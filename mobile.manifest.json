@@ -1,0 +1,9 @@
+{
+  "name": "Codeply Craft Remote",
+  "short_name": "Craft",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#101012",
+  "theme_color": "#101012",
+  "icons": [{ "src": "/logo.png", "sizes": "512x512", "type": "image/png" }]
+}

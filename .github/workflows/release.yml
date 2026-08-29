@@ -1,0 +1,61 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# GitHub's modern default gives the auto-generated GITHUB_TOKEN read-only
+# access, which is what "Resource not accessible by integration" means when
+# a job tries to create a release — this grants write explicitly regardless
+# of the repo/org default.
+permissions:
+  contents: write
+
+# electron-builder's own `--publish always` is what correctly generates AND
+# uploads latest.yml/latest-mac.yml — the metadata electron-updater reads to
+# detect new versions — so both jobs use it rather than a separate
+# build-then-upload step.
+#
+# build-mac runs AFTER build-windows (`needs:`), not in parallel: two
+# `--publish always` calls for the same tag running at once can both decide
+# "no release exists yet" before either has created one, and each creates its
+# own SEPARATE release. Sequenced, the second job finds the first job's
+# release and adds its assets to it instead.
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build & publish Windows
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: npx electron-builder --win --publish always
+
+  build-mac:
+    needs: build-windows
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build & publish Mac
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: npx electron-builder --mac --publish always

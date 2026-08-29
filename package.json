@@ -1,0 +1,83 @@
+{
+  "name": "codeply-craft",
+  "version": "1.0.0",
+  "description": "Codeply Craft — the Codeply AI coding agent as a desktop app",
+  "author": "Awais Siddique",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "mobile:prepare": "node scripts/prepare-mobile.js",
+    "android:add": "npm run mobile:prepare && npx cap add android",
+    "android:sync": "npm run mobile:prepare && npx cap sync android",
+    "android:build": "npm run android:sync && set \"JAVA_HOME=%CD%\\android\\jdk21\" && cd android && gradlew.bat assembleDebug --no-daemon && copy app\\build\\outputs\\apk\\debug\\app-debug.apk ..\\CodeplyCraft.apk",
+    "android:open": "npx cap open android"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.0",
+    "electron": "^29.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "qrcode": "^1.5.4"
+  },
+  "build": {
+    "appId": "app.codeply.craft",
+    "productName": "Codeply Craft",
+    "copyright": "Copyright © 2026 Codeply",
+    "extraMetadata": {
+      "author": "Codeply"
+    },
+    "files": [
+      "**/*",
+      "!android",
+      "!mobile-app",
+      "!node_modules/.cache",
+      "!*.md",
+      "!*.log",
+      "!*.err.log",
+      "!.claude",
+      "!.mcp.json",
+      "!dist",
+      "!out"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "asInvoker",
+      "artifactName": "Codeply-Craft-Setup.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Codeply Craft",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.png",
+      "artifactName": "Codeply-Craft.dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "AwaisSDev",
+      "repo": "Codeply-Craft"
+    }
+  }
+}

@@ -1,0 +1,9 @@
+node_modules
+dist
+out
+.env
+.codeply/
+android
+mobile-app
+*.log
+*.err.log

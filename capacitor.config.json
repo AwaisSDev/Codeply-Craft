@@ -1,0 +1,6 @@
+{
+  "appId": "com.codeply.craft",
+  "appName": "Codeply Craft",
+  "webDir": "mobile-app",
+  "bundledWebRuntime": false
+}
