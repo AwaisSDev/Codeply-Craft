@@ -1,0 +1,500 @@
+<title>App Screenshot Atlas</title>
+<style>
+:root {
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-alt: #eef1f5;
+  --border: #dde2e8;
+  --border-strong: #c7ced7;
+  --text: #14171b;
+  --text-muted: #5b6169;
+  --text-faint: #8a919b;
+  --accent: #3462ea;
+  --accent-soft: #e8edfd;
+  --accent-contrast: #ffffff;
+  --radius: 8px;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0d10;
+    --surface: #14171b;
+    --surface-alt: #1b1f24;
+    --border: #262b31;
+    --border-strong: #333a42;
+    --text: #e8eaed;
+    --text-muted: #9ba1aa;
+    --text-faint: #676e78;
+    --accent: #6f93ff;
+    --accent-soft: #1b2440;
+    --accent-contrast: #0b0d10;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0b0d10;
+  --surface: #14171b;
+  --surface-alt: #1b1f24;
+  --border: #262b31;
+  --border-strong: #333a42;
+  --text: #e8eaed;
+  --text-muted: #9ba1aa;
+  --text-faint: #676e78;
+  --accent: #6f93ff;
+  --accent-soft: #1b2440;
+  --accent-contrast: #0b0d10;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 20px 64px;
+}
+
+header.top {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 20px;
+}
+
+header.top h1 {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+header.top p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.totals {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.overview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 20px;
+}
+
+.overview-row {
+  display: grid;
+  grid-template-columns: 130px 1fr 70px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.overview-row .cat-label {
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.overview-bar-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-alt);
+  overflow: hidden;
+}
+
+.overview-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--cat-color, var(--accent));
+}
+
+.overview-row .cat-count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+  text-align: right;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+  align-items: center;
+}
+
+.search {
+  flex: 1;
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--text);
+  font-family: var(--font-ui);
+  outline: none;
+}
+
+.search:focus {
+  border-color: var(--accent);
+}
+
+.search::placeholder {
+  color: var(--text-faint);
+}
+
+.chip {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.chip:hover {
+  border-color: var(--border-strong);
+}
+
+.chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.result-count {
+  color: var(--text-faint);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  margin-bottom: 8px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 640px;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-alt);
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: 700;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+thead th:hover {
+  color: var(--text);
+}
+
+thead th.sorted {
+  color: var(--accent);
+}
+
+tbody tr {
+  border-bottom: 1px solid var(--border);
+}
+
+tbody tr:last-child {
+  border-bottom: none;
+}
+
+tbody tr:hover {
+  background: var(--surface-alt);
+}
+
+td {
+  padding: 8px 12px;
+  vertical-align: middle;
+}
+
+.app-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 220px;
+}
+
+.app-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  background: var(--surface-alt);
+  object-fit: cover;
+}
+
+.app-name {
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+
+.app-name a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.app-name a:hover {
+  text-decoration: underline;
+}
+
+.cat-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--cat-color-soft, var(--accent-soft));
+  color: var(--cat-color, var(--accent));
+  white-space: nowrap;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.num.shots {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.rating-stars {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+footer.note {
+  margin-top: 20px;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+@media (max-width: 640px) {
+  .overview-row { grid-template-columns: 90px 1fr 50px; }
+  .app-name { max-width: 160px; }
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>App Screenshot Atlas</h1>
+    <p>Private design reference library. Real screenshots sourced from Apple's public iTunes Search API, official App Store listings only. Not shown publicly.</p>
+  </header>
+
+  <div class="overview" id="overview"></div>
+
+  <div class="controls">
+    <input class="search" id="search" type="text" placeholder="Search app name…" autocomplete="off" />
+  </div>
+
+  <div class="chip-row" id="chips"></div>
+
+  <div class="result-count" id="resultCount"></div>
+
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th data-sort="n">App</th>
+          <th data-sort="c">Category</th>
+          <th data-sort="r" style="text-align:right">Rating</th>
+          <th data-sort="s" class="sorted" style="text-align:right">Screenshots</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <footer class="note">
+    Generated __GENERATED_AT__ &middot; __TOTAL_APPS__ apps &middot; __TOTAL_SHOTS__ screenshots &middot; source: Apple iTunes Search API (public, unauthenticated)
+  </footer>
+</div>
+
+<script id="table-data" type="application/json">__DATA_JSON__</script>
+<script>
+(function () {
+  var raw = JSON.parse(document.getElementById('table-data').textContent);
+  var labels = raw.labels;
+  var rows = raw.rows;
+
+  var CAT_HUES = {
+    productivity: 217, finance: 152, shopping: 28, social: 330, travel: 190,
+    food_delivery: 12, health_fitness: 260, education: 45, entertainment: 350, real_estate: 172,
+  };
+
+  var catKeys = Object.keys(labels);
+  var style = document.createElement('style');
+  var css = '';
+  catKeys.forEach(function (k) {
+    var h = CAT_HUES[k] || 200;
+    css += '[data-cat="' + k + '"] { --cat-color: hsl(' + h + ' 65% 45%); --cat-color-soft: hsl(' + h + ' 70% 94%); }\n';
+    css += '@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) [data-cat="' + k + '"] { --cat-color: hsl(' + h + ' 75% 68%); --cat-color-soft: hsl(' + h + ' 40% 18%); } }\n';
+    css += ':root[data-theme="dark"] [data-cat="' + k + '"] { --cat-color: hsl(' + h + ' 75% 68%); --cat-color-soft: hsl(' + h + ' 40% 18%); }\n';
+  });
+  style.textContent = css;
+  document.head.appendChild(style);
+
+  // overview bars
+  var overviewEl = document.getElementById('overview');
+  var catCounts = {};
+  rows.forEach(function (r) { catCounts[r.c] = (catCounts[r.c] || 0) + r.s; });
+  var maxShots = Math.max.apply(null, Object.values(catCounts));
+  catKeys.forEach(function (k) {
+    var shots = catCounts[k] || 0;
+    var row = document.createElement('div');
+    row.className = 'overview-row';
+    row.setAttribute('data-cat', k);
+    row.innerHTML =
+      '<span class="cat-label">' + labels[k] + '</span>' +
+      '<span class="overview-bar-track"><span class="overview-bar-fill" style="width:' + (shots / maxShots * 100) + '%"></span></span>' +
+      '<span class="cat-count">' + shots + '</span>';
+    overviewEl.appendChild(row);
+  });
+
+  // chips
+  var chipsEl = document.getElementById('chips');
+  var activeCat = null;
+  function renderChips() {
+    chipsEl.innerHTML = '';
+    var allChip = document.createElement('button');
+    allChip.className = 'chip' + (activeCat === null ? ' active' : '');
+    allChip.textContent = 'All categories';
+    allChip.onclick = function () { activeCat = null; renderChips(); renderTable(); };
+    chipsEl.appendChild(allChip);
+    catKeys.forEach(function (k) {
+      var chip = document.createElement('button');
+      chip.className = 'chip' + (activeCat === k ? ' active' : '');
+      chip.textContent = labels[k];
+      chip.onclick = function () { activeCat = k; renderChips(); renderTable(); };
+      chipsEl.appendChild(chip);
+    });
+  }
+
+  var sortKey = 's';
+  var sortDir = -1;
+  var searchTerm = '';
+
+  document.querySelectorAll('th[data-sort]').forEach(function (th) {
+    th.addEventListener('click', function () {
+      var key = th.getAttribute('data-sort');
+      if (sortKey === key) sortDir *= -1;
+      else { sortKey = key; sortDir = key === 'n' || key === 'c' ? 1 : -1; }
+      document.querySelectorAll('th[data-sort]').forEach(function (t) { t.classList.remove('sorted'); });
+      th.classList.add('sorted');
+      renderTable();
+    });
+  });
+
+  document.getElementById('search').addEventListener('input', function (e) {
+    searchTerm = e.target.value.trim().toLowerCase();
+    renderTable();
+  });
+
+  function renderTable() {
+    var filtered = rows.filter(function (r) {
+      if (activeCat && r.c !== activeCat) return false;
+      if (searchTerm && r.n.toLowerCase().indexOf(searchTerm) === -1) return false;
+      return true;
+    });
+    filtered.sort(function (a, b) {
+      var av = a[sortKey], bv = b[sortKey];
+      if (typeof av === 'string') return av.localeCompare(bv) * sortDir;
+      return ((av || 0) - (bv || 0)) * sortDir;
+    });
+
+    document.getElementById('resultCount').textContent = filtered.length + ' apps shown';
+
+    var tbody = document.getElementById('tbody');
+    var frag = document.createDocumentFragment();
+    filtered.forEach(function (r) {
+      var tr = document.createElement('tr');
+      tr.setAttribute('data-cat', r.c);
+      var ratingText = r.r ? r.r.toFixed(1) : '—';
+      tr.innerHTML =
+        '<td><div class="app-cell">' +
+          '<img class="app-icon" src="' + r.i + '" alt="" loading="lazy" />' +
+          '<span class="app-name"><a href="' + r.u + '" target="_blank" rel="noopener">' + escapeHtml(r.n) + '</a></span>' +
+        '</div></td>' +
+        '<td><span class="cat-tag">' + labels[r.c] + '</span></td>' +
+        '<td class="num">' + ratingText + '</td>' +
+        '<td class="num shots">' + r.s + '</td>';
+      frag.appendChild(tr);
+    });
+    tbody.innerHTML = '';
+    tbody.appendChild(frag);
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c];
+    });
+  }
+
+  renderChips();
+  renderTable();
+})();
+</script>

@@ -2,13 +2,15 @@
  * Codeply Craft — Electron main process.
  *
  * The AI engine is NOT reimplemented here: it is the exact agent loop the
- * Codeply CLI ships (codeply-cli/lib/agent.mjs + ai.js + tools.mjs), loaded
- * from the sibling checkout. Same tag protocol, same providers, same
+ * Codeply CLI ships (codeply-cli/lib/agent.mjs + ai.js + tools.mjs), bundled
+ * into this app under ./codeply-cli (see the CLI_DIR resolution below — a
+ * packaged install has no sibling checkout to load it from, so it now ships
+ * inside the app itself). Same tag protocol, same providers, same
  * ~/.codeply auth session and daily caps. This file only hosts it: window
  * chrome, chat session persistence, and the approval bridge between the
  * agent's ctx.approve() callback and the renderer's Accept/Reject UI.
  */
-const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -17,8 +19,26 @@ const { execSync } = require('child_process');
 const QRCode = require('qrcode');
 
 // ─── CLI engine location ────────────────────────────────────────────────────
-
-const CLI_DIR = process.env.CODEPLY_CLI_PATH || path.join(__dirname, '..', 'codeply-cli');
+// The engine is bundled INSIDE this app now (./codeply-cli), not loaded from
+// a sibling checkout next to it — a packaged install has no such sibling, so
+// that layout only ever worked from this repo's own source tree.
+//
+// codeply-cli is copied in via `extraResources` (see the build config), NOT
+// packed into app.asar with the rest of this app's own code — on purpose,
+// for two independent reasons that both point the same way:
+//   1. electron-builder's asar packing runs its own dependency-pruning over
+//      any node_modules it finds, keyed off THIS package's own dependency
+//      tree. codeply-cli/node_modules is a separate package's dependencies,
+//      unrelated to that tree, and got silently dropped when it was left
+//      for that step to pick up — extraResources is a plain recursive copy,
+//      no pruning, so what's on disk in the source tree is what ships.
+//   2. agent.mjs is loaded with a dynamic `import()`, and Node's ESM loader
+//      doesn't reliably follow Electron's asar interception the way
+//      require() does even for paths that ARE correctly unpacked.
+// A plain resources/codeply-cli folder on real disk sidesteps both at once.
+const CLI_DIR = process.env.CODEPLY_CLI_PATH || (app.isPackaged
+  ? path.join(process.resourcesPath, 'codeply-cli')
+  : path.join(__dirname, 'codeply-cli'));
 
 let agentMod = null;      // ESM: { runAgent, buildProjectContext }
 let authLib = null;       // CJS: auth.js
@@ -183,6 +203,16 @@ function gitBranch(cwd) {
 // ─── Window ─────────────────────────────────────────────────────────────────
 
 let win = null;
+let tray = null;
+// Set by the tray's own "Quit" item, and by 'before-quit' as a catch-all for
+// every other way the app can end (OS shutdown, mac Cmd+Q, ...) — so the
+// window's 'close' handler below can tell a real quit apart from the user
+// just clicking the titlebar's X, which should hide to the tray instead.
+// 'before-quit' alone isn't enough for the tray path specifically: a
+// BrowserWindow's 'close' fires before 'before-quit' does, so by the time
+// 'before-quit' could set this flag, 'close' has already had to decide.
+let isQuitting = false;
+const APP_ICON_PATH = path.join(__dirname, 'assets', 'icon.ico');
 
 function createWindow() {
   win = new BrowserWindow({
@@ -193,7 +223,7 @@ function createWindow() {
     show: false,
     frame: false,
     backgroundColor: '#141414',
-    icon: path.join(__dirname, 'logo.png'),
+    icon: APP_ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -217,6 +247,40 @@ function createWindow() {
   win.on('maximize', () => win.webContents.send('win:state', { maximized: true }));
   win.on('unmaximize', () => win.webContents.send('win:state', { maximized: false }));
   win.on('resize', () => { if (panelVisible) positionCheckerView(); });
+  // The whole point of the phone companion is that Craft keeps running (and
+  // keeps serving the remote server) after you walk away from the desktop —
+  // closing the window hides it instead of tearing it, and the tray icon
+  // below is what's left to get back in or actually quit from.
+  win.on('close', (e) => {
+    if (isQuitting) return;
+    e.preventDefault();
+    win.hide();
+  });
+}
+
+function showWindow() {
+  if (!win || win.isDestroyed()) { createWindow(); return; }
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function createTray() {
+  if (tray) return;
+  tray = new Tray(nativeImage.createFromPath(APP_ICON_PATH));
+  tray.setToolTip('Codeply Craft');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Open Codeply Craft', click: showWindow },
+    { type: 'separator' },
+    {
+      label: 'Quit Codeply Craft',
+      click: () => { isQuitting = true; app.quit(); },
+    },
+  ]));
+  // Windows/Linux convention: a left-click on the tray icon itself opens the
+  // app (the menu above is reserved for right-click, which Electron already
+  // routes to setContextMenu on its own).
+  tray.on('click', showWindow);
 }
 
 ipcMain.on('win:minimize', () => win && win.minimize());
@@ -1232,7 +1296,12 @@ async function remoteInfo() {
   if (!remotePairCode) remotePairCode = makePairCode();
   const url = `http://${localAddress()}:${REMOTE_PORT}`;
   const qr = await QRCode.toString(`${url}/?code=${remotePairCode}`, {
-    type: 'svg', margin: 1, color: { dark: '#0a0a0d', light: '#0000' },
+    // margin is in QR MODULES, not pixels — the spec's quiet zone is 4
+    // modules on every side, and a phone camera actually relies on that
+    // blank border to find the code at all. The previous margin: 1 was
+    // below that floor, which is exactly the kind of thing that scans fine
+    // up close in good light and unreliably everywhere else.
+    type: 'svg', margin: 4, color: { dark: '#0a0a0d', light: '#0000' },
   });
   return { url, code: remotePairCode, port: REMOTE_PORT, qr };
 }
@@ -1917,6 +1986,7 @@ app.whenReady().then(() => {
   loadStore();
   startRemoteServer();
   createWindow();
+  createTray();
   win.webContents.once('did-finish-load', () => {
     if (pendingAuthUrl) {
       const url = pendingAuthUrl;
@@ -1924,20 +1994,25 @@ app.whenReady().then(() => {
       handleAuthCallback(url);
     }
   });
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
+  // Covers both the mac dock-icon-click convention and the (now rare, since
+  // closing hides rather than destroys) case of no window existing at all.
+  app.on('activate', showWindow);
 });
 
 app.on('window-all-closed', () => {
-  // checkerView is a BrowserView owned by win, not its own window — it goes
-  // away with win automatically, nothing to destroy separately here.
+  // Reached only if a window is destroyed some way other than the hide-on-
+  // close handler above (a crash, devtools forcing it, an actual quit already
+  // underway) — normal "close the window" no longer gets here at all, since
+  // that now hides instead of destroying it. Terminal cleanup still belongs
+  // here regardless of how we got here.
   if (termProc) { try { termProc.kill(); } catch {} termProc = null; }
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
+  isQuitting = true;
   for (const client of remoteEventClients) { try { client.end(); } catch {} }
   remoteEventClients.clear();
   if (remoteServer) remoteServer.close();
+  if (tray) { tray.destroy(); tray = null; }
 });

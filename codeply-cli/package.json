@@ -1,0 +1,46 @@
+{
+  "name": "codeply-cli",
+  "version": "0.2.0",
+  "description": "Codeply from the terminal — an interactive AI coding agent, or a single apply <instruction> --file <path> command.",
+  "main": "bin/codeply.js",
+  "bin": {
+    "codeply": "bin/codeply.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "skills"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node bin/codeply.js"
+  },
+  "keywords": [
+    "codeply",
+    "ai",
+    "cli",
+    "coding-agent",
+    "code-editor"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AwaisSDev/codeply-cli.git"
+  },
+  "homepage": "https://codeply.online",
+  "bugs": {
+    "email": "hello@codeply.online"
+  },
+  "author": "Codeply",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "commander": "^12.1.0",
+    "ink": "^5.1.0",
+    "ink-spinner": "^5.0.0",
+    "marked": "^15.0.12",
+    "marked-terminal": "^7.3.0",
+    "react": "^18.2.0"
+  }
+}

@@ -1,0 +1,207 @@
+/**
+ * Codeply CLI — surgical SEARCH/REPLACE edit engine
+ *
+ * Adapted from Codeply-App/main.js's computeInstructionEdits/
+ * applySearchReplace/applyEditsToContent — same approach (small verified
+ * diffs instead of a full-file rewrite), trimmed for a stateless single-shot
+ * CLI: no local usage-history file, no .codeply/ response cache, no
+ * multi-turn conversation context (each CLI invocation is its own process).
+ */
+const fs = require('fs');
+const path = require('path');
+const ai = require('./ai');
+
+// Apply ONE search/replace edit to a string. Exact match first, then
+// whitespace-tolerant (ignore leading/trailing space, then collapse internal
+// runs), skipping blank lines on both sides. Re-indents the replacement to fit.
+// Returns { ok, content } or { ok:false, error:'notfound'|'multiple'|'empty' }.
+function applySearchReplace(fileContent, searchBlock, replaceBlock) {
+  const nl = (s) => (s || '').replace(/\r\n/g, '\n');
+  fileContent = nl(fileContent); searchBlock = nl(searchBlock); replaceBlock = nl(replaceBlock);
+  if (!searchBlock.trim()) return { ok: false, error: 'empty' };
+
+  const fileLines = fileContent.split('\n');
+  const searchLines = searchBlock.split('\n');
+
+  const lineStartOffset = (idx) => { let o = 0; for (let k = 0; k < idx; k++) o += fileLines[k].length + 1; return o; };
+
+  const reindentBlock = (block, indent) => {
+    const ls = block.split('\n');
+    const firstNonEmpty = ls.find(l => l.trim() !== '') || '';
+    const base = (firstNonEmpty.match(/^[ \t]*/) || [''])[0];
+    return ls.map(l => {
+      if (l.trim() === '') return '';
+      const stripped = l.startsWith(base) ? l.slice(base.length) : l.replace(/^[ \t]*/, '');
+      return indent + stripped;
+    }).join('\n');
+  };
+
+  const locate = (normalize) => {
+    const s = searchLines.map(normalize).filter(x => x !== '');
+    if (!s.length) return [];
+    const found = [];
+    for (let start = 0; start < fileLines.length; start++) {
+      if (normalize(fileLines[start]) !== s[0]) continue;
+      let fi = start, si = 0, end = start;
+      while (si < s.length && fi < fileLines.length) {
+        const nf = normalize(fileLines[fi]);
+        if (nf === '') { fi++; continue; }       // skip blank lines in the file
+        if (nf !== s[si]) break;
+        end = fi; fi++; si++;
+      }
+      if (si === s.length) found.push([start, end]);
+    }
+    return found;
+  };
+
+  const exact = fileContent.indexOf(searchBlock);
+  if (exact !== -1) {
+    if (exact !== fileContent.lastIndexOf(searchBlock)) return { ok: false, error: 'multiple' };
+    return { ok: true, content: fileContent.slice(0, exact) + replaceBlock + fileContent.slice(exact + searchBlock.length) };
+  }
+
+  let matches = locate(l => l.trim());
+  if (matches.length === 0) matches = locate(l => l.trim().replace(/\s+/g, ' '));
+
+  if (matches.length === 0) {
+    // Last resort: anchor on the first AND last non-blank lines of the search
+    // block (recovers when the AI dropped/added a line in the middle). Kept
+    // conservative — both anchors must be unique and the span must be modest.
+    const sNon = searchLines.map(l => l.trim()).filter(x => x !== '');
+    if (sNon.length >= 2) {
+      const firstHits = [], lastHits = [];
+      fileLines.forEach((l, i) => {
+        const t = l.trim();
+        if (t === sNon[0]) firstHits.push(i);
+        if (t === sNon[sNon.length - 1]) lastHits.push(i);
+      });
+      if (firstHits.length === 1 && lastHits.length === 1 && lastHits[0] >= firstHits[0]) {
+        const sL = firstHits[0], eL = lastHits[0];
+        if (eL - sL + 1 <= sNon.length * 3 + 5) {   // don't grab a huge region
+          const indent = (fileLines[sL].match(/^[ \t]*/) || [''])[0];
+          const reindented = reindentBlock(replaceBlock, indent);
+          return { ok: true, content: fileContent.slice(0, lineStartOffset(sL)) + reindented + fileContent.slice(lineStartOffset(eL) + fileLines[eL].length) };
+        }
+      }
+    }
+    return { ok: false, error: 'notfound' };
+  }
+  if (matches.length > 1) return { ok: false, error: 'multiple' };
+
+  const [startLine, endLine] = matches[0];
+  const indent = (fileLines[startLine].match(/^[ \t]*/) || [''])[0];
+  const reindented = reindentBlock(replaceBlock, indent);
+  const startChar = lineStartOffset(startLine);
+  const endChar = lineStartOffset(endLine) + fileLines[endLine].length;
+  return { ok: true, content: fileContent.slice(0, startChar) + reindented + fileContent.slice(endChar) };
+}
+
+// Apply an ordered list of verified {search, replace} hunks to file content,
+// all-or-nothing (pure — no disk write).
+function applyEditsToContent(fileContent, edits) {
+  let working = (fileContent || '').replace(/\r\n/g, '\n');
+  for (let i = 0; i < edits.length; i++) {
+    const { search, replace } = edits[i];
+    const res = applySearchReplace(working, search, replace);
+    if (!res.ok) return { ok: false, error: res.error, index: i };
+    working = res.content;
+  }
+  return { ok: true, content: working };
+}
+
+const SYSTEM_PROMPT = `You are a precise code editor. You receive an INSTRUCTION describing a small change, and the FULL current file. Make ONLY the specific change requested, as surgical SEARCH/REPLACE edits — do NOT reproduce the whole file.
+
+STRICT RULES:
+1. Return an "edits" array. Use the FEWEST edits that cleanly express the change.
+2. "search" must be copied VERBATIM from the file below — exact existing text being changed, with just enough surrounding lines to be unique.
+3. "replace" is that same block with ONLY the requested change applied — preserve everything else in it exactly (formatting, unrelated properties, comments, whitespace style).
+4. If the SAME property/selector/value appears more than once in the file (e.g. "top" set in both a "from" and a "to" block), do NOT pick the first or most obvious match — use every clue in the instruction to find the ONE correct occurrence: the CURRENT value it mentions, nearby selectors, rule/keyframe names, or ordering (first/last, start/end). If more than one occurrence still fits equally well after that, return an EMPTY "edits" array with a "reason" naming the ambiguity instead of guessing.
+5. If the instruction genuinely requires large new content that can't be expressed as a small edit (e.g. "build a whole new page/game/module from scratch"), return an EMPTY "edits" array — do not guess badly at a huge diff.
+6. Return ONLY valid JSON, no markdown, no commentary.
+
+Response format:
+{
+  "edits": [ { "search": "<exact verbatim block from the file>", "replace": "<that block with the change applied>" } ],
+  "reason": "<one short sentence>",
+  "confidence": <0-100>
+}`;
+
+/**
+ * Asks the AI for surgical edits, self-corrects up to twice against bad
+ * "search" matches, and returns only the edits that verify cleanly against
+ * the real file content.
+ * @returns {Promise<{success:boolean, edits?:Array, badCount?:number, reason?:string, confidence?:number, tokensUsed?:number, modelUsed?:string, error?:string}>}
+ */
+async function computeInstructionEdits(instruction, filePath) {
+  if (!fs.existsSync(filePath)) return { success: false, error: `File not found: ${filePath}` };
+  const content = fs.readFileSync(filePath, 'utf8');
+
+  const probe = (search) => {
+    const res = applySearchReplace(content, search, search);
+    return res.ok ? 'ok' : res.error;
+  };
+
+  let totalTokens = 0;
+  let lastModelUsed = null;
+
+  const askModel = async (feedback) => {
+    const messages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      // Large/stable content (the file) first, small/always-different content
+      // (the instruction) last — the ai-proxy's underlying model caches a
+      // repeated PREFIX, so this ordering matters for repeated calls against
+      // the same file even when the instruction text differs each time.
+      { role: 'user', content: `FULL FILE (${path.basename(filePath)}):\n${content}\n\nINSTRUCTION:\n${instruction}` },
+    ];
+    if (feedback) messages.push({ role: 'user', content: feedback });
+
+    const aiResult = await ai.chat(messages, { json: true, meta: { promptText: instruction, filePath } });
+    if (!aiResult.success) throw new Error(aiResult.error);
+    if (aiResult.modelUsed) lastModelUsed = aiResult.modelUsed;
+    const data = aiResult.data;
+    totalTokens += (data.usage || {}).total_tokens || 0;
+
+    let parsed;
+    try { parsed = JSON.parse(data.choices[0].message.content); }
+    catch { return { edits: [], confidence: 0, reason: '' }; }
+
+    const edits = Array.isArray(parsed.edits)
+      ? parsed.edits.filter(e => e && e.search && e.replace != null).map(e => ({ search: e.search, replace: e.replace }))
+      : [];
+    return { edits, confidence: parsed.confidence == null ? 75 : parsed.confidence, reason: parsed.reason || '' };
+  };
+
+  let edits, confidence, reason;
+  try {
+    ({ edits, confidence, reason } = await askModel());
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+
+  const verify = (list) => list.map((e) => ({ e, status: probe(e.search) }));
+  let checked = verify(edits);
+  let bad = checked.filter(c => c.status !== 'ok');
+
+  let pass = 0;
+  while (bad.length && pass < 2) {
+    pass++;
+    const feedback =
+      `Some "search" blocks from your last answer are wrong. Return the COMPLETE corrected edits array again, fixing these:\n` +
+      bad.map(c => c.status === 'multiple'
+        ? `- Matched MULTIPLE places — include more surrounding lines so it is unique:\n${c.e.search}`
+        : `- NOT found in the file — copy it EXACTLY from the FULL FILE above, character for character:\n${c.e.search}`
+      ).join('\n') +
+      `\nEvery "search" must be copied verbatim from the file shown above.`;
+    let retry;
+    try { retry = await askModel(feedback); }
+    catch (e) { break; }
+    if (retry.edits.length) { edits = retry.edits; confidence = retry.confidence; reason = retry.reason || reason; }
+    checked = verify(edits);
+    bad = checked.filter(c => c.status !== 'ok');
+  }
+
+  const good = checked.filter(c => c.status === 'ok').map(c => c.e);
+  return { success: true, edits: good, badCount: bad.length, confidence, reason, tokensUsed: totalTokens, modelUsed: lastModelUsed };
+}
+
+module.exports = { applySearchReplace, applyEditsToContent, computeInstructionEdits };
