@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
-  <meta name="theme-color" content="#090a0f">
+  <meta name="theme-color" content="#1d1d20" id="themeColorMeta">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Codeply Craft Companion</title>
@@ -12,6 +12,20 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="mobile.css">
+  <script>
+    // Runs before mobile.css and mobile.js load, so an explicit dark/light
+    // choice from a previous visit is already on <html> by first paint —
+    // without this, the page would render once in the default (dark) theme
+    // and then visibly flip if the stored choice is actually light. "system"
+    // (the default) needs nothing here: prefers-color-scheme in mobile.css
+    // handles it with zero JS.
+    (function () {
+      try {
+        var t = localStorage.getItem('craft-theme');
+        if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
   <div class="bg-ambience">
@@ -103,6 +117,20 @@
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
             <span>Disconnect</span>
           </button>
+        </div>
+        <div class="theme-row">
+          <span class="theme-row-label">Theme</span>
+          <div class="theme-toggle" id="themeToggle" role="group" aria-label="Theme">
+            <button type="button" class="theme-opt" data-theme-choice="system" title="Match system">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            </button>
+            <button type="button" class="theme-opt" data-theme-choice="light" title="Light">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+            </button>
+            <button type="button" class="theme-opt" data-theme-choice="dark" title="Dark">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.5a8.5 8.5 0 1 1-9-11 6.8 6.8 0 0 0 9 11Z"/></svg>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -266,6 +294,36 @@
       <div class="sheet-actions">
         <button class="btn btn-quiet" id="rejectBtn">Reject</button>
         <button class="btn btn-primary" id="approveBtn">Approve Once</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- IMAGE PICKER SHEET — the phone side of the same fetch_image approval
+       the desktop shows as a search-and-click card (see addImagePickerCard
+       in app.js). Same /api/images/search + /api/image-pick the desktop's
+       IPC calls hit, just over HTTP. -->
+  <section class="approval-sheet hidden" id="imagePickSheet" role="dialog" aria-modal="true">
+    <div class="sheet-backdrop"></div>
+    <div class="sheet-container image-pick-container">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div class="approval-badge image-pick-badge">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M3 15l5-4 4 3 4-4 5 5"/></svg>
+        </div>
+        <div>
+          <span class="sheet-overline">DESKTOP ACTION REQUIRED</span>
+          <h2>Choose an image</h2>
+        </div>
+      </div>
+      <p class="sheet-detail" id="imagePickDetail"></p>
+      <div class="img-search-row">
+        <input class="img-search-input" id="imgSearchInput" type="text" placeholder="Search photos…" autocomplete="off">
+        <button class="img-search-btn" id="imgSearchBtn" type="button">Search</button>
+      </div>
+      <div class="img-grid" id="imgGrid"><div class="img-grid-status">Searching…</div></div>
+      <div class="sheet-actions">
+        <button class="btn btn-quiet" id="imgPickCancelBtn">Cancel, no image</button>
+        <button class="btn btn-primary" id="imgPickSkipBtn">Use Codeply's pick</button>
       </div>
     </div>
   </section>

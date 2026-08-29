@@ -1,10 +1,16 @@
 /* ============ Codex recreation ============ */
+/* Dark (below) is the original, unchanged palette. Light mirrors the phone
+   companion's palette token-for-token (mobile.css's :root) so the two apps
+   read as one product regardless of which theme either is on. System
+   default via `@media (prefers-color-scheme: light)`; an explicit choice
+   (data-theme on <html>, see applyTheme() in app.js) always overrides it,
+   in both directions. */
 :root {
   --titlebar-bg: #101010;
   --sidebar-bg: #161618;
   --main-bg: #1d1d20;
-  --panel-bg: #232327;
-  --card-bg: #232327;
+  --panel-bg: var(--panel-bg);
+  --card-bg: var(--panel-bg);
   --card-border: #333338;
   --hover: rgba(255, 255, 255, 0.06);
   --active: rgba(255, 255, 255, 0.09);
@@ -18,9 +24,71 @@
   --blue: #66a3ff;
   --green: #4cc38a;
   --red: #e5624d;
+  --surface-1: var(--surface-1);
+  --surface-2: var(--surface-2);
+  --purple-chip-bg: rgba(177, 154, 247, 0.14);
+  --invert-bg: #ececf1;
+  --invert-bg-hover: #fff;
+  --invert-text: #141416;
   --radius-lg: 18px;
   --radius-md: 12px;
   --browser-panel-width: 0px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --titlebar-bg: #ffffff;
+    --sidebar-bg: #f6f6f8;
+    --main-bg: #ffffff;
+    --panel-bg: #f6f6f8;
+    --card-bg: #f6f6f8;
+    --card-border: #e4e4e8;
+    --hover: rgba(10, 10, 13, 0.05);
+    --active: rgba(10, 10, 13, 0.08);
+    --text: #0a0a0d;
+    --text-dim: #6b7280;
+    --text-faint: #9096a1;
+    --border: #e4e4e8;
+    --code-bg: #eeeef1;
+    --bubble-bg: #eeeef1;
+    --accent-purple: #7c3aed;
+    --blue: #2563eb;
+    --green: #16a34a;
+    --red: #dc2626;
+    --surface-1: #f0f0f2;
+    --surface-2: #e8e8ec;
+    --purple-chip-bg: rgba(124, 58, 237, 0.12);
+    --invert-bg: #0a0a0d;
+    --invert-bg-hover: #26262b;
+    --invert-text: #ffffff;
+  }
+}
+
+:root[data-theme="light"] {
+  --titlebar-bg: #ffffff;
+  --sidebar-bg: #f6f6f8;
+  --main-bg: #ffffff;
+  --panel-bg: #f6f6f8;
+  --card-bg: #f6f6f8;
+  --card-border: #e4e4e8;
+  --hover: rgba(10, 10, 13, 0.05);
+  --active: rgba(10, 10, 13, 0.08);
+  --text: #0a0a0d;
+  --text-dim: #6b7280;
+  --text-faint: #9096a1;
+  --border: #e4e4e8;
+  --code-bg: #eeeef1;
+  --bubble-bg: #eeeef1;
+  --accent-purple: #7c3aed;
+  --blue: #2563eb;
+  --green: #16a34a;
+  --red: #dc2626;
+  --surface-1: #f0f0f2;
+  --surface-2: #e8e8ec;
+  --purple-chip-bg: rgba(124, 58, 237, 0.12);
+  --invert-bg: #0a0a0d;
+  --invert-bg-hover: #26262b;
+  --invert-text: #ffffff;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -28,7 +96,7 @@
 html, body { height: 100%; overflow: hidden; }
 
 body {
-  font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system, "Inter", system-ui, sans-serif;
+  font-family: "Plus Jakarta Sans", "Segoe UI Variable Text", "Segoe UI", -apple-system, system-ui, sans-serif;
   background: var(--main-bg);
   color: var(--text);
   font-size: 14px;
@@ -48,7 +116,7 @@ button {
 svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: #3b3b42; border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #4a4a52; }
 ::-webkit-scrollbar-track { background: transparent; }
 
@@ -56,7 +124,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 
 /* Phone companion pairing — a compact modal, deliberately separate from the
    settings patterns because it represents a security boundary. */
-.remote-modal { position: relative; width: min(400px, calc(100vw - 32px)); padding: 30px; border: 1px solid #3a3942; border-radius: 18px; background: #19191d; color: var(--text); box-shadow: 0 12px 36px rgba(0,0,0,.34); text-align: center; }
+.remote-modal { position: relative; width: min(400px, calc(100vw - 32px)); padding: 30px; border: 1px solid var(--card-border); border-radius: 18px; background: var(--surface-1); color: var(--text); box-shadow: 0 12px 36px rgba(0,0,0,.34); text-align: center; }
 .remote-close { position: absolute; top: 12px; right: 12px; }
 .remote-orb { width: 40px; height: 40px; margin: 0 auto 16px; display: grid; place-items: center; border-radius: 12px; color: #15121f; background: var(--accent-purple); }
 .remote-orb svg { width: 19px; height: 19px; }
@@ -78,7 +146,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .remote-fallback summary::-webkit-details-marker { display: none; }
 .remote-fallback summary:hover { color: var(--text); }
 .remote-fallback-body { margin-top: 14px; }
-.remote-url { padding: 12px; border-radius: 9px; background: #111114; border: 1px solid var(--border); color: #ddd9ee; font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 13px; user-select: text; }
+.remote-url { padding: 12px; border-radius: 9px; background: var(--surface-1); border: 1px solid var(--border); color: var(--text); font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 13px; user-select: text; }
 .remote-code-label { margin-top: 16px; color: var(--text-faint); font-size: 12px; font-weight: 650; }
 .remote-code { margin-top: 7px; color: #d8cdfd; font-family: ui-monospace, "Cascadia Mono", monospace; font-weight: 750; font-size: 21px; letter-spacing: .12em; }
 
@@ -123,7 +191,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   height: 100%;
   display: grid;
   place-items: center;
-  color: #c9c9d1;
+  color: var(--text-dim);
   transition: background 0.12s ease, color 0.12s ease, transform 0.08s ease;
 }
 .win-btn svg { width: 11px; height: 11px; stroke-width: 1.4; transition: transform 0.12s ease; }
@@ -157,7 +225,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   align-items: center;
   gap: 2px;
   padding: 0 8px;
-  background: #18181b;
+  background: var(--surface-1);
   border-bottom: 1px solid var(--border);
   border-left: 1px solid var(--border);
   z-index: 10;
@@ -183,7 +251,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   min-width: 0;
   margin: 0 4px;
   padding: 4px 10px;
-  background: #101012;
+  background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 999px;
   font-size: 12px;
@@ -209,7 +277,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   height: var(--terminal-panel-height, 280px);
   display: flex;
   flex-direction: column;
-  background: #101012;
+  background: var(--surface-1);
   border-top: 1px solid var(--border);
   z-index: 10;
   transition: right 0.15s ease;
@@ -221,7 +289,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   align-items: center;
   justify-content: space-between;
   padding: 6px 8px 6px 12px;
-  background: #18181b;
+  background: var(--surface-1);
   border-bottom: 1px solid var(--border);
 }
 .terminal-panel-title {
@@ -298,7 +366,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   padding: 7px 10px;
   border-radius: 9px;
   font-size: 13.5px;
-  color: #d6d6dd;
+  color: var(--text-dim);
   text-align: left;
 }
 .sb-item:hover { background: var(--hover); }
@@ -345,7 +413,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   padding: 7px 10px;
   border-radius: 9px;
   font-size: 13.5px;
-  color: #d6d6dd;
+  color: var(--text-dim);
   text-align: left;
 }
 /* The row already carries the hover fill; a second one on the button inside
@@ -377,7 +445,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   padding: 7px 10px;
   border-radius: 9px;
   font-size: 13.5px;
-  color: #d6d6dd;
+  color: var(--text-dim);
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
@@ -421,7 +489,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .chat-ctx-menu {
   position: fixed;
   min-width: 150px;
-  background: #232327;
+  background: var(--panel-bg);
   border: 1px solid var(--card-border);
   border-radius: 10px;
   padding: 5px;
@@ -436,7 +504,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   padding: 7px 9px;
   border-radius: 7px;
   font-size: 13px;
-  color: #d6d6dd;
+  color: var(--text-dim);
   text-align: left;
 }
 .chat-ctx-menu button:hover { background: var(--hover); }
@@ -449,7 +517,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .model-menu {
   position: fixed;
   width: 260px;
-  background: #232327;
+  background: var(--panel-bg);
   border: 1px solid var(--card-border);
   border-radius: 12px;
   padding: 6px;
@@ -495,13 +563,13 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   padding: 2px 7px;
   flex-shrink: 0;
 }
-.model-menu-item-badge.locked { color: var(--text-faint); background: rgba(255, 255, 255, 0.06); }
+.model-menu-item-badge.locked { color: var(--text-faint); background: var(--hover); }
 
 /* ---- Account menu (opens from the sidebar footer) ---- */
 .account-menu {
   position: fixed;
   min-width: 220px;
-  background: #232327;
+  background: var(--panel-bg);
   border: 1px solid var(--card-border);
   border-radius: 12px;
   padding: 6px;
@@ -530,6 +598,38 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 }
 .account-menu-item:hover { background: var(--hover); }
 .account-menu-item svg { width: 16px; height: 16px; flex-shrink: 0; color: var(--text-dim); }
+
+.account-menu-theme-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 9px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.theme-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--main-bg);
+  border: 1px solid var(--border);
+}
+.theme-opt {
+  width: 26px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--text-faint);
+  background: none;
+  border: none;
+}
+.theme-opt svg { width: 13px; height: 13px; }
+.theme-opt.active {
+  background: var(--active);
+  color: var(--accent-purple);
+}
 
 .sb-chat.indent { padding-left: 38px; }
 
@@ -651,11 +751,11 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   gap: 14px;
   text-align: left;
   font-size: 13px;
-  color: #d6d6dd;
+  color: var(--text-dim);
   line-height: 1.4;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
-.suggestion-card:hover { background: #28282d; border-color: #3c3c43; }
+.suggestion-card:hover { background: var(--surface-2); border-color: var(--card-border); }
 
 .sug-icon { width: 18px; height: 18px; }
 .sug-icon.purple { color: #a78bfa; }
@@ -758,11 +858,11 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   gap: 7px;
   padding: 5px 12px;
   border-radius: 999px;
-  background: #2c2c31;
+  background: var(--surface-2);
   font-size: 12.5px;
-  color: #d6d6dd;
+  color: var(--text-dim);
 }
-.chip:hover { background: #34343a; }
+.chip:hover { background: var(--surface-2); }
 .chip svg { width: 14px; height: 14px; color: var(--text-dim); }
 
 .composer-input {
@@ -801,7 +901,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   padding: 6px 12px;
   border-radius: 999px;
   font-size: 13px;
-  color: #c9c9d1;
+  color: var(--text-dim);
 }
 .approve-toggle:hover { background: var(--hover); }
 .approve-toggle.on { background: rgba(76, 195, 138, 0.12); color: #6fd8a5; }
@@ -814,7 +914,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   padding: 6px 8px;
   border-radius: 8px;
   font-size: 13px;
-  color: #c9c9d1;
+  color: var(--text-dim);
 }
 .model-picker:hover { background: var(--hover); }
 .model-picker strong { font-weight: 600; color: var(--text); }
@@ -825,13 +925,13 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  background: #ececf1;
-  color: #141416;
+  background: var(--invert-bg);
+  color: var(--invert-text);
   display: grid;
   place-items: center;
   transition: opacity 0.12s ease;
 }
-.send-btn:hover { background: #fff; }
+.send-btn:hover { background: var(--invert-bg-hover); }
 .send-btn svg { width: 16px; height: 16px; stroke-width: 2.1; }
 
 /* ============ Chat view ============ */
@@ -884,7 +984,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   width: 2px;
   height: 15px;
   margin-left: 2px;
-  background: #c9c9d1;
+  background: var(--text-dim);
   vertical-align: text-bottom;
   animation: type-blink 0.85s steps(1) infinite;
 }
@@ -948,13 +1048,13 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .tool-detail {
   margin: 8px 0 0 25px;
   padding: 10px 14px;
-  background: #101012;
+  background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 8px;
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   font-size: 12.5px;
   line-height: 1.5;
-  color: #c9c9d1;
+  color: var(--text-dim);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 320px;
@@ -966,8 +1066,8 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.16);
-  border-top-color: #c9c9d1;
+  border: 2px solid var(--active);
+  border-top-color: var(--text-dim);
   animation: spin 0.7s linear infinite;
   display: inline-block;
 }
@@ -998,7 +1098,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   0%, 100% { opacity: 0.4; transform: scale(0.8) rotate(0deg); }
   50% { opacity: 1; transform: scale(1.05) rotate(90deg); }
 }
-.thinking-row .thinking-label { color: #c9c9d1; }
+.thinking-row .thinking-label { color: var(--text-dim); }
 .thinking-row .thinking-time {
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
@@ -1020,14 +1120,14 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   font-size: 13px;
   cursor: pointer;
 }
-.reasoning-row-head:hover { color: #c9c9d1; border-color: var(--accent-purple, #b19af7); }
+.reasoning-row-head:hover { color: var(--text-dim); border-color: var(--accent-purple, #b19af7); }
 .reasoning-row-head svg { width: 14px; height: 14px; flex-shrink: 0; }
 .reasoning-row-head .tool-chevron { margin-left: 2px; width: 13px; height: 13px; }
 .reasoning-row.expanded .tool-chevron { transform: rotate(90deg); }
 .reasoning-detail {
   margin: 8px 0 0 4px;
   padding: 10px 14px;
-  background: #101012;
+  background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 12.5px;
@@ -1081,13 +1181,13 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   height: 8px;
   margin-top: 5px;
   border-radius: 50%;
-  background: #47474f;
+  background: var(--text-faint);
 }
 .tasklist-status[data-status="in_progress"] { background: var(--accent-purple, #b19af7); box-shadow: 0 0 0 3px rgba(177,154,247,.2); }
-.tasklist-status[data-status="done"] { background: #4cc38a; }
+.tasklist-status[data-status="done"] { background: var(--green); }
 .tasklist-status[data-status="done-no-changes"] { background: #d0a447; }
-.tasklist-status[data-status="failed"] { background: #e5624d; }
-.tasklist-status[data-status="skipped"] { background: #47474f; opacity: .5; }
+.tasklist-status[data-status="failed"] { background: var(--red); }
+.tasklist-status[data-status="skipped"] { background: var(--text-faint); opacity: .5; }
 .tasklist-text { color: var(--text-dim); line-height: 1.4; }
 .tasklist-row[data-status="failed"] .tasklist-text,
 .tasklist-status[data-status="failed"] ~ .tasklist-text { color: #e79082; }
@@ -1139,12 +1239,12 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   padding: 6px 14px;
   border-radius: 999px;
   font-size: 13px;
-  background: #2c2c31;
-  color: #d6d6dd;
+  background: var(--surface-2);
+  color: var(--text-dim);
 }
-.appr-btn:hover { background: #34343a; }
-.appr-btn.accept { background: #ececf1; color: #141416; font-weight: 600; }
-.appr-btn.accept:hover { background: #fff; }
+.appr-btn:hover { background: var(--surface-2); }
+.appr-btn.accept { background: var(--invert-bg); color: var(--invert-text); font-weight: 600; }
+.appr-btn.accept:hover { background: var(--invert-bg-hover); }
 .appr-btn.reject:hover { background: rgba(229, 98, 77, 0.18); color: #e79082; }
 
 /* ---- Image picker ---- */
@@ -1162,7 +1262,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 }
 .img-search-input {
   flex: 1;
-  background: #1c1c1f;
+  background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 8px 12px;
@@ -1175,11 +1275,11 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .img-search-btn {
   padding: 8px 16px;
   border-radius: 10px;
-  background: #2c2c31;
-  color: #d6d6dd;
+  background: var(--surface-2);
+  color: var(--text-dim);
   font-size: 13.5px;
 }
-.img-search-btn:hover { background: #34343a; }
+.img-search-btn:hover { background: var(--surface-2); }
 
 .img-grid {
   display: grid;
@@ -1202,7 +1302,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   aspect-ratio: 4 / 3;
   border-radius: 10px;
   overflow: hidden;
-  background: #1c1c1f;
+  background: var(--surface-1);
   border: 2px solid transparent;
   transition: border-color 0.12s ease, transform 0.12s ease;
 }
@@ -1232,7 +1332,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .img-tile:first-child .img-tile-credit { opacity: 1; background: rgba(177, 154, 247, 0.85); color: #1a1420; font-weight: 600; }
 
 .code-card {
-  background: #232327;
+  background: var(--panel-bg);
   border: 1px solid var(--border);
   border-radius: 14px;
   margin: 4px 0 16px;
@@ -1271,15 +1371,15 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: #2c2c31;
+  background: var(--surface-2);
   border: 1px solid var(--card-border);
-  color: #d6d6dd;
+  color: var(--text-dim);
   display: grid;
   place-items: center;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
   z-index: 5;
 }
-.scroll-down:hover { background: #34343a; }
+.scroll-down:hover { background: var(--surface-2); }
 .scroll-down svg { width: 16px; height: 16px; }
 
 /* ---- Right side panel ---- */
@@ -1288,7 +1388,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   top: 4px;
   right: 14px;
   width: 300px;
-  background: #212124;
+  background: var(--panel-bg);
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 14px 10px 10px;
@@ -1326,7 +1426,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   padding: 7px 8px;
   border-radius: 9px;
   font-size: 13px;
-  color: #d6d6dd;
+  color: var(--text-dim);
   text-align: left;
 }
 .sp-row:hover { background: var(--hover); }
@@ -1349,7 +1449,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .model-label strong { font-weight: 600; color: var(--text); }
 
 .chip.static { cursor: default; }
-.chip.static:hover { background: #2c2c31; }
+.chip.static:hover { background: var(--surface-2); }
 
 .md-h { font-weight: 700; font-size: 15px; }
 
@@ -1385,12 +1485,12 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   width: 100%;
   padding: 10px 0;
   border-radius: 999px;
-  background: #ececf1;
-  color: #141416;
+  background: var(--invert-bg);
+  color: var(--invert-text);
   font-size: 14px;
   font-weight: 600;
 }
-.login-btn:hover { background: #fff; }
+.login-btn:hover { background: var(--invert-bg-hover); }
 .login-btn:disabled { opacity: 0.5; cursor: default; }
 .login-link { font-size: 13px; color: var(--text-dim); padding: 4px; }
 .login-link:hover { color: var(--text); }
@@ -1455,7 +1555,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   font-weight: 600;
   color: var(--text-dim);
 }
-.auth-tab.active { background: #34343a; color: var(--text); }
+.auth-tab.active { background: var(--surface-2); color: var(--text); }
 .auth-tab:hover:not(.active) { color: var(--text); }
 
 select.login-input {
@@ -1467,7 +1567,7 @@ select.login-input {
   background-size: 16px;
   padding-right: 36px;
 }
-select.login-input option { background: #1c1c1f; color: var(--text); }
+select.login-input option { background: var(--surface-1); color: var(--text); }
 
 /* ---- Referral / onboarding survey ---- */
 .referral-options {
@@ -1485,7 +1585,7 @@ select.login-input option { background: #1c1c1f; color: var(--text); }
   border-radius: 12px;
   background: var(--panel-bg);
   border: 1px solid var(--border);
-  color: #d6d6dd;
+  color: var(--text-dim);
   font-size: 13.5px;
 }
 .referral-opt svg { width: 17px; height: 17px; flex-shrink: 0; }
@@ -1556,13 +1656,13 @@ select.login-input option { background: #1c1c1f; color: var(--text); }
   margin-top: 10px;
   padding: 10px 0;
   border-radius: 999px;
-  background: #2a2a30;
+  background: var(--surface-2);
   color: var(--text);
   font-size: 13px;
   font-weight: 600;
   transition: background 0.12s ease, transform 0.08s ease;
 }
-.plan-card-btn:not(:disabled):hover { background: #38383f; }
+.plan-card-btn:not(:disabled):hover { background: var(--surface-2); }
 .plan-card-btn:not(:disabled):active { transform: scale(0.97); }
 .plan-card-btn.popular { background: var(--accent-purple); color: #1a1424; }
 .plan-card-btn.popular:not(:disabled):hover { background: #c3aefb; }
@@ -1578,7 +1678,7 @@ select.login-input option { background: #1c1c1f; color: var(--text); }
   text-transform: uppercase;
   letter-spacing: 0.4px;
   color: var(--accent-purple);
-  background: #201a2e;
+  background: var(--purple-chip-bg);
   border: 1px solid rgba(177, 154, 247, 0.35);
   border-radius: 999px;
   padding: 3px 10px;
@@ -1600,7 +1700,7 @@ select.login-input option { background: #1c1c1f; color: var(--text); }
 .usage-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .usage-label { font-size: 12.5px; color: var(--text-dim); }
 .usage-count { font-size: 12.5px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
-.usage-track { height: 5px; border-radius: 3px; background: #38383f; overflow: hidden; margin-bottom: 8px; }
+.usage-track { height: 5px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin-bottom: 8px; }
 .usage-fill { height: 100%; border-radius: 3px; background: var(--accent-purple); transition: width 0.3s ease; }
 .usage-note { font-size: 11px; color: var(--text-faint); line-height: 1.4; }
 
@@ -1610,7 +1710,7 @@ select.login-input option { background: #1c1c1f; color: var(--text); }
   left: 14px;
   right: 14px;
   bottom: calc(100% + 8px);
-  background: #232327;
+  background: var(--panel-bg);
   border: 1px solid var(--card-border);
   border-radius: 12px;
   padding: 6px;
@@ -1649,7 +1749,7 @@ select.login-input option { background: #1c1c1f; color: var(--text); }
   max-width: 760px;
   max-height: 82vh;
   margin: 0 24px;
-  background: #1c1c1f;
+  background: var(--surface-1);
   border: 1px solid var(--card-border);
   border-radius: 18px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
@@ -1673,7 +1773,7 @@ select.login-input option { background: #1c1c1f; color: var(--text); }
   max-width: 520px;
   max-height: 78vh;
   margin: 0 24px;
-  background: #1c1c1f;
+  background: var(--surface-1);
   border: 1px solid var(--card-border);
   border-radius: 18px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
@@ -1698,7 +1798,7 @@ select.login-input option { background: #1c1c1f; color: var(--text); }
   width: 100%;
   max-width: 480px;
   margin: 0 24px;
-  background: linear-gradient(180deg, #212124, #1a1a1d);
+  background: linear-gradient(180deg, var(--panel-bg), #1a1a1d);
   border: 1px solid var(--card-border);
   border-radius: 20px;
   box-shadow: 0 30px 70px rgba(0, 0, 0, 0.55);
@@ -1714,11 +1814,11 @@ select.login-input option { background: #1c1c1f; color: var(--text); }
   gap: 14px;
   padding: 14px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--hover);
+  border: 1px solid var(--border);
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
-.app-card:hover { background: rgba(255, 255, 255, 0.045); transform: translateY(-1px); }
+.app-card:hover { background: var(--active); transform: translateY(-1px); }
 .app-card.connected { border-color: rgba(111, 216, 165, 0.28); }
 
 .app-card-logo {
@@ -1744,7 +1844,7 @@ select.login-input option { background: #1c1c1f; color: var(--text); }
   text-transform: uppercase;
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--hover);
   color: var(--text-faint);
 }
 .app-card.connected .app-card-badge { background: rgba(111, 216, 165, 0.14); color: #6fd8a5; }
@@ -1813,12 +1913,12 @@ select.login-input option { background: #1c1c1f; color: var(--text); }
   background: var(--card-bg);
   border: 1px solid var(--card-border);
 }
-.skill-card:hover { border-color: var(--accent-purple); background: #28282d; }
+.skill-card:hover { border-color: var(--accent-purple); background: var(--surface-2); }
 .skill-card-name {
   font-size: 13px;
   font-weight: 600;
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-  color: #d6d6dd;
+  color: var(--text-dim);
   margin-bottom: 4px;
 }
 .skill-card-desc {

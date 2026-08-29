@@ -4,8 +4,27 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Codeply Craft</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Same face the phone companion already loads (mobile.html) -- the desktop
+     app was falling back to plain OS system fonts (Segoe UI on Windows) with
+     no webfont of its own, which is why it read as visibly plainer next to
+     both the phone app and Claude's own surfaces. -->
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="vendor/xterm/xterm.css">
 <link rel="stylesheet" href="styles.css">
+<script>
+  // Applies a stored explicit dark/light choice before styles.css even
+  // finishes loading, so the window doesn't flash the wrong theme for a
+  // frame — see applyTheme() in app.js. "system" needs nothing here:
+  // styles.css's own prefers-color-scheme media query handles it.
+  (function () {
+    try {
+      var t = localStorage.getItem('craft-desktop-theme');
+      if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+    } catch (e) {}
+  })();
+</script>
 </head>
 <body>
 

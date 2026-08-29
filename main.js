@@ -1413,6 +1413,12 @@ function startRemoteServer() {
         const session = store.sessions.find((s) => s.id === url.searchParams.get('id'));
         return remoteJson(res, session ? 200 : 404, session || { error: 'Session not found.' });
       }
+      // Same searchImages() the desktop's own image-pick card calls via IPC
+      // (images:search) — the phone gets the identical Openverse/Wikimedia
+      // results, just over HTTP instead of IPC.
+      if (req.method === 'GET' && url.pathname === '/api/images/search') {
+        return remoteJson(res, 200, await searchImages(url.searchParams.get('q') || ''));
+      }
       if (req.method === 'GET' && url.pathname === '/api/events') {
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
         res.write('retry: 2000\n\n');
@@ -1799,6 +1805,11 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
       return new Promise((resolve) => {
         pendingImagePicks.set(id, (chosenUrl) => {
           pendingImagePicks.delete(id);
+          // Same reasoning as approval_resolved below: whichever device
+          // (desktop or phone) didn't answer this needs to be told it's
+          // done, or its picker sheet is left showing a request that
+          // already went through with nothing left to ever dismiss it.
+          sendEvent(session.id, { type: 'image_pick_resolved', requestId: id });
           resolve(chosenUrl ? { action: 'once', url: chosenUrl } : 'reject');
         });
       });

@@ -22,6 +22,36 @@ function makeClientId() {
 const desktopClientId = localStorage.getItem('craft-desktop-client-id') || makeClientId();
 localStorage.setItem('craft-desktop-client-id', desktopClientId);
 
+// THEME — dark / light / system, mirroring mobile.js exactly (down to the
+// storage key's meaning, though not its name — this is a separate window
+// with its own localStorage, so there's no actual sharing between the two).
+// 'system' is the absence of data-theme: styles.css's own
+// prefers-color-scheme media query does the work then, live-updating for
+// free if the OS theme changes mid-session. An explicit choice always wins
+// over that — see styles.css's :root for both sides of it. The inline
+// script in index.html's <head> applies a stored explicit choice before
+// first paint, so this only has to keep things in sync after that.
+function getThemeChoice() {
+  const t = localStorage.getItem('craft-desktop-theme');
+  return t === 'dark' || t === 'light' ? t : 'system';
+}
+function applyTheme(choice) {
+  if (choice === 'system') {
+    localStorage.removeItem('craft-desktop-theme');
+    delete document.documentElement.dataset.theme;
+  } else {
+    localStorage.setItem('craft-desktop-theme', choice);
+    document.documentElement.dataset.theme = choice;
+  }
+  syncThemeToggleUI();
+}
+function syncThemeToggleUI() {
+  const active = getThemeChoice();
+  document.querySelectorAll('.theme-opt').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.themeChoice === active);
+  });
+}
+
 const state = {
   user: null,
   providerLabel: '',
@@ -596,6 +626,22 @@ function openAccountMenu() {
       <svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
       Upgrade plan
     </button>
+    <div class="account-menu-divider"></div>
+    <div class="account-menu-theme-row">
+      <span>Theme</span>
+      <div class="theme-toggle" id="themeToggle" role="group" aria-label="Theme">
+        <button type="button" class="theme-opt" data-theme-choice="system" title="Match system">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        </button>
+        <button type="button" class="theme-opt" data-theme-choice="light" title="Light">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+        </button>
+        <button type="button" class="theme-opt" data-theme-choice="dark" title="Dark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.5a8.5 8.5 0 1 1-9-11 6.8 6.8 0 0 0 9 11Z"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="account-menu-divider"></div>
     <button class="account-menu-item" data-action="logout">
       <svg viewBox="0 0 24 24"><path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3"/><path d="M16 17l5-5-5-5"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       Sign out
@@ -619,6 +665,10 @@ function openAccountMenu() {
     renderUser();
     showView('viewLogin');
   });
+  menu.querySelectorAll('.theme-opt').forEach((btn) => {
+    btn.addEventListener('click', () => applyTheme(btn.dataset.themeChoice));
+  });
+  syncThemeToggleUI();
   accountMenuEl = menu;
 }
 
@@ -1419,6 +1469,7 @@ function addApprovalCard(ev) {
 function addImagePickerCard(ev) {
   const card = document.createElement('div');
   card.className = 'image-picker-card';
+  card.dataset.requestId = ev.requestId;
   card.innerHTML = `
     <div class="approval-head">
       <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M3 15l5-4 4 3 4-4 5 5"/></svg>
@@ -1580,6 +1631,14 @@ if (api) api.onAgentEvent((data) => {
     case 'approval_auto':
       addNote(`${data.title}: ${data.bypass ? 'bypass mode, ran without asking' : 'auto approved'}`, 'ok');
       break;
+    case 'image_pick_resolved': {
+      // Same reasoning as approval_resolved above, for the picker card
+      // specifically — picked from the phone while this window still has
+      // it open.
+      const card = chatColumn.querySelector(`.image-picker-card[data-request-id="${data.requestId}"]`);
+      if (card) card.outerHTML = '<div class="chat-note ok">Picked an image on another device</div>';
+      break;
+    }
     case 'error':
       hideThinking();
       addNote(data.error, 'error');

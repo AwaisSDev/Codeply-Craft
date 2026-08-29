@@ -21,11 +21,66 @@ const state = {
   mode: 'Build',
   running: false,
   approval: null,
+  imagePick: null,
   account: null,
   activeAgentMessageEl: null,
 };
 
 localStorage.setItem('craft-client-id', state.clientId);
+
+// THEME — dark / light / system. 'system' is the default and is represented
+// by the ABSENCE of data-theme (mobile.css's own prefers-color-scheme media
+// query does all the work then, so it also live-updates for free if the OS
+// theme changes mid-session, no listener needed). An explicit choice sets
+// data-theme, which always wins over the OS signal — see the CSS at the top
+// of mobile.css for both sides of this. The <head> inline script applies a
+// stored explicit choice before first paint; this just keeps it in sync
+// after that (the toggle itself, the theme-color meta, live OS changes
+// while explicitly on 'system').
+function getThemeChoice() {
+  const t = localStorage.getItem('craft-theme');
+  return t === 'dark' || t === 'light' ? t : 'system';
+}
+
+function applyTheme(choice) {
+  if (choice === 'system') {
+    localStorage.removeItem('craft-theme');
+    delete document.documentElement.dataset.theme;
+  } else {
+    localStorage.setItem('craft-theme', choice);
+    document.documentElement.dataset.theme = choice;
+  }
+  syncThemeColorMeta();
+  syncThemeToggleUI();
+}
+
+function isEffectivelyDark() {
+  const choice = getThemeChoice();
+  if (choice === 'dark') return true;
+  if (choice === 'light') return false;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+function syncThemeColorMeta() {
+  const meta = document.getElementById('themeColorMeta');
+  if (meta) meta.content = isEffectivelyDark() ? '#1d1d20' : '#ffffff';
+}
+
+function syncThemeToggleUI() {
+  const active = getThemeChoice();
+  document.querySelectorAll('.theme-opt').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.themeChoice === active);
+  });
+}
+
+// While explicitly on 'system', the OS can still flip mid-session (e.g. auto
+// dark-mode-at-sunset) — the CSS media query repaints on its own, but the
+// theme-color meta is JS-driven and needs its own nudge to follow along.
+if (window.matchMedia) {
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (getThemeChoice() === 'system') syncThemeColorMeta();
+  });
+}
 
 function endpoint(path) {
   let base = (state.baseUrl || location.origin).trim();
@@ -339,6 +394,8 @@ function receiveEvent(event) {
     addMessage('error', event.error);
   } else if (event.type === 'approval_request') {
     showApproval(event);
+  } else if (event.type === 'image_pick_request') {
+    showImagePicker(event);
   } else if (event.type === 'approval_resolved') {
     // Answered from another device (e.g. the desktop app) — this client's
     // own tap already hides the sheet locally, so this only matters when
@@ -346,6 +403,11 @@ function receiveEvent(event) {
     if (state.approval && state.approval.requestId === event.requestId) {
       state.approval = null;
       $('approvalSheet').classList.add('hidden');
+    }
+  } else if (event.type === 'image_pick_resolved') {
+    if (state.imagePick && state.imagePick.requestId === event.requestId) {
+      state.imagePick = null;
+      $('imagePickSheet').classList.add('hidden');
     }
   } else if (event.type === 'done' || event.type === 'run_finished' || event.type === 'aborted') {
     state.activeAgentMessageEl = null;
@@ -357,6 +419,10 @@ function receiveEvent(event) {
     if (state.approval) {
       state.approval = null;
       $('approvalSheet').classList.add('hidden');
+    }
+    if (state.imagePick) {
+      state.imagePick = null;
+      $('imagePickSheet').classList.add('hidden');
     }
     setRunning(false, event.type === 'aborted' ? 'Run stopped' : 'Task completed on PC');
   }
@@ -384,6 +450,67 @@ async function answerApproval(verdict) {
   }
 }
 
+// IMAGE PICKER — the phone side of the fetch_image approval the desktop
+// shows as a search-and-click card (see addImagePickerCard in app.js). Same
+// /api/images/search + /api/image-pick the desktop's own IPC calls hit.
+function showImagePicker(event) {
+  state.imagePick = event;
+  $('imagePickDetail').textContent = `for ${event.path || 'this file'}`;
+  $('imgSearchInput').value = event.keywords || '';
+  $('imagePickSheet').classList.remove('hidden');
+  runImageSearch(event.keywords || '');
+}
+
+function renderImageGrid(results) {
+  const grid = $('imgGrid');
+  grid.innerHTML = '';
+  const makeTile = (img, label) => {
+    const btn = document.createElement('button');
+    btn.className = 'img-tile';
+    btn.innerHTML = `<img src="${escapeHtml(img.thumbnail)}" alt="${escapeHtml(img.title || '')}" loading="lazy">
+      <span class="img-tile-credit">${escapeHtml(label || img.creator || img.source || '')}</span>`;
+    btn.addEventListener('click', () => finishImagePick(img.full));
+    return btn;
+  };
+  if (state.imagePick) {
+    grid.appendChild(makeTile({ thumbnail: state.imagePick.url, full: state.imagePick.url }, "Codeply's pick"));
+  }
+  if (!results.length) {
+    const msg = document.createElement('div');
+    msg.className = 'img-grid-status';
+    msg.textContent = 'No other results. Try different words.';
+    grid.appendChild(msg);
+    return;
+  }
+  for (const img of results) grid.appendChild(makeTile(img));
+}
+
+async function runImageSearch(query) {
+  $('imgGrid').innerHTML = '<div class="img-grid-status">Searching…</div>';
+  try {
+    const r = await request(`/api/images/search?q=${encodeURIComponent(query)}`);
+    if (!r.ok) throw new Error(r.error || 'unknown error');
+    renderImageGrid(r.results || []);
+  } catch (err) {
+    $('imgGrid').innerHTML = `<div class="img-grid-status">Search failed: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function finishImagePick(chosenUrl) {
+  if (!state.imagePick) return;
+  const pending = state.imagePick;
+  $('imagePickSheet').classList.add('hidden');
+  state.imagePick = null;
+  try {
+    await request('/api/image-pick', {
+      method: 'POST',
+      body: JSON.stringify({ requestId: pending.requestId, chosenUrl }),
+    });
+  } catch (err) {
+    addMessage('error', err.message);
+  }
+}
+
 function switchTab(tab) {
   document.querySelectorAll('.nav-item').forEach((button) => {
     button.classList.toggle('active', button.dataset.tab === tab);
@@ -392,10 +519,6 @@ function switchTab(tab) {
   $('sessionsPanel').classList.toggle('hidden', tab !== 'sessions');
   const desktopPanel = $('desktopPanel');
   if (desktopPanel) desktopPanel.classList.toggle('hidden', tab !== 'desktop');
-  // The chat tab is the one screen styled light (see mobile.css) — everything
-  // around it (topbar, nav, this class's own scroll container/composer
-  // backdrop) stays dark, so only it needs to know which mode it's in.
-  document.body.classList.toggle('chat-active', tab === 'chat');
 }
 
 // Shared by the manual form submit AND the QR auto-sync path below — both
@@ -494,9 +617,22 @@ $('stopBtn').addEventListener('click', async () => {
 $('approveBtn').addEventListener('click', () => answerApproval('once'));
 $('rejectBtn').addEventListener('click', () => answerApproval('reject'));
 
+$('imgSearchBtn').addEventListener('click', () => runImageSearch($('imgSearchInput').value.trim()));
+$('imgSearchInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); runImageSearch($('imgSearchInput').value.trim()); }
+});
+$('imgPickSkipBtn').addEventListener('click', () => finishImagePick(state.imagePick?.url || null));
+$('imgPickCancelBtn').addEventListener('click', () => finishImagePick(null));
+
 $('refreshBtn').addEventListener('click', () => bootstrap().catch(() => setConnection('', false)));
 
 $('accountBtn').addEventListener('click', () => $('accountStrip').classList.toggle('open'));
+
+document.querySelectorAll('.theme-opt').forEach((btn) => {
+  btn.addEventListener('click', () => applyTheme(btn.dataset.themeChoice));
+});
+syncThemeColorMeta();
+syncThemeToggleUI();
 
 if ($('unpairBtn')) {
   $('unpairBtn').addEventListener('click', () => {
