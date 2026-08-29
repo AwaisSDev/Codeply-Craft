@@ -46,8 +46,8 @@
     --hover: rgba(10, 10, 13, 0.05);
     --active: rgba(10, 10, 13, 0.08);
     --text: #0a0a0d;
-    --text-dim: #6b7280;
-    --text-faint: #9096a1;
+    --text-dim: #14161a;
+    --text-faint: #45494f;
     --border: #e4e4e8;
     --code-bg: #eeeef1;
     --bubble-bg: #eeeef1;
@@ -74,8 +74,8 @@
   --hover: rgba(10, 10, 13, 0.05);
   --active: rgba(10, 10, 13, 0.08);
   --text: #0a0a0d;
-  --text-dim: #6b7280;
-  --text-faint: #9096a1;
+  --text-dim: #14161a;
+  --text-faint: #45494f;
   --border: #e4e4e8;
   --code-bg: #eeeef1;
   --bubble-bg: #eeeef1;
@@ -136,7 +136,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
    needs to read it reliably, and that's worth breaking the modal's own
    palette for. */
 .remote-qr { width: 200px; height: 200px; margin: 0 auto; padding: 14px; border-radius: 14px; background: #fff; display: grid; place-items: center; }
-.remote-qr svg { width: 100%; height: 100%; }
+.remote-qr img { width: 100%; height: 100%; display: block; }
 .remote-qr-loading { color: #9a9a9a; font-size: 12px; }
 
 /* Collapsed by default — scanning is the primary path, typing a code by

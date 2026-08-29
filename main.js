@@ -1287,21 +1287,29 @@ function localAddress() {
 // The QR encodes the pairing URL WITH the code already in it
 // (?code=1234) — mobile.js reads that query param on load and submits
 // pairing itself, so scanning is the entire flow: no address or code ever
-// gets typed. Inline SVG, not a PNG data URL: a few KB of markup the
-// renderer drops straight into the DOM, crisp at any size, no separate
-// image request. Regenerated on every call (cheap) rather than cached,
-// since it must always reflect the current code — including right after a
+// gets typed. Regenerated on every call (cheap) rather than cached, since
+// it must always reflect the current code — including right after a
 // lockout rotates it.
+//
+// PNG data URL, not inline SVG: the qrcode package's SVG output draws each
+// row of modules as one STROKED path (horizontal segments joined end to
+// end), and Chromium's SVG rasterizer doesn't always honor
+// shape-rendering="crispEdges" on those stroke joins at the scale this
+// renders at — the result was genuinely blurred, rounded-off modules
+// instead of crisp squares, not just a cosmetic nitpick. A PNG has no join
+// geometry to get wrong: every module is a real filled pixel block. Baked
+// at 4x the display size (440 for a 110px box) so it also holds up on a
+// HiDPI display, where the renderer would otherwise upscale a 1x source.
 async function remoteInfo() {
   if (!remotePairCode) remotePairCode = makePairCode();
   const url = `http://${localAddress()}:${REMOTE_PORT}`;
-  const qr = await QRCode.toString(`${url}/?code=${remotePairCode}`, {
+  const qr = await QRCode.toDataURL(`${url}/?code=${remotePairCode}`, {
     // margin is in QR MODULES, not pixels — the spec's quiet zone is 4
     // modules on every side, and a phone camera actually relies on that
     // blank border to find the code at all. The previous margin: 1 was
     // below that floor, which is exactly the kind of thing that scans fine
     // up close in good light and unreliably everywhere else.
-    type: 'svg', margin: 4, color: { dark: '#0a0a0d', light: '#0000' },
+    margin: 4, width: 440, color: { dark: '#0a0a0d', light: '#ffffff' },
   });
   return { url, code: remotePairCode, port: REMOTE_PORT, qr };
 }

@@ -2102,10 +2102,9 @@ async function openRemoteModal() {
   const info = await api.remoteInfo();
   $('remoteUrl').textContent = info.url;
   $('remoteCode').textContent = info.code;
-  // The SVG is markup Craft generated itself (see remoteInfo() in main.js),
-  // never anything from the network, so this innerHTML assignment isn't
-  // rendering untrusted content.
-  if (info.qr) $('remoteQr').innerHTML = info.qr;
+  // A data: URL, not a network image — main.js's remoteInfo() generates it
+  // locally (see the QR-crispness note there), nothing ever fetches it.
+  if (info.qr) $('remoteQr').innerHTML = `<img src="${info.qr}" alt="QR code to pair your phone" width="440" height="440">`;
 }
 function closeRemoteModal() { $('remoteBackdrop').classList.add('hidden'); }
 api.onRemoteServerError((data) => {
