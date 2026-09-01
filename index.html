@@ -103,6 +103,11 @@
         Tasks
         <span class="sb-item-badge hidden" id="tasksBadge">0</span>
       </button>
+      <button class="sb-item" id="agentViewBtn">
+        <svg viewBox="0 0 24 24"><circle cx="7" cy="7" r="3"/><circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><circle cx="17" cy="17" r="3"/></svg>
+        Agent View
+        <span class="sb-item-badge hidden" id="agentViewBadge">0</span>
+      </button>
     </nav>
 
     <div class="sb-scroll">
@@ -130,7 +135,6 @@
         <div class="sb-user-left">
           <div class="avatar" id="userAvatar">·</div>
           <span class="sb-user-name" id="userName">Not signed in</span>
-          <span class="sb-user-plan-badge hidden" id="userPlanBadge"></span>
         </div>
         <svg class="sb-user-caret" viewBox="0 0 24 24"><path d="M8 9l4 4 4-4"/></svg>
       </button>
@@ -234,31 +238,6 @@
       </div>
     </section>
 
-    <!-- ===== PLAN PICKER (one-time, per account) ===== -->
-    <section class="view view-login hidden" id="viewPlans">
-      <div class="login-center plans-center">
-        <img class="login-logo" src="logo.png" alt="Codeply Craft">
-        <h1 class="login-title">Unlock higher limits and more models</h1>
-        <p class="login-sub">Start free and see how Codeply works. Upgrade anytime from the account menu, cancel anytime, no lock-in.</p>
-        <div class="plan-cards" id="plansCards"></div>
-        <div class="plans-trial-block">
-          <button class="login-btn trial-btn" id="plansContinueBtn">Continue with free trial</button>
-          <p class="plans-trial-note">3-day trial · Limits may apply</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- ===== LOCKED (trial limit reached) ===== -->
-    <section class="view view-login hidden" id="viewLocked">
-      <div class="login-center plans-center">
-        <img class="login-logo" src="logo.png" alt="Codeply Craft">
-        <h1 class="login-title">Free trial limit reached</h1>
-        <p class="login-sub" id="lockedMessage">You've used today's free-trial AI requests. Subscribe for higher daily limits, or bring your own API key to keep going right now.</p>
-        <div class="plan-cards" id="lockedCards"></div>
-        <button class="login-btn" id="lockedBackBtn">Back</button>
-      </div>
-    </section>
-
     <!-- ===== HOME VIEW ===== -->
     <section class="view view-home hidden" id="viewHome">
       <div class="main-topbar">
@@ -307,6 +286,10 @@
               <svg viewBox="0 0 24 24"><path d="M14.7 6.3a4.5 4.5 0 0 0-6 6L3 18v3h3l5.7-5.7a4.5 4.5 0 0 0 6-6L15 12l-3-3Z"/></svg>
               <span data-role="mode-name">Build</span>
             </button>
+            <button class="chip subagent-chip" data-role="subagent-chip" title="Pin a specialist to this chat">
+              <span class="subagent-chip-icon-slot" data-role="subagent-icon-slot"></span>
+              <span data-role="subagent-name">General</span>
+            </button>
           </div>
           <div class="composer-image-previews hidden" data-role="image-previews"></div>
           <textarea class="composer-input" rows="1" placeholder="Do anything"></textarea>
@@ -318,7 +301,7 @@
               </button>
             </div>
             <div class="composer-bottom-right">
-              <button class="model-label" data-role="model-picker" title="Switch model"><strong data-role="model-name">Auto</strong></button>
+              <span class="model-label" title="Auto — Gemma 4 31B"><strong data-role="model-name">Auto</strong></span>
               <button class="send-btn" data-role="send" title="Send"><svg class="ic-send" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg><svg class="ic-stop hidden" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button>
             </div>
           </div>
@@ -330,6 +313,9 @@
     <section class="view view-chat hidden" id="viewChat">
       <div class="chat-topbar">
         <div class="chat-title-group">
+          <button class="back-to-main-btn hidden" id="backToMainBtn" title="Back to the chat that dispatched this">
+            <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg> Main chat
+          </button>
           <span class="chat-title" id="chatTitle"></span>
         </div>
         <div class="topbar-icons">
@@ -377,9 +363,13 @@
                 <svg viewBox="0 0 24 24"><path d="M14.7 6.3a4.5 4.5 0 0 0-6 6L3 18v3h3l5.7-5.7a4.5 4.5 0 0 0 6-6L15 12l-3-3Z"/></svg>
                 <span data-role="mode-name">Build</span>
               </button>
+              <button class="chip subagent-chip" data-role="subagent-chip" title="Pin a specialist to this chat">
+                <span class="subagent-chip-icon-slot" data-role="subagent-icon-slot"></span>
+                <span data-role="subagent-name">General</span>
+              </button>
             </div>
             <div class="composer-bottom-right">
-              <button class="model-label" data-role="model-picker" title="Switch model"><strong data-role="model-name">Auto</strong></button>
+              <span class="model-label" title="Auto — Gemma 4 31B"><strong data-role="model-name">Auto</strong></span>
               <button class="send-btn" data-role="send" title="Send"><svg class="ic-send" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg><svg class="ic-stop hidden" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button>
             </div>
           </div>
@@ -449,6 +439,42 @@
         </div>
         <button class="app-card-btn" data-role="action">Connect</button>
       </div>
+      <div class="app-card" id="caVercel">
+        <div class="app-card-logo vercel"><img src="Vercel.png" alt=""></div>
+        <div class="app-card-body">
+          <div class="app-card-top">
+            <span class="app-card-name">Vercel</span>
+            <span class="app-card-badge" data-role="badge">Not connected</span>
+          </div>
+          <div class="app-card-desc">Push a project folder live as a real Vercel deployment</div>
+          <div class="app-card-status hidden" data-role="status"></div>
+        </div>
+        <button class="app-card-btn" data-role="action">Connect</button>
+      </div>
+      <div class="app-card" id="caSupabase">
+        <div class="app-card-logo supabase"><img src="Supabase.jpg" alt=""></div>
+        <div class="app-card-body">
+          <div class="app-card-top">
+            <span class="app-card-name">Supabase</span>
+            <span class="app-card-badge" data-role="badge">Not connected</span>
+          </div>
+          <div class="app-card-desc">Create and manage a Supabase project's database for you</div>
+          <div class="app-card-status hidden" data-role="status"></div>
+        </div>
+        <button class="app-card-btn" data-role="action">Connect</button>
+      </div>
+      <div class="app-card" id="caGithub">
+        <div class="app-card-logo github"><img src="Github.webp" alt=""></div>
+        <div class="app-card-body">
+          <div class="app-card-top">
+            <span class="app-card-name">GitHub</span>
+            <span class="app-card-badge" data-role="badge">Not connected</span>
+          </div>
+          <div class="app-card-desc">Turn a local folder into a new repo on your account and push it</div>
+          <div class="app-card-status hidden" data-role="status"></div>
+        </div>
+        <button class="app-card-btn" data-role="action">Connect</button>
+      </div>
     </div>
   </div>
 </div>
@@ -472,6 +498,20 @@
       </div>
     </details>
     <div class="remote-note"><svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5Z"/><path d="M9 12l2 2 4-4"/></svg>Your phone can dispatch tasks and approve actions. Craft still runs entirely on this PC.</div>
+  </div>
+</div>
+
+<!-- ============ AGENT VIEW (opened from the sidebar) ============ -->
+<div class="modal-backdrop hidden" id="agentViewBackdrop">
+  <div class="agents-modal">
+    <div class="skills-modal-head">
+      <div>
+        <div class="skills-modal-title">Agent View</div>
+        <div class="skills-modal-sub">What each specialist is working on right now. Click one to see its sessions.</div>
+      </div>
+      <button class="sb-icon-btn" id="agentViewCloseBtn"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+    </div>
+    <div class="agents-list" id="agentsList"></div>
   </div>
 </div>
 

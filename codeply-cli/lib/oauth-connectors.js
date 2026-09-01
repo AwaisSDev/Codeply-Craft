@@ -181,7 +181,241 @@ async function slackListChannels(accessToken) {
   return (body.channels || []).map((c) => ({ id: c.id, name: c.name, isPrivate: c.is_private, isMember: c.is_member }));
 }
 
+// Vercel Integrations Console apps do NOT use a plain /oauth/authorize?
+// client_id=... URL — that endpoint belongs to a different, older Vercel
+// OAuth app system and rejects Integrations Console client IDs outright
+// ("App configuration error: The app ID is invalid"). An integration created
+// in the Integrations Console starts its install at this slug-based URL
+// instead (found on the integration's own Console settings page, not
+// derived from client_id), and Vercel redirects back to whichever Redirect
+// URL is configured in the Console (already this app's loopback callback)
+// with ?code=... (and &teamId=... when installed to a team). The code
+// exchange step below is unchanged — that part of the flow really is the
+// same as the old system.
+function buildVercelAuthUrl(slug, state) {
+  const params = new URLSearchParams();
+  if (state) params.set('state', state);
+  const qs = params.toString();
+  return `https://vercel.com/integrations/${encodeURIComponent(slug)}/new${qs ? `?${qs}` : ''}`;
+}
+
+async function exchangeVercelCode(clientId, clientSecret, code, redirectUri) {
+  const res = await fetch('https://api.vercel.com/v2/oauth/access_token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, code, redirect_uri: redirectUri }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error?.message || body.error || `Vercel token exchange failed (HTTP ${res.status})`);
+  return body; // { access_token, team_id, user_id, ... }
+}
+
+async function getVercelProfile(accessToken) {
+  const res = await fetch('https://api.vercel.com/v2/user', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error?.message || `Vercel profile lookup failed (HTTP ${res.status})`);
+  return body.user?.username || body.user?.email || '';
+}
+
+// Supabase's Management API OAuth2 flow (supabase.com/docs/guides/platform/oauth-apps):
+// authorize/token both live under api.supabase.com, token exchange uses HTTP
+// Basic auth (client_id:client_secret) rather than form-body credentials.
+const SUPABASE_SCOPES = 'all';
+
+function buildSupabaseAuthUrl(clientId, redirectUri) {
+  const params = new URLSearchParams({
+    client_id: clientId, redirect_uri: redirectUri,
+    response_type: 'code', scope: SUPABASE_SCOPES,
+  });
+  return `https://api.supabase.com/v1/oauth/authorize?${params}`;
+}
+
+async function exchangeSupabaseCode(clientId, clientSecret, code, redirectUri) {
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  const res = await fetch('https://api.supabase.com/v1/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Basic ${basic}` },
+    body: new URLSearchParams({ code, grant_type: 'authorization_code', redirect_uri: redirectUri }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error_description || body.error || `Supabase token exchange failed (HTTP ${res.status})`);
+  return body; // { access_token, refresh_token, expires_in, ... }
+}
+
+// Non-git deployment: upload isn't needed for small projects — files are
+// inlined as base64 directly in the create-deployment body (Vercel's REST API
+// supports both an inline `data`+`encoding` file or a reference to one
+// pre-uploaded via /v2/files; inlining avoids a second round-trip per file
+// and this app only ever deploys folders small enough for that to be fine).
+async function vercelDeploy(accessToken, teamId, projectName, files) {
+  // A brand-new project (no projectSettings passed — framework is left to
+  // Vercel's own auto-detection) otherwise gets rejected with "projectSettings
+  // is required... or use skipAutoDetectionConfirmation=1" on its first-ever
+  // deploy, since Vercel wants an explicit confirmation step before it'll
+  // guess the framework unattended.
+  const params = new URLSearchParams({ skipAutoDetectionConfirmation: '1' });
+  if (teamId) params.set('teamId', teamId);
+  const res = await fetch(`https://api.vercel.com/v13/deployments${params.toString() ? `?${params}` : ''}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: projectName, target: 'production', files }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error?.message || body.error_description || `Vercel deploy failed (HTTP ${res.status})`);
+  return body; // { id, url, readyState, ... }
+}
+
+/** Bulk-create/update project env vars — `vars` is [{ key, value }]. `type: 'encrypted'` hides values in the dashboard by default, same as a normal manual entry. */
+async function vercelSetEnvVars(accessToken, teamId, projectIdOrName, vars) {
+  const params = new URLSearchParams({ upsert: 'true' });
+  if (teamId) params.set('teamId', teamId);
+  const res = await fetch(`https://api.vercel.com/v10/projects/${encodeURIComponent(projectIdOrName)}/env?${params}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(vars.map((v) => ({
+      key: v.key, value: v.value, type: 'encrypted', target: ['production', 'preview', 'development'],
+    }))),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error?.message || `Vercel env var update failed (HTTP ${res.status})`);
+  return body; // { created, failed: [...] }
+}
+
+async function supabaseListOrganizations(accessToken) {
+  const res = await fetch('https://api.supabase.com/v1/organizations', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.message || `Supabase organization lookup failed (HTTP ${res.status})`);
+  return body; // [{ id, slug, name }]
+}
+
+const SUPABASE_PROVISION_POLL_MS = 5000;
+const SUPABASE_PROVISION_TIMEOUT_MS = 3 * 60 * 1000;
+
+/**
+ * Project creation is asynchronous — the initial response comes back
+ * `status: "INACTIVE"` while Supabase provisions the database, so this polls
+ * until it flips to `ACTIVE_HEALTHY` (or gives up after the timeout; the
+ * project still exists at that point, it's just not confirmed ready yet).
+ */
+async function supabaseCreateProject(accessToken, { name, organizationSlug, dbPass, region = 'us-east-1' }) {
+  const res = await fetch('https://api.supabase.com/v1/projects', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    // Despite older docs listing it as optional, the API now rejects project
+    // creation without exactly one of region/region_selection set.
+    body: JSON.stringify({ name, organization_slug: organizationSlug, db_pass: dbPass, region }),
+  });
+  let project = await res.json();
+  if (!res.ok) throw new Error(project.message || `Supabase project creation failed (HTTP ${res.status})`);
+
+  const ref = project.ref;
+  const deadline = Date.now() + SUPABASE_PROVISION_TIMEOUT_MS;
+  while (project.status !== 'ACTIVE_HEALTHY' && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, SUPABASE_PROVISION_POLL_MS));
+    const pr = await fetch(`https://api.supabase.com/v1/projects/${ref}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+    project = await pr.json();
+    if (!pr.ok) throw new Error(project.message || `Supabase project status check failed (HTTP ${pr.status})`);
+  }
+  if (project.status !== 'ACTIVE_HEALTHY') {
+    throw new Error(`Project ${ref} is still provisioning (status: ${project.status}) after ${SUPABASE_PROVISION_TIMEOUT_MS / 1000}s — it will likely finish shortly; check the Supabase dashboard.`);
+  }
+  return project; // { ref, name, status, ... }
+}
+
+async function supabaseListProjects(accessToken) {
+  const res = await fetch('https://api.supabase.com/v1/projects', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.message || `Supabase project list failed (HTTP ${res.status})`);
+  return body; // [{ id, organization_id, name, ref, status, region, ... }]
+}
+
+/** Permanent, irreversible — Supabase does not soft-delete or restore a removed project. */
+async function supabaseDeleteProject(accessToken, ref) {
+  const res = await fetch(`https://api.supabase.com/v1/projects/${ref}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (res.status === 204 || res.status === 200) return true;
+  const body = await res.json().catch(() => ({}));
+  throw new Error(body.message || `Supabase project deletion failed (HTTP ${res.status})`);
+}
+
+/** anon/public key + project URL + DB connection string. The connection string is built locally (not fetched) since dbPass was chosen by the caller, not returned by the API. */
+async function supabaseGetProjectKeys(accessToken, ref, dbPass) {
+  const res = await fetch(`https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const keys = await res.json();
+  if (!res.ok) throw new Error(keys.message || `Supabase API key lookup failed (HTTP ${res.status})`);
+  const anon = keys.find((k) => /^anon$/i.test(k.name || '') || /anon|publishable/i.test(k.name || k.type || ''));
+  if (!anon?.api_key) throw new Error(`Project ${ref} has no anon/public key yet — it may still be finishing setup.`);
+  return {
+    url: `https://${ref}.supabase.co`,
+    anonKey: anon.api_key,
+    databaseUrl: `postgresql://postgres:${dbPass}@db.${ref}.supabase.co:5432/postgres`,
+  };
+}
+
+// GitHub's standard OAuth Apps flow (docs.github.com/apps/oauth-apps) — much
+// simpler registration than Vercel/Supabase: no scopes picker or store
+// listing, just a name + callback URL. `repo` scope is what lets
+// githubCreateRepo actually create repositories under the connected account.
+const GITHUB_SCOPES = 'repo';
+
+function buildGithubAuthUrl(clientId, redirectUri, state) {
+  const params = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, scope: GITHUB_SCOPES });
+  if (state) params.set('state', state);
+  return `https://github.com/login/oauth/authorize?${params}`;
+}
+
+async function exchangeGithubCode(clientId, clientSecret, code, redirectUri) {
+  const res = await fetch('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+    body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, code, redirect_uri: redirectUri }),
+  });
+  const body = await res.json();
+  if (!res.ok || body.error) throw new Error(body.error_description || body.error || `GitHub token exchange failed (HTTP ${res.status})`);
+  return body; // { access_token, scope, token_type }
+}
+
+async function getGithubProfile(accessToken) {
+  const res = await fetch('https://api.github.com/user', {
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/vnd.github+json' },
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.message || `GitHub profile lookup failed (HTTP ${res.status})`);
+  return body.login || '';
+}
+
+/** Creates a new repo under the connected user's account. Defaults to private — safer for an arbitrary local folder than defaulting public. */
+async function githubCreateRepo(accessToken, name, { private: isPrivate = true } = {}) {
+  const res = await fetch('https://api.github.com/user/repos', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    body: JSON.stringify({ name, private: isPrivate }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.message || `GitHub repo creation failed (HTTP ${res.status})`);
+  return body; // { name, full_name, html_url, clone_url, default_branch, ... }
+}
+
 module.exports = {
   buildGmailAuthUrl, exchangeGmailCode, refreshGmailToken, getGmailProfile, gmailSend, gmailSearch,
   buildSlackAuthUrl, exchangeSlackCode, slackPostMessage, slackListChannels, slackJoinChannel,
+  buildVercelAuthUrl, exchangeVercelCode, getVercelProfile, vercelDeploy, vercelSetEnvVars,
+  buildSupabaseAuthUrl, exchangeSupabaseCode, supabaseListOrganizations, supabaseCreateProject, supabaseGetProjectKeys,
+  supabaseListProjects, supabaseDeleteProject,
+  buildGithubAuthUrl, exchangeGithubCode, getGithubProfile, githubCreateRepo,
 };

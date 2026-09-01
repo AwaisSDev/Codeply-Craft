@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('craft', {
   minimize: () => ipcRenderer.send('win:minimize'),
   maximize: () => ipcRenderer.send('win:maximize'),
   close: () => ipcRenderer.send('win:close'),
+  getWinState: () => ipcRenderer.invoke('win:getState'),
+  onWinState: (cb) => ipcRenderer.on('win:state', (e, data) => cb(data)),
 
   // app bootstrap
   init: () => ipcRenderer.invoke('app:init'),
@@ -26,17 +28,8 @@ contextBridge.exposeInMainWorld('craft', {
   // usage — shared 100/day apply cap (CLI + desktop app + this app, one bucket)
   getUsage: () => ipcRenderer.invoke('usage:get'),
 
-  // subscription — reads the `subscriptions` table, tier-based daily caps
-  getSubscription: () => ipcRenderer.invoke('subscription:get'),
-  getTiers: () => ipcRenderer.invoke('subscription:tiers'),
-  openCheckout: (tier) => ipcRenderer.invoke('checkout:open', tier),
-
   // skills
   listSkills: () => ipcRenderer.invoke('skills:list'),
-
-  // model picker
-  listModels: () => ipcRenderer.invoke('models:list'),
-  selectModel: (presetId) => ipcRenderer.invoke('models:select', presetId),
 
   // projects
   chooseProject: () => ipcRenderer.invoke('project:choose'),
@@ -53,8 +46,15 @@ contextBridge.exposeInMainWorld('craft', {
   renameSession: (id, title) => ipcRenderer.invoke('session:rename', { id, title }),
   refreshSessions: () => ipcRenderer.invoke('sessions:refresh'),
 
+  // subagents — the 8 named specialists a chat can be pinned to
+  listSubagents: () => ipcRenderer.invoke('subagents:list'),
+  setSessionSubagent: (id, subagentId) => ipcRenderer.invoke('session:setSubagent', { id, subagentId }),
+
   // agent
   send: (payload) => ipcRenderer.invoke('chat:send', payload),
+  // Agent View dashboard — which specialist sessions are actively running,
+  // pushed whenever that changes (a dispatch starts, a run finishes).
+  onAgentsStatus: (cb) => ipcRenderer.on('agents:status', (e, data) => cb(data)),
   remoteInfo: () => ipcRenderer.invoke('remote:info'),
   onRemoteServerError: (cb) => ipcRenderer.on('remote:server-error', (e, data) => cb(data)),
   stop: (sessionId) => ipcRenderer.send('chat:stop', sessionId),
@@ -83,9 +83,12 @@ contextBridge.exposeInMainWorld('craft', {
   onTerminalData: (cb) => ipcRenderer.on('terminal:data', (e, data) => cb(data)),
   onTerminalExit: (cb) => ipcRenderer.on('terminal:exit', (e, data) => cb(data)),
 
-  // integrations (Gmail / Slack) — real OAuth via the system browser
+  // integrations (Gmail / Slack / Vercel / Supabase / GitHub) — real OAuth via the system browser
   integrationsStatus: () => ipcRenderer.invoke('integrations:status'),
   connectGmail: () => ipcRenderer.invoke('integrations:connectGmail'),
   connectSlack: () => ipcRenderer.invoke('integrations:connectSlack'),
+  connectVercel: () => ipcRenderer.invoke('integrations:connectVercel'),
+  connectSupabase: () => ipcRenderer.invoke('integrations:connectSupabase'),
+  connectGithub: () => ipcRenderer.invoke('integrations:connectGithub'),
   disconnectIntegration: (name) => ipcRenderer.invoke('integrations:disconnect', name),
 });

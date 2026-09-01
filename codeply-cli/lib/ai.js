@@ -94,6 +94,56 @@ function isAbortError(e) {
   return e && (e.name === 'AbortError' || /aborted|abortsignal/i.test(String(e.message || '')));
 }
 
+// Every provider call below is wrapped in withRetries, which has no timeout
+// of its own — the only AbortSignal ever wired into fetch() was the user's
+// own manual Stop button. A connection that stalls (accepted but never
+// responds, or a streamed body that stops sending bytes mid-generation)
+// previously just hung forever with zero CPU and no visible error — "is it
+// thinking or just dead" is exactly what that looks like from the outside.
+// This gives every attempt a hard ceiling so a stalled request surfaces as a
+// real, retryable error instead of an indefinite silent wait.
+const REQUEST_TIMEOUT_MS = 120_000;
+
+/** Combines the caller's own abort signal (Stop button) with a hard timeout into one signal to hand fetch(). */
+function withTimeout(signal, ms = REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+  const timer = setTimeout(() => controller.abort(new Error('timeout')), ms);
+  return {
+    signal: controller.signal,
+    // Whether THIS particular abort was the timeout firing rather than the
+    // user's own Stop — callers use this to report "the request stalled"
+    // instead of silently treating a stall as if the user had cancelled it.
+    isTimeout: () => controller.signal.reason instanceof Error && controller.signal.reason.message === 'timeout',
+    cleanup: () => clearTimeout(timer),
+  };
+}
+
+/**
+ * Same idea as withTimeout, but resettable — for a streamed response, a flat
+ * ceiling on the whole request would kill a legitimately long generation that
+ * just happens to keep actively sending bytes. poke() bumps the clock every
+ * time a chunk actually arrives, so this only fires on a genuine stall (no
+ * bytes at all for `ms`), never on a slow-but-still-streaming one.
+ */
+function withIdleTimeout(signal, ms = REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+  let timer = setTimeout(() => controller.abort(new Error('timeout')), ms);
+  return {
+    signal: controller.signal,
+    poke: () => { clearTimeout(timer); timer = setTimeout(() => controller.abort(new Error('timeout')), ms); },
+    isTimeout: () => controller.signal.reason instanceof Error && controller.signal.reason.message === 'timeout',
+    cleanup: () => clearTimeout(timer),
+  };
+}
+
 /**
  * Trial-tier gate for the shared pooled proxy only — BYOK backends never call
  * this. A free-trial account past its small daily AI-request allowance gets
@@ -127,7 +177,8 @@ async function chatViaProxy(messages, opts) {
   }
 
   return withRetries(async () => {
-    let res;
+    let res, body;
+    const { signal, isTimeout, cleanup } = withTimeout(opts.signal);
     try {
       res = await fetch(AI_PROXY_URL, {
         method: 'POST',
@@ -140,15 +191,18 @@ async function chatViaProxy(messages, opts) {
         // the proxy logs it to usage_history so CLI activity shows up in the
         // admin dashboard next to the desktop app, same as this app's own calls.
         body: JSON.stringify({ messages, opts, meta: opts.meta }),
-        signal: opts.signal,
+        signal,
       });
+      body = await res.json().catch(() => ({}));
     } catch (e) {
+      if (isTimeout()) return { retryable: true, error: 'The request timed out with no response from the AI proxy — retrying.' };
       if (isAbortError(e)) return { aborted: true };
       // Network-level failure — also worth another go.
       return { retryable: true, error: e.message };
+    } finally {
+      cleanup();
     }
 
-    const body = await res.json().catch(() => ({}));
     if (res.ok && body.success) {
       return { done: true, value: { success: true, data: body.data, modelUsed: body.modelUsed } };
     }
@@ -252,6 +306,7 @@ async function ollamaRequest(host, model, apiKey, isLocal, messages, opts, numCt
 
   return withRetries(async () => {
     let res;
+    const { signal, poke, isTimeout, cleanup } = withIdleTimeout(opts.signal);
     try {
       res = await fetch(`${host}/v1/chat/completions`, {
         method: 'POST',
@@ -285,9 +340,11 @@ async function ollamaRequest(host, model, apiKey, isLocal, messages, opts, numCt
           // below, so nothing downstream of this function has to know or care.
           stream: true,
         }),
-        signal: opts.signal,
+        signal,
       });
     } catch (e) {
+      cleanup();
+      if (isTimeout()) return { retryable: true, error: `Ollama timed out with no response${isLocal ? ' — is `ollama serve` running?' : ' — retrying.'}` };
       if (isAbortError(e)) return { aborted: true };
       const hint = isLocal ? ' Is `ollama serve` running?' : '';
       return { retryable: true, error: e.message + hint };
@@ -300,6 +357,7 @@ async function ollamaRequest(host, model, apiKey, isLocal, messages, opts, numCt
     const isStream = (res.headers.get('content-type') || '').includes('text/event-stream');
 
     if (!isStream) {
+      cleanup(); // no more bytes expected — the idle clock has nothing left to guard
       const body = await res.json().catch(() => ({}));
       if (res.ok && body.choices?.[0]) {
         return { done: true, value: { success: true, data: body, modelUsed: body.model || model } };
@@ -333,6 +391,7 @@ async function ollamaRequest(host, model, apiKey, isLocal, messages, opts, numCt
     let buffer = '';
     try {
       for await (const chunk of res.body) {
+        poke(); // a real chunk arrived — the stream is alive, push the stall clock back out
         buffer += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : Buffer.from(chunk).toString('utf8');
         let nlIndex;
         while ((nlIndex = buffer.indexOf('\n')) !== -1) {
@@ -351,8 +410,11 @@ async function ollamaRequest(host, model, apiKey, isLocal, messages, opts, numCt
         }
       }
     } catch (e) {
+      if (isTimeout()) return { retryable: true, error: 'Ollama stopped sending data mid-response (stalled stream) — retrying.' };
       if (isAbortError(e)) return { aborted: true };
       return { retryable: true, error: `Ollama stream interrupted: ${e.message}` };
+    } finally {
+      cleanup();
     }
 
     if (!res.ok && !content) {
@@ -408,6 +470,14 @@ const OPENAI_COMPATIBLE = {
   qwen: {
     label: 'Qwen (Alibaba Model Studio)',
   },
+  // DeepSeek's own base URL genuinely doesn't need a /v1 segment (unlike the
+  // other OpenAI-compatible hosts above) — they document both /v1/... and
+  // the bare path as equivalent, since /v1 exists there only for client-SDK
+  // compatibility, not real API versioning.
+  deepseek: {
+    url: 'https://api.deepseek.com/chat/completions',
+    label: 'DeepSeek',
+  },
 };
 
 /**
@@ -437,7 +507,8 @@ async function chatViaOpenAICompatible(messages, opts, providerName, cfg) {
   }
 
   return withRetries(async () => {
-    let res;
+    let res, body;
+    const { signal, isTimeout, cleanup } = withTimeout(opts.signal);
     try {
       res = await fetch(url, {
         method: 'POST',
@@ -453,14 +524,16 @@ async function chatViaOpenAICompatible(messages, opts, providerName, cfg) {
           ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
           ...(opts.json ? { response_format: { type: 'json_object' } } : {}),
         }),
-        signal: opts.signal,
+        signal,
       });
+      body = await res.json().catch(() => ({}));
     } catch (e) {
+      if (isTimeout()) return { retryable: true, error: `${label} timed out with no response — retrying.` };
       if (isAbortError(e)) return { aborted: true };
       return { retryable: true, error: e.message };
+    } finally {
+      cleanup();
     }
-
-    const body = await res.json().catch(() => ({}));
 
     if (res.ok && body.choices?.[0]) {
       return { done: true, value: { success: true, data: body, modelUsed: body.model || model } };
@@ -669,6 +742,7 @@ async function chat(messages, opts = {}) {
     case 'openai':
     case 'google':
     case 'qwen':
+    case 'deepseek':
       return chatViaOpenAICompatible(messages, opts, cfg.provider, cfg);
     default: return chatViaProxy(messages, opts);
   }

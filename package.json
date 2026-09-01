@@ -23,6 +23,7 @@
     "@capacitor/core": "^8.5.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "dotenv": "^16.6.1",
     "qrcode": "^1.5.4"
   },
   "build": {
@@ -42,6 +43,7 @@
       "!*.err.log",
       "!.claude",
       "!.mcp.json",
+      "!.env",
       "!dist",
       "!out",
       "!codeply-cli"
@@ -50,7 +52,10 @@
       {
         "from": "codeply-cli",
         "to": "codeply-cli",
-        "filter": ["**/*", "!node_modules"]
+        "filter": [
+          "**/*",
+          "!node_modules"
+        ]
       }
     ],
     "afterPack": "scripts/after-pack.js",
@@ -58,7 +63,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.ico",

@@ -38,7 +38,7 @@
     <section class="pair-screen" id="pairScreen">
       <div class="pair-header">
         <div class="craft-logo">
-          <span class="logo-icon">C</span>
+          <img class="logo-icon-img" src="/logo.png" alt="Codeply Craft">
           <div class="logo-ring"></div>
         </div>
         <span class="badge-tag">CODEPLY CRAFT · PHONE COMPANION</span>
@@ -85,27 +85,90 @@
 
     <!-- MAIN APP SCREEN -->
     <section class="workspace hidden" id="appScreen">
-      <!-- TOP NAVBAR -->
+      <!-- TOP NAVBAR — minimal: menu, a title (doubles as connection status
+           via the dot), new chat. Account, theme, and session history all
+           moved into the sidebar drawer below, which is the one place you
+           navigate from now instead of a bottom tab bar. -->
       <header class="topbar">
-        <button class="brand" id="homeBtn" aria-label="Craft home">
-          <span class="brand-mark">C</span>
-          <span class="brand-text">Craft</span>
+        <button class="icon-btn" id="sidebarOpenBtn" aria-label="Open menu">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="14" y2="17"/></svg>
         </button>
-
-        <div class="topbar-right">
-          <button class="connection-chip" id="refreshBtn" title="Connection status">
-            <span class="status-dot" id="statusDot"></span>
-            <span id="deviceName">Connecting...</span>
-          </button>
-          <button class="avatar-btn" id="accountBtn" title="Account Details">
-            <span id="avatarChar">A</span>
-          </button>
+        <!-- Only shown while viewing a chat dispatch_agent spawned — jumps
+             back to whichever chat dispatched it, same as desktop's
+             backToMainBtn (see openSession in app.js). -->
+        <button class="icon-btn hidden" id="backToMainBtn" aria-label="Back to main chat">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        </button>
+        <div class="topbar-title" id="refreshBtn" title="Connection status">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="deviceName">Craft Agent</span>
+        </div>
+        <!-- The one thing Craft needs beyond a plain chat topbar: which
+             desktop folder a message targets. Sits where the reference's
+             two right-side buttons (Upgrade, temporary-chat) were —
+             replacing both, not sitting alongside them.
+             A <select> can't legally nest inside a <button>, so this is a
+             plain div styled like one; the real <select> sits invisibly on
+             top of it (see mobile.css) and catches every tap — real native
+             picker UI, nothing to keep in sync by hand. -->
+        <div class="topbar-folder-btn" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <span id="topbarFolderName">Choose folder</span>
+          <select id="projectSelect" class="topbar-folder-select" aria-label="Desktop project"></select>
         </div>
       </header>
 
-      <!-- ACCOUNT STRIP DRAWER -->
-      <div class="account-drawer" id="accountStrip">
-        <div class="account-drawer-content">
+      <!-- SIDEBAR DRAWER — slides over everything (see mobile.css); the
+           phone's stand-in for a desktop sidebar. New chat, a jump to the
+           paired-PC status screen, the full session history, and the
+           account/theme/disconnect footer all live here now instead of a
+           bottom tab bar plus a separate small account strip. -->
+      <div class="sidebar-backdrop hidden" id="sidebarBackdrop"></div>
+      <aside class="sidebar-drawer hidden" id="sidebarDrawer" aria-hidden="true">
+        <div class="sidebar-head">
+          <div class="sidebar-head-brand">
+            <img class="sidebar-logo-icon" src="/logo.png" alt="Codeply Craft">
+            <span class="sidebar-head-title">Codeply Craft</span>
+          </div>
+          <button class="icon-btn" id="sidebarCloseBtn" aria-label="Close menu">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+          </button>
+        </div>
+
+        <button class="sidebar-nav-item" id="sidebarNewChatBtn">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          <span>New chat</span>
+        </button>
+        <!-- Specialists dispatch_agent is currently running on the PC, in the
+             background — same concept as desktop's Agent View tab, just a
+             bottom sheet instead of a modal (see openAgentView below). -->
+        <button class="sidebar-nav-item" id="sidebarAgentViewBtn">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+          <span>Agent View</span>
+          <span class="nav-badge hidden" id="agentViewNavBadge">0</span>
+        </button>
+        <div class="sidebar-section-label">Recents <span id="sessionCount"></span></div>
+        <div class="session-list" id="sessionList"></div>
+
+        <div class="sidebar-footer">
+          <div class="theme-row">
+            <span class="theme-row-label">Theme</span>
+            <div class="theme-toggle" id="themeToggle" role="group" aria-label="Theme">
+              <button type="button" class="theme-opt" data-theme-choice="system" title="Match system">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              </button>
+              <button type="button" class="theme-opt" data-theme-choice="light" title="Light">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+              </button>
+              <button type="button" class="theme-opt" data-theme-choice="dark" title="Dark">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.5a8.5 8.5 0 1 1-9-11 6.8 6.8 0 0 0 9 11Z"/></svg>
+              </button>
+            </div>
+          </div>
+          <button class="unpair-btn" id="unpairBtn">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+            <span>Disconnect</span>
+          </button>
           <div class="account-user-info">
             <span class="account-avatar" id="accountInitial">A</span>
             <div class="account-text">
@@ -113,75 +176,21 @@
               <span id="accountMode">Syncing sessions from PC</span>
             </div>
           </div>
-          <button class="unpair-btn" id="unpairBtn">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
-            <span>Disconnect</span>
-          </button>
         </div>
-        <div class="theme-row">
-          <span class="theme-row-label">Theme</span>
-          <div class="theme-toggle" id="themeToggle" role="group" aria-label="Theme">
-            <button type="button" class="theme-opt" data-theme-choice="system" title="Match system">
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-            </button>
-            <button type="button" class="theme-opt" data-theme-choice="light" title="Light">
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
-            </button>
-            <button type="button" class="theme-opt" data-theme-choice="dark" title="Dark">
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.5a8.5 8.5 0 1 1-9-11 6.8 6.8 0 0 0 9 11Z"/></svg>
-            </button>
-          </div>
-        </div>
-      </div>
+      </aside>
 
-      <!-- HERO RUNNER BAR -->
-      <section class="hero-bar" id="heroPanel">
-        <div class="hero-status">
-          <div class="project-pill-wrapper">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            <select id="projectSelect" aria-label="Desktop project"></select>
-          </div>
-          <div class="mode-pill-wrapper">
-            <button type="button" class="mode-chip" id="modeBtn">
-              <span id="modeText">Build</span>
-              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-            </button>
-          </div>
-        </div>
-
-        <div class="presence-card" id="presenceCard">
-          <div class="presence-info">
-            <span class="presence-pulse" id="presencePulse"></span>
-            <div>
-              <strong id="runTitle">Ready on Desktop</strong>
-              <small id="runDetail">Standing by for tasks</small>
-            </div>
-          </div>
-          <button class="stop-btn hidden" id="stopBtn">
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
-            <span>Stop</span>
-          </button>
-        </div>
-      </section>
+      <!-- No always-visible status bar here on purpose — project, mode, and
+           run status all moved into the composer (its "+" menu, and the
+           send button itself doubling as Stop while running). An empty
+           canvas between the topbar and the composer, same as it should
+           be. -->
 
       <!-- MAIN WORK SCROLL AREA -->
       <main class="main-scroll" id="workArea">
         <!-- TAB 1: CONVERSATION -->
         <section class="tab-panel" id="chatPanel">
-          <!-- Title bar for the current conversation. The sidebar-style button
-               doesn't open a drawer (there's no room for one on a phone
-               screen) — it jumps to the Sessions tab, which is the same
-               "see your other chats" job a desktop sidebar does. -->
-          <header class="chat-title-bar">
-            <button class="chat-sidebar-btn" id="chatSidebarBtn" aria-label="Your chats" title="Your chats">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/></svg>
-            </button>
-            <div class="chat-title-pill" id="chatTitlePill">New chat</div>
-          </header>
-
           <div class="starter-view" id="emptyState">
             <div class="starter-hero">
-              <div class="spark-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg></div>
               <h2>What would you like Craft to build?</h2>
               <p>Your task will be executed locally on your PC with full agent tool capabilities.</p>
             </div>
@@ -215,64 +224,21 @@
 
           <div class="chat-feed hidden" id="chatFeed" aria-live="polite"></div>
         </section>
-
-        <!-- TAB 2: SESSIONS -->
-        <section class="tab-panel hidden" id="sessionsPanel">
-          <div class="panel-header">
-            <h3>Active & Recent Sessions</h3>
-            <span class="session-badge" id="sessionCount">0</span>
-          </div>
-          <div class="session-list" id="sessionList"></div>
-        </section>
-
-        <!-- TAB 3: DESKTOP WORKSPACE -->
-        <section class="tab-panel hidden" id="desktopPanel">
-          <div class="desktop-card">
-            <h3>Paired Desktop Workspace</h3>
-            <div class="info-row">
-              <span>PC Host</span>
-              <strong id="desktopHost">Detecting...</strong>
-            </div>
-            <div class="info-row">
-              <span>Active Project</span>
-              <strong id="activeProjectName">No project selected</strong>
-            </div>
-            <div class="info-row">
-              <span>Agent Mode</span>
-              <strong id="activeModeName">Build</strong>
-            </div>
-          </div>
-        </section>
       </main>
 
-      <!-- FLOATING COMPOSER BAR -->
+      <!-- FLOATING COMPOSER BAR — folder picking lives in the topbar now
+           (above); this is just input + send, with send doubling as Stop
+           while a run is in progress. -->
       <form class="composer" id="composerForm">
         <div class="composer-inner">
           <textarea id="taskInput" rows="1" placeholder="Message Craft agent..."></textarea>
           <button class="send-btn" id="sendBtn" type="submit" aria-label="Send task">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+            <svg id="sendIcon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+            <svg id="stopIcon" class="hidden" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
           </button>
         </div>
       </form>
 
-      <!-- BOTTOM NAVIGATION BAR -->
-      <nav class="bottom-nav" aria-label="Mobile Navigation">
-        <button class="nav-item active" data-tab="chat">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          <span>Chat</span>
-          <i id="chatBadge" class="nav-badge hidden"></i>
-        </button>
-
-        <button class="nav-item" data-tab="sessions">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-          <span>Sessions</span>
-        </button>
-
-        <button class="nav-item" data-tab="desktop">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-          <span>PC Work</span>
-        </button>
-      </nav>
     </section>
   </main>
 
@@ -325,6 +291,43 @@
         <button class="btn btn-quiet" id="imgPickCancelBtn">Cancel, no image</button>
         <button class="btn btn-primary" id="imgPickSkipBtn">Use Codeply's pick</button>
       </div>
+    </div>
+  </section>
+
+  <!-- SESSION MENU SHEET — the phone's stand-in for desktop's 3-dot
+       rename/delete popover (see openChatMenu in app.js). A bottom sheet
+       instead of an anchored popover: touch targets and a scrolling list of
+       session rows don't mix well with a small floating menu. -->
+  <section class="approval-sheet hidden" id="sessionMenuSheet" role="dialog" aria-modal="true">
+    <div class="sheet-backdrop" id="sessionMenuBackdrop"></div>
+    <div class="sheet-container session-menu-container">
+      <div class="sheet-handle"></div>
+      <button class="session-menu-item" id="sessionRenameBtn">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        <span>Rename</span>
+      </button>
+      <button class="session-menu-item danger" id="sessionDeleteBtn">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg>
+        <span>Delete</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- AGENT VIEW SHEET — what dispatch_agent is currently running on the PC,
+       phone version of desktop's Agent View modal (see openAgentViewModal in
+       app.js). Live via the same agents_status SSE push desktop's window
+       gets over IPC. -->
+  <section class="approval-sheet hidden" id="agentViewSheet" role="dialog" aria-modal="true">
+    <div class="sheet-backdrop" id="agentViewSheetBackdrop"></div>
+    <div class="sheet-container agent-view-container">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div>
+          <span class="sheet-overline" style="color: var(--text-muted);">LIVE ON YOUR PC</span>
+          <h2>Agent View</h2>
+        </div>
+      </div>
+      <div class="agent-view-list" id="agentViewList"></div>
     </div>
   </section>
 

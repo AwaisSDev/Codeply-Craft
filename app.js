@@ -64,12 +64,31 @@ const state = {
   currentSessionId: null,
   running: false,
   pendingEmail: '',
+  subagents: [],     // the 8 named specialists (lib/subagents.js), loaded once at boot
+  subagentId: null,  // null = General (no persona pinned)
+  activeAgentSessions: [], // [{sessionId, subagentId, title}] — pushed live via agents:status, see main.js's broadcastAgentStatus
 };
 
 // ─── Window controls ────────────────────────────────────────────────────────
 $('winMin').addEventListener('click', () => api && api.minimize());
 $('winMax').addEventListener('click', () => api && api.maximize());
 $('winClose').addEventListener('click', () => api ? api.close() : window.close());
+
+// Swap the maximize button between "maximize" (single square) and "restore"
+// (overlapping squares) so it always reflects the window's real state,
+// matching native Windows title bar conventions — instead of a static icon
+// that's wrong half the time (the window launches maximized already).
+function setMaxIcon(maximized) {
+  const btn = $('winMax');
+  btn.title = maximized ? 'Restore' : 'Maximize';
+  btn.innerHTML = maximized
+    ? '<svg viewBox="0 0 12 12"><rect x="2" y="3.5" width="6.5" height="6.5" rx="1"/><path d="M4 3.5V2.5h5.5V8H8.5"/></svg>'
+    : '<svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" rx="1"/></svg>';
+}
+if (api) {
+  api.getWinState().then((s) => setMaxIcon(!!s.maximized));
+  api.onWinState((s) => setMaxIcon(!!s.maximized));
+}
 // The expand button lives in the titlebar, OUTSIDE the sidebar itself — it
 // has to, since the whole point is reaching it after the sidebar (and the
 // collapse button living inside it) has slid off-screen.
@@ -81,7 +100,7 @@ $('sidebarToggle').addEventListener('click', () => setSidebarCollapsed(true));
 $('sidebarExpandBtn').addEventListener('click', () => setSidebarCollapsed(false));
 
 // ─── View switching ─────────────────────────────────────────────────────────
-const VIEWS = ['viewLogin', 'viewReferral', 'viewCountry', 'viewPlans', 'viewLocked', 'viewHome', 'viewChat', 'viewEngineError'];
+const VIEWS = ['viewLogin', 'viewReferral', 'viewCountry', 'viewHome', 'viewChat', 'viewEngineError'];
 
 // Home and chat are gated behind sign-in — nothing usable happens until the
 // account flow completes, no matter how a view swap was triggered (New chat,
@@ -174,6 +193,8 @@ const TOOL_DISPLAY = {
   search: 'Searched', run: 'Ran', use_skill: 'Loaded skill', list_skills: 'Searched skills',
   fetch_image: 'Downloaded', browser_check: 'Checked',
   gmail_send: 'Emailed', gmail_search: 'Searched Gmail', slack_post_message: 'Posted',
+  vercel_deploy: 'Deployed', supabase_create_project: 'Provisioned', supabase_delete_project: 'Deleted', github_create_repo: 'Pushed',
+  subagent: 'Consulted', dispatch_agent: 'Dispatched', stop_agent: 'Stopped',
   design_reference_search: 'Searched design library',
 };
 
@@ -185,6 +206,10 @@ const TOOL_NAME = {
   use_skill: 'use skill', list_skills: 'list skills', fetch_image: 'download image',
   browser_check: 'check in browser',
   gmail_send: 'send email', gmail_search: 'search Gmail', slack_post_message: 'post to Slack',
+  vercel_deploy: 'deploy to Vercel', supabase_create_project: 'create Supabase project',
+  supabase_delete_project: 'delete Supabase project',
+  github_create_repo: 'create GitHub repo',
+  subagent: 'consult a specialist', dispatch_agent: 'dispatch to a specialist', stop_agent: 'stop a specialist',
   design_reference_search: 'search design library',
 };
 const toolName = (name) => TOOL_NAME[name] || name.replace(/_/g, ' ');
@@ -200,6 +225,11 @@ const TOOL_ICON = {
   mail: '<svg viewBox="0 0 24 24"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg>',
   slack: '<svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="14" rx="3"/><rect x="9" y="8" width="14" height="6" rx="3" transform="rotate(90 16 11)"/></svg>',
   library: '<svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="7" y1="6" x2="17" y2="6"/><line x1="7" y1="17" x2="17" y2="17"/></svg>',
+  vercel: '<svg viewBox="0 0 24 24"><path d="M12 3l9 16H3Z"/></svg>',
+  database: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>',
+  github: '<svg viewBox="0 0 24 24"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1.16-.02-2.11-3.2.7-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.69 1.25 3.34.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.58.24 2.75.12 3.04.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.39-5.25 5.67.41.36.78 1.07.78 2.15 0 1.55-.01 2.8-.01 3.18 0 .3.2.66.79.55A10.52 10.52 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5Z"/></svg>',
+  agent: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>',
+  stop: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
 };
 
 function toolIcon(name) {
@@ -211,6 +241,11 @@ function toolIcon(name) {
   if (name === 'browser_check') return TOOL_ICON.browser;
   if (name === 'gmail_send' || name === 'gmail_search') return TOOL_ICON.mail;
   if (name === 'slack_post_message') return TOOL_ICON.slack;
+  if (name === 'vercel_deploy') return TOOL_ICON.vercel;
+  if (name === 'supabase_create_project' || name === 'supabase_delete_project') return TOOL_ICON.database;
+  if (name === 'github_create_repo') return TOOL_ICON.github;
+  if (name === 'subagent' || name === 'dispatch_agent') return TOOL_ICON.agent;
+  if (name === 'stop_agent') return TOOL_ICON.stop;
   if (name === 'design_reference_search') return TOOL_ICON.library;
   return TOOL_ICON.read;
 }
@@ -258,8 +293,42 @@ function addUserMessage(text, images) {
   bubble.className = 'bubble';
   bubble.textContent = text;
   msg.appendChild(bubble);
+
+  // Restart re-sends this exact message as a brand-new turn — useful when a
+  // reply didn't do what you wanted and you'd rather just try again than
+  // hand-retype the same ask. Revert stops whatever's currently running in
+  // this chat (if anything is) and drops the message back into the
+  // composer to tweak before sending — it does NOT undo any file edits the
+  // original run already made; it only stops the run and gives you the
+  // text back to edit.
+  const actions = document.createElement('div');
+  actions.className = 'user-msg-actions';
+  actions.innerHTML =
+    `<button class="user-msg-action" data-action="restart" title="Send this again">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+    </button>
+    <button class="user-msg-action" data-action="revert" title="Stop and edit this message">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+    </button>`;
+  actions.querySelector('[data-action="restart"]').addEventListener('click', () => sendMessage(text, false, images));
+  actions.querySelector('[data-action="revert"]').addEventListener('click', () => {
+    if (state.running && state.currentSessionId) api.stop(state.currentSessionId);
+    setChatComposerText(text);
+  });
+  msg.appendChild(actions);
+
   chatColumn.appendChild(msg);
   scrollToBottom();
+}
+
+function setChatComposerText(text) {
+  const input = document.querySelector('[data-composer="chat"] .composer-input');
+  if (!input) return;
+  input.value = text;
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 180) + 'px';
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
 }
 
 function openImageLightbox(src) {
@@ -274,78 +343,65 @@ function openImageLightbox(src) {
 // chat) renders instantly — animating text you've already read is just a
 // delay, not a nice touch.
 //
-// Only one typewriter runs at a time, strictly in the order messages arrived.
-// A turn can yield several separate 'text' events (prose alongside an action
-// block, then more prose next step, then a final wrap-up) — without this
-// queue, a fast step landing before the previous bubble finished animating
-// started a SECOND interval concurrently: two bubbles visibly typing at once,
-// which reads as the reply repeating itself even when the underlying text
-// isn't actually a duplicate. The message div itself is still created and
-// appended to chatColumn immediately (not deferred into the queue) so DOM
-// order stays correct relative to tool rows that land in between; only the
-// animation start is deferred.
-const activeTypewriters = new Set();
-const typewriterQueue = [];
-let typewriterRunning = false;
+// Replies render immediately, full text at once — no typewriter effect.
+// ─── Reveal queue ───────────────────────────────────────────────────────────
+// A tool row (or the next reply) that's ready to render while the PRIOR
+// reply is still typing out doesn't jump ahead of it — it's created and
+// appended to the DOM immediately (so tool_start's "running" placeholder
+// and tool_end's swap-in still work exactly as before, in the right DOM
+// order), but stays visually hidden (.reveal-pending) until its turn comes
+// up in this queue, right after whatever was typing above it finishes.
+const revealQueue = [];
+let revealQueueBusy = false;
+let activeTypewriterTimer = null;
+// Set around history replay (reopening a past chat) — every message and
+// tool row should appear at once there, not re-play its live-arrival
+// animation/ordering every time the chat is opened.
+let revealInstant = false;
 
-function stopAllTypewriters() {
-  for (const t of activeTypewriters) clearInterval(t);
-  activeTypewriters.clear();
-  typewriterQueue.length = 0;
-  typewriterRunning = false;
+function enqueueReveal(job) {
+  if (revealInstant) { job(() => {}); return; }
+  revealQueue.push(job);
+  if (!revealQueueBusy) drainRevealQueue();
+}
+function drainRevealQueue() {
+  if (revealQueue.length === 0) { revealQueueBusy = false; return; }
+  revealQueueBusy = true;
+  revealQueue.shift()(drainRevealQueue);
+}
+function stopRevealQueue() {
+  if (activeTypewriterTimer) { clearInterval(activeTypewriterTimer); activeTypewriterTimer = null; }
+  revealQueue.length = 0;
+  revealQueueBusy = false;
 }
 
-const TYPE_CURSOR = '<span class="type-cursor"></span>';
-// Appending the cursor as a trailing sibling puts it after the last block
-// element's closing tag (</p>, </li>, ...), which starts a new line —
-// exactly the stray floating "|" this was producing whenever a paragraph
-// break got revealed before the next paragraph's first word arrived.
-// Splicing it in just before that closing tag keeps it inline, at the
-// actual end of the visible text.
-const withTypeCursor = (html) => (html ? html.replace(/(<\/[a-z0-9]+>)\s*$/i, TYPE_CURSOR + '$1') : TYPE_CURSOR);
-
-function runTypewriterQueue() {
-  if (typewriterRunning || typewriterQueue.length === 0) return;
-  typewriterRunning = true;
-  const { msg, text } = typewriterQueue.shift();
-
+// Reveals a reply a few words at a time — fast (well under half a second
+// total regardless of length) so it still reads as "arriving" rather than
+// just appearing, without the several-second crawl a true per-word
+// typewriter would take on a long reply.
+function runFastTypewriter(msg, text, done) {
   const words = text.split(/(\s+)/); // keeps whitespace tokens so spacing survives the join
   const total = words.filter((w) => w.trim()).length;
-  // Speeds up for long replies so a 500-word answer doesn't take forever —
-  // targets roughly a 4-second animation no matter the length, floor 50 wds/s.
-  const wordsPerTick = Math.max(1, Math.ceil(total / 200));
+  const wordsPerTick = Math.max(1, Math.ceil(total / 16));
   let i = 0;
-  msg.innerHTML = TYPE_CURSOR;
-
-  const timer = setInterval(() => {
+  activeTypewriterTimer = setInterval(() => {
     i = Math.min(words.length, i + wordsPerTick);
-    msg.innerHTML = withTypeCursor(mdToHtml(words.slice(0, i).join('')));
+    msg.innerHTML = mdToHtml(words.slice(0, i).join(''));
     if (nearBottom()) scrollToBottom();
     if (i >= words.length) {
-      clearInterval(timer);
-      activeTypewriters.delete(timer);
-      msg.innerHTML = mdToHtml(text); // exact final render, cursor removed
-      if (nearBottom()) scrollToBottom();
-      typewriterRunning = false;
-      runTypewriterQueue();
+      clearInterval(activeTypewriterTimer);
+      activeTypewriterTimer = null;
+      done();
     }
-  }, 20);
-  activeTypewriters.add(timer);
+  }, 14);
 }
 
-function addAssistantMessage(text, { animate = true } = {}) {
+function addAssistantMessage(text) {
   const msg = document.createElement('div');
   msg.className = 'msg assistant';
   chatColumn.appendChild(msg);
-
-  if (!animate) {
-    msg.innerHTML = mdToHtml(text);
-    if (nearBottom()) scrollToBottom();
-    return;
-  }
-
-  typewriterQueue.push({ msg, text });
-  runTypewriterQueue();
+  if (revealInstant) { msg.innerHTML = mdToHtml(text); return; }
+  enqueueReveal((next) => runFastTypewriter(msg, text, next));
 }
 
 // The raw arguments a real tool call ran with — path, command, search/replace,
@@ -371,7 +427,7 @@ function toolArgsLabel(args) {
     || args?.query || '';
 }
 
-function addToolRow({ name, label, ok, running: isRunning, auto, bypass, args }) {
+function addToolRow({ name, label, ok, running: isRunning, auto, bypass, args, screenshotSrc }) {
   const row = document.createElement('div');
   row.className = 'tool-row' + (isRunning ? ' running' : '') + (ok === false ? ' failed' : '');
   const verb = TOOL_DISPLAY[name] || name;
@@ -394,8 +450,25 @@ function addToolRow({ name, label, ok, running: isRunning, auto, bypass, args })
     });
   }
 
+  // A browser_check's screenshot, shown right in the chat instead of only
+  // fed to the model — the whole point of asking "what did it actually
+  // check" is being able to look at it yourself, not just trust the text.
+  if (screenshotSrc) {
+    const img = document.createElement('img');
+    img.className = 'tool-screenshot';
+    img.src = screenshotSrc;
+    img.alt = label || 'Browser check screenshot';
+    img.addEventListener('click', () => openImageLightbox(screenshotSrc));
+    row.appendChild(img);
+  }
+
+  row.classList.add('reveal-pending');
   chatColumn.appendChild(row);
-  if (nearBottom()) scrollToBottom();
+  enqueueReveal((next) => {
+    row.classList.remove('reveal-pending');
+    if (nearBottom()) scrollToBottom();
+    next();
+  });
   return row;
 }
 
@@ -510,6 +583,149 @@ function addNote(text, kind = '') {
   if (nearBottom()) scrollToBottom();
 }
 
+// Every mascot on screen is two stacked, independently-animated layers —
+// the ball (assets/agents/<id>.png) and a shared eyes overlay
+// (assets/agents/eyes.png) — not one flat pre-drawn image. That's what
+// makes a real blink/look-around animation possible at all: the eyes move
+// on their own transform, the ball breathes on its own, and nothing about
+// either layer is baked together. A small random negative animation-delay
+// desyncs each instance so a grid of them doesn't blink in unison.
+function mascotHtml(mascotFile, sizeClass, altText) {
+  // A negative delay starts the animation already partway through its
+  // cycle — the simplest way to desync instances so a grid of 7 mascots
+  // doesn't blink and look around in unison.
+  const delay = (-(Math.random() * 6)).toFixed(2) + 's';
+  return `<span class="mascot ${sizeClass}">
+    <img class="mascot-ball" src="assets/agents/${esc(mascotFile)}" alt="${esc(altText)}">
+    <img class="mascot-eyes" src="assets/agents/eyes.png" alt="" style="animation-delay: ${delay}">
+  </span>`;
+}
+
+// The visible half of subagent auto-routing (see effectiveSubagentId() in
+// main.js) — fired once at the start of a turn that's using a specialist
+// persona, whether auto-picked or manually pinned. Without this, the
+// persona would be a completely invisible prompt change; this is what
+// actually shows the user which mascot is handling the reply that follows.
+function addSubagentBadge(data) {
+  const el = document.createElement('div');
+  el.className = 'subagent-badge';
+  el.style.setProperty('--subagent-color', data.color || '');
+  el.innerHTML =
+    mascotHtml(data.mascot, 'mascot-sm', data.name) +
+    `<span class="subagent-badge-text"><strong>${esc(data.name)}</strong> · ${esc(data.tagline)}</span>`;
+  chatColumn.appendChild(el);
+  if (nearBottom()) scrollToBottom();
+}
+
+// ─── Agent View — modal listing the 7 specialists, live status + click-through
+// Same list-modal shape as Connect Apps (.app-card rows) and Tasks, not a
+// separate full-page view — a row per specialist, click to expand its
+// sessions inline. Reuses state.subagents/state.sessions (already loaded for
+// the composer picker and Recents) plus state.activeAgentSessions (new — see
+// agents:status below). No separate store: a dispatched session IS a normal
+// session, just one dispatch_agent started instead of the user typing into
+// it directly.
+let expandedAgentId = null;
+
+function renderAgentsList() {
+  const list = $('agentsList');
+  if (expandedAgentId) { renderAgentSessionsInline(expandedAgentId); updateAgentViewBadge(); return; }
+  // Same tile treatment as the composer's own Specialists picker
+  // (.subagent-menu-grid/.subagent-menu-item) — that one already renders the
+  // mascot cleanly at this size; a custom row layout at a smaller size was
+  // what made the eyes look broken, not the artwork itself.
+  list.innerHTML = `<div class="agents-tile-grid">` + state.subagents.map((a) => {
+    const activeHere = state.activeAgentSessions.filter((s) => s.subagentId === a.id);
+    return `<button class="agents-tile${activeHere.length ? ' active' : ''}" data-id="${esc(a.id)}" style="--subagent-color: ${esc(a.color)}">
+      ${mascotHtml(a.mascot, 'mascot-md', a.name)}
+      <span class="agents-tile-name">${esc(a.name)}</span>
+      <span class="agents-tile-tagline">${esc(a.tagline)}</span>
+      <span class="agents-tile-status${activeHere.length ? ' active' : ''}">${activeHere.length ? activeHere.length + ' active' : 'Idle'}</span>
+    </button>`;
+  }).join('') + `</div>`;
+  list.querySelectorAll('.agents-tile').forEach((tile) => {
+    tile.addEventListener('click', () => toggleAgentSessions(tile.dataset.id));
+  });
+  updateAgentViewBadge();
+}
+
+function toggleAgentSessions(subagentId) {
+  expandedAgentId = expandedAgentId === subagentId ? null : subagentId;
+  renderAgentsList();
+}
+
+function renderAgentSessionsInline(subagentId) {
+  const specialist = state.subagents.find((a) => a.id === subagentId);
+  if (!specialist) return;
+  const list = $('agentsList');
+  list.innerHTML = `<button class="agents-back-btn" id="agentsBackBtn">
+    <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg> ${esc(specialist.name)}
+  </button><div id="agentSessionsInner"></div>`;
+  $('agentsBackBtn').addEventListener('click', () => toggleAgentSessions(subagentId));
+  const container = $('agentSessionsInner');
+  const activeForThis = state.activeAgentSessions.filter((s) => s.subagentId === subagentId);
+  const activeIds = new Set(activeForThis.map((s) => s.sessionId));
+  const known = state.sessions.filter((s) => s.subagentId === subagentId);
+  const knownIds = new Set(known.map((s) => s.id));
+  // A dispatch this fresh may not have reached state.sessions yet — that only
+  // updates from a session_sync event for whichever chat is currently open,
+  // or a full sessions:refresh, neither of which a background dispatch
+  // triggers on its own. Synthesized from the live status push instead, so
+  // it's not invisible in the meantime.
+  const synthesized = activeForThis
+    .filter((s) => !knownIds.has(s.sessionId))
+    .map((s) => ({ id: s.sessionId, title: s.title || 'Working…', updatedAt: Date.now() }));
+  const sessions = [...synthesized, ...known]
+    .sort((a, b) => (activeIds.has(b.id) - activeIds.has(a.id)) || (b.updatedAt - a.updatedAt));
+
+  container.innerHTML = sessions.map((s) => `
+    <div class="agents-session-row${activeIds.has(s.id) ? ' active' : ''}">
+      <button class="agents-session-open" data-id="${esc(s.id)}">
+        ${activeIds.has(s.id) ? '<span class="agents-session-dot"></span>' : ''}
+        <span class="agents-session-title">${esc(s.title)}</span>
+      </button>
+      ${activeIds.has(s.id) ? `<button class="agents-session-stop" data-id="${esc(s.id)}" title="Stop"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>` : ''}
+    </div>`).join('') || '<div class="sp-empty">Nothing dispatched to this specialist yet.</div>';
+  container.querySelectorAll('.agents-session-open').forEach((btn) => {
+    btn.addEventListener('click', () => { closeAgentViewModal(); openSession(btn.dataset.id); });
+  });
+  container.querySelectorAll('.agents-session-stop').forEach((btn) => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); api.stop(btn.dataset.id); });
+  });
+}
+
+function openAgentViewModal() {
+  renderAgentsList();
+  $('agentViewBackdrop').classList.remove('hidden');
+}
+function closeAgentViewModal() {
+  $('agentViewBackdrop').classList.add('hidden');
+}
+
+function updateAgentViewBadge() {
+  const badge = $('agentViewBadge');
+  const n = state.activeAgentSessions.length;
+  badge.textContent = String(n);
+  badge.classList.toggle('hidden', n === 0);
+}
+
+$('agentViewBtn').addEventListener('click', openAgentViewModal);
+$('agentViewCloseBtn').addEventListener('click', closeAgentViewModal);
+$('agentViewBackdrop').addEventListener('click', (e) => { if (e.target === $('agentViewBackdrop')) closeAgentViewModal(); });
+
+if (api) api.onAgentsStatus((data) => {
+  state.activeAgentSessions = Array.isArray(data) ? data : [];
+  updateAgentViewBadge();
+  if (!$('agentViewBackdrop').classList.contains('hidden')) renderAgentsList();
+  // Same resync as openSession() below, for the chat already open when this
+  // arrives — keeps the composer's send/stop icon live-accurate without
+  // waiting for a navigation to trigger the check.
+  if (state.currentSessionId) {
+    const isActive = state.activeAgentSessions.some((a) => a.sessionId === state.currentSessionId);
+    if (isActive !== state.running) setRunning(isActive);
+  }
+});
+
 // ─── Side panel (real data: what this chat touched) ─────────────────────────
 const spOutputs = $('spOutputs');
 const spSources = $('spSources');
@@ -564,14 +780,17 @@ async function refreshIntegrations() {
   const s = await api.integrationsStatus();
   renderIntegrationRow('caGmail', { connected: !!s.gmail?.connected, label: s.gmail?.email });
   renderIntegrationRow('caSlack', { connected: !!s.slack?.connected, label: s.slack?.teamName });
+  renderIntegrationRow('caVercel', { connected: !!s.vercel?.connected, label: s.vercel?.userName });
+  renderIntegrationRow('caSupabase', { connected: !!s.supabase?.connected, label: s.supabase?.email });
+  renderIntegrationRow('caGithub', { connected: !!s.github?.connected, label: s.github?.userName });
 }
 
-function wireIntegrationRow(rowId, connectFn, providerLabel) {
+function wireIntegrationRow(rowId, integrationName, connectFn, providerLabel) {
   $(rowId).querySelector('[data-role="action"]').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     const row = $(rowId);
     if (row.classList.contains('connected')) {
-      await api.disconnectIntegration(rowId === 'caGmail' ? 'gmail' : 'slack');
+      await api.disconnectIntegration(integrationName);
       refreshIntegrations();
       return;
     }
@@ -584,8 +803,11 @@ function wireIntegrationRow(rowId, connectFn, providerLabel) {
   });
 }
 
-wireIntegrationRow('caGmail', () => api.connectGmail(), 'Gmail');
-wireIntegrationRow('caSlack', () => api.connectSlack(), 'Slack');
+wireIntegrationRow('caGmail', 'gmail', () => api.connectGmail(), 'Gmail');
+wireIntegrationRow('caSlack', 'slack', () => api.connectSlack(), 'Slack');
+wireIntegrationRow('caVercel', 'vercel', () => api.connectVercel(), 'Vercel');
+wireIntegrationRow('caSupabase', 'supabase', () => api.connectSupabase(), 'Supabase');
+wireIntegrationRow('caGithub', 'github', () => api.connectGithub(), 'GitHub');
 
 function openConnectApps() {
   closeAccountMenu();
@@ -622,10 +844,6 @@ function openAccountMenu() {
       <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
       Connect Apps
     </button>
-    <button class="account-menu-item" data-action="upgrade">
-      <svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
-      Upgrade plan
-    </button>
     <div class="account-menu-divider"></div>
     <div class="account-menu-theme-row">
       <span>Theme</span>
@@ -654,10 +872,6 @@ function openAccountMenu() {
   menu.style.width = rect.width + 'px';
 
   menu.querySelector('[data-action="connect"]').addEventListener('click', openConnectApps);
-  menu.querySelector('[data-action="upgrade"]').addEventListener('click', () => {
-    closeAccountMenu();
-    showPlansPage();
-  });
   menu.querySelector('[data-action="logout"]').addEventListener('click', async () => {
     closeAccountMenu();
     await api.logout();
@@ -1072,125 +1286,109 @@ document.querySelectorAll('[data-role="bypass"]').forEach((el) =>
   })
 );
 
-// ─── Model picker ───────────────────────────────────────────────────────────
-// A real dropdown (name + description + checkmark on the active one),
-// opened above the trigger since it sits at the bottom of the window.
-// Switching writes straight into ~/.codeply/config.json (shared with the
-// CLI), so a pick made here is active there too, immediately.
-let modelPresets = [];
-let activeModelId = null;
-let modelMenuEl = null;
-let modelUserTier = 'free';
-const TIER_RANK = { free: 0, plus: 1, pro: 2, max: 3 };
+// ─── Model label ────────────────────────────────────────────────────────────
+// No picker — Auto is the only mode (Ollama's Gemma 4 31B, with a free Gemma
+// 4 26B helping on design-planning turns; see model-router.js). The bottom
+// bar just always reads "Auto", set once here rather than on every render.
+document.querySelectorAll('[data-role="model-name"]').forEach((el) => (el.textContent = 'Auto'));
 
-// Auto never names the model it actually routed to — it's the free-trial
-// default, and which model is behind it is deliberately not part of the
-// product surface. The bottom bar just reads "Auto".
-function syncModelLabel() {
-  const active = modelPresets.find((p) => p.id === activeModelId);
-  const label = active ? active.label : 'Auto';
-  document.querySelectorAll('[data-role="model-name"]').forEach((el) => (el.textContent = label));
+// ─── Subagent picker (the 8 named specialists — lib/subagents.js) ──────────
+// Same popover pattern as the model picker above, but a 3-column grid of
+// animated mascot tiles instead of a plain list — this is the one place in
+// the app that's meant to feel a little alive, not just functional.
+async function loadSubagents() {
+  if (!api || !api.listSubagents) return;
+  state.subagents = await api.listSubagents();
+  syncSubagentChips();
 }
 
-function renderPlanBadge(tier) {
-  const el = $('userPlanBadge');
-  if (!el) return;
-  const label = TIER_BADGE_LABEL[tier];
-  el.textContent = label || '';
-  el.classList.toggle('hidden', !label);
+// state.subagentId's three shapes: null = Auto (the default — this chat
+// always runs as the coordinator now, see COORDINATOR_RULES in agent.mjs; it
+// dispatches real work to the right specialist as an independent session via
+// dispatch_agent instead of a persona coloring this same turn), 'general' =
+// same as Auto but explicit, or a specific id = pinned for the whole chat, so
+// every turn answers directly AS that specialist instead of coordinating.
+const AUTO_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg>';
+
+function syncSubagentChips() {
+  const active = state.subagents.find((a) => a.id === state.subagentId);
+  // Auto has no fixed persona to show a mascot for (it varies message to
+  // message) — everything else, including General now, is a real mascot.
+  const label = active ? active.name : (state.subagentId === 'general' ? 'General' : 'Auto');
+  const mascotFile = active ? active.mascot : (state.subagentId === 'general' ? 'general.png' : null);
+  document.querySelectorAll('[data-role="subagent-chip"]').forEach((chip) => {
+    chip.style.setProperty('--subagent-color', active ? active.color : '');
+    chip.querySelector('[data-role="subagent-name"]').textContent = label;
+    chip.querySelector('[data-role="subagent-icon-slot"]').innerHTML =
+      mascotFile ? mascotHtml(mascotFile, 'mascot-xs', label) : AUTO_ICON_SVG;
+  });
 }
 
-async function refreshModels() {
-  if (!api) return;
-  const r = await api.listModels();
-  modelPresets = r.presets || [];
-  activeModelId = r.active;
-  modelUserTier = r.userTier || 'free';
-  syncModelLabel();
-  renderPlanBadge(modelUserTier);
-}
-
-function closeModelMenu() {
-  if (modelMenuEl) { modelMenuEl.remove(); modelMenuEl = null; }
+let subagentMenuEl = null;
+function closeSubagentMenu() {
+  if (subagentMenuEl) { subagentMenuEl.remove(); subagentMenuEl = null; }
 }
 document.addEventListener('click', (e) => {
-  if (modelMenuEl && !modelMenuEl.contains(e.target) && !e.target.closest('[data-role="model-picker"]')) closeModelMenu();
+  if (subagentMenuEl && !subagentMenuEl.contains(e.target) && !e.target.closest('[data-role="subagent-chip"]')) closeSubagentMenu();
 });
 
-async function pickModel(id) {
-  if (id === 'auto') {
-    closeModelMenu();
-    if (id !== activeModelId) {
-      activeModelId = id;
-      syncModelLabel();
-      const r = await api.selectModel(id);
-      if (r.ok) { activeModelId = r.active; state.providerLabel = r.providerLabel; }
-      syncModelLabel();
-    }
-    return;
+async function pickSubagent(id) {
+  closeSubagentMenu();
+  const next = id === 'auto' ? null : id;
+  if (next === state.subagentId) return;
+  state.subagentId = next;
+  syncSubagentChips();
+  // Persists immediately for a chat that already exists; for a brand-new,
+  // not-yet-sent chat there's no session row to update yet — the pick just
+  // rides along in the next send() payload instead (see sendMessage above).
+  if (state.currentSessionId && api.setSessionSubagent) {
+    await api.setSessionSubagent(state.currentSessionId, state.subagentId);
   }
-
-  // The server tells us whether this account isn't eligible for this model
-  // yet (send to the plan picker) or is eligible. Eligible ones select for
-  // real in the UI (checkmark, bottom-bar label) — none of them are wired to
-  // a real backend yet, so sendMessage() is where the "too many people are
-  // using this" note actually shows, the same moment a live capacity limit
-  // would surface it, not at pick-time.
-  const r = await api.selectModel(id);
-  if (r.locked) {
-    closeModelMenu();
-    showPlansPage();
-    return;
-  }
-  closeModelMenu();
-  activeModelId = id;
-  syncModelLabel();
 }
 
-const TIER_BADGE_LABEL = { plus: 'Plus', pro: 'Pro', max: 'Max' };
-
-function openModelMenu(anchorBtn) {
-  closeModelMenu();
+function openSubagentMenu(anchorBtn) {
+  closeSubagentMenu();
   const menu = document.createElement('div');
-  menu.className = 'model-menu';
+  menu.className = 'subagent-menu';
+  const isAuto = !state.subagentId;
+  const isGeneral = state.subagentId === 'general';
   menu.innerHTML =
-    '<div class="model-menu-title">Models</div>' +
-    modelPresets.map((p) => {
-      const locked = p.tier && p.tier !== 'free' && TIER_RANK[modelUserTier] < TIER_RANK[p.tier];
-      // Only the models this account isn't eligible for get a badge — once
-      // you're on a plan that includes it, it should look like any other
-      // available model, not still be tagged with the plan name.
-      const badge = locked ? `<span class="model-menu-item-badge locked">${TIER_BADGE_LABEL[p.tier]}</span>` : '';
-      return `
-      <button class="model-menu-item" data-id="${esc(p.id)}">
-        <div class="model-menu-item-row">
-          <span class="model-menu-item-name">${esc(p.label)}</span>
-          ${badge}
-          ${p.id === activeModelId ? '<svg class="model-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>' : ''}
-        </div>
-      </button>`;
-    }).join('');
+    '<div class="subagent-menu-title">Specialists</div>' +
+    '<div class="subagent-menu-grid">' +
+    `<button class="subagent-menu-item${isAuto ? ' active' : ''}" data-id="auto">
+       <span class="subagent-menu-item-general"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg></span>
+       <span class="subagent-menu-item-name">Auto</span>
+       <span class="subagent-menu-item-tagline">Picks a specialist per message</span>
+     </button>` +
+    `<button class="subagent-menu-item${isGeneral ? ' active' : ''}" data-id="general">
+       ${mascotHtml('general.png', 'mascot-md', 'General')}
+       <span class="subagent-menu-item-name">General</span>
+       <span class="subagent-menu-item-tagline">Never use a specialist</span>
+     </button>` +
+    state.subagents.map((a) => `
+      <button class="subagent-menu-item${a.id === state.subagentId ? ' active' : ''}" data-id="${esc(a.id)}" style="--subagent-color: ${esc(a.color)}">
+        ${mascotHtml(a.mascot, 'mascot-md', a.name)}
+        <span class="subagent-menu-item-name">${esc(a.name)}</span>
+        <span class="subagent-menu-item-tagline">${esc(a.tagline)}</span>
+      </button>`).join('') +
+    '</div>';
   document.body.appendChild(menu);
 
   const rect = anchorBtn.getBoundingClientRect();
   menu.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
   menu.style.right = Math.max(8, window.innerWidth - rect.right) + 'px';
 
-  menu.querySelectorAll('.model-menu-item').forEach((item) =>
-    item.addEventListener('click', () => pickModel(item.dataset.id))
+  menu.querySelectorAll('.subagent-menu-item').forEach((item) =>
+    item.addEventListener('click', () => pickSubagent(item.dataset.id))
   );
-  modelMenuEl = menu;
+  subagentMenuEl = menu;
 }
 
-document.querySelectorAll('[data-role="model-picker"]').forEach((btn) =>
-  btn.addEventListener('click', async (e) => {
+document.querySelectorAll('[data-role="subagent-chip"]').forEach((btn) =>
+  btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (modelMenuEl) { closeModelMenu(); return; }
-    // Re-pulled every open, not just at boot — a checkout completed earlier
-    // in this same session should unlock models immediately, not only after
-    // an app restart.
-    await refreshModels();
-    if (modelPresets.length) openModelMenu(btn);
+    if (subagentMenuEl) { closeSubagentMenu(); return; }
+    openSubagentMenu(btn);
   })
 );
 
@@ -1271,24 +1469,16 @@ async function sendMessage(text, fromHome, images) {
 
   if (fromHome || !state.currentSessionId) {
     hideThinking();
-    stopAllTypewriters();
+    stopRevealQueue();
     chatColumn.innerHTML = '';
     resetSidePanel(state.project);
     state.currentSessionId = null;
     $('chatTitle').textContent = text.length > 46 ? text.slice(0, 46) + '…' : text;
+    $('backToMainBtn').classList.add('hidden'); // a brand-new chat has no parent to go back to
     showView('viewChat');
   }
 
   addUserMessage(text, images);
-
-  // A named model (Claude Sonnet 5, etc.) is a real, selectable pin in the
-  // picker, but none of them are wired to a real backend yet — the busy
-  // note shows here, at send-time, instead of blocking the pick itself.
-  const activePreset = modelPresets.find((p) => p.id === activeModelId);
-  if (activePreset && !activePreset.auto) {
-    addNote(`Too many people are using ${activePreset.label} right now. Please try again in a bit, or try Auto for uninterrupted use.`, 'error');
-    return;
-  }
 
   setRunning(true);
   showThinking();
@@ -1301,6 +1491,7 @@ async function sendMessage(text, fromHome, images) {
     text,
     images,
     clientId: desktopClientId,
+    subagentId: state.subagentId,
   });
 
   if (r.error) {
@@ -1561,12 +1752,42 @@ if (api) api.onAgentEvent((data) => {
     if (mine && data.message?.kind === 'user' && data.origin && data.origin !== desktopClientId) {
       addUserMessage(data.message.text, data.message.images);
     }
+    // Covers the AI-generated retitle that lands shortly after a brand-new
+    // chat's first reply, and a rename/delete made from a paired phone —
+    // neither originates in this window, so the sidebar needs to be told.
+    if (meta && data.session?.title && data.session.title !== meta.title) {
+      meta.title = data.session.title;
+      renderRecents();
+      if (mine) $('chatTitle').textContent = meta.title;
+    }
+    if (mine && data.session && data.session.subagentId !== undefined && data.session.subagentId !== state.subagentId) {
+      state.subagentId = data.session.subagentId;
+      syncSubagentChips();
+    }
+    return;
+  }
+
+  // A delete made from a paired phone, or an ephemeral dispatched session
+  // cleaning itself up after reporting its summary back to whoever
+  // dispatched it (see main.js) — mirrors deleteSessionById() below, minus
+  // the api.deleteSession() call (already done on the other end).
+  if (data.type === 'session_deleted') {
+    state.sessions = state.sessions.filter((s) => s.id !== data.sessionId);
+    if (state.currentSessionId === data.sessionId) {
+      state.currentSessionId = null;
+      if (data.parentSessionId) openSession(data.parentSessionId);
+      else showView('viewHome');
+    }
+    renderRecents();
     return;
   }
 
   if (!mine) return;
 
   switch (data.type) {
+    case 'subagent_active':
+      addSubagentBadge(data);
+      break;
     case 'helper_note':
       // A helper call finishing before the writer's own turn starts —
       // "◈ Codeply Design planned the design" — shown the same way a tool row
@@ -1592,7 +1813,7 @@ if (api) api.onAgentEvent((data) => {
       break;
     case 'tool_end': {
       if (runningToolRow) { runningToolRow.remove(); runningToolRow = null; }
-      addToolRow({ name: data.name, label: data.summary || toolArgsLabel(data.args), ok: data.ok, args: data.args });
+      addToolRow({ name: data.name, label: data.summary || toolArgsLabel(data.args), ok: data.ok, args: data.args, screenshotSrc: data.meta?.screenshotDataUrl });
       panelTrack(data.name, data.args?.path || data.summary);
       // The agent calls the model again to decide the next step.
       showThinking();
@@ -1646,7 +1867,7 @@ if (api) api.onAgentEvent((data) => {
     case 'trial_limit_reached':
       hideThinking();
       setRunning(false);
-      showLockedPage(data.message);
+      addNote(data.message, 'error');
       break;
     case 'aborted':
       hideThinking();
@@ -1671,36 +1892,61 @@ async function openSession(id) {
   const s = await api.getSession(id);
   if (!s) return;
   state.currentSessionId = id;
+  state.subagentId = s.subagentId || null;
+  syncSubagentChips();
   if (s.cwd) {
     const r = await api.useProject(s.cwd);
     if (r) setProject(r.path, r.branch);
   }
   $('chatTitle').textContent = s.title;
+  $('backToMainBtn').classList.toggle('hidden', !s.parentSessionId);
+  $('backToMainBtn').dataset.parentId = s.parentSessionId || '';
   hideThinking();
-  stopAllTypewriters();
+  stopRevealQueue();
   chatColumn.innerHTML = '';
   resetSidePanel(s.cwd);
   currentTasks = [];
+  revealInstant = true;
   for (const m of s.messages) {
     if (m.kind === 'user') addUserMessage(m.text, m.images);
-    else if (m.kind === 'assistant') addAssistantMessage(m.text, { animate: false });
+    else if (m.kind === 'assistant') addAssistantMessage(m.text);
     else if (m.kind === 'reasoning') addReasoningRow(m.text, m.ms);
     else if (m.kind === 'tool') {
-      addToolRow({ name: m.name, label: m.label, ok: m.ok, args: m.args });
+      // Desktop can load a local file:// path directly, no server round trip.
+      const screenshotSrc = m.screenshotPath ? 'file:///' + m.screenshotPath.replace(/\\/g, '/') : undefined;
+      addToolRow({ name: m.name, label: m.label, ok: m.ok, args: m.args, screenshotSrc });
       panelTrack(m.name, m.label);
     } else if (m.kind === 'tasklist') {
       addTaskList(m.tasks);
+    } else if (m.kind === 'subagent_active') {
+      addSubagentBadge(m);
     }
   }
+  revealInstant = false;
   activeTaskList = null; // reopening a past chat is read-only history, not a live run — no further task_start/task_end will arrive for it
   refreshTasksUI();
   renderRecents();
   showView('viewChat');
   scrollToBottom();
+
+  // Re-sync the send/stop icon to what THIS session is actually doing right
+  // now. state.running otherwise stays stuck at whatever the previously-open
+  // chat was doing — its own run_finished/error event is ignored while you're
+  // not looking at it (see the `if (!mine) return` in the event handler
+  // below), so navigating away from a still-running chat and back to it, or
+  // over to an idle one, used to leave the composer showing Stop forever.
+  // agents:status (state.activeAgentSessions) is a live backend snapshot, so
+  // it's always right even when a run_finished event got missed.
+  setRunning(state.activeAgentSessions.some((a) => a.sessionId === id));
 }
 
 $('deleteChatBtn').addEventListener('click', () => {
   if (state.currentSessionId) deleteSessionById(state.currentSessionId);
+});
+
+$('backToMainBtn').addEventListener('click', () => {
+  const parentId = $('backToMainBtn').dataset.parentId;
+  if (parentId) openSession(parentId);
 });
 
 $('newChatBtn').addEventListener('click', () => {
@@ -1739,16 +1985,6 @@ document.querySelectorAll('.auth-tab').forEach((tab) =>
   })
 );
 
-// Plans screen is shown once per account per device (localStorage, not a DB
-// column — no schema change needed for this). Returning users who already
-// completed onboarding on this machine go straight to viewHome on login.
-function plansSeenKey(email) { return `codeply_seen_plans_${email}`; }
-function maybeShowPlansThenHome(email) {
-  if (localStorage.getItem(plansSeenKey(email))) return showView('viewHome');
-  localStorage.setItem(plansSeenKey(email), '1');
-  showPlansPage();
-}
-
 async function afterVerified(email, onboarding) {
   state.user = { email };
   renderUser();
@@ -1758,10 +1994,9 @@ async function afterVerified(email, onboarding) {
   // account's session left in state (app:init only runs once at boot).
   state.sessions = await api.refreshSessions();
   renderRecents();
-  await refreshModels(); // also updates the plan badge next to the account name
   if (onboarding && !onboarding.referral_source) return showReferralPage();
   if (onboarding && !onboarding.country) return showCountryPage();
-  maybeShowPlansThenHome(email);
+  showView('viewHome');
 }
 
 // Google sign-in: opens the system browser, then the OS hands the resulting
@@ -1895,7 +2130,7 @@ $('referralContinueBtn').addEventListener('click', async () => {
   await api.saveOnboarding(value, null);
   const profile = await api.getProfile();
   if (!profile?.country) showCountryPage();
-  else maybeShowPlansThenHome(state.user?.email);
+  else showView('viewHome');
 });
 
 const COUNTRIES = [
@@ -1946,119 +2181,8 @@ $('countryContinueBtn').addEventListener('click', async () => {
   if (!value) return;
   $('countryContinueBtn').disabled = true;
   await api.saveOnboarding(null, value);
-  maybeShowPlansThenHome(state.user?.email);
+  showView('viewHome');
 });
-
-// ─── Plan picker / locked screen ─────────────────────────────────────────────
-// Card copy follows the paywalls skill's playbook (~/.agents/skills/paywalls):
-// benefit checklist over a bare feature dump, a "Most popular" badge on the
-// plan we actually want chosen, and price-per-day framing so $50/mo doesn't
-// read as a wall of a number.
-// Only the paid tiers get a card — the free trial is the single "Continue
-// with free trial" button below the cards instead (see showPlansPage), and
-// deliberately makes no model promise there since which models the trial
-// gets is an implementation detail, not a sales point.
-const PLAN_ORDER = ['plus', 'pro', 'max'];
-const PLAN_PRICE = { free: 0, plus: 20, pro: 50, max: 100 };
-const PLAN_TAGLINE = {
-  free: 'Try it out',
-  plus: 'For everyday use',
-  pro: 'For daily heavy use',
-  max: 'Every model, highest limits',
-};
-const MOST_POPULAR_TIER = 'pro';
-const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
-// One glyph per tier instead of a generic stick figure — bolt (Plus, quick/
-// everyday), star (Pro, the popular pick), crown (Max, top tier).
-const PLAN_ICON = {
-  plus: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>',
-  pro: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l2.9 6.1 6.6.7-4.9 4.5 1.4 6.6L12 17l-5.9 3.4 1.4-6.6-4.9-4.5 6.6-.7Z"/></svg>',
-  max: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 8l4.5 3L12 4l4.5 7L21 8l-2 10H5Z"/></svg>',
-};
-
-function planCardHTML(id, tier, currentTier, tiers) {
-  const isCurrent = id === currentTier;
-  const isPopular = id === MOST_POPULAR_TIER && !isCurrent;
-  const price = PLAN_PRICE[id];
-  const priceLabel = price === 0 ? 'Free' : `$${price}<span>/mo</span>`;
-  const btnLabel = isCurrent ? 'Current plan' : `Get ${tier.label} plan`;
-  const btnAttrs = isCurrent ? 'disabled' : `data-checkout-tier="${id}"`;
-  const btnNote = isCurrent ? '' : '<div class="plan-card-btn-note">No commitment · Cancel anytime</div>';
-  // Each tier above the base one reads as "everything in the tier below,
-  // plus the new thing" instead of repeating the full model list every
-  // time — the new addition is the actual reason to upgrade, so it should
-  // be the second line, not buried in a re-stated list. Names the one new
-  // model each tier unlocks (verified real names, see subscription.js) —
-  // one name at a time, not the full comma-dump list.
-  const prevId = PLAN_ORDER[PLAN_ORDER.indexOf(id) - 1];
-  const prevTier = prevId ? tiers[prevId] : null;
-  const newModels = prevTier ? tier.models.filter((m) => !prevTier.models.includes(m)) : tier.models;
-  const usageLine = { plus: 'Solid daily usage', pro: 'Higher daily usage', max: 'Highest daily usage' }[id];
-  const benefits = prevTier
-    ? [
-        `Everything in ${prevTier.label}`,
-        ...(newModels.length ? [`${newModels.join(' + ')} unlocked`] : []),
-        usageLine,
-      ]
-    : [
-        newModels.join(' + '),
-        'Great for everyday tasks',
-        usageLine,
-      ];
-  return `
-    <div class="plan-card${isCurrent ? ' current' : ''}${isPopular ? ' popular' : ''}">
-      ${isCurrent ? '<span class="plan-card-badge">Current plan</span>' : ''}
-      ${isPopular ? '<span class="plan-card-badge popular">Most popular</span>' : ''}
-      <div class="plan-card-icon plan-card-icon-${id}">${PLAN_ICON[id] || ''}</div>
-      <div class="plan-card-name">${tier.label}</div>
-      <div class="plan-card-tagline">${PLAN_TAGLINE[id] || ''}</div>
-      <div class="plan-card-price">${priceLabel}</div>
-      <button class="plan-card-btn${isPopular ? ' popular' : ''}" ${btnAttrs}>${btnLabel}</button>
-      ${btnNote}
-      <div class="plan-card-divider"></div>
-      <div class="plan-card-benefits-head">What you get:</div>
-      <ul class="plan-card-benefits">
-        ${benefits.map((b) => `<li>${CHECK_SVG}<span>${b}</span></li>`).join('')}
-      </ul>
-    </div>`;
-}
-
-async function renderPlanCards(containerId) {
-  const [tiers, sub] = await Promise.all([api.getTiers(), api.getSubscription()]);
-  const currentTier = sub?.tier || 'free';
-  const container = $(containerId);
-  container.innerHTML = PLAN_ORDER
-    .filter((id) => tiers[id])
-    .map((id) => planCardHTML(id, tiers[id], currentTier, tiers))
-    .join('');
-  container.querySelectorAll('[data-checkout-tier]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const tier = btn.dataset.checkoutTier;
-      btn.disabled = true;
-      const label = btn.textContent;
-      btn.textContent = 'Opening…';
-      const r = await api.openCheckout(tier);
-      btn.disabled = false;
-      btn.textContent = r?.ok ? label : (r?.error || 'Something went wrong');
-    });
-  });
-  return currentTier;
-}
-
-async function showPlansPage() {
-  showView('viewPlans');
-  await renderPlanCards('plansCards');
-}
-
-$('plansContinueBtn').addEventListener('click', () => showView(state.currentSessionId ? 'viewChat' : 'viewHome'));
-
-async function showLockedPage(message) {
-  if (message) $('lockedMessage').textContent = message;
-  showView('viewLocked');
-  await renderPlanCards('lockedCards');
-}
-
-$('lockedBackBtn').addEventListener('click', () => showView(state.currentSessionId ? 'viewChat' : 'viewHome'));
 
 // ─── Usage (shared 100/day apply cap — CLI, desktop app, and this app all
 // write to and read the same Supabase bucket) ────────────────────────────────
@@ -2247,7 +2371,7 @@ document.querySelectorAll('.composer').forEach((composer) => {
   renderProjects();
   syncMode();
   syncBypass();
-  refreshModels();
+  loadSubagents();
   if (init.lastProject) setProject(init.lastProject, init.lastProjectBranch);
   else setProject(null, null);
 

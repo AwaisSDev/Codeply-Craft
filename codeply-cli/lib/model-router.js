@@ -30,8 +30,17 @@
  * a per-request override (see applyRoute in ai.js), so the CLI's own stored
  * config is untouched and two chats can be on different models without
  * racing each other.
+ *
+ * The one exception to "always Ollama": if the user has explicitly set up a
+ * BYOK provider (codeply provider <x> --key <y>, or the desktop app's own
+ * config), that is a deliberate choice to leave the shared Ollama route
+ * entirely — Auto mode respects it instead of silently overriding back to
+ * Ollama every turn. See effectiveWriter() below. Only a real, usable
+ * provider (a BYOK key present, or Ollama pointed at a local daemon) can win;
+ * an incomplete/unset config still falls back to the hardcoded WRITER.
  */
 const ai = require('./ai.js');
+const config = require('./config.js');
 
 // Model IDs verified against the providers' live model lists.
 // Note the "a4b" in the 26B id — plain "google/gemma-4-26b-it" does not exist.
@@ -42,6 +51,26 @@ const WRITER = { id: 'writer', label: 'Gemma 4 31B', provider: 'ollama', model: 
 // it is just the writer itself now, reached directly rather than through a
 // separate helper call.
 const VISION_HELPER = WRITER;
+
+/**
+ * The writer for THIS turn: the user's explicit BYOK provider if they've set
+ * one up and it's actually usable, otherwise the hardcoded Ollama default.
+ * `cfg.provider === 'codeply'` (the factory default, nothing configured) and
+ * a BYOK section with no key both fall through to WRITER on purpose — this
+ * only diverts when there is a real, usable route to take instead.
+ */
+function effectiveWriter() {
+  const cfg = config.getConfig();
+  if (cfg.provider === 'codeply') return WRITER;
+  if (cfg.provider === 'ollama') {
+    const isLocal = /localhost|127\.0\.0\.1/.test(cfg.ollama.host || '');
+    if (!cfg.ollama.apiKey && !isLocal) return WRITER;
+    return { id: 'writer', label: cfg.ollama.model, provider: 'ollama', model: cfg.ollama.model };
+  }
+  const section = cfg[cfg.provider];
+  if (!section || !section.apiKey) return WRITER;
+  return { id: 'writer', label: section.model, provider: cfg.provider, model: section.model };
+}
 const DESIGN_HELPER = { id: 'design', label: 'Codeply Design', provider: 'openrouter', model: 'google/gemma-4-26b-a4b-it:free' };
 
 // A whole new page/site/app from scratch is a real design decision (layout,
@@ -69,7 +98,7 @@ function planTurn(message, hasImage) {
   const text = String(message || '');
   return {
     needsDesign: BIG_DESIGN_RE.test(text) || DESIGN_ADVICE_RE.test(text),
-    writer: WRITER,
+    writer: effectiveWriter(),
   };
 }
 

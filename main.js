@@ -10,13 +10,17 @@
  * chrome, chat session persistence, and the approval bridge between the
  * agent's ctx.approve() callback and the renderer's Accept/Reject UI.
  */
-const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, Tray, Menu, nativeImage, powerSaveBlocker, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const { execSync } = require('child_process');
 const QRCode = require('qrcode');
+// Loads a local, gitignored .env for the OAuth app credentials below (see
+// .env.example) — a no-op in a packaged build with no .env shipped alongside
+// it, so this only ever affects a from-source dev run.
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 // ─── CLI engine location ────────────────────────────────────────────────────
 // The engine is bundled INSIDE this app now (./codeply-cli), not loaded from
@@ -44,11 +48,11 @@ let agentMod = null;      // ESM: { runAgent, buildProjectContext }
 let authLib = null;       // CJS: auth.js
 let configLib = null;     // CJS: config.js
 let applyLimitLib = null; // CJS: apply-limit.js — the same 100/day cap the CLI and desktop app share
-let subscriptionLib = null; // CJS: subscription.js — reads the `subscriptions` table, tier-based caps
 let skillsLib = null;     // CJS: skills.js
 let routerLib = null;     // CJS: model-router.js — task-based model routing
 let aiLib = null;         // CJS: ai.js — used directly by Task Maker for its own planning call
 let oauthLib = null;      // CJS: oauth-connectors.js — Gmail/Slack OAuth + real API calls
+let subagentsLib = null;  // CJS: subagents.js — the 8 named specialist personas
 
 async function loadEngine() {
   if (agentMod) return true;
@@ -70,11 +74,11 @@ async function loadEngine() {
   authLib = require(path.join(CLI_DIR, 'lib', 'auth.js'));
   configLib = require(path.join(CLI_DIR, 'lib', 'config.js'));
   applyLimitLib = require(path.join(CLI_DIR, 'lib', 'apply-limit.js'));
-  subscriptionLib = require(path.join(CLI_DIR, 'lib', 'subscription.js'));
   skillsLib = require(path.join(CLI_DIR, 'lib', 'skills.js'));
   routerLib = require(path.join(CLI_DIR, 'lib', 'model-router.js'));
   oauthLib = require(path.join(CLI_DIR, 'lib', 'oauth-connectors.js'));
   aiLib = require(path.join(CLI_DIR, 'lib', 'ai.js'));
+  subagentsLib = require(path.join(CLI_DIR, 'lib', 'subagents.js'));
   agentMod = await import(pathToFileURL(agentPath).href);
   return true;
 }
@@ -92,15 +96,11 @@ function loadStore() {
   try { store = { ...store, ...JSON.parse(fs.readFileSync(storePath, 'utf8')) }; } catch {}
 
   // Migration: a stored `autoRouting: false` is always stale. No current code
-  // path writes it — it survives only from an older build where picking a
-  // named model pinned routing off — and there is no way to see it, let alone
-  // clear it, from the UI: models:list reports 'auto' as active
-  // unconditionally, so the picker kept reading "Auto" while every message
-  // silently went to whatever provider ~/.codeply/config.json still named.
-  // That's exactly how a retired pinned model (stealth/ox-alpha) kept
-  // answering "hi" long after Auto was supposed to own the turn. Dropping the
-  // key restores the default rather than pinning it on, so a future real
-  // "routing off" switch would still work.
+  // path writes it — it survives only from an older build that had an
+  // in-app model picker capable of pinning a provider and turning routing
+  // off, which no longer exists (Auto is the only mode now). Dropping the
+  // key restores the default rather than leaving an old install silently
+  // stuck on whatever provider ~/.codeply/config.json happened to still name.
   if (store.autoRouting === false) {
     delete store.autoRouting;
     saveStore();
@@ -177,11 +177,39 @@ function renameSessionInDb(id, title) {
   }).catch(() => {});
 }
 
+// Fired once, right after a brand-new session's first turn finishes — swaps
+// the raw truncated-first-message title for a short AI-written one, the same
+// way ChatGPT/Claude retitle a chat once there's enough to summarize. Never
+// awaited by the caller: a slow or failed title call should never hold up
+// `run_finished`, so any failure here just leaves the truncated title in place.
+async function generateSessionTitle(session) {
+  try {
+    const firstUser = session.messages.find((m) => m.kind === 'user');
+    const firstAssistant = session.messages.find((m) => m.kind === 'assistant');
+    if (!firstUser) return;
+    const transcript = `User: ${(firstUser.text || '').slice(0, 500)}` +
+      (firstAssistant ? `\nAssistant: ${(firstAssistant.text || '').slice(0, 500)}` : '');
+    const r = await aiLib.chat([{
+      role: 'user',
+      content: `Write a short title (3-6 words, title case, no quotes, no trailing punctuation) that names what this chat is about. Reply with only the title, nothing else.\n\n${transcript}`,
+    }], { maxTokens: 20 });
+    if (!r.success) return;
+    const raw = r.data.choices?.[0]?.message?.content || '';
+    const title = raw.trim().replace(/^["'“”]+|["'“”]+$/g, '').split('\n')[0].slice(0, 60);
+    if (!title || !store.sessions.includes(session)) return;
+    session.title = title;
+    saveStore();
+    renameSessionInDb(session.id, title);
+    sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
+  } catch {}
+}
+
 function sessionMeta(s) {
   const last = s.messages?.[s.messages.length - 1];
   return {
     id: s.id, title: s.title, cwd: s.cwd, updatedAt: s.updatedAt,
     preview: last?.text || last?.label || '', messageCount: s.messages?.length || 0,
+    subagentId: s.subagentId || null, parentSessionId: s.parentSessionId || null,
   };
 }
 
@@ -283,6 +311,7 @@ function createTray() {
   tray.on('click', showWindow);
 }
 
+ipcMain.handle('win:getState', () => ({ maximized: !!(win && win.isMaximized()) }));
 ipcMain.on('win:minimize', () => win && win.minimize());
 ipcMain.on('win:maximize', () => {
   if (!win) return;
@@ -405,7 +434,6 @@ ipcMain.handle('app:init', async () => {
     needsOnboarding: !!user && !!onboarding && (!onboarding.referral_source || !onboarding.country),
     onboarding,
     usage: cfg.provider === 'codeply' ? await getUsage() : null,
-    subscription: user ? await subscriptionLib.getSubscription() : null,
     sessions: store.sessions.map(sessionMeta).sort((a, b) => b.updatedAt - a.updatedAt),
     projects: store.projects,
     lastProject: store.lastProject,
@@ -594,33 +622,6 @@ async function getUsage() {
 }
 
 ipcMain.handle('usage:get', () => getUsage());
-ipcMain.handle('subscription:get', () => subscriptionLib.getSubscription());
-ipcMain.handle('subscription:tiers', () => subscriptionLib.TIERS);
-
-// ─── Whop checkout ──────────────────────────────────────────────────────────
-// Static hosted-checkout links from the Whop dashboard, one per paid tier.
-// Codeply/api/whop-webhook.js (the sibling website's serverless webhook)
-// resolves which account to credit primarily from the metadata[user_id]/
-// metadata[plan] query params appended here — Whop passes hosted-checkout
-// query params through to the membership/payment webhook payload's metadata
-// object — with an email-match fallback on that side too. Built and opened
-// here (not in the renderer) so the signed-in user's id never has to be
-// exposed to the renderer just for this.
-const CHECKOUT_URLS = {
-  plus: 'https://whop.com/checkout/plan_hFigysllFS7Lb',
-  pro: 'https://whop.com/checkout/plan_J8zryCRASbF7J',
-  max: 'https://whop.com/checkout/plan_oicgCvMkZcyB8',
-};
-
-ipcMain.handle('checkout:open', async (e, tier) => {
-  const base = CHECKOUT_URLS[tier];
-  if (!base) return { ok: false, error: 'Unknown plan.' };
-  const userId = await getLoggedInUserId();
-  if (!userId) return { ok: false, error: 'Not signed in.' };
-  const url = `${base}?metadata[user_id]=${encodeURIComponent(userId)}&metadata[plan]=${encodeURIComponent(tier)}`;
-  await shell.openExternal(url);
-  return { ok: true };
-});
 
 // ─── Skills — the same 282-skill library the CLI's agent already searches
 // and auto-loads via use_skill/list_skills mid-run; this just gives the
@@ -635,75 +636,17 @@ ipcMain.handle('skills:list', () => {
   } catch { return []; }
 });
 
-// ─── Model picker ───────────────────────────────────────────────────────────
-// Two named presets, not a free-form model list — switching one writes
-// straight into ~/.codeply/config.json (the exact file `codeply provider
-// <name> --key <key>` would write), so a switch made here is a switch made
-// for the CLI too, same account, same config file, same as everything else
-// this app shares with it. The OpenRouter key lives ONLY in that file — it
-// is deliberately never a literal in this (tracked) source file; saveConfig()
-// merges by provider section, so switching to the ollama preset never
-// touches or clears the openrouter section's stored key, and vice versa.
-// 'auto' is not a model — it's the absence of a pin, letting model-router.js
-// pick per message. It lives in this app's own store rather than in
-// ~/.codeply/config.json because config.json must always name one concrete
-// provider+model for the CLI to use; "decide later, per message" isn't a thing
-// the CLI can act on.
-const AUTO_PRESET = { id: 'auto', label: 'Auto', desc: 'Always available. Picks the right model for the request.', auto: true, tier: 'free' };
-
+// ─── Auto routing ───────────────────────────────────────────────────────────
+// This is the only mode — no picker, no other options. Auto means Ollama's
+// Gemma 4 31B drives the whole turn (see model-router.js's WRITER), with a
+// free Gemma 4 26B (OpenRouter) doing occasional design-planning help on the
+// side. If a real BYOK provider is configured in ~/.codeply/config.json
+// (same file `codeply provider <name> --key <key>` writes), Auto respects
+// it instead — see model-router.js's effectiveWriter — but that's a config
+// file edit, not something surfaced as an in-app picker.
 function autoRoutingOn() {
   return store.autoRouting !== false; // default on for a fresh install
 }
-
-const TIER_RANK = { free: 0, plus: 1, pro: 2, max: 3 };
-
-// The picker shows the named models from subscription.js's TIERS (single
-// source of truth for what each plan actually grants) instead of the raw
-// provider/preset list — each tagged with the lowest tier that unlocks it.
-// None of them are wired to a real backend yet: picking one either sends a
-// free/under-tier user to the plan picker, or — if they're already eligible
-// — a "too many people are using this right now" placeholder, same as
-// picking Auto always has and always will actually work.
-function namedModelEntries() {
-  const order = ['plus', 'pro', 'max'];
-  const seen = new Set();
-  const entries = [];
-  for (const t of order) {
-    for (const name of subscriptionLib.TIERS[t].models) {
-      if (seen.has(name)) continue;
-      seen.add(name);
-      entries.push({ id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), label: name, tier: t });
-    }
-  }
-  return entries;
-}
-
-ipcMain.handle('models:list', async () => {
-  const presets = [AUTO_PRESET, ...namedModelEntries()];
-  const ok = await loadEngine();
-  const sub = ok ? await subscriptionLib.getSubscription() : { tier: 'free' };
-  return { presets, active: 'auto', userTier: sub.tier };
-});
-
-ipcMain.handle('models:select', async (e, presetId) => {
-  const ok = await loadEngine();
-  if (!ok) return { ok: false, error: 'Engine not available.' };
-
-  if (presetId === AUTO_PRESET.id) {
-    store.autoRouting = true;
-    saveStore();
-    return { ok: true, active: 'auto', providerLabel: 'auto' };
-  }
-
-  const entry = namedModelEntries().find((m) => m.id === presetId);
-  if (!entry) return { ok: false, error: 'Unknown model.' };
-
-  const sub = await subscriptionLib.getSubscription();
-  if (TIER_RANK[sub.tier] < TIER_RANK[entry.tier]) {
-    return { ok: false, locked: true, requiredTier: entry.tier, error: `${entry.label} requires the ${entry.tier} plan.` };
-  }
-  return { ok: false, busy: true, error: `Too many people are using ${entry.label} right now. Please try again in a bit.` };
-});
 
 // ─── Gmail / Slack integrations (real OAuth via the system browser) ───────
 // Desktop OAuth per RFC 8252: open the consent screen in the user's actual
@@ -715,6 +658,36 @@ ipcMain.handle('models:select', async (e, presetId) => {
 // same approach works for both, so one mechanism serves both.
 const GMAIL_REDIRECT_PORT = 53681;
 const SLACK_REDIRECT_PORT = 53682;
+const VERCEL_REDIRECT_PORT = 53683;
+const SUPABASE_REDIRECT_PORT = 53684;
+const GITHUB_REDIRECT_PORT = 53685;
+
+// App-wide OAuth app credentials (one registration covers every user — they
+// each still do their own one-time browser sign-in). client_id is public by
+// design; client_secret can't truly be kept secret in a shipped desktop app
+// either way, so this follows the same accepted tradeoff Google/Slack ship
+// for "installed apps" rather than standing up a token-exchange proxy. That
+// tradeoff is about a COMPILED binary, though — it does not extend to
+// plaintext in a public source repo, so these are read from the environment
+// (see .env.example) rather than hardcoded; anyone building from source
+// registers their own OAuth apps and supplies their own credentials.
+// Fill these in after registering the OAuth apps:
+//   Vercel:   vercel.com/dashboard -> Integrations Console -> New Integration (OAuth2)
+//             redirect URI: http://localhost:53683/vercel-callback
+//   Supabase: supabase.com/dashboard/org/_/apps -> New OAuth App
+//             redirect URI: http://localhost:53684/supabase-callback
+const VERCEL_CLIENT_ID = process.env.VERCEL_CLIENT_ID || '';
+const VERCEL_CLIENT_SECRET = process.env.VERCEL_CLIENT_SECRET || '';
+// The integration's "URL Slug" from the Integrations Console (its live URL is
+// vercel.com/integrations/<slug>) — required to start the install flow; the
+// client id/secret above are only used for the later token exchange.
+const VERCEL_SLUG = process.env.VERCEL_SLUG || 'codeply-craft';
+const SUPABASE_CLIENT_ID = process.env.SUPABASE_CLIENT_ID || '';
+const SUPABASE_CLIENT_SECRET = process.env.SUPABASE_CLIENT_SECRET || '';
+// GitHub: github.com/settings/developers -> OAuth Apps -> New OAuth App
+// Authorization callback URL: http://localhost:53685/github-callback
+const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID || '';
+const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET || '';
 
 const http = require('http');
 
@@ -756,12 +729,18 @@ function awaitOAuthRedirect(authUrl, port, path, providerLabel) {
 
 ipcMain.handle('integrations:status', async () => {
   const ok = await loadEngine();
-  if (!ok) return { gmail: null, slack: null };
+  if (!ok) return { gmail: null, slack: null, vercel: null, supabase: null, github: null };
   const gmail = configLib.getIntegration('gmail');
   const slack = configLib.getIntegration('slack');
+  const vercel = configLib.getIntegration('vercel');
+  const supabase = configLib.getIntegration('supabase');
+  const github = configLib.getIntegration('github');
   return {
     gmail: gmail.accessToken ? { connected: true, email: gmail.email } : { connected: false },
     slack: slack.accessToken ? { connected: true, teamName: slack.teamName } : { connected: false },
+    vercel: vercel.accessToken ? { connected: true, userName: vercel.userName } : { connected: false },
+    supabase: supabase.accessToken ? { connected: true, email: supabase.email } : { connected: false },
+    github: github.accessToken ? { connected: true, userName: github.userName } : { connected: false },
   };
 });
 
@@ -810,6 +789,75 @@ ipcMain.handle('integrations:connectSlack', async () => {
       teamName: result.team?.name || '',
     });
     return { ok: true, teamName: result.team?.name || '' };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('integrations:connectVercel', async () => {
+  const ok = await loadEngine();
+  if (!ok) return { ok: false, error: 'Engine not available.' };
+  const stored = configLib.getIntegration('vercel');
+  const clientId = stored.clientId || VERCEL_CLIENT_ID;
+  const clientSecret = stored.clientSecret || VERCEL_CLIENT_SECRET;
+  const slug = stored.slug || VERCEL_SLUG;
+  if (!clientId || !clientSecret) return { ok: false, error: 'No Vercel client ID/secret configured yet.' };
+  if (!slug) return { ok: false, error: 'No Vercel integration slug configured yet.' };
+  const redirectUri = `http://localhost:${VERCEL_REDIRECT_PORT}/vercel-callback`;
+  try {
+    const authUrl = oauthLib.buildVercelAuthUrl(slug);
+    const code = await awaitOAuthRedirect(authUrl, VERCEL_REDIRECT_PORT, '/vercel-callback', 'Vercel');
+    const tokens = await oauthLib.exchangeVercelCode(clientId, clientSecret, code, redirectUri);
+    const userName = await oauthLib.getVercelProfile(tokens.access_token).catch(() => '');
+    configLib.saveIntegration('vercel', {
+      accessToken: tokens.access_token,
+      teamId: tokens.team_id || '',
+      userName,
+    });
+    return { ok: true, userName };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('integrations:connectSupabase', async () => {
+  const ok = await loadEngine();
+  if (!ok) return { ok: false, error: 'Engine not available.' };
+  const stored = configLib.getIntegration('supabase');
+  const clientId = stored.clientId || SUPABASE_CLIENT_ID;
+  const clientSecret = stored.clientSecret || SUPABASE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return { ok: false, error: 'No Supabase client ID/secret configured yet.' };
+  const redirectUri = `http://localhost:${SUPABASE_REDIRECT_PORT}/supabase-callback`;
+  try {
+    const authUrl = oauthLib.buildSupabaseAuthUrl(clientId, redirectUri);
+    const code = await awaitOAuthRedirect(authUrl, SUPABASE_REDIRECT_PORT, '/supabase-callback', 'Supabase');
+    const tokens = await oauthLib.exchangeSupabaseCode(clientId, clientSecret, code, redirectUri);
+    configLib.saveIntegration('supabase', {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token || configLib.getIntegration('supabase').refreshToken,
+      expiresAt: Date.now() + (tokens.expires_in || 3600) * 1000,
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('integrations:connectGithub', async () => {
+  const ok = await loadEngine();
+  if (!ok) return { ok: false, error: 'Engine not available.' };
+  const stored = configLib.getIntegration('github');
+  const clientId = stored.clientId || GITHUB_CLIENT_ID;
+  const clientSecret = stored.clientSecret || GITHUB_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return { ok: false, error: 'No GitHub client ID/secret configured yet.' };
+  const redirectUri = `http://localhost:${GITHUB_REDIRECT_PORT}/github-callback`;
+  try {
+    const authUrl = oauthLib.buildGithubAuthUrl(clientId, redirectUri);
+    const code = await awaitOAuthRedirect(authUrl, GITHUB_REDIRECT_PORT, '/github-callback', 'GitHub');
+    const tokens = await oauthLib.exchangeGithubCode(clientId, clientSecret, code, redirectUri);
+    const userName = await oauthLib.getGithubProfile(tokens.access_token).catch(() => '');
+    configLib.saveIntegration('github', { accessToken: tokens.access_token, userName });
+    return { ok: true, userName };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -1095,10 +1143,14 @@ ipcMain.handle('project:remove', (e, p) => {
 
 ipcMain.handle('session:get', (e, id) => store.sessions.find((s) => s.id === id) || null);
 
-ipcMain.handle('session:delete', (e, id) => {
+function deleteSessionRecord(id) {
   store.sessions = store.sessions.filter((s) => s.id !== id);
   saveStore();
   deleteSessionFromDb(id);
+}
+
+ipcMain.handle('session:delete', (e, id) => {
+  deleteSessionRecord(id);
   return { ok: true };
 });
 
@@ -1108,6 +1160,25 @@ ipcMain.handle('session:rename', (e, { id, title }) => {
   session.title = title;
   saveStore();
   renameSessionInDb(id, title);
+  return { ok: true };
+});
+
+// ─── Subagents ──────────────────────────────────────────────────────────────
+// The 8 named specialists (lib/subagents.js) a chat can be pinned to. Mascot
+// art ships at assets/agents/<mascot> and is loaded straight off disk by the
+// renderer (index.html is itself loaded via file://, so a plain relative
+// <img src> works with no IPC round-trip needed for the image bytes).
+ipcMain.handle('subagents:list', async () => {
+  const ok = await loadEngine();
+  return ok ? subagentsLib.listSubagentsMeta() : [];
+});
+
+ipcMain.handle('session:setSubagent', (e, { id, subagentId }) => {
+  const session = store.sessions.find((s) => s.id === id);
+  if (!session) return { ok: false };
+  session.subagentId = subagentId || null;
+  saveStore();
+  sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
   return { ok: true };
 });
 
@@ -1255,6 +1326,88 @@ ipcMain.handle('images:search', (e, query) => searchImages(query));
 // ─── Agent runs ─────────────────────────────────────────────────────────────
 
 const activeRuns = new Map();        // sessionId -> { signal }
+
+// Dispatched specialists run unattended (bypass mode, see dispatchToSpecialist
+// below) — there's no human approving each step to naturally pace them, so
+// two of them working the same project at once could step on each other's
+// file edits or git state. Only one dispatched specialist's actual turn runs
+// at a time; a second dispatch waits its turn instead of racing the first.
+// The main/coordinator chat itself is never gated by this — only sessions
+// with a parentSessionId (i.e. spawned via dispatch_agent) queue here.
+let specialistLockTail = Promise.resolve();
+function runExclusive(fn) {
+  const result = specialistLockTail.then(fn, fn);
+  specialistLockTail = result.catch(() => {});
+  return result;
+}
+
+// Keeps the machine from auto-sleeping mid-run — a long agent task (several
+// minutes of tool calls) getting killed by Windows' own sleep timer would be
+// a much worse failure than the small battery/idle cost of blocking it. This
+// only blocks system SLEEP, not the display turning off, and only for as
+// long as at least one run is actually active — the moment the last one
+// finishes, sleep behaves completely normally again. It does NOT make the
+// app reachable while the PC is actually off or fully asleep already — a
+// local desktop process can't run without the machine being on; that would
+// need the agent to execute somewhere else entirely (a server/cloud sandbox),
+// which is a real architecture change, not a setting to flip here.
+let sleepBlockerId = null;
+function updateSleepBlocker() {
+  if (activeRuns.size > 0) {
+    if (sleepBlockerId === null || !powerSaveBlocker.isStarted(sleepBlockerId)) {
+      sleepBlockerId = powerSaveBlocker.start('prevent-app-suspension');
+    }
+  } else if (sleepBlockerId !== null) {
+    powerSaveBlocker.stop(sleepBlockerId);
+    sleepBlockerId = null;
+  }
+}
+
+// A native OS notification when a run finishes — only while the window
+// isn't the focused, frontmost thing (if you're actively watching it work,
+// you already know it's done; the notification is for when you've tabbed
+// away). Clicking it brings the window back and focuses it, nothing more —
+// it doesn't need to jump to the specific chat since restoring the app
+// already lands wherever that chat was left open.
+function notifyTaskComplete(session) {
+  if (!Notification.isSupported() || !win || win.isDestroyed() || win.isFocused()) return;
+  const last = session.messages?.filter((m) => m.kind === 'assistant').at(-1);
+  const notification = new Notification({
+    title: session.title || 'Craft finished',
+    body: last?.text ? (last.text.length > 120 ? last.text.slice(0, 119) + '…' : last.text) : 'Your task is done.',
+    silent: false,
+  });
+  notification.on('click', () => {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  });
+  notification.show();
+}
+
+// Matches the wording ai.js already returns when every configured provider/
+// account has said no — rate limited, over quota, revoked, out of credit —
+// rather than a one-off transient error. Those already come back as a real,
+// clear error string; the gap reported was that going quiet with nothing but
+// an easy-to-miss inline note reads the same as the app being stuck, since
+// there's nothing that reaches you if you're not staring at the window.
+const PROVIDER_EXHAUSTED_RE = /rate limit|too many requests|quota|insufficient|billing|payment required|exceed|out of credit|both ollama accounts were tried|daily .* (limit|cap)/i;
+
+function notifyProviderExhausted(session, message) {
+  if (!Notification.isSupported() || !win || win.isDestroyed() || win.isFocused()) return;
+  const notification = new Notification({
+    title: 'Codeply Craft — out of juice',
+    body: message.length > 160 ? message.slice(0, 159) + '…' : message,
+    silent: false,
+  });
+  notification.on('click', () => {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  });
+  notification.show();
+}
+
 const pendingApprovals = new Map();  // requestId -> resolve(verdict)
 const pendingImagePicks = new Map(); // requestId -> resolve(verdict)
 let approvalCounter = 0;
@@ -1382,6 +1535,11 @@ function startRemoteServer() {
       res.writeHead(200, { 'Content-Type': 'image/png' });
       return fs.createReadStream(path.join(__dirname, 'logo.png')).pipe(res);
     }
+    if (req.method === 'GET' && /^\/agent-mascots\/[a-z]+\.png$/.test(url.pathname)) {
+      const file = path.basename(url.pathname);
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' });
+      return fs.createReadStream(path.join(__dirname, 'assets', 'agents', file)).pipe(res);
+    }
     try {
       if (req.method === 'POST' && url.pathname === '/api/pair') {
         if (Date.now() < pairLockedUntil) {
@@ -1412,14 +1570,32 @@ function startRemoteServer() {
       if (!remoteAuthorized(req, url)) return remoteJson(res, 401, { error: 'Pair this phone with Craft first.' });
       if (req.method === 'GET' && url.pathname === '/api/bootstrap') {
         const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '') || url.searchParams.get('token');
+        const engineOk = await loadEngine();
         return remoteJson(res, 200, {
           device: os.hostname(), projects: store.projects, lastProject: store.lastProject,
           sessions: store.sessions.map(sessionMeta), activeSessionIds: [...activeRuns.keys()], account: remoteTokens.get(token) || await remoteAccount(),
+          subagents: engineOk ? subagentsLib.listSubagentsMeta() : [],
+          activeAgents: activeAgentsList(),
         });
       }
       if (req.method === 'GET' && url.pathname === '/api/session') {
         const session = store.sessions.find((s) => s.id === url.searchParams.get('id'));
         return remoteJson(res, session ? 200 : 404, session || { error: 'Session not found.' });
+      }
+      // Serves a browser_check screenshot saved to disk (see the report
+      // built in browserCheck() above) — the phone can't load a
+      // file:///C:/... path itself the way the desktop app can, so a
+      // reopened chat's past screenshots need an actual HTTP route. Scoped
+      // strictly to the app's own browser-checks folder so a crafted path
+      // can't walk out to an arbitrary file on the machine.
+      if (req.method === 'GET' && url.pathname === '/api/screenshot') {
+        const checksDir = path.join(app.getPath('userData'), 'browser-checks');
+        const resolved = path.resolve(checksDir, path.basename(url.searchParams.get('path') || ''));
+        if (!resolved.startsWith(checksDir) || !fs.existsSync(resolved)) {
+          return remoteJson(res, 404, { error: 'Screenshot not found.' });
+        }
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=31536000, immutable' });
+        return fs.createReadStream(resolved).pipe(res);
       }
       // Same searchImages() the desktop's own image-pick card calls via IPC
       // (images:search) — the phone gets the identical Openverse/Wikimedia
@@ -1448,6 +1624,24 @@ function startRemoteServer() {
       if (req.method === 'POST' && url.pathname === '/api/stop') { stopChatRun(body.sessionId); return remoteJson(res, 200, { ok: true }); }
       if (req.method === 'POST' && url.pathname === '/api/approval') { respondApproval(body.requestId, body.verdict); return remoteJson(res, 200, { ok: true }); }
       if (req.method === 'POST' && url.pathname === '/api/image-pick') { respondImagePick(body.requestId, body.chosenUrl); return remoteJson(res, 200, { ok: true }); }
+      if (req.method === 'POST' && url.pathname === '/api/session/rename') {
+        const session = store.sessions.find((s) => s.id === body.sessionId);
+        if (!session) return remoteJson(res, 404, { error: 'Session not found.' });
+        const title = String(body.title || '').trim();
+        if (!title) return remoteJson(res, 400, { error: 'Title cannot be empty.' });
+        session.title = title;
+        saveStore();
+        renameSessionInDb(session.id, title);
+        sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
+        return remoteJson(res, 200, { ok: true });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/session/delete') {
+        store.sessions = store.sessions.filter((s) => s.id !== body.sessionId);
+        saveStore();
+        deleteSessionFromDb(body.sessionId);
+        sendEvent(body.sessionId, { type: 'session_deleted', sessionId: body.sessionId });
+        return remoteJson(res, 200, { ok: true });
+      }
       return remoteJson(res, 404, { error: 'Not found.' });
     } catch (err) { return remoteJson(res, 400, { error: err.message || 'Request failed.' }); }
   });
@@ -1551,7 +1745,7 @@ function looksMultiPart(text) {
 async function planTaskList(text, route) {
   const prompt = `A user sent this message to a coding agent. Decide whether it actually contains more than one distinct, separately actionable instruction (e.g. "change the button color to blue and make the heading font bigger, then on the settings page increase the padding to 5px" is 3 tasks; "fix the login bug" is 1 task — do not invent extra tasks that were not asked for).
 
-If it's genuinely more than one, break it into an ordered checklist. Each task must be specific enough to act on by itself (name the file/element/change). If it's really just one task, return exactly one task that is the request itself, worded the same way. Use at most ${MAX_TASKS} tasks.
+If it's genuinely more than one, break it into an ordered checklist. Each task must be specific enough to act on by itself (name the file/element/change) AND have a concrete, checkable deliverable — a file written or changed, a feature that now works. Never emit a standalone task that is just reading, exploring, or "understanding" the code (e.g. "read index.html, app.js, and server.js to understand the structure") — that has no way to know when it's actually done, so the agent executing it just keeps re-reading indefinitely instead of finishing. Reading whatever files a task needs is something the agent already does automatically as the first step of THAT task; fold it in, never split it out on its own. If it's really just one task, return exactly one task that is the request itself, worded the same way. Use at most ${MAX_TASKS} tasks.
 
 Respond with ONLY a JSON object of the shape {"tasks": ["first task", "second task", ...]} and nothing else.
 
@@ -1574,13 +1768,71 @@ ${text}`;
  *
  * @returns {{status:'done'|'error'|'aborted', madeAnyEdit:boolean, replyText:string}}
  */
-async function runOneTurn({ session, userMessage, images, history, mode, cwd, approve, signal, route }) {
+// session.subagentId is the user's own MANUAL choice from the picker chip:
+// null ('Auto', the default) or 'general' both mean no specialist is pinned,
+// and any other value pins one specialist for the whole chat. Only a manual
+// pin ever lets a turn answer AS that specialist directly — an unpinned
+// ('Auto') turn always runs as the coordinator (persona null) now, full
+// stop, regardless of what the message is about. This used to also
+// auto-detect a specialist per message from its own text (subagents.js's
+// detectSpecialist) and color THAT SAME turn with it, which is exactly the
+// bug this replaced: asking about a security review made the main chat
+// itself become Warden and start editing files inline, instead of staying
+// Codeply and dispatching Warden as an independent background session. The
+// coordinator's own COORDINATOR_RULES (agent.mjs) is what decides who to
+// dispatch to now, not a keyword match before the model even sees the text.
+function effectiveSubagentId(session, text) {
+  if (session.subagentId === 'general') return null;
+  if (session.subagentId) return session.subagentId;
+  return null;
+}
+
+// Shows and persists the mascot badge for whoever is about to answer — the
+// top-level turn itself (subagentId from a manual pin, or Codeply the
+// coordinator when nothing's pinned), or a NAMED nested delegation the model spawned mid-turn via the generic
+// subagent tool ("have Warden review this"). Without the second case, a
+// delegation to a named specialist changed how the reply was written but
+// never showed a trace of it — the badge only ever appeared for whichever
+// persona happened to be running the top-level turn (usually General),
+// even when the actual work was done by Pixel underneath it.
+function emitSubagentBadge(session, subagentId) {
+  const specialist = subagentId && subagentsLib.getSubagent(subagentId);
+  const badge = specialist
+    ? { id: specialist.id, name: specialist.name, tagline: specialist.tagline, color: specialist.color, mascot: specialist.mascot }
+    : { id: 'general', name: 'Codeply', tagline: 'General purpose', color: '', mascot: 'general.png' };
+  sendEvent(session.id, { type: 'subagent_active', ...badge });
+  // Persisted as a real message, not just a live event — otherwise the
+  // badge only ever existed for the device that was open during the run
+  // and vanished the moment the chat was reopened or the app restarted.
+  session.messages.push({ kind: 'subagent_active', ...badge, at: Date.now() });
+}
+
+async function runOneTurn({ session, userMessage, images, history, mode, cwd, approve, signal, route, subagentId }) {
   let status = 'error';
   let madeAnyEdit = false;
   let replyText = '';
+  // Fired once, right at the top of this turn (before the model even starts
+  // replying) — whether subagentId came from a manual pin or from
+  // detectSpecialist() in subagents.js, the point is the same: the user
+  // should see WHO is answering, not just have the persona silently steer
+  // the prompt with no visible trace. No match (or an explicit General/off
+  // pick) still gets its own badge rather than showing nothing — every turn
+  // has an answerer, even when that answerer is just Codeply itself.
+  emitSubagentBadge(session, subagentId);
   try {
     const run = agentMod.runAgent({
-      userMessage, history, mode: mode || 'Build', cwd, approve, browser: browserCheck, images, signal, route,
+      userMessage, history, mode: mode || 'Build', cwd, approve, browser: browserCheck, images, signal, route, subagentId,
+      // Only the specific "a named specialist's nested run just started"
+      // moment is used here — see emitSubagentBadge above. Every other
+      // subagent progress event (generic delegations, step-by-step
+      // updates) is intentionally left unsurfaced for now: streaming a
+      // second live sub-transcript into this same chat is a bigger UI
+      // question than just "show the badge," and not what was asked for.
+      onSubagentEvent: (sub) => {
+        if (sub.type === 'start' && sub.specialistId) emitSubagentBadge(session, sub.specialistId);
+      },
+      dispatchAgent: (subagentIdToDispatch, task) => dispatchToSpecialist(session, subagentIdToDispatch, task),
+      stopAgent: (subagentIdToStop, index) => stopAgentByOrdinal(subagentIdToStop, index),
     });
     for await (const ev of run) {
       if (ev.type === 'text') {
@@ -1594,6 +1846,7 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
           kind: 'tool', name: ev.name,
           label: ev.summary || ev.args?.path || ev.args?.command || ev.args?.pattern || '',
           ok: ev.ok, args: persistedArgs, at: Date.now(),
+          screenshotPath: ev.meta?.screenshotPath || undefined,
         });
       }
       session.updatedAt = Date.now();
@@ -1603,6 +1856,9 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
       if (ev.type === 'error' && typeof ev.error === 'string' && ev.error.startsWith('TRIAL_LIMIT_REACHED: ')) {
         sendEvent(session.id, { type: 'trial_limit_reached', message: ev.error.slice('TRIAL_LIMIT_REACHED: '.length) });
       } else {
+        if (ev.type === 'error' && typeof ev.error === 'string' && PROVIDER_EXHAUSTED_RE.test(ev.error)) {
+          notifyProviderExhausted(session, ev.error);
+        }
         sendEvent(session.id, ev);
       }
       sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
@@ -1627,9 +1883,9 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
  * than 2 real tasks runs as a normal single turn with no checklist shown;
  * nothing about a plain single-ask message changes from before this existed.
  */
-async function runTaskMaker({ session, originalMessage, history, mode, cwd, approve, signal, route }) {
-  if (!looksMultiPart(originalMessage)) {
-    await runOneTurn({ session, userMessage: originalMessage, images: undefined, history, mode, cwd, approve, signal, route });
+async function runTaskMaker({ session, originalMessage, history, mode, cwd, approve, signal, route, forceClassify = false }) {
+  if (!forceClassify && !looksMultiPart(originalMessage)) {
+    await runOneTurn({ session, userMessage: originalMessage, images: undefined, history, mode, cwd, approve, signal, route, subagentId: effectiveSubagentId(session, originalMessage) });
     return;
   }
 
@@ -1638,7 +1894,7 @@ async function runTaskMaker({ session, originalMessage, history, mode, cwd, appr
     if (!plan.ok) {
       sendEvent(session.id, { type: 'helper_note', label: 'Task Maker', why: `Could not check this for multiple tasks (${plan.error}). Continuing as a single run.`, failed: true });
     }
-    await runOneTurn({ session, userMessage: originalMessage, images: undefined, history, mode, cwd, approve, signal, route });
+    await runOneTurn({ session, userMessage: originalMessage, images: undefined, history, mode, cwd, approve, signal, route, subagentId: effectiveSubagentId(session, originalMessage) });
     return;
   }
 
@@ -1673,7 +1929,7 @@ async function runTaskMaker({ session, originalMessage, history, mode, cwd, appr
       (priorSummary ? `Already completed:\n${priorSummary}\n\n` : '') +
       `Do this task now:\n${task.text}`;
 
-    const result = await runOneTurn({ session, userMessage: taskMessage, images: undefined, history: runHistory, mode, cwd, approve, signal, route });
+    const result = await runOneTurn({ session, userMessage: taskMessage, images: undefined, history: runHistory, mode, cwd, approve, signal, route, subagentId: effectiveSubagentId(session, task.text) });
 
     if (result.status === 'aborted') {
       task.status = 'skipped';
@@ -1706,7 +1962,7 @@ async function runTaskMaker({ session, originalMessage, history, mode, cwd, appr
   // or the run was stopped/aborted partway through.
   if (anyEdits && !signal.aborted) {
     const verifyMessage = 'All checklist tasks above are finished. Now verify the actual result: browser_check every page you touched or that could have been affected across all of the tasks above, look at the screenshot each check returns, and fix anything that is visibly wrong or reports an error — repeat until clean. Then give a short final summary of what was done overall.';
-    await runOneTurn({ session, userMessage: verifyMessage, images: undefined, history: runHistory, mode, cwd, approve, signal, route });
+    await runOneTurn({ session, userMessage: verifyMessage, images: undefined, history: runHistory, mode, cwd, approve, signal, route, subagentId: effectiveSubagentId(session, originalMessage) });
   } else if (anyFailed) {
     session.messages.push({
       kind: 'assistant',
@@ -1716,7 +1972,87 @@ async function runTaskMaker({ session, originalMessage, history, mode, cwd, appr
   }
 }
 
-async function startChatRun({ sessionId, cwd, mode, bypass, text, images, clientId = null }) {
+// Cross-references activeRuns (which only has session ids) against
+// store.sessions to get each active run's specialist and title — the one
+// shared shape both the desktop dashboard and the phone's Agent View sheet
+// render from (see broadcastAgentStatus below and /api/bootstrap's
+// activeAgents field).
+function activeAgentsList() {
+  const active = [];
+  for (const id of activeRuns.keys()) {
+    const s = store.sessions.find((x) => x.id === id);
+    if (s) active.push({ sessionId: s.id, subagentId: s.subagentId || null, title: s.title });
+  }
+  return active;
+}
+
+// Drives the Agent View dashboard — not scoped to one chat's event channel
+// like sendEvent, since the dashboard isn't tied to any single session.
+// Reaches both the desktop window (IPC) and any paired phone (SSE, same
+// broadcastRemote every other cross-device event already goes through) —
+// a phone open to a specialist's chat needs to know it finished exactly the
+// same way the desktop's own Agent View tab does.
+function broadcastAgentStatus() {
+  const active = activeAgentsList();
+  if (win && !win.isDestroyed()) win.webContents.send('agents:status', active);
+  broadcastRemote(null, { type: 'agents_status', active });
+}
+
+/**
+ * The fire-and-forget half of dispatch_agent (codeply-cli/lib/tools.mjs) —
+ * threaded into the agent's ctx as ctx.dispatchAgent, same as ctx.approve/
+ * ctx.browser are already host-provided capabilities (see agent.mjs's ctx
+ * object). Starts a brand-new session pinned to the given specialist and
+ * kicks off its own run via the exact same path a real user message takes
+ * (startChatRun), then returns immediately — startChatRun already does its
+ * real work in a detached IIFE it never awaits, so this doesn't either.
+ *
+ * Always bypass: nobody is watching this session to answer an approval card
+ * — the user is in the main chat or a different specialist's view — so a
+ * permission prompt here would just hang forever instead of ever being seen.
+ */
+async function dispatchToSpecialist(parentSession, subagentId, task) {
+  const result = await startChatRun({
+    sessionId: null,
+    cwd: parentSession.cwd,
+    mode: 'Build',
+    bypass: true,
+    text: task,
+    subagentId,
+    parentSessionId: parentSession.id,
+  });
+  if (result.error) throw new Error(result.error);
+  return { sessionId: result.sessionId };
+}
+
+/**
+ * The other half of the coordinator's control surface — "kill the pixel
+ * agent" in plain chat, or the stop icon in Agent View, both end up here.
+ * `index` is 1-based among that specialist's currently ACTIVE sessions,
+ * oldest first (so "pixel agent 1" means the first one that started, not an
+ * arbitrary id the user was never shown) — matches how Agent View lists them.
+ */
+function stopAgentByOrdinal(subagentId, index = 1) {
+  const active = store.sessions
+    .filter((s) => s.subagentId === subagentId && activeRuns.has(s.id))
+    .sort((a, b) => a.createdAt - b.createdAt);
+  const target = active[index - 1];
+  if (!target) return { ok: false, error: `No active session found for that specialist${index > 1 ? ` (#${index})` : ''}.` };
+  stopChatRun(target.id);
+  return { ok: true, title: target.title, sessionId: target.id };
+}
+
+/** First ~220 chars, cut at a word boundary — the parent chat gets a summary, not the dispatched specialist's full report (that stays in its own session). */
+function truncateSummary(text, max = 220) {
+  const clean = String(text || '').trim();
+  if (!clean) return '';
+  if (clean.length <= max) return clean;
+  const cut = clean.slice(0, max);
+  const lastSpace = cut.lastIndexOf(' ');
+  return (lastSpace > 40 ? cut.slice(0, lastSpace) : cut) + '…';
+}
+
+async function startChatRun({ sessionId, cwd, mode, bypass, text, images, clientId = null, subagentId, parentSessionId = null }) {
   text = String(text || '').trim();
   images = Array.isArray(images) ? images : undefined;
   if (!text && !images?.length) return { error: 'Write a task before sending it.' };
@@ -1734,8 +2070,16 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
       updatedAt: Date.now(),
       messages: [],
       alwaysAllowed: [],
+      subagentId: subagentId || null,
+      parentSessionId: parentSessionId || null,
     };
     store.sessions.unshift(session);
+  } else if (subagentId !== undefined) {
+    // Sticks for the rest of the chat once set, same as cwd — but a client
+    // that doesn't know about specialists (an older mobile build) omits the
+    // field entirely rather than sending null, so it never accidentally
+    // clears a specialist chosen from the desktop.
+    session.subagentId = subagentId || null;
   }
   if (activeRuns.has(session.id)) return { error: 'A run is already in progress for this chat.' };
 
@@ -1763,12 +2107,14 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   const signal = abortController.signal;
 
   // Which helpers (if any) this turn needs is decided once, here, from what
-  // the user actually sent — pure classification, no I/O yet. Gemma 4 31B
-  // (the Auto writer) is what actually runs the turn either way, images
-  // included; the design helper just decides whether one narrow planning
-  // call runs before it. Only
-  // applies when the user hasn't pinned a model — a pinned pick means stored
-  // config wins and `plan` stays null, so ai.js's applyRoute is a no-op.
+  // the user actually sent — pure classification, no I/O yet. The writer
+  // routerLib picks (Ollama's Gemma 4 31B by default, or the user's own BYOK
+  // provider/model when ~/.codeply/config.json names one — see
+  // model-router.js's effectiveWriter) is what actually runs the turn either
+  // way, images included; the design helper just decides whether one narrow
+  // planning call runs before it. Only applies when the user hasn't pinned a
+  // model — a pinned pick means stored config wins and `plan` stays null, so
+  // ai.js's applyRoute is a no-op.
   // Returned with the handler's result rather than pushed as an agent event:
   // for a brand-new chat the renderer doesn't know this session's id yet (it
   // learns it from this very return value), so an event sent now would be
@@ -1788,6 +2134,8 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   if (hadStaleImageEntry) saveStore();
   const alwaysAllowed = new Set(session.alwaysAllowed);
   activeRuns.set(session.id, { signal, abortController });
+  updateSleepBlocker();
+  broadcastAgentStatus();
 
   const approve = async (req) => {
     if (signal.aborted) return 'reject';
@@ -1879,20 +2227,73 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
       // split across a to-do list). runTaskMaker() itself decides
       // whether the message actually needs splitting — most sends fall
       // straight through to the exact same single runOneTurn() as always.
-      if ((mode || 'Build') === 'Build' && !turnImages?.length) {
-        await runTaskMaker({ session, originalMessage: turnMessage, history, mode, cwd, approve, signal, route });
+      // looksMultiPart()'s local pre-filter is tuned for casual human phrasing
+      // ("do this and then that") — a dispatch_agent task is a dense,
+      // structured brief the COORDINATOR wrote, which routinely bundles
+      // several concrete asks without ever using those connector words. Skip
+      // the heuristic and always ask the model to classify for those, so a
+      // genuinely multi-part specialist brief still gets a real checklist.
+      const runTurn = (mode || 'Build') === 'Build' && !turnImages?.length
+        ? () => runTaskMaker({ session, originalMessage: turnMessage, history, mode, cwd, approve, signal, route, forceClassify: !!session.parentSessionId })
+        : () => runOneTurn({ session, userMessage: turnMessage, images: turnImages, history, mode, cwd, approve, signal, route, subagentId: effectiveSubagentId(session, turnMessage) });
+
+      // Dispatched specialists (parentSessionId set) queue behind whichever
+      // one is currently running — see runExclusive above. The main chat
+      // never waits on this.
+      if (session.parentSessionId) {
+        await runExclusive(async () => { if (!signal.aborted) await runTurn(); });
       } else {
-        await runOneTurn({ session, userMessage: turnMessage, images: turnImages, history, mode, cwd, approve, signal, route });
+        await runTurn();
       }
     } catch (err) {
       sendEvent(session.id, { type: 'error', error: err.message });
       session.messages.push({ kind: 'assistant', text: `Something went wrong: ${err.message}`, at: Date.now() });
     } finally {
       activeRuns.delete(session.id);
+      updateSleepBlocker();
+      broadcastAgentStatus();
       saveStore();
       syncSessionToDb(session);
       sendEvent(session.id, { type: 'run_finished' });
       sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
+      // This session was dispatched from another chat (dispatch_agent) — a
+      // deliberately EPHEMERAL working session, not a permanent chat: once
+      // it's done (finished or killed), it reports a summary back to the
+      // parent that dispatched it and then deletes itself. The parent's
+      // summary line is the only lasting trace — nothing to dig through in
+      // Recents/Agent View afterward, since there's no session left to open.
+      if (session.parentSessionId) {
+        const parent = store.sessions.find((s) => s.id === session.parentSessionId);
+        if (parent) {
+          const lastReply = [...session.messages].reverse().find((m) => m.kind === 'assistant')?.text;
+          const specialistName = subagentsLib.getSubagent(session.subagentId)?.name || 'A specialist';
+          // signal.aborted distinguishes a real finish from a kill (the stop
+          // button, or the coordinator's own stop_agent tool) — both land in
+          // this same finally block, but they're not the same news for the
+          // parent chat to report.
+          const summary = signal.aborted
+            ? `**${specialistName}** was stopped before finishing.`
+            : lastReply
+              ? `**${specialistName}** finished: ${truncateSummary(lastReply)}`
+              : `**${specialistName}** finished its work.`;
+          parent.messages.push({ kind: 'assistant', text: summary, at: Date.now() });
+          parent.updatedAt = Date.now();
+          saveStore();
+          syncSessionToDb(parent);
+          sendEvent(parent.id, { type: 'text', text: summary });
+          sendEvent(parent.id, { type: 'session_sync', session: sessionMeta(parent) });
+        }
+        // Tell any renderer that might currently have this session open
+        // (someone clicked into it from Agent View while it was still
+        // running) before it's gone, then delete the record itself.
+        sendEvent(session.id, { type: 'session_deleted', parentSessionId: session.parentSessionId });
+        deleteSessionRecord(session.id);
+      } else {
+        notifyTaskComplete(session);
+        if (session.messages.filter((m) => m.kind === 'user').length === 1) {
+          generateSessionTitle(session);
+        }
+      }
       // Writes made during the run may have moved the shared daily counter.
       if (configLib.getConfig().provider === 'codeply') {
         getUsage().then((usage) => sendEvent(session.id, { type: 'usage_update', usage }));

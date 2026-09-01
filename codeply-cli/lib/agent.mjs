@@ -19,6 +19,7 @@ import { executeTool, TOOL_NEEDS_APPROVAL, walkFiles, resolvePath } from './tool
 const require = createRequire(import.meta.url);
 const ai = require('./ai.js');
 const skills = require('./skills.js');
+const subagentsLib = require('./subagents.js');
 
 const MAX_STEPS = 24;
 const MAX_MALFORMED_RETRIES = 3;
@@ -35,7 +36,8 @@ const FORMAT_CORRECTION =
   'closing tags complete:\n\n' +
   '<codeply:read_file>\n<path>run.html</path>\n</codeply:read_file>\n\n' +
   'Valid names: list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, ' +
-  'browser_check, gmail_send, gmail_search, slack_post_message, design_reference_search, view_images.';
+  'browser_check, gmail_send, gmail_search, slack_post_message, vercel_deploy, supabase_create_project, ' +
+  'supabase_delete_project, github_create_repo, design_reference_search, view_images, subagent, dispatch_agent, stop_agent.';
 
 const TRUNCATION_CORRECTION =
   '[system] That reply got cut off partway through the action block — the tag syntax was fine, it simply ran out of ' +
@@ -92,6 +94,25 @@ const overclaimCorrection = (missing) =>
   `${missing.length === 1 ? 'it was' : 'they were'} never actually written or edited this turn: ${missing.join(', ')}. ` +
   "Only claim what you actually did. Either write the real <codeply:write_file> or <codeply:edit_file> action block for " +
   `${missing.length === 1 ? 'it' : 'each of them'} now, or correct your summary to describe only the file(s) you truly changed.`;
+
+// Same failure mode as HALLUCINATED_COMPLETION above, but for the coordinator
+// specifically: a reply that says it handed a task off, with no action block
+// at all, means dispatch_agent never actually ran — the user is told a
+// specialist is on it while nothing is really happening. Kept to a narrow,
+// distinctly dispatch-shaped verb set (not "sent"/"assigned" — too generic,
+// e.g. "I've sent the email" from an unrelated gmail_send narration) to
+// avoid flagging ordinary prose that just happens to use a similar word.
+const HD_VERB = "(?:dispatched|delegated|handed\\s+(?:this\\s+)?off)";
+const HALLUCINATED_DISPATCH = new RegExp(
+  `\\bi(?:'ve|\\s+have)\\s+(?:${HC_ADVERB}\\s+){0,2}${HD_VERB}\\b` +
+  `|\\b(?:has|have)\\s+been\\s+${HD_VERB}\\b`,
+  'i',
+);
+const HALLUCINATED_DISPATCH_CORRECTION =
+  "[system] Your last reply says you dispatched or handed this off to a specialist, but it contained no action block — " +
+  "dispatch_agent was never actually called this turn, so nothing is really running. Do not narrate a dispatch as done " +
+  "that you have not done. Either write the real <codeply:dispatch_agent> action block now, or say plainly that you " +
+  "haven't dispatched it yet.";
 
 const MAX_HALLUCINATION_RETRIES = 3;
 
@@ -157,9 +178,15 @@ const PARAMS = {
   gmail_send: ['to', 'subject', 'body'],
   gmail_search: ['query'],
   slack_post_message: ['channel', 'text'],
+  vercel_deploy: ['path'],
+  supabase_create_project: ['name'],
+  supabase_delete_project: ['name', 'ref'],
+  github_create_repo: ['path', 'name'],
   design_reference_search: ['term', 'category'],
   view_images: ['urls'],
   subagent: ['name', 'task'],
+  dispatch_agent: ['name', 'task'],
+  stop_agent: ['name', 'index'],
 };
 
 // Names the model actually reaches for when it paraphrases the format.
@@ -186,13 +213,22 @@ const NAME_ALIASES = {
   gmail_search: 'gmail_search', gmailsearch: 'gmail_search', searchemail: 'gmail_search', searchgmail: 'gmail_search',
   slack_post_message: 'slack_post_message', slackpostmessage: 'slack_post_message',
   slackmessage: 'slack_post_message', slackpost: 'slack_post_message', postmessage: 'slack_post_message',
+  vercel_deploy: 'vercel_deploy', vercel: 'vercel_deploy', deploy: 'vercel_deploy', publish: 'vercel_deploy', vercelpublish: 'vercel_deploy',
+  supabase_create_project: 'supabase_create_project', supabase: 'supabase_create_project', createproject: 'supabase_create_project',
+  createdatabase: 'supabase_create_project', makedatabase: 'supabase_create_project', create_database: 'supabase_create_project',
+  supabase_delete_project: 'supabase_delete_project', deletesupabaseproject: 'supabase_delete_project',
+  deletedatabase: 'supabase_delete_project', removedatabase: 'supabase_delete_project', delete_database: 'supabase_delete_project',
+  github_create_repo: 'github_create_repo', github: 'github_create_repo', creategithubrepo: 'github_create_repo',
+  createrepo: 'github_create_repo', pushtogithub: 'github_create_repo',
   design_reference_search: 'design_reference_search', designreferencesearch: 'design_reference_search',
   designreference: 'design_reference_search', referencesearch: 'design_reference_search',
   designlibrary: 'design_reference_search', searchdesignlibrary: 'design_reference_search',
   view_images: 'view_images', viewimages: 'view_images', viewimage: 'view_images',
   lookatimages: 'view_images', lookatimage: 'view_images', seeimages: 'view_images',
-  subagent: 'subagent', subtask: 'subagent', delegate: 'subagent', spawnagent: 'subagent',
-  spawn_agent: 'subagent', dispatchagent: 'subagent', taskagent: 'subagent',
+  subagent: 'subagent', subtask: 'subagent', spawnagent: 'subagent',
+  spawn_agent: 'subagent', taskagent: 'subagent',
+  dispatch_agent: 'dispatch_agent', dispatchagent: 'dispatch_agent', delegate: 'dispatch_agent',
+  stop_agent: 'stop_agent', stopagent: 'stop_agent', killagent: 'stop_agent', kill: 'stop_agent',
 };
 
 // Any tag whose name resolves to an action, with or without the codeply: prefix.
@@ -497,6 +533,28 @@ The message to post.
 </text>
 </codeply:slack_post_message>
 
+<codeply:vercel_deploy>
+<path>.</path>
+</codeply:vercel_deploy>
+
+<codeply:supabase_create_project>
+<name>my-project</name>
+</codeply:supabase_create_project>
+
+<codeply:supabase_delete_project>
+<name>my-project</name>
+</codeply:supabase_delete_project>
+
+<codeply:github_create_repo>
+<path>.</path>
+<name>my-project</name>
+</codeply:github_create_repo>
+
+<codeply:stop_agent>
+<name>Pixel</name>
+<index>1</index>
+</codeply:stop_agent>
+
 <codeply:design_reference_search>
 <term>to-do list</term>
 <category>productivity</category>
@@ -515,6 +573,14 @@ back what you found.
 </task>
 </codeply:subagent>
 
+<codeply:dispatch_agent>
+<name>Pixel</name>
+<task>
+Build a responsive pricing page at pricing.html matching the site's existing
+design system, with three tiers (Free/Pro/Team) and a FAQ section.
+</task>
+</codeply:dispatch_agent>
+
 RULES
 - Write at most ONE action block per reply, then stop and wait for its result.
 - Do not waste steps. Every action block costs the user several seconds, so never
@@ -530,7 +596,11 @@ RULES
 - edit_file for changes to an existing file. write_file only for new files or a genuine full rewrite.
 - Prefer run for anything you can check mechanically.
 - run executes a real shell command on the user's own machine, in their own project directory, with their own git/gh credentials already configured — the exact same terminal they'd get typing it themselves. That includes git add, git commit, git push, gh pr create, npm install, or anything else. Never tell the user you don't have terminal or network access, or that you can't run a command — if it's a shell command, write a <codeply:run> action block and run it for real. Do not just describe what the command would do.
+- If a task needs a CLI that turns out not to be installed, install it yourself with the platform's own package manager (winget on Windows, brew on macOS, apt/apt-get on Linux) via run before falling back to a manual workaround — do not immediately hand the user a "go do this in a browser" set of steps just because a binary is missing; installing it is itself a shell command. The one thing you genuinely cannot do unattended is an interactive auth step a CLI requires after installing (e.g. gh auth login opening a browser for a device code) — if the install succeeds but the tool then reports it isn't authenticated, that specific login step is the only part to ask the user for, not the whole task.
+- Deploying to Vercel, creating a Supabase project, or creating a new GitHub repo and pushing to it are NOT CLI tasks here — do not install or shell out to the vercel CLI, the supabase CLI, or gh repo create for these. Use vercel_deploy, supabase_create_project, and github_create_repo instead: they call the connected account directly (once the user has connected it from the Integrations panel), with no separate CLI login step and no "go create an empty repo on github.com first." If one reports its integration isn't connected, say so plainly and point the user to the Integrations panel — do not fall back to the CLI/manual route as a workaround, and do not install the vercel/supabase CLI to route around a missing connection.
+- Creating a remote repo, pushing code, enabling Pages, or deploying anything are exactly the kind of claim covered by "never report success you did not verify" above — and the easiest one to get wrong, because each step's own command can silently no-op or partially fail while a LATER step still appears to succeed. Concretely: run whoami equivalents (gh api user, gh auth status) to get the real signed-in username BEFORE building any URL with it — never guess a username from the OS account name, the folder name, or anything the user said earlier that could be stale; after gh repo create or git push, treat the command's own exit code and printed output as the only source of truth for whether it worked, not your prior turn's summary of what you intended to do — a command you ran two turns ago having succeeded is not evidence this turn's retry did too; and never hand the user a repository/deployment URL you have not just confirmed resolves (curl -I it, or read it back from the command's own output) — a plausible-looking URL built from a guessed username/slug is a fabrication even if the pattern is usually right.
 - gmail_send and slack_post_message send a real email or a real Slack message the moment they run — there is no draft state, no "preview" mode. Only use them when the user actually asked for that email/message to go out, never speculatively, never as a way to "show" them what it would say. If gmail_search or a prior message makes clear Gmail/Slack isn't connected, say so plainly and stop — do not retry hoping it connects itself, and do not claim you sent something when the tool reported it wasn't connected.
+- vercel_deploy, supabase_create_project, supabase_delete_project, and github_create_repo are the same category as gmail_send/slack_post_message above: real, immediate action the moment they run — a live production deployment, a newly provisioned cloud database with its own bill, a brand-new repository pushed with the user's code. Only use them when the user actually asked for that outcome, never speculatively "to check if it would work." If one reports its integration isn't connected, say so plainly and stop rather than retrying or working around it. supabase_delete_project is the sharpest of these — it permanently destroys a database with no undo — so only reach for it when the user has clearly asked to delete or remove a specific project, never as cleanup for something that merely looks unused.
 - Every image in generated markup must be a local file, downloaded with fetch_image. NEVER write an <img> or CSS background-image pointing straight at loremflickr.com, picsum.photos, or any other live generator URL — those are redirect services that return a DIFFERENT random photo on every single request, so the page shows a different (sometimes completely unrelated) image on every reload, every redeploy, every visitor. Always fetch_image the URL to a real path under assets/ first, then reference that local path in the markup. If the user hasn't given you specific photos and the site needs placeholder imagery, fetch_image from https://loremflickr.com/<width>/<height>/<keyword1>,<keyword2> — it pulls a real tagged photo matching those keywords, no API key needed. Pick keywords that actually describe THAT section's subject (a tea shop's hero: 'tea,leaves' or 'matcha,ceremony', not generic filler) — never use a source that returns fully random, unrelated stock photos (e.g. picsum.photos) on a themed site; a beach or a crowd photo under a tea brand's "Our Heritage" section is worse than no image. If a downloaded placeholder turns out to be a broken/static-noise "no match" image or is visibly unrelated to its section once you look at the page, delete it and fetch_image again with more specific keywords — do not leave a wrong or corrupted image in place.
 - If a SKILLS entry below is a clear match for the task, use_skill it before starting — its instructions take priority over your own default approach for that kind of work. Do not use_skill speculatively; only when a listed skill actually matches what you are about to do. A name under LIKELY RELEVANT TO THIS REQUEST, if that section is present, was matched against your actual request from the full library — treat it exactly the same way: use_skill it before starting unless it's obviously a false match, do not silently ignore it in favor of guessing your own approach.
 - EXCEPTION — this one is not speculative: if the task is to build or restyle any page a human will look at in a browser (a landing page, a small-business site, a portfolio, a dashboard, any HTML/CSS/UI), use_skill 'premium-web-design' before writing markup, even if the brief sounds tiny or mundane ("a site for a tea shop"). A plain-sounding brief is not permission for a flat, default-Bootstrap-looking result — Codeply's bar is that every generated page reads as deliberately designed. Skip this only if the user explicitly asked for something minimal/utilitarian/no-frills.
@@ -539,9 +609,10 @@ RULES
 - design_reference_search searches a private library built ahead of time (914 real apps, 6,433 screenshots from official App Store listings, covering productivity/finance/shopping/social/travel/food_delivery/health_fitness/education/entertainment/real_estate). A category filter narrows results; term alone searches across all categories. Same fetch_image requirement applies — see the rule above.
 - EXCEPTION — also not speculative, and it is the LAST thing you do before replying, not something you might get to: if you wrote or edited any HTML/CSS/JS/frontend file this turn, browser_check the actual page that changed (not just the file you touched — file:///<absolute path> for a static file, or http://localhost:<port> if the project needs a server, start one with run first if nothing is serving yet) BEFORE telling the user it's done. A page you have not opened is a page you do not know works. When it's available, the result includes an actual screenshot of the page as it just rendered, not only a text extraction — look at that image before judging the page correct; a layout that's visually broken, a section that's misaligned, or an image that rendered as a broken-icon placeholder won't always show up as a console error or missing text, so text-only reasoning is not enough. Read the report like a bug filed against you: an error names a file and often a line, and the screenshot shows you what a user would actually see — go fix whichever is wrong, then browser_check the same page again, and repeat until both the report and the screenshot come back clean. Do not call two checks "the same" or "different" from memory or assumption — judge each one from what that check actually returned. A fix in a shared file (a stylesheet, a component several pages import) can affect pages you did not start from — browser_check those too before you finish. Skip this only if browser_check reports itself unavailable (say so once, then continue from the source) or the task has no page to render (a CLI script, a backend-only route).
 - subagent hands a self-contained task to a second, independent copy of you, with its own fresh context and its own step budget, running inside this same session. Reach for it to parallelize genuinely independent chunks of a bigger job (e.g. "audit these three unrelated modules" as three subagent calls, or "research X while I keep editing Y") or to keep a long investigation's exploratory reads/searches out of YOUR context so you stay focused on the main thread. A subagent can read, search, run commands, and — if the task calls for it — write or edit files; every write/edit/run it performs still goes through the same approval prompt the user sees for your own actions, so it has no more authority than you do. Give it a short <name> and a <task> that is fully self-contained: it cannot see this conversation, so state everything it needs to know (paths, the exact goal, what "done" looks like) inside the task text itself. It reports back a summary as this tool's result — read that summary and continue; do not re-do the work it already did. Subagents cannot themselves spawn further subagents. Do not use it for small one-step lookups you could just do yourself in the next action block — the overhead of a whole nested run only pays off for real, multi-step, delegable chunks of work.
+- Seven named specialists exist for this — pass one as <name> exactly and the subagent actually takes on that persona (not just the label): frontend/Pixel (UI, components, CSS, accessibility, motion, visual hierarchy), backend/Circuit (API design, business logic, auth, concurrency), database/Index (schema, migrations, query performance, data integrity), devops/Rocket (CI/CD, deploys, infra, observability), security/Warden (vulnerability review, auth/authz, secrets, dependency risk), testing/Scout (test strategy, edge cases, regression tests, manual verification), docs/Scribe (README/API docs/comments written for a real reader). Reach for one by name when a chunk of the task is squarely that specialist's domain and would benefit from its specific standards and instincts, not just extra hands — e.g. "have Warden review this auth change" or "delegate the schema migration to Index" — rather than a generic unnamed subagent call.
 - The SKILLS list below is a subset. If the task is a specific kind of specialized work (a particular framework, a particular deliverable type) that doesn't clearly match anything listed, try list_skills with a one- or two-word query before assuming there's no skill for it — there are 281 in total, not just the ones shown.
 - STACK CHOICE — when the user asks you to build a new app/tool/site from scratch and does not say what to build it with (no "in React", "as an Electron app", "using Vite", etc.), do not silently default to a multi-file React project or an Electron shell — those add a build step, a node_modules install, and a packaging story the user did not ask for. Instead, reply with prose only (no action block) asking one short question: whether they want a single self-contained HTML file (open it straight in a browser, nothing to install) or a specific framework/Electron/React setup instead, and briefly say why a single file is the lighter default. Wait for their answer before writing any code. Skip this ask only when the user already named a stack, is clearly extending/matching an existing project's stack (react/electron files already in the folder), or explicitly said to just decide for them.
-- When the task is finished, reply with prose only and NO action block. That ends your turn.`;
+- When the task is finished, reply with prose only and NO action block. That ends your turn. If you were dispatched to this task rather than talking with the user directly (you're a specialist working independently, not the coordinator), that final reply is the ONLY thing anyone sees of your work unless they go dig through this session — end it with a short, plain-English close: what you actually did, whether it matches what was asked, and what (if anything) should happen next. Not a recap of every step, just the part someone deciding what to do next actually needs.`;
 
 const VERIFY_RULES = `VERIFYING YOUR WORK
 You are not done when the code is written. You are done when it is checked.
@@ -612,8 +683,39 @@ function buildSkillIndex(userMessage) {
   return out;
 }
 
-export function buildSystemPrompt(mode, cwd, userMessage) {
-  const parts = [MODE_PROMPT[mode] || MODE_PROMPT.Build, '', TOOL_REFERENCE];
+// Injected instead of a specialist persona whenever no specialist is pinned
+// for this turn (persona is null — see main.js's effectiveSubagentId: only a
+// manual pin from the picker chip ever exempts a turn from this). Turns the
+// top-level "Codeply" identity into a coordinator: it talks to the user and
+// hands real work to the right specialist via dispatch_agent, rather than doing it
+// itself. This is prompt-level steering, not a hard tool restriction — same
+// as every other rule in this file — so it's a real limit, not a guarantee.
+const COORDINATOR_RULES = `COORDINATOR ROLE
+You are Codeply, talking directly with the user right now. You are not one of the seven specialists (Pixel, Circuit, Index, Rocket, Warden, Scout, Scribe) — you coordinate them and report back; you do not do their work yourself.
+Read-only tools stay yours to use directly, freely, whenever they help you understand a request or check on work already done: list_dir, read_file, search, gmail_search, browser_check, list_skills, view_images, design_reference_search.
+Anything that changes something is not yours to call directly: write_file, edit_file, run, fetch_image, gmail_send, slack_post_message, vercel_deploy, supabase_create_project, supabase_delete_project, github_create_repo. For those, use dispatch_agent to hand the task to whichever specialist's expertise actually matches — frontend/UI to Pixel, backend/API to Circuit, database to Index, deployment/infra to Rocket, security to Warden, testing/QA to Scout, docs/writing to Scribe — even when the task looks small. If nothing fits cleanly, dispatch to whichever is the closest match rather than doing it yourself.
+dispatch_agent is fire-and-forget: it returns as soon as the specialist's own run has started, not once it's finished. Tell the user you've handed it off and to whom, then stop — don't wait around narrating steps you can no longer see. The specialist's own chat (and the Agent View tab) is where its real progress and approval prompts show up from here on.
+The subagent tool (not dispatch_agent) is still fine for a quick synchronous consultation you need an answer from before continuing — "does this look risky to Warden" — since that blocks and returns an answer instead of starting independent background work.
+If the user asks to stop, kill, or cancel a specialist that's currently working ("kill the pixel agent", "stop warden 1"), use stop_agent — name the specialist, and an index if they gave one (1 = the first/oldest active session for that specialist, the default when they didn't say a number). Confirm what you stopped; don't just go quiet.
+When a dispatched specialist finishes, you'll see its own summary arrive as a new message in this chat on its own — you don't need to go check on it or ask the user to.`;
+
+export function buildSystemPrompt(mode, cwd, userMessage, persona, subagentDepth) {
+  const parts = [MODE_PROMPT[mode] || MODE_PROMPT.Build];
+  // A pinned specialist persona (see lib/subagents.js) goes in right after the
+  // base mode framing and before the tool reference — it should color *how*
+  // every tool gets used (what Circuit reaches for vs. what Pixel reaches
+  // for), not compete with the tool reference for the model's attention by
+  // sitting after it. No persona at all means no specialist is active for
+  // this turn — the coordinator rules take that same slot instead, but ONLY
+  // at the top level (subagentDepth falsy/0): a nested subagent/dispatch run
+  // with no named specialist is still a worker that must actually do the
+  // task, not a second coordinator that just delegates again — dispatch_agent
+  // has no depth cap of its own, so without this guard an unnamed subagent
+  // told to write a file would just dispatch yet another run and never
+  // return real work to whoever is synchronously awaiting it.
+  if (persona) parts.push('', 'SPECIALIST PERSONA — this defines who you are for this conversation:', persona);
+  else if (!subagentDepth) parts.push('', COORDINATOR_RULES);
+  parts.push('', TOOL_REFERENCE);
   if (READ_ONLY_MODES.has(mode)) {
     parts.push('', 'MODE RESTRICTION: write_file and edit_file are disabled. Using them returns an error. run is limited to read-only commands.');
   }
@@ -731,10 +833,15 @@ async function callModel(messages, promptText, signal, route) {
  * @param {Function} [o.onSubagentEvent]  ({type:'start'|'progress'|'end', id, label, event}) => void
  *                                  fired as nested subagent runs start, step, and finish, so a host
  *                                  UI can show how many agents are active right now.
+ * @param {string}   [o.subagentId]  id of a named specialist from lib/subagents.js (e.g. 'frontend',
+ *                                  'security') pinned to this whole run — its AGENT.md persona is
+ *                                  injected into the system prompt for every turn. Unknown/omitted
+ *                                  ids are silently ignored (falls back to the plain base prompt).
  * @yields {{type:string, ...}} text | tool_start | tool_end | done | error
  */
-export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, subagentDepth, onSubagentEvent }) {
+export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, subagentDepth, onSubagentEvent, subagentId, dispatchAgent, stopAgent }) {
   const readOnly = READ_ONLY_MODES.has(mode);
+  const persona = subagentsLib.getSubagent(subagentId)?.persona || null;
   // OpenAI-shaped content array only when there's actually an image to carry —
   // every ordinary turn keeps the plain string content every other code path
   // (trimTranscript, prompt caching, dedup keys) already assumes.
@@ -742,12 +849,18 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     ? [{ type: 'text', text: userMessage }, ...images.map((dataUrl) => ({ type: 'image_url', image_url: { url: dataUrl } }))]
     : userMessage;
   const messages = [
-    { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage) },
+    { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, persona, subagentDepth) },
     ...history,
     { role: 'user', content: userContent },
   ];
 
-  const ctx = { cwd, approve, browser, signal, mode, route, subagentDepth: subagentDepth || 0, onSubagentEvent };
+  // True only for the top-level coordinator turn (no specialist persona,
+  // not itself running inside a subagent/dispatch) — see COORDINATOR_RULES
+  // above. Enforced in tools.mjs's executeTool, not just prompted: a prompt
+  // alone wasn't reliable enough to stop the model reaching for write_file/
+  // run/etc. directly instead of dispatch_agent.
+  const coordinatorOnly = !persona && !(subagentDepth || 0);
+  const ctx = { cwd, approve, browser, signal, mode, route, subagentDepth: subagentDepth || 0, onSubagentEvent, dispatchAgent, stopAgent, coordinatorOnly };
   const transcript = [{ role: 'user', content: userMessage }];
   let malformedRetries = 0;
   let truncatedRetries = 0;
@@ -791,6 +904,37 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   // Cleared the moment that path gets a real read_file or a successful edit.
   const failedEditsByPath = new Map();
   const MAX_EDIT_FAILURES_BEFORE_FORCE_READ = 2;
+  // resolved path -> next unseen line offset, once a read_file call comes back
+  // with more of the file left. A model re-requesting "the rest of this file"
+  // doesn't reliably track and restate the right offset itself — left to that,
+  // a long file often just gets re-shown from the top every time instead of
+  // actually advancing. Consulted (and rewritten) right before a read_file
+  // call executes, below; cleared once a path's edited, same as readIndexByPath.
+  const readProgressByPath = new Map();
+
+  // A model that keeps investigating without ever committing to an action —
+  // reading file after file, re-checking things it already looked at, never
+  // reaching write_file/edit_file/run — otherwise burns the whole MAX_STEPS
+  // budget on research alone and fails with nothing to show for it (the
+  // observed failure this guards against: several read_file calls in a row,
+  // no edit, straight into "Stopped after 24 steps"). DEDUPABLE's own
+  // "unchanged, reusing that result" nudge above only catches an EXACT
+  // repeat of the same call; this also has to count a DEDUPED call's own
+  // "step" toward the streak (it costs nothing extra, but still, correctly,
+  // is a step spent with nothing new to show) or a model that keeps
+  // blindly re-requesting the same thing would burn the whole loop that way
+  // without ever tripping this guard. Any tool not in this set — including a
+  // failed write/edit attempt, which is still a real attempt to act —
+  // resets the streak; only read-only, no-side-effect calls extend it.
+  const NON_PROGRESS_TOOLS = new Set(['read_file', 'list_dir', 'search', 'use_skill', 'list_skills', 'view_images', 'design_reference_search', 'browser_check']);
+  const MAX_READ_ONLY_STREAK = 5;
+  let readOnlyStreak = 0;
+  function readOnlyStreakNote() {
+    readOnlyStreak++;
+    if (readOnlyStreak < MAX_READ_ONLY_STREAK) return '';
+    readOnlyStreak = 0;
+    return ` [system] That's ${MAX_READ_ONLY_STREAK} read-only calls in a row with nothing written or run. Stop investigating — either make the actual change now (write_file/edit_file) based on what you've already seen, or state plainly what's blocking you. Do not call another read-only tool this step.`;
+  }
 
   const callKey = (name, args) => `${name}:${JSON.stringify(args)}`;
 
@@ -881,6 +1025,21 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       }
     }
 
+    // Coordinator-only: dispatch_agent is that role's mechanism, not a
+    // specialist's own — see coordinatorOnly above.
+    if (coordinatorOnly && calls.length === 0 && HALLUCINATED_DISPATCH.test(prose)) {
+      if (hallucinationRetries < MAX_HALLUCINATION_RETRIES) {
+        hallucinationRetries++;
+        messages.push({ role: 'user', content: HALLUCINATED_DISPATCH_CORRECTION });
+        continue;
+      }
+      yield {
+        type: 'error',
+        error: 'The model kept claiming it dispatched a specialist without actually doing so, even after being corrected. Try again or rephrase your request.',
+      };
+      return { transcript };
+    }
+
     if (calls.length === 0) {
       // Checked BEFORE the prose yield below, same principle as the
       // hallucination check above: a truncated or malformed reply's raw text
@@ -938,6 +1097,16 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
         content: '[note] You wrote several action blocks at once. Only the first was performed. Write one per reply.',
       });
     }
+
+    // A read_file with no <offset> on a path already partway read continues
+    // from where the last call left off, instead of silently restarting at
+    // line 1 — see readProgressByPath above. Only fills in what the model
+    // left unspecified; an explicit offset (including a deliberate 0, to
+    // recheck the top again) always wins.
+    if (call.name === 'read_file' && call.args.path && (call.args.offset === undefined || call.args.offset === null || call.args.offset === '')) {
+      const abs = resolvePath(call.args.path, cwd).abs;
+      if (readProgressByPath.has(abs)) call.args.offset = String(readProgressByPath.get(abs));
+    }
     if (recovered) {
       // It worked this time, but only because we guessed. Nudge it back on
       // format so the next step does not depend on the same guess.
@@ -971,7 +1140,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     if (DEDUPABLE.has(call.name) && servedCalls.has(callKey(call.name, call.args))) {
       messages.push({
         role: 'user',
-        content: `[tool result: ${call.name}] Unchanged since your earlier identical call — reusing that result, not re-run. Nothing new to see; move on.`,
+        content: `[tool result: ${call.name}] Unchanged since your earlier identical call — reusing that result, not re-run. Nothing new to see; move on.${readOnlyStreakNote()}`,
       });
       yield {
         type: 'tool_end', name: call.name, args: call.args, ok: true,
@@ -1035,6 +1204,8 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
         // A fresh read is exactly the course-correction we'd otherwise force —
         // no need to keep counting failures against this path anymore.
         failedEditsByPath.delete(abs);
+        if (out.meta?.hasMore) readProgressByPath.set(abs, (out.meta.offset || 0) + (out.meta.linesShown || 0));
+        else readProgressByPath.delete(abs); // the whole file has now been seen at least once
       }
       if (call.name === 'edit_file' || call.name === 'write_file') {
         madeAnyEdit = true;
@@ -1059,6 +1230,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
           servedCalls.delete(stale.key);
           readIndexByPath.delete(abs);
         }
+        readProgressByPath.delete(abs);
       }
     } else if (call.name === 'edit_file' && call.args.path) {
       // A model that keeps guessing at search text instead of re-reading the
@@ -1084,6 +1256,13 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
         role: 'user',
         content: '[note] The user declined that action. Do not retry it. Either continue without it or stop and explain what you would have done.',
       });
+    }
+
+    if (NON_PROGRESS_TOOLS.has(call.name)) {
+      const note = readOnlyStreakNote().trim();
+      if (note) messages.push({ role: 'user', content: note });
+    } else {
+      readOnlyStreak = 0;
     }
   }
 

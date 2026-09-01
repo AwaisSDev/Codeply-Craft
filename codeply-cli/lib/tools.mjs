@@ -12,7 +12,8 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { exec, execSync } from 'child_process';
+import crypto from 'crypto';
+import { exec } from 'child_process';
 import { createRequire } from 'module';
 import { searchLibrary, listCategories, designLibraryConfigured, CATEGORY_LABELS } from './design-library/query.mjs';
 
@@ -22,6 +23,7 @@ const applyLimit = require('./apply-limit.js');
 const config = require('./config.js');
 const skills = require('./skills.js');
 const oauth = require('./oauth-connectors.js');
+const subagentsLib = require('./subagents.js');
 
 // A write is a real "apply" against the shared 100/day cap only when it's
 // actually spending the shared codeply proxy — Ollama (local or the user's
@@ -165,7 +167,12 @@ async function read_file(args, ctx) {
   return {
     ok: true,
     output: truncate(`${rel} (${allLines.length} lines)\n${numbered}${more}`),
-    meta: { label: rel, count: allLines.length },
+    // offset/linesShown/hasMore let agent.mjs auto-continue a later call on
+    // this same path that omits <offset> — a model re-requesting "the rest"
+    // of a long file doesn't reliably track and restate the right offset
+    // itself, so leaving that entirely up to it meant it would often just
+    // land back at the top again instead of actually seeing new content.
+    meta: { label: rel, count: allLines.length, offset, linesShown: slice.length, hasMore: allLines.length > offset + slice.length },
   };
 }
 
@@ -489,6 +496,310 @@ async function slack_post_message(args, ctx) {
   }
 }
 
+function sanitizeProjectName(raw) {
+  const base = (raw || '').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 52);
+  return base || 'codeply-project';
+}
+
+/** Add/replace KEY=value lines in an .env file without disturbing anything else already in it. */
+function upsertEnvFile(envPath, vars) {
+  let existing = '';
+  try { existing = fs.readFileSync(envPath, 'utf8'); } catch {}
+  const lines = existing.length ? existing.split(/\r?\n/) : [];
+  for (const { key, value } of vars) {
+    const idx = lines.findIndex((l) => l.startsWith(`${key}=`));
+    const line = `${key}=${value}`;
+    if (idx === -1) lines.push(line);
+    else lines[idx] = line;
+  }
+  while (lines.length && lines[lines.length - 1] === '') lines.pop();
+  fs.writeFileSync(envPath, `${lines.join('\n')}\n`, 'utf8');
+}
+
+const VERCEL_MAX_INLINE_BYTES = 15 * 1024 * 1024; // inline base64 deploy body — plenty for a hand-built site, not an asset-heavy monorepo
+const ENV_FILENAME_RE = /^\.env(\..*)?$/;
+
+async function vercel_deploy(args, ctx) {
+  const root = args.path ? resolvePath(args.path, ctx.cwd).abs : ctx.cwd;
+  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
+    return { ok: false, output: `${args.path || '.'} is not a directory.` };
+  }
+
+  const vercel = config.getIntegration('vercel');
+  if (!vercel.accessToken) return { ok: false, output: 'Vercel is not connected. Ask the user to connect it from the Integrations panel first.' };
+
+  // .env files never ship in the deployment bundle — they exist to become
+  // Vercel project env vars (see supabase_create_project), not static files a
+  // visitor could fetch by URL.
+  const paths = walkFiles(root).filter((abs) => !ENV_FILENAME_RE.test(path.basename(abs)));
+  if (!paths.length) return { ok: false, output: `No deployable files found under ${path.relative(ctx.cwd, root) || '.'}.` };
+
+  const files = [];
+  let totalBytes = 0;
+  for (const abs of paths) {
+    const rel = path.relative(root, abs).replace(/\\/g, '/');
+    const buf = fs.readFileSync(abs);
+    totalBytes += buf.length;
+    if (totalBytes > VERCEL_MAX_INLINE_BYTES) {
+      return {
+        ok: false,
+        output: `${path.relative(ctx.cwd, root) || 'This project'} is over the ${VERCEL_MAX_INLINE_BYTES / 1e6}MB inline-deploy limit ` +
+          `(stopped at ${rel}). Remove large binary assets from the deploy folder, or deploy a smaller subdirectory.`,
+      };
+    }
+    files.push({ file: rel, data: buf.toString('base64'), encoding: 'base64' });
+  }
+
+  const projectName = sanitizeProjectName(path.basename(root));
+
+  const verdict = await ctx.approve({
+    tool: 'vercel_deploy',
+    title: `Deploy "${projectName}" to Vercel`,
+    detail: `${files.length} file(s), ${(totalBytes / 1024).toFixed(0)}KB — production deployment`,
+    danger: true,
+  });
+  if (verdict === 'reject') return { ok: false, output: `User declined the deploy of ${projectName}.`, meta: { rejected: true } };
+
+  try {
+    const deployment = await oauth.vercelDeploy(vercel.accessToken, vercel.teamId, projectName, files);
+    // Every project gets `<project-name>.vercel.app` as its default, always-
+    // public production domain — separate from (and not listed in) this
+    // deployment response's own .url (a per-deploy generated URL with a
+    // random hash) or .alias (a team-suffixed alias), both of which stay
+    // gated behind Vercel Authentication under this account's protection
+    // settings. Reporting either of those hands back a URL that looks broken
+    // to anyone without a Vercel login, even though the deploy itself worked.
+    const publicUrl = `https://${projectName}.vercel.app`;
+    return {
+      ok: true,
+      output: `Deployed "${projectName}" to Vercel — ${publicUrl} (state: ${deployment.readyState || 'unknown'}). ` +
+        `The build runs on Vercel's side — if that state isn't READY yet, it will finish shortly.`,
+      meta: { label: projectName },
+    };
+  } catch (e) {
+    return { ok: false, output: `Vercel deploy failed: ${e.message}` };
+  }
+}
+
+async function supabase_create_project(args, ctx) {
+  const supabase = config.getIntegration('supabase');
+  if (!supabase.accessToken) return { ok: false, output: 'Supabase is not connected. Ask the user to connect it from the Integrations panel first.' };
+
+  const projectName = sanitizeProjectName(args.name || path.basename(ctx.cwd));
+
+  let orgs;
+  try { orgs = await oauth.supabaseListOrganizations(supabase.accessToken); }
+  catch (e) { return { ok: false, output: `Could not look up Supabase organizations: ${e.message}` }; }
+  if (!orgs?.length) return { ok: false, output: 'No Supabase organizations found for this account — create one at supabase.com first.' };
+  const org = orgs[0];
+
+  const vercel = config.getIntegration('vercel');
+  const willPushToVercel = !!vercel.accessToken;
+  const vercelProjectName = sanitizeProjectName(path.basename(ctx.cwd));
+
+  const verdict = await ctx.approve({
+    tool: 'supabase_create_project',
+    title: `Create Supabase project "${projectName}"`,
+    detail: `Organization: ${org.name} (${org.slug}). Writes SUPABASE_URL/SUPABASE_ANON_KEY/DATABASE_URL to .env` +
+      (willPushToVercel ? ` and pushes the same to the "${vercelProjectName}" Vercel project.` : '.'),
+    danger: false,
+  });
+  if (verdict === 'reject') return { ok: false, output: `User declined creating the Supabase project.`, meta: { rejected: true } };
+
+  const dbPass = crypto.randomBytes(24).toString('base64url');
+
+  let project;
+  try {
+    project = await oauth.supabaseCreateProject(supabase.accessToken, { name: projectName, organizationSlug: org.slug, dbPass });
+  } catch (e) {
+    return { ok: false, output: `Supabase project creation failed: ${e.message}` };
+  }
+
+  let keys;
+  try {
+    keys = await oauth.supabaseGetProjectKeys(supabase.accessToken, project.ref, dbPass);
+  } catch (e) {
+    return {
+      ok: true,
+      output: `Created Supabase project "${projectName}" (ref ${project.ref}), but could not fetch its API keys yet: ${e.message} ` +
+        `The project exists — check the Supabase dashboard for its URL/anon key.`,
+      meta: { label: projectName },
+    };
+  }
+
+  const envVars = [
+    { key: 'SUPABASE_URL', value: keys.url },
+    { key: 'SUPABASE_ANON_KEY', value: keys.anonKey },
+    { key: 'DATABASE_URL', value: keys.databaseUrl },
+  ];
+
+  try {
+    upsertEnvFile(path.join(ctx.cwd, '.env'), envVars);
+  } catch (e) {
+    return {
+      ok: true,
+      output: `Created Supabase project "${projectName}" (${keys.url}), but could not write .env: ${e.message}\n` +
+        envVars.map((v) => `${v.key}=${v.value}`).join('\n'),
+      meta: { label: projectName },
+    };
+  }
+
+  let vercelNote = '';
+  if (willPushToVercel) {
+    try {
+      await oauth.vercelSetEnvVars(vercel.accessToken, vercel.teamId, vercelProjectName, envVars);
+      vercelNote = ` Pushed the same env vars to the "${vercelProjectName}" Vercel project.`;
+    } catch (e) {
+      vercelNote = ` Wrote .env locally, but pushing env vars to Vercel failed: ${e.message} (Vercel project "${vercelProjectName}" may not exist yet — deploy it first.)`;
+    }
+  }
+
+  return {
+    ok: true,
+    output: `Created Supabase project "${projectName}" (${keys.url}) and wrote SUPABASE_URL/SUPABASE_ANON_KEY/DATABASE_URL to .env.${vercelNote}`,
+    meta: { label: projectName },
+  };
+}
+
+async function supabase_delete_project(args, ctx) {
+  const supabase = config.getIntegration('supabase');
+  if (!supabase.accessToken) return { ok: false, output: 'Supabase is not connected. Ask the user to connect it from the Integrations panel first.' };
+
+  const target = (args.ref || args.name || path.basename(ctx.cwd)).trim();
+  if (!target) return { ok: false, output: 'supabase_delete_project needs a <name> or <ref> to identify the project.' };
+
+  let projects;
+  try { projects = await oauth.supabaseListProjects(supabase.accessToken); }
+  catch (e) { return { ok: false, output: `Could not look up Supabase projects: ${e.message}` }; }
+
+  // A ref (Supabase's project id, e.g. "abcdefghijklmnop") never collides
+  // with a name, so try that first before falling back to a name match.
+  let project = projects.find((p) => p.ref === target);
+  if (!project) {
+    const nameLower = sanitizeProjectName(target).toLowerCase();
+    const matches = projects.filter((p) => p.name.toLowerCase() === nameLower);
+    if (matches.length > 1) {
+      return {
+        ok: false,
+        output: `Multiple Supabase projects are named "${target}" — specify which by <ref> instead: ` +
+          matches.map((p) => `${p.ref} (${p.region})`).join(', '),
+      };
+    }
+    project = matches[0];
+  }
+  if (!project) return { ok: false, output: `No Supabase project found matching "${target}".` };
+
+  const verdict = await ctx.approve({
+    tool: 'supabase_delete_project',
+    title: `Delete Supabase project "${project.name}"`,
+    detail: `ref ${project.ref} — this permanently deletes the project and its database. Supabase does not support undo or restore.`,
+    danger: true,
+  });
+  if (verdict === 'reject') return { ok: false, output: `User declined deleting the Supabase project.`, meta: { rejected: true } };
+
+  try {
+    await oauth.supabaseDeleteProject(supabase.accessToken, project.ref);
+  } catch (e) {
+    return { ok: false, output: `Supabase project deletion failed: ${e.message}` };
+  }
+
+  return {
+    ok: true,
+    output: `Deleted Supabase project "${project.name}" (ref ${project.ref}). This did not touch .env or any Vercel env vars pointing at it — remove those separately if they're now stale.`,
+    meta: { label: project.name },
+  };
+}
+
+/** GitHub repo names allow more than Vercel/Supabase project names — letters (any case), digits, dot/dash/underscore. */
+function sanitizeRepoName(raw) {
+  const base = (raw || '').trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+  return base || 'codeply-project';
+}
+
+// Async on purpose, same as run()'s exec() below — this is the ONE thing
+// every concurrently-running session shares (Electron's single main-process
+// event loop), so a synchronous git call (execSync) here doesn't just block
+// its own turn, it freezes every other session — the main chat included —
+// for as long as it runs. That's harmless for a local `git init`/`commit`
+// (milliseconds) but genuinely dangerous for `git push`, a real network
+// call that can take seconds to tens of seconds: a synchronous push used to
+// hang the entire app solid until it finished.
+function execAsync(cmd, opts) {
+  return new Promise((resolve, reject) => {
+    exec(cmd, opts, (err, stdout) => {
+      if (err) { reject(err); return; }
+      resolve(stdout);
+    });
+  });
+}
+
+function runGit(args, cwd) {
+  return execAsync(`git ${args}`, { cwd, windowsHide: true, encoding: 'utf8', timeout: RUN_TIMEOUT_MS });
+}
+
+async function github_create_repo(args, ctx) {
+  const root = args.path ? resolvePath(args.path, ctx.cwd).abs : ctx.cwd;
+  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
+    return { ok: false, output: `${args.path || '.'} is not a directory.` };
+  }
+
+  const github = config.getIntegration('github');
+  if (!github.accessToken) return { ok: false, output: 'GitHub is not connected. Ask the user to connect it from the Integrations panel first.' };
+
+  const repoName = sanitizeRepoName(args.name || path.basename(root));
+
+  const verdict = await ctx.approve({
+    tool: 'github_create_repo',
+    title: `Create GitHub repo "${repoName}" and push`,
+    detail: `Creates a new private repo under ${github.userName || 'your account'} from ${path.relative(ctx.cwd, root) || '.'} and pushes it — no need to create the repo on github.com first.`,
+    danger: false,
+  });
+  if (verdict === 'reject') return { ok: false, output: 'User declined creating the GitHub repo.', meta: { rejected: true } };
+
+  try {
+    // Turn the folder into a repo if it isn't one yet, and make sure it has
+    // at least one commit — a brand-new GitHub repo (created with no
+    // auto_init below) starts completely empty, so pushing an empty local
+    // repo would just fail with "src refspec main does not match any".
+    const isRepo = fs.existsSync(path.join(root, '.git'));
+    if (!isRepo) await runGit('init', root);
+    let hasCommit = true;
+    try { await runGit('rev-parse HEAD', root); } catch { hasCommit = false; }
+    if (!hasCommit) {
+      await runGit('add -A', root);
+      await runGit('commit -m "Initial commit"', root);
+    }
+
+    const repo = await oauth.githubCreateRepo(github.accessToken, repoName, { private: true });
+
+    // The access token rides the remote URL only for this one push, then
+    // gets scrubbed back out — .git/config is plaintext on disk, and leaving
+    // a live token sitting in it is a real credential leak, not a theoretical
+    // one. Future pushes from the user's own terminal go through their normal
+    // Git credential helper against the clean URL instead.
+    const cleanUrl = repo.clone_url;
+    const tokenUrl = cleanUrl.replace('https://', `https://x-access-token:${github.accessToken}@`);
+    let hasOrigin = true;
+    try { await runGit('remote get-url origin', root); } catch { hasOrigin = false; }
+    await runGit(`remote ${hasOrigin ? 'set-url' : 'add'} origin ${tokenUrl}`, root);
+
+    await runGit('branch -M main', root);
+    try {
+      await runGit('push -u origin main', root);
+    } finally {
+      await runGit(`remote set-url origin ${cleanUrl}`, root);
+    }
+
+    return {
+      ok: true,
+      output: `Created ${repo.full_name} (private) and pushed ${path.relative(ctx.cwd, root) || '.'} to it — ${repo.html_url}`,
+      meta: { label: repo.full_name },
+    };
+  } catch (e) {
+    return { ok: false, output: `GitHub repo creation/push failed: ${e.message}` };
+  }
+}
+
 const BROWSER_CHECK_DEFAULT_WAIT_MS = 700;
 const BROWSER_CHECK_MAX_WAIT_MS = 5000;
 
@@ -562,7 +873,15 @@ async function browser_check(args, ctx) {
     // real image_url content part on the tool-result message (the same shape
     // already used for pasted user images) so the model actually sees the
     // page instead of only reading a text description of it.
-    meta: { label: url, clean, errorCount: report.consoleErrors?.length || 0, screenshotDataUrl: report.screenshotDataUrl || null },
+    meta: {
+      label: url, clean, errorCount: report.consoleErrors?.length || 0,
+      screenshotDataUrl: report.screenshotDataUrl || null,
+      // Persisted on the session message so a screenshot survives reopening
+      // the chat later — the data: URL above is only ever sent over the
+      // live event stream, never written to the session store (it'd bloat
+      // every saved chat by hundreds of KB per check).
+      screenshotPath: report.screenshotPath || null,
+    },
   };
 }
 
@@ -570,18 +889,20 @@ const CODEPLY_COMMIT_EMAIL = 'noreply.codeplyai@gmail.com';
 const GIT_COMMIT_RE = /\bgit\s+commit\b/;
 
 // Cached after the first run() call — a version check on every single command
-// would be wasted work, and the answer can't change mid-session.
-let gitSupportsTrailer = null;
+// would be wasted work, and the answer can't change mid-session. Cached as a
+// Promise (not the resolved boolean) so two overlapping first calls share the
+// same in-flight check instead of both firing `git --version`.
+let gitTrailerCheck = null;
 function checkGitTrailerSupport() {
-  if (gitSupportsTrailer !== null) return gitSupportsTrailer;
-  try {
-    const out = execSync('git --version', { stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).toString();
-    const m = /(\d+)\.(\d+)\.(\d+)/.exec(out);
-    gitSupportsTrailer = m ? (Number(m[1]) > 2 || (Number(m[1]) === 2 && Number(m[2]) >= 32)) : false;
-  } catch {
-    gitSupportsTrailer = false;
+  if (!gitTrailerCheck) {
+    gitTrailerCheck = execAsync('git --version', { windowsHide: true, timeout: 3000 })
+      .then((out) => {
+        const m = /(\d+)\.(\d+)\.(\d+)/.exec(out);
+        return m ? (Number(m[1]) > 2 || (Number(m[1]) === 2 && Number(m[2]) >= 32)) : false;
+      })
+      .catch(() => false);
   }
-  return gitSupportsTrailer;
+  return gitTrailerCheck;
 }
 
 /**
@@ -597,8 +918,8 @@ function checkGitTrailerSupport() {
  * or if the model already wrote its own Co-authored-by line, rather than
  * risk breaking every single commit over a flag an old git doesn't recognize.
  */
-function withCodeplyTrailer(command) {
-  if (!GIT_COMMIT_RE.test(command) || /co-authored-by/i.test(command) || !checkGitTrailerSupport()) return command;
+async function withCodeplyTrailer(command) {
+  if (!GIT_COMMIT_RE.test(command) || /co-authored-by/i.test(command) || !(await checkGitTrailerSupport())) return command;
   return command.replace(GIT_COMMIT_RE, `git commit --trailer "Co-authored-by=Codeply <${CODEPLY_COMMIT_EMAIL}>"`);
 }
 
@@ -612,7 +933,7 @@ async function run(args, ctx) {
   // in the UI, even though the real command run on disk carries the trailer.
   const displayCommand = (args.command || '').trim();
   if (!displayCommand) return { ok: false, output: 'run needs a <command>.' };
-  const execCommand = withCodeplyTrailer(displayCommand);
+  const execCommand = await withCodeplyTrailer(displayCommand);
 
   const verdict = await ctx.approve({
     tool: 'run',
@@ -833,7 +1154,8 @@ const MAX_SUBAGENT_DEPTH = 1;
  */
 async function subagent(args, ctx) {
   const task = (args.task || '').trim();
-  const label = (args.name || '').trim() || task.slice(0, 48);
+  const rawName = (args.name || '').trim();
+  const label = rawName || task.slice(0, 48);
   if (!task) return { ok: false, output: 'subagent needs a <task> describing what it should do.' };
 
   const depth = ctx.subagentDepth || 0;
@@ -847,10 +1169,20 @@ async function subagent(args, ctx) {
   const READ_ONLY = new Set(['Plan', 'Ask']);
   const childMode = READ_ONLY.has(ctx.mode) ? ctx.mode : 'Build';
 
+  // If <name> names one of the eight fixed specialists (see lib/subagents.js
+  // — "frontend", "the security specialist", "Warden", ...), the nested run
+  // gets that specialist's persona too, not just its label. Delegating to
+  // "the security specialist" then genuinely reviews like Warden would,
+  // rather than just being a generically-labeled nested run.
+  const specialist = rawName ? subagentsLib.findSubagentByName(rawName) : null;
+
   const { runAgent } = await import('./agent.mjs');
   const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
-  ctx.onSubagentEvent?.({ type: 'start', id, label });
+  // specialistId rides along so a host UI can show the actual mascot badge
+  // for a named delegation, not just a text label — see notifySubagentStart
+  // in main.js.
+  ctx.onSubagentEvent?.({ type: 'start', id, label: specialist ? `${specialist.name} (${specialist.tagline})` : label, specialistId: specialist?.id });
 
   let finalText = '';
   let steps = 0;
@@ -869,6 +1201,8 @@ async function subagent(args, ctx) {
       route: ctx.route,
       subagentDepth: depth + 1,
       onSubagentEvent: ctx.onSubagentEvent,
+      subagentId: specialist?.id,
+      dispatchAgent: ctx.dispatchAgent,
     });
     for await (const event of stream) {
       ctx.onSubagentEvent?.({ type: 'progress', id, label, event });
@@ -892,9 +1226,80 @@ async function subagent(args, ctx) {
   };
 }
 
+/**
+ * Fire-and-forget delegation to one of the seven named specialists — unlike
+ * subagent above (which blocks this turn until the nested run finishes),
+ * this starts a genuinely independent session/run and returns immediately.
+ * The specialist keeps working after this tool call returns; its progress
+ * shows up in the Agent View tab and its own chat, not streamed back here.
+ * Only ctx.dispatchAgent-capable hosts (the desktop app) support this — see
+ * browser_check above for the same "host-provided capability, absent in the
+ * plain CLI" pattern.
+ */
+async function dispatch_agent(args, ctx) {
+  const task = (args.task || '').trim();
+  const rawName = (args.name || '').trim();
+  if (!task) return { ok: false, output: 'dispatch_agent needs a <task> describing what the specialist should do.' };
+  if (!rawName) {
+    return {
+      ok: false,
+      output: `dispatch_agent needs a <name> naming one of the specialists: ${subagentsLib.listSubagents().map((s) => s.name).join(', ')}.`,
+    };
+  }
+
+  const specialist = subagentsLib.findSubagentByName(rawName);
+  if (!specialist) {
+    return { ok: false, output: `No specialist named "${rawName}" — use one of: ${subagentsLib.listSubagents().map((s) => s.name).join(', ')}.` };
+  }
+
+  if (!ctx.dispatchAgent) {
+    return {
+      ok: false,
+      output: 'dispatch_agent is not available here — starting an independent background run is only supported by ' +
+        'the Codeply Craft desktop app, not the terminal CLI. Use the subagent tool instead, or do the work directly.',
+    };
+  }
+
+  const { sessionId } = await ctx.dispatchAgent(specialist.id, task);
+  return {
+    ok: true,
+    output: `Dispatched to ${specialist.name} (${specialist.tagline}) — session ${sessionId}. ` +
+      `It's working on this independently now; open the Agent View tab or that chat to see its progress.`,
+    meta: { label: specialist.name },
+  };
+}
+
+/**
+ * "kill the pixel agent" / "stop warden 1" — the conversational half of the
+ * same kill switch Agent View's stop icon uses. `index` is 1-based among
+ * that specialist's currently active sessions, oldest first (matches the
+ * order Agent View lists them in) — omit it to mean "the only/first one".
+ */
+async function stop_agent(args, ctx) {
+  const rawName = (args.name || '').trim();
+  if (!rawName) {
+    return {
+      ok: false,
+      output: `stop_agent needs a <name> naming one of the specialists: ${subagentsLib.listSubagents().map((s) => s.name).join(', ')}.`,
+    };
+  }
+  const specialist = subagentsLib.findSubagentByName(rawName);
+  if (!specialist) {
+    return { ok: false, output: `No specialist named "${rawName}" — use one of: ${subagentsLib.listSubagents().map((s) => s.name).join(', ')}.` };
+  }
+  if (!ctx.stopAgent) {
+    return { ok: false, output: 'stop_agent is not available here — only the Codeply Craft desktop app can stop a background run.' };
+  }
+  const index = parseInt(args.index, 10) || 1;
+  const result = await ctx.stopAgent(specialist.id, index);
+  if (!result.ok) return { ok: false, output: result.error || `Could not stop ${specialist.name}.` };
+  return { ok: true, output: `Stopped ${specialist.name} — "${result.title}".`, meta: { label: specialist.name } };
+}
+
 export const TOOLS = {
   list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, browser_check,
-  gmail_send, gmail_search, slack_post_message, design_reference_search, view_images, subagent,
+  gmail_send, gmail_search, slack_post_message, vercel_deploy, supabase_create_project, supabase_delete_project, github_create_repo,
+  design_reference_search, view_images, subagent, dispatch_agent, stop_agent,
 };
 
 // browser_check, gmail_search, design_reference_search, and view_images are
@@ -905,7 +1310,7 @@ export const TOOLS = {
 // and slack_post_message are the opposite: a real email or Slack message
 // sent on the user's behalf is exactly the kind of side effect approval
 // exists for.
-export const TOOL_NEEDS_APPROVAL = new Set(['write_file', 'edit_file', 'run', 'fetch_image', 'gmail_send', 'slack_post_message']);
+export const TOOL_NEEDS_APPROVAL = new Set(['write_file', 'edit_file', 'run', 'fetch_image', 'gmail_send', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo']);
 
 /** Human-facing verb + colour hint for the transcript. */
 export const TOOL_DISPLAY = {
@@ -922,15 +1327,39 @@ export const TOOL_DISPLAY = {
   gmail_send: { verb: 'email',  icon: '✉' },
   gmail_search:{ verb: 'search', icon: '✉' },
   slack_post_message:{ verb: 'post', icon: '#' },
+  vercel_deploy:{ verb: 'deploy', icon: '▲' },
+  supabase_create_project:{ verb: 'provision', icon: '◆' },
+  supabase_delete_project:{ verb: 'delete', icon: '◆' },
+  github_create_repo:{ verb: 'push', icon: '⎇' },
   design_reference_search:{ verb: 'reference', icon: '◫' },
   view_images:{ verb: 'view', icon: '◉' },
   subagent:   { verb: 'agent', icon: '⌁' },
+  dispatch_agent:{ verb: 'dispatch', icon: '⌁' },
+  stop_agent:{ verb: 'stop', icon: '■' },
 };
+
+// Mirrors the list in agent.mjs's COORDINATOR_RULES — anything that changes
+// something is off-limits to the top-level coordinator turn (ctx.coordinatorOnly),
+// which must hand these to a specialist via dispatch_agent instead. Enforced
+// here, not just prompted: the prompt-only version wasn't reliably followed.
+const COORDINATOR_BLOCKED_TOOLS = new Set([
+  'write_file', 'edit_file', 'run', 'fetch_image', 'gmail_send', 'slack_post_message',
+  'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo',
+]);
 
 export async function executeTool(name, args, ctx) {
   const fn = TOOLS[name];
   if (!fn) {
     return { ok: false, output: `Unknown tool "${name}". Available: ${Object.keys(TOOLS).join(', ')}.` };
+  }
+
+  if (ctx.coordinatorOnly && COORDINATOR_BLOCKED_TOOLS.has(name)) {
+    return {
+      ok: false,
+      output: `${name} is not available to you directly right now — as the coordinator, hand this to the right specialist ` +
+        `with dispatch_agent instead (frontend/UI → Pixel, backend/API → Circuit, database → Index, deployment/infra → Rocket, ` +
+        `security → Warden, testing/QA → Scout, docs/writing → Scribe).`,
+    };
   }
 
   // Same cap the desktop app enforces, same account — checked BEFORE the

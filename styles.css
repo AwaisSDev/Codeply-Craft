@@ -9,7 +9,7 @@
   --titlebar-bg: #101010;
   --sidebar-bg: #161618;
   --main-bg: #1d1d20;
-  --panel-bg: var(--panel-bg);
+  --panel-bg: #232327;
   --card-bg: var(--panel-bg);
   --card-border: #333338;
   --hover: rgba(255, 255, 255, 0.06);
@@ -24,8 +24,8 @@
   --blue: #66a3ff;
   --green: #4cc38a;
   --red: #e5624d;
-  --surface-1: var(--surface-1);
-  --surface-2: var(--surface-2);
+  --surface-1: #212124;
+  --surface-2: #2c2c31;
   --purple-chip-bg: rgba(177, 154, 247, 0.14);
   --invert-bg: #ececf1;
   --invert-bg-hover: #fff;
@@ -148,7 +148,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .remote-fallback-body { margin-top: 14px; }
 .remote-url { padding: 12px; border-radius: 9px; background: var(--surface-1); border: 1px solid var(--border); color: var(--text); font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 13px; user-select: text; }
 .remote-code-label { margin-top: 16px; color: var(--text-faint); font-size: 12px; font-weight: 650; }
-.remote-code { margin-top: 7px; color: #d8cdfd; font-family: ui-monospace, "Cascadia Mono", monospace; font-weight: 750; font-size: 21px; letter-spacing: .12em; }
+.remote-code { margin-top: 7px; color: var(--accent-purple); font-family: ui-monospace, "Cascadia Mono", monospace; font-weight: 750; font-size: 21px; letter-spacing: .12em; }
 
 .remote-note { display: flex; gap: 9px; margin-top: 23px; padding-top: 17px; border-top: 1px solid var(--border); color: var(--text-dim); text-align: left; font-size: 12px; line-height: 1.45; }
 .remote-note svg { flex: 0 0 auto; width: 17px; color: var(--green); }
@@ -509,61 +509,167 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 }
 .chat-ctx-menu button:hover { background: var(--hover); }
 .chat-ctx-menu button svg { width: 15px; height: 15px; color: var(--text-dim); flex-shrink: 0; }
-.chat-ctx-menu button.danger { color: #e79082; }
-.chat-ctx-menu button.danger svg { color: #e79082; }
+.chat-ctx-menu button.danger { color: var(--red); }
+.chat-ctx-menu button.danger svg { color: var(--red); }
 .chat-ctx-menu button.danger:hover { background: rgba(229, 98, 77, 0.14); }
 
-/* ---- Model picker dropdown ---- */
-.model-menu {
+/* ---- Mascot: a ball + an eyes overlay, two independent layers, not one
+   flat pre-drawn image — see mascotHtml() in app.js. The ball breathes on
+   its own transform; the eyes blink and glance side to side on theirs.
+   Each is a SINGLE keyframes rule (not several simultaneous ones on the
+   same property) — CSS animation compositing across multiple concurrent
+   animations targeting the same property isn't reliable enough to build
+   layered motion out of, so blink+look-around and breathe+float are each
+   authored as one continuous timeline instead. ---- */
+.mascot {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  animation: subagent-bounce-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.mascot-ball {
+  display: block;
+  width: 100%;
+  height: 100%;
+  animation: mascot-ball-idle 3.4s ease-in-out 0.5s infinite;
+}
+.mascot-eyes {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 58%;
+  height: 58%;
+  animation: mascot-eyes-life 6s ease-in-out 0.5s infinite;
+}
+.mascot-xs { width: 16px; height: 16px; }
+.mascot-sm { width: 22px; height: 22px; }
+.mascot-md { width: 44px; height: 44px; }
+/* The larger picker tiles get a bit of vertical float too, small chip/badge
+   sizes stay to a plain breathe so they don't jostle inline text. */
+.mascot-md .mascot-ball { animation-name: mascot-ball-idle-float; }
+.subagent-menu-item:hover .mascot-ball,
+.subagent-menu-item.active .mascot-ball { filter: drop-shadow(0 0 10px var(--subagent-color, transparent)); }
+.subagent-menu-item:hover .mascot-eyes,
+.subagent-menu-item.active .mascot-eyes { animation-duration: 2.4s; }
+
+.subagent-menu {
   position: fixed;
-  width: 260px;
+  width: 300px;
   background: var(--panel-bg);
   border: 1px solid var(--card-border);
-  border-radius: 12px;
-  padding: 6px;
+  border-radius: 14px;
+  padding: 10px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   z-index: 40;
 }
-.model-menu-title {
+.subagent-menu-title {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-faint);
-  padding: 6px 9px 8px;
+  padding: 2px 3px 10px;
 }
-.model-menu-item {
-  display: block;
-  width: 100%;
-  padding: 8px 9px;
-  border-radius: 8px;
-  text-align: left;
+.subagent-menu-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
 }
-.model-menu-item:hover { background: var(--hover); }
-.model-menu-item-row {
+.subagent-menu-item {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
+  padding: 10px 6px 8px;
+  border-radius: 10px;
+  text-align: center;
+  border: 1px solid transparent;
 }
-.model-menu-item-name { font-size: 13.5px; font-weight: 600; color: var(--text); }
-.model-menu-item-desc {
-  margin-top: 2px;
-  font-size: 11.5px;
-  color: var(--text-dim);
-  line-height: 1.4;
+.subagent-menu-item:hover { background: var(--hover); }
+.subagent-menu-item.active {
+  background: var(--hover);
+  border-color: var(--subagent-color, var(--accent-purple));
 }
-.model-check { width: 15px; height: 15px; color: var(--accent-purple); flex-shrink: 0; }
-.model-menu-item-badge {
-  font-size: 10px;
+/* Each tile in the grid pops into place a beat after the last one — the
+   "appears, notices, bounces into place" cascade Grok Bot's own designers
+   describe tuning (spring, distance, scale, easing) rather than everything
+   just fading in at once. Targets the shared .mascot entrance plus the
+   Auto tile's plain sparkle-icon wrapper, which pops in the same way. */
+.subagent-menu-item:nth-child(1) .mascot,
+.subagent-menu-item:nth-child(1) .subagent-menu-item-general { animation-delay: 0s; }
+.subagent-menu-item:nth-child(2) .mascot,
+.subagent-menu-item:nth-child(2) .subagent-menu-item-general { animation-delay: 0.04s; }
+.subagent-menu-item:nth-child(3) .mascot,
+.subagent-menu-item:nth-child(3) .subagent-menu-item-general { animation-delay: 0.08s; }
+.subagent-menu-item:nth-child(4) .mascot,
+.subagent-menu-item:nth-child(4) .subagent-menu-item-general { animation-delay: 0.12s; }
+.subagent-menu-item:nth-child(5) .mascot,
+.subagent-menu-item:nth-child(5) .subagent-menu-item-general { animation-delay: 0.16s; }
+.subagent-menu-item:nth-child(6) .mascot,
+.subagent-menu-item:nth-child(6) .subagent-menu-item-general { animation-delay: 0.2s; }
+.subagent-menu-item:nth-child(7) .mascot,
+.subagent-menu-item:nth-child(7) .subagent-menu-item-general { animation-delay: 0.24s; }
+.subagent-menu-item:nth-child(8) .mascot,
+.subagent-menu-item:nth-child(8) .subagent-menu-item-general { animation-delay: 0.28s; }
+.subagent-menu-item-name {
+  font-size: 12px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  color: var(--accent-purple);
-  background: rgba(177, 154, 247, 0.14);
-  border-radius: 999px;
-  padding: 2px 7px;
-  flex-shrink: 0;
+  color: var(--text);
 }
-.model-menu-item-badge.locked { color: var(--text-faint); background: var(--hover); }
+.subagent-menu-item-tagline {
+  font-size: 10px;
+  color: var(--text-faint);
+  line-height: 1.3;
+}
+/* Auto is the one tile with no fixed mascot (it picks a different
+   specialist per message) — just the sparkle icon, same footprint as a
+   .mascot-md tile so the grid stays aligned. */
+.subagent-menu-item-general {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  color: var(--text-dim);
+  animation: subagent-bounce-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.subagent-menu-item-general svg { width: 20px; height: 20px; }
+
+/* The ball's idle life — a slow scale pulse, plus a gentle vertical drift
+   for the larger picker tiles only (mascot-ball-idle-float). */
+@keyframes mascot-ball-idle {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+@keyframes mascot-ball-idle-float {
+  0%, 100% { transform: scale(1) translateY(0); }
+  50% { transform: scale(1.08) translateY(-3px); }
+}
+/* The eyes' idle life — one continuous timeline, not several simultaneous
+   animations: glance left, blink, glance right, back to center, blink
+   again. Every step keeps the translate(-50%,-50%) centering offset that
+   positions the layer over the ball beneath it. */
+@keyframes mascot-eyes-life {
+  0%   { transform: translate(-50%, -50%) translateX(0) scaleY(1); }
+  18%  { transform: translate(-50%, -50%) translateX(-10%) scaleY(1); }
+  40%  { transform: translate(-50%, -50%) translateX(-10%) scaleY(1); }
+  43%  { transform: translate(-50%, -50%) translateX(-10%) scaleY(0.1); }
+  46%  { transform: translate(-50%, -50%) translateX(-10%) scaleY(1); }
+  60%  { transform: translate(-50%, -50%) translateX(10%) scaleY(1); }
+  80%  { transform: translate(-50%, -50%) translateX(0) scaleY(1); }
+  90%  { transform: translate(-50%, -50%) translateX(0) scaleY(0.1); }
+  93%  { transform: translate(-50%, -50%) translateX(0) scaleY(1); }
+  100% { transform: translate(-50%, -50%) translateX(0) scaleY(1); }
+}
+/* The Grok Bot entrance: appear small and low, overshoot past full size on
+   the way up, settle back — a spring, not a linear fade. Runs once per
+   mascot when it first shows up (the picker grid, a fresh chat badge), then
+   idle breathing/floating takes over. */
+@keyframes subagent-bounce-in {
+  0% { transform: scale(0.3) translateY(14px); opacity: 0; }
+  55% { transform: scale(1.18) translateY(-5px); opacity: 1; }
+  75% { transform: scale(0.92) translateY(2px); }
+  100% { transform: scale(1) translateY(0); }
+}
 
 /* ---- Account menu (opens from the sidebar footer) ---- */
 .account-menu {
@@ -672,18 +778,6 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.sb-user-plan-badge {
-  flex-shrink: 0;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  color: var(--accent-purple);
-  background: rgba(177, 154, 247, 0.14);
-  border-radius: 999px;
-  padding: 2px 7px;
-}
-
 /* ============ Main ============ */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--main-bg); }
 
@@ -907,20 +1001,6 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .approve-toggle.on { background: rgba(76, 195, 138, 0.12); color: #6fd8a5; }
 .approve-toggle svg { width: 15px; height: 15px; }
 
-.model-picker {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--text-dim);
-}
-.model-picker:hover { background: var(--hover); }
-.model-picker strong { font-weight: 600; color: var(--text); }
-.model-picker span { color: var(--text-dim); }
-.model-picker .chev { width: 13px; height: 13px; color: var(--text-dim); }
-
 .send-btn {
   width: 34px;
   height: 34px;
@@ -944,6 +1024,21 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 }
 .chat-title-group { display: flex; align-items: center; gap: 6px; }
 .chat-title { font-size: 14.5px; font-weight: 700; }
+.back-to-main-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  padding: 5px 9px 5px 7px;
+  border-radius: 999px;
+  background: var(--hover);
+  margin-right: 4px;
+}
+.back-to-main-btn svg { width: 14px; height: 14px; }
+.back-to-main-btn:hover { background: var(--active); color: var(--text); }
+.back-to-main-btn.hidden { display: none; }
 .dots svg { width: 15px; height: 15px; fill: currentColor; stroke: none; }
 
 .chat-body { flex: 1; position: relative; min-height: 0; display: flex; }
@@ -975,23 +1070,33 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   user-select: text;
 }
 
+/* Restart / revert — hidden until you actually hover the message, so a
+   read-only scroll through history doesn't get cluttered with icons. */
+.user-msg-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.msg.user:hover .user-msg-actions { opacity: 1; }
+.user-msg-action {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--text-faint);
+}
+.user-msg-action:hover { background: var(--hover); color: var(--text-dim); }
+.user-msg-action svg { width: 14px; height: 14px; }
+
 .msg.assistant { line-height: 1.6; font-size: 14px; user-select: text; }
 .msg.assistant p { margin-bottom: 14px; }
 .msg.assistant p:last-child { margin-bottom: 0; }
 
-.type-cursor {
-  display: inline-block;
-  width: 2px;
-  height: 15px;
-  margin-left: 2px;
-  background: var(--text-dim);
-  vertical-align: text-bottom;
-  animation: type-blink 0.85s steps(1) infinite;
-}
-@keyframes type-blink { 50% { opacity: 0; } }
 
 .msg.assistant ul { margin: 0 0 14px 8px; padding-left: 16px; }
-.msg.assistant li { margin-bottom: 8px; color: #dcdce2; }
+.msg.assistant li { margin-bottom: 8px; color: var(--text-dim); }
 
 .msg.assistant code, .bubble code {
   background: var(--code-bg);
@@ -999,8 +1104,9 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   padding: 2px 7px;
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   font-size: 12.5px;
-  color: #d7d7e0;
-  white-space: nowrap;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* ---- Tool rows ---- */
@@ -1009,6 +1115,11 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
    click-to-expand shows a chevron and a hand cursor so the affordance is
    obvious before the user ever clicks it. */
 .tool-row { margin: 8px 0 16px; }
+/* Created and appended the instant its event arrives (so tool_start's
+   "running" placeholder and tool_end's swap-in land in the right DOM
+   order), but not shown until the reveal queue reaches it — see
+   enqueueReveal() in app.js. */
+.reveal-pending { display: none; }
 .tool-row-head {
   display: flex;
   align-items: center;
@@ -1061,6 +1172,16 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   overflow-y: auto;
 }
 .tool-detail.hidden { display: none; }
+
+.tool-screenshot {
+  display: block;
+  margin: 8px 0 0 25px;
+  max-width: calc(100% - 25px);
+  max-height: 320px;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  cursor: zoom-in;
+}
 
 .spinner {
   width: 13px;
@@ -1146,10 +1267,125 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   color: var(--text-dim);
   margin: 4px 0 16px;
   padding: 8px 12px;
-  border-left: 2px solid #47474f;
+  border-left: 2px solid var(--border);
 }
-.chat-note.error { border-left-color: #e5624d; color: #e79082; }
+.chat-note.error { border-left-color: #e5624d; color: var(--red); }
 .chat-note.ok { border-left-color: #4cc38a; }
+
+/* ---- Subagent badge — which specialist is answering this turn ---- */
+.subagent-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 16px;
+  padding: 6px 12px 6px 6px;
+  border-radius: 999px;
+  width: fit-content;
+  background: var(--surface-1);
+  border: 1px solid var(--subagent-color, var(--card-border));
+  animation: subagent-bounce-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.subagent-badge-text {
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.subagent-badge-text strong { color: var(--text); }
+
+/* ---- Agent View — modal listing the 7 specialists. Tiles mirror the
+   composer's own Specialists picker (.subagent-menu-grid/-item below) —
+   that one already renders the mascot art cleanly at this size, so this
+   reuses the same treatment instead of a smaller custom row. Click a tile
+   to swap the grid for that specialist's session list, in the same modal. ---- */
+.agents-modal {
+  width: 100%;
+  max-width: 480px;
+  max-height: 78vh;
+  margin: 0 24px;
+  background: linear-gradient(180deg, var(--panel-bg), #1a1a1d);
+  border: 1px solid var(--card-border);
+  border-radius: 20px;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.agents-list { padding: 6px 18px 20px; overflow-y: auto; }
+.agents-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.agents-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px 8px;
+  border-radius: 10px;
+  text-align: center;
+  border: 1px solid transparent;
+}
+.agents-tile:hover { background: var(--hover); }
+.agents-tile.active { background: var(--hover); border-color: var(--subagent-color, var(--accent-purple)); }
+.agents-tile-name { font-size: 12px; font-weight: 700; color: var(--text); }
+.agents-tile-tagline { font-size: 10px; color: var(--text-faint); line-height: 1.3; }
+.agents-tile-status { font-size: 10px; color: var(--text-faint); }
+.agents-tile-status.active { color: #6fd8a5; font-weight: 600; }
+
+.agents-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 6px;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.agents-back-btn:hover { color: var(--text-dim); }
+.agents-back-btn svg { width: 16px; height: 16px; }
+
+.agents-session-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  border-radius: 9px;
+  color: var(--text-dim);
+}
+.agents-session-row:hover { background: var(--hover); }
+.agents-session-row.active { color: var(--text); }
+.agents-session-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 7px 8px;
+  font-size: 13px;
+  color: inherit;
+  text-align: left;
+}
+.agents-session-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agents-session-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-green, #34a853);
+}
+.agents-session-stop {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  margin-right: 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--text-faint);
+}
+.agents-session-stop svg { width: 13px; height: 13px; }
+.agents-session-stop:hover { background: rgba(229, 98, 77, 0.14); color: #e5624d; }
 
 /* ---- Task Maker checklist ---- */
 .tasklist {
@@ -1190,7 +1426,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .tasklist-status[data-status="skipped"] { background: var(--text-faint); opacity: .5; }
 .tasklist-text { color: var(--text-dim); line-height: 1.4; }
 .tasklist-row[data-status="failed"] .tasklist-text,
-.tasklist-status[data-status="failed"] ~ .tasklist-text { color: #e79082; }
+.tasklist-status[data-status="failed"] ~ .tasklist-text { color: var(--red); }
 
 /* ---- Approval cards ---- */
 .approval-card {
@@ -1214,7 +1450,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   padding: 2px 8px;
   border-radius: 999px;
   background: rgba(229, 98, 77, 0.14);
-  color: #e79082;
+  color: var(--red);
 }
 .approval-detail {
   margin-top: 6px;
@@ -1232,8 +1468,8 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   white-space: pre-wrap;
   word-break: break-all;
 }
-.diff-del { background: rgba(229, 98, 77, 0.10); color: #e7a49a; }
-.diff-add { background: rgba(76, 195, 138, 0.10); color: #9fdfc0; }
+.diff-del { background: rgba(229, 98, 77, 0.10); color: var(--red); }
+.diff-add { background: rgba(76, 195, 138, 0.10); color: var(--green); }
 .approval-actions { display: flex; gap: 8px; margin-top: 12px; }
 .appr-btn {
   padding: 6px 14px;
@@ -1245,7 +1481,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .appr-btn:hover { background: var(--surface-2); }
 .appr-btn.accept { background: var(--invert-bg); color: var(--invert-text); font-weight: 600; }
 .appr-btn.accept:hover { background: var(--invert-bg-hover); }
-.appr-btn.reject:hover { background: rgba(229, 98, 77, 0.18); color: #e79082; }
+.appr-btn.reject:hover { background: rgba(229, 98, 77, 0.18); color: var(--red); }
 
 /* ---- Image picker ---- */
 .image-picker-card {
@@ -1439,13 +1675,13 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 
 
 .model-label {
+  display: inline-block;
   font-size: 13px;
   color: var(--text-dim);
   padding: 6px 10px;
   border-radius: 8px;
   user-select: none;
 }
-.model-label:hover { background: var(--hover); }
 .model-label strong { font-weight: 600; color: var(--text); }
 
 .chip.static { cursor: default; }
@@ -1497,7 +1733,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .login-error {
   margin-top: 16px;
   font-size: 13px;
-  color: #e79082;
+  color: var(--red);
   line-height: 1.5;
 }
 
@@ -1594,101 +1830,6 @@ select.login-input option { background: var(--surface-1); color: var(--text); }
 .referral-opt.wide { grid-column: 1 / -1; }
 .referral-other-wrap.hidden { display: none; }
 .referral-other-wrap { grid-column: 1 / -1; }
-
-/* ---- Plan picker / locked screen ---- */
-.plans-center { max-width: 900px; }
-.plan-cards {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(220px, 1fr));
-  gap: 16px;
-  width: 100%;
-  margin-bottom: 22px;
-  align-items: stretch;
-}
-@media (max-width: 760px) { .plan-cards { grid-template-columns: 1fr; } }
-.plan-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 24px 20px 20px;
-  border-radius: 18px;
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
-  text-align: left;
-  position: relative;
-  transition: border-color 0.15s, transform 0.15s;
-}
-.plan-card.current { border-color: var(--accent-purple); background: rgba(177, 154, 247, 0.08); }
-.plan-card.popular {
-  border-color: var(--accent-purple);
-  background: linear-gradient(180deg, rgba(177, 154, 247, 0.10), rgba(177, 154, 247, 0.03));
-  transform: translateY(-4px);
-  box-shadow: 0 8px 28px rgba(177, 154, 247, 0.16);
-}
-.plan-card-icon {
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  background: rgba(177, 154, 247, 0.14);
-  color: var(--accent-purple);
-  margin-bottom: 8px;
-  box-shadow: 0 0 0 1px rgba(177, 154, 247, 0.18) inset;
-}
-.plan-card-icon svg { width: 21px; height: 21px; }
-/* Distinct accent per tier so the three cards read as a ladder, not three
-   copies of the same box — bolt=blue (quick/everyday), star stays the
-   brand purple (it's the popular pick), crown=gold (top tier). */
-.plan-card-icon-plus { background: rgba(102, 163, 255, 0.14); color: var(--blue); box-shadow: 0 0 0 1px rgba(102, 163, 255, 0.2) inset; }
-.plan-card-icon-max { background: rgba(240, 189, 90, 0.14); color: #f0bd5a; box-shadow: 0 0 0 1px rgba(240, 189, 90, 0.22) inset; }
-.plan-card-name { font-size: 17px; font-weight: 700; color: var(--text); margin-top: 2px; }
-.plan-card-tagline { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
-.plan-card-price { font-size: 28px; font-weight: 700; color: var(--text); letter-spacing: -0.3px; }
-.plan-card-price span { font-size: 12px; font-weight: 500; color: var(--text-dim); }
-.plan-card-perday { font-size: 11px; color: var(--text-faint); margin-top: -4px; margin-bottom: 8px; }
-.plan-card-divider { height: 1px; background: var(--border); margin: 14px 0 12px; }
-.plan-card-benefits-head { font-size: 11.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; }
-.plan-card-benefits { display: flex; flex-direction: column; gap: 8px; flex: 1; margin: 0; }
-.plan-card-benefits li { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; color: var(--text); line-height: 1.4; }
-.plan-card-benefits svg { width: 14px; height: 14px; flex-shrink: 0; margin-top: 1px; color: var(--accent-purple); }
-.plan-card-btn {
-  margin-top: 10px;
-  padding: 10px 0;
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 600;
-  transition: background 0.12s ease, transform 0.08s ease;
-}
-.plan-card-btn:not(:disabled):hover { background: var(--surface-2); }
-.plan-card-btn:not(:disabled):active { transform: scale(0.97); }
-.plan-card-btn.popular { background: var(--accent-purple); color: #1a1424; }
-.plan-card-btn.popular:not(:disabled):hover { background: #c3aefb; }
-.plan-card-btn:disabled { opacity: 0.6; cursor: default; }
-.plan-card-btn-note { text-align: center; font-size: 10.5px; color: var(--text-faint); margin-top: 6px; }
-.plan-card-badge {
-  align-self: flex-start;
-  position: absolute;
-  top: -10px;
-  left: 16px;
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  color: var(--accent-purple);
-  background: var(--purple-chip-bg);
-  border: 1px solid rgba(177, 154, 247, 0.35);
-  border-radius: 999px;
-  padding: 3px 10px;
-}
-.plan-card-badge.popular { color: #1a1424; background: var(--accent-purple); border-color: var(--accent-purple); }
-
-/* ---- Free trial CTA below the paid-tier cards ---- */
-.plans-trial-block { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
-.trial-btn { max-width: 320px; }
-.plans-trial-note { font-size: 11.5px; color: var(--text-faint); }
 
 /* ---- Usage card (sidebar) ---- */
 .usage-card {
@@ -1833,6 +1974,7 @@ select.login-input option { background: var(--surface-1); color: var(--text); }
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
 }
 .app-card-logo img { width: 100%; height: 100%; object-fit: contain; }
+.app-card-logo.vercel, .app-card-logo.supabase, .app-card-logo.github { background: #000; }
 
 .app-card-body { flex: 1; min-width: 0; }
 .app-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }

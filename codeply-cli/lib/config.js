@@ -33,8 +33,8 @@ const os = require('os');
 const configDir = path.join(os.homedir(), '.codeply');
 const configPath = path.join(configDir, 'config.json');
 
-const PROVIDERS = ['codeply', 'ollama', 'openrouter', 'groq', 'anthropic', 'openai', 'google', 'qwen'];
-const BYOK_PROVIDERS = ['openrouter', 'groq', 'anthropic', 'openai', 'google', 'qwen'];
+const PROVIDERS = ['codeply', 'ollama', 'openrouter', 'groq', 'anthropic', 'openai', 'google', 'qwen', 'deepseek'];
+const BYOK_PROVIDERS = ['openrouter', 'groq', 'anthropic', 'openai', 'google', 'qwen', 'deepseek'];
 
 const DEFAULTS = {
   provider: 'codeply',
@@ -52,6 +52,14 @@ const DEFAULTS = {
   openai:     { model: 'gpt-4o-mini', apiKey: '' },
   google:     { model: 'gemini-3.7-flash', apiKey: '' },
   qwen:       { model: 'qwen3.8-max', apiKey: '', baseUrl: '' },
+  // DeepSeek's own API (not via OpenRouter) — automatically caches repeated
+  // request prefixes server-side (cache-hit input tokens run ~15-30x cheaper
+  // than a cache miss, per their published pricing) with no special request
+  // flag needed to enable it; it just applies whenever consecutive calls
+  // share an identical prefix, which every step of one turn's action-block
+  // loop already does (same TOOL_REFERENCE + persona + project context each
+  // time) — this provider benefits from that automatically.
+  deepseek:   { model: 'deepseek-v4-flash-vision-exp', apiKey: '' },
 };
 
 function readFile() {
@@ -127,7 +135,7 @@ function saveConfig(patch) {
 // not places a chat completion comes from. Kept in their own top-level config
 // sections rather than folded into PROVIDERS/BYOK_PROVIDERS so the two
 // systems never get confused with each other.
-const INTEGRATIONS = ['gmail', 'slack'];
+const INTEGRATIONS = ['gmail', 'slack', 'vercel', 'supabase', 'github'];
 
 const INTEGRATION_DEFAULTS = {
   gmail: { clientId: '', clientSecret: '', accessToken: '', refreshToken: '', expiresAt: 0, email: '' },
@@ -138,6 +146,14 @@ const INTEGRATION_DEFAULTS = {
   // present, but the bot token still exists for anything that needs the app
   // identity specifically.
   slack: { clientId: '', clientSecret: '', accessToken: '', userAccessToken: '', userId: '', teamId: '', teamName: '' },
+  // clientId/clientSecret ship empty — connecting is a no-op ("No Vercel
+  // client ID/secret configured") until a real OAuth app is registered and
+  // its credentials are placed here. The rest of the shape exists now so
+  // the connect/disconnect UI and the eventual deploy tool have somewhere
+  // real to read from the moment credentials are added.
+  vercel: { clientId: '', clientSecret: '', slug: '', accessToken: '', teamId: '', userName: '' },
+  supabase: { clientId: '', clientSecret: '', accessToken: '', refreshToken: '', expiresAt: 0, email: '' },
+  github: { clientId: '', clientSecret: '', accessToken: '', userName: '' },
 };
 
 /** Effective integration config: defaults ← file. No env override — these are user-connected, not per-shell. */
@@ -163,7 +179,7 @@ function disconnectIntegration(name) {
   if (!INTEGRATIONS.includes(name)) throw new Error(`Unknown integration: ${name}`);
   const current = getIntegration(name);
   return saveConfig({
-    [name]: { ...current, accessToken: '', refreshToken: '', expiresAt: 0, email: '', teamId: '', teamName: '', userAccessToken: '', userId: '' },
+    [name]: { ...current, accessToken: '', refreshToken: '', expiresAt: 0, email: '', teamId: '', teamName: '', userAccessToken: '', userId: '', userName: '' },
   });
 }
 
