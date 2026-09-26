@@ -12,18 +12,28 @@ on:
 permissions:
   contents: write
 
-# electron-builder's own `--publish always` is what correctly generates AND
-# uploads latest.yml/latest-mac.yml - the metadata electron-updater reads to
-# detect new versions - so both jobs use it rather than a separate
-# build-then-upload step.
+# electron-builder's own `--publish always` generates AND uploads the installers
+# plus latest.yml/latest-mac.yml (what auto-update reads).
 #
-# build-mac runs AFTER build-windows (`needs:`), not in parallel: two
-# `--publish always` calls for the same tag running at once can both decide
-# "no release exists yet" before either has created one, and each creates its
-# own SEPARATE release. Sequenced, the second job finds the first job's
-# release and adds its assets to it instead.
+# The draft release is created up front by create-release. Without it,
+# electron-builder's parallel uploads each found "no release yet" and created
+# their own, splitting one version across duplicate drafts. With it, both
+# builds upload into the same draft (in parallel), and publish makes it public
+# only after every build succeeded, so /releases/latest/download/... never
+# points at a half-finished release.
 jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create draft release for this tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1             || gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --title "Codeply Craft ${TAG#v}" --notes "Codeply Craft ${TAG#v}"
+
   build-windows:
+    needs: create-release
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,7 +72,7 @@ jobs:
         run: npx electron-builder --win --publish always
 
   build-mac:
-    needs: build-windows
+    needs: create-release
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -94,3 +104,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --mac --publish always
+
+  publish:
+    needs: [build-windows, build-mac]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --draft=false --latest
