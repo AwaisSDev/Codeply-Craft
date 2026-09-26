@@ -1,16 +1,16 @@
 /**
- * Codeply TUI — Google-brand interactive shell.
+ * Codeply TUI - Google-brand interactive shell.
  *
  * Rendering model (important):
  *   Everything that is *finished* (banner + past messages + tool activity) is
  *   emitted through Ink's <Static>, which writes each item to stdout exactly
- *   once and never touches it again. Only the live area — spinner, approval
- *   prompt, command palette, composer, hints — lives in the re-rendered frame.
+ *   once and never touches it again. Only the live area - spinner, approval
+ *   prompt, command palette, composer, hints - lives in the re-rendered frame.
  *
  *   This is what kills the flicker/duplicate-screen bug: Ink redraws a frame by
  *   erasing the previous one, but it can only erase lines still on screen. Once
  *   the frame grows taller than the terminal, the erase is incomplete and the
- *   frame gets appended instead of replaced — you see the conversation twice.
+ *   frame gets appended instead of replaced - you see the conversation twice.
  *   Keeping the live frame a handful of lines tall makes the redraw exact.
  *
  *   Rule for future edits: nothing tall goes outside <Static>.
@@ -60,7 +60,7 @@ const T = {
   cycle: [G.blue, G.red, G.yellow, G.green],
 };
 
-// The mascot's own colour, from mascot.png — the home screen's box border and
+// The mascot's own colour, from mascot.png - the home screen's box border and
 // headings pick this up too, so the splash reads as one themed piece instead
 // of the mascot looking like a sticker dropped on top of an unrelated blue box.
 const MASCOT_ORANGE = '#E8821E';
@@ -73,7 +73,7 @@ const MODE_HINT = {
   Ask: 'answers from the codebase, read-only',
 };
 
-// CODEPLY block letters — fixed per-letter widths, one Google color each.
+// CODEPLY block letters - fixed per-letter widths, one Google color each.
 // C=blue O=red D=yellow E=green P=blue L=red Y=yellow
 const LOGO_SEGMENTS = [
   [
@@ -136,7 +136,7 @@ const COMMANDS = [
 ];
 
 const TIPS = [
-  ['ctrl+j', 'inserts a new line — or end a line with \\ and press enter'],
+  ['ctrl+j', 'inserts a new line - or end a line with \\ and press enter'],
   ['Press tab', 'to cycle Build → Plan → Ask without leaving the composer'],
   ['Press esc', 'while it is working to interrupt the run'],
   ['Ask it to fix a failing test', 'it can run commands and iterate on the output'],
@@ -144,12 +144,12 @@ const TIPS = [
 ];
 
 const WHATS_NEW = [
-  'Real subagents — delegate independent chunks of a task with `subagent`; every write it makes still asks you first',
+  'Verification gate - the agent now has to check its changes (and can no longer claim tests or deploys it never ran) before it finishes',
   'Added shift+tab to toggle bypass permissions without leaving the composer',
   '/skill install now accepts a bare GitHub owner/repo, not just a full URL',
 ];
 
-// A tiny pixel mascot echoing mascot.png's blocky orange creature — pointy
+// A tiny pixel mascot echoing mascot.png's blocky orange creature - pointy
 // ear notches, a solid head, two eyes, comb-like legs. The terminal's own
 // background already stands in for every "black" pixel in the source art, so
 // only the orange pixels need marking; everything else is a plain space.
@@ -175,13 +175,13 @@ function fitPath(p, max) {
 
 // ─── Home screen ────────────────────────────────────────────────────────────
 //
-// A single bordered box — title baked into the top border, a left column
+// A single bordered box - title baked into the top border, a left column
 // (identity: mascot, account, mode, cwd) and a right column (tips / what's
 // new) split by one interior divider that runs the full height. Everything
 // is pre-flattened to one ANSI string per row, same discipline as the rest of
 // this file: a handful of <Text> nodes, not one per glyph.
 
-const BOX_MIN_COLS = 74; // below this, two columns can't breathe — fall back to the compact mark
+const BOX_MIN_COLS = 74; // below this, two columns can't breathe - fall back to the compact mark
 
 /** Pad/truncate plain text to exactly `width` visible columns, then colour it. */
 function cell(text, width, color, opts = {}) {
@@ -200,7 +200,7 @@ function centered(text, width) {
   return ' '.repeat(left) + t;
 }
 
-/** Shared by BoxHome and its caller — the caller needs leftInner/rightInner
+/** Shared by BoxHome and its caller - the caller needs leftInner/rightInner
  *  up front to centre text at the right width before the rows are built. */
 function boxHomeMetrics(cols) {
   const boxWidth = Math.max(60, Math.min(cols - 2, 96));
@@ -305,7 +305,7 @@ function MessageBlock({ msg, cols }) {
   }
 
   if (msg.role === 'assistant') {
-    // A plan is a deliverable, not chatter — give it its own panel so it stands
+    // A plan is a deliverable, not chatter - give it its own panel so it stands
     // apart from the running commentary above and below it.
     if (msg.plan) {
       return React.createElement(
@@ -484,7 +484,7 @@ const App = () => {
   const [escArmed, setEscArmed] = React.useState(false);
   const [approval, setApproval] = React.useState(null);
   const [bypassMode, setBypassMode] = React.useState(false);
-  const [activeAgents, setActiveAgents] = React.useState([]); // [{id,label}] — running subagents, this session's own run excluded
+  const [activeAgents, setActiveAgents] = React.useState([]); // [{id,label}] - running subagents, this session's own run excluded
   // Only true once the terminal answers our capability query. Windows Terminal
   // never does, so there we advertise ctrl+j instead of lying about shift+enter.
   const [modifiedEnterWorks, setModifiedEnterWorks] = React.useState(false);
@@ -493,7 +493,7 @@ const App = () => {
   const nextId = React.useRef(1);
   // A real AbortController, not a plain {aborted} object: its .signal ends up
   // handed straight to fetch() (see ai.js), which requires an actual
-  // AbortSignal instance — a look-alike object throws a TypeError there
+  // AbortSignal instance - a look-alike object throws a TypeError there
   // ("Expected signal ... to be an instance of AbortSignal"), and that
   // message contains the word "AbortSignal", which the fetch error classifier
   // then mistakes for a real abort. Net effect: every single turn "aborted"
@@ -561,7 +561,7 @@ const App = () => {
     });
   }, []);
 
-  // Read inside the approval callback without re-creating it on every toggle —
+  // Read inside the approval callback without re-creating it on every toggle -
   // requestApproval is captured once per run and handed down through several
   // layers of nested subagent calls, so it must see the current value, not a
   // stale one closed over when the run started.
@@ -587,7 +587,7 @@ const App = () => {
   }, []);
 
   useInput((char, key) => {
-    // The terminal's answer to our kitty query — proof that modified enter is
+    // The terminal's answer to our kitty query - proof that modified enter is
     // really distinguishable here. Swallow it so it never reaches the draft.
     if (isTerminalReport(char)) { setModifiedEnterWorks(true); return; }
 
@@ -629,7 +629,7 @@ const App = () => {
     }
 
     if (key.tab && key.shift) {
-      // Deliberately no chat message here — this is a status-bar toggle, not
+      // Deliberately no chat message here - this is a status-bar toggle, not
       // conversation content, and pushing one would knock a bare "/"-free home
       // screen straight into the compact conversation layout for no reason.
       setBypassMode((b) => !b);
@@ -676,7 +676,7 @@ const App = () => {
         role: 'system',
         content: 'Commands\n' + COMMANDS.map((c) => `${c.name.padEnd(10)} ${c.description}`).join('\n') +
           '\n\nKeys\nshift+enter / ctrl+j   new line\ntab                    switch mode\nesc                    interrupt a run\n' +
-          `\nModel\n${appConfig.describeProvider()}  —  change with \`codeply provider\`\n`,
+          `\nModel\n${appConfig.describeProvider()}  -  change with \`codeply provider\`\n`,
       });
     } else if (cmd === '/clear') {
       // <Static> never re-renders what it already printed, so a clear means
@@ -689,7 +689,7 @@ const App = () => {
     } else if (cmd === '/mode') {
       const next = (modeIndex + 1) % MODES.length;
       setModeIndex(next);
-      push({ role: 'system', content: `Mode → ${MODES[next]} — ${MODE_HINT[MODES[next]]}` });
+      push({ role: 'system', content: `Mode → ${MODES[next]} - ${MODE_HINT[MODES[next]]}` });
     } else if (cmd === '/provider') {
       const parts = args.trim().split(/\s+/).filter(Boolean);
       const name = parts[0];
@@ -698,7 +698,7 @@ const App = () => {
         const cfg = appConfig.getConfig();
         let msg = `Provider: ${appConfig.describeProvider(cfg)}\n` +
           `Providers: ${appConfig.PROVIDERS.join(', ')}\n` +
-          'Set with /provider <name> [key]  —  e.g. /provider openrouter sk-or-v1-...';
+          'Set with /provider <name> [key]  -  e.g. /provider openrouter sk-or-v1-...';
         if (cfg.provider === 'codeply') msg += `\n\n${appConfig.byokHint()}`;
         push({ role: 'system', content: msg });
         return;
@@ -873,7 +873,7 @@ const App = () => {
   };
 
   // Ollama needs no Codeply sign-in, so showing "not signed in" there would be
-  // a false alarm — surface the model that is actually answering instead.
+  // a false alarm - surface the model that is actually answering instead.
   const provider = React.useMemo(() => appConfig.getConfig(), []);
   const usingOllama = provider.provider === 'ollama';
   const account = usingOllama
@@ -888,7 +888,7 @@ const App = () => {
   // through to the compact layout rather than rendering a cramped one.
   const showSplash = isHome && rows >= 22 && cols >= 44;
   // 1 for this session's own run, plus whatever subagents it has spawned and
-  // are still going — matches what the status bar's "← N agent" is counting.
+  // are still going - matches what the status bar's "← N agent" is counting.
   const agentCount = 1 + activeAgents.length;
 
   // On home the composer is a centred column like an app window; in
@@ -930,7 +930,7 @@ const App = () => {
       focus: !running && !approval,
       allowVertical: !showCommands,
       placeholder: running
-        ? 'working — esc to interrupt'
+        ? 'working - esc to interrupt'
         : 'Ask for a change, a fix, or an explanation…  (/ for commands)',
     }),
     React.createElement(
@@ -1015,7 +1015,7 @@ const App = () => {
       ...MASCOT_ROWS.map((row) => ({ text: centered(row, leftInner), color: T.accent })),
       { text: '' },
       { text: centered(`${mode} mode · v${VERSION}`, leftInner), color: T.muted },
-      { text: centered(usingOllama || session ? account : 'not signed in — /login', leftInner), color: usingOllama || session ? T.secondary : G.yellow },
+      { text: centered(usingOllama || session ? account : 'not signed in - /login', leftInner), color: usingOllama || session ? T.secondary : G.yellow },
       { text: centered(fitPath(homePath(cwd), Math.max(10, leftInner - 2)), leftInner), color: T.faint },
     ];
     const rightRows = [

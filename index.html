@@ -16,7 +16,7 @@
 <script>
   // Applies a stored explicit dark/light choice before styles.css even
   // finishes loading, so the window doesn't flash the wrong theme for a
-  // frame — see applyTheme() in app.js. "system" needs nothing here:
+  // frame - see applyTheme() in app.js. "system" needs nothing here:
   // styles.css's own prefers-color-scheme media query handles it.
   (function () {
     try {
@@ -49,7 +49,7 @@
 
 <!-- ============ EMBEDDED BROWSER CHROME ============ -->
 <!-- The actual page content is a native BrowserView docked by main.js right
-     below this strip — this bar is the only part of "the browser" that's
+     below this strip - this bar is the only part of "the browser" that's
      real HTML, giving the docked page real chrome (address bar, back/
      forward/reload) instead of being a bare pasted-in rectangle. -->
 <div class="browser-chrome hidden" id="browserChrome">
@@ -62,7 +62,7 @@
 
 <!-- ============ EMBEDDED TERMINAL ============ -->
 <!-- Runs the user's own shell as a real child process (not a separate login,
-     not a sandboxed fake — same PATH, same git/gh credentials already on disk). -->
+     not a sandboxed fake - same PATH, same git/gh credentials already on disk). -->
 <div class="terminal-panel hidden" id="terminalPanel">
   <div class="terminal-panel-head">
     <span class="terminal-panel-title">Terminal</span>
@@ -103,11 +103,6 @@
         Tasks
         <span class="sb-item-badge hidden" id="tasksBadge">0</span>
       </button>
-      <button class="sb-item" id="agentViewBtn">
-        <svg viewBox="0 0 24 24"><circle cx="7" cy="7" r="3"/><circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><circle cx="17" cy="17" r="3"/></svg>
-        Agent View
-        <span class="sb-item-badge hidden" id="agentViewBadge">0</span>
-      </button>
     </nav>
 
     <div class="sb-scroll">
@@ -123,14 +118,6 @@
     </div>
 
     <div class="sb-footer">
-      <div class="usage-card hidden" id="usageCard">
-        <div class="usage-head">
-          <span class="usage-label">Daily applies</span>
-          <span class="usage-count" id="usageCount">0 / 100</span>
-        </div>
-        <div class="usage-track"><div class="usage-fill" id="usageFill"></div></div>
-        <div class="usage-note">Shared with the Codeply app and CLI · resets daily at midnight UTC</div>
-      </div>
       <button class="sb-user" id="sbUserBtn">
         <div class="sb-user-left">
           <div class="avatar" id="userAvatar">·</div>
@@ -286,13 +273,9 @@
               <svg viewBox="0 0 24 24"><path d="M14.7 6.3a4.5 4.5 0 0 0-6 6L3 18v3h3l5.7-5.7a4.5 4.5 0 0 0 6-6L15 12l-3-3Z"/></svg>
               <span data-role="mode-name">Build</span>
             </button>
-            <button class="chip subagent-chip" data-role="subagent-chip" title="Pin a specialist to this chat">
-              <span class="subagent-chip-icon-slot" data-role="subagent-icon-slot"></span>
-              <span data-role="subagent-name">General</span>
-            </button>
           </div>
           <div class="composer-image-previews hidden" data-role="image-previews"></div>
-          <textarea class="composer-input" rows="1" placeholder="Do anything"></textarea>
+          <textarea class="composer-input" rows="1" placeholder="Ask Codeply to build, fix or explain anything  ·  /goal keeps it going until done"></textarea>
           <div class="composer-bottom">
             <div class="composer-bottom-left">
               <button class="approve-toggle" data-role="bypass" title="Off: every write/run asks you first. On: actions run without asking.">
@@ -301,7 +284,11 @@
               </button>
             </div>
             <div class="composer-bottom-right">
-              <span class="model-label" title="Auto — Gemma 4 31B"><strong data-role="model-name">Auto</strong></span>
+              <button class="model-btn" data-role="model-chip" title="Choose the model">
+                <span class="model-btn-dot" data-role="model-dot"></span>
+                <span data-role="model-name">Auto</span>
+                <svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg>
+              </button>
               <button class="send-btn" data-role="send" title="Send"><svg class="ic-send" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg><svg class="ic-stop hidden" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button>
             </div>
           </div>
@@ -313,9 +300,6 @@
     <section class="view view-chat hidden" id="viewChat">
       <div class="chat-topbar">
         <div class="chat-title-group">
-          <button class="back-to-main-btn hidden" id="backToMainBtn" title="Back to the chat that dispatched this">
-            <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg> Main chat
-          </button>
           <span class="chat-title" id="chatTitle"></span>
         </div>
         <div class="topbar-icons">
@@ -352,7 +336,7 @@
       <div class="composer-wrap chat-composer">
         <div class="composer" data-composer="chat">
           <div class="composer-image-previews hidden" data-role="image-previews"></div>
-          <textarea class="composer-input" rows="1" placeholder="Do anything"></textarea>
+          <textarea class="composer-input" rows="1" placeholder="Ask Codeply to build, fix or explain anything  ·  /goal keeps it going until done"></textarea>
           <div class="composer-bottom">
             <div class="composer-bottom-left">
               <button class="approve-toggle" data-role="bypass" title="Off: every write/run asks you first. On: actions run without asking.">
@@ -363,13 +347,13 @@
                 <svg viewBox="0 0 24 24"><path d="M14.7 6.3a4.5 4.5 0 0 0-6 6L3 18v3h3l5.7-5.7a4.5 4.5 0 0 0 6-6L15 12l-3-3Z"/></svg>
                 <span data-role="mode-name">Build</span>
               </button>
-              <button class="chip subagent-chip" data-role="subagent-chip" title="Pin a specialist to this chat">
-                <span class="subagent-chip-icon-slot" data-role="subagent-icon-slot"></span>
-                <span data-role="subagent-name">General</span>
-              </button>
             </div>
             <div class="composer-bottom-right">
-              <span class="model-label" title="Auto — Gemma 4 31B"><strong data-role="model-name">Auto</strong></span>
+              <button class="model-btn" data-role="model-chip" title="Choose the model">
+                <span class="model-btn-dot" data-role="model-dot"></span>
+                <span data-role="model-name">Auto</span>
+                <svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg>
+              </button>
               <button class="send-btn" data-role="send" title="Send"><svg class="ic-send" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg><svg class="ic-stop hidden" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button>
             </div>
           </div>
@@ -479,39 +463,73 @@
   </div>
 </div>
 
-<!-- ============ PHONE COMPANION PAIRING ============ -->
+<!-- ============ PHONE COMPANION ============ -->
 <div class="modal-backdrop hidden" id="remoteBackdrop">
   <div class="remote-modal" role="dialog" aria-modal="true" aria-labelledby="remoteTitle">
     <button class="remote-close sb-icon-btn" id="remoteCloseBtn" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     <div class="remote-orb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="3"/><path d="M12 18h.01"/></svg></div>
-    <h2 id="remoteTitle">Sync your phone</h2>
-    <p>Open your camera and point it at this code. Same Wi-Fi, nothing to type.</p>
-    <div class="remote-qr" id="remoteQr" aria-label="QR code to pair your phone">
-      <div class="remote-qr-loading">Generating…</div>
-    </div>
-    <details class="remote-fallback">
-      <summary>Can't scan it?</summary>
-      <div class="remote-fallback-body">
-        <div class="remote-url" id="remoteUrl">Loading…</div>
-        <div class="remote-code-label">Pairing code</div>
-        <div class="remote-code" id="remoteCode">••••••••••</div>
-      </div>
-    </details>
-    <div class="remote-note"><svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5Z"/><path d="M9 12l2 2 4-4"/></svg>Your phone can dispatch tasks and approve actions. Craft still runs entirely on this PC.</div>
+    <h2 id="remoteTitle">Use Craft from your phone</h2>
+    <p>Sign in on your phone with the same account and drive this PC from anywhere. No codes, no QR, any network.</p>
+    <ol class="remote-steps">
+      <li><span class="remote-step-num">1</span><div>On your phone, open <a class="remote-url" id="remoteUrl" href="#">mobile.codeply.app</a>.</div></li>
+      <li><span class="remote-step-num">2</span><div>Sign in as <strong id="remoteEmail">your account</strong>.</div></li>
+      <li><span class="remote-step-num">3</span><div>That's it. It works on mobile data or any Wi-Fi, as long as this PC is on.</div></li>
+    </ol>
+    <div class="remote-status" id="remoteStatus"></div>
+    <label class="remote-awake">
+      <input type="checkbox" id="keepAwakeToggle">
+      <span class="remote-awake-switch"></span>
+      <span>Keep this PC awake while Craft is open, so your phone can always reach it</span>
+    </label>
+    <div class="remote-note"><svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5Z"/><path d="M9 12l2 2 4-4"/></svg>Only phones signed in to this same account can connect. Everything still runs on this PC, and every action still asks for approval.</div>
   </div>
 </div>
 
-<!-- ============ AGENT VIEW (opened from the sidebar) ============ -->
-<div class="modal-backdrop hidden" id="agentViewBackdrop">
-  <div class="agents-modal">
+<!-- ============ MODELS (add a model / connect Ollama) ============ -->
+<div class="modal-backdrop hidden" id="modelsBackdrop">
+  <div class="models-modal" role="dialog" aria-modal="true" aria-labelledby="modelsTitle">
     <div class="skills-modal-head">
       <div>
-        <div class="skills-modal-title">Agent View</div>
-        <div class="skills-modal-sub">What each specialist is working on right now. Click one to see its sessions.</div>
+        <div class="skills-modal-title" id="modelsTitle">Add a model</div>
+        <div class="skills-modal-sub">Use your own model instead of Auto. Any OpenAI-compatible API works, or run models locally with Ollama.</div>
       </div>
-      <button class="sb-icon-btn" id="agentViewCloseBtn"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+      <button class="sb-icon-btn" id="modelsCloseBtn" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     </div>
-    <div class="agents-list" id="agentsList"></div>
+    <div class="models-tabs" role="tablist">
+      <button class="models-tab active" data-tab="custom" role="tab">API model</button>
+      <button class="models-tab" data-tab="ollama" role="tab">Ollama</button>
+    </div>
+
+    <div class="models-pane" id="modelsPaneCustom">
+      <div class="models-presets" id="modelsPresets"></div>
+      <label class="field"><span>Name</span><input id="mName" type="text" placeholder="e.g. GPT-4o mini" autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>Base URL</span><input id="mBaseUrl" type="text" placeholder="https://api.openai.com/v1" autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>Model ID</span><input id="mModel" type="text" placeholder="gpt-4o-mini" autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>API key</span><input id="mKey" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false"></label>
+      <div class="privacy-note">
+        <svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+        <span>Your API key is saved only on this computer and is never sent to Codeply's servers. It's used for exactly one thing: calling the base URL above.</span>
+      </div>
+      <div class="models-error hidden" id="mError"></div>
+      <div class="models-actions">
+        <button class="btn-quiet hidden" id="mSaveAnyway">Save without testing</button>
+        <button class="btn-primary" id="mSave">Test &amp; save</button>
+      </div>
+    </div>
+
+    <div class="models-pane hidden" id="modelsPaneOllama">
+      <label class="field"><span>Ollama address</span>
+        <div class="field-inline">
+          <input id="oHost" type="text" value="http://localhost:11434" autocomplete="off" spellcheck="false">
+          <button class="btn-quiet" id="oDetect">Find models</button>
+        </div>
+      </label>
+      <div class="ollama-list" id="oList"></div>
+      <div class="privacy-note">
+        <svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+        <span>Local models run entirely on this computer - your code and prompts never leave it. No Ollama yet? Get it free at ollama.com, then run <code>ollama pull qwen2.5-coder</code>.</span>
+      </div>
+    </div>
   </div>
 </div>
 

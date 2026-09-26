@@ -7,14 +7,14 @@ on:
 
 # GitHub's modern default gives the auto-generated GITHUB_TOKEN read-only
 # access, which is what "Resource not accessible by integration" means when
-# a job tries to create a release — this grants write explicitly regardless
+# a job tries to create a release - this grants write explicitly regardless
 # of the repo/org default.
 permissions:
   contents: write
 
 # electron-builder's own `--publish always` is what correctly generates AND
-# uploads latest.yml/latest-mac.yml — the metadata electron-updater reads to
-# detect new versions — so both jobs use it rather than a separate
+# uploads latest.yml/latest-mac.yml - the metadata electron-updater reads to
+# detect new versions - so both jobs use it rather than a separate
 # build-then-upload step.
 #
 # build-mac runs AFTER build-windows (`needs:`), not in parallel: two
@@ -36,6 +36,26 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Engine tests
+        run: npm run test:engine
+
+      # Bakes the Connect Apps OAuth credentials into the build (see
+      # scripts/embed-secrets.js). Add these as repository secrets.
+      - name: Embed OAuth app credentials
+        env:
+          VERCEL_CLIENT_ID: ${{ secrets.VERCEL_CLIENT_ID }}
+          VERCEL_CLIENT_SECRET: ${{ secrets.VERCEL_CLIENT_SECRET }}
+          VERCEL_SLUG: ${{ secrets.VERCEL_SLUG }}
+          SUPABASE_CLIENT_ID: ${{ secrets.SUPABASE_CLIENT_ID }}
+          SUPABASE_CLIENT_SECRET: ${{ secrets.SUPABASE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.OAUTH_GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          SLACK_CLIENT_ID: ${{ secrets.SLACK_CLIENT_ID }}
+          SLACK_CLIENT_SECRET: ${{ secrets.SLACK_CLIENT_SECRET }}
+        run: npm run embed-secrets
+
       - name: Build & publish Windows
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -54,6 +74,21 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+
+      - name: Embed OAuth app credentials
+        env:
+          VERCEL_CLIENT_ID: ${{ secrets.VERCEL_CLIENT_ID }}
+          VERCEL_CLIENT_SECRET: ${{ secrets.VERCEL_CLIENT_SECRET }}
+          VERCEL_SLUG: ${{ secrets.VERCEL_SLUG }}
+          SUPABASE_CLIENT_ID: ${{ secrets.SUPABASE_CLIENT_ID }}
+          SUPABASE_CLIENT_SECRET: ${{ secrets.SUPABASE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.OAUTH_GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          SLACK_CLIENT_ID: ${{ secrets.SLACK_CLIENT_ID }}
+          SLACK_CLIENT_SECRET: ${{ secrets.SLACK_CLIENT_SECRET }}
+        run: npm run embed-secrets
 
       - name: Build & publish Mac
         env:

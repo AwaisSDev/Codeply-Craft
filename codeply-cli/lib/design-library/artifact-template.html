@@ -473,7 +473,7 @@ footer.note {
     filtered.forEach(function (r) {
       var tr = document.createElement('tr');
       tr.setAttribute('data-cat', r.c);
-      var ratingText = r.r ? r.r.toFixed(1) : '—';
+      var ratingText = r.r ? r.r.toFixed(1) : '-';
       tr.innerHTML =
         '<td><div class="app-cell">' +
           '<img class="app-icon" src="' + r.i + '" alt="" loading="lazy" />' +

@@ -1,5 +1,5 @@
 /**
- * Codeply TUI — Markdown renderer for AI responses.
+ * Codeply TUI - Markdown renderer for AI responses.
  * Parses markdown into Ink-compatible React elements with syntax coloring.
  */
 import React from 'react';
@@ -213,7 +213,7 @@ const DEFAULT_PANEL_WIDTH = 76;
  * A fenced block with no language that is plainly prose, not code.
  *
  * Models routinely wrap their closing summary in a bare ``` fence. Rendering
- * that as a code panel — line numbers, syntax colours, "15 lines" — is actively
+ * that as a code panel - line numbers, syntax colours, "15 lines" - is actively
  * misleading, so it gets rendered as markdown instead. Kept deliberately
  * conservative: any whiff of real code and it stays a code block.
  */
@@ -411,7 +411,7 @@ function formatPanelLine(raw) {
 }
 
 /**
- * Filled panel for a plan / reasoning block — same visual family as CodeBlock
+ * Filled panel for a plan / reasoning block - same visual family as CodeBlock
  * so the transcript reads as one system, but without the line-number gutter
  * since prose is not addressed by line.
  *
@@ -537,7 +537,7 @@ function renderMarkdown(md, width) {
       i++; // skip closing ```
       const body = codeLines.join('\n');
       if (looksLikeProse(lang, body)) {
-        // A bare fence around a written summary — render it as what it is.
+        // A bare fence around a written summary - render it as what it is.
         for (const el of renderMarkdown(body, width)) {
           elements.push(React.cloneElement(el, { key: `fenced-${elements.length}-${el.key}` }));
         }

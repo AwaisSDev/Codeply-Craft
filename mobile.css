@@ -1,6 +1,6 @@
 /* Dark values here match Craft's own desktop palette (styles.css's :root)
-   token-for-token where a mobile equivalent exists — same charcoal, same
-   border, same text grays, same purple/green/red — so switching between
+   token-for-token where a mobile equivalent exists - same charcoal, same
+   border, same text grays, same purple/green/red - so switching between
    the desktop app and this companion doesn't feel like two different
    products. Light theme is defined further down: system-default via
    `@media (prefers-color-scheme: light)`, or forced either way via
@@ -33,7 +33,7 @@
   --font-mono: 'JetBrains Mono', monospace;
 }
 
-/* LIGHT THEME — full white, minimal. System default when the OS prefers
+/* LIGHT THEME - full white, minimal. System default when the OS prefers
    light and the user hasn't overridden it; :not([data-theme="dark"]) is
    what lets an explicit dark choice win over the OS signal. */
 @media (prefers-color-scheme: light) {
@@ -93,7 +93,7 @@ html, body {
      one viewport worth of pixels, so it can never itself grow taller than
      the screen and start scrolling. That's the actual bug behind "have to
      scroll down manually": every container below this was min-height, so
-     nothing was ever capped — the page grew with the chat instead of
+     nothing was ever capped - the page grew with the chat instead of
      .main-scroll's own overflow kicking in, which is the only place
      scrollToBottom() ever touches. */
   height: 100%;
@@ -338,7 +338,7 @@ button {
   margin-top: 20px;
 }
 
-/* SYNCING STATE — shown in place of the manual form while a scanned QR's
+/* SYNCING STATE - shown in place of the manual form while a scanned QR's
    ?code= is being exchanged for a token. */
 .pair-syncing {
   display: grid;
@@ -419,7 +419,7 @@ button {
   box-shadow: 0 0 0 3px var(--green-glow);
 }
 
-/* TOPBAR FOLDER PICKER — the one thing Craft needs beyond a plain chat
+/* TOPBAR FOLDER PICKER - the one thing Craft needs beyond a plain chat
    topbar. A real native <select>, invisible and positioned exactly over
    this button (see .topbar-folder-select below), rather than a custom
    popover: real OS picker UI for free, nothing to keep in sync by hand. */
@@ -451,10 +451,10 @@ button {
   opacity: 0;
   border: none;
   /* Fills its parent .topbar-folder-btn exactly (which is the positioning
-     context) — tapping anywhere on the visible pill hits this instead. */
+     context) - tapping anywhere on the visible pill hits this instead. */
 }
 
-/* SIDEBAR DRAWER — slides in from the left over everything else (a real
+/* SIDEBAR DRAWER - slides in from the left over everything else (a real
    transform, not a display swap, so it's the smooth slide a drawer is
    expected to have) with a tap-to-dismiss backdrop behind it. Replaces the
    old bottom tab bar entirely: new chat, the paired-PC status screen, full
@@ -620,7 +620,7 @@ button {
 }
 .unpair-btn:active { background: var(--danger-bg); }
 
-/* THEME ROW — dark / light / system, defaulting to system (see
+/* THEME ROW - dark / light / system, defaulting to system (see
    applyTheme() in mobile.js). */
 .theme-row {
   display: flex;
@@ -663,7 +663,7 @@ button {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  /* Bottom padding just needs to clear the floating composer now — there's
+  /* Bottom padding just needs to clear the floating composer now - there's
      no bottom tab bar underneath it anymore. */
   padding: 16px 18px calc(84px + env(safe-area-inset-bottom));
   background: var(--bg);
@@ -742,7 +742,7 @@ button {
   color: var(--text-muted);
 }
 
-/* CHAT FEED — plain text over cards: a colored bubble for the user's own
+/* CHAT FEED - plain text over cards: a colored bubble for the user's own
    message, everything from Craft (status lines and the final answer alike)
    set straight on the background with no card, border, or icon. */
 .chat-feed {
@@ -766,7 +766,7 @@ button {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* ---- Subagent badge — same mascot system as the desktop app, ball +
+/* ---- Subagent badge - same mascot system as the desktop app, ball +
    eyes as two independent layers, not one flat image. ---- */
 .subagent-badge {
   display: flex;
@@ -879,7 +879,7 @@ button {
   border-radius: var(--radius-md);
 }
 
-/* SESSION LIST — flat rows, ChatGPT-style: no card border/background, just
+/* SESSION LIST - flat rows, ChatGPT-style: no card border/background, just
    a hover state and a title that truncates, with a "..." affordance that
    only shows up once you're actually looking at the row. */
 .session-list {
@@ -1020,7 +1020,7 @@ button {
   padding: 12px 24px calc(24px + env(safe-area-inset-bottom));
   box-shadow: 0 -16px 40px rgba(0, 0, 0, 0.5);
   /* Runs fresh every time the sheet goes from display:none to flex (a CSS
-     animation restarts on becoming part of layout, no JS needed) — the
+     animation restarts on becoming part of layout, no JS needed) - the
      slide-up-and-settle a bottom sheet is expected to have instead of just
      snapping into place. */
   animation: sheet-slide-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -1078,7 +1078,7 @@ button {
   gap: 12px;
 }
 
-/* SESSION MENU SHEET — the phone's stand-in for desktop's 3-dot popover. */
+/* SESSION MENU SHEET - the phone's stand-in for desktop's 3-dot popover. */
 .session-menu-container {
   padding-top: 12px;
 }
@@ -1098,7 +1098,7 @@ button {
 .session-menu-item:active { background: var(--bg-card-hover); }
 .session-menu-item.danger { color: var(--danger); }
 
-/* AGENT VIEW SHEET — one row per specialist currently dispatched and
+/* AGENT VIEW SHEET - one row per specialist currently dispatched and
    running on the PC. Tapping a row opens that specialist's own chat (see
    renderAgentsList/openAgentView in mobile.js); the stop icon kills it
    without leaving the sheet. */
@@ -1148,7 +1148,7 @@ button {
 }
 .agent-view-stop:active { opacity: 0.7; }
 
-/* IMAGE PICKER SHEET — mirrors the desktop's search-and-click image card
+/* IMAGE PICKER SHEET - mirrors the desktop's search-and-click image card
    (app.js's addImagePickerCard) inside the same bottom-sheet chrome the
    approval sheet uses above. Taller and scrollable internally (the grid can
    run long), capped so it never grows past a usable size on a short phone. */
@@ -1225,7 +1225,7 @@ button {
 .img-tile:active {
   border-color: var(--violet);
 }
-/* contain, not cover — a search result whose actual subject isn't
+/* contain, not cover - a search result whose actual subject isn't
    centered (or isn't landscape-shaped) was getting its subject cropped
    clean out of frame by a tight cover crop, leaving what looked like a
    blank/irrelevant thumbnail even when the photo itself was a real,
@@ -1258,3 +1258,33 @@ button {
     border-right: 1px solid var(--border);
   }
 }
+
+/* ---- Sign-in: PC offline card ---- */
+.find-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 800; }
+.find-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 4px var(--danger-bg); }
+.find-tips { margin: 0; padding-left: 18px; display: grid; gap: 8px; color: var(--text-muted); font-size: 13px; line-height: 1.5; }
+.find-tips strong { color: var(--text); }
+.find-hint { margin: 0; color: var(--text-muted); font-size: 12.5px; line-height: 1.5; text-align: center; }
+.link-btn { background: none; border: 0; padding: 6px; color: var(--text-muted); font: inherit; font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+
+/* ---- What actually happened ---- */
+.turn-summary { margin: 6px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-card); font-size: 13px; display: grid; gap: 6px; }
+.ts-head { font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); }
+.ts-files { display: flex; flex-wrap: wrap; gap: 6px; }
+.ts-files span, .ts-check code { font-family: var(--font-mono); font-size: 12px; }
+.ts-files span { padding: 2px 8px; border-radius: 6px; background: var(--bg-card-hover); }
+.ts-check { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-check.pass { color: var(--green); }
+.ts-check.fail { color: var(--danger); }
+.ts-check code { color: var(--text-muted); }
+.ts-warn { padding: 6px 10px; border-radius: 8px; background: rgba(226, 194, 106, .14); color: #d9b24c; font-size: 12.5px; }
+
+/* ---- Goal card ---- */
+.goal-card { margin: 6px 0; padding: 12px 14px; border-radius: var(--radius-md); border: 1px solid var(--border-strong); background: var(--bg-card); display: grid; gap: 6px; }
+.goal-head { display: flex; align-items: center; justify-content: space-between; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); }
+.goal-pill { padding: 2px 9px; border-radius: var(--radius-full); background: var(--violet-glow); color: var(--violet-light); letter-spacing: 0; text-transform: none; font-size: 11.5px; }
+.goal-card[data-status="achieved"] .goal-pill { background: var(--green-glow); color: var(--green); }
+.goal-card[data-status="blocked"] .goal-pill, .goal-card[data-status="incomplete"] .goal-pill { background: rgba(226, 194, 106, .16); color: #d9b24c; }
+.goal-card[data-status="failed"] .goal-pill, .goal-card[data-status="stopped"] .goal-pill { background: var(--danger-bg); color: var(--danger); }
+.goal-text { font-size: 14px; line-height: 1.45; }
+.goal-note { font-size: 12.5px; color: var(--text-faint); }

@@ -1,5 +1,5 @@
 /**
- * Codeply CLI — AI client
+ * Codeply CLI - AI client
  *
  * Backends, selected by lib/config.js:
  *
@@ -17,20 +17,19 @@
  *               that provider's OpenAI-compatible chat completions endpoint.
  *               No Codeply account involved at all. OpenRouter is itself an
  *               aggregator, so its model ids carry the upstream namespace
- *               ('google/gemma-4-26b-a4b-it:free', 'stealth/ox-alpha') — that
+ *               ('google/gemma-4-26b-a4b-it:free', 'stealth/ox-alpha') - that
  *               is also how Codeply reaches models no first-party API serves.
  *
  *   anthropic   BYOK against Anthropic's Messages API, which is NOT
  *               OpenAI-compatible (different endpoint, a top-level `system`
  *               field instead of a system message, and a `content` array in
- *               the response) — handled by its own converter below.
+ *               the response) - handled by its own converter below.
  *
- * All of these return the identical shape — {success, data:{choices:[{message}]}, …} —
+ * All of these return the identical shape - {success, data:{choices:[{message}]}, …} -
  * so nothing downstream (agent loop, edit engine) knows or cares which ran.
  */
 const { SUPABASE_URL, SUPABASE_ANON_KEY, getAccessToken } = require('./auth');
 const { getConfig, byokHint, PROVIDERS } = require('./config');
-const { TIERS, getSubscription, dailyAiCountToday } = require('./subscription');
 
 const AI_PROXY_URL = `${SUPABASE_URL}/functions/v1/ai-proxy`;
 
@@ -48,7 +47,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Statuses worth retrying. 546 is Supabase's own code for an Edge Function
- * killed for exceeding its resource limits (WORKER_LIMIT) — it fires on long
+ * killed for exceeding its resource limits (WORKER_LIMIT) - it fires on long
  * generations and is usually transient, so a retry is far more useful to the
  * user than surfacing "HTTP 546". 5xx and 429 get the same treatment.
  */
@@ -60,7 +59,7 @@ function isTransientStatus(status) {
 function describeStatus(status) {
   if (status === 546) {
     return 'The AI service hit its resource limit mid-request (Supabase 546). ' +
-      'This usually happens on very long generations — try a narrower request, ' +
+      'This usually happens on very long generations - try a narrower request, ' +
       'or ask for a targeted edit instead of a full-file rewrite.';
   }
   if (status === 504 || status === 408) return 'The AI service timed out. Try a smaller request.';
@@ -79,7 +78,7 @@ async function withRetries(send) {
     if (attempt > 0) await sleep(RETRY_BACKOFF_MS[attempt - 1] ?? 4000);
     const step = await send();
     if (step.done) return step.value;
-    // A user-triggered abort must never be retried — retrying is exactly the
+    // A user-triggered abort must never be retried - retrying is exactly the
     // "stop didn't stop" bug: it would fire a brand new request right after
     // the one Stop just cancelled.
     if (step.aborted) return { success: false, error: 'aborted', aborted: true };
@@ -95,10 +94,10 @@ function isAbortError(e) {
 }
 
 // Every provider call below is wrapped in withRetries, which has no timeout
-// of its own — the only AbortSignal ever wired into fetch() was the user's
+// of its own - the only AbortSignal ever wired into fetch() was the user's
 // own manual Stop button. A connection that stalls (accepted but never
 // responds, or a streamed body that stops sending bytes mid-generation)
-// previously just hung forever with zero CPU and no visible error — "is it
+// previously just hung forever with zero CPU and no visible error - "is it
 // thinking or just dead" is exactly what that looks like from the outside.
 // This gives every attempt a hard ceiling so a stalled request surfaces as a
 // real, retryable error instead of an indefinite silent wait.
@@ -115,7 +114,7 @@ function withTimeout(signal, ms = REQUEST_TIMEOUT_MS) {
   return {
     signal: controller.signal,
     // Whether THIS particular abort was the timeout firing rather than the
-    // user's own Stop — callers use this to report "the request stalled"
+    // user's own Stop - callers use this to report "the request stalled"
     // instead of silently treating a stall as if the user had cancelled it.
     isTimeout: () => controller.signal.reason instanceof Error && controller.signal.reason.message === 'timeout',
     cleanup: () => clearTimeout(timer),
@@ -123,7 +122,7 @@ function withTimeout(signal, ms = REQUEST_TIMEOUT_MS) {
 }
 
 /**
- * Same idea as withTimeout, but resettable — for a streamed response, a flat
+ * Same idea as withTimeout, but resettable - for a streamed response, a flat
  * ceiling on the whole request would kill a legitimately long generation that
  * just happens to keep actively sending bytes. poke() bumps the clock every
  * time a chunk actually arrives, so this only fires on a genuine stall (no
@@ -144,37 +143,9 @@ function withIdleTimeout(signal, ms = REQUEST_TIMEOUT_MS) {
   };
 }
 
-/**
- * Trial-tier gate for the shared pooled proxy only — BYOK backends never call
- * this. A free-trial account past its small daily AI-request allowance gets
- * blocked here, before ever spending a proxy request, with a typed
- * `trialLimitReached: true` the renderer can key a locked-plan screen off of.
- * Paid tiers still hit the server-side ai-proxy Edge Function's own 400/day
- * backstop on top of this — that one applies to everyone unconditionally.
- */
-async function checkTrialLimit() {
-  const { tier } = await getSubscription();
-  const limit = TIERS[tier].dailyAiLimit;
-  const count = await dailyAiCountToday();
-  return { allowed: count < limit, count, limit, tier };
-}
-
 async function chatViaProxy(messages, opts) {
   const token = await getAccessToken();
-  if (!token) return { success: false, error: 'Not signed in. Run `codeply login` first.' };
-
-  const trial = await checkTrialLimit();
-  if (!trial.allowed) {
-    return {
-      success: false,
-      trialLimitReached: true,
-      // TRIAL_LIMIT_REACHED: prefix is a stable marker main.js's event loop
-      // greps for to trigger the renderer's locked-plan screen instead of a
-      // generic error toast — keep it in sync with main.js if renamed.
-      error: `TRIAL_LIMIT_REACHED: You've used all ${trial.limit} AI requests on your ${TIERS[trial.tier].label} plan today. ` +
-        `${byokHint()}`,
-    };
-  }
+  if (!token) return { success: false, error: 'Not signed in. Sign in to use Auto, or pick one of your own models.' };
 
   return withRetries(async () => {
     let res, body;
@@ -187,7 +158,7 @@ async function chatViaProxy(messages, opts) {
           'Authorization': `Bearer ${token}`,
           'apikey': SUPABASE_ANON_KEY,
         },
-        // meta is optional, display-only context (what was asked, which file) —
+        // meta is optional, display-only context (what was asked, which file) -
         // the proxy logs it to usage_history so CLI activity shows up in the
         // admin dashboard next to the desktop app, same as this app's own calls.
         body: JSON.stringify({ messages, opts, meta: opts.meta }),
@@ -195,9 +166,9 @@ async function chatViaProxy(messages, opts) {
       });
       body = await res.json().catch(() => ({}));
     } catch (e) {
-      if (isTimeout()) return { retryable: true, error: 'The request timed out with no response from the AI proxy — retrying.' };
+      if (isTimeout()) return { retryable: true, error: 'The request timed out with no response from the AI proxy - retrying.' };
       if (isAbortError(e)) return { aborted: true };
-      // Network-level failure — also worth another go.
+      // Network-level failure - also worth another go.
       return { retryable: true, error: e.message };
     } finally {
       cleanup();
@@ -221,7 +192,7 @@ async function chatViaProxy(messages, opts) {
 }
 
 /**
- * Failures that are about THIS key rather than about the request — an
+ * Failures that are about THIS key rather than about the request - an
  * exhausted daily/hourly quota, a rate limit, a revoked or invalid key, an
  * account with nothing left to spend. When a second key is configured these
  * are worth giving up on immediately: no amount of retrying the same key
@@ -236,7 +207,7 @@ function isKeyLevelFailure(msg, status) {
 }
 
 /**
- * Errors that mean the REQUEST is wrong, not the key — a model name that
+ * Errors that mean the REQUEST is wrong, not the key - a model name that
  * doesn't exist on the host, say. Switching accounts can't help, so the
  * second key is left alone rather than spending it on the same guaranteed
  * failure (and showing the user the same error twice as long).
@@ -249,16 +220,16 @@ function isKeyIndependentFailure(msg) {
  * Ollama with automatic account failover.
  *
  * Two cloud keys can be configured (apiKey and apiKeyFallback in
- * ~/.codeply/config.json — two separate ollama.com accounts). This tries
+ * ~/.codeply/config.json - two separate ollama.com accounts). This tries
  * them in order: the first key gets the normal retry cycle for ordinary
  * transient hiccups, but the moment a failure looks like it's about that
- * KEY — rate limited, over quota, out of credit, revoked — the request moves
+ * KEY - rate limited, over quota, out of credit, revoked - the request moves
  * straight to the other account instead of burning retries on an account
  * that has already said no. One key being full or broken therefore doesn't
  * stop the app; it just quietly finishes on the other one.
  *
  * A local daemon (no key at all) is the one case with nothing to fail over
- * to, and needs none — it runs as the single "keyless" attempt.
+ * to, and needs none - it runs as the single "keyless" attempt.
  */
 async function chatViaOllama(messages, opts, cfg) {
   const { host, model, apiKey, apiKeyFallback, numCtx } = cfg.ollama;
@@ -272,14 +243,14 @@ async function chatViaOllama(messages, opts, cfg) {
     if (!isLocal) {
       return { success: false, error: `No Ollama API key set for ${host}. Run \`codeply provider ollama --key <key>\`.` };
     }
-    keys.push(''); // local daemon — one keyless attempt
+    keys.push(''); // local daemon - one keyless attempt
   }
 
   let last = { success: false, error: 'Request failed' };
   for (let i = 0; i < keys.length; i++) {
     const hasSpare = i < keys.length - 1;
     last = await ollamaRequest(host, model, keys[i], isLocal, messages, opts, numCtx, hasSpare);
-    // Success, or the user pressed Stop: either way we're done — an abort
+    // Success, or the user pressed Stop: either way we're done - an abort
     // must never be "retried" on the other account.
     if (last.success || last.aborted) return last;
     if (!hasSpare) break;
@@ -292,10 +263,23 @@ async function chatViaOllama(messages, opts, cfg) {
   return last;
 }
 
-async function ollamaRequest(host, model, apiKey, isLocal, messages, opts, numCtx, hasSpare) {
+function ollamaRequest(host, model, apiKey, isLocal, messages, opts, numCtx, hasSpare) {
+  return streamingChatRequest({
+    url: `${host}/v1/chat/completions`, label: 'Ollama', model, apiKey, isLocal, messages, opts, hasSpare,
+    extraBody: numCtx ? { options: { num_ctx: numCtx } } : null,
+  });
+}
+
+/**
+ * One streamed OpenAI-compatible chat completion, reassembled into the plain
+ * non-streaming response shape. Shared by the Ollama cloud/local path and by
+ * every user-added custom model. Falls back cleanly to a plain JSON body for
+ * servers that ignore `stream: true`.
+ */
+async function streamingChatRequest({ url, label, model, apiKey, isLocal, messages, opts, hasSpare, extraBody, idleMs }) {
   const headers = { 'Content-Type': 'application/json' };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-  // Harmless for a real Ollama host (unrecognized header, ignored) — but
+  // Harmless for a real Ollama host (unrecognized header, ignored) - but
   // without it, an ngrok free-tier tunnel intercepts every request itself and
   // returns its own "you're about to visit..." interstitial page instead of
   // ever forwarding to the actual server behind it. A self-hosted preset
@@ -306,9 +290,9 @@ async function ollamaRequest(host, model, apiKey, isLocal, messages, opts, numCt
 
   return withRetries(async () => {
     let res;
-    const { signal, poke, isTimeout, cleanup } = withIdleTimeout(opts.signal);
+    const { signal, poke, isTimeout, cleanup } = withIdleTimeout(opts.signal, idleMs);
     try {
-      res = await fetch(`${host}/v1/chat/completions`, {
+      res = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -317,47 +301,33 @@ async function ollamaRequest(host, model, apiKey, isLocal, messages, opts, numCt
           temperature: opts.temperature ?? 0,
           ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
           ...(opts.json ? { response_format: { type: 'json_object' } } : {}),
-          // Ollama's OpenAI-compatible endpoint still accepts the native
-          // `options` object and forwards it into the actual generation call
-          // — this is the one way to raise a model's context window past
-          // whatever the server defaulted to. Without it, a self-hosted
-          // instance pulled with no custom Modelfile commonly defaults to a
-          // 2048-token context: fine for one reply, but conversation history
-          // silently falls off the front of it a few turns in, which reads
-          // as the model "forgetting" what was just said — it was actually
-          // never told. Left out entirely (not even an inflated default)
-          // when unset, so a host that's already configured sensibly (like
-          // ollama.com's cloud service) is untouched.
-          ...(numCtx ? { options: { num_ctx: numCtx } } : {}),
-          // Streamed, not buffered. A non-streaming request makes Ollama hold
-          // the ENTIRE reply in memory until generation is completely done,
-          // sending nothing over the wire until then. Behind a free ngrok
-          // tunnel, more than ~60-120s of that silence gets the connection
-          // killed outright (ERR_NGROK_3004) even though Ollama itself is
-          // still working — streaming keeps bytes flowing from the first
-          // token, which is what actually keeps a tunnel alive during a long
-          // generation. Reassembled back into the same non-streaming shape
-          // below, so nothing downstream of this function has to know or care.
+          // Provider-specific extras (e.g. Ollama's `options.num_ctx`).
+          ...(extraBody || {}),
+          // Streamed, not buffered: a non-streaming request sends nothing over
+          // the wire until generation is completely done, and proxies/tunnels
+          // kill a connection that stays silent for a minute or two. Streaming
+          // keeps bytes flowing from the first token; the chunks are
+          // reassembled into the non-streaming shape below.
           stream: true,
         }),
         signal,
       });
     } catch (e) {
       cleanup();
-      if (isTimeout()) return { retryable: true, error: `Ollama timed out with no response${isLocal ? ' — is `ollama serve` running?' : ' — retrying.'}` };
+      if (isTimeout()) return { retryable: true, error: `${label} timed out with no response${isLocal ? ' - is the local server running?' : ' - retrying.'}` };
       if (isAbortError(e)) return { aborted: true };
-      const hint = isLocal ? ' Is `ollama serve` running?' : '';
+      const hint = isLocal ? ` Is the ${label} server running at ${url}?` : '';
       return { retryable: true, error: e.message + hint };
     }
 
     // Errors (bad model name, auth, ...) come back as one plain JSON body,
-    // not a stream — content-type is the reliable signal for which shape
+    // not a stream - content-type is the reliable signal for which shape
     // actually arrived, since res.ok alone can't distinguish a streamed 200
     // from a JSON-error 200 some proxies in front of Ollama return.
     const isStream = (res.headers.get('content-type') || '').includes('text/event-stream');
 
     if (!isStream) {
-      cleanup(); // no more bytes expected — the idle clock has nothing left to guard
+      cleanup(); // no more bytes expected - the idle clock has nothing left to guard
       const body = await res.json().catch(() => ({}));
       if (res.ok && body.choices?.[0]) {
         return { done: true, value: { success: true, data: body, modelUsed: body.model || model } };
@@ -366,17 +336,17 @@ async function ollamaRequest(host, model, apiKey, isLocal, messages, opts, numCt
       if (apiError) {
         const msg = typeof apiError === 'string' ? apiError : JSON.stringify(apiError);
         const fatal = /not found|does not exist|unknown model|unauthor|invalid.*key|forbidden/i.test(msg);
-        if (fatal) return { done: true, value: { success: false, error: `Ollama: ${msg}` } };
+        if (fatal) return { done: true, value: { success: false, error: `${label}: ${msg}` } };
         // Another account is standing by, and this failure is this account's
-        // own (quota, rate limit, no credit) — stop retrying it and let
+        // own (quota, rate limit, no credit) - stop retrying it and let
         // chatViaOllama move the request over there right now.
         if (hasSpare && isKeyLevelFailure(msg, res.status)) {
-          return { done: true, value: { success: false, error: `Ollama: ${msg}` } };
+          return { done: true, value: { success: false, error: `${label}: ${msg}` } };
         }
-        return { retryable: isTransientStatus(res.status), error: `Ollama: ${msg}` };
+        return { retryable: isTransientStatus(res.status), error: `${label}: ${msg}` };
       }
       if (hasSpare && isKeyLevelFailure('', res.status)) {
-        return { done: true, value: { success: false, error: `Ollama: ${describeStatus(res.status)}` } };
+        return { done: true, value: { success: false, error: `${label}: ${describeStatus(res.status)}` } };
       }
       return { retryable: isTransientStatus(res.status), error: describeStatus(res.status) };
     }
@@ -391,7 +361,7 @@ async function ollamaRequest(host, model, apiKey, isLocal, messages, opts, numCt
     let buffer = '';
     try {
       for await (const chunk of res.body) {
-        poke(); // a real chunk arrived — the stream is alive, push the stall clock back out
+        poke(); // a real chunk arrived - the stream is alive, push the stall clock back out
         buffer += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : Buffer.from(chunk).toString('utf8');
         let nlIndex;
         while ((nlIndex = buffer.indexOf('\n')) !== -1) {
@@ -410,16 +380,16 @@ async function ollamaRequest(host, model, apiKey, isLocal, messages, opts, numCt
         }
       }
     } catch (e) {
-      if (isTimeout()) return { retryable: true, error: 'Ollama stopped sending data mid-response (stalled stream) — retrying.' };
+      if (isTimeout()) return { retryable: true, error: `${label} stopped sending data mid-response (stalled stream) - retrying.` };
       if (isAbortError(e)) return { aborted: true };
-      return { retryable: true, error: `Ollama stream interrupted: ${e.message}` };
+      return { retryable: true, error: `${label} stream interrupted: ${e.message}` };
     } finally {
       cleanup();
     }
 
     if (!res.ok && !content) {
       if (hasSpare && isKeyLevelFailure('', res.status)) {
-        return { done: true, value: { success: false, error: `Ollama: ${describeStatus(res.status)}` } };
+        return { done: true, value: { success: false, error: `${label}: ${describeStatus(res.status)}` } };
       }
       return { retryable: isTransientStatus(res.status), error: describeStatus(res.status) };
     }
@@ -458,20 +428,20 @@ const OPENAI_COMPATIBLE = {
     label: 'OpenAI',
   },
   // Google AI Studio (Gemini) exposes an OpenAI-compatible chat completions
-  // endpoint alongside its native API — using it means Gemini needs no
+  // endpoint alongside its native API - using it means Gemini needs no
   // special-cased request/response shape, same as openrouter/groq/openai.
   google: {
     url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
     label: 'Google AI Studio',
   },
-  // No fixed `url` here — Alibaba issues a deployment-specific Model Studio
+  // No fixed `url` here - Alibaba issues a deployment-specific Model Studio
   // host per account/region, so it comes from cfg.qwen.baseUrl instead (see
   // below and lib/config.js).
   qwen: {
     label: 'Qwen (Alibaba Model Studio)',
   },
   // DeepSeek's own base URL genuinely doesn't need a /v1 segment (unlike the
-  // other OpenAI-compatible hosts above) — they document both /v1/... and
+  // other OpenAI-compatible hosts above) - they document both /v1/... and
   // the bare path as equivalent, since /v1 exists there only for client-SDK
   // compatibility, not real API versioning.
   deepseek: {
@@ -485,12 +455,12 @@ const OPENAI_COMPATIBLE = {
  * the key authenticated fine and the account simply has no balance to spend
  * (OpenRouter's paid models, once the free allowance is gone). Retrying that
  * three times just makes the user wait three times as long for the same
- * answer, and the provider's own message — "Insufficient credits" — matches
+ * answer, and the provider's own message - "Insufficient credits" - matches
  * none of the fatal patterns below, so it needs saying explicitly.
  */
 const OUT_OF_CREDIT_HINT = {
   openrouter: 'your OpenRouter account is out of credit. Top it up at ' +
-    'https://openrouter.ai/credits — the key itself is valid, it just has no ' +
+    'https://openrouter.ai/credits - the key itself is valid, it just has no ' +
     'balance to spend. Free models (ids ending in :free, and the stealth ones) ' +
     'keep working without a balance.',
 };
@@ -528,7 +498,7 @@ async function chatViaOpenAICompatible(messages, opts, providerName, cfg) {
       });
       body = await res.json().catch(() => ({}));
     } catch (e) {
-      if (isTimeout()) return { retryable: true, error: `${label} timed out with no response — retrying.` };
+      if (isTimeout()) return { retryable: true, error: `${label} timed out with no response - retrying.` };
       if (isAbortError(e)) return { aborted: true };
       return { retryable: true, error: e.message };
     } finally {
@@ -558,7 +528,7 @@ async function chatViaOpenAICompatible(messages, opts, providerName, cfg) {
 
 // Below this many characters a block essentially never clears Anthropic's
 // minimum-token floor for caching (1024 tokens on Sonnet-class models, higher
-// on Haiku) — offering cache_control on it just adds a cache-write surcharge
+// on Haiku) - offering cache_control on it just adds a cache-write surcharge
 // for a block that will never actually be served from cache. ~4 chars/token is
 // a deliberately conservative floor, not a precise count.
 const ANTHROPIC_CACHEABLE_MIN_CHARS = 4000;
@@ -572,17 +542,17 @@ const ANTHROPIC_CACHEABLE_MIN_CHARS = 4000;
  * Prompt caching (`cache_control: {type:'ephemeral'}`) is applied at two
  * breakpoints, because of how the agent loop in lib/agent.mjs actually calls
  * this: one user turn can take up to 24 steps, and EVERY step resends the
- * ENTIRE message array built up so far — there is no other way to talk to a
+ * ENTIRE message array built up so far - there is no other way to talk to a
  * stateless chat completions API. Without caching, a 20-step turn re-bills the
  * system prompt and the whole growing transcript from scratch 20 times over.
  * With it:
  *   1. The system prompt (mode instructions + tool reference + skill index +
  *      project context) is byte-identical across every step of a turn, and
- *      usually across the whole session — cached at ~10% of its input-token
+ *      usually across the whole session - cached at ~10% of its input-token
  *      cost after the first call.
  *   2. Everything except the newest message is marked as a second breakpoint,
  *      so step N's request reuses step N-1's cache instead of re-billing the
- *      whole transcript-so-far — turning per-step cost from O(conversation
+ *      whole transcript-so-far - turning per-step cost from O(conversation
  *      length) into roughly O(what's new since the last step).
  * Anthropic allows the read side of a cache hit to apply automatically for any
  * request sharing a cached prefix, so these two breakpoints are enough; more
@@ -590,12 +560,12 @@ const ANTHROPIC_CACHEABLE_MIN_CHARS = 4000;
  */
 /**
  * Message content is either a plain string (the overwhelming majority of
- * calls — every tool result, every system prompt) or, when the user pasted
+ * calls - every tool result, every system prompt) or, when the user pasted
  * an image, an OpenAI-shaped array: [{type:'text',text}, {type:'image_url',
  * image_url:{url:'data:...;base64,...'}}]. That array format is what
  * agent.mjs builds and what OpenAI-compatible endpoints (Ollama, OpenRouter,
  * Groq, OpenAI, the codeply proxy) all speak natively, so those backends
- * need no conversion at all — messages just flow through as-is. Anthropic's
+ * need no conversion at all - messages just flow through as-is. Anthropic's
  * Messages API is the one exception: it wants {type:'image', source:
  * {type:'base64', media_type, data}}, not an image_url. This is the only
  * place that translation has to happen.
@@ -626,7 +596,7 @@ async function chatViaAnthropic(messages, opts, cfg) {
     .filter((m) => m.role !== 'system')
     .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: toAnthropicContent(m.content) }));
 
-  // Anthropic has no json_object response mode — ask for it in plain English instead.
+  // Anthropic has no json_object response mode - ask for it in plain English instead.
   const systemText2 = opts.json
     ? `${systemText}\n\nRespond with ONLY a single valid JSON object. No prose, no markdown fences, nothing before or after it.`
     : systemText;
@@ -682,7 +652,7 @@ async function chatViaAnthropic(messages, opts, cfg) {
           prompt_tokens: body.usage?.input_tokens || 0,
           completion_tokens: body.usage?.output_tokens || 0,
           total_tokens: (body.usage?.input_tokens || 0) + (body.usage?.output_tokens || 0),
-          // Surfaced for anyone instrumenting cost later — not read anywhere yet.
+          // Surfaced for anyone instrumenting cost later - not read anywhere yet.
           cache_read_tokens: body.usage?.cache_read_input_tokens || 0,
           cache_write_tokens: body.usage?.cache_creation_input_tokens || 0,
         },
@@ -712,7 +682,7 @@ async function chatViaAnthropic(messages, opts, cfg) {
  * stored config, without persisting anything.
  *
  * Falls back to the unrouted config whenever the target provider isn't
- * actually usable — no API key for a BYOK provider, no key for remote Ollama.
+ * actually usable - no API key for a BYOK provider, no key for remote Ollama.
  * A route that can't authenticate would otherwise turn a working setup into a
  * hard "No API key set" error purely because of which words were in the user's
  * message, which is a far worse outcome than answering on the model they
@@ -732,7 +702,169 @@ function applyRoute(cfg, route) {
   return { ...cfg, provider: route.provider, [route.provider]: section };
 }
 
+// ─── User-added models (desktop model picker) ───────────────────────────────
+
+const isLocalUrl = (u) => /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(u || '');
+
+/**
+ * People paste base URLs in every shape: ".../v1", ".../openai", the full
+ * ".../chat/completions", or a bare host. Normalize to the completions URL.
+ */
+function chatCompletionsUrl(baseUrl) {
+  const base = String(baseUrl || '').trim().replace(/\/+$/, '');
+  if (/\/chat\/completions$/i.test(base)) return base;
+  if (/\/v\d+[a-z]*$/i.test(base) || /\/openai$/i.test(base) || /\/compatible-mode\/v\d+$/i.test(base)) return `${base}/chat/completions`;
+  return `${base}/v1/chat/completions`;
+}
+
+/** Ollama's native API lives at the host root - strip an /api or /v1 suffix someone pasted. */
+function ollamaHost(baseUrl) {
+  return String(baseUrl || 'http://localhost:11434').trim().replace(/\/+$/, '').replace(/\/(api|v1)$/i, '');
+}
+
+// Local models can take a while to load into memory before the first byte -
+// a longer stall window than the hosted providers get.
+const LOCAL_IDLE_TIMEOUT_MS = 300_000;
+// Ollama's default context window (2-4K tokens) is far too small for an agent
+// system prompt plus history; without raising it the model silently loses the
+// start of the conversation. 32K fits comfortably on most machines.
+const OLLAMA_NUM_CTX = 32768;
+
+/** OpenAI-shaped content array → Ollama native { content, images } fields. */
+function toOllamaMessage(m) {
+  if (typeof m.content === 'string' || !Array.isArray(m.content)) return { role: m.role, content: m.content || '' };
+  const text = m.content.filter((p) => p.type === 'text').map((p) => p.text).join('\n');
+  const images = m.content
+    .filter((p) => p.type === 'image_url')
+    .map((p) => /^data:[^;]+;base64,(.+)$/.exec(p.image_url?.url || '')?.[1])
+    .filter(Boolean);
+  return images.length ? { role: m.role, content: text, images } : { role: m.role, content: text };
+}
+
+/**
+ * Ollama's native /api/chat, not its OpenAI shim: only the native endpoint
+ * reliably honors options.num_ctx, which the agent needs (see above).
+ * Streams NDJSON and reassembles it into the standard response shape.
+ */
+async function chatViaOllamaNative(messages, opts, m) {
+  const host = ollamaHost(m.baseUrl);
+  const local = isLocalUrl(host);
+  const headers = { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' };
+  if (m.apiKey) headers.Authorization = `Bearer ${m.apiKey}`;
+
+  return withRetries(async () => {
+    let res;
+    const { signal, poke, isTimeout, cleanup } = withIdleTimeout(opts.signal, local ? LOCAL_IDLE_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
+    try {
+      res = await fetch(`${host}/api/chat`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: m.model,
+          messages: messages.map(toOllamaMessage),
+          stream: true,
+          ...(opts.json ? { format: 'json' } : {}),
+          options: {
+            num_ctx: OLLAMA_NUM_CTX,
+            temperature: opts.temperature ?? 0,
+            ...(opts.maxTokens ? { num_predict: opts.maxTokens } : {}),
+          },
+        }),
+        signal,
+      });
+    } catch (e) {
+      cleanup();
+      if (isTimeout()) return { retryable: true, error: `Ollama at ${host} didn't respond in time. Large models can take a while to load - try again, or pick a smaller model.` };
+      if (isAbortError(e)) return { aborted: true };
+      return { retryable: false, error: local ? `Can't reach Ollama at ${host}. Is Ollama running? (Start it with \`ollama serve\` or open the Ollama app.)` : `Can't reach ${host}: ${e.message}` };
+    }
+
+    if (!res.ok) {
+      cleanup();
+      const body = await res.json().catch(() => ({}));
+      const msg = body.error || describeStatus(res.status);
+      const fatal = res.status === 404 || /not found|pull/i.test(String(msg));
+      if (fatal) return { done: true, value: { success: false, error: `Ollama: ${msg}${/not found/i.test(String(msg)) ? ` - run \`ollama pull ${m.model}\` first.` : ''}` } };
+      return { retryable: isTransientStatus(res.status), error: `Ollama: ${msg}` };
+    }
+
+    let content = '';
+    let reasoning = '';
+    let buffer = '';
+    let streamError = null;
+    try {
+      for await (const chunk of res.body) {
+        poke();
+        buffer += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : Buffer.from(chunk).toString('utf8');
+        let nl;
+        while ((nl = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, nl).trim();
+          buffer = buffer.slice(nl + 1);
+          if (!line) continue;
+          let evt;
+          try { evt = JSON.parse(line); } catch { continue; }
+          if (evt.error) streamError = evt.error;
+          if (evt.message?.content) content += evt.message.content;
+          if (evt.message?.thinking) reasoning += evt.message.thinking;
+        }
+      }
+    } catch (e) {
+      if (isTimeout()) return { retryable: true, error: 'Ollama stopped sending data mid-response - retrying.' };
+      if (isAbortError(e)) return { aborted: true };
+      return { retryable: true, error: `Ollama stream interrupted: ${e.message}` };
+    } finally {
+      cleanup();
+    }
+    if (streamError && !content) return { done: true, value: { success: false, error: `Ollama: ${streamError}` } };
+
+    const message = { role: 'assistant', content };
+    if (reasoning) message.reasoning = reasoning;
+    return { done: true, value: { success: true, data: { choices: [{ message }], model: m.model }, modelUsed: m.model } };
+  });
+}
+
+function chatViaCustom(messages, opts, m) {
+  if (m.kind === 'ollama') return chatViaOllamaNative(messages, opts, m);
+  const url = chatCompletionsUrl(m.baseUrl);
+  const local = isLocalUrl(url);
+  return streamingChatRequest({
+    url, label: m.name || m.model, model: m.model, apiKey: m.apiKey, isLocal: local,
+    messages, opts, hasSpare: false, idleMs: local ? LOCAL_IDLE_TIMEOUT_MS : REQUEST_TIMEOUT_MS,
+  });
+}
+
+/** Lists the models an Ollama host has pulled - powers "Connect Ollama". */
+async function listOllamaModels(baseUrl) {
+  const host = ollamaHost(baseUrl);
+  try {
+    const res = await fetch(`${host}/api/tags`, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return { ok: false, host, error: `Ollama at ${host} answered HTTP ${res.status}.` };
+    const body = await res.json();
+    const models = (body.models || []).map((x) => ({ name: x.name, size: x.size || 0, family: x.details?.family || '', params: x.details?.parameter_size || '' }));
+    return { ok: true, host, models };
+  } catch {
+    return { ok: false, host, error: `Couldn't find Ollama at ${host}. Install it from ollama.com and make sure it's running.` };
+  }
+}
+
+/** A tiny real request against a model entry, so "Save" can confirm it actually works. */
+async function testModel(m) {
+  const started = Date.now();
+  const r = await chatViaCustom(
+    [{ role: 'user', content: 'Reply with exactly: OK' }],
+    { maxTokens: 16, signal: AbortSignal.timeout(90_000) },
+    m,
+  );
+  if (!r.success) return { ok: false, error: r.aborted ? 'The model took longer than 90 seconds to answer.' : r.error };
+  return { ok: true, ms: Date.now() - started, reply: (r.data.choices?.[0]?.message?.content || '').trim().slice(0, 80) };
+}
+
 async function chat(messages, opts = {}) {
+  // A user-added model (desktop model picker) always wins when routed.
+  if (opts.route && opts.route.custom) return chatViaCustom(messages, opts, opts.route.custom);
+  // Auto in the desktop app = the hosted Codeply model, regardless of what
+  // the CLI's own `codeply provider` setting says.
+  if (opts.route && opts.route.auto) return chatViaProxy(messages, opts);
   const cfg = applyRoute(getConfig(), opts.route);
   switch (cfg.provider) {
     case 'ollama': return chatViaOllama(messages, opts, cfg);
@@ -755,17 +887,17 @@ function tryParseJson(s) {
 
 /**
  * `{ json: true }` asks the provider for a strict JSON response, but that's
- * only ever a hint — response_format: json_object is a best-effort request,
+ * only ever a hint - response_format: json_object is a best-effort request,
  * not a guarantee, and plenty of models (especially smaller/self-hosted
  * ones) still answer with a markdown code fence around the object, or a
  * sentence of prose before/after it, even when told not to. A single strict
  * JSON.parse on the raw content turned every one of those into a hard
- * failure — "AI returned an unreadable response" — even though the actual
+ * failure - "AI returned an unreadable response" - even though the actual
  * JSON was sitting right there. Three attempts, each a superset of what the
  * last one handles:
  *   1. The raw content, as-is (the common, well-behaved case).
  *   2. The content inside a ```json ... ``` / ``` ... ``` fence, if present.
- *   3. The first '{' to the last '}' in the whole reply — covers stray
+ *   3. The first '{' to the last '}' in the whole reply - covers stray
  *      leading/trailing prose the model added despite being asked not to.
  */
 function extractJsonObject(text) {
@@ -798,4 +930,4 @@ async function chatJson(messages, opts = {}) {
   return { success: true, json: parsed, usage: r.data.usage || {}, modelUsed: r.modelUsed };
 }
 
-module.exports = { chat, chatJson, isRateLimitError, checkTrialLimit };
+module.exports = { chat, chatJson, isRateLimitError, listOllamaModels, testModel, chatCompletionsUrl };

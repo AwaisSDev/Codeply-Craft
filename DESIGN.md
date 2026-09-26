@@ -3,21 +3,21 @@
 ## Design reference tool
 
 This project requires a real-app UI reference lookup before any website or design work in this
-repo — pull comparable screens from the reference design library before making layout or
+repo - pull comparable screens from the reference design library before making layout or
 pattern decisions, rather than inventing UI blind.
 
 The reference is the local design library: 914 real apps / 6,433 real App Store screenshots
 across 10 categories (productivity, finance, shopping, social, travel, food_delivery,
 health_fitness, education, entertainment, real_estate), sourced from Apple's public iTunes
-Search API and indexed on disk. It needs no external service, no API key, and no login — it
+Search API and indexed on disk. It needs no external service, no API key, and no login - it
 just needs to be present on disk (`codeply-cli/lib/design-library/index.json`), so the lookup
 step is always available.
 
 Craft's own in-app agent (the sibling `codeply-cli` engine `main.js` loads, not this Claude
 Code session) exposes this as the `design_reference_search` tool in `codeply-cli/lib/tools.mjs`,
 querying `codeply-cli/lib/design-library/query.mjs`. It is a required step before writing markup
-for any UI a human will look at — see the design-reference rules in `codeply-cli/lib/agent.mjs`
-— and is paired with `view_images` so results are actually looked at, not just cited.
+for any UI a human will look at - see the design-reference rules in `codeply-cli/lib/agent.mjs`
+- and is paired with `view_images` so results are actually looked at, not just cited.
 
 Mobbin and Banani MCP integrations have been removed from this project (no `.mcp.json` servers,
 no `mobbin_search`/`banani_import` tools) in favor of always using the local reference library

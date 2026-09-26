@@ -2,7 +2,7 @@
  * Codeply agent tools.
  *
  * Each tool is a plain async function returning { ok, output, meta }. `output`
- * is what gets fed back to the model, so it is always truncated to a sane size —
+ * is what gets fed back to the model, so it is always truncated to a sane size -
  * an untruncated file read is the fastest way to blow the context budget and
  * make the agent stupid halfway through a task.
  *
@@ -23,13 +23,10 @@ const applyLimit = require('./apply-limit.js');
 const config = require('./config.js');
 const skills = require('./skills.js');
 const oauth = require('./oauth-connectors.js');
-const subagentsLib = require('./subagents.js');
 
-// A write is a real "apply" against the shared 100/day cap only when it's
-// actually spending the shared codeply proxy — Ollama (local or the user's
-// own cloud key) never touches Codeply's account/infrastructure, so it isn't
-// gated by it.
-const CAPPED_TOOLS = new Set(['write_file', 'edit_file']);
+// Successful writes made while using the hosted model are logged (counts
+// only) for the usage dashboard. There is no cap - see apply-limit.js.
+const RECORDED_TOOLS = new Set(['write_file', 'edit_file']);
 
 const MAX_TOOL_OUTPUT = 12000;   // chars fed back to the model per tool call
 const MAX_READ_LINES = 600;
@@ -145,7 +142,7 @@ async function read_file(args, ctx) {
   if (!target) return { ok: false, output: 'read_file needs a <path>.' };
   const { abs, rel } = resolvePath(target, ctx.cwd);
   if (!fs.existsSync(abs)) return { ok: false, output: `No such file: ${rel}` };
-  if (fs.statSync(abs).isDirectory()) return { ok: false, output: `${rel} is a directory — use list_dir.` };
+  if (fs.statSync(abs).isDirectory()) return { ok: false, output: `${rel} is a directory - use list_dir.` };
 
   let content;
   try { content = fs.readFileSync(abs, 'utf8'); }
@@ -168,7 +165,7 @@ async function read_file(args, ctx) {
     ok: true,
     output: truncate(`${rel} (${allLines.length} lines)\n${numbered}${more}`),
     // offset/linesShown/hasMore let agent.mjs auto-continue a later call on
-    // this same path that omits <offset> — a model re-requesting "the rest"
+    // this same path that omits <offset> - a model re-requesting "the rest"
     // of a long file doesn't reliably track and restate the right offset
     // itself, so leaving that entirely up to it meant it would often just
     // land back at the top again instead of actually seeing new content.
@@ -186,7 +183,7 @@ async function write_file(args, ctx) {
   const before = existed ? fs.readFileSync(abs, 'utf8') : '';
   const after = args.content;
   if (existed && before === after) {
-    return { ok: true, output: `${rel} already has exactly this content — nothing written.`, meta: { label: rel, noop: true } };
+    return { ok: true, output: `${rel} already has exactly this content - nothing written.`, meta: { label: rel, noop: true } };
   }
 
   const beforeLines = existed ? before.split('\n').length : 0;
@@ -212,7 +209,7 @@ async function write_file(args, ctx) {
 
   return {
     ok: true,
-    output: `Wrote ${rel} (${afterLines} lines). The write succeeded exactly as you sent it — ` +
+    output: `Wrote ${rel} (${afterLines} lines). The write succeeded exactly as you sent it - ` +
       `do NOT read the file back to confirm it.`,
     meta: { label: rel, added: afterLines, removed: beforeLines, wrote: true },
   };
@@ -233,9 +230,9 @@ async function edit_file(args, ctx) {
   const attempt = editEngine.applySearchReplace(before, args.search, args.replace);
   if (!attempt.ok) {
     const why = attempt.error === 'notfound'
-      ? 'that exact text is not in the file — re-read it and copy the block verbatim'
+      ? 'that exact text is not in the file - re-read it and copy the block verbatim'
       : attempt.error === 'multiple'
-        ? 'that text appears more than once — include more surrounding lines to make it unique'
+        ? 'that text appears more than once - include more surrounding lines to make it unique'
         : 'the search block was empty';
     return { ok: false, output: `Edit to ${rel} did not apply: ${why}.` };
   }
@@ -262,7 +259,7 @@ async function edit_file(args, ctx) {
     // whole extra round-trip reading the file back, and stuffs the entire file
     // into context again, which slows down every following step.
     output: `Edited ${rel} (-${removed} +${added} lines). The file is now ${nowLines} lines. ` +
-      `The change was matched and applied successfully — do NOT read the file back to confirm it.`,
+      `The change was matched and applied successfully - do NOT read the file back to confirm it.`,
     meta: { label: rel, added, removed, wrote: true },
   };
 }
@@ -308,12 +305,12 @@ async function search(args, ctx) {
   return { ok: true, output: truncate(`${header}\n${hits.join('\n')}`), meta: { label: pattern, count: hits.length } };
 }
 
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB — plenty for web assets, small enough to not stall a turn
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB - plenty for web assets, small enough to not stall a turn
 const FETCH_TIMEOUT_MS = 20000;
 
 /**
  * Download an image from the internet and save it to disk. This is the
- * agent's only sanctioned path to the network for assets — `run` can already
+ * agent's only sanctioned path to the network for assets - `run` can already
  * reach curl/Invoke-WebRequest, but that gives the model no feedback about
  * whether it actually got an image back, no size cap, and a generic "Run
  * command" approval prompt instead of one that tells the user what's about
@@ -348,7 +345,7 @@ async function fetch_image(args, ctx) {
   if (verdictAction === 'reject') return { ok: false, output: `User declined the download to ${rel}.`, meta: { rejected: true } };
 
   // A host UI (e.g. an image picker the user searched and clicked through)
-  // can hand back a different URL than the one the model proposed — that
+  // can hand back a different URL than the one the model proposed - that
   // replaces it here, but everything downstream (fetch, validation, write)
   // is identical either way.
   const fetchUrl = (verdict && typeof verdict === 'object' && verdict.url) ? verdict.url : url;
@@ -385,7 +382,7 @@ async function fetch_image(args, ctx) {
   return {
     ok: true,
     output: `Downloaded ${rel} (${contentType}, ${(buf.length / 1024).toFixed(0)}KB) from ${fetchUrl}. ` +
-      `Reference it in markup with a normal relative path — do NOT read the file back to confirm it.`,
+      `Reference it in markup with a normal relative path - do NOT read the file back to confirm it.`,
     meta: { label: rel, wrote: true },
   };
 }
@@ -400,7 +397,7 @@ async function getValidGmailToken() {
   const gmail = config.getIntegration('gmail');
   if (!gmail.accessToken) return null;
   if (gmail.expiresAt && Date.now() < gmail.expiresAt - 60000) return gmail.accessToken;
-  if (!gmail.refreshToken) return gmail.accessToken; // nothing to refresh with — let the call itself fail if it's actually expired
+  if (!gmail.refreshToken) return gmail.accessToken; // nothing to refresh with - let the call itself fail if it's actually expired
   const refreshed = await oauth.refreshGmailToken(gmail.clientId, gmail.clientSecret, gmail.refreshToken);
   config.saveIntegration('gmail', { accessToken: refreshed.access_token, expiresAt: Date.now() + (refreshed.expires_in || 3600) * 1000 });
   return refreshed.access_token;
@@ -414,7 +411,7 @@ async function gmail_send(args, ctx) {
   if (!subject) return { ok: false, output: 'gmail_send needs a <subject>.' };
 
   const token = await getValidGmailToken();
-  if (!token) return { ok: false, output: 'Gmail is not connected. Ask the user to connect it from the Integrations panel first.' };
+  if (!token) return { ok: false, output: 'Gmail is not connected. Ask the user to connect it from Connect Apps (account menu → Connect Apps) first.' };
 
   const verdict = await ctx.approve({
     tool: 'gmail_send',
@@ -437,12 +434,12 @@ async function gmail_search(args, ctx) {
   if (!query) return { ok: false, output: 'gmail_search needs a <query> (Gmail search syntax, e.g. "from:x@y.com is:unread").' };
 
   const token = await getValidGmailToken();
-  if (!token) return { ok: false, output: 'Gmail is not connected. Ask the user to connect it from the Integrations panel first.' };
+  if (!token) return { ok: false, output: 'Gmail is not connected. Ask the user to connect it from Connect Apps (account menu → Connect Apps) first.' };
 
   try {
     const results = await oauth.gmailSearch(token, query);
     if (!results.length) return { ok: true, output: `No messages matched "${query}".`, meta: { label: query } };
-    const lines = results.map((m) => `- ${m.subject || '(no subject)'} — from ${m.from} — ${m.date}\n  ${m.snippet}`);
+    const lines = results.map((m) => `- ${m.subject || '(no subject)'} - from ${m.from} - ${m.date}\n  ${m.snippet}`);
     return { ok: true, output: `${results.length} message(s) matching "${query}":\n\n${lines.join('\n')}`, meta: { label: query, count: results.length } };
   } catch (e) {
     return { ok: false, output: `Gmail search failed: ${e.message}` };
@@ -450,7 +447,7 @@ async function gmail_search(args, ctx) {
 }
 
 // Slack's own docs are inconsistent about whether chat.postMessage accepts a
-// bare channel name — it's legacy behavior some workspaces get and others
+// bare channel name - it's legacy behavior some workspaces get and others
 // don't. Resolving to a real ID via conversations.list first is the only
 // reliable path, and it's one extra call, not a real cost.
 async function resolveSlackChannel(accessToken, input) {
@@ -469,7 +466,7 @@ async function slack_post_message(args, ctx) {
   if (!text.trim()) return { ok: false, output: 'slack_post_message needs <text> to send.' };
 
   const slack = config.getIntegration('slack');
-  if (!slack.accessToken) return { ok: false, output: 'Slack is not connected. Ask the user to connect it from the Integrations panel first.' };
+  if (!slack.accessToken) return { ok: false, output: 'Slack is not connected. Ask the user to connect it from Connect Apps (account menu → Connect Apps) first.' };
 
   const verdict = await ctx.approve({
     tool: 'slack_post_message',
@@ -480,10 +477,10 @@ async function slack_post_message(args, ctx) {
   if (verdict === 'reject') return { ok: false, output: `User declined to post to ${channelInput}.`, meta: { rejected: true } };
 
   try {
-    // Channel lookup always uses the bot token — channels:read is a bot-only
+    // Channel lookup always uses the bot token - channels:read is a bot-only
     // scope in this app's setup regardless of which token ends up posting.
     const channelId = await resolveSlackChannel(slack.accessToken, channelInput);
-    // Posting defaults to the user token when connected — messages read as
+    // Posting defaults to the user token when connected - messages read as
     // coming from the actual person, not the "Codeply Craft APP" bot. Falls
     // back to the bot token for anyone who connected before user-token
     // support existed, or who only approved the bot scopes.
@@ -516,7 +513,7 @@ function upsertEnvFile(envPath, vars) {
   fs.writeFileSync(envPath, `${lines.join('\n')}\n`, 'utf8');
 }
 
-const VERCEL_MAX_INLINE_BYTES = 15 * 1024 * 1024; // inline base64 deploy body — plenty for a hand-built site, not an asset-heavy monorepo
+const VERCEL_MAX_INLINE_BYTES = 15 * 1024 * 1024; // inline base64 deploy body - plenty for a hand-built site, not an asset-heavy monorepo
 const ENV_FILENAME_RE = /^\.env(\..*)?$/;
 
 async function vercel_deploy(args, ctx) {
@@ -526,9 +523,9 @@ async function vercel_deploy(args, ctx) {
   }
 
   const vercel = config.getIntegration('vercel');
-  if (!vercel.accessToken) return { ok: false, output: 'Vercel is not connected. Ask the user to connect it from the Integrations panel first.' };
+  if (!vercel.accessToken) return { ok: false, output: 'Vercel is not connected. Ask the user to connect it from Connect Apps (account menu → Connect Apps) first.' };
 
-  // .env files never ship in the deployment bundle — they exist to become
+  // .env files never ship in the deployment bundle - they exist to become
   // Vercel project env vars (see supabase_create_project), not static files a
   // visitor could fetch by URL.
   const paths = walkFiles(root).filter((abs) => !ENV_FILENAME_RE.test(path.basename(abs)));
@@ -555,7 +552,7 @@ async function vercel_deploy(args, ctx) {
   const verdict = await ctx.approve({
     tool: 'vercel_deploy',
     title: `Deploy "${projectName}" to Vercel`,
-    detail: `${files.length} file(s), ${(totalBytes / 1024).toFixed(0)}KB — production deployment`,
+    detail: `${files.length} file(s), ${(totalBytes / 1024).toFixed(0)}KB - production deployment`,
     danger: true,
   });
   if (verdict === 'reject') return { ok: false, output: `User declined the deploy of ${projectName}.`, meta: { rejected: true } };
@@ -563,7 +560,7 @@ async function vercel_deploy(args, ctx) {
   try {
     const deployment = await oauth.vercelDeploy(vercel.accessToken, vercel.teamId, projectName, files);
     // Every project gets `<project-name>.vercel.app` as its default, always-
-    // public production domain — separate from (and not listed in) this
+    // public production domain - separate from (and not listed in) this
     // deployment response's own .url (a per-deploy generated URL with a
     // random hash) or .alias (a team-suffixed alias), both of which stay
     // gated behind Vercel Authentication under this account's protection
@@ -572,8 +569,8 @@ async function vercel_deploy(args, ctx) {
     const publicUrl = `https://${projectName}.vercel.app`;
     return {
       ok: true,
-      output: `Deployed "${projectName}" to Vercel — ${publicUrl} (state: ${deployment.readyState || 'unknown'}). ` +
-        `The build runs on Vercel's side — if that state isn't READY yet, it will finish shortly.`,
+      output: `Deployed "${projectName}" to Vercel - ${publicUrl} (state: ${deployment.readyState || 'unknown'}). ` +
+        `The build runs on Vercel's side - if that state isn't READY yet, it will finish shortly.`,
       meta: { label: projectName },
     };
   } catch (e) {
@@ -582,15 +579,15 @@ async function vercel_deploy(args, ctx) {
 }
 
 async function supabase_create_project(args, ctx) {
-  const supabase = config.getIntegration('supabase');
-  if (!supabase.accessToken) return { ok: false, output: 'Supabase is not connected. Ask the user to connect it from the Integrations panel first.' };
+  const supabaseToken = await getValidSupabaseToken();
+  if (!supabaseToken) return { ok: false, output: SUPABASE_NOT_CONNECTED };
 
   const projectName = sanitizeProjectName(args.name || path.basename(ctx.cwd));
 
   let orgs;
-  try { orgs = await oauth.supabaseListOrganizations(supabase.accessToken); }
+  try { orgs = await oauth.supabaseListOrganizations(supabaseToken); }
   catch (e) { return { ok: false, output: `Could not look up Supabase organizations: ${e.message}` }; }
-  if (!orgs?.length) return { ok: false, output: 'No Supabase organizations found for this account — create one at supabase.com first.' };
+  if (!orgs?.length) return { ok: false, output: 'No Supabase organizations found for this account - create one at supabase.com first.' };
   const org = orgs[0];
 
   const vercel = config.getIntegration('vercel');
@@ -610,19 +607,19 @@ async function supabase_create_project(args, ctx) {
 
   let project;
   try {
-    project = await oauth.supabaseCreateProject(supabase.accessToken, { name: projectName, organizationSlug: org.slug, dbPass });
+    project = await oauth.supabaseCreateProject(supabaseToken, { name: projectName, organizationSlug: org.slug, dbPass });
   } catch (e) {
     return { ok: false, output: `Supabase project creation failed: ${e.message}` };
   }
 
   let keys;
   try {
-    keys = await oauth.supabaseGetProjectKeys(supabase.accessToken, project.ref, dbPass);
+    keys = await oauth.supabaseGetProjectKeys(supabaseToken, project.ref, dbPass);
   } catch (e) {
     return {
       ok: true,
       output: `Created Supabase project "${projectName}" (ref ${project.ref}), but could not fetch its API keys yet: ${e.message} ` +
-        `The project exists — check the Supabase dashboard for its URL/anon key.`,
+        `The project exists - check the Supabase dashboard for its URL/anon key.`,
       meta: { label: projectName },
     };
   }
@@ -650,7 +647,7 @@ async function supabase_create_project(args, ctx) {
       await oauth.vercelSetEnvVars(vercel.accessToken, vercel.teamId, vercelProjectName, envVars);
       vercelNote = ` Pushed the same env vars to the "${vercelProjectName}" Vercel project.`;
     } catch (e) {
-      vercelNote = ` Wrote .env locally, but pushing env vars to Vercel failed: ${e.message} (Vercel project "${vercelProjectName}" may not exist yet — deploy it first.)`;
+      vercelNote = ` Wrote .env locally, but pushing env vars to Vercel failed: ${e.message} (Vercel project "${vercelProjectName}" may not exist yet - deploy it first.)`;
     }
   }
 
@@ -662,14 +659,14 @@ async function supabase_create_project(args, ctx) {
 }
 
 async function supabase_delete_project(args, ctx) {
-  const supabase = config.getIntegration('supabase');
-  if (!supabase.accessToken) return { ok: false, output: 'Supabase is not connected. Ask the user to connect it from the Integrations panel first.' };
+  const supabaseToken = await getValidSupabaseToken();
+  if (!supabaseToken) return { ok: false, output: SUPABASE_NOT_CONNECTED };
 
   const target = (args.ref || args.name || path.basename(ctx.cwd)).trim();
   if (!target) return { ok: false, output: 'supabase_delete_project needs a <name> or <ref> to identify the project.' };
 
   let projects;
-  try { projects = await oauth.supabaseListProjects(supabase.accessToken); }
+  try { projects = await oauth.supabaseListProjects(supabaseToken); }
   catch (e) { return { ok: false, output: `Could not look up Supabase projects: ${e.message}` }; }
 
   // A ref (Supabase's project id, e.g. "abcdefghijklmnop") never collides
@@ -681,7 +678,7 @@ async function supabase_delete_project(args, ctx) {
     if (matches.length > 1) {
       return {
         ok: false,
-        output: `Multiple Supabase projects are named "${target}" — specify which by <ref> instead: ` +
+        output: `Multiple Supabase projects are named "${target}" - specify which by <ref> instead: ` +
           matches.map((p) => `${p.ref} (${p.region})`).join(', '),
       };
     }
@@ -692,34 +689,34 @@ async function supabase_delete_project(args, ctx) {
   const verdict = await ctx.approve({
     tool: 'supabase_delete_project',
     title: `Delete Supabase project "${project.name}"`,
-    detail: `ref ${project.ref} — this permanently deletes the project and its database. Supabase does not support undo or restore.`,
+    detail: `ref ${project.ref} - this permanently deletes the project and its database. Supabase does not support undo or restore.`,
     danger: true,
   });
   if (verdict === 'reject') return { ok: false, output: `User declined deleting the Supabase project.`, meta: { rejected: true } };
 
   try {
-    await oauth.supabaseDeleteProject(supabase.accessToken, project.ref);
+    await oauth.supabaseDeleteProject(supabaseToken, project.ref);
   } catch (e) {
     return { ok: false, output: `Supabase project deletion failed: ${e.message}` };
   }
 
   return {
     ok: true,
-    output: `Deleted Supabase project "${project.name}" (ref ${project.ref}). This did not touch .env or any Vercel env vars pointing at it — remove those separately if they're now stale.`,
+    output: `Deleted Supabase project "${project.name}" (ref ${project.ref}). This did not touch .env or any Vercel env vars pointing at it - remove those separately if they're now stale.`,
     meta: { label: project.name },
   };
 }
 
-/** GitHub repo names allow more than Vercel/Supabase project names — letters (any case), digits, dot/dash/underscore. */
+/** GitHub repo names allow more than Vercel/Supabase project names - letters (any case), digits, dot/dash/underscore. */
 function sanitizeRepoName(raw) {
   const base = (raw || '').trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
   return base || 'codeply-project';
 }
 
-// Async on purpose, same as run()'s exec() below — this is the ONE thing
+// Async on purpose, same as run()'s exec() below - this is the ONE thing
 // every concurrently-running session shares (Electron's single main-process
 // event loop), so a synchronous git call (execSync) here doesn't just block
-// its own turn, it freezes every other session — the main chat included —
+// its own turn, it freezes every other session - the main chat included -
 // for as long as it runs. That's harmless for a local `git init`/`commit`
 // (milliseconds) but genuinely dangerous for `git push`, a real network
 // call that can take seconds to tens of seconds: a synchronous push used to
@@ -744,21 +741,21 @@ async function github_create_repo(args, ctx) {
   }
 
   const github = config.getIntegration('github');
-  if (!github.accessToken) return { ok: false, output: 'GitHub is not connected. Ask the user to connect it from the Integrations panel first.' };
+  if (!github.accessToken) return { ok: false, output: 'GitHub is not connected. Ask the user to connect it from Connect Apps (account menu → Connect Apps) first.' };
 
   const repoName = sanitizeRepoName(args.name || path.basename(root));
 
   const verdict = await ctx.approve({
     tool: 'github_create_repo',
     title: `Create GitHub repo "${repoName}" and push`,
-    detail: `Creates a new private repo under ${github.userName || 'your account'} from ${path.relative(ctx.cwd, root) || '.'} and pushes it — no need to create the repo on github.com first.`,
+    detail: `Creates a new private repo under ${github.userName || 'your account'} from ${path.relative(ctx.cwd, root) || '.'} and pushes it - no need to create the repo on github.com first.`,
     danger: false,
   });
   if (verdict === 'reject') return { ok: false, output: 'User declined creating the GitHub repo.', meta: { rejected: true } };
 
   try {
     // Turn the folder into a repo if it isn't one yet, and make sure it has
-    // at least one commit — a brand-new GitHub repo (created with no
+    // at least one commit - a brand-new GitHub repo (created with no
     // auto_init below) starts completely empty, so pushing an empty local
     // repo would just fail with "src refspec main does not match any".
     const isRepo = fs.existsSync(path.join(root, '.git'));
@@ -773,7 +770,7 @@ async function github_create_repo(args, ctx) {
     const repo = await oauth.githubCreateRepo(github.accessToken, repoName, { private: true });
 
     // The access token rides the remote URL only for this one push, then
-    // gets scrubbed back out — .git/config is plaintext on disk, and leaving
+    // gets scrubbed back out - .git/config is plaintext on disk, and leaving
     // a live token sitting in it is a real credential leak, not a theoretical
     // one. Future pushes from the user's own terminal go through their normal
     // Git credential helper against the clean URL instead.
@@ -792,7 +789,7 @@ async function github_create_repo(args, ctx) {
 
     return {
       ok: true,
-      output: `Created ${repo.full_name} (private) and pushed ${path.relative(ctx.cwd, root) || '.'} to it — ${repo.html_url}`,
+      output: `Created ${repo.full_name} (private) and pushed ${path.relative(ctx.cwd, root) || '.'} to it - ${repo.html_url}`,
       meta: { label: repo.full_name },
     };
   } catch (e) {
@@ -804,9 +801,9 @@ const BROWSER_CHECK_DEFAULT_WAIT_MS = 700;
 const BROWSER_CHECK_MAX_WAIT_MS = 5000;
 
 /**
- * Opens a page in a real browser and reports what actually happened —
+ * Opens a page in a real browser and reports what actually happened -
  * console errors/warnings, failed requests, broken images, visible text.
- * Read-only (no ctx.approve — nothing on disk or on the network changes) and
+ * Read-only (no ctx.approve - nothing on disk or on the network changes) and
  * not always available: it depends on ctx.browser, a function only a host
  * with a real embedded browser provides (the Codeply Craft desktop app).
  * The plain terminal CLI has no browser to hand it, so ctx.browser is simply
@@ -826,7 +823,7 @@ async function browser_check(args, ctx) {
   if (!ctx.browser) {
     return {
       ok: false,
-      output: 'browser_check is not available here — this environment has no embedded browser to check with ' +
+      output: 'browser_check is not available here - this environment has no embedded browser to check with ' +
         '(that capability is only provided by the Codeply Craft desktop app, not the terminal CLI). ' +
         'Continue by reasoning from the source instead; do not retry this.',
     };
@@ -862,7 +859,7 @@ async function browser_check(args, ctx) {
   }
   lines.push('', 'Visible page text (truncated):', report.text ? report.text.slice(0, 1500) : '(empty page)');
   if (report.screenshotPath) lines.push('', `Screenshot saved to disk: ${report.screenshotPath}`);
-  if (report.screenshotDataUrl) lines.push('', 'A screenshot of the actual rendered page is attached to this result — look at it before judging whether the page is correct, not just the text above.');
+  if (report.screenshotDataUrl) lines.push('', 'A screenshot of the actual rendered page is attached to this result - look at it before judging whether the page is correct, not just the text above.');
 
   const clean = !(report.consoleErrors?.length || report.failedRequests?.length || report.brokenImages?.length);
 
@@ -877,7 +874,7 @@ async function browser_check(args, ctx) {
       label: url, clean, errorCount: report.consoleErrors?.length || 0,
       screenshotDataUrl: report.screenshotDataUrl || null,
       // Persisted on the session message so a screenshot survives reopening
-      // the chat later — the data: URL above is only ever sent over the
+      // the chat later - the data: URL above is only ever sent over the
       // live event stream, never written to the session store (it'd bloat
       // every saved chat by hundreds of KB per check).
       screenshotPath: report.screenshotPath || null,
@@ -888,7 +885,7 @@ async function browser_check(args, ctx) {
 const CODEPLY_COMMIT_EMAIL = 'noreply.codeplyai@gmail.com';
 const GIT_COMMIT_RE = /\bgit\s+commit\b/;
 
-// Cached after the first run() call — a version check on every single command
+// Cached after the first run() call - a version check on every single command
 // would be wasted work, and the answer can't change mid-session. Cached as a
 // Promise (not the resolved boolean) so two overlapping first calls share the
 // same in-flight check instead of both firing `git --version`.
@@ -909,7 +906,7 @@ function checkGitTrailerSupport() {
  * Every commit the agent makes gets credited to the shared Codeply GitHub
  * account (CodeplyAI, noreply.codeplyai@gmail.com verified on it) via git's
  * built-in --trailer flag (git >= 2.32), so it shows up in GitHub's commit/PR
- * view as a linked contributor with the Codeply avatar — the same mechanism
+ * view as a linked contributor with the Codeply avatar - the same mechanism
  * Claude Code uses for its own "Co-Authored-By: Claude" commits. This has to
  * happen here, not by asking the model to remember to type the trailer
  * itself: --trailer works no matter how the model wrote the commit (-m, an
@@ -924,8 +921,8 @@ async function withCodeplyTrailer(command) {
 }
 
 async function run(args, ctx) {
-  // displayCommand is what the user sees — the approval card, the result
-  // label, the echoed "$ ..." line — and stays exactly what the model wrote.
+  // displayCommand is what the user sees - the approval card, the result
+  // label, the echoed "$ ..." line - and stays exactly what the model wrote.
   // execCommand is what actually runs, with the Codeply co-author trailer
   // spliced into any git commit. Keeping them separate means the contributor
   // bookkeeping is invisible: the user approves "git add . && git commit -m
@@ -962,7 +959,7 @@ async function run(args, ctx) {
 }
 
 /**
- * Load one skill's full instructions on demand. Read-only, no approval — the
+ * Load one skill's full instructions on demand. Read-only, no approval - the
  * whole point of the skill index living in the system prompt (see
  * lib/skills.js) is that only a name and a one-line description cost anything
  * until the agent actually decides a skill is relevant, at which point this is
@@ -977,7 +974,7 @@ async function use_skill(args, ctx) {
     // Capped rather than dumping the full library (281 names) into a reply
     // that only exists because of one wrong guess.
     const all = skills.listSkills().map((s) => s.name);
-    const shown = all.slice(0, 40).join(', ') + (all.length > 40 ? `, … (${all.length - 40} more — see list_skills)` : '');
+    const shown = all.slice(0, 40).join(', ') + (all.length > 40 ? `, … (${all.length - 40} more - see list_skills)` : '');
     return {
       ok: false,
       output: `No skill named "${name}". ${all.length ? `Some available: ${shown}` : '(none installed)'}`,
@@ -987,11 +984,11 @@ async function use_skill(args, ctx) {
 }
 
 /**
- * The full skill catalog — the counterpart to the DAILY-only index that
+ * The full skill catalog - the counterpart to the DAILY-only index that
  * always rides in the system prompt (see lib/skills.js). One call, paid once,
  * only when the task actually needs something outside that curated set.
  *
- * At 281 skills, name+description together run past MAX_TOOL_OUTPUT — an
+ * At 281 skills, name+description together run past MAX_TOOL_OUTPUT - an
  * optional query narrows to matching names/descriptions before formatting, so
  * the normal case (looking for "something about X") returns a handful of
  * relevant lines instead of a wall of text truncated at an arbitrary,
@@ -1021,7 +1018,7 @@ async function list_skills(args) {
  * Real-app UI reference search against the private design library built
  * locally in lib/design-library/index.json (914 apps / 6,433 real App Store
  * screenshots, 10 categories, sourced from Apple's public iTunes Search
- * API). This is the required design-reference step for any UI work — it
+ * API). This is the required design-reference step for any UI work - it
  * doesn't depend on any external service being reachable or authenticated,
  * since this data lives on disk. Read-only, no ctx.approve().
  */
@@ -1049,11 +1046,11 @@ async function design_reference_search(args, ctx) {
   }
 
   const lines = results.map((r, i) =>
-    `${i + 1}. ${r.name} — ${r.categoryLabel}${r.rating ? ` (${r.rating}★)` : ''}\n` +
+    `${i + 1}. ${r.name} - ${r.categoryLabel}${r.rating ? ` (${r.rating}★)` : ''}\n` +
     r.screenshots.map((url) => `   screenshot: ${url}`).join('\n'));
 
   const fallbackNote = results.usedFallback
-    ? `No app is literally named "${term}" — this library only indexes app names, not per-screen content, so a pattern-style ` +
+    ? `No app is literally named "${term}" - this library only indexes app names, not per-screen content, so a pattern-style ` +
       `term rarely matches directly. These are the top-rated ${category} apps instead; browse their screenshots for the ` +
       `specific screen type you need.\n\n`
     : '';
@@ -1061,13 +1058,13 @@ async function design_reference_search(args, ctx) {
   return {
     ok: true,
     output: `${fallbackNote}${results.length} app(s) matching "${term || category}":\n\n${lines.join('\n')}\n\n` +
-      `MANDATORY NEXT STEP: these are just URLs, not a design brief — you have not "used" this reference yet, and ` +
+      `MANDATORY NEXT STEP: these are just URLs, not a design brief - you have not "used" this reference yet, and ` +
       `fetch_image will NOT show you what they look like (it only downloads to disk, silently, no vision). ` +
       `Before writing any markup, call view_images with 2-4 of the "screenshot:" URLs above (pick from different apps, ` +
-      `not all from #1) — that is the only way to actually see the real layout structure, spacing, type scale, color ` +
+      `not all from #1) - that is the only way to actually see the real layout structure, spacing, type scale, color ` +
       `choices, and component patterns those apps ship with. Build FROM what you saw, not from a generic idea of what ` +
       `that kind of app "usually" looks like. If you skip view_images and design from memory instead, do not tell the ` +
-      `user you referenced real apps — say plainly that you designed from your own judgment this time.`,
+      `user you referenced real apps - say plainly that you designed from your own judgment this time.`,
     meta: { label: term || category, count: results.length },
   };
 }
@@ -1078,17 +1075,17 @@ const MAX_VIEW_IMAGES_TOTAL_BYTES = 20 * 1024 * 1024;
 /**
  * Fetch 1-4 image URLs and hand them back as real vision content on the
  * tool-result message (same image_url content-part mechanism browser_check
- * uses for its screenshot) — nothing is written to disk, nothing on the
+ * uses for its screenshot) - nothing is written to disk, nothing on the
  * user's machine changes, so this is read-only like
  * design_reference_search, not fetch_image (which downloads an asset to a
  * path and deliberately does NOT attach it as vision, since most fetch_image
  * calls are just pulling a hero photo, not something worth spending a vision
- * pass on). This exists specifically so a reference-search result — a list
- * of screenshot URLs — can actually be looked at instead of just cited.
+ * pass on). This exists specifically so a reference-search result - a list
+ * of screenshot URLs - can actually be looked at instead of just cited.
  */
 async function view_images(args, ctx) {
   const raw = (args.urls || '').trim();
-  if (!raw) return { ok: false, output: 'view_images needs <urls> — one or more image URLs, comma-separated.' };
+  if (!raw) return { ok: false, output: 'view_images needs <urls> - one or more image URLs, comma-separated.' };
   const urls = raw.split(',').map((u) => u.trim()).filter(Boolean).slice(0, MAX_VIEW_IMAGES);
   if (!urls.length) return { ok: false, output: 'No valid URLs in <urls>.' };
 
@@ -1099,22 +1096,22 @@ async function view_images(args, ctx) {
   for (const url of urls) {
     let parsed;
     try { parsed = new URL(url); }
-    catch { failed.push(`${url} — not a valid URL`); continue; }
+    catch { failed.push(`${url} - not a valid URL`); continue; }
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      failed.push(`${url} — only http/https supported`);
+      failed.push(`${url} - only http/https supported`);
       continue;
     }
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), redirect: 'follow' });
-      if (!res.ok) { failed.push(`${url} — HTTP ${res.status}`); continue; }
+      if (!res.ok) { failed.push(`${url} - HTTP ${res.status}`); continue; }
       const contentType = (res.headers.get('content-type') || '').split(';')[0].trim();
-      if (!contentType.startsWith('image/')) { failed.push(`${url} — not an image (${contentType || 'unknown'})`); continue; }
+      if (!contentType.startsWith('image/')) { failed.push(`${url} - not an image (${contentType || 'unknown'})`); continue; }
       const buf = Buffer.from(await res.arrayBuffer());
-      if (totalBytes + buf.length > MAX_VIEW_IMAGES_TOTAL_BYTES) { failed.push(`${url} — skipped, combined size limit reached`); continue; }
+      if (totalBytes + buf.length > MAX_VIEW_IMAGES_TOTAL_BYTES) { failed.push(`${url} - skipped, combined size limit reached`); continue; }
       totalBytes += buf.length;
       dataUrls.push(`data:${contentType};base64,${buf.toString('base64')}`);
     } catch (e) {
-      failed.push(`${url} — ${e.message}`);
+      failed.push(`${url} - ${e.message}`);
     }
   }
 
@@ -1122,7 +1119,7 @@ async function view_images(args, ctx) {
     return { ok: false, output: `Could not load any of the requested images:\n${failed.join('\n')}` };
   }
 
-  const lines = [`${dataUrls.length} image(s) attached below — look at them before continuing.`];
+  const lines = [`${dataUrls.length} image(s) attached below - look at them before continuing.`];
   if (failed.length) lines.push('', `${failed.length} failed:`, ...failed.map((f) => `  ${f}`));
 
   return {
@@ -1132,185 +1129,169 @@ async function view_images(args, ctx) {
   };
 }
 
-const MAX_SUBAGENT_DEPTH = 1;
+// ─── Full-access Supabase / Vercel ──────────────────────────────────────────
+// Once the user connects Supabase or Vercel, these give the agent the whole
+// Management/REST API rather than a handful of canned operations. Reads (GET,
+// read-only SQL) run without a prompt; anything that changes something goes
+// through the normal approval card, flagged as dangerous for deletes.
+
+const API_OUTPUT_MAX = 10000;
+const READ_ONLY_MODES = new Set(['Plan', 'Ask']);
+
+function normalizeMethod(raw) {
+  const m = String(raw || 'GET').trim().toUpperCase();
+  return ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(m) ? m : null;
+}
+
+function parseJsonBody(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return { ok: true, value: undefined };
+  try { return { ok: true, value: JSON.parse(text) }; }
+  catch (e) { return { ok: false, error: `The <body> is not valid JSON (${e.message}). Send a JSON object.` }; }
+}
+
+function formatApiResult(service, method, apiPath, r) {
+  const shown = typeof r.body === 'string' ? r.body : JSON.stringify(r.body, null, 2);
+  const status = `${service} ${method} ${apiPath} → HTTP ${r.status}${r.ok ? '' : ' (FAILED)'}`;
+  return truncate(`${status}\n${shown ?? '(empty body)'}`, API_OUTPUT_MAX);
+}
 
 /**
- * Runs a second, independent copy of the agent loop to completion on a
- * self-contained sub-task, and hands back a text summary as this tool's
- * result. This is genuine delegation, not a UI fiction: the nested run gets
- * its own fresh transcript and its own MAX_STEPS budget (see agent.mjs), so a
- * big investigation doesn't eat into the parent's own context or step count.
- *
- * Every side effect the subagent performs still goes through ctx.approve —
- * the same approval prompt the user already sees for the parent's own
- * actions — so a subagent can never write, edit, or run anything the user
- * hasn't (or wouldn't) have approved directly. subagentDepth caps recursion
- * at one level: a subagent cannot itself spawn a subagent.
- *
- * Imported lazily (not at module top) because agent.mjs imports this module
- * for executeTool/TOOL_NEEDS_APPROVAL — a top-level cycle would work in
- * practice under ESM's live-binding semantics, but importing at call time
- * keeps that reasoning off the table entirely.
+ * Supabase OAuth tokens expire. Refreshed shortly before expiry using the app's
+ * OAuth credentials (config.getIntegration fills those from the environment).
  */
-async function subagent(args, ctx) {
-  const task = (args.task || '').trim();
-  const rawName = (args.name || '').trim();
-  const label = rawName || task.slice(0, 48);
-  if (!task) return { ok: false, output: 'subagent needs a <task> describing what it should do.' };
-
-  const depth = ctx.subagentDepth || 0;
-  if (depth >= MAX_SUBAGENT_DEPTH) {
-    return { ok: false, output: 'Subagents cannot spawn their own subagents. Do this step directly instead of delegating further.' };
-  }
-
-  // A subagent inherits the parent's read-only-ness — Plan/Ask mode blocking
-  // write_file/edit_file for the parent must not be escapable by delegating
-  // the write to a "Build mode" subagent underneath it.
-  const READ_ONLY = new Set(['Plan', 'Ask']);
-  const childMode = READ_ONLY.has(ctx.mode) ? ctx.mode : 'Build';
-
-  // If <name> names one of the eight fixed specialists (see lib/subagents.js
-  // — "frontend", "the security specialist", "Warden", ...), the nested run
-  // gets that specialist's persona too, not just its label. Delegating to
-  // "the security specialist" then genuinely reviews like Warden would,
-  // rather than just being a generically-labeled nested run.
-  const specialist = rawName ? subagentsLib.findSubagentByName(rawName) : null;
-
-  const { runAgent } = await import('./agent.mjs');
-  const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-
-  // specialistId rides along so a host UI can show the actual mascot badge
-  // for a named delegation, not just a text label — see notifySubagentStart
-  // in main.js.
-  ctx.onSubagentEvent?.({ type: 'start', id, label: specialist ? `${specialist.name} (${specialist.tagline})` : label, specialistId: specialist?.id });
-
-  let finalText = '';
-  let steps = 0;
-  let ok = true;
+async function getValidSupabaseToken() {
+  const sb = config.getIntegration('supabase');
+  if (!sb.accessToken) return null;
+  if (!sb.expiresAt || Date.now() < sb.expiresAt - 120000) return sb.accessToken;
+  if (!sb.refreshToken || !sb.clientId || !sb.clientSecret) return sb.accessToken;
   try {
-    const stream = runAgent({
-      userMessage: task,
-      history: [],
-      mode: childMode,
-      cwd: ctx.cwd,
-      approve: ctx.approve,
-      browser: ctx.browser,
-      // Must be a real AbortSignal, not a look-alike — it rides all the way
-      // down to fetch() in ai.js, which throws if handed anything else.
-      signal: ctx.signal || new AbortController().signal,
-      route: ctx.route,
-      subagentDepth: depth + 1,
-      onSubagentEvent: ctx.onSubagentEvent,
-      subagentId: specialist?.id,
-      dispatchAgent: ctx.dispatchAgent,
+    const t = await oauth.refreshSupabaseToken(sb.clientId, sb.clientSecret, sb.refreshToken);
+    config.saveIntegration('supabase', {
+      accessToken: t.access_token,
+      refreshToken: t.refresh_token || sb.refreshToken,
+      expiresAt: Date.now() + (t.expires_in || 3600) * 1000,
     });
-    for await (const event of stream) {
-      ctx.onSubagentEvent?.({ type: 'progress', id, label, event });
-      if (event.type === 'text') finalText += (finalText ? '\n\n' : '') + event.text;
-      else if (event.type === 'tool_end') steps++;
-      else if (event.type === 'error') { ok = false; finalText += `${finalText ? '\n\n' : ''}[error] ${event.error}`; }
-      else if (event.type === 'aborted') { ok = false; finalText += `${finalText ? '\n\n' : ''}[interrupted]`; break; }
-    }
-  } catch (e) {
-    ok = false;
-    finalText = `Subagent crashed: ${e.message}`;
-  } finally {
-    ctx.onSubagentEvent?.({ type: 'end', id, label, ok });
+    return t.access_token;
+  } catch {
+    return sb.accessToken; // let the call itself report the auth failure
   }
-
-  return {
-    ok,
-    output: `[subagent "${label}"] ${ok ? 'finished' : 'failed'} after ${steps} tool step(s).\n\n` +
-      (finalText || '(subagent produced no summary text)'),
-    meta: { label, count: steps },
-  };
 }
 
-/**
- * Fire-and-forget delegation to one of the seven named specialists — unlike
- * subagent above (which blocks this turn until the nested run finishes),
- * this starts a genuinely independent session/run and returns immediately.
- * The specialist keeps working after this tool call returns; its progress
- * shows up in the Agent View tab and its own chat, not streamed back here.
- * Only ctx.dispatchAgent-capable hosts (the desktop app) support this — see
- * browser_check above for the same "host-provided capability, absent in the
- * plain CLI" pattern.
- */
-async function dispatch_agent(args, ctx) {
-  const task = (args.task || '').trim();
-  const rawName = (args.name || '').trim();
-  if (!task) return { ok: false, output: 'dispatch_agent needs a <task> describing what the specialist should do.' };
-  if (!rawName) {
-    return {
-      ok: false,
-      output: `dispatch_agent needs a <name> naming one of the specialists: ${subagentsLib.listSubagents().map((s) => s.name).join(', ')}.`,
-    };
+const SUPABASE_NOT_CONNECTED = 'Supabase is not connected. Tell the user to connect it from Connect Apps (account menu → Connect Apps → Supabase). Do not work around it with the CLI.';
+const VERCEL_NOT_CONNECTED = 'Vercel is not connected. Tell the user to connect it from Connect Apps (account menu → Connect Apps → Vercel). Do not work around it with the CLI.';
+
+async function supabase_api(args, ctx) {
+  const method = normalizeMethod(args.method);
+  if (!method) return { ok: false, output: 'supabase_api <method> must be GET, POST, PUT, PATCH or DELETE.' };
+  const apiPath = String(args.path || '').trim();
+  if (!apiPath.startsWith('/v1/')) return { ok: false, output: 'supabase_api <path> must start with /v1/ (e.g. /v1/projects, /v1/projects/{ref}/functions).' };
+  const body = parseJsonBody(args.body);
+  if (!body.ok) return { ok: false, output: body.error };
+  if (method !== 'GET' && READ_ONLY_MODES.has(ctx.mode)) return { ok: false, output: `Blocked - ${ctx.mode} mode is read-only; only GET requests are allowed.` };
+
+  const token = await getValidSupabaseToken();
+  if (!token) return { ok: false, output: SUPABASE_NOT_CONNECTED };
+
+  if (method !== 'GET') {
+    const verdict = await ctx.approve({
+      tool: 'supabase_api',
+      title: `Supabase ${method} ${apiPath}`,
+      detail: body.value !== undefined ? JSON.stringify(body.value, null, 2).slice(0, 2000) : '(no body)',
+      danger: method === 'DELETE',
+    });
+    if (verdict === 'reject') return { ok: false, output: `User declined the Supabase ${method} ${apiPath} request.`, meta: { rejected: true } };
   }
 
-  const specialist = subagentsLib.findSubagentByName(rawName);
-  if (!specialist) {
-    return { ok: false, output: `No specialist named "${rawName}" — use one of: ${subagentsLib.listSubagents().map((s) => s.name).join(', ')}.` };
-  }
-
-  if (!ctx.dispatchAgent) {
-    return {
-      ok: false,
-      output: 'dispatch_agent is not available here — starting an independent background run is only supported by ' +
-        'the Codeply Craft desktop app, not the terminal CLI. Use the subagent tool instead, or do the work directly.',
-    };
-  }
-
-  const { sessionId } = await ctx.dispatchAgent(specialist.id, task);
-  return {
-    ok: true,
-    output: `Dispatched to ${specialist.name} (${specialist.tagline}) — session ${sessionId}. ` +
-      `It's working on this independently now; open the Agent View tab or that chat to see its progress.`,
-    meta: { label: specialist.name },
-  };
+  let r;
+  try { r = await oauth.supabaseApi(token, method, apiPath, body.value); }
+  catch (e) { return { ok: false, output: `Supabase request failed: ${e.message}` }; }
+  return { ok: r.ok, output: formatApiResult('Supabase', method, apiPath, r), meta: { label: `${method} ${apiPath}`, status: r.status } };
 }
 
-/**
- * "kill the pixel agent" / "stop warden 1" — the conversational half of the
- * same kill switch Agent View's stop icon uses. `index` is 1-based among
- * that specialist's currently active sessions, oldest first (matches the
- * order Agent View lists them in) — omit it to mean "the only/first one".
- */
-async function stop_agent(args, ctx) {
-  const rawName = (args.name || '').trim();
-  if (!rawName) {
-    return {
-      ok: false,
-      output: `stop_agent needs a <name> naming one of the specialists: ${subagentsLib.listSubagents().map((s) => s.name).join(', ')}.`,
-    };
+// A SELECT can still change things (SELECT INTO, or calling a function with
+// side effects), so only plain reads using known-safe functions skip approval.
+const SAFE_SQL_FUNCS = new Set(['count', 'sum', 'avg', 'min', 'max', 'coalesce', 'nullif', 'greatest', 'least', 'lower', 'upper',
+  'length', 'trim', 'round', 'abs', 'now', 'cast', 'to_char', 'date_trunc', 'array_agg', 'string_agg', 'json_agg', 'jsonb_agg',
+  'row_number', 'rank', 'exists', 'in', 'any', 'all', 'values', 'over', 'filter', 'format_type', 'pg_get_expr', 'obj_description',
+  'col_description', 'pg_size_pretty', 'pg_total_relation_size', 'pg_relation_size', 'current_setting', 'as', 'and', 'or', 'not', 'on', 'using']);
+function isReadOnlySql(q) {
+  if (!/^\s*(select|with|explain|show)\b/i.test(q)) return false;
+  if (/\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|comment|vacuum|reindex|copy|into|call|do|lock|set|notify|listen)\b/i.test(q)) return false;
+  if (q.includes(';') && q.trim().replace(/;\s*$/, '').includes(';')) return false; // multiple statements
+  for (const m of q.matchAll(/\b([a-z_][a-z0-9_]*)\s*\(/gi)) {
+    if (!SAFE_SQL_FUNCS.has(m[1].toLowerCase())) return false;
   }
-  const specialist = subagentsLib.findSubagentByName(rawName);
-  if (!specialist) {
-    return { ok: false, output: `No specialist named "${rawName}" — use one of: ${subagentsLib.listSubagents().map((s) => s.name).join(', ')}.` };
+  return true;
+}
+
+async function supabase_sql(args, ctx) {
+  const ref = String(args.ref || '').trim();
+  const query = String(args.query || '').trim();
+  if (!ref) return { ok: false, output: 'supabase_sql needs a <ref> (the project ref - list projects with supabase_api GET /v1/projects).' };
+  if (!query) return { ok: false, output: 'supabase_sql needs a <query>.' };
+  const readOnly = isReadOnlySql(query);
+  if (!readOnly && READ_ONLY_MODES.has(ctx.mode)) return { ok: false, output: `Blocked - ${ctx.mode} mode is read-only; only SELECT queries are allowed.` };
+
+  const token = await getValidSupabaseToken();
+  if (!token) return { ok: false, output: SUPABASE_NOT_CONNECTED };
+
+  if (!readOnly) {
+    const verdict = await ctx.approve({
+      tool: 'supabase_sql',
+      title: `Run SQL on Supabase project ${ref}`,
+      detail: query.slice(0, 3000),
+      danger: /\b(drop|truncate|delete)\b/i.test(query),
+    });
+    if (verdict === 'reject') return { ok: false, output: 'User declined running that SQL.', meta: { rejected: true } };
   }
-  if (!ctx.stopAgent) {
-    return { ok: false, output: 'stop_agent is not available here — only the Codeply Craft desktop app can stop a background run.' };
+
+  let r;
+  try { r = await oauth.supabaseQuery(token, ref, query); }
+  catch (e) { return { ok: false, output: `Supabase SQL failed: ${e.message}` }; }
+  const firstLine = query.split('\n')[0].slice(0, 80);
+  return { ok: r.ok, output: formatApiResult('Supabase SQL', 'POST', `/v1/projects/${ref}/database/query`, r), meta: { label: firstLine, status: r.status } };
+}
+
+async function vercel_api(args, ctx) {
+  const method = normalizeMethod(args.method);
+  if (!method) return { ok: false, output: 'vercel_api <method> must be GET, POST, PUT, PATCH or DELETE.' };
+  const apiPath = String(args.path || '').trim();
+  if (!/^\/v\d+\//.test(apiPath)) return { ok: false, output: 'vercel_api <path> must start with a version, e.g. /v9/projects or /v6/deployments.' };
+  const body = parseJsonBody(args.body);
+  if (!body.ok) return { ok: false, output: body.error };
+  if (method !== 'GET' && READ_ONLY_MODES.has(ctx.mode)) return { ok: false, output: `Blocked - ${ctx.mode} mode is read-only; only GET requests are allowed.` };
+
+  const vercel = config.getIntegration('vercel');
+  if (!vercel.accessToken) return { ok: false, output: VERCEL_NOT_CONNECTED };
+
+  if (method !== 'GET') {
+    const verdict = await ctx.approve({
+      tool: 'vercel_api',
+      title: `Vercel ${method} ${apiPath}`,
+      detail: body.value !== undefined ? JSON.stringify(body.value, null, 2).slice(0, 2000) : '(no body)',
+      danger: method === 'DELETE',
+    });
+    if (verdict === 'reject') return { ok: false, output: `User declined the Vercel ${method} ${apiPath} request.`, meta: { rejected: true } };
   }
-  const index = parseInt(args.index, 10) || 1;
-  const result = await ctx.stopAgent(specialist.id, index);
-  if (!result.ok) return { ok: false, output: result.error || `Could not stop ${specialist.name}.` };
-  return { ok: true, output: `Stopped ${specialist.name} — "${result.title}".`, meta: { label: specialist.name } };
+
+  let r;
+  try { r = await oauth.vercelApi(vercel.accessToken, vercel.teamId, method, apiPath, body.value); }
+  catch (e) { return { ok: false, output: `Vercel request failed: ${e.message}` }; }
+  return { ok: r.ok, output: formatApiResult('Vercel', method, apiPath, r), meta: { label: `${method} ${apiPath}`, status: r.status } };
 }
 
 export const TOOLS = {
   list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, browser_check,
   gmail_send, gmail_search, slack_post_message, vercel_deploy, supabase_create_project, supabase_delete_project, github_create_repo,
-  design_reference_search, view_images, subagent, dispatch_agent, stop_agent,
+  design_reference_search, view_images, supabase_api, supabase_sql, vercel_api,
 };
 
-// browser_check, gmail_search, design_reference_search, and view_images are
-// deliberately absent — all read-only (opening a page, searching inbox
-// metadata, searching a local reference index, fetching image bytes into
-// memory to look at without writing anything to disk), nothing on disk or
-// sent anywhere changes, same category as read_file or search. gmail_send
-// and slack_post_message are the opposite: a real email or Slack message
-// sent on the user's behalf is exactly the kind of side effect approval
-// exists for.
-export const TOOL_NEEDS_APPROVAL = new Set(['write_file', 'edit_file', 'run', 'fetch_image', 'gmail_send', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo']);
+// Tools that can change something. supabase_api/supabase_sql/vercel_api only
+// actually prompt for non-read requests (see above); read-only tools
+// (browser_check, gmail_search, design_reference_search, view_images, ...)
+// never prompt.
+export const TOOL_NEEDS_APPROVAL = new Set(['write_file', 'edit_file', 'run', 'fetch_image', 'gmail_send', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_api', 'supabase_sql', 'vercel_api']);
 
 /** Human-facing verb + colour hint for the transcript. */
 export const TOOL_DISPLAY = {
@@ -1333,17 +1314,16 @@ export const TOOL_DISPLAY = {
   github_create_repo:{ verb: 'push', icon: '⎇' },
   design_reference_search:{ verb: 'reference', icon: '◫' },
   view_images:{ verb: 'view', icon: '◉' },
-  subagent:   { verb: 'agent', icon: '⌁' },
-  dispatch_agent:{ verb: 'dispatch', icon: '⌁' },
-  stop_agent:{ verb: 'stop', icon: '■' },
+  supabase_api:{ verb: 'supabase', icon: '◆' },
+  supabase_sql:{ verb: 'sql', icon: '◆' },
+  vercel_api:{ verb: 'vercel', icon: '▲' },
 };
 
-// Mirrors the list in agent.mjs's COORDINATOR_RULES — anything that changes
-// something is off-limits to the top-level coordinator turn (ctx.coordinatorOnly),
-// which must hand these to a specialist via dispatch_agent instead. Enforced
-// here, not just prompted: the prompt-only version wasn't reliably followed.
-const COORDINATOR_BLOCKED_TOOLS = new Set([
-  'write_file', 'edit_file', 'run', 'fetch_image', 'gmail_send', 'slack_post_message',
+// Plan and Ask are read-only. write_file/edit_file are also refused in
+// agent.mjs; this covers every other tool that changes something outside the
+// conversation, so read-only can't be escaped through a side door.
+const MUTATING_TOOLS = new Set([
+  'write_file', 'edit_file', 'fetch_image', 'gmail_send', 'slack_post_message',
   'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo',
 ]);
 
@@ -1353,31 +1333,16 @@ export async function executeTool(name, args, ctx) {
     return { ok: false, output: `Unknown tool "${name}". Available: ${Object.keys(TOOLS).join(', ')}.` };
   }
 
-  if (ctx.coordinatorOnly && COORDINATOR_BLOCKED_TOOLS.has(name)) {
-    return {
-      ok: false,
-      output: `${name} is not available to you directly right now — as the coordinator, hand this to the right specialist ` +
-        `with dispatch_agent instead (frontend/UI → Pixel, backend/API → Circuit, database → Index, deployment/infra → Rocket, ` +
-        `security → Warden, testing/QA → Scout, docs/writing → Scribe).`,
-    };
+  if (READ_ONLY_MODES.has(ctx.mode) && MUTATING_TOOLS.has(name)) {
+    return { ok: false, output: `Blocked - ${ctx.mode} mode is read-only, so ${name} is not available. Describe what you would do instead, or tell the user to switch to Build mode.` };
   }
 
-  // Same cap the desktop app enforces, same account — checked BEFORE the
-  // approval prompt so the user is never asked to confirm a write that's
-  // about to be blocked anyway.
-  const capped = CAPPED_TOOLS.has(name) && config.getConfig().provider === 'codeply';
-  if (capped) {
-    const limit = await applyLimit.checkApplyLimit();
-    if (!limit.allowed) {
-      const base = limit.error || `Daily apply limit reached (${limit.count}/${limit.limit}). This is shared with the Codeply desktop app and resets at midnight UTC.`;
-      return { ok: false, output: `${base} ${config.byokHint()}` };
-    }
-  }
+  const usingHosted = ctx.route ? !!ctx.route.auto : config.getConfig().provider === 'codeply';
 
   try {
     const result = await fn(args, ctx);
-    if (capped && result.ok && result.meta?.wrote) {
-      await applyLimit.recordApplyEvent(args.path, result.meta.added, result.meta.removed);
+    if (usingHosted && RECORDED_TOOLS.has(name) && result.ok && result.meta?.wrote) {
+      applyLimit.recordApplyEvent(args.path, result.meta.added, result.meta.removed); // fire-and-forget
     }
     return result;
   } catch (e) {

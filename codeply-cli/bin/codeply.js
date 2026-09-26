@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Codeply CLI — apply an AI instruction to a file from the terminal.
+ * Codeply CLI - apply an AI instruction to a file from the terminal.
  *
  * Single-shot by design (v1): one instruction, one file, one verified diff,
  * one write. No multi-file auto-detection, no conversation memory, no local
- * response cache — those are desktop-app features that can come later if
+ * response cache - those are desktop-app features that can come later if
  * this is worth building out further.
  */
 const fs = require('fs');
@@ -66,7 +66,7 @@ async function runApply(instruction, opts) {
     return;
   }
 
-  // The shared 100/day cap only applies when spending the Codeply proxy —
+  // The shared 100/day cap only applies when spending the Codeply proxy -
   // Ollama (local or the user's own cloud key) doesn't touch that account.
   const usingCodeply = config.getConfig().provider === 'codeply';
   if (usingCodeply) {
@@ -88,7 +88,7 @@ async function runApply(instruction, opts) {
     return;
   }
   if (!result.edits.length) {
-    console.log(result.reason || 'No edits produced — the instruction may be too ambiguous or too large for a targeted change.');
+    console.log(result.reason || 'No edits produced - the instruction may be too ambiguous or too large for a targeted change.');
     return;
   }
 
@@ -96,10 +96,10 @@ async function runApply(instruction, opts) {
   if (result.badCount) {
     console.log(c.muted(`Note: ${result.badCount} proposed change(s) couldn't be matched against the file and were skipped.`));
   }
-  console.log(c.muted(`${result.reason || ''}${result.reason ? ' — ' : ''}confidence ${result.confidence ?? '?'}%, ${result.tokensUsed || 0} tokens, model ${result.modelUsed || 'unknown'}`));
+  console.log(c.muted(`${result.reason || ''}${result.reason ? ' - ' : ''}confidence ${result.confidence ?? '?'}%, ${result.tokensUsed || 0} tokens, model ${result.modelUsed || 'unknown'}`));
 
   if (opts.dryRun) {
-    console.log(c.muted('\n(dry run — nothing written)'));
+    console.log(c.muted('\n(dry run - nothing written)'));
     return;
   }
 
@@ -207,7 +207,7 @@ program
   .option('--key <key>', 'API key for ollama (cloud only), openrouter, groq, anthropic, openai, google, or qwen')
   .option('--model <model>', 'model name for the selected provider')
   .option('--host <url>', 'ollama host only (default https://ollama.com; local: http://localhost:11434)')
-  .option('--base-url <url>', 'qwen only — Alibaba Model Studio compatible-mode endpoint (deployment-specific)')
+  .option('--base-url <url>', 'qwen only - Alibaba Model Studio compatible-mode endpoint (deployment-specific)')
   .action(async (name, opts) => {
     const config = require('../lib/config');
 
@@ -299,7 +299,7 @@ skillCmd
       if (opts.all) console.log(c.muted(`  ${s.description}`));
     }
     console.log('');
-    console.log(c.muted(`Bundled from affaan-m/ECC — see skills/SOURCE.md.  Add your own: codeply skill install <path-or-github-url>`));
+    console.log(c.muted(`Bundled from affaan-m/ECC - see skills/SOURCE.md.  Add your own: codeply skill install <path-or-github-url>`));
   });
 
 skillCmd

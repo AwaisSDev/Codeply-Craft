@@ -1,8 +1,8 @@
 /**
- * Codeply CLI — auth
+ * Codeply CLI - auth
  *
  * Passwordless (email + 6-digit code) sign-in against the SAME Supabase
- * project the desktop app uses — same account, same ai-proxy access, same
+ * project the desktop app uses - same account, same ai-proxy access, same
  * daily request/apply caps either way. The session is cached in
  * ~/.codeply/auth.json, mirroring the desktop app's own file-based session
  * storage (there's no OS keychain dependency to add for a CLI).
@@ -24,7 +24,7 @@ function ensureConfigDir() {
 }
 
 // File-based storage adapter for Supabase session persistence (Node has no
-// localStorage) — same pattern the desktop app uses in main.js.
+// localStorage) - same pattern the desktop app uses in main.js.
 const fileStorage = {
   getItem(key) {
     try { const d = JSON.parse(fs.readFileSync(sessionPath, 'utf8')); return d[key] || null; }
@@ -54,10 +54,10 @@ function getClient() {
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
-        // PKCE, not the (default) implicit flow — inert for this CLI's own
+        // PKCE, not the (default) implicit flow - inert for this CLI's own
         // email/password/OTP sign-in, but required by any client using
         // signInWithOAuth + exchangeCodeForSession (e.g. the desktop app's
-        // and Codeply Craft's "Continue with Google" — the OAuth redirect
+        // and Codeply Craft's "Continue with Google" - the OAuth redirect
         // carries an exchangeable code only under PKCE).
         flowType: 'pkce',
       },

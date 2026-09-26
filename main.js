@@ -1,9 +1,9 @@
 /**
- * Codeply Craft — Electron main process.
+ * Codeply Craft - Electron main process.
  *
  * The AI engine is NOT reimplemented here: it is the exact agent loop the
  * Codeply CLI ships (codeply-cli/lib/agent.mjs + ai.js + tools.mjs), bundled
- * into this app under ./codeply-cli (see the CLI_DIR resolution below — a
+ * into this app under ./codeply-cli (see the CLI_DIR resolution below - a
  * packaged install has no sibling checkout to load it from, so it now ships
  * inside the app itself). Same tag protocol, same providers, same
  * ~/.codeply auth session and daily caps. This file only hosts it: window
@@ -14,27 +14,35 @@ const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, Tray, M
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const os = require('os');
 const { pathToFileURL } = require('url');
 const { execSync } = require('child_process');
-const QRCode = require('qrcode');
-// Loads a local, gitignored .env for the OAuth app credentials below (see
-// .env.example) — a no-op in a packaged build with no .env shipped alongside
-// it, so this only ever affects a from-source dev run.
+// App-wide OAuth app credentials (Vercel / Supabase / GitHub / Gmail / Slack
+// "Connect Apps"). From source they come from a local, gitignored .env (see
+// .env.example). A release build has no .env - instead scripts/embed-secrets.js
+// writes build-secrets.json (also gitignored) at build time and it ships
+// inside the app, so connecting works for everyone who installs it.
 require('dotenv').config({ path: path.join(__dirname, '.env') });
+try {
+  const baked = require('./build-secrets.json');
+  for (const [key, value] of Object.entries(baked)) {
+    if (value && !process.env[key]) process.env[key] = value;
+  }
+} catch {}
 
 // ─── CLI engine location ────────────────────────────────────────────────────
 // The engine is bundled INSIDE this app now (./codeply-cli), not loaded from
-// a sibling checkout next to it — a packaged install has no such sibling, so
+// a sibling checkout next to it - a packaged install has no such sibling, so
 // that layout only ever worked from this repo's own source tree.
 //
 // codeply-cli is copied in via `extraResources` (see the build config), NOT
-// packed into app.asar with the rest of this app's own code — on purpose,
+// packed into app.asar with the rest of this app's own code - on purpose,
 // for two independent reasons that both point the same way:
 //   1. electron-builder's asar packing runs its own dependency-pruning over
 //      any node_modules it finds, keyed off THIS package's own dependency
 //      tree. codeply-cli/node_modules is a separate package's dependencies,
 //      unrelated to that tree, and got silently dropped when it was left
-//      for that step to pick up — extraResources is a plain recursive copy,
+//      for that step to pick up - extraResources is a plain recursive copy,
 //      no pruning, so what's on disk in the source tree is what ships.
 //   2. agent.mjs is loaded with a dynamic `import()`, and Node's ESM loader
 //      doesn't reliably follow Electron's asar interception the way
@@ -46,13 +54,11 @@ const CLI_DIR = process.env.CODEPLY_CLI_PATH || (app.isPackaged
 
 let agentMod = null;      // ESM: { runAgent, buildProjectContext }
 let authLib = null;       // CJS: auth.js
-let configLib = null;     // CJS: config.js
-let applyLimitLib = null; // CJS: apply-limit.js — the same 100/day cap the CLI and desktop app share
+let configLib = null;     // CJS: config.js - provider config, user-added models, integrations
 let skillsLib = null;     // CJS: skills.js
-let routerLib = null;     // CJS: model-router.js — task-based model routing
-let aiLib = null;         // CJS: ai.js — used directly by Task Maker for its own planning call
-let oauthLib = null;      // CJS: oauth-connectors.js — Gmail/Slack OAuth + real API calls
-let subagentsLib = null;  // CJS: subagents.js — the 8 named specialist personas
+let aiLib = null;         // CJS: ai.js - planning/title/goal-check calls, model tests
+let oauthLib = null;      // CJS: oauth-connectors.js - Gmail/Slack/Vercel/Supabase/GitHub OAuth
+let rolesLib = null;      // CJS: subagents.js - the roles the single agent switches between
 
 async function loadEngine() {
   if (agentMod) return true;
@@ -60,7 +66,7 @@ async function loadEngine() {
   if (!fs.existsSync(agentPath)) return false;
 
   // Electron 29 bundles Node 20, which has no global WebSocket (that only
-  // landed in Node 21+) — Supabase's client reaches for it during
+  // landed in Node 21+) - Supabase's client reaches for it during
   // getSession()/auth calls and throws "native WebSocket not found" with no
   // other symptom than every call silently returning null. codeply-cli's own
   // node_modules already carries `ws` as a transitive dep of supabase-js; it
@@ -73,19 +79,17 @@ async function loadEngine() {
 
   authLib = require(path.join(CLI_DIR, 'lib', 'auth.js'));
   configLib = require(path.join(CLI_DIR, 'lib', 'config.js'));
-  applyLimitLib = require(path.join(CLI_DIR, 'lib', 'apply-limit.js'));
   skillsLib = require(path.join(CLI_DIR, 'lib', 'skills.js'));
-  routerLib = require(path.join(CLI_DIR, 'lib', 'model-router.js'));
   oauthLib = require(path.join(CLI_DIR, 'lib', 'oauth-connectors.js'));
   aiLib = require(path.join(CLI_DIR, 'lib', 'ai.js'));
-  subagentsLib = require(path.join(CLI_DIR, 'lib', 'subagents.js'));
+  rolesLib = require(path.join(CLI_DIR, 'lib', 'subagents.js'));
   agentMod = await import(pathToFileURL(agentPath).href);
   return true;
 }
 
 // ─── Session store ──────────────────────────────────────────────────────────
 // One JSON file in userData. Each session keeps the renderer-facing message
-// list (user / assistant / tool rows) — the model-facing history is rebuilt
+// list (user / assistant / tool rows) - the model-facing history is rebuilt
 // from the user+assistant rows on each send.
 
 let storePath = null;
@@ -96,7 +100,7 @@ function loadStore() {
   try { store = { ...store, ...JSON.parse(fs.readFileSync(storePath, 'utf8')) }; } catch {}
 
   // Migration: a stored `autoRouting: false` is always stale. No current code
-  // path writes it — it survives only from an older build that had an
+  // path writes it - it survives only from an older build that had an
   // in-app model picker capable of pinning a provider and turning routing
   // off, which no longer exists (Auto is the only mode now). Dropping the
   // key restores the default rather than leaving an old install silently
@@ -111,13 +115,13 @@ function saveStore() {
   try { fs.writeFileSync(storePath, JSON.stringify(store), 'utf8'); } catch {}
 }
 
-// ─── Chat history — Supabase-backed (chat_sessions table), not local-only ──
+// ─── Chat history - Supabase-backed (chat_sessions table), not local-only ──
 // The local craft-store.json above stays as a same-device cache (so a chat
 // mid-run doesn't hang on a network hiccup), but the DB is authoritative:
 // loadSessionsFromDb() overwrites store.sessions on every login, so a
 // different account signed into the same machine never sees a previous
 // account's chats, and deleting the account (auth.users row) cascades to
-// delete every chat_sessions row via its FK — nothing lingers locally once
+// delete every chat_sessions row via its FK - nothing lingers locally once
 // the account is gone from the account's own device.
 async function loadSessionsFromDb(userId) {
   if (!userId) { store.sessions = []; return; }
@@ -144,7 +148,7 @@ async function loadSessionsFromDb(userId) {
 }
 
 /** Fire-and-forget upsert of one session's full state. Called at the same
- * points saveStore() already persists a session mutation locally — a few
+ * points saveStore() already persists a session mutation locally - a few
  * times per turn, never per streamed token. */
 function syncSessionToDb(session) {
   getLoggedInUserId().then((userId) => {
@@ -177,7 +181,7 @@ function renameSessionInDb(id, title) {
   }).catch(() => {});
 }
 
-// Fired once, right after a brand-new session's first turn finishes — swaps
+// Fired once, right after a brand-new session's first turn finishes - swaps
 // the raw truncated-first-message title for a short AI-written one, the same
 // way ChatGPT/Claude retitle a chat once there's enough to summarize. Never
 // awaited by the caller: a slow or failed title call should never hold up
@@ -192,7 +196,7 @@ async function generateSessionTitle(session) {
     const r = await aiLib.chat([{
       role: 'user',
       content: `Write a short title (3-6 words, title case, no quotes, no trailing punctuation) that names what this chat is about. Reply with only the title, nothing else.\n\n${transcript}`,
-    }], { maxTokens: 20 });
+    }], { maxTokens: 20, route: currentRoute() });
     if (!r.success) return;
     const raw = r.data.choices?.[0]?.message?.content || '';
     const title = raw.trim().replace(/^["'“”]+|["'“”]+$/g, '').split('\n')[0].slice(0, 60);
@@ -209,7 +213,6 @@ function sessionMeta(s) {
   return {
     id: s.id, title: s.title, cwd: s.cwd, updatedAt: s.updatedAt,
     preview: last?.text || last?.label || '', messageCount: s.messages?.length || 0,
-    subagentId: s.subagentId || null, parentSessionId: s.parentSessionId || null,
   };
 }
 
@@ -233,7 +236,7 @@ function gitBranch(cwd) {
 let win = null;
 let tray = null;
 // Set by the tray's own "Quit" item, and by 'before-quit' as a catch-all for
-// every other way the app can end (OS shutdown, mac Cmd+Q, ...) — so the
+// every other way the app can end (OS shutdown, mac Cmd+Q, ...) - so the
 // window's 'close' handler below can tell a real quit apart from the user
 // just clicking the titlebar's X, which should hide to the tray instead.
 // 'before-quit' alone isn't enough for the tray path specifically: a
@@ -265,7 +268,7 @@ function createWindow() {
     win.show();
   });
   win.loadFile('index.html');
-  // Surface renderer problems in the terminal — a silent white/empty pane is
+  // Surface renderer problems in the terminal - a silent white/empty pane is
   // undebuggable for users otherwise.
   win.webContents.on('console-message', (e, level, message, line, sourceId) => {
     if (level >= 2) console.log(`[renderer] ${message} (${sourceId}:${line})`);
@@ -276,7 +279,7 @@ function createWindow() {
   win.on('unmaximize', () => win.webContents.send('win:state', { maximized: false }));
   win.on('resize', () => { if (panelVisible) positionCheckerView(); });
   // The whole point of the phone companion is that Craft keeps running (and
-  // keeps serving the remote server) after you walk away from the desktop —
+  // keeps serving the remote server) after you walk away from the desktop -
   // closing the window hides it instead of tearing it, and the tray icon
   // below is what's left to get back in or actually quit from.
   win.on('close', (e) => {
@@ -321,10 +324,10 @@ ipcMain.on('win:close', () => win && win.close());
 
 // ─── Google sign-in (OAuth via the system browser + codeply:// deep link) ──
 // Mirrors the desktop app exactly, including reusing its `codeply://`
-// redirect URI — that's the one already whitelisted in the Supabase
+// redirect URI - that's the one already whitelisted in the Supabase
 // project's auth settings, so a second/different scheme here would just
 // fail at the provider. (If both apps are installed, whichever registered
-// the protocol most recently wins the deep link — an accepted limitation of
+// the protocol most recently wins the deep link - an accepted limitation of
 // two separate apps sharing one OAuth redirect URI.)
 
 const DEEP_LINK_PREFIX = 'codeply://';
@@ -350,6 +353,7 @@ async function handleAuthCallback(url) {
     const user = data.session?.user;
     if (!user) { send({ ok: false, error: 'Sign-in succeeded but no user was returned.' }); return; }
     const onboarding = await getOnboardingProfile();
+    startRelay();
     send({ ok: true, email: user.email, onboarding });
   } catch (e) {
     send({ ok: false, error: e.message });
@@ -409,7 +413,6 @@ ipcMain.handle('app:init', async () => {
         'Set CODEPLY_CLI_PATH to your codeply-cli folder and restart.',
     };
   }
-  const cfg = configLib.getConfig();
   let user = null;
   try {
     const session = await authLib.getSession();
@@ -420,20 +423,19 @@ ipcMain.handle('app:init', async () => {
   if (user) onboarding = await getOnboardingProfile();
 
   // Chat history is sourced from Supabase, not the local cache file, every
-  // time the app boots signed in — so a different account on this same
+  // time the app boots signed in - so a different account on this same
   // machine (or the same account after deleting and recreating it) never
   // sees a previous account's chats. Signed-out just clears the list.
   await loadSessionsFromDb(user ? await getLoggedInUserId() : null);
+  if (user) startRelay();
 
   return {
     engineOk: true,
     user,
-    provider: cfg.provider,
-    providerLabel: configLib.describeProviderShort(cfg),
+    models: modelsState(),
     needsLogin: !user,
     needsOnboarding: !!user && !!onboarding && (!onboarding.referral_source || !onboarding.country),
     onboarding,
-    usage: cfg.provider === 'codeply' ? await getUsage() : null,
     sessions: store.sessions.map(sessionMeta).sort((a, b) => b.updatedAt - a.updatedAt),
     projects: store.projects,
     lastProject: store.lastProject,
@@ -443,10 +445,10 @@ ipcMain.handle('app:init', async () => {
 
 // ─── Auth (same Supabase project + ~/.codeply session as the CLI/desktop app,
 // same account, same sign-in/sign-up/onboarding flow as the Codeply desktop
-// app — see Codeply-App/main.js's auth:sign-in-email / auth:sign-up-email /
+// app - see Codeply-App/main.js's auth:sign-in-email / auth:sign-up-email /
 // auth:verify-otp / profile:get for the implementation this mirrors) ────────
 
-/** Humanizes Supabase auth errors — same phrasing as the desktop app. */
+/** Humanizes Supabase auth errors - same phrasing as the desktop app. */
 function formatAuthError(raw, context = 'login') {
   let msg = raw?.message || raw?.msg || String(raw || '');
   try {
@@ -490,7 +492,7 @@ async function getLoggedInUserId() {
   } catch { return null; }
 }
 
-/** referral_source + country from the shared `profiles` row — same table, same columns, same gating-per-account the desktop app uses (see Codeply-App/supabase/referral_source.sql + country.sql). */
+/** referral_source + country from the shared `profiles` row - same table, same columns, same gating-per-account the desktop app uses (see Codeply-App/supabase/referral_source.sql + country.sql). */
 async function getOnboardingProfile() {
   const userId = await getLoggedInUserId();
   if (!userId) return { referral_source: null, country: null };
@@ -567,6 +569,7 @@ ipcMain.handle('auth:verifyOtp', async (e, { email, token, mode }) => {
     const user = data?.user || data?.session?.user;
     if (!user) return { ok: false, error: 'Could not verify the code. Please try again.' };
     const onboarding = await getOnboardingProfile();
+    startRelay();
     return { ok: true, email: user.email, onboarding };
   } catch (err) { return { ok: false, error: formatOtpError(err) }; }
 });
@@ -590,6 +593,12 @@ ipcMain.handle('auth:resendOtp', async (e, { email, mode }) => {
 });
 
 ipcMain.handle('auth:logout', async () => {
+  // Paired phones belong to this account - sign them out with it, and stop
+  // advertising this PC under the account before the session goes away.
+  await stopRelay();
+  remoteTokens.clear();
+  for (const client of remoteEventClients) { try { client.end(); } catch {} }
+  remoteEventClients.clear();
   try { await authLib.getClient().auth.signOut(); } catch {}
   // Otherwise the next account signed in on this machine would see this
   // account's chats until the next full app:init (e.g. a restart).
@@ -597,7 +606,7 @@ ipcMain.handle('auth:logout', async () => {
   return { ok: true };
 });
 
-// Re-pulls chat history from Supabase for whoever is signed in right now —
+// Re-pulls chat history from Supabase for whoever is signed in right now -
 // called after a fresh login/signup (afterVerified in app.js), since
 // app:init only runs once at boot and won't otherwise notice an account
 // switch mid-session.
@@ -606,24 +615,7 @@ ipcMain.handle('sessions:refresh', async () => {
   return store.sessions.map(sessionMeta).sort((a, b) => b.updatedAt - a.updatedAt);
 });
 
-// ─── Usage (shared daily cap — same account, same 100/day bucket the CLI and
-// desktop app already write to: one apply_history table, one RPC. Reusing
-// apply-limit.js directly rather than re-querying Supabase here means all
-// three surfaces are reading and enforcing off the literal same code path,
-// not three separately-maintained copies of the same 100 number.) ──────────
-
-async function getUsage() {
-  try {
-    const r = await applyLimitLib.checkApplyLimit();
-    return { count: r.count || 0, limit: r.limit || 100, allowed: r.allowed !== false, tier: r.tier || 'free' };
-  } catch {
-    return { count: 0, limit: 100, allowed: true, tier: 'free' };
-  }
-}
-
-ipcMain.handle('usage:get', () => getUsage());
-
-// ─── Skills — the same 282-skill library the CLI's agent already searches
+// ─── Skills - the same 282-skill library the CLI's agent already searches
 // and auto-loads via use_skill/list_skills mid-run; this just gives the
 // renderer a way to browse/search the same catalog and drop one into the
 // composer. Loaded straight from skills.js, not a separate copy. ───────────
@@ -636,21 +628,88 @@ ipcMain.handle('skills:list', () => {
   } catch { return []; }
 });
 
-// ─── Auto routing ───────────────────────────────────────────────────────────
-// This is the only mode — no picker, no other options. Auto means Ollama's
-// Gemma 4 31B drives the whole turn (see model-router.js's WRITER), with a
-// free Gemma 4 26B (OpenRouter) doing occasional design-planning help on the
-// side. If a real BYOK provider is configured in ~/.codeply/config.json
-// (same file `codeply provider <name> --key <key>` writes), Auto respects
-// it instead — see model-router.js's effectiveWriter — but that's a config
-// file edit, not something surfaced as an in-app picker.
-function autoRoutingOn() {
-  return store.autoRouting !== false; // default on for a fresh install
+// ─── Models ─────────────────────────────────────────────────────────────────
+// "Auto" is the hosted Codeply model. Anything else is a model the user added
+// (an OpenAI-compatible endpoint, or Ollama). Model entries - API keys
+// included - live only in ~/.codeply/config.json on this machine (see
+// config.js); the renderer only ever gets a masked preview of a key, and a
+// key is only ever sent to the base URL the user entered for it.
+
+/** The route for a turn, decided once when the turn starts. */
+function currentRoute() {
+  const m = configLib.getSelectedModel();
+  return m ? { custom: m } : { auto: true };
 }
+
+function publicModel(m) {
+  return {
+    id: m.id, name: m.name, kind: m.kind, baseUrl: m.baseUrl, model: m.model,
+    hasKey: !!m.apiKey, keyPreview: m.apiKey ? configLib.maskKey(m.apiKey) : '',
+  };
+}
+
+function modelsState() {
+  return { selected: configLib.getSelectedModelId(), models: configLib.getModels().map(publicModel) };
+}
+
+function modelLabel(route) {
+  return route && route.custom ? (route.custom.name || route.custom.model) : 'Auto';
+}
+
+ipcMain.handle('models:list', async () => {
+  if (!(await loadEngine())) return { selected: 'auto', models: [] };
+  return modelsState();
+});
+
+ipcMain.handle('models:select', async (e, id) => {
+  if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
+  const r = configLib.selectModel(id || configLib.AUTO_MODEL_ID);
+  return r.ok ? { ok: true, state: modelsState() } : r;
+});
+
+// Saves (and selects) a model, testing it with a tiny real request first so a
+// typo'd URL/key/model id is caught here rather than mid-task. `skipTest`
+// saves anyway (e.g. Ollama not running right now).
+ipcMain.handle('models:save', async (e, input) => {
+  if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
+  const existing = input?.id ? configLib.getModel(input.id) : null;
+  const candidate = {
+    kind: input?.kind === 'ollama' ? 'ollama' : 'openai',
+    name: String(input?.name || '').trim(),
+    baseUrl: String(input?.baseUrl || '').trim().replace(/\/+$/, ''),
+    model: String(input?.model || '').trim(),
+    apiKey: input?.apiKey === undefined || input?.apiKey === null ? (existing?.apiKey || '') : String(input.apiKey).trim(),
+  };
+  // A saved key only ever goes to the URL it was entered for.
+  if (existing && candidate.baseUrl !== existing.baseUrl && (input?.apiKey === undefined || input?.apiKey === null)) {
+    return { ok: false, error: 'You changed the base URL, so enter the API key again for the new address.' };
+  }
+  if (!candidate.model) return { ok: false, error: 'Enter the model id.' };
+  if (!/^https?:\/\//i.test(candidate.baseUrl)) return { ok: false, error: 'The base URL must start with http:// or https://.' };
+  if (!input?.skipTest) {
+    const t = await aiLib.testModel(candidate);
+    if (!t.ok) return { ok: false, testFailed: true, error: t.error };
+  }
+  const saved = configLib.saveModel({ ...input, ...candidate, id: existing?.id });
+  if (!saved.ok) return saved;
+  configLib.selectModel(saved.model.id);
+  return { ok: true, model: publicModel(saved.model), state: modelsState() };
+});
+
+ipcMain.handle('models:delete', async (e, id) => {
+  if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
+  const r = configLib.deleteModel(id);
+  return r.ok ? { ok: true, state: modelsState() } : r;
+});
+
+ipcMain.handle('models:detectOllama', async (e, host) => {
+  if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
+  return aiLib.listOllamaModels(host || 'http://localhost:11434');
+});
 
 // ─── Gmail / Slack integrations (real OAuth via the system browser) ───────
 // Desktop OAuth per RFC 8252: open the consent screen in the user's actual
-// system browser (never an embedded webview — that's exactly what providers
+// system browser (never an embedded webview - that's exactly what providers
 // increasingly refuse for OAuth, and rightly so), and catch the redirect on
 // a short-lived local HTTP server bound to a fixed loopback port. Slack
 // requires that port to exactly match what's registered in its app config;
@@ -662,12 +721,12 @@ const VERCEL_REDIRECT_PORT = 53683;
 const SUPABASE_REDIRECT_PORT = 53684;
 const GITHUB_REDIRECT_PORT = 53685;
 
-// App-wide OAuth app credentials (one registration covers every user — they
+// App-wide OAuth app credentials (one registration covers every user - they
 // each still do their own one-time browser sign-in). client_id is public by
 // design; client_secret can't truly be kept secret in a shipped desktop app
 // either way, so this follows the same accepted tradeoff Google/Slack ship
 // for "installed apps" rather than standing up a token-exchange proxy. That
-// tradeoff is about a COMPILED binary, though — it does not extend to
+// tradeoff is about a COMPILED binary, though - it does not extend to
 // plaintext in a public source repo, so these are read from the environment
 // (see .env.example) rather than hardcoded; anyone building from source
 // registers their own OAuth apps and supplies their own credentials.
@@ -679,7 +738,7 @@ const GITHUB_REDIRECT_PORT = 53685;
 const VERCEL_CLIENT_ID = process.env.VERCEL_CLIENT_ID || '';
 const VERCEL_CLIENT_SECRET = process.env.VERCEL_CLIENT_SECRET || '';
 // The integration's "URL Slug" from the Integrations Console (its live URL is
-// vercel.com/integrations/<slug>) — required to start the install flow; the
+// vercel.com/integrations/<slug>) - required to start the install flow; the
 // client id/secret above are only used for the later token exchange.
 const VERCEL_SLUG = process.env.VERCEL_SLUG || 'codeply-craft';
 const SUPABASE_CLIENT_ID = process.env.SUPABASE_CLIENT_ID || '';
@@ -693,7 +752,7 @@ const http = require('http');
 
 /**
  * Opens `authUrl` in the system browser and resolves with the `code` query
- * param from the one request that lands on `port` — or rejects on timeout /
+ * param from the one request that lands on `port` - or rejects on timeout /
  * an error/missing-code redirect. The server exists only for that single
  * request; torn down immediately after, success or failure.
  */
@@ -778,7 +837,7 @@ ipcMain.handle('integrations:connectSlack', async () => {
     const code = await awaitOAuthRedirect(authUrl, SLACK_REDIRECT_PORT, '/slack-callback', 'Slack');
     const result = await oauthLib.exchangeSlackCode(clientId, clientSecret, code, redirectUri);
     // authed_user carries the separate user token from the same OAuth
-    // exchange (see buildSlackAuthUrl's user_scope) — present whenever the
+    // exchange (see buildSlackAuthUrl's user_scope) - present whenever the
     // user actually approved the "act on your behalf" permission, absent
     // otherwise, so this degrades cleanly to bot-only if they didn't.
     configLib.saveIntegration('slack', {
@@ -871,14 +930,14 @@ ipcMain.handle('integrations:disconnect', async (e, name) => {
   return { ok: true };
 });
 
-// ─── Browser check — the agent's own "open it and look" tool ───────────────
+// ─── Browser check - the agent's own "open it and look" tool ───────────────
 // This is what makes browser_check (agent.mjs/tools.mjs) real instead of
 // theoretical: a genuine embedded Chromium view (a BrowserView docked into
-// Craft's own window — no Puppeteer/Playwright, no separate OS window) that
+// Craft's own window - no Puppeteer/Playwright, no separate OS window) that
 // loads whatever page the agent just built or edited and reports back
 // console errors, failed requests, broken images, and the visible text. The
 // CLI has no such view to hand tools.mjs, which is exactly why ctx.browser
-// is optional — this is the one thing only the desktop app can provide.
+// is optional - this is the one thing only the desktop app can provide.
 
 const PANEL_WIDTH_RATIO = 0.45;
 const TITLEBAR_HEIGHT = 36;
@@ -888,7 +947,7 @@ let checkerCollector = null; // { errors:[], warnings:[] } for whichever check i
 let panelVisible = false;
 
 // The address bar / back / forward / refresh strip lives in Craft's own HTML
-// (index.html's #browserChrome), not inside the BrowserView — a BrowserView
+// (index.html's #browserChrome), not inside the BrowserView - a BrowserView
 // is raw page content with no chrome of its own. Reserving this much height
 // above it is what turns "a page pasted on top of the window" into something
 // that reads as a real browser, and is also why the checker view's bounds
@@ -922,7 +981,7 @@ function getCheckerView() {
   checkerView.webContents.on('console-message', (event, level, message, line, sourceId) => {
     if (!checkerCollector) return;
     // Electron's own dev-mode CSP nag fires on every single page regardless
-    // of what's actually on it — real signal from the checked page, not it.
+    // of what's actually on it - real signal from the checked page, not it.
     if (message.includes('Electron Security Warning')) return;
     const loc = sourceId ? ` (${sourceId.split(/[\\/]/).pop()}:${line})` : '';
     if (level >= 3) checkerCollector.errors.push(message + loc);
@@ -981,7 +1040,7 @@ ipcMain.on('browserpanel:reload', () => { checkerView?.webContents.reload(); });
 // agent last checked, is what makes this an actual browser panel instead of
 // a one-way report viewer. A bare "example.com" (no scheme) is the common
 // case typed by hand, so it's defaulted to https:// the same way every real
-// browser's address bar does — but a local file check still needs an exact
+// browser's address bar does - but a local file check still needs an exact
 // file:// URL to work, which is why that scheme (and any other explicit
 // scheme) is left untouched rather than rewritten.
 ipcMain.on('browserpanel:navigate', (e, rawUrl) => {
@@ -995,7 +1054,7 @@ ipcMain.on('browserpanel:navigate', (e, rawUrl) => {
 ipcMain.on('browserpanel:toggle', toggleCheckerPanel);
 
 // Serialized globally so two chats triggering a check around the same time
-// can't cross-contaminate each other's console/network capture — the shared
+// can't cross-contaminate each other's console/network capture - the shared
 // hidden window can only look at one page at a time anyway, same as a human
 // only has one tab in front of them.
 let browserCheckQueue = Promise.resolve();
@@ -1014,19 +1073,19 @@ async function doBrowserCheck(url, { wait = 700 } = {}) {
 
   wc.session.webRequest.onCompleted({ urls: ['*://*/*'] }, (details) => {
     if (details.statusCode >= 400) {
-      failedRequests.push(`HTTP ${details.statusCode} — ${details.url}`);
+      failedRequests.push(`HTTP ${details.statusCode} - ${details.url}`);
     }
   });
   wc.session.webRequest.onErrorOccurred({ urls: ['*://*/*'] }, (details) => {
     if (details.error && details.error !== 'net::ERR_ABORTED') {
-      failedRequests.push(`${details.error} — ${details.url}`);
+      failedRequests.push(`${details.error} - ${details.url}`);
     }
   });
 
   checkerCollector = { errors: [], warnings: [] };
 
   // Cache-busting: this view's own isolated partition (see getCheckerView
-  // above), so clearing it has zero effect on the app's own session — but
+  // above), so clearing it has zero effect on the app's own session - but
   // without it a repeat check of the SAME url can serve a stale cached copy
   // of a linked stylesheet/script that was just edited, which is exactly the
   // "looks the same but it says different" (or vice versa) failure this
@@ -1041,7 +1100,7 @@ async function doBrowserCheck(url, { wait = 700 } = {}) {
   wc.on('did-fail-load', failListener);
 
   try {
-    // bypassCache: true belt-and-suspenders on top of the clearCache() above —
+    // bypassCache: true belt-and-suspenders on top of the clearCache() above -
     // handles the case where the page being checked is the *same* URL that's
     // already the active one in this view (a plain loadURL there is a no-op
     // reload in some Electron versions and can skip re-fetching entirely).
@@ -1082,7 +1141,7 @@ async function doBrowserCheck(url, { wait = 700 } = {}) {
     fs.mkdirSync(dir, { recursive: true });
     screenshotPath = path.join(dir, `check-${Date.now()}.png`);
     fs.writeFileSync(screenshotPath, png);
-    // The same buffer, as a data: URL — this is what actually lets the model
+    // The same buffer, as a data: URL - this is what actually lets the model
     // SEE the page instead of only reading a text extraction of it. Without
     // this, "browser_check" was verifying blind: console errors and
     // document.body.innerText say nothing about whether the layout is
@@ -1125,7 +1184,7 @@ ipcMain.handle('project:use', async (e, p) => {
   return { path: p, branch: gitBranch(p) };
 });
 
-// Drops a folder from the sidebar's Projects list ONLY — nothing on disk is
+// Drops a folder from the sidebar's Projects list ONLY - nothing on disk is
 // touched, and re-opening the folder puts it straight back (rememberProject
 // unshifts it again). It's the counterpart to rememberProject: that list is a
 // convenience of recently-used folders, capped at 8, and once it's full a
@@ -1163,25 +1222,6 @@ ipcMain.handle('session:rename', (e, { id, title }) => {
   return { ok: true };
 });
 
-// ─── Subagents ──────────────────────────────────────────────────────────────
-// The 8 named specialists (lib/subagents.js) a chat can be pinned to. Mascot
-// art ships at assets/agents/<mascot> and is loaded straight off disk by the
-// renderer (index.html is itself loaded via file://, so a plain relative
-// <img src> works with no IPC round-trip needed for the image bytes).
-ipcMain.handle('subagents:list', async () => {
-  const ok = await loadEngine();
-  return ok ? subagentsLib.listSubagentsMeta() : [];
-});
-
-ipcMain.handle('session:setSubagent', (e, { id, subagentId }) => {
-  const session = store.sessions.find((s) => s.id === id);
-  if (!session) return { ok: false };
-  session.subagentId = subagentId || null;
-  saveStore();
-  sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
-  return { ok: true };
-});
-
 // ─── Image search (Openverse, with a Wikimedia Commons fallback) ──────────
 // Backs the image picker: whenever the agent is about to download a
 // placeholder/hero/etc image and isn't running unattended (bypass/always-
@@ -1190,7 +1230,7 @@ ipcMain.handle('session:setSubagent', (e, { id, subagentId }) => {
 //
 // Openverse's /v1/images/ search now requires an OAuth2 bearer token even
 // for anonymous use (a plain unauthenticated request comes back 401 with a
-// `WWW-Authenticate: Bearer` header) — it used to work keyless, so this
+// `WWW-Authenticate: Bearer` header) - it used to work keyless, so this
 // registers a throwaway anonymous client once, caches the credentials in
 // userData, and refreshes the short-lived access token as needed. All of
 // this is automatic; nothing for the user to sign up for.
@@ -1212,7 +1252,7 @@ async function registerOpenverseClient() {
     signal: AbortSignal.timeout(IMAGE_SEARCH_TIMEOUT_MS),
     body: JSON.stringify({
       name: 'CodeplyCraft-' + Math.random().toString(36).slice(2, 10),
-      description: 'Codeply Craft desktop app — in-app image picker',
+      description: 'Codeply Craft desktop app - in-app image picker',
       email: 'hello@codeply.online',
     }),
   });
@@ -1239,7 +1279,7 @@ async function getOpenverseToken() {
 
   let res = await doTokenRequest(creds);
   if (!res.ok) {
-    // Cached credentials may have been revoked/expired server-side — register
+    // Cached credentials may have been revoked/expired server-side - register
     // a fresh anonymous client once and retry before giving up.
     creds = await registerOpenverseClient();
     res = await doTokenRequest(creds);
@@ -1324,36 +1364,22 @@ function guessImageKeywords(url, targetPath) {
 ipcMain.handle('images:search', (e, query) => searchImages(query));
 
 // ─── Agent runs ─────────────────────────────────────────────────────────────
+// One agent, one run per chat at a time. A turn may take on a role (Frontend,
+// Backend, ...) picked from what it's working on; a multi-part request is
+// split into tasks that run one after another, each in its own role, and a
+// /goal keeps iterating - work, then verify - until the goal is met.
 
-const activeRuns = new Map();        // sessionId -> { signal }
+const activeRuns = new Map();        // sessionId -> { signal, abortController }
 
-// Dispatched specialists run unattended (bypass mode, see dispatchToSpecialist
-// below) — there's no human approving each step to naturally pace them, so
-// two of them working the same project at once could step on each other's
-// file edits or git state. Only one dispatched specialist's actual turn runs
-// at a time; a second dispatch waits its turn instead of racing the first.
-// The main/coordinator chat itself is never gated by this — only sessions
-// with a parentSessionId (i.e. spawned via dispatch_agent) queue here.
-let specialistLockTail = Promise.resolve();
-function runExclusive(fn) {
-  const result = specialistLockTail.then(fn, fn);
-  specialistLockTail = result.catch(() => {});
-  return result;
-}
-
-// Keeps the machine from auto-sleeping mid-run — a long agent task (several
+// Keeps the machine from auto-sleeping mid-run - a long agent task (several
 // minutes of tool calls) getting killed by Windows' own sleep timer would be
 // a much worse failure than the small battery/idle cost of blocking it. This
-// only blocks system SLEEP, not the display turning off, and only for as
-// long as at least one run is actually active — the moment the last one
-// finishes, sleep behaves completely normally again. It does NOT make the
-// app reachable while the PC is actually off or fully asleep already — a
-// local desktop process can't run without the machine being on; that would
-// need the agent to execute somewhere else entirely (a server/cloud sandbox),
-// which is a real architecture change, not a setting to flip here.
+// only blocks system SLEEP, not the display turning off, and only while at
+// least one run is active.
 let sleepBlockerId = null;
 function updateSleepBlocker() {
-  if (activeRuns.size > 0) {
+  // Also held while "keep this PC awake" is on, so the phone can reach it.
+  if (activeRuns.size > 0 || store.keepAwake) {
     if (sleepBlockerId === null || !powerSaveBlocker.isStarted(sleepBlockerId)) {
       sleepBlockerId = powerSaveBlocker.start('prevent-app-suspension');
     }
@@ -1363,12 +1389,8 @@ function updateSleepBlocker() {
   }
 }
 
-// A native OS notification when a run finishes — only while the window
-// isn't the focused, frontmost thing (if you're actively watching it work,
-// you already know it's done; the notification is for when you've tabbed
-// away). Clicking it brings the window back and focuses it, nothing more —
-// it doesn't need to jump to the specific chat since restoring the app
-// already lands wherever that chat was left open.
+// A native OS notification when a run finishes - only while the window
+// isn't focused (if you're watching it work, you already know it's done).
 function notifyTaskComplete(session) {
   if (!Notification.isSupported() || !win || win.isDestroyed() || win.isFocused()) return;
   const last = session.messages?.filter((m) => m.kind === 'assistant').at(-1);
@@ -1385,18 +1407,15 @@ function notifyTaskComplete(session) {
   notification.show();
 }
 
-// Matches the wording ai.js already returns when every configured provider/
-// account has said no — rate limited, over quota, revoked, out of credit —
-// rather than a one-off transient error. Those already come back as a real,
-// clear error string; the gap reported was that going quiet with nothing but
-// an easy-to-miss inline note reads the same as the app being stuck, since
-// there's nothing that reaches you if you're not staring at the window.
+// Matches the wording ai.js returns when the provider has said no - rate
+// limited, over quota, revoked, out of credit - rather than a one-off
+// transient error, so it reaches you even when you're not looking.
 const PROVIDER_EXHAUSTED_RE = /rate limit|too many requests|quota|insufficient|billing|payment required|exceed|out of credit|both ollama accounts were tried|daily .* (limit|cap)/i;
 
 function notifyProviderExhausted(session, message) {
   if (!Notification.isSupported() || !win || win.isDestroyed() || win.isFocused()) return;
   const notification = new Notification({
-    title: 'Codeply Craft — out of juice',
+    title: 'Codeply Craft - the model is unavailable',
     body: message.length > 160 ? message.slice(0, 159) + '…' : message,
     silent: false,
   });
@@ -1408,82 +1427,85 @@ function notifyProviderExhausted(session, message) {
   notification.show();
 }
 
-const pendingApprovals = new Map();  // requestId -> resolve(verdict)
-const pendingImagePicks = new Map(); // requestId -> resolve(verdict)
+const pendingApprovals = new Map();  // requestId -> { sessionId, resolve(verdict) }
+const pendingImagePicks = new Map(); // requestId -> { sessionId, resolve(chosenUrl) }
 let approvalCounter = 0;
 
-// ─── Phone companion (local-network Dispatch + Remote Control) ────────────
-// The phone never gets filesystem credentials or a direct shell. It talks to
-// this small, pairing-protected HTTP bridge; agent work still runs inside this
-// Electron process with the exact same approval gate as the desktop UI.
+// ─── Phone companion (signed in with the same account) ─────────────────────
+// The phone signs in with the user's Codeply account; there is no QR code and
+// no pairing code. From anywhere it reaches this PC through the Supabase
+// Realtime relay (see "Phone relay" below). This small HTTP server is the
+// same-network path: it serves the phone page directly and trades the
+// phone's Supabase access token for a bridge session. Both paths only accept
+// a phone signed in as the SAME account as this desktop, and the phone never
+// gets filesystem access or a shell: every action still runs here, in this
+// process, behind the same approval gate as the desktop UI.
 const REMOTE_PORT = 45671;
 let remoteServer = null;
-let remotePairCode = null;
-const remoteTokens = new Map(); // token -> paired desktop identity
+const remoteTokens = new Map(); // bridge token -> { userId, email, createdAt }
 const remoteEventClients = new Set();
 
-// A 4-digit code is only safe to type over the network because of the two
-// things below it, not on its own — 10,000 possibilities is nothing against
-// an unthrottled guesser on the same Wi-Fi, and a successful guess hands over
-// the exact same remote control this app's own approval gate exists to
-// protect. See the /api/pair handler for the lockout this backs, and
-// PAIR_LOCKOUT_MS/PAIR_MAX_ATTEMPTS just below it for the actual numbers.
-function makePairCode() { return String(crypto.randomInt(0, 10000)).padStart(4, '0'); }
-function localAddress() {
+function localAddresses() {
+  const out = [];
   for (const list of Object.values(os.networkInterfaces())) {
     for (const item of list || []) {
-      if (item.family === 'IPv4' && !item.internal) return item.address;
+      if (item.family === 'IPv4' && !item.internal && !item.address.startsWith('169.254.')) out.push(item.address);
     }
   }
-  return '127.0.0.1';
+  return out;
 }
-// The QR encodes the pairing URL WITH the code already in it
-// (?code=1234) — mobile.js reads that query param on load and submits
-// pairing itself, so scanning is the entire flow: no address or code ever
-// gets typed. Regenerated on every call (cheap) rather than cached, since
-// it must always reflect the current code — including right after a
-// lockout rotates it.
-//
-// PNG data URL, not inline SVG: the qrcode package's SVG output draws each
-// row of modules as one STROKED path (horizontal segments joined end to
-// end), and Chromium's SVG rasterizer doesn't always honor
-// shape-rendering="crispEdges" on those stroke joins at the scale this
-// renders at — the result was genuinely blurred, rounded-off modules
-// instead of crisp squares, not just a cosmetic nitpick. A PNG has no join
-// geometry to get wrong: every module is a real filled pixel block. Baked
-// at 4x the display size (440 for a 110px box) so it also holds up on a
-// HiDPI display, where the renderer would otherwise upscale a 1x source.
-async function remoteInfo() {
-  if (!remotePairCode) remotePairCode = makePairCode();
-  const url = `http://${localAddress()}:${REMOTE_PORT}`;
-  const qr = await QRCode.toDataURL(`${url}/?code=${remotePairCode}`, {
-    // margin is in QR MODULES, not pixels — the spec's quiet zone is 4
-    // modules on every side, and a phone camera actually relies on that
-    // blank border to find the code at all. The previous margin: 1 was
-    // below that floor, which is exactly the kind of thing that scans fine
-    // up close in good light and unreliably everywhere else.
-    margin: 4, width: 440, color: { dark: '#0a0a0d', light: '#ffffff' },
-  });
-  return { url, code: remotePairCode, port: REMOTE_PORT, qr };
+
+function remoteUrls() {
+  return localAddresses().map((a) => `http://${a}:${REMOTE_PORT}`);
 }
-function remoteAuthorized(req, url) {
-  const header = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  return remoteTokens.has(header || url.searchParams.get('token'));
+
+function deviceId() {
+  if (!store.deviceId) {
+    store.deviceId = 'd_' + crypto.randomBytes(8).toString('hex');
+    saveStore();
+  }
+  return store.deviceId;
 }
+
+function remoteToken(req, url) {
+  return String(req.headers.authorization || '').replace(/^Bearer\s+/i, '') || url.searchParams.get('token') || '';
+}
+
+async function remoteAuthorized(req, url) {
+  const entry = remoteTokens.get(remoteToken(req, url));
+  if (!entry) return false;
+  // Still the same account on this desktop? (Signing out clears the map, but
+  // a different account signing in must not inherit old phone sessions.)
+  const current = await getLoggedInUserId();
+  return !!current && current === entry.userId;
+}
+
 async function remoteAccount() {
   const ok = await loadEngine();
-  if (!ok) return { email: 'Local Craft', signedIn: false };
+  if (!ok) return { email: '', signedIn: false };
   try {
     const session = await authLib.getSession();
     if (session?.user) return { email: session.user.email, signedIn: true, id: session.user.id };
   } catch {}
-  return { email: 'Local Craft', signedIn: false };
+  return { email: '', signedIn: false };
 }
+
+// The phone app runs from its own origin (Capacitor's https://localhost) and
+// talks to this bridge cross-origin. Auth is a bearer token, never a cookie,
+// so a permissive CORS policy exposes nothing extra.
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Max-Age': '600',
+};
+
 function remoteJson(res, status, body) {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...CORS_HEADERS });
   res.end(JSON.stringify(body));
 }
 function broadcastRemote(sessionId, event) {
+  relayEmit(sessionId, event);
   const line = `event: agent\ndata: ${JSON.stringify({ sessionId, ...event })}\n\n`;
   for (const client of remoteEventClients) {
     try { client.write(line); } catch { remoteEventClients.delete(client); }
@@ -1500,149 +1522,298 @@ function readRemoteBody(req) {
     req.on('error', reject);
   });
 }
-// Brute-force protection for the 4-digit code above. Not per-IP (this is a
-// single desktop pairing gate, not a multi-tenant API) — a flat counter is
-// enough: 5 wrong codes locks pairing out entirely for 30s AND rotates the
-// code, so a guesser who was getting warm loses that progress too, not just
-// the account whose 4-digit code they were trying.
-const PAIR_MAX_ATTEMPTS = 5;
-const PAIR_LOCKOUT_MS = 30_000;
-let pairFailCount = 0;
-let pairLockedUntil = 0;
+
+// Light throttle on the sign-in exchange - each attempt costs a Supabase call.
+const loginAttempts = [];
+function loginThrottled() {
+  const now = Date.now();
+  while (loginAttempts.length && now - loginAttempts[0] > 60_000) loginAttempts.shift();
+  loginAttempts.push(now);
+  return loginAttempts.length > 20;
+}
+
+function serveStatic(res, file, type, cache = 'no-store') {
+  res.writeHead(200, { 'Content-Type': type, 'Cache-Control': cache, ...CORS_HEADERS });
+  return fs.createReadStream(path.join(__dirname, file)).pipe(res);
+}
+
+// ─── Bridge API (shared by the local-network server and the relay) ─────────
+// Every JSON route the phone uses, in one place, so a request behaves the same
+// whether it arrived over the LAN or through the Realtime relay.
+function screenshotFile(p) {
+  const checksDir = path.join(app.getPath('userData'), 'browser-checks');
+  const resolved = path.resolve(checksDir, path.basename(p || ''));
+  return resolved.startsWith(checksDir) && fs.existsSync(resolved) ? resolved : null;
+}
+
+async function handleBridgeApi(method, pathname, query, body) {
+  body = body || {};
+  if (method === 'GET' && pathname === '/api/bootstrap') {
+    const account = await remoteAccount();
+    return {
+      status: 200,
+      body: {
+        device: os.hostname(), projects: store.projects, lastProject: store.lastProject,
+        sessions: store.sessions.map(sessionMeta), activeSessionIds: [...activeRuns.keys()],
+        account: { email: account.email, signedIn: account.signedIn },
+        model: modelLabel(currentRoute()),
+      },
+    };
+  }
+  if (method === 'GET' && pathname === '/api/session') {
+    const session = store.sessions.find((s) => s.id === query.get('id'));
+    return session ? { status: 200, body: session } : { status: 404, body: { error: 'Session not found.' } };
+  }
+  if (method === 'GET' && pathname === '/api/screenshot-data') {
+    const file = screenshotFile(query.get('path'));
+    if (!file) return { status: 404, body: { error: 'Screenshot not found.' } };
+    return { status: 200, body: { dataUrl: `data:image/png;base64,${fs.readFileSync(file).toString('base64')}` } };
+  }
+  if (method === 'GET' && pathname === '/api/images/search') {
+    return { status: 200, body: await searchImages(query.get('q') || '') };
+  }
+  // Approvals can't be bypassed from a phone, whatever it sends.
+  if (method === 'POST' && pathname === '/api/send') return { status: 200, body: await startChatRun({ ...body, bypass: false }) };
+  if (method === 'POST' && pathname === '/api/stop') { stopChatRun(body.sessionId); return { status: 200, body: { ok: true } }; }
+  if (method === 'POST' && pathname === '/api/approval') { respondApproval(body.requestId, body.verdict); return { status: 200, body: { ok: true } }; }
+  if (method === 'POST' && pathname === '/api/image-pick') { respondImagePick(body.requestId, body.chosenUrl); return { status: 200, body: { ok: true } }; }
+  if (method === 'POST' && pathname === '/api/session/rename') {
+    const session = store.sessions.find((s) => s.id === body.sessionId);
+    if (!session) return { status: 404, body: { error: 'Session not found.' } };
+    const title = String(body.title || '').trim().slice(0, 120);
+    if (!title) return { status: 400, body: { error: 'Title cannot be empty.' } };
+    session.title = title;
+    saveStore();
+    renameSessionInDb(session.id, title);
+    sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
+    return { status: 200, body: { ok: true } };
+  }
+  if (method === 'POST' && pathname === '/api/session/delete') {
+    stopChatRun(body.sessionId);
+    deleteSessionRecord(body.sessionId);
+    sendEvent(body.sessionId, { type: 'session_deleted', sessionId: body.sessionId });
+    return { status: 200, body: { ok: true } };
+  }
+  return { status: 404, body: { error: 'Not found.' } };
+}
+
+// ─── Phone relay (use Craft from anywhere) ─────────────────────────────────
+// The PC and the phone both connect OUT to a Supabase Realtime channel, so the
+// phone works from any network as long as this PC is on and signed in. No
+// server of our own, no open ports.
+//   · channel: craft-<userId>-<secret>. The secret is random and lives in the
+//     account's own user_metadata (craft_relay), readable only when signed in
+//     as that account.
+//   · presence: this PC announces itself; the phone sees whether it's online.
+//   · requests: the phone sends {id, to, method, path, body, accessToken};
+//     the PC checks the token belongs to the same account before running it.
+//   · events: everything sendEvent() emits is mirrored to the channel.
+// Realtime caps message size, so payloads travel in chunks.
+const RELAY_CHUNK = 60000;
+let relayChannel = null;
+let relayUserId = null;
+let relayStatus = 'off';
+const relayParts = new Map();     // message id -> { n, got, chunks, at }
+const relayAuthCache = new Map(); // phone access token -> { userId, until }
+
+function relayNewId() {
+  return Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
+}
+
+function relaySend(event, obj) {
+  if (!relayChannel || relayStatus !== 'SUBSCRIBED') return;
+  const str = JSON.stringify(obj);
+  const id = relayNewId();
+  const n = Math.max(1, Math.ceil(str.length / RELAY_CHUNK));
+  for (let i = 0; i < n; i++) {
+    relayChannel.send({ type: 'broadcast', event, payload: { id, i, n, d: str.slice(i * RELAY_CHUNK, (i + 1) * RELAY_CHUNK) } })
+      .catch(() => {});
+  }
+}
+
+function relayAssemble(payload) {
+  if (!payload || typeof payload.d !== 'string') return null;
+  if (payload.n === 1) { try { return JSON.parse(payload.d); } catch { return null; } }
+  if (payload.n > 200) return null;
+  let entry = relayParts.get(payload.id);
+  if (!entry) { entry = { n: payload.n, got: 0, chunks: [], at: Date.now() }; relayParts.set(payload.id, entry); }
+  if (entry.chunks[payload.i] === undefined) { entry.chunks[payload.i] = payload.d; entry.got++; }
+  // Drop half-received messages that will never complete.
+  for (const [key, e] of relayParts) if (Date.now() - e.at > 60_000) relayParts.delete(key);
+  if (entry.got < entry.n) return null;
+  relayParts.delete(payload.id);
+  try { return JSON.parse(entry.chunks.join('')); } catch { return null; }
+}
+
+async function relayVerify(token) {
+  if (!token) return null;
+  const cached = relayAuthCache.get(token);
+  if (cached && cached.until > Date.now()) return cached.userId;
+  const { data, error } = await authLib.getClient().auth.getUser(token);
+  if (error || !data?.user) return null;
+  if (relayAuthCache.size > 50) relayAuthCache.clear();
+  relayAuthCache.set(token, { userId: data.user.id, until: Date.now() + 5 * 60 * 1000 });
+  return data.user.id;
+}
+
+async function handleRelayRequest(payload) {
+  const msg = relayAssemble(payload);
+  if (!msg || !msg.id) return;
+  if (msg.to && msg.to !== deviceId()) return; // addressed to another of this account's PCs
+  const reply = (status, body) => relaySend('res', { id: msg.id, status, body });
+  try {
+    const phoneUser = await relayVerify(msg.accessToken);
+    const me = await getLoggedInUserId();
+    if (!phoneUser) return reply(401, { error: 'Your sign-in expired. Sign in again.' });
+    if (!me || phoneUser !== me) return reply(403, { error: 'This phone is signed in to a different account than your PC.' });
+    const u = new URL(String(msg.path || '/'), 'http://relay');
+    const r = await handleBridgeApi(String(msg.method || 'GET').toUpperCase(), u.pathname, u.searchParams, msg.body);
+    let body = r.body;
+    if (u.pathname === '/api/session' && body && Array.isArray(body.messages)) {
+      body = { ...body, messages: body.messages.map((m) => (m.images ? { ...m, images: undefined, imageCount: m.images.length } : m)) };
+    }
+    reply(r.status, body);
+  } catch (e) {
+    reply(400, { error: e.message || 'Request failed.' });
+  }
+}
+
+/** Screenshot bytes and pasted images stay out of relayed events (the phone fetches screenshots on demand). */
+function relaySafeEvent(event) {
+  const out = { ...event };
+  if (out.meta && (out.meta.screenshotDataUrl || out.meta.imageDataUrls)) {
+    out.meta = { ...out.meta };
+    delete out.meta.screenshotDataUrl;
+    delete out.meta.imageDataUrls;
+  }
+  if (out.message && out.message.images) out.message = { ...out.message, images: undefined };
+  return out;
+}
+
+// session_sync fires after every agent event; over the relay the metadata-only
+// ones are coalesced per chat so a busy run doesn't flood the channel.
+const relaySyncTimers = new Map();
+function relayEmit(sessionId, event) {
+  if (!relayChannel || relayStatus !== 'SUBSCRIBED') return;
+  const payload = { sessionId, ...relaySafeEvent(event), from: deviceId() };
+  if (event.type === 'session_sync' && !event.message) {
+    const key = sessionId || '_';
+    clearTimeout(relaySyncTimers.get(key));
+    relaySyncTimers.set(key, setTimeout(() => { relaySyncTimers.delete(key); relaySend('event', payload); }, 1200));
+    return;
+  }
+  relaySend('event', payload);
+}
+
+let relayStarting = null;
+function startRelay() {
+  if (!relayStarting) relayStarting = startRelayOnce().finally(() => { relayStarting = null; });
+  return relayStarting;
+}
+
+async function startRelayOnce() {
+  if (!(await loadEngine())) return;
+  try {
+    const supabase = authLib.getClient();
+    const { data } = await supabase.auth.getSession();
+    const session = data?.session;
+    if (!session) return;
+    if (relayChannel && relayUserId === session.user.id) return;
+    await stopRelay();
+
+    let secret = session.user.user_metadata?.craft_relay;
+    if (!secret) {
+      secret = crypto.randomBytes(18).toString('base64url');
+      const { error } = await supabase.auth.updateUser({ data: { craft_relay: secret } });
+      if (error) throw error;
+    }
+    relayUserId = session.user.id;
+    const channel = supabase.channel(`craft-${relayUserId}-${secret}`, {
+      config: { broadcast: { self: false }, presence: { key: deviceId() } },
+    });
+    channel.on('broadcast', { event: 'req' }, ({ payload }) => { handleRelayRequest(payload); });
+    channel.subscribe(async (status) => {
+      relayStatus = status;
+      if (status === 'SUBSCRIBED') {
+        try { await channel.track({ device: os.hostname(), since: Date.now() }); } catch {}
+      }
+    });
+    relayChannel = channel;
+  } catch (e) {
+    console.warn('[phone] relay could not start:', e.message);
+  }
+}
+
+async function stopRelay() {
+  const channel = relayChannel;
+  relayChannel = null;
+  relayUserId = null;
+  relayStatus = 'off';
+  relayAuthCache.clear();
+  if (channel) { try { await authLib.getClient().removeChannel(channel); } catch {} }
+}
 
 function startRemoteServer() {
   if (remoteServer) return;
-  remotePairCode = makePairCode();
   remoteServer = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-    if (req.method === 'GET' && url.pathname === '/') {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-      return fs.createReadStream(path.join(__dirname, 'mobile.html')).pipe(res);
-    }
-    if (req.method === 'GET' && url.pathname === '/mobile.css') {
-      res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8' });
-      return fs.createReadStream(path.join(__dirname, 'mobile.css')).pipe(res);
-    }
-    if (req.method === 'GET' && url.pathname === '/mobile.js') {
-      res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8' });
-      return fs.createReadStream(path.join(__dirname, 'mobile.js')).pipe(res);
-    }
-    if (req.method === 'GET' && url.pathname === '/manifest.json') {
-      res.writeHead(200, { 'Content-Type': 'application/manifest+json' });
-      return fs.createReadStream(path.join(__dirname, 'mobile.manifest.json')).pipe(res);
-    }
-    if (req.method === 'GET' && url.pathname === '/logo.png') {
-      res.writeHead(200, { 'Content-Type': 'image/png' });
-      return fs.createReadStream(path.join(__dirname, 'logo.png')).pipe(res);
-    }
+    if (req.method === 'OPTIONS') { res.writeHead(204, CORS_HEADERS); return res.end(); }
+    if (req.method === 'GET' && url.pathname === '/') return serveStatic(res, 'mobile.html', 'text/html; charset=utf-8');
+    if (req.method === 'GET' && url.pathname === '/mobile.css') return serveStatic(res, 'mobile.css', 'text/css; charset=utf-8');
+    if (req.method === 'GET' && url.pathname === '/mobile.js') return serveStatic(res, 'mobile.js', 'application/javascript; charset=utf-8');
+    if (req.method === 'GET' && url.pathname === '/supabase.js') return serveStatic(res, path.join('vendor', 'supabase', 'supabase.js'), 'application/javascript; charset=utf-8', 'public, max-age=86400');
+    if (req.method === 'GET' && url.pathname === '/manifest.json') return serveStatic(res, 'mobile.manifest.json', 'application/manifest+json');
+    if (req.method === 'GET' && url.pathname === '/logo.png') return serveStatic(res, 'logo.png', 'image/png', 'public, max-age=86400');
     if (req.method === 'GET' && /^\/agent-mascots\/[a-z]+\.png$/.test(url.pathname)) {
-      const file = path.basename(url.pathname);
-      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' });
-      return fs.createReadStream(path.join(__dirname, 'assets', 'agents', file)).pipe(res);
+      return serveStatic(res, path.join('assets', 'agents', path.basename(url.pathname)), 'image/png', 'public, max-age=86400');
     }
     try {
-      if (req.method === 'POST' && url.pathname === '/api/pair') {
-        if (Date.now() < pairLockedUntil) {
-          const waitSec = Math.ceil((pairLockedUntil - Date.now()) / 1000);
-          return remoteJson(res, 429, { error: `Too many wrong codes. Try again in ${waitSec}s.` });
-        }
+      // Unauthenticated liveness probe the phone uses to find which of the
+      // advertised addresses is reachable from its network. Reveals nothing
+      // about the account.
+      if (req.method === 'GET' && url.pathname === '/api/ping') {
+        return remoteJson(res, 200, { app: 'codeply-craft', device: os.hostname(), deviceId: deviceId() });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/login') {
+        if (loginThrottled()) return remoteJson(res, 429, { error: 'Too many sign-in attempts. Wait a minute and try again.' });
         const body = await readRemoteBody(req);
-        if (String(body.code || '').trim() !== remotePairCode) {
-          pairFailCount++;
-          if (pairFailCount >= PAIR_MAX_ATTEMPTS) {
-            pairLockedUntil = Date.now() + PAIR_LOCKOUT_MS;
-            pairFailCount = 0;
-            // Rotates the code on lockout, not just after it expires — a
-            // guesser who was closing in loses that progress too, and the
-            // desktop's own pairing screen re-reads remoteInfo() so it shows
-            // the new code next time it's asked, no restart needed.
-            remotePairCode = makePairCode();
-            return remoteJson(res, 429, { error: `Too many wrong codes. Locked for ${Math.round(PAIR_LOCKOUT_MS / 1000)}s.` });
-          }
-          return remoteJson(res, 401, { error: 'That pairing code is not valid.' });
+        const accessToken = String(body.accessToken || '');
+        if (!accessToken) return remoteJson(res, 400, { error: 'Missing sign-in token.' });
+        if (!(await loadEngine())) return remoteJson(res, 503, { error: 'Craft is still starting. Try again in a moment.' });
+        const desktop = await remoteAccount();
+        if (!desktop.signedIn) return remoteJson(res, 403, { error: 'Craft on your PC is signed out. Sign in there with the same account first.' });
+        const { data, error } = await authLib.getClient().auth.getUser(accessToken);
+        if (error || !data?.user) return remoteJson(res, 401, { error: 'Your sign-in expired. Sign in again.' });
+        if (data.user.id !== desktop.id) {
+          return remoteJson(res, 403, { error: `This PC is signed in to Craft as ${desktop.email}. Sign in on your phone with that account.` });
         }
-        pairFailCount = 0;
         const token = crypto.randomBytes(32).toString('base64url');
-        const account = await remoteAccount();
-        remoteTokens.set(token, account);
-        return remoteJson(res, 200, { token, device: os.hostname(), account });
+        remoteTokens.set(token, { userId: data.user.id, email: data.user.email, createdAt: Date.now() });
+        return remoteJson(res, 200, { token, device: os.hostname(), account: { email: data.user.email, signedIn: true } });
       }
-      if (!remoteAuthorized(req, url)) return remoteJson(res, 401, { error: 'Pair this phone with Craft first.' });
-      if (req.method === 'GET' && url.pathname === '/api/bootstrap') {
-        const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '') || url.searchParams.get('token');
-        const engineOk = await loadEngine();
-        return remoteJson(res, 200, {
-          device: os.hostname(), projects: store.projects, lastProject: store.lastProject,
-          sessions: store.sessions.map(sessionMeta), activeSessionIds: [...activeRuns.keys()], account: remoteTokens.get(token) || await remoteAccount(),
-          subagents: engineOk ? subagentsLib.listSubagentsMeta() : [],
-          activeAgents: activeAgentsList(),
-        });
-      }
-      if (req.method === 'GET' && url.pathname === '/api/session') {
-        const session = store.sessions.find((s) => s.id === url.searchParams.get('id'));
-        return remoteJson(res, session ? 200 : 404, session || { error: 'Session not found.' });
-      }
-      // Serves a browser_check screenshot saved to disk (see the report
-      // built in browserCheck() above) — the phone can't load a
-      // file:///C:/... path itself the way the desktop app can, so a
-      // reopened chat's past screenshots need an actual HTTP route. Scoped
-      // strictly to the app's own browser-checks folder so a crafted path
-      // can't walk out to an arbitrary file on the machine.
+      if (!(await remoteAuthorized(req, url))) return remoteJson(res, 401, { error: 'Sign in again to connect to your PC.' });
       if (req.method === 'GET' && url.pathname === '/api/screenshot') {
-        const checksDir = path.join(app.getPath('userData'), 'browser-checks');
-        const resolved = path.resolve(checksDir, path.basename(url.searchParams.get('path') || ''));
-        if (!resolved.startsWith(checksDir) || !fs.existsSync(resolved)) {
-          return remoteJson(res, 404, { error: 'Screenshot not found.' });
-        }
-        res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=31536000, immutable' });
-        return fs.createReadStream(resolved).pipe(res);
-      }
-      // Same searchImages() the desktop's own image-pick card calls via IPC
-      // (images:search) — the phone gets the identical Openverse/Wikimedia
-      // results, just over HTTP instead of IPC.
-      if (req.method === 'GET' && url.pathname === '/api/images/search') {
-        return remoteJson(res, 200, await searchImages(url.searchParams.get('q') || ''));
+        const file = screenshotFile(url.searchParams.get('path'));
+        if (!file) return remoteJson(res, 404, { error: 'Screenshot not found.' });
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=31536000, immutable', ...CORS_HEADERS });
+        return fs.createReadStream(file).pipe(res);
       }
       if (req.method === 'GET' && url.pathname === '/api/events') {
-        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', ...CORS_HEADERS });
         res.write('retry: 2000\n\n');
         remoteEventClients.add(res);
-        // Mobile carriers/Wi-Fi APs and Android's own network stack often
-        // kill an idle SSE socket after ~30-60s with no traffic — a comment
-        // ping keeps bytes flowing without the client mistaking it for a
-        // real event, so the connection survives long silent stretches
-        // between messages instead of dying and only reconnecting (dropping
-        // whatever streamed while it was down) the next time the app polls.
+        // Mobile networks kill an idle SSE socket after ~30-60s; a comment
+        // ping keeps bytes flowing without looking like a real event.
         const heartbeat = setInterval(() => {
           try { res.write(': ping\n\n'); } catch { clearInterval(heartbeat); remoteEventClients.delete(res); }
         }, 20000);
         req.on('close', () => { clearInterval(heartbeat); remoteEventClients.delete(res); });
         return;
       }
-      const body = await readRemoteBody(req);
-      if (req.method === 'POST' && url.pathname === '/api/send') return remoteJson(res, 200, await startChatRun(body));
-      if (req.method === 'POST' && url.pathname === '/api/stop') { stopChatRun(body.sessionId); return remoteJson(res, 200, { ok: true }); }
-      if (req.method === 'POST' && url.pathname === '/api/approval') { respondApproval(body.requestId, body.verdict); return remoteJson(res, 200, { ok: true }); }
-      if (req.method === 'POST' && url.pathname === '/api/image-pick') { respondImagePick(body.requestId, body.chosenUrl); return remoteJson(res, 200, { ok: true }); }
-      if (req.method === 'POST' && url.pathname === '/api/session/rename') {
-        const session = store.sessions.find((s) => s.id === body.sessionId);
-        if (!session) return remoteJson(res, 404, { error: 'Session not found.' });
-        const title = String(body.title || '').trim();
-        if (!title) return remoteJson(res, 400, { error: 'Title cannot be empty.' });
-        session.title = title;
-        saveStore();
-        renameSessionInDb(session.id, title);
-        sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
-        return remoteJson(res, 200, { ok: true });
-      }
-      if (req.method === 'POST' && url.pathname === '/api/session/delete') {
-        store.sessions = store.sessions.filter((s) => s.id !== body.sessionId);
-        saveStore();
-        deleteSessionFromDb(body.sessionId);
-        sendEvent(body.sessionId, { type: 'session_deleted', sessionId: body.sessionId });
-        return remoteJson(res, 200, { ok: true });
-      }
-      return remoteJson(res, 404, { error: 'Not found.' });
+      if (req.method === 'POST' && url.pathname === '/api/logout') { remoteTokens.delete(remoteToken(req, url)); return remoteJson(res, 200, { ok: true }); }
+      const body = req.method === 'POST' ? await readRemoteBody(req) : {};
+      const r = await handleBridgeApi(req.method, url.pathname, url.searchParams, body);
+      return remoteJson(res, r.status, r.body);
     } catch (err) { return remoteJson(res, 400, { error: err.message || 'Request failed.' }); }
   });
   remoteServer.on('error', (err) => {
@@ -1657,35 +1828,88 @@ function startRemoteServer() {
   remoteServer.listen(REMOTE_PORT, '0.0.0.0');
 }
 
+// Where the phone web app is hosted (override for a staging deploy).
+const MOBILE_APP_URL = process.env.CRAFT_MOBILE_URL || 'https://mobile.codeply.app';
+
+async function remoteInfo() {
+  const account = await remoteAccount();
+  if (account.signedIn && !relayChannel) startRelay();
+  return {
+    mobileUrl: MOBILE_APP_URL,
+    keepAwake: !!store.keepAwake,
+    relay: relayStatus === 'SUBSCRIBED',
+    relayStatus,
+    running: !!remoteServer,
+    urls: remoteUrls(),
+    port: REMOTE_PORT,
+    device: os.hostname(),
+    signedIn: account.signedIn,
+    email: account.email,
+    phones: new Set([...remoteTokens.values()].map((t) => t.createdAt)).size,
+  };
+}
+
 function sendEvent(sessionId, event) {
   if (win && !win.isDestroyed()) win.webContents.send('agent:event', { sessionId, ...event });
   broadcastRemote(sessionId, event);
 }
 
+// Which chats have a run in flight - lets every window/phone keep its
+// send/stop button honest even for events it missed while looking elsewhere.
+function broadcastRunStatus() {
+  const active = [...activeRuns.keys()];
+  if (win && !win.isDestroyed()) win.webContents.send('runs:status', active);
+  broadcastRemote(null, { type: 'runs_status', active });
+}
+
 const MAX_HISTORY_IMAGES = 4;
 
+/** One line per tool call the agent really made, for grounding later turns. */
+function describeAction(m) {
+  const verb = { write_file: 'wrote', edit_file: 'edited', run: 'ran', fetch_image: 'downloaded', browser_check: 'checked in browser',
+    vercel_deploy: 'deployed', supabase_sql: 'ran SQL', supabase_api: 'called Supabase API', vercel_api: 'called Vercel API',
+    github_create_repo: 'pushed to GitHub', supabase_create_project: 'created Supabase project', gmail_send: 'emailed',
+    slack_post_message: 'posted to Slack' }[m.name];
+  if (!verb) return null;
+  const exit = typeof m.exitCode === 'number' ? ` (exit ${m.exitCode})` : '';
+  return `${verb} ${m.label || ''}${exit}${m.ok === false ? ' - FAILED' : ''}`.trim();
+}
+
 /**
- * Model-facing history: alternating prose turns, most recent first served.
- * Carries forward a bounded number of the most recent pasted images too —
- * without this, a follow-up like "what was in the image I sent?" has
- * nothing to answer from, since the model only ever saw that image on the
- * turn it was pasted. Only the last few images are re-included (not every
- * one ever pasted in the conversation), since each carried-forward image
- * re-uploads its full payload on every later model call for the rest of the
- * chat otherwise — unbounded, that cost only grows.
+ * Model-facing history: alternating prose turns. Each assistant turn carries
+ * a short, factual list of the actions it really performed - so on a
+ * follow-up the model knows what it actually changed last time instead of
+ * reconstructing it from its own (possibly wrong) summary. Also carries
+ * forward a bounded number of the most recent pasted images.
  */
 function buildHistory(session) {
   const turns = [];
+  let pendingActions = [];
+  const flushActions = () => {
+    if (!pendingActions.length) return;
+    const last = turns[turns.length - 1];
+    const note = `[Actions actually performed: ${pendingActions.slice(0, 12).join('; ')}${pendingActions.length > 12 ? `; +${pendingActions.length - 12} more` : ''}]`;
+    if (last && last.role === 'assistant') last.content += `\n\n${note}`;
+    else turns.push({ role: 'assistant', content: note });
+    pendingActions = [];
+  };
   for (const m of session.messages) {
     if (m.kind === 'user') {
+      flushActions();
       turns.push({ role: 'user', content: m.text, images: m.images || null });
     } else if (m.kind === 'assistant' && m.text) {
       const last = turns[turns.length - 1];
       if (last && last.role === 'assistant') last.content += '\n\n' + m.text;
       else turns.push({ role: 'assistant', content: m.text });
+    } else if (m.kind === 'tool') {
+      const line = describeAction(m);
+      if (line) pendingActions.push(line);
     }
   }
+  flushActions();
   const kept = turns.slice(-20);
+  // A history must start with a user turn for most providers.
+  while (kept.length && kept[0].role !== 'user') kept.shift();
 
   let imageBudget = MAX_HISTORY_IMAGES;
   for (let i = kept.length - 1; i >= 0; i--) {
@@ -1700,28 +1924,36 @@ function buildHistory(session) {
   return kept;
 }
 
+// ─── Roles ──────────────────────────────────────────────────────────────────
+// The single agent takes on the role that fits what it's doing (see
+// codeply-cli/lib/subagents.js). The badge only appears when the role changes,
+// so a chat shows "now working as Backend" at the moment it switches, not on
+// every single turn.
+function emitRoleBadge(session, roleId) {
+  const role = roleId ? rolesLib.getRole(roleId) : null;
+  const key = role ? role.id : 'general';
+  if (session.lastRole === key) return;
+  session.lastRole = key;
+  const badge = role
+    ? { id: role.id, name: role.tagline.replace(/ Specialist$/i, ''), tagline: 'role', color: role.color, mascot: role.mascot }
+    : { id: 'general', name: 'General', tagline: 'role', color: '', mascot: 'general.png' };
+  sendEvent(session.id, { type: 'role_active', ...badge });
+  session.messages.push({ kind: 'role_active', ...badge, at: Date.now() });
+}
+
 // ─── Task Maker ─────────────────────────────────────────────────────────────
-// Fully automatic, not a toggle: a message that visibly bundles more than one
-// distinct ask ("change this color and this font here, then on the next page
-// change the padding to 5px") gets split into an ordered checklist and worked
-// through one item at a time — its own step budget per item, its own fresh
-// hallucination/skill checks — with history threaded forward so later tasks
-// see what earlier ones actually did. A plain single-ask message never pays
-// for any of this; see looksMultiPart() below for the (cheap, local) gate
-// that decides whether it's even worth asking the model to split it.
+// A message that bundles more than one distinct ask ("change this color and
+// this font, then on the next page change the padding") gets split into an
+// ordered checklist and worked through one task at a time - its own step
+// budget and role per task, history threaded forward so later tasks see what
+// earlier ones actually did - followed by a verification pass over the whole
+// list. A plain single ask never pays for any of this.
 
 const MAX_TASKS = 10;
 
-// Classifying every single message would mean an extra model call on every
-// send, most of which are a single ask ("fix this bug") with nothing to
-// split. This is a local, free pre-filter: only bother asking the model to
-// split a message when it already looks like it's carrying more than one
-// instruction — an explicit connector word, or multiple imperative-looking
-// clauses separated by punctuation/line breaks. A false negative here just
-// means that message runs as a normal single turn (always correct, if not
-// maximally granular); a false positive costs one extra classification call
-// that comes back with a single task and falls through to the same normal
-// single turn. Neither failure mode breaks anything.
+// Cheap local pre-filter so a normal single ask doesn't cost an extra model
+// call. A false negative just runs as one turn; a false positive costs one
+// classification call that comes back with a single task.
 const MULTI_PART_CONNECTORS = /\b(and then|then\s|also\s|next page|next[,:]|after that|once (that'?s )?done|additionally|as well as|first[, ].*then\b)/i;
 function looksMultiPart(text) {
   if (text.length < 20) return false;
@@ -1732,20 +1964,10 @@ function looksMultiPart(text) {
   return clauses.length >= 2;
 }
 
-/**
- * One classification-only call (no tools, no file access) that turns the raw
- * request into a concrete ordered checklist, or hands back a single task
- * unchanged when the request turns out to really be just one thing (the
- * local pre-filter above is a cheap heuristic, not a guarantee — this is the
- * real decision). Mirrors routerLib.planTurn in spirit — pure "what should
- * happen" decided up front — but this one talks to the model because
- * splitting a request into concrete steps isn't something a keyword
- * heuristic can do reliably on its own.
- */
 async function planTaskList(text, route) {
-  const prompt = `A user sent this message to a coding agent. Decide whether it actually contains more than one distinct, separately actionable instruction (e.g. "change the button color to blue and make the heading font bigger, then on the settings page increase the padding to 5px" is 3 tasks; "fix the login bug" is 1 task — do not invent extra tasks that were not asked for).
+  const prompt = `A user sent this message to a coding agent. Decide whether it actually contains more than one distinct, separately actionable instruction (e.g. "change the button color to blue and make the heading font bigger, then on the settings page increase the padding to 5px" is 3 tasks; "fix the login bug" is 1 task - do not invent extra tasks that were not asked for).
 
-If it's genuinely more than one, break it into an ordered checklist. Each task must be specific enough to act on by itself (name the file/element/change) AND have a concrete, checkable deliverable — a file written or changed, a feature that now works. Never emit a standalone task that is just reading, exploring, or "understanding" the code (e.g. "read index.html, app.js, and server.js to understand the structure") — that has no way to know when it's actually done, so the agent executing it just keeps re-reading indefinitely instead of finishing. Reading whatever files a task needs is something the agent already does automatically as the first step of THAT task; fold it in, never split it out on its own. If it's really just one task, return exactly one task that is the request itself, worded the same way. Use at most ${MAX_TASKS} tasks.
+If it's genuinely more than one, break it into an ordered checklist. Each task must be specific enough to act on by itself (name the file/element/change) AND have a concrete, checkable deliverable - a file written or changed, a feature that now works. Never emit a standalone task that is just reading, exploring, or "understanding" the code - reading whatever files a task needs is part of THAT task. Never emit a standalone "test/verify everything" task either; verification runs automatically after the list. If it's really just one task, return exactly one task that is the request itself, worded the same way. Use at most ${MAX_TASKS} tasks.
 
 Respond with ONLY a JSON object of the shape {"tasks": ["first task", "second task", ...]} and nothing else.
 
@@ -1761,78 +1983,20 @@ ${text}`;
 
 /**
  * Drives exactly one runAgent() turn to completion, forwarding every event to
- * the renderer/session the same way the single-turn path always has. Used
- * both for a normal (non-Task-Maker) send and for each item in a Task Maker
- * checklist, so the two paths behave identically at the per-turn level —
- * Task Maker only adds the planning call and the sequencing around this.
+ * the renderer/phone and persisting what matters on the session.
  *
- * @returns {{status:'done'|'error'|'aborted', madeAnyEdit:boolean, replyText:string}}
+ * @returns {{status:'done'|'error'|'aborted', madeAnyEdit:boolean, replyText:string, error?:string}}
  */
-// session.subagentId is the user's own MANUAL choice from the picker chip:
-// null ('Auto', the default) or 'general' both mean no specialist is pinned,
-// and any other value pins one specialist for the whole chat. Only a manual
-// pin ever lets a turn answer AS that specialist directly — an unpinned
-// ('Auto') turn always runs as the coordinator (persona null) now, full
-// stop, regardless of what the message is about. This used to also
-// auto-detect a specialist per message from its own text (subagents.js's
-// detectSpecialist) and color THAT SAME turn with it, which is exactly the
-// bug this replaced: asking about a security review made the main chat
-// itself become Warden and start editing files inline, instead of staying
-// Codeply and dispatching Warden as an independent background session. The
-// coordinator's own COORDINATOR_RULES (agent.mjs) is what decides who to
-// dispatch to now, not a keyword match before the model even sees the text.
-function effectiveSubagentId(session, text) {
-  if (session.subagentId === 'general') return null;
-  if (session.subagentId) return session.subagentId;
-  return null;
-}
-
-// Shows and persists the mascot badge for whoever is about to answer — the
-// top-level turn itself (subagentId from a manual pin, or Codeply the
-// coordinator when nothing's pinned), or a NAMED nested delegation the model spawned mid-turn via the generic
-// subagent tool ("have Warden review this"). Without the second case, a
-// delegation to a named specialist changed how the reply was written but
-// never showed a trace of it — the badge only ever appeared for whichever
-// persona happened to be running the top-level turn (usually General),
-// even when the actual work was done by Pixel underneath it.
-function emitSubagentBadge(session, subagentId) {
-  const specialist = subagentId && subagentsLib.getSubagent(subagentId);
-  const badge = specialist
-    ? { id: specialist.id, name: specialist.name, tagline: specialist.tagline, color: specialist.color, mascot: specialist.mascot }
-    : { id: 'general', name: 'Codeply', tagline: 'General purpose', color: '', mascot: 'general.png' };
-  sendEvent(session.id, { type: 'subagent_active', ...badge });
-  // Persisted as a real message, not just a live event — otherwise the
-  // badge only ever existed for the device that was open during the run
-  // and vanished the moment the chat was reopened or the app restarted.
-  session.messages.push({ kind: 'subagent_active', ...badge, at: Date.now() });
-}
-
-async function runOneTurn({ session, userMessage, images, history, mode, cwd, approve, signal, route, subagentId }) {
+async function runOneTurn({ session, userMessage, images, history, mode, cwd, approve, signal, route, roleId, goal, maxSteps, verifyOnly }) {
   let status = 'error';
   let madeAnyEdit = false;
   let replyText = '';
-  // Fired once, right at the top of this turn (before the model even starts
-  // replying) — whether subagentId came from a manual pin or from
-  // detectSpecialist() in subagents.js, the point is the same: the user
-  // should see WHO is answering, not just have the persona silently steer
-  // the prompt with no visible trace. No match (or an explicit General/off
-  // pick) still gets its own badge rather than showing nothing — every turn
-  // has an answerer, even when that answerer is just Codeply itself.
-  emitSubagentBadge(session, subagentId);
+  let error = '';
+  emitRoleBadge(session, roleId);
   try {
     const run = agentMod.runAgent({
-      userMessage, history, mode: mode || 'Build', cwd, approve, browser: browserCheck, images, signal, route, subagentId,
-      // Only the specific "a named specialist's nested run just started"
-      // moment is used here — see emitSubagentBadge above. Every other
-      // subagent progress event (generic delegations, step-by-step
-      // updates) is intentionally left unsurfaced for now: streaming a
-      // second live sub-transcript into this same chat is a bigger UI
-      // question than just "show the badge," and not what was asked for.
-      onSubagentEvent: (sub) => {
-        if (sub.type === 'start' && sub.specialistId) emitSubagentBadge(session, sub.specialistId);
-      },
-      dispatchAgent: (subagentIdToDispatch, task) => dispatchToSpecialist(session, subagentIdToDispatch, task),
-      stopAgent: (subagentIdToStop, index) => stopAgentByOrdinal(subagentIdToStop, index),
+      userMessage, history, mode: mode || 'Build', cwd, approve, browser: browserCheck, images, signal, route,
+      roleId, goal, maxSteps, verifyOnly,
     });
     for await (const ev of run) {
       if (ev.type === 'text') {
@@ -1846,94 +2010,108 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
           kind: 'tool', name: ev.name,
           label: ev.summary || ev.args?.path || ev.args?.command || ev.args?.pattern || '',
           ok: ev.ok, args: persistedArgs, at: Date.now(),
+          exitCode: typeof ev.meta?.exitCode === 'number' ? ev.meta.exitCode : undefined,
           screenshotPath: ev.meta?.screenshotPath || undefined,
         });
+      } else if (ev.type === 'notice') {
+        session.messages.push({ kind: 'notice', level: ev.level || 'info', text: ev.text, at: Date.now() });
+      } else if (ev.type === 'done' && Array.isArray(ev.actions)) {
+        // The factual record of what this turn changed - rendered as a
+        // "what actually happened" card, independent of the model's prose.
+        const changed = ev.actions.filter((a) => a.ok && ['write_file', 'edit_file', 'fetch_image'].includes(a.tool));
+        const checks = ev.actions.filter((a) => ['run', 'browser_check'].includes(a.tool));
+        if (changed.length || checks.length) {
+          const summary = {
+            kind: 'turn_summary',
+            files: [...new Set(changed.map((a) => a.label))].slice(0, 30),
+            checks: checks.slice(-8).map((a) => ({ tool: a.tool, label: a.label, ok: a.ok, exitCode: a.exitCode })),
+            unverified: ev.unverifiedFiles || [],
+            at: Date.now(),
+          };
+          session.messages.push(summary);
+          sendEvent(session.id, { type: 'turn_summary', ...summary });
+        }
       }
       session.updatedAt = Date.now();
-      // A chatViaProxy() trial-cap rejection (see codeply-cli/lib/ai.js) carries
-      // this marker prefix through agent.mjs's error text unchanged — catch it
-      // here so the renderer shows the locked-plan screen, not a generic toast.
-      if (ev.type === 'error' && typeof ev.error === 'string' && ev.error.startsWith('TRIAL_LIMIT_REACHED: ')) {
-        sendEvent(session.id, { type: 'trial_limit_reached', message: ev.error.slice('TRIAL_LIMIT_REACHED: '.length) });
-      } else {
-        if (ev.type === 'error' && typeof ev.error === 'string' && PROVIDER_EXHAUSTED_RE.test(ev.error)) {
-          notifyProviderExhausted(session, ev.error);
-        }
-        sendEvent(session.id, ev);
+      if (ev.type === 'error' && typeof ev.error === 'string' && PROVIDER_EXHAUSTED_RE.test(ev.error)) {
+        notifyProviderExhausted(session, ev.error);
       }
+      if (ev.type === 'error') session.messages.push({ kind: 'notice', level: 'error', text: ev.error, at: Date.now() });
+      sendEvent(session.id, ev);
       sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
       if (ev.type === 'done') { status = 'done'; madeAnyEdit = !!ev.madeAnyEdit; break; }
-      if (ev.type === 'error') { status = 'error'; break; }
+      if (ev.type === 'error') { status = 'error'; error = String(ev.error || ''); break; }
       if (ev.type === 'aborted') { status = 'aborted'; break; }
     }
   } catch (err) {
     sendEvent(session.id, { type: 'error', error: err.message });
-    session.messages.push({ kind: 'assistant', text: `Something went wrong: ${err.message}`, at: Date.now() });
+    session.messages.push({ kind: 'notice', level: 'error', text: `Something went wrong: ${err.message}`, at: Date.now() });
     status = 'error';
+    error = err.message;
   }
-  return { status, madeAnyEdit, replyText };
+  return { status, madeAnyEdit, replyText, error };
 }
 
+const TASK_STATUS_DONE = new Set(['done', 'done-no-changes']);
+
 /**
- * Entry point for every text-only Build-mode send. Decides for itself whether
- * this message needs splitting: the local looksMultiPart() pre-filter first
- * (skips the classification call entirely for an obvious single ask), then —
- * only if that looked promising — one real classification call that makes
- * the actual call, including "no, this is genuinely one task." Anything less
- * than 2 real tasks runs as a normal single turn with no checklist shown;
- * nothing about a plain single-ask message changes from before this existed.
+ * Runs a message: a single turn, or - when it bundles several asks - a
+ * checklist of tasks followed by a verification pass. Returns the overall
+ * outcome and the history threaded through it (used by /goal).
  */
-async function runTaskMaker({ session, originalMessage, history, mode, cwd, approve, signal, route, forceClassify = false }) {
+async function runTaskMaker({ session, originalMessage, history, mode, cwd, approve, signal, route, forceClassify = false, goal, maxSteps }) {
   if (!forceClassify && !looksMultiPart(originalMessage)) {
-    await runOneTurn({ session, userMessage: originalMessage, images: undefined, history, mode, cwd, approve, signal, route, subagentId: effectiveSubagentId(session, originalMessage) });
-    return;
+    const r = await runOneTurn({ session, userMessage: originalMessage, history, mode, cwd, approve, signal, route, roleId: rolesLib.detectRole(originalMessage), goal, maxSteps });
+    return { ...r, history: [...history, { role: 'user', content: originalMessage }, { role: 'assistant', content: r.replyText || '(no reply)' }] };
   }
 
   const plan = await planTaskList(originalMessage, route);
   if (!plan.ok || plan.tasks.length < 2) {
     if (!plan.ok) {
-      sendEvent(session.id, { type: 'helper_note', label: 'Task Maker', why: `Could not check this for multiple tasks (${plan.error}). Continuing as a single run.`, failed: true });
+      sendEvent(session.id, { type: 'helper_note', label: 'Task list', why: `couldn't be planned (${plan.error}). Continuing as a single task.`, failed: true });
     }
-    await runOneTurn({ session, userMessage: originalMessage, images: undefined, history, mode, cwd, approve, signal, route, subagentId: effectiveSubagentId(session, originalMessage) });
-    return;
+    const r = await runOneTurn({ session, userMessage: originalMessage, history, mode, cwd, approve, signal, route, roleId: rolesLib.detectRole(originalMessage), goal, maxSteps });
+    return { ...r, history: [...history, { role: 'user', content: originalMessage }, { role: 'assistant', content: r.replyText || '(no reply)' }] };
   }
 
-  const tasks = plan.tasks.map((t, i) => ({ id: i + 1, text: t, status: 'pending' }));
+  const tasks = plan.tasks.map((t, i) => ({ id: i + 1, text: t, status: 'pending', role: rolesLib.detectRole(t) || null }));
   const tasklistMsg = { kind: 'tasklist', tasks: tasks.map((t) => ({ ...t })), at: Date.now() };
   session.messages.push(tasklistMsg);
   session.updatedAt = Date.now();
+  const syncList = () => { tasklistMsg.tasks = tasks.map((t) => ({ ...t })); };
   sendEvent(session.id, { type: 'tasklist', tasks: tasklistMsg.tasks });
   sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
 
   let runHistory = history;
   let anyEdits = false;
-  let anyFailed = false;
+  let lastError = '';
 
   for (const task of tasks) {
     if (signal.aborted) {
       task.status = 'skipped';
-      tasklistMsg.tasks = tasks.map((t) => ({ ...t }));
+      syncList();
       sendEvent(session.id, { type: 'task_end', id: task.id, status: 'skipped' });
       continue;
     }
 
     task.status = 'in_progress';
-    tasklistMsg.tasks = tasks.map((t) => ({ ...t }));
+    syncList();
     sendEvent(session.id, { type: 'task_start', id: task.id, text: task.text });
     sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
 
     const priorSummary = tasks
-      .filter((t) => t.id < task.id && t.status === 'done')
-      .map((t) => `- ${t.text}`).join('\n');
+      .filter((t) => t.id < task.id)
+      .map((t) => `- [${TASK_STATUS_DONE.has(t.status) ? 'done' : t.status}] ${t.text}`).join('\n');
     const taskMessage = `You are working through a checklist for this overall request: "${originalMessage}"\n\n` +
-      (priorSummary ? `Already completed:\n${priorSummary}\n\n` : '') +
-      `Do this task now:\n${task.text}`;
+      (priorSummary ? `Earlier tasks:\n${priorSummary}\n\n` : '') +
+      `Do ONLY this task now (task ${task.id} of ${tasks.length}):\n${task.text}\n\n` +
+      'Verify this task before you finish it, and describe only what you actually did.';
 
-    const result = await runOneTurn({ session, userMessage: taskMessage, images: undefined, history: runHistory, mode, cwd, approve, signal, route, subagentId: effectiveSubagentId(session, task.text) });
+    const result = await runOneTurn({ session, userMessage: taskMessage, history: runHistory, mode, cwd, approve, signal, route, roleId: task.role, goal, maxSteps });
 
     if (result.status === 'aborted') {
       task.status = 'skipped';
-      tasklistMsg.tasks = tasks.map((t) => ({ ...t }));
+      syncList();
       sendEvent(session.id, { type: 'task_end', id: task.id, status: 'skipped' });
       break;
     }
@@ -1941,155 +2119,196 @@ async function runTaskMaker({ session, originalMessage, history, mode, cwd, appr
     if (result.status === 'done') {
       task.status = result.madeAnyEdit ? 'done' : 'done-no-changes';
       if (result.madeAnyEdit) anyEdits = true;
-      // Thread this task's own turn into history so the NEXT task's runAgent
-      // call sees what actually happened — not just the original request.
       runHistory = [...runHistory, { role: 'user', content: taskMessage }, { role: 'assistant', content: result.replyText || '(no reply text)' }];
     } else {
       task.status = 'failed';
-      anyFailed = true;
+      lastError = result.error;
+      // A dead provider will fail every remaining task the same way - stop
+      // rather than burning through the list.
+      if (PROVIDER_EXHAUSTED_RE.test(result.error || '') || /not signed in|api key|unauthor|can't reach|couldn't find ollama/i.test(result.error || '')) {
+        syncList();
+        sendEvent(session.id, { type: 'task_end', id: task.id, status: task.status });
+        for (const rest of tasks.filter((t) => t.status === 'pending')) {
+          rest.status = 'skipped';
+          sendEvent(session.id, { type: 'task_end', id: rest.id, status: 'skipped' });
+        }
+        syncList();
+        break;
+      }
     }
 
-    tasklistMsg.tasks = tasks.map((t) => ({ ...t }));
+    syncList();
     sendEvent(session.id, { type: 'task_end', id: task.id, status: task.status });
     session.updatedAt = Date.now();
     sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
   }
 
-  // Final verification pass: force one more turn that browser_checks
-  // everything touched across the whole checklist and fixes anything wrong,
-  // instead of trusting that the last task's own turn happened to check
-  // everything. Skipped if nothing was actually edited (nothing to verify)
-  // or the run was stopped/aborted partway through.
+  // ── Verification loop ──
+  // After the tasks, one more turn that checks each task against the real
+  // project (reads the changed code, runs checks, browser_checks pages),
+  // fixes what's missing, and reports task by task.
+  let verifyResult = null;
   if (anyEdits && !signal.aborted) {
-    const verifyMessage = 'All checklist tasks above are finished. Now verify the actual result: browser_check every page you touched or that could have been affected across all of the tasks above, look at the screenshot each check returns, and fix anything that is visibly wrong or reports an error — repeat until clean. Then give a short final summary of what was done overall.';
-    await runOneTurn({ session, userMessage: verifyMessage, images: undefined, history: runHistory, mode, cwd, approve, signal, route, subagentId: effectiveSubagentId(session, originalMessage) });
-  } else if (anyFailed) {
-    session.messages.push({
-      kind: 'assistant',
-      text: `Finished the checklist with ${tasks.filter((t) => t.status === 'failed').length} task(s) that failed. See above for details.`,
-      at: Date.now(),
-    });
+    const list = tasks.map((t) => `${t.id}. [${TASK_STATUS_DONE.has(t.status) ? 'reported done' : t.status}] ${t.text}`).join('\n');
+    const verifyMessage = `All checklist tasks for this request have been attempted: "${originalMessage}"\n\n${list}\n\n` +
+      'Now run a verification pass. For EACH task, check it is really done by looking at the actual project - read the changed code, ' +
+      'run the syntax check / tests / build that applies, and browser_check any page that was touched (look at the screenshot). ' +
+      'Fix anything missing or broken and re-check it. Finish with a short verification report, one line per task: ' +
+      '"✅ <task> - verified by <how>", "⚠️ <task> - not verified: <why>", or "❌ <task> - not done: <what is missing>".';
+    sendEvent(session.id, { type: 'verification_start' });
+    verifyResult = await runOneTurn({ session, userMessage: verifyMessage, history: runHistory, mode, cwd, approve, signal, route, roleId: 'testing', goal, maxSteps, verifyOnly: true });
+    if (verifyResult.status === 'done') {
+      runHistory = [...runHistory, { role: 'user', content: verifyMessage }, { role: 'assistant', content: verifyResult.replyText || '' }];
+    }
   }
-}
 
-// Cross-references activeRuns (which only has session ids) against
-// store.sessions to get each active run's specialist and title — the one
-// shared shape both the desktop dashboard and the phone's Agent View sheet
-// render from (see broadcastAgentStatus below and /api/bootstrap's
-// activeAgents field).
-function activeAgentsList() {
-  const active = [];
-  for (const id of activeRuns.keys()) {
-    const s = store.sessions.find((x) => x.id === id);
-    if (s) active.push({ sessionId: s.id, subagentId: s.subagentId || null, title: s.title });
+  const failed = tasks.filter((t) => t.status === 'failed').length;
+  if (failed && !verifyResult) {
+    const text = `Finished the checklist with ${failed} task(s) that failed.${lastError ? ` Last error: ${lastError}` : ''}`;
+    session.messages.push({ kind: 'assistant', text, at: Date.now() });
+    sendEvent(session.id, { type: 'text', text });
   }
-  return active;
+
+  const status = signal.aborted ? 'aborted' : failed === tasks.length ? 'error' : 'done';
+  return {
+    status,
+    madeAnyEdit: anyEdits,
+    replyText: verifyResult?.replyText || '',
+    error: lastError,
+    history: runHistory,
+  };
 }
 
-// Drives the Agent View dashboard — not scoped to one chat's event channel
-// like sendEvent, since the dashboard isn't tied to any single session.
-// Reaches both the desktop window (IPC) and any paired phone (SSE, same
-// broadcastRemote every other cross-device event already goes through) —
-// a phone open to a specialist's chat needs to know it finished exactly the
-// same way the desktop's own Agent View tab does.
-function broadcastAgentStatus() {
-  const active = activeAgentsList();
-  if (win && !win.isDestroyed()) win.webContents.send('agents:status', active);
-  broadcastRemote(null, { type: 'agents_status', active });
+// ─── /goal ──────────────────────────────────────────────────────────────────
+// "/goal <objective>" keeps the agent working until the objective is met:
+// work (split into tasks when it has several parts) → an independent
+// verification turn that inspects the real project and ends with
+// GOAL_STATUS: ACHIEVED or NOT_ACHIEVED - <what remains> → repeat with what
+// remains. Bounded, stoppable, and it gives up honestly when stuck.
+
+const GOAL_PREFIX_RE = /^\/goal\b[:\s]*/i;
+const MAX_GOAL_ITERATIONS = 8;
+const GOAL_STEPS_PER_TURN = 60;
+
+function parseGoalStatus(text) {
+  const m = /GOAL_STATUS:\s*(ACHIEVED|NOT[_\s-]?ACHIEVED)\s*(?:[\u2014\u2013:-]+\s*)?([\s\S]*)$/i.exec(text || '');
+  if (!m) return { achieved: false, remaining: '', parsed: false };
+  const achieved = /^ACHIEVED$/i.test(m[1]);
+  return { achieved, remaining: achieved ? '' : m[2].trim().slice(0, 1500), parsed: true };
 }
 
-/**
- * The fire-and-forget half of dispatch_agent (codeply-cli/lib/tools.mjs) —
- * threaded into the agent's ctx as ctx.dispatchAgent, same as ctx.approve/
- * ctx.browser are already host-provided capabilities (see agent.mjs's ctx
- * object). Starts a brand-new session pinned to the given specialist and
- * kicks off its own run via the exact same path a real user message takes
- * (startChatRun), then returns immediately — startChatRun already does its
- * real work in a detached IIFE it never awaits, so this doesn't either.
- *
- * Always bypass: nobody is watching this session to answer an approval card
- * — the user is in the main chat or a different specialist's view — so a
- * permission prompt here would just hang forever instead of ever being seen.
- */
-async function dispatchToSpecialist(parentSession, subagentId, task) {
-  const result = await startChatRun({
-    sessionId: null,
-    cwd: parentSession.cwd,
-    mode: 'Build',
-    bypass: true,
-    text: task,
-    subagentId,
-    parentSessionId: parentSession.id,
-  });
-  if (result.error) throw new Error(result.error);
-  return { sessionId: result.sessionId };
+async function runGoal({ session, goal, history, mode, cwd, approve, signal, route }) {
+  const goalMsg = { kind: 'goal', goal, status: 'running', iteration: 0, max: MAX_GOAL_ITERATIONS, note: '', at: Date.now() };
+  session.messages.push(goalMsg);
+  const syncGoal = (patch) => {
+    Object.assign(goalMsg, patch);
+    sendEvent(session.id, { type: 'goal_update', goal: goalMsg.goal, status: goalMsg.status, iteration: goalMsg.iteration, max: goalMsg.max, note: goalMsg.note });
+    sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
+  };
+  syncGoal({});
+
+  let runHistory = history;
+  let remaining = '';
+  let previousRemaining = null;
+  let quietIterations = 0;
+
+  for (let i = 1; i <= MAX_GOAL_ITERATIONS; i++) {
+    if (signal.aborted) break;
+    syncGoal({ iteration: i, status: 'running', note: i === 1 ? 'Working on it' : 'Working on what is left' });
+
+    // ── Work ──
+    let work;
+    if (i === 1) {
+      work = await runTaskMaker({
+        session, originalMessage: goal, history: runHistory, mode, cwd, approve, signal, route,
+        forceClassify: looksMultiPart(goal), goal, maxSteps: GOAL_STEPS_PER_TURN,
+      });
+    } else {
+      const msg = `Keep working toward the goal: "${goal}"\n\nThe last verification found this still missing:\n${remaining || '(no details were given - re-check the goal against the project)'}\n\n` +
+        'Do that now, verify it, and describe only what you actually did.';
+      const r = await runOneTurn({ session, userMessage: msg, history: runHistory, mode, cwd, approve, signal, route, roleId: rolesLib.detectRole(remaining || goal), goal, maxSteps: GOAL_STEPS_PER_TURN });
+      work = { ...r, history: [...runHistory, { role: 'user', content: msg }, { role: 'assistant', content: r.replyText || '(no reply)' }] };
+    }
+    runHistory = work.history || runHistory;
+    if (signal.aborted || work.status === 'aborted') break;
+    if (work.status === 'error' && (PROVIDER_EXHAUSTED_RE.test(work.error || '') || /not signed in|api key|unauthor|can't reach|couldn't find ollama/i.test(work.error || ''))) {
+      syncGoal({ status: 'failed', note: 'Stopped - the model is unavailable.' });
+      return;
+    }
+
+    // ── Verify ──
+    syncGoal({ status: 'verifying', note: 'Checking whether the goal is met' });
+    const checkMsg = `Goal: "${goal}"\n\nCheck whether this goal is now FULLY achieved by inspecting the real project - read the relevant files, ` +
+      'run the tests/build/syntax checks that apply, and browser_check any pages involved. Do not assume; only trust what you see in tool results. ' +
+      'If something small is broken or missing and you can fix it right now, fix it and re-check. ' +
+      'End your reply with exactly one final line in one of these two forms:\n' +
+      'GOAL_STATUS: ACHIEVED\nGOAL_STATUS: NOT_ACHIEVED - <what is still missing, specifically>';
+    const check = await runOneTurn({ session, userMessage: checkMsg, history: runHistory, mode, cwd, approve, signal, route, roleId: 'testing', goal, maxSteps: 30, verifyOnly: true });
+    runHistory = [...runHistory, { role: 'user', content: checkMsg }, { role: 'assistant', content: check.replyText || '' }];
+    if (signal.aborted || check.status === 'aborted') break;
+
+    const verdict = parseGoalStatus(check.replyText);
+    if (verdict.achieved) {
+      syncGoal({ status: 'achieved', note: `Achieved after ${i} iteration${i === 1 ? '' : 's'}` });
+      return;
+    }
+    remaining = verdict.remaining || (verdict.parsed ? '' : 'The check did not give a clear verdict.');
+
+    // Stuck: the same thing is still missing and nothing changed.
+    const madeProgress = work.madeAnyEdit || check.madeAnyEdit;
+    quietIterations = madeProgress ? 0 : quietIterations + 1;
+    if ((previousRemaining !== null && remaining === previousRemaining && !madeProgress) || quietIterations >= 2) {
+      syncGoal({ status: 'blocked', note: `Stuck - no progress on: ${remaining.slice(0, 200)}` });
+      return;
+    }
+    previousRemaining = remaining;
+  }
+
+  if (signal.aborted) syncGoal({ status: 'stopped', note: 'Stopped' });
+  else syncGoal({ status: 'incomplete', note: `Not finished after ${MAX_GOAL_ITERATIONS} iterations. Still missing: ${remaining.slice(0, 200)}` });
 }
 
-/**
- * The other half of the coordinator's control surface — "kill the pixel
- * agent" in plain chat, or the stop icon in Agent View, both end up here.
- * `index` is 1-based among that specialist's currently ACTIVE sessions,
- * oldest first (so "pixel agent 1" means the first one that started, not an
- * arbitrary id the user was never shown) — matches how Agent View lists them.
- */
-function stopAgentByOrdinal(subagentId, index = 1) {
-  const active = store.sessions
-    .filter((s) => s.subagentId === subagentId && activeRuns.has(s.id))
-    .sort((a, b) => a.createdAt - b.createdAt);
-  const target = active[index - 1];
-  if (!target) return { ok: false, error: `No active session found for that specialist${index > 1 ? ` (#${index})` : ''}.` };
-  stopChatRun(target.id);
-  return { ok: true, title: target.title, sessionId: target.id };
-}
-
-/** First ~220 chars, cut at a word boundary — the parent chat gets a summary, not the dispatched specialist's full report (that stays in its own session). */
-function truncateSummary(text, max = 220) {
-  const clean = String(text || '').trim();
-  if (!clean) return '';
-  if (clean.length <= max) return clean;
-  const cut = clean.slice(0, max);
-  const lastSpace = cut.lastIndexOf(' ');
-  return (lastSpace > 40 ? cut.slice(0, lastSpace) : cut) + '…';
-}
-
-async function startChatRun({ sessionId, cwd, mode, bypass, text, images, clientId = null, subagentId, parentSessionId = null }) {
+async function startChatRun({ sessionId, cwd, mode, bypass, text, images, clientId = null }) {
   text = String(text || '').trim();
-  images = Array.isArray(images) ? images : undefined;
+  images = Array.isArray(images) ? images.slice(0, 6) : undefined;
   if (!text && !images?.length) return { error: 'Write a task before sending it.' };
   const ok = await loadEngine();
   if (!ok) return { error: 'Engine not available.' };
   if (!cwd || !fs.existsSync(cwd)) return { error: 'Pick a project folder first.' };
+  mode = ['Build', 'Plan', 'Ask'].includes(mode) ? mode : 'Build';
+
+  // The model is decided once, when the turn starts - switching models
+  // mid-run never changes a run that's already going.
+  const route = currentRoute();
+  if (route.auto && !(await getLoggedInUserId())) {
+    return { error: 'Sign in to use Auto, or pick one of your own models from the model menu.' };
+  }
+
+  const goalMatch = GOAL_PREFIX_RE.exec(text);
+  const goal = goalMatch ? text.slice(goalMatch[0].length).trim() : null;
+  if (goalMatch && !goal) return { error: 'Add the goal after /goal - for example: /goal make the checkout page work end to end.' };
+  if (goal && mode !== 'Build') return { error: '/goal needs Build mode, since it changes files. Switch the mode chip to Build.' };
 
   let session = sessionId ? store.sessions.find((s) => s.id === sessionId) : null;
   if (!session) {
+    const titleSource = goal || text;
     session = {
       id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      title: text.length > 46 ? text.slice(0, 46) + '…' : text,
+      title: titleSource.length > 46 ? titleSource.slice(0, 46) + '…' : titleSource,
       cwd,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       messages: [],
       alwaysAllowed: [],
-      subagentId: subagentId || null,
-      parentSessionId: parentSessionId || null,
     };
     store.sessions.unshift(session);
-  } else if (subagentId !== undefined) {
-    // Sticks for the rest of the chat once set, same as cwd — but a client
-    // that doesn't know about specialists (an older mobile build) omits the
-    // field entirely rather than sending null, so it never accidentally
-    // clears a specialist chosen from the desktop.
-    session.subagentId = subagentId || null;
   }
   if (activeRuns.has(session.id)) return { error: 'A run is already in progress for this chat.' };
 
   rememberProject(cwd);
   const history = buildHistory(session);
-  // images are kept on the session record purely so reopening this chat
-  // later still shows what was pasted — buildHistory() above deliberately
-  // never re-includes them in the MODEL-facing history for later turns
-  // (that would re-upload the same base64 payload, growing, on every
-  // subsequent message of the whole conversation).
+  // images are kept on the session record so reopening the chat still shows
+  // them; buildHistory() only re-sends the last few to the model.
   session.messages.push({ kind: 'user', text, images: images?.length ? images : undefined, at: Date.now() });
   session.updatedAt = Date.now();
   session.cwd = cwd;
@@ -2097,45 +2316,19 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   syncSessionToDb(session);
   sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session), message: session.messages.at(-1), origin: clientId });
 
-  // A real AbortController, not a plain {aborted:false} flag — fetch() (used
-  // for every provider's HTTP call in ai.js) only actually cancels an
-  // in-flight request when handed a genuine AbortSignal. The old plain-object
-  // version let the loop notice a stop between steps, but did nothing about a
-  // request already in flight, which is why Stop used to take up to ~20s: it
-  // was just waiting for the current generation to finish on its own.
+  // A real AbortController - fetch() only cancels an in-flight request when
+  // handed a genuine AbortSignal.
   const abortController = new AbortController();
   const signal = abortController.signal;
 
-  // Which helpers (if any) this turn needs is decided once, here, from what
-  // the user actually sent — pure classification, no I/O yet. The writer
-  // routerLib picks (Ollama's Gemma 4 31B by default, or the user's own BYOK
-  // provider/model when ~/.codeply/config.json names one — see
-  // model-router.js's effectiveWriter) is what actually runs the turn either
-  // way, images included; the design helper just decides whether one narrow
-  // planning call runs before it. Only applies when the user hasn't pinned a
-  // model — a pinned pick means stored config wins and `plan` stays null, so
-  // ai.js's applyRoute is a no-op.
-  // Returned with the handler's result rather than pushed as an agent event:
-  // for a brand-new chat the renderer doesn't know this session's id yet (it
-  // learns it from this very return value), so an event sent now would be
-  // dropped by its `data.sessionId === state.currentSessionId` filter.
-  const plan = autoRoutingOn() ? routerLib.planTurn(text, !!(images && images.length)) : null;
-  // Scoped to this chat, not this run: "Always allow" persists across every
-  // message sent in this session (loaded from and written back to the
-  // session record itself), until the chat is deleted. fetch_image is
-  // excluded — it never offers an "always allow" (the picker below has no
-  // such button, on purpose: every image is a different pick, unlike "trust
-  // every future write"), so a stale 'fetch_image' entry from an older
-  // session (back when it still used a plain approval card) is dropped here
-  // rather than silently continuing to skip the picker.
+  // "Always allow" is scoped to this chat and persists across its messages.
+  // fetch_image never offers it (every image is a different pick).
   if (!Array.isArray(session.alwaysAllowed)) session.alwaysAllowed = [];
-  const hadStaleImageEntry = session.alwaysAllowed.includes('fetch_image');
   session.alwaysAllowed = session.alwaysAllowed.filter((t) => t !== 'fetch_image');
-  if (hadStaleImageEntry) saveStore();
   const alwaysAllowed = new Set(session.alwaysAllowed);
   activeRuns.set(session.id, { signal, abortController });
   updateSleepBlocker();
-  broadcastAgentStatus();
+  broadcastRunStatus();
 
   const approve = async (req) => {
     if (signal.aborted) return 'reject';
@@ -2145,9 +2338,8 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
     }
 
     // fetch_image gets a picker instead of a plain accept/reject card: the
-    // user searches and clicks a real photo rather than trusting whatever
-    // the model auto-picked. Unattended runs (bypass/always-allow, handled
-    // above) skip straight past this and keep the model's own pick.
+    // user searches and clicks a real photo rather than trusting whatever the
+    // model auto-picked.
     if (req.tool === 'fetch_image') {
       const id = ++approvalCounter;
       sendEvent(session.id, {
@@ -2159,15 +2351,11 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
         danger: !!req.danger,
       });
       return new Promise((resolve) => {
-        pendingImagePicks.set(id, (chosenUrl) => {
+        pendingImagePicks.set(id, { sessionId: session.id, resolve: (chosenUrl) => {
           pendingImagePicks.delete(id);
-          // Same reasoning as approval_resolved below: whichever device
-          // (desktop or phone) didn't answer this needs to be told it's
-          // done, or its picker sheet is left showing a request that
-          // already went through with nothing left to ever dismiss it.
           sendEvent(session.id, { type: 'image_pick_resolved', requestId: id });
           resolve(chosenUrl ? { action: 'once', url: chosenUrl } : 'reject');
-        });
+        } });
       });
     }
 
@@ -2182,7 +2370,7 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
       diff: req.diff || null,
     });
     return new Promise((resolve) => {
-      pendingApprovals.set(id, (verdict) => {
+      pendingApprovals.set(id, { sessionId: session.id, resolve: (verdict) => {
         pendingApprovals.delete(id);
         if (verdict === 'always') {
           alwaysAllowed.add(req.tool);
@@ -2190,147 +2378,77 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
           saveStore();
           syncSessionToDb(session);
         }
-        // Whichever device answers this (phone or desktop), every OTHER
-        // device showing the same approval card needs to be told it's
-        // resolved — otherwise the one that didn't answer it is left
-        // showing a request that already went through, with nothing left
-        // to ever dismiss it.
+        // Tell every other device showing this card that it's been answered.
         sendEvent(session.id, { type: 'approval_resolved', requestId: id, verdict });
         resolve(verdict === 'reject' ? 'reject' : verdict);
-      });
+      } });
     });
   };
 
   (async () => {
     try {
-      // Helper calls happen here, not before the handler's early return above
-      // — they're real network I/O (an extra helper call), and the renderer
-      // shouldn't wait on them before it gets a session id back. Each note is
-      // pushed as its own event so the chat shows "Codeply Design planned the
-      // design" before the writer's own turn starts, like a tool row would.
-      let turnMessage = text;
-      let turnImages = images;
-      let route = null;
-      if (plan) {
-        route = plan.writer;
-        const prepared = await routerLib.runHelpers(plan, text, images);
-        turnMessage = prepared.message;
-        turnImages = prepared.images;
-        for (const note of prepared.notes) {
-          sendEvent(session.id, { type: 'helper_note', label: note.label, why: note.why, failed: !!note.failed });
-        }
-      }
-
-      // Auto-detected, not opt-in: only text-only Build-mode sends are even
-      // candidates (Plan/Ask are single coherent answers, not a to-do list;
-      // an image belongs in one coherent turn the writer can look at, not
-      // split across a to-do list). runTaskMaker() itself decides
-      // whether the message actually needs splitting — most sends fall
-      // straight through to the exact same single runOneTurn() as always.
-      // looksMultiPart()'s local pre-filter is tuned for casual human phrasing
-      // ("do this and then that") — a dispatch_agent task is a dense,
-      // structured brief the COORDINATOR wrote, which routinely bundles
-      // several concrete asks without ever using those connector words. Skip
-      // the heuristic and always ask the model to classify for those, so a
-      // genuinely multi-part specialist brief still gets a real checklist.
-      const runTurn = (mode || 'Build') === 'Build' && !turnImages?.length
-        ? () => runTaskMaker({ session, originalMessage: turnMessage, history, mode, cwd, approve, signal, route, forceClassify: !!session.parentSessionId })
-        : () => runOneTurn({ session, userMessage: turnMessage, images: turnImages, history, mode, cwd, approve, signal, route, subagentId: effectiveSubagentId(session, turnMessage) });
-
-      // Dispatched specialists (parentSessionId set) queue behind whichever
-      // one is currently running — see runExclusive above. The main chat
-      // never waits on this.
-      if (session.parentSessionId) {
-        await runExclusive(async () => { if (!signal.aborted) await runTurn(); });
+      if (goal) {
+        await runGoal({ session, goal, history, mode, cwd, approve, signal, route });
+      } else if (mode === 'Build' && !images?.length) {
+        // Plan/Ask are single coherent answers, and an image belongs in one
+        // turn the model can look at - only text-only Build sends can split.
+        await runTaskMaker({ session, originalMessage: text, history, mode, cwd, approve, signal, route });
       } else {
-        await runTurn();
+        await runOneTurn({ session, userMessage: text, images, history, mode, cwd, approve, signal, route, roleId: rolesLib.detectRole(text) });
       }
     } catch (err) {
       sendEvent(session.id, { type: 'error', error: err.message });
-      session.messages.push({ kind: 'assistant', text: `Something went wrong: ${err.message}`, at: Date.now() });
+      session.messages.push({ kind: 'notice', level: 'error', text: `Something went wrong: ${err.message}`, at: Date.now() });
     } finally {
       activeRuns.delete(session.id);
       updateSleepBlocker();
-      broadcastAgentStatus();
+      broadcastRunStatus();
       saveStore();
       syncSessionToDb(session);
       sendEvent(session.id, { type: 'run_finished' });
       sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
-      // This session was dispatched from another chat (dispatch_agent) — a
-      // deliberately EPHEMERAL working session, not a permanent chat: once
-      // it's done (finished or killed), it reports a summary back to the
-      // parent that dispatched it and then deletes itself. The parent's
-      // summary line is the only lasting trace — nothing to dig through in
-      // Recents/Agent View afterward, since there's no session left to open.
-      if (session.parentSessionId) {
-        const parent = store.sessions.find((s) => s.id === session.parentSessionId);
-        if (parent) {
-          const lastReply = [...session.messages].reverse().find((m) => m.kind === 'assistant')?.text;
-          const specialistName = subagentsLib.getSubagent(session.subagentId)?.name || 'A specialist';
-          // signal.aborted distinguishes a real finish from a kill (the stop
-          // button, or the coordinator's own stop_agent tool) — both land in
-          // this same finally block, but they're not the same news for the
-          // parent chat to report.
-          const summary = signal.aborted
-            ? `**${specialistName}** was stopped before finishing.`
-            : lastReply
-              ? `**${specialistName}** finished: ${truncateSummary(lastReply)}`
-              : `**${specialistName}** finished its work.`;
-          parent.messages.push({ kind: 'assistant', text: summary, at: Date.now() });
-          parent.updatedAt = Date.now();
-          saveStore();
-          syncSessionToDb(parent);
-          sendEvent(parent.id, { type: 'text', text: summary });
-          sendEvent(parent.id, { type: 'session_sync', session: sessionMeta(parent) });
-        }
-        // Tell any renderer that might currently have this session open
-        // (someone clicked into it from Agent View while it was still
-        // running) before it's gone, then delete the record itself.
-        sendEvent(session.id, { type: 'session_deleted', parentSessionId: session.parentSessionId });
-        deleteSessionRecord(session.id);
-      } else {
-        notifyTaskComplete(session);
-        if (session.messages.filter((m) => m.kind === 'user').length === 1) {
-          generateSessionTitle(session);
-        }
-      }
-      // Writes made during the run may have moved the shared daily counter.
-      if (configLib.getConfig().provider === 'codeply') {
-        getUsage().then((usage) => sendEvent(session.id, { type: 'usage_update', usage }));
+      notifyTaskComplete(session);
+      if (session.messages.filter((m) => m.kind === 'user').length === 1) {
+        generateSessionTitle(session);
       }
     }
   })();
 
-  return {
-    sessionId: session.id,
-    title: session.title,
-    // Writer is always known synchronously (planTurn does no I/O); which
-    // helpers actually ran/succeeded arrives later as 'helper_note' events,
-    // since that requires the real helper call to come back first.
-    route: plan ? { label: plan.writer.label } : null,
-  };
+  return { sessionId: session.id, title: session.title, route: { label: modelLabel(route) } };
 }
 
 function stopChatRun(sessionId) {
   const run = activeRuns.get(sessionId);
-  if (run) run.abortController.abort();
+  if (!run) return;
+  run.abortController.abort();
   // A pending approval (or image pick) blocks the loop from noticing the
-  // abort until it resolves — reject/cancel both so it notices immediately.
-  for (const [, resolve] of pendingApprovals) resolve('reject');
-  for (const [, resolve] of pendingImagePicks) resolve(null);
+  // abort until it resolves - cancel both so it notices immediately.
+  // Only this chat's - other chats' runs keep their own prompts.
+  for (const [, p] of [...pendingApprovals]) if (p.sessionId === sessionId) p.resolve('reject');
+  for (const [, p] of [...pendingImagePicks]) if (p.sessionId === sessionId) p.resolve(null);
 }
 
 function respondApproval(requestId, verdict) {
-  const resolve = pendingApprovals.get(requestId);
-  if (resolve) resolve(verdict);
+  const p = pendingApprovals.get(Number(requestId));
+  if (p) p.resolve(['once', 'always', 'reject'].includes(verdict) ? verdict : 'reject');
 }
 function respondImagePick(requestId, chosenUrl) {
-  const resolve = pendingImagePicks.get(requestId);
-  if (resolve) resolve(chosenUrl || null);
+  const p = pendingImagePicks.get(Number(requestId));
+  if (p) p.resolve(chosenUrl || null);
 }
 
 ipcMain.handle('chat:send', (e, payload) => startChatRun(payload));
 ipcMain.handle('remote:info', () => remoteInfo());
+ipcMain.handle('remote:setKeepAwake', (e, on) => {
+  store.keepAwake = !!on;
+  saveStore();
+  updateSleepBlocker();
+  return { ok: true };
+});
+// Only our own phone-app address is ever opened this way.
+ipcMain.handle('shell:openExternal', (e, url) => {
+  if (url === MOBILE_APP_URL) shell.openExternal(url);
+});
 
 ipcMain.on('chat:stop', (e, sessionId) => {
   stopChatRun(sessionId);
@@ -2341,23 +2459,21 @@ ipcMain.on('approval:respond', (e, { requestId, verdict }) => {
 });
 
 ipcMain.on('imagepick:respond', (e, { requestId, chosenUrl }) => {
-  const resolve = pendingImagePicks.get(requestId);
-  if (resolve) resolve(chosenUrl || null);
+  respondImagePick(requestId, chosenUrl);
 });
 
 ipcMain.handle('shell:openPath', (e, p) => shell.openPath(p));
 
 // ─── Embedded terminal ──────────────────────────────────────────────────────
 // Not a real pty (node-pty needs a native rebuild against Electron's ABI, and
-// there's no Visual Studio toolchain available here to do that) — instead a
+// there's no Visual Studio toolchain available here to do that) - instead a
 // plain child_process running the user's own shell, with its stdio piped over
 // IPC into an xterm.js view. This still runs as the user: same PATH, same git
 // credential helper, same gh/ssh auth already on disk, no separate login.
-// The one real cost is no true pty — full-screen TUI programs (vim, htop, a
+// The one real cost is no true pty - full-screen TUI programs (vim, htop, a
 // nested REPL that redraws in place) won't render right, but that's not what
 // this is for; ordinary commands (git, npm, gh) work fine piped.
 const { spawn } = require('child_process');
-const os = require('os');
 
 let termProc = null;
 
@@ -2404,6 +2520,7 @@ ipcMain.on('terminal:kill', () => {
 
 app.whenReady().then(() => {
   loadStore();
+  updateSleepBlocker();
   startRemoteServer();
   createWindow();
   createTray();
@@ -2422,7 +2539,7 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   // Reached only if a window is destroyed some way other than the hide-on-
   // close handler above (a crash, devtools forcing it, an actual quit already
-  // underway) — normal "close the window" no longer gets here at all, since
+  // underway) - normal "close the window" no longer gets here at all, since
   // that now hides instead of destroying it. Terminal cleanup still belongs
   // here regardless of how we got here.
   if (termProc) { try { termProc.kill(); } catch {} termProc = null; }

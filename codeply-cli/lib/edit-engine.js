@@ -1,8 +1,8 @@
 /**
- * Codeply CLI — surgical SEARCH/REPLACE edit engine
+ * Codeply CLI - surgical SEARCH/REPLACE edit engine
  *
  * Adapted from Codeply-App/main.js's computeInstructionEdits/
- * applySearchReplace/applyEditsToContent — same approach (small verified
+ * applySearchReplace/applyEditsToContent - same approach (small verified
  * diffs instead of a full-file rewrite), trimmed for a stateless single-shot
  * CLI: no local usage-history file, no .codeply/ response cache, no
  * multi-turn conversation context (each CLI invocation is its own process).
@@ -66,7 +66,7 @@ function applySearchReplace(fileContent, searchBlock, replaceBlock) {
   if (matches.length === 0) {
     // Last resort: anchor on the first AND last non-blank lines of the search
     // block (recovers when the AI dropped/added a line in the middle). Kept
-    // conservative — both anchors must be unique and the span must be modest.
+    // conservative - both anchors must be unique and the span must be modest.
     const sNon = searchLines.map(l => l.trim()).filter(x => x !== '');
     if (sNon.length >= 2) {
       const firstHits = [], lastHits = [];
@@ -97,7 +97,7 @@ function applySearchReplace(fileContent, searchBlock, replaceBlock) {
 }
 
 // Apply an ordered list of verified {search, replace} hunks to file content,
-// all-or-nothing (pure — no disk write).
+// all-or-nothing (pure - no disk write).
 function applyEditsToContent(fileContent, edits) {
   let working = (fileContent || '').replace(/\r\n/g, '\n');
   for (let i = 0; i < edits.length; i++) {
@@ -109,14 +109,14 @@ function applyEditsToContent(fileContent, edits) {
   return { ok: true, content: working };
 }
 
-const SYSTEM_PROMPT = `You are a precise code editor. You receive an INSTRUCTION describing a small change, and the FULL current file. Make ONLY the specific change requested, as surgical SEARCH/REPLACE edits — do NOT reproduce the whole file.
+const SYSTEM_PROMPT = `You are a precise code editor. You receive an INSTRUCTION describing a small change, and the FULL current file. Make ONLY the specific change requested, as surgical SEARCH/REPLACE edits - do NOT reproduce the whole file.
 
 STRICT RULES:
 1. Return an "edits" array. Use the FEWEST edits that cleanly express the change.
-2. "search" must be copied VERBATIM from the file below — exact existing text being changed, with just enough surrounding lines to be unique.
-3. "replace" is that same block with ONLY the requested change applied — preserve everything else in it exactly (formatting, unrelated properties, comments, whitespace style).
-4. If the SAME property/selector/value appears more than once in the file (e.g. "top" set in both a "from" and a "to" block), do NOT pick the first or most obvious match — use every clue in the instruction to find the ONE correct occurrence: the CURRENT value it mentions, nearby selectors, rule/keyframe names, or ordering (first/last, start/end). If more than one occurrence still fits equally well after that, return an EMPTY "edits" array with a "reason" naming the ambiguity instead of guessing.
-5. If the instruction genuinely requires large new content that can't be expressed as a small edit (e.g. "build a whole new page/game/module from scratch"), return an EMPTY "edits" array — do not guess badly at a huge diff.
+2. "search" must be copied VERBATIM from the file below - exact existing text being changed, with just enough surrounding lines to be unique.
+3. "replace" is that same block with ONLY the requested change applied - preserve everything else in it exactly (formatting, unrelated properties, comments, whitespace style).
+4. If the SAME property/selector/value appears more than once in the file (e.g. "top" set in both a "from" and a "to" block), do NOT pick the first or most obvious match - use every clue in the instruction to find the ONE correct occurrence: the CURRENT value it mentions, nearby selectors, rule/keyframe names, or ordering (first/last, start/end). If more than one occurrence still fits equally well after that, return an EMPTY "edits" array with a "reason" naming the ambiguity instead of guessing.
+5. If the instruction genuinely requires large new content that can't be expressed as a small edit (e.g. "build a whole new page/game/module from scratch"), return an EMPTY "edits" array - do not guess badly at a huge diff.
 6. Return ONLY valid JSON, no markdown, no commentary.
 
 Response format:
@@ -148,7 +148,7 @@ async function computeInstructionEdits(instruction, filePath) {
     const messages = [
       { role: 'system', content: SYSTEM_PROMPT },
       // Large/stable content (the file) first, small/always-different content
-      // (the instruction) last — the ai-proxy's underlying model caches a
+      // (the instruction) last - the ai-proxy's underlying model caches a
       // repeated PREFIX, so this ordering matters for repeated calls against
       // the same file even when the instruction text differs each time.
       { role: 'user', content: `FULL FILE (${path.basename(filePath)}):\n${content}\n\nINSTRUCTION:\n${instruction}` },
@@ -188,8 +188,8 @@ async function computeInstructionEdits(instruction, filePath) {
     const feedback =
       `Some "search" blocks from your last answer are wrong. Return the COMPLETE corrected edits array again, fixing these:\n` +
       bad.map(c => c.status === 'multiple'
-        ? `- Matched MULTIPLE places — include more surrounding lines so it is unique:\n${c.e.search}`
-        : `- NOT found in the file — copy it EXACTLY from the FULL FILE above, character for character:\n${c.e.search}`
+        ? `- Matched MULTIPLE places - include more surrounding lines so it is unique:\n${c.e.search}`
+        : `- NOT found in the file - copy it EXACTLY from the FULL FILE above, character for character:\n${c.e.search}`
       ).join('\n') +
       `\nEvery "search" must be copied verbatim from the file shown above.`;
     let retry;

@@ -2,7 +2,7 @@
  * Query interface for the private design reference library built in
  * index.json (914 apps / 6,433 real App Store screenshots across 10
  * categories, sourced from Apple's public iTunes Search API). Loaded lazily
- * and cached in memory — the file is ~2MB, cheap to hold for the life of one
+ * and cached in memory - the file is ~2MB, cheap to hold for the life of one
  * Craft process, not worth re-reading per call.
  */
 import { readFileSync } from 'node:fs';
@@ -76,7 +76,7 @@ export function searchLibrary({ term = '', category = '', maxApps = 8, maxScreen
     return results;
   }
 
-  // The library only indexes app NAMES, not per-screen content — there is no
+  // The library only indexes app NAMES, not per-screen content - there is no
   // app literally called "settings" or "onboarding", so a natural
   // pattern-style query like that would always come back empty even though
   // the category itself has plenty of real screens worth looking at. A given

@@ -13,8 +13,7 @@ function makeClientId() {
 }
 
 const state = {
-  token: localStorage.getItem('craft-token'),
-  baseUrl: localStorage.getItem('craft-host') || (isHosted ? location.origin : ''),
+  token: isHosted ? localStorage.getItem('craft-token') : null, // bridge session, direct (same-network) mode only
   clientId: localStorage.getItem('craft-client-id') || makeClientId(),
   sessionId: null,
   sessions: [],
@@ -24,18 +23,16 @@ const state = {
   imagePick: null,
   account: null,
   activeAgentMessageEl: null,
-  subagents: [], // static specialist metadata (name/mascot/color) — from /api/bootstrap
-  activeAgentSessions: [], // [{sessionId, subagentId, title}] — live via the agents_status SSE event
-  currentParentId: null, // the open chat's parentSessionId, if dispatch_agent spawned it — drives backToMainBtn
+  runningSessions: [], // chat ids with a run in flight on the PC, live via runs_status
 };
 
 localStorage.setItem('craft-client-id', state.clientId);
 
-// THEME — dark / light / system. 'system' is the default and is represented
+// THEME - dark / light / system. 'system' is the default and is represented
 // by the ABSENCE of data-theme (mobile.css's own prefers-color-scheme media
 // query does all the work then, so it also live-updates for free if the OS
 // theme changes mid-session, no listener needed). An explicit choice sets
-// data-theme, which always wins over the OS signal — see the CSS at the top
+// data-theme, which always wins over the OS signal - see the CSS at the top
 // of mobile.css for both sides of this. The <head> inline script applies a
 // stored explicit choice before first paint; this just keeps it in sync
 // after that (the toggle itself, the theme-color meta, live OS changes
@@ -77,7 +74,7 @@ function syncThemeToggleUI() {
 }
 
 // While explicitly on 'system', the OS can still flip mid-session (e.g. auto
-// dark-mode-at-sunset) — the CSS media query repaints on its own, but the
+// dark-mode-at-sunset) - the CSS media query repaints on its own, but the
 // theme-color meta is JS-driven and needs its own nudge to follow along.
 if (window.matchMedia) {
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -86,29 +83,46 @@ if (window.matchMedia) {
 }
 
 function endpoint(path) {
-  let base = (state.baseUrl || location.origin).trim();
-  if (base && !/^https?:\/\//i.test(base)) {
-    base = `http://${base}`;
-  }
-  return `${base.replace(/\/$/, '')}${path}`;
+  return `${location.origin}${path}`;
 }
 
-async function request(path, options = {}) {
+/**
+ * One call into the PC. Through the Realtime relay from anywhere, or straight
+ * over HTTP when this page is served by the PC itself.
+ */
+async function request(path, options = {}, { retry = true } = {}) {
+  const method = options.method || 'GET';
+  const body = options.body ? JSON.parse(options.body) : null;
+  if (!isHosted) return relayRequest(method, path, body);
+
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
+  const timeout = setTimeout(() => controller.abort(), 15000);
   let res;
   try {
     res = await fetch(endpoint(path), { ...options, headers, signal: controller.signal });
   } catch (err) {
-    throw new Error(err.name === 'AbortError' ? 'Could not reach your Craft PC. Check the address and that both devices are on the same Wi-Fi.' : 'Could not contact your Craft PC.');
+    throw new Error(err.name === 'AbortError' ? "Your PC didn't answer in time." : 'Could not reach your PC.');
   } finally {
     clearTimeout(timeout);
   }
+  if (res.status === 401 && retry && (await reconnect())) return request(path, options, { retry: false });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Could not contact your Craft PC.');
+  if (!res.ok) throw new Error(data.error || 'Could not reach your PC.');
   return data;
+}
+
+/** Screenshots live on the PC; fetched on demand (relay or direct). */
+async function loadScreenshot(img, screenshotPath) {
+  try {
+    if (isHosted) {
+      img.src = endpoint(`/api/screenshot?path=${encodeURIComponent(screenshotPath)}&token=${encodeURIComponent(state.token || '')}`);
+    } else {
+      const r = await request(`/api/screenshot-data?path=${encodeURIComponent(screenshotPath)}`);
+      if (r.dataUrl) img.src = r.dataUrl;
+    }
+  } catch { img.remove(); }
 }
 
 function basename(value) {
@@ -122,9 +136,9 @@ function escapeHtml(s) {
 function setConnection(name, online = true) {
   const chip = $('deviceName');
   const dot = $('statusDot');
-  if (chip) chip.textContent = 'Craft Agent';
+  if (chip) chip.textContent = online ? (name || state.deviceName || 'Your PC') : 'PC offline';
   if (dot) dot.style.background = online ? 'var(--green)' : 'var(--danger)';
-  if (dot) dot.title = online ? 'Connected to your PC' : 'Reconnecting...';
+  if (dot) dot.title = online ? 'Connected to your PC' : 'Your PC is offline';
 }
 
 function setRunning(running) {
@@ -156,7 +170,7 @@ function scrollToBottom() {
   });
 }
 
-// Just enough markdown to make agent replies readable on a phone screen —
+// Just enough markdown to make agent replies readable on a phone screen -
 // bold and line breaks. Escapes first so raw text can never inject markup.
 function renderMarkdownLite(text) {
   return escapeHtml(text || '')
@@ -164,93 +178,70 @@ function renderMarkdownLite(text) {
     .replace(/\n/g, '<br>');
 }
 
-// Same two-layer ball+eyes mascot as the desktop app (see mascotHtml() in
-// app.js) — served from the same /agent-mascots/<file> route on this same
-// phone server, so there's nothing phone-specific to keep in sync here.
+// Same two-layer ball+eyes mascot as the desktop app. Relative path: served by
+// the PC in direct mode, bundled with the phone app everywhere else.
 function mascotHtml(mascotFile, altText) {
   const delay = (-(Math.random() * 6)).toFixed(2) + 's';
   return `<span class="mascot">
-    <img class="mascot-ball" src="/agent-mascots/${encodeURIComponent(mascotFile)}" alt="${escapeHtml(altText)}">
-    <img class="mascot-eyes" src="/agent-mascots/eyes.png" alt="" style="animation-delay: ${delay}">
+    <img class="mascot-ball" src="agent-mascots/${encodeURIComponent(mascotFile)}" alt="${escapeHtml(altText)}">
+    <img class="mascot-eyes" src="agent-mascots/eyes.png" alt="" style="animation-delay: ${delay}">
   </span>`;
 }
 
-// The phone side of desktop's subagent badge — fired for every turn
-// (auto-picked specialist, a manual pin, or plain General) over the same
-// SSE stream the phone already listens to for everything else.
-function addSubagentBadge(data) {
+// One agent; this marks the moment it switches role (Frontend, Backend, ...).
+function addRoleBadge(data) {
   showChat();
+  const roleName = data.tagline === 'role' ? data.name : String(data.tagline || data.name || '').replace(/ Specialist$/i, '');
   const el = document.createElement('div');
   el.className = 'subagent-badge';
   el.style.setProperty('--subagent-color', data.color || '');
-  el.innerHTML =
-    mascotHtml(data.mascot, data.name) +
-    `<span class="subagent-badge-text"><strong>${escapeHtml(data.name)}</strong> · ${escapeHtml(data.tagline)}</span>`;
+  el.innerHTML = mascotHtml(data.mascot || 'general.png', roleName) +
+    `<span class="subagent-badge-text">Working as <strong>${escapeHtml(roleName || 'General')}</strong></span>`;
   $('chatFeed').append(el);
   scrollToBottom();
 }
 
-// AGENT VIEW — what dispatch_agent is currently running on the PC, phone
-// version of desktop's Agent View modal (see openAgentViewModal/
-// renderAgentsList in app.js). state.activeAgentSessions is kept live by the
-// agents_status SSE event (see receiveEvent below); state.subagents is the
-// static per-specialist metadata (mascot/color/tagline) fetched once at
-// bootstrap.
-function renderAgentViewBadge() {
-  const badge = $('agentViewNavBadge');
-  if (!badge) return;
-  const n = state.activeAgentSessions.length;
-  badge.textContent = String(n);
-  badge.classList.toggle('hidden', n === 0);
+// The factual record of what a turn changed, built from tool results.
+function addTurnSummary(data) {
+  const files = data.files || [];
+  const checks = data.checks || [];
+  if (!files.length && !checks.length) return;
+  showChat();
+  const el = document.createElement('div');
+  el.className = 'turn-summary';
+  const checkLine = (c) => {
+    const passed = c.ok && (c.exitCode === undefined || c.exitCode === 0);
+    return `<div class="ts-check ${passed ? 'pass' : 'fail'}">${passed ? '✓' : '✗'} <code>${escapeHtml(c.tool === 'browser_check' ? 'Opened ' + c.label : c.label)}</code>${typeof c.exitCode === 'number' ? ` <span>exit ${c.exitCode}</span>` : ''}</div>`;
+  };
+  el.innerHTML = `<div class="ts-head">What actually happened</div>
+    ${files.length ? `<div class="ts-files">${files.map((f) => `<span>${escapeHtml(f)}</span>`).join('')}</div>` : ''}
+    ${checks.map(checkLine).join('')}
+    ${(data.unverified || []).length ? `<div class="ts-warn">Not verified: ${data.unverified.map(escapeHtml).join(', ')}</div>` : ''}`;
+  $('chatFeed').append(el);
+  scrollToBottom();
 }
 
-function renderAgentsList() {
-  const list = $('agentViewList');
-  if (!list) return;
-  list.innerHTML = '';
-  if (!state.activeAgentSessions.length) {
-    list.innerHTML = '<div class="agent-view-empty">No agents running right now.</div>';
-    return;
+// One live card per /goal run.
+let goalCardEl = null;
+const GOAL_LABEL = { running: 'Working', verifying: 'Verifying', achieved: 'Achieved', blocked: 'Stuck', incomplete: 'Not finished', failed: 'Stopped', stopped: 'Stopped' };
+function renderGoalCard(data) {
+  showChat();
+  if (!goalCardEl || goalCardEl.dataset.goal !== data.goal || !goalCardEl.isConnected) {
+    goalCardEl = document.createElement('div');
+    goalCardEl.className = 'goal-card';
+    goalCardEl.dataset.goal = data.goal;
+    goalCardEl.innerHTML = '<div class="goal-head"><span>Goal</span><span class="goal-pill"></span></div><div class="goal-text"></div><div class="goal-note"></div>';
+    goalCardEl.querySelector('.goal-text').textContent = data.goal;
+    $('chatFeed').append(goalCardEl);
   }
-  for (const a of state.activeAgentSessions) {
-    const spec = state.subagents.find((s) => s.id === a.subagentId);
-    const row = document.createElement('div');
-    row.className = 'agent-view-row';
-    row.setAttribute('role', 'button');
-    row.tabIndex = 0;
-    row.innerHTML = `
-      ${spec ? mascotHtml(spec.mascot, spec.name) : '<span class="mascot"></span>'}
-      <div class="agent-view-row-text">
-        <strong>${escapeHtml(spec ? spec.name : 'General purpose')}</strong>
-        <span>${escapeHtml(a.title || 'Working…')}</span>
-      </div>
-      <button type="button" class="agent-view-stop" aria-label="Stop this agent">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
-      </button>
-    `;
-    row.addEventListener('click', () => { closeAgentView(); openSession(a.sessionId); });
-    row.querySelector('.agent-view-stop').addEventListener('click', async (e) => {
-      e.stopPropagation();
-      try {
-        await request('/api/stop', { method: 'POST', body: JSON.stringify({ sessionId: a.sessionId }) });
-      } catch (err) {
-        addMessage('error', err.message);
-      }
-    });
-    list.append(row);
-  }
+  goalCardEl.dataset.status = data.status;
+  const live = ['running', 'verifying'].includes(data.status) && data.iteration;
+  goalCardEl.querySelector('.goal-pill').textContent = live ? `${GOAL_LABEL[data.status]} · ${data.iteration}/${data.max}` : (GOAL_LABEL[data.status] || data.status);
+  goalCardEl.querySelector('.goal-note').textContent = data.note || '';
+  scrollToBottom();
 }
 
-function openAgentView() {
-  renderAgentsList();
-  $('agentViewSheet').classList.remove('hidden');
-}
-
-function closeAgentView() {
-  $('agentViewSheet').classList.add('hidden');
-}
-
-function addMessage(kind, text, label, screenshotSrc) {
+function addMessage(kind, text, label, screenshotPath) {
   showChat();
   const feed = $('chatFeed');
 
@@ -278,15 +269,15 @@ function addMessage(kind, text, label, screenshotSrc) {
 
   if (kind === 'tool') {
     el.innerHTML = `<span class="tool-name">${escapeHtml(label || 'Executed')}</span>${text ? ` <span>${escapeHtml(text)}</span>` : ''}`;
-    // A browser_check's screenshot, shown right in the chat — this phone
+    // A browser_check's screenshot, shown right in the chat - this phone
     // has no embedded browser of its own to preview the result in, so this
     // is the only way to actually see what got checked.
-    if (screenshotSrc) {
+    if (screenshotPath) {
       const img = document.createElement('img');
       img.className = 'tool-screenshot';
-      img.src = screenshotSrc;
       img.alt = label || 'Browser check screenshot';
       el.appendChild(img);
+      loadScreenshot(img, screenshotPath);
     }
   } else if (kind === 'error') {
     el.textContent = text || '';
@@ -323,14 +314,12 @@ function renderProjects(projects, selected) {
   if (topbarNameEl) topbarNameEl.textContent = select.value ? basename(select.value) : 'Choose folder';
 }
 
-function renderAccount(account) {
+function renderAccount(account, device) {
   state.account = account;
-  const email = account?.email || 'Local Craft Desktop';
-  const initial = email[0]?.toUpperCase() || 'C';
-  
+  const email = account?.email || 'Your account';
   if ($('accountEmail')) $('accountEmail').textContent = email;
-  if ($('accountMode')) $('accountMode').textContent = account?.signedIn ? 'Signed in on PC' : 'Local Wi-Fi paired';
-  if ($('accountInitial')) $('accountInitial').textContent = initial;
+  if ($('accountMode')) $('accountMode').textContent = device ? `Connected to ${device}` : 'Connected to your PC';
+  if ($('accountInitial')) $('accountInitial').textContent = email[0]?.toUpperCase() || 'C';
 }
 
 function renderSessions() {
@@ -343,7 +332,7 @@ function renderSessions() {
 
   for (const session of ordered) {
     // A <button> can't legally contain another <button> (the "..." menu
-    // trigger), so this is a div acting as one — same trick as the topbar's
+    // trigger), so this is a div acting as one - same trick as the topbar's
     // folder <select>. Its own click opens the chat; the nested button stops
     // that click from bubbling and opens the rename/delete sheet instead.
     const card = document.createElement('div');
@@ -374,7 +363,7 @@ function mergeSession(meta) {
   syncChatTitle();
 }
 
-// Drives the title pill at the top of the chat tab — the phone's stand-in
+// Drives the title pill at the top of the chat tab - the phone's stand-in
 // for a desktop sidebar's "which chat am I in" cue.
 function syncChatTitle() {
   const el = $('chatTitlePill');
@@ -385,10 +374,8 @@ function syncChatTitle() {
 
 function renderSession(session) {
   clearChat();
+  goalCardEl = null;
   state.sessionId = session.id;
-  state.currentParentId = session.parentSessionId || null;
-  const backBtn = $('backToMainBtn');
-  if (backBtn) backBtn.classList.toggle('hidden', !state.currentParentId);
   mergeSession({
     id: session.id,
     title: session.title,
@@ -402,13 +389,11 @@ function renderSession(session) {
     for (const item of session.messages) {
       if (item.kind === 'user') addMessage('user', item.text);
       else if (item.kind === 'assistant') addMessage('agent', item.text);
-      else if (item.kind === 'tool') {
-        const screenshotSrc = item.screenshotPath
-          ? endpoint(`/api/screenshot?path=${encodeURIComponent(item.screenshotPath)}&token=${encodeURIComponent(state.token)}`)
-          : undefined;
-        addMessage('tool', item.label, item.name, screenshotSrc);
-      }
-      else if (item.kind === 'subagent_active') addSubagentBadge(item);
+      else if (item.kind === 'tool') addMessage('tool', item.label, item.name, item.screenshotPath);
+      else if (item.kind === 'role_active' || item.kind === 'subagent_active') addRoleBadge(item);
+      else if (item.kind === 'turn_summary') addTurnSummary(item);
+      else if (item.kind === 'goal') renderGoalCard(item);
+      else if (item.kind === 'notice') addMessage('error', item.text);
     }
     // Chat should always open scrolled to the newest message, not the top.
     scrollToBottom();
@@ -418,12 +403,8 @@ function renderSession(session) {
   }
   renderSessions();
 
-  // Re-sync the send/stop icon to what THIS session is actually doing right
-  // now, from the live agents_status snapshot — not a hardcoded "not
-  // running". Opening a chat dispatch_agent is still actively working on
-  // used to always show Send here, wrong, until its own run_finished event
-  // happened to arrive while you were looking at it.
-  setRunning(state.activeAgentSessions.some((a) => a.sessionId === session.id));
+  // Re-sync the send/stop icon to what this chat is actually doing right now.
+  setRunning(state.runningSessions.includes(session.id));
 }
 
 async function openSession(id) {
@@ -434,14 +415,13 @@ async function openSession(id) {
 
 async function bootstrap({ preserveSession = true } = {}) {
   const data = await request('/api/bootstrap');
+  state.deviceName = data.device;
   setConnection(data.device, true);
-  renderAccount(data.account);
+  renderAccount(data.account, data.device);
   renderProjects(data.projects, data.lastProject);
   state.sessions = data.sessions || [];
-  state.subagents = data.subagents || [];
-  state.activeAgentSessions = data.activeAgents || [];
+  state.runningSessions = data.activeSessionIds || [];
   renderSessions();
-  renderAgentViewBadge();
 
   showScreen('chat');
 
@@ -453,7 +433,7 @@ async function bootstrap({ preserveSession = true } = {}) {
     const current = data.sessions?.find((s) => s.id === state.sessionId);
     if (current) renderSession(current);
   }
-  // Nothing to show at all — renderSession()'s own resync (which covers
+  // Nothing to show at all - renderSession()'s own resync (which covers
   // both branches above) never ran, so there's nothing running to reflect.
   if (!target && !state.sessionId) setRunning(false);
 }
@@ -472,21 +452,27 @@ let eventSource = null;
 
 function connectEvents() {
   if (eventSource) eventSource.close();
+  if (!isHosted) return; // relay mode gets events over the Realtime channel
   eventSource = new EventSource(endpoint(`/api/events?token=${encodeURIComponent(state.token)}`));
 
   eventSource.addEventListener('agent', (e) => {
     try { receiveEvent(JSON.parse(e.data)); } catch {}
   });
 
-  eventSource.onopen = () => setConnection($('deviceName')?.textContent || 'PC', true);
-  eventSource.onerror = () => setConnection('', false);
+  eventSource.onopen = () => setConnection(state.deviceName, true);
+  // The PC may have restarted and forgotten this session: sign back in and
+  // reopen the stream.
+  eventSource.onerror = async () => {
+    setConnection('', false);
+    if (eventSource && eventSource.readyState === EventSource.CLOSED && (await reconnect())) connectEvents();
+  };
 }
 
 function receiveEvent(event) {
   if (event.type === 'session_sync') {
     mergeSession(event.session);
     // A brand-new chat's session id is only known once /api/send resolves,
-    // which doesn't happen until the whole agent turn finishes — but the
+    // which doesn't happen until the whole agent turn finishes - but the
     // desktop starts streaming 'text'/'tool_end'/'approval_request' events
     // for that session immediately. Without adopting the id right here (this
     // sync fires first, before any of those), every one of those events gets
@@ -507,31 +493,18 @@ function receiveEvent(event) {
     renderSessions();
     if (state.sessionId === event.sessionId) {
       state.sessionId = null;
-      // An ephemeral dispatch_agent session cleaning itself up after
-      // reporting back — jump to whichever chat dispatched it instead of
-      // dropping you at the empty state, same as the desktop app.
-      if (event.parentSessionId) {
-        openSession(event.parentSessionId);
-      } else {
-        state.currentParentId = null;
-        $('backToMainBtn')?.classList.add('hidden');
-        clearChat();
-        $('chatFeed').classList.add('hidden');
-        $('emptyState').classList.remove('hidden');
-      }
+      clearChat();
+      $('chatFeed').classList.add('hidden');
+      $('emptyState').classList.remove('hidden');
     }
     return;
   }
 
-  // Not scoped to one chat — the live snapshot behind both the sidebar
-  // badge and the Agent View sheet's list, and also what keeps the send/stop
-  // icon honest for whatever chat is open right now (see renderSession).
-  if (event.type === 'agents_status') {
-    state.activeAgentSessions = event.active || [];
-    renderAgentViewBadge();
-    if (!$('agentViewSheet').classList.contains('hidden')) renderAgentsList();
+  // Which chats have a run in flight - keeps the send/stop icon honest.
+  if (event.type === 'runs_status') {
+    state.runningSessions = event.active || [];
     if (state.sessionId) {
-      const isActive = state.activeAgentSessions.some((a) => a.sessionId === state.sessionId);
+      const isActive = state.runningSessions.includes(state.sessionId);
       if (isActive !== state.running) setRunning(isActive);
     }
     return;
@@ -539,13 +512,20 @@ function receiveEvent(event) {
 
   if (event.sessionId !== state.sessionId) return;
 
-  if (event.type === 'subagent_active') {
-    addSubagentBadge(event);
+  if (event.type === 'role_active') {
+    addRoleBadge(event);
+  } else if (event.type === 'turn_summary') {
+    addTurnSummary(event);
+  } else if (event.type === 'goal_update') {
+    renderGoalCard(event);
+  } else if (event.type === 'notice') {
+    state.activeAgentMessageEl = null;
+    addMessage('error', event.text);
   } else if (event.type === 'text') {
     addMessage('agent_delta', event.text);
   } else if (event.type === 'tool_end') {
     state.activeAgentMessageEl = null;
-    addMessage('tool', event.summary || event.args?.path || event.args?.command || '', event.name || 'Executed', event.meta?.screenshotDataUrl);
+    addMessage('tool', event.summary || event.args?.path || event.args?.command || '', event.name || 'Executed', event.meta?.screenshotPath);
   } else if (event.type === 'error') {
     state.activeAgentMessageEl = null;
     addMessage('error', event.error);
@@ -554,7 +534,7 @@ function receiveEvent(event) {
   } else if (event.type === 'image_pick_request') {
     showImagePicker(event);
   } else if (event.type === 'approval_resolved') {
-    // Answered from another device (e.g. the desktop app) — this client's
+    // Answered from another device (e.g. the desktop app) - this client's
     // own tap already hides the sheet locally, so this only matters when
     // it's the request THIS device didn't answer.
     if (state.approval && state.approval.requestId === event.requestId) {
@@ -566,11 +546,11 @@ function receiveEvent(event) {
       state.imagePick = null;
       $('imagePickSheet').classList.add('hidden');
     }
-  } else if (event.type === 'done' || event.type === 'run_finished' || event.type === 'aborted') {
+  } else if (event.type === 'run_finished' || event.type === 'aborted') {
     state.activeAgentMessageEl = null;
     // If a run ends (especially aborted/stopped) while an approval sheet is
     // still up, the server auto-rejects the pending approval on its side but
-    // never tells this client to close the sheet — it was otherwise only
+    // never tells this client to close the sheet - it was otherwise only
     // ever hidden by the user tapping Approve/Reject, so it would stay
     // stuck on screen for a request that's already dead.
     if (state.approval) {
@@ -607,7 +587,7 @@ async function answerApproval(verdict) {
   }
 }
 
-// SESSION MENU — the phone's version of desktop's 3-dot chat menu
+// SESSION MENU - the phone's version of desktop's 3-dot chat menu
 // (openChatMenu/startRenameSession/deleteSessionById in app.js): rename or
 // delete a chat from the "..." on its row in the sidebar.
 let sessionMenuTarget = null;
@@ -649,8 +629,6 @@ async function deleteSessionFlow() {
   renderSessions();
   if (state.sessionId === session.id) {
     state.sessionId = null;
-    state.currentParentId = null;
-    $('backToMainBtn')?.classList.add('hidden');
     clearChat();
     $('chatFeed').classList.add('hidden');
     $('emptyState').classList.remove('hidden');
@@ -665,7 +643,7 @@ async function deleteSessionFlow() {
   }
 }
 
-// IMAGE PICKER — the phone side of the fetch_image approval the desktop
+// IMAGE PICKER - the phone side of the fetch_image approval the desktop
 // shows as a search-and-click card (see addImagePickerCard in app.js). Same
 // /api/images/search + /api/image-pick the desktop's own IPC calls hit.
 function showImagePicker(event) {
@@ -726,7 +704,7 @@ async function finishImagePick(chosenUrl) {
   }
 }
 
-// Only two real screens now — chat and the paired-PC status screen.
+// Only two real screens now - chat and the paired-PC status screen.
 // Session history moved into the sidebar drawer instead of being a third
 // screen of its own (see openSidebar/renderSessions).
 function showScreen(screen) {
@@ -761,37 +739,323 @@ function closeSidebar() {
   }, 280); // matches the drawer's own transition duration
 }
 
-// Shared by the manual form submit AND the QR auto-sync path below — both
-// end at the exact same /api/pair call, they just differ in where the code
-// and address came from.
-async function attemptPair(code, baseUrl) {
-  state.baseUrl = (baseUrl || $('desktopUrl').value.trim()).replace(/\/$/, '');
-  const data = await request('/api/pair', {
-    method: 'POST',
-    body: JSON.stringify({ code }),
-  });
-  state.token = data.token;
-  localStorage.setItem('craft-token', state.token);
-  localStorage.setItem('craft-host', state.baseUrl);
+// ─── Account sign-in + reaching the PC ──────────────────────────────────────
+// The phone signs in with the user's Codeply account, then talks to the PC
+// through a Supabase Realtime channel. Both sides connect out to Supabase, so
+// it works from any network (mobile data, another Wi-Fi) as long as the PC is
+// on and signed in. The channel name includes a random secret kept in the
+// account's own metadata, and the PC checks the phone's sign-in token on every
+// request, so only this account's phones can drive it.
+// When this page is served by the PC itself (http://<pc>:45671), it talks to
+// the PC directly over the local network instead.
+// Public project URL + anon key: the same values the desktop app and CLI ship.
+const SUPABASE_URL = 'https://zswkhfkfseclgadhvobg.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpzd2toZmtmc2VjbGdhZGh2b2JnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMzYyOTgsImV4cCI6MjA5NTgxMjI5OH0.EoTQdIGQQDrN1uEqQfya3VmrQMT68jkzPLphbLwNTWg';
 
-  $('pairScreen').classList.add('hidden');
-  $('appScreen').classList.remove('hidden');
-  await bootstrap({ preserveSession: false });
-  connectEvents();
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storageKey: 'craft-phone-auth' },
+});
+
+const RELAY_CHUNK = 60000;
+const RELAY_TIMEOUT_MS = 25000;
+const relay = {
+  channel: null,
+  pcId: null,          // the PC this phone is driving (presence key)
+  pcs: [],             // [{ deviceId, device, since }] currently online
+  pending: new Map(),  // request id -> { resolve, reject, timer }
+  parts: new Map(),    // message id -> { n, got, chunks }
+};
+
+function friendlyAuthError(err, fallback) {
+  const s = String(err?.message || err || '').toLowerCase();
+  if (s.includes('invalid login') || s.includes('invalid credentials')) return 'Incorrect email or password.';
+  if (s.includes('email not confirmed')) return 'Confirm your email first (check your inbox), then sign in.';
+  if (s.includes('expired') || (s.includes('invalid') && (s.includes('otp') || s.includes('token')))) return 'That code is wrong or has expired. Request a new one.';
+  if (s.includes('rate') || s.includes('too many') || s.includes('seconds')) return 'Too many attempts. Wait a minute and try again.';
+  if (s.includes('signups not allowed') || s.includes('user not found')) return 'No account with that email. Create one in Codeply Craft on your PC first.';
+  if (s.includes('fetch') || s.includes('network')) return "Can't reach Codeply. Check your internet connection.";
+  return err?.message || fallback;
 }
 
-// EVENT LISTENERS
+async function currentSession() {
+  const { data } = await sb.auth.getSession();
+  return data?.session || null;
+}
+
+async function accessToken() {
+  const session = await currentSession();
+  if (!session) throw new Error('You are signed out. Sign in again.');
+  return session.access_token;
+}
+
+function newId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+/** Realtime messages are size-limited, so anything big travels in chunks. */
+function relaySend(event, obj) {
+  if (!relay.channel) return;
+  const str = JSON.stringify(obj);
+  const id = newId();
+  const n = Math.max(1, Math.ceil(str.length / RELAY_CHUNK));
+  for (let i = 0; i < n; i++) {
+    relay.channel.send({ type: 'broadcast', event, payload: { id, i, n, d: str.slice(i * RELAY_CHUNK, (i + 1) * RELAY_CHUNK) } });
+  }
+}
+
+function relayAssemble(payload) {
+  if (!payload || typeof payload.d !== 'string') return null;
+  if (payload.n === 1) { try { return JSON.parse(payload.d); } catch { return null; } }
+  if (payload.n > 200) return null;
+  for (const [key, e] of relay.parts) if (Date.now() - e.at > 60000) relay.parts.delete(key);
+  let entry = relay.parts.get(payload.id);
+  if (!entry) { entry = { n: payload.n, got: 0, chunks: [], at: Date.now() }; relay.parts.set(payload.id, entry); }
+  if (entry.chunks[payload.i] === undefined) { entry.chunks[payload.i] = payload.d; entry.got++; }
+  if (entry.got < entry.n) return null;
+  relay.parts.delete(payload.id);
+  try { return JSON.parse(entry.chunks.join('')); } catch { return null; }
+}
+
+function updatePcs() {
+  const state_ = relay.channel ? relay.channel.presenceState() : {};
+  relay.pcs = Object.entries(state_).map(([key, metas]) => ({ deviceId: key, ...(metas[0] || {}) }))
+    .sort((a, b) => (b.since || 0) - (a.since || 0));
+  const stillThere = relay.pcs.some((p) => p.deviceId === relay.pcId);
+  if (!stillThere) relay.pcId = relay.pcs[0]?.deviceId || null;
+  setConnection('', !!relay.pcId);
+  onPcPresenceChange();
+}
+
+async function openRelay() {
+  if (relay.channel) return;
+  const { data, error } = await sb.auth.getUser();
+  if (error || !data?.user) throw new Error('You are signed out. Sign in again.');
+  const secret = data.user.user_metadata?.craft_relay;
+  if (!secret) throw Object.assign(new Error('Open Codeply Craft on your PC and sign in there once, then try again.'), { noPc: true });
+  const channel = sb.channel(`craft-${data.user.id}-${secret}`, { config: { broadcast: { self: false } } });
+  channel.on('broadcast', { event: 'res' }, ({ payload }) => {
+    const msg = relayAssemble(payload);
+    if (!msg) return;
+    const p = relay.pending.get(msg.id);
+    if (!p) return;
+    relay.pending.delete(msg.id);
+    clearTimeout(p.timer);
+    if (msg.status >= 200 && msg.status < 300) p.resolve(msg.body);
+    else p.reject(Object.assign(new Error(msg.body?.error || 'Your PC could not do that.'), { status: msg.status }));
+  });
+  channel.on('broadcast', { event: 'event' }, ({ payload }) => {
+    const msg = relayAssemble(payload);
+    if (!msg || (relay.pcId && msg.from && msg.from !== relay.pcId)) return;
+    delete msg.from;
+    receiveEvent(msg);
+  });
+  channel.on('presence', { event: 'sync' }, updatePcs);
+  relay.channel = channel;
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Couldn't connect to Codeply. Check your internet connection.")), 12000);
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') { clearTimeout(timer); resolve(); }
+      else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') { clearTimeout(timer); reject(new Error("Couldn't connect to Codeply. Check your internet connection.")); }
+    });
+  });
+}
+
+async function closeRelay() {
+  for (const [, p] of relay.pending) { clearTimeout(p.timer); p.reject(new Error('Disconnected.')); }
+  relay.pending.clear();
+  if (relay.channel) { try { await sb.removeChannel(relay.channel); } catch {} }
+  relay.channel = null;
+  relay.pcId = null;
+  relay.pcs = [];
+}
+
+/** Waits (briefly) for the PC's presence to show up after joining. */
+function waitForPc(ms = 5000) {
+  if (relay.pcId) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const tick = setInterval(() => {
+      if (relay.pcId || Date.now() - started > ms) { clearInterval(tick); resolve(!!relay.pcId); }
+    }, 150);
+  });
+}
+
+async function relayRequest(method, path, body) {
+  if (!relay.channel) throw new Error('Not connected to your PC.');
+  if (!relay.pcId) throw new Error('Your PC is offline. Open Codeply Craft on it and keep it on.');
+  const id = newId();
+  const token = await accessToken();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      relay.pending.delete(id);
+      reject(new Error("Your PC didn't answer. Make sure it's on, awake and online."));
+    }, RELAY_TIMEOUT_MS);
+    relay.pending.set(id, { resolve, reject, timer });
+    relaySend('req', { id, to: relay.pcId, method, path, body: body ?? null, accessToken: token });
+  });
+}
+
+// Direct mode (page served by the PC): trade the sign-in token for a bridge session.
+async function connectDirect() {
+  const res = await fetch(`${location.origin}/api/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accessToken: await accessToken() }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Your PC refused the connection.');
+  state.token = data.token;
+  localStorage.setItem('craft-token', state.token);
+}
+
+/** The bridge forgets sessions when the PC restarts; quietly sign back in once. */
+let reconnecting = null;
+function reconnect() {
+  if (!reconnecting) {
+    reconnecting = connectDirect().then(() => true, () => false)
+      .finally(() => setTimeout(() => { reconnecting = null; }, 0));
+  }
+  return reconnecting;
+}
+
+function showPairStep(step, text) {
+  $('pairForm').classList.toggle('hidden', step !== 'login');
+  $('otpForm').classList.toggle('hidden', step !== 'otp');
+  $('pairSyncing').classList.toggle('hidden', step !== 'busy');
+  $('findCard').classList.toggle('hidden', step !== 'find');
+  if (step === 'busy') $('pairSyncingText').textContent = text || 'Connecting to your PC…';
+}
+
+function enterApp() {
+  $('pairScreen').classList.add('hidden');
+  $('appScreen').classList.remove('hidden');
+}
+
+function showFind(message) {
+  $('appScreen').classList.add('hidden');
+  $('pairScreen').classList.remove('hidden');
+  showPairStep('find');
+  $('findError').textContent = message || '';
+  $('findError').classList.toggle('hidden', !message);
+}
+
+let appReady = false;
+
+/** Signed in: reach the PC, load its state, open the app. */
+async function connect() {
+  $('pairScreen').classList.remove('hidden');
+  $('appScreen').classList.add('hidden');
+  showPairStep('busy', 'Connecting to your PC…');
+  const session = await currentSession();
+  $('findEmail').textContent = session?.user?.email || 'you';
+  try {
+    if (isHosted) {
+      await connectDirect();
+      enterApp();
+      await bootstrap({ preserveSession: false });
+      connectEvents();
+    } else {
+      await openRelay();
+      if (!(await waitForPc())) { showFind(''); return false; }
+      enterApp();
+      await bootstrap({ preserveSession: false });
+    }
+    appReady = true;
+    return true;
+  } catch (err) {
+    showFind(err.message);
+    return false;
+  }
+}
+
+/** PC came online while we were waiting, or went away while in the app. */
+function onPcPresenceChange() {
+  if (isHosted) return;
+  if (relay.pcId && !appReady && !$('findCard').classList.contains('hidden')) {
+    showPairStep('busy', 'Your PC is online. Connecting…');
+    enterApp();
+    bootstrap({ preserveSession: false }).then(() => { appReady = true; }).catch((err) => showFind(err.message));
+  }
+}
+
+async function signOut() {
+  try { if (isHosted && state.token) await request('/api/logout', { method: 'POST', body: '{}' }, { retry: false }); } catch {}
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  await closeRelay();
+  appReady = false;
+  state.token = null;
+  localStorage.removeItem('craft-token');
+  try { await sb.auth.signOut(); } catch {}
+  closeSidebar();
+  $('loginPassword').value = '';
+  $('appScreen').classList.add('hidden');
+  $('pairScreen').classList.remove('hidden');
+  showPairStep('login');
+}
+
 $('pairForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const error = $('pairError');
   error.classList.add('hidden');
+  const email = $('loginEmail').value.trim();
+  const password = $('loginPassword').value;
+  if (!email || !password) return;
+  $('loginBtn').disabled = true;
+  showPairStep('busy', 'Signing in…');
   try {
-    await attemptPair($('pairCode').value.trim());
+    const { error: err } = await sb.auth.signInWithPassword({ email, password });
+    if (err) throw err;
+    $('loginPassword').value = '';
+    await connect();
   } catch (err) {
-    error.textContent = err.message;
+    showPairStep('login');
+    error.textContent = friendlyAuthError(err, 'Sign-in failed.');
+    error.classList.remove('hidden');
+  } finally {
+    $('loginBtn').disabled = false;
+  }
+});
+
+$('useCodeBtn').addEventListener('click', async () => {
+  const email = $('loginEmail').value.trim();
+  const error = $('pairError');
+  if (!email) { error.textContent = 'Enter your email first.'; error.classList.remove('hidden'); return; }
+  error.classList.add('hidden');
+  showPairStep('busy', 'Sending your code…');
+  try {
+    const { error: err } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
+    if (err) throw err;
+    $('otpSentTo').textContent = `We emailed a 6-digit code to ${email}.`;
+    $('loginOtp').value = '';
+    showPairStep('otp');
+    $('loginOtp').focus();
+  } catch (err) {
+    showPairStep('login');
+    error.textContent = friendlyAuthError(err, 'Could not send a code.');
     error.classList.remove('hidden');
   }
 });
+
+$('otpForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const error = $('otpError');
+  error.classList.add('hidden');
+  const email = $('loginEmail').value.trim();
+  const token = $('loginOtp').value.replace(/\s+/g, '');
+  if (token.length < 6) return;
+  showPairStep('busy', 'Signing in…');
+  try {
+    const { error: err } = await sb.auth.verifyOtp({ email, token, type: 'email' });
+    if (err) throw err;
+    await connect();
+  } catch (err) {
+    showPairStep('otp');
+    error.textContent = friendlyAuthError(err, 'Could not verify the code.');
+    error.classList.remove('hidden');
+  }
+});
+
+$('otpBackBtn').addEventListener('click', () => showPairStep('login'));
+$('findRetryBtn').addEventListener('click', async () => { await closeRelay(); connect(); });
+$('findSignOutBtn').addEventListener('click', signOut);
 
 $('composerForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -811,7 +1075,7 @@ $('composerForm').addEventListener('submit', async (e) => {
 
   // Shown immediately, not after the request resolves: /api/send doesn't
   // respond until the whole agent turn (including any approval the user has
-  // to answer) finishes, so waiting for it here — like this used to — meant
+  // to answer) finishes, so waiting for it here - like this used to - meant
   // your own message stayed invisible for the entire run. The desktop client
   // already shows its own message optimistically before awaiting api.send();
   // this matches that.
@@ -872,7 +1136,7 @@ $('imgPickCancelBtn').addEventListener('click', () => finishImagePick(null));
 
 $('refreshBtn').addEventListener('click', () => bootstrap().catch(() => setConnection('', false)));
 
-// SIDEBAR DRAWER — opened from the topbar hamburger; closed by its X,
+// SIDEBAR DRAWER - opened from the topbar hamburger; closed by its X,
 // tapping the backdrop, or by any nav item inside it once it's done its
 // job (new chat, opening a session).
 $('sidebarOpenBtn').addEventListener('click', openSidebar);
@@ -881,8 +1145,6 @@ $('sidebarBackdrop').addEventListener('click', closeSidebar);
 
 $('sidebarNewChatBtn').addEventListener('click', () => {
   state.sessionId = null;
-  state.currentParentId = null;
-  $('backToMainBtn').classList.add('hidden');
   clearChat();
   $('chatFeed').classList.add('hidden');
   $('emptyState').classList.remove('hidden');
@@ -891,11 +1153,6 @@ $('sidebarNewChatBtn').addEventListener('click', () => {
   closeSidebar();
 });
 
-$('sidebarAgentViewBtn').addEventListener('click', () => { closeSidebar(); openAgentView(); });
-$('agentViewSheetBackdrop').addEventListener('click', closeAgentView);
-$('backToMainBtn').addEventListener('click', () => {
-  if (state.currentParentId) openSession(state.currentParentId);
-});
 
 document.querySelectorAll('.theme-opt').forEach((btn) => {
   btn.addEventListener('click', () => applyTheme(btn.dataset.themeChoice));
@@ -903,17 +1160,9 @@ document.querySelectorAll('.theme-opt').forEach((btn) => {
 syncThemeColorMeta();
 syncThemeToggleUI();
 
-if ($('unpairBtn')) {
-  $('unpairBtn').addEventListener('click', () => {
-    localStorage.removeItem('craft-token');
-    state.token = null;
-    $('pairScreen').classList.remove('hidden');
-    $('appScreen').classList.add('hidden');
-    closeSidebar();
-  });
-}
+if ($('unpairBtn')) $('unpairBtn').addEventListener('click', signOut);
 
-// Picking a folder updates the topbar pill immediately — renderProjects()
+// Picking a folder updates the topbar pill immediately - renderProjects()
 // only sets the initial text, this is what keeps it live after that.
 $('projectSelect').addEventListener('change', () => {
   const name = $('projectSelect').value ? basename($('projectSelect').value) : 'Choose folder';
@@ -929,37 +1178,8 @@ document.querySelectorAll('[data-prompt]').forEach((button) => {
   });
 });
 
-if (isHosted) {
-  $('desktopUrl').value = location.origin;
-}
-
-// The QR in Craft's desktop "Use from phone" panel encodes this device's own
-// address WITH the code already in it (?code=1234) — scanning it and opening
-// the link is the entire pairing flow, no address or code ever gets typed.
-// The manual form (baseUrl input + digits) stays underneath as the fallback
-// for when a phone can't or won't scan.
-const scannedCode = new URLSearchParams(location.search).get('code');
-
-if (state.token && state.baseUrl) {
-  $('pairScreen').classList.add('hidden');
-  $('appScreen').classList.remove('hidden');
-  bootstrap({ preserveSession: false })
-    .then(connectEvents)
-    .catch(() => {
-      localStorage.removeItem('craft-token');
-      state.token = null;
-      $('pairScreen').classList.remove('hidden');
-      $('appScreen').classList.add('hidden');
-    });
-} else if (scannedCode) {
-  $('pairCode').value = scannedCode;
-  $('pairForm').classList.add('hidden');
-  $('pairSyncing').classList.remove('hidden');
-  attemptPair(scannedCode, location.origin).catch((err) => {
-    $('pairSyncing').classList.add('hidden');
-    $('pairForm').classList.remove('hidden');
-    const error = $('pairError');
-    error.textContent = err.message;
-    error.classList.remove('hidden');
-  });
-}
+// Startup: a remembered sign-in goes straight to connecting.
+currentSession().then((session) => {
+  if (session) connect();
+  else showPairStep('login');
+});

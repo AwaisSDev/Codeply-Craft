@@ -1,6 +1,6 @@
-/* ============ Codeply Craft — renderer ============ */
+/* ============ Codeply Craft - renderer ============ */
 
-// NOTE: the preload bridge is window.craft — exposed via contextBridge it is a
+// NOTE: the preload bridge is window.craft - exposed via contextBridge it is a
 // non-configurable global, so a top-level `const craft` here is a SyntaxError.
 // Hence the different local name.
 const api = window.craft || null;
@@ -8,7 +8,7 @@ const api = window.craft || null;
 const $ = (id) => document.getElementById(id);
 
 // Identifies this window as the sender of a message, mirroring mobile.js's
-// clientId — lets the 'session_sync' handler below tell "a message I just
+// clientId - lets the 'session_sync' handler below tell "a message I just
 // sent" apart from "a message another paired device (phone) just sent",
 // without which it would either double up this window's own messages or
 // never render the phone's.
@@ -22,13 +22,13 @@ function makeClientId() {
 const desktopClientId = localStorage.getItem('craft-desktop-client-id') || makeClientId();
 localStorage.setItem('craft-desktop-client-id', desktopClientId);
 
-// THEME — dark / light / system, mirroring mobile.js exactly (down to the
-// storage key's meaning, though not its name — this is a separate window
+// THEME - dark / light / system, mirroring mobile.js exactly (down to the
+// storage key's meaning, though not its name - this is a separate window
 // with its own localStorage, so there's no actual sharing between the two).
 // 'system' is the absence of data-theme: styles.css's own
 // prefers-color-scheme media query does the work then, live-updating for
 // free if the OS theme changes mid-session. An explicit choice always wins
-// over that — see styles.css's :root for both sides of it. The inline
+// over that - see styles.css's :root for both sides of it. The inline
 // script in index.html's <head> applies a stored explicit choice before
 // first paint, so this only has to keep things in sync after that.
 function getThemeChoice() {
@@ -64,9 +64,8 @@ const state = {
   currentSessionId: null,
   running: false,
   pendingEmail: '',
-  subagents: [],     // the 8 named specialists (lib/subagents.js), loaded once at boot
-  subagentId: null,  // null = General (no persona pinned)
-  activeAgentSessions: [], // [{sessionId, subagentId, title}] — pushed live via agents:status, see main.js's broadcastAgentStatus
+  models: { selected: 'auto', models: [] }, // "Auto" + the user's own models (keys never reach the renderer)
+  runningSessions: [], // chat ids with a run in flight - pushed live via runs:status
 };
 
 // ─── Window controls ────────────────────────────────────────────────────────
@@ -76,7 +75,7 @@ $('winClose').addEventListener('click', () => api ? api.close() : window.close()
 
 // Swap the maximize button between "maximize" (single square) and "restore"
 // (overlapping squares) so it always reflects the window's real state,
-// matching native Windows title bar conventions — instead of a static icon
+// matching native Windows title bar conventions - instead of a static icon
 // that's wrong half the time (the window launches maximized already).
 function setMaxIcon(maximized) {
   const btn = $('winMax');
@@ -89,7 +88,7 @@ if (api) {
   api.getWinState().then((s) => setMaxIcon(!!s.maximized));
   api.onWinState((s) => setMaxIcon(!!s.maximized));
 }
-// The expand button lives in the titlebar, OUTSIDE the sidebar itself — it
+// The expand button lives in the titlebar, OUTSIDE the sidebar itself - it
 // has to, since the whole point is reaching it after the sidebar (and the
 // collapse button living inside it) has slid off-screen.
 function setSidebarCollapsed(collapsed) {
@@ -102,7 +101,7 @@ $('sidebarExpandBtn').addEventListener('click', () => setSidebarCollapsed(false)
 // ─── View switching ─────────────────────────────────────────────────────────
 const VIEWS = ['viewLogin', 'viewReferral', 'viewCountry', 'viewHome', 'viewChat', 'viewEngineError'];
 
-// Home and chat are gated behind sign-in — nothing usable happens until the
+// Home and chat are gated behind sign-in - nothing usable happens until the
 // account flow completes, no matter how a view swap was triggered (New chat,
 // a suggestion card, reopening a session, ...). One choke point here instead
 // of a check sprinkled at every call site.
@@ -194,11 +193,11 @@ const TOOL_DISPLAY = {
   fetch_image: 'Downloaded', browser_check: 'Checked',
   gmail_send: 'Emailed', gmail_search: 'Searched Gmail', slack_post_message: 'Posted',
   vercel_deploy: 'Deployed', supabase_create_project: 'Provisioned', supabase_delete_project: 'Deleted', github_create_repo: 'Pushed',
-  subagent: 'Consulted', dispatch_agent: 'Dispatched', stop_agent: 'Stopped',
-  design_reference_search: 'Searched design library',
+  supabase_api: 'Supabase', supabase_sql: 'Ran SQL', vercel_api: 'Vercel',
+  design_reference_search: 'Searched design library', view_images: 'Viewed',
 };
 
-// Human-readable tool names for approval UI — never show the raw
+// Human-readable tool names for approval UI - never show the raw
 // underscored identifier (write_file, fetch_image, ...) to the user.
 const TOOL_NAME = {
   list_dir: 'list directory', read_file: 'read file', write_file: 'write file',
@@ -209,7 +208,7 @@ const TOOL_NAME = {
   vercel_deploy: 'deploy to Vercel', supabase_create_project: 'create Supabase project',
   supabase_delete_project: 'delete Supabase project',
   github_create_repo: 'create GitHub repo',
-  subagent: 'consult a specialist', dispatch_agent: 'dispatch to a specialist', stop_agent: 'stop a specialist',
+  supabase_api: 'change Supabase', supabase_sql: 'run SQL on Supabase', vercel_api: 'change Vercel',
   design_reference_search: 'search design library',
 };
 const toolName = (name) => TOOL_NAME[name] || name.replace(/_/g, ' ');
@@ -242,10 +241,10 @@ function toolIcon(name) {
   if (name === 'gmail_send' || name === 'gmail_search') return TOOL_ICON.mail;
   if (name === 'slack_post_message') return TOOL_ICON.slack;
   if (name === 'vercel_deploy') return TOOL_ICON.vercel;
-  if (name === 'supabase_create_project' || name === 'supabase_delete_project') return TOOL_ICON.database;
+  if (name === 'supabase_create_project' || name === 'supabase_delete_project' || name === 'supabase_api' || name === 'supabase_sql') return TOOL_ICON.database;
+  if (name === 'vercel_api') return TOOL_ICON.vercel;
   if (name === 'github_create_repo') return TOOL_ICON.github;
-  if (name === 'subagent' || name === 'dispatch_agent') return TOOL_ICON.agent;
-  if (name === 'stop_agent') return TOOL_ICON.stop;
+  if (name === 'view_images') return TOOL_ICON.image;
   if (name === 'design_reference_search') return TOOL_ICON.library;
   return TOOL_ICON.read;
 }
@@ -258,7 +257,7 @@ function nearBottom() {
   return chatScroll.scrollHeight - chatScroll.scrollTop - chatScroll.clientHeight < 140;
 }
 
-// Guards against the exact same user message rendering twice in a row — seen
+// Guards against the exact same user message rendering twice in a row - seen
 // with the composer's send button/Enter handler double-firing under a slow
 // backend response (a rate-limited free-tier model taking noticeably longer
 // gives more real wall-clock time for a stray double dispatch to land before
@@ -294,11 +293,11 @@ function addUserMessage(text, images) {
   bubble.textContent = text;
   msg.appendChild(bubble);
 
-  // Restart re-sends this exact message as a brand-new turn — useful when a
+  // Restart re-sends this exact message as a brand-new turn - useful when a
   // reply didn't do what you wanted and you'd rather just try again than
   // hand-retype the same ask. Revert stops whatever's currently running in
   // this chat (if anything is) and drops the message back into the
-  // composer to tweak before sending — it does NOT undo any file edits the
+  // composer to tweak before sending - it does NOT undo any file edits the
   // original run already made; it only stops the run and gives you the
   // text back to edit.
   const actions = document.createElement('div');
@@ -340,13 +339,13 @@ function openImageLightbox(src) {
 }
 
 // Live responses type out word by word; replayed history (reopening an old
-// chat) renders instantly — animating text you've already read is just a
+// chat) renders instantly - animating text you've already read is just a
 // delay, not a nice touch.
 //
-// Replies render immediately, full text at once — no typewriter effect.
+// Replies render immediately, full text at once - no typewriter effect.
 // ─── Reveal queue ───────────────────────────────────────────────────────────
 // A tool row (or the next reply) that's ready to render while the PRIOR
-// reply is still typing out doesn't jump ahead of it — it's created and
+// reply is still typing out doesn't jump ahead of it - it's created and
 // appended to the DOM immediately (so tool_start's "running" placeholder
 // and tool_end's swap-in still work exactly as before, in the right DOM
 // order), but stays visually hidden (.reveal-pending) until its turn comes
@@ -354,7 +353,7 @@ function openImageLightbox(src) {
 const revealQueue = [];
 let revealQueueBusy = false;
 let activeTypewriterTimer = null;
-// Set around history replay (reopening a past chat) — every message and
+// Set around history replay (reopening a past chat) - every message and
 // tool row should appear at once there, not re-play its live-arrival
 // animation/ordering every time the chat is opened.
 let revealInstant = false;
@@ -375,7 +374,7 @@ function stopRevealQueue() {
   revealQueueBusy = false;
 }
 
-// Reveals a reply a few words at a time — fast (well under half a second
+// Reveals a reply a few words at a time - fast (well under half a second
 // total regardless of length) so it still reads as "arriving" rather than
 // just appearing, without the several-second crawl a true per-word
 // typewriter would take on a long reply.
@@ -404,8 +403,8 @@ function addAssistantMessage(text) {
   enqueueReveal((next) => runFastTypewriter(msg, text, next));
 }
 
-// The raw arguments a real tool call ran with — path, command, search/replace,
-// pattern, whatever that tool takes — formatted close to the actual
+// The raw arguments a real tool call ran with - path, command, search/replace,
+// pattern, whatever that tool takes - formatted close to the actual
 // <codeply:name>...</codeply:name> block the model wrote, so clicking a tool
 // row shows what really happened instead of leaving it as an opaque one-line
 // summary.
@@ -417,7 +416,7 @@ function formatToolDetail(name, args) {
 }
 
 // A single fallback chain for "what's the one-line summary of this call's
-// arguments" — path/command/pattern/name covered the original file+shell
+// arguments" - path/command/pattern/name covered the original file+shell
 // tools; to/channel cover the two new integrations, whose defining argument
 // isn't any of those.
 function toolArgsLabel(args) {
@@ -451,7 +450,7 @@ function addToolRow({ name, label, ok, running: isRunning, auto, bypass, args, s
   }
 
   // A browser_check's screenshot, shown right in the chat instead of only
-  // fed to the model — the whole point of asking "what did it actually
+  // fed to the model - the whole point of asking "what did it actually
   // check" is being able to look at it yourself, not just trust the text.
   if (screenshotSrc) {
     const img = document.createElement('img');
@@ -472,18 +471,20 @@ function addToolRow({ name, label, ok, running: isRunning, auto, bypass, args, s
   return row;
 }
 
-// Task Maker checklist — one live block per run, updated in place as
+// Task Maker checklist - one live block per run, updated in place as
 // task_start/task_end events arrive rather than re-rendered from scratch,
 // so it reads as a real progress list instead of flickering.
 let activeTaskList = null; // { rows: Map<id, rowEl> }
 let currentTasks = []; // plain data mirror of the active/last checklist, for the Tasks panel + sidebar badge
+
+const ROLE_LABEL = { frontend: 'Frontend', backend: 'Backend', database: 'Database', devops: 'DevOps', security: 'Security', testing: 'Testing', docs: 'Docs' };
 
 function buildTaskListEl(tasks) {
   const wrap = document.createElement('div');
   wrap.className = 'tasklist';
   const head = document.createElement('div');
   head.className = 'tasklist-head';
-  head.textContent = `Task Maker: ${tasks.length} task${tasks.length === 1 ? '' : 's'}`;
+  head.textContent = `Plan · ${tasks.length} task${tasks.length === 1 ? '' : 's'}, one at a time`;
   wrap.appendChild(head);
 
   const rows = new Map();
@@ -499,6 +500,12 @@ function buildTaskListEl(tasks) {
     label.textContent = t.text;
     row.appendChild(dot);
     row.appendChild(label);
+    if (t.role) {
+      const role = document.createElement('span');
+      role.className = 'tasklist-role';
+      role.textContent = ROLE_LABEL[t.role] || t.role;
+      row.appendChild(role);
+    }
     wrap.appendChild(row);
     rows.set(t.id, row);
   }
@@ -583,16 +590,16 @@ function addNote(text, kind = '') {
   if (nearBottom()) scrollToBottom();
 }
 
-// Every mascot on screen is two stacked, independently-animated layers —
+// Every mascot on screen is two stacked, independently-animated layers -
 // the ball (assets/agents/<id>.png) and a shared eyes overlay
-// (assets/agents/eyes.png) — not one flat pre-drawn image. That's what
+// (assets/agents/eyes.png) - not one flat pre-drawn image. That's what
 // makes a real blink/look-around animation possible at all: the eyes move
 // on their own transform, the ball breathes on its own, and nothing about
 // either layer is baked together. A small random negative animation-delay
 // desyncs each instance so a grid of them doesn't blink in unison.
 function mascotHtml(mascotFile, sizeClass, altText) {
   // A negative delay starts the animation already partway through its
-  // cycle — the simplest way to desync instances so a grid of 7 mascots
+  // cycle - the simplest way to desync instances so a grid of 7 mascots
   // doesn't blink and look around in unison.
   const delay = (-(Math.random() * 6)).toFixed(2) + 's';
   return `<span class="mascot ${sizeClass}">
@@ -601,127 +608,105 @@ function mascotHtml(mascotFile, sizeClass, altText) {
   </span>`;
 }
 
-// The visible half of subagent auto-routing (see effectiveSubagentId() in
-// main.js) — fired once at the start of a turn that's using a specialist
-// persona, whether auto-picked or manually pinned. Without this, the
-// persona would be a completely invisible prompt change; this is what
-// actually shows the user which mascot is handling the reply that follows.
-function addSubagentBadge(data) {
+// ─── Role badge ─────────────────────────────────────────────────────────────
+// There's one agent; this marks the moment it switches role (Frontend,
+// Backend, Testing, ...) - shown only when the role actually changes.
+function addRoleBadge(data) {
   const el = document.createElement('div');
-  el.className = 'subagent-badge';
-  el.style.setProperty('--subagent-color', data.color || '');
-  el.innerHTML =
-    mascotHtml(data.mascot, 'mascot-sm', data.name) +
-    `<span class="subagent-badge-text"><strong>${esc(data.name)}</strong> · ${esc(data.tagline)}</span>`;
+  el.className = 'role-badge';
+  el.style.setProperty('--role-color', data.color || '');
+  // Older chats stored the multi-agent era's badge ({name: 'Pixel', tagline: 'Frontend & UI Specialist'}).
+  const roleName = data.tagline === 'role' ? data.name : String(data.tagline || data.name || '').replace(/ Specialist$/i, '');
+  el.innerHTML = mascotHtml(data.mascot || 'general.png', 'mascot-xs', roleName) +
+    `<span class="role-badge-text">Working as <strong>${esc(roleName || 'General')}</strong></span>`;
   chatColumn.appendChild(el);
   if (nearBottom()) scrollToBottom();
 }
 
-// ─── Agent View — modal listing the 7 specialists, live status + click-through
-// Same list-modal shape as Connect Apps (.app-card rows) and Tasks, not a
-// separate full-page view — a row per specialist, click to expand its
-// sessions inline. Reuses state.subagents/state.sessions (already loaded for
-// the composer picker and Recents) plus state.activeAgentSessions (new — see
-// agents:status below). No separate store: a dispatched session IS a normal
-// session, just one dispatch_agent started instead of the user typing into
-// it directly.
-let expandedAgentId = null;
-
-function renderAgentsList() {
-  const list = $('agentsList');
-  if (expandedAgentId) { renderAgentSessionsInline(expandedAgentId); updateAgentViewBadge(); return; }
-  // Same tile treatment as the composer's own Specialists picker
-  // (.subagent-menu-grid/.subagent-menu-item) — that one already renders the
-  // mascot cleanly at this size; a custom row layout at a smaller size was
-  // what made the eyes look broken, not the artwork itself.
-  list.innerHTML = `<div class="agents-tile-grid">` + state.subagents.map((a) => {
-    const activeHere = state.activeAgentSessions.filter((s) => s.subagentId === a.id);
-    return `<button class="agents-tile${activeHere.length ? ' active' : ''}" data-id="${esc(a.id)}" style="--subagent-color: ${esc(a.color)}">
-      ${mascotHtml(a.mascot, 'mascot-md', a.name)}
-      <span class="agents-tile-name">${esc(a.name)}</span>
-      <span class="agents-tile-tagline">${esc(a.tagline)}</span>
-      <span class="agents-tile-status${activeHere.length ? ' active' : ''}">${activeHere.length ? activeHere.length + ' active' : 'Idle'}</span>
-    </button>`;
-  }).join('') + `</div>`;
-  list.querySelectorAll('.agents-tile').forEach((tile) => {
-    tile.addEventListener('click', () => toggleAgentSessions(tile.dataset.id));
-  });
-  updateAgentViewBadge();
-}
-
-function toggleAgentSessions(subagentId) {
-  expandedAgentId = expandedAgentId === subagentId ? null : subagentId;
-  renderAgentsList();
-}
-
-function renderAgentSessionsInline(subagentId) {
-  const specialist = state.subagents.find((a) => a.id === subagentId);
-  if (!specialist) return;
-  const list = $('agentsList');
-  list.innerHTML = `<button class="agents-back-btn" id="agentsBackBtn">
-    <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg> ${esc(specialist.name)}
-  </button><div id="agentSessionsInner"></div>`;
-  $('agentsBackBtn').addEventListener('click', () => toggleAgentSessions(subagentId));
-  const container = $('agentSessionsInner');
-  const activeForThis = state.activeAgentSessions.filter((s) => s.subagentId === subagentId);
-  const activeIds = new Set(activeForThis.map((s) => s.sessionId));
-  const known = state.sessions.filter((s) => s.subagentId === subagentId);
-  const knownIds = new Set(known.map((s) => s.id));
-  // A dispatch this fresh may not have reached state.sessions yet — that only
-  // updates from a session_sync event for whichever chat is currently open,
-  // or a full sessions:refresh, neither of which a background dispatch
-  // triggers on its own. Synthesized from the live status push instead, so
-  // it's not invisible in the meantime.
-  const synthesized = activeForThis
-    .filter((s) => !knownIds.has(s.sessionId))
-    .map((s) => ({ id: s.sessionId, title: s.title || 'Working…', updatedAt: Date.now() }));
-  const sessions = [...synthesized, ...known]
-    .sort((a, b) => (activeIds.has(b.id) - activeIds.has(a.id)) || (b.updatedAt - a.updatedAt));
-
-  container.innerHTML = sessions.map((s) => `
-    <div class="agents-session-row${activeIds.has(s.id) ? ' active' : ''}">
-      <button class="agents-session-open" data-id="${esc(s.id)}">
-        ${activeIds.has(s.id) ? '<span class="agents-session-dot"></span>' : ''}
-        <span class="agents-session-title">${esc(s.title)}</span>
-      </button>
-      ${activeIds.has(s.id) ? `<button class="agents-session-stop" data-id="${esc(s.id)}" title="Stop"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>` : ''}
-    </div>`).join('') || '<div class="sp-empty">Nothing dispatched to this specialist yet.</div>';
-  container.querySelectorAll('.agents-session-open').forEach((btn) => {
-    btn.addEventListener('click', () => { closeAgentViewModal(); openSession(btn.dataset.id); });
-  });
-  container.querySelectorAll('.agents-session-stop').forEach((btn) => {
-    btn.addEventListener('click', (e) => { e.stopPropagation(); api.stop(btn.dataset.id); });
+// ─── What actually changed ──────────────────────────────────────────────────
+// Built from the tool results, not the model's prose: the files really
+// written and the checks really run (with exit codes). If the model's
+// summary and this card ever disagree, this card is the truth.
+function addTurnSummary(data) {
+  const files = data.files || [];
+  const checks = data.checks || [];
+  const unverified = data.unverified || [];
+  if (!files.length && !checks.length) return;
+  const card = document.createElement('div');
+  card.className = 'turn-summary';
+  const checkRow = (c) => {
+    const passed = c.ok && (c.exitCode === undefined || c.exitCode === 0);
+    const label = c.tool === 'browser_check' ? `Opened ${c.label}` : c.label;
+    const exit = typeof c.exitCode === 'number' ? `<span class="ts-exit">exit ${c.exitCode}</span>` : '';
+    return `<div class="ts-check ${passed ? 'pass' : 'fail'}">
+      <span class="ts-check-icon">${passed ? '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'}</span>
+      <code>${esc(label || '')}</code>${exit}</div>`;
+  };
+  card.innerHTML = `
+    <div class="ts-head">
+      <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      <span>What actually happened</span>
+    </div>
+    ${files.length ? `<div class="ts-section-label">Files changed</div><div class="ts-files">${files.map((f) => `<span class="ts-file">${esc(f)}</span>`).join('')}</div>` : ''}
+    ${checks.length ? `<div class="ts-section-label">Checks run</div><div class="ts-checks">${checks.map(checkRow).join('')}</div>` : ''}
+    ${unverified.length ? `<div class="ts-warn"><svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>Not verified by a passing check: ${unverified.map(esc).join(', ')}</div>` : ''}`;
+  card.classList.add('reveal-pending');
+  chatColumn.appendChild(card);
+  enqueueReveal((next) => {
+    card.classList.remove('reveal-pending');
+    if (nearBottom()) scrollToBottom();
+    next();
   });
 }
 
-function openAgentViewModal() {
-  renderAgentsList();
-  $('agentViewBackdrop').classList.remove('hidden');
-}
-function closeAgentViewModal() {
-  $('agentViewBackdrop').classList.add('hidden');
+// ─── /goal progress card ────────────────────────────────────────────────────
+// One live card per goal, updated in place as the loop works and verifies.
+let activeGoalCard = null; // { goal, el }
+
+const GOAL_STATUS_LABEL = {
+  running: 'Working', verifying: 'Verifying', achieved: 'Achieved',
+  blocked: 'Stuck', incomplete: 'Not finished', failed: 'Stopped', stopped: 'Stopped',
+};
+
+function renderGoalCard(data) {
+  if (!activeGoalCard || activeGoalCard.goal !== data.goal || !activeGoalCard.el.isConnected) {
+    const el = document.createElement('div');
+    el.className = 'goal-card';
+    el.innerHTML = `
+      <div class="goal-head">
+        <span class="goal-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/></svg></span>
+        <span class="goal-kicker">Goal</span>
+        <span class="goal-pill" data-role="pill"></span>
+      </div>
+      <div class="goal-text"></div>
+      <div class="goal-track"><div class="goal-bar" data-role="bar"></div></div>
+      <div class="goal-note" data-role="note"></div>`;
+    el.querySelector('.goal-text').textContent = data.goal;
+    chatColumn.appendChild(el);
+    activeGoalCard = { goal: data.goal, el };
+  }
+  const { el } = activeGoalCard;
+  const status = data.status || 'running';
+  el.dataset.status = status;
+  const iter = data.iteration || 0;
+  const max = data.max || 8;
+  const pill = el.querySelector('[data-role="pill"]');
+  pill.textContent = ['running', 'verifying'].includes(status) && iter
+    ? `${GOAL_STATUS_LABEL[status]} · round ${iter} of ${max}`
+    : GOAL_STATUS_LABEL[status] || status;
+  const pct = status === 'achieved' ? 100 : Math.min(95, Math.round(((iter - (status === 'running' ? 1 : 0.5)) / max) * 100));
+  el.querySelector('[data-role="bar"]').style.width = Math.max(4, pct) + '%';
+  el.querySelector('[data-role="note"]').textContent = data.note || '';
+  if (nearBottom()) scrollToBottom();
 }
 
-function updateAgentViewBadge() {
-  const badge = $('agentViewBadge');
-  const n = state.activeAgentSessions.length;
-  badge.textContent = String(n);
-  badge.classList.toggle('hidden', n === 0);
-}
-
-$('agentViewBtn').addEventListener('click', openAgentViewModal);
-$('agentViewCloseBtn').addEventListener('click', closeAgentViewModal);
-$('agentViewBackdrop').addEventListener('click', (e) => { if (e.target === $('agentViewBackdrop')) closeAgentViewModal(); });
-
-if (api) api.onAgentsStatus((data) => {
-  state.activeAgentSessions = Array.isArray(data) ? data : [];
-  updateAgentViewBadge();
-  if (!$('agentViewBackdrop').classList.contains('hidden')) renderAgentsList();
-  // Same resync as openSession() below, for the chat already open when this
-  // arrives — keeps the composer's send/stop icon live-accurate without
-  // waiting for a navigation to trigger the check.
+// ─── Run status (which chats have a run in flight) ─────────────────────────
+if (api) api.onRunsStatus((ids) => {
+  state.runningSessions = Array.isArray(ids) ? ids : [];
+  // Keeps the composer's send/stop icon accurate for the open chat even if
+  // its own run_finished event was missed while looking at another chat.
   if (state.currentSessionId) {
-    const isActive = state.activeAgentSessions.some((a) => a.sessionId === state.currentSessionId);
+    const isActive = state.runningSessions.includes(state.currentSessionId);
     if (isActive !== state.running) setRunning(isActive);
   }
 });
@@ -759,7 +744,7 @@ function panelTrack(name, label) {
 }
 
 // ─── Connect Apps (Gmail / Slack) ───────────────────────────────────────────
-// Lives in its own modal off the account menu, not the chat side panel — the
+// Lives in its own modal off the account menu, not the chat side panel - the
 // side panel only exists inside an open chat, so anyone landing on the home
 // screen (no chat open yet) had no way to find it at all. The account menu
 // at the bottom of the sidebar is present in every state, logged-in or not.
@@ -905,7 +890,7 @@ $('bcBack').addEventListener('click', () => api && api.browserPanelBack());
 $('bcForward').addEventListener('click', () => api && api.browserPanelForward());
 $('bcClose').addEventListener('click', () => api && api.toggleBrowserPanel());
 
-// The reload icon itself spins while a reload is in flight — the click is
+// The reload icon itself spins while a reload is in flight - the click is
 // otherwise silent (no loading indicator anywhere else in the chrome bar),
 // so without this a slow page reload just looks like the button did nothing.
 // Cleared on the next 'browserpanel:url' navigation event, not a fixed
@@ -918,7 +903,7 @@ bcReloadBtn.addEventListener('click', () => {
   api.browserPanelReload();
 });
 
-// A real address bar: type a URL, press Enter, it navigates — not just a
+// A real address bar: type a URL, press Enter, it navigates - not just a
 // read-only label showing whatever the agent's browser_check last opened.
 const bcUrlInput = $('bcUrl');
 let lastBrowserPanelUrl = '';
@@ -929,7 +914,7 @@ bcUrlInput.addEventListener('keydown', (e) => {
   bcUrlInput.blur();
 });
 // Editing the address bar shouldn't fight with the live URL updating out from
-// under the user mid-type — only resynced on blur (abandoning the edit) or
+// under the user mid-type - only resynced on blur (abandoning the edit) or
 // on an actual navigation event, never while it has focus.
 bcUrlInput.addEventListener('blur', () => { bcUrlInput.value = lastBrowserPanelUrl; });
 
@@ -970,7 +955,7 @@ function ensureTerminal() {
   termFit = new FitAddon.FitAddon();
   term.loadAddon(termFit);
   term.open($('terminalBody'));
-  // No real pty backs this (see main.js) — the child's stdin is a plain pipe,
+  // No real pty backs this (see main.js) - the child's stdin is a plain pipe,
   // so there's no line discipline on the other end to turn a raw backspace
   // byte into "erase the previous character". Line editing has to happen
   // here instead: buffer keystrokes locally, echo them ourselves, and only
@@ -978,7 +963,7 @@ function ensureTerminal() {
   let inputBuffer = '';
   term.onData((data) => {
     // A whole chunk starting with ESC is a control sequence (arrow keys,
-    // home/end, etc.) — there's no cursor-within-line editing to apply it
+    // home/end, etc.) - there's no cursor-within-line editing to apply it
     // to here, so drop it rather than let its raw bytes corrupt the buffer.
     if (data.length > 1 && data.charCodeAt(0) === 27) return;
     for (const ch of data) {
@@ -997,7 +982,7 @@ function ensureTerminal() {
         inputBuffer = '';
         if (api) api.terminalInput('\x03');
       } else if (code === 27) {
-        // lone ESC with no following bytes yet — ignore
+        // lone ESC with no following bytes yet - ignore
       } else if (code >= 32 || ch === '\t') {
         inputBuffer += ch;
         term.write(ch);
@@ -1046,8 +1031,8 @@ function renderProjects() {
   for (const p of state.projects) {
     const name = p.split(/[\\/]/).filter(Boolean).pop();
 
-    // Same row shape as a chat in Recents — the folder button fills the row
-    // and a 3-dot button sits at its right edge, revealed on hover — so both
+    // Same row shape as a chat in Recents - the folder button fills the row
+    // and a 3-dot button sits at its right edge, revealed on hover - so both
     // sidebar lists behave the same way instead of Projects being the one
     // list with no way to manage its own entries.
     const row = document.createElement('div');
@@ -1215,14 +1200,14 @@ function openProjectMenu(projectPath, anchorBtn) {
 }
 
 /**
- * Forgets a folder — it leaves the sidebar, nothing on disk changes, and
+ * Forgets a folder - it leaves the sidebar, nothing on disk changes, and
  * opening it again re-adds it. No confirmation for exactly that reason: the
  * label says "Remove from list", and the undo is picking the folder again.
  *
  * Removing the folder that's currently in use also clears the selection and
  * returns Home, rather than leaving the header pointing at a project that is
  * no longer in the list. A run already in flight keeps the cwd it started
- * with — that was resolved when the turn began.
+ * with - that was resolved when the turn began.
  */
 async function removeProjectByPath(p) {
   await api.removeProject(p);
@@ -1286,111 +1271,274 @@ document.querySelectorAll('[data-role="bypass"]').forEach((el) =>
   })
 );
 
-// ─── Model label ────────────────────────────────────────────────────────────
-// No picker — Auto is the only mode (Ollama's Gemma 4 31B, with a free Gemma
-// 4 26B helping on design-planning turns; see model-router.js). The bottom
-// bar just always reads "Auto", set once here rather than on every render.
-document.querySelectorAll('[data-role="model-name"]').forEach((el) => (el.textContent = 'Auto'));
+// ─── Models ─────────────────────────────────────────────────────────────────
+// "Auto" is Codeply's hosted model. Everything else is a model the user added
+// - an OpenAI-compatible API or a local Ollama model. The main process keeps
+// the keys; this side only ever sees a masked preview.
+const MODEL_PRESETS = [
+  { label: 'OpenAI', name: 'GPT-4o mini', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+  { label: 'Claude', name: 'Claude Sonnet', baseUrl: 'https://api.anthropic.com/v1', model: 'claude-sonnet-5' },
+  { label: 'Gemini', name: 'Gemini Flash', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.7-flash' },
+  { label: 'OpenRouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+  { label: 'Groq', name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'openai/gpt-oss-120b' },
+  { label: 'DeepSeek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+];
 
-// ─── Subagent picker (the 8 named specialists — lib/subagents.js) ──────────
-// Same popover pattern as the model picker above, but a 3-column grid of
-// animated mascot tiles instead of a plain list — this is the one place in
-// the app that's meant to feel a little alive, not just functional.
-async function loadSubagents() {
-  if (!api || !api.listSubagents) return;
-  state.subagents = await api.listSubagents();
-  syncSubagentChips();
+const SPARK_SVG = '<svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9Z"/><path d="M19 15l.7 1.8L21.5 17.5l-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7Z"/></svg>';
+const CHIP_SVG = '<svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M9 1.5v3M15 1.5v3M9 19.5v3M15 19.5v3M1.5 9h3M1.5 15h3M19.5 9h3M19.5 15h3"/></svg>';
+const LLAMA_SVG = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2.5"/><path d="M8 20h8M12 16v4"/><path d="M7.5 9.5l2 1.5-2 1.5M12 12.5h4"/></svg>';
+
+function selectedModel() {
+  if (state.models.selected === 'auto') return null;
+  return state.models.models.find((m) => m.id === state.models.selected) || null;
 }
 
-// state.subagentId's three shapes: null = Auto (the default — this chat
-// always runs as the coordinator now, see COORDINATOR_RULES in agent.mjs; it
-// dispatches real work to the right specialist as an independent session via
-// dispatch_agent instead of a persona coloring this same turn), 'general' =
-// same as Auto but explicit, or a specific id = pinned for the whole chat, so
-// every turn answers directly AS that specialist instead of coordinating.
-const AUTO_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg>';
+function hostOf(url) {
+  try { return new URL(url).host; } catch { return url || ''; }
+}
 
-function syncSubagentChips() {
-  const active = state.subagents.find((a) => a.id === state.subagentId);
-  // Auto has no fixed persona to show a mascot for (it varies message to
-  // message) — everything else, including General now, is a real mascot.
-  const label = active ? active.name : (state.subagentId === 'general' ? 'General' : 'Auto');
-  const mascotFile = active ? active.mascot : (state.subagentId === 'general' ? 'general.png' : null);
-  document.querySelectorAll('[data-role="subagent-chip"]').forEach((chip) => {
-    chip.style.setProperty('--subagent-color', active ? active.color : '');
-    chip.querySelector('[data-role="subagent-name"]').textContent = label;
-    chip.querySelector('[data-role="subagent-icon-slot"]').innerHTML =
-      mascotFile ? mascotHtml(mascotFile, 'mascot-xs', label) : AUTO_ICON_SVG;
+function applyModelsState(models) {
+  if (models && Array.isArray(models.models)) state.models = models;
+  const m = selectedModel();
+  const label = m ? m.name : 'Auto';
+  const kind = m ? (m.kind === 'ollama' ? 'local' : 'custom') : 'auto';
+  document.querySelectorAll('[data-role="model-name"]').forEach((el) => (el.textContent = label));
+  document.querySelectorAll('[data-role="model-chip"]').forEach((el) => {
+    el.dataset.kind = kind;
+    el.title = m ? `${m.name} - ${m.model} on ${hostOf(m.baseUrl)}` : 'Auto - Codeply picks the model for you';
   });
 }
 
-let subagentMenuEl = null;
-function closeSubagentMenu() {
-  if (subagentMenuEl) { subagentMenuEl.remove(); subagentMenuEl = null; }
+let modelMenuEl = null;
+function closeModelMenu() {
+  if (modelMenuEl) { modelMenuEl.remove(); modelMenuEl = null; }
 }
 document.addEventListener('click', (e) => {
-  if (subagentMenuEl && !subagentMenuEl.contains(e.target) && !e.target.closest('[data-role="subagent-chip"]')) closeSubagentMenu();
+  if (modelMenuEl && !modelMenuEl.contains(e.target) && !e.target.closest('[data-role="model-chip"]')) closeModelMenu();
 });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModelMenu(); });
 
-async function pickSubagent(id) {
-  closeSubagentMenu();
-  const next = id === 'auto' ? null : id;
-  if (next === state.subagentId) return;
-  state.subagentId = next;
-  syncSubagentChips();
-  // Persists immediately for a chat that already exists; for a brand-new,
-  // not-yet-sent chat there's no session row to update yet — the pick just
-  // rides along in the next send() payload instead (see sendMessage above).
-  if (state.currentSessionId && api.setSessionSubagent) {
-    await api.setSessionSubagent(state.currentSessionId, state.subagentId);
-  }
+async function pickModel(id) {
+  closeModelMenu();
+  if (id === state.models.selected) return;
+  const r = await api.selectModel(id);
+  if (!r.ok) { showToast(r.error || 'Could not switch model.', 'error'); return; }
+  applyModelsState(r.state);
+  const m = selectedModel();
+  showToast(m ? `Using ${m.name}` : 'Using Auto');
 }
 
-function openSubagentMenu(anchorBtn) {
-  closeSubagentMenu();
+function openModelMenu(anchorBtn) {
+  closeModelMenu();
   const menu = document.createElement('div');
-  menu.className = 'subagent-menu';
-  const isAuto = !state.subagentId;
-  const isGeneral = state.subagentId === 'general';
-  menu.innerHTML =
-    '<div class="subagent-menu-title">Specialists</div>' +
-    '<div class="subagent-menu-grid">' +
-    `<button class="subagent-menu-item${isAuto ? ' active' : ''}" data-id="auto">
-       <span class="subagent-menu-item-general"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg></span>
-       <span class="subagent-menu-item-name">Auto</span>
-       <span class="subagent-menu-item-tagline">Picks a specialist per message</span>
-     </button>` +
-    `<button class="subagent-menu-item${isGeneral ? ' active' : ''}" data-id="general">
-       ${mascotHtml('general.png', 'mascot-md', 'General')}
-       <span class="subagent-menu-item-name">General</span>
-       <span class="subagent-menu-item-tagline">Never use a specialist</span>
-     </button>` +
-    state.subagents.map((a) => `
-      <button class="subagent-menu-item${a.id === state.subagentId ? ' active' : ''}" data-id="${esc(a.id)}" style="--subagent-color: ${esc(a.color)}">
-        ${mascotHtml(a.mascot, 'mascot-md', a.name)}
-        <span class="subagent-menu-item-name">${esc(a.name)}</span>
-        <span class="subagent-menu-item-tagline">${esc(a.tagline)}</span>
-      </button>`).join('') +
-    '</div>';
+  menu.className = 'model-menu';
+  const sel = state.models.selected;
+  const check = '<svg class="model-item-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>';
+  const custom = state.models.models;
+  menu.innerHTML = `
+    <button class="model-item${sel === 'auto' ? ' active' : ''}" data-id="auto">
+      <span class="model-item-icon auto">${SPARK_SVG}</span>
+      <span class="model-item-text"><strong>Auto</strong><span>Codeply's hosted model · best for most work</span></span>
+      ${sel === 'auto' ? check : ''}
+    </button>
+    ${custom.length ? '<div class="model-menu-label">Your models</div>' : ''}
+    ${custom.map((m) => `
+      <div class="model-item-row">
+        <button class="model-item${sel === m.id ? ' active' : ''}" data-id="${esc(m.id)}">
+          <span class="model-item-icon ${m.kind === 'ollama' ? 'local' : 'custom'}">${m.kind === 'ollama' ? LLAMA_SVG : CHIP_SVG}</span>
+          <span class="model-item-text"><strong>${esc(m.name)}</strong><span>${esc(m.model)} · ${esc(m.kind === 'ollama' ? 'on this computer' : hostOf(m.baseUrl))}</span></span>
+          ${sel === m.id ? check : ''}
+        </button>
+        <button class="model-item-tool" data-edit="${esc(m.id)}" title="Edit"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+        <button class="model-item-tool danger" data-delete="${esc(m.id)}" title="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg></button>
+      </div>`).join('')}
+    <div class="model-menu-divider"></div>
+    <button class="model-menu-action" data-action="add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add a model</button>
+    <button class="model-menu-action" data-action="ollama">${LLAMA_SVG}Connect Ollama</button>`;
   document.body.appendChild(menu);
 
   const rect = anchorBtn.getBoundingClientRect();
-  menu.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
+  menu.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
   menu.style.right = Math.max(8, window.innerWidth - rect.right) + 'px';
 
-  menu.querySelectorAll('.subagent-menu-item').forEach((item) =>
-    item.addEventListener('click', () => pickSubagent(item.dataset.id))
-  );
-  subagentMenuEl = menu;
+  menu.querySelectorAll('.model-item').forEach((btn) => btn.addEventListener('click', () => pickModel(btn.dataset.id)));
+  menu.querySelectorAll('[data-edit]').forEach((btn) => btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const m = state.models.models.find((x) => x.id === btn.dataset.edit);
+    closeModelMenu();
+    if (m) openModelsModal({ tab: m.kind === 'ollama' ? 'ollama' : 'custom', edit: m });
+  }));
+  menu.querySelectorAll('[data-delete]').forEach((btn) => btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const m = state.models.models.find((x) => x.id === btn.dataset.delete);
+    if (!m || !confirm(`Remove "${m.name}"? Its API key is deleted from this computer too.`)) return;
+    const r = await api.deleteModel(m.id);
+    if (r.ok) { applyModelsState(r.state); openModelMenu(anchorBtn); }
+  }));
+  menu.querySelector('[data-action="add"]').addEventListener('click', () => { closeModelMenu(); openModelsModal({ tab: 'custom' }); });
+  menu.querySelector('[data-action="ollama"]').addEventListener('click', () => { closeModelMenu(); openModelsModal({ tab: 'ollama' }); });
+  modelMenuEl = menu;
 }
 
-document.querySelectorAll('[data-role="subagent-chip"]').forEach((btn) =>
+document.querySelectorAll('[data-role="model-chip"]').forEach((btn) =>
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (subagentMenuEl) { closeSubagentMenu(); return; }
-    openSubagentMenu(btn);
+    if (modelMenuEl) { closeModelMenu(); return; }
+    openModelMenu(btn);
   })
 );
+
+// ─── Models modal (add / edit a model, connect Ollama) ─────────────────────
+let editingModelId = null;
+
+function setModelsTab(tab) {
+  document.querySelectorAll('.models-tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === tab));
+  $('modelsPaneCustom').classList.toggle('hidden', tab !== 'custom');
+  $('modelsPaneOllama').classList.toggle('hidden', tab !== 'ollama');
+  if (tab === 'ollama') detectOllamaModels();
+}
+
+function showModelsError(msg, { canSkip = false } = {}) {
+  $('mError').textContent = msg || '';
+  $('mError').classList.toggle('hidden', !msg);
+  $('mSaveAnyway').classList.toggle('hidden', !canSkip);
+}
+
+function openModelsModal({ tab = 'custom', edit = null } = {}) {
+  editingModelId = edit && edit.kind !== 'ollama' ? edit.id : null;
+  $('modelsTitle').textContent = editingModelId ? 'Edit model' : 'Add a model';
+  $('mName').value = editingModelId ? edit.name : '';
+  $('mBaseUrl').value = editingModelId ? edit.baseUrl : '';
+  $('mModel').value = editingModelId ? edit.model : '';
+  $('mKey').value = '';
+  $('mKey').placeholder = editingModelId && edit.hasKey ? `Saved (${edit.keyPreview}) - leave blank to keep it` : 'sk-…  (leave blank if the server needs no key)';
+  if (edit && edit.kind === 'ollama') $('oHost').value = edit.baseUrl;
+  showModelsError('');
+  $('mSave').disabled = false;
+  $('mSave').textContent = editingModelId ? 'Test & update' : 'Test & save';
+  $('modelsPresets').classList.toggle('hidden', !!editingModelId);
+  setModelsTab(tab);
+  $('modelsBackdrop').classList.remove('hidden');
+  if (tab === 'custom') setTimeout(() => (editingModelId ? $('mKey') : $('mBaseUrl')).focus(), 30);
+}
+
+function closeModelsModal() { $('modelsBackdrop').classList.add('hidden'); }
+
+$('modelsPresets').innerHTML = '<span class="models-presets-label">Quick fill</span>' +
+  MODEL_PRESETS.map((p, i) => `<button class="preset-chip" data-i="${i}">${esc(p.label)}</button>`).join('');
+$('modelsPresets').querySelectorAll('.preset-chip').forEach((btn) => btn.addEventListener('click', () => {
+  const p = MODEL_PRESETS[Number(btn.dataset.i)];
+  $('mName').value = p.name;
+  $('mBaseUrl').value = p.baseUrl;
+  $('mModel').value = p.model;
+  $('mKey').focus();
+}));
+
+async function saveCustomModel(skipTest) {
+  const name = $('mName').value.trim();
+  const baseUrl = $('mBaseUrl').value.trim();
+  const model = $('mModel').value.trim();
+  const key = $('mKey').value.trim();
+  if (!baseUrl || !model) return showModelsError('Enter a base URL and a model ID.');
+  showModelsError('');
+  const btn = $('mSave');
+  btn.disabled = true;
+  btn.textContent = skipTest ? 'Saving…' : 'Testing…';
+  const r = await api.saveModel({
+    id: editingModelId || undefined, kind: 'openai', name, baseUrl, model,
+    // Blank while editing = keep the saved key.
+    apiKey: editingModelId && !key ? undefined : key,
+    skipTest: !!skipTest,
+  });
+  btn.disabled = false;
+  btn.textContent = editingModelId ? 'Test & update' : 'Test & save';
+  if (!r.ok) return showModelsError(r.testFailed ? `The test request failed: ${r.error}` : r.error, { canSkip: !!r.testFailed });
+  applyModelsState(r.state);
+  closeModelsModal();
+  showToast(`${r.model.name} is ready - now using it`);
+}
+
+$('mSave').addEventListener('click', () => saveCustomModel(false));
+$('mSaveAnyway').addEventListener('click', () => saveCustomModel(true));
+['mName', 'mBaseUrl', 'mModel', 'mKey'].forEach((id) => $(id).addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); saveCustomModel(false); }
+}));
+
+function formatBytes(n) {
+  if (!n) return '';
+  const gb = n / 1e9;
+  return gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(n / 1e6)} MB`;
+}
+
+async function detectOllamaModels() {
+  const list = $('oList');
+  list.innerHTML = '<div class="ollama-status"><span class="spinner"></span>Looking for Ollama…</div>';
+  const r = await api.detectOllama($('oHost').value.trim());
+  if (!r.ok) {
+    list.innerHTML = `<div class="ollama-status error">${esc(r.error || 'Could not reach Ollama.')}</div>`;
+    return;
+  }
+  if (!r.models.length) {
+    list.innerHTML = '<div class="ollama-status">Ollama is running but has no models yet. Run <code>ollama pull qwen2.5-coder</code>, then click Find models again.</div>';
+    return;
+  }
+  const added = new Set(state.models.models.filter((m) => m.kind === 'ollama').map((m) => m.model));
+  list.innerHTML = r.models.map((m) => `
+    <div class="ollama-row">
+      <span class="model-item-icon local">${LLAMA_SVG}</span>
+      <div class="ollama-row-text"><strong>${esc(m.name)}</strong><span>${esc([m.params, m.family, formatBytes(m.size)].filter(Boolean).join(' · '))}</span></div>
+      <button class="btn-quiet" data-model="${esc(m.name)}">${added.has(m.name) ? 'Use' : 'Add'}</button>
+    </div>`).join('');
+  list.querySelectorAll('[data-model]').forEach((btn) => btn.addEventListener('click', () => addOllamaModel(btn.dataset.model, r.host, btn)));
+}
+
+async function addOllamaModel(model, host, btn) {
+  const existing = state.models.models.find((m) => m.kind === 'ollama' && m.model === model && m.baseUrl === host);
+  if (existing) {
+    await pickModel(existing.id);
+    closeModelsModal();
+    return;
+  }
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Loading…';
+  const status = document.createElement('div');
+  status.className = 'ollama-status';
+  status.textContent = 'Loading the model for a quick test - the first load can take a minute.';
+  btn.closest('.ollama-row').after(status);
+  const r = await api.saveModel({ kind: 'ollama', name: `${model} (local)`, baseUrl: host, model, apiKey: '' });
+  if (!r.ok) {
+    btn.disabled = false;
+    btn.textContent = 'Retry';
+    status.className = 'ollama-status error';
+    status.textContent = r.error;
+    return;
+  }
+  applyModelsState(r.state);
+  closeModelsModal();
+  showToast(`${model} is ready - running locally`);
+}
+
+$('oDetect').addEventListener('click', detectOllamaModels);
+$('oHost').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); detectOllamaModels(); } });
+document.querySelectorAll('.models-tab').forEach((t) => t.addEventListener('click', () => setModelsTab(t.dataset.tab)));
+$('modelsCloseBtn').addEventListener('click', closeModelsModal);
+$('modelsBackdrop').addEventListener('click', (e) => { if (e.target === $('modelsBackdrop')) closeModelsModal(); });
+
+// ─── Toast ──────────────────────────────────────────────────────────────────
+let toastTimer = null;
+function showToast(text, kind = '') {
+  let el = document.querySelector('.toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.dataset.kind = kind;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
 
 // ─── Sending / running ──────────────────────────────────────────────────────
 let runningToolRow = null;
@@ -1434,7 +1582,7 @@ function hideThinking() {
 
 // A reasoning-capable model (Laguna, gpt-oss) hands back its chain-of-thought
 // separately from its actual reply. The ephemeral "Thinking Xs" spinner above
-// vanishes the instant something real arrives — useful while waiting, useless
+// vanishes the instant something real arrives - useful while waiting, useless
 // once the wait is over. This replaces that spinner with a permanent,
 // collapsed "Thought for Xs" row in its place, so a long step (rate limits,
 // several retries, a genuinely hard step) is explainable after the fact
@@ -1474,7 +1622,6 @@ async function sendMessage(text, fromHome, images) {
     resetSidePanel(state.project);
     state.currentSessionId = null;
     $('chatTitle').textContent = text.length > 46 ? text.slice(0, 46) + '…' : text;
-    $('backToMainBtn').classList.add('hidden'); // a brand-new chat has no parent to go back to
     showView('viewChat');
   }
 
@@ -1491,7 +1638,6 @@ async function sendMessage(text, fromHome, images) {
     text,
     images,
     clientId: desktopClientId,
-    subagentId: state.subagentId,
   });
 
   if (r.error) {
@@ -1507,7 +1653,7 @@ async function sendMessage(text, fromHome, images) {
   }
 }
 
-// Downscales/re-encodes a pasted image before it ever leaves the renderer —
+// Downscales/re-encodes a pasted image before it ever leaves the renderer -
 // clipboard screenshots can be several MB and multi-thousand px; a vision
 // model doesn't need more than ~1568px on the long edge, and shipping the
 // original size would bloat both the IPC payload and the stored session
@@ -1563,7 +1709,7 @@ document.querySelectorAll('.composer').forEach((composer) => {
 
   input.addEventListener('paste', async (e) => {
     const items = [...(e.clipboardData?.items || [])].filter((it) => it.type.startsWith('image/'));
-    if (!items.length) return; // no image on the clipboard — let normal text paste happen
+    if (!items.length) return; // no image on the clipboard - let normal text paste happen
     e.preventDefault();
     for (const item of items) {
       const blob = item.getAsFile();
@@ -1581,7 +1727,7 @@ document.querySelectorAll('.composer').forEach((composer) => {
   // A second layer on top of the addUserMessage dedupe above: blocks a
   // same-composer double-dispatch (key-repeat, a fast double-click before the
   // button visually updates) synchronously, at the moment of the click itself
-  // — before state.running has had any chance to propagate — rather than
+  // - before state.running has had any chance to propagate - rather than
   // relying solely on catching the resulting duplicate after the fact.
   let dispatching = false;
   const submit = () => {
@@ -1603,7 +1749,7 @@ document.querySelectorAll('.composer').forEach((composer) => {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       // The slash-command menu (wired up further below, same input) owns
-      // Enter while it's open — picking a command, not sending "/" as text.
+      // Enter while it's open - picking a command, not sending "/" as text.
       if (composer.slashMenuOpen && composer.slashMenuOpen()) return;
       e.preventDefault();
       submit();
@@ -1743,40 +1889,38 @@ if (api) api.onAgentEvent((data) => {
   const meta = state.sessions.find((s) => s.id === data.sessionId);
   if (meta) meta.updatedAt = Date.now();
 
-  // Fired for every send, from this window or a paired phone — previously
+  // Fired for every send, from this window or a paired phone - previously
   // only reached mobile clients over SSE, so a message sent from the phone
   // never showed up here until you reopened the chat. This window's own
   // sends already render optimistically (see sendMessage above), so only
   // react when the message came from elsewhere.
   if (data.type === 'session_sync') {
+    // A brand-new chat's first events (role badge, goal card) arrive before
+    // api.send() returns its id; adopt it here so they aren't dropped.
+    if (!state.currentSessionId && data.origin === desktopClientId && data.message?.kind === 'user') {
+      state.currentSessionId = data.sessionId;
+    }
     if (mine && data.message?.kind === 'user' && data.origin && data.origin !== desktopClientId) {
       addUserMessage(data.message.text, data.message.images);
     }
     // Covers the AI-generated retitle that lands shortly after a brand-new
-    // chat's first reply, and a rename/delete made from a paired phone —
+    // chat's first reply, and a rename/delete made from a paired phone -
     // neither originates in this window, so the sidebar needs to be told.
     if (meta && data.session?.title && data.session.title !== meta.title) {
       meta.title = data.session.title;
       renderRecents();
       if (mine) $('chatTitle').textContent = meta.title;
     }
-    if (mine && data.session && data.session.subagentId !== undefined && data.session.subagentId !== state.subagentId) {
-      state.subagentId = data.session.subagentId;
-      syncSubagentChips();
-    }
     return;
   }
 
-  // A delete made from a paired phone, or an ephemeral dispatched session
-  // cleaning itself up after reporting its summary back to whoever
-  // dispatched it (see main.js) — mirrors deleteSessionById() below, minus
-  // the api.deleteSession() call (already done on the other end).
+  // A delete made from a paired phone - mirrors deleteSessionById() below,
+  // minus the api.deleteSession() call (already done on the other end).
   if (data.type === 'session_deleted') {
     state.sessions = state.sessions.filter((s) => s.id !== data.sessionId);
     if (state.currentSessionId === data.sessionId) {
       state.currentSessionId = null;
-      if (data.parentSessionId) openSession(data.parentSessionId);
-      else showView('viewHome');
+      showView('viewHome');
     }
     renderRecents();
     return;
@@ -1785,12 +1929,28 @@ if (api) api.onAgentEvent((data) => {
   if (!mine) return;
 
   switch (data.type) {
-    case 'subagent_active':
-      addSubagentBadge(data);
+    case 'role_active':
+      addRoleBadge(data);
+      break;
+    case 'turn_summary':
+      addTurnSummary(data);
+      break;
+    case 'goal_update':
+      renderGoalCard(data);
+      break;
+    case 'notice':
+      addNote(data.text, data.level === 'warn' ? 'warn' : data.level === 'error' ? 'error' : '');
+      break;
+    case 'verifying':
+      addNote(`Checking ${data.files.length === 1 ? data.files[0] : data.files.length + ' changed files'} before finishing…`, 'verify');
+      showThinking();
+      break;
+    case 'verification_start':
+      addNote('All tasks attempted - now verifying each one against the real project.', 'verify');
       break;
     case 'helper_note':
-      // A helper call finishing before the writer's own turn starts —
-      // "◈ Codeply Design planned the design" — shown the same way a tool row
+      // A helper call finishing before the writer's own turn starts -
+      // "◈ Codeply Design planned the design" - shown the same way a tool row
       // is, so it's clear something happened without pretending the writer
       // wrote it. Thinking stays visible after this: the writer's own turn is
       // still to come.
@@ -1838,7 +1998,7 @@ if (api) api.onAgentEvent((data) => {
       addImagePickerCard(data);
       break;
     case 'approval_resolved': {
-      // The request was answered from another device (e.g. the phone) —
+      // The request was answered from another device (e.g. the phone) -
       // this window's own click handler already retires its own card
       // locally, so this only ever fires for a card THIS window didn't
       // answer, which otherwise had nothing to ever remove it.
@@ -1854,7 +2014,7 @@ if (api) api.onAgentEvent((data) => {
       break;
     case 'image_pick_resolved': {
       // Same reasoning as approval_resolved above, for the picker card
-      // specifically — picked from the phone while this window still has
+      // specifically - picked from the phone while this window still has
       // it open.
       const card = chatColumn.querySelector(`.image-picker-card[data-request-id="${data.requestId}"]`);
       if (card) card.outerHTML = '<div class="chat-note ok">Picked an image on another device</div>';
@@ -1863,11 +2023,6 @@ if (api) api.onAgentEvent((data) => {
     case 'error':
       hideThinking();
       addNote(data.error, 'error');
-      break;
-    case 'trial_limit_reached':
-      hideThinking();
-      setRunning(false);
-      addNote(data.message, 'error');
       break;
     case 'aborted':
       hideThinking();
@@ -1880,9 +2035,6 @@ if (api) api.onAgentEvent((data) => {
       setRunning(false);
       renderRecents();
       break;
-    case 'usage_update':
-      renderUsage(data.usage);
-      break;
   }
 });
 
@@ -1892,20 +2044,17 @@ async function openSession(id) {
   const s = await api.getSession(id);
   if (!s) return;
   state.currentSessionId = id;
-  state.subagentId = s.subagentId || null;
-  syncSubagentChips();
   if (s.cwd) {
     const r = await api.useProject(s.cwd);
     if (r) setProject(r.path, r.branch);
   }
   $('chatTitle').textContent = s.title;
-  $('backToMainBtn').classList.toggle('hidden', !s.parentSessionId);
-  $('backToMainBtn').dataset.parentId = s.parentSessionId || '';
   hideThinking();
   stopRevealQueue();
   chatColumn.innerHTML = '';
   resetSidePanel(s.cwd);
   currentTasks = [];
+  activeGoalCard = null;
   revealInstant = true;
   for (const m of s.messages) {
     if (m.kind === 'user') addUserMessage(m.text, m.images);
@@ -1918,12 +2067,18 @@ async function openSession(id) {
       panelTrack(m.name, m.label);
     } else if (m.kind === 'tasklist') {
       addTaskList(m.tasks);
-    } else if (m.kind === 'subagent_active') {
-      addSubagentBadge(m);
+    } else if (m.kind === 'role_active' || m.kind === 'subagent_active') {
+      addRoleBadge(m);
+    } else if (m.kind === 'turn_summary') {
+      addTurnSummary(m);
+    } else if (m.kind === 'notice') {
+      addNote(m.text, m.level === 'warn' ? 'warn' : m.level === 'error' ? 'error' : '');
+    } else if (m.kind === 'goal') {
+      renderGoalCard(m);
     }
   }
   revealInstant = false;
-  activeTaskList = null; // reopening a past chat is read-only history, not a live run — no further task_start/task_end will arrive for it
+  activeTaskList = null; // reopening a past chat is read-only history, not a live run - no further task_start/task_end will arrive for it
   refreshTasksUI();
   renderRecents();
   showView('viewChat');
@@ -1931,22 +2086,17 @@ async function openSession(id) {
 
   // Re-sync the send/stop icon to what THIS session is actually doing right
   // now. state.running otherwise stays stuck at whatever the previously-open
-  // chat was doing — its own run_finished/error event is ignored while you're
+  // chat was doing - its own run_finished/error event is ignored while you're
   // not looking at it (see the `if (!mine) return` in the event handler
   // below), so navigating away from a still-running chat and back to it, or
   // over to an idle one, used to leave the composer showing Stop forever.
-  // agents:status (state.activeAgentSessions) is a live backend snapshot, so
-  // it's always right even when a run_finished event got missed.
-  setRunning(state.activeAgentSessions.some((a) => a.sessionId === id));
+  // runs:status (state.runningSessions) is a live backend snapshot, so it's
+  // always right even when a run_finished event got missed.
+  setRunning(state.runningSessions.includes(id));
 }
 
 $('deleteChatBtn').addEventListener('click', () => {
   if (state.currentSessionId) deleteSessionById(state.currentSessionId);
-});
-
-$('backToMainBtn').addEventListener('click', () => {
-  const parentId = $('backToMainBtn').dataset.parentId;
-  if (parentId) openSession(parentId);
 });
 
 $('newChatBtn').addEventListener('click', () => {
@@ -1965,9 +2115,9 @@ scrollDownBtn.addEventListener('click', () => chatScroll.scrollTo({ top: chatScr
 
 // ─── Login (sign in / sign up / OTP) ────────────────────────────────────────
 // Mirrors the Codeply desktop app's flow exactly: email+password validates
-// first, then a 6-digit emailed code finishes it — same Supabase project,
+// first, then a 6-digit emailed code finishes it - same Supabase project,
 // same account, so a login here is a login everywhere.
-state.pendingMode = 'login'; // 'login' | 'signup' — which OTP verification type to use
+state.pendingMode = 'login'; // 'login' | 'signup' - which OTP verification type to use
 
 function showLoginError(msg) {
   const el = $('loginError');
@@ -1988,8 +2138,7 @@ document.querySelectorAll('.auth-tab').forEach((tab) =>
 async function afterVerified(email, onboarding) {
   state.user = { email };
   renderUser();
-  await refreshUsage();
-  // Chat history is per-account in Supabase, not this device — pull this
+  // Chat history is per-account in Supabase, not this device - pull this
   // account's own history now rather than leaving whatever a previous
   // account's session left in state (app:init only runs once at boot).
   state.sessions = await api.refreshSessions();
@@ -2000,7 +2149,7 @@ async function afterVerified(email, onboarding) {
 }
 
 // Google sign-in: opens the system browser, then the OS hands the resulting
-// codeply:// deep link back to main.js, which pushes the outcome here —
+// codeply:// deep link back to main.js, which pushes the outcome here -
 // same afterVerified() finish line as email OTP.
 const googleBtnHTML = $('googleBtn').innerHTML;
 $('googleBtn').addEventListener('click', async () => {
@@ -2086,7 +2235,7 @@ $('signinPassword').addEventListener('keydown', (e) => e.key === 'Enter' && $('s
 $('signupPassword').addEventListener('keydown', (e) => e.key === 'Enter' && $('signupBtn').click());
 $('otpCode').addEventListener('keydown', (e) => e.key === 'Enter' && $('verifyOtpBtn').click());
 
-// Sign out itself now lives in the account menu (see openAccountMenu above) —
+// Sign out itself now lives in the account menu (see openAccountMenu above) -
 // this button used to carry it directly; the menu's logout item replaced it.
 
 function renderUser() {
@@ -2098,7 +2247,7 @@ function renderUser() {
 
 // ─── Onboarding survey: referral source + country ───────────────────────────
 // Same `profiles` row and same gating (checked per-account, not just locally)
-// as the desktop app — a second account on this machine still gets asked.
+// as the desktop app - a second account on this machine still gets asked.
 let referralSelected = null;
 
 function showReferralPage() {
@@ -2184,21 +2333,6 @@ $('countryContinueBtn').addEventListener('click', async () => {
   showView('viewHome');
 });
 
-// ─── Usage (shared 100/day apply cap — CLI, desktop app, and this app all
-// write to and read the same Supabase bucket) ────────────────────────────────
-function renderUsage(usage) {
-  $('usageCard').classList.toggle('hidden', !usage);
-  if (!usage) return;
-  const pct = Math.min(100, (usage.count / usage.limit) * 100);
-  $('usageCount').textContent = `${usage.count} / ${usage.limit}`;
-  $('usageFill').style.width = pct + '%';
-  $('usageFill').style.background = pct >= 100 ? '#e5624d' : pct >= 80 ? '#e2c26a' : 'var(--accent-purple)';
-}
-async function refreshUsage() {
-  if (!api || state.provider !== 'codeply') return;
-  renderUsage(await api.getUsage());
-}
-
 // ─── Skills browser (/skills) ────────────────────────────────────────────────
 let allSkills = [];
 let skillsTargetInput = null; // which composer input to insert the pick into
@@ -2215,27 +2349,40 @@ function closeSkillsModal() {
   $('skillsBackdrop').classList.add('hidden');
 }
 
-// ─── Phone companion pairing ───────────────────────────────────────────────
-// The desktop is the trust anchor: the LAN address and one-time pairing code
-// are deliberately revealed here rather than embedded in a shareable link.
+// ─── Phone companion ────────────────────────────────────────────────────────
+// The phone signs in with the same account and finds this PC on its own -
+// this panel just explains that and shows whether it's ready.
+function setRemoteStatus(text, kind) {
+  const el = $('remoteStatus');
+  el.textContent = text || '';
+  el.dataset.kind = kind || '';
+  el.classList.toggle('hidden', !text);
+}
+
 async function openRemoteModal() {
   $('remoteBackdrop').classList.remove('hidden');
-  $('remoteUrl').textContent = 'Starting local connection…';
-  $('remoteCode').textContent = '••••••••••';
-  $('remoteQr').innerHTML = '<div class="remote-qr-loading">Generating…</div>';
+  $('remoteUrl').textContent = '…';
+  setRemoteStatus('Checking…', '');
   const info = await api.remoteInfo();
-  $('remoteUrl').textContent = info.url;
-  $('remoteCode').textContent = info.code;
-  // A data: URL, not a network image — main.js's remoteInfo() generates it
-  // locally (see the QR-crispness note there), nothing ever fetches it.
-  if (info.qr) $('remoteQr').innerHTML = `<img src="${info.qr}" alt="QR code to pair your phone" width="440" height="440">`;
+  $('remoteUrl').textContent = info.mobileUrl.replace(/^https?:\/\//, '');
+  $('remoteUrl').dataset.href = info.mobileUrl;
+  $('remoteEmail').textContent = info.email || 'your account';
+  $('keepAwakeToggle').checked = !!info.keepAwake;
+  if (!info.signedIn) setRemoteStatus('Sign in on this PC first. Your phone connects to the account signed in here.', 'warn');
+  else if (info.relay) setRemoteStatus('Online. Your phone can reach this PC from anywhere.', 'ok');
+  else setRemoteStatus('Connecting to Codeply… (needs an internet connection)', '');
+  // The relay can take a moment to come up the first time.
+  if (info.signedIn && !info.relay) setTimeout(() => { if (!$('remoteBackdrop').classList.contains('hidden')) openRemoteModal(); }, 2500);
 }
+$('remoteUrl').addEventListener('click', (e) => {
+  e.preventDefault();
+  if ($('remoteUrl').dataset.href) api.openExternal($('remoteUrl').dataset.href);
+});
+$('keepAwakeToggle').addEventListener('change', (e) => api.setKeepAwake(e.target.checked));
 function closeRemoteModal() { $('remoteBackdrop').classList.add('hidden'); }
 api.onRemoteServerError((data) => {
   if (!$('remoteBackdrop').classList.contains('hidden')) {
-    $('remoteUrl').textContent = data.message || 'The phone companion server failed to start.';
-    $('remoteCode').textContent = '';
-    $('remoteQr').innerHTML = '';
+    setRemoteStatus(data.message || 'The phone connection failed to start.', 'error');
   }
 });
 $('remoteControlBtn').addEventListener('click', openRemoteModal);
@@ -2290,6 +2437,10 @@ $('skillsSearch').addEventListener('input', () => {
 
 // ─── Slash commands ("/" in the composer) ────────────────────────────────────
 const SLASH_COMMANDS = [
+  {
+    name: '/goal', aliases: ['/g'], desc: 'Keep working until the goal is fully done and verified',
+    run: (input) => { input.value = '/goal '; input.focus(); input.dispatchEvent(new Event('input')); },
+  },
   { name: '/skills', aliases: ['/skill-list', '/skill'], desc: 'Browse and search the skill library', run: (input) => openSkillsModal(input) },
 ];
 
@@ -2304,7 +2455,7 @@ document.querySelectorAll('.composer').forEach((composer) => {
 
   function matches() {
     const v = input.value.toLowerCase();
-    if (!v.startsWith('/')) return [];
+    if (!v.startsWith('/') || /\s/.test(v)) return [];
     return SLASH_COMMANDS.filter((c) => c.name.startsWith(v) || c.aliases.some((a) => a.startsWith(v)));
   }
 
@@ -2361,17 +2512,14 @@ document.querySelectorAll('.composer').forEach((composer) => {
     return;
   }
   state.user = init.user;
-  state.provider = init.provider;
-  state.providerLabel = init.providerLabel;
   state.sessions = init.sessions;
   state.projects = init.projects;
   renderUser();
-  renderUsage(init.usage);
   renderRecents();
   renderProjects();
   syncMode();
   syncBypass();
-  loadSubagents();
+  applyModelsState(init.models);
   if (init.lastProject) setProject(init.lastProject, init.lastProjectBranch);
   else setProject(null, null);
 

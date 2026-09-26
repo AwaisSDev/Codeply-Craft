@@ -1,5 +1,5 @@
 /**
- * Legacy CJS stub — the interactive TUI lives in tui.mjs (ESM + Ink).
+ * Legacy CJS stub - the interactive TUI lives in tui.mjs (ESM + Ink).
  * Entry point: bin/codeply.js → dynamic import('./lib/tui.mjs')
  */
 module.exports = function deprecatedTui() {

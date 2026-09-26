@@ -20,13 +20,19 @@ contextBridge.exposeInMainWorld('craft', {
   onAuthCallback: (cb) => ipcRenderer.on('auth:callback', (e, data) => cb(data)),
   logout: () => ipcRenderer.invoke('auth:logout'),
 
-  // onboarding survey (referral source + country) — same profiles row the
+  // onboarding survey (referral source + country) - same profiles row the
   // Codeply desktop app writes to
   getProfile: () => ipcRenderer.invoke('profile:get'),
   saveOnboarding: (referralSource, country) => ipcRenderer.invoke('profile:saveOnboarding', { referralSource, country }),
 
-  // usage — shared 100/day apply cap (CLI + desktop app + this app, one bucket)
-  getUsage: () => ipcRenderer.invoke('usage:get'),
+  // models - "Auto" (hosted) or the user's own models. Keys stay in
+  // ~/.codeply/config.json in the main process; the renderer only ever sees
+  // a masked preview.
+  listModels: () => ipcRenderer.invoke('models:list'),
+  selectModel: (id) => ipcRenderer.invoke('models:select', id),
+  saveModel: (input) => ipcRenderer.invoke('models:save', input),
+  deleteModel: (id) => ipcRenderer.invoke('models:delete', id),
+  detectOllama: (host) => ipcRenderer.invoke('models:detectOllama', host),
 
   // skills
   listSkills: () => ipcRenderer.invoke('skills:list'),
@@ -37,7 +43,7 @@ contextBridge.exposeInMainWorld('craft', {
   // List-only: forgets the folder, never deletes it.
   removeProject: (p) => ipcRenderer.invoke('project:remove', p),
 
-  // sessions — chat history lives in Supabase (chat_sessions table), not
+  // sessions - chat history lives in Supabase (chat_sessions table), not
   // just the local cache file; refreshSessions() re-pulls it for whoever is
   // signed in right now (called after login, since app:init only runs once
   // at boot and won't otherwise notice an account switch mid-session).
@@ -46,16 +52,13 @@ contextBridge.exposeInMainWorld('craft', {
   renameSession: (id, title) => ipcRenderer.invoke('session:rename', { id, title }),
   refreshSessions: () => ipcRenderer.invoke('sessions:refresh'),
 
-  // subagents — the 8 named specialists a chat can be pinned to
-  listSubagents: () => ipcRenderer.invoke('subagents:list'),
-  setSessionSubagent: (id, subagentId) => ipcRenderer.invoke('session:setSubagent', { id, subagentId }),
-
   // agent
   send: (payload) => ipcRenderer.invoke('chat:send', payload),
-  // Agent View dashboard — which specialist sessions are actively running,
-  // pushed whenever that changes (a dispatch starts, a run finishes).
-  onAgentsStatus: (cb) => ipcRenderer.on('agents:status', (e, data) => cb(data)),
+  // which chats have a run in flight, pushed whenever that changes
+  onRunsStatus: (cb) => ipcRenderer.on('runs:status', (e, data) => cb(data)),
   remoteInfo: () => ipcRenderer.invoke('remote:info'),
+  setKeepAwake: (on) => ipcRenderer.invoke('remote:setKeepAwake', !!on),
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   onRemoteServerError: (cb) => ipcRenderer.on('remote:server-error', (e, data) => cb(data)),
   stop: (sessionId) => ipcRenderer.send('chat:stop', sessionId),
   respondApproval: (requestId, verdict) => ipcRenderer.send('approval:respond', { requestId, verdict }),
@@ -76,14 +79,14 @@ contextBridge.exposeInMainWorld('craft', {
   onBrowserPanelState: (cb) => ipcRenderer.on('browserpanel:state', (e, data) => cb(data)),
   onBrowserPanelUrl: (cb) => ipcRenderer.on('browserpanel:url', (e, data) => cb(data)),
 
-  // embedded terminal — runs the user's own shell as a real child process
+  // embedded terminal - runs the user's own shell as a real child process
   terminalStart: (cwd) => ipcRenderer.invoke('terminal:start', cwd),
   terminalInput: (data) => ipcRenderer.send('terminal:input', data),
   terminalKill: () => ipcRenderer.send('terminal:kill'),
   onTerminalData: (cb) => ipcRenderer.on('terminal:data', (e, data) => cb(data)),
   onTerminalExit: (cb) => ipcRenderer.on('terminal:exit', (e, data) => cb(data)),
 
-  // integrations (Gmail / Slack / Vercel / Supabase / GitHub) — real OAuth via the system browser
+  // integrations (Gmail / Slack / Vercel / Supabase / GitHub) - real OAuth via the system browser
   integrationsStatus: () => ipcRenderer.invoke('integrations:status'),
   connectGmail: () => ipcRenderer.invoke('integrations:connectGmail'),
   connectSlack: () => ipcRenderer.invoke('integrations:connectSlack'),

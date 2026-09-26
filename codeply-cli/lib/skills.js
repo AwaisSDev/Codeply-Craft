@@ -3,31 +3,31 @@
  *
  * A skill is a directory with a SKILL.md: YAML frontmatter (`name`,
  * `description`) followed by a markdown body of instructions. This is the same
- * convention Claude Code and affaan-m/ECC use — see skills/SOURCE.md for where
+ * convention Claude Code and affaan-m/ECC use - see skills/SOURCE.md for where
  * the bundled set came from and why the format was copied rather than invented.
  *
- * Two-level progressive disclosure — this matters at 281 skills:
+ * Two-level progressive disclosure - this matters at 281 skills:
  *
  *   1. Per-skill: buildSystemPrompt() only ever injects a skill's NAME and a
- *      capped one-line description. The full body — which can run to several
- *      KB with reference files — loads on demand via <codeply:use_skill>. The
+ *      capped one-line description. The full body - which can run to several
+ *      KB with reference files - loads on demand via <codeply:use_skill>. The
  *      alternative, concatenating every skill's full body into the system
  *      prompt always, would resend ~3.4MB per request for the bundled set
  *      alone.
  *
  *   2. Across the library: even name+description for all 281 is ~44KB
- *      (~11,000 tokens) — resent on every step of every turn, that alone would
+ *      (~11,000 tokens) - resent on every step of every turn, that alone would
  *      make the skill library cost more than it saves. So the system prompt by
  *      default only lists a curated subset (DAILY_SKILLS below, ~2KB) covering
  *      general coding work; the complete 281 are still fully installed and
  *      usable, just one cheap `list_skills` action away instead of force-fed
- *      into every request. DAILY_SKILLS is not a cut Codeply invented — it's
+ *      into every request. DAILY_SKILLS is not a cut Codeply invented - it's
  *      ECC's own `.agents/skills/` curation of its 281-skill `skills/`
  *      library (see skills/SOURCE.md), reused rather than re-decided.
  *
  * Two sources, later wins on a name collision:
- *   built-in   <repo>/skills/<name>/SKILL.md      — vendored, ships with Codeply
- *   user       ~/.codeply/skills/<name>/SKILL.md  — `codeply skill install`
+ *   built-in   <repo>/skills/<name>/SKILL.md      - vendored, ships with Codeply
+ *   user       ~/.codeply/skills/<name>/SKILL.md  - `codeply skill install`
  */
 const fs = require('fs');
 const path = require('path');
@@ -38,7 +38,7 @@ const USER_DIR = path.join(os.homedir(), '.codeply', 'skills');
 
 const MAX_BODY_CHARS = 8000; // fed to the model on demand; keep one skill from eating the whole budget
 
-// ECC's own curated subset of its full library — see skills/SOURCE.md. Kept as
+// ECC's own curated subset of its full library - see skills/SOURCE.md. Kept as
 // a name list rather than a directory so a user-installed skill with one of
 // these names (or a future re-vendor that drops/renames one) degrades
 // gracefully instead of erroring.
@@ -53,7 +53,7 @@ const DAILY_SKILLS = new Set([
   'mle-workflow', 'nextjs-turbopack', 'plan-canvas', 'product-capability',
   'security-review', 'strategic-compact', 'tdd-workflow', 'unified-memory',
   'verification-loop', 'video-editing', 'x-api',
-  // Codeply's own visual-quality bar — see the note above use_skill in
+  // Codeply's own visual-quality bar - see the note above use_skill in
   // lib/agent.mjs's TOOL_REFERENCE for why these are non-speculative triggers.
   'premium-web-design', 'frontend-design-direction', 'motion-ui', 'frontend-a11y',
 ]);
@@ -72,7 +72,7 @@ function listSkillDirs(root, source) {
 /**
  * Minimal YAML frontmatter reader for exactly the two keys skills use.
  * Handles plain `key: value` and folded/literal block scalars (`key: >-` /
- * `key: |-` etc.) since real skills in the wild use both — a naive
+ * `key: |-` etc.) since real skills in the wild use both - a naive
  * single-line regex silently truncates ~10% of the bundled set's descriptions.
  */
 function parseFrontmatter(text) {
@@ -109,7 +109,7 @@ function parseFrontmatter(text) {
       continue;
     }
 
-    // Strip a matching pair of quotes, nothing fancier — these are simple labels.
+    // Strip a matching pair of quotes, nothing fancier - these are simple labels.
     values[key] = rest.replace(/^["'](.*)["']$/, '$1').trim();
   }
 
@@ -139,7 +139,7 @@ function listSkills() {
       description: description || '(no description)',
       source: s.source,
       dir: s.dir,
-      // A user-installed skill overriding a daily one keeps its daily status —
+      // A user-installed skill overriding a daily one keeps its daily status -
       // the name is still what buildSystemPrompt filters on, not the source.
       daily: DAILY_SKILLS.has(finalName),
     });
@@ -152,7 +152,7 @@ const INDEX_DESC_MAX = 140; // per-skill cap in the always-injected index; use_s
 /**
  * Compact index of skill name + a capped description, one per line.
  *
- * `daily` (default) is what goes in the system prompt on every request — see
+ * `daily` (default) is what goes in the system prompt on every request - see
  * the module doc for why the full 281 is too large to inject unconditionally.
  * `all` is for the list_skills action and `/skill list`, where the cost is
  * paid once, on demand, instead of on every step.
@@ -189,7 +189,7 @@ function loadSkillBody(name) {
 /**
  * Copy a local directory containing a SKILL.md into the user skill store.
  * Named separately from the GitHub path below because it never touches the
- * network — used by both `codeply skill install <local-dir>` and as the last
+ * network - used by both `codeply skill install <local-dir>` and as the last
  * step after a GitHub download lands in a temp directory.
  */
 function installFromLocalDir(sourceDir, name) {
@@ -257,7 +257,7 @@ async function githubJson(url) {
  * If `subpath` points directly at a skill (a directory whose own SKILL.md
  * lives there), that one skill is installed under `name` (or its own frontmatter
  * name). Otherwise every SKILL.md found anywhere under `subpath` (the whole
- * repo, if none was given) is installed — this is what makes a bare repo URL
+ * repo, if none was given) is installed - this is what makes a bare repo URL
  * like affaan-m/ECC pull in its entire skill library in one command, and also
  * what lets a single-skill link install just that one.
  */
@@ -282,7 +282,7 @@ async function installFromGitHub(source, explicitName) {
       `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`
     );
     if (treeData.truncated) {
-      // GitHub's own recursion cap (huge monorepos) — rare, but better to say
+      // GitHub's own recursion cap (huge monorepos) - rare, but better to say
       // so than to silently install an incomplete skill.
       return { ok: false, error: `${owner}/${repo}@${branch} is too large to list in one call. Point --install at a narrower subpath.` };
     }
@@ -364,7 +364,7 @@ function tokenize(text) {
 
 /**
  * Cheap keyword-overlap search over the full skill library, run fresh per
- * turn against the user's actual request — no extra model call. This is what
+ * turn against the user's actual request - no extra model call. This is what
  * lets a niche skill (say, cisco-ios-patterns or blender-motion-state-inspection)
  * get surfaced automatically instead of depending on the model guessing the
  * right list_skills query, or on it being one of the ~37 always-shown daily

@@ -18,7 +18,7 @@
  *   enter                                                    → submit
  *
  * Ink reports \r as key.return with input '\r'. \n parses as name 'enter', so
- * key.return is false — that difference is what makes ctrl+j detectable.
+ * key.return is false - that difference is what makes ctrl+j detectable.
  */
 import React from 'react';
 import { Box, Text, useInput } from 'ink';
@@ -36,7 +36,7 @@ const INVERSE_OFF = '\x1b[27m';
 const GREY = '\x1b[90m';        // placeholder
 const GREY_OFF = '\x1b[39m';
 
-// CSI 13;<modifier>u — enter with any modifier held.
+// CSI 13;<modifier>u - enter with any modifier held.
 const CSI_MODIFIED_ENTER = /^\[13;\d+u$/;
 
 /**
@@ -46,7 +46,7 @@ const CSI_MODIFIED_ENTER = /^\[13;\d+u$/;
  * win32-input-mode instead), so on Windows the query simply goes unanswered and
  * shift+enter stays physically identical to enter. That is why the UI reports
  * whichever newline key actually works rather than promising shift+enter
- * everywhere — see `modifiedEnterWorks` in tui.mjs.
+ * everywhere - see `modifiedEnterWorks` in tui.mjs.
  */
 export function enableModifiedEnter(stdout) {
   if (!stdout || !stdout.isTTY) return () => {};

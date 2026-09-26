@@ -1,7 +1,7 @@
 {
   "name": "codeply-craft",
   "version": "1.0.0",
-  "description": "Codeply Craft — the Codeply AI coding agent as a desktop app",
+  "description": "Codeply Craft - the Codeply AI coding agent as a desktop app",
   "author": "Awais Siddique",
   "main": "main.js",
   "scripts": {
@@ -11,7 +11,10 @@
     "android:add": "npm run mobile:prepare && npx cap add android",
     "android:sync": "npm run mobile:prepare && npx cap sync android",
     "android:build": "npm run android:sync && set \"JAVA_HOME=%CD%\\android\\jdk21\" && cd android && gradlew.bat assembleDebug --no-daemon && copy app\\build\\outputs\\apk\\debug\\app-debug.apk ..\\CodeplyCraft.apk",
-    "android:open": "npx cap open android"
+    "android:open": "npx cap open android",
+    "embed-secrets": "node scripts/embed-secrets.js",
+    "dist": "node scripts/embed-secrets.js && electron-builder --win",
+    "test:engine": "node scripts/engine-test.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.0",
@@ -23,8 +26,7 @@
     "@capacitor/core": "^8.5.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "dotenv": "^16.6.1",
-    "qrcode": "^1.5.4"
+    "dotenv": "^16.6.1"
   },
   "build": {
     "appId": "app.codeply.craft",
@@ -43,10 +45,12 @@
       "!*.err.log",
       "!.claude",
       "!.mcp.json",
-      "!.env",
       "!dist",
       "!out",
-      "!codeply-cli"
+      "!codeply-cli",
+      "!.env",
+      "!.env.*",
+      "!scripts/engine-test.mjs"
     ],
     "extraResources": [
       {

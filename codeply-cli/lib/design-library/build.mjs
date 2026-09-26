@@ -1,11 +1,11 @@
 /**
  * Builds a private, internal reference library of real app screenshots for
  * design work. Sourced entirely from Apple's public iTunes Search API
- * (https://itunes.apple.com/search) — official, free, unauthenticated, and
+ * (https://itunes.apple.com/search) - official, free, unauthenticated, and
  * returns screenshotUrls apps publish themselves for their own App Store
  * listing. Not scraped from inside running apps (that's the gray area that
  * got the unofficial Mobbin client killed). Output is never republished
- * publicly — it's a local index used only to inform design work in this
+ * publicly - it's a local index used only to inform design work in this
  * project.
  */
 import { writeFile, mkdir } from 'node:fs/promises';

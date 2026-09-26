@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="mobile.css">
   <script>
     // Runs before mobile.css and mobile.js load, so an explicit dark/light
-    // choice from a previous visit is already on <html> by first paint —
+    // choice from a previous visit is already on <html> by first paint -
     // without this, the page would render once in the default (dark) theme
     // and then visibly flip if the stored choice is actually light. "system"
     // (the default) needs nothing here: prefers-color-scheme in mobile.css
@@ -34,58 +34,88 @@
   </div>
 
   <main class="app-shell">
-    <!-- PAIRING SCREEN -->
+    <!-- SIGN-IN SCREEN - the phone signs in with the same Codeply account
+         as the PC and then finds that PC on the local network by itself. -->
     <section class="pair-screen" id="pairScreen">
       <div class="pair-header">
         <div class="craft-logo">
-          <img class="logo-icon-img" src="/logo.png" alt="Codeply Craft">
+          <img class="logo-icon-img" src="logo.png" alt="Codeply Craft">
           <div class="logo-ring"></div>
         </div>
-        <span class="badge-tag">CODEPLY CRAFT · PHONE COMPANION</span>
-        <h1>Sync your phone</h1>
-        <p class="pair-subtext">Scanned the code in Craft on your PC? You're connecting now. Otherwise, open Craft's "Use from phone" panel and scan it.</p>
+        <span class="badge-tag">CODEPLY CRAFT · PHONE</span>
+        <h1>Sign in to your PC</h1>
+        <p class="pair-subtext">Use the same account you use in Craft on your computer. Works from anywhere, as long as your PC is on.</p>
       </div>
 
-      <!-- Shown while a scanned link (?code=) is auto-pairing -->
+      <!-- Shown while signing in / looking for the PC -->
       <div class="pair-syncing hidden" id="pairSyncing">
         <div class="sync-spinner"></div>
-        <p>Syncing with your PC…</p>
+        <p id="pairSyncingText">Finding your PC…</p>
+      </div>
+
+      <!-- Signed in, but the PC couldn't be reached -->
+      <div class="pair-card find-card hidden" id="findCard">
+        <div class="find-title"><span class="find-dot"></span>Your PC is offline</div>
+        <ul class="find-tips">
+          <li>Open Codeply Craft on your computer and make sure it's signed in as <strong id="findEmail">you</strong>.</li>
+          <li>Keep the PC on, awake and connected to the internet. Your phone can be on any network.</li>
+          <li>This screen connects on its own as soon as your PC comes online.</li>
+        </ul>
+        <button class="btn btn-primary btn-block" id="findRetryBtn" type="button">Try again</button>
+        <button class="link-btn" id="findSignOutBtn" type="button">Use a different account</button>
+        <p class="form-error hidden" id="findError"></p>
       </div>
 
       <form class="pair-card" id="pairForm">
         <div class="input-group">
-          <label for="desktopUrl">Craft PC Address</label>
+          <label for="loginEmail">Email</label>
           <div class="input-wrapper">
-            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-            <input id="desktopUrl" type="text" inputmode="url" autocomplete="url" placeholder="http://192.168.1.10:45671" required>
+            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg>
+            <input id="loginEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="you@example.com" required>
           </div>
         </div>
 
         <div class="input-group">
-          <label for="pairCode">Pairing Code</label>
+          <label for="loginPassword">Password</label>
           <div class="input-wrapper">
             <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            <input id="pairCode" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" spellcheck="false" placeholder="0000" maxlength="4" required>
+            <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Your password" required>
           </div>
         </div>
 
-        <button class="btn btn-primary btn-block" type="submit">
-          <span>Sync</span>
+        <button class="btn btn-primary btn-block" type="submit" id="loginBtn">
+          <span>Sign in</span>
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
         </button>
 
         <p class="form-error hidden" id="pairError"></p>
+        <button class="link-btn" id="useCodeBtn" type="button">No password? Email me a sign-in code</button>
+      </form>
+
+      <!-- Email sign-in code (for accounts created with Google, or no password) -->
+      <form class="pair-card hidden" id="otpForm">
+        <p class="find-hint" id="otpSentTo">We emailed you a 6-digit code.</p>
+        <div class="input-group">
+          <label for="loginOtp">Sign-in code</label>
+          <div class="input-wrapper">
+            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <input id="loginOtp" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="6" placeholder="123456" required>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-block" type="submit" id="otpBtn">Verify &amp; connect</button>
+        <p class="form-error hidden" id="otpError"></p>
+        <button class="link-btn" id="otpBackBtn" type="button">Back to password sign-in</button>
       </form>
 
       <div class="pair-footer">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#60d9a1" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        <span>Synced to your signed-in Craft desktop account</span>
+        <span>Only your own PC, signed in to this account, will take instructions from this phone</span>
       </div>
     </section>
 
     <!-- MAIN APP SCREEN -->
     <section class="workspace hidden" id="appScreen">
-      <!-- TOP NAVBAR — minimal: menu, a title (doubles as connection status
+      <!-- TOP NAVBAR - minimal: menu, a title (doubles as connection status
            via the dot), new chat. Account, theme, and session history all
            moved into the sidebar drawer below, which is the one place you
            navigate from now instead of a bottom tab bar. -->
@@ -93,23 +123,17 @@
         <button class="icon-btn" id="sidebarOpenBtn" aria-label="Open menu">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="14" y2="17"/></svg>
         </button>
-        <!-- Only shown while viewing a chat dispatch_agent spawned — jumps
-             back to whichever chat dispatched it, same as desktop's
-             backToMainBtn (see openSession in app.js). -->
-        <button class="icon-btn hidden" id="backToMainBtn" aria-label="Back to main chat">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
-        </button>
         <div class="topbar-title" id="refreshBtn" title="Connection status">
           <span class="status-dot" id="statusDot"></span>
           <span id="deviceName">Craft Agent</span>
         </div>
         <!-- The one thing Craft needs beyond a plain chat topbar: which
              desktop folder a message targets. Sits where the reference's
-             two right-side buttons (Upgrade, temporary-chat) were —
+             two right-side buttons (Upgrade, temporary-chat) were -
              replacing both, not sitting alongside them.
              A <select> can't legally nest inside a <button>, so this is a
              plain div styled like one; the real <select> sits invisibly on
-             top of it (see mobile.css) and catches every tap — real native
+             top of it (see mobile.css) and catches every tap - real native
              picker UI, nothing to keep in sync by hand. -->
         <div class="topbar-folder-btn" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
@@ -118,7 +142,7 @@
         </div>
       </header>
 
-      <!-- SIDEBAR DRAWER — slides over everything (see mobile.css); the
+      <!-- SIDEBAR DRAWER - slides over everything (see mobile.css); the
            phone's stand-in for a desktop sidebar. New chat, a jump to the
            paired-PC status screen, the full session history, and the
            account/theme/disconnect footer all live here now instead of a
@@ -127,7 +151,7 @@
       <aside class="sidebar-drawer hidden" id="sidebarDrawer" aria-hidden="true">
         <div class="sidebar-head">
           <div class="sidebar-head-brand">
-            <img class="sidebar-logo-icon" src="/logo.png" alt="Codeply Craft">
+            <img class="sidebar-logo-icon" src="logo.png" alt="Codeply Craft">
             <span class="sidebar-head-title">Codeply Craft</span>
           </div>
           <button class="icon-btn" id="sidebarCloseBtn" aria-label="Close menu">
@@ -138,14 +162,6 @@
         <button class="sidebar-nav-item" id="sidebarNewChatBtn">
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
           <span>New chat</span>
-        </button>
-        <!-- Specialists dispatch_agent is currently running on the PC, in the
-             background — same concept as desktop's Agent View tab, just a
-             bottom sheet instead of a modal (see openAgentView below). -->
-        <button class="sidebar-nav-item" id="sidebarAgentViewBtn">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-          <span>Agent View</span>
-          <span class="nav-badge hidden" id="agentViewNavBadge">0</span>
         </button>
         <div class="sidebar-section-label">Recents <span id="sessionCount"></span></div>
         <div class="session-list" id="sessionList"></div>
@@ -167,19 +183,19 @@
           </div>
           <button class="unpair-btn" id="unpairBtn">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
-            <span>Disconnect</span>
+            <span>Sign out</span>
           </button>
           <div class="account-user-info">
             <span class="account-avatar" id="accountInitial">A</span>
             <div class="account-text">
-              <strong id="accountEmail">Paired desktop account</strong>
-              <span id="accountMode">Syncing sessions from PC</span>
+              <strong id="accountEmail">Your account</strong>
+              <span id="accountMode">Connected to your PC</span>
             </div>
           </div>
         </div>
       </aside>
 
-      <!-- No always-visible status bar here on purpose — project, mode, and
+      <!-- No always-visible status bar here on purpose - project, mode, and
            run status all moved into the composer (its "+" menu, and the
            send button itself doubling as Stop while running). An empty
            canvas between the topbar and the composer, same as it should
@@ -226,12 +242,12 @@
         </section>
       </main>
 
-      <!-- FLOATING COMPOSER BAR — folder picking lives in the topbar now
+      <!-- FLOATING COMPOSER BAR - folder picking lives in the topbar now
            (above); this is just input + send, with send doubling as Stop
            while a run is in progress. -->
       <form class="composer" id="composerForm">
         <div class="composer-inner">
-          <textarea id="taskInput" rows="1" placeholder="Message Craft agent..."></textarea>
+          <textarea id="taskInput" rows="1" placeholder="Message Craft…  (/goal to keep going until done)"></textarea>
           <button class="send-btn" id="sendBtn" type="submit" aria-label="Send task">
             <svg id="sendIcon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
             <svg id="stopIcon" class="hidden" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
@@ -264,7 +280,7 @@
     </div>
   </section>
 
-  <!-- IMAGE PICKER SHEET — the phone side of the same fetch_image approval
+  <!-- IMAGE PICKER SHEET - the phone side of the same fetch_image approval
        the desktop shows as a search-and-click card (see addImagePickerCard
        in app.js). Same /api/images/search + /api/image-pick the desktop's
        IPC calls hit, just over HTTP. -->
@@ -294,7 +310,7 @@
     </div>
   </section>
 
-  <!-- SESSION MENU SHEET — the phone's stand-in for desktop's 3-dot
+  <!-- SESSION MENU SHEET - the phone's stand-in for desktop's 3-dot
        rename/delete popover (see openChatMenu in app.js). A bottom sheet
        instead of an anchored popover: touch targets and a scrolling list of
        session rows don't mix well with a small floating menu. -->
@@ -313,24 +329,7 @@
     </div>
   </section>
 
-  <!-- AGENT VIEW SHEET — what dispatch_agent is currently running on the PC,
-       phone version of desktop's Agent View modal (see openAgentViewModal in
-       app.js). Live via the same agents_status SSE push desktop's window
-       gets over IPC. -->
-  <section class="approval-sheet hidden" id="agentViewSheet" role="dialog" aria-modal="true">
-    <div class="sheet-backdrop" id="agentViewSheetBackdrop"></div>
-    <div class="sheet-container agent-view-container">
-      <div class="sheet-handle"></div>
-      <div class="sheet-header">
-        <div>
-          <span class="sheet-overline" style="color: var(--text-muted);">LIVE ON YOUR PC</span>
-          <h2>Agent View</h2>
-        </div>
-      </div>
-      <div class="agent-view-list" id="agentViewList"></div>
-    </div>
-  </section>
-
+  <script src="supabase.js"></script>
   <script src="mobile.js"></script>
 </body>
 </html>

@@ -1,30 +1,22 @@
 /**
- * Named specialist subagents.
+ * Roles for the single Codeply agent.
  *
- * Distinct from the generic `subagent` tool in tools.mjs (which delegates an
- * arbitrary self-contained task to a fresh, anonymous copy of the agent loop).
- * These are fixed personas — Frontend, Backend, Database, DevOps, Security,
- * Testing, Docs, Design — each with its own AGENT.md describing how it
- * should think and work. A session can be pinned to one for its whole
- * lifetime (its persona text gets injected into every turn's system prompt,
- * see buildSystemPrompt() in agent.mjs), and the `subagent` tool itself also
- * checks this registry: if the model names one of these eight in a subagent
- * call's <name>, the nested run inherits that specialist's persona too —
- * so "delegate the security review to the security specialist" actually
- * changes how the delegated run thinks, not just its label.
+ * There is exactly one agent. For each task it takes on the role that fits -
+ * Frontend, Backend, Database, DevOps, Security, Testing, Docs - and the
+ * role's guide (agents/<id>.md: YAML frontmatter + markdown body) is injected
+ * into that turn's system prompt as the standard to hold the work to. Roles
+ * never run in parallel and never hand work to each other; a multi-part
+ * request simply switches role between tasks (see main.js).
  *
- * Same convention as skills.js's SKILL.md: YAML frontmatter + a markdown
- * body. Kept as its own tiny module rather than folded into skills.js
- * because a persona replaces/frames the whole system prompt for a run,
- * where a skill is an opt-in reference doc fetched mid-run — different
- * lifecycle, different injection point.
+ * detectRole() picks a role from a message's text with plain keyword
+ * matching - no model call, so it costs nothing and never blocks a send.
  */
 const fs = require('fs');
 const path = require('path');
 
 const AGENTS_DIR = path.join(__dirname, '..', 'agents');
 
-/** Same minimal frontmatter reader as skills.js — kept local so this module has no cross-dependency. */
+/** Same minimal frontmatter reader as skills.js - kept local so this module has no cross-dependency. */
 function parseFrontmatter(text) {
   const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if (!m) return { meta: {}, body: text };
@@ -38,7 +30,7 @@ function parseFrontmatter(text) {
 
 let cache = null;
 
-/** Every specialist, sorted by their declared `order`. Cached — the set is fixed at build time, not user-editable. */
+/** Every specialist, sorted by their declared `order`. Cached - the set is fixed at build time, not user-editable. */
 function listSubagents() {
   if (cache) return cache;
   let files;
@@ -55,14 +47,16 @@ function listSubagents() {
       color: meta.color || '#888888',
       mascot: meta.mascot || `${meta.id || f.replace(/\.md$/, '')}.png`,
       order: Number(meta.order) || 0,
-      persona: body,
+      // The guides were written for separate agents that handed work to each
+      // other; the "When X Hands Off" section doesn't apply to one agent.
+      persona: body.replace(/\r?\n## When [^\r\n]*Hands Off[\s\S]*?(?=\r?\n## |$)/, '').trim(),
     };
   }).sort((a, b) => a.order - b.order);
 
   return cache;
 }
 
-/** Metadata only, no persona body — what the UI's picker needs, nothing it doesn't. */
+/** Metadata only, no persona body - what the UI's picker needs, nothing it doesn't. */
 function listSubagentsMeta() {
   return listSubagents().map(({ persona, ...meta }) => meta);
 }
@@ -74,7 +68,7 @@ function getSubagent(id) {
 
 /**
  * Loose match against a free-text name (what the model writes into a
- * <name> tag, e.g. "frontend", "the Frontend specialist", "Backend Bot") —
+ * <name> tag, e.g. "frontend", "the Frontend specialist", "Backend Bot") -
  * exact id match first, then a substring check either direction so a
  * reasonably-named delegation call still resolves.
  */
@@ -89,19 +83,19 @@ function findSubagentByName(name) {
 }
 
 // Auto-routing: picks a specialist FOR ONE MESSAGE from its own text, no
-// manual pin required — the same specialist can get picked again on a later,
+// manual pin required - the same specialist can get picked again on a later,
 // unrelated message, or a different one each time, since this runs fresh per
 // call. Pure keyword classification (no I/O, no model call) so it costs
 // nothing and never blocks a send. Ordered most-specific-and-safety-critical
 // first: a message that mentions both "security" and "css" should route to
 // Warden, not Pixel, so security/data-integrity concerns are checked before
 // the broader, easier-to-accidentally-match categories (frontend/design).
-// Deliberately conservative — every pattern requires a real technical term,
+// Deliberately conservative - every pattern requires a real technical term,
 // not a generic word ("test" alone doesn't match; "unit test"/"write a test"
-// does) — a false match hands the whole turn a persona/tone that doesn't fit
+// does) - a false match hands the whole turn a persona/tone that doesn't fit
 // the actual request, which is worse than staying General for an ambiguous one.
 // Every bare noun below is written with its plural covered (`issues?`,
-// `bugs?`, `endpoints?`, ...) — an earlier version required the exact
+// `bugs?`, `endpoints?`, ...) - an earlier version required the exact
 // singular form, so "security issues" (plural) silently missed the
 // security route entirely and fell through to a much broader, wrong
 // category. Getting plurals right matters more here than almost anywhere
@@ -119,11 +113,11 @@ const AUTO_ROUTES = [
   { id: 'docs', re: /\b(write\s?(?:a\s?)?readme|api\s?docs?|documentation|doc[- ]?comments?|changelog|release\s?notes|write\s?a\s?(?:guide|tutorial)|code\s?comments?)\b/i },
 ];
 
-// Alternate ways someone actually types a niche's name in a sentence — not
+// Alternate ways someone actually types a niche's name in a sentence - not
 // just the single-word form AUTO_ROUTES already matches as a topic keyword,
 // but explicitly asking FOR that specialist ("use front end agent", "have
 // the security specialist look at this"). "front end agent" (two words,
-// space) was silently missing before this existed — AUTO_ROUTES only had
+// space) was silently missing before this existed - AUTO_ROUTES only had
 // the one-word "frontend" as a keyword, so a request naming the specialist
 // by its actual two-word name never matched anything.
 const NICHE_ALIASES = {
@@ -137,7 +131,7 @@ const NICHE_ALIASES = {
 };
 
 /**
- * Catches a request that names a specialist directly — by its mascot name
+ * Catches a request that names a specialist directly - by its mascot name
  * ("have Pixel look at this") or by its niche plus an agent/specialist/bot
  * word ("use the front end agent", "security specialist please review").
  * Checked before the topic-keyword routes below so an explicit ask always
@@ -164,4 +158,7 @@ function detectSpecialist(message) {
   return null;
 }
 
-module.exports = { listSubagents, listSubagentsMeta, getSubagent, findSubagentByName, detectSpecialist };
+const detectRole = detectSpecialist;
+const getRole = getSubagent;
+
+module.exports = { listSubagents, listSubagentsMeta, getSubagent, getRole, findSubagentByName, detectSpecialist, detectRole };
