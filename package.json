@@ -6,7 +6,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "postinstall": "npm install --prefix codeply-cli",
+    "postinstall": "node scripts/install-engine.js",
     "mobile:prepare": "node scripts/prepare-mobile.js",
     "android:add": "npm run mobile:prepare && npx cap add android",
     "android:sync": "npm run mobile:prepare && npx cap sync android",
