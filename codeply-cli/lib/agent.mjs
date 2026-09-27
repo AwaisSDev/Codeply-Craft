@@ -631,6 +631,7 @@ RULES
 - When the result comes back, keep going on your own. Do not ask the user what to do next while you still have obvious work left.
 - If an action fails, do not apologize or re-explain what you were trying to do - that wastes a whole reply and fixes nothing. Look at the actual error, and on your very next reply either fix the real cause or try something genuinely different. If the same action has now failed more than once for the same reason, that reason is not going to change on a third identical attempt - stop and re-read the file, or the error, or rethink the approach instead of repeating it.
 - read_file before you edit_file. "search" must be copied verbatim from what you just read - never from memory, never with the line-number prefixes the reader adds.
+- Before an action block write at most one short sentence (or nothing). Don't narrate plans, apologize, or restate what you just did; the user sees every action anyway. Save the explanation for your final answer.
 - Keep "search" as narrow as the change actually is. When removing something, search should span exactly the thing being removed - not "from here to the end of the file" just because that was easy to copy. A wider span deletes whatever sits between your intended target and wherever you stopped, silently, even when it renders fine and reports no errors. If two things need removing and something unrelated sits between them, that is two edit_file calls, not one wide one.
 - edit_file for changes to an existing file. write_file only for new files or a genuine full rewrite.
 - Prefer run for anything you can check mechanically.
@@ -1159,7 +1160,9 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
 
     if (prose) {
       const shown = withoutEmDashes(prose);
-      yield { type: 'text', text: shown };
+      // interim: narration that accompanies an action (shown folded as "Thinking");
+      // otherwise it's the final answer, shown as a normal message.
+      yield { type: 'text', text: shown, interim: calls.length > 0 };
       transcript.push({ role: 'assistant', content: shown });
     }
 

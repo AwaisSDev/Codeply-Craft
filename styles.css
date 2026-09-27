@@ -2166,3 +2166,9 @@ a.remote-url { text-decoration: none; cursor: pointer; }
 .sb-refresh-btn:hover { background: var(--hover); color: var(--text); }
 .sb-refresh-btn svg { width: 13px; height: 13px; }
 .sb-refresh-btn.spinning svg { animation: bc-spin 0.7s linear infinite; }
+
+/* Thinking steps: the agent's narration while it works, folded by default. */
+.thinking-step { margin: 2px 0 6px; }
+.thinking-detail { white-space: normal; font-family: inherit; font-size: 13px; line-height: 1.55; color: var(--text-dim); }
+.thinking-detail p { margin: 0 0 6px; }
+.thinking-detail p:last-child { margin-bottom: 0; }

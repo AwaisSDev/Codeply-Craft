@@ -180,6 +180,20 @@ GOAL_STATUS: ACHIEVED`], 'check the goal', { verifyOnly: true });
   check('verification turn is not blocked for describing earlier work', r.done && r.texts.some((t) => t.includes('GOAL_STATUS: ACHIEVED')));
 }
 
+// 11. Narration next to an action is marked interim (shown as "Thinking"); the final answer is not.
+{
+  const r = await run([
+    `I'll look at the folder first.
+<codeply:list_dir>
+<path>.</path>
+</codeply:list_dir>`,
+    'The folder is empty.',
+  ], 'what is in this folder?', { mode: 'Ask' });
+  const texts = r.events.filter((e) => e.type === 'text');
+  check('narration marked as thinking', texts[0] && texts[0].interim === true, JSON.stringify(texts));
+  check('final answer shown normally', texts.at(-1) && texts.at(-1).interim === false && texts.at(-1).text === 'The folder is empty.');
+}
+
 server.close();
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(failures ? `\n${failures} FAILED` : '\nALL PASSED');

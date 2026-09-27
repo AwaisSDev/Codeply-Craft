@@ -1311,3 +1311,11 @@ button {
    --composer-h by mobile.js) so the last message never slides under it. */
 .main-scroll { padding-bottom: calc(var(--composer-h, 132px) + 12px + env(safe-area-inset-bottom)); }
 .composer { background: linear-gradient(to top, var(--bg) 82%, transparent); padding-top: 18px; }
+
+/* Thinking steps (folded narration while the agent works) */
+.thinking-step { margin: 2px 0; color: var(--text-faint); font-size: 13px; }
+.thinking-step summary { list-style: none; display: inline-flex; align-items: center; gap: 6px; padding: 4px 0; cursor: pointer; font-weight: 600; }
+.thinking-step summary::-webkit-details-marker { display: none; }
+.thinking-step summary svg { transition: transform .15s ease; }
+.thinking-step[open] summary svg { transform: rotate(90deg); }
+.thinking-text { margin: 4px 0 6px; padding: 8px 12px; border-left: 2px solid var(--border); color: var(--text-muted); line-height: 1.5; }

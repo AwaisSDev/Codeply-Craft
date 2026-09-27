@@ -1613,6 +1613,35 @@ function addReasoningRow(text, ms) {
   if (nearBottom()) scrollToBottom();
 }
 
+// Narration the agent writes while it works ("I'll read the file first...")
+// folds into a collapsed "Thinking" row between the tool rows; only the final
+// answer is shown as a normal message.
+function addThinkingRow(text) {
+  const row = document.createElement('div');
+  row.className = 'reasoning-row thinking-step expandable';
+  row.innerHTML =
+    '<div class="reasoning-row-head">' +
+    '<svg viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2Z"/></svg>' +
+    '<span class="reasoning-label">Thinking</span>' +
+    '<svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>' +
+    '</div>';
+  const detail = document.createElement('div');
+  detail.className = 'reasoning-detail thinking-detail hidden';
+  detail.innerHTML = mdToHtml(text);
+  row.appendChild(detail);
+  row.querySelector('.reasoning-row-head').addEventListener('click', () => {
+    detail.classList.toggle('hidden');
+    row.classList.toggle('expanded');
+  });
+  row.classList.add('reveal-pending');
+  chatColumn.appendChild(row);
+  enqueueReveal((next) => {
+    row.classList.remove('reveal-pending');
+    if (nearBottom()) scrollToBottom();
+    next();
+  });
+}
+
 async function sendMessage(text, fromHome, images) {
   if (!api) return;
   if (!state.user) { showView('viewLogin'); return; }
@@ -1886,6 +1915,8 @@ function addImagePickerCard(ev) {
   runSearch(ev.keywords || '');
 }
 
+let pendingAutoApproval = null; // set by approval_auto, consumed by the next tool row
+
 // ─── Agent event stream ─────────────────────────────────────────────────────
 if (api) api.onAgentEvent((data) => {
   const mine = data.sessionId === state.currentSessionId;
@@ -1950,7 +1981,7 @@ if (api) api.onAgentEvent((data) => {
       addNote(data.text, data.level === 'warn' ? 'warn' : data.level === 'error' ? 'error' : '');
       break;
     case 'verifying':
-      addNote(`Checking ${data.files.length === 1 ? data.files[0] : data.files.length + ' changed files'} before finishing…`, 'verify');
+      // The check itself shows up as its own row; just keep the spinner going.
       showThinking();
       break;
     case 'verification_start':
@@ -1969,7 +2000,8 @@ if (api) api.onAgentEvent((data) => {
       break;
     case 'text':
       hideThinking();
-      addAssistantMessage(data.text);
+      if (data.interim) addThinkingRow(data.text);
+      else addAssistantMessage(data.text);
       break;
     case 'tool_start':
       hideThinking();
@@ -1981,7 +2013,8 @@ if (api) api.onAgentEvent((data) => {
       break;
     case 'tool_end': {
       if (runningToolRow) { runningToolRow.remove(); runningToolRow = null; }
-      addToolRow({ name: data.name, label: data.summary || toolArgsLabel(data.args), ok: data.ok, args: data.args, screenshotSrc: data.meta?.screenshotDataUrl });
+      addToolRow({ name: data.name, label: data.summary || toolArgsLabel(data.args), ok: data.ok, args: data.args, screenshotSrc: data.meta?.screenshotDataUrl, auto: !!pendingAutoApproval, bypass: pendingAutoApproval?.bypass });
+      pendingAutoApproval = null;
       panelTrack(data.name, data.args?.path || data.summary);
       // The agent calls the model again to decide the next step.
       showThinking();
@@ -2018,7 +2051,8 @@ if (api) api.onAgentEvent((data) => {
       break;
     }
     case 'approval_auto':
-      addNote(`${data.title}: ${data.bypass ? 'bypass mode, ran without asking' : 'auto approved'}`, 'ok');
+      // No separate line: the tool row that follows gets a small tag instead.
+      pendingAutoApproval = { bypass: !!data.bypass };
       break;
     case 'image_pick_resolved': {
       // Same reasoning as approval_resolved above, for the picker card
@@ -2066,7 +2100,7 @@ async function openSession(id) {
   revealInstant = true;
   for (const m of s.messages) {
     if (m.kind === 'user') addUserMessage(m.text, m.images);
-    else if (m.kind === 'assistant') addAssistantMessage(m.text);
+    else if (m.kind === 'assistant') (m.interim ? addThinkingRow(m.text) : addAssistantMessage(m.text));
     else if (m.kind === 'reasoning') addReasoningRow(m.text, m.ms);
     else if (m.kind === 'tool') {
       // Desktop can load a local file:// path directly, no server round trip.

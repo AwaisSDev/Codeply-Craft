@@ -243,6 +243,19 @@ function renderGoalCard(data) {
   scrollToBottom();
 }
 
+// Narration while the agent works folds into a tap-to-open "Thinking" row;
+// only the final answer is a normal message.
+function addThinking(text) {
+  showChat();
+  state.activeAgentMessageEl = null;
+  const el = document.createElement('details');
+  el.className = 'thinking-step';
+  el.innerHTML = '<summary><span>Thinking</span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></summary><div class="thinking-text"></div>';
+  el.querySelector('.thinking-text').innerHTML = renderMarkdownLite(text);
+  $('chatFeed').append(el);
+  scrollToBottom();
+}
+
 function addMessage(kind, text, label, screenshotPath) {
   showChat();
   const feed = $('chatFeed');
@@ -390,7 +403,7 @@ function renderSession(session) {
     showChat();
     for (const item of session.messages) {
       if (item.kind === 'user') addMessage('user', item.text);
-      else if (item.kind === 'assistant') addMessage('agent', item.text);
+      else if (item.kind === 'assistant') (item.interim ? addThinking(item.text) : addMessage('agent', item.text));
       else if (item.kind === 'tool') addMessage('tool', item.label, item.name, item.screenshotPath);
       else if (item.kind === 'role_active' || item.kind === 'subagent_active') addRoleBadge(item);
       else if (item.kind === 'turn_summary') addTurnSummary(item);
@@ -525,7 +538,8 @@ function receiveEvent(event) {
     state.activeAgentMessageEl = null;
     addMessage('error', event.text);
   } else if (event.type === 'text') {
-    addMessage('agent_delta', event.text);
+    if (event.interim) addThinking(event.text);
+    else addMessage('agent_delta', event.text);
   } else if (event.type === 'tool_end') {
     state.activeAgentMessageEl = null;
     addMessage('tool', event.summary || event.args?.path || event.args?.command || '', event.name || 'Executed', event.meta?.screenshotPath);

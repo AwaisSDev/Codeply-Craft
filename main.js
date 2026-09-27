@@ -2008,6 +2008,9 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
   let madeAnyEdit = false;
   let replyText = '';
   let error = '';
+  // No role detected for this particular text (a vague follow-up like "it
+  // still doesn't work"): keep the role the chat is already working in.
+  if (!roleId) roleId = session.stickyRole || null;
   emitRoleBadge(session, roleId);
   try {
     const run = agentMod.runAgent({
@@ -2016,7 +2019,7 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
     });
     for await (const ev of run) {
       if (ev.type === 'text') {
-        session.messages.push({ kind: 'assistant', text: ev.text, at: Date.now() });
+        session.messages.push({ kind: 'assistant', text: ev.text, interim: !!ev.interim, at: Date.now() });
         replyText += (replyText ? '\n\n' : '') + ev.text;
       } else if (ev.type === 'reasoning') {
         session.messages.push({ kind: 'reasoning', text: ev.text, ms: ev.ms, at: Date.now() });
@@ -2040,7 +2043,9 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
           const summary = {
             kind: 'turn_summary',
             files: [...new Set(changed.map((a) => a.label))].slice(0, 30),
-            checks: checks.slice(-8).map((a) => ({ tool: a.tool, label: a.label, ok: a.ok, exitCode: a.exitCode })),
+            // Same check repeated (e.g. the page re-opened after each fix): show its latest result once.
+            checks: [...new Map(checks.map((a) => [`${a.tool}|${a.label}`, a])).values()].slice(-8)
+              .map((a) => ({ tool: a.tool, label: a.label, ok: a.ok, exitCode: a.exitCode })),
             unverified: ev.unverifiedFiles || [],
             at: Date.now(),
           };
@@ -2322,6 +2327,9 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   if (activeRuns.has(session.id)) return { error: 'A run is already in progress for this chat.' };
 
   rememberProject(cwd);
+  const detectedRole = rolesLib.detectRole(goal || text);
+  if (detectedRole) session.stickyRole = detectedRole;
+  session.lastRole = null; // every reply opens with a "Working as ..." badge
   const history = buildHistory(session);
   // images are kept on the session record so reopening the chat still shows
   // them; buildHistory() only re-sends the last few to the model.
