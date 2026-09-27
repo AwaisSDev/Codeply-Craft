@@ -52,7 +52,8 @@
       "!.env",
       "!.env.*",
       "!scripts/engine-test.mjs",
-      "!dev-app-update.yml"
+      "!dev-app-update.yml",
+      "!vercel.json"
     ],
     "extraResources": [
       {

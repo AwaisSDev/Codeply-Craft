@@ -1,0 +1,23 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "echo \"no install needed\"",
+  "buildCommand": "node scripts/prepare-mobile.js",
+  "outputDirectory": "mobile-app",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- mobile.html mobile.js mobile.css mobile.manifest.json logo.png vendor/supabase assets/agents scripts/prepare-mobile.js vercel.json",
+  "cleanUrls": true,
+  "headers": [
+    {
+      "source": "/(index.html|mobile.js|mobile.css|)",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "X-Frame-Options", "value": "DENY" }
+      ]
+    }
+  ]
+}
