@@ -1,9 +1,15 @@
 {
-  "name": "Codeply Craft Remote",
-  "short_name": "Craft",
+  "name": "Codeply Away",
+  "short_name": "Away",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#101012",
   "theme_color": "#101012",
-  "icons": [{ "src": "/logo.png", "sizes": "512x512", "type": "image/png" }]
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
 }

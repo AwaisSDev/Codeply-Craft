@@ -1833,7 +1833,7 @@ function startRemoteServer() {
     } catch (err) { return remoteJson(res, 400, { error: err.message || 'Request failed.' }); }
   });
   remoteServer.on('error', (err) => {
-    console.error('Phone companion server failed to start:', err.message);
+    console.error('Codeply Away local server failed to start:', err.message);
     remoteServer = null;
     if (err.code === 'EADDRINUSE' && win && !win.isDestroyed()) {
       win.webContents.send('remote:server-error', {

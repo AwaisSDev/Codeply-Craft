@@ -2357,7 +2357,7 @@ function closeSkillsModal() {
   $('skillsBackdrop').classList.add('hidden');
 }
 
-// ─── Phone companion ────────────────────────────────────────────────────────
+// ─── Codeply Away (phone) ────────────────────────────────────────────────────────
 // The phone signs in with the same account and finds this PC on its own -
 // this panel just explains that and shows whether it's ready.
 function setRemoteStatus(text, kind) {

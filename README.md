@@ -1,6 +1,6 @@
 # Codeply Craft
 
-The Codeply AI coding agent as a desktop app, with a phone companion you can
+The Codeply AI coding agent as a desktop app, with Codeply Away, a phone app you can
 use from anywhere. The agent engine lives in `codeply-cli/` and is bundled
 into the app.
 
@@ -45,7 +45,7 @@ npm start
 - **Modes.** Build, Plan, Ask. Plan and Ask are read-only, enforced in the
   engine.
 
-## Phone companion (use it from anywhere)
+## Codeply Away (use Craft from your phone, anywhere)
 
 The phone signs in with the same Codeply account. There's no QR code and no
 pairing code, and it works on any network as long as the PC is on and signed
