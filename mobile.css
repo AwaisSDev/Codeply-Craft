@@ -1306,3 +1306,8 @@ button {
 .session-list { grid-template-columns: minmax(0, 1fr); }
 .session-card { min-width: 0; }
 .sidebar-drawer, .sidebar-drawer .session-list { overflow-x: hidden; }
+
+/* The composer floats over the chat; reserve exactly its real height (kept in
+   --composer-h by mobile.js) so the last message never slides under it. */
+.main-scroll { padding-bottom: calc(var(--composer-h, 132px) + 12px + env(safe-area-inset-bottom)); }
+.composer { background: linear-gradient(to top, var(--bg) 82%, transparent); padding-top: 18px; }

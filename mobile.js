@@ -1118,6 +1118,18 @@ $('composerForm').addEventListener('submit', async (e) => {
   }
 });
 
+// Keep the chat's bottom padding equal to the floating composer's real height
+// (it grows with the pills row and multi-line messages).
+(function trackComposerHeight() {
+  const composer = $('composerForm');
+  const apply = () => {
+    document.documentElement.style.setProperty('--composer-h', `${Math.ceil(composer.getBoundingClientRect().height)}px`);
+  };
+  apply();
+  if (window.ResizeObserver) new ResizeObserver(apply).observe(composer);
+  window.addEventListener('resize', apply);
+})();
+
 // ─── Model + permission pickers ─────────────────────────────────────────────
 function renderModels(models) {
   if (models && Array.isArray(models.models)) state.models = models;
