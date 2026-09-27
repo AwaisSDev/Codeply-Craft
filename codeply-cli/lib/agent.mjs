@@ -35,6 +35,7 @@ const MAX_MALFORMED_RETRIES = 3;
 const CONTEXT_CHAR_BUDGET = 64000;
 function contextBudgetFor(route) {
   if (route && route.custom) return route.custom.kind === 'ollama' ? 100000 : 200000;
+  if (route && route.auto) return 160000; // Gemma 4 31B on Ollama Cloud has a large window
   return CONTEXT_CHAR_BUDGET;
 }
 

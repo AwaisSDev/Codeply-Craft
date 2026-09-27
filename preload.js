@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('craft', {
   saveModel: (input) => ipcRenderer.invoke('models:save', input),
   deleteModel: (id) => ipcRenderer.invoke('models:delete', id),
   detectOllama: (host) => ipcRenderer.invoke('models:detectOllama', host),
+  onModelsChanged: (cb) => ipcRenderer.on('models:changed', (e, data) => cb(data)),
 
   // skills
   listSkills: () => ipcRenderer.invoke('skills:list'),
@@ -51,6 +52,7 @@ contextBridge.exposeInMainWorld('craft', {
   deleteSession: (id) => ipcRenderer.invoke('session:delete', id),
   renameSession: (id, title) => ipcRenderer.invoke('session:rename', { id, title }),
   refreshSessions: () => ipcRenderer.invoke('sessions:refresh'),
+  listSessions: () => ipcRenderer.invoke('sessions:list'),
 
   // agent
   send: (payload) => ipcRenderer.invoke('chat:send', payload),

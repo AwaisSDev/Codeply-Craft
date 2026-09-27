@@ -24,6 +24,8 @@ const state = {
   account: null,
   activeAgentMessageEl: null,
   runningSessions: [], // chat ids with a run in flight on the PC, live via runs_status
+  models: { selected: 'auto', models: [] }, // names only; keys stay on the PC
+  bypass: localStorage.getItem('craft-bypass') === '1', // run without approval prompts
 };
 
 localStorage.setItem('craft-client-id', state.clientId);
@@ -422,6 +424,7 @@ async function bootstrap({ preserveSession = true } = {}) {
   state.sessions = data.sessions || [];
   state.runningSessions = data.activeSessionIds || [];
   renderSessions();
+  if (data.models) renderModels(data.models);
 
   showScreen('chat');
 
@@ -1093,7 +1096,7 @@ $('composerForm').addEventListener('submit', async (e) => {
         sessionId: sentSessionId,
         cwd,
         mode: state.mode,
-        bypass: false,
+        bypass: state.bypass,
         text,
         clientId: state.clientId,
       }),
@@ -1114,6 +1117,51 @@ $('composerForm').addEventListener('submit', async (e) => {
     addMessage('error', err.message);
   }
 });
+
+// ─── Model + permission pickers ─────────────────────────────────────────────
+function renderModels(models) {
+  if (models && Array.isArray(models.models)) state.models = models;
+  const select = $('modelSelect');
+  select.innerHTML = '';
+  const add = (value, label) => {
+    const o = document.createElement('option');
+    o.value = value;
+    o.textContent = label;
+    o.selected = value === state.models.selected;
+    select.append(o);
+  };
+  add('auto', 'Auto (Gemma 4 31B)');
+  for (const m of state.models.models) add(m.id, m.kind === 'ollama' && !/\(local\)/i.test(m.name) ? `${m.name} (local)` : m.name);
+  const current = state.models.models.find((m) => m.id === state.models.selected);
+  $('modelPillName').textContent = current ? current.name : 'Auto';
+  $('modelPillDot').dataset.kind = current ? (current.kind === 'ollama' ? 'local' : 'custom') : 'auto';
+}
+
+$('modelSelect').addEventListener('change', async (e) => {
+  const id = e.target.value;
+  const previous = state.models.selected;
+  try {
+    renderModels(await request('/api/models/select', { method: 'POST', body: JSON.stringify({ id }) }));
+  } catch (err) {
+    state.models.selected = previous;
+    renderModels();
+    addMessage('error', err.message);
+  }
+});
+
+function renderBypass() {
+  $('bypassBtn').classList.toggle('danger', state.bypass);
+  $('bypassBtn').setAttribute('aria-pressed', String(state.bypass));
+  $('bypassLabel').textContent = state.bypass ? 'Bypass: no prompts' : 'Approve manually';
+}
+
+$('bypassBtn').addEventListener('click', () => {
+  if (!state.bypass && !confirm('Bypass mode runs file edits, commands and deploys on your PC without asking you first. Turn it on?')) return;
+  state.bypass = !state.bypass;
+  localStorage.setItem('craft-bypass', state.bypass ? '1' : '0');
+  renderBypass();
+});
+renderBypass();
 
 $('taskInput').addEventListener('input', (e) => {
   e.target.style.height = 'auto';

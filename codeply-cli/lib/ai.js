@@ -859,12 +859,35 @@ async function testModel(m) {
   return { ok: true, ms: Date.now() - started, reply: (r.data.choices?.[0]?.message?.content || '').trim().slice(0, 80) };
 }
 
+// ─── Auto ───────────────────────────────────────────────────────────────────
+// "Auto" is Gemma 4 31B on Ollama Cloud. Two account keys back it (a release
+// build bakes OLLAMA_API_KEY / OLLAMA_API_KEY_FALLBACK in via
+// scripts/embed-secrets.js; from source they come from ~/.codeply/config.json).
+// chatViaOllama moves to the second key the moment the first is over quota or
+// failing. Only if no key works at all does it fall back to the hosted proxy.
+const AUTO_MODEL = { host: 'https://ollama.com', model: 'gemma4:31b' };
+
+async function chatViaAuto(messages, opts) {
+  const cfg = getConfig();
+  const keys = { apiKey: cfg.ollama.apiKey, apiKeyFallback: cfg.ollama.apiKeyFallback };
+  if (!keys.apiKey && !keys.apiKeyFallback) return chatViaProxy(messages, opts);
+  const r = await chatViaOllama(messages, opts, { ollama: { ...AUTO_MODEL, ...keys, numCtx: null } });
+  if (r.success || r.aborted) return r;
+  // A bad request (e.g. model issue) won't be fixed by another provider, but
+  // an exhausted or unreachable account might be.
+  if (isKeyLevelFailure(r.error) || /timed out|unreachable|fetch failed|ECONN|ENOTFOUND/i.test(r.error || '')) {
+    const fallback = await chatViaProxy(messages, opts);
+    if (fallback.success) return fallback;
+  }
+  return r;
+}
+
 async function chat(messages, opts = {}) {
   // A user-added model (desktop model picker) always wins when routed.
   if (opts.route && opts.route.custom) return chatViaCustom(messages, opts, opts.route.custom);
   // Auto in the desktop app = the hosted Codeply model, regardless of what
   // the CLI's own `codeply provider` setting says.
-  if (opts.route && opts.route.auto) return chatViaProxy(messages, opts);
+  if (opts.route && opts.route.auto) return chatViaAuto(messages, opts);
   const cfg = applyRoute(getConfig(), opts.route);
   switch (cfg.provider) {
     case 'ollama': return chatViaOllama(messages, opts, cfg);

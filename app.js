@@ -1272,7 +1272,7 @@ document.querySelectorAll('[data-role="bypass"]').forEach((el) =>
 );
 
 // ─── Models ─────────────────────────────────────────────────────────────────
-// "Auto" is Codeply's hosted model. Everything else is a model the user added
+// "Auto" is Gemma 4 31B, run by Codeply. Everything else is a model the user added
 // - an OpenAI-compatible API or a local Ollama model. The main process keeps
 // the keys; this side only ever sees a masked preview.
 const MODEL_PRESETS = [
@@ -1305,7 +1305,7 @@ function applyModelsState(models) {
   document.querySelectorAll('[data-role="model-name"]').forEach((el) => (el.textContent = label));
   document.querySelectorAll('[data-role="model-chip"]').forEach((el) => {
     el.dataset.kind = kind;
-    el.title = m ? `${m.name} - ${m.model} on ${hostOf(m.baseUrl)}` : 'Auto - Codeply picks the model for you';
+    el.title = m ? `${m.name} - ${m.model} on ${hostOf(m.baseUrl)}` : 'Auto - Gemma 4 31B, run by Codeply';
   });
 }
 
@@ -1338,7 +1338,7 @@ function openModelMenu(anchorBtn) {
   menu.innerHTML = `
     <button class="model-item${sel === 'auto' ? ' active' : ''}" data-id="auto">
       <span class="model-item-icon auto">${SPARK_SVG}</span>
-      <span class="model-item-text"><strong>Auto</strong><span>Codeply's hosted model · best for most work</span></span>
+      <span class="model-item-text"><strong>Auto</strong><span>Gemma 4 31B · run by Codeply, best for most work</span></span>
       ${sel === 'auto' ? check : ''}
     </button>
     ${custom.length ? '<div class="model-menu-label">Your models</div>' : ''}
@@ -1457,6 +1457,9 @@ async function saveCustomModel(skipTest) {
   closeModelsModal();
   showToast(`${r.model.name} is ready - now using it`);
 }
+
+// A phone switched the model: keep this window's chip in sync.
+if (api && api.onModelsChanged) api.onModelsChanged((m) => applyModelsState(m));
 
 $('mSave').addEventListener('click', () => saveCustomModel(false));
 $('mSaveAnyway').addEventListener('click', () => saveCustomModel(true));
@@ -1895,6 +1898,11 @@ if (api) api.onAgentEvent((data) => {
   // sends already render optimistically (see sendMessage above), so only
   // react when the message came from elsewhere.
   if (data.type === 'session_sync') {
+    // A chat this window hasn't seen yet (e.g. started from the phone): add it.
+    if (!meta && data.session && data.session.id) {
+      state.sessions.unshift({ ...data.session });
+      renderRecents();
+    }
     // A brand-new chat's first events (role badge, goal card) arrive before
     // api.send() returns its id; adopt it here so they aren't dropped.
     if (!state.currentSessionId && data.origin === desktopClientId && data.message?.kind === 'user') {
@@ -2497,6 +2505,25 @@ document.querySelectorAll('.composer').forEach((composer) => {
 
   input.addEventListener('blur', () => setTimeout(closeMenu, 150));
 });
+
+// ─── Refresh chats ──────────────────────────────────────────────────────────
+async function refreshChats() {
+  const btn = $('refreshChatsBtn');
+  btn.classList.add('spinning');
+  try {
+    const r = await api.listSessions();
+    state.sessions = r.sessions;
+    state.runningSessions = r.running || [];
+    renderRecents();
+    // Reload the open chat too, so messages sent from the phone show up.
+    if (state.currentSessionId && state.sessions.some((s) => s.id === state.currentSessionId)) {
+      await openSession(state.currentSessionId);
+    }
+  } finally {
+    setTimeout(() => btn.classList.remove('spinning'), 400);
+  }
+}
+$('refreshChatsBtn').addEventListener('click', refreshChats);
 
 // ─── Auto-update ────────────────────────────────────────────────────────────
 // Normal updates download in the background and install on the next restart;

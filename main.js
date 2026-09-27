@@ -1202,6 +1202,12 @@ ipcMain.handle('project:remove', (e, p) => {
 
 ipcMain.handle('session:get', (e, id) => store.sessions.find((s) => s.id === id) || null);
 
+// The chat list as this PC knows it right now, including chats a phone started.
+ipcMain.handle('sessions:list', () => ({
+  sessions: store.sessions.map(sessionMeta).sort((a, b) => b.updatedAt - a.updatedAt),
+  running: [...activeRuns.keys()],
+}));
+
 function deleteSessionRecord(id) {
   store.sessions = store.sessions.filter((s) => s.id !== id);
   saveStore();
@@ -1557,6 +1563,7 @@ async function handleBridgeApi(method, pathname, query, body) {
         sessions: store.sessions.map(sessionMeta), activeSessionIds: [...activeRuns.keys()],
         account: { email: account.email, signedIn: account.signedIn },
         model: modelLabel(currentRoute()),
+        models: modelsState(),
       },
     };
   }
@@ -1572,8 +1579,17 @@ async function handleBridgeApi(method, pathname, query, body) {
   if (method === 'GET' && pathname === '/api/images/search') {
     return { status: 200, body: await searchImages(query.get('q') || '') };
   }
-  // Approvals can't be bypassed from a phone, whatever it sends.
-  if (method === 'POST' && pathname === '/api/send') return { status: 200, body: await startChatRun({ ...body, bypass: false }) };
+  // The phone chooses approve-manually vs bypass itself (same-account phones only).
+  if (method === 'POST' && pathname === '/api/send') return { status: 200, body: await startChatRun({ ...body, bypass: body.bypass === true }) };
+  // Models: names only. API keys never leave this PC.
+  if (method === 'GET' && pathname === '/api/models') return { status: 200, body: modelsState() };
+  if (method === 'POST' && pathname === '/api/models/select') {
+    const r = configLib.selectModel(String(body.id || configLib.AUTO_MODEL_ID));
+    if (!r.ok) return { status: 400, body: { error: r.error || 'Could not switch model.' } };
+    const state = modelsState();
+    if (win && !win.isDestroyed()) win.webContents.send('models:changed', state);
+    return { status: 200, body: state };
+  }
   if (method === 'POST' && pathname === '/api/stop') { stopChatRun(body.sessionId); return { status: 200, body: { ok: true } }; }
   if (method === 'POST' && pathname === '/api/approval') { respondApproval(body.requestId, body.verdict); return { status: 200, body: { ok: true } }; }
   if (method === 'POST' && pathname === '/api/image-pick') { respondImagePick(body.requestId, body.chosenUrl); return { status: 200, body: { ok: true } }; }

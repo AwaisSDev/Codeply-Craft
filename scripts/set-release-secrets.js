@@ -1,4 +1,4 @@
-// Copies the Connect Apps OAuth credentials into the GitHub repo's Actions
+// Copies the Auto model keys and Connect Apps OAuth credentials into the GitHub repo's Actions
 // secrets, so release builds can connect Vercel, Supabase, GitHub, Gmail and
 // Slack. Reads .env and ~/.codeply/config.json on this machine; never prints
 // a value. Needs the GitHub CLI signed in (gh auth login).
@@ -30,6 +30,8 @@ const SECRETS = {
   GMAIL_CLIENT_SECRET: env.GMAIL_CLIENT_SECRET || cfg.gmail?.clientSecret,
   SLACK_CLIENT_ID: env.SLACK_CLIENT_ID || cfg.slack?.clientId,
   SLACK_CLIENT_SECRET: env.SLACK_CLIENT_SECRET || cfg.slack?.clientSecret,
+  OLLAMA_API_KEY: env.OLLAMA_API_KEY || cfg.ollama?.apiKey,
+  OLLAMA_API_KEY_FALLBACK: env.OLLAMA_API_KEY_FALLBACK || cfg.ollama?.apiKeyFallback,
 };
 
 let missing = 0;

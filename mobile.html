@@ -246,6 +246,18 @@
            (above); this is just input + send, with send doubling as Stop
            while a run is in progress. -->
       <form class="composer" id="composerForm">
+        <div class="composer-tools">
+          <div class="tool-pill model-pill" id="modelPill">
+            <span class="model-pill-dot" id="modelPillDot"></span>
+            <span id="modelPillName">Auto</span>
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7 10l5 5 5-5"/></svg>
+            <select id="modelSelect" aria-label="Model"></select>
+          </div>
+          <button type="button" class="tool-pill" id="bypassBtn" aria-pressed="false">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5Z"/><path d="M9 12l2 2 4-4"/></svg>
+            <span id="bypassLabel">Approve manually</span>
+          </button>
+        </div>
         <div class="composer-inner">
           <textarea id="taskInput" rows="1" placeholder="Message Craft…  (/goal to keep going until done)"></textarea>
           <button class="send-btn" id="sendBtn" type="submit" aria-label="Send task">

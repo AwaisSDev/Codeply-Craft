@@ -30,7 +30,7 @@ npm start
   independent check that ends in `GOAL_STATUS: ACHIEVED` or `NOT_ACHIEVED`,
   then keep going on what's missing. Bounded to 8 rounds, stoppable, and it
   stops honestly when it's stuck.
-- **Models.** "Auto" is the hosted Codeply model (needs sign-in). Users can add
+- **Models.** "Auto" is Gemma 4 31B on Ollama Cloud, run with Codeply's keys (needs sign-in). Users can add
   their own model (name, OpenAI-compatible base URL, model ID, API key) or
   connect Ollama for local models. Model entries and API keys are stored only
   in `~/.codeply/config.json` on that computer and are only ever sent to the
