@@ -2639,7 +2639,8 @@ ipcMain.handle('update:install', () => {
   if (!updater || updateState.status !== 'ready') return { ok: false };
   // Let the window really close instead of hiding to the tray.
   isQuitting = true;
-  setImmediate(() => updater.quitAndInstall(false, true));
+  // Silent install, then relaunch: no installer wizard for the user to click through.
+  setImmediate(() => updater.quitAndInstall(true, true));
   return { ok: true };
 });
 
