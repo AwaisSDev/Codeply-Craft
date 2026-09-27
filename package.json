@@ -1,6 +1,6 @@
 {
   "name": "codeply-craft",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Codeply Craft - the Codeply AI coding agent as a desktop app",
   "author": "Awais Siddique",
   "main": "main.js",
@@ -26,7 +26,8 @@
     "@capacitor/core": "^8.5.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "dotenv": "^16.6.1"
+    "dotenv": "^16.6.1",
+    "electron-updater": "^6.8.9"
   },
   "build": {
     "appId": "app.codeply.craft",
@@ -50,7 +51,8 @@
       "!codeply-cli",
       "!.env",
       "!.env.*",
-      "!scripts/engine-test.mjs"
+      "!scripts/engine-test.mjs",
+      "!dev-app-update.yml"
     ],
     "extraResources": [
       {

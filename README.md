@@ -72,6 +72,22 @@ for Android (`npm run android:build`).
 On the same Wi-Fi, a phone can also open `http://<pc-address>:45671`, which
 the PC serves directly.
 
+## Updates
+
+Installed apps check GitHub Releases at startup and every 4 hours.
+
+- A normal update (for example 1.1.0 to 1.1.1 or 1.2.0) downloads in the
+  background and installs the next time the app quits. A small "update ready"
+  pill offers an immediate restart.
+- A required update blocks the app until it's installed. An update is required
+  when the major version goes up (1.x to 2.0), or when the GitHub release notes
+  contain `[required]`.
+- macOS can't auto-install into an unsigned app, so on Mac the same pill or
+  screen offers a button that downloads the new .dmg.
+
+To test from source: `CRAFT_TEST_UPDATES=1 CRAFT_TEST_UPDATES_VERSION=1.0.0 npm start`
+checks the live release as if the app were 1.0.0.
+
 ## Release builds
 
 Connect Apps needs OAuth app credentials. From source they come from `.env`

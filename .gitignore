@@ -8,3 +8,6 @@ mobile-app
 *.log
 *.err.log
 build-secrets.json
+craft-deploy.txt
+*.token
+.vercel-token

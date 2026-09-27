@@ -2498,6 +2498,65 @@ document.querySelectorAll('.composer').forEach((composer) => {
   input.addEventListener('blur', () => setTimeout(closeMenu, 150));
 });
 
+// ─── Auto-update ────────────────────────────────────────────────────────────
+// Normal updates download in the background and install on the next restart;
+// a small pill says so. A required update covers the app until it's installed.
+function renderUpdate(u) {
+  if (!u) return;
+  const pill = $('updatePill');
+  const gate = $('updateGate');
+  const active = ['downloading', 'ready', 'available', 'error'].includes(u.status);
+
+  if (u.required && active) {
+    gate.classList.remove('hidden');
+    pill.classList.add('hidden');
+    $('updateGateText').textContent = `Version ${u.version} is required to keep using Codeply Craft. You're on ${u.current}.`;
+    $('updateGateNotes').textContent = u.notes || '';
+    $('updateGateNotes').classList.toggle('hidden', !u.notes);
+    const showBar = u.status === 'downloading';
+    $('updateGateTrack').classList.toggle('hidden', !showBar);
+    $('updateGateBar').style.width = Math.max(3, u.percent || 0) + '%';
+    const btn = $('updateGateBtn');
+    if (u.status === 'ready') {
+      $('updateGateStatus').textContent = 'Downloaded. Restart to finish updating.';
+      btn.textContent = 'Restart and update';
+      btn.classList.remove('hidden');
+    } else if (u.status === 'available' && u.manual) {
+      $('updateGateStatus').textContent = 'Download the new version, then open it to replace this one.';
+      btn.textContent = 'Download update';
+      btn.classList.remove('hidden');
+    } else if (u.status === 'error') {
+      $('updateGateStatus').textContent = u.error || 'The download failed.';
+      btn.textContent = 'Try again';
+      btn.classList.remove('hidden');
+    } else {
+      $('updateGateStatus').textContent = `Downloading… ${u.percent || 0}%`;
+      btn.classList.add('hidden');
+    }
+    return;
+  }
+
+  gate.classList.add('hidden');
+  // Optional update: stay out of the way until there's something to act on.
+  const showPill = u.status === 'ready' || (u.status === 'available' && u.manual);
+  pill.classList.toggle('hidden', !showPill);
+  if (showPill) {
+    $('updatePillText').textContent = u.manual ? `Update ${u.version} available` : `Update ${u.version} ready · restart`;
+    pill.title = u.manual ? 'Download the new version' : 'Installs automatically next time you quit, or click to restart now';
+  }
+}
+
+let lastUpdate = null;
+if (api && api.onUpdateState) {
+  api.onUpdateState((u) => { lastUpdate = u; renderUpdate(u); });
+  api.getUpdateState().then((u) => { lastUpdate = u; renderUpdate(u); });
+}
+$('updatePill').addEventListener('click', () => api.installUpdate());
+$('updateGateBtn').addEventListener('click', () => {
+  if (lastUpdate && lastUpdate.status === 'error') api.retryUpdate();
+  else api.installUpdate();
+});
+
 // ─── Boot ───────────────────────────────────────────────────────────────────
 (async function boot() {
   if (!api){

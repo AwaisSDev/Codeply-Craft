@@ -2516,6 +2516,117 @@ ipcMain.on('terminal:kill', () => {
   if (termProc) { try { termProc.kill(); } catch {} termProc = null; }
 });
 
+// ─── Auto-update ────────────────────────────────────────────────────────────
+// Checks the GitHub release feed (latest.yml / latest-mac.yml, published by the
+// release workflow) at startup and every few hours.
+//   · A normal update downloads quietly and installs the next time the app
+//     quits; the UI shows a small "update ready" pill.
+//   · A REQUIRED update blocks the app until it's installed. An update is
+//     required when its major version is higher (1.x -> 2.0) or its release
+//     notes contain "[required]" (edit the GitHub release to force one).
+// Windows installs automatically. macOS won't auto-install into an unsigned
+// app, so there the update is announced with a button that downloads the new
+// .dmg instead.
+const RELEASES_URL = 'https://github.com/AwaisSDev/Codeply-Craft/releases/latest/download';
+const UPDATE_CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
+let updater = null;
+let updateState = { status: 'idle', current: app.getVersion() };
+
+function sendUpdateState(patch) {
+  updateState = { ...updateState, ...patch };
+  // Test-mode trace (CRAFT_TEST_UPDATES=1 plus a file path) for checking the flow from source.
+  if (process.env.CRAFT_TEST_UPDATES_LOG) {
+    try { fs.appendFileSync(process.env.CRAFT_TEST_UPDATES_LOG, `${updateState.status} ${updateState.version || ''} ${updateState.percent ?? ''} ${updateState.required ? 'REQUIRED' : 'optional'}
+`); } catch {}
+  }
+  if (win && !win.isDestroyed()) win.webContents.send('update:state', updateState);
+}
+
+function releaseNotesText(info) {
+  const n = info && info.releaseNotes;
+  if (!n) return '';
+  if (typeof n === 'string') return n;
+  if (Array.isArray(n)) return n.map((x) => x.note || '').join('\n');
+  return '';
+}
+
+function isRequiredUpdate(current, next, notes) {
+  const major = (v) => parseInt(String(v || '0').replace(/^v/, '').split('.')[0], 10) || 0;
+  return major(next) > major(current) || /\[required\]/i.test(notes || '');
+}
+
+function macDownloadUrl() {
+  return `${RELEASES_URL}/Codeply-Craft-${process.arch === 'arm64' ? 'arm64' : 'x64'}.dmg`;
+}
+
+function setupAutoUpdates() {
+  // Packaged builds only; CRAFT_TEST_UPDATES=1 exercises it from source.
+  const testing = process.env.CRAFT_TEST_UPDATES === '1';
+  if (!app.isPackaged && !testing) return;
+  try {
+    ({ autoUpdater: updater } = require('electron-updater'));
+  } catch (e) {
+    console.warn('[update] electron-updater unavailable:', e.message);
+    return;
+  }
+  if (testing) {
+    updater.forceDevUpdateConfig = true;
+    updater.updateConfigPath = path.join(__dirname, 'dev-app-update.yml');
+    // Pretend to be an older build so the live release shows up as an update.
+    if (process.env.CRAFT_TEST_UPDATES_VERSION) {
+      try { updater.currentVersion = require(require.resolve('semver', { paths: [path.dirname(require.resolve('electron-updater'))] })).parse(process.env.CRAFT_TEST_UPDATES_VERSION); } catch {}
+      updateState.current = process.env.CRAFT_TEST_UPDATES_VERSION;
+    }
+  }
+  const canAutoInstall = process.platform !== 'darwin';
+  updater.autoDownload = canAutoInstall;
+  updater.autoInstallOnAppQuit = canAutoInstall;
+  updater.allowPrerelease = false;
+  updater.logger = null;
+
+  updater.on('update-available', (info) => {
+    const notes = releaseNotesText(info);
+    sendUpdateState({
+      status: canAutoInstall ? 'downloading' : 'available',
+      version: info.version,
+      required: isRequiredUpdate(updateState.current, info.version, notes),
+      notes: notes.replace(/\[required\]/ig, '').replace(/<[^>]+>/g, '').trim().slice(0, 600),
+      percent: 0,
+      manual: !canAutoInstall,
+      downloadUrl: canAutoInstall ? null : macDownloadUrl(),
+    });
+  });
+  updater.on('update-not-available', () => sendUpdateState({ status: 'idle' }));
+  updater.on('download-progress', (p) => sendUpdateState({ status: 'downloading', percent: Math.round(p.percent || 0) }));
+  updater.on('update-downloaded', (info) => sendUpdateState({ status: 'ready', version: info.version, percent: 100 }));
+  updater.on('error', (err) => {
+    console.warn('[update] ', err && err.message);
+    if (process.env.CRAFT_TEST_UPDATES_LOG) { try { fs.appendFileSync(process.env.CRAFT_TEST_UPDATES_LOG, `ERROR ${err && err.message}
+`); } catch {} }
+    // Only surfaces when an update was actually in flight; a failed check
+    // (offline, GitHub hiccup) never blocks anyone.
+    if (updateState.status === 'downloading') sendUpdateState({ status: 'error', error: 'The update could not be downloaded. Check your connection and try again.' });
+  });
+
+  const check = () => updater.checkForUpdates().catch(() => {});
+  setTimeout(check, testing ? 1000 : 8000);
+  setInterval(check, UPDATE_CHECK_EVERY_MS);
+}
+
+ipcMain.handle('update:get', () => updateState);
+ipcMain.handle('update:retry', () => { if (updater) updater.checkForUpdates().catch(() => {}); return { ok: true }; });
+ipcMain.handle('update:install', () => {
+  if (updateState.manual) {
+    if (updateState.downloadUrl) shell.openExternal(updateState.downloadUrl);
+    return { ok: true, manual: true };
+  }
+  if (!updater || updateState.status !== 'ready') return { ok: false };
+  // Let the window really close instead of hiding to the tray.
+  isQuitting = true;
+  setImmediate(() => updater.quitAndInstall(false, true));
+  return { ok: true };
+});
+
 // ─── Lifecycle ──────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
@@ -2524,6 +2635,7 @@ app.whenReady().then(() => {
   startRemoteServer();
   createWindow();
   createTray();
+  setupAutoUpdates();
   win.webContents.once('did-finish-load', () => {
     if (pendingAuthUrl) {
       const url = pendingAuthUrl;

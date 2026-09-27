@@ -57,6 +57,11 @@ contextBridge.exposeInMainWorld('craft', {
   // which chats have a run in flight, pushed whenever that changes
   onRunsStatus: (cb) => ipcRenderer.on('runs:status', (e, data) => cb(data)),
   remoteInfo: () => ipcRenderer.invoke('remote:info'),
+  // auto-update
+  getUpdateState: () => ipcRenderer.invoke('update:get'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  retryUpdate: () => ipcRenderer.invoke('update:retry'),
+  onUpdateState: (cb) => ipcRenderer.on('update:state', (e, data) => cb(data)),
   setKeepAwake: (on) => ipcRenderer.invoke('remote:setKeepAwake', !!on),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   onRemoteServerError: (cb) => ipcRenderer.on('remote:server-error', (e, data) => cb(data)),

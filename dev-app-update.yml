@@ -1,0 +1,4 @@
+provider: github
+owner: AwaisSDev
+repo: Codeply-Craft
+updaterCacheDirName: codeply-craft-updater
