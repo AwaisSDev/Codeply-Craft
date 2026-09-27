@@ -1,7 +1,7 @@
 /**
  * Codeply CLI - auth
  *
- * Passwordless (email + 6-digit code) sign-in against the SAME Supabase
+ * Passwordless (email + emailed code) sign-in against the SAME Supabase
  * project the desktop app uses - same account, same ai-proxy access, same
  * daily request/apply caps either way. The session is cached in
  * ~/.codeply/auth.json, mirroring the desktop app's own file-based session
@@ -72,7 +72,7 @@ async function prompt(question) {
   finally { rl.close(); }
 }
 
-/** Interactive email + 6-digit-code sign-in. Prints its own progress/errors. */
+/** Interactive email + emailed-code sign-in. Prints its own progress/errors. */
 async function login() {
   const supabase = getClient();
   const email = await prompt('Email: ');
@@ -86,8 +86,8 @@ async function login() {
   }
 
   console.log(`Code sent to ${email}.`);
-  const code = await prompt('6-digit code: ');
-  const { data, error } = await supabase.auth.verifyOtp({ email, token: code.replace(/\s+/g, ''), type: 'email' });
+  const code = await prompt('Code from the email: ');
+  const { data, error } = await supabase.auth.verifyOtp({ email, token: code.replace(/\D+/g, ''), type: 'email' });
   if (error || !data?.session) {
     console.error(`Sign-in failed: ${error?.message || 'invalid code'}`);
     return false;

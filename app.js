@@ -2115,7 +2115,7 @@ scrollDownBtn.addEventListener('click', () => chatScroll.scrollTo({ top: chatScr
 
 // ─── Login (sign in / sign up / OTP) ────────────────────────────────────────
 // Mirrors the Codeply desktop app's flow exactly: email+password validates
-// first, then a 6-digit emailed code finishes it - same Supabase project,
+// first, then an emailed code finishes it - same Supabase project,
 // same account, so a login here is a login everywhere.
 state.pendingMode = 'login'; // 'login' | 'signup' - which OTP verification type to use
 
@@ -2176,7 +2176,7 @@ function showOtpStep(email, mode) {
   $('stepSignin').classList.add('hidden');
   $('stepSignup').classList.add('hidden');
   $('stepOtp').classList.remove('hidden');
-  $('otpSentTo').textContent = `We emailed a 6-digit code to ${email}.`;
+  $('otpSentTo').textContent = `We emailed a sign-in code to ${email}.`;
   $('otpCode').value = '';
   $('otpCode').focus();
 }
@@ -2208,8 +2208,8 @@ $('signupBtn').addEventListener('click', async () => {
 });
 
 $('verifyOtpBtn').addEventListener('click', async () => {
-  const code = $('otpCode').value.trim();
-  if (code.length < 6) return showLoginError('Enter the 6-digit code from your email.');
+  const code = $('otpCode').value.replace(/\D+/g, '');
+  if (code.length < 6) return showLoginError('Enter the full code from your email.');
   $('verifyOtpBtn').disabled = true;
   showLoginError('');
   const r = await api.verifyOtp(state.pendingEmail, code, state.pendingMode);

@@ -185,7 +185,7 @@ program
 
 program
   .command('login')
-  .description('Sign in with your Codeply account (email + 6-digit code).')
+  .description('Sign in with your Codeply account (email + emailed code).')
   .action(async () => { await auth.login(); });
 
 program

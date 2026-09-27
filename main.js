@@ -470,7 +470,7 @@ function formatAuthError(raw, context = 'login') {
   return msg || 'Failed to sign in.';
 }
 
-/** Humanizes errors for the emailed 6-digit code step. */
+/** Humanizes errors for the emailed sign-in code step. */
 function formatOtpError(raw) {
   let msg = typeof raw === 'string' ? raw : (raw?.message || raw?.msg || '');
   try { const p = JSON.parse(msg); msg = p.msg || p.message || msg; } catch {}
@@ -480,7 +480,7 @@ function formatOtpError(raw) {
     return 'Please wait a moment before requesting another code.';
   }
   if (lower.includes('invalid') || lower.includes('token') || lower.includes('otp')) {
-    return 'Incorrect code. Double-check the 6 digits and try again.';
+    return 'Incorrect code. Double-check it and try again.';
   }
   return msg || 'Could not verify the code. Try again.';
 }
@@ -520,7 +520,7 @@ ipcMain.handle('profile:saveOnboarding', async (e, { referralSource, country }) 
 });
 
 // Email + password is two-factor here too: validate the password, then email
-// a fresh 6-digit code. Not signed in until that code is verified.
+// a fresh sign-in code. Not signed in until that code is verified.
 ipcMain.handle('auth:signInEmail', async (e, { email, password }) => {
   const supabase = authLib.getClient();
   try {
@@ -555,8 +555,8 @@ ipcMain.handle('auth:signUpEmail', async (e, { email, password, name }) => {
 
 ipcMain.handle('auth:verifyOtp', async (e, { email, token, mode }) => {
   const supabase = authLib.getClient();
-  const code = String(token || '').replace(/\s+/g, '');
-  if (!email || !code) return { ok: false, error: 'Enter the 6-digit code we emailed you.' };
+  const code = String(token || '').replace(/\D+/g, '');
+  if (!email || !code) return { ok: false, error: 'Enter the code we emailed you.' };
   try {
     const primaryType = mode === 'signup' ? 'signup' : 'email';
     let { data, error } = await supabase.auth.verifyOtp({ email, token: code, type: primaryType });

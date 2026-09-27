@@ -1023,7 +1023,7 @@ $('useCodeBtn').addEventListener('click', async () => {
   try {
     const { error: err } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
     if (err) throw err;
-    $('otpSentTo').textContent = `We emailed a 6-digit code to ${email}.`;
+    $('otpSentTo').textContent = `We emailed a sign-in code to ${email}.`;
     $('loginOtp').value = '';
     showPairStep('otp');
     $('loginOtp').focus();
@@ -1039,8 +1039,8 @@ $('otpForm').addEventListener('submit', async (e) => {
   const error = $('otpError');
   error.classList.add('hidden');
   const email = $('loginEmail').value.trim();
-  const token = $('loginOtp').value.replace(/\s+/g, '');
-  if (token.length < 6) return;
+  const token = $('loginOtp').value.replace(/\D+/g, '');
+  if (token.length < 6) { error.textContent = 'Enter the full code from the email.'; error.classList.remove('hidden'); return; }
   showPairStep('busy', 'Signing in…');
   try {
     const { error: err } = await sb.auth.verifyOtp({ email, token, type: 'email' });

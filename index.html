@@ -153,14 +153,14 @@
           <button class="auth-tab" data-tab="signup">Sign up</button>
         </div>
 
-        <!-- Sign in: email + password, then a 6-digit code -->
+        <!-- Sign in: email + password, then an emailed code -->
         <div class="login-step" id="stepSignin">
           <input class="login-input" id="signinEmail" type="email" placeholder="you@example.com" autocomplete="email">
           <input class="login-input" id="signinPassword" type="password" placeholder="Password" autocomplete="current-password">
           <button class="login-btn" id="signinBtn">Sign in</button>
         </div>
 
-        <!-- Sign up: name + email + password, then a 6-digit code -->
+        <!-- Sign up: name + email + password, then an emailed code -->
         <div class="login-step hidden" id="stepSignup">
           <input class="login-input" id="signupName" type="text" placeholder="Your name" autocomplete="name">
           <input class="login-input" id="signupEmail" type="email" placeholder="you@example.com" autocomplete="email">
@@ -168,10 +168,10 @@
           <button class="login-btn" id="signupBtn">Create account</button>
         </div>
 
-        <!-- 6-digit email code, shared by both flows -->
+        <!-- Emailed code (6 to 10 digits), shared by both flows -->
         <div class="login-step hidden" id="stepOtp">
           <p class="login-sub" id="otpSentTo"></p>
-          <input class="login-input code" id="otpCode" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit code">
+          <input class="login-input code" id="otpCode" type="text" inputmode="numeric" maxlength="12" placeholder="Code from the email">
           <button class="login-btn" id="verifyOtpBtn">Verify &amp; continue</button>
           <button class="login-link" id="resendOtpBtn">Resend code</button>
           <button class="login-link" id="backFromOtpBtn">Use a different email</button>
