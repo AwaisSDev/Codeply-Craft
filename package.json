@@ -1,6 +1,6 @@
 {
   "name": "codeply-craft",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "description": "Codeply Craft - the Codeply AI coding agent as a desktop app",
   "author": "Awais Siddique",
   "main": "main.js",
@@ -80,14 +80,14 @@
       "artifactName": "Codeply-Craft-Setup.exe"
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Codeply Craft",
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
-      "installerHeaderIcon": "assets/icon.ico",
       "deleteAppDataOnUninstall": false
     },
     "mac": {

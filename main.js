@@ -1703,6 +1703,7 @@ function relaySafeEvent(event) {
     delete out.meta.imageDataUrls;
   }
   if (out.message && out.message.images) out.message = { ...out.message, images: undefined };
+  if (out.type === 'tool_end' && out.name === 'write_file' && out.args) out.args = { path: out.args.path };
   return out;
 }
 
@@ -2030,6 +2031,8 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
           label: ev.summary || ev.args?.path || ev.args?.command || ev.args?.pattern || '',
           ok: ev.ok, args: persistedArgs, at: Date.now(),
           exitCode: typeof ev.meta?.exitCode === 'number' ? ev.meta.exitCode : undefined,
+          added: typeof ev.meta?.added === 'number' ? ev.meta.added : undefined,
+          removed: typeof ev.meta?.removed === 'number' ? ev.meta.removed : undefined,
           screenshotPath: ev.meta?.screenshotPath || undefined,
         });
       } else if (ev.type === 'notice') {
@@ -2645,10 +2648,11 @@ ipcMain.handle('update:install', () => {
     return { ok: true, manual: true };
   }
   if (!updater || updateState.status !== 'ready') return { ok: false };
-  // Let the window really close instead of hiding to the tray.
-  isQuitting = true;
-  // Silent install, then relaunch: no installer wizard for the user to click through.
-  setImmediate(() => updater.quitAndInstall(true, true));
+  // Show "Installing update..." in the app, then close, install silently and
+  // relaunch on the new version. No installer window.
+  sendUpdateState({ status: 'installing' });
+  isQuitting = true; // let the window really close instead of hiding to the tray
+  setTimeout(() => updater.quitAndInstall(true, true), 1200);
   return { ok: true };
 });
 

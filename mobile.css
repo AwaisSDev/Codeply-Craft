@@ -1319,3 +1319,24 @@ button {
 .thinking-step summary svg { transition: transform .15s ease; }
 .thinking-step[open] summary svg { transform: rotate(90deg); }
 .thinking-text { margin: 4px 0 6px; padding: 8px 12px; border-left: 2px solid var(--border); color: var(--text-muted); line-height: 1.5; }
+
+/* ---- Tool rows (tap to see the command, the diff, the screenshot) ---- */
+.tool-item { margin: 2px 0; border-radius: var(--radius-md); background: var(--bg-card); border: 1px solid var(--border); font-size: 13px; overflow: hidden; }
+.tool-item summary { list-style: none; display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer; min-width: 0; }
+.tool-item summary::-webkit-details-marker { display: none; }
+.tool-item .tool-verb { font-weight: 700; color: var(--text); flex-shrink: 0; }
+.tool-item .tool-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+.tool-item .tool-stats { flex-shrink: 0; display: inline-flex; gap: 6px; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; }
+.stat-add, .stat-ok { color: var(--green); }
+.stat-del { color: var(--danger); }
+.tool-item .tool-chev { flex-shrink: 0; color: var(--text-faint); transition: transform .15s ease; }
+.tool-item[open] .tool-chev { transform: rotate(90deg); }
+.tool-item.no-body .tool-chev { visibility: hidden; }
+.tool-item.failed { border-color: rgba(229, 98, 77, .35); }
+.tool-body { padding: 0 12px 10px; display: grid; gap: 6px; }
+.tool-body:empty { display: none; }
+.tool-body-label { font-size: 11.5px; color: var(--text-faint); font-family: var(--font-mono); overflow-wrap: anywhere; }
+.tool-code { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--bg); font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow-y: auto; color: var(--text-muted); }
+.tool-code.diff-del { background: rgba(229, 98, 77, .10); color: #f0a497; }
+.tool-code.diff-add { background: rgba(76, 195, 138, .10); color: #8fe0b7; }
+.tool-item .tool-screenshot { width: 100%; border-radius: 8px; border: 1px solid var(--border); display: block; }

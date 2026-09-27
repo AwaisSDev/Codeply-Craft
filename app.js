@@ -2568,6 +2568,21 @@ function renderUpdate(u) {
   const gate = $('updateGate');
   const active = ['downloading', 'ready', 'available', 'error'].includes(u.status);
 
+  if (u.status === 'installing') {
+    gate.classList.remove('hidden');
+    pill.classList.add('hidden');
+    $('updateGateTitle').textContent = 'Installing update';
+    $('updateGateText').textContent = `Codeply Craft ${u.version || ''} is installing. It will reopen by itself in a moment.`;
+    $('updateGateNotes').classList.add('hidden');
+    $('updateGateTrack').classList.remove('hidden');
+    $('updateGateTrack').classList.add('indeterminate');
+    $('updateGateStatus').textContent = 'Closing and installing…';
+    $('updateGateBtn').classList.add('hidden');
+    return;
+  }
+  $('updateGateTitle').textContent = 'Update required';
+  $('updateGateTrack').classList.remove('indeterminate');
+
   if (u.required && active) {
     gate.classList.remove('hidden');
     pill.classList.add('hidden');

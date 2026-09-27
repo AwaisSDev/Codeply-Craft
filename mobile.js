@@ -243,6 +243,67 @@ function renderGoalCard(data) {
   scrollToBottom();
 }
 
+// ─── Tool rows: tap to see what really ran ─────────────────────────────────
+const TOOL_VERB = {
+  read_file: 'Read', write_file: 'Wrote', edit_file: 'Edited', run: 'Ran', search: 'Searched', list_dir: 'Listed',
+  browser_check: 'Checked', fetch_image: 'Downloaded', use_skill: 'Loaded skill', list_skills: 'Searched skills',
+  view_images: 'Viewed', design_reference_search: 'Searched designs', gmail_send: 'Emailed', gmail_search: 'Searched Gmail',
+  slack_post_message: 'Posted', vercel_deploy: 'Deployed', vercel_api: 'Vercel', supabase_api: 'Supabase',
+  supabase_sql: 'Ran SQL', supabase_create_project: 'Created project', supabase_delete_project: 'Deleted project',
+  github_create_repo: 'Pushed',
+};
+
+function clip(text, maxLines = 40) {
+  const lines = String(text || '').split(/\r?\n/);
+  const nl = String.fromCharCode(10);
+  return lines.length > maxLines
+    ? lines.slice(0, maxLines).join(nl) + nl + `… ${lines.length - maxLines} more lines`
+    : lines.join(nl);
+}
+
+function addToolItem(t) {
+  showChat();
+  state.activeAgentMessageEl = null;
+  const failed = t.ok === false || (typeof t.exitCode === 'number' && t.exitCode !== 0);
+  const stats = [];
+  if (typeof t.added === 'number' && (t.name === 'edit_file' || t.name === 'write_file')) stats.push(`<span class="stat-add">+${t.added}</span>`);
+  if (typeof t.removed === 'number' && t.name === 'edit_file') stats.push(`<span class="stat-del">−${t.removed}</span>`);
+  if (typeof t.exitCode === 'number') stats.push(`<span class="${t.exitCode === 0 ? 'stat-ok' : 'stat-del'}">exit ${t.exitCode}</span>`);
+
+  // What goes inside when tapped.
+  const a = t.args || {};
+  let body = '';
+  if (t.name === 'run' && a.command) body = `<div class="tool-body-label">Command</div><pre class="tool-code">${escapeHtml(a.command)}</pre>`;
+  else if (t.name === 'edit_file' && (a.search || a.replace)) {
+    body = `<div class="tool-body-label">${escapeHtml(a.path || '')}</div>` +
+      `<pre class="tool-code diff-del">${escapeHtml(clip(a.search)).replace(/^/gm, '− ')}</pre>` +
+      `<pre class="tool-code diff-add">${escapeHtml(clip(a.replace)).replace(/^/gm, '+ ')}</pre>`;
+  } else if (t.name === 'write_file') body = `<div class="tool-body-label">${escapeHtml(a.path || '')}${typeof t.added === 'number' ? ` · ${t.added} lines` : ''}</div>`;
+  else if (t.name === 'supabase_sql' && a.query) body = `<div class="tool-body-label">SQL</div><pre class="tool-code">${escapeHtml(clip(a.query))}</pre>`;
+  else if (Object.keys(a).length) body = `<pre class="tool-code">${escapeHtml(clip(Object.entries(a).map(([k, v]) => `${k}: ${v}`).join(String.fromCharCode(10)), 20))}</pre>`;
+
+  const el = document.createElement('details');
+  el.className = `tool-item${failed ? ' failed' : ''}`;
+  el.innerHTML = `<summary>
+      <span class="tool-verb">${escapeHtml(TOOL_VERB[t.name] || t.name || 'Ran')}</span>
+      <span class="tool-label">${escapeHtml(t.label || '')}</span>
+      ${stats.length ? `<span class="tool-stats">${stats.join(' ')}</span>` : ''}
+      <svg class="tool-chev" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+    </summary><div class="tool-body">${body}</div>`;
+  if (t.screenshotPath) {
+    const img = document.createElement('img');
+    img.className = 'tool-screenshot';
+    img.alt = 'Screenshot Craft took of the page';
+    img.addEventListener('click', () => window.open(img.src, '_blank'));
+    el.querySelector('.tool-body').appendChild(img);
+    loadScreenshot(img, t.screenshotPath);
+    el.open = true; // a page check is most useful with its screenshot visible
+  }
+  if (!body && !t.screenshotPath) el.classList.add('no-body');
+  $('chatFeed').append(el);
+  scrollToBottom();
+}
+
 // Narration while the agent works folds into a tap-to-open "Thinking" row;
 // only the final answer is a normal message.
 function addThinking(text) {
@@ -404,7 +465,7 @@ function renderSession(session) {
     for (const item of session.messages) {
       if (item.kind === 'user') addMessage('user', item.text);
       else if (item.kind === 'assistant') (item.interim ? addThinking(item.text) : addMessage('agent', item.text));
-      else if (item.kind === 'tool') addMessage('tool', item.label, item.name, item.screenshotPath);
+      else if (item.kind === 'tool') addToolItem(item);
       else if (item.kind === 'role_active' || item.kind === 'subagent_active') addRoleBadge(item);
       else if (item.kind === 'turn_summary') addTurnSummary(item);
       else if (item.kind === 'goal') renderGoalCard(item);
@@ -542,7 +603,10 @@ function receiveEvent(event) {
     else addMessage('agent_delta', event.text);
   } else if (event.type === 'tool_end') {
     state.activeAgentMessageEl = null;
-    addMessage('tool', event.summary || event.args?.path || event.args?.command || '', event.name || 'Executed', event.meta?.screenshotPath);
+    addToolItem({
+      name: event.name, label: event.summary || event.args?.path || event.args?.command || '', ok: event.ok, args: event.args,
+      exitCode: event.meta?.exitCode, added: event.meta?.added, removed: event.meta?.removed, screenshotPath: event.meta?.screenshotPath,
+    });
   } else if (event.type === 'error') {
     state.activeAgentMessageEl = null;
     addMessage('error', event.error);
