@@ -831,9 +831,11 @@ async function browser_check(args, ctx) {
 
   const wait = Math.min(BROWSER_CHECK_MAX_WAIT_MS, Math.max(0, parseInt(args.wait, 10) || BROWSER_CHECK_DEFAULT_WAIT_MS));
 
+  const viewport = String(args.viewport || 'desktop').trim().toLowerCase();
+
   let report;
   try {
-    report = await ctx.browser(url, { wait });
+    report = await ctx.browser(url, { wait, viewport });
   } catch (e) {
     return { ok: false, output: `browser_check failed: ${e.message}` };
   }
@@ -841,7 +843,14 @@ async function browser_check(args, ctx) {
     return { ok: false, output: `Could not load ${url}: ${(report && report.error) || 'unknown error'}` };
   }
 
-  const lines = [`Loaded ${url}`, `Title: ${report.title || '(none)'}`];
+  const lines = [`Loaded ${url}`, `Title: ${report.title || '(none)'}`, `Viewport: ${report.viewport || 'desktop'}`];
+  if (report.overflowX) {
+    lines.push('', `NOT RESPONSIVE: the page is ${report.pageWidth}px wide in a ${report.viewportWidth}px viewport, so it scrolls sideways.` +
+      (report.wideElements?.length ? ` Elements past the right edge: ${report.wideElements.join(', ')}.` : ''));
+  }
+  if (report.viewport && report.viewport !== 'desktop' && report.hasViewportMeta === false) {
+    lines.push('', 'Missing <meta name="viewport" content="width=device-width, initial-scale=1">: phones will render the desktop layout zoomed out.');
+  }
 
   if (report.consoleErrors?.length) {
     lines.push('', `Console errors (${report.consoleErrors.length}):`, ...report.consoleErrors.slice(0, 30).map((m) => `  ${m}`));
@@ -861,7 +870,7 @@ async function browser_check(args, ctx) {
   if (report.screenshotPath) lines.push('', `Screenshot saved to disk: ${report.screenshotPath}`);
   if (report.screenshotDataUrl) lines.push('', 'A screenshot of the actual rendered page is attached to this result - look at it before judging whether the page is correct, not just the text above.');
 
-  const clean = !(report.consoleErrors?.length || report.failedRequests?.length || report.brokenImages?.length);
+  const clean = !(report.consoleErrors?.length || report.failedRequests?.length || report.brokenImages?.length || report.overflowX);
 
   return {
     ok: true,
@@ -871,7 +880,8 @@ async function browser_check(args, ctx) {
     // already used for pasted user images) so the model actually sees the
     // page instead of only reading a text description of it.
     meta: {
-      label: url, clean, errorCount: report.consoleErrors?.length || 0,
+      label: report.viewport && report.viewport !== 'desktop' ? `${url} · ${report.viewport.split(' ')[0]}` : url,
+      clean, errorCount: report.consoleErrors?.length || 0, overflowX: !!report.overflowX,
       screenshotDataUrl: report.screenshotDataUrl || null,
       // Persisted on the session message so a screenshot survives reopening
       // the chat later - the data: URL above is only ever sent over the

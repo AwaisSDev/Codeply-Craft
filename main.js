@@ -1003,9 +1003,12 @@ function positionCheckerView() {
   const { width, height } = win.getContentBounds();
   const panelWidth = Math.round(width * PANEL_WIDTH_RATIO);
   const top = TITLEBAR_HEIGHT + BROWSER_CHROME_HEIGHT;
+  // Tablet/mobile: a centered frame of the real width, so the page lays out
+  // exactly as it would on that device.
+  const viewWidth = panelSize ? Math.min(panelSize.width, panelWidth) : panelWidth;
   checkerView.setBounds({
-    x: width - panelWidth, y: top,
-    width: panelWidth, height: height - top,
+    x: width - panelWidth + Math.floor((panelWidth - viewWidth) / 2), y: top,
+    width: viewWidth, height: height - top,
   });
 }
 
@@ -1064,13 +1067,64 @@ function browserCheck(url, opts) {
   return run;
 }
 
+// ─── Viewport sizes (responsive checks) ─────────────────────────────────────
+// Used both by the agent's browser_check (<viewport>) and the size switcher in
+// the browser panel. A size is applied by making the page's viewport really
+// that wide (the panel shrinks to a centered frame; off-screen captures use a
+// window of exactly that size) plus a phone user agent. Chromium's device
+// emulation is deliberately NOT used: it lets the layout viewport stretch to
+// fit the content, which hides the exact sideways-scroll bug this checks for.
+const VIEWPORTS = {
+  desktop: null,
+  tablet: { width: 768, height: 1024, mobile: true },
+  mobile: { width: 390, height: 844, mobile: true },
+};
+const MOBILE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+let defaultCheckerUA = null;
+
+function parseViewport(v) {
+  const key = String(v || 'desktop').trim().toLowerCase();
+  if (key in VIEWPORTS) return { name: key, size: VIEWPORTS[key] };
+  const m = /^(\d{3,4})\s*[x×]\s*(\d{3,4})$/.exec(key);
+  if (m) {
+    const width = Number(m[1]);
+    const height = Number(m[2]);
+    return { name: `${width}x${height}`, size: { width, height, mobile: width < 1024 } };
+  }
+  return { name: 'desktop', size: null };
+}
+
+function applyViewport(wc, size) {
+  if (!defaultCheckerUA) defaultCheckerUA = wc.getUserAgent();
+  wc.setUserAgent(size && size.mobile ? MOBILE_UA : defaultCheckerUA);
+}
+
+let panelSize = null; // null = fill the panel (desktop)
+function setPanelViewport(name) {
+  const vp = parseViewport(name);
+  panelSize = vp.size;
+  if (checkerView) {
+    applyViewport(checkerView.webContents, vp.size);
+    positionCheckerView();
+  }
+  if (win && !win.isDestroyed()) win.webContents.send('browserpanel:viewport', { name: vp.name });
+  return vp;
+}
+
+ipcMain.on('browserpanel:viewport', (e, name) => {
+  getCheckerView();
+  setPanelViewport(name);
+  if (checkerView.webContents.getURL()) checkerView.webContents.reload();
+});
+
 /** Loads a page in an invisible off-screen window and captures it (works while Craft is hidden). */
-async function captureOffscreen(url, wait = 700) {
+async function captureOffscreen(url, wait = 700, size = null) {
   const shot = new BrowserWindow({
-    show: false, width: 1280, height: 860, paintWhenInitiallyHidden: true,
+    show: false, width: size ? size.width : 1280, height: size ? size.height : 860, paintWhenInitiallyHidden: true,
     webPreferences: { offscreen: true, partition: 'persist:codeply-browser-check', contextIsolation: true, nodeIntegration: false },
   });
   try {
+    if (size) applyViewport(shot.webContents, size);
     await shot.loadURL(url);
     await new Promise((r) => setTimeout(r, Math.max(600, wait + 400)));
     const img = await shot.webContents.capturePage();
@@ -1078,12 +1132,15 @@ async function captureOffscreen(url, wait = 700) {
   } catch {
     return null;
   } finally {
-    if (!shot.isDestroyed()) shot.destroy();
+    // close(), not destroy(): destroying it mid-teardown broke the next page load.
+    if (!shot.isDestroyed()) shot.close();
   }
 }
 
-async function doBrowserCheck(url, { wait = 700 } = {}) {
+async function doBrowserCheck(url, { wait = 700, viewport } = {}) {
   getCheckerView();
+  // The agent picks the size per check; the panel follows so you see it too.
+  const vp = setPanelViewport(viewport || 'desktop');
   showCheckerPanel(); // auto-opens the panel so the user can watch it work, without stealing focus off the chat
   if (win && !win.isDestroyed()) win.webContents.send('browserpanel:url', { url });
   const wc = checkerView.webContents;
@@ -1142,10 +1199,26 @@ async function doBrowserCheck(url, { wait = 700 } = {}) {
         .filter((img) => !img.complete || img.naturalWidth === 0)
         .map((img) => img.src)
         .slice(0, 20);
+      const pageWidth = Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0);
+      // Elements poking past the right edge are the usual cause of sideways scrolling on phones.
+      const wide = [];
+      for (const el of document.querySelectorAll('body *')) {
+        const r = el.getBoundingClientRect();
+        if (r.right > window.innerWidth + 2 && r.width > 0) {
+          const cls = typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\\s+/).slice(0, 2).join('.') : '';
+          wide.push(el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + cls);
+          if (wide.length >= 5) break;
+        }
+      }
       return {
         title: document.title || '',
         text: (document.body ? document.body.innerText : '').trim(),
         brokenImages: imgs,
+        viewportWidth: window.innerWidth,
+        pageWidth,
+        overflowX: pageWidth > window.innerWidth + 1,
+        wideElements: wide,
+        hasViewportMeta: !!document.querySelector('meta[name="viewport"]'),
       };
     })()`);
   } catch {}
@@ -1157,7 +1230,7 @@ async function doBrowserCheck(url, { wait = 700 } = {}) {
     // With Craft minimized or hidden in the tray (e.g. driven from Codeply
     // Away) the panel isn't painted and the capture comes back empty; render
     // the page off-screen instead, which works no matter what's on screen.
-    if (!image || image.isEmpty()) image = await captureOffscreen(url, wait);
+    if (!image || image.isEmpty()) image = await captureOffscreen(url, wait, vp.size);
     if (!image || image.isEmpty()) throw new Error('empty capture');
     const png = image.toPNG();
     const dir = path.join(app.getPath('userData'), 'browser-checks');
@@ -1178,6 +1251,12 @@ async function doBrowserCheck(url, { wait = 700 } = {}) {
     title: extracted.title,
     text: extracted.text,
     brokenImages: extracted.brokenImages,
+    viewport: vp.size ? `${vp.name} (${vp.size.width}x${vp.size.height})` : 'desktop',
+    viewportWidth: extracted.viewportWidth,
+    pageWidth: extracted.pageWidth,
+    overflowX: !!extracted.overflowX,
+    wideElements: extracted.wideElements || [],
+    hasViewportMeta: extracted.hasViewportMeta,
     consoleErrors: checkerCollector.errors,
     consoleWarnings: checkerCollector.warnings,
     failedRequests,

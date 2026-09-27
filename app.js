@@ -938,6 +938,17 @@ if (api) {
 }
 $('spProject').addEventListener('click', () => state.project && api.openPath(state.project));
 
+// Viewport switcher: see the page at desktop, tablet or phone width. The
+// agent's own browser checks switch it too, so you see what it's checking.
+function syncViewportButtons(name) {
+  document.querySelectorAll('.bc-size').forEach((b) => b.classList.toggle('active', b.dataset.size === name));
+}
+document.querySelectorAll('.bc-size').forEach((b) => b.addEventListener('click', () => {
+  syncViewportButtons(b.dataset.size);
+  api.browserPanelViewport(b.dataset.size);
+}));
+if (api && api.onBrowserPanelViewport) api.onBrowserPanelViewport((d) => syncViewportButtons(['desktop', 'tablet', 'mobile'].includes(d.name) ? d.name : ''));
+
 // ─── Embedded terminal (real child process running the user's own shell) ────
 let term = null;
 let termFit = null;

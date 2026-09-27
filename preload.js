@@ -83,6 +83,8 @@ contextBridge.exposeInMainWorld('craft', {
   browserPanelForward: () => ipcRenderer.send('browserpanel:forward'),
   browserPanelReload: () => ipcRenderer.send('browserpanel:reload'),
   browserPanelNavigate: (url) => ipcRenderer.send('browserpanel:navigate', url),
+  browserPanelViewport: (name) => ipcRenderer.send('browserpanel:viewport', name),
+  onBrowserPanelViewport: (cb) => ipcRenderer.on('browserpanel:viewport', (e, data) => cb(data)),
   onBrowserPanelState: (cb) => ipcRenderer.on('browserpanel:state', (e, data) => cb(data)),
   onBrowserPanelUrl: (cb) => ipcRenderer.on('browserpanel:url', (e, data) => cb(data)),
 
