@@ -1064,6 +1064,24 @@ function browserCheck(url, opts) {
   return run;
 }
 
+/** Loads a page in an invisible off-screen window and captures it (works while Craft is hidden). */
+async function captureOffscreen(url, wait = 700) {
+  const shot = new BrowserWindow({
+    show: false, width: 1280, height: 860, paintWhenInitiallyHidden: true,
+    webPreferences: { offscreen: true, partition: 'persist:codeply-browser-check', contextIsolation: true, nodeIntegration: false },
+  });
+  try {
+    await shot.loadURL(url);
+    await new Promise((r) => setTimeout(r, Math.max(600, wait + 400)));
+    const img = await shot.webContents.capturePage();
+    return img && !img.isEmpty() ? img : null;
+  } catch {
+    return null;
+  } finally {
+    if (!shot.isDestroyed()) shot.destroy();
+  }
+}
+
 async function doBrowserCheck(url, { wait = 700 } = {}) {
   getCheckerView();
   showCheckerPanel(); // auto-opens the panel so the user can watch it work, without stealing focus off the chat
@@ -1135,7 +1153,12 @@ async function doBrowserCheck(url, { wait = 700 } = {}) {
   let screenshotPath = null;
   let screenshotDataUrl = null;
   try {
-    const image = await wc.capturePage();
+    let image = await wc.capturePage().catch(() => null);
+    // With Craft minimized or hidden in the tray (e.g. driven from Codeply
+    // Away) the panel isn't painted and the capture comes back empty; render
+    // the page off-screen instead, which works no matter what's on screen.
+    if (!image || image.isEmpty()) image = await captureOffscreen(url, wait);
+    if (!image || image.isEmpty()) throw new Error('empty capture');
     const png = image.toPNG();
     const dir = path.join(app.getPath('userData'), 'browser-checks');
     fs.mkdirSync(dir, { recursive: true });

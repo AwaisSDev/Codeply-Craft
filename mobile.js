@@ -243,6 +243,17 @@ function renderGoalCard(data) {
   scrollToBottom();
 }
 
+// Full-screen view for a screenshot; tap anywhere to close.
+function openLightbox(src) {
+  if (!src) return;
+  const box = document.createElement('div');
+  box.className = 'lightbox';
+  box.innerHTML = '<img alt="Screenshot">';
+  box.querySelector('img').src = src;
+  box.addEventListener('click', () => box.remove());
+  document.body.appendChild(box);
+}
+
 // ─── Tool rows: tap to see what really ran ─────────────────────────────────
 const TOOL_VERB = {
   read_file: 'Read', write_file: 'Wrote', edit_file: 'Edited', run: 'Ran', search: 'Searched', list_dir: 'Listed',
@@ -294,7 +305,7 @@ function addToolItem(t) {
     const img = document.createElement('img');
     img.className = 'tool-screenshot';
     img.alt = 'Screenshot Craft took of the page';
-    img.addEventListener('click', () => window.open(img.src, '_blank'));
+    img.addEventListener('click', (e) => { e.preventDefault(); openLightbox(img.src); });
     el.querySelector('.tool-body').appendChild(img);
     loadScreenshot(img, t.screenshotPath);
     el.open = true; // a page check is most useful with its screenshot visible
