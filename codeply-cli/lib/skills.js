@@ -25,13 +25,15 @@
  *      ECC's own `.agents/skills/` curation of its 281-skill `skills/`
  *      library (see skills/SOURCE.md), reused rather than re-decided.
  *
- * Two sources, later wins on a name collision:
+ * Three sources, later wins on a name collision:
+ *   plugin     <plugin>/skills/<name>/SKILL.md    - `codeply plugin install`
  *   built-in   <repo>/skills/<name>/SKILL.md      - vendored, ships with Codeply
  *   user       ~/.codeply/skills/<name>/SKILL.md  - `codeply skill install`
  */
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const plugins = require('./plugins.js');
 
 const BUILTIN_DIR = path.join(__dirname, '..', 'skills');
 const USER_DIR = path.join(os.homedir(), '.codeply', 'skills');
@@ -121,9 +123,13 @@ function parseFrontmatter(text) {
 }
 
 /** Every skill available right now, built-in and user, deduped by name. */
-function listSkills() {
+function listSkills(cwd) {
   const found = new Map();
   for (const s of listSkillDirs(BUILTIN_DIR, 'built-in')) found.set(s.name, s);
+  // Plugin skills were installed on purpose, so they are shown like the daily set.
+  for (const { plugin, dir } of plugins.skillDirs(cwd)) {
+    for (const s of listSkillDirs(dir, 'plugin')) found.set(s.name, { ...s, plugin });
+  }
   // User skills are installed deliberately, so a same-named one wins.
   for (const s of listSkillDirs(USER_DIR, 'user')) found.set(s.name, s);
 
