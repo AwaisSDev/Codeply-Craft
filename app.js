@@ -3722,6 +3722,7 @@ function pluginSummaryHtml(s) {
   if (s.commands) adds.push(`${s.commands} command${s.commands === 1 ? '' : 's'} (/${esc(s.name)}:...)`);
   if (s.skills) adds.push(`${s.skills} skill${s.skills === 1 ? '' : 's'}`);
   if (s.instructions) adds.push('rules for the agent');
+  if (s.mcpServers.length) adds.push(`${s.mcpServers.length === 1 ? 'MCP server' : 'MCP servers'} ${s.mcpServers.map((m) => esc(m.name)).join(', ')}`);
   const mcp = s.mcpServers.length
     ? `<div class="plugin-warn">Starts programs on this computer (MCP servers):${s.mcpServers.map((m) => `<code>${esc(m.name)}: ${esc(m.runs || m.url)}</code>`).join('')}</div>`
     : '';
@@ -3768,7 +3769,7 @@ async function renderPlugins() {
       <div class="plugin-actions">
         <span class="plugin-scope-tag">${p.scope === 'project' ? 'This project' : 'Every project'}</span>
         <button class="btn btn-secondary btn-sm" data-a="toggle">${p.enabled ? 'Turn off' : 'Turn on'}</button>
-        ${p.source ? '<button class="btn btn-secondary btn-sm" data-a="update">Update</button>' : ''}
+        ${p.source && p.sourceKind !== 'local' ? '<button class="btn btn-secondary btn-sm" data-a="update">Update</button>' : ''}
         <button class="btn btn-ghost btn-sm btn-danger-hover" data-a="remove">Remove</button>
       </div>`;
     card.querySelector('[data-a="toggle"]').addEventListener('click', async () => { await api.togglePlugin(p.name, !p.enabled, state.project || null); renderPlugins(); });

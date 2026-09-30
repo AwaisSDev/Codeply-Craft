@@ -105,7 +105,7 @@ function findSubagentByName(name) {
 // completely wrong specialist instead of just staying General.
 const AUTO_ROUTES = [
   { id: 'security', re: /\b(vulnerabilit(?:y|ies)|xss|csrf|sql\s?injections?|penetration\s?tests?|pentest|exploits?|security\b|auth(?:entication|orization)?\s?(?:bugs?|bypass(?:es)?|checks?|flows?|tokens?)|hash(?:ing)?\s?passwords?|encrypt(?:ion|ed)?|secrets?\s?(?:leak(?:ed)?|expos(?:ed|ure))|credentials?(?:\s?leak(?:ed)?)?|rate\s?limit(?:ing)?|owasp|csp\b|cors\b|jwt\b|sanitiz(?:e|ing|ation)|injection\s?attacks?)\b/i },
-  { id: 'database', re: /\b(databases?|db\s?schemas?|schemas?\s?(?:change|design|migration)|migrat(?:ion|ions|e|ing)|sql\s?quer(?:y|ies)|quer(?:y|ies)\s?(?:plan|slow|performance)|add(?:ing)?\s?an?\s?index|indexes?|foreign\s?keys?|primary\s?keys?|postgres(?:ql)?|mysql|sqlite|mongo(?:db)?|n\+1\s?quer|tables?\s?(?:column|row|schema)|orm\b|prisma\b|supabase\s?tables?)\b/i },
+  { id: 'database', re: /\b(databases?|db\s?schemas?|schemas?\s?(?:change|design|migration)|migrat(?:ion|ions|e|ing)|sql\s?quer(?:y|ies)|quer(?:y|ies)\s?(?:plan|slow|performance)|add(?:ing)?\s?(?:an?\s?)?(?:db\s?|database\s?|sql\s?|unique\s?|composite\s?)?(?:index|indexes|indices)|(?:database|db|sql|table|column|unique|composite|missing|btree|gin)\s?(?:index|indexes|indices)|(?:index|indexes|indices)\s+(?:on|for)\s+(?:the\s+)?(?:\w+\s+)?(?:tables?|columns?|fields?|quer(?:y|ies))|(?:create|drop)\s?(?:unique\s?)?index|foreign\s?keys?|primary\s?keys?|postgres(?:ql)?|mysql|sqlite|mongo(?:db)?|n\+1\s?quer|tables?\s?(?:column|row|schema)|orm\b|prisma\b|supabase\s?tables?)\b/i },
   { id: 'devops', re: /\b(ci\/cd|ci\s?pipelines?|github\s?actions|deploy(?:ment|ments|ing|ed)?|rollbacks?|dockerfiles?|docker\s?compose|kubernetes|k8s|zero[- ]downtime|infra(?:structure)?(?:\s?as\s?code)?|env(?:ironment)?\s?variables?|secrets?\s?manager|build\s?pipelines?|hosting|vercel|netlify|render\.com|health\s?checks?|uptime|logging\s?(?:setup|infra)|monitoring|observability)\b/i },
   { id: 'testing', re: /\b(unit\s?tests?|write\s?(?:a\s?|some\s?)?tests?|regression\s?tests?|e2e\s?tests?|end[- ]to[- ]end\s?tests?|test\s?coverage|flaky\s?tests?|reproduce\s?(?:this|the)\s?bugs?|test\s?suites?|qa\s?pass|edge\s?cases?|testing\s?strategy|test\s?(?:the|this|my|it|out)\b|does\s?(?:it|this)\s?works?|check\s?if\s?(?:it|this)\s?works?)\b/i },
   { id: 'backend', re: /\b(api\s?(?:endpoints?|routes?|integrations?)|rest\s?api|backend\s?(?:logic|routes?|bugs?|code)|business\s?logic|server[- ]side|race\s?conditions?|idempotent|webhooks?|graphql|endpoints?\s?(?:for|to)|route\s?handlers?|server\s?errors?)\b/i },
@@ -140,7 +140,9 @@ const NICHE_ALIASES = {
 function detectExplicitMention(message) {
   const text = String(message || '');
   for (const a of listSubagents()) {
-    if (new RegExp(`\\b${a.name}\\b`, 'i').test(text)) return a.id;
+    // A mascot name inside a file name or path is not a mention: the
+    // database role is called Index, and "index.html" is not asking for it.
+    if (new RegExp(`(?<![\\w./\\\\-])${a.name}(?![\\w/\\\\-]|\\.\\w)`, 'i').test(text)) return a.id;
     for (const alias of NICHE_ALIASES[a.id] || []) {
       if (new RegExp(`\\b${alias}\\s+(?:agent|specialist|bot)\\b`, 'i').test(text)) return a.id;
     }

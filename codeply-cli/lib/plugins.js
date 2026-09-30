@@ -113,6 +113,7 @@ function summarize(p) {
     commands: p.commandsDir ? countFiles(p.commandsDir, (n) => n.toLowerCase().endsWith('.md')) : 0,
     skills: p.skillsDir ? fs.readdirSync(p.skillsDir, { withFileTypes: true }).filter((e) => e.isDirectory() && fs.existsSync(path.join(p.skillsDir, e.name, 'SKILL.md'))).length : 0,
     instructions: p.instructionFiles.length,
+    sourceKind: p.sourceKind || '',
     mcpServers: Object.entries(p.mcpServers).map(([n, s]) => ({
       name: n,
       runs: s && s.command ? [s.command, ...(s.args || [])].join(' ') : '',
@@ -129,7 +130,9 @@ function scanRoot(root, scope, out) {
     const p = readPlugin(path.join(root, e.name), e.name);
     if (p.error) continue;
     const record = readJson(path.join(root, e.name, RECORD_FILE)) || {};
-    out.set(p.name, { ...p, scope, source: record.source || '', commit: record.commit || '' });
+    // Older installs have no recorded kind; anything that is not a git source is a local folder.
+    const sourceKind = record.source ? (record.kind || (parseSource(record.source).kind === 'git' ? 'git' : 'local')) : '';
+    out.set(p.name, { ...p, scope, source: record.source || '', sourceKind, commit: record.commit || '' });
   }
 }
 
@@ -257,7 +260,7 @@ async function prepareInstall(source) {
     if (!summary.commands && !summary.skills && !summary.instructions && !summary.mcpServers.length) {
       throw new Error('Nothing to install: no commands/, skills/, mcp.json or instructions.md in it.');
     }
-    return { ok: true, tmp, work, name: p.name, summary, record: { source: String(source).trim(), commit } };
+    return { ok: true, tmp, work, name: p.name, summary, record: { source: String(source).trim(), kind: src.kind, commit } };
   } catch (e) {
     fs.rmSync(tmp, { recursive: true, force: true });
     return { ok: false, error: e.message };

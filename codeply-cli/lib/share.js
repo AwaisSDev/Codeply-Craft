@@ -4,13 +4,18 @@
  * first: keys and tokens are masked and your home folder and project path are
  * replaced, so a shared chat does not leak the machine it came from.
  */
+const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
 const SECRET_PATTERNS = [
   /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
   /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}/g,
+  /\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{10,}/g,
   /\bsk-ant-[A-Za-z0-9_-]{16,}/g,
+  /\bgsk_[A-Za-z0-9]{20,}/g,
+  /\bhf_[A-Za-z0-9]{20,}/g,
+  /\borg[_-][A-Za-z0-9]{16,}/g,
   /\bgh[pousr]_[A-Za-z0-9]{30,}/g,
   /\bgithub_pat_[A-Za-z0-9_]{30,}/g,
   /\bxox[abprs]-[A-Za-z0-9-]{10,}/g,
@@ -23,18 +28,52 @@ const SECRET_PATTERNS = [
 
 function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
+function realNative(p) { try { return fs.realpathSync.native(p); } catch { return p; } }
+
+// Every spelling of the home folder: as given, fully resolved, and the 8.3
+// short form Windows hands out through os.tmpdir() (C:\Users\ADMINI~1).
+function homeAliases(home) {
+  const out = new Set([home, realNative(home)]);
+  const tmp = os.tmpdir();
+  const longTmp = realNative(tmp);
+  if (longTmp !== tmp && longTmp.toLowerCase().startsWith(home.toLowerCase())) {
+    const rest = longTmp.slice(home.length);
+    if (tmp.toLowerCase().endsWith(rest.toLowerCase())) out.add(tmp.slice(0, tmp.length - rest.length));
+  }
+  return [...out].filter((p) => p && p.length > 3);
+}
+
+// Absolute paths that are neither home nor project keep only their last part.
+const SEG = '[^\\\\/\\s:*?"\'<>|`()\\[\\],;]+';
+const WIN_PATH = new RegExp(`(?<![\\w])[A-Za-z]:(?:\\\\+|/)(?:${SEG}(?: ${SEG})*\\\\+|${SEG}/)*${SEG}`, 'g');
+const UNIX_PATH = new RegExp(`(?<![\\w.:/~<>-])/(?:Users|home|root|var|opt|mnt|tmp|private|srv|Volumes|media|usr|etc|Library|Applications)(?:/${SEG})+`, 'g');
+function maskPath(m) {
+  const tail = /\.+$/.exec(m);
+  const p = tail ? m.slice(0, -tail[0].length) : m;
+  return `<path>/${p.split(/[\\/]+/).pop()}${tail ? tail[0] : ''}`;
+}
+
 /** Cleans one string for sharing. `cwd` is the project folder, if known. */
 function scrub(text, cwd) {
   let s = String(text == null ? '' : text);
   for (const re of SECRET_PATTERNS) s = s.replace(re, (m, pre) => (typeof pre === 'string' ? `${pre}[hidden]` : '[hidden]'));
   const paths = [];
-  if (cwd) paths.push([cwd, '<project>']);
   const home = os.homedir();
-  if (home && home.length > 3) paths.push([home, '~']);
-  for (const [from, to] of paths) {
-    for (const v of new Set([from, from.replace(/\\/g, '/')])) s = s.replace(new RegExp(escapeRe(v), 'gi'), to);
+  const homes = home && home.length > 3 ? homeAliases(home) : [];
+  if (cwd) {
+    const projects = new Set([cwd, realNative(cwd)]);
+    for (const p of [...projects]) {
+      if (home && p.toLowerCase().startsWith(home.toLowerCase())) for (const h of homes) projects.add(h + p.slice(home.length));
+    }
+    for (const p of projects) paths.push([p, '<project>']);
   }
-  return s;
+  for (const h of homes) paths.push([h, '~']);
+  paths.sort((a, b) => b[0].length - a[0].length);
+  for (const [from, to] of paths) {
+    const forms = new Set([from, from.replace(/\\/g, '/'), from.replace(/\\/g, '\\\\')]);
+    for (const v of forms) s = s.replace(new RegExp(escapeRe(v), 'gi'), to);
+  }
+  return s.replace(WIN_PATH, maskPath).replace(UNIX_PATH, maskPath);
 }
 
 /** The parts of a stored chat that belong in a shared copy. */
@@ -162,6 +201,7 @@ async function createGist(session, token, { fetchImpl = fetch, apiUrl = 'https:/
     const scopeHint = res.status === 404 || res.status === 403 ? ' Reconnect GitHub in Connect Apps so Craft can create gists.' : '';
     return { ok: false, error: `GitHub said ${res.status}${json && json.message ? `: ${json.message}` : ''}.${scopeHint}` };
   }
+  if (!json || typeof json.html_url !== 'string') return { ok: false, error: `GitHub answered ${res.status} but did not return a gist link. Try again in a moment.` };
   return { ok: true, url: json.html_url, public: !!isPublic };
 }
 

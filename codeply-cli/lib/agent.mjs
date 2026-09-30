@@ -117,9 +117,26 @@ const HALLUCINATED_ACTION_CORRECTION =
 // styles.css, and app.js" after only index.html was actually write_file'd.
 const FILENAME_TOKEN = /\b[\w-]+\.(?:html|htm|css|js|jsx|ts|tsx|mjs|cjs|py|json|md|yml|yaml|txt|svg|vue|svelte)\b/gi;
 
+// Only names in a sentence that claims a change count. Code blocks and
+// command-shaped code spans ("`node index.js`") are dropped first, and a name
+// right after a command word ("run index.js", "open index.html") is how to
+// use a file, not a claim that it changed.
+const CHANGE_VERB = /\b(?:updated|changed|edited|created|added|modified|wrote|written|fixed|rewrote|rewritten|replaced|removed|refactored|implemented|applied|saved|generated|renamed|moved|deleted)\b/i;
+const COMMAND_BEFORE = /\b(?:run|running|node|nodemon|python3?|py|deno|bun|npx|npm|yarn|pnpm|tsx|ts-node|open|opening|execute|launch|start|serve|visit|load)\s+(?:(?:--?[\w-]+|start|run|exec)\s+)*$/i;
+
 function extractClaimedFilenames(prose) {
-  const m = prose.match(FILENAME_TOKEN);
-  return m ? [...new Set(m.map((f) => f.toLowerCase()))] : [];
+  const text = prose
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`\n]*)`/g, (m, inner) => (/\s/.test(inner.trim()) ? ' ' : inner));
+  const out = new Set();
+  for (const sentence of text.split(/[.!?;:](?=\s|$)|\n/)) {
+    if (!CHANGE_VERB.test(sentence)) continue;
+    for (const m of sentence.matchAll(FILENAME_TOKEN)) {
+      if (COMMAND_BEFORE.test(sentence.slice(0, m.index))) continue;
+      out.add(m[0].toLowerCase());
+    }
+  }
+  return [...out];
 }
 
 const overclaimCorrection = (missing) =>

@@ -45,10 +45,13 @@ const RETRY_BACKOFF_MS = [1500, 4000, 9000];
 const RETRY_AFTER_CAP_MS = 30000;
 
 // Stop must not wait out a backoff: the sleep ends the moment the signal fires.
+// The abort listener is removed when the sleep ends normally, so a long run
+// of retries does not pile listeners onto the run's one signal.
 const sleep = (ms, signal) => new Promise((r) => {
   if (signal?.aborted) return r();
-  const t = setTimeout(r, ms);
-  signal?.addEventListener('abort', () => { clearTimeout(t); r(); }, { once: true });
+  const onAbort = () => { clearTimeout(t); r(); };
+  const t = setTimeout(() => { signal?.removeEventListener('abort', onAbort); r(); }, ms);
+  signal?.addEventListener('abort', onAbort, { once: true });
 });
 
 /**
@@ -234,13 +237,18 @@ function isAbortError(e) {
 // This gives every attempt a hard ceiling so a stalled request surfaces as a
 // real, retryable error instead of an indefinite silent wait.
 const REQUEST_TIMEOUT_MS = 120_000;
+const ANTHROPIC_TIMEOUT_MS = 300_000;
 
 /** Combines the caller's own abort signal (Stop button) with a hard timeout into one signal to hand fetch(). */
 function withTimeout(signal, ms = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController();
+  // One listener per request on the run's long-lived signal; cleanup() takes
+  // it off again, or a run with many model calls trips Node's
+  // MaxListenersExceededWarning (11 abort listeners) and leaks them.
+  const onAbort = () => controller.abort();
   if (signal) {
     if (signal.aborted) controller.abort();
-    else signal.addEventListener('abort', () => controller.abort(), { once: true });
+    else signal.addEventListener('abort', onAbort, { once: true });
   }
   const timer = setTimeout(() => controller.abort(new Error('timeout')), ms);
   return {
@@ -249,7 +257,7 @@ function withTimeout(signal, ms = REQUEST_TIMEOUT_MS) {
     // user's own Stop - callers use this to report "the request stalled"
     // instead of silently treating a stall as if the user had cancelled it.
     isTimeout: () => controller.signal.reason instanceof Error && controller.signal.reason.message === 'timeout',
-    cleanup: () => clearTimeout(timer),
+    cleanup: () => { clearTimeout(timer); signal?.removeEventListener('abort', onAbort); },
   };
 }
 
@@ -262,16 +270,19 @@ function withTimeout(signal, ms = REQUEST_TIMEOUT_MS) {
  */
 function withIdleTimeout(signal, ms = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController();
+  const onAbort = () => controller.abort();
   if (signal) {
     if (signal.aborted) controller.abort();
-    else signal.addEventListener('abort', () => controller.abort(), { once: true });
+    else signal.addEventListener('abort', onAbort, { once: true });
   }
+  let done = false;
   let timer = setTimeout(() => controller.abort(new Error('timeout')), ms);
   return {
     signal: controller.signal,
-    poke: () => { clearTimeout(timer); timer = setTimeout(() => controller.abort(new Error('timeout')), ms); },
+    // A no-op once cleaned up, so a late chunk cannot restart a timer nobody clears.
+    poke: () => { if (done) return; clearTimeout(timer); timer = setTimeout(() => controller.abort(new Error('timeout')), ms); },
     isTimeout: () => controller.signal.reason instanceof Error && controller.signal.reason.message === 'timeout',
-    cleanup: () => clearTimeout(timer),
+    cleanup: () => { done = true; clearTimeout(timer); signal?.removeEventListener('abort', onAbort); },
   };
 }
 
@@ -299,6 +310,7 @@ async function chatViaProxy(messages, opts) {
         signal,
       });
       body = await res.json().catch(() => ({}));
+      if (isTimeout()) return { retryable: true, error: 'The AI proxy stopped sending its answer partway - retrying.' };
     } catch (e) {
       if (isTimeout()) return { retryable: true, error: 'The request timed out with no response from the AI proxy - retrying.' };
       if (isAbortError(e)) return { aborted: true };
@@ -478,8 +490,11 @@ async function streamingChatRequest({ url, label, model, apiKey, isLocal, messag
     const isStream = (res.headers.get('content-type') || '').includes('text/event-stream');
 
     if (!isStream) {
-      cleanup(); // no more bytes expected - the idle clock has nothing left to guard
+      // The clock keeps guarding the body read: clearing it before res.json()
+      // left a server that sent headers and then went quiet hanging forever.
       const body = await res.json().catch(() => ({}));
+      cleanup();
+      if (isTimeout()) return { retryable: true, error: `${label} stopped sending data mid-response - retrying.` };
       if (res.ok && body.choices?.[0]) {
         return { done: true, value: { success: true, data: body, modelUsed: body.model || model } };
       }
@@ -516,7 +531,6 @@ async function streamingChatRequest({ url, label, model, apiKey, isLocal, messag
     const toolCalls = [];
     try {
       for await (const chunk of res.body) {
-        poke(); // a real chunk arrived - the stream is alive, push the stall clock back out
         buffer += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : Buffer.from(chunk).toString('utf8');
         let nlIndex;
         while ((nlIndex = buffer.indexOf('\n')) !== -1) {
@@ -524,7 +538,12 @@ async function streamingChatRequest({ url, label, model, apiKey, isLocal, messag
           buffer = buffer.slice(nlIndex + 1);
           if (!line.startsWith('data:')) continue;
           const payload = line.slice(5).trim();
-          if (!payload || payload === '[DONE]') continue;
+          if (!payload) continue;
+          // Only real data pushes the stall clock back out. Keep-alive comments
+          // (": OPENROUTER PROCESSING") used to count, so an upstream that
+          // never answered but kept pinging held the run open forever.
+          poke();
+          if (payload === '[DONE]') continue;
           let evt;
           try { evt = JSON.parse(payload); } catch { continue; }
           modelUsed = evt.model || modelUsed;
@@ -663,6 +682,7 @@ async function chatViaOpenAICompatible(messages, opts, providerName, cfg) {
         signal,
       });
       body = await res.json().catch(() => ({}));
+      if (isTimeout()) return { retryable: true, error: `${label} stopped sending its answer partway - retrying.` };
     } catch (e) {
       if (isTimeout()) return { retryable: true, error: `${label} timed out with no response - retrying.` };
       if (isAbortError(e)) return { aborted: true };
@@ -793,7 +813,11 @@ async function chatViaAnthropic(messages, opts, cfg) {
   }
 
   return withRetries(async () => {
-    let res;
+    let res, body;
+    // This call is not streamed, so nothing arrives until the whole answer is
+    // ready: a longer ceiling than the others, but a ceiling. Without one a
+    // stalled connection here waited forever with no events at all.
+    const { signal, isTimeout, cleanup } = withTimeout(opts.signal, ANTHROPIC_TIMEOUT_MS);
     try {
       res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -810,14 +834,17 @@ async function chatViaAnthropic(messages, opts, cfg) {
           ...temperatureParam(model, opts),
           ...(opts.tools ? { tools: toAnthropicTools(opts.tools) } : {}),
         }),
-        signal: opts.signal,
+        signal,
       });
+      body = await res.json().catch(() => ({}));
+      if (isTimeout()) return { retryable: true, error: 'Anthropic stopped sending its answer partway - retrying.' };
     } catch (e) {
+      if (isTimeout()) return { retryable: true, error: 'Anthropic timed out with no response - retrying.' };
       if (isAbortError(e)) return { aborted: true };
       return { retryable: true, error: e.message };
+    } finally {
+      cleanup();
     }
-
-    const body = await res.json().catch(() => ({}));
 
     if (res.ok && Array.isArray(body.content)) {
       const text = body.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
@@ -960,9 +987,10 @@ async function chatViaOllamaNative(messages, opts, m) {
     }
 
     if (!res.ok) {
-      cleanup();
-      if (m.research === 'cloud' && (res.status === 401 || res.status === 403)) return { done: true, value: { success: false, error: researchMode().ERR_CLOUD_KEY } };
+      if (m.research === 'cloud' && (res.status === 401 || res.status === 403)) { cleanup(); return { done: true, value: { success: false, error: researchMode().ERR_CLOUD_KEY } }; }
       const body = await res.json().catch(() => ({}));
+      cleanup();
+      if (isTimeout()) return { retryable: true, error: 'Ollama stopped sending data mid-response - retrying.' };
       const msg = body.error || describeStatus(res.status);
       const fatal = res.status === 404 || /not found|pull/i.test(String(msg));
       if (fatal) return { done: true, value: { success: false, error: `Ollama: ${msg}${/not found/i.test(String(msg)) ? ` - run \`ollama pull ${m.model}\` first.` : ''}` } };

@@ -190,6 +190,18 @@ async function run(replies, userMessage = 'do the thing', opts = {}) {
   check('url: full', u('http://x/v1/chat/completions') === 'http://x/v1/chat/completions');
   const bad = await ai.testModel({ kind: 'ollama', baseUrl: 'http://127.0.0.1:1', model: 'x' });
   check('unreachable ollama gives a helpful error', !bad.ok && /Is Ollama running/.test(bad.error), bad.error);
+  // Many calls (and a retry backoff) on one run signal leave no abort listeners behind.
+  const { getEventListeners } = await import('events');
+  const warnings = [];
+  const onWarn = (w) => warnings.push(w.name);
+  process.on('warning', onWarn);
+  const shared = new AbortController();
+  script = [{ status: 503, error: 'busy' }, ...Array(12).fill('ok')];
+  let allOk = true;
+  for (let i = 0; i < 12; i++) allOk = (await ai.chat([{ role: 'user', content: 'hi' }], { route, signal: shared.signal })).success && allOk;
+  await new Promise((r) => setImmediate(r));
+  process.off('warning', onWarn);
+  check('ai: abort listeners are removed after each request and backoff', allOk && getEventListeners(shared.signal, 'abort').length === 0 && !warnings.includes('MaxListenersExceededWarning'), `${getEventListeners(shared.signal, 'abort').length} left, ${warnings}`);
 }
 
 // 9. The per-turn step budget is honored (/goal passes a bigger one).
@@ -598,6 +610,12 @@ process.stdin.on('data', (d) => {
   const r = cmds.resolve('/review src/app.js', proj);
   check('command: expands with mode', r && r.prompt === 'Review src/app.js for bugs.' && r.command.mode === 'Plan', JSON.stringify(r));
   check('command: /goal never shadowed', cmds.resolve('/goal x', proj) === null);
+  fs.writeFileSync(path.join(proj, '.codeply', 'commands', 'plugins.md'), 'Shadow the plugins screen.');
+  fs.writeFileSync(path.join(proj, '.codeply', 'commands', 'plugin.md'), 'Shadow the plugin command.');
+  check('command: /plugins and /plugin never shadowed', cmds.resolve('/plugins', proj) === null && cmds.resolve('/plugin add x', proj) === null);
+  const subs = require(path.join(CLI, 'lib/subagents.js'));
+  check('role: index.html and index.js are not database work', subs.detectRole('fix the typo in index.html') !== 'database' && subs.detectRole('clean up index.js') !== 'database', subs.detectRole('fix the typo in index.html'));
+  check('role: real index work is still database', ['have Index look at this.', 'add an index to the users table', 'we need indexes on the orders table', 'the database index is slow', 'CREATE INDEX on email'].every((m) => subs.detectRole(m) === 'database'), ['add an index to the users table', 'we need indexes on the orders table', 'the database index is slow', 'CREATE INDEX on email'].map((m) => subs.detectRole(m)).join());
   const hints = require(path.join(CLI, 'lib/terminal-hints.js'));
   check('hint: heredoc -> write_file', /write_file/.test(hints.annotateFailure('cat <<EOF > a', 1, '<< was unexpected at this time.') || ''));
   check('hint: PowerShell &&', /PowerShell 5\.1/.test(hints.annotateFailure('a && b', 1, "The token '&&' is not a valid statement separator in this version.") || ''));
@@ -783,6 +801,8 @@ process.stdin.on('data', (d) => {
   check('plugin: nothing is installed until confirmed', plugins.listPlugins(proj).length === 0);
   const done = plugins.finishInstall(prepared, { scope: 'user', cwd: proj });
   check('plugin: install copies it in without node_modules', done.ok && !fs.existsSync(path.join(done.dest, 'node_modules')) && fs.existsSync(path.join(done.dest, '.codeply-install.json')), JSON.stringify(done));
+  const listed = plugins.listPlugins(proj).map((p) => plugins.summarize(p))[0];
+  check('plugin: a local-folder install is marked local (no Update button)', listed && listed.sourceKind === 'local' && plugins.parseSource('acme/tools').kind === 'git', JSON.stringify(listed));
   const again = await plugins.prepareInstall(made.dir);
   check('plugin: a second install is refused without force', !plugins.finishInstall(again, { scope: 'user', cwd: proj }).ok);
 
@@ -1291,6 +1311,15 @@ process.stdin.on('data', (d) => {
   check('cloud: browser checks in the cloud upload their screenshot and the step links it', shotEv && shotEv.screenshot === `shots/${shotTask.id}/1.png` && G.files.has(`craft-sessions:shots/${shotTask.id}/1.png`), JSON.stringify(shotEv));
 }
 
+// ── File-claim check: commands that mention a file are not change claims ──
+{
+  const write = '<codeply:write_file>\n<path>notes.md</path>\n<content>\nhello\n</content>\n</codeply:write_file>';
+  const ok = await run([write, "I've updated notes.md. Run `node index.js` to try it, or run index.js from the terminal."]);
+  check('claims: "node index.js" and "run index.js" are not claimed changes', !ok.seen.some((s) => s.includes('never actually written')) && ok.texts.some((t) => t.includes('Run `node index.js`')), JSON.stringify(ok.seen));
+  const over = await run([write, "I've updated notes.md and created styles.css.", 'Only notes.md changed.']);
+  check('claims: a real overclaim is still caught', over.seen.some((s) => s.includes('never actually written') && s.includes('styles.css')), JSON.stringify(over.seen));
+}
+
 // ── Sharing a chat ──
 {
   const share = require(path.join(CLI, 'lib/share.js'));
@@ -1319,6 +1348,17 @@ process.stdin.on('data', (d) => {
   check('share: a gist is secret by default, holds scrubbed markdown and uses the token', g.ok && g.url.includes('gist.github.com') && posted[0].body.public === false && Object.values(posted[0].body.files)[0].content.includes('<project>') && posted[0].init.headers.Authorization === 'Bearer TOK' && posted[0].url === 'https://api.test/gists');
   const bad = await share.createGist(session, 'TOK', { fetchImpl: async () => ({ ok: false, status: 404, text: async () => '{"message":"Not Found"}' }) });
   check('share: a gist failure explains itself', !bad.ok && /Reconnect GitHub/.test(bad.error) && !(await share.createGist(session, '')).ok);
+  const odd = await share.createGist(session, 'TOK', { fetchImpl: async () => ({ ok: true, status: 200, text: async () => '<html>proxy</html>' }) });
+  check('share: a 2xx gist answer that is not JSON is a clear error, not a crash', !odd.ok && /gist link/.test(odd.error), JSON.stringify(odd));
+  const keys = share.scrub('groq gsk_abcdefghijklmnopqrstuvwxyz12 hf hf_abcdefghijklmnopqrstuvwxyz stripe sk_live_abcdefghij1234 rk_live_abcdefghij1234 pk_live_abcdefghij1234 org org_01abcdefghijklmnopqrst');
+  check('share: groq, hugging face, stripe underscore keys and org ids are hidden', !/gsk_|hf_a|_live_|org_01/.test(keys) && (keys.match(/\[hidden\]/g) || []).length === 6, keys);
+  const home = os.homedir();
+  const jsonHome = share.scrub(JSON.stringify({ file: path.join(home, 'x', 'a.txt') }));
+  check('share: JSON-escaped home paths are masked', !jsonHome.toLowerCase().includes(path.basename(home).toLowerCase()) && /~/.test(jsonHome), jsonHome);
+  const tmpText = share.scrub(`log at ${path.join(os.tmpdir(), 'run.log')}`);
+  check('share: the temp folder (8.3 short form on Windows) is masked', !tmpText.includes(os.tmpdir()) && !/~\d/.test(tmpText) && /run\.log/.test(tmpText), tmpText);
+  const other = share.scrub('see D:\\Secret\\Clients\\acme.docx and /Users/bob/work/plan.txt, also C:\\\\Data\\\\x.json. Docs at https://example.com/Users/y and src/a.js');
+  check('share: other absolute paths keep only their name', other.includes('<path>/acme.docx') && other.includes('<path>/plan.txt,') && other.includes('<path>/x.json.') && !/Secret|Clients|bob|Data/.test(other) && other.includes('https://example.com/Users/y') && other.includes('src/a.js'), other);
 }
 
 // ── Engine server (codeply serve): HTTP API + event stream ──

@@ -23,7 +23,7 @@ const path = require('path');
 const plugins = require('./plugins.js');
 
 const MAX_BODY = 20000;
-const RESERVED = new Set(['goal', 'g', 'skills', 'skill', 'skill-list']);
+const RESERVED = new Set(['goal', 'g', 'skills', 'skill', 'skill-list', 'plugins', 'plugin']);
 
 function parseFrontmatter(text) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
