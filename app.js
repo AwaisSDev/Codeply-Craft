@@ -201,6 +201,7 @@ const TOOL_DISPLAY = {
 // Human-readable tool names for approval UI - never show the raw
 // underscored identifier (write_file, fetch_image, ...) to the user.
 const TOOL_NAME = {
+  todo: 'update task list', ask_user: 'ask you', mcp: 'MCP tools',
   list_dir: 'list directory', read_file: 'read file', write_file: 'write file',
   edit_file: 'edit file', search: 'search', run: 'run command',
   use_skill: 'use skill', list_skills: 'list skills', fetch_image: 'download image',
@@ -657,6 +658,53 @@ function addTurnSummary(data) {
     card.classList.remove('reveal-pending');
     if (nearBottom()) scrollToBottom();
     next();
+  });
+}
+
+// ─── Undo / redo a message's changes ───────────────────────────────────────
+// One row per message that changed files. Undo puts those files back to how
+// they were before the message ran; the same button then offers Redo.
+const checkpointEls = new Map(); // checkpoint id -> row element
+
+const CP_STATUS = { A: 'added', M: 'changed', D: 'deleted' };
+
+function renderCheckpoint(cp) {
+  let row = checkpointEls.get(cp.id);
+  if (!row || !row.isConnected) {
+    row = document.createElement('div');
+    row.className = 'checkpoint';
+    checkpointEls.set(cp.id, row);
+    chatColumn.appendChild(row);
+  }
+  const n = cp.total || cp.files.length;
+  const list = cp.files.slice(0, 40).map((f) =>
+    `<li><span class="cp-status cp-${esc(f.status)}">${esc(CP_STATUS[f.status] || f.status)}</span><code>${esc(f.file)}</code></li>`).join('');
+  row.classList.toggle('undone', !!cp.undone);
+  row.innerHTML = `
+    <button class="cp-toggle" type="button" aria-expanded="false">
+      <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+      <span>${cp.undone ? `Undid changes to ${n} file${n === 1 ? '' : 's'}` : `Changed ${n} file${n === 1 ? '' : 's'}`}</span>
+    </button>
+    <button class="cp-action" type="button">${cp.undone ? 'Redo' : 'Undo'}</button>
+    <ul class="cp-files" hidden>${list}${n > 40 ? `<li class="cp-more">and ${n - 40} more</li>` : ''}</ul>`;
+  const toggle = row.querySelector('.cp-toggle');
+  toggle.addEventListener('click', () => {
+    const list = row.querySelector('.cp-files');
+    list.hidden = !list.hidden;
+    toggle.setAttribute('aria-expanded', String(!list.hidden));
+  });
+  row.querySelector('.cp-action').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    if (!api || !state.currentSessionId) return;
+    btn.disabled = true;
+    btn.textContent = cp.undone ? 'Redoing…' : 'Undoing…';
+    const r = await api.setCheckpoint(state.currentSessionId, cp.id, !cp.undone);
+    if (r && r.error) {
+      addNote(r.error, 'warn');
+      renderCheckpoint(cp);
+    } else if (r && r.checkpoint) {
+      renderCheckpoint(r.checkpoint);
+    }
   });
 }
 
