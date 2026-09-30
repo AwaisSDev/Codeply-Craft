@@ -37,18 +37,51 @@
     const text = await res.text();
     let json = null;
     try { json = text ? JSON.parse(text) : null; } catch {}
-    if (!res.ok) throw new Error(res.status === 401 ? 'GitHub signed this phone out. Open Craft on your PC once to refresh it.' : `GitHub: ${(json && json.message) || res.status}`);
+    if (!res.ok) throw new Error(res.status === 401 ? 'GitHub signed this phone out. Sign in to GitHub again below.' : `GitHub: ${(json && json.message) || res.status}`);
     return json;
   }
 
-  /** Fresh credentials from the PC when it's reachable, the saved ones otherwise. */
+  const MIRROR_DESCRIPTION = 'Craft workspace mirror: a private backup that Craft cloud runs work in.';
+
+  /** The mirrors on this GitHub account, straight from GitHub: no PC needed. */
+  async function discoverMirrors() {
+    const repos = await gh('GET', '/user/repos?affiliation=owner&sort=pushed&per_page=100');
+    return (repos || [])
+      .filter((r) => r.private && r.name.startsWith('craft-workspace-') && r.description === MIRROR_DESCRIPTION)
+      .map((r) => ({ name: r.name.replace(/^craft-workspace-/, ''), repo: r.full_name }));
+  }
+
+  /**
+   * The GitHub login comes from the PC when it's reachable (quietly, in the
+   * background), or from a token pasted here. The mirror list always comes
+   * from GitHub itself, so projects set up later show up with the PC off.
+   */
   async function refreshCreds() {
     try {
       const c = await request('/api/cloud/credentials');
-      if (c && c.token) { creds = { ...c, at: Date.now() }; save(KEY_CREDS, creds); }
+      if (c && c.token) { creds = { ...c, at: Date.now(), source: 'pc' }; save(KEY_CREDS, creds); }
     } catch {}
+    if (creds && creds.token) {
+      try {
+        const found = await discoverMirrors();
+        const names = new Map((creds.projects || []).map((p) => [p.repo, p.name]));
+        creds = { ...creds, projects: found.map((p) => ({ ...p, name: names.get(p.repo) || p.name })) };
+        save(KEY_CREDS, creds);
+      } catch (e) { if (/signed this phone out/.test(e.message)) { creds = { ...creds, expired: true }; save(KEY_CREDS, creds); } }
+    }
+    syncOfflineButton();
     return creds;
   }
+
+  async function useToken(token) {
+    creds = { token: token.trim(), projects: [], at: Date.now(), source: 'phone' };
+    const me = await gh('GET', '/user');
+    creds.login = me.login;
+    creds.projects = await discoverMirrors();
+    save(KEY_CREDS, creds);
+  }
+
+  let syncOfflineButton = () => {};
 
   const projectRepo = () => {
     if (!creds || !creds.projects.length) return null;
@@ -139,9 +172,9 @@
       alt.textContent = 'Run in the cloud instead';
       alt.addEventListener('click', open);
       find.insertBefore(alt, document.getElementById('findSignOutBtn'));
-      const sync = () => { alt.classList.toggle('hidden', !(creds && creds.projects && creds.projects.length)); };
-      sync();
-      window.addEventListener('storage', sync);
+      // Always offered: with no GitHub login yet, the sheet explains how to add one.
+      syncOfflineButton = () => { alt.textContent = creds && creds.token ? 'Run in the cloud instead' : 'Use Craft Cloud instead'; };
+      syncOfflineButton();
     }
   }
 
@@ -158,8 +191,31 @@
 
   function render() {
     const body = el.querySelector('.cloud-sheet-body');
-    if (!creds || !creds.projects || !creds.projects.length) {
-      body.innerHTML = `<div class="pick-label">Cloud runs</div><p class="cloud-m-dim">Cloud runs work even when your PC is off. Set them up once in Craft on your PC: open a project, tap the Cloud chip, then Set up. Open this again while the PC is on and it's ready.</p>`;
+    if (!creds || !creds.token || creds.expired) {
+      const link = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=Craft%20Cloud%20(phone)';
+      body.innerHTML = `<div class="pick-label">Cloud runs</div>
+        <p class="cloud-m-dim">Cloud runs work on GitHub even when your PC is off. This phone needs to reach your GitHub first.</p>
+        <p class="cloud-m-dim"><b>Easiest:</b> open Craft on your PC once. This phone picks up your GitHub login from it on its own.</p>
+        <p class="cloud-m-dim"><b>PC is off right now?</b> <a href="${link}" target="_blank" rel="noopener">Create a GitHub token</a> (it opens with the right boxes ticked: repo and workflow), then paste it here. It stays on this phone.</p>
+        <input class="cloud-m-select cloud-m-token" type="password" autocomplete="off" placeholder="ghp_... or github_pat_...">
+        <div class="cloud-m-row"><span></span><button type="button" class="cloud-m-run" data-act="token">Connect GitHub</button></div>
+        <div class="cloud-m-error hidden" data-err></div>`;
+      body.querySelector('[data-act="token"]').addEventListener('click', async (e) => {
+        const input = body.querySelector('.cloud-m-token');
+        const err = body.querySelector('[data-err]');
+        if (!input.value.trim()) { input.focus(); return; }
+        e.target.disabled = true; e.target.textContent = 'Checking...';
+        try { await useToken(input.value); syncOfflineButton(); render(); }
+        catch (ex) { creds = null; err.textContent = ex.message; err.classList.remove('hidden'); e.target.disabled = false; e.target.textContent = 'Connect GitHub'; }
+      });
+      return;
+    }
+    if (!creds.projects || !creds.projects.length) {
+      body.innerHTML = `<div class="pick-label">Cloud runs</div>
+        <p class="cloud-m-dim">GitHub is connected${creds.login ? ` as <b>${escapeHtml(creds.login)}</b>` : ''}, but no project is set up for the cloud yet.</p>
+        <p class="cloud-m-dim">In Craft on your PC: open the project, tap the <b>Cloud</b> chip under the message box, then <b>Set up</b>. It shows up here right after, even with the PC off.</p>
+        <div class="cloud-m-row"><span></span><button type="button" class="cloud-m-run" data-act="recheck">Check again</button></div>`;
+      body.querySelector('[data-act="recheck"]').addEventListener('click', async () => { await refreshCreds(); render(); });
       return;
     }
     const repo = projectRepo();
@@ -196,4 +252,9 @@
 
   build();
   schedule();
+  // Pick up the GitHub login from the PC whenever it's reachable, so cloud runs
+  // are ready before the PC is ever off. Quiet: a PC that's off just fails.
+  const fromPc = () => creds && creds.source === 'pc' && creds.token && Date.now() - creds.at < 24 * 3600 * 1000;
+  setTimeout(() => { if (!fromPc()) refreshCreds(); }, 4000);
+  setInterval(() => { if (!fromPc()) refreshCreds(); }, 60000);
 })();

@@ -1,6 +1,8 @@
 /* Craft Cloud on the phone (mobile-cloud.js). */
 .cloud-top-btn { margin-left: auto; }
 .cloud-offline-btn { margin-top: 10px; background: var(--bg-card); color: var(--text); border: 1px solid var(--border); }
+/* Above the sign-in / "PC is offline" screen, which sits over the normal sheets. */
+#cloudSheet { z-index: 1000; }
 .cloud-sheet { max-height: 88vh; overflow-y: auto; }
 .cloud-m-dim { color: var(--text-muted); font-size: 13px; line-height: 1.45; margin: 4px 4px 10px; }
 .cloud-m-select, .cloud-m-input {
