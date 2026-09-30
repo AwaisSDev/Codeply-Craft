@@ -1607,7 +1607,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       return;
     }
     // The correction message, if one was needed, has to stay in the transcript.
-    if (attempt.messages.length > messages.length) {
+    if (attempt.messages !== outgoing) {
       messages.push(attempt.messages[attempt.messages.length - 1]);
     }
 
@@ -1621,7 +1621,18 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       yield { type: 'reasoning', text: reasoning.trim(), ms: stepMs };
     }
 
-    const reply = result.data?.choices?.[0]?.message?.content ?? '';
+    const replyMsg = result.data?.choices?.[0]?.message || {};
+    let reply = replyMsg.content ?? '';
+    if (Array.isArray(replyMsg.tool_calls) && replyMsg.tool_calls.length) {
+      // Native calls become ordinary action blocks from here on.
+      const conv = toolCallsToTags(reply, replyMsg.tool_calls, PARAMS, mcpNames.fromNative);
+      reply = conv.text;
+      if (conv.problems.length && !reply.includes('<codeply:')) {
+        messages.push({ role: 'assistant', content: reply || '(tool call)' });
+        messages.push({ role: 'user', content: `[system] Your tool call could not be run: ${conv.problems.join('; ')}. Call one of the provided tools with valid arguments.` });
+        continue;
+      }
+    }
     if (!reply.trim()) {
       messages.push({
         role: 'user',
