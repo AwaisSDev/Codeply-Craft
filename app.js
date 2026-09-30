@@ -2259,6 +2259,10 @@ async function openSession(id) {
       addRoleBadge(m);
     } else if (m.kind === 'turn_summary') {
       addTurnSummary(m);
+    } else if (m.kind === 'checkpoint') {
+      renderCheckpoint(m);
+    } else if (m.kind === 'question') {
+      renderQuestionCard({ ...m, answered: true });
     } else if (m.kind === 'notice') {
       addNote(m.text, m.level === 'warn' ? 'warn' : m.level === 'error' ? 'error' : '');
     } else if (m.kind === 'goal') {
@@ -2622,6 +2626,111 @@ $('skillsSearch').addEventListener('input', () => {
   if (!q) return renderSkillsList(allSkills);
   renderSkillsList(allSkills.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)));
 });
+
+// ─── Plugins (/plugins) ──────────────────────────────────────────────────────
+let pluginPending = null; // { token, summary, update }
+
+function pluginError(msg) {
+  $('pluginError').textContent = msg || '';
+  $('pluginError').classList.toggle('hidden', !msg);
+}
+
+function pluginSummaryHtml(s) {
+  const adds = [];
+  if (s.commands) adds.push(`${s.commands} command${s.commands === 1 ? '' : 's'} (/${esc(s.name)}:...)`);
+  if (s.skills) adds.push(`${s.skills} skill${s.skills === 1 ? '' : 's'}`);
+  if (s.instructions) adds.push('rules for the agent');
+  const mcp = s.mcpServers.length
+    ? `<div class="plugin-warn">Starts programs on this computer (MCP servers):${s.mcpServers.map((m) => `<code>${esc(m.name)}: ${esc(m.runs || m.url)}</code>`).join('')}</div>`
+    : '';
+  return `<div class="plugin-name">${esc(s.name)} <span>${esc(s.version || '')}</span></div>
+    <div class="plugin-desc">${esc(s.description || '')}${s.author ? ` <span class="plugin-by">by ${esc(s.author)}</span>` : ''}</div>
+    <div class="plugin-adds">Adds: ${adds.join(', ') || 'nothing'}</div>${mcp}`;
+}
+
+async function renderPlugins() {
+  const body = $('pluginsBody');
+  body.innerHTML = '';
+  if (pluginPending) {
+    const p = pluginPending;
+    const card = document.createElement('div');
+    card.className = 'plugin-card plugin-confirm';
+    card.innerHTML = `${pluginSummaryHtml(p.summary)}
+      <div class="plugin-actions">
+        ${!p.update && state.project ? '<label class="plugin-scope"><input type="checkbox" id="pluginProjectOnly"> Only for this project</label>' : ''}
+        <button class="btn-quiet" id="pluginCancel">Cancel</button>
+        <button class="btn-primary" id="pluginConfirm">${p.update ? 'Update' : 'Install'} ${esc(p.summary.name)}</button>
+      </div>`;
+    body.appendChild(card);
+    $('pluginCancel').addEventListener('click', async () => { await api.cancelPlugin(p.token); pluginPending = null; renderPlugins(); });
+    $('pluginConfirm').addEventListener('click', async () => {
+      const project = !!($('pluginProjectOnly') && $('pluginProjectOnly').checked);
+      $('pluginConfirm').disabled = true;
+      const r = await api.finishPlugin(p.token, project ? 'project' : 'user', state.project || null);
+      pluginPending = null;
+      pluginError(r.ok ? '' : r.error);
+      if (r.ok) $('pluginSource').value = '';
+      renderPlugins();
+    });
+    return;
+  }
+  const list = await api.listPlugins(state.project || null);
+  if (!list.length) {
+    body.innerHTML = '<div class="skills-empty">No plugins installed yet.</div>';
+    return;
+  }
+  for (const p of list) {
+    const card = document.createElement('div');
+    card.className = 'plugin-card' + (p.enabled ? '' : ' plugin-off');
+    card.innerHTML = `${pluginSummaryHtml(p)}
+      <div class="plugin-actions">
+        <span class="plugin-scope-tag">${p.scope === 'project' ? 'This project' : 'Every project'}</span>
+        <button class="btn-quiet" data-a="toggle">${p.enabled ? 'Turn off' : 'Turn on'}</button>
+        ${p.source ? '<button class="btn-quiet" data-a="update">Update</button>' : ''}
+        <button class="btn-quiet" data-a="remove">Remove</button>
+      </div>`;
+    card.querySelector('[data-a="toggle"]').addEventListener('click', async () => { await api.togglePlugin(p.name, !p.enabled, state.project || null); renderPlugins(); });
+    card.querySelector('[data-a="remove"]').addEventListener('click', async () => { await api.removePlugin(p.name, state.project || null); renderPlugins(); });
+    const upd = card.querySelector('[data-a="update"]');
+    if (upd) upd.addEventListener('click', async () => {
+      upd.disabled = true; upd.textContent = 'Checking...';
+      pluginError('');
+      const r = await api.prepareUpdatePlugin(p.name, state.project || null);
+      if (!r.ok) { pluginError(r.error); return renderPlugins(); }
+      pluginPending = { token: r.token, summary: r.summary, update: true };
+      renderPlugins();
+    });
+    body.appendChild(card);
+  }
+}
+
+async function openPluginsModal() {
+  pluginPending = null;
+  pluginError('');
+  $('pluginsBackdrop').classList.remove('hidden');
+  $('pluginSource').focus();
+  renderPlugins();
+}
+function closePluginsModal() {
+  if (pluginPending) api.cancelPlugin(pluginPending.token);
+  pluginPending = null;
+  $('pluginsBackdrop').classList.add('hidden');
+}
+async function fetchPlugin() {
+  const source = $('pluginSource').value.trim();
+  if (!source) return;
+  pluginError('');
+  $('pluginFetchBtn').disabled = true; $('pluginFetchBtn').textContent = 'Fetching...';
+  const r = await api.preparePlugin(source);
+  $('pluginFetchBtn').disabled = false; $('pluginFetchBtn').textContent = 'Install';
+  if (!r.ok) return pluginError(r.error);
+  pluginPending = { token: r.token, summary: r.summary, update: false };
+  renderPlugins();
+}
+$('pluginFetchBtn').addEventListener('click', fetchPlugin);
+$('pluginSource').addEventListener('keydown', (e) => { if (e.key === 'Enter') fetchPlugin(); });
+$('pluginsCloseBtn').addEventListener('click', closePluginsModal);
+$('pluginsBackdrop').addEventListener('click', (e) => { if (e.target === $('pluginsBackdrop')) closePluginsModal(); });
 
 // ─── Slash commands ("/" in the composer) ────────────────────────────────────
 const SLASH_COMMANDS = [
