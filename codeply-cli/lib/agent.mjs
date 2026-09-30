@@ -1318,8 +1318,60 @@ const NO_NATIVE_TOOLS_REMINDER =
   '[system] Your last reply tried to invoke a function through the API. That is not available here and the response was discarded. ' +
   'Write the action block as literal text in your message - the tags exactly as shown in the OUTPUT FORMAT section - and nothing else.';
 
-async function callModel(messages, promptText, signal, route) {
+// ─── Native tool calling: which models get it ──────────────────────────────
+// Auto (the hosted model behind a proxy that declares no tools) stays on text
+// actions. User-added models and the CLI's own providers use native calls
+// unless their entry says toolMode: 'text', or CODEPLY_TOOLS=text is set.
+// A model that rejects tools is remembered for the rest of the session.
+const nativeUnsupported = new Set();
+const MUTATING_ACTIONS = new Set(['write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo']);
+
+/**
+ * Native function names for MCP tools (mcp__server__tool, within the 64-char
+ * [A-Za-z0-9_-] limit APIs enforce) and the maps between them and the
+ * engine's single <codeply:mcp> action.
+ */
+function mcpNativeNames(list) {
+  const schemas = [];
+  const fromNative = {}; // native name -> { server, tool }
+  const toNative = {};   // "server/tool" -> native name
+  const clean = (s) => String(s).replace(/[^A-Za-z0-9_-]/g, '_');
+  for (const s of list || []) {
+    if (s.error) continue;
+    for (const t of s.tools) {
+      let name = `mcp__${clean(s.name)}__${clean(t.name)}`.slice(0, 64);
+      for (let n = 2; fromNative[name]; n++) name = `${name.slice(0, 60)}_${n}`;
+      fromNative[name] = { server: s.name, tool: t.name };
+      toNative[`${s.name}/${t.name}`] = name;
+      const params = t.inputSchema && t.inputSchema.type === 'object' ? t.inputSchema : { type: 'object', properties: {} };
+      schemas.push({ type: 'function', function: { name, description: `[${s.name}] ${String(t.description || t.name).slice(0, 900)}`, parameters: params } });
+    }
+  }
+  return { schemas, fromNative, toNative };
+}
+
+function routeKey(route) {
+  if (route?.custom) return `custom:${route.custom.id || route.custom.model}`;
+  if (route?.auto) return 'auto';
+  try { const c = config.getConfig(); return `cli:${c.provider}:${c[c.provider]?.model || ''}`; } catch { return 'cli'; }
+}
+
+function wantsNativeTools(route) {
+  if (process.env.CODEPLY_TOOLS === 'text') return false;
+  if (route?.auto) return false;
+  if (route?.custom) return route.custom.toolMode !== 'text';
+  let c;
+  try { c = config.getConfig(); } catch { return false; }
+  return !!c && !!c.provider && c.provider !== 'codeply' && c.toolMode !== 'text';
+}
+
+async function callModel(messages, promptText, signal, route, tools = null, mcpToNative = null) {
   const meta = promptText ? { promptText } : undefined;
+  if (tools) {
+    // Native mode: same engine history, translated at the edge (native-tools.mjs).
+    const result = await ai.chat(toNativeMessages(messages, parseReply, mcpToNative), { meta, signal, route, tools });
+    return { result, messages };
+  }
   let result = await ai.chat(messages, { meta, signal, route });
   if (result.success || !isNativeToolCallError(result.error)) return { result, messages };
 
@@ -1373,7 +1425,7 @@ function withoutEmDashes(text) {
  * @yields {{type:string, ...}} text | reasoning | tool_start | tool_end | done | error | aborted
  */
 export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly }) {
-  const readOnly = READ_ONLY_MODES.has(mode);
+  let readOnly = READ_ONLY_MODES.has(mode);
   const stepBudget = Math.max(1, maxSteps || MAX_STEPS);
   // OpenAI-shaped content array only when there's actually an image to carry -
   // every ordinary turn keeps the plain string content every other code path
