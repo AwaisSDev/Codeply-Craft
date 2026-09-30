@@ -401,13 +401,21 @@ async function write_file(args, ctx) {
   } catch (e) {
     return { ok: false, output: `Cannot write ${rel}: ${e.message}` };
   }
+  rememberDiskState(ctx, abs);
+  const problems = await diagnostics.checkFile(abs, ctx.cwd);
 
   return {
     ok: true,
     output: `Wrote ${rel} (${afterLines} lines). The write succeeded exactly as you sent it - ` +
-      `do NOT read the file back to confirm it.`,
-    meta: { label: rel, added: afterLines, removed: beforeLines, wrote: true },
+      `do NOT read the file back to confirm it.` + problemsNote(rel, problems),
+    meta: { label: rel, added: afterLines, removed: beforeLines, wrote: true, problems },
   };
+}
+
+function problemsNote(rel, problems) {
+  if (!problems.length) return '';
+  return `\n\nSyntax check on ${rel} found ${problems.length === 1 ? 'a problem' : `${problems.length} problems`} ` +
+    `(fix before moving on):\n${problems.map((p) => `- ${p}`).join('\n')}`;
 }
 
 async function edit_file(args, ctx) {
@@ -419,24 +427,55 @@ async function edit_file(args, ctx) {
   const { abs, rel, outside } = resolvePath(target, ctx.cwd);
   if (!fs.existsSync(abs)) return { ok: false, output: `No such file: ${rel}. Use write_file to create it.` };
 
-  const before = fs.readFileSync(abs, 'utf8');
-  // Dry-run through the same matcher that will do the real edit, so the user
-  // is never asked to approve something that turns out not to apply.
-  const attempt = editEngine.applySearchReplace(before, args.search, args.replace);
-  if (!attempt.ok) {
-    const why = attempt.error === 'notfound'
-      ? 'that exact text is not in the file - re-read it and copy the block verbatim'
-      : attempt.error === 'multiple'
-        ? 'that text appears more than once - include more surrounding lines to make it unique'
-        : 'the search block was empty';
-    return { ok: false, output: `Edit to ${rel} did not apply: ${why}.` };
+  if (changedSinceSeen(ctx, abs)) {
+    ctx.fileState.delete(abs);
+    return {
+      ok: false,
+      output: `Edit to ${rel} did not apply: the file changed on disk after you last read it (edited outside this conversation). ` +
+        'Read it again and build the edit from its current content.',
+    };
   }
 
-  const removed = args.search.split('\n').length;
-  const added = args.replace.split('\n').length;
+  const before = fs.readFileSync(abs, 'utf8');
+  const replaceAll = isTruthy(args.all);
+  // Dry-run through the same matcher that will do the real edit, so the user
+  // is never asked to approve something that turns out not to apply.
+  let attempt;
+  let occurrences = 1;
+  if (replaceAll) {
+    // Every occurrence, exact text only: the whitespace-tolerant matcher is
+    // for finding ONE intended block, and applying its guesses file-wide
+    // would be a good way to change lines nobody meant to touch.
+    const text = before.replace(/\r\n/g, '\n');
+    const needle = args.search.replace(/\r\n/g, '\n');
+    occurrences = needle ? text.split(needle).length - 1 : 0;
+    attempt = occurrences > 0
+      ? { ok: true, content: text.split(needle).join(args.replace.replace(/\r\n/g, '\n')) }
+      : { ok: false, error: needle ? 'notfound' : 'empty' };
+    if (attempt.ok && /\r\n/.test(before)) attempt.content = attempt.content.replace(/\n/g, '\r\n');
+  } else {
+    attempt = editEngine.applySearchReplace(before, args.search, args.replace);
+  }
+  if (!attempt.ok) {
+    let why;
+    if (attempt.error === 'notfound') {
+      why = 'that exact text is not in the file.' + (nearestMatchHint(before, args.search) || ' Re-read the part you want to change and copy the block verbatim.');
+    } else if (attempt.error === 'multiple') {
+      const at = exactMatchLines(before, args.search);
+      why = `that text appears more than once${at.length ? ` (starting at lines ${at.join(', ')})` : ''}. ` +
+        'Include more surrounding lines so it matches exactly one place, or add <all>true</all> if every occurrence should change.';
+    } else {
+      why = 'the search block was empty.';
+    }
+    return { ok: false, output: `Edit to ${rel} did not apply: ${why}` };
+  }
 
-  const verdict = await ctx.approve({
+  const removed = args.search.split('\n').length * occurrences;
+  const added = args.replace.split('\n').length * occurrences;
+
+  const verdict = ctx.mode === 'Plan' && isPlanPath(target, ctx.cwd) ? 'allow' : await ctx.approve({
     tool: 'edit_file',
+    path: rel,
     title: `Edit ${rel}`,
     detail: `-${removed} +${added} lines`,
     diff: { search: args.search, replace: args.replace },
