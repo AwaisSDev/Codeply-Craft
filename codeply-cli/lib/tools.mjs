@@ -1291,11 +1291,11 @@ async function use_skill(args, ctx) {
   const name = (args.name || '').trim();
   if (!name) return { ok: false, output: 'use_skill needs a <name>.' };
 
-  const body = skills.loadSkillBody(name);
+  const body = skills.loadSkillBody(name, ctx.cwd);
   if (body == null) {
     // Capped rather than dumping the full library (281 names) into a reply
     // that only exists because of one wrong guess.
-    const all = skills.listSkills().map((s) => s.name);
+    const all = skills.listSkills(ctx.cwd).map((s) => s.name);
     const shown = all.slice(0, 40).join(', ') + (all.length > 40 ? `, … (${all.length - 40} more - see list_skills)` : '');
     return {
       ok: false,
@@ -1316,8 +1316,8 @@ async function use_skill(args, ctx) {
  * relevant lines instead of a wall of text truncated at an arbitrary,
  * alphabetically-biased cutoff.
  */
-async function list_skills(args) {
-  const all = skills.listSkills();
+async function list_skills(args, ctx) {
+  const all = skills.listSkills(ctx.cwd);
   const query = (args.query || '').trim().toLowerCase();
   const matched = query
     ? all.filter((s) => s.name.toLowerCase().includes(query) || s.description.toLowerCase().includes(query))
