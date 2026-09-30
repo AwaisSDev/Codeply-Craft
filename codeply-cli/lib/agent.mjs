@@ -1012,8 +1012,8 @@ function patchTargets(text) {
  * injected in full on every request without the skill library itself becoming
  * the majority of the token cost. The rest is one list_skills query away.
  */
-function buildSkillIndex(userMessage) {
-  const all = skills.listSkills();
+function buildSkillIndex(userMessage, cwd) {
+  const all = skills.listSkills(cwd);
   const daily = skills.formatSkillIndex(all);
   if (!daily) return null;
   const rest = all.length - all.filter((s) => s.daily).length;
@@ -1069,6 +1069,28 @@ const ROLE_INTRO = (role) =>
  * @param {string} [opts.roleId]  a role from lib/subagents.js (frontend, backend, ...) to take on this turn
  * @param {string} [opts.goal]    the overall objective when running under /goal
  */
+const MAX_MCP_TOOLS_LISTED = 80;
+
+/** Which MCP servers are connected and what their tools do. */
+function mcpServersSection(list, native) {
+  if (!Array.isArray(list) || !list.length) return '';
+  const lines = [];
+  let shown = 0;
+  for (const s of list) {
+    if (s.error) { lines.push(`- ${s.name}: NOT CONNECTED (${s.error.slice(0, 160)})`); continue; }
+    lines.push(`- ${s.name}${s.instructions ? ` - ${s.instructions.replace(/\s+/g, ' ').slice(0, 200)}` : ''}`);
+    for (const t of s.tools) {
+      if (shown++ >= MAX_MCP_TOOLS_LISTED) break;
+      const params = Object.keys(t.inputSchema?.properties || {});
+      lines.push(`    ${t.name}(${params.join(', ')}): ${String(t.description || '').replace(/\s+/g, ' ').slice(0, 150)}`);
+    }
+  }
+  const how = native
+    ? 'Each tool above is also available to you directly as mcp__<server>__<tool>.'
+    : 'Call one with <codeply:mcp> <server>name</server> <tool>tool</tool> <args>{"param": "value"}</args> </codeply:mcp> (args is a JSON object).';
+  return `MCP SERVERS\nTools from the user's connected MCP servers. ${how}\n${lines.join('\n')}`;
+}
+
 export function buildSystemPrompt(mode, cwd, userMessage, opts = {}) {
   const parts = [MODE_PROMPT[mode] || MODE_PROMPT.Build];
   // The role guide goes right after the base framing and before the tool
