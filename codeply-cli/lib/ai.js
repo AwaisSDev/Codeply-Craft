@@ -720,9 +720,11 @@ async function chatViaAnthropic(messages, opts, cfg) {
   }
 
   const systemText = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
-  const turns = messages
-    .filter((m) => m.role !== 'system')
-    .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: toAnthropicContent(m.content) }));
+  const turns = opts.tools
+    ? toAnthropicTurns(messages)
+    : textOnlyMessages(messages)
+      .filter((m) => m.role !== 'system')
+      .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: toAnthropicContent(m.content) }));
 
   // Anthropic has no json_object response mode - ask for it in plain English instead.
   const systemText2 = opts.json
@@ -738,11 +740,16 @@ async function chatViaAnthropic(messages, opts, cfg) {
   // (the very first call of a brand-new turn) has nothing "so far" to cache.
   if (turns.length >= 2) {
     const idx = turns.length - 2;
-    if (turns[idx].content.length >= ANTHROPIC_CACHEABLE_MIN_CHARS) {
+    const c = turns[idx].content;
+    if (typeof c === 'string' && c.length >= ANTHROPIC_CACHEABLE_MIN_CHARS) {
       turns[idx] = {
         role: turns[idx].role,
-        content: [{ type: 'text', text: turns[idx].content, cache_control: cacheControl }],
+        content: [{ type: 'text', text: c, cache_control: cacheControl }],
       };
+    } else if (Array.isArray(c) && c.length && JSON.stringify(c).length >= ANTHROPIC_CACHEABLE_MIN_CHARS) {
+      // Block-array turns (tool use/results): the breakpoint goes on the last block.
+      const last = c[c.length - 1];
+      c[c.length - 1] = { ...last, cache_control: cacheControl };
     }
   }
 
@@ -762,6 +769,7 @@ async function chatViaAnthropic(messages, opts, cfg) {
           messages: turns,
           max_tokens: opts.maxTokens || 8192,
           temperature: opts.temperature ?? 0,
+          ...(opts.tools ? { tools: toAnthropicTools(opts.tools) } : {}),
         }),
         signal: opts.signal,
       });
