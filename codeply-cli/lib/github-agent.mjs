@@ -52,7 +52,9 @@ export function routeFromEnv(env) {
   // Keys pasted on Windows often carry a BOM or a trailing newline, which fetch rejects in a header.
   const apiKey = String(env.CODEPLY_API_KEY || '').replace(/[﻿\s]/g, '');
   if (!apiKey && !local) return { error: 'Set the CODEPLY_API_KEY secret (your own key for the model provider).' };
-  return { route: { custom: { id: 'github', name: model, kind: 'openai', baseUrl, model, apiKey } } };
+  // CODEPLY_MODEL_KIND=ollama uses Ollama's native API, the same path the desktop app takes.
+  const kind = String(env.CODEPLY_MODEL_KIND || '').toLowerCase() === 'ollama' ? 'ollama' : 'openai';
+  return { route: { custom: { id: 'github', name: model, kind, baseUrl, model, apiKey } } };
 }
 
 /** What the event asks for, or why to skip it. */
@@ -89,7 +91,7 @@ export function parseEvent(name, ev, { allowed = DEFAULT_ALLOWED } = {}) {
   };
 }
 
-function makeApi({ token, apiUrl, fetchImpl }) {
+export function makeApi({ token, apiUrl, fetchImpl }) {
   return async (method, route, body) => {
     const res = await fetchImpl(`${apiUrl}${route}`, {
       method,
@@ -104,18 +106,20 @@ function makeApi({ token, apiUrl, fetchImpl }) {
   };
 }
 
-function git(cwd, args, { auth } = {}) {
+export function git(cwd, args, { auth, input } = {}) {
   const full = auth ? ['-c', `http.${auth.server}/.extraheader=AUTHORIZATION: basic ${Buffer.from(`x-access-token:${auth.token}`).toString('base64')}`, ...args] : args;
+  const verb = args.find((a, i) => !a.startsWith('-') && !(i > 0 && /^--(git-dir|work-tree)$/.test(args[i - 1])) && !(i > 0 && args[i - 1] === '-c')) || args[0];
   return new Promise((resolve, reject) => {
-    execFile('git', full, { cwd, timeout: 300000, windowsHide: true, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }, (err, stdout, stderr) => {
-      if (err) reject(new Error(`git ${args[0]} failed: ${String(stderr || err.message).trim().split('\n').slice(-2).join(' ')}`));
+    const child = execFile('git', full, { cwd, timeout: 300000, windowsHide: true, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }, (err, stdout, stderr) => {
+      if (err) reject(new Error(`git ${verb} failed: ${String(stderr || err.message).trim().split('\n').slice(-2).join(' ')}`));
       else resolve(String(stdout).trim());
     });
+    if (input != null) child.stdin.end(input);
   });
 }
 
 const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'change';
-const clip = (s) => (s.length > MAX_COMMENT ? `${s.slice(0, MAX_COMMENT)}\n\n[... cut, the run log has the rest]` : s);
+export const clip = (s) => (s.length > MAX_COMMENT ? `${s.slice(0, MAX_COMMENT)}\n\n[... cut, the run log has the rest]` : s);
 
 /** The approver for an unattended run: rules file first, then no pushing, no dangerous commands. */
 export function ciApprove(cwd) {

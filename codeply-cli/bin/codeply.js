@@ -518,6 +518,133 @@ githubCmd
     if (out.status === 'failed') { console.error(c.red(out.message || 'Failed.')); process.exitCode = 1; }
   });
 
+// ─── Craft Cloud ───────────────────────────────────────────────────────────
+
+/** GITHUB_TOKEN, then the GitHub CLI's login, then Craft's own GitHub connection. */
+function cloudToken() {
+  if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN.trim();
+  try {
+    const t = require('child_process').execFileSync('gh', ['auth', 'token'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).trim();
+    if (t) return t;
+  } catch {}
+  const gh = config.getIntegration ? config.getIntegration('github') : {};
+  if (gh && gh.accessToken) return gh.accessToken;
+  throw new Error('No GitHub login. Connect GitHub in Craft, run "gh auth login", or set GITHUB_TOKEN.');
+}
+
+function cloudModel(id) {
+  const m = id ? config.getModel(id) || config.getModels().find((x) => x.name === id || x.model === id) : config.getSelectedModel();
+  if (!m) throw new Error(id ? `No model "${id}". Models: ${config.getModels().map((x) => x.name).join(', ') || 'none yet'}.` : 'Cloud runs use one of your own models. Pick one with "codeply model", or pass --model.');
+  return m;
+}
+
+const cloudCmd = program
+  .command('cloud')
+  .description('Craft Cloud: run the agent on GitHub\'s machines (your account, your key) while this PC is off.');
+
+cloudCmd
+  .command('setup')
+  .description('Create the private mirror repo for this folder, push a snapshot and store your model key as an encrypted secret.')
+  .option('--model <id>', 'model to use (default: the selected one)')
+  .action(async (opts) => {
+    try {
+      const cl = await import('../lib/cloud.mjs');
+      const r = await cl.setupCloud({ cwd: process.cwd(), token: cloudToken(), model: cloudModel(opts.model) });
+      console.log(c.green(`${r.created ? 'Created' : 'Using'} ${r.url} (private).`));
+      for (const s of r.skipped) console.log(c.yellow(`  left out ${s.path}: ${s.reason}`));
+      console.log('Start a run with: codeply cloud run "<what to do>"');
+    } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+  });
+
+cloudCmd
+  .command('run <prompt...>')
+  .description('Push the latest snapshot and start a cloud run.')
+  .option('--mode <mode>', 'Build, Plan or Ask', 'Build')
+  .option('--session <id>', 'continue this cloud chat')
+  .option('--model <id>', 'model to use (default: the selected one)')
+  .option('--wait', 'wait for the run and print the answer')
+  .action(async (words, opts) => {
+    try {
+      const cl = await import('../lib/cloud.mjs');
+      const token = cloudToken();
+      const cwd = process.cwd();
+      const task = await cl.startCloudRun({ cwd, token, prompt: words.join(' '), mode: opts.mode, sessionId: opts.session || '', model: cloudModel(opts.model) });
+      console.log(`Started cloud task ${task.id} on ${task.repo}.`);
+      if (!opts.wait) { console.log(`Check it with: codeply cloud status ${task.id}`); return; }
+      let t = task; let shown = '';
+      while (!['done', 'failed', 'cancelled'].includes(t.status)) {
+        await new Promise((r) => setTimeout(r, 5000));
+        t = await cl.cloudRunStatus({ cwd, taskId: task.id, token });
+        const line = `${t.status}${t.progress ? `: ${t.progress.split('\n')[0]}` : ''}`;
+        if (line !== shown) { console.log(c.dim(line)); shown = line; }
+      }
+      printCloudTask(t);
+    } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+  });
+
+function printCloudTask(t) {
+  console.log(`${t.id}  ${t.status}  ${t.mode}  ${t.prompt.split('\n')[0].slice(0, 60)}`);
+  if (t.runUrl) console.log(c.dim(`  ${t.runUrl}`));
+  if (t.error) console.log(c.red(`  ${t.error}`));
+  if (t.result && t.result.answer) console.log(`\n${t.result.answer}\n`);
+  if (t.result && t.result.files && t.result.files.length) console.log(`Changed: ${t.result.files.join(', ')}\nApply with: codeply cloud pull ${t.id}`);
+}
+
+cloudCmd
+  .command('status [task]')
+  .description('Show one cloud task, or the recent ones for this folder.')
+  .action(async (taskId) => {
+    try {
+      const cl = await import('../lib/cloud.mjs');
+      const cwd = process.cwd();
+      const p = cl.getProject(cwd);
+      if (!p || !p.repo) { console.log('Cloud is not set up here. Run: codeply cloud setup'); return; }
+      if (taskId) { printCloudTask(await cl.cloudRunStatus({ cwd, taskId, token: cloudToken() })); return; }
+      console.log(`Mirror: ${p.repo}${p.lastPush ? `, last snapshot ${new Date(p.lastPush.at).toLocaleString()}` : ''}`);
+      for (const t of (p.tasks || []).slice(0, 10)) console.log(`${t.id}  ${t.status}  ${t.mode}  ${t.prompt.split('\n')[0].slice(0, 60)}`);
+    } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+  });
+
+cloudCmd
+  .command('pull <task>')
+  .description('Apply a finished cloud run\'s changes to this folder (3-way merge).')
+  .action(async (taskId) => {
+    try {
+      const cl = await import('../lib/cloud.mjs');
+      const cwd = process.cwd();
+      const token = cloudToken();
+      await cl.cloudRunStatus({ cwd, taskId, token });
+      const r = await cl.pullCloudRun({ cwd, taskId, token });
+      if (!r.applied) { console.log(r.message); return; }
+      console.log(c.green(`Applied ${r.files.length} file${r.files.length === 1 ? '' : 's'}: ${r.files.join(', ')}`));
+      if (r.conflicts.length) console.log(c.yellow(`Conflicts to resolve (look for <<<<<<< markers): ${r.conflicts.join(', ')}`));
+    } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+  });
+
+cloudCmd
+  .command('push')
+  .description('Back up this folder to its mirror now.')
+  .action(async () => {
+    try {
+      const cl = await import('../lib/cloud.mjs');
+      const r = await cl.pushSnapshot({ cwd: process.cwd(), token: cloudToken() });
+      console.log(r.pushed ? c.green(`Pushed snapshot ${r.sha.slice(0, 7)}.`) : 'Already up to date.');
+      for (const s of r.skipped) console.log(c.yellow(`  left out ${s.path}: ${s.reason}`));
+    } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+  });
+
+cloudCmd
+  .command('runner')
+  .description('Run one cloud task (used by the craft-cloud workflow inside GitHub Actions).')
+  .option('--max-steps <n>', 'step budget for the agent', '80')
+  .action(async (opts) => {
+    const cl = await import('../lib/cloud.mjs');
+    const s = cl.runnerSetup(process.env);
+    const out = await cl.runCloudRunner({ env: s.cfg, token: s.token, route: s.route, setupError: s.setupError, cwd: process.cwd(), maxSteps: Math.max(1, Number(opts.maxSteps) || 80), log: (m) => console.log(m) });
+    console.log(`${out.status}${out.result && out.result.branch ? ` ${out.result.branch}` : ''}`);
+    if (out.status === 'failed') { console.error(c.red((out.result && out.result.error) || 'Failed.')); process.exitCode = 1; }
+  });
+
 program
   .command('serve')
   .description('Run the engine as a local HTTP API with a live event stream, for the desktop app, phone, editors and scripts.')

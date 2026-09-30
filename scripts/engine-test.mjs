@@ -977,6 +977,180 @@ process.stdin.on('data', (d) => {
   check('github: the workflow file is written once, with credentials not persisted', wf1.ok && /persist-credentials: false/.test(yml) && /github run/.test(yml) && !gh.installWorkflow(wfDir).ok);
 }
 
+// ── Craft Cloud ──
+{
+  const cl = await import(pathToFileURL(path.join(CLI, 'lib/cloud.mjs')).href);
+  const nacl = require(path.join(CLI, 'node_modules/tweetnacl'));
+  const { execFileSync } = await import('child_process');
+  const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  const ident = ['-c', 'user.name=t', '-c', 'user.email=t@example.com'];
+
+  const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  check('cloud: key scanner flags real keys but not public ones',
+    cl.findSecret(`const k = "sk-ant-${'a'.repeat(30)}";`) === 'Anthropic key'
+    && cl.findSecret(`x = "ghp_${'b'.repeat(36)}"`) === 'GitHub token'
+    && cl.findSecret(`jwt = "eyJhbGciOiJIUzI1NiJ9.${b64u({ role: 'service_role' })}.signature123"`) === 'Supabase service_role key'
+    && cl.findSecret(`anon = "eyJhbGciOiJIUzI1NiJ9.${b64u({ role: 'anon' })}.signature123"`) === null
+    && cl.findSecret('const token = process.env.GITHUB_TOKEN; const apiKey = config.apiKey;') === null);
+
+  const kp = nacl.box.keyPair();
+  const sealed = cl.sealSecret(Buffer.from(kp.publicKey).toString('base64'), 'my-model-key');
+  check('cloud: secrets are sealed the way GitHub expects (libsodium sealed box)', cl.openSealed(sealed, kp.publicKey, kp.secretKey) === 'my-model-key' && !sealed.includes('my-model-key'));
+
+  check('cloud: models on this PC or without a key are refused for cloud runs',
+    !!cl.cloudModelConfig({ kind: 'ollama', baseUrl: 'http://localhost:11434', model: 'llama3', apiKey: '' }).error
+    && !!cl.cloudModelConfig({ kind: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt', apiKey: '' }).error
+    && !!cl.cloudModelConfig(null).error
+    && cl.cloudModelConfig({ kind: 'ollama', baseUrl: 'https://ollama.com/api', model: 'gemma4:31b', apiKey: 'k' }).baseUrl === 'https://ollama.com');
+
+  check('cloud: the workflow starts only from Craft and never splices inputs into the shell',
+    /workflow_dispatch/.test(cl.CLOUD_WORKFLOW) && !/issue_comment|pull_request|push:/.test(cl.CLOUD_WORKFLOW)
+    && !/run:[^\n]*\$\{\{\s*inputs/.test(cl.CLOUD_WORKFLOW) && /persist-credentials: false/.test(cl.CLOUD_WORKFLOW) && /checks: write/.test(cl.CLOUD_WORKFLOW));
+
+  // A fake GitHub: repos, secrets, variables, dispatches, runs, check runs, contents.
+  const G = { repos: new Map(), secrets: new Map(), vars: new Map(), dispatches: [], runs: [], checks: [], files: new Map(), refs: new Set(), calls: [] };
+  const fetchCloud = async (url, init = {}) => {
+    const u = new URL(url);
+    const p = u.pathname;
+    const method = init.method || 'GET';
+    const body = init.body ? JSON.parse(init.body) : null;
+    G.calls.push({ method, p, body, auth: init.headers && init.headers.Authorization });
+    const reply = (status, json, headers = {}) => ({ ok: status < 400, status, text: async () => (json == null ? '' : JSON.stringify(json)), headers: { get: (k) => headers[k.toLowerCase()] ?? null } });
+    let m;
+    if (p === '/user') return reply(200, { login: 'me' }, { 'x-oauth-scopes': 'repo, workflow, gist' });
+    if (method === 'POST' && p === '/user/repos') { const full = `me/${body.name}`; G.repos.set(full, { full_name: full, private: body.private, description: body.description }); return reply(201, G.repos.get(full)); }
+    if ((m = /^\/repos\/([^/]+\/[^/]+)$/.exec(p))) return G.repos.has(m[1]) ? reply(200, G.repos.get(m[1])) : reply(404, { message: 'Not Found' });
+    if ((m = /\/actions\/secrets\/public-key$/.exec(p))) return reply(200, { key: Buffer.from(kp.publicKey).toString('base64'), key_id: 'kid1' });
+    if (method === 'PUT' && (m = /\/actions\/secrets\/(\w+)$/.exec(p))) { G.secrets.set(m[1], body); return reply(201, null); }
+    if (method === 'PATCH' && (m = /\/actions\/variables\/(\w+)$/.exec(p))) { if (!G.vars.has(m[1])) return reply(404, { message: 'Not Found' }); G.vars.set(m[1], body.value); return reply(204, null); }
+    if (method === 'POST' && /\/actions\/variables$/.test(p)) { G.vars.set(body.name, body.value); return reply(201, null); }
+    if (method === 'POST' && /\/actions\/workflows\/craft-cloud\.yml\/dispatches$/.test(p)) {
+      G.dispatches.push(body);
+      G.runs.push({ id: 7000 + G.runs.length, display_title: `craft ${body.inputs.task_id}`, head_sha: sh(bare, 'rev-parse', 'main'), status: 'in_progress', conclusion: null, html_url: 'https://github.test/run' });
+      return reply(204, null);
+    }
+    if (/\/actions\/workflows\/craft-cloud\.yml\/runs$/.test(p)) return reply(200, { workflow_runs: [...G.runs].reverse() });
+    if ((m = /\/actions\/runs\/(\d+)$/.exec(p))) return reply(200, G.runs.find((r) => r.id === Number(m[1])));
+    if (method === 'POST' && /\/check-runs$/.test(p)) { const c = { id: 900 + G.checks.length, ...body }; G.checks.push(c); return reply(201, c); }
+    if (method === 'PATCH' && (m = /\/check-runs\/(\d+)$/.exec(p))) { const c = G.checks.find((x) => x.id === Number(m[1])); Object.assign(c, body, { output: { ...c.output, ...body.output } }); return reply(200, c); }
+    if ((m = /\/commits\/([0-9a-f]+)\/check-runs$/.exec(p))) return reply(200, { check_runs: G.checks.filter((c) => c.head_sha === m[1] && c.name === u.searchParams.get('check_name')) });
+    if ((m = /\/git\/ref\/heads\/(.+)$/.exec(p))) return G.refs.has(m[1]) ? reply(200, { ref: m[1] }) : reply(404, { message: 'Not Found' });
+    if (method === 'POST' && /\/git\/refs$/.test(p)) { G.refs.add(body.ref.replace('refs/heads/', '')); return reply(201, {}); }
+    if ((m = /\/contents\/(.+)$/.exec(p))) {
+      const key = `${u.searchParams.get('ref') || (body && body.branch)}:${decodeURIComponent(m[1])}`;
+      if (method === 'GET') return G.files.has(key) ? reply(200, { content: G.files.get(key).content, sha: G.files.get(key).sha }) : reply(404, { message: 'Not Found' });
+      if (method === 'PUT') {
+        if (!G.refs.has(body.branch)) return reply(404, { message: 'Branch not found' });
+        const cur = G.files.get(key);
+        if (cur && cur.sha !== body.sha) return reply(409, { message: 'sha mismatch' });
+        G.files.set(key, { content: body.content, sha: `s${Math.random().toString(36).slice(2)}` });
+        return reply(201, {});
+      }
+    }
+    return reply(404, { message: `no fake for ${method} ${p}` });
+  };
+
+  const home = path.join(tmp, 'cloud-home');
+  const bare = path.join(tmp, 'cloud-remote.git');
+  const proj = path.join(tmp, 'cloud-proj');
+  fs.mkdirSync(path.join(proj, '.github', 'workflows'), { recursive: true });
+  fs.mkdirSync(path.join(proj, 'dist'), { recursive: true });
+  fs.mkdirSync(bare, { recursive: true });
+  sh(bare, 'init', '-q', '--bare');
+  fs.writeFileSync(path.join(proj, 'index.js'), 'console.log("hi");\n');
+  fs.writeFileSync(path.join(proj, 'other.txt'), 'one\n');
+  fs.writeFileSync(path.join(proj, '.gitignore'), 'dist/\n');
+  fs.writeFileSync(path.join(proj, 'dist', 'bundle.js'), 'built\n');
+  fs.writeFileSync(path.join(proj, '.env'), 'SECRET=hunter2\n');
+  fs.writeFileSync(path.join(proj, '.env.example'), 'SECRET=\n');
+  fs.writeFileSync(path.join(proj, 'creds.js'), `module.exports = "sk-ant-${'x'.repeat(30)}";\n`);
+  fs.writeFileSync(path.join(proj, '.github', 'workflows', 'deploy.yml'), 'on: push\n');
+  sh(proj, 'init', '-q');
+  sh(proj, 'add', 'index.js', '.gitignore');
+  sh(proj, ...ident, 'commit', '-q', '-m', 'mine');
+  const projHead = sh(proj, 'rev-parse', 'HEAD');
+  const projStatus = sh(proj, 'status', '--porcelain');
+
+  const model = { id: 'm1', name: 'Ollama cloud', kind: 'ollama', baseUrl: 'https://ollama.com', model: 'gemma4:31b', apiKey: 'OLLAMA-KEY-1' };
+  const common = { home, apiUrl: 'https://api.test', serverUrl: 'https://github.test', fetchImpl: fetchCloud, remoteUrl: bare };
+  const setup = await cl.setupCloud({ cwd: proj, token: 'TOK', model, ...common });
+  const repo = 'me/craft-workspace-cloud-proj';
+  check('cloud: setup creates a private mirror repo', setup.repo === repo && setup.created && G.repos.get(repo).private === true, JSON.stringify(setup));
+  const sec = G.secrets.get('CODEPLY_API_KEY');
+  check('cloud: the model key is stored only as an encrypted secret', sec && sec.key_id === 'kid1' && cl.openSealed(sec.encrypted_value, kp.publicKey, kp.secretKey) === 'OLLAMA-KEY-1'
+    && G.vars.get('CODEPLY_MODEL_KIND') === 'ollama' && G.vars.get('CODEPLY_MODEL') === 'gemma4:31b' && G.vars.get('CODEPLY_BASE_URL') === 'https://ollama.com'
+    && ![...G.vars.values()].some((v) => v.includes('OLLAMA-KEY')));
+  const mirrored = sh(bare, 'ls-tree', '-r', '--name-only', 'main').split('\n');
+  check('cloud: the snapshot respects .gitignore and leaves out .env, key files and your own workflows',
+    ['index.js', 'other.txt', '.gitignore', '.env.example', '.github/workflows/craft-cloud.yml'].every((f) => mirrored.includes(f))
+    && !['.env', 'creds.js', 'dist/bundle.js', '.github/workflows/deploy.yml'].some((f) => mirrored.includes(f))
+    && setup.skipped.some((s) => s.path === 'creds.js' && /Anthropic/.test(s.reason)), mirrored.join(','));
+  check('cloud: the project\'s own git is never touched', sh(proj, 'rev-parse', 'HEAD') === projHead && sh(proj, 'status', '--porcelain') === projStatus && !fs.existsSync(path.join(proj, '.codeply')));
+  check('cloud: the push token never lands in the mirror git config', !fs.readFileSync(path.join(home, 'cloud', fs.readdirSync(path.join(home, 'cloud'))[0], 'config'), 'utf8').includes('TOK'));
+
+  const again = await cl.pushSnapshot({ cwd: proj, token: 'TOK', ...common });
+  check('cloud: an unchanged folder is not pushed again', again.pushed === false);
+
+  const task = await cl.startCloudRun({ cwd: proj, token: 'TOK', prompt: 'add a greeting', mode: 'Build', sessionId: 'chat1', model, ...common, retryMs: 1 });
+  const disp = G.dispatches.at(-1);
+  check('cloud: a run dispatches the workflow with the task', disp && disp.ref === 'main' && disp.inputs.prompt === 'add a greeting' && disp.inputs.task_id === task.id && disp.inputs.session_id === 'chat1' && task.baseSha === sh(bare, 'rev-parse', 'main'));
+
+  // The runner, as GitHub Actions would start it: a fresh checkout of the mirror.
+  const runnerDir = path.join(tmp, 'cloud-runner');
+  sh(tmp, 'clone', '-q', '-b', 'main', bare, runnerDir);
+  let seenHistory = null;
+  const agent = (writes) => async function* ({ cwd, history }) {
+    seenHistory = history;
+    for (const [f, text] of writes) fs.writeFileSync(path.join(cwd, f), text);
+    for (const [f] of writes) yield { type: 'tool_end', name: 'write_file', args: { path: f }, ok: true };
+    yield { type: 'text', text: writes.length ? 'Added a greeting.' : 'It prints hi.' };
+    yield { type: 'done' };
+  };
+  const runnerEnv = (t, prompt, mode) => ({ GITHUB_REPOSITORY: repo, GITHUB_SHA: t.baseSha, GITHUB_API_URL: 'https://api.test', GITHUB_SERVER_URL: 'https://github.test', CRAFT_TASK_ID: t.id, CRAFT_PROMPT: prompt, CRAFT_MODE: mode, CRAFT_SESSION_ID: 'chat1' });
+  const out = await cl.runCloudRunner({ env: runnerEnv(task, 'add a greeting', 'Build'), cwd: runnerDir, token: 'TOK', route: {}, fetchImpl: fetchCloud, updateMs: 0,
+    runAgentImpl: agent([['greet.js', 'module.exports = "hello";\n'], ['index.js', 'console.log("hi");\nconsole.log(require("./greet"));\n']]) });
+  const chk = G.checks.find((c) => c.name === `craft ${task.id}`);
+  check('cloud: the runner pushes changes to a task branch and reports in a check run',
+    out.status === 'done' && out.result.branch === `craft/task-${task.id}` && sh(bare, 'show', `craft/task-${task.id}:greet.js`).includes('hello')
+    && chk && chk.status === 'completed' && chk.conclusion === 'success' && JSON.parse(chk.output.text).files.includes('greet.js'), JSON.stringify(out));
+  check('cloud: progress shows the steps while it works', /write_file greet\.js/.test(chk.output.summary) || /Added a greeting/.test(chk.output.summary));
+  const saved = G.files.get('craft-sessions:sessions/chat1.json');
+  check('cloud: the chat is saved for the next run', saved && JSON.parse(Buffer.from(saved.content, 'base64').toString()).messages.length === 2);
+
+  const task2 = await cl.startCloudRun({ cwd: proj, token: 'TOK', prompt: 'what does index.js print?', mode: 'Ask', sessionId: 'chat1', ...common, retryMs: 1 });
+  await cl.runCloudRunner({ env: runnerEnv(task2, 'what does index.js print?', 'Ask'), cwd: runnerDir, token: 'TOK', route: {}, fetchImpl: fetchCloud, updateMs: 0, runAgentImpl: agent([]) });
+  check('cloud: a follow-up run continues the same chat', Array.isArray(seenHistory) && seenHistory.length === 2 && seenHistory[0].content === 'add a greeting');
+
+  const st = await cl.cloudRunStatus({ cwd: proj, taskId: task.id, token: 'TOK', ...common });
+  check('cloud: status reads the finished run', st.status === 'done' && st.result.files.includes('greet.js') && st.runId === 7000, JSON.stringify(st));
+
+  const failTask = await cl.startCloudRun({ cwd: proj, token: 'TOK', prompt: 'x', sessionId: '', ...common, retryMs: 1 });
+  const failOut = await cl.runCloudRunner({ env: runnerEnv(failTask, 'x', 'Build'), cwd: runnerDir, token: 'TOK', route: null, setupError: 'Set the CODEPLY_API_KEY secret.', fetchImpl: fetchCloud });
+  const failSt = await cl.cloudRunStatus({ cwd: proj, taskId: failTask.id, token: 'TOK', ...common });
+  check('cloud: a setup error comes back as a failed task with the reason', failOut.status === 'failed' && failSt.status === 'failed' && /CODEPLY_API_KEY/.test(failSt.error || ''), JSON.stringify(failSt));
+
+  // Meanwhile the user kept working locally; pulling keeps that.
+  fs.writeFileSync(path.join(proj, 'other.txt'), 'one\nedited locally\n');
+  const pulled = await cl.pullCloudRun({ cwd: proj, taskId: task.id, token: 'TOK', ...common });
+  check('cloud: pulling applies the run\'s changes and keeps local edits',
+    pulled.applied && !pulled.conflicts.length && fs.readFileSync(path.join(proj, 'greet.js'), 'utf8').includes('hello')
+    && fs.readFileSync(path.join(proj, 'index.js'), 'utf8').includes('require("./greet")') && fs.readFileSync(path.join(proj, 'other.txt'), 'utf8').includes('edited locally'), JSON.stringify(pulled));
+  check('cloud: pulling never touches the project\'s own git', sh(proj, 'rev-parse', 'HEAD') === projHead && !fs.existsSync(path.join(proj, '.github', 'workflows', 'craft-cloud.yml')));
+  check('cloud: a run is applied only once', (await cl.pullCloudRun({ cwd: proj, taskId: task.id, token: 'TOK', ...common })).applied === false);
+
+  // Overlapping edits come back as conflict markers, not lost work.
+  const t3 = await cl.startCloudRun({ cwd: proj, token: 'TOK', prompt: 'change other', ...common, retryMs: 1 });
+  sh(runnerDir, 'fetch', '-q', 'origin', 'main');
+  sh(runnerDir, 'checkout', '-q', '-f', 'FETCH_HEAD');
+  await cl.runCloudRunner({ env: runnerEnv({ ...t3, baseSha: sh(runnerDir, 'rev-parse', 'HEAD') }, 'change other', 'Build'), cwd: runnerDir, token: 'TOK', route: {}, fetchImpl: fetchCloud, updateMs: 0,
+    runAgentImpl: agent([['other.txt', 'one\nfrom the cloud\n']]) });
+  fs.writeFileSync(path.join(proj, 'other.txt'), 'one\nlocal change\n');
+  await cl.cloudRunStatus({ cwd: proj, taskId: t3.id, token: 'TOK', ...common });
+  const p3 = await cl.pullCloudRun({ cwd: proj, taskId: t3.id, token: 'TOK', ...common });
+  const otherNow = fs.readFileSync(path.join(proj, 'other.txt'), 'utf8');
+  check('cloud: overlapping edits become conflict markers instead of lost work', p3.conflicts.includes('other.txt') && /<<<<<<<[\s\S]*local change[\s\S]*from the cloud|<<<<<<<[\s\S]*from the cloud[\s\S]*local change/.test(otherNow), JSON.stringify(p3) + otherNow);
+}
+
 // ── Sharing a chat ──
 {
   const share = require(path.join(CLI, 'lib/share.js'));
