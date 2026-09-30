@@ -1369,6 +1369,37 @@ ipcMain.handle('session:rename', (e, { id, title }) => {
   return { ok: true };
 });
 
+// Share a chat: save it as Markdown or a web page, or put it in a secret gist.
+// Keys, tokens and local paths are masked by share.js before anything leaves.
+ipcMain.handle('session:share', async (e, { id, kind, thinking }) => {
+  const session = store.sessions.find((s) => s.id === id);
+  if (!session) return { ok: false, error: 'That chat is gone.' };
+  const share = require(path.join(CLI_DIR, 'lib', 'share.js'));
+  const opts = { includeThinking: !!thinking };
+  try {
+    if (kind === 'gist') {
+      if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
+      const gh = configLib.getIntegration('github');
+      if (!gh.accessToken) return { ok: false, error: 'Connect GitHub first (Connect Apps), then share again.' };
+      if (typeof gh.scope === 'string' && !/\bgist\b/.test(gh.scope)) return { ok: false, error: 'Reconnect GitHub in Connect Apps so Craft is allowed to create gists.' };
+      return await share.createGist(session, gh.accessToken, opts);
+    }
+    const html = kind === 'html';
+    if (!html && kind !== 'md') return { ok: false, error: 'Unknown format.' };
+    const base = String(session.title || 'chat').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'chat';
+    const r = await dialog.showSaveDialog(win, {
+      title: html ? 'Save chat as a web page' : 'Save chat as Markdown',
+      defaultPath: `${base}.${html ? 'html' : 'md'}`,
+      filters: html ? [{ name: 'Web page', extensions: ['html'] }] : [{ name: 'Markdown', extensions: ['md'] }],
+    });
+    if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+    fs.writeFileSync(r.filePath, html ? share.toHtml(session, opts) : share.toMarkdown(session, opts));
+    return { ok: true, path: r.filePath };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
 // ─── Image search (Openverse, with a Wikimedia Commons fallback) ──────────
 // Backs the image picker: whenever the agent is about to download a
 // placeholder/hero/etc image and isn't running unattended (bypass/always-
@@ -1576,6 +1607,7 @@ function notifyProviderExhausted(session, message) {
 
 const pendingApprovals = new Map();  // requestId -> { sessionId, resolve(verdict) }
 const pendingImagePicks = new Map(); // requestId -> { sessionId, resolve(chosenUrl) }
+const pendingQuestions = new Map();  // requestId -> { sessionId, resolve(answer) } for ask_user
 let approvalCounter = 0;
 
 // ─── Phone companion (signed in with the same account) ─────────────────────
