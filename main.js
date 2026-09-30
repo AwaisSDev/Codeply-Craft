@@ -2148,7 +2148,9 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
       } else if (ev.type === 'reasoning') {
         session.messages.push({ kind: 'reasoning', text: ev.text, ms: ev.ms, at: Date.now() });
       } else if (ev.type === 'tool_end') {
-        const persistedArgs = ev.args && ev.name === 'write_file' ? { path: ev.args.path } : ev.args;
+        const persistedArgs = ev.args && ev.name === 'write_file' ? { path: ev.args.path }
+          : ev.args && ev.name === 'apply_patch' ? { files: ev.meta?.files || [] }
+          : ev.args;
         session.messages.push({
           kind: 'tool', name: ev.name,
           label: ev.summary || ev.args?.path || ev.args?.command || ev.args?.pattern || '',
@@ -2163,7 +2165,9 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
       } else if (ev.type === 'done' && Array.isArray(ev.actions)) {
         // The factual record of what this turn changed - rendered as a
         // "what actually happened" card, independent of the model's prose.
-        const changed = ev.actions.filter((a) => a.ok && ['write_file', 'edit_file', 'fetch_image'].includes(a.tool));
+        const changed = ev.actions
+          .filter((a) => a.ok && ['write_file', 'edit_file', 'apply_patch', 'fetch_image'].includes(a.tool))
+          .flatMap((a) => (Array.isArray(a.files) && a.files.length ? a.files.map((f) => ({ ...a, label: f })) : [a]));
         const checks = ev.actions.filter((a) => ['run', 'browser_check'].includes(a.tool));
         if (changed.length || checks.length) {
           const summary = {
