@@ -402,6 +402,25 @@
   </div>
 </div>
 
+<!-- ============ PLUGINS (opened by /plugins) ============ -->
+<div class="modal-backdrop hidden" id="pluginsBackdrop">
+  <div class="skills-modal" role="dialog" aria-modal="true" aria-labelledby="pluginsTitle">
+    <div class="skills-modal-head">
+      <div>
+        <div class="skills-modal-title" id="pluginsTitle">Plugins</div>
+        <div class="skills-modal-sub">A plugin adds slash commands, skills, MCP servers and rules to Craft. Install one from GitHub (owner/repo), a git URL or a folder. Share yours by pushing it to GitHub.</div>
+      </div>
+      <button class="sb-icon-btn" id="pluginsCloseBtn" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+    </div>
+    <div class="plugins-install">
+      <input class="skills-search" id="pluginSource" type="text" placeholder="owner/repo, https://github.com/... or C:\path\to\folder" autocomplete="off" spellcheck="false">
+      <button class="btn-primary" id="pluginFetchBtn">Install</button>
+    </div>
+    <div class="models-error hidden" id="pluginError"></div>
+    <div class="plugins-body" id="pluginsBody"></div>
+  </div>
+</div>
+
 <!-- ============ CONNECT APPS (opened from the account menu) ============ -->
 <div class="modal-backdrop hidden" id="connectAppsBackdrop">
   <div class="connect-apps-modal">
