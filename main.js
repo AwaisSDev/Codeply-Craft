@@ -2428,6 +2428,20 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   if (!cwd || !fs.existsSync(cwd)) return { error: 'Pick a project folder first.' };
   mode = ['Build', 'Plan', 'Ask'].includes(mode) ? mode : 'Build';
 
+  // A custom slash command (.codeply/commands/<name>.md) becomes its prompt.
+  // The chat shows what the user typed; the model gets the expanded text.
+  const typedText = text;
+  let expandedText = null;
+  if (commandsLib && !GOAL_PREFIX_RE.test(text)) {
+    const custom = commandsLib.resolve(text, cwd);
+    if (custom) {
+      if (!custom.prompt) return { error: `/${custom.command.name} expanded to nothing. Check ${custom.command.file}.` };
+      expandedText = custom.prompt;
+      text = custom.prompt;
+      if (custom.command.mode) mode = custom.command.mode;
+    }
+  }
+
   // The model is decided once, when the turn starts - switching models
   // mid-run never changes a run that's already going.
   const route = currentRoute();
@@ -2442,7 +2456,7 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
 
   let session = sessionId ? store.sessions.find((s) => s.id === sessionId) : null;
   if (!session) {
-    const titleSource = goal || text;
+    const titleSource = goal || typedText;
     session = {
       id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       title: titleSource.length > 46 ? titleSource.slice(0, 46) + '…' : titleSource,
