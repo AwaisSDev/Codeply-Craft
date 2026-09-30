@@ -6,7 +6,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "postinstall": "node scripts/install-engine.js",
+    "postinstall": "node scripts/install-engine.js && node scripts/install-sqlite.js",
     "mobile:prepare": "node scripts/prepare-mobile.js",
     "android:add": "npm run mobile:prepare && npx cap add android",
     "android:sync": "npm run mobile:prepare && npx cap sync android",
@@ -28,6 +28,9 @@
     "@xterm/xterm": "^6.0.0",
     "dotenv": "^16.6.1",
     "electron-updater": "^6.8.9"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.10.0"
   },
   "build": {
     "appId": "app.codeply.craft",
