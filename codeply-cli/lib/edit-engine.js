@@ -115,6 +115,144 @@ function applySearchReplaceLF(fileContent, searchBlock, replaceBlock) {
   return { ok: true, content: fileContent.slice(0, startChar) + reindented + fileContent.slice(endChar) };
 }
 
+// ─── Fallback matchers ──────────────────────────────────────────────────────
+//
+// Adapted from opencode (packages/opencode/src/tool/edit.ts), MIT License,
+// Copyright (c) 2025 opencode - https://github.com/sst/opencode
+//
+// Each matcher yields candidate spans that exist VERBATIM in the file for a
+// search block the model copied imperfectly (escaped quotes, shifted
+// indentation, a middle line reworded). They only run after the matcher above
+// has found nothing, and a candidate is used only when it occurs exactly once
+// and is not far larger than what the model asked for.
+
+function levenshtein(a, b) {
+  if (a === '' || b === '') return Math.max(a.length, b.length);
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+function spanOfLines(lines, start, end) {
+  return lines.slice(start, end + 1).join('\n');
+}
+
+const ANCHOR_SIMILARITY = 0.65;
+
+// First and last lines match exactly (trimmed); the middle only has to be
+// similar. Recovers a search block with one line misremembered.
+function* blockAnchorMatches(content, find) {
+  const lines = content.split('\n');
+  const want = find.split('\n');
+  if (want[want.length - 1] === '') want.pop();
+  if (want.length < 3) return;
+  const first = want[0].trim(), last = want[want.length - 1].trim();
+  const maxDelta = Math.max(1, Math.floor(want.length * 0.25));
+
+  const candidates = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() !== first) continue;
+    for (let j = i + 2; j < lines.length; j++) {
+      if (lines[j].trim() !== last) continue;
+      if (Math.abs(j - i + 1 - want.length) <= maxDelta) candidates.push([i, j]);
+      break;
+    }
+  }
+
+  let best = null, bestScore = -1;
+  for (const [s, e] of candidates) {
+    const size = e - s + 1;
+    const middle = Math.min(want.length - 2, size - 2);
+    let score = 1;
+    if (middle > 0) {
+      score = 0;
+      for (let k = 1; k < want.length - 1 && k < size - 1; k++) {
+        const a = lines[s + k].trim(), b = want[k].trim();
+        const len = Math.max(a.length, b.length);
+        score += len ? 1 - levenshtein(a, b) / len : 1;
+      }
+      score /= middle;
+    }
+    if (score > bestScore) { bestScore = score; best = [s, e]; }
+  }
+  if (best && bestScore >= ANCHOR_SIMILARITY) yield spanOfLines(lines, best[0], best[1]);
+}
+
+// Same block with its indentation shifted as a whole.
+function* indentationFlexibleMatches(content, find) {
+  const dedent = (text) => {
+    const ls = text.split('\n');
+    const indents = ls.filter((l) => l.trim()).map((l) => l.match(/^\s*/)[0].length);
+    if (!indents.length) return text;
+    const min = Math.min(...indents);
+    return ls.map((l) => (l.trim() ? l.slice(min) : l)).join('\n');
+  };
+  const target = dedent(find);
+  const lines = content.split('\n');
+  const n = find.split('\n').length;
+  for (let i = 0; i + n <= lines.length; i++) {
+    const block = lines.slice(i, i + n).join('\n');
+    if (dedent(block) === target) yield block;
+  }
+}
+
+// The model wrote \n, \" or \` escapes where the file has the real characters.
+function* escapeNormalizedMatches(content, find) {
+  const unescape = (s) => s.replace(/\\(n|t|r|'|"|`|\\|\n|\$)/g, (m, c) =>
+    ({ n: '\n', t: '\t', r: '\r', "'": "'", '"': '"', '`': '`', '\\': '\\', '\n': '\n', $: '$' }[c] ?? m));
+  const target = unescape(find);
+  if (target !== find && content.includes(target)) yield target;
+  const lines = content.split('\n');
+  const n = target.split('\n').length;
+  for (let i = 0; i + n <= lines.length; i++) {
+    const block = lines.slice(i, i + n).join('\n');
+    if (block !== target && unescape(block) === target) yield block;
+  }
+}
+
+// Stray blank lines or spaces around the block.
+function* trimmedBoundaryMatches(content, find) {
+  const t = find.trim();
+  if (t === find) return;
+  if (content.includes(t)) yield t;
+}
+
+const FALLBACK_MATCHERS = [indentationFlexibleMatches, escapeNormalizedMatches, trimmedBoundaryMatches, blockAnchorMatches];
+
+// A "match" many times bigger than the search block means an anchor latched
+// onto the wrong closing line; replacing it would silently delete code.
+function isDisproportionate(span, find) {
+  const spanLines = span.split('\n').length, findLines = find.split('\n').length;
+  if (spanLines >= Math.max(findLines + 3, findLines * 2)) return true;
+  if (findLines === 1) return false;
+  return span.trim().length > Math.max(find.trim().length + 500, find.trim().length * 4);
+}
+
+/**
+ * Find the one verbatim span in `content` that an imperfect search block most
+ * likely meant. @returns {{ok:true, span:string} | {ok:false, error:'notfound'|'multiple'|'disproportionate'}}
+ */
+function fuzzyLocate(content, find) {
+  let sawMultiple = false;
+  for (const matcher of FALLBACK_MATCHERS) {
+    for (const span of matcher(content, find)) {
+      if (!span.trim()) continue;
+      const at = content.indexOf(span);
+      if (at === -1) continue;
+      if (at !== content.lastIndexOf(span)) { sawMultiple = true; continue; }
+      if (isDisproportionate(span, find)) return { ok: false, error: 'disproportionate' };
+      return { ok: true, span, reindent: matcher === indentationFlexibleMatches || matcher === blockAnchorMatches };
+    }
+  }
+  return { ok: false, error: sawMultiple ? 'multiple' : 'notfound' };
+}
+
 // Apply an ordered list of verified {search, replace} hunks to file content,
 // all-or-nothing (pure - no disk write).
 function applyEditsToContent(fileContent, edits) {
@@ -223,4 +361,4 @@ async function computeInstructionEdits(instruction, filePath) {
   return { success: true, edits: good, badCount: bad.length, confidence, reason, tokensUsed: totalTokens, modelUsed: lastModelUsed };
 }
 
-module.exports = { applySearchReplace, applyEditsToContent, computeInstructionEdits };
+module.exports = { applySearchReplace, applyEditsToContent, computeInstructionEdits, fuzzyLocate };
