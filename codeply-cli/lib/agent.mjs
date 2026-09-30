@@ -50,9 +50,10 @@ const FORMAT_CORRECTION =
   'silently discarded and never runs. Write it exactly like this, as literal text in your reply, opening and ' +
   'closing tags complete:\n\n' +
   '<codeply:read_file>\n<path>run.html</path>\n</codeply:read_file>\n\n' +
-  'Valid names: list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, ' +
+  'Valid names: todo, ask_user, mcp, list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, ' +
   'browser_check, gmail_send, gmail_search, slack_post_message, vercel_deploy, supabase_create_project, ' +
-  'supabase_delete_project, github_create_repo, design_reference_search, view_images, supabase_api, supabase_sql, vercel_api.';
+  'supabase_delete_project, github_create_repo, design_reference_search, view_images, supabase_api, supabase_sql, vercel_api, ' +
+  'web_fetch, web_search, apply_patch, plan_exit, plan_enter, lsp.';
 
 const TRUNCATION_CORRECTION =
   '[system] That reply got cut off partway through the action block - the tag syntax was fine, it simply ran out of ' +
@@ -75,15 +76,26 @@ const MAX_TRUNCATED_RETRIES = 3;
 // The adverb list between "have" and the verb is deliberately a closed set
 // (now/already/actually/just/finally), not "any word" - "I have TO update"
 // is a statement of necessity, not a completion claim, and must not match.
-const HC_VERB = '(?:applied|updated|written|wrote|edited|fixed|changed|added|created|modified)';
+const HC_VERB = '(?:applied|updated|written|wrote|edited|fixed|changed|added|created|modified|implemented|built|removed|deleted|replaced|refactored|renamed|rewritten|rewrote|moved|made)';
 const HC_ADVERB = '(?:now|already|actually|just|finally)';
 const HALLUCINATED_COMPLETION = new RegExp(
   `\\bi(?:'ve|\\s+have)\\s+(?:${HC_ADVERB}\\s+){0,2}${HC_VERB}\\b` +      // "I have now already applied..."
   `|\\bsuccessfully\\s+${HC_VERB}\\b` +                                  // "successfully applied..."
   `|\\b${HC_VERB}\\b[^.!?\\n]{0,20}\\bsuccessfully\\b` +                 // "...applied this successfully"
-  `|\\b(?:has|have)\\s+been\\s+${HC_VERB}\\b`,                           // "...has been applied"
+  `|\\b(?:has|have)\\s+been\\s+${HC_VERB}\\b` +                          // "...has been applied"
+  `|\\bi\\s+(?:${HC_ADVERB}\\s+)?(?:updated|edited|fixed|changed|added|created|modified|implemented|removed|replaced|refactored|rewrote|wrote)\\s+(?:the|your|a|an|it|this|that|all|each|every)\\b`, // "I updated the header"
   'i',
 );
+
+// The model writing a tool result itself instead of waiting for the program's
+// real one. Results only ever arrive as a separate message, so this text in
+// the model's own reply is always invented.
+const FABRICATED_RESULT = /\[tool result\b|^\s*(?:exit code|exited with code)\s*[:=]?\s*\d+\s*$/im;
+
+const FABRICATED_RESULT_CORRECTION =
+  '[system] Your last reply contains a tool result you wrote yourself. Tool results only come from the program, in a ' +
+  'separate message after you write an action block, and you have not received one for that. Nothing you described there ' +
+  'actually ran. Write the real action block and stop, then wait for its result.';
 
 const HALLUCINATED_ACTION_CORRECTION =
   "[system] Your last reply describes a file as already changed, but it contained no action block, and nothing has actually " +
