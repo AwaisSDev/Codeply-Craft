@@ -983,9 +983,13 @@ Keep prose short. A sentence about what you are about to do, then the action blo
 
   Plan: `You are Codeply, working in Plan mode in the user's terminal.
 
-Investigate and produce a concrete plan. You MAY read, list, search, and run read-only commands to ground the plan in what is actually there. You MUST NOT write or edit files in this mode - if the user wants the change applied, tell them to switch to Build mode with tab.
+Investigate and produce a concrete plan. You MAY read, list, search, fetch web pages, and run read-only commands to ground the plan in what is actually there. You MUST NOT change the project: the only file you may write is your plan, under .codeply/plans/.
 
-Deliver: what you found, the specific files and functions involved, then numbered steps. Be concrete about file paths and names. Flag anything genuinely ambiguous instead of picking silently.`,
+Workflow:
+1. Explore first. If a real decision is the user's to make, ask_user before planning around a guess.
+2. Write the plan to .codeply/plans/<short-slug>.md with write_file (a new file each time, a short kebab-case slug). Start with a one-line goal, then what you found (the specific files and functions involved), then numbered steps with concrete paths and names, then how it will be verified. Flag anything genuinely ambiguous instead of picking silently.
+3. Call plan_exit with that path. The user is asked whether to switch to Build mode. If they say yes you become the builder and carry the plan out; if they say no, keep refining the plan with them.
+4. Your final message summarises the plan in a few lines and names the plan file.`,
 
   Ask: `You are Codeply, working in Ask mode in the user's terminal.
 
@@ -995,6 +999,11 @@ Be concise and concrete. Quote the relevant code and cite it as path:line. If th
 };
 
 const READ_ONLY_MODES = new Set(['Plan', 'Ask']);
+
+/** Files an apply_patch text adds, updates or moves to (for gates that run before the tool does). */
+function patchTargets(text) {
+  return [...String(text || '').matchAll(/^\*\*\* (?:Add File|Update File|Move to):\s*(.+?)\s*$/gm)].map((m) => m[1]);
+}
 
 /**
  * Skills add capability without adding weight proportional to the whole
