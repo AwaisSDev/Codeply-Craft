@@ -1248,6 +1248,8 @@ async function run(args, ctx) {
     tool: 'run',
     title: 'Run command',
     detail: displayCommand,
+    // What "always allow" covers: these command names, not every command.
+    patterns: commandPatterns(displayCommand),
     danger: /\brm\s+-rf\b|\bdel\s+\/[sf]\b|format\s|mkfs|>\s*\/dev\/sd|shutdown|reboot|:\(\)\{|curl[^|]*\|\s*(ba)?sh/i.test(displayCommand),
   });
   if (verdict === 'reject') return { ok: false, output: `User declined to run: ${displayCommand}`, meta: { rejected: true } };
