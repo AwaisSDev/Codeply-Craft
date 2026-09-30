@@ -53,6 +53,8 @@ contextBridge.exposeInMainWorld('craft', {
   renameSession: (id, title) => ipcRenderer.invoke('session:rename', { id, title }),
   refreshSessions: () => ipcRenderer.invoke('sessions:refresh'),
   listSessions: () => ipcRenderer.invoke('sessions:list'),
+  searchSessions: (query) => ipcRenderer.invoke('sessions:search', query),
+  shareSession: (id, kind, thinking) => ipcRenderer.invoke('session:share', { id, kind, thinking }),
 
   // agent
   send: (payload) => ipcRenderer.invoke('chat:send', payload),
@@ -69,6 +71,19 @@ contextBridge.exposeInMainWorld('craft', {
   onRemoteServerError: (cb) => ipcRenderer.on('remote:server-error', (e, data) => cb(data)),
   stop: (sessionId) => ipcRenderer.send('chat:stop', sessionId),
   respondApproval: (requestId, verdict) => ipcRenderer.send('approval:respond', { requestId, verdict }),
+  // custom slash commands (.codeply/commands/*.md) for a project
+  listCommands: (cwd) => ipcRenderer.invoke('commands:list', cwd),
+  listPlugins: (cwd) => ipcRenderer.invoke('plugins:list', cwd),
+  preparePlugin: (source) => ipcRenderer.invoke('plugins:prepare', { source }),
+  prepareUpdatePlugin: (name, cwd) => ipcRenderer.invoke('plugins:prepareUpdate', { name, cwd }),
+  finishPlugin: (token, scope, cwd) => ipcRenderer.invoke('plugins:finish', { token, scope, cwd }),
+  cancelPlugin: (token) => ipcRenderer.invoke('plugins:cancel', { token }),
+  removePlugin: (name, cwd) => ipcRenderer.invoke('plugins:remove', { name, cwd }),
+  togglePlugin: (name, enabled, cwd) => ipcRenderer.invoke('plugins:toggle', { name, enabled, cwd }),
+  // answer an ask_user question (null = let the agent decide)
+  respondQuestion: (requestId, answer) => ipcRenderer.send('question:respond', { requestId, answer }),
+  // undo (true) or redo (false) everything one message changed
+  setCheckpoint: (sessionId, checkpointId, undo) => ipcRenderer.invoke('checkpoint:set', { sessionId, checkpointId, undo }),
   onAgentEvent: (cb) => ipcRenderer.on('agent:event', (e, data) => cb(data)),
 
   // image picker
