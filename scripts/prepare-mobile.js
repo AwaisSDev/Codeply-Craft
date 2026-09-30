@@ -14,6 +14,8 @@ for (const [from, to] of [
   ['mobile.html', 'index.html'],
   ['mobile.css', 'mobile.css'],
   ['mobile.js', 'mobile.js'],
+  ['mobile-cloud.js', 'mobile-cloud.js'],
+  ['mobile-cloud.css', 'mobile-cloud.css'],
   ['mobile.manifest.json', 'manifest.json'],
   ['logo.png', 'logo.png'],
   [path.join('vendor', 'supabase', 'supabase.js'), 'supabase.js'],
@@ -29,7 +31,7 @@ for (const f of fs.readdirSync(mascots).filter((f) => f.endsWith('.png'))) {
 fs.writeFileSync(path.join(target, 'vercel.json'), JSON.stringify({
   cleanUrls: true,
   headers: [
-    { source: '/(index.html|mobile.js|mobile.css|)', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
+    { source: '/(index.html|mobile.js|mobile.css|mobile-cloud.js|mobile-cloud.css|)', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
     { source: '/(.*)', headers: [{ key: 'X-Content-Type-Options', value: 'nosniff' }, { key: 'Referrer-Policy', value: 'no-referrer' }] },
   ],
 }, null, 2));

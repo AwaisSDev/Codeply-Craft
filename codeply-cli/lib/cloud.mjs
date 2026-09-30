@@ -214,6 +214,13 @@ function saveTask(cwd, home, task) {
     return { ...p, tasks: tasks.slice(0, 100) };
   });
 }
+/** Per-project switches the app keeps: cloudOn (send new messages to the cloud), autoBackup. */
+export function setProjectOptions(cwd, opts, home = defaultHome()) {
+  const allowed = {};
+  for (const k of ['cloudOn', 'autoBackup']) if (typeof opts[k] === 'boolean') allowed[k] = opts[k];
+  return updateProject(cwd, home, (p) => ({ ...p, ...allowed }));
+}
+
 export function getTask(cwd, id, home = defaultHome()) {
   const p = getProject(cwd, home);
   return p && (p.tasks || []).find((t) => t.id === id) || null;
@@ -475,6 +482,36 @@ export async function cloudRunStatus({ cwd, taskId, token, home = defaultHome(),
   return next;
 }
 
+/**
+ * Runs started somewhere else (the phone, while this PC was off) become local
+ * tasks, so their changes can be pulled here. Only finished runs are imported.
+ */
+export async function importRemoteTasks({ cwd, token, home = defaultHome(), apiUrl, fetchImpl, limit = 20 }) {
+  const p = getProject(cwd, home);
+  if (!p || !p.repo) return [];
+  const api = githubApi({ token, apiUrl, fetchImpl });
+  const known = new Set((p.tasks || []).map((t) => t.id));
+  const list = (await api('GET', `/repos/${p.repo}/actions/workflows/${WORKFLOW_FILE}/runs?event=workflow_dispatch&status=completed&per_page=${limit}`, null, { allow: [404] })).json;
+  const added = [];
+  for (const run of (list && list.workflow_runs) || []) {
+    const id = String(run.display_title || '').replace(/^craft /, '');
+    if (!/^[A-Za-z0-9_-]+$/.test(id) || known.has(id)) continue;
+    const checks = (await api('GET', `/repos/${p.repo}/commits/${run.head_sha}/check-runs?check_name=${encodeURIComponent(checkName(id))}`)).json;
+    const check = (checks.check_runs || [])[0];
+    if (!check || check.status !== 'completed') continue;
+    let result = {};
+    try { result = JSON.parse(check.output.text || '{}'); } catch {}
+    const task = {
+      id, prompt: result.prompt || '(started elsewhere)', mode: result.mode || 'Build', sessionId: result.sessionId || '', baseSha: result.baseSha || run.head_sha,
+      repo: p.repo, runId: run.id, runUrl: run.html_url, status: check.conclusion === 'success' ? 'done' : 'failed', result, error: result.error || null,
+      startedAt: Date.parse(run.created_at) || Date.now(), finishedAt: Date.parse(run.updated_at) || Date.now(), remote: true,
+    };
+    saveTask(cwd, home, task);
+    added.push(task);
+  }
+  return added;
+}
+
 /** Stop a cloud run. */
 export async function cancelCloudRun({ cwd, taskId, token, home = defaultHome(), apiUrl, fetchImpl }) {
   const task = await cloudRunStatus({ cwd, taskId, token, home, apiUrl, fetchImpl });
@@ -627,7 +664,7 @@ export async function runCloudRunner({ env = process.env, cwd = process.cwd(), t
 
     await saveHistory(api, repo, sessionId, [...hist.messages, { role: 'user', content: prompt }, { role: 'assistant', content: answer || '(no reply)' }].slice(-HISTORY_TURNS * 2), headSha)
       .catch((e) => log(`Could not save the chat: ${e.message}`));
-    const result = { mode, answer: answer.slice(0, 40000), branch, sha, files, steps, baseSha: headSha };
+    const result = { mode, prompt: prompt.slice(0, 4000), sessionId, answer: answer.slice(0, 40000), branch, sha, files, steps, baseSha: headSha };
     const title = files.length ? `Changed ${files.length} file${files.length === 1 ? '' : 's'}` : mode === 'Build' ? 'No files changed' : 'Answered';
     return finish(true, title, answer || title, result);
   } catch (e) {

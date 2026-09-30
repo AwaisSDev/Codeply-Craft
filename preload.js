@@ -58,6 +58,14 @@ contextBridge.exposeInMainWorld('craft', {
 
   // agent
   send: (payload) => ipcRenderer.invoke('chat:send', payload),
+  // Craft Cloud (cloud-desktop.js)
+  cloudState: (cwd) => ipcRenderer.invoke('cloud:state', cwd),
+  cloudSetup: (cwd) => ipcRenderer.invoke('cloud:setup', cwd),
+  cloudOptions: (cwd, opts) => ipcRenderer.invoke('cloud:options', cwd, opts),
+  cloudApply: (sessionId, taskId) => ipcRenderer.invoke('cloud:apply', sessionId, taskId),
+  cloudApplyTask: (cwd, taskId) => ipcRenderer.invoke('cloud:applyTask', cwd, taskId),
+  cloudCancel: (sessionId, taskId) => ipcRenderer.invoke('cloud:cancel', sessionId, taskId),
+  cloudBackupNow: (cwd) => ipcRenderer.invoke('cloud:backupNow', cwd),
   // which chats have a run in flight, pushed whenever that changes
   onRunsStatus: (cb) => ipcRenderer.on('runs:status', (e, data) => cb(data)),
   remoteInfo: () => ipcRenderer.invoke('remote:info'),

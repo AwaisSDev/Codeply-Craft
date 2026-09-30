@@ -423,7 +423,8 @@ function vercelApi(accessToken, teamId, method, apiPath, body) {
 // simpler registration than Vercel/Supabase: no scopes picker or store
 // listing, just a name + callback URL. `repo` scope is what lets
 // githubCreateRepo actually create repositories under the connected account.
-const GITHUB_SCOPES = 'repo gist';
+// `workflow` lets Craft Cloud write craft-cloud.yml into the user's private mirror repo.
+const GITHUB_SCOPES = 'repo gist workflow';
 
 function buildGithubAuthUrl(clientId, redirectUri, state) {
   const params = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, scope: GITHUB_SCOPES });

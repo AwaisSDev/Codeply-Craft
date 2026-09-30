@@ -1727,6 +1727,10 @@ function screenshotFile(p) {
 
 async function handleBridgeApi(method, pathname, query, body) {
   body = body || {};
+  if (pathname.startsWith('/api/cloud/')) {
+    const r = await cloudDesktop.bridge(method, pathname, query, body);
+    if (r) return r;
+  }
   if (method === 'GET' && pathname === '/api/bootstrap') {
     const account = await remoteAccount();
     return {
@@ -1957,6 +1961,8 @@ function startRemoteServer() {
     if (req.method === 'GET' && url.pathname === '/') return serveStatic(res, 'mobile.html', 'text/html; charset=utf-8');
     if (req.method === 'GET' && url.pathname === '/mobile.css') return serveStatic(res, 'mobile.css', 'text/css; charset=utf-8');
     if (req.method === 'GET' && url.pathname === '/mobile.js') return serveStatic(res, 'mobile.js', 'application/javascript; charset=utf-8');
+    if (req.method === 'GET' && url.pathname === '/mobile-cloud.js') return serveStatic(res, 'mobile-cloud.js', 'application/javascript; charset=utf-8');
+    if (req.method === 'GET' && url.pathname === '/mobile-cloud.css') return serveStatic(res, 'mobile-cloud.css', 'text/css; charset=utf-8');
     if (req.method === 'GET' && url.pathname === '/supabase.js') return serveStatic(res, path.join('vendor', 'supabase', 'supabase.js'), 'application/javascript; charset=utf-8', 'public, max-age=86400');
     if (req.method === 'GET' && url.pathname === '/manifest.json') return serveStatic(res, 'mobile.manifest.json', 'application/manifest+json');
     if (req.method === 'GET' && url.pathname === '/logo.png') return serveStatic(res, 'logo.png', 'image/png', 'public, max-age=86400');
@@ -2454,6 +2460,11 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   if (goalMatch && !goal) return { error: 'Add the goal after /goal - for example: /goal make the checkout page work end to end.' };
   if (goal && mode !== 'Build') return { error: '/goal needs Build mode, since it changes files. Switch the mode chip to Build.' };
 
+  // Cloud chip on: the message runs on GitHub Actions (cloud-desktop.js), not here.
+  const toCloud = cloudDesktop.wants(cwd);
+  if (toCloud && images?.length) return { error: 'Cloud runs take text only for now. Turn the Cloud chip off to send images.' };
+  if (toCloud && goal) return { error: '/goal runs on this PC. Turn the Cloud chip off to use it.' };
+
   let session = sessionId ? store.sessions.find((s) => s.id === sessionId) : null;
   if (!session) {
     const titleSource = goal || typedText;
@@ -2483,6 +2494,7 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   saveStore();
   syncSessionToDb(session);
   sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session), message: session.messages.at(-1), origin: clientId });
+  if (toCloud) return cloudDesktop.startFromChat({ session, text, mode });
 
   // A real AbortController - fetch() only cancels an in-flight request when
   // handed a genuine AbortSignal.
@@ -2655,6 +2667,7 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
       sendEvent(session.id, { type: 'run_finished' });
       sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
       notifyTaskComplete(session);
+      cloudDesktop.afterLocalRun(cwd);
       if (session.messages.filter((m) => m.kind === 'user').length === 1) {
         generateSessionTitle(session);
       }
@@ -2788,6 +2801,18 @@ function respondImagePick(requestId, chosenUrl) {
 }
 
 ipcMain.handle('chat:send', (e, payload) => startChatRun(payload));
+
+// Craft Cloud: runs on GitHub Actions while this PC is off (see cloud-desktop.js).
+const cloudDesktop = require('./cloud-desktop');
+cloudDesktop.init({
+  ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine,
+  configLib: () => configLib, snapshotLib: () => snapshotLib,
+  sendEvent, sessionMeta, checkpointView, notify: notifyTaskComplete,
+  findSession: (id) => store.sessions.find((s) => s.id === id),
+  allSessions: () => store.sessions,
+  isRunning: (id) => activeRuns.has(id),
+  persist: (session) => { saveStore(); syncSessionToDb(session); },
+});
 ipcMain.handle('remote:info', () => remoteInfo());
 ipcMain.handle('remote:setKeepAwake', (e, on) => {
   store.keepAwake = !!on;

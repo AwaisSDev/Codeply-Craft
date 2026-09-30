@@ -2114,6 +2114,9 @@ if (api) api.onAgentEvent((data) => {
     case 'goal_update':
       renderGoalCard(data);
       break;
+    case 'cloud_task':
+      if (window.CraftCloud) window.CraftCloud.render(data.task);
+      break;
     case 'notice':
       addNote(data.text, data.level === 'warn' ? 'warn' : data.level === 'error' ? 'error' : '');
       break;
@@ -2267,6 +2270,8 @@ async function openSession(id) {
       addNote(m.text, m.level === 'warn' ? 'warn' : m.level === 'error' ? 'error' : '');
     } else if (m.kind === 'goal') {
       renderGoalCard(m);
+    } else if (m.kind === 'cloud_task' && window.CraftCloud) {
+      window.CraftCloud.render(m.task);
     }
   }
   revealInstant = false;
