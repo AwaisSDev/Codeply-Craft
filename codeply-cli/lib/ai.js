@@ -925,13 +925,14 @@ async function chatViaOllamaNative(messages, opts, m) {
       const msg = body.error || describeStatus(res.status);
       const fatal = res.status === 404 || /not found|pull/i.test(String(msg));
       if (fatal) return { done: true, value: { success: false, error: `Ollama: ${msg}${/not found/i.test(String(msg)) ? ` - run \`ollama pull ${m.model}\` first.` : ''}` } };
-      return { retryable: isTransientStatus(res.status), error: `Ollama: ${msg}` };
+      return { retryable: isTransientStatus(res.status), retryAfterMs: retryAfterMs(res), error: `Ollama: ${msg}` };
     }
 
     let content = '';
     let reasoning = '';
     let buffer = '';
     let streamError = null;
+    const toolCalls = [];
     try {
       for await (const chunk of res.body) {
         poke();
@@ -946,6 +947,15 @@ async function chatViaOllamaNative(messages, opts, m) {
           if (evt.error) streamError = evt.error;
           if (evt.message?.content) content += evt.message.content;
           if (evt.message?.thinking) reasoning += evt.message.thinking;
+          // Ollama sends each tool call whole (arguments as an object).
+          for (const tc of evt.message?.tool_calls || []) {
+            if (!tc.function?.name) continue;
+            toolCalls.push({
+              id: tc.id || `call_${Date.now().toString(36)}_${toolCalls.length}`,
+              type: 'function',
+              function: { name: tc.function.name, arguments: typeof tc.function.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function.arguments || {}) },
+            });
+          }
         }
       }
     } catch (e) {
@@ -955,12 +965,13 @@ async function chatViaOllamaNative(messages, opts, m) {
     } finally {
       cleanup();
     }
-    if (streamError && !content) return { done: true, value: { success: false, error: `Ollama: ${streamError}` } };
+    if (streamError && !content && !toolCalls.length) return { done: true, value: { success: false, error: `Ollama: ${streamError}` } };
 
     const message = { role: 'assistant', content };
     if (reasoning) message.reasoning = reasoning;
+    if (toolCalls.length) message.tool_calls = toolCalls;
     return { done: true, value: { success: true, data: { choices: [{ message }], model: m.model }, modelUsed: m.model } };
-  });
+  }, opts.signal);
 }
 
 function chatViaCustom(messages, opts, m) {
