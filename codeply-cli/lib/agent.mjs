@@ -1546,7 +1546,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   // without ever tripping this guard. Any tool not in this set - including a
   // failed write/edit attempt, which is still a real attempt to act -
   // resets the streak; only read-only, no-side-effect calls extend it.
-  const NON_PROGRESS_TOOLS = new Set(['read_file', 'list_dir', 'search', 'use_skill', 'list_skills', 'view_images', 'design_reference_search', 'browser_check']);
+  const NON_PROGRESS_TOOLS = new Set(['read_file', 'list_dir', 'search', 'use_skill', 'list_skills', 'view_images', 'design_reference_search', 'browser_check', 'web_fetch', 'web_search', 'lsp']);
   const MAX_READ_ONLY_STREAK = 5;
   let readOnlyStreak = 0;
   function readOnlyStreakNote() {
@@ -1561,8 +1561,35 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   for (let step = 0; step < stepBudget; step++) {
     if (signal.aborted) { yield { type: 'aborted' }; return; }
 
+    const budget = contextBudgetFor(route);
+    let outgoing = trimTranscript(messages, budget);
+    if (transcriptLength(outgoing) > budget && await compactTranscript(messages, userMessage, signal, route, { actions, todos: ctx.todos || [] })) {
+      // Message positions moved, so the index-based caches below point at the
+      // wrong entries now. They are only shortcuts; starting them over is safe.
+      servedCalls.clear();
+      readIndexByPath.clear();
+      yield { type: 'notice', level: 'info', text: 'Summarized earlier steps of this task to make room.' };
+      outgoing = trimTranscript(messages, budget);
+    }
+    if (outgoing !== messages) {
+      const ledger = actionLedger(actions, ctx.todos || []);
+      if (ledger) outgoing = [...outgoing, ledger];
+    }
+    if (signal.aborted) { yield { type: 'aborted' }; return; }
+
     const stepStarted = Date.now();
-    const attempt = await callModel(trimTranscript(messages, contextBudgetFor(route)), userMessage, signal, route);
+    let attempt = await callModel(outgoing, userMessage, signal, route, native ? toolSchemas : null, mcpNames.toNative);
+    // The model or its endpoint turned out not to do function calling: drop
+    // to text actions for the rest of this turn (and remember it for later
+    // turns), with the text-format system prompt.
+    if (native && !attempt.result.success && !signal.aborted && TOOLS_UNSUPPORTED.test(String(attempt.result.error || ''))) {
+      native = false;
+      nativeUnsupported.add(nativeKey);
+      messages[0] = { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native: false, mcp: mcpList }) };
+      outgoing = [messages[0], ...outgoing.slice(1)];
+      yield { type: 'notice', level: 'info', text: 'This model does not support native tool calls, so Codeply switched to text actions.' };
+      attempt = await callModel(outgoing, userMessage, signal, route);
+    }
     const stepMs = Date.now() - stepStarted;
     // A real fetch abort (see the signal wiring in ai.js) lands here as a
     // failed result, not a thrown exception - check the abort flag itself
