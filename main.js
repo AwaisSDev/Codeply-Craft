@@ -100,10 +100,34 @@ async function loadEngine() {
 
 let storePath = null;
 let store = { sessions: [], projects: [], lastProject: null };
+let sessionDb = null; // SQLite (craft-store.db); null means the JSON file below is the store
 
 function loadStore() {
   storePath = path.join(app.getPath('userData'), 'craft-store.json');
-  try { store = { ...store, ...JSON.parse(fs.readFileSync(storePath, 'utf8')) }; } catch {}
+  const dbPath = path.join(app.getPath('userData'), 'craft-store.db');
+  try {
+    sessionDb = require(path.join(CLI_DIR, 'lib', 'session-db.js')).openSessionDb(dbPath, {
+      modulePaths: [__dirname, path.join(CLI_DIR)],
+    });
+  } catch { sessionDb = null; }
+
+  if (sessionDb) {
+    let imported = false;
+    if (sessionDb.isEmpty()) {
+      // First run on SQLite: bring the old JSON store over, then keep it as a backup.
+      try {
+        store = { ...store, ...JSON.parse(fs.readFileSync(storePath, 'utf8')) };
+        imported = true;
+      } catch {}
+    } else {
+      try { store = { ...store, ...sessionDb.load() }; } catch {}
+    }
+    if (imported) {
+      try { sessionDb.save(store); fs.renameSync(storePath, `${storePath}.migrated`); } catch {}
+    }
+  } else {
+    try { store = { ...store, ...JSON.parse(fs.readFileSync(storePath, 'utf8')) }; } catch {}
+  }
 
   // Migration: a stored `autoRouting: false` is always stale. No current code
   // path writes it - it survives only from an older build that had an
@@ -118,6 +142,9 @@ function loadStore() {
 }
 
 function saveStore() {
+  if (sessionDb) {
+    try { sessionDb.save(store); return; } catch (e) { console.warn('[store] sqlite save failed, using JSON:', e.message); }
+  }
   try { fs.writeFileSync(storePath, JSON.stringify(store), 'utf8'); } catch {}
 }
 
