@@ -16,6 +16,15 @@ const ai = require('./ai');
 // runs), skipping blank lines on both sides. Re-indents the replacement to fit.
 // Returns { ok, content } or { ok:false, error:'notfound'|'multiple'|'empty' }.
 function applySearchReplace(fileContent, searchBlock, replaceBlock) {
+  // Matching works on LF text; a CRLF file is written back as CRLF so an edit
+  // never rewrites every line ending in the file (a whole-file diff, and a
+  // mixed-ending file once a later write adds LF lines).
+  const res = applySearchReplaceLF(fileContent, searchBlock, replaceBlock);
+  if (res.ok && /\r\n/.test(fileContent || '')) res.content = res.content.replace(/\r?\n/g, '\r\n');
+  return res;
+}
+
+function applySearchReplaceLF(fileContent, searchBlock, replaceBlock) {
   const nl = (s) => (s || '').replace(/\r\n/g, '\n');
   fileContent = nl(fileContent); searchBlock = nl(searchBlock); replaceBlock = nl(replaceBlock);
   if (!searchBlock.trim()) return { ok: false, error: 'empty' };
