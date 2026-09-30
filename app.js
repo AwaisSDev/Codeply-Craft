@@ -2739,6 +2739,7 @@ const SLASH_COMMANDS = [
     run: (input) => { input.value = '/goal '; input.focus(); input.dispatchEvent(new Event('input')); },
   },
   { name: '/skills', aliases: ['/skill-list', '/skill'], desc: 'Browse and search the skill library', run: (input) => openSkillsModal(input) },
+  { name: '/plugins', aliases: ['/plugin'], desc: 'Install and manage plugins (commands, skills, MCP servers)', run: () => openPluginsModal() },
 ];
 
 document.querySelectorAll('.composer').forEach((composer) => {
@@ -2750,10 +2751,27 @@ document.querySelectorAll('.composer').forEach((composer) => {
   // so Enter doesn't both pick a slash command AND send "/" as a message.
   composer.slashMenuOpen = () => !!menu;
 
+  // The project's own commands (.codeply/commands/*.md), fetched when "/" is
+  // typed so a newly added file shows up without a restart.
+  let customCommands = [];
+  let customAt = 0;
+  async function refreshCustom() {
+    if (!api || !api.listCommands || Date.now() - customAt < 3000) return;
+    customAt = Date.now();
+    try {
+      customCommands = (await api.listCommands(state.project || null)).map((c) => ({
+        name: `/${c.name}`, aliases: [], desc: c.description + (c.mode ? ` (${c.mode})` : ''),
+        run: (inp) => { inp.value = `/${c.name} `; inp.focus(); inp.dispatchEvent(new Event('input')); },
+      }));
+    } catch { customCommands = []; }
+    if (input.value.startsWith('/')) input.dispatchEvent(new Event('input'));
+  }
+
   function matches() {
     const v = input.value.toLowerCase();
     if (!v.startsWith('/') || /\s/.test(v)) return [];
-    return SLASH_COMMANDS.filter((c) => c.name.startsWith(v) || c.aliases.some((a) => a.startsWith(v)));
+    if (v === '/') refreshCustom();
+    return [...SLASH_COMMANDS, ...customCommands].filter((c) => c.name.startsWith(v) || c.aliases.some((a) => a.startsWith(v)));
   }
 
   function closeMenu() {
