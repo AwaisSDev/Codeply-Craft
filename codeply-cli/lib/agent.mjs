@@ -520,19 +520,26 @@ export function parseReply(text) {
     const name = m[1];
     const block = m[2];
     const spec = PARAMS[name];
-    if (!spec) { calls.push({ name, args: {}, unknown: true }); continue; }
+    // `end` is where this block closes in the reply, so the loop can cut the
+    // stored reply right after the last block it actually runs.
+    const end = m.index + m[0].length;
+    if (!spec) { calls.push({ name, args: {}, unknown: true, end }); continue; }
     const args = extractParams(block, spec);
     // Single-param actions tolerate a bare body: <codeply:read_file>x.js</...>
     if (spec.length && Object.keys(args).length === 0 && block.trim()) {
       args[spec[0]] = block.trim();
     }
-    calls.push({ name, args });
+    calls.push({ name, args, end });
   }
-  prose += text.slice(lastIndex);
 
   if (calls.length > 0) {
-    return { prose: prose.trim(), calls, recovered: false, malformed: false, truncated: false };
+    // Whatever follows the last block was written before any result came
+    // back: at best a restated plan, at worst an invented outcome ("done, the
+    // tests pass"). It is never shown and never kept.
+    const trailing = text.slice(lastIndex).trim();
+    return { prose: prose.trim(), calls, recovered: false, malformed: false, truncated: false, trailing };
   }
+  prose += text.slice(lastIndex);
 
   const poolside = parsePoolsideCalls(text);
   if (poolside.calls.length > 0) {
@@ -575,12 +582,83 @@ function gitBranch(cwd) {
   } catch { return null; }
 }
 
+function gitOutput(cwd, cmd) {
+  try {
+    return execSync(cmd, { cwd, stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).toString().trim();
+  } catch { return ''; }
+}
+
+// Instruction files the user keeps for agents. The nearest project-level file
+// wins (walking up from cwd, stopping at the git root), so a repo with both an
+// AGENTS.md and a parent folder's AGENTS.md doesn't get both stacked in. The
+// user-wide one in ~/.codeply is always added on top. Same lookup order idea
+// as opencode's session/instruction.ts.
+const INSTRUCTION_FILES = ['CODEPLY.md', 'AGENTS.md', 'CLAUDE.md'];
+const MAX_INSTRUCTION_CHARS = 8000;
+
+function readCapped(file) {
+  try {
+    const text = fs.readFileSync(file, 'utf8').trim();
+    if (!text) return '';
+    return text.length > MAX_INSTRUCTION_CHARS
+      ? `${text.slice(0, MAX_INSTRUCTION_CHARS)}\n[… truncated, read ${file} for the rest]`
+      : text;
+  } catch { return ''; }
+}
+
+export function findInstructionFiles(cwd) {
+  const found = [];
+  const root = gitOutput(cwd, 'git rev-parse --show-toplevel');
+  const stopAt = root ? path.resolve(root) : path.parse(cwd).root;
+  let dir = path.resolve(cwd);
+  outer: while (true) {
+    for (const name of INSTRUCTION_FILES) {
+      const file = path.join(dir, name);
+      if (fs.existsSync(file) && fs.statSync(file).isFile()) { found.push(file); break outer; }
+    }
+    if (dir === stopAt || path.dirname(dir) === dir) break;
+    dir = path.dirname(dir);
+  }
+  const globalFile = path.join(os.homedir(), '.codeply', 'AGENTS.md');
+  if (fs.existsSync(globalFile)) found.push(globalFile);
+  return found;
+}
+
+function instructionsSection(cwd) {
+  const blocks = findInstructionFiles(cwd)
+    .map((file) => ({ file, text: readCapped(file) }))
+    .filter((b) => b.text)
+    .map((b) => `Instructions from: ${b.file}\n${b.text}`);
+  for (const b of plugins.instructionBlocks(cwd)) blocks.push(`Instructions from plugin ${b.plugin}:\n${b.text}`);
+  if (!blocks.length) return '';
+  return `PROJECT INSTRUCTIONS\nThe user wrote these for agents working here. Follow them; they override your defaults.\n\n${blocks.join('\n\n')}`;
+}
+
 /** A compact snapshot of the project, so the agent starts oriented. */
 export function buildProjectContext(cwd) {
-  const lines = [`Working directory: ${cwd}`, `Platform: ${process.platform}`];
+  const lines = [`Working directory: ${cwd}`, `Platform: ${process.platform}`, `Date: ${new Date().toISOString().slice(0, 10)}`];
+  // What `run` really executes under, so the model writes commands for that
+  // shell instead of assuming bash.
+  lines.push(process.platform === 'win32'
+    ? 'Shell for run: cmd.exe (chain with &&; no heredocs, no $(...); for PowerShell use powershell -NoProfile -Command "..."; for multi-line content use write_file)'
+    : `Shell for run: ${process.env.SHELL ? path.basename(process.env.SHELL) : 'sh'}`);
 
   const branch = gitBranch(cwd);
-  if (branch) lines.push(`Git branch: ${branch}`);
+  if (branch) {
+    lines.push(`Git branch: ${branch}`);
+    // Uncommitted changes are usually what the user is in the middle of, and
+    // recent commits say what just happened - both cheap and often the fastest
+    // way to know where to look.
+    const status = gitOutput(cwd, 'git status --short').split('\n').filter(Boolean);
+    if (status.length) {
+      lines.push(`Uncommitted changes (${status.length}):`, ...status.slice(0, 25));
+      if (status.length > 25) lines.push(`… and ${status.length - 25} more`);
+    } else {
+      lines.push('Working tree clean.');
+    }
+    const log = gitOutput(cwd, 'git log --oneline -5');
+    if (log) lines.push('Recent commits:', log);
+  }
 
   const pkgPath = path.join(cwd, 'package.json');
   if (fs.existsSync(pkgPath)) {
