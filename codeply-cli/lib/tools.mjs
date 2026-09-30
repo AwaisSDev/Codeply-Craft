@@ -485,6 +485,8 @@ async function edit_file(args, ctx) {
 
   try { fs.writeFileSync(abs, attempt.content, 'utf8'); }
   catch (e) { return { ok: false, output: `Cannot write ${rel}: ${e.message}` }; }
+  rememberDiskState(ctx, abs);
+  const problems = await diagnostics.checkFile(abs, ctx.cwd);
 
   const nowLines = attempt.content.split('\n').length;
   return {
