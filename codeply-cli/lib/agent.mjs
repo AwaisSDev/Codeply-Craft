@@ -1433,17 +1433,48 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   const userContent = images && images.length
     ? [{ type: 'text', text: userMessage }, ...images.map((dataUrl) => ({ type: 'image_url', image_url: { url: dataUrl } }))]
     : userMessage;
+  // Native function calling when the model supports it (see native-tools.mjs).
+  const nativeKey = routeKey(route);
+  let native = wantsNativeTools(route) && !nativeUnsupported.has(nativeKey);
+  // MCP servers the user configured for this project (connections are reused).
+  let mcpList = [];
+  if (Object.keys(mcpLib.loadServers(cwd)).length) {
+    try { mcpList = await mcpLib.listServers(cwd); } catch {}
+    const down = mcpList.filter((s) => s.error);
+    if (down.length) yield { type: 'notice', level: 'warn', text: `MCP: couldn't connect to ${down.map((s) => s.name).join(', ')}. ${down[0].error.slice(0, 160)}` };
+  }
+  const mcpNames = mcpNativeNames(mcpList);
+  // Plan mode keeps write_file/edit_file (only the plan file is writable, enforced
+  // in tools.mjs); plan_exit exists only in Plan and plan_enter only in Build.
+  const schemasFor = (m) => {
+    const ro = READ_ONLY_MODES.has(m);
+    const entries = Object.entries(PARAMS).filter(([n]) => {
+      if (n === 'plan_exit') return m === 'Plan';
+      if (n === 'plan_enter') return m === 'Build';
+      if (ro && MUTATING_ACTIONS.has(n)) return m === 'Plan' && (n === 'write_file' || n === 'edit_file');
+      return true;
+    });
+    return [...buildToolSchemas(Object.fromEntries(entries)), ...mcpNames.schemas];
+  };
+  let toolSchemas = schemasFor(mode);
   const messages = [
-    { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal }) },
+    { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList }) },
     ...history,
     { role: 'user', content: userContent },
   ];
 
-  const ctx = { cwd, approve, browser, signal, mode, route };
+  // fileState: path -> mtime when this turn last read/wrote it (see tools.mjs).
+  const ctx = { cwd, approve, browser, signal, mode, route, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null };
+  const recentCallKeys = [];      // executed calls, in order, for the stuck-loop guard
+  const lastResultFor = new Map(); // call key -> its most recent result
   const transcript = [{ role: 'user', content: userMessage }];
   let malformedRetries = 0;
   let truncatedRetries = 0;
   let hallucinationRetries = 0;
+  let stallNudges = 0;
+  let budgetWarned = false;
+  const openProblems = new Map(); // file -> syntax problems from its latest write/edit
+  const failuresByTool = new Map(); // tool -> consecutive failures (any args)
   // What really happened this turn, straight from tool results - the ground
   // truth every completion claim is checked against, and what the host shows
   // the user as the turn's actual changes.
@@ -1484,7 +1515,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   //    stale content), keeping it around costs tokens for information that is
   //    now wrong. It gets collapsed to a pointer the moment the edit lands,
   //    not deferred to trimTranscript()'s budget-driven pass.
-  const DEDUPABLE = new Set(['read_file', 'list_dir', 'search', 'use_skill', 'list_skills']);
+  const DEDUPABLE = new Set(['read_file', 'list_dir', 'search', 'use_skill', 'list_skills', 'web_fetch', 'web_search']);
   const servedCalls = new Map();     // callKey -> message index of its result
   const readIndexByPath = new Map(); // resolved path -> message index of its read_file result
   // Consecutive edit_file failures per path - a weak model that keeps
