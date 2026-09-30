@@ -678,13 +678,20 @@ function receiveEvent(event) {
 
   if (event.type === 'role_active') {
     addRoleBadge(event);
+  } else if (event.type === 'checkpoint' || event.type === 'checkpoint_update') {
+    renderCheckpoint(event.checkpoint);
   } else if (event.type === 'turn_summary') {
     addTurnSummary(event);
+  } else if (event.type === 'mode_switch') {
+    state.mode = event.mode;
+    addThinking(event.mode === 'Build' ? 'Switched to Build mode. Implementing the plan.' : `Switched to ${event.mode} mode.`);
   } else if (event.type === 'goal_update') {
     renderGoalCard(event);
   } else if (event.type === 'notice') {
     state.activeAgentMessageEl = null;
-    addMessage('error', event.text);
+    // Info notes (e.g. "summarized earlier steps") are progress, not failures.
+    if (event.level === 'info') addThinking(event.text);
+    else addMessage('error', event.text);
   } else if (event.type === 'text') {
     if (event.interim) addThinking(event.text);
     else addMessage('agent_delta', event.text);
@@ -699,6 +706,11 @@ function receiveEvent(event) {
     addMessage('error', event.error);
   } else if (event.type === 'approval_request') {
     showApproval(event);
+  } else if (event.type === 'question_request') {
+    renderQuestion(event);
+  } else if (event.type === 'question_resolved') {
+    const el = questionEls.get(event.requestId);
+    if (el) renderQuestion({ ...el._q, answer: event.answer, answered: true });
   } else if (event.type === 'image_pick_request') {
     showImagePicker(event);
   } else if (event.type === 'approval_resolved') {
