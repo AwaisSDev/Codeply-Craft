@@ -1640,9 +1640,26 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       });
       continue;
     }
-    messages.push({ role: 'assistant', content: reply });
-
     const { prose, calls, recovered, malformed, truncated } = parseReply(reply);
+
+    // Which blocks run this step: normally just the first, but a run of
+    // look-around blocks (reads, listings, searches) goes together, since none
+    // of them changes anything and each would otherwise cost a full round trip.
+    const toRun = [];
+    if (calls.length) {
+      toRun.push(calls[0]);
+      if (BATCHABLE_TOOLS.has(calls[0].name)) {
+        for (const c of calls.slice(1)) {
+          if (!BATCHABLE_TOOLS.has(c.name) || toRun.length >= MAX_BATCH) break;
+          toRun.push(c);
+        }
+      }
+    }
+    // Keep only what the model wrote up to the last block that runs. The rest
+    // was written blind, before any result, and leaving it in the history
+    // teaches the model to treat its own guesses as things that happened.
+    const lastEnd = toRun.length ? toRun[toRun.length - 1].end : undefined;
+    messages.push({ role: 'assistant', content: typeof lastEnd === 'number' ? reply.slice(0, lastEnd) : reply });
 
     if (calls.length === 0) {
       // Protocol debris first: a truncated or malformed reply's raw text is
@@ -1684,7 +1701,25 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       //    after only index.html was written).
       //    Skipped for read-only and checking turns, whose answers legitimately
       //    describe changes made in earlier turns.
-      if (!readOnly && !verifyOnly && HALLUCINATED_COMPLETION.test(prose)) {
+      // 0. Wrote a tool result itself. Always invented, in any mode.
+      if (FABRICATED_RESULT.test(prose) && hallucinationRetries < MAX_HALLUCINATION_RETRIES) {
+        hallucinationRetries++;
+        messages.push({ role: 'user', content: FABRICATED_RESULT_CORRECTION });
+        continue;
+      }
+
+      // 0b. Announced an action and stopped without writing it.
+      if (stallNudges < MAX_STALL_NUDGES && !/\?\s*$/.test(prose) && ANNOUNCED_INTENT.test(prose.slice(-300))) {
+        stallNudges++;
+        messages.push({ role: 'user', content: STALL_CORRECTION });
+        continue;
+      }
+
+      // A successful shell command can change files too (sed, a codegen
+      // script, git checkout), so after one the file-claim check can't tell a
+      // true claim from a false one and stays out of it.
+      const ranShell = succeededTools.has('run');
+      if (!readOnly && !verifyOnly && !ranShell && HALLUCINATED_COMPLETION.test(prose)) {
         const overclaimed = madeAnyEdit
           ? extractClaimedFilenames(prose).filter((f) => !writtenBasenames.has(f))
           : [];
