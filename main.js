@@ -948,7 +948,7 @@ ipcMain.handle('integrations:connectGithub', async () => {
     const code = await awaitOAuthRedirect(authUrl, GITHUB_REDIRECT_PORT, '/github-callback', 'GitHub');
     const tokens = await oauthLib.exchangeGithubCode(clientId, clientSecret, code, redirectUri);
     const userName = await oauthLib.getGithubProfile(tokens.access_token).catch(() => '');
-    configLib.saveIntegration('github', { accessToken: tokens.access_token, userName });
+    configLib.saveIntegration('github', { accessToken: tokens.access_token, userName, scope: tokens.scope || '' });
     return { ok: true, userName };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -1342,6 +1342,12 @@ ipcMain.handle('sessions:list', () => ({
   sessions: store.sessions.map(sessionMeta).sort((a, b) => b.updatedAt - a.updatedAt),
   running: [...activeRuns.keys()],
 }));
+
+// Full-text search across every message of every chat (SQLite store only).
+ipcMain.handle('sessions:search', (e, query) => {
+  if (!sessionDb) return { ok: false, results: [], reason: 'Chat search needs the SQLite store, which is not available on this install.' };
+  try { return { ok: true, results: sessionDb.search(query, 50) }; } catch (err) { return { ok: false, results: [], reason: err.message }; }
+});
 
 function deleteSessionRecord(id) {
   store.sessions = store.sessions.filter((s) => s.id !== id);
