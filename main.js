@@ -2559,11 +2559,19 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
       detail: req.detail || '',
       danger: !!req.danger,
       diff: req.diff || null,
+      // For a shell command, the names "always allow" would cover; none means
+      // it can't be scoped (subshells, redirects) and the card won't offer it.
+      alwaysScope: req.tool === 'run' ? (!req.danger && Array.isArray(req.patterns) ? req.patterns : []) : null,
     });
     return new Promise((resolve) => {
       pendingApprovals.set(id, { sessionId: session.id, resolve: (verdict) => {
         pendingApprovals.delete(id);
-        if (verdict === 'always') {
+        if (verdict === 'always' && req.tool === 'run') {
+          if (!req.danger && Array.isArray(req.patterns)) for (const p of req.patterns) alwaysAllowed.add(`run:${p}`);
+          session.alwaysAllowed = Array.from(alwaysAllowed);
+          saveStore();
+          syncSessionToDb(session);
+        } else if (verdict === 'always') {
           alwaysAllowed.add(req.tool);
           session.alwaysAllowed = Array.from(alwaysAllowed);
           saveStore();
@@ -2576,7 +2584,36 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
     });
   };
 
+  // Questions the agent asks the user (ask_user). Handed to the engine as a
+  // property of approve so it rides along through every runOneTurn call
+  // without threading a new parameter through each of them. Bypass and /goal
+  // runs are unattended by design, so they get no ask and the agent decides.
+  if (!bypass && !goal) {
+    approve.ask = ({ question, options }) => {
+      if (signal.aborted) return Promise.resolve(null);
+      const id = ++approvalCounter;
+      const q = { kind: 'question', requestId: id, question, options: options || [], at: Date.now() };
+      sendEvent(session.id, { type: 'question_request', ...q });
+      return new Promise((resolve) => {
+        pendingQuestions.set(id, { sessionId: session.id, resolve: (answer) => {
+          pendingQuestions.delete(id);
+          const text = answer == null ? null : String(answer).trim().slice(0, 2000) || null;
+          session.messages.push({ ...q, answer: text });
+          sendEvent(session.id, { type: 'question_resolved', requestId: id, answer: text });
+          resolve(text);
+        } });
+      });
+    };
+  }
+
   (async () => {
+    // Snapshot the project before anything runs, so everything this message
+    // changes (edits, and whatever its commands wrote) can be undone as one.
+    // Plan/Ask can't change files, so they skip it.
+    let beforeTree = null;
+    if (mode === 'Build' && snapshotLib) {
+      try { beforeTree = await snapshotLib.track(cwd); } catch {}
+    }
     try {
       if (goal) {
         await runGoal({ session, goal, history, mode, cwd, approve, signal, route });
