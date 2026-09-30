@@ -1761,6 +1761,22 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
           messages.push({ role: 'user', content: failedCommandCorrection(lastRun.command.slice(0, 120), lastRun.exitCode) });
           continue;
         }
+        // A file this turn wrote is still failing its syntax check and the
+        // answer doesn't own up to it.
+        const broken = [...openProblems.entries()];
+        // File names are removed first so "broken.js" or "errors.ts" doesn't
+        // count as owning up to the problem.
+        const admitted = /(syntax|error|problem|broken|not (?:fixed|valid))/i.test(prose.replace(FILENAME_TOKEN, ''));
+        if (broken.length && !admitted) {
+          verifyNudges++;
+          messages.push({
+            role: 'user',
+            content: `[system] You are finishing, but the syntax check still fails for ${broken.map(([f]) => f).join(', ')}:\n` +
+              broken.map(([f, p]) => `- ${f}: ${p[0]}`).join('\n') +
+              '\nFix it (edit_file), or if you cannot, say so plainly in your summary.',
+          });
+          continue;
+        }
         // Files changed since the last time anything was checked at all.
         const needsCheck = [...uncheckedEdits].filter((f) => VERIFIABLE_EXT.test(f));
         if (needsCheck.length) {
@@ -1805,204 +1821,309 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
 
     if (signal.aborted) { yield { type: 'aborted' }; return; }
 
-    const call = calls[0];
-    if (calls.length > 1) {
-      messages.push({
-        role: 'user',
-        content: '[note] You wrote several action blocks at once. Only the first was performed. Write one per reply.',
-      });
-    }
-
-    // A read_file with no <offset> on a path already partway read continues
-    // from where the last call left off, instead of silently restarting at
-    // line 1 - see readProgressByPath above. Only fills in what the model
-    // left unspecified; an explicit offset (including a deliberate 0, to
-    // recheck the top again) always wins.
-    if (call.name === 'read_file' && call.args.path && (call.args.offset === undefined || call.args.offset === null || call.args.offset === '')) {
-      const abs = resolvePath(call.args.path, cwd).abs;
-      if (readProgressByPath.has(abs)) call.args.offset = String(readProgressByPath.get(abs));
-    }
     if (recovered) {
       // It worked this time, but only because we guessed. Nudge it back on
       // format so the next step does not depend on the same guess.
       messages.push({ role: 'user', content: FORMAT_CORRECTION });
     }
 
-    if (readOnly && (call.name === 'write_file' || call.name === 'edit_file')) {
-      messages.push({
-        role: 'user',
-        content: `[tool result: ${call.name}] Blocked - ${mode} mode cannot modify files. Describe the change instead, or tell the user to press tab for Build mode.`,
-      });
-      yield { type: 'tool_end', name: call.name, args: call.args, ok: false, summary: `blocked in ${mode} mode` };
-      continue;
-    }
+    for (const call of toRun) {
+      if (signal.aborted) { yield { type: 'aborted' }; return; }
 
-    if (referenceSearchPending && (call.name === 'write_file' || call.name === 'edit_file') && UI_FILE_EXT.test(call.args.path || '')) {
-      messages.push({
-        role: 'user',
-        content: `[tool result: ${call.name}] Blocked - you searched for real-app references and got real hits back, but never called view_images ` +
-          `to actually look at any of the screenshot URLs. Call view_images now with 2-4 of those URLs (from different apps), THEN write ${call.args.path || 'the file'}.`,
-      });
-      yield { type: 'tool_end', name: call.name, args: call.args, ok: false, summary: 'blocked - reference screenshots not viewed yet' };
-      continue;
-    }
-
-    // A repeat of an earlier read-only call, same tool and same arguments,
-    // carries zero new information - reuse the earlier result instead of
-    // spending tokens to resend it. This is skipped for read_file specifically
-    // when the file was edited since (see the invalidation below): the whole
-    // point there is to force a fresh read, not to serve stale content.
-    if (DEDUPABLE.has(call.name) && servedCalls.has(callKey(call.name, call.args))) {
-      messages.push({
-        role: 'user',
-        content: `[tool result: ${call.name}] Unchanged since your earlier identical call - reusing that result, not re-run. Nothing new to see; move on.${readOnlyStreakNote()}`,
-      });
-      yield {
-        type: 'tool_end', name: call.name, args: call.args, ok: true,
-        meta: { deduped: true }, summary: 'unchanged - reused earlier result',
-      };
-      continue;
-    }
-
-    yield { type: 'tool_start', name: call.name, args: call.args };
-
-    const needsApproval = TOOL_NEEDS_APPROVAL.has(call.name);
-    const started = Date.now();
-    const out = await executeTool(call.name, call.args, ctx);
-    const ms = Date.now() - started;
-
-    yield {
-      type: 'tool_end',
-      name: call.name,
-      args: call.args,
-      ok: out.ok,
-      meta: out.meta,
-      summary: out.meta?.label,
-      ms,
-      needsApproval,
-    };
-
-    // browser_check with a real screenshot attached, or view_images with one
-    // or more fetched images, gets the OpenAI-shaped image content array
-    // (same shape used for pasted user images above) so the model actually
-    // looks at the rendered page / reference screenshots instead of judging
-    // them solely from a text description - that blind verification was
-    // exactly why the same page could get called "the same" or "different"
-    // inconsistently, and why a reference-search result could get cited
-    // without ever actually being looked at. Every other tool, and any
-    // provider that can't take image input, keeps the plain string content
-    // unchanged.
-    const resultText = `[tool result: ${call.name}]\n${out.output}`;
-    const imageUrls = out.meta?.screenshotDataUrl
-      ? [out.meta.screenshotDataUrl]
-      : Array.isArray(out.meta?.imageDataUrls) ? out.meta.imageDataUrls : null;
-    messages.push({
-      role: 'user',
-      content: imageUrls
-        ? [{ type: 'text', text: resultText }, ...imageUrls.map((url) => ({ type: 'image_url', image_url: { url } }))]
-        : resultText,
-    });
-
-    // Ground truth for the claim audit above and for the host's "what
-    // actually happened" summary.
-    const exitCode = typeof out.meta?.exitCode === 'number' ? out.meta.exitCode : undefined;
-    actions.push({
-      tool: call.name,
-      label: String(out.meta?.label || call.args.path || call.args.command || '').slice(0, 200),
-      ok: !!out.ok,
-      ...(exitCode !== undefined ? { exitCode } : {}),
-    });
-    if (out.ok) {
-      succeededTools.add(call.name);
-      if ((call.name === 'write_file' || call.name === 'edit_file' || call.name === 'fetch_image') && !out.meta?.noop && call.args.path) {
-        const rel = String(call.args.path).replace(/\\/g, '/');
-        unverifiedEdits.add(rel);
-        uncheckedEdits.add(rel);
-      } else if (call.name === 'run') {
-        lastRun = { command: String(call.args.command || ''), exitCode: exitCode ?? 0 };
-        uncheckedEdits = new Set();
-        if (lastRun.exitCode === 0) unverifiedEdits = new Set();
-      } else if (call.name === 'browser_check') {
-        uncheckedEdits = new Set();
-        unverifiedEdits = new Set();
-      }
-    }
-
-    if (out.ok) {
-      if (call.name === 'design_reference_search' && out.meta?.count > 0) {
-        referenceSearchPending = true;
-      }
-      if (call.name === 'view_images') {
-        referenceSearchPending = false;
-      }
-      if (DEDUPABLE.has(call.name)) {
-        servedCalls.set(callKey(call.name, call.args), messages.length - 1);
-      }
-      if (call.name === 'read_file' && call.args.path) {
+      // A read_file with no <offset> on a path already partway read continues
+      // from where the last call left off, instead of silently restarting at
+      // line 1 - see readProgressByPath above. Only fills in what the model
+      // left unspecified; an explicit offset (including a deliberate 0, to
+      // recheck the top again) always wins.
+      if (call.name === 'read_file' && call.args.path && (call.args.offset === undefined || call.args.offset === null || call.args.offset === '')) {
         const abs = resolvePath(call.args.path, cwd).abs;
-        readIndexByPath.set(abs, { msgIndex: messages.length - 1, key: callKey(call.name, call.args) });
-        // A fresh read is exactly the course-correction we'd otherwise force -
-        // no need to keep counting failures against this path anymore.
-        failedEditsByPath.delete(abs);
-        if (out.meta?.hasMore) readProgressByPath.set(abs, (out.meta.offset || 0) + (out.meta.linesShown || 0));
-        else readProgressByPath.delete(abs); // the whole file has now been seen at least once
+        if (readProgressByPath.has(abs)) call.args.offset = String(readProgressByPath.get(abs));
       }
-      if (call.name === 'edit_file' || call.name === 'write_file') {
-        madeAnyEdit = true;
-        if (call.args.path) writtenBasenames.add(path.basename(call.args.path).toLowerCase());
-      }
-      if ((call.name === 'edit_file' || call.name === 'write_file') && call.args.path) {
-        failedEditsByPath.delete(resolvePath(call.args.path, cwd).abs);
-      }
-      if ((call.name === 'edit_file' || call.name === 'write_file') && call.args.path) {
-        // The file just changed, so any earlier read_file result for it is now
-        // wrong, not just old - collapse it in place rather than leaving
-        // outdated content sitting in the transcript for the model to
-        // (mis)reason from, and drop it from the dedup cache so a genuinely
-        // fresh read_file after this point is not short-circuited by it.
-        const abs = resolvePath(call.args.path, cwd).abs;
-        const stale = readIndexByPath.get(abs);
-        if (stale) {
-          messages[stale.msgIndex] = {
-            role: 'user',
-            content: `[tool result: read_file] ${call.args.path} - superseded by the ${call.name} below; that earlier content no longer matches the file. Re-read if you need to see it again.`,
-          };
-          servedCalls.delete(stale.key);
-          readIndexByPath.delete(abs);
-        }
-        readProgressByPath.delete(abs);
-      }
-    } else if (call.name === 'edit_file' && call.args.path) {
-      // A model that keeps guessing at search text instead of re-reading the
-      // file will otherwise spiral through several apologetic retries in a
-      // row without ever converging on the actual current content. After
-      // enough consecutive failures on the *same* path, stop it from trying
-      // again blind and force a real read_file first.
-      const abs = resolvePath(call.args.path, cwd).abs;
-      const failures = (failedEditsByPath.get(abs) || 0) + 1;
-      failedEditsByPath.set(abs, failures);
-      if (failures >= MAX_EDIT_FAILURES_BEFORE_FORCE_READ) {
-        failedEditsByPath.set(abs, 0);
+      const isPlanFileWrite = mode === 'Plan' && (call.name === 'write_file' || call.name === 'edit_file') && isPlanPath(call.args.path, cwd);
+      if (readOnly && (call.name === 'write_file' || call.name === 'edit_file' || call.name === 'apply_patch') && !isPlanFileWrite) {
         messages.push({
           role: 'user',
-          content: `[note] That edit_file call on ${call.args.path} has now failed ${failures} times in a row - the search text you're guessing at does not match the file. Do not apologize or re-explain what you were trying to do. Call read_file on ${call.args.path} right now, look at its actual current content, then make the edit with search text copied exactly from it.`,
+          content: `[tool result: ${call.name}] Blocked - ${mode} mode cannot modify files${mode === 'Plan' ? ' except the plan file in .codeply/plans/' : ''}. Describe the change instead, or tell the user to press tab for Build mode.`,
         });
+        yield { type: 'tool_end', name: call.name, args: call.args, ok: false, summary: `blocked in ${mode} mode` };
+        continue;
+      }
+  
+      const touchesUiFile = call.name === 'apply_patch'
+        ? patchTargets(call.args.patch).some((p) => UI_FILE_EXT.test(p))
+        : (call.name === 'write_file' || call.name === 'edit_file') && UI_FILE_EXT.test(call.args.path || '');
+      if (referenceSearchPending && touchesUiFile) {
+        messages.push({
+          role: 'user',
+          content: `[tool result: ${call.name}] Blocked - you searched for real-app references and got real hits back, but never called view_images ` +
+            `to actually look at any of the screenshot URLs. Call view_images now with 2-4 of those URLs (from different apps), THEN write ${call.args.path || 'the file'}.`,
+        });
+        yield { type: 'tool_end', name: call.name, args: call.args, ok: false, summary: 'blocked - reference screenshots not viewed yet' };
+        continue;
+      }
+  
+      // A repeat of an earlier read-only call, same tool and same arguments,
+      // carries zero new information - reuse the earlier result instead of
+      // spending tokens to resend it. This is skipped for read_file specifically
+      // when the file was edited since (see the invalidation below): the whole
+      // point there is to force a fresh read, not to serve stale content.
+      if (DEDUPABLE.has(call.name) && servedCalls.has(callKey(call.name, call.args))) {
+        messages.push({
+          role: 'user',
+          content: `[tool result: ${call.name}] Unchanged since your earlier identical call - reusing that result, not re-run. Nothing new to see; move on.`,
+        });
+        yield {
+          type: 'tool_end', name: call.name, args: call.args, ok: true,
+          meta: { deduped: true }, summary: 'unchanged - reused earlier result',
+        };
+        continue;
+      }
+  
+      // The same call, same arguments, several times in a row: whatever it
+      // returns will not change, so running it again just burns a step.
+      const key = callKey(call.name, call.args);
+      if (recentCallKeys.length >= STUCK_REPEATS - 1 && recentCallKeys.slice(-(STUCK_REPEATS - 1)).every((k) => k === key)) {
+        recentCallKeys.length = 0;
+        messages.push({ role: 'user', content: stuckCorrection(call.name, lastResultFor.get(key)) });
+        yield { type: 'tool_end', name: call.name, args: call.args, ok: false, summary: 'skipped - same as the last attempts' };
+        continue;
+      }
+
+      yield { type: 'tool_start', name: call.name, args: call.args };
+  
+      const needsApproval = TOOL_NEEDS_APPROVAL.has(call.name);
+      const started = Date.now();
+      const out = await executeTool(call.name, call.args, ctx);
+      recentCallKeys.push(key);
+      lastResultFor.set(key, out);
+      const ms = Date.now() - started;
+  
+      yield {
+        type: 'tool_end',
+        name: call.name,
+        args: call.args,
+        ok: out.ok,
+        meta: out.meta,
+        summary: out.meta?.label,
+        ms,
+        needsApproval,
+      };
+  
+      // browser_check with a real screenshot attached, or view_images with one
+      // or more fetched images, gets the OpenAI-shaped image content array
+      // (same shape used for pasted user images above) so the model actually
+      // looks at the rendered page / reference screenshots instead of judging
+      // them solely from a text description - that blind verification was
+      // exactly why the same page could get called "the same" or "different"
+      // inconsistently, and why a reference-search result could get cited
+      // without ever actually being looked at. Every other tool, and any
+      // provider that can't take image input, keeps the plain string content
+      // unchanged.
+      const resultText = `[tool result: ${call.name}]\n${out.output}`;
+      const imageUrls = out.meta?.screenshotDataUrl
+        ? [out.meta.screenshotDataUrl]
+        : Array.isArray(out.meta?.imageDataUrls) ? out.meta.imageDataUrls : null;
+      messages.push({
+        role: 'user',
+        content: imageUrls
+          ? [{ type: 'text', text: resultText }, ...imageUrls.map((url) => ({ type: 'image_url', image_url: { url } }))]
+          : resultText,
+      });
+  
+      // Ground truth for the claim audit above and for the host's "what
+      // actually happened" summary.
+      const exitCode = typeof out.meta?.exitCode === 'number' ? out.meta.exitCode : undefined;
+      const patchFiles = call.name === 'apply_patch' && Array.isArray(out.meta?.files) ? out.meta.files : null;
+      actions.push({
+        tool: call.name,
+        label: String(out.meta?.label || call.args.path || call.args.command || '').slice(0, 200),
+        ok: !!out.ok,
+        ...(exitCode !== undefined ? { exitCode } : {}),
+        ...(patchFiles ? { files: patchFiles } : {}),
+      });
+      // The plan file is not a change to the project, so it must not count as an edit
+      // (it would otherwise feed the "you claimed a change" audit after the switch to Build).
+      const wasPlanFile = isPlanFileWrite;
+      if (out.ok && patchFiles) {
+        succeededTools.add(call.name);
+        for (const f of patchFiles) {
+          const rel = String(f).replace(/\\/g, '/');
+          unverifiedEdits.add(rel);
+          uncheckedEdits.add(rel);
+          const probs = out.meta?.problemsByFile?.[f];
+          if (probs?.length) openProblems.set(rel, probs);
+          else openProblems.delete(rel);
+        }
+      } else if (out.ok) {
+        succeededTools.add(call.name);
+        if (out.meta?.switchMode && out.meta.switchMode !== mode) {
+          mode = out.meta.switchMode;
+          readOnly = READ_ONLY_MODES.has(mode);
+          ctx.mode = mode;
+          toolSchemas = schemasFor(mode);
+          messages[0] = { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList }) };
+          yield { type: 'mode_switch', mode, planPath: out.meta.planPath };
+        }
+        if ((call.name === 'write_file' || call.name === 'edit_file' || call.name === 'fetch_image') && !out.meta?.noop && call.args.path && !wasPlanFile) {
+          const rel = String(call.args.path).replace(/\\/g, '/');
+          unverifiedEdits.add(rel);
+          uncheckedEdits.add(rel);
+          if (Array.isArray(out.meta?.problems) && out.meta.problems.length) openProblems.set(rel, out.meta.problems);
+          else openProblems.delete(rel);
+        } else if (call.name === 'run') {
+          lastRun = { command: String(call.args.command || ''), exitCode: exitCode ?? 0 };
+          uncheckedEdits = new Set();
+          if (lastRun.exitCode === 0) unverifiedEdits = new Set();
+        } else if (call.name === 'browser_check') {
+          uncheckedEdits = new Set();
+          unverifiedEdits = new Set();
+        }
+      }
+  
+      if (out.ok) {
+        if (call.name === 'design_reference_search' && out.meta?.count > 0) {
+          referenceSearchPending = true;
+        }
+        if (call.name === 'view_images') {
+          referenceSearchPending = false;
+        }
+        if (DEDUPABLE.has(call.name)) {
+          servedCalls.set(callKey(call.name, call.args), messages.length - 1);
+        }
+        if (call.name === 'read_file' && call.args.path) {
+          const abs = resolvePath(call.args.path, cwd).abs;
+          readIndexByPath.set(abs, { msgIndex: messages.length - 1, key: callKey(call.name, call.args) });
+          // A fresh read is exactly the course-correction we'd otherwise force -
+          // no need to keep counting failures against this path anymore.
+          failedEditsByPath.delete(abs);
+          if (out.meta?.hasMore) readProgressByPath.set(abs, (out.meta.offset || 0) + (out.meta.linesShown || 0));
+          else readProgressByPath.delete(abs); // the whole file has now been seen at least once
+        }
+        if ((call.name === 'edit_file' || call.name === 'write_file') && !wasPlanFile) {
+          madeAnyEdit = true;
+          if (call.args.path) writtenBasenames.add(path.basename(call.args.path).toLowerCase());
+        }
+        if (patchFiles) {
+          madeAnyEdit = true;
+          for (const f of patchFiles) writtenBasenames.add(path.basename(f).toLowerCase());
+        }
+        // Paths this call just changed: earlier reads of them are now wrong.
+        const changedNow = patchFiles
+          ? [...patchFiles, ...patchTargets(call.args.patch)]
+          : ((call.name === 'edit_file' || call.name === 'write_file') && call.args.path ? [call.args.path] : []);
+        for (const p of changedNow) failedEditsByPath.delete(resolvePath(p, cwd).abs);
+        for (const p of changedNow) {
+          // The file just changed, so any earlier read_file result for it is now
+          // wrong, not just old - collapse it in place rather than leaving
+          // outdated content sitting in the transcript for the model to
+          // (mis)reason from, and drop it from the dedup cache so a genuinely
+          // fresh read_file after this point is not short-circuited by it.
+          const abs = resolvePath(p, cwd).abs;
+          const stale = readIndexByPath.get(abs);
+          if (stale) {
+            messages[stale.msgIndex] = {
+              role: 'user',
+              content: `[tool result: read_file] ${p} - superseded by the ${call.name} below; that earlier content no longer matches the file. Re-read if you need to see it again.`,
+            };
+            servedCalls.delete(stale.key);
+            readIndexByPath.delete(abs);
+          }
+          readProgressByPath.delete(abs);
+        }
+      } else if (call.name === 'edit_file' && call.args.path) {
+        // A model that keeps guessing at search text instead of re-reading the
+        // file will otherwise spiral through several apologetic retries in a
+        // row without ever converging on the actual current content. After
+        // enough consecutive failures on the *same* path, stop it from trying
+        // again blind and force a real read_file first.
+        const abs = resolvePath(call.args.path, cwd).abs;
+        const failures = (failedEditsByPath.get(abs) || 0) + 1;
+        failedEditsByPath.set(abs, failures);
+        if (failures >= MAX_EDIT_FAILURES_BEFORE_FORCE_READ) {
+          failedEditsByPath.set(abs, 0);
+          messages.push({
+            role: 'user',
+            content: `[note] That edit_file call on ${call.args.path} has now failed ${failures} times in a row - the search text you're guessing at does not match the file. Do not apologize or re-explain what you were trying to do. Call read_file on ${call.args.path} right now, look at its actual current content, then make the edit with search text copied exactly from it.`,
+          });
+        }
+      }
+  
+      // A declined action is the user's answer, not a retry prompt.
+      if (out.meta?.rejected) {
+        messages.push({
+          role: 'user',
+          content: '[note] The user declined that action. Do not retry it. Either continue without it or stop and explain what you would have done.',
+        });
+      }
+
+      // Failure streaks per tool, whatever the arguments. A run that exits
+      // non-zero counts as a failure here even though the tool itself worked.
+      // Any successful change (write/edit, or a passing run) starts over,
+      // since "edit, re-run, still failing" is normal debugging, not a loop.
+      const failed = !out.ok || (call.name === 'run' && out.meta?.exitCode !== 0);
+      if (out.meta?.rejected) {
+        // The user's call, not the model's mistake.
+      } else if (failed) {
+        const n = (failuresByTool.get(call.name) || 0) + 1;
+        failuresByTool.set(call.name, n);
+        if (n === FAILURE_STREAK_WARN || n === FAILURE_STREAK_WARN * 2) {
+          messages.push({ role: 'user', content: failureStreakNote(call.name, n) });
+        }
+      } else {
+        failuresByTool.delete(call.name);
+        if (/^(write_file|edit_file|apply_patch|run)$/.test(call.name)) {
+          failuresByTool.clear();
+          recentCallKeys.length = 0; // a real change breaks any cycle
+        }
       }
     }
 
-    // A declined action is the user's answer, not a retry prompt.
-    if (out.meta?.rejected) {
+    if (calls.length > toRun.length) {
       messages.push({
         role: 'user',
-        content: '[note] The user declined that action. Do not retry it. Either continue without it or stop and explain what you would have done.',
+        content: `[note] You wrote ${calls.length} action blocks at once. Only ${toRun.length === 1 ? 'the first was' : `the first ${toRun.length} (all look-around) were`} performed. ` +
+          'Anything that changes something (write_file, edit_file, run, ...) goes alone in its reply.',
       });
     }
 
-    if (NON_PROGRESS_TOOLS.has(call.name)) {
+    const period = findCycle(recentCallKeys);
+    if (period) {
+      messages.push({ role: 'user', content: cycleNote(period) });
+      recentCallKeys.length = 0;
+    }
+
+    // Counted once per step, not per block, so a batch of reads is one step
+    // of looking around rather than four. The task list is planning, not
+    // looking around, so it neither extends nor resets the streak.
+    const counted = toRun.filter((c) => c.name !== 'todo' && c.name !== 'ask_user');
+    if (!counted.length) {
+      // todo only
+    } else if (counted.every((c) => NON_PROGRESS_TOOLS.has(c.name))) {
       const note = readOnlyStreakNote().trim();
       if (note) messages.push({ role: 'user', content: note });
     } else {
       readOnlyStreak = 0;
+    }
+
+    if (!budgetWarned && stepBudget >= 12 && step + 1 >= stepBudget - 5) {
+      budgetWarned = true;
+      messages.push({ role: 'user', content: budgetCheckpointNote(step + 1, stepBudget) });
+    }
+  }
+
+  // Out of steps. One last call with actions switched off, so the user gets a
+  // real account of where things stand instead of a bare "stopped". Its
+  // answer is checked the same way: no action blocks, no invented results.
+  if (!signal.aborted && actions.length) {
+    const closing = await callModel([...trimTranscript(messages, contextBudgetFor(route)), { role: 'user', content: FINAL_SUMMARY_PROMPT }], userMessage, signal, route);
+    const text = closing.result?.success ? String(closing.result.data?.choices?.[0]?.message?.content || '') : '';
+    const { prose, calls: stray } = parseReply(text);
+    // Keep only what comes before any action block it wrote anyway.
+    const cleaned = (stray.length ? text.slice(0, Math.max(0, text.search(/<codeply:/i))) : prose).trim();
+    if (cleaned && !FABRICATED_RESULT.test(cleaned)) {
+      const shown = withoutEmDashes(cleaned);
+      yield { type: 'text', text: shown, interim: false };
+      transcript.push({ role: 'assistant', content: shown });
     }
   }
 
