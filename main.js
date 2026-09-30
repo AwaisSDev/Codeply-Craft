@@ -2477,7 +2477,7 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   const history = buildHistory(session);
   // images are kept on the session record so reopening the chat still shows
   // them; buildHistory() only re-sends the last few to the model.
-  session.messages.push({ kind: 'user', text, images: images?.length ? images : undefined, at: Date.now() });
+  session.messages.push({ kind: 'user', text: typedText, ...(expandedText ? { expanded: expandedText } : {}), images: images?.length ? images : undefined, at: Date.now() });
   session.updatedAt = Date.now();
   session.cwd = cwd;
   saveStore();
@@ -2498,9 +2498,32 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   updateSleepBlocker();
   broadcastRunStatus();
 
+  // Shell commands are allowed by name ("run:npm test"), so "always" on one
+  // command never quietly allows every command. A dangerous-looking command
+  // always asks. Old chats may still hold a bare "run" entry: that keeps its
+  // old meaning (all commands) since the user chose it.
+  const runAllowed = (req) => !req.danger && Array.isArray(req.patterns) && req.patterns.length > 0 &&
+    req.patterns.every((p) => alwaysAllowed.has(`run:${p}`));
+  const autoAllowed = (req) => {
+    if (req.tool === 'fetch_image') return false;
+    if (req.tool === 'run') return alwaysAllowed.has('run') || runAllowed(req);
+    return alwaysAllowed.has(req.tool);
+  };
+
   const approve = async (req) => {
     if (signal.aborted) return 'reject';
-    if (bypass || (req.tool !== 'fetch_image' && alwaysAllowed.has(req.tool))) {
+    // Standing rules from .codeply/permissions.json. A deny rule wins over
+    // everything, bypass mode included: it is the user's own hard "never".
+    const rule = permissionsLib ? permissionsLib.decide(req, cwd) : { decision: null };
+    if (rule.decision === 'deny') {
+      sendEvent(session.id, { type: 'notice', level: 'warn', text: `Blocked by your permissions file (rule "${rule.rule}"): ${req.title}${req.detail ? ` - ${String(req.detail).slice(0, 120)}` : ''}` });
+      return 'reject';
+    }
+    if (rule.decision === 'allow' && req.tool !== 'fetch_image') {
+      sendEvent(session.id, { type: 'approval_auto', tool: req.tool, title: req.title, bypass: false });
+      return 'once';
+    }
+    if (bypass || autoAllowed(req)) {
       sendEvent(session.id, { type: 'approval_auto', tool: req.tool, title: req.title, bypass: !!bypass });
       return 'once';
     }
