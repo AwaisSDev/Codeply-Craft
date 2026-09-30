@@ -1808,6 +1808,23 @@ select.login-input option { background: var(--surface-1); color: var(--text); }
 }
 .skills-empty { color: var(--text-dim); font-size: 13px; padding: 30px 4px; text-align: center; }
 
+/* ---- Plugins modal ---- */
+.plugins-install { display: flex; gap: 8px; padding: 0 20px 12px; align-items: center; }
+.plugins-install .skills-search { margin: 0; flex: 1; }
+#pluginError { margin: 0 20px 10px; }
+.plugins-body { overflow-y: auto; padding: 0 20px 20px; display: flex; flex-direction: column; gap: 10px; }
+.plugin-card { padding: 14px; border-radius: 12px; border: 1px solid var(--card-border); background: var(--surface-2); display: flex; flex-direction: column; gap: 6px; }
+.plugin-card.plugin-off { opacity: 0.6; }
+.plugin-name { font-size: 14px; font-weight: 700; }
+.plugin-name span, .plugin-by { font-weight: 400; color: var(--text-faint); font-size: 12px; }
+.plugin-desc { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
+.plugin-adds { font-size: 12px; color: var(--text-faint); }
+.plugin-warn { font-size: 12px; color: var(--text); padding: 8px 10px; border-radius: 8px; background: rgba(229, 98, 77, 0.1); display: flex; flex-direction: column; gap: 4px; word-break: break-all; }
+.plugin-warn code { font-size: 11.5px; color: var(--text-dim); user-select: text; }
+.plugin-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.plugin-scope-tag { margin-right: auto; font-size: 11.5px; color: var(--text-faint); }
+.plugin-scope { margin-right: auto; font-size: 12px; color: var(--text-dim); display: flex; gap: 6px; align-items: center; }
+
 /* Responsive: hide side panel on narrow windows */
 @media (max-width: 1180px) {
   .side-panel { display: none; }
