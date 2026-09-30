@@ -383,8 +383,9 @@ async function write_file(args, ctx) {
   const beforeLines = existed ? before.split('\n').length : 0;
   const afterLines = after.split('\n').length;
 
-  const verdict = await ctx.approve({
+  const verdict = ctx.mode === 'Plan' && isPlanPath(target, ctx.cwd) ? 'allow' : await ctx.approve({
     tool: 'write_file',
+    path: rel,
     title: existed ? `Overwrite ${rel}` : `Create ${rel}`,
     detail: existed
       ? `${beforeLines} lines → ${afterLines} lines`
