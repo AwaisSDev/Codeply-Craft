@@ -616,10 +616,11 @@ async function chatViaOpenAICompatible(messages, opts, providerName, cfg) {
         },
         body: JSON.stringify({
           model,
-          messages,
+          messages: opts.tools ? messages : textOnlyMessages(messages),
           temperature: opts.temperature ?? 0,
           ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
           ...(opts.json ? { response_format: { type: 'json_object' } } : {}),
+          ...(opts.tools ? { tools: opts.tools, tool_choice: 'auto' } : {}),
         }),
         signal,
       });
@@ -646,11 +647,11 @@ async function chatViaOpenAICompatible(messages, opts, providerName, cfg) {
       const msg = typeof apiError === 'string' ? apiError : JSON.stringify(apiError);
       const fatal = /not found|does not exist|unknown model|unauthor|invalid.*key|forbidden/i.test(msg);
       if (fatal) return { done: true, value: { success: false, error: `${label}: ${msg}` } };
-      return { retryable: isTransientStatus(res.status), error: `${label}: ${msg}` };
+      return { retryable: isTransientStatus(res.status), retryAfterMs: retryAfterMs(res), error: `${label}: ${msg}` };
     }
 
-    return { retryable: isTransientStatus(res.status), error: describeStatus(res.status) };
-  });
+    return { retryable: isTransientStatus(res.status), retryAfterMs: retryAfterMs(res), error: describeStatus(res.status) };
+  }, opts.signal);
 }
 
 // Below this many characters a block essentially never clears Anthropic's
