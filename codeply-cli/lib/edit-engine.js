@@ -93,7 +93,17 @@ function applySearchReplaceLF(fileContent, searchBlock, replaceBlock) {
         }
       }
     }
-    return { ok: false, error: 'notfound' };
+    const fuzzy = fuzzyLocate(fileContent, searchBlock);
+    if (fuzzy.ok) {
+      const at = fileContent.indexOf(fuzzy.span);
+      // The model's replacement carries the indentation it wrongly assumed;
+      // move it to where the block really sits.
+      const text = fuzzy.reindent
+        ? reindentBlock(replaceBlock, (fuzzy.span.split('\n').find((l) => l.trim()) || '').match(/^[ \t]*/)[0])
+        : replaceBlock;
+      return { ok: true, content: fileContent.slice(0, at) + text + fileContent.slice(at + fuzzy.span.length), fuzzy: true };
+    }
+    return { ok: false, error: fuzzy.error === 'multiple' ? 'multiple' : 'notfound' };
   }
   if (matches.length > 1) return { ok: false, error: 'multiple' };
 
