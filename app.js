@@ -1905,17 +1905,56 @@ function addApprovalCard(ev) {
     ${diffHtml}
     <div class="approval-actions">
       <button class="appr-btn accept" data-v="once">Accept</button>
-      <button class="appr-btn" data-v="always">Always allow ${esc(toolName(ev.tool))} in this chat</button>
+      ${alwaysLabel ? `<button class="appr-btn" data-v="always">${esc(alwaysLabel)}</button>` : ''}
       <button class="appr-btn reject" data-v="reject">Reject</button>
     </div>`;
   card.querySelectorAll('.appr-btn').forEach((btn) =>
     btn.addEventListener('click', () => {
       api.respondApproval(ev.requestId, btn.dataset.v);
-      const verdictText = btn.dataset.v === 'reject' ? 'Rejected' : btn.dataset.v === 'always' ? `Accepted, always allowing ${toolName(ev.tool)} for the rest of this chat` : 'Accepted';
+      const verdictText = btn.dataset.v === 'reject' ? 'Rejected' : btn.dataset.v === 'always' ? `Accepted, always allowing ${alwaysWhat} for the rest of this chat` : 'Accepted';
       card.outerHTML = `<div class="chat-note ${btn.dataset.v === 'reject' ? 'error' : 'ok'}">${esc(ev.title)}: ${verdictText}</div>`;
     })
   );
   chatColumn.appendChild(card);
+  scrollToBottom();
+}
+
+// ─── Questions from the agent (ask_user) ───────────────────────────────────
+// One tap on an option, or a typed answer. Answered from the phone, the card
+// here flips to the answer too (question_resolved).
+function renderQuestionCard(q, existing) {
+  const card = existing || document.createElement('div');
+  card.className = 'question-card';
+  card.dataset.requestId = q.requestId;
+  card.dataset.q = JSON.stringify({ requestId: q.requestId, question: q.question, options: q.options || [] });
+  const answered = q.answered || q.answer !== undefined;
+  if (answered) {
+    card.innerHTML = `
+      <div class="q-head"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/></svg><span class="q-text"></span></div>
+      <div class="q-answer">${q.answer == null ? '<em>Dismissed, the agent decided on its own</em>' : `Answered: <b>${esc(q.answer)}</b>`}</div>`;
+    card.querySelector('.q-text').textContent = q.question;
+    if (!existing) chatColumn.appendChild(card);
+    return;
+  }
+  card.innerHTML = `
+    <div class="q-head"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/></svg><span class="q-text"></span></div>
+    <div class="q-options">${(q.options || []).map((o, i) => `<button class="q-opt${i === 0 ? ' first' : ''}" type="button" data-i="${i}">${esc(o)}</button>`).join('')}</div>
+    <form class="q-custom"><input type="text" placeholder="${(q.options || []).length ? 'Or type your own answer' : 'Type your answer'}" maxlength="2000"><button type="submit">Send</button></form>
+    <button class="q-skip" type="button">Let the agent decide</button>`;
+  card.querySelector('.q-text').textContent = q.question;
+  const send = (answer) => {
+    if (!api) return;
+    api.respondQuestion(q.requestId, answer);
+    renderQuestionCard({ ...q, answer, answered: true }, card);
+  };
+  card.querySelectorAll('.q-opt').forEach((b) => b.addEventListener('click', () => send(q.options[Number(b.dataset.i)])));
+  card.querySelector('.q-custom').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = e.currentTarget.querySelector('input').value.trim();
+    if (v) send(v);
+  });
+  card.querySelector('.q-skip').addEventListener('click', () => send(null));
+  if (!existing) chatColumn.appendChild(card);
   scrollToBottom();
 }
 
