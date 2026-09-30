@@ -40,10 +40,42 @@ function isRateLimitError(msg) {
     || s.includes('quota') || s.includes('daily ai request limit');
 }
 
-const MAX_ATTEMPTS = 3;
-const RETRY_BACKOFF_MS = [1200, 4000];
+const MAX_ATTEMPTS = 4;
+const RETRY_BACKOFF_MS = [1500, 4000, 9000];
+const RETRY_AFTER_CAP_MS = 30000;
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Stop must not wait out a backoff: the sleep ends the moment the signal fires.
+const sleep = (ms, signal) => new Promise((r) => {
+  if (signal?.aborted) return r();
+  const t = setTimeout(r, ms);
+  signal?.addEventListener('abort', () => { clearTimeout(t); r(); }, { once: true });
+});
+
+/**
+ * How long the server asked us to wait, from retry-after-ms / retry-after
+ * (seconds or an HTTP date). Same headers opencode's session/retry.ts honours.
+ */
+function retryAfterMs(res) {
+  try {
+    const h = res && res.headers;
+    if (!h || typeof h.get !== 'function') return undefined;
+    const ms = Number(h.get('retry-after-ms'));
+    if (Number.isFinite(ms) && ms > 0) return ms;
+    const ra = h.get('retry-after');
+    if (!ra) return undefined;
+    const secs = Number(ra);
+    if (Number.isFinite(secs)) return secs * 1000;
+    const at = Date.parse(ra);
+    return Number.isFinite(at) ? Math.max(0, at - Date.now()) : undefined;
+  } catch { return undefined; }
+}
+
+/** Backoff with +-25% jitter so several clients don't retry in lockstep. */
+function backoffMs(attempt, hinted) {
+  if (hinted !== undefined) return Math.min(RETRY_AFTER_CAP_MS, hinted);
+  const base = RETRY_BACKOFF_MS[attempt - 1] ?? RETRY_BACKOFF_MS[RETRY_BACKOFF_MS.length - 1];
+  return Math.round(base * (0.75 + Math.random() * 0.5));
+}
 
 /**
  * Statuses worth retrying. 546 is Supabase's own code for an Edge Function
@@ -72,11 +104,16 @@ function describeStatus(status) {
  * Retry wrapper shared by both backends.
  * `send` returns { done, value } to stop, or { retryable, error } to try again.
  */
-async function withRetries(send) {
+async function withRetries(send, signal) {
   let lastError = 'Request failed';
+  let hinted;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    if (attempt > 0) await sleep(RETRY_BACKOFF_MS[attempt - 1] ?? 4000);
+    if (attempt > 0) {
+      await sleep(backoffMs(attempt, hinted), signal);
+      if (signal?.aborted) return { success: false, error: 'aborted', aborted: true };
+    }
     const step = await send();
+    hinted = step.retryAfterMs;
     if (step.done) return step.value;
     // A user-triggered abort must never be retried - retrying is exactly the
     // "stop didn't stop" bug: it would fire a brand new request right after
