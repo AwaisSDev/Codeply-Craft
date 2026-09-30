@@ -19,13 +19,53 @@
   const VERBS = ['Codeplying', 'Cooking', 'Baking', 'Brewing', 'Whisking', 'Simmering', 'Tinkering', 'Crafting'];
   const START_ETA = 50;
   const dur = (s) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`);
-  function liveText(t) {
-    const secs = Math.max(0, Math.round((Date.now() - t.startedAt) / 1000));
+  function liveParts(t) {
+    const secs = Math.max(0, Math.round((Date.now() - (t.startedAt || Date.now())) / 1000));
     const verb = `${VERBS[Math.floor(secs / 3) % VERBS.length]}...`;
-    if (t.status === 'running') return `${verb} working on GitHub · ${dur(secs)}`;
+    if (t.status === 'running') return { verb, note: `Working on GitHub · ${dur(secs)}`, pct: null };
     const left = START_ETA - secs;
-    return `${verb} starting a GitHub runner · ${left > 0 ? `about ${left}s left` : `any second now (${dur(secs)})`}`;
+    const what = t.status === 'queued' ? 'Waiting for a GitHub runner' : 'Starting a GitHub runner';
+    return { verb, note: `${what} · ${left > 0 ? `about ${left}s left` : `any second now (${dur(secs)})`}`, pct: Math.min(95, Math.round((secs / START_ETA) * 95)) };
   }
+  const liveHtml = (t) => { const p = liveParts(t); return `<div class="cloud-m-verb">${escapeHtml(p.verb)}</div><div class="cloud-m-note">${escapeHtml(p.note)}</div><div class="cloud-m-bar${p.pct == null ? ' working' : ''}"><i style="${p.pct == null ? '' : `width:${p.pct}%`}"></i></div>`; };
+  function paintLive(node, t) {
+    const p = liveParts(t);
+    const v = node.querySelector('.cloud-m-verb'); const n = node.querySelector('.cloud-m-note'); const bar = node.querySelector('.cloud-m-bar');
+    if (v) v.textContent = p.verb;
+    if (n) n.textContent = p.note;
+    if (bar) { bar.classList.toggle('working', p.pct == null); bar.firstElementChild.style.width = p.pct == null ? '' : `${p.pct}%`; }
+  }
+
+  // ─── Cloud cards in the phone chat (a message sent through the PC with Cloud on) ──
+  const chatLive = new Map();
+  function chatCard(task) {
+    const feed = document.getElementById('chatFeed');
+    if (!feed || !task) return;
+    const pending = String(task.id).startsWith('pending-');
+    let node = feed.querySelector(`.cloud-m-card[data-id="${CSS.escape(task.id)}"]`);
+    if (!node && !pending) node = [...feed.querySelectorAll('.cloud-m-card[data-pending="1"]')].pop();
+    if (!node) { node = document.createElement('div'); feed.append(node); }
+    const live = LIVE.has(task.status);
+    for (const [id] of chatLive) if (id.startsWith('pending-') && !pending) chatLive.delete(id);
+    if (live) chatLive.set(task.id, task); else chatLive.delete(task.id);
+    node.className = `cloud-m-card ${task.status}`;
+    node.dataset.id = task.id;
+    node.dataset.pending = pending ? '1' : '0';
+    const files = task.files || [];
+    node.innerHTML = `<div class="cloud-m-card-head"><span class="cloud-m-icon">${ICON}</span>${live ? `<div class="cloud-m-live-block">${liveHtml(task)}</div>` : `<strong>${escapeHtml(task.status === 'done' ? 'Finished in the cloud' : STATUS[task.status] || task.status)}</strong>`}
+        ${task.runUrl ? `<a href="${escapeHtml(task.runUrl)}" target="_blank" rel="noopener">log</a>` : ''}</div>
+      ${task.error ? `<div class="cloud-m-error">${escapeHtml(task.error)}</div>` : ''}
+      ${task.status === 'done' && files.length ? (task.pulledAt
+        ? `<div class="cloud-m-dim">Applied ${files.length} file${files.length === 1 ? '' : 's'} to the project.</div>`
+        : `<div class="cloud-m-foot"><span class="cloud-m-dim">Changed ${files.length} file${files.length === 1 ? '' : 's'} on GitHub</span><button type="button" class="cloud-m-apply">Apply to project</button></div>`) : ''}`;
+    const apply = node.querySelector('.cloud-m-apply');
+    if (apply) apply.addEventListener('click', async () => {
+      apply.disabled = true; apply.textContent = 'Applying...';
+      try { await request('/api/cloud/apply', { method: 'POST', body: JSON.stringify({ sessionId: state.sessionId, taskId: task.id }) }); }
+      catch (e) { apply.disabled = false; apply.textContent = 'Apply to project'; alert(e.message); }
+    });
+  }
+  window.CraftCloudPhone = { card: chatCard };
 
   // Answers use `code` a lot; the chat's markdown helper only does bold and line breaks.
   const fmt = (text) => escapeHtml(text || '')
@@ -256,7 +296,7 @@
       <li class="cloud-m-task ${t.status}">
         <div class="cloud-m-task-head"><span class="cloud-m-dot"></span><strong>${escapeHtml(STATUS[t.status] || t.status)}</strong><span class="cloud-m-dim">${escapeHtml(t.mode)}</span>${t.runUrl ? `<a href="${escapeHtml(t.runUrl)}" target="_blank" rel="noopener">log</a>` : ''}</div>
         <div class="cloud-m-prompt">${escapeHtml(t.prompt)}</div>
-        ${LIVE.has(t.status) ? `<div class="cloud-m-live" data-live="${escapeHtml(t.id)}">${escapeHtml(liveText(t))}</div>` : ''}
+        ${LIVE.has(t.status) ? `<div class="cloud-m-live-block" data-live="${escapeHtml(t.id)}">${liveHtml(t)}</div>` : ''}
         ${LIVE.has(t.status) && t.progress && /^- /m.test(t.progress) ? `<div class="cloud-m-dim">${escapeHtml(t.progress.split('\n').filter((l) => l.startsWith('- ')).pop().slice(2))}</div>` : ''}
         ${t.answer ? `<div class="cloud-m-answer">${fmt(t.answer)}</div>` : ''}
         ${t.files && t.files.length ? `<div class="cloud-m-dim">Changed ${t.files.length} file${t.files.length === 1 ? '' : 's'} on GitHub. Apply them from Craft on your PC (Cloud chip).</div>` : ''}
@@ -287,10 +327,15 @@
   schedule();
   // Keep live runs moving on screen between polls.
   setInterval(() => {
-    if (!sheetOpen) return;
-    for (const node of el.querySelectorAll('[data-live]')) {
-      const t = tasks.find((x) => x.id === node.dataset.live);
-      if (t && LIVE.has(t.status)) node.textContent = liveText(t);
+    if (sheetOpen) {
+      for (const node of el.querySelectorAll('[data-live]')) {
+        const t = tasks.find((x) => x.id === node.dataset.live);
+        if (t && LIVE.has(t.status)) paintLive(node, t);
+      }
+    }
+    for (const [id, t] of chatLive) {
+      const node = document.querySelector(`.cloud-m-card[data-id="${CSS.escape(id)}"]`);
+      if (node) paintLive(node, t); else chatLive.delete(id);
     }
   }, 1000);
   // Pick up the GitHub login from the PC whenever it's reachable, so cloud runs

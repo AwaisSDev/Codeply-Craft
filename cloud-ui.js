@@ -197,20 +197,28 @@
   function liveText(task) {
     const secs = Math.max(0, Math.round((Date.now() - (task.startedAt || Date.now())) / 1000));
     const verb = `${VERBS[Math.floor(secs / 3) % VERBS.length]}...`;
-    if (task.status === 'running') return { verb, note: `Working on GitHub · ${dur(secs)}` };
+    if (task.status === 'running') return { verb, note: `Working on GitHub · ${dur(secs)}`, pct: null };
     const left = START_ETA - secs;
     const what = task.status === 'queued' ? 'Waiting for a GitHub runner' : 'Starting a GitHub runner';
-    return { verb, note: `${what} · ${left > 0 ? `about ${left}s left` : `any second now (${dur(secs)})`}` };
+    // Fills toward 95% over the expected start; the last bit waits for the real thing.
+    return { verb, note: `${what} · ${left > 0 ? `about ${left}s left` : `any second now (${dur(secs)})`}`, pct: Math.min(95, Math.round((secs / START_ETA) * 95)) };
+  }
+  function paintLive(card, t) {
+    const v = card.querySelector('.cloud-verb');
+    const n = card.querySelector('.cloud-card-note');
+    const bar = card.querySelector('.cloud-bar');
+    if (v) v.textContent = t.verb;
+    if (n) n.textContent = t.note;
+    if (bar) {
+      bar.classList.toggle('working', t.pct == null);
+      bar.firstElementChild.style.width = t.pct == null ? '' : `${t.pct}%`;
+    }
   }
   setInterval(() => {
     for (const [id, task] of liveTasks) {
       const card = chatColumn.querySelector(`.cloud-card[data-task-id="${CSS.escape(id)}"]`);
       if (!card) { liveTasks.delete(id); continue; }
-      const t = liveText(task);
-      const v = card.querySelector('.cloud-verb');
-      const n = card.querySelector('.cloud-card-note');
-      if (v) v.textContent = t.verb;
-      if (n) n.textContent = t.note;
+      paintLive(card, liveText(task));
     }
   }, 1000);
 
@@ -243,10 +251,10 @@
     } else if (task.status === 'done' && task.mode === 'Build') {
       foot = '<div class="cloud-foot"><span class="cloud-dim">No files changed.</span></div>';
     }
-    card.innerHTML = `<div class="cloud-card-head">${ICON}<span class="cloud-card-status">${live ? `<span class="cloud-verb">${esc(lt.verb)}</span><span class="cloud-pulse"></span>` : esc(STATUS[task.status] || task.status)}</span>
+    card.innerHTML = `<div class="cloud-card-head"><span class="cloud-card-icon">${ICON}</span><span class="cloud-card-status">${live ? `<span class="cloud-verb">${esc(lt.verb)}</span>` : esc(STATUS[task.status] || task.status)}</span>
         ${task.runUrl ? '<a href="#" class="cloud-link" data-act="log">View run</a>' : ''}
         ${live && !String(task.id).startsWith('pending-') ? '<button class="cloud-link" data-act="cancel">Cancel</button>' : ''}</div>
-      ${live ? `<div class="cloud-card-note">${esc(lt.note)}</div>` : ''}
+      ${live ? `<div class="cloud-card-note">${esc(lt.note)}</div><div class="cloud-bar"><i></i></div>` : ''}
       ${steps.length ? `<div class="cloud-steps">${steps.map((l) => `<div>${esc(l.slice(2))}</div>`).join('')}</div>` : ''}
       ${task.error ? `<div class="cloud-error">${esc(task.error)}</div>` : ''}${foot}`;
     const log = card.querySelector('[data-act="log"]');
@@ -263,6 +271,7 @@
       const r = await api.cloudApply(state.currentSessionId, task.id);
       if (r.error) { apply.disabled = false; apply.textContent = 'Apply to project'; showToast(r.error, 'error'); }
     });
+    if (live) paintLive(card, lt);
     if (stick) scrollToBottom();
   }
 

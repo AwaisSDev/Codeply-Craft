@@ -27,5 +27,42 @@
 .cloud-m-prompt { margin: 6px 0 4px; font-size: 14px; color: var(--text); white-space: pre-wrap; word-break: break-word; }
 .cloud-m-answer { margin: 6px 0; font-size: 14px; line-height: 1.5; color: var(--text); word-break: break-word; }
 .cloud-m-answer code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; background: var(--bg-card-active); padding: 1px 5px; border-radius: 5px; }
-.cloud-m-live { margin: 2px 0 4px; font-size: 13px; color: var(--text); font-weight: 600; }
+/* Live runs: shimmering word, countdown, progress bar (sheet and chat). */
+.cloud-m-live-block { margin: 6px 0 4px; }
+.cloud-m-verb {
+  font-size: 15px; font-weight: 700; letter-spacing: 0.01em;
+  background: linear-gradient(90deg, var(--text) 0%, var(--text) 35%, #4b9dff 50%, var(--text) 65%, var(--text) 100%);
+  background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: cloud-m-shimmer 2.2s linear infinite;
+}
+@keyframes cloud-m-shimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+.cloud-m-note { margin-top: 2px; font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.cloud-m-bar { position: relative; height: 3px; margin-top: 10px; border-radius: 3px; background: rgba(75, 157, 255, 0.16); overflow: hidden; }
+.cloud-m-bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 3px; background: #4b9dff; transition: width 0.9s linear; }
+.cloud-m-bar.working i { width: 35%; animation: cloud-m-slide 1.6s ease-in-out infinite; }
+@keyframes cloud-m-slide { 0% { left: -35%; } 100% { left: 100%; } }
+
+.cloud-m-card { margin: 4px 0 14px; padding: 12px 14px; border-radius: 16px; border: 1px solid var(--border); background: var(--bg-card); }
+.cloud-m-card.starting, .cloud-m-card.queued, .cloud-m-card.running {
+  border-color: rgba(75, 157, 255, 0.5);
+  background: linear-gradient(180deg, rgba(75, 157, 255, 0.08), var(--bg-card) 70%);
+  box-shadow: 0 6px 24px -14px rgba(75, 157, 255, 0.8);
+}
+.cloud-m-card.failed { border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
+.cloud-m-card-head { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); }
+.cloud-m-card-head a { margin-left: auto; font-size: 13px; color: var(--text-muted); }
+.cloud-m-icon { display: flex; color: #4b9dff; }
+.cloud-m-card.starting .cloud-m-icon, .cloud-m-card.queued .cloud-m-icon, .cloud-m-card.running .cloud-m-icon { animation: cloud-m-float 2.4s ease-in-out infinite; }
+@keyframes cloud-m-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+.cloud-m-card-head { align-items: flex-start; }
+.cloud-m-card-head strong { line-height: 20px; }
+.cloud-m-card .cloud-m-live-block { flex: 1; min-width: 0; margin: 0; }
+.cloud-m-card .cloud-m-icon { margin-top: 1px; }
+.cloud-m-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.cloud-m-foot .cloud-m-dim { margin: 0; }
+.cloud-m-apply { border: 0; border-radius: 10px; padding: 8px 12px; background: var(--text); color: var(--bg); font: inherit; font-size: 13px; font-weight: 600; }
+@media (prefers-reduced-motion: reduce) {
+  .cloud-m-verb, .cloud-m-icon, .cloud-m-bar.working i { animation: none !important; }
+  .cloud-m-verb { color: var(--text); background: none; }
+}
 .cloud-m-error { margin-top: 6px; font-size: 13px; color: var(--warn); }

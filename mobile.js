@@ -566,6 +566,7 @@ function renderSession(session) {
       else if (item.kind === 'checkpoint') renderCheckpoint(item);
       else if (item.kind === 'question') renderQuestion({ ...item, answered: true });
       else if (item.kind === 'goal') renderGoalCard(item);
+      else if (item.kind === 'cloud_task' && window.CraftCloudPhone) window.CraftCloudPhone.card(item.task);
       else if (item.kind === 'notice') { if (item.level === 'info') addThinking(item.text); else addMessage('error', item.text); }
     }
     // Chat should always open scrolled to the newest message, not the top.
@@ -698,6 +699,8 @@ function receiveEvent(event) {
     addThinking(event.mode === 'Build' ? 'Switched to Build mode. Implementing the plan.' : `Switched to ${event.mode} mode.`);
   } else if (event.type === 'goal_update') {
     renderGoalCard(event);
+  } else if (event.type === 'cloud_task') {
+    if (window.CraftCloudPhone) window.CraftCloudPhone.card(event.task);
   } else if (event.type === 'notice') {
     state.activeAgentMessageEl = null;
     // Info notes (e.g. "summarized earlier steps") are progress, not failures.
