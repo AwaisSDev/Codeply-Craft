@@ -1603,7 +1603,332 @@ async function vercel_api(args, ctx) {
   return { ok: r.ok, output: formatApiResult('Vercel', method, apiPath, r), meta: { label: `${method} ${apiPath}`, status: r.status } };
 }
 
+// ─── Task list ──────────────────────────────────────────────────────────────
+// The model's own checklist for a multi-step task. Each call sends the whole
+// list, one item per line:  [ ] pending   [>] in progress   [x] done   [-] dropped
+// Idea from Hermes Agent's todo tool (MIT, Nous Research): the full list comes
+// back every time, at most one item is in progress, and "done" is only for
+// work a tool result has confirmed.
+
+const TODO_MARKS = { ' ': 'pending', '>': 'in_progress', x: 'done', X: 'done', '-': 'dropped', '~': 'dropped' };
+const TODO_LABEL = { pending: '[ ]', in_progress: '[>]', done: '[x]', dropped: '[-]' };
+const MAX_TODOS = 30;
+
+export function parseTodos(text) {
+  const items = [];
+  for (const raw of String(text || '').split('\n')) {
+    const line = raw.trim().replace(/^[-*]\s+(?=\[)/, '');
+    if (!line) continue;
+    const m = line.match(/^\[(.)\]\s*(.+)$/);
+    items.push(m && TODO_MARKS[m[1]] ? { status: TODO_MARKS[m[1]], text: m[2].trim() } : { status: 'pending', text: line });
+  }
+  return items.slice(0, MAX_TODOS);
+}
+
+export function formatTodos(items, { openOnly = false } = {}) {
+  return items
+    .filter((t) => !openOnly || t.status === 'pending' || t.status === 'in_progress')
+    .map((t) => `${TODO_LABEL[t.status]} ${t.text}`)
+    .join('\n');
+}
+
+async function todo(args, ctx) {
+  const items = parseTodos(args.items);
+  if (!items.length) return { ok: false, output: 'todo needs <items>: one task per line, like "[ ] write the header" or "[x] read index.html".' };
+  // One thing in progress at a time: keep the first, demote the rest.
+  let seenActive = false;
+  for (const t of items) {
+    if (t.status !== 'in_progress') continue;
+    if (seenActive) t.status = 'pending';
+    seenActive = true;
+  }
+  ctx.todos = items;
+  const count = (s) => items.filter((t) => t.status === s).length;
+  const open = count('pending') + count('in_progress');
+  return {
+    ok: true,
+    output: `Task list (${count('done')} done, ${open} open${count('dropped') ? `, ${count('dropped')} dropped` : ''}):\n${formatTodos(items)}` +
+      (open ? '' : '\nEvery item is closed. Finish with your summary unless something is still unverified.'),
+    meta: { label: `${count('done')}/${items.length - count('dropped')} done`, todos: items },
+  };
+}
+
+// ─── Question to the user ───────────────────────────────────────────────────
+// A real decision only the user can make, asked as a short multiple-choice
+// question they can answer with one tap (on the PC or the phone). Modeled on
+// opencode's question tool: short options, the recommended one first, and the
+// user can always type their own answer instead.
+
+const MAX_OPTIONS = 5;
+
+async function ask_user(args, ctx) {
+  const question = String(args.question || '').trim();
+  if (!question) return { ok: false, output: 'ask_user needs a <question>.' };
+  const options = String(args.options || '')
+    .split('\n')
+    .map((l) => l.trim().replace(/^[-*\d.)\s]+/, '').trim())
+    .filter(Boolean)
+    .slice(0, MAX_OPTIONS);
+  if (typeof ctx.ask !== 'function') {
+    return {
+      ok: false,
+      output: 'Asking the user is not available here (unattended run). Pick the most sensible option yourself, say which one and why in your summary, and continue.',
+    };
+  }
+  const answer = await ctx.ask({ question, options });
+  if (answer == null || answer === '') {
+    return { ok: false, output: 'The user dismissed the question without answering. Make a sensible choice yourself, say which in your summary, and continue.', meta: { label: question.slice(0, 80) } };
+  }
+  return {
+    ok: true,
+    output: `The user answered: ${answer}\nFollow that answer.`,
+    meta: { label: question.slice(0, 80), answer: String(answer).slice(0, 200) },
+  };
+}
+
+// ─── MCP ────────────────────────────────────────────────────────────────────
+// Tools from the user's configured MCP servers (lib/mcp.js). Anything that
+// isn't marked read-only by the server itself asks for approval first.
+
+async function mcp(args, ctx) {
+  const server = String(args.server || '').trim();
+  const tool = String(args.tool || '').trim();
+  if (!server || !tool) return { ok: false, output: 'mcp needs a <server> and a <tool>.' };
+  let toolArgs = {};
+  if (args.args && String(args.args).trim()) {
+    try { toolArgs = JSON.parse(args.args); }
+    catch { return { ok: false, output: '<args> must be a JSON object, e.g. {"query": "x"}.' }; }
+  }
+  const def = mcpLib.findTool(ctx.cwd, server, tool);
+  if (!def) return { ok: false, output: `No tool "${tool}" on MCP server "${server}". Use one listed under MCP SERVERS.` };
+  const label = `${server}/${tool}`;
+  if (!def.annotations?.readOnlyHint) {
+    const verdict = await ctx.approve({
+      tool: 'mcp',
+      title: `Use ${tool} (${server})`,
+      detail: JSON.stringify(toolArgs).slice(0, 600),
+      danger: !!def.annotations?.destructiveHint,
+    });
+    if (verdict === 'reject') return { ok: false, output: `User declined ${label}.`, meta: { rejected: true, label } };
+  }
+  let r;
+  try { r = await mcpLib.callTool(ctx.cwd, server, tool, toolArgs); }
+  catch (e) { return { ok: false, output: `${label} failed: ${e.message}`, meta: { label } }; }
+  return {
+    ok: !r.isError,
+    output: truncate(`${r.isError ? '[the tool reported an error]\n' : ''}${r.text}`),
+    meta: { label, ...(r.images.length ? { imageDataUrls: r.images.slice(0, 4) } : {}) },
+  };
+}
+
+// ─── Web ────────────────────────────────────────────────────────────────────
+
+async function web_fetch(args, ctx) {
+  const url = String(args.url || '').trim();
+  if (!url) return { ok: false, output: 'web_fetch needs a <url>.' };
+  const format = /^(html|raw)$/i.test(String(args.format || '').trim()) ? String(args.format).trim().toLowerCase() : 'text';
+  const r = await webTools.fetchPage(url, { format, signal: ctx.signal });
+  if (!r.ok) return { ok: false, output: r.error, meta: { label: url } };
+  const note = r.finalUrl && r.finalUrl !== url ? `(redirected to ${r.finalUrl})\n\n` : '';
+  return { ok: true, output: truncate(note + (r.text || '(the page has no text content)')), meta: { label: url } };
+}
+
+async function web_search(args, ctx) {
+  const query = String(args.query || '').trim();
+  if (!query) return { ok: false, output: 'web_search needs a <query>.' };
+  const r = await webTools.webSearch(query, { num: Number(args.num) || 8, signal: ctx.signal });
+  if (!r.ok) return { ok: false, output: r.error, meta: { label: query } };
+  return { ok: true, output: truncate(r.text), meta: { label: query } };
+}
+
+// ─── lsp ────────────────────────────────────────────────────────────────────
+
+const LSP_OPS = new Set(['definition', 'references', 'implementation', 'hover', 'documentsymbol', 'workspacesymbol']);
+const LSP_CANON = { documentsymbol: 'documentSymbol', workspacesymbol: 'workspaceSymbol' };
+
+async function lsp(args, ctx) {
+  const key = String(args.operation || '').trim().toLowerCase().replace(/[\s_-]/g, '');
+  if (!LSP_OPS.has(key)) return { ok: false, output: 'lsp needs an <operation>: definition, references, implementation, hover, documentSymbol or workspaceSymbol.' };
+  const op = LSP_CANON[key] || key;
+  const req = { op };
+  if (op === 'workspaceSymbol') {
+    if (!String(args.query || args.symbol || '').trim()) return { ok: false, output: 'workspaceSymbol needs a <query>.' };
+    req.query = String(args.query || args.symbol).trim();
+  } else {
+    if (!args.path) return { ok: false, output: `lsp ${op} needs a <path>.` };
+    const { abs, rel, outside } = resolvePath(args.path, ctx.cwd);
+    if (outside) return { ok: false, output: `${rel} is outside the project.` };
+    if (!fs.existsSync(abs)) return { ok: false, output: `No such file: ${rel}.` };
+    req.file = abs;
+    if (op !== 'documentSymbol') {
+      req.line = Number(args.line) || 1;
+      if (args.character) req.character = Number(args.character);
+      if (args.symbol) req.symbol = String(args.symbol).trim();
+      if (!req.character && !req.symbol) return { ok: false, output: `lsp ${op} needs a <symbol> (or a <character> column) to know what to look up.` };
+    }
+  }
+  const r = await diagnostics.navigate(req, ctx.cwd);
+  const label = op === 'workspaceSymbol' ? `${op} ${req.query}` : `${op} ${resolvePath(args.path, ctx.cwd).rel}${args.symbol ? ` ${args.symbol}` : ''}`;
+  return { ok: r.ok, output: truncate(r.text), meta: { label } };
+}
+
+// ─── apply_patch ────────────────────────────────────────────────────────────
+// Several file changes in one block (add / update / delete / move). Planned
+// purely first, shown to the user as one approval, then written.
+
+async function apply_patch(args, ctx) {
+  const patch = args.patch;
+  if (!patch || !String(patch).trim()) return { ok: false, output: 'apply_patch needs a <patch> block starting with "*** Begin Patch".' };
+
+  const readFile = (p) => {
+    const { abs } = resolvePath(p, ctx.cwd);
+    try { return fs.statSync(abs).isFile() ? fs.readFileSync(abs, 'utf8') : null; } catch { return null; }
+  };
+  const plan = applyPatchLib.planPatch(patch, readFile);
+  if (plan.error) return { ok: false, output: `Patch not applied: ${plan.error}` };
+
+  for (const c of plan.changes) {
+    if (c.kind === 'add' || c.kind === 'delete') continue;
+    const { abs } = resolvePath(c.path, ctx.cwd);
+    if (changedSinceSeen(ctx, abs)) {
+      ctx.fileState.delete(abs);
+      return { ok: false, output: `Patch not applied: ${c.path} changed on disk after you last read it. Read it again and rebuild the patch from its current content.` };
+    }
+  }
+
+  const resolved = plan.changes.map((c) => ({
+    ...c,
+    abs: resolvePath(c.path, ctx.cwd),
+    absNew: c.newPath ? resolvePath(c.newPath, ctx.cwd) : null,
+  }));
+  const label = (c) => (c.kind === 'move' ? `${c.path} -> ${c.newPath}` : c.path);
+  const verb = { add: 'add', update: 'update', delete: 'delete', move: 'move' };
+  const detail = resolved.map((c) => `${verb[c.kind]} ${label(c)}  (+${c.added} -${c.removed})`).join('\n');
+  const totalAdded = plan.changes.reduce((n, c) => n + c.added, 0);
+  const totalRemoved = plan.changes.reduce((n, c) => n + c.removed, 0);
+  const danger = resolved.some((c) => c.abs.outside || c.absNew?.outside) || plan.changes.some((c) => c.kind === 'delete');
+  // The approval card shows removed and added lines side by side, as it does for edit_file.
+  const patchLines = (sign) => String(patch).split('\n')
+    .filter((l) => l.startsWith(sign) && !l.startsWith(sign.repeat(3) + ' '))
+    .map((l) => l.slice(1)).join('\n').slice(0, 4000);
+
+  const verdict = await ctx.approve({
+    tool: 'apply_patch',
+    title: plan.changes.length === 1 ? `Patch ${label(plan.changes[0])}` : `Apply patch (${plan.changes.length} files)`,
+    detail,
+    diff: {
+      search: patchLines('-'),
+      replace: patchLines('+'),
+    },
+    danger,
+  });
+  if (verdict === 'reject') return { ok: false, output: 'User declined the patch. Nothing was changed.', meta: { rejected: true } };
+
+  const done = [];
+  const files = [];
+  const changes = [];
+  const problemsByFile = {};
+  try {
+    for (const c of resolved) {
+      if (c.kind === 'delete') {
+        fs.unlinkSync(c.abs.abs);
+        ctx.fileState?.delete(c.abs.abs);
+        done.push(`deleted ${c.path}`);
+        files.push(c.path);
+        changes.push({ path: c.path, kind: 'delete', added: 0, removed: c.removed });
+        continue;
+      }
+      const dest = c.kind === 'move' ? c.absNew : c.abs;
+      fs.mkdirSync(path.dirname(dest.abs), { recursive: true });
+      fs.writeFileSync(dest.abs, c.after, 'utf8');
+      if (c.kind === 'move' && c.abs.abs !== dest.abs) {
+        fs.unlinkSync(c.abs.abs);
+        ctx.fileState?.delete(c.abs.abs);
+      }
+      rememberDiskState(ctx, dest.abs);
+      const shown = c.kind === 'move' ? c.newPath : c.path;
+      done.push(c.kind === 'add' ? `added ${shown}` : c.kind === 'move' ? `moved ${c.path} to ${c.newPath}` : `updated ${shown}`);
+      files.push(shown);
+      changes.push({ path: shown, kind: c.kind, added: c.added, removed: c.removed });
+      const problems = await diagnostics.checkFile(dest.abs, ctx.cwd);
+      if (problems.length) problemsByFile[shown] = problems;
+    }
+  } catch (e) {
+    return {
+      ok: false,
+      output: `Patch failed part-way: ${e.message}. Done so far: ${done.join('; ') || 'nothing'}. Check the project state with list_dir/read_file before retrying.`,
+      meta: { files, changes, wrote: files.length > 0 },
+    };
+  }
+
+  const problemText = Object.entries(problemsByFile).map(([f, p]) => problemsNote(f, p)).join('');
+  return {
+    ok: true,
+    output: `Patch applied: ${done.join('; ')}. The changes succeeded exactly as sent - do NOT read the files back to confirm.` + problemText,
+    meta: { label: files.length === 1 ? files[0] : `${files.length} files`, added: totalAdded, removed: totalRemoved, wrote: true, files, changes, problems: Object.values(problemsByFile).flat(), problemsByFile },
+  };
+}
+
+// ─── Plan mode ──────────────────────────────────────────────────────────────
+// Plan mode writes its plan to .codeply/plans/<slug>.md, then plan_exit asks
+// the user to switch to Build. plan_enter is the reverse, and always asks.
+
+function latestPlanFile(cwd) {
+  const dir = path.join(cwd, PLAN_DIR);
+  let best = null;
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      if (!/\.md$/i.test(f)) continue;
+      const m = fs.statSync(path.join(dir, f)).mtimeMs;
+      if (!best || m > best.m) best = { f: `${PLAN_DIR}/${f}`, m };
+    }
+  } catch {}
+  return best ? best.f : null;
+}
+
+async function plan_exit(args, ctx) {
+  if (ctx.mode !== 'Plan') return { ok: false, output: 'plan_exit only works in Plan mode.' };
+  let rel = args.path ? resolvePath(String(args.path).trim(), ctx.cwd).rel : latestPlanFile(ctx.cwd);
+  if (!rel || !isPlanPath(rel, ctx.cwd) || !fs.existsSync(resolvePath(rel, ctx.cwd).abs)) {
+    return { ok: false, output: `Write your plan to ${PLAN_DIR}/<short-name>.md with write_file first, then call plan_exit.` };
+  }
+  if (typeof ctx.ask !== 'function') {
+    return { ok: false, output: `Switching modes needs the user's answer, and asking is not available here. The plan is saved at ${rel}; stay in Plan mode and summarise it.`, meta: { label: rel } };
+  }
+  const answer = await ctx.ask({
+    question: `The plan is ready (${rel}). Switch to Build mode and start implementing it?`,
+    options: ['Yes, start building (Recommended)', 'No, keep planning'],
+  });
+  if (answer != null && /^\s*yes/i.test(String(answer))) {
+    return {
+      ok: true,
+      output: `The user approved the plan. You are now in Build mode. Implement the plan in ${rel}: read it, then work through it, ticking off each step.`,
+      meta: { label: rel, switchMode: 'Build', planPath: rel },
+    };
+  }
+  const feedback = answer && !/^\s*no\b/i.test(String(answer)) ? ` The user said: ${answer}` : '';
+  return { ok: true, output: `The user wants to keep planning.${feedback} Revise the plan file and call plan_exit again when it is ready.`, meta: { label: rel } };
+}
+
+async function plan_enter(args, ctx) {
+  if (ctx.mode !== 'Build') return { ok: false, output: 'plan_enter only works in Build mode.' };
+  if (typeof ctx.ask !== 'function') return { ok: false, output: 'Switching modes needs the user\'s answer, and asking is not available here. Carry on in Build mode.' };
+  const reason = String(args.reason || '').trim();
+  const answer = await ctx.ask({
+    question: `Switch to Plan mode${reason ? ` (${reason})` : ''}? Nothing will be changed until you approve a plan.`,
+    options: ['Yes, plan first', 'No, keep building (Recommended)'],
+  });
+  if (answer != null && /^\s*yes/i.test(String(answer))) {
+    return { ok: true, output: `You are now in Plan mode (read-only). Explore, write the plan to ${PLAN_DIR}/<short-name>.md, then call plan_exit.`, meta: { label: 'plan', switchMode: 'Plan' } };
+  }
+  return { ok: true, output: 'The user wants to keep building. Carry on in Build mode.', meta: { label: 'plan' } };
+}
+
 export const TOOLS = {
+  todo,
+  ask_user,
+  mcp,
+  web_fetch, web_search, apply_patch, plan_exit, plan_enter, lsp,
   list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, browser_check,
   gmail_send, gmail_search, slack_post_message, vercel_deploy, supabase_create_project, supabase_delete_project, github_create_repo,
   design_reference_search, view_images, supabase_api, supabase_sql, vercel_api,
