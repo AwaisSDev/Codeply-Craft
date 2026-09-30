@@ -230,11 +230,23 @@
     if (isOpen) render();
   }
 
+  // One failed check (flaky phone network, a draw error) must never end the loop.
+  let polling = false;
+  async function pollSafe() {
+    if (polling) return;
+    polling = true;
+    try { await pollOnce(); } catch (e) { console.warn('[cloud] check failed:', e.message); } finally { polling = false; }
+  }
   function schedule() {
     clearTimeout(pollTimer);
     if (!tasks.some((t) => LIVE.has(t.status))) return;
-    pollTimer = setTimeout(async () => { await pollOnce(); schedule(); }, 4000);
+    pollTimer = setTimeout(async () => { await pollSafe(); schedule(); }, 3000);
   }
+  // Phones pause background pages; catch up the moment it's looked at again.
+  const catchUp = () => { if (document.visibilityState === 'visible' && tasks.some((t) => LIVE.has(t.status))) pollSafe().then(schedule); };
+  document.addEventListener('visibilitychange', catchUp);
+  window.addEventListener('focus', catchUp);
+  window.addEventListener('pageshow', catchUp);
 
   // ─── The cloud chat's rows: same markup as the normal phone chat ────────
   const CHEV = '<svg class="tool-chev" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>';
@@ -358,7 +370,7 @@
     render(true);
     await refreshCreds();
     render(true);
-    await pollOnce();
+    await pollSafe();
     schedule();
   }
   function close() { isOpen = false; el.classList.add('hidden'); }
