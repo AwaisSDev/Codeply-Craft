@@ -381,6 +381,12 @@ const NAME_ALIASES = {
   supabase_api: 'supabase_api', supabaseapi: 'supabase_api',
   supabase_sql: 'supabase_sql', supabasesql: 'supabase_sql', sql: 'supabase_sql', runsql: 'supabase_sql',
   vercel_api: 'vercel_api', vercelapi: 'vercel_api',
+  web_fetch: 'web_fetch', webfetch: 'web_fetch', fetchurl: 'web_fetch', fetch_url: 'web_fetch', fetchpage: 'web_fetch', openurl: 'web_fetch', readurl: 'web_fetch',
+  web_search: 'web_search', websearch: 'web_search', searchweb: 'web_search', search_web: 'web_search', googlesearch: 'web_search',
+  apply_patch: 'apply_patch', applypatch: 'apply_patch', patch: 'apply_patch',
+  plan_exit: 'plan_exit', planexit: 'plan_exit', exitplan: 'plan_exit', exit_plan: 'plan_exit',
+  plan_enter: 'plan_enter', planenter: 'plan_enter', enterplan: 'plan_enter', enter_plan: 'plan_enter',
+  lsp: 'lsp', codenav: 'lsp', gotodefinition: 'lsp', findreferences: 'lsp', go_to_definition: 'lsp', find_references: 'lsp',
 };
 
 // Any tag whose name resolves to an action, with or without the codeply: prefix.
@@ -431,6 +437,9 @@ function recoverCall(text) {
   let name = null;
   if (has('content')) name = 'write_file';
   else if (has('search') && has('replace')) name = 'edit_file';
+  else if (has('items')) name = 'todo';
+  else if (has('question') && has('options')) name = 'ask_user';
+  else if (has('server') && has('tool')) name = 'mcp';
   else if (has('to') && has('subject')) name = 'gmail_send';
   else if (has('channel') && has('text')) name = 'slack_post_message';
   else {
