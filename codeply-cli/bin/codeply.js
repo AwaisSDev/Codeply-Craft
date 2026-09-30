@@ -364,6 +364,196 @@ skillCmd
     console.log(body);
   });
 
+const pluginCmd = program
+  .command('plugin')
+  .description('Install, share and manage plugins: bundles of commands, skills, MCP servers and instructions.');
+
+function printPluginSummary(s) {
+  console.log(c.bold(`${s.name}${s.version ? ' ' + s.version : ''}`) + (s.author ? c.muted(`  by ${s.author}`) : ''));
+  if (s.description) console.log(`  ${s.description}`);
+  const parts = [];
+  if (s.commands) parts.push(`${s.commands} command${s.commands === 1 ? '' : 's'} (/${s.name}:...)`);
+  if (s.skills) parts.push(`${s.skills} skill${s.skills === 1 ? '' : 's'}`);
+  if (s.instructions) parts.push('agent instructions');
+  if (parts.length) console.log(c.muted(`  Adds: ${parts.join(', ')}`));
+  if (s.mcpServers.length) {
+    console.log(c.yellow('  Starts MCP servers (these can run programs on this computer):'));
+    for (const m of s.mcpServers) console.log(`    ${m.name}: ${m.runs || m.url}`);
+  }
+}
+
+pluginCmd
+  .command('list', { isDefault: true })
+  .description('List installed plugins.')
+  .action(() => {
+    const list = require('../lib/plugins').listPlugins(process.cwd());
+    if (!list.length) {
+      console.log('No plugins installed. Try: codeply plugin install <owner/repo | git URL | folder>');
+      return;
+    }
+    for (const p of list) {
+      const tag = [p.scope, p.enabled ? '' : 'disabled'].filter(Boolean).join(', ');
+      console.log(`${p.name.padEnd(24)} ${p.version.padEnd(8)} ${c.muted(`[${tag}]`)} ${p.description}`);
+    }
+  });
+
+pluginCmd
+  .command('install <source>')
+  .description('Install from owner/repo, a git URL (add #branch or #tag), or a local folder.')
+  .option('--project', 'install for this project only (default: every project)')
+  .option('--force', 'replace an existing plugin of the same name')
+  .option('-y, --yes', 'do not ask before installing')
+  .action(async (source, opts) => {
+    const plugins = require('../lib/plugins');
+    console.log(c.secondary(`Fetching ${source}...`));
+    const prepared = await plugins.prepareInstall(source);
+    if (!prepared.ok) { console.error(c.red(prepared.error)); process.exitCode = 1; return; }
+    console.log('');
+    printPluginSummary(prepared.summary);
+    console.log('');
+    if (!opts.yes && !(await confirm(c.bold(c.accent(`Install ${prepared.name}?`))))) { plugins.discardInstall(prepared); console.log('Cancelled.'); return; }
+    const done = plugins.finishInstall(prepared, { scope: opts.project ? 'project' : 'user', cwd: process.cwd(), force: !!opts.force });
+    if (!done.ok) { console.error(c.red(done.error)); process.exitCode = 1; return; }
+    console.log(c.green(`Installed ${done.name}`) + c.muted(`  ${done.dest}`));
+  });
+
+pluginCmd
+  .command('update [name]')
+  .description('Re-fetch a plugin (or all of them) from where it was installed.')
+  .option('-y, --yes', 'do not ask before updating')
+  .action(async (name, opts) => {
+    const plugins = require('../lib/plugins');
+    const names = name ? [name] : plugins.listPlugins(process.cwd()).filter((p) => p.source).map((p) => p.name);
+    if (!names.length) { console.log('Nothing to update.'); return; }
+    for (const n of names) {
+      const prepared = await plugins.prepareUpdate(n, process.cwd());
+      if (!prepared.ok) { console.error(c.red(`${n}: ${prepared.error}`)); process.exitCode = 1; continue; }
+      const oldMcp = new Set(prepared.before.mcpServers.map((m) => `${m.name}|${m.runs}|${m.url}`));
+      const added = prepared.summary.mcpServers.filter((m) => !oldMcp.has(`${m.name}|${m.runs}|${m.url}`));
+      if (added.length && !opts.yes) {
+        console.log(c.yellow(`${n} now starts new or changed MCP servers:`));
+        for (const m of added) console.log(`    ${m.name}: ${m.runs || m.url}`);
+        if (!(await confirm(c.bold(c.accent(`Update ${n}?`))))) { plugins.discardInstall(prepared); console.log(`Skipped ${n}.`); continue; }
+      }
+      const done = plugins.finishInstall(prepared, { scope: prepared.scope, cwd: process.cwd(), force: true });
+      if (!done.ok) { console.error(c.red(`${n}: ${done.error}`)); process.exitCode = 1; continue; }
+      console.log(c.green(`Updated ${n}`) + (done.summary.version ? c.muted(`  ${done.summary.version}`) : ''));
+    }
+  });
+
+pluginCmd
+  .command('remove <name>')
+  .description('Uninstall a plugin.')
+  .action((name) => {
+    const r = require('../lib/plugins').removePlugin(name, process.cwd());
+    if (!r.ok) { console.error(c.red(r.error)); process.exitCode = 1; return; }
+    console.log(c.green(`Removed ${r.name}`));
+  });
+
+for (const [verb, on] of [['enable', true], ['disable', false]]) {
+  pluginCmd
+    .command(`${verb} <name>`)
+    .description(`${on ? 'Turn a plugin back on' : 'Turn a plugin off without removing it'}.`)
+    .action((name) => {
+      const r = require('../lib/plugins').setEnabled(name, on, process.cwd());
+      if (!r.ok) { console.error(c.red(r.error)); process.exitCode = 1; return; }
+      console.log(c.green(`${on ? 'Enabled' : 'Disabled'} ${r.name}`));
+    });
+}
+
+pluginCmd
+  .command('init <name>')
+  .description('Create a new plugin folder to fill in and push to GitHub.')
+  .action((name) => {
+    const r = require('../lib/plugins').scaffoldPlugin(name, process.cwd());
+    if (!r.ok) { console.error(c.red(r.error)); process.exitCode = 1; return; }
+    console.log(c.green(`Created ${r.dir}`));
+    console.log(c.muted(`Try it locally: codeply plugin install ${r.dir}\nShare it: push the folder to GitHub, then others run: codeply plugin install <you>/${r.name}`));
+  });
+
+const githubCmd = program
+  .command('github')
+  .description('The GitHub agent: comment /codeply on an issue or pull request and Craft does the work in your own Actions runner.');
+
+githubCmd
+  .command('install')
+  .description('Add the workflow file that lets /codeply comments start a run.')
+  .action(async () => {
+    const { installWorkflow } = await import('../lib/github-agent.mjs');
+    const r = installWorkflow(process.cwd());
+    if (!r.ok) { console.error(c.red(r.error)); process.exitCode = 1; return; }
+    console.log(c.green(`Created ${r.file}`));
+    console.log([
+      '',
+      'Finish in your repository settings:',
+      '  1. Settings > Secrets and variables > Actions > New repository secret: CODEPLY_API_KEY (your own model key).',
+      '  2. Optional variables: CODEPLY_PROVIDER (openai, anthropic, gemini, openrouter, groq, deepseek), CODEPLY_MODEL, CODEPLY_BASE_URL.',
+      '  3. Settings > Actions > General > Workflow permissions: "Read and write" and allow Actions to create pull requests.',
+      '  4. Commit the workflow, then comment "/codeply <what you want>" on an issue or pull request.',
+      '',
+      'Only the owner, members and collaborators can start a run. "/codeply ask ..." and "/codeply plan ..." never change files.',
+    ].join('\n'));
+  });
+
+githubCmd
+  .command('run')
+  .description('Handle the current GitHub Actions event (used by the workflow).')
+  .option('--max-steps <n>', 'step budget for the agent', '40')
+  .action(async (opts) => {
+    const g = await import('../lib/github-agent.mjs');
+    const cfg = { ...process.env };
+    const token = cfg.GITHUB_TOKEN || cfg.GH_TOKEN;
+    // The agent runs commands and MCP servers; it must never see these.
+    for (const k of ['GITHUB_TOKEN', 'GH_TOKEN', 'CODEPLY_API_KEY', 'ACTIONS_RUNTIME_TOKEN', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN']) delete process.env[k];
+    if (!cfg.GITHUB_EVENT_NAME || !cfg.GITHUB_EVENT_PATH) { console.error(c.red('This runs inside GitHub Actions (GITHUB_EVENT_NAME and GITHUB_EVENT_PATH are not set).')); process.exitCode = 1; return; }
+    let event;
+    try { event = JSON.parse(fs.readFileSync(cfg.GITHUB_EVENT_PATH, 'utf8')); } catch (e) { console.error(c.red(`Could not read the event: ${e.message}`)); process.exitCode = 1; return; }
+    const r = g.routeFromEnv(cfg);
+    if (r.error) {
+      console.error(c.red(r.error));
+      process.exitCode = 1;
+      return;
+    }
+    const out = await g.runGithubAgent({
+      eventName: cfg.GITHUB_EVENT_NAME, event, token, route: r.route, env: cfg, cwd: process.cwd(),
+      maxSteps: Math.max(1, Number(opts.maxSteps) || 40), log: (m) => console.log(m),
+    });
+    console.log(`${out.status}${out.url ? ` ${out.url}` : ''}`);
+    if (out.status === 'failed') { console.error(c.red(out.message || 'Failed.')); process.exitCode = 1; }
+  });
+
+program
+  .command('serve')
+  .description('Run the engine as a local HTTP API with a live event stream, for the desktop app, phone, editors and scripts.')
+  .option('-p, --port <port>', 'port to listen on (0 picks a free one)', '4096')
+  .option('--host <host>', 'address to bind; anything but 127.0.0.1 exposes the engine to the network', '127.0.0.1')
+  .option('--password <password>', 'password clients must send (default: CODEPLY_SERVER_PASSWORD, else a random one is printed)')
+  .option('--cwd <dir>', 'default project folder for new chats', process.cwd())
+  .option('--data-dir <dir>', 'where chats are stored (default ~/.codeply/server)')
+  .option('--cors <origin...>', 'browser origins allowed to call the API')
+  .action(async (opts) => {
+    const { startServer } = await import('../lib/server.mjs');
+    const password = opts.password || process.env.CODEPLY_SERVER_PASSWORD || undefined;
+    let srv;
+    try {
+      srv = await startServer({ port: Number(opts.port), host: opts.host, password, cwd: opts.cwd, dataDir: opts.dataDir, allowedOrigins: opts.cors });
+    } catch (e) {
+      console.error(c.red(`Could not start the server: ${e.message}`));
+      process.exitCode = 1;
+      return;
+    }
+    console.log(c.green(`✓ Codeply engine listening on ${srv.url}`));
+    console.log(`  Password  ${srv.password}${password ? '' : c.muted('  (generated for this run)')}`);
+    console.log(c.muted(`  Chats     ${srv.storage === 'json' ? 'JSON file (this Node has no SQLite)' : `SQLite (${srv.storage})`}`));
+    console.log(c.muted(`  Try       curl -H "Authorization: Bearer ${srv.password}" ${srv.url}/doc`));
+    if (!['127.0.0.1', 'localhost', '::1'].includes(opts.host)) {
+      console.log(c.yellow('  Bound beyond this machine over plain HTTP. Put it behind a tunnel or TLS proxy before exposing it.'));
+    }
+    const stop = async () => { await srv.close(); process.exit(0); };
+    process.on('SIGINT', stop);
+    process.on('SIGTERM', stop);
+  });
+
 // If no arguments provided, launch TUI
 if (process.argv.length <= 2) {
   runTUI();
