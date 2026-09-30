@@ -65,7 +65,7 @@ function isEffectivelyDark() {
 
 function syncThemeColorMeta() {
   const meta = document.getElementById('themeColorMeta');
-  if (meta) meta.content = isEffectivelyDark() ? '#1d1d20' : '#ffffff';
+  if (meta) meta.content = isEffectivelyDark() ? '#1b1b1b' : '#ffffff';
 }
 
 function syncThemeToggleUI() {
@@ -481,6 +481,15 @@ function renderAccount(account, device) {
   if ($('accountEmail')) $('accountEmail').textContent = email;
   if ($('accountMode')) $('accountMode').textContent = device ? `Connected to ${device}` : 'Connected to your PC';
   if ($('accountInitial')) $('accountInitial').textContent = email[0]?.toUpperCase() || 'C';
+  renderGreeting();
+}
+
+// "What's up next, Awais?" - the name from the sign-in profile when there is
+// one, otherwise the part of the email before the @.
+function renderGreeting() {
+  const email = state.account?.email || '';
+  const name = state.userName || (email ? email.split('@')[0] : '');
+  $('greetingText').textContent = name ? `What’s up next, ${name}?` : 'What’s up next?';
 }
 
 function renderSessions() {
@@ -530,7 +539,8 @@ function syncChatTitle() {
   const el = $('chatTitlePill');
   if (!el) return;
   const current = state.sessionId && state.sessions.find((s) => s.id === state.sessionId);
-  el.textContent = (current && current.title) || 'New chat';
+  // Blank on a fresh chat: the greeting already says where you are.
+  el.textContent = (current && current.title) || '';
 }
 
 function renderSession(session) {
@@ -684,6 +694,7 @@ function receiveEvent(event) {
     addTurnSummary(event);
   } else if (event.type === 'mode_switch') {
     state.mode = event.mode;
+    renderMode();
     addThinking(event.mode === 'Build' ? 'Switched to Build mode. Implementing the plan.' : `Switched to ${event.mode} mode.`);
   } else if (event.type === 'goal_update') {
     renderGoalCard(event);
@@ -1126,6 +1137,8 @@ async function connect() {
   showPairStep('busy', 'Connecting to your PC…');
   const session = await currentSession();
   $('findEmail').textContent = session?.user?.email || 'you';
+  const meta = session?.user?.user_metadata || {};
+  state.userName = meta.full_name || meta.name || null;
   try {
     if (isHosted) {
       await connectDirect();
@@ -1308,27 +1321,35 @@ $('composerForm').addEventListener('submit', async (e) => {
 })();
 
 // ─── Model + permission pickers ─────────────────────────────────────────────
+const CHECK_SVG = '<svg class="pick-check" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>';
+
+function openSheet(id) { $(id).classList.remove('hidden'); }
+function closeSheet(id) { $(id).classList.add('hidden'); }
+document.querySelectorAll('[data-close-sheet]').forEach((el) =>
+  el.addEventListener('click', () => el.closest('.approval-sheet').classList.add('hidden')));
+
 function renderModels(models) {
   if (models && Array.isArray(models.models)) state.models = models;
-  const select = $('modelSelect');
-  select.innerHTML = '';
-  const add = (value, label) => {
-    const o = document.createElement('option');
-    o.value = value;
-    o.textContent = label;
-    o.selected = value === state.models.selected;
-    select.append(o);
+  const list = $('modelList');
+  list.innerHTML = '';
+  const add = (id, name, hint) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'pick-row' + (id === state.models.selected ? ' active' : '');
+    row.innerHTML = `<span class="pick-text"><strong>${escapeHtml(name)}</strong>${hint ? `<span>${escapeHtml(hint)}</span>` : ''}</span>${CHECK_SVG}`;
+    row.addEventListener('click', () => selectModel(id));
+    list.append(row);
   };
-  add('auto', 'Auto (Gemma 4 31B)');
-  for (const m of state.models.models) add(m.id, m.kind === 'ollama' && !/\(local\)/i.test(m.name) ? `${m.name} (local)` : m.name);
+  add('auto', 'Auto', 'Gemma 4 31B, picked for you');
+  for (const m of state.models.models) add(m.id, m.name, m.kind === 'ollama' ? 'Local, runs on your PC' : 'Your API key');
   const current = state.models.models.find((m) => m.id === state.models.selected);
   $('modelPillName').textContent = current ? current.name : 'Auto';
-  $('modelPillDot').dataset.kind = current ? (current.kind === 'ollama' ? 'local' : 'custom') : 'auto';
 }
 
-$('modelSelect').addEventListener('change', async (e) => {
-  const id = e.target.value;
+async function selectModel(id) {
+  closeSheet('modelSheet');
   const previous = state.models.selected;
+  if (id === previous) return;
   try {
     renderModels(await request('/api/models/select', { method: 'POST', body: JSON.stringify({ id }) }));
   } catch (err) {
@@ -1336,21 +1357,39 @@ $('modelSelect').addEventListener('change', async (e) => {
     renderModels();
     addMessage('error', err.message);
   }
-});
-
-function renderBypass() {
-  $('bypassBtn').classList.toggle('danger', state.bypass);
-  $('bypassBtn').setAttribute('aria-pressed', String(state.bypass));
-  $('bypassLabel').textContent = state.bypass ? 'Bypass: no prompts' : 'Approve manually';
 }
 
-$('bypassBtn').addEventListener('click', () => {
-  if (!state.bypass && !confirm('Bypass mode runs file edits, commands and deploys on your PC without asking you first. Turn it on?')) return;
-  state.bypass = !state.bypass;
-  localStorage.setItem('craft-bypass', state.bypass ? '1' : '0');
-  renderBypass();
-});
-renderBypass();
+$('modelBtn').addEventListener('click', () => openSheet('modelSheet'));
+
+// Mode + permissions share one sheet, opened from the mode label under the
+// composer. Full access shows as an orange shield next to the mode.
+function renderMode() {
+  $('modeLabel').textContent = state.mode;
+  $('modeBtn').classList.toggle('warn', state.bypass);
+  $('bypassIcon').classList.toggle('hidden', !state.bypass);
+  document.querySelectorAll('#modeSheet [data-mode]').forEach((row) =>
+    row.classList.toggle('active', row.dataset.mode === state.mode));
+  document.querySelectorAll('#modeSheet [data-bypass]').forEach((row) =>
+    row.classList.toggle('active', (row.dataset.bypass === '1') === state.bypass));
+}
+
+$('modeBtn').addEventListener('click', () => openSheet('modeSheet'));
+document.querySelectorAll('#modeSheet [data-mode]').forEach((row) =>
+  row.addEventListener('click', () => {
+    state.mode = row.dataset.mode;
+    renderMode();
+    closeSheet('modeSheet');
+  }));
+document.querySelectorAll('#modeSheet [data-bypass]').forEach((row) =>
+  row.addEventListener('click', () => {
+    const on = row.dataset.bypass === '1';
+    if (on && !state.bypass && !confirm('Full access runs file edits, commands and deploys on your PC without asking you first. Turn it on?')) return;
+    state.bypass = on;
+    localStorage.setItem('craft-bypass', on ? '1' : '0');
+    renderMode();
+    closeSheet('modeSheet');
+  }));
+renderMode();
 
 $('taskInput').addEventListener('input', (e) => {
   e.target.style.height = 'auto';
@@ -1406,13 +1445,6 @@ $('projectSelect').addEventListener('change', () => {
   $('topbarFolderName').textContent = name;
   const activeProjEl = $('activeProjectName');
   if (activeProjEl) activeProjEl.textContent = name;
-});
-
-document.querySelectorAll('[data-prompt]').forEach((button) => {
-  button.addEventListener('click', () => {
-    $('taskInput').value = button.dataset.prompt;
-    $('taskInput').focus();
-  });
 });
 
 // Startup: a remembered sign-in goes straight to connecting.

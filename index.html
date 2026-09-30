@@ -4,13 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Codeply Craft</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- Same face the phone companion already loads (mobile.html) -- the desktop
-     app was falling back to plain OS system fonts (Segoe UI on Windows) with
-     no webfont of its own, which is why it read as visibly plainer next to
-     both the phone app and Claude's own surfaces. -->
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="vendor/xterm/xterm.css">
 <link rel="stylesheet" href="styles.css">
 <script>
@@ -84,7 +77,7 @@
   <!-- ============ SIDEBAR ============ -->
   <aside class="sidebar" id="sidebar">
     <div class="sb-header">
-      <button class="sb-brand"><img class="brand-logo" src="logo.png" alt=""> Codeply Craft</button>
+      <button class="sb-brand">Codeply Craft</button>
       <button class="tb-icon-btn" id="sidebarToggle" title="Toggle sidebar">
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><line x1="9.5" y1="4" x2="9.5" y2="20"/></svg>
       </button>
@@ -250,51 +243,31 @@
       <div class="home-center">
         <img class="home-logo" src="logo.png" alt="">
         <h1 class="home-title">What should we build in <span class="proj-link" id="homeProjectName">…</span>?</h1>
-
-        <div class="suggestion-row">
-          <button class="suggestion-card" data-suggest="Explore this project and explain how it's structured">
-            <svg class="sug-icon purple" viewBox="0 0 24 24"><path d="M4.5 16.5c-1.5 1.3-2 5-2 5s3.7-.5 5-2c.7-.8.7-2.1-.1-2.9a2.2 2.2 0 0 0-2.9-.1Z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.9A12.6 12.6 0 0 1 21.5 2.5a12.6 12.6 0 0 1-5.6 10.5 22 22 0 0 1-3.9 2Z"/><path d="M9 12H4s.6-3.3 2-4.5c1.6-1.3 4 0 4 0"/><path d="M12 15v5s3.3-.6 4.5-2c1.3-1.6 0-4 0-4"/></svg>
-            <span>Explore and understand code</span>
-          </button>
-          <button class="suggestion-card" data-suggest="Build a new feature: ">
-            <svg class="sug-icon blue" viewBox="0 0 24 24"><path d="M15 12l-8.4 8.4a2.1 2.1 0 0 1-3-3L12 9"/><path d="M17.6 12l3.5-3.5a1 1 0 0 0 0-1.4l-.5-.5 1.4-1.5-1.6-1.6-1.5 1.4-.5-.5a1 1 0 0 0-1.4 0L13.5 7.9Z"/></svg>
-            <span>Build a new feature, app, or tool</span>
-          </button>
-          <button class="suggestion-card" data-suggest="Review the code in this project and suggest concrete improvements">
-            <svg class="sug-icon green" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 4v4h-4"/><path d="M9 12l2 2 4-4"/></svg>
-            <span>Review code and suggest changes</span>
-          </button>
-          <button class="suggestion-card" data-suggest="Fix this issue: ">
-            <svg class="sug-icon red" viewBox="0 0 24 24"><rect x="8" y="7" width="8" height="11" rx="4"/><path d="M9 8L7 6M15 8l2-2M3 12h4M17 12h4M4.5 18.5L7 16M19.5 18.5L17 16M12 18v-6"/></svg>
-            <span>Fix issues and failures</span>
-          </button>
-        </div>
       </div>
 
       <div class="composer-wrap home-composer">
+        <div class="composer-tray">
+          <button class="tray-btn" data-role="project-chip" title="Change project folder">
+            <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+            <span data-role="project-name">Choose folder</span>
+          </button>
+          <button class="tray-btn hidden" data-role="branch-chip" title="Current git branch">
+            <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M6 8.5v7"/><path d="M18 8.5c0 4-4.5 4-9 4"/></svg>
+            <span data-role="branch-name">main</span>
+          </button>
+        </div>
         <div class="composer" data-composer="home">
-          <div class="composer-chips">
-            <button class="chip" data-role="project-chip" title="Change project folder">
-              <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
-              <span data-role="project-name">Choose folder</span>
-            </button>
-            <button class="chip static"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="18" x2="12" y2="21"/></svg> Local</button>
-            <button class="chip hidden" data-role="branch-chip">
-              <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M6 8.5v7"/><path d="M18 8.5c0 4-4.5 4-9 4"/></svg>
-              <span data-role="branch-name">main</span>
-            </button>
-            <button class="chip" data-role="mode-chip" title="Switch mode (Build / Plan / Ask)">
-              <svg viewBox="0 0 24 24"><path d="M14.7 6.3a4.5 4.5 0 0 0-6 6L3 18v3h3l5.7-5.7a4.5 4.5 0 0 0 6-6L15 12l-3-3Z"/></svg>
-              <span data-role="mode-name">Build</span>
-            </button>
-          </div>
           <div class="composer-image-previews hidden" data-role="image-previews"></div>
-          <textarea class="composer-input" rows="1" placeholder="Ask Codeply to build, fix or explain anything  ·  /goal keeps it going until done"></textarea>
+          <textarea class="composer-input" rows="1" placeholder="Ask Codeply anything, or type / for commands"></textarea>
           <div class="composer-bottom">
             <div class="composer-bottom-left">
               <button class="approve-toggle" data-role="bypass" title="Off: every write/run asks you first. On: actions run without asking.">
                 <svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5Z"/><path d="M9 12l2 2 4-4"/></svg>
                 <span data-role="bypass-label">Approve manually</span>
+              </button>
+              <button class="chip" data-role="mode-chip" title="Switch mode (Build / Plan / Ask)">
+                <svg viewBox="0 0 24 24"><path d="M14.7 6.3a4.5 4.5 0 0 0-6 6L3 18v3h3l5.7-5.7a4.5 4.5 0 0 0 6-6L15 12l-3-3Z"/></svg>
+                <span data-role="mode-name">Build</span>
               </button>
             </div>
             <div class="composer-bottom-right">
@@ -350,7 +323,7 @@
       <div class="composer-wrap chat-composer">
         <div class="composer" data-composer="chat">
           <div class="composer-image-previews hidden" data-role="image-previews"></div>
-          <textarea class="composer-input" rows="1" placeholder="Ask Codeply to build, fix or explain anything  ·  /goal keeps it going until done"></textarea>
+          <textarea class="composer-input" rows="1" placeholder="Ask Codeply anything, or type / for commands"></textarea>
           <div class="composer-bottom">
             <div class="composer-bottom-left">
               <button class="approve-toggle" data-role="bypass" title="Off: every write/run asks you first. On: actions run without asking.">

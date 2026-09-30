@@ -3,16 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
-  <meta name="theme-color" content="#1d1d20" id="themeColorMeta">
+  <meta name="theme-color" content="#1b1b1b" id="themeColorMeta">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Codeply Away</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="logo.png">
   <link rel="apple-touch-icon" href="logo.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="mobile.css">
   <script>
     // Runs before mobile.css and mobile.js load, so an explicit dark/light
@@ -30,11 +27,6 @@
   </script>
 </head>
 <body>
-  <div class="bg-ambience">
-    <div class="glow-orb orb-1"></div>
-    <div class="glow-orb orb-2"></div>
-  </div>
-
   <main class="app-shell">
     <!-- SIGN-IN SCREEN - the phone signs in with the same Codeply account
          as the PC and then finds that PC on the local network by itself. -->
@@ -44,7 +36,7 @@
           <img class="logo-icon-img" src="logo.png" alt="Codeply Craft">
           <div class="logo-ring"></div>
         </div>
-        <span class="badge-tag">CODEPLY AWAY</span>
+        <span class="badge-tag">Codeply Away</span>
         <h1>Sign in to your PC</h1>
         <p class="pair-subtext">Use the same account you use in Craft on your computer. Works from anywhere, as long as your PC is on.</p>
       </div>
@@ -110,7 +102,7 @@
       </form>
 
       <div class="pair-footer">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#60d9a1" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         <span>Only your own PC, signed in to this account, will take instructions from this phone</span>
       </div>
     </section>
@@ -123,25 +115,9 @@
            navigate from now instead of a bottom tab bar. -->
       <header class="topbar">
         <button class="icon-btn" id="sidebarOpenBtn" aria-label="Open menu">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="14" y2="17"/></svg>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><line x1="9.5" y1="4" x2="9.5" y2="20"/></svg>
         </button>
-        <div class="topbar-title" id="refreshBtn" title="Connection status">
-          <span class="status-dot" id="statusDot"></span>
-          <span id="deviceName">Craft Agent</span>
-        </div>
-        <!-- The one thing Craft needs beyond a plain chat topbar: which
-             desktop folder a message targets. Sits where the reference's
-             two right-side buttons (Upgrade, temporary-chat) were -
-             replacing both, not sitting alongside them.
-             A <select> can't legally nest inside a <button>, so this is a
-             plain div styled like one; the real <select> sits invisibly on
-             top of it (see mobile.css) and catches every tap - real native
-             picker UI, nothing to keep in sync by hand. -->
-        <div class="topbar-folder-btn" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-          <span id="topbarFolderName">Choose folder</span>
-          <select id="projectSelect" class="topbar-folder-select" aria-label="Desktop project"></select>
-        </div>
+        <div class="topbar-title" id="chatTitlePill"></div>
       </header>
 
       <!-- SIDEBAR DRAWER - slides over everything (see mobile.css); the
@@ -208,36 +184,10 @@
         <!-- TAB 1: CONVERSATION -->
         <section class="tab-panel" id="chatPanel">
           <div class="starter-view" id="emptyState">
-            <div class="starter-hero">
-              <h2>What would you like Craft to build?</h2>
-              <p>Your task will be executed locally on your PC with full agent tool capabilities.</p>
-            </div>
-
-            <div class="action-grid">
-              <button class="action-card" data-prompt="Explore this project structure and summarize key components.">
-                <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
-                <div class="card-text">
-                  <strong>Explore Codebase</strong>
-                  <span>Understand structure & architecture</span>
-                </div>
-              </button>
-
-              <button class="action-card" data-prompt="Review this project code for bugs, performance, and UI improvements.">
-                <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
-                <div class="card-text">
-                  <strong>Code Review</strong>
-                  <span>Find bugs and suggest fixes</span>
-                </div>
-              </button>
-
-              <button class="action-card" data-prompt="Fix issues in this project and verify everything works cleanly.">
-                <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.8 2.8-2-2 2.8-2.8Z"/></svg></div>
-                <div class="card-text">
-                  <strong>Fix & Refactor</strong>
-                  <span>Resolve errors automatically</span>
-                </div>
-              </button>
-            </div>
+            <h2 class="greeting">
+              <img class="greeting-mark" src="logo.png" alt="">
+              <span id="greetingText">What’s up next?</span>
+            </h2>
           </div>
 
           <div class="chat-feed hidden" id="chatFeed" aria-live="polite"></div>
@@ -248,29 +198,70 @@
            (above); this is just input + send, with send doubling as Stop
            while a run is in progress. -->
       <form class="composer" id="composerForm">
-        <div class="composer-tools">
-          <div class="tool-pill model-pill" id="modelPill">
-            <span class="model-pill-dot" id="modelPillDot"></span>
-            <span id="modelPillName">Auto</span>
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7 10l5 5 5-5"/></svg>
-            <select id="modelSelect" aria-label="Model"></select>
-          </div>
-          <button type="button" class="tool-pill" id="bypassBtn" aria-pressed="false">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5Z"/><path d="M9 12l2 2 4-4"/></svg>
-            <span id="bypassLabel">Approve manually</span>
+        <div class="composer-chips">
+          <button type="button" class="chip" id="refreshBtn" title="Connection status (tap to refresh)">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="deviceName">Craft Agent</span>
           </button>
+          <!-- A real native <select> sits invisibly over this chip and catches
+               every tap: the OS folder picker for free, nothing to sync. -->
+          <div class="chip chip-select">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+            <span id="topbarFolderName">Choose folder</span>
+            <select id="projectSelect" aria-label="Desktop project"></select>
+          </div>
         </div>
         <div class="composer-inner">
-          <textarea id="taskInput" rows="1" placeholder="Message Craft…  (/goal to keep going until done)"></textarea>
+          <textarea id="taskInput" rows="1" placeholder="Describe a task or ask a question"></textarea>
           <button class="send-btn" id="sendBtn" type="submit" aria-label="Send task">
-            <svg id="sendIcon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+            <svg id="sendIcon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 5v7a3 3 0 0 1-3 3H5"/><path d="M9 11l-4 4 4 4"/></svg>
             <svg id="stopIcon" class="hidden" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+          </button>
+        </div>
+        <div class="composer-bar">
+          <button type="button" class="bar-btn" id="modeBtn" aria-haspopup="dialog">
+            <svg class="bar-shield hidden" id="bypassIcon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5Z"/></svg>
+            <span id="modeLabel">Build</span>
+          </button>
+          <span class="bar-spacer"></span>
+          <button type="button" class="bar-btn strong" id="modelBtn" aria-haspopup="dialog">
+            <span id="modelPillName">Auto</span>
           </button>
         </div>
       </form>
 
     </section>
   </main>
+
+  <!-- MODEL SHEET -->
+  <section class="approval-sheet pick-sheet hidden" id="modelSheet" role="dialog" aria-modal="true" aria-label="Model">
+    <div class="sheet-backdrop" data-close-sheet></div>
+    <div class="sheet-container">
+      <div class="sheet-handle"></div>
+      <div class="pick-list" id="modelList"></div>
+      <p class="pick-note">Add or remove models in Craft on your PC. Keys never leave it.</p>
+    </div>
+  </section>
+
+  <!-- MODE SHEET - what Craft does with a message, and whether it asks first -->
+  <section class="approval-sheet pick-sheet hidden" id="modeSheet" role="dialog" aria-modal="true" aria-label="Mode">
+    <div class="sheet-backdrop" data-close-sheet></div>
+    <div class="sheet-container">
+      <div class="sheet-handle"></div>
+      <div class="pick-label">Mode</div>
+      <div class="pick-list">
+        <button type="button" class="pick-row" data-mode="Build"><span class="pick-text"><strong>Build</strong><span>Makes the changes on your PC</span></span><svg class="pick-check" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></button>
+        <button type="button" class="pick-row" data-mode="Plan"><span class="pick-text"><strong>Plan</strong><span>Writes a plan before changing anything</span></span><svg class="pick-check" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></button>
+        <button type="button" class="pick-row" data-mode="Ask"><span class="pick-text"><strong>Ask</strong><span>Answers questions, no edits</span></span><svg class="pick-check" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></button>
+      </div>
+      <div class="pick-divider"></div>
+      <div class="pick-label">Permissions</div>
+      <div class="pick-list">
+        <button type="button" class="pick-row" data-bypass="0"><span class="pick-text"><strong>Approve manually</strong><span>Asks you before every edit or command</span></span><svg class="pick-check" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></button>
+        <button type="button" class="pick-row" data-bypass="1"><span class="pick-text"><strong class="warn">Full access</strong><span>Edits, commands and deploys run without asking</span></span><svg class="pick-check" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></button>
+      </div>
+    </div>
+  </section>
 
   <!-- APPROVAL SHEET MODAL -->
   <section class="approval-sheet hidden" id="approvalSheet" role="dialog" aria-modal="true">
@@ -282,7 +273,7 @@
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#ff8275" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         </div>
         <div>
-          <span class="sheet-overline">DESKTOP ACTION REQUIRED</span>
+          <span class="sheet-overline">Needs your OK</span>
           <h2 id="approvalTitle">Craft needs approval</h2>
         </div>
       </div>
@@ -307,7 +298,7 @@
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M3 15l5-4 4 3 4-4 5 5"/></svg>
         </div>
         <div>
-          <span class="sheet-overline">DESKTOP ACTION REQUIRED</span>
+          <span class="sheet-overline">Needs your OK</span>
           <h2>Choose an image</h2>
         </div>
       </div>

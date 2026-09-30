@@ -1344,7 +1344,7 @@ document.querySelectorAll('[data-role="mode-chip"]').forEach((el) =>
 function syncBypass() {
   document.querySelectorAll('[data-role="bypass"]').forEach((el) => el.classList.toggle('on', state.bypass));
   document.querySelectorAll('[data-role="bypass-label"]').forEach((el) =>
-    (el.textContent = state.bypass ? 'Bypass mode' : 'Approve manually'));
+    (el.textContent = state.bypass ? 'Full access' : 'Approve manually'));
 }
 document.querySelectorAll('[data-role="bypass"]').forEach((el) =>
   el.addEventListener('click', () => {
