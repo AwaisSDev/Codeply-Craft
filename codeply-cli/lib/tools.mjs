@@ -1263,10 +1263,18 @@ async function run(args, ctx) {
         if (stderr && stderr.trim()) parts.push(`[stderr]\n${stderr.trimEnd()}`);
         if (err && err.killed) parts.push(`[timed out after ${RUN_TIMEOUT_MS / 1000}s]`);
         const body = parts.join('\n') || '(no output)';
+        // Hints are computed on the untruncated output but appended after
+        // truncation, so they are never the part that gets cut off.
+        const combined = `${stdout || ''}\n${stderr || ''}`;
+        const hint = code ? terminalHints.annotateFailure(displayCommand, code, combined)
+          : terminalHints.annotateMaskedSuccess(displayCommand, combined);
+        // A masked failure is still reported as failed to the loop, so the
+        // "last command failed" and verification checks treat it as one.
+        const effectiveCode = !code && hint ? 1 : code;
         resolve({
           ok: true, // a non-zero exit is a real result the model must see, not a tool failure
-          output: truncate(`$ ${displayCommand}\n[exit ${code}]\n${body}`),
-          meta: { label: displayCommand, exitCode: code },
+          output: truncate(`$ ${displayCommand}\n[exit ${code}]\n${body}`, MAX_TOOL_OUTPUT, { keep: 'ends' }) + (hint ? `\n[hint] ${hint}` : ''),
+          meta: { label: displayCommand, exitCode: effectiveCode, ...(effectiveCode !== code ? { maskedFailure: true } : {}) },
         });
       });
   });
