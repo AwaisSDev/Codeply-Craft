@@ -2102,6 +2102,15 @@ if (api) api.onAgentEvent((data) => {
     case 'turn_summary':
       addTurnSummary(data);
       break;
+    case 'mode_switch':
+      state.mode = data.mode;
+      syncMode();
+      addNote(data.mode === 'Build' ? 'Switched to Build mode. Implementing the plan.' : `Switched to ${data.mode} mode.`, '');
+      break;
+    case 'checkpoint':
+    case 'checkpoint_update':
+      renderCheckpoint(data.checkpoint);
+      break;
     case 'goal_update':
       renderGoalCard(data);
       break;
@@ -2166,6 +2175,15 @@ if (api) api.onAgentEvent((data) => {
       hideThinking();
       addImagePickerCard(data);
       break;
+    case 'question_request':
+      hideThinking();
+      renderQuestionCard(data);
+      break;
+    case 'question_resolved': {
+      const card = chatColumn.querySelector(`.question-card[data-request-id="${data.requestId}"]`);
+      if (card) renderQuestionCard({ ...JSON.parse(card.dataset.q || '{}'), answer: data.answer, answered: true }, card);
+      break;
+    }
     case 'approval_resolved': {
       // The request was answered from another device (e.g. the phone) -
       // this window's own click handler already retires its own card
