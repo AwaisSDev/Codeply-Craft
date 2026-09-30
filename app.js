@@ -1199,6 +1199,19 @@ function openChatMenu(session, anchorBtn) {
   chatCtxMenuEl = menu;
 }
 
+async function shareSessionAs(session, kind) {
+  if (kind === 'gist') showToast('Creating a secret gist...');
+  const r = await api.shareSession(session.id, kind);
+  if (r.canceled) return;
+  if (!r.ok) { showToast(r.error || 'Could not share that chat.', 'error'); return; }
+  if (kind === 'gist') {
+    try { await navigator.clipboard.writeText(r.url); } catch {}
+    showToast('Secret gist created. Link copied.');
+  } else {
+    showToast('Saved.');
+  }
+}
+
 function startRenameSession(session) {
   const row = document.querySelector(`.sb-chat-row[data-id="${session.id}"]`);
   if (!row) return;
@@ -1875,6 +1888,13 @@ function addApprovalCard(ev) {
   if (ev.diff) {
     diffHtml = `<div class="approval-diff"><pre class="diff-del">${esc(ev.diff.search)}</pre><pre class="diff-add">${esc(ev.diff.replace)}</pre></div>`;
   }
+  // Shell commands are allowed by name ("npm test", "git checkout"), never
+  // wholesale. No names (a subshell, a redirect, a risky command) = no offer.
+  const scope = Array.isArray(ev.alwaysScope) ? ev.alwaysScope : null;
+  const alwaysWhat = scope ? scope.map((p) => `"${p}"`).join(' and ') : toolName(ev.tool);
+  const alwaysLabel = scope && !scope.length ? '' : scope
+    ? `Always allow ${alwaysWhat} commands in this chat`
+    : `Always allow ${toolName(ev.tool)} in this chat`;
   card.innerHTML = `
     <div class="approval-head">
       <svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5Z"/></svg>
