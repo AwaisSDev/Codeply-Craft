@@ -177,13 +177,94 @@ const CODE_INSTEAD_OF_EDIT_CORRECTION =
 const MAX_HALLUCINATION_RETRIES = 3;
 const MAX_VERIFY_NUDGES = 2;
 
+// Look-around blocks that may share one reply (see the loop).
+const BATCHABLE_TOOLS = new Set(['read_file', 'list_dir', 'search', 'web_fetch', 'web_search', 'lsp']);
+const MAX_BATCH = 4;
+
+// Identical call, identical arguments, this many times in a row = stuck.
+const STUCK_REPEATS = 3;
+
+function stuckCorrection(name, last) {
+  const failed = last && !last.ok;
+  const head = `[system] That is the same ${name} call ${STUCK_REPEATS} times in a row${failed ? ', and it failed every time' : ''}. ` +
+    'It was not run again, because the same input gives the same result. Change your approach instead of repeating it:';
+  const ways = {
+    run: [
+      'Read the error output of the last attempt word by word and fix what it actually names.',
+      'If a command or package is missing, check with `where <cmd>` (Windows) or `command -v <cmd>`, then install it or use one that exists.',
+      'Try a different way to reach the same goal: another tool, a script file instead of a long one-liner, or a smaller step first.',
+      'Check you are in the right folder and the paths in the command exist (list_dir).',
+    ],
+    edit_file: [
+      'read_file the exact region you are editing and copy the search text from that result.',
+      'Make the search block smaller: 2-5 distinctive lines are enough.',
+      'If the change is large, write_file the whole file instead.',
+    ],
+  }[name] || [
+    'Use what that call already returned, or try a different tool or different arguments.',
+    'If you are blocked, say plainly what is blocking you instead of retrying.',
+  ];
+  return `${head}\n${ways.map((w) => `- ${w}`).join('\n')}`;
+}
+
+// A reply with no action block that ends by announcing the next action ("Let
+// me now update the header.") is not a final answer: the model meant to act
+// and forgot the block. Seen from Hermes Agent's stall nudges (MIT, Nous
+// Research). Questions to the user are excluded; those are real stops.
+const ANNOUNCED_INTENT = /(?:^|[.!\n]\s*)(?:(?:ok(?:ay)?|now|next|so|great|alright|first|then),?\s+)*(?:let me|let's|i'll|i will|i'm going to|i am going to|i need to|now i(?:'ll| will)?)\s+(?:now\s+|also\s+|first\s+|go ahead and\s+)?(?:check|read|look|open|update|edit|fix|add|create|write|run|test|verify|search|find|install|implement|change|remove|apply|make|build|start|try|inspect|review|examine)\b[^?]{0,200}[.:!]?\s*$/i;
+const STALL_CORRECTION =
+  '[system] Your reply announces what you are about to do but has no action block, so nothing ran and the task is ' +
+  'not done. Write that action block now. If you are actually finished, give the final summary instead; if you ' +
+  'need the user, ask them a direct question.';
+const MAX_STALL_NUDGES = 2;
+
+// Same tool failing again and again with DIFFERENT arguments is the other
+// kind of stuck (the identical-call guard above doesn't see it). Warn, with
+// ways around it, instead of letting it spiral. Threshold idea from Hermes
+// Agent's tool_guardrails (MIT, Nous Research).
+const FAILURE_STREAK_WARN = 3;
+const failureStreakNote = (name, n) =>
+  `[system] ${name} has failed ${n} times in a row this turn. This looks like a loop. Stop and diagnose before the ` +
+  'next attempt: what exactly did the last error say, and what assumption does it break? ' +
+  (name === 'run'
+    ? 'Check where you are and what exists (list_dir, or `cd` / `dir` / `ls`), try an absolute path, a simpler command, or a different tool for the same goal.'
+    : name === 'edit_file'
+      ? 'read_file the exact region first, or write_file the whole file if the edit is large.'
+      : 'Try a different tool or a genuinely different approach.') +
+  ' If nothing works, say plainly what is blocking you.';
+
+// A,B,A,B (or A,B,C,A,B,C) with nothing changing in between: going in circles.
+function findCycle(keys) {
+  for (const period of [2, 3]) {
+    if (keys.length < period * 2) continue;
+    const tail = keys.slice(-period * 2);
+    const a = tail.slice(0, period), b = tail.slice(period);
+    if (a.every((k, i) => k === b[i]) && new Set(a).size > 1) return period;
+  }
+  return 0;
+}
+const cycleNote = (period) =>
+  `[system] Your last ${period * 2} actions repeat the same ${period}-step pattern with the same inputs, and none of ` +
+  'them changed anything. You are going in circles. Use what those results already told you and do something different.';
+
+// Late in the step budget, one checkpoint so a long task wraps up properly
+// instead of being cut off mid-edit. Idea from Hermes Agent / opencode.
+const budgetCheckpointNote = (used, max) =>
+  `[system] You have used ${used} of ${max} steps for this turn. Finish the change you are in the middle of, check it, ` +
+  'and wrap up with your summary. If the whole task cannot fit, get the current part to a working state and list what is left.';
+
+const FINAL_SUMMARY_PROMPT =
+  '[system] The step budget for this turn is used up, so actions are switched off: do not write any action block, it ' +
+  'would be ignored. Reply with a short summary for the user: what you actually changed (only files a tool result ' +
+  'confirms), what you checked and the result, and what is left to do. Do not claim anything the tool results do not show.';
+
 // ─── Protocol ───────────────────────────────────────────────────────────────
 
 const TOOL_TAG = /<codeply:([a-z_]+)>([\s\S]*?)<\/codeply:\1>/g;
 
 // Params whose value is a raw payload (file content, code blocks) and may
 // legitimately contain angle-bracket tags of its own.
-const CONTAINER_PARAMS = new Set(['content', 'search', 'replace', 'body', 'text']);
+const CONTAINER_PARAMS = new Set(['content', 'search', 'replace', 'body', 'text', 'patch']);
 
 /** Tag payloads are written on their own lines; drop only that framing. */
 function trimFraming(value) {
@@ -226,11 +307,14 @@ function extractParams(block, spec) {
 }
 
 const PARAMS = {
+  todo: ['items'],
+  ask_user: ['question', 'options'],
+  mcp: ['server', 'tool', 'args'],
   list_dir: ['path'],
   read_file: ['path', 'offset', 'limit'],
   write_file: ['path', 'content'],
-  edit_file: ['path', 'search', 'replace'],
-  search: ['pattern', 'glob', 'path'],
+  edit_file: ['path', 'search', 'replace', 'all'],
+  search: ['pattern', 'glob', 'path', 'context', 'files_only'],
   run: ['command'],
   use_skill: ['name'],
   list_skills: ['query'],
