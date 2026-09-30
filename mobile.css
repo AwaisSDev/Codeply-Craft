@@ -1268,6 +1268,19 @@ button {
 .link-btn { background: none; border: 0; padding: 6px; color: var(--text-muted); font: inherit; font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 
 /* ---- What actually happened ---- */
+.question-card { margin: 6px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-card); font-size: 14px; display: grid; gap: 8px; }
+.question-card .q-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.question-card .q-options button, .question-card .q-custom button { padding: 9px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-card); color: inherit; font: inherit; font-size: 14px; }
+.question-card .q-options button:first-child { font-weight: 600; }
+.question-card .q-custom { display: flex; gap: 6px; }
+.question-card .q-custom input { flex: 1; min-width: 0; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--border); background: transparent; color: inherit; font: inherit; font-size: 14px; }
+.question-card .q-skip { justify-self: start; padding: 0; background: none; border: 0; color: inherit; opacity: 0.6; font: inherit; font-size: 12.5px; }
+.question-card .q-answer { opacity: 0.8; }
+.checkpoint { display: flex; align-items: center; gap: 10px; margin: 6px 0; padding: 8px 10px 8px 14px; border: 1px dashed var(--border); border-radius: var(--radius-md); font-size: 13px; color: var(--text-dim, inherit); }
+.checkpoint.undone { opacity: 0.75; }
+.checkpoint .cp-label { flex: 1; min-width: 0; }
+.checkpoint .cp-action { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: inherit; font: inherit; font-weight: 600; }
+.checkpoint .cp-action:disabled { opacity: 0.6; }
 .turn-summary { margin: 6px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-card); font-size: 13px; display: grid; gap: 6px; }
 .ts-head { font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); }
 .ts-files { display: flex; flex-wrap: wrap; gap: 6px; }
