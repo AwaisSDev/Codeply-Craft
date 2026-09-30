@@ -125,6 +125,81 @@ async function withRetries(send, signal) {
   return { success: false, error: lastError };
 }
 
+// ─── Native tool calling ────────────────────────────────────────────────────
+// agent.mjs sends OpenAI-shaped native history (assistant.tool_calls, role
+// "tool" results) plus opts.tools when a model supports function calling.
+// OpenAI-compatible endpoints take that as is; Anthropic and Ollama get it
+// converted below. Any request WITHOUT tools goes through textOnlyMessages, so
+// native-shaped history can never reach an endpoint that would reject it.
+
+/** Native history -> plain text turns (tool calls described, results as user text). */
+function textOnlyMessages(messages) {
+  if (!messages.some((m) => m.role === 'tool' || m.tool_calls)) return messages;
+  const out = [];
+  for (const m of messages) {
+    if (m.role === 'tool') {
+      out.push({ role: 'user', content: `[tool result: ${m.name || 'tool'}]\n${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}` });
+    } else if (m.tool_calls) {
+      const calls = m.tool_calls.map((c) => `[called ${c.function?.name}(${String(c.function?.arguments || '').slice(0, 400)})]`).join('\n');
+      out.push({ role: 'assistant', content: [m.content || '', calls].filter(Boolean).join('\n') });
+    } else {
+      out.push(m);
+    }
+  }
+  return out;
+}
+
+function parseArgs(raw) {
+  if (raw && typeof raw === 'object') return raw;
+  try { return JSON.parse(raw || '{}'); } catch { return {}; }
+}
+
+/** OpenAI tool definitions -> Anthropic's {name, description, input_schema}. */
+function toAnthropicTools(tools) {
+  return (tools || []).map((t) => ({ name: t.function.name, description: t.function.description, input_schema: t.function.parameters }));
+}
+
+/**
+ * OpenAI-shaped native history -> Anthropic turns. Tool calls become tool_use
+ * blocks on the assistant turn; consecutive tool results merge into one user
+ * turn of tool_result blocks, which is what the Messages API requires.
+ */
+function toAnthropicTurns(messages) {
+  const turns = [];
+  const push = (role, blocks) => {
+    const last = turns[turns.length - 1];
+    if (last && last.role === role) last.content.push(...blocks);
+    else turns.push({ role, content: blocks });
+  };
+  const asBlocks = (content) => {
+    const c = toAnthropicContent(content);
+    return typeof c === 'string' ? (c ? [{ type: 'text', text: c }] : []) : c;
+  };
+  for (const m of messages) {
+    if (m.role === 'system') continue;
+    if (m.role === 'tool') {
+      push('user', [{ type: 'tool_result', tool_use_id: m.tool_call_id, content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }]);
+    } else if (m.role === 'assistant') {
+      const blocks = asBlocks(m.content || '');
+      for (const c of m.tool_calls || []) blocks.push({ type: 'tool_use', id: c.id, name: c.function.name, input: parseArgs(c.function.arguments) });
+      if (blocks.length) push('assistant', blocks);
+    } else {
+      push('user', asBlocks(m.content));
+    }
+  }
+  return turns;
+}
+
+/** OpenAI-shaped native history -> Ollama /api/chat messages (arguments as objects). */
+function toOllamaNativeMessages(messages) {
+  return messages.map((m) => {
+    if (m.role === 'tool') return { role: 'tool', content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content), ...(m.name ? { tool_name: m.name } : {}) };
+    const base = toOllamaMessage(m);
+    if (m.tool_calls) base.tool_calls = m.tool_calls.map((c) => ({ function: { name: c.function.name, arguments: parseArgs(c.function.arguments) } }));
+    return base;
+  });
+}
+
 /** True when `e` is the AbortError a fetch() throws for an aborted signal. */
 function isAbortError(e) {
   return e && (e.name === 'AbortError' || /aborted|abortsignal/i.test(String(e.message || '')));
@@ -198,7 +273,8 @@ async function chatViaProxy(messages, opts) {
         // meta is optional, display-only context (what was asked, which file) -
         // the proxy logs it to usage_history so CLI activity shows up in the
         // admin dashboard next to the desktop app, same as this app's own calls.
-        body: JSON.stringify({ messages, opts, meta: opts.meta }),
+        // The proxy declares no tools, so it only ever gets text history.
+        body: JSON.stringify({ messages: textOnlyMessages(messages), opts: { ...opts, tools: undefined }, meta: opts.meta }),
         signal,
       });
       body = await res.json().catch(() => ({}));
@@ -224,8 +300,8 @@ async function chatViaProxy(messages, opts) {
       return { done: true, value: { success: false, error } };
     }
 
-    return { retryable: isTransientStatus(res.status), error: describeStatus(res.status) };
-  });
+    return { retryable: isTransientStatus(res.status), retryAfterMs: retryAfterMs(res), error: describeStatus(res.status) };
+  }, opts.signal);
 }
 
 /**
