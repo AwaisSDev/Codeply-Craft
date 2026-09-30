@@ -1173,6 +1173,9 @@ function openChatMenu(session, anchorBtn) {
   menu.className = 'chat-ctx-menu';
   menu.innerHTML = `
     <button data-action="rename"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Rename</button>
+    <button data-action="md"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Save as Markdown</button>
+    <button data-action="html"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Save as web page</button>
+    <button data-action="gist"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>Share as secret gist</button>
     <button data-action="delete" class="danger"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg>Delete</button>`;
   document.body.appendChild(menu);
   const rect = anchorBtn.getBoundingClientRect();
@@ -1183,6 +1186,12 @@ function openChatMenu(session, anchorBtn) {
     closeChatMenu();
     startRenameSession(session);
   });
+  for (const kind of ['md', 'html', 'gist']) {
+    menu.querySelector(`[data-action="${kind}"]`).addEventListener('click', () => {
+      closeChatMenu();
+      shareSessionAs(session, kind);
+    });
+  }
   menu.querySelector('[data-action="delete"]').addEventListener('click', () => {
     closeChatMenu();
     deleteSessionById(session.id);
