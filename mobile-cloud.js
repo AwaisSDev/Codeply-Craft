@@ -15,6 +15,18 @@
   const STATUS = { starting: 'Starting', queued: 'Waiting for a runner', running: 'Working', done: 'Finished', failed: 'Failed', cancelled: 'Cancelled' };
   const LIVE = new Set(['starting', 'queued', 'running']);
 
+  // A GitHub runner takes about 50s to start; say so, and keep the card moving.
+  const VERBS = ['Codeplying', 'Cooking', 'Baking', 'Brewing', 'Whisking', 'Simmering', 'Tinkering', 'Crafting'];
+  const START_ETA = 50;
+  const dur = (s) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`);
+  function liveText(t) {
+    const secs = Math.max(0, Math.round((Date.now() - t.startedAt) / 1000));
+    const verb = `${VERBS[Math.floor(secs / 3) % VERBS.length]}...`;
+    if (t.status === 'running') return `${verb} working on GitHub · ${dur(secs)}`;
+    const left = START_ETA - secs;
+    return `${verb} starting a GitHub runner · ${left > 0 ? `about ${left}s left` : `any second now (${dur(secs)})`}`;
+  }
+
   // Answers use `code` a lot; the chat's markdown helper only does bold and line breaks.
   const fmt = (text) => escapeHtml(text || '')
     .replace(/`([^`\n]+)`/g, '<code>$1</code>')
@@ -108,6 +120,26 @@
     schedule();
   }
 
+  /** Why a run died before Craft reported back, from the job and its log (same rules as the PC). */
+  async function diagnose(repo, runId) {
+    try {
+      const jobs = (await gh('GET', `/repos/${repo}/actions/runs/${runId}/jobs`)).jobs || [];
+      const job = jobs.find((j) => j.conclusion === 'failure' || j.conclusion === 'timed_out') || jobs[0];
+      if (!job) return null;
+      if (job.conclusion === 'timed_out') return 'The run hit its 60-minute limit and was stopped.';
+      const step = (job.steps || []).find((s) => s.conclusion === 'failure');
+      let log = '';
+      try {
+        const res = await fetch(`${API}/repos/${repo}/actions/jobs/${job.id}/logs`, { headers: { Authorization: `Bearer ${creds.token}` } });
+        if (res.ok) log = await res.text();
+      } catch {}
+      if (/No matching version found for codeply-cli|notarget[\s\S]{0,200}codeply-cli/i.test(log)) return 'GitHub couldn\'t install Craft\'s cloud engine: that version isn\'t on npm yet. Publish it, then run again.';
+      if (/Resource not accessible by integration/i.test(log)) return 'GitHub refused the run permission to save its work (mirror repo Settings > Actions > Workflow permissions).';
+      if (step) return step.name === 'Run Craft' ? 'Craft stopped before it could report back. Open the log for details.' : `The "${step.name}" step failed on GitHub.`;
+      return null;
+    } catch { return null; }
+  }
+
   async function pollOnce() {
     const live = tasks.filter((t) => LIVE.has(t.status));
     for (const t of live) {
@@ -128,7 +160,7 @@
           try { result = JSON.parse(check.output.text || '{}'); } catch {}
           Object.assign(t, { status: check.conclusion === 'success' ? 'done' : 'failed', answer: result.answer || '', files: result.files || [], error: result.error || null });
         } else if (run.status === 'completed') {
-          Object.assign(t, { status: run.conclusion === 'cancelled' ? 'cancelled' : 'failed', error: run.conclusion === 'cancelled' ? null : 'The run ended before Craft could report back.' });
+          Object.assign(t, { status: run.conclusion === 'cancelled' ? 'cancelled' : 'failed', error: run.conclusion === 'cancelled' ? null : (await diagnose(t.repo, run.id)) || 'The run ended before Craft could report back. The log has details.' });
         } else t.status = run.status === 'in_progress' ? 'running' : 'queued';
       } catch (e) { t.lastError = e.message; }
     }
@@ -224,7 +256,8 @@
       <li class="cloud-m-task ${t.status}">
         <div class="cloud-m-task-head"><span class="cloud-m-dot"></span><strong>${escapeHtml(STATUS[t.status] || t.status)}</strong><span class="cloud-m-dim">${escapeHtml(t.mode)}</span>${t.runUrl ? `<a href="${escapeHtml(t.runUrl)}" target="_blank" rel="noopener">log</a>` : ''}</div>
         <div class="cloud-m-prompt">${escapeHtml(t.prompt)}</div>
-        ${LIVE.has(t.status) && t.progress ? `<div class="cloud-m-dim">${escapeHtml(t.progress.split('\n').filter(Boolean).pop() || '')}</div>` : ''}
+        ${LIVE.has(t.status) ? `<div class="cloud-m-live" data-live="${escapeHtml(t.id)}">${escapeHtml(liveText(t))}</div>` : ''}
+        ${LIVE.has(t.status) && t.progress && /^- /m.test(t.progress) ? `<div class="cloud-m-dim">${escapeHtml(t.progress.split('\n').filter((l) => l.startsWith('- ')).pop().slice(2))}</div>` : ''}
         ${t.answer ? `<div class="cloud-m-answer">${fmt(t.answer)}</div>` : ''}
         ${t.files && t.files.length ? `<div class="cloud-m-dim">Changed ${t.files.length} file${t.files.length === 1 ? '' : 's'} on GitHub. Apply them from Craft on your PC (Cloud chip).</div>` : ''}
         ${t.error ? `<div class="cloud-m-error">${escapeHtml(t.error)}</div>` : ''}
@@ -252,6 +285,14 @@
 
   build();
   schedule();
+  // Keep live runs moving on screen between polls.
+  setInterval(() => {
+    if (!sheetOpen) return;
+    for (const node of el.querySelectorAll('[data-live]')) {
+      const t = tasks.find((x) => x.id === node.dataset.live);
+      if (t && LIVE.has(t.status)) node.textContent = liveText(t);
+    }
+  }, 1000);
   // Pick up the GitHub login from the PC whenever it's reachable, so cloud runs
   // are ready before the PC is ever off. Quiet: a PC that's off just fails.
   const fromPc = () => creds && creds.source === 'pc' && creds.token && Date.now() - creds.at < 24 * 3600 * 1000;

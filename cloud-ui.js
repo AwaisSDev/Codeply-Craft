@@ -18,19 +18,42 @@
       b.className = 'approve-toggle cloud-chip';
       b.type = 'button';
       b.innerHTML = `${ICON}<span>Cloud</span>`;
-      b.title = 'Run on GitHub while this PC is off';
-      b.addEventListener('click', openSheet);
+      b.addEventListener('click', chipClick);
+      b.addEventListener('contextmenu', (e) => { e.preventDefault(); openSheet(); });
+      const more = document.createElement('button');
+      more.className = 'cloud-chip-more hidden';
+      more.type = 'button';
+      more.title = 'Cloud settings';
+      more.setAttribute('aria-label', 'Cloud settings');
+      more.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
+      more.addEventListener('click', openSheet);
       row.appendChild(b);
+      row.appendChild(more);
     });
   }
 
+  /** Set up: one click turns cloud on or off. Not set up yet: the sheet explains and sets it up. */
+  async function chipClick() {
+    const p = current && current.project;
+    if (!p) { openSheet(); return; }
+    const on = !p.cloudOn;
+    const r = await api.cloudOptions(state.project, { cloudOn: on });
+    if (r.error) { showToast(r.error, 'error'); return; }
+    current = r.state;
+    paintChips();
+    showToast(on ? 'Cloud on: new messages run on GitHub.' : 'Cloud off: messages run on this PC again.');
+  }
+
   function paintChips() {
-    const on = !!(current && current.project && current.project.cloudOn);
+    const ready = !!(current && current.project);
+    const on = !!(ready && current.project.cloudOn);
     document.querySelectorAll('.cloud-chip').forEach((b) => {
       b.classList.toggle('on', on);
       b.querySelector('span').textContent = on ? 'Cloud on' : 'Cloud';
-      b.title = on ? 'New messages run on GitHub. Click for cloud settings.' : 'Run on GitHub while this PC is off';
+      b.title = !ready ? 'Run on GitHub while this PC is off (set up once)'
+        : on ? 'Click to turn cloud off and run on this PC' : 'Click to send new messages to GitHub';
     });
+    document.querySelectorAll('.cloud-chip-more').forEach((b) => b.classList.toggle('hidden', !ready));
     document.querySelectorAll('.composer').forEach((c) => c.classList.toggle('cloud-mode', on));
   }
 
@@ -165,6 +188,32 @@
   }
 
   // ─── Card in a chat ────────────────────────────────────────────────────────
+  // While GitHub gets a runner going (about 50s) and while it works, the card
+  // keeps moving: a rotating word, a countdown to the start, then elapsed time.
+  const VERBS = ['Codeplying', 'Cooking', 'Baking', 'Brewing', 'Whisking', 'Simmering', 'Tinkering', 'Crafting'];
+  const START_ETA = 50;
+  const liveTasks = new Map(); // task id -> task, for the ticker
+  const dur = (s) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`);
+  function liveText(task) {
+    const secs = Math.max(0, Math.round((Date.now() - (task.startedAt || Date.now())) / 1000));
+    const verb = `${VERBS[Math.floor(secs / 3) % VERBS.length]}...`;
+    if (task.status === 'running') return { verb, note: `Working on GitHub · ${dur(secs)}` };
+    const left = START_ETA - secs;
+    const what = task.status === 'queued' ? 'Waiting for a GitHub runner' : 'Starting a GitHub runner';
+    return { verb, note: `${what} · ${left > 0 ? `about ${left}s left` : `any second now (${dur(secs)})`}` };
+  }
+  setInterval(() => {
+    for (const [id, task] of liveTasks) {
+      const card = chatColumn.querySelector(`.cloud-card[data-task-id="${CSS.escape(id)}"]`);
+      if (!card) { liveTasks.delete(id); continue; }
+      const t = liveText(task);
+      const v = card.querySelector('.cloud-verb');
+      const n = card.querySelector('.cloud-card-note');
+      if (v) v.textContent = t.verb;
+      if (n) n.textContent = t.note;
+    }
+  }, 1000);
+
   function render(task) {
     if (!task || typeof chatColumn === 'undefined') return;
     let card = chatColumn.querySelector(`.cloud-card[data-task-id="${CSS.escape(task.id)}"]`);
@@ -181,7 +230,9 @@
     const live = task.status === 'starting' || task.status === 'queued' || task.status === 'running';
     // When a run ends its progress text becomes the answer, which the chat already shows.
     const steps = live ? String(task.progress || '').split('\n').filter((l) => l.startsWith('- ')).slice(-6) : [];
-    const note = String(task.progress || '').split('\n')[0];
+    for (const [id] of liveTasks) if (id.startsWith('pending-') && !String(task.id).startsWith('pending-')) liveTasks.delete(id);
+    if (live) liveTasks.set(task.id, task); else liveTasks.delete(task.id);
+    const lt = live ? liveText(task) : null;
     const files = task.files || [];
     let foot = '';
     if (task.status === 'done' && files.length) {
@@ -192,10 +243,10 @@
     } else if (task.status === 'done' && task.mode === 'Build') {
       foot = '<div class="cloud-foot"><span class="cloud-dim">No files changed.</span></div>';
     }
-    card.innerHTML = `<div class="cloud-card-head">${ICON}<span class="cloud-card-status">${esc(STATUS[task.status] || task.status)}${live ? '<span class="cloud-pulse"></span>' : ''}</span>
+    card.innerHTML = `<div class="cloud-card-head">${ICON}<span class="cloud-card-status">${live ? `<span class="cloud-verb">${esc(lt.verb)}</span><span class="cloud-pulse"></span>` : esc(STATUS[task.status] || task.status)}</span>
         ${task.runUrl ? '<a href="#" class="cloud-link" data-act="log">View run</a>' : ''}
         ${live && !String(task.id).startsWith('pending-') ? '<button class="cloud-link" data-act="cancel">Cancel</button>' : ''}</div>
-      ${live && note ? `<div class="cloud-card-note">${esc(note)}</div>` : ''}
+      ${live ? `<div class="cloud-card-note">${esc(lt.note)}</div>` : ''}
       ${steps.length ? `<div class="cloud-steps">${steps.map((l) => `<div>${esc(l.slice(2))}</div>`).join('')}</div>` : ''}
       ${task.error ? `<div class="cloud-error">${esc(task.error)}</div>` : ''}${foot}`;
     const log = card.querySelector('[data-act="log"]');

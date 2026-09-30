@@ -27,4 +27,5 @@
 .cloud-m-prompt { margin: 6px 0 4px; font-size: 14px; color: var(--text); white-space: pre-wrap; word-break: break-word; }
 .cloud-m-answer { margin: 6px 0; font-size: 14px; line-height: 1.5; color: var(--text); word-break: break-word; }
 .cloud-m-answer code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; background: var(--bg-card-active); padding: 1px 5px; border-radius: 5px; }
+.cloud-m-live { margin: 2px 0 4px; font-size: 13px; color: var(--text); font-weight: 600; }
 .cloud-m-error { margin-top: 6px; font-size: 13px; color: var(--warn); }

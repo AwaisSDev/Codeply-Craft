@@ -178,9 +178,35 @@ export function githubApi({ token, apiUrl = 'https://api.github.com', fetchImpl 
       e.status = res.status;
       throw e;
     }
-    return { status: res.status, json, scopes: res.headers && res.headers.get ? res.headers.get('x-oauth-scopes') : null };
+    return { status: res.status, json, text, scopes: res.headers && res.headers.get ? res.headers.get('x-oauth-scopes') : null };
   };
   return call;
+}
+
+/**
+ * Why a run died before Craft could report back (install failed, time limit,
+ * permissions), from the job's steps and log. Plain words, or null.
+ */
+export async function diagnoseRun(api, repo, runId) {
+  try {
+    const jobs = ((await api('GET', `/repos/${repo}/actions/runs/${runId}/jobs`)).json || {}).jobs || [];
+    const job = jobs.find((j) => j.conclusion === 'failure' || j.conclusion === 'timed_out') || jobs[0];
+    if (!job) return null;
+    if (job.conclusion === 'timed_out') return 'The run hit its 60-minute limit and was stopped.';
+    const step = (job.steps || []).find((s) => s.conclusion === 'failure');
+    let log = '';
+    try { log = (await api('GET', `/repos/${repo}/actions/jobs/${job.id}/logs`)).text || ''; } catch {}
+    if (/No matching version found for codeply-cli|notarget[\s\S]{0,200}codeply-cli/i.test(log)) {
+      return `GitHub couldn't install Craft's cloud engine (${ENGINE}): that version isn't on npm yet. Publish it, then run again.`;
+    }
+    if (/Resource not accessible by integration/i.test(log)) return 'GitHub refused the run permission to save its work. Check Settings > Actions > General > Workflow permissions on the mirror repo.';
+    if (/ENOTFOUND|ECONNRESET|ETIMEDOUT|network/i.test(log) && /npm (error|ERR)/i.test(log)) return 'GitHub\'s runner could not download Craft\'s engine (a network hiccup on GitHub\'s side). Run it again.';
+    const lastError = log.split('\n').map((l) => l.replace(/^\S+Z\s/, '').replace(/\x1b\[[0-9;]*m/g, '').trim())
+      .filter((l) => /error|failed|fatal/i.test(l) && !/^##\[group\]/.test(l)).slice(-1)[0];
+    if (step && step.name === 'Run Craft') return `Craft stopped before it could report back${lastError ? `: ${lastError.replace(/^##\[error\]/, '').slice(0, 240)}` : '.'}`;
+    if (step) return `The "${step.name}" step failed on GitHub${lastError ? `: ${lastError.replace(/^##\[error\]/, '').slice(0, 240)}` : '.'}`;
+    return null;
+  } catch { return null; }
 }
 
 // ─── Local state ─────────────────────────────────────────────────────────
@@ -408,7 +434,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * Push the latest snapshot and start a cloud run.
  * @returns {Promise<object>} the task record (also saved in ~/.codeply/cloud.json)
  */
-export async function startCloudRun({ cwd, token, prompt, mode = 'Build', sessionId = '', model, home = defaultHome(), apiUrl, serverUrl, fetchImpl, remoteUrl, retryMs = 3000 }) {
+export async function startCloudRun({ cwd, token, prompt, mode = 'Build', sessionId = '', model, home = defaultHome(), apiUrl, serverUrl, fetchImpl, remoteUrl, retryMs = 3000, startedAt }) {
   const p = getProject(cwd, home);
   if (!p || !p.repo) throw new Error('Set up cloud runs for this project first.');
   prompt = String(prompt || '').trim();
@@ -426,7 +452,7 @@ export async function startCloudRun({ cwd, token, prompt, mode = 'Build', sessio
     }
   }
   const snap = await pushSnapshot({ cwd, token, home, serverUrl, remoteUrl });
-  const task = { id: newTaskId(), prompt, mode, sessionId: String(sessionId || ''), baseSha: snap.sha, repo: p.repo, status: 'starting', startedAt: Date.now() };
+  const task = { id: newTaskId(), prompt, mode, sessionId: String(sessionId || ''), baseSha: snap.sha, repo: p.repo, status: 'starting', startedAt: startedAt || Date.now() };
   // Right after the workflow file first lands, GitHub can take a few seconds to know it.
   let lastErr = null;
   for (let i = 0; i < 10; i++) {
@@ -474,7 +500,8 @@ export async function cloudRunStatus({ cwd, taskId, token, home = defaultHome(),
     try { result = JSON.parse(check.output.text || '{}'); } catch {}
     Object.assign(next, { status: check.conclusion === 'success' ? 'done' : 'failed', result, error: result.error || null, finishedAt: Date.now() });
   } else if (run.status === 'completed') {
-    Object.assign(next, { status: run.conclusion === 'cancelled' ? 'cancelled' : 'failed', error: run.conclusion === 'cancelled' ? 'The run was cancelled.' : `The run ended (${run.conclusion}) before Craft could report back. The run log has details.`, finishedAt: Date.now() });
+    const why = run.conclusion === 'cancelled' ? 'The run was cancelled.' : (await diagnoseRun(api, task.repo, run.id)) || `The run ended (${run.conclusion}) before Craft could report back. The run log has details.`;
+    Object.assign(next, { status: run.conclusion === 'cancelled' ? 'cancelled' : 'failed', error: why, finishedAt: Date.now() });
   } else {
     next.status = run.status === 'queued' || run.status === 'waiting' || run.status === 'pending' ? 'queued' : 'running';
   }

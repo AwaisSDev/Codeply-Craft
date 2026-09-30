@@ -129,7 +129,7 @@ function emitCard(session, card) {
 function startFromChat({ session, text, mode }) {
   const cwd = session.cwd;
   const pendingId = `pending-${Date.now().toString(36)}`;
-  const card = { kind: 'cloud_task', task: { id: pendingId, status: 'starting', prompt: text, mode, progress: 'Backing up the project and starting a GitHub runner...' }, at: Date.now() };
+  const card = { kind: 'cloud_task', task: { id: pendingId, status: 'starting', prompt: text, mode, startedAt: Date.now() }, at: Date.now() };
   session.messages.push(card);
   deps.persist(session);
   emitCard(session, card);
@@ -141,7 +141,7 @@ function startFromChat({ session, text, mode }) {
       const token = githubToken();
       if (!token) throw new Error('GitHub is not connected any more. Reconnect it in Connect Apps.');
       const model = deps.configLib().getSelectedModel();
-      const task = await c.startCloudRun({ cwd, token, prompt: text, mode, sessionId: session.id, model });
+      const task = await c.startCloudRun({ cwd, token, prompt: text, mode, sessionId: session.id, model, startedAt: card.task.startedAt });
       card.task = taskView(task);
       deps.persist(session);
       emitCard(session, card);

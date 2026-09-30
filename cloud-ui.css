@@ -1,6 +1,11 @@
 /* Craft Cloud: composer chip, Cloud sheet, cloud cards (cloud-ui.js). */
 .cloud-chip svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
 .cloud-chip.on, .cloud-chip.on:hover { color: var(--accent); background: var(--purple-chip-bg); }
+.cloud-chip-more { display: flex; align-items: center; justify-content: center; width: 24px; height: 30px; margin-left: -4px; border-radius: 999px; color: var(--text-faint); }
+.cloud-chip-more:hover { background: var(--hover); color: var(--text); }
+.cloud-chip-more.hidden { display: none; }
+.cloud-chip-more svg { width: 14px; height: 14px; fill: currentColor; }
+.cloud-verb { min-width: 92px; }
 
 .cloud-modal {
   width: 100%; max-width: 560px; max-height: 84vh; margin: 0 24px;
