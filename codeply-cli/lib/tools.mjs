@@ -1989,7 +1989,8 @@ export async function executeTool(name, args, ctx) {
     return { ok: false, output: `Unknown tool "${name}". Available: ${Object.keys(TOOLS).join(', ')}.` };
   }
 
-  if (READ_ONLY_MODES.has(ctx.mode) && MUTATING_TOOLS.has(name)) {
+  const planFileWrite = ctx.mode === 'Plan' && (name === 'write_file' || name === 'edit_file') && isPlanPath(args.path, ctx.cwd);
+  if (READ_ONLY_MODES.has(ctx.mode) && MUTATING_TOOLS.has(name) && !planFileWrite) {
     return { ok: false, output: `Blocked - ${ctx.mode} mode is read-only, so ${name} is not available. Describe what you would do instead, or tell the user to switch to Build mode.` };
   }
 
