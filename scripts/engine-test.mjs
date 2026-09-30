@@ -90,7 +90,7 @@ async function run(replies, userMessage = 'do the thing', opts = {}) {
   const events = [];
   for await (const ev of runAgent({
     userMessage, history: [], mode: opts.mode || 'Build', cwd: tmp,
-    approve: async () => 'once', signal: new AbortController().signal, route, maxSteps: opts.maxSteps || 12, verifyOnly: opts.verifyOnly,
+    approve: Object.assign(async () => 'once', opts.ask ? { ask: opts.ask } : {}), signal: new AbortController().signal, route, maxSteps: opts.maxSteps || 12, verifyOnly: opts.verifyOnly,
   })) events.push(ev);
   return { events, seen, texts: events.filter((e) => e.type === 'text').map((e) => e.text), done: events.find((e) => e.type === 'done') };
 }
