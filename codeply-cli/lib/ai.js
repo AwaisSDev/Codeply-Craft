@@ -782,8 +782,11 @@ async function chatViaAnthropic(messages, opts, cfg) {
 
     if (res.ok && Array.isArray(body.content)) {
       const text = body.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
+      const message = { role: 'assistant', content: text };
+      const uses = body.content.filter((b) => b.type === 'tool_use');
+      if (uses.length) message.tool_calls = uses.map((b) => ({ id: b.id, type: 'function', function: { name: b.name, arguments: JSON.stringify(b.input || {}) } }));
       const data = {
-        choices: [{ message: { role: 'assistant', content: text }, finish_reason: body.stop_reason === 'max_tokens' ? 'length' : 'stop' }],
+        choices: [{ message, finish_reason: body.stop_reason === 'max_tokens' ? 'length' : body.stop_reason === 'tool_use' ? 'tool_calls' : 'stop' }],
         usage: {
           prompt_tokens: body.usage?.input_tokens || 0,
           completion_tokens: body.usage?.output_tokens || 0,
@@ -801,11 +804,11 @@ async function chatViaAnthropic(messages, opts, cfg) {
       const msg = typeof apiError === 'string' ? apiError : JSON.stringify(apiError);
       const fatal = /not_found_error|authentication_error|permission_error|invalid.*key/i.test(JSON.stringify(body.error || {})) || res.status === 401 || res.status === 403 || res.status === 404;
       if (fatal) return { done: true, value: { success: false, error: `Anthropic: ${msg}` } };
-      return { retryable: isTransientStatus(res.status), error: `Anthropic: ${msg}` };
+      return { retryable: isTransientStatus(res.status), retryAfterMs: retryAfterMs(res), error: `Anthropic: ${msg}` };
     }
 
-    return { retryable: isTransientStatus(res.status), error: describeStatus(res.status) };
-  });
+    return { retryable: isTransientStatus(res.status), retryAfterMs: retryAfterMs(res), error: describeStatus(res.status) };
+  }, opts.signal);
 }
 
 /**
@@ -897,9 +900,10 @@ async function chatViaOllamaNative(messages, opts, m) {
         headers,
         body: JSON.stringify({
           model: m.model,
-          messages: messages.map(toOllamaMessage),
+          messages: opts.tools ? toOllamaNativeMessages(messages) : textOnlyMessages(messages).map(toOllamaMessage),
           stream: true,
           ...(opts.json ? { format: 'json' } : {}),
+          ...(opts.tools ? { tools: opts.tools } : {}),
           options: {
             num_ctx: OLLAMA_NUM_CTX,
             temperature: opts.temperature ?? 0,
