@@ -59,6 +59,9 @@ let skillsLib = null;     // CJS: skills.js
 let aiLib = null;         // CJS: ai.js - planning/title/goal-check calls, model tests
 let oauthLib = null;      // CJS: oauth-connectors.js - Gmail/Slack/Vercel/Supabase/GitHub OAuth
 let rolesLib = null;      // CJS: subagents.js - the roles the single agent switches between
+let snapshotLib = null;   // CJS: snapshot.js - undo for what a message changed
+let commandsLib = null;   // CJS: commands.js - custom slash commands (.codeply/commands/*.md)
+let permissionsLib = null; // CJS: permissions.js - standing allow/deny rules (.codeply/permissions.json)
 
 async function loadEngine() {
   if (agentMod) return true;
@@ -83,6 +86,9 @@ async function loadEngine() {
   oauthLib = require(path.join(CLI_DIR, 'lib', 'oauth-connectors.js'));
   aiLib = require(path.join(CLI_DIR, 'lib', 'ai.js'));
   rolesLib = require(path.join(CLI_DIR, 'lib', 'subagents.js'));
+  snapshotLib = require(path.join(CLI_DIR, 'lib', 'snapshot.js'));
+  commandsLib = require(path.join(CLI_DIR, 'lib', 'commands.js'));
+  permissionsLib = require(path.join(CLI_DIR, 'lib', 'permissions.js'));
   agentMod = await import(pathToFileURL(agentPath).href);
   return true;
 }
