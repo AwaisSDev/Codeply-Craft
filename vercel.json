@@ -4,11 +4,11 @@
   "installCommand": "echo \"no install needed\"",
   "buildCommand": "node scripts/prepare-mobile.js",
   "outputDirectory": "mobile-app",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- mobile.html mobile.js mobile.css mobile.manifest.json logo.png vendor/supabase assets/agents scripts/prepare-mobile.js vercel.json",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- mobile.html mobile.js mobile.css mobile-cloud.js mobile-cloud.css mobile.manifest.json logo.png vendor/supabase assets/agents scripts/prepare-mobile.js vercel.json",
   "cleanUrls": true,
   "headers": [
     {
-      "source": "/(index.html|mobile.js|mobile.css|)",
+      "source": "/(index.html|mobile.js|mobile.css|mobile-cloud.js|mobile-cloud.css|)",
       "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
     },
     {
