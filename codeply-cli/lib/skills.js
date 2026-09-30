@@ -147,7 +147,8 @@ function listSkills(cwd) {
       dir: s.dir,
       // A user-installed skill overriding a daily one keeps its daily status -
       // the name is still what buildSystemPrompt filters on, not the source.
-      daily: DAILY_SKILLS.has(finalName),
+      daily: DAILY_SKILLS.has(finalName) || s.source === 'plugin',
+      plugin: s.plugin || null,
     });
   }
   return skills.sort((a, b) => a.name.localeCompare(b.name));
@@ -177,8 +178,8 @@ function formatSkillIndex(skills = listSkills(), { all = false } = {}) {
 }
 
 /** The full body of one skill, truncated to a sane size, or null if unknown. */
-function loadSkillBody(name) {
-  const skill = listSkills().find((s) => s.name === name);
+function loadSkillBody(name, cwd) {
+  const skill = listSkills(cwd).find((s) => s.name === name);
   if (!skill) return null;
 
   let raw;
