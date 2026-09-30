@@ -13,6 +13,7 @@ const ai = require(path.join(CLI, 'lib/ai.js'));
 
 let script = [];         // queue of replies (strings) for the next test
 let seen = [];           // last user message content the model saw per call
+let bodies = [];         // full request bodies, for checking what went over the wire
 function sse(res, text) {
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   for (const piece of text.match(/[\s\S]{1,40}/g) || ['']) {
