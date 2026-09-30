@@ -28,10 +28,36 @@ const server = http.createServer((req, res) => {
   req.on('end', () => {
     const body = raw ? JSON.parse(raw) : {};
     if (req.url === '/v1/chat/completions') {
-      const last = body.messages[body.messages.length - 1];
-      seen.push(typeof last.content === 'string' ? last.content : JSON.stringify(last.content));
+      // Everything sent since the model's own last reply (a batch of results, notes).
+      let from = body.messages.length - 1;
+      while (from > 0 && body.messages[from - 1].role !== 'assistant' && body.messages[from - 1].role !== 'system') from--;
+      seen.push(body.messages.slice(from).map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content))).join('\n'));
+      bodies.push(body);
       const next = script.shift() ?? 'All done.';
+      if (next && typeof next === 'object' && next.status) {
+        res.writeHead(next.status, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: { message: next.error } }));
+      }
+      if (next && typeof next === 'object') {
+        // A native tool-call reply, streamed the way OpenAI does: id and name
+        // first, then the JSON arguments in small pieces.
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        if (next.content) res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: next.content } }] })}\n\n`);
+        next.tool_calls.forEach((tc, index) => {
+          res.write(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index, id: `call_t${index}`, type: 'function', function: { name: tc.name, arguments: '' } }] } }] })}\n\n`);
+          for (const piece of JSON.stringify(tc.args).match(/[\s\S]{1,7}/g)) {
+            res.write(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index, function: { arguments: piece } }] } }] })}\n\n`);
+          }
+        });
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      }
       return sse(res, next);
+    }
+    if (req.url === '/page') {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      return res.end('<html><head><title>x</title><script>var a=1</script></head><body><h1>Hello &amp; welcome</h1><p>See <a href="/docs">the docs</a>.</p><ul><li>one</li><li>two</li></ul></body></html>');
     }
     if (req.url === '/api/tags') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
