@@ -77,7 +77,7 @@ function taskView(t) {
   return {
     id: t.id, status: t.status, prompt: t.prompt, mode: t.mode, repo: t.repo, runUrl: t.runUrl || null,
     progress: t.progress || '', error: t.error || null, startedAt: t.startedAt, finishedAt: t.finishedAt || null,
-    files: r.files || [], branch: r.branch || null, answer: r.answer || '', pulledAt: t.pulledAt || null, conflicts: t.conflicts || [],
+    files: r.files || [], stats: r.stats || [], branch: r.branch || null, answer: r.answer || '', pulledAt: t.pulledAt || null, conflicts: t.conflicts || [],
     remote: !!t.remote,
   };
 }
@@ -112,6 +112,43 @@ function wants(cwd) {
   if (!cl || !cwd) return false;
   const p = cl.getProject(cwd);
   return !!(p && p.repo && p.cloudOn);
+}
+
+/**
+ * The runner's step-by-step record, turned into the same chat messages and
+ * events a local run produces (main.js runOneTurn), so a cloud chat reads like
+ * any other: commands, edits with + and - lines, narration, what happened.
+ */
+function replay(session, card, events) {
+  if (!Array.isArray(events)) return;
+  const seen = card.seen || 0;
+  // A trimmed record starts with a "N earlier steps" note; never replay backwards.
+  for (const e of events.slice(seen)) {
+    if (e.t === 'text') {
+      session.messages.push({ kind: 'assistant', text: e.text, interim: true, at: Date.now() });
+      deps.sendEvent(session.id, { type: 'text', text: e.text, interim: true });
+    } else if (e.t === 'reasoning') {
+      session.messages.push({ kind: 'reasoning', text: e.text, ms: e.ms, at: Date.now() });
+      deps.sendEvent(session.id, { type: 'reasoning', text: e.text, ms: e.ms });
+    } else if (e.t === 'tool') {
+      const label = e.summary || (e.args && (e.args.path || e.args.command || e.args.pattern)) || '';
+      session.messages.push({ kind: 'tool', name: e.name, label, ok: e.ok, args: e.args, at: Date.now(), exitCode: e.exitCode, added: e.added, removed: e.removed });
+      deps.sendEvent(session.id, { type: 'tool_end', name: e.name, args: e.args, ok: e.ok, summary: e.summary, meta: { exitCode: e.exitCode, added: e.added, removed: e.removed } });
+    } else if (e.t === 'notice') {
+      session.messages.push({ kind: 'notice', level: e.level || 'info', text: e.text, at: Date.now() });
+      deps.sendEvent(session.id, { type: 'notice', level: e.level || 'info', text: e.text });
+    } else if (e.t === 'summary') {
+      const summary = { kind: 'turn_summary', files: e.files || [], checks: e.checks || [], unverified: e.unverified || [], at: Date.now() };
+      session.messages.push(summary);
+      deps.sendEvent(session.id, { type: 'turn_summary', ...summary });
+    } else if (e.t === 'pushed') {
+      const n = (e.files || []).length;
+      const text = `Committed and pushed ${n} file${n === 1 ? '' : 's'} (+${e.added || 0} -${e.removed || 0}) to ${e.branch} on GitHub.`;
+      session.messages.push({ kind: 'notice', level: 'info', text, at: Date.now() });
+      deps.sendEvent(session.id, { type: 'notice', level: 'info', text });
+    }
+  }
+  if (events.length > seen) card.seen = events.length;
 }
 
 function findCard(session, taskId) {
@@ -175,13 +212,14 @@ function poll(sessionId, cwd, taskId, attempt) {
       poll(sessionId, cwd, taskId, attempt + 12);
       return;
     }
-    const before = card.task.status + (card.task.progress || '');
+    const before = card.task.status + (card.task.progress || '') + (card.seen || 0);
     card.task = taskView(task);
+    replay(session, card, task.events);
     if (TERMINAL.has(task.status)) {
       finish(session, card, task);
       return;
     }
-    if (before !== card.task.status + (card.task.progress || '')) { deps.persist(session); emitCard(session, card); }
+    if (before !== card.task.status + (card.task.progress || '') + (card.seen || 0)) { deps.persist(session); emitCard(session, card); }
     poll(sessionId, cwd, taskId, attempt + 1);
   }, wait));
 }
@@ -198,6 +236,7 @@ function finish(session, card, task) {
   session.updatedAt = Date.now();
   deps.persist(session);
   emitCard(session, card);
+  deps.sendEvent(session.id, { type: 'run_finished' });
   deps.sendEvent(session.id, { type: 'session_sync', session: deps.sessionMeta(session) });
   deps.notify(session);
 }

@@ -91,5 +91,15 @@
 .cloud-steps { margin: 6px 0 0 26px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6; color: var(--text-dim); }
 .cloud-steps div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cloud-card .cloud-error { margin: 8px 0 0 26px; }
+.cloud-files { list-style: none; margin: 6px 0 0 26px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.cloud-files li { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.cloud-add { color: var(--green); font-family: var(--font-mono); font-size: 11.5px; }
+.cloud-del { color: var(--red); font-family: var(--font-mono); font-size: 11.5px; }
+
+/* A cloud chat: the same conversation, on a light blue wash, with a hollow cloud in the sidebar. */
+#viewChat.cloud-session .chat-scroll { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, transparent), color-mix(in srgb, var(--accent) 3%, transparent)); }
+#viewChat.cloud-session .composer { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+.sb-chat .cloud-mark { width: 13px; height: 13px; margin-right: 6px; vertical-align: -2px; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+
 .cloud-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 0 26px; }
 .cloud-foot span { flex: 1; min-width: 200px; }

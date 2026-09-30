@@ -193,6 +193,25 @@
   const VERBS = ['Codeplying', 'Cooking', 'Baking', 'Brewing', 'Whisking', 'Simmering', 'Tinkering', 'Crafting'];
   const START_ETA = 50;
   const liveTasks = new Map(); // task id -> task, for the ticker
+  const cloudChats = new Set(); // chats with a cloud card, beyond what the sidebar list already knows
+
+  // Cloud chats look like any chat, marked by a hollow blue cloud in the
+  // sidebar and a light blue wash behind the open conversation.
+  const HOLLOW = '<svg class="cloud-mark" viewBox="0 0 24 24" aria-label="Cloud chat"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1 .5 7.97V18Z"/></svg>';
+  const isCloudChat = (id) => !!id && (cloudChats.has(id) || (state.sessions || []).some((s) => s.id === id && s.cloud));
+  function markCloudChats() {
+    document.querySelectorAll('.sb-chat-row').forEach((row) => {
+      const on = isCloudChat(row.dataset.id);
+      row.classList.toggle('cloud', on);
+      const btn = row.querySelector('.sb-chat');
+      const mark = btn && btn.querySelector('.cloud-mark');
+      if (on && btn && !mark) btn.insertAdjacentHTML('afterbegin', HOLLOW);
+      else if (!on && mark) mark.remove();
+    });
+    const view = document.getElementById('viewChat');
+    if (view) view.classList.toggle('cloud-session', isCloudChat(state.currentSessionId) || !!chatColumn.querySelector('.cloud-card'));
+  }
+  setInterval(markCloudChats, 600);
   const dur = (s) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`);
   function liveText(task) {
     const secs = Math.max(0, Math.round((Date.now() - (task.startedAt || Date.now())) / 1000));
@@ -236,18 +255,24 @@
     card.dataset.taskId = task.id;
     card.dataset.pending = String(task.id).startsWith('pending-') ? '1' : '0';
     const live = task.status === 'starting' || task.status === 'queued' || task.status === 'running';
-    // When a run ends its progress text becomes the answer, which the chat already shows.
-    const steps = live ? String(task.progress || '').split('\n').filter((l) => l.startsWith('- ')).slice(-6) : [];
+    // The steps themselves are normal chat rows under this card now.
+    const steps = [];
+    if (state.currentSessionId) cloudChats.add(state.currentSessionId);
     for (const [id] of liveTasks) if (id.startsWith('pending-') && !String(task.id).startsWith('pending-')) liveTasks.delete(id);
     if (live) liveTasks.set(task.id, task); else liveTasks.delete(task.id);
     const lt = live ? liveText(task) : null;
     const files = task.files || [];
+    const stats = new Map((task.stats || []).map((s) => [s.file, s]));
+    const fileList = files.slice(0, 8).map((f) => {
+      const s = stats.get(f);
+      return `<li><code>${esc(f)}</code>${s && s.added != null ? `<span class="cloud-add">+${s.added}</span><span class="cloud-del">-${s.removed}</span>` : ''}</li>`;
+    }).join('') + (files.length > 8 ? `<li class="cloud-dim">and ${files.length - 8} more</li>` : '');
     let foot = '';
     if (task.status === 'done' && files.length) {
       foot = task.pulledAt
-        ? `<div class="cloud-foot"><span>Applied ${files.length} file${files.length === 1 ? '' : 's'} to the project.</span></div>`
-        : `<div class="cloud-foot"><span>Changed ${files.length} file${files.length === 1 ? '' : 's'} on GitHub: ${files.slice(0, 4).map((f) => `<code>${esc(f)}</code>`).join(', ')}${files.length > 4 ? ` and ${files.length - 4} more` : ''}</span>
-           <button class="cp-action" data-act="apply">Apply to project</button></div>`;
+        ? `<div class="cloud-foot"><span>Applied ${files.length} file${files.length === 1 ? '' : 's'} to the project.</span></div><ul class="cloud-files">${fileList}</ul>`
+        : `<div class="cloud-foot"><span>Changed ${files.length} file${files.length === 1 ? '' : 's'} and pushed to GitHub</span>
+           <button class="cp-action" data-act="apply">Apply to project</button></div><ul class="cloud-files">${fileList}</ul>`;
     } else if (task.status === 'done' && task.mode === 'Build') {
       foot = '<div class="cloud-foot"><span class="cloud-dim">No files changed.</span></div>';
     }

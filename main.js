@@ -246,6 +246,7 @@ function sessionMeta(s) {
   return {
     id: s.id, title: s.title, cwd: s.cwd, updatedAt: s.updatedAt,
     preview: last?.text || last?.label || '', messageCount: s.messages?.length || 0,
+    ...(s.messages?.some((m) => m.kind === 'cloud_task') ? { cloud: true } : {}), // Craft Cloud chat (cloud-desktop.js)
   };
 }
 

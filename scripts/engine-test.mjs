@@ -1113,6 +1113,17 @@ process.stdin.on('data', (d) => {
   check('cloud: the runner pushes changes to a task branch and reports in a check run',
     out.status === 'done' && out.result.branch === `craft/task-${task.id}` && sh(bare, 'show', `craft/task-${task.id}:greet.js`).includes('hello')
     && chk && chk.status === 'completed' && chk.conclusion === 'success' && JSON.parse(chk.output.text).files.includes('greet.js'), JSON.stringify(out));
+  const chkData = JSON.parse(chk.output.text);
+  const toolEv = (chkData.events || []).find((e) => e.t === 'tool' && e.args && e.args.path === 'greet.js');
+  const pushedEv = (chkData.events || []).find((e) => e.t === 'pushed');
+  check('cloud: the run is published as chat steps: tools with their arguments, then what was pushed with + and - lines',
+    toolEv && toolEv.name === 'write_file' && pushedEv && pushedEv.branch === `craft/task-${task.id}` && pushedEv.files.some((f) => f.file === 'greet.js' && f.added === 1)
+    && chkData.stats.some((s) => s.file === 'index.js' && s.added === 1 && s.removed === 0) && chkData.answer === 'Added a greeting.', chk.output.text.slice(0, 400));
+  const big = Array.from({ length: 300 }, (_, i) => ({ t: 'tool', name: 'edit_file', ok: true, args: { path: `f${i}.js`, search: 'x'.repeat(3000), replace: 'y'.repeat(3000) } }));
+  const packed = cl.packEvents(big, 20000);
+  check('cloud: a long run is fitted into the check run, keeping the latest steps readable',
+    JSON.stringify(packed).length <= 20000 && packed[0].t === 'notice' && /earlier step/.test(packed[0].text) && packed.at(-1).args.path === 'f299.js'
+    && cl.recordEvent({ type: 'tool_end', name: 'write_file', args: { path: 'a.js', content: 'secret body' }, ok: true }).args.content === undefined);
   check('cloud: progress shows the steps while it works', /write_file greet\.js/.test(chk.output.summary) || /Added a greeting/.test(chk.output.summary));
   const saved = G.files.get('craft-sessions:sessions/chat1.json');
   check('cloud: the chat is saved for the next run', saved && JSON.parse(Buffer.from(saved.content, 'base64').toString()).messages.length === 2);

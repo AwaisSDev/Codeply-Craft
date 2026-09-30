@@ -511,7 +511,7 @@ function renderSessions() {
     card.setAttribute('role', 'button');
     card.tabIndex = 0;
     card.innerHTML = `
-      <span class="session-card-title">${escapeHtml(session.title || 'Untitled task')}</span>
+      <span class="session-card-title">${session.cloud ? '<svg class="cloud-mark" viewBox="0 0 24 24" aria-label="Cloud chat"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1 .5 7.97V18Z"/></svg>' : ''}${escapeHtml(session.title || 'Untitled task')}</span>
       <button type="button" class="session-card-more" aria-label="Chat options">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>
       </button>

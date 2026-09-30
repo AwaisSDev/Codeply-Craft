@@ -495,9 +495,13 @@ export async function cloudRunStatus({ cwd, taskId, token, home = defaultHome(),
   const checks = (await api('GET', `/repos/${task.repo}/commits/${run.head_sha}/check-runs?check_name=${encodeURIComponent(checkName(task.id))}`)).json;
   const check = (checks.check_runs || [])[0];
   if (check && check.output) next.progress = check.output.summary || '';
+  // The step-by-step record rides along to the caller but isn't kept in cloud.json.
+  let events = [];
+  let data = {};
+  try { data = JSON.parse((check && check.output && check.output.text) || '{}'); } catch {}
+  if (Array.isArray(data.events)) events = data.events;
   if (check && check.status === 'completed') {
-    let result = {};
-    try { result = JSON.parse(check.output.text || '{}'); } catch {}
+    const { events: _drop, ...result } = data;
     Object.assign(next, { status: check.conclusion === 'success' ? 'done' : 'failed', result, error: result.error || null, finishedAt: Date.now() });
   } else if (run.status === 'completed') {
     const why = run.conclusion === 'cancelled' ? 'The run was cancelled.' : (await diagnoseRun(api, task.repo, run.id)) || `The run ended (${run.conclusion}) before Craft could report back. The run log has details.`;
@@ -506,7 +510,7 @@ export async function cloudRunStatus({ cwd, taskId, token, home = defaultHome(),
     next.status = run.status === 'queued' || run.status === 'waiting' || run.status === 'pending' ? 'queued' : 'running';
   }
   saveTask(cwd, home, next);
-  return next;
+  return { ...next, events };
 }
 
 /**
@@ -528,6 +532,7 @@ export async function importRemoteTasks({ cwd, token, home = defaultHome(), apiU
     if (!check || check.status !== 'completed') continue;
     let result = {};
     try { result = JSON.parse(check.output.text || '{}'); } catch {}
+    delete result.events;
     const task = {
       id, prompt: result.prompt || '(started elsewhere)', mode: result.mode || 'Build', sessionId: result.sessionId || '', baseSha: result.baseSha || run.head_sha,
       repo: p.repo, runId: run.id, runUrl: run.html_url, status: check.conclusion === 'success' ? 'done' : 'failed', result, error: result.error || null,
@@ -592,6 +597,71 @@ function renderProgress(lines, note) {
   return `${note}\n\n${shown.join('\n')}`.slice(0, MAX_OUTPUT);
 }
 
+// ─── The run as a chat: every step the agent took, published live ─────────
+// Cloud chats look like local ones (commands, edits with their + and - lines,
+// narration, the "what actually happened" card), so the runner records the
+// same events the desktop gets from a local run and puts them in the check
+// run's text, where the PC and the phone read them while it works.
+
+const EVENT_BUDGET = 58000;
+const clipText = (s, n) => (typeof s === 'string' && s.length > n ? `${s.slice(0, n)}\n...` : s);
+
+/** One agent event as a small record; tool arguments kept the way the chat shows them. */
+export function recordEvent(ev) {
+  if (ev.type === 'text') return { t: 'text', text: clipText(ev.text, 8000), interim: !!ev.interim };
+  if (ev.type === 'reasoning') return { t: 'reasoning', text: clipText(ev.text, 2000), ms: ev.ms };
+  if (ev.type === 'notice') return { t: 'notice', level: ev.level || 'info', text: clipText(ev.text, 1000) };
+  if (ev.type === 'tool_end') {
+    const a = ev.args || {};
+    let args;
+    if (ev.name === 'write_file') args = { path: a.path };
+    else if (ev.name === 'apply_patch') args = { files: (ev.meta && ev.meta.files) || [] };
+    else {
+      args = {};
+      for (const [k, v] of Object.entries(a)) {
+        if (typeof v === 'string') args[k] = clipText(v, k === 'search' || k === 'replace' ? 3000 : 1500);
+        else if (typeof v === 'number' || typeof v === 'boolean') args[k] = v;
+        else if (Array.isArray(v)) args[k] = v.slice(0, 50);
+      }
+    }
+    const m = ev.meta || {};
+    return {
+      t: 'tool', name: ev.name, ok: ev.ok, summary: clipText(ev.summary || '', 300), args,
+      ...(typeof m.exitCode === 'number' ? { exitCode: m.exitCode } : {}),
+      ...(typeof m.added === 'number' ? { added: m.added } : {}),
+      ...(typeof m.removed === 'number' ? { removed: m.removed } : {}),
+    };
+  }
+  if (ev.type === 'done' && Array.isArray(ev.actions)) {
+    const changed = ev.actions.filter((x) => x.ok && ['write_file', 'edit_file', 'apply_patch', 'fetch_image'].includes(x.tool))
+      .flatMap((x) => (Array.isArray(x.files) && x.files.length ? x.files.map((f) => ({ ...x, label: f })) : [x]));
+    const checks = ev.actions.filter((x) => ['run', 'browser_check'].includes(x.tool));
+    if (!changed.length && !checks.length) return null;
+    return {
+      t: 'summary', files: [...new Set(changed.map((x) => x.label))].slice(0, 30),
+      checks: [...new Map(checks.map((x) => [`${x.tool}|${x.label}`, x])).values()].slice(-8).map((x) => ({ tool: x.tool, label: x.label, ok: x.ok, exitCode: x.exitCode })),
+      unverified: ev.unverifiedFiles || [],
+    };
+  }
+  return null;
+}
+
+/** Fit the event list in the check run's text: shorten diffs, drop thinking, then the oldest steps. */
+export function packEvents(events, budget = EVENT_BUDGET) {
+  let list = events.map((e) => ({ ...e }));
+  const size = () => JSON.stringify(list).length;
+  if (size() <= budget) return list;
+  list = list.map((e) => (e.t === 'reasoning' ? { ...e, text: clipText(e.text, 200) } : e));
+  for (const n of [800, 200]) {
+    if (size() <= budget) return list;
+    list = list.map((e) => (e.t === 'tool' && e.args ? { ...e, args: Object.fromEntries(Object.entries(e.args).map(([k, v]) => [k, typeof v === 'string' ? clipText(v, n) : v])) } : e));
+  }
+  let dropped = 0;
+  while (size() > budget && list.length > 1) { list.shift(); dropped++; }
+  if (dropped) list.unshift({ t: 'notice', level: 'info', text: `${dropped} earlier step${dropped === 1 ? '' : 's'} are only in the run log.` });
+  return list;
+}
+
 async function loadHistory(api, repo, sessionId) {
   if (!sessionId) return { messages: [], sha: null };
   const r = await api('GET', `/repos/${repo}/contents/sessions/${encodeURIComponent(sessionId)}.json?ref=${SESSIONS_BRANCH}`, null, { allow: [404] });
@@ -635,12 +705,16 @@ export async function runCloudRunner({ env = process.env, cwd = process.cwd(), t
     name: checkName(taskId), head_sha: headSha, status: 'in_progress', started_at: new Date().toISOString(),
     output: { title: 'Starting', summary: 'Starting...' },
   })).json;
+  const events = [];
   const finish = async (ok, title, summary, result) => {
+    // The result's fields stay at the top level (older apps read them there); events share the space left.
+    const base = JSON.stringify(result);
+    const packed = packEvents(events, Math.max(4000, MAX_OUTPUT - base.length - 200));
     await api('PATCH', `/repos/${repo}/check-runs/${check.id}`, {
       status: 'completed', conclusion: ok ? 'success' : 'failure', completed_at: new Date().toISOString(),
-      output: { title, summary: String(summary || title).slice(0, MAX_OUTPUT), text: JSON.stringify(result).slice(0, MAX_OUTPUT) },
+      output: { title, summary: String(summary || title).slice(0, MAX_OUTPUT), text: JSON.stringify({ ...result, events: packed }).slice(0, MAX_OUTPUT) },
     }).catch((e) => log(`Could not finish the check run: ${e.message}`));
-    return { status: ok ? 'done' : 'failed', result };
+    return { status: ok ? 'done' : 'failed', result: { ...result, events: packed } };
   };
 
   if (setupError) return finish(false, 'Could not start', setupError, { error: setupError, mode });
@@ -651,7 +725,9 @@ export async function runCloudRunner({ env = process.env, cwd = process.cwd(), t
   const pushProgress = async (note, force = false) => {
     if (!force && Date.now() - lastPush < updateMs) return;
     lastPush = Date.now();
-    pending = api('PATCH', `/repos/${repo}/check-runs/${check.id}`, { output: { title: 'Working', summary: renderProgress(lines, note) } }).catch(() => {});
+    pending = api('PATCH', `/repos/${repo}/check-runs/${check.id}`, {
+      output: { title: 'Working', summary: renderProgress(lines, note), text: JSON.stringify({ running: true, events: packEvents(events) }) },
+    }).catch(() => {});
     await pending;
   };
 
@@ -662,9 +738,13 @@ export async function runCloudRunner({ env = process.env, cwd = process.cwd(), t
     let answer = ''; let steps = 0; let failure = '';
     const userMessage = `${prompt}\n\n(You are running unattended in Craft Cloud, on a copy of the project. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. Do not commit or push; Craft does that when you finish.)`;
     for await (const ev of runAgentImpl({ userMessage, history: hist.messages.slice(-HISTORY_TURNS), mode, cwd, approve, signal: new AbortController().signal, route, maxSteps })) {
+      const rec = recordEvent(ev);
+      // The final answer arrives as the reply; everything else is part of the chat's steps.
+      if (rec && !(rec.t === 'text' && !rec.interim)) events.push(rec);
       if (ev.type === 'text' && !ev.interim) answer = ev.text;
-      else if (ev.type === 'tool_end') { steps++; lines.push(describeTool(ev)); await pushProgress(`Working: ${steps} step${steps === 1 ? '' : 's'} so far.`); }
+      else if (ev.type === 'tool_end') { steps++; lines.push(describeTool(ev)); }
       else if (ev.type === 'error') failure = ev.error;
+      if (rec) await pushProgress(`Working: ${steps} step${steps === 1 ? '' : 's'} so far.`);
       if (ev.type === 'done' || ev.type === 'error' || ev.type === 'aborted') break;
     }
     if (pending) await pending;
@@ -676,22 +756,30 @@ export async function runCloudRunner({ env = process.env, cwd = process.cwd(), t
       if (files.length) answer = fs.readFileSync(path.join(dir, files[0].f), 'utf8');
     }
 
-    let branch = null; let sha = null; let files = [];
+    let branch = null; let sha = null; let files = []; let stats = [];
     if (mode === 'Build') {
       await git(cwd, ['add', '-A', '--', '.', ':(exclude).codeply', `:(exclude)${WORKFLOW_PATH}`]);
       const staged = await git(cwd, ['diff', '--cached', '--name-only']);
       if (staged) {
         files = staged.split('\n').filter(Boolean);
+        // Per-file + and - lines, for the chat's record of what was pushed.
+        stats = (await git(cwd, ['diff', '--cached', '--numstat'])).split('\n').filter(Boolean).map((l) => {
+          const [add, del, ...name] = l.split('\t');
+          return { file: name.join('\t'), added: add === '-' ? null : Number(add), removed: del === '-' ? null : Number(del) };
+        });
         branch = taskBranch(taskId);
         await git(cwd, [...BOT, 'commit', '-q', '-m', `${prompt.split('\n')[0].slice(0, 60)}\n\nCraft cloud task ${taskId}.`]);
         sha = await git(cwd, ['rev-parse', 'HEAD']);
         await git(cwd, ['push', '-q', 'origin', `HEAD:refs/heads/${branch}`], { auth: authFor(token, serverUrl) });
+        const plus = stats.reduce((n, s) => n + (s.added || 0), 0);
+        const minus = stats.reduce((n, s) => n + (s.removed || 0), 0);
+        events.push({ t: 'pushed', branch, sha: sha.slice(0, 7), files: stats.slice(0, 50), added: plus, removed: minus });
       }
     }
 
     await saveHistory(api, repo, sessionId, [...hist.messages, { role: 'user', content: prompt }, { role: 'assistant', content: answer || '(no reply)' }].slice(-HISTORY_TURNS * 2), headSha)
       .catch((e) => log(`Could not save the chat: ${e.message}`));
-    const result = { mode, prompt: prompt.slice(0, 4000), sessionId, answer: answer.slice(0, 40000), branch, sha, files, steps, baseSha: headSha };
+    const result = { mode, prompt: prompt.slice(0, 4000), sessionId, answer: answer.slice(0, 20000), branch, sha, files, stats: stats.slice(0, 100), steps, baseSha: headSha };
     const title = files.length ? `Changed ${files.length} file${files.length === 1 ? '' : 's'}` : mode === 'Build' ? 'No files changed' : 'Answered';
     return finish(true, title, answer || title, result);
   } catch (e) {
