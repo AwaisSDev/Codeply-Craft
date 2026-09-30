@@ -410,10 +410,11 @@ async function streamingChatRequest({ url, label, model, apiKey, isLocal, messag
         headers,
         body: JSON.stringify({
           model,
-          messages,
+          messages: opts.tools ? messages : textOnlyMessages(messages),
           temperature: opts.temperature ?? 0,
           ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
           ...(opts.json ? { response_format: { type: 'json_object' } } : {}),
+          ...(opts.tools ? { tools: opts.tools, tool_choice: 'auto' } : {}),
           // Provider-specific extras (e.g. Ollama's `options.num_ctx`).
           ...(extraBody || {}),
           // Streamed, not buffered: a non-streaming request sends nothing over
@@ -456,12 +457,12 @@ async function streamingChatRequest({ url, label, model, apiKey, isLocal, messag
         if (hasSpare && isKeyLevelFailure(msg, res.status)) {
           return { done: true, value: { success: false, error: `${label}: ${msg}` } };
         }
-        return { retryable: isTransientStatus(res.status), error: `${label}: ${msg}` };
+        return { retryable: isTransientStatus(res.status), retryAfterMs: retryAfterMs(res), error: `${label}: ${msg}` };
       }
       if (hasSpare && isKeyLevelFailure('', res.status)) {
         return { done: true, value: { success: false, error: `${label}: ${describeStatus(res.status)}` } };
       }
-      return { retryable: isTransientStatus(res.status), error: describeStatus(res.status) };
+      return { retryable: isTransientStatus(res.status), retryAfterMs: retryAfterMs(res), error: describeStatus(res.status) };
     }
 
     // Reassemble the OpenAI-shaped SSE chunks (data: {...choices[0].delta...})
@@ -472,6 +473,9 @@ async function streamingChatRequest({ url, label, model, apiKey, isLocal, messag
     let finishReason = null;
     let modelUsed = model;
     let buffer = '';
+    // Native tool calls stream in pieces keyed by index: the id and name
+    // arrive once, the JSON arguments a few characters at a time.
+    const toolCalls = [];
     try {
       for await (const chunk of res.body) {
         poke(); // a real chunk arrived - the stream is alive, push the stall clock back out
