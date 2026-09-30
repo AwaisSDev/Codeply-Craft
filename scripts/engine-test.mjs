@@ -221,6 +221,912 @@ GOAL_STATUS: ACHIEVED`], 'check the goal', { verifyOnly: true });
   check('final answer shown normally', texts.at(-1) && texts.at(-1).interim === false && texts.at(-1).text === 'The folder is empty.');
 }
 
+// 12. Several look-around blocks in one reply all run in that step.
+{
+  fs.writeFileSync(path.join(tmp, 'a.txt'), 'alpha\n');
+  fs.writeFileSync(path.join(tmp, 'b.txt'), 'beta\n');
+  const r = await run([
+    '<codeply:read_file>\n<path>a.txt</path>\n</codeply:read_file>\n<codeply:read_file>\n<path>b.txt</path>\n</codeply:read_file>',
+    'a.txt says alpha and b.txt says beta.',
+  ], 'what do the files say?', { mode: 'Ask' });
+  const ends = r.events.filter((e) => e.type === 'tool_end' && e.name === 'read_file');
+  check('batched reads both ran', ends.length === 2 && ends.every((e) => e.ok), JSON.stringify(ends));
+  check('batched reads took one step', r.done && r.done.steps === 2, JSON.stringify(r.done));
+}
+
+// 13. A write is never batched with other blocks.
+{
+  const r = await run([
+    '<codeply:write_file>\n<path>w1.md</path>\n<content>\none\n</content>\n</codeply:write_file>\n<codeply:read_file>\n<path>a.txt</path>\n</codeply:read_file>',
+    'Wrote w1.md.',
+  ]);
+  const ends = r.events.filter((e) => e.type === 'tool_end');
+  check('write runs alone', ends.length === 1 && ends[0].name === 'write_file', JSON.stringify(ends.map((e) => e.name)));
+  check('told only the first block ran', r.seen.some((s) => s.includes('Only the first was performed')));
+}
+
+// 14. Text written after an action block (a guessed outcome) is dropped.
+{
+  const r = await run([
+    '<codeply:list_dir>\n<path>.</path>\n</codeply:list_dir>\nDone! All tests pass and the site is deployed.',
+    'The folder has a few text files.',
+  ], 'look', { mode: 'Ask' });
+  check('trailing guess never shown', !r.texts.some((t) => /All tests pass/.test(t)), JSON.stringify(r.texts));
+}
+
+// 15. A tool result the model wrote itself is caught.
+{
+  const r = await run([
+    'Running it now.\n[tool result: run]\nexit code 0, all good',
+    'I have not run anything yet.',
+  ], 'run it', { mode: 'Ask' });
+  check('fabricated tool result corrected', r.seen.some((s) => s.includes('tool result you wrote yourself')), JSON.stringify(r.seen));
+  check('fabricated result never shown', !r.texts.some((t) => t.includes('[tool result')));
+}
+
+// 16. The same failing command three times in a row is stopped, with ideas for a way around it.
+{
+  const bad = '<codeply:run>\n<command>node -e "process.exit(3)"</command>\n</codeply:run>';
+  const r = await run([bad, bad, bad, 'That command keeps failing with exit code 3; I could not get past it.'], 'run it');
+  const runs = r.events.filter((e) => e.type === 'tool_end' && e.name === 'run');
+  check('third identical run skipped', runs.length === 3 && /skipped/.test(runs[2].summary || ''), JSON.stringify(runs.map((e) => e.summary)));
+  check('stuck note suggests workarounds', r.seen.some((s) => s.includes('Change your approach') && s.includes('command -v')), JSON.stringify(r.seen.at(-1)));
+}
+
+// 17. A near-miss edit shows the real lines; an imperfect copy still applies when it is unambiguous.
+{
+  fs.writeFileSync(path.join(tmp, 'long.js'), Array.from({ length: 300 }, (_, i) => `const value${i} = compute(${i});`).join('\n') + '\n');
+  const r = await run([
+    '<codeply:edit_file>\n<path>long.js</path>\n<search>\nconst valu150 = compte(150)\n</search>\n<replace>\nconst value150 = 0;\n</replace>\n</codeply:edit_file>',
+    '<codeply:edit_file>\n<path>long.js</path>\n<search>\n    const value150 = compute(150);\n    const value151 = compute(151);\n</search>\n<replace>\n    const value150 = 0;\n    const value151 = compute(151);\n</replace>\n</codeply:edit_file>',
+    '<codeply:run>\n<command>node --check long.js</command>\n</codeply:run>',
+    'Set value150 to 0 in long.js and checked it with node --check.',
+  ]);
+  check('miss shows closest lines', r.seen.some((s) => s.includes('Closest match') && s.includes('151│const value150 = compute(150);')), r.seen[1]);
+  const after = fs.readFileSync(path.join(tmp, 'long.js'), 'utf8');
+  check('indent-shifted edit applied at the right place', after.includes('\nconst value150 = 0;\nconst value151'), after.split('\n').slice(149, 152).join(' | '));
+}
+
+// 18. <all>true</all> renames every occurrence; without it, duplicates are reported with line numbers.
+{
+  fs.writeFileSync(path.join(tmp, 'dup.js'), 'foo();\nbar();\nfoo();\n');
+  const r = await run([
+    '<codeply:edit_file>\n<path>dup.js</path>\n<search>\nfoo();\n</search>\n<replace>\nbaz();\n</replace>\n</codeply:edit_file>',
+    '<codeply:edit_file>\n<path>dup.js</path>\n<search>\nfoo();\n</search>\n<replace>\nbaz();\n</replace>\n<all>true</all>\n</codeply:edit_file>',
+    '<codeply:run>\n<command>node --check dup.js</command>\n</codeply:run>',
+    'Renamed foo to baz in dup.js.',
+  ]);
+  check('duplicate match lists lines', r.seen.some((s) => s.includes('starting at lines 1, 3')), r.seen[1]);
+  check('all=true replaced both', fs.readFileSync(path.join(tmp, 'dup.js'), 'utf8') === 'baz();\nbar();\nbaz();\n');
+}
+
+// 19. A file changed on disk after it was read is not edited blind.
+{
+  fs.writeFileSync(path.join(tmp, 'live.txt'), 'one\ntwo\n');
+  const origApprove = null; // eslint-friendly placeholder
+  script = [
+    '<codeply:read_file>\n<path>live.txt</path>\n</codeply:read_file>',
+    '<codeply:edit_file>\n<path>live.txt</path>\n<search>\ntwo\n</search>\n<replace>\nTWO\n</replace>\n</codeply:edit_file>',
+    'Stopping here.',
+  ];
+  seen = [];
+  const events = [];
+  let step = 0;
+  for await (const ev of runAgent({
+    userMessage: 'edit it', history: [], mode: 'Build', cwd: tmp, route, maxSteps: 6,
+    approve: async () => 'once', signal: new AbortController().signal,
+  })) {
+    events.push(ev);
+    // Simulate the user saving the file in their editor right after the read.
+    if (ev.type === 'tool_end' && ev.name === 'read_file' && step++ === 0) {
+      await new Promise((r) => setTimeout(r, 20));
+      fs.writeFileSync(path.join(tmp, 'live.txt'), 'one\ntwo\nthree\n');
+    }
+  }
+  void origApprove;
+  const edit = events.find((e) => e.type === 'tool_end' && e.name === 'edit_file');
+  check('stale file edit refused', edit && edit.ok === false && seen.some((s) => s.includes('changed on disk')), JSON.stringify(seen));
+}
+
+// 20. Search: context lines, files-only, and find-by-name.
+{
+  fs.mkdirSync(path.join(tmp, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'src', 'x.test.js'), 'line1\nneedle here\nline3\n');
+  const r = await run([
+    '<codeply:search>\n<pattern>needle</pattern>\n<context>1</context>\n</codeply:search>\n<codeply:search>\n<glob>*.test.js</glob>\n</codeply:search>\n<codeply:search>\n<pattern>needle</pattern>\n<files_only>true</files_only>\n</codeply:search>',
+    'Found it in src/x.test.js.',
+  ], 'find needle', { mode: 'Ask' });
+  const all = r.seen.join('\n');
+  check('search context lines', all.includes('src/x.test.js-1- line1') && all.includes('src/x.test.js:2: needle here'), all.slice(0, 600));
+  check('find files by name', all.includes('file(s) matching *.test.js') && all.includes('src/x.test.js'));
+  check('files_only lists counts', all.includes('src/x.test.js  (1)'));
+}
+
+// 21. Project instruction files and git state reach the system prompt.
+{
+  const { buildSystemPrompt } = await import(pathToFileURL(path.join(CLI, 'lib/agent.mjs')).href);
+  fs.writeFileSync(path.join(tmp, 'AGENTS.md'), 'Always use tabs in this repo.');
+  const sys = buildSystemPrompt('Build', tmp, 'hi');
+  check('AGENTS.md loaded', sys.includes('PROJECT INSTRUCTIONS') && sys.includes('Always use tabs in this repo.'));
+  fs.rmSync(path.join(tmp, 'AGENTS.md'));
+}
+
+// 22. Claiming a change is still allowed after a shell command that could have made it.
+{
+  const r = await run([
+    '<codeply:run>\n<command>node -e "require(\'fs\').writeFileSync(\'gen.txt\',\'x\')"</command>\n</codeply:run>',
+    "I've created gen.txt with a script.",
+  ]);
+  check('claim after a real shell change is not blocked', r.texts.some((t) => t.includes("I've created gen.txt")), JSON.stringify(r.texts));
+}
+
+// 23. A failed command gets one concrete recovery hint; a piped-away failure is not taken as a pass.
+{
+  const hints = require(path.join(CLI, 'lib/terminal-hints.js'));
+  check('hint: cmd.exe missing command', /not installed or not on PATH/.test(hints.annotateFailure('foo', 1, "'foo' is not recognized as an internal or external command,") || ''));
+  check('hint: missing node package', /npm install/.test(hints.annotateFailure('node a.js', 1, "Error: Cannot find module 'express'") || ''));
+  check('hint: port in use', /Port 3000/.test(hints.annotateFailure('node s.js', 1, 'Error: listen EADDRINUSE: address already in use :::3000') || ''));
+  check('no hint on success', hints.annotateFailure('ls', 0, 'command not found') === null);
+  check('masked failure caught', /Treat this run as FAILED/.test(hints.annotateMaskedSuccess('npm test | tail -5', 'Tests: 2 failed, 3 passed') || ''));
+  check('grep output not flagged', hints.annotateMaskedSuccess('grep -r "npm ERR!" logs | head', 'npm ERR! x') === null);
+  const r = await run([
+    '<codeply:run>\n<command>node -e "console.log(\'Tests: 1 failed\')" | findstr Tests</command>\n</codeply:run>',
+    'The test run reported 1 failed test, so it is not passing yet.',
+  ], 'run the tests', { mode: 'Ask' });
+  const ran = r.done?.actions.find((a) => a.tool === 'run');
+  check('masked failure recorded as failed', ran && ran.exitCode === 1, JSON.stringify(r.done?.actions));
+}
+
+// 24. "Let me now..." with no action block is sent back once to actually act.
+{
+  const r = await run([
+    "I found the bug in a.txt. Let me now update the file.",
+    '<codeply:write_file>\n<path>a.txt</path>\n<content>\nALPHA\n</content>\n</codeply:write_file>',
+    'Updated a.txt to ALPHA.',
+  ]);
+  check('stall nudged', r.seen.some((s) => s.includes('announces what you are about to do')), JSON.stringify(r.seen));
+  check('announcement never shown as the answer', !r.texts.some((t) => t.includes('Let me now update')));
+  check('then really wrote it', fs.readFileSync(path.join(tmp, 'a.txt'), 'utf8').includes('ALPHA'));
+}
+
+// 25. The task list round-trips and only one item may be in progress.
+{
+  const r = await run([
+    '<codeply:todo>\n<items>\n[x] read a.txt\n[>] update b.txt\n[>] check it\n[ ] summarize\n</items>\n</codeply:todo>',
+    'Plan made.',
+  ], 'plan it', { mode: 'Ask' });
+  const t = r.events.find((e) => e.type === 'tool_end' && e.name === 'todo');
+  check('todo accepted', t && t.ok && /1\/4 done/.test(t.summary || ''), JSON.stringify(t));
+  check('only one in progress', t && t.meta.todos.filter((x) => x.status === 'in_progress').length === 1);
+}
+
+// 26. Running low on steps: one checkpoint, then a no-actions summary instead of a bare stop.
+{
+  const reads = Array.from({ length: 12 }, (_, i) => `<codeply:search>\n<pattern>zz${i}</pattern>\n</codeply:search>`);
+  const r = await run([...reads, 'Summary: I searched for several patterns and found nothing; no files were changed.'], 'dig', { maxSteps: 12, mode: 'Ask' });
+  check('budget checkpoint sent', r.seen.some((s) => s.includes('steps for this turn')), '');
+  check('final summary shown after budget', r.texts.some((t) => t.startsWith('Summary: I searched')), JSON.stringify(r.texts));
+  check('still reported as stopped', r.events.some((e) => e.type === 'error' && /Stopped after 12 steps/.test(e.error)));
+}
+
+// 27. Editing a Windows (CRLF) file keeps its line endings.
+{
+  fs.writeFileSync(path.join(tmp, 'win.txt'), 'one\r\ntwo\r\nthree\r\n');
+  await run([
+    '<codeply:edit_file>\n<path>win.txt</path>\n<search>\ntwo\n</search>\n<replace>\nTWO\n</replace>\n</codeply:edit_file>',
+    'Changed two to TWO in win.txt.',
+  ]);
+  check('CRLF preserved on edit', fs.readFileSync(path.join(tmp, 'win.txt'), 'utf8') === 'one\r\nTWO\r\nthree\r\n', JSON.stringify(fs.readFileSync(path.join(tmp, 'win.txt'), 'utf8')));
+}
+
+// 28. The same tool failing with different arguments gets a "diagnose first" warning.
+{
+  const fails = [1, 2, 3].map((n) => `<codeply:run>\n<command>node -e "process.exit(${n})"</command>\n</codeply:run>`);
+  const r = await run([...fails, 'Every command failed; I am blocked.'], 'run', { mode: 'Ask' });
+  check('failure streak warning', r.seen.some((s) => s.includes('has failed 3 times in a row')), JSON.stringify(r.seen.at(-1)));
+}
+
+// 29. Huge command output is saved to a file the model can page through; the end is kept.
+{
+  const r = await run([
+    '<codeply:run>\n<command>node -e "for (let i = 0; i < 4000; i++) console.log(\'row \' + i)"</command>\n</codeply:run>',
+    'It printed 4000 rows.',
+  ], 'print rows', { mode: 'Ask' });
+  const all = r.seen.join('\n');
+  const saved = (all.match(/saved at (\S+\.txt)/) || [])[1];
+  check('long output spilled to a file', saved && fs.existsSync(saved) && fs.readFileSync(saved, 'utf8').includes('row 3999'), all.slice(0, 300));
+  check('tail of output kept inline', all.includes('row 3999'));
+}
+
+// 30. read_file: near-miss names, binary files, offsets past the end.
+{
+  fs.writeFileSync(path.join(tmp, 'config.json'), '{"a":1}\n');
+  fs.writeFileSync(path.join(tmp, 'pic.bin'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 1, 2]));
+  const r = await run([
+    '<codeply:read_file>\n<path>confg.json</path>\n</codeply:read_file>\n<codeply:read_file>\n<path>pic.bin</path>\n</codeply:read_file>\n<codeply:read_file>\n<path>config.json</path>\n<offset>50</offset>\n</codeply:read_file>',
+    'Done looking.',
+  ], 'read', { mode: 'Ask' });
+  const all = r.seen.join('\n');
+  check('did-you-mean on a missing file', all.includes('Did you mean: config.json'), all.slice(0, 400));
+  check('binary file refused', all.includes('is a binary file'));
+  check('offset past the end explained', all.includes('past the end'));
+}
+
+// 31. A write that breaks syntax gets the error back at once, and the turn can't end while it stays broken.
+{
+  const r = await run([
+    '<codeply:write_file>\n<path>broken.js</path>\n<content>\nfunction x( {\n</content>\n</codeply:write_file>',
+    '<codeply:run>\n<command>node -e "1"</command>\n</codeply:run>',
+    'Created broken.js.',
+    '<codeply:write_file>\n<path>broken.js</path>\n<content>\nfunction x() {}\n</content>\n</codeply:write_file>',
+    '<codeply:run>\n<command>node --check broken.js</command>\n</codeply:run>',
+    'Created broken.js and node --check passes.',
+  ]);
+  check('syntax problem reported with the write', r.seen.some((s) => s.includes('Syntax check on broken.js found a problem')), r.seen[0]);
+  check('finish blocked while still broken', r.seen.some((s) => s.includes('syntax check still fails for broken.js')), JSON.stringify(r.seen.slice(2, 3)));
+  check('then fixed', r.done && fs.readFileSync(path.join(tmp, 'broken.js'), 'utf8').includes('function x() {}'));
+}
+
+// 32. ask_user reaches the host's question callback; without one the agent decides.
+{
+  const asked = [];
+  script = [
+    '<codeply:ask_user>\n<question>Which color?</question>\n<options>\nBlue (Recommended)\nRed\n</options>\n</codeply:ask_user>',
+    'You picked Red, so I will use red.',
+  ];
+  seen = [];
+  const approve = async () => 'once';
+  approve.ask = async (q) => { asked.push(q); return 'Red'; };
+  const events = [];
+  for await (const ev of runAgent({ userMessage: 'pick', history: [], mode: 'Ask', cwd: tmp, route, maxSteps: 4, approve, signal: new AbortController().signal })) events.push(ev);
+  check('question delivered with options', asked.length === 1 && asked[0].options.length === 2 && asked[0].options[0] === 'Blue (Recommended)', JSON.stringify(asked));
+  check('answer returned to the model', seen.some((s) => s.includes('The user answered: Red')));
+  const r2 = await run([
+    '<codeply:ask_user>\n<question>Which color?</question>\n<options>\nBlue\n</options>\n</codeply:ask_user>',
+    'No one to ask, so I chose blue.',
+  ], 'pick', { mode: 'Ask' });
+  check('unattended: told to decide itself', r2.seen.some((s) => s.includes('Pick the most sensible option yourself')));
+}
+
+// 33. "Always allow" for shell commands is scoped by command name.
+{
+  const { commandPatterns } = require(path.join(CLI, 'lib/arity.js'));
+  const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  check('arity: npm run dev', eq(commandPatterns('npm run dev'), ['npm run dev']));
+  check('arity: chained git', eq(commandPatterns('git checkout main && git pull'), ['git checkout', 'git pull']));
+  check('arity: interpreter keeps the script', eq(commandPatterns('node server.js --port 3000'), ['node server.js']));
+  check('arity: subshell not scopable', commandPatterns('echo $(whoami)') === null);
+  check('arity: redirect not scopable', commandPatterns('npm test > out.txt') === null);
+}
+
+// 34. Snapshots: undo puts changed files back, removes new ones, redo re-applies.
+{
+  const snap = require(path.join(CLI, 'lib/snapshot.js'));
+  if (await snap.available()) {
+    const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'codeply-snap-'));
+    fs.writeFileSync(path.join(proj, 'keep.txt'), 'v1\r\n');
+    const t1 = await snap.track(proj);
+    fs.writeFileSync(path.join(proj, 'keep.txt'), 'v2\r\n');
+    fs.writeFileSync(path.join(proj, 'made.txt'), 'new');
+    const t2 = await snap.track(proj);
+    const changed = (await snap.changedFiles(proj, t1, t2)).map((c) => c.file).sort();
+    check('snapshot sees both changes', JSON.stringify(changed) === '["keep.txt","made.txt"]', JSON.stringify(changed));
+    await snap.restore(proj, t1, changed);
+    check('undo restores and removes', fs.readFileSync(path.join(proj, 'keep.txt'), 'utf8') === 'v1\r\n' && !fs.existsSync(path.join(proj, 'made.txt')));
+    await snap.restore(proj, t2, changed);
+    check('redo re-applies', fs.readFileSync(path.join(proj, 'keep.txt'), 'utf8') === 'v2\r\n' && fs.existsSync(path.join(proj, 'made.txt')));
+    fs.rmSync(proj, { recursive: true, force: true });
+    fs.rmSync(snap.gitDirFor(proj), { recursive: true, force: true });
+  } else {
+    console.log('SKIP  snapshots (git not installed)');
+  }
+}
+
+// 35. Native tool calling: real tool_calls run, history goes back in native shape.
+{
+  bodies = [];
+  const r = await run([
+    { content: 'Looking first.', tool_calls: [{ name: 'list_dir', args: { path: '.' } }, { name: 'read_file', args: { path: 'a.txt' } }] },
+    { tool_calls: [{ name: 'write_file', args: { path: 'native.txt', content: 'line one\n</content> stays literal\n' } }] },
+    'Wrote native.txt.',
+  ], 'native test');
+  check('native: tools sent with the request', Array.isArray(bodies[0]?.tools) && bodies[0].tools.some((t) => t.function.name === 'edit_file'));
+  check('native: parallel reads both ran', r.events.filter((e) => e.type === 'tool_end' && e.ok && (e.name === 'list_dir' || e.name === 'read_file')).length === 2);
+  check('native: file content exact (no tag escaping issues)', fs.readFileSync(path.join(tmp, 'native.txt'), 'utf8') === 'line one\n</content> stays literal\n', JSON.stringify(fs.existsSync(path.join(tmp, 'native.txt')) && fs.readFileSync(path.join(tmp, 'native.txt'), 'utf8')));
+  const second = bodies[1]?.messages || [];
+  const asst = second.find((m) => m.role === 'assistant' && m.tool_calls);
+  const tools = second.filter((m) => m.role === 'tool');
+  check('native: history has tool_calls + matching tool results', asst && asst.tool_calls.length === 2 && tools.length === 2 && tools.every((t) => asst.tool_calls.some((c) => c.id === t.tool_call_id)), JSON.stringify(second.slice(-4)).slice(0, 400));
+  check('native: system prompt has no tag examples', !String(bodies[0]?.messages[0]?.content).includes('<codeply:read_file>'));
+}
+
+// 35b. MCP: a stdio server's tools are listed, called natively, and results come back.
+{
+  const mcpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codeply-mcp-'));
+  const serverJs = path.join(mcpDir, 'fake-mcp.js');
+  fs.writeFileSync(serverJs, `
+let buf = '';
+const send = (m) => process.stdout.write(JSON.stringify(m) + '\\n');
+process.stdin.on('data', (d) => {
+  buf += d; let nl;
+  while ((nl = buf.indexOf('\\n')) !== -1) {
+    const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+    if (!line.trim()) continue;
+    const m = JSON.parse(line);
+    if (m.method === 'initialize') send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: m.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'fake', version: '1' }, instructions: 'A fake weather server.' } });
+    else if (m.method === 'tools/list') send({ jsonrpc: '2.0', id: m.id, result: { tools: [{ name: 'get_weather', description: 'Weather for a city', inputSchema: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'] }, annotations: { readOnlyHint: true } }] } });
+    else if (m.method === 'tools/call') send({ jsonrpc: '2.0', id: m.id, result: { content: [{ type: 'text', text: 'Sunny in ' + m.params.arguments.city }] } });
+  }
+});`);
+  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'codeply-mcpproj-'));
+  fs.mkdirSync(path.join(proj, '.codeply'));
+  fs.writeFileSync(path.join(proj, '.codeply', 'mcp.json'), JSON.stringify({ mcpServers: { weather: { command: process.execPath, args: [serverJs] } } }));
+  script = [
+    { tool_calls: [{ name: 'mcp__weather__get_weather', args: { city: 'Lahore' } }] },
+    'It is sunny in Lahore.',
+  ];
+  seen = []; bodies = [];
+  const events = [];
+  for await (const ev of runAgent({ userMessage: 'weather?', history: [], mode: 'Ask', cwd: proj, route, maxSteps: 4, approve: async () => 'once', signal: new AbortController().signal })) events.push(ev);
+  check('mcp: tool offered natively', (bodies[0]?.tools || []).some((t) => t.function.name === 'mcp__weather__get_weather'));
+  check('mcp: server listed in the prompt', String(bodies[0]?.messages[0]?.content).includes('MCP SERVERS') && String(bodies[0]?.messages[0]?.content).includes('get_weather(city)'));
+  check('mcp: call ran and returned', seen.some((s) => s.includes('Sunny in Lahore')), JSON.stringify(seen.slice(-1)));
+  const hist = bodies[1]?.messages || [];
+  check('mcp: history keeps the native name', hist.some((m) => m.tool_calls && m.tool_calls[0].function.name === 'mcp__weather__get_weather'));
+  require(path.join(CLI, 'lib/mcp.js')).closeAll();
+  // Windows keeps the folder locked until the killed server has fully exited.
+  await new Promise((r) => setTimeout(r, 500));
+  for (const d of [proj, mcpDir]) { try { fs.rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch {} }
+}
+
+// 35c. Custom commands, permission rules, and shell-syntax workaround hints.
+{
+  const perms = require(path.join(CLI, 'lib/permissions.js'));
+  const cmds = require(path.join(CLI, 'lib/commands.js'));
+  const { commandPatterns } = require(path.join(CLI, 'lib/arity.js'));
+  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'codeply-rules-'));
+  fs.mkdirSync(path.join(proj, '.codeply', 'commands'), { recursive: true });
+  fs.writeFileSync(path.join(proj, '.codeply', 'permissions.json'), JSON.stringify({ deny: ['run:git push*', 'write_file:*.env'], allow: ['run:npm run *', 'run:git status', 'edit_file:src/**'] }));
+  const run = (c) => perms.decide({ tool: 'run', detail: c, patterns: commandPatterns(c) }, proj).decision;
+  check('perm: allowed command', run('npm run dev') === 'allow');
+  check('perm: chain needs every part allowed', run('npm run build && npm install') === null);
+  check('perm: deny beats allow in a chain', run('npm run dev && git push') === 'deny');
+  check('perm: path rule', perms.decide({ tool: 'edit_file', path: 'src/a/b.ts' }, proj).decision === 'allow' && perms.decide({ tool: 'write_file', path: '.env' }, proj).decision === 'deny');
+  fs.writeFileSync(path.join(proj, '.codeply', 'commands', 'review.md'), '---\ndescription: Review files\nmode: Plan\n---\nReview $ARGUMENTS for bugs.');
+  const r = cmds.resolve('/review src/app.js', proj);
+  check('command: expands with mode', r && r.prompt === 'Review src/app.js for bugs.' && r.command.mode === 'Plan', JSON.stringify(r));
+  check('command: /goal never shadowed', cmds.resolve('/goal x', proj) === null);
+  const hints = require(path.join(CLI, 'lib/terminal-hints.js'));
+  check('hint: heredoc -> write_file', /write_file/.test(hints.annotateFailure('cat <<EOF > a', 1, '<< was unexpected at this time.') || ''));
+  check('hint: PowerShell &&', /PowerShell 5\.1/.test(hints.annotateFailure('a && b', 1, "The token '&&' is not a valid statement separator in this version.") || ''));
+  fs.rmSync(proj, { recursive: true, force: true });
+}
+
+// 36. A model that rejects tools drops to text actions and is remembered.
+{
+  bodies = [];
+  const r = await run([
+    { status: 400, error: 'This model does not support tools' },
+    '<codeply:list_dir>\n<path>.</path>\n</codeply:list_dir>',
+    'Listed it.',
+  ], 'fallback test', { mode: 'Ask' });
+  check('fallback: notice shown', r.events.some((e) => e.type === 'notice' && /switched to text actions/.test(e.text)));
+  check('fallback: retried without tools, with tag examples', !bodies[1]?.tools && String(bodies[1]?.messages[0]?.content).includes('<codeply:read_file>'));
+  check('fallback: then worked', r.done && r.events.some((e) => e.type === 'tool_end' && e.name === 'list_dir' && e.ok));
+  bodies = [];
+  await run(['Nothing to do.'], 'again', { mode: 'Ask' });
+  check('fallback remembered for the next turn', !bodies[0]?.tools);
+}
+
+// ─── Round 4: apply_patch, web tools, plan mode ─────────────────────────────
+
+{
+  const { planPatch, parsePatch } = require(path.join(CLI, 'lib/apply-patch.js'));
+  const files = { 'a.txt': 'one\ntwo\nthree\n', 'gone.txt': 'bye\n', 'crlf.txt': 'x\r\ny\r\nz\r\n' };
+  const read = (p) => (p in files ? files[p] : null);
+  const p1 = planPatch([
+    '*** Begin Patch',
+    '*** Add File: new/b.txt', '+hello', '+world',
+    '*** Update File: a.txt', '@@', ' one', '-two', '+TWO', '+two and a half', ' three',
+    '*** Delete File: gone.txt',
+    '*** Update File: crlf.txt', '*** Move to: moved.txt', '@@', ' x', '-y', '+Y', ' z',
+    '*** End Patch',
+  ].join('\n'), read);
+  check('patch: plans all four kinds', !p1.error && p1.changes.map((c) => c.kind).join() === 'add,update,delete,move', JSON.stringify(p1));
+  check('patch: update applied', p1.changes[1]?.after === 'one\nTWO\ntwo and a half\nthree\n', JSON.stringify(p1.changes?.[1]));
+  check('patch: CRLF kept', p1.changes[3]?.after === 'x\r\nY\r\nz\r\n', JSON.stringify(p1.changes?.[3]));
+  check('patch: missing lines are reported', !!planPatch('*** Begin Patch\n*** Update File: a.txt\n@@\n-nope\n+x\n*** End Patch', read).error);
+  check('patch: no header is reported', !!parsePatch('just text').error);
+  check('patch: heredoc wrapper tolerated', !parsePatch("apply_patch <<'EOF'\n*** Begin Patch\n*** Add File: q.txt\n+q\n*** End Patch\nEOF").error);
+}
+
+{
+  fs.writeFileSync(path.join(tmp, 'p1.txt'), 'alpha\nbeta\ngamma\n');
+  fs.writeFileSync(path.join(tmp, 'p2.txt'), 'delete me\n');
+  const patch = '*** Begin Patch\n*** Update File: p1.txt\n@@\n alpha\n-beta\n+BETA\n gamma\n*** Add File: sub/p3.txt\n+fresh\n*** Delete File: p2.txt\n*** End Patch';
+  const r = await run([
+    '<codeply:read_file>\n<path>p1.txt</path>\n</codeply:read_file>',
+    `<codeply:apply_patch>\n<patch>\n${patch}\n</patch>\n</codeply:apply_patch>`,
+    'Patched p1.txt, added sub/p3.txt and removed p2.txt.',
+  ]);
+  check('apply_patch: update written', fs.readFileSync(path.join(tmp, 'p1.txt'), 'utf8') === 'alpha\nBETA\ngamma\n');
+  check('apply_patch: add written', fs.existsSync(path.join(tmp, 'sub/p3.txt')));
+  check('apply_patch: delete done', !fs.existsSync(path.join(tmp, 'p2.txt')));
+  const act = r.done?.actions.find((a) => a.tool === 'apply_patch');
+  check('apply_patch: action lists files', act?.ok && act.files?.length === 3, JSON.stringify(r.done?.actions));
+  check('apply_patch: counts as an edit', r.done?.madeAnyEdit && r.done.writtenFiles.includes('p3.txt'), JSON.stringify(r.done));
+}
+
+{
+  const r = await run([
+    `<codeply:apply_patch>\n<patch>\n*** Begin Patch\n*** Add File: nope.txt\n+x\n*** End Patch\n</patch>\n</codeply:apply_patch>`,
+    'I cannot change files in Plan mode.',
+  ], 'add a file', { mode: 'Plan' });
+  check('plan mode: apply_patch blocked', !fs.existsSync(path.join(tmp, 'nope.txt')) && r.seen.some((s) => s.includes('Blocked')), JSON.stringify(r.seen));
+}
+
+{
+  const { fetchPage, htmlToText } = require(path.join(CLI, 'lib/web-tools.js'));
+  const r = await fetchPage(`http://127.0.0.1:${port}/page`);
+  check('web_fetch: html becomes readable text', r.ok && r.text.includes('# Hello & welcome') && r.text.includes('[the docs](http://127.0.0.1:') && r.text.includes('- one') && !r.text.includes('var a'), JSON.stringify(r));
+  check('web_fetch: rejects non-http', !(await fetchPage('file:///etc/passwd')).ok);
+  check('web_fetch: htmlToText drops scripts', !htmlToText('<p>hi</p><script>evil()</script>').includes('evil'));
+  const viaAgent = await run([
+    `<codeply:web_fetch>\n<url>http://127.0.0.1:${port}/page</url>\n</codeply:web_fetch>`,
+    'The page greets you.',
+  ], 'read that page', { mode: 'Ask' });
+  check('web_fetch: works in Ask mode', viaAgent.seen.some((s) => s.includes('Hello & welcome')), JSON.stringify(viaAgent.seen));
+}
+
+{
+  const asked = [];
+  const r = await run([
+    '<codeply:write_file>\n<path>src-out.txt</path>\n<content>\nno\n</content>\n</codeply:write_file>',
+    '<codeply:write_file>\n<path>.codeply/plans/add-thing.md</path>\n<content>\n# Plan\n1. Do the thing\n</content>\n</codeply:write_file>',
+    '<codeply:plan_exit>\n</codeply:plan_exit>',
+    '<codeply:write_file>\n<path>built.txt</path>\n<content>\nbuilt\n</content>\n</codeply:write_file>',
+    'Implemented the plan: created built.txt.',
+  ], 'plan then build', { mode: 'Plan', ask: async (q) => { asked.push(q); return q.options[0]; } });
+  check('plan: other files blocked in Plan mode', !fs.existsSync(path.join(tmp, 'src-out.txt')));
+  check('plan: plan file written in Plan mode', fs.existsSync(path.join(tmp, '.codeply/plans/add-thing.md')));
+  check('plan: user asked before switching', asked.length === 1 && /Build/.test(asked[0].question) && /Yes/.test(asked[0].options[0]), JSON.stringify(asked));
+  check('plan: mode_switch event emitted', r.events.some((e) => e.type === 'mode_switch' && e.mode === 'Build'));
+  check('plan: Build tools work after the switch', fs.existsSync(path.join(tmp, 'built.txt')));
+  check('plan: plan file does not count as a project edit', !r.done?.writtenFiles.includes('add-thing.md'), JSON.stringify(r.done?.writtenFiles));
+}
+
+{
+  const r = await run([
+    '<codeply:write_file>\n<path>.codeply/plans/keep.md</path>\n<content>\n# Plan\n</content>\n</codeply:write_file>',
+    '<codeply:plan_exit>\n</codeply:plan_exit>',
+    '<codeply:write_file>\n<path>should-not-exist.txt</path>\n<content>\nx\n</content>\n</codeply:write_file>',
+    'Still planning.',
+  ], 'plan', { mode: 'Plan', ask: async (q) => q.options[1] });
+  check('plan: "No" keeps Plan mode', !r.events.some((e) => e.type === 'mode_switch') && !fs.existsSync(path.join(tmp, 'should-not-exist.txt')));
+}
+
+{
+  const r = await run([
+    '<codeply:plan_exit>\n</codeply:plan_exit>',
+    'Not applicable.',
+  ], 'x', { mode: 'Build' });
+  check('plan: plan_exit refused outside Plan mode', r.seen.some((s) => s.includes('only works in Plan mode')), JSON.stringify(r.seen));
+}
+
+// ── SQLite session store ──
+{
+  const { openSessionDb } = require(path.join(CLI, 'lib/session-db.js'));
+  const dbFile = path.join(tmp, 'sessions.db');
+  const db = openSessionDb(dbFile);
+  if (!db) {
+    console.log('SKIP  sqlite: no SQLite driver in this runtime (Craft falls back to JSON)');
+  } else {
+    check('sqlite: starts empty', db.isEmpty());
+    const store = {
+      projects: ['C:/a'], lastProject: 'C:/a', autoRouting: true,
+      sessions: [
+        { id: 's1', title: 'First', cwd: 'C:/a', messages: [{ kind: 'user', text: 'fix the Login button' }, { kind: 'assistant', text: 'Done, fixed it' }], alwaysAllowed: ['run:npm test'], createdAt: 1, updatedAt: 2, pinned: true },
+        { id: 's2', title: 'Second', cwd: 'C:/b', messages: [{ kind: 'user', text: 'add a footer' }], alwaysAllowed: [], createdAt: 3, updatedAt: 4 },
+      ],
+    };
+    db.save(store);
+    db.close();
+    const db2 = openSessionDb(dbFile);
+    const back = db2.load();
+    check('sqlite: sessions round-trip in order', back.sessions.map((s) => s.id).join() === 's1,s2');
+    check('sqlite: messages, extras and allowlist survive', back.sessions[0].messages.length === 2 && back.sessions[0].pinned === true && back.sessions[0].alwaysAllowed[0] === 'run:npm test');
+    check('sqlite: other store keys survive', back.lastProject === 'C:/a' && back.autoRouting === true && back.projects[0] === 'C:/a');
+    // Mutate in place the way main.js does: edit a message, append one, delete a session.
+    back.sessions[0].messages[1].text = 'Done, fixed the Login button';
+    back.sessions[0].messages.push({ kind: 'user', text: 'thanks' });
+    back.sessions = back.sessions.filter((s) => s.id !== 's2');
+    db2.save(back);
+    check('sqlite: search finds text across sessions', db2.search('login').length === 2 && db2.search('login')[0].sessionId === 's1');
+    check('sqlite: deleted session is gone from search', db2.search('footer').length === 0);
+    check('sqlite: search treats % and _ literally', db2.search('%').length === 0);
+    back.sessions[0].messages.pop();
+    db2.save(back);
+    db2.close();
+    const db3 = openSessionDb(dbFile);
+    const again = db3.load();
+    check('sqlite: edits, appends, trims and deletes persist', again.sessions.length === 1 && again.sessions[0].messages.length === 2 && /Login/.test(again.sessions[0].messages[1].text));
+    db3.close();
+  }
+}
+
+// ── Plugins ──
+{
+  const realHome = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME };
+  const fakeHome = path.join(tmp, 'plugin-home');
+  fs.mkdirSync(fakeHome, { recursive: true });
+  process.env.USERPROFILE = fakeHome; process.env.HOME = fakeHome;
+  const plugins = require(path.join(CLI, 'lib/plugins.js'));
+  const commandsLib = require(path.join(CLI, 'lib/commands.js'));
+  const skillsLib = require(path.join(CLI, 'lib/skills.js'));
+  const mcpLib = require(path.join(CLI, 'lib/mcp.js'));
+  const proj = path.join(tmp, 'plugin-proj');
+  fs.mkdirSync(proj, { recursive: true });
+  const sysText = () => { const s = bodies[bodies.length - 1].messages[0].content; return typeof s === 'string' ? s : JSON.stringify(s); };
+
+  const made = plugins.scaffoldPlugin('demo-kit', path.join(tmp, 'plugin-src'));
+  check('plugin: init scaffolds a folder', made.ok && fs.existsSync(path.join(made.dir, 'codeply-plugin.json')));
+  fs.writeFileSync(path.join(made.dir, 'instructions.md'), 'Always sign commits with the word PLUGINRULE.\n');
+  fs.writeFileSync(path.join(made.dir, 'mcp.json'), JSON.stringify({ mcpServers: { tools: { command: 'node', args: ['${CODEPLY_PLUGIN_ROOT}/server.js'] } } }));
+  fs.writeFileSync(path.join(made.dir, 'evil.md'), 'outside');
+  fs.mkdirSync(path.join(made.dir, 'node_modules'), { recursive: true });
+  fs.writeFileSync(path.join(made.dir, 'node_modules', 'big.txt'), 'x');
+
+  const prepared = await plugins.prepareInstall(made.dir);
+  check('plugin: install shows what it contains before installing', prepared.ok && prepared.summary.commands === 1 && prepared.summary.skills === 1 && prepared.summary.mcpServers[0].runs.includes('server.js'), JSON.stringify(prepared));
+  check('plugin: nothing is installed until confirmed', plugins.listPlugins(proj).length === 0);
+  const done = plugins.finishInstall(prepared, { scope: 'user', cwd: proj });
+  check('plugin: install copies it in without node_modules', done.ok && !fs.existsSync(path.join(done.dest, 'node_modules')) && fs.existsSync(path.join(done.dest, '.codeply-install.json')), JSON.stringify(done));
+  const again = await plugins.prepareInstall(made.dir);
+  check('plugin: a second install is refused without force', !plugins.finishInstall(again, { scope: 'user', cwd: proj }).ok);
+
+  const hello = commandsLib.resolve('/demo-kit:hello the docs', proj);
+  check('plugin: its commands run as /plugin:name', hello && /Greet the user/.test(hello.prompt) && /the docs/.test(hello.prompt), JSON.stringify(hello));
+  check('plugin: its skills are listed and loadable', skillsLib.listSkills(proj).some((s) => s.name === 'demo-kit-example' && s.daily) && /Step by step/.test(skillsLib.loadSkillBody('demo-kit-example', proj) || ''));
+  const srv = mcpLib.loadServers(proj)['demo-kit-tools'];
+  check('plugin: MCP servers come through with the plugin folder filled in', srv && srv.args[0].endsWith('server.js') && !srv.args[0].includes('${'), JSON.stringify(srv));
+
+  await run(['Noted.'], 'hi');
+  check('plugin: its instructions reach the agent prompt', /PLUGINRULE/.test(sysText()) && /plugin demo-kit/.test(sysText()));
+
+  plugins.setEnabled('demo-kit', false, proj);
+  check('plugin: disabled means nothing is loaded', !commandsLib.resolve('/demo-kit:hello', proj) && !skillsLib.listSkills(proj).some((s) => s.plugin === 'demo-kit') && !mcpLib.loadServers(proj)['demo-kit-tools'] && plugins.instructionBlocks(proj).length === 0);
+  plugins.setEnabled('demo-kit', true, proj);
+  check('plugin: enabling brings it back', !!commandsLib.resolve('/demo-kit:hello', proj));
+
+  fs.writeFileSync(path.join(fakeHome, '.codeply', 'plugins', 'outside.md'), 'outside');
+  fs.writeFileSync(path.join(made.dir, 'codeply-plugin.json'), JSON.stringify({ name: 'demo-kit', version: '0.2.0', instructions: ['../outside.md', 'instructions.md'] }));
+  const upd = await plugins.prepareUpdate('demo-kit', proj);
+  check('plugin: update re-reads the source and reports the version', upd.ok && upd.summary.version === '0.2.0' && upd.before.version === '0.1.0', JSON.stringify(upd));
+  const upDone = plugins.finishInstall(upd, { scope: upd.scope, cwd: proj, force: true });
+  check('plugin: update replaces the files', upDone.ok && plugins.listPlugins(proj)[0].version === '0.2.0');
+  check('plugin: an instruction path that leaves the plugin folder is ignored', plugins.instructionBlocks(proj).length === 1 && !/outside/.test(plugins.instructionBlocks(proj)[0].text));
+
+  const projDone = await plugins.installPlugin(made.dir, { scope: 'project', cwd: proj });
+  check('plugin: a project install overrides the user one of the same name', projDone.ok && plugins.listPlugins(proj).find((p) => p.name === 'demo-kit').scope === 'project' && plugins.listPlugins(null).find((p) => p.name === 'demo-kit').scope === 'user');
+
+  const gh = plugins.parseSource('acme/tools#v2');
+  check('plugin: sources are understood', gh.url === 'https://github.com/acme/tools.git' && gh.ref === 'v2'
+    && plugins.parseSource('https://example.com/x.git').kind === 'git' && !!plugins.parseSource('http://example.com/x.git').error
+    && !!plugins.parseSource('not a source').error && !!plugins.parseSource('acme/tools#--upload-pack=x').error);
+  const empty = path.join(tmp, 'plugin-empty');
+  fs.mkdirSync(empty, { recursive: true });
+  fs.writeFileSync(path.join(empty, 'README.md'), 'nothing here');
+  check('plugin: a folder with nothing to install is refused', !(await plugins.prepareInstall(empty)).ok);
+  check('plugin: remove deletes it', plugins.removePlugin('demo-kit', proj).ok && plugins.removePlugin('demo-kit', proj).ok && !plugins.listPlugins(proj).length && !plugins.removePlugin('demo-kit', proj).ok);
+
+  process.env.USERPROFILE = realHome.USERPROFILE;
+  if (realHome.HOME === undefined) delete process.env.HOME; else process.env.HOME = realHome.HOME;
+}
+
+// ── GitHub agent ──
+{
+  const gh = await import(pathToFileURL(path.join(CLI, 'lib/github-agent.mjs')).href);
+  const { execFileSync } = await import('child_process');
+  const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  const ident = ['-c', 'user.name=t', '-c', 'user.email=t@example.com'];
+
+  const issueEv = (body, assoc = 'MEMBER', extra = {}) => ({
+    action: 'created', repository: { full_name: 'o/r', default_branch: 'main' },
+    issue: { number: 7, title: 'Add a greeting', body: 'We need a greeting file.', ...extra.issue },
+    comment: { id: 55, body, user: { login: 'alice', type: 'User' }, author_association: assoc },
+  });
+
+  const p1 = gh.parseEvent('issue_comment', issueEv('/codeply add hello.txt'));
+  check('github: a /codeply comment on an issue is a build request', p1.kind === 'issue' && p1.mode === 'Build' && p1.prompt === 'add hello.txt' && p1.number === 7, JSON.stringify(p1));
+  check('github: "ask" and "plan" pick the read-only modes', gh.parseEvent('issue_comment', issueEv('/codeply ask why is it slow?')).mode === 'Ask'
+    && gh.parseEvent('issue_comment', issueEv('@codeply plan the migration')).mode === 'Plan'
+    && gh.parseEvent('issue_comment', issueEv('/craft plan the migration')).prompt === 'the migration');
+  check('github: comments without the trigger, bots and outsiders are skipped', !!gh.parseEvent('issue_comment', issueEv('looks good')).skip
+    && !!gh.parseEvent('issue_comment', issueEv('/codeply fix', 'NONE')).skip
+    && !!gh.parseEvent('issue_comment', { ...issueEv('/codeply fix'), comment: { ...issueEv('/codeply fix').comment, user: { login: 'dependabot[bot]', type: 'Bot' } } }).skip
+    && !!gh.parseEvent('push', { action: 'created' }).skip
+    && !gh.parseEvent('issue_comment', issueEv('/codeply fix', 'CONTRIBUTOR'), { allowed: ['CONTRIBUTOR'] }).skip);
+  check('github: a comment on a pull request is a pr request', gh.parseEvent('issue_comment', issueEv('/codeply review', 'OWNER', { issue: { pull_request: {} } })).kind === 'pr');
+
+  const okRoute = gh.routeFromEnv({ CODEPLY_PROVIDER: 'anthropic', CODEPLY_API_KEY: 'k' });
+  check('github: the model route comes from the environment', okRoute.route && okRoute.route.custom.baseUrl.includes('anthropic') && !!gh.routeFromEnv({ CODEPLY_PROVIDER: 'nope', CODEPLY_API_KEY: 'k' }).error
+    && !!gh.routeFromEnv({}).error && !!gh.routeFromEnv({ CODEPLY_PROVIDER: 'openai' }).error
+    && !gh.routeFromEnv({ CODEPLY_BASE_URL: 'http://localhost:11434/v1', CODEPLY_MODEL: 'llama3' }).error);
+
+  const approve = gh.ciApprove(tmp);
+  check('github: the agent cannot push or call gh, or run dangerous commands',
+    (await approve({ tool: 'run', detail: 'git push origin main', title: 'Run git push' })) === 'reject'
+    && (await approve({ tool: 'run', detail: 'npm test && git -C . push', title: 'x' })) === 'reject'
+    && (await approve({ tool: 'run', detail: 'gh pr merge 1', title: 'x' })) === 'reject'
+    && (await approve({ tool: 'run', detail: 'rm -rf /', title: 'x', danger: true })) === 'reject'
+    && (await approve({ tool: 'run', detail: 'npm test', title: 'Run npm test' })) === 'once'
+    && (await approve({ tool: 'write_file', detail: 'a.txt', title: 'Write a.txt' })) === 'once');
+
+  // A fake GitHub API and a local bare remote.
+  const calls = [];
+  const comments = new Map();
+  let nextId = 1000;
+  let prInfo = { head: { ref: 'feature', repo: { full_name: 'o/r' } }, base: { ref: 'main', repo: { full_name: 'o/r' } } };
+  const fakeFetch = async (url, init = {}) => {
+    const u = new URL(url);
+    const body = init.body ? JSON.parse(init.body) : null;
+    calls.push({ method: init.method || 'GET', path: u.pathname, body, auth: init.headers && init.headers.Authorization });
+    const reply = (status, json) => ({ ok: status < 400, status, text: async () => JSON.stringify(json) });
+    let m;
+    if ((m = /^\/repos\/o\/r\/(issues|pulls)\/comments\/\d+\/reactions$/.exec(u.pathname))) return reply(201, {});
+    if (init.method === 'POST' && (m = /^\/repos\/o\/r\/issues\/(\d+)\/comments$/.exec(u.pathname))) { const id = nextId++; comments.set(id, body.body); return reply(201, { id }); }
+    if (init.method === 'PATCH' && (m = /^\/repos\/o\/r\/issues\/comments\/(\d+)$/.exec(u.pathname))) { comments.set(Number(m[1]), body.body); return reply(200, {}); }
+    if (init.method === 'GET' && /^\/repos\/o\/r\/pulls\/\d+$/.test(u.pathname)) return reply(200, prInfo);
+    if (init.method === 'POST' && u.pathname === '/repos/o/r/pulls') return reply(201, { html_url: 'https://github.com/o/r/pull/99' });
+    return reply(404, { message: 'not found' });
+  };
+  const lastComment = () => [...comments.values()].pop() || '';
+
+  const bare = path.join(tmp, 'gh-remote.git');
+  const work = path.join(tmp, 'gh-work');
+  fs.mkdirSync(bare, { recursive: true });
+  fs.mkdirSync(work, { recursive: true });
+  sh(bare, 'init', '--bare');
+  sh(work, 'init');
+  fs.writeFileSync(path.join(work, 'README.md'), '# demo\n');
+  sh(work, 'add', '-A');
+  sh(work, ...ident, 'commit', '-m', 'init');
+  sh(work, 'remote', 'add', 'origin', bare);
+  sh(work, 'push', 'origin', 'HEAD:refs/heads/main');
+  sh(work, 'push', 'origin', 'HEAD:refs/heads/feature');
+  const baseBranch = sh(work, 'rev-parse', '--abbrev-ref', 'HEAD');
+  const reset = () => { sh(work, 'checkout', '-f', baseBranch); calls.length = 0; comments.clear(); };
+  const env = { GITHUB_RUN_ID: '424242', GITHUB_API_URL: 'https://api.test', GITHUB_SERVER_URL: 'https://github.test' };
+  let runNo = 0;
+  const go = (ev, name = 'issue_comment', replies = [], extra = {}) => {
+    script = [...replies];
+    env.GITHUB_RUN_ID = String(424242 + runNo++);
+    return gh.runGithubAgent({ eventName: name, event: ev, cwd: work, token: 'TOK', route, env, fetchImpl: fakeFetch, maxSteps: 8, ...extra });
+  };
+
+  const r1 = await go(issueEv('/codeply add hello.txt'), 'issue_comment', [
+    '<codeply:write_file>\n<path>hello.txt</path>\n<content>\nhello world\n</content>\n</codeply:write_file>',
+    'Added hello.txt with a greeting.',
+  ]);
+  const branches = sh(bare, 'branch', '--list', 'codeply/*');
+  const prCall = calls.find((c) => c.path === '/repos/o/r/pulls' && c.method === 'POST');
+  check('github: an issue request commits to a new branch and opens a pull request', r1.status === 'pr' && /codeply\/issue-7-add-a-greeting/.test(branches) && prCall && prCall.body.head.startsWith('codeply/issue-7') && prCall.body.base === 'main' && /Closes #7/.test(prCall.body.body), JSON.stringify({ r1, branches, prCall }));
+  const branchName = branches.replace('*', '').trim().split('\n')[0].trim();
+  check('github: the pushed commit has the file and the bot identity', sh(bare, 'show', `${branchName}:hello.txt`).includes('hello world') && sh(bare, 'log', '-1', '--format=%an', branchName) === 'codeply[bot]');
+  check('github: it reacts to the comment and updates one status comment', calls.some((c) => c.path.endsWith('/comments/55/reactions')) && comments.size === 1 && /pull\/99/.test(lastComment()) && /actions\/runs\/424242/.test(lastComment()), lastComment());
+  check('github: the token is used for the API but never written into the repo', calls.every((c) => !c.auth || c.auth === 'Bearer TOK') && !sh(work, 'config', '--local', '--list').includes('TOK'));
+
+  reset();
+  const branchesBefore = sh(bare, 'branch', '--list').split('\n').length;
+  const r2 = await go(issueEv('/codeply ask what is in this repo?'), 'issue_comment', ['It is a small demo repository.']);
+  check('github: ask mode answers in a comment and changes nothing', r2.status === 'answered' && /small demo/.test(lastComment()) && !calls.some((c) => c.path === '/repos/o/r/pulls' && c.method === 'POST') && sh(bare, 'branch', '--list').split('\n').length === branchesBefore && !sh(work, 'status', '--porcelain'));
+
+  reset();
+  const r3 = await go(issueEv('/codeply add pr.txt', 'OWNER', { issue: { pull_request: {}, title: 'PR title' } }), 'issue_comment', [
+    '<codeply:write_file>\n<path>pr.txt</path>\n<content>\nfrom the agent\n</content>\n</codeply:write_file>',
+    'Added pr.txt.',
+  ]);
+  check('github: a comment on a pull request pushes to its branch and opens nothing new', r3.status === 'pushed' && sh(bare, 'show', 'feature:pr.txt').includes('from the agent') && !calls.some((c) => c.path === '/repos/o/r/pulls' && c.method === 'POST'), JSON.stringify(r3));
+
+  reset();
+  prInfo = { head: { ref: 'forkbranch', repo: { full_name: 'stranger/r' } }, base: { ref: 'main', repo: { full_name: 'o/r' } } };
+  const r4 = await go(issueEv('/codeply add x.txt', 'OWNER', { issue: { pull_request: {} } }), 'issue_comment', ['I would not change anything from a fork.']);
+  check('github: pull requests from forks are answered read-only', r4.status === 'answered' && !sh(bare, 'branch', '--list', 'forkbranch') && !sh(work, 'status', '--porcelain'), JSON.stringify(r4));
+  prInfo = { head: { ref: 'feature', repo: { full_name: 'o/r' } }, base: { ref: 'main', repo: { full_name: 'o/r' } } };
+
+  reset();
+  const r5 = await go(issueEv('please help', 'MEMBER'));
+  const r6 = await go(issueEv('/codeply fix it', 'NONE'));
+  check('github: skipped events touch nothing on GitHub', r5.status === 'skipped' && r6.status === 'skipped' && calls.length === 0);
+
+  reset();
+  const r7 = await go(issueEv('/codeply add z.txt'), 'issue_comment', [], { runAgentImpl: async function* () { throw new Error('model unreachable'); } });
+  check('github: a failed run says so in the comment instead of going silent', r7.status === 'failed' && /model unreachable/.test(lastComment()));
+
+  reset();
+  const r8 = await go(issueEv('/codeply look around'), 'issue_comment', ['I looked around; there is nothing to change.']);
+  check('github: a build that changes no files posts the answer and opens no pull request', r8.status === 'answered' && !calls.some((c) => c.path === '/repos/o/r/pulls' && c.method === 'POST'));
+
+  const wfDir = path.join(tmp, 'gh-wf');
+  fs.mkdirSync(wfDir, { recursive: true });
+  const wf1 = gh.installWorkflow(wfDir);
+  const yml = fs.readFileSync(wf1.file, 'utf8');
+  check('github: the workflow file is written once, with credentials not persisted', wf1.ok && /persist-credentials: false/.test(yml) && /github run/.test(yml) && !gh.installWorkflow(wfDir).ok);
+}
+
+// ── Sharing a chat ──
+{
+  const share = require(path.join(CLI, 'lib/share.js'));
+  const proj = path.join(os.homedir(), 'secret-project');
+  const session = {
+    title: 'Fix <b>login</b>', cwd: proj, updatedAt: Date.UTC(2026, 8, 30),
+    messages: [
+      { kind: 'user', text: `my key is sk-abcdefghijklmnopqrstuvwx and it lives in ${proj}\\src` },
+      { kind: 'assistant', text: 'Looking around.', interim: true },
+      { kind: 'reasoning', text: 'private chain of thought' },
+      { kind: 'tool', name: 'read_file', label: `${proj}/src/a.js`, ok: true },
+      { kind: 'tool', name: 'run', label: 'npm test', ok: false },
+      { kind: 'assistant', text: 'Done.\n\n```js\nif (a < b && x) { alert("<script>") }\n```\n\n- one\n- **two** and `code` [docs](https://example.com/x) [bad](javascript:alert(1))' },
+      { kind: 'notice', level: 'error', text: 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123456789' },
+      { kind: 'checkpoint', id: 'c1' },
+    ],
+  };
+  const md = share.toMarkdown(session);
+  check('share: markdown hides keys, home and project paths', !/sk-abcdefghijkl/.test(md) && !md.includes(proj) && !md.includes(os.homedir()) && /<project>/.test(md) && /\[hidden\]/.test(md) && !/abcdefghijklmnopqrstuvwxyz0123456789/.test(md), md);
+  check('share: markdown leaves out thinking and narration unless asked, keeps tools', !/private chain/.test(md) && !/Looking around/.test(md) && /`run` npm test \(failed\)/.test(md) && /private chain/.test(share.toMarkdown(session, { includeThinking: true })));
+  const html = share.toHtml(session);
+  check('share: html is escaped and self-contained', !/<script/i.test(html.replace(/<style>[\s\S]*?<\/style>/, '')) && html.includes('&lt;script&gt;') && html.includes('Fix &lt;b&gt;login&lt;/b&gt;') && !/https?:\/\/[^"' ]*\.(css|js)/.test(html) && !/href="javascript:/i.test(html) && /href="https:\/\/example\.com\/x"/.test(html) && /<pre/.test(html) && /<strong>two<\/strong>/.test(html), html.slice(0, 400));
+  const posted = [];
+  const gistFetch = async (url, init) => { posted.push({ url, init, body: JSON.parse(init.body) }); return { ok: true, status: 201, text: async () => JSON.stringify({ html_url: 'https://gist.github.com/x/1' }) }; };
+  const g = await share.createGist(session, 'TOK', { fetchImpl: gistFetch, apiUrl: 'https://api.test' });
+  check('share: a gist is secret by default, holds scrubbed markdown and uses the token', g.ok && g.url.includes('gist.github.com') && posted[0].body.public === false && Object.values(posted[0].body.files)[0].content.includes('<project>') && posted[0].init.headers.Authorization === 'Bearer TOK' && posted[0].url === 'https://api.test/gists');
+  const bad = await share.createGist(session, 'TOK', { fetchImpl: async () => ({ ok: false, status: 404, text: async () => '{"message":"Not Found"}' }) });
+  check('share: a gist failure explains itself', !bad.ok && /Reconnect GitHub/.test(bad.error) && !(await share.createGist(session, '')).ok);
+}
+
+// ── Engine server (codeply serve): HTTP API + event stream ──
+{
+  const { startServer } = await import(pathToFileURL(path.join(CLI, 'lib/server.mjs')).href);
+  const dataDir = path.join(tmp, 'serve-data');
+  const projDir = path.join(tmp, 'serve-proj');
+  fs.mkdirSync(projDir, { recursive: true });
+  const srv = await startServer({ port: 0, password: 'pw123', cwd: projDir, dataDir, route });
+  const auth = { Authorization: 'Bearer pw123' };
+  const api = async (method, p, body, headers = auth) => {
+    const r = await fetch(srv.url + p, { method, headers: { ...headers, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    const text = await r.text();
+    let json = null; try { json = JSON.parse(text); } catch {}
+    return { status: r.status, json, text };
+  };
+  // Follows /event for one chat; `onEvent` may answer prompts. Resolves when it returns 'stop'.
+  const watch = (sessionId, onEvent, query = '') => new Promise((resolve) => {
+    const ac = new AbortController();
+    const events = [];
+    const timer = setTimeout(() => { ac.abort(); resolve(events); }, 30000);
+    (async () => {
+      try {
+        const r = await fetch(`${srv.url}/event?session=${sessionId}${query}`, { headers: auth, signal: ac.signal });
+        const reader = r.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let i;
+          while ((i = buf.indexOf('\n\n')) >= 0) {
+            const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+            const line = chunk.split('\n').find((l) => l.startsWith('data: '));
+            if (!line) continue;
+            const ev = JSON.parse(line.slice(6));
+            events.push(ev);
+            if ((await onEvent(ev)) === 'stop') { clearTimeout(timer); ac.abort(); resolve(events); return; }
+          }
+        }
+      } catch { clearTimeout(timer); resolve(events); }
+    })();
+  });
+  const runToEnd = async (sid, body, onEvent = () => {}) => {
+    const watcher = watch(sid, async (ev) => { await onEvent(ev); if (ev.type === 'run_finished') return 'stop'; });
+    await new Promise((r) => setTimeout(r, 50)); // let the stream attach
+    const sent = await api('POST', `/session/${sid}/message`, body);
+    return { sent, events: await watcher };
+  };
+
+  check('serve: /health needs no password', (await api('GET', '/health', null, {})).json?.ok === true);
+  check('serve: missing password is refused', (await api('GET', '/session', null, {})).status === 401);
+  check('serve: wrong password is refused', (await api('GET', '/session', null, { Authorization: 'Bearer nope' })).status === 401);
+  check('serve: ?token= works (for EventSource)', (await fetch(`${srv.url}/session?token=pw123`)).status === 200);
+  check('serve: browser origins are refused by default', (await api('GET', '/session', null, { ...auth, Origin: 'https://evil.example' })).status === 403);
+
+  const created = await api('POST', '/session', { title: 'API chat' });
+  const sid = created.json?.session?.id;
+  check('serve: creates a chat in the given folder', created.status === 201 && created.json.session.cwd === projDir, created.text);
+
+  script = ['Hello from the server.'];
+  const a = await runToEnd(sid, { text: 'say hello', mode: 'Ask' });
+  check('serve: message returns 202 and the run streams to the end', a.sent.status === 202 && a.events.some((e) => e.type === 'run_started') && a.events.some((e) => e.type === 'done') && a.events.some((e) => e.type === 'run_finished'), JSON.stringify(a.events.map((e) => e.type)));
+  const got = await api('GET', `/session/${sid}`);
+  check('serve: the chat holds the user and assistant messages', got.json?.session?.messages.some((m) => m.kind === 'user' && m.text === 'say hello') && got.json.session.messages.some((m) => m.kind === 'assistant' && /Hello from the server/.test(m.text)));
+
+  // Approval flow: the write waits for an answer over HTTP.
+  script = ['<codeply:write_file>\n<path>served.txt</path>\n<content>\nhi\n</content>\n</codeply:write_file>', 'Wrote it.'];
+  let sawApproval = null;
+  const b = await runToEnd(sid, { text: 'write served.txt', mode: 'Build' }, async (ev) => {
+    if (ev.type === 'approval_request') { sawApproval = ev; await api('POST', `/permission/${ev.requestId}`, { verdict: 'once' }); }
+  });
+  check('serve: a write asks first, and "once" lets it through', !!sawApproval && /served\.txt/.test(sawApproval.title + sawApproval.detail) && fs.existsSync(path.join(projDir, 'served.txt')), JSON.stringify(sawApproval));
+  check('serve: the approval is announced as resolved', b.events.some((e) => e.type === 'approval_resolved' && e.verdict === 'once'));
+  check('serve: an answered request cannot be answered twice', (await api('POST', `/permission/${sawApproval.requestId}`, { verdict: 'once' })).status === 404);
+  check('serve: Build turns leave an undo checkpoint', b.events.some((e) => e.type === 'checkpoint' && e.checkpoint.files.length >= 1), JSON.stringify(b.events.map((e) => e.type)));
+
+  script = ['<codeply:write_file>\n<path>refused.txt</path>\n<content>\nno\n</content>\n</codeply:write_file>', 'Ok, not writing.'];
+  await runToEnd(sid, { text: 'write refused.txt', mode: 'Build' }, async (ev) => {
+    if (ev.type === 'approval_request') await api('POST', `/permission/${ev.requestId}`, { verdict: 'reject' });
+  });
+  check('serve: "reject" keeps the file from being written', !fs.existsSync(path.join(projDir, 'refused.txt')));
+
+  script = ['<codeply:write_file>\n<path>bypassed.txt</path>\n<content>\nyes\n</content>\n</codeply:write_file>', 'Done.'];
+  const c2 = await runToEnd(sid, { text: 'write bypassed.txt', mode: 'Build', bypass: true });
+  check('serve: bypass writes without asking', fs.existsSync(path.join(projDir, 'bypassed.txt')) && !c2.events.some((e) => e.type === 'approval_request'));
+
+  // Undo the last Build message through the API.
+  const cp = c2.events.find((e) => e.type === 'checkpoint');
+  const undone = cp ? await api('POST', `/session/${sid}/checkpoint/${cp.checkpoint.id}`, { undo: true }) : { status: 0 };
+  check('serve: a message\'s changes can be undone over HTTP', undone.status === 200 && !fs.existsSync(path.join(projDir, 'bypassed.txt')), undone.text);
+
+  // Abort while an approval is pending.
+  script = ['<codeply:write_file>\n<path>aborted.txt</path>\n<content>\nx\n</content>\n</codeply:write_file>', 'unused'];
+  const d = await runToEnd(sid, { text: 'write aborted.txt', mode: 'Build' }, async (ev) => {
+    if (ev.type === 'approval_request') {
+      const pend = await api('GET', `/session/${sid}/pending`);
+      if (!pend.json.pending.some((p) => p.requestId === ev.requestId)) throw new Error('pending list missing the request');
+      await api('POST', `/session/${sid}/abort`);
+    }
+  });
+  check('serve: abort ends a run that is waiting on a prompt', d.events.some((e) => e.type === 'aborted' || e.type === 'run_finished') && !fs.existsSync(path.join(projDir, 'aborted.txt')));
+  check('serve: nothing is left pending after the run', (await api('GET', `/session/${sid}/pending`)).json.pending.length === 0);
+
+  check('serve: a second message during a run is refused with 409', await (async () => {
+    script = ['<codeply:write_file>\n<path>busy.txt</path>\n<content>\nx\n</content>\n</codeply:write_file>', 'ok'];
+    let second = null;
+    await runToEnd(sid, { text: 'busy', mode: 'Build' }, async (ev) => {
+      if (ev.type === 'approval_request') {
+        second = await api('POST', `/session/${sid}/message`, { text: 'again', mode: 'Ask' });
+        await api('POST', `/permission/${ev.requestId}`, { verdict: 'reject' });
+      }
+    });
+    return second && second.status === 409;
+  })());
+
+  // Question flow.
+  script = ['<codeply:ask_user>\n<question>Which colour?</question>\n<options>\nred\nblue\n</options>\n</codeply:ask_user>', 'Going with your pick.'];
+  let asked = null;
+  await runToEnd(sid, { text: 'pick a colour', mode: 'Ask' }, async (ev) => {
+    if (ev.type === 'question_request') { asked = ev; await api('POST', `/question/${ev.requestId}`, { answer: 'blue' }); }
+  });
+  check('serve: ask_user questions are answered over HTTP', asked && asked.options.join() === 'red,blue' && seen.some((s) => /answered: blue/.test(s)), JSON.stringify({ asked, seen }));
+
+  const replay = await watch(sid, (ev) => (ev.type === 'session_sync' ? 'stop' : undefined), '&after=1');
+  check('serve: reconnecting with a last-seen id replays missed events', replay.some((e) => e.type === 'run_finished'), JSON.stringify(replay.map((e) => e.type)));
+
+  const found = await api('GET', '/search?q=hello');
+  check('serve: search finds text across chats', srv.storage === 'json' ? found.status === 501 : found.json?.results?.some((r) => r.sessionId === sid), found.text);
+  const md = await api('GET', `/session/${sid}/export`);
+  check('serve: a chat exports as markdown', md.status === 200 && /## You/.test(md.text) && /Hello from the server/.test(md.text));
+  const htmlExp = await api('GET', `/session/${sid}/export?format=html`);
+  check('serve: a chat exports as a web page', htmlExp.status === 200 && /<!doctype html>/.test(htmlExp.text) && /Hello from the server/.test(htmlExp.text));
+  check('serve: rename works', (await api('PATCH', `/session/${sid}`, { title: 'Renamed' })).json?.session?.title === 'Renamed');
+
+  await srv.close();
+  const srv2 = await startServer({ port: 0, password: 'pw123', cwd: projDir, dataDir, route });
+  srv.url = srv2.url;
+  const again = await api('GET', '/session');
+  check('serve: chats survive a restart', again.json?.sessions.some((s) => s.id === sid && s.title === 'Renamed'), again.text);
+  check('serve: a deleted chat is gone', (await api('DELETE', `/session/${sid}`)).status === 200 && (await api('GET', `/session/${sid}`)).status === 404);
+  await srv2.close();
+}
+
 server.close();
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(failures ? `\n${failures} FAILED` : '\nALL PASSED');
