@@ -329,6 +329,7 @@ function openLightbox(src) {
 
 // ─── Tool rows: tap to see what really ran ─────────────────────────────────
 const TOOL_VERB = {
+  todo: 'Updated task list', ask_user: 'Asked you', mcp: 'Used',
   read_file: 'Read', write_file: 'Wrote', edit_file: 'Edited', run: 'Ran', search: 'Searched', list_dir: 'Listed',
   browser_check: 'Checked', fetch_image: 'Downloaded', use_skill: 'Loaded skill', list_skills: 'Searched skills',
   view_images: 'Viewed', design_reference_search: 'Searched designs', gmail_send: 'Emailed', gmail_search: 'Searched Gmail',
@@ -552,8 +553,10 @@ function renderSession(session) {
       else if (item.kind === 'tool') addToolItem(item);
       else if (item.kind === 'role_active' || item.kind === 'subagent_active') addRoleBadge(item);
       else if (item.kind === 'turn_summary') addTurnSummary(item);
+      else if (item.kind === 'checkpoint') renderCheckpoint(item);
+      else if (item.kind === 'question') renderQuestion({ ...item, answered: true });
       else if (item.kind === 'goal') renderGoalCard(item);
-      else if (item.kind === 'notice') addMessage('error', item.text);
+      else if (item.kind === 'notice') { if (item.level === 'info') addThinking(item.text); else addMessage('error', item.text); }
     }
     // Chat should always open scrolled to the newest message, not the top.
     scrollToBottom();
