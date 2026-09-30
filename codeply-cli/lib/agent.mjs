@@ -1102,13 +1102,23 @@ export function buildSystemPrompt(mode, cwd, userMessage, opts = {}) {
       'Keep going without asking the user questions - make sensible, conventional decisions yourself and note them in your summary. ' +
       'Only stop to ask if you are truly blocked (missing credentials, an irreversible choice only the user can make).');
   }
-  parts.push('', TOOL_REFERENCE);
+  // Native mode swaps the tag examples for a short note; the tools themselves
+  // arrive as function definitions. The RULES apply either way.
+  parts.push('', opts.native ? `${NATIVE_FORMAT}\n\n${TOOL_REFERENCE.slice(TOOL_REFERENCE.indexOf('RULES\n'))}` : TOOL_REFERENCE);
   parts.push('', connectedServicesSection());
-  if (READ_ONLY_MODES.has(mode)) {
+  if (mode === 'Plan') {
+    parts.push('', 'MODE RESTRICTION: this is Plan mode. write_file and edit_file only work on plan files under .codeply/plans/ (*.md); everything else is disabled and returns an error. run is limited to read-only commands. Call plan_exit when the plan file is written.');
+  } else if (READ_ONLY_MODES.has(mode)) {
     parts.push('', 'MODE RESTRICTION: write_file and edit_file are disabled. Using them returns an error. run is limited to read-only commands.');
+  } else if (mode === 'Build') {
+    parts.push('', 'PLANS: if the user points you at a plan file under .codeply/plans/, read it and carry it out step by step, keeping its checklist in todo. plan_enter switches to Plan mode; use it only when the user asks to plan first, or the request is large and ambiguous enough that building without a plan would be a gamble. It asks the user before switching.');
   }
-  const skillIndex = buildSkillIndex(userMessage);
+  const skillIndex = buildSkillIndex(userMessage, cwd);
   if (skillIndex) parts.push('', skillIndex);
+  const instructions = instructionsSection(cwd);
+  if (instructions) parts.push('', instructions);
+  const mcpSection = mcpServersSection(opts.mcp, opts.native);
+  if (mcpSection) parts.push('', mcpSection);
   parts.push('', 'PROJECT CONTEXT', buildProjectContext(cwd));
   return parts.join('\n');
 }
@@ -1160,6 +1170,133 @@ function trimTranscript(messages, budget = CONTEXT_CHAR_BUDGET) {
     }
   }
   return kept;
+}
+
+function transcriptLength(messages) {
+  return messages.reduce((n, m) => n + contentLength(m.content), 0);
+}
+
+// ─── Compaction ─────────────────────────────────────────────────────────────
+//
+// Dropping old tool output (trimTranscript) is enough most of the time. When
+// the transcript is STILL over budget after that, the middle of the turn is
+// replaced by a structured summary written by the model itself, so the goal,
+// decisions and file paths survive instead of just falling off the end.
+// The summary template is adapted from opencode (packages/core/src/session/
+// compaction.ts), MIT License, Copyright (c) 2025 opencode.
+
+const KEEP_RECENT_MESSAGES = 6;
+const SUMMARY_SOURCE_CHARS = 2000; // per message fed to the summarizer
+
+const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
+<template>
+## Objective
+- [one or two brief sentences describing what the user is trying to accomplish]
+
+## Important Details
+- [constraints/preferences, decisions and why, important facts, exact context needed to continue, or "(none)"]
+
+## Work State
+### Completed
+- [finished work, verified facts, or changes made, ONLY if a tool result below confirms it; otherwise "(none)"]
+
+### Active
+- [current work, partial changes, or investigation state; otherwise "(none)"]
+
+### Blocked
+- [blockers, failing commands, or unknowns; otherwise "(none)"]
+
+## Next Move
+1. [immediate concrete action, or "(none)"]
+
+## Relevant Files
+- [file or directory path: why it matters, or "(none)"]
+</template>
+
+Rules:
+- Keep every section, even when empty. Terse bullets, not paragraphs.
+- Preserve exact file paths, symbols, commands, error strings and identifiers.
+- A change counts as Completed only if a [tool result] in the conversation shows it succeeded. Something the assistant only said it would do, or said it did without a matching result, goes under Active.
+- Do not mention the summary process.`;
+
+function summarySource(messages) {
+  return messages.map((m) => {
+    const text = typeof m.content === 'string' ? m.content : toolResultText(m.content);
+    const cut = text.length > SUMMARY_SOURCE_CHARS ? `${text.slice(0, SUMMARY_SOURCE_CHARS)} [...]` : text;
+    return `${m.role === 'assistant' ? 'ASSISTANT' : 'USER'}: ${cut}`;
+  }).join('\n\n');
+}
+
+/**
+ * Replace messages[1 .. length-KEEP_RECENT_MESSAGES) with one summary message,
+ * in place. The system prompt, the user's request and the latest steps stay.
+ * @returns {Promise<boolean>} whether anything was compacted
+ */
+/**
+ * Used when the summarizer call fails or comes back empty: a plain summary
+ * built from what the tools really did. Worse prose than the model's, but it
+ * can never invent anything, and it still frees the room. (Hermes Agent does
+ * the same, MIT, Nous Research.)
+ */
+function fallbackSummary(userMessage, actions) {
+  const changed = [...new Set(actions.filter((a) => a.ok && /^(write_file|edit_file)$/.test(a.tool)).map((a) => a.label))];
+  const failed = actions.filter((a) => !a.ok || (a.exitCode !== undefined && a.exitCode !== 0)).slice(-8);
+  return [
+    '## Objective', `- ${String(typeof userMessage === 'string' ? userMessage : '').slice(0, 400) || '(see request)'}`,
+    '', '## Work State', '### Completed',
+    ...(changed.length ? changed.map((f) => `- changed ${f}`) : ['- (none)']),
+    '', '### Blocked',
+    ...(failed.length ? failed.map((a) => `- ${a.tool} ${a.label} failed${a.exitCode !== undefined ? ` (exit ${a.exitCode})` : ''}`) : ['- (none)']),
+    '', '## Steps so far', ...actions.slice(-25).map((a) => `- ${a.tool} ${a.label}${a.ok ? '' : ' (FAILED)'}`),
+  ].join('\n');
+}
+
+async function compactTranscript(messages, userMessage, signal, route, { actions = [], todos = [] } = {}) {
+  const start = 1;
+  const end = messages.length - KEEP_RECENT_MESSAGES;
+  if (end - start < 4) return false;
+  const prompt = [
+    'You are a context summarization agent. Produce a structured summary so another coding agent can continue this work. ' +
+    'Do not continue the conversation or answer questions in it.',
+    `The user's request for this turn:\n${typeof userMessage === 'string' ? userMessage : ''}`,
+    `Here is the conversation so far:\n\n<conversation>\n${summarySource(messages.slice(start, end))}\n</conversation>`,
+    SUMMARY_TEMPLATE,
+  ].join('\n\n');
+  let result = null;
+  try { result = await ai.chat([{ role: 'user', content: prompt }], { signal, route }); } catch {}
+  if (signal?.aborted) return false;
+  let summary = result?.success ? String(result.data?.choices?.[0]?.message?.content || '').trim() : '';
+  // Any action block in a summary would be read as a request later on.
+  summary = summary.replace(/<\/?codeply:[a-z_]+>/gi, '');
+  if (!summary) summary = fallbackSummary(userMessage, actions);
+  const open = formatTodos(todos, { openOnly: true });
+  messages.splice(start, end - start, {
+    role: 'user',
+    content: `[context summary] Reference only: earlier steps of this turn, summarized to save room. Their tool ` +
+      'results are gone, so re-read a file if you need its exact content. Your actions all still work: keep going ' +
+      'from "Next Move" with action blocks, and do not redo what is listed as completed.\n\n' + summary +
+      (open ? `\n\n[Your open task list, kept across the summary]\n${open}` : ''),
+  });
+  return true;
+}
+
+/**
+ * Once old tool output has been dropped, the model can no longer see what it
+ * already did, which is exactly when it starts redoing steps or "remembering"
+ * work that never happened. A compact record of this turn's real actions,
+ * straight from the tool results, is sent along with every trimmed request.
+ */
+function actionLedger(actions, todos = []) {
+  if (!actions.length) return null;
+  const rows = actions.slice(-40).map((a, i) =>
+    `${i + 1}. ${a.tool} ${a.label}${a.ok ? '' : ' (FAILED)'}${a.exitCode !== undefined ? ` exit ${a.exitCode}` : ''}`);
+  const open = formatTodos(todos, { openOnly: true });
+  return {
+    role: 'user',
+    content: `[system] Record of what actually ran so far this turn (older output was trimmed). ` +
+      `This is the ground truth; anything not listed here did not happen:\n${rows.join('\n')}` +
+      (open ? `\n\nOpen items on your task list:\n${open}` : ''),
+  };
 }
 
 // ─── Model call ─────────────────────────────────────────────────────────────
