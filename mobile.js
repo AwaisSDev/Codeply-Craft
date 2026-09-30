@@ -223,6 +223,79 @@ function addTurnSummary(data) {
   scrollToBottom();
 }
 
+// A question from the agent: tap an option, type an answer, or let it decide.
+const questionEls = new Map();
+function renderQuestion(q) {
+  if (!q || !q.requestId) return;
+  showChat();
+  let el = questionEls.get(q.requestId);
+  if (!el || !el.isConnected) {
+    el = document.createElement('div');
+    el.className = 'question-card';
+    questionEls.set(q.requestId, el);
+    $('chatFeed').append(el);
+  }
+  el._q = { requestId: q.requestId, question: q.question, options: q.options || [] };
+  const answered = q.answered || q.answer !== undefined;
+  el.innerHTML = `<div class="q-text"></div>` + (answered
+    ? `<div class="q-answer">${q.answer == null ? 'Dismissed, the agent decided' : `Answered: <b>${escapeHtml(q.answer)}</b>`}</div>`
+    : `<div class="q-options">${el._q.options.map((o, i) => `<button type="button" data-i="${i}">${escapeHtml(o)}</button>`).join('')}</div>
+       <form class="q-custom"><input type="text" placeholder="Or type your own answer" maxlength="2000"><button type="submit">Send</button></form>
+       <button class="q-skip" type="button">Let the agent decide</button>`);
+  el.querySelector('.q-text').textContent = q.question;
+  if (!answered) {
+    const send = async (answer) => {
+      renderQuestion({ ...el._q, answer, answered: true });
+      try {
+        await request('/api/question', { method: 'POST', body: JSON.stringify({ requestId: q.requestId, answer }) });
+      } catch (err) { addMessage('error', err.message); }
+    };
+    el.querySelectorAll('.q-options button').forEach((b) => b.addEventListener('click', () => send(el._q.options[Number(b.dataset.i)])));
+    el.querySelector('.q-custom').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const v = e.currentTarget.querySelector('input').value.trim();
+      if (v) send(v);
+    });
+    el.querySelector('.q-skip').addEventListener('click', () => send(null));
+  }
+  scrollToBottom();
+}
+
+// Undo / redo everything one message changed (same as the desktop row).
+const checkpointEls = new Map();
+function renderCheckpoint(cp) {
+  if (!cp || !cp.id) return;
+  showChat();
+  let el = checkpointEls.get(cp.id);
+  if (!el || !el.isConnected) {
+    el = document.createElement('div');
+    el.className = 'checkpoint';
+    checkpointEls.set(cp.id, el);
+    $('chatFeed').append(el);
+  }
+  const n = cp.total || (cp.files || []).length;
+  el.classList.toggle('undone', !!cp.undone);
+  el.innerHTML = `<span class="cp-label">${cp.undone ? 'Undid changes to' : 'Changed'} ${n} file${n === 1 ? '' : 's'}</span>
+    <button class="cp-action" type="button">${cp.undone ? 'Redo' : 'Undo'}</button>`;
+  el.querySelector('.cp-label').title = (cp.files || []).map((f) => f.file).join('\n');
+  el.querySelector('.cp-action').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = cp.undone ? 'Redoing…' : 'Undoing…';
+    try {
+      const r = await request('/api/checkpoint', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId: state.sessionId, checkpointId: cp.id, undo: !cp.undone }),
+      });
+      renderCheckpoint(r && r.checkpoint ? r.checkpoint : cp);
+    } catch (err) {
+      addMessage('error', err.message);
+      renderCheckpoint(cp);
+    }
+  });
+  scrollToBottom();
+}
+
 // One live card per /goal run.
 let goalCardEl = null;
 const GOAL_LABEL = { running: 'Working', verifying: 'Verifying', achieved: 'Achieved', blocked: 'Stuck', incomplete: 'Not finished', failed: 'Stopped', stopped: 'Stopped' };
