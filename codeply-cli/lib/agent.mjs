@@ -11,14 +11,18 @@
  * instead of freezing until the whole task finishes.
  */
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { execSync } from 'child_process';
 import { createRequire } from 'module';
-import { executeTool, TOOL_NEEDS_APPROVAL, walkFiles, resolvePath } from './tools.mjs';
+import { executeTool, TOOL_NEEDS_APPROVAL, walkFiles, resolvePath, formatTodos, isPlanPath } from './tools.mjs';
+import { buildToolSchemas, toNativeMessages, toolCallsToTags, NATIVE_FORMAT, TOOLS_UNSUPPORTED } from './native-tools.mjs';
 
 const require = createRequire(import.meta.url);
 const ai = require('./ai.js');
+const mcpLib = require('./mcp.js');
 const skills = require('./skills.js');
+const plugins = require('./plugins.js');
 const rolesLib = require('./subagents.js');
 const config = require('./config.js');
 
