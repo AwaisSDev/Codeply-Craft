@@ -2628,6 +2628,25 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
       sendEvent(session.id, { type: 'error', error: err.message });
       session.messages.push({ kind: 'notice', level: 'error', text: `Something went wrong: ${err.message}`, at: Date.now() });
     } finally {
+      if (beforeTree) {
+        try {
+          const afterTree = await snapshotLib.track(cwd);
+          const changes = await snapshotLib.changedFiles(cwd, beforeTree, afterTree);
+          if (changes.length) {
+            const checkpoint = {
+              kind: 'checkpoint',
+              id: 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+              beforeTree, afterTree, cwd,
+              files: changes.slice(0, 200),
+              total: changes.length,
+              undone: false,
+              at: Date.now(),
+            };
+            session.messages.push(checkpoint);
+            sendEvent(session.id, { type: 'checkpoint', checkpoint: checkpointView(checkpoint) });
+          }
+        } catch {}
+      }
       activeRuns.delete(session.id);
       updateSleepBlocker();
       broadcastRunStatus();
@@ -2654,7 +2673,110 @@ function stopChatRun(sessionId) {
   // Only this chat's - other chats' runs keep their own prompts.
   for (const [, p] of [...pendingApprovals]) if (p.sessionId === sessionId) p.resolve('reject');
   for (const [, p] of [...pendingImagePicks]) if (p.sessionId === sessionId) p.resolve(null);
+  for (const [, p] of [...pendingQuestions]) if (p.sessionId === sessionId) p.resolve(null);
 }
+
+// ─── Undo / redo a message's changes ────────────────────────────────────────
+
+/** What the renderer and phone need; tree hashes stay in the main process. */
+function checkpointView(c) {
+  return { id: c.id, files: c.files, total: c.total, undone: !!c.undone, at: c.at };
+}
+
+/**
+ * Undo puts every file the message changed back to how it was before the
+ * message ran; redo puts them back to how the message left them. Either way
+ * only those files are touched, and a run in progress blocks it (the agent
+ * would be editing the same files underneath).
+ */
+async function setCheckpointUndone(sessionId, checkpointId, undo) {
+  const session = store.sessions.find((s) => s.id === sessionId);
+  const c = session && session.messages.find((m) => m.kind === 'checkpoint' && m.id === checkpointId);
+  if (!c) return { error: 'That change set is no longer available.' };
+  if (!snapshotLib && !(await loadEngine())) return { error: 'Engine not available.' };
+  if (activeRuns.has(sessionId)) return { error: 'Wait for the current run to finish (or stop it) first.' };
+  if (!!c.undone === !!undo) return { ok: true, checkpoint: checkpointView(c) };
+  // Undoing an older message while a newer one changed the same files would
+  // throw away the newer work too. Refuse and say which message to undo first.
+  const idx = session.messages.indexOf(c);
+  const later = session.messages.slice(idx + 1).filter((m) => m.kind === 'checkpoint' && !m.undone);
+  const mine = new Set(c.files.map((f) => f.file));
+  if (undo && later.some((m) => m.files.some((f) => mine.has(f.file)))) {
+    return { error: 'A later message changed some of the same files. Undo that one first.' };
+  }
+  const target = undo ? c.beforeTree : c.afterTree;
+  const r = await snapshotLib.restore(c.cwd, target, c.files.map((f) => f.file));
+  if (!r.ok && !r.restored.length && !r.removed.length) return { error: `Could not restore the files (${r.failed.slice(0, 3).join(', ')}).` };
+  c.undone = !!undo;
+  session.updatedAt = Date.now();
+  saveStore();
+  syncSessionToDb(session);
+  const view = checkpointView(c);
+  sendEvent(session.id, { type: 'checkpoint_update', checkpoint: view });
+  return { ok: true, checkpoint: view, failed: r.failed };
+}
+
+ipcMain.handle('checkpoint:set', (e, { sessionId, checkpointId, undo }) => setCheckpointUndone(sessionId, checkpointId, undo));
+
+// Custom slash commands for the composer's "/" menu.
+ipcMain.handle('commands:list', async (e, cwd) => {
+  if (!commandsLib && !(await loadEngine())) return [];
+  return [...commandsLib.loadCommands(cwd || null).values()].map((c) => ({ name: c.name, description: c.description, mode: c.mode }));
+});
+
+// Plugins: fetch first, show what is inside, install only after the user confirms.
+const pendingPlugins = new Map();
+let pluginToken = 0;
+const pluginView = (p) => ({ name: p.name, version: p.version, description: p.description, scope: p.scope, enabled: p.enabled, source: p.source, ...require(path.join(CLI_DIR, 'lib', 'plugins.js')).summarize(p) });
+
+ipcMain.handle('plugins:list', async (e, cwd) => {
+  if (!(await loadEngine())) return [];
+  return require(path.join(CLI_DIR, 'lib', 'plugins.js')).listPlugins(cwd || null).map(pluginView);
+});
+
+async function stashPrepared(prepared, extra) {
+  if (!prepared.ok) return { ok: false, error: prepared.error };
+  const token = ++pluginToken;
+  pendingPlugins.set(token, prepared);
+  setTimeout(() => { const p = pendingPlugins.get(token); if (p) { pendingPlugins.delete(token); require(path.join(CLI_DIR, 'lib', 'plugins.js')).discardInstall(p); } }, 10 * 60 * 1000).unref();
+  return { ok: true, token, summary: prepared.summary, ...extra };
+}
+
+ipcMain.handle('plugins:prepare', async (e, { source }) => {
+  if (!(await loadEngine())) return { ok: false, error: 'The engine did not start.' };
+  return stashPrepared(await require(path.join(CLI_DIR, 'lib', 'plugins.js')).prepareInstall(String(source || '')));
+});
+
+ipcMain.handle('plugins:prepareUpdate', async (e, { name, cwd }) => {
+  if (!(await loadEngine())) return { ok: false, error: 'The engine did not start.' };
+  const prepared = await require(path.join(CLI_DIR, 'lib', 'plugins.js')).prepareUpdate(String(name || ''), cwd || null);
+  return stashPrepared(prepared, prepared.ok ? { update: true, before: prepared.before } : {});
+});
+
+ipcMain.handle('plugins:finish', (e, { token, scope, cwd }) => {
+  const prepared = pendingPlugins.get(token);
+  if (!prepared) return { ok: false, error: 'That install expired. Start it again.' };
+  pendingPlugins.delete(token);
+  const lib = require(path.join(CLI_DIR, 'lib', 'plugins.js'));
+  const isUpdate = !!prepared.before;
+  const r = lib.finishInstall(prepared, { scope: isUpdate ? prepared.scope : scope === 'project' && cwd ? 'project' : 'user', cwd: cwd || null, force: isUpdate });
+  return r.ok ? { ok: true, name: r.name } : { ok: false, error: r.error };
+});
+
+ipcMain.handle('plugins:cancel', (e, { token }) => {
+  const prepared = pendingPlugins.get(token);
+  if (prepared) { pendingPlugins.delete(token); require(path.join(CLI_DIR, 'lib', 'plugins.js')).discardInstall(prepared); }
+  return { ok: true };
+});
+
+ipcMain.handle('plugins:remove', (e, { name, cwd }) => require(path.join(CLI_DIR, 'lib', 'plugins.js')).removePlugin(String(name || ''), cwd || null));
+ipcMain.handle('plugins:toggle', (e, { name, enabled, cwd }) => require(path.join(CLI_DIR, 'lib', 'plugins.js')).setEnabled(String(name || ''), !!enabled, cwd || null));
+
+function respondQuestion(requestId, answer) {
+  const p = pendingQuestions.get(Number(requestId));
+  if (p) p.resolve(answer);
+}
+ipcMain.on('question:respond', (e, { requestId, answer }) => respondQuestion(requestId, answer));
 
 function respondApproval(requestId, verdict) {
   const p = pendingApprovals.get(Number(requestId));
@@ -2894,4 +3016,5 @@ app.on('before-quit', () => {
   remoteEventClients.clear();
   if (remoteServer) remoteServer.close();
   if (tray) { tray.destroy(); tray = null; }
+  if (sessionDb) { try { sessionDb.save(store); sessionDb.close(); } catch {} sessionDb = null; }
 });
