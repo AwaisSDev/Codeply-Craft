@@ -51,10 +51,49 @@ const TEXT_EXT = new Set([
   '.yaml', '.toml', '.xml', '.svg', '.vue', '.svelte', '.sql', '.env',
 ]);
 
-function truncate(text, max = MAX_TOOL_OUTPUT) {
+// Oversized output is saved in full to a file the model can page through
+// with read_file, instead of the rest just being lost. Same idea as
+// opencode's tool/truncate.ts (MIT). Old files are swept after a week.
+const SPILL_DIR = path.join(os.tmpdir(), 'codeply-tool-output');
+const SPILL_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+let spillSwept = false;
+
+function spillToFile(text) {
+  try {
+    fs.mkdirSync(SPILL_DIR, { recursive: true });
+    if (!spillSwept) {
+      spillSwept = true;
+      const cutoff = Date.now() - SPILL_MAX_AGE_MS;
+      for (const f of fs.readdirSync(SPILL_DIR)) {
+        const p = path.join(SPILL_DIR, f);
+        try { if (fs.statSync(p).mtimeMs < cutoff) fs.unlinkSync(p); } catch {}
+      }
+    }
+    const file = path.join(SPILL_DIR, `out-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}.txt`);
+    fs.writeFileSync(file, text, 'utf8');
+    return file;
+  } catch { return null; }
+}
+
+/**
+ * @param {string} text
+ * @param {number} [max]
+ * @param {{keep?: 'head'|'ends', spill?: boolean}} [opts]
+ *   keep 'ends' shows the start and the end (command output: errors and
+ *   summaries are usually last). spill saves the full text to a file.
+ */
+function truncate(text, max = MAX_TOOL_OUTPUT, { keep = 'head', spill = true } = {}) {
   if (text.length <= max) return text;
-  const kept = text.slice(0, max);
-  return `${kept}\n\n[… truncated, ${text.length - max} more characters. Narrow the request if you need the rest.]`;
+  const file = spill ? spillToFile(text) : null;
+  const where = file
+    ? `The full output (${text.length} characters, ${text.split('\n').length} lines) is saved at ${file} - read_file it with offset/limit, or search inside it with <path>, instead of re-running.`
+    : 'Narrow the request if you need the rest.';
+  if (keep === 'ends') {
+    const head = text.slice(0, Math.floor(max * 0.35));
+    const tail = text.slice(text.length - Math.floor(max * 0.6));
+    return `${head}\n\n[… ${text.length - head.length - tail.length} characters cut from the middle. ${where}]\n\n${tail}`;
+  }
+  return `${text.slice(0, max)}\n\n[… truncated, ${text.length - max} more characters. ${where}]`;
 }
 
 /** Resolve a model-supplied path against cwd and report whether it escapes it. */
