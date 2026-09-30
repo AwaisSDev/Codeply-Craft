@@ -2000,6 +2000,8 @@ export async function executeTool(name, args, ctx) {
     const result = await fn(args, ctx);
     if (usingHosted && RECORDED_TOOLS.has(name) && result.ok && result.meta?.wrote) {
       applyLimit.recordApplyEvent(args.path, result.meta.added, result.meta.removed); // fire-and-forget
+    } else if (usingHosted && name === 'apply_patch' && result.meta?.changes) {
+      for (const c of result.meta.changes) applyLimit.recordApplyEvent(c.path, c.added, c.removed);
     }
     return result;
   } catch (e) {
@@ -2007,4 +2009,4 @@ export async function executeTool(name, args, ctx) {
   }
 }
 
-export { resolvePath, walkFiles, truncate };
+export { resolvePath, walkFiles, truncate, isPlanPath };
