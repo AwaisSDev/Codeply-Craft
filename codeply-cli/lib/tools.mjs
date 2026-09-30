@@ -1938,11 +1938,20 @@ export const TOOLS = {
 // actually prompt for non-read requests (see above); read-only tools
 // (browser_check, gmail_search, design_reference_search, view_images, ...)
 // never prompt.
-export const TOOL_NEEDS_APPROVAL = new Set(['write_file', 'edit_file', 'run', 'fetch_image', 'gmail_send', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_api', 'supabase_sql', 'vercel_api']);
+export const TOOL_NEEDS_APPROVAL = new Set(['write_file', 'edit_file', 'apply_patch', 'run', 'fetch_image', 'gmail_send', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_api', 'supabase_sql', 'vercel_api']);
 
 /** Human-facing verb + colour hint for the transcript. */
 export const TOOL_DISPLAY = {
-  list_dir:   { verb: 'list',   icon: '▸' },
+  todo:       { verb: 'plan',   icon: '☐' },
+  ask_user:   { verb: 'ask',    icon: '?' },
+  mcp:        { verb: 'mcp',    icon: '⧉' },
+  web_fetch:  { verb: 'fetch',  icon: '⇩' },
+  web_search: { verb: 'web',    icon: '▸' },
+  apply_patch:{ verb: 'patch',  icon: '✎' },
+  plan_exit:  { verb: 'plan',   icon: '☐' },
+  plan_enter: { verb: 'plan',   icon: '☐' },
+  lsp:        { verb: 'lsp',    icon: '▸' },
+  list_dir:  { verb: 'list',   icon: '▸' },
   read_file:  { verb: 'read',   icon: '▸' },
   write_file: { verb: 'write',  icon: '✎' },
   edit_file:  { verb: 'edit',   icon: '✎' },
@@ -1970,7 +1979,7 @@ export const TOOL_DISPLAY = {
 // agent.mjs; this covers every other tool that changes something outside the
 // conversation, so read-only can't be escaped through a side door.
 const MUTATING_TOOLS = new Set([
-  'write_file', 'edit_file', 'fetch_image', 'gmail_send', 'slack_post_message',
+  'write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'slack_post_message',
   'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo',
 ]);
 
