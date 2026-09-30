@@ -2103,6 +2103,50 @@ select.login-input option { background: var(--surface-1); color: var(--text); }
 .ts-warn { display: flex; align-items: flex-start; gap: 7px; margin-top: 10px; padding: 8px 10px; border-radius: 9px; background: rgba(226, 194, 106, 0.12); color: #d9b24c; font-size: 12.5px; line-height: 1.45; }
 .ts-warn svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; }
 
+/* ============ Undo checkpoint ============ */
+.checkpoint {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin: 0 0 18px; padding: 7px 8px 7px 12px;
+  border-radius: 10px; border: 1px dashed var(--border);
+  font-size: 12.5px; color: var(--text-dim);
+}
+.checkpoint.undone { opacity: 0.75; }
+.cp-toggle { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; padding: 2px 0; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.cp-toggle:hover span { color: var(--text); }
+.cp-toggle svg { width: 14px; height: 14px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.cp-action { padding: 4px 12px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
+.cp-action:hover:not(:disabled) { border-color: var(--text-faint); }
+.cp-action:disabled { opacity: 0.6; cursor: default; }
+.cp-files { flex-basis: 100%; margin: 4px 0 2px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+.cp-files li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cp-files code { font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
+.cp-status { flex-shrink: 0; width: 56px; font-size: 11px; font-weight: 600; }
+.cp-A { color: var(--green); }
+.cp-M { color: var(--text-dim); }
+.cp-D { color: var(--red); }
+.cp-more { color: var(--text-faint); }
+
+/* ============ Question from the agent ============ */
+.question-card {
+  margin: 4px 0 18px; padding: 12px 14px;
+  border-radius: 12px; border: 1px solid color-mix(in srgb, var(--accent-purple) 40%, var(--border));
+  background: var(--card-bg);
+}
+.q-head { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; line-height: 1.45; color: var(--text); }
+.q-head svg { width: 17px; height: 17px; flex-shrink: 0; margin-top: 1px; fill: none; stroke: var(--accent-purple); stroke-width: 2; stroke-linecap: round; }
+.q-text { user-select: text; }
+.q-options { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.q-opt { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.q-opt.first { border-color: color-mix(in srgb, var(--accent-purple) 55%, var(--border)); }
+.q-opt:hover { border-color: var(--accent-purple); }
+.q-custom { display: flex; gap: 6px; margin-top: 8px; }
+.q-custom input { flex: 1; min-width: 0; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; }
+.q-custom button { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.q-skip { margin-top: 8px; padding: 0; background: none; border: 0; color: var(--text-faint); font: inherit; font-size: 12px; cursor: pointer; }
+.q-skip:hover { color: var(--text-dim); }
+.q-answer { margin-top: 8px; font-size: 13px; color: var(--text-dim); }
+.q-answer b { color: var(--text); font-weight: 600; }
+
 /* ============ Goal card ============ */
 .goal-card {
   margin: 6px 0 18px;
