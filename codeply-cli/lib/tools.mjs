@@ -494,29 +494,69 @@ async function edit_file(args, ctx) {
     // The "do not re-read" line is load-bearing: without it the model burns a
     // whole extra round-trip reading the file back, and stuffs the entire file
     // into context again, which slows down every following step.
-    output: `Edited ${rel} (-${removed} +${added} lines). The file is now ${nowLines} lines. ` +
-      `The change was matched and applied successfully - do NOT read the file back to confirm it.`,
-    meta: { label: rel, added, removed, wrote: true },
+    output: `Edited ${rel} (-${removed} +${added} lines${occurrences > 1 ? `, ${occurrences} occurrences` : ''}). The file is now ${nowLines} lines. ` +
+      `The change was matched and applied successfully - do NOT read the file back to confirm it.` +
+      (attempt.fuzzy ? ' (Your search text did not match exactly; the closest unique block was used. Copy search text exactly next time.)' : '') +
+      problemsNote(rel, problems),
+    meta: { label: rel, added, removed, wrote: true, problems },
   };
 }
 
+const MAX_SEARCH_CONTEXT = 5;
+const MAX_FOUND_FILES = 200;
+
+/**
+ * Content search, or a file-name search when only <glob> is given.
+ *
+ *   <pattern>   regex matched per line (case-insensitive)
+ *   <glob>      limit to matching paths; alone, it lists matching files
+ *   <path>      folder to search under (default: project root)
+ *   <context>   lines of surrounding code to show per hit (0-5), so a hit
+ *               can often be edited without a separate read_file
+ *   <files_only> true: list each matching file once with its hit count
+ */
 async function search(args, ctx) {
   const pattern = args.pattern;
-  if (!pattern) return { ok: false, output: 'search needs a <pattern>.' };
-
-  let re;
-  try { re = new RegExp(pattern, 'i'); }
-  catch (e) { return { ok: false, output: `Invalid regex: ${e.message}` }; }
-
   const globRe = args.glob ? globToRegex(args.glob) : null;
-  const root = args.path ? resolvePath(args.path, ctx.cwd).abs : ctx.cwd;
-  const files = walkFiles(root);
+  if (!pattern && !globRe) return { ok: false, output: 'search needs a <pattern>, or a <glob> to find files by name.' };
 
+  let re = null;
+  if (pattern) {
+    try { re = new RegExp(pattern, 'i'); }
+    catch (e) { return { ok: false, output: `Invalid regex: ${e.message}` }; }
+  }
+
+  const root = args.path ? resolvePath(args.path, ctx.cwd).abs : ctx.cwd;
+  if (!fs.existsSync(root)) return { ok: false, output: `No such folder: ${args.path}` };
+  // A single file works too (e.g. a saved long command output).
+  const files = fs.statSync(root).isFile() ? [root] : walkFiles(root);
+
+  if (!re) {
+    // Also match against just the file name, so "*.test.js" finds nested files
+    // without the model having to know to write "**/*.test.js".
+    const found = files
+      .map((f) => path.relative(ctx.cwd, f).replace(/\\/g, '/'))
+      .filter((rel) => globRe.test(rel) || globRe.test(rel.split('/').pop()))
+      .sort();
+    const shown = found.slice(0, MAX_FOUND_FILES);
+    const header = found.length
+      ? `${found.length} file(s) matching ${args.glob}${found.length > shown.length ? ` (first ${shown.length} shown)` : ''}:`
+      : `No files matching ${args.glob}.`;
+    return { ok: true, output: truncate(`${header}\n${shown.join('\n')}`), meta: { label: args.glob, count: found.length } };
+  }
+
+  const context = Math.min(MAX_SEARCH_CONTEXT, Math.max(0, parseInt(args.context, 10) || 0));
+  const filesOnly = isTruthy(args.files_only);
+
+  // Context blocks spend several output lines per hit, so the cap scales with them.
+  const maxLines = MAX_SEARCH_HITS * (context ? 4 : 1);
   const hits = [];
+  const fileCounts = [];
+  let totalHits = 0;
   let scanned = 0;
   for (const file of files) {
     const rel = path.relative(ctx.cwd, file).replace(/\\/g, '/');
-    if (globRe && !globRe.test(rel)) continue;
+    if (globRe && !globRe.test(rel) && !globRe.test(rel.split('/').pop())) continue;
     const ext = path.extname(file).toLowerCase();
     if (ext && !TEXT_EXT.has(ext)) continue;
     let content;
@@ -524,21 +564,47 @@ async function search(args, ctx) {
       if (fs.statSync(file).size > 2_000_000) continue;
       content = fs.readFileSync(file, 'utf8');
     } catch { continue; }
+    if (content.includes('\u0000')) continue; // binary that happens to have a text extension
     scanned++;
     const lines = content.split('\n');
+    let inFile = 0;
+    let lastShown = -1;
     for (let i = 0; i < lines.length; i++) {
-      if (re.test(lines[i])) {
+      if (!re.test(lines[i])) continue;
+      inFile++;
+      totalHits++;
+      if (filesOnly || hits.length >= maxLines) continue;
+      if (!context) {
         hits.push(`${rel}:${i + 1}: ${lines[i].trim().slice(0, 200)}`);
-        if (hits.length >= MAX_SEARCH_HITS) break;
+        continue;
       }
+      // Context blocks: hit line marked with ":", neighbours with "-", and
+      // overlapping windows merged so nearby hits don't repeat lines.
+      const from = Math.max(lastShown + 1, i - context);
+      const to = Math.min(lines.length - 1, i + context);
+      if (from > lastShown + 1 || lastShown === -1) hits.push(`--`);
+      for (let k = from; k <= to; k++) {
+        const mark = re.test(lines[k]) ? ':' : '-';
+        hits.push(`${rel}${mark}${k + 1}${mark} ${lines[k].slice(0, 200)}`);
+      }
+      lastShown = to;
     }
-    if (hits.length >= MAX_SEARCH_HITS) break;
+    if (inFile) fileCounts.push(`${rel}  (${inFile})`);
+    if (!filesOnly && hits.length >= maxLines) break;
   }
 
-  const header = hits.length
-    ? `${hits.length}${hits.length >= MAX_SEARCH_HITS ? '+' : ''} match(es) across ${scanned} file(s):`
+  if (filesOnly) {
+    const header = fileCounts.length
+      ? `${totalHits} match(es) in ${fileCounts.length} file(s), out of ${scanned} scanned:`
+      : `No matches for /${pattern}/ across ${scanned} file(s).`;
+    return { ok: true, output: truncate(`${header}\n${fileCounts.join('\n')}`), meta: { label: pattern, count: totalHits } };
+  }
+
+  const capped = hits.length >= maxLines;
+  const header = totalHits
+    ? `${totalHits}${capped ? '+' : ''} match(es) across ${scanned} file(s)${capped ? '. Output capped: narrow with <glob>/<path>, or use <files_only>true</files_only> to see which files match' : ''}:`
     : `No matches for /${pattern}/ across ${scanned} file(s).`;
-  return { ok: true, output: truncate(`${header}\n${hits.join('\n')}`), meta: { label: pattern, count: hits.length } };
+  return { ok: true, output: truncate(`${header}\n${hits.join('\n')}`), meta: { label: pattern, count: totalHits } };
 }
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB - plenty for web assets, small enough to not stall a turn
