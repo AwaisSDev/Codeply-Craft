@@ -1765,6 +1765,11 @@ async function handleBridgeApi(method, pathname, query, body) {
   }
   if (method === 'POST' && pathname === '/api/stop') { stopChatRun(body.sessionId); return { status: 200, body: { ok: true } }; }
   if (method === 'POST' && pathname === '/api/approval') { respondApproval(body.requestId, body.verdict); return { status: 200, body: { ok: true } }; }
+  if (method === 'POST' && pathname === '/api/question') { respondQuestion(body.requestId, body.answer); return { status: 200, body: { ok: true } }; }
+  if (method === 'POST' && pathname === '/api/checkpoint') {
+    const r = await setCheckpointUndone(body.sessionId, body.checkpointId, body.undo === true);
+    return { status: r.error ? 409 : 200, body: r };
+  }
   if (method === 'POST' && pathname === '/api/image-pick') { respondImagePick(body.requestId, body.chosenUrl); return { status: 200, body: { ok: true } }; }
   if (method === 'POST' && pathname === '/api/session/rename') {
     const session = store.sessions.find((s) => s.id === body.sessionId);
@@ -1877,6 +1882,7 @@ function relaySafeEvent(event) {
   }
   if (out.message && out.message.images) out.message = { ...out.message, images: undefined };
   if (out.type === 'tool_end' && out.name === 'write_file' && out.args) out.args = { path: out.args.path };
+  if (out.type === 'tool_end' && out.name === 'apply_patch' && out.args) out.args = {};
   return out;
 }
 
@@ -2052,66 +2058,10 @@ function broadcastRunStatus() {
   broadcastRemote(null, { type: 'runs_status', active });
 }
 
-const MAX_HISTORY_IMAGES = 4;
-
-/** One line per tool call the agent really made, for grounding later turns. */
-function describeAction(m) {
-  const verb = { write_file: 'wrote', edit_file: 'edited', run: 'ran', fetch_image: 'downloaded', browser_check: 'checked in browser',
-    vercel_deploy: 'deployed', supabase_sql: 'ran SQL', supabase_api: 'called Supabase API', vercel_api: 'called Vercel API',
-    github_create_repo: 'pushed to GitHub', supabase_create_project: 'created Supabase project', gmail_send: 'emailed',
-    slack_post_message: 'posted to Slack' }[m.name];
-  if (!verb) return null;
-  const exit = typeof m.exitCode === 'number' ? ` (exit ${m.exitCode})` : '';
-  return `${verb} ${m.label || ''}${exit}${m.ok === false ? ' - FAILED' : ''}`.trim();
-}
-
-/**
- * Model-facing history: alternating prose turns. Each assistant turn carries
- * a short, factual list of the actions it really performed - so on a
- * follow-up the model knows what it actually changed last time instead of
- * reconstructing it from its own (possibly wrong) summary. Also carries
- * forward a bounded number of the most recent pasted images.
- */
+// Model-facing history (and the per-action grounding lines) live in the engine so
+// the desktop app and `codeply serve` build them identically.
 function buildHistory(session) {
-  const turns = [];
-  let pendingActions = [];
-  const flushActions = () => {
-    if (!pendingActions.length) return;
-    const last = turns[turns.length - 1];
-    const note = `[Actions actually performed: ${pendingActions.slice(0, 12).join('; ')}${pendingActions.length > 12 ? `; +${pendingActions.length - 12} more` : ''}]`;
-    if (last && last.role === 'assistant') last.content += `\n\n${note}`;
-    else turns.push({ role: 'assistant', content: note });
-    pendingActions = [];
-  };
-  for (const m of session.messages) {
-    if (m.kind === 'user') {
-      flushActions();
-      turns.push({ role: 'user', content: m.text, images: m.images || null });
-    } else if (m.kind === 'assistant' && m.text) {
-      const last = turns[turns.length - 1];
-      if (last && last.role === 'assistant') last.content += '\n\n' + m.text;
-      else turns.push({ role: 'assistant', content: m.text });
-    } else if (m.kind === 'tool') {
-      const line = describeAction(m);
-      if (line) pendingActions.push(line);
-    }
-  }
-  flushActions();
-  const kept = turns.slice(-20);
-  // A history must start with a user turn for most providers.
-  while (kept.length && kept[0].role !== 'user') kept.shift();
-
-  let imageBudget = MAX_HISTORY_IMAGES;
-  for (let i = kept.length - 1; i >= 0; i--) {
-    const t = kept[i];
-    if (t.role !== 'user' || !t.images || !t.images.length || imageBudget <= 0) { delete t.images; continue; }
-    const take = t.images.slice(0, imageBudget);
-    imageBudget -= take.length;
-    t.content = [{ type: 'text', text: t.content }, ...take.map((dataUrl) => ({ type: 'image_url', image_url: { url: dataUrl } }))];
-    delete t.images;
-  }
-
-  return kept;
+  return require(path.join(CLI_DIR, 'lib', 'history.js')).buildHistory(session);
 }
 
 // ─── Roles ──────────────────────────────────────────────────────────────────
