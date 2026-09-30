@@ -19,10 +19,16 @@ import { searchLibrary, listCategories, designLibraryConfigured, CATEGORY_LABELS
 
 const require = createRequire(import.meta.url);
 const editEngine = require('./edit-engine.js');
+const terminalHints = require('./terminal-hints.js');
+const diagnostics = require('./diagnostics.js');
+const { commandPatterns } = require('./arity.js');
+const mcpLib = require('./mcp.js');
 const applyLimit = require('./apply-limit.js');
 const config = require('./config.js');
 const skills = require('./skills.js');
 const oauth = require('./oauth-connectors.js');
+const webTools = require('./web-tools.js');
+const applyPatchLib = require('./apply-patch.js');
 
 // Successful writes made while using the hosted model are logged (counts
 // only) for the usage dashboard. There is no cap - see apply-limit.js.
