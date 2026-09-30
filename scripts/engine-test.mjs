@@ -866,6 +866,7 @@ process.stdin.on('data', (d) => {
   const calls = [];
   const comments = new Map();
   let nextId = 1000;
+  let blockPrs = false;
   let prInfo = { head: { ref: 'feature', repo: { full_name: 'o/r' } }, base: { ref: 'main', repo: { full_name: 'o/r' } } };
   const fakeFetch = async (url, init = {}) => {
     const u = new URL(url);
@@ -877,7 +878,7 @@ process.stdin.on('data', (d) => {
     if (init.method === 'POST' && (m = /^\/repos\/o\/r\/issues\/(\d+)\/comments$/.exec(u.pathname))) { const id = nextId++; comments.set(id, body.body); return reply(201, { id }); }
     if (init.method === 'PATCH' && (m = /^\/repos\/o\/r\/issues\/comments\/(\d+)$/.exec(u.pathname))) { comments.set(Number(m[1]), body.body); return reply(200, {}); }
     if (init.method === 'GET' && /^\/repos\/o\/r\/pulls\/\d+$/.test(u.pathname)) return reply(200, prInfo);
-    if (init.method === 'POST' && u.pathname === '/repos/o/r/pulls') return reply(201, { html_url: 'https://github.com/o/r/pull/99' });
+    if (init.method === 'POST' && u.pathname === '/repos/o/r/pulls') return blockPrs ? reply(403, { message: 'GitHub Actions is not permitted to create or approve pull requests.' }) : reply(201, { html_url: 'https://github.com/o/r/pull/99' });
     return reply(404, { message: 'not found' });
   };
   const lastComment = () => [...comments.values()].pop() || '';
@@ -946,6 +947,28 @@ process.stdin.on('data', (d) => {
   reset();
   const r8 = await go(issueEv('/codeply look around'), 'issue_comment', ['I looked around; there is nothing to change.']);
   check('github: a build that changes no files posts the answer and opens no pull request', r8.status === 'answered' && !calls.some((c) => c.path === '/repos/o/r/pulls' && c.method === 'POST'));
+
+  reset();
+  blockPrs = true;
+  const r9 = await go(issueEv('/codeply add blocked.txt'), 'issue_comment', [
+    '<codeply:write_file>\n<path>blocked.txt</path>\n<content>\nstill pushed\n</content>\n</codeply:write_file>',
+    'Added blocked.txt.',
+  ]);
+  blockPrs = false;
+  check('github: when Actions may not open pull requests, the branch is pushed and the reply links a one-click PR',
+    r9.status === 'pushed' && /compare\/main\.\.\.codeply%2Fissue-7/.test(r9.url) && /Open the pull request/.test(lastComment()) && /Allow GitHub Actions to create/.test(lastComment()), JSON.stringify(r9));
+
+  reset();
+  let agentRan = false;
+  const noAgent = { setupError: 'Set the CODEPLY_API_KEY secret.', runAgentImpl: async function* () { agentRan = true; } };
+  const r10 = await go(issueEv('/codeply fix it'), 'issue_comment', [], noAgent);
+  const r11 = await go(issueEv('nice work'), 'issue_comment', [], noAgent);
+  check('github: a setup error is posted on the issue, but only for real /codeply requests',
+    r10.status === 'failed' && /can't start yet: Set the CODEPLY_API_KEY/.test(lastComment()) && !agentRan && r11.status === 'skipped' && comments.size === 1);
+
+  const bomKey = gh.routeFromEnv({ CODEPLY_PROVIDER: 'ollama', CODEPLY_API_KEY: '﻿abc.def\r\n' });
+  check('github: keys lose a pasted BOM or newline, and ollama is a preset', bomKey.route && bomKey.route.custom.apiKey === 'abc.def' && bomKey.route.custom.baseUrl === 'https://ollama.com/v1'
+    && !!gh.routeFromEnv({ CODEPLY_PROVIDER: 'ollama', CODEPLY_API_KEY: '﻿' }).error);
 
   const wfDir = path.join(tmp, 'gh-wf');
   fs.mkdirSync(wfDir, { recursive: true });

@@ -31,6 +31,7 @@ const DEFAULT_ALLOWED = ['OWNER', 'MEMBER', 'COLLABORATOR'];
 const MAX_COMMENT = 60000;
 
 export const PROVIDERS = {
+  ollama: { baseUrl: 'https://ollama.com/v1', model: 'gemma4:31b' },
   openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
   anthropic: { baseUrl: 'https://api.anthropic.com/v1', model: 'claude-sonnet-5' },
   gemini: { baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.7-flash' },
@@ -48,8 +49,10 @@ export function routeFromEnv(env) {
   const model = env.CODEPLY_MODEL || (preset && preset.model);
   if (!model) return { error: 'Set CODEPLY_MODEL.' };
   const local = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(baseUrl);
-  if (!env.CODEPLY_API_KEY && !local) return { error: 'Set the CODEPLY_API_KEY secret (your own key for the model provider).' };
-  return { route: { custom: { id: 'github', name: model, kind: 'openai', baseUrl, model, apiKey: env.CODEPLY_API_KEY || '' } } };
+  // Keys pasted on Windows often carry a BOM or a trailing newline, which fetch rejects in a header.
+  const apiKey = String(env.CODEPLY_API_KEY || '').replace(/[﻿\s]/g, '');
+  if (!apiKey && !local) return { error: 'Set the CODEPLY_API_KEY secret (your own key for the model provider).' };
+  return { route: { custom: { id: 'github', name: model, kind: 'openai', baseUrl, model, apiKey } } };
 }
 
 /** What the event asks for, or why to skip it. */
@@ -142,7 +145,7 @@ function buildPrompt(ctx, repo, pr) {
  * @returns {Promise<{status: 'skipped'|'answered'|'pushed'|'pr'|'failed', message?: string, url?: string}>}
  */
 export async function runGithubAgent({
-  eventName, event, cwd = process.cwd(), token, route, env = process.env, maxSteps = 40,
+  eventName, event, cwd = process.cwd(), token, route, setupError = null, env = process.env, maxSteps = 40,
   fetchImpl = fetch, log = () => {}, runAgentImpl = runAgent,
 }) {
   const allowed = env.CODEPLY_ALLOWED_ASSOCIATIONS ? env.CODEPLY_ALLOWED_ASSOCIATIONS.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean) : DEFAULT_ALLOWED;
@@ -165,6 +168,11 @@ export async function runGithubAgent({
       else statusId = (await api('POST', `/repos/${repo}/issues/${ctx.number}/comments`, { body })).id;
     } catch (e) { log(`Could not post a comment: ${e.message}`); }
   };
+
+  if (setupError) {
+    await say(`Craft can't start yet: ${setupError}`);
+    return { status: 'failed', message: setupError };
+  }
 
   try {
     if (ctx.commentId) await api('POST', `/repos/${repo}/${ctx.commentKind === 'review' ? 'pulls' : 'issues'}/comments/${ctx.commentId}/reactions`, { content: 'eyes' }).catch(() => {});
@@ -227,10 +235,19 @@ export async function runGithubAgent({
       await say(`${answer}\n\nPushed ${changed} changed file${changed === 1 ? '' : 's'} to \`${branch}\` (${sha}).`);
       return { status: 'pushed', message: answer, url: `${serverUrl}/${repo}/commit/${sha}` };
     }
-    const made = await api('POST', `/repos/${repo}/pulls`, {
-      title: ctx.title ? `Fix: ${ctx.title}`.slice(0, 120) : subject, head: branch, base,
-      body: `${answer}\n\nCloses #${ctx.number}\n\n<sub>Opened by Codeply Craft at @${ctx.author}'s request.</sub>`,
-    });
+    let made;
+    try {
+      made = await api('POST', `/repos/${repo}/pulls`, {
+        title: ctx.title ? `Fix: ${ctx.title}`.slice(0, 120) : subject, head: branch, base,
+        body: `${answer}\n\nCloses #${ctx.number}\n\n<sub>Opened by Codeply Craft at @${ctx.author}'s request.</sub>`,
+      });
+    } catch (e) {
+      // New repos block Actions from opening PRs; the branch is pushed, so hand over a one-click link.
+      if (!/not permitted to create/i.test(e.message)) throw e;
+      const compare = `${serverUrl}/${repo}/compare/${base}...${encodeURIComponent(branch)}?expand=1`;
+      await say(`${answer}\n\nPushed ${changed} changed file${changed === 1 ? '' : 's'} to \`${branch}\` (${sha}). [Open the pull request](${compare}).\n\nTo let Craft open pull requests itself, turn on Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests".`);
+      return { status: 'pushed', message: answer, url: compare };
+    }
     await say(`${answer}\n\nOpened ${made.html_url} (${changed} changed file${changed === 1 ? '' : 's'}, ${steps} steps).`);
     return { status: 'pr', message: answer, url: made.html_url };
   } catch (e) {
@@ -270,7 +287,7 @@ jobs:
         with:
           node-version: 22
       - name: Run Codeply Craft
-        run: npx -y codeply-cli@latest github run
+        run: npx -y codeply-cli@0.3 github run
         env:
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
           CODEPLY_API_KEY: \${{ secrets.CODEPLY_API_KEY }}

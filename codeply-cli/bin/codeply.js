@@ -509,13 +509,9 @@ githubCmd
     let event;
     try { event = JSON.parse(fs.readFileSync(cfg.GITHUB_EVENT_PATH, 'utf8')); } catch (e) { console.error(c.red(`Could not read the event: ${e.message}`)); process.exitCode = 1; return; }
     const r = g.routeFromEnv(cfg);
-    if (r.error) {
-      console.error(c.red(r.error));
-      process.exitCode = 1;
-      return;
-    }
+    // A setup error is still reported on the issue, so the person who asked isn't left waiting.
     const out = await g.runGithubAgent({
-      eventName: cfg.GITHUB_EVENT_NAME, event, token, route: r.route, env: cfg, cwd: process.cwd(),
+      eventName: cfg.GITHUB_EVENT_NAME, event, token, route: r.route, setupError: r.error, env: cfg, cwd: process.cwd(),
       maxSteps: Math.max(1, Number(opts.maxSteps) || 40), log: (m) => console.log(m),
     });
     console.log(`${out.status}${out.url ? ` ${out.url}` : ''}`);

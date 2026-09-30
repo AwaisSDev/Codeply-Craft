@@ -1,7 +1,7 @@
 {
   "name": "codeply-cli",
-  "version": "0.2.0",
-  "description": "Codeply from the terminal — an interactive AI coding agent, or a single apply <instruction> --file <path> command.",
+  "version": "0.3.0",
+  "description": "Codeply from the terminal: an interactive AI coding agent, a local server (codeply serve), and a GitHub agent that runs in your own Actions runner.",
   "main": "bin/codeply.js",
   "bin": {
     "codeply": "bin/codeply.js"
@@ -9,7 +9,8 @@
   "files": [
     "bin",
     "lib",
-    "skills"
+    "skills",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "engines": {
     "node": ">=18"
