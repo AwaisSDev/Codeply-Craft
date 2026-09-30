@@ -493,6 +493,14 @@ async function streamingChatRequest({ url, label, model, apiKey, isLocal, messag
           const delta = evt.choices?.[0]?.delta;
           if (delta?.content) content += delta.content;
           if (delta?.reasoning) reasoning += delta.reasoning;
+          if (delta?.reasoning_content) reasoning += delta.reasoning_content;
+          for (const tc of delta?.tool_calls || []) {
+            const i = typeof tc.index === 'number' ? tc.index : toolCalls.length;
+            const slot = toolCalls[i] || (toolCalls[i] = { id: '', type: 'function', function: { name: '', arguments: '' } });
+            if (tc.id) slot.id = tc.id;
+            if (tc.function?.name) slot.function.name += tc.function.name;
+            if (tc.function?.arguments) slot.function.arguments += typeof tc.function.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function.arguments);
+          }
           if (evt.choices?.[0]?.finish_reason) finishReason = evt.choices[0].finish_reason;
         }
       }
@@ -508,11 +516,13 @@ async function streamingChatRequest({ url, label, model, apiKey, isLocal, messag
       if (hasSpare && isKeyLevelFailure('', res.status)) {
         return { done: true, value: { success: false, error: `${label}: ${describeStatus(res.status)}` } };
       }
-      return { retryable: isTransientStatus(res.status), error: describeStatus(res.status) };
+      return { retryable: isTransientStatus(res.status), retryAfterMs: retryAfterMs(res), error: describeStatus(res.status) };
     }
 
     const message = { role: 'assistant', content };
     if (reasoning) message.reasoning = reasoning;
+    const calls = toolCalls.filter((t) => t && t.function.name);
+    if (calls.length) message.tool_calls = calls.map((t, i) => ({ ...t, id: t.id || `call_${Date.now().toString(36)}_${i}` }));
     return {
       done: true,
       value: {
@@ -521,7 +531,7 @@ async function streamingChatRequest({ url, label, model, apiKey, isLocal, messag
         modelUsed,
       },
     };
-  });
+  }, opts.signal);
 }
 
 // OpenAI-compatible /v1/chat/completions endpoints for the providers below,
