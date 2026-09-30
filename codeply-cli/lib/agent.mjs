@@ -332,6 +332,12 @@ const PARAMS = {
   supabase_api: ['method', 'path', 'body'],
   supabase_sql: ['ref', 'query'],
   vercel_api: ['method', 'path', 'body'],
+  web_fetch: ['url', 'format'],
+  web_search: ['query', 'num'],
+  apply_patch: ['patch'],
+  plan_exit: ['path'],
+  plan_enter: ['reason'],
+  lsp: ['operation', 'path', 'line', 'character', 'symbol', 'query'],
 };
 
 // Names the model actually reaches for when it paraphrases the format.
@@ -339,6 +345,8 @@ const PARAMS = {
 // those are parameter names, and treating them as action names would misread
 // an edit_file block as a search.
 const NAME_ALIASES = {
+  ask_user: 'ask_user', askuser: 'ask_user', ask: 'ask_user', question: 'ask_user', askquestion: 'ask_user',
+  todo: 'todo', todos: 'todo', todowrite: 'todo', todo_write: 'todo', tasklist: 'todo', task_list: 'todo',
   read_file: 'read_file', readfile: 'read_file', read: 'read_file',
   open: 'read_file', cat: 'read_file', view: 'read_file', openfile: 'read_file',
   list_dir: 'list_dir', listdir: 'list_dir', list: 'list_dir',
