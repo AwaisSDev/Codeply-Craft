@@ -188,6 +188,7 @@ const chatColumn = $('chatColumn');
 const chatScroll = $('chatScroll');
 
 const TOOL_DISPLAY = {
+  todo: 'Updated task list', ask_user: 'Asked you', mcp: 'Used',
   list_dir: 'Listed', read_file: 'Read', write_file: 'Wrote', edit_file: 'Edited',
   search: 'Searched', run: 'Ran', use_skill: 'Loaded skill', list_skills: 'Searched skills',
   fetch_image: 'Downloaded', browser_check: 'Checked',
