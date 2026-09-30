@@ -154,6 +154,138 @@ function walkFiles(root, { maxFiles = 4000, maxDepth = 12 } = {}) {
   return out;
 }
 
+// ─── Read helpers ───────────────────────────────────────────────────────────
+
+const MAX_LINE_CHARS = 2000;
+
+/** NUL bytes, or mostly non-printable bytes, in the first 4KB. */
+function looksBinary(buf) {
+  const n = Math.min(buf.length, 4096);
+  if (!n) return false;
+  let odd = 0;
+  for (let i = 0; i < n; i++) {
+    const b = buf[i];
+    if (b === 0) return true;
+    if (b < 7 || (b > 13 && b < 32)) odd++;
+  }
+  return odd / n > 0.3;
+}
+
+/** Up to 3 existing files whose names resemble a missing one. */
+function similarPaths(abs, cwd) {
+  const want = path.basename(abs).toLowerCase();
+  const stem = want.replace(/\.[^.]+$/, '');
+  const scored = [];
+  const consider = (full) => {
+    const name = path.basename(full).toLowerCase();
+    const s = name === want ? 1 : name.replace(/\.[^.]+$/, '') === stem ? 0.9 : lineSimilarity(name, want);
+    if (s >= 0.55) scored.push([s, full]);
+  };
+  const dir = path.dirname(abs);
+  try { if (fs.existsSync(dir)) for (const f of fs.readdirSync(dir)) consider(path.join(dir, f)); } catch {}
+  // Same name somewhere else in the project is the other common slip.
+  for (const f of walkFiles(cwd, { maxFiles: 3000, maxDepth: 8 })) if (path.basename(f).toLowerCase() === want) scored.push([0.95, f]);
+  return [...new Map(scored.sort((a, b) => b[0] - a[0]).map(([, f]) => [f, f])).keys()]
+    .slice(0, 3)
+    .map((f) => resolvePath(f, cwd).rel);
+}
+
+// ─── Edit helpers ───────────────────────────────────────────────────────────
+
+// ctx.fileState maps an absolute path to the mtime it had when this turn last
+// read or wrote it. If the file changes on disk after that (the user saved it
+// in their editor, a formatter ran), an edit built from the old read would be
+// matched against content the model has never seen, so it is refused until
+// the file is read again.
+function rememberDiskState(ctx, abs) {
+  if (!ctx.fileState) return;
+  try { ctx.fileState.set(abs, fs.statSync(abs).mtimeMs); } catch {}
+}
+
+function changedSinceSeen(ctx, abs) {
+  if (!ctx.fileState || !ctx.fileState.has(abs)) return false;
+  try { return fs.statSync(abs).mtimeMs !== ctx.fileState.get(abs); } catch { return false; }
+}
+
+function bigrams(s) {
+  const out = new Map();
+  for (let i = 0; i < s.length - 1; i++) {
+    const g = s.slice(i, i + 2);
+    out.set(g, (out.get(g) || 0) + 1);
+  }
+  return out;
+}
+
+/** Dice similarity of two trimmed lines, 0..1. */
+function lineSimilarity(a, b) {
+  if (a === b) return 1;
+  if (a.length < 2 || b.length < 2) return 0;
+  const A = bigrams(a), B = bigrams(b);
+  let overlap = 0;
+  for (const [g, n] of A) overlap += Math.min(n, B.get(g) || 0);
+  return (2 * overlap) / (a.length - 1 + b.length - 1);
+}
+
+/**
+ * When a search block does not match, show the model the region of the file
+ * it most likely meant, with line numbers, so it can copy the real text on
+ * the next reply instead of re-reading a long file from the top or guessing
+ * again from memory.
+ */
+function nearestMatchHint(content, search) {
+  const lines = content.replace(/\r\n/g, '\n').split('\n');
+  const want = search.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim()).filter(Boolean);
+  if (!want.length || !lines.length) return '';
+
+  let best = -1, bestScore = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (!t) continue;
+    // Score a candidate start by how well the next few file lines line up
+    // with the first few search lines, not by one line alone - a single
+    // closing brace or "return x;" matches all over a file.
+    let score = 0, n = 0;
+    for (let k = 0, fi = i; k < Math.min(3, want.length) && fi < lines.length; fi++) {
+      const ft = lines[fi].trim();
+      if (!ft) continue;
+      score += lineSimilarity(ft, want[k]);
+      n++; k++;
+    }
+    score = n ? score / Math.min(3, want.length) : 0;
+    if (score > bestScore) { bestScore = score; best = i; }
+  }
+  if (best === -1 || bestScore < 0.45) return '';
+
+  const from = Math.max(0, best - 2);
+  const to = Math.min(lines.length, best + want.length + 3);
+  const width = String(to).length;
+  const excerpt = lines.slice(from, to).map((l, i) => `${String(from + i + 1).padStart(width)}│${l}`).join('\n');
+  return `\nClosest match in the file right now (lines ${from + 1}-${to}). Copy your search text from here, without the line-number prefix:\n${excerpt}`;
+}
+
+/** 1-based line numbers where an exact block starts. */
+function exactMatchLines(content, block) {
+  const text = content.replace(/\r\n/g, '\n');
+  const needle = block.replace(/\r\n/g, '\n');
+  const out = [];
+  for (let at = text.indexOf(needle); at !== -1 && out.length < 20; at = text.indexOf(needle, at + 1)) {
+    out.push(text.slice(0, at).split('\n').length);
+  }
+  return out;
+}
+
+function isTruthy(v) {
+  return /^(1|true|yes|all)$/i.test(String(v || '').trim());
+}
+
+// Plan mode's one exception to "read-only": the plan file itself.
+const PLAN_DIR = '.codeply/plans';
+function isPlanPath(p, cwd) {
+  if (!p) return false;
+  const { rel, outside } = resolvePath(String(p), cwd);
+  return !outside && /^\.codeply\/plans\/[^/]+\.md$/i.test(rel);
+}
+
 // ─── Tools ──────────────────────────────────────────────────────────────────
 
 async function list_dir(args, ctx) {
@@ -186,29 +318,46 @@ async function read_file(args, ctx) {
   const target = args.path;
   if (!target) return { ok: false, output: 'read_file needs a <path>.' };
   const { abs, rel } = resolvePath(target, ctx.cwd);
-  if (!fs.existsSync(abs)) return { ok: false, output: `No such file: ${rel}` };
+  if (!fs.existsSync(abs)) {
+    const alts = similarPaths(abs, ctx.cwd);
+    return { ok: false, output: `No such file: ${rel}${alts.length ? `. Did you mean: ${alts.join(', ')}?` : ''}` };
+  }
   if (fs.statSync(abs).isDirectory()) return { ok: false, output: `${rel} is a directory - use list_dir.` };
 
-  let content;
-  try { content = fs.readFileSync(abs, 'utf8'); }
+  let buf;
+  try { buf = fs.readFileSync(abs); }
   catch (e) { return { ok: false, output: `Cannot read ${rel}: ${e.message}` }; }
+  if (looksBinary(buf)) {
+    return { ok: false, output: `${rel} is a binary file (${buf.length} bytes), not text. Don't read it; use view_images for pictures, or a tool that understands the format.` };
+  }
+  const content = buf.toString('utf8');
 
   const allLines = content.split('\n');
   const offset = Math.max(0, parseInt(args.offset, 10) || 0);
+  if (offset > 0 && offset >= allLines.length) {
+    return { ok: false, output: `${rel} has only ${allLines.length} lines, so offset ${offset} is past the end. Use an offset below ${allLines.length}.` };
+  }
   const limit = Math.min(parseInt(args.limit, 10) || MAX_READ_LINES, MAX_READ_LINES);
   const slice = allLines.slice(offset, offset + limit);
   const width = String(offset + slice.length).length;
 
+  // Minified bundles put a whole file on one line; one of those would eat
+  // the entire output budget. Lines are shown without a CRLF file's \r.
   const numbered = slice
-    .map((l, i) => `${String(offset + i + 1).padStart(width)}│${l}`)
+    .map((l, i) => {
+      const line = l.replace(/\r$/, '');
+      const shown = line.length > MAX_LINE_CHARS ? `${line.slice(0, MAX_LINE_CHARS)}… (line cut, ${line.length} chars)` : line;
+      return `${String(offset + i + 1).padStart(width)}│${shown}`;
+    })
     .join('\n');
   const more = allLines.length > offset + slice.length
     ? `\n[… ${allLines.length - offset - slice.length} more lines. Re-read with offset=${offset + slice.length}.]`
     : '';
 
+  rememberDiskState(ctx, abs);
   return {
     ok: true,
-    output: truncate(`${rel} (${allLines.length} lines)\n${numbered}${more}`),
+    output: truncate(`${rel} (${allLines.length} lines)\n${numbered}${more}`, MAX_TOOL_OUTPUT, { spill: false }),
     // offset/linesShown/hasMore let agent.mjs auto-continue a later call on
     // this same path that omits <offset> - a model re-requesting "the rest"
     // of a long file doesn't reliably track and restate the right offset
