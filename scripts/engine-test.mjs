@@ -1036,8 +1036,14 @@ process.stdin.on('data', (d) => {
     if ((m = /\/commits\/([0-9a-f]+)\/check-runs$/.exec(p))) return reply(200, { check_runs: G.checks.filter((c) => c.head_sha === m[1] && c.name === u.searchParams.get('check_name')) });
     if ((m = /\/git\/ref\/heads\/(.+)$/.exec(p))) return G.refs.has(m[1]) ? reply(200, { ref: m[1] }) : reply(404, { message: 'Not Found' });
     if (method === 'POST' && /\/git\/refs$/.test(p)) { G.refs.add(body.ref.replace('refs/heads/', '')); return reply(201, {}); }
+    if (method === 'POST' && /\/merges$/.test(p)) { G.merges = [...(G.merges || []), body]; return reply(201, { sha: 'mergedsha' }); }
     if ((m = /\/contents\/(.+)$/.exec(p))) {
       const key = `${u.searchParams.get('ref') || (body && body.branch)}:${decodeURIComponent(m[1])}`;
+      if (method === 'GET' && !G.files.has(key)) {
+        const kids = [...G.files.keys()].filter((k) => k.startsWith(`${key}/`));
+        if (kids.length) return reply(200, kids.map((k) => ({ name: k.slice(key.length + 1), path: k.slice(k.indexOf(':') + 1), sha: G.files.get(k).sha })));
+      }
+      if (method === 'DELETE') { G.files.delete(key); return reply(200, {}); }
       if (method === 'GET') return G.files.has(key) ? reply(200, { content: G.files.get(key).content, sha: G.files.get(key).sha }) : reply(404, { message: 'Not Found' });
       if (method === 'PUT') {
         if (!G.refs.has(body.branch)) return reply(404, { message: 'Branch not found' });
@@ -1106,18 +1112,18 @@ process.stdin.on('data', (d) => {
     yield { type: 'text', text: writes.length ? 'Added a greeting.' : 'It prints hi.' };
     yield { type: 'done' };
   };
-  const runnerEnv = (t, prompt, mode) => ({ GITHUB_REPOSITORY: repo, GITHUB_SHA: t.baseSha, GITHUB_API_URL: 'https://api.test', GITHUB_SERVER_URL: 'https://github.test', CRAFT_TASK_ID: t.id, CRAFT_PROMPT: prompt, CRAFT_MODE: mode, CRAFT_SESSION_ID: 'chat1' });
-  const out = await cl.runCloudRunner({ env: runnerEnv(task, 'add a greeting', 'Build'), cwd: runnerDir, token: 'TOK', route: {}, fetchImpl: fetchCloud, updateMs: 0,
+  const runnerEnv = (t, prompt, mode) => ({ GITHUB_REPOSITORY: repo, GITHUB_SHA: t.baseSha, GITHUB_API_URL: 'https://api.test', GITHUB_SERVER_URL: 'https://github.test', CRAFT_TASK_ID: t.id, CRAFT_PROMPT: prompt, CRAFT_MODE: mode, CRAFT_SESSION_ID: 'chat1', GITHUB_RUN_ID: '7000' });
+  const out = await cl.runCloudRunner({ env: runnerEnv(task, 'add a greeting', 'Build'), cwd: runnerDir, token: 'TOK', route: {}, fetchImpl: fetchCloud, updateMs: 0, idleMs: 0, browserImpl: null,
     runAgentImpl: agent([['greet.js', 'module.exports = "hello";\n'], ['index.js', 'console.log("hi");\nconsole.log(require("./greet"));\n']]) });
   const chk = G.checks.find((c) => c.name === `craft ${task.id}`);
   check('cloud: the runner pushes changes to a task branch and reports in a check run',
-    out.status === 'done' && out.result.branch === `craft/task-${task.id}` && sh(bare, 'show', `craft/task-${task.id}:greet.js`).includes('hello')
+    out.status === 'done' && /^craft\/add-a-greeting-[0-9a-z]{6}$/.test(out.result.branch) && sh(bare, 'show', `${out.result.branch}:greet.js`).includes('hello')
     && chk && chk.status === 'completed' && chk.conclusion === 'success' && JSON.parse(chk.output.text).files.includes('greet.js'), JSON.stringify(out));
   const chkData = JSON.parse(chk.output.text);
   const toolEv = (chkData.events || []).find((e) => e.t === 'tool' && e.args && e.args.path === 'greet.js');
   const pushedEv = (chkData.events || []).find((e) => e.t === 'pushed');
   check('cloud: the run is published as chat steps: tools with their arguments, then what was pushed with + and - lines',
-    toolEv && toolEv.name === 'write_file' && pushedEv && pushedEv.branch === `craft/task-${task.id}` && pushedEv.files.some((f) => f.file === 'greet.js' && f.added === 1)
+    toolEv && toolEv.name === 'write_file' && pushedEv && pushedEv.branch === out.result.branch && pushedEv.merged && pushedEv.merged.ok && pushedEv.files.some((f) => f.file === 'greet.js' && f.added === 1)
     && chkData.stats.some((s) => s.file === 'index.js' && s.added === 1 && s.removed === 0) && chkData.answer === 'Added a greeting.', chk.output.text.slice(0, 400));
   const big = Array.from({ length: 300 }, (_, i) => ({ t: 'tool', name: 'edit_file', ok: true, args: { path: `f${i}.js`, search: 'x'.repeat(3000), replace: 'y'.repeat(3000) } }));
   const packed = cl.packEvents(big, 20000);
@@ -1129,14 +1135,14 @@ process.stdin.on('data', (d) => {
   check('cloud: the chat is saved for the next run', saved && JSON.parse(Buffer.from(saved.content, 'base64').toString()).messages.length === 2);
 
   const task2 = await cl.startCloudRun({ cwd: proj, token: 'TOK', prompt: 'what does index.js print?', mode: 'Ask', sessionId: 'chat1', ...common, retryMs: 1 });
-  await cl.runCloudRunner({ env: runnerEnv(task2, 'what does index.js print?', 'Ask'), cwd: runnerDir, token: 'TOK', route: {}, fetchImpl: fetchCloud, updateMs: 0, runAgentImpl: agent([]) });
+  await cl.runCloudRunner({ env: runnerEnv(task2, 'what does index.js print?', 'Ask'), cwd: runnerDir, token: 'TOK', route: {}, fetchImpl: fetchCloud, updateMs: 0, idleMs: 0, browserImpl: null, runAgentImpl: agent([]) });
   check('cloud: a follow-up run continues the same chat', Array.isArray(seenHistory) && seenHistory.length === 2 && seenHistory[0].content === 'add a greeting');
 
   const st = await cl.cloudRunStatus({ cwd: proj, taskId: task.id, token: 'TOK', ...common });
-  check('cloud: status reads the finished run', st.status === 'done' && st.result.files.includes('greet.js') && st.runId === 7000, JSON.stringify(st));
+  check('cloud: status reads the finished run', st.status === 'done' && st.result.files.includes('greet.js') && String(st.runId) === '7000', JSON.stringify(st));
 
   const failTask = await cl.startCloudRun({ cwd: proj, token: 'TOK', prompt: 'x', sessionId: '', ...common, retryMs: 1 });
-  const failOut = await cl.runCloudRunner({ env: runnerEnv(failTask, 'x', 'Build'), cwd: runnerDir, token: 'TOK', route: null, setupError: 'Set the CODEPLY_API_KEY secret.', fetchImpl: fetchCloud });
+  const failOut = await cl.runCloudRunner({ env: runnerEnv(failTask, 'x', 'Build'), cwd: runnerDir, token: 'TOK', route: null, setupError: 'Set the CODEPLY_API_KEY secret.', fetchImpl: fetchCloud, idleMs: 0, browserImpl: null });
   const failSt = await cl.cloudRunStatus({ cwd: proj, taskId: failTask.id, token: 'TOK', ...common });
   check('cloud: a setup error comes back as a failed task with the reason', failOut.status === 'failed' && failSt.status === 'failed' && /CODEPLY_API_KEY/.test(failSt.error || ''), JSON.stringify(failSt));
 
@@ -1153,13 +1159,90 @@ process.stdin.on('data', (d) => {
   const t3 = await cl.startCloudRun({ cwd: proj, token: 'TOK', prompt: 'change other', ...common, retryMs: 1 });
   sh(runnerDir, 'fetch', '-q', 'origin', 'main');
   sh(runnerDir, 'checkout', '-q', '-f', 'FETCH_HEAD');
-  await cl.runCloudRunner({ env: runnerEnv({ ...t3, baseSha: sh(runnerDir, 'rev-parse', 'HEAD') }, 'change other', 'Build'), cwd: runnerDir, token: 'TOK', route: {}, fetchImpl: fetchCloud, updateMs: 0,
+  await cl.runCloudRunner({ env: runnerEnv({ ...t3, baseSha: sh(runnerDir, 'rev-parse', 'HEAD') }, 'change other', 'Build'), cwd: runnerDir, token: 'TOK', route: {}, fetchImpl: fetchCloud, updateMs: 0, idleMs: 0, browserImpl: null,
     runAgentImpl: agent([['other.txt', 'one\nfrom the cloud\n']]) });
   fs.writeFileSync(path.join(proj, 'other.txt'), 'one\nlocal change\n');
   await cl.cloudRunStatus({ cwd: proj, taskId: t3.id, token: 'TOK', ...common });
   const p3 = await cl.pullCloudRun({ cwd: proj, taskId: t3.id, token: 'TOK', ...common });
   const otherNow = fs.readFileSync(path.join(proj, 'other.txt'), 'utf8');
   check('cloud: overlapping edits become conflict markers instead of lost work', p3.conflicts.includes('other.txt') && /<<<<<<<[\s\S]*local change[\s\S]*from the cloud|<<<<<<<[\s\S]*from the cloud[\s\S]*local change/.test(otherNow), JSON.stringify(p3) + otherNow);
+
+  check('cloud: task branches are named after what they do', cl.cloudBranchName('Make the theme white and black please', 'muoj2cb1e01206') === 'craft/make-the-theme-white-and-black-e01206'
+    && cl.cloudBranchName('!!!', 'abc123') === 'craft/change-abc123');
+  check('cloud: Build work is merged into the base branch after it is pushed', (G.merges || []).some((mg) => mg.base === 'main' && /^craft\/add-a-greeting-/.test(mg.head)));
+  const doc1 = JSON.parse(Buffer.from(G.files.get(`craft-sessions:tasks/${task.id}.json`).content, 'base64').toString());
+  check('cloud: each task writes a status file with its steps for the PC and the phone', doc1.status === 'done' && doc1.events.some((e) => e.t === 'pushed') && doc1.answer === 'Added a greeting.' && doc1.sessionId === 'chat1');
+
+  // A runner stays up for the chat and takes the next message from the queue instead of a new runner starting.
+  const dispatchesBefore = G.dispatches.length;
+  const tq1 = await cl.startCloudRun({ cwd: proj, token: 'TOK', prompt: 'first in a chat', mode: 'Ask', sessionId: 'chatq', ...common, retryMs: 1 });
+  const ranPrompts = [];
+  const qAgent = async function* ({ userMessage }) { ranPrompts.push(userMessage.split('\n')[0]); yield { type: 'text', text: `answered: ${userMessage.split('\n')[0]}` }; yield { type: 'done' }; };
+  const runnerP = cl.runCloudRunner({ env: { ...runnerEnv(tq1, 'first in a chat', 'Ask'), CRAFT_SESSION_ID: 'chatq' }, cwd: runnerDir, token: 'TOK', route: {}, fetchImpl: fetchCloud, updateMs: 0, idleMs: 10000, pollMs: 50, browserImpl: null, runAgentImpl: qAgent });
+  const liveKey = 'craft-sessions:live/chatq.json';
+  for (let i = 0; i < 100; i++) {
+    const lv = G.files.get(liveKey);
+    if (lv && JSON.parse(Buffer.from(lv.content, 'base64').toString()).busy === false) break;
+    await new Promise((r) => setTimeout(r, 30));
+  }
+  const tq2 = await cl.startCloudRun({ cwd: proj, token: 'TOK', prompt: 'second in the same chat', mode: 'Ask', sessionId: 'chatq', ...common, retryMs: 1 });
+  const qOut = await runnerP;
+  const st2 = await cl.cloudRunStatus({ cwd: proj, taskId: tq2.id, token: 'TOK', ...common });
+  check('cloud: a follow-up goes to the runner that is still up, not a new runner', tq2.queued === true && G.dispatches.length === dispatchesBefore + 1
+    && qOut.results.length === 2 && ranPrompts.join('|') === 'first in a chat|second in the same chat' && st2.status === 'done' && /second in the same chat/.test(st2.result.answer), JSON.stringify({ q: tq2.queued, d: G.dispatches.length - dispatchesBefore, r: ranPrompts, st2 }));
+  check('cloud: the runner leaves after idling and clears its live mark', !G.files.has(liveKey) && ![...G.files.keys()].some((k) => k.startsWith('craft-sessions:queue/chatq/')));
+
+  // Repo mode: the project's own GitHub repo, the workflow committed there, the PC pulls merged work.
+  const realBare = path.join(tmp, 'real-app.git');
+  const realProj = path.join(tmp, 'real-app');
+  fs.mkdirSync(realBare, { recursive: true });
+  sh(realBare, 'init', '-q', '--bare', '-b', 'main');
+  sh(tmp, 'clone', '-q', realBare, realProj);
+  fs.writeFileSync(path.join(realProj, 'app.js'), 'v1\n');
+  sh(realProj, 'add', '-A'); sh(realProj, ...ident, 'commit', '-q', '-m', 'v1'); sh(realProj, 'push', '-q', 'origin', 'HEAD:main');
+  sh(realProj, 'branch', '-q', '--set-upstream-to=origin/main');
+  sh(realProj, 'remote', 'set-url', '--push', 'origin', realBare);
+  sh(realProj, 'config', 'remote.origin.url', 'https://github.com/me/real-app.git');
+  G.repos.set('me/real-app', { full_name: 'me/real-app', private: true, default_branch: 'main', permissions: { push: true } });
+  G.refs.add('main');
+  check('cloud: the GitHub origin of a project is found', (await cl.githubOrigin(realProj)) === 'me/real-app');
+  const setupR = await cl.setupCloud({ cwd: realProj, token: 'TOK', model, envText: 'DATABASE_URL=postgres://x\nAPI_TOKEN=abc', ...common });
+  const wf = G.files.get('main:.github/workflows/craft-cloud.yml');
+  check('cloud: repo mode commits the workflow to the default branch and stores the environment as a secret',
+    setupR.kind === 'repo' && setupR.repo === 'me/real-app' && wf && Buffer.from(wf.content, 'base64').toString() === cl.CLOUD_WORKFLOW
+    && cl.openSealed(G.secrets.get('CRAFT_ENV').encrypted_value, kp.publicKey, kp.secretKey) === 'DATABASE_URL=postgres://x\nAPI_TOKEN=abc', JSON.stringify(setupR));
+  sh(realProj, 'config', 'remote.origin.url', realBare);
+  const other = path.join(tmp, 'real-app-cloud');
+  sh(tmp, 'clone', '-q', realBare, other);
+  fs.writeFileSync(path.join(other, 'app.js'), 'v2 from the cloud\n');
+  sh(other, 'add', '-A'); sh(other, ...ident, 'commit', '-q', '-m', 'Merge craft/make-it-v2-abc123'); sh(other, 'push', '-q', 'origin', 'HEAD:main');
+  fs.writeFileSync(path.join(realProj, 'notes.txt'), 'my local note\n');
+  const behind = await cl.checkBehind(realProj);
+  check('cloud: before coding, the PC sees it is behind GitHub', behind.ok && behind.behind === 1 && behind.ahead === 0 && /make-it-v2/.test(behind.latest), JSON.stringify(behind));
+  const pulledR = await cl.pullLatest(realProj);
+  check('cloud: pulling brings the merged cloud work down and keeps local files', pulledR.pulled === 1 && fs.readFileSync(path.join(realProj, 'app.js'), 'utf8').includes('from the cloud')
+    && fs.readFileSync(path.join(realProj, 'notes.txt'), 'utf8').includes('my local note') && (await cl.checkBehind(realProj)).behind === 0);
+
+  // The cloud runner writes the environment to .env and never commits it.
+  const envRunner = path.join(tmp, 'env-runner');
+  sh(tmp, 'clone', '-q', '-b', 'main', bare, envRunner);
+  const te = await cl.startCloudRun({ cwd: proj, token: 'TOK', prompt: 'use the env', ...common, retryMs: 1 });
+  let sawEnv = '';
+  await cl.runCloudRunner({ env: { ...runnerEnv({ ...te, baseSha: sh(envRunner, 'rev-parse', 'HEAD') }, 'use the env', 'Build'), CRAFT_SESSION_ID: '', CRAFT_ENV: 'SECRET_X=42' }, cwd: envRunner, token: 'TOK', route: {}, fetchImpl: fetchCloud, updateMs: 0, idleMs: 0, browserImpl: null,
+    runAgentImpl: async function* ({ cwd }) { sawEnv = fs.readFileSync(path.join(cwd, '.env'), 'utf8'); fs.writeFileSync(path.join(cwd, 'used.txt'), 'ok\n'); yield { type: 'tool_end', name: 'write_file', args: { path: 'used.txt' }, ok: true }; yield { type: 'text', text: 'done' }; yield { type: 'done' }; } });
+  const envDoc = JSON.parse(Buffer.from(G.files.get(`craft-sessions:tasks/${te.id}.json`).content, 'base64').toString());
+  check('cloud: the environment is a .env on the cloud machine and is never committed', sawEnv.trim() === 'SECRET_X=42' && envDoc.files.includes('used.txt') && !envDoc.files.includes('.env'), JSON.stringify(envDoc.files));
+
+  // Screenshots from the cloud browser are uploaded and linked from the step.
+  const shotTask = await cl.startCloudRun({ cwd: proj, token: 'TOK', prompt: 'check the page', mode: 'Ask', ...common, retryMs: 1 });
+  const pngFile = path.join(tmp, 'fake-shot.png');
+  fs.writeFileSync(pngFile, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  await cl.runCloudRunner({ env: { ...runnerEnv(shotTask, 'check the page', 'Ask'), CRAFT_SESSION_ID: '' }, cwd: runnerDir, token: 'TOK', route: {}, fetchImpl: fetchCloud, updateMs: 0, idleMs: 0,
+    browserImpl: async () => ({ ok: true, title: 'x', screenshotPath: pngFile }),
+    runAgentImpl: async function* ({ browser }) { await browser('http://localhost:3000', {}); yield { type: 'tool_end', name: 'browser_check', args: { url: 'http://localhost:3000' }, ok: true }; yield { type: 'text', text: 'looks fine' }; yield { type: 'done' }; } });
+  const shotDoc = JSON.parse(Buffer.from(G.files.get(`craft-sessions:tasks/${shotTask.id}.json`).content, 'base64').toString());
+  const shotEv = shotDoc.events.find((e) => e.name === 'browser_check');
+  check('cloud: browser checks in the cloud upload their screenshot and the step links it', shotEv && shotEv.screenshot === `shots/${shotTask.id}/1.png` && G.files.has(`craft-sessions:shots/${shotTask.id}/1.png`), JSON.stringify(shotEv));
 }
 
 // ── Sharing a chat ──

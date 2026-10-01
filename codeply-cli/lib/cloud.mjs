@@ -36,7 +36,7 @@ export const WORKFLOW_PATH = `.github/workflows/${WORKFLOW_FILE}`;
 export const MIRROR_PREFIX = 'craft-workspace-';
 export const MIRROR_DESCRIPTION = 'Craft workspace mirror: a private backup that Craft cloud runs work in.';
 export const SESSIONS_BRANCH = 'craft-sessions';
-export const ENGINE = 'codeply-cli@0.4';
+export const ENGINE = 'codeply-cli@0.5';
 export const taskBranch = (id) => `craft/task-${id}`;
 export const checkName = (id) => `craft ${id}`;
 
@@ -100,6 +100,9 @@ jobs:
           CODEPLY_MODEL: \${{ vars.CODEPLY_MODEL }}
           CODEPLY_BASE_URL: \${{ vars.CODEPLY_BASE_URL }}
           CRAFT_ENGINE: \${{ vars.CRAFT_ENGINE }}
+          CRAFT_ENV: \${{ secrets.CRAFT_ENV }}
+          CRAFT_MERGE: \${{ vars.CRAFT_MERGE }}
+          CRAFT_BASE: \${{ github.ref_name }}
           CRAFT_PROMPT: \${{ inputs.prompt }}
           CRAFT_MODE: \${{ inputs.mode }}
           CRAFT_TASK_ID: \${{ inputs.task_id }}
@@ -411,28 +414,111 @@ export async function checkToken(api) {
   return { ok: true, login: r.json.login };
 }
 
-/** One-click setup: mirror repo, first snapshot with the workflow, model key. */
-export async function setupCloud({ cwd, token, model, home = defaultHome(), apiUrl, serverUrl, fetchImpl, remoteUrl }) {
+// ─── Targets: the project's own GitHub repo, or a private mirror ─────────
+
+/** owner/name of the project's GitHub `origin`, or null. */
+export async function githubOrigin(cwd) {
+  try {
+    const url = await git(cwd, ['remote', 'get-url', 'origin']);
+    const m = /github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i.exec(url);
+    return m ? `${m[1]}/${m[2]}` : null;
+  } catch { return null; }
+}
+
+/** The repos this login can push to (for the phone's and the app's repo picker). */
+export async function listMyRepos(api) {
+  const r = await api('GET', '/user/repos?affiliation=owner,collaborator&sort=pushed&per_page=100');
+  return (r.json || []).filter((x) => x.permissions && x.permissions.push)
+    .map((x) => ({ repo: x.full_name, private: x.private, base: x.default_branch, mirror: x.description === MIRROR_DESCRIPTION, pushedAt: x.pushed_at }));
+}
+
+/** Commit craft-cloud.yml to the repo's default branch (only when missing or out of date). */
+export async function installWorkflowInRepo({ api, repo, base }) {
+  const files = branchFiles(api, repo, base);
+  const cur = await api('GET', `/repos/${repo}/contents/${WORKFLOW_PATH}?ref=${encodeURIComponent(base)}`, null, { allow: [404] });
+  const want = Buffer.from(CLOUD_WORKFLOW).toString('base64');
+  if (cur.status === 200 && String(cur.json.content || '').replace(/\s/g, '') === want) return false;
+  const ok = await files.writeBytes(WORKFLOW_PATH, Buffer.from(CLOUD_WORKFLOW), 'Add Craft Cloud workflow');
+  if (!ok) throw new Error(`Could not add ${WORKFLOW_PATH} to ${repo}. GitHub needs the workflow permission for that.`);
+  return true;
+}
+
+/** The project's environment for running and testing (KEY=value lines), as the CRAFT_ENV secret. */
+export async function setProjectEnv({ api, repo, envText }) {
+  const text = String(envText || '').trim();
+  if (!text) { await api('DELETE', `/repos/${repo}/actions/secrets/CRAFT_ENV`, null, { allow: [404] }); return 0; }
+  const pk = (await api('GET', `/repos/${repo}/actions/secrets/public-key`)).json;
+  await api('PUT', `/repos/${repo}/actions/secrets/CRAFT_ENV`, { encrypted_value: sealSecret(pk.key, text), key_id: pk.key_id });
+  return text.split('\n').filter((l) => /^\s*[A-Za-z_][A-Za-z0-9_]*\s*=/.test(l)).length;
+}
+
+/**
+ * One-click setup. With `target: 'repo'` (default when the project has a GitHub
+ * origin) the cloud works in that repo: new branch per task, merged into the
+ * default branch, and the PC pulls. Otherwise a private mirror holds snapshots.
+ */
+export async function setupCloud({ cwd, token, model, target, envText, home = defaultHome(), apiUrl, serverUrl, fetchImpl, remoteUrl }) {
   const api = githubApi({ token, apiUrl, fetchImpl });
   const t = await checkToken(api);
   if (!t.ok) throw new Error(t.error);
   const cfg = cloudModelConfig(model);
   if (cfg.error) throw new Error(cfg.error);
-  const { repo, created } = await ensureMirror({ api, cwd, home });
-  const pushed = await pushSnapshot({ cwd, token, home, serverUrl, remoteUrl });
+  const origin = target === 'mirror' ? null : await githubOrigin(cwd);
+  let repo; let created = false; let skipped = []; let base = 'main'; let kind = 'mirror';
+  if (origin) {
+    const r = await api('GET', `/repos/${origin}`, null, { allow: [404] });
+    if (r.status !== 200) throw new Error(`Craft can't open ${origin} with this GitHub login.`);
+    if (!r.json.permissions || !r.json.permissions.push) throw new Error(`This GitHub login can't push to ${origin}.`);
+    repo = origin; base = r.json.default_branch || 'main'; kind = 'repo';
+    updateProject(cwd, home, (p) => ({ ...p, repo, base, kind }));
+    await installWorkflowInRepo({ api, repo, base });
+  } else {
+    ({ repo, created } = await ensureMirror({ api, cwd, home }));
+    updateProject(cwd, home, (p) => ({ ...p, base: 'main', kind: 'mirror' }));
+    skipped = (await pushSnapshot({ cwd, token, home, serverUrl, remoteUrl })).skipped;
+  }
   await configureModel({ api, repo, model });
+  if (envText != null) await setProjectEnv({ api, repo, envText });
   updateProject(cwd, home, (p) => ({ ...p, modelSig: cfg.sig, modelName: model.name || model.model, enabled: true }));
-  return { repo, created, url: `${(serverUrl || 'https://github.com').replace(/\/$/, '')}/${repo}`, skipped: pushed.skipped };
+  return { repo, created, kind, base, url: `${(serverUrl || 'https://github.com').replace(/\/$/, '')}/${repo}`, skipped };
 }
 
 // ─── Runs ────────────────────────────────────────────────────────────────
 
 const newTaskId = () => `${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const LIVE_FRESH_MS = 60000;
+
+/** Is a runner up for this chat right now (idle and waiting, or busy and will get to it)? */
+export async function liveRunner(api, repo, sessionId) {
+  if (!sessionId) return null;
+  const f = await branchFiles(api, repo).read(SESSION_PATHS.live(sessionId)).catch(() => null);
+  const live = f && f.json;
+  if (!live || Date.now() - (live.at || 0) > LIVE_FRESH_MS) return null;
+  if (!live.busy && (live.until || 0) < Date.now() + 8000) return null;
+  return live;
+}
+
+async function dispatch(api, repo, base, task, retryMs) {
+  let lastErr = null;
+  // Right after the workflow file first lands, GitHub can take a few seconds to know it.
+  for (let i = 0; i < 10; i++) {
+    try {
+      await api('POST', `/repos/${repo}/actions/workflows/${WORKFLOW_FILE}/dispatches`, { ref: base || 'main', inputs: { prompt: task.prompt, mode: task.mode, task_id: task.id, session_id: task.sessionId } });
+      return;
+    } catch (e) {
+      lastErr = e;
+      if (e.status !== 404 && e.status !== 422) break;
+      await sleep(retryMs);
+    }
+  }
+  throw lastErr;
+}
 
 /**
- * Push the latest snapshot and start a cloud run.
- * @returns {Promise<object>} the task record (also saved in ~/.codeply/cloud.json)
+ * Start a cloud task. A runner already up for this chat gets it through the
+ * queue at once; otherwise a new runner is dispatched. Mirror projects push
+ * the latest snapshot first.
  */
 export async function startCloudRun({ cwd, token, prompt, mode = 'Build', sessionId = '', model, home = defaultHome(), apiUrl, serverUrl, fetchImpl, remoteUrl, retryMs = 3000, startedAt }) {
   const p = getProject(cwd, home);
@@ -442,7 +528,6 @@ export async function startCloudRun({ cwd, token, prompt, mode = 'Build', sessio
   if (prompt.length > MAX_PROMPT) throw new Error(`That task is too long for a cloud run (${prompt.length} characters, the limit is ${MAX_PROMPT}).`);
   mode = ['Build', 'Plan', 'Ask'].includes(mode) ? mode : 'Build';
   const api = githubApi({ token, apiUrl, fetchImpl });
-  // A different model (or key) than last time goes to the mirror first.
   if (model) {
     const cfg = cloudModelConfig(model);
     if (cfg.error) throw new Error(cfg.error);
@@ -451,67 +536,137 @@ export async function startCloudRun({ cwd, token, prompt, mode = 'Build', sessio
       updateProject(cwd, home, (q) => ({ ...q, modelSig: cfg.sig, modelName: model.name || model.model }));
     }
   }
-  const snap = await pushSnapshot({ cwd, token, home, serverUrl, remoteUrl });
-  const task = { id: newTaskId(), prompt, mode, sessionId: String(sessionId || ''), baseSha: snap.sha, repo: p.repo, status: 'starting', startedAt: startedAt || Date.now() };
-  // Right after the workflow file first lands, GitHub can take a few seconds to know it.
-  let lastErr = null;
-  for (let i = 0; i < 10; i++) {
-    try {
-      await api('POST', `/repos/${p.repo}/actions/workflows/${WORKFLOW_FILE}/dispatches`, { ref: 'main', inputs: { prompt, mode, task_id: task.id, session_id: task.sessionId } });
-      lastErr = null;
-      break;
-    } catch (e) {
-      lastErr = e;
-      if (e.status !== 404 && e.status !== 422) break;
-      await sleep(retryMs);
-    }
+  const base = p.base || 'main';
+  let baseSha;
+  if (p.kind === 'repo') {
+    const ref = await api('GET', `/repos/${p.repo}/git/ref/heads/${encodeURIComponent(base)}`, null, { allow: [404] });
+    baseSha = ref.status === 200 ? ref.json.object.sha : null;
+  } else {
+    baseSha = (await pushSnapshot({ cwd, token, home, serverUrl, remoteUrl })).sha;
   }
-  if (lastErr) throw lastErr;
+  const task = { id: newTaskId(), prompt, mode, sessionId: String(sessionId || ''), baseSha, repo: p.repo, status: 'starting', startedAt: startedAt || Date.now() };
+  const live = await liveRunner(api, p.repo, task.sessionId);
+  if (live) {
+    await branchFiles(api, p.repo).write(`${SESSION_PATHS.queue(task.sessionId)}/${Date.now()}-${task.id}.json`, { id: task.id, prompt, mode }, `Craft queue ${task.id}`);
+    Object.assign(task, { queued: true, enqueuedAt: Date.now() });
+  } else {
+    await dispatch(api, p.repo, base, task, retryMs);
+  }
   saveTask(cwd, home, task);
   return task;
 }
 
-/** Where a cloud run is, from the workflow run and the runner's check run. */
-export async function cloudRunStatus({ cwd, taskId, token, home = defaultHome(), apiUrl, fetchImpl }) {
+/** A task's live status document (tasks/<id>.json), or null before the runner has written it. */
+export async function readTaskDoc(api, repo, taskId) {
+  const f = await branchFiles(api, repo).read(SESSION_PATHS.task(taskId)).catch(() => null);
+  return f && f.json ? f.json : null;
+}
+
+/** Where a cloud task is: its status file first, then the workflow run (for starts and failed starts). */
+export async function cloudRunStatus({ cwd, taskId, token, home = defaultHome(), apiUrl, fetchImpl, retryMs = 3000 }) {
   const task = getTask(cwd, taskId, home);
   if (!task) throw new Error('Unknown cloud task.');
   if (task.status === 'done' || task.status === 'failed' || task.status === 'cancelled') return task;
   const api = githubApi({ token, apiUrl, fetchImpl });
+  const next = { ...task };
+  const doc = await readTaskDoc(api, task.repo, task.id);
+  if (doc) {
+    const { events = [], status, ...rest } = doc;
+    if (doc.runId) { next.runId = doc.runId; next.runUrl = `https://github.com/${task.repo}/actions/runs/${doc.runId}`; }
+    if (status === 'done' || status === 'failed') {
+      const { id: _i, startedAt: _s, updatedAt: _u, runId: _r, ...result } = rest;
+      Object.assign(next, { status, result, error: result.error || null, finishedAt: Date.now(), queued: false });
+    } else next.status = 'running';
+    saveTask(cwd, home, next);
+    return { ...next, events };
+  }
+  if (task.queued) {
+    // Handed to a runner that went away before taking it: start a new one.
+    if (Date.now() - task.enqueuedAt > 30000 && !(await liveRunner(api, task.repo, task.sessionId))) {
+      const p = getProject(cwd, home) || {};
+      await dispatch(api, task.repo, p.base || 'main', task, retryMs);
+      Object.assign(next, { queued: false, status: 'starting', redispatchedAt: Date.now() });
+    } else next.status = 'queued';
+    saveTask(cwd, home, next);
+    return { ...next, events: [] };
+  }
   let run = null;
   if (task.runId) run = (await api('GET', `/repos/${task.repo}/actions/runs/${task.runId}`)).json;
   else {
     const list = (await api('GET', `/repos/${task.repo}/actions/workflows/${WORKFLOW_FILE}/runs?event=workflow_dispatch&per_page=30`)).json;
     run = (list.workflow_runs || []).find((r) => r.display_title === checkName(task.id)) || null;
   }
-  const next = { ...task };
   if (!run) {
     // GitHub drops a dispatch it can't start; don't wait forever.
-    if (Date.now() - task.startedAt > 5 * 60 * 1000) Object.assign(next, { status: 'failed', error: 'GitHub never started the run. Check that Actions is enabled on the mirror repo.' });
+    if (Date.now() - task.startedAt > 5 * 60 * 1000) Object.assign(next, { status: 'failed', error: 'GitHub never started the run. Check that Actions is enabled on the repo.' });
     saveTask(cwd, home, next);
-    return next;
+    return { ...next, events: [] };
   }
   next.runId = run.id;
   next.runUrl = run.html_url;
-  const checks = (await api('GET', `/repos/${task.repo}/commits/${run.head_sha}/check-runs?check_name=${encodeURIComponent(checkName(task.id))}`)).json;
-  const check = (checks.check_runs || [])[0];
-  if (check && check.output) next.progress = check.output.summary || '';
-  // The step-by-step record rides along to the caller but isn't kept in cloud.json.
-  let events = [];
-  let data = {};
-  try { data = JSON.parse((check && check.output && check.output.text) || '{}'); } catch {}
-  if (Array.isArray(data.events)) events = data.events;
-  if (check && check.status === 'completed') {
-    const { events: _drop, ...result } = data;
-    Object.assign(next, { status: check.conclusion === 'success' ? 'done' : 'failed', result, error: result.error || null, finishedAt: Date.now() });
-  } else if (run.status === 'completed') {
+  if (run.status === 'completed') {
+    // Finished without a status file: it died before Craft could report (or an older engine ran).
+    const checks = (await api('GET', `/repos/${task.repo}/commits/${run.head_sha}/check-runs?check_name=${encodeURIComponent(checkName(task.id))}`)).json;
+    const check = (checks.check_runs || [])[0];
+    let data = {};
+    try { data = JSON.parse((check && check.output && check.output.text) || '{}'); } catch {}
+    if (check && check.status === 'completed' && data.mode) {
+      const { events = [], ...result } = data;
+      Object.assign(next, { status: check.conclusion === 'success' ? 'done' : 'failed', result, error: result.error || null, finishedAt: Date.now() });
+      saveTask(cwd, home, next);
+      return { ...next, events };
+    }
     const why = run.conclusion === 'cancelled' ? 'The run was cancelled.' : (await diagnoseRun(api, task.repo, run.id)) || `The run ended (${run.conclusion}) before Craft could report back. The run log has details.`;
     Object.assign(next, { status: run.conclusion === 'cancelled' ? 'cancelled' : 'failed', error: why, finishedAt: Date.now() });
   } else {
     next.status = run.status === 'queued' || run.status === 'waiting' || run.status === 'pending' ? 'queued' : 'running';
   }
   saveTask(cwd, home, next);
-  return { ...next, events };
+  return { ...next, events: [] };
 }
+
+/** Download a cloud screenshot (shots/<task>/<n>.png on craft-sessions) to `dest`. */
+export async function downloadShot({ token, repo, path: rel, dest, apiUrl, fetchImpl }) {
+  const api = githubApi({ token, apiUrl, fetchImpl });
+  const r = await api('GET', `/repos/${repo}/contents/${rel.split('/').map(encodeURIComponent).join('/')}?ref=${SESSIONS_BRANCH}`, null, { allow: [404] });
+  if (r.status !== 200 || !r.json || !r.json.content) return null;
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.writeFileSync(dest, Buffer.from(r.json.content, 'base64'));
+  return dest;
+}
+
+/**
+ * Before coding: is the local branch behind GitHub (a cloud run merged work
+ * into it)? Only for projects whose cloud target is their own repo.
+ */
+export async function checkBehind(cwd) {
+  try {
+    const branch = await git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    const upstream = await git(cwd, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']).catch(() => null);
+    if (!upstream) return { ok: false, reason: 'no upstream' };
+    await git(cwd, ['fetch', '-q', '--no-tags', upstream.split('/')[0]]);
+    const [behind, ahead] = (await git(cwd, ['rev-list', '--left-right', '--count', `${upstream}...HEAD`])).split(/\s+/).map(Number);
+    const dirty = !!(await git(cwd, ['status', '--porcelain', '--untracked-files=no']));
+    const latest = behind ? (await git(cwd, ['log', '-1', '--format=%s', upstream]).catch(() => '')) : '';
+    return { ok: true, branch, upstream, behind, ahead, dirty, latest };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
+/** Pull what GitHub has (a fast-forward when possible, else a merge; stashes local edits around it). */
+export async function pullLatest(cwd) {
+  const st = await checkBehind(cwd);
+  if (!st.ok) throw new Error(`Can't pull: ${st.reason}.`);
+  if (!st.behind) return { pulled: 0 };
+  let stashed = false;
+  if (st.dirty) { await git(cwd, ['stash', 'push', '-q', '-m', 'craft: before pulling cloud changes']); stashed = true; }
+  try {
+    await git(cwd, ['-c', 'user.name=Codeply Craft', '-c', 'user.email=craft-bot@users.noreply.github.com', 'pull', '-q', '--no-rebase', '--no-edit']);
+  } finally {
+    if (stashed) await git(cwd, ['stash', 'pop', '-q']).catch(() => { throw new Error('Pulled, but your own edits clashed with them. They are saved in git stash.'); });
+  }
+  return { pulled: st.behind };
+}
+
 
 /**
  * Runs started somewhere else (the phone, while this PC was off) become local
@@ -662,83 +817,215 @@ export function packEvents(events, budget = EVENT_BUDGET) {
   return list;
 }
 
-async function loadHistory(api, repo, sessionId) {
-  if (!sessionId) return { messages: [], sha: null };
-  const r = await api('GET', `/repos/${repo}/contents/sessions/${encodeURIComponent(sessionId)}.json?ref=${SESSIONS_BRANCH}`, null, { allow: [404] });
-  if (r.status !== 200) return { messages: [], sha: null };
-  try {
-    const data = JSON.parse(Buffer.from(r.json.content, 'base64').toString('utf8'));
-    return { messages: Array.isArray(data.messages) ? data.messages : [], sha: r.json.sha };
-  } catch { return { messages: [], sha: r.json.sha }; }
+// ─── Files on the craft-sessions branch (chat memory, status, queue, shots) ──
+
+export const SESSION_PATHS = {
+  history: (sid) => `sessions/${sid}.json`,
+  task: (id) => `tasks/${id}.json`,
+  live: (sid) => `live/${sid}.json`,
+  queue: (sid) => `queue/${sid}`,
+  shot: (id, n) => `shots/${id}/${n}.png`,
+};
+
+/** Small read / write / delete / list helpers for one branch, with retries for concurrent writes. */
+export function branchFiles(api, repo, branch = SESSIONS_BRANCH) {
+  const enc = (p) => p.split('/').map(encodeURIComponent).join('/');
+  const read = async (p) => {
+    const r = await api('GET', `/repos/${repo}/contents/${enc(p)}?ref=${branch}`, null, { allow: [404] });
+    if (r.status !== 200 || !r.json || Array.isArray(r.json)) return null;
+    let json = null;
+    try { json = JSON.parse(Buffer.from(r.json.content || '', 'base64').toString('utf8')); } catch {}
+    return { json, sha: r.json.sha, size: r.json.size };
+  };
+  const list = async (p) => {
+    const r = await api('GET', `/repos/${repo}/contents/${enc(p)}?ref=${branch}`, null, { allow: [404] });
+    return r.status === 200 && Array.isArray(r.json) ? r.json.map((x) => ({ name: x.name, path: x.path, sha: x.sha })) : [];
+  };
+  const put = async (p, content, message) => {
+    for (let i = 0; i < 4; i++) {
+      const cur = await api('GET', `/repos/${repo}/contents/${enc(p)}?ref=${branch}`, null, { allow: [404] });
+      const sha = cur.status === 200 && cur.json && !Array.isArray(cur.json) ? cur.json.sha : undefined;
+      const r = await api('PUT', `/repos/${repo}/contents/${enc(p)}`, { message, branch, content, ...(sha ? { sha } : {}) }, { allow: [409, 422] });
+      if (r.status < 300) return true;
+      await sleep(300 + i * 400);
+    }
+    return false;
+  };
+  const write = (p, obj, message = `Craft ${p}`) => put(p, Buffer.from(JSON.stringify(obj)).toString('base64'), message);
+  const writeBytes = (p, buf, message = `Craft ${p}`) => put(p, Buffer.from(buf).toString('base64'), message);
+  const remove = async (p, sha) => {
+    for (let i = 0; i < 3; i++) {
+      const s = sha || (await read(p) || {}).sha;
+      if (!s) return;
+      const r = await api('DELETE', `/repos/${repo}/contents/${enc(p)}`, { message: `Craft ${p}`, branch, sha: s }, { allow: [404, 409, 422] });
+      if (r.status < 300 || r.status === 404) return;
+      sha = null;
+      await sleep(300);
+    }
+  };
+  const ensure = async (baseSha) => {
+    const ref = await api('GET', `/repos/${repo}/git/ref/heads/${branch}`, null, { allow: [404] });
+    if (ref.status === 404) await api('POST', `/repos/${repo}/git/refs`, { ref: `refs/heads/${branch}`, sha: baseSha }, { allow: [422] });
+  };
+  return { read, list, write, writeBytes, remove, ensure };
 }
 
-async function saveHistory(api, repo, sessionId, messages, baseSha) {
-  if (!sessionId) return;
-  const ref = await api('GET', `/repos/${repo}/git/ref/heads/${SESSIONS_BRANCH}`, null, { allow: [404] });
-  if (ref.status === 404) await api('POST', `/repos/${repo}/git/refs`, { ref: `refs/heads/${SESSIONS_BRANCH}`, sha: baseSha }, { allow: [422] });
-  const file = `sessions/${encodeURIComponent(sessionId)}.json`;
-  const body = (sha) => ({ message: `Chat ${sessionId}`, branch: SESSIONS_BRANCH, content: Buffer.from(JSON.stringify({ sessionId, updatedAt: new Date().toISOString(), messages }, null, 1)).toString('base64'), ...(sha ? { sha } : {}) });
-  for (let i = 0; i < 3; i++) {
-    const cur = await api('GET', `/repos/${repo}/contents/${file}?ref=${SESSIONS_BRANCH}`, null, { allow: [404] });
-    const r = await api('PUT', `/repos/${repo}/contents/${file}`, body(cur.status === 200 ? cur.json.sha : null), { allow: [409, 422] });
-    if (r.status < 300) return;
-  }
+async function loadHistory(files, sessionId) {
+  if (!sessionId) return { messages: [] };
+  const f = await files.read(SESSION_PATHS.history(sessionId));
+  return { messages: f && f.json && Array.isArray(f.json.messages) ? f.json.messages : [] };
 }
+
+async function saveHistory(files, sessionId, messages) {
+  if (!sessionId) return;
+  await files.write(SESSION_PATHS.history(sessionId), { sessionId, updatedAt: new Date().toISOString(), messages }, `Chat ${sessionId}`);
+}
+
+const branchSlug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').split('-').slice(0, 6).join('-').slice(0, 40) || 'change';
+export const cloudBranchName = (prompt, id) => `craft/${branchSlug(prompt)}-${String(id).slice(-6)}`;
 
 /**
- * `codeply cloud runner`: one cloud task, end to end, inside GitHub Actions.
- * @returns {Promise<{status:'done'|'failed', result:object}>}
+ * `codeply cloud runner`, inside GitHub Actions. Runs the dispatched task, then
+ * (for a chat) stays up to CRAFT_IDLE_MS (2 minutes) waiting for the next
+ * message in queue/<session>, so a follow-up starts at once instead of waiting
+ * for a new runner. Each task:
+ *   - runs like a local run, with a real browser (screenshots) when Chrome is there
+ *   - publishes its steps live to tasks/<id>.json (and the first one's check run)
+ *   - commits Build work to craft/<what-it-did>-<id>, pushes it, and merges it
+ *     into the base branch (CRAFT_MERGE=false keeps it as a branch only)
+ * @returns {Promise<{status:'done'|'failed', result:object, results:object[]}>}
  */
-export async function runCloudRunner({ env = process.env, cwd = process.cwd(), token, route, setupError = null, fetchImpl = fetch, runAgentImpl = runAgent, log = () => {}, maxSteps = 80, updateMs = 5000 }) {
+export async function runCloudRunner({ env = process.env, cwd = process.cwd(), token, route, setupError = null, fetchImpl = fetch, runAgentImpl = runAgent, log = () => {}, maxSteps = 80, updateMs = 4000, idleMs, pollMs = 3000, browserImpl }) {
   const repo = env.GITHUB_REPOSITORY;
-  const taskId = String(env.CRAFT_TASK_ID || '').replace(/[^A-Za-z0-9_-]/g, '');
-  const mode = ['Build', 'Plan', 'Ask'].includes(env.CRAFT_MODE) ? env.CRAFT_MODE : 'Build';
-  const prompt = String(env.CRAFT_PROMPT || '').slice(0, MAX_PROMPT);
+  const firstId = String(env.CRAFT_TASK_ID || '').replace(/[^A-Za-z0-9_-]/g, '');
   const sessionId = String(env.CRAFT_SESSION_ID || '').replace(/[^A-Za-z0-9_-]/g, '');
   const headSha = env.GITHUB_SHA;
-  if (!repo || !token || !taskId || !headSha) return { status: 'failed', result: { error: 'Missing GITHUB_REPOSITORY, GITHUB_TOKEN, GITHUB_SHA or CRAFT_TASK_ID.' } };
+  if (!repo || !token || !firstId || !headSha) return { status: 'failed', result: { error: 'Missing GITHUB_REPOSITORY, GITHUB_TOKEN, GITHUB_SHA or CRAFT_TASK_ID.' }, results: [] };
   const apiUrl = env.GITHUB_API_URL || 'https://api.github.com';
   const serverUrl = (env.GITHUB_SERVER_URL || 'https://github.com').replace(/\/$/, '');
   const api = githubApi({ token, apiUrl, fetchImpl });
+  const files = branchFiles(api, repo);
+  const idle = idleMs != null ? idleMs : Number(env.CRAFT_IDLE_MS || 120000);
+  const base = env.CRAFT_BASE || env.GITHUB_REF_NAME || 'main';
+  const merge = String(env.CRAFT_MERGE || 'true') !== 'false';
+  await files.ensure(headSha).catch((e) => log(`Could not create ${SESSIONS_BRANCH}: ${e.message}`));
 
-  const check = (await api('POST', `/repos/${repo}/check-runs`, {
+  // The project's environment for running and testing: never committed.
+  const envFile = path.join(cwd, '.env');
+  if (env.CRAFT_ENV && String(env.CRAFT_ENV).trim()) {
+    try { if (!fs.existsSync(envFile)) fs.writeFileSync(envFile, `${String(env.CRAFT_ENV).trim()}\n`); } catch (e) { log(`Could not write .env: ${e.message}`); }
+  }
+  const browser = browserImpl !== undefined ? browserImpl : (await import('./cloud-browser.mjs')).makeCloudBrowser();
+
+  const heartbeat = (busy, until) => files.write(SESSION_PATHS.live(sessionId), { runId: env.GITHUB_RUN_ID || null, busy, at: Date.now(), until }, `Craft live ${sessionId}`).catch(() => {});
+
+  let task = { id: firstId, prompt: String(env.CRAFT_PROMPT || ''), mode: env.CRAFT_MODE, sessionId, dispatched: true };
+  const results = [];
+  try {
+    while (task) {
+      if (sessionId) await heartbeat(true, Date.now() + 60 * 60 * 1000);
+      results.push(await runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, headSha, route, setupError, runAgentImpl, log, maxSteps, updateMs, browser, base, merge, heartbeat: sessionId ? () => heartbeat(true, Date.now() + 60 * 60 * 1000) : null }));
+      if (!sessionId || idle <= 0 || setupError) break;
+      task = await waitForNext({ files, sessionId, idle, pollMs, heartbeat });
+    }
+  } finally {
+    if (sessionId) await files.remove(SESSION_PATHS.live(sessionId)).catch(() => {});
+    if (browser && browser.close) await browser.close().catch(() => {});
+  }
+  const last = results[results.length - 1] || { status: 'failed', result: { error: 'Nothing ran.' } };
+  return { ...last, results };
+}
+
+/** Idle: the next queued message for this chat, or null after `idle` ms of nothing. */
+async function waitForNext({ files, sessionId, idle, pollMs, heartbeat }) {
+  const deadline = Date.now() + idle;
+  let beat = 0;
+  while (Date.now() < deadline) {
+    if (Date.now() - beat > 20000) { await heartbeat(false, deadline); beat = Date.now(); }
+    const items = (await files.list(SESSION_PATHS.queue(sessionId)).catch(() => [])).sort((a, b) => a.name.localeCompare(b.name));
+    for (const it of items) {
+      const f = await files.read(it.path).catch(() => null);
+      await files.remove(it.path, f && f.sha).catch(() => {});
+      const t = f && f.json;
+      if (!t || !t.id) continue;
+      // Picked up by another runner already (it was re-dispatched): skip.
+      if (await files.read(SESSION_PATHS.task(t.id)).catch(() => null)) continue;
+      return { ...t, sessionId, dispatched: false };
+    }
+    await sleep(pollMs);
+  }
+  return null;
+}
+
+async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, headSha, route, setupError, runAgentImpl, log, maxSteps, updateMs, browser, base, merge, heartbeat }) {
+  const taskId = String(task.id).replace(/[^A-Za-z0-9_-]/g, '');
+  const mode = ['Build', 'Plan', 'Ask'].includes(task.mode) ? task.mode : 'Build';
+  const prompt = String(task.prompt || '').slice(0, MAX_PROMPT);
+  const sessionId = task.sessionId || '';
+  const startedAt = Date.now();
+  const events = [];
+  const lines = [];
+
+  // The dispatched task also gets a check run: it is how a failed start is diagnosed.
+  const check = task.dispatched ? (await api('POST', `/repos/${repo}/check-runs`, {
     name: checkName(taskId), head_sha: headSha, status: 'in_progress', started_at: new Date().toISOString(),
     output: { title: 'Starting', summary: 'Starting...' },
-  })).json;
-  const events = [];
+  }).catch(() => ({ json: null }))).json : null;
+
+  const statusDoc = (status, extra = {}) => ({ id: taskId, status, mode, prompt: prompt.slice(0, 4000), sessionId, startedAt, updatedAt: Date.now(), runId: env.GITHUB_RUN_ID || null, ...extra });
   const finish = async (ok, title, summary, result) => {
-    // The result's fields stay at the top level (older apps read them there); events share the space left.
-    const base = JSON.stringify(result);
-    const packed = packEvents(events, Math.max(4000, MAX_OUTPUT - base.length - 200));
-    await api('PATCH', `/repos/${repo}/check-runs/${check.id}`, {
-      status: 'completed', conclusion: ok ? 'success' : 'failure', completed_at: new Date().toISOString(),
-      output: { title, summary: String(summary || title).slice(0, MAX_OUTPUT), text: JSON.stringify({ ...result, events: packed }).slice(0, MAX_OUTPUT) },
-    }).catch((e) => log(`Could not finish the check run: ${e.message}`));
+    const baseLen = JSON.stringify(result).length;
+    const packed = packEvents(events, Math.max(4000, MAX_OUTPUT - baseLen - 200));
+    await files.write(SESSION_PATHS.task(taskId), statusDoc(ok ? 'done' : 'failed', { ...result, events: packEvents(events, 400000) }), `Craft task ${taskId}: ${title}`).catch(() => {});
+    if (check) {
+      await api('PATCH', `/repos/${repo}/check-runs/${check.id}`, {
+        status: 'completed', conclusion: ok ? 'success' : 'failure', completed_at: new Date().toISOString(),
+        output: { title, summary: String(summary || title).slice(0, MAX_OUTPUT), text: JSON.stringify({ ...result, events: packed }).slice(0, MAX_OUTPUT) },
+      }).catch((e) => log(`Could not finish the check run: ${e.message}`));
+    }
     return { status: ok ? 'done' : 'failed', result: { ...result, events: packed } };
   };
 
   if (setupError) return finish(false, 'Could not start', setupError, { error: setupError, mode });
   if (!prompt) return finish(false, 'Could not start', 'The task was empty.', { error: 'The task was empty.', mode });
 
-  const lines = [];
   let lastPush = 0; let pending = null;
   const pushProgress = async (note, force = false) => {
     if (!force && Date.now() - lastPush < updateMs) return;
     lastPush = Date.now();
-    pending = api('PATCH', `/repos/${repo}/check-runs/${check.id}`, {
-      output: { title: 'Working', summary: renderProgress(lines, note), text: JSON.stringify({ running: true, events: packEvents(events) }) },
-    }).catch(() => {});
+    const packed = packEvents(events);
+    pending = Promise.all([
+      files.write(SESSION_PATHS.task(taskId), statusDoc('running', { events: packEvents(events, 400000) }), `Craft task ${taskId}`).catch(() => {}),
+      check ? api('PATCH', `/repos/${repo}/check-runs/${check.id}`, { output: { title: 'Working', summary: renderProgress(lines, note), text: JSON.stringify({ running: true, events: packed }) } }).catch(() => {}) : null,
+      heartbeat ? heartbeat() : null,
+    ]);
     await pending;
   };
 
+  // Screenshots go next to the status, where the PC and the phone read them.
+  let shots = 0; let pendingShot = null;
+  const agentBrowser = browser ? async (url, opts) => {
+    const r = await browser(url, opts);
+    if (r && r.ok && r.screenshotPath) {
+      try {
+        const rel = SESSION_PATHS.shot(taskId, ++shots);
+        if (await files.writeBytes(rel, fs.readFileSync(r.screenshotPath), `Craft screenshot ${taskId}`)) pendingShot = rel;
+      } catch {}
+    }
+    return r;
+  } : undefined;
+
   try {
-    const hist = await loadHistory(api, repo, sessionId);
+    // Where this task starts (a later message in the same runner starts after the earlier merge).
+    const taskBase = await git(cwd, ['rev-parse', 'HEAD']).catch(() => headSha);
+    const hist = await loadHistory(files, sessionId);
     await pushProgress(hist.messages.length ? `Continuing the chat (${hist.messages.length / 2} earlier turns).` : 'Working on it.', true);
     const approve = ciApprove(cwd);
     let answer = ''; let steps = 0; let failure = '';
-    const userMessage = `${prompt}\n\n(You are running unattended in Craft Cloud, on a copy of the project. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. Do not commit or push; Craft does that when you finish.)`;
-    for await (const ev of runAgentImpl({ userMessage, history: hist.messages.slice(-HISTORY_TURNS), mode, cwd, approve, signal: new AbortController().signal, route, maxSteps })) {
+    const userMessage = `${prompt}\n\n(You are running unattended in Craft Cloud, in a fresh copy of the repository on a Linux machine. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. You can install dependencies, run the app and tests, and check pages with browser_check. Do not commit or push; Craft does that when you finish.)`;
+    for await (const ev of runAgentImpl({ userMessage, history: hist.messages.slice(-HISTORY_TURNS), mode, cwd, approve, browser: agentBrowser, signal: new AbortController().signal, route, maxSteps })) {
       const rec = recordEvent(ev);
+      if (rec && rec.t === 'tool' && ev.name === 'browser_check' && pendingShot) { rec.screenshot = pendingShot; pendingShot = null; }
       // The final answer arrives as the reply; everything else is part of the chat's steps.
       if (rec && !(rec.t === 'text' && !rec.interim)) events.push(rec);
       if (ev.type === 'text' && !ev.interim) answer = ev.text;
@@ -752,35 +1039,48 @@ export async function runCloudRunner({ env = process.env, cwd = process.cwd(), t
 
     if (mode === 'Plan') {
       const dir = path.join(cwd, '.codeply', 'plans');
-      const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.md')).map((f) => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs })).sort((a, b) => b.t - a.t) : [];
-      if (files.length) answer = fs.readFileSync(path.join(dir, files[0].f), 'utf8');
+      const plans = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.md')).map((f) => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs })).sort((a, b) => b.t - a.t) : [];
+      if (plans.length) answer = fs.readFileSync(path.join(dir, plans[0].f), 'utf8');
     }
 
-    let branch = null; let sha = null; let files = []; let stats = [];
+    let branch = null; let sha = null; let changed = []; let stats = []; let merged = null;
     if (mode === 'Build') {
-      await git(cwd, ['add', '-A', '--', '.', ':(exclude).codeply', `:(exclude)${WORKFLOW_PATH}`]);
+      await git(cwd, ['add', '-A', '--', '.', ':(exclude).codeply', `:(exclude)${WORKFLOW_PATH}`, ':(exclude).env']);
       const staged = await git(cwd, ['diff', '--cached', '--name-only']);
       if (staged) {
-        files = staged.split('\n').filter(Boolean);
+        changed = staged.split('\n').filter(Boolean);
         // Per-file + and - lines, for the chat's record of what was pushed.
         stats = (await git(cwd, ['diff', '--cached', '--numstat'])).split('\n').filter(Boolean).map((l) => {
           const [add, del, ...name] = l.split('\t');
           return { file: name.join('\t'), added: add === '-' ? null : Number(add), removed: del === '-' ? null : Number(del) };
         });
-        branch = taskBranch(taskId);
-        await git(cwd, [...BOT, 'commit', '-q', '-m', `${prompt.split('\n')[0].slice(0, 60)}\n\nCraft cloud task ${taskId}.`]);
+        branch = cloudBranchName(prompt, taskId);
+        const subject = prompt.split('\n')[0].slice(0, 60);
+        await git(cwd, [...BOT, 'commit', '-q', '-m', `${subject}\n\nCraft cloud task ${taskId}.`]);
         sha = await git(cwd, ['rev-parse', 'HEAD']);
         await git(cwd, ['push', '-q', 'origin', `HEAD:refs/heads/${branch}`], { auth: authFor(token, serverUrl) });
+        // Into the base branch too, so the next run (and the PC's pull) starts from it.
+        if (merge) {
+          const m = await api('POST', `/repos/${repo}/merges`, { base, head: branch, commit_message: `Merge ${branch}: ${subject}` }, { allow: [204, 404, 409] }).catch((e) => ({ status: 0, error: e.message }));
+          merged = m.status === 201 || m.status === 204
+            ? { ok: true, base, sha: m.json && m.json.sha ? m.json.sha : sha }
+            : { ok: false, base, reason: m.status === 409 ? `it conflicts with newer changes on ${base}` : (m.error || `GitHub answered ${m.status}`) };
+          if (merged.ok) {
+            // Keep working from the merged base for the next message in this chat.
+            await git(cwd, ['fetch', '-q', 'origin', base], { auth: authFor(token, serverUrl) }).catch(() => {});
+            await git(cwd, ['reset', '-q', '--hard', 'FETCH_HEAD']).catch(() => {});
+          }
+        }
         const plus = stats.reduce((n, s) => n + (s.added || 0), 0);
         const minus = stats.reduce((n, s) => n + (s.removed || 0), 0);
-        events.push({ t: 'pushed', branch, sha: sha.slice(0, 7), files: stats.slice(0, 50), added: plus, removed: minus });
+        events.push({ t: 'pushed', branch, sha: sha.slice(0, 7), files: stats.slice(0, 50), added: plus, removed: minus, merged });
       }
     }
 
-    await saveHistory(api, repo, sessionId, [...hist.messages, { role: 'user', content: prompt }, { role: 'assistant', content: answer || '(no reply)' }].slice(-HISTORY_TURNS * 2), headSha)
+    await saveHistory(files, sessionId, [...hist.messages, { role: 'user', content: prompt }, { role: 'assistant', content: answer || '(no reply)' }].slice(-HISTORY_TURNS * 2))
       .catch((e) => log(`Could not save the chat: ${e.message}`));
-    const result = { mode, prompt: prompt.slice(0, 4000), sessionId, answer: answer.slice(0, 20000), branch, sha, files, stats: stats.slice(0, 100), steps, baseSha: headSha };
-    const title = files.length ? `Changed ${files.length} file${files.length === 1 ? '' : 's'}` : mode === 'Build' ? 'No files changed' : 'Answered';
+    const result = { mode, prompt: prompt.slice(0, 4000), sessionId, answer: answer.slice(0, 20000), branch, sha, files: changed, stats: stats.slice(0, 100), merged, steps, baseSha: taskBase };
+    const title = changed.length ? `Changed ${changed.length} file${changed.length === 1 ? '' : 's'}` : mode === 'Build' ? 'No files changed' : 'Answered';
     return finish(true, title, answer || title, result);
   } catch (e) {
     return finish(false, 'Failed', `Something went wrong: ${e.message}`, { error: e.message, mode, steps: lines.length });

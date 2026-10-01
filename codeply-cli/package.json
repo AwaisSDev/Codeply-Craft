@@ -1,6 +1,6 @@
 {
   "name": "codeply-cli",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Codeply from the terminal: an interactive AI coding agent, a local server (codeply serve), and a GitHub agent that runs in your own Actions runner.",
   "main": "bin/codeply.js",
   "bin": {
