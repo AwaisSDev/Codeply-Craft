@@ -191,6 +191,8 @@ function normalizeBot(input, existing) {
     sources: clip(b.sources, 2000),
     approval: Array.isArray(b.approval) ? [...new Set(b.approval.filter((k) => APPROVALS[k]))] : ALL_APPROVALS.slice(),
     avatar: normalizeAvatar(b.avatar),
+    // The voice it speaks with on calls (a Deepgram, Edge or Kokoro voice id; '' = pick one).
+    voice: typeof b.voice === 'string' && /^[\w.-]{0,80}$/.test(b.voice) ? b.voice : '',
     memory: cleanMemory(b.memory),
     template: typeof b.template === 'string' ? b.template : undefined,
     createdAt: existing ? existing.createdAt : (Number(b.createdAt) || Date.now()),
