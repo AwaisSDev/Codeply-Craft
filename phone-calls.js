@@ -389,6 +389,13 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       if (v.quietMs >= END_MS || v.totalMs >= MAX_MS) finish();
     };
     v.flush = () => { if (v.inSpeech) finish(); };
+    /** What has been said so far in the current utterance, at 16 kHz. */
+    v.peek = () => {
+      let n = 0; for (const f of v.frames) n += f.length;
+      const all = new Float32Array(n);
+      let o = 0; for (const f of v.frames) { all.set(f, o); o += f.length; }
+      return to16k(all, sampleRate);
+    };
     v.reset = () => { v.inSpeech = false; v.frames = []; v.hist = []; v.quietMs = 0; v.voicedMs = 0; v.totalMs = 0; };
     return v;
   }
@@ -474,8 +481,8 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       c.vad = makeVad(sampleRate, {
         start: () => {
           if (!c) return;
-          // Barge-in: real speech over the bot (louder than its echo) stops it.
-          if (c.phase === 'speaking') { interrupt(); setPhase('listening'); }
+          // Over the bot's voice nothing stops it yet: the words decide (see bargeCheck).
+          c.bargeAt = c.phase === 'speaking' ? performance.now() : 0;
           if (c.phase !== 'speaking') caption('...', 'user');
         },
         cancel: () => { if (c && c.phase === 'listening' && q('.call-caption').textContent === '...') caption('', 'user'); },
@@ -484,6 +491,30 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     }
     c.vad.botSpeaking = c.phase === 'speaking';
     c.vad.feed(frame);
+    bargeCheck();
+  }
+  // Talking over the bot: about 0.6 s into the sound, transcribe what was said
+  // so far and stop the bot only for 2+ clear words that are not its own echo.
+  // A cough, a door, music or the bot's voice from the speaker never stops it.
+  const clearWords = (text) => words(text).filter((w) => w.length > 1 || /^[ai]$/.test(w));
+  function isRealSpeech(text) {
+    const w = clearWords(text);
+    return w.length >= 2 && overlap(text, c && c.lastBotText) < 0.6;
+  }
+  async function bargeCheck() {
+    const me = c;
+    if (!me || !me.bargeAt || me.bargeBusy || me.phase !== 'speaking' || !me.vad || !me.vad.inSpeech) return;
+    if (performance.now() - me.bargeAt < 600 || stt.state !== 'ready') return;
+    me.bargeBusy = true;
+    try {
+      const text = await transcribe(me.vad.peek());
+      if (c === me && me.phase === 'speaking' && isRealSpeech(text)) {
+        me.bargeAt = 0;
+        interrupt();
+        setPhase('listening');
+        caption(text, 'user');
+      } else if (c === me) me.bargeAt = performance.now(); // check again a bit later
+    } catch {} finally { me.bargeBusy = false; }
   }
   async function hearAudio(audio) {
     const me = c;
@@ -502,11 +533,14 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     console.debug(`[calls] end of speech -> text: ${ms} ms after the 450 ms quiet wait (${(audio.length / 16000).toFixed(1)} s clip, ${stt.device})`);
     if (c !== me) return;
     if (!text) { if (me.phase === 'listening' && q('.call-caption').textContent === '...') caption('', 'user'); return; }
+    // Said while the bot was still talking: only clear words count.
+    if (me.phase === 'speaking' && !isRealSpeech(text)) return;
     heardText(text);
   }
 
   // ─── The bot's own voice (Deepgram, through Codeply's tts-proxy) ──────────
   const TTS_URL = String(P.AI_PROXY_URL || '').replace('/functions/v1/ai-proxy', '/functions/v1/tts-proxy');
+  const VOICE_CHAT_URL = String(P.AI_PROXY_URL || '').replace('/functions/v1/ai-proxy', '/functions/v1/voice-chat');
   const DG_VOICES = ['aura-2-thalia-en', 'aura-2-luna-en', 'aura-2-orion-en', 'aura-2-apollo-en', 'aura-2-athena-en', 'aura-2-arcas-en'];
   /** The bot's chosen Deepgram voice, or a stable default for it. */
   function deepgramVoice(bot) {
@@ -525,6 +559,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     if (!TTS_URL) return;
     lastWarm = Date.now();
     try { fetch(TTS_URL, { method: 'GET', cache: 'no-store' }).catch(() => {}); } catch {}
+    try { fetch(VOICE_CHAT_URL, { method: 'GET', cache: 'no-store' }).catch(() => {}); } catch {}
   }
   /** One chunk -> an AudioBuffer, or null (then the phone's voice says it). Decodes as soon as the bytes land. */
   async function ttsClip(text, token, authP, retried) {
@@ -707,12 +742,12 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     if (!raw.length) return [];
     const out = [];
     const w = raw.shift().split(/\s+/);
-    if (w.length > 10) {
+    if (w.length > 7) {
       let cut = -1;
-      for (let i = 2; i < Math.min(w.length - 2, 12); i++) {
+      for (let i = 1; i < Math.min(w.length - 2, 8); i++) {
         if (/[,;:]$/.test(w[i]) || w[i + 1] === '-') { cut = i + 1; break; }
       }
-      if (cut < 0) cut = 8;
+      if (cut < 0) cut = 5;
       out.push(w.slice(0, cut).join(' '));
       raw.unshift(w.slice(cut).join(' ').replace(/^-\s*/, ''));
     } else out.push(w.join(' '));
@@ -885,7 +920,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       if (c !== me || token !== me.token) return;
     }
     if (c && token === c.token) {
-      if (c.abort && c.stepLabel && text === 'One sec.') setPhase('thinking', c.stepLabel); // still working after the filler
+      if (c.abort && c.stepLabel) setPhase('thinking', c.stepLabel); // said the opening line, the work is still running
       else setPhase('listening');
     }
   }
@@ -1006,7 +1041,119 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     caption(text, 'user');
     await respond(token);
   }
+  // The fast lane: Codeply's fast model answers at once, as the bot. It either
+  // answers outright, or says a natural line and names the real work, which
+  // then runs on the PC with the bot's tools.
+  const FAST_RULES = `LIVE VOICE CALL, FAST REPLY
+You are on a live voice call. Reply with ONLY a JSON object: {"say": "...", "work": null}
+- "say" is spoken out loud right away: one to three short spoken sentences, plain words, no markdown, no lists, no emojis, no links, no long dash.
+- If the user wants something that needs real tools (their email, calendar, files, code, sending a message, searching the web for current facts, anything on their computer), set "work" to one clear sentence describing the task for your tools, and make "say" a short natural line that fits what they asked, like you are starting on it now. Vary it. Never say "one sec" or "one moment". Do not invent results.
+- Otherwise "work" is null and "say" is your full answer.`;
+  const FAST_OFFLINE = '\n- Right now the user\'s PC is offline, so you cannot use tools: never set "work"; if they ask for that kind of thing, say so in one sentence and offer to do it when their PC is on.';
+  async function askFast(bot, turns, signal) {
+    const last = calls.find((x) => x.botId === bot.id && x.status === 'done' && x.turns.length);
+    const recent = last ? last.turns.slice(-6).map((t) => `${t.who === 'bot' ? bot.name : 'User'}: ${String(t.text).slice(0, 300)}`).join('\n') : '';
+    const base = bot.prompt || `You are ${bot.name}, one of the user's bots in Codeply.${bot.specialty ? ` Your job: ${bot.specialty}.` : ''}${bot.instructions ? `\n${bot.instructions}` : ''}`;
+    const system = `${base}\n\n${FAST_RULES}${pcOnline() ? '' : FAST_OFFLINE}${recent ? `\n\nTHE LAST CALL BEFORE THIS ONE\n${recent}` : ''}`;
+    const messages = [{ role: 'system', content: system },
+      ...turns.slice(-14).map((t) => ({ role: t.who === 'bot' ? 'assistant' : 'user', content: String(t.text || '').slice(0, 1000) }))];
+    const token = await P.accessToken();
+    // voice-chat: built for calls (budget and model in parallel, minimal reasoning); ai-proxy if it is not there.
+    let res = await fetch(VOICE_CHAT_URL, {
+      method: 'POST', signal,
+      headers: { Authorization: `Bearer ${token}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages, maxTokens: 260 }),
+    });
+    if (res.status === 404) {
+      res = await fetch(P.AI_PROXY_URL, {
+        method: 'POST', signal,
+        headers: { Authorization: `Bearer ${token}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages, opts: { json: true, maxTokens: 260, temperature: 0.7 }, meta: { source: 'phone-call-fast' } }),
+      });
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) throw new Error(data.error || `Codeply could not answer (${res.status}).`);
+    const raw = (data.data && data.data.choices && data.data.choices[0] && data.data.choices[0].message && data.data.choices[0].message.content) || '';
+    let j = null;
+    try { j = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)); } catch {}
+    if (!j || typeof j.say !== 'string') return { say: raw.replace(/[{}"]/g, '').trim(), work: null };
+    return { say: j.say, work: typeof j.work === 'string' && j.work.trim() ? j.work.trim() : null };
+  }
+
+  /** Say a line now (logged), without waiting for it to finish. */
+  function sayNow(text, token) {
+    text = spoken(text);
+    if (!text || !c) return Promise.resolve();
+    c.lastBotText = text;
+    log('bot', text);
+    return say(text, token);
+  }
+
   async function respond(token) {
+    if (api.fast !== false) {
+      try { return await respondFast(token); } catch (e) {
+        if (!c || token !== c.token || e.name === 'AbortError') return;
+        console.debug('[calls] fast lane failed, using the full path:', e.message);
+      }
+    }
+    return respondFull(token);
+  }
+
+  async function respondFast(token) {
+    const me = c;
+    setPhase('thinking');
+    const controller = new AbortController();
+    me.abort = controller;
+    const t0 = performance.now();
+    const fast = await api.fast_(me.bot, me.turns, controller.signal);
+    if (c !== me || token !== me.token) return;
+    metrics.push({ kind: 'fastReply', ms: Math.round(performance.now() - t0), work: !!fast.work, at: Date.now() });
+    console.debug(`[calls] fast reply in ${Math.round(performance.now() - t0)} ms${fast.work ? ` (work: ${fast.work})` : ''}`);
+    if (!fast.work || !pcOnline()) {
+      me.abort = null;
+      await sayNow(fast.say || 'Mm hm.', token);
+      return;
+    }
+    // Real work: say the line now, run the job on the PC meanwhile.
+    const ack = sayNow(fast.say, token);
+    me.stepLabel = '';
+    let lastSpokeAt = performance.now();
+    let updates = 0;
+    const ui = {
+      step: (label) => {
+        if (c !== me || token !== me.token) return;
+        me.stepLabel = `${label}...`;
+        if (me.phase !== 'speaking') setPhase('thinking', me.stepLabel);
+        // A short, varied update on long jobs instead of silence.
+        if (updates < 2 && me.phase !== 'speaking' && performance.now() - lastSpokeAt > 9000) {
+          updates++;
+          lastSpokeAt = performance.now();
+          const lines = [`Still ${label.charAt(0).toLowerCase()}${label.slice(1)}.`, 'Almost there.', 'Nearly done, hang on.'];
+          sayNow(lines[(updates - 1) % lines.length], token);
+        }
+      },
+      approve: (req, signal) => askApproval(req, signal),
+    };
+    const turns = me.turns.map((t, i) => (i === me.turns.length - 1 && t.who === 'user' ? { ...t, text: `${t.text}\n(The task: ${fast.work})` } : t));
+    let result = '';
+    try {
+      result = spoken(await askBotOnPc(me.bot, turns, controller.signal, ui));
+    } catch (e) {
+      hideApproval();
+      if (c !== me || token !== me.token || e.name === 'AbortError') return;
+      await ack;
+      await sayNow("Sorry, I couldn't get that done just now. Want me to try again?", token);
+      return;
+    }
+    hideApproval();
+    await ack;
+    if (c !== me || token !== me.token) return;
+    me.abort = null;
+    showNote();
+    await sayNow(result || 'Done.', token);
+  }
+
+  async function respondFull(token) {
     setPhase('thinking');
     const controller = new AbortController();
     c.abort = controller;
@@ -1014,12 +1161,10 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     c.filler = null;
     c.stepLabel = '';
     const ui = {
-      // "Checking your email..." while a tool runs, and a quick "One sec." once.
       step: (label) => {
         if (!c || token !== c.token) return;
         c.stepLabel = `${label}...`;
         if (c.phase !== 'speaking') setPhase('thinking', c.stepLabel);
-        if (!c.filler) { c.lastBotText = 'One sec.'; c.filler = say('One sec.', token); }
       },
       approve: (req, signal) => askApproval(req, signal),
     };
@@ -1496,13 +1641,13 @@ Respond with ONLY a JSON object:
 
   // reply/ringMs/endedMs are swappable for tests in the console; localEars
   // forces the kept-mic + Whisper path on browsers that have SpeechRecognition.
-  const api = { reply: askBot, ringMs: 2400, endedMs: 1100, localEars: false };
+  const api = { reply: askBot, fast_: askFast, fast: true, ringMs: 2400, endedMs: 1100, localEars: false };
   window.CraftCalls = {
     api, openCalls, closeCalls, startCall, endCall, refreshBots, syncCalls, spoken, sentences, VOICE_RULES, openBuilder, pushPending,
     heard: heardText, active: () => c, cache, calls: () => calls,
     supported: { recognition: !!SR, synthesis: !!synth, localEars: localEars(), ios: IS_IOS },
     _test: {
-      transcribe, to16k, deepgramVoice, chunks, wordPlan, metrics, ttsUrl: TTS_URL, loadModel: sttLoad, stt: () => ({ state: stt.state, device: stt.device, progress: stt.progress, error: stt.error }),
+      transcribe, to16k, deepgramVoice, chunks, isRealSpeech: (t, said) => { const was = c && c.lastBotText; if (c) c.lastBotText = said || ''; const r = c ? isRealSpeech(t) : clearWords(t).length >= 2; if (c) c.lastBotText = was; return r; }, wordPlan, metrics, ttsUrl: TTS_URL, loadModel: sttLoad, stt: () => ({ state: stt.state, device: stt.device, progress: stt.progress, error: stt.error }),
       mic: () => ({ live: micLive(), enabled: !!(micTrack() && micTrack().enabled), streamId: mic.stream && mic.stream.id }),
       /** Push audio through a fresh voice detector; returns the 16 kHz utterances it cut out. */
       vadFeed(samples, sampleRate = 16000, opts = {}) {
