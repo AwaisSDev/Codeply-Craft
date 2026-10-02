@@ -21,13 +21,16 @@
   const KEY = { bots: 'craft-phone-bots', calls: 'craft-phone-calls' };
   const MAX_CALLS = 50;
 
-  // Same rules as the desktop call (Codeply Crew main.js VOICE_RULES).
+  // With the PC online a call turn runs ON the PC as the bot's real agent, with
+  // its tools (Gmail, files, the web): see bots-desktop.js /api/bots/voice.
+  // These rules are only for when the PC is offline and the phone answers
+  // through ai-proxy without tools (same text as bots.js VOICE_RULES_NO_TOOLS).
   const VOICE_RULES = `LIVE VOICE CALL
 You are on a live voice call with the user, talking out loud. Everything you write is spoken by a voice engine.
 - Reply in one to three short spoken sentences. Plain words, the way people talk.
 - No markdown, no lists, no headings, no emojis, no code, no links, no long dash.
-- Ask one short question back when it helps the conversation.
-- You cannot use tools during the call. If they want real work done (files, code, emails), say you will take care of it in the chat after the call, and remember what they asked.`;
+- Ask one short question back when it helps.
+- Right now you cannot use your tools (email, files, the web), because the user's PC is offline. If they ask for that kind of work, say so in one sentence and offer to do it once their PC is on.`;
 
   const ICON = {
     phone: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1A17 17 0 0 1 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1z"/></svg>',
@@ -334,8 +337,34 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       await speakOne(s, token);
       if (!c || token !== c.token) return;
     }
-    if (c && token === c.token) setPhase('listening');
+    if (c && token === c.token) {
+      if (c.abort && c.stepLabel && text === 'One sec.') setPhase('thinking', c.stepLabel); // still working after the filler
+      else setPhase('listening');
+    }
   }
+
+  // Approvals on the call screen for anything outside the bot's boundary.
+  function askApproval(req, signal) {
+    hideApproval();
+    return new Promise((resolve) => {
+      if (!c) { resolve('reject'); return; }
+      const box = document.createElement('div');
+      box.className = `call-approve${req.danger ? ' danger' : ''}`;
+      box.innerHTML = `<div class="call-approve-title">${esc(req.title || 'Allow this?')}</div>
+        ${req.detail ? `<pre>${esc(String(req.detail).slice(0, 500))}</pre>` : ''}
+        <div class="call-approve-row"><button type="button" data-v="reject">Don't allow</button><button type="button" class="primary" data-v="once">Allow</button></div>`;
+      const done = (v) => { box.remove(); resolve(v); };
+      box.querySelectorAll('[data-v]').forEach((b) => b.addEventListener('click', () => done(b.dataset.v)));
+      signal.addEventListener('abort', () => done('reject'), { once: true });
+      root().appendChild(box);
+      setPhase('thinking', 'Needs your OK');
+    });
+  }
+  function hideApproval() {
+    const box = c && q('.call-approve');
+    if (box) box.remove();
+  }
+
   function interrupt() {
     if (!c) return;
     c.token++;
@@ -343,8 +372,44 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     if (synth) { try { synth.cancel(); } catch {} }
   }
 
-  // Answering: the bot's prompt + the voice rules, through Codeply's ai-proxy.
-  async function askBot(bot, turns, signal) {
+  // Answering, PC online: the turn runs on the PC with the bot's tools. The
+  // relay has a time limit, so it is a job we poll; it reports what the bot is
+  // doing and stops for approvals outside the bot's boundary.
+  const abortError = () => Object.assign(new Error('Stopped.'), { name: 'AbortError' });
+  async function askBotOnPc(bot, turns, signal, ui) {
+    let r = await P.relayRequest('POST', '/api/bots/voice', { botId: bot.id, turns: turns.slice(-16).map((t) => ({ who: t.who, text: t.text })) });
+    const jobId = r.jobId;
+    const cancel = () => { P.relayRequest('POST', '/api/bots/voice/cancel', { jobId }).catch(() => {}); };
+    signal.addEventListener('abort', cancel, { once: true });
+    try {
+      for (;;) {
+        if (signal.aborted) throw abortError();
+        if (r.status === 'done') return r.text || '';
+        if (r.status === 'cancelled') throw abortError();
+        if (r.status === 'error' || (r.error && !r.jobId)) throw new Error(r.error || 'Your PC could not answer.');
+        if (r.step) ui.step(r.step);
+        if (r.approval) {
+          const verdict = await ui.approve(r.approval, signal);
+          if (signal.aborted) throw abortError();
+          await P.relayRequest('POST', '/api/bots/voice/answer', { jobId, requestId: r.approval.requestId, verdict });
+        }
+        r = await P.relayRequest('POST', '/api/bots/voice/poll', { jobId, version: r.version }, 20000);
+      }
+    } finally {
+      signal.removeEventListener('abort', cancel);
+    }
+  }
+
+  // Answering, PC offline: the bot's prompt + the voice rules, through Codeply's ai-proxy.
+  async function askBot(bot, turns, signal, ui) {
+    // Bots made on the PC run there whenever it is reachable, tools and all.
+    if (pcOnline() && ui) {
+      try { return await askBotOnPc(bot, turns, signal, ui); } catch (e) {
+        if (e.name === 'AbortError' || signal.aborted) throw e;
+        if (!e.timeout && !/offline|didn't answer|not on this PC|404/i.test(e.message)) throw e;
+        // The PC dropped off mid-call: answer from the phone instead.
+      }
+    }
     const last = calls.find((x) => x.botId === bot.id && x.status === 'done' && x.turns.length);
     const recent = last ? last.turns.slice(-6).map((t) => `${t.who === 'bot' ? bot.name : 'User'}: ${String(t.text).slice(0, 400)}`).join('\n') : '';
     const base = bot.prompt || `You are ${bot.name}, one of the user's bots in Codeply.${bot.specialty ? ` Your job: ${bot.specialty}.` : ''}${bot.instructions ? `\n${bot.instructions}` : ''}`;
@@ -382,9 +447,24 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     const controller = new AbortController();
     c.abort = controller;
     let text = '';
+    c.filler = null;
+    c.stepLabel = '';
+    const ui = {
+      // "Checking your email..." while a tool runs, and a quick "One sec." once.
+      step: (label) => {
+        if (!c || token !== c.token) return;
+        c.stepLabel = `${label}...`;
+        if (c.phase !== 'speaking') setPhase('thinking', c.stepLabel);
+        if (!c.filler) { c.lastBotText = 'One sec.'; c.filler = say('One sec.', token); }
+      },
+      approve: (req, signal) => askApproval(req, signal),
+    };
     try {
-      text = spoken(await api.reply(c.bot, c.turns, controller.signal));
+      text = spoken(await api.reply(c.bot, c.turns, controller.signal, ui));
+      hideApproval();
+      if (c && c.filler) await c.filler;
     } catch (e) {
+      hideApproval();
       if (!c || token !== c.token || e.name === 'AbortError') return;
       q('.call-note').textContent = /fetch|network/i.test(e.message) ? "Can't reach Codeply. Check your internet connection." : e.message;
       await say('Sorry, I lost my train of thought. Say that again?', token);

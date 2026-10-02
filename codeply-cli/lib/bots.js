@@ -579,7 +579,93 @@ function fromDescription(json, description) {
   return draft;
 }
 
+// ─── Voice calls ────────────────────────────────────────────────────────────
+// A call turn is a real agent run: the bot keeps its tools (Gmail, files, the
+// web, commands) and its approval boundary, and only the way it answers
+// changes, so "check my email" on a call really checks it.
+
+const VOICE_RULES = `LIVE VOICE CALL
+You are on a live voice call with the user, talking out loud. Your final reply is spoken by a voice engine.
+- You still have all your tools. When the user asks for real work (check their email, look something up, read or change a file), do it now with your tools, then tell them the result.
+- Speak the result in one to three short sentences, the way people talk. Summarize: for emails say who it is from and what it is about, never read out long text, links or ids.
+- No markdown, no lists, no headings, no emojis, no code, no links, no long dash in what you say.
+- Ask one short question back when it helps.
+- Anything that needs the user's OK (sending, changing files, running commands) is asked on their screen; if they say no, tell them plainly.`;
+
+const VOICE_RULES_NO_TOOLS = `LIVE VOICE CALL
+You are on a live voice call with the user, talking out loud. Everything you write is spoken by a voice engine.
+- Reply in one to three short spoken sentences. Plain words, the way people talk.
+- No markdown, no lists, no headings, no emojis, no code, no links, no long dash.
+- Ask one short question back when it helps.
+- Right now you cannot use your tools (email, files, the web), because the user's PC is offline. If they ask for that kind of work, say so in one sentence and offer to do it once their PC is on.`;
+
+/** Whatever the model sent, make it sayable: no markdown, no long dashes. */
+function spoken(s) {
+  const dash = String.fromCharCode(0x2014);
+  return String(s || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/\[(.*?)\]\((.*?)\)/g, '$1')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/[*_#`>]+/g, '')
+    .split(dash).join(', ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** The call so far as chat turns: the last thing the user said is the new message. */
+function callTurns(turns) {
+  const list = (Array.isArray(turns) ? turns : []).filter((t) => t && t.text).slice(-16)
+    .map((t) => ({ role: t.who === 'bot' ? 'assistant' : 'user', content: String(t.text).slice(0, 1200) }));
+  let lastUser = -1;
+  list.forEach((t, i) => { if (t.role === 'user') lastUser = i; });
+  if (lastUser < 0) return { history: [], userMessage: '' };
+  const history = [];
+  for (const t of list.slice(0, lastUser)) {
+    const prev = history[history.length - 1];
+    if (prev && prev.role === t.role) prev.content += `\n${t.content}`; else history.push({ ...t });
+  }
+  while (history.length && history[0].role !== 'user') history.shift();
+  return { history, userMessage: list.slice(lastUser).filter((t) => t.role === 'user').map((t) => t.content).join('\n') };
+}
+
+/**
+ * One spoken reply on a call, with tools. `runAgent` is the engine's agent
+ * loop; `onStep({ name, label, done, ok })` reports tool use for the call
+ * screen ("Checking Gmail..."). Returns { text } ready to speak.
+ */
+async function voiceTurn({ bot, team, turns, recentChat, runAgent, route, cwd, signal, approve, onStep, maxSteps = 16 }) {
+  const { history, userMessage } = callTurns(turns);
+  if (!userMessage) return { text: '' };
+  const extra = recentChat ? `\n\nRECENT CHAT BEFORE THIS CALL\n${recentChat}` : '';
+  const run = runAgent({
+    userMessage, history, mode: 'Build', cwd, signal, route, maxSteps, approve,
+    botPrompt: () => `${buildBotPrompt(bot, { team })}\n\n${VOICE_RULES}${extra}`,
+  });
+  let reply = '';
+  for await (const ev of run) {
+    if (ev.type === 'text' && !ev.interim) reply += (reply ? ' ' : '') + ev.text;
+    else if (ev.type === 'tool_start' && onStep) onStep({ name: ev.name, args: ev.args || {} });
+    else if (ev.type === 'tool_end' && onStep) onStep({ name: ev.name, args: ev.args || {}, done: true, ok: !!ev.ok });
+    else if (ev.type === 'error') throw new Error(ev.error || 'The run failed.');
+    else if (ev.type === 'aborted') throw new Error('Stopped.');
+    else if (ev.type === 'done') break;
+  }
+  if (signal && signal.aborted) throw new Error('Stopped.'); // hung up or talked over: nothing to say
+  return { text: spoken(reply) };
+}
+
+/** What the call screen says while a tool runs. */
+const CALL_STEP = {
+  gmail_search: 'Checking your email', gmail_send: 'Sending the email', web_search: 'Searching the web', web_fetch: 'Reading a page',
+  read_file: 'Reading a file', write_file: 'Writing a file', edit_file: 'Editing a file', apply_patch: 'Editing files', run: 'Running a command',
+  search: 'Searching your files', list_dir: 'Looking through files', slack_post_message: 'Posting to Slack', browser_check: 'Checking the page',
+  ask_bot: 'Asking a teammate', todo: 'Planning',
+};
+const callStepLabel = (name) => CALL_STEP[name] || 'Working on it';
+
 module.exports = {
+  VOICE_RULES, VOICE_RULES_NO_TOOLS, spoken, callTurns, voiceTurn, callStepLabel,
   MAX_MEMORY, MAX_DEPTH, ROLES, TONES, APPROVALS, AVATAR_KEYS, TEMPLATES,
   botsDir, setBotsDir, normalizeBot, normalizeAvatar,
   listBots, getBot, findBot, createBot, createFromTemplate, updateBot, removeBot,

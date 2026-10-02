@@ -95,3 +95,12 @@
   .cb, .call-end { width: 66px; height: 66px; }
   .call-grid { margin-bottom: 18px; }
 }
+
+/* Approvals during a call (the bot wants to send an email, edit a file...) */
+.call-approve { position: absolute; left: 16px; right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 200px); z-index: 6; background: rgba(28, 28, 30, 0.96); color: #fff; border-radius: 18px; padding: 16px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45); }
+.call-approve.danger { box-shadow: 0 0 0 1px rgba(255, 82, 87, 0.6), 0 12px 40px rgba(0, 0, 0, 0.45); }
+.call-approve-title { font-weight: 600; font-size: 16px; margin-bottom: 8px; }
+.call-approve pre { margin: 0 0 12px; max-height: 120px; overflow: auto; font: 12.5px/1.45 ui-monospace, Menlo, monospace; color: rgba(255, 255, 255, 0.7); white-space: pre-wrap; background: rgba(255, 255, 255, 0.07); border-radius: 10px; padding: 8px 10px; }
+.call-approve-row { display: flex; gap: 10px; }
+.call-approve-row button { flex: 1; height: 44px; border-radius: 12px; border: 0; font: inherit; font-weight: 600; background: rgba(255, 255, 255, 0.14); color: #fff; }
+.call-approve-row button.primary { background: var(--accent, #4b9dff); }

@@ -209,9 +209,123 @@ async function saveCall({ botId, ms, turns }) {
   return { status: 200, body: { ok: true, learned: true } };
 }
 
+// ─── Phone calls with tools ─────────────────────────────────────────────────
+// A call turn from the phone runs here, on this PC, as the bot's real agent
+// (bots.voiceTurn): Gmail, files, the web, all of it, in the bots' folder
+// (~/Codeply Crew, the same one Codeply Crew uses). The relay is request and
+// response with a time limit, so a turn is a job: the phone starts it, polls
+// for what it is doing ("Checking your email"), answers approvals for anything
+// outside the bot's boundary, and gets the spoken reply at the end.
+
+const os = require('os');
+const fs = require('fs');
+const voiceJobs = new Map(); // jobId -> job
+const JOB_WAIT_MS = 8000;
+
+function botsFolder() {
+  const dir = path.join(os.homedir(), 'Codeply Crew');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  return dir;
+}
+
+function jobView(j) {
+  return {
+    jobId: j.id, version: j.version, status: j.status, step: j.step || '', text: j.text || '', error: j.error || '',
+    approval: j.approval ? { requestId: j.approval.requestId, title: j.approval.title, detail: j.approval.detail, danger: j.approval.danger } : null,
+  };
+}
+
+function bumpJob(j) {
+  j.version++;
+  const waiters = j.waiters.splice(0);
+  for (const w of waiters) w();
+}
+
+/** Resolves when the job changes after `version`, or after `ms`. */
+function waitJob(j, version, ms) {
+  if (j.version !== version || j.status !== 'working') return Promise.resolve();
+  return new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    j.waiters.push(() => { clearTimeout(t); resolve(); });
+  });
+}
+
+async function startVoice({ botId, turns }) {
+  const b = bots();
+  const bot = b.getBot(String(botId || ''));
+  if (!bot) return { status: 404, body: { error: 'That bot is not on this PC any more.' } };
+  if (!(await deps.ensureEngine())) return { status: 503, body: { error: 'The engine is not ready on your PC.' } };
+  // One turn per bot at a time: a new one replaces the old (the user talked over it).
+  for (const j of voiceJobs.values()) if (j.botId === bot.id && j.status === 'working') j.controller.abort();
+  const id = `v${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const controller = new AbortController();
+  const j = { id, botId: bot.id, status: 'working', step: '', text: '', error: '', approval: null, version: 0, waiters: [], controller, at: Date.now() };
+  voiceJobs.set(id, j);
+  const { signal } = controller;
+  const route = deps.currentRoute();
+  const token = `phone-call:${id}`;
+  const approve = async (req) => {
+    if (signal.aborted) return 'reject';
+    if (!req.danger && req.tool !== 'fetch_image' && b.canSkipApproval(bot, req.tool)) {
+      const perms = deps.permissionsLib && deps.permissionsLib();
+      const rule = perms ? perms.decide(req, botsFolder()) : { decision: null };
+      if (rule.decision !== 'deny') return 'once';
+    }
+    const requestId = `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    const verdict = await new Promise((resolve) => {
+      j.approval = { requestId, title: req.title, detail: String(req.detail || '').slice(0, 800), danger: !!req.danger, resolve };
+      bumpJob(j);
+      signal.addEventListener('abort', () => resolve('reject'), { once: true });
+    });
+    j.approval = null;
+    bumpJob(j);
+    return verdict;
+  };
+  (async () => {
+    try {
+      const r = await b.globalLock.run(token, () => b.voiceTurn({
+        bot, team: b.listBots(), turns, runAgent: deps.agentMod().runAgent, route, cwd: botsFolder(), signal, approve,
+        onStep: (s) => { if (!s.done) { j.step = b.callStepLabel(s.name); bumpJob(j); } },
+      }), signal);
+      j.text = r.text; j.status = 'done';
+    } catch (e) {
+      j.status = signal.aborted ? 'cancelled' : 'error';
+      j.error = e.message;
+    }
+    bumpJob(j);
+    setTimeout(() => voiceJobs.delete(id), 5 * 60 * 1000);
+  })();
+  await waitJob(j, 0, JOB_WAIT_MS);
+  return { status: 200, body: jobView(j) };
+}
+
+async function pollVoice({ jobId, version }) {
+  const j = voiceJobs.get(String(jobId || ''));
+  if (!j) return { status: 404, body: { error: 'That call turn is gone.' } };
+  await waitJob(j, Number.isFinite(Number(version)) ? Number(version) : j.version, JOB_WAIT_MS);
+  return { status: 200, body: jobView(j) };
+}
+
+function answerVoice({ jobId, requestId, verdict }) {
+  const j = voiceJobs.get(String(jobId || ''));
+  if (!j || !j.approval || j.approval.requestId !== requestId) return { status: 404, body: { error: 'Nothing is waiting for that answer.' } };
+  j.approval.resolve(verdict === 'once' || verdict === 'always' ? 'once' : 'reject');
+  return { status: 200, body: { ok: true } };
+}
+
+function cancelVoice({ jobId }) {
+  const j = voiceJobs.get(String(jobId || ''));
+  if (j && j.status === 'working') j.controller.abort();
+  return { status: 200, body: { ok: true } };
+}
+
 /** handleBridgeApi hook: a response for /api/bots routes, or null. */
 async function bridge(method, pathname, query, body) {
   try {
+    if (method === 'POST' && pathname === '/api/bots/voice') return await startVoice(body || {});
+    if (method === 'POST' && pathname === '/api/bots/voice/poll') return await pollVoice(body || {});
+    if (method === 'POST' && pathname === '/api/bots/voice/answer') return answerVoice(body || {});
+    if (method === 'POST' && pathname === '/api/bots/voice/cancel') return cancelVoice(body || {});
     if (method === 'GET' && pathname === '/api/bots') return { status: 200, body: phoneCatalog() };
     if (method === 'POST' && pathname === '/api/bots/template') {
       bots().createFromTemplate(String((body && body.key) || ''));
