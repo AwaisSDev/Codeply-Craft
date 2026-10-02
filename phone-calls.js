@@ -3,9 +3,17 @@
 // Bots live on the PC (~/.codeply/bots). The phone lists them over the relay
 // (GET /api/bots, each with a ready prompt) and caches them, so a call still
 // works when the PC is offline. A call runs entirely in this page:
-//   tap Call -> ring (WebAudio) -> the bot greets -> Web Speech recognition
-//   hears you -> Codeply's ai-proxy answers as the bot (its prompt plus the
-//   voice rules) -> speechSynthesis reads it out, sentence by sentence.
+//   tap Call -> ring (WebAudio) -> the bot greets -> we hear you -> the PC
+//   (or Codeply's ai-proxy) answers as the bot -> the bot's own Deepgram
+//   voice (tts-proxy) reads it out, sentence by sentence, through WebAudio.
+//   If that voice is unavailable the phone's speechSynthesis voice takes over.
+// Hearing: on iPhone/iPad, and wherever SpeechRecognition is missing, one
+// microphone stream is opened on the first call and kept for the life of the
+// page (only disabled between calls). Stopping it would make iOS home-screen
+// apps ask for the microphone again on every call. A small voice detector
+// cuts your words out of that stream and Whisper (phone-stt-worker.js)
+// turns them into text on the phone itself. Elsewhere (Chrome) the browser's
+// SpeechRecognition does it, and Whisper takes over if that fails.
 // Talk over the bot and it stops (barge-in); its own voice coming back
 // through the mic is ignored (echo filter). Finished calls are kept here and
 // sent to the PC (POST /api/bots/call) so the bot learns from them.
@@ -134,6 +142,8 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     renderCalls();
     refreshBots();
     syncCalls();
+    // Get Whisper ready in the background so the first call can hear at once.
+    if (localEars()) sttLoad();
   }
   function closeCalls() { $('calls').classList.add('hidden'); }
 
@@ -193,7 +203,9 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       }
       html += '</div>';
     }
-    html += '<p class="calls-foot">Calls run in this app with your phone\'s speech recognition and voice. They use your Codeply daily limit.</p>';
+    html += `<p class="calls-foot">${localEars()
+      ? 'Calls run in this app. What you say is turned into text on this phone, and each bot answers in its own voice.'
+      : 'Calls run in this app with your browser\'s speech recognition, and each bot answers in its own voice.'} They use your Codeply daily limit.</p>`;
     root.innerHTML = html;
     root.querySelectorAll('[data-call]').forEach((b) => b.addEventListener('click', (e) => {
       e.preventDefault(); e.stopPropagation();
@@ -218,6 +230,344 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     return pool[hash(bot.id) % pool.length];
   }
   if (synth && synth.addEventListener) synth.addEventListener('voiceschanged', () => { if (c && !c.voiceLocked) c.voice = voiceFor(c.bot); });
+
+  // ─── Platform ─────────────────────────────────────────────────────────────
+  // iPadOS in desktop mode says "MacIntel" but has touch.
+  const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  let srBroken = false; // SpeechRecognition failed this session: hear with Whisper instead
+  /** Hear with our own mic stream + Whisper (iOS, no SpeechRecognition, or it broke). */
+  const localEars = () => IS_IOS || !SR || srBroken || !!api.localEars;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // One AudioContext for the page: the ring, the bot's voice and the mic tap.
+  // Created and resumed inside the Call tap (iOS only unlocks audio there).
+  let actx = null;
+  function audioCtx() {
+    if (!actx || actx.state === 'closed') {
+      try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch { actx = null; }
+    }
+    if (actx && actx.state !== 'running') { try { actx.resume(); } catch {} }
+    return actx;
+  }
+  async function wake(ctx) {
+    if (!ctx || ctx.state === 'running') return !!ctx;
+    try { await Promise.race([ctx.resume(), sleep(800)]); } catch {}
+    return ctx.state === 'running';
+  }
+
+  // ─── The kept microphone ──────────────────────────────────────────────────
+  // iOS home-screen apps reset the mic permission whenever capture stops, so
+  // the stream is NEVER stopped: between calls its track is only disabled.
+  const mic = { stream: null, pending: null, wired: null, wiring: null };
+  const micTrack = () => (mic.stream && mic.stream.getAudioTracks()[0]) || null;
+  const micLive = () => { const t = micTrack(); return !!t && t.readyState === 'live'; };
+  function micEnabled(on) { const t = micTrack(); if (t) t.enabled = !!on; }
+  function getMic() {
+    if (micLive()) { micEnabled(true); return Promise.resolve(mic.stream); }
+    if (mic.pending) return mic.pending;
+    const md = navigator.mediaDevices;
+    if (!md || !md.getUserMedia) return Promise.reject(Object.assign(new Error('No microphone here.'), { name: 'NotFoundError' }));
+    mic.pending = md.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+      .then((s) => { mic.stream = s; return s; })
+      .finally(() => { mic.pending = null; });
+    return mic.pending;
+  }
+
+  // The tap: 1024-sample frames from the mic to the voice detector.
+  const TAP_SRC = "class CraftTap extends AudioWorkletProcessor{constructor(){super();this.b=new Float32Array(1024);this.n=0}process(i){const x=i[0]&&i[0][0];if(x){for(let k=0;k<x.length;k++){this.b[this.n++]=x[k];if(this.n===1024){this.port.postMessage(this.b,[this.b.buffer]);this.b=new Float32Array(1024);this.n=0}}}return true}}registerProcessor('craft-tap',CraftTap)";
+  let tapUrl = '';
+  function wireMic(ctx) {
+    const key = `${mic.stream && mic.stream.id}`;
+    if (mic.wired && mic.wired.ctx === ctx && mic.wired.key === key) return Promise.resolve();
+    if (mic.wiring) return mic.wiring;
+    mic.wiring = (async () => {
+      if (mic.wired) { try { mic.wired.source.disconnect(); mic.wired.node.disconnect(); } catch {} }
+      const source = ctx.createMediaStreamSource(mic.stream);
+      const sink = ctx.createGain();
+      sink.gain.value = 0; // the tap must reach the output to run; silent
+      sink.connect(ctx.destination);
+      let node = null;
+      if (ctx.audioWorklet && window.AudioWorkletNode) {
+        try {
+          if (!ctx.craftTap) {
+            tapUrl = tapUrl || URL.createObjectURL(new Blob([TAP_SRC], { type: 'application/javascript' }));
+            await ctx.audioWorklet.addModule(tapUrl);
+            ctx.craftTap = true;
+          }
+          node = new AudioWorkletNode(ctx, 'craft-tap', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+          node.port.onmessage = (e) => onMicFrame(e.data, ctx.sampleRate);
+        } catch { node = null; }
+      }
+      if (!node) {
+        node = ctx.createScriptProcessor(2048, 1, 1);
+        node.onaudioprocess = (e) => onMicFrame(new Float32Array(e.inputBuffer.getChannelData(0)), ctx.sampleRate);
+      }
+      source.connect(node);
+      node.connect(sink);
+      mic.wired = { ctx, key, source, node };
+    })().finally(() => { mic.wiring = null; });
+    return mic.wiring;
+  }
+
+  // ─── Voice activity detector ──────────────────────────────────────────────
+  // Energy based with an adaptive noise floor. Speech starts once the level
+  // is clearly above the floor for ~150 ms out of the last 300 ms (syllables
+  // have gaps), or 180 of 500 ms and much louder while the bot is talking so
+  // its echo does not count. It ends after ~700 ms of quiet and keeps ~300 ms
+  // from before the start so first syllables are not clipped.
+  function makeVad(sampleRate, on) {
+    const v = {
+      sampleRate, botSpeaking: false, floor: 0.004, floorBot: 0.01,
+      inSpeech: false, hist: [], quietMs: 0, voicedMs: 0, totalMs: 0, ring: [], ringMs: 0, frames: [],
+    };
+    const PRE_MS = 300; const END_MS = 700; const MIN_MS = 300; const MAX_MS = 15000;
+    function finish() {
+      const keep = v.voicedMs >= MIN_MS;
+      const frames = v.frames;
+      v.reset();
+      if (!keep) { if (on.cancel) on.cancel(); return; }
+      let n = 0; for (const f of frames) n += f.length;
+      const all = new Float32Array(n);
+      let o = 0; for (const f of frames) { all.set(f, o); o += f.length; }
+      on.end(to16k(all, sampleRate));
+    }
+    v.feed = (frame) => {
+      let sum = 0;
+      for (let i = 0; i < frame.length; i++) sum += frame[i] * frame[i];
+      const rms = Math.sqrt(sum / Math.max(1, frame.length));
+      const ms = (frame.length / sampleRate) * 1000;
+      const bot = v.botSpeaking;
+      const floor = bot ? Math.max(v.floorBot, v.floor) : v.floor;
+      if (!v.inSpeech) {
+        const startThr = Math.max(floor * (bot ? 5 : 3), bot ? 0.03 : 0.012);
+        const needMs = bot ? 180 : 150;
+        const winMs = bot ? 500 : 300;
+        const loud = rms > startThr;
+        v.ring.push(frame); v.ringMs += ms;
+        while (v.ring.length > 1 && v.ringMs - (v.ring[0].length / sampleRate) * 1000 >= PRE_MS + winMs + (bot ? 300 : 0)) {
+          v.ringMs -= (v.ring.shift().length / sampleRate) * 1000;
+        }
+        v.hist.push(loud ? ms : 0);
+        while (v.hist.length * ms > winMs) v.hist.shift();
+        if (!loud) {
+          // The floor follows the room: down fast, up slowly.
+          const k = bot ? 'floorBot' : 'floor';
+          v[k] = rms < v[k] ? v[k] * 0.9 + rms * 0.1 : v[k] * 0.995 + rms * 0.005;
+          v[k] = Math.min(0.08, Math.max(0.0015, v[k]));
+        }
+        const loudMs = v.hist.reduce((a, b) => a + b, 0);
+        if (loudMs >= needMs) {
+          v.inSpeech = true;
+          v.frames = v.ring; v.ring = []; v.ringMs = 0; v.hist = [];
+          v.voicedMs = loudMs; v.totalMs = 0; v.quietMs = 0;
+          if (on.start) on.start();
+        }
+        return;
+      }
+      v.frames.push(frame);
+      v.totalMs += ms;
+      const endThr = Math.max(floor * 2, bot ? 0.02 : 0.008);
+      if (rms > endThr) { v.voicedMs += ms; v.quietMs = 0; } else v.quietMs += ms;
+      if (v.quietMs >= END_MS || v.totalMs >= MAX_MS) finish();
+    };
+    v.flush = () => { if (v.inSpeech) finish(); };
+    v.reset = () => { v.inSpeech = false; v.frames = []; v.hist = []; v.quietMs = 0; v.voicedMs = 0; v.totalMs = 0; };
+    return v;
+  }
+  /** Mono Float32 at any rate to 16 kHz (box-filtered), a little louder if quiet. */
+  function to16k(buf, sr) {
+    let out = buf;
+    if (sr !== 16000) {
+      const ratio = sr / 16000;
+      const n = Math.floor(buf.length / ratio);
+      out = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const a = Math.floor(i * ratio); const b = Math.min(buf.length, Math.max(a + 1, Math.floor((i + 1) * ratio)));
+        let s = 0; for (let j = a; j < b; j++) s += buf[j];
+        out[i] = s / (b - a);
+      }
+    }
+    let peak = 0; for (let i = 0; i < out.length; i++) peak = Math.max(peak, Math.abs(out[i]));
+    if (peak > 0 && peak < 0.5) { const g = Math.min(8, 0.5 / peak); for (let i = 0; i < out.length; i++) out[i] *= g; }
+    return out;
+  }
+
+  // ─── Whisper on the phone (phone-stt-worker.js) ───────────────────────────
+  const STT_SEEN = 'craft-phone-stt-ready';
+  const stt = { worker: null, state: 'idle', device: '', progress: 0, waits: new Map(), seq: 0, error: '' };
+  function sttFailed(msg) {
+    stt.state = 'failed';
+    stt.error = msg || 'Speech model did not load.';
+    if (stt.worker) { try { stt.worker.terminate(); } catch {} stt.worker = null; }
+    for (const w of stt.waits.values()) w.reject(new Error(stt.error));
+    stt.waits.clear();
+    if (c && !c.ending && localEars() && !c.typing) useTyping("Voice input couldn't start on this phone. Type below and the bot still talks back.");
+  }
+  function sttLoad() {
+    if (stt.worker || stt.state === 'failed') return;
+    if (!window.Worker) return sttFailed('This browser has no workers.');
+    try { stt.worker = new Worker('phone-stt-worker.js', { type: 'module' }); } catch (e) { return sttFailed(e.message); }
+    stt.state = 'loading';
+    // A load that stops moving for a minute (no download progress, no ready) has failed.
+    let watchdog = null;
+    const bump = () => {
+      clearTimeout(watchdog);
+      watchdog = setTimeout(() => {
+        if (stt.state !== 'loading') return;
+        sttFailed('The speech model took too long to start.');
+      }, 60000);
+    };
+    bump();
+    stt.worker.onmessage = (e) => {
+      const m = e.data || {};
+      if (m.type === 'progress') { bump(); stt.progress = m.total ? m.loaded / m.total : 0; showNote(); }
+      else if (m.type === 'ready') {
+        clearTimeout(watchdog);
+        stt.state = 'ready'; stt.device = m.device || '';
+        save(STT_SEEN, true);
+        showNote();
+        if (c && c.queued) { const a = c.queued; c.queued = null; hearAudio(a); }
+      } else if (m.type === 'result' || m.type === 'error') {
+        const w = m.id != null && stt.waits.get(m.id);
+        if (w) { stt.waits.delete(m.id); if (m.type === 'result') w.resolve(m.text || ''); else w.reject(new Error(m.error)); }
+        else if (m.type === 'error') sttFailed(m.error);
+      }
+    };
+    stt.worker.onerror = (e) => { if (e && e.preventDefault) e.preventDefault(); if (stt.state !== 'ready') sttFailed((e && e.message) || 'Speech worker failed.'); };
+    stt.worker.postMessage({ type: 'load' });
+    showNote();
+  }
+  /** 16 kHz mono Float32 -> text, on the phone. */
+  function transcribe(audio16k) {
+    sttLoad();
+    if (stt.state === 'failed') return Promise.reject(new Error(stt.error));
+    return new Promise((resolve, reject) => {
+      const id = ++stt.seq;
+      stt.waits.set(id, { resolve, reject });
+      const copy = new Float32Array(audio16k);
+      stt.worker.postMessage({ type: 'transcribe', id, audio: copy }, [copy.buffer]);
+    });
+  }
+
+  // Frames from the tap -> the current call's voice detector.
+  function onMicFrame(frame, sampleRate) {
+    if (!c || !c.ears || c.muted || c.typing || c.ending || c.phase === 'ringing') return;
+    if (!c.vad || c.vad.sampleRate !== sampleRate) {
+      c.vad = makeVad(sampleRate, {
+        start: () => {
+          if (!c) return;
+          // Barge-in: real speech over the bot (louder than its echo) stops it.
+          if (c.phase === 'speaking') { interrupt(); setPhase('listening'); }
+          if (c.phase !== 'speaking') caption('...', 'user');
+        },
+        cancel: () => { if (c && c.phase === 'listening' && q('.call-caption').textContent === '...') caption('', 'user'); },
+        end: (audio) => hearAudio(audio),
+      });
+    }
+    c.vad.botSpeaking = c.phase === 'speaking';
+    c.vad.feed(frame);
+  }
+  async function hearAudio(audio) {
+    const me = c;
+    if (!me || me.ending) return;
+    if (stt.state !== 'ready') {
+      me.queued = audio; // only the latest thing said waits for the model
+      sttLoad();
+      showNote();
+      return;
+    }
+    let text = '';
+    try { text = await transcribe(audio); } catch { return; }
+    if (c !== me) return;
+    if (!text) { if (me.phase === 'listening' && q('.call-caption').textContent === '...') caption('', 'user'); return; }
+    heardText(text);
+  }
+
+  // ─── The bot's own voice (Deepgram, through Codeply's tts-proxy) ──────────
+  const TTS_URL = String(P.AI_PROXY_URL || '').replace('/functions/v1/ai-proxy', '/functions/v1/tts-proxy');
+  const DG_VOICES = ['aura-2-thalia-en', 'aura-2-luna-en', 'aura-2-orion-en', 'aura-2-apollo-en', 'aura-2-athena-en', 'aura-2-arcas-en'];
+  /** The bot's chosen Deepgram voice, or a stable default for it. */
+  function deepgramVoice(bot) {
+    const v = String((bot && bot.voice) || '').trim();
+    return /^aura-/i.test(v) ? v : DG_VOICES[hash((bot && bot.id) || '') % DG_VOICES.length];
+  }
+  function decodeAudio(ctx, bytes) {
+    return new Promise((resolve, reject) => {
+      try { const p = ctx.decodeAudioData(bytes, resolve, reject); if (p && p.then) p.then(resolve, reject); } catch (e) { reject(e); }
+    });
+  }
+  /** One sentence -> an AudioBuffer, or null (then the phone's voice says it). */
+  async function ttsClip(text, token) {
+    const me = c;
+    if (!me || me.ttsOff || !me.ctx || !TTS_URL || token !== me.token) return null;
+    if (!me.ttsCtl || me.ttsCtl.token !== token) me.ttsCtl = { token, ctl: new AbortController() };
+    const signal = me.ttsCtl.ctl.signal;
+    const timer = new AbortController();
+    const t = setTimeout(() => timer.abort(), 12000);
+    const stop = () => timer.abort();
+    signal.addEventListener('abort', stop, { once: true });
+    try {
+      const auth = await P.accessToken();
+      const res = await fetch(TTS_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${auth}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: String(text).slice(0, 600), voice: me.dgVoice }),
+        signal: timer.signal,
+      });
+      const type = res.headers.get('content-type') || '';
+      if (!res.ok || /json|text\//i.test(type)) {
+        let err = '';
+        try { const d = await res.json(); err = d.error || d.message || ''; } catch {}
+        throw Object.assign(new Error(err || `Voice failed (${res.status}).`), { status: res.status });
+      }
+      const bytes = await res.arrayBuffer();
+      if (!bytes.byteLength) throw new Error('Empty voice.');
+      return await decodeAudio(me.ctx, bytes);
+    } catch (e) {
+      if (signal.aborted || c !== me) return null; // interrupted, not broken
+      me.ttsOff = true; // the phone's voice for the rest of this call
+      if (e.status === 429) { me.ttsNote = "Daily voice limit reached, using the phone's voice"; showNote(); }
+      return null;
+    } finally {
+      clearTimeout(t);
+      signal.removeEventListener('abort', stop);
+    }
+  }
+  /** Play a clip through the call's AudioContext. Resolves false when cut off, 'fallback' if audio is locked. */
+  async function playClip(buf, token) {
+    const me = c;
+    if (!me || token !== me.token) return false;
+    const ctx = me.ctx;
+    if (!(await wake(ctx))) return 'fallback'; // iOS can suspend it when the mic starts
+    if (c !== me || token !== me.token) return false;
+    return new Promise((resolve) => {
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const gain = ctx.createGain();
+      gain.gain.value = me.speaker ? 1 : 0.45;
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      let done = false;
+      const fin = (ok) => {
+        if (done) return; done = true;
+        clearTimeout(safety);
+        if (me.playing && me.playing.src === src) me.playing = null;
+        try { src.disconnect(); gain.disconnect(); } catch {}
+        resolve(ok);
+      };
+      const safety = setTimeout(() => fin(true), buf.duration * 1000 + 1500);
+      src.onended = () => fin(true);
+      me.playing = { src, gain, fin };
+      try { src.start(); } catch { fin('fallback'); }
+    });
+  }
+  function stopPlayback() {
+    const p = c && c.playing;
+    if (!p) return;
+    c.playing = null;
+    try { p.src.onended = null; p.src.stop(); } catch {}
+    p.fin(false);
+  }
 
   // ─── Text helpers (from Codeply Crew) ─────────────────────────────────────
   function sentences(text) {
@@ -328,14 +678,24 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       synth.speak(u);
     });
   }
+  // Each sentence in the bot's Deepgram voice, the next one fetched while this
+  // one plays; any sentence without a clip falls back to speechSynthesis.
   async function say(text, token) {
     const list = sentences(text);
     if (!list.length || !c) return;
+    const me = c;
     setPhase('speaking');
     caption(text, 'bot');
-    for (const s of list) {
-      await speakOne(s, token);
-      if (!c || token !== c.token) return;
+    const clip = (i) => (i < list.length && !me.ttsOff ? ttsClip(list[i], token) : null);
+    let next = clip(0);
+    for (let i = 0; i < list.length; i++) {
+      const buf = next ? await next : null;
+      if (c !== me || token !== me.token) return;
+      next = clip(i + 1);
+      const played = buf ? await playClip(buf, token) : 'fallback';
+      if (c !== me || token !== me.token) return;
+      if (played === 'fallback') await speakOne(list[i], token);
+      if (c !== me || token !== me.token) return;
     }
     if (c && token === c.token) {
       if (c.abort && c.stepLabel && text === 'One sec.') setPhase('thinking', c.stepLabel); // still working after the filler
@@ -369,7 +729,24 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     if (!c) return;
     c.token++;
     if (c.abort) { try { c.abort.abort(); } catch {} c.abort = null; }
+    if (c.ttsCtl) { try { c.ttsCtl.ctl.abort(); } catch {} c.ttsCtl = null; }
+    stopPlayback();
     if (synth) { try { synth.cancel(); } catch {} }
+  }
+
+  /** The quiet line under the bot: model download, voice limit, or the base note. */
+  function showNote() {
+    if (!c || c.ending) return;
+    const el = q('.call-note');
+    if (!el) return;
+    const parts = [];
+    if (localEars() && !c.typing && stt.state === 'loading') {
+      const pct = stt.progress > 0 && stt.progress < 1 ? ` ${Math.round(stt.progress * 100)}%` : '';
+      parts.push(load(STT_SEEN, false) ? `Getting voice ready...${pct}` : `Getting voice ready (about 40 MB, once)${pct}`);
+    }
+    if (c.ttsNote) parts.push(c.ttsNote);
+    if (c.noteBase) parts.push(c.noteBase);
+    el.textContent = parts.join(' · ');
   }
 
   // Answering, PC online: the turn runs on the PC with the bot's tools. The
@@ -472,17 +849,50 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     }
     if (!c || token !== c.token) return;
     c.abort = null;
-    q('.call-note').textContent = c.noteBase || '';
+    showNote();
     text = text || 'Mm hm.';
     c.lastBotText = text;
     log('bot', text);
     await say(text, token);
   }
 
-  // Hearing: Web Speech recognition, restarted after every result.
+  // Hearing, our own way: the kept mic stream -> voice detector -> Whisper.
+  const MIC_DENIED = 'Codeply needs the microphone for calls. Allow it for this app in your settings, or type below.';
+  async function startLocalEars() {
+    const me = c;
+    if (!me || me.typing || me.muted || me.ending) return;
+    if (!me.ctx) return useTyping("This browser can't hear you. Type below and the bot still talks back.");
+    sttLoad();
+    try {
+      await getMic();
+      if (c !== me || me.ending) return;
+      if (me.muted) { micEnabled(false); return; }
+      await wireMic(me.ctx);
+      await wake(me.ctx);
+    } catch (e) {
+      if (c !== me) return;
+      const n = (e && e.name) || '';
+      if (n === 'NotAllowedError' || n === 'SecurityError') return useTyping(MIC_DENIED);
+      if (n === 'NotFoundError' || n === 'OverconstrainedError') return useTyping('No microphone found. Type below instead.');
+      return useTyping("Voice input isn't working here. Type below and the bot still talks back.");
+    }
+    if (c !== me || me.typing || me.muted) return;
+    me.ears = true;
+    if (stt.state === 'failed') useTyping("Voice input couldn't start on this phone. Type below and the bot still talks back.");
+  }
+  /** SpeechRecognition gave up: switch this call (and the session) to Whisper. */
+  function switchToLocalEars() {
+    if (!c) return;
+    srBroken = true;
+    stopListening();
+    startLocalEars();
+  }
+
+  // Hearing with the browser's SpeechRecognition (Chrome), restarted after every result.
   function startListening() {
-    if (!c || c.typing || c.muted || c.ending || !SR) return;
-    if (c.rec) return;
+    if (!c || c.typing || c.muted || c.ending) return;
+    if (localEars()) { startLocalEars(); return; }
+    if (!SR || c.rec) return;
     const rec = new SR();
     rec.lang = 'en-US';
     rec.continuous = false; // iOS is far steadier restarting short sessions
@@ -510,22 +920,25 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     rec.onerror = (e) => {
       if (c !== me) return;
       const err = e.error || '';
-      if (err === 'not-allowed' || err === 'service-not-allowed') return useTyping('Codeply needs the microphone for calls. Allow it for this site in your browser settings, or type below.');
+      if (err === 'not-allowed') return useTyping(MIC_DENIED);
       if (err === 'audio-capture') return useTyping('No microphone found. Type below instead.');
-      if (err === 'network' || err === 'language-not-supported') me.fails = (me.fails || 0) + 3;
+      // The browser's recognizer itself is unavailable (offline, blocked service): use Whisper.
+      if (err === 'service-not-allowed' || err === 'network' || err === 'language-not-supported') return switchToLocalEars();
     };
     rec.onend = () => {
       if (c !== me) return;
       c.rec = null;
       const quick = Date.now() - me.recAt < 1200;
       me.fails = quick ? (me.fails || 0) + 1 : 0;
-      if (me.fails >= 6) return useTyping("Voice input isn't working in this browser. Type below and the bot still talks back.");
+      if (me.fails >= 6) return switchToLocalEars();
       setTimeout(startListening, quick ? 400 : 60);
     };
     try { me.recAt = Date.now(); rec.start(); } catch { c.rec = null; }
   }
   function stopListening() {
-    if (!c || !c.rec) return;
+    if (!c) return;
+    if (c.ears) { c.ears = false; if (c.vad) c.vad.reset(); }
+    if (!c.rec) return;
     const r = c.rec; c.rec = null;
     r.onend = null; r.onresult = null; r.onerror = null;
     try { r.abort(); } catch {}
@@ -533,18 +946,26 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   function useTyping(msg) {
     if (!c) return;
     stopListening();
+    micEnabled(false);
     c.typing = true;
     root().classList.add('typing');
     c.noteBase = msg || '';
-    q('.call-note').textContent = c.noteBase;
+    showNote();
     if (c.phase === 'listening') setPhase('listening');
   }
 
   async function startCall(bot) {
     if (c) return;
     // Everything audio starts inside this tap: iOS only allows it from a user gesture.
-    let ctx = null;
-    try { ctx = new (window.AudioContext || window.webkitAudioContext)(); ctx.resume && ctx.resume(); } catch {}
+    const ctx = audioCtx();
+    const local = localEars();
+    if (local) {
+      // The kept mic: asked for once, then only re-enabled on later calls.
+      try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch {}
+      getMic().catch(() => {}); // started inside the tap; startLocalEars() handles the outcome
+      if (stt.state === 'failed') stt.state = 'idle'; // a new call gets a fresh try
+      sttLoad();
+    }
     if (synth) { try { synth.cancel(); const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); } catch {} }
 
     const tint = tintOf(bot.avatar);
@@ -579,10 +1000,12 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       </div>
       <button type="button" class="call-end" data-c="end" aria-label="End call">${ICON.end}</button>`;
 
+    const canHear = local ? !!(ctx && window.Worker && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) : !!SR;
     c = {
-      id: newId(), bot, ctx, token: 0, turns: [], muted: false, speaker: true, typing: !SR, phase: 'ringing',
+      id: newId(), bot, ctx, token: 0, turns: [], muted: false, speaker: true, typing: !canHear, phase: 'ringing',
       startedAt: Date.now(), connectedAt: 0, lastBotText: '', rec: null, abort: null, ending: false,
       voice: voiceFor(bot), pitch: 0.92 + (hash(`${bot.id}p`) % 17) / 100, fails: 0, recAt: 0,
+      ears: false, vad: null, queued: null, dgVoice: deepgramVoice(bot), ttsOff: !ctx, ttsCtl: null, ttsNote: '', playing: null, noteBase: '',
     };
     if (c.typing) root().classList.add('typing');
     q('[data-c="end"]').addEventListener('click', () => endCall());
@@ -599,7 +1022,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     });
     try { if (navigator.wakeLock) c.wake = await navigator.wakeLock.request('screen'); } catch {}
     const me = c;
-    if (!SR) { c.noteBase = "This browser can't hear you. Type below and the bot still talks back."; q('.call-note').textContent = c.noteBase; }
+    if (!canHear) { c.noteBase = "This browser can't hear you. Type below and the bot still talks back."; showNote(); }
     else startListening(); // asks for the mic now, inside the tap; results are ignored while it rings
 
     c.stopRing = ctx ? ring(ctx) : () => {};
@@ -621,13 +1044,14 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     const btn = q('[data-c="mute"]');
     btn.classList.toggle('on', c.muted);
     btn.innerHTML = c.muted ? ICON.micOff : ICON.mic;
-    if (c.muted) stopListening(); else startListening();
+    if (c.muted) { stopListening(); micEnabled(false); } else startListening();
     if (c.phase === 'listening') setPhase('listening');
   }
   function toggleSpeaker() {
     if (!c) return;
     c.speaker = !c.speaker;
     q('[data-c="speaker"]').classList.toggle('on', c.speaker);
+    if (c.playing) { try { c.playing.gain.gain.value = c.speaker ? 1 : 0.45; } catch {} }
   }
   function toggleLog() {
     if (!c) return;
@@ -644,9 +1068,12 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     if (call.stopRing) call.stopRing();
     interrupt();
     stopListening();
+    // Never stop the kept mic's track (iOS would ask again next call): just disable it.
+    micEnabled(false);
+    call.queued = null;
     clearInterval(call.timer);
     try { if (call.wake) call.wake.release(); } catch {}
-    try { if (call.ctx) call.ctx.close(); } catch {}
+    // The page keeps its one AudioContext; it is resumed in the next Call tap.
     const connected = !!call.connectedAt;
     const ms = connected ? Date.now() - call.connectedAt : 0;
     root().dataset.phase = 'ended';
@@ -670,18 +1097,42 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   }
 
   // Coming back to the app mid-call: the browser may have stopped the mic.
+  // The kept stream normally survives this (iOS just pauses it); it is only
+  // asked for again if iOS really ended it (say, a real phone call came in).
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && c && !c.ending && !c.rec) startListening();
+    if (document.visibilityState !== 'visible' || !c || c.ending) return;
+    if (c.ctx) wake(c.ctx);
+    if (localEars()) { if (!c.typing && !c.muted && (!c.ears || !micLive())) { c.ears = false; startLocalEars(); } }
+    else if (!c.rec) startListening();
   });
   window.addEventListener('craft:pc-online', () => { refreshBots().then(syncCalls); });
 
   $('drawerCalls').addEventListener('click', () => { P.closeDrawer(); openCalls(); });
   $('callsBack').addEventListener('click', closeCalls);
 
-  // reply/ringMs/endedMs are swappable for tests in the console.
-  const api = { reply: askBot, ringMs: 2400, endedMs: 1100 };
+  // reply/ringMs/endedMs are swappable for tests in the console; localEars
+  // forces the kept-mic + Whisper path on browsers that have SpeechRecognition.
+  const api = { reply: askBot, ringMs: 2400, endedMs: 1100, localEars: false };
   window.CraftCalls = {
     api, openCalls, closeCalls, startCall, endCall, refreshBots, syncCalls, spoken, sentences, VOICE_RULES,
-    heard: heardText, active: () => c, cache, calls: () => calls, supported: { recognition: !!SR, synthesis: !!synth },
+    heard: heardText, active: () => c, cache, calls: () => calls,
+    supported: { recognition: !!SR, synthesis: !!synth, localEars: localEars(), ios: IS_IOS },
+    _test: {
+      transcribe, to16k, deepgramVoice, ttsUrl: TTS_URL, loadModel: sttLoad, stt: () => ({ state: stt.state, device: stt.device, progress: stt.progress, error: stt.error }),
+      mic: () => ({ live: micLive(), enabled: !!(micTrack() && micTrack().enabled), streamId: mic.stream && mic.stream.id }),
+      /** Push audio through a fresh voice detector; returns the 16 kHz utterances it cut out. */
+      vadFeed(samples, sampleRate = 16000, opts = {}) {
+        const out = [];
+        const v = makeVad(sampleRate, { start: () => out.push({ startAt: done }), end: (a) => { out[out.length - 1].audio = a; } });
+        v.botSpeaking = !!opts.botSpeaking;
+        const n = Math.round(sampleRate * 1024 / 48000) || 1024;
+        let done = 0;
+        const quiet = new Float32Array(Math.round(sampleRate * 1.2)); // let the end be detected
+        const all = new Float32Array(samples.length + quiet.length); all.set(samples);
+        for (let i = 0; i < all.length; i += n) { v.feed(all.slice(i, i + n)); done = i + n; }
+        v.flush();
+        return out.filter((u) => u.audio);
+      },
+    },
   };
 })();

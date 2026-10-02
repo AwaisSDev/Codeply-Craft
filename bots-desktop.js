@@ -173,7 +173,7 @@ function phoneBot(bot, team) {
   const b = bots();
   return {
     id: bot.id, name: bot.name, role: bot.role, specialty: bot.specialty, instructions: bot.instructions,
-    tone: bot.tone, sources: bot.sources, avatar: bot.avatar,
+    tone: bot.tone, sources: bot.sources, avatar: bot.avatar, voice: bot.voice || '',
     memory: (bot.memory || []).map((m) => m.fact),
     prompt: b.buildBotPrompt(bot, { team }),
     updatedAt: bot.updatedAt || 0,

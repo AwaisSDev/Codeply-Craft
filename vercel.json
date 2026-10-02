@@ -8,7 +8,7 @@
   "cleanUrls": true,
   "headers": [
     {
-      "source": "/(index.html|phone.js|phone.css|phone-calls.js|phone-calls.css|bot-avatar.js|classic.html|classic|mobile.js|mobile.css|mobile-cloud.js|mobile-cloud.css|)",
+      "source": "/(index.html|phone.js|phone.css|phone-calls.js|phone-calls.css|phone-stt-worker.js|bot-avatar.js|classic.html|classic|mobile.js|mobile.css|mobile-cloud.js|mobile-cloud.css|)",
       "headers": [
         {
           "key": "Cache-Control",
