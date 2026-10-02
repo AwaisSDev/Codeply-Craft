@@ -1443,7 +1443,7 @@ process.stdin.on('data', (d) => {
     check('bots: templates create bots on disk', bots.listBots().length === 2 && fs.existsSync(path.join(store, `${dot.id}.json`)) && dot.role === 'orchestrator');
     check('bots: every team role has a template', ['orchestrator', 'research', 'outreach', 'analysis', 'reporting', 'execution', 'monitoring'].every((k) => bots.TEMPLATES.some((t) => t.key === k)));
     const upd = bots.updateBot(res.id, { name: 'Vera', tone: { preset: 'concise', custom: 'British spelling.' }, avatar: { shape: 'nope', color: '#123abc' }, approval: ['send', 'bogus'] });
-    check('bots: update keeps id and creation time, cleans bad fields', upd.id === res.id && upd.createdAt === res.createdAt && upd.tone.preset === 'concise' && upd.avatar.shape === 'squircle' && upd.avatar.color === '#123abc' && upd.approval.join() === 'send');
+    check('bots: update keeps id and creation time, cleans bad fields', upd.id === res.id && upd.createdAt === res.createdAt && upd.tone.preset === 'concise' && upd.avatar.shape === 'burst9' && upd.avatar.color === '#123abc' && upd.approval.join() === 'send');
     check('bots: found by id, name or a loose mention', bots.findBot(res.id)?.id === res.id && bots.findBot('Orion')?.id === dot.id && bots.findBot('ask vera please')?.id === res.id && !bots.findBot('nobody'));
     const temp = bots.createBot({ name: 'Temp' });
     check('bots: remove deletes the file', bots.removeBot(temp.id) && !bots.getBot(temp.id) && bots.listBots().length === 2);
@@ -1534,13 +1534,13 @@ process.stdin.on('data', (d) => {
       const old = { shape: 'bean', eyes: 'diamond', glasses: 'sunglasses', accessory: 'beret', mouth: 'smile', color: 'pink', cheeks: true };
       const e = bots.normalizeAvatar(old); const r = Av.normalizeAvatar(old);
       const legacyOk = ['shape', 'eyes', 'glasses', 'accessory', 'mouth'].every((k) => Object.entries(Av.LEGACY[k]).every(([o, n]) => bots.normalizeAvatar({ [k]: o })[k] === n && Av.normalizeAvatar({ [k]: o })[k] === n));
-      return JSON.stringify(e) === JSON.stringify(r) && e.shape === 'pill' && e.eyes === 'lens' && e.accessory === 'propeller' && e.color === 'pink' && legacyOk &&
-        Av.normalizeAvatar({ shape: 'constructor', color: 'toString' }).shape === 'squircle' && /^<svg/.test(Av.renderAvatar(old, 48));
+      return JSON.stringify(e) === JSON.stringify(r) && e.shape === 'pebble' && e.eyes === 'pills' && e.accessory === 'sprout' && e.color === 'pink' && legacyOk &&
+        Av.normalizeAvatar({ shape: 'constructor', color: 'toString' }).shape === 'burst9' && bots.normalizeAvatar({ shape: 'hexagon', eyes: 'led' }).shape === 'burst7' && /^<svg/.test(Av.renderAvatar(old, 48));
     })());
     check('bots: every template has its own avatar shape', new Set(bots.TEMPLATES.map((t) => t.avatar.shape)).size === bots.TEMPLATES.length);
     check('bots: a described bot keeps irreversible actions behind approval', (() => {
-      const d = bots.fromDescription({ name: 'Rex', role: 'specialist', approval: [], avatar: { shape: 'chip' } }, 'a reviewer');
-      return d.name === 'Rex' && ['send', 'publish', 'databases'].every((k) => d.approval.includes(k)) && d.avatar.shape === 'chip' && !d.id;
+      const d = bots.fromDescription({ name: 'Rex', role: 'specialist', approval: [], avatar: { shape: 'cloud' } }, 'a reviewer');
+      return d.name === 'Rex' && ['send', 'publish', 'databases'].every((k) => d.approval.includes(k)) && d.avatar.shape === 'cloud' && !d.id;
     })());
   } finally {
     bots.setBotsDir(null);

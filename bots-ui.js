@@ -18,7 +18,7 @@
   const av = (avatar, size, opts) => A.renderAvatar(avatar, size, opts);
   const ROLE = { orchestrator: 'Orchestrator', specialist: 'Specialist' };
   const ICON_X = '<svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
-  const CRAFT_AVATAR = { shape: 'squircle', eyes: 'led', color: '#8e8e93' };
+  const CRAFT_AVATAR = { shape: 'burst9', eyes: 'pills', color: '#8e8e93' };
 
   async function load() {
     try {

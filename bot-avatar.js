@@ -1,141 +1,164 @@
-// Bot avatars: small flat geometric robots, one inline SVG each.
+// Bot avatars: soft sticker characters, one inline SVG each.
 //
 // renderAvatar({ shape, eyes, color, glasses, accessory, mouth, cheeks }, size)
 // returns an SVG string. It runs in the desktop window, the phone and plain
 // Node (the engine tests render every combination), so it touches no DOM
 // unless injectAvatarStyles() is called in a browser.
 //
-// Look: a crisp flat body in one solid color, a dark screen for a face, and
-// eyes that glow in a pale tint of the body color. No textures, no blur.
-// Idle: a slow float and a blink every few seconds. Class "ba-working" makes
-// the eyes scan and the antenna light pulse, "ba-done" swaps in happy arcs.
-// prefers-reduced-motion stops all of it.
+// Look: a puffy rounded silhouette (bursts, scallops, clouds...) with a thick
+// white sticker outline, a matte body that is lighter in the middle and
+// darker at the rim, and white eyes with a soft glow. Light bodies get dark
+// eyes so they always read. Idle: a slow float and a blink. "ba-working"
+// makes the eyes look around and the glow pulse, "ba-done" swaps in a happy
+// squint. prefers-reduced-motion and {still:true} stop all of it.
 //
-// Older saves used other keys (bean, diamond, beret...). normalizeAvatar maps
-// every one of them through LEGACY, so an old bot always renders.
+// Older saves used other keys (the first plush set, then a robot set).
+// normalizeAvatar maps every one of them through LEGACY, so no bot breaks.
 (function (root, factory) {
   const lib = factory();
   if (typeof module === 'object' && module.exports) module.exports = lib;
   if (typeof window !== 'undefined') window.CraftAvatar = lib;
   else if (root) root.CraftAvatar = lib;
 })(typeof globalThis !== 'undefined' ? globalThis : this, () => {
+  const INK = '#232328';
+  const WHITE = '#ffffff';
+  const PAD = 10; // sticker outline width
+
   const COLORS = {
-    green: '#2fbf71',
-    blue: '#4f7cff',
-    yellow: '#f5c142',
-    pink: '#f2609e',
-    orange: '#ff8a3d',
-    purple: '#8b6cff',
-    red: '#f25c5c',
-    teal: '#1fb5a5',
-    sky: '#45bff0',
-    lime: '#98d24a',
+    graphite: '#3b3c42',
+    green: '#3fae6a',
+    blue: '#4a78e0',
+    yellow: '#f0c14b',
+    pink: '#e85d9a',
+    orange: '#f08a4b',
+    purple: '#8463e0',
+    red: '#e05a5a',
+    teal: '#2aa598',
+    sky: '#58b9e6',
+    lime: '#9ccf55',
   };
 
-  const rr = (x, y, w, h, r) =>
-    `M${x + r} ${y}H${x + w - r}A${r} ${r} 0 0 1 ${x + w} ${y + r}V${y + h - r}A${r} ${r} 0 0 1 ${x + w - r} ${y + h}H${x + r}A${r} ${r} 0 0 1 ${x} ${y + h - r}V${y + r}A${r} ${r} 0 0 1 ${x + r} ${y}Z`;
-  function poly(cx, cy, n, R, rot) {
-    let d = '';
-    for (let k = 0; k < n; k++) {
-      const a = rot + (k * 2 * Math.PI) / n;
-      d += `${k ? 'L' : 'M'}${(cx + R * Math.cos(a)).toFixed(1)} ${(cy + R * Math.sin(a)).toFixed(1)}`;
+  const f1 = (v) => (Math.round(v * 10) / 10).toString();
+
+  // A smooth closed curve through points (Catmull-Rom as cubic Beziers).
+  function smooth(pts, t = 1) {
+    const n = pts.length;
+    const P = (i) => pts[(i + n) % n];
+    let d = `M${f1(pts[0][0])} ${f1(pts[0][1])}`;
+    for (let i = 0; i < n; i++) {
+      const p0 = P(i - 1); const p1 = P(i); const p2 = P(i + 1); const p3 = P(i + 2);
+      const c1 = [p1[0] + ((p2[0] - p0[0]) / 6) * t, p1[1] + ((p2[1] - p0[1]) / 6) * t];
+      const c2 = [p2[0] - ((p3[0] - p1[0]) / 6) * t, p2[1] - ((p3[1] - p1[1]) / 6) * t];
+      d += `C${f1(c1[0])} ${f1(c1[1])} ${f1(c2[0])} ${f1(c2[1])} ${f1(p2[0])} ${f1(p2[1])}`;
     }
     return `${d}Z`;
   }
+  // Rounded spikes: each tip is two close points so it ends in a soft dome.
+  function burst(n, R, r, cx = 60, cy = 62, t = 1, tip = 0.16) {
+    const pts = [];
+    const step = (2 * Math.PI) / n;
+    const at = (a, rad) => [cx + rad * Math.cos(a), cy + rad * Math.sin(a)];
+    for (let k = 0; k < n; k++) {
+      const a = -Math.PI / 2 + k * step;
+      pts.push(at(a - step * tip, R * 0.985), at(a + step * tip, R * 0.985), at(a + step / 2, r));
+    }
+    return smooth(pts, t);
+  }
+  // Round bumps between sharp-ish valleys.
+  function scallop(n, inner, outer, cx = 60, cy = 62, spread = 0.42) {
+    let d = '';
+    for (let k = 0; k < n; k++) {
+      const a0 = -Math.PI / 2 + (k * 2 * Math.PI) / n;
+      const a1 = -Math.PI / 2 + ((k + 1) * 2 * Math.PI) / n;
+      const am = (a0 + a1) / 2;
+      const p0 = [cx + inner * Math.cos(a0), cy + inner * Math.sin(a0)];
+      const c1 = [cx + outer * Math.cos(am - spread), cy + outer * Math.sin(am - spread)];
+      const c2 = [cx + outer * Math.cos(am + spread), cy + outer * Math.sin(am + spread)];
+      const p1 = [cx + inner * Math.cos(a1), cy + inner * Math.sin(a1)];
+      if (k === 0) d += `M${f1(p0[0])} ${f1(p0[1])}`;
+      d += `C${f1(c1[0])} ${f1(c1[1])} ${f1(c2[0])} ${f1(c2[1])} ${f1(p1[0])} ${f1(p1[1])}`;
+    }
+    return `${d}Z`;
+  }
+  function superellipse(rx, ry, p, cx = 60, cy = 62) {
+    const pts = [];
+    for (let k = 0; k < 24; k++) {
+      const a = (k * 2 * Math.PI) / 24;
+      const c = Math.cos(a); const s = Math.sin(a);
+      pts.push([cx + rx * Math.sign(c) * Math.abs(c) ** (2 / p), cy + ry * Math.sign(s) * Math.abs(s) ** (2 / p)]);
+    }
+    return smooth(pts);
+  }
 
-  // Each body in a 120 x 120 box: its outline, an optional corner rounding
-  // stroke (j), the face screen (x, y, w, h, r), the top of the head (top), the
-  // left and right edges at eye level (sl, sr), the bottom (bot), where a badge
-  // sits (bx, by) and optional parts drawn behind (back) or in front (front)
-  // in a darker shade.
+  // Each body in a 120 x 120 box: its outline, where the eyes sit (ey, ex)
+  // and the top of the head (top) for extras.
   const SHAPES = {
-    squircle: {
-      label: 'Squircle', d: rr(24, 30, 72, 70, 24),
-      scr: [33, 44, 54, 36, 12], top: 30, sl: 24, sr: 96, bot: 100, bx: 80, by: 90,
+    burst9: { label: 'Burst', d: burst(9, 46, 32, 60, 62, 1, 0.1), ey: 62, ex: 10, top: 17 },
+    burst7: { label: 'Big burst', d: burst(7, 47, 30, 60, 63, 1, 0.09), ey: 63, ex: 10, top: 16 },
+    burst12: { label: 'Sunny', d: burst(12, 45, 35, 60, 62, 1, 0.12), ey: 62, ex: 10, top: 18 },
+    flower: { label: 'Scallop', d: scallop(8, 35, 50), ey: 62, ex: 10, top: 18 },
+    cloud: {
+      label: 'Cloud',
+      d: 'M32 96C16 96 11 80 21 71C13 60 22 45 37 48C40 33 58 27 69 36C79 26 98 33 98 50C110 54 112 71 102 79C107 91 97 98 87 96Z',
+      ey: 68, ex: 11, top: 31,
     },
-    capsule: {
-      label: 'Capsule', d: rr(16, 40, 88, 58, 29),
-      scr: [30, 50, 60, 36, 18], top: 40, sl: 16, sr: 104, bot: 98, bx: 92, by: 84,
+    star: { label: 'Star', d: burst(5, 47, 27, 60, 65, 0.9, 0.08), ey: 66, ex: 9, top: 17 },
+    squircle: { label: 'Puffy', d: superellipse(40, 38, 4.2), ey: 62, ex: 11, top: 24 },
+    pebble: {
+      label: 'Pebble',
+      d: smooth([[60, 26], [86, 31], [100, 54], [96, 82], [72, 98], [44, 97], [22, 80], [20, 52], [36, 32]]),
+      ey: 62, ex: 11, top: 26,
     },
-    pill: {
-      label: 'Tall pill', d: rr(33, 20, 54, 86, 27),
-      scr: [38, 38, 44, 34, 14], top: 20, sl: 33, sr: 87, bot: 106, bx: 60, by: 90,
-    },
-    hexagon: {
-      label: 'Hexagon', d: poly(60, 64, 6, 39, -Math.PI / 2), j: 10,
-      scr: [35, 48, 50, 32, 10], top: 20, sl: 22, sr: 98, bot: 108, bx: 60, by: 93,
-    },
-    octagon: {
-      label: 'Octagon', d: poly(60, 65, 8, 40, Math.PI / 8), j: 10,
-      scr: [34, 49, 52, 33, 10], top: 23, sl: 18, sr: 102, bot: 107, bx: 82, by: 92,
-    },
-    chip: {
-      label: 'Chip', d: rr(30, 34, 60, 62, 10),
-      scr: [37, 43, 46, 33, 7], top: 34, sl: 22, sr: 98, bot: 104, bx: 60, by: 87,
-      back: (c) => {
-        let p = '';
-        for (const y of [50, 63, 76]) p += `<rect x="22" y="${y}" width="10" height="5" rx="2" fill="${c}"/><rect x="88" y="${y}" width="10" height="5" rx="2" fill="${c}"/>`;
-        for (const x of [44, 57.5, 71]) p += `<rect x="${x}" y="92" width="5" height="10" rx="2" fill="${c}"/>`;
-        return p;
-      },
-    },
-    orb: {
-      label: 'Orb', d: 'M24 64a36 36 0 1 0 72 0a36 36 0 1 0 -72 0Z',
-      scr: [37, 47, 46, 30, 15], top: 28, sl: 24, sr: 96, bot: 100, bx: 60, by: 88,
-      back: (c) => `<ellipse cx="60" cy="84" rx="50" ry="10" transform="rotate(-8 60 84)" fill="none" stroke="${c}" stroke-width="4"/>`,
-      front: (c) => `<path d="M10 84A50 10 0 0 0 110 84" transform="rotate(-8 60 84)" fill="none" stroke="${c}" stroke-width="4" stroke-linecap="round"/>`,
-    },
-    shield: {
-      label: 'Shield', d: 'M60 24L92 33Q95 34 95 38L95 60C95 82 80 96 60 104C40 96 25 82 25 60L25 38Q25 34 28 33Z', j: 8,
-      scr: [35, 42, 50, 32, 10], top: 20, sl: 21, sr: 99, bot: 108, bx: 60, by: 88,
-    },
-    dome: {
-      label: 'Dome', d: 'M22 94V68A38 38 0 0 1 98 68V94Q98 100 92 100H28Q22 100 22 94Z',
-      scr: [33, 54, 54, 32, 12], top: 30, sl: 22, sr: 98, bot: 100, bx: 86, by: 92,
-    },
-    monitor: {
-      label: 'Monitor', d: rr(18, 28, 84, 62, 13),
-      scr: [27, 37, 66, 44, 7], top: 28, sl: 18, sr: 102, bot: 104, bx: 92, by: 84,
-      back: (c) => `<rect x="54" y="86" width="12" height="12" fill="${c}"/><rect x="38" y="97" width="44" height="7" rx="3.5" fill="${c}"/>`,
+    drop: {
+      label: 'Drop',
+      d: 'M60 16C70 32 98 50 98 74C98 95 81 106 60 106C39 106 22 95 22 74C22 50 50 32 60 16Z',
+      ey: 74, ex: 11, top: 20,
     },
   };
 
   const EYES = {
-    led: { label: 'LED bars' },
-    pixel: { label: 'Pixels' },
-    lens: { label: 'Lens' },
-    visor: { label: 'Visor' },
-    arcs: { label: 'Arcs' },
-    slits: { label: 'Slits' },
-    rings: { label: 'Rings' },
-    plus: { label: 'Plus' },
+    pills: { label: 'Glow pills' },
+    dots: { label: 'Dots' },
+    ovals: { label: 'Wide ovals' },
+    sleepy: { label: 'Sleepy' },
+    happy: { label: 'Happy' },
+    sparkle: { label: 'Sparkle' },
+    big: { label: 'One eye' },
   };
-  const SINGLE = { lens: 1, visor: 1 };
-  const MOUTHS = { none: { label: 'None' }, line: { label: 'Line' }, curve: { label: 'Curve' }, wave: { label: 'Wave' }, grille: { label: 'Grille' } };
-  // "Optics": things worn over the screen.
-  const GLASSES = { none: { label: 'None' }, frames: { label: 'Frames' }, monocle: { label: 'Monocle' }, shades: { label: 'Shades' }, hud: { label: 'HUD' } };
+  const MOUTHS = { none: { label: 'None' }, smile: { label: 'Smile' }, o: { label: 'Oh' }, flat: { label: 'Flat' } };
+  const GLASSES = { none: { label: 'None' }, round: { label: 'Rings' }, visor: { label: 'Visor' }, monocle: { label: 'Monocle' } };
   const ACCESSORIES = {
-    none: { label: 'None' }, antenna: { label: 'Antenna' }, twin: { label: 'Twin antennas' }, halo: { label: 'Halo' },
-    headset: { label: 'Headset' }, propeller: { label: 'Propeller' }, fins: { label: 'Fins' }, badge: { label: 'Code badge' },
+    none: { label: 'None' }, antenna: { label: 'Antenna' }, halo: { label: 'Halo' }, sprout: { label: 'Sprout' },
+    sparkles: { label: 'Sparkles' }, star: { label: 'Star' },
   };
 
-  // Keys from the first avatar set, mapped to their closest new piece.
+  // Keys from the earlier avatar sets, mapped to their closest new piece.
   const LEGACY = {
-    shape: { bean: 'pill', blob: 'squircle', round: 'orb', pear: 'dome', cloud: 'capsule', heart: 'shield', frog: 'monitor', flower: 'octagon', star: 'hexagon', ghost: 'chip' },
-    eyes: { diamond: 'lens', ovals: 'led', dots: 'pixel', happy: 'arcs', sleepy: 'slits', sparkle: 'plus', wide: 'rings' },
-    glasses: { round: 'frames', square: 'hud', sunglasses: 'shades' },
-    accessory: { beret: 'propeller', bowtie: 'badge', cap: 'antenna', headphones: 'headset', flower: 'fins', crown: 'halo' },
-    mouth: { smile: 'curve', grin: 'wave', o: 'grille' },
+    shape: {
+      bean: 'pebble', blob: 'pebble', round: 'squircle', pear: 'drop', heart: 'flower', frog: 'cloud', ghost: 'drop',
+      capsule: 'squircle', pill: 'pebble', hexagon: 'burst7', octagon: 'flower', chip: 'squircle', orb: 'burst12', shield: 'drop', dome: 'cloud', monitor: 'squircle',
+    },
+    eyes: {
+      diamond: 'pills', wide: 'ovals',
+      led: 'pills', pixel: 'dots', lens: 'big', visor: 'pills', arcs: 'happy', slits: 'sleepy', rings: 'ovals', plus: 'sparkle',
+    },
+    glasses: { square: 'round', sunglasses: 'visor', frames: 'round', shades: 'visor', hud: 'round' },
+    accessory: {
+      beret: 'sprout', bowtie: 'star', cap: 'antenna', headphones: 'antenna', flower: 'sprout', crown: 'halo',
+      twin: 'antenna', headset: 'antenna', propeller: 'sprout', fins: 'sparkles', badge: 'star',
+    },
+    mouth: { grin: 'smile', line: 'flat', curve: 'smile', wave: 'smile', grille: 'flat' },
   };
 
-  const DEFAULT = { shape: 'squircle', eyes: 'led', color: 'green', glasses: 'none', accessory: 'none', mouth: 'none', cheeks: false };
+  const DEFAULT = { shape: 'burst9', eyes: 'pills', color: 'graphite', glasses: 'none', accessory: 'none', mouth: 'none', cheeks: false };
 
   const HEX = /^#[0-9a-f]{6}$/i;
+  const has = (o, v) => typeof v === 'string' && Object.prototype.hasOwnProperty.call(o, v);
   function colorHex(c) {
-    if (typeof c === 'string' && Object.prototype.hasOwnProperty.call(COLORS, c)) return COLORS[c];
+    if (has(COLORS, c)) return COLORS[c];
     if (typeof c === 'string' && HEX.test(c)) return c.toLowerCase();
     if (typeof c === 'string' && /^#[0-9a-f]{3}$/i.test(c)) return `#${c.slice(1).split('').map((x) => x + x).join('')}`.toLowerCase();
-    return COLORS.green;
+    return COLORS.graphite;
   }
   function mix(hex, toward, amount) {
     const a = parseInt(hex.slice(1), 16);
@@ -144,11 +167,14 @@
     const m = (s) => Math.round(ch(a, s) + (ch(b, s) - ch(a, s)) * amount);
     return `#${((1 << 24) + (m(16) << 16) + (m(8) << 8) + m(0)).toString(16).slice(1)}`;
   }
+  function luma(hex) {
+    const v = parseInt(hex.slice(1), 16);
+    return (0.2126 * ((v >> 16) & 255) + 0.7152 * ((v >> 8) & 255) + 0.0722 * (v & 255)) / 255;
+  }
 
   /** Any partial, old or unknown avatar becomes a complete, valid one. */
   function normalizeAvatar(a) {
     a = a && typeof a === 'object' ? a : {};
-    const has = (o, v) => typeof v === 'string' && Object.prototype.hasOwnProperty.call(o, v);
     const pick = (k, table, def) => {
       const v = a[k];
       if (has(table, v)) return v;
@@ -172,110 +198,109 @@
     const pick = (list) => { s = (s * 1103515245 + 12345) >>> 0; return list[(s >>> 8) % list.length]; };
     return normalizeAvatar({
       shape: pick(Object.keys(SHAPES)),
-      eyes: pick(['led', 'led', 'pixel', 'lens', 'visor', 'arcs', 'rings', 'plus', 'slits']),
-      color: pick(Object.keys(COLORS)),
-      glasses: pick(['none', 'none', 'none', 'frames', 'hud', 'shades', 'monocle']),
-      accessory: pick(['none', 'none', 'antenna', 'twin', 'halo', 'headset', 'propeller', 'fins', 'badge']),
-      mouth: pick(['none', 'none', 'curve', 'line', 'wave', 'grille']),
-      cheeks: pick([false, false, true]),
+      eyes: pick(['pills', 'pills', 'pills', 'dots', 'ovals', 'happy', 'sparkle', 'big', 'sleepy']),
+      color: pick(['graphite', 'graphite', ...Object.keys(COLORS)]),
+      glasses: pick(['none', 'none', 'none', 'none', 'round', 'visor', 'monocle']),
+      accessory: pick(['none', 'none', 'none', 'antenna', 'halo', 'sprout', 'sparkles', 'star']),
+      mouth: pick(['none', 'none', 'none', 'smile', 'o']),
+      cheeks: pick([false, false, false, true]),
     });
   }
 
-  // Face geometry derived from the screen.
-  function face(s) {
-    const [x, y, w, h] = s.scr;
-    const cx = x + w / 2;
-    const ex = Math.min(13, w * 0.22);
-    return { cx, ey: y + h * 0.42, ex, l: cx - ex, r: cx + ex, my: y + h * 0.78 };
-  }
-
-  function eyesSvg(kind, f, c) {
-    const one = (x) => {
-      const t = `transform="translate(${x} ${f.ey.toFixed(1)})"`;
-      switch (kind) {
-        case 'pixel': return `<rect ${t} x="-4" y="-4" width="8" height="8" rx="1.5" fill="${c}"/>`;
-        case 'arcs': return `<path ${t} d="M-5.5 2.5Q0 -5.5 5.5 2.5" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round"/>`;
-        case 'slits': return `<rect ${t} x="-6" y="-1.75" width="12" height="3.5" rx="1.75" fill="${c}"/>`;
-        case 'rings': return `<circle ${t} r="4.6" fill="none" stroke="${c}" stroke-width="2.6"/>`;
-        case 'plus': return `<path ${t} d="M0 -5V5M-5 0H5" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round"/>`;
-        default: return `<rect ${t} x="-3" y="-6" width="6" height="12" rx="3" fill="${c}"/>`; // led
+  function eyeSvg(kind, x, y, c, side) {
+    const t = `transform="translate(${f1(x)} ${f1(y)})"`;
+    switch (kind) {
+      case 'dots': return `<circle ${t} r="5.2" fill="${c}"/>`;
+      case 'ovals': return `<ellipse ${t} rx="6.2" ry="8.6" fill="${c}"/>`;
+      case 'sleepy': return `<path ${t} d="M-6 -1Q0 4.5 6 -1" fill="none" stroke="${c}" stroke-width="3.4" stroke-linecap="round"/>`;
+      case 'happy': return `<path ${t} d="M-6 2.5Q0 -5.5 6 2.5" fill="none" stroke="${c}" stroke-width="3.4" stroke-linecap="round"/>`;
+      case 'sparkle': return `<path ${t} d="M0 -8.5Q1.3 -1.3 8 0Q1.3 1.3 0 8.5Q-1.3 1.3 -8 0Q-1.3 -1.3 0 -8.5Z" fill="${c}"/>`;
+      default: { // pills: the right one a touch shorter
+        const h = side ? 18.5 : 21.5;
+        return `<rect ${t} x="-5.2" y="${f1(-h / 2)}" width="10.4" height="${h}" rx="5.2" fill="${c}"/>`;
       }
-    };
-    const t = `transform="translate(${f.cx} ${f.ey.toFixed(1)})"`;
-    if (kind === 'lens') return `<g ${t}><circle r="8.5" fill="none" stroke="${c}" stroke-width="2.4"/><circle r="4" fill="${c}"/></g>`;
-    if (kind === 'visor') {
-      const w = f.ex * 2 + 12;
-      return `<g ${t}><rect x="${-w / 2}" y="-3.25" width="${w}" height="6.5" rx="3.25" fill="${c}" opacity="0.35"/><rect class="ba-scan" x="${-w / 2}" y="-3.25" width="${Math.round(w * 0.38)}" height="6.5" rx="3.25" fill="${c}"/></g>`;
     }
-    return one(f.l) + one(f.r);
+  }
+  function eyesSvg(kind, s, c) {
+    if (kind === 'big') return `<ellipse cx="60" cy="${s.ey}" rx="9.5" ry="12.5" fill="${c}"/>`;
+    return eyeSvg(kind, 60 - s.ex, s.ey, c, 0) + eyeSvg(kind, 60 + s.ex, s.ey, c, 1);
   }
 
-  function mouthSvg(kind, f, c) {
-    const x = f.cx; const y = f.my.toFixed(1);
-    const t = `transform="translate(${x} ${y})"`;
-    if (kind === 'line') return `<path ${t} d="M-5 0H5" stroke="${c}" stroke-width="2.4" stroke-linecap="round"/>`;
-    if (kind === 'curve') return `<path ${t} d="M-5.5 -1.5Q0 3.5 5.5 -1.5" fill="none" stroke="${c}" stroke-width="2.4" stroke-linecap="round"/>`;
-    if (kind === 'wave') return `<path ${t} d="M-7.5 0Q-5.6 -2.6 -3.75 0T0 0T3.75 0T7.5 0" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"/>`;
-    if (kind === 'grille') return `<g ${t} fill="${c}">${[-6, -2, 2, 6].map((d) => `<rect x="${d - 1}" y="-2.5" width="2" height="5" rx="1"/>`).join('')}</g>`;
+  function mouthSvg(kind, s, c) {
+    const y = s.ey + (s.mouthDy || 17);
+    if (kind === 'smile') return `<path d="M54 ${y}Q60 ${y + 5.5} 66 ${y}" fill="none" stroke="${c}" stroke-width="2.8" stroke-linecap="round"/>`;
+    if (kind === 'o') return `<ellipse cx="60" cy="${y + 1.5}" rx="3" ry="3.8" fill="${c}"/>`;
+    if (kind === 'flat') return `<path d="M56 ${y + 1}H64" stroke="${c}" stroke-width="2.8" stroke-linecap="round"/>`;
     return '';
   }
 
-  function opticsSvg(kind, s, f, c, single) {
-    const [x, y, w, h] = s.scr;
-    if (kind === 'frames') {
-      if (single) return `<rect x="${f.cx - f.ex - 9}" y="${(f.ey - 8).toFixed(1)}" width="${f.ex * 2 + 18}" height="16" rx="5" fill="none" stroke="${c}" stroke-width="1.8" opacity="0.7"/>`;
-      return `<g fill="none" stroke="${c}" stroke-width="1.8" opacity="0.7"><rect x="${f.l - 8}" y="${(f.ey - 8).toFixed(1)}" width="16" height="16" rx="4.5"/><rect x="${f.r - 8}" y="${(f.ey - 8).toFixed(1)}" width="16" height="16" rx="4.5"/><path d="M${f.l + 8} ${f.ey.toFixed(1)}H${f.r - 8}"/></g>`;
+  function opticsSvg(kind, s, c, big) {
+    const l = 60 - s.ex; const r = 60 + s.ex; const y = s.ey;
+    if (kind === 'round') {
+      if (big) return `<circle cx="60" cy="${y}" r="17" fill="none" stroke="${c}" stroke-width="2.2" opacity="0.8"/>`;
+      return `<g fill="none" stroke="${c}" stroke-width="2.2" opacity="0.8"><circle cx="${l}" cy="${y}" r="11.5"/><circle cx="${r}" cy="${y}" r="11.5"/><path d="M${l + 9} ${y - 5}Q60 ${y - 9} ${r - 9} ${y - 5}"/></g>`;
+    }
+    if (kind === 'visor') {
+      return `<rect x="${l - 15}" y="${y - 12.5}" width="${r - l + 30}" height="25" rx="12.5" fill="#000" opacity="0.28"/>` +
+        `<rect x="${l - 15}" y="${y - 12.5}" width="${r - l + 30}" height="25" rx="12.5" fill="none" stroke="${c}" stroke-width="1.6" opacity="0.55"/>`;
     }
     if (kind === 'monocle') {
-      const mx = single ? f.cx : f.r; const rad = single ? 12 : 8.5;
-      return `<g fill="none" stroke="${c}" stroke-width="1.8" opacity="0.8"><circle cx="${mx}" cy="${f.ey.toFixed(1)}" r="${rad}"/><path d="M${mx + rad * 0.7} ${(f.ey + rad * 0.7).toFixed(1)}Q${mx + rad + 2} ${(y + h - 3).toFixed(1)} ${x + w - 4} ${y + h - 2}"/></g>`;
-    }
-    if (kind === 'shades') {
-      const top = f.ey - 7.5;
-      return `<g><rect x="${x + 4}" y="${top.toFixed(1)}" width="${w - 8}" height="13" rx="6.5" fill="#000" opacity="0.62"/><path d="M${x + 10} ${(top + 3).toFixed(1)}H${x + 18}" stroke="${c}" stroke-width="1.6" stroke-linecap="round" opacity="0.9"/></g>`;
-    }
-    if (kind === 'hud') {
-      const k = 5; const i = 3.5;
-      const L = x + i; const R = x + w - i; const T = y + i; const B = y + h - i;
-      return `<path d="M${L} ${T + k}V${T}H${L + k}M${R - k} ${T}H${R}V${T + k}M${R} ${B - k}V${B}H${R - k}M${L + k} ${B}H${L}V${B - k}" fill="none" stroke="${c}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.75"/>`;
+      const mx = big ? 60 : r; const rad = big ? 17 : 11.5;
+      return `<g fill="none" stroke="${c}" stroke-width="2.2" opacity="0.8"><circle cx="${mx}" cy="${y}" r="${rad}"/><path d="M${mx + rad * 0.72} ${y + rad * 0.72}Q${mx + rad + 3} ${y + rad + 8} ${mx + rad - 2} ${y + rad + 16}"/></g>`;
     }
     return '';
   }
 
-  // Extras: [drawn behind the body, drawn in front of it].
-  function extraSvg(kind, s, f, dark, glow, fill) {
-    const cx = 60; const top = s.top;
-    const ballY = top - 15;
+  function sparkPath(x, y, r) {
+    const q = r * 0.18;
+    return `M${f1(x)} ${f1(y - r)}Q${f1(x + q)} ${f1(y - q)} ${f1(x + r)} ${f1(y)}Q${f1(x + q)} ${f1(y + q)} ${f1(x)} ${f1(y + r)}Q${f1(x - q)} ${f1(y + q)} ${f1(x - r)} ${f1(y)}Q${f1(x - q)} ${f1(y - q)} ${f1(x)} ${f1(y - r)}Z`;
+  }
+  function starPath(x, y, R) {
+    let d = '';
+    for (let k = 0; k < 10; k++) {
+      const a = -Math.PI / 2 + (k * Math.PI) / 5;
+      const rad = k % 2 ? R * 0.48 : R;
+      d += `${k ? 'L' : 'M'}${f1(x + rad * Math.cos(a))} ${f1(y + rad * Math.sin(a))}`;
+    }
+    return `${d}Z`;
+  }
+
+  // Extras: { sil(pad): parts that join the sticker outline, fill: the colored parts }.
+  function extra(kind, s, body, eye) {
+    const top = s.top;
     switch (kind) {
-      case 'antenna':
-        return [`<path d="M${cx} ${top + 6}V${ballY + 3}" stroke="${dark}" stroke-width="3.2" stroke-linecap="round"/>`,
-          `<circle class="ba-led" cx="${cx}" cy="${ballY}" r="4.6" fill="${glow}" stroke="${dark}" stroke-width="2"/>`];
-      case 'twin':
-        return [`<path d="M${cx - 9} ${top + 8}L${cx - 16} ${top - 10}M${cx + 9} ${top + 8}L${cx + 16} ${top - 10}" stroke="${dark}" stroke-width="3" stroke-linecap="round"/>`,
-          `<circle class="ba-led" cx="${cx - 16.5}" cy="${top - 11.5}" r="3.4" fill="${glow}" stroke="${dark}" stroke-width="1.8"/><circle class="ba-led" cx="${cx + 16.5}" cy="${top - 11.5}" r="3.4" fill="${glow}" stroke="${dark}" stroke-width="1.8"/>`];
+      case 'antenna': {
+        const by = top - 14;
+        return {
+          sil: (p) => `<path d="M60 ${top + 6}V${by}" fill="none" stroke-width="${3.6 + p}"/><circle cx="60" cy="${by}" r="5.2" stroke-width="${p}"/>`,
+          fill: `<path d="M60 ${top + 6}V${by}" stroke="${body}" stroke-width="3.6" stroke-linecap="round"/><circle class="ba-glow" cx="60" cy="${by}" r="5.2" fill="${eye}"/>`,
+        };
+      }
       case 'halo':
-        return ['', `<ellipse class="ba-halo" cx="${cx}" cy="${top - 9}" rx="19" ry="4.6" fill="none" stroke="#ffcc4d" stroke-width="3"/>`];
-      case 'headset': {
-        const y = f.ey;
-        const L = s.sl - 4; const R = s.sr + 4;
-        return [`<path d="M${L + 3} ${y - 6}C${L + 2} ${top - 18} ${R - 2} ${top - 18} ${R - 3} ${y - 6}" fill="none" stroke="${dark}" stroke-width="3.6" stroke-linecap="round"/>`,
-          `<rect x="${L - 3}" y="${(y - 9).toFixed(1)}" width="10" height="18" rx="4" fill="${dark}"/><rect x="${R - 7}" y="${(y - 9).toFixed(1)}" width="10" height="18" rx="4" fill="${dark}"/>` +
-          `<path d="M${L + 2} ${(y + 7).toFixed(1)}Q${L + 4} ${(f.my + 8).toFixed(1)} ${f.cx - 16} ${(f.my + 9).toFixed(1)}" fill="none" stroke="${dark}" stroke-width="2.4" stroke-linecap="round"/><circle cx="${f.cx - 15}" cy="${(f.my + 9).toFixed(1)}" r="2.8" fill="${dark}"/>`];
+        return {
+          sil: (p) => `<ellipse cx="60" cy="${top - 9}" rx="18" ry="5" fill="none" stroke-width="${3.4 + p * 0.7}"/>`,
+          fill: `<ellipse class="ba-glow" cx="60" cy="${top - 9}" rx="18" ry="5" fill="none" stroke="#ffd866" stroke-width="3.4"/>`,
+        };
+      case 'sprout': {
+        const leafL = `M60 ${top + 2}C54 ${top - 4} 46 ${top - 6} 42 ${top - 12}C50 ${top - 15} 58 ${top - 10} 60 ${top + 2}Z`;
+        const leafR = `M60 ${top + 2}C64 ${top - 8} 72 ${top - 16} 80 ${top - 15}C78 ${top - 6} 70 ${top} 60 ${top + 2}Z`;
+        return {
+          sil: (p) => `<path d="${leafL}" stroke-width="${p}"/><path d="${leafR}" stroke-width="${p}"/>`,
+          fill: `<path d="${leafL}" fill="#5cbf6e"/><path d="${leafR}" fill="#6fd37f"/>`,
+        };
       }
-      case 'propeller':
-        return [`<path d="M${cx} ${top + 4}V${top - 8}" stroke="${dark}" stroke-width="3.2" stroke-linecap="round"/>`,
-          `<g class="ba-prop" style="transform-origin:${cx}px ${top - 9}px"><ellipse cx="${cx - 9}" cy="${top - 9}" rx="9" ry="3" fill="${glow}" stroke="${dark}" stroke-width="1.6"/><ellipse cx="${cx + 9}" cy="${top - 9}" rx="9" ry="3" fill="${dark}"/></g><circle cx="${cx}" cy="${top - 9}" r="2.6" fill="${dark}"/>`];
-      case 'fins': {
-        const y = f.ey;
-        const L = s.sl; const R = s.sr;
-        return [`<path d="M${L + 6} ${(y - 10).toFixed(1)}L${L - 9} ${(y - 15).toFixed(1)}Q${L - 12} ${y.toFixed(1)} ${L - 9} ${(y + 15).toFixed(1)}L${L + 6} ${(y + 10).toFixed(1)}Z" fill="${dark}" stroke="${dark}" stroke-width="3" stroke-linejoin="round"/>` +
-          `<path d="M${R - 6} ${(y - 10).toFixed(1)}L${R + 9} ${(y - 15).toFixed(1)}Q${R + 12} ${y.toFixed(1)} ${R + 9} ${(y + 15).toFixed(1)}L${R - 6} ${(y + 10).toFixed(1)}Z" fill="${dark}" stroke="${dark}" stroke-width="3" stroke-linejoin="round"/>`, ''];
+      case 'sparkles': {
+        const a = sparkPath(92, top + 2, 8); const b = sparkPath(101, top + 15, 4.5);
+        return {
+          sil: (p) => `<path d="${a}" stroke-width="${p * 0.8}"/><path d="${b}" stroke-width="${p * 0.8}"/>`,
+          fill: `<path class="ba-glow" d="${a}" fill="#ffd866"/><path class="ba-glow" d="${b}" fill="#ffd866"/>`,
+        };
       }
-      case 'badge': {
-        const x = s.bx; const y = s.by;
-        return ['', `<g transform="translate(${x} ${y})"><rect x="-9" y="-6" width="18" height="12" rx="4" fill="${dark}"/><path d="M-3.5 -2.5L-6 0L-3.5 2.5M3.5 -2.5L6 0L3.5 2.5M1 -3L-1 3" fill="none" stroke="${mix(fill, '#ffffff', 0.8)}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></g>`];
+      case 'star': {
+        const d = starPath(84, top + 6, 9);
+        return { sil: (p) => `<path d="${d}" stroke-width="${p}"/>`, fill: `<path d="${d}" fill="#ffd866"/>` };
       }
-      default: return ['', ''];
+      default: return { sil: () => '', fill: '' };
     }
   }
 
@@ -291,65 +316,59 @@
     size = Math.max(8, Math.round(Number(size) || 64));
     opts = opts || {};
     const s = SHAPES[a.shape];
-    const f = face(s);
     const fill = colorHex(a.color);
     counter++;
-    const flat = opts.flat || size < 30;
-    const dark = mix(fill, '#14151b', 0.42);
-    const screen = mix(fill, '#0c0d12', 0.86);
-    const glow = mix(fill, '#ffffff', 0.74);
+    const id = `ba${counter.toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    // Small avatars skip the blur and grain: they cost paint time and vanish at that size.
+    const flat = opts.flat || size < 40;
+    const lightBody = luma(fill) > 0.6;
+    const eye = lightBody ? INK : WHITE;
+    const ex = extra(a.accessory, s, mix(fill, '#000000', 0.12), lightBody ? '#ffffff' : '#ffffff');
+    const big = a.eyes === 'big';
     const delay = (counter * 0.77) % 5;
     const state = opts.state === 'working' ? ' ba-working' : opts.state === 'done' ? ' ba-done' : '';
-    const single = !!SINGLE[a.eyes];
-    const [sx, sy, sw, sh, sr] = s.scr;
-    const extra = extraSvg(a.accessory, s, f, dark, glow, fill);
-    const body = s.j
-      ? `<path d="${s.d}" fill="${fill}" stroke="${fill}" stroke-width="${s.j}" stroke-linejoin="round"/>`
-      : `<path d="${s.d}" fill="${fill}"/>`;
-    // A thin lighter rim along the top of the screen: the only "shine".
-    const glare = flat ? '' : `<path d="M${sx + sr} ${sy + 3}H${sx + sw - sr}" stroke="#ffffff" stroke-opacity="0.09" stroke-width="2" stroke-linecap="round"/>`;
+    const sil = (p) => `<path d="${s.d}" stroke-width="${p}"/>${ex.sil(p)}`;
+    const defs = `<defs>` +
+      `<radialGradient id="${id}s" cx="0.46" cy="0.42" r="0.62"><stop offset="0" stop-color="${mix(fill, '#ffffff', lightBody ? 0.24 : 0.2)}"/><stop offset="0.55" stop-color="${fill}"/><stop offset="1" stop-color="${mix(fill, '#000000', 0.3)}"/></radialGradient>` +
+      (flat ? '' :
+        `<filter id="${id}b" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2.6"/></filter>` +
+        `<filter id="${id}g" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="2.4"/></filter>` +
+        `<filter id="${id}n" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="2" seed="${counter % 97}"/>` +
+        `<feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.6 -0.25"/><feComposite in2="SourceGraphic" operator="in"/></filter>`) +
+      `</defs>`;
+    const shadow = `<g class="ba-shadow" fill="#000" stroke="#000" stroke-linejoin="round" stroke-linecap="round" opacity="${flat ? 0.1 : 0.2}" transform="translate(0 ${flat ? 2 : 3})"${flat ? '' : ` filter="url(#${id}b)"`}>${sil(PAD)}</g>`;
+    const outline = `<g fill="${WHITE}" stroke="${WHITE}" stroke-linejoin="round" stroke-linecap="round">${sil(PAD)}</g>`;
+    const bodySvg = `<path d="${s.d}" fill="url(#${id}s)"/>` + (flat ? '' : `<path d="${s.d}" fill="#fff" filter="url(#${id}n)" opacity="0.22"/>`);
+    const eyesMain = eyesSvg(a.eyes, s, eye);
+    const eyesHappy = eyesSvg('happy', s, eye);
+    const glow = (svg) => (flat || lightBody ? '' : `<g class="ba-glow" filter="url(#${id}g)" opacity="0.85">${svg}</g>`);
     const cheeks = a.cheeks
-      ? `<g fill="#ff8fb4" opacity="0.8"><rect x="${f.l - (single ? 10 : 9)}" y="${(f.my - 2).toFixed(1)}" width="7" height="3.4" rx="1.7"/><rect x="${f.r + (single ? 3 : 2)}" y="${(f.my - 2).toFixed(1)}" width="7" height="3.4" rx="1.7"/></g>` : '';
+      ? `<g fill="#ff8fb4" opacity="${lightBody ? 0.6 : 0.42}"><ellipse cx="${60 - s.ex - 10}" cy="${s.ey + 11}" rx="5.5" ry="3.3"/><ellipse cx="${60 + s.ex + 10}" cy="${s.ey + 11}" rx="5.5" ry="3.3"/></g>` : '';
     const title = opts.title ? `<title>${String(opts.title).replace(/[<&>"]/g, (c) => ({ '<': '&lt;', '&': '&amp;', '>': '&gt;', '"': '&quot;' })[c])}</title>` : '';
-    let vb = '0 0 120 120';
-    if (opts.zoom === 'face') {
-      const z = Math.max(sw, sh) + 14;
-      vb = `${(sx + sw / 2 - z / 2).toFixed(1)} ${(sy + sh / 2 - z / 2).toFixed(1)} ${z} ${z}`;
-    }
-    return `<svg class="ba${state}${opts.still ? ' ba-still' : ''}" xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" width="${size}" height="${size}" role="img" aria-label="${a.shape} avatar" style="--ba-d:-${delay.toFixed(2)}s">${title}` +
-      `<ellipse class="ba-shadow" cx="60" cy="${Math.min(115, s.bot + 6)}" rx="24" ry="3.2" fill="#000" opacity="0.13"/>` +
-      `<g class="ba-float">` +
-      extra[0] + (s.back ? s.back(dark) : '') + body + (s.front ? s.front(dark) : '') +
-      `<rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="${sr}" fill="${screen}"/>` + glare +
-      cheeks +
-      `<g class="ba-look"><g class="ba-eyes ba-eyes-main">${eyesSvg(a.eyes, f, glow)}</g><g class="ba-eyes ba-eyes-happy">${eyesSvg('arcs', f, glow)}</g></g>` +
-      mouthSvg(a.mouth, f, glow) + opticsSvg(a.glasses, s, f, glow, single) + extra[1] +
+    const vb = opts.zoom === 'face' ? `30 ${s.ey - 30} 60 60` : '0 0 120 120';
+    return `<svg class="ba${state}${opts.still ? ' ba-still' : ''}" xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" width="${size}" height="${size}" role="img" aria-label="${a.shape} avatar" style="--ba-d:-${delay.toFixed(2)}s${opts.zoom === 'face' ? ';overflow:hidden' : ''}">${title}${defs}` +
+      `<g class="ba-float">` + shadow + outline + bodySvg + ex.fill + cheeks +
+      `<g class="ba-look"><g class="ba-eyes ba-eyes-main">${glow(eyesMain)}${eyesMain}</g><g class="ba-eyes ba-eyes-happy">${glow(eyesHappy)}${eyesHappy}</g></g>` +
+      mouthSvg(a.mouth, s, eye) + opticsSvg(a.glasses, s, eye, big) +
       `</g></svg>`;
   }
 
   const AVATAR_CSS = `
 .ba { display: block; overflow: visible; flex-shrink: 0; }
-.ba .ba-float { animation: ba-float 4.8s ease-in-out infinite; animation-delay: var(--ba-d, 0s); }
-.ba .ba-shadow { transform-box: fill-box; transform-origin: 50% 50%; animation: ba-shadow 4.8s ease-in-out infinite; animation-delay: var(--ba-d, 0s); }
-.ba .ba-eyes-main { transform-box: fill-box; transform-origin: 50% 50%; animation: ba-blink 5.6s infinite; animation-delay: var(--ba-d, 0s); }
+.ba .ba-float { animation: ba-float 5s ease-in-out infinite; animation-delay: var(--ba-d, 0s); }
+.ba .ba-eyes-main { transform-box: fill-box; transform-origin: 50% 50%; animation: ba-blink 5.4s infinite; animation-delay: var(--ba-d, 0s); }
 .ba .ba-eyes-happy { display: none; }
 .ba.ba-done .ba-eyes-main { display: none; }
 .ba.ba-done .ba-eyes-happy { display: inline; }
-.ba.ba-done .ba-float { animation: ba-hop 0.6s ease-out 1, ba-float 4.8s ease-in-out 0.6s infinite; }
-.ba.ba-working .ba-look { animation: ba-look 1.4s ease-in-out infinite; }
-.ba.ba-working .ba-float { animation-duration: 2.4s; }
-.ba.ba-working .ba-led { animation: ba-led 0.9s ease-in-out infinite; }
-.ba.ba-working .ba-prop { animation: ba-spin 0.5s linear infinite; }
-.ba .ba-scan { transform-box: fill-box; animation: ba-scan 3.2s ease-in-out infinite; }
-.ba.ba-working .ba-scan { animation-duration: 1.1s; }
+.ba.ba-done .ba-float { animation: ba-hop 0.7s ease-out 1, ba-float 5s ease-in-out 0.7s infinite; }
+.ba.ba-working .ba-look { animation: ba-look 2.4s ease-in-out infinite; }
+.ba.ba-working .ba-glow { animation: ba-pulse 1.2s ease-in-out infinite; }
+.ba.ba-working .ba-float { animation-duration: 2.6s; }
 .ba.ba-still *, .ba.ba-still { animation: none !important; }
 @keyframes ba-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.5px); } }
-@keyframes ba-shadow { 0%, 100% { transform: scaleX(1); opacity: 0.13; } 50% { transform: scaleX(0.9); opacity: 0.09; } }
-@keyframes ba-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
-@keyframes ba-look { 0%, 100% { transform: translateX(-3px); } 50% { transform: translateX(3px); } }
-@keyframes ba-led { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-@keyframes ba-spin { 0% { transform: scaleX(1); } 50% { transform: scaleX(-1); } 100% { transform: scaleX(1); } }
-@keyframes ba-scan { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(163%); } }
+@keyframes ba-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.12); } }
+@keyframes ba-look { 0%, 100% { transform: translate(0, 0); } 20% { transform: translate(-3.5px, -1px); } 45% { transform: translate(3.5px, -1px); } 70% { transform: translate(2px, 1.5px); } }
+@keyframes ba-pulse { 0%, 100% { opacity: 0.9; } 50% { opacity: 0.35; } }
 @keyframes ba-hop { 0% { transform: translateY(0); } 35% { transform: translateY(-7px); } 70% { transform: translateY(0); } 85% { transform: translateY(-1.5px); } 100% { transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .ba *, .ba { animation: none !important; } }
 `;

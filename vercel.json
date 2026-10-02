@@ -4,19 +4,33 @@
   "installCommand": "echo \"no install needed\"",
   "buildCommand": "node scripts/prepare-mobile.js",
   "outputDirectory": "mobile-app",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- phone.html phone.js phone.css phone-calls.js phone-calls.css bot-avatar.js phone.manifest.json vendor/phone mobile.html mobile.js mobile.css mobile-cloud.js mobile-cloud.css mobile.manifest.json logo.png vendor/supabase assets/agents scripts/prepare-mobile.js vercel.json",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- 'phone*' 'mobile*' bot-avatar.js vendor logo.png assets/agents scripts/prepare-mobile.js vercel.json",
   "cleanUrls": true,
   "headers": [
     {
       "source": "/(index.html|phone.js|phone.css|phone-calls.js|phone-calls.css|bot-avatar.js|classic.html|classic|mobile.js|mobile.css|mobile-cloud.js|mobile-cloud.css|)",
-      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
     },
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "Referrer-Policy", "value": "no-referrer" },
-        { "key": "X-Frame-Options", "value": "DENY" }
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        }
       ]
     }
   ]

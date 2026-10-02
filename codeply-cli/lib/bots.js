@@ -1,6 +1,6 @@
 /**
  * Bots: named agents with one clear job, a tone, a memory that grows, and a
- * little robot avatar.
+ * soft sticker avatar.
  *
  * A bot is a JSON file in ~/.codeply/bots/<id>.json. When the user picks a bot
  * for a chat, buildBotPrompt() is added to that run's system prompt. After
@@ -56,22 +56,32 @@ const ALL_APPROVALS = Object.keys(APPROVALS);
 
 // Kept in sync with bot-avatar.js (the renderer). The engine only validates.
 const AVATAR_KEYS = {
-  shape: ['squircle', 'capsule', 'pill', 'hexagon', 'octagon', 'chip', 'orb', 'shield', 'dome', 'monitor'],
-  eyes: ['led', 'pixel', 'lens', 'visor', 'arcs', 'slits', 'rings', 'plus'],
-  glasses: ['none', 'frames', 'monocle', 'shades', 'hud'],
-  accessory: ['none', 'antenna', 'twin', 'halo', 'headset', 'propeller', 'fins', 'badge'],
-  mouth: ['none', 'line', 'curve', 'wave', 'grille'],
-  color: ['green', 'blue', 'yellow', 'pink', 'orange', 'purple', 'red', 'teal', 'sky', 'lime'],
+  shape: ['burst9', 'burst7', 'burst12', 'flower', 'cloud', 'star', 'squircle', 'pebble', 'drop'],
+  eyes: ['pills', 'dots', 'ovals', 'sleepy', 'happy', 'sparkle', 'big'],
+  glasses: ['none', 'round', 'visor', 'monocle'],
+  accessory: ['none', 'antenna', 'halo', 'sprout', 'sparkles', 'star'],
+  mouth: ['none', 'smile', 'o', 'flat'],
+  color: ['graphite', 'green', 'blue', 'yellow', 'pink', 'orange', 'purple', 'red', 'teal', 'sky', 'lime'],
 };
 
-// Keys from the first avatar set, so bots saved before the redesign still
-// load. Same table as LEGACY in bot-avatar.js.
+// Keys from the earlier avatar sets (the first plush set, then a robot set),
+// so bots saved before the redesign still load. Same table as LEGACY in
+// bot-avatar.js.
 const LEGACY_AVATAR = {
-  shape: { bean: 'pill', blob: 'squircle', round: 'orb', pear: 'dome', cloud: 'capsule', heart: 'shield', frog: 'monitor', flower: 'octagon', star: 'hexagon', ghost: 'chip' },
-  eyes: { diamond: 'lens', ovals: 'led', dots: 'pixel', happy: 'arcs', sleepy: 'slits', sparkle: 'plus', wide: 'rings' },
-  glasses: { round: 'frames', square: 'hud', sunglasses: 'shades' },
-  accessory: { beret: 'propeller', bowtie: 'badge', cap: 'antenna', headphones: 'headset', flower: 'fins', crown: 'halo' },
-  mouth: { smile: 'curve', grin: 'wave', o: 'grille' },
+  shape: {
+    bean: 'pebble', blob: 'pebble', round: 'squircle', pear: 'drop', heart: 'flower', frog: 'cloud', ghost: 'drop',
+    capsule: 'squircle', pill: 'pebble', hexagon: 'burst7', octagon: 'flower', chip: 'squircle', orb: 'burst12', shield: 'drop', dome: 'cloud', monitor: 'squircle',
+  },
+  eyes: {
+    diamond: 'pills', wide: 'ovals',
+    led: 'pills', pixel: 'dots', lens: 'big', visor: 'pills', arcs: 'happy', slits: 'sleepy', rings: 'ovals', plus: 'sparkle',
+  },
+  glasses: { square: 'round', sunglasses: 'visor', frames: 'round', shades: 'visor', hud: 'round' },
+  accessory: {
+    beret: 'sprout', bowtie: 'star', cap: 'antenna', headphones: 'antenna', flower: 'sprout', crown: 'halo',
+    twin: 'antenna', headset: 'antenna', propeller: 'sprout', fins: 'sparkles', badge: 'star',
+  },
+  mouth: { grin: 'smile', line: 'flat', curve: 'smile', wave: 'smile', grille: 'flat' },
 };
 
 function normalizeAvatar(a) {
@@ -81,9 +91,9 @@ function normalizeAvatar(a) {
     const old = Object.prototype.hasOwnProperty.call(LEGACY_AVATAR[k], a[k]) ? LEGACY_AVATAR[k][a[k]] : null;
     return old && AVATAR_KEYS[k].includes(old) ? old : def;
   };
-  const color = AVATAR_KEYS.color.includes(a.color) || /^#[0-9a-f]{6}$/i.test(String(a.color || '')) ? String(a.color) : 'green';
+  const color = AVATAR_KEYS.color.includes(a.color) || /^#[0-9a-f]{6}$/i.test(String(a.color || '')) ? String(a.color) : 'graphite';
   return {
-    shape: pick('shape', 'squircle'), eyes: pick('eyes', 'led'), color,
+    shape: pick('shape', 'burst9'), eyes: pick('eyes', 'pills'), color,
     glasses: pick('glasses', 'none'), accessory: pick('accessory', 'none'), mouth: pick('mouth', 'none'), cheeks: !!a.cheeks,
   };
 }
@@ -97,7 +107,7 @@ const TEMPLATES = [
     instructions: 'Restate the objective in one line. Split it into a few small steps. Hand each step to the teammate whose domain fits, one at a time, with only the context they need. Read every result critically before moving on, redo or adjust when something is off, and finish with one merged answer that says what was done and what is left.',
     tone: { preset: 'friendly', custom: '' },
     approval: ['edit_files', 'run_commands', 'send', 'publish', 'databases'],
-    avatar: { shape: 'hexagon', eyes: 'led', color: 'blue', accessory: 'antenna' },
+    avatar: { shape: 'burst9', eyes: 'pills', color: 'graphite' },
   },
   {
     key: 'research', name: 'Vera', role: 'specialist',
@@ -105,7 +115,7 @@ const TEMPLATES = [
     instructions: 'Search the project and the web, read the primary source, and report what you found with links or file paths. Separate facts from guesses. Never change files.',
     tone: { preset: 'professional', custom: '' }, sources: 'Official docs first, then the project itself, then reputable articles.',
     approval: ['edit_files', 'run_commands', 'send', 'publish', 'databases'],
-    avatar: { shape: 'dome', eyes: 'lens', color: 'yellow', accessory: 'badge' },
+    avatar: { shape: 'drop', eyes: 'big', color: 'blue' },
   },
   {
     key: 'outreach', name: 'Remy', role: 'specialist',
@@ -113,7 +123,7 @@ const TEMPLATES = [
     instructions: 'Write drafts the user can send as is: clear subject, short body, one ask. Match their voice from earlier messages. Never send anything yourself without the user saying yes.',
     tone: { preset: 'friendly', custom: '' },
     approval: ['edit_files', 'run_commands', 'send', 'publish', 'databases'],
-    avatar: { shape: 'capsule', eyes: 'arcs', color: 'pink', mouth: 'wave', accessory: 'headset' },
+    avatar: { shape: 'cloud', eyes: 'happy', color: 'pink', cheeks: true },
   },
   {
     key: 'analysis', name: 'Quinn', role: 'specialist',
@@ -121,7 +131,7 @@ const TEMPLATES = [
     instructions: 'Read the real code or data before concluding anything. Show the key numbers, the reasoning, and a clear recommendation. Say how sure you are.',
     tone: { preset: 'direct', custom: '' },
     approval: ['edit_files', 'run_commands', 'send', 'publish', 'databases'],
-    avatar: { shape: 'monitor', eyes: 'pixel', color: 'teal', glasses: 'hud', mouth: 'line' },
+    avatar: { shape: 'squircle', eyes: 'ovals', color: 'teal', glasses: 'round' },
   },
   {
     key: 'reporting', name: 'Wren', role: 'specialist',
@@ -129,7 +139,7 @@ const TEMPLATES = [
     instructions: 'Lead with the outcome, then 3 to 5 bullets, then next steps. Plain words, no jargon, nothing invented.',
     tone: { preset: 'concise', custom: '' },
     approval: ['edit_files', 'run_commands', 'send', 'publish', 'databases'],
-    avatar: { shape: 'squircle', eyes: 'rings', color: 'orange', accessory: 'propeller', mouth: 'curve', cheeks: true },
+    avatar: { shape: 'star', eyes: 'dots', color: 'orange', accessory: 'sprout' },
   },
   {
     key: 'execution', name: 'Axel', role: 'specialist',
@@ -137,7 +147,7 @@ const TEMPLATES = [
     instructions: 'Make the smallest change that does the job, in the project\'s own style. Run the relevant check after every change and report what really happened.',
     tone: { preset: 'concise', custom: '' },
     approval: ['run_commands', 'send', 'publish', 'databases'],
-    avatar: { shape: 'chip', eyes: 'visor', color: 'green', accessory: 'twin' },
+    avatar: { shape: 'burst7', eyes: 'sleepy', color: 'red', accessory: 'antenna' },
   },
   {
     key: 'monitoring', name: 'Juno', role: 'specialist',
@@ -145,7 +155,7 @@ const TEMPLATES = [
     instructions: 'Run the checks, compare with what was expected, and report only what changed or failed, with the exact error. Suggest the next step, do not fix it yourself.',
     tone: { preset: 'direct', custom: '' },
     approval: ['edit_files', 'send', 'publish', 'databases'],
-    avatar: { shape: 'orb', eyes: 'slits', color: 'purple', mouth: 'grille' },
+    avatar: { shape: 'burst12', eyes: 'sparkle', color: 'purple', accessory: 'halo' },
   },
 ];
 
