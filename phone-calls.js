@@ -313,14 +313,14 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   // Energy based with an adaptive noise floor. Speech starts once the level
   // is clearly above the floor for ~150 ms out of the last 300 ms (syllables
   // have gaps), or 180 of 500 ms and much louder while the bot is talking so
-  // its echo does not count. It ends after ~700 ms of quiet and keeps ~300 ms
+  // its echo does not count. It ends after ~450 ms of quiet and keeps ~300 ms
   // from before the start so first syllables are not clipped.
   function makeVad(sampleRate, on) {
     const v = {
       sampleRate, botSpeaking: false, floor: 0.004, floorBot: 0.01,
       inSpeech: false, hist: [], quietMs: 0, voicedMs: 0, totalMs: 0, ring: [], ringMs: 0, frames: [],
     };
-    const PRE_MS = 300; const END_MS = 700; const MIN_MS = 300; const MAX_MS = 15000;
+    const PRE_MS = 300; const END_MS = 450; const MIN_MS = 250; const MAX_MS = 15000;
     function finish() {
       const keep = v.voicedMs >= MIN_MS;
       const frames = v.frames;
@@ -393,7 +393,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   }
 
   // ─── Whisper on the phone (phone-stt-worker.js) ───────────────────────────
-  const STT_SEEN = 'craft-phone-stt-ready';
+  const STT_SEEN = 'craft-phone-stt-ready-2'; // -2: the Moonshine model
   const stt = { worker: null, state: 'idle', device: '', progress: 0, waits: new Map(), seq: 0, error: '' };
   function sttFailed(msg) {
     stt.state = 'failed';
@@ -423,7 +423,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       if (m.type === 'progress') { bump(); stt.progress = m.total ? m.loaded / m.total : 0; showNote(); }
       else if (m.type === 'ready') {
         clearTimeout(watchdog);
-        stt.state = 'ready'; stt.device = m.device || '';
+        stt.state = 'ready'; stt.device = `${(m.model || '').split('/').pop()} ${m.device || ''}`.trim();
         save(STT_SEEN, true);
         showNote();
         if (c && c.queued) { const a = c.queued; c.queued = null; hearAudio(a); }
@@ -477,7 +477,11 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       return;
     }
     let text = '';
+    const t0 = performance.now();
     try { text = await transcribe(audio); } catch { return; }
+    const ms = Math.round(performance.now() - t0);
+    metrics.push({ kind: 'stt', ms, secs: +(audio.length / 16000).toFixed(2), model: stt.device, at: Date.now() });
+    console.debug(`[calls] end of speech -> text: ${ms} ms after the 450 ms quiet wait (${(audio.length / 16000).toFixed(1)} s clip, ${stt.device})`);
     if (c !== me) return;
     if (!text) { if (me.phase === 'listening' && q('.call-caption').textContent === '...') caption('', 'user'); return; }
     heardText(text);
@@ -496,8 +500,16 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       try { const p = ctx.decodeAudioData(bytes, resolve, reject); if (p && p.then) p.then(resolve, reject); } catch (e) { reject(e); }
     });
   }
-  /** One sentence -> an AudioBuffer, or null (then the phone's voice says it). */
-  async function ttsClip(text, token) {
+  // Wake the tts-proxy function (a cold start costs seconds): a plain GET
+  // answers 204 at once. Sent on the Call tap and after 4 idle minutes.
+  let lastWarm = 0;
+  function warmTts() {
+    if (!TTS_URL) return;
+    lastWarm = Date.now();
+    try { fetch(TTS_URL, { method: 'GET', cache: 'no-store' }).catch(() => {}); } catch {}
+  }
+  /** One chunk -> an AudioBuffer, or null (then the phone's voice says it). Decodes as soon as the bytes land. */
+  async function ttsClip(text, token, authP) {
     const me = c;
     if (!me || me.ttsOff || !me.ctx || !TTS_URL || token !== me.token) return null;
     if (!me.ttsCtl || me.ttsCtl.token !== token) me.ttsCtl = { token, ctl: new AbortController() };
@@ -506,8 +518,9 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     const t = setTimeout(() => timer.abort(), 12000);
     const stop = () => timer.abort();
     signal.addEventListener('abort', stop, { once: true });
+    me.lastTtsAt = Date.now();
     try {
-      const auth = await P.accessToken();
+      const auth = await (authP || P.accessToken());
       const res = await fetch(TTS_URL, {
         method: 'POST',
         headers: { Authorization: `Bearer ${auth}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
@@ -533,12 +546,12 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       signal.removeEventListener('abort', stop);
     }
   }
-  /** Play a clip through the call's AudioContext. Resolves false when cut off, 'fallback' if audio is locked. */
-  async function playClip(buf, token) {
+  /** Play a clip through the call's AudioContext, its words appearing as they are said. Resolves false when cut off, 'fallback' if audio is locked. */
+  async function playClip(buf, token, text, onStart) {
     const me = c;
     if (!me || token !== me.token) return false;
     const ctx = me.ctx;
-    if (!(await wake(ctx))) return 'fallback'; // iOS can suspend it when the mic starts
+    if (ctx.state !== 'running' && !(await wake(ctx))) return 'fallback'; // iOS can suspend it when the mic starts
     if (c !== me || token !== me.token) return false;
     return new Promise((resolve) => {
       const src = ctx.createBufferSource();
@@ -553,22 +566,67 @@ You are on a live voice call with the user, talking out loud. Everything you wri
         clearTimeout(safety);
         if (me.playing && me.playing.src === src) me.playing = null;
         try { src.disconnect(); gain.disconnect(); } catch {}
+        if (ok === true && c === me && token === me.token) { stopReveal(); caption(text, 'bot'); }
         resolve(ok);
       };
       const safety = setTimeout(() => fin(true), buf.duration * 1000 + 1500);
       src.onended = () => fin(true);
       me.playing = { src, gain, fin };
-      try { src.start(); } catch { fin('fallback'); }
+      try { src.start(); } catch { fin('fallback'); return; }
+      const startAt = ctx.currentTime;
+      const lag = ctx.outputLatency || ctx.baseLatency || 0;
+      revealTimed(text, () => ctx.currentTime - startAt - lag, buf.duration);
+      if (onStart) onStart();
     });
   }
   function stopPlayback() {
     const p = c && c.playing;
+    stopReveal();
     if (!p) return;
     c.playing = null;
     try { p.src.onended = null; p.src.stop(); } catch {}
     p.fin(false);
   }
 
+  // ─── Word-synced captions ─────────────────────────────────────────────────
+  // A chunk's words appear as they are said: each word gets time by its length
+  // plus a little, with pauses after commas and full stops, spread over the
+  // clip's real duration and driven by the audio clock.
+  function wordPlan(text) {
+    const toks = String(text || '').split(/\s+/).filter(Boolean);
+    const starts = [];
+    let acc = 0;
+    for (const w of toks) {
+      starts.push(acc);
+      acc += w.replace(/[^A-Za-z0-9']/g, '').length + 2;
+      if (/[.!?]["')\]]*$/.test(w)) acc += 6;
+      else if (/[,;:]$/.test(w) || w === '-') acc += 3;
+    }
+    return { toks, starts, total: acc || 1 };
+  }
+  function revealTimed(text, clock, dur) {
+    stopReveal();
+    const me = c;
+    if (!me) return;
+    const plan = wordPlan(text);
+    const lead = Math.min(0.06, dur * 0.05);
+    const span = Math.max(0.2, dur - lead);
+    const handle = { raf: 0 };
+    let shown = -1;
+    const step = () => {
+      if (c !== me || me.reveal !== handle) return;
+      const frac = (clock() - lead) / span;
+      let n = 0;
+      while (n < plan.toks.length && plan.starts[n] / plan.total <= frac) n++;
+      if (n !== shown && n > 0) { shown = n; caption(plan.toks.slice(0, n).join(' '), 'bot'); } // the last chunk stays until this one's first word
+      if (n < plan.toks.length) handle.raf = requestAnimationFrame(step);
+    };
+    me.reveal = handle;
+    step();
+  }
+  function stopReveal() {
+    if (c && c.reveal) { cancelAnimationFrame(c.reveal.raf); c.reveal = null; }
+  }
   // ─── Text helpers (from Codeply Crew) ─────────────────────────────────────
   function sentences(text) {
     const parts = String(text || '').match(/[^.!?]+[.!?]+["')\]]*\s*|[^.!?]+$/g) || [];
@@ -579,7 +637,28 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     }
     return out;
   }
-  /** Whatever the model sent, make it sayable: no markdown, no long dashes. */
+  /** Speaking chunks: a SHORT first one so the voice starts sooner, then full sentences (short ones merged). */
+  function chunks(text) {
+    const raw = (String(text || '').match(/[^.!?]+[.!?]+["')\]]*\s*|[^.!?]+$/g) || []).map((x) => x.trim()).filter(Boolean);
+    if (!raw.length) return [];
+    const out = [];
+    const w = raw.shift().split(/\s+/);
+    if (w.length > 10) {
+      let cut = -1;
+      for (let i = 2; i < Math.min(w.length - 2, 12); i++) {
+        if (/[,;:]$/.test(w[i]) || w[i + 1] === '-') { cut = i + 1; break; }
+      }
+      if (cut < 0) cut = 8;
+      out.push(w.slice(0, cut).join(' '));
+      raw.unshift(w.slice(cut).join(' ').replace(/^-\s*/, ''));
+    } else out.push(w.join(' '));
+    for (const p of raw) {
+      const last = out.length > 1 ? out[out.length - 1] : null;
+      if (last && (last.length < 28 || p.length < 6)) out[out.length - 1] += ` ${p}`;
+      else out.push(p);
+    }
+    return out;
+  }  /** Whatever the model sent, make it sayable: no markdown, no long dashes. */
   function spoken(s) {
     const dash = String.fromCharCode(0x2014);
     return String(s || '')
@@ -605,6 +684,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
 
   // ─── The call ─────────────────────────────────────────────────────────────
   let c = null;
+  const metrics = []; // timings for tests: firstAudio (reply text -> sound), stt (end of speech -> text)
 
   function ring(ctx) {
     let stop = false; let t1 = null;
@@ -656,19 +736,47 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     q('.call-status').textContent = dur(Date.now() - c.connectedAt);
   }
 
-  // Speaking: speechSynthesis, one sentence at a time so it starts at once
-  // and talking over it stops it between words.
-  function speakOne(text, token) {
+  // The phone's own voice (speechSynthesis), for when the Deepgram voice is
+  // unavailable. Words follow its 'boundary' events, or a timed guess.
+  function speakOne(text, token, onStart) {
     return new Promise((resolve) => {
       if (!c || token !== c.token) return resolve(false);
-      if (!synth) return setTimeout(() => resolve(true), Math.min(6000, 600 + text.length * 55)); // captions only
+      const me = c;
+      const estimate = (rate) => Math.max(0.6, (text.length * 0.062) / rate + 0.25);
+      if (!synth) { // captions only
+        const t0 = performance.now();
+        revealTimed(text, () => (performance.now() - t0) / 1000, estimate(1));
+        if (onStart) onStart();
+        setTimeout(() => { if (c === me && token === me.token) { stopReveal(); caption(text, 'bot'); } resolve(true); }, Math.min(6000, 600 + text.length * 55));
+        return;
+      }
       let finished = false;
-      const done = (ok) => { if (finished) return; finished = true; clearTimeout(safety); resolve(ok); };
+      const done = (ok) => {
+        if (finished) return; finished = true;
+        clearTimeout(safety);
+        if (c === me && token === me.token) { stopReveal(); caption(text, 'bot'); }
+        resolve(ok);
+      };
       const u = new SpeechSynthesisUtterance(text);
       if (c.voice) { u.voice = c.voice; u.lang = c.voice.lang; } else u.lang = 'en-US';
       u.rate = 1.03;
       u.pitch = c.pitch;
       u.volume = c.speaker ? 1 : 0.45;
+      let boundaries = false;
+      u.onstart = () => {
+        if (c !== me || token !== me.token) return;
+        const t0 = performance.now();
+        if (!boundaries) revealTimed(text, () => (performance.now() - t0) / 1000, estimate(u.rate));
+        if (onStart) onStart();
+      };
+      u.onboundary = (e) => {
+        if (c !== me || token !== me.token || (e.name && e.name !== 'word')) return;
+        if (!boundaries) { boundaries = true; stopReveal(); }
+        const i = e.charIndex || 0;
+        const sp = text.indexOf(' ', i);
+        const end = e.charLength ? i + e.charLength : (sp < 0 ? text.length : sp);
+        caption(text.slice(0, end), 'bot');
+      };
       u.onend = () => done(true);
       u.onerror = () => done(false);
       // Some engines never fire onend: move on after a generous guess.
@@ -678,23 +786,38 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       synth.speak(u);
     });
   }
-  // Each sentence in the bot's Deepgram voice, the next one fetched while this
-  // one plays; any sentence without a clip falls back to speechSynthesis.
+  // Each chunk in the bot's Deepgram voice. The next two chunks are fetched
+  // (and decoded) while one plays; a chunk without a clip uses the phone's
+  // voice. Nothing of a chunk is shown before its audio starts.
   async function say(text, token) {
-    const list = sentences(text);
+    const list = chunks(text);
     if (!list.length || !c) return;
     const me = c;
     setPhase('speaking');
-    caption(text, 'bot');
-    const clip = (i) => (i < list.length && !me.ttsOff ? ttsClip(list[i], token) : null);
-    let next = clip(0);
+    stopReveal();
+    caption('', 'bot');
+    const t0 = performance.now();
+    let first = true;
+    const onStart = () => {
+      if (!first) return;
+      first = false;
+      const ms = Math.round(performance.now() - t0);
+      metrics.push({ kind: 'firstAudio', ms, at: Date.now(), via: me.ttsOff ? 'phone' : 'deepgram' });
+      console.debug(`[calls] reply text -> first audio: ${ms} ms (${me.ttsOff ? 'phone voice' : 'Deepgram'})`);
+    };
+    const authP = me.ttsOff ? null : Promise.resolve().then(() => P.accessToken());
+    if (authP) authP.catch(() => {});
+    const clips = [];
+    const want = (i) => { if (i < list.length && !clips[i] && !me.ttsOff) clips[i] = ttsClip(list[i], token, authP); };
+    want(0); want(1);
     for (let i = 0; i < list.length; i++) {
-      const buf = next ? await next : null;
+      want(i);
+      const buf = clips[i] ? await clips[i] : null;
       if (c !== me || token !== me.token) return;
-      next = clip(i + 1);
-      const played = buf ? await playClip(buf, token) : 'fallback';
+      want(i + 1); want(i + 2);
+      const played = buf ? await playClip(buf, token, list[i], onStart) : 'fallback';
       if (c !== me || token !== me.token) return;
-      if (played === 'fallback') await speakOne(list[i], token);
+      if (played === 'fallback') await speakOne(list[i], token, onStart);
       if (c !== me || token !== me.token) return;
     }
     if (c && token === c.token) {
@@ -742,7 +865,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     const parts = [];
     if (localEars() && !c.typing && stt.state === 'loading') {
       const pct = stt.progress > 0 && stt.progress < 1 ? ` ${Math.round(stt.progress * 100)}%` : '';
-      parts.push(load(STT_SEEN, false) ? `Getting voice ready...${pct}` : `Getting voice ready (about 40 MB, once)${pct}`);
+      parts.push(load(STT_SEEN, false) ? `Getting voice ready...${pct}` : `Getting voice ready (about 30 MB, once)${pct}`);
     }
     if (c.ttsNote) parts.push(c.ttsNote);
     if (c.noteBase) parts.push(c.noteBase);
@@ -967,6 +1090,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       sttLoad();
     }
     if (synth) { try { synth.cancel(); const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); } catch {} }
+    warmTts(); // wakes the voice function while it rings
 
     const tint = tintOf(bot.avatar);
     const r = root();
@@ -1031,6 +1155,8 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     c.stopRing();
     c.connectedAt = Date.now();
     c.timer = setInterval(tick, 500);
+    // Keep the voice function warm through long quiet stretches.
+    c.warmTimer = setInterval(() => { if (c && Date.now() - Math.max(c.lastTtsAt || 0, lastWarm) > 240000) warmTts(); }, 30000);
     tick();
     const greet = (bot.memory && bot.memory.length) ? `Hey, it's ${bot.name} again. What's on your mind?` : `Hey, it's ${bot.name}. What can I do for you?`;
     c.lastBotText = greet;
@@ -1072,6 +1198,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     micEnabled(false);
     call.queued = null;
     clearInterval(call.timer);
+    clearInterval(call.warmTimer);
     try { if (call.wake) call.wake.release(); } catch {}
     // The page keeps its one AudioContext; it is resumed in the next Call tap.
     const connected = !!call.connectedAt;
@@ -1118,7 +1245,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     heard: heardText, active: () => c, cache, calls: () => calls,
     supported: { recognition: !!SR, synthesis: !!synth, localEars: localEars(), ios: IS_IOS },
     _test: {
-      transcribe, to16k, deepgramVoice, ttsUrl: TTS_URL, loadModel: sttLoad, stt: () => ({ state: stt.state, device: stt.device, progress: stt.progress, error: stt.error }),
+      transcribe, to16k, deepgramVoice, chunks, wordPlan, metrics, ttsUrl: TTS_URL, loadModel: sttLoad, stt: () => ({ state: stt.state, device: stt.device, progress: stt.progress, error: stt.error }),
       mic: () => ({ live: micLive(), enabled: !!(micTrack() && micTrack().enabled), streamId: mic.stream && mic.stream.id }),
       /** Push audio through a fresh voice detector; returns the 16 kHz utterances it cut out. */
       vadFeed(samples, sampleRate = 16000, opts = {}) {
