@@ -28,6 +28,7 @@ for (const [from, to] of [
   ['mobile-cloud.js', 'mobile-cloud.js'],
   ['mobile-cloud.css', 'mobile-cloud.css'],
   ['logo.png', 'logo.png'],
+  ['phone-favicon.png', 'phone-favicon.png'],
   [path.join('vendor', 'supabase', 'supabase.js'), 'supabase.js'],
 ]) fs.copyFileSync(path.join(root, from), path.join(target, to));
 
