@@ -541,6 +541,9 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   // ─── The bot's own voice (Deepgram, through Codeply's tts-proxy) ──────────
   const TTS_URL = String(P.AI_PROXY_URL || '').replace('/functions/v1/ai-proxy', '/functions/v1/tts-proxy');
   const VOICE_CHAT_URL = String(P.AI_PROXY_URL || '').replace('/functions/v1/ai-proxy', '/functions/v1/voice-chat');
+  const VOICE_TURN_URL = String(P.AI_PROXY_URL || '').replace('/functions/v1/ai-proxy', '/functions/v1/voice-turn');
+  // voice-turn runs next to the model and Deepgram (both in the US): fewer slow hops per sentence.
+  const VOICE_REGION = { 'x-region': 'us-east-1' };
   const DG_VOICES = ['aura-2-thalia-en', 'aura-2-luna-en', 'aura-2-orion-en', 'aura-2-apollo-en', 'aura-2-athena-en', 'aura-2-arcas-en'];
   /** The bot's chosen Deepgram voice, or a stable default for it. */
   function deepgramVoice(bot) {
@@ -559,7 +562,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     if (!TTS_URL) return;
     lastWarm = Date.now();
     try { fetch(TTS_URL, { method: 'GET', cache: 'no-store' }).catch(() => {}); } catch {}
-    try { fetch(VOICE_CHAT_URL, { method: 'GET', cache: 'no-store' }).catch(() => {}); } catch {}
+    try { fetch(VOICE_TURN_URL, { method: 'GET', cache: 'no-store', headers: VOICE_REGION }).catch(() => {}); } catch {}
   }
   /** One chunk -> an AudioBuffer, or null (then the phone's voice says it). Decodes as soon as the bytes land. */
   async function ttsClip(text, token, authP, retried) {
@@ -1089,7 +1092,230 @@ You are on a live voice call. Reply with ONLY a JSON object: {"say": "...", "wor
     return say(text, token);
   }
 
+  // ─── Streaming turn (voice-turn) ──────────────────────────────────────────
+  const STREAM_RULES = `LIVE VOICE CALL
+You are on a live voice call; everything you write is spoken out loud right away.
+- Talk like a person on the phone: short spoken sentences, plain words. No markdown, no lists, no emojis, no links, no long dash. Usually one to three sentences.
+- If the user wants something that needs real tools (their email, calendar, files, code, sending a message, current news, anything on their computer), say one short natural line that fits what they asked, as if you are starting on it now (vary it, never "one sec" or "one moment"), then on a new line write [[WORK: one clear sentence describing the task]] and stop. Do not invent results.
+- Things you already know (facts, advice, ideas, jokes, math, small talk) are not work: just answer.`;
+  const STREAM_OFFLINE = '\n- Right now the user\'s PC is offline, so you cannot use tools: never write [[WORK: ...]]; if they ask for that kind of thing, say so in one sentence and offer to do it when their PC is on.';
+
+  function pcmToFloat(b64) {
+    const bin = atob(b64);
+    const n = bin.length >> 1;
+    const out = new Float32Array(n);
+    for (let i = 0; i < n; i++) { let v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8); if (v >= 32768) v -= 65536; out[i] = v / 32768; }
+    return out;
+  }
+  function wavFromFloat(chunks, rate) {
+    let n = 0; for (const c2 of chunks) n += c2.length;
+    const buf = new ArrayBuffer(44 + n * 2); const v = new DataView(buf);
+    const w = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+    let o = 44;
+    for (const c2 of chunks) for (let i = 0; i < c2.length; i++, o += 2) v.setInt16(o, Math.max(-1, Math.min(1, c2[i])) * 0x7fff, true);
+    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  }
+
+  /**
+   * Plays a streamed reply. Live mode: each PCM piece is scheduled on the
+   * AudioContext as it arrives. Gathered mode (iOS suspended the context):
+   * each sentence becomes a WAV played through the unlocked <audio> element.
+   * A sentence without audio is said by the phone's voice, in order.
+   */
+  function makeStreamPlayer(me, token, onFirstSound) {
+    const ctx = me.ctx;
+    const live = !!ctx && ctx.state === 'running';
+    const sources = new Set();
+    let nextAt = 0; let stopped = false; let soundStarted = false;
+    const sent = []; // sentences: { text, chunks, ended, hadAudio, startAt, dur }
+    let queue = Promise.resolve(); // gathered mode and no-audio sentences play in order
+    const alive = () => !stopped && c === me && token === me.token;
+    const firstSound = () => { if (!soundStarted) { soundStarted = true; setPhase('speaking'); if (onFirstSound) onFirstSound(); } };
+    me.playing = { fin: () => stop() };
+    function stop() {
+      stopped = true;
+      for (const src of sources) { try { src.onended = null; src.stop(); } catch {} }
+      sources.clear();
+      stopReveal();
+    }
+    function schedule(item, data) {
+      const b = ctx.createBuffer(1, data.length, item.rate);
+      b.copyToChannel(data, 0);
+      const src = ctx.createBufferSource();
+      src.buffer = b;
+      const gain = ctx.createGain();
+      gain.gain.value = me.speaker ? 1 : 0.45;
+      src.connect(gain); gain.connect(ctx.destination);
+      const at = Math.max(ctx.currentTime + 0.03, nextAt);
+      if (item.startAt == null) {
+        item.startAt = at;
+        // Words appear as they are said, from this sentence's start on the audio clock.
+        const est = Math.max(0.6, item.text.length * 0.064);
+        const delay = Math.max(0, (at - ctx.currentTime) * 1000);
+        setTimeout(() => { if (alive()) revealTimed(item.text, () => ctx.currentTime - item.startAt, item.dur || est); }, delay);
+      }
+      src.start(at);
+      nextAt = at + b.duration;
+      item.dur = (item.dur || 0) + b.duration;
+      sources.add(src);
+      src.onended = () => sources.delete(src);
+      firstSound();
+    }
+    return {
+      say(i, text) { sent[i] = { text, chunks: [], ended: false, hadAudio: false, rate: 24000, startAt: null, dur: 0 }; me.lastBotText = sent.map((x) => x && x.text).join(' '); },
+      pcm(i, b64, rate) {
+        const item = sent[i]; if (!item || !alive()) return;
+        item.hadAudio = true; item.rate = rate || 24000;
+        const data = pcmToFloat(b64);
+        if (live) schedule(item, data); else item.chunks.push(data);
+      },
+      end(i) {
+        const item = sent[i]; if (!item) return;
+        item.ended = true;
+        if (!live && item.hadAudio) {
+          const url = wavFromFloat(item.chunks, item.rate);
+          item.chunks = [];
+          queue = queue.then(() => (alive() ? (firstSound(), playEl({ url }, token, item.text)) : null));
+        }
+      },
+      /** A sentence that never got audio: the phone's voice, after what is already playing. */
+      noAudio(i) {
+        const item = sent[i]; if (!item || item.hadAudio) return;
+        const wait = live ? Math.max(0, (nextAt - ctx.currentTime) * 1000) : 0;
+        queue = queue.then(() => new Promise((r) => setTimeout(r, wait))).then(() => (alive() ? (firstSound(), speakOne(item.text, token)) : null))
+          .then(() => { if (live && ctx) nextAt = Math.max(nextAt, ctx.currentTime); });
+      },
+      /** Resolves when everything has been heard (or it was stopped). */
+      async finished() {
+        await queue;
+        if (live) {
+          while (alive() && ctx.currentTime < nextAt - 0.02) await sleep(60);
+        }
+        if (alive()) { stopReveal(); const last = sent.filter(Boolean).pop(); if (last) caption(last.text, 'bot'); }
+        if (me.playing && me.playing.fin === stop) me.playing = null;
+      },
+      text: () => sent.filter(Boolean).map((x) => x.text).join(' '),
+      stop,
+    };
+  }
+
+  async function respondStream(token) {
+    const me = c;
+    setPhase('thinking');
+    const controller = new AbortController();
+    me.abort = controller;
+    const bot = me.bot;
+    const last = calls.find((x) => x.botId === bot.id && x.status === 'done' && x.turns.length);
+    const recent = last ? last.turns.slice(-6).map((t) => `${t.who === 'bot' ? bot.name : 'User'}: ${String(t.text).slice(0, 300)}`).join('\n') : '';
+    const base = bot.prompt || `You are ${bot.name}, one of the user's bots in Codeply.${bot.specialty ? ` Your job: ${bot.specialty}.` : ''}${bot.instructions ? `\n${bot.instructions}` : ''}`;
+    const system = `${base}\n\n${STREAM_RULES}${pcOnline() ? '' : STREAM_OFFLINE}${recent ? `\n\nTHE LAST CALL BEFORE THIS ONE\n${recent}` : ''}`;
+    const messages = [{ role: 'system', content: system },
+      ...me.turns.slice(-14).map((t) => ({ role: t.who === 'bot' ? 'assistant' : 'user', content: String(t.text || '').slice(0, 1000) }))];
+    if (me.ctx && me.ctx.state !== 'running') await wake(me.ctx);
+    const t0 = performance.now();
+    const auth = await P.accessToken();
+    const res = await fetch(VOICE_TURN_URL, {
+      method: 'POST', signal: controller.signal,
+      headers: { Authorization: `Bearer ${auth}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...VOICE_REGION },
+      body: JSON.stringify({ messages, voice: me.dgVoice, format: 'pcm', maxTokens: 320 }),
+    });
+    if (!res.ok || !res.body || !/ndjson/i.test(res.headers.get('content-type') || '')) {
+      let err = ''; try { err = (await res.json()).error || ''; } catch {}
+      throw Object.assign(new Error(err || `voice-turn ${res.status}`), { status: res.status });
+    }
+    const player = makeStreamPlayer(me, token, () => {
+      const ms = Math.round(performance.now() - t0);
+      metrics.push({ kind: 'firstAudio', ms, at: Date.now(), via: 'stream' });
+      console.debug(`[calls] request -> first sound: ${ms} ms (streamed)`);
+    });
+    let work = null; let said = 0;
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buf = '';
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (c !== me || token !== me.token) { player.stop(); return; }
+        buf += value;
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+          if (!line.trim()) continue;
+          let o; try { o = JSON.parse(line); } catch { continue; }
+          if (o.t === 'say') { player.say(o.i, o.text); said++; }
+          else if (o.t === 'pcm') player.pcm(o.i, o.b64, o.rate);
+          else if (o.t === 'end') player.end(o.i);
+          else if (o.t === 'work') work = o.task;
+          else if (o.t === 'error' && !said) throw new Error(o.error || 'The voice server failed.');
+        }
+      }
+    } catch (e) {
+      player.stop();
+      if (e.name === 'AbortError' || c !== me || token !== me.token) return;
+      if (!said) throw e; // nothing heard yet: let the slower path answer
+    }
+    // Sentences that never got audio are said by the phone's voice.
+    for (let i = 0; i < said; i++) player.noAudio(i);
+    const text = player.text();
+    if (text) log('bot', text);
+    if (work && pcOnline()) {
+      // The opening line plays while the PC starts on the job.
+      const playing = player.finished();
+      await runWork(me, token, controller, work, playing);
+      return;
+    }
+    await player.finished();
+    if (c === me && token === me.token) { me.abort = null; setPhase('listening'); }
+  }
+
+  /** Real work on the PC (with the bot's tools) after the opening line; short updates on long jobs. */
+  async function runWork(me, token, controller, task, playing) {
+    me.stepLabel = '';
+    let lastSpokeAt = performance.now();
+    let updates = 0;
+    const ui = {
+      step: (label) => {
+        if (c !== me || token !== me.token) return;
+        me.stepLabel = `${label}...`;
+        if (me.phase !== 'speaking') setPhase('thinking', me.stepLabel);
+        if (updates < 2 && me.phase !== 'speaking' && performance.now() - lastSpokeAt > 9000) {
+          updates++;
+          lastSpokeAt = performance.now();
+          const lines = [`Still ${label.charAt(0).toLowerCase()}${label.slice(1)}.`, 'Almost there.', 'Nearly done, hang on.'];
+          sayNow(lines[(updates - 1) % lines.length], token);
+        }
+      },
+      approve: (req, signal) => askApproval(req, signal),
+    };
+    const turns = me.turns.map((t, i) => (i === me.turns.length - 1 && t.who === 'user' ? { ...t, text: `${t.text}\n(The task: ${task})` } : t));
+    let result = '';
+    try {
+      result = spoken(await askBotOnPc(me.bot, turns, controller.signal, ui));
+    } catch (e) {
+      hideApproval();
+      if (c !== me || token !== me.token || e.name === 'AbortError') return;
+      await playing;
+      await sayNow("Sorry, I couldn't get that done just now. Want me to try again?", token);
+      return;
+    }
+    hideApproval();
+    await playing;
+    if (c !== me || token !== me.token) return;
+    me.abort = null;
+    showNote();
+    await sayNow(result || 'Done.', token);
+  }
+
   async function respond(token) {
+    if (api.stream !== false && VOICE_TURN_URL && !(c && c.noStream)) {
+      try { return await respondStream(token); } catch (e) {
+        if (!c || token !== c.token || e.name === 'AbortError') return;
+        if (e.status === 404 || e.status === 429) c.noStream = true; // not deployed / limit: stop trying this call
+        console.debug('[calls] streaming turn failed, using the fast lane:', e.message);
+      }
+    }
     if (api.fast !== false) {
       try { return await respondFast(token); } catch (e) {
         if (!c || token !== c.token || e.name === 'AbortError') return;
@@ -1641,7 +1867,7 @@ Respond with ONLY a JSON object:
 
   // reply/ringMs/endedMs are swappable for tests in the console; localEars
   // forces the kept-mic + Whisper path on browsers that have SpeechRecognition.
-  const api = { reply: askBot, fast_: askFast, fast: true, ringMs: 2400, endedMs: 1100, localEars: false };
+  const api = { reply: askBot, fast_: askFast, fast: true, stream: true, ringMs: 2400, endedMs: 1100, localEars: false };
   window.CraftCalls = {
     api, openCalls, closeCalls, startCall, endCall, refreshBots, syncCalls, spoken, sentences, VOICE_RULES, openBuilder, pushPending,
     heard: heardText, active: () => c, cache, calls: () => calls,
