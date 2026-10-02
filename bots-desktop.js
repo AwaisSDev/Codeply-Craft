@@ -319,6 +319,17 @@ function cancelVoice({ jobId }) {
   return { status: 200, body: { ok: true } };
 }
 
+/** A bot built on the phone. Only these fields come from the phone; the rest is the engine's defaults. */
+const PHONE_FIELDS = ['name', 'role', 'specialty', 'instructions', 'tone', 'sources', 'approval', 'avatar', 'voice'];
+function createFromPhone(data) {
+  const picked = {};
+  for (const k of PHONE_FIELDS) if (data[k] !== undefined) picked[k] = data[k];
+  if (!String(picked.name || '').trim()) return { status: 400, body: { error: 'Give the bot a name.' } };
+  const b = bots();
+  const created = b.createBot(picked);
+  return { status: 200, body: { ...phoneCatalog(), bot: phoneBot(created, b.listBots()) } };
+}
+
 /** handleBridgeApi hook: a response for /api/bots routes, or null. */
 async function bridge(method, pathname, query, body) {
   try {
@@ -332,6 +343,9 @@ async function bridge(method, pathname, query, body) {
       return { status: 200, body: phoneCatalog() };
     }
     if (method === 'POST' && pathname === '/api/bots/call') return await saveCall(body || {});
+    // "Build a bot from a prompt" on the phone: a draft first, then the bot.
+    if (method === 'POST' && pathname === '/api/bots/describe') return { status: 200, body: await describe(body && body.text) };
+    if (method === 'POST' && pathname === '/api/bots/create') return createFromPhone((body && body.bot) || {});
   } catch (e) {
     return { status: 500, body: { error: e.message } };
   }

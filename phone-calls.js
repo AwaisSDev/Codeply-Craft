@@ -41,6 +41,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
 - Right now you cannot use your tools (email, files, the web), because the user's PC is offline. If they ask for that kind of work, say so in one sentence and offer to do it once their PC is on.`;
 
   const ICON = {
+    plus: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     phone: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1A17 17 0 0 1 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1z"/></svg>',
     end: '<svg viewBox="0 0 24 24" width="34" height="34" fill="currentColor"><path d="M12 9c-1.6 0-3.1.3-4.6.7v3.1c0 .4-.2.7-.6.9-1 .5-1.9 1.1-2.7 1.8-.2.2-.4.3-.7.3s-.5-.1-.7-.3L.3 13.1A1 1 0 0 1 0 12.4c0-.3.1-.5.3-.7C3.3 8.8 7.4 7 12 7s8.7 1.8 11.7 4.7c.2.2.3.4.3.7s-.1.5-.3.7l-2.4 2.4c-.2.2-.4.3-.7.3s-.5-.1-.7-.3c-.8-.7-1.7-1.3-2.7-1.8-.4-.2-.6-.5-.6-.9V9.7C15.1 9.3 13.6 9 12 9z"/></svg>',
     mic: '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
@@ -80,7 +81,8 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   const pcOnline = () => !!(P.relay && P.relay.pcId);
   function storeCatalog(r) {
     if (!r || !Array.isArray(r.bots)) return;
-    cache.bots = r.bots;
+    const pending = cache.bots.filter((b) => b.pending);
+    cache.bots = [...pending, ...r.bots];
     cache.templates = Array.isArray(r.templates) ? r.templates : [];
     cache.at = Date.now();
     save(KEY.bots, cache);
@@ -157,20 +159,21 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       : bots.length ? 'Your PC is offline. You can still call these bots.' : '';
     if (status) html += `<p class="calls-status${loadError && !refreshing ? ' err' : ''}">${esc(status)}</p>`;
 
+    html += `<button type="button" class="new-bot-btn" id="newBotBtn">${ICON.plus}<span>New bot</span><small>Describe it, Codeply builds it</small></button>`;
     if (bots.length) {
       html += '<div class="calls-label">Bots</div><div class="calls-list">';
       for (const b of bots) {
         html += `<div class="bot-row">
           <span class="bot-av">${avatarHtml(b, 44, { still: true })}</span>
-          <span class="bot-main"><strong>${esc(b.name)}</strong><small>${esc(b.specialty || (b.role === 'orchestrator' ? 'Orchestrator' : 'Specialist'))}</small></span>
+          <span class="bot-main"><strong>${esc(b.name)}</strong><small>${b.pending ? 'On this phone, moves to your PC when it is online' : esc(b.specialty || (b.role === 'orchestrator' ? 'Orchestrator' : 'Specialist'))}</small></span>
           <button type="button" class="call-btn" data-call="${esc(b.id)}" aria-label="Call ${esc(b.name)}">${ICON.phone}</button>
         </div>`;
       }
       html += '</div>';
     } else if (!refreshing) {
       html += `<div class="calls-empty"><h2>Call your bots</h2><p>${online
-        ? 'You have no bots yet. Add a starter bot below, or make your own in Codeply on your PC.'
-        : 'Make bots in Codeply on your PC, then open Calls here while your PC is online. After that you can call them any time.'}</p></div>`;
+        ? 'You have no bots yet. Build one above, or add a starter bot below.'
+        : 'Build a bot above and call it right away. It moves to your PC the next time your PC is online.'}</p></div>`;
       if (online && cache.templates.length) {
         html += '<div class="calls-label">Starter bots</div><div class="calls-list">';
         for (const t of cache.templates) {
@@ -214,6 +217,8 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       else alert('That bot is not on your PC any more.');
     }));
     root.querySelectorAll('[data-tpl]').forEach((b) => b.addEventListener('click', () => addTemplate(b.dataset.tpl, b)));
+    const nb = $('newBotBtn');
+    if (nb) nb.addEventListener('click', () => openBuilder());
   }
 
   // ─── Voices ───────────────────────────────────────────────────────────────
@@ -1232,16 +1237,208 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     if (localEars()) { if (!c.typing && !c.muted && (!c.ears || !micLive())) { c.ears = false; startLocalEars(); } }
     else if (!c.rec) startListening();
   });
-  window.addEventListener('craft:pc-online', () => { refreshBots().then(syncCalls); });
+  window.addEventListener('craft:pc-online', () => { pushPending().then(refreshBots).then(syncCalls); });
 
   $('drawerCalls').addEventListener('click', () => { P.closeDrawer(); openCalls(); });
   $('callsBack').addEventListener('click', closeCalls);
+
+  // ─── Build a bot from a prompt ────────────────────────────────────────────
+  // Same wording as codeply-cli/lib/bots.js describePrompt(); keep in sync.
+  const TONES = ['friendly', 'concise', 'professional', 'playful', 'direct', 'teacher'];
+  function describePrompt(text) {
+    return `Design a helpful AI bot from this description: "${String(text).slice(0, 600)}"
+Respond with ONLY a JSON object:
+{"name": "a short, friendly first name (not a common word)", "specialty": "what it does, one line", "instructions": "how it works: what it always does and never does, 2 to 4 sentences", "tone": {"preset": one of ${JSON.stringify(TONES)}, "custom": "optional extra tone note"}, "role": "specialist" or "orchestrator" (orchestrator only if it should lead other bots)}`;
+  }
+  const BUILD_IDEAS = ['Reads my email every morning and tells me what matters', 'A patient tutor who explains math simply', 'Writes my LinkedIn posts in my voice', 'Keeps an eye on my website'];
+  const BUILD_VOICES = [
+    ['', 'Pick for me'], ['aura-2-thalia-en', 'Thalia, clear and upbeat'], ['aura-2-luna-en', 'Luna, friendly'], ['aura-2-helena-en', 'Helena, warm'],
+    ['aura-2-athena-en', 'Athena, calm'], ['aura-2-orion-en', 'Orion, easygoing'], ['aura-2-apollo-en', 'Apollo, confident'],
+    ['aura-2-arcas-en', 'Arcas, smooth'], ['aura-2-zeus-en', 'Zeus, deep'], ['aura-2-pandora-en', 'Pandora, British'], ['aura-2-draco-en', 'Draco, British'],
+  ];
+  const randomAvatar = (seed) => { try { return A() ? A().randomAvatar(seed) : {}; } catch { return {}; } };
+  const cleanAvatar = (a) => { try { return A() ? A().normalizeAvatar(a) : a; } catch { return a; } };
+
+  function draftFrom(json, text) {
+    const j = json && typeof json === 'object' ? json : {};
+    const name = String(j.name || '').trim().slice(0, 40) || 'Nova';
+    return {
+      name,
+      specialty: String(j.specialty || text).trim().slice(0, 200),
+      instructions: String(j.instructions || '').trim().slice(0, 4000),
+      tone: { preset: TONES.includes(j.tone && j.tone.preset ? j.tone.preset : j.tone) ? (j.tone.preset || j.tone) : 'friendly', custom: String((j.tone && j.tone.custom) || '').slice(0, 400) },
+      role: j.role === 'orchestrator' ? 'orchestrator' : 'specialist',
+      avatar: cleanAvatar(j.avatar && typeof j.avatar === 'object' ? j.avatar : randomAvatar(`${name}${Date.now()}`)),
+      voice: '',
+    };
+  }
+
+  /** A draft bot from a description: the PC when it is online, else Codeply's AI from here. */
+  async function draftBot(text) {
+    if (pcOnline()) {
+      try {
+        const r = await P.relayRequest('POST', '/api/bots/describe', { text });
+        if (r && r.draft) return { ...r.draft, avatar: cleanAvatar(r.draft.avatar), voice: r.draft.voice || '' };
+        if (r && r.error) throw new Error(r.error);
+      } catch (e) { if (!e.timeout && !/Not found|404/i.test(e.message)) throw e; }
+    }
+    const token = await P.accessToken();
+    const res = await fetch(P.AI_PROXY_URL, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'user', content: describePrompt(text) }], opts: { json: true, maxTokens: 500, temperature: 0.6 }, meta: { source: 'phone-bot-builder' } }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) throw new Error(data.error || `Codeply could not build it (${res.status}).`);
+    const raw = (data.data && data.data.choices && data.data.choices[0] && data.data.choices[0].message && data.data.choices[0].message.content) || '';
+    let json = {};
+    try { json = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)); } catch {}
+    return draftFrom(json, text);
+  }
+
+  /** A bot made here while the PC was offline: callable now, saved on the PC later. */
+  function pendingBot(d) {
+    const id = `p_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    const prompt = `BOT IDENTITY\nYou are ${d.name}, a specialist bot inside Codeply.${d.specialty ? `\n\nSPECIALTY\n${d.specialty}` : ''}${d.instructions ? `\n\nHOW YOU WORK\n${d.instructions}` : ''}\n\nTONE\nBe ${d.tone.preset}.`;
+    return { ...d, id, pending: true, prompt, memory: [], updatedAt: Date.now() };
+  }
+
+  async function pushPending() {
+    if (!pcOnline()) return;
+    for (const b of cache.bots.filter((x) => x.pending)) {
+      try {
+        const r = await P.relayRequest('POST', '/api/bots/create', { bot: { name: b.name, role: b.role, specialty: b.specialty, instructions: b.instructions, tone: b.tone, avatar: b.avatar, voice: b.voice } });
+        if (!r || !r.bot) continue;
+        cache.bots = cache.bots.filter((x) => x.id !== b.id);
+        for (const call of calls) if (call.botId === b.id) { call.botId = r.bot.id; call.synced = false; }
+        storeCatalog(r);
+        saveCalls();
+      } catch { break; }
+    }
+    renderCallsIfOpen();
+  }
+
+  let previewing = null;
+  async function previewVoice(voice, name, btn) {
+    if (previewing) { try { previewing.pause(); } catch {} previewing = null; }
+    const label = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Loading...';
+    try {
+      const token = await P.accessToken();
+      const res = await fetch(TTS_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: `Hi, I'm ${name || 'your new bot'}. This is how I sound on a call.`, voice: voice || deepgramVoice({ id: name }) }),
+      });
+      if (!res.ok || /json/i.test(res.headers.get('content-type') || '')) throw new Error((await res.json().catch(() => ({}))).error || 'The voice did not load.');
+      const url = URL.createObjectURL(await res.blob());
+      previewing = new Audio(url);
+      previewing.onended = () => URL.revokeObjectURL(url);
+      await previewing.play();
+    } catch (e) { builderError(e.message); }
+    btn.disabled = false; btn.textContent = label;
+  }
+
+  let builder = null;
+  function builderError(msg) { const el = builder && builder.root.querySelector('.nb-err'); if (el) el.textContent = msg || ''; }
+  function closeBuilder() { if (builder) { builder.root.remove(); builder = null; } }
+
+  function openBuilder() {
+    closeBuilder();
+    const root = document.createElement('div');
+    root.className = 'sheet nb-sheet';
+    document.body.appendChild(root);
+    builder = { root, step: 'describe', text: '', draft: null, busy: false };
+    paintBuilder();
+  }
+
+  function paintBuilder() {
+    const b = builder;
+    if (!b) return;
+    let body;
+    if (b.step === 'describe') {
+      body = `<h2 class="sheet-title">New bot</h2>
+        <p class="sheet-text">Say what it should do and how it should talk. Codeply builds the rest.</p>
+        <div class="field"><textarea id="nbText" rows="3" placeholder="A patient tutor who explains math with simple examples">${esc(b.text)}</textarea></div>
+        <div class="nb-ideas">${BUILD_IDEAS.map((t) => `<button type="button" class="nb-idea">${esc(t)}</button>`).join('')}</div>
+        <p class="nb-err"></p>
+        <div class="sheet-actions"><button type="button" class="btn btn-quiet" data-nb="close">Cancel</button><button type="button" class="btn btn-primary" data-nb="build" ${b.busy ? 'disabled' : ''}>${b.busy ? 'Building...' : 'Build'}</button></div>`;
+    } else {
+      const d = b.draft;
+      body = `<h2 class="sheet-title">Meet ${esc(d.name)}</h2>
+        <div class="nb-stage">${avatarHtml(d, 120)}<button type="button" class="nb-surprise" data-nb="surprise">Surprise me</button></div>
+        <div class="field"><label for="nbName">Name</label><input id="nbName" maxlength="40" value="${esc(d.name)}"></div>
+        <div class="field"><label for="nbJob">What it does</label><input id="nbJob" maxlength="200" value="${esc(d.specialty)}"></div>
+        <div class="field"><label for="nbVoice">Voice on calls</label>
+          <div class="nb-voice"><select id="nbVoice">${BUILD_VOICES.map(([id, label]) => `<option value="${id}" ${d.voice === id ? 'selected' : ''}>${esc(label)}</option>`).join('')}</select>
+          <button type="button" class="btn btn-quiet nb-preview" data-nb="preview">Preview</button></div></div>
+        <p class="nb-err"></p>
+        <div class="sheet-actions"><button type="button" class="btn btn-quiet" data-nb="back">Back</button><button type="button" class="btn btn-primary" data-nb="create" ${b.busy ? 'disabled' : ''}>${b.busy ? 'Creating...' : 'Create bot'}</button></div>`;
+    }
+    b.root.innerHTML = `<div class="sheet-bg" data-nb="close"></div><div class="sheet-card"><div class="sheet-handle"></div>${body}</div>`;
+    const q2 = (sel) => b.root.querySelector(sel);
+    b.root.querySelectorAll('[data-nb="close"]').forEach((el) => el.addEventListener('click', closeBuilder));
+    if (b.step === 'describe') {
+      const t = q2('#nbText');
+      t.addEventListener('input', () => { b.text = t.value; });
+      b.root.querySelectorAll('.nb-idea').forEach((el) => el.addEventListener('click', () => { b.text = el.textContent; t.value = b.text; t.focus(); }));
+      q2('[data-nb="build"]').addEventListener('click', async () => {
+        if (!b.text.trim()) { t.focus(); return; }
+        b.busy = true; paintBuilder();
+        try { b.draft = await draftBot(b.text.trim()); b.step = 'review'; }
+        catch (e) { b.busy = false; paintBuilder(); builderError(e.message); return; }
+        b.busy = false; paintBuilder();
+      });
+      if (!b.busy) t.focus();
+    } else {
+      const d = b.draft;
+      q2('#nbName').addEventListener('input', (e) => { d.name = e.target.value; });
+      q2('#nbJob').addEventListener('input', (e) => { d.specialty = e.target.value; });
+      q2('#nbVoice').addEventListener('change', (e) => { d.voice = e.target.value; });
+      q2('[data-nb="surprise"]').addEventListener('click', () => { d.avatar = randomAvatar(Math.random()); paintBuilder(); });
+      q2('[data-nb="preview"]').addEventListener('click', (e) => previewVoice(d.voice, d.name, e.currentTarget));
+      q2('[data-nb="back"]').addEventListener('click', () => { b.step = 'describe'; paintBuilder(); });
+      q2('[data-nb="create"]').addEventListener('click', async () => {
+        if (!String(d.name || '').trim()) { builderError('Give it a name.'); return; }
+        b.busy = true; paintBuilder();
+        let made = null;
+        try {
+          if (pcOnline()) {
+            const r = await P.relayRequest('POST', '/api/bots/create', { bot: { name: d.name, role: d.role, specialty: d.specialty, instructions: d.instructions, tone: d.tone, avatar: d.avatar, voice: d.voice } });
+            if (r && r.error) throw new Error(r.error);
+            storeCatalog(r);
+            made = r.bot;
+          }
+        } catch (e) { if (!e.timeout && !/offline|didn't answer/i.test(e.message)) { b.busy = false; paintBuilder(); builderError(e.message); return; } }
+        if (!made) {
+          made = pendingBot(d);
+          cache.bots = [made, ...cache.bots];
+          save(KEY.bots, cache);
+        } else {
+          cache.bots = [made, ...cache.bots.filter((x) => x.id !== made.id)];
+          save(KEY.bots, cache);
+        }
+        closeBuilder();
+        renderCallsIfOpen();
+        builtToast(made);
+      });
+    }
+  }
+
+  function builtToast(bot) {
+    const t = document.createElement('div');
+    t.className = 'nb-toast';
+    t.innerHTML = `<span>${esc(bot.name)} is ready.</span><button type="button">${ICON.phone}Call</button>`;
+    t.querySelector('button').addEventListener('click', () => { t.remove(); startCall(botById(bot.id) || bot); });
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 6000);
+  }
 
   // reply/ringMs/endedMs are swappable for tests in the console; localEars
   // forces the kept-mic + Whisper path on browsers that have SpeechRecognition.
   const api = { reply: askBot, ringMs: 2400, endedMs: 1100, localEars: false };
   window.CraftCalls = {
-    api, openCalls, closeCalls, startCall, endCall, refreshBots, syncCalls, spoken, sentences, VOICE_RULES,
+    api, openCalls, closeCalls, startCall, endCall, refreshBots, syncCalls, spoken, sentences, VOICE_RULES, openBuilder, pushPending,
     heard: heardText, active: () => c, cache, calls: () => calls,
     supported: { recognition: !!SR, synthesis: !!synth, localEars: localEars(), ios: IS_IOS },
     _test: {
