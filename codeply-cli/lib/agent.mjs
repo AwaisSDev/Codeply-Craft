@@ -338,6 +338,7 @@ const PARAMS = {
   plan_exit: ['path'],
   plan_enter: ['reason'],
   lsp: ['operation', 'path', 'line', 'character', 'symbol', 'query'],
+  ask_bot: ['bot', 'task'], // only offered when the host passes askBot (lib/bots.js)
 };
 
 // Names the model actually reaches for when it paraphrases the format.
@@ -1097,6 +1098,9 @@ export function buildSystemPrompt(mode, cwd, userMessage, opts = {}) {
   // reference, so it colors how every tool gets used.
   const role = opts.roleId ? rolesLib.getSubagent(opts.roleId) : null;
   if (role) parts.push('', ROLE_INTRO(role), role.persona);
+  // A bot (lib/bots.js): identity, specialty, tone, approval boundary, memory, team.
+  const botPrompt = typeof opts.botPrompt === 'function' ? opts.botPrompt(!!opts.native) : opts.botPrompt;
+  if (botPrompt) parts.push('', botPrompt);
   if (opts.goal) {
     parts.push('', `GOAL MODE\nYou are working autonomously toward this goal until it is fully achieved:\n"${opts.goal}"\n` +
       'Keep going without asking the user questions - make sensible, conventional decisions yourself and note them in your summary. ' +
@@ -1424,7 +1428,7 @@ function withoutEmDashes(text) {
  *                                  "claims an edit it didn't make this turn" check is skipped.
  * @yields {{type:string, ...}} text | reasoning | tool_start | tool_end | done | error | aborted
  */
-export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly }) {
+export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly, botPrompt, askBot }) {
   let readOnly = READ_ONLY_MODES.has(mode);
   const stepBudget = Math.max(1, maxSteps || MAX_STEPS);
   // OpenAI-shaped content array only when there's actually an image to carry -
@@ -1451,6 +1455,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     const entries = Object.entries(PARAMS).filter(([n]) => {
       if (n === 'plan_exit') return m === 'Plan';
       if (n === 'plan_enter') return m === 'Build';
+      if (n === 'ask_bot') return typeof askBot === 'function';
       if (ro && MUTATING_ACTIONS.has(n)) return m === 'Plan' && (n === 'write_file' || n === 'edit_file');
       return true;
     });
@@ -1458,13 +1463,13 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   };
   let toolSchemas = schemasFor(mode);
   const messages = [
-    { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList }) },
+    { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt }) },
     ...history,
     { role: 'user', content: userContent },
   ];
 
   // fileState: path -> mtime when this turn last read/wrote it (see tools.mjs).
-  const ctx = { cwd, approve, browser, signal, mode, route, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null };
+  const ctx = { cwd, approve, browser, signal, mode, route, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null, askBot: typeof askBot === 'function' ? askBot : null };
   const recentCallKeys = [];      // executed calls, in order, for the stuck-loop guard
   const lastResultFor = new Map(); // call key -> its most recent result
   const transcript = [{ role: 'user', content: userMessage }];
@@ -1585,7 +1590,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     if (native && !attempt.result.success && !signal.aborted && TOOLS_UNSUPPORTED.test(String(attempt.result.error || ''))) {
       native = false;
       nativeUnsupported.add(nativeKey);
-      messages[0] = { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native: false, mcp: mcpList }) };
+      messages[0] = { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native: false, mcp: mcpList, botPrompt }) };
       outgoing = [messages[0], ...outgoing.slice(1)];
       yield { type: 'notice', level: 'info', text: 'This model does not support native tool calls, so Codeply switched to text actions.' };
       attempt = await callModel(outgoing, userMessage, signal, route);
@@ -1905,6 +1910,9 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
         ok: out.ok,
         meta: out.meta,
         summary: out.meta?.label,
+        // The real reason a tool failed, so the card can show it even when
+        // the model's own summary of it is vague.
+        error: out.ok || out.meta?.rejected ? undefined : String(out.output || '').slice(0, 800),
         ms,
         needsApproval,
       };

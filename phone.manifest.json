@@ -1,0 +1,15 @@
+{
+  "name": "Codeply",
+  "short_name": "Codeply",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1f1f1e",
+  "theme_color": "#1f1f1e",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

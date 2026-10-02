@@ -1,0 +1,97 @@
+/* Calls with bots (phone-calls.js): the Calls list in the app's own quiet
+   style, and a full-screen call screen laid out like the phone's own
+   in-call screen (name and timer on top, big round buttons, red end). */
+
+/* ─── Calls list ─── */
+.calls-status { color: var(--muted); font-size: 14px; margin: 4px 2px 6px !important; }
+.calls-status.err { color: var(--danger); }
+.calls-label { font-size: 12px; color: var(--faint); margin: 18px 2px 6px; }
+.calls-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.bot-row, .call-row > summary { display: flex; align-items: center; gap: 12px; padding: 10px 12px; min-height: 60px; }
+.bot-row + .bot-row, .call-row + .call-row { border-top: 1px solid var(--border); }
+.bot-av { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; }
+.call-row .bot-av { width: 36px; height: 36px; }
+.av-fallback { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: #fff; font-weight: 600; flex: none; }
+.bot-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.bot-main strong { font-weight: 500; font-size: 15.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bot-main small { color: var(--faint); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-btn { flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: var(--accent-text); display: inline-flex; align-items: center; justify-content: center; }
+.call-btn:active { opacity: .8; }
+.call-btn.small { width: 32px; height: 32px; background: transparent; color: var(--accent); border: 1px solid var(--border); }
+.call-btn.small svg { width: 16px; height: 16px; }
+.add-btn { flex: none; height: 32px; padding: 0 14px; border-radius: 999px; background: var(--surface); font-size: 13px; font-weight: 600; }
+.add-btn:disabled { opacity: .6; }
+.call-row > summary { list-style: none; cursor: pointer; min-height: 56px; }
+.call-row > summary::-webkit-details-marker { display: none; }
+.call-row.missed .bot-main strong { color: var(--danger); }
+.call-when { flex: none; color: var(--faint); font-size: 13px; }
+.call-transcript { padding: 0 14px 12px 60px; display: flex; flex-direction: column; gap: 6px; }
+.call-transcript p { margin: 0 !important; font-size: 14px !important; line-height: 1.45 !important; color: var(--text) !important; overflow-wrap: anywhere; }
+.call-transcript p b { display: block; font-size: 11.5px; font-weight: 600; color: var(--faint); margin-bottom: 1px; }
+.call-transcript p.none { color: var(--faint) !important; }
+.calls-none { color: var(--faint) !important; font-size: 14px !important; margin: 0 2px !important; }
+.calls-empty { padding: 18px 2px 0; }
+.calls-empty h2 { font-size: 22px; font-weight: 600; margin: 0 0 6px; }
+.calls-foot { color: var(--faint) !important; font-size: 12.5px !important; margin: 18px 2px 0 !important; }
+
+/* ─── Call screen ─── */
+.call { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; overflow: hidden; color: #fff; background: var(--tint-bg, #1c2433);
+  padding: calc(env(safe-area-inset-top) + 56px) 24px calc(env(safe-area-inset-bottom) + 30px); animation: call-in .28s ease;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Roboto, "Segoe UI", system-ui, sans-serif; }
+@keyframes call-in { from { opacity: 0; transform: scale(1.04); } }
+.call-bg { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.call-bg-blob { position: absolute; left: 50%; top: 42%; width: 320px; height: 320px; transform: translate(-50%, -50%) scale(2.2); filter: blur(64px) saturate(1.3); opacity: .75; }
+.call-bg-blob svg, .call-bg-blob .av-fallback { width: 100%; height: 100%; }
+.call-bg::after { content: ""; position: absolute; inset: 0; background: rgba(0, 0, 0, .34); }
+.call > :not(.call-bg) { position: relative; z-index: 1; }
+
+.call-head { flex: none; text-align: center; }
+.call-name { font-size: 34px; font-weight: 400; letter-spacing: .01em; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.call-status { margin-top: 6px; font-size: 17px; color: rgba(255, 255, 255, .72); font-variant-numeric: tabular-nums; }
+
+.call-mid { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 12px 0; }
+.call-face { display: flex; flex-direction: column; align-items: center; gap: 12px; min-height: 0; width: 100%; }
+.call-orb { position: relative; display: flex; align-items: center; justify-content: center; }
+.call-orb svg, .call-orb .av-fallback { width: min(168px, 24vh); height: min(168px, 24vh); }
+.call-orb::before { content: ""; position: absolute; inset: -14px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .5); opacity: 0; pointer-events: none; }
+.call[data-phase="ringing"] .call-orb::before { animation: call-pulse 1.6s ease-out infinite; }
+.call[data-phase="speaking"] .call-orb::before { animation: call-pulse 1.2s ease-out infinite; border-color: rgba(255, 255, 255, .35); }
+@keyframes call-pulse { 0% { opacity: .8; transform: scale(.92); } 100% { opacity: 0; transform: scale(1.18); } }
+.call-state { min-height: 18px; font-size: 13px; color: rgba(255, 255, 255, .62); letter-spacing: .02em; }
+.call-caption { max-width: 320px; min-height: 44px; text-align: center; font-size: 16px; line-height: 1.4; color: rgba(255, 255, 255, .92);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.call-caption.you { color: rgba(255, 255, 255, .7); font-style: italic; }
+.call-note { margin: 0; max-width: 320px; text-align: center; font-size: 13px; line-height: 1.4; color: rgba(255, 255, 255, .7); }
+.call-note:empty { display: none; }
+
+.call-log { display: none; width: 100%; max-width: 420px; flex: 1; min-height: 0; border-radius: 18px; background: rgba(0, 0, 0, .28); padding: 4px; }
+.call-log-list { height: 100%; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; overscroll-behavior: contain; }
+.call-log-list p { margin: 0; font-size: 15px; line-height: 1.4; overflow-wrap: anywhere; }
+.call-log-list p b { display: block; font-size: 11.5px; font-weight: 600; color: rgba(255, 255, 255, .55); margin-bottom: 1px; }
+.call.show-log .call-face { display: none; }
+.call.show-log .call-log { display: block; }
+
+.call-type { display: none; width: 100%; max-width: 420px; gap: 8px; }
+.call.typing .call-type, .call.show-log .call-type { display: flex; }
+.call-type input { flex: 1; min-width: 0; height: 44px; border-radius: 22px; border: 0; outline: none; padding: 0 16px; font-size: 16px; color: #fff; background: rgba(255, 255, 255, .16); }
+.call-type input::placeholder { color: rgba(255, 255, 255, .55); }
+.call-type button { flex: none; width: 44px; height: 44px; border-radius: 50%; background: #fff; color: #111; display: inline-flex; align-items: center; justify-content: center; }
+
+.call-grid { flex: none; display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; max-width: 300px; margin: 6px auto 30px; }
+.cb-wrap { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+.cb-wrap span { font-size: 13px; color: rgba(255, 255, 255, .85); }
+.cb { width: 76px; height: 76px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: #fff; background: rgba(255, 255, 255, .18);
+  -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); transition: background .15s, color .15s; }
+.cb.on { background: rgba(255, 255, 255, .92); color: #1c1c1e; }
+.cb:active { transform: scale(.96); }
+.call-end { flex: none; width: 76px; height: 76px; border-radius: 50%; margin: 0 auto; background: #ff3b30; color: #fff; display: inline-flex; align-items: center; justify-content: center; }
+.call-end:active { background: #d9322a; }
+.call button:disabled { opacity: .55; }
+.call[data-phase="ended"] .call-orb { opacity: .7; }
+
+@media (max-height: 700px) {
+  .call { padding-top: calc(env(safe-area-inset-top) + 28px); padding-bottom: calc(env(safe-area-inset-bottom) + 18px); }
+  .call-name { font-size: 30px; }
+  .cb, .call-end { width: 66px; height: 66px; }
+  .call-grid { margin-bottom: 18px; }
+}

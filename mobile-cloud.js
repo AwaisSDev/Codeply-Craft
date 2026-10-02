@@ -21,55 +21,70 @@
   const KEY_TASKS = 'craft-cloud-tasks';
   const KEY_PROJECT = 'craft-cloud-project';
   const ICON = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1 .5 7.97V18Z"/></svg>';
-  const STATUS = { starting: 'Starting', queued: 'Waiting for a runner', running: 'Working', done: 'Finished in the cloud', failed: 'Cloud run failed', cancelled: 'Cancelled' };
   const LIVE = new Set(['starting', 'queued', 'running']);
   const MIRROR_DESCRIPTION = 'Craft workspace mirror: a private backup that Craft cloud runs work in.';
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
-  // ─── The live card: rotating word, countdown to the ~50s runner start, elapsed ──
-  const VERBS = ['Codeplying', 'Cooking', 'Baking', 'Brewing', 'Whisking', 'Simmering', 'Tinkering', 'Crafting'];
-  const START_ETA = 50;
-  const dur = (s) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`);
-  function liveParts(t) {
-    const secs = Math.max(0, Math.round((Date.now() - (t.startedAt || Date.now())) / 1000));
-    const verb = `${VERBS[Math.floor(secs / 3) % VERBS.length]}...`;
-    if (t.status === 'running') return { verb, note: `Working on GitHub · ${dur(secs)}`, pct: null };
-    const left = START_ETA - secs;
-    const what = t.status === 'queued' ? 'Waiting for a GitHub runner' : 'Starting a GitHub runner';
-    return { verb, note: `${what} · ${left > 0 ? `about ${left}s left` : `any second now (${dur(secs)})`}`, pct: Math.min(95, Math.round((secs / START_ETA) * 95)) };
-  }
-  const liveHtml = (t) => { const p = liveParts(t); return `<div class="cloud-m-verb">${escapeHtml(p.verb)}</div><div class="cloud-m-note">${escapeHtml(p.note)}</div><div class="cloud-m-bar${p.pct == null ? ' working' : ''}"><i style="${p.pct == null ? '' : `width:${p.pct}%`}"></i></div>`; };
-  function paintLive(node, t) {
-    const p = liveParts(t);
-    const v = node.querySelector('.cloud-m-verb'); const n = node.querySelector('.cloud-m-note'); const bar = node.querySelector('.cloud-m-bar');
-    if (v) v.textContent = p.verb;
-    if (n) n.textContent = p.note;
-    if (bar) { bar.classList.toggle('working', p.pct == null); bar.firstElementChild.style.width = p.pct == null ? '' : `${p.pct}%`; }
-  }
+  // ─── A cloud message reads like a normal run ────────────────────────────
+  // While it runs: a plain "Working" row at the bottom, like the PC's
+  // Thinking row. The run itself gets one small line ("Running in the cloud",
+  // then "Ran in the cloud" with what happened to the code).
+  const secsSince = (t) => Math.max(0, Math.floor((Date.now() - (t.startedAt || Date.now())) / 1000));
+  const workingHtml = (t) => `<div class="cloud-m-working" data-working="${escapeHtml(t.id)}"><span class="cloud-m-spark">✦</span><span>Working</span><span class="cloud-m-time">${secsSince(t)}s</span></div>`;
 
-  const fileStats = (task) => {
-    const stats = new Map((task.stats || []).map((s) => [s.file, s]));
+  /** What happened to the code. `pcActions` adds the PC chat's Apply / Pull buttons. */
+  function resultHtml(task, pcActions) {
+    if (task.status !== 'done') return '';
     const files = task.files || [];
-    return files.slice(0, 8).map((f) => {
-      const s = stats.get(f);
-      return `<li><code>${escapeHtml(f)}</code>${s && s.added != null ? `<span class="stat-add">+${s.added}</span><span class="stat-del">−${s.removed}</span>` : ''}</li>`;
-    }).join('') + (files.length > 8 ? `<li class="cloud-m-dim">and ${files.length - 8} more</li>` : '');
-  };
-
-  /** The card for one run. `applyHtml` is the PC chat's Apply button; the PC-off chat explains instead. */
-  function cardHtml(task, { applyHtml = '' } = {}) {
-    const live = LIVE.has(task.status);
-    const files = task.files || [];
-    let foot = '';
-    if (task.status === 'done' && files.length) {
-      foot = `<div class="cloud-m-foot"><span class="cloud-m-dim">${task.pulledAt ? 'Applied' : 'Changed'} ${files.length} file${files.length === 1 ? '' : 's'}${task.pulledAt ? ' to the project' : ', pushed to GitHub'}</span>${task.pulledAt ? '' : applyHtml}</div><ul class="cloud-m-files">${fileStats(task)}</ul>`;
+    const m = task.merged;
+    if (task.kind === 'repo' || m) {
+      if (m && m.ok) {
+        return `<span class="cloud-m-sep">·</span><span>Merged into <code>${escapeHtml(m.base || task.base || 'main')}</code></span>${task.pulledAt
+          ? '<span class="cloud-m-sep">·</span><span>Pulled</span>'
+          : pcActions ? '<button type="button" class="cloud-m-apply" data-act="pull">Pull</button>' : ''}`;
+      }
+      if (m && !m.ok) return `<span class="cloud-m-sep">·</span><span>Kept on <code>${escapeHtml(task.branch || 'its branch')}</code>${m.reason ? `: ${escapeHtml(m.reason)}` : ''}</span>`;
+      return files.length ? `<span class="cloud-m-sep">·</span><span>Changed ${plural(files.length, 'file')}</span>` : '';
     }
-    return `<div class="cloud-m-card-head"><span class="cloud-m-icon">${ICON}</span>${live ? `<div class="cloud-m-live-block">${liveHtml(task)}</div>` : `<strong>${escapeHtml(STATUS[task.status] || task.status)}</strong>`}
-        ${task.runUrl ? `<a href="${escapeHtml(task.runUrl)}" target="_blank" rel="noopener">log</a>` : ''}</div>
-      ${task.error ? `<div class="cloud-m-error">${escapeHtml(task.error)}</div>` : ''}${foot}`;
+    if (!files.length) return '';
+    if (task.pulledAt) return `<span class="cloud-m-sep">·</span><span>Applied ${plural(files.length, 'file')}</span>`;
+    return `<span class="cloud-m-sep">·</span><span>Changed ${plural(files.length, 'file')}</span>${pcActions ? '<button type="button" class="cloud-m-apply" data-act="apply">Apply to project</button>' : ''}`;
+  }
+
+  /** The small line for one run. */
+  function cardHtml(task, { pcActions = false } = {}) {
+    const live = LIVE.has(task.status);
+    let text;
+    if (live) text = 'Running in the cloud';
+    else if (task.status === 'done') text = 'Ran in the cloud';
+    else if (task.status === 'cancelled') text = 'Cloud run cancelled';
+    else text = `Cloud run failed${task.error ? `: ${escapeHtml(task.error)}` : ''}`;
+    return `<span class="cloud-m-icon">${ICON}</span><span class="cloud-m-text">${text}</span>${resultHtml(task, pcActions)}${task.runUrl ? `<span class="cloud-m-sep">·</span><a href="${escapeHtml(task.runUrl)}" target="_blank" rel="noopener">View run</a>` : ''}`;
   }
 
   // ─── In the normal phone chat (messages sent through the PC) ────────────
   const chatLive = new Map();
+  /** The Working row, kept last in the chat while a cloud run in it is live. */
+  function ensureChatWorking() {
+    const feed = document.getElementById('chatFeed');
+    if (!feed) return;
+    const liveNode = [...feed.querySelectorAll('.cloud-m-card.live')].pop();
+    const t = liveNode && chatLive.get(liveNode.dataset.id);
+    let row = feed.querySelector('.cloud-m-working');
+    if (!t) { if (row) row.remove(); return; }
+    if (!row || row.dataset.working !== t.id) {
+      if (row) row.remove();
+      feed.insertAdjacentHTML('beforeend', workingHtml(t));
+      row = feed.lastElementChild;
+    } else if (feed.lastElementChild !== row) feed.append(row);
+    row.querySelector('.cloud-m-time').textContent = `${secsSince(t)}s`;
+  }
+  /** A finished run's line goes after its steps and answer, before the next message. */
+  function moveToTurnEnd(node) {
+    let last = node;
+    for (let n = node.nextElementSibling; n && !n.classList.contains('user') && !n.classList.contains('cloud-m-card') && !n.classList.contains('cloud-m-working'); n = n.nextElementSibling) last = n;
+    if (last !== node) last.after(node);
+  }
   function chatCard(task) {
     const feed = document.getElementById('chatFeed');
     if (!feed || !task) return;
@@ -78,17 +93,26 @@
     if (!node && !pending) node = [...feed.querySelectorAll('.cloud-m-card[data-pending="1"]')].pop();
     if (!node) { node = document.createElement('div'); feed.append(node); }
     for (const [id] of chatLive) if (id.startsWith('pending-') && !pending) chatLive.delete(id);
-    if (LIVE.has(task.status)) chatLive.set(task.id, task); else chatLive.delete(task.id);
-    node.className = `cloud-m-card ${task.status}`;
+    const live = LIVE.has(task.status);
+    if (live) chatLive.set(task.id, task); else chatLive.delete(task.id);
+    node.className = `cloud-m-card ${task.status}${live ? ' live' : ''}`;
     node.dataset.id = task.id;
     node.dataset.pending = pending ? '1' : '0';
-    node.innerHTML = cardHtml(task, { applyHtml: '<button type="button" class="cloud-m-apply">Apply to project</button>' });
-    const apply = node.querySelector('.cloud-m-apply');
+    node.innerHTML = cardHtml(task, { pcActions: true });
+    const apply = node.querySelector('[data-act="apply"]');
     if (apply) apply.addEventListener('click', async () => {
       apply.disabled = true; apply.textContent = 'Applying...';
       try { await request('/api/cloud/apply', { method: 'POST', body: JSON.stringify({ sessionId: state.sessionId, taskId: task.id }) }); }
       catch (e) { apply.disabled = false; apply.textContent = 'Apply to project'; alert(e.message); }
     });
+    const pull = node.querySelector('[data-act="pull"]');
+    if (pull) pull.addEventListener('click', async () => {
+      pull.disabled = true; pull.textContent = 'Pulling...';
+      try { await request('/api/cloud/pull', { method: 'POST', body: JSON.stringify({ sessionId: state.sessionId, taskId: task.id }) }); }
+      catch (e) { pull.disabled = false; pull.textContent = 'Pull'; alert(e.message); }
+    });
+    // After the rest of the chat has been drawn (reopening a chat draws it in order).
+    setTimeout(() => { if (!node.isConnected) return; ensureChatWorking(); if (!live) moveToTurnEnd(node); }, 0);
   }
   window.CraftCloudPhone = { card: chatCard };
 
@@ -220,7 +244,7 @@
         try { data = JSON.parse((check && check.output && check.output.text) || '{}'); } catch {}
         if (Array.isArray(data.events)) t.events = data.events;
         if (check && check.status === 'completed') {
-          Object.assign(t, { status: check.conclusion === 'success' ? 'done' : 'failed', answer: data.answer || '', files: data.files || [], stats: data.stats || [], error: data.error || null });
+          Object.assign(t, { status: check.conclusion === 'success' ? 'done' : 'failed', answer: data.answer || '', files: data.files || [], stats: data.stats || [], branch: data.branch || null, merged: data.merged || null, error: data.error || null });
         } else if (run.status === 'completed') {
           Object.assign(t, { status: run.conclusion === 'cancelled' ? 'cancelled' : 'failed', error: run.conclusion === 'cancelled' ? null : (await diagnose(t.repo, run.id)) || 'The run ended before Craft could report back. The log has details.' });
         } else t.status = run.status === 'in_progress' ? 'running' : 'queued';
@@ -290,19 +314,22 @@
     }
     if (e.t === 'pushed') {
       const n = (e.files || []).length;
-      return `<div class="cloud-m-pushed"><div class="cloud-m-pushed-head">${ICON}<span>Committed and pushed ${n} file${n === 1 ? '' : 's'} to <code>${escapeHtml(e.branch)}</code></span><span class="stat-add">+${e.added || 0}</span><span class="stat-del">−${e.removed || 0}</span></div>
-        <ul class="cloud-m-files">${(e.files || []).slice(0, 12).map((f) => `<li><code>${escapeHtml(f.file)}</code>${f.added != null ? `<span class="stat-add">+${f.added}</span><span class="stat-del">−${f.removed}</span>` : ''}</li>`).join('')}</ul></div>`;
+      return `<div class="cloud-m-notice">Committed ${plural(n, 'file')} (<span class="stat-add">+${e.added || 0}</span> <span class="stat-del">−${e.removed || 0}</span>) on <code>${escapeHtml(e.branch)}</code>${e.merged && e.merged.ok ? `, merged into <code>${escapeHtml(e.merged.base || 'main')}</code>` : ''}.</div>`;
     }
     return '';
   }
 
   function taskHtml(t) {
     const events = (t.events || []).map(eventHtml).join('');
-    const note = t.status === 'done' && (t.files || []).length ? '<div class="cloud-m-notice">Craft on your PC applies these changes: open the chat there, or the Cloud chip, and tap Apply.</div>' : '';
+    const live = LIVE.has(t.status);
+    // Repo projects merge on GitHub; a private copy waits for Apply on the PC.
+    const note = t.status === 'done' && (t.files || []).length && !(t.merged && t.merged.ok) && t.kind !== 'repo'
+      ? '<div class="cloud-m-notice">Craft on your PC applies these changes: open the chat there, or the Cloud chip, and tap Apply.</div>' : '';
+    const line = `<div class="cloud-m-card ${t.status}${live ? ' live' : ''}">${cardHtml(t)}</div>`;
     return `<article class="message-bubble user">${escapeHtml(t.prompt)}</article>
-      <div class="cloud-m-card ${t.status}" data-live="${escapeHtml(t.id)}">${cardHtml(t)}</div>
-      ${events}
-      ${t.answer ? `<article class="message-bubble agent">${fmt(t.answer)}</article>` : ''}${note}`;
+      ${live ? line : ''}${events}
+      ${t.answer ? `<article class="message-bubble agent">${fmt(t.answer)}</article>` : ''}
+      ${live ? workingHtml(t) : line}${note}`;
   }
 
   // ─── The PC-off cloud chat screen ────────────────────────────────────────
@@ -436,18 +463,16 @@
   build();
   schedule();
 
-  // Keep live cards moving, and mark cloud chats in the normal phone chat.
+  // Keep the Working rows counting, and mark cloud chats in the normal phone chat.
   setInterval(() => {
     if (isOpen) {
-      for (const node of el.querySelectorAll('.cloud-m-card[data-live]')) {
-        const t = tasks.find((x) => x.id === node.dataset.live);
-        if (t && LIVE.has(t.status)) paintLive(node, t);
+      for (const row of el.querySelectorAll('.cloud-m-working[data-working]')) {
+        const t = tasks.find((x) => x.id === row.dataset.working);
+        if (t && LIVE.has(t.status)) row.querySelector('.cloud-m-time').textContent = `${secsSince(t)}s`;
       }
     }
-    for (const [id, t] of chatLive) {
-      const node = document.querySelector(`#chatFeed .cloud-m-card[data-id="${CSS.escape(id)}"]`);
-      if (node) paintLive(node, t); else chatLive.delete(id);
-    }
+    for (const [id] of chatLive) if (!document.querySelector(`#chatFeed .cloud-m-card[data-id="${CSS.escape(id)}"]`)) chatLive.delete(id);
+    ensureChatWorking();
     const panel = document.getElementById('chatPanel');
     if (panel && typeof state !== 'undefined') {
       const meta = (state.sessions || []).find((s) => s.id === state.sessionId);

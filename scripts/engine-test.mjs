@@ -1223,6 +1223,19 @@ process.stdin.on('data', (d) => {
   check('cloud: pulling brings the merged cloud work down and keeps local files', pulledR.pulled === 1 && fs.readFileSync(path.join(realProj, 'app.js'), 'utf8').includes('from the cloud')
     && fs.readFileSync(path.join(realProj, 'notes.txt'), 'utf8').includes('my local note') && (await cl.checkBehind(realProj)).behind === 0);
 
+  let snapRefused = false;
+  try { await cl.pushSnapshot({ cwd: realProj, token: 'TOK', ...common }); } catch (e) { snapRefused = /own repo/.test(e.message); }
+  check('cloud: a project working in its own repo is never backed up over its main', snapRefused);
+  fs.writeFileSync(path.join(realProj, 'app.js'), 'local v3\n');
+  sh(realProj, 'add', 'app.js'); sh(realProj, ...ident, 'commit', '-q', '-m', 'local v3');
+  sh(other, 'pull', '-q', 'origin', 'main');
+  fs.writeFileSync(path.join(other, 'app.js'), 'cloud v3\n');
+  sh(other, 'add', '-A'); sh(other, ...ident, 'commit', '-q', '-m', 'cloud v3'); sh(other, 'push', '-q', 'origin', 'HEAD:main');
+  let clashMsg = '';
+  try { await cl.pullLatest(realProj); } catch (e) { clashMsg = e.message; }
+  check('cloud: a pull that clashes is undone and says which files', /clash/.test(clashMsg) && /app\.js/.test(clashMsg)
+    && !fs.existsSync(path.join(realProj, '.git', 'MERGE_HEAD')) && fs.readFileSync(path.join(realProj, 'app.js'), 'utf8').replace(/\r\n/g, '\n') === 'local v3\n', clashMsg); // core.autocrlf may re-checkout with CRLF
+
   // The cloud runner writes the environment to .env and never commits it.
   const envRunner = path.join(tmp, 'env-runner');
   sh(tmp, 'clone', '-q', '-b', 'main', bare, envRunner);
@@ -1416,6 +1429,152 @@ process.stdin.on('data', (d) => {
   check('serve: chats survive a restart', again.json?.sessions.some((s) => s.id === sid && s.title === 'Renamed'), again.text);
   check('serve: a deleted chat is gone', (await api('DELETE', `/session/${sid}`)).status === 200 && (await api('GET', `/session/${sid}`)).status === 404);
   await srv2.close();
+}
+
+// Bots: named agents with a job, tone and memory; ask_bot runs one agent at a time.
+{
+  const bots = require(path.join(CLI, 'lib/bots.js'));
+  const Av = require(path.join(CLI, '..', 'bot-avatar.js'));
+  const store = path.join(tmp, 'bots-home');
+  bots.setBotsDir(store);
+  try {
+    const dot = bots.createFromTemplate('orchestrator');
+    const res = bots.createFromTemplate('research');
+    check('bots: templates create bots on disk', bots.listBots().length === 2 && fs.existsSync(path.join(store, `${dot.id}.json`)) && dot.role === 'orchestrator');
+    check('bots: every team role has a template', ['orchestrator', 'research', 'outreach', 'analysis', 'reporting', 'execution', 'monitoring'].every((k) => bots.TEMPLATES.some((t) => t.key === k)));
+    const upd = bots.updateBot(res.id, { name: 'Vera', tone: { preset: 'concise', custom: 'British spelling.' }, avatar: { shape: 'nope', color: '#123abc' }, approval: ['send', 'bogus'] });
+    check('bots: update keeps id and creation time, cleans bad fields', upd.id === res.id && upd.createdAt === res.createdAt && upd.tone.preset === 'concise' && upd.avatar.shape === 'squircle' && upd.avatar.color === '#123abc' && upd.approval.join() === 'send');
+    check('bots: found by id, name or a loose mention', bots.findBot(res.id)?.id === res.id && bots.findBot('Orion')?.id === dot.id && bots.findBot('ask vera please')?.id === res.id && !bots.findBot('nobody'));
+    const temp = bots.createBot({ name: 'Temp' });
+    check('bots: remove deletes the file', bots.removeBot(temp.id) && !bots.getBot(temp.id) && bots.listBots().length === 2);
+    check('bots: a path-like id is refused', (() => { try { bots.updateBot('../evil', {}); return false; } catch { return true; } })());
+    check('bots: canSkipApproval follows the boundary', !bots.canSkipApproval(upd, 'gmail_send') && bots.canSkipApproval(upd, 'write_file') && !bots.canSkipApproval(upd, 'read_file'));
+
+    bots.createFromTemplate('execution');
+    const team = bots.listBots();
+    const dotNow = bots.getBot(dot.id);
+    const p = bots.buildBotPrompt(dotNow, { team, canDelegate: true });
+    check('bots: orchestrator prompt has identity, tone, approval, roster and how to delegate',
+      /You are Orion/.test(p) && /TONE\n/.test(p) && /APPROVAL BOUNDARY/.test(p) && /- Vera \(specialist\): Research/.test(p) && /ONE AT A TIME/.test(p) && p.includes('<codeply:ask_bot>') && !p.includes('- Orion ('), p);
+    check('bots: native prompt leaves out the tag example', !bots.buildBotPrompt(dotNow, { team, canDelegate: true, native: true }).includes('<codeply:ask_bot>'));
+    check('bots: no long dashes in prompts', !(p + bots.teamPrompt(team) + bots.describePrompt('x')).includes(String.fromCharCode(0x2014)));
+
+    bots.addMemory(res.id, ['The user prefers TypeScript.']);
+    let asked = '';
+    const fake = async (msgs) => { asked = msgs[0].content; return { success: true, json: { facts: ['The user prefers TypeScript over plain JavaScript.', 'The user deploys on Vercel.', 'The user likes short answers.', 'A fourth fact that must be dropped.'] } }; };
+    const learned = await bots.learnFromTurn(bots.getBot(res.id), 'Use TS please, I deploy on vercel', 'Sure.', fake);
+    const mem = bots.getBot(res.id).memory.map((m) => m.fact);
+    check('bots: learnFromTurn keeps at most 3 facts and the newest wording wins', learned.added.length === 3 && mem.length === 3 && mem.includes('The user prefers TypeScript over plain JavaScript.') && !mem.includes('The user prefers TypeScript.') && asked.includes('Already known'), JSON.stringify(mem));
+    check('bots: learned memory reaches the prompt', bots.buildBotPrompt(bots.getBot(res.id)).includes('- The user deploys on Vercel.'));
+    check('bots: secrets are never remembered', (await bots.learnFromTurn(bots.getBot(res.id), 'x', 'y', async () => ({ success: true, json: { facts: ['api_key: sk-123456789'] } }))).added.length === 0);
+    check('bots: a failing model teaches nothing and does not throw', (await bots.learnFromTurn(bots.getBot(res.id), 'x', 'y', async () => { throw new Error('down'); })).added.length === 0);
+    bots.addMemory(res.id, Array.from({ length: 70 }, (_, i) => `Fact number ${i} about the project setup`));
+    const capped = bots.getBot(res.id).memory;
+    check('bots: memory is capped and keeps the newest', capped.length === bots.MAX_MEMORY && capped.at(-1).fact.includes('69'));
+    check('bots: forget one fact, then clear all', bots.forget(res.id, 0).memory.length === bots.MAX_MEMORY - 1 && bots.clearMemory(res.id).memory.length === 0);
+
+    // One agent at a time: two asks from different chats queue, never overlap.
+    const lock = bots.createLock();
+    let active = 0; let most = 0; const order = [];
+    const work = (tag) => async () => { active++; most = Math.max(most, active); order.push(`${tag}+`); await new Promise((r) => setTimeout(r, 30)); order.push(`${tag}-`); active--; return `Summary: ${tag} done.`; };
+    const [x, y] = await Promise.all([
+      bots.delegate({ caller: null, name: 'Vera', task: 'one', depth: 0, token: 'chatA', lock, team, runBot: work('A') }),
+      bots.delegate({ caller: null, name: 'Orion', task: 'two', depth: 0, token: 'chatB', lock, team, runBot: work('B') }),
+    ]);
+    check('bots: ask_bot sequential lock, two concurrent asks never overlap', most === 1 && x.ok && y.ok && order.join() === 'A+,A-,B+,B-', order.join());
+    const nested = await Promise.race([
+      bots.delegate({ caller: dotNow, name: 'Vera', task: 'outer', depth: 0, chain: [dot.id], token: 'chatC', lock, team,
+        runBot: async (bot, sub) => {
+          const inner = await bots.delegate({ caller: bot, name: 'Axel', task: 'inner', depth: sub.depth, chain: sub.chain, token: 'chatC', lock, team, runBot: async () => 'Summary: inner.' });
+          const back = await bots.delegate({ caller: bot, name: 'Orion', task: 'loop', depth: sub.depth, chain: sub.chain, token: 'chatC', lock, team, runBot: async () => 'Summary: never.' });
+          return `Summary: outer saw ${inner.ok ? 'ok' : 'refused'} and ${back.ok ? 'ok' : 'refused'}.`;
+        } }),
+      new Promise((r) => setTimeout(() => r('deadlock'), 2000)),
+    ]);
+    check('bots: a nested ask in the same chain never deadlocks, and cycles are refused', nested !== 'deadlock' && nested.ok && nested.meta.delegation.summary === 'outer saw ok and refused.', JSON.stringify(nested));
+    const self = await bots.delegate({ caller: dotNow, name: 'Orion', task: 'x', depth: 0, token: 't1', lock, team, runBot: work('S') });
+    const deep = await bots.delegate({ caller: null, name: 'Vera', task: 'x', depth: bots.MAX_DEPTH, token: 't2', lock, team, runBot: work('D') });
+    const ghost = await bots.delegate({ caller: null, name: 'Nobody', task: 'x', depth: 0, token: 't3', lock, team, runBot: work('G') });
+    check('bots: no self-calls, depth limit 2, unknown bots refused', !self.ok && /yourself/.test(self.output) && !deep.ok && /2 levels/.test(deep.output) && !ghost.ok && /no bot called/i.test(ghost.output));
+    const pr = bots.parseResult('Summary: Found 3 docs.\nThey are in /docs.');
+    check('bots: results come back structured', pr.summary === 'Found 3 docs.' && pr.details === 'They are in /docs.' && /RESULT FROM VERA/.test(x.output) && x.meta.delegation.bot.name === 'Vera');
+
+    // ask_bot through the real agent loop.
+    script = ['<codeply:ask_bot>\n<bot>Vera</bot>\n<task>\nFind where the docs live.\n</task>\n</codeply:ask_bot>', 'Vera says the docs are in /docs.'];
+    seen = []; bodies = [];
+    let subPrompt = '';
+    const evs = [];
+    for await (const ev of runAgent({
+      userMessage: 'where are the docs?', history: [], mode: 'Ask', cwd: tmp, approve: async () => 'once', signal: new AbortController().signal, route, maxSteps: 6,
+      botPrompt: (native) => bots.buildBotPrompt(dotNow, { team, canDelegate: true, native }),
+      askBot: ({ name, task, signal }) => bots.delegate({ caller: dotNow, name, task, depth: 0, chain: [dot.id], token: 'loop', signal, team, runBot: async (bot, sub) => { subPrompt = sub.prompt; return 'Summary: The docs are in /docs.\nREADME links them too.'; } }),
+    })) evs.push(ev);
+    const end = evs.find((e) => e.type === 'tool_end' && e.name === 'ask_bot');
+    check('bots: ask_bot runs in the agent loop and the result goes back to the caller', end && end.ok && end.meta.delegation.summary === 'The docs are in /docs.' && seen.some((s) => s.includes('RESULT FROM VERA')), JSON.stringify(end));
+    check('bots: the bot prompt is in the system prompt, the helper hears who asked', bodies[0]?.messages[0]?.content.includes('You are Orion') && /Orion asked you to do one task/.test(subPrompt));
+    script = ['<codeply:ask_bot>\n<bot>Vera</bot>\n<task>\nx\n</task>\n</codeply:ask_bot>', 'Fine, I will do it myself.'];
+    const plain = [];
+    for await (const ev of runAgent({ userMessage: 'q', history: [], mode: 'Ask', cwd: tmp, approve: async () => 'once', signal: new AbortController().signal, route, maxSteps: 4 })) plain.push(ev);
+    check('bots: without a host askBot, ask_bot is refused cleanly', plain.some((e) => e.type === 'tool_end' && e.name === 'ask_bot' && !e.ok));
+
+    // Avatars: every combination renders.
+    let bad = 0; let n = 0;
+    for (const shape of Object.keys(Av.SHAPES)) for (const eyes of Object.keys(Av.EYES)) for (const glasses of Object.keys(Av.GLASSES)) for (const accessory of Object.keys(Av.ACCESSORIES)) {
+      let svg = '';
+      try { svg = Av.renderAvatar({ shape, eyes, glasses, accessory, color: Object.keys(Av.COLORS)[n % 10], mouth: Object.keys(Av.MOUTHS)[n % 4], cheeks: n % 2 === 0 }, 64, { state: ['idle', 'working', 'done'][n % 3] }); } catch { bad++; }
+      if (!/^<svg[\s\S]*<\/svg>$/.test(svg) || /NaN|undefined/.test(svg)) bad++;
+      n++;
+    }
+    check('bots: avatar SVG renders for every shape, eyes, glasses and accessory combo', bad === 0 && n >= 9 * 6 * 4 * 7, `${bad} bad of ${n}`);
+    check('bots: engine and renderer agree on avatar options', ['shape', 'eyes', 'glasses', 'accessory', 'mouth'].every((k) => {
+      const r = Object.keys({ shape: Av.SHAPES, eyes: Av.EYES, glasses: Av.GLASSES, accessory: Av.ACCESSORIES, mouth: Av.MOUTHS }[k]);
+      return r.length === bots.AVATAR_KEYS[k].length && r.every((v) => bots.AVATAR_KEYS[k].includes(v));
+    }) && Object.keys(Av.COLORS).every((c) => bots.AVATAR_KEYS.color.includes(c)));
+    check('bots: avatars saved with the old keys map to the new set, in the engine and the renderer', (() => {
+      const old = { shape: 'bean', eyes: 'diamond', glasses: 'sunglasses', accessory: 'beret', mouth: 'smile', color: 'pink', cheeks: true };
+      const e = bots.normalizeAvatar(old); const r = Av.normalizeAvatar(old);
+      const legacyOk = ['shape', 'eyes', 'glasses', 'accessory', 'mouth'].every((k) => Object.entries(Av.LEGACY[k]).every(([o, n]) => bots.normalizeAvatar({ [k]: o })[k] === n && Av.normalizeAvatar({ [k]: o })[k] === n));
+      return JSON.stringify(e) === JSON.stringify(r) && e.shape === 'pill' && e.eyes === 'lens' && e.accessory === 'propeller' && e.color === 'pink' && legacyOk &&
+        Av.normalizeAvatar({ shape: 'constructor', color: 'toString' }).shape === 'squircle' && /^<svg/.test(Av.renderAvatar(old, 48));
+    })());
+    check('bots: every template has its own avatar shape', new Set(bots.TEMPLATES.map((t) => t.avatar.shape)).size === bots.TEMPLATES.length);
+    check('bots: a described bot keeps irreversible actions behind approval', (() => {
+      const d = bots.fromDescription({ name: 'Rex', role: 'specialist', approval: [], avatar: { shape: 'chip' } }, 'a reviewer');
+      return d.name === 'Rex' && ['send', 'publish', 'databases'].every((k) => d.approval.includes(k)) && d.avatar.shape === 'chip' && !d.id;
+    })());
+  } finally {
+    bots.setBotsDir(null);
+  }
+}
+
+// ─── Gmail: "check my emails" lists the newest mail, errors say why ─────────
+{
+  const oauth = require(path.join(CLI, 'lib/oauth-connectors.js'));
+  const realFetch = globalThis.fetch;
+  const seen = [];
+  try {
+    globalThis.fetch = async (url) => {
+      seen.push(String(url));
+      const u = new URL(String(url));
+      if (u.pathname.endsWith('/messages')) return new Response(JSON.stringify({ messages: [{ id: 'm1' }] }), { status: 200 });
+      return new Response(JSON.stringify({ snippet: 'hello', payload: { headers: [{ name: 'Subject', value: 'Hi' }, { name: 'From', value: 'a@b.c' }] } }), { status: 200 });
+    };
+    const r = await oauth.gmailSearch('TOK', '*');
+    check('gmail: "*" and empty queries list the newest mail instead of being sent as q', r.length === 1 && r[0].subject === 'Hi' && !new URL(seen[0]).searchParams.has('q'));
+    seen.length = 0;
+    await oauth.gmailSearch('TOK', 'is:unread');
+    check('gmail: a real query is passed through', new URL(seen[0]).searchParams.get('q') === 'is:unread');
+    globalThis.fetch = async () => new Response(JSON.stringify({ error: { code: 400, message: 'Bad Request', errors: [{ reason: 'failedPrecondition', message: 'Bad Request' }] } }), { status: 400 });
+    let msg = ''; let status = 0;
+    try { await oauth.gmailSearch('TOK', 'label:inbox'); } catch (e) { msg = e.message; status = e.status; }
+    check('gmail: a bare "Bad Request" comes back with the status, the reason and what to do', status === 400 && /HTTP 400/.test(msg) && /failedPrecondition/.test(msg) && /Reconnect Gmail/.test(msg), msg);
+    globalThis.fetch = async () => new Response(JSON.stringify({ error: 'invalid_grant', error_description: 'Bad Request' }), { status: 400 });
+    let code = ''; msg = '';
+    try { await oauth.refreshGmailToken('id', 'secret', 'dead'); } catch (e) { code = e.code; msg = e.message; }
+    check('gmail: an expired refresh token says to reconnect, not "Bad Request"', code === 'invalid_grant' && /Reconnect Gmail/.test(msg) && !/Bad Request/.test(msg), msg);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 }
 
 server.close();

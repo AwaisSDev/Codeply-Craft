@@ -428,7 +428,9 @@ function toolArgsLabel(args) {
     || args?.query || '';
 }
 
-function addToolRow({ name, label, ok, running: isRunning, auto, bypass, args, screenshotSrc }) {
+function addToolRow({ name, label, ok, running: isRunning, auto, bypass, args, screenshotSrc, delegation, error }) {
+  // A bot asking a teammate gets its own row (bots-ui.js): "Asked Vera: ...".
+  if (name === 'ask_bot' && window.CraftBots) return window.CraftBots.delegationRow({ label, ok, running: isRunning, args, delegation });
   const row = document.createElement('div');
   row.className = 'tool-row' + (isRunning ? ' running' : '') + (ok === false ? ' failed' : '');
   const verb = TOOL_DISPLAY[name] || name;
@@ -449,6 +451,15 @@ function addToolRow({ name, label, ok, running: isRunning, auto, bypass, args, s
       detail.classList.toggle('hidden');
       row.classList.toggle('expanded');
     });
+  }
+
+  // Why it failed, in the tool's own words: the model's retelling of an
+  // error is often vaguer ("Bad Request") than what the tool actually said.
+  if (ok === false && error) {
+    const err = document.createElement('div');
+    err.className = 'tool-error';
+    err.textContent = error;
+    row.appendChild(err);
   }
 
   // A browser_check's screenshot, shown right in the chat instead of only
@@ -1740,6 +1751,7 @@ async function sendMessage(text, fromHome, images) {
   }
 
   addUserMessage(text, images);
+  if (window.CraftCloud && window.CraftCloud.beforeSend) window.CraftCloud.beforeSend(); // pull check, never blocks
 
   setRunning(true);
   showThinking();
@@ -1752,6 +1764,7 @@ async function sendMessage(text, fromHome, images) {
     text,
     images,
     clientId: desktopClientId,
+    botId: window.CraftBots ? window.CraftBots.selectedId() : undefined, // who answers (bots-ui.js)
   });
 
   if (r.error) {
@@ -2153,7 +2166,7 @@ if (api) api.onAgentEvent((data) => {
       break;
     case 'tool_end': {
       if (runningToolRow) { runningToolRow.remove(); runningToolRow = null; }
-      addToolRow({ name: data.name, label: data.summary || toolArgsLabel(data.args), ok: data.ok, args: data.args, screenshotSrc: data.meta?.screenshotDataUrl, auto: !!pendingAutoApproval, bypass: pendingAutoApproval?.bypass });
+      addToolRow({ name: data.name, label: data.summary || toolArgsLabel(data.args), ok: data.ok, args: data.args, screenshotSrc: data.meta?.screenshotDataUrl, auto: !!pendingAutoApproval, bypass: pendingAutoApproval?.bypass, delegation: data.meta?.delegation, error: data.error });
       pendingAutoApproval = null;
       panelTrack(data.name, data.args?.path || data.summary);
       // The agent calls the model again to decide the next step.
@@ -2254,7 +2267,7 @@ async function openSession(id) {
     else if (m.kind === 'tool') {
       // Desktop can load a local file:// path directly, no server round trip.
       const screenshotSrc = m.screenshotPath ? 'file:///' + m.screenshotPath.replace(/\\/g, '/') : undefined;
-      addToolRow({ name: m.name, label: m.label, ok: m.ok, args: m.args, screenshotSrc });
+      addToolRow({ name: m.name, label: m.label, ok: m.ok, args: m.args, screenshotSrc, delegation: m.delegation });
       panelTrack(m.name, m.label);
     } else if (m.kind === 'tasklist') {
       addTaskList(m.tasks);
@@ -2272,6 +2285,8 @@ async function openSession(id) {
       renderGoalCard(m);
     } else if (m.kind === 'cloud_task' && window.CraftCloud) {
       window.CraftCloud.render(m.task);
+    } else if (m.kind === 'bot_active' && window.CraftBots) {
+      window.CraftBots.renderBadge(m.bot, true);
     }
   }
   revealInstant = false;

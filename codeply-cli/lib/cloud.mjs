@@ -336,6 +336,8 @@ const authFor = (token, serverUrl = 'https://github.com') => ({ token, server: s
 export async function pushSnapshot({ cwd, token, home = defaultHome(), serverUrl = 'https://github.com', remoteUrl }) {
   const p = getProject(cwd, home);
   if (!p || !p.repo) throw new Error('Cloud is not set up for this project yet.');
+  // A project that works in its own GitHub repo is never snapshotted: that would overwrite its real main.
+  if (p.kind === 'repo') throw new Error(`${p.repo} is this project's own repo; Craft does not back up over it.`);
   const snap = await snapshot({ cwd, home });
   if (snap.changed || !p.lastPush || p.lastPush.sha !== snap.sha) {
     const url = remoteUrl || `${serverUrl.replace(/\/$/, '')}/${p.repo}.git`;
@@ -661,6 +663,13 @@ export async function pullLatest(cwd) {
   if (st.dirty) { await git(cwd, ['stash', 'push', '-q', '-m', 'craft: before pulling cloud changes']); stashed = true; }
   try {
     await git(cwd, ['-c', 'user.name=Codeply Craft', '-c', 'user.email=craft-bot@users.noreply.github.com', 'pull', '-q', '--no-rebase', '--no-edit']);
+  } catch (e) {
+    // A conflicting pull is undone, so the project is never left half-merged.
+    const conflicted = (await git(cwd, ['diff', '--name-only', '--diff-filter=U']).catch(() => '')).split('\n').filter(Boolean);
+    await git(cwd, ['merge', '--abort']).catch(() => {});
+    throw new Error(conflicted.length
+      ? `GitHub's changes clash with your commits in ${conflicted.join(', ')}, so nothing was pulled. Commit or undo those, then pull again.`
+      : `Could not pull: ${e.message}`);
   } finally {
     if (stashed) await git(cwd, ['stash', 'pop', '-q']).catch(() => { throw new Error('Pulled, but your own edits clashed with them. They are saved in git stash.'); });
   }

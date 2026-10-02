@@ -58,9 +58,21 @@ contextBridge.exposeInMainWorld('craft', {
 
   // agent
   send: (payload) => ipcRenderer.invoke('chat:send', payload),
+  // Bots (bots-desktop.js)
+  botsList: () => ipcRenderer.invoke('bots:list'),
+  botsCreate: (data) => ipcRenderer.invoke('bots:create', data),
+  botsFromTemplate: (key) => ipcRenderer.invoke('bots:fromTemplate', key),
+  botsUpdate: (id, patch) => ipcRenderer.invoke('bots:update', id, patch),
+  botsRemove: (id) => ipcRenderer.invoke('bots:remove', id),
+  botsForget: (id, index) => ipcRenderer.invoke('bots:forget', id, index),
+  botsClearMemory: (id) => ipcRenderer.invoke('bots:clearMemory', id),
+  botsDescribe: (text) => ipcRenderer.invoke('bots:describe', text),
   // Craft Cloud (cloud-desktop.js)
   cloudState: (cwd) => ipcRenderer.invoke('cloud:state', cwd),
-  cloudSetup: (cwd) => ipcRenderer.invoke('cloud:setup', cwd),
+  cloudSetup: (cwd, opts) => ipcRenderer.invoke('cloud:setup', cwd, opts),
+  cloudEnv: (cwd, envText) => ipcRenderer.invoke('cloud:env', cwd, envText),
+  cloudCheckBehind: (cwd) => ipcRenderer.invoke('cloud:checkBehind', cwd),
+  cloudPull: (cwd, sessionId, taskId) => ipcRenderer.invoke('cloud:pull', cwd, sessionId, taskId),
   cloudOptions: (cwd, opts) => ipcRenderer.invoke('cloud:options', cwd, opts),
   cloudApply: (sessionId, taskId) => ipcRenderer.invoke('cloud:apply', sessionId, taskId),
   cloudApplyTask: (cwd, taskId) => ipcRenderer.invoke('cloud:applyTask', cwd, taskId),

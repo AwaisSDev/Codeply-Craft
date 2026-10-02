@@ -1732,6 +1732,11 @@ async function handleBridgeApi(method, pathname, query, body) {
     const r = await cloudDesktop.bridge(method, pathname, query, body);
     if (r) return r;
   }
+  // Bots for the phone's Calls (list, starter templates, save a finished call).
+  if (pathname === '/api/bots' || pathname.startsWith('/api/bots/')) {
+    const r = await botsDesktop.bridge(method, pathname, query, body);
+    if (r) return r;
+  }
   if (method === 'GET' && pathname === '/api/bootstrap') {
     const account = await remoteAccount();
     return {
@@ -2143,10 +2148,12 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
   // still doesn't work"): keep the role the chat is already working in.
   if (!roleId) roleId = session.stickyRole || null;
   emitRoleBadge(session, roleId);
+  // The chat's bot (bots-desktop.js): its prompt, approval boundary and ask_bot. null = no bots.
+  const bot = await botsDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly });
   try {
     const run = agentMod.runAgent({
-      userMessage, history, mode: mode || 'Build', cwd, approve, browser: browserCheck, images, signal, route,
-      roleId, goal, maxSteps, verifyOnly,
+      userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route,
+      roleId, goal, maxSteps, verifyOnly, botPrompt: bot?.botPrompt, askBot: bot?.askBot,
     });
     for await (const ev of run) {
       if (ev.type === 'text') {
@@ -2166,6 +2173,7 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
           added: typeof ev.meta?.added === 'number' ? ev.meta.added : undefined,
           removed: typeof ev.meta?.removed === 'number' ? ev.meta.removed : undefined,
           screenshotPath: ev.meta?.screenshotPath || undefined,
+          delegation: ev.meta?.delegation || undefined, // ask_bot result, for the chat row
         });
       } else if (ev.type === 'notice') {
         session.messages.push({ kind: 'notice', level: ev.level || 'info', text: ev.text, at: Date.now() });
@@ -2207,6 +2215,7 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
     status = 'error';
     error = err.message;
   }
+  if (bot) bot.done(userMessage, replyText); // frees the one-bot lock; learns in the background
   return { status, madeAnyEdit, replyText, error };
 }
 
@@ -2426,7 +2435,7 @@ async function runGoal({ session, goal, history, mode, cwd, approve, signal, rou
   else syncGoal({ status: 'incomplete', note: `Not finished after ${MAX_GOAL_ITERATIONS} iterations. Still missing: ${remaining.slice(0, 200)}` });
 }
 
-async function startChatRun({ sessionId, cwd, mode, bypass, text, images, clientId = null }) {
+async function startChatRun({ sessionId, cwd, mode, bypass, text, images, clientId = null, botId }) {
   text = String(text || '').trim();
   images = Array.isArray(images) ? images.slice(0, 6) : undefined;
   if (!text && !images?.length) return { error: 'Write a task before sending it.' };
@@ -2486,6 +2495,7 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   const detectedRole = rolesLib.detectRole(goal || text);
   if (detectedRole) session.stickyRole = detectedRole;
   session.lastRole = null; // every reply opens with a "Working as ..." badge
+  botsDesktop.onSend(session, botId);
   const history = buildHistory(session);
   // images are kept on the session record so reopening the chat still shows
   // them; buildHistory() only re-sends the last few to the model.
@@ -2813,6 +2823,13 @@ cloudDesktop.init({
   allSessions: () => store.sessions,
   isRunning: (id) => activeRuns.has(id),
   persist: (session) => { saveStore(); syncSessionToDb(session); },
+  userDataDir: app.getPath('userData'),
+});
+// Bots: named agents with a job, a tone, memory and an avatar (see bots-desktop.js).
+const botsDesktop = require('./bots-desktop');
+botsDesktop.init({
+  ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine, sendEvent, currentRoute, browser: browserCheck,
+  agentMod: () => agentMod, aiLib: () => aiLib, permissionsLib: () => permissionsLib,
 });
 ipcMain.handle('remote:info', () => remoteInfo());
 ipcMain.handle('remote:setKeepAwake', (e, on) => {
@@ -2824,6 +2841,7 @@ ipcMain.handle('remote:setKeepAwake', (e, on) => {
 // Only our own phone-app address is ever opened this way.
 ipcMain.handle('shell:openExternal', (e, url) => {
   if (url === MOBILE_APP_URL) shell.openExternal(url);
+  else if (/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(\/actions\/runs\/\d+)?$/.test(String(url))) shell.openExternal(url); // cloud: View run, repo links
 });
 
 ipcMain.on('chat:stop', (e, sessionId) => {

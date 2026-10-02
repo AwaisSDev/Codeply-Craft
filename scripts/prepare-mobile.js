@@ -10,13 +10,23 @@ const target = path.join(root, 'mobile-app');
 fs.rmSync(target, { recursive: true, force: true });
 fs.mkdirSync(path.join(target, 'agent-mascots'), { recursive: true });
 
+// The Craft phone app (phone.*) is the default page; the classic remote
+// control (mobile.*) stays reachable at /classic.
 for (const [from, to] of [
-  ['mobile.html', 'index.html'],
+  ['phone.html', 'index.html'],
+  ['phone.css', 'phone.css'],
+  ['phone.js', 'phone.js'],
+  ['phone-calls.js', 'phone-calls.js'],
+  ['phone-calls.css', 'phone-calls.css'],
+  ['bot-avatar.js', 'bot-avatar.js'],
+  ['phone.manifest.json', 'manifest.json'],
+  [path.join('vendor', 'phone', 'nacl-fast.min.js'), 'nacl-fast.min.js'],
+  [path.join('vendor', 'phone', 'blake2b.js'), 'blake2b.js'],
+  ['mobile.html', 'classic.html'],
   ['mobile.css', 'mobile.css'],
   ['mobile.js', 'mobile.js'],
   ['mobile-cloud.js', 'mobile-cloud.js'],
   ['mobile-cloud.css', 'mobile-cloud.css'],
-  ['mobile.manifest.json', 'manifest.json'],
   ['logo.png', 'logo.png'],
   [path.join('vendor', 'supabase', 'supabase.js'), 'supabase.js'],
 ]) fs.copyFileSync(path.join(root, from), path.join(target, to));
@@ -31,7 +41,7 @@ for (const f of fs.readdirSync(mascots).filter((f) => f.endsWith('.png'))) {
 fs.writeFileSync(path.join(target, 'vercel.json'), JSON.stringify({
   cleanUrls: true,
   headers: [
-    { source: '/(index.html|mobile.js|mobile.css|mobile-cloud.js|mobile-cloud.css|)', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
+    { source: '/(index.html|phone.js|phone.css|phone-calls.js|phone-calls.css|bot-avatar.js|classic.html|classic|mobile.js|mobile.css|mobile-cloud.js|mobile-cloud.css|)', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
     { source: '/(.*)', headers: [{ key: 'X-Content-Type-Options', value: 'nosniff' }, { key: 'Referrer-Policy', value: 'no-referrer' }] },
   ],
 }, null, 2));

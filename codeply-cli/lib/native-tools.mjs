@@ -33,7 +33,7 @@ export const TOOL_DOCS = {
   fetch_image: { d: 'Download an image into the project.', req: ['url', 'path'], p: { url: 'Image URL.', path: 'Where to save it, e.g. assets/hero.jpg.' } },
   browser_check: { d: 'Open a page in a real browser and get errors plus a screenshot.', req: ['url'], p: { url: 'file:///absolute/path or http://localhost:port.', wait: 'Extra milliseconds to wait before capturing.', viewport: 'desktop (default), tablet, mobile, or WIDTHxHEIGHT.' } },
   gmail_send: { d: 'Send a real email now (no drafts). Only when the user asked for it.', req: ['to', 'subject', 'body'], p: { to: 'Recipient address.', subject: 'Subject line.', body: 'Plain-text body.' } },
-  gmail_search: { d: 'Search the connected Gmail account.', req: ['query'], p: { query: 'Gmail search syntax.' } },
+  gmail_search: { d: 'Search the connected Gmail account. Leave query empty to list the newest mail.', req: [], p: { query: 'Gmail search syntax, e.g. "is:unread" or "from:x@y.com". Empty = newest mail.' } },
   slack_post_message: { d: 'Post a real Slack message now. Only when the user asked for it.', req: ['channel', 'text'], p: { channel: 'Channel name or id.', text: 'Message text.' } },
   vercel_deploy: { d: 'Deploy a folder to the connected Vercel account (live, real).', req: [], p: { path: 'Folder to deploy. Default ".".' } },
   supabase_create_project: { d: 'Create a new Supabase project (billable, real).', req: ['name'], p: { name: 'Project name.' } },
@@ -50,6 +50,7 @@ export const TOOL_DOCS = {
   lsp: { d: 'Code navigation for TypeScript/JavaScript: find the real definition or every reference of a symbol, hover for its type, outline a file, or search symbols.', req: ['operation'], p: { operation: 'definition, references, implementation, hover, documentSymbol or workspaceSymbol.', path: 'File the symbol is in (not needed for workspaceSymbol).', line: '1-based line of the symbol.', character: '1-based column of the symbol (or give symbol instead).', symbol: 'The name on that line, e.g. fetchUser.', query: 'For workspaceSymbol: the name to look for.' } },
   plan_exit: { d: 'Plan mode only. Call after the plan file is written: asks the user whether to switch to Build mode and start implementing.', req: [], p: { path: 'The plan file, e.g. .codeply/plans/add-login.md. Default: the newest plan file.' } },
   plan_enter: { d: 'Build mode only. Ask the user to switch to Plan mode first, for a large or ambiguous task. Use sparingly.', req: [], p: { reason: 'Why planning first would help, one sentence.' } },
+  ask_bot: { d: 'Hand one task to a teammate bot from the TEAM or BOTS list and wait for its result. Only one bot runs at a time.', req: ['bot', 'task'], p: { bot: 'The bot\'s name.', task: 'The one task, with all the context it needs (it sees nothing else).' } },
   mcp: { d: 'Call a tool on a connected MCP server.', req: ['server', 'tool'], p: { server: 'Server name from MCP SERVERS.', tool: 'Tool name on that server.', args: 'JSON object of the tool\'s arguments.' } },
 };
 

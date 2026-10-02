@@ -55,8 +55,19 @@ async function refreshGmailToken(clientId, clientSecret, refreshToken) {
       refresh_token: refreshToken, grant_type: 'refresh_token',
     }),
   });
-  const body = await res.json();
-  if (!res.ok) throw new Error(body.error_description || body.error || `Gmail token refresh failed (HTTP ${res.status})`);
+  const body = await readJson(res);
+  if (!res.ok) {
+    // invalid_grant (Google's description is just "Bad Request") means the
+    // refresh token is dead: revoked, or expired because the OAuth app is
+    // still in Testing mode, where Google drops refresh tokens after 7 days.
+    // Only a fresh sign-in fixes it, so say that instead of "Bad Request".
+    if (body.error === 'invalid_grant') {
+      const e = new Error('The Gmail sign-in has expired or was revoked, so Craft disconnected it. Reconnect Gmail in Connect Apps (account menu → Connect Apps), then try again.');
+      e.code = 'invalid_grant';
+      throw e;
+    }
+    throw new Error(`Gmail token refresh failed (HTTP ${res.status}, ${body.error || 'error'}): ${body.error_description || 'no details from Google'}`);
+  }
   return body; // { access_token, expires_in, ... } - no new refresh_token on refresh
 }
 
@@ -64,9 +75,36 @@ async function getGmailProfile(accessToken) {
   const res = await fetch('https://www.googleapis.com/gmail/v1/users/me/profile', {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  const body = await res.json();
-  if (!res.ok) throw new Error(body.error?.message || `Gmail profile lookup failed (HTTP ${res.status})`);
+  const body = await readJson(res);
+  if (!res.ok) throw gmailError(body, res.status, 'Gmail profile lookup');
   return body.emailAddress;
+}
+
+/**
+ * Google's bare error.message is often just "Bad Request", which tells the
+ * agent (and the user) nothing. Pull the status, the machine reason and the
+ * per-error message so the real cause shows, with a plain-words hint for the
+ * ones that need the user to act.
+ */
+function gmailError(data, status, what) {
+  const err = (data && data.error) || {};
+  const first = Array.isArray(err.errors) && err.errors[0] ? err.errors[0] : {};
+  const reason = first.reason || err.status || '';
+  const detail = [err.message, first.message].filter((m, i, a) => m && a.indexOf(m) === i).join(': ');
+  let hint = '';
+  if (status === 401) hint = ' The Gmail sign-in expired or was revoked. Reconnect Gmail in Connect Apps.';
+  else if (status === 403 && /scope|insufficient/i.test(detail + reason)) hint = ' Gmail was connected without read access. Reconnect Gmail in Connect Apps and allow all requested permissions.';
+  else if (status === 403 && /accessNotConfigured|SERVICE_DISABLED|has not been used/i.test(detail + reason)) hint = ' The Gmail API is not enabled on the Google Cloud project behind this app.';
+  else if (/failedPrecondition|FAILED_PRECONDITION/i.test(reason)) hint = ' Google says this account has no usable Gmail mailbox for this app (Gmail turned off, or the account is not a test user of the app). Reconnect Gmail in Connect Apps with the right account.';
+  else if (status === 400) hint = ' Reconnecting Gmail in Connect Apps usually fixes this.';
+  const e = new Error(`${what} failed (HTTP ${status}${reason ? `, ${reason}` : ''}): ${detail || 'no details from Google'}.${hint}`);
+  e.status = status;
+  return e;
+}
+
+async function readJson(res) {
+  const text = await res.text();
+  try { return JSON.parse(text); } catch { return { error: { message: text.slice(0, 200) } }; }
 }
 
 function base64UrlEncode(str) {
@@ -80,18 +118,22 @@ async function gmailSend(accessToken, { to, subject, body }) {
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ raw }),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || `Gmail send failed (HTTP ${res.status})`);
+  const data = await readJson(res);
+  if (!res.ok) throw gmailError(data, res.status, 'Gmail send');
   return data; // { id, threadId, ... }
 }
 
 async function gmailSearch(accessToken, query, maxResults = 10) {
-  const params = new URLSearchParams({ q: query, maxResults: String(maxResults) });
+  // "*" and "" mean "everything" to a person but are not Gmail syntax; an
+  // empty q simply lists the newest mail, which is what they meant.
+  const q = String(query || '').trim();
+  const params = new URLSearchParams({ maxResults: String(maxResults) });
+  if (q && q !== '*' && q !== '""' && q !== "''") params.set('q', q);
   const res = await fetch(`https://www.googleapis.com/gmail/v1/users/me/messages?${params}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  const list = await res.json();
-  if (!res.ok) throw new Error(list.error?.message || `Gmail search failed (HTTP ${res.status})`);
+  const list = await readJson(res);
+  if (!res.ok) throw gmailError(list, res.status, 'Gmail search');
   if (!list.messages?.length) return [];
   // The list endpoint only returns bare ids - each result needs its own
   // fetch for subject/from/snippet, capped by maxResults so a broad query

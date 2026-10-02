@@ -695,12 +695,20 @@ async function fetch_image(args, ctx) {
  * "expired 4 minutes ago" and "expires in 4 minutes" both need the same
  * refresh anyway and there's no benefit to waiting for the failure first.
  */
-async function getValidGmailToken() {
+async function getValidGmailToken({ force = false } = {}) {
   const gmail = config.getIntegration('gmail');
   if (!gmail.accessToken) return null;
-  if (gmail.expiresAt && Date.now() < gmail.expiresAt - 60000) return gmail.accessToken;
+  if (!force && gmail.expiresAt && Date.now() < gmail.expiresAt - 60000) return gmail.accessToken;
   if (!gmail.refreshToken) return gmail.accessToken; // nothing to refresh with - let the call itself fail if it's actually expired
-  const refreshed = await oauth.refreshGmailToken(gmail.clientId, gmail.clientSecret, gmail.refreshToken);
+  let refreshed;
+  try {
+    refreshed = await oauth.refreshGmailToken(gmail.clientId, gmail.clientSecret, gmail.refreshToken);
+  } catch (e) {
+    // A dead refresh token never comes back: drop it so Connect Apps shows
+    // Gmail as disconnected instead of "connected" but failing every call.
+    if (e.code === 'invalid_grant') config.disconnectIntegration('gmail');
+    throw e;
+  }
   config.saveIntegration('gmail', { accessToken: refreshed.access_token, expiresAt: Date.now() + (refreshed.expires_in || 3600) * 1000 });
   return refreshed.access_token;
 }
@@ -712,7 +720,8 @@ async function gmail_send(args, ctx) {
   if (!to) return { ok: false, output: 'gmail_send needs a <to> address.' };
   if (!subject) return { ok: false, output: 'gmail_send needs a <subject>.' };
 
-  const token = await getValidGmailToken();
+  let token;
+  try { token = await getValidGmailToken(); } catch (e) { return { ok: false, output: `Gmail send failed: ${e.message}` }; }
   if (!token) return { ok: false, output: 'Gmail is not connected. Ask the user to connect it from Connect Apps (account menu → Connect Apps) first.' };
 
   const verdict = await ctx.approve({
@@ -733,18 +742,26 @@ async function gmail_send(args, ctx) {
 
 async function gmail_search(args, ctx) {
   const query = (args.query || '').trim();
-  if (!query) return { ok: false, output: 'gmail_search needs a <query> (Gmail search syntax, e.g. "from:x@y.com is:unread").' };
-
-  const token = await getValidGmailToken();
-  if (!token) return { ok: false, output: 'Gmail is not connected. Ask the user to connect it from Connect Apps (account menu → Connect Apps) first.' };
+  // An empty query is fine: it lists the newest mail ("check my emails").
+  const label = query || 'newest mail';
 
   try {
-    const results = await oauth.gmailSearch(token, query);
-    if (!results.length) return { ok: true, output: `No messages matched "${query}".`, meta: { label: query } };
+    let token = await getValidGmailToken();
+    if (!token) return { ok: false, output: 'Gmail is not connected. Ask the user to connect it from Connect Apps (account menu → Connect Apps) first.' };
+    let results;
+    try {
+      results = await oauth.gmailSearch(token, query);
+    } catch (e) {
+      // A token Google already dropped looks valid by our clock; refresh once and retry.
+      if (e.status !== 401) throw e;
+      token = await getValidGmailToken({ force: true });
+      results = await oauth.gmailSearch(token, query);
+    }
+    if (!results.length) return { ok: true, output: query ? `No messages matched "${query}".` : 'The mailbox is empty.', meta: { label } };
     const lines = results.map((m) => `- ${m.subject || '(no subject)'} - from ${m.from} - ${m.date}\n  ${m.snippet}`);
-    return { ok: true, output: `${results.length} message(s) matching "${query}":\n\n${lines.join('\n')}`, meta: { label: query, count: results.length } };
+    return { ok: true, output: `${results.length} message(s)${query ? ` matching "${query}"` : ', newest first'}:\n\n${lines.join('\n')}`, meta: { label, count: results.length } };
   } catch (e) {
-    return { ok: false, output: `Gmail search failed: ${e.message}` };
+    return { ok: false, output: `Gmail search failed: ${e.message} Do not retry with other queries; tell the user this exact error.` };
   }
 }
 
@@ -1924,8 +1941,18 @@ async function plan_enter(args, ctx) {
   return { ok: true, output: 'The user wants to keep building. Carry on in Build mode.', meta: { label: 'plan' } };
 }
 
+// Hand one task to another bot (lib/bots.js). The host provides ctx.askBot,
+// which runs that bot to completion, one agent at a time, and returns its result.
+async function ask_bot(args, ctx) {
+  if (typeof ctx.askBot !== 'function') {
+    return { ok: false, output: 'ask_bot is not available here (no bots, or this run cannot delegate any further). Do the work yourself.' };
+  }
+  return ctx.askBot({ name: String(args.bot || '').trim(), task: String(args.task || '').trim(), signal: ctx.signal });
+}
+
 export const TOOLS = {
   todo,
+  ask_bot,
   ask_user,
   mcp,
   web_fetch, web_search, apply_patch, plan_exit, plan_enter, lsp,
@@ -1944,6 +1971,7 @@ export const TOOL_NEEDS_APPROVAL = new Set(['write_file', 'edit_file', 'apply_pa
 export const TOOL_DISPLAY = {
   todo:       { verb: 'plan',   icon: '☐' },
   ask_user:   { verb: 'ask',    icon: '?' },
+  ask_bot:    { verb: 'asked',  icon: '◉' },
   mcp:        { verb: 'mcp',    icon: '⧉' },
   web_fetch:  { verb: 'fetch',  icon: '⇩' },
   web_search: { verb: 'web',    icon: '▸' },

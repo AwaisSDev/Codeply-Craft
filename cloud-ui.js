@@ -1,14 +1,17 @@
 // Craft Cloud in the desktop window: the Cloud chip in each composer, the
-// Cloud sheet (setup, switches, backups, runs started from the phone) and the
-// cloud cards in a chat. Loaded after app.js and uses its globals (api, state,
-// chatColumn, esc, mdToHtml, showToast, scrollToBottom, nearBottom).
+// Cloud sheet (setup, switches, environment, runs started from the phone), the
+// small cloud line in a chat, and the "GitHub has new commits, pull?" bar.
+// Loaded after app.js and uses its globals (api, state, chatColumn, esc,
+// showToast, scrollToBottom, nearBottom, showThinking, hideThinking, thinkingEl).
 (() => {
   if (!window.craft || !window.craft.cloudState) return;
 
   const ICON = '<svg viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1 .5 7.97V18Z"/></svg>';
-  const STATUS = { starting: 'Starting on GitHub', queued: 'Waiting for a GitHub runner', running: 'Working in the cloud', done: 'Finished in the cloud', failed: 'Cloud run failed', cancelled: 'Cloud run cancelled' };
+  const STATUS = { starting: 'Starting', queued: 'Working', running: 'Working', done: 'Done', failed: 'Failed', cancelled: 'Cancelled' };
+  const LIVE = new Set(['starting', 'queued', 'running']);
   let current = null;       // last cloud state for state.project
   let lastProject = null;
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
   // ─── Chip ────────────────────────────────────────────────────────────────
   function addChips() {
@@ -41,7 +44,7 @@
     if (r.error) { showToast(r.error, 'error'); return; }
     current = r.state;
     paintChips();
-    showToast(on ? 'Cloud on: new messages run on GitHub.' : 'Cloud off: messages run on this PC again.');
+    showToast(on ? 'Cloud on: new messages run in the cloud.' : 'Cloud off: messages run on this PC again.');
   }
 
   function paintChips() {
@@ -50,8 +53,8 @@
     document.querySelectorAll('.cloud-chip').forEach((b) => {
       b.classList.toggle('on', on);
       b.querySelector('span').textContent = on ? 'Cloud on' : 'Cloud';
-      b.title = !ready ? 'Run on GitHub while this PC is off (set up once)'
-        : on ? 'Click to turn cloud off and run on this PC' : 'Click to send new messages to GitHub';
+      b.title = !ready ? 'Keep working while this PC is off (set up once)'
+        : on ? 'Click to turn cloud off and run on this PC' : 'Click to send new messages to the cloud';
     });
     document.querySelectorAll('.cloud-chip-more').forEach((b) => b.classList.toggle('hidden', !ready));
     document.querySelectorAll('.composer').forEach((c) => c.classList.toggle('cloud-mode', on));
@@ -68,6 +71,9 @@
 
   // ─── Sheet ───────────────────────────────────────────────────────────────
   let backdrop = null;
+  let setupTarget = null;   // 'repo' | 'mirror', chosen in the setup sheet
+  let envDraft = '';        // what is typed in the environment box, kept across redraws
+  let envEditing = false;
   function sheet() {
     if (backdrop) return backdrop;
     backdrop = document.createElement('div');
@@ -78,11 +84,12 @@
     document.body.appendChild(backdrop);
     return backdrop;
   }
-  function closeSheet() { if (backdrop) backdrop.classList.add('hidden'); }
+  function closeSheet() { if (backdrop) backdrop.classList.add('hidden'); envEditing = false; envDraft = ''; }
 
   async function openSheet() {
     if (!state.project) { showToast('Pick a project folder first.', 'error'); return; }
     sheet().classList.remove('hidden');
+    setupTarget = null;
     renderSheet({ loading: true });
     await refresh();
     renderSheet({});
@@ -96,6 +103,8 @@
     return new Date(t).toLocaleDateString();
   };
   const projectName = () => String(state.project || '').split(/[\\/]/).filter(Boolean).pop() || 'this project';
+  const ENV_NOTE = 'Stored as an encrypted GitHub secret and written to <code>.env</code> on the cloud machine for each run. Never committed.';
+  const ENV_PLACEHOLDER = 'DATABASE_URL=postgres://...\nAPI_KEY=...';
 
   function renderSheet({ loading, busy, error }) {
     const box = sheet().querySelector('.cloud-modal');
@@ -104,42 +113,73 @@
       <button class="sb-icon-btn" data-act="close" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button></div>`;
     if (loading || !s) { box.innerHTML = `${head}<div class="cloud-body"><p class="cloud-dim">${loading ? 'Checking...' : 'Cloud runs are not available.'}</p></div>`; wire(box); return; }
     const err = error ? `<div class="cloud-error">${esc(error)}</div>` : '';
+    // Keep what was typed in the environment box when the sheet redraws.
+    const typed = box.querySelector('[data-env]');
+    if (typed) envDraft = typed.value;
 
     if (!s.project) {
+      const o = s.origin && s.origin.canPush !== false ? s.origin : null;
+      const target = setupTarget || (o ? 'repo' : 'mirror');
       let action;
       if (!s.github.connected) action = '<button class="cloud-primary" data-act="github">Connect GitHub</button>';
-      else if (!s.github.scopesOk) action = '<button class="cloud-primary" data-act="github">Reconnect GitHub</button><p class="cloud-dim">Craft needs permission to create a private repo and a workflow file.</p>';
+      else if (!s.github.scopesOk) action = '<button class="cloud-primary" data-act="github">Reconnect GitHub</button><p class="cloud-dim">Craft needs permission to work in your repos.</p>';
       else if (!s.model.ok) action = `<button class="cloud-primary" disabled>Set up</button><p class="cloud-dim">${esc(s.model.error)} Choose one from the model menu, then come back.</p>`;
       else action = `<button class="cloud-primary" data-act="setup" ${busy ? 'disabled' : ''}>${busy ? 'Setting up...' : 'Set up'}</button>`;
+      const mirrorName = `craft-workspace-${projectName().toLowerCase().replace(/[^a-z0-9._-]+/g, '-')}`;
+      const choice = o ? `<div class="cloud-choice">
+          <label><input type="radio" name="cloud-target" value="repo" data-act="target" ${target === 'repo' ? 'checked' : ''}>
+            <span>Work in <b>${esc(o.repo)}</b> <span class="cloud-dim">(new branch per task, merged into <code>${esc(o.base)}</code>)</span></span></label>
+          <label><input type="radio" name="cloud-target" value="mirror" data-act="target" ${target === 'mirror' ? 'checked' : ''}>
+            <span>Use a private copy instead <span class="cloud-dim">(<code>${esc(mirrorName)}</code>, your repo is never touched)</span></span></label>
+        </div>` : '';
+      const points = target === 'repo'
+        ? `<li>Each task gets its own branch, merged into <code>${esc(o.base)}</code> when it is done. Craft offers to pull the changes here.</li>
+           <li>Adds one file to the repo: <code>.github/workflows/craft-cloud.yml</code>.</li>`
+        : `<li>Creates a <b>private</b> repo, <code>${esc(mirrorName)}</code>, on ${s.github.userName ? `<b>${esc(s.github.userName)}</b>'s` : 'your'} GitHub, and backs this folder up there after every run. <code>.env</code> files, keys, and anything in <code>.gitignore</code> stay on this PC.</li>
+           <li>Changes come back when you click Apply in the chat.</li>`;
       box.innerHTML = `${head}<div class="cloud-body">
-        <p class="cloud-lead">Craft keeps working on <b>${esc(projectName())}</b> when this PC is off, on GitHub's machines in your own account. Nothing runs on Codeply's servers.</p>
-        <ul class="cloud-points">
-          <li>Creates a <b>private</b> repo, <code>craft-workspace-${esc(projectName().toLowerCase().replace(/[^a-z0-9._-]+/g, '-'))}</code>, on ${s.github.userName ? `<b>${esc(s.github.userName)}</b>'s` : 'your'} GitHub. Your real repo is never touched.</li>
-          <li>Backs this folder up there after every run. <code>.env</code> files, keys, and anything in <code>.gitignore</code> stay on this PC.</li>
-          <li>Stores your model key${s.model.ok ? ` (${esc(s.model.name)})` : ''} as an encrypted GitHub secret.</li>
-          <li>Uses your own GitHub Actions minutes. A run takes 30 to 60 seconds to start, and can't ask you questions midway.</li>
-        </ul>${err}<div class="cloud-actions">${action}</div></div>`;
+        <p class="cloud-lead">Craft keeps working on <b>${esc(projectName())}</b> when this PC is off, on GitHub in your own account. Nothing runs on Codeply's servers.</p>
+        ${choice}
+        <ul class="cloud-points">${points}
+          <li>Stores your model key${s.model.ok ? ` (${esc(s.model.name)})` : ''} as an encrypted GitHub secret. A run can't ask you questions midway.</li>
+        </ul>
+        <label class="cloud-env"><span class="cloud-env-label">Environment variables for testing <span class="cloud-dim">(optional, KEY=value per line)</span></span>
+          <textarea data-env rows="3" spellcheck="false" placeholder="${esc(ENV_PLACEHOLDER)}">${esc(envDraft)}</textarea>
+          <span class="cloud-dim">${ENV_NOTE}</span></label>
+        ${err}<div class="cloud-actions">${action}</div></div>`;
       wire(box);
       return;
     }
 
     const p = s.project;
-    const skipped = p.lastPush && p.lastPush.skipped && p.lastPush.skipped.length
-      ? `<details class="cloud-skipped"><summary>${p.lastPush.skipped.length} file${p.lastPush.skipped.length === 1 ? '' : 's'} kept off GitHub</summary><ul>${p.lastPush.skipped.map((f) => `<li><code>${esc(f.path)}</code> ${esc(f.reason)}</li>`).join('')}</ul></details>` : '';
+    const skipped = p.kind === 'mirror' && p.lastPush && p.lastPush.skipped && p.lastPush.skipped.length
+      ? `<details class="cloud-skipped"><summary>${plural(p.lastPush.skipped.length, 'file')} kept off GitHub</summary><ul>${p.lastPush.skipped.map((f) => `<li><code>${esc(f.path)}</code> ${esc(f.reason)}</li>`).join('')}</ul></details>` : '';
     const tasks = p.tasks.length ? p.tasks.slice(0, 8).map((t) => {
-      const canApply = t.status === 'done' && t.files.length && !t.pulledAt;
+      const canApply = t.kind !== 'repo' && t.status === 'done' && t.files.length && !t.pulledAt;
+      const merged = t.kind === 'repo' && t.merged ? (t.merged.ok ? ` · merged into ${esc(t.merged.base || t.base)}` : ' · kept on its branch') : '';
       return `<li class="cloud-task">
         <div class="cloud-task-main"><span class="cloud-dot ${t.status}"></span><span class="cloud-task-prompt">${esc(t.prompt.split('\n')[0].slice(0, 90))}</span></div>
-        <div class="cloud-task-meta">${esc(STATUS[t.status] || t.status)}${t.remote ? ' · from another device' : ''} · ${ago(t.startedAt)}${t.files.length ? ` · ${t.files.length} file${t.files.length === 1 ? '' : 's'}` : ''}${t.pulledAt ? ' · applied' : ''}
-          ${t.runUrl ? `<a href="#" data-url="${esc(t.runUrl)}">log</a>` : ''}
+        <div class="cloud-task-meta">${esc(STATUS[t.status] || t.status)}${t.remote ? ' · from another device' : ''} · ${ago(t.startedAt)}${t.files.length ? ` · ${plural(t.files.length, 'file')}` : ''}${merged}${t.pulledAt ? (t.kind === 'repo' ? ' · pulled' : ' · applied') : ''}
+          ${t.runUrl ? `<a href="#" data-url="${esc(t.runUrl)}">View run</a>` : ''}
           ${canApply ? `<button class="cp-action" data-act="apply-task" data-id="${esc(t.id)}">Apply</button>` : ''}</div></li>`;
     }).join('') : '<li class="cloud-dim">No cloud runs yet. Turn the switch on and send a message.</li>';
-    box.innerHTML = `${head}<div class="cloud-body">
-      <label class="cloud-switch"><input type="checkbox" data-act="cloudOn" ${p.cloudOn ? 'checked' : ''}><span><b>Send new messages to the cloud</b><br><span class="cloud-dim">Runs with ${esc(p.modelName || s.model.name)} on GitHub. Turn off to work on this PC again.</span></span></label>
-      <label class="cloud-switch"><input type="checkbox" data-act="autoBackup" ${p.autoBackup ? 'checked' : ''}><span><b>Back up after every run</b><br><span class="cloud-dim">So a cloud run started from your phone has your latest code.</span></span></label>
-      <div class="cloud-row"><span>Mirror: <a href="#" data-url="${esc(p.url)}">${esc(p.repo)}</a> (private)</span>
+    const where = p.kind === 'repo'
+      ? `<div class="cloud-row"><span>Works in <a href="#" data-url="${esc(p.url)}">${esc(p.repo)}</a> <span class="cloud-dim">(new branch per task, merged into <code>${esc(p.base)}</code>)</span></span></div>`
+      : `<label class="cloud-switch"><input type="checkbox" data-act="autoBackup" ${p.autoBackup ? 'checked' : ''}><span><b>Back up after every run</b><br><span class="cloud-dim">So a cloud run started from your phone has your latest code.</span></span></label>
+        <div class="cloud-row"><span>Private copy: <a href="#" data-url="${esc(p.url)}">${esc(p.repo)}</a></span>
         <span class="cloud-dim">${p.lastPush ? `backed up ${ago(p.lastPush.at)}` : 'not backed up yet'}</span>
-        <button class="cp-action" data-act="backup" ${busy ? 'disabled' : ''}>${busy === 'backup' ? 'Backing up...' : 'Back up now'}</button></div>
+        <button class="cp-action" data-act="backup" ${busy ? 'disabled' : ''}>${busy === 'backup' ? 'Backing up...' : 'Back up now'}</button></div>`;
+    const keys = (p.env && p.env.keys) || [];
+    const envRow = envEditing
+      ? `<div class="cloud-env"><span class="cloud-env-label">Environment variables for testing <span class="cloud-dim">(KEY=value per line)</span></span>
+          <textarea data-env rows="4" spellcheck="false" placeholder="${esc(ENV_PLACEHOLDER)}">${esc(envDraft)}</textarea>
+          <span class="cloud-dim">${ENV_NOTE}${keys.length ? ' Saved values can\'t be read back, so enter every line again. Save it empty to remove them all.' : ''}</span>
+          <div class="cloud-env-actions"><button class="cp-action" data-act="env-save" ${busy === 'env' ? 'disabled' : ''}>${busy === 'env' ? 'Saving...' : 'Save'}</button><button class="cloud-link" data-act="env-cancel">Cancel</button></div></div>`
+      : `<div class="cloud-row"><span>Environment: ${keys.length ? `<code>${keys.slice(0, 6).map(esc).join('</code> <code>')}</code>${keys.length > 6 ? ` and ${keys.length - 6} more` : ''}` : '<span class="cloud-dim">none</span>'}</span>
+          <button class="cp-action" data-act="env-edit">${keys.length ? 'Replace' : 'Add'}</button></div>`;
+    box.innerHTML = `${head}<div class="cloud-body">
+      <label class="cloud-switch"><input type="checkbox" data-act="cloudOn" ${p.cloudOn ? 'checked' : ''}><span><b>Send new messages to the cloud</b><br><span class="cloud-dim">Runs with ${esc(p.modelName || s.model.name)}. Turn off to work on this PC again.</span></span></label>
+      ${where}${envRow}
       ${skipped}${err}
       <div class="cloud-sub">Recent cloud runs</div><ul class="cloud-tasks">${tasks}</ul></div>`;
     wire(box);
@@ -148,24 +188,31 @@
   function wire(box) {
     box.querySelectorAll('[data-act="close"]').forEach((b) => b.addEventListener('click', closeSheet));
     box.querySelectorAll('[data-url]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); api.openExternal(a.dataset.url); }));
-    const on = (act, fn) => box.querySelectorAll(`[data-act="${act}"]`).forEach((el) => el.addEventListener(el.type === 'checkbox' ? 'change' : 'click', fn));
+    const on = (act, fn) => box.querySelectorAll(`[data-act="${act}"]`).forEach((el) => el.addEventListener(el.type === 'checkbox' || el.type === 'radio' ? 'change' : 'click', fn));
+    const envBox = box.querySelector('[data-env]');
+    if (envBox) envBox.addEventListener('input', () => { envDraft = envBox.value; });
     on('github', async () => {
       const r = await api.connectGithub();
       if (r && r.error) renderSheet({ error: r.error });
       await refresh(); renderSheet({});
     });
+    on('target', (e) => { setupTarget = e.target.value; renderSheet({}); });
     on('setup', async () => {
+      const o = current && current.origin && current.origin.canPush !== false ? current.origin : null;
+      const target = setupTarget || (o ? 'repo' : 'mirror');
+      const envText = envDraft;
       renderSheet({ busy: true });
-      const r = await api.cloudSetup(state.project);
+      const r = await api.cloudSetup(state.project, { target, envText });
       if (r.error) { await refresh(); renderSheet({ error: r.error }); return; }
+      envDraft = '';
       current = r.state; paintChips(); renderSheet({});
-      showToast(`Cloud runs are ready. ${r.skipped && r.skipped.length ? `${r.skipped.length} file(s) with keys were kept off GitHub.` : ''}`.trim());
+      showToast(`Cloud runs are ready. ${r.skipped && r.skipped.length ? `${plural(r.skipped.length, 'file')} with keys were kept off GitHub.` : ''}`.trim());
     });
     on('cloudOn', async (e) => {
       const r = await api.cloudOptions(state.project, { cloudOn: e.target.checked });
       if (r.error) { renderSheet({ error: r.error }); return; }
       current = r.state; paintChips();
-      showToast(e.target.checked ? 'New messages now run on GitHub.' : 'New messages run on this PC again.');
+      showToast(e.target.checked ? 'New messages now run in the cloud.' : 'New messages run on this PC again.');
     });
     on('autoBackup', async (e) => {
       const r = await api.cloudOptions(state.project, { autoBackup: e.target.checked });
@@ -178,25 +225,35 @@
       current = r.state; renderSheet({});
       showToast(r.pushed ? 'Backed up to GitHub.' : 'Already up to date.');
     });
+    on('env-edit', () => { envEditing = true; envDraft = ''; renderSheet({}); const t = box.querySelector('[data-env]'); if (t) t.focus(); });
+    on('env-cancel', () => { envEditing = false; envDraft = ''; renderSheet({}); });
+    on('env-save', async () => {
+      const text = envDraft;
+      renderSheet({ busy: 'env' });
+      const r = await api.cloudEnv(state.project, text);
+      if (r.error) { renderSheet({ error: r.error }); return; }
+      envEditing = false; envDraft = '';
+      current = r.state; renderSheet({});
+      showToast(r.count ? `Saved ${plural(r.count, 'variable')}.` : 'Environment cleared.');
+    });
     on('apply-task', async (e) => {
       e.target.disabled = true;
       const r = await api.cloudApplyTask(state.project, e.target.dataset.id);
       if (r.error) { renderSheet({ error: r.error }); return; }
       current = r.state; renderSheet({});
-      showToast(r.conflicts && r.conflicts.length ? `Applied, with conflicts in ${r.conflicts.join(', ')}.` : `Applied ${r.files.length} file(s).`, r.conflicts && r.conflicts.length ? 'error' : '');
+      showToast(r.conflicts && r.conflicts.length ? `Applied, with conflicts in ${r.conflicts.join(', ')}.` : `Applied ${plural(r.files.length, 'file')}.`, r.conflicts && r.conflicts.length ? 'error' : '');
     });
   }
 
-  // ─── Card in a chat ────────────────────────────────────────────────────────
-  // While GitHub gets a runner going (about 50s) and while it works, the card
-  // keeps moving: a rotating word, a countdown to the start, then elapsed time.
-  const VERBS = ['Codeplying', 'Cooking', 'Baking', 'Brewing', 'Whisking', 'Simmering', 'Tinkering', 'Crafting'];
-  const START_ETA = 50;
-  const liveTasks = new Map(); // task id -> task, for the ticker
-  const cloudChats = new Set(); // chats with a cloud card, beyond what the sidebar list already knows
+  // ─── In a chat ─────────────────────────────────────────────────────────────
+  // A cloud message reads like a local run: the app's own Working row at the
+  // bottom while it runs, the replayed steps as normal rows, then the answer.
+  // The only extra is one small line: "Running in the cloud" with Cancel while
+  // live, then "Ran in the cloud" with what happened to the code.
+  const liveTasks = new Map(); // task id -> task
+  const cloudChats = new Set(); // chats with a cloud line, beyond what the sidebar list already knows
 
-  // Cloud chats look like any chat, marked by a hollow blue cloud in the
-  // sidebar and a light blue wash behind the open conversation.
+  // Cloud chats look like any chat, marked by a hollow blue cloud in the sidebar.
   const HOLLOW = '<svg class="cloud-mark" viewBox="0 0 24 24" aria-label="Cloud chat"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1 .5 7.97V18Z"/></svg>';
   const isCloudChat = (id) => !!id && (cloudChats.has(id) || (state.sessions || []).some((s) => s.id === id && s.cloud));
   function markCloudChats() {
@@ -212,76 +269,85 @@
     if (view) view.classList.toggle('cloud-session', isCloudChat(state.currentSessionId) || !!chatColumn.querySelector('.cloud-card'));
   }
   setInterval(markCloudChats, 600);
-  const dur = (s) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`);
-  function liveText(task) {
-    const secs = Math.max(0, Math.round((Date.now() - (task.startedAt || Date.now())) / 1000));
-    const verb = `${VERBS[Math.floor(secs / 3) % VERBS.length]}...`;
-    if (task.status === 'running') return { verb, note: `Working on GitHub · ${dur(secs)}`, pct: null };
-    const left = START_ETA - secs;
-    const what = task.status === 'queued' ? 'Waiting for a GitHub runner' : 'Starting a GitHub runner';
-    // Fills toward 95% over the expected start; the last bit waits for the real thing.
-    return { verb, note: `${what} · ${left > 0 ? `about ${left}s left` : `any second now (${dur(secs)})`}`, pct: Math.min(95, Math.round((secs / START_ETA) * 95)) };
-  }
-  function paintLive(card, t) {
-    const v = card.querySelector('.cloud-verb');
-    const n = card.querySelector('.cloud-card-note');
-    const bar = card.querySelector('.cloud-bar');
-    if (v) v.textContent = t.verb;
-    if (n) n.textContent = t.note;
-    if (bar) {
-      bar.classList.toggle('working', t.pct == null);
-      bar.firstElementChild.style.width = t.pct == null ? '' : `${t.pct}%`;
+
+  /** The app's Thinking row, reading "Working" and counting from the run's start, kept last in the chat. */
+  function ensureWorking() {
+    if (typeof chatColumn === 'undefined' || typeof showThinking !== 'function') return;
+    const live = [...chatColumn.querySelectorAll('.cloud-card.live')].pop();
+    const task = live && liveTasks.get(live.dataset.taskId);
+    if (!task) {
+      if (typeof thinkingEl !== 'undefined' && thinkingEl && thinkingEl.classList.contains('cloud-working')) hideThinking();
+      return;
     }
-  }
-  setInterval(() => {
-    for (const [id, task] of liveTasks) {
-      const card = chatColumn.querySelector(`.cloud-card[data-task-id="${CSS.escape(id)}"]`);
-      if (!card) { liveTasks.delete(id); continue; }
-      paintLive(card, liveText(task));
+    const stick = nearBottom();
+    if (!thinkingEl) showThinking();
+    if (!thinkingEl) return;
+    if (chatColumn.lastElementChild !== thinkingEl) chatColumn.appendChild(thinkingEl);
+    thinkingEl.classList.add('cloud-working');
+    const label = thinkingEl.querySelector('.thinking-label');
+    if (label && label.textContent !== 'Working') label.textContent = 'Working';
+    if (task.startedAt) {
+      try { thinkingStart = task.startedAt; } catch {}
+      const time = thinkingEl.querySelector('.thinking-time');
+      if (time) time.textContent = `${Math.max(0, Math.floor((Date.now() - task.startedAt) / 1000))}s`;
     }
-  }, 1000);
+    if (stick) scrollToBottom();
+  }
+  setInterval(ensureWorking, 1000);
+
+  /** A finished run's line goes after its steps and answer, before the next message. */
+  function moveToTurnEnd(card) {
+    let last = card;
+    for (let n = card.nextElementSibling; n && !n.classList.contains('user') && !n.classList.contains('cloud-card') && !n.classList.contains('thinking-row'); n = n.nextElementSibling) last = n;
+    if (last !== card) last.after(card);
+  }
+
+  function resultHtml(task) {
+    if (task.status !== 'done') return '';
+    const files = task.files || [];
+    if (task.kind === 'repo') {
+      const m = task.merged;
+      if (m && m.ok) {
+        return `<span class="cloud-sep">·</span><span>Merged into <code>${esc(m.base || task.base)}</code></span>${task.pulledAt
+          ? '<span class="cloud-sep">·</span><span>Pulled</span>'
+          : '<button class="cp-action cloud-line-btn" data-act="pull">Pull</button>'}`;
+      }
+      if (m && !m.ok) return `<span class="cloud-sep">·</span><span>Kept on <code>${esc(task.branch || 'its branch')}</code>${m.reason ? `: ${esc(m.reason)}` : ''}</span>`;
+      return files.length ? `<span class="cloud-sep">·</span><span>Changed ${plural(files.length, 'file')}</span>` : '';
+    }
+    if (!files.length) return task.mode === 'Build' ? '<span class="cloud-sep">·</span><span>No files changed</span>' : '';
+    return task.pulledAt
+      ? `<span class="cloud-sep">·</span><span>Applied ${plural(files.length, 'file')}</span>`
+      : `<span class="cloud-sep">·</span><span>Changed ${plural(files.length, 'file')}</span><button class="cp-action cloud-line-btn" data-act="apply">Apply to project</button>`;
+  }
 
   function render(task) {
     if (!task || typeof chatColumn === 'undefined') return;
     let card = chatColumn.querySelector(`.cloud-card[data-task-id="${CSS.escape(task.id)}"]`);
-    // The first event has a placeholder id; the real one replaces it on the same card.
+    // The first event has a placeholder id; the real one replaces it on the same line.
     if (!card && !String(task.id).startsWith('pending-')) {
       const pending = [...chatColumn.querySelectorAll('.cloud-card[data-pending="1"]')].pop();
       if (pending) card = pending;
     }
     const stick = nearBottom();
     if (!card) { card = document.createElement('div'); chatColumn.appendChild(card); }
-    card.className = `cloud-card ${task.status}`;
+    const live = LIVE.has(task.status);
+    const pendingId = String(task.id).startsWith('pending-');
+    card.className = `cloud-card ${task.status}${live ? ' live' : ''}`;
     card.dataset.taskId = task.id;
-    card.dataset.pending = String(task.id).startsWith('pending-') ? '1' : '0';
-    const live = task.status === 'starting' || task.status === 'queued' || task.status === 'running';
-    // The steps themselves are normal chat rows under this card now.
-    const steps = [];
+    card.dataset.pending = pendingId ? '1' : '0';
     if (state.currentSessionId) cloudChats.add(state.currentSessionId);
-    for (const [id] of liveTasks) if (id.startsWith('pending-') && !String(task.id).startsWith('pending-')) liveTasks.delete(id);
+    for (const [id] of liveTasks) if (id.startsWith('pending-') && !pendingId) liveTasks.delete(id);
     if (live) liveTasks.set(task.id, task); else liveTasks.delete(task.id);
-    const lt = live ? liveText(task) : null;
-    const files = task.files || [];
-    const stats = new Map((task.stats || []).map((s) => [s.file, s]));
-    const fileList = files.slice(0, 8).map((f) => {
-      const s = stats.get(f);
-      return `<li><code>${esc(f)}</code>${s && s.added != null ? `<span class="cloud-add">+${s.added}</span><span class="cloud-del">-${s.removed}</span>` : ''}</li>`;
-    }).join('') + (files.length > 8 ? `<li class="cloud-dim">and ${files.length - 8} more</li>` : '');
-    let foot = '';
-    if (task.status === 'done' && files.length) {
-      foot = task.pulledAt
-        ? `<div class="cloud-foot"><span>Applied ${files.length} file${files.length === 1 ? '' : 's'} to the project.</span></div><ul class="cloud-files">${fileList}</ul>`
-        : `<div class="cloud-foot"><span>Changed ${files.length} file${files.length === 1 ? '' : 's'} and pushed to GitHub</span>
-           <button class="cp-action" data-act="apply">Apply to project</button></div><ul class="cloud-files">${fileList}</ul>`;
-    } else if (task.status === 'done' && task.mode === 'Build') {
-      foot = '<div class="cloud-foot"><span class="cloud-dim">No files changed.</span></div>';
-    }
-    card.innerHTML = `<div class="cloud-card-head"><span class="cloud-card-icon">${ICON}</span><span class="cloud-card-status">${live ? `<span class="cloud-verb">${esc(lt.verb)}</span>` : esc(STATUS[task.status] || task.status)}</span>
-        ${task.runUrl ? '<a href="#" class="cloud-link" data-act="log">View run</a>' : ''}
-        ${live && !String(task.id).startsWith('pending-') ? '<button class="cloud-link" data-act="cancel">Cancel</button>' : ''}</div>
-      ${live ? `<div class="cloud-card-note">${esc(lt.note)}</div><div class="cloud-bar"><i></i></div>` : ''}
-      ${steps.length ? `<div class="cloud-steps">${steps.map((l) => `<div>${esc(l.slice(2))}</div>`).join('')}</div>` : ''}
-      ${task.error ? `<div class="cloud-error">${esc(task.error)}</div>` : ''}${foot}`;
+
+    const runLink = task.runUrl ? '<span class="cloud-sep">·</span><a href="#" class="cloud-link" data-act="log">View run</a>' : '';
+    let text;
+    if (live) text = 'Running in the cloud';
+    else if (task.status === 'done') text = 'Ran in the cloud';
+    else if (task.status === 'cancelled') text = 'Cloud run cancelled';
+    else text = `Cloud run failed${task.error ? `: ${esc(task.error)}` : ''}`;
+    card.innerHTML = `<span class="cloud-card-icon">${ICON}</span><span class="cloud-card-text">${text}</span>${resultHtml(task)}${runLink}${live && !pendingId ? '<span class="cloud-sep">·</span><button class="cloud-link" data-act="cancel">Cancel</button>' : ''}`;
+
     const log = card.querySelector('[data-act="log"]');
     if (log) log.addEventListener('click', (e) => { e.preventDefault(); api.openExternal(task.runUrl); });
     const cancel = card.querySelector('[data-act="cancel"]');
@@ -296,18 +362,95 @@
       const r = await api.cloudApply(state.currentSessionId, task.id);
       if (r.error) { apply.disabled = false; apply.textContent = 'Apply to project'; showToast(r.error, 'error'); }
     });
-    if (live) paintLive(card, lt);
-    if (stick) scrollToBottom();
+    const pullBtn = card.querySelector('[data-act="pull"]');
+    if (pullBtn) pullBtn.addEventListener('click', async () => {
+      pullBtn.disabled = true; pullBtn.textContent = 'Pulling...';
+      const r = await api.cloudPull(state.project, state.currentSessionId, task.id);
+      if (r.error) { pullBtn.disabled = false; pullBtn.textContent = 'Pull'; showToast(r.error, 'error'); return; }
+      showToast(r.pulled ? `Pulled ${plural(r.pulled, 'commit')}.` : 'Already up to date.');
+      hidePullBar();
+    });
+    // After the rest of this turn has been drawn (reopening a chat draws it in order).
+    setTimeout(() => {
+      if (!card.isConnected) return;
+      ensureWorking();
+      if (!live) moveToTurnEnd(card);
+      if (stick) scrollToBottom();
+    }, 0);
   }
 
-  window.CraftCloud = { render, refresh, openSheet };
+  // ─── Pull before coding ──────────────────────────────────────────────────
+  // When a project opens and before a message goes out (at most once a minute
+  // per project), ask git whether GitHub has commits this copy doesn't. Never blocks.
+  const CHECK_EVERY = 60000;
+  const lastCheck = new Map();   // cwd -> time
+  const dismissed = new Map();   // cwd -> behind count the user said "Not now" to
+  let pullInfo = null;           // { cwd, behind, branch, latest }
+
+  function pullBars() {
+    const bars = [];
+    document.querySelectorAll('.composer').forEach((composer) => {
+      const wrap = composer.closest('.composer-wrap') || composer.parentElement;
+      let bar = wrap.querySelector(':scope > .pull-bar');
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.className = 'pull-bar hidden';
+        wrap.prepend(bar);
+      }
+      bars.push(bar);
+    });
+    return bars;
+  }
+  function hidePullBar() { pullInfo = null; pullBars().forEach((b) => { b.classList.add('hidden'); b.innerHTML = ''; }); }
+  function showPullBar(info, { busy, error } = {}) {
+    pullInfo = info;
+    const html = `<span class="pull-bar-text">GitHub has ${plural(info.behind, 'new commit')} on <code>${esc(info.branch)}</code>${info.latest ? ` (latest: ${esc(info.latest)})` : ''}. Pull ${info.behind === 1 ? 'it' : 'them'} first?</span>
+      ${error ? `<span class="pull-bar-error">${esc(error)}</span>` : ''}
+      <button class="cp-action" data-act="pull" ${busy ? 'disabled' : ''}>${busy ? 'Pulling...' : 'Pull'}</button>
+      <button class="cloud-link" data-act="later" ${busy ? 'disabled' : ''}>Not now</button>`;
+    for (const bar of pullBars()) {
+      bar.innerHTML = html;
+      bar.classList.remove('hidden');
+      bar.querySelector('[data-act="pull"]').addEventListener('click', doPull);
+      bar.querySelector('[data-act="later"]').addEventListener('click', () => { dismissed.set(info.cwd, info.behind); hidePullBar(); });
+    }
+  }
+  async function doPull() {
+    const info = pullInfo;
+    if (!info) return;
+    showPullBar(info, { busy: true });
+    let r;
+    try { r = await api.cloudPull(info.cwd); } catch (e) { r = { error: e.message }; }
+    if (r.error) { showPullBar(info, { error: r.error }); return; }
+    hidePullBar();
+    lastCheck.set(info.cwd, Date.now());
+    showToast(r.pulled ? `Pulled ${plural(r.pulled, 'commit')}.` : 'Already up to date.');
+  }
+  async function checkPull(force = false) {
+    const cwd = typeof state !== 'undefined' ? state.project : null;
+    if (!cwd || !api.cloudCheckBehind) return;
+    if (!force && Date.now() - (lastCheck.get(cwd) || 0) < CHECK_EVERY) return;
+    lastCheck.set(cwd, Date.now());
+    let r;
+    try { r = await api.cloudCheckBehind(cwd); } catch { return; }
+    if (state.project !== cwd) return;
+    if (r && r.ok && r.behind > 0 && (dismissed.get(cwd) || 0) < r.behind) showPullBar({ cwd, behind: r.behind, branch: r.branch, latest: r.latest });
+    else if (!pullInfo || pullInfo.cwd === cwd) hidePullBar();
+  }
+
+  window.CraftCloud = { render, refresh, openSheet, checkPull, beforeSend: () => { checkPull(); } };
 
   addChips();
   refresh();
+  checkPull();
   // The composer is rebuilt in places and the project changes from several screens; keep up cheaply.
   setInterval(() => {
     addChips();
-    if (state.project !== lastProject) refresh();
+    if (state.project !== lastProject) {
+      if (pullInfo && pullInfo.cwd !== state.project) hidePullBar();
+      refresh();
+      checkPull();
+    }
   }, 1500);
   window.addEventListener('focus', refresh);
 })();
