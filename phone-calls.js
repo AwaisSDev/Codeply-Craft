@@ -254,6 +254,19 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     if (actx && actx.state !== 'running') { try { actx.resume(); } catch {} }
     return actx;
   }
+  // The bot's voice can also go through this <audio> element. iOS unlocks it
+  // with a silent play inside the Call tap, and it keeps working when the
+  // mic makes iOS suspend the AudioContext.
+  let voiceEl = null;
+  const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+  function unlockVoiceEl() {
+    try {
+      if (!voiceEl) { voiceEl = new Audio(); voiceEl.setAttribute('playsinline', ''); voiceEl.preload = 'auto'; }
+      voiceEl.src = SILENT_WAV;
+      const p = voiceEl.play();
+      if (p && p.catch) p.catch(() => {});
+    } catch {}
+  }
   async function wake(ctx) {
     if (!ctx || ctx.state === 'running') return !!ctx;
     try { await Promise.race([ctx.resume(), sleep(800)]); } catch {}
@@ -514,9 +527,9 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     try { fetch(TTS_URL, { method: 'GET', cache: 'no-store' }).catch(() => {}); } catch {}
   }
   /** One chunk -> an AudioBuffer, or null (then the phone's voice says it). Decodes as soon as the bytes land. */
-  async function ttsClip(text, token, authP) {
+  async function ttsClip(text, token, authP, retried) {
     const me = c;
-    if (!me || me.ttsOff || !me.ctx || !TTS_URL || token !== me.token) return null;
+    if (!me || me.ttsOff || !TTS_URL || token !== me.token) return null;
     if (!me.ttsCtl || me.ttsCtl.token !== token) me.ttsCtl = { token, ctl: new AbortController() };
     const signal = me.ttsCtl.ctl.signal;
     const timer = new AbortController();
@@ -540,11 +553,22 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       }
       const bytes = await res.arrayBuffer();
       if (!bytes.byteLength) throw new Error('Empty voice.');
-      return await decodeAudio(me.ctx, bytes);
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+      let buf = null;
+      try { if (me.ctx && me.ctx.state !== 'closed') buf = await decodeAudio(me.ctx, bytes.slice(0)); } catch {}
+      return { buf, url };
     } catch (e) {
       if (signal.aborted || c !== me) return null; // interrupted, not broken
-      me.ttsOff = true; // the phone's voice for the rest of this call
-      if (e.status === 429) { me.ttsNote = "Daily voice limit reached, using the phone's voice"; showNote(); }
+      const lasting = e.status === 401 || e.status === 429 || e.status === 503;
+      if (!lasting && !retried) { clearTimeout(t); return ttsClip(text, token, authP, true); }
+      if (lasting || retried) {
+        if (lasting) me.ttsOff = true; // the phone's voice for the rest of this call
+        me.ttsNote = e.status === 429 ? "Daily voice limit reached, using the phone's voice"
+          : e.status === 401 ? "Sign in again for the bot's voice, using the phone's voice"
+          : e.status === 503 ? "Bot voices are not set up yet, using the phone's voice"
+          : `Bot voice failed (${e.status || e.message}), using the phone's voice for that line`;
+        showNote();
+      }
       return null;
     } finally {
       clearTimeout(t);
@@ -552,12 +576,15 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     }
   }
   /** Play a clip through the call's AudioContext, its words appearing as they are said. Resolves false when cut off, 'fallback' if audio is locked. */
-  async function playClip(buf, token, text, onStart) {
+  async function playClip(clip, token, text, onStart) {
     const me = c;
     if (!me || token !== me.token) return false;
     const ctx = me.ctx;
-    if (ctx.state !== 'running' && !(await wake(ctx))) return 'fallback'; // iOS can suspend it when the mic starts
+    const running = ctx && clip.buf && (ctx.state === 'running' || (await wake(ctx)));
     if (c !== me || token !== me.token) return false;
+    if (!running) return playEl(clip, token, text, onStart); // iOS suspended it when the mic started
+    const buf = clip.buf;
+    URL.revokeObjectURL(clip.url);
     return new Promise((resolve) => {
       const src = ctx.createBufferSource();
       src.buffer = buf;
@@ -584,12 +611,44 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       if (onStart) onStart();
     });
   }
+  /** The same clip through the unlocked <audio> element. */
+  function playEl(clip, token, text, onStart) {
+    const me = c;
+    return new Promise((resolve) => {
+      if (!voiceEl) { URL.revokeObjectURL(clip.url); resolve('fallback'); return; }
+      const el = voiceEl;
+      let done = false;
+      const fin = (ok) => {
+        if (done) return; done = true;
+        clearTimeout(safety);
+        el.onended = null; el.onerror = null; el.onplaying = null;
+        URL.revokeObjectURL(clip.url);
+        if (me.playing && me.playing.el === el) me.playing = null;
+        if (ok === true && c === me && token === me.token) { stopReveal(); caption(text, 'bot'); }
+        resolve(ok);
+      };
+      const safety = setTimeout(() => fin(true), 30000);
+      el.onended = () => fin(true);
+      el.onerror = () => fin('fallback');
+      el.onplaying = () => {
+        if (c !== me || token !== me.token) return;
+        const dur = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : Math.max(0.6, text.length * 0.062);
+        revealTimed(text, () => el.currentTime, dur);
+        if (onStart) onStart();
+      };
+      me.playing = { el, fin };
+      el.volume = me.speaker ? 1 : 0.45;
+      el.src = clip.url;
+      const p = el.play();
+      if (p && p.catch) p.catch(() => fin('fallback'));
+    });
+  }
   function stopPlayback() {
     const p = c && c.playing;
     stopReveal();
     if (!p) return;
     c.playing = null;
-    try { p.src.onended = null; p.src.stop(); } catch {}
+    try { if (p.src) { p.src.onended = null; p.src.stop(); } if (p.el) p.el.pause(); } catch {}
     p.fin(false);
   }
 
@@ -1095,6 +1154,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       sttLoad();
     }
     if (synth) { try { synth.cancel(); const u = new SpeechSynthesisUtterance(' '); u.volume = 0; synth.speak(u); } catch {} }
+    unlockVoiceEl(); // inside the tap, so iOS lets it play the bot's voice later
     warmTts(); // wakes the voice function while it rings
 
     const tint = tintOf(bot.avatar);
@@ -1134,7 +1194,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       id: newId(), bot, ctx, token: 0, turns: [], muted: false, speaker: true, typing: !canHear, phase: 'ringing',
       startedAt: Date.now(), connectedAt: 0, lastBotText: '', rec: null, abort: null, ending: false,
       voice: voiceFor(bot), pitch: 0.92 + (hash(`${bot.id}p`) % 17) / 100, fails: 0, recAt: 0,
-      ears: false, vad: null, queued: null, dgVoice: deepgramVoice(bot), ttsOff: !ctx, ttsCtl: null, ttsNote: '', playing: null, noteBase: '',
+      ears: false, vad: null, queued: null, dgVoice: deepgramVoice(bot), ttsOff: !TTS_URL, ttsCtl: null, ttsNote: '', playing: null, noteBase: '',
     };
     if (c.typing) root().classList.add('typing');
     q('[data-c="end"]').addEventListener('click', () => endCall());
@@ -1182,7 +1242,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     if (!c) return;
     c.speaker = !c.speaker;
     q('[data-c="speaker"]').classList.toggle('on', c.speaker);
-    if (c.playing) { try { c.playing.gain.gain.value = c.speaker ? 1 : 0.45; } catch {} }
+    if (c.playing) { try { const v = c.speaker ? 1 : 0.45; if (c.playing.gain) c.playing.gain.gain.value = v; if (c.playing.el) c.playing.el.volume = v; } catch {} }
   }
   function toggleLog() {
     if (!c) return;
