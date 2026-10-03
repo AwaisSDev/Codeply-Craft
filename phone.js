@@ -718,7 +718,7 @@ async function chatSend(chat, text) {
     const res = await fetch(AI_PROXY_URL, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: [{ role: 'system', content: CHAT_SYSTEM }, ...history], opts: {} }),
+      body: JSON.stringify({ messages: [{ role: 'system', content: CHAT_SYSTEM + (window.CraftReminders ? window.CraftReminders.chatRules() : '') }, ...history], opts: {} }),
       signal: controller.signal,
     });
     const data = await res.json().catch(() => ({}));
@@ -734,6 +734,20 @@ async function chatSend(chat, text) {
   } finally {
     state.chatAbort = null;
     state.busy.delete(chat.id);
+  }
+  // Reminders the reply asked for ([[REMIND: ...]] lines, phone-reminders.js): saved, and the lines hidden.
+  if (reply && window.CraftReminders) {
+    const R = window.CraftReminders;
+    const { text, reminds } = R.extract(reply);
+    if (reminds.length) {
+      const notes = [];
+      for (const t of reminds) {
+        try { const r = await R.createFromTag(t, null); notes.push(`Reminder set: ${r.text}, ${R.whenLabel(r.due_at)}${r.kind === 'call' ? ' (a call)' : ''}.`); }
+        catch (e) { notes.push(`Couldn't set a reminder: ${e.message}`); }
+      }
+      if (R.pushState() !== 'granted') notes.push('Open Calls to let Codeply send you notifications.');
+      reply = `${text}\n\n${notes.map((n) => `- ${n}`).join('\n')}`.trim();
+    }
   }
   if (reply) b.messages.push({ role: 'assistant', content: reply, at: Date.now() });
   else if (error) b.messages.push({ role: 'error', content: error, at: Date.now() });
@@ -1769,3 +1783,9 @@ currentSession().then((s) => { if (s) enterApp(); else showSignin(); }).catch(sh
 // phone-calls.js (Calls with bots) builds on these too.
 window.CraftPhone = { state, relay, sealSecret, CLOUD_WORKFLOW, md, pollAll, relayRequest, accessToken, esc, load, save, newId, openDrawer, closeDrawer, AI_PROXY_URL, SUPABASE_ANON_KEY,
   cloudEnvForBots, startCloudTask, pollCloudTask: pollTask };
+
+// Reminders and "calls" from your bots arrive as Web Push: phone-sw.js shows
+// them (phone-reminders.js asks for permission and subscribes).
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  navigator.serviceWorker.register('phone-sw.js', { scope: './' }).catch((e) => console.debug('[phone] service worker:', e.message));
+}

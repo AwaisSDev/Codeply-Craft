@@ -853,6 +853,7 @@ ipcMain.handle('integrations:connectGmail', async () => {
       refreshToken: tokens.refresh_token || configLib.getIntegration('gmail').refreshToken,
       expiresAt: Date.now() + (tokens.expires_in || 3600) * 1000,
       email,
+      scope: tokens.scope || '', // what Google granted (drafts and Calendar need their own scopes)
     });
     return { ok: true, email };
   } catch (e) {
@@ -2586,6 +2587,9 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
       // For a shell command, the names "always allow" would cover; none means
       // it can't be scoped (subshells, redirects) and the card won't offer it.
       alwaysScope: req.tool === 'run' ? (!req.danger && Array.isArray(req.patterns) ? req.patterns : []) : null,
+      // An email (gmail_send / gmail_draft): the card shows it as editable fields.
+      draft: req.draft || null,
+      draftOnly: !!req.draftOnly,
     });
     return new Promise((resolve) => {
       pendingApprovals.set(id, { sessionId: session.id, resolve: (verdict) => {
@@ -2602,7 +2606,7 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
           syncSessionToDb(session);
         }
         // Tell every other device showing this card that it's been answered.
-        sendEvent(session.id, { type: 'approval_resolved', requestId: id, verdict });
+        sendEvent(session.id, { type: 'approval_resolved', requestId: id, verdict: typeof verdict === 'object' ? verdict.verdict : verdict });
         resolve(verdict === 'reject' ? 'reject' : verdict);
       } });
     });
@@ -2803,9 +2807,16 @@ function respondQuestion(requestId, answer) {
 }
 ipcMain.on('question:respond', (e, { requestId, answer }) => respondQuestion(requestId, answer));
 
+// A verdict is a plain 'once' | 'always' | 'reject' | 'draft', or
+// { verdict, edits: { to, subject, body } } when an email card was edited.
 function respondApproval(requestId, verdict) {
   const p = pendingApprovals.get(Number(requestId));
-  if (p) p.resolve(['once', 'always', 'reject'].includes(verdict) ? verdict : 'reject');
+  if (!p) return;
+  const v = verdict && typeof verdict === 'object' ? verdict.verdict : verdict;
+  const clean = ['once', 'always', 'reject', 'draft'].includes(v) ? v : 'reject';
+  const e = verdict && typeof verdict === 'object' && verdict.edits && typeof verdict.edits === 'object' ? verdict.edits : null;
+  const edits = e && Object.fromEntries(['to', 'subject', 'body'].filter((k) => typeof e[k] === 'string').map((k) => [k, e[k].slice(0, 100000)]));
+  p.resolve(edits && clean !== 'reject' ? { verdict: clean, edits } : clean);
 }
 function respondImagePick(requestId, chosenUrl) {
   const p = pendingImagePicks.get(Number(requestId));

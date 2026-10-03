@@ -1665,6 +1665,224 @@ process.stdin.on('data', (d) => {
   }
 }
 
+// ─── Gmail drafts, edit before send, Google Calendar (fake Google API) ─────
+{
+  const oauth = require(path.join(CLI, 'lib/oauth-connectors.js'));
+  const config = require(path.join(CLI, 'lib/config.js'));
+  const bots = require(path.join(CLI, 'lib/bots.js'));
+  const { executeTool } = await import(pathToFileURL(path.join(CLI, 'lib/tools.mjs')).href);
+  const realFetch = globalThis.fetch;
+  const realGet = config.getIntegration;
+  const realSave = config.saveIntegration;
+  const realDisconnect = config.disconnectIntegration;
+  const realHome = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME };
+  const fakeHome = path.join(tmp, 'google-home');
+  fs.mkdirSync(fakeHome, { recursive: true });
+  process.env.USERPROFILE = fakeHome; process.env.HOME = fakeHome;
+  const draftsDir = path.join(fakeHome, '.codeply', 'drafts');
+  const FULL = Object.values(oauth.GOOGLE_SCOPE).join(' ') + ' https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
+  const connected = (scope = FULL) => ({ accessToken: 'TOK', refreshToken: '', expiresAt: Date.now() + 3600e3, email: 'me@example.com', scope });
+  let gmail = connected();
+  // The real config file is never touched: the Gmail connection lives here.
+  config.getIntegration = (n) => (n === 'gmail' ? { ...gmail } : realGet(n));
+  config.saveIntegration = (n, patch) => (n === 'gmail' ? (gmail = { ...gmail, ...patch }) : realSave(n, patch));
+  config.disconnectIntegration = (n) => (n === 'gmail' ? (gmail = { accessToken: '' }) : realDisconnect(n));
+  const reqs = [];
+  let reply = () => ({ status: 200, body: {} });
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).startsWith('http://127.0.0.1')) return realFetch(url, init); // the fake model server
+    const r = { url: String(url), method: init.method || 'GET', body: init.body ? JSON.parse(init.body) : null, auth: init.headers && init.headers.Authorization };
+    reqs.push(r);
+    const out = reply(r);
+    return new Response(JSON.stringify(out.body), { status: out.status });
+  };
+  const decode = (raw) => Buffer.from(String(raw).replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+  const asked = [];
+  const ctxWith = (answer) => ({ cwd: tmp, mode: 'Build', approve: async (req) => { asked.push(req); return typeof answer === 'function' ? answer(req) : answer; } });
+  const localDrafts = () => { try { return fs.readdirSync(draftsDir).map((f) => JSON.parse(fs.readFileSync(path.join(draftsDir, f), 'utf8'))); } catch { return []; } };
+  const reset = () => { reqs.length = 0; asked.length = 0; };
+  const insufficient = { error: { code: 403, message: 'Request had insufficient authentication scopes.', errors: [{ reason: 'insufficientPermissions', message: 'Insufficient Permission' }], status: 'PERMISSION_DENIED' } };
+  try {
+    const authUrl = new URL(oauth.buildGmailAuthUrl('cid', 'http://localhost:1/cb'));
+    const scopes = authUrl.searchParams.get('scope').split(' ');
+    check('google: Connect Gmail asks for drafts (gmail.compose) and Calendar events too', scopes.includes('https://www.googleapis.com/auth/gmail.compose') && scopes.includes('https://www.googleapis.com/auth/calendar.events') && scopes.includes('https://www.googleapis.com/auth/gmail.send') && scopes.includes('https://www.googleapis.com/auth/gmail.readonly'), scopes.join(' '));
+
+    // gmail_draft into Gmail
+    reset();
+    reply = () => ({ status: 200, body: { id: 'r-123', message: { id: 'm1' } } });
+    let r = await executeTool('gmail_draft', { to: 'a@b.com', subject: 'Hello', body: 'Line one\nLine two' }, ctxWith('once'));
+    const raw0 = reqs[0] && reqs[0].body && reqs[0].body.message ? decode(reqs[0].body.message.raw) : '';
+    check('gmail_draft: POSTs users/me/drafts with a raw RFC 2822 message', r.ok && reqs.length === 1 && reqs[0].method === 'POST' && reqs[0].url === 'https://www.googleapis.com/gmail/v1/users/me/drafts' && reqs[0].auth === 'Bearer TOK' &&
+      /^To: a@b\.com\r\nSubject: Hello\r\nContent-Type: text\/plain; charset="UTF-8"\r\n\r\nLine one\nLine two$/.test(raw0) && /Gmail's Drafts/.test(r.output) && /r-123/.test(r.output), JSON.stringify({ r, raw0 }));
+    check('gmail_draft: asks with the email as an editable draft-only card', asked.length === 1 && asked[0].tool === 'gmail_draft' && asked[0].draftOnly === true && asked[0].draft.to === 'a@b.com' && asked[0].draft.subject === 'Hello', JSON.stringify(asked));
+    check('gmail_draft: nothing is saved locally when Gmail took it', localDrafts().length === 0);
+
+    // Google refuses (old connection without gmail.compose): saved locally, says reconnect
+    reset();
+    reply = () => ({ status: 403, body: insufficient });
+    r = await executeTool('gmail_draft', { to: 'a@b.com', subject: 'Scope', body: 'x' }, ctxWith('once'));
+    check('gmail_draft: a 403 insufficientPermissions keeps the draft in Codeply and says to reconnect Gmail to allow drafts', r.ok && /Reconnect Gmail in Connect Apps to allow drafts/.test(r.output) && localDrafts().some((d) => d.subject === 'Scope'), r.output);
+
+    // A connection known to lack compose never calls Google
+    reset();
+    gmail = connected('https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send');
+    r = await executeTool('gmail_draft', { subject: 'Known', body: 'y' }, ctxWith('once'));
+    check('gmail_draft: a stored connection without gmail.compose goes straight to a local draft with the reconnect note', r.ok && reqs.length === 0 && /Reconnect Gmail in Connect Apps to allow drafts/.test(r.output), r.output);
+
+    // Gmail not connected: local fallback, with the card's edits
+    reset();
+    gmail = { accessToken: '' };
+    for (const d of localDrafts()) fs.rmSync(path.join(draftsDir, `${d.id}.json`));
+    r = await executeTool('gmail_draft', { to: 'boss@x.com', subject: 'Report', body: 'Draft body' }, ctxWith({ verdict: 'once', edits: { subject: 'Weekly report', body: 'Edited body' } }));
+    const saved = localDrafts();
+    check('gmail_draft: without Gmail it saves one JSON file in ~/.codeply/drafts (id, to, subject, body, createdAt) with the edits', r.ok && saved.length === 1 && /^d[a-z0-9]+$/.test(saved[0].id) && saved[0].to === 'boss@x.com' && saved[0].subject === 'Weekly report' && saved[0].body === 'Edited body' && !Number.isNaN(Date.parse(saved[0].createdAt)) && reqs.length === 0, JSON.stringify({ r, saved }));
+    check('gmail_draft: and says it is in Codeply, not Gmail', /not connected/.test(r.output) && new RegExp(saved[0].id).test(r.output) && /Nothing was sent/.test(r.output), r.output);
+    r = await executeTool('gmail_draft', { to: 'x@y.z' }, ctxWith('once'));
+    check('gmail_draft: refuses an empty draft', !r.ok && /subject.*body/.test(r.output));
+    reset();
+    r = await executeTool('gmail_draft', { subject: 'No', body: 'no' }, ctxWith('reject'));
+    check('gmail_draft: "Don\'t send" saves nothing', !r.ok && r.meta && r.meta.rejected && localDrafts().length === 1);
+
+    r = await executeTool('drafts_list', {}, ctxWith('once'));
+    check('drafts_list: lists the saved drafts with their ids', r.ok && r.output.includes(saved[0].id) && /Weekly report/.test(r.output) && /boss@x\.com/.test(r.output), r.output);
+
+    // gmail_send: the user's edits are what goes out
+    gmail = connected();
+    reset();
+    reply = (q) => ({ status: 200, body: q.url.endsWith('/messages/send') ? { id: 'sent-1' } : { id: 'gd-1' } });
+    r = await executeTool('gmail_send', { to: 'a@b.com', subject: 'Original', body: 'Original body' }, ctxWith({ verdict: 'once', edits: { to: ' c@d.com ', subject: 'Edited subject', body: 'Edited body\nsecond line' } }));
+    const sentRaw = reqs[0] && reqs[0].body ? decode(reqs[0].body.raw) : '';
+    check('gmail_send: the approval request carries the structured draft', asked.length === 1 && asked[0].tool === 'gmail_send' && !asked[0].draftOnly && JSON.stringify(asked[0].draft) === JSON.stringify({ to: 'a@b.com', subject: 'Original', body: 'Original body' }), JSON.stringify(asked));
+    check('gmail_send: the edited To, Subject and Body are what is sent', r.ok && reqs.length === 1 && reqs[0].url.endsWith('/gmail/v1/users/me/messages/send') && /^To: c@d\.com\r\nSubject: Edited subject\r\n[\s\S]*\r\n\r\nEdited body\nsecond line$/.test(sentRaw) && !/Original/.test(sentRaw), JSON.stringify({ r, sentRaw }));
+    check('gmail_send: the result tells the agent what really went out', /edited it/.test(r.output) && /c@d\.com/.test(r.output) && /Edited subject/.test(r.output), r.output);
+    reset();
+    r = await executeTool('gmail_send', { to: 'a@b.com', subject: 'Plain', body: 'Plain body' }, ctxWith('once'));
+    check('gmail_send: a plain "once" still sends it unchanged', r.ok && /^To: a@b\.com\r\nSubject: Plain\r\n/.test(decode(reqs[0].body.raw)) && !/edited/.test(r.output));
+    reset();
+    r = await executeTool('gmail_send', { to: 'a@b.com', subject: 'Plain', body: 'Plain body' }, ctxWith('reject'));
+    check('gmail_send: "Don\'t send" sends nothing', !r.ok && r.meta.rejected && reqs.length === 0);
+    reset();
+    r = await executeTool('gmail_send', { to: 'a@b.com', subject: 'Later', body: 'Later body' }, ctxWith({ verdict: 'draft', edits: { subject: 'Later, edited' } }));
+    check('gmail_send: "Save as draft" saves a Gmail draft (with the edits) instead of sending', r.ok && reqs.length === 1 && reqs[0].url.endsWith('/users/me/drafts') && /Subject: Later, edited/.test(decode(reqs[0].body.message.raw)) && /save it as a draft instead/.test(r.output), JSON.stringify(r));
+    reset();
+    r = await executeTool('gmail_send', { draft: saved[0].id }, ctxWith('once'));
+    check('gmail_send: sends a saved Codeply draft by id, then removes it', r.ok && /^To: boss@x\.com\r\nSubject: Weekly report\r\n[\s\S]*Edited body$/.test(decode(reqs[0].body.raw)) && asked[0].draft.subject === 'Weekly report' && !localDrafts().some((d) => d.id === saved[0].id), JSON.stringify(r));
+    r = await executeTool('gmail_send', { draft: 'dnope123' }, ctxWith('once'));
+    check('gmail_send: an unknown draft id says so', !r.ok && /No saved draft/.test(r.output));
+    reset();
+    await executeTool('gmail_send', { to: 'a@b.com', subject: 'Grüße', body: 'x' }, ctxWith('once'));
+    check('gmail_send: a non-ASCII subject is RFC 2047 encoded', /Subject: =\?UTF-8\?B\?/.test(decode(reqs[0].body.raw)) && Buffer.from(/=\?UTF-8\?B\?([^?]+)\?=/.exec(decode(reqs[0].body.raw))[1], 'base64').toString('utf8') === 'Grüße');
+
+    // calendar_list
+    const pad = (n) => String(n).padStart(2, '0');
+    const show = (d) => `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()]} ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    reset();
+    reply = () => ({ status: 200, body: { items: [
+      { summary: 'Standup', start: { dateTime: '2026-10-03T09:00:00Z' }, end: { dateTime: '2026-10-03T09:15:00Z' }, location: 'Room 1' },
+      { summary: 'Holiday', start: { date: '2026-10-03' }, end: { date: '2026-10-04' } },
+    ] } });
+    r = await executeTool('calendar_list', {}, ctxWith('once'));
+    let u = new URL(reqs[0].url);
+    const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+    const nextMidnight = new Date(midnight); nextMidnight.setDate(nextMidnight.getDate() + 1);
+    check('calendar_list: GETs the primary calendar for today (local), single events by start time', reqs[0].method === 'GET' && u.origin + u.pathname === 'https://www.googleapis.com/calendar/v3/calendars/primary/events' && reqs[0].auth === 'Bearer TOK' &&
+      u.searchParams.get('singleEvents') === 'true' && u.searchParams.get('orderBy') === 'startTime' && Date.parse(u.searchParams.get('timeMin')) === midnight.getTime() && Date.parse(u.searchParams.get('timeMax')) === nextMidnight.getTime() && u.searchParams.get('maxResults') === '20', reqs[0].url);
+    const st = new Date('2026-10-03T09:00:00Z');
+    const en = new Date('2026-10-03T09:15:00Z');
+    check('calendar_list: titles, local start/end and location come back', r.ok && r.output.includes(`- Standup: ${show(st)} to ${pad(en.getHours())}:${pad(en.getMinutes())}, at Room 1`) && /- Holiday: Sat 2026-10-03, all day/.test(r.output) && asked.length === 0, r.output);
+    reset();
+    r = await executeTool('calendar_list', { from: '2026-10-05', to: '2026-10-06', max: '5' }, ctxWith('once'));
+    u = new URL(reqs[0].url);
+    check('calendar_list: a date range runs from the first day through the whole last day', Date.parse(u.searchParams.get('timeMin')) === new Date(2026, 9, 5).getTime() && Date.parse(u.searchParams.get('timeMax')) === new Date(2026, 9, 7).getTime() && u.searchParams.get('maxResults') === '5', reqs[0].url);
+    r = await executeTool('calendar_list', { from: 'next blue moon' }, ctxWith('once'));
+    check('calendar_list: an unreadable date says what it takes', !r.ok && /could not read/.test(r.output));
+
+    // calendar_add
+    reset();
+    reply = () => ({ status: 200, body: { id: 'ev1', htmlLink: 'https://calendar.google.com/event?eid=ev1' } });
+    r = await executeTool('calendar_add', { title: 'Dentist', start: '2026-10-06T15:30', end: '2026-10-06T16:15', location: 'Main St clinic', description: 'Bring the card', reminders: '10, 60' }, ctxWith('once'));
+    const ev = reqs[0] && reqs[0].body;
+    check('calendar_add: POSTs the event to the primary calendar with local times and a time zone', r.ok && reqs.length === 1 && reqs[0].method === 'POST' && reqs[0].url === 'https://www.googleapis.com/calendar/v3/calendars/primary/events' &&
+      ev.summary === 'Dentist' && ev.location === 'Main St clinic' && ev.description === 'Bring the card' &&
+      Date.parse(ev.start.dateTime) === new Date(2026, 9, 6, 15, 30).getTime() && Date.parse(ev.end.dateTime) === new Date(2026, 9, 6, 16, 15).getTime() && typeof ev.start.timeZone === 'string' && ev.start.timeZone.length > 0, JSON.stringify(ev));
+    check('calendar_add: reminders become popup overrides', ev.reminders && ev.reminders.useDefault === false && JSON.stringify(ev.reminders.overrides) === JSON.stringify([{ method: 'popup', minutes: 10 }, { method: 'popup', minutes: 60 }]), JSON.stringify(ev && ev.reminders));
+    check('calendar_add: asks first, as its own approval', asked.length === 1 && asked[0].tool === 'calendar_add' && /Dentist/.test(asked[0].title) && /15:30/.test(asked[0].detail) && /Main St clinic/.test(asked[0].detail), JSON.stringify(asked));
+    check('calendar_add: says what was added, with the link', /Added "Dentist"/.test(r.output) && /calendar\.google\.com/.test(r.output), r.output);
+    reset();
+    r = await executeTool('calendar_add', { title: 'Trip', start: '2026-10-07' }, ctxWith('once'));
+    check('calendar_add: a date alone is an all-day event (end date exclusive)', r.ok && JSON.stringify(reqs[0].body.start) === '{"date":"2026-10-07"}' && JSON.stringify(reqs[0].body.end) === '{"date":"2026-10-08"}' && !reqs[0].body.reminders, JSON.stringify(reqs[0] && reqs[0].body));
+    reset();
+    r = await executeTool('calendar_add', { title: 'Call', start: '2026-10-08T10:00' }, ctxWith('once'));
+    check('calendar_add: no end means one hour', Date.parse(reqs[0].body.end.dateTime) - Date.parse(reqs[0].body.start.dateTime) === 3600e3);
+    reset();
+    r = await executeTool('calendar_add', { title: 'Nope', start: '2026-10-08T10:00' }, ctxWith('reject'));
+    check('calendar_add: declined means nothing is created', !r.ok && r.meta.rejected && reqs.length === 0);
+    r = await executeTool('calendar_add', { title: 'Bad', start: '2026-10-08T10:00', end: '2026-10-08T09:00' }, ctxWith('once'));
+    check('calendar_add: an end before the start is refused', !r.ok && /after <start>/.test(r.output));
+
+    // Calendar errors
+    reply = () => ({ status: 403, body: { error: { code: 403, message: 'Google Calendar API has not been used in project 123 before or it is disabled.', errors: [{ reason: 'accessNotConfigured', message: 'Google Calendar API has not been used in project 123 before or it is disabled.' }], status: 'PERMISSION_DENIED', details: [{ reason: 'SERVICE_DISABLED' }] } } });
+    r = await executeTool('calendar_list', {}, ctxWith('once'));
+    check('calendar: a disabled Calendar API says to enable it on the Google Cloud project', !r.ok && /Calendar API is not enabled on the Google Cloud project/.test(r.output) && /HTTP 403/.test(r.output), r.output);
+    reply = () => ({ status: 403, body: insufficient });
+    r = await executeTool('calendar_add', { title: 'X', start: '2026-10-08T10:00' }, ctxWith('once'));
+    check('calendar: a missing calendar scope says to reconnect Gmail in Connect Apps', !r.ok && /Reconnect Gmail in Connect Apps/.test(r.output) && /Calendar/.test(r.output), r.output);
+    reset();
+    gmail = connected('https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.compose');
+    r = await executeTool('calendar_add', { title: 'X', start: '2026-10-08T10:00' }, ctxWith('once'));
+    check('calendar: a stored connection without the calendar scope never calls Google or asks', !r.ok && reqs.length === 0 && asked.length === 0 && /reconnect Gmail in Connect Apps/i.test(r.output), r.output);
+    gmail = { accessToken: '' };
+    r = await executeTool('calendar_list', {}, ctxWith('once'));
+    check('calendar: without a Google connection it says to connect Gmail', !r.ok && /connect Gmail/.test(r.output), r.output);
+
+    // Read-only modes cannot create drafts or events
+    r = await executeTool('calendar_add', { title: 'X', start: '2026-10-08T10:00' }, { ...ctxWith('once'), mode: 'Ask' });
+    const r2 = await executeTool('gmail_draft', { subject: 'X', body: 'y' }, { ...ctxWith('once'), mode: 'Ask' });
+    check('google: Ask mode blocks gmail_draft and calendar_add', !r.ok && /read-only/.test(r.output) && !r2.ok && /read-only/.test(r2.output));
+
+    // Through the real loop: a draft from the model, edited on the card, lands as edited
+    gmail = { accessToken: '' };
+    script = ['<codeply:gmail_draft>\n<to>pat@example.com</to>\n<subject>Lunch</subject>\n<body>\nLunch on Friday?\n</body>\n</codeply:gmail_draft>', 'Saved the draft.'];
+    const loopAsked = [];
+    for await (const e of runAgent({ userMessage: 'draft an email to pat about lunch', history: [], mode: 'Build', cwd: tmp, route, maxSteps: 4, signal: new AbortController().signal,
+      approve: async (req) => { loopAsked.push(req); return { verdict: 'once', edits: { subject: 'Lunch Friday?' } }; } })) { if (e.type === 'done') break; }
+    const loopDraft = localDrafts().find((d) => d.to === 'pat@example.com');
+    check('loop: gmail_draft runs from the model, the card edit is what gets saved', loopAsked.length === 1 && loopAsked[0].draft && loopAsked[0].draft.subject === 'Lunch' && loopDraft && loopDraft.subject === 'Lunch Friday?' && /Lunch on Friday\?/.test(loopDraft.body), JSON.stringify({ loopAsked, loopDraft }));
+    const { buildToolSchemas } = await import(pathToFileURL(path.join(CLI, 'lib/native-tools.mjs')).href);
+    const nativeTools = buildToolSchemas({ gmail_draft: ['to', 'subject', 'body'], drafts_list: [], calendar_list: ['from', 'to', 'max'], calendar_add: ['title', 'start', 'end', 'description', 'location', 'reminders'], gmail_send: ['to', 'subject', 'body', 'draft'] });
+    const byName = Object.fromEntries(nativeTools.map((t) => [t.function.name, t.function]));
+    check('native tools: gmail_draft, drafts_list, calendar_list and calendar_add have real descriptions', ['gmail_draft', 'drafts_list', 'calendar_list', 'calendar_add'].every((n) => byName[n].description.length > 30) && byName.calendar_add.parameters.required.join() === 'title,start' && /draft/i.test(byName.gmail_send.parameters.properties.draft.description), JSON.stringify(byName.calendar_add));
+    const sysPrompt = typeof bodies[bodies.length - 1].messages[0].content === 'string' ? bodies[bodies.length - 1].messages[0].content : '';
+    check('prompt: the agent is told about drafts and the calendar', /gmail_draft/.test(sysPrompt) && /calendar_add/.test(sysPrompt), sysPrompt.slice(0, 200));
+
+    // Bots: adding to the calendar is its own approval category, on by default
+    check('bots: calendar_add is in the "calendar" approval category', bots.approvalCategory('calendar_add') === 'calendar' && bots.approvalCategory('gmail_draft') === null && bots.APPROVALS.calendar && bots.TEMPLATES.every((t) => t.approval.includes('calendar')));
+    const store = path.join(tmp, 'bots-calendar');
+    fs.mkdirSync(store, { recursive: true });
+    bots.setBotsDir(store);
+    try {
+      fs.writeFileSync(path.join(store, 'old-bot.json'), JSON.stringify({ id: 'old-bot', name: 'Old', approval: ['send'] }));
+      fs.writeFileSync(path.join(store, 'new-bot.json'), JSON.stringify({ id: 'new-bot', name: 'New', approval: ['send'], approvalSeen: bots.APPROVALS && Object.keys(bots.APPROVALS) }));
+      const list = bots.listBots();
+      const oldBot = list.find((b) => b.id === 'old-bot');
+      const newBot = list.find((b) => b.id === 'new-bot');
+      check('bots: a bot saved before the calendar category asks before adding events', oldBot.approval.includes('calendar') && !bots.canSkipApproval(oldBot, 'calendar_add') && bots.canSkipApproval(oldBot, 'write_file'), JSON.stringify(oldBot.approval));
+      check('bots: a bot whose user turned calendar off keeps it off', !newBot.approval.includes('calendar') && bots.canSkipApproval(newBot, 'calendar_add'), JSON.stringify(newBot.approval));
+      const made = bots.createBot({ name: 'Fresh', approval: ['send'] });
+      check('bots: a new bot keeps exactly the categories it was given', !made.approval.includes('calendar') && !bots.listBots().find((b) => b.id === made.id).approval.includes('calendar'));
+    } finally {
+      bots.setBotsDir(null);
+    }
+  } finally {
+    globalThis.fetch = realFetch;
+    config.getIntegration = realGet;
+    config.saveIntegration = realSave;
+    config.disconnectIntegration = realDisconnect;
+    process.env.USERPROFILE = realHome.USERPROFILE;
+    if (realHome.HOME === undefined) delete process.env.HOME; else process.env.HOME = realHome.HOME;
+  }
+}
+
 server.close();
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(failures ? `\n${failures} FAILED` : '\nALL PASSED');

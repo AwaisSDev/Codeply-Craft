@@ -104,6 +104,12 @@
 .call-approve-row { display: flex; gap: 10px; }
 .call-approve-row button { flex: 1; height: 44px; border-radius: 12px; border: 0; font: inherit; font-weight: 600; background: rgba(255, 255, 255, 0.14); color: #fff; }
 .call-approve-row button.primary { background: var(--accent, #4b9dff); }
+.call-email { bottom: calc(env(safe-area-inset-bottom, 0px) + 120px); max-height: calc(100% - 160px); overflow: auto; }
+.call-email-field { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.12); font-size: 15px; }
+.call-email-field span { width: 62px; flex-shrink: 0; color: rgba(255, 255, 255, 0.55); }
+.call-email-field input { flex: 1; min-width: 0; background: transparent; border: 0; outline: none; color: #fff; font: inherit; font-size: 16px; padding: 2px 0; }
+.call-email textarea { display: block; width: 100%; box-sizing: border-box; margin: 10px 0 12px; min-height: 110px; resize: none; background: rgba(255, 255, 255, 0.07); border: 0; border-radius: 10px; padding: 10px; color: #fff; font: inherit; font-size: 16px; line-height: 1.45; outline: none; }
+.call-email .call-approve-row button { font-size: 14px; }
 
 /* Build a bot from a prompt */
 .new-bot-btn { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center; width: 100%; padding: 12px 14px; margin: 4px 0 14px; border-radius: 14px; border: 1px dashed var(--border); text-align: left; color: var(--text); background: transparent; }
@@ -134,3 +140,30 @@
 @keyframes call-glow { 0%, 100% { opacity: .25; } 50% { opacity: .8; } }
 @keyframes call-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .call[data-phase="thinking"] .call-orb, .call[data-phase="thinking"] .call-orb::after, .call[data-phase="thinking"] .call-state { animation: none; } }
+
+/* ─── Reminders (phone-reminders.js) ─── */
+.rem-card { margin: 6px 0 14px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; }
+.rem-card-main { display: flex; flex-direction: column; gap: 3px; margin-bottom: 12px; }
+.rem-card-main strong { font-weight: 600; font-size: 15.5px; }
+.rem-card-main small { color: var(--muted); font-size: 13.5px; line-height: 1.4; }
+.rem-card-row { display: flex; gap: 10px; }
+.rem-card-row .btn { flex: 1; height: 40px; font-size: 14.5px; }
+.rem-hint { display: flex; align-items: flex-start; gap: 8px; margin: 6px 0 14px; padding: 10px 8px 10px 14px; border: 1px solid var(--border); border-radius: 14px; color: var(--muted); font-size: 13.5px; line-height: 1.4; }
+.rem-hint span { flex: 1; }
+.rem-x { flex: none; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--faint); background: transparent; }
+.rem-x:active { background: var(--surface); }
+.rem-x:disabled { opacity: .4; }
+.rem-row { min-height: 56px; }
+.rem-row .bot-main strong { font-size: 15px; }
+.bot-av.rem-av { width: 36px; height: 36px; }
+
+/* A bot calling you: Decline and Answer, like the phone's own incoming call. */
+.call-answer-row { flex: none; display: flex; justify-content: space-around; width: 100%; max-width: 320px; margin: 0 auto 30px; }
+.call-answer-row .cb-wrap span { margin-top: 2px; }
+.call-accept { flex: none; width: 76px; height: 76px; border-radius: 50%; background: #34c759; color: #fff; display: inline-flex; align-items: center; justify-content: center; }
+.call-accept svg { width: 34px; height: 34px; }
+.call-accept:active { background: #2db14f; }
+.call.incoming .call-orb { animation: call-breathe 1.6s ease-in-out infinite; }
+.call.incoming .call-caption { color: rgba(255, 255, 255, .8); }
+@media (max-height: 700px) { .call-accept { width: 66px; height: 66px; } }
+@media (prefers-reduced-motion: reduce) { .call.incoming .call-orb { animation: none; } }

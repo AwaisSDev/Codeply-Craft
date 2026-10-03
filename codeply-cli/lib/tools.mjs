@@ -713,30 +713,286 @@ async function getValidGmailToken({ force = false } = {}) {
   return refreshed.access_token;
 }
 
+/**
+ * An approval answer: a plain string ('once', 'always', 'reject', 'draft') or
+ * { verdict, edits } when the user changed the email on the card before
+ * saying yes. Every host may answer either way.
+ */
+function readVerdict(v) {
+  if (v && typeof v === 'object') {
+    const edits = v.edits && typeof v.edits === 'object' ? v.edits : null;
+    return { action: String(v.verdict || v.action || 'reject'), edits };
+  }
+  return { action: String(v || 'reject'), edits: null };
+}
+
+/** The email as the user left it on the approval card. */
+function applyEmailEdits(draft, edits) {
+  if (!edits) return draft;
+  const out = { ...draft };
+  for (const k of ['to', 'subject', 'body']) {
+    if (typeof edits[k] === 'string') out[k] = k === 'body' ? edits[k].slice(0, 100000) : edits[k].trim().slice(0, 1000);
+  }
+  return out;
+}
+
+const GMAIL_NOT_CONNECTED = 'Gmail is not connected. Ask the user to connect it from Connect Apps (account menu → Connect Apps) first.';
+
+// ─── Drafts kept by Codeply itself (~/.codeply/drafts) ──────────────────────
+// Where gmail_draft saves when Gmail is not connected (or not allowed to
+// draft yet). One JSON file per draft; gmail_send can send one by id.
+function draftsDir() { return path.join(os.homedir(), '.codeply', 'drafts'); }
+const DRAFT_ID = /^d[a-z0-9]{6,30}$/;
+
+function saveLocalDraft({ to, subject, body }) {
+  const dir = draftsDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const id = `d${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`;
+  const draft = { id, to: to || '', subject: subject || '', body: body || '', createdAt: new Date().toISOString() };
+  fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify(draft, null, 2));
+  return draft;
+}
+
+function readLocalDraft(id) {
+  if (!DRAFT_ID.test(String(id || ''))) return null;
+  try { return JSON.parse(fs.readFileSync(path.join(draftsDir(), `${id}.json`), 'utf8')); } catch { return null; }
+}
+
+function listLocalDrafts() {
+  let files = [];
+  try { files = fs.readdirSync(draftsDir()).filter((f) => f.endsWith('.json')); } catch { return []; }
+  return files.map((f) => { try { return JSON.parse(fs.readFileSync(path.join(draftsDir(), f), 'utf8')); } catch { return null; } })
+    .filter((d) => d && d.id).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+/** True only when we know the stored connection lacks a scope (older connections did not record scopes). */
+function lacksScope(integration, scope) {
+  return typeof integration.scope === 'string' && integration.scope.trim() !== '' && !integration.scope.split(/\s+/).includes(scope);
+}
+
+/**
+ * Saves a draft: in Gmail when it is connected and allowed to draft,
+ * otherwise in Codeply's own drafts. Returns a tool result.
+ */
+async function storeDraft(draft, token) {
+  let why = '';
+  if (token) {
+    if (lacksScope(config.getIntegration('gmail'), oauth.GOOGLE_SCOPE.compose)) {
+      why = 'Gmail was connected before drafts were allowed, so it was saved in Codeply\'s drafts instead. Reconnect Gmail in Connect Apps to allow drafts in Gmail.';
+    } else {
+      try {
+        const r = await oauth.gmailCreateDraft(token, draft);
+        return { ok: true, output: `Draft saved in Gmail's Drafts folder${draft.to ? ` (to ${draft.to})` : ''}, Gmail draft id ${r.id}. Nothing was sent.`, meta: { label: `draft: ${draft.subject || '(no subject)'}` } };
+      } catch (e) {
+        if (!e.scopeMissing) return { ok: false, output: `Gmail draft failed: ${e.message}` };
+        why = 'Gmail was connected before drafts were allowed, so it was saved in Codeply\'s drafts instead. Reconnect Gmail in Connect Apps to allow drafts in Gmail.';
+      }
+    }
+  } else {
+    why = 'Gmail is not connected, so it was saved in Codeply\'s own drafts (not in Gmail). Connect Gmail in Connect Apps to keep drafts in Gmail.';
+  }
+  const d = saveLocalDraft(draft);
+  return {
+    ok: true,
+    output: `Draft saved, id ${d.id}. ${why} Nothing was sent. drafts_list shows saved drafts; gmail_send with <draft>${d.id}</draft> sends it once Gmail is connected.`,
+    meta: { label: `draft ${d.id}: ${d.subject || '(no subject)'}`, draftId: d.id },
+  };
+}
+
 async function gmail_send(args, ctx) {
-  const to = (args.to || '').trim();
-  const subject = (args.subject || '').trim();
-  const body = args.body || '';
+  let to = (args.to || '').trim();
+  let subject = (args.subject || '').trim();
+  let body = args.body || '';
+  const draftId = String(args.draft || '').trim();
+  let saved = null;
+  if (draftId) {
+    saved = readLocalDraft(draftId);
+    if (!saved) return { ok: false, output: `No saved draft with id "${draftId}". drafts_list shows the saved drafts.` };
+    to = to || saved.to; subject = subject || saved.subject; body = body || saved.body;
+  }
   if (!to) return { ok: false, output: 'gmail_send needs a <to> address.' };
   if (!subject) return { ok: false, output: 'gmail_send needs a <subject>.' };
 
   let token;
   try { token = await getValidGmailToken(); } catch (e) { return { ok: false, output: `Gmail send failed: ${e.message}` }; }
-  if (!token) return { ok: false, output: 'Gmail is not connected. Ask the user to connect it from Connect Apps (account menu → Connect Apps) first.' };
+  if (!token) return { ok: false, output: `${GMAIL_NOT_CONNECTED} (gmail_draft can save it as a draft in the meantime.)` };
 
-  const verdict = await ctx.approve({
+  const verdict = readVerdict(await ctx.approve({
     tool: 'gmail_send',
     title: `Send email to ${to}`,
     detail: `Subject: ${subject}\n\n${body}`,
     danger: false,
-  });
-  if (verdict === 'reject') return { ok: false, output: `User declined to send the email to ${to}.`, meta: { rejected: true } };
+    // The card shows these as editable fields; edits come back with the verdict.
+    draft: { to, subject, body },
+  }));
+  if (verdict.action === 'reject') return { ok: false, output: `User declined to send the email to ${to}.`, meta: { rejected: true } };
+  const email = applyEmailEdits({ to, subject, body }, verdict.edits);
+  const edited = !!verdict.edits && (email.to !== to || email.subject !== subject || email.body !== body);
+  if (verdict.action === 'draft') {
+    const r = await storeDraft(email, token);
+    return { ...r, output: `The user chose to save it as a draft instead of sending. ${r.output}` };
+  }
+  if (!email.to) return { ok: false, output: 'The email has no recipient after the user\'s edits, so it was not sent.' };
 
   try {
-    const result = await oauth.gmailSend(token, { to, subject, body });
-    return { ok: true, output: `Email sent to ${to} (message id ${result.id}).`, meta: { label: `to ${to}: ${subject}` } };
+    const result = await oauth.gmailSend(token, email);
+    if (saved) { try { fs.unlinkSync(path.join(draftsDir(), `${saved.id}.json`)); } catch {} }
+    const note = edited ? ` The user edited it before sending; what went out: to ${email.to}, subject "${email.subject}".` : '';
+    return { ok: true, output: `Email sent to ${email.to} (message id ${result.id}).${note}`, meta: { label: `to ${email.to}: ${email.subject}` } };
   } catch (e) {
     return { ok: false, output: `Gmail send failed: ${e.message}` };
+  }
+}
+
+async function gmail_draft(args, ctx) {
+  const draft = { to: (args.to || '').trim(), subject: (args.subject || '').trim(), body: args.body || '' };
+  if (!draft.subject && !draft.body.trim()) return { ok: false, output: 'gmail_draft needs at least a <subject> or a <body>.' };
+
+  let token = null;
+  try { token = await getValidGmailToken(); } catch { token = null; } // an expired sign-in still gets a local draft
+
+  const verdict = readVerdict(await ctx.approve({
+    tool: 'gmail_draft',
+    title: `Save a draft${draft.to ? ` to ${draft.to}` : ''}${token ? ' in Gmail' : ''}`,
+    detail: `Subject: ${draft.subject}\n\n${draft.body}`,
+    danger: false,
+    draft,
+    draftOnly: true,
+  }));
+  if (verdict.action === 'reject') return { ok: false, output: 'User declined to save the draft.', meta: { rejected: true } };
+  return storeDraft(applyEmailEdits(draft, verdict.edits), token);
+}
+
+async function drafts_list() {
+  const list = listLocalDrafts();
+  if (!list.length) return { ok: true, output: 'No drafts saved in Codeply. (Drafts saved in Gmail are in Gmail\'s Drafts folder.)', meta: { label: 'no drafts' } };
+  const lines = list.slice(0, 30).map((d) => `- ${d.id}: "${d.subject || '(no subject)'}" to ${d.to || '(no recipient yet)'}, saved ${d.createdAt}\n  ${String(d.body || '').replace(/\s+/g, ' ').slice(0, 160)}`);
+  return { ok: true, output: `${list.length} draft(s) saved in Codeply, newest first:\n\n${lines.join('\n')}\n\nSend one with gmail_send and <draft>id</draft>.`, meta: { label: `${list.length} draft(s)`, count: list.length } };
+}
+
+// ─── Google Calendar (the Gmail connection, with the calendar scope) ────────
+const pad2 = (n) => String(n).padStart(2, '0');
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** Local wall-clock ISO with the offset, e.g. 2026-10-03T14:00:00+05:00. */
+function localIso(d) {
+  const off = -d.getTimezoneOffset();
+  const sign = off >= 0 ? '+' : '-';
+  const a = Math.abs(off);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}${sign}${pad2(Math.floor(a / 60))}:${pad2(a % 60)}`;
+}
+const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const showLocal = (d) => `${WEEKDAYS[d.getDay()]} ${ymd(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+
+/**
+ * "today", "tomorrow", "2026-10-03" (a whole day, local) or a date-time
+ * ("2026-10-03T14:00", local unless it carries an offset). null if unreadable.
+ */
+function parseWhen(input, now = new Date()) {
+  const s = String(input || '').trim().toLowerCase();
+  if (!s) return null;
+  const day = (offset) => { const d = new Date(now); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + offset); return { date: d, allDay: true }; };
+  if (s === 'today') return day(0);
+  if (s === 'tomorrow') return day(1);
+  if (s === 'yesterday') return day(-1);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (m) return { date: new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])), allDay: true };
+  const d = new Date(String(input).trim().replace(' ', 'T'));
+  return Number.isNaN(d.getTime()) ? null : { date: d, allDay: false };
+}
+
+async function googleTokenFor(what) {
+  const token = await getValidGmailToken();
+  if (!token) return { error: `${what} uses the Gmail connection, and Gmail is not connected. Ask the user to connect Gmail from Connect Apps (account menu → Connect Apps) first; it covers Calendar too.` };
+  if (lacksScope(config.getIntegration('gmail'), oauth.GOOGLE_SCOPE.calendar)) {
+    return { error: 'Gmail was connected before Calendar access was added. Ask the user to reconnect Gmail in Connect Apps (it covers Calendar too) and allow calendar access.' };
+  }
+  return { token };
+}
+
+function eventLine(ev) {
+  const title = ev.summary || '(no title)';
+  let when;
+  if (ev.start && ev.start.date) {
+    const [y, mo, da] = ev.start.date.split('-').map(Number);
+    const s = new Date(y, mo - 1, da);
+    when = `${WEEKDAYS[s.getDay()]} ${ev.start.date}, all day`;
+  } else {
+    const s = new Date(ev.start && ev.start.dateTime);
+    const e = new Date(ev.end && ev.end.dateTime);
+    when = Number.isNaN(s.getTime()) ? '(no time)' : `${showLocal(s)} to ${Number.isNaN(e.getTime()) ? '?' : (ymd(e) === ymd(s) ? `${pad2(e.getHours())}:${pad2(e.getMinutes())}` : showLocal(e))}`;
+  }
+  return `- ${title}: ${when}${ev.location ? `, at ${ev.location}` : ''}`;
+}
+
+async function calendar_list(args) {
+  const now = new Date();
+  const from = args.from ? parseWhen(args.from, now) : parseWhen('today', now);
+  if (!from) return { ok: false, output: `calendar_list could not read <from> "${args.from}". Use today, tomorrow, 2026-10-03 or 2026-10-03T14:00.` };
+  let to = args.to ? parseWhen(args.to, now) : null;
+  if (args.to && !to) return { ok: false, output: `calendar_list could not read <to> "${args.to}". Use today, tomorrow, 2026-10-03 or 2026-10-03T14:00.` };
+  let end;
+  if (to) { end = new Date(to.date); if (to.allDay) end.setDate(end.getDate() + 1); } // a date as the end means through that whole day
+  else if (from.allDay) { end = new Date(from.date); end.setDate(end.getDate() + 1); }
+  else end = new Date(from.date.getTime() + 24 * 3600 * 1000);
+  if (end <= from.date) return { ok: false, output: 'calendar_list: <to> must be after <from>.' };
+  const max = Math.min(50, Math.max(1, parseInt(args.max, 10) || 20));
+  const range = `${showLocal(from.date)} to ${showLocal(end)}`;
+  try {
+    const t = await googleTokenFor('Google Calendar');
+    if (t.error) return { ok: false, output: t.error };
+    const items = await oauth.calendarListEvents(t.token, { timeMin: localIso(from.date), timeMax: localIso(end), maxResults: max });
+    if (!items.length) return { ok: true, output: `No events from ${range} (local time).`, meta: { label: 'no events' } };
+    return { ok: true, output: `${items.length} event(s) from ${range} (local time):\n${items.map(eventLine).join('\n')}`, meta: { label: `${items.length} event(s)`, count: items.length } };
+  } catch (e) {
+    return { ok: false, output: `Calendar list failed: ${e.message} Tell the user this exact error.` };
+  }
+}
+
+async function calendar_add(args, ctx) {
+  const title = (args.title || '').trim();
+  if (!title) return { ok: false, output: 'calendar_add needs a <title>.' };
+  const start = parseWhen(args.start);
+  if (!start) return { ok: false, output: `calendar_add needs a <start> it can read (got "${args.start || ''}"). Use 2026-10-03T14:00 for a time, or 2026-10-03 for an all-day event.` };
+  let end = args.end ? parseWhen(args.end) : null;
+  if (args.end && !end) return { ok: false, output: `calendar_add could not read <end> "${args.end}".` };
+  const event = { summary: title };
+  if (args.description) event.description = String(args.description);
+  if (args.location) event.location = String(args.location).trim();
+  let when;
+  if (start.allDay && (!end || end.allDay)) {
+    // All-day: Google's end date is exclusive, so a one-day event ends the next day.
+    const last = end ? end.date : start.date;
+    const after = new Date(last); after.setDate(after.getDate() + 1);
+    if (after <= start.date) return { ok: false, output: 'calendar_add: <end> must not be before <start>.' };
+    event.start = { date: ymd(start.date) };
+    event.end = { date: ymd(after) };
+    when = ymd(last) === ymd(start.date) ? `${WEEKDAYS[start.date.getDay()]} ${ymd(start.date)}, all day` : `${ymd(start.date)} to ${ymd(last)}, all day`;
+  } else {
+    const s = start.date;
+    const e = end ? end.date : new Date(s.getTime() + 60 * 60 * 1000);
+    if (e <= s) return { ok: false, output: 'calendar_add: <end> must be after <start>.' };
+    let tz = '';
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch {}
+    event.start = { dateTime: localIso(s), ...(tz ? { timeZone: tz } : {}) };
+    event.end = { dateTime: localIso(e), ...(tz ? { timeZone: tz } : {}) };
+    when = `${showLocal(s)} to ${ymd(e) === ymd(s) ? `${pad2(e.getHours())}:${pad2(e.getMinutes())}` : showLocal(e)}`;
+  }
+  const mins = String(args.reminders || '').split(/[\s,]+/).map((x) => parseInt(x, 10)).filter((n) => Number.isFinite(n) && n >= 0 && n <= 40320).slice(0, 5);
+  if (mins.length) event.reminders = { useDefault: false, overrides: mins.map((minutes) => ({ method: 'popup', minutes })) };
+
+  let t;
+  try { t = await googleTokenFor('Google Calendar'); } catch (e) { return { ok: false, output: `Calendar add failed: ${e.message}` }; }
+  if (t.error) return { ok: false, output: t.error };
+
+  const detail = [`When: ${when} (local time)`, event.location ? `Where: ${event.location}` : '', mins.length ? `Reminders: ${mins.map((m) => `${m} min before`).join(', ')}` : '', event.description ? `\n${event.description}` : ''].filter(Boolean).join('\n');
+  const verdict = readVerdict(await ctx.approve({ tool: 'calendar_add', title: `Add "${title}" to your calendar`, detail, danger: false }));
+  if (verdict.action === 'reject') return { ok: false, output: `User declined to add "${title}" to the calendar.`, meta: { rejected: true } };
+  try {
+    const r = await oauth.calendarInsertEvent(t.token, event);
+    return { ok: true, output: `Added "${title}" to the calendar: ${when} (local time)${event.location ? `, at ${event.location}` : ''}.${r.htmlLink ? ` Link: ${r.htmlLink}` : ''}`, meta: { label: `${title}: ${when}` } };
+  } catch (e) {
+    return { ok: false, output: `Calendar add failed: ${e.message} Tell the user this exact error.` };
   }
 }
 
@@ -1957,7 +2213,7 @@ export const TOOLS = {
   mcp,
   web_fetch, web_search, apply_patch, plan_exit, plan_enter, lsp,
   list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, browser_check,
-  gmail_send, gmail_search, slack_post_message, vercel_deploy, supabase_create_project, supabase_delete_project, github_create_repo,
+  gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, slack_post_message, vercel_deploy, supabase_create_project, supabase_delete_project, github_create_repo,
   design_reference_search, view_images, supabase_api, supabase_sql, vercel_api,
 };
 
@@ -1965,7 +2221,7 @@ export const TOOLS = {
 // actually prompt for non-read requests (see above); read-only tools
 // (browser_check, gmail_search, design_reference_search, view_images, ...)
 // never prompt.
-export const TOOL_NEEDS_APPROVAL = new Set(['write_file', 'edit_file', 'apply_patch', 'run', 'fetch_image', 'gmail_send', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_api', 'supabase_sql', 'vercel_api']);
+export const TOOL_NEEDS_APPROVAL = new Set(['write_file', 'edit_file', 'apply_patch', 'run', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_api', 'supabase_sql', 'vercel_api']);
 
 /** Human-facing verb + colour hint for the transcript. */
 export const TOOL_DISPLAY = {
@@ -1991,6 +2247,10 @@ export const TOOL_DISPLAY = {
   browser_check:{ verb: 'check', icon: '◎' },
   gmail_send: { verb: 'email',  icon: '✉' },
   gmail_search:{ verb: 'search', icon: '✉' },
+  gmail_draft:{ verb: 'draft', icon: '✉' },
+  drafts_list:{ verb: 'drafts', icon: '✉' },
+  calendar_list:{ verb: 'calendar', icon: '▦' },
+  calendar_add:{ verb: 'calendar', icon: '▦' },
   slack_post_message:{ verb: 'post', icon: '#' },
   vercel_deploy:{ verb: 'deploy', icon: '▲' },
   supabase_create_project:{ verb: 'provision', icon: '◆' },
@@ -2007,7 +2267,7 @@ export const TOOL_DISPLAY = {
 // agent.mjs; this covers every other tool that changes something outside the
 // conversation, so read-only can't be escaped through a side door.
 const MUTATING_TOOLS = new Set([
-  'write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'slack_post_message',
+  'write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'slack_post_message',
   'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo',
 ]);
 

@@ -60,8 +60,12 @@ const APPROVALS = {
   send: { label: 'Sending anything (email, Slack)', tools: ['gmail_send', 'slack_post_message'] },
   publish: { label: 'Deploying or publishing', tools: ['vercel_deploy', 'github_create_repo', 'vercel_api'] },
   databases: { label: 'Changing databases or cloud projects', tools: ['supabase_create_project', 'supabase_delete_project', 'supabase_api', 'supabase_sql'] },
+  calendar: { label: 'Adding to your calendar', tools: ['calendar_add'] },
 };
 const ALL_APPROVALS = Object.keys(APPROVALS);
+// The categories bots were saved with before `calendar` existed. A bot saved
+// back then never chose about the newer ones, so it asks for them (listBots).
+const FIRST_APPROVALS = ['edit_files', 'run_commands', 'send', 'publish', 'databases'];
 
 // Kept in sync with bot-avatar.js (the renderer). The engine only validates.
 const AVATAR_KEYS = {
@@ -115,7 +119,7 @@ const TEMPLATES = [
     specialty: 'Breaks a big goal into steps and gets the right teammate on each one',
     instructions: 'Restate the objective in one line. Split it into a few small steps. Hand each step to the teammate whose domain fits, one at a time, with only the context they need. Read every result critically before moving on, redo or adjust when something is off, and finish with one merged answer that says what was done and what is left.',
     tone: { preset: 'friendly', custom: '' },
-    approval: ['edit_files', 'run_commands', 'send', 'publish', 'databases'],
+    approval: ['edit_files', 'run_commands', 'send', 'publish', 'databases', 'calendar'],
     avatar: { shape: 'burst9', eyes: 'pills', color: 'graphite' },
   },
   {
@@ -123,7 +127,7 @@ const TEMPLATES = [
     specialty: 'Research: finds facts, docs and prior art, and cites where they came from',
     instructions: 'Search the project and the web, read the primary source, and report what you found with links or file paths. Separate facts from guesses. Never change files.',
     tone: { preset: 'professional', custom: '' }, sources: 'Official docs first, then the project itself, then reputable articles.',
-    approval: ['edit_files', 'run_commands', 'send', 'publish', 'databases'],
+    approval: ['edit_files', 'run_commands', 'send', 'publish', 'databases', 'calendar'],
     avatar: { shape: 'drop', eyes: 'big', color: 'blue' },
   },
   {
@@ -131,7 +135,7 @@ const TEMPLATES = [
     specialty: 'Outreach: drafts emails, posts and messages that sound like the user',
     instructions: 'Write drafts the user can send as is: clear subject, short body, one ask. Match their voice from earlier messages. Never send anything yourself without the user saying yes.',
     tone: { preset: 'friendly', custom: '' },
-    approval: ['edit_files', 'run_commands', 'send', 'publish', 'databases'],
+    approval: ['edit_files', 'run_commands', 'send', 'publish', 'databases', 'calendar'],
     avatar: { shape: 'cloud', eyes: 'happy', color: 'pink', cheeks: true },
   },
   {
@@ -139,7 +143,7 @@ const TEMPLATES = [
     specialty: 'Analysis: digs into code, data and numbers and explains what they mean',
     instructions: 'Read the real code or data before concluding anything. Show the key numbers, the reasoning, and a clear recommendation. Say how sure you are.',
     tone: { preset: 'direct', custom: '' },
-    approval: ['edit_files', 'run_commands', 'send', 'publish', 'databases'],
+    approval: ['edit_files', 'run_commands', 'send', 'publish', 'databases', 'calendar'],
     avatar: { shape: 'squircle', eyes: 'ovals', color: 'teal', glasses: 'round' },
   },
   {
@@ -147,7 +151,7 @@ const TEMPLATES = [
     specialty: 'Reporting: turns results into short, skimmable summaries and status updates',
     instructions: 'Lead with the outcome, then 3 to 5 bullets, then next steps. Plain words, no jargon, nothing invented.',
     tone: { preset: 'concise', custom: '' },
-    approval: ['edit_files', 'run_commands', 'send', 'publish', 'databases'],
+    approval: ['edit_files', 'run_commands', 'send', 'publish', 'databases', 'calendar'],
     avatar: { shape: 'star', eyes: 'dots', color: 'orange', accessory: 'sprout' },
   },
   {
@@ -155,7 +159,7 @@ const TEMPLATES = [
     specialty: 'Execution: writes and changes code, runs the checks, ships the change',
     instructions: 'Make the smallest change that does the job, in the project\'s own style. Run the relevant check after every change and report what really happened.',
     tone: { preset: 'concise', custom: '' },
-    approval: ['run_commands', 'send', 'publish', 'databases'],
+    approval: ['run_commands', 'send', 'publish', 'databases', 'calendar'],
     avatar: { shape: 'burst7', eyes: 'sleepy', color: 'red', accessory: 'antenna' },
   },
   {
@@ -163,7 +167,7 @@ const TEMPLATES = [
     specialty: 'Monitoring: checks that things still work and flags what changed or broke',
     instructions: 'Run the checks, compare with what was expected, and report only what changed or failed, with the exact error. Suggest the next step, do not fix it yourself.',
     tone: { preset: 'direct', custom: '' },
-    approval: ['edit_files', 'send', 'publish', 'databases'],
+    approval: ['edit_files', 'send', 'publish', 'databases', 'calendar'],
     avatar: { shape: 'burst12', eyes: 'sparkle', color: 'purple', accessory: 'halo' },
   },
 ];
@@ -199,6 +203,8 @@ function normalizeBot(input, existing) {
     tone: { preset: TONES[tone.preset] ? tone.preset : 'friendly', custom: clip(tone.custom, 400) },
     sources: clip(b.sources, 2000),
     approval: Array.isArray(b.approval) ? [...new Set(b.approval.filter((k) => APPROVALS[k]))] : ALL_APPROVALS.slice(),
+    // Which categories existed when the user last chose; newer ones default to asking.
+    approvalSeen: ALL_APPROVALS.slice(),
     avatar: normalizeAvatar(b.avatar),
     // The voice it speaks with on calls (a Deepgram, Edge or Kokoro voice id; '' = pick one).
     voice: typeof b.voice === 'string' && /^[\w.-]{0,80}$/.test(b.voice) ? b.voice : '',
@@ -235,6 +241,10 @@ function listBots() {
   for (const f of files) {
     try {
       const raw = JSON.parse(fs.readFileSync(path.join(botsDir(), f), 'utf8'));
+      if (Array.isArray(raw.approval)) {
+        const seen = Array.isArray(raw.approvalSeen) ? raw.approvalSeen : FIRST_APPROVALS;
+        for (const k of ALL_APPROVALS) if (!seen.includes(k) && !raw.approval.includes(k)) raw.approval.push(k);
+      }
       const bot = normalizeBot(raw, { id: f.replace(/\.json$/, ''), createdAt: raw.createdAt });
       bot.updatedAt = Number(raw.updatedAt) || bot.updatedAt;
       out.push(bot);
@@ -887,7 +897,7 @@ function fromDescription(json, description) {
   for (const k of ['name', 'specialty', 'instructions', 'sources']) draft[k] = noDash(draft[k]);
   draft.tone.custom = noDash(draft.tone.custom);
   // Irreversible actions always stay behind approval, whatever the model said.
-  for (const k of ['send', 'publish', 'databases']) if (!draft.approval.includes(k)) draft.approval.push(k);
+  for (const k of ['send', 'publish', 'databases', 'calendar']) if (!draft.approval.includes(k)) draft.approval.push(k);
   delete draft.id; delete draft.memory; delete draft.createdAt; delete draft.updatedAt;
   delete draft.lessons; delete draft.playbooks; delete draft.toolTips; delete draft.openThreads;
   return draft;
@@ -981,7 +991,8 @@ function runStep(ev) {
 
 /** What the call screen says while a tool runs. */
 const CALL_STEP = {
-  gmail_search: 'Checking your email', gmail_send: 'Sending the email', web_search: 'Searching the web', web_fetch: 'Reading a page',
+  gmail_search: 'Checking your email', gmail_send: 'Sending the email', gmail_draft: 'Saving a draft', drafts_list: 'Looking at your drafts',
+  calendar_list: 'Checking your calendar', calendar_add: 'Adding it to your calendar', web_search: 'Searching the web', web_fetch: 'Reading a page',
   read_file: 'Reading a file', write_file: 'Writing a file', edit_file: 'Editing a file', apply_patch: 'Editing files', run: 'Running a command',
   search: 'Searching your files', list_dir: 'Looking through files', slack_post_message: 'Posting to Slack', browser_check: 'Checking the page',
   ask_bot: 'Asking a teammate', todo: 'Planning',

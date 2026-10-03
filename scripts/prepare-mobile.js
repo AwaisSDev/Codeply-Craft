@@ -17,6 +17,8 @@ for (const [from, to] of [
   ['phone.css', 'phone.css'],
   ['phone.js', 'phone.js'],
   ['phone-calls.js', 'phone-calls.js'],
+  ['phone-reminders.js', 'phone-reminders.js'],
+  ['phone-sw.js', 'phone-sw.js'],
   ['phone-calls.css', 'phone-calls.css'],
   ['phone-stt-worker.js', 'phone-stt-worker.js'],
   ['bot-avatar.js', 'bot-avatar.js'],
@@ -43,7 +45,7 @@ for (const f of fs.readdirSync(mascots).filter((f) => f.endsWith('.png'))) {
 fs.writeFileSync(path.join(target, 'vercel.json'), JSON.stringify({
   cleanUrls: true,
   headers: [
-    { source: '/(index.html|phone.js|phone.css|phone-calls.js|phone-calls.css|phone-stt-worker.js|bot-avatar.js|classic.html|classic|mobile.js|mobile.css|mobile-cloud.js|mobile-cloud.css|)', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
+    { source: '/(index.html|phone.js|phone.css|phone-calls.js|phone-calls.css|phone-reminders.js|phone-sw.js|phone-stt-worker.js|bot-avatar.js|classic.html|classic|mobile.js|mobile.css|mobile-cloud.js|mobile-cloud.css|)', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
     { source: '/(.*)', headers: [{ key: 'X-Content-Type-Options', value: 'nosniff' }, { key: 'Referrer-Policy', value: 'no-referrer' }] },
   ],
 }, null, 2));

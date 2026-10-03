@@ -27,6 +27,8 @@
   const $ = (id) => document.getElementById(id);
 
   const KEY = { bots: 'craft-phone-bots', calls: 'craft-phone-calls' };
+  // Reminders (phone-reminders.js): bots set them on calls and "call" you back.
+  const R = () => window.CraftReminders || null;
   const MAX_CALLS = 50;
 
   // With the PC online a call turn runs ON the PC as the bot's real agent, with
@@ -163,6 +165,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       : online ? (loadError || 'Your bots, from your PC.')
       : bots.length ? 'Your PC is offline. You can still call these bots.' : '';
     if (status) html += `<p class="calls-status${loadError && !refreshing ? ' err' : ''}">${esc(status)}</p>`;
+    if (R()) html += '<div id="remindCard"></div>';
 
     html += `<button type="button" class="new-bot-btn" id="newBotBtn">${ICON.plus}<span>New bot</span><small>Describe it, Codeply builds it</small></button>`;
     if (bots.length) {
@@ -192,6 +195,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       }
     }
 
+    if (R()) html += '<div id="remindBox"></div>';
     html += '<div class="calls-label">Recent calls</div>';
     if (!calls.length) html += '<p class="calls-none">No calls yet.</p>';
     else {
@@ -224,6 +228,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     root.querySelectorAll('[data-tpl]').forEach((b) => b.addEventListener('click', () => addTemplate(b.dataset.tpl, b)));
     const nb = $('newBotBtn');
     if (nb) nb.addEventListener('click', () => openBuilder());
+    if (R()) R().mount($('remindCard'), $('remindBox'));
   }
 
   // ─── Voices ───────────────────────────────────────────────────────────────
@@ -805,6 +810,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     const dash = String.fromCharCode(0x2014);
     return String(s || '')
       .replace(/<think>[\s\S]*?<\/think>/gi, '')
+      .replace(/\[\[[\s\S]*?\]\]/g, '') // tags (reminders, work) are never said
       .replace(/```[\s\S]*?```/g, '')
       .replace(/[*_#`>]+/g, '')
       .replace(/\[(.*?)\]\((.*?)\)/g, '$1')
@@ -1005,11 +1011,28 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       if (!c) { resolve('reject'); return; }
       const box = document.createElement('div');
       box.className = `call-approve${req.danger ? ' danger' : ''}`;
-      box.innerHTML = `<div class="call-approve-title">${esc(req.title || 'Allow this?')}</div>
-        ${req.detail ? `<pre>${esc(String(req.detail).slice(0, 500))}</pre>` : ''}
-        <div class="call-approve-row"><button type="button" data-v="reject">Don't allow</button><button type="button" class="primary" data-v="once">Allow</button></div>`;
+      if (req.draft) {
+        // An email: To, Subject and Body are editable; tap a field to change it.
+        box.classList.add('call-email');
+        box.innerHTML = `<div class="call-approve-title">${esc(req.title || 'Send this email?')}</div>
+          <label class="call-email-field"><span>To</span><input data-f="to" type="email" autocomplete="off"></label>
+          <label class="call-email-field"><span>Subject</span><input data-f="subject" type="text" autocomplete="off"></label>
+          <textarea data-f="body" rows="5"></textarea>
+          <div class="call-approve-row">${req.draftOnly ? '' : '<button type="button" data-v="draft">Save as draft</button>'}<button type="button" data-v="reject">Don't send</button><button type="button" class="primary" data-v="once">${req.draftOnly ? 'Save draft' : 'Send'}</button></div>`;
+        for (const k of ['to', 'subject', 'body']) box.querySelector(`[data-f="${k}"]`).value = String(req.draft[k] || '');
+      } else {
+        box.innerHTML = `<div class="call-approve-title">${esc(req.title || 'Allow this?')}</div>
+          ${req.detail ? `<pre>${esc(String(req.detail).slice(0, 500))}</pre>` : ''}
+          <div class="call-approve-row"><button type="button" data-v="reject">Don't allow</button><button type="button" class="primary" data-v="once">Allow</button></div>`;
+      }
       const done = (v) => { box.remove(); resolve(v); };
-      box.querySelectorAll('[data-v]').forEach((b) => b.addEventListener('click', () => done(b.dataset.v)));
+      const answer = (v) => {
+        if (!req.draft || v === 'reject') return v;
+        const edits = {};
+        box.querySelectorAll('[data-f]').forEach((f) => { edits[f.dataset.f] = f.value; });
+        return { verdict: v, edits };
+      };
+      box.querySelectorAll('[data-v]').forEach((b) => b.addEventListener('click', () => done(answer(b.dataset.v))));
       signal.addEventListener('abort', () => done('reject'), { once: true });
       root().appendChild(box);
       setPhase('thinking', 'Needs your OK');
@@ -1064,7 +1087,9 @@ You are on a live voice call with the user, talking out loud. Everything you wri
         if (r.approval) {
           const verdict = await ui.approve(r.approval, signal);
           if (signal.aborted) throw abortError();
-          await P.relayRequest('POST', '/api/bots/voice/answer', { jobId, requestId: r.approval.requestId, verdict });
+          // An edited email comes back as { verdict, edits }; the plain verdict stays a string for older PCs.
+          const edited = verdict && typeof verdict === 'object';
+          await P.relayRequest('POST', '/api/bots/voice/answer', { jobId, requestId: r.approval.requestId, verdict: edited ? verdict.verdict : verdict, ...(edited ? { edits: verdict.edits } : {}) });
         }
         r = await P.relayRequest('POST', '/api/bots/voice/poll', { jobId, version: r.version }, 20000);
       }
@@ -1133,7 +1158,7 @@ You are on a live voice call. Reply with ONLY a JSON object: {"say": "...", "wor
     const last = calls.find((x) => x.botId === bot.id && x.status === 'done' && x.turns.length);
     const recent = last ? last.turns.slice(-6).map((t) => `${t.who === 'bot' ? bot.name : 'User'}: ${String(t.text).slice(0, 300)}`).join('\n') : '';
     const base = bot.prompt || `You are ${bot.name}, one of the user's bots in Codeply.${bot.specialty ? ` Your job: ${bot.specialty}.` : ''}${bot.instructions ? `\n${bot.instructions}` : ''}`;
-    const system = `${base}\n\n${FAST_RULES}${pcOnline() ? '' : FAST_OFFLINE()}${recent ? `\n\nTHE LAST CALL BEFORE THIS ONE\n${recent}` : ''}`;
+    const system = `${base}\n\n${FAST_RULES}${pcOnline() ? '' : FAST_OFFLINE()}${c && c.context ? `\n\n${c.context}` : ''}${recent ? `\n\nTHE LAST CALL BEFORE THIS ONE\n${recent}` : ''}`;
     const messages = [{ role: 'system', content: system },
       ...turns.slice(-14).map((t) => ({ role: t.who === 'bot' ? 'assistant' : 'user', content: String(t.text || '').slice(0, 1000) }))];
     const token = await P.accessToken();
@@ -1174,7 +1199,7 @@ You are on a live voice call; everything you write is spoken out loud right away
 - Talk the way a warm, relaxed friend talks on the phone: flowing, natural sentences with contractions (I'm, you've, that's), the odd "so", "okay" or "honestly" where it fits, and sentences that connect instead of choppy fragments. Vary how you open; do not start every reply with "Sure" or "Got it".
 - Plain spoken words only: no markdown, no lists, no emojis, no links, no long dash, and write numbers and times the way you would say them. Usually one to three sentences.
 - If the user wants something that needs real tools (their email, calendar, files, code, sending a message, current news, anything on their computer), say one short natural line that fits what they asked, as if you are starting on it now (vary it, never "one sec" or "one moment"), then on a new line write [[WORK: one clear sentence describing the task]] and stop. Do not invent results.
-- Things you already know (facts, advice, ideas, jokes, math, small talk) are not work: just answer.`;
+- Things you already know (facts, advice, ideas, jokes, math, small talk) are not work: just answer.${R() ? `\n${R().RULES}` : ''}`;
   const STREAM_OFFLINE = () => (cloudReady()
     ? `\n- Right now the user's PC is offline, so real work runs in Codeply Cloud instead: you may still write [[WORK: ...]]; ${CLOUD_SCOPE}.${cloudBusyNote()}`
     : `\n- Right now the user's PC is offline, so you cannot use tools: never write [[WORK: ...]]; if they ask for that kind of thing, say in one sentence you can do it ${NO_CLOUD_OFFER}.`);
@@ -1290,7 +1315,7 @@ You are on a live voice call; everything you write is spoken out loud right away
     const last = calls.find((x) => x.botId === bot.id && x.status === 'done' && x.turns.length);
     const recent = last ? last.turns.slice(-6).map((t) => `${t.who === 'bot' ? bot.name : 'User'}: ${String(t.text).slice(0, 300)}`).join('\n') : '';
     const base = bot.prompt || `You are ${bot.name}, one of the user's bots in Codeply.${bot.specialty ? ` Your job: ${bot.specialty}.` : ''}${bot.instructions ? `\n${bot.instructions}` : ''}`;
-    const system = `${base}\n\n${STREAM_RULES}${pcOnline() ? '' : STREAM_OFFLINE()}${recent ? `\n\nTHE LAST CALL BEFORE THIS ONE\n${recent}` : ''}`;
+    const system = `${base}\n\n${STREAM_RULES}${pcOnline() ? '' : STREAM_OFFLINE()}${R() ? R().voiceRules() : ''}${me.context ? `\n\n${me.context}` : ''}${recent ? `\n\nTHE LAST CALL BEFORE THIS ONE\n${recent}` : ''}`;
     const messages = [{ role: 'system', content: system },
       ...me.turns.slice(-14).map((t) => ({ role: t.who === 'bot' ? 'assistant' : 'user', content: String(t.text || '').slice(0, 1000) }))];
     if (me.ctx && me.ctx.state !== 'running') await wake(me.ctx);
@@ -1313,6 +1338,7 @@ You are on a live voice call; everything you write is spoken out loud right away
       console.debug(`[calls] request -> first sound: ${ms} ms (streamed)`);
     });
     let work = null; let said = 0;
+    const saves = []; // reminders the bot set this turn ([[REMIND: ...]] -> "remind" events), saved at once
     const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
     let buf = '';
     try {
@@ -1336,6 +1362,7 @@ You are on a live voice call; everything you write is spoken out loud right away
           else if (o.t === 'pcm') player.pcm(o.i, o.b64, o.rate);
           else if (o.t === 'end') player.end(o.i);
           else if (o.t === 'work') work = o.task;
+          else if (o.t === 'remind' && R()) saves.push(R().createFromTag(o, bot).then(() => true, (e) => { console.debug('[calls] reminder not saved:', e.message); return false; }));
           else if (o.t === 'error' && !said) throw new Error(o.error || 'The voice server failed.');
         }
       }
@@ -1355,7 +1382,17 @@ You are on a live voice call; everything you write is spoken out loud right away
       return;
     }
     await player.finished();
+    if (saves.length && c === me && token === me.token) await reminderOutcome(me, token, saves, said);
     if (c === me && token === me.token) { me.abort = null; setPhase('listening'); }
+  }
+  /** After the bot confirmed a reminder out loud: own up if it did not save, and point at notifications. */
+  async function reminderOutcome(me, token, saves, said) {
+    const ok = await Promise.all(saves);
+    if (c !== me || token !== me.token) return;
+    if (ok.includes(false)) { await sayNow("Hmm, actually I couldn't save that reminder just now. Want me to try again?", token); return; }
+    if (!said) await sayNow(saves.length > 1 ? "Okay, that's all set, I'll remind you as we go." : "Okay, that's set.", token); // the bot only wrote tags
+    const st = R() ? R().pushState() : 'granted';
+    if (st !== 'granted') { me.noteBase = st === 'ask' ? 'Reminder saved. Allow notifications in Calls so it reaches you.' : 'Reminder saved. It shows in Calls; this phone cannot get notifications yet.'; showNote(); }
   }
 
   /** Real work on the PC (with the bot's tools) after the opening line; short updates on long jobs. */
@@ -1666,7 +1703,14 @@ You are on a live voice call; everything you write is spoken out loud right away
     if (c.phase === 'listening') setPhase('listening');
   }
 
-  async function startCall(bot) {
+  /**
+   * opts (a bot calling you about a reminder, see incoming()):
+   *   answered  the user picked up an incoming call: no ringing, the bot speaks first
+   *   opening   the bot's first line (a string, or ({ canWork }) => string)
+   *   context   extra system prompt for this call (what the call is about)
+   *   work      a scheduled task the bot starts on right after its opening line
+   */
+  async function startCall(bot, opts = {}) {
     if (c) return;
     // Everything audio starts inside this tap: iOS only allows it from a user gesture.
     const ctx = audioCtx();
@@ -1692,7 +1736,7 @@ You are on a live voice call; everything you write is spoken out loud right away
       <div class="call-bg" aria-hidden="true"><div class="call-bg-blob">${avatarHtml(bot, 320, { still: true, flat: true })}</div></div>
       <div class="call-head">
         <div class="call-name">${esc(bot.name)}</div>
-        <div class="call-status">calling...</div>
+        <div class="call-status">${opts.answered ? 'connecting...' : 'calling...'}</div>
       </div>
       <div class="call-mid">
         <div class="call-face">
@@ -1720,6 +1764,7 @@ You are on a live voice call; everything you write is spoken out loud right away
       startedAt: Date.now(), connectedAt: 0, lastBotText: '', rec: null, abort: null, ending: false,
       voice: voiceFor(bot), pitch: 0.92 + (hash(`${bot.id}p`) % 17) / 100, fails: 0, recAt: 0,
       ears: false, vad: null, queued: null, dgVoice: deepgramVoice(bot), ttsOff: !TTS_URL, ttsCtl: null, ttsNote: '', playing: null, noteBase: '',
+      context: String(opts.context || ''), reminder: opts.reminder || null,
     };
     if (c.typing) root().classList.add('typing');
     q('[data-c="end"]').addEventListener('click', () => endCall());
@@ -1739,8 +1784,9 @@ You are on a live voice call; everything you write is spoken out loud right away
     if (!canHear) { c.noteBase = "This browser can't hear you. Type below and the bot still talks back."; showNote(); }
     else startListening(); // asks for the mic now, inside the tap; results are ignored while it rings
 
-    c.stopRing = ctx ? ring(ctx) : () => {};
-    await new Promise((res) => setTimeout(res, api.ringMs));
+    // Picked up (the bot called): no ringing, just a moment to connect.
+    c.stopRing = ctx && !opts.answered ? ring(ctx) : () => {};
+    await new Promise((res) => setTimeout(res, opts.answered ? api.answerMs : api.ringMs));
     if (c !== me || me.ending) return;
     c.stopRing();
     c.connectedAt = Date.now();
@@ -1748,10 +1794,80 @@ You are on a live voice call; everything you write is spoken out loud right away
     // Keep the voice function warm through long quiet stretches.
     c.warmTimer = setInterval(() => { if (c && Date.now() - Math.max(c.lastTtsAt || 0, lastWarm) > 240000) warmTts(); }, 30000);
     tick();
-    const greet = (bot.memory && bot.memory.length) ? `Hey, it's ${bot.name} again. What's on your mind?` : `Hey, it's ${bot.name}. What can I do for you?`;
+    const canWork = pcOnline() || cloudReady();
+    const custom = typeof opts.opening === 'function' ? opts.opening({ canWork }) : opts.opening;
+    const greet = spoken(custom) || ((bot.memory && bot.memory.length) ? `Hey, it's ${bot.name} again. What's on your mind?` : `Hey, it's ${bot.name}. What can I do for you?`);
     c.lastBotText = greet;
     log('bot', greet);
     await say(greet, c.token);
+    if (opts.work && c === me && !me.ending) await startScheduledTask(me, String(opts.work));
+  }
+
+  /** A task the user scheduled with the bot: it starts on it right after its opening line (PC, or Codeply Cloud). */
+  async function startScheduledTask(me, task) {
+    if (!(pcOnline() || cloudReady())) {
+      await sayNow("Your PC is offline right now though, so I can't do it from here. Turn it on, or set up Codeply Cloud, and call me back.", me.token);
+      return;
+    }
+    // The task goes in as what the user asked for (it is not shown as something they said on this call).
+    me.turns.push({ who: 'user', text: `(Scheduled task) ${task}`, at: Date.now() });
+    interrupt();
+    const token = me.token;
+    const controller = new AbortController();
+    me.abort = controller;
+    setPhase('thinking');
+    await runWork(me, token, controller, task, Promise.resolve());
+  }
+
+  // ─── A bot calling you (a reminder) ───────────────────────────────────────
+  // The phone's own incoming-call look: name, avatar, Decline and Answer. A web
+  // page cannot ring the phone by itself; this shows when a reminder's
+  // notification is tapped (or arrives while the app is open). Audio and the
+  // microphone can only start from the Answer tap, so that is where the call begins.
+  let ringing = null;
+  function incoming(bot, opts = {}) {
+    if (c || ringing) return false;
+    const tint = tintOf(bot.avatar);
+    const r = root();
+    r.style.setProperty('--tint', tint);
+    r.style.setProperty('--tint-bg', shade(tint, 0.62));
+    r.className = 'call incoming';
+    r.dataset.phase = 'ringing';
+    r.innerHTML = `
+      <div class="call-bg" aria-hidden="true"><div class="call-bg-blob">${avatarHtml(bot, 320, { still: true, flat: true })}</div></div>
+      <div class="call-head">
+        <div class="call-name">${esc(bot.name)}</div>
+        <div class="call-status">Codeply call</div>
+      </div>
+      <div class="call-mid">
+        <div class="call-face">
+          <div class="call-orb">${avatarHtml(bot, 168)}</div>
+          <div class="call-caption">${esc(opts.preview || '')}</div>
+        </div>
+      </div>
+      <div class="call-answer-row">
+        <div class="cb-wrap"><button type="button" class="call-end" data-in="decline" aria-label="Decline">${ICON.end}</button><span>Decline</span></div>
+        <div class="cb-wrap"><button type="button" class="call-accept" data-in="answer" aria-label="Answer">${ICON.phone}</button><span>Answer</span></div>
+      </div>`;
+    // Ring only if this page's audio is already unlocked (it was used since the app opened).
+    const stopRing = actx && actx.state === 'running' ? ring(actx) : () => {};
+    try { if (navigator.vibrate) navigator.vibrate([500, 250, 500, 250, 500]); } catch {}
+    const close = () => {
+      if (!ringing) return;
+      clearTimeout(ringing.timer);
+      ringing = null;
+      stopRing();
+      try { if (navigator.vibrate) navigator.vibrate(0); } catch {}
+      if (!c) { r.classList.add('hidden'); r.innerHTML = ''; }
+    };
+    ringing = { bot, timer: setTimeout(() => { close(); if (opts.onDecline) opts.onDecline('missed'); }, api.incomingMs) };
+    r.querySelector('[data-in="answer"]').addEventListener('click', () => {
+      close();
+      if (opts.onAnswer) opts.onAnswer();
+      startCall(bot, { ...opts, answered: true }); // inside the tap: audio and the mic can start
+    });
+    r.querySelector('[data-in="decline"]').addEventListener('click', () => { close(); if (opts.onDecline) opts.onDecline('declined'); });
+    return true;
   }
 
   function toggleMute() {
@@ -2021,9 +2137,9 @@ Respond with ONLY a JSON object:
 
   // reply/ringMs/endedMs are swappable for tests in the console; localEars
   // forces the kept-mic + Whisper path on browsers that have SpeechRecognition.
-  const api = { reply: askBot, fast_: askFast, fast: true, stream: true, serverStt: true, thinkingSound: true, ringMs: 2400, endedMs: 1100, localEars: false };
+  const api = { reply: askBot, fast_: askFast, fast: true, stream: true, serverStt: true, thinkingSound: true, ringMs: 2400, answerMs: 500, incomingMs: 60000, endedMs: 1100, localEars: false };
   window.CraftCalls = {
-    api, openCalls, closeCalls, startCall, endCall, refreshBots, syncCalls, spoken, sentences, VOICE_RULES, openBuilder, pushPending,
+    api, openCalls, closeCalls, startCall, endCall, incoming, refreshBots, syncCalls, spoken, sentences, VOICE_RULES, openBuilder, pushPending,
     heard: heardText, active: () => c, cache, calls: () => calls,
     supported: { recognition: !!SR, synthesis: !!synth, localEars: localEars(), ios: IS_IOS },
     _test: {

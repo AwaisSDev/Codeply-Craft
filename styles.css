@@ -1056,6 +1056,14 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   color: inherit;
 }
 .tool-row.failed .tool-row-head { color: var(--red); }
+.tool-error {
+  margin: 4px 0 0 23px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .tool-badge {
   font-size: 11px;
   padding: 1px 7px;
@@ -1279,6 +1287,13 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 .appr-btn.accept { background: var(--invert-bg); color: var(--invert-text); font-weight: 600; }
 .appr-btn.accept:hover { background: var(--invert-bg-hover); }
 .appr-btn.reject:hover { background: rgba(229, 98, 77, 0.18); color: var(--red); }
+/* An email to send or save as a draft: editable in place */
+.email-field { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--card-border); font-size: 13px; }
+.email-field span { width: 56px; flex-shrink: 0; color: var(--text-dim); }
+.email-field input { flex: 1; min-width: 0; background: transparent; border: 0; outline: none; color: var(--text); font: inherit; padding: 2px 0; }
+.email-body { display: block; width: 100%; box-sizing: border-box; margin-top: 10px; min-height: 96px; resize: vertical; background: var(--surface-2); border: 1px solid transparent; border-radius: 8px; padding: 8px 10px; color: var(--text); font: inherit; font-size: 13px; line-height: 1.5; outline: none; }
+.email-field:focus-within { border-bottom-color: var(--text-dim); }
+.email-body:focus { border-color: var(--card-border); }
 
 /* ---- Image picker ---- */
 .image-picker-card {

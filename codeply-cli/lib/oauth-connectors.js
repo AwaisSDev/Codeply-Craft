@@ -7,7 +7,14 @@
  * owns spinning that server up/down; this file only builds URLs and talks to
  * the providers' token/API endpoints. No secrets are ever logged.
  */
-const GMAIL_SCOPES = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
+// One Google connection covers Gmail (read, send, drafts) and Google
+// Calendar events. A connection made before compose/calendar were added lacks
+// them; the tools say "reconnect Gmail in Connect Apps" when Google refuses.
+const GOOGLE_SCOPE = {
+  compose: 'https://www.googleapis.com/auth/gmail.compose',
+  calendar: 'https://www.googleapis.com/auth/calendar.events',
+};
+const GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.send', GOOGLE_SCOPE.compose, GOOGLE_SCOPE.calendar].join(' ');
 // channels:join is what lets slackPostMessage auto-join a public channel
 // before posting to it - without it, chat:write alone only covers channels
 // the app has already been manually invited into.
@@ -86,14 +93,14 @@ async function getGmailProfile(accessToken) {
  * per-error message so the real cause shows, with a plain-words hint for the
  * ones that need the user to act.
  */
-function gmailError(data, status, what) {
+function gmailError(data, status, what, scopeHint) {
   const err = (data && data.error) || {};
   const first = Array.isArray(err.errors) && err.errors[0] ? err.errors[0] : {};
   const reason = first.reason || err.status || '';
   const detail = [err.message, first.message].filter((m, i, a) => m && a.indexOf(m) === i).join(': ');
   let hint = '';
   if (status === 401) hint = ' The Gmail sign-in expired or was revoked. Reconnect Gmail in Connect Apps.';
-  else if (status === 403 && /scope|insufficient/i.test(detail + reason)) hint = ' Gmail was connected without read access. Reconnect Gmail in Connect Apps and allow all requested permissions.';
+  else if (status === 403 && /scope|insufficient/i.test(detail + reason)) hint = scopeHint || ' Gmail was connected without read access. Reconnect Gmail in Connect Apps and allow all requested permissions.';
   else if (status === 403 && /accessNotConfigured|SERVICE_DISABLED|has not been used/i.test(detail + reason)) hint = ' The Gmail API is not enabled on the Google Cloud project behind this app.';
   else if (/failedPrecondition|FAILED_PRECONDITION/i.test(reason)) hint = ' Google says this account has no usable Gmail mailbox for this app (Gmail turned off, or the account is not a test user of the app). Reconnect Gmail in Connect Apps with the right account.';
   else if (status === 400) hint = ' Reconnecting Gmail in Connect Apps usually fixes this.';
@@ -111,8 +118,16 @@ function base64UrlEncode(str) {
   return Buffer.from(str, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+/** RFC 2822 message, base64url as Gmail wants it. A non-ASCII subject is RFC 2047 encoded. */
+function rawEmail({ to, subject, body }) {
+  const s = String(subject || '');
+  const subj = /^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${Buffer.from(s, 'utf8').toString('base64')}?=`;
+  const head = [to ? `To: ${to}` : '', `Subject: ${subj}`, 'Content-Type: text/plain; charset="UTF-8"'].filter(Boolean).join('\r\n');
+  return base64UrlEncode(`${head}\r\n\r\n${body || ''}`);
+}
+
 async function gmailSend(accessToken, { to, subject, body }) {
-  const raw = base64UrlEncode(`To: ${to}\r\nSubject: ${subject}\r\nContent-Type: text/plain; charset="UTF-8"\r\n\r\n${body}`);
+  const raw = rawEmail({ to, subject, body });
   const res = await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send', {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -121,6 +136,64 @@ async function gmailSend(accessToken, { to, subject, body }) {
   const data = await readJson(res);
   if (!res.ok) throw gmailError(data, res.status, 'Gmail send');
   return data; // { id, threadId, ... }
+}
+
+/** Saves a draft in the user's Gmail (needs gmail.compose). */
+async function gmailCreateDraft(accessToken, { to, subject, body }) {
+  const res = await fetch('https://www.googleapis.com/gmail/v1/users/me/drafts', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: { raw: rawEmail({ to, subject, body }) } }),
+  });
+  const data = await readJson(res);
+  if (!res.ok) {
+    const e = gmailError(data, res.status, 'Gmail draft', ' Gmail was connected before drafts were allowed. Reconnect Gmail in Connect Apps to allow drafts.');
+    e.scopeMissing = res.status === 403 && /scope|insufficient/i.test(JSON.stringify(data));
+    throw e;
+  }
+  return data; // { id, message: { id, threadId } }
+}
+
+// ─── Google Calendar (same Google connection as Gmail) ──────────────────────
+const CALENDAR_EVENTS_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+
+function calendarError(data, status, what) {
+  const err = (data && data.error) || {};
+  const first = Array.isArray(err.errors) && err.errors[0] ? err.errors[0] : {};
+  const reason = first.reason || err.status || '';
+  const detail = [err.message, first.message].filter((m, i, a) => m && a.indexOf(m) === i).join(': ');
+  const text = `${detail} ${reason} ${JSON.stringify(err.details || '')}`;
+  let hint = '';
+  if (status === 401) hint = ' The Google sign-in expired or was revoked. Reconnect Gmail in Connect Apps.';
+  else if (status === 403 && /accessNotConfigured|SERVICE_DISABLED|has not been used|is disabled/i.test(text)) hint = ' The Google Calendar API is not enabled on the Google Cloud project behind this app. Enable "Google Calendar API" in that project (Google Cloud console, APIs & Services, Library), wait a minute, then try again.';
+  else if (status === 403 && /scope|insufficient/i.test(text)) hint = ' Google was connected before Calendar access was added. Reconnect Gmail in Connect Apps (it covers Calendar too) and allow calendar access.';
+  else if (status === 400) hint = ' Check the start and end times.';
+  const e = new Error(`${what} failed (HTTP ${status}${reason ? `, ${reason}` : ''}): ${detail || 'no details from Google'}.${hint}`);
+  e.status = status;
+  return e;
+}
+
+/** Events on the primary calendar between timeMin and timeMax (RFC 3339), soonest first. */
+async function calendarListEvents(accessToken, { timeMin, timeMax, maxResults = 20 }) {
+  const params = new URLSearchParams({ singleEvents: 'true', orderBy: 'startTime', maxResults: String(maxResults) });
+  if (timeMin) params.set('timeMin', timeMin);
+  if (timeMax) params.set('timeMax', timeMax);
+  const res = await fetch(`${CALENDAR_EVENTS_URL}?${params}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const data = await readJson(res);
+  if (!res.ok) throw calendarError(data, res.status, 'Calendar list');
+  return data.items || [];
+}
+
+/** Creates an event on the primary calendar. `event` is a Calendar API event resource. */
+async function calendarInsertEvent(accessToken, event) {
+  const res = await fetch(CALENDAR_EVENTS_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(event),
+  });
+  const data = await readJson(res);
+  if (!res.ok) throw calendarError(data, res.status, 'Calendar add');
+  return data; // { id, htmlLink, ... }
 }
 
 async function gmailSearch(accessToken, query, maxResults = 10) {
@@ -512,7 +585,8 @@ async function githubCreateRepo(accessToken, name, { private: isPrivate = true }
 }
 
 module.exports = {
-  buildGmailAuthUrl, exchangeGmailCode, refreshGmailToken, getGmailProfile, gmailSend, gmailSearch,
+  buildGmailAuthUrl, exchangeGmailCode, refreshGmailToken, getGmailProfile, gmailSend, gmailSearch, gmailCreateDraft, gmailError,
+  calendarListEvents, calendarInsertEvent, calendarError, GOOGLE_SCOPE,
   buildSlackAuthUrl, exchangeSlackCode, slackPostMessage, slackListChannels, slackJoinChannel,
   buildVercelAuthUrl, exchangeVercelCode, getVercelProfile, vercelDeploy, vercelSetEnvVars,
   buildSupabaseAuthUrl, exchangeSupabaseCode, refreshSupabaseToken, supabaseListOrganizations, supabaseCreateProject, supabaseGetProjectKeys,

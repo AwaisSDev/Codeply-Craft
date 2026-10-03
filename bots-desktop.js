@@ -260,7 +260,7 @@ function botsFolder() {
 function jobView(j) {
   return {
     jobId: j.id, version: j.version, status: j.status, step: j.step || '', text: j.text || '', error: j.error || '',
-    approval: j.approval ? { requestId: j.approval.requestId, title: j.approval.title, detail: j.approval.detail, danger: j.approval.danger } : null,
+    approval: j.approval ? { requestId: j.approval.requestId, title: j.approval.title, detail: j.approval.detail, danger: j.approval.danger, draft: j.approval.draft || null, draftOnly: !!j.approval.draftOnly } : null,
   };
 }
 
@@ -302,7 +302,9 @@ async function startVoice({ botId, turns }) {
     }
     const requestId = `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
     const verdict = await new Promise((resolve) => {
-      j.approval = { requestId, title: req.title, detail: String(req.detail || '').slice(0, 800), danger: !!req.danger, resolve };
+      // An email (gmail_send / gmail_draft) rides along so the phone can show it editable.
+      const draft = req.draft ? { to: String(req.draft.to || ''), subject: String(req.draft.subject || ''), body: String(req.draft.body || '').slice(0, 20000) } : null;
+      j.approval = { requestId, title: req.title, detail: String(req.detail || '').slice(0, 800), danger: !!req.danger, draft, draftOnly: !!req.draftOnly, resolve };
       bumpJob(j);
       signal.addEventListener('abort', () => resolve('reject'), { once: true });
     });
@@ -337,10 +339,18 @@ async function pollVoice({ jobId, version }) {
   return { status: 200, body: jobView(j) };
 }
 
-function answerVoice({ jobId, requestId, verdict }) {
+// verdict: 'once' | 'always' | 'draft' | 'reject' (or { verdict, edits }); edits: the
+// email as the user left it on the card ({ to, subject, body }), when there was one.
+function answerVoice({ jobId, requestId, verdict, edits }) {
   const j = voiceJobs.get(String(jobId || ''));
   if (!j || !j.approval || j.approval.requestId !== requestId) return { status: 404, body: { error: 'Nothing is waiting for that answer.' } };
-  j.approval.resolve(verdict === 'once' || verdict === 'always' ? 'once' : 'reject');
+  const v = verdict && typeof verdict === 'object' ? verdict.verdict : verdict;
+  const e = edits || (verdict && typeof verdict === 'object' ? verdict.edits : null);
+  const clean = v === 'once' || v === 'always' ? 'once' : v === 'draft' ? 'draft' : 'reject';
+  const kept = j.approval.draft && e && typeof e === 'object'
+    ? Object.fromEntries(['to', 'subject', 'body'].filter((k) => typeof e[k] === 'string').map((k) => [k, e[k].slice(0, 100000)]))
+    : null;
+  j.approval.resolve(kept && clean !== 'reject' ? { verdict: clean, edits: kept } : clean);
   return { status: 200, body: { ok: true } };
 }
 

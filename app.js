@@ -1894,6 +1894,7 @@ document.querySelectorAll('.suggestion-card').forEach((card) =>
 
 // ─── Approval cards ─────────────────────────────────────────────────────────
 function addApprovalCard(ev) {
+  if (ev.draft) return addEmailApprovalCard(ev);
   const card = document.createElement('div');
   card.className = 'approval-card' + (ev.danger ? ' danger' : '');
   card.dataset.requestId = ev.requestId;
@@ -1929,6 +1930,50 @@ function addApprovalCard(ev) {
     })
   );
   chatColumn.appendChild(card);
+  scrollToBottom();
+}
+
+// An email the agent wants to send or save as a draft: To, Subject and Body
+// are editable right on the card, and what the user leaves there is what
+// goes out (the edits ride back with the verdict).
+function addEmailApprovalCard(ev) {
+  const d = ev.draft || {};
+  const draftOnly = !!ev.draftOnly;
+  const card = document.createElement('div');
+  card.className = 'approval-card email-approval';
+  card.dataset.requestId = ev.requestId;
+  card.innerHTML = `
+    <div class="approval-head">
+      <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+      <span class="approval-title">${esc(ev.title)}</span>
+    </div>
+    <label class="email-field"><span>To</span><input data-f="to" type="text" spellcheck="false"></label>
+    <label class="email-field"><span>Subject</span><input data-f="subject" type="text"></label>
+    <textarea class="email-body" data-f="body" rows="6"></textarea>
+    <div class="approval-actions">
+      <button class="appr-btn accept" data-v="once">${draftOnly ? 'Save draft' : 'Send'}</button>
+      ${draftOnly ? '' : '<button class="appr-btn" data-v="draft">Save as draft</button>'}
+      <button class="appr-btn reject" data-v="reject">Don't send</button>
+    </div>`;
+  // Set as properties, never parsed as markup.
+  card.querySelector('[data-f="to"]').value = String(d.to || '');
+  card.querySelector('[data-f="subject"]').value = String(d.subject || '');
+  card.querySelector('[data-f="body"]').value = String(d.body || '');
+  const body = card.querySelector('.email-body');
+  const grow = () => { body.style.height = 'auto'; body.style.height = `${Math.min(body.scrollHeight + 2, 360)}px`; };
+  body.addEventListener('input', grow);
+  card.querySelectorAll('.appr-btn').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      const v = btn.dataset.v;
+      const edits = {};
+      card.querySelectorAll('[data-f]').forEach((f) => { edits[f.dataset.f] = f.value; });
+      api.respondApproval(ev.requestId, v === 'reject' ? 'reject' : { verdict: v, edits });
+      const text = v === 'reject' ? 'Not sent' : v === 'draft' || draftOnly ? 'Saving as a draft' : `Sending to ${edits.to || 'nobody'}`;
+      card.outerHTML = `<div class="chat-note ${v === 'reject' ? 'error' : 'ok'}">${esc(edits.subject || ev.title)}: ${esc(text)}</div>`;
+    })
+  );
+  chatColumn.appendChild(card);
+  requestAnimationFrame(grow);
   scrollToBottom();
 }
 
@@ -2207,7 +2252,7 @@ if (api) api.onAgentEvent((data) => {
       // answer, which otherwise had nothing to ever remove it.
       const card = chatColumn.querySelector(`.approval-card[data-request-id="${data.requestId}"]`);
       if (card) {
-        const verdictText = data.verdict === 'reject' ? 'Rejected' : data.verdict === 'always' ? 'Accepted, always allowed' : 'Accepted';
+        const verdictText = data.verdict === 'reject' ? 'Rejected' : data.verdict === 'always' ? 'Accepted, always allowed' : data.verdict === 'draft' ? 'Saved as a draft' : 'Accepted';
         card.outerHTML = `<div class="chat-note ${data.verdict === 'reject' ? 'error' : 'ok'}">${verdictText} on another device</div>`;
       }
       break;

@@ -51,7 +51,7 @@ const FORMAT_CORRECTION =
   'closing tags complete:\n\n' +
   '<codeply:read_file>\n<path>run.html</path>\n</codeply:read_file>\n\n' +
   'Valid names: todo, ask_user, mcp, list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, ' +
-  'browser_check, gmail_send, gmail_search, slack_post_message, vercel_deploy, supabase_create_project, ' +
+  'browser_check, gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, slack_post_message, vercel_deploy, supabase_create_project, ' +
   'supabase_delete_project, github_create_repo, design_reference_search, view_images, supabase_api, supabase_sql, vercel_api, ' +
   'web_fetch, web_search, apply_patch, plan_exit, plan_enter, lsp.';
 
@@ -320,8 +320,12 @@ const PARAMS = {
   list_skills: ['query'],
   fetch_image: ['url', 'path'],
   browser_check: ['url', 'wait', 'viewport'],
-  gmail_send: ['to', 'subject', 'body'],
+  gmail_send: ['to', 'subject', 'body', 'draft'],
   gmail_search: ['query'],
+  gmail_draft: ['to', 'subject', 'body'],
+  drafts_list: [],
+  calendar_list: ['from', 'to', 'max'],
+  calendar_add: ['title', 'start', 'end', 'description', 'location', 'reminders'],
   slack_post_message: ['channel', 'text'],
   vercel_deploy: ['path'],
   supabase_create_project: ['name'],
@@ -365,6 +369,10 @@ const NAME_ALIASES = {
   previewcheck: 'browser_check', browserpreview: 'browser_check', check: 'browser_check',
   gmail_send: 'gmail_send', gmailsend: 'gmail_send', sendemail: 'gmail_send', email: 'gmail_send', sendmail: 'gmail_send',
   gmail_search: 'gmail_search', gmailsearch: 'gmail_search', searchemail: 'gmail_search', searchgmail: 'gmail_search',
+  gmail_draft: 'gmail_draft', gmaildraft: 'gmail_draft', draftemail: 'gmail_draft', savedraft: 'gmail_draft', createdraft: 'gmail_draft',
+  drafts_list: 'drafts_list', draftslist: 'drafts_list', listdrafts: 'drafts_list', drafts: 'drafts_list',
+  calendar_list: 'calendar_list', calendarlist: 'calendar_list', listevents: 'calendar_list', calendar: 'calendar_list', events: 'calendar_list', getevents: 'calendar_list',
+  calendar_add: 'calendar_add', calendaradd: 'calendar_add', addevent: 'calendar_add', createevent: 'calendar_add', addtocalendar: 'calendar_add', newevent: 'calendar_add',
   slack_post_message: 'slack_post_message', slackpostmessage: 'slack_post_message',
   slackmessage: 'slack_post_message', slackpost: 'slack_post_message', postmessage: 'slack_post_message',
   vercel_deploy: 'vercel_deploy', vercel: 'vercel_deploy', deploy: 'vercel_deploy', publish: 'vercel_deploy', vercelpublish: 'vercel_deploy',
@@ -441,7 +449,8 @@ function recoverCall(text) {
   else if (has('items')) name = 'todo';
   else if (has('question') && has('options')) name = 'ask_user';
   else if (has('server') && has('tool')) name = 'mcp';
-  else if (has('to') && has('subject')) name = 'gmail_send';
+  else if (has('to') && has('subject')) name = /<\/?\s*(?:codeply[:_-])?gmail_?draft/i.test(text) ? 'gmail_draft' : 'gmail_send';
+  else if (has('title') && has('start')) name = 'calendar_add';
   else if (has('channel') && has('text')) name = 'slack_post_message';
   else {
     const m = text.match(LOOSE_NAME_TAG);
@@ -803,6 +812,39 @@ The email body, plain text.
 <query>from:someone@example.com is:unread</query>
 </codeply:gmail_search>
 
+<codeply:gmail_draft>
+<to>someone@example.com</to>
+<subject>Subject line</subject>
+<body>
+The email body, plain text.
+</body>
+</codeply:gmail_draft>
+
+(gmail_draft saves a draft and sends nothing: in Gmail's Drafts when Gmail is
+connected, otherwise in Codeply's own drafts. drafts_list lists Codeply's
+drafts; gmail_send with <draft>id</draft> sends one of them.)
+
+<codeply:drafts_list>
+</codeply:drafts_list>
+
+<codeply:calendar_list>
+<from>today</from>
+<to>2026-10-05</to>
+</codeply:calendar_list>
+
+<codeply:calendar_add>
+<title>Dentist</title>
+<start>2026-10-06T15:30</start>
+<end>2026-10-06T16:15</end>
+<location>Main St clinic</location>
+<reminders>30</reminders>
+</codeply:calendar_add>
+
+(Calendar times are the user's local time: 2026-10-06T15:30 for a time,
+2026-10-06 for a whole day; from/to also take today or tomorrow. calendar_list
+defaults to today. calendar_add puts a real event on the user's Google
+Calendar and asks first; reminders is minutes before, comma-separated.)
+
 <codeply:slack_post_message>
 <channel>general</channel>
 <text>
@@ -941,7 +983,7 @@ RULES
 - FULL VERCEL ACCESS: when Vercel is connected, vercel_api reaches the entire Vercel REST API (https://api.vercel.com, paths start with a version like /v9/) - projects (GET /v9/projects), deployments and their status/logs (GET /v6/deployments, GET /v13/deployments/{id}, GET /v3/deployments/{id}/events), env vars (/v10/projects/{id}/env), domains (/v10/projects/{id}/domains). The team id is added for you. Use vercel_deploy to ship a folder, then vercel_api to confirm the deployment reached READY and to read its build logs if it failed - do not report a deployment as live until you've seen it succeed.
 - Tool results are the only source of truth about what happened. A failed result (non-2xx status, non-zero exit code, "did not apply") means it did not happen - never describe it as done.
 - Creating a remote repo, pushing code, enabling Pages, or deploying anything are exactly the kind of claim covered by "never report success you did not verify" above - and the easiest one to get wrong, because each step's own command can silently no-op or partially fail while a LATER step still appears to succeed. Concretely: run whoami equivalents (gh api user, gh auth status) to get the real signed-in username BEFORE building any URL with it - never guess a username from the OS account name, the folder name, or anything the user said earlier that could be stale; after gh repo create or git push, treat the command's own exit code and printed output as the only source of truth for whether it worked, not your prior turn's summary of what you intended to do - a command you ran two turns ago having succeeded is not evidence this turn's retry did too; and never hand the user a repository/deployment URL you have not just confirmed resolves (curl -I it, or read it back from the command's own output) - a plausible-looking URL built from a guessed username/slug is a fabrication even if the pattern is usually right.
-- gmail_send and slack_post_message send a real email or a real Slack message the moment they run - there is no draft state, no "preview" mode. Only use them when the user actually asked for that email/message to go out, never speculatively, never as a way to "show" them what it would say. If gmail_search or a prior message makes clear Gmail/Slack isn't connected, say so plainly and stop - do not retry hoping it connects itself, and do not claim you sent something when the tool reported it wasn't connected.
+- gmail_send and slack_post_message send a real email or a real Slack message the moment they run - there is no "preview" mode. Only use them when the user actually asked for that email/message to go out, never speculatively, never as a way to "show" them what it would say. When the user wants an email written but not sent yet, use gmail_draft instead. The user sees the email on an editable card before it goes out and may change it: the tool result says what was really sent or saved, so report that, not your original wording. calendar_add likewise puts a real event on the user's Google Calendar: only when they asked for it, with times in their local time; check calendar_list first when they ask what is on their calendar or whether a time is free. If gmail_search or a prior message makes clear Gmail/Slack isn't connected, say so plainly and stop - do not retry hoping it connects itself, and do not claim you sent something when the tool reported it wasn't connected.
 - vercel_deploy, supabase_create_project, supabase_delete_project, and github_create_repo are the same category as gmail_send/slack_post_message above: real, immediate action the moment they run - a live production deployment, a newly provisioned cloud database with its own bill, a brand-new repository pushed with the user's code. Only use them when the user actually asked for that outcome, never speculatively "to check if it would work." If one reports its integration isn't connected, say so plainly and stop rather than retrying or working around it. supabase_delete_project is the sharpest of these - it permanently destroys a database with no undo - so only reach for it when the user has clearly asked to delete or remove a specific project, never as cleanup for something that merely looks unused.
 - Every image in generated markup must be a local file, downloaded with fetch_image. NEVER write an <img> or CSS background-image pointing straight at loremflickr.com, picsum.photos, or any other live generator URL - those are redirect services that return a DIFFERENT random photo on every single request, so the page shows a different (sometimes completely unrelated) image on every reload, every redeploy, every visitor. Always fetch_image the URL to a real path under assets/ first, then reference that local path in the markup. If the user hasn't given you specific photos and the site needs placeholder imagery, fetch_image from https://loremflickr.com/<width>/<height>/<keyword1>,<keyword2> - it pulls a real tagged photo matching those keywords, no API key needed. Pick keywords that actually describe THAT section's subject (a tea shop's hero: 'tea,leaves' or 'matcha,ceremony', not generic filler) - never use a source that returns fully random, unrelated stock photos (e.g. picsum.photos) on a themed site; a beach or a crowd photo under a tea brand's "Our Heritage" section is worse than no image. If a downloaded placeholder turns out to be a broken/static-noise "no match" image or is visibly unrelated to its section once you look at the page, delete it and fetch_image again with more specific keywords - do not leave a wrong or corrupted image in place.
 - If a SKILLS entry below is a clear match for the task, use_skill it before starting - its instructions take priority over your own default approach for that kind of work. Do not use_skill speculatively; only when a listed skill actually matches what you are about to do. A name under LIKELY RELEVANT TO THIS REQUEST, if that section is present, was matched against your actual request from the full library - treat it exactly the same way: use_skill it before starting unless it's obviously a false match, do not silently ignore it in favor of guessing your own approach.
@@ -1054,7 +1096,7 @@ function connectedServicesSection() {
   describe('supabase', 'Supabase', 'full Management API via supabase_api, SQL via supabase_sql');
   describe('vercel', 'Vercel', [vercelUser, 'full REST API via vercel_api'].filter(Boolean).join(' - '));
   describe('github', 'GitHub', githubUser);
-  describe('gmail', 'Gmail', gmailUser);
+  describe('gmail', 'Gmail and Google Calendar', [gmailUser, 'drafts via gmail_draft, calendar via calendar_list/calendar_add'].filter(Boolean).join(' - '));
   describe('slack', 'Slack', '');
   return `CONNECTED SERVICES\n${lines.join('\n')}\nA service marked "not connected" cannot be used - tell the user to connect it from Connect Apps rather than attempting it.`;
 }
@@ -1328,7 +1370,7 @@ const NO_NATIVE_TOOLS_REMINDER =
 // unless their entry says toolMode: 'text', or CODEPLY_TOOLS=text is set.
 // A model that rejects tools is remembered for the rest of the session.
 const nativeUnsupported = new Set();
-const MUTATING_ACTIONS = new Set(['write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo']);
+const MUTATING_ACTIONS = new Set(['write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo']);
 
 /**
  * Native function names for MCP tools (mcp__server__tool, within the 64-char
