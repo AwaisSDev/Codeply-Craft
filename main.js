@@ -2149,13 +2149,14 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
   if (!roleId) roleId = session.stickyRole || null;
   emitRoleBadge(session, roleId);
   // The chat's bot (bots-desktop.js): its prompt, approval boundary and ask_bot. null = no bots.
-  const bot = await botsDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly });
+  const bot = await botsDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly, request: userMessage });
   try {
     const run = agentMod.runAgent({
       userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route,
       roleId, goal, maxSteps, verifyOnly, botPrompt: bot?.botPrompt, askBot: bot?.askBot,
     });
     for await (const ev of run) {
+      if (bot) bot.see(ev); // the bot's trajectory, for its reflection after the reply
       if (ev.type === 'text') {
         session.messages.push({ kind: 'assistant', text: ev.text, interim: !!ev.interim, at: Date.now() });
         replyText += (replyText ? '\n\n' : '') + ev.text;

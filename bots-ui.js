@@ -253,6 +253,28 @@
       ${items ? `<ul class="bot-mem">${items}</ul>` : '<div class="bots-dim">Nothing yet. It picks up your preferences and decisions as you chat.</div>'}</div>`;
   }
 
+  // Experience: what the bot learned from its own work (lessons, playbooks, tool tips, open threads).
+  function experienceHtml(d) {
+    if (!screen.id) return '';
+    const lessons = d.lessons || []; const playbooks = d.playbooks || []; const tips = d.toolTips || []; const threads = d.openThreads || [];
+    const total = lessons.length + playbooks.length + tips.length + threads.length;
+    const del = (kind, i) => `<button class="bot-mem-del" data-xforget="${kind}:${i}" title="Forget this" aria-label="Forget this">${ICON_X}</button>`;
+    const group = (title, kind, list, row) => (list.length
+      ? `<div class="bot-xp-sub">${title}</div><ul class="bot-mem">${list.map((x, i) => `<li>${row(x)}${del(kind, i)}</li>`).reverse().join('')}</ul>` : '');
+    const pb = (p) => `<details class="bot-xp-pb"><summary>${esc(p.app)} / ${esc(p.task)}${p.uses > 1 ? ` <span class="bots-dim">used ${p.uses} times</span>` : ''}</summary>
+      ${p.when ? `<div class="bots-dim">${esc(p.when)}</div>` : ''}<ol>${(p.steps || []).map((s) => `<li>${esc(s)}</li>`).join('')}</ol>
+      ${(p.precautions || []).length ? `<div class="bots-dim">Watch out: ${p.precautions.map(esc).join(' · ')}</div>` : ''}${p.params ? `<div class="bots-dim">What worked: ${esc(p.params)}</div>` : ''}</details>`;
+    const counts = [[lessons.length, 'lesson'], [playbooks.length, 'playbook'], [tips.length, 'tool tip']].filter(([n]) => n).map(([n, w]) => `${n} ${w}${n === 1 ? '' : 's'}`).join(', ');
+    return `<div class="bot-field bot-xp" data-experience><div class="bot-field-label">Experience <span class="bots-dim">${total ? `${counts || 'open threads'}, learned from its own work` : 'learned from its own work'}</span>
+        ${total ? '<button class="bots-link" data-act="clear-xp">Clear all</button>' : ''}</div>
+      ${total ? [
+    group('Lessons', 'lessons', lessons, (l) => `<span>When ${esc(l.situation)}: ${esc(l.strategy)}</span>`),
+    group('Playbooks', 'playbooks', playbooks, (p) => `<span>${pb(p)}</span>`),
+    group('Tool tips', 'toolTips', tips, (t) => `<span>${esc(t.tip)}</span>`),
+    group('Open threads', 'openThreads', threads, (t) => `<span>${esc(t.text)}</span>`),
+  ].join('') : '<div class="bots-dim">Nothing yet. After it works with its tools, it keeps what worked: lessons, step by step playbooks and tool tips.</div>'}</div>`;
+  }
+
   function renderEditor() {
     const d = screen.draft;
     const isNew = !screen.id;
@@ -283,6 +305,7 @@
           <div class="bot-field"><div class="bot-field-label">Must ask before</div><div class="bot-approvals">${approvals}</div>
             <div class="bots-dim">Unchecked actions run without asking (your permission rules still apply). Keep anything irreversible checked.</div></div>
           ${memoryHtml(d)}
+          ${experienceHtml(d)}
         </div>
       </div>
       <div class="bots-foot">
@@ -342,6 +365,20 @@
       if (r.error) { showToast(r.error, 'error'); return; }
       cat = r; d.memory = r.bot.memory; renderEditor();
     }));
+    const setXp = (bot) => { for (const k of ['lessons', 'playbooks', 'toolTips', 'openThreads']) d[k] = bot[k] || []; };
+    box.querySelectorAll('[data-xforget]').forEach((el) => el.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const [kind, i] = el.dataset.xforget.split(':');
+      const r = await api.botsForgetExperience(screen.id, kind, Number(i));
+      if (r.error) { showToast(r.error, 'error'); return; }
+      cat = r; setXp(r.bot); renderEditor();
+    }));
+    on('clear-xp', async () => {
+      const r = await api.botsForgetExperience(screen.id, 'all', -1);
+      if (r.error) { showToast(r.error, 'error'); return; }
+      cat = r; setXp(r.bot); renderEditor();
+      showToast(`${d.name} forgot what it learned from its work.`);
+    });
     on('clear-mem', async () => {
       const r = await api.botsClearMemory(screen.id);
       if (r.error) { showToast(r.error, 'error'); return; }

@@ -1473,6 +1473,94 @@ process.stdin.on('data', (d) => {
     check('bots: memory is capped and keeps the newest', capped.length === bots.MAX_MEMORY && capped.at(-1).fact.includes('69'));
     check('bots: forget one fact, then clear all', bots.forget(res.id, 0).memory.length === bots.MAX_MEMORY - 1 && bots.clearMemory(res.id).memory.length === 0);
 
+    // Experience (MUSE): lessons, playbooks, tool tips, open threads learned from the bot's own work.
+    {
+      const old = bots.normalizeBot({ name: 'Old', memory: ['x'] });
+      check('bots: experience fields are backward compatible (old bots get empty lists)', [old.lessons, old.playbooks, old.toolTips, old.openThreads].every((l) => Array.isArray(l) && !l.length));
+      const big = bots.normalizeBot({
+        name: 'Big',
+        lessons: [...Array.from({ length: 20 }, (_, i) => ({ situation: `case ${i}`, strategy: 'do it' })), { situation: '', strategy: 'x' }, 'junk'],
+        playbooks: [...Array.from({ length: 50 }, (_, i) => ({ app: 'App', task: `task ${i}`, steps: ['a'] })), { app: 'NoSteps', task: 't', steps: [] }],
+        toolTips: Array.from({ length: 30 }, (_, i) => `tip ${i}`),
+        openThreads: Array.from({ length: 9 }, (_, i) => ({ text: `thread ${i}` })),
+      });
+      check('bots: experience is normalized and bounded', big.lessons.length === bots.MAX_LESSONS && big.playbooks.length === bots.MAX_PLAYBOOKS && big.toolTips.length === bots.MAX_TOOL_TIPS &&
+        big.openThreads.length === bots.MAX_OPEN_THREADS && big.playbooks.every((p) => p.steps.length) && big.playbooks.at(-1).task === 'task 49' && big.openThreads.at(-1).text === 'thread 8');
+      const m1 = bots.mergeExperience({}, {
+        lessons: [{ situation: 'The user asks for important mail', strategy: 'Search is:important first' }],
+        toolTips: ['gmail_search: is:important newer_than:2d works well', 'password: hunter2 for the account'],
+        playbook: { app: 'Gmail', task: 'find important emails', steps: ['gmail_search q=is:important'], precautions: ['Skip promotions'] },
+        unfinished: 'Reply to the landlord',
+      });
+      const m2 = bots.mergeExperience(m1.experience, {
+        lessons: [{ situation: 'the user asks for important mail!', strategy: 'Search is:important, then is:unread' }],
+        toolTips: ['gmail_search: is:important newer_than:2d works well'],
+        playbook: { app: 'gmail', task: 'Find important emails', steps: ['gmail_search q=is:important newer_than:2d', 'summarize'], precautions: ['Never open attachments', 'skip promotions'] },
+        unfinished: 'none',
+      });
+      const pb = m2.experience.playbooks;
+      check('bots: experience merge dedupes lessons and tips, drops secrets, updates a playbook with the same app and task',
+        m1.experience.toolTips.length === 1 && m2.experience.lessons.length === 1 && m2.experience.lessons[0].strategy === 'Search is:important, then is:unread' &&
+        m2.experience.toolTips.length === 1 && pb.length === 1 && pb[0].uses === 2 && pb[0].steps.length === 2 && pb[0].precautions.length === 2 && m2.added.updated && m2.experience.openThreads.length === 1,
+        JSON.stringify(m2.experience));
+      const m3 = bots.mergeExperience(m2.experience, { resolved: [1], unfinished: 'Book the dentist' });
+      const m4 = bots.mergeExperience(m3.experience, { resolved: ['book the dentist'] });
+      check('bots: open threads are added, then cleared when a later reflection says they are done',
+        m3.experience.openThreads.length === 1 && m3.experience.openThreads[0].text === 'Book the dentist' && m3.added.resolved[0] === 'Reply to the landlord' && m4.experience.openThreads.length === 0);
+
+      const xb = bots.createBot({ name: 'Mira', specialty: 'Inbox helper' });
+      let reflectAsked = '';
+      const reflection = (task) => async (msgs) => { reflectAsked = msgs[0].content; return { success: true, json: {
+        outcome: 'success',
+        playbook: { app: 'Gmail', task, when: 'The user asks what mail matters', steps: ['gmail_search with q="is:important newer_than:2d"', 'Summarize sender and subject'], precautions: ['Do not open attachments'], params: 'newer_than:2d' },
+        lessons: [{ situation: 'the user asks for important mail', strategy: 'search is:important first, then unread' }],
+        toolTips: ['gmail_search: "is:important newer_than:2d" works well'],
+        unfinished: 'Reply to the landlord email once the user confirms the date',
+      } }; };
+      const trajectory = { request: 'check my important emails', steps: [{ name: 'gmail_search', args: { q: 'is:important newer_than:2d', content: 'x'.repeat(500) }, ok: true }, { name: 'read_file', args: { path: 'a.txt' }, ok: false, error: 'not found' }], reply: 'You have 3 important emails.' };
+      const r1 = await bots.reflectOnRun(xb, trajectory, reflection('find important emails'));
+      const r2 = await bots.reflectOnRun(bots.getBot(xb.id), trajectory, reflection('Find important emails'));
+      const mira = bots.getBot(xb.id);
+      check('bots: reflectOnRun sends the trajectory with short args and ok/error', /1\. gmail_search .*is:important newer_than:2d.*\(500 chars\).* -> ok/.test(reflectAsked) && /2\. read_file .* -> error: not found/.test(reflectAsked) && /Gmail \/ find important emails/.test(reflectAsked), reflectAsked);
+      check('bots: reflectOnRun merges into the bot and updates the same playbook instead of duplicating',
+        r1.outcome === 'success' && r1.added.playbook === 'Gmail / find important emails' && !r1.added.updated && r2.added.updated &&
+        mira.playbooks.length === 1 && mira.playbooks[0].uses === 2 && mira.lessons.length === 1 && mira.toolTips.length === 1 && mira.openThreads.length === 1, JSON.stringify(mira));
+      check('bots: reflectOnRun skips runs without tools and never throws', (await bots.reflectOnRun(mira, { request: 'hi', steps: [], reply: 'hello' }, reflection('x'))).skipped === 'no tools used' &&
+        (await bots.reflectOnRun(mira, trajectory, async () => { throw new Error('down'); })).added === null);
+      const failed = await bots.reflectOnRun(mira, trajectory, async () => ({ success: true, json: { outcome: 'failed', playbook: { app: 'Web', task: 'broken thing', steps: ['web_fetch'] }, lessons: [], unfinished: '', resolved: [1] } }));
+      check('bots: a failed run keeps no playbook, and a resolved thread is cleared', failed.outcome === 'failed' && !failed.added.playbook && bots.getBot(xb.id).playbooks.length === 1 && bots.getBot(xb.id).openThreads.length === 0);
+      bots.addExperience(xb.id, { playbook: { app: 'Files', task: 'rename photos by date', when: 'Bulk rename of pictures', steps: ['list_dir', 'run a rename script'] }, unfinished: 'Rename the 2019 folder too' });
+      bots.addExperience(xb.id, { playbook: { app: 'Web', task: 'compare flight prices', steps: ['web_search', 'web_fetch each result'] } });
+      const now = bots.getBot(xb.id);
+      const xp = bots.buildBotPrompt(now, { request: 'Any important emails in my inbox today?' });
+      check('bots: the prompt has lessons, tool tips, a playbook index, open threads and the done check',
+        /WHAT YOU HAVE LEARNED FROM PAST WORK\n[\s\S]*- When the user asks for important mail: search is:important first/.test(xp) && /TOOL TIPS\n[\s\S]*gmail_search/.test(xp) &&
+        /YOUR PLAYBOOKS\n[\s\S]*- Gmail \/ [Ff]ind important emails[\s\S]*- Files \/ rename photos by date[\s\S]*- Web \/ compare flight prices|YOUR PLAYBOOKS\n[\s\S]*- Web \/ compare flight prices[\s\S]*- Files \/ rename photos by date[\s\S]*- Gmail \/ [Ff]ind important emails/.test(xp) &&
+        /OPEN THREADS\n[\s\S]*- \(\d{4}-\d\d-\d\d\) Rename the 2019 folder too/.test(xp) && /BEFORE YOU SAY IT IS DONE/.test(xp), xp);
+      check('bots: only the playbook that fits the request goes in full', /PLAYBOOKS FOR THIS REQUEST\nGmail \/ [Ff]ind important emails\nWhen to use: The user asks what mail matters\nSteps:\n1\. gmail_search/.test(xp) && !/Steps:\n1\. list_dir/.test(xp) && !/1\. web_search/.test(xp), xp);
+      const xp2 = bots.buildBotPrompt(now, { request: 'rename my photos by the date taken' });
+      check('bots: a different request brings its own playbook in full', /PLAYBOOKS FOR THIS REQUEST\nFiles \/ rename photos by date/.test(xp2) && !/1\. gmail_search/.test(xp2));
+      check('bots: without a request only the index is shown', !/PLAYBOOKS FOR THIS REQUEST/.test(bots.buildBotPrompt(now)) && /YOUR PLAYBOOKS/.test(bots.buildBotPrompt(now)));
+      check('bots: rankPlaybooks keeps the top 2', bots.rankPlaybooks(now.playbooks, 'gmail emails photos rename flight prices compare').length === 2);
+      check('bots: delegated teammates get the playbook for their task', (await bots.delegate({ caller: null, name: 'Mira', task: 'Find the important emails from today', depth: 0, token: 'xp', team: bots.listBots(), runBot: async (b2, sub) => (/PLAYBOOKS FOR THIS REQUEST\nGmail/.test(sub.prompt) ? 'Summary: ok.' : 'Summary: missing.') })).meta.delegation.summary === 'ok.');
+      const upd2 = bots.updateBot(xb.id, { name: 'Mira 2', specialty: 'Inbox' });
+      check('bots: editing a bot keeps its experience', upd2.playbooks.length === 3 && upd2.lessons.length === 1);
+      check('bots: forget one experience item, then clear all', bots.forgetExperience(xb.id, 'playbooks', 0).playbooks.length === 2 &&
+        (() => { const c = bots.forgetExperience(xb.id, 'all'); return !c.lessons.length && !c.playbooks.length && !c.toolTips.length && !c.openThreads.length; })() &&
+        (() => { try { bots.forgetExperience(xb.id, 'memory', 0); return false; } catch { return true; } })());
+      check('bots: no long dashes in experience prompts', !(xp + reflectAsked).includes(String.fromCharCode(0x2014)));
+      // voiceTurn hands back the call turn's trajectory for reflection.
+      const vt = await bots.voiceTurn({ bot: now, team: [now], turns: [{ who: 'user', text: 'check my important emails' }], runAgent: async function* (o) {
+        reflectAsked = o.botPrompt();
+        yield { type: 'tool_start', name: 'gmail_search', args: { q: 'is:important' } };
+        yield { type: 'tool_end', name: 'gmail_search', args: { q: 'is:important' }, ok: true };
+        yield { type: 'text', text: 'Two important emails.' };
+        yield { type: 'done' };
+      } });
+      check('bots: voiceTurn passes the request for playbooks and returns the steps for reflection', vt.text === 'Two important emails.' && vt.request === 'check my important emails' && vt.steps.length === 1 && vt.steps[0].name === 'gmail_search' && vt.steps[0].ok && /LIVE VOICE CALL/.test(reflectAsked));
+      bots.removeBot(xb.id);
+    }
+
     // One agent at a time: two asks from different chats queue, never overlap.
     const lock = bots.createLock();
     let active = 0; let most = 0; const order = [];

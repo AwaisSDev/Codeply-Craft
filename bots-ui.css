@@ -137,6 +137,10 @@
 .bot-mem-del { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--text-faint); flex-shrink: 0; }
 .bot-mem-del:hover { background: var(--hover); color: var(--red); }
 .bot-mem-del svg, .bots-modal .sb-icon-btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; }
+.bot-xp-sub { font-size: 12px; color: var(--text-faint); margin: 8px 0 4px; }
+.bot-xp-pb summary { cursor: pointer; }
+.bot-xp-pb ol { margin: 6px 0 4px; padding-left: 18px; }
+.bot-xp-pb .bots-dim { margin: 2px 0; }
 .bots-foot { display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--border); }
 
 @media (max-width: 760px) {

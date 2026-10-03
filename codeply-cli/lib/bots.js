@@ -6,6 +6,9 @@
  * for a chat, buildBotPrompt() is added to that run's system prompt. After
  * each reply, learnFromTurn() asks the model for at most 3 durable facts to
  * remember, so the bot gets better at working with this user over time.
+ * After a run that used tools, reflectOnRun() looks at what the bot did and
+ * keeps experience (lessons, playbooks, tool tips, open threads), so the bot
+ * also gets better at the work itself.
  *
  * Bots talk to each other through the ask_bot tool. delegate() runs the asked
  * bot as an isolated sub-run (its own prompt, only the task text it was
@@ -23,6 +26,12 @@ const path = require('path');
 const MAX_MEMORY = 60;
 const MAX_FACTS_PER_TURN = 3;
 const MAX_DEPTH = 2;
+// Experience memory (MUSE style: learned from the bot's own work, not about the user).
+const MAX_LESSONS = 12;
+const MAX_PLAYBOOKS = 40;
+const MAX_TOOL_TIPS = 15;
+const MAX_OPEN_THREADS = 5;
+const PLAYBOOKS_IN_FULL = 2;
 
 let dirOverride = null;
 function botsDir() {
@@ -194,6 +203,11 @@ function normalizeBot(input, existing) {
     // The voice it speaks with on calls (a Deepgram, Edge or Kokoro voice id; '' = pick one).
     voice: typeof b.voice === 'string' && /^[\w.-]{0,80}$/.test(b.voice) ? b.voice : '',
     memory: cleanMemory(b.memory),
+    // Experience (learned on the job, see reflectOnRun): lessons, playbooks, tool tips, open threads.
+    lessons: cleanLessons(b.lessons),
+    playbooks: cleanPlaybooks(b.playbooks),
+    toolTips: cleanTips(b.toolTips),
+    openThreads: cleanThreads(b.openThreads),
     template: typeof b.template === 'string' ? b.template : undefined,
     createdAt: existing ? existing.createdAt : (Number(b.createdAt) || Date.now()),
     updatedAt: Date.now(),
@@ -355,6 +369,261 @@ Respond with ONLY a JSON object {"facts": ["..."]}. Use an empty list when nothi
   }
 }
 
+// ─── Experience: learning on the job ────────────────────────────────────────
+// Memory (above) is about the USER. Experience is about the WORK, after MUSE
+// ("Learning on the Job", arxiv 2510.08002): after a run that used tools, the
+// bot reflects once on what it did (reflectOnRun) and keeps
+//   - lessons:     short <situation, what works> pairs, always in its prompt
+//   - playbooks:   named procedures for work that succeeded (app / task, when
+//                  to use, steps with the real tool names, precautions); a
+//                  one-line index is always in the prompt, the ones that fit
+//                  the current request go in full
+//   - toolTips:    how tools behaved for this bot and user
+//   - openThreads: what it left unfinished, until a later run finishes it
+// All bounded, deduplicated, and stored on the bot file like memory.
+
+const SECRET_RE = /(api[_ -]?key|password|passwd|secret|token|bearer)\s*[:=]|\bsk-[a-z0-9]{8,}/i;
+const noSecret = (s) => !SECRET_RE.test(String(s || ''));
+const cleanList = (v, max, n) => (Array.isArray(v) ? v : [])
+  .filter((s) => typeof s === 'string' && s.trim() && noSecret(s))
+  .map((s) => clip(s, n)).slice(0, max);
+
+function cleanLessons(list) {
+  return (Array.isArray(list) ? list : [])
+    .filter((l) => l && typeof l.situation === 'string' && typeof l.strategy === 'string' && l.situation.trim() && l.strategy.trim())
+    .map((l) => ({ situation: clip(l.situation, 160), strategy: clip(l.strategy, 240), at: Number(l.at) || Date.now() }))
+    .slice(-MAX_LESSONS);
+}
+
+function cleanPlaybook(p) {
+  if (!p || typeof p !== 'object') return null;
+  const app = clip(p.app, 40);
+  const task = clip(p.task, 80);
+  const steps = cleanList(p.steps, 10, 200);
+  if (!app || !task || !steps.length) return null;
+  return {
+    app, task, when: clip(p.when, 200), steps,
+    precautions: cleanList(p.precautions, 6, 200),
+    params: noSecret(p.params) ? clip(p.params, 300) : '',
+    uses: Math.max(1, Number(p.uses) || 1),
+    at: Number(p.at) || Date.now(),
+  };
+}
+
+function cleanPlaybooks(list) {
+  return (Array.isArray(list) ? list : []).map(cleanPlaybook).filter(Boolean).slice(-MAX_PLAYBOOKS);
+}
+
+function cleanTips(list) {
+  return (Array.isArray(list) ? list : [])
+    .map((t) => (typeof t === 'string' ? { tip: t } : t))
+    .filter((t) => t && typeof t.tip === 'string' && t.tip.trim())
+    .map((t) => ({ tip: clip(t.tip, 200), at: Number(t.at) || Date.now() }))
+    .slice(-MAX_TOOL_TIPS);
+}
+
+function cleanThreads(list) {
+  return (Array.isArray(list) ? list : [])
+    .map((t) => (typeof t === 'string' ? { text: t } : t))
+    .filter((t) => t && typeof t.text === 'string' && t.text.trim())
+    .map((t) => ({ text: clip(t.text, 200), at: Number(t.at) || Date.now() }))
+    .slice(-MAX_OPEN_THREADS);
+}
+
+const playbookKey = (p) => `${factKey(p.app)}|${factKey(p.task)}`;
+const playbookName = (p) => `${p.app} / ${p.task}`;
+const uniqueStrings = (list, max) => {
+  const out = [];
+  for (const s of list) if (!out.some((x) => sameFact(x, s))) out.push(s);
+  return out.slice(-max);
+};
+
+/**
+ * Pure merge of one reflection into a bot's experience. Same lesson
+ * situation, same tool tip, same app + task: the newer one replaces (a
+ * playbook is updated in place, keeping its use count and precautions).
+ * @returns {{experience:object, added:object}}
+ */
+function mergeExperience(exp, r, now = Date.now()) {
+  let lessons = cleanLessons(exp && exp.lessons);
+  let playbooks = cleanPlaybooks(exp && exp.playbooks);
+  let toolTips = cleanTips(exp && exp.toolTips);
+  let openThreads = cleanThreads(exp && exp.openThreads);
+  const added = { lessons: [], toolTips: [], playbook: null, updated: false, unfinished: '', resolved: [] };
+  for (const l of cleanLessons((r && r.lessons) || [])) {
+    if (!noSecret(l.situation + l.strategy)) continue;
+    lessons = lessons.filter((x) => !sameFact(x.situation, l.situation) && !sameFact(x.strategy, l.strategy));
+    lessons.push({ ...l, at: now });
+    added.lessons.push(l);
+  }
+  for (const t of cleanTips(((r && r.toolTips) || []).filter(noSecret))) {
+    toolTips = toolTips.filter((x) => !sameFact(x.tip, t.tip));
+    toolTips.push({ ...t, at: now });
+    added.toolTips.push(t.tip);
+  }
+  const pb = r && r.playbook ? cleanPlaybook(r.playbook) : null;
+  if (pb) {
+    const old = playbooks.find((x) => playbookKey(x) === playbookKey(pb));
+    const merged = old
+      ? { ...pb, when: pb.when || old.when, params: pb.params || old.params, precautions: uniqueStrings([...old.precautions, ...pb.precautions], 6), uses: old.uses + 1, at: now }
+      : { ...pb, uses: 1, at: now };
+    playbooks = playbooks.filter((x) => x !== old);
+    playbooks.push(merged); // most recently used last, so the oldest unused one goes first
+    added.playbook = playbookName(merged);
+    added.updated = !!old;
+  }
+  // Open threads: resolved ones go (by number or by text), a new one is added.
+  const resolved = Array.isArray(r && r.resolved) ? r.resolved : [];
+  if (resolved.length) {
+    const before = openThreads;
+    openThreads = openThreads.filter((t, i) => !resolved.some((x) => (typeof x === 'number' ? x === i + 1 : (/^\d+$/.test(String(x).trim()) ? Number(x) === i + 1 : sameFact(t.text, x)))));
+    added.resolved = before.filter((t) => !openThreads.includes(t)).map((t) => t.text);
+  }
+  const unfinished = r && typeof r.unfinished === 'string' && noSecret(r.unfinished) ? clip(r.unfinished, 200) : '';
+  if (unfinished && !/^(none|nothing|n\/a|no)\.?$/i.test(unfinished)) {
+    openThreads = openThreads.filter((t) => !sameFact(t.text, unfinished));
+    openThreads.push({ text: unfinished, at: now });
+    added.unfinished = unfinished;
+  }
+  return {
+    experience: {
+      lessons: lessons.slice(-MAX_LESSONS), playbooks: playbooks.slice(-MAX_PLAYBOOKS),
+      toolTips: toolTips.slice(-MAX_TOOL_TIPS), openThreads: openThreads.slice(-MAX_OPEN_THREADS),
+    },
+    added,
+  };
+}
+
+/** Merge a reflection into the stored bot (re-read first, so a parallel learn is never lost). */
+function addExperience(botId, reflection) {
+  const bot = getBot(botId);
+  if (!bot) return { bot: null, added: null };
+  const { experience, added } = mergeExperience(bot, reflection);
+  return { bot: save({ ...bot, ...experience, updatedAt: Date.now() }), added };
+}
+
+const EXPERIENCE_KINDS = ['lessons', 'playbooks', 'toolTips', 'openThreads'];
+
+/** Forget one experience item (kind + index), or everything with kind 'all'. */
+function forgetExperience(botId, kind, index) {
+  const bot = getBot(botId);
+  if (!bot) throw new Error('That bot is gone.');
+  if (kind === 'all') return save({ ...bot, lessons: [], playbooks: [], toolTips: [], openThreads: [], updatedAt: Date.now() });
+  if (!EXPERIENCE_KINDS.includes(kind)) throw new Error('Unknown kind of experience.');
+  const list = bot[kind].slice();
+  if (index >= 0 && index < list.length) list.splice(index, 1);
+  return save({ ...bot, [kind]: list, updatedAt: Date.now() });
+}
+
+const STOP = new Set('the and for with that this from what when where which your you our are was were can could would should will have has had not but all any how who why into onto about please just some them they then than there these those its it him her his she use using want need make get got give show tell check look find out new one two'.split(' '));
+
+/** Words that carry meaning, lightly stemmed ("emails" and "email" match). */
+function terms(text) {
+  return [...new Set(String(text || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/)
+    .filter((w) => w.length >= 3 && !STOP.has(w))
+    .map((w) => (w.length > 4 ? w.replace(/(ing|es|s)$/, '') : w)))];
+}
+
+/** The playbooks that fit a request best (keyword overlap), at most `n`, best first. */
+function rankPlaybooks(playbooks, request, n = PLAYBOOKS_IN_FULL) {
+  const want = terms(request);
+  if (!want.length) return [];
+  return (playbooks || []).map((p, i) => {
+    const head = terms(`${p.app} ${p.task}`);
+    const body = terms(`${p.when} ${(p.steps || []).join(' ')}`);
+    let score = 0;
+    for (const w of want) score += head.includes(w) ? 2 : body.includes(w) ? 0.5 : 0;
+    return { p, i, score };
+  }).filter((x) => x.score >= 2 || (x.score >= 1 && want.length <= 2))
+    .sort((a, b) => b.score - a.score || b.p.at - a.p.at)
+    .slice(0, n).map((x) => x.p);
+}
+
+/** One line per tool call: name, short args, ok or the error. */
+function trajectoryLines(steps) {
+  return (Array.isArray(steps) ? steps : []).filter((s) => s && s.name).slice(-30).map((s, i) => {
+    let args = '';
+    if (s.args && typeof s.args === 'object') {
+      const short = {};
+      for (const [k, v] of Object.entries(s.args)) {
+        if (/content|patch|body|text|old|new/i.test(k) && typeof v === 'string' && v.length > 60) short[k] = `(${v.length} chars)`;
+        else short[k] = typeof v === 'string' ? clip(v, 80) : v;
+      }
+      args = clip(JSON.stringify(short), 200);
+    } else if (s.label) args = clip(s.label, 140);
+    const result = s.ok ? 'ok' : `error${s.error ? `: ${clip(s.error, 140)}` : ''}`;
+    return `${i + 1}. ${s.name} ${args} -> ${result}`;
+  });
+}
+
+function reflectPrompt(bot, { request, steps, reply }) {
+  const index = (bot.playbooks || []).map((p) => `- ${playbookName(p)}`).join('\n') || '(none yet)';
+  const lessons = (bot.lessons || []).map((l) => `- When ${l.situation}: ${l.strategy}`).join('\n') || '(none yet)';
+  const threads = (bot.openThreads || []).map((t, i) => `${i + 1}. ${t.text}`).join('\n') || '(none)';
+  return `You are the reflection step of an assistant called ${bot.name}${bot.specialty ? ` (${bot.specialty})` : ''}. It just finished a piece of work with its tools. Look at what it did and decide what it should learn for next time, so it gets better on the job.
+
+The user's request:
+${clip(request, 2000) || '(not given)'}
+
+The tool calls, in order:
+${trajectoryLines(steps).join('\n') || '(none)'}
+
+${bot.name}'s final reply:
+${clip(reply, 2000) || '(no reply)'}
+
+Playbooks it already has (reuse the exact same app and task names to update one):
+${index}
+
+Lessons it already has:
+${lessons}
+
+Open threads it left unfinished before (numbered):
+${threads}
+
+Judge the outcome from the tool results, not from what the reply claims. Then respond with ONLY a JSON object:
+{
+  "outcome": "success" or "partial" or "failed",
+  "playbook": null, or ONLY when it succeeded and the procedure is reusable: {"app": "the app or area, e.g. Gmail, Files, Web, Shell", "task": "short task name, e.g. find important emails", "when": "one line: when to use it", "steps": ["each key step, naming the real tool used, e.g. gmail_search with q=is:important newer_than:2d"], "precautions": ["what to watch out for"], "params": "parameters or values that worked, or empty"},
+  "lessons": [{"situation": "a short kind of situation", "strategy": "what works there, or what to avoid"}] (at most 2, only new and general ones),
+  "toolTips": ["tool_name: how it behaved, e.g. a query or argument that worked or failed"] (at most 2),
+  "unfinished": "one line about anything the user asked for that is still not done, or empty",
+  "resolved": [numbers of the open threads above that this work finished]
+}
+Never include passwords, keys, tokens or personal secrets. Keep every line short. Never use the long dash character.`;
+}
+
+/**
+ * MUSE "Reflect + Memorize": after a run that used tools, one cheap model
+ * call turns the trajectory into experience on the bot. chatFn has the
+ * ai.js chatJson shape. Never throws.
+ * @param {object} bot
+ * @param {{request:string, steps:Array<{name:string,args?:object,label?:string,ok:boolean,error?:string}>, reply:string}} run
+ * @returns {Promise<{outcome?:string, added:object|null, skipped?:string}>}
+ */
+async function reflectOnRun(bot, run, chatFn) {
+  try {
+    if (!bot || !bot.id || typeof chatFn !== 'function') return { added: null, skipped: 'no bot or model' };
+    const steps = (run && Array.isArray(run.steps) ? run.steps : []).filter((s) => s && s.name);
+    if (!steps.length) return { added: null, skipped: 'no tools used' };
+    const fresh = getBot(bot.id) || normalizeBot(bot, bot);
+    const r = await chatFn([{ role: 'user', content: reflectPrompt(fresh, { ...run, steps }) }]);
+    if (!r || !r.success || !r.json || typeof r.json !== 'object') return { added: null, skipped: 'no answer' };
+    const j = r.json;
+    const outcome = ['success', 'partial', 'failed'].includes(j.outcome) ? j.outcome : 'partial';
+    const reflection = {
+      playbook: outcome === 'success' ? j.playbook : null,
+      lessons: (Array.isArray(j.lessons) ? j.lessons : []).slice(0, 2),
+      toolTips: (Array.isArray(j.toolTips) ? j.toolTips : []).slice(0, 2),
+      unfinished: j.unfinished,
+      resolved: j.resolved,
+    };
+    const { added } = addExperience(bot.id, reflection);
+    return { outcome, added };
+  } catch {
+    return { added: null, skipped: 'failed' };
+  }
+}
+
 // ─── Prompts ────────────────────────────────────────────────────────────────
 
 function approvalLine(bot) {
@@ -376,6 +645,45 @@ The one task, with every bit of context they need (they see nothing else).
 </task>
 </codeply:ask_bot>`;
 
+const VERIFY_RULES = `BEFORE YOU SAY IT IS DONE
+- Base every claim on what your tools actually returned in this run.
+- Check the deliverable exists (the file is written, the message is sent, the command passed) before you say so.
+- Never invent results, numbers, names or links. If something failed or you could not check it, say so plainly.`;
+
+const shortDate = (at) => new Date(Number(at) || Date.now()).toISOString().slice(0, 10);
+
+function playbookText(p) {
+  const lines = [`${playbookName(p)}`];
+  if (p.when) lines.push(`When to use: ${p.when}`);
+  lines.push('Steps:', ...(p.steps || []).map((s, i) => `${i + 1}. ${s}`));
+  if ((p.precautions || []).length) lines.push('Precautions:', ...p.precautions.map((s) => `- ${s}`));
+  if (p.params) lines.push(`What worked: ${p.params}`);
+  return lines.join('\n');
+}
+
+/** The experience sections of a bot's prompt; `request` picks the playbooks shown in full. */
+function experienceParts(bot, request) {
+  const parts = [];
+  const lessons = bot.lessons || [];
+  if (lessons.length) {
+    parts.push(`WHAT YOU HAVE LEARNED FROM PAST WORK\nStrategies from your own earlier work. Use them when the situation fits:\n${lessons.map((l) => `- When ${l.situation}: ${l.strategy}`).join('\n')}`);
+  }
+  const tips = bot.toolTips || [];
+  if (tips.length) parts.push(`TOOL TIPS\nHow your tools behaved before:\n${tips.map((t) => `- ${t.tip}`).join('\n')}`);
+  const playbooks = bot.playbooks || [];
+  if (playbooks.length) {
+    const top = rankPlaybooks(playbooks, request);
+    const index = playbooks.slice().reverse().map((p) => `- ${playbookName(p)}${p.when ? `: ${clip(p.when, 90)}` : ''}${top.includes(p) ? ' (in full below)' : ''}`);
+    parts.push(`YOUR PLAYBOOKS\nProcedures that worked for you before (app / task). Follow the matching one, and adapt it if things changed:\n${index.join('\n')}`);
+    if (top.length) parts.push(`PLAYBOOKS FOR THIS REQUEST\n${top.map(playbookText).join('\n\n')}`);
+  }
+  const threads = bot.openThreads || [];
+  if (threads.length) {
+    parts.push(`OPEN THREADS\nThings you left unfinished before. Bring one up when it fits, and finish it when the user wants:\n${threads.map((t) => `- (${shortDate(t.at)}) ${t.text}`).join('\n')}`);
+  }
+  return parts;
+}
+
 /**
  * The system prompt addition for one bot.
  * @param {object} bot
@@ -384,6 +692,7 @@ The one task, with every bit of context they need (they see nothing else).
  * @param {boolean} [o.canDelegate] ask_bot is available in this run
  * @param {string}  [o.askedBy]     set for a delegated sub-run: who asked
  * @param {boolean} [o.native]      native function calling (no tag example)
+ * @param {string}  [o.request]     the user's message: picks the playbooks shown in full
  */
 function buildBotPrompt(bot, o = {}) {
   if (!bot) return '';
@@ -400,6 +709,8 @@ function buildBotPrompt(bot, o = {}) {
   if (memory.length) {
     parts.push(`WHAT YOU HAVE LEARNED ABOUT THIS USER\nFollow these unless the user says otherwise now:\n${memory.map((m) => `- ${m.fact}`).join('\n')}`);
   }
+  parts.push(...experienceParts(bot, o.request));
+  parts.push(VERIFY_RULES);
   if (o.askedBy) {
     parts.push(`DELEGATED TASK\n${o.askedBy} asked you to do one task. You only see that task, not the rest of the conversation. Do it fully with your tools, then reply in this shape:\nSummary: <one sentence with the outcome>\n<the details: findings, what you changed, anything ${o.askedBy} must know or check>`);
   }
@@ -524,7 +835,7 @@ async function delegate(o) {
   try {
     reply = await lock.run(o.token, () => o.runBot(target, {
       task, depth: depth + 1, chain: [...chain, ...(o.caller ? [o.caller.id] : []), target.id],
-      prompt: buildBotPrompt(target, { team, askedBy: callerName, canDelegate: depth + 1 < MAX_DEPTH }),
+      prompt: buildBotPrompt(target, { team, askedBy: callerName, canDelegate: depth + 1 < MAX_DEPTH, request: task }),
     }), o.signal);
   } catch (e) {
     const output = `${target.name} could not finish: ${e.message}`;
@@ -578,6 +889,7 @@ function fromDescription(json, description) {
   // Irreversible actions always stay behind approval, whatever the model said.
   for (const k of ['send', 'publish', 'databases']) if (!draft.approval.includes(k)) draft.approval.push(k);
   delete draft.id; delete draft.memory; delete draft.createdAt; delete draft.updatedAt;
+  delete draft.lessons; delete draft.playbooks; delete draft.toolTips; delete draft.openThreads;
   return draft;
 }
 
@@ -634,7 +946,8 @@ function callTurns(turns) {
 /**
  * One spoken reply on a call, with tools. `runAgent` is the engine's agent
  * loop; `onStep({ name, label, done, ok })` reports tool use for the call
- * screen ("Checking Gmail..."). Returns { text } ready to speak.
+ * screen ("Checking Gmail..."). Returns { text } ready to speak, plus
+ * { request, reply, steps } for reflectOnRun.
  */
 async function voiceTurn({ bot, team, turns, recentChat, runAgent, route, cwd, signal, approve, onStep, maxSteps = 16 }) {
   const { history, userMessage } = callTurns(turns);
@@ -642,19 +955,28 @@ async function voiceTurn({ bot, team, turns, recentChat, runAgent, route, cwd, s
   const extra = recentChat ? `\n\nRECENT CHAT BEFORE THIS CALL\n${recentChat}` : '';
   const run = runAgent({
     userMessage, history, mode: 'Build', cwd, signal, route, maxSteps, approve,
-    botPrompt: () => `${buildBotPrompt(bot, { team })}\n\n${VOICE_RULES}${extra}`,
+    botPrompt: () => `${buildBotPrompt(bot, { team, request: userMessage })}\n\n${VOICE_RULES}${extra}`,
   });
   let reply = '';
+  const steps = []; // the trajectory, for reflectOnRun after the call turn
   for await (const ev of run) {
     if (ev.type === 'text' && !ev.interim) reply += (reply ? ' ' : '') + ev.text;
     else if (ev.type === 'tool_start' && onStep) onStep({ name: ev.name, args: ev.args || {} });
-    else if (ev.type === 'tool_end' && onStep) onStep({ name: ev.name, args: ev.args || {}, done: true, ok: !!ev.ok });
+    else if (ev.type === 'tool_end') {
+      steps.push(runStep(ev));
+      if (onStep) onStep({ name: ev.name, args: ev.args || {}, done: true, ok: !!ev.ok });
+    }
     else if (ev.type === 'error') throw new Error(ev.error || 'The run failed.');
     else if (ev.type === 'aborted') throw new Error('Stopped.');
     else if (ev.type === 'done') break;
   }
   if (signal && signal.aborted) throw new Error('Stopped.'); // hung up or talked over: nothing to say
-  return { text: spoken(reply) };
+  return { text: spoken(reply), request: userMessage, reply, steps };
+}
+
+/** One agent tool_end event as a trajectory step for reflectOnRun. */
+function runStep(ev) {
+  return { name: ev.name, args: ev.args || {}, ok: !!ev.ok, error: ev.ok ? undefined : clip(ev.summary || ev.error || '', 200) };
 }
 
 /** What the call screen says while a tool runs. */
@@ -672,6 +994,8 @@ module.exports = {
   botsDir, setBotsDir, normalizeBot, normalizeAvatar,
   listBots, getBot, findBot, createBot, createFromTemplate, updateBot, removeBot,
   mergeMemory, addMemory, forget, clearMemory, learnFromTurn,
+  MAX_LESSONS, MAX_PLAYBOOKS, MAX_TOOL_TIPS, MAX_OPEN_THREADS,
+  mergeExperience, addExperience, forgetExperience, rankPlaybooks, reflectOnRun, runStep,
   buildBotPrompt, teamPrompt, approvalCategory, canSkipApproval,
   createLock, globalLock, parseResult, delegate, botCard,
   describePrompt, fromDescription,

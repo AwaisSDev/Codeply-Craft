@@ -5,7 +5,8 @@
 // boundary wraps approve(), and it can ask teammates with ask_bot. Only one
 // bot runs at a time across the whole app (the engine's global lock); a turn
 // that would overlap waits, and a delegated teammate runs while its caller
-// waits. After each reply the bot learns, in the background.
+// waits. After each reply the bot learns, in the background, and after work
+// with tools it reflects on what it did (lessons, playbooks, tool tips).
 //
 // main.js wires this in with init(deps) and two small hooks (onSend in
 // startChatRun, forTurn in runOneTurn); nothing here reaches into main.js.
@@ -101,17 +102,20 @@ async function runSub(c, target, sub, steps) {
     askBot: canAsk ? makeAskBot({ ...c, caller: target, depth: sub.depth, chain: sub.chain }) : undefined,
   });
   let reply = '';
+  const trajectory = []; // the teammate's own tool calls, for its reflection
   for await (const ev of run) {
     if (ev.type === 'text' && !ev.interim) reply += (reply ? '\n\n' : '') + ev.text;
     else if (ev.type === 'tool_end') {
       const label = ev.summary || (ev.args && (ev.args.path || ev.args.command || ev.args.pattern || ev.args.query)) || '';
       const step = { name: ev.name, label: String(label).slice(0, 140), ok: !!ev.ok };
       steps.push(step);
+      if (trajectory.length < 60) trajectory.push(b.runStep(ev));
       deps.sendEvent(c.session.id, { type: 'bot_step', bot: card, ...step });
     } else if (ev.type === 'error') throw new Error(ev.error || 'the run failed');
     else if (ev.type === 'aborted') throw new Error('Stopped.');
     else if (ev.type === 'done') break;
   }
+  if (reply && !(c.signal && c.signal.aborted)) reflect(target, { request: sub.task, steps: trajectory, reply }, c.route, null);
   return reply;
 }
 
@@ -119,7 +123,7 @@ async function runSub(c, target, sub, steps) {
  * runOneTurn: everything this turn needs to run as the chat's bot, or null
  * when the user has no bots (plain Craft, nothing changes). Never throws.
  */
-async function forTurn({ session, approve, signal, route, cwd, mode, verifyOnly }) {
+async function forTurn({ session, approve, signal, route, cwd, mode, verifyOnly, request }) {
   let b; let team;
   try { b = bots(); team = b.listBots(); } catch (e) { console.warn('[bots] not available:', e.message); return null; }
   if (!team.length) return null;
@@ -136,11 +140,16 @@ async function forTurn({ session, approve, signal, route, cwd, mode, verifyOnly 
     emitBadge(session, null);
   }
   const c = { session, caller: bot, depth: 0, chain: bot ? [bot.id] : [], token, approve, signal, route, cwd, mode };
+  const steps = []; // this turn's tool calls, for the bot's reflection
   return {
     bot,
     approve: wrapApprove(approve, bot, session, cwd),
-    botPrompt: (native) => (bot ? b.buildBotPrompt(bot, { team, canDelegate: true, native }) : b.teamPrompt(team, { native })),
+    botPrompt: (native) => (bot ? b.buildBotPrompt(bot, { team, canDelegate: true, native, request }) : b.teamPrompt(team, { native })),
     askBot: makeAskBot(c),
+    /** runOneTurn passes every run event here; tool calls become the trajectory. */
+    see(ev) {
+      if (ev && ev.type === 'tool_end' && steps.length < 60) steps.push(b.runStep(ev));
+    },
     done(userText, replyText) {
       if (held) { held = false; b.globalLock.release(token); }
       if (!bot || verifyOnly || !replyText || signal.aborted) return;
@@ -148,8 +157,28 @@ async function forTurn({ session, approve, signal, route, cwd, mode, verifyOnly 
       b.learnFromTurn(b.getBot(bot.id) || bot, userText, replyText, chatFn).then((r) => {
         if (r.added && r.added.length) deps.sendEvent(session.id, { type: 'bot_learned', bot: b.botCard(bot), facts: r.added });
       }).catch(() => {});
+      reflect(bot, { request: userText, steps, reply: replyText }, route, session);
     },
   };
+}
+
+/**
+ * MUSE-style reflection after a run that used tools, in the background: the
+ * bot keeps lessons, playbooks, tool tips and open threads (bots.reflectOnRun).
+ * A new or updated playbook shows up in the chat like a learned fact.
+ */
+function reflect(bot, run, route, session) {
+  if (!bot || !run.steps || !run.steps.length) return;
+  const b = bots();
+  const chatFn = (messages) => deps.aiLib().chatJson(messages, { route });
+  b.reflectOnRun(b.getBot(bot.id) || bot, run, chatFn).then((r) => {
+    const a = r && r.added;
+    if (!a || !session) return;
+    const facts = [];
+    if (a.playbook) facts.push(`${a.updated ? 'a better way to do' : 'how to do'} ${a.playbook}`);
+    for (const l of a.lessons || []) facts.push(`when ${l.situation}, ${l.strategy}`);
+    if (facts.length) deps.sendEvent(session.id, { type: 'bot_learned', bot: b.botCard(bot), facts });
+  }).catch(() => {});
 }
 
 /** "Describe your bot": the model fills in a draft; nothing is saved until the user does. */
@@ -288,6 +317,8 @@ async function startVoice({ botId, turns }) {
         onStep: (s) => { if (!s.done) { j.step = b.callStepLabel(s.name); bumpJob(j); } },
       }), signal);
       j.text = r.text; j.status = 'done';
+      // The bot learns from the work it did on the call, in the background.
+      if (r.reply) reflect(bot, { request: r.request, steps: r.steps, reply: r.reply }, route, null);
     } catch (e) {
       j.status = signal.aborted ? 'cancelled' : 'error';
       j.error = e.message;
@@ -368,6 +399,7 @@ function init(d) {
   ipcMain.handle('bots:remove', guard((e, id) => { bots().removeBot(id); return catalog(); }));
   ipcMain.handle('bots:forget', guard((e, id, index) => ({ bot: bots().forget(id, Number(index)), ...catalog() })));
   ipcMain.handle('bots:clearMemory', guard((e, id) => ({ bot: bots().clearMemory(id), ...catalog() })));
+  ipcMain.handle('bots:forgetExperience', guard((e, id, kind, index) => ({ bot: bots().forgetExperience(id, String(kind), Number(index)), ...catalog() })));
   ipcMain.handle('bots:describe', guard((e, text) => describe(text)));
 }
 
