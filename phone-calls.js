@@ -516,9 +516,35 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       } else if (c === me) me.bargeAt = performance.now(); // check again a bit later
     } catch {} finally { me.bargeBusy = false; }
   }
+  /** 16 kHz mono Float32 -> base64 WAV (16-bit), for the voice server. */
+  function wavB64(audio) {
+    const n = audio.length; const buf = new ArrayBuffer(44 + n * 2); const v = new DataView(buf);
+    const w = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, 16000, true); v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, audio[i])) * 0x7fff, true);
+    const bytes = new Uint8Array(buf); let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }
+  const serverEars = () => api.stream !== false && api.serverStt !== false && !!VOICE_TURN_URL && !!c && !c.noStream && !c.typing;
+
   async function hearAudio(audio) {
     const me = c;
     if (!me || me.ending) return;
+    // Accurate hearing: the audio goes to the voice server with the turn.
+    // (Said over the bot's voice it was already checked for clear words.)
+    if (serverEars() && me.phase !== 'speaking') {
+      interrupt();
+      const token = me.token;
+      caption('...', 'user');
+      try { return await respondStream(token, audio); } catch (e) {
+        if (c !== me || token !== me.token || e.name === 'AbortError') return;
+        if (e.status === 404 || e.status === 429) me.noStream = true;
+        console.debug('[calls] server hearing failed, using the phone:', e.message);
+        setPhase('listening');
+      }
+    }
     if (stt.state !== 'ready') {
       me.queued = audio; // only the latest thing said waits for the model
       sttLoad();
@@ -1201,7 +1227,7 @@ You are on a live voice call; everything you write is spoken out loud right away
     };
   }
 
-  async function respondStream(token) {
+  async function respondStream(token, audio) {
     const me = c;
     setPhase('thinking');
     const controller = new AbortController();
@@ -1219,7 +1245,9 @@ You are on a live voice call; everything you write is spoken out loud right away
     const res = await fetch(VOICE_TURN_URL, {
       method: 'POST', signal: controller.signal,
       headers: { Authorization: `Bearer ${auth}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...VOICE_REGION },
-      body: JSON.stringify({ messages, voice: me.dgVoice, format: 'pcm', maxTokens: 320 }),
+      body: JSON.stringify(audio
+        ? { messages, voice: me.dgVoice, format: 'pcm', maxTokens: 320, audio_b64: wavB64(audio), hint: `${bot.name}. ${String(me.lastBotText || '').slice(-200)}` }
+        : { messages, voice: me.dgVoice, format: 'pcm', maxTokens: 320 }),
     });
     if (!res.ok || !res.body || !/ndjson/i.test(res.headers.get('content-type') || '')) {
       let err = ''; try { err = (await res.json()).error || ''; } catch {}
@@ -1244,7 +1272,13 @@ You are on a live voice call; everything you write is spoken out loud right away
           const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
           if (!line.trim()) continue;
           let o; try { o = JSON.parse(line); } catch { continue; }
-          if (o.t === 'say') { player.say(o.i, o.text); said++; }
+          if (o.t === 'heard') {
+            const heard = String(o.text || '').trim();
+            // Silence, noise, or the bot's own voice from the speaker: nothing to answer.
+            if (!heard || isEcho(heard)) { player.stop(); controller.abort(); if (c === me && token === me.token) { me.abort = null; caption('', 'user'); setPhase('listening'); } return; }
+            log('user', heard);
+            caption(heard, 'user');
+          } else if (o.t === 'say') { player.say(o.i, o.text); said++; }
           else if (o.t === 'pcm') player.pcm(o.i, o.b64, o.rate);
           else if (o.t === 'end') player.end(o.i);
           else if (o.t === 'work') work = o.task;
@@ -1867,13 +1901,13 @@ Respond with ONLY a JSON object:
 
   // reply/ringMs/endedMs are swappable for tests in the console; localEars
   // forces the kept-mic + Whisper path on browsers that have SpeechRecognition.
-  const api = { reply: askBot, fast_: askFast, fast: true, stream: true, ringMs: 2400, endedMs: 1100, localEars: false };
+  const api = { reply: askBot, fast_: askFast, fast: true, stream: true, serverStt: true, ringMs: 2400, endedMs: 1100, localEars: false };
   window.CraftCalls = {
     api, openCalls, closeCalls, startCall, endCall, refreshBots, syncCalls, spoken, sentences, VOICE_RULES, openBuilder, pushPending,
     heard: heardText, active: () => c, cache, calls: () => calls,
     supported: { recognition: !!SR, synthesis: !!synth, localEars: localEars(), ios: IS_IOS },
     _test: {
-      transcribe, to16k, deepgramVoice, chunks, isRealSpeech: (t, said) => { const was = c && c.lastBotText; if (c) c.lastBotText = said || ''; const r = c ? isRealSpeech(t) : clearWords(t).length >= 2; if (c) c.lastBotText = was; return r; }, wordPlan, metrics, ttsUrl: TTS_URL, loadModel: sttLoad, stt: () => ({ state: stt.state, device: stt.device, progress: stt.progress, error: stt.error }),
+      transcribe, to16k, deepgramVoice, chunks, hearAudio, isRealSpeech: (t, said) => { const was = c && c.lastBotText; if (c) c.lastBotText = said || ''; const r = c ? isRealSpeech(t) : clearWords(t).length >= 2; if (c) c.lastBotText = was; return r; }, wordPlan, metrics, ttsUrl: TTS_URL, loadModel: sttLoad, stt: () => ({ state: stt.state, device: stt.device, progress: stt.progress, error: stt.error }),
       mic: () => ({ live: micLive(), enabled: !!(micTrack() && micTrack().enabled), streamId: mic.stream && mic.stream.id }),
       /** Push audio through a fresh voice detector; returns the 16 kHz utterances it cut out. */
       vadFeed(samples, sampleRate = 16000, opts = {}) {
