@@ -494,7 +494,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
         end: (audio) => hearAudio(audio),
       });
     }
-    c.vad.botSpeaking = c.phase === 'speaking';
+    c.vad.botSpeaking = c.phase === 'speaking' || !!c.cueOn;
     c.vad.feed(frame);
     bargeCheck();
   }
@@ -502,14 +502,21 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   // so far and stop the bot only for 2+ clear words that are not its own echo.
   // A cough, a door, music or the bot's voice from the speaker never stops it.
   const clearWords = (text) => words(text).filter((w) => w.length > 1 || /^[ai]$/.test(w));
+  // Over the bot's voice only a clear interruption counts: 3+ real words that
+  // are not from what it is saying, or an obvious "stop", "wait", "hold on".
+  // The small on-phone model can mishear the bot's own voice from the speaker,
+  // so this is deliberately strict: it must never cut the bot off by mistake.
+  const STOP_WORDS = /\b(stop|wait|hold on|hang on|pause|excuse me|shut up|no no|hey hey)\b/i;
   function isRealSpeech(text) {
     const w = clearWords(text);
-    return w.length >= 2 && overlap(text, c && c.lastBotText) < 0.6;
+    const fromBot = overlap(text, c && c.lastBotText);
+    if (STOP_WORDS.test(text) && fromBot < 0.5) return true;
+    return w.length >= 3 && fromBot < 0.4;
   }
   async function bargeCheck() {
     const me = c;
     if (!me || !me.bargeAt || me.bargeBusy || me.phase !== 'speaking' || !me.vad || !me.vad.inSpeech) return;
-    if (performance.now() - me.bargeAt < 600 || stt.state !== 'ready') return;
+    if (performance.now() - me.bargeAt < 800 || stt.state !== 'ready') return;
     me.bargeBusy = true;
     try {
       const text = await transcribe(me.vad.peek());
@@ -742,13 +749,15 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     const me = c;
     if (!me) return;
     const plan = wordPlan(text);
-    const lead = Math.min(0.06, dur * 0.05);
-    const span = Math.max(0.2, dur - lead);
+    // dur may be a function: a streamed sentence's length is known only as its audio arrives.
+    const total = typeof dur === 'function' ? dur : () => dur;
     const handle = { raf: 0 };
     let shown = -1;
     const step = () => {
       if (c !== me || me.reveal !== handle) return;
-      const frac = (clock() - lead) / span;
+      const d = Math.max(0.2, total());
+      const lead = Math.min(0.06, d * 0.05);
+      const frac = (clock() - lead) / Math.max(0.2, d - lead);
       let n = 0;
       while (n < plan.toks.length && plan.starts[n] / plan.total <= frac) n++;
       if (n !== shown && n > 0) { shown = n; caption(plan.toks.slice(0, n).join(' '), 'bot'); } // the last chunk stays until this one's first word
@@ -839,8 +848,38 @@ You are on a live voice call with the user, talking out loud. Everything you wri
 
   const root = () => $('call');
   const q = (sel) => root().querySelector(sel);
+  function thinkingCue(on) {
+    const me = c;
+    if (!me) return;
+    if (!on) { clearTimeout(me.cueWait); clearTimeout(me.cueNext); me.cueWait = me.cueNext = 0; me.cueOn = false; if (me.cueGain) { try { me.cueGain.gain.cancelScheduledValues(0); me.cueGain.gain.setTargetAtTime(0, me.ctx.currentTime, 0.05); } catch {} } return; }
+    if (me.cueWait || me.cueOn || api.thinkingSound === false) return;
+    me.cueWait = setTimeout(() => {
+      me.cueWait = 0;
+      const ctx = me.ctx;
+      if (c !== me || me.phase !== 'thinking' || !ctx || ctx.state !== 'running' || me.muted) return;
+      me.cueOn = true;
+      const out = ctx.createGain(); out.gain.value = 1; out.connect(ctx.destination); me.cueGain = out;
+      const breath = () => {
+        if (c !== me || !me.cueOn) return;
+        const t = ctx.currentTime;
+        [523.25, 659.25].forEach((f, k) => {
+          const o = ctx.createOscillator(); const g = ctx.createGain();
+          o.type = 'sine'; o.frequency.value = f;
+          const at = t + k * 0.16;
+          g.gain.setValueAtTime(0, at);
+          g.gain.linearRampToValueAtTime(me.speaker ? 0.022 : 0.012, at + 0.18);
+          g.gain.exponentialRampToValueAtTime(0.0001, at + 0.9);
+          o.connect(g); g.connect(out); o.start(at); o.stop(at + 0.95);
+        });
+        me.cueNext = setTimeout(breath, 1800);
+      };
+      breath();
+    }, 450);
+  }
+
   function setPhase(phase, label) {
     if (!c) return;
+    thinkingCue(phase === 'thinking');
     c.phase = phase;
     const r = root();
     r.dataset.phase = phase;
@@ -1193,7 +1232,8 @@ You are on a live voice call; everything you write is spoken out loud right away
         // Words appear as they are said, from this sentence's start on the audio clock.
         const est = Math.max(0.6, item.text.length * 0.064);
         const delay = Math.max(0, (at - ctx.currentTime) * 1000);
-        setTimeout(() => { if (alive()) revealTimed(item.text, () => ctx.currentTime - item.startAt, item.dur || est); }, delay);
+        // Words follow the real audio: until the sentence's audio is all in, its length is at least the estimate.
+        setTimeout(() => { if (alive()) revealTimed(item.text, () => ctx.currentTime - item.startAt, () => (item.ended ? item.dur : Math.max(item.dur, est))); }, delay);
       }
       src.start(at);
       nextAt = at + b.duration;
@@ -1980,7 +2020,7 @@ Respond with ONLY a JSON object:
 
   // reply/ringMs/endedMs are swappable for tests in the console; localEars
   // forces the kept-mic + Whisper path on browsers that have SpeechRecognition.
-  const api = { reply: askBot, fast_: askFast, fast: true, stream: true, serverStt: true, ringMs: 2400, endedMs: 1100, localEars: false };
+  const api = { reply: askBot, fast_: askFast, fast: true, stream: true, serverStt: true, thinkingSound: true, ringMs: 2400, endedMs: 1100, localEars: false };
   window.CraftCalls = {
     api, openCalls, closeCalls, startCall, endCall, refreshBots, syncCalls, spoken, sentences, VOICE_RULES, openBuilder, pushPending,
     heard: heardText, active: () => c, cache, calls: () => calls,

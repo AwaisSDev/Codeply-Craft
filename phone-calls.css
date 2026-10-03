@@ -125,3 +125,12 @@
 .nb-toast button svg { width: 16px; height: 16px; }
 .nb-sheet { z-index: 80; }
 .nb-sheet .field textarea { font-family: inherit; font-size: 15px; min-height: 84px; }
+
+/* Thinking: a slow breath on the avatar and a soft glow, nothing loud. */
+.call[data-phase="thinking"] .call-orb { animation: call-breathe 2.4s ease-in-out infinite; }
+.call[data-phase="thinking"] .call-orb::after { content: ""; position: absolute; inset: -22px; border-radius: 50%; pointer-events: none; background: radial-gradient(closest-side, rgba(255, 255, 255, .16), transparent 70%); animation: call-glow 2.4s ease-in-out infinite; }
+.call[data-phase="thinking"] .call-state { background: linear-gradient(90deg, rgba(255,255,255,.45) 0%, #fff 50%, rgba(255,255,255,.45) 100%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: call-shimmer 1.8s linear infinite; }
+@keyframes call-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045); } }
+@keyframes call-glow { 0%, 100% { opacity: .25; } 50% { opacity: .8; } }
+@keyframes call-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .call[data-phase="thinking"] .call-orb, .call[data-phase="thinking"] .call-orb::after, .call[data-phase="thinking"] .call-state { animation: none; } }
