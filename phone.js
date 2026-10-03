@@ -942,6 +942,60 @@ async function dispatch(env, task) {
   throw last;
 }
 
+// ─── Starting a cloud task (Code chats and bot calls) ───────────────────────
+const newCloudTask = (prompt, mode, sessionId) => ({ id: `${Date.now().toString(36)}${randHex(6)}`, prompt, mode: ['Build', 'Plan', 'Ask'].includes(mode) ? mode : 'Build', sessionId: sessionId || '', status: 'starting', startedAt: Date.now(), events: [] });
+/** craft-sessions, created from the base branch when this repo never had a run. */
+async function ensureSessionsBranch(env) {
+  const ref = await gh('GET', `/repos/${env.repo}/git/ref/heads/${SESSIONS_BRANCH}`, null, { allow: [404] });
+  if (ref.status === 200) return;
+  const base = await repoBase(env);
+  const head = await gh('GET', `/repos/${env.repo}/git/ref/heads/${encodeURIComponent(base)}`);
+  const sha = head.json && head.json.object && head.json.object.sha;
+  if (sha) await gh('POST', `/repos/${env.repo}/git/refs`, { ref: `refs/heads/${SESSIONS_BRANCH}`, sha }, { allow: [422] });
+}
+/**
+ * Hand a task to the cloud. A runner still up for its chat takes it at once
+ * from the queue; otherwise a new runner is dispatched. A bot ({ name, prompt },
+ * the prompt the PC built) is too big for a workflow input, so it goes to
+ * requests/<id>.json on craft-sessions first (codeply-cli 0.5.1+ reads it).
+ */
+async function launchTask(env, task, { bot = null, kind = '' } = {}) {
+  const extra = { ...(bot && bot.prompt ? { bot: { name: String(bot.name || 'Bot'), prompt: String(bot.prompt) } } : {}), ...(kind === 'task' ? { kind } : {}) };
+  if (extra.bot) task.bot = { name: extra.bot.name };
+  if (extra.kind) task.kind = 'task';
+  const live = await liveRunner(env.repo, task.sessionId);
+  if (live) {
+    const ok = await putFile(env.repo, `queue/${task.sessionId}/${Date.now()}-${task.id}.json`, textToB64(JSON.stringify({ id: task.id, prompt: task.prompt, mode: task.mode, ...extra })), `Craft queue ${task.id}`, SESSIONS_BRANCH);
+    if (!ok) throw new Error('Could not hand the message to the cloud. Try again.');
+    Object.assign(task, { queued: true, enqueuedAt: Date.now() });
+    return;
+  }
+  if (Object.keys(extra).length) {
+    await ensureSessionsBranch(env).catch(() => {});
+    const ok = await putFile(env.repo, `requests/${task.id}.json`, textToB64(JSON.stringify(extra)), `Craft request ${task.id}`, SESSIONS_BRANCH);
+    if (!ok) throw new Error('Could not hand the bot to the cloud. Try again.');
+  }
+  await dispatch(env, task);
+}
+/** The cloud environment bots work in when the PC is off: the open project's, else the first one set up. Null when there is none, or GitHub is not connected. */
+function cloudEnvForBots() {
+  if (!state.creds || !state.creds.token || state.creds.expired) return null;
+  const mine = envFor(currentProject());
+  if (mine) return mine;
+  for (const e of Object.values(state.envs)) if (e && e.repo) return e;
+  for (const p of (state.creds && state.creds.projects) || []) { const e = envFor({ repo: p.repo }); if (e) return e; }
+  return null;
+}
+/** A bot's job in the cloud (for calls): returns { env, task }; poll it with pollCloudTask(env, task). */
+async function startCloudTask({ prompt, mode = 'Build', sessionId = '', bot = null, kind = 'task', env = null } = {}) {
+  env = env || cloudEnvForBots();
+  if (!env) throw new Error('Codeply Cloud is not set up yet.');
+  const task = newCloudTask(String(prompt || '').trim(), mode, sessionId);
+  if (!task.prompt) throw new Error('Write a task first.');
+  await launchTask(env, task, { bot, kind });
+  return { env, task };
+}
+
 // ─── Code mode in the cloud ─────────────────────────────────────────────────
 async function cloudSend(chat, text) {
   const env = envFor(chat.project);
@@ -951,21 +1005,13 @@ async function cloudSend(chat, text) {
   chat.cloud = true;
   chat.live = true;
   const b = body(chat.id);
-  const task = { id: `${Date.now().toString(36)}${randHex(6)}`, prompt: text, mode: state.ui.codeMode, sessionId: chat.cloudSessionId, status: 'starting', startedAt: Date.now(), events: [] };
+  const task = newCloudTask(text, state.ui.codeMode, chat.cloudSessionId);
   b.tasks.push(task);
   saveBody(chat.id);
   touchChat(chat.id);
   if (chat.id === state.current) renderFeed({ force: true });
   try {
-    // A runner still up for this chat takes the message at once from the queue.
-    const live = await liveRunner(env.repo, task.sessionId);
-    if (live) {
-      const ok = await putFile(env.repo, `queue/${task.sessionId}/${Date.now()}-${task.id}.json`, textToB64(JSON.stringify({ id: task.id, prompt: task.prompt, mode: task.mode })), `Craft queue ${task.id}`, SESSIONS_BRANCH);
-      if (!ok) throw new Error('Could not hand the message to the cloud. Try again.');
-      Object.assign(task, { queued: true, enqueuedAt: Date.now() });
-    } else {
-      await dispatch(env, task);
-    }
+    await launchTask(env, task);
   } catch (e) {
     Object.assign(task, { status: 'failed', error: e.message });
   }
@@ -1000,7 +1046,7 @@ async function pollTask(env, t) {
     if (doc.runId) t.runId = doc.runId;
     t.queued = false;
     if (doc.status === 'done' || doc.status === 'failed') {
-      Object.assign(t, { status: doc.status, answer: doc.answer || '', files: doc.files || [], stats: doc.stats || [], merged: doc.merged || null, branch: doc.branch || null, error: doc.status === 'failed' ? (doc.error || 'The cloud run failed.') : null, finishedAt: Date.now() });
+      Object.assign(t, { status: doc.status, answer: doc.answer || '', reply: doc.reply || '', files: doc.files || [], stats: doc.stats || [], merged: doc.merged || null, branch: doc.branch || null, error: doc.status === 'failed' ? (doc.error || 'The cloud run failed.') : null, finishedAt: Date.now() });
     } else t.status = 'running';
     return;
   }
@@ -1721,4 +1767,5 @@ currentSession().then((s) => { if (s) enterApp(); else showSignin(); }).catch(sh
 
 // For tests and debugging in the console.
 // phone-calls.js (Calls with bots) builds on these too.
-window.CraftPhone = { state, relay, sealSecret, CLOUD_WORKFLOW, md, pollAll, relayRequest, accessToken, esc, load, save, newId, openDrawer, closeDrawer, AI_PROXY_URL, SUPABASE_ANON_KEY };
+window.CraftPhone = { state, relay, sealSecret, CLOUD_WORKFLOW, md, pollAll, relayRequest, accessToken, esc, load, save, newId, openDrawer, closeDrawer, AI_PROXY_URL, SUPABASE_ANON_KEY,
+  cloudEnvForBots, startCloudTask, pollCloudTask: pollTask };

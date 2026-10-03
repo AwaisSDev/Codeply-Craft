@@ -43,6 +43,7 @@ export const checkName = (id) => `craft ${id}`;
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const MAX_SCAN_BYTES = 2 * 1024 * 1024;
 const MAX_PROMPT = 20000;
+const MAX_BOT_PROMPT = 30000;
 const MAX_OUTPUT = 60000;
 const HISTORY_TURNS = 40;
 
@@ -522,7 +523,7 @@ async function dispatch(api, repo, base, task, retryMs) {
  * queue at once; otherwise a new runner is dispatched. Mirror projects push
  * the latest snapshot first.
  */
-export async function startCloudRun({ cwd, token, prompt, mode = 'Build', sessionId = '', model, home = defaultHome(), apiUrl, serverUrl, fetchImpl, remoteUrl, retryMs = 3000, startedAt }) {
+export async function startCloudRun({ cwd, token, prompt, mode = 'Build', sessionId = '', bot = null, kind = 'code', model, home = defaultHome(), apiUrl, serverUrl, fetchImpl, remoteUrl, retryMs = 3000, startedAt }) {
   const p = getProject(cwd, home);
   if (!p || !p.repo) throw new Error('Set up cloud runs for this project first.');
   prompt = String(prompt || '').trim();
@@ -547,11 +548,21 @@ export async function startCloudRun({ cwd, token, prompt, mode = 'Build', sessio
     baseSha = (await pushSnapshot({ cwd, token, home, serverUrl, remoteUrl })).sha;
   }
   const task = { id: newTaskId(), prompt, mode, sessionId: String(sessionId || ''), baseSha, repo: p.repo, status: 'starting', startedAt: startedAt || Date.now() };
+  const b = cleanBot(bot);
+  const extra = { ...(b ? { bot: b } : {}), ...(cleanKind(kind) === 'task' ? { kind: 'task' } : {}) };
+  if (b) task.bot = { name: b.name };
+  if (extra.kind) task.kind = 'task';
+  const files = branchFiles(api, p.repo);
   const live = await liveRunner(api, p.repo, task.sessionId);
   if (live) {
-    await branchFiles(api, p.repo).write(`${SESSION_PATHS.queue(task.sessionId)}/${Date.now()}-${task.id}.json`, { id: task.id, prompt, mode }, `Craft queue ${task.id}`);
+    await files.write(`${SESSION_PATHS.queue(task.sessionId)}/${Date.now()}-${task.id}.json`, { id: task.id, prompt, mode, ...extra }, `Craft queue ${task.id}`);
     Object.assign(task, { queued: true, enqueuedAt: Date.now() });
   } else {
+    // A bot's prompt is too big for a workflow input: the runner reads it from craft-sessions.
+    if (Object.keys(extra).length) {
+      if (baseSha) await files.ensure(baseSha).catch(() => {});
+      if (!(await files.write(SESSION_PATHS.request(task.id), extra, `Craft request ${task.id}`))) throw new Error('Could not hand the bot to the cloud. Try again.');
+    }
     await dispatch(api, p.repo, base, task, retryMs);
   }
   saveTask(cwd, home, task);
@@ -834,7 +845,22 @@ export const SESSION_PATHS = {
   live: (sid) => `live/${sid}.json`,
   queue: (sid) => `queue/${sid}`,
   shot: (id, n) => `shots/${id}/${n}.png`,
+  // What does not fit in the workflow's inputs (a bot's prompt), written before the dispatch.
+  request: (id) => `requests/${id}.json`,
 };
+
+/**
+ * A task's optional bot: { name, prompt }, the full prompt the PC built
+ * (bots.js buildBotPrompt). Anything else, or an empty prompt, is no bot.
+ */
+export function cleanBot(bot) {
+  if (!bot || typeof bot !== 'object') return null;
+  const prompt = String(bot.prompt || '').trim().slice(0, MAX_BOT_PROMPT);
+  if (!prompt) return null;
+  return { name: String(bot.name || 'Bot').trim().slice(0, 80) || 'Bot', prompt };
+}
+/** 'task' is a job for a bot (not about the repo): its final reply is what the user hears. */
+const cleanKind = (k) => (k === 'task' ? 'task' : 'code');
 
 /** Small read / write / delete / list helpers for one branch, with retries for concurrent writes. */
 export function branchFiles(api, repo, branch = SESSIONS_BRANCH) {
@@ -929,6 +955,12 @@ export async function runCloudRunner({ env = process.env, cwd = process.cwd(), t
   const heartbeat = (busy, until) => files.write(SESSION_PATHS.live(sessionId), { runId: env.GITHUB_RUN_ID || null, busy, at: Date.now(), until }, `Craft live ${sessionId}`).catch(() => {});
 
   let task = { id: firstId, prompt: String(env.CRAFT_PROMPT || ''), mode: env.CRAFT_MODE, sessionId, dispatched: true };
+  // A bot (and the task kind) comes next to the dispatch, on craft-sessions.
+  const req = await files.read(SESSION_PATHS.request(firstId)).catch(() => null);
+  if (req && req.json) {
+    task = { ...task, bot: req.json.bot, kind: req.json.kind };
+    await files.remove(SESSION_PATHS.request(firstId), req.sha).catch(() => {});
+  }
   const results = [];
   try {
     while (task) {
@@ -971,6 +1003,8 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
   const mode = ['Build', 'Plan', 'Ask'].includes(task.mode) ? task.mode : 'Build';
   const prompt = String(task.prompt || '').slice(0, MAX_PROMPT);
   const sessionId = task.sessionId || '';
+  const bot = cleanBot(task.bot);
+  const kind = cleanKind(task.kind);
   const startedAt = Date.now();
   const events = [];
   const lines = [];
@@ -981,7 +1015,7 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
     output: { title: 'Starting', summary: 'Starting...' },
   }).catch(() => ({ json: null }))).json : null;
 
-  const statusDoc = (status, extra = {}) => ({ id: taskId, status, mode, prompt: prompt.slice(0, 4000), sessionId, startedAt, updatedAt: Date.now(), runId: env.GITHUB_RUN_ID || null, ...extra });
+  const statusDoc = (status, extra = {}) => ({ id: taskId, status, mode, prompt: prompt.slice(0, 4000), sessionId, ...(kind === 'task' ? { kind } : {}), ...(bot ? { bot: { name: bot.name } } : {}), startedAt, updatedAt: Date.now(), runId: env.GITHUB_RUN_ID || null, ...extra });
   const finish = async (ok, title, summary, result) => {
     const baseLen = JSON.stringify(result).length;
     const packed = packEvents(events, Math.max(4000, MAX_OUTPUT - baseLen - 200));
@@ -1031,8 +1065,10 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
     await pushProgress(hist.messages.length ? `Continuing the chat (${hist.messages.length / 2} earlier turns).` : 'Working on it.', true);
     const approve = ciApprove(cwd);
     let answer = ''; let steps = 0; let failure = '';
-    const userMessage = `${prompt}\n\n(You are running unattended in Craft Cloud, in a fresh copy of the repository on a Linux machine. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. You can install dependencies, run the app and tests, and check pages with browser_check. Do not commit or push; Craft does that when you finish.)`;
-    for await (const ev of runAgentImpl({ userMessage, history: hist.messages.slice(-HISTORY_TURNS), mode, cwd, approve, browser: agentBrowser, signal: new AbortController().signal, route, maxSteps })) {
+    const userMessage = kind === 'task'
+      ? `${prompt}\n\n(You are running unattended in Codeply Cloud on a Linux machine, not on the user's PC: you cannot reach their local files or desktop apps. Use the shell, the web and this repository. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. Your final reply is read out to the user: say plainly what you did or found, in a few short sentences, no markdown. Do not commit or push; Craft does that when you finish.)`
+      : `${prompt}\n\n(You are running unattended in Craft Cloud, in a fresh copy of the repository on a Linux machine. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. You can install dependencies, run the app and tests, and check pages with browser_check. Do not commit or push; Craft does that when you finish.)`;
+    for await (const ev of runAgentImpl({ userMessage, history: hist.messages.slice(-HISTORY_TURNS), mode, cwd, approve, browser: agentBrowser, signal: new AbortController().signal, route, maxSteps, ...(bot ? { botPrompt: bot.prompt } : {}) })) {
       const rec = recordEvent(ev);
       if (rec && rec.t === 'tool' && ev.name === 'browser_check' && pendingShot) { rec.screenshot = pendingShot; pendingShot = null; }
       // The final answer arrives as the reply; everything else is part of the chat's steps.
@@ -1046,6 +1082,8 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
     if (pending) await pending;
     if (failure && !answer) throw new Error(failure);
 
+    // The bot's own last words, before a plan file replaces the answer: what the phone speaks.
+    const reply = answer;
     if (mode === 'Plan') {
       const dir = path.join(cwd, '.codeply', 'plans');
       const plans = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.md')).map((f) => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs })).sort((a, b) => b.t - a.t) : [];
@@ -1088,7 +1126,8 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
 
     await saveHistory(files, sessionId, [...hist.messages, { role: 'user', content: prompt }, { role: 'assistant', content: answer || '(no reply)' }].slice(-HISTORY_TURNS * 2))
       .catch((e) => log(`Could not save the chat: ${e.message}`));
-    const result = { mode, prompt: prompt.slice(0, 4000), sessionId, answer: answer.slice(0, 20000), branch, sha, files: changed, stats: stats.slice(0, 100), merged, steps, baseSha: taskBase };
+    const result = { mode, prompt: prompt.slice(0, 4000), sessionId, answer: answer.slice(0, 20000), branch, sha, files: changed, stats: stats.slice(0, 100), merged, steps, baseSha: taskBase,
+      ...(bot || kind === 'task' ? { reply: reply.slice(0, 20000) } : {}) };
     const title = changed.length ? `Changed ${changed.length} file${changed.length === 1 ? '' : 's'}` : mode === 'Build' ? 'No files changed' : 'Answered';
     return finish(true, title, answer || title, result);
   } catch (e) {

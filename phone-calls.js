@@ -39,6 +39,9 @@ You are on a live voice call with the user, talking out loud. Everything you wri
 - No markdown, no lists, no headings, no emojis, no code, no links, no long dash.
 - Ask one short question back when it helps.
 - Right now you cannot use your tools (email, files, the web), because the user's PC is offline. If they ask for that kind of work, say so in one sentence and offer to do it once their PC is on.`;
+  const NO_CLOUD_OFFER = 'once their PC is on, or once they set up Codeply Cloud (it runs jobs in their own GitHub account with the PC off)';
+  /** VOICE_RULES, offering Codeply Cloud when it is not set up yet. */
+  const voiceRules = () => (cloudReady() ? VOICE_RULES : VOICE_RULES.replace('once their PC is on.', `${NO_CLOUD_OFFER}.`));
 
   const ICON = {
     plus: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
@@ -79,6 +82,8 @@ You are on a live voice call with the user, talking out loud. Everything you wri
 
   // ─── Bots from the PC ─────────────────────────────────────────────────────
   const pcOnline = () => !!(P.relay && P.relay.pcId);
+  // Codeply Cloud (phone.js): with the PC off, real work runs there instead.
+  const cloudReady = () => { try { return !!(P.cloudEnvForBots && P.cloudEnvForBots()); } catch { return false; } };
   function storeCatalog(r) {
     if (!r || !Array.isArray(r.bots)) return;
     const pending = cache.bots.filter((b) => b.pending);
@@ -997,6 +1002,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     }
     if (c.ttsNote) parts.push(c.ttsNote);
     if (c.noteBase) parts.push(c.noteBase);
+    if (c.cloudJobs && c.cloudJobs.length) parts.push('Working in the cloud...');
     el.textContent = parts.join(' · ');
   }
 
@@ -1041,7 +1047,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     const last = calls.find((x) => x.botId === bot.id && x.status === 'done' && x.turns.length);
     const recent = last ? last.turns.slice(-6).map((t) => `${t.who === 'bot' ? bot.name : 'User'}: ${String(t.text).slice(0, 400)}`).join('\n') : '';
     const base = bot.prompt || `You are ${bot.name}, one of the user's bots in Codeply.${bot.specialty ? ` Your job: ${bot.specialty}.` : ''}${bot.instructions ? `\n${bot.instructions}` : ''}`;
-    const system = `${base}\n\n${VOICE_RULES}${recent ? `\n\nTHE LAST CALL BEFORE THIS ONE\n${recent}` : ''}`;
+    const system = `${base}\n\n${voiceRules()}${recent ? `\n\nTHE LAST CALL BEFORE THIS ONE\n${recent}` : ''}`;
     const messages = [{ role: 'system', content: system },
       ...turns.slice(-16).map((t) => ({ role: t.who === 'bot' ? 'assistant' : 'user', content: String(t.text || '').slice(0, 1200) }))];
     const token = await P.accessToken();
@@ -1078,12 +1084,17 @@ You are on a live voice call. Reply with ONLY a JSON object: {"say": "...", "wor
 - "say" is spoken out loud right away: one to three short spoken sentences, plain words, no markdown, no lists, no emojis, no links, no long dash.
 - If the user wants something that needs real tools (their email, calendar, files, code, sending a message, searching the web for current facts, anything on their computer), set "work" to one clear sentence describing the task for your tools, and make "say" a short natural line that fits what they asked, like you are starting on it now. Vary it. Never say "one sec" or "one moment". Do not invent results.
 - Otherwise "work" is null and "say" is your full answer.`;
-  const FAST_OFFLINE = '\n- Right now the user\'s PC is offline, so you cannot use tools: never set "work"; if they ask for that kind of thing, say so in one sentence and offer to do it when their PC is on.';
+  const CLOUD_SCOPE = 'it has a shell, the web and the project repo, but not the user\'s own files, email or desktop apps (for those, say they need the PC on)';
+  const cloudBusyNote = () => (c && c.cloudJobs && c.cloudJobs.length ? `\n- Still running in the cloud: ${c.cloudJobs.map((j) => j.task).join('; ')}. If they ask, say it is still working and you will tell them when it is done.` : '');
+  /** The PC-offline rule: with Codeply Cloud set up, work still goes ahead there. */
+  const FAST_OFFLINE = () => (cloudReady()
+    ? `\n- Right now the user's PC is offline, so real work runs in Codeply Cloud instead: you may still set "work"; ${CLOUD_SCOPE}.${cloudBusyNote()}`
+    : `\n- Right now the user's PC is offline, so you cannot use tools: never set "work"; if they ask for that kind of thing, say in one sentence you can do it ${NO_CLOUD_OFFER}.`);
   async function askFast(bot, turns, signal) {
     const last = calls.find((x) => x.botId === bot.id && x.status === 'done' && x.turns.length);
     const recent = last ? last.turns.slice(-6).map((t) => `${t.who === 'bot' ? bot.name : 'User'}: ${String(t.text).slice(0, 300)}`).join('\n') : '';
     const base = bot.prompt || `You are ${bot.name}, one of the user's bots in Codeply.${bot.specialty ? ` Your job: ${bot.specialty}.` : ''}${bot.instructions ? `\n${bot.instructions}` : ''}`;
-    const system = `${base}\n\n${FAST_RULES}${pcOnline() ? '' : FAST_OFFLINE}${recent ? `\n\nTHE LAST CALL BEFORE THIS ONE\n${recent}` : ''}`;
+    const system = `${base}\n\n${FAST_RULES}${pcOnline() ? '' : FAST_OFFLINE()}${recent ? `\n\nTHE LAST CALL BEFORE THIS ONE\n${recent}` : ''}`;
     const messages = [{ role: 'system', content: system },
       ...turns.slice(-14).map((t) => ({ role: t.who === 'bot' ? 'assistant' : 'user', content: String(t.text || '').slice(0, 1000) }))];
     const token = await P.accessToken();
@@ -1124,7 +1135,9 @@ You are on a live voice call; everything you write is spoken out loud right away
 - Talk like a person on the phone: short spoken sentences, plain words. No markdown, no lists, no emojis, no links, no long dash. Usually one to three sentences.
 - If the user wants something that needs real tools (their email, calendar, files, code, sending a message, current news, anything on their computer), say one short natural line that fits what they asked, as if you are starting on it now (vary it, never "one sec" or "one moment"), then on a new line write [[WORK: one clear sentence describing the task]] and stop. Do not invent results.
 - Things you already know (facts, advice, ideas, jokes, math, small talk) are not work: just answer.`;
-  const STREAM_OFFLINE = '\n- Right now the user\'s PC is offline, so you cannot use tools: never write [[WORK: ...]]; if they ask for that kind of thing, say so in one sentence and offer to do it when their PC is on.';
+  const STREAM_OFFLINE = () => (cloudReady()
+    ? `\n- Right now the user's PC is offline, so real work runs in Codeply Cloud instead: you may still write [[WORK: ...]]; ${CLOUD_SCOPE}.${cloudBusyNote()}`
+    : `\n- Right now the user's PC is offline, so you cannot use tools: never write [[WORK: ...]]; if they ask for that kind of thing, say in one sentence you can do it ${NO_CLOUD_OFFER}.`);
 
   function pcmToFloat(b64) {
     const bin = atob(b64);
@@ -1236,7 +1249,7 @@ You are on a live voice call; everything you write is spoken out loud right away
     const last = calls.find((x) => x.botId === bot.id && x.status === 'done' && x.turns.length);
     const recent = last ? last.turns.slice(-6).map((t) => `${t.who === 'bot' ? bot.name : 'User'}: ${String(t.text).slice(0, 300)}`).join('\n') : '';
     const base = bot.prompt || `You are ${bot.name}, one of the user's bots in Codeply.${bot.specialty ? ` Your job: ${bot.specialty}.` : ''}${bot.instructions ? `\n${bot.instructions}` : ''}`;
-    const system = `${base}\n\n${STREAM_RULES}${pcOnline() ? '' : STREAM_OFFLINE}${recent ? `\n\nTHE LAST CALL BEFORE THIS ONE\n${recent}` : ''}`;
+    const system = `${base}\n\n${STREAM_RULES}${pcOnline() ? '' : STREAM_OFFLINE()}${recent ? `\n\nTHE LAST CALL BEFORE THIS ONE\n${recent}` : ''}`;
     const messages = [{ role: 'system', content: system },
       ...me.turns.slice(-14).map((t) => ({ role: t.who === 'bot' ? 'assistant' : 'user', content: String(t.text || '').slice(0, 1000) }))];
     if (me.ctx && me.ctx.state !== 'running') await wake(me.ctx);
@@ -1294,8 +1307,8 @@ You are on a live voice call; everything you write is spoken out loud right away
     for (let i = 0; i < said; i++) player.noAudio(i);
     const text = player.text();
     if (text) log('bot', text);
-    if (work && pcOnline()) {
-      // The opening line plays while the PC starts on the job.
+    if (work && (pcOnline() || cloudReady())) {
+      // The opening line plays while the PC (or the cloud) starts on the job.
       const playing = player.finished();
       await runWork(me, token, controller, work, playing);
       return;
@@ -1306,6 +1319,7 @@ You are on a live voice call; everything you write is spoken out loud right away
 
   /** Real work on the PC (with the bot's tools) after the opening line; short updates on long jobs. */
   async function runWork(me, token, controller, task, playing) {
+    if (!pcOnline() && cloudReady()) return runCloudWork(me, token, task, playing);
     me.stepLabel = '';
     let lastSpokeAt = performance.now();
     let updates = 0;
@@ -1342,6 +1356,67 @@ You are on a live voice call; everything you write is spoken out loud right away
     await sayNow(result || 'Done.', token);
   }
 
+  /**
+   * Real work in Codeply Cloud (PC offline): the bot's prompt and the task go
+   * to a runner in the user's GitHub account (phone.js startCloudTask). Runs
+   * take minutes, so the call carries on meanwhile: the user can keep talking,
+   * and the bot says the result as soon as it is done (between turns).
+   */
+  const CLOUD_NOTE = "You are running in the cloud: no access to the user's local files or desktop apps; use the shell, the web and the repo.";
+  const CLOUD_POLL_MS = 4000;
+  const CLOUD_GIVE_UP_MS = 20 * 60 * 1000;
+  async function runCloudWork(me, token, task, playing) {
+    const bot = me.bot;
+    const asked = [...me.turns].reverse().find((t) => t.who === 'user');
+    const prompt = `${task}${asked ? `\n\nWhat the user said on the call: "${String(asked.text).slice(0, 600)}"` : ''}\n\n(${CLOUD_NOTE})`;
+    const botPrompt = bot.prompt || `You are ${bot.name}, one of the user's bots in Codeply.${bot.specialty ? ` Your job: ${bot.specialty}.` : ''}${bot.instructions ? `\n${bot.instructions}` : ''}`;
+    if (!me.cloudSid) me.cloudSid = `v${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const job = { task, startedAt: Date.now() };
+    me.cloudJobs = [...(me.cloudJobs || []), job];
+    let started = null;
+    try {
+      started = await P.startCloudTask({ prompt, mode: 'Build', sessionId: me.cloudSid, bot: { name: bot.name, prompt: botPrompt }, kind: 'task' });
+      job.id = started.task.id;
+    } catch (e) {
+      me.cloudJobs = me.cloudJobs.filter((j) => j !== job);
+      await playing;
+      if (c !== me || me.ending) return;
+      console.debug('[calls] cloud start failed:', e && e.message);
+      if (token === me.token) await sayNow("Sorry, I couldn't start that in the cloud just now. Want me to try again?", token);
+      return;
+    }
+    // The opening line has been said: the call goes back to listening while the cloud works.
+    await playing;
+    if (c === me && !me.ending && token === me.token) { me.abort = null; setPhase('listening', 'Working in the cloud...'); }
+    showNote();
+    // Watched apart from this turn, so the next thing the user says is answered at once.
+    me.cloudWatch = watchCloudJob(me, job, started).catch((e) => console.debug('[calls] cloud watch failed:', e && e.message));
+  }
+  async function watchCloudJob(me, job, started) {
+    const { env, task: t } = started;
+    let fails = 0;
+    while (c === me && !me.ending) {
+      await sleep(CLOUD_POLL_MS);
+      if (c !== me || me.ending) return;
+      try { await P.pollCloudTask(env, t); fails = 0; } catch (e) { if (++fails > 5) Object.assign(t, { status: 'failed', error: e.message }); }
+      if (['done', 'failed', 'cancelled'].includes(t.status)) break;
+      if (Date.now() - job.startedAt > CLOUD_GIVE_UP_MS) { t.status = 'slow'; break; }
+    }
+    if (c !== me || me.ending) return;
+    me.cloudJobs = me.cloudJobs.filter((j) => j !== job);
+    showNote();
+    const text = t.status === 'done' ? (spoken(t.reply || t.answer || '') || 'Done, it finished in the cloud.')
+      : t.status === 'slow' ? 'That cloud job is taking a while. It keeps running in your GitHub account; check it later in Codeply.'
+        : t.status === 'cancelled' ? 'The cloud job was cancelled.'
+          : "Sorry, the cloud job didn't work out. Want me to try again?";
+    if (t.status === 'failed' && t.error) { me.noteBase = `Cloud: ${String(t.error).slice(0, 140)}`; showNote(); }
+    // Never talk over the user or over a reply that is under way.
+    const waitUntil = Date.now() + 60000;
+    while (c === me && !me.ending && (me.phase === 'speaking' || me.phase === 'thinking' || me.abort) && Date.now() < waitUntil) await sleep(250);
+    if (c !== me || me.ending) return;
+    await sayNow(text, me.token);
+  }
+
   async function respond(token) {
     if (api.stream !== false && VOICE_TURN_URL && !(c && c.noStream)) {
       try { return await respondStream(token); } catch (e) {
@@ -1369,6 +1444,10 @@ You are on a live voice call; everything you write is spoken out loud right away
     if (c !== me || token !== me.token) return;
     metrics.push({ kind: 'fastReply', ms: Math.round(performance.now() - t0), work: !!fast.work, at: Date.now() });
     console.debug(`[calls] fast reply in ${Math.round(performance.now() - t0)} ms${fast.work ? ` (work: ${fast.work})` : ''}`);
+    if (fast.work && !pcOnline() && cloudReady()) {
+      me.abort = null;
+      return runCloudWork(me, token, fast.work, sayNow(fast.say, token));
+    }
     if (!fast.work || !pcOnline()) {
       me.abort = null;
       await sayNow(fast.say || 'Mm hm.', token);
