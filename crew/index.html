@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self'; connect-src 'self' blob: data:; worker-src 'self' blob:">
+  <title>Codeply Crew</title>
+  <link rel="stylesheet" href="crew.css">
+</head>
+<body>
+  <header class="titlebar">
+    <div class="tb-drag"></div>
+    <div class="tb-buttons">
+      <button class="tb-btn" data-win="min" aria-label="Minimize"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></button>
+      <button class="tb-btn" data-win="max" aria-label="Maximize"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" rx="1"/></svg></button>
+      <button class="tb-btn tb-close" data-win="close" aria-label="Close"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg></button>
+    </div>
+  </header>
+
+  <div class="app">
+    <aside class="side">
+      <button class="brand" data-act="home" aria-label="Home">
+        <img class="brand-mark" src="assets/logo/codeply-icon-small-48.png" alt=""><span class="brand-name">Codeply Crew</span>
+      </button>
+      <button class="side-new" data-act="new-bot">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New bot</span>
+      </button>
+      <div class="side-scroll">
+        <div class="side-group hidden" id="groupSide">
+          <div class="side-label side-label-row">Group chats<button class="side-plus" id="newGroupBtn" aria-label="New group chat" title="New group chat"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>
+          <nav class="bot-list" id="groupList"></nav>
+        </div>
+        <div class="side-label">Your crew</div>
+        <nav class="bot-list" id="botList"></nav>
+      </div>
+      <div class="side-foot">
+        <button class="account" id="accountBtn"></button>
+      </div>
+    </aside>
+    <main class="main" id="view"></main>
+  </div>
+
+  <div class="modal-back hidden" id="modalBack"><div class="modal" id="modal" role="dialog" aria-modal="true"></div></div>
+  <div class="call hidden" id="call" aria-live="polite"></div>
+  <div class="menu hidden" id="menu"></div>
+  <div class="toasts" id="toasts"></div>
+
+  <script src="bot-avatar.js"></script>
+  <script src="../node_modules/onnxruntime-web/dist/ort.wasm.min.js"></script>
+  <script src="../node_modules/@ricky0123/vad-web/dist/bundle.min.js"></script>
+  <script src="markdown.js"></script>
+  <script src="crew.js"></script>
+  <script src="groups.js"></script>
+  <script src="call.js"></script>
+</body>
+</html>

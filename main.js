@@ -3056,6 +3056,17 @@ app.whenReady().then(() => {
   app.on('activate', showWindow);
 });
 
+// ─── Codeply Crew ───────────────────────────────────────────────────────────
+// Crew is part of Craft now: its own window (with the Crew logo), the same
+// engine and the same ~/.codeply bots. crew/crew-main.js registers its
+// "crew:"-prefixed handlers the first time it is loaded.
+let crewMod = null;
+ipcMain.handle('crew:open', () => {
+  if (!crewMod) crewMod = require('./crew/crew-main');
+  crewMod.open(CLI_DIR);
+  return { ok: true };
+});
+
 app.on('window-all-closed', () => {
   // Reached only if a window is destroyed some way other than the hide-on-
   // close handler above (a crash, devtools forcing it, an actual quit already

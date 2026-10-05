@@ -592,6 +592,7 @@ function closeTasksModal() {
 }
 
 $('tasksBtn').addEventListener('click', openTasksModal);
+$('crewBtn').addEventListener('click', () => window.craft.openCrew());
 $('tasksCloseBtn').addEventListener('click', closeTasksModal);
 $('tasksBackdrop').addEventListener('click', (e) => { if (e.target === $('tasksBackdrop')) closeTasksModal(); });
 

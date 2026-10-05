@@ -374,6 +374,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 }
 .sb-item:hover { background: var(--hover); }
 .sb-item svg { width: 16px; height: 16px; color: var(--text-dim); }
+.sb-item-logo { width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0; }
 .sb-item-badge {
   margin-left: auto;
   min-width: 18px;

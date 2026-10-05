@@ -133,6 +133,26 @@ async function withRetries(send, signal) {
 // native-shaped history can never reach an endpoint that would reject it.
 
 /** Native history -> plain text turns (tool calls described, results as user text). */
+// reasoning_content rides along on assistant turns (agent.mjs). DeepSeek's
+// thinking mode requires it back on every step of a tool run; everyone else
+// gets it stripped, since some providers reject unknown message fields.
+function wantsReasoningBack(url, model) {
+  return /deepseek/i.test(String(url || '')) || /deepseek/i.test(String(model || ''));
+}
+function wireMessages(messages, url, model) {
+  if (wantsReasoningBack(url, model)) {
+    // A step with no reasoning still needs the field (an empty one is accepted).
+    if (!messages.some((m) => m && m.role === 'assistant' && m.tool_calls && m.reasoning_content === undefined)) return messages;
+    return messages.map((m) => (m && m.role === 'assistant' && m.tool_calls && m.reasoning_content === undefined ? { ...m, reasoning_content: '' } : m));
+  }
+  if (!messages.some((m) => m && m.reasoning_content !== undefined)) return messages;
+  return messages.map((m) => {
+    if (!m || m.reasoning_content === undefined) return m;
+    const { reasoning_content, ...rest } = m;
+    return rest;
+  });
+}
+
 function textOnlyMessages(messages) {
   if (!messages.some((m) => m.role === 'tool' || m.tool_calls)) return messages;
   const out = [];
@@ -141,7 +161,7 @@ function textOnlyMessages(messages) {
       out.push({ role: 'user', content: `[tool result: ${m.name || 'tool'}]\n${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}` });
     } else if (m.tool_calls) {
       const calls = m.tool_calls.map((c) => `[called ${c.function?.name}(${String(c.function?.arguments || '').slice(0, 400)})]`).join('\n');
-      out.push({ role: 'assistant', content: [m.content || '', calls].filter(Boolean).join('\n') });
+      out.push({ role: 'assistant', content: [m.content || '', calls].filter(Boolean).join('\n'), ...(m.reasoning_content !== undefined ? { reasoning_content: m.reasoning_content } : {}) });
     } else {
       out.push(m);
     }
@@ -274,7 +294,7 @@ async function chatViaProxy(messages, opts) {
         // the proxy logs it to usage_history so CLI activity shows up in the
         // admin dashboard next to the desktop app, same as this app's own calls.
         // The proxy declares no tools, so it only ever gets text history.
-        body: JSON.stringify({ messages: textOnlyMessages(messages), opts: { ...opts, tools: undefined }, meta: opts.meta }),
+        body: JSON.stringify({ messages: wireMessages(textOnlyMessages(messages)), opts: { ...opts, tools: undefined }, meta: opts.meta }),
         signal,
       });
       body = await res.json().catch(() => ({}));
@@ -410,7 +430,7 @@ async function streamingChatRequest({ url, label, model, apiKey, isLocal, messag
         headers,
         body: JSON.stringify({
           model,
-          messages: opts.tools ? messages : textOnlyMessages(messages),
+          messages: wireMessages(opts.tools ? messages : textOnlyMessages(messages), url, model),
           temperature: opts.temperature ?? 0,
           ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
           ...(opts.json ? { response_format: { type: 'json_object' } } : {}),
@@ -616,7 +636,7 @@ async function chatViaOpenAICompatible(messages, opts, providerName, cfg) {
         },
         body: JSON.stringify({
           model,
-          messages: opts.tools ? messages : textOnlyMessages(messages),
+          messages: wireMessages(opts.tools ? messages : textOnlyMessages(messages), url, model),
           temperature: opts.temperature ?? 0,
           ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
           ...(opts.json ? { response_format: { type: 'json_object' } } : {}),

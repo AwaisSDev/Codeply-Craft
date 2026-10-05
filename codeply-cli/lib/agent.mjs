@@ -1438,6 +1438,13 @@ function withoutEmDashes(text) {
 
 // ─── Loop ───────────────────────────────────────────────────────────────────
 
+// Thinking models (DeepSeek V4 and later) refuse the next step of a tool run
+// unless each assistant turn carries its own reasoning back. ai.js only sends
+// the field to providers that want it.
+function withReasoning(msg, reasoning) {
+  return reasoning && reasoning.trim() ? { ...msg, reasoning_content: reasoning } : msg;
+}
+
 /**
  * Run one user turn to completion.
  *
@@ -1663,7 +1670,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     // `reply` and not shown inline - so the UI can offer it as an optional,
     // collapsed "thought for Xs" the user opens on demand instead of dumping
     // raw reasoning into the chat unconditionally.
-    const reasoning = result.data?.choices?.[0]?.message?.reasoning || '';
+    const reasoning = result.data?.choices?.[0]?.message?.reasoning || result.data?.choices?.[0]?.message?.reasoning_content || '';
     if (reasoning.trim()) {
       yield { type: 'reasoning', text: reasoning.trim(), ms: stepMs };
     }
@@ -1675,7 +1682,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       const conv = toolCallsToTags(reply, replyMsg.tool_calls, PARAMS, mcpNames.fromNative);
       reply = conv.text;
       if (conv.problems.length && !reply.includes('<codeply:')) {
-        messages.push({ role: 'assistant', content: reply || '(tool call)' });
+        messages.push(withReasoning({ role: 'assistant', content: reply || '(tool call)' }, reasoning));
         messages.push({ role: 'user', content: `[system] Your tool call could not be run: ${conv.problems.join('; ')}. Call one of the provided tools with valid arguments.` });
         continue;
       }
@@ -1706,7 +1713,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     // was written blind, before any result, and leaving it in the history
     // teaches the model to treat its own guesses as things that happened.
     const lastEnd = toRun.length ? toRun[toRun.length - 1].end : undefined;
-    messages.push({ role: 'assistant', content: typeof lastEnd === 'number' ? reply.slice(0, lastEnd) : reply });
+    messages.push(withReasoning({ role: 'assistant', content: typeof lastEnd === 'number' ? reply.slice(0, lastEnd) : reply }, reasoning));
 
     if (calls.length === 0) {
       // Protocol debris first: a truncated or malformed reply's raw text is

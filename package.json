@@ -1,6 +1,6 @@
 {
   "name": "codeply-craft",
-  "version": "1.1.8",
+  "version": "1.1.9",
   "description": "Codeply Craft - the Codeply AI coding agent as a desktop app",
   "author": "Awais Siddique",
   "main": "main.js",
@@ -24,10 +24,16 @@
   "dependencies": {
     "@capacitor/android": "^8.5.0",
     "@capacitor/core": "^8.5.0",
+    "@huggingface/transformers": "^3.8.1",
+    "@ricky0123/vad-web": "^0.0.31",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "dotenv": "^16.6.1",
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.9",
+    "geist": "^1.7.2",
+    "kokoro-js": "^1.2.1",
+    "msedge-tts": "^2.0.9",
+    "onnxruntime-web": "^1.30.0"
   },
   "optionalDependencies": {
     "better-sqlite3": "^11.10.0"
@@ -117,6 +123,11 @@
     },
     "dmg": {
       "artifactName": "Codeply-Craft-${arch}.${ext}"
-    }
+    },
+    "asarUnpack": [
+      "node_modules/onnxruntime-node/**",
+      "node_modules/sharp/**",
+      "node_modules/@img/**"
+    ]
   }
 }

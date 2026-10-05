@@ -113,6 +113,8 @@ export function toNativeMessages(messages, parse, mcpToNative = null) {
       role: 'assistant',
       content: prose || '',
       tool_calls: withIds.map((c) => ({ id: c.id, type: 'function', function: nativeCall(c) })),
+      // DeepSeek's thinking mode rejects a tool call whose reasoning is missing.
+      ...(m.reasoning_content !== undefined ? { reasoning_content: m.reasoning_content } : {}),
     });
     // Collect everything up to the next assistant message.
     const answers = new Map();

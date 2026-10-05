@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('craft', {
+  // Codeply Crew (your bots) opens in its own window with the Crew logo.
+  openCrew: () => ipcRenderer.invoke('crew:open'),
   // window chrome
   minimize: () => ipcRenderer.send('win:minimize'),
   maximize: () => ipcRenderer.send('win:maximize'),
