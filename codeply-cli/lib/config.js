@@ -98,8 +98,19 @@ function getConfig() {
     };
   }
 
+  // Research Mode (local Ollama or Ollama Cloud), see research-mode/.
+  const fr = file.research || {};
+  const research = {
+    enabled: fr.enabled === true,
+    mode: fr.mode === 'cloud' ? 'cloud' : 'local',
+    model: String(fr.model || ''),
+    apiKey: process.env.OLLAMA_API_KEY || fr.apiKey || '',
+    context: String(fr.context || ''),
+  };
+
   return {
     provider,
+    research,
     ollama: {
       host: (process.env.OLLAMA_HOST || fileOllama.host || DEFAULTS.ollama.host).replace(/\/+$/, ''),
       model: process.env.OLLAMA_MODEL || fileOllama.model || DEFAULTS.ollama.model,
@@ -121,7 +132,7 @@ function saveConfig(patch) {
   const current = readFile();
   if (lastReadFailed) return { ok: false, error: `${configPath} is not valid JSON. Fix or delete it, then try again.` };
   const next = { ...current, ...patch };
-  for (const name of ['ollama', ...BYOK_PROVIDERS]) {
+  for (const name of ['ollama', 'research', ...BYOK_PROVIDERS]) {
     if (current[name] || patch[name]) {
       next[name] = { ...(current[name] || {}), ...(patch[name] || {}) };
     }
