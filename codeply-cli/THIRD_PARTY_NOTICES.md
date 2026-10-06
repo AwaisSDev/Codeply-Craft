@@ -1,5 +1,7 @@
 # Third-party notices
 
+"OpenAI", "ChatGPT" and the OpenAI Blossom logo (`assets/brand/openai-blossom-*.svg` in the desktop app, shown next to "Continue with ChatGPT") are trademarks of OpenAI, used unmodified under OpenAI's brand guidelines (https://openai.com/brand). They are not covered by this project's MIT license, and their use does not imply endorsement by OpenAI.
+
 Parts of the Codeply engine (codeply-cli/lib) are adapted from the open-source projects below. Each adapted section is marked in the source with a comment naming the project.
 
 ## opencode
