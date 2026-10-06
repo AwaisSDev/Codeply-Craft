@@ -3062,6 +3062,9 @@ $('updateGateBtn').addEventListener('click', () => {
   syncMode();
   syncBypass();
   applyModelsState(init.models);
+  state.chatgpt = init.chatgpt || { signedIn: false };
+  // Refresh the plan's model list in the background (models:changed repaints the picker).
+  if (state.chatgpt.sharing) api.chatgptStatus({ refresh: true }).then((st) => { state.chatgpt = st; });
   if (init.lastProject) setProject(init.lastProject, init.lastProjectBranch);
   else setProject(null, null);
 
