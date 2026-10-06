@@ -208,3 +208,10 @@ async function signIn({ openBrowser }) {
   }
 }
 
+/** Sign-out drops the tokens but keeps the host id and issued client_id for the next sign-in. */
+function signOut() {
+  const { hostId: h, clientId, email } = readStore();
+  writeStore({ hostId: h, clientId, email });
+  return status();
+}
+
