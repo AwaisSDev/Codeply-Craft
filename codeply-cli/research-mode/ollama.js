@@ -11,3 +11,13 @@ const cloudUrl = () => process.env.CODEPLY_RESEARCH_CLOUD_URL || 'https://ollama
 const ERR_LOCAL_DOWN = 'Start Ollama with `ollama serve`';
 const ERR_CLOUD_KEY = 'Add your Ollama Cloud API key in Settings';
 
+/** Where a research settings object sends requests: { host, apiKey, error }. */
+function resolveTarget(rm) {
+  if (rm && rm.mode === 'cloud') {
+    const apiKey = String(rm.apiKey || '').trim();
+    if (!apiKey) return { host: cloudUrl(), apiKey: '', error: ERR_CLOUD_KEY };
+    return { host: cloudUrl(), apiKey };
+  }
+  return { host: localUrl(), apiKey: '' };
+}
+
