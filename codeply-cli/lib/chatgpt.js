@@ -100,3 +100,18 @@ async function verifyIdToken(idToken, { clientId, nonce }) {
   return payload;
 }
 
+async function tokenRequest(params) {
+  const res = await fetch(TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(params).toString(),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(body.error_description || body.error || `ChatGPT sign-in failed (HTTP ${res.status}).`);
+    err.code = body.error;
+    throw err;
+  }
+  return body;
+}
+
