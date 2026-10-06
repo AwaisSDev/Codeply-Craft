@@ -54,6 +54,7 @@ function syncThemeToggleUI() {
 
 const state = {
   user: null,
+  chatgpt: { signedIn: false }, // Sign in with ChatGPT: { signedIn, email, sharing }
   providerLabel: '',
   sessions: [],
   projects: [],
