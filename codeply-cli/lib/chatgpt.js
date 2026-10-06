@@ -267,3 +267,16 @@ async function accessToken({ force = false } = {}) {
   return refreshing;
 }
 
+/** The models this user's plan can use, as [{ slug, name }]. */
+async function listModels() {
+  const res = await fetch(MODELS_URL, { headers: { Authorization: `Bearer ${await accessToken()}` } });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error?.message || `Couldn't list your ChatGPT models (HTTP ${res.status}).`);
+  const list = body.models || body.data || [];
+  return list
+    .filter((m) => !m.visibility || m.visibility === 'list')
+    .map((m) => ({ slug: m.slug || m.id, name: m.display_name || m.slug || m.id }))
+    .filter((m) => m.slug);
+}
+
+module.exports = { signIn, signOut, status, accessToken, listModels, USAGE_URL, RESOURCE };
