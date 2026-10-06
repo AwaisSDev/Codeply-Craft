@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld('craft', {
   deleteModel: (id) => ipcRenderer.invoke('models:delete', id),
   detectOllama: (host) => ipcRenderer.invoke('models:detectOllama', host),
   onModelsChanged: (cb) => ipcRenderer.on('models:changed', (e, data) => cb(data)),
+  chatgptStatus: (opts) => ipcRenderer.invoke('chatgpt:status', opts),
+  chatgptSignIn: () => ipcRenderer.invoke('chatgpt:signIn'),
+  chatgptSignOut: () => ipcRenderer.invoke('chatgpt:signOut'),
 
   // skills
   listSkills: () => ipcRenderer.invoke('skills:list'),
