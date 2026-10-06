@@ -21,3 +21,24 @@ function resolveTarget(rm) {
   return { host: localUrl(), apiKey: '' };
 }
 
+/** GET /api/tags. Resolves { ok, models: [{name,size,params,family}], error }. */
+async function listModels(rm) {
+  const t = resolveTarget(rm);
+  if (t.error) return { ok: false, models: [], error: t.error };
+  const headers = t.apiKey ? { Authorization: `Bearer ${t.apiKey}` } : {};
+  const local = !(rm && rm.mode === 'cloud');
+  try {
+    const res = await fetch(`${t.host}/api/tags`, { headers, signal: AbortSignal.timeout(5000) });
+    if (res.status === 401 || res.status === 403) return { ok: false, models: [], error: ERR_CLOUD_KEY };
+    if (!res.ok) return { ok: false, models: [], error: `Ollama answered HTTP ${res.status}.` };
+    const body = await res.json();
+    const models = (body.models || []).map((x) => ({
+      name: x.name || x.model, size: x.size || 0, family: x.details?.family || '', params: x.details?.parameter_size || '',
+    })).filter((x) => x.name);
+    return { ok: true, models };
+  } catch {
+    return { ok: false, models: [], error: local ? ERR_LOCAL_DOWN : 'Could not reach Ollama Cloud.' };
+  }
+}
+
+module.exports = { localUrl, cloudUrl, ERR_LOCAL_DOWN, ERR_CLOUD_KEY, resolveTarget, listModels };
