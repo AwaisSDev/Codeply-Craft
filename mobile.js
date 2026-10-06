@@ -1344,7 +1344,7 @@ function renderModels(models) {
     list.append(row);
   };
   add('auto', 'Auto', 'Gemma 4 31B, picked for you');
-  for (const m of state.models.models) add(m.id, m.name, m.kind === 'ollama' ? 'Local, runs on your PC' : 'Your API key');
+  for (const m of state.models.models) add(m.id, m.name, m.kind === 'ollama' ? 'Local, runs on your PC' : m.kind === 'chatgpt' ? 'Uses your ChatGPT plan' : 'Your API key');
   const current = state.models.models.find((m) => m.id === state.models.selected);
   $('modelPillName').textContent = current ? current.name : 'Auto';
 }
