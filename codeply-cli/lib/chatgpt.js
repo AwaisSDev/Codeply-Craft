@@ -20,3 +20,17 @@ const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
 
+const ISSUER = 'https://auth.openai.com';
+const AUTHORIZE_URL = `${ISSUER}/api/accounts/authorize`;
+const TOKEN_URL = `${ISSUER}/api/accounts/oauth/token`;
+const RESOURCE = 'https://api.openai.com/v1';
+const MODELS_URL = `${RESOURCE}/models`;
+const SCOPE = 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct';
+const PLAN_SCOPE = 'chatgpt.tokens.use.direct';
+const DYNAMIC_CLIENT = 'dynamic_agent_client';
+const APP_NAME = 'Codeply Craft';
+const SIGN_IN_TIMEOUT_MS = 5 * 60_000;
+const USAGE_URL = 'https://chatgpt.com/settings/usage';
+
+const storePath = path.join(os.homedir(), '.codeply', 'chatgpt.json');
+
