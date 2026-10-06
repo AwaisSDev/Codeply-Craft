@@ -3,6 +3,7 @@
   "version": "1.1.9",
   "description": "Codeply Craft - the Codeply AI coding agent as a desktop app",
   "author": "Awais Siddique",
+  "license": "MIT",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
