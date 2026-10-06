@@ -2903,9 +2903,9 @@ ipcMain.handle('remote:setKeepAwake', (e, on) => {
   updateSleepBlocker();
   return { ok: true };
 });
-// Only our own phone-app address is ever opened this way.
+// Only our own phone-app address and ChatGPT's usage settings are ever opened this way.
 ipcMain.handle('shell:openExternal', (e, url) => {
-  if (url === MOBILE_APP_URL) shell.openExternal(url);
+  if (url === MOBILE_APP_URL || url === 'https://chatgpt.com/settings/usage') shell.openExternal(url);
   else if (/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(\/actions\/runs\/\d+)?$/.test(String(url))) shell.openExternal(url); // cloud: View run, repo links
 });
 
