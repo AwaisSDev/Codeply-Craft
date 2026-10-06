@@ -126,6 +126,30 @@
       </div>
     </div>
 
+    <div class="rm-panel" id="rmPanel">
+      <label class="rm-row rm-toggle-row">
+        <span class="rm-title">Research Mode (Local)</span>
+        <input type="checkbox" id="rmToggle" class="rm-switch" role="switch" aria-label="Research Mode (Local)">
+      </label>
+      <div class="rm-status" id="rmStatus"><span class="rm-dot" id="rmDot"></span><span id="rmStatusText">Checking Ollama…</span></div>
+      <div class="rm-body hidden" id="rmBody">
+        <label class="rm-field"><span>Where to run</span>
+          <select id="rmMode"><option value="local">Local Ollama</option><option value="cloud">Ollama Cloud</option></select>
+        </label>
+        <label class="rm-field"><span>Model</span>
+          <select id="rmModel" aria-label="Model"></select>
+        </label>
+        <label class="rm-field hidden" id="rmKeyField"><span>Ollama Cloud API key</span>
+          <input id="rmKey" type="password" autocomplete="off" spellcheck="false" placeholder="">
+        </label>
+        <label class="rm-field"><span>Research context (optional)</span>
+          <textarea id="rmContext" rows="2" spellcheck="false" placeholder="Plain context you want sent as a system message"></textarea>
+        </label>
+        <div class="rm-actions"><button class="btn-quiet" id="rmRefresh" type="button">Refresh</button><button class="btn-quiet" id="rmTest" type="button">Test</button></div>
+        <div class="rm-out hidden" id="rmOut"></div>
+      </div>
+    </div>
+
     <div class="sb-footer">
       <button class="update-pill hidden" id="updatePill" type="button">
         <span class="update-pill-dot"></span>
