@@ -786,6 +786,14 @@ ipcMain.handle('chatgpt:signIn', async () => {
     return { ok: false, error: err.message };
   }
 });
+
+ipcMain.handle('chatgpt:signOut', async () => {
+  if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
+  const status = chatgptLib.signOut();
+  configLib.syncChatGPTModels([]);
+  return { ok: true, status, state: modelsState() };
+});
+
 // ─── Gmail / Slack integrations (real OAuth via the system browser) ───────
 // Desktop OAuth per RFC 8252: open the consent screen in the user's actual
 // system browser (never an embedded webview - that's exactly what providers
