@@ -1502,6 +1502,17 @@ function openModelMenu(anchorBtn) {
   }));
   menu.querySelector('[data-action="add"]').addEventListener('click', () => { closeModelMenu(); openModelsModal({ tab: 'custom' }); });
   menu.querySelector('[data-action="ollama"]').addEventListener('click', () => { closeModelMenu(); openModelsModal({ tab: 'ollama' }); });
+  menu.querySelector('[data-action="chatgpt-signin"]')?.addEventListener('click', () => { closeModelMenu(); signInWithChatGPT(); });
+  menu.querySelector('[data-action="chatgpt-usage"]')?.addEventListener('click', () => { closeModelMenu(); api.openExternal(CHATGPT_USAGE_URL); });
+  menu.querySelector('[data-action="chatgpt-signout"]')?.addEventListener('click', async () => {
+    closeModelMenu();
+    if (!confirm('Disconnect ChatGPT? Craft stops using your ChatGPT plan until you sign in again.')) return;
+    const r = await api.chatgptSignOut();
+    if (!r.ok) { showToast(r.error || 'Could not disconnect.', 'error'); return; }
+    state.chatgpt = r.status;
+    applyModelsState(r.state);
+    showToast('ChatGPT disconnected');
+  });
   modelMenuEl = menu;
 }
 
