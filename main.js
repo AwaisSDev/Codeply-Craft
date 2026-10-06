@@ -768,6 +768,24 @@ ipcMain.handle('chatgpt:status', async (e, { refresh } = {}) => {
   if (refresh && status.sharing) refreshChatGPTModels().catch(() => {});
   return status;
 });
+
+ipcMain.handle('chatgpt:signIn', async () => {
+  if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
+  try {
+    const status = await chatgptLib.signIn({ openBrowser: (url) => shell.openExternal(url) });
+    if (!status.sharing) {
+      configLib.syncChatGPTModels([]);
+      return {
+        ok: true, status, state: modelsState(),
+        warning: 'You signed in, but Craft wasn’t allowed to use your ChatGPT plan. Sign in again and allow plan usage to get your ChatGPT models.',
+      };
+    }
+    const state = await refreshChatGPTModels();
+    return { ok: true, status, state };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 // ─── Gmail / Slack integrations (real OAuth via the system browser) ───────
 // Desktop OAuth per RFC 8252: open the consent screen in the user's actual
 // system browser (never an embedded webview - that's exactly what providers
