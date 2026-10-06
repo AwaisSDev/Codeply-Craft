@@ -1992,6 +1992,19 @@ select.login-input option { background: var(--surface-1); color: var(--text); }
 .model-menu-action:hover { background: var(--hover); color: var(--text); }
 .model-menu-action svg { width: 16px; height: 16px; }
 
+/* ---- Sign in with ChatGPT ---- */
+.model-item-icon.chatgpt { background: var(--surface-2); }
+.chatgpt-mark { width: 26px; height: 26px; background: var(--chatgpt-mark) center / contain no-repeat; }
+.model-menu-action.chatgpt-connect { padding: 7px 9px; color: var(--text); text-align: left; }
+.model-menu-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.model-menu-label-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
+.model-menu-empty { padding: 6px 10px 8px; font-size: 12.5px; color: var(--text-faint); line-height: 1.45; }
+.model-menu-inline { display: flex; gap: 2px; padding: 2px 4px 4px; }
+.model-menu-link { padding: 5px 8px; border-radius: 7px; font-size: 12.5px; color: var(--text-dim); }
+.model-menu-link:hover { background: var(--hover); color: var(--text); }
+/* "Using ChatGPT plan", right beside the model name, while a plan model is picked. */
+[data-role="model-name"][data-plan]::after { content: " · ChatGPT plan"; color: var(--text-faint); font-weight: 400; }
+
 /* ============ Models modal ============ */
 .models-modal {
   width: 100%;
