@@ -1227,7 +1227,30 @@ async function chatViaAuto(messages, opts) {
   return r;
 }
 
+/**
+ * Research Mode: all inference goes to local Ollama (/api/chat) or Ollama
+ * Cloud (bearer key), streaming through chatViaOllamaNative. opts.onToken
+ * receives each token as it arrives.
+ */
+function researchMode() {
+  const ollama = require('../research-mode/ollama.js');
+  const pre = require('../research-mode/preprocessor.js');
+  return { ...ollama, ...pre };
+}
+
+async function chatResearch(messages, opts, rm) {
+  const rmod = researchMode();
+  const target = rmod.resolveTarget(rm);
+  if (target.error) return { success: false, error: target.error };
+  if (!rm.model) return { success: false, error: 'Pick a model in Research Mode settings.' };
+  const pre = rmod.preprocess({ messages, mode: rm.mode, model: rm.model, researchContext: rm.context });
+  return chatViaOllamaNative(rmod.withSystem(pre), opts, { baseUrl: target.host, model: rm.model, apiKey: target.apiKey, research: rm.mode === 'cloud' ? 'cloud' : 'local' });
+}
+
 async function chat(messages, opts = {}) {
+  // Research Mode, when switched on in settings, takes every request.
+  const rm = getConfig().research;
+  if (rm && rm.enabled) return chatResearch(messages, opts, rm);
   // A user-added model (desktop model picker) always wins when routed.
   if (opts.route && opts.route.custom) return chatViaCustom(messages, opts, opts.route.custom);
   // Auto in the desktop app = the hosted Codeply model, regardless of what
@@ -1298,4 +1321,4 @@ async function chatJson(messages, opts = {}) {
   return { success: true, json: parsed, usage: r.data.usage || {}, modelUsed: r.modelUsed };
 }
 
-module.exports = { chat, chatJson, isRateLimitError, listOllamaModels, testModel, chatCompletionsUrl };
+module.exports = { chatResearch, chat, chatJson, isRateLimitError, listOllamaModels, testModel, chatCompletionsUrl };
