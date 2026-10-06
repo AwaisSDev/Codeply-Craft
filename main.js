@@ -57,6 +57,7 @@ let authLib = null;       // CJS: auth.js
 let configLib = null;     // CJS: config.js - provider config, user-added models, integrations
 let skillsLib = null;     // CJS: skills.js
 let aiLib = null;         // CJS: ai.js - planning/title/goal-check calls, model tests
+let chatgptLib = null;    // CJS: chatgpt.js - Sign in with ChatGPT (plan usage) tokens
 let oauthLib = null;      // CJS: oauth-connectors.js - Gmail/Slack/Vercel/Supabase/GitHub OAuth
 let rolesLib = null;      // CJS: subagents.js - the roles the single agent switches between
 let snapshotLib = null;   // CJS: snapshot.js - undo for what a message changed
@@ -85,6 +86,7 @@ async function loadEngine() {
   skillsLib = require(path.join(CLI_DIR, 'lib', 'skills.js'));
   oauthLib = require(path.join(CLI_DIR, 'lib', 'oauth-connectors.js'));
   aiLib = require(path.join(CLI_DIR, 'lib', 'ai.js'));
+  chatgptLib = require(path.join(CLI_DIR, 'lib', 'chatgpt.js'));
   rolesLib = require(path.join(CLI_DIR, 'lib', 'subagents.js'));
   snapshotLib = require(path.join(CLI_DIR, 'lib', 'snapshot.js'));
   commandsLib = require(path.join(CLI_DIR, 'lib', 'commands.js'));
