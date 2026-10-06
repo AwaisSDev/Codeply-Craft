@@ -47,3 +47,19 @@ function writeStore(data) {
   try { fs.chmodSync(storePath, 0o600); } catch {}
 }
 
+/**
+ * The per-install host id OpenAI requires before the first sign-in. Opaque,
+ * random, never derived from anything about the user, and kept for the life
+ * of the install (sign-out keeps it, as the docs ask).
+ */
+function hostId() {
+  const store = readStore();
+  if (store.hostId) return store.hostId;
+  const id = `urn:uuid:${crypto.randomUUID()}`;
+  writeStore({ ...store, hostId: id });
+  return id;
+}
+
+const b64url = (buf) => Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const randomToken = () => b64url(crypto.randomBytes(32));
+
