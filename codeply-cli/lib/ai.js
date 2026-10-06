@@ -994,6 +994,21 @@ async function chatViaOllamaNative(messages, opts, m) {
   }, opts.signal);
 }
 
+// ─── ChatGPT plan (Sign in with ChatGPT) ────────────────────────────────────
+// The token from chatgpt.js only works against the Responses API, and only
+// with store:false + stream:true. Craft's history is chat-completions shaped,
+// so it's converted on the way in and the stream reassembled into the same
+// {choices:[{message}]} shape every other path returns.
+
+function toResponsesContent(content, role) {
+  if (typeof content === 'string' || !Array.isArray(content)) {
+    return [{ type: role === 'assistant' ? 'output_text' : 'input_text', text: String(content || '') }];
+  }
+  return content.map((p) => {
+    if (p.type === 'image_url') return { type: 'input_image', image_url: p.image_url?.url || p.image_url };
+    return { type: role === 'assistant' ? 'output_text' : 'input_text', text: p.text || '' };
+  });
+}
 function chatViaCustom(messages, opts, m) {
   if (m.kind === 'ollama') return chatViaOllamaNative(messages, opts, m);
   const url = chatCompletionsUrl(m.baseUrl);
