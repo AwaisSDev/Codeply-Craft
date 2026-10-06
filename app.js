@@ -1439,7 +1439,26 @@ function openModelMenu(anchorBtn) {
   menu.className = 'model-menu';
   const sel = state.models.selected;
   const check = '<svg class="model-item-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>';
-  const custom = state.models.models;
+  const custom = state.models.models.filter((m) => m.kind !== 'chatgpt');
+  const plan = state.models.models.filter((m) => m.kind === 'chatgpt');
+  const cg = state.chatgpt || {};
+  const chatgptSection = cg.signedIn ? `
+    <div class="model-menu-label model-menu-label-row"><span>ChatGPT plan</span><span class="model-menu-label-meta">${esc(cg.email || '')}</span></div>
+    ${plan.map((m) => `
+      <button class="model-item${sel === m.id ? ' active' : ''}" data-id="${esc(m.id)}">
+        <span class="model-item-icon chatgpt">${CHATGPT_SVG}</span>
+        <span class="model-item-text"><strong>${esc(m.name)}</strong><span>Uses your ChatGPT plan</span></span>
+        ${sel === m.id ? check : ''}
+      </button>`).join('') || `<div class="model-menu-empty">${cg.sharing ? 'No models available on this plan yet.' : 'Plan usage wasn’t allowed. Sign in again to allow it.'}</div>`}
+    <div class="model-menu-inline">
+      <button class="model-menu-link" data-action="chatgpt-usage">Manage usage</button>
+      <button class="model-menu-link" data-action="${cg.sharing ? 'chatgpt-signout' : 'chatgpt-signin'}">${cg.sharing ? 'Disconnect' : 'Sign in again'}</button>
+    </div>` : `
+    <div class="model-menu-divider"></div>
+    <button class="model-menu-action chatgpt-connect" data-action="chatgpt-signin">
+      <span class="model-item-icon chatgpt">${CHATGPT_SVG}</span>
+      <span class="model-item-text"><strong>Continue with ChatGPT</strong><span>Use your ChatGPT plan instead of an API key</span></span>
+    </button>`;
   menu.innerHTML = `
     <button class="model-item${sel === 'auto' ? ' active' : ''}" data-id="auto">
       <span class="model-item-icon auto">${SPARK_SVG}</span>
@@ -1457,6 +1476,7 @@ function openModelMenu(anchorBtn) {
         <button class="model-item-tool" data-edit="${esc(m.id)}" title="Edit"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
         <button class="model-item-tool danger" data-delete="${esc(m.id)}" title="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg></button>
       </div>`).join('')}
+    ${chatgptSection}
     <div class="model-menu-divider"></div>
     <button class="model-menu-action" data-action="add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add a model</button>
     <button class="model-menu-action" data-action="ollama">${LLAMA_SVG}Connect Ollama</button>`;
