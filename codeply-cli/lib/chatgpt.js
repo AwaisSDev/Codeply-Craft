@@ -215,3 +215,17 @@ function signOut() {
   return status();
 }
 
+function status() {
+  const s = readStore();
+  const signedIn = !!(s.refreshToken || s.accessToken);
+  return {
+    signedIn,
+    email: signedIn ? s.email || '' : '',
+    name: signedIn ? s.name || '' : '',
+    // Identity alone is not permission to use the plan - the docs make the
+    // plan scope its own grant the user can turn down.
+    sharing: signedIn && (s.scopes || []).includes(PLAN_SCOPE),
+    usageUrl: USAGE_URL,
+  };
+}
+
