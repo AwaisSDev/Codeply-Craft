@@ -744,6 +744,13 @@ ipcMain.handle('models:detectOllama', async (e, host) => {
   return aiLib.listOllamaModels(host || 'http://localhost:11434');
 });
 
+// ─── Research Mode (local Ollama / Ollama Cloud) ────────────────────────────
+// Settings live in ~/.codeply/config.json under "research". The renderer gets
+// the key only as a masked preview, never in full.
+function publicResearch() {
+  const r = configLib.getConfig().research;
+  return { enabled: r.enabled, mode: r.mode, model: r.model, context: r.context, hasKey: !!r.apiKey, keyPreview: r.apiKey ? configLib.maskKey(r.apiKey) : '' };
+}
 
 // ─── Codeply Crew ───────────────────────────────────────────────────────────
 // Crew is part of Craft now: its own window (with the Crew logo), the same
