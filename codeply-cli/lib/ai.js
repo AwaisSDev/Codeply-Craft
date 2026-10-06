@@ -1053,6 +1053,115 @@ function chatgptErrorMessage(code, fallback) {
   }
 }
 const CHATGPT_RETRYABLE = new Set(['subscription_sharing_usage_unavailable', 'subscription_sharing_user_unavailable']);
+
+async function chatViaChatGPT(messages, opts, m) {
+  const chatgpt = require('./chatgpt.js');
+  const label = m.name || m.model;
+  let refreshed = false;
+  return withRetries(async () => {
+    let token;
+    try { token = await chatgpt.accessToken({ force: refreshed }); } catch (e) {
+      return { done: true, value: { success: false, error: e.message } };
+    }
+    let res;
+    const { signal, poke, isTimeout, cleanup } = withIdleTimeout(opts.signal, REQUEST_TIMEOUT_MS);
+    try {
+      res = await fetch(`${chatgpt.RESOURCE}/responses`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(toResponsesRequest(messages, { ...opts, model: m.model })),
+        signal,
+      });
+    } catch (e) {
+      cleanup();
+      if (isTimeout()) return { retryable: true, error: `${label} timed out with no response - retrying.` };
+      if (isAbortError(e)) return { aborted: true };
+      return { retryable: true, error: `Couldn't reach ChatGPT: ${e.message}` };
+    }
+
+    if (!res.ok) {
+      cleanup();
+      const body = await res.json().catch(() => ({}));
+      const code = body?.error?.code || body?.code;
+      const msg = body?.error?.message || describeStatus(res.status);
+      // An expired access token: refresh once and go again.
+      if (res.status === 401 && !refreshed && code !== 'subscription_sharing_invalid_user') {
+        refreshed = true;
+        return { retryable: true, retryAfterMs: 0, error: msg };
+      }
+      const text = `${label}: ${chatgptErrorMessage(code, msg)}`;
+      if (CHATGPT_RETRYABLE.has(code) || res.status === 503) return { retryable: true, retryAfterMs: retryAfterMs(res), error: text };
+      return { done: true, value: { success: false, error: text } };
+    }
+
+    let content = '';
+    let reasoning = '';
+    let modelUsed = m.model;
+    let failure = null;
+    let completed = false;
+    const toolCalls = [];
+    let buffer = '';
+    try {
+      for await (const chunk of res.body) {
+        poke();
+        buffer += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : Buffer.from(chunk).toString('utf8');
+        let nl;
+        while ((nl = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, nl).trim();
+          buffer = buffer.slice(nl + 1);
+          if (!line.startsWith('data:')) continue;
+          const payload = line.slice(5).trim();
+          if (!payload || payload === '[DONE]') continue;
+          let evt;
+          try { evt = JSON.parse(payload); } catch { continue; }
+          switch (evt.type) {
+            case 'response.output_text.delta': content += evt.delta || ''; break;
+            case 'response.reasoning_summary_text.delta':
+            case 'response.reasoning_text.delta': reasoning += evt.delta || ''; break;
+            case 'response.output_item.done':
+              if (evt.item?.type === 'function_call') {
+                toolCalls.push({
+                  id: evt.item.call_id || evt.item.id || `call_${Date.now().toString(36)}_${toolCalls.length}`,
+                  type: 'function',
+                  function: { name: evt.item.name, arguments: evt.item.arguments || '{}' },
+                });
+              }
+              break;
+            case 'response.completed':
+              completed = true;
+              modelUsed = evt.response?.model || modelUsed;
+              break;
+            case 'response.failed':
+            case 'response.incomplete':
+            case 'error': {
+              const err = evt.response?.error || evt.error || evt;
+              failure = { code: err.code, message: err.message || evt.response?.incomplete_details?.reason || 'the response did not finish' };
+              break;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      if (isTimeout()) return { retryable: true, error: `${label} stopped sending data mid-response (stalled stream) - retrying.` };
+      if (isAbortError(e)) return { aborted: true };
+      return { retryable: true, error: `${label} stream interrupted: ${e.message}` };
+    } finally {
+      cleanup();
+    }
+
+    if (failure && !content && !toolCalls.length) {
+      const text = `${label}: ${chatgptErrorMessage(failure.code, failure.message)}`;
+      return CHATGPT_RETRYABLE.has(failure.code) ? { retryable: true, error: text } : { done: true, value: { success: false, error: text } };
+    }
+    if (!completed && !content && !toolCalls.length) return { retryable: true, error: `${label} ended the stream without an answer - retrying.` };
+
+    const message = { role: 'assistant', content };
+    if (reasoning) message.reasoning = reasoning;
+    if (toolCalls.length) message.tool_calls = toolCalls;
+    return { done: true, value: { success: true, data: { choices: [{ message, finish_reason: toolCalls.length ? 'tool_calls' : 'stop' }], model: modelUsed }, modelUsed } };
+  }, opts.signal);
+}
+
 function chatViaCustom(messages, opts, m) {
   if (m.kind === 'ollama') return chatViaOllamaNative(messages, opts, m);
   const url = chatCompletionsUrl(m.baseUrl);
