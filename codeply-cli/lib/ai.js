@@ -967,7 +967,10 @@ async function chatViaOllamaNative(messages, opts, m) {
           let evt;
           try { evt = JSON.parse(line); } catch { continue; }
           if (evt.error) streamError = evt.error;
-          if (evt.message?.content) content += evt.message.content;
+          if (evt.message?.content) {
+            content += evt.message.content;
+            if (opts.onToken) { try { opts.onToken(evt.message.content); } catch {} }
+          }
           if (evt.message?.thinking) reasoning += evt.message.thinking;
           // Ollama sends each tool call whole (arguments as an object).
           for (const tc of evt.message?.tool_calls || []) {
