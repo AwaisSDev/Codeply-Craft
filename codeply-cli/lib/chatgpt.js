@@ -115,3 +115,35 @@ async function tokenRequest(params) {
   return body;
 }
 
+const PAGE = (title, text) => `<!doctype html><meta charset="utf-8"><title>${title}</title>
+<body style="font-family:system-ui,sans-serif;background:#1b1b1b;color:#ececec;display:grid;place-items:center;height:100vh;margin:0">
+<div style="text-align:center;max-width:360px"><h2 style="font-weight:600">${title}</h2><p style="color:#a8a8a8">${text}</p></div>`;
+
+/** One-shot loopback server on a free port; resolves with the callback's query params. */
+function listenForCallback(expectedState) {
+  let finish;
+  const result = new Promise((resolve, reject) => { finish = { resolve, reject }; });
+  result.catch(() => {}); // awaited by signIn; this only keeps an early reject from going unhandled
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1');
+    if (url.pathname !== '/callback') { res.writeHead(404); res.end(); return; }
+    const q = Object.fromEntries(url.searchParams);
+    const failed = q.error || !q.code || q.state !== expectedState;
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(failed
+      ? PAGE('Sign-in did not finish', 'Go back to Codeply Craft and try again.')
+      : PAGE('You are signed in', 'You can close this tab and go back to Codeply Craft.'));
+    if (q.error) finish.reject(new Error(q.error_description || `ChatGPT sign-in was cancelled (${q.error}).`));
+    else if (q.state !== expectedState) finish.reject(new Error('ChatGPT sign-in did not match this attempt. Try again.'));
+    else if (!q.code) finish.reject(new Error('ChatGPT sign-in returned no authorization code.'));
+    else finish.resolve(q);
+  });
+  const ready = new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => resolve(`http://127.0.0.1:${server.address().port}/callback`));
+  });
+  const timer = setTimeout(() => finish.reject(new Error('ChatGPT sign-in timed out. Try again.')), SIGN_IN_TIMEOUT_MS);
+  const close = () => { clearTimeout(timer); server.close(); };
+  return { ready, result, close };
+}
+
