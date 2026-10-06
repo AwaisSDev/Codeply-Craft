@@ -3075,3 +3075,72 @@ $('updateGateBtn').addEventListener('click', () => {
   }
   showView('viewHome');
 })();
+
+// ─── Research Mode panel (local Ollama / Ollama Cloud) ─────────────────────
+// The API key is never read back in full: the saved one shows as a masked
+// placeholder, and typing a new one replaces it.
+(function researchModePanel() {
+  if (!api || !api.researchGet || !$('rmPanel')) return;
+  let rm = { enabled: false, mode: 'local', model: '', context: '', hasKey: false, keyPreview: '' };
+
+  function setStatus(ok, text) {
+    $('rmDot').className = 'rm-dot ' + (ok ? 'ok' : 'bad');
+    $('rmStatusText').textContent = text;
+  }
+
+  function paint() {
+    $('rmToggle').checked = rm.enabled;
+    $('rmBody').classList.toggle('hidden', !rm.enabled);
+    $('rmMode').value = rm.mode;
+    $('rmKeyField').classList.toggle('hidden', rm.mode !== 'cloud');
+    $('rmKey').placeholder = rm.hasKey ? rm.keyPreview : 'Paste your key';
+    if (document.activeElement !== $('rmContext')) $('rmContext').value = rm.context;
+  }
+
+  async function refreshStatus() {
+    const sel = $('rmModel');
+    setStatus(false, 'Checking Ollama…');
+    const r = await api.researchStatus();
+    if (!r.ok) {
+      setStatus(false, rm.mode === 'cloud' ? r.error : 'Ollama not running. ' + r.error + '.');
+      sel.innerHTML = rm.model ? '<option>' + esc(rm.model) + '</option>' : '<option value="">No models</option>';
+      return;
+    }
+    setStatus(true, rm.mode === 'cloud' ? 'Ollama Cloud connected' : 'Ollama running');
+    const names = r.models.map((m) => m.name);
+    if (rm.model && !names.includes(rm.model)) names.unshift(rm.model);
+    sel.innerHTML = names.length ? names.map((n) => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('') : '<option value="">No models installed</option>';
+    if (!rm.model && names.length) { rm.model = names[0]; api.researchSave({ model: rm.model }); }
+    sel.value = rm.model;
+  }
+
+  async function save(patch) {
+    const r = await api.researchSave(patch);
+    if (r.ok) rm = r.settings;
+    paint();
+  }
+
+  $('rmToggle').addEventListener('change', async () => {
+    await save({ enabled: $('rmToggle').checked });
+    if (rm.enabled) refreshStatus();
+  });
+  $('rmMode').addEventListener('change', async () => { await save({ mode: $('rmMode').value, model: '' }); refreshStatus(); });
+  $('rmModel').addEventListener('change', () => save({ model: $('rmModel').value }));
+  $('rmKey').addEventListener('change', async () => {
+    const v = $('rmKey').value.trim();
+    $('rmKey').value = '';
+    if (v) { await save({ apiKey: v }); refreshStatus(); }
+  });
+  $('rmContext').addEventListener('change', () => save({ context: $('rmContext').value }));
+  $('rmRefresh').addEventListener('click', refreshStatus);
+  $('rmTest').addEventListener('click', async () => {
+    const out = $('rmOut');
+    out.className = 'rm-out';
+    out.textContent = '';
+    const r = await api.researchTest();
+    if (!r.ok) { out.className = 'rm-out error'; out.textContent = r.error; }
+  });
+  api.onResearchToken((t) => { const out = $('rmOut'); out.classList.remove('hidden'); out.textContent += t; });
+
+  api.researchGet().then((r) => { if (r && r.ok) { rm = r.settings; paint(); refreshStatus(); } });
+})();
