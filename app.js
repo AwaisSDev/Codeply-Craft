@@ -1381,6 +1381,10 @@ const MODEL_PRESETS = [
 
 const SPARK_SVG = '<svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9Z"/><path d="M19 15l.7 1.8L21.5 17.5l-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7Z"/></svg>';
 const CHIP_SVG = '<svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M9 1.5v3M15 1.5v3M9 19.5v3M15 19.5v3M1.5 9h3M1.5 15h3M19.5 9h3M19.5 15h3"/></svg>';
+// OpenAI's own Blossom mark, unmodified, from openai.com/brand (assets/brand/).
+// styles.css swaps the white and black files with the theme; OpenAI's rules
+// forbid recoloring it, so it's never tinted with currentColor.
+const CHATGPT_SVG = '<span class="chatgpt-mark" role="img" aria-label="ChatGPT"></span>';
 const LLAMA_SVG = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2.5"/><path d="M8 20h8M12 16v4"/><path d="M7.5 9.5l2 1.5-2 1.5M12 12.5h4"/></svg>';
 
 function selectedModel() {
