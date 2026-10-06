@@ -1009,6 +1009,50 @@ function toResponsesContent(content, role) {
     return { type: role === 'assistant' ? 'output_text' : 'input_text', text: p.text || '' };
   });
 }
+
+function toResponsesRequest(messages, opts) {
+  const instructions = [];
+  const input = [];
+  for (const m of opts.tools ? messages : textOnlyMessages(messages)) {
+    if (m.role === 'system') {
+      instructions.push(typeof m.content === 'string' ? m.content : toResponsesContent(m.content).map((p) => p.text).join('\n'));
+    } else if (m.role === 'tool') {
+      input.push({ type: 'function_call_output', call_id: m.tool_call_id, output: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) });
+    } else {
+      const hasText = Array.isArray(m.content) ? m.content.length > 0 : !!m.content;
+      if (hasText) input.push({ role: m.role, content: toResponsesContent(m.content, m.role) });
+      for (const c of m.tool_calls || []) {
+        input.push({ type: 'function_call', call_id: c.id, name: c.function?.name, arguments: c.function?.arguments || '{}' });
+      }
+    }
+  }
+  const body = { model: opts.model, input, store: false, stream: true };
+  if (instructions.length) body.instructions = instructions.join('\n\n');
+  if (opts.maxTokens) body.max_output_tokens = Math.max(16, opts.maxTokens);
+  if (opts.tools) {
+    body.tools = opts.tools.map((t) => ({ type: 'function', name: t.function.name, description: t.function.description, parameters: t.function.parameters }));
+    body.tool_choice = 'auto';
+  }
+  return body;
+}
+
+// Plan-usage errors come back as structured codes; these are the ones a
+// person can act on (developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery).
+function chatgptErrorMessage(code, fallback) {
+  switch (code) {
+    case 'subscription_sharing_usage_limit_exceeded':
+      return 'You reached the ChatGPT plan usage allowed for Craft. Manage usage at chatgpt.com/settings/usage, or pick another model.';
+    case 'subscription_sharing_user_not_eligible':
+      return 'Your ChatGPT plan or workspace can’t be used in other apps. Pick another model, or check your plan at chatgpt.com.';
+    case 'subscription_sharing_invalid_user':
+      return 'Your ChatGPT sign-in is no longer valid. Sign in again from the model menu.';
+    case 'subscription_sharing_unsupported_capability':
+      return `ChatGPT plan models don’t support part of this request (${fallback}).`;
+    default:
+      return fallback;
+  }
+}
+const CHATGPT_RETRYABLE = new Set(['subscription_sharing_usage_unavailable', 'subscription_sharing_user_unavailable']);
 function chatViaCustom(messages, opts, m) {
   if (m.kind === 'ollama') return chatViaOllamaNative(messages, opts, m);
   const url = chatCompletionsUrl(m.baseUrl);
