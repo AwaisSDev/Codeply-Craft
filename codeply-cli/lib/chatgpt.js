@@ -34,3 +34,16 @@ const USAGE_URL = 'https://chatgpt.com/settings/usage';
 
 const storePath = path.join(os.homedir(), '.codeply', 'chatgpt.json');
 
+function readStore() {
+  try { return JSON.parse(fs.readFileSync(storePath, 'utf8')) || {}; } catch { return {}; }
+}
+
+/** Atomic, owner-only write - the file holds a refresh token. */
+function writeStore(data) {
+  fs.mkdirSync(path.dirname(storePath), { recursive: true });
+  const tmp = `${storePath}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, storePath);
+  try { fs.chmodSync(storePath, 0o600); } catch {}
+}
+
