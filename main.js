@@ -745,6 +745,17 @@ ipcMain.handle('models:detectOllama', async (e, host) => {
 });
 
 
+// ─── Codeply Crew ───────────────────────────────────────────────────────────
+// Crew is part of Craft now: its own window (with the Crew logo), the same
+// engine and the same ~/.codeply bots. crew/crew-main.js registers its
+// "crew:"-prefixed handlers the first time it is loaded.
+let crewMod = null;
+ipcMain.handle('crew:open', () => {
+  if (!crewMod) crewMod = require('./crew/crew-main');
+  crewMod.open(CLI_DIR);
+  return { ok: true };
+});
+
 // ─── ChatGPT plan (Sign in with ChatGPT) ────────────────────────────────────
 // OpenAI's official flow for local/open-source apps: the user signs in in
 // their own browser and their ChatGPT plan pays for the model calls. The
@@ -3107,17 +3118,6 @@ app.whenReady().then(() => {
   // Covers both the mac dock-icon-click convention and the (now rare, since
   // closing hides rather than destroys) case of no window existing at all.
   app.on('activate', showWindow);
-});
-
-// ─── Codeply Crew ───────────────────────────────────────────────────────────
-// Crew is part of Craft now: its own window (with the Crew logo), the same
-// engine and the same ~/.codeply bots. crew/crew-main.js registers its
-// "crew:"-prefixed handlers the first time it is loaded.
-let crewMod = null;
-ipcMain.handle('crew:open', () => {
-  if (!crewMod) crewMod = require('./crew/crew-main');
-  crewMod.open(CLI_DIR);
-  return { ok: true };
 });
 
 app.on('window-all-closed', () => {
