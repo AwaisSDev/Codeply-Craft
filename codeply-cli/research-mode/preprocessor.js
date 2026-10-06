@@ -15,3 +15,9 @@ function preprocess({ messages, mode, model, researchContext } = {}) {
   return { messages: list, system: text };
 }
 
+/** Messages with the context (if any) as a leading system message. */
+function withSystem({ messages, system }) {
+  return system ? [{ role: 'system', content: system }, ...messages] : messages;
+}
+
+module.exports = { preprocess, withSystem };
