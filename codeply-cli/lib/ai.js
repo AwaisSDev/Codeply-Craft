@@ -1163,6 +1163,7 @@ async function chatViaChatGPT(messages, opts, m) {
 }
 
 function chatViaCustom(messages, opts, m) {
+  if (m.kind === 'chatgpt') return chatViaChatGPT(messages, opts, m);
   if (m.kind === 'ollama') return chatViaOllamaNative(messages, opts, m);
   const url = chatCompletionsUrl(m.baseUrl);
   const local = isLocalUrl(url);
