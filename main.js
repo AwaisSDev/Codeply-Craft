@@ -744,6 +744,22 @@ ipcMain.handle('models:detectOllama', async (e, host) => {
   return aiLib.listOllamaModels(host || 'http://localhost:11434');
 });
 
+
+// ─── ChatGPT plan (Sign in with ChatGPT) ────────────────────────────────────
+// OpenAI's official flow for local/open-source apps: the user signs in in
+// their own browser and their ChatGPT plan pays for the model calls. The
+// plan's models show up as ordinary entries in the model picker (kind
+// "chatgpt"); tokens stay in ~/.codeply/chatgpt.json, see chatgpt.js.
+
+/** Pulls the plan's current model list into the picker. */
+async function refreshChatGPTModels() {
+  const list = await chatgptLib.listModels();
+  const r = configLib.syncChatGPTModels(list);
+  if (!r.ok) throw new Error(r.error);
+  const state = modelsState();
+  if (win && !win.isDestroyed()) win.webContents.send('models:changed', state);
+  return state;
+}
 // ─── Gmail / Slack integrations (real OAuth via the system browser) ───────
 // Desktop OAuth per RFC 8252: open the consent screen in the user's actual
 // system browser (never an embedded webview - that's exactly what providers
