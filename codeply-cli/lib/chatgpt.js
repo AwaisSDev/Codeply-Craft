@@ -147,3 +147,64 @@ function listenForCallback(expectedState) {
   return { ready, result, close };
 }
 
+/**
+ * Full sign-in: opens the browser, waits for the redirect, exchanges the code,
+ * verifies the ID token and saves the profile. Reuses the client_id issued on
+ * an earlier sign-in (the docs: never reuse dynamic_agent_client).
+ */
+async function signIn({ openBrowser }) {
+  const store = readStore();
+  const verifier = randomToken();
+  const state = randomToken();
+  const nonce = randomToken();
+  const listener = listenForCallback(state);
+  try {
+    const redirectUri = await listener.ready;
+    const params = new URLSearchParams({
+      client_id: store.clientId || DYNAMIC_CLIENT,
+      ext_agent_host_id: hostId(),
+      response_type: 'code',
+      redirect_uri: redirectUri,
+      scope: SCOPE,
+      resource: RESOURCE,
+      state,
+      nonce,
+      code_challenge_method: 'S256',
+      code_challenge: b64url(crypto.createHash('sha256').update(verifier).digest()),
+    });
+    if (!store.clientId) params.set('agent_name_hint', APP_NAME);
+    if (store.email) params.set('login_hint', store.email);
+    await openBrowser(`${AUTHORIZE_URL}?${params}`);
+
+    const callback = await listener.result;
+    const clientId = callback.client_id || store.clientId;
+    if (!clientId || clientId === DYNAMIC_CLIENT) throw new Error('ChatGPT sign-in did not register this app. Try again.');
+
+    const tokens = await tokenRequest({
+      grant_type: 'authorization_code',
+      client_id: clientId,
+      code: callback.code,
+      code_verifier: verifier,
+      redirect_uri: redirectUri,
+      resource: RESOURCE,
+    });
+    const claims = await verifyIdToken(tokens.id_token, { clientId, nonce });
+    const scopes = String(tokens.scope || callback.scope || '').split(/\s+/).filter(Boolean);
+    writeStore({
+      ...readStore(),
+      clientId,
+      subject: claims.sub,
+      email: claims.email || '',
+      name: claims.name || '',
+      idToken: tokens.id_token,
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresAt: Date.now() + (tokens.expires_in || 3600) * 1000,
+      scopes,
+    });
+    return status();
+  } finally {
+    listener.close();
+  }
+}
+
