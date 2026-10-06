@@ -63,3 +63,14 @@ function hostId() {
 const b64url = (buf) => Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const randomToken = () => b64url(crypto.randomBytes(32));
 
+function decodeJwt(token) {
+  const [h, p, s] = String(token || '').split('.');
+  if (!h || !p || !s) throw new Error('Malformed token.');
+  return {
+    header: JSON.parse(Buffer.from(h, 'base64url').toString('utf8')),
+    payload: JSON.parse(Buffer.from(p, 'base64url').toString('utf8')),
+    signingInput: `${h}.${p}`,
+    signature: Buffer.from(s, 'base64url'),
+  };
+}
+
