@@ -347,6 +347,34 @@ function selectModel(id) {
   return writeFile(file);
 }
 
+/**
+ * The models the signed-in ChatGPT plan offers (see chatgpt.js), kept as
+ * kind "chatgpt" entries so the pickers, routing and the phone all treat them
+ * like any other model. No key is stored: chatgpt.js holds the tokens.
+ * Passing [] removes them all (sign-out); the selection falls back to Auto if
+ * the chosen one went away.
+ */
+function syncChatGPTModels(list) {
+  const file = readModelsState();
+  const existing = file.models.filter((m) => m.kind === 'chatgpt');
+  const next = (list || []).map((x) => {
+    const prev = existing.find((m) => m.model === x.slug);
+    return {
+      id: prev ? prev.id : newModelId(),
+      name: x.name || x.slug,
+      kind: 'chatgpt',
+      baseUrl: 'https://api.openai.com/v1',
+      model: x.slug,
+      apiKey: '',
+      createdAt: prev?.createdAt || Date.now(),
+    };
+  });
+  file.models = [...file.models.filter((m) => m.kind !== 'chatgpt'), ...next];
+  if (file.selectedModel !== AUTO_MODEL_ID && !file.models.some((m) => m.id === file.selectedModel)) file.selectedModel = AUTO_MODEL_ID;
+  const w = writeFile(file);
+  return w.ok ? { ok: true, models: next } : w;
+}
+
 /** Never render a key in full - this is what goes on screen and in logs. */
 function maskKey(key) {
   if (!key) return '(none)';
@@ -388,5 +416,5 @@ module.exports = {
   getConfig, saveConfig, maskKey, describeProvider, describeProviderShort, byokHint,
   configPath, PROVIDERS, BYOK_PROVIDERS,
   getIntegration, saveIntegration, disconnectIntegration, isIntegrationConnected, INTEGRATIONS,
-  AUTO_MODEL_ID, getModels, getModel, getSelectedModel, getSelectedModelId, saveModel, deleteModel, selectModel,
+  AUTO_MODEL_ID, getModels, getModel, getSelectedModel, getSelectedModelId, saveModel, deleteModel, selectModel, syncChatGPTModels,
 };
