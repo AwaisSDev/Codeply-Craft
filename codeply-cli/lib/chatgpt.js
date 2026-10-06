@@ -74,3 +74,14 @@ function decodeJwt(token) {
   };
 }
 
+let jwksCache = null;
+async function signingKey(kid) {
+  if (!jwksCache || !jwksCache.keys.some((k) => k.kid === kid)) {
+    const disco = await (await fetch(`${ISSUER}/.well-known/openid-configuration`)).json();
+    jwksCache = await (await fetch(disco.jwks_uri)).json();
+  }
+  const jwk = jwksCache.keys.find((k) => k.kid === kid);
+  if (!jwk) throw new Error('ChatGPT sign-in returned a token signed with an unknown key.');
+  return crypto.createPublicKey({ key: jwk, format: 'jwk' });
+}
+
