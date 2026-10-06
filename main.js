@@ -763,6 +763,43 @@ ipcMain.handle('crew:open', () => {
   return { ok: true };
 });
 
+ipcMain.handle('research:get', async () => {
+  if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
+  return { ok: true, settings: publicResearch() };
+});
+
+// patch: { enabled?, mode?, model?, context?, apiKey? } (apiKey undefined keeps the saved one, '' clears it)
+ipcMain.handle('research:save', async (e, patch) => {
+  if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
+  const p = patch || {};
+  const next = {};
+  if (typeof p.enabled === 'boolean') next.enabled = p.enabled;
+  if (p.mode === 'local' || p.mode === 'cloud') next.mode = p.mode;
+  if (typeof p.model === 'string') next.model = p.model.trim();
+  if (typeof p.context === 'string') next.context = p.context.slice(0, 2000);
+  if (typeof p.apiKey === 'string') next.apiKey = p.apiKey.trim();
+  const r = configLib.saveConfig({ research: next });
+  return r.ok ? { ok: true, settings: publicResearch() } : r;
+});
+
+// Connection status plus the installed models (GET /api/tags).
+ipcMain.handle('research:status', async () => {
+  if (!(await loadEngine())) return { ok: false, models: [], error: 'Engine not available.' };
+  return require(path.join(CLI_DIR, 'research-mode', 'ollama.js')).listModels(configLib.getConfig().research);
+});
+
+// A short streamed reply so the panel can show tokens arriving.
+ipcMain.handle('research:test', async (e) => {
+  if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
+  const rm = configLib.getConfig().research;
+  const r = await aiLib.chatResearch([{ role: 'user', content: 'Say hello in one short sentence.' }], {
+    maxTokens: 60,
+    signal: AbortSignal.timeout(90_000),
+    onToken: (t) => { if (!e.sender.isDestroyed()) e.sender.send('research:token', t); },
+  }, rm);
+  return r.success ? { ok: true } : { ok: false, error: r.aborted ? 'Timed out.' : r.error };
+});
+
 // ─── ChatGPT plan (Sign in with ChatGPT) ────────────────────────────────────
 // OpenAI's official flow for local/open-source apps: the user signs in in
 // their own browser and their ChatGPT plan pays for the model calls. The
