@@ -760,6 +760,14 @@ async function refreshChatGPTModels() {
   if (win && !win.isDestroyed()) win.webContents.send('models:changed', state);
   return state;
 }
+
+ipcMain.handle('chatgpt:status', async (e, { refresh } = {}) => {
+  if (!(await loadEngine())) return { signedIn: false };
+  const status = chatgptLib.status();
+  // Picks up models the plan gained or lost since last time, quietly.
+  if (refresh && status.sharing) refreshChatGPTModels().catch(() => {});
+  return status;
+});
 // ─── Gmail / Slack integrations (real OAuth via the system browser) ───────
 // Desktop OAuth per RFC 8252: open the consent screen in the user's actual
 // system browser (never an embedded webview - that's exactly what providers
