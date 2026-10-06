@@ -85,3 +85,18 @@ async function signingKey(kid) {
   return crypto.createPublicKey({ key: jwk, format: 'jwk' });
 }
 
+/** Signature, issuer, audience, nonce and expiry - all required by the docs before trusting the profile. */
+async function verifyIdToken(idToken, { clientId, nonce }) {
+  const { header, payload, signingInput, signature } = decodeJwt(idToken);
+  const algs = { RS256: 'sha256', RS384: 'sha384', RS512: 'sha512' };
+  if (!algs[header.alg]) throw new Error(`Unsupported ID token algorithm ${header.alg}.`);
+  const ok = crypto.verify(algs[header.alg], Buffer.from(signingInput), await signingKey(header.kid), signature);
+  if (!ok) throw new Error('ChatGPT sign-in returned an ID token with a bad signature.');
+  const aud = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+  if (payload.iss !== ISSUER) throw new Error('ChatGPT sign-in returned a token from the wrong issuer.');
+  if (!aud.includes(clientId)) throw new Error('ChatGPT sign-in returned a token for a different app.');
+  if (nonce && payload.nonce !== nonce) throw new Error('ChatGPT sign-in did not match this attempt. Try again.');
+  if (payload.exp && payload.exp * 1000 < Date.now() - 60_000) throw new Error('ChatGPT sign-in returned an expired token.');
+  return payload;
+}
+
