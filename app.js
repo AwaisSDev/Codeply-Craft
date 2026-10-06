@@ -1516,6 +1516,32 @@ function openModelMenu(anchorBtn) {
   modelMenuEl = menu;
 }
 
+// ─── Sign in with ChatGPT ───────────────────────────────────────────────────
+// Opens OpenAI's sign-in in the browser; the plan's models then join the
+// model menu. main.js / chatgpt.js do the OAuth and keep the tokens.
+const CHATGPT_USAGE_URL = 'https://chatgpt.com/settings/usage';
+let chatgptSigningIn = false;
+
+async function signInWithChatGPT() {
+  if (chatgptSigningIn) return;
+  chatgptSigningIn = true;
+  showToast('Finish signing in to ChatGPT in your browser…');
+  try {
+    const r = await api.chatgptSignIn();
+    if (!r.ok) { showToast(r.error || 'ChatGPT sign-in failed.', 'error'); return; }
+    state.chatgpt = r.status;
+    applyModelsState(r.state);
+    if (r.warning) { alert(r.warning); return; }
+    // The first model the plan offers becomes the pick, so the sign-in does something visible.
+    const first = state.models.models.find((m) => m.kind === 'chatgpt');
+    if (first) await pickModel(first.id);
+    // The disclosure OpenAI asks apps to show after the first sign-in.
+    alert('Eligible usage in this app uses your ChatGPT plan. Manage usage in your ChatGPT settings (chatgpt.com/settings/usage).');
+  } finally {
+    chatgptSigningIn = false;
+  }
+}
+
 document.querySelectorAll('[data-role="model-chip"]').forEach((btn) =>
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
