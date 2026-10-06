@@ -469,6 +469,7 @@ ipcMain.handle('app:init', async () => {
     engineOk: true,
     user,
     models: modelsState(),
+    chatgpt: chatgptLib.status(),
     needsLogin: !user,
     needsOnboarding: !!user && !!onboarding && (!onboarding.referral_source || !onboarding.country),
     onboarding,
