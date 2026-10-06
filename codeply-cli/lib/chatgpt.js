@@ -229,3 +229,41 @@ function status() {
   };
 }
 
+const REFRESH_DEAD = new Set(['invalid_grant', 'invalid_refresh_token', 'token_expired', 'refresh_token_expired', 'refresh_token_invalidated', 'refresh_token_reused']);
+
+let refreshing = null;
+/** A valid access token, refreshed a minute before it expires. Throws a user-facing message when signed out. */
+async function accessToken({ force = false } = {}) {
+  const s = readStore();
+  if (!s.refreshToken && !s.accessToken) throw new Error('Sign in with ChatGPT again from the model menu to use this model.');
+  if (!force && s.accessToken && s.expiresAt > Date.now() + 60_000) return s.accessToken;
+  if (!s.refreshToken) throw new Error('Your ChatGPT sign-in expired. Sign in again from the model menu.');
+  refreshing = refreshing || (async () => {
+    try {
+      const tokens = await tokenRequest({
+        grant_type: 'refresh_token',
+        client_id: s.clientId,
+        refresh_token: s.refreshToken,
+        resource: RESOURCE,
+      });
+      writeStore({
+        ...readStore(),
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || s.refreshToken,
+        expiresAt: Date.now() + (tokens.expires_in || 3600) * 1000,
+        ...(tokens.scope ? { scopes: String(tokens.scope).split(/\s+/).filter(Boolean) } : {}),
+      });
+      return tokens.access_token;
+    } catch (e) {
+      if (REFRESH_DEAD.has(e.code)) {
+        signOut();
+        throw new Error('Your ChatGPT sign-in expired. Sign in again from the model menu.');
+      }
+      throw e;
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
+}
+
