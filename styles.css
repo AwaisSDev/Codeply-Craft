@@ -36,6 +36,7 @@
   --invert-text: #141414;
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
   --composer-shadow: none;
+  --chatgpt-mark: url("assets/brand/openai-blossom-white.svg");
   --font-ui: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --font-mono: ui-monospace, "Cascadia Code", "Cascadia Mono", "SF Mono", Consolas, monospace;
   --radius-lg: 18px;
@@ -74,6 +75,7 @@
     --invert-text: #ffffff;
     --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.10), 0 1px 3px rgba(0, 0, 0, 0.06);
     --composer-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    --chatgpt-mark: url("assets/brand/openai-blossom-black.svg");
   }
 }
 
@@ -107,6 +109,7 @@
   --invert-text: #ffffff;
   --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.10), 0 1px 3px rgba(0, 0, 0, 0.06);
   --composer-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  --chatgpt-mark: url("assets/brand/openai-blossom-black.svg");
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
