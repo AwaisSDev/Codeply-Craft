@@ -1400,11 +1400,17 @@ function applyModelsState(models) {
   if (models && Array.isArray(models.models)) state.models = models;
   const m = selectedModel();
   const label = m ? m.name : 'Auto';
-  const kind = m ? (m.kind === 'ollama' ? 'local' : 'custom') : 'auto';
-  document.querySelectorAll('[data-role="model-name"]').forEach((el) => (el.textContent = label));
+  const kind = m ? (m.kind === 'ollama' ? 'local' : m.kind === 'chatgpt' ? 'chatgpt' : 'custom') : 'auto';
+  document.querySelectorAll('[data-role="model-name"]').forEach((el) => {
+    el.textContent = label;
+    // OpenAI asks for "Using ChatGPT plan" next to the model picker while a plan model is in use.
+    el.toggleAttribute('data-plan', kind === 'chatgpt');
+  });
   document.querySelectorAll('[data-role="model-chip"]').forEach((el) => {
     el.dataset.kind = kind;
-    el.title = m ? `${m.name} - ${m.model} on ${hostOf(m.baseUrl)}` : 'Auto - Gemma 4 31B, run by Codeply';
+    el.title = !m ? 'Auto - Gemma 4 31B, run by Codeply'
+      : kind === 'chatgpt' ? `${m.name} - using your ChatGPT plan`
+      : `${m.name} - ${m.model} on ${hostOf(m.baseUrl)}`;
   });
 }
 
