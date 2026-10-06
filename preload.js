@@ -40,6 +40,13 @@ contextBridge.exposeInMainWorld('craft', {
   chatgptSignIn: () => ipcRenderer.invoke('chatgpt:signIn'),
   chatgptSignOut: () => ipcRenderer.invoke('chatgpt:signOut'),
 
+  // Research Mode (local Ollama / Ollama Cloud); the key is only ever returned masked
+  researchGet: () => ipcRenderer.invoke('research:get'),
+  researchSave: (patch) => ipcRenderer.invoke('research:save', patch),
+  researchStatus: () => ipcRenderer.invoke('research:status'),
+  researchTest: () => ipcRenderer.invoke('research:test'),
+  onResearchToken: (cb) => ipcRenderer.on('research:token', (e, t) => cb(t)),
+
   // skills
   listSkills: () => ipcRenderer.invoke('skills:list'),
 
