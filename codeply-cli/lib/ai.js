@@ -936,11 +936,13 @@ async function chatViaOllamaNative(messages, opts, m) {
       cleanup();
       if (isTimeout()) return { retryable: true, error: `Ollama at ${host} didn't respond in time. Large models can take a while to load - try again, or pick a smaller model.` };
       if (isAbortError(e)) return { aborted: true };
+      if (m.research === 'local') return { done: true, value: { success: false, error: researchMode().ERR_LOCAL_DOWN } };
       return { retryable: false, error: local ? `Can't reach Ollama at ${host}. Is Ollama running? (Start it with \`ollama serve\` or open the Ollama app.)` : `Can't reach ${host}: ${e.message}` };
     }
 
     if (!res.ok) {
       cleanup();
+      if (m.research === 'cloud' && (res.status === 401 || res.status === 403)) return { done: true, value: { success: false, error: researchMode().ERR_CLOUD_KEY } };
       const body = await res.json().catch(() => ({}));
       const msg = body.error || describeStatus(res.status);
       const fatal = res.status === 404 || /not found|pull/i.test(String(msg));
