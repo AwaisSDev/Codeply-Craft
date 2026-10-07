@@ -25,7 +25,7 @@
 
 <!-- ============ TITLE BAR ============ -->
 <header class="titlebar">
-  <button class="tb-icon-btn hidden" id="sidebarExpandBtn" title="Show sidebar">
+  <button class="tb-icon-btn icon-btn icon-btn-sm hidden" id="sidebarExpandBtn" title="Show sidebar">
     <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><line x1="9.5" y1="4" x2="9.5" y2="20"/></svg>
   </button>
   <div class="titlebar-drag"></div>
@@ -48,16 +48,16 @@
      real HTML, giving the docked page real chrome (address bar, back/
      forward/reload) instead of being a bare pasted-in rectangle. -->
 <div class="browser-chrome hidden" id="browserChrome">
-  <button class="bc-btn" id="bcBack" title="Back" disabled><svg viewBox="0 0 24 24"><path d="M14 6l-6 6 6 6"/></svg></button>
-  <button class="bc-btn" id="bcForward" title="Forward" disabled><svg viewBox="0 0 24 24"><path d="M10 6l6 6-6 6"/></svg></button>
-  <button class="bc-btn" id="bcReload" title="Reload"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3"/><path d="M18 3v5h-5"/><path d="M6 21v-5h5"/></svg></button>
+  <button class="bc-btn icon-btn icon-btn-sm" id="bcBack" title="Back" disabled><svg viewBox="0 0 24 24"><path d="M14 6l-6 6 6 6"/></svg></button>
+  <button class="bc-btn icon-btn icon-btn-sm" id="bcForward" title="Forward" disabled><svg viewBox="0 0 24 24"><path d="M10 6l6 6-6 6"/></svg></button>
+  <button class="bc-btn icon-btn icon-btn-sm" id="bcReload" title="Reload"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3"/><path d="M18 3v5h-5"/><path d="M6 21v-5h5"/></svg></button>
   <input class="bc-url" id="bcUrl" type="text" placeholder="No page checked yet" spellcheck="false" autocomplete="off">
-  <div class="bc-sizes" role="group" aria-label="Viewport size">
-    <button class="bc-size active" data-size="desktop" title="Desktop"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button>
-    <button class="bc-size" data-size="tablet" title="Tablet (768px)"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg></button>
-    <button class="bc-size" data-size="mobile" title="Mobile (390px)"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg></button>
+  <div class="bc-sizes segmented segmented-sm" role="group" aria-label="Viewport size">
+    <button class="bc-size segmented-item active" data-size="desktop" title="Desktop"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button>
+    <button class="bc-size segmented-item" data-size="tablet" title="Tablet (768px)"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg></button>
+    <button class="bc-size segmented-item" data-size="mobile" title="Mobile (390px)"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg></button>
   </div>
-  <button class="bc-btn" id="bcClose" title="Close browser panel"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+  <button class="bc-btn icon-btn icon-btn-sm" id="bcClose" title="Close browser panel"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
 </div>
 
 <!-- ============ EMBEDDED TERMINAL ============ -->
@@ -67,8 +67,8 @@
   <div class="terminal-panel-head">
     <span class="terminal-panel-title">Terminal</span>
     <div class="terminal-panel-actions">
-      <button class="bc-btn" id="termClearBtn" title="Clear"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg></button>
-      <button class="bc-btn" id="termCloseBtn" title="Close terminal"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+      <button class="icon-btn icon-btn-sm" id="termClearBtn" title="Clear"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg></button>
+      <button class="icon-btn icon-btn-sm" id="termCloseBtn" title="Close terminal"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     </div>
   </div>
   <div class="terminal-panel-body" id="terminalBody"></div>
@@ -80,7 +80,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sb-header">
       <button class="sb-brand">Codeply Craft</button>
-      <button class="tb-icon-btn" id="sidebarToggle" title="Toggle sidebar">
+      <button class="tb-icon-btn icon-btn icon-btn-sm" id="sidebarToggle" title="Toggle sidebar">
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><line x1="9.5" y1="4" x2="9.5" y2="20"/></svg>
       </button>
     </div>
@@ -118,7 +118,7 @@
       <div class="sb-section" id="recentsSection">
         <div class="sb-section-title sb-section-title-row">
           <span>Recents</span>
-          <button class="sb-refresh-btn" id="refreshChatsBtn" type="button" title="Refresh chats (picks up chats started from your phone)" aria-label="Refresh chats">
+          <button class="sb-refresh-btn icon-btn icon-btn-xs" id="refreshChatsBtn" type="button" title="Refresh chats (picks up chats started from your phone)" aria-label="Refresh chats">
             <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>
           </button>
         </div>
@@ -129,23 +129,23 @@
     <div class="rm-panel" id="rmPanel">
       <label class="rm-row rm-toggle-row">
         <span class="rm-title">Research Mode (Local)</span>
-        <input type="checkbox" id="rmToggle" class="rm-switch" role="switch" aria-label="Research Mode (Local)">
+        <input type="checkbox" id="rmToggle" class="switch" role="switch" aria-label="Research Mode (Local)">
       </label>
       <div class="rm-status" id="rmStatus"><span class="rm-dot" id="rmDot"></span><span id="rmStatusText">Checking Ollama…</span></div>
       <div class="rm-body hidden" id="rmBody">
         <label class="rm-field"><span>Where to run</span>
-          <select id="rmMode"><option value="local">Local Ollama</option><option value="cloud">Ollama Cloud</option></select>
+          <select class="select input-sm" id="rmMode"><option value="local">Local Ollama</option><option value="cloud">Ollama Cloud</option></select>
         </label>
         <label class="rm-field"><span>Model</span>
-          <select id="rmModel" aria-label="Model"></select>
+          <select class="select input-sm" id="rmModel" aria-label="Model"></select>
         </label>
         <label class="rm-field hidden" id="rmKeyField"><span>Ollama Cloud API key</span>
-          <input id="rmKey" type="password" autocomplete="off" spellcheck="false" placeholder="">
+          <input class="input input-sm" id="rmKey" type="password" autocomplete="off" spellcheck="false" placeholder="">
         </label>
         <label class="rm-field"><span>Research context (optional)</span>
-          <textarea id="rmContext" rows="2" spellcheck="false" placeholder="Plain context you want sent as a system message"></textarea>
+          <textarea class="textarea" id="rmContext" rows="2" spellcheck="false" placeholder="Plain context you want sent as a system message"></textarea>
         </label>
-        <div class="rm-actions"><button class="btn-quiet" id="rmRefresh" type="button">Refresh</button><button class="btn-quiet" id="rmTest" type="button">Test</button></div>
+        <div class="rm-actions"><button class="btn btn-secondary btn-sm" id="rmRefresh" type="button">Refresh</button><button class="btn btn-secondary btn-sm" id="rmTest" type="button">Test</button></div>
         <div class="rm-out hidden" id="rmOut"></div>
       </div>
     </div>
@@ -175,39 +175,39 @@
         <h1 class="login-title">Welcome to Codeply</h1>
         <p class="login-sub">Same account as the Codeply desktop app and CLI.</p>
 
-        <button class="oauth-btn" id="googleBtn" type="button">
+        <button class="btn btn-secondary btn-lg btn-block oauth-btn" id="googleBtn" type="button">
           <img class="oauth-btn-icon" src="google.png" alt="">
           Continue with Google
         </button>
         <div class="login-divider">or continue with email</div>
 
-        <div class="auth-tabs" id="authTabs">
-          <button class="auth-tab active" data-tab="signin">Sign in</button>
-          <button class="auth-tab" data-tab="signup">Sign up</button>
+        <div class="auth-tabs segmented" id="authTabs">
+          <button class="auth-tab segmented-item active" data-tab="signin">Sign in</button>
+          <button class="auth-tab segmented-item" data-tab="signup">Sign up</button>
         </div>
 
         <!-- Sign in: email + password, then an emailed code -->
         <div class="login-step" id="stepSignin">
-          <input class="login-input" id="signinEmail" type="email" placeholder="you@example.com" autocomplete="email">
-          <input class="login-input" id="signinPassword" type="password" placeholder="Password" autocomplete="current-password">
-          <button class="login-btn" id="signinBtn">Sign in</button>
+          <input class="input input-lg login-input" id="signinEmail" type="email" placeholder="you@example.com" autocomplete="email">
+          <input class="input input-lg login-input" id="signinPassword" type="password" placeholder="Password" autocomplete="current-password">
+          <button class="btn btn-primary btn-lg btn-block login-btn" id="signinBtn">Sign in</button>
         </div>
 
         <!-- Sign up: name + email + password, then an emailed code -->
         <div class="login-step hidden" id="stepSignup">
-          <input class="login-input" id="signupName" type="text" placeholder="Your name" autocomplete="name">
-          <input class="login-input" id="signupEmail" type="email" placeholder="you@example.com" autocomplete="email">
-          <input class="login-input" id="signupPassword" type="password" placeholder="At least 6 characters" autocomplete="new-password">
-          <button class="login-btn" id="signupBtn">Create account</button>
+          <input class="input input-lg login-input" id="signupName" type="text" placeholder="Your name" autocomplete="name">
+          <input class="input input-lg login-input" id="signupEmail" type="email" placeholder="you@example.com" autocomplete="email">
+          <input class="input input-lg login-input" id="signupPassword" type="password" placeholder="At least 6 characters" autocomplete="new-password">
+          <button class="btn btn-primary btn-lg btn-block login-btn" id="signupBtn">Create account</button>
         </div>
 
         <!-- Emailed code (6 to 10 digits), shared by both flows -->
         <div class="login-step hidden" id="stepOtp">
           <p class="login-sub" id="otpSentTo"></p>
-          <input class="login-input code" id="otpCode" type="text" inputmode="numeric" maxlength="12" placeholder="Code from the email">
-          <button class="login-btn" id="verifyOtpBtn">Verify &amp; continue</button>
-          <button class="login-link" id="resendOtpBtn">Resend code</button>
-          <button class="login-link" id="backFromOtpBtn">Use a different email</button>
+          <input class="input input-lg login-input code" id="otpCode" type="text" inputmode="numeric" maxlength="12" placeholder="Code from the email">
+          <button class="btn btn-primary btn-lg btn-block login-btn" id="verifyOtpBtn">Verify &amp; continue</button>
+          <button class="btn btn-ghost btn-sm login-link" id="resendOtpBtn">Resend code</button>
+          <button class="btn btn-ghost btn-sm login-link" id="backFromOtpBtn">Use a different email</button>
         </div>
 
         <div class="login-error hidden" id="loginError"></div>
@@ -238,14 +238,14 @@
             Twitter (X)
           </button>
           <div class="referral-other-wrap hidden" id="referralOtherWrap">
-            <input class="login-input" id="referralOtherInput" type="text" placeholder="Tell us where...">
+            <input class="input input-lg login-input" id="referralOtherInput" type="text" placeholder="Tell us where...">
           </div>
           <button class="referral-opt wide" type="button" data-value="Other" id="referralOtherBtn">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
             Other
           </button>
         </div>
-        <button class="login-btn" id="referralContinueBtn" disabled>Continue</button>
+        <button class="btn btn-primary btn-lg btn-block login-btn" id="referralContinueBtn" disabled>Continue</button>
       </div>
     </section>
 
@@ -255,10 +255,10 @@
         <img class="login-logo" src="logo.png" alt="Codeply Craft">
         <h1 class="login-title">Which country are you from?</h1>
         <p class="login-sub">Helps us understand where Codeply is used.</p>
-        <select class="login-input" id="countrySelect">
+        <select class="select input-lg login-input" id="countrySelect">
           <option value="" disabled selected>Select your country</option>
         </select>
-        <button class="login-btn" id="countryContinueBtn" disabled>Continue</button>
+        <button class="btn btn-primary btn-lg btn-block login-btn" id="countryContinueBtn" disabled>Continue</button>
       </div>
     </section>
 
@@ -266,7 +266,7 @@
     <section class="view view-home hidden" id="viewHome">
       <div class="main-topbar">
         <div class="topbar-icons">
-          <button class="sb-icon-btn browser-toggle-btn" title="Toggle browser panel"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg></button>
+          <button class="icon-btn browser-toggle-btn" title="Toggle browser panel"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg></button>
         </div>
       </div>
 
@@ -320,10 +320,10 @@
           <span class="chat-title" id="chatTitle"></span>
         </div>
         <div class="topbar-icons">
-          <button class="sb-icon-btn browser-toggle-btn" title="Toggle browser panel"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg></button>
-          <button class="sb-icon-btn" id="terminalToggleBtn" title="Toggle terminal"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l4 3-4 3"/><line x1="13" y1="15" x2="17" y2="15"/></svg></button>
-          <button class="sb-icon-btn" id="deleteChatBtn" title="Delete chat"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg></button>
-          <button class="sb-icon-btn" id="togglePanelBtn" title="Toggle details panel"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><line x1="14.5" y1="4" x2="14.5" y2="20"/></svg></button>
+          <button class="icon-btn browser-toggle-btn" title="Toggle browser panel"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg></button>
+          <button class="icon-btn" id="terminalToggleBtn" title="Toggle terminal"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l4 3-4 3"/><line x1="13" y1="15" x2="17" y2="15"/></svg></button>
+          <button class="icon-btn" id="deleteChatBtn" title="Delete chat"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg></button>
+          <button class="icon-btn" id="togglePanelBtn" title="Toggle details panel"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><line x1="14.5" y1="4" x2="14.5" y2="20"/></svg></button>
         </div>
       </div>
 
@@ -332,9 +332,9 @@
           <div class="chat-column" id="chatColumn"></div>
         </div>
 
-        <button class="scroll-down hidden" id="scrollDown"><svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M6 13l6 6 6-6"/></svg></button>
+        <button class="scroll-down icon-btn icon-btn-round hidden" id="scrollDown" title="Scroll to bottom" aria-label="Scroll to bottom"><svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M6 13l6 6 6-6"/></svg></button>
 
-        <aside class="side-panel" id="sidePanel">
+        <aside class="side-panel hidden" id="sidePanel">
           <div class="sp-section">
             <div class="sp-head">Project</div>
             <button class="sp-row" id="spProject"><svg class="sp-ico" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg><span>No project</span></button>
@@ -391,50 +391,52 @@
 </div>
 
 <!-- ============ SKILLS BROWSER (opened by /skills) ============ -->
+<!-- Every dialog below is the same .modal component (styles.css "Design
+     system"), opened and closed through CraftModal in app.js. -->
 <div class="modal-backdrop hidden" id="skillsBackdrop">
-  <div class="skills-modal">
-    <div class="skills-modal-head">
+  <div class="modal modal-lg skills-modal" role="dialog" aria-modal="true" aria-labelledby="skillsTitle">
+    <div class="modal-header">
       <div>
-        <div class="skills-modal-title">Skills</div>
-        <div class="skills-modal-sub">Codeply already reaches for the right one automatically mid-task. Browse and drop one in yourself here.</div>
+        <div class="modal-title" id="skillsTitle">Skills</div>
+        <div class="modal-desc">Codeply already reaches for the right one automatically mid-task. Browse and drop one in yourself here.</div>
       </div>
-      <button class="sb-icon-btn" id="skillsCloseBtn"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+      <button class="icon-btn icon-btn-sm modal-close" id="skillsCloseBtn" title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     </div>
-    <input class="skills-search" id="skillsSearch" type="text" placeholder="Search skills…">
-    <div class="skills-groups" id="skillsGroups"></div>
+    <div class="modal-toolbar"><input class="input skills-search" id="skillsSearch" type="text" placeholder="Search skills…" autocomplete="off" spellcheck="false"></div>
+    <div class="modal-body skills-groups" id="skillsGroups"></div>
   </div>
 </div>
 
 <!-- ============ PLUGINS (opened by /plugins) ============ -->
 <div class="modal-backdrop hidden" id="pluginsBackdrop">
-  <div class="skills-modal" role="dialog" aria-modal="true" aria-labelledby="pluginsTitle">
-    <div class="skills-modal-head">
+  <div class="modal modal-lg skills-modal" role="dialog" aria-modal="true" aria-labelledby="pluginsTitle">
+    <div class="modal-header">
       <div>
-        <div class="skills-modal-title" id="pluginsTitle">Plugins</div>
-        <div class="skills-modal-sub">A plugin adds slash commands, skills, MCP servers and rules to Craft. Install one from GitHub (owner/repo), a git URL or a folder. Share yours by pushing it to GitHub.</div>
+        <div class="modal-title" id="pluginsTitle">Plugins</div>
+        <div class="modal-desc">A plugin adds slash commands, skills, MCP servers and rules to Craft. Install one from GitHub (owner/repo), a git URL or a folder. Share yours by pushing it to GitHub.</div>
       </div>
-      <button class="sb-icon-btn" id="pluginsCloseBtn" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+      <button class="icon-btn icon-btn-sm modal-close" id="pluginsCloseBtn" title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     </div>
-    <div class="plugins-install">
-      <input class="skills-search" id="pluginSource" type="text" placeholder="owner/repo, https://github.com/... or C:\path\to\folder" autocomplete="off" spellcheck="false">
-      <button class="btn-primary" id="pluginFetchBtn">Install</button>
+    <div class="modal-toolbar plugins-install">
+      <input class="input skills-search" id="pluginSource" type="text" placeholder="owner/repo, https://github.com/... or C:\path\to\folder" autocomplete="off" spellcheck="false">
+      <button class="btn btn-primary btn-lg" id="pluginFetchBtn">Install</button>
     </div>
     <div class="models-error hidden" id="pluginError"></div>
-    <div class="plugins-body" id="pluginsBody"></div>
+    <div class="modal-body plugins-body" id="pluginsBody"></div>
   </div>
 </div>
 
 <!-- ============ CONNECT APPS (opened from the account menu) ============ -->
 <div class="modal-backdrop hidden" id="connectAppsBackdrop">
-  <div class="connect-apps-modal">
-    <div class="skills-modal-head">
+  <div class="modal modal-md connect-apps-modal" role="dialog" aria-modal="true" aria-labelledby="connectAppsTitle">
+    <div class="modal-header">
       <div>
-        <div class="skills-modal-title">Connect Apps</div>
-        <div class="skills-modal-sub">Let the agent send real email and post to Slack on your behalf. Every send still asks first, same as any other action.</div>
+        <div class="modal-title" id="connectAppsTitle">Connect Apps</div>
+        <div class="modal-desc">Let the agent send real email and post to Slack on your behalf. Every send still asks first, same as any other action.</div>
       </div>
-      <button class="sb-icon-btn" id="connectAppsCloseBtn"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+      <button class="icon-btn icon-btn-sm modal-close" id="connectAppsCloseBtn" title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     </div>
-    <div class="connect-apps-list">
+    <div class="modal-body connect-apps-list">
       <div class="app-card" id="caGmail">
         <div class="app-card-logo gmail"><img src="Gmail.webp" alt=""></div>
         <div class="app-card-body">
@@ -445,7 +447,7 @@
           <div class="app-card-desc">Read, draft and send email, and see and add Google Calendar events</div>
           <div class="app-card-status hidden" data-role="status"></div>
         </div>
-        <button class="app-card-btn" data-role="action">Connect</button>
+        <button class="btn btn-primary btn-sm app-card-btn" data-role="action">Connect</button>
       </div>
       <div class="app-card" id="caSlack">
         <div class="app-card-logo slack"><img src="Slack.webp" alt=""></div>
@@ -457,7 +459,7 @@
           <div class="app-card-desc">Post messages to channels in your workspace</div>
           <div class="app-card-status hidden" data-role="status"></div>
         </div>
-        <button class="app-card-btn" data-role="action">Connect</button>
+        <button class="btn btn-primary btn-sm app-card-btn" data-role="action">Connect</button>
       </div>
       <div class="app-card" id="caVercel">
         <div class="app-card-logo vercel"><img src="Vercel.png" alt=""></div>
@@ -469,7 +471,7 @@
           <div class="app-card-desc">Push a project folder live as a real Vercel deployment</div>
           <div class="app-card-status hidden" data-role="status"></div>
         </div>
-        <button class="app-card-btn" data-role="action">Connect</button>
+        <button class="btn btn-primary btn-sm app-card-btn" data-role="action">Connect</button>
       </div>
       <div class="app-card" id="caSupabase">
         <div class="app-card-logo supabase"><img src="Supabase.jpg" alt=""></div>
@@ -481,7 +483,7 @@
           <div class="app-card-desc">Create and manage a Supabase project's database for you</div>
           <div class="app-card-status hidden" data-role="status"></div>
         </div>
-        <button class="app-card-btn" data-role="action">Connect</button>
+        <button class="btn btn-primary btn-sm app-card-btn" data-role="action">Connect</button>
       </div>
       <div class="app-card" id="caGithub">
         <div class="app-card-logo github"><img src="Github.webp" alt=""></div>
@@ -493,7 +495,7 @@
           <div class="app-card-desc">Turn a local folder into a new repo on your account and push it</div>
           <div class="app-card-status hidden" data-role="status"></div>
         </div>
-        <button class="app-card-btn" data-role="action">Connect</button>
+        <button class="btn btn-primary btn-sm app-card-btn" data-role="action">Connect</button>
       </div>
     </div>
   </div>
@@ -501,10 +503,10 @@
 
 <!-- ============ CODEPLY AWAY (phone) ============ -->
 <div class="modal-backdrop hidden" id="remoteBackdrop">
-  <div class="remote-modal" role="dialog" aria-modal="true" aria-labelledby="remoteTitle">
-    <button class="remote-close sb-icon-btn" id="remoteCloseBtn" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+  <div class="modal modal-sm remote-modal" role="dialog" aria-modal="true" aria-labelledby="remoteTitle">
+    <button class="icon-btn icon-btn-sm remote-close" id="remoteCloseBtn" title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     <div class="remote-orb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="3"/><path d="M12 18h.01"/></svg></div>
-    <h2 id="remoteTitle">Codeply Away</h2>
+    <h2 class="modal-title" id="remoteTitle">Codeply Away</h2>
     <p>Use Craft from your phone. Sign in with the same account and drive this PC from anywhere. No codes, no QR, any network.</p>
     <ol class="remote-steps">
       <li><span class="remote-step-num">1</span><div>On your phone, open <a class="remote-url" id="remoteUrl" href="#">mobile.codeply.app</a>.</div></li>
@@ -513,9 +515,8 @@
     </ol>
     <div class="remote-status" id="remoteStatus"></div>
     <label class="remote-awake">
-      <input type="checkbox" id="keepAwakeToggle">
-      <span class="remote-awake-switch"></span>
       <span>Keep this PC awake while Craft is open, so your phone can always reach it</span>
+      <input type="checkbox" class="switch" id="keepAwakeToggle">
     </label>
     <div class="remote-note"><svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5Z"/><path d="M9 12l2 2 4-4"/></svg>Only phones signed in to this same account can connect. Everything still runs on this PC, and every action still asks for approval.</div>
   </div>
@@ -523,28 +524,28 @@
 
 <!-- ============ MODELS (add a model / connect Ollama) ============ -->
 <div class="modal-backdrop hidden" id="modelsBackdrop">
-  <div class="models-modal" role="dialog" aria-modal="true" aria-labelledby="modelsTitle">
-    <div class="skills-modal-head">
+  <div class="modal modal-md models-modal" role="dialog" aria-modal="true" aria-labelledby="modelsTitle">
+    <div class="modal-header">
       <div>
-        <div class="skills-modal-title" id="modelsTitle">Add a model</div>
-        <div class="skills-modal-sub">Use your own model instead of Auto. Any OpenAI-compatible API works, or run models locally with Ollama.</div>
+        <div class="modal-title" id="modelsTitle">Add a model</div>
+        <div class="modal-desc">Use your own model instead of Auto. Any OpenAI-compatible API works, or run models locally with Ollama.</div>
       </div>
-      <button class="sb-icon-btn" id="modelsCloseBtn" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+      <button class="icon-btn icon-btn-sm modal-close" id="modelsCloseBtn" title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     </div>
-    <div class="models-tabs" role="tablist">
-      <button class="models-tab active" data-tab="custom" role="tab">API model</button>
-      <button class="models-tab" data-tab="ollama" role="tab">Ollama</button>
+    <div class="models-tabs segmented" role="tablist">
+      <button class="models-tab segmented-item active" data-tab="custom" role="tab">API model</button>
+      <button class="models-tab segmented-item" data-tab="ollama" role="tab">Ollama</button>
     </div>
 
     <div class="models-pane" id="modelsPaneCustom">
       <div class="models-presets" id="modelsPresets"></div>
-      <label class="field"><span>Name</span><input id="mName" type="text" placeholder="e.g. GPT-4o mini" autocomplete="off" spellcheck="false"></label>
-      <label class="field"><span>Base URL</span><input id="mBaseUrl" type="text" placeholder="https://api.openai.com/v1" autocomplete="off" spellcheck="false"></label>
-      <label class="field"><span>Model ID</span><input id="mModel" type="text" placeholder="gpt-4o-mini" autocomplete="off" spellcheck="false"></label>
-      <label class="field"><span>API key</span><input id="mKey" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>Name</span><input class="input" id="mName" type="text" placeholder="e.g. GPT-4o mini" autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>Base URL</span><input class="input" id="mBaseUrl" type="text" placeholder="https://api.openai.com/v1" autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>Model ID</span><input class="input" id="mModel" type="text" placeholder="gpt-4o-mini" autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>API key</span><input class="input" id="mKey" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false"></label>
       <label class="phone-sync-row">
         <span class="phone-sync-text"><strong>Use on my phone</strong><span id="mPhoneHint">Works on your phone even when this PC is off.</span></span>
-        <input type="checkbox" id="mPhone" class="rm-switch" role="switch" aria-label="Use on my phone" checked>
+        <input type="checkbox" id="mPhone" class="switch" role="switch" aria-label="Use on my phone" checked>
       </label>
       <div class="privacy-note">
         <svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
@@ -552,16 +553,16 @@
       </div>
       <div class="models-error hidden" id="mError"></div>
       <div class="models-actions">
-        <button class="btn-quiet hidden" id="mSaveAnyway">Save without testing</button>
-        <button class="btn-primary" id="mSave">Test &amp; save</button>
+        <button class="btn btn-secondary hidden" id="mSaveAnyway">Save without testing</button>
+        <button class="btn btn-primary" id="mSave">Test &amp; save</button>
       </div>
     </div>
 
     <div class="models-pane hidden" id="modelsPaneOllama">
       <label class="field"><span>Ollama address</span>
         <div class="field-inline">
-          <input id="oHost" type="text" value="http://localhost:11434" autocomplete="off" spellcheck="false">
-          <button class="btn-quiet" id="oDetect">Find models</button>
+          <input class="input" id="oHost" type="text" value="http://localhost:11434" autocomplete="off" spellcheck="false">
+          <button class="btn btn-secondary btn-lg" id="oDetect">Find models</button>
         </div>
       </label>
       <div class="ollama-list" id="oList"></div>
@@ -575,15 +576,15 @@
 
 <!-- ============ TASKS PANEL (Task Maker checklist) ============ -->
 <div class="modal-backdrop hidden" id="tasksBackdrop">
-  <div class="tasks-modal" role="dialog" aria-modal="true" aria-labelledby="tasksTitle">
-    <div class="skills-modal-head">
+  <div class="modal modal-md tasks-modal" role="dialog" aria-modal="true" aria-labelledby="tasksTitle">
+    <div class="modal-header">
       <div>
-        <div class="skills-modal-title" id="tasksTitle">Tasks</div>
-        <div class="skills-modal-sub" id="tasksSub">What Task Maker is doing in this chat.</div>
+        <div class="modal-title" id="tasksTitle">Tasks</div>
+        <div class="modal-desc" id="tasksSub">What Task Maker is doing in this chat.</div>
       </div>
-      <button class="sb-icon-btn" id="tasksCloseBtn"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+      <button class="icon-btn icon-btn-sm modal-close" id="tasksCloseBtn" title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     </div>
-    <div class="tasks-modal-body" id="tasksModalBody"></div>
+    <div class="modal-body tasks-modal-body" id="tasksModalBody"></div>
   </div>
 </div>
 
@@ -596,7 +597,7 @@
     <div class="update-gate-notes hidden" id="updateGateNotes"></div>
     <div class="update-gate-track" id="updateGateTrack"><div class="update-gate-bar" id="updateGateBar"></div></div>
     <div class="update-gate-status" id="updateGateStatus">Downloading…</div>
-    <button class="btn-primary update-gate-btn hidden" id="updateGateBtn" type="button">Restart and update</button>
+    <button class="btn btn-primary btn-lg btn-block update-gate-btn hidden" id="updateGateBtn" type="button">Restart and update</button>
   </div>
 </div>
 

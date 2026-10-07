@@ -664,6 +664,14 @@ function receiveEvent(event) {
     return;
   }
 
+  // The chat was cut back for an edit or retry on the PC: reload it, so the
+  // replaced messages don't linger here.
+  if (event.type === 'session_rewound') {
+    if (event.session) mergeSession(event.session);
+    if (event.sessionId === state.sessionId && event.origin !== state.clientId) openSession(event.sessionId).catch(() => {});
+    return;
+  }
+
   if (event.type === 'session_deleted') {
     state.sessions = state.sessions.filter((s) => s.id !== event.sessionId);
     renderSessions();

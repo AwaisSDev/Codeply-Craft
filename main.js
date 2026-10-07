@@ -2000,6 +2000,8 @@ async function handleBridgeApi(method, pathname, query, body) {
     return { status: 200, body: state };
   }
   if (method === 'POST' && pathname === '/api/stop') { stopChatRun(body.sessionId); return { status: 200, body: { ok: true } }; }
+  // Edit or retry a sent message from the phone (same rewind as the desktop).
+  if (method === 'POST' && pathname === '/api/edit') return { status: 200, body: await editAndRerun({ ...body, bypass: body.bypass === true }) };
   if (method === 'POST' && pathname === '/api/approval') { respondApproval(body.requestId, body.verdict); return { status: 200, body: { ok: true } }; }
   if (method === 'POST' && pathname === '/api/question') { respondQuestion(body.requestId, body.answer); return { status: 200, body: { ok: true } }; }
   if (method === 'POST' && pathname === '/api/checkpoint') {
@@ -2918,6 +2920,71 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
 
   return { sessionId: session.id, title: session.title, route: { label: modelLabel(route) } };
 }
+
+// ─── Edit / retry a sent message ────────────────────────────────────────────
+// Editing a message (or retrying the last one) cuts the chat back to just
+// before it and runs it again in place - the message and everything after it
+// leave the saved history (here, the local store and Supabase), so it is
+// never appended as a second copy at the bottom. chat-rewind.js works out
+// the cut and, when later turns changed files, which files to restore and to
+// which snapshot (the project as it was right before the message first ran).
+const { planRewind } = require('./chat-rewind');
+
+function waitForRunEnd(sessionId, ms = 10000) {
+  return new Promise((resolve) => {
+    const t0 = Date.now();
+    const tick = () => {
+      if (!activeRuns.has(sessionId)) return resolve(true);
+      if (Date.now() - t0 > ms) return resolve(false);
+      setTimeout(tick, 100);
+    };
+    tick();
+  });
+}
+
+async function rewindChat({ sessionId, userIndex, expectText, restoreFiles, clientId = null }) {
+  const session = store.sessions.find((s) => s.id === sessionId);
+  if (!session) return { error: 'That chat is no longer available.' };
+  // A run still going would keep writing to the part being cut: stop it and
+  // let its own cleanup (checkpoint, save) finish first.
+  if (activeRuns.has(sessionId)) {
+    stopChatRun(sessionId);
+    if (!(await waitForRunEnd(sessionId))) return { error: 'The current run is still stopping. Try again in a moment.' };
+  }
+  const plan = planRewind(session.messages, Number(userIndex), typeof expectText === 'string' ? expectText : undefined);
+  if (!plan) return { error: 'Could not find that message in this chat. Reopen the chat and try again.' };
+
+  let restored = null;
+  if (restoreFiles && plan.restore && plan.restore.files.length) {
+    if (!snapshotLib && !(await loadEngine())) return { error: 'Engine not available.' };
+    const r = await snapshotLib.restore(plan.restore.cwd, plan.restore.tree, plan.restore.files);
+    if (!r.ok && !r.restored.length && !r.removed.length) return { error: `Could not restore the files (${r.failed.slice(0, 3).join(', ')}). Nothing was changed.` };
+    restored = { files: r.restored.length + r.removed.length, failed: r.failed };
+  }
+
+  session.messages = session.messages.slice(0, plan.index);
+  session.updatedAt = Date.now();
+  saveStore();
+  syncSessionToDb(session);
+  // Phones (and any other window) reload the chat so the dropped part goes.
+  sendEvent(session.id, { type: 'session_rewound', keep: plan.index, origin: clientId, session: sessionMeta(session) });
+  return { ok: true, session, original: plan.message, restored };
+}
+
+/** Rewind to a user message, then run the (possibly edited) text there. */
+async function editAndRerun({ sessionId, userIndex, expectText, text, images, restoreFiles, cwd, mode, bypass, clientId = null, botId }) {
+  if (!String(text || '').trim()) return { error: 'Write a message before sending it.' };
+  const rw = await rewindChat({ sessionId, userIndex, expectText, restoreFiles, clientId });
+  if (rw.error) return rw;
+  // The images stay with the message unless the edit says otherwise.
+  const keepImages = images === undefined ? rw.original.images : images;
+  const run = await startChatRun({
+    sessionId, cwd: cwd || rw.session.cwd, mode, bypass, text, images: keepImages, clientId, botId,
+  });
+  return { ...run, restored: rw.restored };
+}
+
+ipcMain.handle('chat:edit', (e, payload) => editAndRerun(payload || {}));
 
 function stopChatRun(sessionId) {
   const run = activeRuns.get(sessionId);
