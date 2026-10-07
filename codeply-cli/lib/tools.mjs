@@ -1759,8 +1759,12 @@ function formatApiResult(service, method, apiPath, r) {
 async function getValidSupabaseToken() {
   const sb = config.getIntegration('supabase');
   if (!sb.accessToken) return null;
+  // A token with no expiry (a pasted personal access token) never lapses here.
   if (!sb.expiresAt || Date.now() < sb.expiresAt - 120000) return sb.accessToken;
-  if (!sb.refreshToken || !sb.clientId || !sb.clientSecret) return sb.accessToken;
+  // Past expiry with no way to renew it (no OAuth app credentials): report
+  // "not connected" so the user is asked to reconnect, instead of every call
+  // failing with a bare "Unauthorized".
+  if (!sb.refreshToken || !sb.clientId || !sb.clientSecret) return null;
   try {
     const t = await oauth.refreshSupabaseToken(sb.clientId, sb.clientSecret, sb.refreshToken);
     config.saveIntegration('supabase', {
