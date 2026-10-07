@@ -274,9 +274,17 @@
     const s = String(t || '').trim().replace(/[.!?]+$/, '').replace(/^(please\s+)?remind (me|you|them)\s+(to|about|that)\s+/i, '');
     return /^[A-Z][a-z]/.test(s) && !/^I\b/.test(s) ? s[0].toLowerCase() + s.slice(1) : s;
   };
+  // An always-on bot found an important email (bots-watch.js on the PC, or mail-watch-tick in the cloud).
+  const mailOf = (r) => (r && r.payload && r.payload.mail && typeof r.payload.mail === 'object' ? r.payload.mail : null);
   function openingFor(r, bot, env) {
     const name = bot.name || 'Codeply';
     const t = phrase(r.text);
+    const mail = mailOf(r);
+    if (mail) {
+      return mail.drafted
+        ? `Hey, it's ${name}. You got an email from ${mail.from || 'someone'} about ${mail.subject || 'something'} that looked important, so I drafted a reply. It's in your Gmail drafts.`
+        : `Hey, it's ${name}. You got an important email from ${mail.from || 'someone'} about ${mail.subject || 'something'}.`;
+    }
     if (r.kind === 'task') {
       return env && env.canWork
         ? `Hey, it's ${name}. It's time for the task you gave me, ${t}, so I'm getting started on it now.`
@@ -290,6 +298,12 @@
     return lines[Math.floor(Math.random() * lines.length)];
   }
   function contextFor(r) {
+    const mail = mailOf(r);
+    if (mail) {
+      return `THIS CALL\nYou called the user yourself because an important email arrived while you watched their inbox.\nFrom: ${mail.from}\nSubject: ${mail.subject}\nSummary: ${mail.summary || '(none)'}\n` +
+        (mail.drafted ? `You saved this reply as a draft in their Gmail (not sent):\n${mail.reply || '(not shown)'}\n` : '') +
+        'You already said your opening line. Answer their questions about it, read the draft out if they ask, and say they can open it in Gmail to edit and send. You cannot send it yourself. Keep it short.';
+    }
     if (r.kind === 'task') {
       return `THIS CALL\nYou called the user yourself because it is time for a task they scheduled with you: "${r.text}". You have just said you are starting on it. Keep it short and warm.`;
     }
