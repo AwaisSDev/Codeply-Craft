@@ -644,6 +644,13 @@ function receiveEvent(event) {
     renderTitle();
     return;
   }
+  // The PC cut this chat back for an edit or retry: re-fetch it so the
+  // replaced messages don't linger on the phone.
+  if (event.type === 'session_rewound') {
+    const c = state.chats.find((x) => x.pcSessionId === event.sessionId);
+    if (c) refreshPcSession(c, false).then(() => { if (c.id === state.current) renderFeed(); }).catch(() => {});
+    return;
+  }
   if (event.type === 'session_deleted') {
     state.pc.sessions = (state.pc.sessions || []).filter((s) => s.id !== event.sessionId);
     save(KEY.pc, state.pc);

@@ -7,6 +7,166 @@ const api = window.craft || null;
 
 const $ = (id) => document.getElementById(id);
 
+// ─── Dialogs (one modal component for every popup) ──────────────────────────
+// Every .modal-backdrop goes through here, so they all behave the same way:
+// Esc closes the top one, Tab stays inside it, focus goes back to whatever
+// opened it, and closing plays a short exit (styles.css .is-closing, off
+// under prefers-reduced-motion) before .hidden goes back on. Dialogs that
+// bots-ui.js and cloud-ui.js toggle with .hidden themselves are picked up by
+// the observer below, so they get the focus handling too.
+const CraftModal = (() => {
+  const stack = []; // { el, onClose, returnTo }
+  const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  const reduced = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const elOf = (x) => (typeof x === 'string' ? $(x) : x);
+  const entryOf = (el) => stack.find((e) => e.el === el);
+  const visible = (el) => el && !el.classList.contains('hidden') && el.isConnected;
+
+  function focusInside(el) {
+    const panel = el.firstElementChild || el;
+    const target = panel.querySelector('[autofocus]') || panel.querySelector('input:not([type="checkbox"]):not([disabled]), textarea:not([disabled])') ||
+      panel.querySelector('.modal-footer .btn-primary, .modal-footer .btn-danger') || panel.querySelector(FOCUSABLE);
+    if (target) target.focus({ preventScroll: true });
+  }
+
+  function track(el, onClose) {
+    let e = entryOf(el);
+    if (!e) {
+      const active = document.activeElement;
+      e = { el, onClose: null, returnTo: active && active !== document.body ? active : null };
+      stack.push(e);
+      requestAnimationFrame(() => { if (!el.contains(document.activeElement)) focusInside(el); });
+    }
+    if (onClose) e.onClose = onClose;
+    return e;
+  }
+
+  function untrack(el) {
+    const i = stack.findIndex((e) => e.el === el);
+    if (i < 0) return;
+    const [e] = stack.splice(i, 1);
+    if (e.returnTo && e.returnTo.isConnected && (!document.activeElement || document.activeElement === document.body || el.contains(document.activeElement))) {
+      e.returnTo.focus({ preventScroll: true });
+    }
+  }
+
+  /** Shows a dialog. onClose is what Esc and the backdrop run (defaults to close). */
+  function open(x, { onClose } = {}) {
+    const el = elOf(x);
+    if (!el) return;
+    el.classList.remove('is-closing');
+    el.classList.remove('hidden');
+    track(el, onClose).own = true;
+  }
+
+  /** Hides a dialog with its exit animation. */
+  function close(x) {
+    const el = elOf(x);
+    if (!el || el.classList.contains('hidden')) return Promise.resolve();
+    untrack(el);
+    if (reduced()) { el.classList.add('hidden'); return Promise.resolve(); }
+    el.classList.add('is-closing');
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        // Reopened while it was still fading out: leave it open.
+        if (el.classList.contains('is-closing')) { el.classList.remove('is-closing'); el.classList.add('hidden'); }
+        resolve();
+      };
+      el.addEventListener('animationend', (ev) => { if (ev.target === el) finish(); }, { once: true });
+      setTimeout(finish, 220);
+    });
+  }
+
+  const isOpen = (x) => visible(elOf(x));
+  const dismiss = (e) => (e.onClose ? e.onClose() : close(e.el));
+
+  document.addEventListener('keydown', (ev) => {
+    const top = [...stack].reverse().find((e) => visible(e.el));
+    if (!top) return;
+    if (ev.key === 'Escape') {
+      // bots-ui.js / cloud-ui.js handle Esc for their own dialogs.
+      if (!top.onClose && !top.own) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      dismiss(top);
+    } else if (ev.key === 'Tab') {
+      const items = [...top.el.querySelectorAll(FOCUSABLE)].filter((n) => n.offsetParent !== null);
+      if (!items.length) { ev.preventDefault(); return; }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!top.el.contains(document.activeElement)) { ev.preventDefault(); first.focus(); }
+      else if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+      else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+    }
+  }, true);
+
+  // Dialogs shown or hidden by other scripts (bots, cloud) still get focus
+  // moved in and handed back.
+  new MutationObserver((records) => {
+    for (const r of records) {
+      const el = r.target;
+      if (!el.classList || !el.classList.contains('modal-backdrop')) continue;
+      if (visible(el) && !el.classList.contains('is-closing')) track(el);
+      else if (el.classList.contains('hidden')) untrack(el);
+    }
+  }).observe(document.body, { attributes: true, attributeFilter: ['class'], subtree: true });
+
+  /**
+   * A small confirm dialog. Resolves { ok, checked } (checked is the
+   * optional checkbox), or ok: false when cancelled.
+   */
+  function confirmDialog({ title, body = '', confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = false, checkbox = null, alertOnly = false }) {
+    return new Promise((resolve) => {
+      const el = document.createElement('div');
+      el.className = 'modal-backdrop hidden';
+      el.innerHTML = `
+        <div class="modal modal-sm" role="${alertOnly ? 'alertdialog' : 'dialog'}" aria-modal="true" aria-labelledby="cmTitle" aria-describedby="cmBody">
+          <div class="modal-header"><div><div class="modal-title" id="cmTitle"></div><div class="modal-desc" id="cmBody"></div></div></div>
+          ${checkbox ? '<div class="modal-body"><label class="modal-check"><input type="checkbox"><span><span data-role="label"></span><small data-role="note"></small></span></label></div>' : ''}
+          <div class="modal-footer">
+            ${alertOnly ? '' : '<button class="btn btn-secondary" data-act="cancel"></button>'}
+            <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" data-act="ok"></button>
+          </div>
+        </div>`;
+      el.querySelector('#cmTitle').textContent = title;
+      el.querySelector('#cmBody').textContent = body;
+      el.querySelector('#cmTitle').removeAttribute('id');
+      el.querySelector('#cmBody').removeAttribute('id');
+      const okBtn = el.querySelector('[data-act="ok"]');
+      okBtn.textContent = confirmLabel;
+      const cancelBtn = el.querySelector('[data-act="cancel"]');
+      if (cancelBtn) cancelBtn.textContent = cancelLabel;
+      const box = el.querySelector('.modal-check input');
+      if (checkbox) {
+        box.checked = checkbox.checked !== false;
+        el.querySelector('[data-role="label"]').textContent = checkbox.label;
+        el.querySelector('[data-role="note"]').textContent = checkbox.note || '';
+      }
+      document.body.appendChild(el);
+      let settled = false;
+      const finish = (ok) => {
+        if (settled) return;
+        settled = true;
+        close(el).then(() => el.remove());
+        resolve({ ok, checked: box ? box.checked : false });
+      };
+      el.addEventListener('click', (ev) => { if (ev.target === el) finish(alertOnly); });
+      okBtn.addEventListener('click', () => finish(true));
+      if (cancelBtn) cancelBtn.addEventListener('click', () => finish(false));
+      open(el, { onClose: () => finish(alertOnly) });
+      requestAnimationFrame(() => okBtn.focus({ preventScroll: true }));
+    });
+  }
+
+  const alertDialog = ({ title, body = '', confirmLabel = 'OK' }) => confirmDialog({ title, body, confirmLabel, alertOnly: true });
+
+  return { open, close, isOpen, confirm: confirmDialog, alert: alertDialog };
+})();
+window.CraftModal = CraftModal;
+
 // Identifies this window as the sender of a message, mirroring mobile.js's
 // clientId - lets the 'session_sync' handler below tell "a message I just
 // sent" apart from "a message another paired device (phone) just sent",
@@ -295,42 +455,191 @@ function addUserMessage(text, images) {
   bubble.className = 'bubble';
   bubble.textContent = text;
   msg.appendChild(bubble);
+  msg.userText = text;
+  msg.userImages = images && images.length ? images : undefined;
 
-  // Restart re-sends this exact message as a brand-new turn - useful when a
-  // reply didn't do what you wanted and you'd rather just try again than
-  // hand-retype the same ask. Revert stops whatever's currently running in
-  // this chat (if anything is) and drops the message back into the
-  // composer to tweak before sending - it does NOT undo any file edits the
-  // original run already made; it only stops the run and gives you the
-  // text back to edit.
+  // Hover actions, like Claude and ChatGPT: Copy, and Edit, which turns this
+  // bubble into an editor and reruns the chat from here (see editUserMessage).
   const actions = document.createElement('div');
-  actions.className = 'user-msg-actions';
+  actions.className = 'msg-hover-actions';
   actions.innerHTML =
-    `<button class="user-msg-action" data-action="restart" title="Send this again">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
-    </button>
-    <button class="user-msg-action" data-action="revert" title="Stop and edit this message">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-    </button>`;
-  actions.querySelector('[data-action="restart"]').addEventListener('click', () => sendMessage(text, false, images));
-  actions.querySelector('[data-action="revert"]').addEventListener('click', () => {
-    if (state.running && state.currentSessionId) api.stop(state.currentSessionId);
-    setChatComposerText(text);
-  });
+    `<button class="icon-btn icon-btn-xs" data-action="copy" title="Copy" aria-label="Copy message">${ICON_COPY}</button>
+    <button class="icon-btn icon-btn-xs" data-action="edit" title="Edit" aria-label="Edit message">${ICON_EDIT}</button>`;
+  actions.querySelector('[data-action="copy"]').addEventListener('click', (e) => copyWithFeedback(text, e.currentTarget));
+  actions.querySelector('[data-action="edit"]').addEventListener('click', () => editUserMessage(msg));
   msg.appendChild(actions);
 
   chatColumn.appendChild(msg);
   scrollToBottom();
 }
 
-function setChatComposerText(text) {
-  const input = document.querySelector('[data-composer="chat"] .composer-input');
-  if (!input) return;
-  input.value = text;
-  input.style.height = 'auto';
-  input.style.height = Math.min(input.scrollHeight, 180) + 'px';
-  input.focus();
-  input.setSelectionRange(input.value.length, input.value.length);
+const ICON_COPY = '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>';
+const ICON_EDIT = '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+const ICON_RETRY = '<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>';
+const ICON_CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>';
+
+async function copyWithFeedback(text, btn) {
+  try { await navigator.clipboard.writeText(text); } catch { showToast('Could not copy.', 'error'); return; }
+  const old = btn.innerHTML;
+  btn.innerHTML = ICON_CHECK;
+  btn.classList.add('done');
+  setTimeout(() => { btn.innerHTML = old; btn.classList.remove('done'); }, 1200);
+}
+
+// ─── Edit and retry a sent message ──────────────────────────────────────────
+// Editing a message (or retrying the last one) rewinds the chat to just
+// before it and runs it again in place: the message and everything after it
+// are dropped, here and in the saved history (main.js editAndRerun), and the
+// new version takes its spot. Nothing is appended as a fresh copy at the
+// bottom. If the later turns changed files, those files can be put back to
+// how they were before the message first ran (on by default).
+
+/** Files changed by the turns after this message that are still applied. */
+function filesChangedAfter(msgEl) {
+  const files = new Set();
+  for (let n = msgEl.nextElementSibling; n; n = n.nextElementSibling) {
+    if (n.cpData && !n.cpData.undone) for (const f of n.cpData.files || []) files.add(f.file);
+    if (n.cpData && n.cpData.total > (n.cpData.files || []).length && !n.cpData.undone) files.add('+' + n.cpData.id); // more than were listed
+  }
+  return files.size;
+}
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+function editUserMessage(msg) {
+  const open = chatColumn.querySelector('.msg.user.editing');
+  if (open && open !== msg && open.cancelEdit) open.cancelEdit();
+  if (msg.classList.contains('editing')) return;
+  msg.classList.add('editing');
+  const bubble = msg.querySelector('.bubble');
+  bubble.hidden = true;
+
+  const changed = filesChangedAfter(msg);
+  const editor = document.createElement('div');
+  editor.className = 'bubble-editor';
+  editor.innerHTML = `
+    <textarea rows="1" aria-label="Edit message" spellcheck="true"></textarea>
+    <div class="bubble-editor-foot">
+      ${changed ? `<label class="bubble-editor-restore" title="Puts the files the later replies changed back the way they were before this message ran"><input type="checkbox" checked><span>Restore ${plural(changed, 'file')} to before this message</span></label>` : '<span class="bubble-editor-note">Replies after this message are replaced.</span>'}
+      <button class="btn btn-ghost btn-sm" data-act="cancel" type="button">Cancel</button>
+      <button class="btn btn-primary btn-sm" data-act="send" type="button">Send</button>
+    </div>`;
+  bubble.after(editor);
+  const ta = editor.querySelector('textarea');
+  ta.value = msg.userText;
+  const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 320) + 'px'; };
+  ta.addEventListener('input', () => {
+    grow();
+    editor.querySelector('[data-act="send"]').disabled = !ta.value.trim();
+  });
+
+  const cancel = () => {
+    editor.remove();
+    bubble.hidden = false;
+    msg.classList.remove('editing');
+    msg.cancelEdit = null;
+  };
+  const send = () => {
+    const text = ta.value.trim();
+    if (!text) return;
+    const restore = !!editor.querySelector('.bubble-editor-restore input')?.checked;
+    cancel();
+    rerunFrom(msg, text, restore);
+  };
+  msg.cancelEdit = cancel;
+  editor.querySelector('[data-act="cancel"]').addEventListener('click', cancel);
+  editor.querySelector('[data-act="send"]').addEventListener('click', send);
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }
+  });
+  requestAnimationFrame(() => {
+    grow();
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+  });
+}
+
+/** Retry: run the latest message again, replacing the latest reply. */
+async function retryLastMessage() {
+  const users = chatColumn.querySelectorAll('.msg.user');
+  const msg = users[users.length - 1];
+  if (!msg || state.running) return;
+  const changed = filesChangedAfter(msg);
+  let restore = false;
+  if (changed) {
+    const r = await CraftModal.confirm({
+      title: 'Retry this message?',
+      body: 'Craft runs it again and replaces the last reply.',
+      confirmLabel: 'Retry',
+      checkbox: { label: `Restore ${plural(changed, 'file')} first`, note: 'Puts the files the last reply changed back the way they were before it ran.', checked: true },
+    });
+    if (!r.ok) return;
+    restore = r.checked;
+  }
+  rerunFrom(msg, msg.userText, restore);
+}
+
+async function rerunFrom(msg, text, restoreFiles) {
+  if (!api || !state.currentSessionId || !msg.isConnected) return;
+  const sessionId = state.currentSessionId;
+  const users = [...chatColumn.querySelectorAll('.msg.user')];
+  const userIndex = users.indexOf(msg);
+  const expectText = msg.userText;
+  const images = msg.userImages;
+
+  // Drop this message and everything after it, then show the new version in
+  // the same spot. A run still going is stopped by main.js first.
+  hideThinking();
+  stopRevealQueue();
+  runningToolRow = null;
+  while (msg.nextSibling) msg.nextSibling.remove();
+  msg.remove();
+  activeTaskList = null;
+  if (activeGoalCard && !activeGoalCard.el.isConnected) activeGoalCard = null;
+  if (!chatColumn.querySelector('.tasklist')) { currentTasks = []; refreshTasksUI(); }
+  lastUserMessage = null;
+  addUserMessage(text, images);
+  setRunning(true);
+  showThinking();
+
+  const r = await api.editMessage({
+    sessionId, userIndex, expectText, text, images, restoreFiles,
+    cwd: state.project, mode: state.mode, bypass: state.bypass, clientId: desktopClientId,
+    botId: window.CraftBots ? window.CraftBots.selectedId() : undefined,
+  });
+  if (r && r.restored) {
+    const n = r.restored.files;
+    if (r.restored.failed && r.restored.failed.length) showToast(`Restored ${plural(n, 'file')}. ${plural(r.restored.failed.length, 'file')} could not be restored.`, 'error');
+    else if (n) showToast(`Restored ${plural(n, 'file')}`);
+  }
+  if (!r || r.error) {
+    // Show the chat as it is really saved, then say what went wrong.
+    if (state.currentSessionId === sessionId) {
+      await openSession(sessionId);
+      addNote((r && r.error) || 'Could not run that again.', 'error');
+    }
+    setRunning(state.runningSessions.includes(sessionId));
+  }
+}
+
+// Copy and Retry under the latest reply, kept up to date as runs finish.
+function updateReplyActions() {
+  chatColumn.querySelectorAll('.reply-actions').forEach((el) => el.remove());
+  if (state.running || !state.currentSessionId) return;
+  const users = chatColumn.querySelectorAll('.msg.user');
+  const last = users[users.length - 1];
+  if (!last) return;
+  let reply = null;
+  for (let n = last.nextElementSibling; n; n = n.nextElementSibling) if (n.matches('.msg.assistant')) reply = n;
+  const row = document.createElement('div');
+  row.className = 'reply-actions';
+  row.innerHTML = `<div class="msg-hover-actions">
+    ${reply ? `<button class="icon-btn icon-btn-xs" data-action="copy" title="Copy" aria-label="Copy reply">${ICON_COPY}</button>` : ''}
+    <button class="icon-btn icon-btn-xs" data-action="retry" title="Retry" aria-label="Retry">${ICON_RETRY}</button></div>`;
+  if (reply) row.querySelector('[data-action="copy"]').addEventListener('click', (e) => copyWithFeedback(reply.rawText || reply.innerText, e.currentTarget));
+  row.querySelector('[data-action="retry"]').addEventListener('click', retryLastMessage);
+  chatColumn.appendChild(row);
 }
 
 function openImageLightbox(src) {
@@ -401,6 +710,7 @@ function runFastTypewriter(msg, text, done) {
 function addAssistantMessage(text) {
   const msg = document.createElement('div');
   msg.className = 'msg assistant';
+  msg.rawText = text;
   chatColumn.appendChild(msg);
   if (revealInstant) { msg.innerHTML = mdToHtml(text); return; }
   enqueueReveal((next) => runFastTypewriter(msg, text, next));
@@ -585,11 +895,11 @@ function renderTasksPanel() {
 
 function openTasksModal() {
   renderTasksPanel();
-  $('tasksBackdrop').classList.remove('hidden');
+  CraftModal.open('tasksBackdrop', { onClose: closeTasksModal });
 }
 
 function closeTasksModal() {
-  $('tasksBackdrop').classList.add('hidden');
+  CraftModal.close('tasksBackdrop');
 }
 
 $('tasksBtn').addEventListener('click', openTasksModal);
@@ -692,13 +1002,14 @@ function renderCheckpoint(cp) {
   const n = cp.total || cp.files.length;
   const list = cp.files.slice(0, 40).map((f) =>
     `<li><span class="cp-status cp-${esc(f.status)}">${esc(CP_STATUS[f.status] || f.status)}</span><code>${esc(f.file)}</code></li>`).join('');
+  row.cpData = cp;
   row.classList.toggle('undone', !!cp.undone);
   row.innerHTML = `
     <button class="cp-toggle" type="button" aria-expanded="false">
       <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
       <span>${cp.undone ? `Undid changes to ${n} file${n === 1 ? '' : 's'}` : `Changed ${n} file${n === 1 ? '' : 's'}`}</span>
     </button>
-    <button class="cp-action" type="button">${cp.undone ? 'Redo' : 'Undo'}</button>
+    <button class="btn btn-secondary btn-sm cp-action" type="button">${cp.undone ? 'Redo' : 'Undo'}</button>
     <ul class="cp-files" hidden>${list}${n > 40 ? `<li class="cp-more">and ${n - 40} more</li>` : ''}</ul>`;
   const toggle = row.querySelector('.cp-toggle');
   toggle.addEventListener('click', () => {
@@ -819,7 +1130,9 @@ function renderIntegrationRow(rowId, { connected, label }) {
   statusEl.classList.toggle('hidden', !connected || !label);
   const btn = row.querySelector('[data-role="action"]');
   btn.textContent = connected ? 'Disconnect' : 'Connect';
-  btn.classList.toggle('danger', connected);
+  btn.classList.toggle('btn-primary', !connected);
+  btn.classList.toggle('btn-secondary', connected);
+  btn.classList.toggle('btn-danger-hover', connected);
 }
 
 async function refreshIntegrations() {
@@ -859,10 +1172,10 @@ wireIntegrationRow('caGithub', 'github', () => api.connectGithub(), 'GitHub');
 function openConnectApps() {
   closeAccountMenu();
   refreshIntegrations();
-  $('connectAppsBackdrop').classList.remove('hidden');
+  CraftModal.open('connectAppsBackdrop', { onClose: closeConnectApps });
 }
 function closeConnectApps() {
-  $('connectAppsBackdrop').classList.add('hidden');
+  CraftModal.close('connectAppsBackdrop');
 }
 $('connectAppsCloseBtn').addEventListener('click', closeConnectApps);
 $('connectAppsBackdrop').addEventListener('click', (e) => {
@@ -880,34 +1193,34 @@ function openAccountMenu() {
   closeAccountMenu();
   if (!state.user) return;
   const menu = document.createElement('div');
-  menu.className = 'account-menu';
+  menu.className = 'menu account-menu';
   menu.innerHTML = `
     <div class="account-menu-header">
       <div class="avatar">${esc(state.user.email.slice(0, 2).toUpperCase())}</div>
       <div class="account-menu-email">${esc(state.user.email)}</div>
     </div>
-    <div class="account-menu-divider"></div>
-    <button class="account-menu-item" data-action="connect">
+    <div class="menu-sep"></div>
+    <button class="menu-item" data-action="connect">
       <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
       Connect Apps
     </button>
-    <div class="account-menu-divider"></div>
+    <div class="menu-sep"></div>
     <div class="account-menu-theme-row">
       <span>Theme</span>
-      <div class="theme-toggle" id="themeToggle" role="group" aria-label="Theme">
-        <button type="button" class="theme-opt" data-theme-choice="system" title="Match system">
+      <div class="theme-toggle segmented segmented-sm" id="themeToggle" role="group" aria-label="Theme">
+        <button type="button" class="theme-opt segmented-item" data-theme-choice="system" title="Match system">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
         </button>
-        <button type="button" class="theme-opt" data-theme-choice="light" title="Light">
+        <button type="button" class="theme-opt segmented-item" data-theme-choice="light" title="Light">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
         </button>
-        <button type="button" class="theme-opt" data-theme-choice="dark" title="Dark">
+        <button type="button" class="theme-opt segmented-item" data-theme-choice="dark" title="Dark">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.5a8.5 8.5 0 1 1-9-11 6.8 6.8 0 0 0 9 11Z"/></svg>
         </button>
       </div>
     </div>
-    <div class="account-menu-divider"></div>
-    <button class="account-menu-item" data-action="logout">
+    <div class="menu-sep"></div>
+    <button class="menu-item" data-action="logout">
       <svg viewBox="0 0 24 24"><path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3"/><path d="M16 17l5-5-5-5"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       Sign out
     </button>
@@ -940,6 +1253,12 @@ $('sbUserBtn').addEventListener('click', (e) => {
 });
 document.addEventListener('click', (e) => {
   if (accountMenuEl && !accountMenuEl.contains(e.target) && e.target !== $('sbUserBtn') && !$('sbUserBtn').contains(e.target)) closeAccountMenu();
+});
+// Esc closes whichever small menu is open (each menu's own handler is a no-op when it is closed).
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (accountMenuEl) { closeAccountMenu(); $('sbUserBtn').focus(); }
+  if (chatCtxMenuEl) { const a = chatCtxAnchorBtn; closeChatMenu(); if (a) a.focus(); }
 });
 
 $('togglePanelBtn').addEventListener('click', () => $('sidePanel').classList.toggle('hidden'));
@@ -1122,8 +1441,9 @@ function renderProjects() {
     });
 
     const menuBtn = document.createElement('button');
-    menuBtn.className = 'sb-chat-menu-btn';
+    menuBtn.className = 'sb-chat-menu-btn icon-btn icon-btn-xs';
     menuBtn.title = 'More';
+    menuBtn.setAttribute('aria-label', 'More');
     menuBtn.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>';
     menuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1152,8 +1472,9 @@ function renderRecents() {
     btn.addEventListener('click', () => openSession(s.id));
 
     const menuBtn = document.createElement('button');
-    menuBtn.className = 'sb-chat-menu-btn';
+    menuBtn.className = 'sb-chat-menu-btn icon-btn icon-btn-xs';
     menuBtn.title = 'More';
+    menuBtn.setAttribute('aria-label', 'More');
     menuBtn.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>';
     menuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1183,13 +1504,13 @@ function openChatMenu(session, anchorBtn) {
   anchorBtn.classList.add('active');
   chatCtxAnchorBtn = anchorBtn;
   const menu = document.createElement('div');
-  menu.className = 'chat-ctx-menu';
+  menu.className = 'menu chat-ctx-menu';
   menu.innerHTML = `
-    <button data-action="rename"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Rename</button>
-    <button data-action="md"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Save as Markdown</button>
-    <button data-action="html"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Save as web page</button>
-    <button data-action="gist"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>Share as secret gist</button>
-    <button data-action="delete" class="danger"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg>Delete</button>`;
+    <button class="menu-item" data-action="rename"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Rename</button>
+    <button class="menu-item" data-action="md"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Save as Markdown</button>
+    <button class="menu-item" data-action="html"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Save as web page</button>
+    <button class="menu-item" data-action="gist"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>Share as secret gist</button>
+    <button class="menu-item danger" data-action="delete"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg>Delete</button>`;
   document.body.appendChild(menu);
   const rect = anchorBtn.getBoundingClientRect();
   menu.style.top = rect.bottom + 4 + 'px';
@@ -1207,7 +1528,7 @@ function openChatMenu(session, anchorBtn) {
   }
   menu.querySelector('[data-action="delete"]').addEventListener('click', () => {
     closeChatMenu();
-    deleteSessionById(session.id);
+    confirmDeleteSession(session);
   });
   chatCtxMenuEl = menu;
 }
@@ -1255,6 +1576,16 @@ function startRenameSession(session) {
   input.addEventListener('blur', () => finish(true));
 }
 
+async function confirmDeleteSession(session) {
+  const r = await CraftModal.confirm({
+    title: 'Delete chat?',
+    body: `"${session.title || 'This chat'}" is deleted on this PC and your phone. Files in the project are not touched.`,
+    confirmLabel: 'Delete',
+    danger: true,
+  });
+  if (r.ok) deleteSessionById(session.id);
+}
+
 async function deleteSessionById(id) {
   await api.deleteSession(id);
   state.sessions = state.sessions.filter((s) => s.id !== id);
@@ -1274,10 +1605,10 @@ function openProjectMenu(projectPath, anchorBtn) {
   anchorBtn.classList.add('active');
   chatCtxAnchorBtn = anchorBtn;
   const menu = document.createElement('div');
-  menu.className = 'chat-ctx-menu';
+  menu.className = 'menu chat-ctx-menu';
   menu.innerHTML = `
-    <button data-action="reveal"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>Show in Explorer</button>
-    <button data-action="remove" class="danger"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg>Remove from list</button>`;
+    <button class="menu-item" data-action="reveal"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>Show in Explorer</button>
+    <button class="menu-item danger" data-action="remove"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg>Remove from list</button>`;
   document.body.appendChild(menu);
   const rect = anchorBtn.getBoundingClientRect();
   menu.style.top = rect.bottom + 4 + 'px';
@@ -1444,7 +1775,7 @@ async function pickModel(id) {
 function openModelMenu(anchorBtn) {
   closeModelMenu();
   const menu = document.createElement('div');
-  menu.className = 'model-menu';
+  menu.className = 'menu model-menu';
   const sel = state.models.selected;
   const check = '<svg class="model-item-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>';
   const custom = state.models.models.filter((m) => m.kind !== 'chatgpt');
@@ -1481,9 +1812,9 @@ function openModelMenu(anchorBtn) {
           <span class="model-item-text"><strong>${esc(m.name)}${phoneBadge(m)}</strong><span>${esc(m.model)} · ${esc(m.kind === 'ollama' ? 'on this computer' : hostOf(m.baseUrl))}</span></span>
           ${sel === m.id ? check : ''}
         </button>
-        ${m.phone && m.phone.eligible ? `<button class="model-item-tool${m.phone.on ? ' on' : ''}" data-phone="${esc(m.id)}" title="${esc(m.phone.on ? (m.phone.synced ? 'On your phone. Click to stop syncing it' : m.phone.reason || 'Syncing to your phone') : 'Sync to phone: use it there even when this PC is off')}"><svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 17.5h2"/></svg></button>` : ''}
-        <button class="model-item-tool" data-edit="${esc(m.id)}" title="Edit"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-        <button class="model-item-tool danger" data-delete="${esc(m.id)}" title="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg></button>
+        ${m.phone && m.phone.eligible ? `<button class="model-item-tool icon-btn icon-btn-xs${m.phone.on ? ' on' : ''}" data-phone="${esc(m.id)}" title="${esc(m.phone.on ? (m.phone.synced ? 'On your phone. Click to stop syncing it' : m.phone.reason || 'Syncing to your phone') : 'Sync to phone: use it there even when this PC is off')}"><svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 17.5h2"/></svg></button>` : ''}
+        <button class="model-item-tool icon-btn icon-btn-xs" data-edit="${esc(m.id)}" title="Edit"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+        <button class="model-item-tool icon-btn icon-btn-xs danger" data-delete="${esc(m.id)}" title="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg></button>
       </div>`).join('')}
     ${chatgptSection}
     <div class="model-menu-divider"></div>
@@ -1507,7 +1838,7 @@ function openModelMenu(anchorBtn) {
     const m = state.models.models.find((x) => x.id === btn.dataset.phone);
     if (!m) return;
     const on = !(m.phone && m.phone.on);
-    if (!on && !confirm(`Stop syncing "${m.name}" to your phone? Its key is removed from your Codeply account; it stays on this computer.`)) return;
+    if (!on && !(await CraftModal.confirm({ title: 'Stop syncing to your phone?', body: `The key for "${m.name}" is removed from your Codeply account. It stays on this computer.`, confirmLabel: 'Stop syncing' })).ok) return;
     btn.disabled = true;
     const r = await api.setModelPhone(m.id, on);
     if (r.state) applyModelsState(r.state);
@@ -1518,9 +1849,11 @@ function openModelMenu(anchorBtn) {
   menu.querySelectorAll('[data-delete]').forEach((btn) => btn.addEventListener('click', async (e) => {
     e.stopPropagation();
     const m = state.models.models.find((x) => x.id === btn.dataset.delete);
-    if (!m || !confirm(`Remove "${m.name}"? Its API key is deleted from this computer${m.synced ? ' and from your phone' : ''} too.`)) return;
+    if (!m) return;
+    closeModelMenu();
+    if (!(await CraftModal.confirm({ title: `Remove ${m.name}?`, body: `Its API key is deleted from this computer${m.synced ? ' and from your phone' : ''} too.`, confirmLabel: 'Remove', danger: true })).ok) return;
     const r = await api.deleteModel(m.id);
-    if (r.ok) { applyModelsState(r.state); openModelMenu(anchorBtn); }
+    if (r.ok) { applyModelsState(r.state); showToast(`Removed ${m.name}`); }
   }));
   menu.querySelector('[data-action="add"]').addEventListener('click', () => { closeModelMenu(); openModelsModal({ tab: 'custom' }); });
   menu.querySelector('[data-action="ollama"]').addEventListener('click', () => { closeModelMenu(); openModelsModal({ tab: 'ollama' }); });
@@ -1528,7 +1861,7 @@ function openModelMenu(anchorBtn) {
   menu.querySelector('[data-action="chatgpt-usage"]')?.addEventListener('click', () => { closeModelMenu(); api.openExternal(CHATGPT_USAGE_URL); });
   menu.querySelector('[data-action="chatgpt-signout"]')?.addEventListener('click', async () => {
     closeModelMenu();
-    if (!confirm('Disconnect ChatGPT? Craft stops using your ChatGPT plan until you sign in again.')) return;
+    if (!(await CraftModal.confirm({ title: 'Disconnect ChatGPT?', body: 'Craft stops using your ChatGPT plan until you sign in again.', confirmLabel: 'Disconnect', danger: true })).ok) return;
     const r = await api.chatgptSignOut();
     if (!r.ok) { showToast(r.error || 'Could not disconnect.', 'error'); return; }
     state.chatgpt = r.status;
@@ -1553,12 +1886,12 @@ async function signInWithChatGPT() {
     if (!r.ok) { showToast(r.error || 'ChatGPT sign-in failed.', 'error'); return; }
     state.chatgpt = r.status;
     applyModelsState(r.state);
-    if (r.warning) { alert(r.warning); return; }
+    if (r.warning) { await CraftModal.alert({ title: 'ChatGPT', body: r.warning }); return; }
     // The first model the plan offers becomes the pick, so the sign-in does something visible.
     const first = state.models.models.find((m) => m.kind === 'chatgpt');
     if (first) await pickModel(first.id);
     // The disclosure OpenAI asks apps to show after the first sign-in.
-    alert('Eligible usage in this app uses your ChatGPT plan. Manage usage in your ChatGPT settings (chatgpt.com/settings/usage).');
+    await CraftModal.alert({ title: 'Using your ChatGPT plan', body: 'Eligible usage in this app uses your ChatGPT plan. Manage usage in your ChatGPT settings (chatgpt.com/settings/usage).' });
   } finally {
     chatgptSigningIn = false;
   }
@@ -1605,11 +1938,11 @@ function openModelsModal({ tab = 'custom', edit = null } = {}) {
   $('mSave').textContent = editingModelId ? 'Test & update' : 'Test & save';
   $('modelsPresets').classList.toggle('hidden', !!editingModelId);
   setModelsTab(tab);
-  $('modelsBackdrop').classList.remove('hidden');
+  CraftModal.open('modelsBackdrop', { onClose: closeModelsModal });
   if (tab === 'custom') setTimeout(() => (editingModelId ? $('mKey') : $('mBaseUrl')).focus(), 30);
 }
 
-function closeModelsModal() { $('modelsBackdrop').classList.add('hidden'); }
+function closeModelsModal() { CraftModal.close('modelsBackdrop'); }
 
 $('modelsPresets').innerHTML = '<span class="models-presets-label">Quick fill</span>' +
   MODEL_PRESETS.map((p, i) => `<button class="preset-chip" data-i="${i}">${esc(p.label)}</button>`).join('');
@@ -1697,7 +2030,7 @@ async function detectOllamaModels() {
     <div class="ollama-row">
       <span class="model-item-icon local">${LLAMA_SVG}</span>
       <div class="ollama-row-text"><strong>${esc(m.name)}</strong><span>${esc([m.params, m.family, formatBytes(m.size)].filter(Boolean).join(' · '))}</span></div>
-      <button class="btn-quiet" data-model="${esc(m.name)}">${added.has(m.name) ? 'Use' : 'Add'}</button>
+      <button class="btn btn-secondary btn-sm" data-model="${esc(m.name)}">${added.has(m.name) ? 'Use' : 'Add'}</button>
     </div>`).join('');
   list.querySelectorAll('[data-model]').forEach((btn) => btn.addEventListener('click', () => addOllamaModel(btn.dataset.model, r.host, btn)));
 }
@@ -2032,9 +2365,9 @@ function addApprovalCard(ev) {
     ${ev.detail ? `<div class="approval-detail">${esc(ev.detail)}</div>` : ''}
     ${diffHtml}
     <div class="approval-actions">
-      <button class="appr-btn accept" data-v="once">Accept</button>
-      ${alwaysLabel ? `<button class="appr-btn" data-v="always">${esc(alwaysLabel)}</button>` : ''}
-      <button class="appr-btn reject" data-v="reject">Reject</button>
+      <button class="btn btn-primary btn-sm appr-btn" data-v="once">Accept</button>
+      ${alwaysLabel ? `<button class="btn btn-secondary btn-sm appr-btn" data-v="always">${esc(alwaysLabel)}</button>` : ''}
+      <button class="btn btn-ghost btn-sm btn-danger-hover appr-btn" data-v="reject">Reject</button>
     </div>`;
   card.querySelectorAll('.appr-btn').forEach((btn) =>
     btn.addEventListener('click', () => {
@@ -2065,9 +2398,9 @@ function addEmailApprovalCard(ev) {
     <label class="email-field"><span>Subject</span><input data-f="subject" type="text"></label>
     <textarea class="email-body" data-f="body" rows="6"></textarea>
     <div class="approval-actions">
-      <button class="appr-btn accept" data-v="once">${draftOnly ? 'Save draft' : 'Send'}</button>
-      ${draftOnly ? '' : '<button class="appr-btn" data-v="draft">Save as draft</button>'}
-      <button class="appr-btn reject" data-v="reject">Don't send</button>
+      <button class="btn btn-primary btn-sm appr-btn" data-v="once">${draftOnly ? 'Save draft' : 'Send'}</button>
+      ${draftOnly ? '' : '<button class="btn btn-secondary btn-sm appr-btn" data-v="draft">Save as draft</button>'}
+      <button class="btn btn-ghost btn-sm btn-danger-hover appr-btn" data-v="reject">Don't send</button>
     </div>`;
   // Set as properties, never parsed as markup.
   card.querySelector('[data-f="to"]').value = String(d.to || '');
@@ -2110,9 +2443,9 @@ function renderQuestionCard(q, existing) {
   }
   card.innerHTML = `
     <div class="q-head"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/></svg><span class="q-text"></span></div>
-    <div class="q-options">${(q.options || []).map((o, i) => `<button class="q-opt${i === 0 ? ' first' : ''}" type="button" data-i="${i}">${esc(o)}</button>`).join('')}</div>
-    <form class="q-custom"><input type="text" placeholder="${(q.options || []).length ? 'Or type your own answer' : 'Type your answer'}" maxlength="2000"><button type="submit">Send</button></form>
-    <button class="q-skip" type="button">Let the agent decide</button>`;
+    <div class="q-options">${(q.options || []).map((o, i) => `<button class="btn btn-secondary btn-sm q-opt${i === 0 ? ' first' : ''}" type="button" data-i="${i}">${esc(o)}</button>`).join('')}</div>
+    <form class="q-custom"><input class="input input-sm" type="text" placeholder="${(q.options || []).length ? 'Or type your own answer' : 'Type your answer'}" maxlength="2000"><button class="btn btn-secondary btn-sm" type="submit">Send</button></form>
+    <button class="btn btn-ghost btn-sm q-skip" type="button">Let the agent decide</button>`;
   card.querySelector('.q-text').textContent = q.question;
   const send = (answer) => {
     if (!api) return;
@@ -2147,13 +2480,13 @@ function addImagePickerCard(ev) {
     </div>
     <div class="approval-detail">for ${esc(ev.path || 'this file')}</div>
     <div class="img-search-row">
-      <input class="img-search-input" type="text" value="${esc(ev.keywords || '')}" placeholder="Search photos…">
-      <button class="img-search-btn">Search</button>
+      <input class="input img-search-input" type="text" value="${esc(ev.keywords || '')}" placeholder="Search photos…">
+      <button class="btn btn-secondary btn-lg img-search-btn">Search</button>
     </div>
     <div class="img-grid"><div class="img-grid-status">Searching…</div></div>
     <div class="approval-actions">
-      <button class="appr-btn" data-v="skip">Skip, use Codeply's pick</button>
-      <button class="appr-btn reject" data-v="cancel">Cancel, no image</button>
+      <button class="btn btn-secondary btn-sm appr-btn" data-v="skip">Skip, use Codeply's pick</button>
+      <button class="btn btn-ghost btn-sm btn-danger-hover appr-btn" data-v="cancel">Cancel, no image</button>
     </div>`;
 
   const grid = card.querySelector('.img-grid');
@@ -2255,6 +2588,13 @@ if (api) api.onAgentEvent((data) => {
 
   // A delete made from a paired phone - mirrors deleteSessionById() below,
   // minus the api.deleteSession() call (already done on the other end).
+  // The chat was rewound for an edit or retry somewhere else (this window
+  // already redrew its own): reload it so dropped messages disappear.
+  if (data.type === 'session_rewound') {
+    if (mine && data.origin !== desktopClientId) openSession(data.sessionId);
+    return;
+  }
+
   if (data.type === 'session_deleted') {
     state.sessions = state.sessions.filter((s) => s.id !== data.sessionId);
     if (state.currentSessionId === data.sessionId) {
@@ -2397,6 +2737,7 @@ if (api) api.onAgentEvent((data) => {
       activeTaskList = null;
       setRunning(false);
       renderRecents();
+      updateReplyActions();
       break;
   }
 });
@@ -2464,10 +2805,12 @@ async function openSession(id) {
   // runs:status (state.runningSessions) is a live backend snapshot, so it's
   // always right even when a run_finished event got missed.
   setRunning(state.runningSessions.includes(id));
+  updateReplyActions();
 }
 
 $('deleteChatBtn').addEventListener('click', () => {
-  if (state.currentSessionId) deleteSessionById(state.currentSessionId);
+  const s = state.sessions.find((x) => x.id === state.currentSessionId);
+  if (s) confirmDeleteSession(s);
 });
 
 $('newChatBtn').addEventListener('click', () => {
@@ -2710,14 +3053,14 @@ let skillsTargetInput = null; // which composer input to insert the pick into
 
 async function openSkillsModal(inputEl) {
   skillsTargetInput = inputEl;
-  $('skillsBackdrop').classList.remove('hidden');
+  CraftModal.open('skillsBackdrop', { onClose: closeSkillsModal });
   $('skillsSearch').value = '';
   $('skillsSearch').focus();
   if (!allSkills.length) allSkills = await api.listSkills();
   renderSkillsList(allSkills);
 }
 function closeSkillsModal() {
-  $('skillsBackdrop').classList.add('hidden');
+  CraftModal.close('skillsBackdrop');
 }
 
 // ─── Codeply Away (phone) ────────────────────────────────────────────────────────
@@ -2731,7 +3074,7 @@ function setRemoteStatus(text, kind) {
 }
 
 async function openRemoteModal() {
-  $('remoteBackdrop').classList.remove('hidden');
+  CraftModal.open('remoteBackdrop', { onClose: closeRemoteModal });
   $('remoteUrl').textContent = '…';
   setRemoteStatus('Checking…', '');
   const info = await api.remoteInfo();
@@ -2743,14 +3086,14 @@ async function openRemoteModal() {
   else if (info.relay) setRemoteStatus('Online. Your phone can reach this PC from anywhere.', 'ok');
   else setRemoteStatus('Connecting to Codeply… (needs an internet connection)', '');
   // The relay can take a moment to come up the first time.
-  if (info.signedIn && !info.relay) setTimeout(() => { if (!$('remoteBackdrop').classList.contains('hidden')) openRemoteModal(); }, 2500);
+  if (info.signedIn && !info.relay) setTimeout(() => { if (CraftModal.isOpen('remoteBackdrop')) openRemoteModal(); }, 2500);
 }
 $('remoteUrl').addEventListener('click', (e) => {
   e.preventDefault();
   if ($('remoteUrl').dataset.href) api.openExternal($('remoteUrl').dataset.href);
 });
 $('keepAwakeToggle').addEventListener('change', (e) => api.setKeepAwake(e.target.checked));
-function closeRemoteModal() { $('remoteBackdrop').classList.add('hidden'); }
+function closeRemoteModal() { CraftModal.close('remoteBackdrop'); }
 api.onRemoteServerError((data) => {
   if (!$('remoteBackdrop').classList.contains('hidden')) {
     setRemoteStatus(data.message || 'The phone connection failed to start.', 'error');
@@ -2837,8 +3180,8 @@ async function renderPlugins() {
     card.innerHTML = `${pluginSummaryHtml(p.summary)}
       <div class="plugin-actions">
         ${!p.update && state.project ? '<label class="plugin-scope"><input type="checkbox" id="pluginProjectOnly"> Only for this project</label>' : ''}
-        <button class="btn-quiet" id="pluginCancel">Cancel</button>
-        <button class="btn-primary" id="pluginConfirm">${p.update ? 'Update' : 'Install'} ${esc(p.summary.name)}</button>
+        <button class="btn btn-secondary btn-sm" id="pluginCancel">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="pluginConfirm">${p.update ? 'Update' : 'Install'} ${esc(p.summary.name)}</button>
       </div>`;
     body.appendChild(card);
     $('pluginCancel').addEventListener('click', async () => { await api.cancelPlugin(p.token); pluginPending = null; renderPlugins(); });
@@ -2864,12 +3207,16 @@ async function renderPlugins() {
     card.innerHTML = `${pluginSummaryHtml(p)}
       <div class="plugin-actions">
         <span class="plugin-scope-tag">${p.scope === 'project' ? 'This project' : 'Every project'}</span>
-        <button class="btn-quiet" data-a="toggle">${p.enabled ? 'Turn off' : 'Turn on'}</button>
-        ${p.source ? '<button class="btn-quiet" data-a="update">Update</button>' : ''}
-        <button class="btn-quiet" data-a="remove">Remove</button>
+        <button class="btn btn-secondary btn-sm" data-a="toggle">${p.enabled ? 'Turn off' : 'Turn on'}</button>
+        ${p.source ? '<button class="btn btn-secondary btn-sm" data-a="update">Update</button>' : ''}
+        <button class="btn btn-ghost btn-sm btn-danger-hover" data-a="remove">Remove</button>
       </div>`;
     card.querySelector('[data-a="toggle"]').addEventListener('click', async () => { await api.togglePlugin(p.name, !p.enabled, state.project || null); renderPlugins(); });
-    card.querySelector('[data-a="remove"]').addEventListener('click', async () => { await api.removePlugin(p.name, state.project || null); renderPlugins(); });
+    card.querySelector('[data-a="remove"]').addEventListener('click', async () => {
+      if (!(await CraftModal.confirm({ title: `Remove ${p.name}?`, body: 'Its commands, skills and MCP servers stop loading. You can install it again later.', confirmLabel: 'Remove', danger: true })).ok) return;
+      await api.removePlugin(p.name, state.project || null);
+      renderPlugins();
+    });
     const upd = card.querySelector('[data-a="update"]');
     if (upd) upd.addEventListener('click', async () => {
       upd.disabled = true; upd.textContent = 'Checking...';
@@ -2886,14 +3233,14 @@ async function renderPlugins() {
 async function openPluginsModal() {
   pluginPending = null;
   pluginError('');
-  $('pluginsBackdrop').classList.remove('hidden');
+  CraftModal.open('pluginsBackdrop', { onClose: closePluginsModal });
   $('pluginSource').focus();
   renderPlugins();
 }
 function closePluginsModal() {
   if (pluginPending) api.cancelPlugin(pluginPending.token);
   pluginPending = null;
-  $('pluginsBackdrop').classList.add('hidden');
+  CraftModal.close('pluginsBackdrop');
 }
 async function fetchPlugin() {
   const source = $('pluginSource').value.trim();
@@ -2961,10 +3308,10 @@ document.querySelectorAll('.composer').forEach((composer) => {
     closeMenu();
     activeIndex = 0;
     menu = document.createElement('div');
-    menu.className = 'slash-menu';
+    menu.className = 'menu slash-menu';
     list.forEach((cmd, i) => {
       const item = document.createElement('button');
-      item.className = 'slash-item' + (i === 0 ? ' active' : '');
+      item.className = 'menu-item slash-item' + (i === 0 ? ' active' : '');
       item.innerHTML = `<svg viewBox="0 0 24 24"><path d="M12 3l2.2 5.6L20 10.8l-5.8 2.2L12 19l-2.2-6L4 10.8l5.8-2.2Z"/></svg><strong>${esc(cmd.name)}</strong><span class="slash-desc">${esc(cmd.desc)}</span>`;
       item.addEventListener('click', () => { closeMenu(); input.value = ''; cmd.run(input); });
       menu.appendChild(item);

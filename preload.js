@@ -105,6 +105,8 @@ contextBridge.exposeInMainWorld('craft', {
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   onRemoteServerError: (cb) => ipcRenderer.on('remote:server-error', (e, data) => cb(data)),
   stop: (sessionId) => ipcRenderer.send('chat:stop', sessionId),
+  // edit or retry a sent message: rewinds the chat to it and runs it again in place
+  editMessage: (payload) => ipcRenderer.invoke('chat:edit', payload),
   respondApproval: (requestId, verdict) => ipcRenderer.send('approval:respond', { requestId, verdict }),
   // custom slash commands (.codeply/commands/*.md) for a project
   listCommands: (cwd) => ipcRenderer.invoke('commands:list', cwd),
