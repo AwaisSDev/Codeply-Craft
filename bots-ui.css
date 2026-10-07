@@ -10,14 +10,11 @@
 .bot-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bot-chip .bot-chip-icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; margin-left: 2px; }
 
-.bot-menu {
-  position: fixed; z-index: 60; width: 280px; max-height: 60vh; overflow-y: auto; padding: 6px;
-  background: var(--surface-1); border: 1px solid var(--card-border); border-radius: var(--radius-md); box-shadow: var(--shadow-pop);
-}
-.bot-menu-head { padding: 6px 8px 4px; font-size: 11.5px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; }
+/* The panel itself is the shared .menu (styles.css). */
+.bot-menu { z-index: 60; width: 280px; max-height: 60vh; overflow-y: auto; }
+.bot-menu-head { padding: 8px 8px 4px; font-size: 12px; font-weight: 500; color: var(--text-faint); }
 .bot-menu-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; border-radius: 8px; text-align: left; color: var(--text); }
-.bot-menu-item:hover { background: var(--hover); }
-.bot-menu-item.on { background: var(--surface-2); }
+.bot-menu-item:hover, .bot-menu-item.on { background: var(--hover); }
 .bot-menu-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .bot-menu-text b { font-size: 13px; font-weight: 600; }
 .bot-menu-text span { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -27,16 +24,13 @@
 .bot-menu-manage:hover { background: var(--hover); color: var(--text); }
 
 /* ---- Modal ---- */
-.bots-modal {
-  width: 100%; max-width: 920px; height: min(760px, 88vh); margin: 0 24px;
-  background: var(--surface-1); border: 1px solid var(--card-border); border-radius: 18px; box-shadow: var(--shadow-pop);
-  display: flex; flex-direction: column; overflow: hidden; color: var(--text);
-}
+/* The panel is the shared .modal (styles.css); this only sizes it. */
+.bots-modal { max-width: 920px; height: min(760px, 88vh); }
 .bots-head { display: flex; align-items: flex-start; gap: 10px; padding: 18px 18px 12px 20px; }
 .bots-head-text { flex: 1; min-width: 0; }
 .bots-back { margin-left: -6px; }
 .bots-back svg { fill: none; stroke: currentColor; stroke-width: 2; }
-.bots-title { font-size: 17px; font-weight: 600; margin-bottom: 3px; }
+.bots-title { font-size: 16px; font-weight: 600; margin-bottom: 3px; }
 .bots-sub { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; max-width: 600px; }
 .bots-body { flex: 1; overflow-y: auto; padding: 4px 20px 20px; font-size: 13.5px; }
 .bots-sub-title { margin: 18px 0 8px; font-size: 12px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; }
@@ -47,15 +41,7 @@
 .bots-link { background: none; border: 0; padding: 0; margin-left: auto; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
 .bots-link:hover { text-decoration: underline; }
 
-.bots-btn {
-  height: 32px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
-  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
-}
-.bots-btn:hover:not(:disabled) { border-color: var(--text-faint); }
-.bots-btn:disabled { opacity: 0.6; cursor: default; }
-.bots-btn.primary { background: var(--invert-bg); color: var(--invert-text); border-color: transparent; }
-.bots-btn.primary:hover:not(:disabled) { background: var(--invert-bg-hover); }
-.bots-btn.danger { color: var(--red); }
+/* Buttons are the shared .btn (styles.css). */
 
 /* Describe your bot */
 .bots-describe { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--card-bg); padding: 10px 10px 8px 12px; }
@@ -136,7 +122,7 @@
 .bot-mem li span { flex: 1; }
 .bot-mem-del { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--text-faint); flex-shrink: 0; }
 .bot-mem-del:hover { background: var(--hover); color: var(--red); }
-.bot-mem-del svg, .bots-modal .sb-icon-btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; }
+.bot-mem-del svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; }
 .bot-xp-sub { font-size: 12px; color: var(--text-faint); margin: 8px 0 4px; }
 .bot-xp-pb summary { cursor: pointer; }
 .bot-xp-pb ol { margin: 6px 0 4px; padding-left: 18px; }

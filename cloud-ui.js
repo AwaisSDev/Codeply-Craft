@@ -78,7 +78,7 @@
     if (backdrop) return backdrop;
     backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop hidden';
-    backdrop.innerHTML = '<div class="cloud-modal" role="dialog" aria-modal="true" aria-label="Cloud runs"></div>';
+    backdrop.innerHTML = '<div class="modal modal-md cloud-modal" role="dialog" aria-modal="true" aria-label="Cloud runs"></div>';
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeSheet(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !backdrop.classList.contains('hidden')) closeSheet(); });
     document.body.appendChild(backdrop);
@@ -110,7 +110,7 @@
     const box = sheet().querySelector('.cloud-modal');
     const s = current;
     const head = `<div class="cloud-head"><div class="cloud-title">${ICON}<span>Cloud runs</span></div>
-      <button class="sb-icon-btn" data-act="close" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button></div>`;
+      <button class="icon-btn icon-btn-sm modal-close" data-act="close" title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button></div>`;
     if (loading || !s) { box.innerHTML = `${head}<div class="cloud-body"><p class="cloud-dim">${loading ? 'Checking...' : 'Cloud runs are not available.'}</p></div>`; wire(box); return; }
     const err = error ? `<div class="cloud-error">${esc(error)}</div>` : '';
     // Keep what was typed in the environment box when the sheet redraws.
@@ -121,10 +121,10 @@
       const o = s.origin && s.origin.canPush !== false ? s.origin : null;
       const target = setupTarget || (o ? 'repo' : 'mirror');
       let action;
-      if (!s.github.connected) action = '<button class="cloud-primary" data-act="github">Connect GitHub</button>';
-      else if (!s.github.scopesOk) action = '<button class="cloud-primary" data-act="github">Reconnect GitHub</button><p class="cloud-dim">Craft needs permission to work in your repos.</p>';
-      else if (!s.model.ok) action = `<button class="cloud-primary" disabled>Set up</button><p class="cloud-dim">${esc(s.model.error)} Choose one from the model menu, then come back.</p>`;
-      else action = `<button class="cloud-primary" data-act="setup" ${busy ? 'disabled' : ''}>${busy ? 'Setting up...' : 'Set up'}</button>`;
+      if (!s.github.connected) action = '<button class="btn btn-primary cloud-primary" data-act="github">Connect GitHub</button>';
+      else if (!s.github.scopesOk) action = '<button class="btn btn-primary cloud-primary" data-act="github">Reconnect GitHub</button><p class="cloud-dim">Craft needs permission to work in your repos.</p>';
+      else if (!s.model.ok) action = `<button class="btn btn-primary cloud-primary" disabled>Set up</button><p class="cloud-dim">${esc(s.model.error)} Choose one from the model menu, then come back.</p>`;
+      else action = `<button class="btn btn-primary cloud-primary" data-act="setup" ${busy ? 'disabled' : ''}>${busy ? 'Setting up...' : 'Set up'}</button>`;
       const mirrorName = `craft-workspace-${projectName().toLowerCase().replace(/[^a-z0-9._-]+/g, '-')}`;
       const choice = o ? `<div class="cloud-choice">
           <label><input type="radio" name="cloud-target" value="repo" data-act="target" ${target === 'repo' ? 'checked' : ''}>
@@ -161,22 +161,22 @@
         <div class="cloud-task-main"><span class="cloud-dot ${t.status}"></span><span class="cloud-task-prompt">${esc(t.prompt.split('\n')[0].slice(0, 90))}</span></div>
         <div class="cloud-task-meta">${esc(STATUS[t.status] || t.status)}${t.remote ? ' · from another device' : ''} · ${ago(t.startedAt)}${t.files.length ? ` · ${plural(t.files.length, 'file')}` : ''}${merged}${t.pulledAt ? (t.kind === 'repo' ? ' · pulled' : ' · applied') : ''}
           ${t.runUrl ? `<a href="#" data-url="${esc(t.runUrl)}">View run</a>` : ''}
-          ${canApply ? `<button class="cp-action" data-act="apply-task" data-id="${esc(t.id)}">Apply</button>` : ''}</div></li>`;
+          ${canApply ? `<button class="btn btn-secondary btn-sm cp-action" data-act="apply-task" data-id="${esc(t.id)}">Apply</button>` : ''}</div></li>`;
     }).join('') : '<li class="cloud-dim">No cloud runs yet. Turn the switch on and send a message.</li>';
     const where = p.kind === 'repo'
       ? `<div class="cloud-row"><span>Works in <a href="#" data-url="${esc(p.url)}">${esc(p.repo)}</a> <span class="cloud-dim">(new branch per task, merged into <code>${esc(p.base)}</code>)</span></span></div>`
       : `<label class="cloud-switch"><input type="checkbox" data-act="autoBackup" ${p.autoBackup ? 'checked' : ''}><span><b>Back up after every run</b><br><span class="cloud-dim">So a cloud run started from your phone has your latest code.</span></span></label>
         <div class="cloud-row"><span>Private copy: <a href="#" data-url="${esc(p.url)}">${esc(p.repo)}</a></span>
         <span class="cloud-dim">${p.lastPush ? `backed up ${ago(p.lastPush.at)}` : 'not backed up yet'}</span>
-        <button class="cp-action" data-act="backup" ${busy ? 'disabled' : ''}>${busy === 'backup' ? 'Backing up...' : 'Back up now'}</button></div>`;
+        <button class="btn btn-secondary btn-sm cp-action" data-act="backup" ${busy ? 'disabled' : ''}>${busy === 'backup' ? 'Backing up...' : 'Back up now'}</button></div>`;
     const keys = (p.env && p.env.keys) || [];
     const envRow = envEditing
       ? `<div class="cloud-env"><span class="cloud-env-label">Environment variables for testing <span class="cloud-dim">(KEY=value per line)</span></span>
           <textarea data-env rows="4" spellcheck="false" placeholder="${esc(ENV_PLACEHOLDER)}">${esc(envDraft)}</textarea>
           <span class="cloud-dim">${ENV_NOTE}${keys.length ? ' Saved values can\'t be read back, so enter every line again. Save it empty to remove them all.' : ''}</span>
-          <div class="cloud-env-actions"><button class="cp-action" data-act="env-save" ${busy === 'env' ? 'disabled' : ''}>${busy === 'env' ? 'Saving...' : 'Save'}</button><button class="cloud-link" data-act="env-cancel">Cancel</button></div></div>`
+          <div class="cloud-env-actions"><button class="btn btn-secondary btn-sm cp-action" data-act="env-save" ${busy === 'env' ? 'disabled' : ''}>${busy === 'env' ? 'Saving...' : 'Save'}</button><button class="cloud-link" data-act="env-cancel">Cancel</button></div></div>`
       : `<div class="cloud-row"><span>Environment: ${keys.length ? `<code>${keys.slice(0, 6).map(esc).join('</code> <code>')}</code>${keys.length > 6 ? ` and ${keys.length - 6} more` : ''}` : '<span class="cloud-dim">none</span>'}</span>
-          <button class="cp-action" data-act="env-edit">${keys.length ? 'Replace' : 'Add'}</button></div>`;
+          <button class="btn btn-secondary btn-sm cp-action" data-act="env-edit">${keys.length ? 'Replace' : 'Add'}</button></div>`;
     box.innerHTML = `${head}<div class="cloud-body">
       <label class="cloud-switch"><input type="checkbox" data-act="cloudOn" ${p.cloudOn ? 'checked' : ''}><span><b>Send new messages to the cloud</b><br><span class="cloud-dim">Runs with ${esc(p.modelName || s.model.name)}. Turn off to work on this PC again.</span></span></label>
       ${where}${envRow}
@@ -310,7 +310,7 @@
       if (m && m.ok) {
         return `<span class="cloud-sep">·</span><span>Merged into <code>${esc(m.base || task.base)}</code></span>${task.pulledAt
           ? '<span class="cloud-sep">·</span><span>Pulled</span>'
-          : '<button class="cp-action cloud-line-btn" data-act="pull">Pull</button>'}`;
+          : '<button class="btn btn-secondary btn-sm cp-action cloud-line-btn" data-act="pull">Pull</button>'}`;
       }
       if (m && !m.ok) return `<span class="cloud-sep">·</span><span>Kept on <code>${esc(task.branch || 'its branch')}</code>${m.reason ? `: ${esc(m.reason)}` : ''}</span>`;
       return files.length ? `<span class="cloud-sep">·</span><span>Changed ${plural(files.length, 'file')}</span>` : '';
@@ -318,7 +318,7 @@
     if (!files.length) return task.mode === 'Build' ? '<span class="cloud-sep">·</span><span>No files changed</span>' : '';
     return task.pulledAt
       ? `<span class="cloud-sep">·</span><span>Applied ${plural(files.length, 'file')}</span>`
-      : `<span class="cloud-sep">·</span><span>Changed ${plural(files.length, 'file')}</span><button class="cp-action cloud-line-btn" data-act="apply">Apply to project</button>`;
+      : `<span class="cloud-sep">·</span><span>Changed ${plural(files.length, 'file')}</span><button class="btn btn-secondary btn-sm cp-action cloud-line-btn" data-act="apply">Apply to project</button>`;
   }
 
   function render(task) {
@@ -406,7 +406,7 @@
     pullInfo = info;
     const html = `<span class="pull-bar-text">GitHub has ${plural(info.behind, 'new commit')} on <code>${esc(info.branch)}</code>${info.latest ? ` (latest: ${esc(info.latest)})` : ''}. Pull ${info.behind === 1 ? 'it' : 'them'} first?</span>
       ${error ? `<span class="pull-bar-error">${esc(error)}</span>` : ''}
-      <button class="cp-action" data-act="pull" ${busy ? 'disabled' : ''}>${busy ? 'Pulling...' : 'Pull'}</button>
+      <button class="btn btn-secondary btn-sm cp-action" data-act="pull" ${busy ? 'disabled' : ''}>${busy ? 'Pulling...' : 'Pull'}</button>
       <button class="cloud-link" data-act="later" ${busy ? 'disabled' : ''}>Not now</button>`;
     for (const bar of pullBars()) {
       bar.innerHTML = html;

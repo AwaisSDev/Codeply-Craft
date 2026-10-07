@@ -89,7 +89,7 @@
   function openMenu(anchor) {
     if (menu) { closeMenu(); return; }
     menu = document.createElement('div');
-    menu.className = 'bot-menu';
+    menu.className = 'menu bot-menu';
     const item = (id, avatarHtml, name, sub) => `<button class="bot-menu-item${id === selected ? ' on' : ''}" data-id="${esc(id)}">${avatarHtml}<span class="bot-menu-text"><b>${esc(name)}</b><span>${esc(sub)}</span></span>${id === selected ? '<svg class="bot-menu-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>' : ''}</button>`;
     menu.innerHTML = `<div class="bot-menu-head">Who answers</div>` +
       item('', av(CRAFT_AVATAR, 26, { still: true }), 'Craft', 'The default agent') +
@@ -118,7 +118,7 @@
     if (backdrop) return backdrop;
     backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop hidden';
-    backdrop.innerHTML = '<div class="bots-modal" role="dialog" aria-modal="true" aria-label="Bots"></div>';
+    backdrop.innerHTML = '<div class="modal bots-modal" role="dialog" aria-modal="true" aria-label="Bots"></div>';
     box = backdrop.firstElementChild;
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModal(); });
     document.addEventListener('keydown', (e) => {
@@ -146,9 +146,9 @@
 
   function head(title, sub, back) {
     return `<div class="bots-head">
-      ${back ? '<button class="sb-icon-btn bots-back" data-act="back" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>' : ''}
+      ${back ? '<button class="icon-btn icon-btn-sm bots-back" data-act="back" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>' : ''}
       <div class="bots-head-text"><div class="bots-title">${esc(title)}</div>${sub ? `<div class="bots-sub">${esc(sub)}</div>` : ''}</div>
-      <button class="sb-icon-btn" data-act="close" aria-label="Close">${ICON_X}</button></div>`;
+      <button class="icon-btn icon-btn-sm modal-close" data-act="close" title="Close" aria-label="Close">${ICON_X}</button></div>`;
   }
 
   function renderGallery() {
@@ -168,8 +168,8 @@
           <textarea class="bots-describe-input" rows="2" placeholder="Describe your bot: &quot;a patient reviewer who checks my pull requests for security issues and explains fixes simply&quot;">${esc(screen.describeText || '')}</textarea>
           <div class="bots-describe-row">
             <span class="bots-error">${screen.error ? esc(screen.error) : ''}</span>
-            <button class="bots-btn" data-act="blank">Start blank</button>
-            <button class="bots-btn primary" data-act="describe" ${screen.busy ? 'disabled' : ''}>${screen.busy ? 'Designing...' : 'Create with Craft'}</button>
+            <button class="btn btn-secondary bots-btn" data-act="blank">Start blank</button>
+            <button class="btn btn-primary bots-btn" data-act="describe" ${screen.busy ? 'disabled' : ''}>${screen.busy ? 'Designing...' : 'Create with Craft'}</button>
           </div>
         </div>
         <div class="bots-sub-title">Start from a template</div>
@@ -285,8 +285,8 @@
         <div class="bots-ed-left">
           <div class="bots-stage">${av(d.avatar, 168)}</div>
           <div class="bots-stage-actions">
-            <button class="bots-btn" data-act="surprise">Surprise me</button>
-            <button class="bots-btn" data-act="preview-work">Try working</button>
+            <button class="btn btn-secondary bots-btn" data-act="surprise">Surprise me</button>
+            <button class="btn btn-secondary bots-btn" data-act="preview-work">Try working</button>
           </div>
           ${PICKERS.map((p) => pickerHtml(p, d)).join('')}
           ${colorsHtml(d)}
@@ -309,10 +309,10 @@
         </div>
       </div>
       <div class="bots-foot">
-        ${isNew ? '' : `<button class="bots-btn danger" data-act="delete">${screen.confirmDelete ? 'Click again to delete' : 'Delete bot'}</button>`}
+        ${isNew ? '' : `<button class="btn btn-secondary btn-danger-hover bots-btn" data-act="delete">${screen.confirmDelete ? 'Click again to delete' : 'Delete bot'}</button>`}
         <span class="bots-error">${screen.error ? esc(screen.error) : ''}</span>
-        ${isNew ? '' : `<button class="bots-btn" data-act="use">${d.id === selected ? 'In chat' : 'Use in chat'}</button>`}
-        <button class="bots-btn primary" data-act="save">${isNew ? 'Create bot' : 'Save'}</button>
+        ${isNew ? '' : `<button class="btn btn-secondary bots-btn" data-act="use">${d.id === selected ? 'In chat' : 'Use in chat'}</button>`}
+        <button class="btn btn-primary bots-btn" data-act="save">${isNew ? 'Create bot' : 'Save'}</button>
       </div>`;
     wireCommon();
     wireEditor();
