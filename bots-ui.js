@@ -207,6 +207,34 @@
     on('back', () => { screen = { view: 'gallery' }; render(); });
   }
 
+  // Always on: the bot watches Gmail in the background (bots-watch.js) and reaches you when something is important.
+  const AO_DEFAULT = { on: false, watch: ['gmail'], reach: 'push', draft: true, quiet: { on: true, from: '22:00', to: '07:00' }, cloud: false };
+  function alwaysOnHtml(d, c) {
+    const ao = d.alwaysOn = { ...AO_DEFAULT, ...(d.alwaysOn || {}), quiet: { ...AO_DEFAULT.quiet, ...((d.alwaysOn && d.alwaysOn.quiet) || {}) } };
+    const reach = cat.reach || { message: 'Message me in Craft', push: 'Notify my phone', call: 'Call me when it is very important' };
+    return `<div class="${c.field}" data-ao-box><div class="${c.label}">Always on</div>
+      <label class="${c.check}"><input type="checkbox" data-ao="on" ${ao.on ? 'checked' : ''}><span>Watch my Gmail inbox in the background</span></label>
+      <div class="ao-more"${ao.on ? '' : ' hidden'}>
+        <div class="${c.dim}">No AI is used until an email looks important. Then it writes a summary and a reply.</div>
+        <div class="ao-row"><span>Reach me</span><select class="${c.input}" data-ao="reach">${Object.entries(reach).map(([k, v]) => `<option value="${k}" ${ao.reach === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>
+        <label class="${c.check}"><input type="checkbox" data-ao="draft" ${ao.draft ? 'checked' : ''}><span>Draft a reply in Gmail (never sends)</span></label>
+        <div class="ao-row"><label class="${c.check}"><input type="checkbox" data-ao="quiet" ${ao.quiet.on ? 'checked' : ''}><span>Quiet hours</span></label>
+          <input type="time" class="${c.input} ao-time" data-ao="from" value="${esc(ao.quiet.from)}"><span>to</span><input type="time" class="${c.input} ao-time" data-ao="to" value="${esc(ao.quiet.to)}"></div>
+        <label class="${c.check}"><input type="checkbox" data-ao="cloud" ${ao.cloud ? 'checked' : ''}><span>Keep watching when this PC is off (stores your Gmail sign-in on Codeply's server, encrypted)</span></label>
+      </div></div>`;
+  }
+  function wireAlwaysOn(root, d) {
+    const ao = d.alwaysOn;
+    root.querySelectorAll('[data-ao]').forEach((el) => el.addEventListener('change', () => {
+      const k = el.dataset.ao;
+      if (k === 'on') { ao.on = el.checked; const more = root.querySelector('[data-ao-box] .ao-more'); if (more) more.hidden = !el.checked; }
+      else if (k === 'reach') ao.reach = el.value;
+      else if (k === 'draft' || k === 'cloud') ao[k] = el.checked;
+      else if (k === 'quiet') ao.quiet.on = el.checked;
+      else if ((k === 'from' || k === 'to') && /^\d\d:\d\d$/.test(el.value)) ao.quiet[k] = el.value;
+    }));
+  }
+
   // ─── Editor ──────────────────────────────────────────────────────────────
   function editBot(bot) {
     if (!bot) return;
@@ -304,6 +332,7 @@
           <div class="bot-field"><label class="bot-field-label" for="botSources">Sources and notes</label><textarea id="botSources" class="bots-input" data-f="sources" rows="2" placeholder="Where it should look first, links, house rules (optional)">${esc(d.sources)}</textarea></div>
           <div class="bot-field"><div class="bot-field-label">Must ask before</div><div class="bot-approvals">${approvals}</div>
             <div class="bots-dim">Unchecked actions run without asking (your permission rules still apply). Keep anything irreversible checked.</div></div>
+          ${alwaysOnHtml(d, { field: 'bot-field', label: 'bot-field-label', check: 'bot-approval', input: 'bots-input', dim: 'bots-dim' })}
           ${memoryHtml(d)}
           ${experienceHtml(d)}
         </div>
@@ -337,6 +366,7 @@
       const k = el.dataset.approval;
       d.approval = el.checked ? [...new Set([...d.approval, k])] : d.approval.filter((x) => x !== k);
     }));
+    wireAlwaysOn(box, d);
     box.querySelectorAll('.bot-pick-row').forEach((row) => row.addEventListener('click', (e) => {
       const tile = e.target.closest('.bot-pick-tile');
       if (!tile) return;
@@ -401,7 +431,7 @@
     });
     on('save', async () => {
       if (!String(d.name || '').trim()) { screen.error = 'Give it a name.'; renderEditor(); box.querySelector('#botName').focus(); return; }
-      const patch = { name: d.name, role: d.role, specialty: d.specialty, instructions: d.instructions, tone: d.tone, sources: d.sources, approval: d.approval, avatar: d.avatar };
+      const patch = { name: d.name, role: d.role, specialty: d.specialty, instructions: d.instructions, tone: d.tone, sources: d.sources, approval: d.approval, avatar: d.avatar, alwaysOn: d.alwaysOn };
       const r = screen.id ? await api.botsUpdate(screen.id, patch) : await api.botsCreate(patch);
       if (r.error) { screen.error = r.error; renderEditor(); return; }
       cat = r;
