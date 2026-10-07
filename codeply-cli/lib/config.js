@@ -220,7 +220,8 @@ function disconnectIntegration(name) {
 // ever sent to the base URL the user typed in, never to Codeply.
 //
 //   selectedModel: 'auto' | <model id>
-//   models: [{ id, name, kind: 'openai' | 'ollama', baseUrl, model, apiKey, createdAt }]
+//   models: [{ id, name, kind: 'openai' | 'ollama', baseUrl, model, apiKey, createdAt,
+//              phone?, phoneSyncedAt?, phoneUser?, phoneError? }]   (phone sync: model-sync.js)
 
 const AUTO_MODEL_ID = 'auto';
 
@@ -337,6 +338,12 @@ function saveModel(input) {
     apiKey: input.apiKey === undefined || input.apiKey === null ? (existing?.apiKey || '') : String(input.apiKey).trim(),
     createdAt: existing?.createdAt || Date.now(),
   };
+  // "Use on my phone" (model-sync.js). phone: true/false once chosen, absent
+  // for models added before the option existed; the sync status fields are
+  // only ever written by setModelPhone.
+  const phone = typeof input.phone === 'boolean' ? input.phone : existing?.phone;
+  if (typeof phone === 'boolean') entry.phone = phone;
+  for (const k of PHONE_FIELDS) if (existing && existing[k] !== undefined) entry[k] = existing[k];
   file.models = existing
     ? file.models.map((m) => (m.id === entry.id ? entry : m))
     : [...file.models, entry];
@@ -344,8 +351,41 @@ function saveModel(input) {
   return w.ok ? { ok: true, model: entry } : w;
 }
 
+const PHONE_FIELDS = ['phoneSyncedAt', 'phoneUser', 'phoneError'];
+
+/** Updates a model's phone sync state: { phone?, phoneSyncedAt?, phoneUser?, phoneError? }. */
+function setModelPhone(id, patch) {
+  const file = readModelsState();
+  const m = file.models.find((x) => x.id === id);
+  if (!m) return { ok: false, error: 'Unknown model.' };
+  for (const k of ['phone', ...PHONE_FIELDS]) if (patch[k] !== undefined) m[k] = patch[k];
+  const w = writeFile(file);
+  return w.ok ? { ok: true, model: m } : w;
+}
+
+/**
+ * Synced models removed here but not yet removed from the account (offline,
+ * signed out). Kept until the delete goes through, so a removed key never
+ * lingers in the cloud: [{ id, user }].
+ */
+function getPhoneDeletes() {
+  const list = readFile().phoneDeletes;
+  return Array.isArray(list) ? list.filter((d) => d && d.id) : [];
+}
+
+function setPhoneDeletes(list) {
+  const file = readModelsState();
+  file.phoneDeletes = list;
+  return writeFile(file);
+}
+
 function deleteModel(id) {
   const file = readModelsState();
+  const gone = file.models.find((m) => m.id === id);
+  if (gone && gone.phoneSyncedAt) {
+    const pending = Array.isArray(file.phoneDeletes) ? file.phoneDeletes : [];
+    if (!pending.some((d) => d.id === id)) file.phoneDeletes = [...pending, { id, user: gone.phoneUser || null }];
+  }
   file.models = file.models.filter((m) => m.id !== id);
   if (file.selectedModel === id) file.selectedModel = AUTO_MODEL_ID;
   return writeFile(file);
@@ -428,4 +468,5 @@ module.exports = {
   configPath, PROVIDERS, BYOK_PROVIDERS,
   getIntegration, saveIntegration, disconnectIntegration, isIntegrationConnected, INTEGRATIONS,
   AUTO_MODEL_ID, getModels, getModel, getSelectedModel, getSelectedModelId, saveModel, deleteModel, selectModel, syncChatGPTModels,
+  setModelPhone, getPhoneDeletes, setPhoneDeletes,
 };
