@@ -2091,6 +2091,13 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
 .field > span { font-size: 12.5px; font-weight: 500; color: var(--text-dim); }
 .field-inline { display: flex; gap: 8px; }
 .field-inline input { flex: 1; }
+.phone-sync-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--card-border); cursor: pointer; }
+.phone-sync-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.phone-sync-text strong { font-size: 13px; font-weight: 600; color: var(--text); }
+.phone-sync-text span { font-size: 12px; color: var(--text-dim); line-height: 1.4; }
+.model-item-badge { font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: var(--surface-2); color: var(--text-dim); margin-left: 6px; vertical-align: 1px; }
+.model-item-badge.warn { color: var(--red); }
+.model-item-tool.on { color: var(--green); opacity: 1; }
 .privacy-note {
   display: flex;
   gap: 10px;

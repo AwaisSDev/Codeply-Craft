@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('craft', {
   selectModel: (id) => ipcRenderer.invoke('models:select', id),
   saveModel: (input) => ipcRenderer.invoke('models:save', input),
   deleteModel: (id) => ipcRenderer.invoke('models:delete', id),
+  setModelPhone: (id, on) => ipcRenderer.invoke('models:setPhone', { id, on }),
   detectOllama: (host) => ipcRenderer.invoke('models:detectOllama', host),
   onModelsChanged: (cb) => ipcRenderer.on('models:changed', (e, data) => cb(data)),
   chatgptStatus: (opts) => ipcRenderer.invoke('chatgpt:status', opts),
@@ -80,6 +81,7 @@ contextBridge.exposeInMainWorld('craft', {
   botsClearMemory: (id) => ipcRenderer.invoke('bots:clearMemory', id),
   botsForgetExperience: (id, kind, index) => ipcRenderer.invoke('bots:forgetExperience', id, kind, index),
   botsDescribe: (text) => ipcRenderer.invoke('bots:describe', text),
+  botsWatchStatus: () => ipcRenderer.invoke('bots:watchStatus'),
   // Craft Cloud (cloud-desktop.js)
   cloudState: (cwd) => ipcRenderer.invoke('cloud:state', cwd),
   cloudSetup: (cwd, opts) => ipcRenderer.invoke('cloud:setup', cwd, opts),

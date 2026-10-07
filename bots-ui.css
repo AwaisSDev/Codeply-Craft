@@ -160,3 +160,10 @@
 .bot-deleg-error { color: var(--red); }
 .bot-learned { display: flex; align-items: center; gap: 7px; margin: -4px 0 12px; font-size: 12px; color: var(--text-faint); }
 .bot-learned b { color: var(--text-dim); font-weight: 600; }
+
+/* Always on settings in the bot editor */
+.ao-more { display: grid; gap: 8px; margin-top: 8px; }
+.ao-more[hidden] { display: none; }
+.ao-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ao-row select { flex: 1; min-width: 180px; }
+.ao-time { width: 110px; }

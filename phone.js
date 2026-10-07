@@ -15,6 +15,10 @@ const $ = (id) => document.getElementById(id);
 const SUPABASE_URL = 'https://zswkhfkfseclgadhvobg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpzd2toZmtmc2VjbGdhZGh2b2JnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMzYyOTgsImV4cCI6MjA5NTgxMjI5OH0.EoTQdIGQQDrN1uEqQfya3VmrQMT68jkzPLphbLwNTWg';
 const AI_PROXY_URL = `${SUPABASE_URL}/functions/v1/ai-proxy`;
+// Models synced from Craft ("Use on my phone"): listed without their keys, and
+// chatted with through byok-proxy, which holds the encrypted key. No PC needed.
+const USER_MODELS_URL = `${SUPABASE_URL}/functions/v1/user-models`;
+const BYOK_PROXY_URL = `${SUPABASE_URL}/functions/v1/byok-proxy`;
 
 const CHAT_SYSTEM = 'You are Codeply, the assistant in the Codeply phone app. This is a normal chat: you cannot see, open or change any files, run code or browse here. Answer clearly and keep it readable on a phone screen; use short paragraphs, lists and fenced code blocks when they help. If someone wants changes made to one of their projects, tell them to switch to Code in the composer.';
 
@@ -118,6 +122,7 @@ if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEven
 const KEY = {
   chats: 'craft-phone-chats', chat: (id) => `craft-phone-chat-${id}`, pc: 'craft-phone-pc', envs: 'craft-phone-envs',
   ui: 'craft-phone-ui', creds: 'craft-cloud-creds', client: 'craft-client-id', bypass: 'craft-bypass',
+  synced: 'craft-phone-synced',
 };
 const clientId = localStorage.getItem(KEY.client) || makeClientId();
 localStorage.setItem(KEY.client, clientId);
@@ -126,7 +131,8 @@ const state = {
   chats: load(KEY.chats, []),     // [{ id, title, kind: 'chat'|'code', cloud, project, pcSessionId, cloudSessionId, updatedAt, live }]
   bodies: new Map(),              // chat id -> { messages, pcItems, tasks }
   current: null,                  // chat id, or null for a new chat
-  ui: { mode: 'chat', projectKey: null, codeMode: 'Build', ...load(KEY.ui, {}) },
+  ui: { mode: 'chat', projectKey: null, codeMode: 'Build', chatModel: 'auto', ...load(KEY.ui, {}) },
+  synced: load(KEY.synced, []),   // [{ id, clientId, name, model, baseUrl, key }] from user-models, keys masked
   bypass: localStorage.getItem(KEY.bypass) === '1',
   pc: load(KEY.pc, { device: '', projects: [], sessions: [], models: null }),
   envs: load(KEY.envs, {}),       // repo -> cloud environment set up from the phone
@@ -137,7 +143,35 @@ const state = {
   approval: null,
   imagePick: null,
 };
-const saveUi = () => save(KEY.ui, { mode: state.ui.mode, projectKey: state.ui.projectKey, codeMode: state.ui.codeMode });
+const saveUi = () => save(KEY.ui, { mode: state.ui.mode, projectKey: state.ui.projectKey, codeMode: state.ui.codeMode, chatModel: state.ui.chatModel });
+
+/** The synced model Chat uses, or null for Auto. */
+function chatModel() {
+  return (state.ui.chatModel && state.ui.chatModel !== 'auto' && state.synced.find((m) => m.id === state.ui.chatModel)) || null;
+}
+/** Refreshes the synced models (metadata only). Quiet on failure: the cached list stays. */
+let syncedLoading = null;
+function loadSynced() {
+  if (syncedLoading) return syncedLoading;
+  syncedLoading = (async () => {
+    try {
+      const token = await accessToken();
+      const res = await fetch(USER_MODELS_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'list' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success || !Array.isArray(data.models)) return;
+      state.synced = data.models.map((m) => ({ id: m.id, clientId: m.clientId, name: m.name, model: m.model, baseUrl: m.baseUrl, key: m.key }));
+      save(KEY.synced, state.synced);
+      if (state.ui.chatModel !== 'auto' && !chatModel()) { state.ui.chatModel = 'auto'; saveUi(); }
+      renderComposer();
+    } catch {} finally { syncedLoading = null; }
+  })();
+  return syncedLoading;
+}
+const isSyncedOnPhone = (pcModel) => !!pcModel && (pcModel.synced || state.synced.some((s) => s.clientId === pcModel.id));
 const saveChats = () => save(KEY.chats, state.chats);
 const chatMeta = (id) => state.chats.find((c) => c.id === id) || null;
 function body(id) {
@@ -344,6 +378,7 @@ async function onPcOnline() {
   } catch {}
   const c = state.current && chatMeta(state.current);
   if (c && c.pcSessionId && !c.cloud) refreshPcSession(c).catch(() => {});
+  loadSynced(); // the PC may just have synced a model
   window.dispatchEvent(new CustomEvent('craft:pc-online')); // phone-calls.js refreshes the bots
 }
 function renderPcStatus() {
@@ -715,10 +750,13 @@ async function chatSend(chat, text) {
   try {
     const token = await accessToken();
     const history = b.messages.filter((m) => m.role === 'user' || m.role === 'assistant').slice(-30).map((m) => ({ role: m.role, content: m.content }));
-    const res = await fetch(AI_PROXY_URL, {
+    // A synced model goes through byok-proxy (same reply shape as ai-proxy).
+    const own = chatModel();
+    const messages = [{ role: 'system', content: CHAT_SYSTEM + (window.CraftReminders ? window.CraftReminders.chatRules() : '') }, ...history];
+    const res = await fetch(own ? BYOK_PROXY_URL : AI_PROXY_URL, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: [{ role: 'system', content: CHAT_SYSTEM + (window.CraftReminders ? window.CraftReminders.chatRules() : '') }, ...history], opts: {} }),
+      body: JSON.stringify(own ? { modelId: own.id, messages, opts: {} } : { messages, opts: {} }),
       signal: controller.signal,
     });
     const data = await res.json().catch(() => ({}));
@@ -1447,7 +1485,7 @@ function ensureEnvModel(env) {
   }).catch(() => {});
 }
 function modelLabel() {
-  if (state.ui.mode === 'chat') return 'Auto';
+  if (state.ui.mode === 'chat') { const own = chatModel(); return own ? own.name : 'Auto'; }
   const c = state.current && chatMeta(state.current);
   const p = currentProject();
   const useCloud = (c && c.cloud) || (p && !p.cwd) || (p && !relay.pcId && envFor(p));
@@ -1459,8 +1497,15 @@ function modelLabel() {
 }
 function openModelPicker() {
   if (state.ui.mode === 'chat') {
-    openPick(`<div class="sheet-title">Model</div><button type="button" class="pick-row on"><span class="pick-main"><strong>Auto</strong><small>Picked for you by Codeply</small></span>${ICONS.check}</button>
-      <p class="pick-note">Chat and Code share your Codeply daily limit.</p>`);
+    loadSynced();
+    const cur = chatModel() ? chatModel().id : 'auto';
+    const row = (id, name, hint, tag) => `<button type="button" class="pick-row${id === cur ? ' on' : ''}" data-id="${esc(id)}"><span class="pick-main"><strong>${esc(name)}${tag ? ` <span class="pick-tag">${esc(tag)}</span>` : ''}</strong><small>${esc(hint)}</small></span>${ICONS.check}</button>`;
+    openPick(`<div class="sheet-title">Model</div>${row('auto', 'Auto', 'Picked for you by Codeply')}${state.synced.map((m) => row(m.id, m.name, `${m.model}, your API key ${m.key || ''}`.trim(), 'Synced')).join('')}
+      <p class="pick-note">${state.synced.length ? 'Synced models use your own API key, stored encrypted in your Codeply account. They work with your PC off.' : 'Chat and Code share your Codeply daily limit. Turn on "Use on my phone" for a model in Codeply on your PC to use it here.'}</p>`, (root) => {
+      root.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('click', () => {
+        state.ui.chatModel = b.dataset.id; saveUi(); closePick(); renderComposer();
+      }));
+    });
     return;
   }
   const c = state.current && chatMeta(state.current);
@@ -1476,8 +1521,8 @@ function openModelPicker() {
   }
   const m = state.pc.models || { selected: 'auto', models: [] };
   const row = (id, name, hint) => `<button type="button" class="pick-row${id === m.selected ? ' on' : ''}" data-id="${esc(id)}"><span class="pick-main"><strong>${esc(name)}</strong><small>${esc(hint)}</small></span>${ICONS.check}</button>`;
-  openPick(`<div class="sheet-title">Model on your PC</div>${row('auto', 'Auto', 'Picked for you, uses your Codeply limit')}${(m.models || []).map((x) => row(x.id, x.name, x.kind === 'ollama' ? 'Local, runs on your PC' : x.kind === 'chatgpt' ? 'Uses your ChatGPT plan' : 'Your API key')).join('')}
-    <p class="pick-note">Add models in Codeply on your PC. Keys never leave it.</p>`, (root) => {
+  openPick(`<div class="sheet-title">Model on your PC</div>${row('auto', 'Auto', 'Picked for you, uses your Codeply limit')}${(m.models || []).map((x) => row(x.id, x.name, x.kind === 'ollama' ? 'Local, runs on your PC' : x.kind === 'chatgpt' ? 'Uses your ChatGPT plan, stays on your PC' : isSyncedOnPhone(x) ? 'Your API key, Synced: also works in Chat with the PC off' : 'Your API key, on your PC only')).join('')}
+    <p class="pick-note">Add models in Codeply on your PC. A key leaves it only when "Use on my phone" is on, and is then stored encrypted in your account.</p>`, (root) => {
     root.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('click', async () => {
       closePick();
       if (!relay.pcId) return;
@@ -1682,6 +1727,7 @@ async function enterApp() {
   renderChatList();
   if (state.current) renderFeed({ force: true });
   startRelay();
+  loadSynced();
   schedulePoll(500);
 }
 async function signOut() {

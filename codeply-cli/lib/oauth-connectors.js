@@ -118,11 +118,19 @@ function base64UrlEncode(str) {
   return Buffer.from(str, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-/** RFC 2822 message, base64url as Gmail wants it. A non-ASCII subject is RFC 2047 encoded. */
-function rawEmail({ to, subject, body }) {
+/**
+ * RFC 2822 message, base64url as Gmail wants it. A non-ASCII subject is RFC 2047 encoded.
+ * inReplyTo / references (Message-ID values) make it a reply in the same thread.
+ */
+function rawEmail({ to, subject, body, inReplyTo, references }) {
   const s = String(subject || '');
   const subj = /^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${Buffer.from(s, 'utf8').toString('base64')}?=`;
-  const head = [to ? `To: ${to}` : '', `Subject: ${subj}`, 'Content-Type: text/plain; charset="UTF-8"'].filter(Boolean).join('\r\n');
+  const oneLine = (v) => String(v || '').replace(/[\r\n]+/g, ' ').trim();
+  const head = [
+    to ? `To: ${oneLine(to)}` : '', `Subject: ${oneLine(subj)}`,
+    inReplyTo ? `In-Reply-To: ${oneLine(inReplyTo)}` : '', references ? `References: ${oneLine(references)}` : '',
+    'Content-Type: text/plain; charset="UTF-8"',
+  ].filter(Boolean).join('\r\n');
   return base64UrlEncode(`${head}\r\n\r\n${body || ''}`);
 }
 
@@ -138,12 +146,14 @@ async function gmailSend(accessToken, { to, subject, body }) {
   return data; // { id, threadId, ... }
 }
 
-/** Saves a draft in the user's Gmail (needs gmail.compose). */
-async function gmailCreateDraft(accessToken, { to, subject, body }) {
+/** Saves a draft in the user's Gmail (needs gmail.compose). threadId + inReplyTo make it a reply in that thread. */
+async function gmailCreateDraft(accessToken, { to, subject, body, threadId, inReplyTo, references }) {
+  const message = { raw: rawEmail({ to, subject, body, inReplyTo, references }) };
+  if (threadId) message.threadId = String(threadId);
   const res = await fetch('https://www.googleapis.com/gmail/v1/users/me/drafts', {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: { raw: rawEmail({ to, subject, body }) } }),
+    body: JSON.stringify({ message }),
   });
   const data = await readJson(res);
   if (!res.ok) {
@@ -585,7 +595,7 @@ async function githubCreateRepo(accessToken, name, { private: isPrivate = true }
 }
 
 module.exports = {
-  buildGmailAuthUrl, exchangeGmailCode, refreshGmailToken, getGmailProfile, gmailSend, gmailSearch, gmailCreateDraft, gmailError,
+  buildGmailAuthUrl, exchangeGmailCode, refreshGmailToken, getGmailProfile, gmailSend, gmailSearch, gmailCreateDraft, gmailError, rawEmail,
   calendarListEvents, calendarInsertEvent, calendarError, GOOGLE_SCOPE,
   buildSlackAuthUrl, exchangeSlackCode, slackPostMessage, slackListChannels, slackJoinChannel,
   buildVercelAuthUrl, exchangeVercelCode, getVercelProfile, vercelDeploy, vercelSetEnvVars,

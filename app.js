@@ -1414,6 +1414,14 @@ function applyModelsState(models) {
   });
 }
 
+/** "Synced" (usable on the phone with this PC off) or why syncing failed. */
+function phoneBadge(m) {
+  const p = m.phone;
+  if (!p || !p.on) return '';
+  if (p.synced) return '<span class="model-item-badge">Synced</span>';
+  return p.reason ? '<span class="model-item-badge warn">Not synced</span>' : '<span class="model-item-badge">Syncing</span>';
+}
+
 let modelMenuEl = null;
 function closeModelMenu() {
   if (modelMenuEl) { modelMenuEl.remove(); modelMenuEl = null; }
@@ -1447,7 +1455,7 @@ function openModelMenu(anchorBtn) {
     ${plan.map((m) => `
       <button class="model-item${sel === m.id ? ' active' : ''}" data-id="${esc(m.id)}">
         <span class="model-item-icon chatgpt">${CHATGPT_SVG}</span>
-        <span class="model-item-text"><strong>${esc(m.name)}</strong><span>Uses your ChatGPT plan</span></span>
+        <span class="model-item-text"><strong>${esc(m.name)}</strong><span title="Your ChatGPT sign-in stays on this PC, so these are not synced. The phone uses them through this PC while it is on.">Uses your ChatGPT plan, stays on this PC</span></span>
         ${sel === m.id ? check : ''}
       </button>`).join('') || `<div class="model-menu-empty">${cg.sharing ? 'No models available on this plan yet.' : 'Plan usage wasn’t allowed. Sign in again to allow it.'}</div>`}
     <div class="model-menu-inline">
@@ -1470,9 +1478,10 @@ function openModelMenu(anchorBtn) {
       <div class="model-item-row">
         <button class="model-item${sel === m.id ? ' active' : ''}" data-id="${esc(m.id)}">
           <span class="model-item-icon ${m.kind === 'ollama' ? 'local' : 'custom'}">${m.kind === 'ollama' ? LLAMA_SVG : CHIP_SVG}</span>
-          <span class="model-item-text"><strong>${esc(m.name)}</strong><span>${esc(m.model)} · ${esc(m.kind === 'ollama' ? 'on this computer' : hostOf(m.baseUrl))}</span></span>
+          <span class="model-item-text"><strong>${esc(m.name)}${phoneBadge(m)}</strong><span>${esc(m.model)} · ${esc(m.kind === 'ollama' ? 'on this computer' : hostOf(m.baseUrl))}</span></span>
           ${sel === m.id ? check : ''}
         </button>
+        ${m.phone && m.phone.eligible ? `<button class="model-item-tool${m.phone.on ? ' on' : ''}" data-phone="${esc(m.id)}" title="${esc(m.phone.on ? (m.phone.synced ? 'On your phone. Click to stop syncing it' : m.phone.reason || 'Syncing to your phone') : 'Sync to phone: use it there even when this PC is off')}"><svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 17.5h2"/></svg></button>` : ''}
         <button class="model-item-tool" data-edit="${esc(m.id)}" title="Edit"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
         <button class="model-item-tool danger" data-delete="${esc(m.id)}" title="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg></button>
       </div>`).join('')}
@@ -1493,10 +1502,23 @@ function openModelMenu(anchorBtn) {
     closeModelMenu();
     if (m) openModelsModal({ tab: m.kind === 'ollama' ? 'ollama' : 'custom', edit: m });
   }));
+  menu.querySelectorAll('[data-phone]').forEach((btn) => btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const m = state.models.models.find((x) => x.id === btn.dataset.phone);
+    if (!m) return;
+    const on = !(m.phone && m.phone.on);
+    if (!on && !confirm(`Stop syncing "${m.name}" to your phone? Its key is removed from your Codeply account; it stays on this computer.`)) return;
+    btn.disabled = true;
+    const r = await api.setModelPhone(m.id, on);
+    if (r.state) applyModelsState(r.state);
+    if (!r.ok) showToast(r.error || 'Could not sync it.', 'error');
+    else showToast(on ? `${m.name} is on your phone now` : `${m.name} is no longer on your phone`);
+    if (modelMenuEl) openModelMenu(anchorBtn);
+  }));
   menu.querySelectorAll('[data-delete]').forEach((btn) => btn.addEventListener('click', async (e) => {
     e.stopPropagation();
     const m = state.models.models.find((x) => x.id === btn.dataset.delete);
-    if (!m || !confirm(`Remove "${m.name}"? Its API key is deleted from this computer too.`)) return;
+    if (!m || !confirm(`Remove "${m.name}"? Its API key is deleted from this computer${m.synced ? ' and from your phone' : ''} too.`)) return;
     const r = await api.deleteModel(m.id);
     if (r.ok) { applyModelsState(r.state); openModelMenu(anchorBtn); }
   }));
@@ -1574,6 +1596,9 @@ function openModelsModal({ tab = 'custom', edit = null } = {}) {
   $('mModel').value = editingModelId ? edit.model : '';
   $('mKey').value = '';
   $('mKey').placeholder = editingModelId && edit.hasKey ? `Saved (${edit.keyPreview}) - leave blank to keep it` : 'sk-…  (leave blank if the server needs no key)';
+  // Use on my phone: on by default for a new model, the saved choice when editing.
+  $('mPhone').checked = editingModelId ? !!(edit.phone && edit.phone.on) : true;
+  syncPhoneHint();
   if (edit && edit.kind === 'ollama') $('oHost').value = edit.baseUrl;
   showModelsError('');
   $('mSave').disabled = false;
@@ -1611,6 +1636,7 @@ async function saveCustomModel(skipTest) {
     // Blank while editing = keep the saved key.
     apiKey: editingModelId && !key ? undefined : key,
     skipTest: !!skipTest,
+    phone: $('mPhone').checked,
   });
   btn.disabled = false;
   btn.textContent = editingModelId ? 'Test & update' : 'Test & save';
@@ -1622,6 +1648,25 @@ async function saveCustomModel(skipTest) {
 
 // A phone switched the model: keep this window's chip in sync.
 if (api && api.onModelsChanged) api.onModelsChanged((m) => applyModelsState(m));
+
+/** Explains what the phone switch does, and why a model cannot be synced (no key, http, private address). */
+function syncPhoneHint() {
+  const edit = editingModelId && state.models.models.find((m) => m.id === editingModelId);
+  const base = $('mBaseUrl').value.trim();
+  const hasKey = !!$('mKey').value.trim() || !!(edit && edit.hasKey);
+  let why = '';
+  if (!hasKey) why = 'Needs an API key. Without one the model only works through this PC.';
+  else if (base && !/^https:\/\//i.test(base)) why = 'Needs an https address. This one only works through this PC.';
+  else if (/^https?:\/\/(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|\[)/i.test(base)) why = 'This address is on your own network, so it only works through this PC.';
+  const on = $('mPhone').checked;
+  $('mPhone').disabled = !!why;
+  $('mPhoneHint').textContent = why || (on ? 'Works on your phone even when this PC is off.' : 'Your phone can use it only while this PC is on.');
+  $('mPrivacy').textContent = on && !why
+    ? "Your API key is saved on this computer and sent once to your Codeply account, where it is stored encrypted for your phone. It is never shown again, and is only used to call the base URL above."
+    : 'Your API key is saved only on this computer and is never sent to Codeply. It is used for exactly one thing: calling the base URL above.';
+}
+['mBaseUrl', 'mKey'].forEach((id) => $(id).addEventListener('input', syncPhoneHint));
+$('mPhone').addEventListener('change', syncPhoneHint);
 
 $('mSave').addEventListener('click', () => saveCustomModel(false));
 $('mSaveAnyway').addEventListener('click', () => saveCustomModel(true));

@@ -15,6 +15,8 @@ self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 
 function bodyFor(d) {
   const text = String(d.body || '').trim();
+  // An always-on bot found an important email: the line, then the summary.
+  if (d.mail && d.kind !== 'call') return [text, d.mail.summary].filter(Boolean).join('\n');
   if (d.kind === 'call') return text ? `Calling you about: ${text}` : 'Calling you';
   if (d.kind === 'task') return text ? `Time for: ${text}. Tap and I'll start on it.` : 'Time for your task. Tap and I will start on it.';
   return text || 'You have a reminder.';
@@ -52,6 +54,12 @@ self.addEventListener('notificationclick', (e) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'snooze', id: d.reminderId, key: d.key, minutes: 10 }),
     }).catch(() => {}));
+    return;
+  }
+  // An email (not a call): open it, or the draft, in Gmail.
+  const mailUrl = d.mail && d.kind !== 'call' ? String(d.mail.draftUrl || d.mail.gmailUrl || '') : '';
+  if (/^https:\/\/mail\.google\.com\//.test(mailUrl) && self.clients.openWindow) {
+    e.waitUntil(self.clients.openWindow(mailUrl));
     return;
   }
   const url = d.reminderId ? `/?call=${encodeURIComponent(d.reminderId)}` : '/';

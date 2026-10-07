@@ -543,9 +543,13 @@
       <label class="field"><span>Base URL</span><input class="input" id="mBaseUrl" type="text" placeholder="https://api.openai.com/v1" autocomplete="off" spellcheck="false"></label>
       <label class="field"><span>Model ID</span><input class="input" id="mModel" type="text" placeholder="gpt-4o-mini" autocomplete="off" spellcheck="false"></label>
       <label class="field"><span>API key</span><input class="input" id="mKey" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false"></label>
+      <label class="phone-sync-row">
+        <span class="phone-sync-text"><strong>Use on my phone</strong><span id="mPhoneHint">Works on your phone even when this PC is off.</span></span>
+        <input type="checkbox" id="mPhone" class="switch" role="switch" aria-label="Use on my phone" checked>
+      </label>
       <div class="privacy-note">
         <svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-        <span>Your API key is saved only on this computer and is never sent to Codeply's servers. It's used for exactly one thing: calling the base URL above.</span>
+        <span id="mPrivacy">Your API key is saved on this computer and only ever used to call the base URL above.</span>
       </div>
       <div class="models-error hidden" id="mError"></div>
       <div class="models-actions">
@@ -564,7 +568,7 @@
       <div class="ollama-list" id="oList"></div>
       <div class="privacy-note">
         <svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-        <span>Local models run entirely on this computer - your code and prompts never leave it. No Ollama yet? Get it free at ollama.com, then run <code>ollama pull qwen2.5-coder</code>.</span>
+        <span>Local models run entirely on this computer - your code and prompts never leave it, so they are not synced to your phone (it uses them through this PC while it is on). No Ollama yet? Get it free at ollama.com, then run <code>ollama pull qwen2.5-coder</code>.</span>
       </div>
     </div>
   </div>
