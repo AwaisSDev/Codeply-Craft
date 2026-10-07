@@ -63,6 +63,7 @@ let rolesLib = null;      // CJS: subagents.js - the roles the single agent swit
 let snapshotLib = null;   // CJS: snapshot.js - undo for what a message changed
 let commandsLib = null;   // CJS: commands.js - custom slash commands (.codeply/commands/*.md)
 let permissionsLib = null; // CJS: permissions.js - standing allow/deny rules (.codeply/permissions.json)
+let modelSyncLib = null;  // CJS: model-sync.js - "Use on my phone" for models with an API key
 
 async function loadEngine() {
   if (agentMod) return true;
@@ -91,6 +92,7 @@ async function loadEngine() {
   snapshotLib = require(path.join(CLI_DIR, 'lib', 'snapshot.js'));
   commandsLib = require(path.join(CLI_DIR, 'lib', 'commands.js'));
   permissionsLib = require(path.join(CLI_DIR, 'lib', 'permissions.js'));
+  modelSyncLib = require(path.join(CLI_DIR, 'lib', 'model-sync.js'));
   agentMod = await import(pathToFileURL(agentPath).href);
   return true;
 }
@@ -668,9 +670,11 @@ ipcMain.handle('skills:list', () => {
 // ─── Models ─────────────────────────────────────────────────────────────────
 // "Auto" is the hosted Codeply model. Anything else is a model the user added
 // (an OpenAI-compatible endpoint, or Ollama). Model entries - API keys
-// included - live only in ~/.codeply/config.json on this machine (see
-// config.js); the renderer only ever gets a masked preview of a key, and a
-// key is only ever sent to the base URL the user entered for it.
+// included - live in ~/.codeply/config.json on this machine (see config.js);
+// the renderer only ever gets a masked preview of a key. A key is sent to the
+// base URL the user entered for it and, only when "Use on my phone" is on, once
+// to the user's own Codeply account, where it is stored encrypted for the
+// phone (model-sync.js, Codeply-App/supabase/functions/user-models).
 
 /** The route for a turn, decided once when the turn starts. */
 function currentRoute() {
@@ -679,10 +683,88 @@ function currentRoute() {
 }
 
 function publicModel(m) {
+  const phone = modelSyncLib.phoneStatus(m, phoneUserId);
   return {
     id: m.id, name: m.name, kind: m.kind, baseUrl: m.baseUrl, model: m.model,
     hasKey: !!m.apiKey, keyPreview: m.apiKey ? configLib.maskKey(m.apiKey) : '',
+    // phone: { eligible, on, synced, reason } - "synced" also tells the phone
+    // it can use this model while the PC is off.
+    phone, synced: phone.synced,
   };
+}
+
+// ─── Use on my phone (model sync) ───────────────────────────────────────────
+// Models with an API key can be synced to the user's account so the phone can
+// use them with the PC off. The key is sent once and stored encrypted by the
+// user-models edge function; it never comes back. See model-sync.js.
+let phoneUserId = null; // who the phone status is for; refreshed on every sync
+
+function phoneSyncClient() {
+  return modelSyncLib.createModelSync({
+    getAccessToken: () => authLib.getAccessToken(),
+    url: `${authLib.SUPABASE_URL}/functions/v1/user-models`,
+    anonKey: authLib.SUPABASE_ANON_KEY,
+  });
+}
+
+function emitModelsChanged() {
+  if (win && !win.isDestroyed()) win.webContents.send('models:changed', modelsState());
+}
+
+/** Sends one model to the account if its toggle is on. withKey re-sends the key. */
+async function pushModelToPhone(id, { withKey = false } = {}) {
+  const m = configLib.getModel(id);
+  if (!m || m.phone !== true) return { ok: true, skipped: true };
+  phoneUserId = await getLoggedInUserId();
+  const blocker = modelSyncLib.phoneBlocker(m);
+  if (blocker) return { ok: false, error: blocker };
+  const fresh = withKey || !m.phoneSyncedAt || m.phoneUser !== phoneUserId;
+  const r = await phoneSyncClient().push(m, { withKey: fresh });
+  configLib.setModelPhone(id, r.ok
+    ? { phoneSyncedAt: Date.now(), phoneUser: phoneUserId, phoneError: '' }
+    : { phoneError: r.error, ...(fresh ? { phoneSyncedAt: 0 } : {}) });
+  emitModelsChanged();
+  return r;
+}
+
+/** Removes a model from the account (toggle off). */
+async function removeModelFromPhone(id) {
+  const r = await phoneSyncClient().remove(id);
+  if (r.ok) configLib.setModelPhone(id, { phoneSyncedAt: 0, phoneError: '' });
+  return r;
+}
+
+/**
+ * Catches up after a sign-in or a time offline: finishes removals that could
+ * not go through, then syncs every model whose toggle is on but that is not
+ * synced for whoever is signed in now.
+ */
+let phoneSyncRunning = null;
+function syncPhoneModels() {
+  if (!phoneSyncRunning) phoneSyncRunning = syncPhoneModelsOnce().catch(() => {}).finally(() => { phoneSyncRunning = null; });
+  return phoneSyncRunning;
+}
+async function syncPhoneModelsOnce() {
+  if (!(await loadEngine())) return;
+  phoneUserId = await getLoggedInUserId();
+  if (!phoneUserId) return;
+  const client = phoneSyncClient();
+  const pending = configLib.getPhoneDeletes();
+  if (pending.length) {
+    const left = [];
+    for (const d of pending) {
+      if (d.user && d.user !== phoneUserId) { left.push(d); continue; } // another account's: wait for it
+      const r = await client.remove(d.id);
+      if (!r.ok) left.push(d);
+    }
+    configLib.setPhoneDeletes(left);
+  }
+  for (const m of configLib.getModels()) {
+    if (m.phone !== true || modelSyncLib.phoneBlocker(m)) continue;
+    if (m.phoneSyncedAt && !m.phoneError && m.phoneUser === phoneUserId) continue;
+    await pushModelToPhone(m.id);
+  }
+  emitModelsChanged();
 }
 
 function modelsState() {
@@ -727,16 +809,47 @@ ipcMain.handle('models:save', async (e, input) => {
     const t = await aiLib.testModel(candidate);
     if (!t.ok) return { ok: false, testFailed: true, error: t.error };
   }
-  const saved = configLib.saveModel({ ...input, ...candidate, id: existing?.id });
+  // "Use on my phone" defaults to on for a new model; an edit keeps the choice.
+  const phone = typeof input?.phone === 'boolean' ? input.phone : (existing ? existing.phone : true);
+  const saved = configLib.saveModel({ ...input, ...candidate, id: existing?.id, phone });
   if (!saved.ok) return saved;
   configLib.selectModel(saved.model.id);
+  // In the background: the key goes to the account only if the toggle is on.
+  // A new key or a new address re-sends it; turning the toggle off removes it.
+  const keyChanged = !existing || candidate.apiKey !== existing.apiKey || candidate.baseUrl !== existing.baseUrl;
+  if (phone === true && !modelSyncLib.phoneBlocker(saved.model)) pushModelToPhone(saved.model.id, { withKey: keyChanged }).catch(() => {});
+  else if (existing && existing.phoneSyncedAt) removeModelFromPhone(saved.model.id).then(emitModelsChanged).catch(() => {});
   return { ok: true, model: publicModel(saved.model), state: modelsState() };
 });
 
 ipcMain.handle('models:delete', async (e, id) => {
   if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
   const r = configLib.deleteModel(id);
+  // A synced copy is queued for removal (config.js) and removed now if possible.
+  if (r.ok && configLib.getPhoneDeletes().some((d) => d.id === id)) syncPhoneModels();
   return r.ok ? { ok: true, state: modelsState() } : r;
+});
+
+// The "Use on my phone" switch for a model already saved (also the one-click
+// "Sync to phone" for models added before the option existed). Waits for the
+// result so the menu can show it.
+ipcMain.handle('models:setPhone', async (e, { id, on } = {}) => {
+  if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
+  const m = configLib.getModel(id);
+  if (!m) return { ok: false, error: 'Unknown model.' };
+  if (on) {
+    const blocker = modelSyncLib.phoneBlocker(m);
+    if (blocker) return { ok: false, error: blocker, state: modelsState() };
+    configLib.setModelPhone(id, { phone: true });
+    const r = await pushModelToPhone(id, { withKey: true });
+    return { ok: !!r.ok, error: r.ok ? undefined : r.error, state: modelsState() };
+  }
+  configLib.setModelPhone(id, { phone: false });
+  let r = { ok: true };
+  if (m.phoneSyncedAt) r = await removeModelFromPhone(id);
+  if (!r.ok) configLib.setModelPhone(id, { phoneError: r.error });
+  emitModelsChanged();
+  return { ok: !!r.ok, error: r.ok ? undefined : `Turned off here, but it is still on your account: ${r.error}`, state: modelsState() };
 });
 
 ipcMain.handle('models:detectOllama', async (e, host) => {
@@ -757,9 +870,12 @@ function publicResearch() {
 // engine and the same ~/.codeply bots. crew/crew-main.js registers its
 // "crew:"-prefixed handlers the first time it is loaded.
 let crewMod = null;
+const crew = () => {
+  if (!crewMod) { crewMod = require('./crew/crew-main'); crewMod.setOnChange(() => botsWatch.poke()); }
+  return crewMod;
+};
 ipcMain.handle('crew:open', () => {
-  if (!crewMod) crewMod = require('./crew/crew-main');
-  crewMod.open(CLI_DIR);
+  crew().open(CLI_DIR);
   return { ok: true };
 });
 
@@ -963,6 +1079,7 @@ ipcMain.handle('integrations:connectGmail', async () => {
       email,
       scope: tokens.scope || '', // what Google granted (drafts and Calendar need their own scopes)
     });
+    botsWatch.poke(); // always-on bots start watching the new inbox now
     return { ok: true, email };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -2033,6 +2150,7 @@ async function startRelayOnce() {
     const { data } = await supabase.auth.getSession();
     const session = data?.session;
     if (!session) return;
+    syncPhoneModels(); // signed in: catch up the phone's synced models in the background
     if (relayChannel && relayUserId === session.user.id) return;
     await stopRelay();
 
@@ -2950,7 +3068,17 @@ const botsDesktop = require('./bots-desktop');
 botsDesktop.init({
   ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine, sendEvent, currentRoute, browser: browserCheck,
   agentMod: () => agentMod, aiLib: () => aiLib, permissionsLib: () => permissionsLib,
+  onChange: () => botsWatch.poke(),
 });
+// Always-on bots (bots-watch.js): watch Gmail in the background while Craft
+// runs (also from the tray), no model calls until an email is important.
+const botsWatch = require('./bots-watch');
+app.whenReady().then(() => botsWatch.init({
+  ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine, currentRoute, Notification,
+  aiLib: () => aiLib, configLib: () => configLib, oauthLib: () => oauthLib, authLib: () => authLib,
+  crewThread: (botId, ev) => crew().addMail(CLI_DIR, botId, ev),
+  openBot: (botId) => crew().showBot(CLI_DIR, botId),
+}));
 ipcMain.handle('remote:info', () => remoteInfo());
 ipcMain.handle('remote:setKeepAwake', (e, on) => {
   store.keepAwake = !!on;

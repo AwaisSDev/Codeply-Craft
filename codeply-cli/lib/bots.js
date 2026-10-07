@@ -67,6 +67,33 @@ const ALL_APPROVALS = Object.keys(APPROVALS);
 // back then never chose about the newer ones, so it asks for them (listBots).
 const FIRST_APPROVALS = ['edit_files', 'run_commands', 'send', 'publish', 'databases'];
 
+// Always on (mail-watch.js): the bot watches in the background, with no model
+// calls until something important arrives. What it can watch, and how it
+// reaches the user when it finds something.
+const WATCH_SOURCES = { gmail: 'Gmail inbox' };
+const REACH = {
+  message: 'Message me in Craft',
+  push: 'Notify my phone',
+  call: 'Call me when it is very important',
+};
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function normalizeAlwaysOn(a) {
+  a = a && typeof a === 'object' ? a : {};
+  const q = a.quiet && typeof a.quiet === 'object' ? a.quiet : {};
+  const watch = (Array.isArray(a.watch) ? a.watch : ['gmail']).filter((k) => WATCH_SOURCES[k]);
+  return {
+    on: !!a.on,
+    watch: watch.length ? [...new Set(watch)] : ['gmail'],
+    reach: REACH[a.reach] ? a.reach : 'push',
+    // Draft a reply in Gmail for important mail (one model call each). Off = just tell me.
+    draft: a.draft !== false,
+    quiet: { on: q.on !== false, from: HHMM.test(q.from) ? q.from : '22:00', to: HHMM.test(q.to) ? q.to : '07:00' },
+    // Keep watching from Codeply's server while this PC is off (stores the Gmail sign-in there, encrypted).
+    cloud: !!a.cloud,
+  };
+}
+
 // Kept in sync with bot-avatar.js (the renderer). The engine only validates.
 const AVATAR_KEYS = {
   shape: ['burst9', 'burst7', 'burst12', 'flower', 'cloud', 'star', 'squircle', 'pebble', 'drop'],
@@ -208,6 +235,7 @@ function normalizeBot(input, existing) {
     avatar: normalizeAvatar(b.avatar),
     // The voice it speaks with on calls (a Deepgram, Edge or Kokoro voice id; '' = pick one).
     voice: typeof b.voice === 'string' && /^[\w.-]{0,80}$/.test(b.voice) ? b.voice : '',
+    alwaysOn: normalizeAlwaysOn(b.alwaysOn),
     memory: cleanMemory(b.memory),
     // Experience (learned on the job, see reflectOnRun): lessons, playbooks, tool tips, open threads.
     lessons: cleanLessons(b.lessons),
@@ -1001,8 +1029,8 @@ const callStepLabel = (name) => CALL_STEP[name] || 'Working on it';
 
 module.exports = {
   VOICE_RULES, VOICE_RULES_NO_TOOLS, spoken, callTurns, voiceTurn, callStepLabel,
-  MAX_MEMORY, MAX_DEPTH, ROLES, TONES, APPROVALS, AVATAR_KEYS, TEMPLATES,
-  botsDir, setBotsDir, normalizeBot, normalizeAvatar,
+  MAX_MEMORY, MAX_DEPTH, ROLES, TONES, APPROVALS, AVATAR_KEYS, TEMPLATES, WATCH_SOURCES, REACH,
+  botsDir, setBotsDir, normalizeBot, normalizeAvatar, normalizeAlwaysOn,
   listBots, getBot, findBot, createBot, createFromTemplate, updateBot, removeBot,
   mergeMemory, addMemory, forget, clearMemory, learnFromTurn,
   MAX_LESSONS, MAX_PLAYBOOKS, MAX_TOOL_TIPS, MAX_OPEN_THREADS,

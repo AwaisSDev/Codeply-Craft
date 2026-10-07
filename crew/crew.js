@@ -36,6 +36,46 @@
   };
 
   const bot = (id) => state.catalog.bots.find((b) => b.id === id) || null;
+  // Always on: the bot watches Gmail in the background (bots-watch.js) and reaches you when something is important.
+  const AO_DEFAULT = { on: false, watch: ['gmail'], reach: 'push', draft: true, quiet: { on: true, from: '22:00', to: '07:00' }, cloud: false };
+  function alwaysOnHtml(d, c) {
+    const ao = d.alwaysOn = { ...AO_DEFAULT, ...(d.alwaysOn || {}), quiet: { ...AO_DEFAULT.quiet, ...((d.alwaysOn && d.alwaysOn.quiet) || {}) } };
+    const reach = state.catalog.reach || { message: 'Message me in Craft', push: 'Notify my phone', call: 'Call me when it is very important' };
+    return `<div class="${c.field}" data-ao-box><div class="${c.label}">Always on</div>
+      <label class="${c.check}"><input type="checkbox" data-ao="on" ${ao.on ? 'checked' : ''}><span>Watch my Gmail inbox in the background</span></label>
+      <div class="ao-more"${ao.on ? '' : ' hidden'}>
+        <div class="${c.dim}">No AI is used until an email looks important. Then it writes a summary and a reply.</div>
+        <div class="ao-row"><span>Reach me</span><select class="${c.input}" data-ao="reach">${Object.entries(reach).map(([k, v]) => `<option value="${k}" ${ao.reach === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>
+        <label class="${c.check}"><input type="checkbox" data-ao="draft" ${ao.draft ? 'checked' : ''}><span>Draft a reply in Gmail (never sends)</span></label>
+        <div class="ao-row"><label class="${c.check}"><input type="checkbox" data-ao="quiet" ${ao.quiet.on ? 'checked' : ''}><span>Quiet hours</span></label>
+          <input type="time" class="${c.input} ao-time" data-ao="from" value="${esc(ao.quiet.from)}"><span>to</span><input type="time" class="${c.input} ao-time" data-ao="to" value="${esc(ao.quiet.to)}"></div>
+        <label class="${c.check}"><input type="checkbox" data-ao="cloud" ${ao.cloud ? 'checked' : ''}><span>Keep watching when this PC is off (stores your Gmail sign-in on Codeply's server, encrypted)</span></label>
+      </div></div>`;
+  }
+  function wireAlwaysOn(root, d) {
+    const ao = d.alwaysOn;
+    root.querySelectorAll('[data-ao]').forEach((el) => el.addEventListener('change', () => {
+      const k = el.dataset.ao;
+      if (k === 'on') { ao.on = el.checked; const more = root.querySelector('[data-ao-box] .ao-more'); if (more) more.hidden = !el.checked; }
+      else if (k === 'reach') ao.reach = el.value;
+      else if (k === 'draft' || k === 'cloud') ao[k] = el.checked;
+      else if (k === 'quiet') ao.quiet.on = el.checked;
+      else if ((k === 'from' || k === 'to') && /^\d\d:\d\d$/.test(el.value)) ao.quiet[k] = el.value;
+    }));
+  }
+
+  // An important email an always-on bot found (crew-main.js addMail).
+  function mailCardHtml(m) {
+    return `<div class="mailcard${m.level === 'very' ? ' very' : ''}"><div class="mailcard-head"><b>${esc(m.text)}</b>${m.cloud ? '<span class="dim">while your PC was off</span>' : ''}</div>
+      ${m.summary ? `<div class="mailcard-sum">${esc(m.summary)}</div>` : ''}
+      ${m.reply ? `<details class="mailcard-reply"><summary>The draft</summary><div>${esc(m.reply)}</div></details>` : ''}
+      ${m.error ? `<div class="note err">Could not draft a reply: ${esc(m.error)}</div>` : ''}
+      <div class="mailcard-actions">${m.gmailUrl ? `<button class="btn" data-open-url="${esc(m.gmailUrl)}">Open email</button>` : ''}${m.drafted && m.draftUrl ? `<button class="btn primary" data-open-url="${esc(m.draftUrl)}">Open draft</button>` : ''}</div></div>`;
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('[data-open-url]');
+    if (b) api.openExternal(b.dataset.openUrl);
+  });
   const av = (b, size, opts) => A.renderAvatar(b ? b.avatar : { shape: 'burst9', eyes: 'pills', color: '#8e8e93' }, size, opts);
 
   // ─── Small helpers ──────────────────────────────────────────────────────
@@ -478,6 +518,7 @@
       if (m.kind === 'assistant') addToBody(body, `<div class="m-text">${md(m.text)}</div>`);
       else if (m.kind === 'tool') addToBody(body, stepHtml(m));
       else if (m.kind === 'error') addToBody(body, `<div class="note err">${esc(m.text)}</div>`);
+      else if (m.kind === 'mail') addToBody(body, mailCardHtml(m));
     }
     box.querySelectorAll('[data-call]').forEach(wireCallCard);
   }
@@ -557,6 +598,18 @@
         if (card) card.outerHTML = `<div class="note">${ev.verdict === 'reject' ? 'You said no.' : ev.verdict === 'draft' ? 'Saved as a draft.' : 'You allowed it.'}</div>`;
         break;
       }
+      case 'mail':
+        t.last = String(ev.msg.text || ''); t.updatedAt = Date.now();
+        if (here) {
+          state.messages.push(ev.msg);
+          const box = $('#msgs');
+          if (box) { addToBody(botBlock(box, b, false).querySelector('.m-bot-body'), mailCardHtml(ev.msg)); scrollDown(true); }
+        } else toast(`${b.name}: ${ev.msg.text}`);
+        renderSide();
+        break;
+      case 'open':
+        openBot(b.id);
+        break;
       case 'learned':
         state.catalog = ev.catalog || state.catalog;
         if (here) toast(`${b.name} will remember: ${ev.facts[0]}`);
@@ -719,6 +772,7 @@
           <div class="field"><div class="field-label">Role</div><div class="seg"><button class="${d.role === 'specialist' ? 'on' : ''}" data-role="specialist">Specialist</button><button class="${d.role === 'orchestrator' ? 'on' : ''}" data-role="orchestrator">Orchestrator</button></div>
             <div class="dim" style="margin-top:6px">${d.role === 'orchestrator' ? 'Splits a big goal into steps and hands each to the right teammate.' : 'One clear job. Teammates can ask it for help.'}</div></div>
           <div class="field"><div class="field-label">Must ask you before</div><div class="checks">${Object.entries(state.catalog.approvals).map(([k, label]) => `<label class="check"><input type="checkbox" data-approval="${k}" ${d.approval.includes(k) ? 'checked' : ''}>${esc(label)}</label>`).join('')}</div></div>
+          ${alwaysOnHtml(d, { field: 'field', label: 'field-label', check: 'check', input: 'input', dim: 'dim' })}
           ${isNew ? '' : `<div class="field"><div class="field-label">Memory <span class="dim">${d.memory.length} things</span>${d.memory.length ? '<button class="link" data-act="clear-mem">Clear all</button>' : ''}</div>
             ${d.memory.length ? `<ul class="mem">${d.memory.map((x, i) => `<li><span>${esc(x.fact)}</span><button data-forget="${i}" title="Forget">${ICON.x}</button></li>`).reverse().join('')}</ul>` : '<div class="dim">Nothing yet. It learns your preferences as you chat and call.</div>'}</div>
           ${experienceHtml(d)}`}
@@ -742,6 +796,7 @@
     m.querySelectorAll('[data-approval]').forEach((el) => el.addEventListener('change', () => {
       d.approval = el.checked ? [...new Set([...d.approval, el.dataset.approval])] : d.approval.filter((x) => x !== el.dataset.approval);
     }));
+    wireAlwaysOn(m, d);
     m.querySelectorAll('.pick-row[data-pick]').forEach((row) => row.addEventListener('click', (e) => {
       const tile = e.target.closest('.pick');
       if (!tile) return;
@@ -790,7 +845,7 @@
     });
     on('save', async () => {
       if (!String(d.name || '').trim()) { ui.error = 'Give it a name.'; paintEditor(d, ui); return; }
-      const patch = { name: d.name, role: d.role, specialty: d.specialty, instructions: d.instructions, tone: d.tone, sources: d.sources || '', approval: d.approval, avatar: d.avatar, voice: ui.voice };
+      const patch = { name: d.name, role: d.role, specialty: d.specialty, instructions: d.instructions, tone: d.tone, sources: d.sources || '', approval: d.approval, avatar: d.avatar, voice: ui.voice, alwaysOn: d.alwaysOn };
       const r = ui.id ? await api.botsUpdate(ui.id, patch) : await api.botsCreate(patch);
       if (r.error) { ui.error = r.error; paintEditor(d, ui); return; }
       state.catalog = r;
@@ -839,6 +894,7 @@
     try { last = localStorage.getItem('crew.last'); } catch {}
     if (last && last.startsWith('g:') && state.groups.some((g) => `g:${g.id}` === last)) window.CrewGroups.open(last.slice(2));
     else if (last && bot(last)) openBot(last); else goHome();
+    if (r.openBot && bot(r.openBot)) openBot(r.openBot); // a notification was clicked
   }
 
   // Bots are shared with Craft: pick up ones made or changed there.

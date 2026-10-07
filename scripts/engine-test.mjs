@@ -1883,6 +1883,219 @@ process.stdin.on('data', (d) => {
   }
 }
 
+// Always-on bots: the zero-token Gmail watcher against a fake Gmail API (no real tokens).
+{
+  const bots = require(path.join(CLI, 'lib/bots.js'));
+  const watch = require(path.join(CLI, 'lib/mail-watch.js'));
+  const { rawEmail } = require(path.join(CLI, 'lib/oauth-connectors.js'));
+  const store = path.join(tmp, 'bots-watch');
+  fs.mkdirSync(store, { recursive: true });
+  bots.setBotsDir(store);
+  watch.setWatchDir(path.join(tmp, 'watch'));
+  const g = { historyId: 100, history: [], messages: {}, sent: new Set(['pat@example.org']), drafts: [], calls: [], historyGone: false };
+  const hdr = (o) => Object.entries(o).map(([name, value]) => ({ name, value }));
+  const addMail = (id, labels, headers, snippet = '') => {
+    g.messages[id] = { id, threadId: `t-${id}`, labelIds: labels, snippet, payload: { mimeType: 'text/plain', headers: hdr(headers), body: { data: Buffer.from(`${snippet}\n\nBody of ${id}`).toString('base64url') } } };
+    g.historyId++;
+    g.history.push({ id: String(g.historyId), messagesAdded: [{ message: { id } }] });
+  };
+  const gmailServer = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', (c) => (raw += c));
+    req.on('end', () => {
+      const u = new URL(req.url, 'http://x');
+      const p = u.pathname.replace(/^\/gmail\/v1\/users\/me/, '');
+      g.calls.push(`${req.method} ${p}${p === '/messages' ? `?q=${u.searchParams.get('q')}` : ''}`);
+      const send = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+      if (req.headers.authorization !== 'Bearer fake-access') return send(401, { error: { message: 'bad token' } });
+      if (p === '/profile') return send(200, { emailAddress: 'Me@Example.com', historyId: String(g.historyId) });
+      if (p === '/history') {
+        if (g.historyGone) return send(404, { error: { message: 'Requested entity was not found.' } });
+        const start = Number(u.searchParams.get('startHistoryId'));
+        return send(200, { history: g.history.filter((h) => Number(h.id) > start), historyId: String(g.historyId) });
+      }
+      if (p === '/messages') {
+        const q = u.searchParams.get('q') || '';
+        const to = (q.match(/in:sent to:(\S+)/) || [])[1];
+        if (to) return send(200, g.sent.has(to) ? { messages: [{ id: 'sent1' }] } : {});
+        return send(200, { messages: Object.keys(g.messages).map((id) => ({ id })) });
+      }
+      const mm = p.match(/^\/messages\/([^/]+)$/);
+      if (mm) return g.messages[mm[1]] ? send(200, g.messages[mm[1]]) : send(404, { error: { message: 'gone' } });
+      if (p === '/drafts' && req.method === 'POST') {
+        const body = JSON.parse(raw);
+        g.drafts.push(body);
+        return send(200, { id: `d${g.drafts.length}`, message: { id: `dm${g.drafts.length}`, threadId: body.message.threadId } });
+      }
+      send(404, { error: { message: 'no route' } });
+    });
+  });
+  await new Promise((r) => gmailServer.listen(0, '127.0.0.1', r));
+  const api = watch.gmailApi({ token: async () => 'fake-access', base: `http://127.0.0.1:${gmailServer.address().port}/gmail/v1/users/me` });
+  const chats = [];
+  const isRules = (t) => /watches the user's inbox/.test(t);
+  const chat = async (messages) => {
+    const text = messages.map((m) => m.content).join('\n');
+    chats.push(text);
+    if (isRules(text)) return { success: true, json: { keywords: ['launch', 'press kit'], senders: ['acme.com'] } };
+    return { success: true, json: { summary: 'Pat needs the signed contract today.', reply: 'Hi Pat, I will send it over this afternoon.' } };
+  };
+  const notified = [];
+  const poll = () => watch.watchOnce({ bots: bots.listBots(), api, chat, rawEmail, notify: async (ev) => { notified.push(ev); } });
+  try {
+    const mia = bots.createBot({ name: 'Mia', specialty: 'Inbox: watches for the launch', instructions: 'Flag anything about the launch.', alwaysOn: { on: true, reach: 'call' } });
+    bots.createBot({ name: 'Idle', specialty: 'Not watching' });
+    check('always on: a bot keeps its Always on settings, with safe defaults', mia.alwaysOn.on && mia.alwaysOn.reach === 'call' && mia.alwaysOn.draft && mia.alwaysOn.quiet.from === '22:00' && !mia.alwaysOn.cloud && bots.normalizeBot({ name: 'x' }).alwaysOn.on === false, JSON.stringify(mia.alwaysOn));
+    check('always on: only bots switched on watch Gmail', watch.watchingBots(bots.listBots()).map((b) => b.name).join() === 'Mia');
+
+    const first = await poll();
+    check('watch: the first poll only starts the cursor (no backlog, no model)', first.primed && chats.length === 0 && watch.loadState().cursor === '100' && watch.loadState().account === 'me@example.com', JSON.stringify(first));
+
+    addMail('m1', ['INBOX', 'CATEGORY_PROMOTIONS'], { From: 'Deals <news@shop.example>', To: 'me@example.com', Subject: 'Big sale today only', 'List-Unsubscribe': '<mailto:u@shop.example>' }, 'Save 50 percent today');
+    addMail('m2', ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'], { From: 'Pat Lee <pat@example.org>', To: 'me@example.com', Subject: 'Contract needed today', 'Message-ID': '<abc@example.org>' }, 'Can you sign the contract asap?');
+    addMail('m3', ['INBOX', 'CATEGORY_PERSONAL'], { From: 'Sam <sam@stranger.example>', To: 'me@example.com', Subject: 'hello' }, 'Just saying hi');
+    addMail('m4', ['INBOX', 'CATEGORY_PERSONAL'], { From: 'Lee <lee@acme.com>', To: 'me@example.com', Subject: 'Plan for next week', 'Message-ID': '<x1@acme.com>' }, 'Notes attached');
+    const r = await poll();
+    const composeCalls = chats.filter((t) => !isRules(t));
+    check('watch: only important mail reaches the model (1 rules call + 2 drafts)', chats.length === 3 && composeCalls.length === 2 && !composeCalls.some((t) => /Big sale|hello/.test(t)), JSON.stringify({ n: chats.length, r }));
+    check('watch: scoring picks the contract and the watched sender, not the sale or the stranger', r.checked === 4 && r.important === 2 && notified.map((e) => e.messageId).join() === 'm2,m4', JSON.stringify(notified.map((e) => [e.messageId, e.score, e.reasons])));
+    check('watch: the contract from someone you email is "very important"', notified[0].level === 'very' && notified[1].level === 'important', JSON.stringify(notified.map((e) => e.level)));
+    const raw2 = Buffer.from(g.drafts[0].message.raw, 'base64url').toString('utf8');
+    check('watch: a reply is saved as a Gmail draft in the same thread, never sent', g.drafts.length === 2 && g.drafts[0].message.threadId === 't-m2' && /^To: pat@example\.org/m.test(raw2) && /Subject: Re: Contract needed today/.test(raw2) && /In-Reply-To: <abc@example\.org>/.test(raw2) && /this afternoon/.test(raw2) && !g.calls.some((c) => /send/.test(c)), raw2);
+    check('watch: the event has the summary, the links and the line the bot says', notified[0].draftId === 'd1' && /signed contract/.test(notified[0].summary) && /#all\/t-m2/.test(notified[0].gmailUrl) && /compose=dm1/.test(notified[0].draftUrl) && watch.eventLine(notified[0]) === 'I drafted a reply to Pat Lee about Contract needed today', JSON.stringify(notified[0]));
+    check('watch: one SENT search per new sender, metadata only for the rest', g.calls.filter((c) => /in:sent/.test(c)).length === 4 && g.calls.filter((c) => /^GET \/messages\/m[13]$/.test(c)).length === 2, g.calls.join(' | '));
+
+    // Dedupe: the same ids again (history replayed) do nothing, and the rules stay cached.
+    const before = chats.length;
+    const sentSearches = g.calls.filter((c) => /in:sent/.test(c)).length;
+    const st = watch.loadState(); st.cursor = '100'; watch.saveState(st);
+    const again = await poll();
+    check('watch: already seen mail is skipped (no model, no drafts, no notifications)', again.checked === 0 && chats.length === before && g.drafts.length === 2 && notified.length === 2, JSON.stringify(again));
+
+    addMail('m5', ['INBOX', 'CATEGORY_UPDATES'], { From: 'Bank <no-reply@bank.example>', To: 'me@example.com', Subject: 'Your statement is ready', Precedence: 'bulk' }, 'View online');
+    addMail('m6', ['INBOX', 'CATEGORY_SOCIAL'], { From: 'Friends <notify@social.example>', To: 'list@social.example', Subject: 'You have 3 new likes', 'List-Id': '<social>' }, '');
+    const quiet = await poll();
+    check('watch: unimportant mail costs no AI call at all', quiet.checked === 2 && quiet.important === 0 && chats.length === before && notified.length === 2, JSON.stringify(quiet));
+    check('watch: a sender seen before is not searched again', g.calls.filter((c) => /in:sent/.test(c)).length === sentSearches + 2);
+
+    // Changing the bot's job refreshes its rules once; turning drafts off means no model call per email.
+    bots.updateBot(mia.id, { instructions: 'Flag anything about the launch or from investors.', alwaysOn: { ...mia.alwaysOn, draft: false } });
+    addMail('m7', ['INBOX', 'STARRED', 'CATEGORY_PERSONAL'], { From: 'Pat Lee <pat@example.org>', To: 'me@example.com', Subject: 'Quick question' }, 'Call me back');
+    const nodraft = await poll();
+    check('watch: new settings make exactly one rules call; drafts off = no model call for the email', chats.length === before + 1 && isRules(chats[chats.length - 1]) && nodraft.important === 1 && notified[2].draftId === '' && watch.eventLine(notified[2]) === 'Important email from Pat Lee: Quick question' && g.drafts.length === 2, JSON.stringify({ n: chats.length - before, nodraft }));
+
+    // A cursor Gmail no longer knows (404): fall back to a search since the last check.
+    g.historyGone = true;
+    addMail('m8', ['INBOX'], { From: 'x@y.example', To: 'me@example.com', Subject: 'hi' });
+    const fallback = await poll();
+    check('watch: an expired cursor falls back to a search and moves on', fallback.checked === 1 && g.calls.some((c) => /in:inbox after:/.test(c)) && watch.loadState().cursor === String(g.historyId), JSON.stringify(fallback));
+    g.historyGone = false;
+
+    // Scoring and quiet hours on their own
+    const s = (labels, h, ctx) => watch.scoreMessage(watch.parseMessage({ id: 'z', labelIds: labels, snippet: h.snippet || '', payload: { headers: hdr(h) } }), { me: 'me@example.com', ...ctx });
+    check('score: promotions with an unsubscribe link stay low even with urgent words', s(['CATEGORY_PROMOTIONS'], { From: 'a@shop.example', To: 'me@example.com', Subject: 'URGENT: sale ends today', 'List-Unsubscribe': 'x' }).level === 'low');
+    check('score: an interview invite to you from a stranger is important', s(['CATEGORY_PERSONAL'], { From: 'Hiring <jo@company.example>', To: 'me@example.com', Subject: 'Interview on Thursday' }).level === 'important');
+    check('score: the bot\'s keywords count', s([], { From: 'a@b.example', To: 'me@example.com', Subject: 'press kit for the launch' }, { rules: { keywords: ['launch', 'press kit'] } }).score === 5);
+    const qh = { on: true, from: '22:00', to: '07:00' };
+    check('quiet hours: 22:00 to 07:00 wraps past midnight', watch.inQuietHours(qh, new Date(2026, 0, 1, 23, 30)) && watch.inQuietHours(qh, new Date(2026, 0, 1, 6, 59)) && !watch.inQuietHours(qh, new Date(2026, 0, 1, 12, 0)) && !watch.inQuietHours({ ...qh, on: false }, new Date(2026, 0, 1, 23, 30)));
+
+    // The loop backs off after errors and comes back after a success
+    const steps = [];
+    let n = 0;
+    const w = watch.createWatcher({ intervalMs: 1000, maxBackoffMs: 3000, tick: async () => { n++; if (n <= 3) throw new Error('down'); }, setTimer: (fn, ms) => { steps.push({ fn, ms }); return {}; }, clearTimer: () => {} });
+    w.start(0);
+    for (let i = 0; i < 5; i++) await steps[steps.length - 1].fn();
+    w.stop();
+    check('watcher: backs off 2x per error up to the cap, back to normal after a success', steps.map((t) => t.ms).join() === '0,2000,3000,3000,1000,1000', steps.map((t) => t.ms).join());
+  } finally {
+    gmailServer.close();
+    bots.setBotsDir(null);
+    watch.setWatchDir(null);
+  }
+}
+
+// ─── Use on my phone: model sync against a fake user-models server ──────────
+{
+  const sync = require(path.join(CLI, 'lib/model-sync.js'));
+  const FAKE_TOKEN = 'test-session-token';
+  const rows = new Map(); // clientId -> { id, name, baseUrl, model, last4, keyVersion, hasKey }
+  const calls = [];
+  let conflictOnce = false;
+  const fake = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', (c) => (raw += c));
+    req.on('end', () => {
+      const send = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+      if (req.headers.authorization !== `Bearer ${FAKE_TOKEN}`) return send(401, { success: false, error: 'Sign in first.' });
+      const body = JSON.parse(raw || '{}');
+      calls.push(body);
+      const pub = (clientId, r) => ({ id: r.id, clientId, name: r.name, kind: 'openai', baseUrl: r.baseUrl, model: r.model, key: `****${r.last4}` });
+      if (body.action === 'list') return send(200, { success: true, models: [...rows].map(([k, r]) => pub(k, r)) });
+      if (body.action === 'delete') { rows.delete(body.clientId); return send(200, { success: true }); }
+      if (body.action === 'upsert') {
+        const m = body.model;
+        if (conflictOnce) { conflictOnce = false; return send(409, { success: false, error: 'This model changed at the same time somewhere else. Try again.', retry: true }); }
+        const prev = rows.get(m.clientId);
+        if (!m.apiKey && (!prev || prev.baseUrl !== m.baseUrl)) return send(400, { success: false, error: 'Send the API key once to sync this model.' });
+        const r = { id: prev ? prev.id : `row-${rows.size + 1}`, name: m.name, baseUrl: m.baseUrl, model: m.model,
+          last4: m.apiKey ? m.apiKey.slice(-4) : prev.last4, keyVersion: (prev ? prev.keyVersion : 0) + (m.apiKey ? 1 : 0) };
+        rows.set(m.clientId, r);
+        return send(200, { success: true, model: pub(m.clientId, r) });
+      }
+      send(400, { success: false, error: 'Unknown action.' });
+    });
+  });
+  await new Promise((r) => fake.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${fake.address().port}/functions/v1/user-models`;
+  try {
+    const client = sync.createModelSync({ getAccessToken: async () => FAKE_TOKEN, url, fetch: globalThis.fetch });
+    const placeholderKey = 'test-placeholder-key-1234';
+    const model = { id: 'm_test1', name: 'Test model', kind: 'openai', baseUrl: 'https://api.example.com/v1', model: 'test-model', apiKey: placeholderKey, phone: true };
+
+    check('sync: ChatGPT plan models are never synced', /stay on this PC/.test(sync.phoneBlocker({ ...model, kind: 'chatgpt' })));
+    check('sync: Ollama models are never synced', /Ollama runs on this PC/.test(sync.phoneBlocker({ ...model, kind: 'ollama', baseUrl: 'http://localhost:11434' })));
+    check('sync: models without a key, on http or a private address are not synced',
+      !!sync.phoneBlocker({ ...model, apiKey: '' }) && !!sync.phoneBlocker({ ...model, baseUrl: 'http://api.example.com/v1' })
+      && !!sync.phoneBlocker({ ...model, baseUrl: 'https://192.168.1.20/v1' }) && !!sync.phoneBlocker({ ...model, baseUrl: 'https://localhost/v1' })
+      && sync.phoneBlocker(model) === null);
+
+    let r = await client.push(model, { withKey: true });
+    check('sync: first push sends the key once and saves the row', r.ok && calls[calls.length - 1].model.apiKey === placeholderKey && rows.has('m_test1'));
+    r = await client.push({ ...model, name: 'Renamed' });
+    check('sync: a rename sends metadata only', r.ok && calls[calls.length - 1].model.apiKey === undefined && rows.get('m_test1').name === 'Renamed' && rows.get('m_test1').keyVersion === 1);
+    const listed = await client.list();
+    check('sync: the list never carries the key', listed.ok && listed.models.length === 1 && !JSON.stringify(listed).includes(placeholderKey) && listed.models[0].key === '****1234');
+
+    rows.clear();
+    const before = calls.length;
+    r = await client.push(model);
+    check('sync: a row removed elsewhere is re-sent with the key', r.ok && calls.length === before + 2 && calls[calls.length - 1].model.apiKey === placeholderKey);
+    conflictOnce = true;
+    r = await client.push(model);
+    check('sync: a save conflict is retried once', r.ok && !conflictOnce);
+
+    r = await client.push({ ...model, kind: 'chatgpt' }, { withKey: true });
+    check('sync: a blocked model never reaches the server', !r.ok && r.blocked && calls.every((c) => !c.model || c.model.clientId !== 'm_test1' || c.model.kind === 'openai'));
+    r = await client.remove('m_test1');
+    check('sync: delete removes the row', r.ok && !rows.has('m_test1'));
+
+    const signedOut = sync.createModelSync({ getAccessToken: async () => null, url, fetch: globalThis.fetch });
+    const n = calls.length;
+    r = await signedOut.push(model, { withKey: true });
+    check('sync: signed out, nothing is sent', !r.ok && r.signedOut && calls.length === n);
+    const offline = sync.createModelSync({ getAccessToken: async () => FAKE_TOKEN, url: 'http://127.0.0.1:1/x', fetch: globalThis.fetch });
+    r = await offline.push(model, { withKey: true });
+    check('sync: offline fails softly with a message', !r.ok && r.offline && /reach Codeply/.test(r.error));
+
+    const st = sync.phoneStatus({ ...model, phoneSyncedAt: 1, phoneUser: 'user-a' }, 'user-a');
+    check('sync: status is "synced" only for the account that synced it', st.synced && !sync.phoneStatus({ ...model, phoneSyncedAt: 1, phoneUser: 'user-a' }, 'user-b').synced
+      && !sync.phoneStatus({ ...model, phone: false, phoneSyncedAt: 1, phoneUser: 'user-a' }, 'user-a').on
+      && sync.phoneStatus({ ...model, kind: 'ollama' }, 'user-a').eligible === false);
+  } finally {
+    fake.close();
+  }
+}
+
 server.close();
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(failures ? `\n${failures} FAILED` : '\nALL PASSED');
