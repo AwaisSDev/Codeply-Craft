@@ -1883,6 +1883,88 @@ process.stdin.on('data', (d) => {
   }
 }
 
+// ─── Use on my phone: model sync against a fake user-models server ──────────
+{
+  const sync = require(path.join(CLI, 'lib/model-sync.js'));
+  const FAKE_TOKEN = 'test-session-token';
+  const rows = new Map(); // clientId -> { id, name, baseUrl, model, last4, keyVersion, hasKey }
+  const calls = [];
+  let conflictOnce = false;
+  const fake = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', (c) => (raw += c));
+    req.on('end', () => {
+      const send = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+      if (req.headers.authorization !== `Bearer ${FAKE_TOKEN}`) return send(401, { success: false, error: 'Sign in first.' });
+      const body = JSON.parse(raw || '{}');
+      calls.push(body);
+      const pub = (clientId, r) => ({ id: r.id, clientId, name: r.name, kind: 'openai', baseUrl: r.baseUrl, model: r.model, key: `****${r.last4}` });
+      if (body.action === 'list') return send(200, { success: true, models: [...rows].map(([k, r]) => pub(k, r)) });
+      if (body.action === 'delete') { rows.delete(body.clientId); return send(200, { success: true }); }
+      if (body.action === 'upsert') {
+        const m = body.model;
+        if (conflictOnce) { conflictOnce = false; return send(409, { success: false, error: 'This model changed at the same time somewhere else. Try again.', retry: true }); }
+        const prev = rows.get(m.clientId);
+        if (!m.apiKey && (!prev || prev.baseUrl !== m.baseUrl)) return send(400, { success: false, error: 'Send the API key once to sync this model.' });
+        const r = { id: prev ? prev.id : `row-${rows.size + 1}`, name: m.name, baseUrl: m.baseUrl, model: m.model,
+          last4: m.apiKey ? m.apiKey.slice(-4) : prev.last4, keyVersion: (prev ? prev.keyVersion : 0) + (m.apiKey ? 1 : 0) };
+        rows.set(m.clientId, r);
+        return send(200, { success: true, model: pub(m.clientId, r) });
+      }
+      send(400, { success: false, error: 'Unknown action.' });
+    });
+  });
+  await new Promise((r) => fake.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${fake.address().port}/functions/v1/user-models`;
+  try {
+    const client = sync.createModelSync({ getAccessToken: async () => FAKE_TOKEN, url, fetch: globalThis.fetch });
+    const placeholderKey = 'test-placeholder-key-1234';
+    const model = { id: 'm_test1', name: 'Test model', kind: 'openai', baseUrl: 'https://api.example.com/v1', model: 'test-model', apiKey: placeholderKey, phone: true };
+
+    check('sync: ChatGPT plan models are never synced', /stay on this PC/.test(sync.phoneBlocker({ ...model, kind: 'chatgpt' })));
+    check('sync: Ollama models are never synced', /Ollama runs on this PC/.test(sync.phoneBlocker({ ...model, kind: 'ollama', baseUrl: 'http://localhost:11434' })));
+    check('sync: models without a key, on http or a private address are not synced',
+      !!sync.phoneBlocker({ ...model, apiKey: '' }) && !!sync.phoneBlocker({ ...model, baseUrl: 'http://api.example.com/v1' })
+      && !!sync.phoneBlocker({ ...model, baseUrl: 'https://192.168.1.20/v1' }) && !!sync.phoneBlocker({ ...model, baseUrl: 'https://localhost/v1' })
+      && sync.phoneBlocker(model) === null);
+
+    let r = await client.push(model, { withKey: true });
+    check('sync: first push sends the key once and saves the row', r.ok && calls[calls.length - 1].model.apiKey === placeholderKey && rows.has('m_test1'));
+    r = await client.push({ ...model, name: 'Renamed' });
+    check('sync: a rename sends metadata only', r.ok && calls[calls.length - 1].model.apiKey === undefined && rows.get('m_test1').name === 'Renamed' && rows.get('m_test1').keyVersion === 1);
+    const listed = await client.list();
+    check('sync: the list never carries the key', listed.ok && listed.models.length === 1 && !JSON.stringify(listed).includes(placeholderKey) && listed.models[0].key === '****1234');
+
+    rows.clear();
+    const before = calls.length;
+    r = await client.push(model);
+    check('sync: a row removed elsewhere is re-sent with the key', r.ok && calls.length === before + 2 && calls[calls.length - 1].model.apiKey === placeholderKey);
+    conflictOnce = true;
+    r = await client.push(model);
+    check('sync: a save conflict is retried once', r.ok && !conflictOnce);
+
+    r = await client.push({ ...model, kind: 'chatgpt' }, { withKey: true });
+    check('sync: a blocked model never reaches the server', !r.ok && r.blocked && calls.every((c) => !c.model || c.model.clientId !== 'm_test1' || c.model.kind === 'openai'));
+    r = await client.remove('m_test1');
+    check('sync: delete removes the row', r.ok && !rows.has('m_test1'));
+
+    const signedOut = sync.createModelSync({ getAccessToken: async () => null, url, fetch: globalThis.fetch });
+    const n = calls.length;
+    r = await signedOut.push(model, { withKey: true });
+    check('sync: signed out, nothing is sent', !r.ok && r.signedOut && calls.length === n);
+    const offline = sync.createModelSync({ getAccessToken: async () => FAKE_TOKEN, url: 'http://127.0.0.1:1/x', fetch: globalThis.fetch });
+    r = await offline.push(model, { withKey: true });
+    check('sync: offline fails softly with a message', !r.ok && r.offline && /reach Codeply/.test(r.error));
+
+    const st = sync.phoneStatus({ ...model, phoneSyncedAt: 1, phoneUser: 'user-a' }, 'user-a');
+    check('sync: status is "synced" only for the account that synced it', st.synced && !sync.phoneStatus({ ...model, phoneSyncedAt: 1, phoneUser: 'user-a' }, 'user-b').synced
+      && !sync.phoneStatus({ ...model, phone: false, phoneSyncedAt: 1, phoneUser: 'user-a' }, 'user-a').on
+      && sync.phoneStatus({ ...model, kind: 'ollama' }, 'user-a').eligible === false);
+  } finally {
+    fake.close();
+  }
+}
+
 server.close();
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(failures ? `\n${failures} FAILED` : '\nALL PASSED');
