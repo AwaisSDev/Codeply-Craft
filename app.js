@@ -360,6 +360,7 @@ const TOOL_DISPLAY = {
   gmail_send: 'Emailed', gmail_search: 'Searched Gmail', slack_post_message: 'Posted',
   vercel_deploy: 'Deployed', supabase_create_project: 'Provisioned', supabase_delete_project: 'Deleted', github_create_repo: 'Pushed',
   supabase_api: 'Supabase', supabase_sql: 'Ran SQL', vercel_api: 'Vercel',
+  publish_check: 'Checked for publishing', publish_connect: 'Connect', supabase_setup: 'Set up database', supabase_schema: 'Applied schema', publish_deploy: 'Published', publish_github: 'Pushed to GitHub',
   design_reference_search: 'Searched design library', view_images: 'Viewed',
 };
 
@@ -376,6 +377,7 @@ const TOOL_NAME = {
   supabase_delete_project: 'delete Supabase project',
   github_create_repo: 'create GitHub repo',
   supabase_api: 'change Supabase', supabase_sql: 'run SQL on Supabase', vercel_api: 'change Vercel',
+  supabase_setup: 'set up the Supabase database', supabase_schema: 'run SQL on Supabase', publish_deploy: 'publish to Vercel', publish_github: 'push to GitHub and link Vercel',
   design_reference_search: 'search design library',
 };
 const toolName = (name) => TOOL_NAME[name] || name.replace(/_/g, ' ');
@@ -2463,6 +2465,7 @@ function renderQuestionCard(q, existing) {
     if (v) send(v);
   });
   card.querySelector('.q-skip').addEventListener('click', () => send(null));
+  if (q.connect && window.CraftPublish) window.CraftPublish.decorateQuestion(card, q, send); // publish: one-click connect
   if (!existing) chatColumn.appendChild(card);
   scrollToBottom();
 }
@@ -2670,6 +2673,7 @@ if (api) api.onAgentEvent((data) => {
     case 'tool_end': {
       if (runningToolRow) { runningToolRow.remove(); runningToolRow = null; }
       addToolRow({ name: data.name, label: data.summary || toolArgsLabel(data.args), ok: data.ok, args: data.args, screenshotSrc: data.meta?.screenshotDataUrl, auto: !!pendingAutoApproval, bypass: pendingAutoApproval?.bypass, delegation: data.meta?.delegation, error: data.error });
+      if (data.meta?.publish && window.CraftPublish) window.CraftPublish.render(data.meta.publish);
       pendingAutoApproval = null;
       panelTrack(data.name, data.args?.path || data.summary);
       // The agent calls the model again to decide the next step.
@@ -2783,6 +2787,8 @@ async function openSession(id) {
       renderCheckpoint(m);
     } else if (m.kind === 'question') {
       renderQuestionCard({ ...m, answered: true });
+    } else if (m.kind === 'publish' && window.CraftPublish) {
+      window.CraftPublish.render(m);
     } else if (m.kind === 'notice') {
       addNote(m.text, m.level === 'warn' ? 'warn' : m.level === 'error' ? 'error' : '');
     } else if (m.kind === 'goal') {

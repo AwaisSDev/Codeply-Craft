@@ -58,6 +58,8 @@ const DAILY_SKILLS = new Set([
   // Codeply's own visual-quality bar - see the note above use_skill in
   // lib/agent.mjs's TOOL_REFERENCE for why these are non-speculative triggers.
   'premium-web-design', 'frontend-design-direction', 'motion-ui', 'frontend-a11y',
+  // The end-to-end publish flow (lib/publish.js).
+  'publish-website',
 ]);
 
 function listSkillDirs(root, source) {

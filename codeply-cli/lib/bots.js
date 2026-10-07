@@ -58,8 +58,8 @@ const APPROVALS = {
   edit_files: { label: 'Editing files', tools: ['write_file', 'edit_file', 'apply_patch', 'fetch_image'] },
   run_commands: { label: 'Running commands', tools: ['run'] },
   send: { label: 'Sending anything (email, Slack)', tools: ['gmail_send', 'slack_post_message'] },
-  publish: { label: 'Deploying or publishing', tools: ['vercel_deploy', 'github_create_repo', 'vercel_api'] },
-  databases: { label: 'Changing databases or cloud projects', tools: ['supabase_create_project', 'supabase_delete_project', 'supabase_api', 'supabase_sql'] },
+  publish: { label: 'Deploying or publishing', tools: ['vercel_deploy', 'github_create_repo', 'vercel_api', 'publish_deploy', 'publish_github'] },
+  databases: { label: 'Changing databases or cloud projects', tools: ['supabase_create_project', 'supabase_delete_project', 'supabase_api', 'supabase_sql', 'supabase_setup', 'supabase_schema'] },
   calendar: { label: 'Adding to your calendar', tools: ['calendar_add'] },
 };
 const ALL_APPROVALS = Object.keys(APPROVALS);

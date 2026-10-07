@@ -1,0 +1,46 @@
+/* Publishing: top-bar button, progress card, connect button, token form (publish-ui.js). */
+.pub-btn {
+  height: 28px; padding: 0 12px; margin-right: 6px; border-radius: 8px;
+  border: 1px solid var(--border, rgba(255,255,255,0.12)); background: var(--text, #e4e4e7); color: var(--bg, #0a0a0c);
+  font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.pub-btn:hover { opacity: 0.9; }
+
+.pub-card {
+  margin: 10px 0; padding: 12px 14px; border-radius: 12px;
+  border: 1px solid var(--border, rgba(255,255,255,0.12)); background: var(--panel, rgba(255,255,255,0.03));
+}
+.pub-head { font-weight: 600; font-size: 13.5px; margin-bottom: 8px; color: var(--text, #e4e4e7); }
+.pub-step { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 13px; }
+.pub-name { width: 72px; color: var(--text, #e4e4e7); }
+.pub-detail { color: var(--muted, #a1a1aa); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.pub-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted, #71717a); flex: none; opacity: 0.5; }
+.pub-step.active .pub-dot, .pub-step.waiting .pub-dot { background: #f5c451; opacity: 1; animation: pub-pulse 1.2s ease-in-out infinite; }
+.pub-step.done .pub-dot { background: #6fd8a5; opacity: 1; }
+.pub-step.error .pub-dot { background: #f87171; opacity: 1; }
+.pub-step.error .pub-detail { color: #f87171; white-space: normal; }
+.pub-step.skipped .pub-name { opacity: 0.6; }
+@keyframes pub-pulse { 50% { opacity: 0.35; } }
+.pub-live, .pub-link {
+  background: none; border: 0; padding: 0; font: inherit; color: var(--accent, #8ab4ff); cursor: pointer; text-decoration: underline;
+}
+.pub-open {
+  margin-top: 10px; width: 100%; padding: 8px 10px; border-radius: 8px; border: 0; cursor: pointer;
+  background: #6fd8a5; color: #0a0a0c; font: inherit; font-weight: 600; font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.pub-connect { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0; }
+.pub-connect-btn {
+  padding: 7px 14px; border-radius: 8px; border: 0; cursor: pointer; font: inherit; font-weight: 600;
+  background: var(--text, #e4e4e7); color: var(--bg, #0a0a0c);
+}
+.pub-connect-btn:disabled { opacity: 0.6; cursor: default; }
+.pub-token { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; width: 100%; margin-top: 6px; }
+.pub-token input {
+  flex: 1; min-width: 180px; padding: 6px 8px; border-radius: 6px; font: inherit; font-size: 12.5px;
+  border: 1px solid var(--border, rgba(255,255,255,0.12)); background: transparent; color: var(--text, #e4e4e7);
+}
+.pub-token button[type="submit"] { padding: 6px 12px; border-radius: 6px; border: 0; cursor: pointer; font: inherit; }
+.pub-token-msg { width: 100%; font-size: 12px; color: var(--muted, #a1a1aa); }
+.app-card-body .pub-link { font-size: 12px; margin-top: 4px; }

@@ -53,7 +53,8 @@ const FORMAT_CORRECTION =
   'Valid names: todo, ask_user, mcp, list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, ' +
   'browser_check, gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, slack_post_message, vercel_deploy, supabase_create_project, ' +
   'supabase_delete_project, github_create_repo, design_reference_search, view_images, supabase_api, supabase_sql, vercel_api, ' +
-  'web_fetch, web_search, apply_patch, plan_exit, plan_enter, lsp.';
+  'web_fetch, web_search, apply_patch, plan_exit, plan_enter, lsp, publish_check, publish_connect, supabase_setup, supabase_schema, ' +
+  'publish_deploy, publish_github.';
 
 const TRUNCATION_CORRECTION =
   '[system] That reply got cut off partway through the action block - the tag syntax was fine, it simply ran out of ' +
@@ -144,7 +145,7 @@ const CLAIM_SHIPPED = new RegExp(
   `|\\b(?:is|are)\\s+now\\s+live\\s+(?:at|on)\\b`,
   'i',
 );
-const SHIP_TOOLS = new Set(['run', 'vercel_deploy', 'vercel_api', 'github_create_repo', 'supabase_api']);
+const SHIP_TOOLS = new Set(['run', 'vercel_deploy', 'vercel_api', 'github_create_repo', 'supabase_api', 'publish_deploy', 'publish_github']);
 
 const unbackedClaimCorrection = (what) =>
   `[system] Your last reply says you ${what}, but no tool that could have done that ran successfully this turn. ` +
@@ -264,7 +265,7 @@ const TOOL_TAG = /<codeply:([a-z_]+)>([\s\S]*?)<\/codeply:\1>/g;
 
 // Params whose value is a raw payload (file content, code blocks) and may
 // legitimately contain angle-bracket tags of its own.
-const CONTAINER_PARAMS = new Set(['content', 'search', 'replace', 'body', 'text', 'patch']);
+const CONTAINER_PARAMS = new Set(['content', 'search', 'replace', 'body', 'text', 'patch', 'sql']);
 
 /** Tag payloads are written on their own lines; drop only that framing. */
 function trimFraming(value) {
@@ -336,6 +337,12 @@ const PARAMS = {
   supabase_api: ['method', 'path', 'body'],
   supabase_sql: ['ref', 'query'],
   vercel_api: ['method', 'path', 'body'],
+  publish_check: ['path'],
+  publish_connect: ['service', 'reason'],
+  supabase_setup: ['project', 'name', 'region'],
+  supabase_schema: ['ref', 'sql', 'path'],
+  publish_deploy: ['path', 'name'],
+  publish_github: ['path', 'name', 'private'],
   web_fetch: ['url', 'format'],
   web_search: ['query', 'num'],
   apply_patch: ['patch'],
@@ -375,7 +382,13 @@ const NAME_ALIASES = {
   calendar_add: 'calendar_add', calendaradd: 'calendar_add', addevent: 'calendar_add', createevent: 'calendar_add', addtocalendar: 'calendar_add', newevent: 'calendar_add',
   slack_post_message: 'slack_post_message', slackpostmessage: 'slack_post_message',
   slackmessage: 'slack_post_message', slackpost: 'slack_post_message', postmessage: 'slack_post_message',
-  vercel_deploy: 'vercel_deploy', vercel: 'vercel_deploy', deploy: 'vercel_deploy', publish: 'vercel_deploy', vercelpublish: 'vercel_deploy',
+  vercel_deploy: 'vercel_deploy', vercel: 'vercel_deploy', vercelpublish: 'vercel_deploy',
+  publish_deploy: 'publish_deploy', publishdeploy: 'publish_deploy', deploy: 'publish_deploy', publish: 'publish_deploy',
+  publish_check: 'publish_check', publishcheck: 'publish_check',
+  publish_connect: 'publish_connect', publishconnect: 'publish_connect', connect: 'publish_connect',
+  supabase_setup: 'supabase_setup', supabasesetup: 'supabase_setup', setupdatabase: 'supabase_setup',
+  supabase_schema: 'supabase_schema', supabaseschema: 'supabase_schema', applyschema: 'supabase_schema',
+  publish_github: 'publish_github', publishgithub: 'publish_github',
   supabase_create_project: 'supabase_create_project', supabase: 'supabase_create_project', createproject: 'supabase_create_project',
   createdatabase: 'supabase_create_project', makedatabase: 'supabase_create_project', create_database: 'supabase_create_project',
   supabase_delete_project: 'supabase_delete_project', deletesupabaseproject: 'supabase_delete_project',
@@ -886,6 +899,38 @@ create table if not exists todos (id bigint generated always as identity primary
 <path>/v9/projects</path>
 </codeply:vercel_api>
 
+<codeply:publish_check>
+</codeply:publish_check>
+
+<codeply:publish_connect>
+<service>supabase</service>
+<reason>The app has sign-up and saves notes, so it needs a database.</reason>
+</codeply:publish_connect>
+
+<codeply:supabase_setup>
+</codeply:supabase_setup>
+
+<codeply:supabase_schema>
+<sql>
+create table if not exists notes (id bigint generated always as identity primary key, user_id uuid references auth.users not null default auth.uid(), body text not null);
+create policy "own notes" on notes for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+</sql>
+</codeply:supabase_schema>
+
+<codeply:publish_github>
+</codeply:publish_github>
+
+<codeply:publish_deploy>
+</codeply:publish_deploy>
+
+(Publishing, only when the user asked to publish/deploy/put it live: use_skill
+publish-website first and follow it. publish_check reads the project;
+publish_connect pauses until the user connects a service in one click;
+supabase_setup picks or creates the Supabase project and writes its URL and anon
+key into the app; supabase_schema runs SQL after the user approves it, with RLS;
+publish_deploy asks about GitHub once, then deploys to Vercel and waits until it
+is live; publish_github creates or reuses the repo, pushes and links Vercel.)
+
 <codeply:design_reference_search>
 <term>to-do list</term>
 <category>productivity</category>
@@ -978,6 +1023,7 @@ RULES
 - Prefer run for anything you can check mechanically.
 - run executes a real shell command on the user's own machine, in their own project directory, with their own git/gh credentials already configured - the exact same terminal they'd get typing it themselves. That includes git add, git commit, git push, gh pr create, npm install, or anything else. Never tell the user you don't have terminal or network access, or that you can't run a command - if it's a shell command, write a <codeply:run> action block and run it for real. Do not just describe what the command would do.
 - If a task needs a CLI that turns out not to be installed, install it yourself with the platform's own package manager (winget on Windows, brew on macOS, apt/apt-get on Linux) via run before falling back to a manual workaround - do not immediately hand the user a "go do this in a browser" set of steps just because a binary is missing; installing it is itself a shell command. The one thing you genuinely cannot do unattended is an interactive auth step a CLI requires after installing (e.g. gh auth login opening a browser for a device code) - if the install succeeds but the tool then reports it isn't authenticated, that specific login step is the only part to ask the user for, not the whole task.
+- PUBLISHING: never publish, deploy or create cloud resources unless the user asked for that in so many words (publish, deploy, put it live, ship it, host it). Building or fixing a site is not a request to publish it. When they do ask, use_skill 'publish-website' first and follow it: publish_check, decide yourself whether the app needs a database, publish_connect for any service that is not connected (it waits for the user, then you carry on without asking again), supabase_setup and supabase_schema when a database is needed, then publish_deploy (and publish_github when the user wants GitHub). Finish with the live URL from the publish_deploy result, never one you built yourself. Prefer these over vercel_deploy and supabase_create_project.
 - Deploying to Vercel, creating a Supabase project, or creating a new GitHub repo and pushing to it are NOT CLI tasks here - do not install or shell out to the vercel CLI, the supabase CLI, or gh repo create for these. Use vercel_deploy, supabase_create_project, and github_create_repo instead: they call the connected account directly (once the user has connected it from Connect Apps), with no separate CLI login step and no "go create an empty repo on github.com first." If one reports its integration isn't connected, say so plainly and point the user to Connect Apps (account menu) - do not fall back to the CLI/manual route as a workaround, and do not install the vercel/supabase CLI to route around a missing connection.
 - FULL SUPABASE ACCESS: when Supabase is connected (see CONNECTED SERVICES), supabase_api reaches the entire Supabase Management API (https://api.supabase.com, paths start with /v1/) - list projects (GET /v1/projects), read API keys (GET /v1/projects/{ref}/api-keys?reveal=true), manage auth config, storage buckets, edge functions, secrets, branches, and more. supabase_sql runs SQL directly against a project's Postgres database - create and alter tables, write RLS policies, seed data, inspect schemas (select from information_schema). Always look up the real project ref first (GET /v1/projects) instead of guessing it. Read requests run immediately; changes ask the user first. Enable RLS and add policies on any table that holds user data.
 - FULL VERCEL ACCESS: when Vercel is connected, vercel_api reaches the entire Vercel REST API (https://api.vercel.com, paths start with a version like /v9/) - projects (GET /v9/projects), deployments and their status/logs (GET /v6/deployments, GET /v13/deployments/{id}, GET /v3/deployments/{id}/events), env vars (/v10/projects/{id}/env), domains (/v10/projects/{id}/domains). The team id is added for you. Use vercel_deploy to ship a folder, then vercel_api to confirm the deployment reached READY and to read its build logs if it failed - do not report a deployment as live until you've seen it succeed.
@@ -1098,7 +1144,7 @@ function connectedServicesSection() {
   describe('github', 'GitHub', githubUser);
   describe('gmail', 'Gmail and Google Calendar', [gmailUser, 'drafts via gmail_draft, calendar via calendar_list/calendar_add'].filter(Boolean).join(' - '));
   describe('slack', 'Slack', '');
-  return `CONNECTED SERVICES\n${lines.join('\n')}\nA service marked "not connected" cannot be used - tell the user to connect it from Connect Apps rather than attempting it.`;
+  return `CONNECTED SERVICES\n${lines.join('\n')}\nA service marked "not connected" cannot be used - tell the user to connect it from Connect Apps rather than attempting it. While publishing, call publish_connect instead: it lets the user connect in one click and waits.`;
 }
 
 const ROLE_INTRO = (role) =>
@@ -1370,7 +1416,7 @@ const NO_NATIVE_TOOLS_REMINDER =
 // unless their entry says toolMode: 'text', or CODEPLY_TOOLS=text is set.
 // A model that rejects tools is remembered for the rest of the session.
 const nativeUnsupported = new Set();
-const MUTATING_ACTIONS = new Set(['write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo']);
+const MUTATING_ACTIONS = new Set(['write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github']);
 
 /**
  * Native function names for MCP tools (mcp__server__tool, within the 64-char
@@ -1518,7 +1564,8 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   ];
 
   // fileState: path -> mtime when this turn last read/wrote it (see tools.mjs).
-  const ctx = { cwd, approve, browser, signal, mode, route, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null, askBot: typeof askBot === 'function' ? askBot : null };
+  // userMessage lets the publish tools refuse when nobody asked to publish.
+  const ctx = { cwd, approve, browser, signal, mode, route, userMessage, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null, askBot: typeof askBot === 'function' ? askBot : null };
   const recentCallKeys = [];      // executed calls, in order, for the stuck-loop guard
   const lastResultFor = new Map(); // call key -> its most recent result
   const transcript = [{ role: 'user', content: userMessage }];

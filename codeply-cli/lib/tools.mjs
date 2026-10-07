@@ -29,6 +29,7 @@ const skills = require('./skills.js');
 const oauth = require('./oauth-connectors.js');
 const webTools = require('./web-tools.js');
 const applyPatchLib = require('./apply-patch.js');
+const publishLib = require('./publish.js');
 
 // Successful writes made while using the hosted model are logged (counts
 // only) for the usage dashboard. There is no cap - see apply-limit.js.
@@ -2206,7 +2207,15 @@ async function ask_bot(args, ctx) {
   return ctx.askBot({ name: String(args.bot || '').trim(), task: String(args.task || '').trim(), signal: ctx.signal });
 }
 
+// ─── Publishing (Supabase + Vercel + GitHub, see lib/publish.js) ────────────
+const publishTools = publishLib.makePublishTools({
+  config,
+  getSupabaseToken: () => getValidSupabaseToken(),
+  resolveDir: (p, cwd) => resolvePath(String(p).trim(), cwd).abs,
+});
+
 export const TOOLS = {
+  ...publishTools,
   todo,
   ask_bot,
   ask_user,
@@ -2221,7 +2230,7 @@ export const TOOLS = {
 // actually prompt for non-read requests (see above); read-only tools
 // (browser_check, gmail_search, design_reference_search, view_images, ...)
 // never prompt.
-export const TOOL_NEEDS_APPROVAL = new Set(['write_file', 'edit_file', 'apply_patch', 'run', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_api', 'supabase_sql', 'vercel_api']);
+export const TOOL_NEEDS_APPROVAL = new Set(['supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github', 'write_file', 'edit_file', 'apply_patch', 'run', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_api', 'supabase_sql', 'vercel_api']);
 
 /** Human-facing verb + colour hint for the transcript. */
 export const TOOL_DISPLAY = {
@@ -2261,6 +2270,12 @@ export const TOOL_DISPLAY = {
   supabase_api:{ verb: 'supabase', icon: '◆' },
   supabase_sql:{ verb: 'sql', icon: '◆' },
   vercel_api:{ verb: 'vercel', icon: '▲' },
+  publish_check:{ verb: 'check', icon: '▲' },
+  publish_connect:{ verb: 'connect', icon: '▲' },
+  supabase_setup:{ verb: 'database', icon: '◆' },
+  supabase_schema:{ verb: 'schema', icon: '◆' },
+  publish_deploy:{ verb: 'publish', icon: '▲' },
+  publish_github:{ verb: 'push', icon: '⎇' },
 };
 
 // Plan and Ask are read-only. write_file/edit_file are also refused in
@@ -2269,6 +2284,7 @@ export const TOOL_DISPLAY = {
 const MUTATING_TOOLS = new Set([
   'write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'slack_post_message',
   'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo',
+  'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github',
 ]);
 
 export async function executeTool(name, args, ctx) {

@@ -2096,6 +2096,9 @@ process.stdin.on('data', (d) => {
   }
 }
 
+// End-to-end publishing against fake Vercel / Supabase / GitHub servers.
+await (await import(pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), 'publish-test.mjs')).href)).default({ check, tmp, CLI });
+
 server.close();
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(failures ? `\n${failures} FAILED` : '\nALL PASSED');

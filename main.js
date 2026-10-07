@@ -1133,6 +1133,7 @@ ipcMain.handle('integrations:connectVercel', async () => {
       teamId: tokens.team_id || '',
       userName,
     });
+    resolveConnectQuestions('vercel');
     return { ok: true, userName };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -1156,6 +1157,7 @@ ipcMain.handle('integrations:connectSupabase', async () => {
       refreshToken: tokens.refresh_token || configLib.getIntegration('supabase').refreshToken,
       expiresAt: Date.now() + (tokens.expires_in || 3600) * 1000,
     });
+    resolveConnectQuestions('supabase');
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -1176,9 +1178,28 @@ ipcMain.handle('integrations:connectGithub', async () => {
     const tokens = await oauthLib.exchangeGithubCode(clientId, clientSecret, code, redirectUri);
     const userName = await oauthLib.getGithubProfile(tokens.access_token).catch(() => '');
     configLib.saveIntegration('github', { accessToken: tokens.access_token, userName, scope: tokens.scope || '' });
+    resolveConnectQuestions('github');
     return { ok: true, userName };
   } catch (e) {
     return { ok: false, error: e.message };
+  }
+});
+
+// The token fallback for Vercel / Supabase / GitHub: the user pastes their
+// own personal access token when no OAuth app is configured. It is checked
+// with one read-only call, stored like any other integration token, and never
+// sent back to the renderer.
+ipcMain.handle('integrations:connectToken', async (e, { name, token } = {}) => {
+  const ok = await loadEngine();
+  if (!ok) return { ok: false, error: 'Engine not available.' };
+  if (!['vercel', 'supabase', 'github'].includes(name)) return { ok: false, error: 'Unknown integration.' };
+  try {
+    const saved = await oauthLib.checkAccessToken(name, token);
+    configLib.saveIntegration(name, { ...saved, viaToken: true });
+    resolveConnectQuestions(name);
+    return { ok: true, label: saved.userName || saved.email || '' };
+  } catch (err) {
+    return { ok: false, error: err.message };
   }
 });
 
@@ -1834,7 +1855,15 @@ function notifyProviderExhausted(session, message) {
 
 const pendingApprovals = new Map();  // requestId -> { sessionId, resolve(verdict) }
 const pendingImagePicks = new Map(); // requestId -> { sessionId, resolve(chosenUrl) }
-const pendingQuestions = new Map();  // requestId -> { sessionId, resolve(answer) } for ask_user
+const pendingQuestions = new Map();  // requestId -> { sessionId, resolve(answer), connect? } for ask_user
+
+/** A publish waiting on "connect Supabase/Vercel/GitHub" carries on the moment that connection lands, however it was made. */
+function resolveConnectQuestions(name) {
+  for (const [, p] of [...pendingQuestions]) if (p.connect === name) p.resolve('Connected');
+}
+
+// Live links from publish results: the only non-fixed URLs openExternal opens.
+const publishedUrls = new Set();
 let approvalCounter = 0;
 
 // ─── Phone companion (signed in with the same account) ─────────────────────
@@ -2405,6 +2434,13 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
           screenshotPath: ev.meta?.screenshotPath || undefined,
           delegation: ev.meta?.delegation || undefined, // ask_bot result, for the chat row
         });
+        // The publish card (Database, Vercel, GitHub, Live): one per publish, kept up to date.
+        if (ev.meta?.publish?.id) {
+          const card = { kind: 'publish', ...ev.meta.publish, at: Date.now() };
+          const i = session.messages.findIndex((m) => m.kind === 'publish' && m.id === card.id);
+          if (i === -1) session.messages.push(card); else session.messages[i] = card;
+          if (card.url) publishedUrls.add(card.url);
+        }
       } else if (ev.type === 'notice') {
         session.messages.push({ kind: 'notice', level: ev.level || 'info', text: ev.text, at: Date.now() });
       } else if (ev.type === 'done' && Array.isArray(ev.actions)) {
@@ -2845,13 +2881,14 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   // without threading a new parameter through each of them. Bypass and /goal
   // runs are unattended by design, so they get no ask and the agent decides.
   if (!bypass && !goal) {
-    approve.ask = ({ question, options }) => {
+    approve.ask = ({ question, options, connect }) => {
       if (signal.aborted) return Promise.resolve(null);
       const id = ++approvalCounter;
-      const q = { kind: 'question', requestId: id, question, options: options || [], at: Date.now() };
+      // connect: 'supabase' | 'vercel' | 'github' (publish_connect) - the card shows a Connect button.
+      const q = { kind: 'question', requestId: id, question, options: options || [], ...(connect ? { connect } : {}), at: Date.now() };
       sendEvent(session.id, { type: 'question_request', ...q });
       return new Promise((resolve) => {
-        pendingQuestions.set(id, { sessionId: session.id, resolve: (answer) => {
+        pendingQuestions.set(id, { sessionId: session.id, connect: connect || null, resolve: (answer) => {
           pendingQuestions.delete(id);
           const text = answer == null ? null : String(answer).trim().slice(0, 2000) || null;
           session.messages.push({ ...q, answer: text });
@@ -3157,7 +3194,13 @@ ipcMain.handle('remote:setKeepAwake', (e, on) => {
 ipcMain.handle('shell:openExternal', (e, url) => {
   if (url === MOBILE_APP_URL || url === 'https://chatgpt.com/settings/usage') shell.openExternal(url);
   else if (/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(\/actions\/runs\/\d+)?$/.test(String(url))) shell.openExternal(url); // cloud: View run, repo links
+  else if (publishedUrls.has(url) || /^https:\/\/[a-z0-9-]+\.vercel\.app\/?$/.test(String(url))) shell.openExternal(url); // a publish's live link
+  else if (PUBLISH_HELP_URLS.has(url)) shell.openExternal(url); // where to create a token
 });
+const PUBLISH_HELP_URLS = new Set([
+  'https://vercel.com/account/settings/tokens', 'https://supabase.com/dashboard/account/tokens',
+  'https://github.com/settings/tokens', 'https://github.com/apps/vercel/installations/new',
+]);
 
 ipcMain.on('chat:stop', (e, sessionId) => {
   stopChatRun(sessionId);

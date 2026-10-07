@@ -7,6 +7,15 @@
  * owns spinning that server up/down; this file only builds URLs and talks to
  * the providers' token/API endpoints. No secrets are ever logged.
  */
+// REST API hosts for Vercel, Supabase and GitHub. The environment overrides
+// exist only so the offline tests can point every call at fake local servers;
+// the app itself never sets them.
+const API = {
+  vercel: () => (process.env.CODEPLY_VERCEL_API || 'https://api.vercel.com').replace(/\/+$/, ''),
+  supabase: () => (process.env.CODEPLY_SUPABASE_API || 'https://api.supabase.com').replace(/\/+$/, ''),
+  github: () => (process.env.CODEPLY_GITHUB_API || 'https://api.github.com').replace(/\/+$/, ''),
+};
+
 // One Google connection covers Gmail (read, send, drafts) and Google
 // Calendar events. A connection made before compose/calendar were added lacks
 // them; the tools say "reconnect Gmail in Connect Apps" when Google refuses.
@@ -325,7 +334,7 @@ function buildVercelAuthUrl(slug, state) {
 }
 
 async function exchangeVercelCode(clientId, clientSecret, code, redirectUri) {
-  const res = await fetch('https://api.vercel.com/v2/oauth/access_token', {
+  const res = await fetch(`${API.vercel()}/v2/oauth/access_token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, code, redirect_uri: redirectUri }),
@@ -336,7 +345,7 @@ async function exchangeVercelCode(clientId, clientSecret, code, redirectUri) {
 }
 
 async function getVercelProfile(accessToken) {
-  const res = await fetch('https://api.vercel.com/v2/user', {
+  const res = await fetch(`${API.vercel()}/v2/user`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   const body = await res.json();
@@ -359,7 +368,7 @@ function buildSupabaseAuthUrl(clientId, redirectUri) {
 
 async function exchangeSupabaseCode(clientId, clientSecret, code, redirectUri) {
   const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const res = await fetch('https://api.supabase.com/v1/oauth/token', {
+  const res = await fetch(`${API.supabase()}/v1/oauth/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Basic ${basic}` },
     body: new URLSearchParams({ code, grant_type: 'authorization_code', redirect_uri: redirectUri }),
@@ -382,7 +391,7 @@ async function vercelDeploy(accessToken, teamId, projectName, files) {
   // guess the framework unattended.
   const params = new URLSearchParams({ skipAutoDetectionConfirmation: '1' });
   if (teamId) params.set('teamId', teamId);
-  const res = await fetch(`https://api.vercel.com/v13/deployments${params.toString() ? `?${params}` : ''}`, {
+  const res = await fetch(`${API.vercel()}/v13/deployments${params.toString() ? `?${params}` : ''}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: projectName, target: 'production', files }),
@@ -396,7 +405,7 @@ async function vercelDeploy(accessToken, teamId, projectName, files) {
 async function vercelSetEnvVars(accessToken, teamId, projectIdOrName, vars) {
   const params = new URLSearchParams({ upsert: 'true' });
   if (teamId) params.set('teamId', teamId);
-  const res = await fetch(`https://api.vercel.com/v10/projects/${encodeURIComponent(projectIdOrName)}/env?${params}`, {
+  const res = await fetch(`${API.vercel()}/v10/projects/${encodeURIComponent(projectIdOrName)}/env?${params}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(vars.map((v) => ({
@@ -409,7 +418,7 @@ async function vercelSetEnvVars(accessToken, teamId, projectIdOrName, vars) {
 }
 
 async function supabaseListOrganizations(accessToken) {
-  const res = await fetch('https://api.supabase.com/v1/organizations', {
+  const res = await fetch(`${API.supabase()}/v1/organizations`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   const body = await res.json();
@@ -426,8 +435,8 @@ const SUPABASE_PROVISION_TIMEOUT_MS = 3 * 60 * 1000;
  * until it flips to `ACTIVE_HEALTHY` (or gives up after the timeout; the
  * project still exists at that point, it's just not confirmed ready yet).
  */
-async function supabaseCreateProject(accessToken, { name, organizationSlug, dbPass, region = 'us-east-1' }) {
-  const res = await fetch('https://api.supabase.com/v1/projects', {
+async function supabaseCreateProject(accessToken, { name, organizationSlug, dbPass, region = 'us-east-1', pollMs = SUPABASE_PROVISION_POLL_MS }) {
+  const res = await fetch(`${API.supabase()}/v1/projects`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     // Despite older docs listing it as optional, the API now rejects project
@@ -440,8 +449,8 @@ async function supabaseCreateProject(accessToken, { name, organizationSlug, dbPa
   const ref = project.ref;
   const deadline = Date.now() + SUPABASE_PROVISION_TIMEOUT_MS;
   while (project.status !== 'ACTIVE_HEALTHY' && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, SUPABASE_PROVISION_POLL_MS));
-    const pr = await fetch(`https://api.supabase.com/v1/projects/${ref}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+    await new Promise((r) => setTimeout(r, pollMs));
+    const pr = await fetch(`${API.supabase()}/v1/projects/${ref}`, { headers: { Authorization: `Bearer ${accessToken}` } });
     project = await pr.json();
     if (!pr.ok) throw new Error(project.message || `Supabase project status check failed (HTTP ${pr.status})`);
   }
@@ -452,7 +461,7 @@ async function supabaseCreateProject(accessToken, { name, organizationSlug, dbPa
 }
 
 async function supabaseListProjects(accessToken) {
-  const res = await fetch('https://api.supabase.com/v1/projects', {
+  const res = await fetch(`${API.supabase()}/v1/projects`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   const body = await res.json();
@@ -462,7 +471,7 @@ async function supabaseListProjects(accessToken) {
 
 /** Permanent, irreversible - Supabase does not soft-delete or restore a removed project. */
 async function supabaseDeleteProject(accessToken, ref) {
-  const res = await fetch(`https://api.supabase.com/v1/projects/${ref}`, {
+  const res = await fetch(`${API.supabase()}/v1/projects/${ref}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -473,7 +482,7 @@ async function supabaseDeleteProject(accessToken, ref) {
 
 /** anon/public key + project URL + DB connection string. The connection string is built locally (not fetched) since dbPass was chosen by the caller, not returned by the API. */
 async function supabaseGetProjectKeys(accessToken, ref, dbPass) {
-  const res = await fetch(`https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true`, {
+  const res = await fetch(`${API.supabase()}/v1/projects/${ref}/api-keys?reveal=true`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   const keys = await res.json();
@@ -490,7 +499,7 @@ async function supabaseGetProjectKeys(accessToken, ref, dbPass) {
 /** Supabase OAuth access tokens expire; the refresh token doesn't (until revoked). */
 async function refreshSupabaseToken(clientId, clientSecret, refreshToken) {
   const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const res = await fetch('https://api.supabase.com/v1/oauth/token', {
+  const res = await fetch(`${API.supabase()}/v1/oauth/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Basic ${basic}` },
     body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken }),
@@ -531,17 +540,17 @@ async function apiCall(base, accessToken, method, apiPath, body, query) {
 }
 
 function supabaseApi(accessToken, method, apiPath, body) {
-  return apiCall('https://api.supabase.com', accessToken, method, apiPath, body);
+  return apiCall(API.supabase(), accessToken, method, apiPath, body);
 }
 
 /** Runs SQL against a project's Postgres through the Management API. */
 function supabaseQuery(accessToken, ref, query) {
-  return apiCall('https://api.supabase.com', accessToken, 'POST', `/v1/projects/${encodeURIComponent(ref)}/database/query`, { query });
+  return apiCall(API.supabase(), accessToken, 'POST', `/v1/projects/${encodeURIComponent(ref)}/database/query`, { query });
 }
 
 /** teamId is appended automatically when the connection was installed to a team. */
 function vercelApi(accessToken, teamId, method, apiPath, body) {
-  return apiCall('https://api.vercel.com', accessToken, method, apiPath, body, { teamId });
+  return apiCall(API.vercel(), accessToken, method, apiPath, body, { teamId });
 }
 
 // GitHub's standard OAuth Apps flow (docs.github.com/apps/oauth-apps) - much
@@ -569,7 +578,7 @@ async function exchangeGithubCode(clientId, clientSecret, code, redirectUri) {
 }
 
 async function getGithubProfile(accessToken) {
-  const res = await fetch('https://api.github.com/user', {
+  const res = await fetch(`${API.github()}/user`, {
     headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/vnd.github+json' },
   });
   const body = await res.json();
@@ -579,7 +588,7 @@ async function getGithubProfile(accessToken) {
 
 /** Creates a new repo under the connected user's account. Defaults to private - safer for an arbitrary local folder than defaulting public. */
 async function githubCreateRepo(accessToken, name, { private: isPrivate = true } = {}) {
-  const res = await fetch('https://api.github.com/user/repos', {
+  const res = await fetch(`${API.github()}/user/repos`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -594,7 +603,36 @@ async function githubCreateRepo(accessToken, name, { private: isPrivate = true }
   return body; // { name, full_name, html_url, clone_url, default_branch, ... }
 }
 
+/**
+ * The token fallback in Connect Apps: the user pastes their own personal
+ * access token (Vercel account token, Supabase access token, GitHub token)
+ * when no OAuth app is configured. One read-only call proves it works and
+ * gives the label shown on the card. The token itself is never logged.
+ */
+async function checkAccessToken(name, token) {
+  const t = String(token || '').trim();
+  if (!t || /\s/.test(t)) throw new Error('That does not look like a token. Paste it again without spaces.');
+  if (name === 'vercel') {
+    const res = await fetch(`${API.vercel()}/v2/user`, { headers: { Authorization: `Bearer ${t}` } });
+    const body = await readJson(res);
+    if (!res.ok) throw new Error(res.status === 403 || res.status === 401 ? 'Vercel did not accept that token. Create a new one at vercel.com/account/settings/tokens.' : `Vercel check failed (HTTP ${res.status}).`);
+    return { accessToken: t, userName: body.user?.username || body.user?.email || '' };
+  }
+  if (name === 'supabase') {
+    const res = await fetch(`${API.supabase()}/v1/organizations`, { headers: { Authorization: `Bearer ${t}` } });
+    const body = await readJson(res);
+    if (!res.ok) throw new Error(res.status === 401 || res.status === 403 ? 'Supabase did not accept that token. Create a new one at supabase.com/dashboard/account/tokens.' : `Supabase check failed (HTTP ${res.status}).`);
+    return { accessToken: t, refreshToken: '', expiresAt: 0, email: Array.isArray(body) && body[0] ? body[0].name : '' };
+  }
+  if (name === 'github') {
+    const userName = await getGithubProfile(t).catch(() => { throw new Error('GitHub did not accept that token. Create one with the "repo" scope at github.com/settings/tokens.'); });
+    return { accessToken: t, userName };
+  }
+  throw new Error(`${name} has no token sign-in.`);
+}
+
 module.exports = {
+  API, apiCall, checkAccessToken,
   buildGmailAuthUrl, exchangeGmailCode, refreshGmailToken, getGmailProfile, gmailSend, gmailSearch, gmailCreateDraft, gmailError, rawEmail,
   calendarListEvents, calendarInsertEvent, calendarError, GOOGLE_SCOPE,
   buildSlackAuthUrl, exchangeSlackCode, slackPostMessage, slackListChannels, slackJoinChannel,

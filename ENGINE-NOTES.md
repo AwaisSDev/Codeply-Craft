@@ -94,6 +94,15 @@ Not done on purpose: subagents (one agent at a time), provider changes, plugin h
 
 Untested against real services: the GitHub agent has not run inside a real Actions job, and the desktop share menu and gist upload have not been driven in the running app.
 
+### End-to-end publishing (2026-10-07)
+
+| Area | What | Where |
+|---|---|---|
+| Flow | "Publish it": `publish_check` (stack, database signals, connections), `publish_connect` (one-click connect card, waits, resumes), `supabase_setup` (pick or create project, URL + anon key written where the stack reads them: `env.js`, `.env` VITE_, `.env.local` NEXT_PUBLIC_, ...), `supabase_schema` (SQL shown and approved, RLS added to new tables), `publish_deploy` (asks about GitHub once, project, env vars, SHA upload, polls until READY, live URL; build log back to the agent, one retry), `publish_github` (create or reuse repo, push with a one-time auth header, link Vercel) | `publish.js`, `skills/publish-website`, `agent.mjs` PUBLISHING rule |
+| Safety | Refuses unless the user's message asks to publish; creating a project and going live ask first; never the service role key; `.env` git-ignored; tokens never in output, state or `.git/config` | `publish.js` |
+| Desktop | Publish button, progress card (Database, Vercel, GitHub, Live), Connect button on the question card, token fallback in Connect Apps | `publish-ui.js/.css`, `main.js` connectToken + resolveConnectQuestions |
+| Tests | Fake Vercel/Supabase/GitHub servers + local bare remote | `scripts/publish-test.mjs` |
+
 ## Worth doing next (from the study, not built yet)
 
 1. UX: group consecutive reads into one "Gathered context" row, docked approvals,
