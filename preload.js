@@ -152,5 +152,7 @@ contextBridge.exposeInMainWorld('craft', {
   connectVercel: () => ipcRenderer.invoke('integrations:connectVercel'),
   connectSupabase: () => ipcRenderer.invoke('integrations:connectSupabase'),
   connectGithub: () => ipcRenderer.invoke('integrations:connectGithub'),
+  // Token fallback (publish-ui.js): the token goes to the main process and is never read back.
+  connectToken: (name, token) => ipcRenderer.invoke('integrations:connectToken', { name, token }),
   disconnectIntegration: (name) => ipcRenderer.invoke('integrations:disconnect', name),
 });
