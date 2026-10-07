@@ -25,8 +25,11 @@ const CraftModal = (() => {
   function focusInside(el) {
     const panel = el.firstElementChild || el;
     const target = panel.querySelector('[autofocus]') || panel.querySelector('input:not([type="checkbox"]):not([disabled]), textarea:not([disabled])') ||
-      panel.querySelector('.modal-footer .btn-primary, .modal-footer .btn-danger') || panel.querySelector(FOCUSABLE);
-    if (target) target.focus({ preventScroll: true });
+      panel.querySelector('.modal-footer .btn-primary') || panel;
+    // No field to type in: focus the dialog itself, so Tab starts inside it
+    // without a ring landing on the close button.
+    if (target === panel && !panel.hasAttribute('tabindex')) panel.setAttribute('tabindex', '-1');
+    target.focus({ preventScroll: true });
   }
 
   function track(el, onClose) {
@@ -157,7 +160,8 @@ const CraftModal = (() => {
       okBtn.addEventListener('click', () => finish(true));
       if (cancelBtn) cancelBtn.addEventListener('click', () => finish(false));
       open(el, { onClose: () => finish(alertOnly) });
-      requestAnimationFrame(() => okBtn.focus({ preventScroll: true }));
+      // A destructive choice never sits on Enter by default.
+      requestAnimationFrame(() => ((danger && cancelBtn) || okBtn).focus({ preventScroll: true }));
     });
   }
 
