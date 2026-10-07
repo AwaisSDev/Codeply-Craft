@@ -224,6 +224,7 @@ a { color: inherit; }
 .pick-row svg { flex: none; color: var(--muted); }
 .pick-row .check-mark { visibility: hidden; color: var(--text); }
 .pick-row.on .check-mark { visibility: visible; }
+.pick-tag { font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: var(--surface-2); color: var(--muted); vertical-align: 1px; }
 .pick-note { color: var(--faint); font-size: 13px; margin: 10px 4px 0; line-height: 1.45; }
 .pick-divider { height: 1px; background: var(--border); margin: 8px 0; }
 .image-pick { display: block; max-width: 100%; max-height: 220px; border-radius: 10px; margin: 0 auto 16px; }
