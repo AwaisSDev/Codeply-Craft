@@ -80,6 +80,7 @@ contextBridge.exposeInMainWorld('craft', {
   botsClearMemory: (id) => ipcRenderer.invoke('bots:clearMemory', id),
   botsForgetExperience: (id, kind, index) => ipcRenderer.invoke('bots:forgetExperience', id, kind, index),
   botsDescribe: (text) => ipcRenderer.invoke('bots:describe', text),
+  botsWatchStatus: () => ipcRenderer.invoke('bots:watchStatus'),
   // Craft Cloud (cloud-desktop.js)
   cloudState: (cwd) => ipcRenderer.invoke('cloud:state', cwd),
   cloudSetup: (cwd, opts) => ipcRenderer.invoke('cloud:setup', cwd, opts),

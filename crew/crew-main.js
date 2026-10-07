@@ -146,6 +146,7 @@ function guard(fn) {
 }
 
 ipcMain.handle('app:init', guard(async () => ({
+  openBot: takePendingBot(),
   user: await signedInUser(),
   models: modelsState(),
   catalog: catalog(),
@@ -214,12 +215,14 @@ function catalog() {
     tones: bots.TONES,
     approvals: Object.fromEntries(Object.entries(bots.APPROVALS).map(([k, v]) => [k, v.label])),
     maxMemory: bots.MAX_MEMORY,
+    watchSources: bots.WATCH_SOURCES, reach: bots.REACH,
   };
 }
 function lastLine(t) {
-  const m = [...(t.messages || [])].reverse().find((x) => x.kind === 'user' || x.kind === 'assistant' || x.kind === 'call');
+  const m = [...(t.messages || [])].reverse().find((x) => x.kind === 'user' || x.kind === 'assistant' || x.kind === 'call' || x.kind === 'mail');
   if (!m) return '';
   if (m.kind === 'call') return `Call, ${formatDuration(m.ms)}`;
+  if (m.kind === 'mail') return String(m.text || '');
   return String(m.text || '').replace(/\s+/g, ' ').slice(0, 90);
 }
 function formatDuration(ms) {
@@ -230,7 +233,7 @@ function formatDuration(ms) {
 ipcMain.handle('bots:list', guard(() => catalog()));
 ipcMain.handle('bots:create', guard((e, data) => ({ bot: bots.createBot(data), ...catalog() })));
 ipcMain.handle('bots:fromTemplate', guard((e, key) => ({ bot: bots.createFromTemplate(key), ...catalog() })));
-ipcMain.handle('bots:update', guard((e, id, patch) => ({ bot: bots.updateBot(id, patch), ...catalog() })));
+ipcMain.handle('bots:update', guard((e, id, patch) => { const r = { bot: bots.updateBot(id, patch), ...catalog() }; if (onChange) onChange(); return r; }));
 ipcMain.handle('bots:remove', guard((e, id) => {
   bots.removeBot(id);
   delete store.threads[id];
@@ -711,6 +714,35 @@ ipcMain.handle('call:save', guard(async (e, { botId, ms, turns }) => {
   return { ok: true };
 }));
 
+// ─── Always-on bots (Craft's bots-watch.js) ────────────────────────────────
+// An always-on bot that found an important email says so in its own thread,
+// with links to the email and to the draft it saved in Gmail.
+
+let onChange = null;
+let pendingBot = null;
+function takePendingBot() { const id = pendingBot; pendingBot = null; return id; }
+
+const gmailLink = (u) => (/^https:\/\/mail\.google\.com\//.test(String(u || '')) ? String(u) : '');
+function addMail(engineDir, botId, ev) {
+  init(engineDir);
+  const msg = {
+    kind: 'mail', text: String(ev.text || '').slice(0, 400), from: String(ev.fromName || '').slice(0, 120), fromEmail: String(ev.fromEmail || '').slice(0, 200),
+    subject: String(ev.subject || '').slice(0, 300), summary: String(ev.summary || '').slice(0, 800), reply: String(ev.reply || '').slice(0, 8000),
+    level: ev.level === 'very' ? 'very' : 'important', drafted: !!ev.draftId, gmailUrl: gmailLink(ev.gmailUrl), draftUrl: gmailLink(ev.draftUrl),
+    cloud: !!ev.cloud, error: ev.error ? String(ev.error).slice(0, 300) : '',
+  };
+  push(botId, msg);
+  send('crew:event', { botId, type: 'mail', msg: { at: Date.now(), ...msg } });
+}
+
+/** A notification was clicked: open Crew on that bot's thread. */
+function showBot(engineDir, botId) {
+  const ready = win && !win.isDestroyed();
+  if (!ready) pendingBot = botId;
+  open(engineDir);
+  if (ready) send('crew:event', { botId, type: 'open' });
+}
+
 // ─── Lifecycle (called by Craft's main.js) ────────────────────────────────
 
 let started = false;
@@ -737,4 +769,4 @@ function open(engineDir) {
   setTimeout(() => { voice.prepare(store.settings.voiceEngine).catch((err) => console.warn('[voice] warm-up:', err.message)); }, 4000);
 }
 
-module.exports = { init, open, isOpen: () => !!(win && !win.isDestroyed()) };
+module.exports = { init, open, isOpen: () => !!(win && !win.isDestroyed()), addMail, showBot, setOnChange: (fn) => { onChange = fn; } };

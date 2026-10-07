@@ -757,9 +757,12 @@ function publicResearch() {
 // engine and the same ~/.codeply bots. crew/crew-main.js registers its
 // "crew:"-prefixed handlers the first time it is loaded.
 let crewMod = null;
+const crew = () => {
+  if (!crewMod) { crewMod = require('./crew/crew-main'); crewMod.setOnChange(() => botsWatch.poke()); }
+  return crewMod;
+};
 ipcMain.handle('crew:open', () => {
-  if (!crewMod) crewMod = require('./crew/crew-main');
-  crewMod.open(CLI_DIR);
+  crew().open(CLI_DIR);
   return { ok: true };
 });
 
@@ -963,6 +966,7 @@ ipcMain.handle('integrations:connectGmail', async () => {
       email,
       scope: tokens.scope || '', // what Google granted (drafts and Calendar need their own scopes)
     });
+    botsWatch.poke(); // always-on bots start watching the new inbox now
     return { ok: true, email };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -2950,7 +2954,17 @@ const botsDesktop = require('./bots-desktop');
 botsDesktop.init({
   ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine, sendEvent, currentRoute, browser: browserCheck,
   agentMod: () => agentMod, aiLib: () => aiLib, permissionsLib: () => permissionsLib,
+  onChange: () => botsWatch.poke(),
 });
+// Always-on bots (bots-watch.js): watch Gmail in the background while Craft
+// runs (also from the tray), no model calls until an email is important.
+const botsWatch = require('./bots-watch');
+app.whenReady().then(() => botsWatch.init({
+  ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine, currentRoute, Notification,
+  aiLib: () => aiLib, configLib: () => configLib, oauthLib: () => oauthLib, authLib: () => authLib,
+  crewThread: (botId, ev) => crew().addMail(CLI_DIR, botId, ev),
+  openBot: (botId) => crew().showBot(CLI_DIR, botId),
+}));
 ipcMain.handle('remote:info', () => remoteInfo());
 ipcMain.handle('remote:setKeepAwake', (e, on) => {
   store.keepAwake = !!on;

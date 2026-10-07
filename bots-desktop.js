@@ -30,6 +30,7 @@ function catalog() {
     tones: b.TONES,
     approvals: Object.fromEntries(Object.entries(b.APPROVALS).map(([k, v]) => [k, v.label])),
     maxMemory: b.MAX_MEMORY,
+    watchSources: b.WATCH_SOURCES, reach: b.REACH,
   };
 }
 
@@ -403,10 +404,12 @@ function init(d) {
   deps = d;
   const { ipcMain } = d;
   ipcMain.handle('bots:list', guard(() => catalog()));
-  ipcMain.handle('bots:create', guard((e, data) => ({ bot: bots().createBot(data), ...catalog() })));
-  ipcMain.handle('bots:fromTemplate', guard((e, key) => ({ bot: bots().createFromTemplate(key), ...catalog() })));
-  ipcMain.handle('bots:update', guard((e, id, patch) => ({ bot: bots().updateBot(id, patch), ...catalog() })));
-  ipcMain.handle('bots:remove', guard((e, id) => { bots().removeBot(id); return catalog(); }));
+  // Saving a bot can switch Always on; the watcher checks again right away.
+  const changed = (fn) => guard(async (...a) => { const r = await fn(...a); if (d.onChange) d.onChange(); return r; });
+  ipcMain.handle('bots:create', changed((e, data) => ({ bot: bots().createBot(data), ...catalog() })));
+  ipcMain.handle('bots:fromTemplate', changed((e, key) => ({ bot: bots().createFromTemplate(key), ...catalog() })));
+  ipcMain.handle('bots:update', changed((e, id, patch) => ({ bot: bots().updateBot(id, patch), ...catalog() })));
+  ipcMain.handle('bots:remove', changed((e, id) => { bots().removeBot(id); return catalog(); }));
   ipcMain.handle('bots:forget', guard((e, id, index) => ({ bot: bots().forget(id, Number(index)), ...catalog() })));
   ipcMain.handle('bots:clearMemory', guard((e, id) => ({ bot: bots().clearMemory(id), ...catalog() })));
   ipcMain.handle('bots:forgetExperience', guard((e, id, kind, index) => ({ bot: bots().forgetExperience(id, String(kind), Number(index)), ...catalog() })));
