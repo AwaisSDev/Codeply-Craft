@@ -24,7 +24,8 @@ const state = {
   account: null,
   activeAgentMessageEl: null,
   runningSessions: [], // chat ids with a run in flight on the PC, live via runs_status
-  models: { selected: 'auto', models: [] }, // names only; keys stay on the PC
+  models: { selected: 'auto', models: [] }, // names only, never keys
+  offlineChat: [], // a plain chat with a synced model while the PC is off
   bypass: localStorage.getItem('craft-bypass') === '1', // run without approval prompts
 };
 
@@ -1275,6 +1276,16 @@ $('composerForm').addEventListener('submit', async (e) => {
   // your own message stayed invisible for the entire run. The desktop client
   // already shows its own message optimistically before awaiting api.send();
   // this matches that.
+  // PC went offline, but the chosen model is synced to the account: answer
+  // as a plain chat through byok-proxy (no files or commands without the PC).
+  const pick = state.models.models.find((m) => m.id === state.models.selected);
+  if (!isHosted && !relay.pcId && pick && pick.synced) {
+    addMessage('user', text);
+    input.value = '';
+    input.style.height = 'auto';
+    return offlineChat(pick, text);
+  }
+
   const sentSessionId = state.sessionId;
   state.activeAgentMessageEl = null;
   addMessage('user', text);
@@ -1311,6 +1322,44 @@ $('composerForm').addEventListener('submit', async (e) => {
   }
 });
 
+// ─── Offline chat with a synced model ───────────────────────────────────────
+const USER_MODELS_URL = `${SUPABASE_URL}/functions/v1/user-models`;
+const BYOK_PROXY_URL = `${SUPABASE_URL}/functions/v1/byok-proxy`;
+
+async function cloudCall(url, body) {
+  const token = await accessToken();
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) throw new Error(data.error || `Codeply could not answer (${res.status}).`);
+  return data;
+}
+
+async function offlineChat(pick, text) {
+  setRunning(true, `Asking ${pick.name}`);
+  try {
+    // The account's row for this PC model (metadata only, the key stays sealed).
+    const { models } = await cloudCall(USER_MODELS_URL, { action: 'list' });
+    const row = (models || []).find((m) => m.clientId === pick.id);
+    if (!row) throw new Error(`${pick.name} is not synced yet. Turn on "Use on my phone" for it in Craft.`);
+    state.offlineChat.push({ role: 'user', content: text });
+    const data = await cloudCall(BYOK_PROXY_URL, {
+      modelId: row.id,
+      messages: [{ role: 'system', content: 'You are Codeply. The PC is offline, so this is a plain chat: you cannot see or change files or run commands. Keep answers readable on a phone.' }, ...state.offlineChat.slice(-30)],
+    });
+    const reply = data.data?.choices?.[0]?.message?.content || '';
+    state.offlineChat.push({ role: 'assistant', content: reply });
+    addMessage('agent', reply || 'The model sent back an empty reply.', pick.name);
+  } catch (err) {
+    addMessage('error', err.message);
+  } finally {
+    setRunning(false);
+  }
+}
+
 // Keep the chat's bottom padding equal to the floating composer's real height
 // (it grows with the pills row and multi-line messages).
 (function trackComposerHeight() {
@@ -1344,7 +1393,7 @@ function renderModels(models) {
     list.append(row);
   };
   add('auto', 'Auto', 'Gemma 4 31B, picked for you');
-  for (const m of state.models.models) add(m.id, m.name, m.kind === 'ollama' ? 'Local, runs on your PC' : m.kind === 'chatgpt' ? 'Uses your ChatGPT plan' : 'Your API key');
+  for (const m of state.models.models) add(m.id, m.name, m.kind === 'ollama' ? 'Local, runs on your PC' : m.kind === 'chatgpt' ? 'Uses your ChatGPT plan, stays on your PC' : m.synced ? 'Your API key · Synced, chats even with the PC off' : 'Your API key, on your PC only');
   const current = state.models.models.find((m) => m.id === state.models.selected);
   $('modelPillName').textContent = current ? current.name : 'Auto';
 }
