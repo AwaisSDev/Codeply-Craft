@@ -53,7 +53,8 @@ const FORMAT_CORRECTION =
   'Valid names: todo, ask_user, mcp, list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, ' +
   'browser_check, gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, slack_post_message, vercel_deploy, supabase_create_project, ' +
   'supabase_delete_project, github_create_repo, design_reference_search, view_images, supabase_api, supabase_sql, vercel_api, ' +
-  'web_fetch, web_search, apply_patch, plan_exit, plan_enter, lsp.';
+  'web_fetch, web_search, apply_patch, plan_exit, plan_enter, lsp, publish_check, publish_connect, supabase_setup, supabase_schema, ' +
+  'publish_deploy, publish_github.';
 
 const TRUNCATION_CORRECTION =
   '[system] That reply got cut off partway through the action block - the tag syntax was fine, it simply ran out of ' +
@@ -144,7 +145,7 @@ const CLAIM_SHIPPED = new RegExp(
   `|\\b(?:is|are)\\s+now\\s+live\\s+(?:at|on)\\b`,
   'i',
 );
-const SHIP_TOOLS = new Set(['run', 'vercel_deploy', 'vercel_api', 'github_create_repo', 'supabase_api']);
+const SHIP_TOOLS = new Set(['run', 'vercel_deploy', 'vercel_api', 'github_create_repo', 'supabase_api', 'publish_deploy', 'publish_github']);
 
 const unbackedClaimCorrection = (what) =>
   `[system] Your last reply says you ${what}, but no tool that could have done that ran successfully this turn. ` +
@@ -264,7 +265,7 @@ const TOOL_TAG = /<codeply:([a-z_]+)>([\s\S]*?)<\/codeply:\1>/g;
 
 // Params whose value is a raw payload (file content, code blocks) and may
 // legitimately contain angle-bracket tags of its own.
-const CONTAINER_PARAMS = new Set(['content', 'search', 'replace', 'body', 'text', 'patch']);
+const CONTAINER_PARAMS = new Set(['content', 'search', 'replace', 'body', 'text', 'patch', 'sql']);
 
 /** Tag payloads are written on their own lines; drop only that framing. */
 function trimFraming(value) {
@@ -336,6 +337,12 @@ const PARAMS = {
   supabase_api: ['method', 'path', 'body'],
   supabase_sql: ['ref', 'query'],
   vercel_api: ['method', 'path', 'body'],
+  publish_check: ['path'],
+  publish_connect: ['service', 'reason'],
+  supabase_setup: ['project', 'name', 'region'],
+  supabase_schema: ['ref', 'sql', 'path'],
+  publish_deploy: ['path', 'name'],
+  publish_github: ['path', 'name', 'private'],
   web_fetch: ['url', 'format'],
   web_search: ['query', 'num'],
   apply_patch: ['patch'],
@@ -375,7 +382,13 @@ const NAME_ALIASES = {
   calendar_add: 'calendar_add', calendaradd: 'calendar_add', addevent: 'calendar_add', createevent: 'calendar_add', addtocalendar: 'calendar_add', newevent: 'calendar_add',
   slack_post_message: 'slack_post_message', slackpostmessage: 'slack_post_message',
   slackmessage: 'slack_post_message', slackpost: 'slack_post_message', postmessage: 'slack_post_message',
-  vercel_deploy: 'vercel_deploy', vercel: 'vercel_deploy', deploy: 'vercel_deploy', publish: 'vercel_deploy', vercelpublish: 'vercel_deploy',
+  vercel_deploy: 'vercel_deploy', vercel: 'vercel_deploy', vercelpublish: 'vercel_deploy',
+  publish_deploy: 'publish_deploy', publishdeploy: 'publish_deploy', deploy: 'publish_deploy', publish: 'publish_deploy',
+  publish_check: 'publish_check', publishcheck: 'publish_check',
+  publish_connect: 'publish_connect', publishconnect: 'publish_connect', connect: 'publish_connect',
+  supabase_setup: 'supabase_setup', supabasesetup: 'supabase_setup', setupdatabase: 'supabase_setup',
+  supabase_schema: 'supabase_schema', supabaseschema: 'supabase_schema', applyschema: 'supabase_schema',
+  publish_github: 'publish_github', publishgithub: 'publish_github',
   supabase_create_project: 'supabase_create_project', supabase: 'supabase_create_project', createproject: 'supabase_create_project',
   createdatabase: 'supabase_create_project', makedatabase: 'supabase_create_project', create_database: 'supabase_create_project',
   supabase_delete_project: 'supabase_delete_project', deletesupabaseproject: 'supabase_delete_project',
@@ -1370,7 +1383,7 @@ const NO_NATIVE_TOOLS_REMINDER =
 // unless their entry says toolMode: 'text', or CODEPLY_TOOLS=text is set.
 // A model that rejects tools is remembered for the rest of the session.
 const nativeUnsupported = new Set();
-const MUTATING_ACTIONS = new Set(['write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo']);
+const MUTATING_ACTIONS = new Set(['write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github']);
 
 /**
  * Native function names for MCP tools (mcp__server__tool, within the 64-char
@@ -1518,7 +1531,8 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   ];
 
   // fileState: path -> mtime when this turn last read/wrote it (see tools.mjs).
-  const ctx = { cwd, approve, browser, signal, mode, route, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null, askBot: typeof askBot === 'function' ? askBot : null };
+  // userMessage lets the publish tools refuse when nobody asked to publish.
+  const ctx = { cwd, approve, browser, signal, mode, route, userMessage, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null, askBot: typeof askBot === 'function' ? askBot : null };
   const recentCallKeys = [];      // executed calls, in order, for the stuck-loop guard
   const lastResultFor = new Map(); // call key -> its most recent result
   const transcript = [{ role: 'user', content: userMessage }];
