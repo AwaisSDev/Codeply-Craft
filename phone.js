@@ -679,12 +679,12 @@ function receiveEvent(event) {
   else if (event.type === 'mode_switch') { addThinking(event.mode === 'Build' ? 'Switched to Build mode. Implementing the plan.' : `Switched to ${event.mode} mode.`, 'Note'); }
   else if (event.type === 'goal_update') addMsg('note', `Goal: ${event.goal || ''} (${event.status})`);
   else if (event.type === 'cloud_task') renderCloudTaskCard(event.task);
-  else if (event.type === 'notice') (event.level === 'info' ? addThinking(event.text, 'Note') : addMsg('error', event.text));
+  else if (event.type === 'notice') { if (!/^Summarized earlier steps/i.test(event.text || '')) (event.level === 'info' ? addThinking(event.text, 'Note') : addMsg('error', event.text)); }
   else if (event.type === 'text') (event.interim ? addThinking(event.text) : addDelta(event.text));
   else if (event.type === 'tool_end') {
     const m = event.meta || {};
     addTool({ name: event.name, label: event.summary || (event.args && (event.args.path || event.args.command)) || '', ok: event.ok, args: event.args, exitCode: m.exitCode, added: m.added, removed: m.removed, screenshotPath: m.screenshotPath });
-  } else if (event.type === 'error') addMsg('error', event.error);
+  } else if (event.type === 'error') { if (!/^Stopped after \d+ steps/i.test(event.error || '')) addMsg('error', event.error); }
   else if (event.type === 'approval_request') showApproval(event);
   else if (event.type === 'question_request') renderQuestion(event);
   else if (event.type === 'question_resolved') { const q = questionEls.get(event.requestId); if (q) renderQuestion({ ...q._q, answer: event.answer, answered: true }); }

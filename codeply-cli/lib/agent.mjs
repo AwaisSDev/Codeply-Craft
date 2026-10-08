@@ -28,7 +28,7 @@ const config = require('./config.js');
 
 // Enough room for a real task plus its verification pass. /goal runs pass a
 // larger budget per iteration (see main.js).
-const MAX_STEPS = 40;
+const MAX_STEPS = 80;
 const MAX_MALFORMED_RETRIES = 3;
 // How much transcript (system prompt included) is sent per step before older
 // tool results get collapsed. The hosted proxy is a Supabase Edge Function
@@ -1669,7 +1669,6 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       // wrong entries now. They are only shortcuts; starting them over is safe.
       servedCalls.clear();
       readIndexByPath.clear();
-      yield { type: 'notice', level: 'info', text: 'Summarized earlier steps of this task to make room.' };
       outgoing = trimTranscript(messages, budget);
     }
     if (outgoing !== messages) {

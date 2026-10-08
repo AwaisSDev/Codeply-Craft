@@ -2292,3 +2292,23 @@ a.remote-url { text-decoration: none; cursor: pointer; }
 
 .bc-sizes { flex-shrink: 0; margin-right: 2px; }
 .bc-size { flex: none; width: 28px; padding: 0; }
+
+/* ============ Activity group (the agent's work, folded into one line) ============ */
+.activity { margin: 2px 0 14px; }
+.activity-head { display: flex; align-items: center; gap: 8px; max-width: 100%; padding: 3px 0; background: none; border: 0; color: var(--text-dim); font: inherit; font-size: 13.5px; cursor: pointer; text-align: left; transition: color .12s ease; }
+.activity-head:hover { color: var(--text); }
+.activity-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-icon { width: 14px; height: 14px; flex: none; border-radius: 50%; position: relative; }
+.activity-icon::before { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--text-faint); }
+.activity.running .activity-icon { border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent); border-top-color: var(--accent); animation: activity-spin .8s linear infinite; }
+.activity.running .activity-icon::before { display: none; }
+.activity.running .activity-summary { background: linear-gradient(90deg, var(--text-dim) 0%, var(--text) 50%, var(--text-dim) 100%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: activity-shimmer 1.6s linear infinite; }
+.activity .tool-chevron { width: 13px; height: 13px; flex: none; color: var(--text-faint); transition: transform .15s ease; }
+.activity.open > .activity-head .tool-chevron { transform: rotate(90deg); }
+.activity-body { display: none; margin: 8px 0 2px 6px; padding-left: 16px; border-left: 1px solid var(--border); }
+.activity.open .activity-body { display: block; }
+.activity-body .role-badge { margin: 2px 0 10px; }
+.activity-body .chat-note { margin: 4px 0 10px; }
+@keyframes activity-spin { to { transform: rotate(360deg); } }
+@keyframes activity-shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .activity.running .activity-icon, .activity.running .activity-summary { animation: none; } }

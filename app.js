@@ -437,6 +437,7 @@ function nearBottom() {
 let lastUserMessage = null; // { text, imageCount, at }
 
 function addUserMessage(text, images) {
+  closeActivity();
   const imageCount = images ? images.length : 0;
   if (lastUserMessage && lastUserMessage.text === text && lastUserMessage.imageCount === imageCount
     && Date.now() - lastUserMessage.at < 4000) {
@@ -713,7 +714,94 @@ function runFastTypewriter(msg, text, done) {
   }, 14);
 }
 
+// ─── Activity group ─────────────────────────────────────────────────────────
+// Everything the agent does between your message and its reply (tool rows,
+// "Thought for", narration, role switches, info notes) folds into one quiet
+// line, Claude Code style: "Read 3 files, ran 2 commands, used 4 tools >".
+// Click it to see every step. A reply, a card that needs you, an error or the
+// end of the run closes the group; the next step starts a new one.
+let activityEl = null;
+
+const ACTIVITY_KIND = {
+  read_file: ['read', 'file', 'files'], list_dir: ['listed', 'folder', 'folders'],
+  write_file: ['wrote', 'file', 'files'], edit_file: ['edited', 'file', 'files'],
+  run: ['ran', 'command', 'commands'], search: ['searched', 'time', 'times'],
+  browser_check: ['checked', 'page', 'pages'], fetch_image: ['downloaded', 'image', 'images'],
+  view_images: ['looked at', 'image', 'images'],
+};
+
+function activityHead(el) { return el.querySelector('.activity-summary'); }
+
+function updateActivitySummary(el) {
+  if (!el) return;
+  const rows = [...el.querySelectorAll('.activity-body > .tool-row:not(.running)')];
+  const counts = new Map();
+  const first = new Map();
+  let other = 0;
+  for (const r of rows) {
+    const k = ACTIVITY_KIND[r.dataset.tool];
+    if (!k) { other++; continue; }
+    counts.set(r.dataset.tool, (counts.get(r.dataset.tool) || 0) + 1);
+    if (!first.has(r.dataset.tool)) first.set(r.dataset.tool, r.dataset.label || '');
+  }
+  const parts = [];
+  for (const [tool, n] of counts) {
+    const [verb, one, many] = ACTIVITY_KIND[tool];
+    const name = (first.get(tool) || '').split(/[\\/]/).pop();
+    parts.push(n === 1 && name && name.length <= 32 && tool !== 'run' && tool !== 'search' ? `${verb} ${name}` : `${verb} ${n === 1 ? (/^[aeiou]/.test(one) ? 'an ' : 'a ') + one : n + ' ' + many}`);
+  }
+  if (other) parts.push(`used ${other === 1 ? 'a tool' : other + ' tools'}`);
+  let text = parts.join(', ');
+  const running = el.classList.contains('running');
+  const live = el.querySelector('.activity-body > .tool-row.running');
+  if (running && live) {
+    const v = live.querySelector('.tool-verb')?.textContent || 'Working';
+    const l = live.dataset.label ? ' ' + live.dataset.label.split(/[\\/]/).pop() : '';
+    text = v + l;
+  } else if (!text) {
+    text = running ? 'Working' : 'Thought it through';
+  }
+  activityHead(el).textContent = text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function activityBody() {
+  if (!activityEl || !activityEl.isConnected) {
+    activityEl = document.createElement('div');
+    activityEl.className = 'activity running';
+    activityEl.innerHTML =
+      '<button class="activity-head" type="button" aria-expanded="false">' +
+      '<span class="activity-icon" aria-hidden="true"></span>' +
+      '<span class="activity-summary">Working</span>' +
+      '<svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>' +
+      '<div class="activity-body"></div>';
+    const el = activityEl;
+    el.querySelector('.activity-head').addEventListener('click', () => {
+      const open = el.classList.toggle('open');
+      el.querySelector('.activity-head').setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    if (thinkingEl && thinkingEl.isConnected) chatColumn.insertBefore(activityEl, thinkingEl);
+    else chatColumn.appendChild(activityEl);
+    hideThinking();
+  }
+  return activityEl.querySelector('.activity-body');
+}
+
+function closeActivity() {
+  if (!activityEl) return;
+  const el = activityEl;
+  activityEl = null;
+  el.classList.remove('running');
+  if (!el.querySelector('.activity-body').children.length) { el.remove(); return; }
+  updateActivitySummary(el);
+}
+
+// Engine messages that are bookkeeping, not news: never shown.
+function isQuietNotice(text) {
+  return /^Summarized earlier steps/i.test(text || '') || /^Stopped after \d+ steps/i.test(text || '');
+}
+
 function addAssistantMessage(text) {
+  closeActivity();
   const msg = document.createElement('div');
   msg.className = 'msg assistant';
   msg.rawText = text;
@@ -750,6 +838,8 @@ function addToolRow({ name, label, ok, running: isRunning, auto, bypass, args, s
   if (name === 'ask_bot' && window.CraftBots) return window.CraftBots.delegationRow({ label, ok, running: isRunning, args, delegation });
   const row = document.createElement('div');
   row.className = 'tool-row' + (isRunning ? ' running' : '') + (ok === false ? ' failed' : '');
+  row.dataset.tool = name;
+  row.dataset.label = label || '';
   const verb = TOOL_DISPLAY[name] || name;
   const badge = auto ? `<span class="tool-badge">${bypass ? 'bypass' : 'auto approved'}</span>` : '';
   const hasDetail = !isRunning && args && Object.keys(args).length > 0;
@@ -792,7 +882,9 @@ function addToolRow({ name, label, ok, running: isRunning, auto, bypass, args, s
   }
 
   row.classList.add('reveal-pending');
-  chatColumn.appendChild(row);
+  const body = activityBody();
+  body.appendChild(row);
+  updateActivitySummary(activityEl);
   enqueueReveal((next) => {
     row.classList.remove('reveal-pending');
     if (nearBottom()) scrollToBottom();
@@ -914,10 +1006,12 @@ $('tasksCloseBtn').addEventListener('click', closeTasksModal);
 $('tasksBackdrop').addEventListener('click', (e) => { if (e.target === $('tasksBackdrop')) closeTasksModal(); });
 
 function addNote(text, kind = '') {
+  if (isQuietNotice(text)) return;
   const el = document.createElement('div');
   el.className = 'chat-note ' + kind;
   el.textContent = text;
-  chatColumn.appendChild(el);
+  if (!kind) { activityBody().appendChild(el); updateActivitySummary(activityEl); }
+  else { closeActivity(); chatColumn.appendChild(el); }
   if (nearBottom()) scrollToBottom();
 }
 
@@ -950,7 +1044,8 @@ function addRoleBadge(data) {
   const roleName = data.tagline === 'role' ? data.name : String(data.tagline || data.name || '').replace(/ Specialist$/i, '');
   el.innerHTML = mascotHtml(data.mascot || 'general.png', 'mascot-xs', roleName) +
     `<span class="role-badge-text">Working as <strong>${esc(roleName || 'General')}</strong></span>`;
-  chatColumn.appendChild(el);
+  activityBody().appendChild(el);
+  updateActivitySummary(activityEl);
   if (nearBottom()) scrollToBottom();
 }
 
@@ -959,6 +1054,7 @@ function addRoleBadge(data) {
 // written and the checks really run (with exit codes). If the model's
 // summary and this card ever disagree, this card is the truth.
 function addTurnSummary(data) {
+  closeActivity();
   const files = data.files || [];
   const checks = data.checks || [];
   const unverified = data.unverified || [];
@@ -1048,6 +1144,7 @@ const GOAL_STATUS_LABEL = {
 };
 
 function renderGoalCard(data) {
+  closeActivity();
   if (!activeGoalCard || activeGoalCard.goal !== data.goal || !activeGoalCard.el.isConnected) {
     const el = document.createElement('div');
     el.className = 'goal-card';
@@ -2111,6 +2208,7 @@ let thinkingTimer = null;
 let thinkingStart = 0;
 
 function showThinking() {
+  if (activityEl && activityEl.isConnected) { activityEl.classList.add('running'); updateActivitySummary(activityEl); return; }
   if (thinkingEl) return;
   thinkingEl = document.createElement('div');
   thinkingEl.className = 'thinking-row';
@@ -2154,8 +2252,9 @@ function addReasoningRow(text, ms) {
     detail.classList.toggle('hidden');
     row.classList.toggle('expanded');
   });
-  if (thinkingEl) { thinkingEl.replaceWith(row); thinkingEl = null; if (thinkingTimer) { clearInterval(thinkingTimer); thinkingTimer = null; } }
-  else chatColumn.appendChild(row);
+  hideThinking();
+  activityBody().appendChild(row);
+  updateActivitySummary(activityEl);
   if (nearBottom()) scrollToBottom();
 }
 
@@ -2180,7 +2279,8 @@ function addThinkingRow(text) {
     row.classList.toggle('expanded');
   });
   row.classList.add('reveal-pending');
-  chatColumn.appendChild(row);
+  activityBody().appendChild(row);
+  updateActivitySummary(activityEl);
   enqueueReveal((next) => {
     row.classList.remove('reveal-pending');
     if (nearBottom()) scrollToBottom();
@@ -2347,6 +2447,7 @@ document.querySelectorAll('.suggestion-card').forEach((card) =>
 
 // ─── Approval cards ─────────────────────────────────────────────────────────
 function addApprovalCard(ev) {
+  closeActivity();
   if (ev.draft) return addEmailApprovalCard(ev);
   const card = document.createElement('div');
   card.className = 'approval-card' + (ev.danger ? ' danger' : '');
@@ -2434,6 +2535,7 @@ function addEmailApprovalCard(ev) {
 // One tap on an option, or a typed answer. Answered from the phone, the card
 // here flips to the answer too (question_resolved).
 function renderQuestionCard(q, existing) {
+  if (!existing) closeActivity();
   const card = existing || document.createElement('div');
   card.className = 'question-card';
   card.dataset.requestId = q.requestId;
@@ -2476,6 +2578,7 @@ function renderQuestionCard(q, existing) {
 // what it would have auto-picked plus a live search the user can refine, and
 // clicking a photo swaps it in for the download.
 function addImagePickerCard(ev) {
+  closeActivity();
   const card = document.createElement('div');
   card.className = 'image-picker-card';
   card.dataset.requestId = ev.requestId;
@@ -2675,6 +2778,7 @@ if (api) api.onAgentEvent((data) => {
       addToolRow({ name: data.name, label: data.summary || toolArgsLabel(data.args), ok: data.ok, args: data.args, screenshotSrc: data.meta?.screenshotDataUrl, auto: !!pendingAutoApproval, bypass: pendingAutoApproval?.bypass, delegation: data.meta?.delegation, error: data.error });
       if (data.meta?.publish && window.CraftPublish) window.CraftPublish.render(data.meta.publish);
       pendingAutoApproval = null;
+      updateActivitySummary(activityEl);
       panelTrack(data.name, data.args?.path || data.summary);
       // The agent calls the model again to decide the next step.
       showThinking();
@@ -2733,15 +2837,18 @@ if (api) api.onAgentEvent((data) => {
     }
     case 'error':
       hideThinking();
-      addNote(data.error, 'error');
+      if (isQuietNotice(data.error)) closeActivity();
+      else addNote(data.error, 'error');
       break;
     case 'aborted':
       hideThinking();
-      addNote('Stopped.', '');
+      closeActivity();
+      addNote('Stopped.', 'stopped');
       break;
     case 'run_finished':
       hideThinking();
       if (runningToolRow) { runningToolRow.remove(); runningToolRow = null; }
+      closeActivity();
       activeTaskList = null;
       setRunning(false);
       renderRecents();
@@ -2764,6 +2871,7 @@ async function openSession(id) {
   hideThinking();
   stopRevealQueue();
   chatColumn.innerHTML = '';
+  activityEl = null;
   resetSidePanel(s.cwd);
   currentTasks = [];
   activeGoalCard = null;
@@ -2799,6 +2907,7 @@ async function openSession(id) {
       window.CraftBots.renderBadge(m.bot, true);
     }
   }
+  closeActivity();
   revealInstant = false;
   activeTaskList = null; // reopening a past chat is read-only history, not a live run - no further task_start/task_end will arrive for it
   refreshTasksUI();
