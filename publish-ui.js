@@ -100,7 +100,7 @@
     const settled = (k) => ['done', 'active', 'waiting', 'error'].includes((steps[k] || {}).status);
     if (saved.supabase && !settled('database')) steps.database = { status: 'done', detail: saved.supabase.name || 'Supabase', url: `https://supabase.com/dashboard/project/${saved.supabase.ref}` };
     if (saved.vercel && !settled('vercel')) steps.vercel = { status: 'done', detail: saved.vercel.name };
-    if (saved.github && saved.github.linked && saved.github.repo && !settled('github')) steps.github = { status: 'done', detail: `${saved.github.repo}, auto-deploy on`, url: `https://github.com/${saved.github.repo}` };
+    if (saved.github && saved.github.repo && !settled('github')) steps.github = { status: 'done', detail: saved.github.linked ? `${saved.github.repo}, auto-deploy on` : saved.github.repo, url: `https://github.com/${saved.github.repo}` };
     else if (saved.github && saved.github.choice === 'no' && !settled('github')) steps.github = { status: 'skipped', detail: 'Direct deploy' };
     if (saved.supabase && steps.database && !steps.database.url) steps.database = { ...steps.database, url: `https://supabase.com/dashboard/project/${saved.supabase.ref}` };
     return { ...p, steps, url: p.url || (saved.vercel && saved.vercel.url) || '' };

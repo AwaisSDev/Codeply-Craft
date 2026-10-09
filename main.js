@@ -1206,15 +1206,22 @@ ipcMain.handle('integrations:connectToken', async (e, { name, token } = {}) => {
 // What earlier publishes set up in a project (.codeply/publish.json), for the publish card's refresh.
 ipcMain.handle('publish:state', (e, cwd) => {
   if (!cwd || typeof cwd !== 'string') return { ok: false };
+  // A repo made outside the publish flow (github_create_repo, or by hand) still counts.
+  let remote = '';
+  try {
+    const m = fs.readFileSync(path.join(cwd, '.git', 'config'), 'utf8')
+      .match(/\[remote "origin"\][^[]*?url\s*=\s*(?:https:\/\/github\.com\/|git@github\.com:)([\w.-]+\/[\w.-]+?)(?:\.git)?\s*$/m);
+    if (m) remote = m[1];
+  } catch {}
   try {
     const s = JSON.parse(fs.readFileSync(path.join(cwd, '.codeply', 'publish.json'), 'utf8')) || {};
     return {
       ok: true,
       supabase: s.supabase?.ref ? { ref: s.supabase.ref, name: s.supabase.name || '' } : null,
       vercel: s.vercel?.projectName ? { name: s.vercel.projectName, url: s.vercel.url || '' } : null,
-      github: s.github ? { choice: s.github.choice || '', repo: s.github.repo || '', linked: !!s.github.linked } : null,
+      github: s.github ? { choice: s.github.choice || '', repo: s.github.repo || remote, linked: !!s.github.linked } : remote ? { choice: '', repo: remote, linked: false } : null,
     };
-  } catch { return { ok: true, supabase: null, vercel: null, github: null }; }
+  } catch { return { ok: true, supabase: null, vercel: null, github: remote ? { choice: '', repo: remote, linked: false } : null }; }
 });
 
 ipcMain.handle('integrations:disconnect', async (e, name) => {
