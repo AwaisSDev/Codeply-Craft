@@ -6,6 +6,7 @@
 //   tap Call -> ring (WebAudio) -> the bot greets -> we hear you -> the PC
 //   (or Codeply's ai-proxy) answers as the bot -> the bot's own Deepgram
 //   voice (tts-proxy) reads it out, sentence by sentence, through WebAudio.
+//   A bot's voice is a Deepgram Aura-2 (aura-2-*) or Flux (flux-*, e.g. Sienna) model.
 //   If that voice is unavailable the phone's speechSynthesis voice takes over.
 // Hearing: on iPhone/iPad, and wherever SpeechRecognition is missing, one
 // microphone stream is opened on the first call and kept for the life of the
