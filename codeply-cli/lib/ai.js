@@ -396,6 +396,22 @@ async function chatViaOllama(messages, opts, cfg) {
   return last;
 }
 
+// Newer models refuse a temperature setting ("temperature is deprecated for
+// this model": Claude 4.5 and later, OpenAI's o-series and GPT-5). Those never
+// get one; any other model that refuses it once is remembered and retried
+// straight away without it.
+const NO_TEMPERATURE = /^(claude-(opus|sonnet|haiku)-(4-[5-9]|[5-9])|claude-fable|o\d|gpt-5)/i;
+const temperatureRefused = new Set();
+const sendsTemperature = (model) => !NO_TEMPERATURE.test(String(model || '').replace(/^[\w.-]+\//, '')) && !temperatureRefused.has(model);
+const temperatureParam = (model, opts) => (sendsTemperature(model) ? { temperature: opts.temperature ?? 0 } : {});
+/** The provider refused the temperature: remember it for this model, and say whether to retry. */
+function refusedTemperature(model, msg) {
+  if (!/temperature/i.test(msg) || !/deprecat|not supported|unsupported|does not support|only the default|not allowed|invalid/i.test(msg)) return false;
+  if (temperatureRefused.has(model)) return false;
+  temperatureRefused.add(model);
+  return true;
+}
+
 function ollamaRequest(host, model, apiKey, isLocal, messages, opts, numCtx, hasSpare) {
   return streamingChatRequest({
     url: `${host}/v1/chat/completions`, label: 'Ollama', model, apiKey, isLocal, messages, opts, hasSpare,
@@ -431,7 +447,7 @@ async function streamingChatRequest({ url, label, model, apiKey, isLocal, messag
         body: JSON.stringify({
           model,
           messages: wireMessages(opts.tools ? messages : textOnlyMessages(messages), url, model),
-          temperature: opts.temperature ?? 0,
+          ...temperatureParam(model, opts),
           ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
           ...(opts.json ? { response_format: { type: 'json_object' } } : {}),
           ...(opts.tools ? { tools: opts.tools, tool_choice: 'auto' } : {}),
@@ -469,6 +485,7 @@ async function streamingChatRequest({ url, label, model, apiKey, isLocal, messag
       const apiError = body?.error?.message || body?.error;
       if (apiError) {
         const msg = typeof apiError === 'string' ? apiError : JSON.stringify(apiError);
+        if (refusedTemperature(model, msg)) return { retryable: true, retryAfterMs: 0, error: `${label}: ${msg}` };
         const fatal = /not found|does not exist|unknown model|unauthor|invalid.*key|forbidden/i.test(msg);
         if (fatal) return { done: true, value: { success: false, error: `${label}: ${msg}` } };
         // Another account is standing by, and this failure is this account's
@@ -637,7 +654,7 @@ async function chatViaOpenAICompatible(messages, opts, providerName, cfg) {
         body: JSON.stringify({
           model,
           messages: wireMessages(opts.tools ? messages : textOnlyMessages(messages), url, model),
-          temperature: opts.temperature ?? 0,
+          ...temperatureParam(model, opts),
           ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
           ...(opts.json ? { response_format: { type: 'json_object' } } : {}),
           ...(opts.tools ? { tools: opts.tools, tool_choice: 'auto' } : {}),
@@ -665,6 +682,7 @@ async function chatViaOpenAICompatible(messages, opts, providerName, cfg) {
     const apiError = body?.error?.message || body?.error;
     if (apiError) {
       const msg = typeof apiError === 'string' ? apiError : JSON.stringify(apiError);
+      if (refusedTemperature(model, msg)) return { retryable: true, retryAfterMs: 0, error: `${label}: ${msg}` };
       const fatal = /not found|does not exist|unknown model|unauthor|invalid.*key|forbidden/i.test(msg);
       if (fatal) return { done: true, value: { success: false, error: `${label}: ${msg}` } };
       return { retryable: isTransientStatus(res.status), retryAfterMs: retryAfterMs(res), error: `${label}: ${msg}` };
@@ -788,7 +806,7 @@ async function chatViaAnthropic(messages, opts, cfg) {
           system,
           messages: turns,
           max_tokens: opts.maxTokens || 8192,
-          temperature: opts.temperature ?? 0,
+          ...temperatureParam(model, opts),
           ...(opts.tools ? { tools: toAnthropicTools(opts.tools) } : {}),
         }),
         signal: opts.signal,
