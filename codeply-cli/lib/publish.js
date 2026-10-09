@@ -693,7 +693,7 @@ function makePublishTools({ config, getSupabaseToken, resolveDir }) {
       output: `${created ? 'Created' : 'Using'} Supabase project "${chosen.name}" (ref ${chosen.ref}, ${keys.url}). Wrote its URL and anon key to ${written.files.join(', ')}. ` +
         `${readHow} The anon key is public by design; Row Level Security protects the data. Never put the service role key in client code. ` +
         'If the app needs tables, write the SQL and run it with supabase_schema (the user sees it and approves first). Check that the code uses these values before deploying.',
-      meta: { label: `${chosen.name} (${chosen.ref})`, files: written.files, publish: card(ctx, { steps: { database: { status: 'done', detail: `${chosen.name}${created ? ' (new)' : ''}` } } }) },
+      meta: { label: `${chosen.name} (${chosen.ref})`, files: written.files, publish: card(ctx, { steps: { database: { status: 'done', detail: `${chosen.name}${created ? ' (new)' : ''}`, url: `https://supabase.com/dashboard/project/${chosen.ref}` } } }) },
     };
   }
 
@@ -802,7 +802,7 @@ function makePublishTools({ config, getSupabaseToken, resolveDir }) {
         output: `Published. The site is live at ${url} (Vercel project "${project.name}", deployment ${deployment.id} is READY).` +
           (gh?.linked ? ` GitHub ${gh.repo} is linked, so every push to ${gh.branch || 'the main branch'} deploys on its own.` : '') +
           ' Give the user this link.',
-        meta: { label: url, liveUrl: url, publish: card(ctx, { url, steps: { vercel: { status: 'done', detail: project.name }, live: { status: 'done', detail: url } } }) },
+        meta: { label: url, liveUrl: url, publish: card(ctx, { url, steps: { vercel: { status: 'done', detail: project.name, url: final.inspectorUrl || 'https://vercel.com/dashboard' }, live: { status: 'done', detail: url } } }) },
       };
     }
     if (final.readyState === 'ERROR') {
@@ -890,13 +890,13 @@ function makePublishTools({ config, getSupabaseToken, resolveDir }) {
       return {
         ok: true,
         output: `Pushed the code to ${full} (branch ${branch}), but linking it to Vercel did not work: ${link.why} Carry on with publish_deploy now; pushes will deploy on their own once the link works.`,
-        meta: { label: full, publish: card(ctx, { steps: { github: { status: 'error', detail: link.why.slice(0, 220) } } }) },
+        meta: { label: full, publish: card(ctx, { steps: { github: { status: 'error', detail: link.why.slice(0, 220), url: `https://github.com/${full}` } } }) },
       };
     }
     return {
       ok: true,
       output: `Pushed the code to ${full} (branch ${branch}) and linked it to the Vercel project "${project.name}". From now on every push to ${branch} deploys on its own. Now call publish_deploy for the first deploy.`,
-      meta: { label: full, publish: card(ctx, { steps: { github: { status: 'done', detail: `${full}, auto-deploy on` } } }) },
+      meta: { label: full, publish: card(ctx, { steps: { github: { status: 'done', detail: `${full}, auto-deploy on`, url: `https://github.com/${full}` } } }) },
     };
   }
 

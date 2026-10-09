@@ -252,12 +252,13 @@ const cycleNote = (period) =>
 // instead of being cut off mid-edit. Idea from Hermes Agent / opencode.
 const budgetCheckpointNote = (used, max) =>
   `[system] You have used ${used} of ${max} steps for this turn. Finish the change you are in the middle of, check it, ` +
-  'and wrap up with your summary. If the whole task cannot fit, get the current part to a working state and list what is left.';
+  'and wrap up with a short summary. If the whole task cannot fit, get the current part to a working state and name what is left in a line or two.';
 
 const FINAL_SUMMARY_PROMPT =
   '[system] The step budget for this turn is used up, so actions are switched off: do not write any action block, it ' +
-  'would be ignored. Reply with a short summary for the user: what you actually changed (only files a tool result ' +
-  'confirms), what you checked and the result, and what is left to do. Do not claim anything the tool results do not show.';
+  'would be ignored. Reply with a short note for the user: one sentence on where things stand, then at most 4 short ' +
+  'bullets on what you changed (only files a tool result confirms) and what is left. No headings, IDs or evidence ' +
+  'lists, and do not mention the step budget. Under about 100 words. Do not claim anything the tool results do not show.';
 
 // ─── Protocol ───────────────────────────────────────────────────────────────
 
@@ -1018,6 +1019,7 @@ RULES
   If an edit_file fails, its error shows the closest matching lines with numbers:
   copy from those instead of re-reading the whole file.
 - Before an action block write at most one short sentence (or nothing). Don't narrate plans, apologize, or restate what you just did; the user sees every action anyway. Save the explanation for your final answer.
+- Your final answer is a short note to a busy person, not a report. Open with the outcome in one plain sentence, then at most 3 to 5 short bullets: what changed, and anything that failed or is still left (one line each). No section headings like "What I changed" or "What I verified", no project refs, IDs, hashes, raw JSON, test account names or step-budget talk. Mention checks in a few words ("sign-in tested, works"), not as evidence lists. If work is left, end with one sentence offering the next step. Stay under about 120 words unless the user asked for detail.
 - Keep "search" as narrow as the change actually is. When removing something, search should span exactly the thing being removed - not "from here to the end of the file" just because that was easy to copy. A wider span deletes whatever sits between your intended target and wherever you stopped, silently, even when it renders fine and reports no errors. If two things need removing and something unrelated sits between them, that is two edit_file calls, not one wide one.
 - edit_file for changes to an existing file. write_file only for new files or a genuine full rewrite.
 - Prefer run for anything you can check mechanically.

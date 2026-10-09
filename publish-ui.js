@@ -91,15 +91,17 @@
   }
 
   // ─── The progress card ───
-  function render(p) {
+  function render(p, inPlace) {
     if (!p || !p.id || !p.steps) return;
-    let card = chatColumn.querySelector(`.pub-card[data-id="${p.id}"]`);
-    const fresh = !card;
-    if (fresh) {
+    // One card per chat: publishing again reuses it and moves it down to the latest turn.
+    let card = chatColumn.querySelector('.pub-card');
+    chatColumn.querySelectorAll('.pub-card').forEach((c) => { if (c !== card) c.remove(); });
+    if (!card) {
       card = document.createElement('div');
       card.className = 'pub-card';
-      card.dataset.id = p.id;
     }
+    if (card.dataset.id !== p.id) delete card.dataset.open;
+    card.dataset.id = p.id;
     const live = !!p.url;
     const steps = STEPS.filter(([key]) => key !== 'live').map(([key, label]) => ({ key, label, ...(p.steps[key] || { status: 'pending' }) }));
     const failed = steps.find((s) => s.status === 'error');
@@ -108,8 +110,14 @@
     const title = live ? host : failed ? 'Publishing stopped' : 'Publishing your site';
     const sub = live ? 'Live' : failed ? `${failed.label}: ${failed.detail || 'something went wrong'}`
       : current ? `${current.label}: ${current.detail || STATUS_WORD[current.status]}` : 'Getting ready';
-    const chips = steps.map((s) => `<span class="pub-chip ${esc(s.status)}" title="${esc(s.label + ': ' + (s.detail || STATUS_WORD[s.status] || ''))}">` +
-      `${STEP_ICON[s.status] || STEP_ICON.pending}${esc(s.label)}</span>`).join('');
+    const words = (s) => s.detail || STATUS_WORD[s.status] || '';
+    const chips = steps.map((s) => `<button type="button" class="pub-chip ${esc(s.status)}${card.dataset.open === s.key ? ' open' : ''}" data-step="${s.key}" ` +
+      `title="${esc(s.label + ': ' + words(s) + (s.url ? ' (click to open)' : ''))}">${STEP_ICON[s.status] || STEP_ICON.pending}${esc(s.label)}${s.url ? ICON_ARROW : ''}</button>`).join('');
+    // Errors are always spelled out; any other step shows its detail when its chip is clicked.
+    const opened = steps.find((s) => s.key === card.dataset.open && s.status !== 'error');
+    const notes = steps.filter((s) => s.status === 'error' && (live || s !== failed))
+      .map((s) => `<div class="pub-note error"><b>${esc(s.label)}</b> ${esc(words(s))}</div>`).join('') +
+      (opened ? `<div class="pub-note"><b>${esc(opened.label)}</b> ${esc(words(opened))}</div>` : '');
     card.classList.toggle('live', live);
     card.classList.toggle('failed', !!failed && !live);
     card.innerHTML =
@@ -121,14 +129,21 @@
           <button type="button" class="pub-icon-btn" data-copy="${esc(p.url)}" title="Copy link" aria-label="Copy link">${ICON_COPY}</button>
           <button type="button" class="pub-visit" data-url="${esc(p.url)}">Visit${ICON_ARROW}</button></span>` : ''}
       </div>
-      <div class="pub-chips">${chips}</div>`;
+      <div class="pub-chips">${chips}</div>${notes}`;
     card.querySelectorAll('[data-url]').forEach((b) => b.addEventListener('click', () => api.openExternal(b.dataset.url)));
+    card.querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', () => {
+      const s = steps.find((x) => x.key === b.dataset.step);
+      if (s && s.url) { api.openExternal(s.url); return; }
+      card.dataset.open = card.dataset.open === b.dataset.step ? '' : b.dataset.step;
+      render(p, true);
+    }));
     card.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
       try { await navigator.clipboard.writeText(b.dataset.copy); } catch { return; }
       b.innerHTML = ICON_CHECK;
       b.classList.add('copied');
       setTimeout(() => { b.innerHTML = ICON_COPY; b.classList.remove('copied'); }, 1400);
     }));
+    if (inPlace) return;
     chatColumn.appendChild(card); // a known card moves down, under the latest step
     if (typeof scrollToBottom === 'function') scrollToBottom();
   }
