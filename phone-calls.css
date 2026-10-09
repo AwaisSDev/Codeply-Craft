@@ -167,3 +167,7 @@
 .call.incoming .call-caption { color: rgba(255, 255, 255, .8); }
 @media (max-height: 700px) { .call-accept { width: 66px; height: 66px; } }
 @media (prefers-reduced-motion: reduce) { .call.incoming .call-orb { animation: none; } }
+
+/* Reminders that already went out today: listed under Earlier, quieter. */
+.rem-past { opacity: .62; }
+.rem-past strong { font-weight: 500; }

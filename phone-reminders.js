@@ -215,7 +215,19 @@
     const up = list.filter((r) => (r.status === 'pending' || r.status === 'snoozed') && Date.parse(r.due_at) > now - 60000);
     let html = '<div class="calls-label">Reminders</div>';
     if (listError) html += `<p class="calls-status err">${esc(listError)}</p>`;
-    if (!up.length) return `${html}<p class="calls-none">None yet. On a call, say "remind me at 5" or "plan my day".</p>`;
+    // Calls and texts that already went out today (a bot's "call me now").
+    const DONE_LABEL = { call: 'Called you', remind: 'Texted you', task: 'Started your task' };
+    const past = list.filter((r) => (r.status === 'sent' || r.status === 'done') && now - Date.parse(r.sent_at || r.due_at) < 24 * 3600000)
+      .sort((a, b) => Date.parse(b.sent_at || b.due_at) - Date.parse(a.sent_at || a.due_at)).slice(0, 10);
+    const pastHtml = past.length ? '<div class="calls-label">Earlier</div><div class="calls-list">' + past.map((r) => {
+      const at = new Date(r.sent_at || r.due_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      return `<div class="bot-row rem-row rem-past">
+        <span class="bot-av rem-av">${avatarFor(r, 36)}</span>
+        <span class="bot-main"><strong>${esc(r.text)}</strong><small>${esc(r.bot_name || 'Codeply')} · ${esc(DONE_LABEL[r.kind] || 'Sent')} · ${esc(at)}</small></span>
+        <button type="button" class="rem-x" data-rdel="${esc(r.id)}" aria-label="Remove">${ICON_X}</button>
+      </div>`;
+    }).join('') + '</div>' : '';
+    if (!up.length) return `${html}<p class="calls-none">Nothing coming up. On a call, say "remind me at 5" or "plan my day".</p>${pastHtml}`;
     html += '<div class="calls-list">';
     for (const r of up) {
       const sub = [whenLabel(r.due_at), KIND_LABEL[r.kind] || '', REPEAT_LABEL[r.repeat] || '', r.status === 'snoozed' ? 'Snoozed' : ''].filter(Boolean).join(' · ');
@@ -225,7 +237,7 @@
         <button type="button" class="rem-x" data-rdel="${esc(r.id)}" aria-label="Delete reminder">${ICON_X}</button>
       </div>`;
     }
-    return `${html}</div>`;
+    return `${html}</div>${pastHtml}`;
   }
   function paint() {
     if (!mounted || !mounted.box.isConnected) { mounted = null; return; }
