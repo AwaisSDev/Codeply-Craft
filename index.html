@@ -127,30 +127,6 @@
       </div>
     </div>
 
-    <div class="rm-panel" id="rmPanel">
-      <label class="rm-row rm-toggle-row">
-        <span class="rm-title">Research Mode (Local)</span>
-        <input type="checkbox" id="rmToggle" class="switch" role="switch" aria-label="Research Mode (Local)">
-      </label>
-      <div class="rm-status" id="rmStatus"><span class="rm-dot" id="rmDot"></span><span id="rmStatusText">Checking Ollama…</span></div>
-      <div class="rm-body hidden" id="rmBody">
-        <label class="rm-field"><span>Where to run</span>
-          <select class="select input-sm" id="rmMode"><option value="local">Local Ollama</option><option value="cloud">Ollama Cloud</option></select>
-        </label>
-        <label class="rm-field"><span>Model</span>
-          <select class="select input-sm" id="rmModel" aria-label="Model"></select>
-        </label>
-        <label class="rm-field hidden" id="rmKeyField"><span>Ollama Cloud API key</span>
-          <input class="input input-sm" id="rmKey" type="password" autocomplete="off" spellcheck="false" placeholder="">
-        </label>
-        <label class="rm-field"><span>Research context (optional)</span>
-          <textarea class="textarea" id="rmContext" rows="2" spellcheck="false" placeholder="Plain context you want sent as a system message"></textarea>
-        </label>
-        <div class="rm-actions"><button class="btn btn-secondary btn-sm" id="rmRefresh" type="button">Refresh</button><button class="btn btn-secondary btn-sm" id="rmTest" type="button">Test</button></div>
-        <div class="rm-out hidden" id="rmOut"></div>
-      </div>
-    </div>
-
     <div class="sb-footer">
       <button class="update-pill hidden" id="updatePill" type="button">
         <span class="update-pill-dot"></span>
@@ -602,6 +578,29 @@
   </div>
 </div>
 
+<div class="rm-panel rm-pop hidden" id="rmPanel" role="dialog" aria-label="Research Mode">
+  <label class="rm-row rm-toggle-row">
+    <span class="rm-title">Research Mode</span>
+    <input type="checkbox" id="rmToggle" class="switch" role="switch" aria-label="Research Mode">
+  </label>
+  <div class="rm-status" id="rmStatus"><span class="rm-dot" id="rmDot"></span><span id="rmStatusText">Checking Ollama…</span></div>
+  <div class="rm-body hidden" id="rmBody">
+    <label class="rm-field"><span>Where to run</span>
+      <select class="select input-sm" id="rmMode"><option value="local">Local Ollama</option><option value="cloud">Ollama Cloud</option></select>
+    </label>
+    <label class="rm-field"><span>Model</span>
+      <select class="select input-sm" id="rmModel" aria-label="Model"></select>
+    </label>
+    <label class="rm-field hidden" id="rmKeyField"><span>Ollama Cloud API key</span>
+      <input class="input input-sm" id="rmKey" type="password" autocomplete="off" spellcheck="false" placeholder="">
+    </label>
+    <label class="rm-field"><span>Research context (optional)</span>
+      <textarea class="textarea" id="rmContext" rows="2" spellcheck="false" placeholder="Plain context you want sent as a system message"></textarea>
+    </label>
+    <div class="rm-actions"><button class="btn btn-secondary btn-sm" id="rmRefresh" type="button">Refresh</button><button class="btn btn-secondary btn-sm" id="rmTest" type="button">Test</button></div>
+    <div class="rm-out hidden" id="rmOut"></div>
+  </div>
+</div>
 <script src="vendor/xterm/xterm.js"></script>
 <script src="vendor/xterm/addon-fit.js"></script>
 <script src="app.js"></script>

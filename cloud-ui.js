@@ -30,8 +30,10 @@
       more.setAttribute('aria-label', 'Cloud settings');
       more.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
       more.addEventListener('click', openSheet);
-      row.appendChild(b);
-      row.appendChild(more);
+      // Cloud sits before the Research chip, whichever script adds its chip first.
+      const after = row.querySelector('.rm-chip');
+      row.insertBefore(b, after);
+      row.insertBefore(more, after);
     });
   }
 

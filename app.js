@@ -3601,12 +3601,68 @@ $('updateGateBtn').addEventListener('click', () => {
   if (!api || !api.researchGet || !$('rmPanel')) return;
   let rm = { enabled: false, mode: 'local', model: '', context: '', hasKey: false, keyPreview: '' };
 
+  let statusOk = null;
+  const RM_ICON = '<svg viewBox="0 0 24 24"><path d="M9 3h6"/><path d="M10 3v6L4.5 18.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3"/><path d="M7 15h10"/></svg>';
+
+  // The chip lives in each composer, right after Cloud. Click turns it on or off;
+  // the dots (or a right click) open the settings popover above it.
+  document.querySelectorAll('.composer-bottom-left').forEach((row) => {
+    const b = document.createElement('button');
+    b.className = 'approve-toggle rm-chip';
+    b.type = 'button';
+    b.innerHTML = RM_ICON + '<span>Research</span><i class="rm-chip-dot"></i>';
+    b.addEventListener('click', async () => {
+      await save({ enabled: !rm.enabled });
+      if (rm.enabled) {
+        await refreshStatus();
+        if (!statusOk) openPop(b);
+      } else closePop();
+    });
+    b.addEventListener('contextmenu', (e) => { e.preventDefault(); openPop(b); });
+    const more = document.createElement('button');
+    more.className = 'cloud-chip-more rm-chip-more hidden';
+    more.type = 'button';
+    more.title = 'Research settings';
+    more.setAttribute('aria-label', 'Research settings');
+    more.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
+    more.addEventListener('click', () => ($('rmPanel').classList.contains('hidden') ? openPop(b) : closePop()));
+    row.appendChild(b);
+    row.appendChild(more);
+  });
+
+  function openPop(anchor) {
+    const pop = $('rmPanel');
+    pop.classList.remove('hidden');
+    const r = anchor.getBoundingClientRect();
+    const w = pop.offsetWidth;
+    pop.style.left = Math.max(12, Math.min(r.left, window.innerWidth - w - 12)) + 'px';
+    pop.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+  }
+  function closePop() { $('rmPanel').classList.add('hidden'); }
+  document.addEventListener('mousedown', (e) => {
+    if (!e.target.closest('#rmPanel, .rm-chip, .rm-chip-more')) closePop();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
+
+  function paintChips() {
+    document.querySelectorAll('.rm-chip').forEach((b) => {
+      b.classList.toggle('on', rm.enabled);
+      b.classList.toggle('bad', rm.enabled && statusOk === false);
+      b.title = !rm.enabled ? 'Research Mode: use an Ollama model for research'
+        : statusOk === false ? $('rmStatusText').textContent : 'Research Mode on. Click to turn off.';
+    });
+    document.querySelectorAll('.rm-chip-more').forEach((b) => b.classList.toggle('hidden', !rm.enabled));
+  }
+
   function setStatus(ok, text) {
     $('rmDot').className = 'rm-dot ' + (ok ? 'ok' : 'bad');
     $('rmStatusText').textContent = text;
+    statusOk = ok;
+    paintChips();
   }
 
   function paint() {
+    paintChips();
     $('rmToggle').checked = rm.enabled;
     $('rmBody').classList.toggle('hidden', !rm.enabled);
     $('rmMode').value = rm.mode;
