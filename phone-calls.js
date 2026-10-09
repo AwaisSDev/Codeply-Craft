@@ -879,6 +879,43 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     return () => { stop = true; clearTimeout(t1); };
   }
 
+  /**
+   * A bot calling you: a soft marimba ringtone (a rising E major arpeggio,
+   * twice, then a breath), looped until answered, with a buzz each round.
+   * Made here with WebAudio, so there is no file to load. (ring() above is
+   * the tone you hear while YOUR call to a bot connects.)
+   */
+  function ringtone(ctx) {
+    let stop = false; let t1 = null;
+    const out = ctx.createGain();
+    out.gain.value = 0.55;
+    const comp = ctx.createDynamicsCompressor();
+    out.connect(comp); comp.connect(ctx.destination);
+    const note = (f, at) => {
+      const env = ctx.createGain();
+      env.gain.setValueAtTime(0.0001, at);
+      env.gain.exponentialRampToValueAtTime(0.32, at + 0.006);
+      env.gain.exponentialRampToValueAtTime(0.0001, at + 0.95);
+      env.connect(out);
+      // A marimba bar: the note, plus its 4th harmonic that dies away fast.
+      const o1 = ctx.createOscillator(); o1.type = 'sine'; o1.frequency.value = f; o1.connect(env);
+      const g2 = ctx.createGain(); g2.gain.setValueAtTime(0.22, at); g2.gain.exponentialRampToValueAtTime(0.0001, at + 0.18); g2.connect(env);
+      const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = f * 4; o2.connect(g2);
+      for (const o of [o1, o2]) { o.start(at); o.stop(at + 1); }
+    };
+    const PHRASE = [659.25, 830.61, 987.77, 1318.51]; // E5 G#5 B5 E6
+    const round = () => {
+      if (stop || ctx.state === 'closed') return;
+      const t = ctx.currentTime + 0.02;
+      PHRASE.forEach((f, k) => note(f, t + k * 0.14));
+      PHRASE.forEach((f, k) => note(f, t + 0.7 + k * 0.14));
+      try { if (navigator.vibrate) navigator.vibrate([600, 200, 600]); } catch {}
+      t1 = setTimeout(round, 2600);
+    };
+    round();
+    return () => { stop = true; clearTimeout(t1); try { out.gain.setTargetAtTime(0, ctx.currentTime, 0.05); } catch {} try { navigator.vibrate && navigator.vibrate(0); } catch {} };
+  }
+
   const root = () => $('call');
   const q = (sel) => root().querySelector(sel);
   function thinkingCue(on) {
@@ -1881,7 +1918,7 @@ You are on a live voice call; everything you write is spoken out loud right away
     let stopRing = () => {};
     const a0 = audioCtx();
     if (a0) Promise.race([a0.state === 'running' ? null : a0.resume().catch(() => {}), sleep(400)]).then(() => {
-      if (ringing && ringing.bot === bot && a0.state === 'running') stopRing = ring(a0);
+      if (ringing && ringing.bot === bot && a0.state === 'running') stopRing = ringtone(a0);
       // Answer was pressed on the notification: go straight into the call when sound can play.
       if (opts.autoAnswer && ringing && ringing.bot === bot && a0.state === 'running') r.querySelector('[data-in="answer"]').click();
     });
