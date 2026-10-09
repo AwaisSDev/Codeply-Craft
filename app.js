@@ -1050,6 +1050,7 @@ window.CraftCrew = { show: () => setCrewMode(true), hide: () => setCrewMode(fals
 document.querySelectorAll('.app-switch-btn').forEach((b) => b.addEventListener('click', () => setCrewMode(b.dataset.app === 'crew')));
 if (api && api.onCrewShow) api.onCrewShow(() => setCrewMode(true));
 if (api && api.onCrewHide) api.onCrewHide(() => setCrewMode(false));
+if (api && api.onOpenConnect) api.onOpenConnect(() => openConnectApps());
 window.addEventListener('resize', () => { if (crewMode) api.crewBounds(crewArea()); });
 $('tasksCloseBtn').addEventListener('click', closeTasksModal);
 $('tasksBackdrop').addEventListener('click', (e) => { if (e.target === $('tasksBackdrop')) closeTasksModal(); });

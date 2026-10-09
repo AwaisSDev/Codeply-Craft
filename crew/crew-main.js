@@ -125,6 +125,12 @@ ipcMain.on('win:maximize', () => win && (win.isMaximized() ? win.unmaximize() : 
 ipcMain.on('win:close', () => win && win.close());
 ipcMain.handle('shell:open', (e, url) => { if (/^https?:\/\//.test(String(url))) shell.openExternal(url); });
 ipcMain.handle('shell:openPath', (e, p) => shell.openPath(p || workspace()));
+// The apps the bots can use, for the account panel. Same store as Craft's Connect Apps.
+ipcMain.handle('connections', () => {
+  if (!config) return [];
+  const row = (id, name, who) => { const i = config.getIntegration(id); return { id, name, connected: !!i.accessToken, account: i.accessToken ? (i[who] || '') : '' }; };
+  return [row('gmail', 'Gmail', 'email'), row('slack', 'Slack', 'teamName'), row('github', 'GitHub', 'userName'), row('vercel', 'Vercel', 'userName'), row('supabase', 'Supabase', 'email')];
+});
 
 // ─── Account and models (shared with Craft through ~/.codeply) ──────────────
 

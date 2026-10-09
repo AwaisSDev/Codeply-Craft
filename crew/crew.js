@@ -163,14 +163,47 @@
     btn.innerHTML = u
       ? `<span class="account-av">${esc(u.email[0].toUpperCase())}</span><span class="account-text"><b>${esc(u.email)}</b><span>${esc(modelName())}</span></span>`
       : `<span class="account-av">?</span><span class="account-text"><b>Sign in</b><span>Same account as Craft</span></span>`;
-    // Signed out still gets the menu: people on their own models need Voices too.
-    btn.onclick = () => openMenu(btn, [
-      { note: u ? u.email : `Not signed in, using ${modelName()}` },
-      { label: 'Open the bots\' folder', icon: ICON.folder, run: () => api.openFolder(state.workspace) },
-      '-',
-      u ? { label: 'Sign out', danger: true, run: async () => { await api.signOut(); state.user = null; renderAccount(); toast('Signed out.'); } }
-        : { label: 'Sign in', run: signIn },
-    ]);
+    btn.onclick = () => openAccountPanel(btn);
+  }
+
+  // ─── Account panel: who you are, the apps your bots can use, their files ───
+  const APP_TILE = { gmail: ['#ea4335', 'G'], slack: ['#4a154b', 'S'], github: ['#24292f', 'GH'], vercel: ['#000000', 'V'], supabase: ['#3ecf8e', 'S'] };
+  async function openAccountPanel(anchor) {
+    const u = state.user;
+    let conns = [];
+    try { conns = (api.connections && await api.connections()) || []; } catch {}
+    const embedded = document.body.classList.contains('embedded');
+    const rows = conns.map((c) => {
+      const [bg, ch] = APP_TILE[c.id] || ['#555', c.name[0]];
+      return `<div class="ap-conn${c.connected ? ' on' : ''}"><span class="ap-tile" style="background:${bg}">${ch}</span>` +
+        `<span class="ap-conn-text"><b>${esc(c.name)}</b><span>${c.connected ? esc(c.account || 'Connected') : 'Not connected'}</span></span>` +
+        `<i class="ap-dot"></i></div>`;
+    }).join('');
+    const m = $('#menu');
+    m.innerHTML = `
+      <div class="ap-head"><span class="account-av">${esc(u ? u.email[0].toUpperCase() : '?')}</span>
+        <span class="ap-head-text"><b>${esc(u ? u.email : 'Not signed in')}</b><span>${esc(modelName())}</span></span></div>
+      <div class="ap-label">Connected apps<span>What your bots can use</span></div>
+      <div class="ap-conns">${rows || '<div class="menu-note">No apps yet.</div>'}</div>
+      ${embedded ? `<button data-act="connect"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg><span>Manage connections</span></button>` : ''}
+      <hr>
+      <button data-act="folder">${ICON.folder}<span class="ap-two"><span>Bots' files</span><small>The folder where your bots save what they make</small></span></button>
+      <hr>
+      ${u ? '<button data-act="out" class="danger"><span>Sign out</span></button>' : '<button data-act="in"><span>Sign in</span></button>'}`;
+    m.classList.add('account-panel');
+    m.classList.remove('hidden');
+    const r = anchor.getBoundingClientRect();
+    m.style.left = `${r.left}px`;
+    m.style.top = `${Math.max(8, r.top - m.offsetHeight - 6)}px`;
+    const act = (k, fn) => { const b = m.querySelector(`[data-act="${k}"]`); if (b) b.addEventListener('click', () => { closeMenu(); fn(); }); };
+    act('connect', () => api.openConnect());
+    act('folder', () => api.openFolder(state.workspace));
+    act('out', async () => { await api.signOut(); state.user = null; renderAccount(); toast('Signed out.'); });
+    act('in', signIn);
+    const onDoc = (e) => { if (!m.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) closeMenu(); };
+    const onKey = (e) => { if (e.key === 'Escape') closeMenu(); };
+    setTimeout(() => { document.addEventListener('mousedown', onDoc); document.addEventListener('keydown', onKey); });
+    menuClose = () => { m.classList.remove('account-panel'); document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey); };
   }
 
   // ─── Voices ─────────────────────────────────────────────────────────────

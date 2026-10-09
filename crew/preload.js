@@ -11,6 +11,8 @@ const on = (channel) => (cb) => {
 contextBridge.exposeInMainWorld('crew', {
   init: () => ipcRenderer.invoke('crew:app:init'),
   toCraft: () => ipcRenderer.send('crew:toCraft'),
+  connections: () => ipcRenderer.invoke('crew:connections'),
+  openConnect: () => ipcRenderer.send('crew:openConnect'),
   signIn: (email, password) => ipcRenderer.invoke('crew:auth:signIn', { email, password }),
   signOut: () => ipcRenderer.invoke('crew:auth:signOut'),
   selectModel: (id) => ipcRenderer.invoke('crew:models:select', id),

@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('craft', {
   crewUnembed: () => ipcRenderer.invoke('crew:unembed'),
   onCrewShow: (cb) => ipcRenderer.on('crew:show', () => cb()),
   onCrewHide: (cb) => ipcRenderer.on('crew:hide', () => cb()),
+  onOpenConnect: (cb) => ipcRenderer.on('connect:open', () => cb()),
   // window chrome
   minimize: () => ipcRenderer.send('win:minimize'),
   maximize: () => ipcRenderer.send('win:maximize'),

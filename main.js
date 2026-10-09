@@ -898,6 +898,8 @@ ipcMain.handle('crew:embed', (e, bounds) => {
 ipcMain.on('crew:bounds', (e, bounds) => { if (crewMod) crewMod.setBounds(bounds); });
 // The Craft half of the switcher inside the Crew tab.
 ipcMain.on('crew:toCraft', () => { if (win && !win.isDestroyed()) win.webContents.send('crew:hide'); });
+// Crew's "Manage connections": back to Craft with Connect Apps open.
+ipcMain.on('crew:openConnect', () => { if (win && !win.isDestroyed()) { win.webContents.send('crew:hide'); win.webContents.send('connect:open'); } });
 ipcMain.handle('crew:unembed', () => { if (crewMod) crewMod.unembed(); return { ok: true }; });
 
 ipcMain.handle('research:get', async () => {
