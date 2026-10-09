@@ -167,7 +167,8 @@ function cloudBots(list, state) {
     return {
       id: b.id, name: b.name, voice: b.voice || '', specialty: b.specialty, instructions: b.instructions,
       tone: (b.tone && b.tone.custom) || '', memory: (b.memory || []).slice(-15).map((m) => m.fact),
-      keywords: rules.keywords || [], senders: [...new Set([...(b.alwaysOn.alerts || []).map((a) => a.from), ...(rules.senders || [])])].slice(0, 10),
+      keywords: rules.keywords || [], senders: rules.senders || [],
+      alerts: (b.alwaysOn.alerts || []).map((a) => ({ from: a.from, how: a.how, repeat: !!a.repeat })),
       reach: b.alwaysOn.reach, draft: b.alwaysOn.draft, quiet: b.alwaysOn.quiet, tz: localTz(),
     };
   });
@@ -204,6 +205,7 @@ async function syncCloud(list, state, newSeen) {
     for (const id of s.seen || []) if (!state.seen.includes(id)) state.seen.push(id);
     for (const ev of s.events || []) {
       try { deps.crewThread(ev.botId, { ...ev, text: W.eventLine(ev), cloud: true }); } catch {}
+      if (ev.alert && !ev.alert.repeat) dropAlert(ev.botId, ev.alert.from);
       state.cloud.since = Math.max(state.cloud.since || 0, Number(ev.at) || 0);
     }
   }
