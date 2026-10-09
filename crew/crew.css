@@ -478,3 +478,5 @@ body.embedded .side .brand { display: none; }
 /* These logos are full squares already: show them edge to edge, no white tile. */
 .ap-app.ap-github, .ap-app.ap-vercel, .ap-app.ap-supabase { padding: 0; background: #000; }
 .ap-app.ap-github img, .ap-app.ap-vercel img, .ap-app.ap-supabase img { object-fit: cover; border-radius: 10px; }
+.ap-app.ap-supabase { padding: 8px; }
+.ap-app.ap-supabase img { object-fit: contain; border-radius: 0; }
