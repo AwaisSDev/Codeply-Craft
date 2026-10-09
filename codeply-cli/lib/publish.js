@@ -498,6 +498,13 @@ const STEPS = ['database', 'vercel', 'github', 'live'];
 function card(ctx, patch = {}) {
   if (!ctx.publishCard) {
     ctx.publishCard = { id: `pub-${Date.now().toString(36)}`, steps: Object.fromEntries(STEPS.map((s) => [s, { status: 'pending' }])), url: '' };
+    // Start from what earlier publishes already set up, so a database made last
+    // time reads as done instead of "Waiting".
+    const saved = ctx.cwd ? readState(ctx.cwd) : {};
+    const st = ctx.publishCard.steps;
+    if (saved.supabase?.ref) st.database = { status: 'done', detail: saved.supabase.name || 'Supabase', url: `https://supabase.com/dashboard/project/${saved.supabase.ref}` };
+    if (saved.github?.repo && saved.github.linked) st.github = { status: 'done', detail: `${saved.github.repo}, auto-deploy on`, url: `https://github.com/${saved.github.repo}` };
+    else if (saved.github?.choice === 'no') st.github = { status: 'skipped', detail: 'Direct deploy' };
   }
   const c = ctx.publishCard;
   for (const [k, v] of Object.entries(patch.steps || {})) c.steps[k] = { ...c.steps[k], ...v };
@@ -558,8 +565,8 @@ function makePublishTools({ config, getSupabaseToken, resolveDir }) {
       meta: {
         label: `${stack.label}, database ${db.verdict}`,
         publish: card(ctx, { steps: {
-          database: state.supabase?.ref ? { status: 'done', detail: state.supabase.name || state.supabase.ref } : needsDb ? { status: 'pending', detail: 'Checking' } : { status: 'skipped', detail: 'Not needed' },
-          github: state.github?.choice === 'no' ? { status: 'skipped', detail: 'Direct deploy' } : state.github?.linked ? { status: 'done', detail: state.github.repo } : {},
+          database: state.supabase?.ref ? { status: 'done', detail: state.supabase.name || state.supabase.ref, url: `https://supabase.com/dashboard/project/${state.supabase.ref}` } : needsDb ? { status: 'pending', detail: 'Checking' } : { status: 'skipped', detail: 'Not needed' },
+          github: state.github?.choice === 'no' ? { status: 'skipped', detail: 'Direct deploy' } : state.github?.linked ? { status: 'done', detail: state.github.repo, url: `https://github.com/${state.github.repo}` } : {},
         } }),
       },
     };

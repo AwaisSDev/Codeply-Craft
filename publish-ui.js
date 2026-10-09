@@ -103,7 +103,9 @@
     if (card.dataset.id !== p.id) delete card.dataset.open;
     card.dataset.id = p.id;
     const live = !!p.url;
-    const steps = STEPS.filter(([key]) => key !== 'live').map(([key, label]) => ({ key, label, ...(p.steps[key] || { status: 'pending' }) }));
+    const raw = STEPS.filter(([key]) => key !== 'live').map(([key, label]) => ({ key, label, ...(p.steps[key] || { status: 'pending' }) }));
+    // Once the site is live, a step nobody started was simply not part of this publish.
+    const steps = raw.map((x) => (live && x.status === 'pending' ? { ...x, status: 'skipped', detail: 'Not set up' } : x));
     const failed = steps.find((s) => s.status === 'error');
     const current = steps.find((s) => s.status === 'active' || s.status === 'waiting');
     const host = live ? p.url.replace(/^https?:\/\//, '').replace(/\/$/, '') : '';
