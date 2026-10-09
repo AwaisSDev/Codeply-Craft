@@ -258,21 +258,9 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   const localEars = () => IS_IOS || IS_ANDROID || !SR || srBroken || !!api.localEars;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const ECHO_TAIL_MS = 900;
-  // The bot's voice goes through one output: a boost into a limiter. With the
-  // mic open, iOS's voice processing turns playback right down, so on iPhone
-  // the voice gets about 3x louder; the limiter keeps that from distorting.
-  const VOICE_BOOST = IS_IOS ? 3 : 1;
-  function voiceBus(ctx) {
-    if (ctx.craftVoiceBus) return ctx.craftVoiceBus;
-    const boost = ctx.createGain();
-    boost.gain.value = VOICE_BOOST;
-    const limit = ctx.createDynamicsCompressor();
-    limit.threshold.value = -10; limit.knee.value = 4; limit.ratio.value = 12;
-    limit.attack.value = 0.002; limit.release.value = 0.2;
-    boost.connect(limit); limit.connect(ctx.destination);
-    ctx.craftVoiceBus = boost;
-    return boost;
-  } // the bot's last words can still come back through the mic this long
+  // The bot's voice goes straight out, untouched: nothing here (or in the
+  // phone, see getMic) changes its level while you talk.
+  const voiceBus = (ctx) => ctx.destination; // the bot's last words can still come back through the mic this long
 
   // Browsers keep sound locked until a tap. Unlock it on the first one, so a
   // bot calling while the app is open rings out loud like a real call.
@@ -321,7 +309,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     if (mic.pending) return mic.pending;
     const md = navigator.mediaDevices;
     if (!md || !md.getUserMedia) return Promise.reject(Object.assign(new Error('No microphone here.'), { name: 'NotFoundError' }));
-    mic.pending = md.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+    mic.pending = md.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
       .then((s) => { mic.stream = s; return s; })
       .finally(() => { mic.pending = null; });
     return mic.pending;
@@ -583,7 +571,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     // a short clip is dropped as echo.
     if (me.echoRisk && !me.barged) {
       me.echoRisk = false;
-      if (stt.state !== 'ready') { if (audio.length < 16000 * 1.6) return; }
+      if (stt.state !== 'ready') return; // cannot check it: most likely the bot's own voice
       else {
         let text = '';
         try { text = await transcribe(audio); } catch { return; }
