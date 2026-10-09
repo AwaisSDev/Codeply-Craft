@@ -222,14 +222,20 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .btn.danger { color: var(--red); }
 .btn[disabled] { opacity: .45; cursor: default; }
 
-.callcard { display: flex; align-items: center; gap: 12px; padding: 10px 16px 10px 10px; border: 1px solid rgba(74, 222, 128, .28); border-radius: 16px; margin: 10px 0; width: fit-content; min-width: 260px; cursor: pointer; background: rgba(74, 222, 128, .08); transition: background .15s ease, border-color .15s ease; }
-.callcard:hover { background: rgba(74, 222, 128, .13); border-color: rgba(74, 222, 128, .42); }
-.callcard-ic { width: 36px; height: 36px; border-radius: 50%; background: #4ade80; color: #052e16; display: grid; place-items: center; flex: none; }
-.callcard-ic svg { width: 16px; height: 16px; stroke-width: 2.2; }
-.callcard b { font-weight: 600; font-size: 14px; display: block; color: #bbf7d0; }
-.callcard span { font-size: 12.5px; color: rgba(187, 247, 208, .7); }
-.call-transcript { margin: -2px 0 10px 4px; padding-left: 14px; border-left: 2px solid var(--border); display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
-.call-transcript div b { font-weight: 600; margin-right: 6px; }
+.callcard { display: flex; align-items: center; gap: 14px; width: min(100%, 420px); margin: 10px 0; padding: 12px 14px 12px 12px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface-2, #161618); text-align: left; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.callcard:hover { border-color: rgba(134, 239, 172, .35); background: color-mix(in srgb, #86efac 5%, var(--surface-2, #161618)); }
+.callcard-ic { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 12px; background: rgba(134, 239, 172, .14); color: #86efac; }
+.callcard-ic svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.callcard-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.callcard-text b { font-size: 14px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.callcard-text span { font-size: 12.5px; color: var(--text-dim); white-space: pre; }
+.callcard-more { display: inline-flex; align-items: center; gap: 2px; flex: none; font-size: 12.5px; font-weight: 500; color: var(--text-dim); transition: color .15s ease; }
+.callcard-more svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s ease; }
+.callcard:hover .callcard-more { color: #86efac; }
+.callcard.open .callcard-more svg { transform: rotate(90deg); }
+.call-transcript { width: min(100%, 620px); margin: -4px 0 14px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface, #111113); display: flex; flex-direction: column; gap: 12px; font-size: 13.5px; line-height: 1.5; }
+.call-transcript div b { display: block; margin-bottom: 2px; font-size: 11.5px; font-weight: 600; color: var(--text-dim); letter-spacing: .01em; }
+.call-transcript div:has(> b:only-child) b { margin: 0; }
 
 /* ─── Composer ─── */
 .composer-wrap { padding: 0 28px 20px; flex: none; }

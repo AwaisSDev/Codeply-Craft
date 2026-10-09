@@ -548,7 +548,15 @@
   function callCardHtml(m, b) {
     const s = Math.round((m.ms || 0) / 1000);
     const turns = (m.turns || []);
-    return `<div class="callcard" data-call>${'<span class="callcard-ic">' + ICON.phone + '</span>'}<span><b>Voice call</b><span>${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} · ${turns.length} line${turns.length === 1 ? '' : 's'} · click for transcript</span></span></div>
+    const dur = s >= 60 ? `${Math.floor(s / 60)} min ${s % 60 ? `${s % 60} sec` : ''}`.trim() : `${s} sec`;
+    const at = m.at ? new Date(m.at) : null;
+    const when = at ? at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+    const said = turns.filter((t) => t.who === 'user').length;
+    return `<button type="button" class="callcard" data-call>
+        <span class="callcard-ic">${ICON.phone}</span>
+        <span class="callcard-text"><b>Voice call with ${esc(b.name)}</b><span>${[when, dur, said ? `${turns.length} messages` : 'No answer'].filter(Boolean).join('  ·  ')}</span></span>
+        <span class="callcard-more">Transcript<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
+      </button>
       <div class="call-transcript hidden">${turns.map((t) => `<div><b>${t.who === 'bot' ? esc(b.name) : 'You'}</b>${esc(t.text)}</div>`).join('') || '<div class="dim">Nothing was said.</div>'}</div>`;
   }
 
@@ -571,7 +579,7 @@
     box.querySelectorAll('[data-call]').forEach(wireCallCard);
   }
   function wireCallCard(card) {
-    card.addEventListener('click', () => card.nextElementSibling.classList.toggle('hidden'));
+    card.addEventListener('click', () => card.classList.toggle('open', !card.nextElementSibling.classList.toggle('hidden')));
   }
 
   // The live block for a bot that is answering right now.
