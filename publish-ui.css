@@ -74,3 +74,4 @@
 .pub-note b { font-weight: 600; color: var(--text, #e4e4e7); margin-right: 4px; }
 .pub-note.error { color: var(--red, #f87171); background: color-mix(in srgb, var(--red, #f87171) 9%, transparent); }
 .pub-note.error b { color: inherit; }
+.pub-card.refreshing .pub-refresh svg { animation: pub-rot .8s linear infinite; }

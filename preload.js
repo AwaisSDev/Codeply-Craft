@@ -157,4 +157,5 @@ contextBridge.exposeInMainWorld('craft', {
   // Token fallback (publish-ui.js): the token goes to the main process and is never read back.
   connectToken: (name, token) => ipcRenderer.invoke('integrations:connectToken', { name, token }),
   disconnectIntegration: (name) => ipcRenderer.invoke('integrations:disconnect', name),
+  publishState: (cwd) => ipcRenderer.invoke('publish:state', cwd),
 });

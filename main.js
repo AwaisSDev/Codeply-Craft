@@ -1203,6 +1203,20 @@ ipcMain.handle('integrations:connectToken', async (e, { name, token } = {}) => {
   }
 });
 
+// What earlier publishes set up in a project (.codeply/publish.json), for the publish card's refresh.
+ipcMain.handle('publish:state', (e, cwd) => {
+  if (!cwd || typeof cwd !== 'string') return { ok: false };
+  try {
+    const s = JSON.parse(fs.readFileSync(path.join(cwd, '.codeply', 'publish.json'), 'utf8')) || {};
+    return {
+      ok: true,
+      supabase: s.supabase?.ref ? { ref: s.supabase.ref, name: s.supabase.name || '' } : null,
+      vercel: s.vercel?.projectName ? { name: s.vercel.projectName, url: s.vercel.url || '' } : null,
+      github: s.github ? { choice: s.github.choice || '', repo: s.github.repo || '', linked: !!s.github.linked } : null,
+    };
+  } catch { return { ok: true, supabase: null, vercel: null, github: null }; }
+});
+
 ipcMain.handle('integrations:disconnect', async (e, name) => {
   const ok = await loadEngine();
   if (!ok) return { ok: false, error: 'Engine not available.' };

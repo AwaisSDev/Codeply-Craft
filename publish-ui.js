@@ -22,6 +22,7 @@
   const ICON_ALERT = svg('<circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16.5v.01"/>');
   const ICON_COPY = svg('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/>');
   const ICON_CHECK = svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>');
+  const ICON_REFRESH = svg('<path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/>');
   const ICON_ARROW = svg('<path d="M7 17L17 7"/><path d="M9 7h8v8"/>');
   const STEP_ICON = {
     done: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
@@ -91,6 +92,31 @@
   }
 
   // ─── The progress card ───
+  // What the project already has (.codeply/publish.json), read on refresh. It fills in
+  // steps an older card never saw, like a database set up in an earlier turn.
+  function withSaved(p, saved) {
+    if (!saved) return p;
+    const steps = { ...p.steps };
+    const settled = (k) => ['done', 'active', 'waiting', 'error'].includes((steps[k] || {}).status);
+    if (saved.supabase && !settled('database')) steps.database = { status: 'done', detail: saved.supabase.name || 'Supabase', url: `https://supabase.com/dashboard/project/${saved.supabase.ref}` };
+    if (saved.vercel && !settled('vercel')) steps.vercel = { status: 'done', detail: saved.vercel.name };
+    if (saved.github && saved.github.linked && saved.github.repo && !settled('github')) steps.github = { status: 'done', detail: `${saved.github.repo}, auto-deploy on`, url: `https://github.com/${saved.github.repo}` };
+    else if (saved.github && saved.github.choice === 'no' && !settled('github')) steps.github = { status: 'skipped', detail: 'Direct deploy' };
+    if (saved.supabase && steps.database && !steps.database.url) steps.database = { ...steps.database, url: `https://supabase.com/dashboard/project/${saved.supabase.ref}` };
+    return { ...p, steps, url: p.url || (saved.vercel && saved.vercel.url) || '' };
+  }
+
+  async function refreshCard(card) {
+    if (!card || !card._p || !api.publishState || typeof state === 'undefined' || !state.project) return;
+    card.classList.add('refreshing');
+    try {
+      const r = await api.publishState(state.project);
+      if (r && r.ok) card._saved = r;
+    } catch {}
+    card.classList.remove('refreshing');
+    if (card.isConnected) render(card._p, true);
+  }
+
   function render(p, inPlace) {
     if (!p || !p.id || !p.steps) return;
     // One card per chat: publishing again reuses it and moves it down to the latest turn.
@@ -101,7 +127,11 @@
       card.className = 'pub-card';
     }
     if (card.dataset.id !== p.id) delete card.dataset.open;
+    if (card.dataset.id !== p.id) card._saved = null;
     card.dataset.id = p.id;
+    card._p = p;
+    const busy = Object.values(p.steps).some((x) => x && (x.status === 'active' || x.status === 'waiting'));
+    if (!busy) p = withSaved(p, card._saved);
     const live = !!p.url;
     const raw = STEPS.filter(([key]) => key !== 'live').map(([key, label]) => ({ key, label, ...(p.steps[key] || { status: 'pending' }) }));
     // Once the site is live, a step nobody started was simply not part of this publish.
@@ -127,9 +157,10 @@
         <span class="pub-tile">${live ? ICON_GLOBE : failed ? ICON_ALERT : '<span class="pub-spin"></span>'}</span>
         <span class="pub-text"><span class="pub-title">${esc(title)}</span>
           <span class="pub-sub">${live ? '<i class="pub-ready"></i>' : ''}${esc(sub)}</span></span>
-        ${live ? `<span class="pub-actions">
+        ${!busy ? `<span class="pub-actions">
+          <button type="button" class="pub-icon-btn pub-refresh" title="Refresh" aria-label="Refresh">${ICON_REFRESH}</button>${live ? `
           <button type="button" class="pub-icon-btn" data-copy="${esc(p.url)}" title="Copy link" aria-label="Copy link">${ICON_COPY}</button>
-          <button type="button" class="pub-visit" data-url="${esc(p.url)}">Visit${ICON_ARROW}</button></span>` : ''}
+          <button type="button" class="pub-visit" data-url="${esc(p.url)}">Visit${ICON_ARROW}</button>` : ''}</span>` : ''}
       </div>
       <div class="pub-chips">${chips}</div>${notes}`;
     card.querySelectorAll('[data-url]').forEach((b) => b.addEventListener('click', () => api.openExternal(b.dataset.url)));
@@ -137,8 +168,9 @@
       const s = steps.find((x) => x.key === b.dataset.step);
       if (s && s.url) { api.openExternal(s.url); return; }
       card.dataset.open = card.dataset.open === b.dataset.step ? '' : b.dataset.step;
-      render(p, true);
+      render(card._p, true);
     }));
+    card.querySelector('.pub-refresh')?.addEventListener('click', () => refreshCard(card));
     card.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
       try { await navigator.clipboard.writeText(b.dataset.copy); } catch { return; }
       b.innerHTML = ICON_CHECK;
@@ -148,6 +180,7 @@
     if (inPlace) return;
     chatColumn.appendChild(card); // a known card moves down, under the latest step
     if (typeof scrollToBottom === 'function') scrollToBottom();
+    if (!busy && !card._saved) refreshCard(card);
   }
 
   // ─── Publish button in the chat top bar ───
