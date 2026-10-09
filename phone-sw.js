@@ -56,7 +56,8 @@ self.addEventListener('push', (e) => {
   const opts = {
     body: bodyFor(d).slice(0, 240),
     icon: '/logo.png',
-    badge: '/phone-favicon.png',
+    // The small status-bar icon: Android draws only its shape, so it is the knot alone on transparent.
+    badge: '/notify-badge.png',
     tag: d.reminderId ? `reminder-${d.reminderId}` : 'codeply',
     renotify: true,
     requireInteraction: d.kind === 'call',

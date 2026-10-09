@@ -32,6 +32,7 @@ for (const [from, to] of [
   ['mobile-cloud.css', 'mobile-cloud.css'],
   ['logo.png', 'logo.png'],
   ['phone-favicon.png', 'phone-favicon.png'],
+  ['notify-badge.png', 'notify-badge.png'], // Android's status-bar icon: only its shape is drawn
   [path.join('crew', 'assets', 'logo', 'codeply-icon-small-48.png'), 'crew-logo.png'],
   [path.join('vendor', 'supabase', 'supabase.js'), 'supabase.js'],
 ]) fs.copyFileSync(path.join(root, from), path.join(target, to));
