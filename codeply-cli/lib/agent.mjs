@@ -348,7 +348,7 @@ const PARAMS = {
   web_fetch: ['url', 'format'],
   web_search: ['query', 'num'],
   image_search: ['query', 'num'],
-  reach_me: ['how', 'message', 'at'], // only when the host can reach the phone (lib/reach.js)
+  reach_me: ['how', 'message', 'at', 'bot'], // only when the host can reach the phone (lib/reach.js)
   watch_email: ['from', 'how', 'note', 'repeat'],
   apply_patch: ['patch'],
   plan_exit: ['path'],

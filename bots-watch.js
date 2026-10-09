@@ -124,8 +124,12 @@ function dropAlert(botId, from) {
 // ─── Bots reaching the user from a chat (reach_me, watch_email in lib/reach.js) ─
 
 /** A call or a text to the phone, now or at a time, as this bot (or as Codeply when no bot). */
-async function reachPhone({ botId, how, message, at }) {
-  const bot = botId ? lib('bots.js').getBot(botId) : null;
+async function reachPhone({ botId, botName, how, message, at }) {
+  const B = lib('bots.js');
+  // A named bot ("tell Shella to call me") comes first, then the bot running this.
+  const named = botName ? B.findBot(botName, B.listBots()) : null;
+  if (botName && !named) return { ok: false, output: `There is no bot called "${botName}". The user's bots: ${B.listBots().map((b) => b.name).join(', ') || 'none'}.` };
+  const bot = named || (botId ? B.getBot(botId) : null);
   try {
     await callFunction('reminders', {
       action: 'create',
@@ -134,7 +138,7 @@ async function reachPhone({ botId, how, message, at }) {
         bot_id: bot ? bot.id : null, bot_name: bot ? bot.name : 'Codeply', bot_voice: (bot && bot.voice) || null,
       },
     });
-    return { ok: true };
+    return { ok: true, from: bot ? bot.name : 'Codeply' };
   } catch (e) {
     return { ok: false, output: e.signedOut ? 'The user is not signed in to Codeply on this PC, so the phone cannot be reached. Ask them to sign in.' : `Could not reach the phone: ${e.message}` };
   }

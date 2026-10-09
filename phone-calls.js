@@ -257,7 +257,22 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   /** Hear with our own mic stream + Whisper (iOS, no SpeechRecognition, or it broke). */
   const localEars = () => IS_IOS || IS_ANDROID || !SR || srBroken || !!api.localEars;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const ECHO_TAIL_MS = 900; // the bot's last words can still come back through the mic this long
+  const ECHO_TAIL_MS = 900;
+  // The bot's voice goes through one output: a boost into a limiter. With the
+  // mic open, iOS's voice processing turns playback right down, so on iPhone
+  // the voice gets about 3x louder; the limiter keeps that from distorting.
+  const VOICE_BOOST = IS_IOS ? 3 : 1;
+  function voiceBus(ctx) {
+    if (ctx.craftVoiceBus) return ctx.craftVoiceBus;
+    const boost = ctx.createGain();
+    boost.gain.value = VOICE_BOOST;
+    const limit = ctx.createDynamicsCompressor();
+    limit.threshold.value = -10; limit.knee.value = 4; limit.ratio.value = 12;
+    limit.attack.value = 0.002; limit.release.value = 0.2;
+    boost.connect(limit); limit.connect(ctx.destination);
+    ctx.craftVoiceBus = boost;
+    return boost;
+  } // the bot's last words can still come back through the mic this long
 
   // Browsers keep sound locked until a tap. Unlock it on the first one, so a
   // bot calling while the app is open rings out loud like a real call.
@@ -699,7 +714,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       const gain = ctx.createGain();
       gain.gain.value = me.speaker ? 1 : 0.45;
       src.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(voiceBus(ctx));
       let done = false;
       const fin = (ok) => {
         if (done) return; done = true;
@@ -1316,7 +1331,7 @@ You are on a live voice call; everything you write is spoken out loud right away
       src.buffer = b;
       const gain = ctx.createGain();
       gain.gain.value = me.speaker ? 1 : 0.45;
-      src.connect(gain); gain.connect(ctx.destination);
+      src.connect(gain); gain.connect(voiceBus(ctx));
       const at = Math.max(ctx.currentTime + 0.03, nextAt);
       if (item.startAt == null) {
         item.startAt = at;

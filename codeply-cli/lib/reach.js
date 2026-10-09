@@ -45,10 +45,11 @@ async function reachMe(args, ctx) {
   if (!message) return { ok: false, output: 'reach_me needs a <message>: what to tell the user.' };
   const at = parseWhen(args.at);
   if (at === undefined) return { ok: false, output: `Could not read the time "${args.at}". Use 17:30, 5pm, "in 20 minutes" or an ISO time.` };
-  const r = await handler.reach({ botId: ctx.botId || null, how, message, at });
+  // "Tell Shella to call me": the call comes from Shella, not from whoever placed it.
+  const r = await handler.reach({ botId: ctx.botId || null, botName: String(args.bot || '').trim(), how, message, at });
   const when = at ? ` at ${at.toLocaleString()}` : '';
   return r.ok
-    ? { ok: true, output: `${how === 'call' ? 'Call' : 'Text'} scheduled to the user's phone${when || ' now'}. It arrives within about a minute of that time.`, meta: { label: `${how === 'call' ? 'Call' : 'Text'}${when}: ${message.slice(0, 60)}` } }
+    ? { ok: true, output: `${how === 'call' ? 'Call' : 'Text'} from ${r.from || 'Codeply'} scheduled to the user's phone${when || ' now'}. It arrives within about a minute of that time.`, meta: { label: `${how === 'call' ? 'Call' : 'Text'} from ${r.from || 'Codeply'}${when}: ${message.slice(0, 60)}` } }
     : { ok: false, output: r.output || 'Could not reach the phone.', meta: { label: 'phone not reached' } };
 }
 

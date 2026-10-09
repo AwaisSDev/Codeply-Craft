@@ -691,12 +691,14 @@ You can reach the user on their phone with reach_me, and watch their inbox with 
 - Urgent or time critical, or they asked for a call: reach_me with how=call (the phone rings and you speak).
 - Anything else worth their attention: how=text (a notification).
 - "Tell me / call me when X emails me": watch_email with from=X and how=call or text. Do not say you cannot run in the background.
-- A reminder at a time: reach_me with at set to that time.`;
+- A reminder at a time: reach_me with at set to that time.
+- "Have Shella call me": reach_me with bot set to that bot's name, so the call comes from them.`;
 const PHONE_FORMAT = `To reach the phone or watch for an email, write:
 <codeply:reach_me>
 <how>call</how>
 <message>Your Vercel deploy just failed on main.</message>
 <at>17:30</at>
+<bot>(optional: the bot it comes from)</bot>
 </codeply:reach_me>
 <codeply:watch_email>
 <from>someone@example.com</from>
@@ -787,7 +789,10 @@ function buildBotPrompt(bot, o = {}) {
 function teamPrompt(team, o = {}) {
   const roster = rosterLines(team, null);
   if (!roster.length) return '';
-  return `BOTS\nThe user has these bots. When they ask for one by name, or a part of the work is clearly a bot's specialty, you can hand it that part with ask_bot. Only one bot runs at a time, and you wait for its answer.\n${roster.join('\n')}${o.native ? '' : `\n\n${ASK_BOT_FORMAT}`}`;
+  const phone = require('./reach.js').available()
+    ? `\n\nWhen the user asks a bot to call or text them ("tell Shella to call me"), do it yourself with reach_me and bot set to that bot's name, so it comes from that bot. ${o.native ? '' : PHONE_FORMAT}`
+    : '';
+  return `BOTS\nThe user has these bots. When they ask for one by name, or a part of the work is clearly a bot's specialty, you can hand it that part with ask_bot. Only one bot runs at a time, and you wait for its answer.\n${roster.join('\n')}${o.native ? '' : `\n\n${ASK_BOT_FORMAT}`}${phone}`;
 }
 
 /** Which approval category a tool falls into, or null. */
