@@ -109,10 +109,12 @@
   async function refreshCard(card) {
     if (!card || !card._p || !api.publishState || typeof state === 'undefined' || !state.project) return;
     card.classList.add('refreshing');
+    const minSpin = new Promise((r) => setTimeout(r, 700)); // reading the file is instant; let the spin be seen
     try {
       const r = await api.publishState(state.project);
       if (r && r.ok) card._saved = r;
     } catch {}
+    await minSpin;
     card.classList.remove('refreshing');
     if (card.isConnected) render(card._p, true);
   }

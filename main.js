@@ -3210,6 +3210,8 @@ ipcMain.handle('shell:openExternal', (e, url) => {
   else if (/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(\/actions\/runs\/\d+)?$/.test(String(url))) shell.openExternal(url); // cloud: View run, repo links
   else if (publishedUrls.has(url) || /^https:\/\/[a-z0-9-]+\.vercel\.app\/?$/.test(String(url))) shell.openExternal(url); // a publish's live link
   else if (PUBLISH_HELP_URLS.has(url)) shell.openExternal(url); // where to create a token
+  else if (/^https:\/\/supabase\.com\/dashboard\/project\/[a-z0-9]+$/.test(String(url))) shell.openExternal(url); // publish card: Database
+  else if (/^https:\/\/vercel\.com\/[\w.-]+\/[\w.-]+(\/[\w.-]+)?$/.test(String(url)) || url === 'https://vercel.com/dashboard') shell.openExternal(url); // publish card: Vercel
 });
 const PUBLISH_HELP_URLS = new Set([
   'https://vercel.com/account/settings/tokens', 'https://supabase.com/dashboard/account/tokens',
