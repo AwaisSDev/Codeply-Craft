@@ -22,6 +22,33 @@ function bodyFor(d) {
   return text || 'You have a reminder.';
 }
 
+// A call keeps ringing: the notification comes back (sound and vibration)
+// every few seconds for about half a minute, until it is answered, declined
+// or swiped away.
+const RING_EVERY_MS = 4500;
+const RING_FOR_MS = 32000;
+const stopped = new Set(); // tags answered, declined or dismissed
+
+async function ringCall(title, opts) {
+  const until = Date.now() + RING_FOR_MS;
+  for (let first = true; Date.now() < until; first = false) {
+    if (stopped.has(opts.tag)) return;
+    if (!first) {
+      // Gone from the shade (answered elsewhere, or swiped): stop.
+      const open = await self.registration.getNotifications({ tag: opts.tag });
+      if (!open.length) return;
+    }
+    await self.registration.showNotification(title, opts);
+    await new Promise((r) => setTimeout(r, RING_EVERY_MS));
+  }
+  // Not answered: leave it as a missed call.
+  if (!stopped.has(opts.tag)) {
+    await self.registration.showNotification(`Missed call from ${title}`, { ...opts, body: opts.data && opts.data.body ? `About: ${opts.data.body}` : 'Tap to call back.', renotify: false, requireInteraction: false, silent: true, vibrate: [], actions: [{ action: 'answer', title: 'Call back' }] });
+  }
+}
+
+self.addEventListener('notificationclose', (e) => { if (e.notification && e.notification.tag) stopped.add(e.notification.tag); });
+
 self.addEventListener('push', (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch { d = { body: e.data ? e.data.text() : '' }; }
@@ -37,17 +64,31 @@ self.addEventListener('push', (e) => {
     data: d,
     actions: d.reminderId ? [{ action: 'answer', title: d.kind === 'call' ? 'Answer' : 'Open' }, { action: 'snooze', title: 'Snooze 10 min' }] : [],
   };
+  if (d.kind === 'call') {
+    // Like a phone call: the bot's name, "Incoming call", Answer and Decline.
+    opts.body = `Incoming call${String(d.body || '').trim() ? ` · ${String(d.body).trim()}` : ''}`.slice(0, 240);
+    opts.tag = `call-${d.reminderId || Date.now()}`;
+    opts.vibrate = [900, 500, 900, 500, 900];
+    opts.actions = [{ action: 'answer', title: 'Answer' }, { action: 'decline', title: 'Decline' }];
+  }
   e.waitUntil((async () => {
+    // The app is open on screen: it shows the incoming call (and rings) right away.
+    const wins0 = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const w of wins0) { try { w.postMessage({ type: 'codeply-push', data: d }); } catch {} }
+    if (d.kind === 'call') {
+      const visible = wins0.some((w) => w.visibilityState === 'visible');
+      if (!visible) await ringCall(title, opts);
+      return;
+    }
     await self.registration.showNotification(title, opts);
-    // The app is open on screen: it shows the incoming call right away.
-    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const w of wins) { try { w.postMessage({ type: 'codeply-push', data: d }); } catch {} }
   })());
 });
 
 self.addEventListener('notificationclick', (e) => {
   const d = (e.notification && e.notification.data) || {};
+  if (e.notification && e.notification.tag) stopped.add(e.notification.tag);
   e.notification.close();
+  if (e.action === 'decline') return;
   if (e.action === 'snooze' && d.reminderId && d.key) {
     e.waitUntil(fetch(REMINDERS_URL, {
       method: 'POST',

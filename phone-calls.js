@@ -249,10 +249,20 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   // ─── Platform ─────────────────────────────────────────────────────────────
   // iPadOS in desktop mode says "MacIntel" but has touch.
   const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  // Android Chrome's SpeechRecognition beeps on every start and stop (the "tin ton" loop) and
+  // hears the bot from the speaker, so Android hears like iOS: one kept mic with echo cancelling.
+  const IS_ANDROID = /Android/i.test(navigator.userAgent);
   let srBroken = false; // SpeechRecognition failed this session: hear with Whisper instead
   /** Hear with our own mic stream + Whisper (iOS, no SpeechRecognition, or it broke). */
-  const localEars = () => IS_IOS || !SR || srBroken || !!api.localEars;
+  const localEars = () => IS_IOS || IS_ANDROID || !SR || srBroken || !!api.localEars;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const ECHO_TAIL_MS = 900; // the bot's last words can still come back through the mic this long
+
+  // Browsers keep sound locked until a tap. Unlock it on the first one, so a
+  // bot calling while the app is open rings out loud like a real call.
+  const unlockSound = () => { const a = audioCtx(); if (a && a.state !== 'running') a.resume().catch(() => {}); if (a && a.state === 'running') { document.removeEventListener('pointerdown', unlockSound, true); document.removeEventListener('keydown', unlockSound, true); } };
+  document.addEventListener('pointerdown', unlockSound, true);
+  document.addEventListener('keydown', unlockSound, true);
 
   // One AudioContext for the page: the ring, the bot's voice and the mic tap.
   // Created and resumed inside the Call tap (iOS only unlocks audio there).
@@ -491,6 +501,8 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       c.vad = makeVad(sampleRate, {
         start: () => {
           if (!c) return;
+          // Began over the bot's voice, or right after it stopped: maybe just its echo.
+          c.echoRisk = c.phase === 'speaking' || !!c.cueOn || performance.now() - (c.botEndedAt || 0) < ECHO_TAIL_MS;
           // Over the bot's voice nothing stops it yet: the words decide (see bargeCheck).
           c.bargeAt = c.phase === 'speaking' ? performance.now() : 0;
           if (c.phase !== 'speaking') caption('...', 'user');
@@ -527,6 +539,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       const text = await transcribe(me.vad.peek());
       if (c === me && me.phase === 'speaking' && isRealSpeech(text)) {
         me.bargeAt = 0;
+        me.barged = true; // a real interruption: what follows is the user
         interrupt();
         setPhase('listening');
         caption(text, 'user');
@@ -549,6 +562,19 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   async function hearAudio(audio) {
     const me = c;
     if (!me || me.ending) return;
+    // It started while the bot was talking (or just after): only clear words
+    // that are not the bot's own count. Without the phone's model to check,
+    // a short clip is dropped as echo.
+    if (me.echoRisk && !me.barged) {
+      me.echoRisk = false;
+      if (stt.state !== 'ready') { if (audio.length < 16000 * 1.6) return; }
+      else {
+        let text = '';
+        try { text = await transcribe(audio); } catch { return; }
+        if (c !== me || !isRealSpeech(text)) return;
+      }
+    }
+    me.barged = false;
     // Accurate hearing: the audio goes to the voice server with the turn.
     // (Said over the bot's voice it was already checked for clear words.)
     if (serverEars() && me.phase !== 'speaking') {
@@ -885,6 +911,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
 
   function setPhase(phase, label) {
     if (!c) return;
+    if (c.phase === 'speaking' && phase !== 'speaking') c.botEndedAt = performance.now();
     thinkingCue(phase === 'thinking');
     c.phase = phase;
     const r = root();
