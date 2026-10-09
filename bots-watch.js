@@ -241,11 +241,11 @@ async function tick() {
   const seenBefore = new Set(state.seen);
   const route = deps.currentRoute();
   try {
-    await W.watchOnce({
+    await lib('telemetry.js').withProduct('crew', () => W.watchOnce({
       bots: list, state, save: false, notify, rawEmail: deps.oauthLib().rawEmail,
       api: W.gmailApi({ token: gmailToken }),
       chat: (messages) => deps.aiLib().chatJson(messages, { route }),
-    });
+    }));
     status.lastCheck = Date.now();
     status.lastError = '';
   } catch (e) {

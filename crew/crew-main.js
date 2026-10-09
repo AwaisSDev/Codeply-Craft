@@ -17,9 +17,11 @@ const os = require('os');
 const { pathToFileURL } = require('url');
 
 // Every channel the Crew window uses gets a "crew:" prefix.
+// Every Crew handler runs as Crew for the usage counts (telemetry.js), so its bots' model calls are Crew's.
+const asCrew = (fn) => (...a) => { const t = ENGINE ? require(path.join(ENGINE, 'lib', 'telemetry.js')) : null; return t ? t.withProduct('crew', () => fn(...a)) : fn(...a); };
 const ipcMain = {
-  handle: (ch, fn) => rawIpc.handle(`crew:${ch}`, fn),
-  on: (ch, fn) => rawIpc.on(`crew:${ch}`, fn),
+  handle: (ch, fn) => rawIpc.handle(`crew:${ch}`, asCrew(fn)),
+  on: (ch, fn) => rawIpc.on(`crew:${ch}`, asCrew(fn)),
 };
 let ENGINE = null; // Craft's codeply-cli folder, set by init()
 // Crew's threads and settings stay where the standalone app kept them.
@@ -761,6 +763,7 @@ function showBot(engineDir, botId) {
 let onShowRequest = null;
 function embed(engineDir, host, bounds) {
   init(engineDir);
+  try { require(path.join(ENGINE, 'lib', 'telemetry.js')).recordOpen('crew'); } catch {}
   if (!view || view.webContents.isDestroyed()) {
     view = new BrowserView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false } });
     view.setBackgroundColor('#0b0b0c');

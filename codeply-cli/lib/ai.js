@@ -1265,7 +1265,31 @@ async function chatResearch(messages, opts, rm) {
   return chatViaOllamaNative(rmod.withSystem(pre), opts, { baseUrl: target.host, model: rm.model, apiKey: target.apiKey, research: rm.mode === 'cloud' ? 'cloud' : 'local' });
 }
 
+/** Which route a request takes, for the usage counts (telemetry.js). */
+function providerOf(opts) {
+  const rm = getConfig().research;
+  if (rm && rm.enabled) return 'research';
+  if (opts.route && opts.route.custom) return opts.route.custom.kind === 'chatgpt' ? 'chatgpt' : opts.route.custom.kind === 'ollama' ? 'ollama' : 'byok';
+  if (opts.route && opts.route.auto) return 'auto';
+  const p = applyRoute(getConfig(), opts.route).provider;
+  return p === 'ollama' ? 'ollama' : ['anthropic', 'openrouter', 'groq', 'openai', 'google', 'qwen', 'deepseek'].includes(p) ? 'byok' : 'proxy';
+}
+
+/** Every model call, counted (which app, which model, tokens; never content). */
 async function chat(messages, opts = {}) {
+  const started = Date.now();
+  const r = await chatRouted(messages, opts);
+  if (r && r.success) {
+    try {
+      const telemetry = require('./telemetry.js');
+      const model = r.modelUsed || (r.data && r.data.model) || (opts.route && opts.route.custom && opts.route.custom.model) || '';
+      telemetry.recordAi({ model: String(model).slice(0, 120), provider: providerOf(opts), ms: Date.now() - started, ...telemetry.tokensOf(r.data, messages) });
+    } catch {}
+  }
+  return r;
+}
+
+async function chatRouted(messages, opts = {}) {
   // Research Mode, when switched on in settings, takes every request.
   const rm = getConfig().research;
   if (rm && rm.enabled) return chatResearch(messages, opts, rm);

@@ -93,6 +93,8 @@ async function loadEngine() {
   commandsLib = require(path.join(CLI_DIR, 'lib', 'commands.js'));
   permissionsLib = require(path.join(CLI_DIR, 'lib', 'permissions.js'));
   modelSyncLib = require(path.join(CLI_DIR, 'lib', 'model-sync.js'));
+  // Usage counts for the admin dashboard (counts only, never content): calls from this window are Craft's.
+  try { const t = require(path.join(CLI_DIR, 'lib', 'telemetry.js')); t.setDefaults({ product: 'craft', version: app.getVersion(), platform: process.platform }); t.recordOpen('craft'); } catch {}
   require(path.join(CLI_DIR, 'lib', 'reach.js')).setHandler({ reach: (a) => botsWatch.reachPhone(a), watchEmail: (a) => botsWatch.addAlert(a) });
   agentMod = await import(pathToFileURL(agentPath).href);
   return true;
