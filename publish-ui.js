@@ -24,6 +24,7 @@
   const ICON_CHECK = svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>');
   const ICON_REFRESH = svg('<path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/>');
   const ICON_ARROW = svg('<path d="M7 17L17 7"/><path d="M9 7h8v8"/>');
+  const SITE = { database: 'Supabase', vercel: 'Vercel', github: 'GitHub' };
   const STEP_ICON = {
     done: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
     active: '<span class="pub-spin sm"></span>',
@@ -102,6 +103,7 @@
     if (saved.vercel && !settled('vercel')) steps.vercel = { status: 'done', detail: saved.vercel.name };
     if (saved.github && saved.github.repo && !settled('github')) steps.github = { status: 'done', detail: saved.github.linked ? `${saved.github.repo}, auto-deploy on` : saved.github.repo, url: `https://github.com/${saved.github.repo}` };
     else if (saved.github && saved.github.choice === 'no' && !settled('github')) steps.github = { status: 'skipped', detail: 'Direct deploy' };
+    if (steps.vercel && steps.vercel.status === 'done' && !steps.vercel.url) steps.vercel = { ...steps.vercel, url: 'https://vercel.com/dashboard' };
     if (saved.supabase && steps.database && !steps.database.url) steps.database = { ...steps.database, url: `https://supabase.com/dashboard/project/${saved.supabase.ref}` };
     return { ...p, steps, url: p.url || (saved.vercel && saved.vercel.url) || '' };
   }
@@ -146,12 +148,13 @@
       : current ? `${current.label}: ${current.detail || STATUS_WORD[current.status]}` : 'Getting ready';
     const words = (s) => s.detail || STATUS_WORD[s.status] || '';
     const chips = steps.map((s) => `<button type="button" class="pub-chip ${esc(s.status)}${card.dataset.open === s.key ? ' open' : ''}" data-step="${s.key}" ` +
-      `title="${esc(s.label + ': ' + words(s) + (s.url ? ' (click to open)' : ''))}">${STEP_ICON[s.status] || STEP_ICON.pending}${esc(s.label)}${s.url ? ICON_ARROW : ''}</button>`).join('');
+      `title="${esc(s.label + ': ' + words(s))}">${STEP_ICON[s.status] || STEP_ICON.pending}${esc(s.label)}</button>`).join('');
     // Errors are always spelled out; any other step shows its detail when its chip is clicked.
+    const note = (s, cls) => `<div class="pub-note ${cls}"><span><b>${esc(s.label)}</b> ${esc(words(s))}</span>` +
+      (s.url ? `<button type="button" class="pub-note-open" data-url="${esc(s.url)}">Open in ${SITE[s.key]}${ICON_ARROW}</button>` : '') + '</div>';
     const opened = steps.find((s) => s.key === card.dataset.open && s.status !== 'error');
     const notes = steps.filter((s) => s.status === 'error' && (live || s !== failed))
-      .map((s) => `<div class="pub-note error"><b>${esc(s.label)}</b> ${esc(words(s))}</div>`).join('') +
-      (opened ? `<div class="pub-note"><b>${esc(opened.label)}</b> ${esc(words(opened))}</div>` : '');
+      .map((s) => note(s, 'error')).join('') + (opened ? note(opened, '') : '');
     card.classList.toggle('live', live);
     card.classList.toggle('failed', !!failed && !live);
     card.innerHTML =
@@ -167,8 +170,6 @@
       <div class="pub-chips">${chips}</div>${notes}`;
     card.querySelectorAll('[data-url]').forEach((b) => b.addEventListener('click', () => api.openExternal(b.dataset.url)));
     card.querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', () => {
-      const s = steps.find((x) => x.key === b.dataset.step);
-      if (s && s.url) { api.openExternal(s.url); return; }
       card.dataset.open = card.dataset.open === b.dataset.step ? '' : b.dataset.step;
       render(card._p, true);
     }));

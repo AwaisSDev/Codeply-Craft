@@ -75,3 +75,12 @@
 .pub-note.error { color: var(--red, #f87171); background: color-mix(in srgb, var(--red, #f87171) 9%, transparent); }
 .pub-note.error b { color: inherit; }
 .pub-card.refreshing .pub-refresh svg { animation: pub-rot .8s linear infinite; }
+.pub-note { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pub-note > span { min-width: 0; }
+.pub-note-open {
+  flex: none; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border-radius: 7px; cursor: pointer;
+  background: transparent; border: 1px solid var(--border, rgba(255,255,255,0.12)); color: var(--text, #e4e4e7); font: inherit; font-size: 12px; font-weight: 500;
+}
+.pub-note-open:hover { background: var(--hover, rgba(255,255,255,0.06)); }
+.pub-note-open svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.pub-note.error .pub-note-open { color: inherit; border-color: color-mix(in srgb, var(--red, #f87171) 35%, transparent); }
