@@ -2363,3 +2363,11 @@ a.remote-url { text-decoration: none; cursor: pointer; }
 @keyframes activity-spin { to { transform: rotate(360deg); } }
 @keyframes activity-shimmer { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .activity.running .activity-icon, .activity.running .activity-summary { animation: none; } }
+
+/* Craft | Crew switcher at the top of the sidebar, like Claude's app switcher. */
+.app-switch { display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--hover); border: 1px solid var(--border); -webkit-app-region: no-drag; }
+.app-switch-btn { display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px 0 8px; border: 0; border-radius: 7px; background: transparent; color: var(--text-dim); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s ease, color .15s ease; }
+.app-switch-btn img { width: 16px; height: 16px; border-radius: 4px; display: block; opacity: .75; transition: opacity .15s ease; }
+.app-switch-btn:hover { color: var(--text); }
+.app-switch-btn.on { background: var(--active); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.25); cursor: default; }
+.app-switch-btn.on img, .app-switch-btn:hover img { opacity: 1; }

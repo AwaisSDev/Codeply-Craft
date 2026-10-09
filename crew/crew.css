@@ -444,3 +444,13 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 
 /* Inside Craft's window: no title bar of its own. */
 body.embedded .titlebar { display: none; }
+
+/* Craft | Crew switcher at the top of the sidebar, like Claude's app switcher. */
+.app-switch { display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--hover); border: 1px solid var(--border); -webkit-app-region: no-drag; }
+.app-switch-btn { display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px 0 8px; border: 0; border-radius: 7px; background: transparent; color: var(--text-dim, #a1a1aa); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s ease, color .15s ease; }
+.app-switch-btn img { width: 16px; height: 16px; border-radius: 4px; display: block; opacity: .75; transition: opacity .15s ease; }
+.app-switch-btn:hover { color: var(--text); }
+.app-switch-btn.on { background: var(--active, rgba(255,255,255,.1)); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.25); cursor: default; }
+.app-switch-btn.on img, .app-switch-btn:hover img { opacity: 1; }
+body.embedded .app-switch { align-self: flex-start; margin: 0 0 14px 2px; }
+body.embedded .side .brand { display: none; }

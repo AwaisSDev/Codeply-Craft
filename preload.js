@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('craft', {
   crewBounds: (bounds) => ipcRenderer.send('crew:bounds', bounds),
   crewUnembed: () => ipcRenderer.invoke('crew:unembed'),
   onCrewShow: (cb) => ipcRenderer.on('crew:show', () => cb()),
+  onCrewHide: (cb) => ipcRenderer.on('crew:hide', () => cb()),
   // window chrome
   minimize: () => ipcRenderer.send('win:minimize'),
   maximize: () => ipcRenderer.send('win:maximize'),

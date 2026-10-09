@@ -3,7 +3,15 @@
 (() => {
   const api = window.crew;
   // Inside Craft's window (the Crew tab), Craft's own title bar and window buttons are used.
-  if (new URLSearchParams(location.search).get('embedded')) document.body.classList.add('embedded');
+  if (new URLSearchParams(location.search).get('embedded')) {
+    document.body.classList.add('embedded');
+    const brand = document.querySelector('.side .brand');
+    if (brand) {
+      brand.insertAdjacentHTML('beforebegin', `<div class="app-switch" role="tablist" aria-label="Switch between Craft and Crew"><button class="app-switch-btn" data-app="craft" role="tab" aria-selected="false"><img src="../logo.png" alt="">Craft</button><button class="app-switch-btn on" data-app="crew" role="tab" aria-selected="true"><img src="assets/logo/codeply-icon-small-48.png" alt="">Crew</button></div>`);
+      brand.hidden = true; // kept: crew.js wires it as the Home button
+      document.querySelector('.app-switch-btn[data-app="craft"]').addEventListener('click', () => api.toCraft());
+    }
+  }
   const A = window.CraftAvatar;
   const { md, esc } = window.CrewMarkdown;
   const $ = (sel, root = document) => root.querySelector(sel);

@@ -80,7 +80,10 @@
   <!-- ============ SIDEBAR ============ -->
   <aside class="sidebar" id="sidebar">
     <div class="sb-header">
-      <button class="sb-brand">Codeply Craft</button>
+      <div class="app-switch" role="tablist" aria-label="Switch between Craft and Crew">
+        <button class="app-switch-btn on" data-app="craft" role="tab" aria-selected="true"><img src="logo.png" alt="">Craft</button>
+        <button class="app-switch-btn" data-app="crew" role="tab" aria-selected="false"><img src="crew/assets/logo/codeply-icon-small-48.png" alt="">Crew</button>
+      </div>
       <button class="tb-icon-btn icon-btn icon-btn-sm" id="sidebarToggle" title="Toggle sidebar">
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><line x1="9.5" y1="4" x2="9.5" y2="20"/></svg>
       </button>
@@ -103,10 +106,6 @@
         <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
         Tasks
         <span class="sb-item-badge hidden" id="tasksBadge">0</span>
-      </button>
-      <button class="sb-item" id="crewBtn" title="Open Codeply Crew: your bots, chats and calls">
-        <img class="sb-item-logo" src="crew/assets/logo/codeply-icon-small-48.png" alt="">
-        Crew
       </button>
     </nav>
 

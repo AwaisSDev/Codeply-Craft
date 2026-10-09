@@ -19,15 +19,27 @@
   const ROLE = { orchestrator: 'Orchestrator', specialist: 'Specialist' };
   const ICON_X = '<svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
   const CRAFT_AVATAR = { shape: 'burst9', eyes: 'pills', color: '#8e8e93' }; // stand-in for an unknown bot
-  // Craft itself answers as the Codeply knot, the same logo as the app.
-  const craftFace = (size) => `<img class="bot-craft-face" src="logo.png" alt="" width="${size}" height="${size}">`;
+// Craft's own agents, the mascot balls: Craft (purple) picks a specialist by
+  // itself; picking one here pins it for the chat ('role:<id>' goes to main.js).
+  const ROLES = [
+    { id: '', file: 'general.png', label: 'Craft', sub: 'Main agent, picks the right specialist' },
+    { id: 'role:frontend', file: 'frontend.png', label: 'Frontend', sub: 'Pixel, UI and pages' },
+    { id: 'role:backend', file: 'backend.png', label: 'Backend', sub: 'Circuit, servers and APIs' },
+    { id: 'role:database', file: 'database.png', label: 'Database', sub: 'Index, data and schemas' },
+    { id: 'role:testing', file: 'testing.png', label: 'QA', sub: 'Scout, tests and checks' },
+    { id: 'role:security', file: 'security.png', label: 'Security', sub: 'Warden, safety review' },
+    { id: 'role:devops', file: 'devops.png', label: 'DevOps', sub: 'Rocket, deploys and builds' },
+    { id: 'role:docs', file: 'docs.png', label: 'Docs', sub: 'Scribe, writing and READMEs' },
+  ];
+  const roleOf = (id) => ROLES.find((r) => r.id === (id || '')) || null;
+  const ball = (r, cls) => mascotHtml(r.file, cls, r.label);
 
   async function load() {
     try {
       const r = await api.botsList();
       if (r && !r.error) cat = r;
     } catch {}
-    if (selected && !byId(selected)) setSelected('');
+    if (selected && !byId(selected) && !roleOf(selected)) setSelected('');
     paintChips();
     return cat;
   }
@@ -55,14 +67,15 @@
 
   function paintChips() {
     const bot = byId(selected);
+    const role = bot ? null : roleOf(selected) || ROLES[0];
     document.querySelectorAll('.bot-chip').forEach((b) => {
-      const key = bot ? `${bot.id}:${JSON.stringify(bot.avatar)}:${bot.name}` : 'craft';
+      const key = bot ? `${bot.id}:${JSON.stringify(bot.avatar)}:${bot.name}` : 'role' + role.id;
       if (b.dataset.key === key) return;
       b.dataset.key = key;
-      b.classList.toggle('on', !!bot);
+      b.classList.toggle('on', !!bot || !!role.id);
       b.innerHTML = bot
         ? `${av(bot.avatar, 20, { still: true })}<span>${esc(bot.name)}</span>`
-        : `${craftFace(18)}<span>Craft</span>`;
+        : `${ball(role, 'mascot-chip')}<span>${esc(role.label)}</span>`;
     });
     document.querySelectorAll('.composer-input').forEach((t) => {
       if (!t.dataset.basePlaceholder) t.dataset.basePlaceholder = t.placeholder;
@@ -81,7 +94,8 @@
     menu.className = 'menu bot-menu';
     const item = (id, avatarHtml, name, sub) => `<button class="bot-menu-item${id === selected ? ' on' : ''}" data-id="${esc(id)}">${avatarHtml}<span class="bot-menu-text"><b>${esc(name)}</b><span>${esc(sub)}</span></span>${id === selected ? '<svg class="bot-menu-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>' : ''}</button>`;
     menu.innerHTML = `<div class="bot-menu-head">Who answers</div>` +
-      item('', craftFace(26), 'Craft', 'The default agent') +
+      ROLES.map((r) => item(r.id, ball(r, 'mascot-menu'), r.label, r.sub)).join('') +
+      (cat.bots.length ? '<div class="bot-menu-sep"></div><div class="bot-menu-head">Your bots</div>' : '') +
       cat.bots.map((b) => item(b.id, av(b.avatar, 26, { still: true }), b.name, b.specialty || ROLE[b.role])).join('') +
       `<div class="bot-menu-sep"></div><button class="bot-menu-manage" data-act="manage">${cat.bots.length ? 'Manage bots' : 'Create a bot'}</button>`;
     document.body.appendChild(menu);
@@ -93,7 +107,8 @@
       setSelected(el.dataset.id);
       closeMenu();
       const b = byId(el.dataset.id);
-      showToast(b ? `${b.name} answers your next messages.` : 'Craft answers your next messages.');
+      const r = roleOf(el.dataset.id);
+      showToast(b ? `${b.name} answers your next messages.` : r && r.id ? `${r.label} works on your next messages.` : 'Craft picks the right specialist again.');
     }));
     menu.querySelector('[data-act="manage"]').addEventListener('click', () => { closeMenu(); if (window.CraftCrew) window.CraftCrew.show(); else openModal(); });
   }

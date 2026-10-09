@@ -1026,17 +1026,17 @@ $('tasksBtn').addEventListener('click', openTasksModal);
 // Crew opens inside this window, over the main area, instead of in a window of
 // its own. The sidebar button then reads "Craft" and switches back.
 let crewMode = false;
+// Crew takes the whole window under the title bar (its own sidebar has the switch back).
 function crewArea() {
-  const r = document.querySelector('.main').getBoundingClientRect();
-  return { x: r.left + 1, y: r.top + 1, width: r.width - 1, height: r.height - 1 };
+  const top = Math.round(document.querySelector('.titlebar').getBoundingClientRect().bottom);
+  return { x: 0, y: top, width: window.innerWidth, height: window.innerHeight - top };
 }
 function paintCrewBtn() {
-  const b = $('crewBtn');
-  b.classList.toggle('crew-on', crewMode);
-  b.title = crewMode ? 'Back to Craft' : 'Open Codeply Crew: your bots, chats and calls';
-  b.innerHTML = crewMode
-    ? '<img class="sb-item-logo" src="logo.png" alt="">Craft'
-    : '<img class="sb-item-logo" src="crew/assets/logo/codeply-icon-small-48.png" alt="">Crew';
+  document.querySelectorAll('.app-switch-btn').forEach((b) => {
+    const on = (b.dataset.app === 'crew') === crewMode;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', String(on));
+  });
 }
 function setCrewMode(on) {
   if (!api || !api.crewEmbed || crewMode === on) return;
@@ -1046,13 +1046,9 @@ function setCrewMode(on) {
   if (on) api.crewEmbed(crewArea()); else api.crewUnembed();
 }
 window.CraftCrew = { show: () => setCrewMode(true), hide: () => setCrewMode(false), isOpen: () => crewMode };
-$('crewBtn').addEventListener('click', () => setCrewMode(!crewMode));
-// Anything else in the sidebar (a chat, a project, New chat, the account menu) goes back to Craft.
-$('sidebar').addEventListener('click', (e) => {
-  if (crewMode && e.target.closest('button') && !e.target.closest('#crewBtn, #sidebarToggle')) setCrewMode(false);
-}, true);
+document.querySelectorAll('.app-switch-btn').forEach((b) => b.addEventListener('click', () => setCrewMode(b.dataset.app === 'crew')));
 if (api && api.onCrewShow) api.onCrewShow(() => setCrewMode(true));
-new ResizeObserver(() => { if (crewMode) api.crewBounds(crewArea()); }).observe(document.querySelector('.main'));
+if (api && api.onCrewHide) api.onCrewHide(() => setCrewMode(false));
 window.addEventListener('resize', () => { if (crewMode) api.crewBounds(crewArea()); });
 $('tasksCloseBtn').addEventListener('click', closeTasksModal);
 $('tasksBackdrop').addEventListener('click', (e) => { if (e.target === $('tasksBackdrop')) closeTasksModal(); });

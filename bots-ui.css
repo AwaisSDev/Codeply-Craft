@@ -167,4 +167,8 @@
 .ao-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ao-row select { flex: 1; min-width: 180px; }
 .ao-time { width: 110px; }
-.bot-craft-face { flex: none; border-radius: 5px; display: block; }
+
+/* Craft's mascot agents in the answer chip and menu. */
+.bot-chip .mascot-chip { width: 18px; height: 18px; flex: none; }
+.bot-menu .mascot-menu { width: 26px; height: 26px; flex: none; }
+.bot-menu { max-height: 70vh; overflow-y: auto; }

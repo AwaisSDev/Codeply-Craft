@@ -895,6 +895,8 @@ ipcMain.handle('crew:embed', (e, bounds) => {
   return { ok: true };
 });
 ipcMain.on('crew:bounds', (e, bounds) => { if (crewMod) crewMod.setBounds(bounds); });
+// The Craft half of the switcher inside the Crew tab.
+ipcMain.on('crew:toCraft', () => { if (win && !win.isDestroyed()) win.webContents.send('crew:hide'); });
 ipcMain.handle('crew:unembed', () => { if (crewMod) crewMod.unembed(); return { ok: true }; });
 
 ipcMain.handle('research:get', async () => {
@@ -2444,6 +2446,8 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
   // No role detected for this particular text (a vague follow-up like "it
   // still doesn't work"): keep the role the chat is already working in.
   if (!roleId) roleId = session.stickyRole || null;
+  // A role the user picked wins over the guessed one (checks keep their own).
+  if (session.pinnedRole && !verifyOnly) roleId = session.pinnedRole;
   emitRoleBadge(session, roleId);
   // The chat's bot (bots-desktop.js): its prompt, approval boundary and ask_bot. null = no bots.
   const bot = await botsDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly, request: userMessage });
@@ -2800,6 +2804,12 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   const detectedRole = rolesLib.detectRole(goal || text);
   if (detectedRole) session.stickyRole = detectedRole;
   session.lastRole = null; // every reply opens with a "Working as ..." badge
+  // 'role:frontend' from the answer picker pins one of Craft's own agents; a bot id or '' clears it.
+  if (typeof botId === 'string') {
+    const pinned = botId.startsWith('role:') ? botId.slice(5) : '';
+    session.pinnedRole = pinned && rolesLib.getRole(pinned) ? pinned : null;
+    if (pinned) botId = '';
+  }
   botsDesktop.onSend(session, botId);
   const history = buildHistory(session);
   // images are kept on the session record so reopening the chat still shows
