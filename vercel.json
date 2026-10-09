@@ -4,7 +4,7 @@
   "installCommand": "echo \"no install needed\"",
   "buildCommand": "node scripts/prepare-mobile.js",
   "outputDirectory": "mobile-app",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- 'phone*' 'mobile*' bot-avatar.js vendor logo.png assets/agents scripts/prepare-mobile.js vercel.json",
+  "ignoreCommand": "git diff --quiet ${VERCEL_GIT_PREVIOUS_SHA:-HEAD^} HEAD -- 'phone*' 'mobile*' bot-avatar.js vendor logo.png assets/agents scripts/prepare-mobile.js vercel.json",
   "cleanUrls": true,
   "headers": [
     {
