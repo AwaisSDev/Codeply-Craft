@@ -1125,21 +1125,39 @@ function renderCheckpoint(cp) {
     chatColumn.appendChild(row);
   }
   const n = cp.total || cp.files.length;
-  const list = cp.files.slice(0, 40).map((f) =>
-    `<li><span class="cp-status cp-${esc(f.status)}">${esc(CP_STATUS[f.status] || f.status)}</span><code>${esc(f.file)}</code></li>`).join('');
+  const list = cp.files.slice(0, 40).map((f) => {
+    const parts = String(f.file).split(/[\\/]/);
+    const name = parts.pop();
+    const dir = parts.length ? parts.join('/') + '/' : '';
+    return `<li><span class="cp-badge cp-${esc(f.status)}" title="${esc(CP_STATUS[f.status] || f.status)}">${esc(f.status)}</span>` +
+      `<code><span class="cp-dir">${esc(dir)}</span>${esc(name)}</code></li>`;
+  }).join('');
+  const counts = {};
+  for (const f of cp.files) counts[f.status] = (counts[f.status] || 0) + 1;
+  const sub = Object.entries(counts).map(([k, c]) => `${c} ${CP_STATUS[k] || k}`).join(', ');
+  // Short lists start open; long ones stay folded until asked.
+  const open = row.dataset.open ? row.dataset.open === '1' : n <= 5;
+  row.dataset.open = open ? '1' : '0';
   row.cpData = cp;
   row.classList.toggle('undone', !!cp.undone);
   row.innerHTML = `
-    <button class="cp-toggle" type="button" aria-expanded="false">
-      <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
-      <span>${cp.undone ? `Undid changes to ${n} file${n === 1 ? '' : 's'}` : `Changed ${n} file${n === 1 ? '' : 's'}`}</span>
-    </button>
-    <button class="btn btn-secondary btn-sm cp-action" type="button">${cp.undone ? 'Redo' : 'Undo'}</button>
-    <ul class="cp-files" hidden>${list}${n > 40 ? `<li class="cp-more">and ${n - 40} more</li>` : ''}</ul>`;
+    <div class="cp-head">
+      <button class="cp-toggle" type="button" aria-expanded="${open}">
+        <span class="cp-tile"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/><path d="M9 14h6"/><path d="M12 11v6"/></svg></span>
+        <span class="cp-text"><span class="cp-title">${cp.undone ? `Undid changes to ${n} file${n === 1 ? '' : 's'}` : `Changed ${n} file${n === 1 ? '' : 's'}`}</span>
+          <span class="cp-sub">${esc(sub)}</span></span>
+        <svg class="cp-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+      <button class="cp-action" type="button">${cp.undone
+        ? '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>Redo'
+        : '<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>Undo'}</button>
+    </div>
+    <ul class="cp-files"${open ? '' : ' hidden'}>${list}${n > 40 ? `<li class="cp-more">and ${n - 40} more</li>` : ''}</ul>`;
   const toggle = row.querySelector('.cp-toggle');
   toggle.addEventListener('click', () => {
     const list = row.querySelector('.cp-files');
     list.hidden = !list.hidden;
+    row.dataset.open = list.hidden ? '0' : '1';
     toggle.setAttribute('aria-expanded', String(!list.hidden));
   });
   row.querySelector('.cp-action').addEventListener('click', async (e) => {

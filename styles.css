@@ -192,8 +192,8 @@ button {
 
 svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: var(--active); border-radius: 8px; border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: var(--active); border-radius: 6px; border: 1px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); background-clip: padding-box; }
 ::-webkit-scrollbar-track { background: transparent; }
 
@@ -771,7 +771,14 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
 }
 .sb-item-badge.hidden { display: none; }
 
-.sb-scroll { flex: 1; overflow-y: auto; padding: 6px 10px; min-height: 0; }
+/* The sidebar itself never scrolls: the nav above stays put, Projects scrolls
+   inside its four rows and Recents scrolls in whatever height is left. */
+.sb-scroll { flex: 1; min-height: 0; overflow: hidden; padding: 6px 10px 0; display: flex; flex-direction: column; }
+#projectsSection { flex: none; }
+#recentsSection { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-bottom: 6px; }
+#recentsList {
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+}
 
 .sb-section { margin-bottom: 18px; }
 
@@ -787,12 +794,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
   max-height: calc(4 * 32px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
 }
-#projectsList::-webkit-scrollbar { width: 6px; }
-#projectsList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-#projectsList::-webkit-scrollbar-track { background: transparent; }
 .sb-project-row {
   position: relative;
   flex: none;
@@ -2193,23 +2195,38 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
 
 /* ============ Undo checkpoint ============ */
 .checkpoint {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-  margin: 0 0 18px; padding: 7px 8px 7px 12px;
-  border-radius: 10px; border: 1px dashed var(--border);
+  margin: 0 0 18px; max-width: 560px; border-radius: 14px; overflow: hidden;
+  border: 1px solid var(--border); background: var(--panel-bg);
   font-size: 12.5px; color: var(--text-dim);
 }
-.checkpoint.undone { opacity: 0.75; }
-.cp-toggle { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; padding: 2px 0; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
-.cp-toggle:hover span { color: var(--text); }
-.cp-toggle svg { width: 14px; height: 14px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.checkpoint .cp-action { height: 26px; }
-.cp-files { flex-basis: 100%; margin: 4px 0 2px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
-.cp-files li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.checkpoint.undone { opacity: 0.7; }
+.cp-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 10px; }
+.cp-toggle { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 0; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.cp-tile { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 9px; background: var(--hover); border: 1px solid var(--border); color: var(--text-dim); }
+.cp-tile svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.cp-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.cp-title { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.cp-sub { font-size: 12px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-chev { width: 14px; height: 14px; flex: none; fill: none; stroke: var(--text-faint); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s ease; }
+.cp-toggle[aria-expanded="true"] .cp-chev { transform: rotate(90deg); }
+.cp-toggle:hover .cp-title { color: var(--text); }
+.cp-toggle:hover .cp-chev { stroke: var(--text-dim); }
+.cp-action {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 8px; cursor: pointer;
+  background: transparent; border: 1px solid var(--border); color: var(--text); font: inherit; font-size: 12.5px; font-weight: 500;
+}
+.cp-action:hover { background: var(--hover); }
+.cp-action:disabled { opacity: 0.6; cursor: default; }
+.cp-action svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.cp-files { margin: 0; padding: 8px 12px 10px; list-style: none; display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--border); }
+.cp-files[hidden] { display: none; }
+.cp-files li { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 3px 2px; }
 .cp-files code { font-family: var(--font-mono); font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
-.cp-status { flex-shrink: 0; width: 56px; font-size: 11px; font-weight: 600; }
-.cp-A { color: var(--green); }
-.cp-M { color: var(--text-dim); }
-.cp-D { color: var(--red); }
+.cp-dir { color: var(--text-faint); }
+.cp-badge { flex: none; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 5px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; }
+.cp-A { color: var(--green); background: color-mix(in srgb, var(--green) 14%, transparent); }
+.cp-M { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.cp-D { color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
 .cp-more { color: var(--text-faint); }
 
 /* ============ Question from the agent ============ */
