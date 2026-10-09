@@ -3532,9 +3532,14 @@ function renderUpdate(u) {
 
   gate.classList.add('hidden');
   // Optional update: stay out of the way until there's something to act on.
-  const showPill = u.status === 'ready' || (u.status === 'available' && u.manual);
+  const downloading = u.status === 'downloading' && !!u.version;
+  const showPill = downloading || u.status === 'ready' || (u.status === 'available' && u.manual);
   pill.classList.toggle('hidden', !showPill);
-  if (showPill) {
+  pill.classList.toggle('busy', downloading);
+  if (downloading) {
+    $('updatePillText').textContent = `Downloading update ${u.version} · ${u.percent || 0}%`;
+    pill.title = 'Downloading in the background. Keep working.';
+  } else if (showPill) {
     $('updatePillText').textContent = u.manual ? `Update ${u.version} available` : `Update ${u.version} ready · restart`;
     pill.title = u.manual ? 'Download the new version' : 'Installs automatically next time you quit, or click to restart now';
   }
@@ -3545,7 +3550,9 @@ if (api && api.onUpdateState) {
   api.onUpdateState((u) => { lastUpdate = u; renderUpdate(u); });
   api.getUpdateState().then((u) => { lastUpdate = u; renderUpdate(u); });
 }
-$('updatePill').addEventListener('click', () => api.installUpdate());
+$('updatePill').addEventListener('click', () => {
+  if (!$('updatePill').classList.contains('busy')) api.installUpdate();
+});
 $('updateGateBtn').addEventListener('click', () => {
   if (lastUpdate && lastUpdate.status === 'error') api.retryUpdate();
   else api.installUpdate();

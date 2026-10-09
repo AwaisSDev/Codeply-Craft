@@ -2256,6 +2256,12 @@ a.remote-url { text-decoration: none; cursor: pointer; }
 }
 .update-pill:hover { background: color-mix(in srgb, var(--green) 18%, transparent); }
 .update-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 25%, transparent); flex-shrink: 0; }
+.update-pill.busy {
+  cursor: default; color: var(--text-2, inherit); font-weight: 500;
+  background: transparent; border-color: var(--border, rgba(255,255,255,.1));
+}
+.update-pill.busy .update-pill-dot { animation: updPulse 1.4s ease-in-out infinite; }
+@keyframes updPulse { 50% { opacity: .35; } }
 .update-gate {
   position: fixed; inset: 36px 0 0 0; z-index: 90;
   display: grid; place-items: center; padding: 24px;
