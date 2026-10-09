@@ -161,35 +161,40 @@
     const btn = $('#accountBtn');
     const u = state.user;
     btn.innerHTML = u
-      ? `<span class="account-av">${esc(u.email[0].toUpperCase())}</span><span class="account-text"><b>${esc(u.email)}</b><span>${esc(modelName())}</span></span>`
+      ? `<span class="account-av">${esc(u.email.replace(/@.*/, '').replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase())}</span><span class="account-text"><b>${esc(u.email)}</b><span>${esc(modelName())}</span></span>`
       : `<span class="account-av">?</span><span class="account-text"><b>Sign in</b><span>Same account as Craft</span></span>`;
     btn.onclick = () => openAccountPanel(btn);
   }
 
   // ─── Account panel: who you are, the apps your bots can use, their files ───
-  const APP_TILE = { gmail: ['#ea4335', 'G'], slack: ['#4a154b', 'S'], github: ['#24292f', 'GH'], vercel: ['#000000', 'V'], supabase: ['#3ecf8e', 'S'] };
+  // The same logos as Craft's Connect Apps (one folder up from crew/).
+  const APP_LOGO = { gmail: '../Gmail.webp', slack: '../Slack.webp', github: '../Github.webp', vercel: '../Vercel.png', supabase: '../Supabase.jpg' };
+  const ICON_LINK = '<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>';
+  const ICON_OUT = '<svg viewBox="0 0 24 24"><path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
   async function openAccountPanel(anchor) {
     const u = state.user;
     let conns = [];
     try { conns = (api.connections && await api.connections()) || []; } catch {}
     const embedded = document.body.classList.contains('embedded');
-    const rows = conns.map((c) => {
-      const [bg, ch] = APP_TILE[c.id] || ['#555', c.name[0]];
-      return `<div class="ap-conn${c.connected ? ' on' : ''}"><span class="ap-tile" style="background:${bg}">${ch}</span>` +
-        `<span class="ap-conn-text"><b>${esc(c.name)}</b><span>${c.connected ? esc(c.account || 'Connected') : 'Not connected'}</span></span>` +
-        `<i class="ap-dot"></i></div>`;
-    }).join('');
+    const on = conns.filter((c) => c.connected).length;
+    const tiles = conns.map((c) => `<span class="ap-app${c.connected ? ' on' : ''}" title="${esc(c.name)}: ${esc(c.connected ? (c.account || 'connected') : 'not connected')}">` +
+      `<img src="${APP_LOGO[c.id] || ''}" alt="${esc(c.name)}"><i></i></span>`).join('');
+    const initials = u ? u.email.replace(/@.*/, '').replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase() : '?';
     const m = $('#menu');
     m.innerHTML = `
-      <div class="ap-head"><span class="account-av">${esc(u ? u.email[0].toUpperCase() : '?')}</span>
-        <span class="ap-head-text"><b>${esc(u ? u.email : 'Not signed in')}</b><span>${esc(modelName())}</span></span></div>
-      <div class="ap-label">Connected apps<span>What your bots can use</span></div>
-      <div class="ap-conns">${rows || '<div class="menu-note">No apps yet.</div>'}</div>
-      ${embedded ? `<button data-act="connect"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg><span>Manage connections</span></button>` : ''}
-      <hr>
-      <button data-act="folder">${ICON.folder}<span class="ap-two"><span>Bots' files</span><small>The folder where your bots save what they make</small></span></button>
-      <hr>
-      ${u ? '<button data-act="out" class="danger"><span>Sign out</span></button>' : '<button data-act="in"><span>Sign in</span></button>'}`;
+      <div class="ap-head">
+        <span class="ap-av">${esc(initials)}</span>
+        <span class="ap-head-text"><b>${esc(u ? u.email : 'Not signed in')}</b><span>${u ? 'Codeply account' : 'Same account as Craft'} · ${esc(modelName())}</span></span>
+      </div>
+      <div class="ap-section">
+        <div class="ap-label"><span>Connected apps</span><span class="ap-count">${on} of ${conns.length}</span></div>
+        <div class="ap-apps">${tiles}</div>
+        ${embedded ? `<button class="ap-manage" data-act="connect">${ICON_LINK}<span>Manage connections</span></button>` : ''}
+      </div>
+      <div class="ap-list">
+        <button data-act="folder" title="The folder where your bots save what they make">${ICON.folder}<span>Bots' files</span></button>
+        ${u ? `<button data-act="out" class="danger">${ICON_OUT}<span>Sign out</span></button>` : '<button data-act="in"><span>Sign in</span></button>'}
+      </div>`;
     m.classList.add('account-panel');
     m.classList.remove('hidden');
     const r = anchor.getBoundingClientRect();
