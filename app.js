@@ -1580,6 +1580,9 @@ function renderProjects() {
     row.appendChild(menuBtn);
     holder.appendChild(row);
   }
+  // Only four rows show; keep the open project in view when it sits further down.
+  const sel = holder.querySelector('.sb-project.selected');
+  if (sel) holder.scrollTop = Math.max(0, sel.parentElement.offsetTop - holder.offsetTop - (holder.clientHeight - sel.offsetHeight) / 2);
 }
 
 function renderRecents() {

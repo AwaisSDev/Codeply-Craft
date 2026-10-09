@@ -782,8 +782,20 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
   padding: 6px 10px 4px;
 }
 
+/* Four projects show; the rest scroll inside the list. */
+#projectsList {
+  max-height: calc(4 * 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+#projectsList::-webkit-scrollbar { width: 6px; }
+#projectsList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+#projectsList::-webkit-scrollbar-track { background: transparent; }
 .sb-project-row {
   position: relative;
+  flex: none;
   display: flex;
   align-items: center;
   border-radius: 8px;
