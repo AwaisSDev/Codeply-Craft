@@ -17,6 +17,20 @@
   };
   const STEPS = [['database', 'Database'], ['vercel', 'Vercel'], ['github', 'GitHub'], ['live', 'Live']];
   const STATUS_WORD = { pending: 'Waiting', active: 'Working', waiting: 'Needs you', done: 'Done', skipped: 'Skipped', error: 'Problem' };
+  const svg = (d) => `<svg viewBox="0 0 24 24">${d}</svg>`;
+  const ICON_GLOBE = svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/>');
+  const ICON_ALERT = svg('<circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16.5v.01"/>');
+  const ICON_COPY = svg('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/>');
+  const ICON_CHECK = svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>');
+  const ICON_ARROW = svg('<path d="M7 17L17 7"/><path d="M9 7h8v8"/>');
+  const STEP_ICON = {
+    done: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
+    active: '<span class="pub-spin sm"></span>',
+    waiting: '<i class="pub-wait"></i>',
+    pending: svg('<circle cx="12" cy="12" r="7"/>'),
+    skipped: svg('<path d="M7 12h10"/>'),
+    error: svg('<path d="M7 7l10 10M17 7L7 17"/>'),
+  };
 
   // OAuth not set up in this build: the connect call says so, and the token form is the way in.
   const needsToken = (err) => /client ID|slug|configured/i.test(String(err || ''));
@@ -86,16 +100,35 @@
       card.className = 'pub-card';
       card.dataset.id = p.id;
     }
-    const rows = STEPS.map(([key, label]) => {
-      const s = p.steps[key] || { status: 'pending' };
-      const detail = key === 'live' && p.url
-        ? `<button type="button" class="pub-live" data-url="${esc(p.url)}">${esc(p.url.replace(/^https:\/\//, ''))}</button>`
-        : esc(s.detail || STATUS_WORD[s.status] || '');
-      return `<div class="pub-step ${esc(s.status)}"><span class="pub-dot"></span><span class="pub-name">${label}</span><span class="pub-detail">${detail}</span></div>`;
-    }).join('');
-    card.innerHTML = `<div class="pub-head">${p.url ? 'Your site is live' : 'Publishing'}</div>${rows}` +
-      (p.url ? `<button type="button" class="pub-open" data-url="${esc(p.url)}">Open ${esc(p.url)}</button>` : '');
+    const live = !!p.url;
+    const steps = STEPS.filter(([key]) => key !== 'live').map(([key, label]) => ({ key, label, ...(p.steps[key] || { status: 'pending' }) }));
+    const failed = steps.find((s) => s.status === 'error');
+    const current = steps.find((s) => s.status === 'active' || s.status === 'waiting');
+    const host = live ? p.url.replace(/^https?:\/\//, '').replace(/\/$/, '') : '';
+    const title = live ? host : failed ? 'Publishing stopped' : 'Publishing your site';
+    const sub = live ? 'Live' : failed ? `${failed.label}: ${failed.detail || 'something went wrong'}`
+      : current ? `${current.label}: ${current.detail || STATUS_WORD[current.status]}` : 'Getting ready';
+    const chips = steps.map((s) => `<span class="pub-chip ${esc(s.status)}" title="${esc(s.label + ': ' + (s.detail || STATUS_WORD[s.status] || ''))}">` +
+      `${STEP_ICON[s.status] || STEP_ICON.pending}${esc(s.label)}</span>`).join('');
+    card.classList.toggle('live', live);
+    card.classList.toggle('failed', !!failed && !live);
+    card.innerHTML =
+      `<div class="pub-top">
+        <span class="pub-tile">${live ? ICON_GLOBE : failed ? ICON_ALERT : '<span class="pub-spin"></span>'}</span>
+        <span class="pub-text"><span class="pub-title">${esc(title)}</span>
+          <span class="pub-sub">${live ? '<i class="pub-ready"></i>' : ''}${esc(sub)}</span></span>
+        ${live ? `<span class="pub-actions">
+          <button type="button" class="pub-icon-btn" data-copy="${esc(p.url)}" title="Copy link" aria-label="Copy link">${ICON_COPY}</button>
+          <button type="button" class="pub-visit" data-url="${esc(p.url)}">Visit${ICON_ARROW}</button></span>` : ''}
+      </div>
+      <div class="pub-chips">${chips}</div>`;
     card.querySelectorAll('[data-url]').forEach((b) => b.addEventListener('click', () => api.openExternal(b.dataset.url)));
+    card.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copy); } catch { return; }
+      b.innerHTML = ICON_CHECK;
+      b.classList.add('copied');
+      setTimeout(() => { b.innerHTML = ICON_COPY; b.classList.remove('copied'); }, 1400);
+    }));
     chatColumn.appendChild(card); // a known card moves down, under the latest step
     if (typeof scrollToBottom === 'function') scrollToBottom();
   }

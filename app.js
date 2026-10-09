@@ -438,6 +438,7 @@ let lastUserMessage = null; // { text, imageCount, at }
 
 function addUserMessage(text, images) {
   closeActivity();
+  activityRole = null;
   const imageCount = images ? images.length : 0;
   if (lastUserMessage && lastUserMessage.text === text && lastUserMessage.imageCount === imageCount
     && Date.now() - lastUserMessage.at < 4000) {
@@ -721,6 +722,7 @@ function runFastTypewriter(msg, text, done) {
 // Click it to see every step. A reply, a card that needs you, an error or the
 // end of the run closes the group; the next step starts a new one.
 let activityEl = null;
+let activityRole = null;   // { mascot, name } of the role working this turn, shown on each work line
 
 const ACTIVITY_KIND = {
   read_file: ['read', 'file', 'files'], list_dir: ['listed', 'folder', 'folders'],
@@ -731,6 +733,24 @@ const ACTIVITY_KIND = {
 };
 
 function activityHead(el) { return el.querySelector('.activity-summary'); }
+
+// Puts the working agent's mascot where the plain dot sits on a work line.
+function setActivityAgent(el) {
+  if (!el || !activityRole) return;
+  const icon = el.querySelector('.activity-icon');
+  if (icon.dataset.mascot === activityRole.mascot) return;
+  icon.dataset.mascot = activityRole.mascot;
+  icon.innerHTML = mascotHtml(activityRole.mascot, 'mascot-xs', activityRole.name);
+  el.classList.add('has-agent');
+  el.querySelector('.activity-head').title = 'Worked as ' + activityRole.name;
+}
+
+// The last part of a path, "4 image(s)" as "4 images", and "." as "the project".
+function tidyActivityLabel(label) {
+  const name = String(label || '').split(/[\\/]/).filter(Boolean).pop() || '';
+  if (!name || name === '.') return 'the project';
+  return name.replace(/^(\d+) (\w+)\(s\)$/, (m, n, w) => n + ' ' + w + (n === '1' ? '' : 's'));
+}
 
 function updateActivitySummary(el) {
   if (!el) return;
@@ -747,7 +767,7 @@ function updateActivitySummary(el) {
   const parts = [];
   for (const [tool, n] of counts) {
     const [verb, one, many] = ACTIVITY_KIND[tool];
-    const name = (first.get(tool) || '').split(/[\\/]/).pop();
+    const name = tidyActivityLabel(first.get(tool));
     parts.push(n === 1 && name && name.length <= 32 && tool !== 'run' && tool !== 'search' ? `${verb} ${name}` : `${verb} ${n === 1 ? (/^[aeiou]/.test(one) ? 'an ' : 'a ') + one : n + ' ' + many}`);
   }
   if (other) parts.push(`used ${other === 1 ? 'a tool' : other + ' tools'}`);
@@ -756,7 +776,7 @@ function updateActivitySummary(el) {
   const live = el.querySelector('.activity-body > .tool-row.running');
   if (running && live) {
     const v = live.querySelector('.tool-verb')?.textContent || 'Working';
-    const l = live.dataset.label ? ' ' + live.dataset.label.split(/[\\/]/).pop() : '';
+    const l = live.dataset.label ? ' ' + tidyActivityLabel(live.dataset.label) : '';
     text = v + l;
   } else if (!text) {
     text = running ? 'Working' : 'Thought it through';
@@ -779,6 +799,7 @@ function activityBody() {
       const open = el.classList.toggle('open');
       el.querySelector('.activity-head').setAttribute('aria-expanded', open ? 'true' : 'false');
     });
+    setActivityAgent(activityEl);
     if (thinkingEl && thinkingEl.isConnected) chatColumn.insertBefore(activityEl, thinkingEl);
     else chatColumn.appendChild(activityEl);
     hideThinking();
@@ -1044,7 +1065,9 @@ function addRoleBadge(data) {
   const roleName = data.tagline === 'role' ? data.name : String(data.tagline || data.name || '').replace(/ Specialist$/i, '');
   el.innerHTML = mascotHtml(data.mascot || 'general.png', 'mascot-xs', roleName) +
     `<span class="role-badge-text">Working as <strong>${esc(roleName || 'General')}</strong></span>`;
+  activityRole = { mascot: data.mascot || 'general.png', name: roleName || 'General' };
   activityBody().appendChild(el);
+  setActivityAgent(activityEl);
   updateActivitySummary(activityEl);
   if (nearBottom()) scrollToBottom();
 }
@@ -2872,6 +2895,7 @@ async function openSession(id) {
   stopRevealQueue();
   chatColumn.innerHTML = '';
   activityEl = null;
+  activityRole = null;
   resetSidePanel(s.cwd);
   currentTasks = [];
   activeGoalCard = null;

@@ -2319,6 +2319,10 @@ a.remote-url { text-decoration: none; cursor: pointer; }
 .activity.running .activity-icon { border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent); border-top-color: var(--accent); animation: activity-spin .8s linear infinite; }
 .activity.running .activity-icon::before { display: none; }
 .activity.running .activity-summary { background: linear-gradient(90deg, var(--text-dim) 0%, var(--text) 50%, var(--text-dim) 100%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: activity-shimmer 1.6s linear infinite; }
+.activity.has-agent .activity-icon { width: 18px; height: 18px; border: 0; animation: none; display: grid; place-items: center; }
+.activity.has-agent .activity-icon::before { display: none; }
+.activity.has-agent .activity-icon .mascot { width: 18px; height: 18px; }
+.activity.running.has-agent .activity-icon::after { content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 1.5px solid transparent; border-top-color: var(--accent); animation: activity-spin .8s linear infinite; }
 .activity .tool-chevron { width: 13px; height: 13px; flex: none; color: var(--text-faint); transition: transform .15s ease; }
 .activity.open > .activity-head .tool-chevron { transform: rotate(90deg); }
 .activity-body { display: none; margin: 8px 0 2px 6px; padding-left: 16px; border-left: 1px solid var(--border); }
