@@ -53,7 +53,7 @@ const FORMAT_CORRECTION =
   'Valid names: todo, ask_user, mcp, list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, ' +
   'browser_check, gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, slack_post_message, vercel_deploy, supabase_create_project, ' +
   'supabase_delete_project, github_create_repo, design_reference_search, view_images, supabase_api, supabase_sql, vercel_api, ' +
-  'web_fetch, web_search, apply_patch, plan_exit, plan_enter, lsp, publish_check, publish_connect, supabase_setup, supabase_schema, ' +
+  'web_fetch, web_search, image_search, apply_patch, plan_exit, plan_enter, lsp, publish_check, publish_connect, supabase_setup, supabase_schema, ' +
   'publish_deploy, publish_github.';
 
 const TRUNCATION_CORRECTION =
@@ -179,7 +179,7 @@ const MAX_HALLUCINATION_RETRIES = 3;
 const MAX_VERIFY_NUDGES = 2;
 
 // Look-around blocks that may share one reply (see the loop).
-const BATCHABLE_TOOLS = new Set(['read_file', 'list_dir', 'search', 'web_fetch', 'web_search', 'lsp']);
+const BATCHABLE_TOOLS = new Set(['read_file', 'list_dir', 'search', 'web_fetch', 'web_search', 'image_search', 'lsp']);
 const MAX_BATCH = 4;
 
 // Identical call, identical arguments, this many times in a row = stuck.
@@ -346,6 +346,7 @@ const PARAMS = {
   publish_github: ['path', 'name', 'private'],
   web_fetch: ['url', 'format'],
   web_search: ['query', 'num'],
+  image_search: ['query', 'num'],
   apply_patch: ['patch'],
   plan_exit: ['path'],
   plan_enter: ['reason'],
@@ -405,6 +406,7 @@ const NAME_ALIASES = {
   supabase_sql: 'supabase_sql', supabasesql: 'supabase_sql', sql: 'supabase_sql', runsql: 'supabase_sql',
   vercel_api: 'vercel_api', vercelapi: 'vercel_api',
   web_fetch: 'web_fetch', webfetch: 'web_fetch', fetchurl: 'web_fetch', fetch_url: 'web_fetch', fetchpage: 'web_fetch', openurl: 'web_fetch', readurl: 'web_fetch',
+  image_search: 'image_search', imagesearch: 'image_search', searchimages: 'image_search', search_images: 'image_search', googleimages: 'image_search',
   web_search: 'web_search', websearch: 'web_search', searchweb: 'web_search', search_web: 'web_search', googlesearch: 'web_search',
   apply_patch: 'apply_patch', applypatch: 'apply_patch', patch: 'apply_patch',
   plan_exit: 'plan_exit', planexit: 'plan_exit', exitplan: 'plan_exit', exit_plan: 'plan_exit',
@@ -804,8 +806,12 @@ match exactly one place.)
 <query>testing</query>
 </codeply:list_skills>
 
+<codeply:image_search>
+<query>matcha tea ceremony</query>
+</codeply:image_search>
+
 <codeply:fetch_image>
-<url>https://loremflickr.com/1600/900/tea,leaves</url>
+<url>(an image URL from image_search)</url>
 <path>assets/hero.jpg</path>
 </codeply:fetch_image>
 
@@ -1033,7 +1039,7 @@ RULES
 - Creating a remote repo, pushing code, enabling Pages, or deploying anything are exactly the kind of claim covered by "never report success you did not verify" above - and the easiest one to get wrong, because each step's own command can silently no-op or partially fail while a LATER step still appears to succeed. Concretely: run whoami equivalents (gh api user, gh auth status) to get the real signed-in username BEFORE building any URL with it - never guess a username from the OS account name, the folder name, or anything the user said earlier that could be stale; after gh repo create or git push, treat the command's own exit code and printed output as the only source of truth for whether it worked, not your prior turn's summary of what you intended to do - a command you ran two turns ago having succeeded is not evidence this turn's retry did too; and never hand the user a repository/deployment URL you have not just confirmed resolves (curl -I it, or read it back from the command's own output) - a plausible-looking URL built from a guessed username/slug is a fabrication even if the pattern is usually right.
 - gmail_send and slack_post_message send a real email or a real Slack message the moment they run - there is no "preview" mode. Only use them when the user actually asked for that email/message to go out, never speculatively, never as a way to "show" them what it would say. When the user wants an email written but not sent yet, use gmail_draft instead. The user sees the email on an editable card before it goes out and may change it: the tool result says what was really sent or saved, so report that, not your original wording. calendar_add likewise puts a real event on the user's Google Calendar: only when they asked for it, with times in their local time; check calendar_list first when they ask what is on their calendar or whether a time is free. If gmail_search or a prior message makes clear Gmail/Slack isn't connected, say so plainly and stop - do not retry hoping it connects itself, and do not claim you sent something when the tool reported it wasn't connected.
 - vercel_deploy, supabase_create_project, supabase_delete_project, and github_create_repo are the same category as gmail_send/slack_post_message above: real, immediate action the moment they run - a live production deployment, a newly provisioned cloud database with its own bill, a brand-new repository pushed with the user's code. Only use them when the user actually asked for that outcome, never speculatively "to check if it would work." If one reports its integration isn't connected, say so plainly and stop rather than retrying or working around it. supabase_delete_project is the sharpest of these - it permanently destroys a database with no undo - so only reach for it when the user has clearly asked to delete or remove a specific project, never as cleanup for something that merely looks unused.
-- Every image in generated markup must be a local file, downloaded with fetch_image. NEVER write an <img> or CSS background-image pointing straight at loremflickr.com, picsum.photos, or any other live generator URL - those are redirect services that return a DIFFERENT random photo on every single request, so the page shows a different (sometimes completely unrelated) image on every reload, every redeploy, every visitor. Always fetch_image the URL to a real path under assets/ first, then reference that local path in the markup. If the user hasn't given you specific photos and the site needs placeholder imagery, fetch_image from https://loremflickr.com/<width>/<height>/<keyword1>,<keyword2> - it pulls a real tagged photo matching those keywords, no API key needed. Pick keywords that actually describe THAT section's subject (a tea shop's hero: 'tea,leaves' or 'matcha,ceremony', not generic filler) - never use a source that returns fully random, unrelated stock photos (e.g. picsum.photos) on a themed site; a beach or a crowd photo under a tea brand's "Our Heritage" section is worse than no image. If a downloaded placeholder turns out to be a broken/static-noise "no match" image or is visibly unrelated to its section once you look at the page, delete it and fetch_image again with more specific keywords - do not leave a wrong or corrupted image in place.
+- Images: build without photos first. Most pages look great with type, color, layout, CSS shapes, icons and inline SVG, so do that unless the design truly needs a photo (a restaurant's food, a product shot, a portfolio). Never ask the user for images or how imagery should work; decide yourself. When a photo is genuinely needed, find a real one with image_search (it searches the whole web like Google Images), pick the result that fits that exact section, and download it with fetch_image to a path under assets/. Every image in the markup must be that local file: never point an <img> or CSS background at a remote URL, and never use loremflickr, picsum or other random-photo services. If a downloaded image turns out broken or unrelated once you look at the page, delete it and pick another result.
 - If a SKILLS entry below is a clear match for the task, use_skill it before starting - its instructions take priority over your own default approach for that kind of work. Do not use_skill speculatively; only when a listed skill actually matches what you are about to do. A name under LIKELY RELEVANT TO THIS REQUEST, if that section is present, was matched against your actual request from the full library - treat it exactly the same way: use_skill it before starting unless it's obviously a false match, do not silently ignore it in favor of guessing your own approach.
 - EXCEPTION - this one is not speculative: if the task is to build or restyle any page a human will look at in a browser (a landing page, a small-business site, a portfolio, a dashboard, any HTML/CSS/UI), use_skill 'premium-web-design' before writing markup, even if the brief sounds tiny or mundane ("a site for a tea shop"). A plain-sounding brief is not permission for a flat, default-Bootstrap-looking result - Codeply's bar is that every generated page reads as deliberately designed. Skip this only if the user explicitly asked for something minimal/utilitarian/no-frills.
 - EXCEPTION - this one is MANDATORY, not speculative, and comes before you write any markup for that same kind of task (a page or app screen a human will look at): call design_reference_search on the core screen(s) the app needs (an onboarding flow, a checkout, a settings screen, a to-do list's main view - whatever the brief actually calls for) before designing it from memory. It is a local library (no external account, no login, no network dependency) so it is always available - do not skip this step, and do not substitute your own guess at what that kind of screen "usually" looks like. Real shipped apps solve layout/hierarchy/empty-state problems in ways worth matching, not just imitating the vibe of. Only if it reports the library itself is missing on this machine should you say that plainly to the user once and continue from your own judgment.

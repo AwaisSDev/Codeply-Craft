@@ -355,7 +355,7 @@ const chatScroll = $('chatScroll');
 const TOOL_DISPLAY = {
   todo: 'Updated task list', ask_user: 'Asked you', mcp: 'Used',
   list_dir: 'Listed', read_file: 'Read', write_file: 'Wrote', edit_file: 'Edited',
-  search: 'Searched', run: 'Ran', use_skill: 'Loaded skill', list_skills: 'Searched skills',
+  search: 'Searched', image_search: 'Searched images for', web_search: 'Searched the web for', run: 'Ran', use_skill: 'Loaded skill', list_skills: 'Searched skills',
   fetch_image: 'Downloaded', browser_check: 'Checked',
   gmail_send: 'Emailed', gmail_search: 'Searched Gmail', slack_post_message: 'Posted',
   vercel_deploy: 'Deployed', supabase_create_project: 'Provisioned', supabase_delete_project: 'Deleted', github_create_repo: 'Pushed',
@@ -729,6 +729,7 @@ const ACTIVITY_KIND = {
   write_file: ['wrote', 'file', 'files'], edit_file: ['edited', 'file', 'files'],
   run: ['ran', 'command', 'commands'], search: ['searched', 'time', 'times'],
   browser_check: ['checked', 'page', 'pages'], fetch_image: ['downloaded', 'image', 'images'],
+  image_search: ['searched images for', 'query', 'queries'], web_search: ['searched the web for', 'query', 'queries'],
   view_images: ['looked at', 'image', 'images'],
 };
 

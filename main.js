@@ -2866,9 +2866,13 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
       return 'once';
     }
 
-    // fetch_image gets a picker instead of a plain accept/reject card: the
-    // user searches and clicks a real photo rather than trusting whatever the
-    // model auto-picked.
+    // An image download inside the project just runs: the agent picked it
+    // from image_search, and Undo on the message removes it. Only a risky
+    // target (outside the project) still gets the picker.
+    if (req.tool === 'fetch_image' && !req.danger) {
+      sendEvent(session.id, { type: 'approval_auto', tool: req.tool, title: req.title, bypass: false });
+      return 'once';
+    }
     if (req.tool === 'fetch_image') {
       const id = ++approvalCounter;
       sendEvent(session.id, {

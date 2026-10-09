@@ -145,6 +145,57 @@ async function ddgSearch(query, num, signal) {
   return out.join('\n\n');
 }
 
+// ─── Image search ───────────────────────────────────────────────────────────
+// Real photos from across the web, like a Google image search: DuckDuckGo's
+// image results (no key), with Wikimedia Commons (free to use) as a fallback.
+
+// Stock sites whose previews carry a watermark: never useful on a real page.
+const WATERMARKED = /(dreamstime|shutterstock|alamy|istockphoto|gettyimages|depositphotos|123rf|stock\.adobe|bigstockphoto|canstockphoto|agefotostock|vectorstock|pond5|featurepics)\./i;
+
+async function ddgImages(query, num, signal) {
+  const signals = [AbortSignal.timeout(SEARCH_TIMEOUT_MS)];
+  if (signal) signals.push(signal);
+  const page = await fetch(`https://duckduckgo.com/?q=${encodeURIComponent(query)}&iax=images&ia=images`, { signal: AbortSignal.any(signals), headers: { 'User-Agent': UA } });
+  const vqd = (/vqd=["']?([\d-]+)/.exec(await page.text()) || [])[1];
+  if (!vqd) throw new Error('DuckDuckGo images did not answer');
+  const res = await fetch(`https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(query)}&vqd=${vqd}&f=,,,,,&p=1`, {
+    signal: AbortSignal.any(signals), headers: { 'User-Agent': UA, Referer: 'https://duckduckgo.com/' },
+  });
+  if (!res.ok) throw new Error(`DuckDuckGo images returned HTTP ${res.status}`);
+  const j = await res.json();
+  const out = (j.results || [])
+    .filter((r) => /^https:\/\//.test(r.image || '') && (r.width || 0) >= 600 && !WATERMARKED.test(`${r.image} ${r.url || ''}`))
+    .slice(0, num)
+    .map((r) => ({ title: String(r.title || '').slice(0, 120), url: r.image, width: r.width, height: r.height, page: r.url || '' }));
+  if (!out.length) throw new Error('DuckDuckGo images found nothing');
+  return out;
+}
+
+async function commonsImages(query, num, signal) {
+  const signals = [AbortSignal.timeout(SEARCH_TIMEOUT_MS)];
+  if (signal) signals.push(signal);
+  const u = `https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=${num * 2}` +
+    `&gsrsearch=${encodeURIComponent(query + ' filetype:bitmap')}&prop=imageinfo&iiprop=url|size&iiurlwidth=1600`;
+  const res = await fetch(u, { signal: AbortSignal.any(signals), headers: { 'User-Agent': UA } });
+  if (!res.ok) throw new Error(`Wikimedia returned HTTP ${res.status}`);
+  const pages = Object.values((await res.json()).query?.pages || {});
+  const out = pages.map((p) => ({ p, i: (p.imageinfo || [])[0] })).filter(({ i }) => i && i.width >= 600)
+    .slice(0, num)
+    .map(({ p, i }) => ({ title: String(p.title || '').replace(/^File:/, '').slice(0, 120), url: i.thumburl || i.url, width: i.thumbwidth || i.width, height: i.thumbheight || i.height, page: i.descriptionurl || '' }));
+  if (!out.length) throw new Error('Wikimedia Commons found nothing');
+  return out;
+}
+
+/** @returns {Promise<{ok:boolean, images?:object[], error?:string, via?:string}>} */
+async function imageSearch(query, opts = {}) {
+  const num = Math.min(Math.max(Number(opts.num) || 8, 1), 16);
+  const errors = [];
+  try { return { ok: true, images: await ddgImages(query, num, opts.signal), via: 'web' }; } catch (e) { errors.push(e.message); }
+  if (opts.signal?.aborted) return { ok: false, error: 'Search cancelled.' };
+  try { return { ok: true, images: await commonsImages(query, num, opts.signal), via: 'wikimedia' }; } catch (e) { errors.push(e.message); }
+  return { ok: false, error: `Image search failed (${errors.join('; ')}).` };
+}
+
 /** @returns {Promise<{ok:boolean, text?:string, error?:string, via?:string}>} */
 async function webSearch(query, opts = {}) {
   const num = Math.min(Math.max(Number(opts.num) || 8, 1), 20);
@@ -155,4 +206,4 @@ async function webSearch(query, opts = {}) {
   return { ok: false, error: `Web search failed (${errors.join('; ')}).` };
 }
 
-module.exports = { fetchPage, webSearch, htmlToText };
+module.exports = { fetchPage, webSearch, imageSearch, htmlToText };

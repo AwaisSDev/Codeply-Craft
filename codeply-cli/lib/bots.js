@@ -679,7 +679,7 @@ const ASK_BOT_FORMAT = `To ask a teammate, write:
 <codeply:ask_bot>
 <bot>Name</bot>
 <task>
-The one task, with every bit of context they need (they see nothing else).
+The one task, with every bit of context they need. Spell out the concrete details: email addresses, names, subjects, dates, file paths. Never write "the email from earlier" or "what they told you".
 </task>
 </codeply:ask_bot>`;
 
@@ -745,7 +745,7 @@ function buildBotPrompt(bot, o = {}) {
   parts.push(`APPROVAL BOUNDARY\n${approvalLine(bot)}`);
   const memory = (bot.memory || []).slice(-MAX_MEMORY);
   if (memory.length) {
-    parts.push(`WHAT YOU HAVE LEARNED ABOUT THIS USER\nFollow these unless the user says otherwise now:\n${memory.map((m) => `- ${m.fact}`).join('\n')}`);
+    parts.push(`WHAT YOU HAVE LEARNED ABOUT THIS USER\nBackground only. The current request and the recent chat always win: never assume an old item here is what the user means now (an older email, project or task). If the request is unclear, say which one you picked, or ask.\n${memory.map((m) => `- ${m.fact}`).join('\n')}`);
   }
   parts.push(...experienceParts(bot, o.request));
   parts.push(VERIFY_RULES);
@@ -1020,7 +1020,7 @@ function runStep(ev) {
 /** What the call screen says while a tool runs. */
 const CALL_STEP = {
   gmail_search: 'Checking your email', gmail_send: 'Sending the email', gmail_draft: 'Saving a draft', drafts_list: 'Looking at your drafts',
-  calendar_list: 'Checking your calendar', calendar_add: 'Adding it to your calendar', web_search: 'Searching the web', web_fetch: 'Reading a page',
+  calendar_list: 'Checking your calendar', calendar_add: 'Adding it to your calendar', web_search: 'Searching the web', image_search: 'Looking for images', web_fetch: 'Reading a page',
   read_file: 'Reading a file', write_file: 'Writing a file', edit_file: 'Editing a file', apply_patch: 'Editing files', run: 'Running a command',
   search: 'Searching your files', list_dir: 'Looking through files', slack_post_message: 'Posting to Slack', browser_check: 'Checking the page',
   ask_bot: 'Asking a teammate', todo: 'Planning',

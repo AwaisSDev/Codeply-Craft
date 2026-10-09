@@ -2019,6 +2019,20 @@ async function web_search(args, ctx) {
   return { ok: true, output: truncate(r.text), meta: { label: query } };
 }
 
+async function image_search(args, ctx) {
+  const query = String(args.query || '').trim();
+  if (!query) return { ok: false, output: 'image_search needs a <query>.' };
+  const r = await webTools.imageSearch(query, { num: Number(args.num) || 8, signal: ctx.signal });
+  if (!r.ok) return { ok: false, output: r.error, meta: { label: query } };
+  const lines = r.images.map((im, i) => `${i + 1}. ${im.title || 'image'} (${im.width}x${im.height})\n   ${im.url}${im.page ? `\n   from ${im.page}` : ''}`);
+  return {
+    ok: true,
+    output: `${r.images.length} images for "${query}"${r.via === 'wikimedia' ? ' (Wikimedia Commons, free to use)' : ''}:\n${lines.join('\n')}\n\n` +
+      'Pick the one that fits the section best and download it with fetch_image to a path under assets/. Prefer landscape for heroes and banners.',
+    meta: { label: query },
+  };
+}
+
 // ─── lsp ────────────────────────────────────────────────────────────────────
 
 const LSP_OPS = new Set(['definition', 'references', 'implementation', 'hover', 'documentsymbol', 'workspacesymbol']);
@@ -2224,7 +2238,7 @@ export const TOOLS = {
   ask_bot,
   ask_user,
   mcp,
-  web_fetch, web_search, apply_patch, plan_exit, plan_enter, lsp,
+  web_fetch, web_search, image_search, apply_patch, plan_exit, plan_enter, lsp,
   list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, browser_check,
   gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, slack_post_message, vercel_deploy, supabase_create_project, supabase_delete_project, github_create_repo,
   design_reference_search, view_images, supabase_api, supabase_sql, vercel_api,
@@ -2244,6 +2258,7 @@ export const TOOL_DISPLAY = {
   mcp:        { verb: 'mcp',    icon: '⧉' },
   web_fetch:  { verb: 'fetch',  icon: '⇩' },
   web_search: { verb: 'web',    icon: '▸' },
+  image_search: { verb: 'images', icon: '▸' },
   apply_patch:{ verb: 'patch',  icon: '✎' },
   plan_exit:  { verb: 'plan',   icon: '☐' },
   plan_enter: { verb: 'plan',   icon: '☐' },

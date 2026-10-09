@@ -90,6 +90,21 @@ function makeAskBot(c) {
   };
 }
 
+/** The task, plus the recent chat it came from. The chat outranks the teammate's older memories. */
+function withChat(task, session) {
+  const chat = recentChat(session);
+  if (!chat) return task;
+  return `${task}\n\nRECENT CHAT THIS CAME FROM (newest last). When the task points at something said here, like "that email" or "the one I just sent", it means this, not an older thing from your memory:\n${chat}`;
+}
+
+/** The last few lines of the chat a teammate was asked from (newest last). */
+function recentChat(session, max = 8) {
+  const msgs = (session && Array.isArray(session.messages) ? session.messages : [])
+    .filter((m) => (m.kind === 'user' || (m.kind === 'assistant' && !m.interim)) && m.text)
+    .slice(-max);
+  return msgs.map((m) => `${m.kind === 'user' ? 'User' : 'Craft'}: ${String(m.text).replace(/\s+/g, ' ').slice(0, 500)}`).join('\n');
+}
+
 /** One delegated teammate run: its own prompt, only the task, its own approval boundary. */
 async function runSub(c, target, sub, steps) {
   const b = bots();
@@ -97,7 +112,7 @@ async function runSub(c, target, sub, steps) {
   deps.sendEvent(c.session.id, { type: 'bot_working', bot: card, task: sub.task, working: true });
   const canAsk = sub.depth < b.MAX_DEPTH;
   const run = deps.agentMod().runAgent({
-    userMessage: sub.task, history: [], mode: c.mode, cwd: c.cwd,
+    userMessage: withChat(sub.task, c.session), history: [], mode: c.mode, cwd: c.cwd,
     approve: wrapApprove(c.approve, target, c.session, c.cwd), browser: deps.browser, signal: c.signal, route: c.route,
     maxSteps: 30, botPrompt: sub.prompt,
     askBot: canAsk ? makeAskBot({ ...c, caller: target, depth: sub.depth, chain: sub.chain }) : undefined,
