@@ -480,3 +480,6 @@ body.embedded .side .brand { display: none; }
 .ap-app.ap-github img, .ap-app.ap-vercel img, .ap-app.ap-supabase img { object-fit: cover; border-radius: 10px; }
 .ap-app.ap-supabase { padding: 8px; }
 .ap-app.ap-supabase img { object-fit: contain; border-radius: 0; }
+/* Same spot and type as Craft's switcher, so switching does not jump. */
+body.embedded .app-switch { margin-top: -8px; }
+body.embedded .app-switch-btn { font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; letter-spacing: normal; }
