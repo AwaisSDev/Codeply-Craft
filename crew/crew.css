@@ -222,12 +222,12 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .btn.danger { color: var(--red); }
 .btn[disabled] { opacity: .45; cursor: default; }
 
-.callcard { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 16px; margin: 10px 0; width: fit-content; min-width: 260px; cursor: pointer; }
-.callcard:hover { background: var(--hover); }
-.callcard-ic { width: 34px; height: 34px; border-radius: 50%; background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); display: grid; place-items: center; flex: none; }
-.callcard-ic svg { width: 16px; height: 16px; }
-.callcard b { font-weight: 550; font-size: 14px; display: block; }
-.callcard span { font-size: 12.5px; color: var(--text-faint); }
+.callcard { display: flex; align-items: center; gap: 12px; padding: 10px 16px 10px 10px; border: 1px solid rgba(74, 222, 128, .28); border-radius: 16px; margin: 10px 0; width: fit-content; min-width: 260px; cursor: pointer; background: rgba(74, 222, 128, .08); transition: background .15s ease, border-color .15s ease; }
+.callcard:hover { background: rgba(74, 222, 128, .13); border-color: rgba(74, 222, 128, .42); }
+.callcard-ic { width: 36px; height: 36px; border-radius: 50%; background: #4ade80; color: #052e16; display: grid; place-items: center; flex: none; }
+.callcard-ic svg { width: 16px; height: 16px; stroke-width: 2.2; }
+.callcard b { font-weight: 600; font-size: 14px; display: block; color: #bbf7d0; }
+.callcard span { font-size: 12.5px; color: rgba(187, 247, 208, .7); }
 .call-transcript { margin: -2px 0 10px 4px; padding-left: 14px; border-left: 2px solid var(--border); display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
 .call-transcript div b { font-weight: 600; margin-right: 6px; }
 
