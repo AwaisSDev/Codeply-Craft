@@ -1084,21 +1084,31 @@ function addTurnSummary(data) {
   if (!files.length && !checks.length) return;
   const card = document.createElement('div');
   card.className = 'turn-summary';
+  const isPass = (c) => c.ok && (c.exitCode === undefined || c.exitCode === 0);
+  const failedN = checks.filter((c) => !isPass(c)).length;
   const checkRow = (c) => {
-    const passed = c.ok && (c.exitCode === undefined || c.exitCode === 0);
+    const passed = isPass(c);
     const label = c.tool === 'browser_check' ? `Opened ${c.label}` : c.label;
     const exit = typeof c.exitCode === 'number' ? `<span class="ts-exit">exit ${c.exitCode}</span>` : '';
     return `<div class="ts-check ${passed ? 'pass' : 'fail'}">
       <span class="ts-check-icon">${passed ? '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'}</span>
-      <code>${esc(label || '')}</code>${exit}</div>`;
+      <code title="${esc(label || '')}">${esc(label || '')}</code>${exit}</div>`;
   };
+  const title = !checks.length ? `Changed ${files.length} file${files.length === 1 ? '' : 's'}`
+    : failedN ? `${failedN} of ${checks.length} check${checks.length === 1 ? '' : 's'} failed`
+    : checks.length === 1 ? 'Check passed' : `All ${checks.length} checks passed`;
+  const sub = [checks.length ? 'What actually ran this turn' : 'Not checked by a run',
+    files.length && checks.length ? `${files.length} file${files.length === 1 ? '' : 's'} changed` : ''].filter(Boolean).join(' · ');
+  card.classList.toggle('has-fail', failedN > 0);
   card.innerHTML = `
     <div class="ts-head">
-      <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-      <span>What actually happened</span>
+      <span class="ts-tile">${failedN
+        ? '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16.5v.01"/></svg>'
+        : '<svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.4-7 10-4-1.6-7-5.5-7-10V6Z"/><path d="M9 12l2 2 4-4"/></svg>'}</span>
+      <span class="ts-text"><span class="ts-title">${title}</span><span class="ts-sub">${sub}</span></span>
     </div>
-    ${files.length ? `<div class="ts-section-label">Files changed</div><div class="ts-files">${files.map((f) => `<span class="ts-file">${esc(f)}</span>`).join('')}</div>` : ''}
-    ${checks.length ? `<div class="ts-section-label">Checks run</div><div class="ts-checks">${checks.map(checkRow).join('')}</div>` : ''}
+    ${checks.length ? `<div class="ts-checks">${checks.map(checkRow).join('')}</div>` : ''}
+    ${files.length ? `<div class="ts-files">${files.map((f) => `<span class="ts-file">${esc(f)}</span>`).join('')}</div>` : ''}
     ${unverified.length ? `<div class="ts-warn"><svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>Not verified by a passing check: ${unverified.map(esc).join(', ')}</div>` : ''}`;
   card.classList.add('reveal-pending');
   chatColumn.appendChild(card);
