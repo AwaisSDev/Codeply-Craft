@@ -177,7 +177,7 @@
     try { conns = (api.connections && await api.connections()) || []; } catch {}
     const embedded = document.body.classList.contains('embedded');
     const on = conns.filter((c) => c.connected).length;
-    const tiles = conns.map((c) => `<span class="ap-app${c.connected ? ' on' : ''}" title="${esc(c.name)}: ${esc(c.connected ? (c.account || 'connected') : 'not connected')}">` +
+    const tiles = conns.map((c) => `<span class="ap-app ap-${c.id}${c.connected ? ' on' : ''}" title="${esc(c.name)}: ${esc(c.connected ? (c.account || 'connected') : 'not connected')}">` +
       `<img src="${APP_LOGO[c.id] || ''}" alt="${esc(c.name)}"><i></i></span>`).join('');
     const initials = u ? u.email.replace(/@.*/, '').replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase() : '?';
     const m = $('#menu');

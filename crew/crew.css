@@ -475,3 +475,6 @@ body.embedded .side .brand { display: none; }
 .menu .ap-manage svg { width: 14px; height: 14px; }
 .ap-list { padding: 6px; border-top: 1px solid var(--border); }
 .side-foot .account-av { background: #2f6bff; color: #fff; font-size: 11.5px; font-weight: 650; letter-spacing: .02em; }
+/* These logos are full squares already: show them edge to edge, no white tile. */
+.ap-app.ap-github, .ap-app.ap-vercel, .ap-app.ap-supabase { padding: 0; background: #000; }
+.ap-app.ap-github img, .ap-app.ap-vercel img, .ap-app.ap-supabase img { object-fit: cover; border-radius: 10px; }
