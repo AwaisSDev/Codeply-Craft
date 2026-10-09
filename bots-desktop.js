@@ -114,7 +114,7 @@ async function runSub(c, target, sub, steps) {
   const run = deps.agentMod().runAgent({
     userMessage: withChat(sub.task, c.session), history: [], mode: c.mode, cwd: c.cwd,
     approve: wrapApprove(c.approve, target, c.session, c.cwd), browser: deps.browser, signal: c.signal, route: c.route,
-    maxSteps: 30, botPrompt: sub.prompt,
+    maxSteps: 30, botPrompt: sub.prompt, botId: target.id,
     askBot: canAsk ? makeAskBot({ ...c, caller: target, depth: sub.depth, chain: sub.chain }) : undefined,
   });
   let reply = '';
@@ -162,6 +162,7 @@ async function forTurn({ session, approve, signal, route, cwd, mode, verifyOnly,
     approve: wrapApprove(approve, bot, session, cwd),
     botPrompt: (native) => (bot ? b.buildBotPrompt(bot, { team, canDelegate: true, native, request }) : b.teamPrompt(team, { native })),
     askBot: makeAskBot(c),
+    botId: bot ? bot.id : null,
     /** runOneTurn passes every run event here; tool calls become the trajectory. */
     see(ev) {
       if (ev && ev.type === 'tool_end' && steps.length < 60) steps.push(b.runStep(ev));

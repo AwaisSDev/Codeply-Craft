@@ -93,6 +93,7 @@ async function loadEngine() {
   commandsLib = require(path.join(CLI_DIR, 'lib', 'commands.js'));
   permissionsLib = require(path.join(CLI_DIR, 'lib', 'permissions.js'));
   modelSyncLib = require(path.join(CLI_DIR, 'lib', 'model-sync.js'));
+  require(path.join(CLI_DIR, 'lib', 'reach.js')).setHandler({ reach: (a) => botsWatch.reachPhone(a), watchEmail: (a) => botsWatch.addAlert(a) });
   agentMod = await import(pathToFileURL(agentPath).href);
   return true;
 }
@@ -2454,7 +2455,7 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
   try {
     const run = agentMod.runAgent({
       userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route,
-      roleId, goal, maxSteps, verifyOnly, botPrompt: bot?.botPrompt, askBot: bot?.askBot,
+      roleId, goal, maxSteps, verifyOnly, botPrompt: bot?.botPrompt, askBot: bot?.askBot, botId: bot?.botId,
     });
     for await (const ev of run) {
       if (bot) bot.see(ev); // the bot's trajectory, for its reflection after the reply

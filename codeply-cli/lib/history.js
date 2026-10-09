@@ -9,7 +9,7 @@
 const MAX_HISTORY_IMAGES = 4;
 
 const ACTION_VERBS = {
-  write_file: 'wrote', edit_file: 'edited', apply_patch: 'patched', web_fetch: 'fetched', web_search: 'searched the web for', image_search: 'searched images for',
+  write_file: 'wrote', edit_file: 'edited', apply_patch: 'patched', web_fetch: 'fetched', web_search: 'searched the web for', image_search: 'searched images for', reach_me: 'reached the phone:', watch_email: 'set an email alert for',
   run: 'ran', fetch_image: 'downloaded', browser_check: 'checked in browser', vercel_deploy: 'deployed', supabase_sql: 'ran SQL',
   supabase_api: 'called Supabase API', vercel_api: 'called Vercel API', github_create_repo: 'pushed to GitHub',
   supabase_create_project: 'created Supabase project', gmail_send: 'emailed', slack_post_message: 'posted to Slack',

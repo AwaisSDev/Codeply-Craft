@@ -91,6 +91,9 @@ function normalizeAlwaysOn(a) {
     quiet: { on: q.on !== false, from: HHMM.test(q.from) ? q.from : '22:00', to: HHMM.test(q.to) ? q.to : '07:00' },
     // Keep watching from Codeply's server while this PC is off (stores the Gmail sign-in there, encrypted).
     cloud: !!a.cloud,
+    // "Call me when X emails me" (watch_email): sender, call or text, once unless repeat.
+    alerts: (Array.isArray(a.alerts) ? a.alerts : []).filter((x) => x && typeof x.from === 'string' && x.from.trim())
+      .slice(-20).map((x) => ({ from: x.from.trim().toLowerCase().slice(0, 200), how: x.how === 'call' ? 'call' : 'text', note: String(x.note || '').slice(0, 200), repeat: !!x.repeat, at: Number(x.at) || Date.now() })),
   };
 }
 
@@ -683,6 +686,23 @@ The one task, with every bit of context they need. Spell out the concrete detail
 </task>
 </codeply:ask_bot>`;
 
+const PHONE_RULES = `YOUR LINE TO THE USER'S PHONE
+You can reach the user on their phone with reach_me, and watch their inbox with watch_email (it keeps watching in the background).
+- Urgent or time critical, or they asked for a call: reach_me with how=call (the phone rings and you speak).
+- Anything else worth their attention: how=text (a notification).
+- "Tell me / call me when X emails me": watch_email with from=X and how=call or text. Do not say you cannot run in the background.
+- A reminder at a time: reach_me with at set to that time.`;
+const PHONE_FORMAT = `To reach the phone or watch for an email, write:
+<codeply:reach_me>
+<how>call</how>
+<message>Your Vercel deploy just failed on main.</message>
+<at>17:30</at>
+</codeply:reach_me>
+<codeply:watch_email>
+<from>someone@example.com</from>
+<how>call</how>
+</codeply:watch_email>`;
+
 const VERIFY_RULES = `BEFORE YOU SAY IT IS DONE
 - Base every claim on what your tools actually returned in this run.
 - Check the deliverable exists (the file is written, the message is sent, the command passed) before you say so.
@@ -748,6 +768,7 @@ function buildBotPrompt(bot, o = {}) {
     parts.push(`WHAT YOU HAVE LEARNED ABOUT THIS USER\nBackground only. The current request and the recent chat always win: never assume an old item here is what the user means now (an older email, project or task). If the request is unclear, say which one you picked, or ask.\n${memory.map((m) => `- ${m.fact}`).join('\n')}`);
   }
   parts.push(...experienceParts(bot, o.request));
+  if (require('./reach.js').available()) parts.push(o.native ? PHONE_RULES : `${PHONE_RULES}\n\n${PHONE_FORMAT}`);
   parts.push(VERIFY_RULES);
   if (o.askedBy) {
     parts.push(`DELEGATED TASK\n${o.askedBy} asked you to do one task. You only see that task, not the rest of the conversation. Do it fully with your tools, then reply in this shape:\nSummary: <one sentence with the outcome>\n<the details: findings, what you changed, anything ${o.askedBy} must know or check>`);
@@ -992,7 +1013,7 @@ async function voiceTurn({ bot, team, turns, recentChat, runAgent, route, cwd, s
   if (!userMessage) return { text: '' };
   const extra = recentChat ? `\n\nRECENT CHAT BEFORE THIS CALL\n${recentChat}` : '';
   const run = runAgent({
-    userMessage, history, mode: 'Build', cwd, signal, route, maxSteps, approve,
+    userMessage, history, mode: 'Build', cwd, signal, route, maxSteps, approve, botId: bot.id,
     botPrompt: () => `${buildBotPrompt(bot, { team, request: userMessage })}\n\n${VOICE_RULES}${extra}`,
   });
   let reply = '';
@@ -1020,7 +1041,7 @@ function runStep(ev) {
 /** What the call screen says while a tool runs. */
 const CALL_STEP = {
   gmail_search: 'Checking your email', gmail_send: 'Sending the email', gmail_draft: 'Saving a draft', drafts_list: 'Looking at your drafts',
-  calendar_list: 'Checking your calendar', calendar_add: 'Adding it to your calendar', web_search: 'Searching the web', image_search: 'Looking for images', web_fetch: 'Reading a page',
+  calendar_list: 'Checking your calendar', calendar_add: 'Adding it to your calendar', web_search: 'Searching the web', image_search: 'Looking for images', reach_me: 'Reaching your phone', watch_email: 'Setting an email alert', web_fetch: 'Reading a page',
   read_file: 'Reading a file', write_file: 'Writing a file', edit_file: 'Editing a file', apply_patch: 'Editing files', run: 'Running a command',
   search: 'Searching your files', list_dir: 'Looking through files', slack_post_message: 'Posting to Slack', browser_check: 'Checking the page',
   ask_bot: 'Asking a teammate', todo: 'Planning',

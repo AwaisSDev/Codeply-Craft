@@ -24,6 +24,7 @@ const mcpLib = require('./mcp.js');
 const skills = require('./skills.js');
 const plugins = require('./plugins.js');
 const rolesLib = require('./subagents.js');
+const reachLib = require('./reach.js');
 const config = require('./config.js');
 
 // Enough room for a real task plus its verification pass. /goal runs pass a
@@ -53,7 +54,7 @@ const FORMAT_CORRECTION =
   'Valid names: todo, ask_user, mcp, list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, ' +
   'browser_check, gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, slack_post_message, vercel_deploy, supabase_create_project, ' +
   'supabase_delete_project, github_create_repo, design_reference_search, view_images, supabase_api, supabase_sql, vercel_api, ' +
-  'web_fetch, web_search, image_search, apply_patch, plan_exit, plan_enter, lsp, publish_check, publish_connect, supabase_setup, supabase_schema, ' +
+  'web_fetch, web_search, image_search, reach_me, watch_email, apply_patch, plan_exit, plan_enter, lsp, publish_check, publish_connect, supabase_setup, supabase_schema, ' +
   'publish_deploy, publish_github.';
 
 const TRUNCATION_CORRECTION =
@@ -347,6 +348,8 @@ const PARAMS = {
   web_fetch: ['url', 'format'],
   web_search: ['query', 'num'],
   image_search: ['query', 'num'],
+  reach_me: ['how', 'message', 'at'], // only when the host can reach the phone (lib/reach.js)
+  watch_email: ['from', 'how', 'note', 'repeat'],
   apply_patch: ['patch'],
   plan_exit: ['path'],
   plan_enter: ['reason'],
@@ -406,6 +409,8 @@ const NAME_ALIASES = {
   supabase_sql: 'supabase_sql', supabasesql: 'supabase_sql', sql: 'supabase_sql', runsql: 'supabase_sql',
   vercel_api: 'vercel_api', vercelapi: 'vercel_api',
   web_fetch: 'web_fetch', webfetch: 'web_fetch', fetchurl: 'web_fetch', fetch_url: 'web_fetch', fetchpage: 'web_fetch', openurl: 'web_fetch', readurl: 'web_fetch',
+  reach_me: 'reach_me', reachme: 'reach_me', call_me: 'reach_me', callme: 'reach_me', text_me: 'reach_me', textme: 'reach_me', notify_me: 'reach_me', notifyme: 'reach_me', call_user: 'reach_me',
+  watch_email: 'watch_email', watchemail: 'watch_email', email_alert: 'watch_email', alert_on_email: 'watch_email', watch_inbox: 'watch_email',
   image_search: 'image_search', imagesearch: 'image_search', searchimages: 'image_search', search_images: 'image_search', googleimages: 'image_search',
   web_search: 'web_search', websearch: 'web_search', searchweb: 'web_search', search_web: 'web_search', googlesearch: 'web_search',
   apply_patch: 'apply_patch', applypatch: 'apply_patch', patch: 'apply_patch',
@@ -1531,7 +1536,7 @@ function withReasoning(msg, reasoning) {
  *                                  "claims an edit it didn't make this turn" check is skipped.
  * @yields {{type:string, ...}} text | reasoning | tool_start | tool_end | done | error | aborted
  */
-export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly, botPrompt, askBot }) {
+export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly, botPrompt, askBot, botId }) {
   let readOnly = READ_ONLY_MODES.has(mode);
   const stepBudget = Math.max(1, maxSteps || MAX_STEPS);
   // OpenAI-shaped content array only when there's actually an image to carry -
@@ -1559,6 +1564,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       if (n === 'plan_exit') return m === 'Plan';
       if (n === 'plan_enter') return m === 'Build';
       if (n === 'ask_bot') return typeof askBot === 'function';
+      if (n === 'reach_me' || n === 'watch_email') return reachLib.available();
       if (ro && MUTATING_ACTIONS.has(n)) return m === 'Plan' && (n === 'write_file' || n === 'edit_file');
       return true;
     });
@@ -1573,7 +1579,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
 
   // fileState: path -> mtime when this turn last read/wrote it (see tools.mjs).
   // userMessage lets the publish tools refuse when nobody asked to publish.
-  const ctx = { cwd, approve, browser, signal, mode, route, userMessage, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null, askBot: typeof askBot === 'function' ? askBot : null };
+  const ctx = { cwd, approve, browser, signal, mode, route, userMessage, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null, askBot: typeof askBot === 'function' ? askBot : null, botId: botId || null };
   const recentCallKeys = [];      // executed calls, in order, for the stuck-loop guard
   const lastResultFor = new Map(); // call key -> its most recent result
   const transcript = [{ role: 'user', content: userMessage }];

@@ -23,6 +23,7 @@ const terminalHints = require('./terminal-hints.js');
 const diagnostics = require('./diagnostics.js');
 const { commandPatterns } = require('./arity.js');
 const mcpLib = require('./mcp.js');
+const reachLib = require('./reach.js');
 const applyLimit = require('./apply-limit.js');
 const config = require('./config.js');
 const skills = require('./skills.js');
@@ -2225,6 +2226,10 @@ async function ask_bot(args, ctx) {
   return ctx.askBot({ name: String(args.bot || '').trim(), task: String(args.task || '').trim(), signal: ctx.signal });
 }
 
+// ─── Reaching the user's phone (lib/reach.js; the host registers the handler) ─
+const reach_me = (args, ctx) => reachLib.reachMe(args, ctx);
+const watch_email = (args, ctx) => reachLib.watchEmail(args, ctx);
+
 // ─── Publishing (Supabase + Vercel + GitHub, see lib/publish.js) ────────────
 const publishTools = publishLib.makePublishTools({
   config,
@@ -2238,7 +2243,7 @@ export const TOOLS = {
   ask_bot,
   ask_user,
   mcp,
-  web_fetch, web_search, image_search, apply_patch, plan_exit, plan_enter, lsp,
+  web_fetch, web_search, image_search, apply_patch, plan_exit, plan_enter, lsp, reach_me, watch_email,
   list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, browser_check,
   gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, slack_post_message, vercel_deploy, supabase_create_project, supabase_delete_project, github_create_repo,
   design_reference_search, view_images, supabase_api, supabase_sql, vercel_api,
@@ -2259,6 +2264,8 @@ export const TOOL_DISPLAY = {
   web_fetch:  { verb: 'fetch',  icon: '⇩' },
   web_search: { verb: 'web',    icon: '▸' },
   image_search: { verb: 'images', icon: '▸' },
+  reach_me: { verb: 'phone', icon: '☎' },
+  watch_email: { verb: 'watch', icon: '✉' },
   apply_patch:{ verb: 'patch',  icon: '✎' },
   plan_exit:  { verb: 'plan',   icon: '☐' },
   plan_enter: { verb: 'plan',   icon: '☐' },

@@ -309,7 +309,7 @@ function makeAskBot(c) {
       send('crew:event', { botId: c.botId, type: 'helper', bot: card, task: sub.task, working: true });
       const run = agentMod.runAgent({
         userMessage: sub.task, history: [], mode: 'Build', cwd: c.cwd, signal: c.signal, route: c.route, maxSteps: 30,
-        approve: approverFor(c.botId, target, c.signal), botPrompt: sub.prompt,
+        approve: approverFor(c.botId, target, c.signal), botPrompt: sub.prompt, botId: target.id,
         askBot: sub.depth < bots.MAX_DEPTH ? makeAskBot({ ...c, caller: target, depth: sub.depth, chain: sub.chain }) : undefined,
       });
       let reply = '';
@@ -364,6 +364,7 @@ ipcMain.handle('chat:send', guard(async (e, { botId, text }) => {
           approve: approverFor(botId, bot, signal),
           botPrompt: (native) => bots.buildBotPrompt(bot, { team, canDelegate: true, native, request: text }),
           askBot: makeAskBot({ botId, caller: bot, depth: 0, chain: [bot.id], token, signal, route, cwd }),
+          botId: bot.id,
         });
         for await (const ev of run) {
           if (ev.type === 'text') {
@@ -600,6 +601,7 @@ ipcMain.handle('groups:send', guard(async (e, { groupId, text }) => {
             userMessage, history, mode: 'Build', cwd, signal, route, maxSteps: 30,
             approve: approverFor({ groupId, botId: bot.id }, bot, signal),
             botPrompt: () => `${bots.buildBotPrompt(bot, { team: members, request: text })}\n\n${groupRules(bot, members)}`,
+            botId: bot.id,
           });
           for await (const ev of run) {
             if (ev.type === 'text') {

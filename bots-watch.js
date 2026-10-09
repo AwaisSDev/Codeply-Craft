@@ -67,9 +67,9 @@ async function callFunction(name, body) {
 const localTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; } };
 
 /** The phone hears about it through a reminder due now (reminders-tick pushes it within a minute). */
-async function tellPhone(ev, bot) {
+async function tellPhone(ev, bot, forceKind) {
   const W = mw();
-  const kind = bot.alwaysOn.reach === 'call' && ev.level === 'very' ? 'call' : 'remind';
+  const kind = forceKind || (bot.alwaysOn.reach === 'call' && ev.level === 'very' ? 'call' : 'remind');
   await callFunction('reminders', {
     action: 'create',
     reminder: {
@@ -103,8 +103,59 @@ async function notify(ev) {
     n.on('click', () => deps.openBot(bot.id));
     n.show();
   }
+  if (ev.alert) {
+    try { await tellPhone(ev, bot, ev.alert.how === 'call' ? 'call' : 'remind'); } catch (e) { if (!e.signedOut) console.warn('[always on] phone:', e.message); }
+    if (!ev.alert.repeat) dropAlert(bot.id, ev.alert.from);
+    return;
+  }
   if (quiet || bot.alwaysOn.reach === 'message') return;
   try { await tellPhone(ev, bot); } catch (e) { if (!e.signedOut) console.warn('[always on] phone:', e.message); }
+}
+
+function dropAlert(botId, from) {
+  try {
+    const B = lib('bots.js');
+    const bot = B.getBot(botId);
+    if (!bot) return;
+    B.updateBot(botId, { alwaysOn: { ...bot.alwaysOn, alerts: bot.alwaysOn.alerts.filter((a) => a.from !== from) } });
+  } catch (e) { console.warn('[always on] alert:', e.message); }
+}
+
+// ─── Bots reaching the user from a chat (reach_me, watch_email in lib/reach.js) ─
+
+/** A call or a text to the phone, now or at a time, as this bot (or as Codeply when no bot). */
+async function reachPhone({ botId, how, message, at }) {
+  const bot = botId ? lib('bots.js').getBot(botId) : null;
+  try {
+    await callFunction('reminders', {
+      action: 'create',
+      reminder: {
+        text: String(message).slice(0, 480), due_at: (at || new Date()).toISOString(), kind: how === 'call' ? 'call' : 'remind', tz: localTz(),
+        bot_id: bot ? bot.id : null, bot_name: bot ? bot.name : 'Codeply', bot_voice: (bot && bot.voice) || null,
+      },
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, output: e.signedOut ? 'The user is not signed in to Codeply on this PC, so the phone cannot be reached. Ask them to sign in.' : `Could not reach the phone: ${e.message}` };
+  }
+}
+
+/** "Call / text me when X emails me": an alert on the bot, and the bot starts watching the inbox. */
+async function addAlert({ botId, from, how, note, repeat }) {
+  const B = lib('bots.js');
+  const bot = botId ? B.getBot(botId) : null;
+  if (!bot) return { ok: false, output: 'Only a bot can watch the inbox. Ask the user to pick one of their bots (or to make one in Crew) for this.' };
+  if (!deps.configLib().getIntegration('gmail').accessToken) return { ok: false, output: 'Gmail is not connected. Ask the user to connect Gmail in Connect Apps first.' };
+  const alerts = (bot.alwaysOn.alerts || []).filter((a) => a.from !== from);
+  alerts.push({ from, how, note, repeat, at: Date.now() });
+  B.updateBot(bot.id, { alwaysOn: { ...bot.alwaysOn, on: true, alerts } });
+  poke();
+  const signedIn = !!(await deps.authLib().getAccessToken().catch(() => null));
+  return {
+    ok: true,
+    output: `Watching the inbox for email from ${from}. When one arrives, the user gets a ${how === 'call' ? 'call' : 'text'} on their phone${repeat ? ' every time' : ' (once)'}. ` +
+      'This runs while Craft is open or in the tray.' + (signedIn ? '' : ' The user is not signed in to Codeply on this PC, so only a desktop notification will show until they sign in.'),
+  };
 }
 
 // ─── Codeply Cloud hand-off ─────────────────────────────────────────────────
@@ -116,7 +167,7 @@ function cloudBots(list, state) {
     return {
       id: b.id, name: b.name, voice: b.voice || '', specialty: b.specialty, instructions: b.instructions,
       tone: (b.tone && b.tone.custom) || '', memory: (b.memory || []).slice(-15).map((m) => m.fact),
-      keywords: rules.keywords || [], senders: rules.senders || [],
+      keywords: rules.keywords || [], senders: [...new Set([...(b.alwaysOn.alerts || []).map((a) => a.from), ...(rules.senders || [])])].slice(0, 10),
       reach: b.alwaysOn.reach, draft: b.alwaysOn.draft, quiet: b.alwaysOn.quiet, tz: localTz(),
     };
   });
@@ -227,4 +278,4 @@ function init(d) {
 /** Settings changed (a bot saved, Gmail connected): check soon instead of in 2 minutes. */
 function poke() { if (watcher) watcher.poke(); }
 
-module.exports = { init, poke };
+module.exports = { init, poke, reachPhone, addAlert };

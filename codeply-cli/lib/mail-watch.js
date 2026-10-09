@@ -165,6 +165,16 @@ function hits(text, list) {
  * ctx: { me (the user's address), knownSender (bool), rules: { keywords, senders } }
  * Returns { score, level: 'low'|'important'|'very', reasons }.
  */
+/** The bot alert this sender matches (an address, or a domain and its subdomains), or null. */
+function matchAlert(bot, fromEmail) {
+  const from = lower(fromEmail);
+  if (!from) return null;
+  return ((bot.alwaysOn && bot.alwaysOn.alerts) || []).find((a) => {
+    const s = lower(a.from).replace(/^@/, '');
+    return s && (from === s || from.endsWith(`@${s}`) || from.endsWith(`.${s}`));
+  }) || null;
+}
+
 function scoreMessage(m, ctx = {}) {
   const W = WEIGHTS;
   let score = 0;
@@ -391,13 +401,19 @@ async function watchOnce(o) {
     const known = await knownSender(api, state, m.fromEmail, now);
     // Every watching bot scores it with its own rules; the best fit handles it, once.
     let best = null;
+    // A sender the user asked to hear about comes first, whatever its score.
     for (const b of bots) {
+      const alert = matchAlert(b, m.fromEmail);
+      if (alert) { best = { b, alert, s: { score: 99, level: 'very', reasons: ['you asked to hear about this sender'] } }; break; }
+    }
+    if (!best) for (const b of bots) {
       const s = scoreMessage(m, { me: state.account, knownSender: known, rules: state.rules[b.id] });
       if (!best || s.score > best.s.score) best = { b, s };
     }
     if (!best || best.s.level === 'low') continue;
     out.important++;
     const ev = await handleImportant({ ...o, state, bot: best.b, m, scored: best.s, now });
+    if (best.alert) ev.alert = best.alert;
     if (ev.draftId) out.drafted++;
     out.events.push(ev);
     state.log.push({ at: now, botId: ev.botId, id: m.id, subject: m.subject.slice(0, 120), from: m.fromName, level: ev.level, drafted: !!ev.draftId });
@@ -482,7 +498,7 @@ function createWatcher({ tick, intervalMs = POLL_MS, maxBackoffMs = MAX_BACKOFF_
 module.exports = {
   GMAIL_BASE, POLL_MS, IMPORTANT_AT, VERY_AT, WEIGHTS, URGENT,
   watchDir, setWatchDir, loadState, saveState, emptyState,
-  watchingBots, inQuietHours, parseMessage, bodyText, scoreMessage,
+  watchingBots, inQuietHours, parseMessage, bodyText, scoreMessage, matchAlert,
   rulesHash, localRules, ensureRules, gmailApi, composePrompt, gmailLinks, reSubject,
   watchOnce, eventLine, createWatcher,
 };
