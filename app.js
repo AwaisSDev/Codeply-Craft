@@ -1022,7 +1022,38 @@ function closeTasksModal() {
 }
 
 $('tasksBtn').addEventListener('click', openTasksModal);
-$('crewBtn').addEventListener('click', () => window.craft.openCrew());
+// ─── Crew tab ───────────────────────────────────────────────────────────────
+// Crew opens inside this window, over the main area, instead of in a window of
+// its own. The sidebar button then reads "Craft" and switches back.
+let crewMode = false;
+function crewArea() {
+  const r = document.querySelector('.main').getBoundingClientRect();
+  return { x: r.left + 1, y: r.top + 1, width: r.width - 1, height: r.height - 1 };
+}
+function paintCrewBtn() {
+  const b = $('crewBtn');
+  b.classList.toggle('crew-on', crewMode);
+  b.title = crewMode ? 'Back to Craft' : 'Open Codeply Crew: your bots, chats and calls';
+  b.innerHTML = crewMode
+    ? '<img class="sb-item-logo" src="logo.png" alt="">Craft'
+    : '<img class="sb-item-logo" src="crew/assets/logo/codeply-icon-small-48.png" alt="">Crew';
+}
+function setCrewMode(on) {
+  if (!api || !api.crewEmbed || crewMode === on) return;
+  crewMode = on;
+  document.body.classList.toggle('crew-mode', on);
+  paintCrewBtn();
+  if (on) api.crewEmbed(crewArea()); else api.crewUnembed();
+}
+window.CraftCrew = { show: () => setCrewMode(true), hide: () => setCrewMode(false), isOpen: () => crewMode };
+$('crewBtn').addEventListener('click', () => setCrewMode(!crewMode));
+// Anything else in the sidebar (a chat, a project, New chat, the account menu) goes back to Craft.
+$('sidebar').addEventListener('click', (e) => {
+  if (crewMode && e.target.closest('button') && !e.target.closest('#crewBtn, #sidebarToggle')) setCrewMode(false);
+}, true);
+if (api && api.onCrewShow) api.onCrewShow(() => setCrewMode(true));
+new ResizeObserver(() => { if (crewMode) api.crewBounds(crewArea()); }).observe(document.querySelector('.main'));
+window.addEventListener('resize', () => { if (crewMode) api.crewBounds(crewArea()); });
 $('tasksCloseBtn').addEventListener('click', closeTasksModal);
 $('tasksBackdrop').addEventListener('click', (e) => { if (e.target === $('tasksBackdrop')) closeTasksModal(); });
 

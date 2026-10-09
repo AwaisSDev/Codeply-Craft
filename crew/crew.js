@@ -2,6 +2,8 @@
 // the bot editor and sign-in. Calls live in call.js (window.CrewCall).
 (() => {
   const api = window.crew;
+  // Inside Craft's window (the Crew tab), Craft's own title bar and window buttons are used.
+  if (new URLSearchParams(location.search).get('embedded')) document.body.classList.add('embedded');
   const A = window.CraftAvatar;
   const { md, esc } = window.CrewMarkdown;
   const $ = (sel, root = document) => root.querySelector(sel);

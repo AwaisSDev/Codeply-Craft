@@ -871,13 +871,31 @@ function publicResearch() {
 // "crew:"-prefixed handlers the first time it is loaded.
 let crewMod = null;
 const crew = () => {
-  if (!crewMod) { crewMod = require('./crew/crew-main'); crewMod.setOnChange(() => botsWatch.poke()); }
+  if (!crewMod) {
+    crewMod = require('./crew/crew-main');
+    crewMod.setOnChange(() => botsWatch.poke());
+    // A bot notification was clicked: show Craft with its Crew tab open.
+    crewMod.onShowRequest(() => {
+      if (!win || win.isDestroyed()) return;
+      if (win.isMinimized()) win.restore();
+      win.show(); win.focus();
+      win.webContents.send('crew:show');
+    });
+  }
   return crewMod;
 };
 ipcMain.handle('crew:open', () => {
   crew().open(CLI_DIR);
   return { ok: true };
 });
+// The Crew tab: Crew's page laid over Craft's main area in this same window.
+ipcMain.handle('crew:embed', (e, bounds) => {
+  if (!win || win.isDestroyed()) return { ok: false };
+  crew().embed(CLI_DIR, win, bounds);
+  return { ok: true };
+});
+ipcMain.on('crew:bounds', (e, bounds) => { if (crewMod) crewMod.setBounds(bounds); });
+ipcMain.handle('crew:unembed', () => { if (crewMod) crewMod.unembed(); return { ok: true }; });
 
 ipcMain.handle('research:get', async () => {
   if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };

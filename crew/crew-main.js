@@ -10,7 +10,7 @@
 // agent as that bot, with its prompt, approval boundary and teammates. A call
 // is a live voice conversation (voice.js): local speech-to-text, the model,
 // and a natural voice back, all free.
-const { app, BrowserWindow, ipcMain: rawIpc, shell, safeStorage } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain: rawIpc, shell, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -27,6 +27,8 @@ const CREW_DATA = path.join(app.getPath('appData'), 'Codeply Crew');
 const voice = require('./voice');
 
 let win = null;
+let view = null;      // Crew inside Craft's window (the Crew tab), instead of its own window
+let viewHost = null;  // the Craft window it is attached to, while shown
 let auth = null; let config = null; let ai = null; let bots = null; let history = null; let agentMod = null;
 
 async function engine() {
@@ -115,7 +117,8 @@ function createWindow() {
   win.webContents.session.setPermissionRequestHandler((wc, permission, cb) => cb(permission === 'media' || permission === 'clipboard-sanitized-write' || permission === 'notifications'));
 }
 
-const send = (channel, payload) => { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); };
+const page = () => (view && !view.webContents.isDestroyed() ? view.webContents : win && !win.isDestroyed() ? win.webContents : null);
+const send = (channel, payload) => { const wc = page(); if (wc) wc.send(channel, payload); };
 
 ipcMain.on('win:minimize', () => win && win.minimize());
 ipcMain.on('win:maximize', () => win && (win.isMaximized() ? win.unmaximize() : win.maximize()));
@@ -737,10 +740,37 @@ function addMail(engineDir, botId, ev) {
 
 /** A notification was clicked: open Crew on that bot's thread. */
 function showBot(engineDir, botId) {
-  const ready = win && !win.isDestroyed();
+  const ready = !!page();
   if (!ready) pendingBot = botId;
-  open(engineDir);
+  if (onShowRequest) onShowRequest(); else open(engineDir);
   if (ready) send('crew:event', { botId, type: 'open' });
+}
+
+// ─── The Crew tab inside Craft's window ─────────────────────────────────────
+// Same page as the Crew window (index.html?embedded=1, which hides its own
+// title bar), laid over Craft's main area. Kept alive while hidden so chats,
+// calls and scroll positions survive switching back and forth.
+let onShowRequest = null;
+function embed(engineDir, host, bounds) {
+  init(engineDir);
+  if (!view || view.webContents.isDestroyed()) {
+    view = new BrowserView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false } });
+    view.setBackgroundColor('#0b0b0c');
+    view.webContents.loadFile(path.join(__dirname, 'index.html'), { query: { embedded: '1' } });
+    view.webContents.on('console-message', (e, level, message, line, src) => { if (level >= 2) console.log(`[crew] ${message} (${src}:${line})`); });
+    view.webContents.session.setPermissionRequestHandler((wc, permission, cb) => cb(permission === 'media' || permission === 'clipboard-sanitized-write' || permission === 'notifications'));
+    setTimeout(() => { voice.prepare(store.settings.voiceEngine).catch((err) => console.warn('[voice] warm-up:', err.message)); }, 4000);
+  }
+  if (viewHost !== host) { if (viewHost && !viewHost.isDestroyed()) viewHost.removeBrowserView(view); host.addBrowserView(view); viewHost = host; }
+  setBounds(bounds);
+}
+function setBounds(b) {
+  if (!view || !viewHost || !b) return;
+  view.setBounds({ x: Math.round(b.x), y: Math.round(b.y), width: Math.max(1, Math.round(b.width)), height: Math.max(1, Math.round(b.height)) });
+}
+function unembed() {
+  if (view && viewHost && !viewHost.isDestroyed()) viewHost.removeBrowserView(view);
+  viewHost = null;
 }
 
 // ─── Lifecycle (called by Craft's main.js) ────────────────────────────────
@@ -769,4 +799,7 @@ function open(engineDir) {
   setTimeout(() => { voice.prepare(store.settings.voiceEngine).catch((err) => console.warn('[voice] warm-up:', err.message)); }, 4000);
 }
 
-module.exports = { init, open, isOpen: () => !!(win && !win.isDestroyed()), addMail, showBot, setOnChange: (fn) => { onChange = fn; } };
+module.exports = {
+  init, open, isOpen: () => !!(win && !win.isDestroyed()), addMail, showBot, setOnChange: (fn) => { onChange = fn; },
+  embed, setBounds, unembed, onShowRequest: (fn) => { onShowRequest = fn; },
+};

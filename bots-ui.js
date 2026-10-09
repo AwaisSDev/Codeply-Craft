@@ -18,7 +18,9 @@
   const av = (avatar, size, opts) => A.renderAvatar(avatar, size, opts);
   const ROLE = { orchestrator: 'Orchestrator', specialist: 'Specialist' };
   const ICON_X = '<svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
-  const CRAFT_AVATAR = { shape: 'burst9', eyes: 'pills', color: '#8e8e93' };
+  const CRAFT_AVATAR = { shape: 'burst9', eyes: 'pills', color: '#8e8e93' }; // stand-in for an unknown bot
+  // Craft itself answers as the Codeply knot, the same logo as the app.
+  const craftFace = (size) => `<img class="bot-craft-face" src="logo.png" alt="" width="${size}" height="${size}">`;
 
   async function load() {
     try {
@@ -34,19 +36,6 @@
     selected = id || '';
     try { localStorage.setItem(KEY, selected); } catch {}
     paintChips();
-  }
-
-  // ─── Sidebar entry ───────────────────────────────────────────────────────
-  function addSidebarItem() {
-    const nav = document.querySelector('.sb-nav');
-    if (!nav || document.getElementById('botsBtn')) return;
-    const b = document.createElement('button');
-    b.className = 'sb-item';
-    b.id = 'botsBtn';
-    b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M7 7.5C9 4.5 15 4.3 17.2 7.4c1.6 2.3.8 4.3 1.2 6.6.5 3.4-2 6-6.3 6-4.4 0-6.9-2.2-6.9-5.6 0-2.3 0-4.9 1.8-6.9Z"/><path d="M10 11.3v1.6M14.2 11.3v1.6"/></svg>Bots';
-    b.addEventListener('click', () => openModal());
-    const tasks = document.getElementById('tasksBtn');
-    if (tasks && tasks.nextSibling) nav.insertBefore(b, tasks.nextSibling); else nav.appendChild(b);
   }
 
   // ─── Composer chip ───────────────────────────────────────────────────────
@@ -73,7 +62,7 @@
       b.classList.toggle('on', !!bot);
       b.innerHTML = bot
         ? `${av(bot.avatar, 20, { still: true })}<span>${esc(bot.name)}</span>`
-        : `<svg class="bot-chip-icon" viewBox="0 0 24 24"><path d="M7 7.5C9 4.5 15 4.3 17.2 7.4c1.6 2.3.8 4.3 1.2 6.6.5 3.4-2 6-6.3 6-4.4 0-6.9-2.2-6.9-5.6 0-2.3 0-4.9 1.8-6.9Z"/><path d="M10 11.3v1.6M14.2 11.3v1.6"/></svg><span>Craft</span>`;
+        : `${craftFace(18)}<span>Craft</span>`;
     });
     document.querySelectorAll('.composer-input').forEach((t) => {
       if (!t.dataset.basePlaceholder) t.dataset.basePlaceholder = t.placeholder;
@@ -92,7 +81,7 @@
     menu.className = 'menu bot-menu';
     const item = (id, avatarHtml, name, sub) => `<button class="bot-menu-item${id === selected ? ' on' : ''}" data-id="${esc(id)}">${avatarHtml}<span class="bot-menu-text"><b>${esc(name)}</b><span>${esc(sub)}</span></span>${id === selected ? '<svg class="bot-menu-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>' : ''}</button>`;
     menu.innerHTML = `<div class="bot-menu-head">Who answers</div>` +
-      item('', av(CRAFT_AVATAR, 26, { still: true }), 'Craft', 'The default agent') +
+      item('', craftFace(26), 'Craft', 'The default agent') +
       cat.bots.map((b) => item(b.id, av(b.avatar, 26, { still: true }), b.name, b.specialty || ROLE[b.role])).join('') +
       `<div class="bot-menu-sep"></div><button class="bot-menu-manage" data-act="manage">${cat.bots.length ? 'Manage bots' : 'Create a bot'}</button>`;
     document.body.appendChild(menu);
@@ -106,7 +95,7 @@
       const b = byId(el.dataset.id);
       showToast(b ? `${b.name} answers your next messages.` : 'Craft answers your next messages.');
     }));
-    menu.querySelector('[data-act="manage"]').addEventListener('click', () => { closeMenu(); openModal(); });
+    menu.querySelector('[data-act="manage"]').addEventListener('click', () => { closeMenu(); if (window.CraftCrew) window.CraftCrew.show(); else openModal(); });
   }
 
   // ─── Modal ───────────────────────────────────────────────────────────────
@@ -559,10 +548,9 @@
 
   window.CraftBots = { selectedId: () => selected, delegationRow, renderBadge, open: openModal, refresh: load, setSelected };
 
-  addSidebarItem();
   addChips();
   load();
   // Composers get rebuilt in places; keep the chip there cheaply.
-  setInterval(() => { addSidebarItem(); addChips(); }, 1500);
+  setInterval(addChips, 1500);
   window.addEventListener('focus', load);
 })();

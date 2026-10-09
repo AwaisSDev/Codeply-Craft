@@ -441,3 +441,6 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .mailcard-sum { opacity: .85; }
 .mailcard-reply div { white-space: pre-wrap; margin-top: 6px; opacity: .85; }
 .mailcard-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Inside Craft's window: no title bar of its own. */
+body.embedded .titlebar { display: none; }

@@ -167,3 +167,4 @@
 .ao-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ao-row select { flex: 1; min-width: 180px; }
 .ao-time { width: 110px; }
+.bot-craft-face { flex: none; border-radius: 5px; display: block; }
