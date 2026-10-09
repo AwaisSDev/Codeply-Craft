@@ -489,3 +489,13 @@ body.embedded .side .brand { display: none; }
 /* Same spot and type as Craft's switcher, so switching does not jump. */
 body.embedded .app-switch { margin-top: -8px; }
 body.embedded .app-switch-btn { font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; letter-spacing: normal; }
+
+.ap-toggle { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--hover); cursor: pointer; }
+.ap-toggle-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.ap-toggle-text b { font-size: 12.5px; font-weight: 600; }
+.ap-toggle-text span { font-size: 11.5px; color: var(--text-dim); line-height: 1.35; }
+.ap-toggle .switch { appearance: none; -webkit-appearance: none; flex: none; position: relative; width: 34px; height: 20px; border-radius: 999px; background: var(--border-strong, #3a3a3e); cursor: pointer; transition: background .18s ease; margin: 0; }
+.ap-toggle .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .18s ease; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.ap-toggle .switch:checked { background: #2f6bff; }
+.ap-toggle .switch:checked::after { transform: translateX(14px); }
+.ap-toggle .switch:disabled { opacity: .5; cursor: default; }

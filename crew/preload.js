@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('crew', {
   init: () => ipcRenderer.invoke('crew:app:init'),
   toCraft: () => ipcRenderer.send('crew:toCraft'),
   connections: () => ipcRenderer.invoke('crew:connections'),
+  gmailPhone: () => ipcRenderer.invoke('crew:gmailPhone:get'),
+  setGmailPhone: (on) => ipcRenderer.invoke('crew:gmailPhone:set', on),
   openConnect: () => ipcRenderer.send('crew:openConnect'),
   signIn: (email, password) => ipcRenderer.invoke('crew:auth:signIn', { email, password }),
   signOut: () => ipcRenderer.invoke('crew:auth:signOut'),

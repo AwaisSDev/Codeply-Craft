@@ -280,4 +280,25 @@ function init(d) {
 /** Settings changed (a bot saved, Gmail connected): check soon instead of in 2 minutes. */
 function poke() { if (watcher) watcher.poke(); }
 
-module.exports = { init, poke, reachPhone, addAlert };
+// ─── Gmail on phone calls (Codeply's server reads it while this PC is off) ──
+
+async function gmailPhoneStatus() {
+  try { const r = await callFunction('mail-watch', { action: 'linkStatus' }); return { ok: true, linked: !!r.linked }; }
+  catch (e) { return { ok: false, linked: false, error: e.signedOut ? 'Sign in to Codeply first.' : e.message }; }
+}
+
+/** on: store the Gmail sign-in on Codeply's server, sealed; off: remove it there. */
+async function gmailPhoneSet(on) {
+  try {
+    if (!on) { await callFunction('mail-watch', { action: 'unlink' }); return { ok: true, linked: false }; }
+    const g = deps.configLib().getIntegration('gmail');
+    if (!g.accessToken) return { ok: false, linked: false, error: 'Connect Gmail in Connect Apps first.' };
+    if (!g.refreshToken) return { ok: false, linked: false, error: 'Reconnect Gmail in Connect Apps (it needs a fresh sign-in for this).' };
+    await callFunction('mail-watch', { action: 'link', email: g.email || '', gmail: { refreshToken: g.refreshToken, clientId: g.clientId, clientSecret: g.clientSecret } });
+    return { ok: true, linked: true };
+  } catch (e) {
+    return { ok: false, linked: !on, error: e.signedOut ? 'Sign in to Codeply first.' : e.message };
+  }
+}
+
+module.exports = { init, poke, reachPhone, addAlert, gmailPhoneStatus, gmailPhoneSet };

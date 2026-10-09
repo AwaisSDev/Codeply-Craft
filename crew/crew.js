@@ -189,6 +189,9 @@
       <div class="ap-section">
         <div class="ap-label"><span>Connected apps</span><span class="ap-count">${on} of ${conns.length}</span></div>
         <div class="ap-apps">${tiles}</div>
+        ${conns.some((c) => c.id === 'gmail' && c.connected) && api.gmailPhone ? `<label class="ap-toggle" title="Keeps your Gmail sign-in on Codeply's server, encrypted, so it works with this PC off. Read only: sending still asks you.">
+          <span class="ap-toggle-text"><b>Gmail on calls</b><span>Bots read your inbox on phone calls, even with this PC off</span></span>
+          <input type="checkbox" class="switch" data-gmail-phone disabled></label>` : ''}
         ${embedded ? `<button class="ap-manage" data-act="connect">${ICON_LINK}<span>Manage connections</span></button>` : ''}
       </div>
       <div class="ap-list">
@@ -201,6 +204,18 @@
     m.style.left = `${r.left}px`;
     m.style.top = `${Math.max(8, r.top - m.offsetHeight - 6)}px`;
     const act = (k, fn) => { const b = m.querySelector(`[data-act="${k}"]`); if (b) b.addEventListener('click', () => { closeMenu(); fn(); }); };
+    const gp = m.querySelector('[data-gmail-phone]');
+    if (gp) {
+      api.gmailPhone().then((r) => { gp.checked = !!(r && r.linked); gp.disabled = false; });
+      gp.addEventListener('change', async () => {
+        gp.disabled = true;
+        const r = await api.setGmailPhone(gp.checked);
+        gp.checked = !!(r && r.linked);
+        gp.disabled = false;
+        if (r && r.ok) toast(r.linked ? 'Your bots can read Gmail on calls now, even with this PC off.' : 'Gmail on calls is off. Your sign-in was removed from the server.');
+        else toast((r && r.error) || 'That did not work.');
+      });
+    }
     act('connect', () => api.openConnect());
     act('folder', () => api.openFolder(state.workspace));
     act('out', async () => { await api.signOut(); state.user = null; renderAccount(); toast('Signed out.'); });
