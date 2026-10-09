@@ -103,12 +103,13 @@ self.addEventListener('notificationclick', (e) => {
     e.waitUntil(self.clients.openWindow(mailUrl));
     return;
   }
-  const url = d.reminderId ? `/?call=${encodeURIComponent(d.reminderId)}` : '/';
+  const answer = e.action === 'answer' && d.kind === 'call';
+  const url = d.reminderId ? `/?call=${encodeURIComponent(d.reminderId)}${answer ? '&answer=1' : ''}` : '/';
   e.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const w of wins) {
       if (!('focus' in w)) continue;
-      try { w.postMessage({ type: 'codeply-reminder-open', id: d.reminderId, data: d }); } catch {}
+      try { w.postMessage({ type: 'codeply-reminder-open', id: d.reminderId, data: d, answer }); } catch {}
       try { return await w.focus(); } catch {}
     }
     if (self.clients.openWindow) return self.clients.openWindow(url);

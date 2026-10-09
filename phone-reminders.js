@@ -318,7 +318,7 @@
     } catch {}
   }
   /** Show the incoming call for a reminder (from the URL, the service worker, or a push while open). */
-  async function openReminder(id, data) {
+  async function openReminder(id, data, answer) {
     const C = window.CraftCalls;
     if (!id || !C || opening === id || (C.active && C.active())) return;
     opening = id;
@@ -330,6 +330,7 @@
     const work = r.kind === 'task' ? String((r.payload && r.payload.task) || r.text) : null;
     closeNotification(id);
     C.incoming(bot, {
+      autoAnswer: !!answer,
       reminder: r,
       preview: r.text,
       opening: (env) => openingFor(r, bot, env),
@@ -345,6 +346,7 @@
   async function fromUrl() {
     const params = new URLSearchParams(location.search);
     const id = params.get('call');
+    const answer = params.get('answer') === '1';
     if (!id) return;
     try { history.replaceState(null, '', location.pathname); } catch {}
     // Wait for the sign-in to come back (phone.js restores it on load).
@@ -352,12 +354,12 @@
       try { await P.accessToken(); break; } catch { if (i === 59) return; await sleep(250); }
     }
     while (!window.CraftCalls) await sleep(50);
-    openReminder(id);
+    openReminder(id, null, answer);
   }
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', (e) => {
       const m = e.data || {};
-      if (m.type === 'codeply-reminder-open') openReminder(m.id, m.data);
+      if (m.type === 'codeply-reminder-open') openReminder(m.id, m.data, m.answer);
       else if (m.type === 'codeply-push' && m.data && m.data.reminderId) {
         if (document.visibilityState === 'visible') openReminder(m.data.reminderId, m.data);
         if (mounted) refresh();

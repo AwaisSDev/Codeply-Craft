@@ -617,7 +617,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   /** The bot's chosen Deepgram voice, or a stable default for it. */
   function deepgramVoice(bot) {
     const v = String((bot && bot.voice) || '').trim();
-    return /^aura-/i.test(v) ? v : DG_VOICES[hash((bot && bot.id) || '') % DG_VOICES.length];
+    return /^(aura|flux)-/i.test(v) ? v : DG_VOICES[hash((bot && bot.id) || '') % DG_VOICES.length];
   }
   function decodeAudio(ctx, bytes) {
     return new Promise((resolve, reject) => {
@@ -1877,13 +1877,19 @@ You are on a live voice call; everything you write is spoken out loud right away
         <div class="cb-wrap"><button type="button" class="call-accept" data-in="answer" aria-label="Answer">${ICON.phone}</button><span>Answer</span></div>
       </div>`;
     // Ring only if this page's audio is already unlocked (it was used since the app opened).
-    const stopRing = actx && actx.state === 'running' ? ring(actx) : () => {};
+    let stopRing = () => {};
+    const a0 = audioCtx();
+    if (a0) Promise.race([a0.state === 'running' ? null : a0.resume().catch(() => {}), sleep(400)]).then(() => {
+      if (ringing && ringing.bot === bot && a0.state === 'running') stopRing = ring(a0);
+      // Answer was pressed on the notification: go straight into the call when sound can play.
+      if (opts.autoAnswer && ringing && ringing.bot === bot && a0.state === 'running') r.querySelector('[data-in="answer"]').click();
+    });
     try { if (navigator.vibrate) navigator.vibrate([500, 250, 500, 250, 500]); } catch {}
     const close = () => {
       if (!ringing) return;
       clearTimeout(ringing.timer);
       ringing = null;
-      stopRing();
+      stopRing(); stopRing = () => {};
       try { if (navigator.vibrate) navigator.vibrate(0); } catch {}
       if (!c) { r.classList.add('hidden'); r.innerHTML = ''; }
     };

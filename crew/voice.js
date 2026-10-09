@@ -55,12 +55,14 @@ const DEEPGRAM_VOICES = [
   aura('orion', 'calm, approachable'), aura('orpheus', 'clear, trustworthy'), aura('pluto', 'calm, baritone'),
   aura('saturn', 'confident, baritone'), aura('zeus', 'deep, smooth'), aura('draco', 'British, baritone'),
   aura('hyperion', 'Australian, warm'),
+  // Flux TTS (developers.deepgram.com/docs/flux-tts/voices): newer and more natural, on /v2/speak.
+  { id: 'flux-sienna-en', label: 'Sienna (Flux, calm, warm)' },
 ];
 
 /** Which engine a voice id belongs to. */
 function engineOf(id) {
   id = String(id || '');
-  if (id.startsWith('aura-')) return 'deepgram';
+  if (id.startsWith('aura-') || id.startsWith('flux-')) return 'deepgram';
   if (EDGE_VOICES.some((v) => v.id === id)) return 'edge';
   if (KOKORO_VOICES.some((v) => v.id === id)) return 'kokoro';
   return '';
@@ -111,7 +113,7 @@ async function deepgramFetch(url, key, init, ms = 15000) {
 
 /** One sentence as mp3 from an Aura-2 voice. */
 async function deepgramSpeak(text, model, key) {
-  const url = `https://api.deepgram.com/v1/speak?model=${encodeURIComponent(model)}&encoding=mp3`;
+  const url = `https://api.deepgram.com/${String(model).startsWith('flux-') ? 'v2' : 'v1'}/speak?model=${encodeURIComponent(model)}&encoding=mp3`;
   const res = await deepgramFetch(url, key, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
   const buf = Buffer.from(await res.arrayBuffer());
   if (!buf.length) throw new Error('Deepgram sent no audio.');
