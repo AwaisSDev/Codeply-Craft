@@ -1,6 +1,6 @@
-{
+﻿{
   "name": "codeply-craft",
-  "version": "1.1.10",
+  "version": "1.1.11",
   "description": "Codeply Craft - the Codeply AI coding agent as a desktop app",
   "author": "Awais Siddique",
   "license": "MIT",
@@ -42,7 +42,7 @@
   "build": {
     "appId": "app.codeply.craft",
     "productName": "Codeply Craft",
-    "copyright": "Copyright © 2026 Codeply",
+    "copyright": "Copyright Â© 2026 Codeply",
     "extraMetadata": {
       "author": "Codeply"
     },
