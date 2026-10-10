@@ -278,11 +278,13 @@ function init(d) {
     onError: (e, n) => { if (n <= 3) console.warn(`[always on] poll failed (${n}):`, e.message); },
   });
   watcher.start(15000);
+  // Gmail on calls and phone chat is on by default: link it a little after start.
+  setTimeout(() => { autoLinkGmailPhone().catch(() => {}); }, 20000);
   d.ipcMain.handle('bots:watchStatus', async () => { try { return publicStatus(); } catch (e) { return { error: e.message }; } });
 }
 
 /** Settings changed (a bot saved, Gmail connected): check soon instead of in 2 minutes. */
-function poke() { if (watcher) watcher.poke(); }
+function poke() { if (watcher) watcher.poke(); autoLinkGmailPhone().catch(() => {}); }
 
 // ─── Gmail on phone calls (Codeply's server reads it while this PC is off) ──
 
@@ -291,8 +293,36 @@ async function gmailPhoneStatus() {
   catch (e) { return { ok: false, linked: false, error: e.signedOut ? 'Sign in to Codeply first.' : e.message }; }
 }
 
+/**
+ * On by default: when Gmail is connected here and the person hasn't turned
+ * "Gmail on calls" off, keep it linked on Codeply's server, so calls and phone
+ * chat can read the inbox with this PC off. Links again when Gmail is
+ * reconnected (a new refresh token). Turning it off is remembered
+ * ("gmailPhone": false in ~/.codeply/config.json) and never undone here.
+ */
+let gmailLinkedSig = null;
+async function autoLinkGmailPhone() {
+  if (!deps) return;
+  const config = deps.configLib();
+  if (!config) { setTimeout(() => { autoLinkGmailPhone().catch(() => {}); }, 30000); return; } // engine still loading
+  if (config.getConfig().gmailPhone === false) return;
+  const g = config.getIntegration('gmail');
+  if (!g.accessToken || !g.refreshToken) return;
+  const sig = require('crypto').createHash('sha256').update(g.refreshToken).digest('hex');
+  if (gmailLinkedSig === sig) return;
+  gmailLinkedSig = sig; // one try per sign-in, not one per poke
+  const st = await gmailPhoneStatus();
+  if (!st.ok) { gmailLinkedSig = null; return; } // signed out or offline: try again later
+  if (st.linked && config.getConfig().gmailPhoneSig === sig) return;
+  const r = await gmailPhoneSet(true, { auto: true });
+  if (r.ok) config.saveConfig({ gmailPhoneSig: sig });
+  else gmailLinkedSig = null;
+}
+
 /** on: store the Gmail sign-in on Codeply's server, sealed; off: remove it there. */
-async function gmailPhoneSet(on) {
+async function gmailPhoneSet(on, { auto = false } = {}) {
+  // Remember a person's own choice; the automatic link never overrides an "off".
+  if (!auto) { try { deps.configLib().saveConfig({ gmailPhone: !!on }); } catch {} }
   try {
     if (!on) { await callFunction('mail-watch', { action: 'unlink' }); return { ok: true, linked: false }; }
     const g = deps.configLib().getIntegration('gmail');
