@@ -3,9 +3,12 @@
  * or the CLI), which model, Auto or the user's own key, tokens in and out, and
  * the app version. Never prompts, replies, files or anything typed.
  *
- * Events wait in memory and go out in small batches (about once a minute) to
- * Codeply's track function, only when the user is signed in to Codeply. Off
- * with CODEPLY_TELEMETRY=0, or "telemetry": false in ~/.codeply/config.json.
+ * Events wait in memory and go out in small batches (about once a minute, and
+ * once more before the process exits) to Codeply's track function, only when
+ * the user is signed in to Codeply. A Cloud run inside GitHub Actions has no
+ * sign-in; it sends with the usage key Craft put in the repo's secrets
+ * (CODEPLY_TRACK_KEY). Off with CODEPLY_TELEMETRY=0, or "telemetry": false in
+ * ~/.codeply/config.json.
  *
  * Which app a call belongs to: the host sets a default (Craft's main process
  * says "craft"; the CLI is "cli" by default), and Crew runs its bots inside
@@ -61,11 +64,12 @@ async function flush() {
   const batch = queue.slice(0, 100);
   try {
     const auth = require('./auth.js');
-    const token = await auth.getAccessToken().catch(() => null);
-    if (!token) { queue = []; return; } // signed out: nothing is kept or sent
+    const trackKey = String(process.env.CODEPLY_TRACK_KEY || '').trim();
+    const token = trackKey ? null : await auth.getAccessToken().catch(() => null);
+    if (!token && !trackKey) { queue = []; return; } // signed out: nothing is kept or sent
     const res = await fetch(`${auth.SUPABASE_URL}/functions/v1/track`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, apikey: auth.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      headers: { ...(trackKey ? { 'x-codeply-track-key': trackKey } : { Authorization: `Bearer ${token}` }), apikey: auth.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({ events: batch }),
       signal: AbortSignal.timeout(15_000),
     });
@@ -88,5 +92,11 @@ function tokensOf(data, messages) {
   const reply = data && data.choices && data.choices[0] && data.choices[0].message ? String(data.choices[0].message.content || '') : '';
   return { tokens_in: Math.round(chars(messages || []) / 4), tokens_out: Math.round(reply.length / 4) };
 }
+
+// Send what is waiting before the process ends (short CLI commands and Cloud
+// runs finish long before the minute timer). beforeExit fires again after the
+// send; with the queue empty, flush does nothing and the process exits.
+let exitFlushes = 0;
+process.on('beforeExit', () => { if (queue.length && exitFlushes++ < 3) flush(); });
 
 module.exports = { setDefaults, withProduct, currentProduct, recordAi, recordOpen, flush, tokensOf };

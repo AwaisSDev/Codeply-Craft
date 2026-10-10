@@ -97,6 +97,7 @@ jobs:
         env:
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
           CODEPLY_API_KEY: \${{ secrets.CODEPLY_API_KEY }}
+          CODEPLY_TRACK_KEY: \${{ secrets.CODEPLY_TRACK_KEY }}
           CODEPLY_MODEL_KIND: \${{ vars.CODEPLY_MODEL_KIND }}
           CODEPLY_MODEL: \${{ vars.CODEPLY_MODEL }}
           CODEPLY_BASE_URL: \${{ vars.CODEPLY_BASE_URL }}
@@ -456,6 +457,40 @@ export async function setProjectEnv({ api, repo, envText }) {
 }
 
 /**
+ * Usage counts for the admin dashboard from cloud runs: a run has no Codeply
+ * sign-in, so Craft asks Codeply for a usage key for the signed-in user and puts
+ * it in the repo's encrypted secrets (CODEPLY_TRACK_KEY). Counts only, like the
+ * desktop apps. Never fails a setup or a run: without a sign-in, or with
+ * telemetry off, it does nothing.
+ */
+export async function ensureTrackKey({ api, repo, cwd, home = defaultHome(), fetchImpl = fetch }) {
+  try {
+    const p = getProject(cwd, home) || {};
+    if (p.trackKeyRepo === repo) return false;
+    if (process.env.CODEPLY_TELEMETRY === '0') return false;
+    try { if (require('./config.js').getConfig().telemetry === false) return false; } catch {}
+    const auth = require('./auth.js');
+    const token = await auth.getAccessToken().catch(() => null);
+    if (!token) return false;
+    const r = await fetchImpl(auth.SUPABASE_URL + '/functions/v1/track', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, apikey: auth.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'mint', label: 'cloud ' + repo }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.key) return false;
+    const pk = (await api('GET', '/repos/' + repo + '/actions/secrets/public-key')).json;
+    await api('PUT', '/repos/' + repo + '/actions/secrets/CODEPLY_TRACK_KEY', { encrypted_value: sealSecret(pk.key, j.key), key_id: pk.key_id });
+    updateProject(cwd, home, (q) => ({ ...q, trackKeyRepo: repo }));
+    return true;
+  } catch { return false; }
+}
+
+// Bumped when CLOUD_WORKFLOW changes, so repos set up earlier get the new file once.
+export const WORKFLOW_REV = 2;
+
+/**
  * One-click setup. With `target: 'repo'` (default when the project has a GitHub
  * origin) the cloud works in that repo: new branch per task, merged into the
  * default branch, and the PC pulls. Otherwise a private mirror holds snapshots.
@@ -482,7 +517,8 @@ export async function setupCloud({ cwd, token, model, target, envText, home = de
   }
   await configureModel({ api, repo, model });
   if (envText != null) await setProjectEnv({ api, repo, envText });
-  updateProject(cwd, home, (p) => ({ ...p, modelSig: cfg.sig, modelName: model.name || model.model, enabled: true }));
+  updateProject(cwd, home, (p) => ({ ...p, modelSig: cfg.sig, modelName: model.name || model.model, enabled: true, workflowRev: WORKFLOW_REV }));
+  await ensureTrackKey({ api, repo, cwd, home, fetchImpl });
   return { repo, created, kind, base, url: `${(serverUrl || 'https://github.com').replace(/\/$/, '')}/${repo}`, skipped };
 }
 
@@ -540,6 +576,12 @@ export async function startCloudRun({ cwd, token, prompt, mode = 'Build', sessio
     }
   }
   const base = p.base || 'main';
+  // repos set up before a workflow change get the new file once (mirrors get it with every snapshot)
+  if (p.kind === 'repo' && p.workflowRev !== WORKFLOW_REV) {
+    await installWorkflowInRepo({ api, repo: p.repo, base });
+    updateProject(cwd, home, (q) => ({ ...q, workflowRev: WORKFLOW_REV }));
+  }
+  await ensureTrackKey({ api, repo: p.repo, cwd, home, fetchImpl });
   let baseSha;
   if (p.kind === 'repo') {
     const ref = await api('GET', `/repos/${p.repo}/git/ref/heads/${encodeURIComponent(base)}`, null, { allow: [404] });
