@@ -3352,7 +3352,7 @@ let installWhenReady = false; // "Update now" was clicked while it was still dow
 function installDownloadedUpdate() {
   sendUpdateState({ status: 'installing' });
   isQuitting = true; // let the window really close instead of hiding to the tray
-  setTimeout(() => updater.quitAndInstall(true, true), 1200);
+  setTimeout(() => updater.quitAndInstall(true, true), 1800);
 }
 
 function sendUpdateState(patch) {

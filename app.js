@@ -3570,6 +3570,7 @@ function renderUpdate(u) {
   const gate = $('updateGate');
   const active = ['downloading', 'ready', 'available', 'error'].includes(u.status);
 
+  gate.classList.toggle('installing', u.status === 'installing');
   if (u.status === 'installing') {
     gate.classList.remove('hidden');
     pill.classList.add('hidden');
