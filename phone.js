@@ -76,12 +76,23 @@ function md(src) {
     return mdBlocks(part.replace(/^[^\n]*\n?/, i === 0 ? '$&' : ''));
   }).join('');
 }
+// A markdown table (| a | b | rows), drawn as a real table that scrolls sideways on a narrow screen.
+function mdTable(lines) {
+  const cells = (l) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+  const rows = lines.filter((l) => !/^\s*\|?\s*:?-{2,}/.test(l)).map(cells);
+  if (!rows.length) return '';
+  const [head, ...rest] = rows;
+  return `<div class="md-table"><table><thead><tr>${head.map((c) => `<th>${inlineMd(c)}</th>`).join('')}</tr></thead><tbody>${rest.map((r) => `<tr>${r.map((c) => `<td>${inlineMd(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
 function mdBlocks(text) {
   const out = [];
-  let para = []; let list = null;
+  let para = []; let list = null; let table = null;
   const flushPara = () => { if (para.length) out.push(`<p>${para.map(inlineMd).join('<br>')}</p>`); para = []; };
   const flushList = () => { if (list) out.push(`<${list.type}>${list.items.map((x) => `<li>${inlineMd(x)}</li>`).join('')}</${list.type}>`); list = null; };
+  const flushTable = () => { if (table) out.push(mdTable(table)); table = null; };
   for (const line of text.split('\n')) {
+    if (/^\s*\|.*\|\s*$/.test(line)) { flushPara(); flushList(); (table || (table = [])).push(line); continue; }
+    flushTable();
     const ul = /^\s*[-*+]\s+(.*)$/.exec(line);
     const ol = /^\s*\d+[.)]\s+(.*)$/.exec(line);
     const h = /^\s*(#{1,6})\s+(.*)$/.exec(line);
@@ -98,7 +109,7 @@ function mdBlocks(text) {
     flushList();
     para.push(line);
   }
-  flushPara(); flushList();
+  flushPara(); flushList(); flushTable();
   return out.join('');
 }
 

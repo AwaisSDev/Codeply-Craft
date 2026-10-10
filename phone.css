@@ -260,3 +260,10 @@ a { color: inherit; }
 
 /* Crew logo marks the bots (Calls) entry; the app itself uses the Codeply logo */
 .drawer-crew { width: 18px; height: 18px; border-radius: 5px; flex: none; }
+
+/* Tables in replies: a real table that scrolls sideways on a narrow screen. */
+.md-table { overflow-x: auto; margin: 8px 0; border: 1px solid var(--border, rgba(127,127,127,.25)); border-radius: 12px; }
+.md-table table { border-collapse: collapse; width: 100%; font-size: 13px; line-height: 1.4; }
+.md-table th, .md-table td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border, rgba(127,127,127,.18)); min-width: 90px; }
+.md-table tr:last-child td { border-bottom: 0; }
+.md-table th { font-weight: 600; background: rgba(127,127,127,.08); white-space: nowrap; }
