@@ -487,6 +487,67 @@ export async function ensureTrackKey({ api, repo, cwd, home = defaultHome(), fet
   } catch { return false; }
 }
 
+/**
+ * Connected apps (Gmail, Slack, Vercel, Supabase, GitHub) for cloud runs. A run
+ * happens on GitHub's servers, which don't have the sign-ins saved on this PC,
+ * so Craft keeps an encrypted copy on Codeply's server for the signed-in user
+ * (the connections function) and the runner loads it at start with the usage
+ * key. Sent only when something changed. Off with "cloudConnections": false in
+ * ~/.codeply/config.json. Never fails a setup or a run.
+ */
+export const CONNECTION_APPS = ['gmail', 'slack', 'vercel', 'supabase', 'github'];
+export async function syncCloudConnections({ home = defaultHome(), fetchImpl = fetch } = {}) {
+  try {
+    const config = require('./config.js');
+    if (config.getConfig().cloudConnections === false) return false;
+    const connections = {};
+    for (const name of CONNECTION_APPS) {
+      const c = config.getIntegration(name); // includes the app's OAuth client, which token refresh needs
+      if (c.accessToken) connections[name] = c;
+    }
+    const sig = crypto.createHash('sha256').update(JSON.stringify(connections)).digest('hex');
+    const state = readState(home);
+    if (state.connectionsSig === sig) return false;
+    const auth = require('./auth.js');
+    const token = await auth.getAccessToken().catch(() => null);
+    if (!token) return false;
+    const r = await fetchImpl(auth.SUPABASE_URL + '/functions/v1/connections', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, apikey: auth.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save', connections }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!r.ok) return false;
+    writeState(home, { ...readState(home), connectionsSig: sig });
+    return true;
+  } catch { return false; }
+}
+
+/** In the runner: put the user's connected apps into this machine's config, so the agent's tools can use them. */
+export async function loadCloudConnections({ env = process.env, fetchImpl = fetch, log = () => {} } = {}) {
+  const key = String(env.CODEPLY_TRACK_KEY || '').trim();
+  if (!key) return [];
+  try {
+    const auth = require('./auth.js');
+    const r = await fetchImpl(auth.SUPABASE_URL + '/functions/v1/connections', {
+      method: 'POST',
+      headers: { 'x-codeply-track-key': key, apikey: auth.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'get' }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.connections) return [];
+    const config = require('./config.js');
+    const loaded = [];
+    for (const name of CONNECTION_APPS) {
+      const c = j.connections[name];
+      if (c && c.accessToken) { config.saveIntegration(name, c); loaded.push(name); }
+    }
+    if (loaded.length) log('Connected apps: ' + loaded.join(', '));
+    return loaded;
+  } catch (e) { log('Could not load connected apps: ' + e.message); return []; }
+}
+
 // Bumped when CLOUD_WORKFLOW changes, so repos set up earlier get the new file once.
 export const WORKFLOW_REV = 2;
 
@@ -519,6 +580,7 @@ export async function setupCloud({ cwd, token, model, target, envText, home = de
   if (envText != null) await setProjectEnv({ api, repo, envText });
   updateProject(cwd, home, (p) => ({ ...p, modelSig: cfg.sig, modelName: model.name || model.model, enabled: true, workflowRev: WORKFLOW_REV }));
   await ensureTrackKey({ api, repo, cwd, home, fetchImpl });
+  await syncCloudConnections({ home, fetchImpl });
   return { repo, created, kind, base, url: `${(serverUrl || 'https://github.com').replace(/\/$/, '')}/${repo}`, skipped };
 }
 
@@ -582,6 +644,7 @@ export async function startCloudRun({ cwd, token, prompt, mode = 'Build', sessio
     updateProject(cwd, home, (q) => ({ ...q, workflowRev: WORKFLOW_REV }));
   }
   await ensureTrackKey({ api, repo: p.repo, cwd, home, fetchImpl });
+  await syncCloudConnections({ home, fetchImpl });
   let baseSha;
   if (p.kind === 'repo') {
     const ref = await api('GET', `/repos/${p.repo}/git/ref/heads/${encodeURIComponent(base)}`, null, { allow: [404] });
@@ -986,6 +1049,7 @@ export async function runCloudRunner({ env = process.env, cwd = process.cwd(), t
   const base = env.CRAFT_BASE || env.GITHUB_REF_NAME || 'main';
   const merge = String(env.CRAFT_MERGE || 'true') !== 'false';
   await files.ensure(headSha).catch((e) => log(`Could not create ${SESSIONS_BRANCH}: ${e.message}`));
+  await loadCloudConnections({ env, log });
 
   // The project's environment for running and testing: never committed.
   const envFile = path.join(cwd, '.env');

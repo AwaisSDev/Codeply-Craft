@@ -3615,17 +3615,23 @@ function renderUpdate(u) {
   }
 
   gate.classList.add('hidden');
-  // Optional update: stay out of the way until there's something to act on.
+  // Optional update: shows as soon as a new version is found. "Update now"
+  // installs right away, or the moment the background download finishes.
   const downloading = u.status === 'downloading' && !!u.version;
   const showPill = downloading || u.status === 'ready' || (u.status === 'available' && u.manual);
   pill.classList.toggle('hidden', !showPill);
-  pill.classList.toggle('busy', downloading);
-  if (downloading) {
-    $('updatePillText').textContent = `Downloading update ${u.version} · ${u.percent || 0}%`;
-    pill.title = 'Downloading in the background. Keep working.';
+  const waiting = !!(downloading && u.queued); // clicked "Update now" while it downloads
+  pill.classList.toggle('busy', waiting);
+  $('updatePillCta').classList.toggle('hidden', waiting);
+  if (waiting) {
+    $('updatePillText').textContent = `Updating · ${u.percent || 0}%`;
+    pill.title = 'Downloading the update. Craft restarts on the new version when it is done.';
   } else if (showPill) {
-    $('updatePillText').textContent = u.manual ? `Update ${u.version} available` : `Update ${u.version} ready · restart`;
-    pill.title = u.manual ? 'Download the new version' : 'Installs automatically next time you quit, or click to restart now';
+    $('updatePillText').textContent = `Version ${u.version} available`;
+    $('updatePillCta').textContent = u.manual ? 'Download' : 'Update now';
+    pill.title = u.manual ? 'Download the new version'
+      : downloading ? `Downloading in the background (${u.percent || 0}%). Click to update as soon as it is ready.`
+      : 'Restart now to update';
   }
 }
 

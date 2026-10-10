@@ -2288,19 +2288,23 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
 a.remote-url { text-decoration: none; cursor: pointer; }
 
 /* ============ Auto-update ============ */
+/* Light blue with blue text: "Version X available · Update now". */
 .update-pill {
-  display: flex; align-items: center; gap: 8px; width: 100%;
-  margin-bottom: 8px; padding: 8px 12px; border-radius: 10px;
-  background: color-mix(in srgb, var(--green) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--green) 30%, transparent);
-  color: var(--green); font-size: 12.5px; font-weight: 600; text-align: left;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%;
+  margin-bottom: 8px; padding: 9px 10px 10px 12px; border-radius: 12px;
+  background: rgba(75, 149, 255, .12);
+  border: 1px solid rgba(47, 107, 255, .35);
+  color: #2f6bff; font-size: 12.5px; font-weight: 500; text-align: left;
+  transition: background .15s ease, border-color .15s ease;
 }
-.update-pill:hover { background: color-mix(in srgb, var(--green) 18%, transparent); }
-.update-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 25%, transparent); flex-shrink: 0; }
-.update-pill.busy {
-  cursor: default; color: var(--text-2, inherit); font-weight: 500;
-  background: transparent; border-color: var(--border, rgba(255,255,255,.1));
-}
+.update-pill:hover { background: rgba(75, 149, 255, .18); border-color: rgba(47, 107, 255, .5); }
+.update-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: #2f6bff; box-shadow: 0 0 0 3px rgba(47, 107, 255, .2); flex-shrink: 0; }
+#updatePillText { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.update-pill-cta { flex: 1 0 100%; margin-top: 2px; text-align: center; font-weight: 600; padding: 6px 10px; border-radius: 8px; background: #2f6bff; color: #fff; font-size: 12.5px; }
+.update-pill:hover .update-pill-cta { background: #245de6; }
+.update-pill.busy { cursor: default; }
+:root:not([data-theme="light"]) .update-pill { color: #7fb0ff; }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .update-pill { color: #2f6bff; } }
 .update-pill.busy .update-pill-dot { animation: updPulse 1.4s ease-in-out infinite; }
 @keyframes updPulse { 50% { opacity: .35; } }
 .update-gate {

@@ -3343,9 +3343,17 @@ ipcMain.on('terminal:kill', () => {
 // app, so there the update is announced with a button that downloads the new
 // .dmg instead.
 const RELEASES_URL = 'https://github.com/AwaisSDev/Codeply-Craft/releases/latest/download';
-const UPDATE_CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
+const UPDATE_CHECK_EVERY_MS = 60 * 60 * 1000;
 let updater = null;
 let updateState = { status: 'idle', current: app.getVersion() };
+let installWhenReady = false; // "Update now" was clicked while it was still downloading
+
+/** Close, install silently and reopen on the new version. */
+function installDownloadedUpdate() {
+  sendUpdateState({ status: 'installing' });
+  isQuitting = true; // let the window really close instead of hiding to the tray
+  setTimeout(() => updater.quitAndInstall(true, true), 1200);
+}
 
 function sendUpdateState(patch) {
   updateState = { ...updateState, ...patch };
@@ -3413,7 +3421,10 @@ function setupAutoUpdates() {
   });
   updater.on('update-not-available', () => sendUpdateState({ status: 'idle' }));
   updater.on('download-progress', (p) => sendUpdateState({ status: 'downloading', percent: Math.round(p.percent || 0) }));
-  updater.on('update-downloaded', (info) => sendUpdateState({ status: 'ready', version: info.version, percent: 100 }));
+  updater.on('update-downloaded', (info) => {
+    sendUpdateState({ status: 'ready', version: info.version, percent: 100 });
+    if (installWhenReady) installDownloadedUpdate();
+  });
   updater.on('error', (err) => {
     console.warn('[update] ', err && err.message);
     if (process.env.CRAFT_TEST_UPDATES_LOG) { try { fs.appendFileSync(process.env.CRAFT_TEST_UPDATES_LOG, `ERROR ${err && err.message}
@@ -3435,12 +3446,13 @@ ipcMain.handle('update:install', () => {
     if (updateState.downloadUrl) shell.openExternal(updateState.downloadUrl);
     return { ok: true, manual: true };
   }
-  if (!updater || updateState.status !== 'ready') return { ok: false };
+  if (!updater) return { ok: false };
+  // Still downloading: install the moment it lands.
+  if (updateState.status === 'downloading') { installWhenReady = true; sendUpdateState({ queued: true }); return { ok: true, queued: true }; }
+  if (updateState.status !== 'ready') return { ok: false };
   // Show "Installing update..." in the app, then close, install silently and
   // relaunch on the new version. No installer window.
-  sendUpdateState({ status: 'installing' });
-  isQuitting = true; // let the window really close instead of hiding to the tray
-  setTimeout(() => updater.quitAndInstall(true, true), 1200);
+  installDownloadedUpdate();
   return { ok: true };
 });
 
