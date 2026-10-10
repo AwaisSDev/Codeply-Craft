@@ -211,7 +211,11 @@ function createChat(kind, extra = {}) {
   saveChats();
   return chat;
 }
-const titleFrom = (text) => { const t = String(text || '').replace(/\s+/g, ' ').trim(); return t.length > 46 ? `${t.slice(0, 45)}...` : t; };
+const titleFrom = (text) => {
+  const sh = window.CodeplyAttach ? window.CodeplyAttach.split(text) : { text, files: [] };
+  const t = String(sh.text || (sh.files[0] ? sh.files[0].name : '') || '').replace(/\s+/g, ' ').trim();
+  return t.length > 46 ? `${t.slice(0, 45)}...` : t;
+};
 
 // ─── Projects and cloud environments ────────────────────────────────────────
 const normCwd = (p) => String(p || '').replace(/\\/g, '/').replace(/\/$/, '').toLowerCase();
@@ -418,6 +422,16 @@ function el(tag, cls, html) { const n = document.createElement(tag); if (cls) n.
 
 function addMsg(kind, text) {
   streamEl = null;
+  if (kind === 'user' && window.CodeplyAttach) {
+    const sh = window.CodeplyAttach.split(text);
+    if (sh.files.length) {
+      const row = el('div', 'msg-files');
+      row.innerHTML = sh.files.map((f) => window.CodeplyAttach.chipHtml(f)).join('');
+      append(row);
+      if (!sh.text) return row;
+    }
+    text = sh.text;
+  }
   const n = el('div', `msg ${kind}`);
   if (kind === 'user' || kind === 'error' || kind === 'note') n.textContent = text || '';
   else n.innerHTML = md(text);
@@ -1198,8 +1212,10 @@ async function onSubmit(e) {
   const c0 = state.current && chatMeta(state.current);
   if (c0 && state.busy.has(c0.id)) return stopCurrent(c0);
   const input = $('input');
-  const text = input.value.trim();
+  if (attFiles.some((f) => f.reading)) { attNote('Still reading a file. One moment.'); return; }
+  const text = window.CodeplyAttach ? window.CodeplyAttach.compose(input.value.trim(), attFiles) : input.value.trim();
   if (!text) return;
+  attFiles = []; renderAtt();
   if (state.ui.mode === 'chat') {
     const chat = c0 && c0.kind === 'chat' ? c0 : createChat('chat');
     openChat(chat.id, { keepMode: true });
@@ -1223,6 +1239,48 @@ async function onSubmit(e) {
   $('offlineSheet').classList.remove('hidden');
 }
 function clearInput() { const i = $('input'); i.value = ''; i.style.height = 'auto'; }
+
+// ─── Attached files (attachments.js): PDFs, text and code ───────────────────
+let attFiles = []; // read files, or { name, reading: true } while one is read
+let attNotes = []; // short messages (a file that couldn't be read), shown for a few seconds
+function attNote(msg) {
+  const n = { msg };
+  attNotes.push(n); renderAtt();
+  setTimeout(() => { attNotes = attNotes.filter((x) => x !== n); renderAtt(); }, 5000);
+}
+function renderAtt() {
+  const row = $('attRow');
+  row.innerHTML = '';
+  row.classList.toggle('hidden', !attFiles.length && !attNotes.length);
+  for (const n of attNotes) { const d = el('div', 'att-note'); d.textContent = n.msg; row.appendChild(d); }
+  attFiles.forEach((f, i) => {
+    const box = document.createElement('div');
+    box.innerHTML = window.CodeplyAttach.chipHtml(f.reading ? { name: f.name, type: f.isPdf ? 'pdf' : 'text' } : f, { removable: !f.reading });
+    const chip = box.firstElementChild;
+    if (f.reading) { chip.classList.add('reading'); chip.querySelector('.att-meta').textContent = 'Reading…'; }
+    const x = chip.querySelector('.att-x');
+    if (x) x.addEventListener('click', () => { attFiles.splice(i, 1); renderAtt(); });
+    row.appendChild(chip);
+  });
+}
+async function addAttFiles(list) {
+  for (const file of list) {
+    const kind = window.CodeplyAttach.kindOf(file);
+    if (kind === 'image') { attNote('Images work in Craft on your computer. Here: PDFs, text and code files.'); continue; }
+    const slot = { name: file.name, reading: true, isPdf: kind === 'pdf' };
+    attFiles.push(slot); renderAtt();
+    const got = await window.CodeplyAttach.read(file, { pdfBase: 'pdfjs/' });
+    const at = attFiles.indexOf(slot);
+    if (got.error) { if (at >= 0) attFiles.splice(at, 1); renderAtt(); attNote(got.error); }
+    else { if (at >= 0) attFiles[at] = got; renderAtt(); }
+  }
+}
+if (window.CodeplyAttach) {
+  const inp = $('attInput');
+  inp.accept = window.CodeplyAttach.ACCEPT;
+  inp.addEventListener('change', () => { const list = [...inp.files]; inp.value = ''; addAttFiles(list); });
+}
+function pickFiles() { if (window.CodeplyAttach) $('attInput').click(); }
 async function runInCloud(chat, text) {
   if (!envFor(chat.project) || !state.creds || !state.creds.token || state.creds.expired) {
     pendingSend = { chatId: chat.id, text };
@@ -1468,15 +1526,16 @@ function openPlus() {
   const c = state.current && chatMeta(state.current);
   const cloudChat = c && c.cloud;
   const mode = (m, hint) => `<button type="button" class="pick-row${state.ui.codeMode === m ? ' on' : ''}" data-mode="${m}"><span class="pick-main"><strong>${m}</strong><small>${hint}</small></span>${ICONS.check}</button>`;
+  const attachRow = `<button type="button" class="pick-row" data-act="attach"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg><span class="pick-main"><strong>Attach a file</strong><small>PDF, text or code</small></span></button><div class="pick-divider"></div>`;
   openPick(code
-    ? `<div class="sheet-label">Mode</div>${mode('Build', 'Makes the changes')}${mode('Plan', 'Writes a plan before changing anything')}${mode('Ask', 'Answers questions, no edits')}
+    ? `${attachRow}<div class="sheet-label">Mode</div>${mode('Build', 'Makes the changes')}${mode('Plan', 'Writes a plan before changing anything')}${mode('Ask', 'Answers questions, no edits')}
       ${cloudChat ? '' : `<div class="pick-divider"></div><div class="sheet-label">On your PC</div>
       <button type="button" class="pick-row${!state.bypass ? ' on' : ''}" data-bypass="0"><span class="pick-main"><strong>Ask first</strong><small>Approve edits and commands from here</small></span>${ICONS.check}</button>
       <button type="button" class="pick-row${state.bypass ? ' on' : ''}" data-bypass="1"><span class="pick-main"><strong>Full access</strong><small>Edits and commands run without asking</small></span>${ICONS.check}</button>`}
       <div class="pick-divider"></div>
       <button type="button" class="pick-row" data-act="project">${ICONS.folder}<span class="pick-main"><strong>Project</strong><small>${esc((currentProject() || {}).name || 'Choose one')}</small></span></button>
       <button type="button" class="pick-row" data-act="setup">${ICONS.cloud}<span class="pick-main"><strong>Cloud environment</strong><small>Repo, model and environment variables</small></span></button>`
-    : `<div class="sheet-title">Chat</div><p class="sheet-text">A normal chat. To work on a project's files, switch to Code.</p>
+    : `${attachRow}<div class="sheet-title">Chat</div><p class="sheet-text">A normal chat. To work on a project's files, switch to Code.</p>
       <button type="button" class="pick-row" data-act="code">${ICONS.folder}<span class="pick-main"><strong>Switch to Code</strong><small>Runs on your PC, or in the cloud when it is off</small></span></button>`, (root) => {
     root.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { state.ui.codeMode = b.dataset.mode; saveUi(); closePick(); renderComposer(); }));
     root.querySelectorAll('[data-bypass]').forEach((b) => b.addEventListener('click', () => {
@@ -1488,6 +1547,7 @@ function openPlus() {
     act('project', () => openProjectPicker());
     act('setup', () => { const p = currentProject(); const env = envFor(p); openSetup({ chatId: c && c.kind === 'code' ? c.id : null, repo: env && !env.fromPc ? env.repo : null }); });
     act('code', () => setUiMode('code'));
+    act('attach', () => pickFiles());
   });
 }
 /** A cloud environment set up on the PC: read its model name once from the repo's variables. */

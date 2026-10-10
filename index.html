@@ -268,6 +268,8 @@
           <textarea class="composer-input" rows="1" placeholder="Ask Codeply anything, or type / for commands"></textarea>
           <div class="composer-bottom">
             <div class="composer-bottom-left">
+              <button class="attach-btn" data-role="attach" type="button" title="Attach files: PDFs, text, code and images"><svg viewBox="0 0 24 24"><path d="M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg></button>
+              <input type="file" data-role="attach-input" multiple hidden>
               <button class="approve-toggle" data-role="bypass" title="Off: every write/run asks you first. On: actions run without asking.">
                 <svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5Z"/><path d="M9 12l2 2 4-4"/></svg>
                 <span data-role="bypass-label">Approve manually</span>
@@ -333,6 +335,8 @@
           <textarea class="composer-input" rows="1" placeholder="Ask Codeply anything, or type / for commands"></textarea>
           <div class="composer-bottom">
             <div class="composer-bottom-left">
+              <button class="attach-btn" data-role="attach" type="button" title="Attach files: PDFs, text, code and images"><svg viewBox="0 0 24 24"><path d="M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg></button>
+              <input type="file" data-role="attach-input" multiple hidden>
               <button class="approve-toggle" data-role="bypass" title="Off: every write/run asks you first. On: actions run without asking.">
                 <svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5Z"/><path d="M9 12l2 2 4-4"/></svg>
                 <span data-role="bypass-label">Approve manually</span>
@@ -603,6 +607,7 @@
 </div>
 <script src="vendor/xterm/xterm.js"></script>
 <script src="vendor/xterm/addon-fit.js"></script>
+<script src="attachments.js"></script>
 <script src="app.js"></script>
 <script src="cloud-ui.js"></script>
 <script src="bot-avatar.js"></script>

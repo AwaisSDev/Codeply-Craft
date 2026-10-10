@@ -22,6 +22,7 @@ for (const [from, to] of [
   ['phone-calls.css', 'phone-calls.css'],
   ['phone-stt-worker.js', 'phone-stt-worker.js'],
   ['bot-avatar.js', 'bot-avatar.js'],
+  ['attachments.js', 'attachments.js'],
   ['phone.manifest.json', 'manifest.json'],
   [path.join('vendor', 'phone', 'nacl-fast.min.js'), 'nacl-fast.min.js'],
   [path.join('vendor', 'phone', 'blake2b.js'), 'blake2b.js'],
@@ -36,6 +37,10 @@ for (const [from, to] of [
   [path.join('crew', 'assets', 'logo', 'codeply-icon-small-48.png'), 'crew-logo.png'],
   [path.join('vendor', 'supabase', 'supabase.js'), 'supabase.js'],
 ]) fs.copyFileSync(path.join(root, from), path.join(target, to));
+
+// pdf.js (Mozilla, Apache 2.0) for reading attached PDFs in the browser
+fs.mkdirSync(path.join(target, 'pdfjs'), { recursive: true });
+for (const f of ['pdf.min.mjs', 'pdf.worker.min.mjs', 'LICENSE']) fs.copyFileSync(path.join(root, 'vendor', 'pdfjs', f), path.join(target, 'pdfjs', f));
 
 const mascots = path.join(root, 'assets', 'agents');
 for (const f of fs.readdirSync(mascots).filter((f) => f.endsWith('.png'))) {

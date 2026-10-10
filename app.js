@@ -459,10 +459,18 @@ function addUserMessage(text, images) {
     }
     msg.appendChild(row);
   }
+  // Attached files (attachments.js) show as chips; the bubble holds only what was typed.
+  const shown = window.CodeplyAttach ? window.CodeplyAttach.split(text) : { text, files: [] };
+  if (shown.files.length) {
+    const row = document.createElement('div');
+    row.className = 'bubble-files';
+    row.innerHTML = shown.files.map((f) => window.CodeplyAttach.chipHtml(f)).join('');
+    msg.appendChild(row);
+  }
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.textContent = text;
-  msg.appendChild(bubble);
+  bubble.textContent = shown.text;
+  if (shown.text || !shown.files.length) msg.appendChild(bubble);
   msg.userText = text;
   msg.userImages = images && images.length ? images : undefined;
 
@@ -2382,7 +2390,9 @@ async function sendMessage(text, fromHome, images) {
     chatColumn.innerHTML = '';
     resetSidePanel(state.project);
     state.currentSessionId = null;
-    $('chatTitle').textContent = text.length > 46 ? text.slice(0, 46) + '…' : text;
+    const sh = window.CodeplyAttach ? window.CodeplyAttach.split(text) : { text, files: [] };
+    const titleText = sh.text || (sh.files[0] ? sh.files[0].name : text);
+    $('chatTitle').textContent = titleText.length > 46 ? titleText.slice(0, 46) + '…' : titleText;
     showView('viewChat');
   }
 
@@ -2454,10 +2464,20 @@ document.querySelectorAll('.composer').forEach((composer) => {
   const fromHome = composer.dataset.composer === 'home';
   const previewsEl = composer.querySelector('[data-role="image-previews"]');
   composer.pendingImages = [];
+  composer.pendingFiles = []; // read files (attachments.js), or { name, reading: true } while a PDF is read
 
   function renderImagePreviews() {
     previewsEl.innerHTML = '';
-    previewsEl.classList.toggle('hidden', composer.pendingImages.length === 0);
+    previewsEl.classList.toggle('hidden', composer.pendingImages.length === 0 && composer.pendingFiles.length === 0);
+    composer.pendingFiles.forEach((f, i) => {
+      const box = document.createElement('div');
+      box.innerHTML = window.CodeplyAttach.chipHtml(f.reading ? { name: f.name, kind: 'text', type: f.isPdf ? 'pdf' : 'text', reading: true } : f, { removable: !f.reading });
+      const chip = box.firstElementChild;
+      if (f.reading) { chip.classList.add('reading'); chip.querySelector('.att-meta').textContent = 'Reading…'; }
+      const x = chip.querySelector('.att-x');
+      if (x) x.addEventListener('click', () => { composer.pendingFiles.splice(i, 1); renderImagePreviews(); });
+      previewsEl.appendChild(chip);
+    });
     composer.pendingImages.forEach((src, i) => {
       const chip = document.createElement('div');
       chip.className = 'composer-image-preview';
@@ -2470,16 +2490,48 @@ document.querySelectorAll('.composer').forEach((composer) => {
     });
   }
 
-  input.addEventListener('paste', async (e) => {
-    const items = [...(e.clipboardData?.items || [])].filter((it) => it.type.startsWith('image/'));
-    if (!items.length) return; // no image on the clipboard - let normal text paste happen
-    e.preventDefault();
-    for (const item of items) {
-      const blob = item.getAsFile();
-      if (!blob) continue;
-      try { composer.pendingImages.push(await downscaleImageBlob(blob)); } catch {}
+  // Files from the paperclip, a paste or a drop: images as before, PDFs and text files read here.
+  async function addFiles(list) {
+    for (const file of list) {
+      const kind = window.CodeplyAttach ? window.CodeplyAttach.kindOf(file) : (file.type.startsWith('image/') ? 'image' : null);
+      if (kind === 'image') {
+        try { composer.pendingImages.push(await downscaleImageBlob(file)); } catch {}
+        renderImagePreviews();
+        continue;
+      }
+      if (!window.CodeplyAttach) continue;
+      const slot = { name: file.name, reading: true, isPdf: kind === 'pdf' };
+      composer.pendingFiles.push(slot);
+      renderImagePreviews();
+      const got = await window.CodeplyAttach.read(file, { pdfBase: 'vendor/pdfjs/' });
+      const at = composer.pendingFiles.indexOf(slot);
+      if (got.error) { if (at >= 0) composer.pendingFiles.splice(at, 1); showToast(got.error, 'error'); }
+      else if (at >= 0) composer.pendingFiles[at] = got;
+      renderImagePreviews();
     }
-    renderImagePreviews();
+  }
+  const attachInput = composer.querySelector('[data-role="attach-input"]');
+  if (attachInput && window.CodeplyAttach) attachInput.accept = 'image/*,' + window.CodeplyAttach.ACCEPT;
+  const attachBtn = composer.querySelector('[data-role="attach"]');
+  if (attachBtn && attachInput) {
+    attachBtn.addEventListener('click', () => attachInput.click());
+    attachInput.addEventListener('change', () => { const list = [...attachInput.files]; attachInput.value = ''; addFiles(list); input.focus(); });
+  }
+  composer.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); composer.classList.add('drop-on'); } });
+  composer.addEventListener('dragleave', (e) => { if (!composer.contains(e.relatedTarget)) composer.classList.remove('drop-on'); });
+  composer.addEventListener('drop', (e) => {
+    composer.classList.remove('drop-on');
+    const list = [...(e.dataTransfer?.files || [])];
+    if (!list.length) return;
+    e.preventDefault();
+    addFiles(list);
+  });
+
+  input.addEventListener('paste', async (e) => {
+    const list = [...(e.clipboardData?.files || [])];
+    if (!list.length) return; // no file on the clipboard - let normal text paste happen
+    e.preventDefault();
+    addFiles(list);
   });
 
   input.addEventListener('input', () => {
@@ -2496,14 +2548,18 @@ document.querySelectorAll('.composer').forEach((composer) => {
   const submit = () => {
     if (dispatching) return;
     if (state.running) { api.stop(state.currentSessionId); return; }
-    const text = input.value.trim();
+    const typed = input.value.trim();
     const images = composer.pendingImages;
-    if (!text && !images.length) return;
+    if (composer.pendingFiles.some((f) => f.reading)) { showToast('Still reading a file. One moment.'); return; }
+    const files = composer.pendingFiles;
+    if (!typed && !images.length && !files.length) return;
+    const text = window.CodeplyAttach ? window.CodeplyAttach.compose(typed, files) : typed;
     dispatching = true;
     setTimeout(() => { dispatching = false; }, 0);
     input.value = '';
     input.style.height = 'auto';
     composer.pendingImages = [];
+    composer.pendingFiles = [];
     renderImagePreviews();
     sendMessage(text || 'Image attached.', fromHome, images.length ? images : undefined);
   };

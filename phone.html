@@ -81,6 +81,8 @@
         <span class="ctx-status" id="pcStatus"><i></i><span>PC offline</span></span>
       </div>
       <div class="box">
+        <div class="att-row hidden" id="attRow"></div>
+        <input type="file" id="attInput" multiple hidden>
         <textarea id="input" rows="1" placeholder="Ask Codeply anything"></textarea>
         <div class="box-row">
           <button type="button" class="round-btn" id="plusBtn" aria-label="More">
@@ -216,6 +218,7 @@
   <script src="nacl-fast.min.js"></script>
   <script src="blake2b.js"></script>
   <script src="bot-avatar.js"></script>
+  <script src="attachments.js"></script>
   <script src="phone.js"></script>
   <script src="phone-reminders.js"></script>
   <script src="phone-calls.js"></script>

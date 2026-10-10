@@ -2378,3 +2378,20 @@ a.remote-url { text-decoration: none; cursor: pointer; }
 .app-switch-btn:hover { color: var(--text); }
 .app-switch-btn.on { background: var(--active); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.25); cursor: default; }
 .app-switch-btn.on img, .app-switch-btn:hover img { opacity: 1; }
+
+/* ============ Attached files (attachments.js) ============ */
+.attach-btn { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 999px; color: var(--text-dim); flex: none; transition: background .15s ease, color .15s ease; }
+.attach-btn:hover { background: var(--hover); color: var(--text); }
+.attach-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.composer.drop-on { box-shadow: 0 0 0 2px var(--accent) inset; }
+.att-chip { display: inline-flex; align-items: center; gap: 9px; max-width: 260px; padding: 7px 10px 7px 8px; border-radius: 12px; background: var(--card-bg); border: 1px solid var(--card-border); position: relative; }
+.att-ico { width: 30px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 7px; background: rgba(75, 149, 255, .12); color: var(--accent); }
+.att-chip.pdf .att-ico { background: rgba(229, 72, 77, .12); color: #e5484d; }
+.att-ico svg { width: 20px; height: 20px; }
+.att-txt { min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.att-name { font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.att-meta { font-size: 11.5px; color: var(--text-faint); white-space: nowrap; }
+.att-chip.reading .att-meta { animation: updPulse 1.4s ease-in-out infinite; }
+.att-x { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; background: rgba(0, 0, 0, .65); color: #fff; font-size: 13px; line-height: 16px; text-align: center; opacity: 0; transition: opacity .15s ease; }
+.att-chip:hover .att-x { opacity: 1; }
+.bubble-files { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-bottom: 6px; }
