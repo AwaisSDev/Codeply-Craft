@@ -420,13 +420,13 @@ const nearBottom = () => { const el = $('scroll'); return el.scrollHeight - el.s
 function append(node) { showFeed(true); feed().append(node); return node; }
 function el(tag, cls, html) { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; }
 
-function addMsg(kind, text) {
+function addMsg(kind, text, images) {
   streamEl = null;
   if (kind === 'user' && window.CodeplyAttach) {
     const sh = window.CodeplyAttach.split(text);
-    if (sh.files.length) {
+    if (sh.files.length || (images && images.length)) {
       const row = el('div', 'msg-files');
-      row.innerHTML = sh.files.map((f) => window.CodeplyAttach.chipHtml(f)).join('');
+      row.innerHTML = (images || []).map((src) => `<img class="msg-thumb" src="${esc(src)}" alt="">`).join('') + sh.files.map((f) => window.CodeplyAttach.chipHtml(f)).join('');
       append(row);
       if (!sh.text) return row;
     }
@@ -619,7 +619,7 @@ function renderFeed({ force = false } = {}) {
   streamEl = null;
   checkpointEls.clear(); questionEls.clear();
   if (c.kind === 'chat') {
-    for (const m of b.messages) addMsg(m.role === 'user' ? 'user' : m.role === 'error' ? 'error' : 'agent', m.content);
+    for (const m of b.messages) addMsg(m.role === 'user' ? 'user' : m.role === 'error' ? 'error' : 'agent', m.content, m.thumbs);
     if (state.busy.has(c.id)) append(el('div', 'working', '<span class="spinner"></span><span>Thinking...</span>'));
   } else {
     for (const item of b.pcItems || []) renderPcItem(item, c);
@@ -769,9 +769,10 @@ async function answerImagePick(url) {
 
 // ─── Chat mode: Codeply's ai-proxy ──────────────────────────────────────────
 function localTz() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; } }
-async function chatSend(chat, text) {
+async function chatSend(chat, text, images = []) {
   const b = body(chat.id);
-  b.messages.push({ role: 'user', content: text, at: Date.now() });
+  const thumbs = images.length ? await Promise.all(images.map((u) => shrinkDataUrl(u, 240, 0.7))) : undefined;
+  b.messages.push({ role: 'user', content: text || 'Image attached.', at: Date.now(), ...(thumbs ? { thumbs } : {}) });
   if (!chat.title) chat.title = titleFrom(text);
   saveBody(chat.id);
   touchChat(chat.id);
@@ -782,7 +783,9 @@ async function chatSend(chat, text) {
   let reply = null; let error = null;
   try {
     const token = await accessToken();
-    const history = b.messages.filter((m) => m.role === 'user' || m.role === 'assistant').slice(-30).map((m) => ({ role: m.role, content: m.content }));
+    const history = b.messages.filter((m) => m.role === 'user' || m.role === 'assistant').slice(-30).map((m) => ({ role: m.role, content: m.thumbs ? `${m.content}\n\n[${m.thumbs.length} image(s) attached]` : m.content }));
+    // the newest message goes with its full images (the server has a vision model look at them)
+    if (images.length && history.length) history[history.length - 1] = { role: 'user', content: [{ type: 'text', text: text || 'What is in this image?' }, ...images.map((url) => ({ type: 'image_url', image_url: { url } }))] };
     // A synced model goes through byok-proxy (same reply shape as ai-proxy).
     const own = chatModel();
     const messages = [{ role: 'system', content: CHAT_SYSTEM + (window.CraftReminders ? window.CraftReminders.chatRules() : '') }, ...history];
@@ -829,19 +832,19 @@ async function chatSend(chat, text) {
 }
 
 // ─── Code mode on the PC ────────────────────────────────────────────────────
-async function pcSend(chat, text) {
+async function pcSend(chat, text, images = []) {
   const project = chat.project;
   if (!chat.title) chat.title = titleFrom(text);
   if (!chat.pcSessionId) chat.awaitingPc = true;
   touchChat(chat.id);
   state.busy.add(chat.id);
   showFeed(true);
-  addMsg('user', text);
+  addMsg('user', text, images);
   scrollToBottom();
   renderComposer();
   try {
     // The PC answers when the whole turn ends; events stream in meanwhile.
-    const r = await relayRequest('POST', '/api/send', { sessionId: chat.pcSessionId || null, cwd: project.cwd, mode: state.ui.codeMode, bypass: state.bypass, text, clientId }, 6 * 3600 * 1000);
+    const r = await relayRequest('POST', '/api/send', { sessionId: chat.pcSessionId || null, cwd: project.cwd, mode: state.ui.codeMode, bypass: state.bypass, text: text || 'Image attached.', ...(images.length ? { images } : {}), clientId }, 6 * 3600 * 1000);
     if (r && r.error) throw new Error(r.error);
     if (r && r.sessionId) chat.pcSessionId = r.sessionId;
     if (r && r.title) chat.title = r.title;
@@ -1213,14 +1216,15 @@ async function onSubmit(e) {
   if (c0 && state.busy.has(c0.id)) return stopCurrent(c0);
   const input = $('input');
   if (attFiles.some((f) => f.reading)) { attNote('Still reading a file. One moment.'); return; }
-  const text = window.CodeplyAttach ? window.CodeplyAttach.compose(input.value.trim(), attFiles) : input.value.trim();
-  if (!text) return;
+  const images = attFiles.filter((f) => f.kind === 'image').map((f) => f.dataUrl);
+  const text = window.CodeplyAttach ? window.CodeplyAttach.compose(input.value.trim(), attFiles.filter((f) => f.kind !== 'image')) : input.value.trim();
+  if (!text && !images.length) return;
   attFiles = []; renderAtt();
   if (state.ui.mode === 'chat') {
     const chat = c0 && c0.kind === 'chat' ? c0 : createChat('chat');
     openChat(chat.id, { keepMode: true });
     clearInput();
-    return chatSend(chat, text);
+    return chatSend(chat, text, images);
   }
   // Code
   let chat = c0 && c0.kind === 'code' ? c0 : null;
@@ -1232,9 +1236,10 @@ async function onSubmit(e) {
   }
   clearInput();
   // A cloud-only project (no folder on the PC) goes straight to the cloud.
-  if (chat.cloud || !project.cwd) return runInCloud(chat, text);
+  if ((chat.cloud || !project.cwd) && images.length) attNote('Cloud runs take text and files for now; the image was left out.');
+  if (chat.cloud || !project.cwd) return runInCloud(chat, text || 'Image attached.');
   if (project.cwd && !relay.pcId && (relay.connecting || relay.channel)) await waitForPc(4000);
-  if (project.cwd && relay.pcId) return pcSend(chat, text);
+  if (project.cwd && relay.pcId) return pcSend(chat, text, images);
   pendingSend = { chatId: chat.id, text };
   $('offlineSheet').classList.remove('hidden');
 }
@@ -1254,6 +1259,13 @@ function renderAtt() {
   row.classList.toggle('hidden', !attFiles.length && !attNotes.length);
   for (const n of attNotes) { const d = el('div', 'att-note'); d.textContent = n.msg; row.appendChild(d); }
   attFiles.forEach((f, i) => {
+    if (f.kind === 'image') {
+      const t = el('div', 'att-img');
+      t.innerHTML = `<img src="${esc(f.dataUrl)}" alt=""><button type="button" class="att-x" aria-label="Remove">×</button>`;
+      t.querySelector('.att-x').addEventListener('click', () => { attFiles.splice(i, 1); renderAtt(); });
+      row.appendChild(t);
+      return;
+    }
     const box = document.createElement('div');
     box.innerHTML = window.CodeplyAttach.chipHtml(f.reading ? { name: f.name, type: f.isPdf ? 'pdf' : 'text' } : f, { removable: !f.reading });
     const chip = box.firstElementChild;
@@ -1266,7 +1278,12 @@ function renderAtt() {
 async function addAttFiles(list) {
   for (const file of list) {
     const kind = window.CodeplyAttach.kindOf(file);
-    if (kind === 'image') { attNote('Images work in Craft on your computer. Here: PDFs, text and code files.'); continue; }
+    if (kind === 'image') {
+      if (attFiles.filter((f) => f.kind === 'image').length >= 4) { attNote('Up to 4 images per message.'); continue; }
+      try { attFiles.push({ name: file.name || 'image', kind: 'image', size: file.size, dataUrl: await shrinkDataUrl(file, 1280, 0.82) }); renderAtt(); }
+      catch { attNote(`Couldn't open ${file.name || 'that image'}.`); }
+      continue;
+    }
     const slot = { name: file.name, reading: true, isPdf: kind === 'pdf' };
     attFiles.push(slot); renderAtt();
     const got = await window.CodeplyAttach.read(file, { pdfBase: 'pdfjs/' });
@@ -1277,10 +1294,27 @@ async function addAttFiles(list) {
 }
 if (window.CodeplyAttach) {
   const inp = $('attInput');
-  inp.accept = window.CodeplyAttach.ACCEPT;
+  inp.accept = 'image/*,' + window.CodeplyAttach.ACCEPT;
   inp.addEventListener('change', () => { const list = [...inp.files]; inp.value = ''; addAttFiles(list); });
 }
 function pickFiles() { if (window.CodeplyAttach) $('attInput').click(); }
+/** An image (File or data URL) as a JPEG data URL no larger than max px on its long side. */
+function shrinkDataUrl(src, max, quality) {
+  return new Promise((resolve, reject) => {
+    const url = typeof src === 'string' ? src : URL.createObjectURL(src);
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      if (typeof src !== 'string') URL.revokeObjectURL(url);
+      resolve(c.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => { if (typeof src !== 'string') URL.revokeObjectURL(url); reject(new Error('bad image')); };
+    img.src = url;
+  });
+}
 async function runInCloud(chat, text) {
   if (!envFor(chat.project) || !state.creds || !state.creds.token || state.creds.expired) {
     pendingSend = { chatId: chat.id, text };
@@ -1526,7 +1560,7 @@ function openPlus() {
   const c = state.current && chatMeta(state.current);
   const cloudChat = c && c.cloud;
   const mode = (m, hint) => `<button type="button" class="pick-row${state.ui.codeMode === m ? ' on' : ''}" data-mode="${m}"><span class="pick-main"><strong>${m}</strong><small>${hint}</small></span>${ICONS.check}</button>`;
-  const attachRow = `<button type="button" class="pick-row" data-act="attach"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg><span class="pick-main"><strong>Attach a file</strong><small>PDF, text or code</small></span></button><div class="pick-divider"></div>`;
+  const attachRow = `<button type="button" class="pick-row" data-act="attach"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg><span class="pick-main"><strong>Attach a file</strong><small>Photos, PDFs, text or code</small></span></button><div class="pick-divider"></div>`;
   openPick(code
     ? `${attachRow}<div class="sheet-label">Mode</div>${mode('Build', 'Makes the changes')}${mode('Plan', 'Writes a plan before changing anything')}${mode('Ask', 'Answers questions, no edits')}
       ${cloudChat ? '' : `<div class="pick-divider"></div><div class="sheet-label">On your PC</div>
