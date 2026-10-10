@@ -3575,7 +3575,7 @@ function renderUpdate(u) {
     gate.classList.remove('hidden');
     pill.classList.add('hidden');
     $('updateGateTitle').textContent = 'Installing update';
-    $('updateGateText').textContent = `Codeply Craft ${u.version || ''} is installing. It will reopen by itself in a moment.`;
+    $('updateGateText').textContent = `Craft is closing to install ${u.version || 'the update'}. A small installer window shows the progress, and Craft reopens by itself when it is done, usually in 2 to 5 minutes. You do not need to open it.`;
     $('updateGateNotes').classList.add('hidden');
     $('updateGateTrack').classList.remove('hidden');
     $('updateGateTrack').classList.add('indeterminate');
@@ -3585,6 +3585,22 @@ function renderUpdate(u) {
   }
   $('updateGateTitle').textContent = 'Update required';
   $('updateGateTrack').classList.remove('indeterminate');
+
+  // "Update now" was clicked: a page that stays up through the download and says
+  // plainly that Craft will close, install and reopen by itself.
+  if (u.queued && (u.status === 'downloading' || u.status === 'ready')) {
+    gate.classList.remove('hidden');
+    gate.classList.add('installing');
+    pill.classList.add('hidden');
+    $('updateGateTitle').textContent = `Updating to ${u.version}`;
+    $('updateGateText').textContent = 'Craft downloads the update, closes, installs it and reopens by itself. It takes a few minutes. You do not need to open it again.';
+    $('updateGateNotes').classList.add('hidden');
+    $('updateGateTrack').classList.remove('hidden');
+    $('updateGateBar').style.width = Math.max(3, u.status === 'ready' ? 100 : (u.percent || 0)) + '%';
+    $('updateGateStatus').textContent = u.status === 'ready' ? 'Downloaded. Closing to install…' : `Downloading… ${u.percent || 0}%`;
+    $('updateGateBtn').classList.add('hidden');
+    return;
+  }
 
   if (u.required && active) {
     gate.classList.remove('hidden');

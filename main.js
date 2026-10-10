@@ -3347,12 +3347,17 @@ const UPDATE_CHECK_EVERY_MS = 60 * 60 * 1000;
 let updater = null;
 let updateState = { status: 'idle', current: app.getVersion() };
 let installWhenReady = false; // "Update now" was clicked while it was still downloading
+let updateInstallStarted = false;
 
-/** Close, install silently and reopen on the new version. */
+/**
+ * Close, install and reopen on the new version. Not silent on purpose: the
+ * installer's own small "Installing Codeply Craft" window shows its progress,
+ * so nobody thinks the app vanished while it installs (it takes a few minutes).
+ */
 function installDownloadedUpdate() {
   sendUpdateState({ status: 'installing' });
   isQuitting = true; // let the window really close instead of hiding to the tray
-  setTimeout(() => updater.quitAndInstall(true, true), 1800);
+  setTimeout(() => { updateInstallStarted = true; updater.quitAndInstall(false, true); }, 2500);
 }
 
 function sendUpdateState(patch) {
@@ -3403,7 +3408,9 @@ function setupAutoUpdates() {
   }
   const canAutoInstall = process.platform !== 'darwin';
   updater.autoDownload = canAutoInstall;
-  updater.autoInstallOnAppQuit = canAutoInstall;
+  // Quitting with an update downloaded installs it too, but with the installer's
+  // window showing (see the 'quit' handler), not silently in the background.
+  updater.autoInstallOnAppQuit = false;
   updater.allowPrerelease = false;
   updater.logger = null;
 
@@ -3485,6 +3492,13 @@ app.on('window-all-closed', () => {
   // here regardless of how we got here.
   if (termProc) { try { termProc.kill(); } catch {} termProc = null; }
   if (process.platform !== 'darwin') app.quit();
+});
+
+// Quit with an update downloaded: install it, with the installer window showing.
+app.on('quit', () => {
+  if (!updater || updateInstallStarted || updateState.status !== 'ready' || process.platform === 'darwin') return;
+  updateInstallStarted = true;
+  try { updater.quitAndInstall(false, false); } catch {}
 });
 
 app.on('before-quit', () => {
