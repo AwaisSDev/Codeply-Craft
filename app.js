@@ -2015,7 +2015,7 @@ document.querySelectorAll('[data-role="bypass"]').forEach((el) =>
 );
 
 // ─── Models ─────────────────────────────────────────────────────────────────
-// "Auto" is Gemma 4 31B, run by Codeply. Everything else is a model the user added
+// "Auto" is Codeply's router (Sonnet 5.5 for code, Haiku 5.5 for chat). Everything else is a model the user added
 // - an OpenAI-compatible API or a local Ollama model. The main process keeps
 // the keys; this side only ever sees a masked preview.
 const MODEL_PRESETS = [
@@ -2046,6 +2046,12 @@ function hostOf(url) {
 
 function applyModelsState(models) {
   if (models && Array.isArray(models.models)) state.models = models;
+  // ChatGPT plan sign-in was removed from the menu: anyone still on one of its models goes back to Auto
+  const sel = state.models.models.find((x) => x.id === state.models.selected);
+  if (sel && sel.kind === 'chatgpt' && api && !applyModelsState.movedOff) {
+    applyModelsState.movedOff = true;
+    api.selectModel('auto').then((r) => { if (r && r.ok) applyModelsState(r.state); }).catch(() => {});
+  }
   const m = selectedModel();
   const label = m ? m.name : 'Auto';
   const kind = m ? (m.kind === 'ollama' ? 'local' : m.kind === 'chatgpt' ? 'chatgpt' : 'custom') : 'auto';
@@ -2056,7 +2062,7 @@ function applyModelsState(models) {
   });
   document.querySelectorAll('[data-role="model-chip"]').forEach((el) => {
     el.dataset.kind = kind;
-    el.title = !m ? 'Auto - Gemma 4 31B, run by Codeply'
+    el.title = !m ? 'Auto - Sonnet 5.5 for code, Haiku 5.5 for chat, run by Codeply'
       : kind === 'chatgpt' ? `${m.name} - using your ChatGPT plan`
       : `${m.name} - ${m.model} on ${hostOf(m.baseUrl)}`;
   });
@@ -2096,31 +2102,21 @@ function openModelMenu(anchorBtn) {
   const sel = state.models.selected;
   const check = '<svg class="model-item-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>';
   const custom = state.models.models.filter((m) => m.kind !== 'chatgpt');
-  const plan = state.models.models.filter((m) => m.kind === 'chatgpt');
-  const cg = state.chatgpt || {};
-  const chatgptSection = cg.signedIn ? `
-    <div class="model-menu-label model-menu-label-row"><span>ChatGPT plan</span><span class="model-menu-label-meta">${esc(cg.email || '')}</span></div>
-    ${plan.map((m) => `
-      <button class="model-item${sel === m.id ? ' active' : ''}" data-id="${esc(m.id)}">
-        <span class="model-item-icon chatgpt">${CHATGPT_SVG}</span>
-        <span class="model-item-text"><strong>${esc(m.name)}</strong><span title="Your ChatGPT sign-in stays on this PC, so these are not synced. The phone uses them through this PC while it is on.">Uses your ChatGPT plan, stays on this PC</span></span>
-        ${sel === m.id ? check : ''}
-      </button>`).join('') || `<div class="model-menu-empty">${cg.sharing ? 'No models available on this plan yet.' : 'Plan usage wasn’t allowed. Sign in again to allow it.'}</div>`}
-    <div class="model-menu-inline">
-      <button class="model-menu-link" data-action="chatgpt-usage">Manage usage</button>
-      <button class="model-menu-link" data-action="${cg.sharing ? 'chatgpt-signout' : 'chatgpt-signin'}">${cg.sharing ? 'Disconnect' : 'Sign in again'}</button>
-    </div>` : `
-    <div class="model-menu-divider"></div>
-    <button class="model-menu-action chatgpt-connect" data-action="chatgpt-signin">
-      <span class="model-item-icon chatgpt">${CHATGPT_SVG}</span>
-      <span class="model-item-text"><strong>Continue with ChatGPT</strong><span>Use your ChatGPT plan instead of an API key</span></span>
-    </button>`;
+  const LOCK = '<svg class="model-item-lock" viewBox="0 0 16 16" aria-hidden="true"><path class="lock-shackle" d="M5.25 7.25V5.5a2.75 2.75 0 0 1 5.5 0v1.75"/><path class="lock-body" fill-rule="evenodd" d="M4.6 7h6.8A1.6 1.6 0 0 1 13 8.6v4.3a1.6 1.6 0 0 1-1.6 1.6H4.6A1.6 1.6 0 0 1 3 12.9V8.6A1.6 1.6 0 0 1 4.6 7Zm3.4 2.2a1 1 0 0 0-.55 1.84v.96a.55.55 0 0 0 1.1 0v-.96A1 1 0 0 0 8 9.2Z"/></svg>';
+  const autoModels = [['Sonnet 5.5', 'Used by Auto for code and hard tasks'], ['Haiku 5.5', 'Used by Auto for chat and images']].map(([name, why]) => `
+    <div class="model-item locked" aria-disabled="true" title="Auto picks these for you">
+      <span class="model-item-icon custom">${CHIP_SVG}</span>
+      <span class="model-item-text"><strong>${name}</strong><span>${why}</span></span>
+      ${LOCK}
+    </div>`).join('');
   menu.innerHTML = `
+    <div class="model-menu-title">Select model</div>
     <button class="model-item${sel === 'auto' ? ' active' : ''}" data-id="auto">
       <span class="model-item-icon auto">${SPARK_SVG}</span>
-      <span class="model-item-text"><strong>Auto</strong><span>Gemma 4 31B · run by Codeply, best for most work</span></span>
+      <span class="model-item-text"><strong>Auto</strong><span>Picks the best model for each task</span></span>
       ${sel === 'auto' ? check : ''}
     </button>
+    ${autoModels}
     ${custom.length ? '<div class="model-menu-label">Your models</div>' : ''}
     ${custom.map((m) => `
       <div class="model-item-row">
@@ -2133,17 +2129,16 @@ function openModelMenu(anchorBtn) {
         <button class="model-item-tool icon-btn icon-btn-xs" data-edit="${esc(m.id)}" title="Edit"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
         <button class="model-item-tool icon-btn icon-btn-xs danger" data-delete="${esc(m.id)}" title="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg></button>
       </div>`).join('')}
-    ${chatgptSection}
     <div class="model-menu-divider"></div>
     <button class="model-menu-action" data-action="add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add a model</button>
-    <button class="model-menu-action" data-action="ollama">${LLAMA_SVG}Connect Ollama</button>`;
+    <button class="model-menu-ollama" data-action="ollama">Connect Ollama</button>`;
   document.body.appendChild(menu);
 
   const rect = anchorBtn.getBoundingClientRect();
   menu.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
   menu.style.right = Math.max(8, window.innerWidth - rect.right) + 'px';
 
-  menu.querySelectorAll('.model-item').forEach((btn) => btn.addEventListener('click', () => pickModel(btn.dataset.id)));
+  menu.querySelectorAll('.model-item[data-id]').forEach((btn) => btn.addEventListener('click', () => pickModel(btn.dataset.id)));
   menu.querySelectorAll('[data-edit]').forEach((btn) => btn.addEventListener('click', (e) => {
     e.stopPropagation();
     const m = state.models.models.find((x) => x.id === btn.dataset.edit);
@@ -2173,7 +2168,7 @@ function openModelMenu(anchorBtn) {
     if (r.ok) { applyModelsState(r.state); showToast(`Removed ${m.name}`); }
   }));
   menu.querySelector('[data-action="add"]').addEventListener('click', () => { closeModelMenu(); openModelsModal({ tab: 'custom' }); });
-  menu.querySelector('[data-action="ollama"]').addEventListener('click', () => { closeModelMenu(); openModelsModal({ tab: 'ollama' }); });
+  menu.querySelector('[data-action="ollama"]').addEventListener('click', () => { closeModelMenu(); openOllamaConnect(); });
   menu.querySelector('[data-action="chatgpt-signin"]')?.addEventListener('click', () => { closeModelMenu(); signInWithChatGPT(); });
   menu.querySelector('[data-action="chatgpt-usage"]')?.addEventListener('click', () => { closeModelMenu(); api.openExternal(CHATGPT_USAGE_URL); });
   menu.querySelector('[data-action="chatgpt-signout"]')?.addEventListener('click', async () => {
@@ -2225,8 +2220,14 @@ document.querySelectorAll('[data-role="model-chip"]').forEach((btn) =>
 // ─── Models modal (add / edit a model, connect Ollama) ─────────────────────
 let editingModelId = null;
 
+let modelsOllamaOnly = false;
 function setModelsTab(tab) {
-  document.querySelectorAll('.models-tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('.models-tab').forEach((t) => {
+    t.classList.toggle('active', t.dataset.tab === tab);
+    t.classList.toggle('hidden', modelsOllamaOnly && t.dataset.tab === 'custom');
+    if (t.dataset.tab === 'ocloud') t.textContent = modelsOllamaOnly ? 'Online' : 'Ollama online';
+    if (t.dataset.tab === 'ollama') t.textContent = modelsOllamaOnly ? 'Local' : 'Ollama local';
+  });
   $('modelsPaneCustom').classList.toggle('hidden', tab !== 'custom');
   $('modelsPaneOllama').classList.toggle('hidden', tab !== 'ollama');
   $('modelsPaneOllamaCloud').classList.toggle('hidden', tab !== 'ocloud');
@@ -2242,20 +2243,27 @@ let ocPoll = null;
 // The app names a cloud model "<name>-cloud" when it has a size tag, else "<name>:cloud"
 const ocLocalName = (name) => (name.includes(':') ? `${name}-cloud` : `${name}:cloud`);
 
+function openOllamaConnect() {
+  // the full Connect Ollama page (ollama-connect.js); the small window is the fallback
+  if (window.OllamaConnect) { window.OllamaConnect.open(); return; }
+  openModelsModal({ tab: 'ocloud', ollamaOnly: true });
+  const hasKeyModel = state.models.models.some((m) => /ollama\.com/.test(m.baseUrl || ''));
+  if (!ocWay && !hasKeyModel) api.ollamaCloudOpenKeys();
+  setTimeout(() => $('ocKey').focus(), 60);
+}
+
 async function openOllamaCloud() {
   clearInterval(ocPoll);
   if (ocWay) { listOllamaCloud(); return; }
   $('ocList').innerHTML = '';
   const body = $('ocAppBody');
-  body.innerHTML = '<div class="ollama-status"><span class="spinner"></span>Looking for Ollama on this PC…</div>';
+  $('ocApp').classList.add('hidden');
   const r = await api.ollamaCloudLocal();
-  if (!r.running) {
-    body.innerHTML = '<div class="ollama-status">Ollama isn\'t running on this PC. Install it free from ollama.com and open it, then come back here. Or use an API key below.</div>';
-    return;
-  }
+  if (!r.running) return;
+  $('ocApp').classList.remove('hidden');
   if (r.signedIn) { ocWay = { via: 'app' }; body.innerHTML = '<div class="ollama-status ok">Connected through the Ollama app.</div>'; listOllamaCloud(); return; }
-  body.innerHTML = `<div class="ollama-status${r.error ? ' error' : ''}">${esc(r.error || 'Ollama is running here. Sign it in to ollama.com once and its cloud models work with no key.')}</div>
-    ${r.error ? '' : '<button class="btn btn-primary btn-lg" id="ocSignin">Sign in to Ollama</button>'}`;
+  body.innerHTML = `<div class="ollama-status${r.error ? ' error' : ''}">${esc(r.error || 'Ollama is running here. Sign it in to ollama.com once and its online models work with no key.')}</div>
+    ${r.error ? '' : '<button class="btn btn-secondary btn-sm" id="ocSignin">Sign in to Ollama</button>'}`;
   const btn = $('ocSignin');
   if (!btn) return;
   btn.addEventListener('click', async () => {
@@ -2338,9 +2346,14 @@ function showModelsError(msg, { canSkip = false } = {}) {
   $('mSaveAnyway').classList.toggle('hidden', !canSkip);
 }
 
-function openModelsModal({ tab = 'custom', edit = null } = {}) {
+function openModelsModal({ tab = 'custom', edit = null, ollamaOnly = false } = {}) {
+  modelsOllamaOnly = ollamaOnly;
+  $('modelsPaneOllamaCloud').classList.toggle('only', ollamaOnly); // the header already says it
   editingModelId = edit && edit.kind !== 'ollama' ? edit.id : null;
-  $('modelsTitle').textContent = editingModelId ? 'Edit model' : 'Add a model';
+  $('modelsTitle').textContent = ollamaOnly ? 'Connect Ollama' : editingModelId ? 'Edit model' : 'Add a model';
+  $('modelsDesc').textContent = ollamaOnly
+    ? 'Big open models on your own Ollama account: online with a key, or on this computer.'
+    : 'Use your own model instead of Auto. Any OpenAI-compatible API works, or Ollama online or on this computer.';
   $('mName').value = editingModelId ? edit.name : '';
   $('mBaseUrl').value = editingModelId ? edit.baseUrl : '';
   $('mModel').value = editingModelId ? edit.model : '';
@@ -3989,7 +4002,7 @@ $('updateGateBtn').addEventListener('click', () => {
 // placeholder, and typing a new one replaces it.
 (function researchModePanel() {
   if (!api || !api.researchGet || !$('rmPanel')) return;
-  let rm = { enabled: false, mode: 'local', model: '', context: '', hasKey: false, keyPreview: '' };
+  let rm = { enabled: false, mode: 'cloud', model: '', context: '', hasKey: false, keyPreview: '' };
 
   let statusOk = null;
   const RM_ICON = '<svg viewBox="0 0 24 24"><path d="M9 3h6"/><path d="M10 3v6L4.5 18.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3"/><path d="M7 15h10"/></svg>';
@@ -4023,6 +4036,7 @@ $('updateGateBtn').addEventListener('click', () => {
   function openPop(anchor) {
     const pop = $('rmPanel');
     pop.classList.remove('hidden');
+    refreshStatus();
     const r = anchor.getBoundingClientRect();
     const w = pop.offsetWidth;
     pop.style.left = Math.max(12, Math.min(r.left, window.innerWidth - w - 12)) + 'px';
@@ -4038,8 +4052,8 @@ $('updateGateBtn').addEventListener('click', () => {
     document.querySelectorAll('.rm-chip').forEach((b) => {
       b.classList.toggle('on', rm.enabled);
       b.classList.toggle('bad', rm.enabled && statusOk === false);
-      b.title = !rm.enabled ? 'Research Mode: use an Ollama model for research'
-        : statusOk === false ? $('rmStatusText').textContent : 'Research Mode on. Click to turn off.';
+      b.title = !rm.enabled ? 'Research Mode: send your research context with every message, on the model you picked'
+        : statusOk === false ? $('rmStatusText').textContent : 'Research Mode on: your research context goes with every message. Click to turn off.';
     });
     document.querySelectorAll('.rm-chip-more').forEach((b) => b.classList.toggle('hidden', !rm.enabled));
   }
@@ -4056,26 +4070,15 @@ $('updateGateBtn').addEventListener('click', () => {
     $('rmToggle').checked = rm.enabled;
     $('rmBody').classList.toggle('hidden', !rm.enabled);
     $('rmMode').value = rm.mode;
-    $('rmKeyField').classList.toggle('hidden', rm.mode !== 'cloud');
-    $('rmKey').placeholder = rm.hasKey ? rm.keyPreview : 'Paste your key';
+    $('rmKeyField').classList.add('hidden'); // the selected model answers; no separate key
+    $('rmKey').placeholder = rm.hasKey ? rm.keyPreview : 'Not needed: Codeply runs it for you';
     if (document.activeElement !== $('rmContext')) $('rmContext').value = rm.context;
   }
 
+  // Research Mode runs on whatever model is selected in the model menu.
   async function refreshStatus() {
-    const sel = $('rmModel');
-    setStatus(false, 'Checking Ollama…');
-    const r = await api.researchStatus();
-    if (!r.ok) {
-      setStatus(false, rm.mode === 'cloud' ? r.error : 'Ollama not running. ' + r.error + '.');
-      sel.innerHTML = rm.model ? '<option>' + esc(rm.model) + '</option>' : '<option value="">No models</option>';
-      return;
-    }
-    setStatus(true, rm.mode === 'cloud' ? 'Ollama Cloud connected' : 'Ollama running');
-    const names = r.models.map((m) => m.name);
-    if (rm.model && !names.includes(rm.model)) names.unshift(rm.model);
-    sel.innerHTML = names.length ? names.map((n) => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('') : '<option value="">No models installed</option>';
-    if (!rm.model && names.length) { rm.model = names[0]; api.researchSave({ model: rm.model }); }
-    sel.value = rm.model;
+    const m = typeof selectedModel === 'function' ? selectedModel() : null;
+    setStatus(true, 'Using ' + (m ? m.name : 'Auto') + '. Change it in the model menu.');
   }
 
   async function save(patch) {
@@ -4089,7 +4092,6 @@ $('updateGateBtn').addEventListener('click', () => {
     if (rm.enabled) refreshStatus();
   });
   $('rmMode').addEventListener('change', async () => { await save({ mode: $('rmMode').value, model: '' }); refreshStatus(); });
-  $('rmModel').addEventListener('change', () => save({ model: $('rmModel').value }));
   $('rmKey').addEventListener('change', async () => {
     const v = $('rmKey').value.trim();
     $('rmKey').value = '';

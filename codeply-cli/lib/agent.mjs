@@ -52,7 +52,7 @@ const FORMAT_CORRECTION =
   'closing tags complete:\n\n' +
   '<codeply:read_file>\n<path>run.html</path>\n</codeply:read_file>\n\n' +
   'Valid names: todo, ask_user, mcp, list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, ' +
-  'browser_check, gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, slack_post_message, vercel_deploy, supabase_create_project, ' +
+  'browser_check, gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, add_model, slack_post_message, vercel_deploy, supabase_create_project, ' +
   'supabase_delete_project, github_create_repo, design_reference_search, view_images, supabase_api, supabase_sql, vercel_api, ' +
   'web_fetch, web_search, image_search, reach_me, watch_email, apply_patch, plan_exit, plan_enter, lsp, publish_check, publish_connect, supabase_setup, supabase_schema, ' +
   'publish_deploy, publish_github.';
@@ -329,6 +329,7 @@ const PARAMS = {
   drafts_list: [],
   calendar_list: ['from', 'to', 'max'],
   calendar_add: ['title', 'start', 'end', 'description', 'location', 'reminders'],
+  add_model: ['name', 'base_url', 'model', 'api_key'],
   slack_post_message: ['channel', 'text'],
   vercel_deploy: ['path'],
   supabase_create_project: ['name'],
@@ -865,6 +866,16 @@ drafts; gmail_send with <draft>id</draft> sends one of them.)
 <reminders>30</reminders>
 </codeply:calendar_add>
 
+<codeply:add_model>
+<name>GPT-5 mini</name>
+<base_url>https://api.openai.com/v1</base_url>
+<model>gpt-5-mini</model>
+<api_key>the key the user gave</api_key>
+</codeply:add_model>
+
+(add_model puts a model in the user's model menu when they ask; it asks them
+first, tests it, selects it and syncs it to their phone. Never repeat the key.)
+
 (Calendar times are the user's local time: 2026-10-06T15:30 for a time,
 2026-10-06 for a whole day; from/to also take today or tomorrow. calendar_list
 defaults to today. calendar_add puts a real event on the user's Google
@@ -1043,7 +1054,8 @@ RULES
 - Tool results are the only source of truth about what happened. A failed result (non-2xx status, non-zero exit code, "did not apply") means it did not happen - never describe it as done.
 - Creating a remote repo, pushing code, enabling Pages, or deploying anything are exactly the kind of claim covered by "never report success you did not verify" above - and the easiest one to get wrong, because each step's own command can silently no-op or partially fail while a LATER step still appears to succeed. Concretely: run whoami equivalents (gh api user, gh auth status) to get the real signed-in username BEFORE building any URL with it - never guess a username from the OS account name, the folder name, or anything the user said earlier that could be stale; after gh repo create or git push, treat the command's own exit code and printed output as the only source of truth for whether it worked, not your prior turn's summary of what you intended to do - a command you ran two turns ago having succeeded is not evidence this turn's retry did too; and never hand the user a repository/deployment URL you have not just confirmed resolves (curl -I it, or read it back from the command's own output) - a plausible-looking URL built from a guessed username/slug is a fabrication even if the pattern is usually right.
 - gmail_send and slack_post_message send a real email or a real Slack message the moment they run - there is no "preview" mode. Only use them when the user actually asked for that email/message to go out, never speculatively, never as a way to "show" them what it would say. When the user wants an email written but not sent yet, use gmail_draft instead. The user sees the email on an editable card before it goes out and may change it: the tool result says what was really sent or saved, so report that, not your original wording. calendar_add likewise puts a real event on the user's Google Calendar: only when they asked for it, with times in their local time; check calendar_list first when they ask what is on their calendar or whether a time is free. If gmail_search or a prior message makes clear Gmail/Slack isn't connected, say so plainly and stop - do not retry hoping it connects itself, and do not claim you sent something when the tool reported it wasn't connected.
-- vercel_deploy, supabase_create_project, supabase_delete_project, and github_create_repo are the same category as gmail_send/slack_post_message above: real, immediate action the moment they run - a live production deployment, a newly provisioned cloud database with its own bill, a brand-new repository pushed with the user's code. Only use them when the user actually asked for that outcome, never speculatively "to check if it would work." If one reports its integration isn't connected, say so plainly and stop rather than retrying or working around it. supabase_delete_project is the sharpest of these - it permanently destroys a database with no undo - so only reach for it when the user has clearly asked to delete or remove a specific project, never as cleanup for something that merely looks unused.
+- A brand-new project: when the user asks you to start, create or build a new app or project from scratch (an empty or new folder), then once the first version runs, back it up on GitHub without being asked again: call github_create_repo (it creates a private repo on their connected account and pushes; the user approves it on a card, no env vars, tokens or github.com steps). If it reports GitHub isn't connected, mention once, in one line, that connecting GitHub in Connect Apps backs projects up automatically, and carry on. Don't do this for existing projects, folders that are already git repos with a remote, or small one-off files.
+- vercel_deploy, supabase_create_project, supabase_delete_project, and github_create_repo are the same category as gmail_send/slack_post_message above: real, immediate action the moment they run - a live production deployment, a newly provisioned cloud database with its own bill, a brand-new repository pushed with the user's code. Only use them when the user actually asked for that outcome (or, for github_create_repo, a brand-new project as described above), never speculatively "to check if it would work." If one reports its integration isn't connected, say so plainly and stop rather than retrying or working around it. supabase_delete_project is the sharpest of these - it permanently destroys a database with no undo - so only reach for it when the user has clearly asked to delete or remove a specific project, never as cleanup for something that merely looks unused.
 - Images: build without photos first. Most pages look great with type, color, layout, CSS shapes, icons and inline SVG, so do that unless the design truly needs a photo (a restaurant's food, a product shot, a portfolio). Never ask the user for images or how imagery should work; decide yourself. When a photo is genuinely needed, find a real one with image_search (it searches the whole web like Google Images), pick the result that fits that exact section, and download it with fetch_image to a path under assets/. Every image in the markup must be that local file: never point an <img> or CSS background at a remote URL, and never use loremflickr, picsum or other random-photo services. If a downloaded image turns out broken or unrelated once you look at the page, delete it and pick another result.
 - If a SKILLS entry below is a clear match for the task, use_skill it before starting - its instructions take priority over your own default approach for that kind of work. Do not use_skill speculatively; only when a listed skill actually matches what you are about to do. A name under LIKELY RELEVANT TO THIS REQUEST, if that section is present, was matched against your actual request from the full library - treat it exactly the same way: use_skill it before starting unless it's obviously a false match, do not silently ignore it in favor of guessing your own approach.
 - EXCEPTION - this one is not speculative: if the task is to build or restyle any page a human will look at in a browser (a landing page, a small-business site, a portfolio, a dashboard, any HTML/CSS/UI), use_skill 'premium-web-design' before writing markup, even if the brief sounds tiny or mundane ("a site for a tea shop"). A plain-sounding brief is not permission for a flat, default-Bootstrap-looking result - Codeply's bar is that every generated page reads as deliberately designed. Skip this only if the user explicitly asked for something minimal/utilitarian/no-frills.
@@ -1429,7 +1441,7 @@ const NO_NATIVE_TOOLS_REMINDER =
 // unless their entry says toolMode: 'text', or CODEPLY_TOOLS=text is set.
 // A model that rejects tools is remembered for the rest of the session.
 const nativeUnsupported = new Set();
-const MUTATING_ACTIONS = new Set(['write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github']);
+const MUTATING_ACTIONS = new Set(['write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'add_model', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github']);
 
 /**
  * Native function names for MCP tools (mcp__server__tool, within the 64-char

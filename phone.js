@@ -20,6 +20,59 @@ const AI_PROXY_URL = `${SUPABASE_URL}/functions/v1/ai-proxy`;
 const USER_MODELS_URL = `${SUPABASE_URL}/functions/v1/user-models`;
 const BYOK_PROXY_URL = `${SUPABASE_URL}/functions/v1/byok-proxy`;
 
+// ─── This phone, for the daily limits ────────────────────────────────────────
+// A browser can't read a MAC or hardware id, so the phone keeps its own random
+// id in three places (localStorage, a cookie, IndexedDB): signing out and in
+// with another account keeps it, so every account on this phone shares one
+// daily limit. Sent as x-codeply-device to ai-proxy, byok-proxy, auto and
+// voice-chat only (the functions that allow that header).
+const DEVICE_KEY = 'codeply.device';
+const isDeviceId = (v) => /^[a-f0-9]{64}$/.test(String(v || ''));
+function makeDeviceId() {
+  const b = new Uint8Array(32);
+  crypto.getRandomValues(b);
+  return [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+function cookieDeviceId() {
+  try {
+    const m = /(?:^|;\s*)codeply_device=([a-f0-9]{64})/.exec(document.cookie || '');
+    return m ? m[1] : '';
+  } catch { return ''; }
+}
+let deviceIdValue = '';
+try { deviceIdValue = localStorage.getItem(DEVICE_KEY) || ''; } catch {}
+if (!isDeviceId(deviceIdValue)) deviceIdValue = cookieDeviceId();
+if (!isDeviceId(deviceIdValue)) deviceIdValue = makeDeviceId();
+function keepDeviceId(id) {
+  try { localStorage.setItem(DEVICE_KEY, id); } catch {}
+  try { document.cookie = `codeply_device=${id}; max-age=${60 * 60 * 24 * 400}; path=/; samesite=lax; secure`; } catch {}
+  try {
+    const open = indexedDB.open('codeply-device', 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('kv');
+    open.onsuccess = () => { try { open.result.transaction('kv', 'readwrite').objectStore('kv').put(id, 'id'); } catch {} };
+  } catch {}
+}
+// IndexedDB is read first: if it still has an older id (localStorage and the
+// cookie were cleared), that one wins; then the id is written everywhere.
+(function restoreDeviceId() {
+  let done = false;
+  const finish = (id) => { if (done) return; done = true; if (isDeviceId(id)) deviceIdValue = id; keepDeviceId(deviceIdValue); };
+  try {
+    const open = indexedDB.open('codeply-device', 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('kv');
+    open.onerror = () => finish('');
+    open.onsuccess = () => {
+      try {
+        const get = open.result.transaction('kv', 'readonly').objectStore('kv').get('id');
+        get.onsuccess = () => finish(get.result);
+        get.onerror = () => finish('');
+      } catch { finish(''); }
+    };
+    setTimeout(() => finish(''), 1500);
+  } catch { finish(''); }
+})();
+const deviceHeader = () => ({ 'x-codeply-device': deviceIdValue });
+
 const CHAT_SYSTEM = 'You are Codeply, the assistant in the Codeply phone app. This is a normal chat: you cannot see, open or change any files, run code or browse here. Answer clearly and keep it readable on a phone screen; use short paragraphs, lists and fenced code blocks when they help. If someone wants changes made to one of their projects, tell them to switch to Code in the composer. When a GMAIL note appears in the conversation, it is the user’s own inbox read live just now: answer from it directly (who wrote, about what, what needs a reply) and never say you cannot see their email.';
 
 // ─── Small helpers ──────────────────────────────────────────────────────────
@@ -791,7 +844,7 @@ async function chatSend(chat, text, images = []) {
     const messages = [{ role: 'system', content: CHAT_SYSTEM + (window.CraftReminders ? window.CraftReminders.chatRules() : '') }, ...history];
     const res = await fetch(own ? BYOK_PROXY_URL : AI_PROXY_URL, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...deviceHeader() },
       // inbox: when the message is about email, the server reads Gmail (the link turned on for calls) first
       body: JSON.stringify(own ? { modelId: own.id, messages, opts: { inbox: true, tz: localTz() } } : { messages, opts: { inbox: true, tz: localTz() } }),
       signal: controller.signal,
@@ -844,8 +897,14 @@ async function pcSend(chat, text, images = []) {
   renderComposer();
   try {
     // The PC answers when the whole turn ends; events stream in meanwhile.
-    const r = await relayRequest('POST', '/api/send', { sessionId: chat.pcSessionId || null, cwd: project.cwd, mode: state.ui.codeMode, bypass: state.bypass, text: text || 'Image attached.', ...(images.length ? { images } : {}), clientId }, 6 * 3600 * 1000);
+    const r = await relayRequest('POST', '/api/send', { sessionId: chat.pcSessionId || null, cwd: project.cwd, ...(project.newProject && !project.cwd ? { newProject: project.newProject } : {}), mode: state.ui.codeMode, bypass: state.bypass, text: text || 'Image attached.', ...(images.length ? { images } : {}), clientId }, 6 * 3600 * 1000);
     if (r && r.error) throw new Error(r.error);
+    if (r && r.cwd && !project.cwd) {
+      chat.project = { key: `cwd:${normCwd(r.cwd)}`, name: basename(r.cwd), cwd: r.cwd, repo: null };
+      state.pc.projects = [r.cwd, ...(state.pc.projects || []).filter((p) => normCwd(p) !== normCwd(r.cwd))];
+      state.ui.projectKey = chat.project.key;
+      saveUi(); saveChats();
+    }
     if (r && r.sessionId) chat.pcSessionId = r.sessionId;
     if (r && r.title) chat.title = r.title;
     delete chat.awaitingPc;
@@ -1220,6 +1279,10 @@ async function onSubmit(e) {
   const text = window.CodeplyAttach ? window.CodeplyAttach.compose(input.value.trim(), attFiles.filter((f) => f.kind !== 'image')) : input.value.trim();
   if (!text && !images.length) return;
   attFiles = []; renderAtt();
+  if (state.ui.mode === 'chat' && !images.length) {
+    const intent = taskIntent(input.value.trim());
+    if (intent) { clearInput(); return handOff(text, intent); }
+  }
   if (state.ui.mode === 'chat') {
     const chat = c0 && c0.kind === 'chat' ? c0 : createChat('chat');
     openChat(chat.id, { keepMode: true });
@@ -1244,6 +1307,55 @@ async function onSubmit(e) {
   $('offlineSheet').classList.remove('hidden');
 }
 function clearInput() { const i = $('input'); i.value = ''; i.style.height = 'auto'; }
+
+// ─── Chat → Code: real tasks go to the agent ────────────────────────────────
+// "Make me a website", "fix the login bug", "deploy it", "send an email to…",
+// "create a repo": Chat can only talk, so these run as a Code task instead,
+// on the PC when it's on (a brand-new project gets its own folder there), or
+// in the cloud when it's off. Questions ("how do I build a website?") stay chat.
+const TASK_TYPES = 'websites?|web ?sites?|sites?|web ?apps?|apps?|landing ?pages?|portfolios?|dashboards?|games?|apis?|backends?|frontends?|extensions?|bots?|tools?|clones?|projects?|stores?|shops?|blogs?|scripts?|programs?';
+const NEW_RE = new RegExp(`\\b(build|make|create|code|develop|design|generate|start|set ?up|scaffold|write)\\b[^.?!]{0,60}?\\b(${TASK_TYPES})\\b`, 'i');
+const WORK_RE = /\b(fix|debug|refactor|deploy|redeploy|ship|publish|push|commit|implement|add (a |the )?(feature|page|button|section|login|dark mode)|run (the )?tests?|update (the |my )?(code|site|app|website))\b/i;
+const ACTION_RE = /\b(send|reply|forward)\b[^.?!]{0,40}\b(e-?mail|mail|message)\b|\bpost\b[^.?!]{0,30}\b(slack|channel)\b|\bcreate\b[^.?!]{0,30}\b(repo|repository|supabase project|database)\b/i;
+const QUESTION_RE = /^(how|what|why|when|which|who|where|is|are|does|do|should|explain|tell me|teach me|what's|whats)\b/i;
+function taskIntent(raw) {
+  const t = String(raw || '').trim();
+  if (t.length < 8 || QUESTION_RE.test(t)) return null;
+  const isNew = NEW_RE.exec(t);
+  if (isNew) {
+    // "a portfolio website for my bakery" -> "portfolio-website"
+    const m = new RegExp(`\\b(?:a|an|my|the|new)\\s+((?:[a-z0-9-]+\\s+){0,2}?)(${TASK_TYPES})\\b`, 'i').exec(t);
+    const name = m ? `${m[1]}${m[2]}`.trim() : isNew[2];
+    return { kind: 'new', name };
+  }
+  if (WORK_RE.test(t)) return { kind: 'work' };
+  if (ACTION_RE.test(t)) return { kind: 'action' };
+  return null;
+}
+
+async function handOff(text, intent) {
+  setUiMode('code');
+  const project = projectByKey(state.ui.projectKey) || currentProject();
+  if (relay.connecting || relay.channel) await waitForPc(4000);
+  const pcOn = !!relay.pcId;
+  const note = (msg) => { addMsg('note', msg); scrollToBottom(); };
+  // something new, with the PC on: a fresh folder for it there
+  if (intent.kind === 'new' && pcOn) {
+    const chat = createChat('code', { project: { key: 'new', name: intent.name, cwd: null, repo: null, newProject: intent.name } });
+    openChat(chat.id, { keepMode: true });
+    note('This is a building task, so Codeply is doing it on your PC in a new project folder.');
+    return pcSend(chat, text, []);
+  }
+  // work in a project, or an action (email, Slack, deploy, repo): the current project
+  if (project) {
+    const chat = createChat('code', { project: { key: project.key, name: project.name, cwd: project.cwd || null, repo: project.repo || null } });
+    openChat(chat.id, { keepMode: true });
+    if (project.cwd && pcOn) { note(`This is a task, so Codeply is doing it on your PC in ${project.name}.`); return pcSend(chat, text, []); }
+    if (envFor(project)) { note(`Your PC is off, so this runs in the cloud on ${project.name}.`); return runInCloud(chat, text); }
+  }
+  // nowhere to run it yet: pick a project (or set up the cloud), the message is kept
+  openProjectPicker({ thenSend: text });
+}
 
 // ─── Attached files (attachments.js): PDFs, text and code ───────────────────
 let attFiles = []; // read files, or { name, reading: true } while one is read
@@ -1941,7 +2053,7 @@ currentSession().then((s) => { if (s) enterApp(); else showSignin(); }).catch(sh
 
 // For tests and debugging in the console.
 // phone-calls.js (Calls with bots) builds on these too.
-window.CraftPhone = { state, relay, sealSecret, CLOUD_WORKFLOW, md, pollAll, relayRequest, accessToken, esc, load, save, newId, openDrawer, closeDrawer, AI_PROXY_URL, SUPABASE_ANON_KEY,
+window.CraftPhone = { state, relay, sealSecret, CLOUD_WORKFLOW, md, pollAll, relayRequest, accessToken, esc, load, save, newId, openDrawer, closeDrawer, AI_PROXY_URL, SUPABASE_ANON_KEY, deviceHeader,
   cloudEnvForBots, startCloudTask, pollCloudTask: pollTask };
 
 // Reminders and "calls" from your bots arrive as Web Push: phone-sw.js shows

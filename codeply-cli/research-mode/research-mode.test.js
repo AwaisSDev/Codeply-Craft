@@ -30,6 +30,11 @@ function fakeServer(label, requireKey) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ models: [{ name: 'llama3:8b', size: 1, details: { family: 'llama', parameter_size: '8B' } }, { name: 'qwen2.5-coder:7b' }] }));
       }
+      if (req.url === '/v1/chat/completions') {
+        seen[label].push({ openai: JSON.parse(body) });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Hello there' }, finish_reason: 'stop' }], usage: { prompt_tokens: 3, completion_tokens: 2 } }));
+      }
       if (req.url === '/api/chat') {
         seen[label].push({ chat: JSON.parse(body) });
         res.writeHead(200, { 'Content-Type': 'application/x-ndjson' });
@@ -99,56 +104,39 @@ const listen = (s) => new Promise((r) => s.listen(0, '127.0.0.1', () => r(s.addr
     assert.deepStrictEqual(r.models.map((m) => m.name), ['llama3:8b', 'qwen2.5-coder:7b']);
   });
 
-  await t('local ok: tokens stream in order to onToken, full text returned', async () => {
-    const tokens = [];
-    const r = await ai.chat([{ role: 'user', content: 'hi' }], { onToken: (x) => tokens.push(x) });
+  // Research Mode runs on the selected model: the context goes in front, nothing else changes.
+  const selected = () => ({ custom: { kind: 'openai', name: 'Picked', baseUrl: `http://127.0.0.1:${lp}/v1`, model: 'picked-model', apiKey: '' } });
+  const lastSent = () => seen.local.filter((x) => x.openai).pop().openai;
+
+  await t('research on: the selected model answers, context first', async () => {
+    config.saveConfig({ research: { enabled: true, context: 'ctx' } });
+    const r = await ai.chat([{ role: 'user', content: 'hi' }], { route: selected() });
     assert.ok(r.success, r.error);
-    assert.deepStrictEqual(tokens, ['Hel', 'lo ', 'there']);
     assert.strictEqual(r.data.choices[0].message.content, 'Hello there');
-    const chatReq = seen.local.find((x) => x.chat).chat;
-    assert.strictEqual(chatReq.model, 'llama3:8b'); assert.strictEqual(chatReq.stream, true);
-    assert.strictEqual(seen.local.find((x) => x.url === '/api/chat').auth, '');
+    const sent = lastSent();
+    assert.strictEqual(sent.model, 'picked-model');
+    assert.deepStrictEqual(sent.messages, [{ role: 'system', content: 'ctx' }, { role: 'user', content: 'hi' }]);
   });
 
-  await t('research context is sent as a system message, messages unchanged', async () => {
-    seen.local.length = 0;
-    await ai.chat([{ role: 'user', content: 'hi' }], {});
-    const sent = seen.local.find((x) => x.chat).chat.messages;
-    assert.deepStrictEqual(sent, [{ role: 'system', content: 'ctx' }, { role: 'user', content: 'hi' }]);
+  await t('research on with no context: messages go unchanged', async () => {
+    config.saveConfig({ research: { enabled: true, context: '' } });
+    await ai.chat([{ role: 'user', content: 'hi' }], { route: selected() });
+    assert.deepStrictEqual(lastSent().messages, [{ role: 'user', content: 'hi' }]);
   });
 
-  await t('local not running: exact error text', async () => {
+  await t('research off: no context is added', async () => {
+    config.saveConfig({ research: { enabled: false, context: 'ctx' } });
+    await ai.chat([{ role: 'user', content: 'hi' }], { route: selected() });
+    assert.deepStrictEqual(lastSent().messages, [{ role: 'user', content: 'hi' }]);
+  });
+
+  await t('local Ollama not running: exact error text from the model list', async () => {
+    const l = await ollama.listModels({ mode: 'local', apiKey: '' });
+    assert.ok(l.ok);
     process.env.CODEPLY_RESEARCH_LOCAL_URL = `http://127.0.0.1:${dp}`;
-    const r = await ai.chat([{ role: 'user', content: 'hi' }], {});
-    assert.strictEqual(r.success, false); assert.strictEqual(r.error, 'Start Ollama with `ollama serve`');
-    const l = await ollama.listModels({ mode: 'local' });
-    assert.strictEqual(l.ok, false); assert.strictEqual(l.error, 'Start Ollama with `ollama serve`');
+    const down = await ollama.listModels({ mode: 'local' });
+    assert.strictEqual(down.ok, false); assert.strictEqual(down.error, 'Start Ollama with `ollama serve`');
     process.env.CODEPLY_RESEARCH_LOCAL_URL = `http://127.0.0.1:${lp}`;
-  });
-
-  await t('cloud missing key: exact error text, no request made', async () => {
-    config.saveConfig({ research: { mode: 'cloud', apiKey: '' } });
-    const before = seen.cloud.length;
-    const r = await ai.chat([{ role: 'user', content: 'hi' }], {});
-    assert.strictEqual(r.error, 'Add your Ollama Cloud API key in Settings');
-    assert.strictEqual(seen.cloud.length, before);
-  });
-
-  await t('cloud invalid key: 401 maps to exact error text', async () => {
-    config.saveConfig({ research: { mode: 'cloud', apiKey: 'wrong-key-000000000000' } });
-    const r = await ai.chat([{ role: 'user', content: 'hi' }], {});
-    assert.strictEqual(r.success, false); assert.strictEqual(r.error, 'Add your Ollama Cloud API key in Settings');
-    const l = await ollama.listModels(config.getConfig().research);
-    assert.strictEqual(l.error, 'Add your Ollama Cloud API key in Settings');
-  });
-
-  await t('cloud valid key: bearer header sent and tokens stream', async () => {
-    config.saveConfig({ research: { mode: 'cloud', apiKey: FAKE_KEY } });
-    const tokens = [];
-    const r = await ai.chat([{ role: 'user', content: 'hi' }], { onToken: (x) => tokens.push(x) });
-    assert.ok(r.success, r.error);
-    assert.deepStrictEqual(tokens, ['Hel', 'lo ', 'there']);
-    assert.ok(seen.cloud.some((x) => x.url === '/api/chat' && x.auth === `Bearer ${FAKE_KEY}`));
   });
 
   await t('key masking: preview never contains the full key', () => {

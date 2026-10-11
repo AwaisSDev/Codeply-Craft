@@ -1185,7 +1185,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     const token = await P.accessToken();
     const res = await fetch(P.AI_PROXY_URL, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...(P.deviceHeader ? P.deviceHeader() : {}) },
       body: JSON.stringify({ messages, opts: { maxTokens: 220, temperature: 0.7 }, meta: { source: 'phone-call' } }),
       signal,
     });
@@ -1233,13 +1233,13 @@ You are on a live voice call. Reply with ONLY a JSON object: {"say": "...", "wor
     // voice-chat: built for calls (budget and model in parallel, minimal reasoning); ai-proxy if it is not there.
     let res = await fetch(VOICE_CHAT_URL, {
       method: 'POST', signal,
-      headers: { Authorization: `Bearer ${token}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...(P.deviceHeader ? P.deviceHeader() : {}) },
       body: JSON.stringify({ messages, maxTokens: 260 }),
     });
     if (res.status === 404) {
       res = await fetch(P.AI_PROXY_URL, {
         method: 'POST', signal,
-        headers: { Authorization: `Bearer ${token}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${token}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...(P.deviceHeader ? P.deviceHeader() : {}) },
         body: JSON.stringify({ messages, opts: { json: true, maxTokens: 260, temperature: 0.7 }, meta: { source: 'phone-call-fast' } }),
       });
     }
@@ -2060,7 +2060,7 @@ Respond with ONLY a JSON object:
     const token = await P.accessToken();
     const res = await fetch(P.AI_PROXY_URL, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...(P.deviceHeader ? P.deviceHeader() : {}) },
       body: JSON.stringify({ messages: [{ role: 'user', content: describePrompt(text) }], opts: { json: true, maxTokens: 500, temperature: 0.6 }, meta: { source: 'phone-bot-builder' } }),
     });
     const data = await res.json().catch(() => ({}));

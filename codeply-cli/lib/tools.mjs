@@ -1335,13 +1335,23 @@ async function github_create_repo(args, ctx) {
     // at least one commit - a brand-new GitHub repo (created with no
     // auto_init below) starts completely empty, so pushing an empty local
     // repo would just fail with "src refspec main does not match any".
+    try { await runGit('--version', root); } catch {
+      return { ok: false, output: 'Git is not installed on this computer, so the code can\'t be pushed. Tell the user to install it from git-scm.com (the defaults are fine), then ask again.' };
+    }
     const isRepo = fs.existsSync(path.join(root, '.git'));
     if (!isRepo) await runGit('init', root);
     let hasCommit = true;
     try { await runGit('rev-parse HEAD', root); } catch { hasCommit = false; }
     if (!hasCommit) {
       await runGit('add -A', root);
-      await runGit('commit -m "Initial commit"', root);
+      // A computer where git was never told who you are would fail here
+      // ("Please tell me who you are"): commit as the GitHub account, with
+      // GitHub's private no-reply address. The git settings stay untouched.
+      const login = String(github.userName || 'codeply').replace(/[^A-Za-z0-9-]/g, '') || 'codeply';
+      let who = '';
+      try { await runGit('config user.name', root); } catch { who += `-c user.name="${login}" `; }
+      try { await runGit('config user.email', root); } catch { who += `-c user.email="${login}@users.noreply.github.com" `; }
+      await runGit(`${who}commit -m "Initial commit"`, root);
     }
 
     const repo = await oauth.githubCreateRepo(github.accessToken, repoName, { private: true });
@@ -2237,6 +2247,48 @@ const publishTools = publishLib.makePublishTools({
   resolveDir: (p, cwd) => resolvePath(String(p).trim(), cwd).abs,
 });
 
+/**
+ * add_model: adds a model to the user's model menu from chat ("add this model:
+ * name, base URL, API key"). Asks first (key masked), checks the model really
+ * answers, saves it on this computer and selects it. In Craft the desktop does
+ * the saving (globalThis.__codeplyHost.addModel), so it also syncs to the
+ * phone like any added model and the menu updates right away.
+ */
+async function add_model(args, ctx) {
+  const name = String(args.name || '').trim();
+  const baseUrl = String(args.base_url || args.baseUrl || '').trim().replace(/\/+$/, '');
+  const model = String(args.model || '').trim();
+  const apiKey = String(args.api_key || args.apiKey || '').trim();
+  if (!model) return { ok: false, output: 'add_model needs <model>: the model id the provider expects (e.g. gpt-4o-mini, claude-sonnet-5-5, deepseek-chat).' };
+  if (!/^https?:\/\//i.test(baseUrl)) return { ok: false, output: 'add_model needs <base_url> starting with http:// or https:// (e.g. https://api.openai.com/v1).' };
+  const local = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(baseUrl) && /:11434$/.test(baseUrl);
+  const shown = name || model;
+  const masked = apiKey ? `${apiKey.slice(0, 4)}…${apiKey.slice(-4)}` : 'none';
+  const verdict = readVerdict(await ctx.approve({
+    tool: 'add_model',
+    title: `Add "${shown}" to your models`,
+    detail: `Model: ${model}\nAddress: ${baseUrl}\nKey: ${masked}\n\nIt's tested first, saved on this computer, and synced to your phone.`,
+    danger: false,
+  }));
+  if (verdict.action === 'reject') return { ok: false, output: `User declined to add "${shown}".`, meta: { rejected: true } };
+  const input = { kind: local ? 'ollama' : 'openai', name: shown, baseUrl, model, apiKey };
+  try {
+    const host = globalThis.__codeplyHost;
+    let r;
+    if (host && typeof host.addModel === 'function') r = await host.addModel(input);
+    else {
+      const t = await require('./ai.js').testModel(input);
+      if (!t.ok) return { ok: false, output: `The model didn't answer, so it wasn't added: ${t.error}` };
+      r = config.saveModel({ ...input, phone: true });
+      if (r.ok) config.selectModel(r.model.id);
+    }
+    if (!r || !r.ok) return { ok: false, output: `Couldn't add it: ${(r && r.error) || 'unknown error'}` };
+    return { ok: true, output: `Added "${shown}" (${model} at ${baseUrl}) and selected it. It answered a test request${local ? '' : ' and syncs to the phone'}. Never repeat the API key back to the user.`, meta: { label: shown } };
+  } catch (e) {
+    return { ok: false, output: `Couldn't add it: ${e.message}` };
+  }
+}
+
 export const TOOLS = {
   ...publishTools,
   todo,
@@ -2246,14 +2298,14 @@ export const TOOLS = {
   web_fetch, web_search, image_search, apply_patch, plan_exit, plan_enter, lsp, reach_me, watch_email,
   list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, browser_check,
   gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, slack_post_message, vercel_deploy, supabase_create_project, supabase_delete_project, github_create_repo,
-  design_reference_search, view_images, supabase_api, supabase_sql, vercel_api,
+  design_reference_search, view_images, supabase_api, supabase_sql, vercel_api, add_model,
 };
 
 // Tools that can change something. supabase_api/supabase_sql/vercel_api only
 // actually prompt for non-read requests (see above); read-only tools
 // (browser_check, gmail_search, design_reference_search, view_images, ...)
 // never prompt.
-export const TOOL_NEEDS_APPROVAL = new Set(['supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github', 'write_file', 'edit_file', 'apply_patch', 'run', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_api', 'supabase_sql', 'vercel_api']);
+export const TOOL_NEEDS_APPROVAL = new Set(['add_model', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github', 'write_file', 'edit_file', 'apply_patch', 'run', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_api', 'supabase_sql', 'vercel_api']);
 
 /** Human-facing verb + colour hint for the transcript. */
 export const TOOL_DISPLAY = {
@@ -2286,6 +2338,7 @@ export const TOOL_DISPLAY = {
   drafts_list:{ verb: 'drafts', icon: '✉' },
   calendar_list:{ verb: 'calendar', icon: '▦' },
   calendar_add:{ verb: 'calendar', icon: '▦' },
+  add_model:{ verb: 'model', icon: '◆' },
   slack_post_message:{ verb: 'post', icon: '#' },
   vercel_deploy:{ verb: 'deploy', icon: '▲' },
   supabase_create_project:{ verb: 'provision', icon: '◆' },
@@ -2308,7 +2361,7 @@ export const TOOL_DISPLAY = {
 // agent.mjs; this covers every other tool that changes something outside the
 // conversation, so read-only can't be escaped through a side door.
 const MUTATING_TOOLS = new Set([
-  'write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'slack_post_message',
+  'write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'slack_post_message', 'add_model',
   'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo',
   'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github',
 ]);

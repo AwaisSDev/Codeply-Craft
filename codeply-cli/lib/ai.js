@@ -289,6 +289,7 @@ async function chatViaProxy(messages, opts) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
           'apikey': SUPABASE_ANON_KEY,
+          ...(deviceId() ? { 'x-codeply-device': deviceId() } : {}),
         },
         // meta is optional, display-only context (what was asked, which file) -
         // the proxy logs it to usage_history so CLI activity shows up in the
@@ -1236,8 +1237,41 @@ const AUTO_MODEL = { host: 'https://ollama.com', model: 'gemma4:31b' };
 // Long Claude turns: the router streams keep-alive spaces, so allow a while
 const AUTO_TIMEOUT_MS = 6 * 60_000;
 
+/**
+ * This computer, as a one-way hash, so the router can give one Claude
+ * allowance per computer however many accounts sign in on it. Built from the
+ * OS machine id (Windows MachineGuid, the Mac's hardware UUID, Linux
+ * /etc/machine-id), or the first network card's MAC when that can't be read.
+ * The raw values never leave the PC.
+ */
+let deviceIdCache = null;
+function deviceId() {
+  if (deviceIdCache !== null) return deviceIdCache;
+  const os = require('os');
+  const { execSync } = require('child_process');
+  let machine = '';
+  try {
+    if (process.platform === 'win32') {
+      const out = execSync('reg query HKLM\\SOFTWARE\\Microsoft\\Cryptography /v MachineGuid', { encoding: 'utf8', windowsHide: true, timeout: 3000 });
+      machine = (/MachineGuid\s+REG_SZ\s+(\S+)/.exec(out) || [])[1] || '';
+    } else if (process.platform === 'darwin') {
+      const out = execSync('ioreg -rd1 -c IOPlatformExpertDevice', { encoding: 'utf8', timeout: 3000 });
+      machine = (/"IOPlatformUUID" = "([^"]+)"/.exec(out) || [])[1] || '';
+    } else {
+      machine = require('fs').readFileSync('/etc/machine-id', 'utf8').trim();
+    }
+  } catch {}
+  const macs = Object.values(os.networkInterfaces()).flat()
+    .filter((n) => n && !n.internal && n.mac && n.mac !== '00:00:00:00:00:00')
+    .map((n) => n.mac).sort();
+  const raw = machine || macs[0] || '';
+  deviceIdCache = raw ? require('crypto').createHash('sha256').update(`codeply-device|${raw}`).digest('hex') : '';
+  return deviceIdCache;
+}
+
 async function chatViaRouter(messages, opts) {
   const token = await getAccessToken();
+  const device = deviceId();
   if (!token) return { success: false, unreachable: true, error: 'Not signed in.' };
   return withRetries(async () => {
     let res, body;
@@ -1245,7 +1279,7 @@ async function chatViaRouter(messages, opts) {
     try {
       res = await fetch(AUTO_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, ...(device ? { 'x-codeply-device': device } : {}) },
         body: JSON.stringify({
           messages: wireMessages(messages),
           ...(opts.tools ? { tools: opts.tools } : {}),
@@ -1299,6 +1333,10 @@ async function chatResearch(messages, opts, rm) {
   const rmod = researchMode();
   const target = rmod.resolveTarget(rm);
   if (target.error) return { success: false, error: target.error };
+  // Online without their own key runs on Codeply's Ollama account: signed-in people only
+  if (rm.mode !== 'local' && !String(rm.apiKey || '').trim() && !(await getAccessToken().catch(() => null))) {
+    return { success: false, error: 'Sign in to Codeply to use Research Mode online, or add your own Ollama key in its settings.' };
+  }
   if (!rm.model) return { success: false, error: 'Pick a model in Research Mode settings.' };
   const pre = rmod.preprocess({ messages, mode: rm.mode, model: rm.model, researchContext: rm.context });
   return chatViaOllamaNative(rmod.withSystem(pre), opts, { baseUrl: target.host, model: rm.model, apiKey: target.apiKey, research: rm.mode === 'cloud' ? 'cloud' : 'local' });
@@ -1306,8 +1344,6 @@ async function chatResearch(messages, opts, rm) {
 
 /** Which route a request takes, for the usage counts (telemetry.js). */
 function providerOf(opts) {
-  const rm = getConfig().research;
-  if (rm && rm.enabled) return 'research';
   if (opts.route && opts.route.custom) return opts.route.custom.kind === 'chatgpt' ? 'chatgpt' : opts.route.custom.kind === 'ollama' ? 'ollama' : 'byok';
   if (opts.route && opts.route.auto) return 'auto';
   const p = applyRoute(getConfig(), opts.route).provider;
@@ -1329,9 +1365,13 @@ async function chat(messages, opts = {}) {
 }
 
 async function chatRouted(messages, opts = {}) {
-  // Research Mode, when switched on in settings, takes every request.
+  // Research Mode: the user's research context goes in front, and whatever
+  // model is selected (Auto or their own) answers as usual.
   const rm = getConfig().research;
-  if (rm && rm.enabled) return chatResearch(messages, opts, rm);
+  if (rm && rm.enabled && String(rm.context || '').trim()) {
+    const rmod = researchMode();
+    messages = rmod.withSystem(rmod.preprocess({ messages, researchContext: rm.context }));
+  }
   // A user-added model (desktop model picker) always wins when routed.
   if (opts.route && opts.route.custom) return chatViaCustom(messages, opts, opts.route.custom);
   // Auto in the desktop app = the hosted Codeply model, regardless of what

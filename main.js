@@ -257,6 +257,26 @@ function sessionMeta(s) {
   };
 }
 
+/**
+ * A new project folder for a task that starts something new from the phone
+ * ("make me a portfolio site"): Documents\Codeply Projects\<name>, numbered
+ * when the name is taken. Remembered like any project so it shows everywhere.
+ */
+function newProjectFolder(name) {
+  try {
+    const slug = String(name || 'new-project').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'new-project';
+    const base = path.join(app.getPath('documents'), 'Codeply Projects');
+    fs.mkdirSync(base, { recursive: true });
+    let dir = path.join(base, slug);
+    for (let i = 2; fs.existsSync(dir) && i < 100; i++) dir = path.join(base, `${slug}-${i}`);
+    fs.mkdirSync(dir, { recursive: true });
+    rememberProject(dir);
+    return { cwd: dir };
+  } catch (e) {
+    return { error: `Couldn't make a project folder: ${e.message}` };
+  }
+}
+
 function rememberProject(cwd) {
   if (!cwd) return;
   store.projects = [cwd, ...store.projects.filter((p) => p !== cwd)].slice(0, 8);
@@ -803,7 +823,10 @@ ipcMain.handle('models:select', async (e, id) => {
 // Saves (and selects) a model, testing it with a tiny real request first so a
 // typo'd URL/key/model id is caught here rather than mid-task. `skipTest`
 // saves anyway (e.g. Ollama not running right now).
-ipcMain.handle('models:save', async (e, input) => {
+ipcMain.handle('models:save', (e, input) => saveModelInput(input));
+
+/** Tests, saves and selects a model, then syncs it to the phone (on by default). The window and the add_model tool both use this. */
+async function saveModelInput(input) {
   if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
   const existing = input?.id ? configLib.getModel(input.id) : null;
   const candidate = {
@@ -834,6 +857,16 @@ ipcMain.handle('models:save', async (e, input) => {
   if (phone === true && !modelSyncLib.phoneBlocker(saved.model)) pushModelToPhone(saved.model.id, { withKey: keyChanged }).catch(() => {});
   else if (existing && existing.phoneSyncedAt) removeModelFromPhone(saved.model.id).then(emitModelsChanged).catch(() => {});
   return { ok: true, model: publicModel(saved.model), state: modelsState() };
+}
+
+// The agent's add_model tool (codeply-cli/lib/tools.mjs) saves through here, so a model
+// added from chat is tested, synced to the phone and shows in the menu right away.
+globalThis.__codeplyHost = Object.assign(globalThis.__codeplyHost || {}, {
+  addModel: async (input) => {
+    const r = await saveModelInput({ ...input, phone: true });
+    if (r.ok) emitModelsChanged();
+    return r;
+  },
 });
 
 ipcMain.handle('models:delete', async (e, id) => {
@@ -938,7 +971,9 @@ ipcMain.handle('ollamaCloud:checkKey', async (e, key) => {
   } catch (err) { return { ok: false, error: `Couldn't reach ollama.com: ${err.message}` }; }
 });
 
-ipcMain.handle('ollamaCloud:openKeys', () => shell.openExternal('https://ollama.com/settings/keys'));
+// ollama.com's dashboard: Get API key at the top right (redirects to sign-in first when needed)
+ipcMain.handle('ollamaCloud:openKeys', () => shell.openExternal('https://ollama.com/dashboard'));
+ipcMain.handle('ollamaCloud:openDownload', () => shell.openExternal('https://ollama.com/download'));
 
 // ─── Research Mode (local Ollama / Ollama Cloud) ────────────────────────────
 // Settings live in ~/.codeply/config.json under "research". The renderer gets
@@ -1006,21 +1041,22 @@ ipcMain.handle('research:save', async (e, patch) => {
   return r.ok ? { ok: true, settings: publicResearch() } : r;
 });
 
-// Connection status plus the installed models (GET /api/tags).
+// Research Mode runs on the selected model: its status is that model's name.
 ipcMain.handle('research:status', async () => {
   if (!(await loadEngine())) return { ok: false, models: [], error: 'Engine not available.' };
-  return require(path.join(CLI_DIR, 'research-mode', 'ollama.js')).listModels(configLib.getConfig().research);
+  return { ok: true, models: [], model: modelLabel(currentRoute()) };
 });
 
 // A short streamed reply so the panel can show tokens arriving.
 ipcMain.handle('research:test', async (e) => {
   if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
-  const rm = configLib.getConfig().research;
-  const r = await aiLib.chatResearch([{ role: 'user', content: 'Say hello in one short sentence.' }], {
+  const r = await aiLib.chat([{ role: 'user', content: 'Say hello in one short sentence.' }], {
     maxTokens: 60,
+    route: currentRoute(),
     signal: AbortSignal.timeout(90_000),
-    onToken: (t) => { if (!e.sender.isDestroyed()) e.sender.send('research:token', t); },
-  }, rm);
+  });
+  const reply = r.success ? String(r.data?.choices?.[0]?.message?.content || '').trim() : '';
+  if (reply && !e.sender.isDestroyed()) e.sender.send('research:token', reply);
   return r.success ? { ok: true } : { ok: false, error: r.aborted ? 'Timed out.' : r.error };
 });
 
@@ -2147,7 +2183,16 @@ async function handleBridgeApi(method, pathname, query, body) {
     return { status: 200, body: await searchImages(query.get('q') || '') };
   }
   // The phone chooses approve-manually vs bypass itself (same-account phones only).
-  if (method === 'POST' && pathname === '/api/send') return { status: 200, body: await startChatRun({ ...body, bypass: body.bypass === true }) };
+  if (method === 'POST' && pathname === '/api/send') {
+    // "Make me a website" from the phone: a fresh folder under Documents\Codeply Projects
+    if (body.newProject && !body.cwd) {
+      const made = newProjectFolder(body.newProject);
+      if (made.error) return { status: 200, body: made };
+      body.cwd = made.cwd;
+    }
+    const run = await startChatRun({ ...body, bypass: body.bypass === true });
+    return { status: 200, body: { ...run, cwd: body.cwd } };
+  }
   // Models: names only. API keys never leave this PC.
   if (method === 'GET' && pathname === '/api/models') return { status: 200, body: modelsState() };
   if (method === 'POST' && pathname === '/api/models/select') {

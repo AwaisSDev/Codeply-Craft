@@ -13,8 +13,13 @@ const ERR_CLOUD_KEY = 'Add your Ollama Cloud API key in Settings';
 
 /** Where a research settings object sends requests: { host, apiKey, error }. */
 function resolveTarget(rm) {
-  if (rm && rm.mode === 'cloud') {
-    const apiKey = String(rm.apiKey || '').trim();
+  if (!rm || rm.mode !== 'local') {
+    // Online: the person's own Ollama key if they added one, else Codeply's
+    // own Ollama Cloud account (the keys Auto's fallback uses), so it just works.
+    let apiKey = String((rm && rm.apiKey) || '').trim();
+    if (!apiKey) {
+      try { const o = require('../lib/config.js').getConfig().ollama; apiKey = String(o.apiKey || o.apiKeyFallback || '').trim(); } catch {}
+    }
     if (!apiKey) return { host: cloudUrl(), apiKey: '', error: ERR_CLOUD_KEY };
     return { host: cloudUrl(), apiKey };
   }
@@ -26,7 +31,7 @@ async function listModels(rm) {
   const t = resolveTarget(rm);
   if (t.error) return { ok: false, models: [], error: t.error };
   const headers = t.apiKey ? { Authorization: `Bearer ${t.apiKey}` } : {};
-  const local = !(rm && rm.mode === 'cloud');
+  const local = !!(rm && rm.mode === 'local');
   try {
     const res = await fetch(`${t.host}/api/tags`, { headers, signal: AbortSignal.timeout(5000) });
     if (res.status === 401 || res.status === 403) return { ok: false, models: [], error: ERR_CLOUD_KEY };

@@ -2448,3 +2448,77 @@ a.remote-url { text-decoration: none; cursor: pointer; }
 .ollama-status.hidden { display: none; }
 .oc-list-head { font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin: 6px 0 8px; }
 #ocList { display: flex; flex-direction: column; gap: 6px; }
+
+/* Model menu: the models Auto uses (locked), and Connect Ollama as a pill */
+.model-item.locked { cursor: default; opacity: .62; padding-top: 4px; padding-bottom: 4px; }
+.model-item.locked:hover { background: none; }
+.model-item.locked .model-item-icon { transform: scale(.82); }
+.model-item.locked .model-item-text strong { font-size: 12.5px; font-weight: 500; }
+.model-item.locked .model-item-text span { font-size: 11px; }
+.model-item-lock { width: 13px; height: 13px; flex: none; margin-left: auto; color: var(--text-faint); fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.model-menu-ollama { display: block; width: calc(100% - 12px); margin: 6px 6px 4px; height: 34px; border-radius: 999px; background: var(--text); color: var(--main-bg); font-size: 13px; font-weight: 600; text-align: center; transition: opacity .12s ease, transform .08s ease; }
+.model-menu-ollama:hover { opacity: .9; }
+.model-menu-ollama:active { transform: scale(.98); }
+
+/* Connect Ollama: online steps */
+.models-tab.hidden { display: none; }
+.oc-step { display: flex; align-items: center; gap: 12px; padding: 6px 0; }
+.oc-num { width: 22px; height: 22px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); }
+.oc-step-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.oc-step-text span { font-size: 12px; color: var(--text-faint); }
+.oc-key-row { margin: 8px 0 2px 34px; }
+.oc-app .ollama-status { padding-top: 0; }
+#modelsPaneOllamaCloud.only .oc-intro { display: none; }
+
+/* Model menu: plain text rows like Codex's "Select model" (no icons, a check on the right) */
+.model-menu { width: 290px; padding: 6px; }
+.model-menu-title { padding: 8px 10px 6px; font-size: 13px; color: var(--text-faint); }
+.model-menu .model-item-icon { display: none; }
+.model-menu .model-item { padding: 8px 10px; gap: 12px; }
+.model-menu .model-item.active { background: none; }
+.model-menu .model-item:hover { background: var(--hover); }
+.model-menu .model-item-text strong { font-size: 14px; font-weight: 500; }
+.model-menu .model-item-text span { font-size: 12.5px; }
+.model-menu .model-item.locked { opacity: .55; padding-top: 6px; padding-bottom: 6px; }
+.model-menu .model-item.locked:hover { background: none; }
+.model-menu .model-item.locked .model-item-text strong { font-size: 13px; }
+.model-menu .model-item.locked .model-item-text span { font-size: 11.5px; }
+.model-menu .model-menu-label { padding: 10px 10px 4px; }
+.model-menu .model-menu-action { padding: 8px 10px; font-size: 14px; }
+.model-menu .model-menu-action svg { display: none; }
+.model-menu-ollama { border-radius: 10px; height: 36px; width: calc(100% - 8px); margin: 6px 4px 2px; }
+
+/* Model menu, ChatGPT style: a raised rounded panel, two-line rows, soft hover */
+.model-menu {
+  width: 300px;
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--cg-menu-bg, #2f2f2f);
+  border: 1px solid var(--cg-menu-border, rgba(255, 255, 255, 0.08));
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.16);
+}
+:root { --cg-menu-bg: #2f2f2f; --cg-menu-hover: rgba(255, 255, 255, 0.06); --cg-menu-border: rgba(255, 255, 255, 0.08); --cg-menu-sub: #afafaf; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) { --cg-menu-bg: #ffffff; --cg-menu-hover: #f4f4f4; --cg-menu-border: rgba(0, 0, 0, 0.08); --cg-menu-sub: #8f8f8f; }
+}
+:root[data-theme="light"] { --cg-menu-bg: #ffffff; --cg-menu-hover: #f4f4f4; --cg-menu-border: rgba(0, 0, 0, 0.08); --cg-menu-sub: #8f8f8f; }
+.model-menu-title { padding: 8px 12px 6px; font-size: 13px; color: var(--cg-menu-sub); }
+.model-menu .model-item { padding: 9px 12px; border-radius: 10px; }
+.model-menu .model-item:hover { background: var(--cg-menu-hover); }
+.model-menu .model-item-text { gap: 2px; }
+.model-menu .model-item-text strong { font-size: 14px; font-weight: 400; color: var(--text); }
+.model-menu .model-item-text span { font-size: 12.5px; color: var(--cg-menu-sub); }
+.model-menu .model-item-check { width: 18px; height: 18px; color: var(--text); }
+.model-menu .model-item.locked { opacity: 1; padding-top: 7px; padding-bottom: 7px; }
+.model-menu .model-item.locked .model-item-text strong { font-size: 13.5px; color: var(--cg-menu-sub); }
+.model-menu .model-item.locked .model-item-text span { font-size: 12px; opacity: .8; }
+.model-menu .model-menu-label { padding: 10px 12px 4px; font-size: 12.5px; color: var(--cg-menu-sub); font-weight: 400; }
+.model-menu .model-menu-divider { margin: 6px 8px; background: var(--cg-menu-border); }
+.model-menu .model-menu-action { padding: 9px 12px; border-radius: 10px; font-size: 14px; }
+.model-menu .model-menu-action:hover { background: var(--cg-menu-hover); }
+.model-menu-ollama { border-radius: 10px; height: 38px; width: calc(100% - 8px); margin: 4px 4px 2px; font-size: 14px; font-weight: 500; }
+/* the lock on rows Auto uses: solid body with a keyhole, slim shackle */
+.model-menu .model-item-lock { width: 14px; height: 14px; color: var(--cg-menu-sub); opacity: .7; stroke: none; fill: none; }
+.model-menu .model-item-lock .lock-shackle { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.model-menu .model-item-lock .lock-body { fill: currentColor; stroke: none; }
+.model-menu .model-item.locked .model-item-text strong { font-weight: 400; }

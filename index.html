@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="cloud-ui.css">
 <link rel="stylesheet" href="usage.css">
+<link rel="stylesheet" href="ollama-connect.css">
 <link rel="stylesheet" href="publish-ui.css">
 <link rel="stylesheet" href="bots-ui.css">
 <script>
@@ -518,14 +519,14 @@
     <div class="modal-header">
       <div>
         <div class="modal-title" id="modelsTitle">Add a model</div>
-        <div class="modal-desc">Use your own model instead of Auto. Any OpenAI-compatible API works, or run models locally with Ollama.</div>
+        <div class="modal-desc" id="modelsDesc">Use your own model instead of Auto. Any OpenAI-compatible API works, or Ollama online or on this computer.</div>
       </div>
       <button class="icon-btn icon-btn-sm modal-close" id="modelsCloseBtn" title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     </div>
     <div class="models-tabs segmented" role="tablist">
       <button class="models-tab segmented-item active" data-tab="custom" role="tab">API model</button>
-      <button class="models-tab segmented-item" data-tab="ollama" role="tab">Ollama</button>
-      <button class="models-tab segmented-item" data-tab="ocloud" role="tab">Ollama Cloud</button>
+      <button class="models-tab segmented-item" data-tab="ocloud" role="tab">Ollama online</button>
+      <button class="models-tab segmented-item" data-tab="ollama" role="tab">Ollama local</button>
     </div>
 
     <div class="models-pane" id="modelsPaneCustom">
@@ -551,20 +552,18 @@
 
     <div class="models-pane hidden" id="modelsPaneOllamaCloud">
       <p class="oc-intro">Big open models on your own Ollama account: Kimi, GLM, DeepSeek, gpt-oss and more, running on Ollama's servers.</p>
-      <div class="oc-way" id="ocApp">
-        <div class="oc-way-head"><strong>With the Ollama app</strong><span class="oc-tag">No key</span></div>
-        <div class="oc-way-body" id="ocAppBody"><div class="ollama-status"><span class="spinner"></span>Looking for Ollama on this PC…</div></div>
-      </div>
       <div class="oc-way">
-        <div class="oc-way-head"><strong>With an API key</strong></div>
-        <div class="oc-way-body">
-          <div class="field-inline">
-            <input class="input" id="ocKey" type="password" placeholder="Paste your ollama.com key" autocomplete="off" spellcheck="false">
-            <button class="btn btn-secondary btn-lg" id="ocKeyBtn">Connect</button>
-          </div>
-          <div class="oc-hint">No key yet? <button class="link-btn" id="ocGetKey" type="button">Get one on ollama.com</button> (Add API Key, then copy it here).</div>
-          <div class="ollama-status hidden" id="ocKeyStatus"></div>
+        <div class="oc-step"><span class="oc-num">1</span><div class="oc-step-text"><strong>Make a key on ollama.com</strong><span>Sign in, click Add API Key, then copy it.</span></div><button class="btn btn-secondary btn-sm" id="ocGetKey" type="button">Open ollama.com</button></div>
+        <div class="oc-step"><span class="oc-num">2</span><div class="oc-step-text"><strong>Paste it here</strong><span>It's checked right away and stays on this computer.</span></div></div>
+        <div class="field-inline oc-key-row">
+          <input class="input" id="ocKey" type="password" placeholder="Paste your ollama.com key" autocomplete="off" spellcheck="false">
+          <button class="btn btn-primary btn-lg" id="ocKeyBtn">Connect</button>
         </div>
+        <div class="ollama-status hidden" id="ocKeyStatus"></div>
+      </div>
+      <div class="oc-way oc-app hidden" id="ocApp">
+        <div class="oc-way-head"><strong>Or use the Ollama app on this PC</strong><span class="oc-tag">No key</span></div>
+        <div class="oc-way-body" id="ocAppBody"></div>
       </div>
       <div class="ollama-list" id="ocList"></div>
     </div>
@@ -616,17 +615,12 @@
     <span class="rm-title">Research Mode</span>
     <input type="checkbox" id="rmToggle" class="switch" role="switch" aria-label="Research Mode">
   </label>
-  <div class="rm-status" id="rmStatus"><span class="rm-dot" id="rmDot"></span><span id="rmStatusText">Checking Ollama…</span></div>
+  <div class="rm-status" id="rmStatus"><span class="rm-dot" id="rmDot"></span><span id="rmStatusText">Checking…</span></div>
   <div class="rm-body hidden" id="rmBody">
-    <label class="rm-field"><span>Where to run</span>
-      <select class="select input-sm" id="rmMode"><option value="local">Local Ollama</option><option value="cloud">Ollama Cloud</option></select>
-    </label>
-    <label class="rm-field"><span>Model</span>
-      <select class="select input-sm" id="rmModel" aria-label="Model"></select>
-    </label>
-    <label class="rm-field hidden" id="rmKeyField"><span>Ollama Cloud API key</span>
-      <input class="input input-sm" id="rmKey" type="password" autocomplete="off" spellcheck="false" placeholder="">
-    </label>
+    <!-- kept hidden so older handlers find them; Research Mode now uses the selected model -->
+    <select class="hidden" id="rmMode" aria-hidden="true"><option value="cloud">Online</option><option value="local">Local</option></select>
+    <select class="hidden" id="rmModel" aria-hidden="true"></select>
+    <label class="rm-field hidden" id="rmKeyField"><input class="input input-sm" id="rmKey" type="password" autocomplete="off"></label>
     <label class="rm-field"><span>Research context (optional)</span>
       <textarea class="textarea" id="rmContext" rows="2" spellcheck="false" placeholder="Plain context you want sent as a system message"></textarea>
     </label>
@@ -639,6 +633,7 @@
 <script src="attachments.js"></script>
 <script src="usage.js"></script>
 <script src="app.js"></script>
+<script src="ollama-connect.js"></script>
 <script src="cloud-ui.js"></script>
 <script src="bot-avatar.js"></script>
 <script src="bots-ui.js"></script>

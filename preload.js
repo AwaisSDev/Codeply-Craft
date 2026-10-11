@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('craft', {
   ollamaCloudSignin: (link) => ipcRenderer.invoke('ollamaCloud:signin', link),
   ollamaCloudCheckKey: (key) => ipcRenderer.invoke('ollamaCloud:checkKey', key),
   ollamaCloudOpenKeys: () => ipcRenderer.invoke('ollamaCloud:openKeys'),
+  ollamaCloudOpenDownload: () => ipcRenderer.invoke('ollamaCloud:openDownload'),
   onModelsChanged: (cb) => ipcRenderer.on('models:changed', (e, data) => cb(data)),
   chatgptStatus: (opts) => ipcRenderer.invoke('chatgpt:status', opts),
   chatgptSignIn: () => ipcRenderer.invoke('chatgpt:signIn'),

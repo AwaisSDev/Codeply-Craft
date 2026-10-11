@@ -102,9 +102,9 @@ function getConfig() {
   const fr = file.research || {};
   const research = {
     enabled: fr.enabled === true,
-    mode: fr.mode === 'cloud' ? 'cloud' : 'local',
+    mode: fr.mode === 'local' ? 'local' : 'cloud', // online by default: works with no Ollama installed
     model: String(fr.model || ''),
-    apiKey: process.env.OLLAMA_API_KEY || fr.apiKey || '',
+    apiKey: fr.apiKey || '', // only a key the person added; without one, research-mode/ollama.js uses Codeply's
     context: String(fr.context || ''),
   };
 

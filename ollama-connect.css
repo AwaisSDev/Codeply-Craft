@@ -1,0 +1,132 @@
+/* Connect Ollama page (ollama-connect.js) */
+.ocx-backdrop { position: fixed; inset: 0; z-index: 900; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, .55); opacity: 0; transition: opacity .18s ease; }
+.ocx-backdrop.open { opacity: 1; }
+.ocx-page {
+  --ocx-bg: var(--main-bg, #1b1b1b); --ocx-card: color-mix(in srgb, var(--text) 5%, transparent); --ocx-line: color-mix(in srgb, var(--text) 18%, transparent);
+  --ocx-strong: color-mix(in srgb, var(--text) 38%, transparent); --ocx-ink: var(--text); --ocx-sub: var(--text-faint);
+  --ocx-hot: #4b95ff;
+  position: relative; width: min(860px, 100%); max-height: calc(100vh - 48px); overflow: auto;
+  padding: 34px 38px 30px; border-radius: 22px; background: var(--ocx-bg); border: 1px solid var(--border);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .45);
+  transform: translateY(10px) scale(.985); transition: transform .24s cubic-bezier(.2, .8, .2, 1);
+}
+.ocx-backdrop.open .ocx-page { transform: none; }
+.ocx-close { position: absolute; top: 16px; right: 16px; width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; color: var(--text-dim); }
+.ocx-close:hover { background: var(--hover); color: var(--text); }
+.ocx-close svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+
+.ocx-head h2 { margin: 0; font-size: 24px; font-weight: 500; letter-spacing: -.3px; }
+.ocx-head p { margin: 6px 0 18px; font-size: 14px; color: var(--ocx-sub); }
+.ocx-tabs { display: inline-flex; gap: 2px; padding: 3px; border-radius: 12px; background: var(--ocx-card); }
+.ocx-tabs button { height: 32px; padding: 0 16px; border-radius: 9px; font-size: 13.5px; color: var(--ocx-sub); transition: background .15s ease, color .15s ease; }
+.ocx-tabs button.on { background: var(--ocx-bg); color: var(--ocx-ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .25); }
+.ocx-body { margin-top: 24px; }
+
+/* steps + illustration */
+.ocx-steps { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.45fr); gap: 28px; align-items: center; }
+.ocx-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ocx-step { display: flex; gap: 14px; padding: 14px 14px; border-radius: 14px; cursor: pointer; transition: background .15s ease; }
+.ocx-step:hover { background: var(--ocx-card); }
+.ocx-step.on { background: var(--ocx-card); }
+.ocx-num { width: 26px; height: 26px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 12.5px; font-weight: 600; color: var(--ocx-sub); border: 1.5px solid var(--ocx-line); transition: all .2s ease; }
+.ocx-step.on .ocx-num { background: var(--ocx-ink); color: var(--ocx-bg); border-color: var(--ocx-ink); }
+.ocx-step.done .ocx-num { background: color-mix(in srgb, var(--ocx-hot) 18%, transparent); border-color: transparent; color: var(--ocx-hot); }
+.ocx-num svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.ocx-step-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ocx-step-text strong { font-size: 14.5px; font-weight: 500; }
+.ocx-step-text span { font-size: 13px; color: var(--ocx-sub); line-height: 1.45; }
+.ocx-step-text b { color: var(--ocx-ink); font-weight: 500; }
+.ocx-step:not(.on) .ocx-step-text span { display: none; }
+.ocx-stage { border-radius: 18px; padding: 14px; background: radial-gradient(120% 120% at 30% 0%, color-mix(in srgb, var(--ocx-hot) 9%, transparent), transparent 60%), var(--ocx-card); border: 1px solid var(--border); }
+.ocx-art { display: block; width: 100%; height: auto; animation: ocxIn .35s ease; }
+@keyframes ocxIn { from { opacity: 0; transform: translateY(6px); } }
+
+/* illustration parts */
+/* Craft styles every svg as a 1.8px outline icon; drawings start from nothing */
+.ocx-art, .ocx-art * { stroke: none; stroke-width: 1; }
+.ocx-art text { stroke: none !important; }
+.ocx-art text { font-family: inherit; }
+.ocx-win { fill: var(--ocx-bg); stroke: var(--ocx-line); }
+.ocx-bar { fill: var(--ocx-card); }
+.ocx-dot { fill: var(--ocx-line); }
+.ocx-url { fill: var(--ocx-bg); stroke: var(--ocx-line); }
+.ocx-url-t { font-size: 8.5px; fill: var(--ocx-sub); }
+.ocx-line { fill: var(--ocx-line); }
+.ocx-line.strong { fill: var(--ocx-strong); }
+.ocx-card { fill: none; stroke: var(--ocx-line); }
+.ocx-pill { fill: var(--ocx-ink); }
+.ocx-pill-t { font-size: 8.6px; font-weight: 600; fill: var(--ocx-bg); }
+.ocx-pill-o { fill: none; stroke: var(--ocx-strong); }
+.ocx-ring { fill: none; stroke: var(--ocx-hot); stroke-width: 2 !important; opacity: .9; animation: ocxPulse 1.8s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes ocxPulse { 0%, 100% { opacity: .9; transform: scale(1); } 50% { opacity: .35; transform: scale(1.06); } }
+.ocx-cursor path { fill: var(--ocx-ink); stroke: var(--ocx-bg); stroke-width: 1.2; }
+.ocx-shade { fill: rgba(0, 0, 0, .35); }
+.ocx-modal { fill: var(--ocx-bg); stroke: var(--ocx-line); }
+.ocx-h { font-size: 12px; font-weight: 600; fill: var(--ocx-ink); }
+.ocx-s { font-size: 9.4px; fill: var(--ocx-sub); }
+.ocx-input { fill: none; stroke: var(--ocx-line); }
+.ocx-input.on { stroke: var(--ocx-hot); }
+.ocx-typed { font-size: 10px; fill: var(--ocx-ink); }
+.ocx-caret { fill: var(--ocx-hot); animation: ocxBlink 1s steps(1) infinite; }
+@keyframes ocxBlink { 50% { opacity: 0; } }
+.ocx-dots { font-size: 10px; letter-spacing: .5px; fill: var(--ocx-ink); }
+.ocx-copy { fill: var(--ocx-card); stroke: var(--ocx-line); }
+.ocx-copy-i { fill: none; stroke: var(--ocx-ink); stroke-width: 1.2; }
+.ocx-arrow { fill: none; stroke: var(--ocx-hot); stroke-width: 1.6; stroke-dasharray: 4 4; animation: ocxDash 1.2s linear infinite; }
+.ocx-arrow-h { fill: none; stroke: var(--ocx-hot); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+@keyframes ocxDash { to { stroke-dashoffset: -16; } }
+.ocx-brand { fill: var(--ocx-hot); }
+.ocx-term { fill: #0f1115; }
+.ocx-code { font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; fill: #e6e6e6; }
+.ocx-code.dim { fill: #8b93a1; }
+.ocx-base { fill: var(--ocx-line); }
+
+/* actions */
+.ocx-actions { display: flex; align-items: center; gap: 10px; margin-top: 22px; }
+.ocx-actions.left { margin-top: 14px; }
+.ocx-btn { height: 40px; padding: 0 18px; border-radius: 12px; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px; transition: opacity .12s ease, transform .08s ease, background .12s ease; }
+.ocx-btn:active { transform: scale(.98); }
+.ocx-btn.primary { background: var(--ocx-ink); color: var(--ocx-bg); }
+.ocx-btn.primary:hover { opacity: .9; }
+.ocx-btn.ghost { color: var(--ocx-ink); border: 1px solid var(--border); }
+.ocx-btn.ghost:hover { background: var(--hover); }
+.ocx-btn:disabled { opacity: .6; cursor: default; }
+.ocx-key { display: flex; gap: 10px; width: 100%; }
+.ocx-key input { flex: 1; min-width: 0; height: 40px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--ocx-card); color: var(--ocx-ink); font: inherit; font-size: 14px; outline: none; }
+.ocx-key input:focus { border-color: var(--ocx-hot); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ocx-hot) 22%, transparent); }
+.ocx-msg { min-height: 18px; margin-top: 10px; font-size: 13px; color: var(--ocx-sub); }
+.ocx-msg.err { color: var(--red, #e5484d); }
+.ocx-hint { font-size: 12.5px; color: var(--ocx-sub); }
+.ocx-hint.block { display: block; margin-top: 16px; }
+.ocx-hint code { font-size: 12px; padding: 1px 6px; border-radius: 6px; background: var(--ocx-card); }
+.ocx-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; display: inline-block; animation: ocxSpin .7s linear infinite; vertical-align: -2px; }
+@keyframes ocxSpin { to { transform: rotate(360deg); } }
+
+/* local */
+.ocx-local-text h3 { margin: 0 0 8px; font-size: 17px; font-weight: 500; }
+.ocx-local-text p { margin: 0 0 14px; font-size: 13.5px; color: var(--ocx-sub); line-height: 1.55; }
+.ocx-local-status { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.ocx-dotst { width: 8px; height: 8px; border-radius: 50%; }
+.ocx-dotst.on { background: var(--green, #3fb950); box-shadow: 0 0 0 4px color-mix(in srgb, var(--green, #3fb950) 20%, transparent); }
+.ocx-dotst.off { background: var(--ocx-strong); }
+.ocx-sub { margin: 22px 0 10px; font-size: 13px; color: var(--ocx-sub); }
+
+/* connected: models */
+.ocx-done p { margin: 10px 0 16px; font-size: 13.5px; color: var(--ocx-sub); }
+.ocx-badge { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border-radius: 999px; font-size: 13px; color: var(--green, #3fb950); background: color-mix(in srgb, var(--green, #3fb950) 14%, transparent); }
+.ocx-badge svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.ocx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.ocx-model { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px 14px 12px; border-radius: 14px; border: 1px solid var(--border); background: var(--ocx-card); text-align: left; transition: border-color .15s ease, transform .12s ease, background .15s ease; }
+.ocx-model:hover { border-color: color-mix(in srgb, var(--ocx-hot) 60%, transparent); transform: translateY(-1px); }
+.ocx-model-name { font-size: 14.5px; font-weight: 500; color: var(--ocx-ink); }
+.ocx-model-tag { font-size: 12px; color: var(--ocx-sub); }
+.ocx-model-add { position: absolute; top: 12px; right: 12px; font-size: 12px; padding: 3px 10px; border-radius: 8px; background: var(--ocx-ink); color: var(--ocx-bg); opacity: 0; transition: opacity .15s ease; }
+.ocx-model:hover .ocx-model-add, .ocx-model:disabled .ocx-model-add { opacity: 1; }
+.ocx-model.err { border-color: var(--red, #e5484d); }
+.ocx-loading { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 16px 2px; font-size: 13.5px; color: var(--ocx-sub); }
+.ocx-loading.err { color: var(--red, #e5484d); }
+
+@media (max-width: 720px) {
+  .ocx-page { padding: 26px 18px 20px; }
+  .ocx-steps { grid-template-columns: 1fr; }
+}
