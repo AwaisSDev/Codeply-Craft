@@ -14,6 +14,10 @@
   if (!api) return;
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const LOCAL_HOST = 'http://localhost:11434';
+  // Ollama's free accounts can run these families (checked against ollama.com,
+  // 2026-10-11: the rest answer 402 "not included in your free usage").
+  const FREE_FAMILIES = /^(gpt-oss|gemma4|nemotron-3-(nano|super|ultra))(:|$)/;
+  const isFreeModel = (name) => FREE_FAMILIES.test(String(name || ''));
   // the Ollama app calls a cloud model "<name>-cloud" when it has a size tag, else "<name>:cloud"
   const localCloudName = (n) => (n.includes(':') ? `${n}-cloud` : `${n}:cloud`);
 
@@ -184,12 +188,16 @@
     if (!r.ok) { grid.innerHTML = `<div class="ocx-loading err">${esc(r.error)}</div>`; return; }
     const viaApp = connected && connected.via === 'app';
     const saved = new Set(((typeof state !== 'undefined' && state.models && state.models.models) || []).map((m) => m.model));
-    grid.innerHTML = r.models.map((m) => {
+    // free accounts first: those work right away, the rest need Ollama usage credits
+    const models = r.models.slice().sort((a, b) => Number(isFreeModel(b.name)) - Number(isFreeModel(a.name)));
+    grid.innerHTML = models.map((m) => {
       const id = viaApp ? localCloudName(m.name) : m.name;
       const [fam, tag] = m.name.split(':');
+      const free = isFreeModel(m.name);
       return `<button class="ocx-model" data-id="${esc(id)}" data-name="${esc(m.name)}">
         <span class="ocx-model-name">${esc(fam)}</span>
         <span class="ocx-model-tag">${esc(tag || 'latest')}</span>
+        <span class="ocx-price ${free ? 'free' : 'paid'}" title="${free ? 'Included in a free Ollama account' : 'Needs Ollama usage credits or a paid plan'}">${free ? 'Free' : 'Paid'}</span>
         <span class="ocx-model-add">${saved.has(id) ? 'Use' : 'Add'}</span>
       </button>`;
     }).join('');

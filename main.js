@@ -165,6 +165,10 @@ function saveStore() {
 // the account is gone from the account's own device.
 async function loadSessionsFromDb(userId) {
   if (!userId) { store.sessions = []; return; }
+  // This machine's own copy, when it belongs to the same account: newer local
+  // chats (a cloud run's steps, an answer that hadn't reached the server yet)
+  // are kept instead of being replaced by an older server copy.
+  const local = store.sessionsUser === userId ? (store.sessions || []) : [];
   try {
     const { data, error } = await authLib.getClient()
       .from('chat_sessions')
@@ -172,7 +176,7 @@ async function loadSessionsFromDb(userId) {
       .eq('user_id', userId)
       .order('updated_at', { ascending: false });
     if (error) throw error;
-    store.sessions = (data || []).map((row) => ({
+    const fromDb = (data || []).map((row) => ({
       id: row.id,
       title: row.title,
       cwd: row.cwd,
@@ -181,28 +185,55 @@ async function loadSessionsFromDb(userId) {
       createdAt: new Date(row.created_at).getTime(),
       updatedAt: new Date(row.updated_at).getTime(),
     }));
+    const byId = new Map(fromDb.map((x) => [x.id, x]));
+    for (const mine of local) {
+      const theirs = byId.get(mine.id);
+      // keep the newer copy (or the one with more messages when the times tie)
+      if (!theirs || (mine.updatedAt || 0) > (theirs.updatedAt || 0) || ((mine.updatedAt || 0) === (theirs.updatedAt || 0) && (mine.messages || []).length > (theirs.messages || []).length)) {
+        byId.set(mine.id, mine);
+        syncSessionToDb(mine); // and put the server copy right
+      }
+    }
+    store.sessions = [...byId.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    store.sessionsUser = userId;
   } catch (e) {
-    console.warn('[chat-sync] load failed, starting with an empty list:', e.message);
-    store.sessions = [];
+    // Offline or a server hiccup: keep this machine's chats rather than showing none.
+    console.warn('[chat-sync] load failed, keeping the chats on this PC:', e.message);
+    store.sessions = local;
   }
 }
 
 /** Fire-and-forget upsert of one session's full state. Called at the same
  * points saveStore() already persists a session mutation locally - a few
  * times per turn, never per streamed token. */
+// One save at a time per chat, always with its latest state: an older save can
+// never land after a newer one and leave the server copy behind.
+const syncQueue = new Map(); // session id -> { running, again }
 function syncSessionToDb(session) {
-  getLoggedInUserId().then((userId) => {
-    if (!userId) return;
-    authLib.getClient().from('chat_sessions').upsert({
-      id: session.id,
-      user_id: userId,
-      title: session.title,
-      cwd: session.cwd,
-      messages: session.messages,
-      always_allowed: session.alwaysAllowed || [],
-      updated_at: new Date(session.updatedAt || Date.now()).toISOString(),
-    }).then(({ error }) => { if (error) console.warn('[chat-sync] upsert failed:', error.message); });
-  }).catch(() => {});
+  const q = syncQueue.get(session.id) || { running: false, again: false };
+  syncQueue.set(session.id, q);
+  if (q.running) { q.again = true; return; }
+  q.running = true;
+  const run = async () => {
+    try {
+      const userId = await getLoggedInUserId();
+      if (!userId) return;
+      const latest = (store.sessions || []).find((x) => x.id === session.id) || session;
+      const { error } = await authLib.getClient().from('chat_sessions').upsert({
+        id: latest.id,
+        user_id: userId,
+        title: latest.title,
+        cwd: latest.cwd,
+        messages: latest.messages,
+        always_allowed: latest.alwaysAllowed || [],
+        updated_at: new Date(latest.updatedAt || Date.now()).toISOString(),
+      });
+      if (error) console.warn('[chat-sync] upsert failed:', error.message);
+    } catch {}
+    if (q.again) { q.again = false; return run(); }
+    q.running = false;
+  };
+  run();
 }
 
 function deleteSessionFromDb(id) {
@@ -276,6 +307,13 @@ function newProjectFolder(name) {
     return { error: `Couldn't make a project folder: ${e.message}` };
   }
 }
+
+// A new project from the desktop ("make a repo online for a todo app") with no folder picked.
+ipcMain.handle('projects:new', (e, name) => {
+  const made = newProjectFolder(name);
+  if (made.error) return made;
+  return { path: made.cwd, branch: null };
+});
 
 function rememberProject(cwd) {
   if (!cwd) return;
@@ -488,6 +526,7 @@ ipcMain.handle('app:init', async () => {
   // machine (or the same account after deleting and recreating it) never
   // sees a previous account's chats. Signed-out just clears the list.
   await loadSessionsFromDb(user ? await getLoggedInUserId() : null);
+  cloudDesktop.resume(); // unfinished cloud runs pick up polling now that their chats are here
   if (user) startRelay();
 
   return {
@@ -685,6 +724,7 @@ ipcMain.handle('auth:logout', async () => {
 // switch mid-session.
 ipcMain.handle('sessions:refresh', async () => {
   await loadSessionsFromDb(await getLoggedInUserId());
+  cloudDesktop.resume();
   return store.sessions.map(sessionMeta).sort((a, b) => b.updatedAt - a.updatedAt);
 });
 

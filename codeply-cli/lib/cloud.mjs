@@ -104,6 +104,7 @@ jobs:
           CRAFT_ENGINE: \${{ vars.CRAFT_ENGINE }}
           CRAFT_ENV: \${{ secrets.CRAFT_ENV }}
           CRAFT_MERGE: \${{ vars.CRAFT_MERGE }}
+          CRAFT_PERMISSIONS: \${{ vars.CRAFT_PERMISSIONS }}
           CRAFT_BASE: \${{ github.ref_name }}
           CRAFT_PROMPT: \${{ inputs.prompt }}
           CRAFT_MODE: \${{ inputs.mode }}
@@ -379,14 +380,18 @@ export async function ensureMirror({ api, cwd, home = defaultHome() }) {
   throw new Error(`Could not find a free name for the mirror (tried ${base} to ${base}-9).`);
 }
 
-/** Which model the runner uses. Local models can't be reached from GitHub. */
+/**
+ * Which model a cloud run uses. Auto (Codeply's router, through the run's usage
+ * key, counted in the person's allowance) unless they picked one of their own
+ * models that GitHub can reach; a model on this PC (or with no key) uses Auto.
+ */
+export const AUTO_CLOUD = { kind: 'auto', model: 'Auto', sig: 'auto' };
 export function cloudModelConfig(model) {
-  if (!model || !model.model) return { error: 'Pick one of your own models first. Cloud runs use your key, not Auto.' };
+  if (!model || !model.model) return AUTO_CLOUD;
   const kind = model.kind === 'ollama' ? 'ollama' : 'openai';
   const baseUrl = kind === 'ollama' ? String(model.baseUrl || 'https://ollama.com').replace(/\/+$/, '').replace(/\/(api|v1)$/i, '') : String(model.baseUrl || '').trim();
-  if (!baseUrl) return { error: 'That model has no base URL.' };
-  if (/^https?:\/\/(localhost|127\.|0\.0\.0\.0|\[::1\]|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(baseUrl)) return { error: `${model.name || model.model} runs on this PC, so GitHub can't reach it. Pick a cloud model for cloud runs.` };
-  if (!model.apiKey) return { error: `${model.name || model.model} has no API key.` };
+  if (!baseUrl || !model.apiKey) return AUTO_CLOUD;
+  if (/^https?:\/\/(localhost|127\.|0\.0\.0\.0|\[::1\]|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(baseUrl)) return AUTO_CLOUD;
   return { kind, baseUrl, model: model.model, apiKey: model.apiKey, sig: crypto.createHash('sha256').update([kind, baseUrl, model.model, model.apiKey].join('\n')).digest('hex').slice(0, 16) };
 }
 
@@ -398,7 +403,13 @@ async function setVariable(api, repo, name, value) {
 /** Put the model key in the mirror's encrypted secrets and the rest in variables. */
 export async function configureModel({ api, repo, model }) {
   const cfg = cloudModelConfig(model);
-  if (cfg.error) throw new Error(cfg.error);
+  if (cfg.kind === 'auto') {
+    // Auto: no model key in the repo at all; the runner reaches Codeply's router with its usage key
+    await api('DELETE', `/repos/${repo}/actions/secrets/CODEPLY_API_KEY`, null, { allow: [404] });
+    for (const name of ['CODEPLY_BASE_URL', 'CODEPLY_MODEL']) await api('DELETE', `/repos/${repo}/actions/variables/${name}`, null, { allow: [404] });
+    await setVariable(api, repo, 'CODEPLY_MODEL_KIND', 'auto');
+    return cfg;
+  }
   const pk = (await api('GET', `/repos/${repo}/actions/secrets/public-key`)).json;
   await api('PUT', `/repos/${repo}/actions/secrets/CODEPLY_API_KEY`, { encrypted_value: sealSecret(pk.key, cfg.apiKey), key_id: pk.key_id });
   await setVariable(api, repo, 'CODEPLY_MODEL_KIND', cfg.kind);
@@ -467,8 +478,8 @@ export async function ensureTrackKey({ api, repo, cwd, home = defaultHome(), fet
   try {
     const p = getProject(cwd, home) || {};
     if (p.trackKeyRepo === repo) return false;
-    if (process.env.CODEPLY_TELEMETRY === '0') return false;
-    try { if (require('./config.js').getConfig().telemetry === false) return false; } catch {}
+    // Needed whatever the usage-stats setting: the run reaches Auto and the connected
+    // apps with it (telemetry.js still sends no stats when they're switched off).
     const auth = require('./auth.js');
     const token = await auth.getAccessToken().catch(() => null);
     if (!token) return false;
@@ -549,7 +560,7 @@ export async function loadCloudConnections({ env = process.env, fetchImpl = fetc
 }
 
 // Bumped when CLOUD_WORKFLOW changes, so repos set up earlier get the new file once.
-export const WORKFLOW_REV = 2;
+export const WORKFLOW_REV = 3;
 
 /**
  * One-click setup. With `target: 'repo'` (default when the project has a GitHub
@@ -578,7 +589,7 @@ export async function setupCloud({ cwd, token, model, target, envText, home = de
   }
   await configureModel({ api, repo, model });
   if (envText != null) await setProjectEnv({ api, repo, envText });
-  updateProject(cwd, home, (p) => ({ ...p, modelSig: cfg.sig, modelName: model.name || model.model, enabled: true, workflowRev: WORKFLOW_REV }));
+  updateProject(cwd, home, (p) => ({ ...p, modelSig: cfg.sig, modelName: cfg.kind === 'auto' ? 'Auto' : (model.name || model.model), enabled: true, workflowRev: WORKFLOW_REV }));
   await ensureTrackKey({ api, repo, cwd, home, fetchImpl });
   await syncCloudConnections({ home, fetchImpl });
   return { repo, created, kind, base, url: `${(serverUrl || 'https://github.com').replace(/\/$/, '')}/${repo}`, skipped };
@@ -629,12 +640,12 @@ export async function startCloudRun({ cwd, token, prompt, mode = 'Build', sessio
   if (prompt.length > MAX_PROMPT) throw new Error(`That task is too long for a cloud run (${prompt.length} characters, the limit is ${MAX_PROMPT}).`);
   mode = ['Build', 'Plan', 'Ask'].includes(mode) ? mode : 'Build';
   const api = githubApi({ token, apiUrl, fetchImpl });
-  if (model) {
+  // model: undefined leaves the repo's model as it is; null (Auto selected) or a model sets it
+  if (model !== undefined) {
     const cfg = cloudModelConfig(model);
-    if (cfg.error) throw new Error(cfg.error);
     if (cfg.sig !== p.modelSig) {
       await configureModel({ api, repo: p.repo, model });
-      updateProject(cwd, home, (q) => ({ ...q, modelSig: cfg.sig, modelName: model.name || model.model }));
+      updateProject(cwd, home, (q) => ({ ...q, modelSig: cfg.sig, modelName: cfg.kind === 'auto' ? 'Auto' : (model.name || model.model) }));
     }
   }
   const base = p.base || 'main';
@@ -681,6 +692,28 @@ export async function readTaskDoc(api, repo, taskId) {
 }
 
 /** Where a cloud task is: its status file first, then the workflow run (for starts and failed starts). */
+/** The person's answer to a cloud run's question (allow or not), picked up by the runner within seconds. */
+export async function answerCloudAsk({ cwd, token, taskId, askId, approve, home = defaultHome(), apiUrl, fetchImpl }) {
+  const task = getTask(cwd, taskId, home);
+  if (!task) throw new Error('Unknown cloud task.');
+  if (!/^[\w.-]+$/.test(String(askId || ''))) throw new Error('Unknown question.');
+  const api = githubApi({ token, apiUrl, fetchImpl });
+  const ok = await branchFiles(api, task.repo).write(SESSION_PATHS.answer(askId), { verdict: approve ? 'approve' : 'reject', at: Date.now() }, `Craft answer ${askId}`);
+  if (!ok) throw new Error('Could not send your answer to GitHub. Try again.');
+  saveTask(cwd, home, { ...task, ask: null });
+  return true;
+}
+
+/** "ask" (risky actions wait for an OK) or "full" (they just run), kept as the repo variable CRAFT_PERMISSIONS. */
+export async function setCloudPermission({ cwd, token, permission, home = defaultHome(), apiUrl, fetchImpl }) {
+  const p = getProject(cwd, home);
+  if (!p || !p.repo) throw new Error('Set up cloud runs for this project first.');
+  const value = permission === 'full' ? 'full' : 'ask';
+  await setVariable(githubApi({ token, apiUrl, fetchImpl }), p.repo, 'CRAFT_PERMISSIONS', value);
+  updateProject(cwd, home, (q) => ({ ...q, permission: value }));
+  return value;
+}
+
 export async function cloudRunStatus({ cwd, taskId, token, home = defaultHome(), apiUrl, fetchImpl, retryMs = 3000 }) {
   const task = getTask(cwd, taskId, home);
   if (!task) throw new Error('Unknown cloud task.');
@@ -695,6 +728,8 @@ export async function cloudRunStatus({ cwd, taskId, token, home = defaultHome(),
       const { id: _i, startedAt: _s, updatedAt: _u, runId: _r, ...result } = rest;
       Object.assign(next, { status, result, error: result.error || null, finishedAt: Date.now(), queued: false });
     } else next.status = 'running';
+    // a risky action waiting for the person's OK (answerCloudAsk)
+    next.ask = next.status === 'running' && doc.ask && doc.ask.id ? doc.ask : null;
     saveTask(cwd, home, next);
     return { ...next, events };
   }
@@ -950,6 +985,8 @@ export const SESSION_PATHS = {
   live: (sid) => `live/${sid}.json`,
   queue: (sid) => `queue/${sid}`,
   shot: (id, n) => `shots/${id}/${n}.png`,
+  // A risky action waiting for the person: Craft or the phone writes the answer here.
+  answer: (askId) => `answers/${askId}.json`,
   // What does not fit in the workflow's inputs (a bot's prompt), written before the dispatch.
   request: (id) => `requests/${id}.json`,
 };
@@ -1121,7 +1158,8 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
     output: { title: 'Starting', summary: 'Starting...' },
   }).catch(() => ({ json: null }))).json : null;
 
-  const statusDoc = (status, extra = {}) => ({ id: taskId, status, mode, prompt: prompt.slice(0, 4000), sessionId, ...(kind === 'task' ? { kind } : {}), ...(bot ? { bot: { name: bot.name } } : {}), startedAt, updatedAt: Date.now(), runId: env.GITHUB_RUN_ID || null, ...extra });
+  let pendingAsk = null; let asks = 0;
+  const statusDoc = (status, extra = {}) => ({ ...(pendingAsk && status === 'running' ? { ask: pendingAsk } : {}), id: taskId, status, mode, prompt: prompt.slice(0, 4000), sessionId, ...(kind === 'task' ? { kind } : {}), ...(bot ? { bot: { name: bot.name } } : {}), startedAt, updatedAt: Date.now(), runId: env.GITHUB_RUN_ID || null, ...extra });
   const finish = async (ok, title, summary, result) => {
     const baseLen = JSON.stringify(result).length;
     const packed = packEvents(events, Math.max(4000, MAX_OUTPUT - baseLen - 200));
@@ -1169,7 +1207,31 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
     const taskBase = await git(cwd, ['rev-parse', 'HEAD']).catch(() => headSha);
     const hist = await loadHistory(files, sessionId);
     await pushProgress(hist.messages.length ? `Continuing the chat (${hist.messages.length / 2} earlier turns).` : 'Working on it.', true);
-    const approve = ciApprove(cwd);
+    // Risky actions (deploys...) ask the person unless the repo's Cloud permission is "full".
+    const ASK_WAIT_MS = 15 * 60 * 1000;
+    // Only a repo with the current workflow passes CRAFT_PERMISSIONS (empty when unset): its
+    // Craft and phone can show the question. An older setup keeps the old rule (no) until updated.
+    const rules = ciApprove(cwd, { permission: env.CRAFT_PERMISSIONS, canAsk: env.CRAFT_PERMISSIONS !== undefined });
+    const approve = async (req) => {
+      const v = await rules(req);
+      if (v !== 'ask') return v;
+      const askId = `${taskId}-${++asks}`;
+      pendingAsk = { id: askId, tool: req.tool, title: String(req.title || req.tool).slice(0, 300), detail: String(req.detail || '').slice(0, 2000), at: Date.now() };
+      events.push({ t: 'notice', level: 'info', text: `Waiting for your OK: ${pendingAsk.title}` });
+      await pushProgress('Waiting for your OK.', true);
+      const until = Date.now() + ASK_WAIT_MS;
+      let verdict = null;
+      while (Date.now() < until && !verdict) {
+        await sleep(4000);
+        const f = await files.read(SESSION_PATHS.answer(askId)).catch(() => null);
+        if (f && f.json) { verdict = f.json.verdict === 'approve' ? 'once' : 'reject'; files.remove(SESSION_PATHS.answer(askId), f.sha).catch(() => {}); }
+        else if (heartbeat) heartbeat(true).catch(() => {});
+      }
+      pendingAsk = null;
+      events.push({ t: 'notice', level: 'info', text: verdict === 'once' ? 'Approved.' : verdict === 'reject' ? 'You said no, so it was skipped.' : 'No answer in 15 minutes, so it was skipped.' });
+      await pushProgress('Working.', true);
+      return verdict || 'reject';
+    };
     let answer = ''; let steps = 0; let failure = '';
     const userMessage = kind === 'task'
       ? `${prompt}\n\n(You are running unattended in Codeply Cloud on a Linux machine, not on the user's PC: you cannot reach their local files or desktop apps. Use the shell, the web and this repository. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. Your final reply is read out to the user: say plainly what you did or found, in a few short sentences, no markdown. Do not commit or push; Craft does that when you finish.)`

@@ -65,6 +65,7 @@ contextBridge.exposeInMainWorld('craft', {
   listSkills: () => ipcRenderer.invoke('skills:list'),
 
   // projects
+  newProject: (name) => ipcRenderer.invoke('projects:new', name),
   chooseProject: () => ipcRenderer.invoke('project:choose'),
   useProject: (p) => ipcRenderer.invoke('project:use', p),
   // List-only: forgets the folder, never deletes it.
@@ -102,6 +103,8 @@ contextBridge.exposeInMainWorld('craft', {
   cloudCheckBehind: (cwd) => ipcRenderer.invoke('cloud:checkBehind', cwd),
   cloudPull: (cwd, sessionId, taskId) => ipcRenderer.invoke('cloud:pull', cwd, sessionId, taskId),
   cloudOptions: (cwd, opts) => ipcRenderer.invoke('cloud:options', cwd, opts),
+  cloudAnswer: (sessionId, taskId, askId, approve) => ipcRenderer.invoke('cloud:answer', sessionId, taskId, askId, approve),
+  cloudPermission: (cwd, permission) => ipcRenderer.invoke('cloud:permission', cwd, permission),
   cloudApply: (sessionId, taskId) => ipcRenderer.invoke('cloud:apply', sessionId, taskId),
   cloudApplyTask: (cwd, taskId) => ipcRenderer.invoke('cloud:applyTask', cwd, taskId),
   cloudCancel: (sessionId, taskId) => ipcRenderer.invoke('cloud:cancel', sessionId, taskId),

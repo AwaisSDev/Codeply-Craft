@@ -287,3 +287,18 @@ a { color: inherit; }
 .att-img { position: relative; width: 56px; height: 56px; border-radius: 12px; overflow: visible; }
 .att-img img { width: 56px; height: 56px; object-fit: cover; border-radius: 12px; display: block; border: 1px solid var(--border, rgba(127,127,127,.2)); }
 .msg-thumb { width: 120px; height: 120px; object-fit: cover; border-radius: 14px; border: 1px solid var(--border, rgba(127,127,127,.2)); }
+
+/* Long commands, paths and output wrap inside their box instead of widening the page */
+.scroll { overflow-x: hidden; }
+.feed, .feed > * { min-width: 0; max-width: 100%; }
+.code { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; overflow-x: hidden; }
+.step-text, .step-body-label, .summary-card, .check, .step-label { overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
+
+/* a cloud run waiting for an OK */
+.cloud-ask { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; font-size: 14px; min-width: 0; }
+.cloud-ask span { color: var(--muted); overflow-wrap: anywhere; }
+.cloud-ask .code { max-height: 160px; overflow-y: auto; }
+.cloud-ask-btns { display: flex; gap: 8px; margin-top: 4px; }
+/* setup: start a new repo */
+.new-repo-row { display: flex; gap: 8px; }
+.new-repo-row input { flex: 1; min-width: 0; }

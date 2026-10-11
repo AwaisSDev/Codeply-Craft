@@ -652,7 +652,8 @@ function taskHtml(t) {
   let h = `<div class="msg user">${esc(t.prompt)}</div>`;
   h += (t.events || []).map(cloudEventHtml).join('');
   if (t.answer) h += `<div class="msg agent">${md(t.answer)}</div>`;
-  if (isLive(t)) h += '<div class="working"><span class="spinner"></span><span>Working...</span></div>';
+  if (isLive(t) && t.ask) h += `<div class="cloud-ask" data-ask-task="${esc(t.id)}" data-ask-id="${esc(t.ask.id)}"><b>Waiting for your OK</b><span>${esc(t.ask.title)}</span>${t.ask.detail ? `<pre class="code">${esc(t.ask.detail)}</pre>` : ''}<div class="cloud-ask-btns"><button type="button" class="btn btn-primary" data-ask-yes>Allow</button><button type="button" class="btn" data-ask-no>Don't allow</button></div></div>`;
+  else if (isLive(t)) h += '<div class="working"><span class="spinner"></span><span>Working...</span></div>';
   if (t.status === 'failed') h += `<div class="msg error">${esc(t.error || 'The cloud run failed.')}</div>`;
   if (t.status === 'cancelled') h += '<div class="msg note">Cancelled.</div>';
   if (t.status === 'done' && !t.answer && !(t.events || []).length) h += '<div class="msg note">Done.</div>';
@@ -695,7 +696,22 @@ function hydrateShots(c) {
     shotCache.get(key).then((url) => { if (url) img.src = url; else img.alt = 'Screenshot not available'; });
   });
 }
-document.addEventListener('click', (e) => {
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest && e.target.closest('[data-ask-yes],[data-ask-no]');
+  if (btn) {
+    const box = btn.closest('.cloud-ask');
+    const c = state.current && chatMeta(state.current);
+    const env = c && envFor(c.project);
+    if (!box || !env) return;
+    box.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    try {
+      await answerCloudAsk(env.repo, box.dataset.askId, btn.hasAttribute('data-ask-yes'));
+      const t = (body(c.id).tasks || []).find((x) => x.id === box.dataset.askTask);
+      if (t) { t.ask = null; saveBody(c.id); }
+      renderFeed();
+    } catch (err) { box.querySelectorAll('button').forEach((b) => { b.disabled = false; }); addMsg('error', err.message); }
+    return;
+  }
   const img = e.target.closest && e.target.closest('img.shot');
   if (img && img.src) { e.preventDefault(); const lb = $('lightbox'); lb.querySelector('img').src = img.src; lb.classList.remove('hidden'); }
 });
@@ -982,12 +998,14 @@ jobs:
         env:
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
           CODEPLY_API_KEY: \${{ secrets.CODEPLY_API_KEY }}
+          CODEPLY_TRACK_KEY: \${{ secrets.CODEPLY_TRACK_KEY }}
           CODEPLY_MODEL_KIND: \${{ vars.CODEPLY_MODEL_KIND }}
           CODEPLY_MODEL: \${{ vars.CODEPLY_MODEL }}
           CODEPLY_BASE_URL: \${{ vars.CODEPLY_BASE_URL }}
           CRAFT_ENGINE: \${{ vars.CRAFT_ENGINE }}
           CRAFT_ENV: \${{ secrets.CRAFT_ENV }}
           CRAFT_MERGE: \${{ vars.CRAFT_MERGE }}
+          CRAFT_PERMISSIONS: \${{ vars.CRAFT_PERMISSIONS }}
           CRAFT_BASE: \${{ github.ref_name }}
           CRAFT_PROMPT: \${{ inputs.prompt }}
           CRAFT_MODE: \${{ inputs.mode }}
@@ -1056,6 +1074,83 @@ async function setVariable(repo, name, value) {
   const r = await gh('PATCH', `/repos/${repo}/actions/variables/${name}`, { name, value }, { allow: [404] });
   if (r.status === 404) await gh('POST', `/repos/${repo}/actions/variables`, { name, value });
 }
+// ─── Getting a repo ready for cloud runs (no model step: Auto unless Craft set one) ───
+const PHONE_WORKFLOW_REV = 3;
+const b64ToText = (b64) => new TextDecoder().decode(b64ToBytes(b64));
+/** The GitHub login connected in Craft (synced, encrypted, to the account): no token to paste. */
+async function githubFromAccount() {
+  try {
+    const token = await accessToken();
+    if (!token) return false;
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/connections`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get' }) });
+    const j = await r.json().catch(() => ({}));
+    const g = j && j.connections && j.connections.github;
+    if (!g || !g.accessToken) return false;
+    const me = await gh('GET', '/user', null, { token: g.accessToken });
+    state.creds = { token: g.accessToken, login: me.json.login, projects: (state.creds && !state.creds.expired && state.creds.projects) || [], at: Date.now(), source: 'account' };
+    save(KEY.creds, state.creds);
+    return true;
+  } catch { return false; }
+}
+const hasGithub = () => !!(state.creds && state.creds.token && !state.creds.expired);
+async function ensureGithub() { return hasGithub() || githubFromAccount(); }
+/**
+ * Everything a repo needs for cloud runs, done once and skipped after: the
+ * workflow (current version), the usage key (Auto and connected apps in the
+ * run), and Auto as the model when nothing chose one.
+ */
+async function ensureRepoReady(repo, base) {
+  const e = state.envs[repo] || {};
+  if (e.rev === PHONE_WORKFLOW_REV && e.trackKey) return;
+  base = base || e.base || ((await gh('GET', `/repos/${repo}`)).json.default_branch) || 'main';
+  const cur = await gh('GET', `/repos/${repo}/contents/${encPath(WORKFLOW_PATH)}?ref=${encodeURIComponent(base)}`, null, { allow: [404] });
+  const have = cur.status === 200 ? b64ToText(cur.json.content || '') : '';
+  if (have !== CLOUD_WORKFLOW) {
+    const r = await gh('PUT', `/repos/${repo}/contents/${encPath(WORKFLOW_PATH)}`, { message: 'Codeply Cloud workflow', branch: base, content: textToB64(CLOUD_WORKFLOW), ...(cur.status === 200 && cur.json.sha ? { sha: cur.json.sha } : {}) });
+    if (r.status >= 300) throw new Error('Could not add the workflow file. GitHub needs the workflow permission.');
+  }
+  const hasKey = (await gh('GET', `/repos/${repo}/actions/secrets/CODEPLY_TRACK_KEY`, null, { allow: [404] })).status === 200;
+  if (!hasKey) {
+    const token = await accessToken();
+    const m = token ? await fetch(`${SUPABASE_URL}/functions/v1/track`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'mint', label: `cloud ${repo}` }) }).then((r) => r.json()).catch(() => ({})) : {};
+    if (!m || !m.key) throw new Error('Could not get a Codeply usage key for this repo. Sign in again and retry.');
+    const pk = (await gh('GET', `/repos/${repo}/actions/secrets/public-key`)).json;
+    await gh('PUT', `/repos/${repo}/actions/secrets/CODEPLY_TRACK_KEY`, { encrypted_value: sealSecret(pk.key, m.key), key_id: pk.key_id });
+  }
+  if ((await gh('GET', `/repos/${repo}/actions/variables/CODEPLY_MODEL_KIND`, null, { allow: [404] })).status === 404) await setVariable(repo, 'CODEPLY_MODEL_KIND', 'auto');
+  state.envs[repo] = { ...(state.envs[repo] || {}), repo, base, rev: PHONE_WORKFLOW_REV, trackKey: true };
+  save(KEY.envs, state.envs);
+}
+/** A new private repo for a new project, made from the phone. */
+async function createRepo(name) {
+  const slug = String(name || 'codeply-project').toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'codeply-project';
+  for (let i = 0; i < 20; i++) {
+    const n = i ? `${slug}-${i + 1}` : slug;
+    const r = await gh('POST', '/user/repos', { name: n, private: true, auto_init: true, description: 'Made with Codeply' }, { allow: [422] });
+    if (r.status < 300) return { repo: r.json.full_name, base: r.json.default_branch || 'main' };
+  }
+  throw new Error('Could not pick a free repo name. Try another name.');
+}
+/** Set a repo up for cloud runs in one go and remember it. */
+async function setUpRepo(repo, base, { name = '' } = {}) {
+  await ensureRepoReady(repo, base);
+  const prev = state.envs[repo] || {};
+  state.envs[repo] = { ...prev, repo, base: base || prev.base || 'main', name: name || prev.name || repo.split('/')[1], ready: true, at: Date.now() };
+  save(KEY.envs, state.envs);
+  return state.envs[repo];
+}
+/** "Ask first" or "Full access" for risky steps in this repo's cloud runs. */
+async function setCloudPermission(repo, value) {
+  await setVariable(repo, 'CRAFT_PERMISSIONS', value === 'full' ? 'full' : 'ask');
+  state.envs[repo] = { ...(state.envs[repo] || { repo }), permission: value === 'full' ? 'full' : 'ask' };
+  save(KEY.envs, state.envs);
+}
+/** Answer a cloud run that's waiting for an OK. */
+async function answerCloudAsk(repo, askId, approve) {
+  const ok = await putFile(repo, `answers/${askId}.json`, textToB64(JSON.stringify({ verdict: approve ? 'approve' : 'reject', at: Date.now() })), `Craft answer ${askId}`, SESSIONS_BRANCH);
+  if (!ok) throw new Error('Could not send your answer to GitHub. Try again.');
+}
+
 const baseCache = new Map();
 async function repoBase(env) {
   if (env.base) return env.base;
@@ -1108,6 +1203,7 @@ async function ensureSessionsBranch(env) {
  * requests/<id>.json on craft-sessions first (codeply-cli 0.5.1+ reads it).
  */
 async function launchTask(env, task, { bot = null, kind = '' } = {}) {
+  await ensureRepoReady(env.repo, env.base);
   const extra = { ...(bot && bot.prompt ? { bot: { name: String(bot.name || 'Bot'), prompt: String(bot.prompt) } } : {}), ...(kind === 'task' ? { kind } : {}) };
   if (extra.bot) task.bot = { name: extra.bot.name };
   if (extra.kind) task.kind = 'task';
@@ -1193,6 +1289,7 @@ async function pollTask(env, t) {
     t.events = Array.isArray(doc.events) ? doc.events : t.events || [];
     if (doc.runId) t.runId = doc.runId;
     t.queued = false;
+    t.ask = doc.status === 'running' && doc.ask && doc.ask.id ? doc.ask : null;
     if (doc.status === 'done' || doc.status === 'failed') {
       Object.assign(t, { status: doc.status, answer: doc.answer || '', reply: doc.reply || '', files: doc.files || [], stats: doc.stats || [], merged: doc.merged || null, branch: doc.branch || null, error: doc.status === 'failed' ? (doc.error || 'The cloud run failed.') : null, finishedAt: Date.now() });
     } else t.status = 'running';
@@ -1246,9 +1343,9 @@ async function pollAll() {
       let changed = false;
       for (const t of (b.tasks || []).filter(isLive)) {
         if (!env) { Object.assign(t, { status: 'failed', error: 'This chat lost its cloud environment.' }); changed = true; continue; }
-        const before = JSON.stringify([t.status, (t.events || []).length, t.answer, t.queued, t.error]);
+        const before = JSON.stringify([t.status, (t.events || []).length, t.answer, t.queued, t.error, t.ask && t.ask.id]);
         try { await pollTask(env, t); } catch (e) { t.lastError = e.message; }
-        if (JSON.stringify([t.status, (t.events || []).length, t.answer, t.queued, t.error]) !== before) changed = true;
+        if (JSON.stringify([t.status, (t.events || []).length, t.answer, t.queued, t.error, t.ask && t.ask.id]) !== before) changed = true;
       }
       if (!(b.tasks || []).some(isLive)) { c.live = false; saveChats(); }
       if (changed) { saveBody(c.id); touchChat(c.id, {}); if (c.id === state.current) renderFeed(); }
@@ -1346,6 +1443,20 @@ async function handOff(text, intent) {
     note('This is a building task, so Codeply is doing it on your PC in a new project folder.');
     return pcSend(chat, text, []);
   }
+  // something new with the PC off: a new repo on their GitHub, ready for cloud runs, no folder
+  if (intent.kind === 'new' && (await ensureGithub())) {
+    const chat = createChat('code', { project: { key: 'new', name: intent.name, cwd: null, repo: null } });
+    openChat(chat.id, { keepMode: true });
+    note('Your PC is off, so Codeply is making a new repo on your GitHub and building it in the cloud.');
+    try {
+      const made = await createRepo(intent.name);
+      await setUpRepo(made.repo, made.base, { name: intent.name });
+      chat.project = { key: `repo:${made.repo}`, name: intent.name, cwd: null, repo: made.repo };
+      state.ui.projectKey = chat.project.key;
+      saveChats(); saveUi();
+      return cloudSend(chat, text);
+    } catch (e) { addMsg('error', e.message); return; }
+  }
   // work in a project, or an action (email, Slack, deploy, repo): the current project
   if (project) {
     const chat = createChat('code', { project: { key: project.key, name: project.name, cwd: project.cwd || null, repo: project.repo || null } });
@@ -1428,7 +1539,8 @@ function shrinkDataUrl(src, max, quality) {
   });
 }
 async function runInCloud(chat, text) {
-  if (!envFor(chat.project) || !state.creds || !state.creds.token || state.creds.expired) {
+  if (!hasGithub()) await githubFromAccount();
+  if (!envFor(chat.project) || !hasGithub()) {
     pendingSend = { chatId: chat.id, text };
     openSetup({ chatId: chat.id });
     return;
@@ -1462,10 +1574,12 @@ $('offlineSheet').querySelector('.sheet-bg').addEventListener('click', offlineNo
 // ─── Cloud setup (GitHub login, repo, model, env vars) ──────────────────────
 const setup = { chatId: null, repo: null, step: 'repos', repos: null, error: '', model: { kind: 'ollama', baseUrl: 'https://ollama.com', model: '', apiKey: '' }, envText: '', progress: [] };
 function openSetup({ chatId = null, repo = null, step = null } = {}) {
-  Object.assign(setup, { chatId, repo, step: step || (repo ? 'model' : 'repos'), error: '', progress: [], repos: null, filter: '' });
+  Object.assign(setup, { chatId, repo, step: step || (repo ? 'model' : 'repos'), error: '', progress: [], repos: null, filter: '', connecting: !hasGithub() });
   if (repo && state.envs[repo] && state.envs[repo].model) setup.model = { ...setup.model, ...state.envs[repo].model, apiKey: '' };
   $('setup').classList.remove('hidden');
   renderSetup();
+  // Craft's GitHub login, when there is one, connects this phone with no token to paste
+  if (setup.connecting) githubFromAccount().finally(() => { setup.connecting = false; renderSetup(); });
 }
 function closeSetup(done) {
   $('setup').classList.add('hidden');
@@ -1478,6 +1592,7 @@ function renderSetup() {
   const root = $('setupBody');
   const chat = setup.chatId && chatMeta(setup.chatId);
   const projectName = chat && chat.project ? chat.project.name : '';
+  if (setup.connecting) { root.innerHTML = '<h2 class="serif">Connecting GitHub</h2><p><span class="spinner"></span> Using the GitHub you connected in Codeply…</p>'; return; }
   if (!state.creds || !state.creds.token || state.creds.expired) {
     root.innerHTML = `<h2 class="serif">Connect GitHub</h2>
       <p>Cloud runs happen in your own GitHub account, so they keep going with your PC off.</p>
@@ -1502,12 +1617,29 @@ function renderSetup() {
   }
   const who = `<div class="connected">${ICONS.cloud}<span>GitHub${state.creds.login ? ` as <b>${esc(state.creds.login)}</b>` : ' connected'}</span><button type="button" id="ghChange">Change</button></div>`;
   if (setup.step === 'repos') {
-    root.innerHTML = `<h2 class="serif">Pick a repo</h2><p>${projectName ? `Where <b>${esc(projectName)}</b> runs in the cloud. ` : ''}Codeply works on a branch and merges it in when it is done.</p>${who}
-      <div class="field"><input id="repoFilter" type="search" placeholder="Search repos" value="${esc(setup.filter || '')}"></div>
+    root.innerHTML = `<h2 class="serif">Pick a repo</h2><p>${projectName ? `Where <b>${esc(projectName)}</b> runs in the cloud. ` : ''}Codeply works on a branch and merges it in when it is done. It runs on Auto, counted in your daily allowance.</p>${who}
+      <div class="field new-repo"><label for="newRepo">Start a new repo</label><div class="new-repo-row"><input id="newRepo" type="text" autocapitalize="off" spellcheck="false" placeholder="my-new-app"><button class="btn btn-primary" id="newRepoBtn" type="button">Create</button></div></div>
+      <ul class="progress" id="setupProgress">${setup.progress.map((p) => `<li class="${p.done ? 'done' : ''}">${esc(p.text)}</li>`).join('')}</ul>
+      <div class="field"><input id="repoFilter" type="search" placeholder="Or pick one of your repos" value="${esc(setup.filter || '')}"></div>
       <div id="repoList">${setup.repos ? '' : '<p><span class="spinner"></span></p>'}</div>
       <p class="form-error ${setup.error ? '' : 'hidden'}">${esc(setup.error)}</p>`;
     root.querySelector('#ghChange').addEventListener('click', () => { state.creds = { ...state.creds, expired: true }; renderSetup(); });
     root.querySelector('#repoFilter').addEventListener('input', (e) => { setup.filter = e.target.value; paintRepos(); });
+    root.querySelector('#newRepoBtn').addEventListener('click', async (e) => {
+      const name = root.querySelector('#newRepo').value.trim();
+      if (!name) return root.querySelector('#newRepo').focus();
+      e.target.disabled = true;
+      setup.error = '';
+      setup.progress = [{ text: `Creating ${name}` }];
+      renderSetup();
+      try {
+        const made = await createRepo(name);
+        setup.progress = [{ text: `Created ${made.repo}`, done: true }, { text: 'Getting it ready for cloud runs' }];
+        renderSetup();
+        await setUpRepo(made.repo, made.base, { name });
+        finishSetup({ repo: made.repo, base: made.base, ready: true });
+      } catch (err) { setup.error = err.message; setup.progress = []; renderSetup(); }
+    });
     if (!setup.repos) {
       gh('GET', '/user/repos?affiliation=owner,collaborator&per_page=100').then((r) => {
         setup.repos = (r.json || []).filter((x) => x.permissions && x.permissions.push)
@@ -1557,10 +1689,11 @@ function paintRepos() {
   list.querySelectorAll('.repo-row').forEach((b) => b.addEventListener('click', () => {
     const r = setup.repos.find((x) => x.repo === b.dataset.repo);
     if (r.ready || known.has(r.repo)) return finishSetup({ repo: r.repo, base: r.base, ready: true });
-    setup.repo = r.repo;
-    setup.base = r.base;
-    setup.step = 'model';
+    // no model step: the repo runs on Auto (or the model Craft set for it)
+    setup.error = '';
+    setup.progress = [{ text: `Getting ${r.repo} ready for cloud runs` }];
     renderSetup();
+    setUpRepo(r.repo, r.base).then(() => finishSetup({ repo: r.repo, base: r.base, ready: true })).catch((err) => { setup.error = err.message; setup.progress = []; renderSetup(); });
   }));
 }
 function modelConfig(m) {
@@ -1671,6 +1804,8 @@ function openPlus() {
   const code = state.ui.mode === 'code';
   const c = state.current && chatMeta(state.current);
   const cloudChat = c && c.cloud;
+  const cloudEnv = envFor((c && c.project) || currentProject());
+  const cperm = cloudEnv && cloudEnv.permission === 'full' ? 'full' : 'ask';
   const mode = (m, hint) => `<button type="button" class="pick-row${state.ui.codeMode === m ? ' on' : ''}" data-mode="${m}"><span class="pick-main"><strong>${m}</strong><small>${hint}</small></span>${ICONS.check}</button>`;
   const attachRow = `<button type="button" class="pick-row" data-act="attach"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg><span class="pick-main"><strong>Attach a file</strong><small>Photos, PDFs, text or code</small></span></button><div class="pick-divider"></div>`;
   openPick(code
@@ -1678,12 +1813,23 @@ function openPlus() {
       ${cloudChat ? '' : `<div class="pick-divider"></div><div class="sheet-label">On your PC</div>
       <button type="button" class="pick-row${!state.bypass ? ' on' : ''}" data-bypass="0"><span class="pick-main"><strong>Ask first</strong><small>Approve edits and commands from here</small></span>${ICONS.check}</button>
       <button type="button" class="pick-row${state.bypass ? ' on' : ''}" data-bypass="1"><span class="pick-main"><strong>Full access</strong><small>Edits and commands run without asking</small></span>${ICONS.check}</button>`}
+      ${cloudEnv ? `<div class="pick-divider"></div><div class="sheet-label">In the cloud</div>
+      <button type="button" class="pick-row${cperm === 'ask' ? ' on' : ''}" data-cperm="ask"><span class="pick-main"><strong>Ask first</strong><small>Deploys and other risky steps wait for your OK</small></span>${ICONS.check}</button>
+      <button type="button" class="pick-row${cperm === 'full' ? ' on' : ''}" data-cperm="full"><span class="pick-main"><strong>Full access</strong><small>Everything runs without asking</small></span>${ICONS.check}</button>` : ''}
       <div class="pick-divider"></div>
       <button type="button" class="pick-row" data-act="project">${ICONS.folder}<span class="pick-main"><strong>Project</strong><small>${esc((currentProject() || {}).name || 'Choose one')}</small></span></button>
-      <button type="button" class="pick-row" data-act="setup">${ICONS.cloud}<span class="pick-main"><strong>Cloud environment</strong><small>Repo, model and environment variables</small></span></button>`
+      <button type="button" class="pick-row" data-act="setup">${ICONS.cloud}<span class="pick-main"><strong>Cloud environment</strong><small>Pick a repo or start a new one</small></span></button>`
     : `${attachRow}<div class="sheet-title">Chat</div><p class="sheet-text">A normal chat. To work on a project's files, switch to Code.</p>
       <button type="button" class="pick-row" data-act="code">${ICONS.folder}<span class="pick-main"><strong>Switch to Code</strong><small>Runs on your PC, or in the cloud when it is off</small></span></button>`, (root) => {
     root.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { state.ui.codeMode = b.dataset.mode; saveUi(); closePick(); renderComposer(); }));
+    root.querySelectorAll('[data-cperm]').forEach((b) => b.addEventListener('click', async () => {
+      const v = b.dataset.cperm;
+      if (v === cperm) { closePick(); return; }
+      if (v === 'full' && !confirm('Full access lets cloud runs deploy and do other risky steps without asking. Turn it on?')) return;
+      closePick();
+      try { if (!(await ensureGithub())) throw new Error('Connect GitHub first.'); await setCloudPermission(cloudEnv.repo, v); }
+      catch (e) { addMsg('error', e.message); }
+    }));
     root.querySelectorAll('[data-bypass]').forEach((b) => b.addEventListener('click', () => {
       const on = b.dataset.bypass === '1';
       if (on && !state.bypass && !confirm('Full access runs edits and commands on your PC without asking first. Turn it on?')) return;
@@ -1691,7 +1837,7 @@ function openPlus() {
     }));
     const act = (name, fn) => { const n = root.querySelector(`[data-act="${name}"]`); if (n) n.addEventListener('click', () => { closePick(); fn(); }); };
     act('project', () => openProjectPicker());
-    act('setup', () => { const p = currentProject(); const env = envFor(p); openSetup({ chatId: c && c.kind === 'code' ? c.id : null, repo: env && !env.fromPc ? env.repo : null }); });
+    act('setup', () => openSetup({ chatId: c && c.kind === 'code' ? c.id : null }));
     act('code', () => setUiMode('code'));
     act('attach', () => pickFiles());
   });
@@ -1802,6 +1948,7 @@ function setUiMode(mode) {
 }
 function newChat() {
   state.current = null;
+  try { localStorage.removeItem('craft-phone-current'); } catch {}
   feed().innerHTML = '';
   streamEl = null;
   showFeed(false);
@@ -1813,6 +1960,7 @@ function openChat(id, { keepMode = false } = {}) {
   const c = chatMeta(id);
   if (!c) return;
   state.current = id;
+  try { localStorage.setItem('craft-phone-current', id); } catch {}
   if (!keepMode) {
     state.ui.mode = c.kind;
     if (c.project && c.project.key) state.ui.projectKey = c.project.key;
@@ -1950,6 +2098,8 @@ async function enterApp() {
   renderAccount();
   renderTitle();
   renderComposer();
+  // reopen the chat that was open last time (cloud chats keep going while the app is closed)
+  if (!state.current) { try { const last = localStorage.getItem('craft-phone-current'); if (last && chatMeta(last)) { state.current = last; const c = chatMeta(last); state.ui.mode = c.kind; } } catch {} }
   renderChatList();
   if (state.current) renderFeed({ force: true });
   startRelay();

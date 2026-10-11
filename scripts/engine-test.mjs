@@ -997,10 +997,10 @@ process.stdin.on('data', (d) => {
   const sealed = cl.sealSecret(Buffer.from(kp.publicKey).toString('base64'), 'my-model-key');
   check('cloud: secrets are sealed the way GitHub expects (libsodium sealed box)', cl.openSealed(sealed, kp.publicKey, kp.secretKey) === 'my-model-key' && !sealed.includes('my-model-key'));
 
-  check('cloud: models on this PC or without a key are refused for cloud runs',
-    !!cl.cloudModelConfig({ kind: 'ollama', baseUrl: 'http://localhost:11434', model: 'llama3', apiKey: '' }).error
-    && !!cl.cloudModelConfig({ kind: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt', apiKey: '' }).error
-    && !!cl.cloudModelConfig(null).error
+  check('cloud: Auto, a model on this PC, or one without a key all run on Auto in the cloud',
+    cl.cloudModelConfig({ kind: 'ollama', baseUrl: 'http://localhost:11434', model: 'llama3', apiKey: '' }).kind === 'auto'
+    && cl.cloudModelConfig({ kind: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt', apiKey: '' }).kind === 'auto'
+    && cl.cloudModelConfig(null).kind === 'auto'
     && cl.cloudModelConfig({ kind: 'ollama', baseUrl: 'https://ollama.com/api', model: 'gemma4:31b', apiKey: 'k' }).baseUrl === 'https://ollama.com');
 
   check('cloud: the workflow starts only from Craft and never splices inputs into the shell',
@@ -1170,6 +1170,37 @@ process.stdin.on('data', (d) => {
   check('cloud: task branches are named after what they do', cl.cloudBranchName('Make the theme white and black please', 'muoj2cb1e01206') === 'craft/make-the-theme-white-and-black-e01206'
     && cl.cloudBranchName('!!!', 'abc123') === 'craft/change-abc123');
   check('cloud: Build work is merged into the base branch after it is pushed', (G.merges || []).some((mg) => mg.base === 'main' && /^craft\/add-a-greeting-/.test(mg.head)));
+
+  // A risky step (a deploy) asks the person and waits: Craft or the phone writes the answer.
+  for (const [say, want] of [['approve', 'once'], ['reject', 'reject']]) {
+    const ta = await cl.startCloudRun({ cwd: proj, token: 'TOK', prompt: `deploy it ${say}`, mode: 'Build', sessionId: `chatask${say}`, ...common, retryMs: 1 });
+    let asked = null; let got = null;
+    const answerer = setInterval(() => {
+      const doc = G.files.get(`craft-sessions:tasks/${ta.id}.json`);
+      if (!doc || asked) return;
+      const j = JSON.parse(Buffer.from(doc.content, 'base64').toString());
+      if (j.ask) { asked = j.ask; G.files.set(`craft-sessions:answers/${j.ask.id}.json`, { content: Buffer.from(JSON.stringify({ verdict: say })).toString('base64'), sha: 'ans1' }); }
+    }, 50);
+    await cl.runCloudRunner({ env: { ...runnerEnv(ta, `deploy it ${say}`, 'Build'), CRAFT_SESSION_ID: `chatask${say}`, CRAFT_PERMISSIONS: '' }, cwd: runnerDir, token: 'TOK', route: {}, fetchImpl: fetchCloud, updateMs: 0, idleMs: 0, browserImpl: null,
+      runAgentImpl: async function* ({ approve }) { got = await approve({ tool: 'vercel_deploy', title: 'Deploy my-site to Vercel', danger: true }); yield { type: 'text', text: 'ok' }; yield { type: 'done' }; } });
+    clearInterval(answerer);
+    check(`cloud: a risky step asks first and gets the answer (${say})`, asked && asked.title === 'Deploy my-site to Vercel' && got === want && !G.files.has(`craft-sessions:answers/${asked.id}.json`), JSON.stringify({ asked, got }));
+  }
+  {
+    const tf = await cl.startCloudRun({ cwd: proj, token: 'TOK', prompt: 'deploy with full access', mode: 'Build', sessionId: 'chatfull', ...common, retryMs: 1 });
+    let got = null;
+    await cl.runCloudRunner({ env: { ...runnerEnv(tf, 'deploy with full access', 'Build'), CRAFT_SESSION_ID: 'chatfull', CRAFT_PERMISSIONS: 'full' }, cwd: runnerDir, token: 'TOK', route: {}, fetchImpl: fetchCloud, updateMs: 0, idleMs: 0, browserImpl: null,
+      runAgentImpl: async function* ({ approve }) { got = await approve({ tool: 'vercel_deploy', title: 'Deploy', danger: true }); yield { type: 'text', text: 'ok' }; yield { type: 'done' }; } });
+    check('cloud: with Full access a risky step runs without asking', got === 'once');
+  }
+  {
+    // an older workflow (no CRAFT_PERMISSIONS line): no question nobody can answer, the old rule applies
+    const to = await cl.startCloudRun({ cwd: proj, token: 'TOK', prompt: 'deploy old setup', mode: 'Build', sessionId: 'chatold', ...common, retryMs: 1 });
+    let got = null;
+    await cl.runCloudRunner({ env: { ...runnerEnv(to, 'deploy old setup', 'Build'), CRAFT_SESSION_ID: 'chatold' }, cwd: runnerDir, token: 'TOK', route: {}, fetchImpl: fetchCloud, updateMs: 0, idleMs: 0, browserImpl: null,
+      runAgentImpl: async function* ({ approve }) { got = await approve({ tool: 'vercel_deploy', title: 'Deploy', danger: true }); yield { type: 'text', text: 'ok' }; yield { type: 'done' }; } });
+    check('cloud: an older workflow is not asked (no client to answer), so the old rule applies', got === 'reject');
+  }
   const doc1 = JSON.parse(Buffer.from(G.files.get(`craft-sessions:tasks/${task.id}.json`).content, 'base64').toString());
   check('cloud: each task writes a status file with its steps for the PC and the phone', doc1.status === 'done' && doc1.events.some((e) => e.t === 'pushed') && doc1.answer === 'Added a greeting.' && doc1.sessionId === 'chat1');
 

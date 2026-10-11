@@ -69,12 +69,13 @@ async function state(cwd) {
   const ready = !!(p && p.repo);
   return {
     github: { connected: !!gh.accessToken, userName: gh.userName || '', scopesOk: await githubScopesOk() },
-    model: { name: model ? (model.name || model.model) : 'Auto', ok: !modelCheck.error, error: modelCheck.error || null },
+    // any model works: Auto, or one of the person's own that GitHub can reach (a local one runs as Auto)
+    model: { name: modelCheck.kind === 'auto' ? 'Auto' : (model.name || model.model), ok: true, error: null },
     // Before setup: the project's own GitHub repo, offered as the default place to work.
     origin: !ready && cwd ? await originInfo(c, cwd) : null,
     project: ready ? {
       repo: p.repo, url: `https://github.com/${p.repo}`, kind: p.kind === 'repo' ? 'repo' : 'mirror', base: p.base || 'main',
-      cloudOn: !!p.cloudOn, autoBackup: p.autoBackup !== false,
+      cloudOn: !!p.cloudOn, autoBackup: p.autoBackup !== false, permission: p.permission === 'full' ? 'full' : 'ask',
       modelName: p.modelName || '', lastPush: p.lastPush ? { at: p.lastPush.at, skipped: p.lastPush.skipped || [] } : null,
       env: envInfo(cwd),
       tasks: (p.tasks || []).slice(0, 20).map((t) => taskView(t, p)),
@@ -119,7 +120,7 @@ function taskView(t, p) {
     id: t.id, status: t.status, prompt: t.prompt, mode: t.mode, repo: t.repo, runUrl: t.runUrl || null,
     progress: t.progress || '', error: t.error || null, startedAt: t.startedAt, finishedAt: t.finishedAt || null,
     files: r.files || [], stats: r.stats || [], branch: r.branch || null, answer: r.answer || '', pulledAt: t.pulledAt || null, conflicts: t.conflicts || [],
-    remote: !!t.remote, queued: !!t.queued,
+    remote: !!t.remote, queued: !!t.queued, ask: t.ask || null,
     kind: t.kind || (p && p.kind === 'repo' ? 'repo' : 'mirror'),
     base: (r.merged && r.merged.base) || (p && p.base) || 'main',
     merged: r.merged || null,
@@ -144,6 +145,34 @@ async function setup(cwd, opts = {}) {
   } catch (e) {
     return { error: e.message };
   }
+}
+
+/** Allow or don't allow the risky action a cloud run is waiting on. */
+async function answerAsk(sessionId, taskId, askId, approve) {
+  const session = deps.findSession(sessionId);
+  const card = session && findCard(session, taskId);
+  if (!card) return { error: 'That cloud run is gone.' };
+  const token = githubToken();
+  if (!token) return { error: 'GitHub is not connected any more. Reconnect it in Connect Apps.' };
+  try {
+    const c = await lib();
+    await c.answerCloudAsk({ cwd: session.cwd, token, taskId, askId, approve: !!approve });
+    card.task = { ...card.task, ask: null };
+    deps.persist(session);
+    emitCard(session, card);
+    return { ok: true };
+  } catch (e) { return { error: e.message }; }
+}
+
+/** Cloud permission for a project: "ask" or "full". */
+async function setPermission(cwd, permission) {
+  const token = githubToken();
+  if (!token) return { error: 'Connect GitHub first.', needsGithub: true };
+  try {
+    const c = await lib();
+    await c.setCloudPermission({ cwd, token, permission });
+    return { ok: true, state: await state(cwd) };
+  } catch (e) { return { error: e.message }; }
 }
 
 async function setOptions(cwd, opts) {
@@ -335,14 +364,14 @@ function poll(sessionId, cwd, taskId, attempt) {
       poll(sessionId, cwd, taskId, attempt + 12);
       return;
     }
-    const before = card.task.status + (card.task.progress || '') + (card.seen || 0);
+    const before = card.task.status + (card.task.progress || '') + (card.seen || 0) + (card.task.ask ? card.task.ask.id : '');
     card.task = { ...taskView(task, c.getProject(cwd)), pulledAt: card.task.pulledAt || task.pulledAt || null };
     try { await replay(session, card, task.events); } catch (e) { console.warn('[cloud] replay failed:', e.message); }
     if (TERMINAL.has(task.status)) {
       finish(session, card, task);
       return;
     }
-    if (before !== card.task.status + (card.task.progress || '') + (card.seen || 0)) { deps.persist(session); emitCard(session, card); }
+    if (before !== card.task.status + (card.task.progress || '') + (card.seen || 0) + (card.task.ask ? card.task.ask.id : '')) { deps.persist(session); emitCard(session, card); }
     poll(sessionId, cwd, taskId, attempt + 1);
   }, wait));
 }
@@ -503,6 +532,8 @@ function init(d) {
   ipcMain.handle('cloud:checkBehind', (e, cwd) => checkBehind(cwd));
   ipcMain.handle('cloud:pull', (e, cwd, sessionId, taskId) => pull(cwd, sessionId, taskId));
   ipcMain.handle('cloud:options', (e, cwd, opts) => setOptions(cwd, opts));
+  ipcMain.handle('cloud:answer', (e, sessionId, taskId, askId, approve) => answerAsk(sessionId, taskId, askId, approve));
+  ipcMain.handle('cloud:permission', (e, cwd, permission) => setPermission(cwd, permission));
   ipcMain.handle('cloud:apply', (e, sessionId, taskId) => apply(sessionId, taskId));
   ipcMain.handle('cloud:applyTask', (e, cwd, taskId) => applyTask(cwd, taskId));
   ipcMain.handle('cloud:cancel', (e, sessionId, taskId) => cancel(sessionId, taskId));
@@ -518,4 +549,5 @@ function init(d) {
   lib().then(resume).catch((e) => console.warn('[cloud] not available:', e.message));
 }
 
-module.exports = { init, wants, startFromChat, afterLocalRun, bridge };
+// resume is called again once the chats have loaded (they can load after this module does)
+module.exports = { init, wants, startFromChat, afterLocalRun, bridge, resume: () => lib().then(resume).catch(() => {}) };

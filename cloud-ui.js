@@ -143,7 +143,7 @@
         <p class="cloud-lead">Craft keeps working on <b>${esc(projectName())}</b> when this PC is off, on GitHub in your own account. Nothing runs on Codeply's servers.</p>
         ${choice}
         <ul class="cloud-points">${points}
-          <li>Stores your model key${s.model.ok ? ` (${esc(s.model.name)})` : ''} as an encrypted GitHub secret. A run can't ask you questions midway.</li>
+          <li>Runs on <b>${esc(s.model.name)}</b>, the model you picked${s.model.name === 'Auto' ? ' (it counts in your daily allowance)' : ', its key kept as an encrypted GitHub secret'}. Change it any time in the model menu.</li>
         </ul>
         <label class="cloud-env"><span class="cloud-env-label">Environment variables for testing <span class="cloud-dim">(optional, KEY=value per line)</span></span>
           <textarea data-env rows="3" spellcheck="false" placeholder="${esc(ENV_PLACEHOLDER)}">${esc(envDraft)}</textarea>
@@ -182,6 +182,11 @@
     box.innerHTML = `${head}<div class="cloud-body">
       <label class="cloud-switch"><input type="checkbox" data-act="cloudOn" ${p.cloudOn ? 'checked' : ''}><span><b>Send new messages to the cloud</b><br><span class="cloud-dim">Runs with ${esc(p.modelName || s.model.name)}. Turn off to work on this PC again.</span></span></label>
       ${where}${envRow}
+      <div class="cloud-perm"><span class="cloud-env-label">Permissions in the cloud</span>
+        <div class="cloud-perm-opts">
+          <button class="cloud-perm-opt${p.permission !== 'full' ? ' on' : ''}" data-perm="ask"><b>Ask first</b><span class="cloud-dim">Deploys and other risky steps wait for your OK, here or on your phone</span></button>
+          <button class="cloud-perm-opt${p.permission === 'full' ? ' on' : ''}" data-perm="full"><b>Full access</b><span class="cloud-dim">Everything runs without asking</span></button>
+        </div></div>
       ${skipped}${err}
       <div class="cloud-sub">Recent cloud runs</div><ul class="cloud-tasks">${tasks}</ul></div>`;
     wire(box);
@@ -216,6 +221,13 @@
       current = r.state; paintChips();
       showToast(e.target.checked ? 'New messages now run in the cloud.' : 'New messages run on this PC again.');
     });
+    box.querySelectorAll('[data-perm]').forEach((b) => b.addEventListener('click', async () => {
+      if (b.classList.contains('on')) return;
+      box.querySelectorAll('[data-perm]').forEach((x) => x.classList.toggle('on', x === b));
+      const r = await api.cloudPermission(state.project, b.dataset.perm);
+      if (r.error) { renderSheet({ error: r.error }); return; }
+      current = r.state;
+    }));
     on('autoBackup', async (e) => {
       const r = await api.cloudOptions(state.project, { autoBackup: e.target.checked });
       if (!r.error) current = r.state;
@@ -348,7 +360,14 @@
     else if (task.status === 'done') text = 'Ran in the cloud';
     else if (task.status === 'cancelled') text = 'Cloud run cancelled';
     else text = `Cloud run failed${task.error ? `: ${esc(task.error)}` : ''}`;
-    card.innerHTML = `<span class="cloud-card-icon">${ICON}</span><span class="cloud-card-text">${text}</span>${resultHtml(task)}${runLink}${live && !pendingId ? '<span class="cloud-sep">·</span><button class="cloud-link" data-act="cancel">Cancel</button>' : ''}`;
+    const ask = live && task.ask ? `<div class="cloud-ask"><div class="cloud-ask-text"><b>Waiting for your OK</b><span>${esc(task.ask.title)}</span>${task.ask.detail ? `<pre>${esc(task.ask.detail)}</pre>` : ''}</div>
+      <div class="cloud-ask-btns"><button class="btn btn-primary btn-sm" data-ask="1">Allow</button><button class="btn btn-secondary btn-sm" data-ask="0">Don't allow</button></div></div>` : '';
+    card.innerHTML = `<span class="cloud-card-icon">${ICON}</span><span class="cloud-card-text">${text}</span>${resultHtml(task)}${runLink}${live && !pendingId ? '<span class="cloud-sep">·</span><button class="cloud-link" data-act="cancel">Cancel</button>' : ''}${ask}`;
+    card.querySelectorAll('[data-ask]').forEach((b) => b.addEventListener('click', async () => {
+      card.querySelectorAll('[data-ask]').forEach((x) => { x.disabled = true; });
+      const r = await api.cloudAnswer(state.currentSessionId, task.id, task.ask.id, b.dataset.ask === '1');
+      if (r.error) { showToast(r.error, 'error'); card.querySelectorAll('[data-ask]').forEach((x) => { x.disabled = false; }); }
+    }));
 
     const log = card.querySelector('[data-act="log"]');
     if (log) log.addEventListener('click', (e) => { e.preventDefault(); api.openExternal(task.runUrl); });
@@ -382,11 +401,17 @@
   }
 
   // ─── Pull before coding ──────────────────────────────────────────────────
-  // When a project opens and before a message goes out (at most once a minute
-  // per project), ask git whether GitHub has commits this copy doesn't. Never blocks.
+  // Only for projects that use Cloud (cloud runs push commits this copy doesn't
+  // have): when the project opens and before a message goes out, at most once a
+  // minute, ask git whether GitHub is ahead. Never blocks. "Not now" is kept
+  // across restarts until more commits arrive.
   const CHECK_EVERY = 60000;
   const lastCheck = new Map();   // cwd -> time
-  const dismissed = new Map();   // cwd -> behind count the user said "Not now" to
+  const DISMISS_KEY = 'codeply.pullDismissed';
+  const dismissed = {
+    get: (cwd) => { try { return (JSON.parse(localStorage.getItem(DISMISS_KEY) || '{}')[cwd]) || 0; } catch { return 0; } },
+    set: (cwd, n) => { try { const all = JSON.parse(localStorage.getItem(DISMISS_KEY) || '{}'); all[cwd] = n; localStorage.setItem(DISMISS_KEY, JSON.stringify(all)); } catch {} },
+  };
   let pullInfo = null;           // { cwd, behind, branch, latest }
 
   function pullBars() {
@@ -431,6 +456,8 @@
   async function checkPull(force = false) {
     const cwd = typeof state !== 'undefined' ? state.project : null;
     if (!cwd || !api.cloudCheckBehind) return;
+    // only projects that use Cloud: other repos never get this question
+    if (!(current && current.project) || lastProject !== cwd) { if (pullInfo) hidePullBar(); return; }
     if (!force && Date.now() - (lastCheck.get(cwd) || 0) < CHECK_EVERY) return;
     lastCheck.set(cwd, Date.now());
     let r;
@@ -443,15 +470,13 @@
   window.CraftCloud = { render, refresh, openSheet, checkPull, beforeSend: () => { checkPull(); } };
 
   addChips();
-  refresh();
-  checkPull();
+  refresh().then(() => checkPull());
   // The composer is rebuilt in places and the project changes from several screens; keep up cheaply.
   setInterval(() => {
     addChips();
     if (state.project !== lastProject) {
       if (pullInfo && pullInfo.cwd !== state.project) hidePullBar();
-      refresh();
-      checkPull();
+      refresh().then(() => checkPull());
     }
   }, 1500);
   window.addEventListener('focus', refresh);

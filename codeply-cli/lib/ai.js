@@ -1271,15 +1271,17 @@ function deviceId() {
 
 async function chatViaRouter(messages, opts) {
   const token = await getAccessToken();
-  const device = deviceId();
-  if (!token) return { success: false, unreachable: true, error: 'Not signed in.' };
+  // A cloud run has no sign-in: its usage key (CODEPLY_TRACK_KEY) stands in for the person
+  const trackKey = token ? '' : String(process.env.CODEPLY_TRACK_KEY || '').trim();
+  const device = trackKey ? '' : deviceId();
+  if (!token && !trackKey) return { success: false, unreachable: true, error: 'Not signed in.' };
   return withRetries(async () => {
     let res, body;
     const { signal, isTimeout, cleanup } = withTimeout(opts.signal, AUTO_TIMEOUT_MS);
     try {
       res = await fetch(AUTO_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, ...(device ? { 'x-codeply-device': device } : {}) },
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : { 'x-codeply-track-key': trackKey }), apikey: SUPABASE_ANON_KEY, ...(device ? { 'x-codeply-device': device } : {}) },
         body: JSON.stringify({
           messages: wireMessages(messages),
           ...(opts.tools ? { tools: opts.tools } : {}),

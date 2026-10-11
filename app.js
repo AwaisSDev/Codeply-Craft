@@ -2616,10 +2616,31 @@ function addThinkingRow(text) {
   });
 }
 
+// Starting something new with no folder picked: Craft makes the folder itself
+// (Documents\Codeply Projects\<name>) instead of asking for one.
+const THING_TYPES = 'websites?|web ?sites?|sites?|web ?apps?|apps?|landing ?pages?|portfolios?|dashboards?|games?|apis?|backends?|frontends?|extensions?|bots?|tools?|clones?|projects?|stores?|shops?|blogs?|scripts?|programs?';
+const NEW_TYPES = THING_TYPES + '|repos?|repositor(?:y|ies)';
+function newProjectName(raw) {
+  const t = String(raw || '').trim();
+  if (t.length < 8 || /^(how|what|why|when|which|who|where|is|are|does|do|should|explain|tell me)\b/i.test(t)) return null;
+  const hit = new RegExp(`\\b(build|make|create|code|develop|design|generate|start|set ?up|scaffold|write)\\b[^.?!]{0,60}?\\b(${NEW_TYPES})\\b`, 'i').exec(t);
+  if (!hit) return null;
+  // named after what's being built ("a todo app"), not the word "repo"
+  const m = new RegExp(`\\b(?:a|an|my|the|new)\\s+((?:[a-z0-9-]+\\s+){0,2}?)(${THING_TYPES})\\b`, 'i').exec(t);
+  return m ? `${m[1]}${m[2]}`.trim() : 'new-project';
+}
+
 async function sendMessage(text, fromHome, images) {
   if (!api) return;
   if (!state.user) { showView('viewLogin'); return; }
-  if (!state.project) { await chooseProject(); if (!state.project) return; }
+  if (!state.project) {
+    const name = api.newProject ? newProjectName(text) : null;
+    if (name) {
+      const r = await api.newProject(name);
+      if (r && r.path) { setProject(r.path, r.branch); if (!state.projects.includes(r.path)) state.projects.unshift(r.path); renderProjects(); }
+    }
+    if (!state.project) { await chooseProject(); if (!state.project) return; }
+  }
 
   if (fromHome || !state.currentSessionId) {
     hideThinking();
@@ -3839,23 +3860,26 @@ document.querySelectorAll('.composer').forEach((composer) => {
 });
 
 // ─── Refresh chats ──────────────────────────────────────────────────────────
+// Chats started or continued from the phone show up by themselves: the list
+// refreshes when the window gets focus and every 20 seconds. The open chat is
+// reloaded only when it changed elsewhere and isn't running here.
+let refreshingChats = false;
 async function refreshChats() {
-  const btn = $('refreshChatsBtn');
-  btn.classList.add('spinning');
+  if (refreshingChats || !api || !state.user) return;
+  refreshingChats = true;
   try {
+    const before = state.sessions.find((s) => s.id === state.currentSessionId);
     const r = await api.listSessions();
     state.sessions = r.sessions;
     state.runningSessions = r.running || [];
     renderRecents();
-    // Reload the open chat too, so messages sent from the phone show up.
-    if (state.currentSessionId && state.sessions.some((s) => s.id === state.currentSessionId)) {
-      await openSession(state.currentSessionId);
-    }
-  } finally {
-    setTimeout(() => btn.classList.remove('spinning'), 400);
-  }
+    const after = state.sessions.find((s) => s.id === state.currentSessionId);
+    const runningHere = (state.runningSessions || []).includes(state.currentSessionId);
+    if (before && after && after.updatedAt !== before.updatedAt && !runningHere) await openSession(state.currentSessionId);
+  } catch {} finally { refreshingChats = false; }
 }
-$('refreshChatsBtn').addEventListener('click', refreshChats);
+window.addEventListener('focus', () => { refreshChats(); });
+setInterval(() => { if (document.visibilityState === 'visible') refreshChats(); }, 20000);
 
 // ─── Auto-update ────────────────────────────────────────────────────────────
 // Normal updates download in the background and install on the next restart;

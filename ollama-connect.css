@@ -130,3 +130,7 @@
   .ocx-page { padding: 26px 18px 20px; }
   .ocx-steps { grid-template-columns: 1fr; }
 }
+/* free / paid tag on Ollama's cloud models */
+.ocx-price { margin-top: 6px; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 999px; }
+.ocx-price.free { color: var(--green, #3fb950); background: color-mix(in srgb, var(--green, #3fb950) 14%, transparent); }
+.ocx-price.paid { color: var(--ocx-sub); background: var(--ocx-card); border: 1px solid var(--border); }

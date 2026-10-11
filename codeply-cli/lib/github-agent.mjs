@@ -42,6 +42,12 @@ export const PROVIDERS = {
 
 /** Model route from CODEPLY_PROVIDER / CODEPLY_BASE_URL / CODEPLY_MODEL / CODEPLY_API_KEY. */
 export function routeFromEnv(env) {
+  const wantsAuto = String(env.CODEPLY_MODEL_KIND || '').toLowerCase() === 'auto';
+  const hasKey = !!String(env.CODEPLY_API_KEY || '').trim();
+  if (wantsAuto || (!hasKey && !env.CODEPLY_BASE_URL && env.CODEPLY_TRACK_KEY)) {
+    if (!env.CODEPLY_TRACK_KEY) return { error: 'This repo has no Codeply usage key yet. Set cloud up again from Codeply.' };
+    return { route: { auto: true } };
+  }
   const provider = String(env.CODEPLY_PROVIDER || 'openai').toLowerCase();
   const preset = PROVIDERS[provider];
   const baseUrl = env.CODEPLY_BASE_URL || (preset && preset.baseUrl);
@@ -121,12 +127,21 @@ export function git(cwd, args, { auth, input } = {}) {
 const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'change';
 export const clip = (s) => (s.length > MAX_COMMENT ? `${s.slice(0, MAX_COMMENT)}\n\n[... cut, the run log has the rest]` : s);
 
-/** The approver for an unattended run: rules file first, then no pushing, no dangerous commands. */
-export function ciApprove(cwd) {
+/**
+ * The approver for a run nobody is watching live: the rules file first, never a
+ * git push (Craft pushes when the run ends), then the risky actions (deploys,
+ * deleting a database, risky commands). Those depend on the repo's Cloud
+ * permission (CRAFT_PERMISSIONS): "full" runs them, anything else answers
+ * 'ask' so the cloud runner can ask the person in Craft or on the phone. With
+ * no way to ask (the /codeply comment agent), 'ask' means no.
+ */
+export function ciApprove(cwd, { permission = '', canAsk = false } = {}) {
+  const full = String(permission || '').toLowerCase() === 'full';
   return async (req) => {
     const d = permissions.decide(req, cwd);
-    if (d.decision === 'deny' || req.danger || req.tool === 'fetch_image') return 'reject';
+    if (d.decision === 'deny' || req.tool === 'fetch_image') return 'reject';
     if (req.tool === 'run' && /(^|[\s;&|(])(git\b[^;&|\n]*\spush|gh)(\s|$)/.test(`${req.detail || ''}\n${req.title || ''}`)) return 'reject';
+    if (req.danger) return full ? 'once' : canAsk ? 'ask' : 'reject';
     return 'once';
   };
 }
