@@ -280,11 +280,29 @@ function init(d) {
   watcher.start(15000);
   // Gmail on calls and phone chat is on by default: link it a little after start.
   setTimeout(() => { autoLinkGmailPhone().catch(() => {}); }, 20000);
+  // Connected apps on Codeply's server too (phone chat, calls, Cloud runs):
+  // a hash check every 2 minutes, a network call only when something changed.
+  setTimeout(() => { syncConnections(); }, 25000);
+  setInterval(() => { syncConnections(); }, 2 * 60 * 1000).unref?.();
   d.ipcMain.handle('bots:watchStatus', async () => { try { return publicStatus(); } catch (e) { return { error: e.message }; } });
 }
 
 /** Settings changed (a bot saved, Gmail connected): check soon instead of in 2 minutes. */
-function poke() { if (watcher) watcher.poke(); autoLinkGmailPhone().catch(() => {}); }
+function poke() { if (watcher) watcher.poke(); autoLinkGmailPhone().catch(() => {}); syncConnections(); }
+
+/**
+ * Keeps the connected apps (GitHub, Vercel, Supabase, Slack, Gmail) stored on
+ * Codeply's server, encrypted, so phone chat, calls and Cloud runs can use
+ * them with this PC off. On by default; "cloudConnections": false in
+ * ~/.codeply/config.json turns it off (cloud.mjs syncCloudConnections).
+ */
+let syncing = false;
+function syncConnections() {
+  if (!deps || syncing || !deps.configLib()) return;
+  syncing = true;
+  const url = require('url').pathToFileURL(path.join(deps.cliDir, 'lib', 'cloud.mjs')).href;
+  import(url).then((m) => m.syncCloudConnections()).catch(() => {}).finally(() => { syncing = false; });
+}
 
 // ─── Gmail on phone calls (Codeply's server reads it while this PC is off) ──
 

@@ -23,6 +23,7 @@
   window.CrewState = state;
 
   const ICON = {
+    history: '<svg viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3 4v4h4"/><path d="M12 7.5V12l3 2"/></svg>',
     phone: '<svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>',
     up: '<svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
     stop: '<svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>',
@@ -90,6 +91,7 @@
 
   // ─── Small helpers ──────────────────────────────────────────────────────
   function toast(text, kind) {
+    if (kind !== 'error' && kind !== 'alert') return; // only errors and asks for your OK pop up; what a bot learned goes to its History
     const t = document.createElement('div');
     t.className = `toast${kind === 'error' ? ' err' : ''}`;
     t.textContent = text;
@@ -195,7 +197,7 @@
         ${embedded ? `<button class="ap-manage" data-act="connect">${ICON_LINK}<span>Manage connections</span></button>` : ''}
       </div>
       <div class="ap-list">
-        <button data-act="folder" title="The folder where your bots save what they make">${ICON.folder}<span>Bots' files</span></button>
+        <button data-act="folder" title="Where your bots save what they make">${ICON.folder}<span>Saved work</span></button>
         ${u ? `<button data-act="out" class="danger">${ICON_OUT}<span>Sign out</span></button>` : '<button data-act="in"><span>Sign in</span></button>'}
       </div>`;
     m.classList.add('account-panel');
@@ -213,7 +215,7 @@
         gp.checked = !!(r && r.linked);
         gp.disabled = false;
         if (r && r.ok) toast(r.linked ? 'Your bots can read Gmail on calls now, even with this PC off.' : 'Gmail on calls is off. Your sign-in was removed from the server.');
-        else toast((r && r.error) || 'That did not work.');
+        else toast((r && r.error) || 'That did not work.', 'error');
       });
     }
     act('connect', () => api.openConnect());
@@ -410,7 +412,7 @@
         <button class="th-who" id="whoBtn">${av(b, 34)}<span style="min-width:0;text-align:left"><div class="th-name">${esc(b.name)}</div><div class="th-sub">${esc(b.specialty || '')}</div></span></button>
         <span class="th-spacer"></span>
         <button class="call-btn" id="callBtn">${ICON.phone}Call</button>
-        <button class="icon-btn" id="moreBtn" aria-label="More">${ICON.more}</button>
+        <button class="icon-btn${state.learnedNew && state.learnedNew.has(b.id) ? ' has-new' : ''}" id="moreBtn" aria-label="More">${ICON.more}</button>
       </div>
       ${empty ? `<div class="empty">
           ${av(b, 112)}
@@ -423,8 +425,9 @@
     $('#callBtn').addEventListener('click', () => window.CrewCall.start(b.id));
     $('#whoBtn').addEventListener('click', () => editBot(bot(state.current) || b));
     $('#moreBtn').addEventListener('click', (e) => openMenu(e.currentTarget, [
+      { label: 'History', icon: ICON.history, run: () => showHistory(bot(state.current)) },
       { label: 'Edit bot', icon: ICON.edit, run: () => editBot(bot(state.current)) },
-      { label: 'Open the bots\' folder', icon: ICON.folder, run: () => api.openFolder(state.workspace) },
+      { label: 'Open saved work', icon: ICON.folder, run: () => api.openFolder(state.workspace) },
       '-',
       { label: 'Clear this chat', icon: ICON.trash, danger: true, run: clearChat },
     ], 'right'));
@@ -661,7 +664,7 @@
         else toast(`${b.name}: ${ev.text}`, 'error');
         break;
       case 'approval':
-        if (!here) toast(`${b.name} needs your OK. Open the chat to answer.`);
+        if (!here) toast(`${b.name} needs your OK. Open the chat to answer.`, 'alert');
         if (liveBody(b)) { addToBody(state.live.body, approvalHtml(ev)); wireApproval(ev.requestId); scrollDown(true); }
         break;
       case 'approval_done': {
@@ -682,12 +685,11 @@
         openBot(b.id);
         break;
       case 'learned':
-        state.catalog = ev.catalog || state.catalog;
-        if (here) toast(`${b.name} will remember: ${ev.facts[0]}`);
-        break;
       case 'reflected':
         state.catalog = ev.catalog || state.catalog;
-        if (here && ev.playbook) toast(`${b.name} ${ev.updated ? 'got better at' : 'learned how to do'}: ${ev.playbook}`);
+        state.learnedNew = state.learnedNew || new Set();
+        state.learnedNew.add(b.id);
+        if (here) { const mb = $('#moreBtn'); if (mb) mb.classList.add('has-new'); }
         break;
       case 'done':
         state.busy.delete(b.id);
@@ -798,6 +800,34 @@
     d.tone = d.tone || { preset: 'friendly', custom: '' };
     const ui = { id: b ? b.id : null, note, error: '', confirmDelete: false, voice: b ? (b.voice || (state.settings.voices || {})[b.id] || '') : '' };
     paintEditor(d, ui);
+  }
+
+  // History (⋯ → History): what the bot has learned, newest first, grouped by day.
+  function showHistory(b) {
+    if (!b) return;
+    if (state.learnedNew) state.learnedNew.delete(b.id);
+    const mb = $('#moreBtn'); if (mb) mb.classList.remove('has-new');
+    const items = [
+      ...(b.memory || []).map((x) => ({ at: x.at, kind: 'Remembers', text: x.fact })),
+      ...(b.lessons || []).map((x) => ({ at: x.at, kind: 'Lesson', text: `When ${x.situation}: ${x.strategy}` })),
+      ...(b.playbooks || []).map((x) => ({ at: x.at, kind: x.uses > 1 ? 'Got better at' : 'Learned how to', text: `${x.app} / ${x.task}`, steps: x.steps })),
+      ...(b.toolTips || []).map((x) => ({ at: x.at, kind: 'Tool tip', text: x.tip })),
+    ].sort((p, q) => (Number(q.at) || 0) - (Number(p.at) || 0));
+    const today = new Date().toDateString(); const yesterday = new Date(Date.now() - 86400000).toDateString();
+    const dayOf = (t) => { const d = new Date(Number(t) || 0); const s = d.toDateString(); return s === today ? 'Today' : s === yesterday ? 'Yesterday' : d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }); };
+    let last = ''; let rows = '';
+    for (const it of items) {
+      const day = it.at ? dayOf(it.at) : 'Earlier';
+      if (day !== last) { rows += `<div class="hist-day">${esc(day)}</div>`; last = day; }
+      const time = it.at ? new Date(Number(it.at)).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
+      rows += `<div class="hist-item"><span class="hist-kind">${esc(it.kind)}</span><div class="hist-text">${esc(it.text)}${it.steps && it.steps.length ? `<ol>${it.steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>` : ''}</div><span class="hist-time">${esc(time)}</span></div>`;
+    }
+    const m = modal(`
+      <div class="modal-head"><div class="modal-title">${esc(b.name)}'s history</div><button class="icon-btn" data-act="close" aria-label="Close">${ICON.x}</button></div>
+      <div class="modal-body hist">${rows || `<div class="dim hist-empty">Nothing yet. As ${esc(b.name)} chats, takes calls and does work, what it learns shows up here.</div>`}</div>
+      <div class="modal-foot"><span class="grow dim">To forget something, open Edit bot.</span><button class="btn" data-act="edit">Edit bot</button></div>`);
+    m.querySelectorAll('[data-act="close"]').forEach((el) => el.addEventListener('click', closeModal));
+    m.querySelector('[data-act="edit"]').addEventListener('click', () => { closeModal(); editBot(bot(b.id) || b); });
   }
 
   // Experience: what the bot learned from its own work (lessons, playbooks, tool tips, open threads).

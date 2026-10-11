@@ -359,7 +359,7 @@
         } else UI.toast(`${g.name}: ${ev.text}`, 'error');
         break;
       case 'approval':
-        if (!here) UI.toast(`${b ? b.name : 'A bot'} in ${g.name} needs your OK.`);
+        if (!here) UI.toast(`${b ? b.name : 'A bot'} in ${g.name} needs your OK.`, 'alert');
         else if (liveBlock(ev.botId)) { UI.addToBody(live.body, UI.approvalHtml(ev)); UI.wireApproval(ev.requestId); UI.scrollDown(true); }
         break;
       case 'approval_done': {

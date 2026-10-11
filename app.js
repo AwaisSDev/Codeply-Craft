@@ -258,10 +258,127 @@ if (api) {
 // collapse button living inside it) has slid off-screen.
 function setSidebarCollapsed(collapsed) {
   $('sidebar').classList.toggle('collapsed', collapsed);
-  $('sidebarExpandBtn').classList.toggle('hidden', !collapsed);
 }
+const toggleSidebar = () => setSidebarCollapsed(!$('sidebar').classList.contains('collapsed'));
 $('sidebarToggle').addEventListener('click', () => setSidebarCollapsed(true));
-$('sidebarExpandBtn').addEventListener('click', () => setSidebarCollapsed(false));
+$('sidebarExpandBtn').addEventListener('click', toggleSidebar);
+
+// ─── Back / forward between home and chats (the title bar arrows) ───────────
+const nav = { stack: [], at: -1, moving: false };
+function navRecord(place) {
+  if (nav.moving) return;
+  if (nav.stack[nav.at] === place) return;
+  nav.stack = nav.stack.slice(0, nav.at + 1);
+  nav.stack.push(place);
+  if (nav.stack.length > 100) nav.stack.shift();
+  nav.at = nav.stack.length - 1;
+  navPaint();
+}
+function navPaint() {
+  $('navBack').disabled = nav.at <= 0;
+  $('navForward').disabled = nav.at >= nav.stack.length - 1;
+}
+async function navGo(step) {
+  const to = nav.at + step;
+  if (to < 0 || to >= nav.stack.length) return;
+  nav.at = to; nav.moving = true;
+  try {
+    const place = nav.stack[to];
+    if (place === 'home') $('newChatBtn').click();
+    else await openSession(place.slice(2));
+  } finally { nav.moving = false; navPaint(); }
+}
+$('navBack').addEventListener('click', () => navGo(-1));
+$('navForward').addEventListener('click', () => navGo(1));
+
+// ─── File / Edit / View / Help (the title bar menus) ────────────────────────
+let tbPop = null;
+function closeTbMenu() {
+  if (tbPop) { tbPop.remove(); tbPop = null; }
+  document.querySelectorAll('.tb-menu.open').forEach((b) => b.classList.remove('open'));
+}
+const ZOOM_KEY = 'codeply.zoom';
+function setZoom(z) {
+  z = Math.min(1.6, Math.max(0.7, Math.round(z * 10) / 10));
+  document.documentElement.style.zoom = z === 1 ? '' : String(z);
+  try { localStorage.setItem(ZOOM_KEY, String(z)); } catch {}
+}
+try { const z = Number(localStorage.getItem(ZOOM_KEY)); if (z && z !== 1) setZoom(z); } catch {}
+const currentZoom = () => Number(document.documentElement.style.zoom) || 1;
+const editCmd = (cmd) => () => document.execCommand(cmd);
+function tbMenuItems(name) {
+  const signedIn = !!state.user;
+  if (name === 'file') return [
+    ['New chat', 'Ctrl+N', () => $('newChatBtn').click(), !signedIn],
+    ['Open folder…', 'Ctrl+O', () => $('openProjectBtn').click(), !signedIn],
+    null,
+    ['Connect apps', '', () => openConnectApps(), !signedIn],
+    null,
+    ['Close window', 'Alt+F4', () => api && api.close()],
+  ];
+  if (name === 'edit') return [
+    ['Undo', 'Ctrl+Z', editCmd('undo')], ['Redo', 'Ctrl+Y', editCmd('redo')], null,
+    ['Cut', 'Ctrl+X', editCmd('cut')], ['Copy', 'Ctrl+C', editCmd('copy')], ['Paste', 'Ctrl+V', editCmd('paste')], null,
+    ['Select all', 'Ctrl+A', editCmd('selectAll')],
+  ];
+  if (name === 'view') return [
+    ['Toggle sidebar', 'Ctrl+B', toggleSidebar],
+    ['Toggle browser panel', '', () => document.querySelector('.browser-toggle-btn')?.click()],
+    null,
+    ['Zoom in', 'Ctrl+=', () => setZoom(currentZoom() + 0.1)],
+    ['Zoom out', 'Ctrl+-', () => setZoom(currentZoom() - 0.1)],
+    ['Actual size', 'Ctrl+0', () => setZoom(1)],
+  ];
+  return [
+    ['Codeply website', '', () => api && api.openExternal('https://codeply.app')],
+    ['Report a problem', '', () => api && api.openExternal('https://github.com/AwaisSDev/Codeply-Craft/issues')],
+  ];
+}
+function openTbMenu(btn) {
+  const same = btn.classList.contains('open');
+  closeTbMenu();
+  if (same) return;
+  const pop = document.createElement('div');
+  pop.className = 'menu tb-pop';
+  for (const it of tbMenuItems(btn.dataset.menu)) {
+    if (!it) { pop.appendChild(Object.assign(document.createElement('div'), { className: 'menu-sep' })); continue; }
+    const [label, keys, run, off] = it;
+    const b = document.createElement('button');
+    b.className = 'menu-item';
+    b.disabled = !!off;
+    b.innerHTML = `<span>${esc(label)}</span>${keys ? `<kbd>${esc(keys)}</kbd>` : ''}`;
+    // keep focus in the text box, so Cut / Copy / Paste act on it
+    b.addEventListener('mousedown', (e) => e.preventDefault());
+    b.addEventListener('click', () => { closeTbMenu(); run(); });
+    pop.appendChild(b);
+  }
+  document.body.appendChild(pop);
+  const r = btn.getBoundingClientRect();
+  pop.style.left = r.left + 'px';
+  pop.style.top = (r.bottom + 4) + 'px';
+  btn.classList.add('open');
+  tbPop = pop;
+}
+document.querySelectorAll('.tb-menu').forEach((b) => {
+  b.addEventListener('mousedown', (e) => e.preventDefault());
+  b.addEventListener('click', (e) => { e.stopPropagation(); openTbMenu(b); });
+  // moving across the bar while a menu is open switches menus, like a native menu bar
+  b.addEventListener('mouseenter', () => { if (tbPop && !b.classList.contains('open')) openTbMenu(b); });
+});
+document.addEventListener('click', (e) => { if (tbPop && !tbPop.contains(e.target)) closeTbMenu(); });
+window.addEventListener('blur', closeTbMenu);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && tbPop) { closeTbMenu(); return; }
+  if (e.altKey && !e.ctrlKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); navGo(e.key === 'ArrowLeft' ? -1 : 1); return; }
+  if (!e.ctrlKey || e.altKey || e.shiftKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'b') { e.preventDefault(); toggleSidebar(); }
+  else if (k === 'n' && state.user) { e.preventDefault(); $('newChatBtn').click(); }
+  else if (k === 'o' && state.user) { e.preventDefault(); $('openProjectBtn').click(); }
+  else if (k === '=' || k === '+') { e.preventDefault(); setZoom(currentZoom() + 0.1); }
+  else if (k === '-') { e.preventDefault(); setZoom(currentZoom() - 0.1); }
+  else if (k === '0') { e.preventDefault(); setZoom(1); }
+});
 
 // ─── View switching ─────────────────────────────────────────────────────────
 const VIEWS = ['viewLogin', 'viewReferral', 'viewCountry', 'viewHome', 'viewChat', 'viewEngineError'];
@@ -273,6 +390,7 @@ const VIEWS = ['viewLogin', 'viewReferral', 'viewCountry', 'viewHome', 'viewChat
 function showView(name) {
   if ((name === 'viewHome' || name === 'viewChat') && !state.user) name = 'viewLogin';
   for (const v of VIEWS) $(v).classList.toggle('hidden', v !== name);
+  if (name === 'viewHome') navRecord('home');
 }
 
 // ─── Tiny markdown renderer (safe: everything escaped first) ────────────────
@@ -1391,6 +1509,10 @@ function openAccountMenu() {
       <div class="account-menu-email">${esc(state.user.email)}</div>
     </div>
     <div class="menu-sep"></div>
+    <button class="menu-item" data-action="usage">
+      <svg viewBox="0 0 24 24"><path d="M4.6 18.5a9 9 0 1 1 14.8 0"/><path d="M12 14.2l4.2-4.6"/><circle cx="12" cy="14.6" r="1.5"/><path d="M7.3 10.2l.9.6M12 6.4v1M16.7 10.2l-.9.6"/></svg>
+      Usage
+    </button>
     <button class="menu-item" data-action="connect">
       <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
       Connect Apps
@@ -1423,6 +1545,7 @@ function openAccountMenu() {
   menu.style.width = rect.width + 'px';
 
   menu.querySelector('[data-action="connect"]').addEventListener('click', openConnectApps);
+  menu.querySelector('[data-action="usage"]').addEventListener('click', () => { closeAccountMenu(); window.CraftUsage && window.CraftUsage.open({ name: $('userName').textContent, email: state.user.email }); });
   menu.querySelector('[data-action="logout"]').addEventListener('click', async () => {
     closeAccountMenu();
     await api.logout();
@@ -2106,8 +2229,108 @@ function setModelsTab(tab) {
   document.querySelectorAll('.models-tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === tab));
   $('modelsPaneCustom').classList.toggle('hidden', tab !== 'custom');
   $('modelsPaneOllama').classList.toggle('hidden', tab !== 'ollama');
+  $('modelsPaneOllamaCloud').classList.toggle('hidden', tab !== 'ocloud');
   if (tab === 'ollama') detectOllamaModels();
+  if (tab === 'ocloud') openOllamaCloud();
 }
+
+// ─── Ollama Cloud: the person's own account (main.js ollamaCloud:*) ─────────
+// Through the Ollama app on this PC (no key: it signs in to ollama.com itself)
+// or with a pasted API key. Either way, then pick from Ollama's live cloud list.
+let ocWay = null; // { via: 'app' } or { via: 'key', key }
+let ocPoll = null;
+// The app names a cloud model "<name>-cloud" when it has a size tag, else "<name>:cloud"
+const ocLocalName = (name) => (name.includes(':') ? `${name}-cloud` : `${name}:cloud`);
+
+async function openOllamaCloud() {
+  clearInterval(ocPoll);
+  if (ocWay) { listOllamaCloud(); return; }
+  $('ocList').innerHTML = '';
+  const body = $('ocAppBody');
+  body.innerHTML = '<div class="ollama-status"><span class="spinner"></span>Looking for Ollama on this PC…</div>';
+  const r = await api.ollamaCloudLocal();
+  if (!r.running) {
+    body.innerHTML = '<div class="ollama-status">Ollama isn\'t running on this PC. Install it free from ollama.com and open it, then come back here. Or use an API key below.</div>';
+    return;
+  }
+  if (r.signedIn) { ocWay = { via: 'app' }; body.innerHTML = '<div class="ollama-status ok">Connected through the Ollama app.</div>'; listOllamaCloud(); return; }
+  body.innerHTML = `<div class="ollama-status${r.error ? ' error' : ''}">${esc(r.error || 'Ollama is running here. Sign it in to ollama.com once and its cloud models work with no key.')}</div>
+    ${r.error ? '' : '<button class="btn btn-primary btn-lg" id="ocSignin">Sign in to Ollama</button>'}`;
+  const btn = $('ocSignin');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Waiting for you in the browser…';
+    const s = await api.ollamaCloudSignin(r.signinUrl || '');
+    if (!s.ok) { btn.disabled = false; btn.textContent = 'Sign in to Ollama'; body.insertAdjacentHTML('beforeend', `<div class="ollama-status error">${esc(s.error)}</div>`); return; }
+    // check every few seconds until the app is signed in (up to 3 minutes)
+    const until = Date.now() + 3 * 60_000;
+    ocPoll = setInterval(async () => {
+      if (Date.now() > until) { clearInterval(ocPoll); btn.disabled = false; btn.textContent = 'Try again'; return; }
+      const again = await api.ollamaCloudLocal();
+      if (again.signedIn) { clearInterval(ocPoll); ocWay = { via: 'app' }; body.innerHTML = '<div class="ollama-status ok">Connected through the Ollama app.</div>'; listOllamaCloud(); }
+    }, 4000);
+  });
+}
+
+async function connectOllamaKey() {
+  const key = $('ocKey').value.trim();
+  const st = $('ocKeyStatus');
+  st.classList.remove('hidden', 'error', 'ok');
+  st.innerHTML = '<span class="spinner"></span>Checking the key…';
+  $('ocKeyBtn').disabled = true;
+  const r = await api.ollamaCloudCheckKey(key);
+  $('ocKeyBtn').disabled = false;
+  if (!r.ok) { st.classList.add('error'); st.textContent = r.error; return; }
+  ocWay = { via: 'key', key };
+  st.classList.add('ok');
+  st.textContent = 'Connected with your key.';
+  listOllamaCloud();
+}
+
+async function listOllamaCloud() {
+  const list = $('ocList');
+  list.innerHTML = '<div class="ollama-status"><span class="spinner"></span>Loading Ollama\'s cloud models…</div>';
+  const r = await api.ollamaCloudModels();
+  if (!r.ok) { list.innerHTML = `<div class="ollama-status error">${esc(r.error)}</div>`; return; }
+  const viaApp = ocWay && ocWay.via === 'app';
+  const saved = new Set(state.models.models.map((m) => m.model));
+  list.innerHTML = `<div class="oc-list-head">Pick a model to add</div>` + r.models.map((m) => {
+    const id = viaApp ? ocLocalName(m.name) : m.name;
+    return `<div class="ollama-row">
+      <span class="model-item-icon local">${LLAMA_SVG}</span>
+      <div class="ollama-row-text"><strong>${esc(m.name)}</strong><span>Ollama Cloud${viaApp ? ' · through the app' : ' · your key'}</span></div>
+      <button class="btn btn-secondary btn-sm" data-oc="${esc(id)}" data-name="${esc(m.name)}">${saved.has(id) ? 'Use' : 'Add'}</button>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('[data-oc]').forEach((b) => b.addEventListener('click', () => addOllamaCloudModel(b.dataset.oc, b.dataset.name, b)));
+}
+
+async function addOllamaCloudModel(model, name, btn) {
+  const viaApp = ocWay && ocWay.via === 'app';
+  const existing = state.models.models.find((m) => m.model === model && (viaApp ? m.kind === 'ollama' : /ollama\.com/.test(m.baseUrl || '')));
+  if (existing) { await pickModel(existing.id); closeModelsModal(); return; }
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Testing…';
+  const r = await api.saveModel(viaApp
+    ? { kind: 'ollama', name: `${name} (Ollama Cloud)`, baseUrl: 'http://localhost:11434', model, apiKey: '' }
+    : { kind: 'openai', name: `${name} (Ollama Cloud)`, baseUrl: 'https://ollama.com/v1', model, apiKey: ocWay.key });
+  if (!r.ok) {
+    btn.disabled = false;
+    btn.textContent = 'Retry';
+    const st = document.createElement('div');
+    st.className = 'ollama-status error';
+    st.textContent = r.error;
+    btn.closest('.ollama-row').after(st);
+    return;
+  }
+  applyModelsState(r.state);
+  closeModelsModal();
+}
+
+$('ocKeyBtn').addEventListener('click', connectOllamaKey);
+$('ocKey').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); connectOllamaKey(); } });
+$('ocGetKey').addEventListener('click', () => api.ollamaCloudOpenKeys());
 
 function showModelsError(msg, { canSkip = false } = {}) {
   $('mError').textContent = msg || '';
@@ -2264,6 +2487,7 @@ $('modelsBackdrop').addEventListener('click', (e) => { if (e.target === $('model
 // ─── Toast ──────────────────────────────────────────────────────────────────
 let toastTimer = null;
 function showToast(text, kind = '') {
+  if (kind !== 'error') return; // only errors pop up
   let el = document.querySelector('.toast');
   if (!el) {
     el = document.createElement('div');
@@ -2421,6 +2645,7 @@ async function sendMessage(text, fromHome, images) {
   }
   if (!state.currentSessionId) {
     state.currentSessionId = r.sessionId;
+    navRecord('s:' + r.sessionId);
     state.sessions.unshift({ id: r.sessionId, title: r.title, cwd: state.project, updatedAt: Date.now() });
     renderRecents();
   }
@@ -2820,6 +3045,7 @@ if (api) api.onAgentEvent((data) => {
     // api.send() returns its id; adopt it here so they aren't dropped.
     if (!state.currentSessionId && data.origin === desktopClientId && data.message?.kind === 'user') {
       state.currentSessionId = data.sessionId;
+      navRecord('s:' + data.sessionId);
     }
     if (mine && data.message?.kind === 'user' && data.origin && data.origin !== desktopClientId) {
       addUserMessage(data.message.text, data.message.images);
@@ -3002,6 +3228,7 @@ async function openSession(id) {
   const s = await api.getSession(id);
   if (!s) return;
   state.currentSessionId = id;
+  navRecord('s:' + id);
   if (s.cwd) {
     const r = await api.useProject(s.cwd);
     if (r) setProject(r.path, r.branch);

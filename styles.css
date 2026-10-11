@@ -2395,3 +2395,56 @@ a.remote-url { text-decoration: none; cursor: pointer; }
 .att-x { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; background: rgba(0, 0, 0, .65); color: #fff; font-size: 13px; line-height: 16px; text-align: center; opacity: 0; transition: opacity .15s ease; }
 .att-chip:hover .att-x { opacity: 1; }
 .bubble-files { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-bottom: 6px; }
+
+/* ============ Composer toolbar: never wraps, never pushes Send off ============
+   Labels give way to icons as the box narrows (the title tooltips still name them). */
+.composer { container-type: inline-size; }
+.composer-bottom { gap: 8px; min-width: 0; }
+.composer-bottom-left { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.composer-bottom-right { flex: 0 0 auto; }
+.composer-bottom button, .composer-bottom span { white-space: nowrap; }
+.composer-bottom-left > * { flex-shrink: 0; }
+.send-btn { flex-shrink: 0; }
+@container (max-width: 700px) {
+  .composer-bottom [data-role="bypass-label"], .composer-bottom .rm-chip > span { display: none; }
+  .composer-bottom .model-btn { max-width: 150px; }
+}
+@container (max-width: 560px) {
+  .composer-bottom [data-role="mode-name"], .composer-bottom .cloud-chip > span, .composer-bottom .bot-chip > span { display: none; }
+  .composer-bottom .approve-toggle, .composer-bottom .chip { padding: 0 8px; }
+  .composer-bottom .model-btn { max-width: 120px; }
+}
+
+/* ============ Title bar: back, forward, sidebar, menus ============ */
+.titlebar-left { display: flex; align-items: center; gap: 2px; padding-left: 8px; height: 100%; -webkit-app-region: no-drag; }
+.tb-btn { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 7px; color: var(--text-dim); transition: background .12s ease, color .12s ease; }
+.tb-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tb-btn:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+.tb-btn:disabled { opacity: .35; cursor: default; }
+.tb-menus { display: flex; align-items: center; margin-left: 10px; gap: 2px; }
+.tb-menu { height: 26px; padding: 0 9px; border-radius: 6px; font-size: 13px; color: var(--text-dim); transition: background .12s ease, color .12s ease; }
+.tb-menu:hover, .tb-menu.open { background: var(--hover); color: var(--text); }
+.tb-pop { position: fixed; min-width: 230px; z-index: 1000; }
+.tb-pop .menu-item { justify-content: space-between; gap: 24px; }
+.tb-pop .menu-item kbd { font: inherit; font-size: 12px; color: var(--text-faint); }
+.tb-pop .menu-item:disabled { opacity: .4; pointer-events: none; }
+/* the sidebar's own toggle is now in the title bar */
+#sidebarToggle { display: none; }
+
+/* ============ Home: the app icon's knot, in the icon gray ============ */
+.home-logo { width: 50px; height: 50px; border-radius: 0; fill: var(--text-dim); }
+.home-title { font-weight: 400; }
+
+/* Models window: the Ollama Cloud tab */
+.oc-intro { margin: 0 0 12px; font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+.oc-way { border: 1px solid var(--card-border); border-radius: var(--r-lg); padding: 12px 14px; margin-bottom: 10px; }
+.oc-way-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13.5px; }
+.oc-tag { font-size: 11px; padding: 1px 8px; border-radius: 999px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.oc-way-body .btn { margin-top: 4px; }
+.oc-hint { margin-top: 8px; font-size: 12px; color: var(--text-faint); }
+.oc-hint .link-btn { color: var(--accent); font-size: inherit; padding: 0; background: none; border: 0; cursor: pointer; }
+.oc-hint .link-btn:hover { text-decoration: underline; }
+.ollama-status.ok { color: var(--green, #3fb950); }
+.ollama-status.hidden { display: none; }
+.oc-list-head { font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin: 6px 0 8px; }
+#ocList { display: flex; flex-direction: column; gap: 6px; }

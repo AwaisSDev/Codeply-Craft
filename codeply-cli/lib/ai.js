@@ -1223,14 +1223,53 @@ async function testModel(m) {
 }
 
 // ─── Auto ───────────────────────────────────────────────────────────────────
-// "Auto" is Gemma 4 31B on Ollama Cloud. Two account keys back it (a release
-// build bakes OLLAMA_API_KEY / OLLAMA_API_KEY_FALLBACK in via
-// scripts/embed-secrets.js; from source they come from ~/.codeply/config.json).
-// chatViaOllama moves to the second key the moment the first is over quota or
-// failing. Only if no key works at all does it fall back to the hosted proxy.
+// "Auto" is Codeply's router (Codeply-App/supabase/functions/auto): Claude
+// Sonnet 5.5 for coding and hard work, Claude Haiku 5.5 for chat, images and
+// background jobs, gpt-oss-120b and Gemma 4 when a daily allowance is used up.
+// It decides per turn on the server, where the Claude key and the budgets
+// live. If the router can't be reached at all, Auto falls back to Gemma 4 31B
+// on Ollama Cloud directly (two account keys: a release build bakes
+// OLLAMA_API_KEY / OLLAMA_API_KEY_FALLBACK in via scripts/embed-secrets.js;
+// from source they come from ~/.codeply/config.json), then the hosted proxy.
+const AUTO_URL = `${SUPABASE_URL}/functions/v1/auto`;
 const AUTO_MODEL = { host: 'https://ollama.com', model: 'gemma4:31b' };
+// Long Claude turns: the router streams keep-alive spaces, so allow a while
+const AUTO_TIMEOUT_MS = 6 * 60_000;
+
+async function chatViaRouter(messages, opts) {
+  const token = await getAccessToken();
+  if (!token) return { success: false, unreachable: true, error: 'Not signed in.' };
+  return withRetries(async () => {
+    let res, body;
+    const { signal, isTimeout, cleanup } = withTimeout(opts.signal, AUTO_TIMEOUT_MS);
+    try {
+      res = await fetch(AUTO_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
+        body: JSON.stringify({
+          messages: wireMessages(messages),
+          ...(opts.tools ? { tools: opts.tools } : {}),
+          opts: { json: !!opts.json, maxTokens: opts.maxTokens, temperature: opts.temperature },
+        }),
+        signal,
+      });
+      body = JSON.parse((await res.text()).trim() || '{}');
+    } catch (e) {
+      if (isAbortError(e) && !isTimeout()) return { aborted: true };
+      return { retryable: true, error: isTimeout() ? 'Auto took too long to answer.' : e.message };
+    } finally {
+      cleanup();
+    }
+    if (body.success) return { done: true, value: { success: true, data: body.data, modelUsed: body.modelUsed, route: body.route } };
+    if (body.error) return { done: true, value: { success: false, error: body.error } };
+    return { retryable: isTransientStatus(res.status), retryAfterMs: retryAfterMs(res), error: describeStatus(res.status) };
+  }, opts.signal);
+}
 
 async function chatViaAuto(messages, opts) {
+  const routed = await chatViaRouter(messages, opts);
+  if (routed.success || routed.aborted) return routed;
+  // The router itself is unreachable or broken: the old direct route still works.
   const cfg = getConfig();
   const keys = { apiKey: cfg.ollama.apiKey, apiKeyFallback: cfg.ollama.apiKeyFallback };
   if (!keys.apiKey && !keys.apiKeyFallback) return chatViaProxy(messages, opts);

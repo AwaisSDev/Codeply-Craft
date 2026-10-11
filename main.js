@@ -548,6 +548,17 @@ async function getOnboardingProfile() {
 
 ipcMain.handle('profile:get', () => getOnboardingProfile());
 
+// The Usage page: this person's own token use per day, from every app and model (my_usage in the database).
+ipcMain.handle('usage:get', async (e, tz) => {
+  const userId = await getLoggedInUserId();
+  if (!userId) return { error: 'Sign in to see your usage.' };
+  try {
+    const { data, error } = await authLib.getClient().rpc('my_usage', { tz: String(tz || 'UTC').slice(0, 64) });
+    if (error) return { error: error.message };
+    return data || { error: 'No usage yet.' };
+  } catch (err) { return { error: err.message }; }
+});
+
 ipcMain.handle('profile:saveOnboarding', async (e, { referralSource, country }) => {
   const userId = await getLoggedInUserId();
   if (!userId) return { ok: false, error: 'Not signed in.' };
@@ -859,6 +870,75 @@ ipcMain.handle('models:detectOllama', async (e, host) => {
   if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
   return aiLib.listOllamaModels(host || 'http://localhost:11434');
 });
+
+// ─── Ollama Cloud: the person's own account ─────────────────────────────────
+// Ollama has no sign-in for other apps, so there are two ways in:
+//  1. The Ollama app on this PC, signed in to ollama.com: its cloud models run
+//     through localhost with no key. When it isn't signed in, it answers a
+//     cloud request with a sign-in link (ollama.com/connect...), which we open.
+//  2. An API key from ollama.com/settings/keys, checked as soon as it's pasted.
+const OLLAMA_LOCAL = 'http://localhost:11434';
+const OLLAMA_PROBE_MODEL = 'gpt-oss:20b'; // the smallest cloud model, for checks
+
+/** Ollama's current cloud models (a public list). */
+ipcMain.handle('ollamaCloud:models', async () => {
+  try {
+    const r = await fetch('https://ollama.com/api/tags', { signal: AbortSignal.timeout(10_000) });
+    const j = await r.json();
+    return { ok: true, models: (j.models || []).map((m) => ({ name: m.name, size: m.size || 0 })) };
+  } catch (err) { return { ok: false, error: `Couldn't load Ollama's model list: ${err.message}` }; }
+});
+
+/** Is the Ollama app running here, and signed in to ollama.com? */
+ipcMain.handle('ollamaCloud:local', async () => {
+  try {
+    const v = await fetch(`${OLLAMA_LOCAL}/api/version`, { signal: AbortSignal.timeout(3000) });
+    if (!v.ok) throw new Error(String(v.status));
+  } catch { return { running: false }; }
+  try {
+    const r = await fetch(`${OLLAMA_LOCAL}/api/chat`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: `${OLLAMA_PROBE_MODEL}-cloud`, messages: [{ role: 'user', content: 'hi' }], stream: false, options: { num_predict: 1 } }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (r.ok) return { running: true, signedIn: true };
+    const j = await r.json().catch(() => ({}));
+    const link = String(j.signin_url || j.signinUrl || '');
+    if (r.status === 401 || r.status === 403 || link) return { running: true, signedIn: false, signinUrl: /^https:\/\/ollama\.com\//.test(link) ? link : '' };
+    return { running: true, signedIn: false, error: j.error || `Ollama answered HTTP ${r.status}. It may need an update for cloud models.` };
+  } catch (err) { return { running: true, signedIn: false, error: err.message }; }
+});
+
+/** Sign the Ollama app in: open its own sign-in link, or run `ollama signin`. */
+ipcMain.handle('ollamaCloud:signin', async (e, link) => {
+  if (link && /^https:\/\/ollama\.com\//.test(String(link))) { await shell.openExternal(String(link)); return { ok: true }; }
+  try {
+    const { spawn } = require('child_process');
+    const p = spawn('ollama', ['signin'], { detached: true, stdio: 'ignore', windowsHide: true });
+    p.on('error', () => {});
+    p.unref();
+    return { ok: true };
+  } catch (err) { return { ok: false, error: `Couldn't start Ollama's sign-in: ${err.message}` }; }
+});
+
+/** Checks a pasted ollama.com API key with a one-token request. */
+ipcMain.handle('ollamaCloud:checkKey', async (e, key) => {
+  const k = String(key || '').trim();
+  if (!k) return { ok: false, error: 'Paste your key first.' };
+  try {
+    const r = await fetch('https://ollama.com/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${k}` },
+      body: JSON.stringify({ model: OLLAMA_PROBE_MODEL, messages: [{ role: 'user', content: 'hi' }], stream: false, options: { num_predict: 1 } }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (r.ok) return { ok: true };
+    if (r.status === 401 || r.status === 403) return { ok: false, error: "That key didn't work. Copy it again from ollama.com/settings/keys." };
+    const j = await r.json().catch(() => ({}));
+    return { ok: false, error: j.error || `Ollama answered HTTP ${r.status}.` };
+  } catch (err) { return { ok: false, error: `Couldn't reach ollama.com: ${err.message}` }; }
+});
+
+ipcMain.handle('ollamaCloud:openKeys', () => shell.openExternal('https://ollama.com/settings/keys'));
 
 // ─── Research Mode (local Ollama / Ollama Cloud) ────────────────────────────
 // Settings live in ~/.codeply/config.json under "research". The renderer gets
@@ -3254,6 +3334,7 @@ ipcMain.handle('remote:setKeepAwake', (e, on) => {
 // Only our own phone-app address and ChatGPT's usage settings are ever opened this way.
 ipcMain.handle('shell:openExternal', (e, url) => {
   if (url === MOBILE_APP_URL || url === 'https://chatgpt.com/settings/usage') shell.openExternal(url);
+  else if (url === 'https://codeply.app' || url === 'https://github.com/AwaisSDev/Codeply-Craft/issues') shell.openExternal(url); // Help menu
   else if (/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(\/actions\/runs\/\d+)?$/.test(String(url))) shell.openExternal(url); // cloud: View run, repo links
   else if (publishedUrls.has(url) || /^https:\/\/[a-z0-9-]+\.vercel\.app\/?$/.test(String(url))) shell.openExternal(url); // a publish's live link
   else if (PUBLISH_HELP_URLS.has(url)) shell.openExternal(url); // where to create a token

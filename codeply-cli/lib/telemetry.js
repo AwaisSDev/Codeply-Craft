@@ -47,7 +47,10 @@ function push(ev) {
 }
 
 /** One model call: { model, provider, tokens_in, tokens_out, ms }. */
-function recordAi(ev) { push({ kind: 'ai', ...ev }); }
+function recordAi(ev) {
+  if (ev && ev.model === 'fake') return; // the engine tests' stand-in model is not real use
+  push({ kind: 'ai', ...ev });
+}
 
 /** The app was opened (counts active users even on a day with no AI call), once an hour at most. */
 const lastOpen = new Map();

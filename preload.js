@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('craft', {
   // onboarding survey (referral source + country) - same profiles row the
   // Codeply desktop app writes to
   getProfile: () => ipcRenderer.invoke('profile:get'),
+  getUsage: (tz) => ipcRenderer.invoke('usage:get', tz),
   saveOnboarding: (referralSource, country) => ipcRenderer.invoke('profile:saveOnboarding', { referralSource, country }),
 
   // models - "Auto" (hosted) or the user's own models. Keys stay in
@@ -42,6 +43,11 @@ contextBridge.exposeInMainWorld('craft', {
   deleteModel: (id) => ipcRenderer.invoke('models:delete', id),
   setModelPhone: (id, on) => ipcRenderer.invoke('models:setPhone', { id, on }),
   detectOllama: (host) => ipcRenderer.invoke('models:detectOllama', host),
+  ollamaCloudModels: () => ipcRenderer.invoke('ollamaCloud:models'),
+  ollamaCloudLocal: () => ipcRenderer.invoke('ollamaCloud:local'),
+  ollamaCloudSignin: (link) => ipcRenderer.invoke('ollamaCloud:signin', link),
+  ollamaCloudCheckKey: (key) => ipcRenderer.invoke('ollamaCloud:checkKey', key),
+  ollamaCloudOpenKeys: () => ipcRenderer.invoke('ollamaCloud:openKeys'),
   onModelsChanged: (cb) => ipcRenderer.on('models:changed', (e, data) => cb(data)),
   chatgptStatus: (opts) => ipcRenderer.invoke('chatgpt:status', opts),
   chatgptSignIn: () => ipcRenderer.invoke('chatgpt:signIn'),
