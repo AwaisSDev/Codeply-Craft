@@ -792,12 +792,20 @@ export async function downloadShot({ token, repo, path: rel, dest, apiUrl, fetch
  * Before coding: is the local branch behind GitHub (a cloud run merged work
  * into it)? Only for projects whose cloud target is their own repo.
  */
-export async function checkBehind(cwd) {
+/**
+ * Background git talks to GitHub with Craft's own GitHub login (when given),
+ * never through Windows' credential manager, which would pop up a sign-in
+ * window every time Craft checks for new commits.
+ */
+const QUIET_GIT = ['-c', 'credential.helper='];
+const quietAuth = (token) => (token ? { server: 'https://github.com', token } : undefined);
+
+export async function checkBehind(cwd, { token } = {}) {
   try {
     const branch = await git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']);
     const upstream = await git(cwd, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']).catch(() => null);
     if (!upstream) return { ok: false, reason: 'no upstream' };
-    await git(cwd, ['fetch', '-q', '--no-tags', upstream.split('/')[0]]);
+    await git(cwd, [...QUIET_GIT, 'fetch', '-q', '--no-tags', upstream.split('/')[0]], { auth: quietAuth(token) });
     const [behind, ahead] = (await git(cwd, ['rev-list', '--left-right', '--count', `${upstream}...HEAD`])).split(/\s+/).map(Number);
     const dirty = !!(await git(cwd, ['status', '--porcelain', '--untracked-files=no']));
     const latest = behind ? (await git(cwd, ['log', '-1', '--format=%s', upstream]).catch(() => '')) : '';
@@ -806,14 +814,14 @@ export async function checkBehind(cwd) {
 }
 
 /** Pull what GitHub has (a fast-forward when possible, else a merge; stashes local edits around it). */
-export async function pullLatest(cwd) {
-  const st = await checkBehind(cwd);
+export async function pullLatest(cwd, { token } = {}) {
+  const st = await checkBehind(cwd, { token });
   if (!st.ok) throw new Error(`Can't pull: ${st.reason}.`);
   if (!st.behind) return { pulled: 0 };
   let stashed = false;
   if (st.dirty) { await git(cwd, ['stash', 'push', '-q', '-m', 'craft: before pulling cloud changes']); stashed = true; }
   try {
-    await git(cwd, ['-c', 'user.name=Codeply Craft', '-c', 'user.email=craft-bot@users.noreply.github.com', 'pull', '-q', '--no-rebase', '--no-edit']);
+    await git(cwd, [...QUIET_GIT, '-c', 'user.name=Codeply Craft', '-c', 'user.email=craft-bot@users.noreply.github.com', 'pull', '-q', '--no-rebase', '--no-edit'], { auth: quietAuth(token) });
   } catch (e) {
     // A conflicting pull is undone, so the project is never left half-merged.
     const conflicted = (await git(cwd, ['diff', '--name-only', '--diff-filter=U']).catch(() => '')).split('\n').filter(Boolean);

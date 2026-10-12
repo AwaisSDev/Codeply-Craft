@@ -138,6 +138,7 @@ contextBridge.exposeInMainWorld('craft', {
   // undo (true) or redo (false) everything one message changed
   setCheckpoint: (sessionId, checkpointId, undo) => ipcRenderer.invoke('checkpoint:set', { sessionId, checkpointId, undo }),
   onAgentEvent: (cb) => ipcRenderer.on('agent:event', (e, data) => cb(data)),
+  onOpenSessionFromDrop: (cb) => ipcRenderer.on('drop:openSession', (e, id) => cb(id)),
 
   // image picker
   searchImages: (query) => ipcRenderer.invoke('images:search', query),

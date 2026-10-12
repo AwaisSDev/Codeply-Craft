@@ -201,7 +201,7 @@ async function checkBehind(cwd) {
   if (!cwd) return { ok: false, reason: 'no project' };
   try { if (!fs.statSync(cwd).isDirectory()) return { ok: false, reason: 'not a folder' }; } catch { return { ok: false, reason: 'not a folder' }; }
   const c = await lib();
-  return c.checkBehind(cwd);
+  return c.checkBehind(cwd, { token: githubToken() });
 }
 
 /** Files git left with conflict markers, after a pull that could not merge cleanly. */
@@ -219,7 +219,7 @@ async function pull(cwd, sessionId, taskId) {
   if (sessionId && deps.isRunning(sessionId)) return { error: 'Wait for the current run to finish first.' };
   const c = await lib();
   let r;
-  try { r = await c.pullLatest(cwd); } catch (e) {
+  try { r = await c.pullLatest(cwd, { token: githubToken() }); } catch (e) {
     const clash = await conflictedFiles(cwd);
     if (clash.length) return { error: `GitHub's commits and yours change the same lines in ${clash.slice(0, 4).join(', ')}${clash.length > 4 ? ` and ${clash.length - 4} more` : ''}. Fix the <<<<<<< markers there, or run git merge --abort to undo the pull.`, conflicts: clash };
     return { error: e.message };

@@ -116,7 +116,7 @@ export function git(cwd, args, { auth, input } = {}) {
   const full = auth ? ['-c', `http.${auth.server}/.extraheader=AUTHORIZATION: basic ${Buffer.from(`x-access-token:${auth.token}`).toString('base64')}`, ...args] : args;
   const verb = args.find((a, i) => !a.startsWith('-') && !(i > 0 && /^--(git-dir|work-tree)$/.test(args[i - 1])) && !(i > 0 && args[i - 1] === '-c')) || args[0];
   return new Promise((resolve, reject) => {
-    const child = execFile('git', full, { cwd, timeout: 300000, windowsHide: true, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }, (err, stdout, stderr) => {
+    const child = execFile('git', full, { cwd, timeout: 300000, windowsHide: true, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' } }, (err, stdout, stderr) => {
       if (err) reject(new Error(`git ${verb} failed: ${String(stderr || err.message).trim().split('\n').slice(-2).join(' ')}`));
       else resolve(String(stdout).trim());
     });

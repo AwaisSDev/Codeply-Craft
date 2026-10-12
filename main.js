@@ -363,6 +363,7 @@ function createWindow() {
   // Launch maximized; the width/height above become the restore size when
   // the user later unmaximizes, and the window stays freely resizable.
   win.once('ready-to-show', () => {
+    if (launchedHidden) return;
     win.maximize();
     win.show();
   });
@@ -391,22 +392,42 @@ function createWindow() {
 function showWindow() {
   if (!win || win.isDestroyed()) { createWindow(); return; }
   if (win.isMinimized()) win.restore();
+  if (!win.isVisible() && launchedHidden) { launchedHidden = false; win.maximize(); }
   win.show();
   win.focus();
+}
+
+// Started with Windows (--hidden): Craft waits in the tray so Alt+C works
+// right away, and the main window only opens when asked for.
+let launchedHidden = process.argv.includes('--hidden');
+const startsWithSystem = () => app.getLoginItemSettings({ args: ['--hidden'] }).openAtLogin;
+function setStartWithSystem(on) {
+  app.setLoginItemSettings({ openAtLogin: !!on, openAsHidden: !!on, args: ['--hidden'] });
+  store.startWithSystemSet = true;
+  saveStore();
+  buildTrayMenu();
+}
+
+function buildTrayMenu() {
+  if (!tray) return;
+  const key = drop.hotkeyLabel();
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Open Codeply Craft', click: showWindow },
+    { label: key ? `Open the drop (${key})` : 'Open the drop', click: () => drop.show() },
+    { type: 'separator' },
+    ...(app.isPackaged ? [{ label: process.platform === 'darwin' ? 'Open at login' : 'Start with Windows', type: 'checkbox', checked: startsWithSystem(), click: (item) => setStartWithSystem(item.checked) }] : []),
+    {
+      label: 'Quit Codeply Craft',
+      click: () => { isQuitting = true; app.quit(); },
+    },
+  ]));
 }
 
 function createTray() {
   if (tray) return;
   tray = new Tray(nativeImage.createFromPath(APP_ICON_PATH));
   tray.setToolTip('Codeply Craft');
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Open Codeply Craft', click: showWindow },
-    { type: 'separator' },
-    {
-      label: 'Quit Codeply Craft',
-      click: () => { isQuitting = true; app.quit(); },
-    },
-  ]));
+  buildTrayMenu();
   // Windows/Linux convention: a left-click on the tray icon itself opens the
   // app (the menu above is reserved for right-click, which Electron already
   // routes to setContextMenu on its own).
@@ -2532,6 +2553,7 @@ async function remoteInfo() {
 function sendEvent(sessionId, event) {
   if (win && !win.isDestroyed()) win.webContents.send('agent:event', { sessionId, ...event });
   broadcastRemote(sessionId, event);
+  drop.event(sessionId, event);
 }
 
 // Which chats have a run in flight - lets every window/phone keep its
@@ -2540,6 +2562,7 @@ function broadcastRunStatus() {
   const active = [...activeRuns.keys()];
   if (win && !win.isDestroyed()) win.webContents.send('runs:status', active);
   broadcastRemote(null, { type: 'runs_status', active });
+  drop.runs(active);
 }
 
 // Model-facing history (and the per-action grounding lines) live in the engine so
@@ -3381,6 +3404,31 @@ function respondImagePick(requestId, chosenUrl) {
 
 ipcMain.handle('chat:send', (e, payload) => startChatRun(payload));
 
+// The drop: Alt+C anywhere opens Craft's agent in a small chat in the corner (see drop.js).
+const drop = require('./drop');
+function initDrop() {
+  drop.init({
+    store: () => store, saveStore,
+    getSetting: (k) => store[k], setSetting: (k, v) => { store[k] = v; saveStore(); },
+    loadEngine, modelsState: () => (configLib ? modelsState() : { selected: 'auto', models: [] }),
+    selectModel: (id) => {
+      const r = configLib.selectModel(id || configLib.AUTO_MODEL_ID);
+      if (!r.ok) return r;
+      emitModelsChanged();
+      return { ok: true, state: modelsState() };
+    },
+    activeRunIds: () => [...activeRuns.keys()],
+    startChatRun, stopChatRun, respondApproval, respondQuestion, setCheckpointUndone,
+    rememberProject, newProjectFolder,
+    openInCraft: (id) => {
+      showWindow();
+      if (!id || !win || win.isDestroyed()) return;
+      const go = () => win.webContents.send('drop:openSession', id);
+      if (win.webContents.isLoading()) win.webContents.once('did-finish-load', () => setTimeout(go, 600)); else go();
+    },
+  });
+}
+
 // Craft Cloud: runs on GitHub Actions while this PC is off (see cloud-desktop.js).
 const cloudDesktop = require('./cloud-desktop');
 cloudDesktop.init({
@@ -3636,7 +3684,11 @@ app.whenReady().then(() => {
   updateSleepBlocker();
   startRemoteServer();
   createWindow();
+  initDrop();
   createTray();
+  // Craft starts with the computer by default (in the tray), so Alt+C always
+  // works; the tray menu turns it off, and that choice is kept.
+  if (app.isPackaged && !store.startWithSystemSet) setStartWithSystem(true);
   setupAutoUpdates();
   win.webContents.once('did-finish-load', () => {
     if (pendingAuthUrl) {
@@ -3669,6 +3721,7 @@ app.on('quit', () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
+  drop.dispose();
   for (const client of remoteEventClients) { try { client.end(); } catch {} }
   remoteEventClients.clear();
   if (remoteServer) remoteServer.close();
