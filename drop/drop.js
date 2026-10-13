@@ -9,7 +9,7 @@
   const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   const S = {
-    project: null, projects: [], models: { selected: 'auto', models: [] }, recent: [],
+    project: null, projects: [], models: { selected: 'auto', models: [] }, recent: [], recentMore: false, recentLoading: false,
     mode: 'Build', bypass: readBypass(), sessionId: null, running: false, sending: false, hotkey: null,
   };
   function readBypass() { try { return localStorage.getItem('craft-drop-bypass') === '1'; } catch { return false; } }
@@ -70,7 +70,7 @@
   function renderChips() {
     $('projName').textContent = S.project ? S.project.name : 'Choose a project';
     const sel = S.models.models.find((m) => m.id === S.models.selected);
-    $('modelName').textContent = sel ? sel.name || sel.model : 'Auto';
+    $('modelName').textContent = sel ? sel.name || sel.model : 'Haze 2';
     document.querySelectorAll('#modeSeg button').forEach((b) => b.classList.toggle('on', b.dataset.mode === S.mode));
     $('permName').textContent = S.bypass ? 'Full access' : 'Approve manually';
     $('permBtn').classList.toggle('full', S.bypass);
@@ -86,13 +86,41 @@
     sendBtn.setAttribute('aria-label', S.running ? 'Stop' : 'Send');
   }
 
+  const recentRow = (r) => {
+    const b = h(`<button type="button" data-id="${esc(r.id)}">${ICON.chat}<span class="t">${esc(r.title)}</span><span class="when">${esc(ago(r.updatedAt))}</span></button>`);
+    b.addEventListener('click', () => openChat(r.id));
+    return b;
+  };
   function renderRecent() {
     const box = $('recent');
-    if (!S.recent.length) { box.innerHTML = ''; return; }
-    box.innerHTML = '<div class="recent-title">Recent</div>' + S.recent.map((r) =>
-      `<button type="button" data-id="${esc(r.id)}">${ICON.chat}<span class="t">${esc(r.title)}</span><span class="when">${esc(ago(r.updatedAt))}</span></button>`).join('');
-    box.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => openChat(b.dataset.id)));
+    box.innerHTML = '';
+    if (!S.recent.length) return;
+    box.appendChild(h('<div class="recent-title">Recent</div>'));
+    S.recent.forEach((r) => box.appendChild(recentRow(r)));
+    fillRecent();
   }
+  // Scrolling near the end of the list brings in the next page.
+  async function moreRecent() {
+    if (!S.recentMore || S.recentLoading || card.classList.contains('has-chat')) return;
+    S.recentLoading = true;
+    try {
+      const page = await api.recent(S.recent.length);
+      const seen = new Set(S.recent.map((r) => r.id));
+      const fresh = (page.items || []).filter((r) => !seen.has(r.id));
+      S.recent.push(...fresh);
+      S.recentMore = !!page.more && fresh.length > 0;
+      const box = $('recent');
+      fresh.forEach((r) => box.appendChild(recentRow(r)));
+    } finally { S.recentLoading = false; }
+    fillRecent();
+  }
+  // A tall window and a short first page: keep loading until it can scroll.
+  function fillRecent() {
+    requestAnimationFrame(() => { if (S.recentMore && thread.scrollHeight <= thread.clientHeight + 40) moreRecent(); });
+  }
+  thread.addEventListener('scroll', () => {
+    if (thread.scrollHeight - thread.scrollTop - thread.clientHeight < 160) moreRecent();
+  });
   function ago(t) {
     const m = Math.round((Date.now() - (t || 0)) / 60000);
     if (m < 1) return 'now'; if (m < 60) return `${m}m`; const hr = Math.round(m / 60);
@@ -105,7 +133,8 @@
     S.projects = st.projects || [];
     if (!S.sessionId || !S.project) S.project = st.project || S.project;
     S.models = st.models || S.models;
-    S.recent = st.recent || [];
+    S.recent = (st.recent && st.recent.items) || [];
+    S.recentMore = !!(st.recent && st.recent.more);
     if (S.sessionId) S.running = (st.running || []).includes(S.sessionId);
     renderChips(); renderRecent();
     // The page was reloaded: pick the chat back up instead of starting blank.
@@ -144,7 +173,7 @@
 
   $('modelBtn').addEventListener('click', (e) => {
     if (!menu.hidden) return closeMenu();
-    const all = [{ id: 'auto', name: 'Auto', sub: 'Picks the right model' }, ...S.models.models.map((m) => ({ id: m.id, name: m.name || m.model, sub: m.kind === 'ollama' ? 'Ollama' : '' }))];
+    const all = [{ id: 'auto', name: 'Haze 2', sub: 'Routes to the right model' }, ...S.models.models.map((m) => ({ id: m.id, name: m.name || m.model, sub: m.kind === 'ollama' ? 'Ollama' : '' }))];
     const m = openMenu(e.currentTarget, '<div class="lbl">Model</div>' + all.map((x) =>
       `<button type="button" data-id="${esc(x.id)}"><span class="t">${esc(x.name)}</span>${x.sub ? `<span class="s">${esc(x.sub)}</span>` : ''}${x.id === S.models.selected ? ICON.tick : ''}</button>`).join(''));
     m.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('click', async () => {

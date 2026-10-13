@@ -104,6 +104,16 @@ function projectView(p) {
   return p ? { path: p, name: path.basename(p) } : null;
 }
 
+// Every chat (Craft's and the drop's), newest first, a page at a time.
+const RECENT_PAGE = 15;
+function recentPage(offset = 0, limit = RECENT_PAGE) {
+  const all = [...host.store().sessions].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  return {
+    items: all.slice(offset, offset + limit).map((s) => ({ id: s.id, title: s.title, cwd: s.cwd, updatedAt: s.updatedAt })),
+    more: offset + limit < all.length,
+  };
+}
+
 function stateView() {
   const store = host.store();
   const project = store.lastProject && fs.existsSync(store.lastProject) ? store.lastProject : null;
@@ -112,10 +122,7 @@ function stateView() {
     project: projectView(project),
     projects: (store.projects || []).filter((p) => fs.existsSync(p)).map(projectView),
     models: host.modelsState(),
-    recent: store.sessions.slice(0, 40)
-      .filter((s) => s.fromDrop)
-      .slice(0, 4)
-      .map((s) => ({ id: s.id, title: s.title, cwd: s.cwd, updatedAt: s.updatedAt })),
+    recent: recentPage(),
     running: host.activeRunIds(),
     current: shownSession,
   };
@@ -128,6 +135,8 @@ function init(h) {
   ipcMain.handle('drop:state', async () => { await host.loadEngine(); return stateView(); });
   ipcMain.on('drop:hide', hide);
   ipcMain.on('drop:showing', (e, id) => { shownSession = id || null; });
+
+  ipcMain.handle('drop:recent', (e, { offset } = {}) => recentPage(Math.max(0, Number(offset) || 0)));
 
   ipcMain.handle('drop:session', (e, id) => {
     const s = host.store().sessions.find((x) => x.id === id);

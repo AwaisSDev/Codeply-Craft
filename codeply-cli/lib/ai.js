@@ -277,7 +277,7 @@ function withIdleTimeout(signal, ms = REQUEST_TIMEOUT_MS) {
 
 async function chatViaProxy(messages, opts) {
   const token = await getAccessToken();
-  if (!token) return { success: false, error: 'Not signed in. Sign in to use Auto, or pick one of your own models.' };
+  if (!token) return { success: false, error: 'Not signed in. Sign in to use Haze 2, or pick one of your own models.' };
 
   return withRetries(async () => {
     let res, body;
@@ -1223,12 +1223,11 @@ async function testModel(m) {
   return { ok: true, ms: Date.now() - started, reply: (r.data.choices?.[0]?.message?.content || '').trim().slice(0, 80) };
 }
 
-// ─── Auto ───────────────────────────────────────────────────────────────────
-// "Auto" is Codeply's router (Codeply-App/supabase/functions/auto): Claude
-// Sonnet 5.5 for coding and hard work, Claude Haiku 5.5 for chat, images and
-// background jobs, gpt-oss-120b and Gemma 4 when a daily allowance is used up.
-// It decides per turn on the server, where the Claude key and the budgets
-// live. If the router can't be reached at all, Auto falls back to Gemma 4 31B
+// ─── Haze 2 (route.auto) ──────────────────────────────────────────────
+// Haze 2 is Codeply's hosted model: a router that picks the model for each
+// turn on the server, where the keys and the budgets live. The front door is
+// the Supabase function Codeply-App/supabase/functions/auto. If the router
+// can't be reached at all, the client falls back to Gemma 4 31B
 // on Ollama Cloud directly (two account keys: a release build bakes
 // OLLAMA_API_KEY / OLLAMA_API_KEY_FALLBACK in via scripts/embed-secrets.js;
 // from source they come from ~/.codeply/config.json), then the hosted proxy.
@@ -1269,6 +1268,32 @@ function deviceId() {
   return deviceIdCache;
 }
 
+// Haze 2 routes once per user turn. Every agent step says which turn it
+// belongs to (opts.haze, from agent.mjs); the router decides on the first step
+// and keeps the same model, effort and cache for the rest of the turn. The
+// router's state comes back with each answer and goes out again with the next
+// turn of the same chat. Memory only: a restart just starts a fresh state.
+const hazeStates = new Map(); // chatId -> state
+function hazeField(h) {
+  if (!h) return {};
+  return {
+    haze: {
+      product: h.product || 'craft',
+      surface: 'agent',
+      turnId: h.turnId,
+      continuation: (h.step || 0) > 0,
+      historyCount: h.historyCount || 0,
+      state: hazeStates.get(h.chatId) || undefined,
+    },
+  };
+}
+function keepHazeState(h, route) {
+  if (!h || !route || !route.haze || !route.haze.state) return;
+  hazeStates.delete(h.chatId);
+  hazeStates.set(h.chatId, route.haze.state);
+  if (hazeStates.size > 300) hazeStates.delete(hazeStates.keys().next().value);
+}
+
 async function chatViaRouter(messages, opts) {
   const token = await getAccessToken();
   // A cloud run has no sign-in: its usage key (CODEPLY_TRACK_KEY) stands in for the person
@@ -1286,17 +1311,21 @@ async function chatViaRouter(messages, opts) {
           messages: wireMessages(messages),
           ...(opts.tools ? { tools: opts.tools } : {}),
           opts: { json: !!opts.json, maxTokens: opts.maxTokens, temperature: opts.temperature },
+          ...hazeField(opts.haze),
         }),
         signal,
       });
       body = JSON.parse((await res.text()).trim() || '{}');
     } catch (e) {
       if (isAbortError(e) && !isTimeout()) return { aborted: true };
-      return { retryable: true, error: isTimeout() ? 'Auto took too long to answer.' : e.message };
+      return { retryable: true, error: isTimeout() ? 'Haze 2 took too long to answer.' : e.message };
     } finally {
       cleanup();
     }
-    if (body.success) return { done: true, value: { success: true, data: body.data, modelUsed: body.modelUsed, route: body.route } };
+    if (body.success) {
+      keepHazeState(opts.haze, body.route);
+      return { done: true, value: { success: true, data: body.data, modelUsed: body.modelUsed, route: body.route } };
+    }
     if (body.error) return { done: true, value: { success: false, error: body.error } };
     return { retryable: isTransientStatus(res.status), retryAfterMs: retryAfterMs(res), error: describeStatus(res.status) };
   }, opts.signal);

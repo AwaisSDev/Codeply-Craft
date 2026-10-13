@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('drop', {
   state: () => ipcRenderer.invoke('drop:state'),
   session: (id) => ipcRenderer.invoke('drop:session', id),
+  recent: (offset) => ipcRenderer.invoke('drop:recent', { offset }),
   showing: (id) => ipcRenderer.send('drop:showing', id),
   send: (payload) => ipcRenderer.invoke('drop:send', payload),
   stop: (id) => ipcRenderer.send('drop:stop', id),

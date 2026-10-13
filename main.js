@@ -867,7 +867,7 @@ function modelsState() {
 }
 
 function modelLabel(route) {
-  return route && route.custom ? (route.custom.name || route.custom.model) : 'Auto';
+  return route && route.custom ? (route.custom.name || route.custom.model) : 'Haze 2';
 }
 
 ipcMain.handle('models:list', async () => {
@@ -2651,6 +2651,7 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
     const run = agentMod.runAgent({
       userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route,
       roleId, goal, maxSteps, verifyOnly, botPrompt: bot?.botPrompt, askBot: bot?.askBot, botId: bot?.botId,
+      haze: { product: 'craft', chatId: session.id },
     });
     for await (const ev of run) {
       if (bot) bot.see(ev); // the bot's trajectory, for its reflection after the reply
@@ -2967,7 +2968,7 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   // mid-run never changes a run that's already going.
   const route = currentRoute();
   if (route.auto && !(await getLoggedInUserId())) {
-    return { error: 'Sign in to use Auto, or pick one of your own models from the model menu.' };
+    return { error: 'Sign in to use Haze 2, or pick one of your own models from the model menu.' };
   }
 
   const goalMatch = GOAL_PREFIX_RE.exec(text);

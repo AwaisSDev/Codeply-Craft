@@ -1400,10 +1400,10 @@ function renderModels(models) {
     row.addEventListener('click', () => selectModel(id));
     list.append(row);
   };
-  add('auto', 'Auto', 'Gemma 4 31B, picked for you');
+  add('auto', 'Haze 2', 'The routing brain, picks the right model');
   for (const m of state.models.models) add(m.id, m.name, m.kind === 'ollama' ? 'Local, runs on your PC' : m.kind === 'chatgpt' ? 'Uses your ChatGPT plan, stays on your PC' : m.synced ? 'Your API key · Synced, chats even with the PC off' : 'Your API key, on your PC only');
   const current = state.models.models.find((m) => m.id === state.models.selected);
-  $('modelPillName').textContent = current ? current.name : 'Auto';
+  $('modelPillName').textContent = current ? current.name : 'Haze 2';
 }
 
 async function selectModel(id) {

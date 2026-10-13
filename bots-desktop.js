@@ -116,6 +116,7 @@ async function runSub(c, target, sub, steps) {
     approve: wrapApprove(c.approve, target, c.session, c.cwd), browser: deps.browser, signal: c.signal, route: c.route,
     maxSteps: 30, botPrompt: sub.prompt, botId: target.id,
     askBot: canAsk ? makeAskBot({ ...c, caller: target, depth: sub.depth, chain: sub.chain }) : undefined,
+    haze: { product: 'crew' },
   });
   let reply = '';
   const trajectory = []; // the teammate's own tool calls, for its reflection

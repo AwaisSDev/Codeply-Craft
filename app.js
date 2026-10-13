@@ -2053,7 +2053,7 @@ function applyModelsState(models) {
     api.selectModel('auto').then((r) => { if (r && r.ok) applyModelsState(r.state); }).catch(() => {});
   }
   const m = selectedModel();
-  const label = m ? m.name : 'Auto';
+  const label = m ? m.name : 'Haze 2';
   const kind = m ? (m.kind === 'ollama' ? 'local' : m.kind === 'chatgpt' ? 'chatgpt' : 'custom') : 'auto';
   document.querySelectorAll('[data-role="model-name"]').forEach((el) => {
     el.textContent = label;
@@ -2062,7 +2062,7 @@ function applyModelsState(models) {
   });
   document.querySelectorAll('[data-role="model-chip"]').forEach((el) => {
     el.dataset.kind = kind;
-    el.title = !m ? 'Auto - Sonnet 5.5 for code, Haiku 5.5 for chat, run by Codeply'
+    el.title = !m ? 'Haze 2 - the routing brain: Sonnet 5.5 for code, Haiku 5.5 for quick answers, GPT OSS 120B for casual chat, run by Codeply'
       : kind === 'chatgpt' ? `${m.name} - using your ChatGPT plan`
       : `${m.name} - ${m.model} on ${hostOf(m.baseUrl)}`;
   });
@@ -2092,7 +2092,7 @@ async function pickModel(id) {
   if (!r.ok) { showToast(r.error || 'Could not switch model.', 'error'); return; }
   applyModelsState(r.state);
   const m = selectedModel();
-  showToast(m ? `Using ${m.name}` : 'Using Auto');
+  showToast(m ? `Using ${m.name}` : 'Using Haze 2');
 }
 
 function openModelMenu(anchorBtn) {
@@ -2103,8 +2103,8 @@ function openModelMenu(anchorBtn) {
   const check = '<svg class="model-item-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>';
   const custom = state.models.models.filter((m) => m.kind !== 'chatgpt');
   const LOCK = '<svg class="model-item-lock" viewBox="0 0 16 16" aria-hidden="true"><path class="lock-shackle" d="M5.25 7.25V5.5a2.75 2.75 0 0 1 5.5 0v1.75"/><path class="lock-body" fill-rule="evenodd" d="M4.6 7h6.8A1.6 1.6 0 0 1 13 8.6v4.3a1.6 1.6 0 0 1-1.6 1.6H4.6A1.6 1.6 0 0 1 3 12.9V8.6A1.6 1.6 0 0 1 4.6 7Zm3.4 2.2a1 1 0 0 0-.55 1.84v.96a.55.55 0 0 0 1.1 0v-.96A1 1 0 0 0 8 9.2Z"/></svg>';
-  const autoModels = [['Sonnet 5.5', 'Used by Auto for code and hard tasks'], ['Haiku 5.5', 'Used by Auto for chat and images']].map(([name, why]) => `
-    <div class="model-item locked" aria-disabled="true" title="Auto picks these for you">
+  const autoModels = [['Sonnet 5.5', 'Used by Haze 2 for code and hard tasks'], ['Haiku 5.5', 'Used by Haze 2 for quick answers and images'], ['GPT OSS 120B', 'Used by Haze 2 for casual chat']].map(([name, why]) => `
+    <div class="model-item locked" aria-disabled="true" title="Haze 2 picks these for you">
       <span class="model-item-icon custom">${CHIP_SVG}</span>
       <span class="model-item-text"><strong>${name}</strong><span>${why}</span></span>
       ${LOCK}
@@ -2113,7 +2113,7 @@ function openModelMenu(anchorBtn) {
     <div class="model-menu-title">Select model</div>
     <button class="model-item${sel === 'auto' ? ' active' : ''}" data-id="auto">
       <span class="model-item-icon auto">${SPARK_SVG}</span>
-      <span class="model-item-text"><strong>Auto</strong><span>Picks the best model for each task</span></span>
+      <span class="model-item-text"><strong>Haze 2</strong><span>The routing brain: sends each request to the right model</span></span>
       ${sel === 'auto' ? check : ''}
     </button>
     ${autoModels}
@@ -2353,7 +2353,7 @@ function openModelsModal({ tab = 'custom', edit = null, ollamaOnly = false } = {
   $('modelsTitle').textContent = ollamaOnly ? 'Connect Ollama' : editingModelId ? 'Edit model' : 'Add a model';
   $('modelsDesc').textContent = ollamaOnly
     ? 'Big open models on your own Ollama account: online with a key, or on this computer.'
-    : 'Use your own model instead of Auto. Any OpenAI-compatible API works, or Ollama online or on this computer.';
+    : 'Use your own model instead of Haze 2. Any OpenAI-compatible API works, or Ollama online or on this computer.';
   $('mName').value = editingModelId ? edit.name : '';
   $('mBaseUrl').value = editingModelId ? edit.baseUrl : '';
   $('mModel').value = editingModelId ? edit.model : '';
@@ -4093,7 +4093,7 @@ $('updateGateBtn').addEventListener('click', () => {
   // Research Mode runs on whatever model is selected in the model menu.
   async function refreshStatus() {
     const m = typeof selectedModel === 'function' ? selectedModel() : null;
-    setStatus(true, 'Using ' + (m ? m.name : 'Auto') + '. Change it in the model menu.');
+    setStatus(true, 'Using ' + (m ? m.name : 'Haze 2') + '. Change it in the model menu.');
   }
 
   async function save(patch) {

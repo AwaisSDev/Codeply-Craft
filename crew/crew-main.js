@@ -319,6 +319,7 @@ function makeAskBot(c) {
         userMessage: sub.task, history: [], mode: 'Build', cwd: c.cwd, signal: c.signal, route: c.route, maxSteps: 30,
         approve: approverFor(c.botId, target, c.signal), botPrompt: sub.prompt, botId: target.id,
         askBot: sub.depth < bots.MAX_DEPTH ? makeAskBot({ ...c, caller: target, depth: sub.depth, chain: sub.chain }) : undefined,
+        haze: { product: 'crew' },
       });
       let reply = '';
       const steps = [];
@@ -348,7 +349,7 @@ ipcMain.handle('chat:send', guard(async (e, { botId, text }) => {
   if (!bot) return { error: 'That bot is gone.' };
   if (runs.has(botId)) return { error: `${bot.name} is still answering.` };
   const route = routeNow();
-  if (route.auto && !(await signedInUser())) return { error: 'Sign in to use Auto, or pick one of your own models from the model menu.' };
+  if (route.auto && !(await signedInUser())) return { error: 'Sign in to use Haze 2, or pick one of your own models from the model menu.' };
 
   const t = thread(botId);
   const prior = history.buildHistory({ messages: t.messages });
@@ -373,6 +374,7 @@ ipcMain.handle('chat:send', guard(async (e, { botId, text }) => {
           botPrompt: (native) => bots.buildBotPrompt(bot, { team, canDelegate: true, native, request: text }),
           askBot: makeAskBot({ botId, caller: bot, depth: 0, chain: [bot.id], token, signal, route, cwd }),
           botId: bot.id,
+          haze: { product: 'crew', chatId: `bot:${botId}` },
         });
         for await (const ev of run) {
           if (ev.type === 'text') {
@@ -573,7 +575,7 @@ ipcMain.handle('groups:send', guard(async (e, { groupId, text }) => {
   const members = g.members.map((id) => bots.getBot(id)).filter(Boolean);
   if (members.length < 2) return { error: 'This group needs at least two bots. Add some in the group settings.' };
   const route = routeNow();
-  if (route.auto && !(await signedInUser())) return { error: 'Sign in to use Auto, or pick one of your own models from the model menu.' };
+  if (route.auto && !(await signedInUser())) return { error: 'Sign in to use Haze 2, or pick one of your own models from the model menu.' };
 
   groupPush(g, { kind: 'user', text });
   const controller = new AbortController();
@@ -610,6 +612,7 @@ ipcMain.handle('groups:send', guard(async (e, { groupId, text }) => {
             approve: approverFor({ groupId, botId: bot.id }, bot, signal),
             botPrompt: () => `${bots.buildBotPrompt(bot, { team: members, request: text })}\n\n${groupRules(bot, members)}`,
             botId: bot.id,
+            haze: { product: 'crew', chatId: `group:${groupId}:${bot.id}` },
           });
           for await (const ev of run) {
             if (ev.type === 'text') {
@@ -688,7 +691,7 @@ ipcMain.handle('voice:reply', guard(async (e, { botId, turns }) => {
   const bot = bots.getBot(botId);
   if (!bot) return { error: 'That bot is gone.' };
   const route = routeNow();
-  if (route.auto && !(await signedInUser())) return { error: 'Sign in to use Auto, or pick one of your own models.' };
+  if (route.auto && !(await signedInUser())) return { error: 'Sign in to use Haze 2, or pick one of your own models.' };
   const recentChat = thread(botId).messages.filter((m) => m.kind === 'user' || m.kind === 'assistant').slice(-6)
     .map((m) => `${m.kind === 'user' ? 'User' : bot.name}: ${String(m.text).slice(0, 400)}`).join('\n');
   if (callRuns.has(botId)) callRuns.get(botId).abort();

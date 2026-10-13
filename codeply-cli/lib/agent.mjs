@@ -1128,25 +1128,32 @@ function patchTargets(text) {
  */
 function buildSkillIndex(userMessage, cwd) {
   const all = skills.listSkills(cwd);
+  const catalog = skillCatalog(all);
+  if (!catalog) return null;
+  const relevant = relevantSkillsSection(userMessage, all);
+  return relevant ? `${catalog}\n\n${relevant}` : catalog;
+}
+
+// The daily skills: the same for every request in a project.
+function skillCatalog(all) {
   const daily = skills.formatSkillIndex(all);
   if (!daily) return null;
   const rest = all.length - all.filter((s) => s.daily).length;
-  let out = `SKILLS\nOptional playbooks for specific kinds of work. Load one with use_skill ` +
+  return `SKILLS\nOptional playbooks for specific kinds of work. Load one with use_skill ` +
     `when its description clearly matches the current task. This is a subset - ` +
     `${rest} more exist; search them with list_skills if nothing here fits:\n${daily}`;
+}
 
-  // Computed fresh from the actual request, not a fixed list - this is what
-  // lets one of the other ~244 skills get reached without the model having to
-  // guess a good list_skills query first. Excludes daily skills: they're
-  // already shown above, no need to say the same name twice.
+// Computed fresh from the actual request, not a fixed list - this is what
+// lets one of the other ~244 skills get reached without the model having to
+// guess a good list_skills query first. Excludes daily skills: they're
+// already shown in the catalog, no need to say the same name twice.
+function relevantSkillsSection(userMessage, all) {
   const relevant = skills.findRelevantSkills(userMessage, all, { limit: 6, excludeDaily: true });
-  if (relevant.length) {
-    const lines = relevant.map((s) => `- ${s.name}: ${s.description.length > 140 ? s.description.slice(0, 139).trim() + '…' : s.description}`).join('\n');
-    out += `\n\nLIKELY RELEVANT TO THIS REQUEST (matched from the full ${all.length}-skill library):\n${lines}\n` +
-      `Treat a name here exactly like a SKILLS match above: use_skill it before starting unless it's clearly a false match for what you're about to do.`;
-  }
-
-  return out;
+  if (!relevant.length) return '';
+  const lines = relevant.map((s) => `- ${s.name}: ${s.description.length > 140 ? s.description.slice(0, 139).trim() + '…' : s.description}`).join('\n');
+  return `LIKELY RELEVANT TO THIS REQUEST (matched from the full ${all.length}-skill library):\n${lines}\n` +
+    `Treat a name here exactly like a SKILLS match above: use_skill it before starting unless it's clearly a false match for what you're about to do.`;
 }
 
 /**
@@ -1214,22 +1221,13 @@ export function buildSystemPrompt(mode, cwd, userMessage, opts = {}) {
   // A bot (lib/bots.js): identity, specialty, tone, approval boundary, memory, team.
   const botPrompt = typeof opts.botPrompt === 'function' ? opts.botPrompt(!!opts.native) : opts.botPrompt;
   if (botPrompt) parts.push('', botPrompt);
-  if (opts.goal) {
-    parts.push('', `GOAL MODE\nYou are working autonomously toward this goal until it is fully achieved:\n"${opts.goal}"\n` +
-      'Keep going without asking the user questions - make sensible, conventional decisions yourself and note them in your summary. ' +
-      'Only stop to ask if you are truly blocked (missing credentials, an irreversible choice only the user can make).');
-  }
+  if (opts.goal) parts.push('', goalSection(opts.goal));
   // Native mode swaps the tag examples for a short note; the tools themselves
   // arrive as function definitions. The RULES apply either way.
-  parts.push('', opts.native ? `${NATIVE_FORMAT}\n\n${TOOL_REFERENCE.slice(TOOL_REFERENCE.indexOf('RULES\n'))}` : TOOL_REFERENCE);
+  parts.push('', toolSection(opts.native));
   parts.push('', connectedServicesSection());
-  if (mode === 'Plan') {
-    parts.push('', 'MODE RESTRICTION: this is Plan mode. write_file and edit_file only work on plan files under .codeply/plans/ (*.md); everything else is disabled and returns an error. run is limited to read-only commands. Call plan_exit when the plan file is written.');
-  } else if (READ_ONLY_MODES.has(mode)) {
-    parts.push('', 'MODE RESTRICTION: write_file and edit_file are disabled. Using them returns an error. run is limited to read-only commands.');
-  } else if (mode === 'Build') {
-    parts.push('', 'PLANS: if the user points you at a plan file under .codeply/plans/, read it and carry it out step by step, keeping its checklist in todo. plan_enter switches to Plan mode; use it only when the user asks to plan first, or the request is large and ambiguous enough that building without a plan would be a gamble. It asks the user before switching.');
-  }
+  const restriction = modeRestriction(mode);
+  if (restriction) parts.push('', restriction);
   const skillIndex = buildSkillIndex(userMessage, cwd);
   if (skillIndex) parts.push('', skillIndex);
   const instructions = instructionsSection(cwd);
@@ -1238,6 +1236,86 @@ export function buildSystemPrompt(mode, cwd, userMessage, opts = {}) {
   if (mcpSection) parts.push('', mcpSection);
   parts.push('', 'PROJECT CONTEXT', buildProjectContext(cwd));
   return parts.join('\n');
+}
+
+function goalSection(goal) {
+  return `GOAL MODE\nYou are working autonomously toward this goal until it is fully achieved:\n"${goal}"\n` +
+    'Keep going without asking the user questions - make sensible, conventional decisions yourself and note them in your summary. ' +
+    'Only stop to ask if you are truly blocked (missing credentials, an irreversible choice only the user can make).';
+}
+
+function toolSection(native) {
+  return native ? `${NATIVE_FORMAT}\n\n${TOOL_REFERENCE.slice(TOOL_REFERENCE.indexOf('RULES\n'))}` : TOOL_REFERENCE;
+}
+
+function modeRestriction(mode) {
+  if (mode === 'Plan') return 'MODE RESTRICTION: this is Plan mode. write_file and edit_file only work on plan files under .codeply/plans/ (*.md); everything else is disabled and returns an error. run is limited to read-only commands. Call plan_exit when the plan file is written.';
+  if (READ_ONLY_MODES.has(mode)) return 'MODE RESTRICTION: write_file and edit_file are disabled. Using them returns an error. run is limited to read-only commands.';
+  if (mode === 'Build') return 'PLANS: if the user points you at a plan file under .codeply/plans/, read it and carry it out step by step, keeping its checklist in todo. plan_enter switches to Plan mode; use it only when the user asks to plan first, or the request is large and ambiguous enough that building without a plan would be a gamble. It asks the user before switching.';
+  return '';
+}
+
+/**
+ * The same prompt as buildSystemPrompt, laid out for Haze 2's prompt
+ * cache. The router caches each system message as its own block, and a
+ * cached block only hits when every byte before it is unchanged, so:
+ *
+ *  - core: mode, tool reference, mode rules. The same for every Craft user,
+ *    so it stays cached all day (~8k tokens read at a twentieth of the price).
+ *  - project: role, bot, goal, connected services, skill catalog, project
+ *    instructions, MCP. Holds for a conversation.
+ *  - turn: the skills matched to this message and the project snapshot
+ *    (date, git status). Goes at the top of the user's message, after every
+ *    cached block, so a new turn never invalidates the two above.
+ *
+ * Before this, the role, the bot prompt and the per-message skill list sat in
+ * front of the 30 KB tool reference, and the whole prompt missed the cache on
+ * every new turn.
+ */
+export function buildSystemSections(mode, cwd, userMessage, opts = {}) {
+  const core = [MODE_PROMPT[mode] || MODE_PROMPT.Build, '', toolSection(opts.native)];
+  const restriction = modeRestriction(mode);
+  if (restriction) core.push('', restriction);
+
+  const project = [];
+  const role = opts.roleId ? rolesLib.getSubagent(opts.roleId) : null;
+  if (role) project.push(`${ROLE_INTRO(role)}\n${role.persona}`);
+  const botPrompt = typeof opts.botPrompt === 'function' ? opts.botPrompt(!!opts.native) : opts.botPrompt;
+  if (botPrompt) project.push(botPrompt);
+  if (opts.goal) project.push(goalSection(opts.goal));
+  project.push(connectedServicesSection());
+  const all = skills.listSkills(cwd);
+  const catalog = skillCatalog(all);
+  if (catalog) project.push(catalog);
+  const instructions = instructionsSection(cwd);
+  if (instructions) project.push(instructions);
+  const mcpSection = mcpServersSection(opts.mcp, opts.native);
+  if (mcpSection) project.push(mcpSection);
+
+  const turn = [];
+  const relevant = catalog ? relevantSkillsSection(userMessage, all) : '';
+  if (relevant) turn.push(relevant);
+  turn.push(`PROJECT CONTEXT\n${buildProjectContext(cwd)}`);
+
+  return { core: core.join('\n'), project: project.join('\n\n'), turn: turn.join('\n\n') };
+}
+
+/** The user's message with this turn's context in front of it (Haze layout). */
+function withTurnContext(userContent, turn) {
+  const ctx = `<turn-context>\n${turn}\n</turn-context>\n\n`;
+  if (Array.isArray(userContent)) {
+    const i = userContent.findIndex((p) => p && p.type === 'text');
+    if (i < 0) return [{ type: 'text', text: ctx.trim() }, ...userContent];
+    return userContent.map((p, j) => (j === i ? { ...p, text: ctx + p.text } : p));
+  }
+  return ctx + userContent;
+}
+
+/** How many system messages lead the transcript (one, or two in the Haze layout). */
+function leadingSystemCount(messages) {
+  let n = 0;
+  while (n < messages.length && messages[n].role === 'system') n++;
+  return n;
 }
 
 // ─── Context budget ─────────────────────────────────────────────────────────
@@ -1369,7 +1447,7 @@ function fallbackSummary(userMessage, actions) {
 }
 
 async function compactTranscript(messages, userMessage, signal, route, { actions = [], todos = [] } = {}) {
-  const start = 1;
+  const start = leadingSystemCount(messages);
   const end = messages.length - KEEP_RECENT_MESSAGES;
   if (end - start < 4) return false;
   const prompt = [
@@ -1482,18 +1560,18 @@ function wantsNativeTools(route) {
   return !!c && !!c.provider && c.provider !== 'codeply' && c.toolMode !== 'text';
 }
 
-async function callModel(messages, promptText, signal, route, tools = null, mcpToNative = null) {
+async function callModel(messages, promptText, signal, route, tools = null, mcpToNative = null, haze = undefined) {
   const meta = promptText ? { promptText } : undefined;
   if (tools) {
     // Native mode: same engine history, translated at the edge (native-tools.mjs).
-    const result = await ai.chat(toNativeMessages(messages, parseReply, mcpToNative), { meta, signal, route, tools });
+    const result = await ai.chat(toNativeMessages(messages, parseReply, mcpToNative), { meta, signal, route, tools, haze });
     return { result, messages };
   }
-  let result = await ai.chat(messages, { meta, signal, route });
+  let result = await ai.chat(messages, { meta, signal, route, haze });
   if (result.success || !isNativeToolCallError(result.error)) return { result, messages };
 
   const corrected = [...messages, { role: 'user', content: NO_NATIVE_TOOLS_REMINDER }];
-  result = await ai.chat(corrected, { meta, signal, route });
+  result = await ai.chat(corrected, { meta, signal, route, haze });
   return { result, messages: corrected };
 }
 
@@ -1532,6 +1610,9 @@ function withReasoning(msg, reasoning) {
  * @param {object}   [o.route]      per-turn model route: {auto:true} for the hosted model, or
  *                                  {custom:<model entry>} for a user-added model (see ai.js chat()).
  *                                  Omitted = the stored CLI provider config.
+ * @param {object}   [o.haze]       Haze 2 (the hosted router) only: { product, chatId }.
+ *                                  product is craft | cli | crew | drop | mobile; chatId lets the
+ *                                  router carry its state from one turn of a chat to the next.
  * @param {string[]} [o.images]     data: URLs of images pasted alongside this message - only sent
  *                                  on THIS turn (not replayed into history on later turns); silently
  *                                  ignored by any model/provider that doesn't accept vision input.
@@ -1548,7 +1629,7 @@ function withReasoning(msg, reasoning) {
  *                                  "claims an edit it didn't make this turn" check is skipped.
  * @yields {{type:string, ...}} text | reasoning | tool_start | tool_end | done | error | aborted
  */
-export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly, botPrompt, askBot, botId }) {
+export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly, botPrompt, askBot, botId, haze: hazeOpts }) {
   let readOnly = READ_ONLY_MODES.has(mode);
   const stepBudget = Math.max(1, maxSteps || MAX_STEPS);
   // OpenAI-shaped content array only when there's actually an image to carry -
@@ -1583,11 +1664,31 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     return [...buildToolSchemas(Object.fromEntries(entries)), ...mcpNames.schemas];
   };
   let toolSchemas = schemasFor(mode);
-  const messages = [
-    { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt }) },
-    ...history,
-    { role: 'user', content: userContent },
-  ];
+  // Haze 2 (route.auto): the router picks the model once for this turn
+  // and every step says which turn it belongs to, so the whole turn stays on
+  // one model and one warm cache. The prompt uses the cache layout from
+  // buildSystemSections.
+  const haze = route?.auto ? {
+    product: hazeOpts?.product || 'craft',
+    chatId: hazeOpts?.chatId || `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    turnId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+    historyCount: history.length,
+  } : null;
+  const hazeStep = (step) => (haze ? { ...haze, step } : undefined);
+  const sectionsFor = (m) => buildSystemSections(m, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt });
+  const sections = haze ? sectionsFor(mode) : null;
+  const messages = sections
+    ? [
+      { role: 'system', content: sections.core },
+      { role: 'system', content: sections.project },
+      ...history,
+      { role: 'user', content: withTurnContext(userContent, sections.turn) },
+    ]
+    : [
+      { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt }) },
+      ...history,
+      { role: 'user', content: userContent },
+    ];
 
   // fileState: path -> mtime when this turn last read/wrote it (see tools.mjs).
   // userMessage lets the publish tools refuse when nobody asked to publish.
@@ -1704,7 +1805,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     if (signal.aborted) { yield { type: 'aborted' }; return; }
 
     const stepStarted = Date.now();
-    let attempt = await callModel(outgoing, userMessage, signal, route, native ? toolSchemas : null, mcpNames.toNative);
+    let attempt = await callModel(outgoing, userMessage, signal, route, native ? toolSchemas : null, mcpNames.toNative, hazeStep(step));
     // The model or its endpoint turned out not to do function calling: drop
     // to text actions for the rest of this turn (and remember it for later
     // turns), with the text-format system prompt.
@@ -2090,7 +2191,10 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
           readOnly = READ_ONLY_MODES.has(mode);
           ctx.mode = mode;
           toolSchemas = schemasFor(mode);
-          messages[0] = { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList }) };
+          // Haze layout: only the core (mode prompt and rules) changes with the
+          // mode; the project block and the cached history after it stay put.
+          if (haze) messages[0] = { role: 'system', content: sectionsFor(mode).core };
+          else messages[0] = { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList }) };
           yield { type: 'mode_switch', mode, planPath: out.meta.planPath };
         }
         if ((call.name === 'write_file' || call.name === 'edit_file' || call.name === 'fetch_image') && !out.meta?.noop && call.args.path && !wasPlanFile) {
@@ -2147,13 +2251,18 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
           // outdated content sitting in the transcript for the model to
           // (mis)reason from, and drop it from the dedup cache so a genuinely
           // fresh read_file after this point is not short-circuited by it.
+          // Under Haze 2 the transcript stays append-only instead: the
+          // edit's own result below says the file changed, and rewriting an
+          // earlier message would make every step after it miss the cache.
           const abs = resolvePath(p, cwd).abs;
           const stale = readIndexByPath.get(abs);
           if (stale) {
-            messages[stale.msgIndex] = {
-              role: 'user',
-              content: `[tool result: read_file] ${p} - superseded by the ${call.name} below; that earlier content no longer matches the file. Re-read if you need to see it again.`,
-            };
+            if (!haze) {
+              messages[stale.msgIndex] = {
+                role: 'user',
+                content: `[tool result: read_file] ${p} - superseded by the ${call.name} below; that earlier content no longer matches the file. Re-read if you need to see it again.`,
+              };
+            }
             servedCalls.delete(stale.key);
             readIndexByPath.delete(abs);
           }
@@ -2244,7 +2353,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   // real account of where things stand instead of a bare "stopped". Its
   // answer is checked the same way: no action blocks, no invented results.
   if (!signal.aborted && actions.length) {
-    const closing = await callModel([...trimTranscript(messages, contextBudgetFor(route)), { role: 'user', content: FINAL_SUMMARY_PROMPT }], userMessage, signal, route);
+    const closing = await callModel([...trimTranscript(messages, contextBudgetFor(route)), { role: 'user', content: FINAL_SUMMARY_PROMPT }], userMessage, signal, route, null, null, hazeStep(stepBudget));
     const text = closing.result?.success ? String(closing.result.data?.choices?.[0]?.message?.content || '') : '';
     const { prose, calls: stray } = parseReply(text);
     // Keep only what comes before any action block it wrote anyway.

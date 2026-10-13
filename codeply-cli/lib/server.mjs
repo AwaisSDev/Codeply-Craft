@@ -212,6 +212,7 @@ export async function startServer(o = {}) {
         const run = runAgent({
           userMessage: text, history, mode, cwd: session.cwd, approve, images, signal,
           route: resolveRoute(model), roleId: subagents.detectRole(text) || session.stickyRole || undefined,
+          haze: { product: 'cli', chatId: session.id },
         });
         for await (const ev of run) {
           if (ev.type === 'text') session.messages.push({ kind: 'assistant', text: ev.text, interim: !!ev.interim, at: Date.now() });

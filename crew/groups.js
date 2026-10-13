@@ -271,7 +271,7 @@
     });
     $('#sendBtn').addEventListener('click', () => (busy.has(g.id) ? api.groupStop(g.id) : send()));
     $('#modelBtn').addEventListener('click', (e) => UI.openMenu(e.currentTarget, [
-      { label: 'Auto', on: S.models.selected === 'auto' || !S.models.selected, run: () => UI.pickModel('auto') },
+      { label: 'Haze 2', on: S.models.selected === 'auto' || !S.models.selected, run: () => UI.pickModel('auto') },
       ...S.models.models.map((m) => ({ label: m.name, on: S.models.selected === m.id, run: () => UI.pickModel(m.id) })),
       '-',
       { note: 'Add your own models in Craft. They show up here too.' },

@@ -1617,7 +1617,7 @@ function renderSetup() {
   }
   const who = `<div class="connected">${ICONS.cloud}<span>GitHub${state.creds.login ? ` as <b>${esc(state.creds.login)}</b>` : ' connected'}</span><button type="button" id="ghChange">Change</button></div>`;
   if (setup.step === 'repos') {
-    root.innerHTML = `<h2 class="serif">Pick a repo</h2><p>${projectName ? `Where <b>${esc(projectName)}</b> runs in the cloud. ` : ''}Codeply works on a branch and merges it in when it is done. It runs on Auto, counted in your daily allowance.</p>${who}
+    root.innerHTML = `<h2 class="serif">Pick a repo</h2><p>${projectName ? `Where <b>${esc(projectName)}</b> runs in the cloud. ` : ''}Codeply works on a branch and merges it in when it is done. It runs on Haze 2, counted in your daily allowance.</p>${who}
       <div class="field new-repo"><label for="newRepo">Start a new repo</label><div class="new-repo-row"><input id="newRepo" type="text" autocapitalize="off" spellcheck="false" placeholder="my-new-app"><button class="btn btn-primary" id="newRepoBtn" type="button">Create</button></div></div>
       <ul class="progress" id="setupProgress">${setup.progress.map((p) => `<li class="${p.done ? 'done' : ''}">${esc(p.text)}</li>`).join('')}</ul>
       <div class="field"><input id="repoFilter" type="search" placeholder="Or pick one of your repos" value="${esc(setup.filter || '')}"></div>
@@ -1857,22 +1857,22 @@ function ensureEnvModel(env) {
   }).catch(() => {});
 }
 function modelLabel() {
-  if (state.ui.mode === 'chat') { const own = chatModel(); return own ? own.name : 'Auto'; }
+  if (state.ui.mode === 'chat') { const own = chatModel(); return own ? own.name : 'Haze 2'; }
   const c = state.current && chatMeta(state.current);
   const p = currentProject();
   const useCloud = (c && c.cloud) || (p && !p.cwd) || (p && !relay.pcId && envFor(p));
   if (useCloud) { const env = envFor(p); ensureEnvModel(env); return (env && env.model && env.model.model) || 'Cloud'; }
   const m = state.pc.models;
-  if (!m) return 'Auto';
+  if (!m) return 'Haze 2';
   const cur = (m.models || []).find((x) => x.id === m.selected);
-  return cur ? cur.name : 'Auto';
+  return cur ? cur.name : 'Haze 2';
 }
 function openModelPicker() {
   if (state.ui.mode === 'chat') {
     loadSynced();
     const cur = chatModel() ? chatModel().id : 'auto';
     const row = (id, name, hint, tag) => `<button type="button" class="pick-row${id === cur ? ' on' : ''}" data-id="${esc(id)}"><span class="pick-main"><strong>${esc(name)}${tag ? ` <span class="pick-tag">${esc(tag)}</span>` : ''}</strong><small>${esc(hint)}</small></span>${ICONS.check}</button>`;
-    openPick(`<div class="sheet-title">Model</div>${row('auto', 'Auto', 'Picked for you by Codeply')}${state.synced.map((m) => row(m.id, m.name, `${m.model}, your API key ${m.key || ''}`.trim(), 'Synced')).join('')}
+    openPick(`<div class="sheet-title">Model</div>${row('auto', 'Haze 2', 'The routing brain, picks the right model')}${state.synced.map((m) => row(m.id, m.name, `${m.model}, your API key ${m.key || ''}`.trim(), 'Synced')).join('')}
       <p class="pick-note">${state.synced.length ? 'Synced models use your own API key, stored encrypted in your Codeply account. They work with your PC off.' : 'Chat and Code share your Codeply daily limit. Turn on "Use on my phone" for a model in Codeply on your PC to use it here.'}</p>`, (root) => {
       root.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('click', () => {
         state.ui.chatModel = b.dataset.id; saveUi(); closePick(); renderComposer();
@@ -1893,7 +1893,7 @@ function openModelPicker() {
   }
   const m = state.pc.models || { selected: 'auto', models: [] };
   const row = (id, name, hint) => `<button type="button" class="pick-row${id === m.selected ? ' on' : ''}" data-id="${esc(id)}"><span class="pick-main"><strong>${esc(name)}</strong><small>${esc(hint)}</small></span>${ICONS.check}</button>`;
-  openPick(`<div class="sheet-title">Model on your PC</div>${row('auto', 'Auto', 'Picked for you, uses your Codeply limit')}${(m.models || []).map((x) => row(x.id, x.name, x.kind === 'ollama' ? 'Local, runs on your PC' : x.kind === 'chatgpt' ? 'Uses your ChatGPT plan, stays on your PC' : isSyncedOnPhone(x) ? 'Your API key, Synced: also works in Chat with the PC off' : 'Your API key, on your PC only')).join('')}
+  openPick(`<div class="sheet-title">Model on your PC</div>${row('auto', 'Haze 2', 'Routes to the right model, uses your Codeply limit')}${(m.models || []).map((x) => row(x.id, x.name, x.kind === 'ollama' ? 'Local, runs on your PC' : x.kind === 'chatgpt' ? 'Uses your ChatGPT plan, stays on your PC' : isSyncedOnPhone(x) ? 'Your API key, Synced: also works in Chat with the PC off' : 'Your API key, on your PC only')).join('')}
     <p class="pick-note">Add models in Codeply on your PC. A key leaves it only when "Use on my phone" is on, and is then stored encrypted in your account.</p>`, (root) => {
     root.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('click', async () => {
       closePick();

@@ -315,9 +315,9 @@
   }
 
   function modelName() {
-    if (state.models.selected === 'auto' || !state.models.selected) return 'Auto';
+    if (state.models.selected === 'auto' || !state.models.selected) return 'Haze 2';
     const m = state.models.models.find((x) => x.id === state.models.selected);
-    return m ? m.name : 'Auto';
+    return m ? m.name : 'Haze 2';
   }
 
   $('[data-act="home"]').addEventListener('click', () => goHome());
@@ -480,7 +480,7 @@
     $('#sendBtn').addEventListener('click', () => (state.busy.has(state.current) ? api.stop(state.current) : send()));
     $('#callBtn2').addEventListener('click', () => window.CrewCall.start(state.current));
     $('#modelBtn').addEventListener('click', (e) => openMenu(e.currentTarget, [
-      { label: 'Auto', on: state.models.selected === 'auto' || !state.models.selected, run: () => pickModel('auto') },
+      { label: 'Haze 2', on: state.models.selected === 'auto' || !state.models.selected, run: () => pickModel('auto') },
       ...state.models.models.map((m) => ({ label: m.name, on: state.models.selected === m.id, run: () => pickModel(m.id) })),
       '-',
       { note: 'Add your own models in Craft. They show up here too.' },

@@ -78,7 +78,7 @@ svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; s
 .thread::-webkit-scrollbar { width: 8px; }
 .thread::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 8px; border: 2px solid var(--bg); }
 
-.empty { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 8px 6px 24px; }
+.empty { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: safe center; text-align: center; padding: 8px 6px 24px; }
 .empty-mark .knot { width: 40px; height: 40px; }
 .empty h1 { font-size: 17px; font-weight: 600; margin: 14px 0 4px; letter-spacing: -.01em; }
 .empty p { margin: 0; color: var(--dim); max-width: 300px; }

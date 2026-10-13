@@ -143,7 +143,7 @@
         <p class="cloud-lead">Craft keeps working on <b>${esc(projectName())}</b> when this PC is off, on GitHub in your own account. Nothing runs on Codeply's servers.</p>
         ${choice}
         <ul class="cloud-points">${points}
-          <li>Runs on <b>${esc(s.model.name)}</b>, the model you picked${s.model.name === 'Auto' ? ' (it counts in your daily allowance)' : ', its key kept as an encrypted GitHub secret'}. Change it any time in the model menu.</li>
+          <li>Runs on <b>${esc(s.model.name)}</b>, the model you picked${s.model.name === 'Haze 2' ? ' (it counts in your daily allowance)' : ', its key kept as an encrypted GitHub secret'}. Change it any time in the model menu.</li>
         </ul>
         <label class="cloud-env"><span class="cloud-env-label">Environment variables for testing <span class="cloud-dim">(optional, KEY=value per line)</span></span>
           <textarea data-env rows="3" spellcheck="false" placeholder="${esc(ENV_PLACEHOLDER)}">${esc(envDraft)}</textarea>

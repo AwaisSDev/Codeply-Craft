@@ -1020,6 +1020,7 @@ async function voiceTurn({ bot, team, turns, recentChat, runAgent, route, cwd, s
   const run = runAgent({
     userMessage, history, mode: 'Build', cwd, signal, route, maxSteps, approve, botId: bot.id,
     botPrompt: () => `${buildBotPrompt(bot, { team, request: userMessage })}\n\n${VOICE_RULES}${extra}`,
+    haze: { product: 'mobile', chatId: `call:${bot.id}` },
   });
   let reply = '';
   const steps = []; // the trajectory, for reflectOnRun after the call turn

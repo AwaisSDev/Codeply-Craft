@@ -70,7 +70,7 @@ async function state(cwd) {
   return {
     github: { connected: !!gh.accessToken, userName: gh.userName || '', scopesOk: await githubScopesOk() },
     // any model works: Auto, or one of the person's own that GitHub can reach (a local one runs as Auto)
-    model: { name: modelCheck.kind === 'auto' ? 'Auto' : (model.name || model.model), ok: true, error: null },
+    model: { name: modelCheck.kind === 'auto' ? 'Haze 2' : (model.name || model.model), ok: true, error: null },
     // Before setup: the project's own GitHub repo, offered as the default place to work.
     origin: !ready && cwd ? await originInfo(c, cwd) : null,
     project: ready ? {
