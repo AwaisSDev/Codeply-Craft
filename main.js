@@ -484,6 +484,11 @@ async function handleAuthCallback(url) {
 // ready: a second launch (the OS relaunching us to hand off the deep link)
 // needs to find an existing instance to hand off to instead of opening a
 // second window.
+// Windows shows notifications under the app's AppUserModelID. Without this it
+// falls back to "electron.app.Codeply Craft" with no icon; with the same id the
+// installer gives the Start menu shortcut (build.appId), the toast says
+// "Codeply Craft" with the app icon.
+if (process.platform === 'win32') app.setAppUserModelId('app.codeply.craft');
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -2041,6 +2046,10 @@ function updateSleepBlocker() {
   }
 }
 
+// The Codeply mark shown in every notification (a PNG: Windows toasts can't use the .ico).
+let notifyIconCache = null;
+const notifyIcon = () => notifyIconCache || (notifyIconCache = nativeImage.createFromPath(path.join(__dirname, 'logo.png')));
+
 // A native OS notification when a run finishes - only while the window
 // isn't focused (if you're watching it work, you already know it's done).
 function notifyTaskComplete(session) {
@@ -2049,6 +2058,7 @@ function notifyTaskComplete(session) {
   const notification = new Notification({
     title: session.title || 'Craft finished',
     body: last?.text ? (last.text.length > 120 ? last.text.slice(0, 119) + '…' : last.text) : 'Your task is done.',
+    icon: notifyIcon(),
     silent: false,
   });
   notification.on('click', () => {
@@ -2067,8 +2077,9 @@ const PROVIDER_EXHAUSTED_RE = /rate limit|too many requests|quota|insufficient|b
 function notifyProviderExhausted(session, message) {
   if (!Notification.isSupported() || !win || win.isDestroyed() || win.isFocused()) return;
   const notification = new Notification({
-    title: 'Codeply Craft - the model is unavailable',
+    title: 'The model is unavailable',
     body: message.length > 160 ? message.slice(0, 159) + '…' : message,
+    icon: notifyIcon(),
     silent: false,
   });
   notification.on('click', () => {
@@ -3453,7 +3464,7 @@ botsDesktop.init({
 // runs (also from the tray), no model calls until an email is important.
 const botsWatch = require('./bots-watch');
 app.whenReady().then(() => botsWatch.init({
-  ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine, currentRoute, Notification,
+  ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine, currentRoute, Notification, notifyIcon: notifyIcon(),
   aiLib: () => aiLib, configLib: () => configLib, oauthLib: () => oauthLib, authLib: () => authLib,
   crewThread: (botId, ev) => crew().addMail(CLI_DIR, botId, ev),
   openBot: (botId) => crew().showBot(CLI_DIR, botId),

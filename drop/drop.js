@@ -173,7 +173,7 @@
 
   $('modelBtn').addEventListener('click', (e) => {
     if (!menu.hidden) return closeMenu();
-    const all = [{ id: 'auto', name: 'Haze 2', sub: 'Routes to the right model' }, ...S.models.models.map((m) => ({ id: m.id, name: m.name || m.model, sub: m.kind === 'ollama' ? 'Ollama' : '' }))];
+    const all = [{ id: 'auto', name: 'Haze 2', sub: 'The routing brain' }, ...S.models.models.map((m) => ({ id: m.id, name: m.name || m.model, sub: m.kind === 'ollama' ? 'Ollama' : '' }))];
     const m = openMenu(e.currentTarget, '<div class="lbl">Model</div>' + all.map((x) =>
       `<button type="button" data-id="${esc(x.id)}"><span class="t">${esc(x.name)}</span>${x.sub ? `<span class="s">${esc(x.sub)}</span>` : ''}${x.id === S.models.selected ? ICON.tick : ''}</button>`).join(''));
     m.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('click', async () => {

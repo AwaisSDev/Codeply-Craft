@@ -1872,7 +1872,7 @@ function openModelPicker() {
     loadSynced();
     const cur = chatModel() ? chatModel().id : 'auto';
     const row = (id, name, hint, tag) => `<button type="button" class="pick-row${id === cur ? ' on' : ''}" data-id="${esc(id)}"><span class="pick-main"><strong>${esc(name)}${tag ? ` <span class="pick-tag">${esc(tag)}</span>` : ''}</strong><small>${esc(hint)}</small></span>${ICONS.check}</button>`;
-    openPick(`<div class="sheet-title">Model</div>${row('auto', 'Haze 2', 'The routing brain, picks the right model')}${state.synced.map((m) => row(m.id, m.name, `${m.model}, your API key ${m.key || ''}`.trim(), 'Synced')).join('')}
+    openPick(`<div class="sheet-title">Model</div>${row('auto', 'Haze 2', 'The routing brain')}${state.synced.map((m) => row(m.id, m.name, `${m.model}, your API key ${m.key || ''}`.trim(), 'Synced')).join('')}
       <p class="pick-note">${state.synced.length ? 'Synced models use your own API key, stored encrypted in your Codeply account. They work with your PC off.' : 'Chat and Code share your Codeply daily limit. Turn on "Use on my phone" for a model in Codeply on your PC to use it here.'}</p>`, (root) => {
       root.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('click', () => {
         state.ui.chatModel = b.dataset.id; saveUi(); closePick(); renderComposer();
@@ -1893,7 +1893,7 @@ function openModelPicker() {
   }
   const m = state.pc.models || { selected: 'auto', models: [] };
   const row = (id, name, hint) => `<button type="button" class="pick-row${id === m.selected ? ' on' : ''}" data-id="${esc(id)}"><span class="pick-main"><strong>${esc(name)}</strong><small>${esc(hint)}</small></span>${ICONS.check}</button>`;
-  openPick(`<div class="sheet-title">Model on your PC</div>${row('auto', 'Haze 2', 'Routes to the right model, uses your Codeply limit')}${(m.models || []).map((x) => row(x.id, x.name, x.kind === 'ollama' ? 'Local, runs on your PC' : x.kind === 'chatgpt' ? 'Uses your ChatGPT plan, stays on your PC' : isSyncedOnPhone(x) ? 'Your API key, Synced: also works in Chat with the PC off' : 'Your API key, on your PC only')).join('')}
+  openPick(`<div class="sheet-title">Model on your PC</div>${row('auto', 'Haze 2', 'The routing brain, uses your Codeply limit')}${(m.models || []).map((x) => row(x.id, x.name, x.kind === 'ollama' ? 'Local, runs on your PC' : x.kind === 'chatgpt' ? 'Uses your ChatGPT plan, stays on your PC' : isSyncedOnPhone(x) ? 'Your API key, Synced: also works in Chat with the PC off' : 'Your API key, on your PC only')).join('')}
     <p class="pick-note">Add models in Codeply on your PC. A key leaves it only when "Use on my phone" is on, and is then stored encrypted in your account.</p>`, (root) => {
     root.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('click', async () => {
       closePick();

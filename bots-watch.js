@@ -99,7 +99,7 @@ async function notify(ev) {
   try { deps.crewThread(bot.id, { ...ev, text: line }); } catch (e) { console.warn('[always on] thread:', e.message); }
   const { Notification } = deps;
   if (Notification && Notification.isSupported()) {
-    const n = new Notification({ title: bot.name, body: `${line}${ev.summary ? `\n${ev.summary}` : ''}`.slice(0, 240), silent: quiet });
+    const n = new Notification({ title: bot.name, body: `${line}${ev.summary ? `\n${ev.summary}` : ''}`.slice(0, 240), icon: deps.notifyIcon, silent: quiet });
     n.on('click', () => deps.openBot(bot.id));
     n.show();
   }
