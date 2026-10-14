@@ -2246,6 +2246,14 @@ async function handleBridgeApi(method, pathname, query, body) {
     const session = store.sessions.find((s) => s.id === query.get('id'));
     return session ? { status: 200, body: session } : { status: 404, body: { error: 'Session not found.' } };
   }
+  // The phone's "/" menu: a project's own commands (.codeply/commands/*.md), names only.
+  if (method === 'GET' && pathname === '/api/commands') {
+    if (!commandsLib && !(await loadEngine())) return { status: 200, body: { commands: [] } };
+    const cwd = query.get('cwd');
+    const known = cwd && store.projects.find((p) => path.resolve(p) === path.resolve(cwd));
+    const list = [...commandsLib.loadCommands(known || null).values()].map((c) => ({ name: c.name, description: c.description, mode: c.mode }));
+    return { status: 200, body: { commands: list } };
+  }
   if (method === 'GET' && pathname === '/api/screenshot-data') {
     const file = screenshotFile(query.get('path'));
     if (!file) return { status: 404, body: { error: 'Screenshot not found.' } };
