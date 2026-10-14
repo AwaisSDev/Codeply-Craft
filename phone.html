@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
   <meta name="theme-color" content="#0d0d0d" id="themeColorMeta">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <!-- Opaque, not black-translucent: on iOS 26 a see-through status bar leaves the home-screen app
+       sized short by the status bar's height, with a dead band at the bottom (WebKit bug 301108). -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <title>Codeply</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="phone-favicon.png">
@@ -19,24 +21,6 @@
         var t = localStorage.getItem('craft-theme');
         if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
       } catch (e) {}
-    })();
-    // Added to the iPhone home screen, the page can come up shorter than the
-    // screen by about the status bar's height, leaving a gap under the
-    // composer. Then size the app to the real screen height instead.
-    (function () {
-      function fit() {
-        var root = document.documentElement;
-        var standalone = window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
-        if (!standalone) return;
-        var portrait = window.innerHeight >= window.innerWidth;
-        var full = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
-        var gap = full - window.innerHeight;
-        if (gap > 0 && gap < 120) { root.style.setProperty('--app-h', full + 'px'); root.classList.add('fit-screen'); }
-        else root.classList.remove('fit-screen');
-      }
-      fit();
-      window.addEventListener('resize', fit);
-      window.addEventListener('orientationchange', function () { setTimeout(fit, 300); });
     })();
   </script>
 </head>
