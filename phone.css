@@ -19,7 +19,11 @@
   --accent-text: #0d0d0d;
   --link: #7fb2ff;
   --brand: #3d6af2;
-  --circle: #1c1c1e;
+  --circle: #151515;
+  /* Edges: a thin rim all round and a brighter line along the top, like ChatGPT's buttons. */
+  --rim: rgba(255,255,255,.10);
+  --rim-top: rgba(255,255,255,.07);
+  --edge: inset 0 0 0 1px var(--rim), inset 0 1px 0 var(--rim-top);
   --user-bg: #1f1f1f;
   --code-bg: #121212;
   --add: #4fbf7f;
@@ -27,7 +31,7 @@
   --danger: #ef6f5e;
   --invert-bg: #ededed;
   --invert-text: #0d0d0d;
-  --shadow: 0 12px 32px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.04);
+  --shadow: 0 12px 32px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.09), inset 0 1px 0 rgba(255,255,255,.06);
   --scrim: rgba(0,0,0,.25);
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", Roboto, "Segoe UI", system-ui, sans-serif;
   --serif: var(--font);
@@ -38,17 +42,17 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     --bg: #ffffff; --surface: #f4f4f4; --surface-2: #e9e9e9; --sheet: #ffffff; --pop: #ffffff; --border: #e6e6e6; --border-strong: #d6d6d6;
-    --text: #0d0d0d; --muted: #5e5e5e; --faint: #9b9b9b; --accent: #0d0d0d; --accent-text: #ffffff; --link: #1667d9; --brand: #2f5fe8; --circle: #f2f2f2; --user-bg: #f1f1f1;
+    --text: #0d0d0d; --muted: #5e5e5e; --faint: #9b9b9b; --accent: #0d0d0d; --accent-text: #ffffff; --link: #1667d9; --brand: #2f5fe8; --circle: #f4f4f4; --rim: rgba(0,0,0,.08); --rim-top: rgba(255,255,255,.9); --user-bg: #f1f1f1;
     --code-bg: #f6f6f6; --add: #23864a; --del: #c8432f; --danger: #c8432f; --invert-bg: #0d0d0d; --invert-text: #ffffff;
-    --shadow: 0 12px 32px rgba(0,0,0,.12), 0 0 0 1px rgba(0,0,0,.06); --scrim: rgba(0,0,0,.06);
+    --shadow: 0 12px 32px rgba(0,0,0,.12), 0 0 0 1px rgba(0,0,0,.07); --scrim: rgba(0,0,0,.06);
     color-scheme: light;
   }
 }
 :root[data-theme="light"] {
   --bg: #ffffff; --surface: #f4f4f4; --surface-2: #e9e9e9; --sheet: #ffffff; --pop: #ffffff; --border: #e6e6e6; --border-strong: #d6d6d6;
-  --text: #0d0d0d; --muted: #5e5e5e; --faint: #9b9b9b; --accent: #0d0d0d; --accent-text: #ffffff; --link: #1667d9; --brand: #2f5fe8; --circle: #f2f2f2; --user-bg: #f1f1f1;
+  --text: #0d0d0d; --muted: #5e5e5e; --faint: #9b9b9b; --accent: #0d0d0d; --accent-text: #ffffff; --link: #1667d9; --brand: #2f5fe8; --circle: #f4f4f4; --rim: rgba(0,0,0,.08); --rim-top: rgba(255,255,255,.9); --user-bg: #f1f1f1;
   --code-bg: #f6f6f6; --add: #23864a; --del: #c8432f; --danger: #c8432f; --invert-bg: #0d0d0d; --invert-text: #ffffff;
-  --shadow: 0 12px 32px rgba(0,0,0,.12), 0 0 0 1px rgba(0,0,0,.06); --scrim: rgba(0,0,0,.06);
+  --shadow: 0 12px 32px rgba(0,0,0,.12), 0 0 0 1px rgba(0,0,0,.07); --scrim: rgba(0,0,0,.06);
   color-scheme: light;
 }
 
@@ -67,6 +71,7 @@ a { color: inherit; }
 .icon-btn:active { background: var(--surface); }
 .icon-btn.small { width: 34px; height: 34px; color: var(--muted); }
 /* Round header buttons with a soft fill, like ChatGPT on iOS. */
+.circle-btn, .round-btn, .box, .suggest button, .ctx-chip, .pop-tile, .drawer-search, .btn-quiet { box-shadow: var(--edge); }
 .circle-btn { width: 44px; height: 44px; border-radius: 50%; background: var(--circle); color: var(--text); display: inline-flex; align-items: center; justify-content: center; flex: none; transition: transform .15s var(--ease), background .15s; }
 .circle-btn:active { transform: scale(.94); }
 .circle-btn.on { background: var(--surface-2); }
@@ -74,7 +79,8 @@ a { color: inherit; }
 .btn { height: 46px; padding: 0 18px; border-radius: 999px; font-weight: 600; font-size: 15px; transition: opacity .15s var(--ease), transform .15s var(--ease); }
 .btn:active { transform: scale(.98); }
 .btn-primary { background: var(--accent); color: var(--accent-text); }
-.btn-quiet { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.btn-quiet { background: var(--surface); color: var(--text); }
+.btn-primary { box-shadow: inset 0 0 0 1px rgba(255,255,255,.18), inset 0 -1px 0 rgba(0,0,0,.18); }
 .btn:disabled { opacity: .5; }
 .link-btn { color: var(--muted); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; padding: 8px 0; }
 .form-error { color: var(--danger); font-size: 14px; margin: 0; }
@@ -119,13 +125,13 @@ div.top-title { display: block; text-align: center; line-height: 40px; white-spa
 /* Starters: a sideways row of cards just above the composer. */
 .suggest { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 -12px 10px; padding: 0 12px; scroll-snap-type: x proximity; }
 .suggest::-webkit-scrollbar { display: none; }
-.suggest button { flex: none; scroll-snap-align: start; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 11px 14px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); text-align: left; max-width: 220px; transition: transform .15s var(--ease), background .15s; }
+.suggest button { flex: none; scroll-snap-align: start; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 11px 14px; border-radius: 18px; background: var(--surface); text-align: left; max-width: 220px; transition: transform .15s var(--ease), background .15s; }
 .suggest button:active { transform: scale(.97); background: var(--surface-2); }
 .suggest button strong { font-size: 15px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; }
 .suggest button span { font-size: 13px; color: var(--muted); white-space: nowrap; }
 
 /* ─── Composer ─── */
-.composer { flex: none; position: relative; padding: 6px 12px calc(10px + env(safe-area-inset-bottom)); }
+.composer { flex: none; position: relative; padding: 6px 12px max(10px, calc(env(safe-area-inset-bottom) - 14px)); }
 .ctx-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 0 8px; }
 .ctx-chip { display: inline-flex; align-items: stretch; height: 30px; border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: 13px; font-weight: 500; max-width: 100%; min-width: 0; }
 .ctx-main { display: inline-flex; align-items: center; gap: 6px; padding: 0 4px 0 10px; min-width: 0; border-radius: 999px 0 0 999px; }
@@ -138,22 +144,22 @@ div.top-title { display: block; text-align: center; line-height: 40px; white-spa
 .ctx-chip:has(.ctx-x.hidden) .ctx-main { padding-right: 11px; }
 .ctx-main:active, .ctx-x:active { background: var(--border-strong); }
 .ctx-status { display: none; }
-.box { background: var(--surface); border: 1px solid var(--border); border-radius: 28px; padding: 10px 8px 8px 12px; transition: border-color .15s var(--ease); }
+.box { background: var(--surface); border-radius: 28px; padding: 10px 8px 8px 12px; transition: box-shadow .15s var(--ease); }
 .box:focus-within { border-color: var(--border-strong); }
 .box textarea { width: 100%; border: 0; outline: none; background: transparent; resize: none; font-size: 17px; letter-spacing: -.01em; line-height: 1.4; max-height: 160px; padding: 4px 6px 10px 4px; display: block; }
 .box textarea::placeholder { color: var(--faint); }
 .box-row { display: flex; align-items: center; gap: 6px; }
-.round-btn { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border-strong); display: inline-flex; align-items: center; justify-content: center; color: var(--text); flex: none; margin-left: -2px; transition: background .15s; }
+.round-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--circle); display: inline-flex; align-items: center; justify-content: center; color: var(--text); flex: none; margin-left: -2px; transition: background .15s; }
 .round-btn:active, .pill-btn:active { background: var(--surface-2); }
 .pill-btn { display: inline-flex; align-items: center; gap: 4px; height: 34px; padding: 0 10px 0 12px; border-radius: 999px; font-size: 13.5px; font-weight: 500; color: var(--muted); flex: none; min-width: 0; transition: background .15s; }
 .pill-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #codeModeChip { border: 1px solid var(--border-strong); color: var(--text); }
 .spacer { flex: 1; }
-.send-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--accent-text); display: inline-flex; align-items: center; justify-content: center; flex: none; transition: opacity .15s, transform .15s var(--ease); }
+.send-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--accent-text); box-shadow: inset 0 -1.5px 0 rgba(0,0,0,.14), inset 0 0 0 1px rgba(0,0,0,.06); display: inline-flex; align-items: center; justify-content: center; flex: none; transition: opacity .15s, transform .15s var(--ease); }
 .send-btn:active { transform: scale(.92); }
 .send-btn:disabled { opacity: .35; }
 /* Empty composer: the voice button (Calls) instead of send, like ChatGPT. */
-.voice-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--accent-text); display: none; align-items: center; justify-content: center; flex: none; transition: transform .15s var(--ease); }
+.voice-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--accent-text); box-shadow: inset 0 -1.5px 0 rgba(0,0,0,.14), inset 0 0 0 1px rgba(0,0,0,.06); display: none; align-items: center; justify-content: center; flex: none; transition: transform .15s var(--ease); }
 .voice-btn:active { transform: scale(.92); }
 .composer.empty-input .voice-btn { display: inline-flex; }
 .composer.empty-input .send-btn { display: none; }
@@ -312,7 +318,7 @@ div.top-title { display: block; text-align: center; line-height: 40px; white-spa
 .pick-row.danger strong, .pick-row.danger .pick-ico { color: var(--danger); }
 .chat-empty { color: var(--faint); font-size: 15px; padding: 8px; }
 .drawer-foot { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 12px 0 0; }
-.pill-new { display: inline-flex; align-items: center; gap: 10px; height: 52px; padding: 0 26px 0 22px; border-radius: 999px; background: var(--brand); color: #fff; font-size: 18px; font-weight: 600; letter-spacing: -.01em; box-shadow: 0 6px 18px color-mix(in srgb, var(--brand) 35%, transparent); transition: transform .15s var(--ease); }
+.pill-new { display: inline-flex; align-items: center; gap: 10px; height: 52px; padding: 0 26px 0 22px; border-radius: 999px; background: var(--brand); color: #fff; font-size: 18px; font-weight: 600; letter-spacing: -.01em; box-shadow: inset 0 0 0 1px rgba(255,255,255,.22), inset 0 1px 0 rgba(255,255,255,.28); transition: transform .15s var(--ease); }
 .pill-new:active { transform: scale(.97); }
 .drawer-foot .circle-btn { width: 52px; height: 52px; }
 .pop-account { display: flex; align-items: center; gap: 10px; padding: 8px 10px 10px; font-size: 14.5px; font-weight: 500; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
@@ -322,7 +328,7 @@ div.top-title { display: block; text-align: center; line-height: 40px; white-spa
 /* ─── Sheets ─── */
 .sheet { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; }
 .sheet-bg { position: absolute; inset: 0; background: rgba(0,0,0,.5); animation: fade .18s ease; }
-.sheet-card { position: relative; width: 100%; max-width: 720px; max-height: 86vh; overflow-y: auto; background: var(--sheet); border-radius: 26px 26px 0 0; border: 1px solid var(--border); border-bottom: 0; padding: 8px 18px calc(18px + env(safe-area-inset-bottom)); animation: rise .24s var(--ease); }
+.sheet-card { position: relative; width: 100%; max-width: 720px; max-height: 86vh; overflow-y: auto; background: var(--sheet); border-radius: 26px 26px 0 0; box-shadow: inset 0 1px 0 var(--rim), inset 1px 0 0 var(--rim), inset -1px 0 0 var(--rim); padding: 8px 18px calc(18px + env(safe-area-inset-bottom)); animation: rise .24s var(--ease); }
 @keyframes rise { from { transform: translateY(100%); } to { transform: none; } }
 @keyframes fade { from { opacity: 0; } }
 .sheet-handle { width: 36px; height: 4px; border-radius: 4px; background: var(--border); margin: 0 auto 14px; }
