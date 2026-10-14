@@ -121,6 +121,10 @@ const ICONS = {
   stop: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" stroke="none"/></svg>',
   pencil: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
   trash: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg>',
+  github: '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2.5a9.5 9.5 0 0 0-3 18.5c.5.1.7-.2.7-.5v-1.7c-2.6.6-3.2-1.2-3.2-1.2-.4-1.1-1-1.4-1-1.4-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1 2.8.8.1-.6.3-1 .6-1.3-2.1-.2-4.3-1-4.3-4.7 0-1 .4-1.9 1-2.6-.1-.2-.4-1.2.1-2.5 0 0 .8-.3 2.6 1a9 9 0 0 1 4.8 0c1.8-1.3 2.6-1 2.6-1 .5 1.3.2 2.3.1 2.5.6.7 1 1.6 1 2.6 0 3.7-2.2 4.5-4.3 4.7.3.3.6.9.6 1.8v2.6c0 .3.2.6.7.5A9.5 9.5 0 0 0 12 2.5Z"/></svg>',
+  camera: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.2l1.5-2h5.6l1.5 2h2.2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5Z"/><circle cx="12" cy="12.5" r="3.5"/></svg>',
+  image: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="m4 17 5-4.5 4 3.5 2.5-2 4.5 3.5"/></svg>',
+  x: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 7l10 10M17 7 7 17"/></svg>',
   arrow: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>',
 };
 
@@ -212,7 +216,7 @@ const state = {
   chats: load(KEY.chats, []),     // [{ id, title, kind: 'chat'|'code', cloud, project, pcSessionId, cloudSessionId, updatedAt, live }]
   bodies: new Map(),              // chat id -> { messages, pcItems, tasks }
   current: null,                  // chat id, or null for a new chat
-  ui: { mode: 'chat', projectKey: null, codeMode: 'Build', chatModel: 'auto', ...load(KEY.ui, {}) },
+  ui: { mode: 'chat', projectKey: null, codeMode: 'Build', chatModel: 'auto', useProject: false, ...load(KEY.ui, {}) },
   synced: load(KEY.synced, []),   // [{ id, clientId, name, model, baseUrl, key }] from user-models, keys masked
   bypass: localStorage.getItem(KEY.bypass) === '1',
   pc: load(KEY.pc, { device: '', projects: [], sessions: [], models: null }),
@@ -224,7 +228,17 @@ const state = {
   approval: null,
   imagePick: null,
 };
-const saveUi = () => save(KEY.ui, { mode: state.ui.mode, projectKey: state.ui.projectKey, codeMode: state.ui.codeMode, chatModel: state.ui.chatModel });
+const saveUi = () => save(KEY.ui, { mode: state.ui.mode, projectKey: state.ui.projectKey, codeMode: state.ui.codeMode, chatModel: state.ui.chatModel, useProject: !!state.ui.useProject });
+// Chat and Code are one composer now: a project attached from + makes a new
+// message a task for the agent; without one it is a chat. An older "code" mode
+// carries over as an attached project.
+if (state.ui.mode === 'code' && load(KEY.ui, {}).useProject === undefined) state.ui.useProject = true;
+/** Where the next message goes: the open conversation's kind, or chat unless a project is attached. */
+function effMode() {
+  const c = state.current && chatMeta(state.current);
+  if (c && c.kind === 'code') return 'code';
+  return state.ui.useProject && projectByKey(state.ui.projectKey) ? 'code' : 'chat';
+}
 
 /** The synced model Chat uses, or null for Auto. */
 function chatModel() {
@@ -642,8 +656,18 @@ function renderCloudTaskCard(task) {
 }
 
 /** One stored PC chat item, the way mobile.js renders a session. */
+// A chat that picked up a project hands the agent what was said so far; it is
+// shown without that preamble.
+const CTX_RE = /^\[Earlier in this conversation\][\s\S]*?\[\/Earlier\]\s*/;
+const stripCtx = (t) => String(t || '').replace(CTX_RE, '');
+function withContext(chat, text) {
+  const b = body(chat.id);
+  if (chat.pcSessionId || chat.cloudSessionId || !(b.prelude || []).length) return text;
+  const lines = b.prelude.slice(-8).map((m) => `${m.role === 'user' ? 'User' : 'Codeply'}: ${String(m.content || '').slice(0, 800)}`).join('\n');
+  return `[Earlier in this conversation]\n${lines.slice(-4000)}\n[/Earlier]\n\n${text}`;
+}
 function renderPcItem(item, chat) {
-  if (item.kind === 'user') addMsg('user', item.text);
+  if (item.kind === 'user') addMsg('user', stripCtx(item.text));
   else if (item.kind === 'assistant') (item.interim ? addThinking(item.text) : addMsg('agent', item.text));
   else if (item.kind === 'tool') addTool(item);
   else if (item.kind === 'role_active' || item.kind === 'subagent_active') addRole(item);
@@ -667,7 +691,7 @@ function cloudEventHtml(e) {
 }
 const isLive = (t) => t && ['starting', 'queued', 'running'].includes(t.status);
 function taskHtml(t) {
-  let h = `<div class="msg user">${esc(t.prompt)}</div>`;
+  let h = `<div class="msg user">${esc(stripCtx(t.prompt))}</div>`;
   h += (t.events || []).map(cloudEventHtml).join('');
   if (t.answer) h += `<div class="msg agent">${md(t.answer)}</div>`;
   if (isLive(t) && t.ask) h += `<div class="cloud-ask" data-ask-task="${esc(t.id)}" data-ask-id="${esc(t.ask.id)}"><b>Waiting for your OK</b><span>${esc(t.ask.title)}</span>${t.ask.detail ? `<pre class="code">${esc(t.ask.detail)}</pre>` : ''}<div class="cloud-ask-btns"><button type="button" class="btn btn-primary" data-ask-yes>Allow</button><button type="button" class="btn" data-ask-no>Don't allow</button></div></div>`;
@@ -694,6 +718,7 @@ function renderFeed({ force = false } = {}) {
     for (const m of b.messages) addMsg(m.role === 'user' ? 'user' : m.role === 'error' ? 'error' : 'agent', m.content, m.thumbs);
     if (state.busy.has(c.id)) append(el('div', 'working', '<span class="spinner"></span><span>Thinking...</span>'));
   } else {
+    for (const m of b.prelude || []) addMsg(m.role === 'user' ? 'user' : m.role === 'error' ? 'error' : 'agent', m.content, m.thumbs);
     for (const item of b.pcItems || []) renderPcItem(item, c);
     if (c.pcSessionId && !(b.pcItems || []).length && !relay.pcId && !(b.tasks || []).length) addMsg('note', 'This chat lives on your PC. It shows up here once the PC is online.');
     if ((b.tasks || []).length) f.insertAdjacentHTML('beforeend', b.tasks.map(taskHtml).join(''));
@@ -931,7 +956,7 @@ async function pcSend(chat, text, images = []) {
   renderComposer();
   try {
     // The PC answers when the whole turn ends; events stream in meanwhile.
-    const r = await relayRequest('POST', '/api/send', { sessionId: chat.pcSessionId || null, cwd: project.cwd, ...(project.newProject && !project.cwd ? { newProject: project.newProject } : {}), mode: state.ui.codeMode, bypass: state.bypass, text: text || 'Image attached.', ...(images.length ? { images } : {}), clientId }, 6 * 3600 * 1000);
+    const r = await relayRequest('POST', '/api/send', { sessionId: chat.pcSessionId || null, cwd: project.cwd, ...(project.newProject && !project.cwd ? { newProject: project.newProject } : {}), mode: state.ui.codeMode, bypass: state.bypass, text: withContext(chat, text || 'Image attached.'), ...(images.length ? { images } : {}), clientId }, 6 * 3600 * 1000);
     if (r && r.error) throw new Error(r.error);
     if (r && r.cwd && !project.cwd) {
       chat.project = { key: `cwd:${normCwd(r.cwd)}`, name: basename(r.cwd), cwd: r.cwd, repo: null };
@@ -1262,6 +1287,7 @@ async function startCloudTask({ prompt, mode = 'Build', sessionId = '', bot = nu
 async function cloudSend(chat, text) {
   const env = envFor(chat.project);
   if (!env) throw new Error('This project has no cloud environment yet.');
+  text = withContext(chat, text);
   if (!chat.cloudSessionId) chat.cloudSessionId = `p${Date.now().toString(36)}${randHex(6)}`;
   if (!chat.title) chat.title = titleFrom(text);
   chat.cloud = true;
@@ -1397,24 +1423,24 @@ async function onSubmit(e) {
   const text = window.CodeplyAttach ? window.CodeplyAttach.compose(input.value.trim(), attFiles.filter((f) => f.kind !== 'image')) : input.value.trim();
   if (!text && !images.length) return;
   attFiles = []; renderAtt();
-  if (state.ui.mode === 'chat' && !images.length) {
+  // One composer: a code conversation, or an attached project, goes to the
+  // agent; everything else is a chat (real tasks still hand off by themselves).
+  const attached = state.ui.useProject ? projectByKey(state.ui.projectKey) : null;
+  const toAgent = (c0 && c0.kind === 'code') || !!attached;
+  if (!toAgent && !images.length) {
     const intent = taskIntent(input.value.trim());
     if (intent) { clearInput(); return handOff(text, intent); }
   }
-  if (state.ui.mode === 'chat') {
+  if (!toAgent) {
     const chat = c0 && c0.kind === 'chat' ? c0 : createChat('chat');
     openChat(chat.id, { keepMode: true });
     clearInput();
     return chatSend(chat, text, images);
   }
-  // Code
   let chat = c0 && c0.kind === 'code' ? c0 : null;
-  const project = chat ? currentProject() : projectByKey(state.ui.projectKey);
-  if (!project) { openProjectPicker({ thenSend: text }); return; }
-  if (!chat) {
-    chat = createChat('code', { project: { key: project.key, name: project.name, cwd: project.cwd || null, repo: project.repo || null } });
-    openChat(chat.id, { keepMode: true });
-  }
+  const project = chat ? currentProject() : attached;
+  if (!project) { openProjectPicker({ thenSend: text, anchor: $('plusBtn') }); return; }
+  if (!chat) chat = codeChatFor(project);
   clearInput();
   // A cloud-only project (no folder on the PC) goes straight to the cloud.
   if ((chat.cloud || !project.cwd) && images.length) attNote('Cloud runs take text and files for now; the image was left out.');
@@ -1451,23 +1477,37 @@ function taskIntent(raw) {
   return null;
 }
 
+/** The conversation a task runs in: the open chat picks up the project (its messages stay above), or a new one. */
+function codeChatFor(project) {
+  const p = { key: project.key, name: project.name, cwd: project.cwd || null, repo: project.repo || null, ...(project.newProject ? { newProject: project.newProject } : {}) };
+  const c0 = state.current && chatMeta(state.current);
+  let chat;
+  if (c0 && c0.kind === 'chat') {
+    const b = body(c0.id);
+    b.prelude = [...(b.prelude || []), ...b.messages];
+    b.messages = [];
+    c0.kind = 'code'; c0.project = p;
+    saveBody(c0.id); saveChats();
+    chat = c0;
+  } else chat = createChat('code', { project: p });
+  if (project.key !== 'new') { state.ui.projectKey = project.key; state.ui.useProject = true; saveUi(); }
+  openChat(chat.id, { keepMode: true });
+  return chat;
+}
 async function handOff(text, intent) {
-  setUiMode('code');
   const project = projectByKey(state.ui.projectKey) || currentProject();
   if (relay.connecting || relay.channel) await waitForPc(4000);
   const pcOn = !!relay.pcId;
   const note = (msg) => { addMsg('note', msg); scrollToBottom(); };
   // something new, with the PC on: a fresh folder for it there
   if (intent.kind === 'new' && pcOn) {
-    const chat = createChat('code', { project: { key: 'new', name: intent.name, cwd: null, repo: null, newProject: intent.name } });
-    openChat(chat.id, { keepMode: true });
+    const chat = codeChatFor({ key: 'new', name: intent.name, cwd: null, repo: null, newProject: intent.name });
     note('This is a building task, so Codeply is doing it on your PC in a new project folder.');
     return pcSend(chat, text, []);
   }
   // something new with the PC off: a new repo on their GitHub, ready for cloud runs, no folder
   if (intent.kind === 'new' && (await ensureGithub())) {
-    const chat = createChat('code', { project: { key: 'new', name: intent.name, cwd: null, repo: null } });
-    openChat(chat.id, { keepMode: true });
+    const chat = codeChatFor({ key: 'new', name: intent.name, cwd: null, repo: null });
     note('Your PC is off, so Codeply is making a new repo on your GitHub and building it in the cloud.');
     try {
       const made = await createRepo(intent.name);
@@ -1480,13 +1520,12 @@ async function handOff(text, intent) {
   }
   // work in a project, or an action (email, Slack, deploy, repo): the current project
   if (project) {
-    const chat = createChat('code', { project: { key: project.key, name: project.name, cwd: project.cwd || null, repo: project.repo || null } });
-    openChat(chat.id, { keepMode: true });
+    const chat = codeChatFor(project);
     if (project.cwd && pcOn) { note(`This is a task, so Codeply is doing it on your PC in ${project.name}.`); return pcSend(chat, text, []); }
     if (envFor(project)) { note(`Your PC is off, so this runs in the cloud on ${project.name}.`); return runInCloud(chat, text); }
   }
   // nowhere to run it yet: pick a project (or set up the cloud), the message is kept
-  openProjectPicker({ thenSend: text });
+  openProjectPicker({ thenSend: text, anchor: $('plusBtn') });
 }
 
 // ─── Attached files (attachments.js): PDFs, text and code ───────────────────
@@ -1499,6 +1538,7 @@ function attNote(msg) {
 }
 function renderAtt() {
   const row = $('attRow');
+  if (state.user) renderComposer();
   row.innerHTML = '';
   row.classList.toggle('hidden', !attFiles.length && !attNotes.length);
   for (const n of attNotes) { const d = el('div', 'att-note'); d.textContent = n.msg; row.appendChild(d); }
@@ -1541,7 +1581,14 @@ if (window.CodeplyAttach) {
   inp.accept = 'image/*,' + window.CodeplyAttach.ACCEPT;
   inp.addEventListener('change', () => { const list = [...inp.files]; inp.value = ''; addAttFiles(list); });
 }
-function pickFiles() { if (window.CodeplyAttach) $('attInput').click(); }
+/** kind: 'camera' takes a photo, 'photos' picks images, anything else any file. */
+function pickFiles(kind = '') {
+  if (!window.CodeplyAttach) return;
+  const inp = $('attInput');
+  inp.accept = kind ? 'image/*' : 'image/*,' + window.CodeplyAttach.ACCEPT;
+  if (kind === 'camera') inp.setAttribute('capture', 'environment'); else inp.removeAttribute('capture');
+  inp.click();
+}
 /** An image (File or data URL) as a JPEG data URL no larger than max px on its long side. */
 function shrinkDataUrl(src, max, quality) {
   return new Promise((resolve, reject) => {
@@ -1808,7 +1855,7 @@ function placePop(pop, anchor) {
   const r = anchor.getBoundingClientRect();
   const vw = window.innerWidth;
   const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-  const w = Math.min(300, vw - 24);
+  const w = Math.min(320, vw - 24);
   const above = r.top + r.height / 2 > vh / 2;
   let left = r.left;
   if (left + w > vw - 12) left = Math.max(12, r.right - w);
@@ -1827,29 +1874,40 @@ window.addEventListener('resize', () => { if (!$('popLayer').classList.contains(
 
 function openProjectPicker({ thenSend = null, anchor = null } = {}) {
   const list = allProjects();
-  const cur = currentProject();
+  const c0 = state.current && chatMeta(state.current);
+  const cur = (c0 && c0.kind === 'code') || state.ui.useProject ? currentProject() : null;
   const rows = list.map((p) => {
     const env = envFor(p);
     return `<button type="button" class="pick-row${cur && cur.key === p.key ? ' on' : ''}" data-key="${esc(p.key)}"><span class="pick-ico">${p.cwd ? ICONS.folder : ICONS.cloud}</span><span class="pick-main"><strong>${esc(p.name)}</strong><small>${p.cwd ? (env ? 'On your PC, cloud ready' : 'On your PC') : `Cloud, ${esc(p.repo)}`}</small></span>${ICONS.check}</button>`;
   }).join('');
-  openPick(`<div class="sheet-title">Projects</div>
-    ${rows || '<p class="sheet-text">No projects yet. Open Codeply on your PC once, or set up a cloud environment.</p>'}
+  openPick(`<div class="sheet-title">Work in a project</div>
+    ${rows || '<p class="sheet-text">No projects yet. Open Codeply on your PC once, or connect a GitHub repo.</p>'}
     <div class="pick-divider"></div>
-    <button type="button" class="pick-row" data-act="setup"><span class="pick-ico">${ICONS.plus}</span><span class="pick-main"><strong>Set up a cloud environment</strong><small>A GitHub repo Codeply can work in with your PC off</small></span></button>`, (root) => {
+    ${pickRow({ icon: ICONS.github, title: 'Connect a GitHub repo', hint: 'Codeply works in it in the cloud, with your PC off', attrs: 'data-act="setup"' })}
+    ${cur && !(c0 && c0.kind === 'code') ? pickRow({ icon: ICONS.x, title: 'No project', hint: 'Just chat', attrs: 'data-act="detach"' }) : ''}`, (root) => {
     root.querySelectorAll('[data-key]').forEach((b) => b.addEventListener('click', () => {
       closePick();
       const p = projectByKey(b.dataset.key);
       const c = state.current && chatMeta(state.current);
       if (c && c.kind === 'code' && body(c.id).pcItems.length + body(c.id).tasks.length && (!c.project || c.project.key !== p.key)) newChat();
       state.ui.projectKey = p.key;
+      state.ui.useProject = true;
       saveUi();
       const c2 = state.current && chatMeta(state.current);
       if (c2 && c2.kind === 'code') { c2.project = { key: p.key, name: p.name, cwd: p.cwd || null, repo: p.repo || null }; saveChats(); }
+      renderTitle();
       renderComposer();
       if (thenSend) { $('input').value = thenSend; $('composer').requestSubmit(); }
     }));
     root.querySelector('[data-act="setup"]').addEventListener('click', () => { closePick(); openSetup({}); });
+    const det = root.querySelector('[data-act="detach"]');
+    if (det) det.addEventListener('click', () => { closePick(); detachProject(); });
   }, anchor);
+}
+function detachProject() {
+  state.ui.useProject = false; saveUi();
+  const c = state.current && chatMeta(state.current);
+  if (c && c.kind === 'code') newChat(); else { renderTitle(); renderComposer(); }
 }
 const pickRow = ({ icon = '', title, hint = '', on = null, attrs = '', kbd = '', cls = '' }) => `<button type="button" role="menuitem" class="pick-row${on ? ' on' : ''}${cls ? ` ${cls}` : ''}" ${attrs}>${icon ? `<span class="pick-ico">${icon}</span>` : ''}<span class="pick-main"><strong>${title}</strong>${hint ? `<small>${hint}</small>` : ''}</span>${kbd ? `<span class="pick-kbd">${esc(kbd)}</span>` : ''}${on !== null ? ICONS.check : ''}</button>`;
 const CODE_MODES = [['Build', 'Makes the changes', 'build'], ['Plan', 'Writes a plan before changing anything', 'plan'], ['Ask', 'Answers questions, no edits', 'ask']];
@@ -1860,65 +1918,62 @@ function openCodeModePicker(anchor) {
 }
 function setCodeMode(m) {
   if (!CODE_MODES.some(([x]) => x === m)) return;
-  if (state.ui.mode !== 'code') setUiMode('code');
   state.ui.codeMode = m; saveUi(); renderComposer();
 }
-/** The title at the top: Chat or Code on a new chat; the chat's own options inside one. */
-function openTitleMenu() {
+function openChatOptions() {
   const c = state.current && chatMeta(state.current);
-  if (c) {
-    const r = { type: 'local', id: c.id, title: c.title };
-    return chatMenu(r, $('titleBtn'));
-  }
-  const mode = state.ui.mode;
-  openPick(`${pickRow({ icon: ICONS.chat, title: 'Chat', hint: 'Ask anything, works with your PC off', on: mode === 'chat', attrs: 'data-ui="chat"', kbd: '/chat' })}
-    ${pickRow({ icon: ICONS.code, title: 'Code', hint: 'Work on a project, on your PC or in the cloud', on: mode === 'code', attrs: 'data-ui="code"', kbd: '/code' })}`, (root) => {
-    root.querySelectorAll('[data-ui]').forEach((b) => b.addEventListener('click', () => { closePick(); setUiMode(b.dataset.ui); }));
-  }, $('titleBtn'));
+  if (c) chatMenu({ type: 'local', id: c.id, title: c.title }, $('chatMoreBtn'));
 }
+// + holds everything that is not the conversation itself, like ChatGPT's:
+// add a photo or file, work in a project, how the agent works, the cloud.
 function openPlus() {
-  const code = state.ui.mode === 'code';
   const c = state.current && chatMeta(state.current);
+  const inCode = !!(c && c.kind === 'code');
+  const proj = inCode || state.ui.useProject ? currentProject() : null;
   const cloudChat = c && c.cloud;
-  const cloudEnv = envFor((c && c.project) || currentProject());
+  const cloudEnv = envFor((c && c.project) || proj);
   const cperm = cloudEnv && cloudEnv.permission === 'full' ? 'full' : 'ask';
-  const top = `${pickRow({ icon: ICONS.attach, title: 'Attach a file', hint: 'Photos, PDFs, text or code', attrs: 'data-act="attach"' })}
-    ${pickRow({ icon: ICONS.slash, title: 'Commands', hint: 'Everything you can do from here', attrs: 'data-act="commands"', kbd: '/' })}`;
-  openPick(code
-    ? `${top}<div class="pick-divider"></div>
-      ${pickRow({ icon: ICONS.folder, title: 'Project', hint: esc((currentProject() || {}).name || 'Choose one'), attrs: 'data-act="project"' })}
-      ${pickRow({ icon: ICONS.target, title: 'Goal', hint: 'Keep working until it is done and verified', attrs: 'data-act="goal"', kbd: '/goal' })}
-      ${cloudChat ? '' : `<div class="pick-divider"></div><div class="sheet-label">On your PC</div>
-      ${pickRow({ icon: ICONS.shield, title: 'Ask first', hint: 'Approve edits and commands from here', on: !state.bypass, attrs: 'data-bypass="0"' })}
-      ${pickRow({ icon: ICONS.bolt, title: 'Full access', hint: 'Edits and commands run without asking', on: !!state.bypass, attrs: 'data-bypass="1"' })}`}
-      ${cloudEnv ? `<div class="pick-divider"></div><div class="sheet-label">In the cloud</div>
-      ${pickRow({ icon: ICONS.shield, title: 'Ask first', hint: 'Deploys and other risky steps wait for your OK', on: cperm === 'ask', attrs: 'data-cperm="ask"' })}
-      ${pickRow({ icon: ICONS.bolt, title: 'Full access', hint: 'Everything runs without asking', on: cperm === 'full', attrs: 'data-cperm="full"' })}` : ''}
-      <div class="pick-divider"></div>
-      ${pickRow({ icon: ICONS.cloud, title: 'Cloud environment', hint: 'Pick a repo or start a new one', attrs: 'data-act="setup"' })}`
-    : `${top}<div class="pick-divider"></div>
-      ${pickRow({ icon: ICONS.code, title: 'Switch to Code', hint: 'Runs on your PC, or in the cloud when it is off', attrs: 'data-act="code"', kbd: '/code' })}`, (root) => {
-    root.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { state.ui.codeMode = b.dataset.mode; saveUi(); closePick(); renderComposer(); }));
-    root.querySelectorAll('[data-cperm]').forEach((b) => b.addEventListener('click', async () => {
-      const v = b.dataset.cperm;
-      if (v === cperm) { closePick(); return; }
-      if (v === 'full' && !confirm('Full access lets cloud runs deploy and do other risky steps without asking. Turn it on?')) return;
+  const tile = (act, icon, label) => `<button type="button" class="pop-tile" data-act="${act}">${icon}<span>${label}</span></button>`;
+  const modeHint = CODE_MODES.find(([m]) => m === state.ui.codeMode);
+  openPick(`<div class="pop-tiles">${tile('camera', ICONS.camera, 'Camera')}${tile('photos', ICONS.image, 'Photos')}${tile('files', ICONS.attach, 'Files')}</div>
+    ${pickRow({ icon: ICONS.folder, title: proj ? esc(proj.name) : 'Work in a project', hint: proj ? (proj.cwd ? (relay.pcId ? 'On your PC' : 'On your PC, which is offline: runs in the cloud if set up') : 'In the cloud') : 'A folder on your PC or a GitHub repo', attrs: 'data-act="project"', kbd: proj ? 'Change' : '' })}
+    ${proj ? `${pickRow({ icon: ICONS[modeHint ? modeHint[2] : 'build'], title: `Mode: ${esc(state.ui.codeMode)}`, hint: modeHint ? modeHint[1] : '', attrs: 'data-act="mode"' })}
+    ${pickRow({ icon: ICONS.target, title: 'Set a goal', hint: 'Keep working until it is done and verified', attrs: 'data-act="goal"', kbd: '/goal' })}
+    ${!cloudChat ? pickRow({ icon: state.bypass ? ICONS.bolt : ICONS.shield, title: state.bypass ? 'Full access on your PC' : 'Ask first on your PC', hint: state.bypass ? 'Edits and commands run without asking' : 'You approve edits and commands from here', attrs: 'data-act="access"' }) : ''}
+    ${cloudEnv ? pickRow({ icon: cperm === 'full' ? ICONS.bolt : ICONS.shield, title: cperm === 'full' ? 'Full access in the cloud' : 'Ask first in the cloud', hint: cperm === 'full' ? 'Everything runs without asking' : 'Deploys and risky steps wait for your OK', attrs: 'data-act="caccess"' }) : ''}` : ''}
+    <div class="pick-divider"></div>
+    ${pickRow({ icon: ICONS.github, title: 'Connect a GitHub repo', hint: 'Work with your PC off', attrs: 'data-act="setup"' })}
+    ${pickRow({ icon: ICONS.phone, title: 'Calls', hint: 'Talk to your bots', attrs: 'data-act="calls"' })}
+    ${pickRow({ icon: ICONS.slash, title: 'All commands', attrs: 'data-act="commands"', kbd: '/' })}`, (root) => {
+    const act = (name, fn) => { const n = root.querySelector(`[data-act="${name}"]`); if (n) n.addEventListener('click', () => { closePick(); fn(); }); };
+    act('camera', () => pickFiles('camera'));
+    act('photos', () => pickFiles('photos'));
+    act('files', () => pickFiles());
+    act('project', () => openProjectPicker({ anchor: $('plusBtn') }));
+    act('mode', () => openCodeModePicker($('plusBtn')));
+    act('goal', () => { if (!proj) { openProjectPicker({ anchor: $('plusBtn') }); return; } insertCommand('/goal '); });
+    act('access', () => openAccess('pc'));
+    act('caccess', () => openAccess('cloud', cloudEnv, cperm));
+    act('setup', () => openSetup({ chatId: inCode ? c.id : null }));
+    act('calls', () => $('drawerCalls').click());
+    act('commands', () => startSlash());
+  }, $('plusBtn'));
+}
+function openAccess(where, cloudEnv = null, cperm = 'ask') {
+  const pc = where === 'pc';
+  const on = pc ? (state.bypass ? 'full' : 'ask') : cperm;
+  openPick(`<div class="sheet-title">${pc ? 'On your PC' : 'In the cloud'}</div>
+    ${pickRow({ icon: ICONS.shield, title: 'Ask first', hint: pc ? 'Approve edits and commands from here' : 'Deploys and other risky steps wait for your OK', on: on === 'ask', attrs: 'data-v="ask"' })}
+    ${pickRow({ icon: ICONS.bolt, title: 'Full access', hint: pc ? 'Edits and commands run without asking' : 'Everything runs without asking', on: on === 'full', attrs: 'data-v="full"' })}`, (root) => {
+    root.querySelectorAll('[data-v]').forEach((b) => b.addEventListener('click', async () => {
+      const v = b.dataset.v;
+      if (v === on) { closePick(); return; }
+      if (v === 'full' && !confirm(pc ? 'Full access runs edits and commands on your PC without asking first. Turn it on?' : 'Full access lets cloud runs deploy and do other risky steps without asking. Turn it on?')) return;
       closePick();
+      if (pc) { state.bypass = v === 'full'; localStorage.setItem(KEY.bypass, state.bypass ? '1' : '0'); return; }
       try { if (!(await ensureGithub())) throw new Error('Connect GitHub first.'); await setCloudPermission(cloudEnv.repo, v); }
       catch (e) { addMsg('error', e.message); }
     }));
-    root.querySelectorAll('[data-bypass]').forEach((b) => b.addEventListener('click', () => {
-      const on = b.dataset.bypass === '1';
-      if (on && !state.bypass && !confirm('Full access runs edits and commands on your PC without asking first. Turn it on?')) return;
-      state.bypass = on; localStorage.setItem(KEY.bypass, on ? '1' : '0'); closePick();
-    }));
-    const act = (name, fn) => { const n = root.querySelector(`[data-act="${name}"]`); if (n) n.addEventListener('click', () => { closePick(); fn(); }); };
-    act('project', () => openProjectPicker({ anchor: $('projectChip').offsetParent ? $('projectChip') : $('plusBtn') }));
-    act('setup', () => openSetup({ chatId: c && c.kind === 'code' ? c.id : null }));
-    act('code', () => setUiMode('code'));
-    act('attach', () => pickFiles());
-    act('commands', () => startSlash());
-    act('goal', () => insertCommand('/goal '));
   }, $('plusBtn'));
 }
 /** A cloud environment set up on the PC: read its model name once from the repo's variables. */
@@ -1947,16 +2002,17 @@ function modelLabel() {
   return cur ? cur.name : 'Haze 2';
 }
 function openModelPicker() {
+  state.ui.mode = effMode();
   if (state.ui.mode === 'chat') {
     loadSynced();
     const cur = chatModel() ? chatModel().id : 'auto';
     const row = (id, name, hint, tag) => pickRow({ icon: id === 'auto' ? ICONS.spark : ICONS.code, title: `${esc(name)}${tag ? ` <span class="pick-tag">${esc(tag)}</span>` : ''}`, hint: esc(hint), on: id === cur, attrs: `data-id="${esc(id)}"` });
-    openPick(`<div class="sheet-title">Select model</div>${row('auto', 'Haze 2', 'The routing brain')}${state.synced.map((m) => row(m.id, m.name, `${m.model}, your API key ${m.key || ''}`.trim(), 'Synced')).join('')}
+    openPick(`<div class="sheet-title">Model</div>${row('auto', 'Haze 2', 'The routing brain')}${state.synced.map((m) => row(m.id, m.name, `${m.model}, your API key ${m.key || ''}`.trim(), 'Synced')).join('')}
       <p class="pick-note">${state.synced.length ? 'Synced models use your own API key, stored encrypted in your Codeply account. They work with your PC off.' : 'Chat and Code share your Codeply daily limit. Turn on "Use on my phone" for a model in Codeply on your PC to use it here.'}</p>`, (root) => {
       root.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('click', () => {
         state.ui.chatModel = b.dataset.id; saveUi(); closePick(); renderComposer();
       }));
-    }, $('modelBtn'));
+    }, $('titleBtn'));
     return;
   }
   const c = state.current && chatMeta(state.current);
@@ -1967,7 +2023,7 @@ function openModelPicker() {
       <button type="button" class="pick-row on"><span class="pick-ico">${ICONS.cloud}</span><span class="pick-main"><strong>${esc((env && env.model && env.model.model) || 'Set on your PC')}</strong><small>${esc((env && env.model && env.model.baseUrl) || (env ? env.repo : ''))}</small></span>${ICONS.check}</button>
       <button type="button" class="pick-row" data-act="change"><span class="pick-ico">${ICONS.pencil}</span><span class="pick-main"><strong>Change model</strong><small>Updates the repo's secret and variables</small></span></button>`, (root) => {
       root.querySelector('[data-act="change"]').addEventListener('click', () => { closePick(); if (env) openSetup({ chatId: c ? c.id : null, repo: env.repo, step: 'model' }); else openSetup({}); });
-    }, $('modelBtn'));
+    }, $('titleBtn'));
     return;
   }
   const m = state.pc.models || { selected: 'auto', models: [] };
@@ -1980,7 +2036,7 @@ function openModelPicker() {
       try { const r = await relayRequest('POST', '/api/models/select', { id: b.dataset.id }); if (r && Array.isArray(r.models)) { state.pc.models = r; save(KEY.pc, state.pc); } renderComposer(); }
       catch (e) { addMsg('error', e.message); }
     }));
-  }, $('modelBtn'));
+  }, $('titleBtn'));
 }
 
 // ─── Shell: chats, sidebar, composer ────────────────────────────────────────
@@ -1992,53 +2048,61 @@ function greeting() {
   return 'Up late? What can I do?';
 }
 const SUGGEST = {
-  chat: [['Explain a concept simply', 'Explain how HTTPS keeps a connection private, simply'], ['Draft a reply', 'Help me write a short, friendly reply to this message: '], ['What is in my inbox?', 'What needs a reply in my email today?']],
-  code: [['Fix a bug', 'Find and fix the bug where '], ['Review recent changes', 'Review the latest changes in this project and point out anything risky'], ['Add a feature', 'Add ']],
+  chat: [['Explain a concept', 'simply, with an example', 'Explain how HTTPS keeps a connection private, simply, with an example'], ['Draft a reply', 'short and friendly', 'Help me write a short, friendly reply to this message: '], ['Check my email', 'what needs a reply today', 'What needs a reply in my email today?'], ['Build a website', 'for my side project', 'Make a landing page website for ']],
+  code: [['Fix a bug', 'find it and fix it', 'Find and fix the bug where '], ['Review changes', 'point out anything risky', 'Review the latest changes in this project and point out anything risky'], ['Add a feature', 'plan it, then build it', 'Add '], ['Run the tests', 'and fix what fails', 'Run the tests and fix anything that fails']],
 };
 function renderTitle() {
   const c = state.current && chatMeta(state.current);
-  const code = state.ui.mode === 'code';
-  $('topTitle').textContent = (c && c.title) || (code ? 'Code' : 'Chat');
   $('greeting').textContent = greeting();
-  const p = currentProject();
-  $('emptySub').innerHTML = code ? (p ? `Working in <strong>${esc(p.name)}</strong>` : 'Pick a project and say what to change.') : 'Type <kbd>/</kbd> for commands';
+  $('chatMoreBtn').classList.toggle('hidden', !c);
+  const code = effMode() === 'code';
+  const p = code ? currentProject() : null;
+  $('emptySub').innerHTML = p ? `Working in <strong>${esc(p.name)}</strong>` : '';
   const list = SUGGEST[code ? 'code' : 'chat'];
-  $('suggest').innerHTML = list.map(([t, fill], i) => `<button type="button" data-i="${i}">${ICONS.arrow}<span>${esc(t)}</span></button>`).join('');
+  $('suggest').innerHTML = list.map(([t, sub], i) => `<button type="button" data-i="${i}"><strong>${esc(t)}</strong><span>${esc(sub)}</span></button>`).join('');
   $('suggest').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
     const i = $('input');
-    i.value = list[Number(b.dataset.i)][1];
+    i.value = list[Number(b.dataset.i)][2];
     i.dispatchEvent(new Event('input'));
     i.focus();
     i.setSelectionRange(i.value.length, i.value.length);
   }));
 }
 function renderComposer() {
-  const code = state.ui.mode === 'code';
-  document.querySelectorAll('#modeSwitch button').forEach((b) => b.classList.toggle('on', b.dataset.uiMode === state.ui.mode));
-  $('ctxRow').classList.toggle('hidden', !code);
-  $('codeModeChip').classList.toggle('hidden', !code);
-  $('input').placeholder = code ? 'Describe a change, or ask about the code' : 'Ask Codeply anything';
   const c = state.current && chatMeta(state.current);
-  const p = currentProject();
-  $('projectChipName').textContent = p ? p.name : 'Choose project';
-  $('projectChip').querySelector('svg').outerHTML = (c && c.cloud) || (p && !p.cwd) ? ICONS.cloud : ICONS.folder;
+  state.ui.mode = effMode();
+  const code = state.ui.mode === 'code';
+  const p = code ? currentProject() : null;
+  $('topTitle').textContent = modelLabel();
+  $('ctxRow').classList.toggle('hidden', !p);
+  if (p) {
+    const cloud = (c && c.cloud) || !p.cwd;
+    $('projectChipName').textContent = p.name;
+    $('projectChipIco').innerHTML = cloud ? ICONS.cloud : ICONS.folder;
+    $('pcDot').className = `ctx-dot${cloud ? ' hidden' : relay.pcId ? ' on' : ''}`;
+    $('pcDot').title = relay.pcId ? 'PC online' : 'PC offline';
+    $('projectChipX').classList.toggle('hidden', !!(c && c.kind === 'code'));
+  }
+  $('codeModeChip').classList.toggle('hidden', !p || state.ui.codeMode === 'Build');
   $('codeModeName').textContent = state.ui.codeMode;
-  $('pcStatus').classList.toggle('hidden', !!(c && c.cloud) || !!(p && !p.cwd));
-  $('modelName').textContent = modelLabel();
+  $('input').placeholder = p ? `Ask or tell Codeply what to change` : 'Ask anything';
   const busy = !!(c && state.busy.has(c.id));
   $('sendIcon').classList.toggle('hidden', busy);
   $('stopIcon').classList.toggle('hidden', !busy);
   $('sendBtn').setAttribute('aria-label', busy ? 'Stop' : 'Send');
-  $('composer').classList.toggle('empty-input', !busy && !$('input').value.trim() && !attFiles.length);
+  const empty = !busy && !$('input').value.trim() && !attFiles.length;
+  $('composer').classList.toggle('empty-input', empty);
+  $('suggest').classList.toggle('hidden', !!c || !empty);
 }
+/** "Code": attach a project to the composer; "Chat": no project. */
 function setUiMode(mode) {
-  if (mode === state.ui.mode) return;
-  const c = state.current && chatMeta(state.current);
-  state.ui.mode = mode;
-  saveUi();
-  if (c && c.kind !== mode) newChat();
-  renderTitle();
-  renderComposer();
+  if (mode === 'code') {
+    if (state.ui.useProject && projectByKey(state.ui.projectKey)) return;
+    if (projectByKey(state.ui.projectKey)) { state.ui.useProject = true; saveUi(); renderTitle(); renderComposer(); return; }
+    openProjectPicker({ anchor: $('plusBtn') });
+    return;
+  }
+  detachProject();
 }
 function newChat() {
   state.current = null;
@@ -2055,11 +2119,7 @@ function openChat(id, { keepMode = false } = {}) {
   if (!c) return;
   state.current = id;
   try { localStorage.setItem('craft-phone-current', id); } catch {}
-  if (!keepMode) {
-    state.ui.mode = c.kind;
-    if (c.project && c.project.key) state.ui.projectKey = c.project.key;
-    saveUi();
-  }
+  if (!keepMode && c.project && c.project.key && c.project.key !== 'new') { state.ui.projectKey = c.project.key; saveUi(); }
   renderFeed({ force: true });
   renderChatList();
   if (c.pcSessionId && !c.cloud && relay.pcId && !state.busy.has(c.id)) refreshPcSession(c).catch(() => {});
@@ -2271,17 +2331,16 @@ $('otpBackBtn').addEventListener('click', () => signinStep('login'));
 // (.codeply/commands/*.md, listed by the PC) are sent to the PC as typed.
 const SLASH = [
   { name: '/new', desc: 'Start a new chat', icon: 'compose', run: () => newChat() },
-  { name: '/chat', desc: 'Switch to Chat', icon: 'chat', run: () => setUiMode('chat') },
-  { name: '/code', desc: 'Switch to Code', icon: 'code', run: () => setUiMode('code') },
-  { name: '/build', desc: 'Code mode: make the changes', icon: 'build', run: () => setCodeMode('Build') },
-  { name: '/plan', desc: 'Code mode: write a plan first', icon: 'plan', run: () => setCodeMode('Plan') },
-  { name: '/ask', desc: 'Code mode: answer questions, no edits', icon: 'ask', run: () => setCodeMode('Ask') },
+  { name: '/project', desc: 'Work in a project on your PC or GitHub', icon: 'folder', run: () => openProjectPicker({ anchor: $('plusBtn') }) },
+  { name: '/chat', desc: 'Just chat, no project', icon: 'chat', run: () => detachProject() },
+  { name: '/build', desc: 'The agent makes the changes', icon: 'build', run: () => setCodeMode('Build') },
+  { name: '/plan', desc: 'The agent writes a plan first', icon: 'plan', run: () => setCodeMode('Plan') },
+  { name: '/ask', desc: 'The agent answers, no edits', icon: 'ask', run: () => setCodeMode('Ask') },
   { name: '/goal', desc: 'Keep working until the goal is done and verified', icon: 'target', code: true, insert: '/goal ' },
-  { name: '/project', desc: 'Choose a project', icon: 'folder', run: () => { if (state.ui.mode !== 'code') setUiMode('code'); openProjectPicker({ anchor: $('projectChip') }); } },
   { name: '/model', desc: 'Choose a model', icon: 'spark', run: () => openModelPicker() },
-  { name: '/attach', desc: 'Attach photos, PDFs, text or code', icon: 'attach', run: () => pickFiles() },
-  { name: '/access', desc: 'Ask first or full access', icon: 'shield', run: () => { if (state.ui.mode !== 'code') setUiMode('code'); openPlus(); } },
-  { name: '/cloud', desc: 'Set up a cloud environment', icon: 'cloud', run: () => openSetup({}) },
+  { name: '/attach', desc: 'Photos, PDFs, text or code', icon: 'attach', run: () => pickFiles() },
+  { name: '/access', desc: 'Ask first or full access on your PC', icon: 'shield', run: () => openAccess('pc') },
+  { name: '/repo', desc: 'Connect a GitHub repo for the cloud', icon: 'github', run: () => openSetup({}) },
   { name: '/calls', desc: 'Talk to your bots', icon: 'phone', run: () => $('drawerCalls').click() },
   { name: '/stop', desc: 'Stop the current run', icon: 'stop', run: () => { const c = state.current && chatMeta(state.current); if (c && state.busy.has(c.id)) stopCurrent(c); } },
   { name: '/theme', desc: 'System, light or dark', icon: 'system', run: () => { const order = ['system', 'light', 'dark']; applyTheme(order[(order.indexOf(themeChoice()) + 1) % 3]); } },
@@ -2289,7 +2348,7 @@ const SLASH = [
 const slash = { open: false, list: [], active: 0, custom: new Map() };
 function projectCommands() {
   const p = currentProject();
-  if (state.ui.mode !== 'code' || !p || !p.cwd || !relay.pcId) return [];
+  if (effMode() !== 'code' || !p || !p.cwd || !relay.pcId) return [];
   const hit = slash.custom.get(p.cwd);
   if (!hit || Date.now() - hit.at > 30000) {
     slash.custom.set(p.cwd, { at: Date.now(), list: (hit && hit.list) || [] });
@@ -2333,7 +2392,11 @@ function insertCommand(text) {
 function runSlash(cmd) {
   closeSlash();
   if (!cmd) return;
-  if (cmd.insert) { if (cmd.code && state.ui.mode !== 'code') setUiMode('code'); insertCommand(cmd.insert); return; }
+  if (cmd.insert) {
+    if (cmd.code && effMode() !== 'code' && !projectByKey(state.ui.projectKey)) { clearInput(); openProjectPicker({ anchor: $('plusBtn') }); return; }
+    if (cmd.code && effMode() !== 'code') { state.ui.useProject = true; saveUi(); renderComposer(); }
+    insertCommand(cmd.insert); return;
+  }
   clearInput();
   $('composer').classList.add('empty-input');
   cmd.run();
@@ -2358,7 +2421,7 @@ $('input').addEventListener('blur', () => setTimeout(() => { if (document.active
 $('composer').addEventListener('submit', onSubmit);
 $('input').addEventListener('input', (e) => {
   e.target.style.height = 'auto'; e.target.style.height = `${Math.min(e.target.scrollHeight, 140)}px`;
-  $('composer').classList.toggle('empty-input', !e.target.value.trim() && !attFiles.length && !$('stopIcon').offsetParent);
+  renderComposer();
   renderSlash();
 });
 $('input').addEventListener('keydown', (e) => {
@@ -2366,17 +2429,20 @@ $('input').addEventListener('keydown', (e) => {
   // Enter sends on a desktop keyboard; phones keep Enter for new lines.
   if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) { e.preventDefault(); $('composer').requestSubmit(); }
 });
-document.querySelectorAll('#modeSwitch button').forEach((b) => b.addEventListener('click', () => setUiMode(b.dataset.uiMode)));
 $('plusBtn').addEventListener('click', openPlus);
-$('projectChip').addEventListener('click', () => openProjectPicker({ anchor: $('projectChip') }));
-$('codeModeChip').addEventListener('click', () => openCodeModePicker($('codeModeChip')));
-$('titleBtn').addEventListener('click', openTitleMenu);
-$('modelBtn').addEventListener('click', openModelPicker);
+$('projectChipBtn').addEventListener('click', () => openProjectPicker({ anchor: $('projectChipBtn') }));
+$('projectChipX').addEventListener('click', detachProject);
+$('codeModeBtn').addEventListener('click', () => openCodeModePicker($('codeModeBtn')));
+$('codeModeX').addEventListener('click', () => setCodeMode('Build'));
+$('titleBtn').addEventListener('click', openModelPicker);
+$('chatMoreBtn').addEventListener('click', openChatOptions);
+$('voiceBtn').addEventListener('click', () => $('drawerCalls').click());
 $('menuBtn').addEventListener('click', openDrawer);
 $('drawerBackdrop').addEventListener('click', closeDrawer);
 $('newChatTopBtn').addEventListener('click', newChat);
-$('drawerNewChat').addEventListener('click', () => { closeDrawer(); state.ui.mode = 'chat'; saveUi(); newChat(); });
-$('drawerCode').addEventListener('click', () => { closeDrawer(); state.ui.mode = 'code'; saveUi(); newChat(); });
+$('drawerNewChat').addEventListener('click', () => { closeDrawer(); newChat(); });
+$('drawerHome').addEventListener('click', () => { closeDrawer(); newChat(); });
+$('drawerProjects').addEventListener('click', () => { closeDrawer(); openProjectPicker(); });
 $('searchInput').addEventListener('input', renderChatList);
 $('themeBtn').addEventListener('click', () => { const order = ['system', 'light', 'dark']; applyTheme(order[(order.indexOf(themeChoice()) + 1) % 3]); });
 $('signOutBtn').addEventListener('click', signOut);
