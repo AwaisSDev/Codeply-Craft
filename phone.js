@@ -198,7 +198,7 @@ function applyTheme(choice) {
 function syncTheme() {
   const c = themeChoice();
   const dark = c === 'dark' || (c === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  $('themeColorMeta').content = dark ? '#0d0d0d' : '#ffffff';
+  if ($('themeColorMeta')) $('themeColorMeta').content = dark ? '#0d0d0d' : '#ffffff';
   $('themeBtn').innerHTML = ICONS[c];
   $('themeBtn').title = c === 'system' ? 'Theme: match the phone' : `Theme: ${c}`;
 }
@@ -1962,16 +1962,19 @@ function openPick(html, bind, anchor = null) {
   if (bind) bind(pop);
 }
 function placePop(pop, anchor) {
-  const r = anchor.getBoundingClientRect();
-  const vw = window.innerWidth;
-  const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  // Measured against the menu layer, so it also lines up when the app sits inside a frame.
+  const box = pop.parentElement.getBoundingClientRect();
+  const a = anchor.getBoundingClientRect();
+  const r = { top: a.top - box.top, bottom: a.bottom - box.top, left: a.left - box.left, right: a.right - box.left, height: a.height, width: a.width };
+  const vw = box.width;
+  const vh = Math.min(box.height, window.visualViewport ? window.visualViewport.height - box.top : box.height);
   const w = Math.min(320, vw - 24);
   const above = r.top + r.height / 2 > vh / 2;
   let left = r.left;
   if (left + w > vw - 12) left = Math.max(12, r.right - w);
   pop.style.width = `${w}px`;
   pop.style.left = `${Math.max(12, left)}px`;
-  if (above) { pop.style.bottom = `${window.innerHeight - r.top + 6}px`; pop.style.maxHeight = `${r.top - 18}px`; pop.style.setProperty('--pop-dy', '6px'); }
+  if (above) { pop.style.bottom = `${box.height - r.top + 6}px`; pop.style.maxHeight = `${r.top - 18}px`; pop.style.setProperty('--pop-dy', '6px'); }
   else { pop.style.top = `${r.bottom + 6}px`; pop.style.maxHeight = `${vh - r.bottom - 18}px`; pop.style.setProperty('--pop-dy', '-6px'); }
   const origin = `${above ? 'bottom' : 'top'} ${left + w / 2 < r.left + r.width / 2 ? 'right' : 'left'}`;
   pop.style.transformOrigin = origin;
