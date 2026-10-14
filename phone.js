@@ -2056,8 +2056,7 @@ function openPlus() {
     ${cloudEnv ? pickRow({ icon: cperm === 'full' ? ICONS.bolt : ICONS.shield, title: cperm === 'full' ? 'Full access in the cloud' : 'Ask first in the cloud', hint: cperm === 'full' ? 'Everything runs without asking' : 'Deploys and risky steps wait for your OK', attrs: 'data-act="caccess"' }) : ''}` : ''}
     <div class="pick-divider"></div>
     ${pickRow({ icon: ICONS.github, title: 'Connect a GitHub repo', hint: 'Work with your PC off', attrs: 'data-act="setup"' })}
-    ${pickRow({ icon: ICONS.phone, title: 'Calls', hint: 'Talk to your bots', attrs: 'data-act="calls"' })}
-    ${pickRow({ icon: ICONS.slash, title: 'All commands', attrs: 'data-act="commands"', kbd: '/' })}`, (root) => {
+    ${pickRow({ icon: ICONS.phone, title: 'Calls', hint: 'Talk to your bots', attrs: 'data-act="calls"' })}`, (root) => {
     const act = (name, fn) => { const n = root.querySelector(`[data-act="${name}"]`); if (n) n.addEventListener('click', () => { closePick(); fn(); }); };
     act('camera', () => pickFiles('camera'));
     act('photos', () => pickFiles('photos'));
@@ -2585,7 +2584,6 @@ $('newChatTopBtn').addEventListener('click', newChat);
 $('drawerNewChat').addEventListener('click', () => { closeDrawer(); newChat(); });
 $('drawerProjects').addEventListener('click', () => { closeDrawer(); openProjectPicker(); });
 $('drawerCloud').addEventListener('click', () => { closeDrawer(); openSetup({}); });
-$('drawerCommands').addEventListener('click', () => { closeDrawer(); startSlash(); });
 $('searchToggle').addEventListener('click', () => toggleSearch($('drawerSearch').classList.contains('hidden')));
 $('settingsBtn').addEventListener('click', openSettings);
 $('searchInput').addEventListener('input', renderChatList);
