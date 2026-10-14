@@ -251,6 +251,32 @@ div.top-title { display: block; text-align: center; line-height: 40px; white-spa
 .question .q-skip { align-self: flex-start; color: var(--muted); font-size: 13px; }
 .question .q-answer { color: var(--muted); font-size: 14px; }
 
+/* Steps the agent took, folded into one row (open it to see each one). */
+.steps-group { font-size: 14px; color: var(--muted); }
+.steps-group > summary { list-style: none; display: inline-flex; align-items: center; gap: 8px; min-height: 30px; max-width: 100%; cursor: pointer; color: var(--muted); }
+.steps-group > summary::-webkit-details-marker { display: none; }
+.steps-group > summary:active { opacity: .6; }
+.steps-group .sg-ico:empty { display: none; }
+.steps-group .sg-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.steps-group.live .sg-text { color: var(--text); background: linear-gradient(90deg, var(--muted) 0%, var(--text) 50%, var(--muted) 100%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 1.6s linear infinite; }
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.steps-group > summary > .chev { flex: none; transition: transform .18s var(--ease); color: var(--faint); }
+.steps-group[open] > summary > .chev { transform: rotate(90deg); }
+.steps-group.has-failed .sg-text { color: var(--muted); }
+.sg-body { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 2px 6px; padding-left: 14px; border-left: 1px solid var(--border-strong); }
+.sg-body .step.tool + .step.tool { margin-top: 0; }
+.sg-body .msg.note { font-size: 13px; }
+
+.verify { font-size: 13.5px; color: var(--muted); }
+.verify > summary { list-style: none; display: inline-flex; align-items: center; gap: 7px; min-height: 28px; cursor: pointer; }
+.verify > summary::-webkit-details-marker { display: none; }
+.verify > summary > .chev { color: var(--faint); transition: transform .18s var(--ease); }
+.verify[open] > summary > .chev { transform: rotate(90deg); }
+.verify-mark { width: 16px; height: 16px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex: none; }
+.verify.ok .verify-mark { background: color-mix(in srgb, var(--add) 22%, transparent); color: var(--add); }
+.verify.warn .verify-mark { background: color-mix(in srgb, var(--del) 22%, transparent); color: var(--del); }
+.verify .summary-card { margin-top: 6px; }
+
 /* ─── Drawer ─── */
 .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 40; opacity: 0; transition: opacity .2s; }
 .backdrop.open { opacity: 1; }

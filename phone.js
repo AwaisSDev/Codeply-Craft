@@ -502,7 +502,104 @@ function scrollToBottom() {
   requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; }); });
 }
 const nearBottom = () => { const el = $('scroll'); return el.scrollHeight - el.scrollTop - el.clientHeight < 160; };
-function append(node) { showFeed(true); feed().append(node); return node; }
+function append(node) {
+  showFeed(true);
+  const f = feed();
+  const w = f.querySelector(':scope > .pc-working');
+  if (w) w.remove();
+  if (isStepNode(node)) addToSteps(f, node);
+  else {
+    const prev = f.lastElementChild;
+    f.append(node);
+    if (prev && prev.classList.contains('steps-group') && prev.classList.contains('live')) updateStepsGroup(prev);
+  }
+  return node;
+}
+
+// ─── Steps fold into one row ────────────────────────────────────────────────
+// What the agent did between two messages (thinking, files read, edits,
+// commands) collapses into a single "Read 2 files, edited 1, ran 1 command"
+// row you can open, so the chat reads like a conversation, not a log.
+const isStepNode = (n) => !!(n && n.nodeType === 1 && (n.matches('details.step') || n.matches('.msg.note.role')));
+function stepsGroup() {
+  const g = el('details', 'steps-group');
+  g.innerHTML = `<summary><span class="sg-ico"></span><span class="sg-text"></span>${ICONS.chev}</summary><div class="sg-body"></div>`;
+  return g;
+}
+function addToSteps(container, node) {
+  let last = container.lastElementChild;
+  if (!last || !last.classList.contains('steps-group')) { last = stepsGroup(); container.append(last); }
+  last.querySelector('.sg-body').append(node);
+  updateStepsGroup(last);
+}
+/** Wraps every run of loose steps in a group (after a full redraw). */
+function groupSteps(container) {
+  let run = null;
+  for (const n of [...container.children]) {
+    if (isStepNode(n)) {
+      if (!run) { run = stepsGroup(); n.before(run); }
+      run.querySelector('.sg-body').append(n);
+    } else if (run && !n.classList.contains('working')) { updateStepsGroup(run); run = null; }
+  }
+  if (run) updateStepsGroup(run);
+}
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+function stepsSummary(steps) {
+  const count = {}; let failed = 0; let thought = false; let other = 0;
+  for (const st of steps) {
+    if (st.classList.contains('thinking')) { thought = true; continue; }
+    if (!st.matches('details.step')) continue;
+    if (st.classList.contains('failed')) failed++;
+    const name = st.dataset.tool || '';
+    const k = ['read_file', 'view_images'].includes(name) ? 'read' : ['edit_file', 'write_file', 'apply_patch'].includes(name) ? 'edit'
+      : name === 'run' ? 'run' : ['search', 'list_dir', 'design_reference_search', 'list_skills'].includes(name) ? 'search' : 'other';
+    if (k === 'other') other++; else count[k] = (count[k] || 0) + 1;
+  }
+  const parts = [];
+  if (count.read) parts.push(`read ${plural(count.read, 'file', 'files')}`);
+  if (count.search) parts.push(count.search === 1 ? 'searched' : `searched ${count.search} times`);
+  if (count.edit) parts.push(`edited ${plural(count.edit, 'file', 'files')}`);
+  if (count.run) parts.push(`ran ${plural(count.run, 'command', 'commands')}`);
+  if (other) parts.push(`used ${plural(other, 'tool', 'tools')}`);
+  let text = parts.join(', ');
+  if (!text) text = thought ? 'thought it through' : 'worked on it';
+  text = text[0].toUpperCase() + text.slice(1);
+  return { text, failed };
+}
+/** Live while it is the newest thing in a running chat: a spinner and what is happening now. */
+function updateStepsGroup(g) {
+  const steps = [...g.querySelector('.sg-body').children];
+  const c = state.current && chatMeta(state.current);
+  const live = !!(c && state.busy.has(c.id)) && g === g.parentElement.lastElementChild;
+  g.classList.toggle('live', live);
+  let text;
+  if (live) {
+    const cur = steps[steps.length - 1];
+    const verb = cur && cur.querySelector('.step-verb');
+    const label = cur && cur.querySelector('.step-label');
+    text = verb ? `${verb.textContent} ${label ? label.textContent : ''}`.trim() : 'Thinking';
+  } else {
+    const sm = stepsSummary(steps);
+    text = sm.text + (sm.failed ? ` · ${sm.failed} failed` : '');
+    g.classList.toggle('has-failed', !!sm.failed);
+  }
+  g.querySelector('.sg-text').textContent = text;
+  g.querySelector('.sg-ico').innerHTML = live ? '<span class="spinner"></span>' : '';
+}
+/** After a run starts or ends: refresh the newest group, and show "Working" before the first step arrives. */
+function refreshLiveSteps() {
+  const f = feed();
+  if (!f) return;
+  const c = state.current && chatMeta(state.current);
+  const busy = !!(c && state.busy.has(c.id) && c.kind === 'code' && !c.cloud);
+  const groups = f.querySelectorAll(':scope > .steps-group');
+  groups.forEach(updateStepsGroup);
+  const w = f.querySelector(':scope > .pc-working');
+  const last = f.lastElementChild;
+  const needs = busy && !!last && last.matches('.msg.user, .msg-files, .pc-working');
+  if (needs && !w) f.append(el('div', 'working pc-working', '<span class="spinner"></span><span>Thinking...</span>'));
+  else if (!needs && w) w.remove();
+}
 function el(tag, cls, html) { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; }
 
 function addMsg(kind, text, images) {
@@ -557,7 +654,7 @@ function toolHtml(t, extraBody = '') {
   else if (Object.keys(a).length && !(t.name === 'browser_check' && extraBody)) b = `<pre class="code">${esc(clip(Object.entries(a).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join('\n'), 20))}</pre>`;
   b += extraBody;
   const label = t.label || a.path || a.command || a.pattern || a.url || '';
-  return `<details class="step tool${failed ? ' failed' : ''}${b ? '' : ' no-body'}"${extraBody ? ' open' : ''}><summary>${ICONS.chev}`
+  return `<details class="step tool${failed ? ' failed' : ''}${b ? '' : ' no-body'}" data-tool="${esc(t.name || '')}"${extraBody ? ' open' : ''}><summary>${ICONS.chev}`
     + `<span class="step-verb">${esc(TOOL_VERB[t.name] || t.name || 'Ran')}</span><span class="step-label">${esc(label)}</span>`
     + `${stats.length ? `<span class="step-stats">${stats.join('')}</span>` : ''}</summary><div class="step-body">${b}</div></details>`;
 }
@@ -569,9 +666,19 @@ function summaryHtml(d) {
     const passed = c.ok && (c.exitCode === undefined || c.exitCode === null || c.exitCode === 0);
     return `<div class="check ${passed ? 'pass' : 'fail'}">${passed ? '&#10003;' : '&#10007;'} ${esc(c.tool === 'browser_check' ? `Opened ${c.label}` : c.label)}${typeof c.exitCode === 'number' ? ` <span>exit ${c.exitCode}</span>` : ''}</div>`;
   };
-  return `<div class="summary-card"><div class="summary-head">What actually happened</div>`
+  // One quiet line under the answer; open it for the files and checks.
+  const passed = checks.filter((c) => c.ok && (c.exitCode === undefined || c.exitCode === null || c.exitCode === 0)).length;
+  const failed = checks.length - passed;
+  const unverified = (d.unverified || []).length;
+  const bits = [];
+  if (files.length) bits.push(`${files.length} file${files.length === 1 ? '' : 's'} changed`);
+  if (passed) bits.push(`${passed} check${passed === 1 ? '' : 's'} passed`);
+  if (failed) bits.push(`${failed} failed`);
+  if (unverified) bits.push(`${unverified} not verified`);
+  const ok = !failed && !unverified;
+  return `<details class="verify${ok ? ' ok' : ' warn'}"><summary><span class="verify-mark">${ok ? '&#10003;' : '!'}</span><span>${esc(bits.join(' · '))}</span>${ICONS.chev}</summary><div class="summary-card"><div class="summary-head">What actually happened</div>`
     + `${files.length ? `<div class="summary-files">${files.map((f) => `<span>${esc(f)}</span>`).join('')}</div>` : ''}${checks.map(line).join('')}`
-    + `${(d.unverified || []).length ? `<div class="check fail">Not verified: ${d.unverified.map(esc).join(', ')}</div>` : ''}</div>`;
+    + `${unverified ? `<div class="check fail">Not verified: ${d.unverified.map(esc).join(', ')}</div>` : ''}</div></details>`;
 }
 function fileListHtml(list) {
   return `<ul class="file-list">${list.slice(0, 20).map((f) => `<li><code>${esc(f.file)}</code>${f.added != null ? `<span class="add">+${f.added}</span><span class="del">-${f.removed}</span>` : ''}</li>`).join('')}${list.length > 20 ? `<li><code>and ${list.length - 20} more</code></li>` : ''}</ul>`;
@@ -604,7 +711,7 @@ function addThinking(text, label) { streamEl = null; return append(el('div', nul
 function addSummary(d) { const h = summaryHtml(d); if (h) append(el('div', null, h).firstElementChild); }
 function addRole(d) {
   const role = d.tagline === 'role' ? d.name : String(d.tagline || d.name || '').replace(/ Specialist$/i, '');
-  append(el('div', 'msg note', `Working as <strong>${esc(role || 'General')}</strong>`));
+  append(el('div', 'msg note role', `Working as <strong>${esc(role || 'General')}</strong>`));
 }
 
 const checkpointEls = new Map();
@@ -723,6 +830,8 @@ function renderFeed({ force = false } = {}) {
     if (c.pcSessionId && !(b.pcItems || []).length && !relay.pcId && !(b.tasks || []).length) addMsg('note', 'This chat lives on your PC. It shows up here once the PC is online.');
     if ((b.tasks || []).length) f.insertAdjacentHTML('beforeend', b.tasks.map(taskHtml).join(''));
   }
+  groupSteps(f);
+  refreshLiveSteps();
   showFeed(f.children.length > 0);
   f.querySelectorAll('details').forEach((d, i) => { d.dataset.k = String(i); if (open.has(d.dataset.k)) d.open = true; });
   hydrateShots(c);
@@ -2090,6 +2199,7 @@ function renderComposer() {
   $('sendIcon').classList.toggle('hidden', busy);
   $('stopIcon').classList.toggle('hidden', !busy);
   $('sendBtn').setAttribute('aria-label', busy ? 'Stop' : 'Send');
+  refreshLiveSteps();
   const empty = !busy && !$('input').value.trim() && !attFiles.length;
   $('composer').classList.toggle('empty-input', empty);
   $('suggest').classList.toggle('hidden', !!c || !empty);
