@@ -234,7 +234,7 @@ async function kokoroSpeak(text, voiceId) {
  * Audio for one sentence: { mime, data: Buffer }. The bot's own voice decides
  * the engine; with no voice picked, the default engine picks a stable one.
  */
-async function speak(text, { engine, voice, botId, deepgramKey, serverToken } = {}) {
+async function speak(text, { engine, voice, botId, deepgramKey, serverToken, offline = true } = {}) {
   text = String(text || '').trim().slice(0, 600);
   if (!text) throw new Error('Nothing to say.');
   const picked = engineOf(voice);
@@ -255,6 +255,8 @@ async function speak(text, { engine, voice, botId, deepgramKey, serverToken } = 
   if (use !== 'kokoro') {
     const id = EDGE_VOICES.some((v) => v.id === voice) ? voice : defaultVoice(EDGE_VOICES, botId);
     try { return { mime: 'audio/mpeg', data: await edgeSpeak(text, id) }; } catch (e) {
+      // offline: false (voice mode) never falls back to Kokoro, which is slow to load and heavy on the CPU.
+      if (!offline) throw e;
       console.warn('[voice] Edge failed, using Kokoro:', e.message);
     }
   }

@@ -1279,7 +1279,7 @@ function hazeField(h) {
   return {
     haze: {
       product: h.product || 'craft',
-      surface: 'agent',
+      surface: h.surface || 'agent', // 'voice': Haze's fast path for live voice (Haiku, no thinking)
       turnId: h.turnId,
       continuation: (h.step || 0) > 0,
       historyCount: h.historyCount || 0,
@@ -1473,4 +1473,18 @@ async function chatJson(messages, opts = {}) {
   return { success: true, json: parsed, usage: r.data.usage || {}, modelUsed: r.modelUsed };
 }
 
-module.exports = { chatResearch, chat, chatJson, isRateLimitError, listOllamaModels, testModel, chatCompletionsUrl };
+/**
+ * Gemma 4 31B on Ollama Cloud, which can see images: what voice mode uses when
+ * Haze 2 is on its free tier (the day's Claude allowance is used up), since
+ * Haze's free model and the hosted proxy are text only.
+ */
+async function chatVision(messages, opts = {}) {
+  const cfg = getConfig();
+  const keys = { apiKey: cfg.ollama.apiKey, apiKeyFallback: cfg.ollama.apiKeyFallback };
+  if (!keys.apiKey && !keys.apiKeyFallback) return { success: false, error: 'This build has no Gemma key for screenshots.' };
+  const r = await chatViaOllama(messages, opts, { ollama: { ...AUTO_MODEL, ...keys, numCtx: null } });
+  if (r && r.success && !r.modelUsed) r.modelUsed = AUTO_MODEL.model;
+  return r;
+}
+
+module.exports = { chatResearch, chat, chatJson, chatVision, isRateLimitError, listOllamaModels, testModel, chatCompletionsUrl };

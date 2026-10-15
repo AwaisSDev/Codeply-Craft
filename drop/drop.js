@@ -391,6 +391,13 @@
     syncSend();
   });
   api.onShown(() => { if (window.applyDropTheme) window.applyDropTheme(); loadState(); setTimeout(() => input.focus(), 30); });
+  // Voice mode: "Craft, do X" arrives as a task in a fresh chat; "Open in Drop" just fills the box.
+  api.onVoiceText(async ({ text, run }) => {
+    if (!text) return;
+    if (run && (S.running || S.sending)) newChat();
+    input.value = text; autosize(); syncSend();
+    if (run) { await loadState(); send(); } else input.focus();
+  });
 
   // ─── sending ──────────────────────────────────────────────────────────────
   async function send() {

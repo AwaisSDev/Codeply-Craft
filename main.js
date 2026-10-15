@@ -10,6 +10,9 @@
  * chrome, chat session persistence, and the approval bridge between the
  * agent's ctx.approve() callback and the renderer's Accept/Reject UI.
  */
+// A build check, not the app: `CRAFT_VOICE_SELFTEST=<report.json>` runs the
+// voice self-test (voice/selftest.js) and exits, before anything else starts.
+if (process.env.CRAFT_VOICE_SELFTEST) { require('./voice/selftest'); return; }
 const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, Tray, Menu, nativeImage, powerSaveBlocker, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -414,6 +417,8 @@ function buildTrayMenu() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Open Codeply Craft', click: showWindow },
     { label: key ? `Open the drop (${key})` : 'Open the drop', click: () => drop.show() },
+    ...(voiceMode.available() ? [{ label: key ? `Spoken answers (hold ${key} to talk)` : 'Spoken answers', type: 'checkbox', checked: !voiceMode.isMuted(), click: (item) => voiceMode.setMuted(!item.checked) }] : []),
+    ...(voiceMode.available() && voiceMode.canAct() ? [{ label: 'Voice can click and type for me', type: 'checkbox', checked: voiceMode.actionsOn(), click: (item) => voiceMode.setActions(item.checked) }] : []),
     { type: 'separator' },
     ...(app.isPackaged ? [{ label: process.platform === 'darwin' ? 'Open at login' : 'Start with Windows', type: 'checkbox', checked: startsWithSystem(), click: (item) => setStartWithSystem(item.checked) }] : []),
     {
@@ -3447,7 +3452,20 @@ function initDrop() {
       if (win.webContents.isLoading()) win.webContents.once('did-finish-load', () => setTimeout(go, 600)); else go();
     },
   });
+  // Voice mode: hold the drop's key to talk (see voice-mode.js).
+  voiceMode.init({
+    getSetting: (k) => store[k], setSetting: (k, v) => { store[k] = v; saveStore(); },
+    loadEngine, route: currentRoute, ai: () => aiLib, signedIn: getLoggedInUserId,
+    voiceTask: (text) => drop.voiceText(text, true),
+    openDrop: (text) => drop.voiceText(text, false),
+    hotkeyLabel: () => drop.hotkeyLabel(),
+    accessToken: () => (authLib ? authLib.getAccessToken() : Promise.resolve('')),
+    cliDir: CLI_DIR,
+  });
+  drop.setPressHandler(voiceMode.press);
+  buildTrayMenu();
 }
+const voiceMode = require('./voice-mode');
 
 // Craft Cloud: runs on GitHub Actions while this PC is off (see cloud-desktop.js).
 const cloudDesktop = require('./cloud-desktop');
@@ -3742,6 +3760,7 @@ app.on('quit', () => {
 app.on('before-quit', () => {
   isQuitting = true;
   drop.dispose();
+  voiceMode.dispose();
   for (const client of remoteEventClients) { try { client.end(); } catch {} }
   remoteEventClients.clear();
   if (remoteServer) remoteServer.close();

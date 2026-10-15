@@ -1,0 +1,90 @@
+name: Voice self-test
+
+# Builds the app the way release.yml does (native modules rebuilt, codeply-cli
+# next to the archive) and runs voice/selftest.js inside the built app on
+# Windows and macOS. No signing and no secrets: the test needs neither.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'voice/**'
+      - 'voice-mode.js'
+      - 'crew/voice.js'
+      - 'drop.js'
+      - 'drop/**'
+      - 'main.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/voice-selftest.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            build: --win --dir --x64
+          - name: macOS arm64
+            os: macos-latest
+            build: --mac --dir --arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build the app (unpacked)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder ${{ matrix.build }} --publish never
+
+      - name: Run the voice self-test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:CRAFT_VOICE_SELFTEST = "$PWD\voice-report.json"
+          $p = Start-Process -FilePath "dist\win-unpacked\Codeply Craft.exe" -PassThru -Wait
+          if (Test-Path voice-report.json) { Get-Content voice-report.json } else { Write-Host 'No report was written.' }
+          exit $p.ExitCode
+
+      - name: Run the voice self-test (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          exe=$(ls -d dist/mac*/*.app/Contents/MacOS/* | head -1)
+          echo "Running $exe"
+          CRAFT_VOICE_SELFTEST="$PWD/voice-report.json" "$exe"
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            if (!fs.existsSync("voice-report.json")) { fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, "### ${{ matrix.name }}: no report\n"); process.exit(0); }
+            const r = JSON.parse(fs.readFileSync("voice-report.json", "utf8"));
+            const cell = (s) => String(s).replace(/\|/g, "/").replace(/\n/g, " ");
+            let md = `### ${{ matrix.name }}: ${r.ok ? "passed" : "FAILED"} (Electron ${r.electron}, packaged: ${r.packaged})\n\n| | Check | ms | Detail |\n|---|---|---|---|\n`;
+            for (const x of r.results) md += `| ${x.ok ? "pass" : x.warnOnly ? "warn" : "FAIL"} | ${cell(x.name)} | ${x.ms} | ${cell(x.detail)} |\n`;
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md + "\n");
+          '
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: voice-report-${{ runner.os }}
+          path: voice-report.json
+          if-no-files-found: ignore

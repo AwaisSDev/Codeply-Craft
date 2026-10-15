@@ -81,9 +81,14 @@ function toggle() {
   else show();
 }
 
+// Voice mode (voice-mode.js) decides whether a key down is a tap (toggle) or a hold (talk).
+let onPress = null;
+function setPressHandler(fn) { onPress = fn; }
+
 function registerHotkey() {
+  const handler = () => (onPress ? onPress(toggle) : toggle());
   for (const k of HOTKEYS) {
-    try { if (globalShortcut.register(k, toggle)) { hotkey = k; return; } } catch {}
+    try { if (globalShortcut.register(k, handler)) { hotkey = k; return; } } catch {}
   }
   console.warn('[drop] no hotkey: Alt+C and Alt+Shift+C are both taken');
 }
@@ -196,5 +201,12 @@ function dispose() {
   try { if (hotkey) globalShortcut.unregister(hotkey); } catch {}
 }
 
-module.exports = { init, event, runs, show, hide, toggle, dispose, hotkeyLabel: () => (hotkey && process.platform === 'darwin' ? hotkey.replace('Alt', 'Option') : hotkey) };
+/** From voice mode: put text in the drop's box, and send it as a task when `run` is set. */
+function voiceText(text, run) {
+  show({ focus: !run });
+  const go = () => send('drop:voiceText', { text, run: !!run });
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', go); else go();
+}
+
+module.exports = { init, event, runs, show, hide, toggle, dispose, setPressHandler, voiceText, hotkeyLabel: () => (hotkey && process.platform === 'darwin' ? hotkey.replace('Alt', 'Option') : hotkey) };
 

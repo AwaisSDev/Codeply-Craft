@@ -19,4 +19,5 @@ contextBridge.exposeInMainWorld('drop', {
   onEvent: (cb) => ipcRenderer.on('drop:event', (e, d) => cb(d)),
   onRuns: (cb) => ipcRenderer.on('drop:runs', (e, d) => cb(d)),
   onShown: (cb) => ipcRenderer.on('drop:shown', (e, d) => cb(d)),
+  onVoiceText: (cb) => ipcRenderer.on('drop:voiceText', (e, d) => cb(d)),
 });

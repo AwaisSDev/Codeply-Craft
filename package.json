@@ -32,9 +32,11 @@
     "dotenv": "^16.6.1",
     "electron-updater": "^6.8.9",
     "geist": "^1.7.2",
+    "katex": "^0.16.22",
     "kokoro-js": "^1.2.1",
-    "msedge-tts": "^2.0.9",
-    "onnxruntime-web": "^1.30.0"
+    "msedge-tts": "^2.1.0",
+    "onnxruntime-web": "^1.30.0",
+    "uiohook-napi": "^1.5.5"
   },
   "optionalDependencies": {
     "better-sqlite3": "^11.10.0"
@@ -113,6 +115,10 @@
       ],
       "icon": "assets/icon.png",
       "category": "public.app-category.developer-tools",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Craft listens while you hold Option+C so you can talk to it.",
+        "NSScreenCaptureUsageDescription": "Craft looks at your screen when you ask it about what you see."
+      },
       "artifactName": "Codeply-Craft-${arch}.${ext}"
     },
     "linux": {
@@ -127,6 +133,7 @@
       "artifactName": "Codeply-Craft-${arch}.${ext}"
     },
     "asarUnpack": [
+      "node_modules/uiohook-napi/**",
       "node_modules/onnxruntime-node/**",
       "node_modules/sharp/**",
       "node_modules/@img/**"
