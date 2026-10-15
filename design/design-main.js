@@ -248,7 +248,9 @@ async function buildInCraft(id) {
 // pushes after every finished run and pulls newer designs (the phone's) when
 // the tab opens. Until that SQL has been run, sync stays quietly off.
 const BUCKET = 'designs';
-let syncOff = false;
+// Set when the table or bucket is missing (the SQL not run yet, or the API still loading it): try again later.
+let syncOffUntil = 0;
+const pauseSync = () => { syncOffUntil = Date.now() + 5 * 60000; };
 let lastPull = 0;
 const CONTENT_TYPE = {
   '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml',
@@ -258,7 +260,7 @@ const CONTENT_TYPE = {
 const missingTable = (msg) => /does not exist|could not find the table|schema cache|bucket not found/i.test(String(msg || ''));
 
 async function account() {
-  if (syncOff || !host.supabase) return null;
+  if (Date.now() < syncOffUntil || !host.supabase) return null;
   const c = host.supabase();
   const uid = c ? await host.userId() : null;
   return c && uid ? { c, uid } : null;
@@ -300,14 +302,14 @@ async function push(d) {
     const { error } = await a.c.storage.from(BUCKET).upload(`${a.uid}/${d.id}/${rel}`, fs.readFileSync(abs), {
       upsert: true, contentType: CONTENT_TYPE[path.extname(rel).toLowerCase()] || 'application/octet-stream',
     });
-    if (error) { if (missingTable(error.message)) { syncOff = true; return; } console.warn('[design sync] upload', rel, error.message); }
+    if (error) { if (missingTable(error.message)) { pauseSync(); return; } console.warn('[design sync] upload', rel, error.message); }
   }
   const version = (d.version || 0) + 1;
   const { error } = await a.c.from('designs').upsert({
     id: d.id, user_id: a.uid, title: v.title, kind: v.kind, summary: v.summary, chat: shortChat(d),
     origin: d.origin || 'pc', version, deleted: false, updated_at: new Date().toISOString(),
   });
-  if (error) { if (missingTable(error.message)) syncOff = true; else console.warn('[design sync] row', error.message); return; }
+  if (error) { if (missingTable(error.message)) pauseSync(); else console.warn('[design sync] row', error.message); return; }
   d.version = version; d.syncedAt = Date.now();
   host.saveStore();
 }
@@ -343,7 +345,7 @@ async function pull(force = false) {
   const a = await account();
   if (!a) return false;
   const { data, error } = await a.c.from('designs').select('id, title, kind, summary, chat, origin, version, deleted, updated_at').order('updated_at', { ascending: false }).limit(300);
-  if (error) { if (missingTable(error.message)) syncOff = true; return false; }
+  if (error) { if (missingTable(error.message)) pauseSync(); return false; }
   let changed = false;
   for (const row of data || []) {
     let d = byId(row.id);
