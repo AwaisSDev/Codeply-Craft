@@ -10,8 +10,13 @@ const { BrowserWindow, globalShortcut, screen, ipcMain, dialog, shell } = requir
 const path = require('path');
 const fs = require('fs');
 
-const W = 416;         // window size (the card fills it; only its rounded corners are transparent)
-const H = 616;
+// Empty, the drop is just its message bar; with a chat it grows upward into a
+// panel. The page measures itself and asks for a height (drop:fit), and the
+// window keeps its bottom edge where it is, so it grows up, never down.
+const W = 380;
+const START_H = 104;   // until the page has measured itself: about one bar
+const MAX_H = 500;   // the window never goes taller, menus included (they fit: about 390 at most)
+const OLD_H = 616;     // the fixed height before, for positions saved back then
 const GUTTER = 16;
 const HOTKEYS = ['Alt+C', 'Alt+Shift+C']; // the second one if another app already holds Alt+C
 
@@ -20,27 +25,45 @@ let win = null;
 let hotkey = null;
 let shownSession = null; // the chat the drop is showing
 let quitting = false;
+let bottom = 0;          // the window's bottom edge, in screen coordinates
+let height = START_H;
 
 function send(channel, data) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, data);
 }
 
-function cornerPosition() {
+// Where the bar sits: { x, bottom }. Saved when it's dragged; the default is the
+// bottom right corner of the screen the mouse is on.
+function anchor() {
   const saved = host.getSetting('dropPos');
-  const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
-  if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
-    // still on a screen that exists?
-    const on = screen.getAllDisplays().some((d) => saved.x >= d.workArea.x - 40 && saved.y >= d.workArea.y - 40 &&
-      saved.x + W <= d.workArea.x + d.workArea.width + 40 && saved.y + H <= d.workArea.y + d.workArea.height + 40);
-    if (on) return saved;
+  if (saved && Number.isFinite(saved.x) && (Number.isFinite(saved.bottom) || Number.isFinite(saved.y))) {
+    const b = Number.isFinite(saved.bottom) ? saved.bottom : saved.y + OLD_H;
+    // still on a screen that exists? Then keep it fully inside that screen.
+    const d = screen.getAllDisplays().find((s) => saved.x + W / 2 >= s.workArea.x && saved.x + W / 2 <= s.workArea.x + s.workArea.width &&
+      b > s.workArea.y + START_H && b <= s.workArea.y + s.workArea.height + 40);
+    if (d) {
+      const a = d.workArea;
+      return { x: Math.max(a.x, Math.min(saved.x, a.x + a.width - W)), bottom: Math.min(b, a.y + a.height) };
+    }
   }
-  return { x: area.x + area.width - W - GUTTER, y: area.y + area.height - H - GUTTER };
+  const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  return { x: area.x + area.width - W - GUTTER, bottom: area.y + area.height - GUTTER };
+}
+
+/** The page asked for a height: grow or shrink upward from the bottom edge, never past the top of the screen. */
+function fit(h) {
+  if (!win || win.isDestroyed() || !Number.isFinite(h)) return;
+  const [x] = win.getPosition();
+  const area = screen.getDisplayMatching(win.getBounds()).workArea;
+  height = Math.round(Math.max(48, Math.min(h, MAX_H, bottom - area.y)));
+  win.setBounds({ x, y: bottom - height, width: W, height });
 }
 
 function create() {
-  const pos = cornerPosition();
+  const pos = anchor();
+  bottom = pos.bottom;
   win = new BrowserWindow({
-    width: W, height: H, x: pos.x, y: pos.y,
+    width: W, height, x: pos.x, y: bottom - height,
     frame: false, transparent: true, resizable: false, maximizable: false, fullscreenable: false,
     alwaysOnTop: true, skipTaskbar: true, show: false, hasShadow: false,
     backgroundColor: '#00000000',
@@ -52,14 +75,14 @@ function create() {
   const external = (url) => { if (/^https?:\/\//i.test(url)) shell.openExternal(url); };
   win.webContents.setWindowOpenHandler(({ url }) => { external(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', (e, url) => { if (url !== win.webContents.getURL()) { e.preventDefault(); external(url); } });
+  // Dragged somewhere else: that's the new bottom edge it grows up from.
   let saveTimer = null;
   win.on('moved', () => {
+    if (!win || win.isDestroyed()) return;
+    const b = win.getBounds();
+    bottom = b.y + b.height;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      if (!win || win.isDestroyed()) return;
-      const [x, y] = win.getPosition();
-      host.setSetting('dropPos', { x, y });
-    }, 400);
+    saveTimer = setTimeout(() => host.setSetting('dropPos', { x: b.x, bottom }), 400);
   });
   // Alt+F4 and the like only hide it: the chat, and a task still running, stay put.
   win.on('close', (e) => { if (!quitting) { e.preventDefault(); hide(); } });
@@ -139,6 +162,7 @@ function init(h) {
 
   ipcMain.handle('drop:state', async () => { await host.loadEngine(); return stateView(); });
   ipcMain.on('drop:hide', hide);
+  ipcMain.on('drop:fit', (e, h) => fit(Number(h)));
   ipcMain.on('drop:showing', (e, id) => { shownSession = id || null; });
 
   ipcMain.handle('drop:recent', (e, { offset } = {}) => recentPage(Math.max(0, Number(offset) || 0)));

@@ -417,8 +417,8 @@ function buildTrayMenu() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Open Codeply Craft', click: showWindow },
     { label: key ? `Open the drop (${key})` : 'Open the drop', click: () => drop.show() },
-    ...(voiceMode.available() ? [{ label: key ? `Spoken answers (hold ${key} to talk)` : 'Spoken answers', type: 'checkbox', checked: !voiceMode.isMuted(), click: (item) => voiceMode.setMuted(!item.checked) }] : []),
-    ...(voiceMode.available() && voiceMode.canAct() ? [{ label: 'Voice can click and type for me', type: 'checkbox', checked: voiceMode.actionsOn(), click: (item) => voiceMode.setActions(item.checked) }] : []),
+    ...(voiceMode.available() ? [{ label: key ? `Orbit speaks its answers (hold ${key} to talk)` : 'Orbit speaks its answers', type: 'checkbox', checked: !voiceMode.isMuted(), click: (item) => voiceMode.setMuted(!item.checked) }] : []),
+    ...(voiceMode.available() && voiceMode.canAct() ? [{ label: 'Orbit can click and type for me', type: 'checkbox', checked: voiceMode.actionsOn(), click: (item) => voiceMode.setActions(item.checked) }] : []),
     { type: 'separator' },
     ...(app.isPackaged ? [{ label: process.platform === 'darwin' ? 'Open at login' : 'Start with Windows', type: 'checkbox', checked: startsWithSystem(), click: (item) => setStartWithSystem(item.checked) }] : []),
     {

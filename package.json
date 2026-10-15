@@ -116,8 +116,8 @@
       "icon": "assets/icon.png",
       "category": "public.app-category.developer-tools",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Craft listens while you hold Option+C so you can talk to it.",
-        "NSScreenCaptureUsageDescription": "Craft looks at your screen when you ask it about what you see."
+        "NSMicrophoneUsageDescription": "Codeply Orbit listens while you hold Option+C so you can talk to it.",
+        "NSScreenCaptureUsageDescription": "Codeply Orbit looks at your screen when you ask it about what you see."
       },
       "artifactName": "Codeply-Craft-${arch}.${ext}"
     },

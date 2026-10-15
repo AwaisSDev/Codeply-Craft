@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('drop', {
   selectModel: (id) => ipcRenderer.invoke('drop:selectModel', id),
   openInCraft: (id) => ipcRenderer.send('drop:openInCraft', id),
   hide: () => ipcRenderer.send('drop:hide'),
+  fit: (height) => ipcRenderer.send('drop:fit', height),
   onEvent: (cb) => ipcRenderer.on('drop:event', (e, d) => cb(d)),
   onRuns: (cb) => ipcRenderer.on('drop:runs', (e, d) => cb(d)),
   onShown: (cb) => ipcRenderer.on('drop:shown', (e, d) => cb(d)),

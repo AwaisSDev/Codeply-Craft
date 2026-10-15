@@ -2,6 +2,10 @@
 // Everything runs in the main process (drop.js there); this page sends messages
 // and draws the events that come back: the agent's steps, its replies, and the
 // cards it waits on (an OK for a deploy, a question, Undo).
+//
+// Empty, the drop is just the message bar. With a chat it grows upward into a
+// panel, as tall as the conversation up to MAX_H, and the window follows: this
+// page measures itself and tells the main process its height (fit()).
 (() => {
   const api = window.drop;
   const md = (t) => (window.CrewMarkdown ? window.CrewMarkdown.md(t) : esc(t));
@@ -10,10 +14,11 @@
 
   const S = {
     project: null, projects: [], models: { selected: 'auto', models: [] }, recent: [], recentMore: false, recentLoading: false,
-    mode: 'Build', bypass: readBypass(), sessionId: null, running: false, sending: false, hotkey: null,
+    mode: 'Build', bypass: readBypass(), sessionId: null, running: false, sending: false, hotkey: null, title: '',
   };
   function readBypass() { try { return localStorage.getItem('craft-drop-bypass') === '1'; } catch { return false; } }
   const card = $('card'); const thread = $('thread'); const feed = $('feed'); const input = $('input'); const sendBtn = $('sendBtn');
+  const head = $('head'); const composer = $('composer');
 
   const ICON = {
     check: '<svg viewBox="0 0 16 16"><path d="M3.5 8.5 6.5 11.5 12.5 4.5"/></svg>',
@@ -22,6 +27,7 @@
     chat: '<svg viewBox="0 0 16 16"><path d="M3 4.5C3 3.7 3.7 3 4.5 3h7c.8 0 1.5.7 1.5 1.5v5c0 .8-.7 1.5-1.5 1.5H7l-3 2.5V11h0c-.6 0-1-.4-1-1z"/></svg>',
     folder: '<svg viewBox="0 0 16 16"><path d="M2 4.5c0-.8.7-1.5 1.5-1.5h2.6l1.4 1.5h5c.8 0 1.5.7 1.5 1.5v5.5c0 .8-.7 1.5-1.5 1.5h-9c-.8 0-1.5-.7-1.5-1.5z"/></svg>',
     plus: '<svg viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></svg>',
+    chev: '<svg class="chev" viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg>',
   };
 
   // What a step says while it runs, and after.
@@ -55,6 +61,30 @@
   };
   const short = (p) => String(p || '').replace(/\\/g, '/').split('/').slice(-2).join('/');
 
+  // ─── the window's height ──────────────────────────────────────────────────
+  const MAX_H = 500;       // the panel's tallest; the conversation scrolls past this
+  const MIN_CHAT = 220;    // a fresh chat doesn't start as a sliver
+  let fitRaf = 0; let lastFit = 0; let menuNeed = 0;
+  function fit() {
+    cancelAnimationFrame(fitRaf);
+    fitRaf = requestAnimationFrame(() => {
+      let h;
+      if (card.classList.contains('has-chat')) {
+        const cs = getComputedStyle(composer);
+        const want = head.offsetHeight + feed.scrollHeight + 16 + composer.offsetHeight + parseFloat(cs.marginBottom || 0);
+        h = Math.max(MIN_CHAT, Math.min(MAX_H, Math.ceil(want)));
+        card.style.height = h + 'px';
+      } else {
+        card.style.height = '';
+        h = card.scrollHeight;
+      }
+      const winH = Math.max(h, menu.hidden ? 0 : menuNeed);
+      if (winH !== lastFit) { lastFit = winH; if (api.fit) api.fit(winH); }
+    });
+  }
+  new ResizeObserver(fit).observe(feed);
+  new ResizeObserver(fit).observe(composer);
+
   // ─── layout helpers ───────────────────────────────────────────────────────
   const nearBottom = () => thread.scrollHeight - thread.scrollTop - thread.clientHeight < 80;
   function scrollDown(force) { if (force || nearBottom()) requestAnimationFrame(() => { thread.scrollTop = thread.scrollHeight; }); }
@@ -65,19 +95,23 @@
     input.style.height = Math.min(input.scrollHeight, 132) + 'px';
     input.style.overflowY = input.scrollHeight > 132 ? 'auto' : 'hidden';
   }
+  function setChat(on) {
+    if (card.classList.contains('has-chat') === on) return;
+    card.classList.toggle('has-chat', on);
+    fit();
+  }
 
-  // ─── header, chips, composer ──────────────────────────────────────────────
+  // ─── bar, chips, header ───────────────────────────────────────────────────
   function renderChips() {
-    $('projName').textContent = S.project ? S.project.name : 'Choose a project';
+    $('projName').textContent = S.project ? S.project.name : 'Project';
     const sel = S.models.models.find((m) => m.id === S.models.selected);
     $('modelName').textContent = sel ? sel.name || sel.model : 'Haze 2';
-    document.querySelectorAll('#modeSeg button').forEach((b) => b.classList.toggle('on', b.dataset.mode === S.mode));
-    $('permName').textContent = S.bypass ? 'Full access' : 'Approve manually';
-    $('permBtn').classList.toggle('full', S.bypass);
-    $('emptySub').textContent = S.project
-      ? `Ask anything, or give it a task in ${S.project.name}.`
-      : 'Ask anything, or start something new. Craft makes the folder for you.';
-    input.placeholder = S.sessionId ? 'Follow up' : 'Ask Craft or give it a task';
+    $('modeName').textContent = S.mode;
+    $('fullTag').hidden = !S.bypass;
+    $('modeBtn').classList.toggle('full', S.bypass);
+    $('modeBtn').title = S.bypass ? 'Full access: runs everything without asking' : 'Mode and permissions';
+    input.placeholder = S.sessionId ? 'Follow up' : 'Ask Craft anything';
+    $('title').textContent = S.title || 'New chat';
     syncSend();
   }
   function syncSend() {
@@ -85,42 +119,6 @@
     sendBtn.disabled = !S.running && (S.sending || !input.value.trim());
     sendBtn.setAttribute('aria-label', S.running ? 'Stop' : 'Send');
   }
-
-  const recentRow = (r) => {
-    const b = h(`<button type="button" data-id="${esc(r.id)}">${ICON.chat}<span class="t">${esc(r.title)}</span><span class="when">${esc(ago(r.updatedAt))}</span></button>`);
-    b.addEventListener('click', () => openChat(r.id));
-    return b;
-  };
-  function renderRecent() {
-    const box = $('recent');
-    box.innerHTML = '';
-    if (!S.recent.length) return;
-    box.appendChild(h('<div class="recent-title">Recent</div>'));
-    S.recent.forEach((r) => box.appendChild(recentRow(r)));
-    fillRecent();
-  }
-  // Scrolling near the end of the list brings in the next page.
-  async function moreRecent() {
-    if (!S.recentMore || S.recentLoading || card.classList.contains('has-chat')) return;
-    S.recentLoading = true;
-    try {
-      const page = await api.recent(S.recent.length);
-      const seen = new Set(S.recent.map((r) => r.id));
-      const fresh = (page.items || []).filter((r) => !seen.has(r.id));
-      S.recent.push(...fresh);
-      S.recentMore = !!page.more && fresh.length > 0;
-      const box = $('recent');
-      fresh.forEach((r) => box.appendChild(recentRow(r)));
-    } finally { S.recentLoading = false; }
-    fillRecent();
-  }
-  // A tall window and a short first page: keep loading until it can scroll.
-  function fillRecent() {
-    requestAnimationFrame(() => { if (S.recentMore && thread.scrollHeight <= thread.clientHeight + 40) moreRecent(); });
-  }
-  thread.addEventListener('scroll', () => {
-    if (thread.scrollHeight - thread.scrollTop - thread.clientHeight < 160) moreRecent();
-  });
   function ago(t) {
     const m = Math.round((Date.now() - (t || 0)) / 60000);
     if (m < 1) return 'now'; if (m < 60) return `${m}m`; const hr = Math.round(m / 60);
@@ -136,29 +134,36 @@
     S.recent = (st.recent && st.recent.items) || [];
     S.recentMore = !!(st.recent && st.recent.more);
     if (S.sessionId) S.running = (st.running || []).includes(S.sessionId);
-    renderChips(); renderRecent();
+    renderChips();
     // The page was reloaded: pick the chat back up instead of starting blank.
     if (!restored) { restored = true; if (!S.sessionId && st.current) await openChat(st.current); }
   }
   let restored = false;
 
   // ─── menus ────────────────────────────────────────────────────────────────
+  // They open above the button. While just the bar shows there is no room above
+  // it, so the window grows for the menu and shrinks back when it closes.
   const menu = $('menu');
-  function openMenu(anchor, html, below) {
+  let menuFor = null;
+  function openMenu(anchor, html) {
+    menuFor = anchor;
     menu.innerHTML = html; menu.hidden = false;
-    const a = anchor.getBoundingClientRect(); const c = card.getBoundingClientRect();
-    menu.style.left = Math.max(6, Math.min(a.left - c.left, c.width - menu.offsetWidth - 6)) + 'px';
-    if (below) { menu.style.top = (a.bottom - c.top + 4) + 'px'; menu.style.bottom = ''; }
-    else { menu.style.bottom = (c.bottom - a.top + 4) + 'px'; menu.style.top = ''; }
+    const a = anchor.getBoundingClientRect();
+    const fromBottom = window.innerHeight - a.top + 6;
+    menu.style.bottom = fromBottom + 'px';
+    menu.style.left = Math.max(8, Math.min(a.left, window.innerWidth - menu.offsetWidth - 8)) + 'px';
+    menuNeed = Math.ceil(fromBottom + menu.offsetHeight + 8);
+    fit();
     return menu;
   }
-  function closeMenu() { menu.hidden = true; menu.innerHTML = ''; }
-  document.addEventListener('mousedown', (e) => { if (!menu.hidden && !menu.contains(e.target) && !e.target.closest('.chip')) closeMenu(); });
+  function closeMenu() { if (menu.hidden) return; menu.hidden = true; menu.innerHTML = ''; menuFor = null; menuNeed = 0; fit(); }
+  const toggleMenu = (btn, build) => { if (!menu.hidden && menuFor === btn) return closeMenu(); closeMenu(); build(); };
+  document.addEventListener('mousedown', (e) => { if (!menu.hidden && !menu.contains(e.target) && !e.target.closest('[data-menu]')) closeMenu(); });
+  window.addEventListener('blur', closeMenu);
 
-  $('projBtn').addEventListener('click', (e) => {
-    if (!menu.hidden) return closeMenu();
+  $('projBtn').addEventListener('click', (e) => toggleMenu(e.currentTarget, () => {
     const rows = S.projects.map((p) => `<button type="button" data-p="${esc(p.path)}">${ICON.folder}<span class="t">${esc(p.name)}</span>${S.project && S.project.path === p.path ? ICON.tick : ''}</button>`).join('');
-    const m = openMenu(e.currentTarget, `<div class="lbl">Projects</div>${rows || ''}${rows ? '<hr>' : ''}<button type="button" data-open>${ICON.plus}<span class="t">Open a folder…</span></button>`, true);
+    const m = openMenu($('projBtn'), `<div class="lbl">Projects</div>${rows}${rows ? '<hr>' : ''}<button type="button" data-open>${ICON.plus}<span class="t">Open a folder…</span></button>`);
     m.querySelectorAll('[data-p]').forEach((b) => b.addEventListener('click', async () => {
       closeMenu();
       const p = await api.useProject(b.dataset.p);
@@ -169,12 +174,34 @@
       const p = await api.chooseProject();
       if (p) { S.project = p; if (!S.projects.some((x) => x.path === p.path)) S.projects.unshift(p); newChat(); }
     });
-  });
+  }));
 
-  $('modelBtn').addEventListener('click', (e) => {
-    if (!menu.hidden) return closeMenu();
+  // Build or Ask, and whether it asks before edits, commands and deploys.
+  $('modeBtn').addEventListener('click', (e) => toggleMenu(e.currentTarget, () => {
+    const modes = [
+      { mode: 'Build', sub: 'Makes the changes' },
+      { mode: 'Ask', sub: 'Answers questions, no edits' },
+    ];
+    const perms = [
+      { full: false, name: 'Approve manually', sub: 'Asks before edits, commands and deploys' },
+      { full: true, name: 'Full access', sub: 'Runs everything without asking' },
+    ];
+    const m = openMenu($('modeBtn'), '<div class="lbl">Mode</div>'
+      + modes.map((o) => `<button type="button" data-mode="${o.mode}"><span class="t">${o.mode}<span class="sub">${o.sub}</span></span>${o.mode === S.mode ? ICON.tick : ''}</button>`).join('')
+      + '<hr><div class="lbl">Permissions</div>'
+      + perms.map((o) => `<button type="button" data-full="${o.full ? 1 : 0}" class="${o.full ? 'warn' : ''}"><span class="t">${o.name}<span class="sub">${o.sub}</span></span>${o.full === S.bypass ? ICON.tick : ''}</button>`).join(''));
+    m.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { closeMenu(); S.mode = b.dataset.mode; renderChips(); input.focus(); }));
+    m.querySelectorAll('[data-full]').forEach((b) => b.addEventListener('click', () => {
+      closeMenu();
+      S.bypass = b.dataset.full === '1';
+      try { localStorage.setItem('craft-drop-bypass', S.bypass ? '1' : '0'); } catch {}
+      renderChips(); input.focus();
+    }));
+  }));
+
+  $('modelBtn').addEventListener('click', (e) => toggleMenu(e.currentTarget, () => {
     const all = [{ id: 'auto', name: 'Haze 2', sub: 'The routing brain' }, ...S.models.models.map((m) => ({ id: m.id, name: m.name || m.model, sub: m.kind === 'ollama' ? 'Ollama' : '' }))];
-    const m = openMenu(e.currentTarget, '<div class="lbl">Model</div>' + all.map((x) =>
+    const m = openMenu($('modelBtn'), '<div class="lbl">Model</div>' + all.map((x) =>
       `<button type="button" data-id="${esc(x.id)}"><span class="t">${esc(x.name)}</span>${x.sub ? `<span class="s">${esc(x.sub)}</span>` : ''}${x.id === S.models.selected ? ICON.tick : ''}</button>`).join(''));
     m.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('click', async () => {
       closeMenu();
@@ -182,46 +209,59 @@
       if (r && r.ok && r.state) { S.models = r.state; renderChips(); }
       else if (r && r.error) addNote(r.error, 'error');
     }));
-  });
+  }));
 
-  $('permBtn').addEventListener('click', (e) => {
-    if (!menu.hidden) return closeMenu();
-    const opts = [
-      { full: false, name: 'Approve manually', sub: 'Asks before edits, commands and deploys' },
-      { full: true, name: 'Full access', sub: 'Runs everything without asking' },
-    ];
-    const m = openMenu(e.currentTarget, '<div class="lbl">Permissions</div>' + opts.map((o) =>
-      `<button type="button" data-full="${o.full ? 1 : 0}"><span class="t">${o.name}<span class="s sub">${o.sub}</span></span>${o.full === S.bypass ? ICON.tick : ''}</button>`).join(''));
-    m.querySelectorAll('[data-full]').forEach((b) => b.addEventListener('click', () => {
-      closeMenu();
-      S.bypass = b.dataset.full === '1';
-      try { localStorage.setItem('craft-drop-bypass', S.bypass ? '1' : '0'); } catch {}
-      renderChips();
-    }));
+  // Every chat (Craft's and the drop's), newest first; scrolling near the end brings in the next page.
+  const recentRow = (r) => {
+    const b = h(`<button type="button" data-id="${esc(r.id)}">${ICON.chat}<span class="t">${esc(r.title)}</span><span class="s">${esc(ago(r.updatedAt))}</span></button>`);
+    b.addEventListener('click', () => { closeMenu(); openChat(r.id); });
+    return b;
+  };
+  $('recentBtn').addEventListener('click', (e) => toggleMenu(e.currentTarget, () => {
+    const m = openMenu($('recentBtn'), `<div class="lbl">Recent</div>${S.recent.length ? '' : '<div class="none">No chats yet.</div>'}`);
+    S.recent.forEach((r) => m.appendChild(recentRow(r)));
+    menuNeed = Math.ceil(window.innerHeight - $('recentBtn').getBoundingClientRect().top + 6 + m.offsetHeight + 8);
+    m.style.left = Math.max(8, window.innerWidth - m.offsetWidth - 8) + 'px';
+    fit();
+  }));
+  menu.addEventListener('scroll', () => {
+    if (menuFor === $('recentBtn') && menu.scrollHeight - menu.scrollTop - menu.clientHeight < 80) moreRecent();
   });
+  async function moreRecent() {
+    if (!S.recentMore || S.recentLoading) return;
+    S.recentLoading = true;
+    try {
+      const page = await api.recent(S.recent.length);
+      const seen = new Set(S.recent.map((r) => r.id));
+      const fresh = (page.items || []).filter((r) => !seen.has(r.id));
+      S.recent.push(...fresh);
+      S.recentMore = !!page.more && fresh.length > 0;
+      if (menuFor === $('recentBtn')) fresh.forEach((r) => menu.appendChild(recentRow(r)));
+    } finally { S.recentLoading = false; }
+  }
 
-  document.querySelectorAll('#modeSeg button').forEach((b) => b.addEventListener('click', () => { S.mode = b.dataset.mode; renderChips(); input.focus(); }));
   $('newBtn').addEventListener('click', () => { newChat(); input.focus(); });
   $('craftBtn').addEventListener('click', () => api.openInCraft(S.sessionId));
   $('hideBtn').addEventListener('click', () => api.hide());
+  $('closeBtn').addEventListener('click', () => api.hide());
 
   // ─── the chat ─────────────────────────────────────────────────────────────
-  let steps = null;        // the open block of step rows
-  let working = null;      // "Working…" row, kept at the bottom while running
+  let steps = null;        // the open group of step rows
+  let working = null;      // "Working" row, kept at the bottom while running
   let workingTimer = null;
   let startedAt = 0;
 
   function newChat() {
-    S.sessionId = null; S.running = false;
+    S.sessionId = null; S.running = false; S.title = '';
     feed.innerHTML = ''; steps = null; stopWorking();
-    card.classList.remove('has-chat');
+    setChat(false);
     api.showing(null);
     loadState();
   }
 
+  // Consecutive steps share one group; every other kind of row resets `steps`.
   function stepsBlock() {
-    // every other kind of row resets `steps`, so consecutive steps share one block
-    if (!steps) steps = add(h('<div class="steps"></div>'));
+    if (!steps) steps = add(h(`<details class="sg"><summary><span class="sg-ico"></span><span class="sg-text"></span>${ICON.chev}</summary><div class="sg-body"></div></details>`));
     return steps;
   }
 
@@ -233,26 +273,48 @@
     return h(`<div class="step ${state === 'run' ? 'run' : state}" data-tool="${esc(name)}"><span class="st">${st}</span><span class="v">${esc(verb(name, state !== 'run'))}</span>${l}${n}</div>`);
   }
 
-  // Long runs: keep the last few steps in view, fold the rest.
-  function foldSteps(block) {
-    const rows = [...block.querySelectorAll('.step')];
-    const hidden = rows.length - 5;
-    let more = block.querySelector('.more');
-    if (block.dataset.open === '1' || hidden <= 0) { if (more) more.remove(); rows.forEach((r) => { r.hidden = false; }); return; }
-    rows.forEach((r, i) => { r.hidden = i < hidden; });
-    if (!more) {
-      more = h('<button type="button" class="more"></button>');
-      more.addEventListener('click', () => { block.dataset.open = '1'; foldSteps(block); });
-      block.prepend(more);
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  function stepsSummary(rows) {
+    const count = {}; let failed = 0; let other = 0;
+    for (const r of rows) {
+      if (r.classList.contains('bad')) failed++;
+      const name = r.dataset.tool || '';
+      const k = ['read_file', 'view_images'].includes(name) ? 'read' : ['edit_file', 'write_file', 'apply_patch'].includes(name) ? 'edit'
+        : name === 'run' ? 'run' : ['search', 'list_dir', 'design_reference_search', 'list_skills', 'web_search'].includes(name) ? 'search' : 'other';
+      if (k === 'other') other++; else count[k] = (count[k] || 0) + 1;
     }
-    more.textContent = `${hidden} earlier step${hidden === 1 ? '' : 's'}`;
+    const parts = [];
+    if (count.read) parts.push(`read ${plural(count.read, 'file', 'files')}`);
+    if (count.search) parts.push(count.search === 1 ? 'searched' : `searched ${count.search} times`);
+    if (count.edit) parts.push(`edited ${plural(count.edit, 'file', 'files')}`);
+    if (count.run) parts.push(`ran ${plural(count.run, 'command', 'commands')}`);
+    if (other) parts.push(`used ${plural(other, 'tool', 'tools')}`);
+    let text = parts.join(', ') || 'worked on it';
+    text = text[0].toUpperCase() + text.slice(1);
+    return text + (failed ? ` · ${failed} failed` : '');
   }
+  // Live while it's the newest thing in a running chat: a spinner and what's happening now.
+  function updateGroup(g) {
+    if (!g) return;
+    const rows = [...g.querySelectorAll('.step')];
+    const lastReal = [...feed.children].filter((n) => n !== working).pop();
+    const live = S.running && g === lastReal;
+    g.classList.toggle('live', live);
+    let text;
+    if (live) {
+      const cur = rows[rows.length - 1];
+      text = cur ? `${cur.querySelector('.v').textContent} ${cur.querySelector('.l') ? cur.querySelector('.l').textContent : ''}`.trim() : 'Working';
+    } else text = stepsSummary(rows);
+    g.querySelector('.sg-text').textContent = text;
+    g.querySelector('.sg-ico').innerHTML = live ? '<span class="spin"></span>' : '';
+  }
+  const updateGroups = () => feed.querySelectorAll(':scope > .sg').forEach(updateGroup);
 
   function addStep(name, label, state, added, removed) {
     const block = stepsBlock();
     const stick = nearBottom();
-    block.appendChild(stepRow(name, label, state, added, removed));
-    foldSteps(block);
+    block.querySelector('.sg-body').appendChild(stepRow(name, label, state, added, removed));
+    updateGroup(block); placeWorking();
     scrollDown(stick);
   }
 
@@ -260,12 +322,16 @@
     const rows = [...feed.querySelectorAll(`.step.run[data-tool="${CSS.escape(ev.name)}"]`)];
     const row = rows[rows.length - 1];
     const fresh = stepRow(ev.name, labelOf(ev), ev.ok ? 'ok' : 'bad', ev.meta?.added, ev.meta?.removed);
-    if (row) { fresh.hidden = row.hidden; row.replaceWith(fresh); } else addStep(ev.name, labelOf(ev), ev.ok ? 'ok' : 'bad', ev.meta?.added, ev.meta?.removed);
+    if (row) { const g = row.closest('.sg'); row.replaceWith(fresh); updateGroup(g); } else addStep(ev.name, labelOf(ev), ev.ok ? 'ok' : 'bad', ev.meta?.added, ev.meta?.removed);
   }
 
-  function addUser(text) { steps = null; add(h(`<div class="msg-user">${esc(text)}</div>`), true); }
-  function addAi(text) { steps = null; const el = h('<div class="msg-ai"></div>'); el.innerHTML = md(text); add(el); }
-  function addNote(text, level) { steps = null; add(h(`<div class="note ${esc(level || '')}">${esc(text)}</div>`)); }
+  function addUser(text) {
+    steps = null;
+    if (!S.title) { S.title = text.replace(/\s+/g, ' ').slice(0, 80); $('title').textContent = S.title; }
+    add(h(`<div class="msg-user">${esc(text)}</div>`), true);
+  }
+  function addAi(text) { steps = null; const el = h('<div class="msg-ai"></div>'); el.innerHTML = md(text); add(el); updateGroups(); }
+  function addNote(text, level) { steps = null; add(h(`<div class="note ${esc(level || '')}">${esc(text)}</div>`)); updateGroups(); }
 
   function startWorking() {
     startedAt = startedAt || Date.now();
@@ -275,19 +341,20 @@
       clearInterval(workingTimer);
       workingTimer = setInterval(tickWorking, 1000);
     }
-    tickWorking(); scrollDown();
+    tickWorking(); placeWorking(); scrollDown();
   }
   function tickWorking() {
     if (!working) return;
     const s = Math.round((Date.now() - startedAt) / 1000);
     working.querySelector('.time').textContent = s >= 3 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : '';
   }
-  function stopWorking() { clearInterval(workingTimer); workingTimer = null; if (working) working.remove(); working = null; startedAt = 0; }
+  function stopWorking() { clearInterval(workingTimer); workingTimer = null; if (working) working.remove(); working = null; startedAt = 0; updateGroups(); }
   function placeWorking() {
     if (!working) return;
     if (feed.lastElementChild !== working) feed.appendChild(working);
-    // waiting on you, not working: the card says so
-    working.hidden = !!feed.querySelector('.ask:not(.done)');
+    // A live step group already says what's happening; a card waiting on you says it isn't working.
+    const prev = working.previousElementSibling;
+    working.hidden = !!feed.querySelector('.ask:not(.done)') || !!(prev && prev.classList.contains('sg'));
   }
 
   // The agent wants an OK.
@@ -310,6 +377,7 @@
       api.approve(ev.requestId, b.dataset.v);
       resolveCard(ev.requestId, b.dataset.v === 'reject' ? 'Not allowed' : 'Allowed');
     }));
+    updateGroups();
   }
 
   // The agent asked a question.
@@ -328,6 +396,7 @@
     const inp = el.querySelector('input');
     inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); answer(inp.value.trim()); } });
     setTimeout(() => { if (!opts.length) inp.focus(); }, 50);
+    updateGroups();
   }
 
   function resolveCard(requestId, text) {
@@ -353,6 +422,7 @@
       else addChanged({ ...cp, undone: !cp.undone });
     });
     if (old) old.replaceWith(el); else add(el);
+    updateGroups();
   }
 
   // ─── events from the main process ─────────────────────────────────────────
@@ -378,7 +448,7 @@
       case 'checkpoint': case 'checkpoint_update': addChanged(ev.checkpoint); break;
       case 'cloud_task': if (ev.task && ev.task.status) addNote(`Cloud: ${ev.task.status}`, ''); break;
       case 'run_finished': S.running = false; stopWorking(); syncSend(); break;
-      case 'session_sync': if (ev.session?.title) S.title = ev.session.title; break;
+      case 'session_sync': if (ev.session?.title) { S.title = ev.session.title; $('title').textContent = S.title; } break;
       default: break;
     }
   });
@@ -391,7 +461,7 @@
     syncSend();
   });
   api.onShown(() => { if (window.applyDropTheme) window.applyDropTheme(); loadState(); setTimeout(() => input.focus(), 30); });
-  // Voice mode: "Craft, do X" arrives as a task in a fresh chat; "Open in Drop" just fills the box.
+  // Orbit: "Craft, do X" arrives as a task in a fresh chat; "Open in Drop" just fills the box.
   api.onVoiceText(async ({ text, run }) => {
     if (!text) return;
     if (run && (S.running || S.sending)) newChat();
@@ -414,7 +484,7 @@
       }
     }
     S.sending = true; syncSend();
-    card.classList.add('has-chat');
+    setChat(true);
     addUser(text);
     input.value = ''; autosize();
     startWorking(); S.running = true; syncSend();
@@ -432,14 +502,14 @@
     renderChips();
   }
 
-  // An earlier drop chat from the list.
+  // An earlier chat from the list.
   async function openChat(id) {
     const s = await api.session(id);
     if (!s) return;
-    S.sessionId = s.id; S.running = !!s.running;
+    S.sessionId = s.id; S.running = !!s.running; S.title = s.title || '';
     if (s.cwd) S.project = { path: s.cwd, name: s.cwd.replace(/\\/g, '/').split('/').pop() };
     feed.innerHTML = ''; steps = null; stopWorking();
-    card.classList.add('has-chat');
+    setChat(true);
     for (const m of s.messages) {
       if (m.kind === 'user') addUser(m.text);
       else if (m.kind === 'assistant' && m.text) addAi(m.text);
@@ -448,6 +518,7 @@
       else if (m.kind === 'checkpoint') addChanged({ id: m.id, total: m.total, files: m.files, undone: m.undone });
     }
     if (S.running) startWorking();
+    updateGroups();
     renderChips(); scrollDown(true); input.focus();
   }
 
@@ -462,5 +533,6 @@
     api.hide();
   });
 
+  fit();
   loadState().then(() => input.focus());
 })();

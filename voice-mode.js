@@ -1,4 +1,4 @@
-// Voice mode: hold Alt+C (Option+C on a Mac), talk, let go.
+// Codeply Orbit (voice mode): hold Alt+C (Option+C on a Mac), talk, let go.
 //
 // A tap still opens the drop. Held past HOLD_MS, the same keys start listening:
 // a small Codeply buddy rides next to the cursor with a live waveform, the
@@ -329,13 +329,13 @@ async function finishListening() {
   if (!pcm || pcm.length < 16000 * 0.3) return finish('I didn\'t hear anything. Hold Alt+C while you talk.');
   let text = '';
   try {
-    if (!sttReady) setMode('thinking', { note: 'Getting voice ready…' });
+    if (!sttReady) setMode('thinking', { note: 'Getting Orbit ready…' });
     text = await transcribe(pcm);
     log(`heard in ${Date.now() - S.t0}ms: ${text}`);
     host.setSetting('voiceUsed', true);
     if (!app.isPackaged && process.env.CRAFT_VOICE_SAY) text = process.env.CRAFT_VOICE_SAY; // dev test: a fixed question
   } catch (e) {
-    return finish(`Voice didn't start: ${e.message}`);
+    return finish(`Orbit couldn't start: ${e.message}`);
   }
   if (turn !== S.turn) return;
   if (!text || (NOT_SPEECH.test(text.trim()) && pcm.length < 16000 * 2.5)) return finish('I didn\'t catch that. Try again?');
@@ -362,7 +362,7 @@ const toImg = (shot, x, y) => [Math.round((x * shot.w) / shot.display.bounds.wid
 const toDip = (shot, x, y) => [(x * shot.display.bounds.width) / shot.w, (y * shot.display.bounds.height) / shot.h];
 
 // ─── The model ──────────────────────────────────────────────────────────────
-const SYSTEM = `You are Craft, Codeply's voice buddy. You live next to the user's mouse cursor on their computer. They hold a key, talk to you, and let go. You get what they said and screenshots of their screens.
+const SYSTEM = `You are Orbit (Codeply Orbit), Codeply's on-screen buddy. You live next to the user's mouse cursor on their computer. They hold a key, talk to you, and let go. You get what they said and screenshots of their screens.
 
 Talk the way a friendly expert talks out loud: short plain sentences, no markdown, no lists, no code blocks, no emojis, no URLs read out. Usually one to three sentences and under 60 words, unless they ask for detail.
 
@@ -484,7 +484,7 @@ async function answer({ said, turn, followUp, screen }) {
   const ok = await host.loadEngine();
   if (!ok) return finish('Craft\'s engine isn\'t ready yet.');
   const route = host.route();
-  if (route.auto && !(await host.signedIn())) return finish('Sign in to Craft to use voice with Haze 2.');
+  if (route.auto && !(await host.signedIn())) return finish('Sign in to Craft to use Orbit with Haze 2.');
   // Screenshots are the costly part, so one goes along only when the question is
   // about the screen (or a task step changed it). Otherwise the model answers from
   // text and replies [LOOK] when it does need to see.
@@ -925,7 +925,7 @@ const sttWaiters = new Map();
 function sttProcess() {
   if (sttProc) return sttProc;
   const cache = path.join(app.getPath('appData'), 'Codeply Crew', 'voice-models');
-  sttProc = utilityProcess.fork(path.join(__dirname, 'voice', 'stt-process.js'), [cache], { serviceName: 'Craft voice' });
+  sttProc = utilityProcess.fork(path.join(__dirname, 'voice', 'stt-process.js'), [cache], { serviceName: 'Codeply Orbit' });
   sttProc.on('message', (m) => {
     if (!m) return;
     if (m.type === 'ready') { sttReady = true; log(`speech model ready in ${m.ms}ms`); return; }
