@@ -84,8 +84,19 @@ const KIND = {
   logo: { widths: [1200], height: 800, allow: [...PAGE_RULES, 'all-centred', 'font-count', 'size-count', 'body-size', 'small-text'] },
 };
 const MOBILE_H = 844;
+// A check takes a while and a model left to itself keeps checking: one when the
+// design is complete, one after fixing, and a third at most, per request.
+const MAX_CHECKS = 3;
 
 export async function design_lint(args, ctx) {
+  ctx.designChecks = (ctx.designChecks || 0) + 1;
+  if (ctx.designChecks > MAX_CHECKS) {
+    return {
+      ok: true,
+      output: `Not checked: that would be check ${ctx.designChecks} for this request, and ${MAX_CHECKS} is the most. Stop checking and write your summary now. If something still looks off, say what in one line; the person can ask for another pass.`,
+      meta: { label: 'skipped, checked enough' },
+    };
+  }
   const file = insideCwd(args.path || 'index.html', ctx.cwd);
   if (!file || !fs.existsSync(file)) return { ok: false, output: `design_lint: no such file in this design: ${args.path || 'index.html'}.` };
   const kind = KIND[String(args.kind || 'website').trim().toLowerCase()] ? String(args.kind || 'website').trim().toLowerCase() : 'website';
@@ -136,13 +147,20 @@ export async function design_lint(args, ctx) {
   const warns = merged.filter((f) => f.level === 'WARN');
   const lines = [`design_lint ${path.relative(ctx.cwd, file).split(path.sep).join('/')} as ${kind}${render ? ` at ${useWidths.join(', ')}px` : ' (static scan only: no browser here)'}`];
   if (measured.length) lines.push(...measured);
-  if (!fails.length && !warns.length) lines.push('', 'No findings. Now judge the screenshots yourself: hierarchy, spacing, contrast, whether it looks designed rather than generated.');
-  for (const [title, list] of [['FAIL (fix every one)', fails], ['WARN (fix, or keep with a reason you can state)', warns]]) {
+  for (const [title, list] of [['FAIL (fix every one)', fails], ['WARN (optional: fix the quick ones in the same edit as the FAILs, leave the rest; never check again just for a WARN)', warns]]) {
     if (!list.length) continue;
     lines.push('', title);
     for (const f of list.slice(0, 20)) lines.push(`- [${f.id}]${f.width ? ` @${f.width}px` : ''}${f.alsoAt ? ` (+${f.alsoAt.join(', ')})` : ''}${f.where ? ` ${f.where}` : ''} ${f.message}${f.fix ? `\n  fix: ${f.fix}` : ''}`);
   }
-  if (images.length) lines.push('', `${images.length} screenshot(s) attached: look at them before calling the design done.`);
+  if (images.length) lines.push('', `${images.length} screenshot(s) attached.`);
+  // What to do next, so a clean result ends the checking instead of starting more.
+  if (!fails.length) {
+    lines.push('', `It passes (check ${ctx.designChecks} of ${MAX_CHECKS}). You are done checking for this request: glance at the screenshots, fix anything plainly broken in one edit without checking again, then write your summary.`);
+  } else if (ctx.designChecks >= MAX_CHECKS) {
+    lines.push('', `That was the last check for this request (${ctx.designChecks} of ${MAX_CHECKS}). Fix the FAILs in one edit, then write your summary and say which ones you fixed.`);
+  } else {
+    lines.push('', `Check ${ctx.designChecks} of ${MAX_CHECKS}. Fix all the FAILs in one or two edits, then check once more.`);
+  }
   // The rules' fixes name the skill's terminal scripts; here, pictures come from the tools.
   const output = lines.join('\n')
     .replace(/scripts\/assets\.mjs(?: --video)?/g, 'image_search (then fetch_image into assets/)')

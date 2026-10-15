@@ -47,10 +47,12 @@ proportions, and use real pictures. Weak pages decorate.
    `fetch_image` into `assets/`, and credit them; or the dealt photographs from the
    direction sheet.
 
-6. **Check it**: `design_lint` with the `path` and the `kind`. Fix every FAIL.
-   Fix each WARN or keep it for a reason you can say out loud. Then look at the
-   attached screenshots the way `references/critique.md` says, and fix what looks
-   wrong even if no rule caught it. Lint again after big changes.
+6. **Check it, once or twice**: `design_lint` with the `path` and the `kind`, when
+   the design is complete (not after every edit). Fix every FAIL in one or two edits
+   and check once more; three checks per request at most. WARNs are optional: fix
+   the quick ones alongside the FAILs. Look at the attached screenshots the way
+   `references/critique.md` says and fix what is plainly wrong in the same edit.
+   Once a check passes, stop checking.
 
 7. **Say what you made** in two or three lines: the idea, the type and colour, and
    anything you decided for the person. Never say a design "works": its buttons and
