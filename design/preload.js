@@ -3,8 +3,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('design', {
   list: () => ipcRenderer.invoke('design:list'),
-  create: (text, kind) => ipcRenderer.invoke('design:create', { text, kind }),
-  send: (id, text) => ipcRenderer.invoke('design:send', { id, text }),
+  create: (text, kind, images) => ipcRenderer.invoke('design:create', { text, kind, images }),
+  send: (id, text, images) => ipcRenderer.invoke('design:send', { id, text, images }),
   open: (id) => ipcRenderer.invoke('design:open', id),
   close: () => ipcRenderer.send('design:close'),
   stop: (id) => ipcRenderer.send('design:stop', id),
@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('design', {
   rename: (id, title) => ipcRenderer.invoke('design:rename', { id, title }),
   remove: (id) => ipcRenderer.invoke('design:delete', id),
   reveal: (id) => ipcRenderer.send('design:reveal', id),
+  openFile: (id) => ipcRenderer.send('design:openFile', id),
+  openFolder: () => ipcRenderer.send('design:openFolder'),
   exportAs: (id, format) => ipcRenderer.invoke('design:export', { id, format }),
   build: (id) => ipcRenderer.invoke('design:build', id),
   toCraft: () => ipcRenderer.send('design:toCraft'),

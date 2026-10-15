@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: file:; frame-src file:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob: file: codeply-design:; frame-src file: codeply-design:; style-src 'self' 'unsafe-inline'; script-src 'self'">
 <title>Codeply Design</title>
 <script src="../drop/theme.js"></script>
 <link rel="stylesheet" href="../styles.css">
@@ -10,7 +10,7 @@
 </head>
 <body class="dz-body-root">
 <div class="dz">
-  <!-- Craft's sidebar, with the switch on Design and the designs in place of chats -->
+  <!-- Craft's sidebar, with the switch on Design and your designs in place of chats -->
   <aside class="sidebar dz-side" id="side">
     <div class="sb-header">
       <div class="app-switch" role="tablist" aria-label="Switch between Craft, Crew and Design">
@@ -21,27 +21,52 @@
     </div>
     <nav class="sb-nav">
       <button class="sb-item" id="newBtn" type="button">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.2 2.8a1.4 1.4 0 0 1 0 2L7.5 10.5 5 11l.5-2.5 5.7-5.7a1.4 1.4 0 0 1 2 0zM8 3H3.5C2.7 3 2 3.7 2 4.5v8c0 .8.7 1.5 1.5 1.5h8c.8 0 1.5-.7 1.5-1.5V8"/></svg>
+        <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
         New design
       </button>
+      <button class="sb-item" id="searchBtn" type="button">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        Search designs
+      </button>
+      <label class="dz-search" id="searchBox" hidden>
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="searchInput" type="search" placeholder="Search designs" autocomplete="off" spellcheck="false">
+      </label>
+      <button class="sb-item" id="folderBtn" type="button">
+        <svg viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3.6l2 2.2h7.4A2.5 2.5 0 0 1 21 9.7v7.8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></svg>
+        Designs folder
+      </button>
     </nav>
-    <div class="dz-list-title">Designs</div>
+    <div class="sb-section-title dz-section-title">Designs</div>
     <div class="dz-list" id="list"></div>
   </aside>
 
   <main class="dz-main">
-    <!-- start: what to design -->
-    <section class="dz-start" id="start">
-      <div class="dz-start-inner">
-        <h1>What should we design?</h1>
-        <div class="dz-kinds" id="kinds" role="group" aria-label="Kind of design"></div>
-        <div class="dz-box">
-          <textarea id="startInput" rows="3" placeholder="A landing page for a small coffee roaster in Lahore, warm and editorial" spellcheck="true"></textarea>
-          <div class="dz-box-row">
-            <span class="dz-box-note">Designs only. When one should work for real, build it in Craft.</span>
-            <button class="dz-send" id="startSend" type="button" aria-label="Design it" disabled>
-              <svg viewBox="0 0 16 16"><path d="M8 13V3.5M3.8 7.5 8 3.3l4.2 4.2"/></svg>
-            </button>
+    <!-- start: Craft's home, for designs -->
+    <section class="dz-home" id="start">
+      <div class="main-topbar"><span></span><div class="topbar-icons"></div></div>
+      <div class="home-center">
+        <svg class="home-logo" viewBox="560 540 3200 3200" aria-hidden="true"><path transform="translate(446.2 415.6)" fill-rule="evenodd" d="M 1678.618 161.001 C 1513.270 173.860, 1361.809 346.904, 1279.057 617.500 C 1274.011 634, 1267.620 654.925, 1264.855 664 C 1249.516 714.339, 1229.366 737.485, 1195.500 743.667 C 1176.163 747.196, 1162.631 743.554, 1110.552 720.802 C 1022.739 682.440, 971.671 664, 888.500 640.621 C 862.965 633.443, 796.420 619.707, 772 616.573 C 713.658 609.085, 593.780 610.737, 551.641 619.609 C 332.720 665.703, 243.351 832.965, 314.976 1062.546 C 353.997 1187.622, 433.071 1316.880, 553.531 1452.500 C 623.139 1530.869, 661.709 1532.912, 733.080 1462.011 C 772.514 1422.836, 780.747 1391.220, 761.479 1352.958 C 754.288 1338.678, 740.993 1320.496, 698.991 1267.500 C 608.528 1153.357, 538.933 1033.300, 526.096 969.244 C 508.440 881.134, 552.031 833.575, 650.500 833.517 C 684.922 833.497, 695.220 834.936, 769.390 850.128 C 888.325 874.489, 1086.233 953.898, 1267.500 1049.990 C 1344.206 1090.653, 1372.719 1106.795, 1461.500 1159.816 C 1608.121 1247.380, 1755.866 1358.262, 1861.500 1460.014 C 1921.219 1517.539, 1951.774 1524.352, 1997.213 1490.277 C 2057.039 1445.413, 2074.206 1391.642, 2043.179 1346.309 C 2033.397 1332.016, 2001.765 1301.543, 1934.541 1241.650 C 1874.053 1187.757, 1792.899 1122.849, 1720.500 1070.456 C 1642.140 1013.750, 1607.593 990.197, 1545.770 951.333 C 1444.460 887.645, 1440.775 876.828, 1477.514 751 C 1554.913 485.915, 1639.597 355.942, 1721.242 376.924 C 1792.586 395.260, 1843.427 482.519, 1903.944 690.500 C 1922.645 754.772, 1931.223 772.623, 1951.366 789.193 C 1979.980 812.729, 2004.596 813.361, 2073.962 792.338 C 2129.084 775.633, 2151.559 737.105, 2138.619 681.500 C 2096.957 502.479, 2034.714 369.918, 1948.588 276.785 C 1867.542 189.146, 1782.992 152.884, 1678.618 161.001 M 2651 826.525 C 2636.425 827.220, 2610.775 828.309, 2594 828.947 C 2547.771 830.703, 2538.279 831.726, 2500.500 839.021 C 2486.750 841.676, 2465.600 845.252, 2453.500 846.968 C 2317.824 866.210, 2285.604 904.119, 2316.087 1008.641 C 2337.385 1081.667, 2374.061 1095.532, 2487.753 1073.537 C 2517.351 1067.811, 2526.614 1066.506, 2555.451 1064.003 C 2580.486 1061.831, 2593.838 1060.071, 2623 1055.100 C 2674.441 1046.332, 2761.094 1044.363, 2803.500 1050.999 C 2919.711 1069.183, 2946.817 1114.190, 2903.478 1217 C 2845.944 1353.482, 2724.242 1482.607, 2533 1610.074 C 2379.093 1712.656, 2141.479 1829.058, 1924.625 1908.104 C 1912.456 1912.540, 1890.432 1920.651, 1875.682 1926.128 C 1850.956 1935.310, 1816.781 1947.333, 1750.760 1970.078 C 1695.022 1989.279, 1679.399 1999.437, 1665.959 2025.213 C 1653.383 2049.332, 1654.682 2087.531, 1669.522 2129.971 C 1691.542 2192.948, 1730.404 2209.667, 1804.386 2187.990 C 1976.971 2137.422, 2183.921 2052.417, 2353.500 1962.440 C 2455.001 1908.585, 2473.561 1910.724, 2546.003 1984.625 C 2709.559 2151.475, 2793.184 2302.385, 2762.458 2375.239 C 2737.105 2435.354, 2659.411 2458.576, 2547.500 2439.488 C 2533.200 2437.049, 2512.157 2433.680, 2500.739 2432.002 C 2470.016 2427.486, 2429.336 2418.321, 2378.085 2404.369 C 2283.654 2378.663, 2250.338 2399.382, 2224.311 2500 C 2211.121 2550.990, 2228.931 2586.687, 2278.053 2607.714 C 2311.029 2621.830, 2394.875 2642.821, 2446.688 2649.932 C 2455.042 2651.079, 2473.042 2654.046, 2486.688 2656.526 C 2531.128 2664.603, 2529.166 2664.462, 2597 2664.482 C 2666.633 2664.503, 2661.731 2664.930, 2712.968 2654.375 C 2793.081 2637.871, 2839.358 2618.554, 2885 2582.566 C 2975.643 2511.096, 3006.471 2421.809, 2989.432 2280.095 C 2981.902 2217.467, 2941.621 2124.094, 2886.934 2042.500 C 2844.667 1979.438, 2814.783 1942.700, 2753.527 1878.500 C 2711.108 1834.043, 2701.792 1818.416, 2701.664 1791.500 C 2701.509 1759.031, 2716.582 1739.248, 2771 1700.491 C 2877.964 1624.312, 2979.014 1528.767, 3039.190 1446.911 C 3127.138 1327.276, 3159.569 1234.123, 3154.045 1117 C 3148.683 1003.324, 3072.370 911.830, 2942.369 863.217 C 2915.206 853.060, 2857.026 837.930, 2824.500 832.566 C 2791.651 827.148, 2702.834 824.056, 2651 826.525 M 1221 1480.554 C 1185.814 1488.106, 1164.806 1513.094, 1153.370 1561 C 1151.466 1568.975, 1147.468 1585.625, 1144.487 1598 C 1141.505 1610.375, 1137.227 1630.850, 1134.980 1643.500 C 1132.732 1656.150, 1128.698 1676.850, 1126.013 1689.500 C 1123.329 1702.150, 1119.707 1721.950, 1117.965 1733.500 C 1114.579 1755.950, 1113.091 1764.073, 1107.617 1790 C 1103.206 1810.891, 1101.591 1822.086, 1099.032 1849.500 C 1096.638 1875.144, 1094.993 1887.946, 1091 1912 C 1084.635 1950.349, 1083.594 1961.542, 1081.521 2014 C 1079.670 2060.833, 1078.662 2076.859, 1075.451 2110.500 C 1073.097 2135.166, 1072.499 2143.857, 1069.981 2190 C 1065.137 2278.770, 1046.459 2294.011, 902.500 2326.667 C 853.941 2337.682, 844.423 2339.535, 818.775 2342.971 C 805.974 2344.686, 786.275 2347.628, 775 2349.510 C 670.265 2366.986, 578.382 2357.052, 530.217 2323.044 C 447.360 2264.540, 489.788 2150.492, 658.069 1979.376 C 701.290 1935.427, 713.158 1921.198, 720.567 1904.445 C 737.226 1866.775, 725.209 1831.984, 679.971 1786.916 C 643.652 1750.733, 611.184 1740.532, 576.802 1754.502 C 536.975 1770.685, 432.342 1880.046, 374.269 1966.185 C 291.116 2089.526, 261.131 2183.962, 268.924 2297.971 C 278.346 2435.833, 391.245 2541.176, 563 2572.366 C 627.602 2584.098, 785.970 2581.139, 852.500 2566.957 C 865.150 2564.261, 884.050 2560.457, 894.500 2558.504 C 904.950 2556.552, 927 2551.636, 943.500 2547.581 C 984.354 2537.540, 984.644 2537.493, 1005.500 2537.543 C 1045.793 2537.641, 1071.124 2557.231, 1081.535 2596.347 C 1085.400 2610.867, 1095.186 2680.902, 1098.534 2718 C 1100.530 2740.113, 1102.307 2752.129, 1106.001 2768.500 C 1107.614 2775.650, 1110.055 2786.450, 1111.425 2792.500 C 1112.796 2798.550, 1115.526 2812.275, 1117.492 2823 C 1135.496 2921.202, 1182.799 3041.222, 1234.744 3120.500 C 1322.370 3254.236, 1425.576 3311.227, 1556.500 3298.177 C 1716.141 3282.265, 1881.913 3095.902, 1981.844 2820 C 2021.370 2710.873, 2024.915 2690.720, 2009.872 2660.701 C 1995.846 2632.714, 1981.433 2623.761, 1914.032 2601.170 C 1837.474 2575.509, 1827.569 2579.467, 1803.046 2645.514 C 1695.736 2934.533, 1604.354 3080.592, 1534.615 3074.557 C 1458.122 3067.937, 1353.237 2893.564, 1315.637 2710.500 C 1313.152 2698.400, 1309.321 2680.400, 1307.124 2670.500 C 1301.618 2645.694, 1300.423 2638.161, 1297.523 2610 C 1294.774 2583.293, 1294.324 2579.619, 1289.992 2548.500 C 1277.686 2460.097, 1277.946 2268.554, 1290.509 2168 C 1294.349 2137.262, 1295.857 2120.182, 1297.501 2088.762 C 1299.997 2041.094, 1300.894 2033.182, 1308.473 1992 C 1312.545 1969.874, 1314.372 1955.875, 1316.500 1930.500 C 1318.625 1905.160, 1320.210 1894.149, 1326.002 1864.500 C 1328.688 1850.750, 1332.488 1827.980, 1334.447 1813.899 C 1336.406 1799.819, 1340.451 1776.194, 1343.436 1761.399 C 1346.420 1746.605, 1350.031 1726.625, 1351.459 1717 C 1355.384 1690.557, 1355.798 1688.343, 1361.654 1662.583 C 1384.615 1561.577, 1376.855 1524.810, 1327.368 1500.125 C 1296.022 1484.489, 1245.756 1475.241, 1221 1480.554"/></svg>
+        <h1 class="home-title">What should we design?</h1>
+        <div class="dz-recent" id="recent"></div>
+      </div>
+      <div class="composer-wrap home-composer">
+        <div class="composer-tray dz-tray" id="kinds" role="group" aria-label="Kind of design"></div>
+        <div class="composer dz-composer" id="startComposer">
+          <div class="dz-attach-row" id="startAtt" hidden></div>
+          <textarea class="composer-input" id="startInput" rows="1" placeholder="Describe what to design: what it is, who it's for, the feel"></textarea>
+          <div class="composer-bottom">
+            <div class="composer-bottom-left">
+              <button class="attach-btn" id="startAttach" type="button" title="Add reference images"><svg viewBox="0 0 24 24"><path d="M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg></button>
+              <input type="file" id="startFile" accept="image/*" multiple hidden>
+              <span class="chip dz-only" title="Codeply Design makes designs only. When a website or app should work, Build it in Craft.">
+                <svg viewBox="0 0 24 24"><path d="M12 3.5 13.9 9l5.6 1.9-5.6 1.9L12 18.5l-1.9-5.7L4.5 10.9 10.1 9z"/></svg>
+                <span>Designs only</span>
+              </span>
+            </div>
+            <div class="composer-bottom-right">
+              <button class="send-btn" id="startSend" type="button" title="Design it" disabled><svg class="ic-send" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg></button>
+            </div>
           </div>
         </div>
       </div>
@@ -50,45 +75,60 @@
     <!-- one design: its chat beside the canvas -->
     <section class="dz-work" id="work" hidden>
       <div class="dz-chat">
-        <header class="dz-chat-head">
-          <span class="dz-title" id="dTitle" title="Double-click to rename">Untitled design</span>
-          <span class="dz-kind" id="dKind">Website</span>
-          <button class="icon-btn icon-btn-sm dz-more" id="moreBtn" type="button" title="More" aria-label="More" data-menu>
-            <svg viewBox="0 0 16 16" fill="currentColor" stroke="none"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg>
-          </button>
-        </header>
-        <div class="dz-thread" id="thread"><div class="feed" id="feed"></div></div>
-        <footer class="dz-composer">
-          <textarea id="input" rows="1" placeholder="Ask for changes" spellcheck="true"></textarea>
-          <div class="dz-box-row">
-            <span class="dz-box-note" id="chatNote"></span>
-            <button class="dz-send" id="sendBtn" type="button" aria-label="Send" disabled>
-              <svg class="i-send" viewBox="0 0 16 16"><path d="M8 13V3.5M3.8 7.5 8 3.3l4.2 4.2"/></svg>
-              <svg class="i-stop" viewBox="0 0 16 16"><rect x="4.5" y="4.5" width="7" height="7" rx="1.5"/></svg>
-            </button>
+        <div class="chat-topbar dz-chat-top">
+          <div class="chat-title-group">
+            <span class="dz-kind-ico" id="dKindIco" aria-hidden="true"></span>
+            <span class="chat-title dz-title" id="dTitle" title="Double-click to rename">Untitled design</span>
           </div>
-        </footer>
+          <div class="topbar-icons">
+            <button class="icon-btn" id="renameBtn" type="button" title="Rename"><svg viewBox="0 0 24 24"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+            <button class="icon-btn" id="moreBtn" type="button" title="More" data-menu><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg></button>
+          </div>
+        </div>
+        <div class="dz-thread" id="thread"><div class="dz-feed" id="feed"></div></div>
+        <div class="composer-wrap dz-chat-composer">
+          <div class="composer dz-composer" id="chatComposer">
+            <div class="dz-attach-row" id="chatAtt" hidden></div>
+            <textarea class="composer-input" id="input" rows="1" placeholder="Ask for changes"></textarea>
+            <div class="composer-bottom">
+              <div class="composer-bottom-left">
+                <button class="attach-btn" id="chatAttach" type="button" title="Add reference images"><svg viewBox="0 0 24 24"><path d="M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg></button>
+                <input type="file" id="chatFile" accept="image/*" multiple hidden>
+                <span class="dz-note" id="chatNote"></span>
+              </div>
+              <div class="composer-bottom-right">
+                <button class="send-btn" id="sendBtn" type="button" title="Send" disabled><svg class="ic-send" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg><svg class="ic-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="dz-stage">
-        <header class="dz-stage-head">
-          <div class="segmented segmented-sm dz-sizes" id="sizes" role="group" aria-label="Width" hidden>
-            <button class="segmented-item active" data-w="1440" type="button">Desktop</button>
-            <button class="segmented-item" data-w="768" type="button">Tablet</button>
-            <button class="segmented-item" data-w="390" type="button">Phone</button>
+        <div class="dz-stage-top">
+          <div class="dz-devices" id="sizes" role="group" aria-label="Width">
+            <button type="button" data-w="1440" title="Desktop (1440)"><svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/></svg></button>
+            <button type="button" data-w="768" title="Tablet (768)"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2.2"/><path d="M11 18h2"/></svg></button>
+            <button type="button" data-w="390" title="Phone (390)"><svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.2"/><path d="M11 18h2"/></svg></button>
           </div>
-          <span class="dz-stage-spacer"></span>
-          <button class="btn dz-btn" id="exportBtn" type="button" data-menu>
+          <span class="dz-size-label" id="sizeLabel"></span>
+          <span class="dz-spacer"></span>
+          <button class="icon-btn" id="reloadBtn" type="button" title="Reload the preview"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>
+          <button class="icon-btn" id="openBtn" type="button" title="Open in your browser"><svg viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/></svg></button>
+          <button class="btn btn-secondary dz-btn" id="exportBtn" type="button" data-menu>
+            <svg viewBox="0 0 24 24"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>
             Export
-            <svg viewBox="0 0 16 16" class="dz-caret"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg>
           </button>
           <button class="btn btn-primary dz-btn" id="buildBtn" type="button" title="Copy this design into a new project and have Craft make it work">
-            <svg viewBox="0 0 16 16"><path d="M9.5 2.5 6.5 13.5M4.5 5 1.8 8l2.7 3M11.5 5l2.7 3-2.7 3"/></svg>
+            <svg viewBox="0 0 24 24"><path d="m14 4-4 16"/><path d="M7 8l-4 4 4 4"/><path d="M17 8l4 4-4 4"/></svg>
             Build it in Craft
           </button>
-        </header>
+        </div>
         <div class="dz-canvas" id="canvas">
-          <div class="dz-frame" id="frameWrap"><iframe id="frame" title="Design preview" sandbox="allow-scripts"></iframe></div>
+          <div class="dz-frame" id="frameWrap">
+            <div class="dz-chrome" id="chrome"><i></i><i></i><i></i><span class="dz-url" id="chromeUrl"></span></div>
+            <div class="dz-viewport" id="viewport"><iframe id="frame" title="Design preview" sandbox="allow-scripts"></iframe></div>
+          </div>
           <div class="dz-waiting" id="waiting"><span class="spin"></span><span class="shine">Designing</span></div>
         </div>
       </div>

@@ -7,10 +7,16 @@
 //
 // "Build it in Craft" copies the design into a new project and starts a Build
 // chat that makes it work.
-const { BrowserView, BrowserWindow, ipcMain, dialog, shell, app } = require('electron');
+const { BrowserView, BrowserWindow, ipcMain, dialog, shell, app, protocol, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
+
+// The canvas shows a design in a sandboxed frame, and a sandboxed frame may not read file://
+// pictures. So each design is served as codeply-design://<id>/..., from its own folder only.
+// (Registered here, at startup: it has to happen before the app is ready.)
+const SCHEME = 'codeply-design';
+protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 
 let host = null;        // functions from main.js (see init)
 let view = null;
@@ -37,15 +43,18 @@ function view_(d) {
   const file = path.join(d.dir, 'index.html');
   const kind = KINDS.includes(j.kind) ? j.kind : (KINDS.includes(d.kind) ? d.kind : 'website');
   let mtime = 0; try { mtime = fs.statSync(file).mtimeMs; } catch {}
+  let thumb = 0; try { thumb = fs.statSync(path.join(d.dir, THUMB)).mtimeMs; } catch {}
   return {
     id: d.id, title: String(j.title || d.title || 'Untitled design').slice(0, 120), kind, summary: String(j.summary || '').slice(0, 300),
-    sessionId: d.sessionId || null, dir: d.dir, file, url: pathToFileURL(file).href, ready: mtime > 0, updatedAt: Math.max(d.updatedAt || 0, mtime),
+    sessionId: d.sessionId || null, dir: d.dir, file, url: pathToFileURL(file).href, previewUrl: `${SCHEME}://${d.id}/index.html`, thumbUrl: thumb ? `${SCHEME}://${d.id}/${THUMB}?v=${Math.round(thumb)}` : null, ready: mtime > 0, updatedAt: Math.max(d.updatedAt || 0, mtime),
     size: SIZE[kind], running: !!d.sessionId && host.activeRunIds().includes(d.sessionId),
   };
 }
 
 function list() {
-  return records().filter((d) => fs.existsSync(d.dir)).map(view_).sort((a, b) => b.updatedAt - a.updatedAt);
+  const all = records().filter((d) => fs.existsSync(d.dir)).map(view_).sort((a, b) => b.updatedAt - a.updatedAt);
+  for (const v of all) if (v.ready && (!v.thumbUrl || thumbStale(v))) thumbSoon(byId(v.id));
+  return all;
 }
 
 function slugOf(text) {
@@ -62,8 +71,8 @@ function newFolder(text) {
   return dir;
 }
 
-async function sendMessage(d, text) {
-  const r = await host.startChatRun({ sessionId: d.sessionId || null, cwd: d.dir, mode: 'Design', design: d.id, text, clientId: 'design' });
+async function sendMessage(d, text, images) {
+  const r = await host.startChatRun({ sessionId: d.sessionId || null, cwd: d.dir, mode: 'Design', design: d.id, text, images: Array.isArray(images) && images.length ? images.slice(0, 4) : undefined, clientId: 'design' });
   if (r && r.sessionId && d.sessionId !== r.sessionId) { d.sessionId = r.sessionId; }
   d.updatedAt = Date.now();
   host.saveStore();
@@ -121,9 +130,12 @@ async function withPage(url, { width, height, mobile = false }, fn) {
     // format 'jpeg' for the agent to look at, 'png' for an export; full = the whole page in one picture
     const shot = async ({ full = false, format = 'jpeg', scale = 1 } = {}) => {
       const total = full ? Math.min(await pageHeight(), height * 12, 16000) : height;
+      // A clip (in page coordinates) is what scales a capture: the whole page, or the screen in view.
+      const y = full ? 0 : await js('window.scrollY').catch(() => 0);
+      const clipped = full || scale !== 1;
       const r = await dbg.sendCommand('Page.captureScreenshot', {
-        format, ...(format === 'jpeg' ? { quality: 76 } : {}), captureBeyondViewport: full,
-        ...(full ? { clip: { x: 0, y: 0, width, height: total, scale } } : {}),
+        format, ...(format === 'jpeg' ? { quality: 76 } : {}), captureBeyondViewport: clipped,
+        ...(clipped ? { clip: { x: 0, y, width, height: total, scale } } : {}),
       });
       return r && r.data ? r.data : null;
     };
@@ -159,6 +171,35 @@ async function renderForLint(url, { width = 1440, height = 900, probe = null, fr
   } catch (e) {
     return { ok: false, error: e.message };
   }
+}
+
+// ─── Thumbnails for the sidebar and the start screen ───────────────────────────
+// The first screen of the design, 480 wide, in .thumb.jpg (a dot file: never copied
+// into a project or synced). Made after every finished run, and for any design without one.
+const THUMB = '.thumb.jpg';
+const thumbQueue = [];
+let thumbBusy = false;
+function thumbStale(v) {
+  try { return fs.statSync(path.join(v.dir, THUMB)).mtimeMs + 2000 < fs.statSync(v.file).mtimeMs; } catch { return true; }
+}
+function thumbSoon(d, ms = 0) {
+  if (!d || thumbQueue.includes(d.id)) return;
+  setTimeout(() => { if (!thumbQueue.includes(d.id)) thumbQueue.push(d.id); nextThumb(); }, ms);
+}
+async function nextThumb() {
+  if (thumbBusy || !thumbQueue.length) return;
+  thumbBusy = true;
+  const d = byId(thumbQueue.shift());
+  try {
+    const v = d && view_(d);
+    if (v && v.ready) {
+      const { w, h } = v.size;
+      const data = await withPage(v.url, { width: w, height: h }, (p) => p.shot({ full: false, scale: 480 / w }));
+      if (data) { fs.writeFileSync(path.join(d.dir, THUMB), Buffer.from(data, 'base64')); send('design:synced', {}); }
+    }
+  } catch (e) { console.warn('[design] thumbnail:', e.message); }
+  thumbBusy = false;
+  nextThumb();
 }
 
 async function renderPng(d, v) {
@@ -410,7 +451,7 @@ function event(sessionId, ev) {
   const d = (s && s.design ? byId(s.design) : null) || records().find((x) => x.sessionId === sessionId);
   if (d && !d.sessionId) d.sessionId = sessionId;
   if (d && (ev.type === 'run_finished' || ev.type === 'tool_end')) d.updatedAt = Date.now();
-  if (d && ev.type === 'run_finished') pushSoon(d);
+  if (d && ev.type === 'run_finished') { pushSoon(d); thumbSoon(d, 600); }
   send('design:event', { sessionId, designId: d ? d.id : null, ...ev });
 }
 function runs(active) { send('design:runs', active); }
@@ -418,13 +459,23 @@ function runs(active) { send('design:runs', active); }
 function init(h) {
   host = h;
 
+  protocol.handle(SCHEME, (req) => {
+    const u = new URL(req.url);
+    const d = byId(u.hostname);
+    if (!d) return new Response('Not found', { status: 404 });
+    const root = path.resolve(d.dir);
+    const abs = path.resolve(root, decodeURIComponent(u.pathname).replace(/^\/+/, '') || 'index.html');
+    if (!abs.startsWith(root + path.sep)) return new Response('Not found', { status: 404 });
+    return net.fetch(pathToFileURL(abs).href);
+  });
+
   ipcMain.handle('design:list', () => {
     // Newer designs from the phone come down in the background; the page reloads its list when they land.
     pull().then((changed) => { if (changed) send('design:synced', {}); }).catch(() => {});
     return { designs: list(), kinds: KINDS };
   });
-  ipcMain.handle('design:create', (e, { text, kind } = {}) => createDesign(text, kind));
-  ipcMain.handle('design:send', (e, { id, text } = {}) => sendTo(id, text));
+  ipcMain.handle('design:create', (e, { text, kind, images } = {}) => createDesign(text, kind, 'pc', images));
+  ipcMain.handle('design:send', (e, { id, text, images } = {}) => sendTo(id, text, images));
   ipcMain.handle('design:open', (e, id) => {
     const d = byId(id);
     if (!d) return null;
@@ -464,6 +515,9 @@ function init(h) {
     return { ok: true };
   });
   ipcMain.on('design:reveal', (e, id) => { const d = byId(id); if (d) shell.showItemInFolder(path.join(d.dir, 'index.html')); });
+  // In the default browser (the file's own app), as the real page.
+  ipcMain.on('design:openFile', (e, id) => { const d = byId(id); if (d && fs.existsSync(path.join(d.dir, 'index.html'))) shell.openPath(path.join(d.dir, 'index.html')); });
+  ipcMain.on('design:openFolder', () => { fs.mkdirSync(base(), { recursive: true }); shell.openPath(base()); });
   ipcMain.handle('design:export', (e, { id, format } = {}) => exportDesign(id, format).catch((err) => ({ error: err.message })));
   ipcMain.handle('design:build', (e, id) => buildInCraft(id).catch((err) => ({ error: err.message })));
   ipcMain.on('design:toCraft', () => host.toCraft());
@@ -471,23 +525,23 @@ function init(h) {
 }
 
 // ─── Actions the page and the phone (main.js /api/design/*) both use ──────────
-async function createDesign(text, kind, origin = 'pc') {
+async function createDesign(text, kind, origin = 'pc', images) {
   text = String(text || '').trim();
   if (!text) return { error: 'Say what to design.' };
   const k = KINDS.includes(kind) ? kind : null;
   const d = { id: 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), dir: newFolder(text), title: text.slice(0, 60), kind: k || 'website', origin, createdAt: Date.now(), updatedAt: Date.now(), sessionId: null };
   records().unshift(d);
   host.saveStore();
-  const r = await sendMessage(d, k ? `Make a ${k === 'doc' ? 'document' : k === 'social' ? 'social post' : k} design: ${text}` : text);
+  const r = await sendMessage(d, k ? `Make a ${k === 'doc' ? 'document' : k === 'social' ? 'social post' : k} design: ${text}` : text, images);
   return { ...r, design: view_(d) };
 }
-async function sendTo(id, text) {
+async function sendTo(id, text, images) {
   if (!byId(id)) await pull(true); // made on the phone a moment ago
   const d = byId(id);
   if (!d) return { error: 'That design is gone.' };
   text = String(text || '').trim();
   if (!text) return { error: 'Write a message first.' };
-  const r = await sendMessage(d, text);
+  const r = await sendMessage(d, text, images);
   return { ...r, design: view_(d) };
 }
 /** For the phone while this PC works on a design: is it running, what is it doing, what was said. */
