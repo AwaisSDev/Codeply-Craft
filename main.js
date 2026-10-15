@@ -2279,7 +2279,8 @@ async function handleBridgeApi(method, pathname, query, body) {
     if (method === 'POST' && act === 'create') { const r = await designTab.createDesign(body && body.text, body && body.kind, 'phone'); return { status: r.error ? 400 : 200, body: r.error ? r : { id: r.design.id, sessionId: r.sessionId } }; }
     if (method === 'POST' && act === 'send') { const r = await designTab.sendTo(body && body.id, body && body.text); return { status: r.error ? 400 : 200, body: r.error ? r : { id: r.design.id, sessionId: r.sessionId } }; }
     if (method === 'POST' && act === 'stop') { designTab.stopDesign(body && body.id); return { status: 200, body: { ok: true } }; }
-    if (method === 'POST' && act === 'build') { const r = await designTab.buildFromPhone(body && body.id); return { status: r && r.error ? 400 : 200, body: r || { error: 'Craft could not start that.' } }; }
+    if (method === 'POST' && act === 'build') { const r = await designTab.buildFromPhone(body && body.id, body || {}); return { status: r && r.error ? 400 : 200, body: r || { error: 'Craft could not start that.' } }; }
+    if (method === 'GET' && act === 'html') { const r = designTab.inlineHtml(query.get('id')); return r ? { status: 200, body: r } : { status: 404, body: { error: 'That design is not on this PC.' } }; }
     if (method === 'GET' && act === 'state') { const st = designTab.designState(query.get('id')); return st ? { status: 200, body: st } : { status: 404, body: { error: 'That design is not on this PC yet.' } }; }
     return { status: 404, body: { error: 'Unknown design request.' } };
   }

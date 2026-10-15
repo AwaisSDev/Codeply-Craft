@@ -14,6 +14,7 @@
   <link rel="apple-touch-icon" href="logo.png">
   <link rel="stylesheet" href="phone.css">
   <link rel="stylesheet" href="phone-calls.css">
+  <link rel="stylesheet" href="phone-design.css">
   <script>
     // Apply a stored dark/light choice before first paint.
     (function () {
@@ -138,6 +139,7 @@
       <button class="drawer-item" id="drawerProjects"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2h7.4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/><path d="M3.5 10.5h17"/></svg><span>Projects</span></button>
       <button class="drawer-item" id="drawerCloud"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18.5a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 9a4 4 0 0 1 .5 7.97V18.5Z"/></svg><span>Cloud</span></button>
       <button class="drawer-item" id="drawerCalls"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4h3.2l1.8 4.5-2.2 1.4a11 11 0 0 0 5.8 5.8l1.4-2.2 4.5 1.8v3.2a1.5 1.5 0 0 1-1.6 1.5A16.5 16.5 0 0 1 4 5.6 1.5 1.5 0 0 1 5.5 4Z"/></svg><span>Calls</span></button>
+      <button class="drawer-item" id="drawerDesign"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2a8.8 8.8 0 1 0 0 17.6c1.2 0 2-.9 2-2 0-.6-.3-1.1-.6-1.5-.3-.3-.5-.8-.5-1.2 0-1.1.9-2 2-2h2.4c2.4 0 4.4-2 4.4-4.4C21.7 6.6 17.3 3.2 12 3.2z"/><circle cx="7.6" cy="11" r="1.2" fill="currentColor" stroke="none"/><circle cx="11.4" cy="7.4" r="1.2" fill="currentColor" stroke="none"/><circle cx="16" cy="8.4" r="1.2" fill="currentColor" stroke="none"/></svg><span>Design</span></button>
     </nav>
     <div class="drawer-sep" id="drawerSep"></div>
     <div class="chat-list" id="chatList"></div>
@@ -233,6 +235,29 @@
     <div class="panel-body" id="callsBody"></div>
   </section>
 
+  <section class="panel hidden" id="design" role="dialog" aria-modal="true" aria-label="Design">
+    <header class="top">
+      <button class="icon-btn" id="designBack" aria-label="Back">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <div class="top-title"><span id="designTitle">Design</span></div>
+      <span class="icon-btn" aria-hidden="true"></span>
+    </header>
+    <div class="panel-body dg-body" id="designBody"></div>
+    <form class="composer dg-composer" id="designComposer">
+      <div class="dg-kinds" id="designKinds" role="group" aria-label="Kind of design"></div>
+      <div class="box">
+        <textarea id="designInput" rows="1" placeholder="What should we design?"></textarea>
+        <div class="box-row">
+          <span class="dg-note" id="designNote"></span>
+          <button type="submit" class="send-btn" aria-label="Design it">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg>
+          </button>
+        </div>
+      </div>
+    </form>
+  </section>
+
   <section class="call hidden" id="call" role="dialog" aria-modal="true" aria-label="Voice call"></section>
 
   <div class="lightbox hidden" id="lightbox"><img alt="Screenshot"></div>
@@ -245,5 +270,6 @@
   <script src="phone.js"></script>
   <script src="phone-reminders.js"></script>
   <script src="phone-calls.js"></script>
+  <script src="phone-design.js"></script>
 </body>
 </html>

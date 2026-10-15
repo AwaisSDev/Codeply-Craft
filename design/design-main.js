@@ -497,8 +497,34 @@ function designState(id) {
   const tools = s ? s.messages.filter((m) => m.kind === 'tool').slice(-1) : [];
   return { id: d.id, title: v.title, kind: v.kind, summary: v.summary, running: v.running, version: d.version || 0, lastStep: tools[0] ? tools[0].name : null, chat: shortChat(d) };
 }
-async function buildFromPhone(id) {
+/** The design for the phone to show, with its pictures inlined (works before sync is set up). */
+function inlineHtml(id) {
+  const d = byId(id);
+  if (!d) return null;
+  const file = path.join(d.dir, 'index.html');
+  if (!fs.existsSync(file)) return { html: '', version: d.version || 0 };
+  let budget = 3 * 1024 * 1024;
+  const root = path.resolve(d.dir) + path.sep;
+  const html = fs.readFileSync(file, 'utf8').replace(/(["'(])((?:\.\/)?assets\/[^"')?#\s]+)/g, (m, q, rel) => {
+    const abs = path.resolve(d.dir, rel);
+    if (!abs.startsWith(root) || !fs.existsSync(abs)) return m;
+    const buf = fs.readFileSync(abs);
+    if (buf.length > budget) return m;
+    budget -= buf.length;
+    return `${q}data:${CONTENT_TYPE[path.extname(abs).toLowerCase()] || 'application/octet-stream'};base64,${buf.toString('base64')}`;
+  });
+  return { html, version: d.version || 0, title: view_(d).title, kind: view_(d).kind };
+}
+/** Build it in Craft from the phone. A design made on the phone arrives with its HTML when sync isn't set up. */
+async function buildFromPhone(id, from = {}) {
   if (!byId(id)) await pull(true);
+  if (!byId(id) && from.html) {
+    const d = { id, dir: newFolder(from.title || 'design'), title: String(from.title || 'Untitled design').slice(0, 120), kind: KINDS.includes(from.kind) ? from.kind : 'website', origin: 'phone', createdAt: Date.now(), updatedAt: Date.now(), sessionId: null };
+    fs.writeFileSync(path.join(d.dir, 'index.html'), String(from.html));
+    fs.writeFileSync(path.join(d.dir, 'design.json'), JSON.stringify({ title: d.title, kind: d.kind, summary: '' }, null, 2));
+    records().unshift(d);
+    host.saveStore();
+  }
   return buildInCraft(id);
 }
 function stopDesign(id) { const d = byId(id); if (d && d.sessionId) host.stopChatRun(d.sessionId); }
@@ -506,4 +532,4 @@ function stopDesign(id) { const d = byId(id); if (d && d.sessionId) host.stopCha
 /** The session ids of every design chat (main.js keeps them out of Craft's lists). */
 function sessionIds() { return new Set(records().map((d) => d.sessionId).filter(Boolean)); }
 
-module.exports = { init, embed, setBounds, unembed, event, runs, sessionIds, KINDS, createDesign, sendTo, designState, buildFromPhone, stopDesign, pull, exportDesign, renderForLint };
+module.exports = { init, embed, setBounds, unembed, event, runs, sessionIds, KINDS, createDesign, sendTo, designState, buildFromPhone, stopDesign, pull, exportDesign, renderForLint, inlineHtml };

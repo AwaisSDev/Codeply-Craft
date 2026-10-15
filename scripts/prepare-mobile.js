@@ -20,6 +20,8 @@ for (const [from, to] of [
   ['phone-reminders.js', 'phone-reminders.js'],
   ['phone-sw.js', 'phone-sw.js'],
   ['phone-calls.css', 'phone-calls.css'],
+  ['phone-design.js', 'phone-design.js'],
+  ['phone-design.css', 'phone-design.css'],
   ['phone-stt-worker.js', 'phone-stt-worker.js'],
   ['bot-avatar.js', 'bot-avatar.js'],
   ['attachments.js', 'attachments.js'],

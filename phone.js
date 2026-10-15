@@ -2601,7 +2601,7 @@ currentSession().then((s) => { if (s) enterApp(); else showSignin(); }).catch(sh
 
 // For tests and debugging in the console.
 // phone-calls.js (Calls with bots) builds on these too.
-window.CraftPhone = { state, relay, sealSecret, CLOUD_WORKFLOW, md, pollAll, relayRequest, accessToken, esc, load, save, newId, openDrawer, closeDrawer, AI_PROXY_URL, SUPABASE_ANON_KEY, deviceHeader,
+window.CraftPhone = { state, relay, sb, sealSecret, CLOUD_WORKFLOW, md, pollAll, relayRequest, accessToken, esc, load, save, newId, openDrawer, closeDrawer, AI_PROXY_URL, SUPABASE_ANON_KEY, deviceHeader,
   cloudEnvForBots, startCloudTask, pollCloudTask: pollTask };
 
 // Reminders and "calls" from your bots arrive as Web Push: phone-sw.js shows
