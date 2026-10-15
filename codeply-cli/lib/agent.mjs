@@ -15,7 +15,7 @@ import os from 'os';
 import path from 'path';
 import { execSync } from 'child_process';
 import { createRequire } from 'module';
-import { executeTool, TOOL_NEEDS_APPROVAL, walkFiles, resolvePath, formatTodos, isPlanPath } from './tools.mjs';
+import { executeTool, TOOL_NEEDS_APPROVAL, walkFiles, resolvePath, formatTodos, isPlanPath, DESIGN_BLOCKED } from './tools.mjs';
 import { buildToolSchemas, toNativeMessages, toolCallsToTags, NATIVE_FORMAT, TOOLS_UNSUPPORTED } from './native-tools.mjs';
 
 const require = createRequire(import.meta.url);
@@ -53,7 +53,7 @@ const FORMAT_CORRECTION =
   '<codeply:read_file>\n<path>run.html</path>\n</codeply:read_file>\n\n' +
   'Valid names: todo, ask_user, mcp, list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, ' +
   'browser_check, gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, add_model, slack_post_message, vercel_deploy, supabase_create_project, ' +
-  'supabase_delete_project, github_create_repo, design_reference_search, view_images, supabase_api, supabase_sql, vercel_api, ' +
+  'supabase_delete_project, github_create_repo, design_reference_search, view_images, design_direction, design_lint, supabase_api, supabase_sql, vercel_api, ' +
   'web_fetch, web_search, image_search, reach_me, watch_email, apply_patch, plan_exit, plan_enter, lsp, publish_check, publish_connect, supabase_setup, supabase_schema, ' +
   'publish_deploy, publish_github.';
 
@@ -337,6 +337,8 @@ const PARAMS = {
   github_create_repo: ['path', 'name'],
   design_reference_search: ['term', 'category'],
   view_images: ['urls'],
+  design_direction: ['brief', 'sector', 'tone', 'sections', 'options', 'direction', 'redraw', 'have', 'keep', 'avoid', 'show', 'list', 'site'],
+  design_lint: ['path', 'kind', 'widths', 'allow'],
   supabase_api: ['method', 'path', 'body'],
   supabase_sql: ['ref', 'query'],
   vercel_api: ['method', 'path', 'body'],
@@ -405,6 +407,8 @@ const NAME_ALIASES = {
   designreference: 'design_reference_search', referencesearch: 'design_reference_search',
   designlibrary: 'design_reference_search', searchdesignlibrary: 'design_reference_search',
   view_images: 'view_images', viewimages: 'view_images', viewimage: 'view_images',
+  design_direction: 'design_direction', designdirection: 'design_direction', artdirection: 'design_direction', drawdirection: 'design_direction',
+  design_lint: 'design_lint', designlint: 'design_lint', designcheck: 'design_lint', checkdesign: 'design_lint',
   lookatimages: 'view_images', lookatimage: 'view_images', seeimages: 'view_images',
   supabase_api: 'supabase_api', supabaseapi: 'supabase_api',
   supabase_sql: 'supabase_sql', supabasesql: 'supabase_sql', sql: 'supabase_sql', runsql: 'supabase_sql',
@@ -963,6 +967,23 @@ is live; publish_github creates or reuses the repo, pushes and links Vercel.)
 <urls>https://example.com/screenshot1.jpg,https://example.com/screenshot2.jpg</urls>
 </codeply:view_images>
 
+<codeply:design_direction>
+<brief>Booking site for a small mountain hotel</brief>
+<sector>hospitality</sector>
+<tone>warm</tone>
+</codeply:design_direction>
+
+<codeply:design_lint>
+<path>index.html</path>
+<kind>website</kind>
+</codeply:design_lint>
+
+(design_direction deals an art direction for a page or app from the codeply-taste
+library; options=3 shows three to choose from, direction=<id> deals that one,
+redraw=type|palette|hero|photos re-deals one part. design_lint checks a design:
+kind is website, app, slides, doc, poster, social or logo; it returns findings
+and screenshots. Use them with the codeply-taste skill.)
+
 <codeply:web_search>
 <query>vite 6 breaking changes</query>
 </codeply:web_search>
@@ -1104,6 +1125,19 @@ Workflow:
 2. Write the plan to .codeply/plans/<short-slug>.md with write_file (a new file each time, a short kebab-case slug). Start with a one-line goal, then what you found (the specific files and functions involved), then numbered steps with concrete paths and names, then how it will be verified. Flag anything genuinely ambiguous instead of picking silently.
 3. Call plan_exit with that path. The user is asked whether to switch to Build mode. If they say yes you become the builder and carry the plan out; if they say no, keep refining the plan with them.
 4. Your final message summarises the plan in a few lines and names the plan file.`,
+
+  Design: `You are Codeply Design. You make designs - websites, app screens, slide decks, documents, posters, social posts, logos - and nothing else. You do not build working software: no backend, no data, no deploys, no commands. When a design should become real, the user presses "Build it in Craft" and Craft's coding agent builds it from your design.
+
+You work in this design's own folder (the working directory). Everything you make lives there:
+- index.html: the design itself, one self-contained file (styles in a <style> tag, scripts inline, fonts from Google Fonts, pictures under assets/).
+- design.json: {"title": "...", "kind": "website|app|slides|doc|poster|social|logo", "summary": "one line"}. Write it with the first version and keep it current; Craft shows the title and kind.
+Changing an existing design means editing index.html, not starting a new file. Read it first.
+
+Workflow: use_skill codeply-taste first (once per conversation) and follow it: deal a direction with design_direction for pages and app looks, look at real apps with design_reference_search and view_images for app screens, write the design, then design_lint it with its kind and fix what it finds. Look at the screenshots design_lint attaches before you call it done.
+
+Buttons, forms, tabs and menus are drawn, not wired: hover and pressed states are fine, a tab may switch what it shows, but nothing saves, sends or loads. Use real words and real pictures, never lorem ipsum or grey boxes.
+
+Keep prose short: a line about what you are making, the actions, and at the end two or three lines on the idea, the type and colour, and anything you decided for the person.`,
 
   Ask: `You are Codeply, working in Ask mode in the user's terminal.
 
@@ -1249,6 +1283,7 @@ function toolSection(native) {
 }
 
 function modeRestriction(mode) {
+  if (mode === 'Design') return 'MODE RESTRICTION: this is Design mode. Files are written only inside this design\'s folder, without asking. run, deploys, databases, email, Slack and every other tool that is not about designing are disabled and return an error.';
   if (mode === 'Plan') return 'MODE RESTRICTION: this is Plan mode. write_file and edit_file only work on plan files under .codeply/plans/ (*.md); everything else is disabled and returns an error. run is limited to read-only commands. Call plan_exit when the plan file is written.';
   if (READ_ONLY_MODES.has(mode)) return 'MODE RESTRICTION: write_file and edit_file are disabled. Using them returns an error. run is limited to read-only commands.';
   if (mode === 'Build') return 'PLANS: if the user points you at a plan file under .codeply/plans/, read it and carry it out step by step, keeping its checklist in todo. plan_enter switches to Plan mode; use it only when the user asks to plan first, or the request is large and ambiguous enough that building without a plan would be a gamble. It asks the user before switching.';
@@ -1658,6 +1693,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       if (n === 'plan_enter') return m === 'Build';
       if (n === 'ask_bot') return typeof askBot === 'function';
       if (n === 'reach_me' || n === 'watch_email') return reachLib.available();
+      if (m === 'Design' && DESIGN_BLOCKED.has(n)) return false;
       if (ro && MUTATING_ACTIONS.has(n)) return m === 'Plan' && (n === 'write_file' || n === 'edit_file');
       return true;
     });

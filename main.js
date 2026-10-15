@@ -1654,6 +1654,52 @@ async function captureOffscreen(url, wait = 700, size = null) {
   }
 }
 
+/**
+ * The design layer's render (codeply-cli/lib/design-tools.mjs, design_lint): a design
+ * loaded off-screen at one width, measured with the taste skill's probe, photographed
+ * screen by screen (scrolling, so reveal-on-scroll content shows). The probe and frame
+ * functions arrive as source text and run inside the page.
+ */
+async function renderDesign(url, { width = 1440, height = 900, probe = null, frame = null, screens = 1 } = {}) {
+  const w = new BrowserWindow({
+    show: false, width, height, useContentSize: true, paintWhenInitiallyHidden: true,
+    webPreferences: { offscreen: true, partition: 'codeply-design-render', contextIsolation: true, nodeIntegration: false },
+  });
+  const consoleErrors = [];
+  w.webContents.on('console-message', (e, level, message) => { if (level >= 3 && consoleErrors.length < 5) consoleErrors.push(message); });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const shot = async (maxW) => {
+    const img = await w.webContents.capturePage();
+    if (!img || img.isEmpty()) return null;
+    const small = img.getSize().width > maxW ? img.resize({ width: maxW }) : img;
+    return 'data:image/jpeg;base64,' + small.toJPEG(76).toString('base64');
+  };
+  try {
+    if (width < 700) applyViewport(w.webContents, { mobile: true });
+    await w.loadURL(url);
+    await w.webContents.executeJavaScript('document.fonts.ready.then(() => true)').catch(() => {});
+    await sleep(1300); // let the entrance choreography finish before judging the first screen
+    const run = (src) => (src ? w.webContents.executeJavaScript(`(${src})()`).catch((e) => ({ error: e.message })) : null);
+    const metrics = await run(probe);
+    const images = [await shot(width >= 1000 ? 1000 : width)];
+    const frames = [await run(frame)];
+    const pageH = await w.webContents.executeJavaScript('document.documentElement.scrollHeight').catch(() => height);
+    const more = Math.min(Math.max(0, screens - 1), Math.ceil(pageH / height) - 1);
+    for (let i = 1; i <= more; i++) {
+      await w.webContents.executeJavaScript(`window.scrollTo({ top: ${i * height}, behavior: 'instant' })`).catch(() => {});
+      await sleep(700);
+      images.push(await shot(width >= 1000 ? 800 : width));
+      frames.push(await run(frame));
+    }
+    return { ok: true, metrics, frames, images: images.filter(Boolean), consoleErrors };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  } finally {
+    if (!w.isDestroyed()) w.close();
+  }
+}
+browserCheck.render = renderDesign;
+
 async function doBrowserCheck(url, { wait = 700, viewport } = {}) {
   getCheckerView();
   // The agent picks the size per check; the panel follows so you see it too.

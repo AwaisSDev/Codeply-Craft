@@ -16,6 +16,7 @@ import crypto from 'crypto';
 import { exec } from 'child_process';
 import { createRequire } from 'module';
 import { searchLibrary, listCategories, designLibraryConfigured, CATEGORY_LABELS } from './design-library/query.mjs';
+import { design_direction, design_lint } from './design-tools.mjs';
 
 const require = createRequire(import.meta.url);
 const editEngine = require('./edit-engine.js');
@@ -288,6 +289,12 @@ function isPlanPath(p, cwd) {
   return !outside && /^\.codeply\/plans\/[^/]+\.md$/i.test(rel);
 }
 
+// Design mode works in the design's own folder (its cwd) and writes there without
+// asking: a design is a sandbox. Anything outside it is blocked in executeTool.
+function isDesignWrite(p, ctx) {
+  return ctx.mode === 'Design' && !!p && !resolvePath(String(p), ctx.cwd).outside;
+}
+
 // ─── Tools ──────────────────────────────────────────────────────────────────
 
 async function list_dir(args, ctx) {
@@ -385,7 +392,7 @@ async function write_file(args, ctx) {
   const beforeLines = existed ? before.split('\n').length : 0;
   const afterLines = after.split('\n').length;
 
-  const verdict = ctx.mode === 'Plan' && isPlanPath(target, ctx.cwd) ? 'allow' : await ctx.approve({
+  const verdict = (ctx.mode === 'Plan' && isPlanPath(target, ctx.cwd)) || isDesignWrite(target, ctx) ? 'allow' : await ctx.approve({
     tool: 'write_file',
     path: rel,
     title: existed ? `Overwrite ${rel}` : `Create ${rel}`,
@@ -475,7 +482,7 @@ async function edit_file(args, ctx) {
   const removed = args.search.split('\n').length * occurrences;
   const added = args.replace.split('\n').length * occurrences;
 
-  const verdict = ctx.mode === 'Plan' && isPlanPath(target, ctx.cwd) ? 'allow' : await ctx.approve({
+  const verdict = (ctx.mode === 'Plan' && isPlanPath(target, ctx.cwd)) || isDesignWrite(target, ctx) ? 'allow' : await ctx.approve({
     tool: 'edit_file',
     path: rel,
     title: `Edit ${rel}`,
@@ -638,7 +645,7 @@ async function fetch_image(args, ctx) {
   // `path` rides alongside `detail` (the original url) so a host that wants to
   // offer a real picker doesn't have to scrape the human-readable `title` text
   // to know where the image is headed.
-  const verdict = await ctx.approve({
+  const verdict = isDesignWrite(target, ctx) ? 'allow' : await ctx.approve({
     tool: 'fetch_image',
     title: `Download image to ${rel}`,
     detail: url,
@@ -2115,7 +2122,7 @@ async function apply_patch(args, ctx) {
     .filter((l) => l.startsWith(sign) && !l.startsWith(sign.repeat(3) + ' '))
     .map((l) => l.slice(1)).join('\n').slice(0, 4000);
 
-  const verdict = await ctx.approve({
+  const verdict = ctx.mode === 'Design' && !danger ? 'allow' : await ctx.approve({
     tool: 'apply_patch',
     title: plan.changes.length === 1 ? `Patch ${label(plan.changes[0])}` : `Apply patch (${plan.changes.length} files)`,
     detail,
@@ -2299,6 +2306,7 @@ export const TOOLS = {
   list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, browser_check,
   gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, slack_post_message, vercel_deploy, supabase_create_project, supabase_delete_project, github_create_repo,
   design_reference_search, view_images, supabase_api, supabase_sql, vercel_api, add_model,
+  design_direction, design_lint,
 };
 
 // Tools that can change something. supabase_api/supabase_sql/vercel_api only
@@ -2345,6 +2353,8 @@ export const TOOL_DISPLAY = {
   supabase_delete_project:{ verb: 'delete', icon: '◆' },
   github_create_repo:{ verb: 'push', icon: '⎇' },
   design_reference_search:{ verb: 'reference', icon: '◫' },
+  design_direction:{ verb: 'direction', icon: '◐' },
+  design_lint:{ verb: 'check', icon: '◎' },
   view_images:{ verb: 'view', icon: '◉' },
   supabase_api:{ verb: 'supabase', icon: '◆' },
   supabase_sql:{ verb: 'sql', icon: '◆' },
@@ -2366,10 +2376,28 @@ const MUTATING_TOOLS = new Set([
   'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github',
 ]);
 
+// Everything that isn't designing: commands, deploys, databases, messages, other projects.
+export const DESIGN_BLOCKED = new Set([
+  'run', 'lsp', 'mcp', 'ask_bot', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model',
+  'gmail_send', 'gmail_draft', 'gmail_search', 'drafts_list', 'calendar_list', 'calendar_add', 'slack_post_message',
+  'vercel_deploy', 'vercel_api', 'supabase_create_project', 'supabase_delete_project', 'supabase_api', 'supabase_sql',
+  'github_create_repo', 'publish_check', 'publish_connect', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github',
+]);
+
 export async function executeTool(name, args, ctx) {
   const fn = TOOLS[name];
   if (!fn) {
     return { ok: false, output: `Unknown tool "${name}". Available: ${Object.keys(TOOLS).join(', ')}.` };
+  }
+
+  // Design mode only designs: no commands, deploys or messages, and files stay in the design's folder.
+  if (ctx.mode === 'Design') {
+    if (DESIGN_BLOCKED.has(name)) {
+      return { ok: false, output: `Blocked - Design mode only makes designs, so ${name} is not available. When the design is ready, the user can press "Build it in Craft" to make it work.` };
+    }
+    if ((name === 'write_file' || name === 'edit_file' || name === 'fetch_image') && args.path && resolvePath(String(args.path), ctx.cwd).outside) {
+      return { ok: false, output: 'Blocked - in Design mode every file stays inside this design\'s folder. Write it under the design instead (e.g. assets/).' };
+    }
   }
 
   const planFileWrite = ctx.mode === 'Plan' && (name === 'write_file' || name === 'edit_file') && isPlanPath(args.path, ctx.cwd);
