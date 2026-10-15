@@ -1152,32 +1152,52 @@ $('tasksBtn').addEventListener('click', openTasksModal);
 // ─── Crew tab ───────────────────────────────────────────────────────────────
 // Crew opens inside this window, over the main area, instead of in a window of
 // its own. The sidebar button then reads "Craft" and switches back.
+// Design (design/) works the same way: its page laid over the main area.
 let crewMode = false;
-// Crew takes the whole window under the title bar (its own sidebar has the switch back).
+let designMode = false;
+// Crew and Design take the whole window under the title bar (their own sidebars have the switch back).
 function crewArea() {
   const top = Math.round(document.querySelector('.titlebar').getBoundingClientRect().bottom);
   return { x: 0, y: top, width: window.innerWidth, height: window.innerHeight - top };
 }
 function paintCrewBtn() {
+  const cur = designMode ? 'design' : crewMode ? 'crew' : 'craft';
   document.querySelectorAll('.app-switch-btn').forEach((b) => {
-    const on = (b.dataset.app === 'crew') === crewMode;
+    const on = b.dataset.app === cur;
     b.classList.toggle('on', on);
     b.setAttribute('aria-selected', String(on));
   });
 }
 function setCrewMode(on) {
   if (!api || !api.crewEmbed || crewMode === on) return;
+  if (on && designMode) setDesignMode(false);
   crewMode = on;
   document.body.classList.toggle('crew-mode', on);
   paintCrewBtn();
   if (on) api.crewEmbed(crewArea()); else api.crewUnembed();
 }
+function setDesignMode(on) {
+  if (!api || !api.designEmbed || designMode === on) return;
+  if (on && crewMode) setCrewMode(false);
+  designMode = on;
+  document.body.classList.toggle('design-mode', on);
+  paintCrewBtn();
+  if (on) api.designEmbed(crewArea()); else api.designUnembed();
+}
+function setAppView(name) {
+  if (name === 'crew') setCrewMode(true);
+  else if (name === 'design') setDesignMode(true);
+  else { setCrewMode(false); setDesignMode(false); }
+}
 window.CraftCrew = { show: () => setCrewMode(true), hide: () => setCrewMode(false), isOpen: () => crewMode };
-document.querySelectorAll('.app-switch-btn').forEach((b) => b.addEventListener('click', () => setCrewMode(b.dataset.app === 'crew')));
+window.CraftDesign = { show: () => setDesignMode(true), hide: () => setDesignMode(false), isOpen: () => designMode };
+document.querySelectorAll('.app-switch-btn').forEach((b) => b.addEventListener('click', () => setAppView(b.dataset.app)));
 if (api && api.onCrewShow) api.onCrewShow(() => setCrewMode(true));
 if (api && api.onCrewHide) api.onCrewHide(() => setCrewMode(false));
+if (api && api.onDesignShow) api.onDesignShow(() => setDesignMode(true));
+if (api && api.onDesignHide) api.onDesignHide(() => setDesignMode(false));
 if (api && api.onOpenConnect) api.onOpenConnect(() => openConnectApps());
-window.addEventListener('resize', () => { if (crewMode) api.crewBounds(crewArea()); });
+window.addEventListener('resize', () => { if (crewMode) api.crewBounds(crewArea()); if (designMode) api.designBounds(crewArea()); });
 $('tasksCloseBtn').addEventListener('click', closeTasksModal);
 $('tasksBackdrop').addEventListener('click', (e) => { if (e.target === $('tasksBackdrop')) closeTasksModal(); });
 

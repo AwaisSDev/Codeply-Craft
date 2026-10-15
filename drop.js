@@ -135,7 +135,7 @@ function projectView(p) {
 // Every chat (Craft's and the drop's), newest first, a page at a time.
 const RECENT_PAGE = 15;
 function recentPage(offset = 0, limit = RECENT_PAGE) {
-  const all = [...host.store().sessions].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const all = host.store().sessions.filter((s) => !(host.isDesignSession && host.isDesignSession(s.id))).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   return {
     items: all.slice(offset, offset + limit).map((s) => ({ id: s.id, title: s.title, cwd: s.cwd, updatedAt: s.updatedAt })),
     more: offset + limit < all.length,

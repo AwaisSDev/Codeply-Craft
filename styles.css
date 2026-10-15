@@ -2379,6 +2379,12 @@ a.remote-url { text-decoration: none; cursor: pointer; }
 .app-switch-btn.on { background: var(--active); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.25); cursor: default; }
 .app-switch-btn.on img, .app-switch-btn:hover img { opacity: 1; }
 
+/* The Design tab's icon in the switch, and three tabs (Craft, Crew, Design) a little tighter so they fit */
+.app-switch-btn .dz-switch-ico { width: 16px; height: 16px; display: inline-grid; place-items: center; opacity: .75; transition: opacity .15s ease; }
+.app-switch-btn.on .dz-switch-ico, .app-switch-btn:hover .dz-switch-ico { opacity: 1; }
+.app-switch-btn .dz-switch-ico svg { width: 15px; height: 15px; }
+.app-switch .app-switch-btn { padding: 0 9px 0 7px; gap: 6px; }
+
 /* ============ Attached files (attachments.js) ============ */
 .attach-btn { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 999px; color: var(--text-dim); flex: none; transition: background .15s ease, color .15s ease; }
 .attach-btn:hover { background: var(--hover); color: var(--text); }

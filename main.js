@@ -206,6 +206,21 @@ async function loadSessionsFromDb(userId) {
   }
 }
 
+// Design chats (the Design tab, design/design-main.js) stay out of Craft's own
+// chat lists, the Drop, the phone and the chat sync: designs sync on their own.
+let designSessionSet = null;
+function isDesignSession(id) {
+  if (!designSessionSet) {
+    designSessionSet = new Set([
+      ...(store.designs || []).map((d) => d.sessionId).filter(Boolean),
+      ...(store.sessions || []).filter((s) => s.design).map((s) => s.id),
+    ]);
+  }
+  return designSessionSet.has(id);
+}
+function markDesignSession(id) { isDesignSession(id); designSessionSet.add(id); }
+const craftSessions = () => store.sessions.filter((s) => !isDesignSession(s.id));
+
 /** Fire-and-forget upsert of one session's full state. Called at the same
  * points saveStore() already persists a session mutation locally - a few
  * times per turn, never per streamed token. */
@@ -213,6 +228,7 @@ async function loadSessionsFromDb(userId) {
 // never land after a newer one and leave the server copy behind.
 const syncQueue = new Map(); // session id -> { running, again }
 function syncSessionToDb(session) {
+  if (isDesignSession(session.id)) return;
   const q = syncQueue.get(session.id) || { running: false, again: false };
   syncQueue.set(session.id, q);
   if (q.running) { q.again = true; return; }
@@ -568,7 +584,7 @@ ipcMain.handle('app:init', async () => {
     needsLogin: !user,
     needsOnboarding: !!user && !!onboarding && (!onboarding.referral_source || !onboarding.country),
     onboarding,
-    sessions: store.sessions.map(sessionMeta).sort((a, b) => b.updatedAt - a.updatedAt),
+    sessions: craftSessions().map(sessionMeta).sort((a, b) => b.updatedAt - a.updatedAt),
     projects: store.projects,
     lastProject: store.lastProject,
     lastProjectBranch: store.lastProject ? gitBranch(store.lastProject) : null,
@@ -756,7 +772,7 @@ ipcMain.handle('auth:logout', async () => {
 ipcMain.handle('sessions:refresh', async () => {
   await loadSessionsFromDb(await getLoggedInUserId());
   cloudDesktop.resume();
-  return store.sessions.map(sessionMeta).sort((a, b) => b.updatedAt - a.updatedAt);
+  return craftSessions().map(sessionMeta).sort((a, b) => b.updatedAt - a.updatedAt);
 });
 
 // ─── Skills - the same 282-skill library the CLI's agent already searches
@@ -1089,6 +1105,8 @@ ipcMain.on('crew:bounds', (e, bounds) => { if (crewMod) crewMod.setBounds(bounds
 ipcMain.handle('crew:gmailPhone:get', () => botsWatch.gmailPhoneStatus());
 ipcMain.handle('crew:gmailPhone:set', (e, on) => botsWatch.gmailPhoneSet(!!on));
 ipcMain.on('crew:toCraft', () => { if (win && !win.isDestroyed()) win.webContents.send('crew:hide'); });
+// The Design half of the switcher inside the Crew tab.
+ipcMain.on('crew:toDesign', () => { if (win && !win.isDestroyed()) win.webContents.send('design:show'); });
 // Crew's "Manage connections": back to Craft with Connect Apps open.
 ipcMain.on('crew:openConnect', () => { if (win && !win.isDestroyed()) { win.webContents.send('crew:hide'); win.webContents.send('connect:open'); } });
 ipcMain.handle('crew:unembed', () => { if (crewMod) crewMod.unembed(); return { ok: true }; });
@@ -1654,51 +1672,8 @@ async function captureOffscreen(url, wait = 700, size = null) {
   }
 }
 
-/**
- * The design layer's render (codeply-cli/lib/design-tools.mjs, design_lint): a design
- * loaded off-screen at one width, measured with the taste skill's probe, photographed
- * screen by screen (scrolling, so reveal-on-scroll content shows). The probe and frame
- * functions arrive as source text and run inside the page.
- */
-async function renderDesign(url, { width = 1440, height = 900, probe = null, frame = null, screens = 1 } = {}) {
-  const w = new BrowserWindow({
-    show: false, width, height, useContentSize: true, paintWhenInitiallyHidden: true,
-    webPreferences: { offscreen: true, partition: 'codeply-design-render', contextIsolation: true, nodeIntegration: false },
-  });
-  const consoleErrors = [];
-  w.webContents.on('console-message', (e, level, message) => { if (level >= 3 && consoleErrors.length < 5) consoleErrors.push(message); });
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const shot = async (maxW) => {
-    const img = await w.webContents.capturePage();
-    if (!img || img.isEmpty()) return null;
-    const small = img.getSize().width > maxW ? img.resize({ width: maxW }) : img;
-    return 'data:image/jpeg;base64,' + small.toJPEG(76).toString('base64');
-  };
-  try {
-    if (width < 700) applyViewport(w.webContents, { mobile: true });
-    await w.loadURL(url);
-    await w.webContents.executeJavaScript('document.fonts.ready.then(() => true)').catch(() => {});
-    await sleep(1300); // let the entrance choreography finish before judging the first screen
-    const run = (src) => (src ? w.webContents.executeJavaScript(`(${src})()`).catch((e) => ({ error: e.message })) : null);
-    const metrics = await run(probe);
-    const images = [await shot(width >= 1000 ? 1000 : width)];
-    const frames = [await run(frame)];
-    const pageH = await w.webContents.executeJavaScript('document.documentElement.scrollHeight').catch(() => height);
-    const more = Math.min(Math.max(0, screens - 1), Math.ceil(pageH / height) - 1);
-    for (let i = 1; i <= more; i++) {
-      await w.webContents.executeJavaScript(`window.scrollTo({ top: ${i * height}, behavior: 'instant' })`).catch(() => {});
-      await sleep(700);
-      images.push(await shot(width >= 1000 ? 800 : width));
-      frames.push(await run(frame));
-    }
-    return { ok: true, metrics, frames, images: images.filter(Boolean), consoleErrors };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  } finally {
-    if (!w.isDestroyed()) w.close();
-  }
-}
-browserCheck.render = renderDesign;
+// design_lint (codeply-cli/lib/design-tools.mjs) renders designs through the Design tab's helper.
+browserCheck.render = (url, opts) => designTab.renderForLint(url, opts);
 
 async function doBrowserCheck(url, { wait = 700, viewport } = {}) {
   getCheckerView();
@@ -1869,7 +1844,7 @@ ipcMain.handle('session:get', (e, id) => store.sessions.find((s) => s.id === id)
 
 // The chat list as this PC knows it right now, including chats a phone started.
 ipcMain.handle('sessions:list', () => ({
-  sessions: store.sessions.map(sessionMeta).sort((a, b) => b.updatedAt - a.updatedAt),
+  sessions: craftSessions().map(sessionMeta).sort((a, b) => b.updatedAt - a.updatedAt),
   running: [...activeRuns.keys()],
 }));
 
@@ -2286,7 +2261,7 @@ async function handleBridgeApi(method, pathname, query, body) {
       status: 200,
       body: {
         device: os.hostname(), projects: store.projects, lastProject: store.lastProject,
-        sessions: store.sessions.map(sessionMeta), activeSessionIds: [...activeRuns.keys()],
+        sessions: craftSessions().map(sessionMeta), activeSessionIds: [...activeRuns.keys()],
         account: { email: account.email, signedIn: account.signedIn },
         model: modelLabel(currentRoute()),
         models: modelsState(),
@@ -2298,6 +2273,16 @@ async function handleBridgeApi(method, pathname, query, body) {
     return session ? { status: 200, body: session } : { status: 404, body: { error: 'Session not found.' } };
   }
   // The phone's "/" menu: a project's own commands (.codeply/commands/*.md), names only.
+  // The phone's Design tab: this PC's agent makes the design; the files come back through sync (design-main.js).
+  if (pathname.startsWith('/api/design/')) {
+    const act = pathname.slice('/api/design/'.length);
+    if (method === 'POST' && act === 'create') { const r = await designTab.createDesign(body && body.text, body && body.kind, 'phone'); return { status: r.error ? 400 : 200, body: r.error ? r : { id: r.design.id, sessionId: r.sessionId } }; }
+    if (method === 'POST' && act === 'send') { const r = await designTab.sendTo(body && body.id, body && body.text); return { status: r.error ? 400 : 200, body: r.error ? r : { id: r.design.id, sessionId: r.sessionId } }; }
+    if (method === 'POST' && act === 'stop') { designTab.stopDesign(body && body.id); return { status: 200, body: { ok: true } }; }
+    if (method === 'POST' && act === 'build') { const r = await designTab.buildFromPhone(body && body.id); return { status: r && r.error ? 400 : 200, body: r || { error: 'Craft could not start that.' } }; }
+    if (method === 'GET' && act === 'state') { const st = designTab.designState(query.get('id')); return st ? { status: 200, body: st } : { status: 404, body: { error: 'That design is not on this PC yet.' } }; }
+    return { status: 404, body: { error: 'Unknown design request.' } };
+  }
   if (method === 'GET' && pathname === '/api/commands') {
     if (!commandsLib && !(await loadEngine())) return { status: 200, body: { commands: [] } };
     const cwd = query.get('cwd');
@@ -2621,6 +2606,7 @@ async function remoteInfo() {
 }
 
 function sendEvent(sessionId, event) {
+  if (sessionId && isDesignSession(sessionId)) { designTab.event(sessionId, event); return; }
   if (win && !win.isDestroyed()) win.webContents.send('agent:event', { sessionId, ...event });
   broadcastRemote(sessionId, event);
   drop.event(sessionId, event);
@@ -2633,6 +2619,7 @@ function broadcastRunStatus() {
   if (win && !win.isDestroyed()) win.webContents.send('runs:status', active);
   broadcastRemote(null, { type: 'runs_status', active });
   drop.runs(active);
+  designTab.runs(active);
 }
 
 // Model-facing history (and the per-action grounding lines) live in the engine so
@@ -3011,14 +2998,15 @@ async function runGoal({ session, goal, history, mode, cwd, approve, signal, rou
   else syncGoal({ status: 'incomplete', note: `Not finished after ${MAX_GOAL_ITERATIONS} iterations. Still missing: ${remaining.slice(0, 200)}` });
 }
 
-async function startChatRun({ sessionId, cwd, mode, bypass, text, images, clientId = null, botId }) {
+async function startChatRun({ sessionId, cwd, mode, bypass, text, images, clientId = null, botId, design = null }) {
   text = String(text || '').trim();
   images = Array.isArray(images) ? images.slice(0, 6) : undefined;
   if (!text && !images?.length) return { error: 'Write a task before sending it.' };
   const ok = await loadEngine();
   if (!ok) return { error: 'Engine not available.' };
   if (!cwd || !fs.existsSync(cwd)) return { error: 'Pick a project folder first.' };
-  mode = ['Build', 'Plan', 'Ask'].includes(mode) ? mode : 'Build';
+  // Design mode only for the Design tab's own chats (design is the design's id).
+  mode = design ? 'Design' : ['Build', 'Plan', 'Ask'].includes(mode) ? mode : 'Build';
 
   // A custom slash command (.codeply/commands/<name>.md) becomes its prompt.
   // The chat shows what the user typed; the model gets the expanded text.
@@ -3062,12 +3050,14 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
       updatedAt: Date.now(),
       messages: [],
       alwaysAllowed: [],
+      ...(design ? { design } : {}),
     };
     store.sessions.unshift(session);
   }
+  if (design) { session.design = design; markDesignSession(session.id); }
   if (activeRuns.has(session.id)) return { error: 'A run is already in progress for this chat.' };
 
-  rememberProject(cwd);
+  if (!design) rememberProject(cwd); // a design's folder is not a project
   const detectedRole = rolesLib.detectRole(goal || text);
   if (detectedRole) session.stickyRole = detectedRole;
   session.lastRole = null; // every reply opens with a "Working as ..." badge
@@ -3477,7 +3467,33 @@ ipcMain.handle('chat:send', (e, payload) => startChatRun(payload));
 
 // The drop: Alt+C anywhere opens Craft's agent in a small chat in the corner (see drop.js).
 const drop = require('./drop');
+// The Design tab (design/design-main.js): Codeply Design laid over the main area, like Crew.
+const designTab = require('./design/design-main');
+function initDesignTab() {
+  designTab.init({
+    store: () => store, saveStore, startChatRun, stopChatRun, respondApproval, respondQuestion, newProjectFolder,
+    activeRunIds: () => [...activeRuns.keys()],
+    supabase: () => (authLib ? authLib.getClient() : null), userId: getLoggedInUserId,
+    deleteSession: (id) => deleteSessionRecord(id),
+    toCraft: () => { if (win && !win.isDestroyed()) win.webContents.send('design:hide'); },
+    toCrew: () => { if (win && !win.isDestroyed()) win.webContents.send('crew:show'); },
+    openInCraft: (id) => {
+      showWindow();
+      if (!id || !win || win.isDestroyed()) return;
+      const go = () => win.webContents.send('drop:openSession', id);
+      if (win.webContents.isLoading()) win.webContents.once('did-finish-load', () => setTimeout(go, 600)); else go();
+    },
+  });
+}
+ipcMain.handle('design:embed', (e, bounds) => {
+  if (!win || win.isDestroyed()) return { ok: false };
+  designTab.embed(win, bounds);
+  return { ok: true };
+});
+ipcMain.on('design:bounds', (e, bounds) => designTab.setBounds(bounds));
+ipcMain.handle('design:unembed', () => { designTab.unembed(); return { ok: true }; });
 function initDrop() {
+  initDesignTab();
   drop.init({
     store: () => store, saveStore,
     getSetting: (k) => store[k], setSetting: (k, v) => { store[k] = v; saveStore(); },
@@ -3490,7 +3506,7 @@ function initDrop() {
     },
     activeRunIds: () => [...activeRuns.keys()],
     startChatRun, stopChatRun, respondApproval, respondQuestion, setCheckpointUndone,
-    rememberProject, newProjectFolder,
+    rememberProject, newProjectFolder, isDesignSession,
     openInCraft: (id) => {
       showWindow();
       if (!id || !win || win.isDestroyed()) return;

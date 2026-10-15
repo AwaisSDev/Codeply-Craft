@@ -2378,7 +2378,7 @@ const MUTATING_TOOLS = new Set([
 
 // Everything that isn't designing: commands, deploys, databases, messages, other projects.
 export const DESIGN_BLOCKED = new Set([
-  'run', 'lsp', 'mcp', 'ask_bot', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model',
+  'run', 'lsp', 'mcp', 'ask_bot', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model', 'browser_check',
   'gmail_send', 'gmail_draft', 'gmail_search', 'drafts_list', 'calendar_list', 'calendar_add', 'slack_post_message',
   'vercel_deploy', 'vercel_api', 'supabase_create_project', 'supabase_delete_project', 'supabase_api', 'supabase_sql',
   'github_create_repo', 'publish_check', 'publish_connect', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github',

@@ -8,6 +8,12 @@ contextBridge.exposeInMainWorld('craft', {
   crewUnembed: () => ipcRenderer.invoke('crew:unembed'),
   onCrewShow: (cb) => ipcRenderer.on('crew:show', () => cb()),
   onCrewHide: (cb) => ipcRenderer.on('crew:hide', () => cb()),
+  // The Design tab (design/design-main.js), laid over the main area like Crew.
+  designEmbed: (bounds) => ipcRenderer.invoke('design:embed', bounds),
+  designBounds: (bounds) => ipcRenderer.send('design:bounds', bounds),
+  designUnembed: () => ipcRenderer.invoke('design:unembed'),
+  onDesignShow: (cb) => ipcRenderer.on('design:show', () => cb()),
+  onDesignHide: (cb) => ipcRenderer.on('design:hide', () => cb()),
   onOpenConnect: (cb) => ipcRenderer.on('connect:open', () => cb()),
   // window chrome
   minimize: () => ipcRenderer.send('win:minimize'),

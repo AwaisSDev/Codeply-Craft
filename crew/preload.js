@@ -11,6 +11,7 @@ const on = (channel) => (cb) => {
 contextBridge.exposeInMainWorld('crew', {
   init: () => ipcRenderer.invoke('crew:app:init'),
   toCraft: () => ipcRenderer.send('crew:toCraft'),
+  toDesign: () => ipcRenderer.send('crew:toDesign'),
   connections: () => ipcRenderer.invoke('crew:connections'),
   gmailPhone: () => ipcRenderer.invoke('crew:gmailPhone:get'),
   setGmailPhone: (on) => ipcRenderer.invoke('crew:gmailPhone:set', on),

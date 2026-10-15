@@ -7,9 +7,10 @@
     document.body.classList.add('embedded');
     const brand = document.querySelector('.side .brand');
     if (brand) {
-      brand.insertAdjacentHTML('beforebegin', `<div class="app-switch" role="tablist" aria-label="Switch between Craft and Crew"><button class="app-switch-btn" data-app="craft" role="tab" aria-selected="false"><img src="../logo.png" alt="">Craft</button><button class="app-switch-btn on" data-app="crew" role="tab" aria-selected="true"><img src="assets/logo/codeply-icon-small-48.png" alt="">Crew</button></div>`);
+      brand.insertAdjacentHTML('beforebegin', `<div class="app-switch" role="tablist" aria-label="Switch between Craft, Crew and Design"><button class="app-switch-btn" data-app="craft" role="tab" aria-selected="false"><img src="../logo.png" alt="">Craft</button><button class="app-switch-btn on" data-app="crew" role="tab" aria-selected="true"><img src="assets/logo/codeply-icon-small-48.png" alt="">Crew</button><button class="app-switch-btn" data-app="design" role="tab" aria-selected="false"><span class="dz-switch-ico" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.2a5.8 5.8 0 1 0 0 11.6c.8 0 1.3-.6 1.3-1.3 0-.4-.2-.7-.4-1-.2-.2-.3-.5-.3-.8 0-.7.6-1.3 1.3-1.3h1.6c1.6 0 2.9-1.3 2.9-2.9C14.4 4.5 11.5 2.2 8 2.2z"/><circle cx="5" cy="7.3" r=".9" fill="currentColor" stroke="none"/><circle cx="7.6" cy="4.9" r=".9" fill="currentColor" stroke="none"/><circle cx="10.6" cy="5.6" r=".9" fill="currentColor" stroke="none"/></svg></span>Design</button></div>`);
       brand.hidden = true; // kept: crew.js wires it as the Home button
       document.querySelector('.app-switch-btn[data-app="craft"]').addEventListener('click', () => api.toCraft());
+      document.querySelector('.app-switch-btn[data-app="design"]').addEventListener('click', () => api.toDesign());
     }
   }
   const A = window.CraftAvatar;

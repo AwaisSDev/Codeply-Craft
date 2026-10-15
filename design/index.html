@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: file:; frame-src file:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>Codeply Design</title>
+<script src="../drop/theme.js"></script>
+<link rel="stylesheet" href="../styles.css">
+<link rel="stylesheet" href="design.css">
+</head>
+<body class="dz-body-root">
+<div class="dz">
+  <!-- Craft's sidebar, with the switch on Design and the designs in place of chats -->
+  <aside class="sidebar dz-side" id="side">
+    <div class="sb-header">
+      <div class="app-switch" role="tablist" aria-label="Switch between Craft, Crew and Design">
+        <button class="app-switch-btn" data-app="craft" role="tab" aria-selected="false"><img src="../logo.png" alt="">Craft</button>
+        <button class="app-switch-btn" data-app="crew" role="tab" aria-selected="false"><img src="../crew/assets/logo/codeply-icon-small-48.png" alt="">Crew</button>
+        <button class="app-switch-btn on" data-app="design" role="tab" aria-selected="true"><span class="dz-switch-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 2.2a5.8 5.8 0 1 0 0 11.6c.8 0 1.3-.6 1.3-1.3 0-.4-.2-.7-.4-1-.2-.2-.3-.5-.3-.8 0-.7.6-1.3 1.3-1.3h1.6c1.6 0 2.9-1.3 2.9-2.9C14.4 4.5 11.5 2.2 8 2.2z"/><circle cx="5" cy="7.3" r=".9"/><circle cx="7.6" cy="4.9" r=".9"/><circle cx="10.6" cy="5.6" r=".9"/></svg></span>Design</button>
+      </div>
+    </div>
+    <nav class="sb-nav">
+      <button class="sb-item" id="newBtn" type="button">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.2 2.8a1.4 1.4 0 0 1 0 2L7.5 10.5 5 11l.5-2.5 5.7-5.7a1.4 1.4 0 0 1 2 0zM8 3H3.5C2.7 3 2 3.7 2 4.5v8c0 .8.7 1.5 1.5 1.5h8c.8 0 1.5-.7 1.5-1.5V8"/></svg>
+        New design
+      </button>
+    </nav>
+    <div class="dz-list-title">Designs</div>
+    <div class="dz-list" id="list"></div>
+  </aside>
+
+  <main class="dz-main">
+    <!-- start: what to design -->
+    <section class="dz-start" id="start">
+      <div class="dz-start-inner">
+        <h1>What should we design?</h1>
+        <div class="dz-kinds" id="kinds" role="group" aria-label="Kind of design"></div>
+        <div class="dz-box">
+          <textarea id="startInput" rows="3" placeholder="A landing page for a small coffee roaster in Lahore, warm and editorial" spellcheck="true"></textarea>
+          <div class="dz-box-row">
+            <span class="dz-box-note">Designs only. When one should work for real, build it in Craft.</span>
+            <button class="dz-send" id="startSend" type="button" aria-label="Design it" disabled>
+              <svg viewBox="0 0 16 16"><path d="M8 13V3.5M3.8 7.5 8 3.3l4.2 4.2"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- one design: its chat beside the canvas -->
+    <section class="dz-work" id="work" hidden>
+      <div class="dz-chat">
+        <header class="dz-chat-head">
+          <span class="dz-title" id="dTitle" title="Double-click to rename">Untitled design</span>
+          <span class="dz-kind" id="dKind">Website</span>
+          <button class="icon-btn icon-btn-sm dz-more" id="moreBtn" type="button" title="More" aria-label="More" data-menu>
+            <svg viewBox="0 0 16 16" fill="currentColor" stroke="none"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg>
+          </button>
+        </header>
+        <div class="dz-thread" id="thread"><div class="feed" id="feed"></div></div>
+        <footer class="dz-composer">
+          <textarea id="input" rows="1" placeholder="Ask for changes" spellcheck="true"></textarea>
+          <div class="dz-box-row">
+            <span class="dz-box-note" id="chatNote"></span>
+            <button class="dz-send" id="sendBtn" type="button" aria-label="Send" disabled>
+              <svg class="i-send" viewBox="0 0 16 16"><path d="M8 13V3.5M3.8 7.5 8 3.3l4.2 4.2"/></svg>
+              <svg class="i-stop" viewBox="0 0 16 16"><rect x="4.5" y="4.5" width="7" height="7" rx="1.5"/></svg>
+            </button>
+          </div>
+        </footer>
+      </div>
+
+      <div class="dz-stage">
+        <header class="dz-stage-head">
+          <div class="segmented segmented-sm dz-sizes" id="sizes" role="group" aria-label="Width" hidden>
+            <button class="segmented-item active" data-w="1440" type="button">Desktop</button>
+            <button class="segmented-item" data-w="768" type="button">Tablet</button>
+            <button class="segmented-item" data-w="390" type="button">Phone</button>
+          </div>
+          <span class="dz-stage-spacer"></span>
+          <button class="btn dz-btn" id="exportBtn" type="button" data-menu>
+            Export
+            <svg viewBox="0 0 16 16" class="dz-caret"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg>
+          </button>
+          <button class="btn btn-primary dz-btn" id="buildBtn" type="button" title="Copy this design into a new project and have Craft make it work">
+            <svg viewBox="0 0 16 16"><path d="M9.5 2.5 6.5 13.5M4.5 5 1.8 8l2.7 3M11.5 5l2.7 3-2.7 3"/></svg>
+            Build it in Craft
+          </button>
+        </header>
+        <div class="dz-canvas" id="canvas">
+          <div class="dz-frame" id="frameWrap"><iframe id="frame" title="Design preview" sandbox="allow-scripts"></iframe></div>
+          <div class="dz-waiting" id="waiting"><span class="spin"></span><span class="shine">Designing</span></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="dz-menu" id="menu" hidden></div>
+<script src="../crew/markdown.js"></script>
+<script src="design.js"></script>
+</body>
+</html>
