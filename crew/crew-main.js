@@ -230,10 +230,13 @@ function catalog() {
   };
 }
 function lastLine(t) {
-  const m = [...(t.messages || [])].reverse().find((x) => x.kind === 'user' || x.kind === 'assistant' || x.kind === 'call' || x.kind === 'mail');
+  const m = [...(t.messages || [])].reverse().find((x) => ['user', 'assistant', 'call', 'mail', 'nudge', 'botmail', 'slack', 'task'].includes(x.kind));
   if (!m) return '';
   if (m.kind === 'call') return `Call, ${formatDuration(m.ms)}`;
   if (m.kind === 'mail') return String(m.text || '');
+  if (m.kind === 'botmail') return `${m.dir === 'out' ? 'Emailed' : 'Email from'} ${m.dir === 'out' ? (m.to || '') : (m.fromName || m.from || '')}: ${m.subject || ''}`.slice(0, 90);
+  if (m.kind === 'slack') return `Slack from ${m.fromName || 'someone'}: ${m.text || ''}`.slice(0, 90);
+  if (m.kind === 'task') return `Task ${String(m.status || '').replace('_', ' ')}: ${m.text || ''}`.slice(0, 90);
   return String(m.text || '').replace(/\s+/g, ' ').slice(0, 90);
 }
 function formatDuration(ms) {
@@ -726,6 +729,8 @@ ipcMain.handle('call:save', guard(async (e, { botId, ms, turns }) => {
     const userSide = list.filter((t) => t.who === 'user').map((t) => t.text).join('\n');
     const botSide = list.filter((t) => t.who === 'bot').map((t) => t.text).join('\n');
     learn(bot, `(on a voice call) ${userSide}`, botSide, routeNow());
+    // The call joins the shared life context too (life-desktop.js), summarized and sealed.
+    if (lifeHooks.onCall) Promise.resolve(lifeHooks.onCall({ source: 'crew', botId, ms: Number(ms) || 0, turns: list })).catch(() => {});
   }
   return { ok: true };
 }));
@@ -749,6 +754,31 @@ function addMail(engineDir, botId, ev) {
   };
   push(botId, msg);
   send('crew:event', { botId, type: 'mail', msg: { at: Date.now(), ...msg } });
+}
+
+// ─── Life (life-desktop.js, bots-mail.js, autopilot.js) ─────────────────────
+// A nudge, an email to the bot's own address, a task the bot did by itself:
+// a card in that bot's thread. The hooks let a call in Crew reach the life context.
+let lifeHooks = {};
+const NOTE_KINDS = new Set(['nudge', 'botmail', 'slack', 'task', 'callnote']);
+function addNote(engineDir, botId, m) {
+  init(engineDir);
+  if (!m || !NOTE_KINDS.has(m.kind) || !bots || !bots.getBot(botId)) return;
+  let msg;
+  try { msg = JSON.parse(JSON.stringify(m)); } catch { return; }
+  if (JSON.stringify(msg).length > 30000) msg = { kind: msg.kind, id: msg.id, text: String(msg.text || '').slice(0, 2000) };
+  // A card can be updated later (a task finishing, an email answered): same id, same row.
+  const t = thread(botId);
+  const i = msg.id ? t.messages.findIndex((x) => x.kind === msg.kind && x.id === msg.id) : -1;
+  if (i >= 0) { t.messages[i] = { ...t.messages[i], ...msg }; t.updatedAt = Date.now(); saveStore(); }
+  else push(botId, msg);
+  send('crew:event', { botId, type: 'note', msg: { at: Date.now(), ...msg }, replace: i >= 0 });
+}
+function pushEvent(ev) { send('crew:event', ev); }
+/** Stop all bots (autopilot.js): every chat, group and call turn in Crew. */
+function stopAll() {
+  for (const c of runs.values()) { try { c.abort(); } catch {} }
+  for (const c of callRuns.values()) { try { c.abort(); } catch {} }
 }
 
 /** A notification was clicked: open Crew on that bot's thread. */
@@ -814,6 +844,7 @@ function open(engineDir) {
 }
 
 module.exports = {
-  init, open, isOpen: () => !!(win && !win.isDestroyed()), addMail, showBot, setOnChange: (fn) => { onChange = fn; },
+  init, open, isOpen: () => !!(win && !win.isDestroyed()), addMail, addNote, pushEvent, showBot, setOnChange: (fn) => { onChange = fn; },
+  setLifeHooks: (h) => { lifeHooks = h || {}; }, stopAll, workspace: (engineDir) => { init(engineDir); return workspace(); },
   embed, setBounds, unembed, onShowRequest: (fn) => { onShowRequest = fn; },
 };

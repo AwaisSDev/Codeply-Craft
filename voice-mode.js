@@ -534,6 +534,8 @@ async function answer({ said, turn, followUp, screen }) {
   if (!midTask) {
     S.history.push({ role: 'user', content: followUp ? `(did the step) ${intro}` : `They said: "${said}"` }, { role: 'assistant', content: reply });
     S.history = S.history.slice(-8);
+    // What was asked joins the shared life context (life-desktop.js); the answer without its pointing marks.
+    if (!followUp && host.onAsk) { try { host.onAsk(said, reply.replace(/\[[A-Z]+[^\]]*\]/g, ' ')); } catch {} }
   }
   S.lastAt = Date.now();
   await perform(parse(reply), shots, turn);

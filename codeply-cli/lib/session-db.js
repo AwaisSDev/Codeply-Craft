@@ -217,4 +217,4 @@ function snippetAround(text, term) {
   return `${from > 0 ? '...' : ''}${t.slice(from, at + term.length + 70).replace(/\s+/g, ' ')}${at + term.length + 70 < t.length ? '...' : ''}`;
 }
 
-module.exports = { openSessionDb };
+module.exports = { openSessionDb, loadDriver };

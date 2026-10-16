@@ -332,6 +332,7 @@
   function goHome() {
     state.current = null;
     state.currentGroup = null;
+    if (window.CrewLife) window.CrewLife.hide();
     try { localStorage.removeItem('crew.last'); } catch {}
     renderSide();
     const bots = state.catalog.bots;
@@ -383,6 +384,7 @@
     if (!b) { goHome(); return; }
     state.current = id;
     state.currentGroup = null;
+    if (window.CrewLife) window.CrewLife.hide();
     try { localStorage.setItem('crew.last', id); } catch {}
     const r = await api.thread(id);
     if (state.current !== id) return;
@@ -593,8 +595,10 @@
       else if (m.kind === 'tool') addToBody(body, stepHtml(m));
       else if (m.kind === 'error') addToBody(body, `<div class="note err">${esc(m.text)}</div>`);
       else if (m.kind === 'mail') addToBody(body, mailCardHtml(m));
+      else if (window.CrewLife && ['nudge', 'botmail', 'slack', 'task'].includes(m.kind)) addToBody(body, `<div data-note-id="${esc(m.id || '')}">${window.CrewLife.cardHtml(m)}</div>`);
     }
     box.querySelectorAll('[data-call]').forEach(wireCallCard);
+    if (window.CrewLife) window.CrewLife.wireCards(box);
   }
   function wireCallCard(card) {
     card.addEventListener('click', () => card.classList.toggle('open', !card.nextElementSibling.classList.toggle('hidden')));
@@ -626,10 +630,29 @@
 
   // ─── Engine events ──────────────────────────────────────────────────────
   api.onEvent((ev) => {
+    if (ev.type === 'life') { if (window.CrewLife) window.CrewLife.onState(ev.state); return; }
     if (ev.groupId) { if (window.CrewGroups) window.CrewGroups.onEvent(ev); return; }
     if (ev.call) { if (window.CrewCall) window.CrewCall.onEvent(ev); return; }
     const b = bot(ev.botId);
     if (!b) return;
+    if (ev.type === 'note' && window.CrewLife) {
+      // A nudge, bot mail or a task (life-desktop.js): a card in the thread, updated in place when it changes.
+      (state.threads[b.id] || (state.threads[b.id] = { updatedAt: 0, last: '' })).updatedAt = Date.now();
+      if (state.current === ev.botId) {
+        const box = $('#msgs');
+        const i = ev.replace ? state.messages.findIndex((x) => x.kind === ev.msg.kind && x.id === ev.msg.id) : -1;
+        if (i >= 0) state.messages[i] = ev.msg; else state.messages.push(ev.msg);
+        if (box) {
+          const old = ev.replace && ev.msg.id ? box.querySelector(`[data-note-id="${CSS.escape(ev.msg.id)}"]`) : null;
+          const html = `<div data-note-id="${esc(ev.msg.id || '')}">${window.CrewLife.cardHtml(ev.msg)}</div>`;
+          if (old) old.outerHTML = html; else addToBody(botBlock(box, b, false).querySelector('.m-bot-body'), html);
+          window.CrewLife.wireCards(box);
+          scrollDown(true);
+        }
+      } else if (!ev.replace) toast(`${b.name}: ${String(ev.msg.text || ev.msg.subject || '').slice(0, 120)}`);
+      renderSide();
+      return;
+    }
     const here = state.current === ev.botId;
     const t = state.threads[b.id] || (state.threads[b.id] = { updatedAt: Date.now(), last: '' });
     switch (ev.type) {
@@ -874,6 +897,7 @@
             <div class="dim" style="margin-top:6px">${d.role === 'orchestrator' ? 'Splits a big goal into steps and hands each to the right teammate.' : 'One clear job. Teammates can ask it for help.'}</div></div>
           <div class="field"><div class="field-label">Must ask you before</div><div class="checks">${Object.entries(state.catalog.approvals).map(([k, label]) => `<label class="check"><input type="checkbox" data-approval="${k}" ${d.approval.includes(k) ? 'checked' : ''}>${esc(label)}</label>`).join('')}</div></div>
           ${alwaysOnHtml(d, { field: 'field', label: 'field-label', check: 'check', input: 'input', dim: 'dim' })}
+          ${window.CrewLife ? window.CrewLife.editorHtml(d, ui) : ''}
           ${isNew ? '' : `<div class="field"><div class="field-label">Memory <span class="dim">${d.memory.length} things</span>${d.memory.length ? '<button class="link" data-act="clear-mem">Clear all</button>' : ''}</div>
             ${d.memory.length ? `<ul class="mem">${d.memory.map((x, i) => `<li><span>${esc(x.fact)}</span><button data-forget="${i}" title="Forget">${ICON.x}</button></li>`).reverse().join('')}</ul>` : '<div class="dim">Nothing yet. It learns your preferences as you chat and call.</div>'}</div>
           ${experienceHtml(d)}`}
@@ -898,6 +922,7 @@
       d.approval = el.checked ? [...new Set([...d.approval, el.dataset.approval])] : d.approval.filter((x) => x !== el.dataset.approval);
     }));
     wireAlwaysOn(m, d);
+    if (window.CrewLife) window.CrewLife.wireEditor(m, d, ui, () => paintEditor(d, ui));
     m.querySelectorAll('.pick-row[data-pick]').forEach((row) => row.addEventListener('click', (e) => {
       const tile = e.target.closest('.pick');
       if (!tile) return;
@@ -946,7 +971,7 @@
     });
     on('save', async () => {
       if (!String(d.name || '').trim()) { ui.error = 'Give it a name.'; paintEditor(d, ui); return; }
-      const patch = { name: d.name, role: d.role, specialty: d.specialty, instructions: d.instructions, tone: d.tone, sources: d.sources || '', approval: d.approval, avatar: d.avatar, voice: ui.voice, alwaysOn: d.alwaysOn };
+      const patch = { name: d.name, role: d.role, specialty: d.specialty, instructions: d.instructions, tone: d.tone, sources: d.sources || '', approval: d.approval, avatar: d.avatar, voice: ui.voice, alwaysOn: d.alwaysOn, ...(window.CrewLife ? window.CrewLife.editorPatch(d) : {}) };
       const r = ui.id ? await api.botsUpdate(ui.id, patch) : await api.botsCreate(patch);
       if (r.error) { ui.error = r.error; paintEditor(d, ui); return; }
       state.catalog = r;

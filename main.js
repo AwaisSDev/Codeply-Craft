@@ -13,6 +13,8 @@
 // A build check, not the app: `CRAFT_VOICE_SELFTEST=<report.json>` runs the
 // voice self-test (voice/selftest.js) and exits, before anything else starts.
 if (process.env.CRAFT_VOICE_SELFTEST) { require('./voice/selftest'); return; }
+// Same for Life Integrated Bots: `CRAFT_LIFE_SELFTEST=<folder>` (life-selftest.js).
+if (process.env.CRAFT_LIFE_SELFTEST) { require('./life-selftest'); return; }
 const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, Tray, Menu, nativeImage, powerSaveBlocker, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -1063,6 +1065,8 @@ const crew = () => {
   if (!crewMod) {
     crewMod = require('./crew/crew-main');
     crewMod.setOnChange(() => botsWatch.poke());
+    // A call in Crew joins the shared life context (life-desktop.js).
+    crewMod.setLifeHooks({ onCall: (c) => lifeDesktop.noteCall(c) });
     // A bot notification was clicked: show Craft with its Crew tab open.
     crewMod.onShowRequest(() => {
       if (!win || win.isDestroyed()) return;
@@ -1321,7 +1325,9 @@ ipcMain.handle('integrations:connectSlack', async () => {
       userId: result.authed_user?.id || '',
       teamId: result.team?.id || '',
       teamName: result.team?.name || '',
+      botUserId: result.bot_user_id || '', // slack-events tells the user's messages to their bots from everyone else's
     });
+    try { botsMail.poke(); } catch {}
     return { ok: true, teamName: result.team?.name || '' };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -2227,6 +2233,11 @@ async function handleBridgeApi(method, pathname, query, body) {
   body = body || {};
   if (pathname.startsWith('/api/cloud/')) {
     const r = await cloudDesktop.bridge(method, pathname, query, body);
+    if (r) return r;
+  }
+  // Bots at work for the phone (autopilot.js): the outbox, tasks, Stop all bots.
+  if (pathname === '/api/life' || pathname.startsWith('/api/life/')) {
+    const r = await autopilot.bridge(method, pathname, body);
     if (r) return r;
   }
   // Bots for the phone's Calls (list, starter templates, save a finished call).
@@ -3451,6 +3462,7 @@ function initDrop() {
       const go = () => win.webContents.send('drop:openSession', id);
       if (win.webContents.isLoading()) win.webContents.once('did-finish-load', () => setTimeout(go, 600)); else go();
     },
+    onAsk: (text) => lifeDesktop.noteAsk(text, '', 'drop'),
   });
   // Voice mode: hold the drop's key to talk (see voice-mode.js).
   voiceMode.init({
@@ -3461,6 +3473,7 @@ function initDrop() {
     hotkeyLabel: () => drop.hotkeyLabel(),
     accessToken: () => (authLib ? authLib.getAccessToken() : Promise.resolve('')),
     cliDir: CLI_DIR,
+    onAsk: (text, answer) => lifeDesktop.noteAsk(text, answer, 'orbit'),
   });
   drop.setPressHandler(voiceMode.press);
   buildTrayMenu();
@@ -3485,6 +3498,7 @@ botsDesktop.init({
   ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine, sendEvent, currentRoute, browser: browserCheck,
   agentMod: () => agentMod, aiLib: () => aiLib, permissionsLib: () => permissionsLib,
   onChange: () => botsWatch.poke(),
+  onCallSaved: (c) => lifeDesktop.noteCall(c),
 });
 // Always-on bots (bots-watch.js): watch Gmail in the background while Craft
 // runs (also from the tray), no model calls until an email is important.
@@ -3495,6 +3509,69 @@ app.whenReady().then(() => botsWatch.init({
   crewThread: (botId, ev) => crew().addMail(CLI_DIR, botId, ev),
   openBot: (botId) => crew().showBot(CLI_DIR, botId),
 }));
+// Life Integrated Bots (life-desktop.js): one picture of the user's day that
+// every bot reads, and bots that reach out by themselves. Off until the user
+// turns Life on in Crew.
+const lifeDesktop = require('./life-desktop');
+/** Craft's projects for the life context: the recent folders, and when a chat last ran in each. */
+function lifeProjects() {
+  const last = new Map();
+  for (const s of store.sessions || []) if (s.cwd) { const k = path.resolve(s.cwd); last.set(k, Math.max(last.get(k) || 0, Number(s.updatedAt) || 0)); }
+  return (store.projects || []).map((p) => ({ path: p, name: path.basename(p), lastActive: last.get(path.resolve(p)) || 0 }));
+}
+app.whenReady().then(() => lifeDesktop.init({
+  ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine, safeStorage: require('electron').safeStorage, Notification, notifyIcon: notifyIcon(),
+  userDataDir: app.getPath('userData'), modulePaths: [__dirname, CLI_DIR],
+  configLib: () => configLib, oauthLib: () => oauthLib, aiLib: () => aiLib, currentRoute,
+  gmailToken: (force) => botsWatch.gmailToken(force), callFunction: (name, body) => botsWatch.callFunction(name, body),
+  projects: lifeProjects,
+  crewThread: (botId, msg) => crew().addNote(CLI_DIR, botId, msg),
+  crewEvent: (ev) => { if (crewMod) crewMod.pushEvent(ev); },
+  openBot: (botId) => crew().showBot(CLI_DIR, botId),
+  onTask: (t) => autopilot.intake(t),
+  mailUsage: () => botsMail.usage(),
+  autopilotState: () => autopilot.state(),
+  onCallWindow: (call) => callListen.onCallWindow(call),
+  callState: () => callListen.state(),
+  takeoverReady: () => callListen.takeoverReady(),
+}));
+// The call helper (call-listen.js): a bot that listens to calls on this PC,
+// whispers what helps, and takes the call when the user hands it over.
+const callListen = require('./call-listen');
+// Each bot's own email and Slack (bots-mail.js), and the autonomy loop that
+// works tasks end to end with nobody watching (autopilot.js).
+const botsMail = require('./bots-mail');
+const autopilot = require('./autopilot');
+app.whenReady().then(() => {
+  const shared = {
+    ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine, Notification, notifyIcon: notifyIcon(),
+    configLib: () => configLib, oauthLib: () => oauthLib, aiLib: () => aiLib, currentRoute,
+    callFunction: (name, body) => botsWatch.callFunction(name, body), localTz: () => botsWatch.localTz(),
+    life: lifeDesktop,
+    crewThread: (botId, msg) => crew().addNote(CLI_DIR, botId, msg),
+    openBot: (botId) => crew().showBot(CLI_DIR, botId),
+  };
+  botsMail.init({
+    ...shared,
+    onTask: (t) => autopilot.intake(t), hold: (h) => autopilot.hold(h),
+    budgetLeft: (bot, key) => autopilot.budgetLeft(bot, key), audit: (e) => autopilot.audit(e),
+  });
+  autopilot.init({
+    ...shared,
+    agentMod: () => agentMod, botsMail, projects: lifeProjects,
+    workspace: () => crew().workspace(CLI_DIR),
+    stopCrew: () => { if (crewMod) crewMod.stopAll(); },
+    stopCalls: () => callListen.stopAll(),
+  });
+  callListen.init({
+    ...shared,
+    act: require('./voice/act'),
+    voiceLib: () => { const v = require('./crew/voice'); v.init({ cacheDir: path.join(app.getPath('appData'), 'Codeply Crew', 'voice-models') }); return v; },
+    serverToken: () => (authLib ? authLib.getAccessToken() : Promise.resolve('')),
+    userName: () => '',
+    audit: (e) => autopilot.audit(e),
+  });
+});
 ipcMain.handle('remote:info', () => remoteInfo());
 ipcMain.handle('remote:setKeepAwake', (e, on) => {
   store.keepAwake = !!on;

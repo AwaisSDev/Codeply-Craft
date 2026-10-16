@@ -56,6 +56,22 @@ contextBridge.exposeInMainWorld('crew', {
   setDeepgramKey: (key) => ipcRenderer.invoke('crew:settings:deepgramKey', key),
   saveCall: (botId, ms, turns) => ipcRenderer.invoke('crew:call:save', { botId, ms, turns }),
 
+  // Life (life-desktop.js, bots-mail.js, autopilot.js)
+  lifeState: () => ipcRenderer.invoke('crew:life:state'),
+  lifeSet: (patch) => ipcRenderer.invoke('crew:life:set', patch),
+  lifeSearch: (q) => ipcRenderer.invoke('crew:life:search', q),
+  lifeForgetSource: (key) => ipcRenderer.invoke('crew:life:forgetSource', key),
+  lifeForgetItem: (id) => ipcRenderer.invoke('crew:life:forgetItem', id),
+  lifeClear: () => ipcRenderer.invoke('crew:life:clear'),
+  lifeNudge: (id, verdict) => ipcRenderer.invoke('crew:life:nudge', id, verdict),
+  lifeStopAll: () => ipcRenderer.invoke('crew:life:stopAll'),
+  lifeOutbox: (id, action) => ipcRenderer.invoke('crew:life:outbox', id, action),
+  lifeTask: (id, action) => ipcRenderer.invoke('crew:life:task', id, action),
+  lifeListenNow: () => ipcRenderer.invoke('crew:life:listenNow'),
+  botMailClaim: (botId, local) => ipcRenderer.invoke('crew:botmail:claim', botId, local),
+  botMailRelease: (botId) => ipcRenderer.invoke('crew:botmail:release', botId),
+  botMailReply: (id) => ipcRenderer.invoke('crew:botmail:reply', id),
+
   openExternal: (url) => ipcRenderer.invoke('crew:shell:open', url),
   openFolder: (p) => ipcRenderer.invoke('crew:shell:openPath', p),
   minimize: () => ipcRenderer.send('crew:win:minimize'),

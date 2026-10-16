@@ -27,14 +27,18 @@ const GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https:/
 // channels:join is what lets slackPostMessage auto-join a public channel
 // before posting to it - without it, chat:write alone only covers channels
 // the app has already been manually invited into.
-const SLACK_SCOPES = 'chat:write,channels:read,channels:history,channels:join';
+// chat:write.customize lets a Crew bot post under its own name; im:history,
+// im:read and app_mentions:read bring the user's messages to their bots
+// (slack-events on Codeply's server).
+const SLACK_SCOPES = 'chat:write,channels:read,channels:history,channels:join,chat:write.customize,im:history,im:read,app_mentions:read,users:read';
 // Separate from the bot scopes above - Slack issues bot and user tokens
 // through entirely different mechanisms in the same OAuth exchange. `scope`
 // requests the bot token (posts as "Codeply Craft APP"); `user_scope`
 // requests a second, independent token that posts as the actual signed-in
 // user. Both come back in one authorize round-trip, but they're genuinely
 // two different tokens with two different scope sets.
-const SLACK_USER_SCOPES = 'chat:write';
+// im:history: direct messages to the user reach their bots (drafts only; the user sends their own replies).
+const SLACK_USER_SCOPES = 'chat:write,im:history';
 
 function buildGmailAuthUrl(clientId, redirectUri) {
   const params = new URLSearchParams({
@@ -273,7 +277,7 @@ async function slackJoinChannel(accessToken, channelId) {
   if (!body.ok && body.error !== 'already_in_channel') throw new Error(body.error || 'Could not join the channel');
 }
 
-async function slackPostMessage(accessToken, { channel, text }, { isUserToken = false } = {}) {
+async function slackPostMessage(accessToken, { channel, text, threadTs }, { isUserToken = false, asName = '' } = {}) {
   // A bot token's chat:write only covers channels the app has actually
   // joined - not "any public channel" the way a human member can post to.
   // Auto-joining first (public channels only; that's all resolveSlackChannel
@@ -287,16 +291,29 @@ async function slackPostMessage(accessToken, { channel, text }, { isUserToken = 
   // either already belongs to the channel or doesn't - conversations.join
   // isn't the right operation for a user identity the way it is for a bot,
   // so this is skipped entirely on that path.
-  if (!isUserToken) await slackJoinChannel(accessToken, channel);
+  // A direct message (D...) is not something to join.
+  if (!isUserToken && !/^D/.test(String(channel))) await slackJoinChannel(accessToken, channel);
 
-  const res = await fetch('https://slack.com/api/chat.postMessage', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ channel, text }),
-  });
-  const body = await res.json();
+  // asName: a Crew bot posting as itself (chat:write.customize). A workspace
+  // connected before that scope existed refuses the name: then it posts with
+  // the bot's name in the text instead, still never as the user.
+  const thread = threadTs ? { thread_ts: threadTs } : {};
+  const post = async (extra) => {
+    const res = await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel, text, ...thread, ...extra }),
+    });
+    return res.json();
+  };
+  let named = !!asName && !isUserToken;
+  let body = await post(named ? { username: String(asName).slice(0, 80) } : {});
+  if (!body.ok && named && /missing_scope|not_allowed|invalid_arguments/.test(String(body.error))) {
+    named = false;
+    body = await post({ text: `*${String(asName).slice(0, 80)}:* ${text}` });
+  }
   if (!body.ok) throw new Error(body.error || 'Slack message failed to send');
-  return body;
+  return { ...body, named };
 }
 
 async function slackListChannels(accessToken) {
