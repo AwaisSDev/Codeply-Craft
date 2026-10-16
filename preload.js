@@ -103,6 +103,8 @@ contextBridge.exposeInMainWorld('craft', {
   cloudCheckBehind: (cwd) => ipcRenderer.invoke('cloud:checkBehind', cwd),
   cloudPull: (cwd, sessionId, taskId) => ipcRenderer.invoke('cloud:pull', cwd, sessionId, taskId),
   cloudOptions: (cwd, opts) => ipcRenderer.invoke('cloud:options', cwd, opts),
+  handoffStatus: (sessionId) => ipcRenderer.invoke('handoff:status', sessionId),
+  handoffAppInstalled: (repo) => ipcRenderer.invoke('handoff:appInstalled', repo),
   cloudAnswer: (sessionId, taskId, askId, approve) => ipcRenderer.invoke('cloud:answer', sessionId, taskId, askId, approve),
   cloudPermission: (cwd, permission) => ipcRenderer.invoke('cloud:permission', cwd, permission),
   cloudApply: (sessionId, taskId) => ipcRenderer.invoke('cloud:apply', sessionId, taskId),

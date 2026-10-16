@@ -26,6 +26,7 @@ import crypto from 'crypto';
 import { createRequire } from 'module';
 import { runAgent } from './agent.mjs';
 import { git, ciApprove, routeFromEnv } from './github-agent.mjs';
+import { takeStateFile, continuationPrompt, recordEvent as recordHandoff, wipBranch, HANDBACK, STATE_FILE } from './handoff.mjs';
 
 const require = createRequire(import.meta.url);
 const nacl = require('tweetnacl');
@@ -71,13 +72,18 @@ on:
         required: false
         default: ''
         type: string
+      handoff:
+        description: resume = carry on a run from the PC (craft/wip-<chat>)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
   checks: write
 
 concurrency:
-  group: craft-\${{ inputs.session_id || inputs.task_id }}
+  group: craft-\${{ inputs.handoff }}\${{ inputs.session_id || inputs.task_id }}
   cancel-in-progress: false
 
 jobs:
@@ -87,6 +93,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: \${{ inputs.handoff == 'resume' && format('craft/wip-{0}', inputs.session_id) || '' }}
           fetch-depth: 1
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -110,6 +117,7 @@ jobs:
           CRAFT_MODE: \${{ inputs.mode }}
           CRAFT_TASK_ID: \${{ inputs.task_id }}
           CRAFT_SESSION_ID: \${{ inputs.session_id }}
+          CRAFT_HANDOFF: \${{ inputs.handoff }}
 `;
 
 // Never mirrored, whatever .gitignore says.
@@ -239,6 +247,8 @@ function updateProject(cwd, home, fn) {
   writeState(home, state);
   return state.projects[key];
 }
+/** Remember a task this PC did not start (a handoff run the server dispatched), so status and replay work. */
+export function rememberTask(cwd, task, home = defaultHome()) { return saveTask(cwd, home, task); }
 function saveTask(cwd, home, task) {
   return updateProject(cwd, home, (p) => {
     const tasks = (p.tasks || []).filter((t) => t.id !== task.id);
@@ -246,10 +256,10 @@ function saveTask(cwd, home, task) {
     return { ...p, tasks: tasks.slice(0, 100) };
   });
 }
-/** Per-project switches the app keeps: cloudOn (send new messages to the cloud), autoBackup. */
+/** Per-project switches the app keeps: cloudOn (send new messages to the cloud), autoBackup, handoff (carry on in the cloud if the PC drops; on unless turned off). */
 export function setProjectOptions(cwd, opts, home = defaultHome()) {
   const allowed = {};
-  for (const k of ['cloudOn', 'autoBackup']) if (typeof opts[k] === 'boolean') allowed[k] = opts[k];
+  for (const k of ['cloudOn', 'autoBackup', 'handoff']) if (typeof opts[k] === 'boolean') allowed[k] = opts[k];
   return updateProject(cwd, home, (p) => ({ ...p, ...allowed }));
 }
 
@@ -260,7 +270,7 @@ export function getTask(cwd, id, home = defaultHome()) {
 
 // ─── Snapshots ───────────────────────────────────────────────────────────
 
-const BOT = ['-c', 'user.name=Codeply Craft', '-c', 'user.email=craft-bot@users.noreply.github.com'];
+export const BOT = ['-c', 'user.name=Codeply Craft', '-c', 'user.email=craft-bot@users.noreply.github.com'];
 
 function mirrorGit(cwd, home) {
   const gitDir = path.join(home, 'cloud', `${projectId(cwd)}.git`);
@@ -268,7 +278,7 @@ function mirrorGit(cwd, home) {
   return { gitDir, G };
 }
 
-async function initMirrorGit(cwd, home) {
+export async function initMirrorGit(cwd, home) {
   const m = mirrorGit(cwd, home);
   if (!fs.existsSync(path.join(m.gitDir, 'HEAD'))) {
     fs.mkdirSync(m.gitDir, { recursive: true });
@@ -288,7 +298,7 @@ async function initMirrorGit(cwd, home) {
  * respected, the project's own workflows left out (they must not run on the
  * mirror), big files and files holding keys dropped, craft-cloud.yml added.
  */
-async function stageWorkingTree(cwd, home) {
+export async function stageWorkingTree(cwd, home) {
   const m = await initMirrorGit(cwd, home);
   const { G } = m;
   await G(['add', '-A', '--', '.']);
@@ -333,7 +343,7 @@ export async function snapshot({ cwd, home = defaultHome() }) {
   return { gitDir: s.gitDir, sha, changed: true, skipped: s.skipped };
 }
 
-const authFor = (token, serverUrl = 'https://github.com') => ({ token, server: serverUrl.replace(/\/$/, '') });
+export const authFor = (token, serverUrl = 'https://github.com') => ({ token, server: serverUrl.replace(/\/$/, '') });
 
 /** Snapshot, then push it to the mirror. The mirror's main is Craft's, so it is force-pushed. */
 export async function pushSnapshot({ cwd, token, home = defaultHome(), serverUrl = 'https://github.com', remoteUrl }) {
@@ -560,7 +570,7 @@ export async function loadCloudConnections({ env = process.env, fetchImpl = fetc
 }
 
 // Bumped when CLOUD_WORKFLOW changes, so repos set up earlier get the new file once.
-export const WORKFLOW_REV = 3;
+export const WORKFLOW_REV = 4;
 
 /**
  * One-click setup. With `target: 'repo'` (default when the project has a GitHub
@@ -593,6 +603,16 @@ export async function setupCloud({ cwd, token, model, target, envText, home = de
   await ensureTrackKey({ api, repo, cwd, home, fetchImpl });
   await syncCloudConnections({ home, fetchImpl });
   return { repo, created, kind, base, url: `${(serverUrl || 'https://github.com').replace(/\/$/, '')}/${repo}`, skipped };
+}
+
+/** Before a PC run is protected (handoff.mjs): the repo's craft-cloud.yml must know handoff runs. */
+export async function ensureHandoffReady({ cwd, token, home = defaultHome(), apiUrl, fetchImpl, serverUrl, remoteUrl }) {
+  const p = getProject(cwd, home);
+  if (!p || !p.repo) throw new Error('Set up cloud runs for this project first.');
+  if (p.workflowRev === WORKFLOW_REV) return p;
+  if (p.kind === 'repo') await installWorkflowInRepo({ api: githubApi({ token, apiUrl, fetchImpl }), repo: p.repo, base: p.base || 'main' });
+  else await pushSnapshot({ cwd, token, home, serverUrl, remoteUrl }); // the mirror gets the workflow with every snapshot
+  return updateProject(cwd, home, (q) => ({ ...q, workflowRev: WORKFLOW_REV }));
 }
 
 // ─── Runs ────────────────────────────────────────────────────────────────
@@ -1106,6 +1126,12 @@ export async function runCloudRunner({ env = process.env, cwd = process.cwd(), t
   const heartbeat = (busy, until) => files.write(SESSION_PATHS.live(sessionId), { runId: env.GITHUB_RUN_ID || null, busy, at: Date.now(), until }, `Craft live ${sessionId}`).catch(() => {});
 
   let task = { id: firstId, prompt: String(env.CRAFT_PROMPT || ''), mode: env.CRAFT_MODE, sessionId, dispatched: true };
+  // A run carried on from the PC: the checked-out craft/wip-<chat> holds its state.
+  if (String(env.CRAFT_HANDOFF || '') === 'resume' && sessionId) {
+    const state = takeStateFile(cwd);
+    if (state) task = { ...task, prompt: state.userMessage || task.prompt, mode: state.mode || task.mode, handoff: state };
+    else setupError = setupError || 'The run from the PC left no saved state on its WIP branch.';
+  }
   // A bot (and the task kind) comes next to the dispatch, on craft-sessions.
   const req = await files.read(SESSION_PATHS.request(firstId)).catch(() => null);
   if (req && req.json) {
@@ -1113,15 +1139,18 @@ export async function runCloudRunner({ env = process.env, cwd = process.cwd(), t
     await files.remove(SESSION_PATHS.request(firstId), req.sha).catch(() => {});
   }
   const results = [];
+  const isHandoff = !!task.handoff;
   try {
     while (task) {
-      if (sessionId) await heartbeat(true, Date.now() + 60 * 60 * 1000);
-      results.push(await runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, headSha, route, setupError, runAgentImpl, log, maxSteps, updateMs, browser, base, merge, heartbeat: sessionId ? () => heartbeat(true, Date.now() + 60 * 60 * 1000) : null }));
-      if (!sessionId || idle <= 0 || setupError) break;
+      // A handoff run is not a chat runner: new messages for this chat get their own run.
+      const live = sessionId && !task.handoff;
+      if (live) await heartbeat(true, Date.now() + 60 * 60 * 1000);
+      results.push(await runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, headSha, route, setupError, runAgentImpl, log, maxSteps, updateMs, browser, base, merge, heartbeat: live ? () => heartbeat(true, Date.now() + 60 * 60 * 1000) : null, handbackPollMs: pollMs }));
+      if (!live || idle <= 0 || setupError) break;
       task = await waitForNext({ files, sessionId, idle, pollMs, heartbeat });
     }
   } finally {
-    if (sessionId) await files.remove(SESSION_PATHS.live(sessionId)).catch(() => {});
+    if (sessionId && !isHandoff) await files.remove(SESSION_PATHS.live(sessionId)).catch(() => {});
     if (browser && browser.close) await browser.close().catch(() => {});
   }
   const last = results[results.length - 1] || { status: 'failed', result: { error: 'Nothing ran.' } };
@@ -1149,7 +1178,7 @@ async function waitForNext({ files, sessionId, idle, pollMs, heartbeat }) {
   return null;
 }
 
-async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, headSha, route, setupError, runAgentImpl, log, maxSteps, updateMs, browser, base, merge, heartbeat }) {
+async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, headSha, route, setupError, runAgentImpl, log, maxSteps, updateMs, browser, base, merge, heartbeat, handbackPollMs = 3000 }) {
   const taskId = String(task.id).replace(/[^A-Za-z0-9_-]/g, '');
   const mode = ['Build', 'Plan', 'Ask'].includes(task.mode) ? task.mode : 'Build';
   const prompt = String(task.prompt || '').slice(0, MAX_PROMPT);
@@ -1168,6 +1197,7 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
 
   let pendingAsk = null; let asks = 0;
   const statusDoc = (status, extra = {}) => ({ ...(pendingAsk && status === 'running' ? { ask: pendingAsk } : {}), id: taskId, status, mode, prompt: prompt.slice(0, 4000), sessionId, ...(kind === 'task' ? { kind } : {}), ...(bot ? { bot: { name: bot.name } } : {}), startedAt, updatedAt: Date.now(), runId: env.GITHUB_RUN_ID || null, ...extra });
+  const state = task.handoff || null; // a run carried on from the PC
   const finish = async (ok, title, summary, result) => {
     const baseLen = JSON.stringify(result).length;
     const packed = packEvents(events, Math.max(4000, MAX_OUTPUT - baseLen - 200));
@@ -1178,7 +1208,28 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
         output: { title, summary: String(summary || title).slice(0, MAX_OUTPUT), text: JSON.stringify({ ...result, events: packed }).slice(0, MAX_OUTPUT) },
       }).catch((e) => log(`Could not finish the check run: ${e.message}`));
     }
-    return { status: ok ? 'done' : 'failed', result: { ...result, events: packed } };
+    return { status: ok ? 'done' : 'failed', result: { ...result, events: packed }, ...(state ? { handoff: true } : {}) };
+  };
+
+  // Handoff: the work goes on craft/wip-<chat> with the state next to it, never merged.
+  // done.json tells the PC where it ended: 'paused' (it asked for the chat back),
+  // 'done' or 'failed'.
+  const commitWip = async (status) => {
+    if (!state) return null;
+    state.side = 'cloud';
+    fs.writeFileSync(path.join(cwd, STATE_FILE), JSON.stringify({ ...state, savedAt: Date.now() }));
+    await git(cwd, ['add', '-A', '--', '.', ':(exclude).codeply', `:(exclude)${WORKFLOW_PATH}`, ':(exclude).env']);
+    await git(cwd, [...BOT, 'commit', '-q', '--allow-empty', '-m', `Craft WIP ${sessionId} (cloud, ${state.steps.length} steps)`]);
+    try { fs.unlinkSync(path.join(cwd, STATE_FILE)); } catch {}
+    const sha = await git(cwd, ['rev-parse', 'HEAD']);
+    // Not forced: if anything else moved the branch, this side lost the lease.
+    await git(cwd, ['push', '-q', 'origin', `HEAD:refs/heads/${wipBranch(sessionId)}`], { auth: authFor(token, serverUrl) });
+    if (status) {
+      await files.write(HANDBACK.done(sessionId), { sha, status, taskId, at: Date.now() }, `Craft handback ${sessionId}`);
+      const want = await files.read(HANDBACK.want(sessionId)).catch(() => null);
+      if (want) await files.remove(HANDBACK.want(sessionId), want.sha).catch(() => {});
+    }
+    return sha;
   };
 
   if (setupError) return finish(false, 'Could not start', setupError, { error: setupError, mode });
@@ -1213,8 +1264,9 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
   try {
     // Where this task starts (a later message in the same runner starts after the earlier merge).
     const taskBase = await git(cwd, ['rev-parse', 'HEAD']).catch(() => headSha);
-    const hist = await loadHistory(files, sessionId);
-    await pushProgress(hist.messages.length ? `Continuing the chat (${hist.messages.length / 2} earlier turns).` : 'Working on it.', true);
+    const hist = state ? { messages: Array.isArray(state.history) ? state.history : [] } : await loadHistory(files, sessionId);
+    if (state) events.push({ t: 'notice', level: 'info', text: `Your PC went offline, so Craft Cloud is carrying on from step ${state.steps.length + 1}.` });
+    await pushProgress(state ? 'Carrying on from your PC.' : hist.messages.length ? `Continuing the chat (${hist.messages.length / 2} earlier turns).` : 'Working on it.', true);
     // Risky actions (deploys...) ask the person unless the repo's Cloud permission is "full".
     const ASK_WAIT_MS = 15 * 60 * 1000;
     // Only a repo with the current workflow passes CRAFT_PERMISSIONS (empty when unset): its
@@ -1241,10 +1293,24 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
       return verdict || 'reject';
     };
     let answer = ''; let steps = 0; let failure = '';
-    const userMessage = kind === 'task'
+    const userMessage = state
+      ? `${continuationPrompt(state, 'cloud')}\n\n(You are now in Craft Cloud, on a Linux machine with a copy of the project as the PC left it. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. Do not commit or push; Craft does that.)`
+      : kind === 'task'
       ? `${prompt}\n\n(You are running unattended in Codeply Cloud on a Linux machine, not on the user's PC: you cannot reach their local files or desktop apps. Use the shell, the web and this repository. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. Your final reply is read out to the user: say plainly what you did or found, in a few short sentences, no markdown. Do not commit or push; Craft does that when you finish.)`
       : `${prompt}\n\n(You are running unattended in Craft Cloud, in a fresh copy of the repository on a Linux machine. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. You can install dependencies, run the app and tests, and check pages with browser_check. Do not commit or push; Craft does that when you finish.)`;
-    for await (const ev of runAgentImpl({ userMessage, history: hist.messages.slice(-HISTORY_TURNS), mode, cwd, approve, browser: agentBrowser, signal: new AbortController().signal, route, maxSteps, ...(bot ? { botPrompt: bot.prompt } : {}) })) {
+    const ac = new AbortController();
+    let handedBack = false; let lastWant = Date.now(); let lastWip = Date.now();
+    for await (const ev of runAgentImpl({ userMessage, history: hist.messages.slice(-HISTORY_TURNS), mode, cwd, approve, browser: agentBrowser, signal: ac.signal, route, maxSteps, ...(bot ? { botPrompt: bot.prompt } : {}), ...(state ? { todos: state.todos } : {}) })) {
+      if (state) {
+        recordHandoff(state, ev);
+        // Between steps: has the PC asked for the chat back? Then stop here, never mid-tool.
+        if (!handedBack && (ev.type === 'tool_end' || Date.now() - lastWant > handbackPollMs)) {
+          lastWant = Date.now();
+          if (await files.read(HANDBACK.want(sessionId)).catch(() => null)) { handedBack = true; ac.abort(); events.push({ t: 'notice', level: 'info', text: 'Your PC is back, so the task is going back to it.' }); }
+        }
+        // A WIP every minute, so a runner that dies still leaves its work.
+        if (!handedBack && ev.type === 'tool_end' && Date.now() - lastWip > 60000) { lastWip = Date.now(); await commitWip(null).catch((e) => log(`WIP push failed: ${e.message}`)); }
+      }
       const rec = recordEvent(ev);
       if (rec && rec.t === 'tool' && ev.name === 'browser_check' && pendingShot) { rec.screenshot = pendingShot; pendingShot = null; }
       // The final answer arrives as the reply; everything else is part of the chat's steps.
@@ -1254,8 +1320,16 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
       else if (ev.type === 'error') failure = ev.error;
       if (rec) await pushProgress(`Working: ${steps} step${steps === 1 ? '' : 's'} so far.`);
       if (ev.type === 'done' || ev.type === 'error' || ev.type === 'aborted') break;
+      if (handedBack && ev.type === 'tool_end') break;
     }
     if (pending) await pending;
+    if (state) {
+      if (failure && !answer && !handedBack) throw new Error(failure);
+      const wipSha = await commitWip(handedBack ? 'paused' : 'done');
+      const changed = (await git(cwd, ['diff', '--name-only', headSha, 'HEAD', '--', '.', `:(exclude)${STATE_FILE}`, `:(exclude)${WORKFLOW_PATH}`]).catch(() => '')).split('\n').filter(Boolean);
+      const result = { mode, prompt: prompt.slice(0, 4000), sessionId, answer: handedBack ? '' : answer.slice(0, 20000), branch: null, sha: wipSha, files: changed, stats: [], merged: null, steps, baseSha: headSha, handoff: { wipSha, handedBack } };
+      return finish(true, handedBack ? 'Handed back to the PC' : changed.length ? `Changed ${changed.length} file${changed.length === 1 ? '' : 's'}` : 'Done', answer || 'Handed back to the PC.', result);
+    }
     if (failure && !answer) throw new Error(failure);
 
     // The bot's own last words, before a plan file replaces the answer: what the phone speaks.
@@ -1307,7 +1381,9 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
     const title = changed.length ? `Changed ${changed.length} file${changed.length === 1 ? '' : 's'}` : mode === 'Build' ? 'No files changed' : 'Answered';
     return finish(true, title, answer || title, result);
   } catch (e) {
-    return finish(false, 'Failed', `Something went wrong: ${e.message}`, { error: e.message, mode, steps: lines.length });
+    // A handoff still leaves its work for the PC.
+    const wipSha = state ? await commitWip('failed').catch(() => null) : null;
+    return finish(false, 'Failed', `Something went wrong: ${e.message}`, { error: e.message, mode, steps: lines.length, ...(state ? { handoff: { wipSha, handedBack: false } } : {}) });
   }
 }
 

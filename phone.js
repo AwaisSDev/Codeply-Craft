@@ -811,6 +811,23 @@ function taskHtml(t) {
 }
 
 /** Full redraw of the current chat. Keeps open rows open and the scroll where it was. */
+// The PC is offline: where its task is (run_leases, handoff-desktop.js). Craft Cloud
+// carries a protected run on, and hands it back when the PC is online again.
+async function showHandoff(c) {
+  let row = null;
+  try {
+    const { data } = await sb.from('run_leases').select('holder, state, note, beat_at, device_name').eq('session_id', c.pcSessionId).maybeSingle();
+    row = data;
+  } catch { return; }
+  if (!row || (state.current && chatMeta(state.current) || {}).id !== c.id || relay.pcId) return;
+  let text = '';
+  if (row.holder === 'cloud' && row.state === 'running') text = 'Your PC went offline, so Craft Cloud is carrying this task on. It goes back to your PC when the PC is online.';
+  else if (row.holder === 'pc' && row.state === 'running') text = 'Your PC went offline in the middle of this task. Craft Cloud picks it up within a minute or two.';
+  else if (row.state === 'no_credentials' || row.state === 'cloud_failed') text = `${row.note || 'Craft Cloud could not take this task over.'} It carries on when your PC is back.`;
+  if (!text) return;
+  addMsg('note', text);
+}
+
 function renderFeed({ force = false } = {}) {
   const c = state.current && chatMeta(state.current);
   const f = feed();
@@ -829,6 +846,7 @@ function renderFeed({ force = false } = {}) {
     for (const m of b.prelude || []) addMsg(m.role === 'user' ? 'user' : m.role === 'error' ? 'error' : 'agent', m.content, m.thumbs);
     for (const item of b.pcItems || []) renderPcItem(item, c);
     if (c.pcSessionId && !(b.pcItems || []).length && !relay.pcId && !(b.tasks || []).length) addMsg('note', 'This chat lives on your PC. It shows up here once the PC is online.');
+    if (c.pcSessionId && !relay.pcId) showHandoff(c);
     if ((b.tasks || []).length) f.insertAdjacentHTML('beforeend', b.tasks.map(taskHtml).join(''));
   }
   groupSteps(f);
@@ -926,6 +944,7 @@ function receiveEvent(event) {
   else if (event.type === 'mode_switch') { addThinking(event.mode === 'Build' ? 'Switched to Build mode. Implementing the plan.' : `Switched to ${event.mode} mode.`, 'Note'); }
   else if (event.type === 'goal_update') addMsg('note', `Goal: ${event.goal || ''} (${event.status})`);
   else if (event.type === 'cloud_task') renderCloudTaskCard(event.task);
+  else if (event.type === 'handoff') { if (event.status === 'back') addThinking('Back on your PC.', 'Note'); }
   else if (event.type === 'notice') { if (!/^Summarized earlier steps/i.test(event.text || '')) (event.level === 'info' ? addThinking(event.text, 'Note') : addMsg('error', event.text)); }
   else if (event.type === 'text') (event.interim ? addThinking(event.text) : addDelta(event.text));
   else if (event.type === 'tool_end') {

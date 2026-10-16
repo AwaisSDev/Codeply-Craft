@@ -3129,6 +3129,9 @@ if (api) api.onAgentEvent((data) => {
     case 'cloud_task':
       if (window.CraftCloud) window.CraftCloud.render(data.task);
       break;
+    case 'handoff':
+      if (window.CraftHandoff) window.CraftHandoff.render(data);
+      break;
     case 'notice':
       addNote(data.text, data.level === 'warn' ? 'warn' : data.level === 'error' ? 'error' : '');
       break;
@@ -3254,6 +3257,7 @@ async function openSession(id) {
   if (!s) return;
   state.currentSessionId = id;
   navRecord('s:' + id);
+  if (window.CraftHandoff) window.CraftHandoff.show(id);
   if (s.cwd) {
     const r = await api.useProject(s.cwd);
     if (r) setProject(r.path, r.branch);
