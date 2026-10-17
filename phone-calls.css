@@ -171,3 +171,11 @@
 /* Reminders that already went out today: listed under Earlier, quieter. */
 .rem-past { opacity: .62; }
 .rem-past strong { font-weight: 500; }
+
+/* Bots at work (phone-life.js): what the bots are doing on their own. */
+.life-card { margin: 6px 0 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; }
+.life-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.life-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); }
+.life-btn { height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border); background: none; color: inherit; font: inherit; font-size: 13px; flex: none; }
+.life-btn.danger { color: var(--danger); }
+.life-btn[disabled] { opacity: .5; }

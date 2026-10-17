@@ -167,6 +167,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       : bots.length ? 'Your PC is offline. You can still call these bots.' : '';
     if (status) html += `<p class="calls-status${loadError && !refreshing ? ' err' : ''}">${esc(status)}</p>`;
     if (R()) html += '<div id="remindCard"></div>';
+    if (window.CraftLife && online) html += '<div id="lifeCard"></div>'; // bots at work (phone-life.js)
 
     html += `<button type="button" class="new-bot-btn" id="newBotBtn">${ICON.plus}<span>New bot</span><small>Describe it, Codeply builds it</small></button>`;
     if (bots.length) {
@@ -230,6 +231,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     const nb = $('newBotBtn');
     if (nb) nb.addEventListener('click', () => openBuilder());
     if (R()) R().mount($('remindCard'), $('remindBox'));
+    if (window.CraftLife && $('lifeCard')) window.CraftLife.mount($('lifeCard'));
   }
 
   // ─── Voices ───────────────────────────────────────────────────────────────

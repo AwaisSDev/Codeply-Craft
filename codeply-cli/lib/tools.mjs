@@ -25,6 +25,8 @@ const diagnostics = require('./diagnostics.js');
 const { commandPatterns } = require('./arity.js');
 const mcpLib = require('./mcp.js');
 const reachLib = require('./reach.js');
+const lifeLib = require('./life.js');
+const botMailLib = require('./bot-mail.js');
 const applyLimit = require('./apply-limit.js');
 const config = require('./config.js');
 const skills = require('./skills.js');
@@ -1064,10 +1066,16 @@ async function slack_post_message(args, ctx) {
     // Channel lookup always uses the bot token - channels:read is a bot-only
     // scope in this app's setup regardless of which token ends up posting.
     const channelId = await resolveSlackChannel(slack.accessToken, channelInput);
-    // Posting defaults to the user token when connected - messages read as
-    // coming from the actual person, not the "Codeply Craft APP" bot. Falls
-    // back to the bot token for anyone who connected before user-token
-    // support existed, or who only approved the bot scopes.
+    // A bot posts as itself (the app's bot token, with the bot's name), never
+    // as the user. The plain agent posts with the user token when connected -
+    // messages read as coming from the actual person, not the "Codeply Craft
+    // APP" bot - and falls back to the bot token for anyone who connected
+    // before user-token support existed, or who only approved the bot scopes.
+    const bot = ctx.botId ? require('./bots.js').getBot(ctx.botId) : null;
+    if (bot) {
+      const r = await oauth.slackPostMessage(slack.accessToken, { channel: channelId, text }, { asName: `${bot.name} (assistant)` });
+      return { ok: true, output: `Posted to ${channelInput} as ${bot.name}${r.named ? '' : ' (with the Codeply app\'s name: reconnect Slack in Connect Apps so bots can post under their own names)'}.`, meta: { label: `#${channelInput.replace(/^#/, '')} as ${bot.name}` } };
+    }
     const useUserToken = !!slack.userAccessToken;
     const postToken = useUserToken ? slack.userAccessToken : slack.accessToken;
     await oauth.slackPostMessage(postToken, { channel: channelId, text }, { isUserToken: useUserToken });
@@ -2247,6 +2255,45 @@ async function ask_bot(args, ctx) {
 const reach_me = (args, ctx) => reachLib.reachMe(args, ctx);
 const watch_email = (args, ctx) => reachLib.watchEmail(args, ctx);
 
+// ─── The user's life context (lib/life.js; the host attaches the store) ──────
+// A bot reads only the sources its Life settings allow; the plain agent reads the non-sensitive ones.
+function life_context(args, ctx) {
+  const bot = ctx.botId ? require('./bots.js').getBot(ctx.botId) : null;
+  return lifeLib.contextTool(args, { bot });
+}
+
+// ─── A bot's own email (lib/bot-mail.js; the host sends through Codeply's server) ─
+// The same editable card as gmail_send: what is left on it is what goes out.
+async function bot_email_send(args, ctx) {
+  const bot = ctx.botId ? require('./bots.js').getBot(ctx.botId) : null;
+  if (!bot) return { ok: false, output: 'Only a bot with its own address can email as itself. Use gmail_send to send from the user\'s Gmail.' };
+  const from = botMailLib.addressOf(bot.id);
+  if (!from) return { ok: false, output: `${bot.name} has no email address yet. The user can give it one in Crew: Edit bot, Email.` };
+  const thread = args.reply_to ? await botMailLib.threadOf(args.reply_to) : null;
+  if (args.reply_to && !thread) return { ok: false, output: `No received email with id "${args.reply_to}". Leave reply_to empty to start a new email.` };
+  const to = String(args.to || (thread && thread.to) || '').trim();
+  const subject = String(args.subject || (thread && thread.subject) || '').trim();
+  const body = String(args.body || '');
+  if (!to) return { ok: false, output: 'bot_email_send needs a <to> address.' };
+  if (!body.trim()) return { ok: false, output: 'bot_email_send needs a <body>.' };
+  const verdict = readVerdict(await ctx.approve({
+    tool: 'bot_email_send',
+    title: `Email ${to} as ${bot.name} (${from})`,
+    detail: `Subject: ${subject || '(no subject)'}\n\n${body}`,
+    danger: false,
+    draft: { to, subject, body },
+    draftOnly: false,
+  }));
+  if (verdict.action === 'reject') return { ok: false, output: `User declined to send the email to ${to}.`, meta: { rejected: true } };
+  if (verdict.action === 'draft') return { ok: false, output: 'The user wants to keep it as a draft. It was not sent; tell them it is on the card above.', meta: { rejected: true } };
+  const email = applyEmailEdits({ to, subject, body }, verdict.edits);
+  if (!email.to) return { ok: false, output: 'The email has no recipient after the user\'s edits, so it was not sent.' };
+  const r = await botMailLib.send({ botId: bot.id, to: email.to, subject: email.subject, text: email.body, replyTo: thread ? thread.id : '' });
+  if (!r || !r.ok) return { ok: false, output: `Not sent: ${(r && (r.error || r.output)) || 'the server did not answer'}` };
+  const left = r.used && r.limits ? ` The crew has ${Math.max(0, r.limits.day - r.used.day)} emails left today and ${Math.max(0, r.limits.month - r.used.month)} this month.` : '';
+  return { ok: true, output: `Sent from ${from} to ${email.to}, subject "${email.subject}".${left}`, meta: { label: `to ${email.to}: ${email.subject}` } };
+}
+
 // ─── Publishing (Supabase + Vercel + GitHub, see lib/publish.js) ────────────
 const publishTools = publishLib.makePublishTools({
   config,
@@ -2302,7 +2349,7 @@ export const TOOLS = {
   ask_bot,
   ask_user,
   mcp,
-  web_fetch, web_search, image_search, apply_patch, plan_exit, plan_enter, lsp, reach_me, watch_email,
+  web_fetch, web_search, image_search, apply_patch, plan_exit, plan_enter, lsp, reach_me, watch_email, life_context, bot_email_send,
   list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, browser_check,
   gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, slack_post_message, vercel_deploy, supabase_create_project, supabase_delete_project, github_create_repo,
   design_reference_search, view_images, supabase_api, supabase_sql, vercel_api, add_model,
@@ -2313,7 +2360,7 @@ export const TOOLS = {
 // actually prompt for non-read requests (see above); read-only tools
 // (browser_check, gmail_search, design_reference_search, view_images, ...)
 // never prompt.
-export const TOOL_NEEDS_APPROVAL = new Set(['add_model', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github', 'write_file', 'edit_file', 'apply_patch', 'run', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_api', 'supabase_sql', 'vercel_api']);
+export const TOOL_NEEDS_APPROVAL = new Set(['add_model', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github', 'write_file', 'edit_file', 'apply_patch', 'run', 'fetch_image', 'gmail_send', 'gmail_draft', 'bot_email_send', 'calendar_add', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_api', 'supabase_sql', 'vercel_api']);
 
 /** Human-facing verb + colour hint for the transcript. */
 export const TOOL_DISPLAY = {
@@ -2326,6 +2373,8 @@ export const TOOL_DISPLAY = {
   image_search: { verb: 'images', icon: '▸' },
   reach_me: { verb: 'phone', icon: '☎' },
   watch_email: { verb: 'watch', icon: '✉' },
+  life_context: { verb: 'context', icon: '◷' },
+  bot_email_send: { verb: 'email', icon: '✉' },
   apply_patch:{ verb: 'patch',  icon: '✎' },
   plan_exit:  { verb: 'plan',   icon: '☐' },
   plan_enter: { verb: 'plan',   icon: '☐' },
@@ -2378,7 +2427,7 @@ const MUTATING_TOOLS = new Set([
 
 // Everything that isn't designing: commands, deploys, databases, messages, other projects.
 export const DESIGN_BLOCKED = new Set([
-  'run', 'lsp', 'mcp', 'ask_bot', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model', 'browser_check',
+  'run', 'lsp', 'mcp', 'ask_bot', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model', 'browser_check', 'bot_email_send',
   'gmail_send', 'gmail_draft', 'gmail_search', 'drafts_list', 'calendar_list', 'calendar_add', 'slack_post_message',
   'vercel_deploy', 'vercel_api', 'supabase_create_project', 'supabase_delete_project', 'supabase_api', 'supabase_sql',
   'github_create_repo', 'publish_check', 'publish_connect', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github',

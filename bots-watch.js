@@ -353,4 +353,5 @@ async function gmailPhoneSet(on, { auto = false } = {}) {
   }
 }
 
-module.exports = { init, poke, reachPhone, addAlert, gmailPhoneStatus, gmailPhoneSet };
+// gmailToken and callFunction are shared with the life engine (life-desktop.js) and bot mail (bots-mail.js).
+module.exports = { init, poke, reachPhone, addAlert, gmailPhoneStatus, gmailPhoneSet, gmailToken, callFunction, localTz };

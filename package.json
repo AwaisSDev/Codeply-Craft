@@ -65,6 +65,7 @@
       "!.env.*",
       "!scripts/engine-test.mjs",
       "!scripts/rewind-test.mjs",
+      "!scripts/life-test.mjs",
       "!dev-app-update.yml",
       "!vercel.json"
     ],

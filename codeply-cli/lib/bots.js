@@ -57,7 +57,7 @@ const TONES = {
 const APPROVALS = {
   edit_files: { label: 'Editing files', tools: ['write_file', 'edit_file', 'apply_patch', 'fetch_image'] },
   run_commands: { label: 'Running commands', tools: ['run'] },
-  send: { label: 'Sending anything (email, Slack)', tools: ['gmail_send', 'slack_post_message'] },
+  send: { label: 'Sending anything (email, Slack)', tools: ['gmail_send', 'slack_post_message', 'bot_email_send'] },
   publish: { label: 'Deploying or publishing', tools: ['vercel_deploy', 'github_create_repo', 'vercel_api', 'publish_deploy', 'publish_github'] },
   databases: { label: 'Changing databases or cloud projects', tools: ['supabase_create_project', 'supabase_delete_project', 'supabase_api', 'supabase_sql', 'supabase_setup', 'supabase_schema'] },
   calendar: { label: 'Adding to your calendar', tools: ['calendar_add'] },
@@ -96,6 +96,48 @@ function normalizeAlwaysOn(a) {
       .slice(-20).map((x) => ({ from: x.from.trim().toLowerCase().slice(0, 200), how: x.how === 'call' ? 'call' : 'text', note: String(x.note || '').slice(0, 200), repeat: !!x.repeat, at: Number(x.at) || Date.now() })),
   };
 }
+
+// Autonomy (life-desktop.js autopilot): how much a bot may do with nobody watching.
+//   ask   every action outside its approval boundary waits for the user (as before)
+//   hold  outward actions (send, publish, databases, calendar) wait holdMinutes in
+//         the outbox, where the user can cancel them from the phone or Crew; then go
+//   full  the categories in `allow` run at once
+// Deleting things, anything flagged dangerous and anything a third party asked
+// for always wait for the user, at every level.
+const AUTONOMY = { ask: 'Ask me first', hold: 'Do it after a wait I can cancel', full: 'Just do it' };
+function normalizeAutonomy(a) {
+  a = a && typeof a === 'object' ? a : {};
+  const n = (v, d, lo, hi) => { const x = Math.round(Number(v)); return Number.isFinite(x) ? Math.max(lo, Math.min(hi, x)) : d; };
+  const b = a.budgets && typeof a.budgets === 'object' ? a.budgets : {};
+  return {
+    level: AUTONOMY[a.level] ? a.level : 'ask',
+    holdMinutes: n(a.holdMinutes, 10, 1, 240),
+    allow: (Array.isArray(a.allow) ? a.allow : ['edit_files', 'run_commands']).filter((k) => APPROVALS[k]),
+    // Per day, per bot. 0 means never on its own.
+    budgets: { runs: n(b.runs, 10, 0, 200), emails: n(b.emails, 10, 0, 200), posts: n(b.posts, 3, 0, 100), deploys: n(b.deploys, 3, 0, 50) },
+  };
+}
+
+// On calls (the call helper in life-desktop.js): how the bot steps in when the user hands a call over.
+const EXCUSE_STYLES = { friendly: 'Warm and casual', formal: 'Polite and formal', brief: 'Short and to the point', playful: 'Light and a bit funny' };
+function normalizeCallStyle(c) {
+  c = c && typeof c === 'object' ? c : {};
+  return {
+    style: EXCUSE_STYLES[c.style] ? c.style : 'friendly',
+    // Excuses the user approved. The bot picks one that fits; with none it says the user had to step away.
+    excuses: (Array.isArray(c.excuses) ? c.excuses : []).filter((x) => typeof x === 'string' && x.trim()).map((x) => clip(x.trim(), 200)).slice(0, 8),
+  };
+}
+
+// The bot's own email address (bot-mail on Codeply's server, sent through Resend).
+const BOT_ADDRESS = /^[a-z0-9][a-z0-9._-]{0,40}@[a-z0-9.-]+\.[a-z]{2,}$/i;
+function normalizeEmail(e) {
+  e = e && typeof e === 'object' ? e : {};
+  const address = BOT_ADDRESS.test(String(e.address || '')) ? String(e.address).toLowerCase() : '';
+  return { address, on: !!(address && e.on !== false) };
+}
+
+const lifeLib = () => require('./life.js');
 
 // Kept in sync with bot-avatar.js (the renderer). The engine only validates.
 const AVATAR_KEYS = {
@@ -239,6 +281,11 @@ function normalizeBot(input, existing) {
     // The voice it speaks with on calls (a Deepgram, Edge or Kokoro voice id; '' = pick one).
     voice: typeof b.voice === 'string' && /^[\w.-]{0,80}$/.test(b.voice) ? b.voice : '',
     alwaysOn: normalizeAlwaysOn(b.alwaysOn),
+    // What it may read of the user's life context (life.js), and which nudges it sends.
+    life: lifeLib().normalizeLife(b.life),
+    autonomy: normalizeAutonomy(b.autonomy),
+    callStyle: normalizeCallStyle(b.callStyle),
+    email: normalizeEmail(b.email),
     memory: cleanMemory(b.memory),
     // Experience (learned on the job, see reflectOnRun): lessons, playbooks, tool tips, open threads.
     lessons: cleanLessons(b.lessons),
@@ -383,6 +430,8 @@ async function learnFromTurn(bot, userText, replyText, chatFn) {
     const user = clip(userText, 3000);
     if (!user) return { added: [] };
     const known = (bot.memory || []).slice(-30).map((m) => `- ${m.fact}`).join('\n') || '(nothing yet)';
+    // Plans the user mentions go to the shared life context (life.js), from the same model call.
+    const life = lifeLib().available() && lifeLib().allowedFor(bot).has('plans') ? lifeLib() : null;
     const prompt = `You keep the long-term memory of an assistant called ${bot.name}${bot.specialty ? ` (${bot.specialty})` : ''}.
 From the exchange below, pick at most ${MAX_FACTS_PER_TURN} durable things worth remembering for future conversations: the user's preferences, decisions, standing instructions, facts about them or their project, or feedback on how ${bot.name} should work.
 Skip anything one-off, temporary, obvious, or already known. Never store passwords, keys or other secrets. Each item is one short sentence about the user or the work, written in the third person ("The user prefers ...").
@@ -393,10 +442,11 @@ ${known}
 User: ${user}
 
 ${bot.name}: ${clip(replyText, 3000) || '(no reply)'}
-
-Respond with ONLY a JSON object {"facts": ["..."]}. Use an empty list when nothing is worth keeping.`;
+${life ? `\n${life.plansAsk()}\n` : ''}
+Respond with ONLY a JSON object {"facts": ["..."]${life ? ', "plans": []' : ''}}. Use an empty list when nothing is worth keeping.`;
     const r = await chatFn([{ role: 'user', content: prompt }]);
     if (!r || !r.success || !r.json) return { added: [] };
+    if (life && Array.isArray(r.json.plans) && r.json.plans.length) { try { life.notePlans(r.json.plans, { source: 'chat', botId: bot.id }); } catch {} }
     const facts = (Array.isArray(r.json.facts) ? r.json.facts : [])
       .filter((f) => typeof f === 'string')
       .map((f) => f.trim())
@@ -705,6 +755,14 @@ const PHONE_FORMAT = `To reach the phone or watch for an email, write:
 <how>call</how>
 </codeply:watch_email>`;
 
+const LIFE_RULES = `THE USER'S LIFE CONTEXT
+All the user's bots share one picture of their life: calendar, email, calls, plans, projects, what is on screen. Look things up with life_context (about = now, today, tomorrow, week, person, calls, email, activity, plans, projects, slack, tasks, or a query to search) before saying you do not know what the user has on, who someone is, or what happened. It is private: use it to help the user, never pass it on to anyone else.`;
+const LIFE_FORMAT = `To look something up, write:
+<codeply:life_context>
+<about>person</about>
+<query>Sara</query>
+</codeply:life_context>`;
+
 const VERIFY_RULES = `BEFORE YOU SAY IT IS DONE
 - Base every claim on what your tools actually returned in this run.
 - Check the deliverable exists (the file is written, the message is sent, the command passed) before you say so.
@@ -771,6 +829,17 @@ function buildBotPrompt(bot, o = {}) {
   }
   parts.push(...experienceParts(bot, o.request));
   if (require('./reach.js').available()) parts.push(o.native ? PHONE_RULES : `${PHONE_RULES}\n\n${PHONE_FORMAT}`);
+  const mail = require('./bot-mail.js');
+  if (mail.available() && mail.addressOf(bot.id)) parts.push(mail.RULES(mail.addressOf(bot.id), !!o.native));
+  const L = lifeLib();
+  if (L.available() && o.life !== false) {
+    const allowed = L.allowedFor(bot);
+    if (allowed.size) {
+      let block = '';
+      try { block = L.nowBlock(L.snapshot({ allowed }), { skipEmpty: true }); } catch {}
+      parts.push([block, o.native ? LIFE_RULES : `${LIFE_RULES}\n\n${LIFE_FORMAT}`].filter(Boolean).join('\n\n'));
+    }
+  }
   parts.push(VERIFY_RULES);
   if (o.askedBy) {
     parts.push(`DELEGATED TASK\n${o.askedBy} asked you to do one task. You only see that task, not the rest of the conversation. Do it fully with your tools, then reply in this shape:\nSummary: <one sentence with the outcome>\n<the details: findings, what you changed, anything ${o.askedBy} must know or check>`);
@@ -1050,14 +1119,14 @@ const CALL_STEP = {
   calendar_list: 'Checking your calendar', calendar_add: 'Adding it to your calendar', web_search: 'Searching the web', image_search: 'Looking for images', reach_me: 'Reaching your phone', watch_email: 'Setting an email alert', web_fetch: 'Reading a page',
   read_file: 'Reading a file', write_file: 'Writing a file', edit_file: 'Editing a file', apply_patch: 'Editing files', run: 'Running a command',
   search: 'Searching your files', list_dir: 'Looking through files', slack_post_message: 'Posting to Slack', browser_check: 'Checking the page',
-  ask_bot: 'Asking a teammate', todo: 'Planning',
+  ask_bot: 'Asking a teammate', todo: 'Planning', life_context: 'Checking your day', bot_email_send: 'Sending the email',
 };
 const callStepLabel = (name) => CALL_STEP[name] || 'Working on it';
 
 module.exports = {
   VOICE_RULES, VOICE_RULES_NO_TOOLS, spoken, callTurns, voiceTurn, callStepLabel,
   MAX_MEMORY, MAX_DEPTH, ROLES, TONES, APPROVALS, AVATAR_KEYS, TEMPLATES, WATCH_SOURCES, REACH,
-  botsDir, setBotsDir, normalizeBot, normalizeAvatar, normalizeAlwaysOn,
+  botsDir, setBotsDir, normalizeBot, normalizeAvatar, normalizeAlwaysOn, normalizeAutonomy, normalizeCallStyle, normalizeEmail, AUTONOMY, EXCUSE_STYLES,
   listBots, getBot, findBot, createBot, createFromTemplate, updateBot, removeBot,
   mergeMemory, addMemory, forget, clearMemory, learnFromTurn,
   MAX_LESSONS, MAX_PLAYBOOKS, MAX_TOOL_TIPS, MAX_OPEN_THREADS,

@@ -285,11 +285,11 @@ function gmailApi({ token, base = GMAIL_BASE, fetchImpl = (...a) => fetch(...a) 
   const qs = (o) => new URLSearchParams(Object.entries(o).filter(([, v]) => v !== undefined && v !== '')).toString();
   return {
     profile: () => req('GET', '/profile'),
-    /** New inbox message ids since startHistoryId, and the newest historyId. */
-    async history(startHistoryId) {
+    /** New inbox message ids since startHistoryId, and the newest historyId. labelId null: every label (the life context reads SENT too). */
+    async history(startHistoryId, labelId = 'INBOX') {
       const ids = []; let pageToken = ''; let historyId = String(startHistoryId);
       for (let page = 0; page < 5; page++) {
-        const r = await req('GET', `/history?${qs({ startHistoryId, historyTypes: 'messageAdded', labelId: 'INBOX', maxResults: 100, pageToken })}`);
+        const r = await req('GET', `/history?${qs({ startHistoryId, historyTypes: 'messageAdded', labelId: labelId || undefined, maxResults: 100, pageToken })}`);
         for (const h of r.history || []) for (const a of h.messagesAdded || []) if (a.message && a.message.id) ids.push(a.message.id);
         if (r.historyId) historyId = String(r.historyId);
         if (!r.nextPageToken) break;

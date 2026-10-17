@@ -25,6 +25,8 @@ const skills = require('./skills.js');
 const plugins = require('./plugins.js');
 const rolesLib = require('./subagents.js');
 const reachLib = require('./reach.js');
+const lifeLib = require('./life.js');
+const botMailLib = require('./bot-mail.js');
 const config = require('./config.js');
 
 // Enough room for a real task plus its verification pass. /goal runs pass a
@@ -54,7 +56,7 @@ const FORMAT_CORRECTION =
   'Valid names: todo, ask_user, mcp, list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, ' +
   'browser_check, gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, add_model, slack_post_message, vercel_deploy, supabase_create_project, ' +
   'supabase_delete_project, github_create_repo, design_reference_search, view_images, design_direction, design_lint, supabase_api, supabase_sql, vercel_api, ' +
-  'web_fetch, web_search, image_search, reach_me, watch_email, apply_patch, plan_exit, plan_enter, lsp, publish_check, publish_connect, supabase_setup, supabase_schema, ' +
+  'web_fetch, web_search, image_search, reach_me, watch_email, life_context, bot_email_send, apply_patch, plan_exit, plan_enter, lsp, publish_check, publish_connect, supabase_setup, supabase_schema, ' +
   'publish_deploy, publish_github.';
 
 const TRUNCATION_CORRECTION =
@@ -353,6 +355,8 @@ const PARAMS = {
   image_search: ['query', 'num'],
   reach_me: ['how', 'message', 'at', 'bot'], // only when the host can reach the phone (lib/reach.js)
   watch_email: ['from', 'how', 'note', 'repeat'],
+  life_context: ['about', 'query'], // only when the host attached the life store (lib/life.js)
+  bot_email_send: ['to', 'subject', 'body', 'reply_to'], // only for a bot with its own address (lib/bot-mail.js)
   apply_patch: ['patch'],
   plan_exit: ['path'],
   plan_enter: ['reason'],
@@ -416,6 +420,8 @@ const NAME_ALIASES = {
   web_fetch: 'web_fetch', webfetch: 'web_fetch', fetchurl: 'web_fetch', fetch_url: 'web_fetch', fetchpage: 'web_fetch', openurl: 'web_fetch', readurl: 'web_fetch',
   reach_me: 'reach_me', reachme: 'reach_me', call_me: 'reach_me', callme: 'reach_me', text_me: 'reach_me', textme: 'reach_me', notify_me: 'reach_me', notifyme: 'reach_me', call_user: 'reach_me',
   watch_email: 'watch_email', watchemail: 'watch_email', email_alert: 'watch_email', alert_on_email: 'watch_email', watch_inbox: 'watch_email',
+  life_context: 'life_context', lifecontext: 'life_context', my_day: 'life_context', myday: 'life_context', user_context: 'life_context', usercontext: 'life_context',
+  bot_email_send: 'bot_email_send', botemailsend: 'bot_email_send', bot_email: 'bot_email_send', botemail: 'bot_email_send', email_as_me: 'bot_email_send', send_as_bot: 'bot_email_send',
   image_search: 'image_search', imagesearch: 'image_search', searchimages: 'image_search', search_images: 'image_search', googleimages: 'image_search',
   web_search: 'web_search', websearch: 'web_search', searchweb: 'web_search', search_web: 'web_search', googlesearch: 'web_search',
   apply_patch: 'apply_patch', applypatch: 'apply_patch', patch: 'apply_patch',
@@ -1554,7 +1560,7 @@ const NO_NATIVE_TOOLS_REMINDER =
 // unless their entry says toolMode: 'text', or CODEPLY_TOOLS=text is set.
 // A model that rejects tools is remembered for the rest of the session.
 const nativeUnsupported = new Set();
-const MUTATING_ACTIONS = new Set(['write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'add_model', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github']);
+const MUTATING_ACTIONS = new Set(['write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'bot_email_send', 'calendar_add', 'add_model', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github']);
 
 /**
  * Native function names for MCP tools (mcp__server__tool, within the 64-char
@@ -1694,6 +1700,8 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       if (n === 'ask_bot') return typeof askBot === 'function';
       if (n === 'reach_me' || n === 'watch_email') return reachLib.available();
       if (m === 'Design' && DESIGN_BLOCKED.has(n)) return false;
+      if (n === 'life_context') return lifeLib.available();
+      if (n === 'bot_email_send') return botMailLib.available() && !!botMailLib.addressOf(botId);
       if (ro && MUTATING_ACTIONS.has(n)) return m === 'Plan' && (n === 'write_file' || n === 'edit_file');
       return true;
     });

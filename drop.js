@@ -181,6 +181,7 @@ function init(h) {
       cwd = made.cwd;
     }
     const r = await host.startChatRun({ sessionId: sessionId || null, cwd, mode, text, bypass: bypass === true, clientId: 'drop' });
+    if (r && r.sessionId && host.onAsk) { try { host.onAsk(text); } catch {} } // the shared life context (life-desktop.js)
     if (r && r.sessionId) {
       shownSession = r.sessionId;
       const s = host.store().sessions.find((x) => x.id === r.sessionId);

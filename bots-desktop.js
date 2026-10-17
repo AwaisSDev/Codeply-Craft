@@ -252,6 +252,8 @@ async function saveCall({ botId, ms, turns }) {
     const route = deps.currentRoute();
     const chatFn = (messages) => deps.aiLib().chatJson(messages, { route });
     await b.learnFromTurn(bot, `(on a voice call, ${Math.round((Number(ms) || 0) / 1000)}s) ${userSide}`, botSide, chatFn);
+    // The call joins the shared life context (life-desktop.js), summarized and sealed.
+    if (deps.onCallSaved) await deps.onCallSaved({ source: 'phone', botId: bot.id, ms, turns: list });
   })().catch(() => {});
   return { status: 200, body: { ok: true, learned: true } };
 }

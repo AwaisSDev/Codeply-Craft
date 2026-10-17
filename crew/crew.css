@@ -518,3 +518,84 @@ body.embedded .app-switch-btn { font-family: "Segoe UI Variable Text", "Segoe UI
 .hist-text ol { margin: 6px 0 0; padding-left: 18px; color: var(--text-dim); font-size: 12.5px; }
 .hist-time { font-size: 11.5px; color: var(--text-dim); white-space: nowrap; }
 .hist-empty { padding: 24px 0; text-align: center; }
+
+/* ─── Life (life.js): one picture of the user's day that every bot reads ─── */
+.side-new.on { background: var(--active); }
+.life { flex: 1; overflow-y: auto; padding: 40px 32px 64px; }
+.life > * { max-width: 760px; margin-left: auto; margin-right: auto; }
+.life-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
+.life-title { font-size: 30px; font-weight: 600; letter-spacing: -0.03em; margin: 0 0 6px; }
+.life-head p { margin: 0; }
+.life-card { border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; margin-bottom: 14px; display: grid; gap: 10px; background: var(--side); }
+.life-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.life-card-head b { font-size: 15px; font-weight: 600; }
+.life-intro p { margin: 0; line-height: 1.55; }
+.life-intro .btn { justify-self: start; }
+.life-rows { display: grid; gap: 6px; }
+.life-row { display: grid; grid-template-columns: 120px 1fr; gap: 12px; font-size: 13.5px; line-height: 1.45; }
+.life-row span { color: var(--text-faint); }
+.life-search { display: grid; gap: 6px; }
+.life-hit { display: grid; grid-template-columns: 150px 1fr auto; gap: 10px; align-items: center; font-size: 13px; padding: 4px 0; border-top: 1px solid var(--border); }
+.life-hit .icon-btn { width: 26px; height: 26px; }
+.life-src { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border); }
+.life-src:first-of-type { border-top: 0; }
+.life-src.off { opacity: .6; }
+.life-src-main { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; min-width: 0; }
+.life-src-main input { margin-top: 3px; accent-color: var(--accent); }
+.life-src-main > span { display: flex; flex-direction: column; gap: 2px; font-size: 13.5px; }
+.life-src-main .dim { font-size: 12.5px; line-height: 1.4; }
+.life-src-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-faint); white-space: nowrap; }
+.life-src-meta .link { margin-left: 0; }
+.life-tag { font-size: 11px; color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); border-radius: 6px; padding: 0 5px; margin-left: 4px; }
+.life-grid { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; font-size: 13.5px; color: var(--text-dim); }
+.life-num { width: 64px; display: inline-block; padding: 5px 8px; margin: 0 4px; }
+.life-quiet { display: inline-flex; align-items: center; gap: 6px; }
+.life-quiet .ao-time { width: 110px; padding: 5px 8px; }
+.life-trigs { display: grid; gap: 2px; }
+.life-trig { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--border); }
+.life-trig .check > span { display: flex; flex-direction: column; gap: 1px; }
+.life-trig .check b { color: var(--text); font-weight: 550; }
+.life-trig .check .dim { font-size: 12.5px; }
+.life-who { width: 150px; flex: none; padding: 6px 30px 6px 10px; font-size: 13px; }
+.life-sub { font-size: 12px; color: var(--text-faint); font-weight: 550; margin-top: 4px; }
+.life-list { display: grid; }
+.life-li { display: grid; grid-template-columns: 120px 1fr auto; gap: 12px; align-items: baseline; font-size: 13px; line-height: 1.45; padding: 7px 0; border-top: 1px solid var(--border); }
+.life-li > span:last-child { display: inline-flex; gap: 6px; }
+.life-seg { justify-self: start; }
+.life-consent span { line-height: 1.45; }
+.life-meter { height: 6px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+.life-meter span { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.life-status { font-size: 11.5px; padding: 1px 7px; border-radius: 99px; background: var(--surface-3); color: var(--text-dim); white-space: nowrap; margin-left: 8px; }
+.life-status.s-done { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+.life-status.s-failed, .life-status.s-needs_you { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.life-status.s-running, .life-status.s-verifying { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.life-audit summary { cursor: pointer; font-size: 13px; color: var(--text-dim); }
+.life-foot { display: flex; align-items: center; gap: 14px; margin-top: 10px; }
+.life-switch { position: relative; display: inline-block; width: 38px; height: 22px; flex: none; cursor: pointer; }
+.life-switch.big { width: 46px; height: 26px; margin-top: 6px; }
+.life-switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.life-switch span { position: absolute; inset: 0; border-radius: 99px; background: var(--border-strong); transition: background .18s ease; pointer-events: none; }
+.life-switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: calc(100% - 22px); max-width: 20px; aspect-ratio: 1; border-radius: 50%; background: #fff; transition: transform .18s ease; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.life-switch.big span::after { max-width: 20px; }
+.life-switch input:checked + span { background: #2f6bff; }
+.life-switch input:checked + span::after { transform: translateX(16px); }
+.life-switch.big input:checked + span::after { transform: translateX(20px); }
+.life-switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.life-bot .check { margin: 3px 0; }
+.life-bot textarea { margin-top: 8px; }
+.life-more { margin-top: 8px; }
+.life-addr { display: flex; align-items: center; gap: 8px; }
+.life-addr .input { max-width: 200px; }
+.life-addr .link { margin-left: 8px; }
+/* Cards in a bot's thread: a nudge, an email, a task */
+.lcard { border: 1px solid var(--border-strong); border-radius: 14px; padding: 12px 14px; margin: 6px 0; display: grid; gap: 8px; max-width: 560px; font-size: 14px; line-height: 1.5; }
+.lcard.nudge { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.lcard-kind { font-size: 12px; color: var(--text-faint); font-weight: 550; display: flex; align-items: center; gap: 6px; }
+.lcard-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.lcard-actions .btn { height: 28px; font-size: 12.5px; padding: 0 11px; }
+.lcard-body { white-space: pre-wrap; color: var(--text-dim); font-size: 13.5px; margin-top: 4px; }
+.lcard details summary { cursor: pointer; font-size: 12.5px; color: var(--text-dim); }
+@media (max-width: 720px) { .life { padding: 28px 16px 48px; } .life-row, .life-li, .life-hit { grid-template-columns: 1fr; gap: 2px; } }
+.life .btn { white-space: nowrap; }
+.life .btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.life-li .life-status { justify-self: start; margin-left: 0; }
