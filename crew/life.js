@@ -51,92 +51,151 @@
   }
 
   // ─── The Life page ────────────────────────────────────────────────────────
+  // Laid out like a settings app: a short header, today in four cards, one box
+  // to ask what the bots know, then groups of rows (an icon, a name, one short
+  // line, a switch). Long explanations live in the row's tooltip, not on screen.
 
-  function nowHtml(n) {
+  const G = (d, fill) => `<svg viewBox="0 0 24 24"${fill ? ' class="fill"' : ''}>${d}</svg>`;
+  const SRC = {
+    calendar: { c: '#ff453a', i: '<rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/>' },
+    gmail: { c: '#0a84ff', i: '<rect x="3.5" y="6" width="17" height="12.5" rx="2.5"/><path d="m4.5 7.5 7.5 6 7.5-6"/>' },
+    calls: { c: '#30d158', i: '<path d="M6.5 4.5h3l1.5 4-2 1.3a10 10 0 0 0 5.2 5.2l1.3-2 4 1.5v3a1.5 1.5 0 0 1-1.6 1.5A15 15 0 0 1 5 6.1a1.5 1.5 0 0 1 1.5-1.6z"/>' },
+    projects: { c: '#ff9f0a', i: '<path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.2h7a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>' },
+    activity: { c: '#5e5ce6', i: '<rect x="3.5" y="4.5" width="17" height="11.5" rx="2"/><path d="M8.5 20h7M12 16v4"/>' },
+    orbit: { c: '#64d2ff', i: '<path d="M12 4.5 13.8 10l5.7.2-4.5 3.4 1.6 5.4L12 15.8 7.4 19l1.6-5.4L4.5 10.2l5.7-.2z"/>' },
+    plans: { c: '#ff375f', i: '<circle cx="9" cy="9" r="3"/><circle cx="16.5" cy="10" r="2.5"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M14 19a4.5 4.5 0 0 1 7 0"/>' },
+    botmail: { c: '#bf5af2', i: '<circle cx="12" cy="12" r="3.5"/><path d="M15.5 12v1.5a2.5 2.5 0 0 0 5 0V12a8.5 8.5 0 1 0-3.4 6.8"/>' },
+    slack: { c: '#ac8e68', i: '<path d="M9.5 4v16M14.5 4v16M4 9.5h16M4 14.5h16"/>' },
+    tasks: { c: '#8e8e93', i: '<rect x="4" y="4" width="16" height="16" rx="3.5"/><path d="m8.5 12 2.5 2.5 4.5-5"/>' },
+  };
+  const ROWICON = {
+    bell: { c: '#ff9f0a', i: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>' },
+    phone: { c: '#30d158', i: SRC.calls.i },
+    moon: { c: '#5e5ce6', i: '<path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5z"/>' },
+    mobile: { c: '#0a84ff', i: '<rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 18h2"/>' },
+    ear: { c: '#30d158', i: '<path d="M8 9a4 4 0 1 1 8 0c0 2.5-2.5 3.2-2.5 5.5a2.5 2.5 0 0 1-5 0"/><path d="M10.5 9.5a1.5 1.5 0 0 1 3 0"/>' },
+    speaker: { c: '#64d2ff', i: '<path d="M5 9.5h3l4.5-4v13L8 14.5H5z"/><path d="M16 9a4 4 0 0 1 0 6"/>' },
+    bot: { c: '#8e8e93', i: '<rect x="5" y="8" width="14" height="10" rx="3"/><path d="M12 4v4M9.5 13h.01M14.5 13h.01"/>' },
+    mail: { c: '#bf5af2', i: SRC.botmail.i },
+    robot: { c: '#0a84ff', i: '<path d="M12 3.5 14 9l5.5.5-4.2 3.6L16.6 19 12 16l-4.6 3 1.3-5.9L4.5 9.5 10 9z"/>' },
+  };
+  const tile = (ic) => `<span class="lf-ico" style="background:${ic.c}">${G(ic.i)}</span>`;
+  const sw = (attrs, on) => `<label class="lf-switch"><input type="checkbox" ${attrs} ${on ? 'checked' : ''}><span></span></label>`;
+  const row = ({ icon, title, sub, right, attr = '', cls = '' }) => `<div class="lf-row ${cls}" ${attr}>${icon ? tile(icon) : ''}<div class="lf-row-text"><div class="lf-row-title">${title}</div>${sub ? `<div class="lf-row-sub">${sub}</div>` : ''}</div><div class="lf-row-right">${right || ''}</div></div>`;
+  const group = (title, body, aside = '') => `<section class="lf-group"><div class="lf-group-head"><h2>${title}</h2>${aside}</div><div class="lf-rows">${body}</div></section>`;
+
+  // Today, in four cards: what's next, who is waiting on you, what you're on, your calls.
+  function todayHtml(n, l) {
     if (!n) return '';
-    const rows = [];
-    if (n.onCall) rows.push(['On a call', n.onCall.app || 'now']);
-    if (n.doing) rows.push(['On screen', `${n.doing.app}${n.doing.title ? `, ${n.doing.title}` : ''}`]);
-    for (const e of n.next.slice(0, 4)) rows.push([e.allDay ? 'All day' : e.live ? 'Now' : dayTime(e.at), `${e.title}${e.place ? ` at ${e.place}` : ''}`]);
-    for (const w of n.waiting.slice(0, 3)) rows.push(['Waiting on you', `${w.from}, "${w.subject}" (${w.hours} h)`]);
-    for (const p of n.projects.slice(0, 3)) rows.push(['Project', `${p.name}${p.lastPush ? `, pushed ${ago(p.lastPush)}` : ''}${p.unpushed ? `, ${p.unpushed} not pushed` : ''}`]);
-    for (const c of n.calls.slice(0, 2)) rows.push(['Call', `${c.title}${c.summary ? `: ${c.summary}` : ''}`]);
-    for (const w of n.watched.slice(0, 2)) rows.push(['Watched', `${w.title} (${w.minutes} min)`]);
-    for (const t of n.tasks.slice(0, 3)) rows.push(['Bot task', `${t.text} (${t.status.replace('_', ' ')})`]);
-    return `<section class="life-card">
-      <div class="life-card-head"><b>Right now</b><span class="dim">${esc(n.local)}</span></div>
-      ${rows.length ? `<div class="life-rows">${rows.map(([k, v]) => `<div class="life-row"><span>${esc(k)}</span><div>${esc(v)}</div></div>`).join('')}</div>` : '<div class="dim">Nothing yet. The sources below fill this in over the next few minutes.</div>'}
-      <div class="life-search"><input class="input" id="lifeSearch" placeholder="Search what your bots know" value="${esc(searchText)}"><div id="lifeHits"></div></div>
-    </section>`;
+    const cal = (l.sources || []).find((s) => s.key === 'calendar');
+    const next = n.next[0];
+    const cards = [];
+    cards.push(cal && cal.problem
+      ? `<div class="lf-card warn" title="${esc(cal.problem)}">${tile(SRC.calendar)}<div class="lf-card-v">Calendar is off</div><div class="lf-card-l">Its sign-in expired</div><button class="lf-btn small" data-act="connect">Reconnect</button></div>`
+      : `<div class="lf-card">${tile(SRC.calendar)}<div class="lf-card-v">${next ? esc(next.title) : 'Nothing next'}</div><div class="lf-card-l">${next ? esc(next.allDay ? 'All day' : next.live ? 'Happening now' : dayTime(next.at)) : 'Your calendar is clear'}</div></div>`);
+    cards.push(`<div class="lf-card">${tile(SRC.gmail)}<div class="lf-card-v">${n.waiting.length ? `${n.waiting.length} waiting on you` : 'All caught up'}</div><div class="lf-card-l">${n.waiting.length ? esc(n.waiting.slice(0, 2).map((w) => w.from).join(', ')) : 'No one is waiting on a reply'}</div></div>`);
+    cards.push(n.onCall
+      ? `<div class="lf-card live">${tile(SRC.calls)}<div class="lf-card-v">On a call</div><div class="lf-card-l">${esc(n.onCall.app || 'Right now')}</div></div>`
+      : `<div class="lf-card">${tile(SRC.activity)}<div class="lf-card-v">${n.doing ? esc(n.doing.app) : 'Away'}</div><div class="lf-card-l">${n.doing ? 'On your screen now' : 'Nothing in front right now'}</div></div>`);
+    cards.push(`<div class="lf-card">${tile(SRC.calls)}<div class="lf-card-v">${n.calls.length ? `${n.calls.length} recent call${n.calls.length === 1 ? '' : 's'}` : 'No calls yet'}</div><div class="lf-card-l">${n.calls.length ? esc(n.calls[0].title) : 'Calls with your bots show here'}</div></div>`);
+    return `<div class="lf-today">${cards.join('')}</div>
+      <div class="lf-ask"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="lifeSearch" placeholder="Ask what your bots know about your day" value="${esc(searchText)}" autocomplete="off"></div>
+      <div id="lifeHits" class="lf-hits"></div>`;
   }
 
   function sourcesHtml(l) {
-    return `<section class="life-card"><div class="life-card-head"><b>What your bots can see</b><span class="dim">kept on this PC</span></div>
-      ${l.sources.map((s) => `<div class="life-src${s.on ? '' : ' off'}">
-        <label class="life-src-main"><input type="checkbox" data-src="${esc(s.key)}" ${s.on ? 'checked' : ''}><span><b>${esc(s.label)}${s.sensitive ? ' <span class="life-tag">sealed</span>' : ''}</b><span class="dim">${esc(s.note)}</span></span></label>
-        <span class="life-src-meta">${s.problem ? `<span class="err-text" title="${esc(s.problem)}">Problem</span>` : s.count ? `${s.count} · ${esc(ago(s.last))}` : ''}${s.count ? `<button class="link" data-forget-src="${esc(s.key)}">Forget</button>` : ''}</span>
-      </div>`).join('')}
-      ${!l.google ? '<div class="note">Connect Gmail in Connect Apps to add your calendar and email.</div>' : ''}
-      ${!l.canSeal ? '<div class="note err">This PC cannot protect the key for sealed items, so call transcripts are not kept.</div>' : ''}
-      ${l.platform !== 'win32' ? '<div class="dim">Seeing the window in front works on Windows for now.</div>' : ''}
-    </section>`;
+    const rows = l.sources.map((s) => {
+      const ic = SRC[s.key] || SRC.tasks;
+      const right = s.problem
+        ? `<button class="lf-btn small danger" data-act="connect" title="${esc(s.problem)}">Reconnect</button>${sw(`data-src="${esc(s.key)}"`, s.on)}`
+        : `${s.count ? `<span class="lf-meta">${esc(ago(s.last))}</span><button class="lf-forget" data-forget-src="${esc(s.key)}" title="Forget what it saw">${G('<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>')}</button>` : ''}${sw(`data-src="${esc(s.key)}"`, s.on)}`;
+      return row({ icon: ic, title: `${esc(s.label)}${s.sensitive ? '<span class="lf-pill">sealed</span>' : ''}`, sub: esc(s.note), right, cls: s.on ? '' : 'off' });
+    }).join('');
+    const tips = [];
+    if (!l.google) tips.push(`<div class="lf-tip">${G('<circle cx="12" cy="12" r="8.5"/><path d="M12 8v5M12 16h.01"/>')}<span>Connect Google to add your calendar and email.</span><button class="lf-btn small" data-act="connect">Connect</button></div>`);
+    if (!l.canSeal) tips.push(`<div class="lf-tip bad">${G('<circle cx="12" cy="12" r="8.5"/><path d="M12 8v5M12 16h.01"/>')}<span>This PC can't protect call notes, so they aren't kept.</span></div>`);
+    return group('What your bots can see', rows, '<span class="lf-aside">Stays on this PC</span>') + tips.join('');
   }
 
   function nudgesHtml(l) {
     const n = l.nudges;
     const bots = S().catalog.bots || [];
+    const who = (key) => `<select class="lf-select" data-who="${esc(key)}"><option value="">Best bot</option>${bots.map((b) => `<option value="${esc(b.id)}" ${(n.botFor || {})[key] === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>`;
     const fb = { helpful: 'Helpful', later: 'Not now', stop: 'Stopped' };
-    return `<section class="life-card"><div class="life-card-head"><b>Bots that reach out</b><label class="life-switch"><input type="checkbox" data-nudge="on" ${n.on ? 'checked' : ''}><span></span></label></div>
-      <div class="dim">Your bots message or call you when something needs you, without being asked. A desktop notification while you are at this PC, your phone otherwise, and a note in the bot's chat.</div>
-      <div class="life-grid">
-        <label>At most <input class="input life-num" type="number" min="0" max="30" data-nudge="perDay" value="${Number(n.perDay)}"> a day</label>
-        <label class="check"><input type="checkbox" data-nudge="phone" ${n.phone !== false ? 'checked' : ''}>Use my phone when I am away</label>
-        <label class="check"><input type="checkbox" data-nudge="quiet" ${n.quiet.on ? 'checked' : ''}>Quiet hours</label>
-        <span class="life-quiet"><input type="time" class="input ao-time" data-nudge="from" value="${esc(n.quiet.from)}"> to <input type="time" class="input ao-time" data-nudge="to" value="${esc(n.quiet.to)}"></span>
-      </div>
-      <div class="life-trigs">${n.triggers.map((t) => `<div class="life-trig">
-        <label class="check"><input type="checkbox" data-trig="${esc(t.key)}" ${t.on ? 'checked' : ''}><span><b>${esc(t.label)}</b><span class="dim">${esc(t.note)}</span></span></label>
-        <select class="input life-who" data-who="${esc(t.key)}"><option value="">Best fit</option>${bots.map((b) => `<option value="${esc(b.id)}" ${(n.botFor || {})[t.key] === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>
-      </div>`).join('')}</div>
-      ${n.list.length ? `<div class="life-sub">Lately</div><div class="life-list">${n.list.slice(0, 12).map((x) => `<div class="life-li"><span class="dim">${esc(dayTime(x.at))}</span><div><b>${esc(botName(x.botId) || 'Codeply')}</b> ${esc(x.text)}</div><span class="dim">${x.feedback ? esc(fb[x.feedback] || '') : ''}</span></div>`).join('')}</div>` : ''}
-    </section>`;
+    let body = row({ icon: ROWICON.bell, title: 'Message me first', sub: 'Your bots reach out when something needs you', right: sw('data-nudge="on"', n.on) });
+    if (n.on) {
+      body += row({ icon: ROWICON.bell, title: 'How often', sub: 'The most in one day', right: `<div class="lf-stepper"><button data-step="-1" aria-label="Fewer">−</button><span>${Number(n.perDay)}</span><button data-step="1" aria-label="More">+</button></div>` });
+      body += row({ icon: ROWICON.mobile, title: 'Use my phone when I\'m away', right: sw('data-nudge="phone"', n.phone !== false) });
+      body += row({ icon: ROWICON.moon, title: 'Quiet hours', sub: n.quiet.on ? `<span class="lf-times"><input type="time" class="lf-time" data-nudge="from" value="${esc(n.quiet.from)}"> to <input type="time" class="lf-time" data-nudge="to" value="${esc(n.quiet.to)}"></span>` : 'No messages at night', right: sw('data-nudge="quiet"', n.quiet.on) });
+      body += n.triggers.map((t) => row({ icon: null, cls: `lf-trig${t.on ? '' : ' off'}`, attr: `title="${esc(t.note)}"`, title: esc(t.label), right: `${t.on ? who(t.key) : ''}${sw(`data-trig="${esc(t.key)}"`, t.on)}` })).join('');
+    }
+    const recent = n.list.length
+      ? `<details class="lf-more"><summary>Recent messages (${n.list.length})</summary>${n.list.slice(0, 12).map((x) => `<div class="lf-li"><b>${esc(botName(x.botId) || 'Codeply')}</b><span>${esc(x.text)}</span><em>${esc(dayTime(x.at))}${x.feedback ? ` · ${esc(fb[x.feedback] || '')}` : ''}</em></div>`).join('')}</details>` : '';
+    return group('Reach out to me', body) + recent;
   }
 
   function callsHtml(l) {
     const c = l.calls || {};
     const st = l.callNow || null;
-    return `<section class="life-card"><div class="life-card-head"><b>Call helper</b><span class="dim">free, on this PC</span></div>
-      <div class="dim">During a call on this PC (Meet, Zoom, Teams, WhatsApp, Discord, or a phone call through Phone Link) a bot listens, writes it down, shows you what is relevant, and whispers suggestions. Mute yourself and it offers to take over: it says it is your assistant, gives your excuse and ends the call. Speech to text runs on this PC with Whisper. No audio is kept, only the text.</div>
-      <div class="seg life-seg">${[['ask', 'Ask me each call'], ['always', 'Always listen'], ['off', 'Off']].map(([k, label]) => `<button class="${c.listen === k ? 'on' : ''}" data-listen="${k}">${label}</button>`).join('')}</div>
-      <label class="check life-consent"><input type="checkbox" data-consent ${c.consentAck ? 'checked' : ''}><span>I will tell the people on my calls that an assistant is listening. Many places require everyone's consent before a call is recorded or transcribed.</span></label>
-      <label class="check"><input type="checkbox" data-whisper-voice ${c.whisperVoice ? 'checked' : ''}><span>Whisper suggestions out loud too (use headphones)</span></label>
-      <div class="life-grid"><label>Who helps <select class="input life-who" data-call-bot><option value="">Best fit</option>${(S().catalog.bots || []).map((b) => `<option value="${esc(b.id)}" ${c.botId === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></label>
-        ${st && st.active ? `<span class="dim">Listening to a ${esc(st.app || '')} call now.</span>` : `<button class="btn" data-act="listen-now" ${c.consentAck ? '' : 'disabled title="Confirm the line above first"'}>Listen to a call now</button>`}</div>
-      ${l.takeoverReady === false ? '<div class="dim">To let a bot speak in the call, install VB-CABLE (free) and pick "CABLE Output" as the microphone in your call app. Without it the bot can still listen and whisper.</div>' : ''}
-    </section>`;
+    const bots = S().catalog.bots || [];
+    const seg = `<div class="lf-seg">${[['ask', 'Ask each call'], ['always', 'Always'], ['off', 'Off']].map(([k, label]) => `<button class="${c.listen === k ? 'on' : ''}" data-listen="${k}">${label}</button>`).join('')}</div>`;
+    let body = row({ icon: ROWICON.ear, title: 'Help on my calls', sub: 'Notes, tips while you talk, and a polite exit when you mute', attr: 'title="Meet, Zoom, Teams, WhatsApp, Discord, or Phone Link calls on this PC. Speech to text runs here with Whisper; only the text is kept."', right: seg });
+    if (c.listen !== 'off') {
+      body += `<label class="lf-consent${c.consentAck ? ' ok' : ''}"><input type="checkbox" data-consent ${c.consentAck ? 'checked' : ''}><span><b>I'll tell people an assistant is listening</b><em>Many places require everyone's consent before a call is transcribed.</em></span></label>`;
+      body += row({ icon: ROWICON.speaker, title: 'Whisper tips out loud', sub: 'Use headphones', right: sw('data-whisper-voice', c.whisperVoice) });
+      body += row({ icon: ROWICON.bot, title: 'Who helps', right: `<select class="lf-select" data-call-bot><option value="">Best bot</option>${bots.map((b) => `<option value="${esc(b.id)}" ${c.botId === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>` });
+    }
+    const now = st && st.active
+      ? `<div class="lf-banner live"><span class="lf-dot"></span>Listening to a ${esc(st.app || '')} call</div>`
+      : c.listen !== 'off' ? `<button class="lf-btn primary wide" data-act="listen-now" ${c.consentAck ? '' : 'disabled'}>${G(ROWICON.ear.i)}${c.consentAck ? 'Listen to a call now' : 'Tick the box above to start'}</button>` : '';
+    const cable = l.takeoverReady === false && c.listen !== 'off'
+      ? '<div class="lf-tip">' + G('<circle cx="12" cy="12" r="8.5"/><path d="M12 8v5M12 16h.01"/>') + '<span>For a bot to speak in calls, install VB-CABLE (free) and pick "CABLE Output" as the mic in your call app.</span></div>' : '';
+    return group('Calls', body) + now + cable;
   }
 
   function mailHtml(l) {
     const m = l.mail;
     if (!m) return '';
-    return `<section class="life-card"><div class="life-card-head"><b>Your bots' email</b><span class="dim">${m.domain ? esc(m.domain) : ''}</span></div>
-      <div class="dim">Each bot can have its own address and send and receive mail as itself. Your crew shares ${m.limits.month} emails a month and ${m.limits.day} a day, sent and received together.</div>
-      ${m.error ? `<div class="note err">${esc(m.error)}</div>` : `<div class="life-meter"><span style="width:${Math.min(100, Math.round((m.used.month / Math.max(1, m.limits.month)) * 100))}%"></span></div>
-      <div class="dim">${m.used.month} of ${m.limits.month} this month, ${m.used.day} of ${m.limits.day} today</div>`}
-      ${(m.boxes || []).length ? `<div class="life-list">${m.boxes.map((b) => `<div class="life-li"><b>${esc(b.botName)}</b><div>${esc(b.address)}</div></div>`).join('')}</div>` : '<div class="dim">Give a bot an address in its settings (Edit bot, Email).</div>'}
-    </section>`;
+    const pct = Math.min(100, Math.round((m.used.month / Math.max(1, m.limits.month)) * 100));
+    // A server problem reads as one plain line; the raw error stays in the tooltip.
+    if (m.error && !(m.boxes || []).length) return group('Bot email', row({ icon: ROWICON.mail, title: 'Bot email isn\'t ready yet', sub: 'Its mail server isn\'t set up', attr: `title="${esc(m.error)}"` }));
+    const usage = m.error
+      ? row({ icon: ROWICON.mail, title: 'Bot email isn\'t reachable', sub: 'Mail waits until it\'s back', attr: `title="${esc(m.error)}"` })
+      : row({ icon: ROWICON.mail, title: `${m.used.month} of ${m.limits.month} this month`, sub: `<div class="lf-meter"><span style="width:${pct}%"></span></div>`, right: `<span class="lf-meta">${m.used.day} of ${m.limits.day} today</span>` });
+    const boxes = (m.boxes || []).length
+      ? m.boxes.map((b) => row({ icon: null, title: esc(b.botName), sub: esc(b.address) })).join('')
+      : row({ icon: null, title: 'No addresses yet', sub: 'Give a bot one in Edit bot, Email' });
+    return group('Bot email', usage + boxes);
   }
 
   function autopilotHtml(l) {
     const a = l.autopilot || {};
     const outbox = a.outbox || []; const tasks = a.tasks || []; const auditList = a.audit || [];
-    return `<section class="life-card"><div class="life-card-head"><b>Autopilot</b><button class="btn danger" data-act="stop-all">${ICON.stop}Stop all bots</button></div>
-      <div class="dim">Bots take tasks from you on calls, by email, on Slack or in chat, plan them, do them, check they worked, and report back. How much each bot may do alone is in its settings. Deleting things, money and anything someone else asked for always wait for you.</div>
-      ${a.paused ? '<div class="note err">All bots are stopped. Nothing runs on its own until you resume.</div><button class="btn" data-act="resume">Resume</button>' : ''}
-      ${outbox.length ? `<div class="life-sub">Waiting to go out</div><div class="life-list">${outbox.map((o) => `<div class="life-li"><span class="dim">goes ${esc(dayTime(o.dueAt))}</span><div><b>${esc(botName(o.botId))}</b> ${esc(o.title)}</div><span><button class="btn" data-outbox-now="${esc(o.id)}">Send now</button><button class="btn danger" data-outbox-cancel="${esc(o.id)}">Cancel</button></span></div>`).join('')}</div>` : ''}
-      ${tasks.length ? `<div class="life-sub">Tasks</div><div class="life-list">${tasks.map((t) => `<div class="life-li"><span class="life-status s-${esc(t.status)}">${esc(t.status.replace('_', ' '))}</span><div><b>${esc(botName(t.botId) || 'A bot')}</b> ${esc(t.text)}${t.data && t.data.report ? `<div class="dim">${esc(t.data.report)}</div>` : ''}</div>${['queued', 'running', 'needs_you'].includes(t.status) ? `<button class="btn" data-task-cancel="${esc(t.id)}">Cancel</button>` : '<span></span>'}</div>`).join('')}</div>` : ''}
-      ${auditList.length ? `<details class="life-audit"><summary>Everything the bots did alone (${auditList.length})</summary><div class="life-list">${auditList.map((x) => `<div class="life-li"><span class="dim">${esc(dayTime(x.at))}</span><div><b>${esc(botName(x.botId) || 'Codeply')}</b> ${esc(x.title)}${x.result ? `<div class="dim">${esc(x.result)}</div>` : ''}</div><span class="dim">${esc(x.verdict || '')}</span></div>`).join('')}</div></details>` : ''}
-    </section>`;
+    let body = a.paused
+      ? row({ icon: ROWICON.robot, title: 'All bots are stopped', sub: 'Nothing runs on its own', right: '<button class="lf-btn primary small" data-act="resume">Resume</button>' })
+      : row({ icon: ROWICON.robot, title: 'Bots work on their own', sub: 'They plan, do, check and report back', attr: 'title="Tasks come from you, calls, email, Slack or chat. Deleting things, money, and anything someone else asked for always wait for you."', right: `<button class="lf-btn danger small" data-act="stop-all">${ICON.stop}Stop all</button>` });
+    body += outbox.map((o) => row({ icon: null, title: `${esc(botName(o.botId))}: ${esc(o.title)}`, sub: `Goes ${esc(dayTime(o.dueAt))}`, right: `<button class="lf-btn small" data-outbox-now="${esc(o.id)}">Send now</button><button class="lf-btn small" data-outbox-cancel="${esc(o.id)}">Cancel</button>` })).join('');
+    body += tasks.map((t) => row({ icon: null, title: `${esc(botName(t.botId) || 'A bot')}: ${esc(t.text)}`, sub: t.data && t.data.report ? esc(t.data.report) : '', right: `<span class="lf-status s-${esc(t.status)}">${esc(t.status.replace('_', ' '))}</span>${['queued', 'running', 'needs_you'].includes(t.status) ? `<button class="lf-btn small" data-task-cancel="${esc(t.id)}">Cancel</button>` : ''}` })).join('');
+    const audit = auditList.length
+      ? `<details class="lf-more"><summary>Everything they did alone (${auditList.length})</summary>${auditList.map((x) => `<div class="lf-li"><b>${esc(botName(x.botId) || 'Codeply')}</b><span>${esc(x.title)}${x.result ? ` · ${esc(x.result)}` : ''}</span><em>${esc(dayTime(x.at))}${x.verdict ? ` · ${esc(x.verdict)}` : ''}</em></div>`).join('')}</details>` : '';
+    return group('Autopilot', body) + audit;
+  }
+
+  // Off: what Life does, in three lines, and one button.
+  function introHtml() {
+    const b = (ic, t, s) => `<div class="lf-benefit">${tile(ic)}<div><b>${t}</b><span>${s}</span></div></div>`;
+    return `<div class="lf-intro">
+      <div class="lf-intro-mark">${G('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>')}</div>
+      <h1>Let your bots see your day</h1>
+      <p>So they can help before you ask.</p>
+      <div class="lf-benefits">
+        ${b(ROWICON.bell, 'A nudge at the right time', '"Got your keys?" before you head out')}
+        ${b(SRC.gmail, 'Know who is waiting on you', 'Emails you haven\'t answered yet')}
+        ${b(SRC.calls, 'Help on your calls', 'Notes and tips while you talk')}
+      </div>
+      <button class="lf-btn primary big" data-act="turn-on">Turn on Life</button>
+      <div class="lf-private">${G('<rect x="5" y="10.5" width="14" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>')}Stays on this PC. You choose what each bot sees.</div>
+    </div>`;
   }
 
   function paint() {
@@ -144,20 +203,19 @@
     if (!view || !open) return;
     const l = life;
     if (!l || l.error && !l.sources) {
-      view.innerHTML = `<div class="life"><h1 class="life-title">Life</h1><div class="note err">${esc((l && l.error) || 'The life context did not load.')}</div></div>`;
+      view.innerHTML = `<div class="lf"><div class="lf-head"><h1>Life</h1></div><div class="lf-tip bad">${G('<circle cx="12" cy="12" r="8.5"/><path d="M12 8v5M12 16h.01"/>')}<span>${esc((l && l.error) || 'Life did not load.')}</span></div></div>`;
       return;
     }
-    const scroll = view.querySelector('.life') ? view.querySelector('.life').scrollTop : 0;
-    view.innerHTML = `<div class="life">
-      <div class="life-head"><div><h1 class="life-title">Life</h1><p class="dim">One picture of your day that every bot reads, so they can help before you ask.</p></div>
-        <label class="life-switch big"><input type="checkbox" data-life-on ${l.on ? 'checked' : ''}><span></span></label></div>
-      ${l.on ? `${nowHtml(l.now)}${sourcesHtml(l)}${nudgesHtml(l)}${callsHtml(l)}${mailHtml(l)}${autopilotHtml(l)}
-        <div class="life-foot"><button class="btn danger" data-act="clear">Forget everything</button><span class="dim">Turning Life off stops it; Forget everything also deletes what it kept.</span></div>`
-    : `<section class="life-card life-intro"><b>Give your crew your context</b>
-        <p class="dim">Turn this on and your bots share what is going on: your calendar, who emailed and who is waiting on you, your calls, your plans, your projects and pushes, and the window you have open (its title, every 30 seconds, never a screenshot). It stays on this PC. You choose each source, and each bot's access.</p>
-        <button class="btn primary" data-act="turn-on">Turn on Life</button></section>`}
-    </div>`;
-    if (view.querySelector('.life')) view.querySelector('.life').scrollTop = scroll;
+    const scroll = view.querySelector('.lf') ? view.querySelector('.lf').scrollTop : 0;
+    view.innerHTML = l.on
+      ? `<div class="lf">
+          <div class="lf-head"><div><h1>Life</h1><p>Your bots see your day, so they can help before you ask.</p></div>
+            <label class="lf-onoff"><span>On</span>${sw('data-life-on', true)}</label></div>
+          ${todayHtml(l.now, l)}${sourcesHtml(l)}${nudgesHtml(l)}${callsHtml(l)}${mailHtml(l)}${autopilotHtml(l)}
+          <div class="lf-foot"><button class="lf-btn ghost danger" data-act="clear">Forget everything</button><span>Deletes what Life kept on this PC.</span></div>
+        </div>`
+      : `<div class="lf">${introHtml()}</div>`;
+    if (view.querySelector('.lf')) view.querySelector('.lf').scrollTop = scroll;
     wire(view);
   }
 
@@ -175,7 +233,7 @@
     on('[data-src]', 'change', (el) => set({ sources: { [el.dataset.src]: el.checked } }));
     on('[data-forget-src]', 'click', async (el) => { const r = await api.lifeForgetSource(el.dataset.forgetSrc); if (!r.error) { life = { ...life, ...r }; paint(); } });
     on('[data-act="clear"]', 'click', async (el) => {
-      if (!el.dataset.sure) { el.dataset.sure = '1'; el.textContent = 'Click again to forget everything'; return; }
+      if (!el.dataset.sure) { el.dataset.sure = '1'; el.textContent = 'Click again to delete it all'; return; }
       const r = await api.lifeClear(); if (!r.error) { life = { ...life, ...r }; paint(); toast('Forgot everything.'); }
     });
     on('[data-nudge]', 'change', (el) => {
@@ -186,6 +244,8 @@
       else if ((k === 'from' || k === 'to') && /^\d\d:\d\d$/.test(el.value)) set({ nudges: { quiet: { [k]: el.value } } });
     });
     on('[data-trig]', 'change', (el) => set({ nudges: { triggers: { [el.dataset.trig]: el.checked } } }));
+    on('[data-step]', 'click', (el) => set({ nudges: { perDay: Math.max(0, Math.min(30, Number(life.nudges.perDay) + Number(el.dataset.step))) } }));
+    on('[data-act="connect"]', 'click', () => api.openConnect());
     on('[data-who]', 'change', (el) => set({ nudges: { botFor: { [el.dataset.who]: el.value } } }));
     on('[data-listen]', 'click', (el) => set({ calls: { listen: el.dataset.listen } }));
     on('[data-consent]', 'change', (el) => set({ calls: { consentAck: el.checked } }));
@@ -206,8 +266,8 @@
         if (!searchText.trim()) { box.innerHTML = ''; return; }
         const hits = await api.lifeSearch(searchText);
         box.innerHTML = Array.isArray(hits) && hits.length
-          ? hits.slice(0, 12).map((x) => `<div class="life-hit"><span class="dim">${esc(dayTime(x.at))} · ${esc(x.source)}</span><div>${esc(x.title)}${x.people && x.people.length ? ` <span class="dim">${esc(x.people.slice(0, 2).join(', '))}</span>` : ''}</div><button class="icon-btn" data-forget-item="${esc(x.id)}" title="Forget this">${ICON.x}</button></div>`).join('')
-          : '<div class="dim">Nothing found.</div>';
+          ? hits.slice(0, 12).map((x) => `<div class="lf-hit"><div><b>${esc(x.title)}</b><span>${esc(x.source)} · ${esc(dayTime(x.at))}${x.people && x.people.length ? ` · ${esc(x.people.slice(0, 2).join(', '))}` : ''}</span></div><button class="lf-forget" data-forget-item="${esc(x.id)}" title="Forget this">${ICON.x}</button></div>`).join('')
+          : '<div class="lf-none">Nothing found.</div>';
         box.querySelectorAll('[data-forget-item]').forEach((b) => b.addEventListener('click', async () => { await api.lifeForgetItem(b.dataset.forgetItem); go(); }));
       };
       search.addEventListener('input', () => { clearTimeout(t); t = setTimeout(go, 250); });

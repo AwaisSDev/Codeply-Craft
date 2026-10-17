@@ -166,10 +166,12 @@ async function syncGmail({ store, api, now = Date.now(), maxNew = 40 }) {
  */
 async function syncProjects({ store, projects, git, now = Date.now() }) {
   let n = 0;
+  const keep = new Set();
   for (const p of (projects || []).slice(0, 25)) {
     if (!p || !p.path) continue;
     const key = path.resolve(p.path).replace(/\\/g, '/').toLowerCase();
     const id = `projects:${key}`;
+    keep.add(id);
     const prev = store.getItem(id);
     const data = { path: p.path, lastActive: Math.max(Number(p.lastActive) || 0, (prev && prev.data.lastActive) || 0) || now, deadline: (prev && prev.data.deadline) || null };
     try {
@@ -189,6 +191,8 @@ async function syncProjects({ store, projects, git, now = Date.now() }) {
     store.upsertItem({ id, source: 'projects', kind: 'project', at: data.lastActive, title: short(p.name || path.basename(p.path), 120), data });
     n++;
   }
+  // A project that left Craft's list (removed, or a folder that never was one) leaves Life too.
+  if (keep.size) for (const it of store.items({ sources: ['projects'], limit: 500 })) if (!keep.has(it.id)) store.deleteItem(it.id);
   store.setState('projects.lastSync', now);
   return { projects: n };
 }
