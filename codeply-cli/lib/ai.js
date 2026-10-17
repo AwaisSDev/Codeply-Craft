@@ -1294,6 +1294,35 @@ function keepHazeState(h, route) {
   if (hazeStates.size > 300) hazeStates.delete(hazeStates.keys().next().value);
 }
 
+const localClock = (iso) => { try { return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
+
+// What Haze 2 says about its own limits, once per chat each: answers moved to
+// lighter models (the day's Claude allowance is used up, or Claude is down),
+// and a heads-up when the lighter models' 5-hour amount is nearly used.
+const hazeNoticed = new Map(); // chatId|what -> when it was said
+function hazeNotice(route, chatId = '') {
+  if (!route) return [];
+  const once = (key, text) => {
+    const k = `${chatId}|${key}`;
+    if (hazeNoticed.has(k)) return '';
+    hazeNoticed.set(k, Date.now());
+    if (hazeNoticed.size > 500) hazeNoticed.delete(hazeNoticed.keys().next().value);
+    return text;
+  };
+  const out = [];
+  const l = route.lighter;
+  if (l && (l.why === 'allowance' || l.why === 'pool')) {
+    out.push(once(`lighter|${l.resetsAt}`, `Using lighter models now: ${l.why === 'pool' ? 'Haze 2 is busy today' : 'today\'s Claude allowance is used up'}. Claude is back at ${localClock(l.resetsAt)}.`));
+  } else if (l && l.why === 'claude-down') {
+    out.push(once(`down|${new Date().toISOString().slice(0, 13)}`, 'Claude isn\'t answering right now, so Haze 2 used lighter models.'));
+  }
+  const f = route.free;
+  if (f && f.limit && f.used >= f.limit * 0.8 && f.resetsAt) {
+    out.push(once(`free80|${f.resetsAt}`, `You've used most of Haze 2's lighter models for now. They reset at ${localClock(f.resetsAt)}.`));
+  }
+  return out.filter(Boolean);
+}
+
 async function chatViaRouter(messages, opts) {
   const token = await getAccessToken();
   // A cloud run has no sign-in: its usage key (CODEPLY_TRACK_KEY) stands in for the person
@@ -1326,6 +1355,12 @@ async function chatViaRouter(messages, opts) {
       keepHazeState(opts.haze, body.route);
       return { done: true, value: { success: true, data: body.data, modelUsed: body.modelUsed, route: body.route } };
     }
+    // Past the lighter models' 5-hour amount: say when it comes back, in the person's own time.
+    if (body.limited) {
+      const at = body.resetsAt ? localClock(body.resetsAt) : '';
+      const error = at ? String(body.error || '').replace(/It resets in [^,.]+/, `It resets at ${at}`) : body.error;
+      return { done: true, value: { success: false, limited: true, resetsAt: body.resetsAt || null, error: error || 'You\'ve reached Haze 2\'s limit for now.' } };
+    }
     if (body.error) return { done: true, value: { success: false, error: body.error } };
     return { retryable: isTransientStatus(res.status), retryAfterMs: retryAfterMs(res), error: describeStatus(res.status) };
   }, opts.signal);
@@ -1333,7 +1368,8 @@ async function chatViaRouter(messages, opts) {
 
 async function chatViaAuto(messages, opts) {
   const routed = await chatViaRouter(messages, opts);
-  if (routed.success || routed.aborted) return routed;
+  // A limit is an answer, not an outage: no going around it on the direct route.
+  if (routed.success || routed.aborted || routed.limited) return routed;
   // The router itself is unreachable or broken: the old direct route still works.
   const cfg = getConfig();
   const keys = { apiKey: cfg.ollama.apiKey, apiKeyFallback: cfg.ollama.apiKeyFallback };
@@ -1487,4 +1523,4 @@ async function chatVision(messages, opts = {}) {
   return r;
 }
 
-module.exports = { chatResearch, chat, chatJson, chatVision, isRateLimitError, listOllamaModels, testModel, chatCompletionsUrl };
+module.exports = { chatResearch, chat, chatJson, chatVision, isRateLimitError, listOllamaModels, testModel, chatCompletionsUrl, hazeNotice };

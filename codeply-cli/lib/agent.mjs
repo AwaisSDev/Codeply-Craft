@@ -1879,6 +1879,8 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       };
       return;
     }
+    // Haze 2 moved to lighter models, or they are nearly used up: one line, once per chat.
+    for (const text of ai.hazeNotice(result.route, haze && haze.chatId)) yield { type: 'notice', level: 'info', text };
     // The correction message, if one was needed, has to stay in the transcript.
     if (attempt.messages !== outgoing) {
       messages.push(attempt.messages[attempt.messages.length - 1]);
