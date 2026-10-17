@@ -731,6 +731,31 @@ body.embedded .app-switch-btn { font-family: "Segoe UI Variable Text", "Segoe UI
 .lf-li em { font-style: normal; font-size: 12.5px; color: var(--text-faint); white-space: nowrap; }
 .lf-foot { display: flex; align-items: center; gap: 12px; margin-top: 36px; color: var(--text-faint); font-size: 13.5px; }
 
+/* Customize: the rarely changed settings fold under one row */
+.lf-custom { border-top: 1px solid var(--border); }
+.lf-custom > summary { list-style: none; cursor: pointer; min-height: 56px; }
+.lf-custom > summary::-webkit-details-marker { display: none; }
+.lf-custom > summary:hover { background: var(--hover); }
+.lf-custom > summary .lf-row-title { color: #0a84ff; }
+.lf-custom > summary > svg { color: var(--text-faint); transition: transform .15s; }
+.lf-custom[open] > summary > svg { transform: rotate(90deg); }
+.lf-custom > .lf-row, .lf-custom > .lf-consent { border-top: 1px solid var(--border); }
+.lf-label { padding: 16px 16px 6px; border-top: 1px solid var(--border); font-size: 13px; font-weight: 600; color: var(--text-faint); }
+.lf-label + .lf-trig { border-top: 0; }
+.lf-custom .lf-trig { padding-left: 16px; }
+
+/* privacy, at the bottom */
+.lf-privacy { margin-top: 32px; }
+.lf-privacy > summary { font-size: 15px; }
+.lf-privacy .lf-rows { margin-top: 6px; }
+.lf-btn.danger.sure { background: var(--red); color: #fff; }
+
+/* the connect step */
+.lf-setup { width: 100%; margin: 4px 0 28px; text-align: left; }
+.lf-ok { display: inline-flex; align-items: center; gap: 6px; color: #30d158; font-size: 14px; font-weight: 600; }
+.lf-ok svg { width: 16px; height: 16px; stroke-width: 2.4; }
+.lf-skip { margin-top: 10px; color: var(--text-dim); }
+
 /* off: the first screen */
 .lf-intro { display: flex; flex-direction: column; align-items: center; text-align: center; padding-top: 6vh; max-width: 520px; }
 .lf-intro-mark { width: 64px; height: 64px; border-radius: 20px; display: grid; place-items: center; background: linear-gradient(160deg, #0a84ff, #5e5ce6); color: #fff; margin-bottom: 22px; box-shadow: 0 12px 30px rgba(10, 132, 255, .3); }

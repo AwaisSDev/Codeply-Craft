@@ -20,6 +20,8 @@
   let life = null;      // the last state from life-desktop.js
   let open = false;     // the Life page is showing
   let searchText = '';
+  let setup = false;    // just turned on: show the connect step first
+  const openMore = new Set(); // Customize and Privacy sections the user opened
 
   const ICON = {
     life: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
@@ -82,7 +84,9 @@
   const tile = (ic) => `<span class="lf-ico" style="background:${ic.c}">${G(ic.i)}</span>`;
   const sw = (attrs, on) => `<label class="lf-switch"><input type="checkbox" ${attrs} ${on ? 'checked' : ''}><span></span></label>`;
   const row = ({ icon, title, sub, right, attr = '', cls = '' }) => `<div class="lf-row ${cls}" ${attr}>${icon ? tile(icon) : ''}<div class="lf-row-text"><div class="lf-row-title">${title}</div>${sub ? `<div class="lf-row-sub">${sub}</div>` : ''}</div><div class="lf-row-right">${right || ''}</div></div>`;
-  const group = (title, body, aside = '') => `<section class="lf-group"><div class="lf-group-head"><h2>${title}</h2>${aside}</div><div class="lf-rows">${body}</div></section>`;
+  // The rarely changed settings fold under one "Customize" row.
+  const more = (key, hint, body) => `<details class="lf-custom" data-more="${key}" ${openMore.has(key) ? 'open' : ''}><summary class="lf-row"><div class="lf-row-text"><div class="lf-row-title">Customize</div><div class="lf-row-sub">${hint}</div></div>${G('<path d="m9 6 6 6-6 6"/>')}</summary>${body}</details>`;
+  const group = (title, body, aside = '') =>`<section class="lf-group"><div class="lf-group-head"><h2>${title}</h2>${aside}</div><div class="lf-rows">${body}</div></section>`;
 
   // Today, in four cards: what's next, who is waiting on you, what you're on, your calls.
   function todayHtml(n, l) {
@@ -125,9 +129,11 @@
     let body = row({ icon: ROWICON.bell, title: 'Message me first', sub: 'Your bots reach out when something needs you', right: sw('data-nudge="on"', n.on) });
     if (n.on) {
       body += row({ icon: ROWICON.bell, title: 'How often', sub: 'The most in one day', right: `<div class="lf-stepper"><button data-step="-1" aria-label="Fewer">−</button><span>${Number(n.perDay)}</span><button data-step="1" aria-label="More">+</button></div>` });
-      body += row({ icon: ROWICON.mobile, title: 'Use my phone when I\'m away', right: sw('data-nudge="phone"', n.phone !== false) });
-      body += row({ icon: ROWICON.moon, title: 'Quiet hours', sub: n.quiet.on ? `<span class="lf-times"><input type="time" class="lf-time" data-nudge="from" value="${esc(n.quiet.from)}"> to <input type="time" class="lf-time" data-nudge="to" value="${esc(n.quiet.to)}"></span>` : 'No messages at night', right: sw('data-nudge="quiet"', n.quiet.on) });
-      body += n.triggers.map((t) => row({ icon: null, cls: `lf-trig${t.on ? '' : ' off'}`, attr: `title="${esc(t.note)}"`, title: esc(t.label), right: `${t.on ? who(t.key) : ''}${sw(`data-trig="${esc(t.key)}"`, t.on)}` })).join('');
+      let extra = row({ icon: ROWICON.mobile, title: 'Use my phone when I\'m away', right: sw('data-nudge="phone"', n.phone !== false) });
+      extra += row({ icon: ROWICON.moon, title: 'Quiet hours', sub: n.quiet.on ? `<span class="lf-times"><input type="time" class="lf-time" data-nudge="from" value="${esc(n.quiet.from)}"> to <input type="time" class="lf-time" data-nudge="to" value="${esc(n.quiet.to)}"></span>` : 'No messages at night', right: sw('data-nudge="quiet"', n.quiet.on) });
+      extra += '<div class="lf-label">Message me about</div>';
+      extra += n.triggers.map((t) => row({ icon: null, cls: `lf-trig${t.on ? '' : ' off'}`, attr: `title="${esc(t.note)}"`, title: esc(t.label), right: `${t.on ? who(t.key) : ''}${sw(`data-trig="${esc(t.key)}"`, t.on)}` })).join('');
+      body += more('nudges', 'Quiet hours, phone, topics', extra);
     }
     const recent = n.list.length
       ? `<details class="lf-more"><summary>Recent messages (${n.list.length})</summary>${n.list.slice(0, 12).map((x) => `<div class="lf-li"><b>${esc(botName(x.botId) || 'Codeply')}</b><span>${esc(x.text)}</span><em>${esc(dayTime(x.at))}${x.feedback ? ` · ${esc(fb[x.feedback] || '')}` : ''}</em></div>`).join('')}</details>` : '';
@@ -142,8 +148,9 @@
     let body = row({ icon: ROWICON.ear, title: 'Help on my calls', sub: 'Notes, tips while you talk, and a polite exit when you mute', attr: 'title="Meet, Zoom, Teams, WhatsApp, Discord, or Phone Link calls on this PC. Speech to text runs here with Whisper; only the text is kept."', right: seg });
     if (c.listen !== 'off') {
       body += `<label class="lf-consent${c.consentAck ? ' ok' : ''}"><input type="checkbox" data-consent ${c.consentAck ? 'checked' : ''}><span><b>I'll tell people an assistant is listening</b><em>Many places require everyone's consent before a call is transcribed.</em></span></label>`;
-      body += row({ icon: ROWICON.speaker, title: 'Whisper tips out loud', sub: 'Use headphones', right: sw('data-whisper-voice', c.whisperVoice) });
-      body += row({ icon: ROWICON.bot, title: 'Who helps', right: `<select class="lf-select" data-call-bot><option value="">Best bot</option>${bots.map((b) => `<option value="${esc(b.id)}" ${c.botId === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>` });
+      body += more('calls', 'Whisper tips, who helps',
+        row({ icon: ROWICON.speaker, title: 'Whisper tips out loud', sub: 'Use headphones', right: sw('data-whisper-voice', c.whisperVoice) })
+        + row({ icon: ROWICON.bot, title: 'Who helps', right: `<select class="lf-select" data-call-bot><option value="">Best bot</option>${bots.map((b) => `<option value="${esc(b.id)}" ${c.botId === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>` }));
     }
     const now = st && st.active
       ? `<div class="lf-banner live"><span class="lf-dot"></span>Listening to a ${esc(st.app || '')} call</div>`
@@ -198,6 +205,30 @@
     </div>`;
   }
 
+  // Right after "Turn on Life": connect Calendar and Gmail (one Google sign-in), or skip.
+  function setupHtml(l) {
+    const cal = (l.sources || []).find((s) => s.key === 'calendar');
+    const ok = l.google && !(cal && cal.problem);
+    const done = ok ? `<span class="lf-ok">${G('<path d="m5 12.5 4.5 4.5L19 7.5"/>')}Connected</span>` : '';
+    return `<div class="lf-intro">
+      <div class="lf-intro-mark">${G('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>')}</div>
+      <h1>${ok ? 'You\'re all set' : 'Connect the essentials'}</h1>
+      <p>${ok ? 'Your bots can see your calendar and email.' : 'One Google sign-in adds both.'}</p>
+      <div class="lf-rows lf-setup">${row({ icon: SRC.calendar, title: 'Google Calendar', sub: 'What\'s next today', right: done })}${row({ icon: SRC.gmail, title: 'Gmail', sub: 'Who is waiting on you', right: done })}</div>
+      ${ok ? '<button class="lf-btn primary big" data-act="setup-done">Done</button>'
+    : '<button class="lf-btn primary big" data-act="connect">Connect Google</button><button class="lf-btn ghost lf-skip" data-act="setup-done">Skip for now</button>'}
+    </div>`;
+  }
+
+  // Closed by default, at the very bottom, so Forget everything is never one stray click away.
+  function privacyHtml() {
+    const lock = { c: '#8e8e93', i: '<rect x="5" y="10.5" width="14" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>' };
+    const bin = { c: '#ff453a', i: '<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>' };
+    const body = row({ icon: lock, title: 'Stays on this PC', sub: 'Bots only see what you switch on above' })
+      + row({ icon: bin, title: 'Forget everything', sub: 'Deletes all Life kept on this PC', right: '<button class="lf-btn small danger" data-act="clear">Forget</button>' });
+    return `<details class="lf-more lf-privacy" data-more="privacy" ${openMore.has('privacy') ? 'open' : ''}><summary>Privacy</summary><div class="lf-rows">${body}</div></details>`;
+  }
+
   function paint() {
     const view = $('#view');
     if (!view || !open) return;
@@ -207,12 +238,14 @@
       return;
     }
     const scroll = view.querySelector('.lf') ? view.querySelector('.lf').scrollTop : 0;
-    view.innerHTML = l.on
+    view.innerHTML = l.on && setup
+      ? `<div class="lf">${setupHtml(l)}</div>`
+      : l.on
       ? `<div class="lf">
           <div class="lf-head"><div><h1>Life</h1><p>Your bots see your day, so they can help before you ask.</p></div>
             <label class="lf-onoff"><span>On</span>${sw('data-life-on', true)}</label></div>
           ${todayHtml(l.now, l)}${sourcesHtml(l)}${nudgesHtml(l)}${callsHtml(l)}${mailHtml(l)}${autopilotHtml(l)}
-          <div class="lf-foot"><button class="lf-btn ghost danger" data-act="clear">Forget everything</button><span>Deletes what Life kept on this PC.</span></div>
+          ${privacyHtml()}
         </div>`
       : `<div class="lf">${introHtml()}</div>`;
     if (view.querySelector('.lf')) view.querySelector('.lf').scrollTop = scroll;
@@ -229,11 +262,17 @@
   function wire(view) {
     const on = (sel, ev, fn) => view.querySelectorAll(sel).forEach((el) => el.addEventListener(ev, (e) => fn(el, e)));
     on('[data-life-on]', 'change', (el) => set({ on: el.checked }));
-    on('[data-act="turn-on"]', 'click', () => set({ on: true }));
+    on('[data-act="turn-on"]', 'click', () => { setup = true; set({ on: true }); });
+    on('[data-act="setup-done"]', 'click', () => { setup = false; paint(); });
+    on('[data-more]', 'toggle', (el) => { if (el.open) openMore.add(el.dataset.more); else openMore.delete(el.dataset.more); });
     on('[data-src]', 'change', (el) => set({ sources: { [el.dataset.src]: el.checked } }));
     on('[data-forget-src]', 'click', async (el) => { const r = await api.lifeForgetSource(el.dataset.forgetSrc); if (!r.error) { life = { ...life, ...r }; paint(); } });
     on('[data-act="clear"]', 'click', async (el) => {
-      if (!el.dataset.sure) { el.dataset.sure = '1'; el.textContent = 'Click again to delete it all'; return; }
+      if (!el.dataset.sure) {
+        el.dataset.sure = '1'; el.classList.add('sure'); el.textContent = 'Yes, delete it all';
+        setTimeout(() => { if (el.isConnected) { delete el.dataset.sure; el.classList.remove('sure'); el.textContent = 'Forget'; } }, 4000);
+        return;
+      }
       const r = await api.lifeClear(); if (!r.error) { life = { ...life, ...r }; paint(); toast('Forgot everything.'); }
     });
     on('[data-nudge]', 'change', (el) => {
