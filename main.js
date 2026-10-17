@@ -513,7 +513,21 @@ async function handleAuthCallback(url) {
 // falls back to "electron.app.Codeply Craft" with no icon; with the same id the
 // installer gives the Start menu shortcut (build.appId), the toast says
 // "Codeply Craft" with the app icon.
-if (process.platform === 'win32') app.setAppUserModelId('app.codeply.craft');
+if (process.platform === 'win32') {
+  app.setAppUserModelId('app.codeply.craft');
+  // The name and icon Windows puts over every toast: "Codeply", not the raw id (it shows that when
+  // nothing names the id, as in a dev build). The icon has to be a real file, not one inside app.asar.
+  app.whenReady().then(() => {
+    try {
+      const icon = path.join(app.getPath('userData'), 'notify-icon.png');
+      if (!fs.existsSync(icon)) fs.writeFileSync(icon, fs.readFileSync(path.join(__dirname, 'logo.png')));
+      const key = 'HKCU\\Software\\Classes\\AppUserModelId\\app.codeply.craft';
+      const { execFile } = require('child_process');
+      execFile('reg', ['add', key, '/v', 'DisplayName', '/t', 'REG_SZ', '/d', 'Codeply', '/f'], { windowsHide: true }, () => {});
+      execFile('reg', ['add', key, '/v', 'IconUri', '/t', 'REG_SZ', '/d', icon, '/f'], { windowsHide: true }, () => {});
+    } catch (e) { console.warn('[notify] app name:', e.message); }
+  });
+}
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -2088,12 +2102,19 @@ const notifyIcon = () => notifyIconCache || (notifyIconCache = nativeImage.creat
 
 // A native OS notification when a run finishes - only while the window
 // isn't focused (if you're watching it work, you already know it's done).
+// Short enough to read at a glance: the chat's name, and the reply's first sentence.
+const plainText = (t) => String(t || '').replace(/```[\s\S]*?```/g, ' ').replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`#>]+/g, '').replace(/^\s*[-•]\s+/gm, '').replace(/\s+/g, ' ').trim();
+const clip = (t, n) => { t = plainText(t); if (t.length <= n) return t; const cut = t.slice(0, n - 1); return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), n * 0.6)).trim()}…`; };
+const firstSentence = (t) => { const s = plainText(t); const m = /^(.{20,}?[.!?])(\s|$)/.exec(s); return m ? m[1] : s; };
+
 function notifyTaskComplete(session) {
   if (!Notification.isSupported() || !win || win.isDestroyed() || win.isFocused()) return;
+  // The drop is open on this chat: the answer is already in front of the person.
+  if (drop.isShowing && drop.isShowing(session.id)) return;
   const last = session.messages?.filter((m) => m.kind === 'assistant').at(-1);
   const notification = new Notification({
-    title: session.title || 'Craft finished',
-    body: last?.text ? (last.text.length > 120 ? last.text.slice(0, 119) + '…' : last.text) : 'Your task is done.',
+    title: clip(session.title || 'Done', 40),
+    body: last?.text ? clip(firstSentence(last.text), 90) : 'Your task is done.',
     icon: notifyIcon(),
     silent: false,
   });
@@ -3015,7 +3036,7 @@ async function runGoal({ session, goal, history, mode, cwd, approve, signal, rou
   else syncGoal({ status: 'incomplete', note: `Not finished after ${MAX_GOAL_ITERATIONS} iterations. Still missing: ${remaining.slice(0, 200)}` });
 }
 
-async function startChatRun({ sessionId, cwd, mode, bypass, text, images, clientId = null, botId, design = null, resume = null }) {
+async function startChatRun({ sessionId, cwd, mode, bypass, text, images, clientId = null, botId, design = null, resume = null, screen = null }) {
   // resume: carry on a run that was cut off here or came back from Craft Cloud
   // (handoff-desktop.js). Its prompt says what is done; no new user message.
   if (resume) { text = String(resume.prompt || ''); mode = resume.mode; images = undefined; }
@@ -3096,6 +3117,8 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   const history = resume ? resume.history : buildHistory(session);
   // images are kept on the session record so reopening the chat still shows
   // them; buildHistory() only re-sends the last few to the model.
+  // The screen's text sent with this message (the drop): the agent sees it, and the chat remembers it.
+  if (screen && screen.text) { try { require(path.join(CLI_DIR, 'lib', 'screen.js')).remember(session.id, screen); } catch {} }
   if (!resume) session.messages.push({ kind: 'user', text: typedText, ...(expandedText ? { expanded: expandedText } : {}), images: images?.length ? images : undefined, at: Date.now() });
   session.updatedAt = Date.now();
   session.cwd = cwd;

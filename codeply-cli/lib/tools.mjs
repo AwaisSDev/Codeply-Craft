@@ -2265,7 +2265,7 @@ function life_context(args, ctx) {
 
 // ─── The user's screen (lib/screen.js; only a desktop host can look) ──────────
 // A picture of the screen and its text, for "this", "her message", "what's on my right".
-const look_at_screen = () => screenLib.lookTool();
+const look_at_screen = (args, ctx) => screenLib.lookTool(ctx);
 
 // ─── A bot's own email (lib/bot-mail.js; the host sends through Codeply's server) ─
 // The same editable card as gmail_send: what is left on it is what goes out.

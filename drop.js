@@ -9,6 +9,7 @@
 const { BrowserWindow, globalShortcut, screen, ipcMain, dialog, shell, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const lifeScreen = require('./life-screen');
 
 // Empty, the drop is just its message bar; with a chat it grows upward into a
 // panel. The page measures itself and asks for a height (drop:fit), and the
@@ -102,7 +103,7 @@ function hide() { if (win && !win.isDestroyed()) win.hide(); }
 // What was on screen when the drop opened: one picture of the screen under the
 // mouse, taken just before the drop shows, kept in memory only. It goes out
 // with a message only when that message asks about the screen.
-let shot = null; // { url, at }
+let shot = null; // { url, img, at, text: Promise<string> }
 const ABOUT_SCREEN = /\b(screen|screenshot|seeing|looking at|look at (this|that|it)|this (page|window|error|tab|site|app|image|picture|chart|graph|code|message|email|video|doc|document|file|bug|popup)|what('?s| is) (this|that|here)|whats (this|that)|on here|what (do|can) (you|u) see|you see|u see|read this|explain this)\b/i;
 async function grabScreen() {
   try {
@@ -110,7 +111,9 @@ async function grabScreen() {
     const k = Math.min(1, 1600 / d.size.width);
     const list = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: Math.round(d.size.width * k), height: Math.round(d.size.height * k) } });
     const src = list.find((s) => String(s.display_id) === String(d.id)) || list[0];
-    shot = src && !src.thumbnail.isEmpty() ? { url: `data:image/jpeg;base64,${src.thumbnail.toJPEG(78).toString('base64')}`, at: Date.now() } : null;
+    // Its text is read straight away (the OCR built into Windows), so a message sent right after doesn't wait.
+    shot = src && !src.thumbnail.isEmpty() ? { url: `data:image/jpeg;base64,${src.thumbnail.toJPEG(78).toString('base64')}`, img: src.thumbnail, at: Date.now() } : null;
+    if (shot) shot.text = lifeScreen.ocrImage(shot.img).catch(() => '');
   } catch { shot = null; }
 }
 
@@ -217,10 +220,16 @@ function init(h) {
       if (made.error) return made;
       cwd = made.cwd;
     }
-    // Asking about the screen ("what am I looking at", "what's this error"): the picture goes with it.
-    const images = shot && Date.now() - shot.at < 15 * 60000 && ABOUT_SCREEN.test(String(text || '')) ? [shot.url] : undefined;
-    let r = await host.startChatRun({ sessionId: sessionId || null, cwd, mode, text, images, bypass: bypass === true, clientId: 'drop' });
-    if (images && r && r.error && /images|text only/i.test(r.error)) { r = await host.startChatRun({ sessionId: sessionId || null, cwd, mode, text, bypass: bypass === true, clientId: 'drop' }); }
+    // The drop sits over whatever the person is looking at, so every message carries the screen's
+    // text: the picture from when it opened if that's recent, else a fresh one.
+    let now = shot && Date.now() - shot.at < 2 * 60000 ? shot : null;
+    if (!now) { try { const c = await captureNow(); if (c) now = { ...c, at: Date.now(), text: lifeScreen.ocrImage(c.img).catch(() => '') }; } catch {} }
+    const screenText = now ? await Promise.race([now.text, new Promise((r) => setTimeout(() => r(''), 4000))]) : '';
+    // Asking about the screen ("what am I looking at", "what's this error"): the picture goes too.
+    const images = now && ABOUT_SCREEN.test(String(text || '')) ? [now.url] : undefined;
+    const screenRead = screenText ? { text: screenText } : null;
+    let r = await host.startChatRun({ sessionId: sessionId || null, cwd, mode, text, images, screen: screenRead, bypass: bypass === true, clientId: 'drop' });
+    if (images && r && r.error && /images|text only/i.test(r.error)) { r = await host.startChatRun({ sessionId: sessionId || null, cwd, mode, text, screen: screenRead, bypass: bypass === true, clientId: 'drop' }); }
     else if (images && r && r.sessionId) send('drop:event', { sessionId: r.sessionId, type: 'notice', level: 'info', text: 'Sent a picture of your screen with this.' });
     if (r && r.sessionId && host.onAsk) { try { host.onAsk(text); } catch {} } // the shared life context (life-desktop.js)
     if (r && r.sessionId) {
@@ -274,5 +283,7 @@ function voiceText(text, run) {
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', go); else go();
 }
 
-module.exports = { init, event, runs, show, hide, toggle, captureNow, dispose, setPressHandler, voiceText, hotkeyLabel: () => (hotkey && process.platform === 'darwin' ? hotkey.replace('Alt', 'Option') : hotkey) };
+const isShowing = (sessionId) => !!(win && !win.isDestroyed() && win.isVisible() && shownSession && shownSession === sessionId);
+
+module.exports = { init, event, runs, show, hide, toggle, captureNow, isShowing, dispose, setPressHandler, voiceText, hotkeyLabel: () => (hotkey && process.platform === 'darwin' ? hotkey.replace('Alt', 'Option') : hotkey) };
 

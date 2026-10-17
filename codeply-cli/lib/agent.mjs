@@ -1739,22 +1739,25 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   const hazeStep = (step) => (haze ? { ...haze, step } : undefined);
   const sectionsFor = (m) => buildSystemSections(m, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt });
   const sections = haze ? sectionsFor(mode) : null;
+  // What this chat saw on the user's screen (the drop reads it with every message; lib/screen.js).
+  const chatId = hazeOpts?.chatId || null;
+  const screenBlock = screenLib.contextFor(chatId);
   const messages = sections
     ? [
       { role: 'system', content: sections.core },
       { role: 'system', content: sections.project },
       ...history,
-      { role: 'user', content: withTurnContext(userContent, sections.turn) },
+      { role: 'user', content: withTurnContext(userContent, [sections.turn, screenBlock].filter(Boolean).join('\n\n')) },
     ]
     : [
       { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt }) },
       ...history,
-      { role: 'user', content: userContent },
+      { role: 'user', content: screenBlock ? withTurnContext(userContent, screenBlock) : userContent },
     ];
 
   // fileState: path -> mtime when this turn last read/wrote it (see tools.mjs).
   // userMessage lets the publish tools refuse when nobody asked to publish.
-  const ctx = { cwd, approve, browser, signal, mode, route, userMessage, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null, askBot: typeof askBot === 'function' ? askBot : null, botId: botId || null };
+  const ctx = { cwd, approve, browser, signal, mode, route, userMessage, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null, askBot: typeof askBot === 'function' ? askBot : null, botId: botId || null, chatId };
   // A run carried on from the other side (handoff.mjs) keeps its todo list.
   if (Array.isArray(todos) && todos.length) ctx.todos = todos;
   const recentCallKeys = [];      // executed calls, in order, for the stuck-loop guard
