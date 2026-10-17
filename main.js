@@ -339,7 +339,7 @@ ipcMain.handle('projects:new', (e, name) => {
 });
 
 function rememberProject(cwd) {
-  if (!cwd) return;
+  if (!cwd || designTab.isDesignFolder(cwd)) return; // a design's folder (Documents/Codeply Designs) is not a project
   store.projects = [cwd, ...store.projects.filter((p) => p !== cwd)].slice(0, 8);
   store.lastProject = cwd;
   saveStore();

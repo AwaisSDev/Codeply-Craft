@@ -46,7 +46,7 @@
     return ev.summary || ev.label || a.path || a.query || a.term || a.url || '';
   };
   const short = (p) => String(p || '').replace(/\\/g, '/').split('/').slice(-2).join('/');
-  const ago = (t) => { const m = Math.round((Date.now() - (t || 0)) / 60000); if (m < 1) return 'now'; if (m < 60) return `${m}m ago`; const hr = Math.round(m / 60); return hr < 24 ? `${hr}h ago` : `${Math.round(hr / 24)}d ago`; };
+  const ago = (t) => { const m = Math.round((Date.now() - (t || 0)) / 60000); if (m < 1) return 'now'; if (m < 60) return `${m}m ago`; const hr = Math.floor(m / 60); return hr < 24 ? `${hr}h ago` : `${Math.floor(hr / 24)}d ago`; };
   const slug = (t) => String(t || 'design').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'design';
 
   const S = { designs: [], cur: null, sessionId: null, running: false, sending: false, kind: null, width: 1440, active: [], query: '', att: { start: [], chat: [] } };

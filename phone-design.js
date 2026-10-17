@@ -33,7 +33,7 @@
   const byId = (id) => D.list.find((d) => d.id === id) || null;
   const uid = () => (P.state.user && P.state.user.id) || null;
   const pcOn = () => !!(P.relay && P.relay.pcId);
-  const ago = (t) => { const m = Math.round((Date.now() - (t || 0)) / 60000); if (m < 1) return 'now'; if (m < 60) return `${m}m`; const h = Math.round(m / 60); return h < 24 ? `${h}h` : `${Math.round(h / 24)}d`; };
+  const ago = (t) => { const m = Math.round((Date.now() - (t || 0)) / 60000); if (m < 1) return 'now'; if (m < 60) return `${m}m`; const h = Math.floor(m / 60); return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`; };
 
   // ─── the panel ────────────────────────────────────────────────────────────
   function openPanel() { $('design').classList.remove('hidden'); showList(); refresh(); }

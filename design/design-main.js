@@ -31,6 +31,8 @@ const SIZE = {
 const KINDS = Object.keys(SIZE);
 
 const base = () => path.join(app.getPath('documents'), 'Codeply Designs');
+/** A folder inside Documents/Codeply Designs: a design, never a Craft project. */
+const isDesignFolder = (p) => { try { return path.resolve(String(p)).toLowerCase().startsWith(path.resolve(base()).toLowerCase() + path.sep); } catch { return false; } };
 const records = () => { const s = host.store(); if (!Array.isArray(s.designs)) s.designs = []; return s.designs; };
 const byId = (id) => records().find((d) => d.id === id) || null;
 const send = (channel, data) => { if (view && !view.webContents.isDestroyed()) view.webContents.send(channel, data); };
@@ -458,6 +460,13 @@ function runs(active) { send('design:runs', active); }
 
 function init(h) {
   host = h;
+  // A design folder that got into Craft's project list (older builds) comes back out.
+  const st = host.store();
+  if (Array.isArray(st.projects) && st.projects.some(isDesignFolder)) {
+    st.projects = st.projects.filter((p) => !isDesignFolder(p));
+    if (isDesignFolder(st.lastProject)) st.lastProject = st.projects[0] || null;
+    host.saveStore();
+  }
 
   protocol.handle(SCHEME, (req) => {
     const u = new URL(req.url);
@@ -588,4 +597,4 @@ function stopDesign(id) { const d = byId(id); if (d && d.sessionId) host.stopCha
 /** The session ids of every design chat (main.js keeps them out of Craft's lists). */
 function sessionIds() { return new Set(records().map((d) => d.sessionId).filter(Boolean)); }
 
-module.exports = { init, embed, setBounds, unembed, event, runs, sessionIds, KINDS, createDesign, sendTo, designState, buildFromPhone, stopDesign, pull, exportDesign, renderForLint, inlineHtml };
+module.exports = { init, embed, setBounds, unembed, event, runs, sessionIds, KINDS, createDesign, sendTo, designState, buildFromPhone, stopDesign, pull, exportDesign, renderForLint, inlineHtml, isDesignFolder };
