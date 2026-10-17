@@ -1,0 +1,17 @@
+/* The handoff line above the chat composer (handoff-ui.js). */
+.handoff-line { margin: 0 auto 8px; width: 100%; }
+.handoff-line.hidden { display: none; }
+.handoff-quiet { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-faint); padding: 0 6px; }
+.handoff-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+.handoff-dot.busy { background: var(--warn); animation: handoff-pulse 1.2s ease-in-out infinite; }
+@keyframes handoff-pulse { 50% { opacity: 0.35; } }
+
+/* The orange box: faint dark-orange background, rounded, orange text and a "!" mark. */
+.handoff-warn {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 9px 12px; border-radius: 12px;
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 22%, transparent);
+  color: var(--warn); font-size: 12.5px; line-height: 1.45;
+}
+.handoff-warn svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }

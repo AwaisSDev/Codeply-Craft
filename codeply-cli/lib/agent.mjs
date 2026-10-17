@@ -1664,7 +1664,7 @@ function withReasoning(msg, reasoning) {
  *                                  "claims an edit it didn't make this turn" check is skipped.
  * @yields {{type:string, ...}} text | reasoning | tool_start | tool_end | done | error | aborted
  */
-export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly, botPrompt, askBot, botId, haze: hazeOpts }) {
+export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly, botPrompt, askBot, botId, haze: hazeOpts, todos }) {
   let readOnly = READ_ONLY_MODES.has(mode);
   const stepBudget = Math.max(1, maxSteps || MAX_STEPS);
   // OpenAI-shaped content array only when there's actually an image to carry -
@@ -1729,6 +1729,8 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   // fileState: path -> mtime when this turn last read/wrote it (see tools.mjs).
   // userMessage lets the publish tools refuse when nobody asked to publish.
   const ctx = { cwd, approve, browser, signal, mode, route, userMessage, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null, askBot: typeof askBot === 'function' ? askBot : null, botId: botId || null };
+  // A run carried on from the other side (handoff.mjs) keeps its todo list.
+  if (Array.isArray(todos) && todos.length) ctx.todos = todos;
   const recentCallKeys = [];      // executed calls, in order, for the stuck-loop guard
   const lastResultFor = new Map(); // call key -> its most recent result
   const transcript = [{ role: 'user', content: userMessage }];

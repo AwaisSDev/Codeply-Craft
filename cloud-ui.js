@@ -171,6 +171,9 @@
         <div class="cloud-row"><span>Private copy: <a href="#" data-url="${esc(p.url)}">${esc(p.repo)}</a></span>
         <span class="cloud-dim">${p.lastPush ? `backed up ${ago(p.lastPush.at)}` : 'not backed up yet'}</span>
         <button class="btn btn-secondary btn-sm cp-action" data-act="backup" ${busy ? 'disabled' : ''}>${busy === 'backup' ? 'Backing up...' : 'Back up now'}</button></div>`;
+    // Keep going in the cloud if this PC drops (handoff-desktop.js): on by default.
+    const handoffRow = `<label class="cloud-switch"><input type="checkbox" data-act="handoff" ${p.handoff ? 'checked' : ''}><span><b>Keep going in the cloud if this PC turns off</b><br><span class="cloud-dim">If this PC loses power or connection in the middle of a task, Craft Cloud carries it on from the last step and hands it back when the PC returns. GitHub Actions minutes are only used while the PC is off.</span></span></label>
+        ${p.handoff ? `<div class="cloud-row"><span class="cloud-dim" data-handoff-app>Uses your GitHub connection. <a href="#" data-url="https://github.com/apps/codeply-craft">Safer: install the Codeply GitHub app</a> so Craft only touches the repos you pick.</span></div>` : ''}`;
     const keys = (p.env && p.env.keys) || [];
     const envRow = envEditing
       ? `<div class="cloud-env"><span class="cloud-env-label">Environment variables for testing <span class="cloud-dim">(KEY=value per line)</span></span>
@@ -181,7 +184,7 @@
           <button class="btn btn-secondary btn-sm cp-action" data-act="env-edit">${keys.length ? 'Replace' : 'Add'}</button></div>`;
     box.innerHTML = `${head}<div class="cloud-body">
       <label class="cloud-switch"><input type="checkbox" data-act="cloudOn" ${p.cloudOn ? 'checked' : ''}><span><b>Send new messages to the cloud</b><br><span class="cloud-dim">Runs with ${esc(p.modelName || s.model.name)}. Turn off to work on this PC again.</span></span></label>
-      ${where}${envRow}
+      ${where}${handoffRow}${envRow}
       <div class="cloud-perm"><span class="cloud-env-label">Permissions in the cloud</span>
         <div class="cloud-perm-opts">
           <button class="cloud-perm-opt${p.permission !== 'full' ? ' on' : ''}" data-perm="ask"><b>Ask first</b><span class="cloud-dim">Deploys and other risky steps wait for your OK, here or on your phone</span></button>
@@ -228,6 +231,14 @@
       if (r.error) { renderSheet({ error: r.error }); return; }
       current = r.state;
     }));
+    on('handoff', async (e) => {
+      const r = await api.cloudOptions(state.project, { handoff: e.target.checked });
+      if (!r.error) { current = r.state; renderSheet({}); }
+    });
+    const appNote = box.querySelector('[data-handoff-app]');
+    if (appNote && api.handoffAppInstalled && current && current.project) {
+      api.handoffAppInstalled(current.project.repo).then((yes) => { if (yes && appNote.isConnected) appNote.textContent = 'The Codeply GitHub app covers this repo, so your GitHub key stays on this PC.'; }).catch(() => {});
+    }
     on('autoBackup', async (e) => {
       const r = await api.cloudOptions(state.project, { autoBackup: e.target.checked });
       if (!r.error) current = r.state;

@@ -75,7 +75,7 @@ async function state(cwd) {
     origin: !ready && cwd ? await originInfo(c, cwd) : null,
     project: ready ? {
       repo: p.repo, url: `https://github.com/${p.repo}`, kind: p.kind === 'repo' ? 'repo' : 'mirror', base: p.base || 'main',
-      cloudOn: !!p.cloudOn, autoBackup: p.autoBackup !== false, permission: p.permission === 'full' ? 'full' : 'ask',
+      cloudOn: !!p.cloudOn, autoBackup: p.autoBackup !== false, handoff: p.handoff !== false, permission: p.permission === 'full' ? 'full' : 'ask',
       modelName: p.modelName || '', lastPush: p.lastPush ? { at: p.lastPush.at, skipped: p.lastPush.skipped || [] } : null,
       env: envInfo(cwd),
       tasks: (p.tasks || []).slice(0, 20).map((t) => taskView(t, p)),
@@ -550,4 +550,9 @@ function init(d) {
 }
 
 // resume is called again once the chats have loaded (they can load after this module does)
-module.exports = { init, wants, startFromChat, afterLocalRun, bridge, resume: () => lib().then(resume).catch(() => {}) };
+/** A handoff run's steps (handoff-desktop.js), turned into chat rows like any cloud run's. */
+function replayInto(session, task, events) {
+  return replay(session, { kind: 'cloud_task', task, seen: 0 }, events);
+}
+
+module.exports = { init, wants, startFromChat, afterLocalRun, bridge, replayInto, resume: () => lib().then(resume).catch(() => {}) };

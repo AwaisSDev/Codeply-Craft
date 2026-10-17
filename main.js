@@ -196,6 +196,8 @@ async function loadSessionsFromDb(userId) {
         byId.set(mine.id, mine);
         syncSessionToDb(mine); // and put the server copy right
       }
+      // A run cut off here (handoff-desktop.js) is this PC's to bring back; the server copy doesn't know.
+      if (mine.handoff && byId.get(mine.id)) byId.get(mine.id).handoff = mine.handoff;
     }
     store.sessions = [...byId.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     store.sessionsUser = userId;
@@ -574,6 +576,7 @@ ipcMain.handle('app:init', async () => {
   // sees a previous account's chats. Signed-out just clears the list.
   await loadSessionsFromDb(user ? await getLoggedInUserId() : null);
   cloudDesktop.resume(); // unfinished cloud runs pick up polling now that their chats are here
+  handoffDesktop.recoverAll(); // runs cut off by a power cut or handed to the cloud come back
   if (user) startRelay();
 
   return {
@@ -772,6 +775,7 @@ ipcMain.handle('auth:logout', async () => {
 ipcMain.handle('sessions:refresh', async () => {
   await loadSessionsFromDb(await getLoggedInUserId());
   cloudDesktop.resume();
+  handoffDesktop.recoverAll();
   return craftSessions().map(sessionMeta).sort((a, b) => b.updatedAt - a.updatedAt);
 });
 
@@ -2692,7 +2696,7 @@ ${text}`;
  *
  * @returns {{status:'done'|'error'|'aborted', madeAnyEdit:boolean, replyText:string, error?:string}}
  */
-async function runOneTurn({ session, userMessage, images, history, mode, cwd, approve, signal, route, roleId, goal, maxSteps, verifyOnly }) {
+async function runOneTurn({ session, userMessage, images, history, mode, cwd, approve, signal, route, roleId, goal, maxSteps, verifyOnly, todos }) {
   let status = 'error';
   let madeAnyEdit = false;
   let replyText = '';
@@ -2709,10 +2713,11 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
     const run = agentMod.runAgent({
       userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route,
       roleId, goal, maxSteps, verifyOnly, botPrompt: bot?.botPrompt, askBot: bot?.askBot, botId: bot?.botId,
-      haze: { product: 'craft', chatId: session.id },
+      haze: { product: 'craft', chatId: session.id }, todos,
     });
     for await (const ev of run) {
       if (bot) bot.see(ev); // the bot's trajectory, for its reflection after the reply
+      handoffDesktop.see(session, ev); // steps and todos for Craft Cloud, should this PC drop
       if (ev.type === 'text') {
         session.messages.push({ kind: 'assistant', text: ev.text, interim: !!ev.interim, at: Date.now() });
         replyText += (replyText ? '\n\n' : '') + ev.text;
@@ -2999,7 +3004,10 @@ async function runGoal({ session, goal, history, mode, cwd, approve, signal, rou
   else syncGoal({ status: 'incomplete', note: `Not finished after ${MAX_GOAL_ITERATIONS} iterations. Still missing: ${remaining.slice(0, 200)}` });
 }
 
-async function startChatRun({ sessionId, cwd, mode, bypass, text, images, clientId = null, botId, design = null }) {
+async function startChatRun({ sessionId, cwd, mode, bypass, text, images, clientId = null, botId, design = null, resume = null }) {
+  // resume: carry on a run that was cut off here or came back from Craft Cloud
+  // (handoff-desktop.js). Its prompt says what is done; no new user message.
+  if (resume) { text = String(resume.prompt || ''); mode = resume.mode; images = undefined; }
   text = String(text || '').trim();
   images = Array.isArray(images) ? images.slice(0, 6) : undefined;
   if (!text && !images?.length) return { error: 'Write a task before sending it.' };
@@ -3013,7 +3021,7 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   // The chat shows what the user typed; the model gets the expanded text.
   const typedText = text;
   let expandedText = null;
-  if (commandsLib && !GOAL_PREFIX_RE.test(text)) {
+  if (commandsLib && !resume && !GOAL_PREFIX_RE.test(text)) {
     const custom = commandsLib.resolve(text, cwd);
     if (custom) {
       if (!custom.prompt) return { error: `/${custom.command.name} expanded to nothing. Check ${custom.command.file}.` };
@@ -3030,17 +3038,18 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
     return { error: 'Sign in to use Haze 2, or pick one of your own models from the model menu.' };
   }
 
-  const goalMatch = GOAL_PREFIX_RE.exec(text);
+  const goalMatch = resume ? null : GOAL_PREFIX_RE.exec(text);
   const goal = goalMatch ? text.slice(goalMatch[0].length).trim() : null;
   if (goalMatch && !goal) return { error: 'Add the goal after /goal - for example: /goal make the checkout page work end to end.' };
   if (goal && mode !== 'Build') return { error: '/goal needs Build mode, since it changes files. Switch the mode chip to Build.' };
 
   // Cloud chip on: the message runs on GitHub Actions (cloud-desktop.js), not here.
-  const toCloud = cloudDesktop.wants(cwd);
+  const toCloud = !resume && cloudDesktop.wants(cwd);
   if (toCloud && images?.length) return { error: 'Cloud runs take text only for now. Turn the Cloud chip off to send images.' };
   if (toCloud && goal) return { error: '/goal runs on this PC. Turn the Cloud chip off to use it.' };
 
   let session = sessionId ? store.sessions.find((s) => s.id === sessionId) : null;
+  if (!session && resume) return { error: 'That chat is no longer available.' };
   if (!session) {
     const titleSource = goal || typedText;
     session = {
@@ -3057,9 +3066,13 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   }
   if (design) { session.design = design; markDesignSession(session.id); }
   if (activeRuns.has(session.id)) return { error: 'A run is already in progress for this chat.' };
+  if (!resume && session.handoff && ['cloud', 'returning', 'resuming'].includes(session.handoff.status)) {
+    return { error: 'This task is coming back from Craft Cloud. Give it a moment.' };
+  }
+  if (!resume && session.handoff) session.handoff = null; // a new message replaces a paused run
 
   if (!design) rememberProject(cwd); // a design's folder is not a project
-  const detectedRole = rolesLib.detectRole(goal || text);
+  const detectedRole = resume ? (resume.state && resume.state.roleId) || null : rolesLib.detectRole(goal || text);
   if (detectedRole) session.stickyRole = detectedRole;
   session.lastRole = null; // every reply opens with a "Working as ..." badge
   // 'role:frontend' from the answer picker pins one of Craft's own agents; a bot id or '' clears it.
@@ -3068,16 +3081,16 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
     session.pinnedRole = pinned && rolesLib.getRole(pinned) ? pinned : null;
     if (pinned) botId = '';
   }
-  botsDesktop.onSend(session, botId);
-  const history = buildHistory(session);
+  if (!resume) botsDesktop.onSend(session, botId);
+  const history = resume ? resume.history : buildHistory(session);
   // images are kept on the session record so reopening the chat still shows
   // them; buildHistory() only re-sends the last few to the model.
-  session.messages.push({ kind: 'user', text: typedText, ...(expandedText ? { expanded: expandedText } : {}), images: images?.length ? images : undefined, at: Date.now() });
+  if (!resume) session.messages.push({ kind: 'user', text: typedText, ...(expandedText ? { expanded: expandedText } : {}), images: images?.length ? images : undefined, at: Date.now() });
   session.updatedAt = Date.now();
   session.cwd = cwd;
   saveStore();
   syncSessionToDb(session);
-  sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session), message: session.messages.at(-1), origin: clientId });
+  sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session), ...(resume ? {} : { message: session.messages.at(-1) }), origin: clientId });
   if (toCloud) return cloudDesktop.startFromChat({ session, text, mode });
 
   // A real AbortController - fetch() only cancels an in-flight request when
@@ -3093,6 +3106,8 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   activeRuns.set(session.id, { signal, abortController });
   updateSleepBlocker();
   broadcastRunStatus();
+  // Keep going in Craft Cloud if this PC drops mid-run (Build in a cloud project).
+  handoffDesktop.begin(session, { mode, userMessage: resume ? resume.state.userMessage : text, history, roleId: detectedRole, route, resume: resume ? resume.state : null, takeover: !!(resume && resume.takeover) });
 
   // Shell commands are allowed by name ("run:npm test"), so "always" on one
   // command never quietly allows every command. A dangerous-looking command
@@ -3219,7 +3234,9 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
       try { beforeTree = await snapshotLib.track(cwd); } catch {}
     }
     try {
-      if (goal) {
+      if (resume) {
+        await runOneTurn({ session, userMessage: text, history, mode, cwd, approve, signal, route, roleId: detectedRole, todos: resume.todos });
+      } else if (goal) {
         await runGoal({ session, goal, history, mode, cwd, approve, signal, route });
       } else if (mode === 'Build' && !images?.length) {
         // Plan/Ask are single coherent answers, and an image belongs in one
@@ -3258,7 +3275,9 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
       syncSessionToDb(session);
       sendEvent(session.id, { type: 'run_finished' });
       sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
-      notifyTaskComplete(session);
+      await handoffDesktop.end(session, { aborted: signal.aborted });
+      // Paused or handed to the cloud: not finished, so no "done" notification.
+      if (!session.handoff) notifyTaskComplete(session);
       cloudDesktop.afterLocalRun(cwd);
       if (session.messages.filter((m) => m.kind === 'user').length === 1) {
         generateSessionTitle(session);
@@ -3541,6 +3560,25 @@ cloudDesktop.init({
   isRunning: (id) => activeRuns.has(id),
   persist: (session) => { saveStore(); syncSessionToDb(session); },
   userDataDir: app.getPath('userData'),
+});
+// Handoff: a run carries on in Craft Cloud if this PC drops, and comes back (see handoff-desktop.js).
+const handoffDesktop = require('./handoff-desktop');
+handoffDesktop.init({
+  ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine,
+  supabase: () => authLib.getClient(),
+  signedIn: async () => !!(await getLoggedInUserId()),
+  deviceId, deviceName: () => os.hostname(),
+  githubToken: () => { const gh = configLib && configLib.getIntegration('github'); return gh && gh.accessToken ? gh.accessToken : null; },
+  findSession: (id) => store.sessions.find((s) => s.id === id),
+  allSessions: () => store.sessions || [],
+  isRunning: (id) => activeRuns.has(id),
+  stopRun: (id) => stopChatRun(id),
+  resumeRun: (session, resume) => startChatRun({ sessionId: session.id, cwd: session.cwd, resume }),
+  replay: (session, task, events) => cloudDesktop.replayInto(session, task, events),
+  sendEvent, sessionMeta, checkpointView, notify: notifyTaskComplete,
+  snapshotLib: () => snapshotLib,
+  saveLocal: () => saveStore(),
+  persist: (session) => { saveStore(); syncSessionToDb(session); },
 });
 // Bots: named agents with a job, a tone, memory and an avatar (see bots-desktop.js).
 const botsDesktop = require('./bots-desktop');
