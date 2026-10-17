@@ -32,7 +32,7 @@ function contextFor(chatId, now = Date.now()) {
   const head = age < FRESH_MS
     ? `ON THE USER'S SCREEN RIGHT NOW${where}, read by OCR just now`
     : `THE USER'S SCREEN WHEN YOU LAST LOOKED${where}, ${Math.round(age / 60000)} min ago; it may have changed since`;
-  return `${head}:\n${s.text.slice(0, 4000)}\n\nUse this when the message is about what they are looking at (names, numbers, a message, an error on screen), and answer from it directly. For a picture, or if it looks out of date, call look_at_screen. Never mention the Codeply chat window itself.`;
+  return `${head}:\n${s.text.slice(0, 4000)}\n\nEach line is one row of the screen, left to right, with | between columns, so a table row (a name and its numbers) is on one line; numbers on a row belong to that row. OCR can misread a character (5 as s, 1 as l). Use this when the message is about what they are looking at (names, numbers, a message, an error on screen), and answer from it directly. For a picture, or if it looks out of date, call look_at_screen. Never mention the Codeply chat window itself.`;
 }
 
 async function lookTool(ctx = {}) {
@@ -45,7 +45,7 @@ async function lookTool(ctx = {}) {
   const lines = [
     'A screenshot of the user\'s screen is attached below, taken just now. Look at it before answering.',
     r.app ? `Window in front: ${r.app}${r.title ? `, "${r.title}"` : ''}` : '',
-    text ? `Text on the screen (read by OCR, may have small mistakes):\n${text.slice(0, 6000)}` : 'No text could be read from the screen.',
+    text ? `Text on the screen (read by OCR, one line per row of the screen with | between columns; may have small mistakes):\n${text.slice(0, 6000)}` : 'No text could be read from the screen.',
     'Answer about what the user means from this. Do not describe the whole screen unless they asked; never mention the Codeply chat window itself.',
   ].filter(Boolean);
   return { ok: true, output: lines.join('\n\n'), meta: { imageDataUrls: [r.image] } }; // the step already reads "Looked at your screen"

@@ -35,8 +35,18 @@ while ($true) {
       $decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
       $bitmap = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
       $result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
-      $text = ($result.Lines | ForEach-Object { $_.Text }) -join [Environment]::NewLine
-      $out = @{ text = $text } | ConvertTo-Json -Compress
+      # Each line with its box, so Node can put a table row back on one line.
+      $lines = New-Object System.Collections.ArrayList
+      foreach ($l in $result.Lines) {
+        $x1 = 1e9; $y1 = 1e9; $x2 = 0; $y2 = 0
+        foreach ($w in $l.Words) {
+          $r = $w.BoundingRect
+          if ($r.X -lt $x1) { $x1 = $r.X }; if ($r.Y -lt $y1) { $y1 = $r.Y }
+          if ($r.X + $r.Width -gt $x2) { $x2 = $r.X + $r.Width }; if ($r.Y + $r.Height -gt $y2) { $y2 = $r.Y + $r.Height }
+        }
+        [void]$lines.Add(@{ t = $l.Text; x = [int]$x1; y = [int]$y1; w = [int]($x2 - $x1); h = [int]($y2 - $y1) })
+      }
+      $out = @{ lines = $lines.ToArray() } | ConvertTo-Json -Compress -Depth 4
     } finally { $stream.Dispose() }
   } catch { $out = @{ error = $_.Exception.Message } | ConvertTo-Json -Compress }
   [Console]::Out.WriteLine($out)
@@ -101,10 +111,42 @@ async function ocrImage(img) {
   try {
     const r = await ocr(file);
     if (r.error) throw new Error(r.error);
-    return String(r.text || '').replace(/[ \t]+/g, ' ').trim();
+    return r.lines ? layout(r.lines) : String(r.text || '').replace(/[ \t]+/g, ' ').trim();
   } finally { fs.rm(file, { force: true }, () => {}); }
+}
+
+/**
+ * The OCR's lines put back the way the screen shows them. The OCR reads a
+ * table cell by cell, so a name and its numbers end up far apart; here every
+ * line at the same height becomes one row, left to right, with " | " where
+ * there is a gap between columns. "Marwa Gamal | Egypt | Craft 100% | 532k".
+ */
+function layout(lines) {
+  const ls = (Array.isArray(lines) ? lines : lines ? [lines] : [])
+    .filter((l) => l && String(l.t || '').trim() && l.h > 0)
+    .map((l) => ({ t: String(l.t).replace(/[ \t]+/g, ' ').trim(), x: l.x, y: l.y, w: l.w, h: l.h }))
+    .sort((a, b) => a.y - b.y);
+  // One row = lines whose heights overlap, so a two-line cell (a name over an
+  // email) stays with the numbers next to it that sit between the two.
+  const rows = [];
+  for (const l of ls) {
+    const row = rows[rows.length - 1];
+    const pad = l.h * 0.1;
+    if (row && l.y - pad <= row.bottom) { row.items.push(l); row.bottom = Math.max(row.bottom, l.y + l.h + pad); }
+    else rows.push({ bottom: l.y + l.h + pad, items: [l] });
+  }
+  return rows.map((r) => {
+    // Left to right; lines in the same column keep their top-to-bottom order.
+    r.items.sort((a, b) => (Math.abs(a.x - b.x) < Math.min(a.h, b.h) ? a.y - b.y : a.x - b.x));
+    let s = ''; let end = -1;
+    for (const it of r.items) {
+      s += end < 0 ? it.t : (it.x - end > it.h * 1.5 ? ' | ' : ' ') + it.t;
+      end = Math.max(end, it.x + it.w);
+    }
+    return s;
+  }).join('\n');
 }
 
 function stop() { try { if (proc) proc.kill(); } catch {} proc = null; }
 
-module.exports = { read, ocrImage, stop, OCR_HELPER };
+module.exports = { read, ocrImage, layout, stop, OCR_HELPER };
