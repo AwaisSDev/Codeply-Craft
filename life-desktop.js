@@ -46,7 +46,8 @@ const KEY_FILE = path.join(LIFE_DIR, 'key.bin');
 
 const DEFAULTS = {
   on: false,
-  sources: { calendar: true, gmail: true, calls: true, projects: true, activity: true, orbit: true, plans: true, botmail: true, slack: true, tasks: true },
+  // The mic and the words on screen are the most private: off until the user turns them on.
+  sources: { calendar: true, gmail: true, calls: true, projects: true, activity: true, screen: false, heard: false, orbit: true, plans: true, botmail: true, slack: true, tasks: true },
   nudges: { on: true, perDay: 6, phone: true, quiet: { on: true, from: '22:00', to: '07:00' }, triggers: {}, botFor: {} },
   calls: { listen: 'ask', consentAck: false, whisperVoice: false, routeMic: false, botId: '' },
   autopilot: { paused: false },
@@ -234,7 +235,30 @@ async function sampleActivity() {
   if (idleSeconds > 300) { store.setState('activity.current', null); return { idle: idleSeconds }; }
   const r = SRC().activityTick({ store, sample: s });
   if (r.kind === 'call' && deps.onCallWindow) { try { deps.onCallWindow(store.getState('call.current')); } catch {} }
+  await readScreen(s, r).catch((e) => { status.sources.screen = { ...(status.sources.screen || {}), error: String(e.message || e).slice(0, 200) }; });
   return r;
+}
+
+// ─── The words on screen (life-screen.js: Windows' own OCR, on this PC) ─────
+// When the window in front changes, and every 2 minutes on the same one. Never
+// a private window, a password manager, a call, or Craft itself.
+let lastScreen = { sig: '', at: 0 };
+async function readScreen(sample, r) {
+  if (!sourceOn('screen') || !deps.screenText) return;
+  if (!r || ['none', 'private', 'call'].includes(r.kind)) { if (r && r.kind === 'private') store.setState('activity.screen', null); return; }
+  if (/^(electron|codeply.*)$/i.test(String(sample.app || ''))) return;
+  const cur = store.getState('activity.current') || {};
+  const sig = `${cur.app || sample.app}|${sample.title || ''}`;
+  const now = Date.now();
+  if (sig === lastScreen.sig && now - lastScreen.at < 2 * 60000) return;
+  lastScreen = { sig, at: now };
+  const text = String(await deps.screenText({ title: sample.title || '' }) || '').slice(0, 6000);
+  if (text.replace(/\s+/g, '').length < 20) return;
+  store.setState('activity.screen', { app: cur.app || sample.app, title: cur.title || sample.title || '', text, at: now });
+  // One item per window, updated as it changes, so the Ask box finds what was on screen (kept 3 days).
+  const id = `screen:${crypto.createHash('sha1').update(sig.toLowerCase()).digest('hex').slice(0, 16)}`;
+  store.upsertItem({ id, source: 'screen', kind: 'screen', at: now, title: `${cur.app || sample.app}${cur.title ? `: ${cur.title}` : ''}`.slice(0, 200), body: text, data: { app: cur.app || sample.app } });
+  status.sources.screen = { ...(status.sources.screen || {}), lastOk: now, error: '' };
 }
 const atPc = () => idleSeconds < 120 && Date.now() - ((store && store.getState('pc.idle', {}) || {}).at || 0) < 2 * 60000;
 
@@ -358,6 +382,9 @@ function panelState() {
     calls: settings.calls,
     autopilot: { ...settings.autopilot, ...(deps.autopilotState ? deps.autopilotState() : {}) },
     callNow: deps.callState ? deps.callState() : null,
+    listen: deps.listenState ? deps.listenState() : null,
+    screen: (() => { const sc = store && started && sourceOn('screen') ? store.getState('activity.screen') : null; return sc && Date.now() - sc.at < 5 * 60000 ? { app: sc.app, title: sc.title, at: sc.at } : null; })(),
+    heardToday: store && started ? store.items({ sources: ['heard'], from: new Date().setHours(0, 0, 0, 0), limit: 40 }).map((x) => ({ id: x.id, title: x.title, kind: x.kind, at: x.at })) : [],
     takeoverReady: deps.takeoverReady ? deps.takeoverReady() : undefined,
     platform: process.platform,
   };
@@ -396,10 +423,13 @@ function setSettings(patch = {}) {
     if (typeof patch.calls.botId === 'string') settings.calls.botId = patch.calls.botId.slice(0, 60);
   }
   if (patch.autopilot && typeof patch.autopilot.paused === 'boolean') settings.autopilot.paused = patch.autopilot.paused;
+  // The mic only listens once the user said they tell people an assistant is listening.
+  if (settings.sources.heard && !settings.calls.consentAck) settings.sources.heard = false;
   saveSettings();
   if (settings.on && !was) start();
   else if (!settings.on && was) stop();
   else if (settings.on) timers.forEach((t) => t.poke());
+  if (deps.onListenChange) { try { deps.onListenChange(); } catch {} }
   return panelState();
 }
 
@@ -435,6 +465,7 @@ function stop() {
   while (timers.length) timers.pop().stop();
   try { if (fg) fg.kill(); } catch {}
   fg = null;
+  try { if (deps.screenStop) deps.screenStop(); } catch {}
   try { LIFE().detach(); } catch {}
   pushState();
 }

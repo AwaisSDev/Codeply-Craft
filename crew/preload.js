@@ -69,6 +69,8 @@ contextBridge.exposeInMainWorld('crew', {
   lifeOutbox: (id, action) => ipcRenderer.invoke('crew:life:outbox', id, action),
   lifeTask: (id, action) => ipcRenderer.invoke('crew:life:task', id, action),
   lifeListenNow: () => ipcRenderer.invoke('crew:life:listenNow'),
+  lifeCallShow: () => ipcRenderer.invoke('crew:life:callShow'),
+  lifeCallStop: () => ipcRenderer.invoke('crew:life:callStop'),
   botMailClaim: (botId, local) => ipcRenderer.invoke('crew:botmail:claim', botId, local),
   botMailRelease: (botId) => ipcRenderer.invoke('crew:botmail:release', botId),
   botMailReply: (id) => ipcRenderer.invoke('crew:botmail:reply', id),

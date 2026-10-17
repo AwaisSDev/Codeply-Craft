@@ -20,11 +20,12 @@
   function paint() {
     if (!st) return;
     const bot = st.bot ? st.bot.name : 'Your bot';
-    $('title').textContent = st.active ? `${st.app || 'Call'} call` : 'Call helper';
+    const callName = st.app && st.app !== 'Call' ? `${st.app} call` : 'A call';
+    $('title').textContent = st.active ? callName : 'Call helper';
     $('dot').classList.toggle('on', !!st.active);
     const m = $('main');
     if (!st.active && st.offered) {
-      m.innerHTML = `<div class="card"><b>${esc(st.app || 'A')} call</b><div>Want ${esc(bot)} to listen and help? It writes the call down on this PC, shows you what is relevant and can take over if you need to go.</div></div>
+      m.innerHTML = `<div class="card"><b>${esc(callName)}</b><div>Want ${esc(bot)} to listen and help? It writes the call down on this PC, shows you what is relevant and can take over if you need to go.</div></div>
         ${st.consentAck ? '' : `<label class="check"><input type="checkbox" id="consent" ${consentDraft ? 'checked' : ''}><span>I will tell the other person an assistant is listening. Many places need everyone's consent before a call is recorded or transcribed.</span></label>`}
         <div class="row"><button class="btn primary" id="listen" ${st.consentAck || consentDraft ? '' : 'disabled'}>Listen</button><button class="btn" id="dismiss">Not this call</button></div>`;
       const c = $('consent');

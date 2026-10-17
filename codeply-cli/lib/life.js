@@ -26,7 +26,9 @@ const SOURCES = {
   gmail: { label: 'Gmail, sent and received', note: 'Who wrote, what about, and who is still waiting on your reply. Headers and the preview line only.' },
   calls: { label: 'Calls', note: 'Calls with your bots and calls the call helper heard on this PC, with a short summary.', sensitive: true },
   projects: { label: 'Craft projects', note: 'What you are building, and when you last pushed.' },
-  activity: { label: 'What is on your screen', note: 'The app and window title in front, every 30 seconds. No screenshots. Private windows and password managers are skipped.' },
+  activity: { label: 'What is on your screen', note: 'Which app and window you have in front, every 30 seconds. Private windows and password managers are skipped.' },
+  screen: { label: 'Text on your screen', note: 'The words in the window in front, read on this PC by the OCR built into Windows. No images are kept. Private windows and password managers are skipped.' },
+  heard: { label: 'Heard around you', note: 'Listens in the background and keeps only the important bits: to-dos, plans, names, decisions. No audio is kept.' },
   orbit: { label: 'Orbit and the drop', note: 'What you asked them.' },
   plans: { label: 'Plans', note: 'Plans your bots heard about in chats, calls and email.' },
   botmail: { label: "Your bots' email", note: 'Mail to and from your bots\' own addresses.' },
@@ -124,7 +126,7 @@ function snapshot(o = {}) {
   const tz = tzOf(o);
   const allowed = o.allowed || null;
   const can = (k) => !allowed || allowed.has(k);
-  const snap = { at: now, tz, local: fmt(now, tz, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }), doing: null, onCall: null, next: [], waiting: [], calls: [], projects: [], watched: [], plans: [], tasks: [], unread: [] };
+  const snap = { at: now, tz, local: fmt(now, tz, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }), doing: null, onCall: null, next: [], waiting: [], calls: [], projects: [], watched: [], plans: [], tasks: [], unread: [], screen: null, heard: [] };
   if (!s) return snap;
 
   if (can('activity')) {
@@ -133,6 +135,14 @@ function snapshot(o = {}) {
     snap.watched = s.items({ sources: ['activity'], kinds: ['watch'], from: now - DAY, limit: 5 })
       .filter((x) => (x.end || x.at) - x.at >= 3 * 60000)
       .map((x) => ({ title: x.title, at: x.at, minutes: Math.round(((x.end || x.at) - x.at) / 60000), url: x.url }));
+  }
+  if (can('screen')) {
+    const sc = s.getState('activity.screen');
+    if (sc && sc.text && now - (sc.at || 0) < 3 * 60000) snap.screen = { app: sc.app || '', title: sc.title || '', text: short(sc.text, 600), at: sc.at };
+  }
+  if (can('heard')) {
+    snap.heard = s.items({ sources: ['heard'], from: now - 12 * HOUR, limit: 6 })
+      .map((x) => ({ id: x.id, title: x.title, at: x.at, kind: x.kind, text: short(x.body || '', 200), people: x.people }));
   }
   const call = s.getState('call.current');
   if (call && now - (call.seenAt || 0) < 2 * 60000) snap.onCall = { app: call.app || '', since: call.since || call.seenAt, with: call.with || '' };
@@ -182,6 +192,8 @@ function nowBlock(snap, o = {}) {
   const lines = [`- ${snap.local} (${tz})`];
   if (snap.onCall) lines.push(`- The user is on a call right now${snap.onCall.app ? ` (${snap.onCall.app})` : ''}.`);
   if (snap.doing) lines.push(`- On screen: ${snap.doing.app}${snap.doing.title ? `, "${short(snap.doing.title, 90)}"` : ''}${snap.doing.minutes >= 2 ? ` (${snap.doing.minutes} min)` : ''}`);
+  if (snap.screen) lines.push(`- Words on screen now: "${short(snap.screen.text, 400)}"`);
+  if (snap.heard.length) lines.push(`- Heard around the user lately: ${snap.heard.slice(0, 4).map((h) => `${short(h.title, 90)} (${when(h.at, now, tz)})`).join('; ')}`);
   if (snap.next.length) {
     lines.push(`- Coming up: ${snap.next.slice(0, 4).map((e) => `${e.allDay ? 'all day' : e.live ? 'now' : when(e.at, now, tz)} ${short(e.title, 60)}${e.place ? ` at ${short(e.place, 40)}` : ''}${e.people.length ? ` with ${e.people.slice(0, 3).map(firstName).join(', ')}` : ''}${!e.allDay && !e.live && e.at - now < 3 * HOUR ? ` (${until(e.at - now)})` : ''}`).join('; ')}`);
   }
@@ -206,7 +218,7 @@ Use this when it helps: plan around the user's time, mention a clash, link what 
 const ABOUT = {
   now: 'now', current: 'now', snapshot: 'now', today: 'today', day: 'today', tomorrow: 'tomorrow', week: 'week', upcoming: 'week',
   person: 'person', people: 'person', who: 'person', contact: 'person', search: 'search', find: 'search',
-  calls: 'calls', call: 'calls', email: 'email', mail: 'email', inbox: 'email', activity: 'activity', screen: 'activity', watched: 'activity',
+  calls: 'calls', call: 'calls', email: 'email', mail: 'email', inbox: 'email', activity: 'activity', screen: 'activity', watched: 'activity', heard: 'heard', overheard: 'heard', listened: 'heard', conversations: 'heard',
   plans: 'plans', plan: 'plans', projects: 'projects', project: 'projects', slack: 'slack', tasks: 'tasks',
 };
 
@@ -246,13 +258,15 @@ async function contextTool(args, ctx = {}) {
   } else if (about === 'email') {
     const waiting = (store.getState('gmail.waiting') || []).slice(0, 8);
     out = `${waiting.length ? `Waiting on the user's reply:\n${waiting.map((w) => `- ${w.fromName || w.from} <${w.from}>: "${short(w.subject, 80)}", ${ago(now - w.at)} ago${w.important ? ' (important)' : ''}`).join('\n')}\n` : ''}Recent email:\n${lines(store.items({ sources: pick(['gmail', 'botmail']), from: now - 3 * DAY, limit: 15 }))}`;
-  } else if (about === 'activity') out = `On screen, the last few hours:\n${lines(store.items({ sources: pick(['activity', 'orbit']), from: now - 6 * HOUR, limit: 25 }))}`;
+  } else if (about === 'activity') out = `On screen, the last few hours:\n${lines(store.items({ sources: pick(['activity', 'screen', 'orbit']), from: now - 6 * HOUR, limit: 25 }))}`;
+  else if (about === 'heard') out = `Heard around the user (the important bits only):
+${lines(store.items({ sources: pick(['heard']), from: now - 3 * DAY, limit: 25 }))}`;
   else if (about === 'plans') out = `Plans:\n${lines(store.items({ sources: pick(['plans']), from: now - DAY, limit: 20, order: 'asc' }))}`;
   else if (about === 'projects') out = `Projects:\n${lines(store.items({ sources: pick(['projects']), limit: 10 }))}`;
   else if (about === 'slack') out = `Slack:\n${lines(store.items({ sources: pick(['slack']), from: now - 3 * DAY, limit: 20 }))}`;
   else if (about === 'tasks') out = `Bot tasks:\n${store.recentTasks(10).map((t) => `- ${t.status}: ${short(t.text, 140)}`).join('\n') || '(nothing)'}`;
   else {
-    if (!query) return { ok: false, output: 'life_context needs <about> (now, today, tomorrow, week, person, calls, email, activity, plans, projects, slack, tasks) or <query> to search.' };
+    if (!query) return { ok: false, output: 'life_context needs <about> (now, today, tomorrow, week, person, calls, email, activity, heard, plans, projects, slack, tasks) or <query> to search.' };
     out = `Search "${query}":\n${lines(store.search(query, { limit: 15, sources: srcs }))}`;
   }
   return { ok: true, output: out.slice(0, 8000), meta: { label: `${about}${query && about !== 'now' ? `: ${short(query, 40)}` : ''}` } };

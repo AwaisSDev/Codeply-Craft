@@ -756,6 +756,12 @@ body.embedded .app-switch-btn { font-family: "Segoe UI Variable Text", "Segoe UI
 .lf-ok svg { width: 16px; height: 16px; stroke-width: 2.4; }
 .lf-skip { margin-top: 10px; color: var(--text-dim); }
 
+/* always on: a live dot while the mic or the screen reader works */
+.lf-live { display: inline-flex; align-items: center; gap: 7px; color: #30d158; font-weight: 600; }
+.lf-live .lf-dot { width: 8px; height: 8px; }
+.lf-banner > span:not(.lf-dot) { flex: 1; }
+.lf-banner .lf-btn { font-weight: 600; }
+
 /* off: the first screen */
 .lf-intro { display: flex; flex-direction: column; align-items: center; text-align: center; padding-top: 6vh; max-width: 520px; }
 .lf-intro-mark { width: 64px; height: 64px; border-radius: 20px; display: grid; place-items: center; background: linear-gradient(160deg, #0a84ff, #5e5ce6); color: #fff; margin-bottom: 22px; box-shadow: 0 12px 30px rgba(10, 132, 255, .3); }

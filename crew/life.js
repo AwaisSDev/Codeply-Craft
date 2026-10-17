@@ -21,6 +21,7 @@
   let open = false;     // the Life page is showing
   let searchText = '';
   let setup = false;    // just turned on: show the connect step first
+  let askConsent = false; // the user tried to turn the mic on before confirming they tell people
   const openMore = new Set(); // Customize and Privacy sections the user opened
 
   const ICON = {
@@ -79,8 +80,12 @@
     speaker: { c: '#64d2ff', i: '<path d="M5 9.5h3l4.5-4v13L8 14.5H5z"/><path d="M16 9a4 4 0 0 1 0 6"/>' },
     bot: { c: '#8e8e93', i: '<rect x="5" y="8" width="14" height="10" rx="3"/><path d="M12 4v4M9.5 13h.01M14.5 13h.01"/>' },
     mail: { c: '#bf5af2', i: SRC.botmail.i },
+    mic: { c: '#ff375f', i: '<rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M6 11.5a6 6 0 0 0 12 0M12 17.5V21"/>' },
+    screen: { c: '#5e5ce6', i: '<rect x="3.5" y="4.5" width="17" height="12" rx="2.5"/><path d="M8 20h8M12 16.5V20"/>' },
     robot: { c: '#0a84ff', i: '<path d="M12 3.5 14 9l5.5.5-4.2 3.6L16.6 19 12 16l-4.6 3 1.3-5.9L4.5 9.5 10 9z"/>' },
   };
+  // Google answers 403 accessNotConfigured when the API is switched off in the app's Cloud project: no sign-in fixes that.
+  const apiOff = (p) => /accessNotConfigured|has not been used|is disabled/i.test(String(p || ''));
   const tile = (ic) => `<span class="lf-ico" style="background:${ic.c}">${G(ic.i)}</span>`;
   const sw = (attrs, on) => `<label class="lf-switch"><input type="checkbox" ${attrs} ${on ? 'checked' : ''}><span></span></label>`;
   const row = ({ icon, title, sub, right, attr = '', cls = '' }) => `<div class="lf-row ${cls}" ${attr}>${icon ? tile(icon) : ''}<div class="lf-row-text"><div class="lf-row-title">${title}</div>${sub ? `<div class="lf-row-sub">${sub}</div>` : ''}</div><div class="lf-row-right">${right || ''}</div></div>`;
@@ -94,7 +99,9 @@
     const cal = (l.sources || []).find((s) => s.key === 'calendar');
     const next = n.next[0];
     const cards = [];
-    cards.push(cal && cal.problem
+    cards.push(cal && cal.problem && apiOff(cal.problem)
+      ? `<div class="lf-card warn" title="${esc(cal.problem)}">${tile(SRC.calendar)}<div class="lf-card-v">Calendar is off</div><div class="lf-card-l">Turn on its API</div></div>`
+      : cal && cal.problem
       ? `<div class="lf-card warn" title="${esc(cal.problem)}">${tile(SRC.calendar)}<div class="lf-card-v">Calendar is off</div><div class="lf-card-l">Its sign-in expired</div><button class="lf-btn small" data-act="connect">Reconnect</button></div>`
       : `<div class="lf-card">${tile(SRC.calendar)}<div class="lf-card-v">${next ? esc(next.title) : 'Nothing next'}</div><div class="lf-card-l">${next ? esc(next.allDay ? 'All day' : next.live ? 'Happening now' : dayTime(next.at)) : 'Your calendar is clear'}</div></div>`);
     cards.push(`<div class="lf-card">${tile(SRC.gmail)}<div class="lf-card-v">${n.waiting.length ? `${n.waiting.length} waiting on you` : 'All caught up'}</div><div class="lf-card-l">${n.waiting.length ? esc(n.waiting.slice(0, 2).map((w) => w.from).join(', ')) : 'No one is waiting on a reply'}</div></div>`);
@@ -107,10 +114,38 @@
       <div id="lifeHits" class="lf-hits"></div>`;
   }
 
+  // Always on: the mic in the background and the words on screen, each one switch.
+  const ALWAYS = ['heard', 'screen'];
+  const KIND = { todo: 'To-do', decision: 'Decided', person: 'Person', idea: 'Idea', info: 'Note' };
+  function alwaysHtml(l) {
+    const src = (k) => (l.sources || []).find((s) => s.key === k) || {};
+    const heard = src('heard'); const screen = src('screen');
+    const ls = l.listen || {};
+    const saved = l.heardToday || [];
+    const live = (t) => `<span class="lf-live"><span class="lf-dot"></span>${t}</span>`;
+    const heardSub = !heard.on ? 'Keeps the important bits, never the audio'
+      : ls.paused === 'call' ? 'Paused while the call helper listens'
+      : ls.error ? esc(ls.error)
+      : ls.mic ? `${live(ls.thinking ? 'Saving what matters' : 'Listening')}${saved.length ? ` · ${saved.length} saved today` : ''}`
+      : 'Starting the mic';
+    let body = row({ icon: ROWICON.mic, title: 'Listen in the background', sub: heardSub, attr: 'title="Your mic stays on while Craft runs. Speech becomes text on this PC (Whisper), the important bits are kept, and the rest is thrown away."', right: sw('data-src="heard"', heard.on) });
+    if (askConsent && !(l.calls || {}).consentAck) {
+      body += `<label class="lf-consent"><input type="checkbox" data-consent-heard><span><b>I'll tell people an assistant is listening</b><em>Tick to turn the mic on. Many places require everyone's consent.</em></span></label>`;
+    }
+    const screenSub = !screen.on ? 'The words on screen, read on this PC'
+      : l.screen ? live(`Reading ${esc(l.screen.app || 'your screen')}`) : 'Reads when you use your PC';
+    body += row({ icon: ROWICON.screen, title: 'Read my screen', sub: screenSub, attr: 'title="Every time the window in front changes, the OCR built into Windows reads the words on screen. No images are kept, and private windows and password managers are skipped."', right: sw('data-src="screen"', screen.on) });
+    const list = saved.length
+      ? `<details class="lf-more" data-more="heard" ${openMore.has('heard') ? 'open' : ''}><summary>Saved today (${saved.length})</summary>${saved.map((x) => `<div class="lf-hit"><div><b>${esc(x.title)}</b><span>${esc(KIND[x.kind] || 'Note')} · ${esc(clock(x.at))}</span></div><button class="lf-forget" data-forget-item="${esc(x.id)}" title="Forget this">${ICON.x}</button></div>`).join('')}</details>` : '';
+    return group('Always on', body) + list;
+  }
+
   function sourcesHtml(l) {
-    const rows = l.sources.map((s) => {
+    const rows = l.sources.filter((s) => !ALWAYS.includes(s.key)).map((s) => {
       const ic = SRC[s.key] || SRC.tasks;
-      const right = s.problem
+      const right = s.problem && apiOff(s.problem)
+        ? `<span class="lf-meta" title="${esc(s.problem)}">API off in Google Cloud</span>${sw(`data-src="${esc(s.key)}"`, s.on)}`
+        : s.problem
         ? `<button class="lf-btn small danger" data-act="connect" title="${esc(s.problem)}">Reconnect</button>${sw(`data-src="${esc(s.key)}"`, s.on)}`
         : `${s.count ? `<span class="lf-meta">${esc(ago(s.last))}</span><button class="lf-forget" data-forget-src="${esc(s.key)}" title="Forget what it saw">${G('<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>')}</button>` : ''}${sw(`data-src="${esc(s.key)}"`, s.on)}`;
       return row({ icon: ic, title: `${esc(s.label)}${s.sensitive ? '<span class="lf-pill">sealed</span>' : ''}`, sub: esc(s.note), right, cls: s.on ? '' : 'off' });
@@ -153,7 +188,7 @@
         + row({ icon: ROWICON.bot, title: 'Who helps', right: `<select class="lf-select" data-call-bot><option value="">Best bot</option>${bots.map((b) => `<option value="${esc(b.id)}" ${c.botId === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>` }));
     }
     const now = st && st.active
-      ? `<div class="lf-banner live"><span class="lf-dot"></span>Listening to a ${esc(st.app || '')} call</div>`
+      ? `<div class="lf-banner live"><span class="lf-dot"></span><span>Listening to ${st.app && st.app !== 'Call' ? `your ${esc(st.app)} call` : 'your call'}</span><button class="lf-btn small" data-act="call-show">Show</button><button class="lf-btn small danger" data-act="call-stop">Stop</button></div>`
       : c.listen !== 'off' ? `<button class="lf-btn primary wide" data-act="listen-now" ${c.consentAck ? '' : 'disabled'}>${G(ROWICON.ear.i)}${c.consentAck ? 'Listen to a call now' : 'Tick the box above to start'}</button>` : '';
     const cable = l.takeoverReady === false && c.listen !== 'off'
       ? '<div class="lf-tip">' + G('<circle cx="12" cy="12" r="8.5"/><path d="M12 8v5M12 16h.01"/>') + '<span>For a bot to speak in calls, install VB-CABLE (free) and pick "CABLE Output" as the mic in your call app.</span></div>' : '';
@@ -244,7 +279,7 @@
       ? `<div class="lf">
           <div class="lf-head"><div><h1>Life</h1><p>Your bots see your day, so they can help before you ask.</p></div>
             <label class="lf-onoff"><span>On</span>${sw('data-life-on', true)}</label></div>
-          ${todayHtml(l.now, l)}${sourcesHtml(l)}${nudgesHtml(l)}${callsHtml(l)}${mailHtml(l)}${autopilotHtml(l)}
+          ${todayHtml(l.now, l)}${alwaysHtml(l)}${sourcesHtml(l)}${nudgesHtml(l)}${callsHtml(l)}${mailHtml(l)}${autopilotHtml(l)}
           ${privacyHtml()}
         </div>`
       : `<div class="lf">${introHtml()}</div>`;
@@ -265,7 +300,15 @@
     on('[data-act="turn-on"]', 'click', () => { setup = true; set({ on: true }); });
     on('[data-act="setup-done"]', 'click', () => { setup = false; paint(); });
     on('[data-more]', 'toggle', (el) => { if (el.open) openMore.add(el.dataset.more); else openMore.delete(el.dataset.more); });
-    on('[data-src]', 'change', (el) => set({ sources: { [el.dataset.src]: el.checked } }));
+    on('[data-src]', 'change', (el) => {
+      // The mic needs the consent tick first: show it instead of turning on.
+      if (el.dataset.src === 'heard' && el.checked && !(life.calls || {}).consentAck) { askConsent = true; paint(); return; }
+      set({ sources: { [el.dataset.src]: el.checked } });
+    });
+    on('[data-consent-heard]', 'change', (el) => { if (el.checked) { askConsent = false; set({ calls: { consentAck: true }, sources: { heard: true } }); } });
+    on('.lf-more [data-forget-item]', 'click', async (el) => { await api.lifeForgetItem(el.dataset.forgetItem); refresh(); });
+    on('[data-act="call-show"]', 'click', () => api.lifeCallShow());
+    on('[data-act="call-stop"]', 'click', async () => { const r = await api.lifeCallStop(); if (r && !r.error) { life = { ...life, ...r }; paint(); } });
     on('[data-forget-src]', 'click', async (el) => { const r = await api.lifeForgetSource(el.dataset.forgetSrc); if (!r.error) { life = { ...life, ...r }; paint(); } });
     on('[data-act="clear"]', 'click', async (el) => {
       if (!el.dataset.sure) {

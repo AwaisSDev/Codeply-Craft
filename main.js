@@ -3635,7 +3635,15 @@ app.whenReady().then(() => lifeDesktop.init({
   onCallWindow: (call) => callListen.onCallWindow(call),
   callState: () => callListen.state(),
   takeoverReady: () => callListen.takeoverReady(),
+  screenText: (o) => lifeScreen.read(o),
+  screenStop: () => lifeScreen.stop(),
+  listenState: () => lifeListen.state(),
+  onListenChange: () => lifeListen.sync(),
 }));
+// Life's always-on parts: the words on screen (life-screen.js, Windows' own OCR)
+// and the mic in the background (life-listen.js), both off until the user turns them on.
+const lifeScreen = require('./life-screen');
+const lifeListen = require('./life-listen');
 // The call helper (call-listen.js): a bot that listens to calls on this PC,
 // whispers what helps, and takes the call when the user hands it over.
 const callListen = require('./call-listen');
@@ -3672,6 +3680,7 @@ app.whenReady().then(() => {
     userName: () => '',
     audit: (e) => autopilot.audit(e),
   });
+  lifeListen.init({ ...shared, transcribe: (pcm) => callListen.transcribe(pcm), callState: () => callListen.state() });
 });
 ipcMain.handle('remote:info', () => remoteInfo());
 ipcMain.handle('remote:setKeepAwake', (e, on) => {

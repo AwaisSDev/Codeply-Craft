@@ -756,7 +756,7 @@ const PHONE_FORMAT = `To reach the phone or watch for an email, write:
 </codeply:watch_email>`;
 
 const LIFE_RULES = `THE USER'S LIFE CONTEXT
-All the user's bots share one picture of their life: calendar, email, calls, plans, projects, what is on screen. Look things up with life_context (about = now, today, tomorrow, week, person, calls, email, activity, plans, projects, slack, tasks, or a query to search) before saying you do not know what the user has on, who someone is, or what happened. It is private: use it to help the user, never pass it on to anyone else.`;
+All the user's bots share one picture of their life: calendar, email, calls, plans, projects, what is on screen, the important bits heard around them. Look things up with life_context (about = now, today, tomorrow, week, person, calls, email, activity, heard, plans, projects, slack, tasks, or a query to search) before saying you do not know what the user has on, who someone is, or what happened. It is private: use it to help the user, never pass it on to anyone else.`;
 const LIFE_FORMAT = `To look something up, write:
 <codeply:life_context>
 <about>person</about>

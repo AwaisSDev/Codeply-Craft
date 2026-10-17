@@ -86,7 +86,7 @@ function ensureWindow() {
     width: W, height: H, x: pos.x, y: pos.y,
     frame: false, resizable: true, alwaysOnTop: true, skipTaskbar: true, show: false, backgroundColor: '#0b0b0c', title: 'Call helper',
     // The bot speaks after a model call, long after the click: no gesture needed to play.
-    webPreferences: { preload: path.join(__dirname, 'call-listen', 'preload.js'), contextIsolation: true, nodeIntegration: false, partition: PARTITION, autoplayPolicy: 'no-user-gesture-required' },
+    webPreferences: { preload: path.join(__dirname, 'call-listen', 'preload.js'), contextIsolation: true, nodeIntegration: false, partition: PARTITION, autoplayPolicy: 'no-user-gesture-required', backgroundThrottling: false },
   });
   win.setAlwaysOnTop(true, 'floating');
   win.loadFile(path.join(__dirname, 'call-listen', 'index.html'));
@@ -114,17 +114,19 @@ function onCallWindow(call) {
   const key = `${call.app}:${call.since}`;
   if (S.dismissed.has(key)) return;
   S.app = call.app; S.lastSeen = Date.now();
-  if (mode === 'always' && settings().consentAck) start(call.app);
+  // Always: it listens without a window; the window shows only when the bot can help (a hand-over).
+  if (mode === 'always' && settings().consentAck) start(call.app, { quiet: true });
   else if (!S.offered) { S.offered = true; ensureWindow().showInactive(); push(); setTimeout(push, 800); }
 }
 
-function start(appName) {
+function start(appName, { quiet = false } = {}) {
   if (S.active) return view();
   Object.assign(S, { active: true, app: appName || S.app || 'Call', startedAt: Date.now(), turns: [], cards: [], whisper: '', offered: false, lastAssist: 0, lastThem: 0, takeover: null, lastSeen: Date.now() });
   const bot = helperBot();
   S.botId = bot ? bot.id : null;
   try { sttProc().postMessage({ type: 'load' }); } catch {}
-  ensureWindow().showInactive();
+  const w = ensureWindow();
+  if (!quiet) w.showInactive();
   if (win) win.webContents.send('callhelp:listen', true);
   clearInterval(S.endTimer);
   // The call is over when its window has been gone for 45 seconds.
@@ -162,7 +164,7 @@ async function chunk(who, pcm) {
   S.turns.push({ who: who === 'me' ? 'me' : 'them', text: text.slice(0, 1000), at: now });
   if (S.turns.length > 600) S.turns = S.turns.slice(-600);
   if (who !== 'me') S.lastThem = now;
-  if (!S.takeover && CA().offerHandover(S.turns, { userName: userName(), now })) S.takeover = { stage: 'offer', why: 'They are asking for you.' };
+  if (!S.takeover && CA().offerHandover(S.turns, { userName: userName(), now })) { S.takeover = { stage: 'offer', why: 'They are asking for you.' }; ensureWindow().showInactive(); }
   push();
 }
 
@@ -256,9 +258,11 @@ function registerIpc() {
   // Crew's Life page: listen to a call the PC did not spot (a phone on speaker, an app it does not know).
   ipcMain.handle('crew:life:listenNow', async () => {
     if (!settings().consentAck) return { error: 'First confirm, on the Life page, that you tell people an assistant is listening.' };
-    start(S.app || 'Call');
+    start(S.app || '', { quiet: true });
     return deps.life.setSettings({});
   });
+  ipcMain.handle('crew:life:callShow', () => { if (S.active) ensureWindow().showInactive(); return view(); });
+  ipcMain.handle('crew:life:callStop', async () => { await stop('stopped'); return deps.life.setSettings({}); });
   ipcMain.on('callhelp:chunk', (e, { who, pcm }) => { chunk(who, pcm).catch(() => {}); });
   ipcMain.on('callhelp:close', () => { if (win) win.hide(); });
 }
@@ -277,4 +281,4 @@ const state = () => ({ active: S.active, app: S.app, startedAt: S.startedAt });
 let cable = undefined;
 ipcMain.on('callhelp:devices', (e, d) => { cable = !!(d && d.cable); });
 
-module.exports = { init, onCallWindow, start, stop, chunk, takeover, endCall, stopAll, state, takeoverReady: () => cable, view };
+module.exports = { init, onCallWindow, start, stop, chunk, transcribe, takeover, endCall, stopAll, state, takeoverReady: () => cable, view };

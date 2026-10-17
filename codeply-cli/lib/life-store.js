@@ -33,7 +33,7 @@ const { loadDriver } = require('./session-db.js');
 const SCHEMA_VERSION = 1;
 const DAY = 86400000;
 // How long things are kept. Screen activity is the noisiest, sensitive things the most private.
-const KEEP_DAYS = { default: 90, activity: 14, sensitive: 30, audit: 365 };
+const KEEP_DAYS = { default: 90, activity: 14, screen: 3, sensitive: 30, audit: 365 };
 
 function defaultFile() {
   return process.env.CODEPLY_LIFE_DB || path.join(os.homedir(), '.codeply', 'life', 'life.db');
@@ -323,6 +323,7 @@ function openLifeStore(opts = {}) {
 
   function prune(t = now()) {
     db.prepare('DELETE FROM items WHERE source = ? AND at < ?').run('activity', t - KEEP_DAYS.activity * DAY);
+    db.prepare('DELETE FROM items WHERE source = ? AND updated_at < ?').run('screen', t - KEEP_DAYS.screen * DAY);
     db.prepare('DELETE FROM items WHERE sensitive = 1 AND at < ?').run(t - KEEP_DAYS.sensitive * DAY);
     db.prepare('DELETE FROM items WHERE at < ? AND (end_at IS NULL OR end_at < ?)').run(t - KEEP_DAYS.default * DAY, t - KEEP_DAYS.default * DAY);
     db.prepare('DELETE FROM nudges WHERE at < ?').run(t - KEEP_DAYS.default * DAY);

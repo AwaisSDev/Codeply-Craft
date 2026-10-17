@@ -442,7 +442,7 @@
       renderStored(box, state.messages, b);
       if (busy) resumeLive(box, b);
       const sc = $('#scroller');
-      sc.addEventListener('scroll', () => $('.thread-head').classList.toggle('scrolled', sc.scrollTop > 4));
+      sc.addEventListener('scroll', () => { const h = $('.thread-head'); if (h) h.classList.toggle('scrolled', sc.scrollTop > 4); });
       scrollDown(true);
     }
     $('#input').focus();
