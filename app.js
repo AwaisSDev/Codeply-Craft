@@ -479,7 +479,7 @@ const TOOL_DISPLAY = {
   vercel_deploy: 'Deployed', supabase_create_project: 'Provisioned', supabase_delete_project: 'Deleted', github_create_repo: 'Pushed',
   supabase_api: 'Supabase', supabase_sql: 'Ran SQL', vercel_api: 'Vercel',
   publish_check: 'Checked for publishing', publish_connect: 'Connect', supabase_setup: 'Set up database', supabase_schema: 'Applied schema', publish_deploy: 'Published', publish_github: 'Pushed to GitHub',
-  design_reference_search: 'Searched design library', view_images: 'Viewed',
+  design_reference_search: 'Searched design library', view_images: 'Viewed', look_at_screen: 'Looked at your screen',
 };
 
 // Human-readable tool names for approval UI - never show the raw
@@ -857,6 +857,7 @@ const ACTIVITY_KIND = {
   browser_check: ['checked', 'page', 'pages'], fetch_image: ['downloaded', 'image', 'images'],
   image_search: ['searched images for', 'query', 'queries'], web_search: ['searched the web for', 'query', 'queries'],
   view_images: ['looked at', 'image', 'images'],
+  look_at_screen: ['looked at your screen', 'time', 'times'],
 };
 
 function activityHead(el) { return el.querySelector('.activity-summary'); }

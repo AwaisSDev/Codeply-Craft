@@ -89,9 +89,15 @@ async function read() {
   const list = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: Math.round(w * k), height: Math.round(h * k) } });
   const src = list.find((s) => String(s.display_id) === String(d.id)) || list[0] || null;
   if (!src || src.thumbnail.isEmpty()) return '';
+  return ocrImage(src.thumbnail);
+}
+
+/** The text in a picture (an Electron NativeImage), read by the OCR built into Windows. */
+async function ocrImage(img) {
+  if (process.platform !== 'win32' || !img || img.isEmpty()) return '';
   helper();
   const file = path.join(dir, `shot-${Date.now()}.png`);
-  fs.writeFileSync(file, src.thumbnail.toPNG());
+  fs.writeFileSync(file, img.toPNG());
   try {
     const r = await ocr(file);
     if (r.error) throw new Error(r.error);
@@ -101,4 +107,4 @@ async function read() {
 
 function stop() { try { if (proc) proc.kill(); } catch {} proc = null; }
 
-module.exports = { read, stop, OCR_HELPER };
+module.exports = { read, ocrImage, stop, OCR_HELPER };

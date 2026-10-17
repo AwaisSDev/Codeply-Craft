@@ -114,6 +114,25 @@ async function grabScreen() {
   } catch { shot = null; }
 }
 
+/**
+ * A fresh picture of the screen under the mouse for look_at_screen, with the
+ * drop see-through for that moment so it never covers what the person means.
+ */
+async function captureNow() {
+  const visible = win && !win.isDestroyed() && win.isVisible();
+  if (visible) { win.setOpacity(0); await new Promise((r) => setTimeout(r, 140)); }
+  try {
+    const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const k = Math.min(1, 1600 / d.size.width);
+    const list = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: Math.round(d.size.width * k), height: Math.round(d.size.height * k) } });
+    const src = list.find((s) => String(s.display_id) === String(d.id)) || list[0];
+    if (!src || src.thumbnail.isEmpty()) return null;
+    return { url: `data:image/jpeg;base64,${src.thumbnail.toJPEG(78).toString('base64')}`, img: src.thumbnail };
+  } finally {
+    if (visible && win && !win.isDestroyed()) win.setOpacity(1);
+  }
+}
+
 function toggle() {
   if (win && !win.isDestroyed() && win.isVisible() && win.isFocused()) { hide(); return; }
   // The picture first, so the drop isn't in it; never more than half a second's wait.
@@ -255,5 +274,5 @@ function voiceText(text, run) {
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', go); else go();
 }
 
-module.exports = { init, event, runs, show, hide, toggle, dispose, setPressHandler, voiceText, hotkeyLabel: () => (hotkey && process.platform === 'darwin' ? hotkey.replace('Alt', 'Option') : hotkey) };
+module.exports = { init, event, runs, show, hide, toggle, captureNow, dispose, setPressHandler, voiceText, hotkeyLabel: () => (hotkey && process.platform === 'darwin' ? hotkey.replace('Alt', 'Option') : hotkey) };
 

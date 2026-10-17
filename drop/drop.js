@@ -36,7 +36,7 @@
     write_file: ['Writing', 'Wrote'], edit_file: ['Editing', 'Edited'], apply_patch: ['Editing', 'Edited'],
     run: ['Running', 'Ran'], browser_check: ['Checking', 'Checked'], web_search: ['Searching the web for', 'Searched the web for'],
     image_search: ['Searching images for', 'Searched images for'], fetch_image: ['Downloading', 'Downloaded'],
-    view_images: ['Looking at', 'Looked at'], todo: ['Updating the task list', 'Updated the task list'],
+    view_images: ['Looking at', 'Looked at'], look_at_screen: ['Looking at your screen', 'Looked at your screen'], todo: ['Updating the task list', 'Updated the task list'],
     use_skill: ['Loading skill', 'Loaded skill'], list_skills: ['Searching skills', 'Searched skills'],
     ask_user: ['Asking you', 'Asked you'], gmail_send: ['Emailing', 'Emailed'], gmail_search: ['Searching Gmail', 'Searched Gmail'],
     slack_post_message: ['Posting', 'Posted'], vercel_deploy: ['Deploying', 'Deployed'], publish_deploy: ['Publishing', 'Published'],

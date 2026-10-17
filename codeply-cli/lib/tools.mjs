@@ -26,6 +26,7 @@ const { commandPatterns } = require('./arity.js');
 const mcpLib = require('./mcp.js');
 const reachLib = require('./reach.js');
 const lifeLib = require('./life.js');
+const screenLib = require('./screen.js');
 const botMailLib = require('./bot-mail.js');
 const applyLimit = require('./apply-limit.js');
 const config = require('./config.js');
@@ -2262,6 +2263,10 @@ function life_context(args, ctx) {
   return lifeLib.contextTool(args, { bot });
 }
 
+// ─── The user's screen (lib/screen.js; only a desktop host can look) ──────────
+// A picture of the screen and its text, for "this", "her message", "what's on my right".
+const look_at_screen = () => screenLib.lookTool();
+
 // ─── A bot's own email (lib/bot-mail.js; the host sends through Codeply's server) ─
 // The same editable card as gmail_send: what is left on it is what goes out.
 async function bot_email_send(args, ctx) {
@@ -2349,7 +2354,7 @@ export const TOOLS = {
   ask_bot,
   ask_user,
   mcp,
-  web_fetch, web_search, image_search, apply_patch, plan_exit, plan_enter, lsp, reach_me, watch_email, life_context, bot_email_send,
+  web_fetch, web_search, image_search, apply_patch, plan_exit, plan_enter, lsp, reach_me, watch_email, life_context, bot_email_send, look_at_screen,
   list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, browser_check,
   gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, slack_post_message, vercel_deploy, supabase_create_project, supabase_delete_project, github_create_repo,
   design_reference_search, view_images, supabase_api, supabase_sql, vercel_api, add_model,
@@ -2374,6 +2379,7 @@ export const TOOL_DISPLAY = {
   reach_me: { verb: 'phone', icon: '☎' },
   watch_email: { verb: 'watch', icon: '✉' },
   life_context: { verb: 'context', icon: '◷' },
+  look_at_screen: { verb: 'screen', icon: '◉' },
   bot_email_send: { verb: 'email', icon: '✉' },
   apply_patch:{ verb: 'patch',  icon: '✎' },
   plan_exit:  { verb: 'plan',   icon: '☐' },

@@ -3644,6 +3644,18 @@ app.whenReady().then(() => lifeDesktop.init({
 // and the mic in the background (life-listen.js), both off until the user turns them on.
 const lifeScreen = require('./life-screen');
 const lifeListen = require('./life-listen');
+// look_at_screen (codeply-cli/lib/screen.js): a fresh picture of the screen
+// under the mouse (the drop see-through for that moment) and its text.
+app.whenReady().then(() => {
+  require(path.join(CLI_DIR, 'lib', 'screen.js')).attach(async () => {
+    const shot = await drop.captureNow();
+    if (!shot) return { error: 'the screen could not be captured' };
+    const text = await lifeScreen.ocrImage(shot.img).catch(() => '');
+    let front = null;
+    try { const st = lifeDesktop.getStore(); const cur = st && st.getState('activity.current'); if (cur && Date.now() - cur.seenAt < 120000 && !/codeply|electron/i.test(cur.app || '')) front = cur; } catch {}
+    return { image: shot.url, text, app: front ? front.app : '', title: front ? front.title : '' };
+  });
+});
 // The call helper (call-listen.js): a bot that listens to calls on this PC,
 // whispers what helps, and takes the call when the user hands it over.
 const callListen = require('./call-listen');

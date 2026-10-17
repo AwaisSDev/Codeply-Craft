@@ -44,7 +44,7 @@
     read_file: 'Read', write_file: 'Wrote', edit_file: 'Edited', apply_patch: 'Patched', run: 'Ran', search: 'Searched',
     list_dir: 'Looked in', web_search: 'Searched the web for', web_fetch: 'Read', gmail_search: 'Searched Gmail', gmail_send: 'Emailed',
     slack_post_message: 'Posted to Slack', browser_check: 'Checked', fetch_image: 'Downloaded', todo: 'Updated the plan',
-    use_skill: 'Used skill', view_images: 'Looked at', ask_user: 'Asked you', mcp: 'Used', vercel_deploy: 'Deployed',
+    use_skill: 'Used skill', view_images: 'Looked at', look_at_screen: 'Looked at your screen', ask_user: 'Asked you', mcp: 'Used', vercel_deploy: 'Deployed',
   };
 
   const bot = (id) => state.catalog.bots.find((b) => b.id === id) || null;
