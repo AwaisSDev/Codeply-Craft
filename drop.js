@@ -6,7 +6,7 @@
 // shows up in Craft's sidebar too. The window is created on first use and only
 // hidden after that, so a task keeps reporting while it's out of sight; when the
 // agent needs an OK or an answer, the drop comes back on its own.
-const { BrowserWindow, globalShortcut, screen, ipcMain, dialog, shell } = require('electron');
+const { BrowserWindow, globalShortcut, screen, ipcMain, dialog, shell, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -99,9 +99,27 @@ function show({ focus = true } = {}) {
 
 function hide() { if (win && !win.isDestroyed()) win.hide(); }
 
+// What was on screen when the drop opened: one picture of the screen under the
+// mouse, taken just before the drop shows, kept in memory only. It goes out
+// with a message only when that message asks about the screen.
+let shot = null; // { url, at }
+const ABOUT_SCREEN = /\b(screen|screenshot|seeing|looking at|look at (this|that|it)|this (page|window|error|tab|site|app|image|picture|chart|graph|code|message|email|video|doc|document|file|bug|popup)|what('?s| is) (this|that|here)|whats (this|that)|on here|what (do|can) (you|u) see|you see|u see|read this|explain this)\b/i;
+async function grabScreen() {
+  try {
+    const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const k = Math.min(1, 1600 / d.size.width);
+    const list = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: Math.round(d.size.width * k), height: Math.round(d.size.height * k) } });
+    const src = list.find((s) => String(s.display_id) === String(d.id)) || list[0];
+    shot = src && !src.thumbnail.isEmpty() ? { url: `data:image/jpeg;base64,${src.thumbnail.toJPEG(78).toString('base64')}`, at: Date.now() } : null;
+  } catch { shot = null; }
+}
+
 function toggle() {
-  if (win && !win.isDestroyed() && win.isVisible() && win.isFocused()) hide();
-  else show();
+  if (win && !win.isDestroyed() && win.isVisible() && win.isFocused()) { hide(); return; }
+  // The picture first, so the drop isn't in it; never more than half a second's wait.
+  const visible = win && !win.isDestroyed() && win.isVisible();
+  if (visible) { show(); return; }
+  Promise.race([grabScreen(), new Promise((r) => setTimeout(r, 500))]).finally(() => show());
 }
 
 // Voice mode (voice-mode.js) decides whether a key down is a tap (toggle) or a hold (talk).
@@ -180,7 +198,11 @@ function init(h) {
       if (made.error) return made;
       cwd = made.cwd;
     }
-    const r = await host.startChatRun({ sessionId: sessionId || null, cwd, mode, text, bypass: bypass === true, clientId: 'drop' });
+    // Asking about the screen ("what am I looking at", "what's this error"): the picture goes with it.
+    const images = shot && Date.now() - shot.at < 15 * 60000 && ABOUT_SCREEN.test(String(text || '')) ? [shot.url] : undefined;
+    let r = await host.startChatRun({ sessionId: sessionId || null, cwd, mode, text, images, bypass: bypass === true, clientId: 'drop' });
+    if (images && r && r.error && /images|text only/i.test(r.error)) { r = await host.startChatRun({ sessionId: sessionId || null, cwd, mode, text, bypass: bypass === true, clientId: 'drop' }); }
+    else if (images && r && r.sessionId) send('drop:event', { sessionId: r.sessionId, type: 'notice', level: 'info', text: 'Sent a picture of your screen with this.' });
     if (r && r.sessionId && host.onAsk) { try { host.onAsk(text); } catch {} } // the shared life context (life-desktop.js)
     if (r && r.sessionId) {
       shownSession = r.sessionId;

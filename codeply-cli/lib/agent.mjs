@@ -1621,6 +1621,11 @@ async function callModel(messages, promptText, signal, route, tools = null, mcpT
  * that too, but models slip, so prose is cleaned before it's shown. Fenced
  * code is left exactly as written.
  */
+function cutFabricated(text) {
+  const i = String(text || '').search(/\[tool result\b/i);
+  return i < 0 ? text : text.slice(0, i).trim();
+}
+
 function withoutEmDashes(text) {
   return text.split(/(```[\s\S]*?```)/).map((part, i) => (i % 2 === 1 ? part
     : part.replace(/ \u2014 /g, ', ').replace(/\u2014/g, '-'))).join('');
@@ -2073,8 +2078,12 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       }
     }
 
-    if (prose) {
-      const shown = withoutEmDashes(prose);
+    // Narration next to an action that pastes a made-up tool result (lighter
+    // models copy the format): everything from there on is dropped, since the
+    // real result comes from the program. Final answers are audited above.
+    const narration = calls.length ? cutFabricated(prose) : prose;
+    if (narration) {
+      const shown = withoutEmDashes(narration);
       // interim: narration that accompanies an action (shown folded as "Thinking");
       // otherwise it's the final answer, shown as a normal message.
       yield { type: 'text', text: shown, interim: calls.length > 0 };
