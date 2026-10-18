@@ -1,0 +1,32 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.95"
+
+[workspace.dependencies]
+reel-core = { path = "crates/reel-core" }
+
+# Upstream engines, pinned. Bump both revs together and re-run `cargo test`.
+filmcraft-engine = { git = "https://github.com/storytold/filmcraft", rev = "48088e3a8e50bd4a7a71d1ebdfde0835b01a3051" }
+filmcraft-time = { git = "https://github.com/storytold/filmcraft", rev = "48088e3a8e50bd4a7a71d1ebdfde0835b01a3051" }
+effectcraft-engine = { git = "https://github.com/storytold/effectcraft", rev = "f36b2b3e6bd121dc52b00503cdf8d60f42ac242a" }
+effectcraft-host = { git = "https://github.com/storytold/effectcraft", rev = "f36b2b3e6bd121dc52b00503cdf8d60f42ac242a" }
+
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Mirrors effectcraft's own [patch]: patches don't propagate from a dependency's workspace.
+[patch.crates-io]
+hayro-syntax = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d", version = "=0.7.2" }
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 16

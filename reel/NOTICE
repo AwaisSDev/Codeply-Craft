@@ -1,0 +1,20 @@
+Codeply Reel
+Copyright (c) 2026 Awais Siddique (Codeply). Licensed under the MIT License (../LICENSE).
+
+Codeply Reel links, unmodified, the following open-source engines. Their source is fetched by
+Cargo at the pinned revisions in Cargo.toml; nothing of theirs is copied into this directory.
+
+FilmCraft — https://github.com/storytold/filmcraft (rev 48088e3a8e50bd4a7a71d1ebdfde0835b01a3051)
+Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option.
+
+EffectCraft — https://github.com/storytold/effectcraft (rev f36b2b3e6bd121dc52b00503cdf8d60f42ac242a)
+Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option.
+
+craft-libs — https://github.com/storytold/craft-libs (MIT OR Apache-2.0), pulled in by both.
+
+The ArtCraft name, wordmark and logos are trademarks of the ArtCraft Team and are not covered by
+those licenses; Codeply Reel does not use them. Binary releases must ship the upstream
+LICENSE-MIT / NOTICE / ATTRIBUTION.md files (third-party fonts and assets, OFL-1.1 and others)
+alongside this notice.

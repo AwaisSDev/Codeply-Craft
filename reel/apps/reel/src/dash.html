@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codeply Reel</title>
+<style>
+:root {
+  --bg: #f6f6f4; --panel: #ffffff; --ink: #1b1b1a; --dim: #6b6a66; --line: #e3e2de;
+  --ok: #1f7a4d; --bad: #b3261e; --accent: #3b5bdb; --code: #f0efeb;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111213; --panel: #1a1b1d; --ink: #e8e6e1; --dim: #9a978f; --line: #2a2b2e;
+    --ok: #4cc38a; --bad: #ff6b60; --accent: #8ea2ff; --code: #222326;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111213; --panel: #1a1b1d; --ink: #e8e6e1; --dim: #9a978f; --line: #2a2b2e;
+  --ok: #4cc38a; --bad: #ff6b60; --accent: #8ea2ff; --code: #222326;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--sans); }
+header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+header h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: .01em; }
+header .sub { color: var(--dim); font-size: 12px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+.dot.live { background: var(--ok); }
+.spacer { flex: 1; }
+button, select, input { font: inherit; color: var(--ink); background: var(--code); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
+button { cursor: pointer; }
+button.primary { background: var(--accent); color: #fff; border-color: transparent; }
+main { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; padding: 16px; max-width: 1500px; margin: 0 auto; }
+@media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); } }
+.kpis { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.kpi .v { font: 600 22px/1.2 var(--mono); font-variant-numeric: tabular-nums; }
+.kpi .v.txt { font-size: 15px; line-height: 1.9; }
+.kpi .l { color: var(--dim); font-size: 12px; }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
+.col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.log { max-height: 640px; overflow: auto; }
+table { width: 100%; border-collapse: collapse; font: 12px/1.4 var(--mono); }
+td, th { padding: 5px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+th { color: var(--dim); font-weight: 500; position: sticky; top: 0; background: var(--panel); }
+td.n { text-align: right; font-variant-numeric: tabular-nums; color: var(--dim); }
+td.cmd { word-break: break-all; }
+.tag { display: inline-block; font-size: 10px; padding: 0 5px; border-radius: 4px; margin-right: 6px; border: 1px solid var(--line); color: var(--dim); }
+.err { color: var(--bad); }
+.ok { color: var(--ok); }
+pre { margin: 0; padding: 10px 12px; font: 12px/1.45 var(--mono); white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow: auto; }
+textarea { width: 100%; min-height: 96px; resize: vertical; font: 12px/1.45 var(--mono); color: var(--ink); background: var(--code); border: 0; border-bottom: 1px solid var(--line); padding: 10px 12px; }
+.row { display: flex; gap: 8px; padding: 8px 12px; align-items: center; flex-wrap: wrap; }
+.preview { aspect-ratio: 16 / 9; background: repeating-conic-gradient(var(--code) 0 25%, var(--panel) 0 50%) 0 0 / 16px 16px; display: grid; place-items: center; color: var(--dim); font-size: 12px; }
+.preview img { max-width: 100%; max-height: 100%; display: block; }
+.empty { color: var(--dim); padding: 16px 12px; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span>
+  <h1>Codeply Reel</h1>
+  <span class="sub">agent-first edit + motion studio · built on FilmCraft and EffectCraft</span>
+  <span class="spacer"></span>
+  <span class="sub" id="rev">rev 0</span>
+  <button id="theme" title="Toggle theme">Theme</button>
+</header>
+<main>
+  <div class="kpis" id="kpis"></div>
+  <div class="col">
+    <section>
+      <h2>Command log <span class="spacer"></span><span id="logn"></span></h2>
+      <div class="log"><table><thead><tr><th>time</th><th>command</th><th>ms</th><th>tok</th></tr></thead><tbody id="log"></tbody></table>
+      <div class="empty" id="logEmpty">No commands yet. Agents POST scripts to <code>/api/run</code> or use <code>reel mcp</code>.</div></div>
+    </section>
+  </div>
+  <div class="col">
+    <section>
+      <h2>Preview <span class="spacer"></span>
+        <select id="eng"><option value="">auto</option><option value="cut">cut</option><option value="fx">fx</option></select>
+        <input id="t" type="number" step="0.1" placeholder="t (s)" style="width:80px">
+        <button id="refresh">Render</button>
+      </h2>
+      <div class="preview" id="preview">renders on each new revision</div>
+    </section>
+    <section>
+      <h2>Console</h2>
+      <textarea id="script" spellcheck="false" placeholder="reel.find q=razor&#10;fx.comp.new name=Title width=1920 height=1080 duration=4">reel.help</textarea>
+      <div class="row"><button class="primary" id="run">Run</button><span class="sub" id="runInfo"></span></div>
+      <pre id="out"></pre>
+    </section>
+    <section>
+      <h2>Document</h2>
+      <pre id="doc">—</pre>
+    </section>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let lastRev = -1, lastSteps = -1;
+
+try { const th = localStorage.getItem('reel-theme'); if (th) document.documentElement.dataset.theme = th; } catch (_) {}
+$('theme').onclick = () => {
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  const cur = document.documentElement.dataset.theme || (dark ? 'dark' : 'light');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('reel-theme', next); } catch (_) {}
+};
+
+function fmt(n) { return n >= 10000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n * 10) / 10); }
+function clock(ms) { const s = Math.floor(ms / 1000); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+function kpis(t) {
+  const per = t.steps ? t.tokens / t.steps : 0;
+  const ms = t.steps ? t.busyMs / t.steps : 0;
+  const items = [
+    [t.steps, 'commands run'],
+    [t.errors, 'errors'],
+    [t.tokens, 'reply tokens (est.)'],
+    [per, 'tokens / command'],
+    [ms, 'ms / command'],
+    [Object.entries(t.engines || {}).map(([k, v]) => `${k} ${v}`).join(' · ') || '—', 'by engine'],
+  ];
+  $('kpis').innerHTML = items.map(([v, l]) => `<div class="kpi"><div class="v${typeof v === 'number' ? '' : ' txt'}">${typeof v === 'number' ? fmt(v) : esc(v)}</div><div class="l">${l}</div></div>`).join('');
+}
+
+function log(t) {
+  $('logEmpty').style.display = t.log.length ? 'none' : '';
+  $('logn').textContent = t.log.length ? `last ${t.log.length}` : '';
+  $('log').innerHTML = t.log.map((e) => {
+    const [ns] = e.cmd.split('.');
+    const tag = ['cut', 'fx', 'reel'].includes(ns) ? `<span class="tag">${ns}</span>` : '';
+    const msg = e.ok ? '' : `<div class="err">${esc(e.err || 'failed')}</div>`;
+    return `<tr><td class="n">${clock(e.at)}</td><td class="cmd ${e.ok ? '' : 'err'}">${tag}${esc(e.cmd)}${msg}</td><td class="n">${e.ms}</td><td class="n">${e.tok}</td></tr>`;
+  }).join('');
+}
+
+async function poll() {
+  try {
+    const t = await (await fetch('/api/tele')).json();
+    $('dot').classList.add('live');
+    $('rev').textContent = `rev ${t.rev}`;
+    if (t.steps !== lastSteps) { kpis(t); log(t); lastSteps = t.steps; }
+    $('doc').textContent = JSON.stringify(t.summary || {}, null, 2);
+    if (t.rev !== lastRev) { lastRev = t.rev; if (t.rev > 0) render(); }
+  } catch (_) { $('dot').classList.remove('live'); }
+}
+
+async function render() {
+  const q = new URLSearchParams({ max: 640 });
+  if ($('eng').value) q.set('engine', $('eng').value);
+  if ($('t').value) q.set('t', $('t').value);
+  const r = await fetch('/api/frame?' + q);
+  if (!r.ok) { const j = await r.json().catch(() => ({})); $('preview').textContent = j.err || 'nothing to render yet'; return; }
+  const url = URL.createObjectURL(await r.blob());
+  $('preview').innerHTML = `<img alt="frame preview" src="${url}">`;
+}
+
+async function run() {
+  const t0 = performance.now();
+  const r = await fetch('/api/run', { method: 'POST', headers: { 'X-Reel': '1' }, body: $('script').value });
+  const j = await r.json();
+  $('out').textContent = typeof j.r === 'string' ? j.r : JSON.stringify(j, null, 2);
+  $('out').className = j.ok ? '' : 'err';
+  $('runInfo').textContent = `${Math.round(performance.now() - t0)} ms round trip`;
+  poll();
+}
+
+$('run').onclick = run;
+$('refresh').onclick = render;
+$('script').addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') run(); });
+poll();
+setInterval(poll, 1000);
+</script>
+</body>
+</html>
