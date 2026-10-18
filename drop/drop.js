@@ -437,7 +437,7 @@
       case 'tool_end': endStep(ev); break;
       case 'text': if (ev.text && ev.text.trim()) addAi(ev.text); break;
       case 'notice': addNote(ev.text, ev.level); break;
-      case 'error': addNote(ev.error, 'error'); break;
+      case 'error': addNote(ev.error, ev.limited ? 'limit' : 'error'); break;
       case 'task_start': steps = null; add(h(`<div class="task">${esc(ev.text)}</div>`)); break;
       case 'approval_request': addApproval(ev); break;
       case 'approval_resolved': resolveCard(ev.requestId, ev.verdict === 'reject' ? 'Not allowed' : 'Allowed'); break;

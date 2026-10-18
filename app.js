@@ -1202,6 +1202,28 @@ window.addEventListener('resize', () => { if (crewMode) api.crewBounds(crewArea(
 $('tasksCloseBtn').addEventListener('click', closeTasksModal);
 $('tasksBackdrop').addEventListener('click', (e) => { if (e.target === $('tasksBackdrop')) closeTasksModal(); });
 
+// Haze 2's 5-hour limit on the lighter models: when it comes back, and a way to keep going now.
+function addLimitCard(text) {
+  closeActivity();
+  const at = /resets at ([^,.]+)/i.exec(text || '');
+  const where = /limit for now (on this (?:computer|network))/i.exec(text || '');
+  const el = document.createElement('div');
+  el.className = 'limit-card';
+  el.innerHTML = '<div class="limit-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></div>' +
+    '<div class="limit-text"><b></b><span></span></div><button class="limit-btn" type="button">Choose a model</button>';
+  el.querySelector('b').textContent = `You've hit Haze 2's limit for now${where ? ` ${where[1]}` : ''}`;
+  el.querySelector('span').textContent = at ? `It resets at ${at[1].trim()}. Your own model works in the meantime.` : String(text || '');
+  // The click must not reach the page's "click outside closes the menu" handler, or the menu shuts at once.
+  // The visible chip (the home screen has its own, hidden here), so the menu opens beside it.
+  el.querySelector('.limit-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const chip = [...document.querySelectorAll('[data-role="model-chip"]')].find((c) => c.offsetParent !== null);
+    if (chip) chip.click();
+  });
+  chatColumn.appendChild(el);
+  if (nearBottom()) scrollToBottom();
+}
+
 function addNote(text, kind = '') {
   if (isQuietNotice(text)) return;
   const el = document.createElement('div');
@@ -3154,7 +3176,7 @@ if (api) api.onAgentEvent((data) => {
       if (window.CraftHandoff) window.CraftHandoff.render(data);
       break;
     case 'notice':
-      addNote(data.text, data.level === 'warn' ? 'warn' : data.level === 'error' ? 'error' : '');
+      addNote(data.text, data.level === 'warn' ? 'warn' : data.level === 'error' ? 'error' : data.level === 'limit' ? 'limit' : '');
       break;
     case 'verifying':
       // The check itself shows up as its own row; just keep the spinner going.
@@ -3251,7 +3273,8 @@ if (api) api.onAgentEvent((data) => {
     }
     case 'error':
       hideThinking();
-      if (isQuietNotice(data.error)) closeActivity();
+      if (data.limited) addLimitCard(data.error);
+      else if (isQuietNotice(data.error)) closeActivity();
       else addNote(data.error, 'error');
       break;
     case 'aborted':
@@ -3315,7 +3338,8 @@ async function openSession(id) {
     } else if (m.kind === 'publish' && window.CraftPublish) {
       window.CraftPublish.render(m);
     } else if (m.kind === 'notice') {
-      addNote(m.text, m.level === 'warn' ? 'warn' : m.level === 'error' ? 'error' : '');
+      if (m.level === 'limited') addLimitCard(m.text);
+      else addNote(m.text, m.level === 'warn' ? 'warn' : m.level === 'error' ? 'error' : m.level === 'limit' ? 'limit' : '');
     } else if (m.kind === 'goal') {
       renderGoalCard(m);
     } else if (m.kind === 'cloud_task' && window.CraftCloud) {

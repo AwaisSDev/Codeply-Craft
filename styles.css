@@ -1531,6 +1531,18 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
 }
 .chat-note.error { border-left-color: var(--red); color: var(--red); }
 .chat-note.ok { border-left-color: var(--green); }
+/* Haze 2 moved to lighter models, or they are nearly used up: a quiet line, not a warning. */
+.chat-note.limit { display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; border-left: 0; border-radius: 999px; padding: 6px 12px 6px 10px; background: var(--hover); color: var(--text-dim); }
+.chat-note.limit::before { content: ""; flex: none; width: 14px; height: 14px; background: var(--text-faint); -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27black%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27><path d=%27M13 3 5 14h6l-1 7 8-11h-6z%27/></svg>") center / contain no-repeat; }
+/* Past the 5-hour limit: when it comes back, and a way to keep going now. */
+.limit-card { display: flex; align-items: center; gap: 14px; margin: 8px 0 18px; padding: 14px 16px; border: 1px solid var(--card-border); border-radius: 14px; background: var(--card-bg); }
+.limit-icon { flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--purple-chip-bg); color: var(--accent); }
+.limit-icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.limit-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.limit-text b { font-size: 14px; font-weight: 600; color: var(--text); }
+.limit-text span { font-size: 13px; color: var(--text-dim); }
+.limit-btn { flex: none; height: 32px; padding: 0 14px; border-radius: 999px; border: 0; background: var(--invert-bg); color: var(--invert-text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.limit-btn:hover { background: var(--invert-bg-hover); }
 
 /* ---- Task Maker checklist ---- */
 .tasklist {

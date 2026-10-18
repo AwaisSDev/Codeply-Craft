@@ -131,6 +131,8 @@ svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; s
 .note { font-size: 13px; color: var(--dim); }
 .note.error { color: var(--red); }
 .note.warn { color: var(--warn); }
+.note.limit { display: flex; align-items: center; gap: 7px; width: fit-content; padding: 5px 11px 5px 9px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); }
+.note.limit::before { content: ""; flex: none; width: 13px; height: 13px; background: currentColor; opacity: .8; -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27black%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27><path d=%27M13 3 5 14h6l-1 7 8-11h-6z%27/></svg>") center / contain no-repeat; }
 
 .working { display: flex; align-items: center; gap: 8px; color: var(--faint); font-size: 13px; min-height: 24px; }
 .working .time { font-variant-numeric: tabular-nums; }

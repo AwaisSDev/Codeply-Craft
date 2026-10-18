@@ -2803,7 +2803,7 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
       if (ev.type === 'error' && typeof ev.error === 'string' && PROVIDER_EXHAUSTED_RE.test(ev.error)) {
         notifyProviderExhausted(session, ev.error);
       }
-      if (ev.type === 'error') session.messages.push({ kind: 'notice', level: 'error', text: ev.error, at: Date.now() });
+      if (ev.type === 'error') session.messages.push({ kind: 'notice', level: ev.limited ? 'limited' : 'error', text: ev.error, at: Date.now() });
       sendEvent(session.id, ev);
       sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
       if (ev.type === 'done') { status = 'done'; madeAnyEdit = !!ev.madeAnyEdit; break; }

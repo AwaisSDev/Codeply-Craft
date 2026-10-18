@@ -1894,6 +1894,8 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     if (!result.success) {
       yield {
         type: 'error',
+        // Haze 2's 5-hour limit: the app shows it as a card with a way to keep going.
+        ...(result.limited ? { limited: true, resetsAt: result.resetsAt || null } : {}),
         error: isNativeToolCallError(result.error)
           ? `The model kept trying to use the provider's function-calling API, which this proxy does not enable (${result.error}). Try rephrasing, or switch modes with tab.`
           : result.error,
@@ -1901,7 +1903,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       return;
     }
     // Haze 2 moved to lighter models, or they are nearly used up: one line, once per chat.
-    for (const text of ai.hazeNotice(result.route, haze && haze.chatId)) yield { type: 'notice', level: 'info', text };
+    for (const text of ai.hazeNotice(result.route, haze && haze.chatId)) yield { type: 'notice', level: 'limit', text };
     // The correction message, if one was needed, has to stay in the transcript.
     if (attempt.messages !== outgoing) {
       messages.push(attempt.messages[attempt.messages.length - 1]);
