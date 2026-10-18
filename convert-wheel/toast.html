@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>Convert</title>
+<script src="../drop/theme.js"></script>
+<link rel="stylesheet" href="wheel.css">
+</head>
+<body class="toast-page">
+<div class="toast" id="toast" role="status" aria-live="polite">
+  <div class="icon" id="icon"></div>
+  <div class="words">
+    <div class="title" id="title"></div>
+    <div class="detail" id="detail"></div>
+  </div>
+  <button type="button" id="reveal" hidden>Show in folder</button>
+  <button type="button" class="close" id="close" aria-label="Close" title="Close">
+    <svg viewBox="0 0 14 14" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8"/></svg>
+  </button>
+</div>
+<script src="toast.js"></script>
+</body>
+</html>

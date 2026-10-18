@@ -439,6 +439,7 @@ function buildTrayMenu() {
     { label: key ? `Open the drop (${key})` : 'Open the drop', click: () => drop.show() },
     ...(voiceMode.available() ? [{ label: key ? `Orbit speaks its answers (hold ${key} to talk)` : 'Orbit speaks its answers', type: 'checkbox', checked: !voiceMode.isMuted(), click: (item) => voiceMode.setMuted(!item.checked) }] : []),
     ...(voiceMode.available() && voiceMode.canAct() ? [{ label: 'Orbit can click and type for me', type: 'checkbox', checked: voiceMode.actionsOn(), click: (item) => voiceMode.setActions(item.checked) }] : []),
+    ...convertWheel.trayItems(),
     { type: 'separator' },
     ...(app.isPackaged ? [{ label: process.platform === 'darwin' ? 'Open at login' : 'Start with Windows', type: 'checkbox', checked: startsWithSystem(), click: (item) => setStartWithSystem(item.checked) }] : []),
     {
@@ -3581,9 +3582,15 @@ function initDrop() {
     onAsk: (text, answer) => lifeDesktop.noteAsk(text, answer, 'orbit'),
   });
   drop.setPressHandler(voiceMode.press);
+  // Drag + Shift: a wheel of formats to convert a dragged file to (see convert-wheel.js).
+  convertWheel.init({
+    getSetting: (k) => store[k], setSetting: (k, v) => { store[k] = v; saveStore(); },
+    onChange: buildTrayMenu,
+  });
   buildTrayMenu();
 }
 const voiceMode = require('./voice-mode');
+const convertWheel = require('./convert-wheel');
 
 // Craft Cloud: runs on GitHub Actions while this PC is off (see cloud-desktop.js).
 const cloudDesktop = require('./cloud-desktop');
@@ -3983,6 +3990,7 @@ app.on('before-quit', () => {
   isQuitting = true;
   drop.dispose();
   voiceMode.dispose();
+  convertWheel.dispose();
   for (const client of remoteEventClients) { try { client.end(); } catch {} }
   remoteEventClients.clear();
   if (remoteServer) remoteServer.close();

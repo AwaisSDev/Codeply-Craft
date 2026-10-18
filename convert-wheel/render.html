@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; worker-src 'self' blob:">
+<title>Converter</title>
+<style id="pageStyle"></style>
+<style>
+  html, body { margin: 0; padding: 0; background: #fff; }
+  /* docx-preview's pages, without the grey desk and shadows around them */
+  .docx-wrapper { background: none !important; padding: 0 !important; display: block !important; }
+  .docx-wrapper > section.docx { box-shadow: none !important; margin: 0 !important; break-after: page; }
+  .docx-wrapper > section.docx:last-child { break-after: auto; }
+</style>
+<script src="../vendor/docx/jszip.min.js"></script>
+<script src="../vendor/docx/docx-preview.min.js"></script>
+<script type="module" src="render.js"></script>
+</head>
+<body><div id="doc"></div></body>
+</html>
