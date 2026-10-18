@@ -225,9 +225,10 @@ function foreground() {
 }
 
 let idleSeconds = 0;
+let lastFg = { s: null, at: 0 };
 async function sampleActivity() {
   if (!sourceOn('activity')) return { skipped: true };
-  const s = await foreground();
+  const s = Date.now() - lastFg.at < 5000 ? lastFg.s : await foreground();
   if (!s) return { none: true };
   idleSeconds = Number(s.idle) || 0;
   store.setState('pc.idle', { seconds: idleSeconds, at: Date.now() });
@@ -235,30 +236,46 @@ async function sampleActivity() {
   if (idleSeconds > 300) { store.setState('activity.current', null); return { idle: idleSeconds }; }
   const r = SRC().activityTick({ store, sample: s });
   if (r.kind === 'call' && deps.onCallWindow) { try { deps.onCallWindow(store.getState('call.current')); } catch {} }
-  await readScreen(s, r).catch((e) => { status.sources.screen = { ...(status.sources.screen || {}), error: String(e.message || e).slice(0, 200) }; });
   return r;
 }
 
 // ─── The words on screen (life-screen.js: Windows' own OCR, on this PC) ─────
-// When the window in front changes, and every 2 minutes on the same one. Never
-// a private window, a password manager, a call, or Craft itself.
+// Every 4 seconds a look at the window in front; its words are read the moment
+// it changes (a tab looked at for a few seconds is still remembered), and every
+// 2 minutes on the same one. Never a private window, a password manager, a
+// call, or Craft itself.
 let lastScreen = { sig: '', at: 0 };
-async function readScreen(sample, r) {
-  if (!sourceOn('screen') || !deps.screenText) return;
-  if (!r || ['none', 'private', 'call'].includes(r.kind)) { if (r && r.kind === 'private') store.setState('activity.screen', null); return; }
-  if (/^(electron|codeply.*)$/i.test(String(sample.app || ''))) return;
-  const cur = store.getState('activity.current') || {};
-  const sig = `${cur.app || sample.app}|${sample.title || ''}`;
+const BROWSER_SUFFIX = / [-\u2013\u2014] (Google Chrome|Microsoft\u200b? Edge|Mozilla Firefox|Brave|Opera|Vivaldi)$/i;
+async function sampleScreen() {
+  if (!sourceOn('screen') || !deps.screenText) return { skipped: true };
+  const s = await foreground();
+  if (!s) return { none: true };
+  lastFg = { s, at: Date.now() };
+  if (Number(s.idle) > 120) return { idle: true };
+  const c = SRC().classifyWindow(s);
+  if (c.kind === 'private') { store.setState('activity.screen', null); return { kind: 'private' }; }
+  if (c.kind === 'none' || c.kind === 'call') return { kind: c.kind };
+  if (/^(electron|codeply.*)$/i.test(String(s.app || ''))) return { kind: 'craft' };
+  const app = SRC().appName(s.app);
+  const title = String(s.title || '').replace(BROWSER_SUFFIX, '').trim();
+  const sig = `${app}|${title}`;
   const now = Date.now();
-  if (sig === lastScreen.sig && now - lastScreen.at < 2 * 60000) return;
+  if (sig === lastScreen.sig && now - lastScreen.at < 2 * 60000) return { same: true };
   lastScreen = { sig, at: now };
-  const text = String(await deps.screenText({ title: sample.title || '' }) || '').slice(0, 6000);
-  if (text.replace(/\s+/g, '').length < 20) return;
-  store.setState('activity.screen', { app: cur.app || sample.app, title: cur.title || sample.title || '', text, at: now });
-  // One item per window, updated as it changes, so the Ask box finds what was on screen (kept 3 days).
+  const text = String(await deps.screenText({ title }) || '').slice(0, 6000);
+  if (text.replace(/\s+/g, '').length < 20) return { empty: true };
+  store.setState('activity.screen', { app, title, text, at: now });
+  // One item per window, updated as it changes, so the drop and the Ask box find what was on screen (kept 3 days).
   const id = `screen:${crypto.createHash('sha1').update(sig.toLowerCase()).digest('hex').slice(0, 16)}`;
-  store.upsertItem({ id, source: 'screen', kind: 'screen', at: now, title: `${cur.app || sample.app}${cur.title ? `: ${cur.title}` : ''}`.slice(0, 200), body: text, data: { app: cur.app || sample.app } });
+  store.upsertItem({ id, source: 'screen', kind: 'screen', at: now, title: `${app}${title ? `: ${title}` : ''}`.slice(0, 200), body: text, data: { app } });
   status.sources.screen = { ...(status.sources.screen || {}), lastOk: now, error: '' };
+  return { read: sig };
+}
+
+/** What was on screen lately, newest first: [{ title, text, at }]. The drop sends the ones a question is about. */
+function recentScreens(ms = 30 * 60000, limit = 12) {
+  if (!store || !started || !sourceOn('screen')) return [];
+  return store.items({ sources: ['screen'], from: Date.now() - ms, limit }).map((x) => ({ title: x.title, text: x.body || '', at: x.at }));
 }
 const atPc = () => idleSeconds < 120 && Date.now() - ((store && store.getState('pc.idle', {}) || {}).at || 0) < 2 * 60000;
 
@@ -456,6 +473,7 @@ function start() {
   every('gmail', 5 * 60000, pollGmail, 9000);
   every('projects', 10 * 60000, pollProjects, 15000);
   every('activity', 30000, sampleActivity, 6000);
+  every('screen', 4000, sampleScreen, 7000);
   every('nudges', 60000, tick, 45000);
   every('housekeeping', 6 * 3600000, async () => store.prune(), 120000);
   pushState();
@@ -483,5 +501,5 @@ function init(d) {
 module.exports = {
   init, start, stop, poke, noteCall, noteAsk, feedback,
   // for the call helper, bot mail and the autopilot
-  getStore: () => store, ensureStore: () => openStore(), isOn: () => started, status: () => status, setSettings, sourceOn, settings: () => settings, atPc, pushState, localTz,
+  getStore: () => store, ensureStore: () => openStore(), recentScreens, isOn: () => started, status: () => status, setSettings, sourceOn, settings: () => settings, atPc, pushState, localTz,
 };

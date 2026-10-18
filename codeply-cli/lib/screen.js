@@ -15,24 +15,41 @@ const RECALL_MS = 30 * 60000; // after that the chat still remembers it, as "whe
 function attach(fn) { host = typeof fn === 'function' ? fn : null; }
 function available() { return !!host; }
 
-/** The screen's text was read for this chat (the drop reads it with every message). */
-function remember(chatId, { text = '', app = '', title = '' } = {}) {
-  if (!chatId || !String(text).trim()) return;
+/**
+ * The screen's text was read for this chat (the drop reads it with every
+ * message). earlier: screens from a few minutes ago that the message seems to
+ * be about ([{ title, text, at }]), and others: the other windows lately.
+ */
+function remember(chatId, { text = '', app = '', title = '', earlier = [], others = [] } = {}) {
+  if (!chatId || !(String(text).trim() || earlier.length)) return;
+  // A follow-up ("try now") names nothing new: the earlier screens this chat was about stay with it.
+  const prev = seen.get(chatId);
+  const kept = earlier.length ? earlier : (prev && prev.earlier || []).filter((e) => Date.now() - e.at < RECALL_MS);
   seen.delete(chatId);
-  seen.set(chatId, { text: String(text).slice(0, 6000), app, title, at: Date.now() });
+  seen.set(chatId, { text: String(text).slice(0, 6000), app, title, earlier: kept.slice(0, 2), others: others.slice(0, 8), at: Date.now() });
   if (seen.size > 200) seen.delete(seen.keys().next().value);
 }
 
-/** The block for this turn's context: what is on screen now, or what this chat saw last. '' when nothing. */
+const ago = (ms) => (ms < 60000 ? 'just now' : `${Math.round(ms / 60000)} min ago`);
+
+/** The block for this turn's context: what is on screen now, what was on it lately, or what this chat saw last. '' when nothing. */
 function contextFor(chatId, now = Date.now()) {
   const s = chatId && seen.get(chatId);
   if (!s || now - s.at > RECALL_MS) return '';
   const age = now - s.at;
-  const where = s.app ? ` (${s.app}${s.title ? `, "${s.title}"` : ''})` : '';
-  const head = age < FRESH_MS
-    ? `ON THE USER'S SCREEN RIGHT NOW${where}, read by OCR just now`
-    : `THE USER'S SCREEN WHEN YOU LAST LOOKED${where}, ${Math.round(age / 60000)} min ago; it may have changed since`;
-  return `${head}:\n${s.text.slice(0, 4000)}\n\nEach line is one row of the screen, left to right, with | between columns, so a table row (a name and its numbers) is on one line; numbers on a row belong to that row. OCR can misread a character (5 as s, 1 as l). Use this when the message is about what they are looking at (names, numbers, a message, an error on screen), and answer from it directly. For a picture, or if it looks out of date, call look_at_screen. Never mention the Codeply chat window itself.`;
+  const parts = [];
+  if (s.text) {
+    const where = s.app ? ` (${s.app}${s.title ? `, "${s.title}"` : ''})` : '';
+    parts.push(`${age < FRESH_MS ? `ON THE USER'S SCREEN RIGHT NOW${where}, read by OCR just now` : `THE USER'S SCREEN WHEN YOU LAST LOOKED${where}, ${ago(age)}; it may have changed since`}:\n${s.text.slice(0, 4000)}`);
+  }
+  for (const e of s.earlier || []) parts.push(`EARLIER ON THE USER'S SCREEN, ${ago(now - e.at)}: ${e.title}\n${String(e.text).slice(0, 3000)}`);
+  if ((s.others || []).length) parts.push(`Other windows the user had in front lately: ${s.others.map((o) => `${o.title} (${ago(now - o.at)})`).join('; ')}. For what was on them, use life_context with a query.`);
+  parts.push([
+    'How to read this: each line is one row of the screen, left to right, with | between columns, so a number belongs to the words on its own line. Read every number with the word printed right next to it ("693m views" is a view count, "40.2m subscribers" is a channel\'s subscribers) and never swap or estimate them. OCR can misread a character (5 as s, 1 as l).',
+    '"That video", "that page", "again": the user may mean something they saw a few minutes ago, so check the earlier screens before saying you can\'t see it.',
+    'Answer from this directly when the message is about what they are or were looking at. For a closer look at the screen now, call look_at_screen. If the answer is not here, say so plainly. Never say you looked something up, searched or checked unless you called a tool for it this turn, and never mention the Codeply chat window itself.',
+  ].join(' '));
+  return parts.join('\n\n');
 }
 
 async function lookTool(ctx = {}) {

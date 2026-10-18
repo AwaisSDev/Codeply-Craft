@@ -1283,6 +1283,7 @@ function hazeField(h) {
       turnId: h.turnId,
       continuation: (h.step || 0) > 0,
       historyCount: h.historyCount || 0,
+      ...(h.screen ? { screen: true } : {}), // this turn carries the user's screen
       state: hazeStates.get(h.chatId) || undefined,
     },
   };

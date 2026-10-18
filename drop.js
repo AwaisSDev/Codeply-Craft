@@ -104,7 +104,27 @@ function hide() { if (win && !win.isDestroyed()) win.hide(); }
 // mouse, taken just before the drop shows, kept in memory only. It goes out
 // with a message only when that message asks about the screen.
 let shot = null; // { url, img, at, text: Promise<string> }
-const ABOUT_SCREEN = /\b(screen|screenshot|seeing|looking at|look at (this|that|it)|this (page|window|error|tab|site|app|image|picture|chart|graph|code|message|email|video|doc|document|file|bug|popup)|what('?s| is) (this|that|here)|whats (this|that)|on here|what (do|can) (you|u) see|you see|u see|read this|explain this)\b/i;
+const ABOUT_SCREEN = /\b(screen|screenshot|seeing|looking at|look at (this|that|it)|(this|that) (page|window|error|tab|site|app|image|picture|chart|graph|code|message|email|video|post|tweet|reel|story|doc|document|file|bug|popup|price|number)|how (many|much)|what('?s| is) (this|that|here)|whats (this|that)|on here|what (do|can) (you|u) see|you see|u see|read this|explain this)\b/i;
+
+// Screens from the last half hour (Life's "Read my screen" keeps them): the ones
+// this message is about go along too, so "how many views did that video have"
+// works after switching to another tab.
+const STOP = new Set('the and for you your that this there their what was were how many much again with from have has had did does are its can could would should about just now then than one also into some any'.split(' '));
+function earlierScreens(text) {
+  let list = [];
+  try { list = require('./life-desktop').recentScreens(); } catch {}
+  if (!list.length) return { earlier: [], others: [] };
+  const words = [...new Set(String(text || '').toLowerCase().match(/[a-z0-9]{3,}/g) || [])].filter((w) => !STOP.has(w));
+  const earlier = list
+    .map((x) => ({ ...x, score: words.reduce((n, w) => n + (x.title.toLowerCase().includes(w) ? 3 : 0) + (x.text.toLowerCase().includes(w) ? 1 : 0), 0) }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score || b.at - a.at)
+    .slice(0, 2)
+    .map(({ title, text: t, at }) => ({ title, text: t, at }));
+  const taken = new Set(earlier.map((x) => x.title));
+  const others = list.filter((x) => !taken.has(x.title)).slice(0, 8).map(({ title, at }) => ({ title, at }));
+  return { earlier, others };
+}
 async function grabScreen() {
   try {
     const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
@@ -227,7 +247,8 @@ function init(h) {
     const screenText = now ? await Promise.race([now.text, new Promise((r) => setTimeout(() => r(''), 4000))]) : '';
     // Asking about the screen ("what am I looking at", "what's this error"): the picture goes too.
     const images = now && ABOUT_SCREEN.test(String(text || '')) ? [now.url] : undefined;
-    const screenRead = screenText ? { text: screenText } : null;
+    const { earlier, others } = earlierScreens(text);
+    const screenRead = screenText || earlier.length ? { text: screenText, earlier, others } : null;
     let r = await host.startChatRun({ sessionId: sessionId || null, cwd, mode, text, images, screen: screenRead, bypass: bypass === true, clientId: 'drop' });
     if (images && r && r.error && /images|text only/i.test(r.error)) { r = await host.startChatRun({ sessionId: sessionId || null, cwd, mode, text, screen: screenRead, bypass: bypass === true, clientId: 'drop' }); }
     else if (images && r && r.sessionId) send('drop:event', { sessionId: r.sessionId, type: 'notice', level: 'info', text: 'Sent a picture of your screen with this.' });

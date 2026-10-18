@@ -3118,7 +3118,7 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   // images are kept on the session record so reopening the chat still shows
   // them; buildHistory() only re-sends the last few to the model.
   // The screen's text sent with this message (the drop): the agent sees it, and the chat remembers it.
-  if (screen && screen.text) { try { require(path.join(CLI_DIR, 'lib', 'screen.js')).remember(session.id, screen); } catch {} }
+  if (screen && (screen.text || (screen.earlier || []).length)) { try { require(path.join(CLI_DIR, 'lib', 'screen.js')).remember(session.id, screen); } catch {} }
   if (!resume) session.messages.push({ kind: 'user', text: typedText, ...(expandedText ? { expanded: expandedText } : {}), images: images?.length ? images : undefined, at: Date.now() });
   session.updatedAt = Date.now();
   session.cwd = cwd;

@@ -1742,6 +1742,8 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   // What this chat saw on the user's screen (the drop reads it with every message; lib/screen.js).
   const chatId = hazeOpts?.chatId || null;
   const screenBlock = screenLib.contextFor(chatId);
+  // A question about the screen needs careful reading: Haze 2 never treats it as small talk.
+  if (haze && screenBlock) haze.screen = true;
   const messages = sections
     ? [
       { role: 'system', content: sections.core },
