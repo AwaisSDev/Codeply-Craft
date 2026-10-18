@@ -3659,6 +3659,8 @@ app.whenReady().then(() => lifeDesktop.init({
   callState: () => callListen.state(),
   takeoverReady: () => callListen.takeoverReady(),
   screenText: (o) => lifeScreen.read(o),
+  screenRead: () => lifeScreen.readWithImage(),
+  screenCapture: () => lifeScreen.capture(),
   screenStop: () => lifeScreen.stop(),
   listenState: () => lifeListen.state(),
   onListenChange: () => lifeListen.sync(),
@@ -3670,7 +3672,14 @@ const lifeListen = require('./life-listen');
 // look_at_screen (codeply-cli/lib/screen.js): a fresh picture of the screen
 // under the mouse (the drop see-through for that moment) and its text.
 app.whenReady().then(() => {
-  require(path.join(CLI_DIR, 'lib', 'screen.js')).attach(async () => {
+  require(path.join(CLI_DIR, 'lib', 'screen.js')).attach(async ({ window: want } = {}) => {
+    // An earlier window, from Life's picture buffer: no new screenshot.
+    if (want) {
+      const f = lifeDesktop.findFrame(want);
+      if (!f) return { error: `no recent screen matches "${want}" (only the last 12 windows are kept, while Read my screen is on)` };
+      const scr = lifeDesktop.recentScreens().find((x) => x.title === f.title);
+      return { image: f.url, text: scr ? scr.text : '', title: f.title, ago: Date.now() - f.at };
+    }
     const shot = await drop.captureNow();
     if (!shot) return { error: 'the screen could not be captured' };
     const text = await lifeScreen.ocrImage(shot.img).catch(() => '');

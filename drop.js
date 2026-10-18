@@ -246,9 +246,18 @@ function init(h) {
     if (!now) { try { const c = await captureNow(); if (c) now = { ...c, at: Date.now(), text: lifeScreen.ocrImage(c.img).catch(() => '') }; } catch {} }
     const screenText = now ? await Promise.race([now.text, new Promise((r) => setTimeout(() => r(''), 4000))]) : '';
     // Asking about the screen ("what am I looking at", "what's this error"): the picture goes too.
-    const images = now && ABOUT_SCREEN.test(String(text || '')) ? [now.url] : undefined;
     const { earlier, others } = earlierScreens(text);
-    const screenRead = screenText || earlier.length ? { text: screenText, earlier, others } : null;
+    // Pictures: the screen now when the message asks about it, and the earlier screen it is
+    // about straight from Life's picture buffer (no new screenshot), each named for the model.
+    const pics = [];
+    if (now && ABOUT_SCREEN.test(String(text || ''))) pics.push({ url: now.url, what: 'the screen right now' });
+    if (earlier.length) {
+      let frame = null;
+      try { frame = require('./life-desktop').recentFrames().find((f) => f.title === earlier[0].title) || null; } catch {}
+      if (frame) pics.push({ url: frame.url, what: `${frame.title}, ${Math.max(1, Math.round((Date.now() - frame.at) / 60000))} min ago` });
+    }
+    const images = pics.length ? pics.map((p) => p.url) : undefined;
+    const screenRead = screenText || earlier.length ? { text: screenText, earlier, others, pictures: pics.map((p) => p.what) } : null;
     let r = await host.startChatRun({ sessionId: sessionId || null, cwd, mode, text, images, screen: screenRead, bypass: bypass === true, clientId: 'drop' });
     if (images && r && r.error && /images|text only/i.test(r.error)) { r = await host.startChatRun({ sessionId: sessionId || null, cwd, mode, text, screen: screenRead, bypass: bypass === true, clientId: 'drop' }); }
     else if (images && r && r.sessionId) send('drop:event', { sessionId: r.sessionId, type: 'notice', level: 'info', text: 'Sent a picture of your screen with this.' });

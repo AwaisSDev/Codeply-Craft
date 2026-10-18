@@ -357,7 +357,7 @@ const PARAMS = {
   reach_me: ['how', 'message', 'at', 'bot'], // only when the host can reach the phone (lib/reach.js)
   watch_email: ['from', 'how', 'note', 'repeat'],
   life_context: ['about', 'query'], // only when the host attached the life store (lib/life.js)
-  look_at_screen: ['why'], // only when the host can take a screenshot (lib/screen.js)
+  look_at_screen: ['why', 'window'], // only when the host can take a screenshot (lib/screen.js)
   bot_email_send: ['to', 'subject', 'body', 'reply_to'], // only for a bot with its own address (lib/bot-mail.js)
   apply_patch: ['patch'],
   plan_exit: ['path'],

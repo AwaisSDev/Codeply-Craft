@@ -245,9 +245,42 @@ async function sampleActivity() {
 // 2 minutes on the same one. Never a private window, a password manager, a
 // call, or Craft itself.
 let lastScreen = { sig: '', at: 0 };
+let lastFrameAt = 0;
+
+// The picture buffer: the last 12 different screens (one picture per window or
+// tab, the newest look at it), in memory only and gone when Craft closes. A
+// question about something seen a few minutes ago gets its picture at once,
+// with no new screenshot. Only while "Read my screen" is on.
+const FRAMES = 12;
+const frames = []; // { title, at, jpeg }, oldest first
+function keepFrame(label, img) {
+  if (!img || img.isEmpty()) return;
+  const { width } = img.getSize();
+  const small = width > 1600 ? img.resize({ width: 1600, quality: 'good' }) : img;
+  const i = frames.findIndex((f) => f.title === label);
+  if (i >= 0) frames.splice(i, 1);
+  frames.push({ title: label, at: Date.now(), jpeg: small.toJPEG(72) });
+  while (frames.length > FRAMES) frames.shift();
+}
+const words = (t) => [...new Set(String(t || '').toLowerCase().match(/[a-z0-9]{3,}/g) || [])];
+/** The buffer, newest first, as pictures the model can take: [{ title, at, url }]. */
+function recentFrames() {
+  return frames.slice().reverse().map((f) => ({ title: f.title, at: f.at, url: `data:image/jpeg;base64,${f.jpeg.toString('base64')}` }));
+}
+/** The buffered screen whose title best matches these words (newest wins a tie), or null. */
+function findFrame(query) {
+  const want = words(query);
+  let best = null; let bestScore = 0;
+  for (const f of recentFrames()) {
+    const t = f.title.toLowerCase();
+    const score = want.reduce((n, w) => n + (t.includes(w) ? 1 : 0), 0);
+    if (score > bestScore) { best = f; bestScore = score; }
+  }
+  return best;
+}
 const BROWSER_SUFFIX = / [-\u2013\u2014] (Google Chrome|Microsoft\u200b? Edge|Mozilla Firefox|Brave|Opera|Vivaldi)$/i;
 async function sampleScreen() {
-  if (!sourceOn('screen') || !deps.screenText) return { skipped: true };
+  if (!sourceOn('screen') || !deps.screenText) { frames.length = 0; return { skipped: true }; }
   const s = await foreground();
   if (!s) return { none: true };
   lastFg = { s, at: Date.now() };
@@ -260,14 +293,28 @@ async function sampleScreen() {
   const title = String(s.title || '').replace(BROWSER_SUFFIX, '').trim();
   const sig = `${app}|${title}`;
   const now = Date.now();
-  if (sig === lastScreen.sig && now - lastScreen.at < 2 * 60000) return { same: true };
+  const label = `${app}${title ? `: ${title}` : ''}`.slice(0, 200);
+  // Same window: a fresh picture every 10 s (a video plays, a page scrolls) and its words every 30 s.
+  const same = sig === lastScreen.sig;
+  if (same && now - lastScreen.at < 30000) {
+    if (now - lastFrameAt < 10000 || !deps.screenCapture) return { same: true };
+    lastFrameAt = now;
+    keepFrame(label, await deps.screenCapture());
+    return { frame: sig };
+  }
   lastScreen = { sig, at: now };
-  const text = String(await deps.screenText({ title }) || '').slice(0, 6000);
+  let text = '';
+  if (deps.screenRead) {
+    const r = await deps.screenRead({ title });
+    keepFrame(label, r && r.img);
+    lastFrameAt = now;
+    text = String((r && r.text) || '').slice(0, 6000);
+  } else text = String(await deps.screenText({ title }) || '').slice(0, 6000);
   if (text.replace(/\s+/g, '').length < 20) return { empty: true };
   store.setState('activity.screen', { app, title, text, at: now });
   // One item per window, updated as it changes, so the drop and the Ask box find what was on screen (kept 3 days).
   const id = `screen:${crypto.createHash('sha1').update(sig.toLowerCase()).digest('hex').slice(0, 16)}`;
-  store.upsertItem({ id, source: 'screen', kind: 'screen', at: now, title: `${app}${title ? `: ${title}` : ''}`.slice(0, 200), body: text, data: { app } });
+  store.upsertItem({ id, source: 'screen', kind: 'screen', at: now, title: label, body: text, data: { app } });
   status.sources.screen = { ...(status.sources.screen || {}), lastOk: now, error: '' };
   return { read: sig };
 }
@@ -401,6 +448,7 @@ function panelState() {
     callNow: deps.callState ? deps.callState() : null,
     listen: deps.listenState ? deps.listenState() : null,
     screen: (() => { const sc = store && started && sourceOn('screen') ? store.getState('activity.screen') : null; return sc && Date.now() - sc.at < 5 * 60000 ? { app: sc.app, title: sc.title, at: sc.at } : null; })(),
+    screenFrames: frames.length, // pictures in the buffer (memory only)
     heardToday: store && started ? store.items({ sources: ['heard'], from: new Date().setHours(0, 0, 0, 0), limit: 40 }).map((x) => ({ id: x.id, title: x.title, kind: x.kind, at: x.at })) : [],
     takeoverReady: deps.takeoverReady ? deps.takeoverReady() : undefined,
     platform: process.platform,
@@ -484,6 +532,7 @@ function stop() {
   try { if (fg) fg.kill(); } catch {}
   fg = null;
   try { if (deps.screenStop) deps.screenStop(); } catch {}
+  frames.length = 0;
   try { LIFE().detach(); } catch {}
   pushState();
 }
@@ -501,5 +550,5 @@ function init(d) {
 module.exports = {
   init, start, stop, poke, noteCall, noteAsk, feedback,
   // for the call helper, bot mail and the autopilot
-  getStore: () => store, ensureStore: () => openStore(), recentScreens, isOn: () => started, status: () => status, setSettings, sourceOn, settings: () => settings, atPc, pushState, localTz,
+  getStore: () => store, ensureStore: () => openStore(), recentScreens, recentFrames, findFrame, isOn: () => started, status: () => status, setSettings, sourceOn, settings: () => settings, atPc, pushState, localTz,
 };

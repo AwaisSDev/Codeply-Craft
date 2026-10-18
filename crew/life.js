@@ -133,7 +133,7 @@
       body += `<label class="lf-consent"><input type="checkbox" data-consent-heard><span><b>I'll tell people an assistant is listening</b><em>Tick to turn the mic on. Many places require everyone's consent.</em></span></label>`;
     }
     const screenSub = !screen.on ? 'The words on screen, read on this PC'
-      : l.screen ? live(`Reading ${esc(l.screen.app || 'your screen')}`) : 'Reads when you use your PC';
+      : l.screen ? `${live(`Reading ${esc(l.screen.app || 'your screen')}`)}${l.screenFrames ? ` · ${l.screenFrames} recent screen${l.screenFrames === 1 ? '' : 's'} kept` : ''}` : 'Reads when you use your PC';
     body += row({ icon: ROWICON.screen, title: 'Read my screen', sub: screenSub, attr: 'title="Every time the window in front changes, the OCR built into Windows reads the words on screen. No images are kept, and private windows and password managers are skipped."', right: sw('data-src="screen"', screen.on) });
     const list = saved.length
       ? `<details class="lf-more" data-more="heard" ${openMore.has('heard') ? 'open' : ''}><summary>Saved today (${saved.length})</summary>${saved.map((x) => `<div class="lf-hit"><div><b>${esc(x.title)}</b><span>${esc(KIND[x.kind] || 'Note')} · ${esc(clock(x.at))}</span></div><button class="lf-forget" data-forget-item="${esc(x.id)}" title="Forget this">${ICON.x}</button></div>`).join('')}</details>` : '';

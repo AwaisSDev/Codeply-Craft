@@ -92,14 +92,25 @@ function ocr(file) {
  * there is nothing to read.
  */
 async function read() {
-  if (process.platform !== 'win32') return '';
+  const r = await readWithImage();
+  return r.text;
+}
+
+/** One picture of the screen with the mouse (an Electron NativeImage), or null. */
+async function capture() {
+  if (process.platform !== 'win32') return null;
   const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   const w = d.size.width * d.scaleFactor; const h = d.size.height * d.scaleFactor;
   const k = Math.min(1, 2560 / Math.max(w, h)); // the OCR reads images up to 2600 px a side
   const list = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: Math.round(w * k), height: Math.round(h * k) } });
   const src = list.find((s) => String(s.display_id) === String(d.id)) || list[0] || null;
-  if (!src || src.thumbnail.isEmpty()) return '';
-  return ocrImage(src.thumbnail);
+  return src && !src.thumbnail.isEmpty() ? src.thumbnail : null;
+}
+
+/** The picture and its text, from one capture (Life keeps both: the text in its store, the picture in memory). */
+async function readWithImage() {
+  const img = await capture();
+  return { img, text: img ? await ocrImage(img) : '' };
 }
 
 /** The text in a picture (an Electron NativeImage), read by the OCR built into Windows. */
@@ -149,4 +160,4 @@ function layout(lines) {
 
 function stop() { try { if (proc) proc.kill(); } catch {} proc = null; }
 
-module.exports = { read, ocrImage, layout, stop, OCR_HELPER };
+module.exports = { read, readWithImage, capture, ocrImage, layout, stop, OCR_HELPER };
