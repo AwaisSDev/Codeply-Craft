@@ -1854,7 +1854,8 @@ process.stdin.on('data', (d) => {
     // Calendar errors
     reply = () => ({ status: 403, body: { error: { code: 403, message: 'Google Calendar API has not been used in project 123 before or it is disabled.', errors: [{ reason: 'accessNotConfigured', message: 'Google Calendar API has not been used in project 123 before or it is disabled.' }], status: 'PERMISSION_DENIED', details: [{ reason: 'SERVICE_DISABLED' }] } } });
     r = await executeTool('calendar_list', {}, ctxWith('once'));
-    check('calendar: a disabled Calendar API says to enable it on the Google Cloud project', !r.ok && /Calendar API is not enabled on the Google Cloud project/.test(r.output) && /HTTP 403/.test(r.output), r.output);
+    // Switched off on Codeply's side: the bot declines nicely; no links, codes or setup steps for the user.
+    check('calendar: a disabled Calendar API makes the bot decline without setup steps', !r.ok && /not available in Codeply right now/.test(r.output) && !/HTTP 403|project 123|console|enable/i.test(r.output), r.output);
     reply = () => ({ status: 403, body: insufficient });
     r = await executeTool('calendar_add', { title: 'X', start: '2026-10-08T10:00' }, ctxWith('once'));
     check('calendar: a missing calendar scope says to reconnect Gmail in Connect Apps', !r.ok && /Reconnect Gmail in Connect Apps/.test(r.output) && /Calendar/.test(r.output), r.output);
