@@ -5,7 +5,7 @@
 //! * `cut.<id>` runs a FilmCraft command, `fx.<id>` an EffectCraft command.
 //! * A bare id (`timeline.razor`) goes to whichever engine has it; an id both have is an error
 //!   that names both.
-//! * `reel.<id>` are the cross-engine and agent-economy commands (see [`HELP`]).
+//! * `motion.<id>` are the cross-engine and agent-economy commands (see [`HELP`]).
 
 use std::collections::{HashMap, VecDeque};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -20,19 +20,21 @@ use crate::dsl::{self, Step};
 use crate::probe::{self, Rgba};
 
 pub const HELP: &str = "\
-reel: one command line per step. `cmd k=v k2=[a,b] k3.sub=1` or {\"cmd\":..,\"params\":{..}}; `;` chains.
-namespaces: cut.* = FilmCraft (edit/timeline/export) | fx.* = EffectCraft (comps/layers/keys/effects) | reel.* = cross-engine. Bare ids auto-route.
+motion: one command line per step. `cmd k=v k2=[a,b] k3.sub=1` or {\"cmd\":..,\"params\":{..}}; `;` chains.
+namespaces: cut.* = FilmCraft (edit/timeline/export) | fx.* = EffectCraft (comps/layers/keys/effects) | motion.* = cross-engine. Bare ids auto-route.
 refs: $1.layer = step 1's result .layer, $-1 = previous step. Meta params on any step: _select=a.b,c.*.id (keep fields) _budget=N (max reply tokens, 0=all) _raw=true (no pruning).
-reel.find q=<words> [engine=cut|fx] [limit=20]       search both command catalogs (one line each)
-reel.describe cmd=<id>                                 full params doc for one command
-reel.state [_select=..]                                cut project+sequence and fx project, pruned
-reel.diff                                              only what changed since last state/diff
-reel.probe [engine=cut|fx] [t=sec] [comp=..] [ascii=48]  frame stats as text: luma, grid, palette, hash
-reel.frame out=/path.png [engine] [t] [comp] [max=960] write a PNG to disk (path back, no pixels)
-reel.compare a=<hash> b=<hash>                         picture distance of two probe hashes
-reel.fx2cut comp=<name|id> [track=V2] [seconds=0]       render an fx comp (ProRes 4444 alpha) and place it in the cut
-reel.save dir=<d> | reel.open dir=<d>                  both projects as <d>/cut.fcproj + <d>/fx.ecproj
-reel.log [n=20] | reel.reset | reel.help";
+motion.find q=<words> [engine=cut|fx] [limit=20]       search both command catalogs (one line each)
+motion.describe cmd=<id>                                 full params doc for one command
+motion.state [_select=..]                                cut project+sequence and fx project, pruned
+motion.diff                                              only what changed since last state/diff
+motion.probe [engine=cut|fx] [t=sec] [comp=..] [ascii=48]  frame stats as text: luma, grid, palette, hash
+motion.frame out=/path.png [engine] [t] [comp] [max=960] write a PNG to disk (path back, no pixels)
+motion.compare a=<hash> b=<hash>                         picture distance of two probe hashes
+motion.fx2cut comp=<name|id> [track=V2] [seconds=0]       render an fx comp (ProRes 4444 alpha) and place it in the cut
+motion.save dir=<d> | motion.open dir=<d>                  both projects as <d>/cut.fcproj + <d>/fx.ecproj
+motion.log [n=20] | motion.reset | motion.help";
+
+const BUILTINS: &[&str] = &["help", "find", "describe", "state", "diff", "probe", "frame", "compare", "fx2cut", "save", "open", "log", "reset"];
 
 /// One executed step, for the dashboard.
 #[derive(Clone, Debug)]
@@ -64,7 +66,7 @@ const DEFAULT_BUDGET: usize = 1500;
 enum Engine {
     Cut,
     Fx,
-    Reel,
+    Motion,
 }
 
 impl Engine {
@@ -72,7 +74,7 @@ impl Engine {
         match self {
             Engine::Cut => "cut",
             Engine::Fx => "fx",
-            Engine::Reel => "reel",
+            Engine::Motion => "motion",
         }
     }
 }
@@ -177,7 +179,7 @@ impl Studio {
         t.tokens_out += tokens as u64;
         if let Some(e) = eng {
             *t.per_engine.entry(e.tag().into()).or_default() += 1;
-            if e != Engine::Reel && res.is_ok() && !is_read_only(cmd) {
+            if e != Engine::Motion && res.is_ok() && !is_read_only(cmd) {
                 t.rev += 1;
             }
         }
@@ -202,7 +204,8 @@ impl Studio {
             match ns {
                 "cut" => return Ok((Engine::Cut, id.to_string())),
                 "fx" => return Ok((Engine::Fx, id.to_string())),
-                "reel" => return Ok((Engine::Reel, id.to_string())),
+                // EffectCraft has its own `motion.sketch`: only our built-ins claim the prefix
+                "motion" if BUILTINS.contains(&id) => return Ok((Engine::Motion, id.to_string())),
                 _ => {}
             }
         }
@@ -236,7 +239,7 @@ impl Studio {
         let r = match eng {
             Engine::Cut => self.cut.execute("command.list", json!({})).ok(),
             Engine::Fx => self.fx_exec("command.list", json!({})).ok(),
-            Engine::Reel => None,
+            Engine::Motion => None,
         };
         r.and_then(|v| v.as_array().cloned()).unwrap_or_default()
     }
@@ -255,7 +258,7 @@ impl Studio {
         match eng {
             Engine::Cut => self.cut_exec(id, p),
             Engine::Fx => self.fx_exec(id, p),
-            Engine::Reel => self.builtin(id, p),
+            Engine::Motion => self.builtin(id, p),
         }
     }
 
@@ -284,7 +287,7 @@ impl Studio {
                 Ok(json!({"out": out, "size": [w, h], "engine": eng.tag()}))
             }
             "compare" => {
-                let g = |k: &str| p.get(k).and_then(Value::as_str).ok_or(format!("need {k}=<hash from reel.probe>"));
+                let g = |k: &str| p.get(k).and_then(Value::as_str).ok_or(format!("need {k}=<hash from motion.probe>"));
                 let d = probe::hash_distance(g("a")?, g("b")?).ok_or("hashes are 16 hex digits")?;
                 Ok(json!({"distance": d, "same": d <= 4, "verdict": match d { 0..=4 => "same picture", 5..=12 => "similar", _ => "different" }}))
             }
@@ -325,7 +328,7 @@ impl Studio {
                 self.snapshot = None;
                 Ok(json!("fresh sessions"))
             }
-            _ => Err(format!("unknown reel command `reel.{id}` (reel.help lists them)")),
+            _ => Err(format!("unknown motion command `motion.{id}` (motion.help lists them)")),
         }
     }
 
@@ -380,7 +383,7 @@ impl Studio {
                 .into_iter()
                 .find(|c| c.get("id").and_then(Value::as_str) == Some(id.as_str()))
                 .ok_or_else(|| format!("no cut command `{id}`")),
-            Engine::Reel => Ok(json!(HELP.lines().find(|l| l.contains(&format!("reel.{id}"))).unwrap_or(HELP))),
+            Engine::Motion => Ok(json!(HELP.lines().find(|l| l.contains(&format!("motion.{id}"))).unwrap_or(HELP))),
         }
     }
 
@@ -398,7 +401,7 @@ impl Studio {
     fn diff(&mut self) -> Result<Value, String> {
         let now = self.doc();
         let Some(prev) = self.snapshot.replace(now.clone()) else {
-            return Ok(json!({"baseline": true, "summary": summary(&now), "hint": "next reel.diff reports only changes"}));
+            return Ok(json!({"baseline": true, "summary": summary(&now), "hint": "next motion.diff reports only changes"}));
         };
         let (changes, n) = compact::diff(&prev, &now, 60);
         let mut v = json!({"n": n, "changes": changes});

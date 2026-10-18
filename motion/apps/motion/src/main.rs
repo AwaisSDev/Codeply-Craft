@@ -1,11 +1,11 @@
-//! `reel`: Codeply Reel's single binary.
+//! `motion`: Codeply Motion's single binary.
 //!
 //! ```text
-//! reel run [--ws DIR] SCRIPT|@file|-     one shot; --ws loads/saves DIR/cut.fcproj + DIR/fx.ecproj
-//! reel sh  [--ws DIR]                    persistent session: a script per stdin line, a JSON reply per line
-//! reel mcp [--ws DIR]                    MCP server on stdio (two tools: run, look)
-//! reel serve [--port 7070] [--ws DIR]    HTTP API + live agent dashboard on 127.0.0.1
-//! reel help                              the command language
+//! motion run [--ws DIR] SCRIPT|@file|-     one shot; --ws loads/saves DIR/cut.fcproj + DIR/fx.ecproj
+//! motion sh  [--ws DIR]                    persistent session: a script per stdin line, a JSON reply per line
+//! motion mcp [--ws DIR]                    MCP server on stdio (two tools: run, look)
+//! motion serve [--port 7070] [--ws DIR]    HTTP API + live agent dashboard on 127.0.0.1
+//! motion help                              the command language
 //! ```
 
 mod http;
@@ -14,10 +14,10 @@ mod mcp;
 use std::io::{BufRead, Read, Write};
 use std::path::PathBuf;
 
-use reel_core::{HELP, Handle, default_work_dir};
+use motion_core::{HELP, Handle, default_work_dir};
 use serde_json::{Value, json};
 
-const USAGE: &str = "usage: reel run [--ws DIR] SCRIPT|@file|- | reel sh [--ws DIR] | reel mcp [--ws DIR] | reel serve [--port N] [--ws DIR] | reel help";
+const USAGE: &str = "usage: motion run [--ws DIR] SCRIPT|@file|- | motion sh [--ws DIR] | motion mcp [--ws DIR] | motion serve [--port N] [--ws DIR] | motion help";
 
 struct Args {
     cmd: String,
@@ -42,7 +42,7 @@ fn args() -> Args {
 }
 
 fn die(msg: &str) -> ! {
-    eprintln!("reel: {msg}\n{USAGE}");
+    eprintln!("motion: {msg}\n{USAGE}");
     std::process::exit(2)
 }
 
@@ -61,9 +61,9 @@ fn main() {
 fn open(a: &Args) -> Handle {
     let h = Handle::spawn(default_work_dir());
     if let Some(ws) = a.ws.as_ref().filter(|d| d.exists()) {
-        let r = h.run(&format!("reel.open dir={}", quote(ws)));
+        let r = h.run(&format!("motion.open dir={}", quote(ws)));
         if r["ok"] != true {
-            eprintln!("reel: could not open workspace {}: {}", ws.display(), r["err"]);
+            eprintln!("motion: could not open workspace {}: {}", ws.display(), r["err"]);
         }
     }
     h
@@ -72,7 +72,7 @@ fn open(a: &Args) -> Handle {
 /// Save the workspace back after work that changed it.
 pub fn save(h: &Handle, ws: &Option<PathBuf>) -> Value {
     match ws {
-        Some(d) => h.run(&format!("reel.save dir={}", quote(d))),
+        Some(d) => h.run(&format!("motion.save dir={}", quote(d))),
         None => Value::Null,
     }
 }
@@ -98,7 +98,7 @@ fn run_once(a: &Args) {
     if ok && a.ws.is_some() {
         let s = save(&h, &a.ws);
         if s["ok"] != true {
-            eprintln!("reel: save failed: {}", s["err"]);
+            eprintln!("motion: save failed: {}", s["err"]);
         }
     }
     println!("{}", r);
@@ -117,7 +117,7 @@ fn shell(a: &Args) {
         }
         // `{"script": "..."}` carries a multi-line script on one line
         let src = serde_json::from_str::<Value>(line).ok().and_then(|v| v.get("script").and_then(Value::as_str).map(String::from)).unwrap_or_else(|| line.to_string());
-        let r = if src == "reel.quit" || src == "quit" {
+        let r = if src == "motion.quit" || src == "quit" {
             let s = save(&h, &a.ws);
             let _ = writeln!(out, "{}", json!({"ok": true, "r": "bye", "saved": s.get("r")}));
             break;

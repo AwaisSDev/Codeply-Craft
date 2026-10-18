@@ -1,5 +1,5 @@
 [package]
-name = "reel-core"
+name = "motion-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

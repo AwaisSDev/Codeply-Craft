@@ -1,10 +1,10 @@
-//! The reel command language: one command per line (or `;`-separated), built for agents to write
+//! The motion command language: one command per line (or `;`-separated), built for agents to write
 //! with as few tokens as possible.
 //!
 //! ```text
 //! fx.comp.new name=Title width=1920 height=1080 duration=4
 //! fx.layer.newText text="Hello world" size=140 fill=#ffffff
-//! reel.fx2cut comp=Title track=V2 seconds=2
+//! motion.fx2cut comp=Title track=V2 seconds=2
 //! cut.timeline.razor seconds=3.5 ; cut.sequence.inspect
 //! {"cmd":"cut.file.import","params":{"paths":["/m/a.mp4"]}}
 //! ```
@@ -282,7 +282,7 @@ mod tests {
 
     #[test]
     fn bare_words_continue_a_bare_string() {
-        let s = parse_script("reel.find q=sequence new limit=3").unwrap();
+        let s = parse_script("motion.find q=sequence new limit=3").unwrap();
         assert_eq!(s[0].params, json!({"q":"sequence new","limit":3}));
         assert!(parse_script("x.y q=\"done\" stray").is_err());
         assert!(parse_script("x.y n=3 stray").is_err());

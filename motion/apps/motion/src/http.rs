@@ -1,6 +1,6 @@
 //! A small HTTP/1.1 server on 127.0.0.1: the agent API and the dashboard that watches it.
 //!
-//! * `POST /api/run`   body = script → reply JSON (needs header `X-Reel: 1`, which a cross-site
+//! * `POST /api/run`   body = script → reply JSON (needs header `X-Motion: 1`, which a cross-site
 //!   form cannot send, so a web page can't drive the studio)
 //! * `GET  /api/tele`  counters, document summary and the recent command log (never waits on a
 //!   running script)
@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::PoisonError;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use reel_core::{HELP, Handle};
+use motion_core::{HELP, Handle};
 use serde_json::{Value, json};
 
 const DASH: &str = include_str!("dash.html");
@@ -22,7 +22,7 @@ const MAX_BODY: usize = 4 << 20;
 pub fn serve(h: Handle, port: u16, ws: Option<PathBuf>) {
     let addr = format!("127.0.0.1:{port}");
     let l = TcpListener::bind(&addr).unwrap_or_else(|e| crate::die(&format!("cannot listen on {addr}: {e}")));
-    eprintln!("reel: dashboard http://{addr}/  api POST http://{addr}/api/run (header X-Reel: 1)");
+    eprintln!("motion: dashboard http://{addr}/  api POST http://{addr}/api/run (header X-Motion: 1)");
     for s in l.incoming().flatten() {
         let (h, ws) = (h.clone(), ws.clone());
         std::thread::spawn(move || {
@@ -115,8 +115,8 @@ fn route(req: &Req, h: &Handle, ws: &Option<PathBuf>) -> (u16, &'static str, Vec
         ("GET", "/api/help") => (200, "text/plain; charset=utf-8", HELP.as_bytes().to_vec()),
         ("GET", "/api/tele") => (200, "application/json", tele(h).to_string().into_bytes()),
         ("POST", "/api/run") => {
-            if req.header("x-reel") != Some("1") {
-                return (403, "text/plain", b"send header X-Reel: 1".to_vec());
+            if req.header("x-motion") != Some("1") {
+                return (403, "text/plain", b"send header X-Motion: 1".to_vec());
             }
             let src = String::from_utf8_lossy(&req.body);
             let mut r = h.run(&src);
@@ -127,8 +127,8 @@ fn route(req: &Req, h: &Handle, ws: &Option<PathBuf>) -> (u16, &'static str, Vec
         }
         ("GET", "/api/frame") => {
             static N: AtomicU64 = AtomicU64::new(0);
-            let path = std::env::temp_dir().join(format!("reel-dash-{}-{}.png", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
-            let mut cmd = format!("reel.frame _quiet=true out={} max={}", crate::quote(&path), req.q("max").and_then(|m| m.parse::<u32>().ok()).unwrap_or(640));
+            let path = std::env::temp_dir().join(format!("motion-dash-{}-{}.png", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+            let mut cmd = format!("motion.frame _quiet=true out={} max={}", crate::quote(&path), req.q("max").and_then(|m| m.parse::<u32>().ok()).unwrap_or(640));
             if let Some(e) = req.q("engine").filter(|e| e == "cut" || e == "fx") {
                 cmd.push_str(&format!(" engine={e}"));
             }

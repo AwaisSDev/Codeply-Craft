@@ -164,7 +164,7 @@ fn push(out: &mut Vec<Value>, total: &mut usize, cap: usize, path: String, a: Va
 }
 
 /// An added or removed object as its scalar fields only; nested parts become `[n]` / `{n}`.
-/// Ask `reel.state _select=...` for the detail.
+/// Ask `motion.state _select=...` for the detail.
 fn brief(v: &Value) -> Value {
     match v {
         Value::Object(m) => Value::Object(

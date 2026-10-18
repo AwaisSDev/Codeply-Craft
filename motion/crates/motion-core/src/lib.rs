@@ -1,6 +1,6 @@
-//! # reel-core
+//! # motion-core
 //!
-//! Codeply Reel's engine layer: FilmCraft (editing) and EffectCraft (motion graphics) in one
+//! Codeply Motion's engine layer: FilmCraft (editing) and EffectCraft (motion graphics) in one
 //! process, driven by a terse command language and replying in as few tokens as possible.
 
 pub mod compact;
@@ -29,7 +29,7 @@ impl Handle {
         let (tx, rx) = mpsc::channel::<(String, mpsc::Sender<Value>)>();
         let (ttx, trx) = mpsc::channel();
         std::thread::Builder::new()
-            .name("reel-studio".into())
+            .name("motion-studio".into())
             // deep effect stacks and expression evaluation recurse; give them room
             .stack_size(64 << 20)
             .spawn(move || {
@@ -56,5 +56,5 @@ impl Handle {
 
 /// Where renders and bridge files go by default.
 pub fn default_work_dir() -> PathBuf {
-    std::env::var_os("REEL_WORK").map(PathBuf::from).unwrap_or_else(|| std::env::temp_dir().join("codeply-reel"))
+    std::env::var_os("MOTION_WORK").map(PathBuf::from).unwrap_or_else(|| std::env::temp_dir().join("codeply-motion"))
 }

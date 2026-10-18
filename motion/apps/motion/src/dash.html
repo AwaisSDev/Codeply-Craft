@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Codeply Reel</title>
+<title>Codeply Motion</title>
 <style>
 :root {
   --bg: #f6f6f4; --panel: #ffffff; --ink: #1b1b1a; --dim: #6b6a66; --line: #e3e2de;
@@ -62,7 +62,7 @@ textarea { width: 100%; min-height: 96px; resize: vertical; font: 12px/1.45 var(
 <body>
 <header>
   <span class="dot" id="dot"></span>
-  <h1>Codeply Reel</h1>
+  <h1>Codeply Motion</h1>
   <span class="sub">agent-first edit + motion studio · built on FilmCraft and EffectCraft</span>
   <span class="spacer"></span>
   <span class="sub" id="rev">rev 0</span>
@@ -74,7 +74,7 @@ textarea { width: 100%; min-height: 96px; resize: vertical; font: 12px/1.45 var(
     <section>
       <h2>Command log <span class="spacer"></span><span id="logn"></span></h2>
       <div class="log"><table><thead><tr><th>time</th><th>command</th><th>ms</th><th>tok</th></tr></thead><tbody id="log"></tbody></table>
-      <div class="empty" id="logEmpty">No commands yet. Agents POST scripts to <code>/api/run</code> or use <code>reel mcp</code>.</div></div>
+      <div class="empty" id="logEmpty">No commands yet. Agents POST scripts to <code>/api/run</code> or use <code>motion mcp</code>.</div></div>
     </section>
   </div>
   <div class="col">
@@ -88,7 +88,7 @@ textarea { width: 100%; min-height: 96px; resize: vertical; font: 12px/1.45 var(
     </section>
     <section>
       <h2>Console</h2>
-      <textarea id="script" spellcheck="false" placeholder="reel.find q=razor&#10;fx.comp.new name=Title width=1920 height=1080 duration=4">reel.help</textarea>
+      <textarea id="script" spellcheck="false" placeholder="motion.find q=razor&#10;fx.comp.new name=Title width=1920 height=1080 duration=4">motion.help</textarea>
       <div class="row"><button class="primary" id="run">Run</button><span class="sub" id="runInfo"></span></div>
       <pre id="out"></pre>
     </section>
@@ -102,13 +102,13 @@ textarea { width: 100%; min-height: 96px; resize: vertical; font: 12px/1.45 var(
 const $ = (id) => document.getElementById(id);
 let lastRev = -1, lastSteps = -1;
 
-try { const th = localStorage.getItem('reel-theme'); if (th) document.documentElement.dataset.theme = th; } catch (_) {}
+try { const th = localStorage.getItem('motion-theme'); if (th) document.documentElement.dataset.theme = th; } catch (_) {}
 $('theme').onclick = () => {
   const dark = matchMedia('(prefers-color-scheme: dark)').matches;
   const cur = document.documentElement.dataset.theme || (dark ? 'dark' : 'light');
   const next = cur === 'dark' ? 'light' : 'dark';
   document.documentElement.dataset.theme = next;
-  try { localStorage.setItem('reel-theme', next); } catch (_) {}
+  try { localStorage.setItem('motion-theme', next); } catch (_) {}
 };
 
 function fmt(n) { return n >= 10000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n * 10) / 10); }
@@ -134,7 +134,7 @@ function log(t) {
   $('logn').textContent = t.log.length ? `last ${t.log.length}` : '';
   $('log').innerHTML = t.log.map((e) => {
     const [ns] = e.cmd.split('.');
-    const tag = ['cut', 'fx', 'reel'].includes(ns) ? `<span class="tag">${ns}</span>` : '';
+    const tag = ['cut', 'fx', 'motion'].includes(ns) ? `<span class="tag">${ns}</span>` : '';
     const msg = e.ok ? '' : `<div class="err">${esc(e.err || 'failed')}</div>`;
     return `<tr><td class="n">${clock(e.at)}</td><td class="cmd ${e.ok ? '' : 'err'}">${tag}${esc(e.cmd)}${msg}</td><td class="n">${e.ms}</td><td class="n">${e.tok}</td></tr>`;
   }).join('');
@@ -163,7 +163,7 @@ async function render() {
 
 async function run() {
   const t0 = performance.now();
-  const r = await fetch('/api/run', { method: 'POST', headers: { 'X-Reel': '1' }, body: $('script').value });
+  const r = await fetch('/api/run', { method: 'POST', headers: { 'X-Motion': '1' }, body: $('script').value });
   const j = await r.json();
   $('out').textContent = typeof j.r === 'string' ? j.r : JSON.stringify(j, null, 2);
   $('out').className = j.ok ? '' : 'err';

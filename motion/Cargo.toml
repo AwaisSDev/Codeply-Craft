@@ -9,7 +9,7 @@ license = "MIT"
 rust-version = "1.95"
 
 [workspace.dependencies]
-reel-core = { path = "crates/reel-core" }
+motion-core = { path = "crates/motion-core" }
 
 # Upstream engines, pinned. Bump both revs together and re-run `cargo test`.
 filmcraft-engine = { git = "https://github.com/storytold/filmcraft", rev = "48088e3a8e50bd4a7a71d1ebdfde0835b01a3051" }

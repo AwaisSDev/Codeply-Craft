@@ -1,15 +1,15 @@
 //! MCP over stdio (newline-delimited JSON-RPC 2.0). Two tools instead of dozens: every tool's
-//! schema sits in the agent's context on every turn, so the catalogue lives behind `reel.find`.
+//! schema sits in the agent's context on every turn, so the catalogue lives behind `motion.find`.
 
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
-use reel_core::{HELP, Handle};
+use motion_core::{HELP, Handle};
 use serde_json::{Value, json};
 
-const RUN_DESC: &str = "Run Codeply Reel commands (video editing + motion graphics, headless). One command per line or `;`-chained: `cmd key=value ...`. \
-cut.* = FilmCraft editor (import, sequences, timeline, effects, export), fx.* = EffectCraft (comps, layers, keyframes, 300+ effects, render queue), reel.* = cross-engine. \
-Discover with `reel.find q=<words>` and `reel.describe cmd=<id>`. Verify with `reel.probe` (text frame stats) or `reel.diff` (what changed) instead of screenshots. \
+const RUN_DESC: &str = "Run Codeply Motion commands (video editing + motion graphics, headless). One command per line or `;`-chained: `cmd key=value ...`. \
+cut.* = FilmCraft editor (import, sequences, timeline, effects, export), fx.* = EffectCraft (comps, layers, keyframes, 300+ effects, render queue), motion.* = cross-engine. \
+Discover with `motion.find q=<words>` and `motion.describe cmd=<id>`. Verify with `motion.probe` (text frame stats) or `motion.diff` (what changed) instead of screenshots. \
 Refs: `$1.layer` = step 1's result field. Meta: `_select=a.b,c.*.id` trims replies, `_budget=N` caps reply tokens.";
 
 pub fn serve(h: Handle, ws: Option<PathBuf>) {
@@ -40,7 +40,7 @@ fn handle(h: &Handle, ws: &Option<PathBuf>, req: &Value) -> Option<Value> {
         "initialize" => Ok(json!({
             "protocolVersion": p.get("protocolVersion").cloned().unwrap_or(json!("2025-06-18")),
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "codeply-reel", "version": env!("CARGO_PKG_VERSION")},
+            "serverInfo": {"name": "codeply-motion", "version": env!("CARGO_PKG_VERSION")},
             "instructions": HELP,
         })),
         "ping" => Ok(json!({})),
@@ -60,7 +60,7 @@ fn tools() -> Value {
     json!([
         {
             "name": "run",
-            "title": "Run Reel commands",
+            "title": "Run Motion commands",
             "description": RUN_DESC,
             "inputSchema": {"type": "object", "properties": {
                 "script": {"type": "string", "description": "Commands, one per line or `;`-separated."},
@@ -71,7 +71,7 @@ fn tools() -> Value {
         {
             "name": "look",
             "title": "Look at a frame",
-            "description": "PNG of a frame, for when text stats (reel.probe) are not enough. Costs ~1-2k tokens; prefer reel.probe.",
+            "description": "PNG of a frame, for when text stats (motion.probe) are not enough. Costs ~1-2k tokens; prefer motion.probe.",
             "inputSchema": {"type": "object", "properties": {
                 "engine": {"type": "string", "enum": ["cut", "fx"]},
                 "t": {"type": "number", "description": "seconds"},
@@ -96,8 +96,8 @@ fn call(h: &Handle, ws: &Option<PathBuf>, p: &Value) -> Value {
             json!({"content": [{"type": "text", "text": r.to_string()}], "isError": is_err})
         }
         Some("look") => {
-            let path = std::env::temp_dir().join(format!("reel-look-{}.png", std::process::id()));
-            let mut cmd = format!("reel.frame out={} max={}", crate::quote(&path), args.get("max").and_then(Value::as_u64).unwrap_or(512));
+            let path = std::env::temp_dir().join(format!("motion-look-{}.png", std::process::id()));
+            let mut cmd = format!("motion.frame out={} max={}", crate::quote(&path), args.get("max").and_then(Value::as_u64).unwrap_or(512));
             for k in ["engine", "t", "comp"] {
                 if let Some(v) = args.get(k) {
                     cmd.push_str(&format!(" {k}={v}"));
