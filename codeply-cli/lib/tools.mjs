@@ -796,7 +796,7 @@ async function storeDraft(draft, token) {
         const r = await oauth.gmailCreateDraft(token, draft);
         return { ok: true, output: `Draft saved in Gmail's Drafts folder${draft.to ? ` (to ${draft.to})` : ''}, Gmail draft id ${r.id}. Nothing was sent.`, meta: { label: `draft: ${draft.subject || '(no subject)'}` } };
       } catch (e) {
-        if (!e.scopeMissing) return { ok: false, output: `Gmail draft failed: ${e.message}` };
+        if (!e.scopeMissing) return { ok: false, output: googleFailure('Gmail draft', 'email', e) };
         why = 'Gmail was connected before drafts were allowed, so it was saved in Codeply\'s drafts instead. Reconnect Gmail in Connect Apps to allow drafts in Gmail.';
       }
     }
@@ -852,7 +852,7 @@ async function gmail_send(args, ctx) {
     const note = edited ? ` The user edited it before sending; what went out: to ${email.to}, subject "${email.subject}".` : '';
     return { ok: true, output: `Email sent to ${email.to} (message id ${result.id}).${note}`, meta: { label: `to ${email.to}: ${email.subject}` } };
   } catch (e) {
-    return { ok: false, output: `Gmail send failed: ${e.message}` };
+    return { ok: false, output: googleFailure('Gmail send', 'email', e) };
   }
 }
 
@@ -937,6 +937,21 @@ function eventLine(ev) {
   return `- ${title}: ${when}${ev.location ? `, at ${ev.location}` : ''}`;
 }
 
+/**
+ * What a failed Google call tells the model. Switched off on Codeply's side
+ * (an API not enabled in the Cloud project behind the app): the user can't fix
+ * that, so the bot just says it can't reach it right now, with no links, error
+ * codes or setup steps. Anything the user can fix (sign in again, allow
+ * access) is passed on in plain words.
+ */
+function googleFailure(what, thing, e, extra = '') {
+  if (e && e.serviceSide) {
+    console.warn(`[google] ${what}: ${e.message}`); // for whoever runs Codeply: enable the API in that Cloud project
+    return `${what} is not available in Codeply right now. This is a setup problem on Codeply's side, not something the user can fix. Tell the user in one short, friendly sentence that you can't reach their ${thing} right now. Do not give links, error codes, project numbers or setup steps. Then still help with what they asked, another way.`;
+  }
+  return `${what} failed: ${e.message}${extra} Tell the user briefly, in plain words, what went wrong and what they can do about it; no raw error codes or links.`;
+}
+
 async function calendar_list(args) {
   const now = new Date();
   const from = args.from ? parseWhen(args.from, now) : parseWhen('today', now);
@@ -957,7 +972,7 @@ async function calendar_list(args) {
     if (!items.length) return { ok: true, output: `No events from ${range} (local time).`, meta: { label: 'no events' } };
     return { ok: true, output: `${items.length} event(s) from ${range} (local time):\n${items.map(eventLine).join('\n')}`, meta: { label: `${items.length} event(s)`, count: items.length } };
   } catch (e) {
-    return { ok: false, output: `Calendar list failed: ${e.message} Tell the user this exact error.` };
+    return { ok: false, output: googleFailure('Calendar list', 'calendar', e) };
   }
 }
 
@@ -1004,7 +1019,7 @@ async function calendar_add(args, ctx) {
     const r = await oauth.calendarInsertEvent(t.token, event);
     return { ok: true, output: `Added "${title}" to the calendar: ${when} (local time)${event.location ? `, at ${event.location}` : ''}.${r.htmlLink ? ` Link: ${r.htmlLink}` : ''}`, meta: { label: `${title}: ${when}` } };
   } catch (e) {
-    return { ok: false, output: `Calendar add failed: ${e.message} Tell the user this exact error.` };
+    return { ok: false, output: googleFailure('Calendar add', 'calendar', e) };
   }
 }
 
@@ -1029,7 +1044,7 @@ async function gmail_search(args, ctx) {
     const lines = results.map((m) => `- ${m.subject || '(no subject)'} - from ${m.from} - ${m.date}\n  ${m.snippet}`);
     return { ok: true, output: `${results.length} message(s)${query ? ` matching "${query}"` : ', newest first'}:\n\n${lines.join('\n')}`, meta: { label, count: results.length } };
   } catch (e) {
-    return { ok: false, output: `Gmail search failed: ${e.message} Do not retry with other queries; tell the user this exact error.` };
+    return { ok: false, output: googleFailure('Gmail search', 'email', e, ' Do not retry with other queries.') };
   }
 }
 

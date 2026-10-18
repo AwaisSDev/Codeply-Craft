@@ -119,6 +119,8 @@ function gmailError(data, status, what, scopeHint) {
   else if (status === 400) hint = ' Reconnecting Gmail in Connect Apps usually fixes this.';
   const e = new Error(`${what} failed (HTTP ${status}${reason ? `, ${reason}` : ''}): ${detail || 'no details from Google'}.${hint}`);
   e.status = status;
+  // Switched off on Codeply's side: only Codeply can fix it, so the user is never sent to set it up.
+  if (status === 403 && /accessNotConfigured|SERVICE_DISABLED|has not been used/i.test(detail + reason)) e.serviceSide = true;
   return e;
 }
 
@@ -193,6 +195,7 @@ function calendarError(data, status, what) {
   else if (status === 400) hint = ' Check the start and end times.';
   const e = new Error(`${what} failed (HTTP ${status}${reason ? `, ${reason}` : ''}): ${detail || 'no details from Google'}.${hint}`);
   e.status = status;
+  if (status === 403 && /accessNotConfigured|SERVICE_DISABLED|has not been used|is disabled/i.test(text)) e.serviceSide = true;
   return e;
 }
 

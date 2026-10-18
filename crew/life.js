@@ -100,7 +100,7 @@
     const next = n.next[0];
     const cards = [];
     cards.push(cal && cal.problem && apiOff(cal.problem)
-      ? `<div class="lf-card warn" title="${esc(cal.problem)}">${tile(SRC.calendar)}<div class="lf-card-v">Calendar is off</div><div class="lf-card-l">Turn on its API</div></div>`
+      ? `<div class="lf-card warn" title="${esc(cal.problem)}">${tile(SRC.calendar)}<div class="lf-card-v">Calendar is off</div><div class="lf-card-l">Not available right now</div></div>`
       : cal && cal.problem
       ? `<div class="lf-card warn" title="${esc(cal.problem)}">${tile(SRC.calendar)}<div class="lf-card-v">Calendar is off</div><div class="lf-card-l">Its sign-in expired</div><button class="lf-btn small" data-act="connect">Reconnect</button></div>`
       : `<div class="lf-card">${tile(SRC.calendar)}<div class="lf-card-v">${next ? esc(next.title) : 'Nothing next'}</div><div class="lf-card-l">${next ? esc(next.allDay ? 'All day' : next.live ? 'Happening now' : dayTime(next.at)) : 'Your calendar is clear'}</div></div>`);
@@ -144,7 +144,7 @@
     const rows = l.sources.filter((s) => !ALWAYS.includes(s.key)).map((s) => {
       const ic = SRC[s.key] || SRC.tasks;
       const right = s.problem && apiOff(s.problem)
-        ? `<span class="lf-meta" title="${esc(s.problem)}">API off in Google Cloud</span>${sw(`data-src="${esc(s.key)}"`, s.on)}`
+        ? `<span class="lf-meta" title="${esc(s.problem)}">Not available right now</span>${sw(`data-src="${esc(s.key)}"`, s.on)}`
         : s.problem
         ? `<button class="lf-btn small danger" data-act="connect" title="${esc(s.problem)}">Reconnect</button>${sw(`data-src="${esc(s.key)}"`, s.on)}`
         : `${s.count ? `<span class="lf-meta">${esc(ago(s.last))}</span><button class="lf-forget" data-forget-src="${esc(s.key)}" title="Forget what it saw">${G('<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>')}</button>` : ''}${sw(`data-src="${esc(s.key)}"`, s.on)}`;
