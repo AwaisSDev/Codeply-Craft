@@ -1,0 +1,83 @@
+# Builds Codeply Motion (motion/) for Windows and Mac, runs its end-to-end
+# test (a whole session through both engines, MP4 export included), and keeps
+# the zipped binaries as workflow artifacts. Craft downloads published copies
+# of these from a Codeply-Craft pre-release on first use; publishing is a
+# separate step.
+#
+# The first build compiles both engines (about 800k lines) and takes a while;
+# rust-cache keeps later builds short. Mac Intel comes later (cross-compiled).
+name: Motion build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'motion/**'
+      - '.github/workflows/motion-build.yml'
+
+concurrency:
+  group: motion-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: win-x64
+            exe: motion.exe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            name: mac-arm64
+            exe: motion
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    env:
+      # The engines come from git; their checkouts nest deep, so let git (with long paths) fetch them.
+      CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+      CARGO_TERM_COLOR: always
+    defaults:
+      run:
+        shell: bash
+        working-directory: motion
+    steps:
+      - name: Long paths (Windows)
+        if: runner.os == 'Windows'
+        working-directory: .
+        run: git config --global core.longpaths true
+
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: motion
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked -p motion --target ${{ matrix.target }}
+
+      - name: Test (both engines end to end)
+        run: cargo test --release --locked -p motion-core --target ${{ matrix.target }}
+
+      - name: Smoke test the binary
+        run: ./target/${{ matrix.target }}/release/${{ matrix.exe }} help | head -n 20
+
+      - name: Package
+        run: node scripts/package.mjs ${{ matrix.target }} ${{ matrix.exe }} ${{ matrix.name }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codeply-motion-${{ matrix.name }}
+          path: |
+            motion/dist/codeply-motion-${{ matrix.name }}.zip
+            motion/dist/codeply-motion-${{ matrix.name }}.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
