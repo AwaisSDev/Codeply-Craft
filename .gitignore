@@ -11,3 +11,4 @@ build-secrets.json
 craft-deploy.txt
 *.token
 .vercel-token
+sim-out/
