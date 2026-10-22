@@ -83,6 +83,8 @@ async function onImportantEmail(ev) {
     if (!B.available() || !B.canHandOff() || !ev || ev.alert) return null;
     if (!B.looksLikeScheduling(ev.subject, ev.summary)) return null;
     const team = BOTS().listBots();
+    // The bot that caught it handles the calendar itself: nothing to pass on.
+    if (B.botDomains(team.find((b) => b.id === ev.botId)).includes('calendar')) return null;
     const route = B.routeHandoff('calendar', team, { fromBotId: ev.botId, intent: `${ev.subject} ${ev.summary}` });
     if (!route.bot || !B.botDomains(route.bot).includes('calendar')) return null;
     const from = team.find((b) => b.id === ev.botId) || null;

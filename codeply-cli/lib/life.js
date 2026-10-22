@@ -9,6 +9,8 @@
  *   contextTool()  the life_context tool: now, today, week, person, search,
  *                  calls, email, activity, plans.
  *   notePlans()    plans the bots heard about in chats, calls and email.
+ *   noteHealth()   steps, workouts, sleep, heart rate and how the user feels,
+ *                  from their phone or watch.
  *
  * Bots see only the sources their settings allow (bot.life, normalized in
  * bots.js). Sensitive things (call transcripts) need life.sensitive on top.
@@ -34,6 +36,7 @@ const SOURCES = {
   botmail: { label: "Your bots' email", note: 'Mail to and from your bots\' own addresses.' },
   slack: { label: 'Slack', note: 'Direct messages and mentions.' },
   tasks: { label: 'Bot tasks', note: 'Work your bots took on by themselves.' },
+  health: { label: 'Health and activity', note: 'Steps, workouts, sleep and how you feel, from your phone or watch. Only bots you allow see it.', sensitive: true },
 };
 const SOURCE_KEYS = Object.keys(SOURCES);
 
@@ -126,7 +129,7 @@ function snapshot(o = {}) {
   const tz = tzOf(o);
   const allowed = o.allowed || null;
   const can = (k) => !allowed || allowed.has(k);
-  const snap = { at: now, tz, local: fmt(now, tz, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }), doing: null, onCall: null, next: [], waiting: [], calls: [], projects: [], watched: [], plans: [], tasks: [], unread: [], screen: null, heard: [] };
+  const snap = { at: now, tz, local: fmt(now, tz, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }), doing: null, onCall: null, next: [], waiting: [], calls: [], projects: [], watched: [], plans: [], tasks: [], unread: [], screen: null, heard: [], health: null };
   if (!s) return snap;
 
   if (can('activity')) {
@@ -178,6 +181,7 @@ function snapshot(o = {}) {
       .sort((a, b) => (b.data.lastActive || b.at) - (a.data.lastActive || a.at)).slice(0, 4)
       .map((x) => ({ name: x.title, path: x.data.path || '', lastActive: x.data.lastActive || x.at, lastPush: x.data.lastPush || null, unpushed: x.data.unpushed || 0, dirty: !!x.data.dirty, deadline: x.data.deadline || null }));
   }
+  if (can('health')) snap.health = healthSummary(s, now, tz);
   if (can('tasks')) {
     snap.tasks = s.recentTasks(10).filter((t) => ['queued', 'running', 'needs_you', 'verifying'].includes(t.status)).slice(0, 4)
       .map((t) => ({ id: t.id, text: short(t.text, 120), status: t.status, botId: t.botId }));
@@ -206,6 +210,7 @@ function nowBlock(snap, o = {}) {
     lines.push(`- Projects: ${snap.projects.slice(0, 3).map((p) => `${p.name}${p.lastPush ? `, last push ${ago(now - p.lastPush)} ago` : ''}${p.unpushed ? `, ${p.unpushed} commit${p.unpushed === 1 ? '' : 's'} not pushed` : ''}${p.dirty ? ', uncommitted changes' : ''}`).join('; ')}`);
   }
   if (snap.watched.length) lines.push(`- Watched lately: ${snap.watched.slice(0, 2).map((w) => `"${short(w.title, 60)}"`).join('; ')}`);
+  if (snap.health) lines.push(`- Health: ${healthLine(snap.health, now, tz)}`);
   if (snap.tasks.length) lines.push(`- Bot tasks in progress: ${snap.tasks.slice(0, 3).map((t) => `${short(t.text, 60)} (${t.status.replace('_', ' ')})`).join('; ')}`);
   if (lines.length === 1 && o.skipEmpty) return '';
   return `RIGHT NOW (the user's life context, shared by all their bots)
@@ -220,6 +225,7 @@ const ABOUT = {
   person: 'person', people: 'person', who: 'person', contact: 'person', search: 'search', find: 'search',
   calls: 'calls', call: 'calls', email: 'email', mail: 'email', inbox: 'email', activity: 'activity', screen: 'activity', watched: 'activity', heard: 'heard', overheard: 'heard', listened: 'heard', conversations: 'heard',
   plans: 'plans', plan: 'plans', projects: 'projects', project: 'projects', slack: 'slack', tasks: 'tasks',
+  health: 'health', steps: 'health', workout: 'health', workouts: 'health', exercise: 'health', sleep: 'health', fitness: 'health', activity_level: 'health', heart: 'health',
 };
 
 function itemLine(x, now, tz) {
@@ -264,7 +270,10 @@ ${lines(store.items({ sources: pick(['heard']), from: now - 3 * DAY, limit: 25 }
   else if (about === 'plans') out = `Plans:\n${lines(store.items({ sources: pick(['plans']), from: now - DAY, limit: 20, order: 'asc' }))}`;
   else if (about === 'projects') out = `Projects:\n${lines(store.items({ sources: pick(['projects']), limit: 10 }))}`;
   else if (about === 'slack') out = `Slack:\n${lines(store.items({ sources: pick(['slack']), from: now - 3 * DAY, limit: 20 }))}`;
-  else if (about === 'tasks') out = `Bot tasks:\n${store.recentTasks(10).map((t) => `- ${t.status}: ${short(t.text, 140)}`).join('\n') || '(nothing)'}`;
+  else if (about === 'health') {
+    if (!allowed.has('health')) return { ok: false, output: 'This bot is not allowed to read health data. The user can allow it in the bot\'s Life settings (Sensitive things).' };
+    out = healthReport(store, now, tz);
+  } else if (about === 'tasks') out = `Bot tasks:\n${store.recentTasks(10).map((t) => `- ${t.status}: ${short(t.text, 140)}`).join('\n') || '(nothing)'}`;
   else {
     if (!query) return { ok: false, output: 'life_context needs <about> (now, today, tomorrow, week, person, calls, email, activity, heard, plans, projects, slack, tasks) or <query> to search.' };
     out = `Search "${query}":\n${lines(store.search(query, { limit: 15, sources: srcs }))}`;
@@ -318,6 +327,92 @@ function plansAsk(now = Date.now(), tz = tzOf()) {
   return `Also list plans or commitments with a time or a place that the user mentioned (meeting someone, an appointment, a trip, a deadline): {"what": "Dinner with Ali", "when": "YYYY-MM-DDTHH:MM in the user's local time, or empty", "where": "", "who": ["Ali"]}. It is ${fmt(now, tz, { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} for the user now (${tz}). Most exchanges have none: use an empty list.`;
 }
 
+// ─── Health ─────────────────────────────────────────────────────────────────
+// Samples from the user's phone or watch (the phone app sends them through
+// the desktop bridge). Steps are one item per day (the day's total so far),
+// workouts and feelings one item each, sleep one item per night.
+
+const HEALTH_KINDS = new Set(['steps', 'workout', 'sleep', 'heart', 'feeling']);
+
+/**
+ * samples: [{ kind: 'steps'|'workout'|'sleep'|'heart'|'feeling', at, end?, value?, unit?, title?, note? }]
+ *   steps    value = the day's total so far (at: any time that day)
+ *   workout  title ("Walk", "Gym"), at and end, value = active calories (optional)
+ *   sleep    at = asleep, end = awake
+ *   heart    value = resting heart rate (bpm) for the day
+ *   feeling  title or note: how the user said they feel ("ankle hurts", "great")
+ */
+function noteHealth(samples, o = {}) {
+  if (!store || !Array.isArray(samples)) return [];
+  const tz = tzOf(o);
+  const out = [];
+  for (const raw of samples.slice(0, 500)) {
+    if (!raw || !HEALTH_KINDS.has(raw.kind)) continue;
+    const at = Math.round(Number(raw.at) || Date.now());
+    const day = dayKey(at, tz);
+    const value = Number(raw.value);
+    const base = { source: 'health', kind: raw.kind, at, sensitive: true };
+    let item = null;
+    if (raw.kind === 'steps' && Number.isFinite(value)) item = { ...base, id: `health:steps:${day}`, at: startOfDay(at, tz) + 12 * HOUR, title: `${Math.round(value)} steps`, data: { value: Math.round(value), day } };
+    else if (raw.kind === 'heart' && Number.isFinite(value)) item = { ...base, id: `health:heart:${day}`, title: `Resting heart rate ${Math.round(value)} bpm`, data: { value: Math.round(value), day } };
+    else if (raw.kind === 'sleep' && raw.end) item = { ...base, id: `health:sleep:${dayKey(Number(raw.end), tz)}`, end: Math.round(Number(raw.end)), title: `Slept ${((Number(raw.end) - at) / HOUR).toFixed(1)} h`, data: { hours: Math.round(((Number(raw.end) - at) / HOUR) * 10) / 10 } };
+    else if (raw.kind === 'workout') item = { ...base, id: `health:workout:${at}`, end: raw.end ? Math.round(Number(raw.end)) : null, title: short(raw.title || 'Workout', 80), data: { minutes: raw.end ? Math.round((Number(raw.end) - at) / 60000) : Number(raw.minutes) || 0, value: Number.isFinite(value) ? value : null } };
+    else if (raw.kind === 'feeling') item = { ...base, id: `health:feeling:${at}`, title: short(raw.title || raw.note || 'How they feel', 160), body: short(raw.note || '', 600), data: {} };
+    if (item) { try { out.push(store.upsertItem(item)); } catch {} }
+  }
+  if (out.length && hostOpts.onChange) { try { hostOpts.onChange('health'); } catch {} }
+  return out;
+}
+
+const median = (xs) => { const a = xs.slice().sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : 0; };
+
+/** Today's steps, the usual day (median of the 14 before), workouts and sleep. Null with no data at all. */
+function healthSummary(s, now, tz) {
+  const start = startOfDay(now, tz);
+  const items = s.items({ sources: ['health'], from: start - 15 * DAY, limit: 300 });
+  if (!items.length) return null;
+  const steps = items.filter((x) => x.kind === 'steps');
+  const today = steps.find((x) => x.data.day === dayKey(now, tz));
+  const yesterday = steps.find((x) => x.data.day === dayKey(now - DAY, tz));
+  const dayBefore = steps.find((x) => x.data.day === dayKey(now - 2 * DAY, tz));
+  const before = steps.filter((x) => x.at < start).map((x) => x.data.value);
+  const workouts = items.filter((x) => x.kind === 'workout').sort((a, b) => b.at - a.at);
+  const sleep = items.filter((x) => x.kind === 'sleep').sort((a, b) => b.at - a.at)[0];
+  const heart = items.filter((x) => x.kind === 'heart').sort((a, b) => b.at - a.at);
+  const feelings = items.filter((x) => x.kind === 'feeling' && now - x.at < 3 * DAY).sort((a, b) => b.at - a.at);
+  return {
+    stepsToday: today ? today.data.value : null, stepsYesterday: yesterday ? yesterday.data.value : null, stepsDayBefore: dayBefore ? dayBefore.data.value : null,
+    usualSteps: before.length >= 5 ? median(before) : null, stepDays: before.length,
+    lastWorkout: workouts[0] ? { title: workouts[0].title, at: workouts[0].at, minutes: workouts[0].data.minutes } : null,
+    workoutsWeek: workouts.filter((x) => now - x.at < 7 * DAY).length,
+    workoutsBefore: workouts.filter((x) => now - x.at >= 7 * DAY && now - x.at < 14 * DAY).length,
+    sleepHours: sleep && now - (sleep.end || sleep.at) < 36 * HOUR ? sleep.data.hours : null,
+    restingHeart: heart[0] ? heart[0].data.value : null, usualHeart: heart.length >= 5 ? median(heart.slice(1).map((x) => x.data.value)) : null,
+    feelings: feelings.slice(0, 3).map((x) => ({ title: x.title, at: x.at })),
+  };
+}
+
+function healthLine(h, now, tz) {
+  const parts = [];
+  if (h.stepsToday != null) parts.push(`${h.stepsToday.toLocaleString('en-US')} steps today${h.usualSteps ? ` (usually about ${Math.round(h.usualSteps / 100) * 100} a day)` : ''}`);
+  else if (h.stepsYesterday != null) parts.push(`${h.stepsYesterday.toLocaleString('en-US')} steps yesterday`);
+  if (h.lastWorkout) parts.push(`last workout ${short(h.lastWorkout.title, 30)}${h.lastWorkout.minutes ? ` ${h.lastWorkout.minutes} min` : ''} ${when(h.lastWorkout.at, now, tz)}`);
+  if (h.sleepHours != null) parts.push(`slept ${h.sleepHours} h`);
+  if (h.restingHeart && h.usualHeart && Math.abs(h.restingHeart - h.usualHeart) >= 6) parts.push(`resting heart rate ${h.restingHeart} (usually ${h.usualHeart})`);
+  if (h.feelings.length) parts.push(`said: "${short(h.feelings[0].title, 60)}" (${when(h.feelings[0].at, now, tz)})`);
+  return parts.join('; ') || 'nothing recent';
+}
+
+function healthReport(s, now, tz) {
+  const start = startOfDay(now, tz);
+  const items = s.items({ sources: ['health'], from: start - 14 * DAY, limit: 300, order: 'asc' });
+  if (!items.length) return 'No health data yet. It comes from the user\'s phone or watch.';
+  const h = healthSummary(s, now, tz);
+  const steps = items.filter((x) => x.kind === 'steps').map((x) => `${x.data.day.slice(0, 5)} ${x.data.value}`).join(', ');
+  const rest = items.filter((x) => x.kind !== 'steps').slice(-25).map((x) => `- ${when(x.at, now, tz)} · ${x.kind} · ${x.title}${x.data && x.data.minutes ? ` (${x.data.minutes} min)` : ''}`).join('\n');
+  return `Health, last 14 days (this is private: use it to look after the user, never to lecture or share).\nNow: ${healthLine(h, now, tz)}\nDaily steps: ${steps || '(none)'}\n${rest}`;
+}
+
 /** Something happened that the bots should know (a call ended, an Orbit question): one store write. */
 function note(item) {
   if (!store || !item) return null;
@@ -326,7 +421,7 @@ function note(item) {
 
 module.exports = {
   SOURCES, SOURCE_KEYS, attach, detach, available, getStore,
-  normalizeLife, allowedFor, snapshot, nowBlock, contextTool, notePlans, plansAsk, note,
+  normalizeLife, allowedFor, snapshot, nowBlock, contextTool, notePlans, plansAsk, note, noteHealth, healthSummary,
   // for tests and the trigger engine
   when, ago, until, clock, dayKey, startOfDay, localIso, tzOf,
 };

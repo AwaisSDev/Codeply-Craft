@@ -47,7 +47,7 @@ const KEY_FILE = path.join(LIFE_DIR, 'key.bin');
 const DEFAULTS = {
   on: false,
   // The mic and the words on screen are the most private: off until the user turns them on.
-  sources: { calendar: true, gmail: true, calls: true, projects: true, activity: true, screen: false, heard: false, orbit: true, plans: true, botmail: true, slack: true, tasks: true },
+  sources: { calendar: true, gmail: true, calls: true, projects: true, activity: true, screen: false, heard: false, orbit: true, plans: true, botmail: true, slack: true, tasks: true, health: true },
   nudges: { on: true, perDay: 6, phone: true, quiet: { on: true, from: '22:00', to: '07:00' }, triggers: {}, botFor: {} },
   calls: { listen: 'ask', consentAck: false, whisperVoice: false, routeMic: false, botId: '' },
   autopilot: { paused: false },
@@ -549,6 +549,8 @@ function init(d) {
 
 module.exports = {
   init, start, stop, poke, noteCall, noteAsk, feedback,
+  // the minute's look for something worth saying (the life simulation drives it, scripts/sim)
+  tick,
   // for the call helper, bot mail and the autopilot
   getStore: () => store, ensureStore: () => openStore(), recentScreens, recentFrames, findFrame, isOn: () => started, status: () => status, setSettings, sourceOn, settings: () => settings, atPc, pushState, localTz,
 };

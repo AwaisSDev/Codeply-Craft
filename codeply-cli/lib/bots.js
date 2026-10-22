@@ -627,7 +627,12 @@ const STOP = new Set('the and for with that this from what when where which your
 function terms(text) {
   return [...new Set(String(text || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/)
     .filter((w) => w.length >= 3 && !STOP.has(w))
-    .map((w) => (w.length > 4 ? w.replace(/(ing|es|s)$/, '') : w)))];
+    .map((w) => {
+      if (w.length > 4 && w.endsWith('s') && !w.endsWith('ss')) w = w.slice(0, -1);
+      if (w.length > 5 && w.endsWith('ing')) w = w.slice(0, -3);
+      if (w.length > 4 && w.endsWith('e')) w = w.slice(0, -1);
+      return w;
+    }))];
 }
 
 /** The playbooks that fit a request best (keyword overlap), at most `n`, best first. */
@@ -779,7 +784,7 @@ const PHONE_FORMAT = `To reach the phone or watch for an email, write:
 </codeply:watch_email>`;
 
 const LIFE_RULES = `THE USER'S LIFE CONTEXT
-All the user's bots share one picture of their life: calendar, email, calls, plans, projects, what is on screen, the important bits heard around them. Look things up with life_context (about = now, today, tomorrow, week, person, calls, email, activity, heard, plans, projects, slack, tasks, or a query to search) before saying you do not know what the user has on, who someone is, or what happened. It is private: use it to help the user, never pass it on to anyone else.`;
+All the user's bots share one picture of their life: calendar, email, calls, plans, projects, what is on screen, the important bits heard around them. Look things up with life_context (about = now, today, tomorrow, week, person, calls, email, activity, heard, plans, projects, slack, tasks, health, or a query to search) before saying you do not know what the user has on, who someone is, or what happened. It is private: use it to help the user, never pass it on to anyone else.`;
 const LIFE_FORMAT = `To look something up, write:
 <codeply:life_context>
 <about>person</about>

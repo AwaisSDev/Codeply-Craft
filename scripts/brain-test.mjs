@@ -118,7 +118,7 @@ if (section('Projects')) {
   check('remember from Craft files a decision under the folder\'s project', r.ok && BR.list({ scope: 'project:startup-idea', text: 'Next.js' }).length === 1, JSON.stringify(r));
   const scratch = BR.rememberTool({ kind: 'decision', text: 'Ship the landing page on Friday.' }, { cwd: path.join(os.homedir(), 'Codeply Crew') });
   check('a decision made in Crew\'s bots folder is not filed under that folder', scratch.ok && !BR.list({ scope: 'project:codeply-crew' }).length && BR.projectOfFolder(os.homedir()) === '');
-  check('it still comes back when a message is about it', /Earlier notes[\s\S]*landing page on Friday/.test(BR.contextBlock({ request: 'is the landing page still on for friday?' })));
+  check('it is still in every prompt, as a standing decision', /About them:[\s\S]*landing page on Friday/.test(BR.contextBlock({ request: 'what should I do today?' })));
   const rc = BR.recallTool({ query: 'auth' }, {});
   check('recall finds it by word', rc.ok && /Supabase/.test(rc.output), rc.output);
 }
@@ -137,6 +137,56 @@ if (section('Prompt block')) {
   BR.setEnabled(false);
   check('switched off: nothing in any prompt, nothing learned', BR.contextBlock({}) === '' && BR.observe({ kind: 'fact', text: 'Something new here.', certainty: 'stated' }).action === 'ignored');
   BR.setEnabled(true);
+}
+
+// ─── Standing rules and to-dos (found by the life simulation) ──────────────
+if (section('Standing rules')) {
+  fresh('rules');
+  // A model may file "always CC hiring@" as a requirement with no project.
+  BR.observe({ kind: 'requirement', slot: 'candidate email cc', value: 'hiring@acme.example', text: 'The user wants hiring@acme.example CC\'d on all candidate emails.', certainty: 'stated' }, crew());
+  BR.observe({ kind: 'todo', text: 'Pay Ali Traders Rs 45,000 for rice on Friday.', certainty: 'stated' }, crew());
+  BR.observe({ kind: 'idea', text: 'Open a second shop near the university.', certainty: 'stated' }, crew());
+  const b = BR.contextBlock({ request: 'draft a rejection template for candidates' });
+  check('a requirement with no project is a standing rule in every prompt', /About them:[\s\S]*hiring@acme\.example/.test(b), b);
+  check('an open to-do shows even when the message does not mention it', /Open to-dos[\s\S]*Ali Traders/.test(BR.contextBlock({ request: 'aaj kya karna hai?' })));
+  check('an idea shows only when the message is about it', !/second shop/.test(b) && /second shop/.test(BR.contextBlock({ request: 'should I open a second shop?' })));
+  NOW += 30 * 24 * HOUR;
+  check('to-dos untouched for three weeks drop out of the prompt', !/Ali Traders/.test(BR.contextBlock({})));
+  check('"candidates" matches "candidate"', BR.terms('candidates')[0] === BR.terms('candidate')[0] && BR.terms('emails')[0] === 'email');
+}
+
+// ─── Health (life.js) ───────────────────────────────────────────────────────
+if (section('Health')) {
+  const LS = require(path.join(ROOT, 'codeply-cli/lib/life-store.js'));
+  const L = require(path.join(ROOT, 'codeply-cli/lib/life.js'));
+  const T = require(path.join(ROOT, 'codeply-cli/lib/life-triggers.js'));
+  const tz = 'Asia/Karachi';
+  const now = Date.UTC(2026, 10, 2, 14, 0); // Mon 19:00 in Karachi
+  const DAY = 24 * HOUR;
+  const store = LS.openLifeStore({ file: path.join(tmp, 'health.db'), key: Buffer.alloc(32, 7), now: () => now });
+  L.attach(store, { tz });
+  const samples = [];
+  for (let d = 14; d >= 2; d--) samples.push({ kind: 'steps', at: now - d * DAY, value: 8000 + (d % 3) * 400 });
+  for (const d of [3, 5, 8, 10, 12]) samples.push({ kind: 'workout', title: 'Walk in the park', at: now - d * DAY, end: now - d * DAY + 40 * 60000 });
+  samples.push({ kind: 'steps', at: now - DAY, value: 1900 }, { kind: 'steps', at: now, value: 1200 });
+  samples.push({ kind: 'feeling', at: now - 20 * HOUR, title: 'Left ankle hurts again' });
+  samples.push({ kind: 'sleep', at: now - 18 * HOUR, end: now - 11 * HOUR });
+  check('health samples are stored, sealed', L.noteHealth(samples, { tz }).length === samples.length && store.items({ sources: ['health'], limit: 1 })[0].sensitive);
+  const snap = L.snapshot({ now, tz });
+  check('the snapshot knows today, the usual day and the last workout', snap.health.stepsToday === 1200 && snap.health.usualSteps >= 8000 && /Walk/.test(snap.health.lastWorkout.title), JSON.stringify(snap.health));
+  check('the prompt block says it plainly', /Health: 1,200 steps today \(usually about 8\d00 a day\)[\s\S]*ankle/.test(L.nowBlock(snap)), L.nowBlock(snap));
+  const bot = B.createBot({ name: 'Coach', specialty: 'Health and fitness' });
+  check('a bot without sensitive access cannot read health', !(await L.contextTool({ about: 'health' }, { bot, now, tz })).ok);
+  const okBot = B.updateBot(bot.id, { life: { sensitive: true } });
+  const r = await L.contextTool({ about: 'steps' }, { bot: okBot, now, tz });
+  check('a bot allowed to can, with the 14 days', r.ok && /Daily steps:/.test(r.output) && /ankle/.test(r.output), r.output);
+  const due = T.due({ store, snap, settings: { perDay: 6, quiet: { on: false } }, now });
+  const act = due.find((c) => c.trigger === 'activity');
+  check('two low days in a row: one gentle check-in', !!act && /1200 so far today, 1900 yesterday/.test(act.facts.join(' ')) && /ankle/.test(act.facts.join(' ')), JSON.stringify(due));
+  check('it goes to a life bot', T.chooseBot(act, [B.createBot({ name: 'Ivo', specialty: 'Email inbox' }), okBot], {}).id === okBot.id);
+  store.addNudge({ trigger: 'activity', key: act.key, text: 'x', at: now - HOUR });
+  check('and not again for three days', !T.due({ store, snap, settings: { perDay: 6, quiet: { on: false } }, now: now + DAY }).some((c) => c.trigger === 'activity'));
+  L.detach(); store.close();
 }
 
 // ─── Lessons shared with the team ───────────────────────────────────────────
@@ -321,6 +371,13 @@ if (section('Agent run')) {
   const noHost = await drive(['<codeply:hand_off>\n<to>calendar</to>\n<intent>x</intent>\n</codeply:hand_off>', 'ok'], { message: 'hand it on' });
   check('with no handOff for the run, the model is told to do it itself', JSON.stringify(bodies.map((b) => b.messages.slice(-1))).includes('not available'), JSON.stringify(noHost.filter((e) => e.type === 'tool_end')).slice(0, 300));
   BR.setCoordinator(null);
+
+  // A long task: so much is written that the middle of the turn gets summarized.
+  const big = (i) => `<codeply:write_file>\n<path>part${i}.txt</path>\n<content>\n${`line ${i} `.repeat(5000)}\n</content>\n</codeply:write_file>`;
+  await drive([big(1), big(2), big(3), big(4), big(5), big(6), 'Objective: write the parts. Next Move: write part 7.', big(7), 'All seven parts are written.'], { message: 'write the seven big parts of the atlas export' });
+  const summarized = bodies.findIndex((b) => JSON.stringify(b.messages).includes('[context summary]'));
+  const after = summarized >= 0 ? JSON.stringify(bodies[summarized].messages) : '';
+  check('a long task that gets summarized still carries the brain', summarized > 0 && /CODEPLY BRAIN/.test(after) && /magic links/.test(after), `summary at request ${summarized}`);
   server.close();
 }
 

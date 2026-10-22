@@ -10,6 +10,8 @@
  *   deadline  a deadline in the next 3 days, and no push to its project in 3 days
  *   watched   a while after something watched for 10+ minutes, ask how it went
  *   brief     once in the morning, the day in a few lines (off by default)
+ *   activity  the user has moved far less than usual for two days, or stopped
+ *             working out: one gentle "everything okay?" (needs health data)
  *
  * What comes out is checked against the user's limits: a daily budget, quiet
  * hours, never twice for the same thing, a gap between nudges, nothing but
@@ -30,8 +32,9 @@ const TRIGGERS = {
   deadline: { label: 'Deadlines', note: 'A deadline in the next 3 days and no push to the project in 3 days.', domain: 'work' },
   watched: { label: 'Follow-ups', note: 'A few hours after you watched something for 10 minutes or more, a bot asks how it went.', domain: 'life' },
   brief: { label: 'Morning brief', note: 'Your day in a few lines, once in the morning.', domain: 'life', off: true },
+  activity: { label: 'When you move less than usual', note: 'If your steps or workouts drop a lot for a couple of days, a bot gently asks if everything is okay.', domain: 'life' },
 };
-const PRIORITY = { leaving: 3, meeting: 2, email: 2, deadline: 2, watched: 1, brief: 1 };
+const PRIORITY = { leaving: 3, meeting: 2, email: 2, deadline: 2, watched: 1, brief: 1, activity: 1 };
 const GAP_MS = 20 * MIN;
 const DEADLINE_RE = /\b(deadline|due|launch|ship|release|submit|submission|demo|presentation|pitch|go live|hand ?in|exam)\b/i;
 const ONLINE_RE = /^(https?:|www\.)|meet\.google|zoom\.us|teams\.microsoft|webex|online|virtual|google meet|zoom|teams call/i;
@@ -125,7 +128,35 @@ function brief({ store, snap, now, atPc }) {
   return [{ key: `brief:${L.dayKey(now, tz)}`, trigger: 'brief', priority: PRIORITY.brief, how: 'text', facts, fallback: facts.join(' ') }];
 }
 
-const GENERATORS = { leaving, meeting, email, deadline, watched, brief };
+function activity({ store, snap, now }) {
+  const h = snap.health;
+  const tz = snap.tz;
+  const hour = localHour(now, tz);
+  if (!h || hour < 9 || hour >= 21) return [];
+  // At most one every 3 days, whatever the reason.
+  if (store.nudgesSince(now - 3 * DAY, 200).some((n) => n.trigger === 'activity')) return [];
+  const facts = [];
+  let reason = '';
+  const low = (v) => v != null && h.usualSteps && v < 0.45 * h.usualSteps;
+  // The two latest days with data must both be low; today only counts once it is evening.
+  const recent = [hour >= 17 && h.stepsToday != null ? ['so far today', h.stepsToday] : null, h.stepsYesterday != null ? ['yesterday', h.stepsYesterday] : null, h.stepsDayBefore != null ? ['the day before', h.stepsDayBefore] : null].filter(Boolean).slice(0, 2);
+  if (h.usualSteps && h.stepDays >= 7 && recent.length === 2 && recent.every(([, v]) => low(v))) {
+    reason = 'steps';
+    facts.push(`Steps: ${recent.map(([when, v]) => `${v} ${when}`).join(', ')}; the user usually does about ${Math.round(h.usualSteps)} a day.`);
+  } else if (h.workoutsBefore >= 3 && h.workoutsWeek === 0) {
+    reason = 'workouts';
+    facts.push(`No workouts in the last 7 days; the week before had ${h.workoutsBefore}.`);
+  }
+  if (!reason) return [];
+  if (h.feelings.length) facts.push(`Lately they said: "${short(h.feelings[0].title, 80)}".`);
+  facts.push('Ask gently, once, whether everything is okay. No lecture, no numbers unless they help, no medical advice; offer to move or lighten things on their calendar if that helps.');
+  return [{
+    key: `activity:${reason}:${L.dayKey(now, tz)}`, trigger: 'activity', priority: PRIORITY.activity, how: 'text', facts,
+    fallback: reason === 'steps' ? 'You\'ve been moving a lot less than usual the last couple of days. Everything okay?' : 'No workouts this week, which isn\'t like you. All good?',
+  }];
+}
+
+const GENERATORS = { leaving, meeting, email, deadline, watched, brief, activity };
 
 // ─── The limits ─────────────────────────────────────────────────────────────
 

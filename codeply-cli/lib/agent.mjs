@@ -1474,9 +1474,12 @@ Rules:
 - A change counts as Completed only if a [tool result] in the conversation shows it succeeded. Something the assistant only said it would do, or said it did without a matching result, goes under Active.
 - Do not mention the summary process.`;
 
+const TURN_CONTEXT_RE = /<turn-context>[\s\S]*?<\/turn-context>\s*/;
+
 function summarySource(messages) {
   return messages.map((m) => {
-    const text = typeof m.content === 'string' ? m.content : toolResultText(m.content);
+    // The turn context is carried over whole (compactTranscript), not summarized.
+    const text = (typeof m.content === 'string' ? m.content : toolResultText(m.content)).replace(TURN_CONTEXT_RE, '');
     const cut = text.length > SUMMARY_SOURCE_CHARS ? `${text.slice(0, SUMMARY_SOURCE_CHARS)} [...]` : text;
     return `${m.role === 'assistant' ? 'ASSISTANT' : 'USER'}: ${cut}`;
   }).join('\n\n');
@@ -1525,9 +1528,16 @@ async function compactTranscript(messages, userMessage, signal, route, { actions
   summary = summary.replace(/<\/?codeply:[a-z_]+>/gi, '');
   if (!summary) summary = fallbackSummary(userMessage, actions);
   const open = formatTodos(todos, { openOnly: true });
+  // This turn's context (the shared brain, the screen, the project snapshot)
+  // still applies after the summary, however long the task runs.
+  let turnContext = '';
+  for (const m of messages.slice(start, end)) {
+    const hit = TURN_CONTEXT_RE.exec(typeof m.content === 'string' ? m.content : toolResultText(m.content));
+    if (hit) turnContext = `${hit[0].trim()}\n\n`;
+  }
   messages.splice(start, end - start, {
     role: 'user',
-    content: `[context summary] Reference only: earlier steps of this turn, summarized to save room. Their tool ` +
+    content: `${turnContext}[context summary] Reference only: earlier steps of this turn, summarized to save room. Their tool ` +
       'results are gone, so re-read a file if you need its exact content. Your actions all still work: keep going ' +
       'from "Next Move" with action blocks, and do not redo what is listed as completed.\n\n' + summary +
       (open ? `\n\n[Your open task list, kept across the summary]\n${open}` : ''),

@@ -304,6 +304,8 @@ async function bridge(method, pathname, body) {
   if (method === 'POST' && pathname === '/api/life/outbox') { const r = outboxAction(body && body.id, body && body.action === 'now' ? 'now' : 'cancel'); return { status: r.error ? 409 : 200, body: r }; }
   if (method === 'POST' && pathname === '/api/life/stop') { stopAll(); return { status: 200, body: { ok: true } }; }
   if (method === 'POST' && pathname === '/api/life/resume') { deps.life.setSettings({ autopilot: { paused: false } }); setTimeout(pump, 200); return { status: 200, body: { ok: true } }; }
+  // Steps, workouts, sleep and how the user feels, from the phone or watch (life.js noteHealth).
+  if (method === 'POST' && pathname === '/api/life/health') { const n = lib('life.js').noteHealth(body && body.samples, { tz: deps.life.localTz() }); return { status: 200, body: { ok: true, saved: n.length } }; }
   if (method === 'POST' && pathname === '/api/life/nudge') { const r = deps.life.feedback(body && body.id, body && body.verdict); return { status: r.error ? 404 : 200, body: r }; }
   return null;
 }

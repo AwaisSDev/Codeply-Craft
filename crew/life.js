@@ -70,6 +70,7 @@
     botmail: { c: '#bf5af2', i: '<circle cx="12" cy="12" r="3.5"/><path d="M15.5 12v1.5a2.5 2.5 0 0 0 5 0V12a8.5 8.5 0 1 0-3.4 6.8"/>' },
     slack: { c: '#ac8e68', i: '<path d="M9.5 4v16M14.5 4v16M4 9.5h16M4 14.5h16"/>' },
     tasks: { c: '#8e8e93', i: '<rect x="4" y="4" width="16" height="16" rx="3.5"/><path d="m8.5 12 2.5 2.5 4.5-5"/>' },
+    health: { c: '#ff2d55', i: '<path d="M12 19.5s-7-4.3-7-9.5a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.2-7 9.5-7 9.5z"/>' },
   };
   const ROWICON = {
     bell: { c: '#ff9f0a', i: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>' },

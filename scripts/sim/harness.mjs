@@ -164,6 +164,7 @@ function makeWorld(persona, life) {
   const w = { calendar: [], sent: [], drafts: [], inbox: [], posts: [], phone: [] };
   let seq = 0;
   const mirror = (ev) => {
+    if (!life.store) return;
     const at = Date.parse(ev.start.dateTime || ev.start.date);
     const end = Date.parse(ev.end.dateTime || ev.end.date);
     life.store.upsertItem({ id: `calendar:${ev.id}`, source: 'calendar', kind: 'event', at, end, title: ev.summary, place: ev.location || '', people: (ev.attendees || []).map((a) => a.email), data: { allDay: !!ev.start.date } });
@@ -173,6 +174,7 @@ function makeWorld(persona, life) {
     w.calendar.push(e); mirror(e);
     return e;
   };
+  w.useStore = (s) => { life.store = s; };
   w.eventsBetween = (a, b) => w.calendar.filter((e) => { const s = Date.parse(e.start.dateTime || e.start.date); return s >= a && s < b; });
   return w;
 }
@@ -269,7 +271,7 @@ export async function runPersona(persona, { out, bridgeDir, real }) {
     BrowserWindow: Win, BrowserView: Win,
     ipcMain: { handle: (ch, fn) => handlers.set(ch, fn), on: (ch, fn) => listeners.set(ch, fn), removeHandler() {} },
     shell: { openExternal() {}, openPath: async () => '' },
-    safeStorage: { isEncryptionAvailable: () => false },
+    safeStorage: { isEncryptionAvailable: () => true, encryptString: (t) => Buffer.from(String(t), 'utf8'), decryptString: (b) => Buffer.from(b).toString('utf8') },
   };
   const voicePath = path.join(ROOT, 'crew', 'voice.js');
   const voiceStub = { init() {}, prepare: async () => ({}), transcribe: async () => '', speak: async () => null, voiceList: () => [], engineOf: () => 'none', deepgramCheck: async () => ({}) };
@@ -300,11 +302,19 @@ export async function runPersona(persona, { out, bridgeDir, real }) {
   // Google is "connected" (the world answers instead of Google).
   config.saveIntegration('gmail', { accessToken: 'sim-token', refreshToken: 'sim', clientId: 'x', clientSecret: 'y', expiresAt: Date.now() + 10 * 365 * 86400000, email: persona.email, scope: Object.values(oauth.GOOGLE_SCOPE).join(' ') + ' https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send' });
 
-  // The life store every bot reads, and the world it mirrors.
-  const store = lib('life-store.js').openLifeStore({ file: path.join(home, '.codeply', 'life', 'life.db') });
+  // Life, the real always-on engine (life-desktop.js): one store every bot
+  // reads, the calendar and Gmail synced from the world, and the minute's
+  // look for something worth telling the user (driven by "tick" steps).
   const tz = process.env.TZ;
-  L.attach(store, { tz, userName: persona.name });
-  const world = makeWorld(persona, { store });
+  fs.mkdirSync(path.join(home, '.codeply', 'life'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.codeply', 'life', 'settings.json'), JSON.stringify({
+    on: true,
+    sources: { calendar: true, gmail: true, calls: true, projects: true, activity: true, screen: false, heard: false, orbit: true, plans: true, botmail: true, slack: true, tasks: true, health: true },
+    nudges: { on: true, perDay: 8, phone: true, quiet: { on: false, from: '23:00', to: '06:00' }, triggers: { brief: !!persona.brief }, botFor: {} },
+  }));
+  const lifeDesktop = require(path.join(ROOT, 'life-desktop.js'));
+  const store0 = lib('life-store.js').openLifeStore({ file: path.join(home, '.codeply', 'life', 'life.db') });
+  const world = makeWorld(persona, { store: store0 });
   installGoogle(world, oauth, webTools, persona);
   for (const ev of persona.calendar || []) {
     const s = localTime(base, ev.day, ev.at); const e = s + (ev.minutes || 60) * 60000;
@@ -316,6 +326,19 @@ export async function runPersona(persona, { out, bridgeDir, real }) {
   crewMod.open(CLI);
   await handlers.get('crew:app:init')({});
   const agentMod = await import(pathToFileURL(path.join(CLI, 'lib', 'agent.mjs')).href);
+  let gapiRef = null;
+  const nudgeLog = (botId, msg) => { if (msg && msg.kind === 'nudge' && !msg.feedback) log({ kind: 'nudge', bot: (B.getBot(botId) || {}).name, trigger: msg.trigger, text: msg.text }); };
+  lifeDesktop.init({
+    ipcMain: electron.ipcMain, cliDir: CLI, safeStorage: electron.safeStorage, Notification: undefined, notifyIcon: '',
+    userDataDir: path.join(home, 'appdata'), modulePaths: [ROOT, CLI],
+    configLib: () => config, oauthLib: () => oauth, aiLib: () => ai, currentRoute: () => route,
+    gmailToken: async () => 'sim-token', gmailApi: () => gapiRef, callFunction: (n, b) => callFunction(n, b),
+    projects: () => [], crewThread: (botId, msg) => { nudgeLog(botId, msg); crewMod.addNote(CLI, botId, msg); }, crewEvent: (ev) => crewMod.pushEvent(ev), openBot() {},
+    onTask: (t) => autopilot.intake(t), autopilotState: () => autopilot.state(),
+    screenText: async () => null, screenRead: async () => null, screenCapture: async () => null, screenStop() {}, listenState: () => ({}), onListenChange() {}, callState: () => ({}), takeoverReady: () => false,
+  });
+  const store = lifeDesktop.getStore();
+  world.useStore(store); store0.close();
   const brainDesktop = require(path.join(ROOT, 'brain-desktop.js'));
   const autopilot = require(path.join(ROOT, 'autopilot.js'));
   let outboxPolicy = () => 'wait';
@@ -340,12 +363,11 @@ export async function runPersona(persona, { out, bridgeDir, real }) {
     crewThread: (botId, msg) => crewMod.addNote(CLI, botId, msg),
     crewEvent: (ev) => crewMod.pushEvent(ev),
   });
-  const lifeSettings = { autopilot: { paused: false } };
   autopilot.init({
     ipcMain: electron.ipcMain, cliDir: CLI, ensureEngine: async () => true, Notification: undefined, notifyIcon: '',
     configLib: () => config, oauthLib: () => oauth, aiLib: () => ai, currentRoute: () => route,
     callFunction, localTz: () => tz,
-    life: { ensureStore: () => store, settings: () => lifeSettings, pushState() {}, atPc: () => true, localTz: () => tz, setSettings: (p) => Object.assign(lifeSettings, p), feedback: () => ({}) },
+    life: lifeDesktop,
     crewThread: (botId, msg) => crewMod.addNote(CLI, botId, msg), openBot() {},
     agentMod: () => agentMod, botsMail: null, projects: () => [], workspace: () => crewMod.workspace(CLI),
     stopCrew() {}, stopCalls() {},
@@ -357,6 +379,7 @@ export async function runPersona(persona, { out, bridgeDir, real }) {
   const gm = gmailServer(world, persona);
   await new Promise((r) => gm.server.listen(0, '127.0.0.1', r));
   const gapi = MW.gmailApi({ token: async () => 'sim-token', base: `http://127.0.0.1:${gm.server.address().port}/gmail/v1/users/me` });
+  gapiRef = gapi;
   const notify = async (ev) => {
     log({ kind: 'mail_event', bot: ev.botName, from: ev.fromName, subject: ev.subject, level: ev.level, drafted: !!ev.draftId, summary: ev.summary });
     crewMod.addMail(CLI, ev.botId, { ...ev, text: MW.eventLine(ev) });
@@ -426,12 +449,39 @@ export async function runPersona(persona, { out, bridgeDir, real }) {
     await settle(`email ${m.subject}`);
   }
 
+  // Health samples (persona.health: [{ day, at, kind, value, minutes, title, sleepHours }]), sent as their time comes.
+  const healthSent = new Set();
+  function healthDue(t) {
+    const due = (persona.health || []).filter((x) => !healthSent.has(x) && localTime(base, x.day, x.at || '20:00') <= t);
+    if (!due.length) return [];
+    const samples = due.map((x) => {
+      const at = localTime(base, x.day, x.at || '20:00');
+      if (x.kind === 'workout') return { kind: 'workout', title: x.title, at, end: at + (x.minutes || 30) * 60000 };
+      if (x.kind === 'sleep') return { kind: 'sleep', at: at - x.sleepHours * 3600000, end: at };
+      return { kind: x.kind, at, value: x.value, title: x.title };
+    });
+    L.noteHealth(samples, { tz });
+    log({ kind: 'health', count: samples.length });
+    return due;
+  }
+
+  // The minute's look for something worth saying (calendar and Gmail synced first, as the pollers do).
+  async function tick(stamp) {
+    lifeDesktop.poke('calendar'); lifeDesktop.poke('gmail');
+    await sleep(1500);
+    await pollMail();
+    await lifeDesktop.tick();
+    await settle(`tick ${stamp}`);
+  }
+
   const brainIpc = (ch, ...a) => handlers.get(`crew:brain:${ch}`)({}, ...a);
   const H = {
     persona, world, store, B, BR, L, log, transcript, crewEvents, modelCalls, thread, botByName, brainIpc,
     mem: (re, f = {}) => BR.list({ limit: 1000, ...f }).filter((m) => re.test(`${m.slot} ${m.value} ${m.text}`)),
     memAll: () => BR.list({ limit: 1000, includeExpired: true }),
     handoffs: () => BR.recentHandoffs(100),
+    nudges: (since = 0) => transcript.filter((e) => e.kind === 'nudge' && e.at >= since),
+    phone: (since = 0) => transcript.filter((e) => e.kind === 'phone' && e.at >= since),
     tasks: () => store.recentTasks(100),
     /** The last agent request a bot got (its system prompt and turn), as text. */
     lastPromptFor: (who) => {
@@ -478,10 +528,13 @@ export async function runPersona(persona, { out, bridgeDir, real }) {
     setClock(t);
     const stamp = DAYNAME(Date.now());
     const since = Date.now();
-    const label = step.crew ? `${step.crew}: "${step.say}"` : step.craft ? `Craft in ${step.craft}: "${step.say}"` : step.email ? `Email from ${step.email.from}: "${step.email.subject}"` : step.label || 'step';
+    const label = step.tick && !step.crew ? (step.label || 'Time passes: the bots look for something worth saying') : step.crew ? `${step.crew}: "${step.say}"` : step.craft ? `Craft in ${step.craft}: "${step.say}"` : step.email ? `Email from ${step.email.from}: "${step.email.subject}"` : step.label || 'step';
     log({ kind: 'step', when: stamp, label });
     console.log(`\n[${persona.key}] ${stamp}  ${short(label, 140)}`);
+    // Health data from the phone or watch, up to now.
+    for (const smp of healthDue(Date.now())) healthSent.add(smp);
     try {
+      if (step.tick) await tick(stamp);
       if (step.crew) await crewSay(step.crew, step.say);
       else if (step.craft) await craftSay(step.craft, step.say);
       else if (step.email) await email(step.email);
@@ -515,6 +568,7 @@ function writeReport(persona, { out, transcript, results, H }) {
     else if (e.kind === 'approval') lines.push(`- approval asked: ${e.title} -> **${e.verdict}**`);
     else if (e.kind === 'outbox') lines.push(`- outbox: ${short(e.title, 160)} -> **${e.decision}**`);
     else if (e.kind === 'phone') lines.push(`- phone notification from ${e.bot}: ${short(e.text, 200)}`);
+    else if (e.kind === 'nudge') lines.push(`- **${e.bot} reached out (${e.trigger}):** ${short(e.text, 300)}`);
     else if (e.kind === 'notice') lines.push(`- notice: ${short(e.text, 200)}`);
     else if (e.kind === 'task_end') lines.push(`- task finished (${e.status}): ${short(e.report, 300)}`);
     else if (e.kind === 'mail_event') lines.push(`- mail watcher: ${e.bot} flagged "${e.subject}" from ${e.from} (${e.level}${e.drafted ? ', drafted a reply' : ''})`);

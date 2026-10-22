@@ -54,7 +54,7 @@ const MAX_HISTORY = 8;
 const MAX_SOURCES = 8;
 const CHALLENGE_TO_SWITCH = 2;
 const MAX_HANDOFF_CHAIN = 3;
-const BLOCK_LIMITS = { personal: 14, unsure: 4, live: 5, project: 12, lessons: 3 };
+const BLOCK_LIMITS = { personal: 16, unsure: 4, live: 5, project: 12, lessons: 3, todos: 5 };
 
 /** What can be remembered, and which layer it lives in. */
 const KINDS = {
@@ -101,11 +101,18 @@ function sameText(a, b) {
 }
 
 const STOP = new Set('the and for with that this from what when where which your you our are was were can could would should will have has had not but all any how who why into onto about please just some them they then than there these those its it him her his she use using want need make get got give show tell check look find out new one two user users does did doing done like also very really'.split(' '));
+/** "candidates", "candidate" and "candidating" all become "candidat"; "emails" becomes "email". */
+function stem(w) {
+  if (w.length > 4 && w.endsWith('s') && !w.endsWith('ss')) w = w.slice(0, -1);
+  if (w.length > 5 && w.endsWith('ing')) w = w.slice(0, -3);
+  if (w.length > 4 && w.endsWith('e')) w = w.slice(0, -1);
+  return w;
+}
 /** Words that carry meaning, lightly stemmed ("emails" and "email" match). */
 function terms(text) {
   return [...new Set(norm(text).split(' ')
     .filter((w) => w.length >= 3 && !STOP.has(w))
-    .map((w) => (w.length > 4 ? w.replace(/(ing|es|s)$/, '') : w)))];
+    .map(stem))];
 }
 function overlap(a, b) {
   const want = Array.isArray(a) ? a : terms(a);
@@ -577,7 +584,8 @@ function contextBlock(o = {}) {
     const here = projectKey(o.project || projectOfFolder(o.cwd));
     if (here && projectFor(here)) keys.add(here);
     for (const p of projectsNamed(o.request || '')) keys.add(p.key);
-    const personal = list({ scope: 'me', kinds: ['preference', 'fact', 'routine', 'style'], limit: 300 });
+    // Standing rules count as personal too: "always CC hiring@" may come back as a requirement or decision.
+    const personal = list({ scope: 'me', kinds: ['preference', 'fact', 'routine', 'style', 'decision', 'requirement'], limit: 300 });
     const sure = rank(personal.filter((m) => m.status === 'confirmed'), want, BLOCK_LIMITS.personal);
     const unsure = rank(personal.filter((m) => m.status === 'tentative'), want, 20).filter((m) => !want.length || overlap(want, m.text) > 0 || m.evidence > 1).slice(0, BLOCK_LIMITS.unsure);
     const live = list({ kinds: ['context'], limit: 20 }).slice(0, BLOCK_LIMITS.live);
@@ -585,9 +593,11 @@ function contextBlock(o = {}) {
     const line = (m) => `- ${m.text}${m.review ? ' (recently changed; double check)' : ''}`;
     if (sure.length) lines.push('About them:', ...sure.map(line));
     if (unsure.length) lines.push('Not sure yet (heard once or in passing; never act on it without checking):', ...unsure.map((m) => `- ${m.text}`));
-    // Decisions, ideas and to-dos with no project: only the ones this message is about.
-    const loose = want.length ? rank(list({ scope: 'me', kinds: [...PROJECT_KINDS], limit: 200 }), want, 20).filter((m) => overlap(want, m.text) > 0).slice(0, 4) : [];
-    if (loose.length) lines.push('Earlier notes that fit this message:', ...loose.map((m) => `- ${KINDS[m.kind].label}: ${m.text}`));
+    // Open to-dos from the last three weeks always; ideas only when this message is about them.
+    const todos = list({ scope: 'me', kinds: ['todo'], limit: 50 }).filter((m) => now() - m.updatedAt < 21 * DAY).slice(0, BLOCK_LIMITS.todos);
+    if (todos.length) lines.push('Open to-dos from earlier chats (say so if one is due or done):', ...todos.map((m) => `- ${m.text}${m.status === 'tentative' ? ' (not confirmed)' : ''}`));
+    const ideas = want.length ? rank(list({ scope: 'me', kinds: ['idea'], limit: 100 }), want, 10).filter((m) => overlap(want, m.text) > 0).slice(0, 3) : [];
+    if (ideas.length) lines.push('Earlier ideas that fit this message:', ...ideas.map((m) => `- ${m.text}`));
     if (live.length) lines.push('Right now (temporary):', ...live.map((m) => `- ${m.text}${m.expiresAt ? ` (until about ${new Date(m.expiresAt).toISOString().slice(0, 16).replace('T', ' ')} UTC)` : ''}`));
     for (const key of [...keys].slice(0, 2)) {
       const items = rank(list({ scope: `project:${key}`, limit: 200 }), want, BLOCK_LIMITS.project);
@@ -596,7 +606,7 @@ function contextBlock(o = {}) {
       lines.push(`Project "${(p && p.name) || key}" (from earlier chats, in any Codeply app):`);
       for (const m of items) {
         const src = m.sources.length ? m.sources[m.sources.length - 1] : null;
-        lines.push(`- ${KINDS[m.kind] ? KINDS[m.kind].label : m.kind}: ${m.text}${src ? ` (${sourceLabel(src)}, ${ago(now() - m.updatedAt)} ago)` : ''}${m.status === 'tentative' ? ' (not confirmed)' : ''}`);
+        lines.push(`- ${m.kind === 'fact' ? 'Fact' : KINDS[m.kind] ? KINDS[m.kind].label : m.kind}: ${m.text}${src ? ` (${sourceLabel(src)}, ${ago(now() - m.updatedAt)} ago)` : ''}${m.status === 'tentative' ? ' (not confirmed)' : ''}`);
       }
     }
     let domains = o.domains;
