@@ -630,9 +630,10 @@ function contextBlock(o = {}) {
  */
 function observationsAsk() {
   const known = projects(15).map((p) => p.name).join(', ');
-  return `Also fill "observations" for the user's shared Codeply brain (every app and bot reads it). Only lasting things about the user or their projects:
+  return `Also fill "observations" for the user's shared Codeply brain (every app and bot reads it). Only lasting things about the user, their projects, and the people in their life:
 {"kind": "preference|fact|routine|style|decision|idea|requirement|todo|context", "slot": "what it is about in 1 to 4 words, the same each time (favorite color, reply length, auth provider)", "value": "the value in a few words", "text": "one short third-person sentence", "certainty": "stated|implied|temporary|joking|hypothetical|quoting", "project": "the project name, only for project things", "ttlHours": hours, only for context}
-Read the tone. certainty is "joking" for sarcasm, teasing, banter or anything said in an argument or to make a point; "hypothetical" for ifs, maybes, wishes and questions; "quoting" for someone else's words or tastes; "temporary" (kind context) for what is true only for now; "stated" only when the user said it plainly about themselves; otherwise "implied".${known ? ` Known projects: ${known}.` : ''} Most exchanges have none: use an empty list. At most 4.`;
+Read the tone. certainty is "joking" for sarcasm, teasing, banter or anything said in an argument or to make a point; "hypothetical" for ifs, maybes, wishes and questions; "quoting" for someone else's opinion, advice or claim passed on (a neighbour's tip, a friend's insult), which must never become the user's own; "temporary" (kind context) for what is true only for now; "stated" only when the user said it plainly; otherwise "implied".
+People matter too: what the user tells you about someone close (who they are to the user, what they like, their birthday) is a kind "fact" about that person, written with their name ("Ayesha, the user's girlfriend, loves sketching"), never as the user's own taste.${known ? ` Known projects: ${known}.` : ''} Most exchanges have none: use an empty list. At most 4.`;
 }
 
 /** Store what a learning call returned. Returns the outcome of each. */
