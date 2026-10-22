@@ -2746,6 +2746,8 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
     const run = agentMod.runAgent({
       userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route,
       roleId, goal, maxSteps, verifyOnly, botPrompt: bot?.botPrompt, askBot: bot?.askBot, botId: bot?.botId,
+      // Pass work to the bot whose job it is (brain-desktop.js); the user asked for this chat.
+      handOff: bot && !verifyOnly ? brainDesktop.handOffFor({ botId: bot.botId || null, requester: 'user' }) : undefined,
       haze: { product: 'craft', chatId: session.id }, todos,
     });
     for await (const ev of run) {
@@ -2818,6 +2820,8 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
     error = err.message;
   }
   if (bot) bot.done(userMessage, replyText); // frees the one-bot lock; learns in the background
+  // The shared brain learns from plain Craft chats too, so Crew and the phone know what was decided here.
+  if (status === 'done' && !verifyOnly) brainDesktop.learnFromCraft({ userText: userMessage, replyText, cwd, route, withBot: !!bot?.bot });
   return { status, madeAnyEdit, replyText, error };
 }
 
@@ -3623,10 +3627,21 @@ handoffDesktop.init({
   saveLocal: () => saveStore(),
   persist: (session) => { saveStore(); syncSessionToDb(session); },
 });
+// The shared brain (brain-desktop.js): one personal context for every Codeply
+// app and bot, and the board where bots hand work to each other.
+const brainDesktop = require('./brain-desktop');
+brainDesktop.init({
+  ipcMain, cliDir: CLI_DIR, modulePaths: [__dirname, CLI_DIR], aiLib: () => aiLib,
+  intake: (t) => autopilot.intake(t),
+  crewThread: (botId, msg) => crew().addNote(CLI_DIR, botId, msg),
+  crewEvent: (ev) => { if (crewMod) crewMod.pushEvent(ev); },
+  onBotsChange: () => botsWatch.poke(),
+});
 // Bots: named agents with a job, a tone, memory and an avatar (see bots-desktop.js).
 const botsDesktop = require('./bots-desktop');
 botsDesktop.init({
   ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine, sendEvent, currentRoute, browser: browserCheck,
+  canHandOff: () => require(path.join(CLI_DIR, 'lib', 'brain.js')).canHandOff(),
   agentMod: () => agentMod, aiLib: () => aiLib, permissionsLib: () => permissionsLib,
   onChange: () => botsWatch.poke(),
   onCallSaved: (c) => lifeDesktop.noteCall(c),
@@ -3639,6 +3654,7 @@ app.whenReady().then(() => botsWatch.init({
   aiLib: () => aiLib, configLib: () => configLib, oauthLib: () => oauthLib, authLib: () => authLib,
   crewThread: (botId, ev) => crew().addMail(CLI_DIR, botId, ev),
   openBot: (botId) => crew().showBot(CLI_DIR, botId),
+  onImportant: (ev) => brainDesktop.onImportantEmail(ev),
 }));
 // Life Integrated Bots (life-desktop.js): one picture of the user's day that
 // every bot reads, and bots that reach out by themselves. Off until the user
@@ -3722,6 +3738,8 @@ app.whenReady().then(() => {
     workspace: () => crew().workspace(CLI_DIR),
     stopCrew: () => { if (crewMod) crewMod.stopAll(); },
     stopCalls: () => callListen.stopAll(),
+    handOffFor: (o) => brainDesktop.handOffFor(o),
+    onTaskEnd: (task, status, report) => brainDesktop.taskEnded(task, status, report),
   });
   callListen.init({
     ...shared,

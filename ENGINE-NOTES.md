@@ -103,6 +103,26 @@ Untested against real services: the GitHub agent has not run inside a real Actio
 | Desktop | Publish button, progress card (Database, Vercel, GitHub, Live), Connect button on the question card, token fallback in Connect Apps | `publish-ui.js/.css`, `main.js` connectToken + resolveConnectQuestions |
 | Tests | Fake Vercel/Supabase/GitHub servers + local bare remote | `scripts/publish-test.mjs` |
 
+### The shared brain and agent handoffs (2026-10-22)
+
+One personal context for every Codeply product and bot, so the user never explains themselves twice.
+
+| Area | What | Where |
+|---|---|---|
+| Brain | One SQLite store (`~/.codeply/brain/brain.db`): personal memory (preferences, facts, routines, style), project context (decisions, ideas, requirements, to-dos per project), live context that expires, lessons shared by the team, and a change log | `brain.js` |
+| Judgment | `observe()` reads the certainty of each statement: jokes, sarcasm, hypotheticals and other people's words are ignored; temporary things expire; a first mention in passing is "not sure yet"; a confirmed memory contradicted in passing only changes after it comes up again, as tentative and flagged for review; a plain new statement replaces it (history kept); anything the user set by hand is locked; secrets are never kept | `brain.js` observe |
+| Every run | `runAgent` adds the brain block to the turn context (ranked by the message, the folder's project and any project the message names), so Craft, Crew, the autopilot, the CLI and `codeply serve` all see it | `agent.mjs` |
+| Tools | `remember` (save or forget), `recall` (search), `hand_off` (pass work to the bot whose job it is and carry on, unlike `ask_bot`); text tags and native function definitions | `tools.mjs`, `native-tools.mjs`, `agent.mjs` |
+| Learning | Crew: the bot's existing memory call also returns observations (no extra model call). Plain Craft: one small call after a turn. Reflection lessons are shared with the team and shown to another bot only when they fit its request | `bots.js` learnFromTurn / reflectOnRun, `brain-desktop.js` |
+| Coordination | A handoff carries only intent, facts and the decision so far, routed by bot name or domain (`handles`, else read from the job). The desktop turns it into an autopilot task; the requester stays what it was at the start, so a meeting request from someone's email can only be proposed, never booked without the user. The sender's thread gets a card that updates when the work ends | `brain.js`, `brain-desktop.js`, `autopilot.js` |
+| Email to calendar | An important email with a meeting word and a time (no model call) is handed from the watching bot to the calendar bot | `brain.js` looksLikeScheduling, `bots-watch.js`, `brain-desktop.js` |
+| Autonomy | Level 1 `none` ("Just suggest, never act"): every action category is refused, watched or not, alongside `ask`/`hold` (Level 2) and `full` (Level 3) | `bots.js`, `autopilot.js`, `crew-main.js`, `bots-desktop.js` |
+| Crew | Brain page: Needs a look (Keep / Switch / Undo), About you, Right now, per project, From the team, Who handles what, Handed on, What changed; correct, confirm, forget, tell it something, switch it off | `crew/brain.js`, `crew/crew.css`, `brain-desktop.js` |
+
+Tests: `npm run test:brain` (90 checks, including a real agent run against a fake model). The engine and life suites write to a throwaway brain.
+
+Not done yet: the brain lives on one PC (no sync to the phone or Craft Cloud machines), the mobile app has no Brain screen, and only the email to calendar handoff is spotted automatically.
+
 ## Worth doing next (from the study, not built yet)
 
 1. UX: group consecutive reads into one "Gathered context" row, docked approvals,

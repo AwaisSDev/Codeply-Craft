@@ -24,6 +24,7 @@ const ipcMain = {
   on: (ch, fn) => rawIpc.on(`crew:${ch}`, asCrew(fn)),
 };
 let ENGINE = null; // Craft's codeply-cli folder, set by init()
+const brainLib = () => require(path.join(ENGINE, 'lib', 'brain.js'));
 // Crew's threads and settings stay where the standalone app kept them.
 const CREW_DATA = path.join(app.getPath('appData'), 'Codeply Crew');
 const voice = require('./voice');
@@ -230,7 +231,7 @@ function catalog() {
   };
 }
 function lastLine(t) {
-  const m = [...(t.messages || [])].reverse().find((x) => ['user', 'assistant', 'call', 'mail', 'nudge', 'botmail', 'slack', 'task'].includes(x.kind));
+  const m = [...(t.messages || [])].reverse().find((x) => ['user', 'assistant', 'call', 'mail', 'nudge', 'botmail', 'slack', 'task', 'handoff'].includes(x.kind));
   if (!m) return '';
   if (m.kind === 'call') return `Call, ${formatDuration(m.ms)}`;
   if (m.kind === 'mail') return String(m.text || '');
@@ -297,6 +298,11 @@ function approverFor(where, bot, signal) {
   const at = typeof where === 'string' ? { botId: where } : where;
   return async (req) => {
     if (signal.aborted) return 'reject';
+    // Suggest only (autonomy Level 1): the bot never acts, so there is nothing to approve.
+    if (bot && bots.suggestOnly(bot, req.tool)) {
+      send('crew:event', { ...at, type: 'notice', text: `${bot.name} is set to suggest only, so it did not ${String(req.title || req.tool).slice(0, 120).replace(/^./, (c) => c.toLowerCase())}. Change it in Edit bot, Autonomy.` });
+      return 'reject';
+    }
     if (bot && !req.danger && req.tool !== 'fetch_image' && bots.canSkipApproval(bot, req.tool)) return 'once';
     if (allowedAlways.has(req.tool) && req.tool !== 'run') return 'once';
     const requestId = `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -374,8 +380,10 @@ ipcMain.handle('chat:send', guard(async (e, { botId, text }) => {
         const run = agentMod.runAgent({
           userMessage: text, history: prior, mode: 'Build', cwd, signal, route, maxSteps: 40,
           approve: approverFor(botId, bot, signal),
-          botPrompt: (native) => bots.buildBotPrompt(bot, { team, canDelegate: true, native, request: text }),
+          botPrompt: (native) => bots.buildBotPrompt(bot, { team, canDelegate: true, canHandOff: brainLib().canHandOff(), native, request: text }),
           askBot: makeAskBot({ botId, caller: bot, depth: 0, chain: [bot.id], token, signal, route, cwd }),
+          // Pass work on without waiting (brain.js): the user asked for this chat, so the receiver may act within its own limits.
+          handOff: (args) => brainLib().handOff(args, { fromBot: bots.getBot(bot.id) || bot, requester: 'user' }),
           botId: bot.id,
           haze: { product: 'crew', chatId: `bot:${botId}` },
         });
@@ -760,7 +768,7 @@ function addMail(engineDir, botId, ev) {
 // A nudge, an email to the bot's own address, a task the bot did by itself:
 // a card in that bot's thread. The hooks let a call in Crew reach the life context.
 let lifeHooks = {};
-const NOTE_KINDS = new Set(['nudge', 'botmail', 'slack', 'task', 'callnote']);
+const NOTE_KINDS = new Set(['nudge', 'botmail', 'slack', 'task', 'callnote', 'handoff']);
 function addNote(engineDir, botId, m) {
   init(engineDir);
   if (!m || !NOTE_KINDS.has(m.kind) || !bots || !bots.getBot(botId)) return;

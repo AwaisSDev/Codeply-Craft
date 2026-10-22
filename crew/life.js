@@ -361,6 +361,7 @@
     open = true;
     const st = S();
     st.current = null; st.currentGroup = null;
+    if (window.CrewBrain) window.CrewBrain.hide();
     document.querySelectorAll('.bot-item.on').forEach((x) => x.classList.remove('on'));
     const nav = $('#lifeNav'); if (nav) nav.classList.add('on');
     paint();
@@ -370,7 +371,7 @@
 
   // ─── The bot editor ───────────────────────────────────────────────────────
 
-  const AUTONOMY = { ask: 'Ask me first', hold: 'Do it after a wait I can cancel', full: 'Just do it' };
+  const AUTONOMY = { none: 'Just suggest, never act', ask: 'Ask me first', hold: 'Do it after a wait I can cancel', full: 'Just do it' };
   const STYLES = { friendly: 'Warm and casual', formal: 'Polite and formal', brief: 'Short and to the point', playful: 'Light and a bit funny' };
   function editorHtml(d, ui) {
     d.life = { read: true, sensitive: false, sources: null, speaksFor: [], ...(d.life || {}) };
@@ -464,6 +465,11 @@
         <div>${esc(m.text || '')}</div>${m.summary ? `<div class="dim">${esc(m.summary)}</div>` : ''}
         ${m.draft ? `<details open><summary>A reply you could send</summary><div class="lcard-body">${esc(m.draft)}</div></details>` : ''}
         <div class="lcard-actions">${m.draft ? `<button class="btn" data-copy="${esc(m.draft)}">Copy reply</button>` : ''}${m.url ? `<button class="btn" data-open-url="${esc(m.url)}">Open in Slack</button>` : ''}</div></div>`;
+    }
+    if (m.kind === 'handoff') {
+      const st = { working: 'working on it', done: 'done', needs_you: 'needs you', failed: 'could not finish' }[m.status] || '';
+      return `<div class="lcard task"><div class="lcard-kind">Handed on${m.to ? ` to ${esc(m.to)}` : ''}${st ? `<span class="life-status s-${esc(m.status === 'working' ? 'running' : m.status)}">${esc(st)}</span>` : ''}</div>
+        <div>${esc(m.text || '')}</div>${m.report ? `<div class="lcard-body">${esc(m.report)}</div>` : ''}</div>`;
     }
     if (m.kind === 'task') {
       return `<div class="lcard task"><div class="lcard-kind">Task from ${esc(m.source || 'you')}<span class="life-status s-${esc(m.status || '')}">${esc(String(m.status || '').replace('_', ' '))}</span></div>

@@ -11,6 +11,8 @@
  *   hold   put it in the outbox for the bot's hold time; the user can cancel
  *          from Crew or the phone; then it goes by itself
  *   ask    wait for the user (in the outbox, with no timer)
+ *   refuse not at all: the bot is set to suggest only (autonomy level none),
+ *          so it drafts and says what it would do instead
  *
  * Always ask, at every level: anything the engine flags dangerous, deleting
  * a cloud project, anything when the request did not come from the user, and
@@ -30,6 +32,7 @@ const BUDGET_OF = { send: 'emails', publish: 'deploys' };
 function decide(req, bot, o = {}) {
   const tool = String(req && req.tool || '');
   if (!bot || o.paused) return 'ask';
+  if (bots.suggestOnly(bot, tool)) return 'refuse';
   if (req.danger || NEVER_ALONE.has(tool)) return 'ask';
   if (o.requester && o.requester !== 'user') return 'ask';
   const cat = bots.approvalCategory(tool);
@@ -46,7 +49,7 @@ function decide(req, bot, o = {}) {
   return 'ask';
 }
 
-const SOURCE_NAME = { crew: 'a chat in Crew', call: 'a phone call', email: 'an email from the user', slack: 'Slack', phone: 'the phone app', nudge: 'a nudge' };
+const SOURCE_NAME = { handoff: 'another bot handing work on', crew: 'a chat in Crew', call: 'a phone call', email: 'an email from the user', slack: 'Slack', phone: 'the phone app', nudge: 'a nudge' };
 
 /** The first turn: the task, how it came in, and how to work without the user there. */
 function taskMessage(task, { holdMinutes } = {}) {

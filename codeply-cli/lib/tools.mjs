@@ -26,6 +26,7 @@ const { commandPatterns } = require('./arity.js');
 const mcpLib = require('./mcp.js');
 const reachLib = require('./reach.js');
 const lifeLib = require('./life.js');
+const brainLib = require('./brain.js');
 const screenLib = require('./screen.js');
 const botMailLib = require('./bot-mail.js');
 const applyLimit = require('./apply-limit.js');
@@ -2278,6 +2279,18 @@ function life_context(args, ctx) {
   return lifeLib.contextTool(args, { bot });
 }
 
+// ─── The shared brain (lib/brain.js): one memory for every app and bot ────────
+const remember = (args, ctx) => brainLib.rememberTool(args, ctx);
+const recall = (args, ctx) => brainLib.recallTool(args, ctx);
+
+// Pass a job to the agent whose domain it is, and carry on (no waiting, unlike
+// ask_bot). The host provides ctx.handOff, which knows who asked for this run.
+async function hand_off(args, ctx) {
+  if (typeof ctx.handOff !== 'function') return { ok: false, output: 'hand_off is not available here. Do the work yourself, or ask a teammate with ask_bot.' };
+  if (!String(args.intent || '').trim()) return { ok: false, output: 'hand_off needs <intent>: what the other agent should get done.' };
+  return ctx.handOff({ to: String(args.to || '').trim(), intent: String(args.intent || '').trim(), facts: args.facts, decision: args.decision });
+}
+
 // ─── The user's screen (lib/screen.js; only a desktop host can look) ──────────
 // A picture of the screen and its text, for "this", "her message", "what's on my right".
 const look_at_screen = (args, ctx) => screenLib.lookTool(ctx, args);
@@ -2369,7 +2382,7 @@ export const TOOLS = {
   ask_bot,
   ask_user,
   mcp,
-  web_fetch, web_search, image_search, apply_patch, plan_exit, plan_enter, lsp, reach_me, watch_email, life_context, bot_email_send, look_at_screen,
+  web_fetch, web_search, image_search, apply_patch, plan_exit, plan_enter, lsp, reach_me, watch_email, life_context, remember, recall, hand_off, bot_email_send, look_at_screen,
   list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, browser_check,
   gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, slack_post_message, vercel_deploy, supabase_create_project, supabase_delete_project, github_create_repo,
   design_reference_search, view_images, supabase_api, supabase_sql, vercel_api, add_model,
@@ -2394,6 +2407,9 @@ export const TOOL_DISPLAY = {
   reach_me: { verb: 'phone', icon: '☎' },
   watch_email: { verb: 'watch', icon: '✉' },
   life_context: { verb: 'context', icon: '◷' },
+  remember: { verb: 'remember', icon: '✦' },
+  recall: { verb: 'recall', icon: '✦' },
+  hand_off: { verb: 'handed', icon: '⇢' },
   look_at_screen: { verb: 'screen', icon: '◉' },
   bot_email_send: { verb: 'email', icon: '✉' },
   apply_patch:{ verb: 'patch',  icon: '✎' },
@@ -2448,7 +2464,7 @@ const MUTATING_TOOLS = new Set([
 
 // Everything that isn't designing: commands, deploys, databases, messages, other projects.
 export const DESIGN_BLOCKED = new Set([
-  'run', 'lsp', 'mcp', 'ask_bot', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model', 'browser_check', 'bot_email_send',
+  'run', 'lsp', 'mcp', 'ask_bot', 'hand_off', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model', 'browser_check', 'bot_email_send',
   'gmail_send', 'gmail_draft', 'gmail_search', 'drafts_list', 'calendar_list', 'calendar_add', 'slack_post_message',
   'vercel_deploy', 'vercel_api', 'supabase_create_project', 'supabase_delete_project', 'supabase_api', 'supabase_sql',
   'github_create_repo', 'publish_check', 'publish_connect', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github',

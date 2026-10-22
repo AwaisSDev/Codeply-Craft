@@ -26,6 +26,7 @@ const plugins = require('./plugins.js');
 const rolesLib = require('./subagents.js');
 const reachLib = require('./reach.js');
 const lifeLib = require('./life.js');
+const brainLib = require('./brain.js');
 const screenLib = require('./screen.js');
 const botMailLib = require('./bot-mail.js');
 const config = require('./config.js');
@@ -57,7 +58,7 @@ const FORMAT_CORRECTION =
   'Valid names: todo, ask_user, mcp, list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, ' +
   'browser_check, gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, add_model, slack_post_message, vercel_deploy, supabase_create_project, ' +
   'supabase_delete_project, github_create_repo, design_reference_search, view_images, design_direction, design_lint, supabase_api, supabase_sql, vercel_api, ' +
-  'web_fetch, web_search, image_search, reach_me, watch_email, life_context, bot_email_send, look_at_screen, apply_patch, plan_exit, plan_enter, lsp, publish_check, publish_connect, supabase_setup, supabase_schema, ' +
+  'web_fetch, web_search, image_search, reach_me, watch_email, life_context, remember, recall, hand_off, bot_email_send, look_at_screen, apply_patch, plan_exit, plan_enter, lsp, publish_check, publish_connect, supabase_setup, supabase_schema, ' +
   'publish_deploy, publish_github.';
 
 const TRUNCATION_CORRECTION =
@@ -357,6 +358,9 @@ const PARAMS = {
   reach_me: ['how', 'message', 'at', 'bot'], // only when the host can reach the phone (lib/reach.js)
   watch_email: ['from', 'how', 'note', 'repeat'],
   life_context: ['about', 'query'], // only when the host attached the life store (lib/life.js)
+  remember: ['kind', 'slot', 'value', 'text', 'certainty', 'project', 'ttlHours', 'forget'], // the shared brain (lib/brain.js)
+  recall: ['query', 'project'],
+  hand_off: ['to', 'intent', 'facts', 'decision'], // only when the host passes handOff (lib/brain.js)
   look_at_screen: ['why', 'window'], // only when the host can take a screenshot (lib/screen.js)
   bot_email_send: ['to', 'subject', 'body', 'reply_to'], // only for a bot with its own address (lib/bot-mail.js)
   apply_patch: ['patch'],
@@ -423,6 +427,9 @@ const NAME_ALIASES = {
   reach_me: 'reach_me', reachme: 'reach_me', call_me: 'reach_me', callme: 'reach_me', text_me: 'reach_me', textme: 'reach_me', notify_me: 'reach_me', notifyme: 'reach_me', call_user: 'reach_me',
   watch_email: 'watch_email', watchemail: 'watch_email', email_alert: 'watch_email', alert_on_email: 'watch_email', watch_inbox: 'watch_email',
   look_at_screen: 'look_at_screen', lookatscreen: 'look_at_screen', screenshot: 'look_at_screen', take_screenshot: 'look_at_screen', takescreenshot: 'look_at_screen', see_screen: 'look_at_screen', seescreen: 'look_at_screen', read_screen: 'look_at_screen', readscreen: 'look_at_screen', view_screen: 'look_at_screen', screen: 'look_at_screen',
+  remember: 'remember', save_memory: 'remember', savememory: 'remember', memorize: 'remember', note_preference: 'remember',
+  recall: 'recall', brain: 'recall', search_memory: 'recall', searchmemory: 'recall',
+  hand_off: 'hand_off', handoff: 'hand_off', hand_over: 'hand_off', handover: 'hand_off', pass_to: 'hand_off',
   life_context: 'life_context', lifecontext: 'life_context', my_day: 'life_context', myday: 'life_context', user_context: 'life_context', usercontext: 'life_context',
   bot_email_send: 'bot_email_send', botemailsend: 'bot_email_send', bot_email: 'bot_email_send', botemail: 'bot_email_send', email_as_me: 'bot_email_send', send_as_bot: 'bot_email_send',
   image_search: 'image_search', imagesearch: 'image_search', searchimages: 'image_search', search_images: 'image_search', googleimages: 'image_search',
@@ -1687,7 +1694,7 @@ function withReasoning(msg, reasoning) {
  *                                  "claims an edit it didn't make this turn" check is skipped.
  * @yields {{type:string, ...}} text | reasoning | tool_start | tool_end | done | error | aborted
  */
-export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly, botPrompt, askBot, botId, haze: hazeOpts, todos }) {
+export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly, botPrompt, askBot, handOff, botId, haze: hazeOpts, todos }) {
   let readOnly = READ_ONLY_MODES.has(mode);
   const stepBudget = Math.max(1, maxSteps || MAX_STEPS);
   // OpenAI-shaped content array only when there's actually an image to carry -
@@ -1718,6 +1725,8 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       if (n === 'reach_me' || n === 'watch_email') return reachLib.available();
       if (m === 'Design' && DESIGN_BLOCKED.has(n)) return false;
       if (n === 'life_context') return lifeLib.available();
+      if (n === 'remember' || n === 'recall') return brainLib.available();
+      if (n === 'hand_off') return typeof handOff === 'function' && brainLib.canHandOff() && !ro && m !== 'Design';
       if (n === 'look_at_screen') return screenLib.available();
       if (n === 'bot_email_send') return botMailLib.available() && !!botMailLib.addressOf(botId);
       if (ro && MUTATING_ACTIONS.has(n)) return m === 'Plan' && (n === 'write_file' || n === 'edit_file');
@@ -1742,6 +1751,12 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   // What this chat saw on the user's screen (the drop reads it with every message; lib/screen.js).
   const chatId = hazeOpts?.chatId || null;
   const screenBlock = screenLib.contextFor(chatId);
+  // The shared brain (lib/brain.js): what every Codeply app and bot knows about
+  // the user and this project. Per turn, because it ranks by this message.
+  const brainProject = brainLib.projectOfFolder(cwd);
+  if (brainProject) brainLib.touchProject({ name: brainProject, path: cwd });
+  const brainBlock = brainLib.contextBlock({ cwd, request: typeof userMessage === 'string' ? userMessage : '', botId, native });
+  const turnExtra = [screenBlock, brainBlock].filter(Boolean).join('\n\n');
   // A question about the screen needs careful reading: Haze 2 never treats it as small talk.
   if (haze && screenBlock) haze.screen = true;
   const messages = sections
@@ -1749,17 +1764,17 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       { role: 'system', content: sections.core },
       { role: 'system', content: sections.project },
       ...history,
-      { role: 'user', content: withTurnContext(userContent, [sections.turn, screenBlock].filter(Boolean).join('\n\n')) },
+      { role: 'user', content: withTurnContext(userContent, [sections.turn, turnExtra].filter(Boolean).join('\n\n')) },
     ]
     : [
       { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt }) },
       ...history,
-      { role: 'user', content: screenBlock ? withTurnContext(userContent, screenBlock) : userContent },
+      { role: 'user', content: turnExtra ? withTurnContext(userContent, turnExtra) : userContent },
     ];
 
   // fileState: path -> mtime when this turn last read/wrote it (see tools.mjs).
   // userMessage lets the publish tools refuse when nobody asked to publish.
-  const ctx = { cwd, approve, browser, signal, mode, route, userMessage, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null, askBot: typeof askBot === 'function' ? askBot : null, botId: botId || null, chatId };
+  const ctx = { cwd, approve, browser, signal, mode, route, userMessage, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null, askBot: typeof askBot === 'function' ? askBot : null, handOff: typeof handOff === 'function' ? handOff : null, botId: botId || null, chatId };
   // A run carried on from the other side (handoff.mjs) keeps its todo list.
   if (Array.isArray(todos) && todos.length) ctx.todos = todos;
   const recentCallKeys = [];      // executed calls, in order, for the stuck-loop guard

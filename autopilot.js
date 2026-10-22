@@ -201,6 +201,8 @@ async function run(task, bot) {
     if (signal.aborted) return 'reject';
     const verdict = R.decide(req, BOTS().getBot(bot.id) || bot, { requester: task.requester, paused: paused(), budgetLeft: (k) => budgetLeft(bot, k) });
     if (verdict === 'run') { audit({ kind: 'approved', botId: bot.id, taskId: task.id, tool: req.tool, title: short(req.title, 200), verdict: 'auto', ok: true }); return 'once'; }
+    // Suggest only (Level 1): never acts, never asks; the report carries the suggestion.
+    if (verdict === 'refuse') { audit({ kind: 'refused', botId: bot.id, taskId: task.id, tool: req.tool, title: short(req.title, 200), verdict: 'suggest only', ok: false, result: 'set to suggest only' }); return 'reject'; }
     const asked = verdict === 'ask';
     const r = await hold({ botId: bot.id, taskId: task.id, tool: req.tool, title: req.title, detail: req.detail, minutes: a.holdMinutes, ask: asked });
     if (asked && r !== 'go') needsYou = true;
@@ -214,7 +216,9 @@ async function run(task, bot) {
   try {
     await BOTS().globalLock.run(`autopilot:${task.id}`, async () => {
       const userMessage = R.taskMessage(task, { holdMinutes: a.level === 'hold' ? a.holdMinutes : 0 });
-      const common = { mode: 'Build', cwd, signal, route, approve, botId: bot.id, haze: { product: 'crew', chatId: `task:${task.id}` }, botPrompt: (native) => BOTS().buildBotPrompt(bot, { team, native, request: task.text }) };
+      // A bot can pass part of the task on (brain.js); the receiver inherits who asked in the end.
+      const handOff = deps.handOffFor ? deps.handOffFor({ botId: bot.id, requester: task.requester, taskId: task.id }) : undefined;
+      const common = { mode: 'Build', cwd, signal, route, approve, botId: bot.id, handOff, haze: { product: 'crew', chatId: `task:${task.id}` }, botPrompt: (native) => BOTS().buildBotPrompt(bot, { team, native, request: task.text, canHandOff: !!handOff }) };
       reply = await collect(agent.runAgent({ ...common, userMessage, history: [], maxSteps: 40 }), onEvent);
       if (signal.aborted) throw new Error('Stopped.');
       t = s.saveTask({ id: task.id, status: 'verifying' });
@@ -233,6 +237,7 @@ async function run(task, bot) {
   t = s.saveTask({ id: task.id, status, data: { report: short(report, 1200), checked: verdict.why || verdict.verified, verified: verdict.verified } });
   card(t);
   audit({ kind: 'task_end', botId: bot.id, taskId: task.id, title: short(task.text, 160), verdict: status, ok: status === 'done', result: short(report, 300) });
+  if (deps.onTaskEnd) { try { deps.onTaskEnd(t, status, report); } catch {} }
   if (status !== 'cancelled') {
     await tell(bot, report);
     await answerOrigin(task, bot, report);

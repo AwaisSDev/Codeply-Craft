@@ -15,7 +15,8 @@
     "android:open": "npx cap open android",
     "embed-secrets": "node scripts/embed-secrets.js",
     "dist": "node scripts/embed-secrets.js && electron-builder --win",
-    "test:engine": "node scripts/engine-test.mjs"
+    "test:engine": "node scripts/engine-test.mjs",
+    "test:brain": "node scripts/brain-test.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.0",

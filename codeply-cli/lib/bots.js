@@ -97,14 +97,19 @@ function normalizeAlwaysOn(a) {
   };
 }
 
-// Autonomy (life-desktop.js autopilot): how much a bot may do with nobody watching.
-//   ask   every action outside its approval boundary waits for the user (as before)
-//   hold  outward actions (send, publish, databases, calendar) wait holdMinutes in
-//         the outbox, where the user can cancel them from the phone or Crew; then go
-//   full  the categories in `allow` run at once
+// Autonomy: how much a bot may do. The user picks one of three levels:
+//   none  Level 1: information and suggestions only. It never edits, runs,
+//         sends, publishes or books anything, watched or not; it drafts and
+//         tells the user what it would do
+//   ask   Level 2: it does the work and asks before each action outside its
+//         approval boundary (as before)
+//   hold  Level 2, softer: outward actions (send, publish, databases, calendar)
+//         wait holdMinutes in the outbox, where the user can cancel them from
+//         the phone or Crew; then go
+//   full  Level 3: the categories in `allow` run at once
 // Deleting things, anything flagged dangerous and anything a third party asked
 // for always wait for the user, at every level.
-const AUTONOMY = { ask: 'Ask me first', hold: 'Do it after a wait I can cancel', full: 'Just do it' };
+const AUTONOMY = { none: 'Just suggest, never act', ask: 'Ask me first', hold: 'Do it after a wait I can cancel', full: 'Just do it' };
 function normalizeAutonomy(a) {
   a = a && typeof a === 'object' ? a : {};
   const n = (v, d, lo, hi) => { const x = Math.round(Number(v)); return Number.isFinite(x) ? Math.max(lo, Math.min(hi, x)) : d; };
@@ -138,6 +143,7 @@ function normalizeEmail(e) {
 }
 
 const lifeLib = () => require('./life.js');
+const brainLib = () => require('./brain.js');
 
 // Kept in sync with bot-avatar.js (the renderer). The engine only validates.
 const AVATAR_KEYS = {
@@ -286,6 +292,8 @@ function normalizeBot(input, existing) {
     autonomy: normalizeAutonomy(b.autonomy),
     callStyle: normalizeCallStyle(b.callStyle),
     email: normalizeEmail(b.email),
+    // The jobs it takes handoffs for (brain.js DOMAINS); empty = read from its specialty.
+    handles: (Array.isArray(b.handles) ? [...new Set(b.handles)] : []).filter((d) => brainLib().DOMAINS[d]).slice(0, 6),
     memory: cleanMemory(b.memory),
     // Experience (learned on the job, see reflectOnRun): lessons, playbooks, tool tips, open threads.
     lessons: cleanLessons(b.lessons),
@@ -432,6 +440,8 @@ async function learnFromTurn(bot, userText, replyText, chatFn) {
     const known = (bot.memory || []).slice(-30).map((m) => `- ${m.fact}`).join('\n') || '(nothing yet)';
     // Plans the user mentions go to the shared life context (life.js), from the same model call.
     const life = lifeLib().available() && lifeLib().allowedFor(bot).has('plans') ? lifeLib() : null;
+    // And what is worth knowing in every app goes to the shared brain (brain.js), from the same call too.
+    const brain = brainLib().available() ? brainLib() : null;
     const prompt = `You keep the long-term memory of an assistant called ${bot.name}${bot.specialty ? ` (${bot.specialty})` : ''}.
 From the exchange below, pick at most ${MAX_FACTS_PER_TURN} durable things worth remembering for future conversations: the user's preferences, decisions, standing instructions, facts about them or their project, or feedback on how ${bot.name} should work.
 Skip anything one-off, temporary, obvious, or already known. Never store passwords, keys or other secrets. Each item is one short sentence about the user or the work, written in the third person ("The user prefers ...").
@@ -442,19 +452,24 @@ ${known}
 User: ${user}
 
 ${bot.name}: ${clip(replyText, 3000) || '(no reply)'}
-${life ? `\n${life.plansAsk()}\n` : ''}
-Respond with ONLY a JSON object {"facts": ["..."]${life ? ', "plans": []' : ''}}. Use an empty list when nothing is worth keeping.`;
+${life ? `\n${life.plansAsk()}\n` : ''}${brain ? `\n${brain.observationsAsk()}\n` : ''}
+Respond with ONLY a JSON object {"facts": ["..."]${life ? ', "plans": []' : ''}${brain ? ', "observations": []' : ''}}. Use an empty list when nothing is worth keeping.`;
     const r = await chatFn([{ role: 'user', content: prompt }]);
     if (!r || !r.success || !r.json) return { added: [] };
     if (life && Array.isArray(r.json.plans) && r.json.plans.length) { try { life.notePlans(r.json.plans, { source: 'chat', botId: bot.id }); } catch {} }
+    let brainNotes = [];
+    if (brain && Array.isArray(r.json.observations) && r.json.observations.length) {
+      // The product (Crew or Craft) comes from the running one (telemetry.js).
+      try { brainNotes = brain.noteObservations(r.json.observations, { botId: bot.id, botName: bot.name }); } catch {}
+    }
     const facts = (Array.isArray(r.json.facts) ? r.json.facts : [])
       .filter((f) => typeof f === 'string')
       .map((f) => f.trim())
       .filter((f) => f.length >= 4 && !/(api[_ -]?key|password|secret|token)\s*[:=]/i.test(f))
       .filter((f) => !(bot.memory || []).some((m) => factKey(m.fact) === factKey(f)))
       .slice(0, MAX_FACTS_PER_TURN);
-    if (!facts.length) return { added: [] };
-    return addMemory(bot.id, facts);
+    if (!facts.length) return { added: [], brain: brainNotes };
+    return { ...addMemory(bot.id, facts), brain: brainNotes };
   } catch {
     return { added: [] };
   }
@@ -709,6 +724,11 @@ async function reflectOnRun(bot, run, chatFn) {
       resolved: j.resolved,
     };
     const { added } = addExperience(bot.id, reflection);
+    // The same lessons, shared with the other bots through the brain. They see
+    // one only when it fits their request, labelled as a teammate's experience.
+    if (added && added.lessons && added.lessons.length) {
+      try { brainLib().shareLessons(added.lessons, { botId: bot.id, botName: fresh.name, domain: brainLib().botDomains(fresh)[0] || '' }); } catch {}
+    }
     return { outcome, added };
   } catch {
     return { added: null, skipped: 'failed' };
@@ -718,6 +738,9 @@ async function reflectOnRun(bot, run, chatFn) {
 // ─── Prompts ────────────────────────────────────────────────────────────────
 
 function approvalLine(bot) {
+  if (normalizeAutonomy(bot.autonomy).level === 'none') {
+    return 'You are set to suggest only (the user chose this). Never edit files, run commands, send, post, publish, book or change anything, even when asked in this chat: Craft refuses those actions for you. Read, look things up, think, then give your suggestion or a ready-to-use draft and say what you would do.';
+  }
   const must = (bot.approval || []).map((k) => APPROVALS[k] && APPROVALS[k].label.toLowerCase()).filter(Boolean);
   if (!must.length) return 'You may act without asking first. Still never do anything irreversible the user did not ask for.';
   return `Always get the user's approval before: ${must.join('; ')}. Craft enforces this too. Do reversible, read-only work (reading, searching, thinking) without asking.`;
@@ -851,7 +874,26 @@ function buildBotPrompt(bot, o = {}) {
       : `You can ask a teammate for help with ask_bot when part of the work is clearly in their domain. Only one bot runs at a time, and you wait for the answer.`;
     parts.push(`TEAM\n${lead}\nTeammates:\n${roster.join('\n')}${o.native ? '' : `\n\n${ASK_BOT_FORMAT}`}`);
   }
+  if (o.canHandOff && roster.length) parts.push(handOffRules(o.team, bot.id, !!o.native));
   return parts.join('\n\n');
+}
+
+/** hand_off: passing work on without waiting (brain.js), for bots and for plain Craft. */
+function handOffRules(team, selfId, native) {
+  const B = brainLib();
+  const who = (team || []).filter((b) => b.id !== selfId).map((b) => `${b.name} (${B.botDomains(b).join(', ') || 'general'})`).join('; ');
+  return `HANDING WORK ON
+When part of a job belongs to another bot's domain and you do not need the answer to finish yours, pass it on with hand_off and carry on: an email asking for a meeting goes to the calendar bot, a follow-up date to the reminders bot. Send only what they need (the intent, the facts with exact names, addresses, dates and time zones, what is decided), never the whole conversation. Use ask_bot instead when you need their result to continue. Who handles what: ${who}.${native ? '' : `
+
+<codeply:hand_off>
+<to>calendar</to>
+<intent>Mike proposed meeting tomorrow at 5:00 (Asia/Karachi). Check the calendar and the user's preferences, and propose the slot or a better one.</intent>
+<facts>
+From: Mike Chen <mike@example.com>
+Gmail thread: 18c2f0a1b2
+</facts>
+<decision>I drafted a holding reply; not sent.</decision>
+</codeply:hand_off>`}`;
 }
 
 /** The short roster note when the plain Craft agent (no bot chosen) can still ask bots. */
@@ -861,7 +903,13 @@ function teamPrompt(team, o = {}) {
   const phone = require('./reach.js').available()
     ? `\n\nWhen the user asks a bot to call or text them ("tell Shella to call me"), do it yourself with reach_me and bot set to that bot's name, so it comes from that bot. ${o.native ? '' : PHONE_FORMAT}`
     : '';
-  return `BOTS\nThe user has these bots. When they ask for one by name, or a part of the work is clearly a bot's specialty, you can hand it that part with ask_bot. Only one bot runs at a time, and you wait for its answer.\n${roster.join('\n')}${o.native ? '' : `\n\n${ASK_BOT_FORMAT}`}${phone}`;
+  const handOff = o.canHandOff ? `\n\n${handOffRules(team, null, !!o.native)}` : '';
+  return `BOTS\nThe user has these bots. When they ask for one by name, or a part of the work is clearly a bot's specialty, you can hand it that part with ask_bot. Only one bot runs at a time, and you wait for its answer.\n${roster.join('\n')}${o.native ? '' : `\n\n${ASK_BOT_FORMAT}`}${phone}${handOff}`;
+}
+
+/** Level 1 (suggest only): this bot may not take this action at all, watched or not. */
+function suggestOnly(bot, tool) {
+  return !!bot && normalizeAutonomy(bot.autonomy).level === 'none' && (!!approvalCategory(tool) || tool === 'gmail_draft' || tool === 'add_model');
 }
 
 /** Which approval category a tool falls into, or null. */
@@ -873,6 +921,7 @@ function approvalCategory(tool) {
 /** True when this bot is allowed to do this tool without asking the user. */
 function canSkipApproval(bot, tool) {
   if (!bot) return false;
+  if (normalizeAutonomy(bot.autonomy).level === 'none') return false;
   const cat = approvalCategory(tool);
   return !!cat && !(bot.approval || []).includes(cat);
 }
@@ -1131,7 +1180,7 @@ module.exports = {
   mergeMemory, addMemory, forget, clearMemory, learnFromTurn,
   MAX_LESSONS, MAX_PLAYBOOKS, MAX_TOOL_TIPS, MAX_OPEN_THREADS,
   mergeExperience, addExperience, forgetExperience, rankPlaybooks, reflectOnRun, runStep,
-  buildBotPrompt, teamPrompt, approvalCategory, canSkipApproval,
+  buildBotPrompt, teamPrompt, handOffRules, approvalCategory, canSkipApproval, suggestOnly,
   createLock, globalLock, parseResult, delegate, botCard,
   describePrompt, fromDescription,
 };

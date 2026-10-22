@@ -334,6 +334,7 @@
     state.current = null;
     state.currentGroup = null;
     if (window.CrewLife) window.CrewLife.hide();
+    if (window.CrewBrain) window.CrewBrain.hide();
     try { localStorage.removeItem('crew.last'); } catch {}
     renderSide();
     const bots = state.catalog.bots;
@@ -386,6 +387,7 @@
     state.current = id;
     state.currentGroup = null;
     if (window.CrewLife) window.CrewLife.hide();
+    if (window.CrewBrain) window.CrewBrain.hide();
     try { localStorage.setItem('crew.last', id); } catch {}
     const r = await api.thread(id);
     if (state.current !== id) return;
@@ -596,7 +598,7 @@
       else if (m.kind === 'tool') addToBody(body, stepHtml(m));
       else if (m.kind === 'error') addToBody(body, `<div class="note err">${esc(m.text)}</div>`);
       else if (m.kind === 'mail') addToBody(body, mailCardHtml(m));
-      else if (window.CrewLife && ['nudge', 'botmail', 'slack', 'task'].includes(m.kind)) addToBody(body, `<div data-note-id="${esc(m.id || '')}">${window.CrewLife.cardHtml(m)}</div>`);
+      else if (window.CrewLife && ['nudge', 'botmail', 'slack', 'task', 'handoff'].includes(m.kind)) addToBody(body, `<div data-note-id="${esc(m.id || '')}">${window.CrewLife.cardHtml(m)}</div>`);
     }
     box.querySelectorAll('[data-call]').forEach(wireCallCard);
     if (window.CrewLife) window.CrewLife.wireCards(box);
@@ -632,6 +634,7 @@
   // ─── Engine events ──────────────────────────────────────────────────────
   api.onEvent((ev) => {
     if (ev.type === 'life') { if (window.CrewLife) window.CrewLife.onState(ev.state); return; }
+    if (ev.type === 'brain') { if (window.CrewBrain) window.CrewBrain.onState(ev.state); return; }
     if (ev.groupId) { if (window.CrewGroups) window.CrewGroups.onEvent(ev); return; }
     if (ev.call) { if (window.CrewCall) window.CrewCall.onEvent(ev); return; }
     const b = bot(ev.botId);

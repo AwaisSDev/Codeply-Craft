@@ -6,6 +6,8 @@ import path from 'path';
 import { pathToFileURL, fileURLToPath } from 'url';
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'codeply-cli');
+// Runs write to a throwaway brain (lib/brain.js), never the user's own.
+process.env.CODEPLY_BRAIN_DB = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'codeply-engine-brain-')), 'brain.db');
 const { runAgent } = await import(pathToFileURL(path.join(CLI, 'lib/agent.mjs')).href);
 const { createRequire } = await import('module');
 const require = createRequire(import.meta.url);

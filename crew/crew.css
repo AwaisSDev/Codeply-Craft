@@ -780,3 +780,27 @@ body.embedded .app-switch-btn { font-family: "Segoe UI Variable Text", "Segoe UI
 
 @media (max-width: 900px) { .lf-today { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 720px) { .lf { padding: 28px 16px 48px; } .lf-head { flex-direction: column; align-items: flex-start; } .lf-trig, .lf-consent { padding-left: 16px; } }
+
+/* ─── Brain (brain.js .br): what every app and bot knows, in the user's hands ─── */
+.br-add { display: flex; gap: 8px; align-items: center; margin: 0 auto 8px; flex-wrap: wrap; }
+.br-add .lf-select { flex: 0 1 auto; min-width: 0; }
+.br-input { flex: 1; min-width: 180px; height: 40px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--border-strong); background: var(--bg); color: var(--text); font: inherit; font-size: 14.5px; outline: none; }
+.br-input:focus { border-color: #0a84ff; }
+.br-edit .br-input { height: 36px; }
+.br-unsure .br-text { color: var(--text-dim); font-style: italic; }
+.br-act { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: var(--text-faint); background: none; border: 0; cursor: pointer; opacity: 0; transition: opacity .15s, background .12s, color .12s; }
+.br-act svg { width: 16px; height: 16px; }
+.lf-row:hover .br-act, .br-act:focus-visible { opacity: 1; }
+.br-act:hover { background: var(--hover); color: var(--text); }
+.br-act.danger:hover { color: var(--red); }
+.br-handles { align-items: flex-start; }
+.br-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.br-chip { height: 28px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--border-strong); background: none; color: var(--text-dim); font: inherit; font-size: 13px; font-weight: 550; cursor: pointer; }
+.br-chip.on { background: color-mix(in srgb, #0a84ff 18%, transparent); border-color: transparent; color: #0a84ff; }
+.br-chip.on.guessed { background: none; border: 1px dashed color-mix(in srgb, #0a84ff 60%, transparent); }
+.br-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.br .lf-private { flex-wrap: wrap; }
+.br .lf-private .lf-btn { margin-left: auto; }
+.br .lf-row-text { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 720px) { .br-input { min-width: 0; flex-basis: 100%; } .br .lf-row { flex-wrap: wrap; } .br .lf-row-right { margin-left: auto; } }
+@media (hover: none) { .br-act { opacity: 1; } }

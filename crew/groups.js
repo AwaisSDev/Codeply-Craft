@@ -99,6 +99,8 @@
     if (!g) { UI.goHome(); return; }
     S.currentGroup = id;
     S.current = null;
+    if (window.CrewLife) window.CrewLife.hide();
+    if (window.CrewBrain) window.CrewBrain.hide();
     try { localStorage.setItem('crew.last', `g:${id}`); } catch {}
     const r = await api.groupMessages(id);
     if (S.currentGroup !== id) return;

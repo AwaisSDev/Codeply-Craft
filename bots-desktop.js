@@ -54,6 +54,11 @@ function emitBadge(session, bot) {
 function wrapApprove(approve, bot, session, cwd) {
   if (!bot) return approve;
   const wrapped = async (req) => {
+    // Suggest only (autonomy Level 1): the bot never acts in any chat.
+    if (bots().suggestOnly(bot, req.tool)) {
+      deps.sendEvent(session.id, { type: 'notice', level: 'info', text: `${bot.name} is set to suggest only, so it did not do that. Change it in Crew: Edit bot, Autonomy.` });
+      return 'reject';
+    }
     const skip = !req.danger && req.tool !== 'fetch_image' && bots().canSkipApproval(bot, req.tool);
     if (skip) {
       // The user's own deny rules still win over anything a bot is allowed.
@@ -161,7 +166,7 @@ async function forTurn({ session, approve, signal, route, cwd, mode, verifyOnly,
   return {
     bot,
     approve: wrapApprove(approve, bot, session, cwd),
-    botPrompt: (native) => (bot ? b.buildBotPrompt(bot, { team, canDelegate: true, native, request }) : b.teamPrompt(team, { native })),
+    botPrompt: (native) => (bot ? b.buildBotPrompt(bot, { team, canDelegate: true, canHandOff: !!deps.canHandOff && deps.canHandOff(), native, request }) : b.teamPrompt(team, { native, canHandOff: !!deps.canHandOff && deps.canHandOff() })),
     askBot: makeAskBot(c),
     botId: bot ? bot.id : null,
     /** runOneTurn passes every run event here; tool calls become the trajectory. */

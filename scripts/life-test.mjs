@@ -14,6 +14,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'codeply-life-'));
 process.env.CODEPLY_BOTS_DIR = path.join(tmp, 'bots');
+process.env.CODEPLY_BRAIN_DB = path.join(tmp, 'brain.db'); // never the user's own brain
 
 const LS = require(path.join(ROOT, 'codeply-cli/lib/life-store.js'));
 const L = require(path.join(ROOT, 'codeply-cli/lib/life.js'));

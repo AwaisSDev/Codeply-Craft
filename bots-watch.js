@@ -97,6 +97,8 @@ async function notify(ev) {
   const quiet = W.inQuietHours(bot.alwaysOn.quiet);
   const line = W.eventLine(ev);
   try { deps.crewThread(bot.id, { ...ev, text: line }); } catch (e) { console.warn('[always on] thread:', e.message); }
+  // Work for another bot in it (a meeting request goes to the calendar bot; brain-desktop.js).
+  if (deps.onImportant) { try { deps.onImportant(ev); } catch {} }
   const { Notification } = deps;
   if (Notification && Notification.isSupported()) {
     const n = new Notification({ title: bot.name, body: `${line}${ev.summary ? `\n${ev.summary}` : ''}`.slice(0, 240), icon: deps.notifyIcon, silent: quiet });
