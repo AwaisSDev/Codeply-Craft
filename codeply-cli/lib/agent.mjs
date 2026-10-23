@@ -371,7 +371,7 @@ const PARAMS = {
   reach_me: ['how', 'message', 'at', 'bot'], // only when the host can reach the phone (lib/reach.js)
   watch_email: ['from', 'how', 'note', 'repeat'],
   life_context: ['about', 'query'], // only when the host attached the life store (lib/life.js)
-  remember: ['kind', 'slot', 'value', 'text', 'certainty', 'project', 'ttlHours', 'forget'], // the shared brain (lib/brain.js)
+  remember: ['kind', 'slot', 'value', 'text', 'certainty', 'project', 'ttlHours', 'until', 'forget'], // the shared brain (lib/brain.js)
   recall: ['query', 'project'],
   hand_off: ['to', 'intent', 'facts', 'decision'], // only when the host passes handOff (lib/brain.js)
   look_at_screen: ['why', 'window'], // only when the host can take a screenshot (lib/screen.js)

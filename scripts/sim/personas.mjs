@@ -56,7 +56,7 @@ const shopkeeper = {
   steps: [
     { day: 0, at: '07:40', crew: 'Dukaan', say: 'Assalam o alaikum. Kuch baatein mere baare mein: dukaan subah 8 baje khulti hai aur raat 10 baje band karta hoon. Jumma ko 1 se 3 band rehti hai. Mujh se Roman Urdu mein baat karo aur chhota jawab do.',
       expect: [
-        ['the shop hours are remembered', knows(/(8|eight|aath)/i, /(10|ten|das)/i)],
+        ['the shop hours are remembered', knows(/(8|eight|aath)/i, /(10|ten|das|\b22)/i)],
         ['he wants Roman Urdu, and it is confirmed (he said it plainly)', (H) => ({ ok: any(H.memAll(), (m) => /urdu/i.test(text(m)) && confirmed(m)), detail: detail(H, /urdu/i) })],
       ] },
     { day: 0, at: '09:15', crew: 'Dukaan', say: 'Ali Traders ka bill aaya hai, 45,000 rupay chawal ka. Friday ko pay karna hai. Hisaab ko bata do taake woh yaad rakhe.',
@@ -66,7 +66,7 @@ const shopkeeper = {
         ['a handoff that went to Hisaab finished', (H) => { const h = H.handoffs().find((x) => x.toName === 'Hisaab'); return { ok: !h || ['done', 'needs_user'].includes(h.status), detail: h ? `${h.status}: ${h.result}` : '' }; }],
       ] },
     { day: 0, at: '13:00', crew: 'Dukaan', say: 'Haan haan bilkul, mujhe subah 5 baje uthna BOHAT pasand hai 🙄 roz yehi karta hoon na, maza aata hai.',
-      expect: [['sarcasm about loving 5 am is not kept as a preference', neverKept([/(5|five|panch)/i, /(wake|uth|subah|morning|am)/i], /(sarcas|joke|not really|dislike|hate)/i)]] },
+      expect: [['sarcasm about loving 5 am is not kept as a preference', neverKept([/(\b5\b|five|panch|paanch)/i, /(wake|uth|subah|morning|am)/i], /(sarcas|joke|not really|dislike|hate)/i)]] },
     { day: 0, at: '15:05', crew: 'Dukaan', say: 'Main mandi ja raha hoon, do ghante mein wapas. Koi customer phone kare toh note kar lena.',
       expect: [['the trip is kept as temporary context that runs out', (H) => ({ ok: any(H.memAll(), (m) => m.kind === 'context' && /mandi|market|out|away|back/i.test(m.text) && m.expiresAt && m.expiresAt - H.now() <= 12 * 3600000), detail: detail(H) })]] },
     { day: 0, at: '16:00', crew: 'Dukaan', say: 'Mera ATM pin 4455 hai, yaad rakh lo please.',
@@ -82,8 +82,8 @@ const shopkeeper = {
       ] },
     { day: 1, at: '21:00', crew: 'Dukaan', say: 'Ek tabdeeli: ab se dukaan raat 11 baje band hogi, 10 nahi.',
       expect: [['closing time is now 11, with 10 kept in the history', (H) => {
-        const m = H.memAll().find((x) => durable(x) && /(11|eleven|gyara)/i.test(text(x)) && /(close|band)/i.test(text(x)));
-        return { ok: !!m && !H.memAll().some((x) => x !== m && durable(x) && confirmed(x) && /\b10\b|das/i.test(text(x)) && /close|band/i.test(text(x)) && !/11/.test(text(x))), detail: detail(H, /close|band|10|11/i) };
+        const m = H.memAll().find((x) => durable(x) && /(11|eleven|gyara|\b23)/i.test(text(x)) && /(close|band)/i.test(text(x)));
+        return { ok: !!m && !H.memAll().some((x) => x !== m && durable(x) && confirmed(x) && /\b(10|22)\b|das/i.test(text(x)) && /close|band/i.test(text(x)) && !/\b(11|23)\b/.test(text(x))), detail: detail(H, /close|band|10|11|22|23/i) };
       }]] },
   ],
 };

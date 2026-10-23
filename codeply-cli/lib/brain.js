@@ -88,6 +88,28 @@ const SECRET_RE = /(api[_ -]?key|password|passwd|passcode|secret|token|bearer|pr
 
 const clip = (s, n) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, n);
 const json = (v, fallback) => { try { return v == null ? fallback : JSON.parse(v); } catch { return fallback; } };
+// "17:00", "5pm" or "2026-10-26T17:00" in the user's local time to epoch ms (0 if
+// unreadable). A bare time that has already passed today means tomorrow.
+function untilAt(s, t) {
+  const v = String(s || '').trim().toLowerCase();
+  if (!v) return 0;
+  let m = /^(\d{4})-(\d{2})-(\d{2})[t ](\d{1,2}):(\d{2})/.exec(v);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).getTime();
+  m = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/.exec(v);
+  if (!m || +m[1] > 23) return 0;
+  let h = +m[1];
+  if (m[3] === 'pm' && h < 12) h += 12;
+  if (m[3] === 'am' && h === 12) h = 0;
+  const d = new Date(t);
+  d.setHours(h, +(m[2] || 0), 0, 0);
+  return d.getTime() <= t ? d.getTime() + DAY : d.getTime();
+}
+/** "2026-10-26 17:05" in the user's local time. */
+function localStamp(t) {
+  const d = new Date(t);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
 const newId = (p, now) => `${p}${now.toString(36)}${crypto.randomBytes(3).toString('hex')}`;
 
@@ -279,7 +301,7 @@ function log(memoryId, action, text, src) {
 function scopeFor(o, kind) {
   if (kind === 'lesson') return 'team';
   if (o.scope && /^(me|team|project:[a-z0-9-]+)$/.test(o.scope)) return o.scope;
-  const pk = projectKey(o.project);
+  const pk = knownKey(o.project);
   if (pk) return `project:${pk}`;
   return 'me';
 }
@@ -305,7 +327,7 @@ function cleanObservation(o) {
   return {
     kind, certainty, slot, value, text,
     project: clip(o.project, 80), scope: o.scope ? String(o.scope) : '',
-    ttlHours: Number(o.ttlHours || o.ttl_hours) || 0, domain: clip(o.domain, 40).toLowerCase(),
+    ttlHours: Number(o.ttlHours || o.ttl_hours) || 0, until: untilAt(o.until || o.expires, now()), domain: clip(o.domain, 40).toLowerCase(),
   };
 }
 
@@ -346,14 +368,15 @@ function observe(raw, src) {
 
   // Live context: expires by itself, never touches what is known for good.
   if (o.kind === 'context') {
-    const hours = Math.max(1, Math.min(MAX_TEMP_HOURS, o.ttlHours || 24));
+    // "back around 17:00" ends at 17:00: an end time the model read from the user beats a guessed number of hours.
+    const end = o.until > t && o.until <= t + MAX_TEMP_HOURS * HOUR ? o.until : t + Math.max(1, Math.min(MAX_TEMP_HOURS, o.ttlHours || 24)) * HOUR;
     const cur = findExisting(scope, { ...o, slot: o.slot ? `now ${o.slot}` : '' });
     if (cur && cur.kind === 'context') {
-      const m = write({ ...cur, text: o.text, value: o.value, expiresAt: t + hours * HOUR, evidence: cur.evidence + 1, sources: addSource(cur.sources, from), seenAt: t });
+      const m = write({ ...cur, text: o.text, value: o.value, expiresAt: end, evidence: cur.evidence + 1, sources: addSource(cur.sources, from), seenAt: t });
       return { action: 'reinforced', memory: m };
     }
     const id = newId('m', t);
-    q.insert.run(id, 'context', scope, o.slot ? `now ${o.slot}` : null, o.value || null, o.text, 'temporary', 0.7, 1, 0, 0, null, '[]', JSON.stringify([from]), o.domain || null, t + hours * HOUR, t, t, t);
+    q.insert.run(id, 'context', scope, o.slot ? `now ${o.slot}` : null, o.value || null, o.text, 'temporary', 0.7, 1, 0, 0, null, '[]', JSON.stringify([from]), o.domain || null, end, t, t, t);
     log(id, 'added', `${o.text} (for now)`, from);
     return { action: 'added', memory: get(id) };
   }
@@ -505,7 +528,7 @@ const rowToProject = (r) => r && { key: r.key, name: r.name, path: r.path || '',
 /** A project the brain should know by name (Craft calls this for every folder it runs in). */
 function touchProject({ name, path: p } = {}) {
   if (!open()) return null;
-  const key = projectKey(name || p);
+  const key = knownKey(name || p);
   if (!key || key.length < 2) return null;
   const cur = rowToProject(q.getProject.get(key));
   q.upsertProject.run(key, clip(name || (cur && cur.name) || path.basename(String(p || key)), 80), p ? String(p).slice(0, 500) : null, now());
@@ -523,10 +546,25 @@ function projectOfFolder(cwd) {
   return path.basename(full);
 }
 
+/**
+ * The key of a project the brain already knows by this name or folder, else
+ * the plain key. A folder called study-buddy is the "HackLahore study buddy"
+ * the user talked about in Crew: one key's words run whole inside the other's.
+ * With several matches, the most recently used wins.
+ */
+function knownKey(nameOrPath) {
+  const key = projectKey(nameOrPath);
+  if (!key || !open() || q.getProject.get(key)) return key;
+  const inside = (a, b) => `-${b}-`.includes(`-${a}-`);
+  const specific = (k) => k.split('-').length >= 2 || k.length >= 8;
+  const hit = projects(60).find((p) => (specific(key) && inside(key, p.key)) || (specific(p.key) && inside(p.key, key)));
+  return hit ? hit.key : key;
+}
+
 /** The project a folder or name means, matching known projects by key. */
 function projectFor(nameOrPath) {
   if (!open()) return null;
-  const key = projectKey(nameOrPath);
+  const key = knownKey(nameOrPath);
   if (!key) return null;
   return rowToProject(q.getProject.get(key));
 }
@@ -570,7 +608,7 @@ const REMEMBER_FORMAT = `To save something, write:
 <text>The user wants short replies.</text>
 <certainty>stated</certainty>
 </codeply:remember>
-(kind: preference, fact, routine, style, decision, idea, requirement, todo, context; add <project>name</project> for project things; <forget>id</forget> removes one.)`;
+(kind: preference, fact, routine, style, decision, idea, requirement, todo, context; add <project>name</project> for project things; for context, <until>17:00</until> (their local time) says when it stops being true; <forget>id</forget> removes one.)`;
 
 /**
  * The brain block for one run's prompt. Empty when there is nothing to say.
@@ -581,7 +619,7 @@ function contextBlock(o = {}) {
   try {
     const want = terms(o.request);
     const keys = new Set();
-    const here = projectKey(o.project || projectOfFolder(o.cwd));
+    const here = knownKey(o.project || projectOfFolder(o.cwd));
     if (here && projectFor(here)) keys.add(here);
     for (const p of projectsNamed(o.request || '')) keys.add(p.key);
     // Standing rules count as personal too: "always CC hiring@" may come back as a requirement or decision.
@@ -598,7 +636,7 @@ function contextBlock(o = {}) {
     if (todos.length) lines.push('Open to-dos from earlier chats (say so if one is due or done):', ...todos.map((m) => `- ${m.text}${m.status === 'tentative' ? ' (not confirmed)' : ''}`));
     const ideas = want.length ? rank(list({ scope: 'me', kinds: ['idea'], limit: 100 }), want, 10).filter((m) => overlap(want, m.text) > 0).slice(0, 3) : [];
     if (ideas.length) lines.push('Earlier ideas that fit this message:', ...ideas.map((m) => `- ${m.text}`));
-    if (live.length) lines.push('Right now (temporary):', ...live.map((m) => `- ${m.text}${m.expiresAt ? ` (until about ${new Date(m.expiresAt).toISOString().slice(0, 16).replace('T', ' ')} UTC)` : ''}`));
+    if (live.length) lines.push('Right now (temporary):', ...live.map((m) => `- ${m.text}${m.expiresAt ? ` (until about ${localStamp(m.expiresAt)}, their time)` : ''}`));
     for (const key of [...keys].slice(0, 2)) {
       const items = rank(list({ scope: `project:${key}`, limit: 200 }), want, BLOCK_LIMITS.project);
       if (!items.length) continue;
@@ -631,7 +669,7 @@ function contextBlock(o = {}) {
 function observationsAsk() {
   const known = projects(15).map((p) => p.name).join(', ');
   return `Also fill "observations" for the user's shared Codeply brain (every app and bot reads it). Only lasting things about the user, their projects, and the people in their life:
-{"kind": "preference|fact|routine|style|decision|idea|requirement|todo|context", "slot": "what it is about in 1 to 4 words, the same each time (favorite color, reply length, auth provider)", "value": "the value in a few words", "text": "one short third-person sentence", "certainty": "stated|implied|temporary|joking|hypothetical|quoting", "project": "the project name, only for project things", "ttlHours": hours, only for context}
+{"kind": "preference|fact|routine|style|decision|idea|requirement|todo|context", "slot": "what it is about in 1 to 4 words, the same each time (favorite color, reply length, auth provider)", "value": "the value in a few words", "text": "one short third-person sentence", "certainty": "stated|implied|temporary|joking|hypothetical|quoting", "project": "the project name, only for project things", "until": "when it stops being true, HH:MM or YYYY-MM-DDTHH:MM in the user's local time, only for context"}
 Read the tone. certainty is "joking" for sarcasm, teasing, banter or anything said in an argument or to make a point; "hypothetical" for ifs, maybes, wishes and questions; "quoting" for someone else's opinion, advice or claim passed on (a neighbour's tip, a friend's insult), which must never become the user's own; "temporary" (kind context) for what is true only for now; "stated" only when the user said it plainly; otherwise "implied".
 People matter too: what the user tells you about someone close (who they are to the user, what they like, their birthday) is a kind "fact" about that person, written with their name ("Ayesha, the user's girlfriend, loves sketching"), never as the user's own taste.${known ? ` Known projects: ${known}.` : ''} Most exchanges have none: use an empty list. At most 4.`;
 }
@@ -702,7 +740,7 @@ function rememberTool(args, ctx = {}) {
 function recallTool(args, ctx = {}) {
   if (!available()) return { ok: false, output: 'The Codeply brain is off on this machine.' };
   const query = String(args.query || '').trim();
-  const pk = projectKey(args.project || '');
+  const pk = knownKey(args.project || '');
   const scopes = pk ? [`project:${pk}`] : null;
   let hits = list({ scopes, text: query || undefined, limit: 40 });
   if (!hits.length && query) {
@@ -736,7 +774,9 @@ function botDomains(bot) {
   if (!bot) return [];
   const own = Array.isArray(bot.handles) ? bot.handles.filter((d) => DOMAINS[d]) : [];
   if (own.length) return own;
-  const hay = ` ${norm(`${bot.name} ${bot.specialty} ${bot.instructions}`)} `;
+  // A lead's "Hand money matters to Hisaab" names a job it gives away, not one it does.
+  const kept = String(bot.instructions || '').split(/(?<=[.!?;\n])/).filter((s) => !/\b(hand|pass|forward|send|give|leave|delegate|route)\b[^.!?;\n]*\bto\b/i.test(s)).join(' ');
+  const hay = ` ${norm(`${bot.name} ${bot.specialty} ${kept}`)} `;
   return DOMAIN_KEYS.filter((d) => DOMAINS[d].some((w) => hay.includes(` ${norm(w)} `)));
 }
 
@@ -865,7 +905,7 @@ module.exports = {
   KINDS, KIND_KEYS, CERTAINTY, DOMAINS, DOMAIN_KEYS, SECRET_RE,
   configure, usable, available, enabled, setEnabled, close, prune,
   observe, cleanObservation, get, list, correct, confirm, resolve, forget, clear, changes,
-  touchProject, projects, projectFor, projectsNamed, projectKey, projectOfFolder,
+  touchProject, projects, projectFor, projectsNamed, projectKey, knownKey, projectOfFolder,
   contextBlock, teamLessons, observationsAsk, noteObservations, learnFromExchange, shareLessons,
   rememberTool, recallTool, REMEMBER_FORMAT,
   botDomains, routeHandoff, createHandoff, getHandoff, updateHandoff, handoffsByStatus, recentHandoffs, handoffForTask, handoffTask,

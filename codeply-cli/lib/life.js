@@ -228,9 +228,17 @@ const ABOUT = {
   health: 'health', steps: 'health', workout: 'health', workouts: 'health', exercise: 'health', sleep: 'health', fitness: 'health', activity_level: 'health', heart: 'health',
 };
 
+// The sources each life_context topic reads (calls and health check their own switch).
+const ABOUT_SOURCES = {
+  today: ['calendar', 'plans', 'calls', 'gmail', 'botmail', 'slack', 'tasks'], tomorrow: ['calendar', 'plans', 'calls', 'gmail', 'botmail', 'slack', 'tasks'],
+  week: ['calendar', 'plans'], email: ['gmail', 'botmail'], activity: ['activity', 'screen', 'orbit'], heard: ['heard'],
+  plans: ['plans'], projects: ['projects'], slack: ['slack'],
+};
+
 function itemLine(x, now, tz) {
+  // A plan with only a date shows the date, never a time nobody gave.
   // An event that ends on another day (a 48 hour hackathon) shows the end's day too.
-  const t = x.end && x.end - x.at > 30 * 60000 && x.source !== 'activity' ? `${when(x.at, now, tz)} to ${dayKey(x.end, tz) === dayKey(x.at, tz) ? clock(x.end, tz) : when(x.end, now, tz)}` : when(x.at, now, tz);
+  const t = x.data && x.data.allDay ? `${fmt(x.at, tz, { weekday: 'short', day: 'numeric', month: 'short' })}, all day` : x.end && x.end - x.at > 30 * 60000 && x.source !== 'activity' ? `${when(x.at, now, tz)} to ${dayKey(x.end, tz) === dayKey(x.at, tz) ? clock(x.end, tz) : when(x.end, now, tz)}` : when(x.at, now, tz);
   const who = x.people && x.people.length ? ` [${x.people.slice(0, 4).join(', ')}]` : '';
   const extra = x.data && (x.data.summary || x.data.snippet) ? `: ${short(x.data.summary || x.data.snippet, 220)}` : x.body && !x.sensitive ? `: ${short(x.body, 220)}` : '';
   return `- ${t} · ${x.source}/${x.kind} · ${short(x.title, 120)}${x.place ? ` @ ${short(x.place, 60)}` : ''}${who}${extra}`;
@@ -247,7 +255,10 @@ async function contextTool(args, ctx = {}) {
   const tz = tzOf(ctx);
   const srcs = [...allowed];
   const lines = (list) => (list.length ? list.map((x) => itemLine(x, now, tz)).join('\n') : '(nothing)');
-  const pick = (want) => want.filter((k) => allowed.has(k));
+  // Never an empty list: the store reads an empty source list as "every source", sensitive ones included.
+  const pick = (want) => { const ok = want.filter((k) => allowed.has(k)); return ok.length ? ok : ['(none allowed)']; };
+  const needs = ABOUT_SOURCES[about];
+  if (needs && !needs.some((k) => allowed.has(k))) return { ok: false, output: `This bot is not allowed to read ${about === 'heard' ? 'what is heard around the user' : about}. The user can allow it in the bot's Life settings.` };
   let out = '';
   if (about === 'now') out = nowBlock(snapshot({ now, tz, allowed })) || 'Nothing known right now.';
   else if (about === 'today' || about === 'tomorrow') {
@@ -324,6 +335,7 @@ function notePlans(plans, o = {}) {
     const what = short(p && p.what, 140);
     if (!what || what.length < 3) continue;
     let at = p.when ? localIso(p.when, tz) : NaN;
+    const dateOnly = /^\s*\d{4}-\d{2}-\d{2}\s*$/.test(String(p.when || ''));
     const untimed = !Number.isFinite(at);
     if (untimed) at = now;
     if (!untimed && at < now - DAY) continue;
@@ -332,7 +344,7 @@ function notePlans(plans, o = {}) {
     const key = what.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 60);
     const id = `plans:${dayKey(at, tz)}:${key}`;
     const who = (Array.isArray(p.who) ? p.who : p.who ? [p.who] : []).map((x) => short(x, 60)).filter(Boolean).slice(0, 6);
-    out.push(store.upsertItem({ id, source: 'plans', kind: 'plan', at, end: untimed ? now + 7 * DAY : null, title: what, place: short(p.where, 120), people: who, data: { untimed, from: o.source || 'chat', botId: o.botId || null } }));
+    out.push(store.upsertItem({ id, source: 'plans', kind: 'plan', at, end: untimed ? now + 7 * DAY : null, title: what, place: short(p.where, 120), people: who, data: { untimed, ...(dateOnly ? { allDay: true } : {}), from: o.source || 'chat', botId: o.botId || null } }));
   }
   if (out.length && hostOpts.onChange) { try { hostOpts.onChange('plans'); } catch {} }
   return out;
@@ -340,7 +352,7 @@ function notePlans(plans, o = {}) {
 
 /** The part of learnFromTurn's prompt that asks for plans (bots.js). */
 function plansAsk(now = Date.now(), tz = tzOf()) {
-  return `Also list plans or commitments with a time or a place that the user mentioned (meeting someone, an appointment, a trip, a deadline): {"what": "Dinner with Ali", "when": "YYYY-MM-DDTHH:MM in the user's local time, or empty", "where": "", "who": ["Ali"]}. It is ${fmt(now, tz, { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} for the user now (${tz}). Most exchanges have none: use an empty list.`;
+  return `Also list plans or commitments with a time or a place that the user mentioned (meeting someone, an appointment, a trip, a deadline): {"what": "Dinner with Ali", "when": "YYYY-MM-DDTHH:MM in the user's local time, YYYY-MM-DD for a day with no time, or empty", "where": "", "who": ["Ali"]}. It is ${fmt(now, tz, { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} for the user now (${tz}). Most exchanges have none: use an empty list.`;
 }
 
 // ─── Health ─────────────────────────────────────────────────────────────────
@@ -438,6 +450,9 @@ function noteSent(addresses) {
   const list = (Array.isArray(addresses) ? addresses : String(addresses || '').split(/[,;]/))
     .map((a) => ((/<([^>]+)>/.exec(String(a)) || [])[1] || String(a)).trim().toLowerCase()).filter((a) => a.includes('@'));
   if (!list.length) return 0;
+  // Remembered on the contact too, so an email from them that the sync only
+  // reads after this reply does not put them back on the waiting list.
+  for (const a of list) { try { store.notePerson({ email: a, lastTo: Date.now() }); } catch {} }
   const sent = new Set(list);
   const waiting = store.getState('gmail.waiting') || [];
   const left = waiting.filter((w) => !sent.has(String(w.from || '').trim().toLowerCase()));

@@ -865,7 +865,10 @@ function buildBotPrompt(bot, o = {}) {
     if (allowed.size) {
       let block = '';
       try { block = L.nowBlock(L.snapshot({ allowed }), { skipEmpty: true }); } catch {}
-      parts.push([block, o.native ? LIFE_RULES : `${LIFE_RULES}\n\n${LIFE_FORMAT}`].filter(Boolean).join('\n\n'));
+      // Said up front, so the bot never promises "I'll list your calls" and then finds out it may not.
+      const shut = L.SOURCE_KEYS.filter((k) => !allowed.has(k)).map((k) => L.SOURCES[k].label.toLowerCase());
+      const limits = shut.length ? `You cannot read: ${shut.join('; ')}. Never offer to check those; if the user wants it, they can allow it in your Life settings in Crew.` : '';
+      parts.push([block, o.native ? LIFE_RULES : `${LIFE_RULES}\n\n${LIFE_FORMAT}`, limits].filter(Boolean).join('\n\n'));
     }
   }
   parts.push(VERIFY_RULES);

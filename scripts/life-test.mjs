@@ -124,6 +124,15 @@ if (section('Gmail')) {
   await SRC.syncGmail({ store: s, api, now: NOW });
   check('later polls read every label from the history cursor', api.calls.some((c) => c[0] === 'history' && c[2] === null));
   check('replying clears the wait', s.getState('gmail.waiting').length === 0);
+  // A reply that went out through Codeply (gmail_send) before the sync read the email it answers.
+  L.attach(s, { tz: TZ });
+  L.noteSent('Usman <usman@uni.edu>');
+  api.add({ id: 'm6', thread: 't6', labels: ['INBOX', 'IMPORTANT'], from: 'Usman <usman@uni.edu>', subject: 'Need the hackathon plan today', at: NOW - 40 * MIN });
+  api.add({ id: 'm7', thread: 't7', labels: ['INBOX', 'IMPORTANT'], from: 'Zed <zed@x.com>', subject: 'Need the venue address today', at: NOW - 40 * MIN });
+  await SRC.syncGmail({ store: s, api, now: NOW });
+  const after = s.getState('gmail.waiting').map((w) => w.from);
+  check('an email already answered through Codeply never shows as waiting, an unanswered one does', !after.includes('usman@uni.edu') && after.includes('zed@x.com'), JSON.stringify(after));
+  L.detach();
   s.close();
 }
 
@@ -200,6 +209,10 @@ if (section('Context')) {
   const on = B.updateBot(shella.id, { life: { read: true } });
   const prompt = B.buildBotPrompt(on, { native: false });
   check('the bot prompt carries RIGHT NOW and the tool format', /RIGHT NOW/.test(prompt) && /<codeply:life_context>/.test(prompt));
+  const plain = B.createBot({ name: 'Plain', specialty: 'life and social' });
+  const cannot = (b) => (/You cannot read: [^\n]*/.exec(B.buildBotPrompt(b, { native: false })) || [''])[0];
+  check('the prompt says up front which sources the bot cannot read', /calls/.test(cannot(plain)) && /Never offer to check those/.test(cannot(plain)), cannot(plain));
+  check('and stops saying it once the user allows them', !/calls/.test(cannot(B.updateBot(plain.id, { life: { sensitive: true } }))));
   const plans = L.notePlans([{ what: 'Gym with Hamza', when: '2026-10-17T07:30', where: 'Shapes', who: ['Hamza'] }, { what: 'Call the bank', when: '' }], { now: NOW, tz: TZ });
   check('plans are stored at local time', plans.length === 2 && plans[0].at === Date.UTC(2026, 9, 17, 2, 30) && plans[1].data.untimed, JSON.stringify(plans.map((p) => [p.title, new Date(p.at).toISOString()])));
   let asked = '';

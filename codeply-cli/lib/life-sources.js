@@ -144,7 +144,9 @@ async function syncGmail({ store, api, now = Date.now(), maxNew = 40 }) {
     store.upsertItem({ id: `gmail:${m.id}`, source: 'gmail', kind: 'email_in', at, title: short(m.subject || '(no subject)', 300), people: [m.fromName && m.fromName !== m.fromEmail ? `${m.fromName} <${m.fromEmail}>` : m.fromEmail], url: gmailUrl(account, m.threadId), data: { threadId: m.threadId, snippet: short(m.snippet, 300), level: s.level, score: s.score } });
     // Someone is waiting on the user: a real person, to them directly, not a no-reply.
     const direct = (m.to || []).includes(account) || (m.cc || []).includes(account);
-    if (s.level !== 'low' && direct && !/^(no-?reply|do-?not-?reply|notifications?)@/i.test(m.fromEmail)) {
+    // Already answered: the user wrote to them after this came in (seen through gmail_send before this sync).
+    const answered = !!(known && known.lastTo && known.lastTo >= at);
+    if (s.level !== 'low' && direct && !answered && !/^(no-?reply|do-?not-?reply|notifications?)@/i.test(m.fromEmail)) {
       waiting = waiting.filter((w) => w.threadId !== m.threadId);
       waiting.push({ threadId: m.threadId, id: m.id, from: m.fromEmail, fromName: m.fromName, subject: short(m.subject, 200), at, important: s.level === 'very' || knownSender, url: gmailUrl(account, m.threadId) });
     }

@@ -115,6 +115,22 @@ if (section('Live context')) {
   NOW += 3 * 24 * HOUR;
   BR.prune();
   check('prune drops expired context', !BR.list({ kinds: ['context'], includeExpired: true }).length);
+  // "Back in two hours": the model gives the end time, not a guessed number of hours.
+  const back = new Date(NOW); back.setHours(back.getHours() + 2, 0, 0, 0);
+  const pad = (n) => String(n).padStart(2, '0');
+  const at = `${pad(back.getHours())}:00`;
+  const mandi = BR.observe({ kind: 'context', slot: 'away', text: `The user is at the mandi until ${at}.`, certainty: 'temporary', ttlHours: 4, until: at }, crew());
+  check('until (local time) beats ttlHours', mandi.memory.expiresAt === back.getTime(), `${new Date(mandi.memory.expiresAt).toString()} vs ${back.toString()}`);
+  check('the prompt shows the end in the user\'s own time', BR.contextBlock({}).includes(`(until about ${back.getFullYear()}-${pad(back.getMonth() + 1)}-${pad(back.getDate())} ${at}, their time)`), BR.contextBlock({}));
+  const next = new Date(NOW + 24 * HOUR);
+  const iso = `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}T09:30`;
+  const tomorrow = BR.observe({ kind: 'context', slot: 'travel', text: 'The user is travelling until tomorrow morning.', certainty: 'temporary', until: iso }, crew());
+  check('a full local date and time works too', new Date(tomorrow.memory.expiresAt).getHours() === 9 && new Date(tomorrow.memory.expiresAt).getMinutes() === 30);
+  const earlier = new Date(NOW); earlier.setHours(earlier.getHours() - 1, 0, 0, 0);
+  const wrapped = BR.observe({ kind: 'context', slot: 'night shift', text: 'The user is on a night shift.', certainty: 'temporary', until: `${pad(earlier.getHours())}:00` }, crew());
+  check('a bare time already past today means tomorrow', wrapped.memory.expiresAt === earlier.getTime() + 24 * HOUR);
+  const junk = BR.observe({ kind: 'context', slot: 'gym', text: 'The user is at the gym.', certainty: 'temporary', ttlHours: 2, until: 'soonish' }, crew());
+  check('an unreadable until falls back to ttlHours', junk.memory.expiresAt === NOW + 2 * HOUR);
 }
 
 // ─── Projects follow the user between apps ─────────────────────────────────
@@ -139,6 +155,14 @@ if (section('Projects')) {
   check('it is still in every prompt, as a standing decision', /About them:[\s\S]*landing page on Friday/.test(BR.contextBlock({ request: 'what should I do today?' })));
   const rc = BR.recallTool({ query: 'auth' }, {});
   check('recall finds it by word', rc.ok && /Supabase/.test(rc.output), rc.output);
+
+  // Named one way in Crew, opened under a shorter folder name in Craft.
+  BR.observe({ kind: 'decision', project: 'HackLahore study buddy', slot: 'stack', value: 'Next.js and Supabase', text: 'The hackathon app uses Next.js and Supabase, not Firebase.', certainty: 'stated' }, crew('Hack'));
+  const short = BR.contextBlock({ cwd: '/home/u/code/study-buddy', request: 'set up Supabase auth for our hackathon app' });
+  check('a folder whose name is part of a known project finds it', /Next\.js and Supabase/.test(short), short);
+  BR.rememberTool({ kind: 'requirement', text: 'Login by email magic link.' }, { cwd: '/home/u/code/study-buddy' });
+  check('and a decision saved there joins that project, not a new one', BR.list({ scope: 'project:hacklahore-study-buddy', text: 'magic link' }).length === 1 && !BR.projects(60).some((p) => p.key === 'study-buddy'), JSON.stringify(BR.projects(60).map((p) => p.key)));
+  check('a one-word folder never grabs a longer project', BR.knownKey('/home/u/code/study') === 'study' && BR.knownKey('/home/u/code/buddy') === 'buddy');
 }
 
 // ─── The prompt block ───────────────────────────────────────────────────────
@@ -238,6 +262,8 @@ if (section('Handoffs')) {
   const team = B.listBots();
   check('domains are read from the job', BR.botDomains(mail).includes('email') && BR.botDomains(cal).includes('calendar'));
   check('or set by the user', JSON.stringify(BR.botDomains(team.find((b) => b.id === res.id))) === '["research"]');
+  const lead = { name: 'Dukaan', specialty: 'Shop assistant: daily sales, stock, customers', instructions: 'Keep things short. Hand money matters to Hisaab and reminders to Yaad.' };
+  check('a job the lead gives away is not counted as its own', BR.botDomains(lead).length === 0 && BR.botDomains({ ...lead, instructions: 'Watch the inbox and draft replies.' }).includes('email'), JSON.stringify(BR.botDomains(lead)));
   check('route by domain', BR.routeHandoff('calendar', team, { fromBotId: mail.id }).bot.id === cal.id);
   check('route by name', BR.routeHandoff('rae', team, {}).bot.id === res.id);
   check('route by words in the intent', BR.routeHandoff('', team, { fromBotId: mail.id, intent: 'find a free slot for the meeting' }).bot.id === cal.id);
@@ -408,6 +434,19 @@ if (section('Gmail and Calendar')) {
   const snap = L.snapshot({ now: at, tz: 'Asia/Karachi' });
   const leave = TR.due({ store, snap, settings: { perDay: 6, quiet: { on: false } }, now: at }).filter((c) => c.trigger === 'leaving');
   check('one "leave now" nudge for one match', leave.length === 1 && leave[0].key === 'leaving:calendar:cricket', JSON.stringify(leave.map((c) => c.key)));
+
+  // "Pay Ali Traders on Friday": a day, no time.
+  const [bill] = L.notePlans([{ what: 'Pay Ali Traders Rs 45,000', when: '2030-11-08' }], { now: match, tz: 'Asia/Karachi' });
+  const pl = await L.contextTool({ about: 'plans' }, { now: match, tz: 'Asia/Karachi' });
+  check('a plan with only a date shows the day, not a made-up time', bill.data.allDay && /Fri 8 Nov, all day[^\n]*Pay Ali Traders/.test(pl.output) && !/12:00[^\n]*Pay Ali/.test(pl.output), pl.output);
+
+  // A topic whose sources are all off never falls through to every source.
+  store.upsertItem({ id: 'calls:mom', source: 'calls', kind: 'call', at: match - HOUR, title: 'Call with Mom', sensitive: true });
+  const noHeard = new Set(['calendar', 'plans', 'gmail']);
+  const hr = await L.contextTool({ about: 'heard' }, { now: match, tz: 'Asia/Karachi', allowed: noHeard });
+  const act = await L.contextTool({ about: 'activity' }, { now: match, tz: 'Asia/Karachi', allowed: noHeard });
+  check('about=heard without the heard source is refused, not everything', !hr.ok && /not allowed/.test(hr.output) && !/Mom|Cricket/.test(hr.output), hr.output);
+  check('the same for activity', !act.ok && !/Mom/.test(act.output), act.output);
   L.detach(); store.close();
 }
 

@@ -50,12 +50,48 @@ Read `ENGINE-NOTES.md` (section "The shared brain and agent handoffs") first.
   the past) and was there before this work.
 
 Simulation results so far (real Claude agents as the model): farmer 12/12,
-hiring week 12/12, senior 17/18, manager 11/13, artist 10/12, hr 8/9. The
-student and shopkeeper runs have not finished yet: see below.
+hiring week 12/12, senior 17/18, manager 11/13, artist 10/12, hr 8/9,
+student 10/12, shopkeeper 10/12 (12/12 against the fixed checks below).
+
+What the student and shopkeeper runs found, and what was done:
+- Shopkeeper: a "back in two hours" note stayed in "Right now" because the
+  model guessed ttlHours 4. `remember` now takes `until` (local time) and the
+  prompt shows expiry in the user's time, not UTC. Rerun: passes.
+- Shopkeeper checks were too literal: "15:00" matched "5 am", and "22:00" /
+  "23:00" did not count as 10 / 11 pm. Fixed in personas.mjs.
+- Student: the health check-in now goes to Pulse (fixed). It went out a day
+  late because the judge model chose not to send it on Thursday ("futsal
+  tonight will make up for it"): model judgement, not changed.
+- Student: Craft in folder `study-buddy` did not see decisions saved under
+  "HackLahore study buddy". `brain.js knownKey` now matches a folder or name
+  whose words run whole inside a known project's key (and the other way).
+  Not rerun yet.
+- A lead bot's "Hand money matters to Hisaab" made it look like the money
+  bot (`botDomains` now drops sentences that give work away).
+- `life_context` on a topic whose sources were all off (heard, activity)
+  returned every source, sensitive ones included. Now refused.
+- The bot prompt says which life sources it cannot read, so it does not
+  promise to list calls it may not see.
+- A plan with only a date is stored as all day, not at a made-up 12:00.
+- An email answered through `gmail_send` before the sync read it no longer
+  shows as waiting (`noteSent` sets lastTo; the sync checks it).
+
+Seen by the model agents, not fixed yet:
+- The "claims a file changed" guard fired twice on an email turn (student
+  req 44-45) and the throwaway reply became the recorded answer.
+- list_dir reused a cached result after a `run` changed the folder.
+- A done to-do ("buy Ayesha a gift") stays open; the brain block shows no ids,
+  so the model cannot forget it. Reflection adds duplicate open threads.
+- "Right now" doubles names ("with Usman with Usman").
+- A bot's own "WHAT YOU HAVE LEARNED" facts are not updated when the brain
+  slot changes (shop hours 22:00 stayed next to 23:00).
+- The memory extraction call still receives a secret the user typed (ATM PIN),
+  though nothing stores it.
+- gmail_send has no thread or In-Reply-To, so replies thread by subject only.
 
 ## Next
 
-1. Rerun the simulations for `student` and `shopkeeper` (and ideally all).
+1. Rerun `student` to confirm the project match, and ideally all personas.
    With no model key, start the persona in the background
    (`node scripts/sim/run.mjs student --bridge <dir> --out <dir>`) and have
    an AI agent act as the model through `model-bridge.mjs`, without letting it
