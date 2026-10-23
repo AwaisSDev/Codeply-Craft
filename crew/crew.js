@@ -164,8 +164,8 @@
     const btn = $('#accountBtn');
     const u = state.user;
     btn.innerHTML = u
-      ? `<span class="account-av">${esc(u.email.replace(/@.*/, '').replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase())}</span><span class="account-text"><b>${esc(u.email)}</b><span>${esc(modelName())}</span></span>`
-      : `<span class="account-av">?</span><span class="account-text"><b>Sign in</b><span>Same account as Craft</span></span>`;
+      ? `<span class="account-av">${esc(u.email.replace(/@.*/, '').replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase())}</span><span class="account-text"><b>${esc(u.email)}</b></span><svg class="account-caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>`
+      : `<span class="account-av">?</span><span class="account-text"><b>Sign in</b></span><svg class="account-caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>`;
     btn.onclick = () => openAccountPanel(btn);
   }
 

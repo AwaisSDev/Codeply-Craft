@@ -112,12 +112,12 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .bot-item-sub { font-size: 12.5px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .side-empty { padding: 8px 10px; color: var(--text-faint); font-size: 13px; }
 .side-foot { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; }
-.account { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border-radius: 10px; text-align: left; }
+.account { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 6px; border-radius: 9px; text-align: left; }
 .account:hover { background: var(--hover); }
-.account-av { width: 28px; height: 28px; border-radius: 50%; background: var(--surface-3); display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }
-.account-text { min-width: 0; flex: 1; font-size: 13px; }
-.account-text b { display: block; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.account-text span { color: var(--text-faint); font-size: 12px; }
+.account-av { width: 26px; height: 26px; border-radius: 50%; background: #10a37f; color: #fff; display: grid; place-items: center; font-size: 10.5px; font-weight: 600; flex: none; }
+.account-text { min-width: 0; flex: 1; font-size: 13.5px; }
+.account-text b { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.account-caret { width: 15px; height: 15px; flex: none; color: var(--text-dim); }
 
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
 
@@ -493,7 +493,7 @@ body.embedded .side .brand { display: none; }
 .menu .ap-manage { margin-top: 12px; justify-content: center; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border-strong); font-size: 12.5px; font-weight: 500; }
 .menu .ap-manage svg { width: 14px; height: 14px; }
 .ap-list { padding: 6px; border-top: 1px solid var(--border); }
-.side-foot .account-av { background: #2f6bff; color: #fff; font-size: 11.5px; font-weight: 650; letter-spacing: .02em; }
+.side-foot .account-av { background: #10a37f; color: #fff; font-size: 10.5px; font-weight: 600; }
 /* These logos are full squares already: show them edge to edge, no white tile. */
 .ap-app.ap-github, .ap-app.ap-vercel, .ap-app.ap-supabase { padding: 0; background: #000; }
 .ap-app.ap-github img, .ap-app.ap-vercel img, .ap-app.ap-supabase img { object-fit: cover; border-radius: 10px; }
@@ -829,8 +829,6 @@ body.in-settings .side > :not(.side-settings):not(.side-foot) { display: none; }
 .set-nav-item.on { background: var(--active); color: var(--text); }
 .side-foot { display: flex; align-items: center; gap: 2px; }
 .side-foot .account { flex: 1; min-width: 0; }
-.side-gear { color: var(--text-faint); }
-body.in-settings .side-gear { background: var(--active); color: var(--text); }
 
 .set-scroll { flex: 1; overflow-y: auto; }
 .set-page { max-width: 720px; margin: 0 auto; padding: 72px 32px 96px; user-select: text; }
@@ -882,7 +880,7 @@ body.in-settings .side-gear { background: var(--active); color: var(--text); }
 .set-switch input:checked + span::after { transform: translateX(16px); }
 .set-switch input:disabled + span { opacity: .5; }
 
-.set-back:focus-visible, .set-nav-item:focus-visible, .set-pill:focus-visible, .set-btn:focus-visible, .side-gear:focus-visible, .access-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.set-back:focus-visible, .set-nav-item:focus-visible, .set-pill:focus-visible, .set-btn:focus-visible, .access-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .set-switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   .set-switch span, .set-switch span::after, .set-pill, .set-btn { transition: none; }

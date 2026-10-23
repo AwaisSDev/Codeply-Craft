@@ -279,12 +279,5 @@
     ]));
   }
 
-  // The way in: a gear next to the account in the sidebar.
-  const foot = $('.side-foot');
-  if (foot && !$('#settingsBtn')) {
-    foot.insertAdjacentHTML('beforeend', `<button class="icon-btn side-gear" id="settingsBtn" aria-label="Settings" title="Settings">${ICON.gear}</button>`);
-    $('#settingsBtn').addEventListener('click', () => (open ? leave() : show('general')));
-  }
-
   window.CrewSettings = { show, hide, leave, isOpen: () => open, chipHtml, wireChip, allowedWords };
 })();
