@@ -102,7 +102,7 @@
     if (window.CrewSettings) window.CrewSettings.hide();
     if (window.CrewLife) window.CrewLife.hide();
     if (window.CrewBrain) window.CrewBrain.hide();
-    try { localStorage.setItem('crew.last', `g:${id}`); } catch {}
+    try { sessionStorage.setItem('crew.last', `g:${id}`); } catch {}
     const r = await api.groupMessages(id);
     if (S.currentGroup !== id) return;
     messages = Array.isArray(r) ? r : [];

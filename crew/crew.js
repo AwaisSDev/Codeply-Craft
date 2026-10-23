@@ -339,7 +339,7 @@
     if (window.CrewSettings) window.CrewSettings.hide();
     if (window.CrewLife) window.CrewLife.hide();
     if (window.CrewBrain) window.CrewBrain.hide();
-    try { localStorage.removeItem('crew.last'); } catch {}
+    try { sessionStorage.removeItem('crew.last'); } catch {}
     renderSide();
     const bots = state.catalog.bots;
     const used = new Set(bots.map((b) => b.template).filter(Boolean));
@@ -393,7 +393,7 @@
     if (window.CrewSettings) window.CrewSettings.hide();
     if (window.CrewLife) window.CrewLife.hide();
     if (window.CrewBrain) window.CrewBrain.hide();
-    try { localStorage.setItem('crew.last', id); } catch {}
+    try { sessionStorage.setItem('crew.last', id); } catch {}
     const r = await api.thread(id);
     if (state.current !== id) return;
     state.messages = Array.isArray(r) ? r : [];
@@ -1031,7 +1031,7 @@
     }
     Object.assign(state, { user: r.user, models: r.models, catalog: r.catalog, threads: r.threads || {}, groups: r.groups || [], settings: r.settings || {}, workspace: r.workspace });
     let last = null;
-    try { last = localStorage.getItem('crew.last'); } catch {}
+    try { last = sessionStorage.getItem('crew.last'); } catch {}
     if (last && last.startsWith('g:') && state.groups.some((g) => `g:${g.id}` === last)) window.CrewGroups.open(last.slice(2));
     else if (last && bot(last)) openBot(last); else goHome();
     if (r.openBot && bot(r.openBot)) openBot(r.openBot); // a notification was clicked
