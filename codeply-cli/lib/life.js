@@ -89,6 +89,17 @@ function when(t, now, tz) {
   if (dayKey(t, tz) === dayKey(now - DAY, tz)) return `yesterday ${clock(t, tz)}`;
   return fmt(t, tz, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 }
+/** An all-day item's day: "today, all day", "tomorrow, all day" or "Tue 27 Oct, all day". */
+function allDayLabel(t, now, tz) {
+  if (dayKey(t, tz) === dayKey(now, tz)) return 'today, all day';
+  if (dayKey(t, tz) === dayKey(now + DAY, tz)) return 'tomorrow, all day';
+  return `${fmt(t, tz, { weekday: 'short', day: 'numeric', month: 'short' })}, all day`;
+}
+// The people an item is with, minus anyone its title already names ("Meeting with Usman").
+function others(people, title) {
+  const t = ` ${String(title || '').toLowerCase()} `;
+  return (people || []).filter((p) => { const n = firstName(p).toLowerCase(); return !n || !t.includes(` ${n} `); });
+}
 function ago(ms) {
   const m = Math.round(ms / 60000);
   if (m < 60) return `${Math.max(1, m)} min`;
@@ -158,7 +169,7 @@ function snapshot(o = {}) {
   }
   if (can('plans')) {
     snap.plans = s.items({ sources: ['plans'], from: now - HOUR, limit: 40, order: 'asc' })
-      .filter((x) => !x.data.done).slice(0, 6).map((x) => ({ id: x.id, title: x.title, at: x.at, place: x.place, people: x.people, timed: !x.data.untimed }));
+      .filter((x) => !x.data.done).slice(0, 6).map((x) => ({ id: x.id, title: x.title, at: x.at, place: x.place, people: x.people, timed: !x.data.untimed, allDay: !!x.data.allDay }));
   }
   if (can('gmail')) {
     snap.waiting = (s.getState('gmail.waiting') || []).filter((w) => now - w.at >= 4 * HOUR).slice(0, 5)
@@ -199,10 +210,10 @@ function nowBlock(snap, o = {}) {
   if (snap.screen) lines.push(`- Words on screen now: "${short(snap.screen.text, 400)}"`);
   if (snap.heard.length) lines.push(`- Heard around the user lately: ${snap.heard.slice(0, 4).map((h) => `${short(h.title, 90)} (${when(h.at, now, tz)})`).join('; ')}`);
   if (snap.next.length) {
-    lines.push(`- Coming up: ${snap.next.slice(0, 4).map((e) => `${e.allDay ? 'all day' : e.live ? 'now' : when(e.at, now, tz)} ${short(e.title, 60)}${e.place ? ` at ${short(e.place, 40)}` : ''}${e.people.length ? ` with ${e.people.slice(0, 3).map(firstName).join(', ')}` : ''}${!e.allDay && !e.live && e.at - now < 3 * HOUR ? ` (${until(e.at - now)})` : ''}`).join('; ')}`);
+    lines.push(`- Coming up: ${snap.next.slice(0, 4).map((e) => `${e.allDay ? allDayLabel(e.at, now, tz) : e.live ? 'now' : when(e.at, now, tz)} ${short(e.title, 60)}${e.place ? ` at ${short(e.place, 40)}` : ''}${others(e.people, e.title).length ? ` with ${others(e.people, e.title).slice(0, 3).map(firstName).join(', ')}` : ''}${!e.allDay && !e.live && e.at - now < 3 * HOUR ? ` (${until(e.at - now)})` : ''}`).join('; ')}`);
   }
   const loosePlans = snap.plans.filter((p) => !snap.next.some((e) => e.id === p.id));
-  if (loosePlans.length) lines.push(`- Plans: ${loosePlans.slice(0, 3).map((p) => `${short(p.title, 60)}${p.timed ? ` (${when(p.at, now, tz)})` : ''}`).join('; ')}`);
+  if (loosePlans.length) lines.push(`- Plans: ${loosePlans.slice(0, 3).map((p) => `${short(p.title, 60)}${p.allDay ? ` (${allDayLabel(p.at, now, tz)})` : p.timed ? ` (${when(p.at, now, tz)})` : ''}`).join('; ')}`);
   if (snap.waiting.length) lines.push(`- Waiting on the user's reply: ${snap.waiting.slice(0, 3).map((w) => `${w.from}, "${short(w.subject, 50)}" (${w.hours} h)`).join('; ')}`);
   if (snap.unread.length) lines.push(`- New for the bots: ${snap.unread.slice(0, 3).map((u) => `${u.via} from ${u.from || 'someone'}: "${short(u.title, 50)}"`).join('; ')}`);
   if (snap.calls.length) lines.push(`- Recent calls: ${snap.calls.slice(0, 2).map((c) => `${short(c.title, 50)} ${when(c.at, now, tz)}${c.summary ? `: ${short(c.summary, 120)}` : ''}`).join('; ')}`);
@@ -238,7 +249,7 @@ const ABOUT_SOURCES = {
 function itemLine(x, now, tz) {
   // A plan with only a date shows the date, never a time nobody gave.
   // An event that ends on another day (a 48 hour hackathon) shows the end's day too.
-  const t = x.data && x.data.allDay ? `${fmt(x.at, tz, { weekday: 'short', day: 'numeric', month: 'short' })}, all day` : x.end && x.end - x.at > 30 * 60000 && x.source !== 'activity' ? `${when(x.at, now, tz)} to ${dayKey(x.end, tz) === dayKey(x.at, tz) ? clock(x.end, tz) : when(x.end, now, tz)}` : when(x.at, now, tz);
+  const t = x.data && x.data.allDay ? allDayLabel(x.at, now, tz) : x.end && x.end - x.at > 30 * 60000 && x.source !== 'activity' ? `${when(x.at, now, tz)} to ${dayKey(x.end, tz) === dayKey(x.at, tz) ? clock(x.end, tz) : when(x.end, now, tz)}` : when(x.at, now, tz);
   const who = x.people && x.people.length ? ` [${x.people.slice(0, 4).join(', ')}]` : '';
   const extra = x.data && (x.data.summary || x.data.snippet) ? `: ${short(x.data.summary || x.data.snippet, 220)}` : x.body && !x.sensitive ? `: ${short(x.body, 220)}` : '';
   return `- ${t} · ${x.source}/${x.kind} · ${short(x.title, 120)}${x.place ? ` @ ${short(x.place, 60)}` : ''}${who}${extra}`;

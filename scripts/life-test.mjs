@@ -191,7 +191,7 @@ if (section('Context')) {
   s.upsertItem({ id: 'projects:p', source: 'projects', kind: 'project', at: NOW - HOUR, title: 'Codeply Craft', data: { lastActive: NOW - HOUR, lastPush: NOW - 3 * DAY - HOUR, unpushed: 4 } });
   const all = L.snapshot({ now: NOW, tz: TZ });
   const block = L.nowBlock(all);
-  check('the block has the next event with time to go', /18:40 Dinner with Ali at Kolachi with Ali \(in 40 min\)/.test(block), block);
+  check('the block has the next event with time to go', /18:40 Dinner with Ali at Kolachi \(in 40 min\)/.test(block), block);
   check('the block has who is waiting', /Sara, "Contract draft" \(26 h\)/.test(block), block);
   check('the block has the quiet project', /Codeply Craft, last push 3 days ago, 4 commits not pushed/.test(block), block);
   check('the block has what is on screen', /On screen: VS Code, "life.js" \(40 min\)/.test(block), block);

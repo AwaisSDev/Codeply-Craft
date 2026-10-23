@@ -78,7 +78,12 @@ What the student and shopkeeper runs found, and what was done:
   promise to list calls it may not see.
 - A plan with only a date is stored as all day, not at a made-up 12:00.
 - An email answered through `gmail_send` before the sync read it no longer
-  shows as waiting (`noteSent` sets lastTo; the sync checks it).
+  shows as waiting (`noteSent` sets lastTo; the sync checks it). The sim's
+  fake Gmail had no `internalDate`, so every email looked as new as the sync
+  that read it (Usman's 10:00 email showed at 16:32 and stayed "waiting");
+  fixed in harness.mjs.
+- All-day items say which day ("tomorrow, all day"), in "Coming up", "Plans"
+  and life_context; a name the title already has is not repeated.
 
 Seen by the model agents, not fixed yet:
 - The "claims a file changed" guard fired twice on an email turn (student
@@ -86,7 +91,6 @@ Seen by the model agents, not fixed yet:
 - list_dir reused a cached result after a `run` changed the folder.
 - A done to-do ("buy Ayesha a gift") stays open; the brain block shows no ids,
   so the model cannot forget it. Reflection adds duplicate open threads.
-- "Right now" doubles names ("with Usman with Usman").
 - A bot's own "WHAT YOU HAVE LEARNED" facts are not updated when the brain
   slot changes (shop hours 22:00 stayed next to 23:00).
 - The memory extraction call still receives a secret the user typed (ATM PIN),

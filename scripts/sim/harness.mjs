@@ -257,7 +257,7 @@ function gmailServer(world, persona) {
   g.deliver = (m) => {
     const id = `m${Object.keys(g.messages).length + 1}`;
     const headers = { From: m.from, To: persona.email, Subject: m.subject, 'Message-ID': `<${id}@sim>`, Date: new Date().toUTCString(), ...(m.headers || {}) };
-    g.messages[id] = { id, threadId: `t${id}`, labelIds: m.labels || ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'], snippet: short(m.body, 200),
+    g.messages[id] = { id, threadId: `t${id}`, internalDate: String(Date.now()), labelIds: m.labels || ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'], snippet: short(m.body, 200),
       payload: { mimeType: 'text/plain', headers: Object.entries(headers).map(([name, value]) => ({ name, value })), body: { data: Buffer.from(m.body).toString('base64url') } } };
     g.history.push({ id: String(++g.historyId), messagesAdded: [{ message: { id, labelIds: g.messages[id].labelIds } }] });
     world.inbox.push({ id, from: m.from, subject: m.subject, body: m.body, at: Date.now() });

@@ -439,6 +439,11 @@ if (section('Gmail and Calendar')) {
   const [bill] = L.notePlans([{ what: 'Pay Ali Traders Rs 45,000', when: '2030-11-08' }], { now: match, tz: 'Asia/Karachi' });
   const pl = await L.contextTool({ about: 'plans' }, { now: match, tz: 'Asia/Karachi' });
   check('a plan with only a date shows the day, not a made-up time', bill.data.allDay && /Fri 8 Nov, all day[^\n]*Pay Ali Traders/.test(pl.output) && !/12:00[^\n]*Pay Ali/.test(pl.output), pl.output);
+  L.notePlans([{ what: 'Ayesha\'s birthday', when: '2030-11-07', who: ['Ayesha'] }, { what: 'Task split meeting with Usman', when: '2030-11-06T21:00', who: ['Usman Tariq'] }], { now: match - 2 * HOUR, tz: 'Asia/Karachi' });
+  const nb = L.nowBlock(L.snapshot({ now: match - 2 * HOUR, tz: 'Asia/Karachi' }));
+  const late = L.nowBlock(L.snapshot({ now: match + 3.5 * HOUR, tz: 'Asia/Karachi' })); // 23:30, the evening is over
+  check('in "Coming up" a date-only plan for tomorrow says tomorrow, never just "all day"', /tomorrow, all day Ayesha's birthday/.test(late) && !/(^|; |: )all day Ayesha/.test(late), late);
+  check('a name the title already has is not repeated', /Task split meeting with Usman/.test(nb) && !/with Usman with/.test(nb), nb);
 
   // A topic whose sources are all off never falls through to every source.
   store.upsertItem({ id: 'calls:mom', source: 'calls', kind: 'call', at: match - HOUR, title: 'Call with Mom', sensitive: true });
