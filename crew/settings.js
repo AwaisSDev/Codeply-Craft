@@ -48,7 +48,18 @@
     ask: { label: 'Always ask', desc: 'Asks before every command, click, email or edit.' },
     once: { label: 'Ask once', desc: 'Once you allow something, it is allowed for the rest of the chat. Emails still show every time.' },
   };
-  const allowedWords = (x) => (String(x).startsWith('run:') ? `"${String(x).slice(4)}" commands` : TOOL_WORDS[x] || String(x).replace(/_/g, ' '));
+  const SCRIPTERS = { powershell: 'PowerShell', pwsh: 'PowerShell', cmd: 'cmd', bash: 'bash', sh: 'sh', node: 'node', python: 'Python', python3: 'Python', py: 'Python' };
+  // "git" commands; a one-off script (allowed only exactly as it was) is shortened.
+  function allowedWords(x) {
+    if (!String(x).startsWith('run:')) return TOOL_WORDS[x] || String(x).replace(/_/g, ' ');
+    const cmd = String(x).slice(4).trim();
+    const [first, ...rest] = cmd.split(/\s+/);
+    if (rest.length && (SCRIPTERS[first] || cmd.length > 40)) {
+      const body = rest.join(' ');
+      return `${SCRIPTERS[first] || first} script: "${body.length > 48 ? `${body.slice(0, 47).trim()}…` : body}"`;
+    }
+    return `"${cmd}" commands`;
+  }
   const chatName = (key) => {
     if (String(key).startsWith('group:')) { const g = (S().groups || []).find((x) => x.id === key.slice(6)); return g ? g.name : 'A group chat'; }
     const b = UI.bot(key); return b ? b.name : 'A chat that is gone';
@@ -251,8 +262,7 @@
     if (!btn || !api.accessGet) return;
     let acc = { mode: 'ask', always: [] };
     const paintChip = () => {
-      const n = acc.always.length;
-      $('#accessLabel', btn).textContent = `${(MODES[acc.mode] || MODES.ask).label}${n ? ` · ${n} allowed` : ''}`;
+      $('#accessLabel', btn).textContent = (MODES[acc.mode] || MODES.ask).label;
     };
     try { acc = { mode: 'ask', always: [], ...((await api.accessGet(key)) || {}) }; } catch {}
     paintChip();
@@ -261,15 +271,11 @@
       paintChip();
       if (said) UI.toast(said);
     };
+    // Just the two ways to ask. What a chat has allowed is listed in Settings, Permissions.
     btn.addEventListener('click', (e) => UI.openMenu(e.currentTarget, [
-      { note: 'Permissions for this chat' },
       // Always ask means every time: what was allowed so far is taken back too.
       { label: MODES.ask.label, desc: MODES.ask.desc, on: acc.mode === 'ask', run: () => set({ mode: 'ask', clearAlways: true }, acc.always.length ? 'It asks every time again.' : '') },
       { label: MODES.once.label, desc: MODES.once.desc, on: acc.mode === 'once', run: () => set({ mode: 'once' }) },
-      ...(acc.always.length ? ['-', { note: 'Allowed in this chat. Pick one to take it back:' },
-        ...acc.always.map((x) => ({ label: allowedWords(x), run: () => set({ forget: [x] }, `It asks again before: ${allowedWords(x).toLowerCase()}.`) }))] : []),
-      '-',
-      { label: 'Permission settings', run: () => show('permissions') },
     ]));
   }
 
