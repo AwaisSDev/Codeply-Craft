@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld('crew', {
   send: (botId, text) => ipcRenderer.invoke('crew:chat:send', { botId, text }),
   stop: (botId) => ipcRenderer.send('crew:chat:stop', botId),
   respond: (requestId, verdict) => ipcRenderer.send('crew:approval:respond', { requestId, verdict }),
+  // What a chat may do without asking: a bot id, or "group:<id>".
+  accessGet: (key) => ipcRenderer.invoke('crew:access:get', key),
+  accessSet: (key, patch) => ipcRenderer.invoke('crew:access:set', key, patch),
   onEvent: on('crew:event'),
 
   groupsList: () => ipcRenderer.invoke('crew:groups:list'),

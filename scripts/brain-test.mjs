@@ -455,6 +455,43 @@ if (section('Gmail and Calendar')) {
   L.detach(); store.close();
 }
 
+// ─── use_computer: hands in other apps, never in the wrong window ──────────
+if (section('Computer')) {
+  const C = require(path.join(ROOT, 'codeply-cli/lib/computer.js'));
+  const did = [];
+  const wins = { claude: { app: 'claude', title: 'Claude', bounds: { x: 0, y: 0, width: 800, height: 600 }, front: true }, crew: { app: 'Codeply Crew', title: 'Codeply Crew', bounds: { x: 0, y: 0, width: 800, height: 600 }, front: true } };
+  let front = wins.crew; let focusWorks = true;
+  C.attach({
+    front: async () => front,
+    focus: async (want) => { if (!/claude/i.test(want)) return null; if (focusWorks) front = wins.claude; return { ...wins.claude, front: focusWorks }; },
+    isOwn: (w) => !!w && /codeply/i.test(w.app),
+    capture: async () => ({ image: 'data:image/jpeg;base64,AAAA', w: 800, h: 600, text: 'New chat' }),
+    point: (x, y) => (x >= 0 && y >= 0 && x < 800 && y < 600 ? { x, y } : null),
+    click: async (pt, o) => did.push(['click', pt, o]), type: async (t) => did.push(['type', t]), keys: async (k) => did.push(['keys', k]), scroll: async () => did.push(['scroll']),
+  });
+  const asked = [];
+  const ctx = { approve: async (a) => { asked.push(a); return 'once'; } };
+  const typed = await C.tool({ action: 'type', window: 'Claude', text: 'whats bigger a car or a bus' }, ctx);
+  check('type brings the named app forward first, asks, then types into it', typed.ok && front === wins.claude && did[0][0] === 'type' && asked[0].tool === 'use_computer' && /Claude/.test(asked[0].title), JSON.stringify({ typed, did, asked }));
+  check('and shows the screen after', typed.meta.imageDataUrls.length === 1 && /Screenshot attached, 800 x 600/.test(typed.output));
+  front = wins.crew; focusWorks = false; did.length = 0;
+  const stuck = await C.tool({ action: 'type', window: 'Claude', text: 'hello' }, ctx);
+  check('if the app cannot come to the front, nothing is typed anywhere', !stuck.ok && !did.length && /nothing was typed/.test(stuck.output), stuck.output);
+  check('it never types into Codeply itself', !(await C.tool({ action: 'type', window: 'Codeply Crew', text: 'x' }, ctx)).ok && !did.length);
+  check('acting needs a window name', !(await C.tool({ action: 'keys', keys: 'enter' }, ctx)).ok);
+  focusWorks = true;
+  const no = await C.tool({ action: 'click', window: 'Claude', x: 2000, y: 10 }, ctx);
+  check('a spot outside the screenshot is refused', !no.ok && !did.length, no.output);
+  const click = await C.tool({ action: 'click', window: 'Claude', x: 212, y: 88, target: 'New chat' }, ctx);
+  check('click lands on the spot from the screenshot', click.ok && did[0][0] === 'click' && did[0][1].x === 212, JSON.stringify(did));
+  did.length = 0;
+  const nope = await C.tool({ action: 'keys', window: 'Claude', keys: 'enter' }, { approve: async () => 'reject' });
+  check('a "no" from the user does nothing', !nope.ok && !did.length);
+  check('look and focus need no approval', (await C.tool({ action: 'focus', window: 'Claude' }, { approve: async () => { throw new Error('asked'); } })).ok);
+  C.attach(null);
+  check('without the desktop app it says so', !(await C.tool({ action: 'look' }, {})).ok);
+}
+
 // ─── End to end: a real agent run against a fake model ─────────────────────
 if (section('Agent run')) {
   fresh('agent');
@@ -537,6 +574,10 @@ if (section('Agent run')) {
   check('a cc tag from the model reaches the email', google.sent.length === 1 && google.sent[0].cc === 'hamza@example.com', JSON.stringify(google.sent));
   await drive(['<codeply:calendar_update>\n<id>evF</id>\n<start>2030-11-05T21:00</start>\n</codeply:calendar_update>', 'Moved.'], { message: 'move futsal to 9' });
   check('a calendar_update block from the model moves the event', google.patched.length === 1 && google.patched[0].id === 'evF', JSON.stringify(google.patched));
+
+  // Orion said it typed the question into Claude, with no tool that could have.
+  await drive(['I opened Claude and typed the question into a new chat. Claude answered: a bus.', 'I only opened Claude; I did not type anything.'], { message: 'ask claude whats bigger a car or a bus' });
+  check('"I typed it into Claude" with no tool behind it is sent back', bodies.length === 2 && /typed, clicked or pressed something on the computer/.test(JSON.stringify(bodies[1].messages.slice(-1))), JSON.stringify(bodies.map((b) => b.messages.slice(-1))).slice(0, 400));
   server.close();
 }
 

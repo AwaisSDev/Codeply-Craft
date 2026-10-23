@@ -54,7 +54,7 @@ async function engine() {
 // not in the shared bot files, so Craft never sees fields it does not know).
 
 let storePath = null;
-let store = { threads: {}, groups: {}, settings: { voiceEngine: 'deepgram', voices: {} } };
+let store = { threads: {}, groups: {}, access: {}, settings: { voiceEngine: 'deepgram', voices: {} } };
 
 function loadStore() {
   fs.mkdirSync(CREW_DATA, { recursive: true });
@@ -76,6 +76,26 @@ function saveStore() {
     } catch (e) { console.warn('[store]', e.message); }
   }, 150);
 }
+// What each chat may do without asking, kept across its messages (like Craft):
+// full = Full access (nothing asks); always = what "Always in this chat" allowed.
+// A chat is a bot id, or "group:<id>". Commands are allowed by name ("run:npm"),
+// so allowing one command never quietly allows every command.
+function access(key) {
+  if (!store.access || typeof store.access !== 'object') store.access = {};
+  const a = store.access[key] || (store.access[key] = { full: false, always: [] });
+  if (!Array.isArray(a.always)) a.always = [];
+  return a;
+}
+const accessKey = (where) => (typeof where === 'string' ? where : where && where.groupId ? `group:${where.groupId}` : String(where && where.botId || ''));
+ipcMain.handle('access:get', guard((e, key) => { const a = access(String(key)); return { full: !!a.full, always: a.always.slice() }; }));
+ipcMain.handle('access:set', guard((e, key, patch = {}) => {
+  const a = access(String(key));
+  if (typeof patch.full === 'boolean') a.full = patch.full;
+  if (patch.clearAlways) a.always = [];
+  saveStore();
+  return { full: !!a.full, always: a.always.slice() };
+}));
+
 function thread(botId) {
   if (!store.threads[botId]) store.threads[botId] = { messages: [], updatedAt: 0 };
   return store.threads[botId];
@@ -294,8 +314,9 @@ ipcMain.on('chat:stop', (e, botId) => { const c = runs.get(botId); if (c) c.abor
  * `where` is a bot id (its own thread) or { groupId, botId } (a group chat).
  */
 function approverFor(where, bot, signal) {
-  const allowedAlways = new Set();
   const at = typeof where === 'string' ? { botId: where } : where;
+  const key = accessKey(where);
+  const runAllowed = (req, always) => !req.danger && Array.isArray(req.patterns) && req.patterns.length > 0 && req.patterns.every((p) => always.has(`run:${p}`));
   return async (req) => {
     if (signal.aborted) return 'reject';
     // Suggest only (autonomy Level 1): the bot never acts, so there is nothing to approve.
@@ -304,7 +325,9 @@ function approverFor(where, bot, signal) {
       return 'reject';
     }
     if (bot && !req.danger && req.tool !== 'fetch_image' && bots.canSkipApproval(bot, req.tool)) return 'once';
-    if (allowedAlways.has(req.tool) && req.tool !== 'run') return 'once';
+    const acc = access(key);
+    const always = new Set(acc.always);
+    if (req.tool !== 'fetch_image' && (acc.full || (req.tool === 'run' ? runAllowed(req, always) : always.has(req.tool)))) return 'once';
     const requestId = `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     send('crew:event', { ...at, type: 'approval', requestId, title: req.title, detail: String(req.detail || '').slice(0, 1600), danger: !!req.danger, tool: req.tool, draft: req.draft || null, draftOnly: !!req.draftOnly });
     const verdict = await new Promise((resolve) => {
@@ -312,7 +335,12 @@ function approverFor(where, bot, signal) {
       signal.addEventListener('abort', () => { if (approvals.delete(requestId)) resolve('reject'); }, { once: true });
     });
     send('crew:event', { ...at, type: 'approval_done', requestId, verdict: typeof verdict === 'object' ? verdict.verdict : verdict });
-    if (verdict === 'always') allowedAlways.add(req.tool);
+    const v = typeof verdict === 'object' ? verdict.verdict : verdict;
+    if (v === 'always' && req.tool !== 'fetch_image') {
+      const add = req.tool === 'run' ? (Array.isArray(req.patterns) && req.patterns.length ? req.patterns.map((p) => `run:${p}`) : []) : [req.tool];
+      acc.always = [...new Set([...acc.always, ...add])].slice(-200);
+      saveStore();
+    }
     return verdict;
   };
 }
@@ -396,7 +424,7 @@ ipcMain.handle('chat:send', guard(async (e, { botId, text }) => {
           } else if (ev.type === 'tool_start') {
             send('crew:event', { botId, type: 'tool_start', name: ev.name, label: toolLabel(ev) });
           } else if (ev.type === 'tool_end') {
-            const row = { kind: 'tool', name: ev.name, label: toolLabel(ev), ok: !!ev.ok, error: ev.error };
+            const row = { kind: 'tool', name: ev.name, label: toolLabel(ev), ...(ev.name === 'run' && ev.args && ev.args.command ? { command: String(ev.args.command).slice(0, 600) } : {}), ok: !!ev.ok, error: ev.error };
             steps.push(bots.runStep(ev));
             if (ev.name === 'ask_bot' && ev.meta && ev.meta.delegation) row.delegation = ev.meta.delegation;
             push(botId, row);
@@ -640,7 +668,7 @@ ipcMain.handle('groups:send', guard(async (e, { groupId, text }) => {
             } else if (ev.type === 'tool_start') {
               emit({ type: 'tool_start', botId: bot.id, name: ev.name, label: toolLabel(ev) });
             } else if (ev.type === 'tool_end') {
-              const row = { kind: 'tool', botId: bot.id, name: ev.name, label: toolLabel(ev), ok: !!ev.ok, error: ev.error };
+              const row = { kind: 'tool', botId: bot.id, name: ev.name, label: toolLabel(ev), ...(ev.name === 'run' && ev.args && ev.args.command ? { command: String(ev.args.command).slice(0, 600) } : {}), ok: !!ev.ok, error: ev.error };
               steps.push(bots.runStep(ev));
               groupPush(g, row);
               emit({ type: 'tool', ...row });

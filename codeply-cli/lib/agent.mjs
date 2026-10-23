@@ -28,6 +28,7 @@ const reachLib = require('./reach.js');
 const lifeLib = require('./life.js');
 const brainLib = require('./brain.js');
 const screenLib = require('./screen.js');
+const computerLib = require('./computer.js');
 const botMailLib = require('./bot-mail.js');
 const config = require('./config.js');
 
@@ -58,7 +59,7 @@ const FORMAT_CORRECTION =
   'Valid names: todo, ask_user, mcp, list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, ' +
   'browser_check, gmail_send, gmail_search, gmail_read, gmail_draft, drafts_list, calendar_list, calendar_add, calendar_update, add_model, slack_post_message, vercel_deploy, supabase_create_project, ' +
   'supabase_delete_project, github_create_repo, design_reference_search, view_images, design_direction, design_lint, supabase_api, supabase_sql, vercel_api, ' +
-  'web_fetch, web_search, image_search, reach_me, watch_email, life_context, remember, recall, hand_off, bot_email_send, look_at_screen, apply_patch, plan_exit, plan_enter, lsp, publish_check, publish_connect, supabase_setup, supabase_schema, ' +
+  'web_fetch, web_search, image_search, reach_me, watch_email, life_context, remember, recall, hand_off, bot_email_send, look_at_screen, use_computer, apply_patch, plan_exit, plan_enter, lsp, publish_check, publish_connect, supabase_setup, supabase_schema, ' +
   'publish_deploy, publish_github.';
 
 const TRUNCATION_CORRECTION =
@@ -168,6 +169,16 @@ const CLAIM_SHIPPED = new RegExp(
   'i',
 );
 const SHIP_TOOLS = new Set(['run', 'vercel_deploy', 'vercel_api', 'github_create_repo', 'supabase_api', 'publish_deploy', 'publish_github']);
+
+// "I typed the question into Claude", "I clicked Send": only true when a tool
+// that drives the computer ran this turn (use_computer, or a run script).
+const CLAIM_COMPUTER = new RegExp(
+  `\\bi(?:'ve|\\s+have)?\\s+(?:${HC_ADVERB}\\s+|also\\s+|just\\s+|then\\s+){0,2}(?:typed|clicked|pressed|pasted|entered|submitted|switched\\s+to|opened\\s+(?:a\\s+)?new\\s+chat)\\b` +
+  // "I opened Claude and typed the question": the second verb carries the claim.
+  `|\\bi(?:'ve|\\s+have)?\\s+(?:${HC_ADVERB}\\s+|also\\s+|just\\s+|then\\s+){0,2}(?:opened|launched|went\\s+to|switched\\s+to|focused)\\b[^.!?\\n]{0,80}?\\band\\s+(?:then\\s+)?(?:typed|clicked|pressed|pasted|entered|submitted|sent)\\b`,
+  'i',
+);
+const COMPUTER_TOOLS = new Set(['use_computer', 'run']);
 
 const unbackedClaimCorrection = (what) =>
   `[system] Your last reply says you ${what}, but no tool that could have done that ran successfully this turn. ` +
@@ -358,6 +369,7 @@ const PARAMS = {
   gmail_send: ['to', 'subject', 'body', 'draft', 'cc'],
   gmail_search: ['query'],
   gmail_read: ['id'],
+  use_computer: ['action', 'window', 'x', 'y', 'text', 'keys', 'amount', 'seconds', 'target'],
   gmail_draft: ['to', 'subject', 'body', 'cc'],
   drafts_list: [],
   calendar_list: ['from', 'to', 'max'],
@@ -424,6 +436,7 @@ const NAME_ALIASES = {
   previewcheck: 'browser_check', browserpreview: 'browser_check', check: 'browser_check',
   gmail_send: 'gmail_send', gmailsend: 'gmail_send', sendemail: 'gmail_send', email: 'gmail_send', sendmail: 'gmail_send',
   gmail_search: 'gmail_search', gmailsearch: 'gmail_search', searchemail: 'gmail_search', searchgmail: 'gmail_search',
+  use_computer: 'use_computer', usecomputer: 'use_computer', computer: 'use_computer', desktop: 'use_computer', click: 'use_computer', typetext: 'use_computer', presskeys: 'use_computer',
   gmail_read: 'gmail_read', gmailread: 'gmail_read', reademail: 'gmail_read', openemail: 'gmail_read', getemail: 'gmail_read',
   gmail_draft: 'gmail_draft', gmaildraft: 'gmail_draft', draftemail: 'gmail_draft', savedraft: 'gmail_draft', createdraft: 'gmail_draft',
   drafts_list: 'drafts_list', draftslist: 'drafts_list', listdrafts: 'drafts_list', drafts: 'drafts_list',
@@ -917,6 +930,31 @@ drafts; gmail_send with <draft>id</draft> sends one of them.)
 <why>see the message they want to reply to</why>
 </codeply:look_at_screen>
 
+<codeply:use_computer>
+<action>focus</action>
+<window>Claude</window>
+</codeply:use_computer>
+
+<codeply:use_computer>
+<action>click</action>
+<window>Claude</window>
+<x>212</x>
+<y>88</y>
+<target>New chat button</target>
+</codeply:use_computer>
+
+<codeply:use_computer>
+<action>type</action>
+<window>Claude</window>
+<text>Make a landing page for my pizza cafe</text>
+</codeply:use_computer>
+
+(use_computer drives another app with the mouse and keyboard and shows a
+fresh screenshot after every step. actions: look, focus, click, double_click,
+right_click, type, keys (<keys>enter</keys>, ctrl+n), scroll (<amount>),
+wait (<seconds>, then a screenshot). x and y are pixels on the latest
+screenshot. Every action names its <window>; it is brought to the front first.)
+
 <codeply:calendar_list>
 <from>today</from>
 <to>2026-10-05</to>
@@ -1149,6 +1187,7 @@ RULES
 - FULL VERCEL ACCESS: when Vercel is connected, vercel_api reaches the entire Vercel REST API (https://api.vercel.com, paths start with a version like /v9/) - projects (GET /v9/projects), deployments and their status/logs (GET /v6/deployments, GET /v13/deployments/{id}, GET /v3/deployments/{id}/events), env vars (/v10/projects/{id}/env), domains (/v10/projects/{id}/domains). The team id is added for you. Use vercel_deploy to ship a folder, then vercel_api to confirm the deployment reached READY and to read its build logs if it failed - do not report a deployment as live until you've seen it succeed.
 - Tool results are the only source of truth about what happened. A failed result (non-2xx status, non-zero exit code, "did not apply") means it did not happen - never describe it as done.
 - Creating a remote repo, pushing code, enabling Pages, or deploying anything are exactly the kind of claim covered by "never report success you did not verify" above - and the easiest one to get wrong, because each step's own command can silently no-op or partially fail while a LATER step still appears to succeed. Concretely: run whoami equivalents (gh api user, gh auth status) to get the real signed-in username BEFORE building any URL with it - never guess a username from the OS account name, the folder name, or anything the user said earlier that could be stale; after gh repo create or git push, treat the command's own exit code and printed output as the only source of truth for whether it worked, not your prior turn's summary of what you intended to do - a command you ran two turns ago having succeeded is not evidence this turn's retry did too; and never hand the user a repository/deployment URL you have not just confirmed resolves (curl -I it, or read it back from the command's own output) - a plausible-looking URL built from a guessed username/slug is a fabrication even if the pattern is usually right.
+- THE USER'S COMPUTER: when use_computer is available you have hands in every other app. When the user asks you to do something in an app (type a prompt into Claude, start a new chat, click a button, fill a form), do every step yourself with use_computer: focus the app, look, click, type, press keys, then look again to check it worked. Never ask the user to bring a window to the front, click something or type something you can do yourself. If a step fails, try another way before giving up: a keyboard shortcut instead of a click (ctrl+n for a new chat), a different <window> name, opening the app with run, waiting and looking again. Only say you can't after you tried, and say exactly what you tried. Report only what the last screenshot shows: never say you typed, clicked or sent something unless use_computer did it this turn, and never present your own answer as another app's reply. For a long job in another app (it is generating a page), use use_computer wait and look again instead of a long sleep in run.
 - gmail_send and slack_post_message send a real email or a real Slack message the moment they run - there is no "preview" mode. Only use them when the user actually asked for that email/message to go out, never speculatively, never as a way to "show" them what it would say. When the user wants an email written but not sent yet, use gmail_draft instead. The user sees the email on an editable card before it goes out and may change it: the tool result says what was really sent or saved, so report that, not your original wording. calendar_add likewise puts a real event on the user's Google Calendar: only when they asked for it, with times in their local time; check calendar_list first when they ask what is on their calendar or whether a time is free. If gmail_search or a prior message makes clear Gmail/Slack isn't connected, say so plainly and stop - do not retry hoping it connects itself, and do not claim you sent something when the tool reported it wasn't connected.
 - A brand-new project: when the user asks you to start, create or build a new app or project from scratch (an empty or new folder), then once the first version runs, back it up on GitHub without being asked again: call github_create_repo (it creates a private repo on their connected account and pushes; the user approves it on a card, no env vars, tokens or github.com steps). If it reports GitHub isn't connected, mention once, in one line, that connecting GitHub in Connect Apps backs projects up automatically, and carry on. Don't do this for existing projects, folders that are already git repos with a remote, or small one-off files.
 - vercel_deploy, supabase_create_project, supabase_delete_project, and github_create_repo are the same category as gmail_send/slack_post_message above: real, immediate action the moment they run - a live production deployment, a newly provisioned cloud database with its own bill, a brand-new repository pushed with the user's code. Only use them when the user actually asked for that outcome (or, for github_create_repo, a brand-new project as described above), never speculatively "to check if it would work." If one reports its integration isn't connected, say so plainly and stop rather than retrying or working around it. supabase_delete_project is the sharpest of these - it permanently destroys a database with no undo - so only reach for it when the user has clearly asked to delete or remove a specific project, never as cleanup for something that merely looks unused.
@@ -1656,7 +1695,7 @@ const NO_NATIVE_TOOLS_REMINDER =
 // unless their entry says toolMode: 'text', or CODEPLY_TOOLS=text is set.
 // A model that rejects tools is remembered for the rest of the session.
 const nativeUnsupported = new Set();
-const MUTATING_ACTIONS = new Set(['write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'bot_email_send', 'calendar_add', 'calendar_update', 'add_model', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github']);
+const MUTATING_ACTIONS = new Set(['use_computer', 'write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'bot_email_send', 'calendar_add', 'calendar_update', 'add_model', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github']);
 
 /**
  * Native function names for MCP tools (mcp__server__tool, within the 64-char
@@ -1805,6 +1844,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       if (n === 'remember' || n === 'recall') return brainLib.available();
       if (n === 'hand_off') return typeof handOff === 'function' && brainLib.canHandOff() && !ro && m !== 'Design';
       if (n === 'look_at_screen') return screenLib.available();
+      if (n === 'use_computer') return computerLib.available();
       if (n === 'bot_email_send') return botMailLib.available() && !!botMailLib.addressOf(botId);
       if (ro && MUTATING_ACTIONS.has(n)) return m === 'Plan' && (n === 'write_file' || n === 'edit_file');
       return true;
@@ -2132,12 +2172,13 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       //    with no tool that could have done so succeeding this turn.
       const claimedVerify = CLAIM_VERIFIED.test(prose) && ![...VERIFY_TOOLS].some((t) => succeededTools.has(t));
       const claimedShip = CLAIM_SHIPPED.test(prose) && ![...SHIP_TOOLS].some((t) => succeededTools.has(t));
-      if (claimedVerify || claimedShip) {
+      const claimedHands = CLAIM_COMPUTER.test(prose) && ![...COMPUTER_TOOLS].some((t) => succeededTools.has(t));
+      if (claimedVerify || claimedShip || claimedHands) {
         if (hallucinationRetries < MAX_HALLUCINATION_RETRIES) {
           hallucinationRetries++;
           messages.push({
             role: 'user',
-            content: unbackedClaimCorrection(claimedShip ? 'deployed, pushed or published something' : 'ran, tested or verified something'),
+            content: unbackedClaimCorrection(claimedHands ? 'typed, clicked or pressed something on the computer (do it with use_computer)' : claimedShip ? 'deployed, pushed or published something' : 'ran, tested or verified something'),
           });
           continue;
         }

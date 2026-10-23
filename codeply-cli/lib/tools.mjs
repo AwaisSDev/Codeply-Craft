@@ -28,6 +28,7 @@ const reachLib = require('./reach.js');
 const lifeLib = require('./life.js');
 const brainLib = require('./brain.js');
 const screenLib = require('./screen.js');
+const computerLib = require('./computer.js');
 const botMailLib = require('./bot-mail.js');
 const applyLimit = require('./apply-limit.js');
 const config = require('./config.js');
@@ -2352,6 +2353,7 @@ async function hand_off(args, ctx) {
 // ─── The user's screen (lib/screen.js; only a desktop host can look) ──────────
 // A picture of the screen and its text, for "this", "her message", "what's on my right".
 const look_at_screen = (args, ctx) => screenLib.lookTool(ctx, args);
+const use_computer = (args, ctx) => computerLib.tool(args, ctx);
 
 // ─── A bot's own email (lib/bot-mail.js; the host sends through Codeply's server) ─
 // The same editable card as gmail_send: what is left on it is what goes out.
@@ -2440,7 +2442,7 @@ export const TOOLS = {
   ask_bot,
   ask_user,
   mcp,
-  web_fetch, web_search, image_search, apply_patch, plan_exit, plan_enter, lsp, reach_me, watch_email, life_context, remember, recall, hand_off, bot_email_send, look_at_screen,
+  web_fetch, web_search, image_search, apply_patch, plan_exit, plan_enter, lsp, reach_me, watch_email, life_context, remember, recall, hand_off, bot_email_send, look_at_screen, use_computer,
   list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, browser_check,
   gmail_send, gmail_search, gmail_read, gmail_draft, drafts_list, calendar_list, calendar_add, calendar_update, slack_post_message, vercel_deploy, supabase_create_project, supabase_delete_project, github_create_repo,
   design_reference_search, view_images, supabase_api, supabase_sql, vercel_api, add_model,
@@ -2451,7 +2453,7 @@ export const TOOLS = {
 // actually prompt for non-read requests (see above); read-only tools
 // (browser_check, gmail_search, design_reference_search, view_images, ...)
 // never prompt.
-export const TOOL_NEEDS_APPROVAL = new Set(['add_model', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github', 'write_file', 'edit_file', 'apply_patch', 'run', 'fetch_image', 'gmail_send', 'gmail_draft', 'bot_email_send', 'calendar_add', 'calendar_update', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_api', 'supabase_sql', 'vercel_api']);
+export const TOOL_NEEDS_APPROVAL = new Set(['use_computer', 'add_model', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github', 'write_file', 'edit_file', 'apply_patch', 'run', 'fetch_image', 'gmail_send', 'gmail_draft', 'bot_email_send', 'calendar_add', 'calendar_update', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_api', 'supabase_sql', 'vercel_api']);
 
 /** Human-facing verb + colour hint for the transcript. */
 export const TOOL_DISPLAY = {
@@ -2469,6 +2471,7 @@ export const TOOL_DISPLAY = {
   recall: { verb: 'recall', icon: '✦' },
   hand_off: { verb: 'handed', icon: '⇢' },
   look_at_screen: { verb: 'screen', icon: '◉' },
+  use_computer: { verb: 'computer', icon: '◉' },
   bot_email_send: { verb: 'email', icon: '✉' },
   apply_patch:{ verb: 'patch',  icon: '✎' },
   plan_exit:  { verb: 'plan',   icon: '☐' },
@@ -2517,14 +2520,14 @@ export const TOOL_DISPLAY = {
 // agent.mjs; this covers every other tool that changes something outside the
 // conversation, so read-only can't be escaped through a side door.
 const MUTATING_TOOLS = new Set([
-  'write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'calendar_update', 'slack_post_message', 'add_model',
+  'write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'calendar_update', 'slack_post_message', 'add_model', 'use_computer',
   'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo',
   'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github',
 ]);
 
 // Everything that isn't designing: commands, deploys, databases, messages, other projects.
 export const DESIGN_BLOCKED = new Set([
-  'run', 'lsp', 'mcp', 'ask_bot', 'hand_off', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model', 'browser_check', 'bot_email_send',
+  'run', 'use_computer', 'lsp', 'mcp', 'ask_bot', 'hand_off', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model', 'browser_check', 'bot_email_send',
   'gmail_send', 'gmail_draft', 'gmail_search', 'gmail_read', 'drafts_list', 'calendar_list', 'calendar_add', 'calendar_update', 'slack_post_message',
   'vercel_deploy', 'vercel_api', 'supabase_create_project', 'supabase_delete_project', 'supabase_api', 'supabase_sql',
   'github_create_repo', 'publish_check', 'publish_connect', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github',

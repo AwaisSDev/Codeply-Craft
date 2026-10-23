@@ -53,6 +53,48 @@ public static class CraftInput {
   }
   public static void Scroll(int x, int y, int clicks) { SetCursorPos(x, y); Send(new INPUT[] { M(0x0800, -clicks * 120) }); }
   public static void Key(ushort vk, bool up) { Send(new INPUT[] { K(vk, 0, up ? 2u : 0u) }); }
+  // Windows: which one is in front, and bringing one forward by its title or app name.
+  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+  [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+  [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool on);
+  [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L; public int T; public int R; public int B; }
+  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+  public delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc f, IntPtr l);
+  static string TitleOf(IntPtr h) { var s = new System.Text.StringBuilder(512); GetWindowText(h, s, 512); return s.ToString().Replace("\t", " "); }
+  static string ProcOf(IntPtr h) { uint pid; GetWindowThreadProcessId(h, out pid); try { return System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { return ""; } }
+  // "left,top,right,bottom<TAB>process<TAB>title", in physical pixels.
+  static string Describe(IntPtr h) { RECT r; GetWindowRect(h, out r); return r.L + "," + r.T + "," + r.R + "," + r.B + "\t" + ProcOf(h) + "\t" + TitleOf(h); }
+  public static string Front() { return Describe(GetForegroundWindow()); }
+  public static string Focus(string want) {
+    want = want.ToLowerInvariant();
+    IntPtr found = IntPtr.Zero;
+    // Front to back, so the most recently used match wins.
+    EnumWindows(delegate (IntPtr h, IntPtr l) {
+      if (!IsWindowVisible(h)) return true;
+      string t = TitleOf(h);
+      if (t.Length == 0) return true;
+      if (t.ToLowerInvariant().Contains(want) || ProcOf(h).ToLowerInvariant().Contains(want)) { found = h; return false; }
+      return true;
+    }, IntPtr.Zero);
+    if (found == IntPtr.Zero) return "";
+    if (IsIconic(found)) ShowWindow(found, 9);
+    // Windows only lets the process that has the foreground hand it on: borrow its input queue for a moment.
+    uint pid; uint fg = GetWindowThreadProcessId(GetForegroundWindow(), out pid); uint me = GetCurrentThreadId();
+    if (fg != me) AttachThreadInput(me, fg, true);
+    SetForegroundWindow(found); BringWindowToTop(found);
+    if (fg != me) AttachThreadInput(me, fg, false);
+    System.Threading.Thread.Sleep(200);
+    if (GetForegroundWindow() != found) { Key(0x12, false); Key(0x12, true); SetForegroundWindow(found); System.Threading.Thread.Sleep(200); }
+    return Describe(found) + "\t" + (GetForegroundWindow() == found ? "front" : "behind");
+  }
   public static void Text(string s) {
     foreach (char c in s) {
       if (c == '\n') { Key(0x0D, false); Key(0x0D, true); continue; }
@@ -79,6 +121,8 @@ while ($true) {
       'keys'   { foreach ($k in $c.down) { [CraftInput]::Key([uint16]$k, $false) }; foreach ($k in $c.up) { [CraftInput]::Key([uint16]$k, $true) } }
       'text'   { [CraftInput]::Text([string]$c.text) }
       'held'   { $extra = ' ' + [CraftInput]::Held() }
+      'front'  { $extra = ' ' + [CraftInput]::Front() }
+      'focus'  { $extra = ' ' + [CraftInput]::Focus([string]$c.want) }
     }
     [Console]::Out.WriteLine('ok ' + $c.id + $extra)
   } catch {
@@ -258,6 +302,50 @@ async function held() {
   return Number.isFinite(v) ? { alt: !!(v & 1), c: !!(v & 2) } : null;
 }
 
+// ─── Windows: which is in front, and bringing one forward ──────────────────
+// A window: { app, title, bounds (Electron screen points), front }.
+function parseWindow(line, physical) {
+  const [rect, app = '', title = '', where = 'front'] = String(line || '').split('\t');
+  const n = String(rect || '').split(',').map(Number);
+  if (n.length !== 4 || n.some((v) => !Number.isFinite(v))) return null;
+  let bounds = { x: n[0], y: n[1], width: n[2] - n[0], height: n[3] - n[1] };
+  if (physical) { try { bounds = screen.screenToDipRect(null, bounds); } catch {} }
+  return { app: app.trim(), title: title.trim(), bounds, front: where.trim() !== 'behind' };
+}
+const MAC_DESCRIBE = `function describe(p) {
+  let t = '', b = [0, 0, 0, 0];
+  try { const w = p.windows()[0]; t = String(w.name() || ''); const pos = w.position(); const sz = w.size(); b = [pos[0], pos[1], pos[0] + sz[0], pos[1] + sz[1]]; } catch (e) {}
+  return b.join(',') + '\\t' + p.name() + '\\t' + t.replace(/\\t/g, ' ');
+}
+const se = Application('System Events');`;
+
+/** The window in front right now, or null. */
+async function frontWindow() {
+  if (isWin) return parseWindow(await winSend({ op: 'front' }), true);
+  if (isMac) return parseWindow(await jxa(`${MAC_DESCRIBE}\ndescribe(se.applicationProcesses.whose({ frontmost: true })()[0]);`), false);
+  throw new Error('not supported here');
+}
+
+/** Bring the newest window whose title or app name contains `want` to the front. null when none is open. */
+async function focusWindow(want) {
+  want = String(want || '').trim().slice(0, 120);
+  if (!want) return null;
+  if (isWin) { const r = await winSend({ op: 'focus', want }); return String(r || '').trim() ? parseWindow(r, true) : null; }
+  if (isMac) {
+    const out = await jxa(`${MAC_DESCRIBE}
+const want = ${JSON.stringify(want.toLowerCase())};
+let hit = null;
+for (const p of se.applicationProcesses.whose({ backgroundOnly: false })()) {
+  let n = ''; try { n = String(p.name()); } catch (e) {}
+  let titles = []; try { titles = p.windows().map((w) => String(w.name() || '')); } catch (e) {}
+  if (n.toLowerCase().includes(want) || titles.some((t) => t.toLowerCase().includes(want))) { hit = p; break; }
+}
+if (!hit) { ''; } else { hit.frontmost = true; delay(0.3); describe(hit) + '\\t' + (hit.frontmost() ? 'front' : 'behind'); }`);
+    return String(out || '').trim() ? parseWindow(out.trim(), false) : null;
+  }
+  throw new Error('not supported here');
+}
+
 function dispose() { try { if (helper) helper.kill(); } catch {} }
 
-module.exports = { supported, warm, move, click, drag, scroll, type, keys, held, dispose };
+module.exports = { supported, warm, move, click, drag, scroll, type, keys, held, frontWindow, focusWindow, dispose };

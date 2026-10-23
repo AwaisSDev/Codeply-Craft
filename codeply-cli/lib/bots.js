@@ -56,7 +56,7 @@ const TONES = {
 /** What a bot must ask the user before doing. Each maps to engine tools. */
 const APPROVALS = {
   edit_files: { label: 'Editing files', tools: ['write_file', 'edit_file', 'apply_patch', 'fetch_image'] },
-  run_commands: { label: 'Running commands', tools: ['run'] },
+  run_commands: { label: 'Running commands and using your computer', tools: ['run', 'use_computer'] },
   send: { label: 'Sending anything (email, Slack)', tools: ['gmail_send', 'slack_post_message', 'bot_email_send'] },
   publish: { label: 'Deploying or publishing', tools: ['vercel_deploy', 'github_create_repo', 'vercel_api', 'publish_deploy', 'publish_github'] },
   databases: { label: 'Changing databases or cloud projects', tools: ['supabase_create_project', 'supabase_delete_project', 'supabase_api', 'supabase_sql', 'supabase_setup', 'supabase_schema'] },
@@ -1176,7 +1176,7 @@ const CALL_STEP = {
   calendar_list: 'Checking your calendar', calendar_add: 'Adding it to your calendar', calendar_update: 'Changing your calendar', web_search: 'Searching the web', image_search: 'Looking for images', reach_me: 'Reaching your phone', watch_email: 'Setting an email alert', web_fetch: 'Reading a page',
   read_file: 'Reading a file', write_file: 'Writing a file', edit_file: 'Editing a file', apply_patch: 'Editing files', run: 'Running a command',
   search: 'Searching your files', list_dir: 'Looking through files', slack_post_message: 'Posting to Slack', browser_check: 'Checking the page',
-  ask_bot: 'Asking a teammate', todo: 'Planning', life_context: 'Checking your day', look_at_screen: 'Looking at your screen', bot_email_send: 'Sending the email',
+  ask_bot: 'Asking a teammate', todo: 'Planning', life_context: 'Checking your day', look_at_screen: 'Looking at your screen', use_computer: 'Using your computer', bot_email_send: 'Sending the email',
 };
 const callStepLabel = (name) => CALL_STEP[name] || 'Working on it';
 

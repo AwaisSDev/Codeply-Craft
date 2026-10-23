@@ -13,6 +13,8 @@ const ACTION_VERBS = {
   run: 'ran', fetch_image: 'downloaded', browser_check: 'checked in browser', vercel_deploy: 'deployed', supabase_sql: 'ran SQL',
   supabase_api: 'called Supabase API', vercel_api: 'called Vercel API', github_create_repo: 'pushed to GitHub',
   supabase_create_project: 'created Supabase project', gmail_send: 'emailed', slack_post_message: 'posted to Slack',
+  use_computer: 'on the computer:', look_at_screen: 'looked at the screen', life_context: 'looked up', calendar_add: 'added to the calendar',
+  calendar_update: 'changed the calendar:', gmail_search: 'searched email for', gmail_read: 'read the email', remember: 'remembered', hand_off: 'handed off',
 };
 
 /** One line per tool call the agent really made, for grounding later turns. */
@@ -20,7 +22,8 @@ function describeAction(m) {
   const verb = ACTION_VERBS[m.name];
   if (!verb) return null;
   const exit = typeof m.exitCode === 'number' ? ` (exit ${m.exitCode})` : '';
-  return `${verb} ${m.label || ''}${exit}${m.ok === false ? ' - FAILED' : ''}`.trim();
+  const what = m.name === 'run' && m.command ? String(m.command).slice(0, 600) : (m.label || '');
+  return `${verb} ${what}${exit}${m.ok === false ? ' - FAILED' : ''}`.trim();
 }
 
 function buildHistory(session) {

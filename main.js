@@ -3710,6 +3710,8 @@ app.whenReady().then(() => {
     try { const st = lifeDesktop.getStore(); const cur = st && st.getState('activity.current'); if (cur && Date.now() - cur.seenAt < 120000 && !/codeply|electron/i.test(cur.app || '')) front = cur; } catch {}
     return { image: shot.url, text, app: front ? front.app : '', title: front ? front.title : '' };
   });
+  // use_computer (codeply-cli/lib/computer.js): the agent's own hands in other apps.
+  try { require('./computer-desktop').init({ cliDir: CLI_DIR, act: require('./voice/act'), ocr: (img) => lifeScreen.ocrImage(img) }); } catch (e) { console.warn('[use_computer]', e.message); }
 });
 // The call helper (call-listen.js): a bot that listens to calls on this PC,
 // whispers what helps, and takes the call when the user hands it over.
