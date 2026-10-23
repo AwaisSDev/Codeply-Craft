@@ -229,12 +229,14 @@ if (section('Handoffs')) {
   const text = BR.handoffTask(h);
   check('the task says it came from someone else, so the receiver only proposes', /HANDOFF from Ivo/.test(text) && /someone other than the user/.test(text) && /mike@example.com/.test(text));
   check('the task links back to the handoff', BR.handoffForTask('task-1').id === h.id);
-  // Cleo, working the handoff, cannot pass it straight back to Ivo, and chains stay short.
-  const back = await BR.handOff({ to: 'Ivo', intent: 'Reply to Mike for me.' }, { fromBot: cal, parent: h.id });
-  check('no handing back to a bot already in the chain', !back.ok && queued.length === 1, back.output);
+  // Cleo, working the handoff, cannot pass the same job straight back to Ivo, and chains stay short.
+  const back = await BR.handOff({ to: 'Ivo', intent: 'Mike proposed meeting tomorrow at 5am, check and propose a time.' }, { fromBot: cal, parent: h.id });
+  check('the same job never bounces back to the bot that sent it', !back.ok && /loop/.test(back.output) && queued.length === 1, back.output);
   const onward = await BR.handOff({ to: 'research', intent: 'Find a quiet cafe near the office for the meeting.' }, { fromBot: cal, parent: h.id });
-  check('but onward to someone new is fine', onward.ok && queued.length === 2 && queued[1].toBot === res.id && queued[1].parent === h.id);
-  const c3 = BR.createHandoff({ to: 'calendar', intent: 'x', team, fromBot: res, parent: queued[1].id });
+  check('onward to someone new is fine', onward.ok && queued.length === 2 && queued[1].toBot === res.id && queued[1].parent === h.id);
+  const reply = await BR.handOff({ to: 'email', intent: 'Email Mike the invite for Tuesday 10:00 with the agenda.' }, { fromBot: cal, parent: h.id });
+  check('a new job back to the sender is fine too (book it here, email it there)', reply.ok && queued.length === 3 && queued[2].toBot === mail.id, reply.output);
+  const c3 = BR.createHandoff({ to: 'calendar', intent: 'Book the cafe table', team, fromBot: res, parent: queued[1].id });
   const c4 = BR.createHandoff({ to: 'email', intent: 'y', team: [...team, B.createBot({ name: 'Zed', specialty: 'Email and inbox' })], fromBot: res, parent: c3.handoff.id });
   check('a chain stops after three handoffs', /handed on 3 times/.test(c4.error || ''), JSON.stringify(c4));
   const none = await BR.handOff({ to: 'money', intent: 'Pay the bill.' }, { fromBot: mail });

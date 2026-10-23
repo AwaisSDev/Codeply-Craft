@@ -137,20 +137,20 @@ function base64UrlEncode(str) {
  * RFC 2822 message, base64url as Gmail wants it. A non-ASCII subject is RFC 2047 encoded.
  * inReplyTo / references (Message-ID values) make it a reply in the same thread.
  */
-function rawEmail({ to, subject, body, inReplyTo, references }) {
+function rawEmail({ to, cc, subject, body, inReplyTo, references }) {
   const s = String(subject || '');
   const subj = /^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${Buffer.from(s, 'utf8').toString('base64')}?=`;
   const oneLine = (v) => String(v || '').replace(/[\r\n]+/g, ' ').trim();
   const head = [
-    to ? `To: ${oneLine(to)}` : '', `Subject: ${oneLine(subj)}`,
+    to ? `To: ${oneLine(to)}` : '', cc ? `Cc: ${oneLine(cc)}` : '', `Subject: ${oneLine(subj)}`,
     inReplyTo ? `In-Reply-To: ${oneLine(inReplyTo)}` : '', references ? `References: ${oneLine(references)}` : '',
     'Content-Type: text/plain; charset="UTF-8"',
   ].filter(Boolean).join('\r\n');
   return base64UrlEncode(`${head}\r\n\r\n${body || ''}`);
 }
 
-async function gmailSend(accessToken, { to, subject, body }) {
-  const raw = rawEmail({ to, subject, body });
+async function gmailSend(accessToken, { to, cc, subject, body }) {
+  const raw = rawEmail({ to, cc, subject, body });
   const res = await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send', {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -162,8 +162,8 @@ async function gmailSend(accessToken, { to, subject, body }) {
 }
 
 /** Saves a draft in the user's Gmail (needs gmail.compose). threadId + inReplyTo make it a reply in that thread. */
-async function gmailCreateDraft(accessToken, { to, subject, body, threadId, inReplyTo, references }) {
-  const message = { raw: rawEmail({ to, subject, body, inReplyTo, references }) };
+async function gmailCreateDraft(accessToken, { to, cc, subject, body, threadId, inReplyTo, references }) {
+  const message = { raw: rawEmail({ to, cc, subject, body, inReplyTo, references }) };
   if (threadId) message.threadId = String(threadId);
   const res = await fetch('https://www.googleapis.com/gmail/v1/users/me/drafts', {
     method: 'POST',
@@ -210,9 +210,10 @@ async function calendarListEvents(accessToken, { timeMin, timeMax, maxResults = 
   return data.items || [];
 }
 
-/** Creates an event on the primary calendar. `event` is a Calendar API event resource. */
+/** Creates an event on the primary calendar. `event` is a Calendar API event resource. Guests get an invite. */
 async function calendarInsertEvent(accessToken, event) {
-  const res = await fetch(CALENDAR_EVENTS_URL, {
+  const invite = Array.isArray(event.attendees) && event.attendees.length ? '?sendUpdates=all' : '';
+  const res = await fetch(`${CALENDAR_EVENTS_URL}${invite}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(event),
@@ -220,6 +221,40 @@ async function calendarInsertEvent(accessToken, event) {
   const data = await readJson(res);
   if (!res.ok) throw calendarError(data, res.status, 'Calendar add');
   return data; // { id, htmlLink, ... }
+}
+
+/** Moves, renames or changes one event (a partial resource). Guests hear about it. */
+async function calendarPatchEvent(accessToken, id, patch) {
+  const res = await fetch(`${CALENDAR_EVENTS_URL}/${encodeURIComponent(id)}?sendUpdates=all`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  const data = await readJson(res);
+  if (!res.ok) throw calendarError(data, res.status, 'Calendar update');
+  return data;
+}
+
+/** Cancels one event. Guests are told. */
+async function calendarDeleteEvent(accessToken, id) {
+  const res = await fetch(`${CALENDAR_EVENTS_URL}/${encodeURIComponent(id)}?sendUpdates=all`, { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!res.ok && res.status !== 410) throw calendarError(await readJson(res), res.status, 'Calendar cancel');
+  return { ok: true };
+}
+
+/** One whole email: headers and the plain-text body (HTML turned into text). */
+async function gmailGetMessage(accessToken, id) {
+  const res = await fetch(`https://www.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(id)}?format=full`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const msg = await readJson(res);
+  if (!res.ok) throw gmailError(msg, res.status, 'Gmail read');
+  const header = (name) => (msg.payload?.headers || []).find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+  const parts = [];
+  const walk = (p) => { if (!p) return; if (p.body?.data && /^text\/(plain|html)/.test(p.mimeType || 'text/plain')) parts.push({ type: p.mimeType || 'text/plain', text: Buffer.from(p.body.data, 'base64url').toString('utf8') }); (p.parts || []).forEach(walk); };
+  walk(msg.payload);
+  const plain = parts.find((p) => p.type.startsWith('text/plain'));
+  const html = parts.find((p) => p.type.startsWith('text/html'));
+  const body = plain ? plain.text : html ? html.text.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, '').replace(/<br\s*\/?>|<\/p>|<\/div>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&') : (msg.snippet || '');
+  return { id: msg.id, threadId: msg.threadId, from: header('From'), to: header('To'), cc: header('Cc'), subject: header('Subject'), date: header('Date'), body };
 }
 
 async function gmailSearch(accessToken, query, maxResults = 10) {
@@ -654,7 +689,7 @@ async function checkAccessToken(name, token) {
 module.exports = {
   API, apiCall, checkAccessToken,
   buildGmailAuthUrl, exchangeGmailCode, refreshGmailToken, getGmailProfile, gmailSend, gmailSearch, gmailCreateDraft, gmailError, rawEmail,
-  calendarListEvents, calendarInsertEvent, calendarError, GOOGLE_SCOPE,
+  calendarListEvents, calendarInsertEvent, calendarPatchEvent, calendarDeleteEvent, gmailGetMessage, calendarError, GOOGLE_SCOPE,
   buildSlackAuthUrl, exchangeSlackCode, slackPostMessage, slackListChannels, slackJoinChannel,
   buildVercelAuthUrl, exchangeVercelCode, getVercelProfile, vercelDeploy, vercelSetEnvVars,
   buildSupabaseAuthUrl, exchangeSupabaseCode, refreshSupabaseToken, supabaseListOrganizations, supabaseCreateProject, supabaseGetProjectKeys,

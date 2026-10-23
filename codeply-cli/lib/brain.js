@@ -779,12 +779,14 @@ function createHandoff({ fromBot, to, intent, facts, decision, requester, origin
   if (!open()) return { error: 'The coordination board is not available on this machine.' };
   const why = clip(intent, 500);
   if (!why) return { error: 'A handoff needs an intent: what the next agent should get done.' };
-  // A chain of handoffs never loops back to a bot already in it, and stays short.
+  // A chain stays short, and the same job never bounces between bots. Passing a
+  // NEW job back (the calendar bot booked it, the email bot sends the invite) is fine.
   const chain = []; const seen = new Set();
   for (let p = parent ? getHandoff(parent) : null; p && !seen.has(p.id) && chain.length < 10; p = p.parent ? getHandoff(p.parent) : null) { seen.add(p.id); chain.push(p); }
   if (chain.length >= MAX_HANDOFF_CHAIN) return { error: `This work has been handed on ${chain.length} times already. Finish it yourself or tell the user what is left.` };
-  const inChain = new Set(chain.flatMap((h) => [h.fromBot, h.toBot]).filter(Boolean));
-  const route = routeHandoff(to, (team || []).filter((b) => !inChain.has(b.id)), { fromBotId: fromBot && fromBot.id, intent: why });
+  const route = routeHandoff(to, team || [], { fromBotId: fromBot && fromBot.id, intent: why });
+  const bounce = route.bot && chain.find((h) => h.fromBot === route.bot.id && sameJob(h.intent, why));
+  if (bounce) return { error: `${route.bot.name} handed you this job; passing the same job back would loop. Do it yourself, or say what blocks it.` };
   const t = now();
   const id = newId('h', t);
   const list = (Array.isArray(facts) ? facts : String(facts || '').split(/\n+/)).map((f) => clip(String(f).replace(/^[-*\s]+/, ''), 300)).filter((f) => f && !SECRET_RE.test(f)).slice(0, 12);
@@ -792,6 +794,12 @@ function createHandoff({ fromBot, to, intent, facts, decision, requester, origin
     route.domain || null, why, JSON.stringify(list), clip(decision, 400) || null, requester === 'user' ? 'user' : 'other',
     origin ? JSON.stringify(origin).slice(0, 2000) : null, parent || null, null, route.bot ? 'open' : 'unrouted', null, t, t);
   return { handoff: getHandoff(id) };
+}
+/** The same job in other words: most of its meaningful words are shared. */
+function sameJob(a, b) {
+  const x = terms(a); const y = terms(b);
+  if (!x.length || !y.length) return false;
+  return overlap(x, y) / Math.min(x.length, y.length) >= 0.6;
 }
 const getHandoff = (id) => (open() ? rowToHandoff(q.getHandoff.get(String(id))) : null);
 function updateHandoff(id, patch = {}) {
