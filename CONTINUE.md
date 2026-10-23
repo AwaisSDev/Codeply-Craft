@@ -65,7 +65,11 @@ What the student and shopkeeper runs found, and what was done:
 - Student: Craft in folder `study-buddy` did not see decisions saved under
   "HackLahore study buddy". `brain.js knownKey` now matches a folder or name
   whose words run whole inside a known project's key (and the other way).
-  Not rerun yet.
+  Rerun: "Craft knows the hackathon stack without being told" passes.
+- Student rerun: every check passed except the health check-in, which two
+  different model agents both held back on Thursday 19:30 (futsal at 20:00
+  is on his calendar) and sent through Pulse on Friday. If that should go
+  out anyway, the judge prompt in life-triggers.js is the place to change.
 - A lead bot's "Hand money matters to Hisaab" made it look like the money
   bot (`botDomains` now drops sentences that give work away).
 - `life_context` on a topic whose sources were all off (heard, activity)
@@ -91,7 +95,7 @@ Seen by the model agents, not fixed yet:
 
 ## Next
 
-1. Rerun `student` to confirm the project match, and ideally all personas.
+1. Rerun the other personas (farmer, manager, hr, artist, hiring, senior).
    With no model key, start the persona in the background
    (`node scripts/sim/run.mjs student --bridge <dir> --out <dir>`) and have
    an AI agent act as the model through `model-bridge.mjs`, without letting it
