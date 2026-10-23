@@ -34,30 +34,31 @@
    --accent-purple is kept as an alias of --accent so older rules and
    generated markup keep working. */
 :root {
-  --titlebar-bg: #151515;
-  --sidebar-bg: #151515;
-  --main-bg: #1b1b1b;
-  --panel-bg: #262626;
-  --card-bg: #212121;
-  --card-border: #2f2f2f;
-  --hover: rgba(255, 255, 255, 0.05);
-  --active: rgba(255, 255, 255, 0.08);
+  /* The same values as Codeply Crew (crew/crew.css), so the two read as one app. */
+  --titlebar-bg: #141414;
+  --sidebar-bg: #141414;
+  --main-bg: #191919;
+  --panel-bg: #202020;
+  --card-bg: #202020;
+  --card-border: #2a2a2a;
+  --hover: rgba(255, 255, 255, 0.055);
+  --active: rgba(255, 255, 255, 0.09);
   --text: #ececec;
-  --text-dim: #a8a8a8;
-  --text-faint: #717171;
+  --text-dim: #ababab;
+  --text-faint: #8a8a8a;
   --border: #2a2a2a;
   --code-bg: #2a2a2a;
   --bubble-bg: #2b2b2b;
   --bubble-text: #ececec;
-  --accent: #4b9dff;
+  --accent: #3d8bfd;
   --accent-purple: var(--accent);
-  --blue: #4b9dff;
+  --blue: #3d8bfd;
   --green: #4cc38a;
   --red: #ef6a5a;
   --warn: #f0883e;
   --surface-1: #202020;
   --surface-2: #2b2b2b;
-  --purple-chip-bg: rgba(75, 157, 255, 0.14);
+  --purple-chip-bg: rgba(61, 139, 253, 0.14);
   --invert-bg: #ececec;
   --invert-bg-hover: #ffffff;
   --invert-text: #141414;
@@ -66,9 +67,9 @@
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
   --overlay: rgba(0, 0, 0, 0.55);
-  --popover-bg: #262626;
-  --modal-bg: #212121;
-  --control-bg: #262626;
+  --popover-bg: #272727;
+  --modal-bg: #202020;
+  --control-bg: #272727;
   --control-border: #363636;
   --seg-active: #3d3d3d;
   --composer-shadow: none;
@@ -1235,13 +1236,13 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: var(--accent);
-  color: #ffffff;
+  background: var(--invert-bg);
+  color: var(--invert-text);
   display: grid;
   place-items: center;
   transition: background 0.12s ease, opacity 0.12s ease, transform 0.08s ease;
 }
-.send-btn:hover { background: color-mix(in srgb, var(--accent) 86%, #ffffff); }
+.send-btn:hover { background: var(--invert-bg-hover); }
 .send-btn svg { width: 16px; height: 16px; stroke-width: 2.2; }
 
 /* ============ Chat view ============ */
