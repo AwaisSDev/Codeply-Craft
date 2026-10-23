@@ -30,6 +30,24 @@ const HOUR = 3600000;
 const fresh = (name) => BR.configure({ file: path.join(tmp, `${name}.db`), now: () => NOW });
 const crew = (botName = 'Mira') => ({ product: 'crew', botId: botName.toLowerCase(), botName });
 
+// A pretend Google account: the oauth functions the tools call, and a
+// connected Gmail in config (patched on the module, nothing written to disk).
+const google = { sent: [], drafts: [], inserted: [], patched: [], deleted: [], inbox: [], events: [] };
+function fakeGoogle() {
+  const oauth = require(path.join(ROOT, 'codeply-cli/lib/oauth-connectors.js'));
+  const config = require(path.join(ROOT, 'codeply-cli/lib/config.js'));
+  const getIntegration = config.getIntegration;
+  config.getIntegration = (name) => (name === 'gmail' ? { accessToken: 'tok', expiresAt: Date.now() + 86400000, email: 'me@example.com', scope: Object.values(oauth.GOOGLE_SCOPE).join(' ') } : getIntegration(name));
+  oauth.gmailSend = async (tok, m) => { google.sent.push(m); return { id: `s${google.sent.length}` }; };
+  oauth.gmailCreateDraft = async (tok, d) => { google.drafts.push(d); return { id: `d${google.drafts.length}`, message: { id: 'dm', threadId: '' } }; };
+  oauth.gmailSearch = async () => google.inbox.map((m) => ({ id: m.id, subject: m.subject, from: m.from, date: m.date, snippet: m.body.slice(0, 40) }));
+  oauth.gmailGetMessage = async (tok, id) => { const m = google.inbox.find((x) => x.id === id); if (!m) throw Object.assign(new Error('Not Found'), { status: 404 }); return { threadId: `t${id}`, to: 'me@example.com', ...m }; };
+  oauth.calendarListEvents = async () => google.events;
+  oauth.calendarInsertEvent = async (tok, ev) => { google.inserted.push(ev); return { id: `ev${google.inserted.length}`, htmlLink: '' }; };
+  oauth.calendarPatchEvent = async (tok, id, patch) => { google.patched.push({ id, patch }); return { id, summary: patch.summary || 'Futsal' }; };
+  oauth.calendarDeleteEvent = async (tok, id) => { google.deleted.push(id); return { ok: true }; };
+}
+
 fresh('probe');
 if (!BR.usable()) {
   console.log('No SQLite driver on this Node: the brain cannot be tested here.');
@@ -184,6 +202,11 @@ if (section('Health')) {
   const act = due.find((c) => c.trigger === 'activity');
   check('two low days in a row: one gentle check-in', !!act && /1200 so far today, 1900 yesterday/.test(act.facts.join(' ')) && /ankle/.test(act.facts.join(' ')), JSON.stringify(due));
   check('it goes to a life bot', T.chooseBot(act, [B.createBot({ name: 'Ivo', specialty: 'Email inbox' }), okBot], {}).id === okBot.id);
+  const buddy = B.createBot({ name: 'Buddy', role: 'orchestrator', specialty: 'Personal life: friends, girlfriend, plans, social stuff, reminders' });
+  const pulse = B.createBot({ name: 'Pulse', specialty: 'Gym, steps, sleep', handles: ['health'] });
+  check('the bot that handles health gets it, not the personal-life bot listed first', T.chooseBot(act, [buddy, pulse], {}).id === pulse.id);
+  check('without one, a bot whose job is fitness gets it', T.chooseBot(act, [buddy, B.createBot({ name: 'Fit', specialty: 'Fitness coach' })], {}).name === 'Fit');
+  check('other life nudges still go to the life bot', T.chooseBot({ trigger: 'leaving' }, [buddy, pulse], {}).id === buddy.id);
   store.addNudge({ trigger: 'activity', key: act.key, text: 'x', at: now - HOUR });
   check('and not again for three days', !T.due({ store, snap, settings: { perDay: 6, quiet: { on: false } }, now: now + DAY }).some((c) => c.trigger === 'activity'));
   L.detach(); store.close();
@@ -321,6 +344,73 @@ if (section('Tools')) {
   check('native tool definitions exist', schemas.length === 2 && JSON.stringify(schemas).includes('joking'));
 }
 
+// ─── Gmail and Calendar (cc, whole emails, guests, edits) ──────────────────
+if (section('Gmail and Calendar')) {
+  fakeGoogle();
+  const LS = require(path.join(ROOT, 'codeply-cli/lib/life-store.js'));
+  const L = require(path.join(ROOT, 'codeply-cli/lib/life.js'));
+  const T = await import(pathToFileURL(path.join(ROOT, 'codeply-cli/lib/tools.mjs')).href);
+  const approvals = [];
+  const ctx = { cwd: tmp, mode: 'Build', approve: async (a) => { approvals.push(a); return 'once'; } };
+  const now = Date.now();
+  const store = LS.openLifeStore({ file: path.join(tmp, 'mail-life.db'), key: Buffer.alloc(32, 9), now: () => now });
+  L.attach(store, { tz: 'Asia/Karachi' });
+  store.setState('gmail.waiting', [{ from: 'sana@example.com', subject: 'Team name?', at: now - 30 * HOUR }, { from: 'usman@example.com', subject: 'Notes', at: now - 30 * HOUR }]);
+
+  const s = await T.executeTool('gmail_send', { to: 'Sana <sana@example.com>', cc: 'hamza@example.com', subject: 'Team', body: 'We are in.' }, ctx);
+  check('gmail_send copies the cc address', s.ok && google.sent[0].cc === 'hamza@example.com' && /cc hamza@example\.com/.test(s.output), JSON.stringify({ s, sent: google.sent }));
+  check('the approval card shows the cc', /cc hamza/.test(approvals[0].title) && approvals[0].draft.cc === 'hamza@example.com', JSON.stringify(approvals[0]));
+  check('whoever was answered is no longer waiting on the user', JSON.stringify(store.getState('gmail.waiting').map((w) => w.from)) === '["usman@example.com"]', JSON.stringify(store.getState('gmail.waiting')));
+  check('noteSent takes a list and ignores strangers', L.noteSent(['nobody@example.com']) === 0 && L.noteSent('Usman <USMAN@example.com>') === 1 && store.getState('gmail.waiting').length === 0);
+  const d = await T.executeTool('gmail_draft', { to: 'a@example.com', cc: 'b@example.com', subject: 'Hi', body: 'x' }, ctx);
+  check('gmail_draft keeps the cc', d.ok && google.drafts[0].cc === 'b@example.com', JSON.stringify(google.drafts));
+
+  google.inbox.push({ id: '18c2f0a9', from: 'Sana <sana@example.com>', cc: 'hamza@example.com', subject: 'Hackathon rules', date: 'Fri, 23 Oct 2026 10:00:00 GMT', body: `Hi Ali,\n\n${'Rule. '.repeat(40)}\nThe last line: bring your student card.` });
+  const sr = await T.executeTool('gmail_search', { query: 'hackathon' }, ctx);
+  check('gmail_search shows each email\'s id and how to read it', sr.ok && /\[18c2f0a9\] Hackathon rules/.test(sr.output) && /gmail_read/.test(sr.output), sr.output);
+  const rd = await T.executeTool('gmail_read', { id: '[18c2f0a9]' }, ctx);
+  check('gmail_read gives the whole email, cc and the last line too', rd.ok && /Cc: hamza@example\.com/.test(rd.output) && /bring your student card/.test(rd.output), rd.output);
+  check('gmail_read on a missing id fails cleanly', !(await T.executeTool('gmail_read', { id: 'nope' }, ctx)).ok);
+
+  const add = await T.executeTool('calendar_add', { title: 'Team sync', start: '2030-11-03T16:00', attendees: 'sana@example.com, not-an-address, hamza@example.com' }, ctx);
+  check('calendar_add invites the guests (valid addresses only) and gives the event id', add.ok && JSON.stringify(google.inserted[0].attendees) === '[{"email":"sana@example.com"},{"email":"hamza@example.com"}]' && /invites sent/.test(add.output) && /Event id ev1/.test(add.output), add.output);
+  google.events = [{ id: 'evF', summary: 'Futsal', start: { dateTime: '2030-11-05T20:00:00+05:00' }, end: { dateTime: '2030-11-05T21:00:00+05:00' }, attendees: [{ email: 'me@example.com', self: true }, { email: 'hamza@example.com' }] }];
+  const ls = await T.executeTool('calendar_list', { from: '2030-11-05' }, ctx);
+  check('calendar_list shows the id and the guests', ls.ok && /\[evF\] Futsal/.test(ls.output) && /with hamza@example\.com/.test(ls.output) && !/me@example/.test(ls.output), ls.output);
+  const mv = await T.executeTool('calendar_update', { id: '[evF]', start: '2030-11-05T21:00', minutes: '90' }, ctx);
+  const p = google.patched[0];
+  check('calendar_update moves the event by id', mv.ok && p.id === 'evF' && /^2030-11-05T21:00/.test(p.patch.start.dateTime) && /^2030-11-05T22:30/.test(p.patch.end.dateTime) && /Updated "Futsal"/.test(mv.output), JSON.stringify({ mv, p }));
+  check('and asks first', approvals.some((a) => a.tool === 'calendar_update'));
+  const cn = await T.executeTool('calendar_update', { id: 'evF', cancel: 'yes' }, ctx);
+  check('calendar_update cancel removes it', cn.ok && google.deleted[0] === 'evF');
+  check('calendar_update with nothing to change says so', !(await T.executeTool('calendar_update', { id: 'evF' }, ctx)).ok);
+  check('calendar_update is refused in a read-only mode', !(await T.executeTool('calendar_update', { id: 'evF', cancel: 'yes' }, { ...ctx, mode: 'Ask' })).ok && google.deleted.length === 1);
+  const NT = await import(pathToFileURL(path.join(ROOT, 'codeply-cli/lib/native-tools.mjs')).href);
+  const defs = JSON.stringify(NT.buildToolSchemas({ gmail_read: ['id'], calendar_update: ['id', 'start', 'cancel'], gmail_send: ['to', 'cc'] }));
+  check('native definitions describe the new tools and cc', /whole email/.test(defs) && /never calendar_add a second one/.test(defs) && /addresses to copy/.test(defs), defs.slice(0, 300));
+
+  // A 48 hour event shows the day it ends.
+  const fri = Date.parse('2030-11-08T13:00:00Z');
+  store.upsertItem({ id: 'calendar:hack', source: 'calendar', kind: 'event', at: fri, end: fri + 48 * HOUR, title: 'HackLahore 48h hackathon', place: 'NIC Lahore' });
+  const wk = await L.contextTool({ about: 'week' }, { now: fri - 2 * 24 * HOUR, tz: 'Asia/Karachi' });
+  check('an event ending on another day shows that day', /Fri 8 Nov.*18:00 to Sun 10 Nov.*18:00.*HackLahore/.test(wk.output) && !/18:00 to 18:00/.test(wk.output), wk.output);
+
+  // A plan that is already on the calendar is not saved twice.
+  const match = Date.parse('2030-11-06T15:00:00Z'); // 20:00 in Karachi
+  store.upsertItem({ id: 'calendar:cricket', source: 'calendar', kind: 'event', at: match, end: match + 3 * HOUR, title: 'Cricket match at Gaddafi', place: 'Gaddafi Stadium' });
+  const saved = L.notePlans([{ what: 'cricket match with Usman', when: '2030-11-06T19:30', where: 'Gaddafi Stadium' }, { what: 'Dinner with Ayesha', when: '2030-11-06T21:00', where: 'Cafe Aylanto' }], { now: match - 24 * HOUR, tz: 'Asia/Karachi' });
+  check('a plan already on the calendar is skipped, a new one is kept', saved.length === 1 && /Dinner/.test(saved[0].title), JSON.stringify(saved.map((x) => x.title)));
+  check('same words far apart in time are different events', !L.sameEvent({ title: 'Cricket match', at: match }, { title: 'Cricket practice', at: match + 5 * HOUR }) && L.sameEvent({ title: 'Cricket match', at: match }, { title: 'cricket with Usman', at: match - HOUR }));
+  // Saved before this fix: the leaving nudge still goes out once.
+  store.upsertItem({ id: 'plans:old:cricket', source: 'plans', kind: 'plan', at: match - 30 * 60000, title: 'Cricket with Usman', place: 'Gaddafi Stadium' });
+  const TR = require(path.join(ROOT, 'codeply-cli/lib/life-triggers.js'));
+  const at = match - 15 * 60000;
+  const snap = L.snapshot({ now: at, tz: 'Asia/Karachi' });
+  const leave = TR.due({ store, snap, settings: { perDay: 6, quiet: { on: false } }, now: at }).filter((c) => c.trigger === 'leaving');
+  check('one "leave now" nudge for one match', leave.length === 1 && leave[0].key === 'leaving:calendar:cricket', JSON.stringify(leave.map((c) => c.key)));
+  L.detach(); store.close();
+}
+
 // ─── End to end: a real agent run against a fake model ─────────────────────
 if (section('Agent run')) {
   fresh('agent');
@@ -346,7 +436,7 @@ if (section('Agent run')) {
   const drive = async (replies, o = {}) => {
     script = [...replies]; bodies.length = 0;
     const events = [];
-    for await (const ev of runAgent({ userMessage: o.message || 'set up the login page', history: [], mode: 'Build', cwd: proj, approve: async () => 'once', signal: new AbortController().signal, route, maxSteps: 6, handOff: o.handOff, botId: o.botId })) events.push(ev);
+    for await (const ev of runAgent({ userMessage: o.message || 'set up the login page', history: [], mode: 'Build', cwd: proj, approve: async () => 'once', signal: new AbortController().signal, route, maxSteps: 6, handOff: o.handOff, botId: o.botId, botPrompt: o.botPrompt })) events.push(ev);
     return events;
   };
 
@@ -380,6 +470,29 @@ if (section('Agent run')) {
   const summarized = bodies.findIndex((b) => JSON.stringify(b.messages).includes('[context summary]'));
   const after = summarized >= 0 ? JSON.stringify(bodies[summarized].messages) : '';
   check('a long task that gets summarized still carries the brain', summarized > 0 && /CODEPLY BRAIN/.test(after) && /magic links/.test(after), `summary at request ${summarized}`);
+
+  // A closing promise to the user is a final answer; an announced step is not.
+  await drive(['Good luck with the exam! I\'ll check in next week to see how it went.'], { message: 'thanks, that is all' });
+  check('"I\'ll check in next week" ends the turn, no nudge', bodies.length === 1, JSON.stringify(bodies.map((b) => b.messages.slice(-1))).slice(0, 300));
+  await drive(['Let me check the login file.', 'Done.'], { message: 'is the login ok' });
+  check('"Let me check the login file." still gets the nudge', bodies.length === 2 && /announces what you are about to do/.test(JSON.stringify(bodies[1].messages.slice(-1))));
+
+  // Companion bots do not get the coding skill library pushed at them.
+  const life = B.createBot({ name: 'Buddy', specialty: 'Personal life: friends, plans, birthdays' });
+  const coder = B.createBot({ name: 'Hack', specialty: 'Hackathon: team, code, the app', handles: ['code'] });
+  await drive(['ok'], { message: 'build a remotion video and a blender scene for the billing page', botId: life.id, botPrompt: 'You are Buddy.' });
+  const lifeSys = String(bodies[0].messages[0].content);
+  check('a companion bot gets a one-line skills note, no catalog or matches', /Playbooks exist for specific kinds of work/.test(lifeSys) && !/LIKELY RELEVANT TO THIS REQUEST \(matched/.test(JSON.stringify(bodies[0].messages)) && !/Optional playbooks/.test(lifeSys), lifeSys.slice(lifeSys.lastIndexOf('SKILLS'), lifeSys.lastIndexOf('SKILLS') + 300));
+  await drive(['ok'], { message: 'build a remotion video and a blender scene for the billing page', botId: coder.id, botPrompt: 'You are Hack.' });
+  check('a code bot still gets the skills', !/Playbooks exist for specific kinds of work/.test(String(bodies[0].messages[0].content)) && /LIKELY RELEVANT TO THIS REQUEST \(matched/.test(JSON.stringify(bodies[0].messages)));
+
+  // The new tags parse in text mode: cc on a send, an edit by id.
+  fakeGoogle();
+  google.sent.length = 0; google.patched.length = 0;
+  await drive(['<codeply:gmail_send>\n<to>sana@example.com</to>\n<cc>hamza@example.com</cc>\n<subject>Team</subject>\n<body>\nIn.\n</body>\n</codeply:gmail_send>', 'Sent.'], { message: 'email sana, cc hamza' });
+  check('a cc tag from the model reaches the email', google.sent.length === 1 && google.sent[0].cc === 'hamza@example.com', JSON.stringify(google.sent));
+  await drive(['<codeply:calendar_update>\n<id>evF</id>\n<start>2030-11-05T21:00</start>\n</codeply:calendar_update>', 'Moved.'], { message: 'move futsal to 9' });
+  check('a calendar_update block from the model moves the event', google.patched.length === 1 && google.patched[0].id === 'evF', JSON.stringify(google.patched));
   server.close();
 }
 

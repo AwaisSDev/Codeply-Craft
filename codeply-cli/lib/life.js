@@ -229,7 +229,8 @@ const ABOUT = {
 };
 
 function itemLine(x, now, tz) {
-  const t = x.end && x.end - x.at > 30 * 60000 && x.source !== 'activity' ? `${when(x.at, now, tz)} to ${clock(x.end, tz)}` : when(x.at, now, tz);
+  // An event that ends on another day (a 48 hour hackathon) shows the end's day too.
+  const t = x.end && x.end - x.at > 30 * 60000 && x.source !== 'activity' ? `${when(x.at, now, tz)} to ${dayKey(x.end, tz) === dayKey(x.at, tz) ? clock(x.end, tz) : when(x.end, now, tz)}` : when(x.at, now, tz);
   const who = x.people && x.people.length ? ` [${x.people.slice(0, 4).join(', ')}]` : '';
   const extra = x.data && (x.data.summary || x.data.snippet) ? `: ${short(x.data.summary || x.data.snippet, 220)}` : x.body && !x.sensitive ? `: ${short(x.body, 220)}` : '';
   return `- ${t} · ${x.source}/${x.kind} · ${short(x.title, 120)}${x.place ? ` @ ${short(x.place, 60)}` : ''}${who}${extra}`;
@@ -297,6 +298,19 @@ function localIso(s, tz) {
   return guess - off(guess - off(guess));
 }
 
+// Words too common to tell two events apart.
+const PLAIN_WORDS = new Set(['with', 'the', 'and', 'for', 'from', 'meeting', 'call', 'event', 'plan', 'plans', 'session', 'time', 'today', 'tomorrow', 'tonight', 'going', 'our', 'his', 'her', 'their']);
+function titleWords(s) {
+  return new Set(String(s || '').toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').split(/\s+/).filter((w) => w.length >= 3 && !PLAIN_WORDS.has(w)));
+}
+/** Two items are the same event: they start within 3 hours and their titles share a main word. */
+function sameEvent(a, b) {
+  if (!a || !b || !Number.isFinite(a.at) || !Number.isFinite(b.at) || Math.abs(a.at - b.at) > 3 * HOUR) return false;
+  const wa = titleWords(a.title);
+  for (const w of titleWords(b.title)) if (wa.has(w)) return true;
+  return false;
+}
+
 /**
  * Plans the bots heard about: [{ what, when, where, who }] from learnFromTurn
  * or a call summary. A plan without a time is kept for a week as "untimed".
@@ -313,6 +327,8 @@ function notePlans(plans, o = {}) {
     const untimed = !Number.isFinite(at);
     if (untimed) at = now;
     if (!untimed && at < now - DAY) continue;
+    // Already on the calendar: a second copy means two "leave now" nudges for one match.
+    if (!untimed && store.items({ sources: ['calendar'], from: at - 3 * HOUR, to: at + 3 * HOUR, limit: 20 }).some((c) => c.kind !== 'cancelled' && sameEvent(c, { title: what, at }))) continue;
     const key = what.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 60);
     const id = `plans:${dayKey(at, tz)}:${key}`;
     const who = (Array.isArray(p.who) ? p.who : p.who ? [p.who] : []).map((x) => short(x, 60)).filter(Boolean).slice(0, 6);
@@ -413,6 +429,24 @@ function healthReport(s, now, tz) {
   return `Health, last 14 days (this is private: use it to look after the user, never to lecture or share).\nNow: ${healthLine(h, now, tz)}\nDaily steps: ${steps || '(none)'}\n${rest}`;
 }
 
+/**
+ * The user (or a bot for them) emailed these addresses: they are no longer
+ * waiting on a reply. addresses: "a@x.com, Name <b@y.com>" or a list.
+ */
+function noteSent(addresses) {
+  if (!store) return 0;
+  const list = (Array.isArray(addresses) ? addresses : String(addresses || '').split(/[,;]/))
+    .map((a) => ((/<([^>]+)>/.exec(String(a)) || [])[1] || String(a)).trim().toLowerCase()).filter((a) => a.includes('@'));
+  if (!list.length) return 0;
+  const sent = new Set(list);
+  const waiting = store.getState('gmail.waiting') || [];
+  const left = waiting.filter((w) => !sent.has(String(w.from || '').trim().toLowerCase()));
+  if (left.length === waiting.length) return 0;
+  store.setState('gmail.waiting', left);
+  if (hostOpts.onChange) { try { hostOpts.onChange('gmail'); } catch {} }
+  return waiting.length - left.length;
+}
+
 /** Something happened that the bots should know (a call ended, an Orbit question): one store write. */
 function note(item) {
   if (!store || !item) return null;
@@ -421,7 +455,7 @@ function note(item) {
 
 module.exports = {
   SOURCES, SOURCE_KEYS, attach, detach, available, getStore,
-  normalizeLife, allowedFor, snapshot, nowBlock, contextTool, notePlans, plansAsk, note, noteHealth, healthSummary,
+  normalizeLife, allowedFor, snapshot, nowBlock, contextTool, notePlans, plansAsk, note, noteSent, noteHealth, healthSummary, sameEvent,
   // for tests and the trigger engine
   when, ago, until, clock, dayKey, startOfDay, localIso, tzOf,
 };

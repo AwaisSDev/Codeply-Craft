@@ -174,6 +174,22 @@ function makeWorld(persona, life) {
     w.calendar.push(e); mirror(e);
     return e;
   };
+  // Moved or renamed by a bot (calendar_update): the life store follows, as the real sync would.
+  w.patchEvent = (id, patch) => {
+    const e = w.calendar.find((x) => x.id === id);
+    if (!e) return null;
+    Object.assign(e, patch, { changedBy: 'codeply' });
+    mirror(e);
+    return e;
+  };
+  w.cancelEvent = (id) => {
+    const i = w.calendar.findIndex((x) => x.id === id);
+    if (i < 0) return null;
+    const [e] = w.calendar.splice(i, 1);
+    w.cancelled = [...(w.cancelled || []), { ...e, cancelledAt: Date.now() }];
+    if (life.store) life.store.deleteItem(`calendar:${id}`);
+    return e;
+  };
   w.useStore = (s) => { life.store = s; };
   w.eventsBetween = (a, b) => w.calendar.filter((e) => { const s = Date.parse(e.start.dateTime || e.start.date); return s >= a && s < b; });
   return w;
@@ -186,7 +202,22 @@ function installGoogle(world, oauth, webTools, persona) {
     return world.eventsBetween(a, b).sort((x, y) => Date.parse(x.start.dateTime || x.start.date) - Date.parse(y.start.dateTime || y.start.date)).slice(0, maxResults);
   };
   oauth.calendarInsertEvent = async (tok, ev) => { const e = world.addEvent(ev, 'codeply'); return { id: e.id, htmlLink: '' }; };
-  oauth.gmailSend = async (tok, m) => { world.sent.push({ ...m, at: Date.now() }); return { id: `sent${world.sent.length}` }; };
+  oauth.calendarPatchEvent = async (tok, id, patch) => {
+    const e = world.patchEvent(id, patch);
+    if (!e) throw Object.assign(new Error('Not Found'), { status: 404 });
+    return { id: e.id, summary: e.summary, htmlLink: '' };
+  };
+  oauth.calendarDeleteEvent = async (tok, id) => {
+    if (!world.cancelEvent(id)) throw Object.assign(new Error('Not Found'), { status: 404 });
+    return { ok: true };
+  };
+  // cc stays on the sent record, so a check can see who was copied.
+  oauth.gmailSend = async (tok, m) => { world.sent.push({ ...m, cc: m.cc || '', at: Date.now() }); return { id: `sent${world.sent.length}` }; };
+  oauth.gmailGetMessage = async (tok, id) => {
+    const m = world.inbox.find((x) => x.id === id);
+    if (!m) throw Object.assign(new Error('Not Found'), { status: 404 });
+    return { id: m.id, threadId: `t${m.id}`, from: m.from, to: persona.email, cc: m.cc || '', date: new Date(m.at).toUTCString(), subject: m.subject, body: m.body };
+  };
   oauth.gmailCreateDraft = async (tok, d) => { world.drafts.push({ ...d, at: Date.now() }); return { id: `d${world.drafts.length}`, message: { id: `dm${world.drafts.length}`, threadId: d.threadId || '' } }; };
   oauth.gmailSearch = async (tok, q) => {
     const words = String(q || '').toLowerCase().split(/\s+/).filter((x) => x && !x.includes(':'));

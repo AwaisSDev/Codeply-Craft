@@ -42,6 +42,8 @@ const shopkeeper = {
   key: 'shopkeeper', name: 'Bilal Ahmed', role: 'runs Bilal General Store, a grocery shop in Lahore',
   about: 'Opens at 8, closes at 10 pm, deals with suppliers and cash all day, talks in Roman Urdu, little patience for long messages.',
   tz: 'Asia/Karachi', email: 'bilal.store@example.pk', start,
+  // He says yes to what his bots line up (without this every outbox task waits the real 30 minute timeout).
+  outbox: () => 'now',
   bots: [
     { name: 'Dukaan', role: 'orchestrator', specialty: 'Shop assistant: daily sales, stock, customers, keeps the owner organised', instructions: 'Keep things short. Hand money matters to Hisaab and reminders to Yaad.', tone: { preset: 'friendly' } },
     { name: 'Hisaab', specialty: 'Money: supplier bills, payments due, the shop ledger', handles: ['money'], tone: { preset: 'concise' } },

@@ -56,7 +56,7 @@ const FORMAT_CORRECTION =
   'closing tags complete:\n\n' +
   '<codeply:read_file>\n<path>run.html</path>\n</codeply:read_file>\n\n' +
   'Valid names: todo, ask_user, mcp, list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, ' +
-  'browser_check, gmail_send, gmail_search, gmail_draft, drafts_list, calendar_list, calendar_add, add_model, slack_post_message, vercel_deploy, supabase_create_project, ' +
+  'browser_check, gmail_send, gmail_search, gmail_read, gmail_draft, drafts_list, calendar_list, calendar_add, calendar_update, add_model, slack_post_message, vercel_deploy, supabase_create_project, ' +
   'supabase_delete_project, github_create_repo, design_reference_search, view_images, design_direction, design_lint, supabase_api, supabase_sql, vercel_api, ' +
   'web_fetch, web_search, image_search, reach_me, watch_email, life_context, remember, recall, hand_off, bot_email_send, look_at_screen, apply_patch, plan_exit, plan_enter, lsp, publish_check, publish_connect, supabase_setup, supabase_schema, ' +
   'publish_deploy, publish_github.';
@@ -184,7 +184,7 @@ const MAX_HALLUCINATION_RETRIES = 3;
 const MAX_VERIFY_NUDGES = 2;
 
 // Look-around blocks that may share one reply (see the loop).
-const BATCHABLE_TOOLS = new Set(['read_file', 'list_dir', 'search', 'web_fetch', 'web_search', 'image_search', 'lsp']);
+const BATCHABLE_TOOLS = new Set(['read_file', 'list_dir', 'search', 'web_fetch', 'web_search', 'image_search', 'lsp', 'gmail_read']);
 const MAX_BATCH = 4;
 
 // Identical call, identical arguments, this many times in a row = stuck.
@@ -218,6 +218,17 @@ function stuckCorrection(name, last) {
 // and forgot the block. Seen from Hermes Agent's stall nudges (MIT, Nous
 // Research). Questions to the user are excluded; those are real stops.
 const ANNOUNCED_INTENT = /(?:^|[.!\n]\s*)(?:(?:ok(?:ay)?|now|next|so|great|alright|first|then),?\s+)*(?:let me|let's|i'll|i will|i'm going to|i am going to|i need to|now i(?:'ll| will)?)\s+(?:now\s+|also\s+|first\s+|go ahead and\s+)?(?:check|read|look|open|update|edit|fix|add|create|write|run|test|verify|search|find|install|implement|change|remove|apply|make|build|start|try|inspect|review|examine)\b[^?]{0,200}[.:!]?\s*$/i;
+// "I'll check in next week", "I'll look at it again tomorrow", "I'll update the
+// list once you reply": a promise to the user about later, which closes the
+// turn, not an action this turn forgot to write.
+const LATER_PROMISE = /\b(?:check(?:ing)? (?:in|back)|tomorrow|tonight|later|soon|next (?:week|month|year|time|session)|in (?:a|an|one|two|three|a few|\d+) (?:minutes?|hours?|days?|weeks?|months?)|on (?:mon|tues|wednes|thurs|fri|satur|sun)day|this (?:morning|afternoon|evening|weekend)|(?:when|once|after) you)\b/i;
+
+/** The reply ends by announcing an action it did not write (see ANNOUNCED_INTENT). */
+function announcesAction(prose) {
+  if (/\?\s*$/.test(prose)) return false;
+  const m = prose.slice(-300).match(ANNOUNCED_INTENT);
+  return !!m && !LATER_PROMISE.test(m[0]);
+}
 const STALL_CORRECTION =
   '[system] Your reply announces what you are about to do but has no action block, so nothing ran and the task is ' +
   'not done. Write that action block now. If you are actually finished, give the final summary instead; if you ' +
@@ -327,12 +338,14 @@ const PARAMS = {
   list_skills: ['query'],
   fetch_image: ['url', 'path'],
   browser_check: ['url', 'wait', 'viewport'],
-  gmail_send: ['to', 'subject', 'body', 'draft'],
+  gmail_send: ['to', 'subject', 'body', 'draft', 'cc'],
   gmail_search: ['query'],
-  gmail_draft: ['to', 'subject', 'body'],
+  gmail_read: ['id'],
+  gmail_draft: ['to', 'subject', 'body', 'cc'],
   drafts_list: [],
   calendar_list: ['from', 'to', 'max'],
-  calendar_add: ['title', 'start', 'end', 'description', 'location', 'reminders'],
+  calendar_add: ['title', 'start', 'end', 'description', 'location', 'reminders', 'attendees'],
+  calendar_update: ['id', 'title', 'start', 'end', 'minutes', 'location', 'description', 'cancel'],
   add_model: ['name', 'base_url', 'model', 'api_key'],
   slack_post_message: ['channel', 'text'],
   vercel_deploy: ['path'],
@@ -394,10 +407,12 @@ const NAME_ALIASES = {
   previewcheck: 'browser_check', browserpreview: 'browser_check', check: 'browser_check',
   gmail_send: 'gmail_send', gmailsend: 'gmail_send', sendemail: 'gmail_send', email: 'gmail_send', sendmail: 'gmail_send',
   gmail_search: 'gmail_search', gmailsearch: 'gmail_search', searchemail: 'gmail_search', searchgmail: 'gmail_search',
+  gmail_read: 'gmail_read', gmailread: 'gmail_read', reademail: 'gmail_read', openemail: 'gmail_read', getemail: 'gmail_read',
   gmail_draft: 'gmail_draft', gmaildraft: 'gmail_draft', draftemail: 'gmail_draft', savedraft: 'gmail_draft', createdraft: 'gmail_draft',
   drafts_list: 'drafts_list', draftslist: 'drafts_list', listdrafts: 'drafts_list', drafts: 'drafts_list',
   calendar_list: 'calendar_list', calendarlist: 'calendar_list', listevents: 'calendar_list', calendar: 'calendar_list', events: 'calendar_list', getevents: 'calendar_list',
   calendar_add: 'calendar_add', calendaradd: 'calendar_add', addevent: 'calendar_add', createevent: 'calendar_add', addtocalendar: 'calendar_add', newevent: 'calendar_add',
+  calendar_update: 'calendar_update', calendarupdate: 'calendar_update', updateevent: 'calendar_update', moveevent: 'calendar_update', editevent: 'calendar_update', cancelevent: 'calendar_update', deleteevent: 'calendar_update', reschedule: 'calendar_update',
   slack_post_message: 'slack_post_message', slackpostmessage: 'slack_post_message',
   slackmessage: 'slack_post_message', slackpost: 'slack_post_message', postmessage: 'slack_post_message',
   vercel_deploy: 'vercel_deploy', vercel: 'vercel_deploy', vercelpublish: 'vercel_deploy',
@@ -492,6 +507,7 @@ function recoverCall(text) {
   else if (has('question') && has('options')) name = 'ask_user';
   else if (has('server') && has('tool')) name = 'mcp';
   else if (has('to') && has('subject')) name = /<\/?\s*(?:codeply[:_-])?gmail_?draft/i.test(text) ? 'gmail_draft' : 'gmail_send';
+  else if (has('id') && (has('start') || has('cancel') || has('title') || has('location'))) name = 'calendar_update';
   else if (has('title') && has('start')) name = 'calendar_add';
   else if (has('channel') && has('text')) name = 'slack_post_message';
   else {
@@ -858,6 +874,13 @@ The email body, plain text.
 <query>from:someone@example.com is:unread</query>
 </codeply:gmail_search>
 
+<codeply:gmail_read>
+<id>18c2f0a9b3e4d5f6</id>
+</codeply:gmail_read>
+
+(gmail_search shows previews with an [id] each; gmail_read reads one whole
+email. gmail_send and gmail_draft also take <cc>a@x.com, b@y.com</cc>.)
+
 <codeply:gmail_draft>
 <to>someone@example.com</to>
 <subject>Subject line</subject>
@@ -889,6 +912,16 @@ drafts; gmail_send with <draft>id</draft> sends one of them.)
 <location>Main St clinic</location>
 <reminders>30</reminders>
 </codeply:calendar_add>
+
+<codeply:calendar_update>
+<id>(the [id] from calendar_list)</id>
+<start>2026-10-06T16:00</start>
+</codeply:calendar_update>
+
+(calendar_add takes <attendees>a@x.com, b@y.com</attendees>: they get an
+invite. calendar_update moves, renames or cancels an existing event by its id
+(<cancel>yes</cancel> removes it); it asks first and the guests are told.
+Change an event with calendar_update, never by adding a second one.)
 
 <codeply:add_model>
 <name>GPT-5 mini</name>
@@ -1185,12 +1218,28 @@ function patchTargets(text) {
  * injected in full on every request without the skill library itself becoming
  * the majority of the token cost. The rest is one list_skills query away.
  */
-function buildSkillIndex(userMessage, cwd) {
+function buildSkillIndex(userMessage, cwd, codeSkills = true) {
+  if (!codeSkills) return COMPANION_SKILLS;
   const all = skills.listSkills(cwd);
   const catalog = skillCatalog(all);
   if (!catalog) return null;
   const relevant = relevantSkillsSection(userMessage, all);
   return relevant ? `${catalog}\n\n${relevant}` : catalog;
+}
+
+// A bot whose job is not code (a life companion, an email bot) gets no coding
+// playbooks pushed at it: the per-message matcher kept offering blender,
+// billing and remotion skills to a personal assistant. They are still one
+// list_skills search away.
+const COMPANION_SKILLS = 'SKILLS\nPlaybooks exist for specific kinds of work (documents, spreadsheets, code). Search them with list_skills only when a task clearly needs one.';
+
+/** Whether this run should be offered the coding skill library. */
+function wantsCodeSkills(botPrompt, botId) {
+  if (!botPrompt || !botId) return true;
+  try {
+    const bot = require('./bots.js').getBot(botId);
+    return !bot || brainLib.botDomains(bot).includes('code');
+  } catch { return true; }
 }
 
 // The daily skills: the same for every request in a project.
@@ -1233,7 +1282,7 @@ function connectedServicesSection() {
   describe('supabase', 'Supabase', 'full Management API via supabase_api, SQL via supabase_sql');
   describe('vercel', 'Vercel', [vercelUser, 'full REST API via vercel_api'].filter(Boolean).join(' - '));
   describe('github', 'GitHub', githubUser);
-  describe('gmail', 'Gmail and Google Calendar', [gmailUser, 'drafts via gmail_draft, calendar via calendar_list/calendar_add'].filter(Boolean).join(' - '));
+  describe('gmail', 'Gmail and Google Calendar', [gmailUser, 'drafts via gmail_draft, calendar via calendar_list/calendar_add/calendar_update'].filter(Boolean).join(' - '));
   describe('slack', 'Slack', '');
   return `CONNECTED SERVICES\n${lines.join('\n')}\nA service marked "not connected" cannot be used - tell the user to connect it from Connect Apps rather than attempting it. While publishing, call publish_connect instead: it lets the user connect in one click and waits.`;
 }
@@ -1287,7 +1336,7 @@ export function buildSystemPrompt(mode, cwd, userMessage, opts = {}) {
   parts.push('', connectedServicesSection());
   const restriction = modeRestriction(mode);
   if (restriction) parts.push('', restriction);
-  const skillIndex = buildSkillIndex(userMessage, cwd);
+  const skillIndex = buildSkillIndex(userMessage, cwd, opts.codeSkills !== false);
   if (skillIndex) parts.push('', skillIndex);
   const instructions = instructionsSection(cwd);
   if (instructions) parts.push('', instructions);
@@ -1344,8 +1393,9 @@ export function buildSystemSections(mode, cwd, userMessage, opts = {}) {
   if (botPrompt) project.push(botPrompt);
   if (opts.goal) project.push(goalSection(opts.goal));
   project.push(connectedServicesSection());
-  const all = skills.listSkills(cwd);
-  const catalog = skillCatalog(all);
+  const codeSkills = opts.codeSkills !== false;
+  const all = codeSkills ? skills.listSkills(cwd) : [];
+  const catalog = codeSkills ? skillCatalog(all) : COMPANION_SKILLS;
   if (catalog) project.push(catalog);
   const instructions = instructionsSection(cwd);
   if (instructions) project.push(instructions);
@@ -1353,7 +1403,7 @@ export function buildSystemSections(mode, cwd, userMessage, opts = {}) {
   if (mcpSection) project.push(mcpSection);
 
   const turn = [];
-  const relevant = catalog ? relevantSkillsSection(userMessage, all) : '';
+  const relevant = codeSkills && catalog ? relevantSkillsSection(userMessage, all) : '';
   if (relevant) turn.push(relevant);
   turn.push(`PROJECT CONTEXT\n${buildProjectContext(cwd)}`);
 
@@ -1589,7 +1639,7 @@ const NO_NATIVE_TOOLS_REMINDER =
 // unless their entry says toolMode: 'text', or CODEPLY_TOOLS=text is set.
 // A model that rejects tools is remembered for the rest of the session.
 const nativeUnsupported = new Set();
-const MUTATING_ACTIONS = new Set(['write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'bot_email_send', 'calendar_add', 'add_model', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github']);
+const MUTATING_ACTIONS = new Set(['write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'bot_email_send', 'calendar_add', 'calendar_update', 'add_model', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github']);
 
 /**
  * Native function names for MCP tools (mcp__server__tool, within the 64-char
@@ -1756,7 +1806,8 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     historyCount: history.length,
   } : null;
   const hazeStep = (step) => (haze ? { ...haze, step } : undefined);
-  const sectionsFor = (m) => buildSystemSections(m, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt });
+  const codeSkills = wantsCodeSkills(botPrompt, botId);
+  const sectionsFor = (m) => buildSystemSections(m, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt, codeSkills });
   const sections = haze ? sectionsFor(mode) : null;
   // What this chat saw on the user's screen (the drop reads it with every message; lib/screen.js).
   const chatId = hazeOpts?.chatId || null;
@@ -1777,7 +1828,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       { role: 'user', content: withTurnContext(userContent, [sections.turn, turnExtra].filter(Boolean).join('\n\n')) },
     ]
     : [
-      { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt }) },
+      { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt, codeSkills }) },
       ...history,
       { role: 'user', content: turnExtra ? withTurnContext(userContent, turnExtra) : userContent },
     ];
@@ -1906,7 +1957,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     if (native && !attempt.result.success && !signal.aborted && TOOLS_UNSUPPORTED.test(String(attempt.result.error || ''))) {
       native = false;
       nativeUnsupported.add(nativeKey);
-      messages[0] = { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native: false, mcp: mcpList, botPrompt }) };
+      messages[0] = { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native: false, mcp: mcpList, botPrompt, codeSkills }) };
       outgoing = [messages[0], ...outgoing.slice(1)];
       yield { type: 'notice', level: 'info', text: 'This model does not support native tool calls, so Codeply switched to text actions.' };
       attempt = await callModel(outgoing, userMessage, signal, route);
@@ -2034,7 +2085,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       }
 
       // 0b. Announced an action and stopped without writing it.
-      if (stallNudges < MAX_STALL_NUDGES && !/\?\s*$/.test(prose) && ANNOUNCED_INTENT.test(prose.slice(-300))) {
+      if (stallNudges < MAX_STALL_NUDGES && announcesAction(prose)) {
         stallNudges++;
         messages.push({ role: 'user', content: STALL_CORRECTION });
         continue;

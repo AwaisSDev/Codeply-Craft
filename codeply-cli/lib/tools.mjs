@@ -939,7 +939,7 @@ function eventLine(ev) {
     when = Number.isNaN(s.getTime()) ? '(no time)' : `${showLocal(s)} to ${Number.isNaN(e.getTime()) ? '?' : (ymd(e) === ymd(s) ? `${pad2(e.getHours())}:${pad2(e.getMinutes())}` : showLocal(e))}`;
   }
   const guests = (ev.attendees || []).filter((a) => a && a.email && !a.self).map((a) => a.email);
-  return `- [${ev.id}] ${title}: ${when}${ev.location ? `, at ${ev.location}` : ''}${guests.length ? ` (with ${guests.slice(0, 6).join(', ')})` : ''}`;
+  return `- ${ev.id ? `[${ev.id}] ` : ''}${title}: ${when}${ev.location ? `, at ${ev.location}` : ''}${guests.length ? ` (with ${guests.slice(0, 6).join(', ')})` : ''}`;
 }
 
 /**

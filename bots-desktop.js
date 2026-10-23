@@ -328,7 +328,7 @@ async function startVoice({ botId, turns }) {
     const requestId = `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
     const verdict = await new Promise((resolve) => {
       // An email (gmail_send / gmail_draft) rides along so the phone can show it editable.
-      const draft = req.draft ? { to: String(req.draft.to || ''), subject: String(req.draft.subject || ''), body: String(req.draft.body || '').slice(0, 20000) } : null;
+      const draft = req.draft ? { to: String(req.draft.to || ''), cc: String(req.draft.cc || ''), subject: String(req.draft.subject || ''), body: String(req.draft.body || '').slice(0, 20000) } : null;
       j.approval = { requestId, title: req.title, detail: String(req.detail || '').slice(0, 800), danger: !!req.danger, draft, draftOnly: !!req.draftOnly, resolve };
       bumpJob(j);
       signal.addEventListener('abort', () => resolve('reject'), { once: true });

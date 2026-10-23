@@ -1785,7 +1785,7 @@ process.stdin.on('data', (d) => {
     reply = (q) => ({ status: 200, body: q.url.endsWith('/messages/send') ? { id: 'sent-1' } : { id: 'gd-1' } });
     r = await executeTool('gmail_send', { to: 'a@b.com', subject: 'Original', body: 'Original body' }, ctxWith({ verdict: 'once', edits: { to: ' c@d.com ', subject: 'Edited subject', body: 'Edited body\nsecond line' } }));
     const sentRaw = reqs[0] && reqs[0].body ? decode(reqs[0].body.raw) : '';
-    check('gmail_send: the approval request carries the structured draft', asked.length === 1 && asked[0].tool === 'gmail_send' && !asked[0].draftOnly && JSON.stringify(asked[0].draft) === JSON.stringify({ to: 'a@b.com', subject: 'Original', body: 'Original body' }), JSON.stringify(asked));
+    check('gmail_send: the approval request carries the structured draft', asked.length === 1 && asked[0].tool === 'gmail_send' && !asked[0].draftOnly && JSON.stringify(asked[0].draft) === JSON.stringify({ to: 'a@b.com', cc: '', subject: 'Original', body: 'Original body' }), JSON.stringify(asked));
     check('gmail_send: the edited To, Subject and Body are what is sent', r.ok && reqs.length === 1 && reqs[0].url.endsWith('/gmail/v1/users/me/messages/send') && /^To: c@d\.com\r\nSubject: Edited subject\r\n[\s\S]*\r\n\r\nEdited body\nsecond line$/.test(sentRaw) && !/Original/.test(sentRaw), JSON.stringify({ r, sentRaw }));
     check('gmail_send: the result tells the agent what really went out', /edited it/.test(r.output) && /c@d\.com/.test(r.output) && /Edited subject/.test(r.output), r.output);
     reset();

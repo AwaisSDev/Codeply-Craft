@@ -32,7 +32,7 @@ const TRIGGERS = {
   deadline: { label: 'Deadlines', note: 'A deadline in the next 3 days and no push to the project in 3 days.', domain: 'work' },
   watched: { label: 'Follow-ups', note: 'A few hours after you watched something for 10 minutes or more, a bot asks how it went.', domain: 'life' },
   brief: { label: 'Morning brief', note: 'Your day in a few lines, once in the morning.', domain: 'life', off: true },
-  activity: { label: 'When you move less than usual', note: 'If your steps or workouts drop a lot for a couple of days, a bot gently asks if everything is okay.', domain: 'life' },
+  activity: { label: 'When you move less than usual', note: 'If your steps or workouts drop a lot for a couple of days, a bot gently asks if everything is okay.', domain: 'life', topic: 'health' },
 };
 const PRIORITY = { leaving: 3, meeting: 2, email: 2, deadline: 2, watched: 1, brief: 1, activity: 1 };
 const GAP_MS = 20 * MIN;
@@ -48,7 +48,9 @@ const localHour = (t, tz) => Number(L.clock(t, tz).slice(0, 2));
 // ─── The triggers ───────────────────────────────────────────────────────────
 
 function leaving({ snap, now }) {
-  return snap.next.filter((e) => e.place && !ONLINE_RE.test(e.place) && !e.allDay && !e.live && e.at - now >= 5 * MIN && e.at - now <= 20 * MIN).map((e) => ({
+  // A plan someone mentioned that is also on the calendar is one event: nudge once, for the calendar entry.
+  const next = snap.next.filter((e) => !(e.source === 'plans' && snap.next.some((c) => c.source !== 'plans' && L.sameEvent(c, e))));
+  return next.filter((e) => e.place && !ONLINE_RE.test(e.place) && !e.allDay && !e.live && e.at - now >= 5 * MIN && e.at - now <= 20 * MIN).map((e) => ({
     key: `leaving:${e.id}`, trigger: 'leaving', priority: PRIORITY.leaving, how: 'text',
     facts: [`"${e.title}" at ${e.place} starts ${L.until(e.at - now)} (${L.clock(e.at, snap.tz)})${e.people.length ? `, with ${e.people.slice(0, 3).map(firstName).join(', ')}` : ''}.`, 'Remind them to grab what they need (wallet, keys, phone, anything the plan needs) and to leave now if it is not close.'],
     fallback: `${short(e.title, 60)} at ${short(e.place, 40)} ${L.until(e.at - now)}. Got your wallet, keys and phone?`,
@@ -220,7 +222,11 @@ const DOMAIN_RE = {
   life: /\b(life|social|personal|friend|assistant|buddy|coach|health|wellbeing|planner|organi[sz]er|reminder)\b/i,
   work: /\b(work|code|coding|dev|developer|engineer|project|email|inbox|mail|ops|deploy|manager|chief of staff)\b/i,
 };
-/** The bot that speaks for this trigger: the user's pick, a bot that took it on, the best fit by job, the lead. */
+// A trigger about one subject goes to the bot that handles it before any general life bot.
+const TOPIC_RE = {
+  health: /\b(health|fitness|workout|exercise|gym|wellbeing|wellness|sleep|steps|trainer|nutrition|diet|medicines?|doctor)\b/i,
+};
+/** The bot that speaks for this trigger: the user's pick, a bot that took it on, the bot for its subject, the best fit by job, the lead. */
 function chooseBot(c, team, settings = {}) {
   const bots = (team || []).filter((b) => b && (!b.life || b.life.read !== false));
   if (!bots.length) return null;
@@ -228,6 +234,11 @@ function chooseBot(c, team, settings = {}) {
   if (picked) { const b = bots.find((x) => x.id === picked); if (b) return b; }
   const taker = bots.find((b) => b.life && (b.life.speaksFor || []).includes(c.trigger));
   if (taker) return taker;
+  const topic = (TRIGGERS[c.trigger] || {}).topic;
+  if (topic) {
+    const own = bots.find((b) => Array.isArray(b.handles) && b.handles.includes(topic)) || bots.find((b) => TOPIC_RE[topic].test(`${b.name} ${b.specialty || ''}`));
+    if (own) return own;
+  }
   const re = DOMAIN_RE[(TRIGGERS[c.trigger] || {}).domain];
   const fit = re && bots.find((b) => re.test(`${b.name} ${b.specialty || ''}`));
   if (fit) return fit;

@@ -60,7 +60,7 @@ const APPROVALS = {
   send: { label: 'Sending anything (email, Slack)', tools: ['gmail_send', 'slack_post_message', 'bot_email_send'] },
   publish: { label: 'Deploying or publishing', tools: ['vercel_deploy', 'github_create_repo', 'vercel_api', 'publish_deploy', 'publish_github'] },
   databases: { label: 'Changing databases or cloud projects', tools: ['supabase_create_project', 'supabase_delete_project', 'supabase_api', 'supabase_sql', 'supabase_setup', 'supabase_schema'] },
-  calendar: { label: 'Adding to your calendar', tools: ['calendar_add'] },
+  calendar: { label: 'Adding to your calendar', tools: ['calendar_add', 'calendar_update'] },
 };
 const ALL_APPROVALS = Object.keys(APPROVALS);
 // The categories bots were saved with before `calendar` existed. A bot saved
@@ -1169,8 +1169,8 @@ function runStep(ev) {
 
 /** What the call screen says while a tool runs. */
 const CALL_STEP = {
-  gmail_search: 'Checking your email', gmail_send: 'Sending the email', gmail_draft: 'Saving a draft', drafts_list: 'Looking at your drafts',
-  calendar_list: 'Checking your calendar', calendar_add: 'Adding it to your calendar', web_search: 'Searching the web', image_search: 'Looking for images', reach_me: 'Reaching your phone', watch_email: 'Setting an email alert', web_fetch: 'Reading a page',
+  gmail_search: 'Checking your email', gmail_read: 'Reading the email', gmail_send: 'Sending the email', gmail_draft: 'Saving a draft', drafts_list: 'Looking at your drafts',
+  calendar_list: 'Checking your calendar', calendar_add: 'Adding it to your calendar', calendar_update: 'Changing your calendar', web_search: 'Searching the web', image_search: 'Looking for images', reach_me: 'Reaching your phone', watch_email: 'Setting an email alert', web_fetch: 'Reading a page',
   read_file: 'Reading a file', write_file: 'Writing a file', edit_file: 'Editing a file', apply_patch: 'Editing files', run: 'Running a command',
   search: 'Searching your files', list_dir: 'Looking through files', slack_post_message: 'Posting to Slack', browser_check: 'Checking the page',
   ask_bot: 'Asking a teammate', todo: 'Planning', life_context: 'Checking your day', look_at_screen: 'Looking at your screen', bot_email_send: 'Sending the email',
