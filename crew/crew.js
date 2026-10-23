@@ -44,7 +44,7 @@
     read_file: 'Read', write_file: 'Wrote', edit_file: 'Edited', apply_patch: 'Patched', run: 'Ran', search: 'Searched',
     list_dir: 'Looked in', web_search: 'Searched the web for', web_fetch: 'Read', gmail_search: 'Searched Gmail', gmail_send: 'Emailed',
     slack_post_message: 'Posted to Slack', browser_check: 'Checked', fetch_image: 'Downloaded', todo: 'Updated the plan',
-    use_skill: 'Used skill', view_images: 'Looked at', look_at_screen: 'Looked at your screen', ask_user: 'Asked you', mcp: 'Used', vercel_deploy: 'Deployed',
+    use_skill: 'Used skill', view_images: 'Looked at', look_at_screen: 'Looked at your screen', use_computer: 'On your computer:', gmail_read: 'Read the email', calendar_add: 'Added to your calendar', calendar_update: 'Changed your calendar:', ask_user: 'Asked you', mcp: 'Used', vercel_deploy: 'Deployed',
   };
 
   const bot = (id) => state.catalog.bots.find((b) => b.id === id) || null;
@@ -108,7 +108,7 @@
     m.innerHTML = items.map((it, i) => {
       if (it === '-') return '<hr>';
       if (it.note) return `<div class="menu-note">${esc(it.note)}</div>`;
-      return `<button data-i="${i}" class="${it.on ? 'on' : ''} ${it.danger ? 'danger' : ''}">${it.icon || ''}<span>${esc(it.label)}</span></button>`;
+      return `<button data-i="${i}" class="${it.on ? 'on' : ''} ${it.danger ? 'danger' : ''}${it.desc ? ' has-desc' : ''}">${it.icon || ''}<span class="menu-label">${esc(it.label)}${it.desc ? `<small>${esc(it.desc)}</small>` : ''}</span></button>`;
     }).join('');
     m.classList.remove('hidden');
     const r = anchor.getBoundingClientRect();
@@ -173,6 +173,7 @@
   // The same logos as Craft's Connect Apps (one folder up from crew/).
   const APP_LOGO = { gmail: '../Gmail.webp', slack: '../Slack.webp', github: '../Github.webp', vercel: '../Vercel.png', supabase: '../Supabase.jpg' };
   const ICON_LINK = '<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>';
+  const ICON_GEAR = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>';
   const ICON_OUT = '<svg viewBox="0 0 24 24"><path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
   async function openAccountPanel(anchor) {
     const u = state.user;
@@ -198,6 +199,7 @@
         ${embedded ? `<button class="ap-manage" data-act="connect">${ICON_LINK}<span>Manage connections</span></button>` : ''}
       </div>
       <div class="ap-list">
+        <button data-act="settings">${ICON_GEAR}<span>Settings</span></button>
         <button data-act="folder" title="Where your bots save what they make">${ICON.folder}<span>Saved work</span></button>
         ${u ? `<button data-act="out" class="danger">${ICON_OUT}<span>Sign out</span></button>` : '<button data-act="in"><span>Sign in</span></button>'}
       </div>`;
@@ -221,6 +223,7 @@
     }
     act('connect', () => api.openConnect());
     act('folder', () => api.openFolder(state.workspace));
+    act('settings', () => window.CrewSettings && window.CrewSettings.show('general'));
     act('out', async () => { await api.signOut(); state.user = null; renderAccount(); toast('Signed out.'); });
     act('in', signIn);
     const onDoc = (e) => { if (!m.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) closeMenu(); };
@@ -333,6 +336,7 @@
   function goHome() {
     state.current = null;
     state.currentGroup = null;
+    if (window.CrewSettings) window.CrewSettings.hide();
     if (window.CrewLife) window.CrewLife.hide();
     if (window.CrewBrain) window.CrewBrain.hide();
     try { localStorage.removeItem('crew.last'); } catch {}
@@ -343,7 +347,7 @@
     view.innerHTML = `<div class="home">
       <h1 class="home-title">${greeting()}.</h1>
       <p class="home-sub">${bots.length ? 'Who do you need today?' : 'Build your crew. Each bot has one job, its own voice, and a memory that grows.'}</p>
-      ${bots.length ? `<div class="crew-row">${bots.map((b) => `<button class="crew-card" data-id="${esc(b.id)}">${av(b, 64)}<b>${esc(b.name)}</b><span>${esc(b.specialty || '')}</span></button>`).join('')}</div>` : ''}
+      ${bots.length ? `<div class="crew-row">${bots.map((b) => `<button class="crew-card" data-id="${esc(b.id)}">${av(b, 40, { still: true })}<span class="crew-card-text"><b>${esc(b.name)}</b><span>${esc(b.specialty || '')}</span></span></button>`).join('')}</div>` : ''}
       ${bots.length >= 2 ? `<button class="btn group-cta" id="groupCta">${ICON.group}Start a group chat</button>` : ''}
       <div class="describe">
         <div class="describe-label">Describe a new bot</div>
@@ -386,6 +390,7 @@
     if (!b) { goHome(); return; }
     state.current = id;
     state.currentGroup = null;
+    if (window.CrewSettings) window.CrewSettings.hide();
     if (window.CrewLife) window.CrewLife.hide();
     if (window.CrewBrain) window.CrewBrain.hide();
     try { localStorage.setItem('crew.last', id); } catch {}
@@ -466,6 +471,7 @@
       <textarea id="input" rows="1" placeholder="Message ${esc(b.name)}"></textarea>
       <div class="composer-row">
         <button class="model-chip" id="modelBtn">${esc(modelName())}${ICON.chev}</button>
+        ${window.CrewSettings ? window.CrewSettings.chipHtml() : ''}
         <span class="grow"></span>
         <button class="icon-btn" id="callBtn2" aria-label="Call ${esc(b.name)}" title="Call ${esc(b.name)}">${ICON.phone}</button>
         <button class="send${busy ? ' stop' : ''}" id="sendBtn" aria-label="${busy ? 'Stop' : 'Send'}">${busy ? ICON.stop : ICON.up}</button>
@@ -484,6 +490,7 @@
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
     $('#sendBtn').addEventListener('click', () => (state.busy.has(state.current) ? api.stop(state.current) : send()));
     $('#callBtn2').addEventListener('click', () => window.CrewCall.start(state.current));
+    if (window.CrewSettings) window.CrewSettings.wireChip(state.current);
     $('#modelBtn').addEventListener('click', (e) => openMenu(e.currentTarget, [
       { label: 'Haze 2', on: state.models.selected === 'auto' || !state.models.selected, run: () => pickModel('auto') },
       ...state.models.models.map((m) => ({ label: m.name, on: state.models.selected === m.id, run: () => pickModel(m.id) })),
@@ -745,10 +752,13 @@
       <textarea class="email-body" data-f="body" rows="6">${esc(d.body)}</textarea>
       <div class="approve-row"><button class="btn" data-v="reject">Don't send</button>${ev.draftOnly ? '' : '<button class="btn" data-v="draft">Save as draft</button>'}<button class="btn primary" data-v="once">${ev.draftOnly ? 'Save draft' : 'Send'}</button></div></div>`;
     }
+    // Ask once (the composer's permissions): one OK covers the rest of the chat.
+    const wide = !!ev.chatWide;
+    const keep = !wide && ev.canAlways !== false;
     return `<div class="approve${ev.danger ? ' danger' : ''}" data-req="${esc(ev.requestId)}">
       <div class="approve-title">${esc(ev.title || 'Allow this?')}</div>
       ${ev.detail ? `<pre>${esc(ev.detail)}</pre>` : ''}
-      <div class="approve-row"><button class="btn" data-v="reject">Don't allow</button><button class="btn" data-v="always">Always in this chat</button><button class="btn primary" data-v="once">Allow</button></div></div>`;
+      <div class="approve-row">${wide ? '<span class="approve-note">Allowed for the rest of this chat once you say yes.</span>' : ''}<button class="btn" data-v="reject">Deny</button>${keep ? '<button class="btn" data-v="always">Allow for this chat</button>' : ''}<button class="btn primary" data-v="once">${wide ? 'Allow' : 'Allow once'}</button></div></div>`;
   }
   function wireApproval(id) {
     const card = document.querySelector(`.approve[data-req="${id}"]`);
@@ -1040,7 +1050,7 @@
 
   window.CrewUI = {
     bot, av, toast, openBot, goHome, renderSide, ICON, VERB, md, esc, modal, closeModal, openMenu, autosize, modelName, pickModel,
-    botBlock, stepHtml, addToBody, appendUser, scrollDown, approvalHtml, wireApproval,
+    botBlock, stepHtml, addToBody, appendUser, scrollDown, approvalHtml, wireApproval, editBot, voiceSettings, signIn, renderAccount,
     refreshThread: () => state.current && openBot(state.current),
   };
   // After every script (groups.js, call.js) has loaded, so a restored group chat can open.

@@ -99,6 +99,7 @@
     if (!g) { UI.goHome(); return; }
     S.currentGroup = id;
     S.current = null;
+    if (window.CrewSettings) window.CrewSettings.hide();
     if (window.CrewLife) window.CrewLife.hide();
     if (window.CrewBrain) window.CrewBrain.hide();
     try { localStorage.setItem('crew.last', `g:${id}`); } catch {}
@@ -122,6 +123,7 @@
       <textarea id="input" rows="1" placeholder="Message ${esc(g.name)}, @ to pick who answers"></textarea>
       <div class="composer-row">
         <button class="model-chip" id="modelBtn">${esc(UI.modelName())}${ICON.chev}</button>
+        ${window.CrewSettings ? window.CrewSettings.chipHtml() : ''}
         <span class="grow"></span>
         <button class="send${isBusy ? ' stop' : ''}" id="sendBtn" aria-label="${isBusy ? 'Stop' : 'Send'}">${isBusy ? ICON.stop : ICON.up}</button>
       </div></div></div>`;
@@ -272,6 +274,7 @@
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
     });
     $('#sendBtn').addEventListener('click', () => (busy.has(g.id) ? api.groupStop(g.id) : send()));
+    if (window.CrewSettings) window.CrewSettings.wireChip(`group:${g.id}`);
     $('#modelBtn').addEventListener('click', (e) => UI.openMenu(e.currentTarget, [
       { label: 'Haze 2', on: S.models.selected === 'auto' || !S.models.selected, run: () => UI.pickModel('auto') },
       ...S.models.models.map((m) => ({ label: m.name, on: S.models.selected === m.id, run: () => UI.pickModel(m.id) })),

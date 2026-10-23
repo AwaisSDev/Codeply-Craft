@@ -76,24 +76,35 @@ function saveStore() {
     } catch (e) { console.warn('[store]', e.message); }
   }, 150);
 }
-// What each chat may do without asking, kept across its messages (like Craft):
-// full = Full access (nothing asks); always = what "Always in this chat" allowed.
+// What each chat may do without asking, kept across its messages (like Craft).
+// mode: 'ask' (Always ask) or 'once' (Ask once: the first OK for a kind of
+// action allows it for the rest of the chat). always: what is allowed so far.
 // A chat is a bot id, or "group:<id>". Commands are allowed by name ("run:npm"),
 // so allowing one command never quietly allows every command.
+const ACCESS_MODES = ['ask', 'once'];
 function access(key) {
   if (!store.access || typeof store.access !== 'object') store.access = {};
-  const a = store.access[key] || (store.access[key] = { full: false, always: [] });
+  const a = store.access[key] || (store.access[key] = { always: [] });
   if (!Array.isArray(a.always)) a.always = [];
+  if (!ACCESS_MODES.includes(a.mode)) a.mode = ACCESS_MODES.includes(store.settings.accessDefault) ? store.settings.accessDefault : 'ask';
+  delete a.full; // an older build's switch: nothing turns it on any more
   return a;
 }
+// An email is shown on its own card every time (each one says something different).
+const ASK_EVERY_TIME = new Set(['gmail_send', 'gmail_draft', 'bot_email_send', 'fetch_image']);
 const accessKey = (where) => (typeof where === 'string' ? where : where && where.groupId ? `group:${where.groupId}` : String(where && where.botId || ''));
-ipcMain.handle('access:get', guard((e, key) => { const a = access(String(key)); return { full: !!a.full, always: a.always.slice() }; }));
+ipcMain.handle('access:get', guard((e, key) => { const a = access(String(key)); return { mode: a.mode, always: a.always.slice() }; }));
+// Every chat that has something always allowed, for Settings, Permissions.
+ipcMain.handle('access:list', guard(() => Object.entries(store.access || {})
+  .filter(([, a]) => a && Array.isArray(a.always) && a.always.length)
+  .map(([key, a]) => ({ key, always: a.always.slice() }))));
 ipcMain.handle('access:set', guard((e, key, patch = {}) => {
   const a = access(String(key));
-  if (typeof patch.full === 'boolean') a.full = patch.full;
   if (patch.clearAlways) a.always = [];
+  if (Array.isArray(patch.forget)) a.always = a.always.filter((x) => !patch.forget.includes(x));
+  if (ACCESS_MODES.includes(patch.mode)) a.mode = patch.mode;
   saveStore();
-  return { full: !!a.full, always: a.always.slice() };
+  return { mode: a.mode, always: a.always.slice() };
 }));
 
 function thread(botId) {
@@ -219,6 +230,7 @@ const voiceOpts = (botId, voiceId) => ({ engine: store.settings.voiceEngine, voi
 ipcMain.handle('settings:set', guard((e, patch) => {
   const p = patch || {};
   if (['deepgram', 'edge', 'kokoro'].includes(p.voiceEngine)) store.settings.voiceEngine = p.voiceEngine;
+  if (ACCESS_MODES.includes(p.accessDefault)) store.settings.accessDefault = p.accessDefault;
   if (p.voice && typeof p.voice.botId === 'string') store.settings.voices[p.voice.botId] = String(p.voice.id || '');
   saveStore();
   return publicSettings();
@@ -327,16 +339,18 @@ function approverFor(where, bot, signal) {
     if (bot && !req.danger && req.tool !== 'fetch_image' && bots.canSkipApproval(bot, req.tool)) return 'once';
     const acc = access(key);
     const always = new Set(acc.always);
-    if (req.tool !== 'fetch_image' && (acc.full || (req.tool === 'run' ? runAllowed(req, always) : always.has(req.tool)))) return 'once';
+    if (req.tool !== 'fetch_image' && (req.tool === 'run' ? runAllowed(req, always) : always.has(req.tool))) return 'once';
     const requestId = `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-    send('crew:event', { ...at, type: 'approval', requestId, title: req.title, detail: String(req.detail || '').slice(0, 1600), danger: !!req.danger, tool: req.tool, draft: req.draft || null, draftOnly: !!req.draftOnly });
+    // Ask once: this OK also covers the rest of the chat (never for a risky one, or an email).
+    const chatWide = acc.mode === 'once' && !req.danger && !ASK_EVERY_TIME.has(req.tool) && (req.tool !== 'run' || (Array.isArray(req.patterns) && req.patterns.length > 0));
+    send('crew:event', { ...at, type: 'approval', requestId, title: req.title, detail: String(req.detail || '').slice(0, 1600), danger: !!req.danger, tool: req.tool, draft: req.draft || null, draftOnly: !!req.draftOnly, chatWide, canAlways: !ASK_EVERY_TIME.has(req.tool) });
     const verdict = await new Promise((resolve) => {
       approvals.set(requestId, resolve);
       signal.addEventListener('abort', () => { if (approvals.delete(requestId)) resolve('reject'); }, { once: true });
     });
     send('crew:event', { ...at, type: 'approval_done', requestId, verdict: typeof verdict === 'object' ? verdict.verdict : verdict });
     const v = typeof verdict === 'object' ? verdict.verdict : verdict;
-    if (v === 'always' && req.tool !== 'fetch_image') {
+    if ((v === 'always' || (v === 'once' && chatWide)) && !ASK_EVERY_TIME.has(req.tool)) {
       const add = req.tool === 'run' ? (Array.isArray(req.patterns) && req.patterns.length ? req.patterns.map((p) => `run:${p}`) : []) : [req.tool];
       acc.always = [...new Set([...acc.always, ...add])].slice(-200);
       saveStore();

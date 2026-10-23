@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('crew', {
   // What a chat may do without asking: a bot id, or "group:<id>".
   accessGet: (key) => ipcRenderer.invoke('crew:access:get', key),
   accessSet: (key, patch) => ipcRenderer.invoke('crew:access:set', key, patch),
+  accessList: () => ipcRenderer.invoke('crew:access:list'),
   onEvent: on('crew:event'),
 
   groupsList: () => ipcRenderer.invoke('crew:groups:list'),

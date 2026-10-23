@@ -25,10 +25,10 @@ const ALIASES = { open: 'focus', activate: 'focus', switch: 'focus', screenshot:
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const clip = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
 const matches = (win, want) => !!win && `${win.app} ${win.title}`.toLowerCase().includes(String(want).toLowerCase());
-const named = (win) => (win ? `${win.app || 'a window'}${win.title ? ` ("${clip(win.title, 80)}")` : ''}` : 'nothing');
+const named = (win) => (win ? clip(win.title || win.app || 'a window', 60) : 'nothing');
 
 /** A fresh picture of the screen the window is on, as the tool's result. */
-async function seeing(win, said) {
+async function seeing(win, said, label = '') {
   let shot = null;
   try { shot = await host.capture(win); } catch (e) { return { ok: true, output: `${said} (No screenshot: ${e.message}.)` }; }
   if (!shot || !shot.image) return { ok: true, output: `${said} (The screen could not be captured.)` };
@@ -37,7 +37,7 @@ async function seeing(win, said) {
     `Screenshot attached, ${shot.w} x ${shot.h} pixels, window in front: ${named(win)}. Spots for click and scroll are x and y in this picture's pixels, measured from its top left.`,
     shot.text ? `Text on the screen (OCR, one row per line, may have small mistakes):\n${String(shot.text).slice(0, 4000)}` : '',
   ].filter(Boolean);
-  return { ok: true, output: lines.join('\n\n'), meta: { imageDataUrls: [shot.image] } };
+  return { ok: true, output: lines.join('\n\n'), meta: { imageDataUrls: [shot.image], ...(label ? { label } : {}) } };
 }
 
 /**
@@ -58,12 +58,12 @@ async function tool(args = {}, ctx = {}) {
     if (ctx.signal && ctx.signal.aborted) return { ok: false, output: 'Stopped.' };
     await sleep(secs * 1000);
     let win = null; try { win = await host.front(); } catch {}
-    return seeing(win, `Waited ${secs} s.`);
+    return seeing(win, `Waited ${secs} s.`, `Waited ${secs} s and looked`);
   }
 
   if (action === 'look' && !want) {
     let win = null; try { win = await host.front(); } catch {}
-    return seeing(win, 'Looked at the screen.');
+    return seeing(win, 'Looked at the screen.', 'Looked at the screen');
   }
 
   if (!want) return { ok: false, output: `use_computer ${action} needs <window>: a few words of the app name or window title it is for, so it never lands in the wrong window.` };
@@ -83,7 +83,7 @@ async function tool(args = {}, ctx = {}) {
     let front = null; try { front = await host.front(); } catch {}
     return { ok: false, output: `Could not bring "${want}" to the front (the window in front is ${named(front)}), so nothing was ${action === 'type' ? 'typed' : action === 'keys' ? 'pressed' : 'clicked'}. Try use_computer focus again, or a more exact <window>.` };
   }
-  if (action === 'focus' || action === 'look') return seeing(win, `${named(win)} is in front.`);
+  if (action === 'focus' || action === 'look') return seeing(win, `${named(win)} is in front.`, `Brought ${named(win)} to the front`);
 
   // What it will do, checked before asking.
   let pt = null;
