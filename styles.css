@@ -2680,3 +2680,11 @@ a.remote-url { text-decoration: none; cursor: pointer; }
 .tb-root { min-width: 170px; }
 .tb-root .menu-item svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; color: var(--text-faint); }
 .tb-root .menu-item.open { background: var(--hover); }
+
+/* The switch shows plain icons in the text colour, no tiles, like Claude's.
+   Each logo is a mask, so it follows the theme (white in dark, black in light). */
+.tb-switch .app-switch-btn { width: 34px; height: 30px; color: var(--text); }
+.tb-switch .app-ic { width: 20px; height: 20px; display: block; background: currentColor; -webkit-mask: var(--ic) center / contain no-repeat; mask: var(--ic) center / contain no-repeat; }
+.tb-switch .ic-craft { --ic: url("assets/logo/craft-glyph.png"); width: 21px; height: 21px; }
+.tb-switch .ic-crew { --ic: url("crew/assets/logo/crew-glyph.svg"); }
+.tb-switch .ic-design { --ic: url("design/assets/design-glyph.svg"); }
