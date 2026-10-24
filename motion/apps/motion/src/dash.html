@@ -94,7 +94,7 @@ textarea { width: 100%; min-height: 96px; resize: vertical; font: 12px/1.45 var(
     </section>
     <section>
       <h2>Document</h2>
-      <pre id="doc">—</pre>
+      <pre id="doc">Nothing yet</pre>
     </section>
   </div>
 </main>
@@ -124,7 +124,7 @@ function kpis(t) {
     [t.tokens, 'reply tokens (est.)'],
     [per, 'tokens / command'],
     [ms, 'ms / command'],
-    [Object.entries(t.engines || {}).map(([k, v]) => `${k} ${v}`).join(' · ') || '—', 'by engine'],
+    [Object.entries(t.engines || {}).map(([k, v]) => `${k} ${v}`).join(' · ') || 'None yet', 'by engine'],
   ];
   $('kpis').innerHTML = items.map(([v, l]) => `<div class="kpi"><div class="v${typeof v === 'number' ? '' : ' txt'}">${typeof v === 'number' ? fmt(v) : esc(v)}</div><div class="l">${l}</div></div>`).join('');
 }
