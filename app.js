@@ -1669,72 +1669,304 @@ document.addEventListener('keydown', (e) => {
 
 $('togglePanelBtn').addEventListener('click', () => $('sidePanel').classList.toggle('hidden'));
 
-// ─── Embedded browser panel (docked BrowserView the agent's browser_check drives) ─
+// ─── Embedded browser panel (docked BrowserViews the agent's browser_check drives) ─
+// Tabs, back / forward / reload, the point-at tool, the address bar and a ...
+// menu, laid out like Codex's browser. The pages themselves are native views
+// main.js docks under this chrome, so anything that has to draw over a page
+// (the menu, the edge being dragged) first swaps the page for a still of it.
+const bc = { visible: false, tabs: [], activeTabId: null, zoom: 100, viewport: 'desktop', frozen: false, menu: null };
 document.querySelectorAll('.browser-toggle-btn').forEach((btn) =>
   btn.addEventListener('click', () => api && api.toggleBrowserPanel())
 );
 $('bcBack').addEventListener('click', () => api && api.browserPanelBack());
 $('bcForward').addEventListener('click', () => api && api.browserPanelForward());
 $('bcClose').addEventListener('click', () => api && api.toggleBrowserPanel());
+$('bcNewTab').addEventListener('click', () => api && api.browserPanelNewTab());
+$('bcExternal').addEventListener('click', () => api && api.browserPanelExternal());
 
-// The reload icon itself spins while a reload is in flight - the click is
-// otherwise silent (no loading indicator anywhere else in the chrome bar),
-// so without this a slow page reload just looks like the button did nothing.
-// Cleared on the next 'browserpanel:url' navigation event, not a fixed
-// timeout, so it keeps spinning for exactly as long as the reload actually
-// takes instead of guessing.
 const bcReloadBtn = $('bcReload');
-bcReloadBtn.addEventListener('click', () => {
-  if (!api) return;
-  bcReloadBtn.classList.add('spinning');
-  api.browserPanelReload();
-});
+bcReloadBtn.addEventListener('click', () => api && api.browserPanelReload());
 
-// A real address bar: type a URL, press Enter, it navigates - not just a
-// read-only label showing whatever the agent's browser_check last opened.
+// A real address bar: type a URL (or words to search), press Enter, it goes there.
 const bcUrlInput = $('bcUrl');
 let lastBrowserPanelUrl = '';
 bcUrlInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { bcUrlInput.value = lastBrowserPanelUrl; bcUrlInput.blur(); return; }
   if (e.key !== 'Enter') return;
   const value = bcUrlInput.value.trim();
   if (value && api) api.browserPanelNavigate(value);
   bcUrlInput.blur();
 });
-// Editing the address bar shouldn't fight with the live URL updating out from
-// under the user mid-type - only resynced on blur (abandoning the edit) or
-// on an actual navigation event, never while it has focus.
+bcUrlInput.addEventListener('focus', () => bcUrlInput.select());
+// Editing the address bar shouldn't fight the live URL updating under the
+// user mid-type - only resynced on blur or on an actual navigation.
 bcUrlInput.addEventListener('blur', () => { bcUrlInput.value = lastBrowserPanelUrl; });
+
+/** Where the chrome ends, in window pixels, so main.js docks the page right under it. */
+function reportBrowserLayout() {
+  if (!api || !api.browserPanelLayout || !bc.visible) return;
+  const rect = $('browserChrome').getBoundingClientRect();
+  // With the app zoomed, rects may come back in unzoomed px; scale them to the window.
+  const k = window.innerWidth / (document.documentElement.getBoundingClientRect().width || window.innerWidth);
+  api.browserPanelLayout({ top: Math.round(rect.bottom * k) });
+}
+window.addEventListener('resize', () => requestAnimationFrame(reportBrowserLayout));
+
+const BC_GLOBE = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg>';
+function renderBrowserTabs() {
+  const host = $('bcTabs');
+  host.innerHTML = bc.tabs.map((t) => {
+    const on = t.id === bc.activeTabId;
+    const icon = t.loading ? '<span class="bc-tab-spin"></span>'
+      : t.kind === 'agent' ? '<span class="bc-tab-agent" title="Codeply checks pages here"></span>'
+      : t.favicon ? `<img src="${esc(t.favicon)}" alt="">` : BC_GLOBE;
+    const title = t.title || (t.url ? t.url.replace(/^https?:\/\//, '') : 'New tab');
+    return `<div class="bc-tab${on ? ' on' : ''}" role="tab" aria-selected="${on}" tabindex="${on ? 0 : -1}" data-id="${t.id}" title="${esc(title)}">
+      <span class="bc-tab-ic">${icon}</span><span class="bc-tab-title">${esc(title)}</span>
+      ${t.kind === 'agent' ? '' : `<button class="bc-tab-x" type="button" data-close="${t.id}" aria-label="Close ${esc(title)}"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>`}
+    </div>`;
+  }).join('');
+}
+$('bcTabs').addEventListener('click', (e) => {
+  const x = e.target.closest('[data-close]');
+  if (x) { e.stopPropagation(); api.browserPanelCloseTab(Number(x.dataset.close)); return; }
+  const tab = e.target.closest('.bc-tab');
+  if (tab) api.browserPanelSelectTab(Number(tab.dataset.id));
+});
+$('bcTabs').addEventListener('auxclick', (e) => { const tab = e.target.closest('.bc-tab'); if (e.button === 1 && tab) api.browserPanelCloseTab(Number(tab.dataset.id)); });
+$('bcTabs').addEventListener('keydown', (e) => {
+  if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+  const i = bc.tabs.findIndex((t) => t.id === bc.activeTabId);
+  const next = bc.tabs[i + (e.key === 'ArrowRight' ? 1 : -1)];
+  if (next) { e.preventDefault(); api.browserPanelSelectTab(next.id); }
+});
 
 if (api) {
   api.onBrowserPanelState((data) => {
+    const opened = data.visible && !bc.visible;
+    bc.visible = data.visible;
+    bc.tabs = data.tabs || [];
+    bc.activeTabId = data.activeTabId;
+    bc.zoom = data.zoom || 100;
     document.querySelectorAll('.browser-toggle-btn').forEach((btn) => btn.classList.toggle('active', data.visible));
-    document.documentElement.style.setProperty('--browser-panel-width', data.width + 'px');
+    if (!dragState) document.documentElement.style.setProperty('--browser-panel-width', data.width + 'px');
     document.querySelector('.app').classList.toggle('browser-panel-open', data.visible);
     $('browserChrome').classList.toggle('hidden', !data.visible);
+    $('bcResize').classList.toggle('hidden', !data.visible);
     $('bcBack').disabled = !data.canGoBack;
     $('bcForward').disabled = !data.canGoForward;
+    const active = bc.tabs.find((t) => t.id === bc.activeTabId);
+    bcReloadBtn.classList.toggle('spinning', !!(active && active.loading));
+    renderBrowserTabs();
+    const zoomEl = document.querySelector('.bc-menu [data-zoom-label]');
+    if (zoomEl) zoomEl.textContent = bc.zoom + '%';
+    if (!data.visible) { closeBrowserFind(); closeBrowserMenu(); }
+    if (opened || data.visible) requestAnimationFrame(reportBrowserLayout);
   });
   api.onBrowserPanelUrl((data) => {
     lastBrowserPanelUrl = data.url;
-    bcReloadBtn.classList.remove('spinning');
     if (document.activeElement !== bcUrlInput) {
       bcUrlInput.value = data.url;
       bcUrlInput.title = data.url;
     }
   });
+  if (api.onBrowserPanelFocusUrl) api.onBrowserPanelFocusUrl(() => { bcUrlInput.value = ''; bcUrlInput.focus(); });
+  if (api.onBrowserPanelViewport) api.onBrowserPanelViewport((d) => { bc.viewport = d.name; });
 }
 $('spProject').addEventListener('click', () => state.project && api.openPath(state.project));
 
-// Viewport switcher: see the page at desktop, tablet or phone width. The
-// agent's own browser checks switch it too, so you see what it's checking.
-function syncViewportButtons(name) {
-  document.querySelectorAll('.bc-size').forEach((b) => b.classList.toggle('active', b.dataset.size === name));
+// ── Swapping the live page for a still, so HTML can draw over it ──
+async function freezeBrowser(on) {
+  if (!api || !api.browserPanelDrag || !bc.visible || bc.frozen === on) return;
+  bc.frozen = on;
+  const ghost = $('bcGhost');
+  if (on) {
+    const r = await api.browserPanelDrag(true);
+    ghost.style.backgroundImage = r && r.image ? `url("${r.image}")` : 'none';
+    ghost.style.top = $('browserChrome').getBoundingClientRect().bottom + 'px';
+    ghost.classList.remove('hidden');
+  } else {
+    ghost.classList.add('hidden');
+    ghost.style.backgroundImage = 'none';
+    await api.browserPanelDrag(false);
+  }
 }
-document.querySelectorAll('.bc-size').forEach((b) => b.addEventListener('click', () => {
-  syncViewportButtons(b.dataset.size);
-  api.browserPanelViewport(b.dataset.size);
-}));
-if (api && api.onBrowserPanelViewport) api.onBrowserPanelViewport((d) => syncViewportButtons(['desktop', 'tablet', 'mobile'].includes(d.name) ? d.name : ''));
+
+// ── The ... menu ──
+function closeBrowserMenu() {
+  if (!bc.menu) return;
+  bc.menu.remove();
+  bc.menu = null;
+  $('bcMenuBtn').classList.remove('active');
+  $('bcMenuBtn').setAttribute('aria-expanded', 'false');
+  freezeBrowser(false);
+}
+const BC_SIZES = [['desktop', 'Desktop'], ['tablet', 'Tablet'], ['mobile', 'Phone']];
+async function openBrowserMenu() {
+  if (bc.menu) { closeBrowserMenu(); return; }
+  await freezeBrowser(true);
+  const m = document.createElement('div');
+  m.className = 'menu bc-menu';
+  m.setAttribute('role', 'menu');
+  const item = (act, label, keys = '') => `<button class="menu-item" role="menuitem" data-act="${act}"><span>${label}</span>${keys ? `<kbd>${keys}</kbd>` : ''}</button>`;
+  m.innerHTML = item('find', 'Find in page', 'Ctrl+F') + item('print', 'Print')
+    + `<div class="bc-menu-row"><span>Zoom</span><span class="bc-zoom"><button class="bc-btn" data-act="zoom-out" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button><span data-zoom-label>${bc.zoom}%</span><button class="bc-btn" data-act="zoom-in" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button><button class="bc-btn" data-act="zoom-reset" aria-label="Actual size" title="Actual size"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button></span></div>`
+    + `<div class="bc-menu-row"><span>Device</span><span class="bc-devices">${BC_SIZES.map(([k, l]) => `<button class="${bc.viewport === k ? 'on' : ''}" data-act="size:${k}">${l}</button>`).join('')}</span></div>`
+    + item('shot', 'Take a screenshot')
+    + '<div class="menu-sep"></div>'
+    + item('external', 'Open in your browser') + item('downloads', 'Downloads') + item('clear', 'Clear browsing data')
+    + '<div class="menu-sep"></div>'
+    + item('close', 'Close the browser');
+  document.body.appendChild(m);
+  const r = $('bcMenuBtn').getBoundingClientRect();
+  m.style.top = (r.bottom + 6) + 'px';
+  m.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+  bc.menu = m;
+  $('bcMenuBtn').classList.add('active');
+  $('bcMenuBtn').setAttribute('aria-expanded', 'true');
+  const first = m.querySelector('.menu-item');
+  if (first) first.focus();
+  m.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const act = b.dataset.act;
+    if (act === 'zoom-in') return api.browserPanelZoom(1);
+    if (act === 'zoom-out') return api.browserPanelZoom(-1);
+    if (act === 'zoom-reset') return api.browserPanelZoom(0);
+    if (act.startsWith('size:')) {
+      bc.viewport = act.slice(5);
+      m.querySelectorAll('.bc-devices button').forEach((x) => x.classList.toggle('on', x === b));
+      api.browserPanelViewport(bc.viewport);
+      return;
+    }
+    closeBrowserMenu();
+    if (act === 'find') openBrowserFind();
+    else if (act === 'print') api.browserPanelPrint();
+    else if (act === 'shot') {
+      const res = await api.browserPanelScreenshot();
+      showToast(res && res.ok ? 'Screenshot copied, and saved to Downloads.' : (res && res.error) || 'Could not take a screenshot.', res && res.ok ? undefined : 'error');
+    } else if (act === 'external') api.browserPanelExternal();
+    else if (act === 'downloads') api.browserPanelDownloads();
+    else if (act === 'clear') {
+      if (!confirm('Clear cookies, sign-ins and saved data in Craft\'s browser?')) return;
+      const res = await api.browserPanelClearData();
+      if (res && res.ok) showToast('Browsing data cleared.');
+    } else if (act === 'close') api.toggleBrowserPanel();
+  });
+  m.addEventListener('keydown', (e) => {
+    const items = [...m.querySelectorAll('.menu-item')];
+    const i = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus(); }
+  });
+}
+$('bcMenuBtn').addEventListener('click', (e) => { e.stopPropagation(); openBrowserMenu(); });
+document.addEventListener('click', (e) => { if (bc.menu && !bc.menu.contains(e.target)) closeBrowserMenu(); });
+
+// ── Find in page ──
+const bcFindInput = $('bcFindInput');
+function openBrowserFind() {
+  $('bcFind').classList.remove('hidden');
+  bcFindInput.focus();
+  bcFindInput.select();
+  requestAnimationFrame(reportBrowserLayout);
+}
+function closeBrowserFind() {
+  if ($('bcFind').classList.contains('hidden')) return;
+  $('bcFind').classList.add('hidden');
+  $('bcFindCount').textContent = '';
+  if (api && api.browserPanelFindStop) api.browserPanelFindStop();
+  requestAnimationFrame(reportBrowserLayout);
+}
+const findStep = (forward) => api.browserPanelFind({ text: bcFindInput.value, forward, next: true });
+bcFindInput.addEventListener('input', () => { if (!bcFindInput.value) $('bcFindCount').textContent = ''; api.browserPanelFind({ text: bcFindInput.value }); });
+bcFindInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); findStep(!e.shiftKey); }
+  else if (e.key === 'Escape') { e.preventDefault(); closeBrowserFind(); }
+});
+$('bcFindNext').addEventListener('click', () => findStep(true));
+$('bcFindPrev').addEventListener('click', () => findStep(false));
+$('bcFindClose').addEventListener('click', closeBrowserFind);
+if (api && api.onBrowserPanelFound) api.onBrowserPanelFound((d) => { $('bcFindCount').textContent = d.total ? `${d.active} of ${d.total}` : 'No matches'; });
+
+// ── Point at an item: the next click on the page picks it, and it lands in the chat box ──
+async function pickBrowserItem() {
+  if (!api || !api.browserPanelPick || !bc.visible) return;
+  const btn = $('bcPick');
+  if (btn.classList.contains('active')) return;
+  btn.classList.add('active');
+  showToast('Click anything on the page. Esc cancels.');
+  const r = await api.browserPanelPick();
+  btn.classList.remove('active');
+  if (!r || r.cancelled) return;
+  if (r.error) { showToast(r.error, 'error'); return; }
+  const composer = [...document.querySelectorAll('.composer')].find((c) => c.offsetParent) || document.querySelector('.chat-composer .composer');
+  if (!composer) return;
+  if (r.image && composer.addImage) composer.addImage(r.image);
+  const input = composer.querySelector('.composer-input');
+  let host = '';
+  try { host = r.url.startsWith('file:') ? decodeURIComponent(r.url.split(/[\\/]/).pop()) : new URL(r.url).host; } catch {}
+  const words = r.text ? ` "${r.text.replace(/\s+/g, ' ').slice(0, 120)}"` : '';
+  input.value = `About this ${r.tag}${words} on ${host || 'the page'} (${r.selector}): ${input.value}`;
+  input.dispatchEvent(new Event('input'));
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+}
+$('bcPick').addEventListener('click', pickBrowserItem);
+
+// ── The panel's edge: drag it to resize ──
+let dragState = null;
+const bcResize = $('bcResize');
+function setPanelRatio(ratio, live) {
+  const r = Math.min(0.75, Math.max(0.25, ratio));
+  document.documentElement.style.setProperty('--browser-panel-width', Math.round(r * window.innerWidth) + 'px');
+  if (live) api.browserPanelResize(r);
+  return r;
+}
+bcResize.addEventListener('pointerdown', async (e) => {
+  if (e.button !== 0 || !bc.visible) return;
+  e.preventDefault();
+  bcResize.setPointerCapture(e.pointerId);
+  dragState = { raf: 0, ratio: null };
+  document.body.classList.add('bc-dragging');
+  await freezeBrowser(true);
+});
+bcResize.addEventListener('pointermove', (e) => {
+  if (!dragState) return;
+  dragState.ratio = (window.innerWidth - e.clientX) / window.innerWidth;
+  if (dragState.raf) return;
+  dragState.raf = requestAnimationFrame(() => {
+    if (!dragState) return;
+    dragState.raf = 0;
+    setPanelRatio(dragState.ratio, true);
+  });
+});
+const endDrag = async () => {
+  if (!dragState) return;
+  const ratio = dragState.ratio;
+  dragState = null;
+  document.body.classList.remove('bc-dragging');
+  if (ratio != null) api.browserPanelResize(Math.min(0.75, Math.max(0.25, ratio)));
+  await freezeBrowser(false);
+};
+bcResize.addEventListener('pointerup', endDrag);
+bcResize.addEventListener('pointercancel', endDrag);
+bcResize.addEventListener('keydown', (e) => {
+  if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+  e.preventDefault();
+  const cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--browser-panel-width')) / window.innerWidth || 0.45;
+  api.browserPanelResize(setPanelRatio(cur + (e.key === 'ArrowLeft' ? 0.02 : -0.02), false));
+});
+
+// Shortcuts while the browser is open.
+document.addEventListener('keydown', (e) => {
+  if (!bc.visible) return;
+  if (e.key === 'Escape' && bc.menu) { closeBrowserMenu(); $('bcMenuBtn').focus(); return; }
+  if (!e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 't' && !e.shiftKey) { e.preventDefault(); api.browserPanelNewTab(); }
+  else if (k === 'f' && !e.shiftKey && !e.target.closest('.composer')) { e.preventDefault(); openBrowserFind(); }
+  else if (e.shiftKey && (k === '.' || k === '>')) { e.preventDefault(); pickBrowserItem(); }
+});
 
 // ─── Embedded terminal (real child process running the user's own shell) ────
 let term = null;
@@ -2995,6 +3227,8 @@ document.querySelectorAll('.composer').forEach((composer) => {
   composer.pendingImages = [];
   composer.pendingFiles = []; // read files (attachments.js), or { name, reading: true } while a PDF is read
 
+  // The browser's point-at tool drops a picture of the picked item in here.
+  composer.addImage = (src) => { composer.pendingImages.push(src); renderImagePreviews(); };
   function renderImagePreviews() {
     previewsEl.innerHTML = '';
     previewsEl.classList.toggle('hidden', composer.pendingImages.length === 0 && composer.pendingFiles.length === 0);

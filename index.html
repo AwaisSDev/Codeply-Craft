@@ -56,22 +56,41 @@
 </header>
 
 <!-- ============ EMBEDDED BROWSER CHROME ============ -->
-<!-- The actual page content is a native BrowserView docked by main.js right
-     below this strip - this bar is the only part of "the browser" that's
-     real HTML, giving the docked page real chrome (address bar, back/
-     forward/reload) instead of being a bare pasted-in rectangle. -->
+<!-- The page itself is a native BrowserView that main.js docks right below
+     this chrome (it is told where the chrome ends). This part is real HTML:
+     tabs, back / forward / reload, the point-at tool, the address bar and
+     the ... menu, laid out like Codex's browser. -->
 <div class="browser-chrome hidden" id="browserChrome">
-  <button class="bc-btn icon-btn icon-btn-sm" id="bcBack" title="Back" disabled><svg viewBox="0 0 24 24"><path d="M14 6l-6 6 6 6"/></svg></button>
-  <button class="bc-btn icon-btn icon-btn-sm" id="bcForward" title="Forward" disabled><svg viewBox="0 0 24 24"><path d="M10 6l6 6-6 6"/></svg></button>
-  <button class="bc-btn icon-btn icon-btn-sm" id="bcReload" title="Reload"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3"/><path d="M18 3v5h-5"/><path d="M6 21v-5h5"/></svg></button>
-  <input class="bc-url" id="bcUrl" type="text" placeholder="No page checked yet" spellcheck="false" autocomplete="off">
-  <div class="bc-sizes segmented segmented-sm" role="group" aria-label="Viewport size">
-    <button class="bc-size segmented-item active" data-size="desktop" title="Desktop"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button>
-    <button class="bc-size segmented-item" data-size="tablet" title="Tablet (768px)"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg></button>
-    <button class="bc-size segmented-item" data-size="mobile" title="Mobile (390px)"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg></button>
+  <div class="bc-row bc-tabs-row">
+    <div class="bc-tabs" id="bcTabs" role="tablist" aria-label="Browser tabs"></div>
+    <button class="bc-btn" id="bcNewTab" title="New tab (Ctrl+T)" aria-label="New tab"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+    <span class="bc-grow"></span>
+    <button class="bc-btn" id="bcExternal" title="Open in your browser" aria-label="Open in your browser"><svg viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button>
+    <button class="bc-btn" id="bcClose" title="Close the browser" aria-label="Close the browser"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><line x1="14.5" y1="4" x2="14.5" y2="20"/></svg></button>
   </div>
-  <button class="bc-btn icon-btn icon-btn-sm" id="bcClose" title="Close browser panel"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+  <div class="bc-row bc-nav-row">
+    <div class="bc-group">
+      <button class="bc-btn" id="bcBack" title="Back" aria-label="Back" disabled><svg viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M11 6l-6 6 6 6"/></svg></button>
+      <button class="bc-btn" id="bcForward" title="Forward" aria-label="Forward" disabled><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></button>
+    </div>
+    <button class="bc-btn" id="bcReload" title="Reload" aria-label="Reload"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>
+    <button class="bc-btn" id="bcPick" title="Point at an item to ask about or change it (Ctrl+Shift+.)" aria-label="Point at an item"><svg viewBox="0 0 24 24"><path d="M5 3h4M3 5v4M15 3h4M21 5v4M3 15v4M5 21h4"/><path d="M12 12l8 3.5-3.4 1.2-1.2 3.4Z"/></svg></button>
+    <input class="bc-url" id="bcUrl" type="text" placeholder="Search or type a web address" spellcheck="false" autocomplete="off" aria-label="Address">
+    <button class="bc-btn" id="bcMenuBtn" title="More" aria-label="More" aria-haspopup="menu"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg></button>
+  </div>
+  <div class="bc-row bc-find hidden" id="bcFind">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    <input id="bcFindInput" type="text" placeholder="Find in page" spellcheck="false" autocomplete="off" aria-label="Find in page">
+    <span class="bc-find-count" id="bcFindCount"></span>
+    <button class="bc-btn" id="bcFindPrev" title="Previous (Shift+Enter)" aria-label="Previous match"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
+    <button class="bc-btn" id="bcFindNext" title="Next (Enter)" aria-label="Next match"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+    <button class="bc-btn" id="bcFindClose" title="Close (Esc)" aria-label="Close find"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
 </div>
+<!-- The panel's left edge: drag it to make the browser wider or narrower. -->
+<div class="bc-resize hidden" id="bcResize" role="separator" aria-orientation="vertical" aria-label="Resize the browser" tabindex="0"></div>
+<!-- While the edge is dragged, a still of the page stands in for it. -->
+<div class="bc-ghost hidden" id="bcGhost"></div>
 
 <!-- ============ EMBEDDED TERMINAL ============ -->
 <!-- Runs the user's own shell as a real child process (not a separate login,

@@ -15,7 +15,7 @@
 if (process.env.CRAFT_VOICE_SELFTEST) { require('./voice/selftest'); return; }
 // Same for Life Integrated Bots: `CRAFT_LIFE_SELFTEST=<folder>` (life-selftest.js).
 if (process.env.CRAFT_LIFE_SELFTEST) { require('./life-selftest'); return; }
-const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, Tray, Menu, nativeImage, powerSaveBlocker, Notification } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, Tray, Menu, nativeImage, powerSaveBlocker, Notification, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -1499,45 +1499,85 @@ ipcMain.handle('integrations:disconnect', async (e, name) => {
 // CLI has no such view to hand tools.mjs, which is exactly why ctx.browser
 // is optional - this is the one thing only the desktop app can provide.
 
-const PANEL_WIDTH_RATIO = 0.45;
-const TITLEBAR_HEIGHT = 36;
+// The panel's share of the window. The user drags its left edge to change it;
+// the last width is kept between runs.
+const PANEL_RATIO_FILE = () => path.join(app.getPath('userData'), 'browser-panel.json');
+let panelRatio = 0.45;
+try { const r = JSON.parse(fs.readFileSync(PANEL_RATIO_FILE(), 'utf8')).ratio; if (r >= 0.25 && r <= 0.75) panelRatio = r; } catch {}
+const clampRatio = (r) => Math.min(0.75, Math.max(0.25, Number(r) || 0.45));
+function savePanelRatio() { try { fs.writeFileSync(PANEL_RATIO_FILE(), JSON.stringify({ ratio: panelRatio })); } catch {} }
 
 let checkerView = null;
 let checkerCollector = null; // { errors:[], warnings:[] } for whichever check is in flight
 let panelVisible = false;
+let panelDragging = false;
 
-// The address bar / back / forward / refresh strip lives in Craft's own HTML
+// The tab strip, address bar and buttons live in Craft's own HTML
 // (index.html's #browserChrome), not inside the BrowserView - a BrowserView
-// is raw page content with no chrome of its own. Reserving this much height
-// above it is what turns "a page pasted on top of the window" into something
-// that reads as a real browser, and is also why the checker view's bounds
-// start BROWSER_CHROME_HEIGHT below the titlebar, not right at it.
-const BROWSER_CHROME_HEIGHT = 40;
+// is raw page content with no chrome of its own. The renderer reports where
+// its chrome ends (browserpanel:layout) so the page sits exactly under it,
+// whatever the title bar's height or the app's zoom.
+let panelTop = 42 + 84;
+
+// Tabs. The agent's tab (checkerView, where browser_check opens pages) always
+// exists; the user can open more beside it. Each tab is its own BrowserView;
+// only the active one is in the window. The user's tabs share a partition of
+// their own, so the agent's network capture never sees them.
+const tabs = []; // { id, kind: 'agent'|'user', view, title, favicon, loading }
+let activeTabId = null;
+let nextTabId = 1;
+const activeTab = () => tabs.find((t) => t.id === activeTabId) || null;
+const activeView = () => { const t = activeTab(); return t ? t.view : null; };
+const httpUrl = (u) => /^https?:\/\//i.test(String(u || ''));
 
 function sendPanelState() {
   if (!win || win.isDestroyed()) return;
   const { width } = win.getContentBounds();
-  const panelWidth = panelVisible ? Math.round(width * PANEL_WIDTH_RATIO) : 0;
+  const panelWidth = panelVisible ? Math.round(width * panelRatio) : 0;
+  const v = activeView();
   win.webContents.send('browserpanel:state', {
     visible: panelVisible,
     width: panelWidth,
-    canGoBack: checkerView ? checkerView.webContents.canGoBack() : false,
-    canGoForward: checkerView ? checkerView.webContents.canGoForward() : false,
+    ratio: panelRatio,
+    canGoBack: v ? v.webContents.canGoBack() : false,
+    canGoForward: v ? v.webContents.canGoForward() : false,
+    zoom: v ? Math.round(v.webContents.getZoomFactor() * 100) : 100,
+    activeTabId,
+    tabs: tabs.map((t) => ({ id: t.id, kind: t.kind, title: t.title, favicon: t.favicon, loading: t.loading, url: t.view.webContents.getURL() })),
   });
+}
+
+function wireTab(tab) {
+  const wc = tab.view.webContents;
+  const changed = () => {
+    if (!win || win.isDestroyed()) return;
+    if (tab.id === activeTabId) win.webContents.send('browserpanel:url', { url: wc.getURL() });
+    sendPanelState();
+  };
+  wc.on('did-navigate', () => { tab.favicon = ''; changed(); });
+  wc.on('did-navigate-in-page', changed);
+  wc.on('page-title-updated', (e, title) => { tab.title = title; sendPanelState(); });
+  wc.on('page-favicon-updated', (e, icons) => { tab.favicon = (icons || []).find(httpUrl) || ''; sendPanelState(); });
+  wc.on('did-start-loading', () => { tab.loading = true; sendPanelState(); });
+  wc.on('did-stop-loading', () => { tab.loading = false; changed(); });
+  wc.on('found-in-page', (e, r) => {
+    if (tab.id === activeTabId && win && !win.isDestroyed()) win.webContents.send('browserpanel:found', { active: r.activeMatchOrdinal, total: r.matches });
+  });
+  // Links that open a new window open a new tab here instead.
+  wc.setWindowOpenHandler(({ url }) => { if (httpUrl(url)) openTab(url); return { action: 'deny' }; });
+}
+
+function makeView(partition) {
+  const view = new BrowserView({ webPreferences: { partition, contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  view.setBackgroundColor('#1e1e1e');
+  return view;
 }
 
 function getCheckerView() {
   if (checkerView) return checkerView;
-  checkerView = new BrowserView({
-    webPreferences: {
-      // Isolated from the app's own session so this view's network
-      // listeners (webRequest, below) never see the app's own traffic.
-      partition: 'persist:codeply-browser-check',
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-  checkerView.setBackgroundColor('#1e1e1e');
+  // Isolated from the app's own session so this view's network listeners
+  // (webRequest, in doBrowserCheck) never see the app's own traffic.
+  checkerView = makeView('persist:codeply-browser-check');
   checkerView.webContents.on('console-message', (event, level, message, line, sourceId) => {
     if (!checkerCollector) return;
     // Electron's own dev-mode CSP nag fires on every single page regardless
@@ -1547,28 +1587,26 @@ function getCheckerView() {
     if (level >= 3) checkerCollector.errors.push(message + loc);
     else if (level === 2) checkerCollector.warnings.push(message + loc);
   });
-  const onNavigated = () => {
-    if (!win || win.isDestroyed()) return;
-    win.webContents.send('browserpanel:url', { url: checkerView.webContents.getURL() });
-    sendPanelState();
-  };
-  checkerView.webContents.on('did-navigate', onNavigated);
-  checkerView.webContents.on('did-navigate-in-page', onNavigated);
+  const tab = { id: nextTabId++, kind: 'agent', view: checkerView, title: 'Codeply', favicon: '', loading: false };
+  tabs.unshift(tab);
+  wireTab(tab);
+  if (activeTabId == null) activeTabId = tab.id;
   return checkerView;
 }
 
-/** Docks the panel to the right side of Craft's own content area, below the titlebar AND the chrome strip. */
+/** Docks the active tab to the right side of Craft's window, under the browser chrome. */
 function positionCheckerView() {
-  if (!win || win.isDestroyed() || !checkerView) return;
+  const view = activeView();
+  if (!win || win.isDestroyed() || !view || panelDragging) return;
   const { width, height } = win.getContentBounds();
-  const panelWidth = Math.round(width * PANEL_WIDTH_RATIO);
-  const top = TITLEBAR_HEIGHT + BROWSER_CHROME_HEIGHT;
+  const panelWidth = Math.round(width * panelRatio);
+  const top = panelTop;
   // Tablet/mobile: a centered frame of the real width, so the page lays out
   // exactly as it would on that device.
   const viewWidth = panelSize ? Math.min(panelSize.width, panelWidth) : panelWidth;
-  checkerView.setBounds({
+  view.setBounds({
     x: width - panelWidth + Math.floor((panelWidth - viewWidth) / 2), y: top,
-    width: viewWidth, height: height - top,
+    width: viewWidth, height: Math.max(0, height - top),
   });
 }
 
@@ -1576,7 +1614,7 @@ function showCheckerPanel() {
   if (!win || win.isDestroyed()) return;
   getCheckerView();
   if (!panelVisible) {
-    win.addBrowserView(checkerView);
+    win.addBrowserView(activeView());
     panelVisible = true;
   }
   positionCheckerView();
@@ -1584,8 +1622,9 @@ function showCheckerPanel() {
 }
 
 function hideCheckerPanel() {
-  if (!win || win.isDestroyed() || !checkerView || !panelVisible) return;
-  win.removeBrowserView(checkerView);
+  if (!win || win.isDestroyed() || !panelVisible) return;
+  const view = activeView();
+  if (view) win.removeBrowserView(view);
   panelVisible = false;
   sendPanelState();
 }
@@ -1595,26 +1634,180 @@ function toggleCheckerPanel() {
   else showCheckerPanel();
 }
 
-ipcMain.on('browserpanel:back', () => { if (checkerView?.webContents.canGoBack()) checkerView.webContents.goBack(); });
-ipcMain.on('browserpanel:forward', () => { if (checkerView?.webContents.canGoForward()) checkerView.webContents.goForward(); });
-ipcMain.on('browserpanel:reload', () => { checkerView?.webContents.reload(); });
+function selectTab(id) {
+  const next = tabs.find((t) => t.id === id);
+  if (!next || !win || win.isDestroyed()) return;
+  const prev = activeTab();
+  if (panelVisible && prev && prev !== next && !panelDragging) win.removeBrowserView(prev.view);
+  activeTabId = id;
+  if (panelVisible && !panelDragging) win.addBrowserView(next.view);
+  positionCheckerView();
+  win.webContents.send('browserpanel:url', { url: next.view.webContents.getURL() });
+  sendPanelState();
+}
+
+function loadInTab(tab, rawUrl) {
+  const input = String(rawUrl || '').trim();
+  if (!input) return;
+  // A bare "example.com" is defaulted to https:// like every address bar; an
+  // explicit scheme (file:// for local checks) is left as typed. Anything
+  // with spaces and no dot is a search.
+  const url = /^[a-z][a-z0-9+.-]*:\/\//i.test(input) ? input
+    : (/\s/.test(input) || !/\./.test(input)) ? `https://www.google.com/search?q=${encodeURIComponent(input)}`
+    : `https://${input}`;
+  tab.view.webContents.loadURL(url).catch(() => {});
+}
+
+function openTab(url) {
+  getCheckerView();
+  const tab = { id: nextTabId++, kind: 'user', view: makeView('persist:codeply-browser'), title: 'New tab', favicon: '', loading: false };
+  tabs.push(tab);
+  wireTab(tab);
+  if (!panelVisible) showCheckerPanel();
+  selectTab(tab.id);
+  if (url) loadInTab(tab, url);
+  else if (win && !win.isDestroyed()) win.webContents.send('browserpanel:focusurl');
+  return tab;
+}
+
+function closeTab(id) {
+  const i = tabs.findIndex((t) => t.id === id);
+  if (i < 0 || tabs[i].kind === 'agent') return; // the agent's tab stays
+  const [tab] = tabs.splice(i, 1);
+  if (id === activeTabId) {
+    if (panelVisible && win && !win.isDestroyed()) win.removeBrowserView(tab.view);
+    activeTabId = null;
+    selectTab((tabs[i] || tabs[i - 1] || tabs[0]).id);
+  }
+  try { if (tab.view.webContents.close) tab.view.webContents.close(); else tab.view.webContents.destroy(); } catch {}
+  sendPanelState();
+}
+
+ipcMain.on('browserpanel:back', () => { const v = activeView(); if (v?.webContents.canGoBack()) v.webContents.goBack(); });
+ipcMain.on('browserpanel:forward', () => { const v = activeView(); if (v?.webContents.canGoForward()) v.webContents.goForward(); });
+ipcMain.on('browserpanel:reload', () => { activeView()?.webContents.reload(); });
 
 // The address bar accepting real input, not just displaying whatever the
 // agent last checked, is what makes this an actual browser panel instead of
-// a one-way report viewer. A bare "example.com" (no scheme) is the common
-// case typed by hand, so it's defaulted to https:// the same way every real
-// browser's address bar does - but a local file check still needs an exact
-// file:// URL to work, which is why that scheme (and any other explicit
-// scheme) is left untouched rather than rewritten.
+// a one-way report viewer.
 ipcMain.on('browserpanel:navigate', (e, rawUrl) => {
-  const input = String(rawUrl || '').trim();
-  if (!input) return;
-  const url = /^[a-z][a-z0-9+.-]*:\/\//i.test(input) ? input : `https://${input}`;
   showCheckerPanel();
-  checkerView.webContents.loadURL(url).catch(() => {});
+  loadInTab(activeTab(), rawUrl);
 });
 
 ipcMain.on('browserpanel:toggle', toggleCheckerPanel);
+ipcMain.on('browserpanel:newtab', (e, url) => openTab(url));
+ipcMain.on('browserpanel:selecttab', (e, id) => selectTab(Number(id)));
+ipcMain.on('browserpanel:closetab', (e, id) => closeTab(Number(id)));
+
+ipcMain.on('browserpanel:layout', (e, d) => {
+  const top = Math.round(Number(d && d.top));
+  if (top > 0 && top < 400 && top !== panelTop) { panelTop = top; positionCheckerView(); }
+});
+
+// Dragging the panel's edge: the live page is taken out while the edge moves
+// (a native view would swallow the mouse) and a still of it stands in.
+ipcMain.handle('browserpanel:drag', async (e, on) => {
+  const view = activeView();
+  if (!win || win.isDestroyed() || !view || !panelVisible) return { ok: false };
+  if (on && !panelDragging) {
+    let image = '';
+    try { image = (await view.webContents.capturePage()).toDataURL(); } catch {}
+    panelDragging = true;
+    win.removeBrowserView(view);
+    return { ok: true, image };
+  }
+  if (!on && panelDragging) {
+    panelDragging = false;
+    win.addBrowserView(view);
+    positionCheckerView();
+    savePanelRatio();
+    sendPanelState();
+  }
+  return { ok: true };
+});
+ipcMain.on('browserpanel:resize', (e, ratio) => {
+  panelRatio = clampRatio(ratio);
+  if (!panelDragging) { positionCheckerView(); savePanelRatio(); }
+  sendPanelState();
+});
+
+// The ... menu.
+ipcMain.on('browserpanel:find', (e, d) => {
+  const v = activeView();
+  if (!v) return;
+  const text = String((d && d.text) || '');
+  if (!text) { v.webContents.stopFindInPage('clearSelection'); return; }
+  v.webContents.findInPage(text, { forward: d.forward !== false, findNext: !!d.next });
+});
+ipcMain.on('browserpanel:findstop', () => { activeView()?.webContents.stopFindInPage('clearSelection'); });
+ipcMain.on('browserpanel:zoom', (e, step) => {
+  const v = activeView();
+  if (!v) return;
+  const z = step === 0 ? 1 : Math.min(3, Math.max(0.25, Math.round((v.webContents.getZoomFactor() + step * 0.1) * 10) / 10));
+  v.webContents.setZoomFactor(z);
+  sendPanelState();
+});
+ipcMain.on('browserpanel:print', () => { activeView()?.webContents.print({}, () => {}); });
+ipcMain.handle('browserpanel:screenshot', async () => {
+  const v = activeView();
+  if (!v) return { error: 'No page open.' };
+  try {
+    const img = await v.webContents.capturePage();
+    clipboard.writeImage(img);
+    const file = path.join(app.getPath('downloads'), `Codeply browser ${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.png`);
+    fs.writeFileSync(file, img.toPNG());
+    return { ok: true, file };
+  } catch (err) { return { error: err.message }; }
+});
+ipcMain.on('browserpanel:external', () => {
+  const url = activeView()?.webContents.getURL();
+  if (httpUrl(url)) shell.openExternal(url); // only web pages leave the app, never file:// or anything else
+});
+ipcMain.on('browserpanel:downloads', () => { shell.openPath(app.getPath('downloads')); });
+ipcMain.handle('browserpanel:cleardata', async () => {
+  const { session } = require('electron');
+  for (const p of ['persist:codeply-browser', 'persist:codeply-browser-check']) {
+    try { const s = session.fromPartition(p); await s.clearStorageData(); await s.clearCache(); } catch {}
+  }
+  return { ok: true };
+});
+
+// "Point at an item": the next click on the page picks an element instead of
+// following it. Its tag, text and a picture of it go to the chat box, so the
+// user can ask about or change exactly that thing.
+const PICKER_JS = `new Promise((done) => {
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;border:2px solid #3d8bfd;background:rgba(61,139,253,.12);border-radius:4px;transition:all .06s ease-out;';
+  const tip = document.createElement('div');
+  tip.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;font:12px system-ui,sans-serif;background:#1b1b1f;color:#fff;padding:3px 7px;border-radius:6px;';
+  document.documentElement.append(box, tip);
+  let cur = null;
+  const label = (el) => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\\s+/).slice(0, 2).join('.') : '');
+  const path = (el) => { const out = []; for (let n = el; n && n.nodeType === 1 && out.length < 5; n = n.parentElement) { let s = label(n); if (n.parentElement) { const same = [...n.parentElement.children].filter((c) => c.tagName === n.tagName); if (same.length > 1) s += ':nth-of-type(' + (same.indexOf(n) + 1) + ')'; } out.unshift(s); if (n.id) break; } return out.join(' > '); };
+  const move = (e) => { cur = e.target; const r = cur.getBoundingClientRect(); Object.assign(box.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' }); tip.textContent = label(cur); tip.style.left = Math.max(4, r.left) + 'px'; tip.style.top = Math.max(4, r.top - 24) + 'px'; };
+  const stop = (v) => { removeEventListener('mousemove', move, true); removeEventListener('click', click, true); removeEventListener('keydown', key, true); box.remove(); tip.remove(); done(v); };
+  const click = (e) => { e.preventDefault(); e.stopPropagation(); const el = e.target; const r = el.getBoundingClientRect(); stop({ tag: el.tagName.toLowerCase(), selector: path(el), text: (el.innerText || el.alt || el.value || '').trim().slice(0, 300), html: el.outerHTML.slice(0, 600), rect: { x: r.left, y: r.top, width: r.width, height: r.height } }); };
+  const key = (e) => { if (e.key === 'Escape') { e.preventDefault(); stop(null); } };
+  addEventListener('mousemove', move, true); addEventListener('click', click, true); addEventListener('keydown', key, true);
+})`;
+ipcMain.handle('browserpanel:pick', async () => {
+  const v = activeView();
+  if (!v || !panelVisible) return { error: 'Open a page in the browser first.' };
+  try {
+    v.webContents.focus();
+    const got = await v.webContents.executeJavaScript(PICKER_JS, true);
+    if (!got) return { cancelled: true };
+    let image = '';
+    const r = got.rect;
+    if (r && r.width > 2 && r.height > 2) {
+      const pad = 6;
+      const rect = { x: Math.max(0, Math.round(r.x - pad)), y: Math.max(0, Math.round(r.y - pad)), width: Math.round(r.width + pad * 2), height: Math.round(r.height + pad * 2) };
+      try { image = (await v.webContents.capturePage(rect)).toDataURL(); } catch {}
+    }
+    return { ...got, image, url: v.webContents.getURL(), title: v.webContents.getTitle() };
+  } catch (err) { return { error: err.message }; }
+});
 
 // Serialized globally so two chats triggering a check around the same time
 // can't cross-contaminate each other's console/network capture - the shared
@@ -1663,8 +1856,9 @@ let panelSize = null; // null = fill the panel (desktop)
 function setPanelViewport(name) {
   const vp = parseViewport(name);
   panelSize = vp.size;
-  if (checkerView) {
-    applyViewport(checkerView.webContents, vp.size);
+  const view = activeView() || checkerView;
+  if (view) {
+    applyViewport(view.webContents, vp.size);
     positionCheckerView();
   }
   if (win && !win.isDestroyed()) win.webContents.send('browserpanel:viewport', { name: vp.name });
@@ -1674,7 +1868,8 @@ function setPanelViewport(name) {
 ipcMain.on('browserpanel:viewport', (e, name) => {
   getCheckerView();
   setPanelViewport(name);
-  if (checkerView.webContents.getURL()) checkerView.webContents.reload();
+  const view = activeView();
+  if (view && view.webContents.getURL()) view.webContents.reload();
 });
 
 /** Loads a page in an invisible off-screen window and captures it (works while Craft is hidden). */
@@ -1702,6 +1897,8 @@ browserCheck.render = (url, opts) => designTab.renderForLint(url, opts);
 
 async function doBrowserCheck(url, { wait = 700, viewport } = {}) {
   getCheckerView();
+  const agentTab = tabs.find((t) => t.kind === 'agent');
+  if (agentTab && activeTabId !== agentTab.id) selectTab(agentTab.id); // its checks happen in its own tab
   // The agent picks the size per check; the panel follows so you see it too.
   const vp = setPanelViewport(viewport || 'desktop');
   showCheckerPanel(); // auto-opens the panel so the user can watch it work, without stealing focus off the chat
