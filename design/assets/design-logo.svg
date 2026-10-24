@@ -1,20 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- Codeply Design: an artist's brush mid-stroke, in the same blues as Craft and Crew -->
+  <!-- Codeply Design: one artist's brush, in the same blues as Craft and Crew -->
   <rect width="512" height="512" fill="#2F6BFF"/>
-  <!-- the stroke it just painted -->
-  <path d="M150 376C190 350 214 428 264 402S344 350 396 384" fill="none" stroke="#FFFFFF" stroke-width="38" stroke-linecap="round"/>
-  <!-- a few drops of paint -->
-  <circle cx="404" cy="132" r="20" fill="#A6D3FF"/>
-  <circle cx="438" cy="186" r="11" fill="#A6D3FF"/>
-  <circle cx="454" cy="118" r="9" fill="#FFFFFF"/>
-  <g transform="rotate(38 256 236)">
+  <g transform="rotate(38 256 256) translate(0 20)">
     <!-- handle -->
-    <path d="M238 228L245 70Q256 46 267 70L274 228Z" fill="#FFFFFF"/>
+    <path d="M234 228L243 62Q256 34 269 62L278 228Z" fill="#FFFFFF"/>
     <!-- ferrule -->
-    <rect x="228" y="222" width="56" height="52" rx="10" fill="#0E45D6"/>
-    <path d="M240 236H272" stroke="#2F6BFF" stroke-width="8" stroke-linecap="round"/>
+    <rect x="224" y="222" width="64" height="56" rx="11" fill="#0E45D6"/>
+    <path d="M238 238H274" stroke="#2F6BFF" stroke-width="9" stroke-linecap="round"/>
     <!-- bristles, dipped in paint -->
-    <path d="M228 274H284C292 318 282 360 256 404C230 360 220 318 228 274Z" fill="#A6D3FF"/>
-    <path d="M233 330C246 336 266 336 279 330C276 356 268 380 256 404C244 380 236 356 233 330Z" fill="#FFFFFF"/>
+    <path d="M224 278H288C297 328 286 376 256 426C226 376 215 328 224 278Z" fill="#A6D3FF"/>
+    <path d="M229 342C243 349 269 349 283 342C280 370 271 398 256 426C241 398 232 370 229 342Z" fill="#FFFFFF"/>
   </g>
 </svg>
