@@ -1,14 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- Codeply Design: one artist's brush, in the same blues as Craft and Crew -->
+  <!-- Codeply Design: one artist's brush, a plain white shape on Craft and Crew's blue -->
   <rect width="512" height="512" fill="#2F6BFF"/>
-  <g transform="rotate(38 256 256) translate(0 20)">
-    <!-- handle -->
-    <path d="M234 228L243 62Q256 34 269 62L278 228Z" fill="#FFFFFF"/>
+  <g transform="rotate(45 256 256) translate(256 256) scale(1.08) translate(-256 -244)" fill="#FFFFFF">
+    <!-- handle, thin at the end and fuller toward the metal -->
+    <path d="M244 56Q256 28 268 56L288 264H224Z"/>
     <!-- ferrule -->
-    <rect x="224" y="222" width="64" height="56" rx="11" fill="#0E45D6"/>
-    <path d="M238 238H274" stroke="#2F6BFF" stroke-width="9" stroke-linecap="round"/>
-    <!-- bristles, dipped in paint -->
-    <path d="M224 278H288C297 328 286 376 256 426C226 376 215 328 224 278Z" fill="#A6D3FF"/>
-    <path d="M229 342C243 349 269 349 283 342C280 370 271 398 256 426C241 398 232 370 229 342Z" fill="#FFFFFF"/>
+    <rect x="221" y="274" width="70" height="48" rx="8"/>
+    <!-- bristles, flaring out to a curled tip -->
+    <path d="M222 332H290C302 368 298 408 274 438C259 456 236 466 211 461C229 449 235 430 230 412C219 388 215 358 222 332Z"/>
   </g>
 </svg>
