@@ -296,7 +296,10 @@ $('navForward').addEventListener('click', () => navGo(1));
 
 // ─── File / Edit / View / Help (the title bar menus) ────────────────────────
 let tbPop = null;
+let tbSub = null; // File / Edit / View / Help, opened from the ≡ menu
+function closeTbSub() { if (tbSub) { tbSub.remove(); tbSub = null; } document.querySelectorAll('.tb-pop .menu-item.open').forEach((b) => b.classList.remove('open')); }
 function closeTbMenu() {
+  closeTbSub();
   if (tbPop) { tbPop.remove(); tbPop = null; }
   document.querySelectorAll('.tb-menu.open').forEach((b) => b.classList.remove('open'));
 }
@@ -337,13 +340,23 @@ function tbMenuItems(name) {
     ['Report a problem', '', () => api && api.openExternal('https://github.com/AwaisSDev/Codeply-Craft/issues')],
   ];
 }
-function openTbMenu(btn) {
-  const same = btn.classList.contains('open');
-  closeTbMenu();
-  if (same) return;
+const TB_SUBS = [['file', 'File'], ['edit', 'Edit'], ['view', 'View'], ['help', 'Help']];
+function openTbSub(row, name) {
+  if (row.classList.contains('open')) return;
+  closeTbSub();
+  const sub = tbMenuPop(tbMenuItems(name));
+  sub.classList.add('tb-sub');
+  document.body.appendChild(sub);
+  const r = row.getBoundingClientRect();
+  sub.style.left = (r.right + 4) + 'px';
+  sub.style.top = (r.top - 6) + 'px';
+  row.classList.add('open');
+  tbSub = sub;
+}
+function tbMenuPop(items) {
   const pop = document.createElement('div');
   pop.className = 'menu tb-pop';
-  for (const it of tbMenuItems(btn.dataset.menu)) {
+  for (const it of items) {
     if (!it) { pop.appendChild(Object.assign(document.createElement('div'), { className: 'menu-sep' })); continue; }
     const [label, keys, run, off] = it;
     const b = document.createElement('button');
@@ -353,8 +366,30 @@ function openTbMenu(btn) {
     // keep focus in the text box, so Cut / Copy / Paste act on it
     b.addEventListener('mousedown', (e) => e.preventDefault());
     b.addEventListener('click', () => { closeTbMenu(); run(); });
+    b.addEventListener('mouseenter', () => { if (tbSub && !tbSub.contains(b)) closeTbSub(); });
     pop.appendChild(b);
   }
+  return pop;
+}
+function openTbMenu(btn) {
+  const same = btn.classList.contains('open');
+  closeTbMenu();
+  if (same) return;
+  let pop;
+  if (btn.dataset.menu === 'all') {
+    // The ≡ menu: four rows, each opening its own menu to the side.
+    pop = document.createElement('div');
+    pop.className = 'menu tb-pop tb-root';
+    for (const [name, label] of TB_SUBS) {
+      const b = document.createElement('button');
+      b.className = 'menu-item';
+      b.innerHTML = `<span>${esc(label)}</span><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>`;
+      b.addEventListener('mousedown', (e) => e.preventDefault());
+      b.addEventListener('mouseenter', () => openTbSub(b, name));
+      b.addEventListener('click', (e) => { e.stopPropagation(); openTbSub(b, name); });
+      pop.appendChild(b);
+    }
+  } else pop = tbMenuPop(tbMenuItems(btn.dataset.menu));
   document.body.appendChild(pop);
   const r = btn.getBoundingClientRect();
   pop.style.left = r.left + 'px';
@@ -368,7 +403,7 @@ document.querySelectorAll('.tb-menu').forEach((b) => {
   // moving across the bar while a menu is open switches menus, like a native menu bar
   b.addEventListener('mouseenter', () => { if (tbPop && !b.classList.contains('open')) openTbMenu(b); });
 });
-document.addEventListener('click', (e) => { if (tbPop && !tbPop.contains(e.target)) closeTbMenu(); });
+document.addEventListener('click', (e) => { if (tbPop && !tbPop.contains(e.target) && !(tbSub && tbSub.contains(e.target))) closeTbMenu(); });
 window.addEventListener('blur', closeTbMenu);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && tbPop) { closeTbMenu(); return; }
@@ -1277,7 +1312,27 @@ function addRoleBadge(data) {
 // ─── What actually changed ──────────────────────────────────────────────────
 // Built from the tool results, not the model's prose: the files really
 // written and the checks really run (with exit codes). If the model's
-// summary and this card ever disagree, this card is the truth.
+// summary and this line ever disagree, this line is the truth. It reads like
+// the activity line above it: one quiet sentence that opens into the list.
+const QL_CHEV = '<svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>';
+const qlCount = (n, one) => `${n === 1 ? (/^[aeiou]/.test(one) ? 'an' : 'a') : n} ${n === 1 ? one : one + 's'}`;
+const qlBase = (p) => String(p).split(/[\\/]/).pop();
+
+/** A quiet line that opens and closes its list, like the activity line. */
+function wireQuietLine(el) {
+  el.addEventListener('click', (e) => {
+    const head = e.target.closest('.ql-head');
+    if (!head || head.parentElement !== el || e.target.closest('.ql-action')) return;
+    const open = !el.classList.contains('open');
+    el.classList.toggle('open', open);
+    head.setAttribute('aria-expanded', String(open));
+  });
+  el.addEventListener('keydown', (e) => {
+    const head = e.target.closest('.ql-head');
+    if (head && e.target === head && head.tagName !== 'BUTTON' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); head.click(); }
+  });
+}
+
 function addTurnSummary(data) {
   closeActivity();
   const files = data.files || [];
@@ -1285,33 +1340,33 @@ function addTurnSummary(data) {
   const unverified = data.unverified || [];
   if (!files.length && !checks.length) return;
   const card = document.createElement('div');
-  card.className = 'turn-summary';
+  card.className = 'turn-summary quiet-line';
   const isPass = (c) => c.ok && (c.exitCode === undefined || c.exitCode === 0);
   const failedN = checks.filter((c) => !isPass(c)).length;
   const checkRow = (c) => {
     const passed = isPass(c);
     const label = c.tool === 'browser_check' ? `Opened ${c.label}` : c.label;
-    const exit = typeof c.exitCode === 'number' ? `<span class="ts-exit">exit ${c.exitCode}</span>` : '';
-    return `<div class="ts-check ${passed ? 'pass' : 'fail'}">
-      <span class="ts-check-icon">${passed ? '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'}</span>
-      <code title="${esc(label || '')}">${esc(label || '')}</code>${exit}</div>`;
+    const exit = !passed && typeof c.exitCode === 'number' ? `<span class="ql-exit">exit ${c.exitCode}</span>` : '';
+    return `<div class="ql-row ${passed ? 'pass' : 'fail'}">
+      <span class="ql-ic">${passed ? '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'}</span>
+      <span class="ql-label" title="${esc(label || '')}">${esc(label || '')}</span>${exit}</div>`;
   };
-  const title = !checks.length ? `Changed ${files.length} file${files.length === 1 ? '' : 's'}`
-    : failedN ? `${failedN} of ${checks.length} check${checks.length === 1 ? '' : 's'} failed`
-    : checks.length === 1 ? 'Check passed' : `All ${checks.length} checks passed`;
-  const sub = [checks.length ? 'What actually ran this turn' : 'Not checked by a run',
-    files.length && checks.length ? `${files.length} file${files.length === 1 ? '' : 's'} changed` : ''].filter(Boolean).join(' · ');
+  // "Ran 5 checks, all passed" / "Ran 5 checks, 1 failed" / "Changed app.js, not checked by a run"
+  const n = checks.length;
+  const verdict = !n ? '' : failedN ? `<span class="ql-bad">${failedN === n && n > 1 ? 'all failed' : `${failedN} failed`}</span>` : (n === 1 ? 'it passed' : 'all passed');
+  const text = n ? `Ran ${qlCount(n, 'check')}, ${verdict}`
+    : `Changed ${files.length === 1 ? esc(qlBase(files[0])) : qlCount(files.length, 'file')}, not checked by a run`;
   card.classList.toggle('has-fail', failedN > 0);
   card.innerHTML = `
-    <div class="ts-head">
-      <span class="ts-tile">${failedN
-        ? '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16.5v.01"/></svg>'
-        : '<svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.4-7 10-4-1.6-7-5.5-7-10V6Z"/><path d="M9 12l2 2 4-4"/></svg>'}</span>
-      <span class="ts-text"><span class="ts-title">${title}</span><span class="ts-sub">${sub}</span></span>
+    <button class="ql-head" type="button" aria-expanded="false">
+      <span class="ql-dot ${failedN ? 'bad' : n ? 'good' : ''}"></span><span class="ql-text">${text}</span>${QL_CHEV}
+    </button>
+    <div class="ql-body">
+      ${checks.map(checkRow).join('')}
+      ${files.length ? `<div class="ql-row files"><span class="ql-ic"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg></span><span class="ql-label">${files.map((f) => esc(qlBase(f))).join(', ')}</span></div>` : ''}
     </div>
-    ${checks.length ? `<div class="ts-checks">${checks.map(checkRow).join('')}</div>` : ''}
-    ${files.length ? `<div class="ts-files">${files.map((f) => `<span class="ts-file">${esc(f)}</span>`).join('')}</div>` : ''}
-    ${unverified.length ? `<div class="ts-warn"><svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>Not verified by a passing check: ${unverified.map(esc).join(', ')}</div>` : ''}`;
+    ${unverified.length ? `<div class="ql-warn"><svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>Not checked by a passing run: ${unverified.map((f) => esc(qlBase(f))).join(', ')}</div>` : ''}`;
+  wireQuietLine(card);
   card.classList.add('reveal-pending');
   chatColumn.appendChild(card);
   enqueueReveal((next) => {
@@ -1322,61 +1377,50 @@ function addTurnSummary(data) {
 }
 
 // ─── Undo / redo a message's changes ───────────────────────────────────────
-// One row per message that changed files. Undo puts those files back to how
-// they were before the message ran; the same button then offers Redo.
+// One quiet line per message that changed files, with Undo at its end. Undo
+// puts those files back to how they were before the message ran; the same
+// button then offers Redo.
 const checkpointEls = new Map(); // checkpoint id -> row element
 
 const CP_STATUS = { A: 'added', M: 'changed', D: 'deleted' };
+const CP_VERB = { A: 'Added', M: 'Edited', D: 'Deleted' };
 
 function renderCheckpoint(cp) {
   let row = checkpointEls.get(cp.id);
   if (!row || !row.isConnected) {
     row = document.createElement('div');
-    row.className = 'checkpoint';
+    row.className = 'checkpoint quiet-line';
     checkpointEls.set(cp.id, row);
     chatColumn.appendChild(row);
+    wireQuietLine(row);
   }
   const n = cp.total || cp.files.length;
   const list = cp.files.slice(0, 40).map((f) => {
     const parts = String(f.file).split(/[\\/]/);
     const name = parts.pop();
     const dir = parts.length ? parts.join('/') + '/' : '';
-    return `<li><span class="cp-badge cp-${esc(f.status)}" title="${esc(CP_STATUS[f.status] || f.status)}">${esc(f.status)}</span>` +
-      `<code><span class="cp-dir">${esc(dir)}</span>${esc(name)}</code></li>`;
+    return `<div class="ql-row"><span class="ql-status cp-${esc(f.status)}" title="${esc(CP_STATUS[f.status] || f.status)}">${esc(f.status)}</span>` +
+      `<span class="ql-label" title="${esc(f.file)}"><span class="ql-dir">${esc(dir)}</span>${esc(name)}</span></div>`;
   }).join('');
-  const counts = {};
-  for (const f of cp.files) counts[f.status] = (counts[f.status] || 0) + 1;
-  const sub = Object.entries(counts).map(([k, c]) => `${c} ${CP_STATUS[k] || k}`).join(', ');
-  // Short lists start open; long ones stay folded until asked.
-  const open = row.dataset.open ? row.dataset.open === '1' : n <= 5;
-  row.dataset.open = open ? '1' : '0';
+  // "Edited craft.html" for one file, "Changed 3 files" for more.
+  const one = n === 1 && cp.files[0];
+  const what = one ? `${CP_VERB[one.status] || 'Changed'} ${esc(qlBase(one.file))}` : `Changed ${n} files`;
+  const open = row.classList.contains('open');
   row.cpData = cp;
   row.classList.toggle('undone', !!cp.undone);
   row.innerHTML = `
-    <div class="cp-head">
-      <button class="cp-toggle" type="button" aria-expanded="${open}">
-        <span class="cp-tile"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/><path d="M9 14h6"/><path d="M12 11v6"/></svg></span>
-        <span class="cp-text"><span class="cp-title">${cp.undone ? `Undid changes to ${n} file${n === 1 ? '' : 's'}` : `Changed ${n} file${n === 1 ? '' : 's'}`}</span>
-          <span class="cp-sub">${esc(sub)}</span></span>
-        <svg class="cp-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-      </button>
-      <button class="cp-action" type="button">${cp.undone
+    <div class="ql-head" role="button" tabindex="0" aria-expanded="${open}">
+      <span class="ql-dot"></span><span class="ql-text">${cp.undone ? `Undone: ${what.charAt(0).toLowerCase() + what.slice(1)}` : what}</span>${QL_CHEV}
+      <button class="cp-action ql-action" type="button">${cp.undone
         ? '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>Redo'
         : '<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>Undo'}</button>
     </div>
-    <ul class="cp-files"${open ? '' : ' hidden'}>${list}${n > 40 ? `<li class="cp-more">and ${n - 40} more</li>` : ''}</ul>`;
-  const toggle = row.querySelector('.cp-toggle');
-  toggle.addEventListener('click', () => {
-    const list = row.querySelector('.cp-files');
-    list.hidden = !list.hidden;
-    row.dataset.open = list.hidden ? '0' : '1';
-    toggle.setAttribute('aria-expanded', String(!list.hidden));
-  });
+    <div class="ql-body">${list}${n > 40 ? `<div class="ql-row more">and ${n - 40} more</div>` : ''}</div>`;
   row.querySelector('.cp-action').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     if (!api || !state.currentSessionId) return;
     btn.disabled = true;
-    btn.textContent = cp.undone ? 'Redoing…' : 'Undoing…';
+    btn.textContent = cp.undone ? 'Redoing...' : 'Undoing...';
     const r = await api.setCheckpoint(state.currentSessionId, cp.id, !cp.undone);
     if (r && r.error) {
       addNote(r.error, 'warn');
@@ -2740,6 +2784,9 @@ function showToast(text, kind = '') {
 // ─── Sending / running ──────────────────────────────────────────────────────
 let runningToolRow = null;
 
+const COMPOSER_HINT = 'Ask Codeply anything, or type / for commands';
+const COMPOSER_BUSY_HINT = 'Enter to queue a message, it sends when this finishes';
+
 function setRunning(on) {
   state.running = on;
   document.querySelectorAll('[data-role="send"]').forEach((btn) => {
@@ -2747,6 +2794,17 @@ function setRunning(on) {
     btn.querySelector('.ic-stop').classList.toggle('hidden', !on);
     btn.title = on ? 'Stop' : 'Send';
   });
+  document.querySelectorAll('.chat-composer .composer-input').forEach((el) => { el.placeholder = on ? COMPOSER_BUSY_HINT : COMPOSER_HINT; });
+  // A message queued during the run goes out once this chat is free again.
+  if (!on) {
+    document.querySelectorAll('.composer').forEach((c) => {
+      const q = c.queued;
+      if (!q || q.sessionId !== state.currentSessionId) return;
+      c.queued = null;
+      if (c.renderQueued) c.renderQueued();
+      setTimeout(() => { if (!state.running) sendMessage(q.text, false, q.images); }, 250);
+    });
+  }
 }
 
 // ─── Thinking indicator ─────────────────────────────────────────────────────
@@ -2987,6 +3045,14 @@ document.querySelectorAll('.composer').forEach((composer) => {
     attachBtn.addEventListener('click', () => attachInput.click());
     attachInput.addEventListener('change', () => { const list = [...attachInput.files]; attachInput.value = ''; addFiles(list); input.focus(); });
   }
+  // The chat box is one slim row: + and send inside it, the mode and model
+  // controls in a quiet row under it.
+  if (!fromHome && attachBtn) {
+    composer.classList.add('composer-slim');
+    attachBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
+    composer.insertBefore(attachBtn, input);
+    input.after(sendBtn);
+  }
   composer.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); composer.classList.add('drop-on'); } });
   composer.addEventListener('dragleave', (e) => { if (!composer.contains(e.relatedTarget)) composer.classList.remove('drop-on'); });
   composer.addEventListener('drop', (e) => {
@@ -3009,15 +3075,54 @@ document.querySelectorAll('.composer').forEach((composer) => {
     input.style.height = Math.min(input.scrollHeight, 180) + 'px';
   });
 
+  // A message typed while a run is going waits above the box and goes out
+  // when the run ends (setRunning). The x puts it back in the box.
+  const queuedEl = document.createElement('div');
+  queuedEl.className = 'composer-queued hidden';
+  composer.insertBefore(queuedEl, previewsEl);
+  composer.queued = null;
+  composer.renderQueued = () => {
+    const q = composer.queued;
+    queuedEl.classList.toggle('hidden', !q);
+    if (!q) { queuedEl.innerHTML = ''; return; }
+    const shown = window.CodeplyAttach ? window.CodeplyAttach.split(q.text).text || q.text : q.text;
+    queuedEl.innerHTML = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="cq-label">Queued</span><span class="cq-text"></span><button type="button" class="cq-x" title="Take it back" aria-label="Take the queued message back"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+    queuedEl.querySelector('.cq-text').textContent = shown;
+    queuedEl.querySelector('.cq-x').addEventListener('click', () => {
+      const back = composer.queued;
+      composer.queued = null;
+      composer.renderQueued();
+      if (back && !input.value.trim()) { input.value = back.text; input.dispatchEvent(new Event('input')); }
+      input.focus();
+    });
+  };
+
   // A second layer on top of the addUserMessage dedupe above: blocks a
   // same-composer double-dispatch (key-repeat, a fast double-click before the
   // button visually updates) synchronously, at the moment of the click itself
   // - before state.running has had any chance to propagate - rather than
   // relying solely on catching the resulting duplicate after the fact.
   let dispatching = false;
-  const submit = () => {
+  const submit = (viaButton) => {
     if (dispatching) return;
-    if (state.running) { api.stop(state.currentSessionId); return; }
+    // While a run goes, the button stops it; Enter queues what was typed.
+    if (state.running && (viaButton === true || fromHome)) { api.stop(state.currentSessionId); return; }
+    if (state.running) {
+      const typed = input.value.trim();
+      if (!typed || composer.pendingFiles.some((f) => f.reading)) return;
+      const prev = composer.queued;
+      const text = window.CodeplyAttach ? window.CodeplyAttach.compose(typed, composer.pendingFiles) : typed;
+      composer.queued = { text: prev && prev.sessionId === state.currentSessionId ? `${prev.text}
+
+${text}` : text, images: composer.pendingImages.length ? composer.pendingImages : (prev && prev.images), sessionId: state.currentSessionId };
+      input.value = '';
+      input.style.height = 'auto';
+      composer.pendingImages = [];
+      composer.pendingFiles = [];
+      renderImagePreviews();
+      composer.renderQueued();
+      return;
+    }
     const typed = input.value.trim();
     const images = composer.pendingImages;
     if (composer.pendingFiles.some((f) => f.reading)) { showToast('Still reading a file. One moment.'); return; }
@@ -3034,7 +3139,7 @@ document.querySelectorAll('.composer').forEach((composer) => {
     sendMessage(text || 'Image attached.', fromHome, images.length ? images : undefined);
   };
 
-  sendBtn.addEventListener('click', submit);
+  sendBtn.addEventListener('click', () => submit(true));
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       // The slash-command menu (wired up further below, same input) owns

@@ -218,3 +218,9 @@
   .busy { animation: none; }
   .dz-menu { animation: none; }
 }
+
+/* Bigger action icons and text at the top of the sidebar, like Claude's. */
+.dz-actions .dz-row { height: 36px; font-size: 15px; gap: 12px; }
+.dz-actions .dz-row .ic, .dz-actions .dz-row .ic svg { width: 20px; height: 20px; }
+.dz-actions .dz-row .ic svg { stroke-width: 1.7; }
+.dz-scroll { padding-top: 6px; }

@@ -935,3 +935,9 @@ body.in-settings .side > :not(.side-settings):not(.side-foot) { display: none; }
 .bot-item-sub { display: none; }
 .bot-item-name { font-weight: 400; font-size: 14px; }
 @media (prefers-reduced-motion: reduce) { .sb-fold svg { transition: none; } .sb-busy { animation: none; } }
+
+/* Bigger action icons and text at the top of the sidebar, like Claude's. */
+.side-new { gap: 12px; height: 36px; padding: 0 10px; font-size: 15px; color: var(--text); }
+.side-new svg { width: 20px; height: 20px; stroke-width: 1.7; opacity: .9; }
+/* Same width as Craft and Design, so the title bar switch sits on its edge. */
+body.embedded .side { width: 272px; }
