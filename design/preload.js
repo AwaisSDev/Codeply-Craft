@@ -3,7 +3,12 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('design', {
   list: () => ipcRenderer.invoke('design:list'),
-  create: (text, kind, images) => ipcRenderer.invoke('design:create', { text, kind, images }),
+  // opts: { category, from } (from: a design to use as the reference)
+  create: (text, kind, images, opts = {}) => ipcRenderer.invoke('design:create', { text, kind, images, category: opts.category || null, from: opts.from || null }),
+  catCreate: (name) => ipcRenderer.invoke('design:catCreate', name),
+  catRename: (id, name) => ipcRenderer.invoke('design:catRename', { id, name }),
+  catDelete: (id) => ipcRenderer.invoke('design:catDelete', id),
+  move: (id, category) => ipcRenderer.invoke('design:move', { id, category }),
   send: (id, text, images) => ipcRenderer.invoke('design:send', { id, text, images }),
   open: (id) => ipcRenderer.invoke('design:open', id),
   close: () => ipcRenderer.send('design:close'),

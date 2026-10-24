@@ -35,6 +35,12 @@ const base = () => path.join(app.getPath('documents'), 'Codeply Designs');
 const isDesignFolder = (p) => { try { return path.resolve(String(p)).toLowerCase().startsWith(path.resolve(base()).toLowerCase() + path.sep); } catch { return false; } };
 const records = () => { const s = host.store(); if (!Array.isArray(s.designs)) s.designs = []; return s.designs; };
 const byId = (id) => records().find((d) => d.id === id) || null;
+// The sidebar's categories: [{ id, name }] in the store beside the designs, newest first;
+// a design's record holds its category's id (none: Uncategorized). They stay on this PC:
+// sync carries the designs, not how they are filed.
+const categories = () => { const s = host.store(); if (!Array.isArray(s.designCategories)) s.designCategories = []; return s.designCategories; };
+const catById = (id) => (id ? categories().find((c) => c.id === id) || null : null);
+const catName = (n) => String(n || '').replace(/\s+/g, ' ').trim().slice(0, 60);
 const send = (channel, data) => { if (view && !view.webContents.isDestroyed()) view.webContents.send(channel, data); };
 
 function readJson(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } }
@@ -49,7 +55,7 @@ function view_(d) {
   return {
     id: d.id, title: String(j.title || d.title || 'Untitled design').slice(0, 120), kind, summary: String(j.summary || '').slice(0, 300),
     sessionId: d.sessionId || null, dir: d.dir, file, url: pathToFileURL(file).href, previewUrl: `${SCHEME}://${d.id}/index.html`, thumbUrl: thumb ? `${SCHEME}://${d.id}/${THUMB}?v=${Math.round(thumb)}` : null, ready: mtime > 0, updatedAt: Math.max(d.updatedAt || 0, mtime),
-    size: SIZE[kind], running: !!d.sessionId && host.activeRunIds().includes(d.sessionId),
+    size: SIZE[kind], running: !!d.sessionId && host.activeRunIds().includes(d.sessionId), category: catById(d.category) ? d.category : null,
   };
 }
 
@@ -481,9 +487,38 @@ function init(h) {
   ipcMain.handle('design:list', () => {
     // Newer designs from the phone come down in the background; the page reloads its list when they land.
     pull().then((changed) => { if (changed) send('design:synced', {}); }).catch(() => {});
-    return { designs: list(), kinds: KINDS };
+    return { designs: list(), kinds: KINDS, categories: categories().map((c) => ({ id: c.id, name: c.name })) };
   });
-  ipcMain.handle('design:create', (e, { text, kind, images } = {}) => createDesign(text, kind, 'pc', images));
+  ipcMain.handle('design:create', (e, { text, kind, images, category, from } = {}) => createDesign(text, kind, 'pc', images, { category, from }));
+  // Categories: make, rename and delete one (its designs go back to Uncategorized), and file a design in one.
+  ipcMain.handle('design:catCreate', (e, name) => {
+    const c = { id: 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: catName(name) || 'New category', createdAt: Date.now() };
+    categories().unshift(c);
+    host.saveStore();
+    return { id: c.id, name: c.name };
+  });
+  ipcMain.handle('design:catRename', (e, { id, name } = {}) => {
+    const c = catById(id);
+    name = catName(name);
+    if (!c || !name) return null;
+    c.name = name;
+    host.saveStore();
+    return { id: c.id, name: c.name };
+  });
+  ipcMain.handle('design:catDelete', (e, id) => {
+    if (!catById(id)) return { ok: true };
+    host.store().designCategories = categories().filter((c) => c.id !== id);
+    for (const d of records()) if (d.category === id) d.category = null;
+    host.saveStore();
+    return { ok: true };
+  });
+  ipcMain.handle('design:move', (e, { id, category } = {}) => {
+    const d = byId(id);
+    if (!d) return null;
+    d.category = catById(category) ? category : null;
+    host.saveStore();
+    return view_(d);
+  });
   ipcMain.handle('design:send', (e, { id, text, images } = {}) => sendTo(id, text, images));
   ipcMain.handle('design:open', (e, id) => {
     const d = byId(id);
@@ -534,14 +569,50 @@ function init(h) {
 }
 
 // ─── Actions the page and the phone (main.js /api/design/*) both use ──────────
-async function createDesign(text, kind, origin = 'pc', images) {
+const KIND_WORD = { website: 'website', app: 'app', slides: 'slide deck', doc: 'document', poster: 'poster', social: 'social post', logo: 'logo' };
+
+/**
+ * "New chat from this": a new design that starts from another as its reference. Its page is
+ * copied into .reference/ (a dot folder, so it is never built, synced or watched), its pictures
+ * into assets/ where the new design can use them as they are, and its thumbnail goes with the
+ * first message so the agent sees the look before it reads the code.
+ */
+function useReference(d, ref) {
+  const v = view_(ref);
+  if (!v.ready) return { text: '', image: null };
+  const into = path.join(d.dir, '.reference');
+  fs.mkdirSync(into, { recursive: true });
+  fs.copyFileSync(v.file, path.join(into, 'index.html'));
+  try { fs.copyFileSync(path.join(ref.dir, 'design.json'), path.join(into, 'design.json')); } catch {}
+  try { if (fs.existsSync(path.join(ref.dir, 'assets'))) copyDir(path.join(ref.dir, 'assets'), path.join(d.dir, 'assets')); } catch (e) { console.warn('[design] reference pictures:', e.message); }
+  let image = null;
+  try { image = 'data:image/jpeg;base64,' + fs.readFileSync(path.join(ref.dir, THUMB)).toString('base64'); } catch {}
+  const text = `\n\nReference: my design "${v.title}" (${KIND_WORD[v.kind] || 'design'}). Use it for the look, layout and colours: read .reference/index.html first and keep its type, palette, spacing and style. Its pictures are already in assets/, use them where they fit.${image ? ' The attached picture shows how it looks.' : ''}`;
+  return { text, image };
+}
+
+async function createDesign(text, kind, origin = 'pc', images, opts = {}) {
   text = String(text || '').trim();
   if (!text) return { error: 'Say what to design.' };
   const k = KINDS.includes(kind) ? kind : null;
-  const d = { id: 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), dir: newFolder(text), title: text.slice(0, 60), kind: k || 'website', origin, createdAt: Date.now(), updatedAt: Date.now(), sessionId: null };
+  const ref = opts.from ? byId(opts.from) : null;
+  const d = {
+    id: 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), dir: newFolder(text), title: text.slice(0, 60),
+    kind: k || (ref ? view_(ref).kind : 'website'), origin, createdAt: Date.now(), updatedAt: Date.now(), sessionId: null,
+    category: catById(opts.category) ? opts.category : null,
+  };
   records().unshift(d);
   host.saveStore();
-  const r = await sendMessage(d, k ? `Make a ${k === 'doc' ? 'document' : k === 'social' ? 'social post' : k} design: ${text}` : text, images);
+  let first = k ? `Make a ${KIND_WORD[k]} design: ${text}` : text;
+  let pics = Array.isArray(images) ? images : [];
+  if (ref) {
+    try {
+      const r = useReference(d, ref);
+      first += r.text;
+      if (r.image) pics = [r.image, ...pics].slice(0, 4);
+    } catch (e) { console.warn('[design] reference:', e.message); }
+  }
+  const r = await sendMessage(d, first, pics);
   return { ...r, design: view_(d) };
 }
 async function sendTo(id, text, images) {

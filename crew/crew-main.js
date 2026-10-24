@@ -92,7 +92,7 @@ function access(key) {
 }
 // An email is shown on its own card every time (each one says something different).
 const ASK_EVERY_TIME = new Set(['gmail_send', 'gmail_draft', 'bot_email_send', 'fetch_image']);
-const accessKey = (where) => (typeof where === 'string' ? where : where && where.groupId ? `group:${where.groupId}` : String(where && where.botId || ''));
+const accessKey = (where) => (typeof where === 'string' ? where : where && where.groupId ? `group:${where.groupId}` : String((where && (where.chatId || where.botId)) || ''));
 ipcMain.handle('access:get', guard((e, key) => { const a = access(String(key)); return { mode: a.mode, always: a.always.slice() }; }));
 // Every chat that has something always allowed, for Settings, Permissions.
 ipcMain.handle('access:list', guard(() => Object.entries(store.access || {})
@@ -107,12 +107,33 @@ ipcMain.handle('access:set', guard((e, key, patch = {}) => {
   return { mode: a.mode, always: a.always.slice() };
 }));
 
-function thread(botId) {
-  if (!store.threads[botId]) store.threads[botId] = { messages: [], updatedAt: 0 };
-  return store.threads[botId];
+// A bot has many chats. store.threads is keyed by chat id; a bot's first chat
+// (from before chats existed) keeps the bot's own id as its key, so nothing old moves.
+// A chat: { botId, title, messages, updatedAt, createdAt }.
+function thread(chatId) {
+  if (!store.threads[chatId]) store.threads[chatId] = { messages: [], updatedAt: 0 };
+  return store.threads[chatId];
 }
-function push(botId, msg) {
-  const t = thread(botId);
+const chatBotId = (chatId) => (store.threads[chatId] && store.threads[chatId].botId) || String(chatId || '').split('~')[0];
+const chatsOf = (botId) => Object.keys(store.threads).filter((id) => chatBotId(id) === botId);
+/** The chat that news about a bot goes to (a note, an email, a call): its most recent one. */
+function latestChat(botId) {
+  let best = null;
+  for (const id of chatsOf(botId)) if (!best || (store.threads[id].updatedAt || 0) > (store.threads[best].updatedAt || 0)) best = id;
+  return best || botId;
+}
+function newChat(botId) {
+  const id = `${botId}~${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+  store.threads[id] = { botId, title: '', messages: [], updatedAt: Date.now(), createdAt: Date.now() };
+  return id;
+}
+const chatTitle = (t) => t.title || (t.messages.find((m) => m.kind === 'user') || {}).text || '';
+function chatRow(id) {
+  const t = store.threads[id];
+  return { id, botId: chatBotId(id), title: String(chatTitle(t)).replace(/\s+/g, ' ').slice(0, 80), updatedAt: t.updatedAt || 0, last: lastLine(t) };
+}
+function push(chatId, msg) {
+  const t = thread(chatId);
   t.messages.push({ at: Date.now(), ...msg });
   if (t.messages.length > 400) t.messages = t.messages.slice(-400);
   t.updatedAt = Date.now();
@@ -193,7 +214,7 @@ ipcMain.handle('app:init', guard(async () => ({
   user: await signedInUser(),
   models: modelsState(),
   catalog: catalog(),
-  threads: Object.fromEntries(Object.entries(store.threads).map(([id, t]) => [id, { updatedAt: t.updatedAt, last: lastLine(t) }])),
+  threads: Object.fromEntries(Object.keys(store.threads).filter((id) => store.threads[id].messages.length).map((id) => [id, chatRow(id)])),
   groups: groupsList(),
   settings: publicSettings(),
   workspace: workspace(),
@@ -231,6 +252,11 @@ ipcMain.handle('settings:set', guard((e, patch) => {
   const p = patch || {};
   if (['deepgram', 'edge', 'kokoro'].includes(p.voiceEngine)) store.settings.voiceEngine = p.voiceEngine;
   if (ACCESS_MODES.includes(p.accessDefault)) store.settings.accessDefault = p.accessDefault;
+  // First-run onboarding: who the user is, and that they agreed to the terms.
+  if (p.onboarded === true) store.settings.onboarded = true;
+  if (typeof p.userName === 'string') store.settings.userName = p.userName.trim().slice(0, 40);
+  if (Array.isArray(p.focus)) store.settings.focus = p.focus.map((f) => String(f).trim().slice(0, 60)).filter(Boolean).slice(0, 8);
+  if (p.agreedToTerms === true) { store.settings.agreedToTerms = true; store.settings.agreedAt = new Date().toISOString(); }
   if (p.voice && typeof p.voice.botId === 'string') store.settings.voices[p.voice.botId] = String(p.voice.id || '');
   saveStore();
   return publicSettings();
@@ -283,7 +309,7 @@ ipcMain.handle('bots:fromTemplate', guard((e, key) => ({ bot: bots.createFromTem
 ipcMain.handle('bots:update', guard((e, id, patch) => { const r = { bot: bots.updateBot(id, patch), ...catalog() }; if (onChange) onChange(); return r; }));
 ipcMain.handle('bots:remove', guard((e, id) => {
   bots.removeBot(id);
-  delete store.threads[id];
+  for (const c of chatsOf(id)) { delete store.threads[c]; if (store.access) delete store.access[c]; }
   for (const g of Object.values(store.groups || {})) g.members = g.members.filter((x) => x !== id);
   saveStore();
   return { ...catalog(), groups: groupsList() };
@@ -301,8 +327,19 @@ ipcMain.handle('bots:describe', guard(async (e, text) => {
 
 // ─── Chat ───────────────────────────────────────────────────────────────────
 
-ipcMain.handle('thread:get', guard((e, botId) => thread(botId).messages));
-ipcMain.handle('thread:clear', guard((e, botId) => { store.threads[botId] = { messages: [], updatedAt: Date.now() }; saveStore(); return { ok: true }; }));
+ipcMain.handle('thread:get', guard((e, chatId) => thread(chatId).messages));
+ipcMain.handle('thread:clear', guard((e, chatId) => { const t = thread(chatId); t.messages = []; t.updatedAt = Date.now(); saveStore(); return { ok: true }; }));
+// Every chat with something in it, newest first (the sidebar shows five per bot at a time).
+ipcMain.handle('chats:list', guard(() => Object.keys(store.threads).filter((id) => store.threads[id].messages.length)
+  .map(chatRow).sort((a, b) => b.updatedAt - a.updatedAt)));
+ipcMain.handle('chat:rename', guard((e, chatId, title) => { const t = store.threads[chatId]; if (t) { t.title = String(title || '').trim().slice(0, 80); saveStore(); } return t ? chatRow(chatId) : { error: 'That chat is gone.' }; }));
+ipcMain.handle('chat:delete', guard((e, chatId) => {
+  if (runs.has(chatBotId(chatId))) return { error: 'Stop the bot first.' };
+  delete store.threads[chatId];
+  if (store.access) delete store.access[chatId];
+  saveStore();
+  return { ok: true };
+}));
 
 const runs = new Map(); // botId -> AbortController
 const approvals = new Map(); // requestId -> resolve
@@ -393,7 +430,7 @@ function toolLabel(ev) {
   return String(ev.summary || a.path || a.command || a.query || a.pattern || a.url || '').slice(0, 140);
 }
 
-ipcMain.handle('chat:send', guard(async (e, { botId, text }) => {
+ipcMain.handle('chat:send', guard(async (e, { botId, chatId, text }) => {
   text = String(text || '').trim();
   if (!text) return { error: 'Write something first.' };
   const bot = bots.getBot(botId);
@@ -402,9 +439,15 @@ ipcMain.handle('chat:send', guard(async (e, { botId, text }) => {
   const route = routeNow();
   if (route.auto && !(await signedInUser())) return { error: 'Sign in to use Haze 2, or pick one of your own models from the model menu.' };
 
-  const t = thread(botId);
+  // A new chat (the window made its id, "<botId>~...", or sent none) is created on its first message.
+  if (!chatId || chatBotId(String(chatId)) !== botId) chatId = newChat(botId);
+  else if (!store.threads[chatId] && chatId !== botId) store.threads[chatId] = { botId, title: '', messages: [], updatedAt: Date.now(), createdAt: Date.now() };
+  const t = thread(chatId);
+  if (!t.botId && chatId !== botId) t.botId = botId;
+  if (!t.title && !t.messages.some((m) => m.kind === 'user')) t.title = text.replace(/\s+/g, ' ').slice(0, 80);
+  const at = { botId, chatId };
   const prior = history.buildHistory({ messages: t.messages });
-  push(botId, { kind: 'user', text });
+  push(chatId, { kind: 'user', text });
   const controller = new AbortController();
   runs.set(botId, controller);
   const { signal } = controller;
@@ -415,53 +458,53 @@ ipcMain.handle('chat:send', guard(async (e, { botId, text }) => {
   (async () => {
     let reply = '';
     const steps = []; // the run's tool calls, for the bot's reflection
-    send('crew:event', { botId, type: 'start' });
+    send('crew:event', { ...at, type: 'start' });
     try {
-      if (bots.globalLock.owner && bots.globalLock.owner !== token) send('crew:event', { botId, type: 'notice', text: 'Waiting for another bot to finish. Only one works at a time.' });
+      if (bots.globalLock.owner && bots.globalLock.owner !== token) send('crew:event', { ...at, type: 'notice', text: 'Waiting for another bot to finish. Only one works at a time.' });
       await bots.globalLock.run(token, async () => {
         const run = agentMod.runAgent({
           userMessage: text, history: prior, mode: 'Build', cwd, signal, route, maxSteps: 40,
-          approve: approverFor(botId, bot, signal),
+          approve: approverFor(at, bot, signal),
           botPrompt: (native) => bots.buildBotPrompt(bot, { team, canDelegate: true, canHandOff: brainLib().canHandOff(), native, request: text }),
           askBot: makeAskBot({ botId, caller: bot, depth: 0, chain: [bot.id], token, signal, route, cwd }),
           // Pass work on without waiting (brain.js): the user asked for this chat, so the receiver may act within its own limits.
           handOff: (args) => brainLib().handOff(args, { fromBot: bots.getBot(bot.id) || bot, requester: 'user' }),
           botId: bot.id,
-          haze: { product: 'crew', chatId: `bot:${botId}` },
+          haze: { product: 'crew', chatId: `bot:${chatId}` },
         });
         for await (const ev of run) {
           if (ev.type === 'text') {
-            if (ev.interim) send('crew:event', { botId, type: 'thinking', text: ev.text });
-            else { reply += (reply ? '\n\n' : '') + ev.text; push(botId, { kind: 'assistant', text: ev.text }); send('crew:event', { botId, type: 'text', text: ev.text }); }
+            if (ev.interim) send('crew:event', { ...at, type: 'thinking', text: ev.text });
+            else { reply += (reply ? '\n\n' : '') + ev.text; push(chatId, { kind: 'assistant', text: ev.text }); send('crew:event', { ...at, type: 'text', text: ev.text }); }
           } else if (ev.type === 'reasoning') {
-            send('crew:event', { botId, type: 'thinking', text: ev.text });
+            send('crew:event', { ...at, type: 'thinking', text: ev.text });
           } else if (ev.type === 'tool_start') {
-            send('crew:event', { botId, type: 'tool_start', name: ev.name, label: toolLabel(ev) });
+            send('crew:event', { ...at, type: 'tool_start', name: ev.name, label: toolLabel(ev) });
           } else if (ev.type === 'tool_end') {
             const row = { kind: 'tool', name: ev.name, label: toolLabel(ev), ...(ev.name === 'run' && ev.args && ev.args.command ? { command: String(ev.args.command).slice(0, 600) } : {}), ok: !!ev.ok, error: ev.error };
             steps.push(bots.runStep(ev));
             if (ev.name === 'ask_bot' && ev.meta && ev.meta.delegation) row.delegation = ev.meta.delegation;
-            push(botId, row);
-            send('crew:event', { botId, type: 'tool', ...row });
+            push(chatId, row);
+            send('crew:event', { ...at, type: 'tool', ...row });
           } else if (ev.type === 'notice') {
-            send('crew:event', { botId, type: 'notice', text: ev.text });
+            send('crew:event', { ...at, type: 'notice', text: ev.text });
           } else if (ev.type === 'error') {
-            push(botId, { kind: 'error', text: ev.error });
-            send('crew:event', { botId, type: 'error', text: ev.error });
+            push(chatId, { kind: 'error', text: ev.error });
+            send('crew:event', { ...at, type: 'error', text: ev.error });
           } else if (ev.type === 'aborted') {
-            send('crew:event', { botId, type: 'notice', text: 'Stopped.' });
+            send('crew:event', { ...at, type: 'notice', text: 'Stopped.' });
           } else if (ev.type === 'done') break;
         }
       }, signal);
     } catch (err) {
-      if (!signal.aborted) { push(botId, { kind: 'error', text: err.message }); send('crew:event', { botId, type: 'error', text: err.message }); }
+      if (!signal.aborted) { push(chatId, { kind: 'error', text: err.message }); send('crew:event', { ...at, type: 'error', text: err.message }); }
     } finally {
       runs.delete(botId);
-      send('crew:event', { botId, type: 'done' });
+      send('crew:event', { ...at, type: 'done', chat: chatRow(chatId) });
       if (reply && !signal.aborted) { learn(bot, text, reply, route); reflect(bot, { request: text, steps, reply }, route); }
     }
   })();
-  return { ok: true };
+  return { ok: true, chatId, chat: chatRow(chatId) };
 }));
 
 /**
@@ -745,7 +788,7 @@ ipcMain.handle('voice:reply', guard(async (e, { botId, turns }) => {
   if (!bot) return { error: 'That bot is gone.' };
   const route = routeNow();
   if (route.auto && !(await signedInUser())) return { error: 'Sign in to use Haze 2, or pick one of your own models.' };
-  const recentChat = thread(botId).messages.filter((m) => m.kind === 'user' || m.kind === 'assistant').slice(-6)
+  const recentChat = thread(latestChat(botId)).messages.filter((m) => m.kind === 'user' || m.kind === 'assistant').slice(-6)
     .map((m) => `${m.kind === 'user' ? 'User' : bot.name}: ${String(m.text).slice(0, 400)}`).join('\n');
   if (callRuns.has(botId)) callRuns.get(botId).abort();
   const controller = new AbortController();
@@ -774,7 +817,7 @@ ipcMain.handle('voice:reply', guard(async (e, { botId, turns }) => {
 ipcMain.handle('call:save', guard(async (e, { botId, ms, turns }) => {
   const bot = bots.getBot(botId);
   const list = (Array.isArray(turns) ? turns : []).filter((t) => t && t.text).map((t) => ({ who: t.who === 'bot' ? 'bot' : 'user', text: String(t.text).slice(0, 2000) }));
-  push(botId, { kind: 'call', ms: Number(ms) || 0, turns: list });
+  push(latestChat(botId), { kind: 'call', ms: Number(ms) || 0, turns: list });
   if (bot && list.some((t) => t.who === 'user')) {
     const userSide = list.filter((t) => t.who === 'user').map((t) => t.text).join('\n');
     const botSide = list.filter((t) => t.who === 'bot').map((t) => t.text).join('\n');
@@ -802,8 +845,9 @@ function addMail(engineDir, botId, ev) {
     level: ev.level === 'very' ? 'very' : 'important', drafted: !!ev.draftId, gmailUrl: gmailLink(ev.gmailUrl), draftUrl: gmailLink(ev.draftUrl),
     cloud: !!ev.cloud, error: ev.error ? String(ev.error).slice(0, 300) : '',
   };
-  push(botId, msg);
-  send('crew:event', { botId, type: 'mail', msg: { at: Date.now(), ...msg } });
+  const chatId = latestChat(botId);
+  push(chatId, msg);
+  send('crew:event', { botId, chatId, type: 'mail', msg: { at: Date.now(), ...msg } });
 }
 
 // ─── Life (life-desktop.js, bots-mail.js, autopilot.js) ─────────────────────
@@ -818,11 +862,14 @@ function addNote(engineDir, botId, m) {
   try { msg = JSON.parse(JSON.stringify(m)); } catch { return; }
   if (JSON.stringify(msg).length > 30000) msg = { kind: msg.kind, id: msg.id, text: String(msg.text || '').slice(0, 2000) };
   // A card can be updated later (a task finishing, an email answered): same id, same row.
-  const t = thread(botId);
+  // A card being updated stays in the chat it was first posted to.
+  const home = msg.id ? chatsOf(botId).find((c) => store.threads[c].messages.some((x) => x.kind === msg.kind && x.id === msg.id)) : null;
+  const chatId = home || latestChat(botId);
+  const t = thread(chatId);
   const i = msg.id ? t.messages.findIndex((x) => x.kind === msg.kind && x.id === msg.id) : -1;
   if (i >= 0) { t.messages[i] = { ...t.messages[i], ...msg }; t.updatedAt = Date.now(); saveStore(); }
-  else push(botId, msg);
-  send('crew:event', { botId, type: 'note', msg: { at: Date.now(), ...msg }, replace: i >= 0 });
+  else push(chatId, msg);
+  send('crew:event', { botId, chatId, type: 'note', msg: { at: Date.now(), ...msg }, replace: i >= 0 });
 }
 function pushEvent(ev) { send('crew:event', ev); }
 /** Stop all bots (autopilot.js): every chat, group and call turn in Crew. */

@@ -20,6 +20,8 @@
   const state = {
     user: null, models: { selected: 'auto', models: [] }, catalog: { bots: [], templates: [], tones: {}, approvals: {} },
     threads: {}, settings: {}, workspace: '', current: null, messages: [], busy: new Set(), live: null, groups: [], currentGroup: null,
+    // A bot has many chats: threads is keyed by chat id ({ botId, title, updatedAt, last }); chat is the open one.
+    chat: null, busyChat: {}, openBots: new Set(), shown: {},
   };
   window.CrewState = state;
 
@@ -145,20 +147,80 @@
   }));
 
   // ─── Sidebar ────────────────────────────────────────────────────────────
+  const CHAT_STEP = 5;
+  const chatsOf = (botId) => Object.entries(state.threads).filter(([, t]) => t.botId === botId).map(([id, t]) => ({ id, ...t })).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const lastActive = (b) => { const c = chatsOf(b.id)[0]; return (c && c.updatedAt) || b.createdAt || 0; };
+  function since(t) {
+    const m = Math.round((Date.now() - t) / 60000);
+    if (m < 1) return 'now';
+    if (m < 60) return `${m} min`;
+    const h = Math.round(m / 60);
+    if (h < 24) return `${h} h`;
+    const d = Math.round(h / 24);
+    return d === 1 ? 'Yesterday' : d < 7 ? `${d} d` : d < 35 ? `${Math.round(d / 7)} w` : `${Math.round(d / 30)} mo`;
+  }
+  const newChatId = (botId) => `${botId}~${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+
   function renderSide() {
     const list = $('#botList');
-    const bots = [...state.catalog.bots].sort((a, b) => ((state.threads[b.id] || {}).updatedAt || b.createdAt) - ((state.threads[a.id] || {}).updatedAt || a.createdAt));
+    const q = state.sideQuery || '';
+    const bots = [...state.catalog.bots].sort((a, b) => lastActive(b) - lastActive(a));
+    let hits = 0;
     list.innerHTML = bots.length ? bots.map((b) => {
-      const t = state.threads[b.id];
-      return `<button class="bot-item${state.current === b.id ? ' on' : ''}" data-id="${esc(b.id)}">
-        <span class="av${state.busy.has(b.id) ? ' busy' : ''}">${av(b, 32, { still: true })}</span>
-        <span class="bot-item-text"><div class="bot-item-name">${esc(b.name)}</div><div class="bot-item-sub">${esc((t && t.last) || b.specialty || 'Say hi')}</div></span>
-      </button>`;
+      const all = chatsOf(b.id);
+      const chats = q ? all.filter((c) => `${c.title} ${c.last}`.toLowerCase().includes(q)) : all;
+      const named = b.name.toLowerCase().includes(q);
+      if (q && !named && !chats.length) return '';
+      hits++;
+      const open = !!q || state.openBots.has(b.id);
+      const limit = q ? chats.length : (state.shown[b.id] || CHAT_STEP);
+      const busy = state.busy.has(b.id);
+      const rows = chats.slice(0, limit).map((c) => `<button class="sb-row sb-chat" data-chat="${esc(c.id)}" data-bot="${esc(b.id)}" aria-current="${state.chat === c.id}">
+          <span class="sb-label">${esc(c.title || c.last || 'New chat')}</span><span class="sb-grow"></span>${busy && state.busyChat[b.id] === c.id ? '<span class="sb-busy" title="Working"></span>' : `<span class="sb-sub">${since(c.updatedAt || 0)}</span>`}</button>`).join('');
+      const left = chats.length - limit;
+      return `<div class="sb-bot">
+        <div class="sb-line">
+          <button class="sb-row" data-toggle="${esc(b.id)}" aria-expanded="${open}">
+            <span class="sb-ic">${av(b, 20, { still: true })}</span><span class="sb-label">${esc(b.name)}</span>
+            ${all.length ? `<span class="sb-fold">${ICON.chev}</span>` : ''}<span class="sb-grow"></span>${busy ? '<span class="sb-busy" title="Working"></span>' : ''}
+          </button>
+          <div class="sb-tools"><button class="sb-tool" data-newchat="${esc(b.id)}" aria-label="New chat with ${esc(b.name)}" title="New chat with ${esc(b.name)}">${ICON.plus || '+'}</button></div>
+        </div>
+        ${all.length ? `<div class="sb-kids"${open ? '' : ' hidden'}>${rows}${left > 0 ? `<button class="sb-more" data-more="${esc(b.id)}">${ICON.chev}Show ${Math.min(CHAT_STEP, left)} more <span>of ${chats.length}</span></button>` : ''}</div>` : ''}
+      </div>`;
     }).join('') : '<div class="side-empty">No bots yet.</div>';
-    list.querySelectorAll('.bot-item').forEach((el) => el.addEventListener('click', () => openBot(el.dataset.id)));
+    if (q && !hits) list.innerHTML = `<div class="side-empty">No bots or chats match "${esc(q)}".</div>`;
+    list.querySelectorAll('[data-toggle]').forEach((el) => el.addEventListener('click', () => {
+      const id = el.dataset.toggle;
+      // A bot with no chats yet opens a fresh one; otherwise its chats fold open or closed.
+      if (!chatsOf(id).length) { openChat(id, null); return; }
+      state.openBots.has(id) ? state.openBots.delete(id) : state.openBots.add(id);
+      renderSide();
+    }));
+    list.querySelectorAll('[data-newchat]').forEach((el) => el.addEventListener('click', () => openChat(el.dataset.newchat, null)));
+    list.querySelectorAll('[data-chat]').forEach((el) => el.addEventListener('click', () => openChat(el.dataset.bot, el.dataset.chat)));
+    list.querySelectorAll('[data-more]').forEach((el) => el.addEventListener('click', () => { const id = el.dataset.more; state.shown[id] = (state.shown[id] || CHAT_STEP) + CHAT_STEP; renderSide(); }));
     if (window.CrewGroups) window.CrewGroups.renderSide();
     renderAccount();
   }
+
+  // Top of the sidebar: Search (filters bots and chats) and Life and memory (Settings).
+  (function sideActions() {
+    const after = $('.side-new');
+    if (!after || $('#sideSearchBtn')) return;
+    after.insertAdjacentHTML('afterend', `
+      <button class="side-new" id="sideSearchBtn"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span>Search</span></button>
+      <div class="sb-search hidden" id="sideSearch"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="sideQuery" type="text" placeholder="Search bots and chats" aria-label="Search bots and chats"></div>
+      <button class="side-new" id="lifeMemNav"><svg viewBox="0 0 24 24"><path d="M12 3a7 7 0 0 0-7 7c0 2.4 1.2 4.4 3 5.7V19h8v-3.3c1.8-1.3 3-3.3 3-5.7a7 7 0 0 0-7-7Z"/><path d="M10 22h4"/></svg><span>Life and memory</span></button>`);
+    const box = $('#sideSearch'); const input = $('#sideQuery');
+    const close = () => { box.classList.add('hidden'); input.value = ''; state.sideQuery = ''; renderSide(); };
+    const openSearch = () => { box.classList.remove('hidden'); input.focus(); };
+    $('#sideSearchBtn').addEventListener('click', () => (box.classList.contains('hidden') ? openSearch() : close()));
+    input.addEventListener('input', () => { state.sideQuery = input.value.trim().toLowerCase(); renderSide(); });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+    document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openSearch(); } });
+    $('#lifeMemNav').addEventListener('click', () => { if (window.CrewSettings) window.CrewSettings.show('memory'); });
+  })();
 
   function renderAccount() {
     const btn = $('#accountBtn');
@@ -335,6 +397,7 @@
 
   function goHome() {
     state.current = null;
+    state.chat = null;
     state.currentGroup = null;
     if (window.CrewSettings) window.CrewSettings.hide();
     if (window.CrewLife) window.CrewLife.hide();
@@ -385,17 +448,27 @@
   }
 
   // ─── Thread ─────────────────────────────────────────────────────────────
-  async function openBot(id) {
+  /** A bot's latest chat, or a fresh one when it has none. */
+  function openBot(id) {
+    const latest = chatsOf(id)[0];
+    return openChat(id, latest ? latest.id : null);
+  }
+  /** chatId null: a new chat (its id is made here, the chat itself on the first message). */
+  async function openChat(id, chatId) {
     const b = bot(id);
     if (!b) { goHome(); return; }
+    const fresh = !chatId;
+    if (fresh) chatId = newChatId(id);
     state.current = id;
+    state.chat = chatId;
     state.currentGroup = null;
+    state.openBots.add(id);
     if (window.CrewSettings) window.CrewSettings.hide();
     if (window.CrewLife) window.CrewLife.hide();
     if (window.CrewBrain) window.CrewBrain.hide();
-    try { sessionStorage.setItem('crew.last', id); } catch {}
-    const r = await api.thread(id);
-    if (state.current !== id) return;
+    try { sessionStorage.setItem('crew.last', id); sessionStorage.setItem('crew.lastChat', chatId); } catch {}
+    const r = fresh ? [] : await api.thread(chatId);
+    if (state.chat !== chatId) return;
     state.messages = Array.isArray(r) ? r : [];
     renderSide();
     renderThread();
@@ -414,13 +487,14 @@
   function renderThread() {
     const b = bot(state.current);
     if (!b) return goHome();
-    const busy = state.busy.has(b.id);
+    const busy = state.busy.has(b.id) && state.busyChat[b.id] === state.chat;
     const empty = !state.messages.length && !busy;
     const view = $('#view');
     view.innerHTML = `
       <div class="thread-head">
         <button class="th-who" id="whoBtn">${av(b, 34)}<span style="min-width:0;text-align:left"><div class="th-name">${esc(b.name)}</div><div class="th-sub">${esc(b.specialty || '')}</div></span></button>
         <span class="th-spacer"></span>
+        <button class="icon-btn" id="newChatBtn" aria-label="New chat with ${esc(b.name)}" title="New chat with ${esc(b.name)}">${ICON.plus || '+'}</button>
         <button class="call-btn" id="callBtn">${ICON.phone}Call</button>
         <button class="icon-btn${state.learnedNew && state.learnedNew.has(b.id) ? ' has-new' : ''}" id="moreBtn" aria-label="More">${ICON.more}</button>
       </div>
@@ -433,13 +507,15 @@
         </div>`
         : `<div class="scroller" id="scroller"><div class="msgs" id="msgs"></div></div>${composerHtml(b)}`}`;
     $('#callBtn').addEventListener('click', () => window.CrewCall.start(b.id));
+    $('#newChatBtn').addEventListener('click', () => openChat(b.id, null));
     $('#whoBtn').addEventListener('click', () => editBot(bot(state.current) || b));
     $('#moreBtn').addEventListener('click', (e) => openMenu(e.currentTarget, [
       { label: 'History', icon: ICON.history, run: () => showHistory(bot(state.current)) },
       { label: 'Edit bot', icon: ICON.edit, run: () => editBot(bot(state.current)) },
       { label: 'Open saved work', icon: ICON.folder, run: () => api.openFolder(state.workspace) },
+      ...(state.threads[state.chat] ? [{ label: 'Rename this chat', icon: ICON.edit, run: renameChat }] : []),
       '-',
-      { label: 'Clear this chat', icon: ICON.trash, danger: true, run: clearChat },
+      { label: 'Delete this chat', icon: ICON.trash, danger: true, run: clearChat },
     ], 'right'));
     view.querySelectorAll('.chip').forEach((c) => c.addEventListener('click', () => { $('#input').value = c.textContent; send(); }));
     wireComposer();
@@ -455,18 +531,38 @@
     $('#input').focus();
   }
 
+  /** Delete the open chat; the bot's next chat (or a fresh one) opens. */
   async function clearChat() {
     const b = bot(state.current);
     if (!b) return;
     if (state.busy.has(b.id)) { toast(`${b.name} is still working.`, 'error'); return; }
-    await api.clearThread(b.id);
-    state.messages = [];
-    state.threads[b.id] = { updatedAt: Date.now(), last: '' };
-    renderSide(); renderThread();
+    if (state.threads[state.chat]) {
+      const r = await api.chatDelete(state.chat);
+      if (r && r.error) { toast(r.error, 'error'); return; }
+      delete state.threads[state.chat];
+    }
+    openBot(b.id);
+  }
+  function renameChat() {
+    const t = state.threads[state.chat];
+    if (!t) return;
+    const m = modal(`<div class="modal-head"><div class="modal-title">Rename chat</div></div>
+      <div class="modal-body"><input class="input" id="chatTitle" maxlength="80" value="${esc(t.title || '')}" aria-label="Chat name"></div>
+      <div class="modal-foot"><span class="grow"></span><button class="btn" data-act="cancel">Cancel</button><button class="btn primary" data-act="save">Save</button></div>`, true);
+    const input = m.querySelector('#chatTitle');
+    input.focus(); input.select();
+    const save = async () => {
+      const r = await api.chatRename(state.chat, input.value);
+      if (r && !r.error) { state.threads[state.chat] = { ...t, ...r }; renderSide(); }
+      closeModal();
+    };
+    m.querySelector('[data-act="save"]').addEventListener('click', save);
+    m.querySelector('[data-act="cancel"]').addEventListener('click', closeModal);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
   }
 
   function composerHtml(b) {
-    const busy = state.busy.has(b.id);
+    const busy = state.busy.has(b.id) && state.busyChat[b.id] === state.chat;
     return `<div class="composer-wrap"><div class="composer">
       <textarea id="input" rows="1" placeholder="Message ${esc(b.name)}"></textarea>
       <div class="composer-row">
@@ -490,7 +586,7 @@
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
     $('#sendBtn').addEventListener('click', () => (state.busy.has(state.current) ? api.stop(state.current) : send()));
     $('#callBtn2').addEventListener('click', () => window.CrewCall.start(state.current));
-    if (window.CrewSettings) window.CrewSettings.wireChip(state.current);
+    if (window.CrewSettings) window.CrewSettings.wireChip(state.chat || state.current);
     $('#modelBtn').addEventListener('click', (e) => openMenu(e.currentTarget, [
       { label: 'Haze 2', on: state.models.selected === 'auto' || !state.models.selected, run: () => pickModel('auto') },
       ...state.models.models.map((m) => ({ label: m.name, on: state.models.selected === m.id, run: () => pickModel(m.id) })),
@@ -511,7 +607,7 @@
   function setSendState() {
     const btn = $('#sendBtn');
     if (!btn) return;
-    const busy = state.busy.has(state.current);
+    const busy = state.busy.has(state.current) && state.busyChat[state.current] === state.chat;
     btn.classList.toggle('stop', busy);
     btn.innerHTML = busy ? ICON.stop : ICON.up;
     btn.setAttribute('aria-label', busy ? 'Stop' : 'Send');
@@ -527,7 +623,8 @@
     if (!$('#msgs')) renderThread(); // leaving the empty state: draws the thread with this message in it
     else { input.value = ''; input.dispatchEvent(new Event('input')); appendUser($('#msgs'), text); }
     scrollDown(true);
-    const r = await api.send(b.id, text);
+    const chatId = state.chat;
+    const r = await api.send(b.id, text, chatId);
     if (r.error) {
       state.messages.pop();
       renderThread();
@@ -536,7 +633,9 @@
       if (/sign in/i.test(r.error) && !state.user) signIn();
       return;
     }
-    state.threads[b.id] = { updatedAt: Date.now(), last: text.slice(0, 90) };
+    if (r.chat) state.threads[r.chatId] = r.chat;
+    if (state.chat === chatId) state.chat = r.chatId || chatId;
+    renderSide();
   }
 
   // ─── Rendering messages ─────────────────────────────────────────────────
@@ -617,7 +716,7 @@
   // The live block for a bot that is answering right now.
   function liveBody(b) {
     const box = $('#msgs');
-    if (!box || state.current !== b.id) return null;
+    if (!box || state.current !== b.id || (state.busyChat[b.id] && state.busyChat[b.id] !== state.chat)) return null;
     if (!state.live || state.live.botId !== b.id || !box.contains(state.live.el)) {
       const el = botBlock(box, b, true);
       const body = el.querySelector('.m-bot-body');
@@ -646,10 +745,13 @@
     if (ev.call) { if (window.CrewCall) window.CrewCall.onEvent(ev); return; }
     const b = bot(ev.botId);
     if (!b) return;
+    // Which chat this is about (a note or reply into a bot's other chat only updates the sidebar).
+    const chatOk = !ev.chatId || ev.chatId === state.chat;
+    const row = ev.chatId ? (state.threads[ev.chatId] || (state.threads[ev.chatId] = { botId: b.id, title: '', updatedAt: 0, last: '' })) : null;
     if (ev.type === 'note' && window.CrewLife) {
       // A nudge, bot mail or a task (life-desktop.js): a card in the thread, updated in place when it changes.
-      (state.threads[b.id] || (state.threads[b.id] = { updatedAt: 0, last: '' })).updatedAt = Date.now();
-      if (state.current === ev.botId) {
+      if (row) row.updatedAt = Date.now();
+      if (state.current === ev.botId && chatOk) {
         const box = $('#msgs');
         const i = ev.replace ? state.messages.findIndex((x) => x.kind === ev.msg.kind && x.id === ev.msg.id) : -1;
         if (i >= 0) state.messages[i] = ev.msg; else state.messages.push(ev.msg);
@@ -664,11 +766,11 @@
       renderSide();
       return;
     }
-    const here = state.current === ev.botId;
-    const t = state.threads[b.id] || (state.threads[b.id] = { updatedAt: Date.now(), last: '' });
+    const here = state.current === ev.botId && chatOk;
+    const t = row || {};
     switch (ev.type) {
       case 'start':
-        state.busy.add(b.id); renderSide(); setSendState();
+        state.busy.add(b.id); if (ev.chatId) state.busyChat[b.id] = ev.chatId; renderSide(); setSendState();
         if (here) { liveBody(b); scrollDown(true); }
         break;
       case 'thinking':
@@ -699,7 +801,7 @@
         break;
       case 'approval':
         if (!here) toast(`${b.name} needs your OK. Open the chat to answer.`, 'alert');
-        if (liveBody(b)) { addToBody(state.live.body, approvalHtml(ev)); wireApproval(ev.requestId); scrollDown(true); }
+        if (here && liveBody(b)) { addToBody(state.live.body, approvalHtml(ev)); wireApproval(ev.requestId); scrollDown(true); }
         break;
       case 'approval_done': {
         const card = document.querySelector(`.approve[data-req="${ev.requestId}"]`);
@@ -727,6 +829,8 @@
         break;
       case 'done':
         state.busy.delete(b.id);
+        delete state.busyChat[b.id];
+        if (ev.chat && ev.chatId) state.threads[ev.chatId] = ev.chat;
         if (state.live && state.live.botId === b.id) {
           state.live.thinking.remove();
           A.setAvatarState(state.live.el.querySelector('.av'), 'done');
@@ -978,7 +1082,7 @@
       if (!ui.confirmDelete) { ui.confirmDelete = true; paintEditor(d, ui); return; }
       const r = await api.botsRemove(ui.id);
       if (r.error) { toast(r.error, 'error'); return; }
-      state.catalog = r; delete state.threads[ui.id];
+      state.catalog = r; for (const [id, t] of Object.entries(state.threads)) if (t.botId === ui.id) delete state.threads[id];
       if (r.groups) state.groups = r.groups;
       closeModal(); toast(`${d.name} left the crew.`);
       if (state.current === ui.id) goHome(); else if (state.currentGroup && window.CrewGroups) window.CrewGroups.open(state.currentGroup); else renderSide();
@@ -1030,10 +1134,19 @@
       return;
     }
     Object.assign(state, { user: r.user, models: r.models, catalog: r.catalog, threads: r.threads || {}, groups: r.groups || [], settings: r.settings || {}, workspace: r.workspace });
+    // First run: the onboarding sits over the home page until it is finished.
+    if (!state.settings.onboarded && window.CrewOnboarding) {
+      goHome();
+      const s = await window.CrewOnboarding.start({ settings: state.settings, bots: (state.catalog && state.catalog.bots) || [] });
+      if (s && typeof s === 'object') state.settings = s;
+      renderAccount();
+      goHome();
+      return;
+    }
     let last = null;
     try { last = sessionStorage.getItem('crew.last'); } catch {}
     if (last && last.startsWith('g:') && state.groups.some((g) => `g:${g.id}` === last)) window.CrewGroups.open(last.slice(2));
-    else if (last && bot(last)) openBot(last); else goHome();
+    else if (last && bot(last)) { let lastChat = null; try { lastChat = sessionStorage.getItem('crew.lastChat'); } catch {} if (lastChat && state.threads[lastChat]) openChat(last, lastChat); else openBot(last); } else goHome();
     if (r.openBot && bot(r.openBot)) openBot(r.openBot); // a notification was clicked
   }
 
@@ -1051,7 +1164,8 @@
   window.CrewUI = {
     bot, av, toast, openBot, goHome, renderSide, ICON, VERB, md, esc, modal, closeModal, openMenu, autosize, modelName, pickModel,
     botBlock, stepHtml, addToBody, appendUser, scrollDown, approvalHtml, wireApproval, editBot, voiceSettings, signIn, renderAccount,
-    refreshThread: () => state.current && openBot(state.current),
+    refreshThread: () => state.current && openChat(state.current, state.threads[state.chat] ? state.chat : null),
+    openChat,
   };
   // After every script (groups.js, call.js) has loaded, so a restored group chat can open.
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();

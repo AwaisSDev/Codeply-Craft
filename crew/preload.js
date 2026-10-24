@@ -31,9 +31,13 @@ contextBridge.exposeInMainWorld('crew', {
   botsForgetExperience: (id, kind, i) => ipcRenderer.invoke('crew:bots:forgetExperience', id, kind, i),
   botsDescribe: (text) => ipcRenderer.invoke('crew:bots:describe', text),
 
-  thread: (botId) => ipcRenderer.invoke('crew:thread:get', botId),
-  clearThread: (botId) => ipcRenderer.invoke('crew:thread:clear', botId),
-  send: (botId, text) => ipcRenderer.invoke('crew:chat:send', { botId, text }),
+  // A bot has many chats; a chat id is the bot id for its first chat. No chat id on send: a new chat.
+  thread: (chatId) => ipcRenderer.invoke('crew:thread:get', chatId),
+  clearThread: (chatId) => ipcRenderer.invoke('crew:thread:clear', chatId),
+  send: (botId, text, chatId) => ipcRenderer.invoke('crew:chat:send', { botId, text, chatId }),
+  chatsList: () => ipcRenderer.invoke('crew:chats:list'),
+  chatRename: (chatId, title) => ipcRenderer.invoke('crew:chat:rename', chatId, title),
+  chatDelete: (chatId) => ipcRenderer.invoke('crew:chat:delete', chatId),
   stop: (botId) => ipcRenderer.send('crew:chat:stop', botId),
   respond: (requestId, verdict) => ipcRenderer.send('crew:approval:respond', { requestId, verdict }),
   // What a chat may do without asking: a bot id, or "group:<id>".

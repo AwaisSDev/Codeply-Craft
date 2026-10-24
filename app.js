@@ -257,7 +257,10 @@ if (api) {
 // has to, since the whole point is reaching it after the sidebar (and the
 // collapse button living inside it) has slid off-screen.
 function setSidebarCollapsed(collapsed) {
+  const hadFocus = $('sidebar').contains(document.activeElement);
   $('sidebar').classList.toggle('collapsed', collapsed);
+  $('sidebar').inert = collapsed; // off-screen rows stay out of the Tab order
+  if (collapsed && hadFocus) $('sidebarExpandBtn').focus();
 }
 const toggleSidebar = () => setSidebarCollapsed(!$('sidebar').classList.contains('collapsed'));
 $('sidebarToggle').addEventListener('click', () => setSidebarCollapsed(true));
@@ -375,6 +378,7 @@ document.addEventListener('keydown', (e) => {
   if (k === 'b') { e.preventDefault(); toggleSidebar(); }
   else if (k === 'n' && state.user) { e.preventDefault(); $('newChatBtn').click(); }
   else if (k === 'o' && state.user) { e.preventDefault(); $('openProjectBtn').click(); }
+  else if (k === 'k' && state.user) { e.preventDefault(); sbOpenSearch(); }
   else if (k === '=' || k === '+') { e.preventDefault(); setZoom(currentZoom() + 0.1); }
   else if (k === '-') { e.preventDefault(); setZoom(currentZoom() - 0.1); }
   else if (k === '0') { e.preventDefault(); setZoom(1); }
@@ -1427,7 +1431,7 @@ function renderGoalCard(data) {
 
 // ─── Run status (which chats have a run in flight) ─────────────────────────
 if (api) api.onRunsStatus((ids) => {
-  state.runningSessions = Array.isArray(ids) ? ids : [];
+  sbRunsChanged(ids); // sets state.runningSessions and repaints the sidebar dots
   // Keeps the composer's send/stop icon accurate for the open chat even if
   // its own run_finished event was missed while looking at another chat.
   if (state.currentSessionId) {
@@ -1773,79 +1777,248 @@ $('termCloseBtn').addEventListener('click', closeTerminal);
 $('termClearBtn').addEventListener('click', () => term && term.clear());
 
 // ─── Sidebar lists ──────────────────────────────────────────────────────────
-function renderProjects() {
-  const holder = $('projectsList');
-  holder.innerHTML = '';
-  $('projectsSection').classList.toggle('hidden', state.projects.length === 0);
-  for (const p of state.projects) {
-    const name = p.split(/[\\/]/).filter(Boolean).pop();
+// The same pattern as Crew: a few actions, then one folding section per
+// project and a "No project" section for chats without a folder. Sections
+// follow the remembered project list's order, then any other folder a chat
+// ran in. Each shows five chats and grows five at a time; Search (Ctrl+K)
+// filters every row. Running and unread marks are repainted in place, so a
+// live run never rebuilds the list under the mouse.
+const SB_STEP = 5;
+const SB_FOLDED_KEY = 'craft.sb.folded';
+const SB_UNREAD_KEY = 'craft.sb.unread';
+function sbLoadSet(key) {
+  try { const v = JSON.parse(localStorage.getItem(key) || '[]'); return new Set(Array.isArray(v) ? v : []); } catch { return new Set(); }
+}
+function sbSaveSet(key, set) {
+  try { localStorage.setItem(key, JSON.stringify([...set])); } catch {}
+}
+const sb = {
+  folded: sbLoadSet(SB_FOLDED_KEY), // section keys folded away
+  unread: sbLoadSet(SB_UNREAD_KEY), // chats that finished or arrived while another one was open
+  shown: new Map(),                 // section key -> how many chats show
+  paths: new Map(),                 // section key -> project folder (null for "No project")
+  query: '',
+  renaming: false,                  // a rename field is open; the list waits for it to close
+};
+const SB_ICON = {
+  chev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+  more: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>',
+};
+const sbAttr = (s) => esc(String(s == null ? '' : s)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+// Windows paths: one folder however its slashes or letter case were written.
+const sbPathKey = (p) => String(p || '').replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
+const sbFolderName = (p) => String(p).split(/[\\/]/).filter(Boolean).pop() || String(p);
 
-    // Same row shape as a chat in Recents - the folder button fills the row
-    // and a 3-dot button sits at its right edge, revealed on hover - so both
-    // sidebar lists behave the same way instead of Projects being the one
-    // list with no way to manage its own entries.
-    const row = document.createElement('div');
-    row.className = 'sb-project-row';
-
-    const btn = document.createElement('button');
-    btn.className = 'sb-project' + (p === state.project ? ' selected' : '');
-    btn.title = p;
-    btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg><span class="sb-project-name">${esc(name)}</span>`;
-    btn.addEventListener('click', async () => {
-      const r = await api.useProject(p);
-      if (r) setProject(r.path, r.branch);
-      showView('viewHome');
-    });
-
-    const menuBtn = document.createElement('button');
-    menuBtn.className = 'sb-chat-menu-btn icon-btn icon-btn-xs';
-    menuBtn.title = 'More';
-    menuBtn.setAttribute('aria-label', 'More');
-    menuBtn.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>';
-    menuBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openProjectMenu(p, menuBtn);
-    });
-
-    row.appendChild(btn);
-    row.appendChild(menuBtn);
-    holder.appendChild(row);
-  }
-  // Only four rows show; keep the open project in view when it sits further down.
-  const sel = holder.querySelector('.sb-project.selected');
-  if (sel) holder.scrollTop = Math.max(0, sel.parentElement.offsetTop - holder.offsetTop - (holder.clientHeight - sel.offsetHeight) / 2);
+function sbSections() {
+  const byKey = new Map();
+  const add = (p) => {
+    const key = 'p:' + sbPathKey(p);
+    if (!byKey.has(key)) byKey.set(key, { key, path: p, name: sbFolderName(p), chats: [] });
+    return byKey.get(key);
+  };
+  for (const p of state.projects) add(p);
+  const loose = [];
+  for (const s of state.sessions) (s.cwd ? add(s.cwd).chats : loose).push(s);
+  const list = [...byKey.values()];
+  if (loose.length) list.push({ key: 'none', path: null, name: 'No project', chats: loose });
+  return list;
 }
 
-function renderRecents() {
-  const holder = $('recentsList');
-  holder.innerHTML = '';
-  $('recentsSection').classList.toggle('hidden', state.sessions.length === 0);
-  for (const s of state.sessions) {
-    const row = document.createElement('div');
-    row.className = 'sb-chat-row';
-    row.dataset.id = s.id;
+function sbMarkHtml(id) {
+  if ((state.runningSessions || []).includes(id)) return '<span class="sb-mark busy" role="img" aria-label="Running" title="Running"></span>';
+  if (sb.unread.has(id)) return '<span class="sb-mark unread" role="img" aria-label="Unread" title="Unread"></span>';
+  return '';
+}
 
-    const btn = document.createElement('button');
-    btn.className = 'sb-chat' + (s.id === state.currentSessionId ? ' selected' : '');
-    btn.textContent = s.title;
-    btn.title = s.title;
-    btn.addEventListener('click', () => openSession(s.id));
+function sbChatHtml(s) {
+  const title = s.title || 'New chat';
+  const cur = s.id === state.currentSessionId;
+  return `<div class="sb-chat-row" data-id="${sbAttr(s.id)}">`
+    + `<button class="sb-chat" type="button" data-key="c:${sbAttr(s.id)}" title="${sbAttr(title)}"${cur ? ' aria-current="true"' : ''}><span class="sb-chat-label">${esc(title)}</span>${sbMarkHtml(s.id)}</button>`
+    + `<button class="sb-chat-menu-btn" type="button" data-act="chat-menu" data-key="m:${sbAttr(s.id)}" title="More" aria-label="More for ${sbAttr(title)}">${SB_ICON.more}</button>`
+    + '</div>';
+}
 
-    const menuBtn = document.createElement('button');
-    menuBtn.className = 'sb-chat-menu-btn icon-btn icon-btn-xs';
-    menuBtn.title = 'More';
-    menuBtn.setAttribute('aria-label', 'More');
-    menuBtn.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>';
-    menuBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openChatMenu(s, menuBtn);
-    });
+function sbSectionHtml(sec, chats, n) {
+  const q = sb.query;
+  const closed = !q && sb.folded.has(sec.key);
+  // Keep the open chat in view: the list grows until it shows.
+  let limit = sb.shown.get(sec.key) || SB_STEP;
+  const at = chats.findIndex((s) => s.id === state.currentSessionId);
+  if (at >= limit) limit = Math.ceil((at + 1) / SB_STEP) * SB_STEP;
+  const rows = q ? chats : chats.slice(0, limit);
+  const left = chats.length - rows.length;
+  const isCurrent = sec.path && state.project && sbPathKey(sec.path) === sbPathKey(state.project);
+  const addLabel = sec.path ? `New chat in ${sec.name}` : 'New chat without a project';
+  const k = sbAttr(sec.key);
+  return `<section class="sb-sec${closed ? ' closed' : ''}${isCurrent ? ' current' : ''}" data-sec="${k}">`
+    + '<div class="sb-sec-head">'
+    + `<button class="sb-sec-toggle" type="button" data-key="t:${k}" aria-expanded="${!closed}" aria-controls="sbSec${n}"${sec.path ? ` title="${sbAttr(sec.path)}"` : ''}><span>${esc(sec.name)}</span>${SB_ICON.chev}</button>`
+    + `<button class="sb-sec-tool" type="button" data-act="add" data-key="a:${k}" title="${sbAttr(addLabel)}" aria-label="${sbAttr(addLabel)}">${SB_ICON.plus}</button>`
+    + (sec.path ? `<button class="sb-sec-tool" type="button" data-act="project-menu" data-key="p:${k}" title="More" aria-label="More for ${sbAttr(sec.name)}">${SB_ICON.more}</button>` : '')
+    + '</div>'
+    + `<div class="sb-sec-body" id="sbSec${n}"${closed ? ' inert' : ''}><div>`
+    + (rows.length ? rows.map(sbChatHtml).join('') : '<div class="sb-empty">No chats yet</div>')
+    + (left > 0 && !q ? `<button class="sb-more" type="button" data-act="more" data-key="x:${k}">${SB_ICON.chev}Show ${Math.min(SB_STEP, left)} more</button>` : '')
+    + '</div></div></section>';
+}
 
-    row.appendChild(btn);
-    row.appendChild(menuBtn);
-    holder.appendChild(row);
+function renderSidebar() {
+  if (sb.renaming) return;
+  const holder = $('sbSections');
+  const active = document.activeElement;
+  const focusKey = active && holder.contains(active) ? active.dataset.key : null;
+  // Forget unread marks for chats that are gone.
+  if (state.sessions.length) {
+    const ids = new Set(state.sessions.map((s) => s.id));
+    for (const id of sb.unread) if (!ids.has(id)) sb.unread.delete(id);
+  }
+  const q = sb.query;
+  sb.paths.clear();
+  let html = '';
+  let n = 0;
+  for (const sec of sbSections()) {
+    sb.paths.set(sec.key, sec.path);
+    const nameHit = !!q && !!sec.path && sec.name.toLowerCase().includes(q);
+    const chats = !q || nameHit ? sec.chats : sec.chats.filter((s) => (s.title || '').toLowerCase().includes(q));
+    if (q && !chats.length && !nameHit) continue;
+    html += sbSectionHtml(sec, chats, n++);
+  }
+  if (q && !n) html = `<div class="sb-no-hits">No chats match "${esc($('sbSearchInput').value.trim())}"</div>`;
+  holder.innerHTML = html;
+  if (focusKey) {
+    const el = holder.querySelector(`[data-key="${CSS.escape(focusKey)}"]`);
+    if (el) el.focus();
   }
 }
+// Every caller of the two old lists now repaints the one sidebar.
+const renderProjects = () => renderSidebar();
+const renderRecents = () => renderSidebar();
+
+/** Running and unread dots, swapped in place on the rows already drawn. */
+function sbPaintMarks() {
+  document.querySelectorAll('#sbSections .sb-chat-row').forEach((row) => {
+    const btn = row.querySelector('.sb-chat');
+    if (!btn) return;
+    const old = btn.querySelector('.sb-mark');
+    const html = sbMarkHtml(row.dataset.id);
+    if (old && html && old.outerHTML === html) return; // keep the pulse running
+    if (old) old.remove();
+    if (html) btn.insertAdjacentHTML('beforeend', html);
+  });
+}
+
+/** A new running list: a chat whose run ended while another was open turns unread. */
+function sbRunsChanged(ids) {
+  const now = Array.isArray(ids) ? ids : [];
+  for (const id of state.runningSessions || []) {
+    if (!now.includes(id) && id !== state.currentSessionId) sb.unread.add(id);
+  }
+  state.runningSessions = now;
+  sbSaveSet(SB_UNREAD_KEY, sb.unread);
+  sbPaintMarks();
+}
+function sbMarkUnread(id, on) {
+  if (!id || on === sb.unread.has(id)) return;
+  if (on) sb.unread.add(id); else sb.unread.delete(id);
+  sbSaveSet(SB_UNREAD_KEY, sb.unread);
+  sbPaintMarks();
+}
+
+function sbToggleSection(secEl) {
+  const key = secEl.dataset.sec;
+  const closed = !secEl.classList.contains('closed');
+  if (closed) sb.folded.add(key); else sb.folded.delete(key);
+  sbSaveSet(SB_FOLDED_KEY, sb.folded);
+  secEl.classList.toggle('closed', closed);
+  secEl.querySelector('.sb-sec-toggle').setAttribute('aria-expanded', String(!closed));
+  secEl.querySelector('.sb-sec-body').inert = closed;
+}
+
+/** The + on a section: a new chat in that project, or in no folder at all. */
+async function sbNewChatIn(projectPath) {
+  if (projectPath) {
+    const r = await api.useProject(projectPath);
+    if (r) setProject(r.path, r.branch);
+  } else {
+    setProject(null, null);
+  }
+  $('newChatBtn').click();
+}
+
+$('sbSections').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  const secEl = btn.closest('.sb-sec');
+  const key = secEl ? secEl.dataset.sec : null;
+  const act = btn.dataset.act;
+  if (btn.classList.contains('sb-chat')) {
+    openSession(btn.closest('.sb-chat-row').dataset.id);
+  } else if (act === 'chat-menu') {
+    e.stopPropagation(); // the document click handler would close it straight away
+    const s = state.sessions.find((x) => x.id === btn.closest('.sb-chat-row').dataset.id);
+    if (s) openChatMenu(s, btn);
+  } else if (btn.classList.contains('sb-sec-toggle')) {
+    sbToggleSection(secEl);
+  } else if (act === 'add') {
+    sbNewChatIn(sb.paths.get(key));
+  } else if (act === 'project-menu') {
+    e.stopPropagation();
+    openProjectMenu(sb.paths.get(key), btn);
+  } else if (act === 'more') {
+    const before = secEl.querySelectorAll('.sb-chat-row').length;
+    sb.shown.set(key, before + SB_STEP);
+    renderSidebar();
+    // The button may be gone now; carry focus to the first chat that just appeared.
+    const sec = $('sbSections').querySelector(`.sb-sec[data-sec="${CSS.escape(key)}"]`);
+    const first = sec && sec.querySelectorAll('.sb-chat')[before];
+    if (first && !sec.querySelector('.sb-more')) first.focus();
+  }
+});
+// Right-click a chat or a project title for the same menu its ... button opens.
+$('sbSections').addEventListener('contextmenu', (e) => {
+  const row = e.target.closest('.sb-chat-row');
+  const head = e.target.closest('.sb-sec-head');
+  const menuBtn = row ? row.querySelector('.sb-chat-menu-btn') : head ? head.querySelector('[data-act="project-menu"]') : null;
+  if (!menuBtn || e.target.closest('input')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  menuBtn.click();
+});
+
+// ─── Sidebar search (the Search row or Ctrl+K; Escape closes it) ────────────
+function sbOpenSearch() {
+  if ($('sidebar').classList.contains('collapsed')) setSidebarCollapsed(false);
+  $('sbSearch').hidden = false;
+  $('sbSearchBtn').setAttribute('aria-expanded', 'true');
+  $('sbScroll').scrollTop = 0;
+  $('sbSearchInput').focus();
+  $('sbSearchInput').select();
+}
+function sbCloseSearch(refocus) {
+  $('sbSearch').hidden = true;
+  $('sbSearchBtn').setAttribute('aria-expanded', 'false');
+  $('sbSearchInput').value = '';
+  if (sb.query) { sb.query = ''; renderSidebar(); }
+  if (refocus) $('sbSearchBtn').focus();
+}
+$('sbSearchBtn').addEventListener('click', () => ($('sbSearch').hidden ? sbOpenSearch() : sbCloseSearch(false)));
+$('sbSearchInput').addEventListener('input', (e) => {
+  sb.query = e.target.value.trim().toLowerCase();
+  renderSidebar();
+});
+$('sbSearchInput').addEventListener('keydown', (e) => {
+  const first = $('sbSections').querySelector('.sb-chat');
+  if (e.key === 'Enter' && first) { e.preventDefault(); first.click(); }
+  else if (e.key === 'ArrowDown' && first) { e.preventDefault(); first.focus(); }
+});
+$('sidebar').addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || $('sbSearch').hidden || chatCtxMenuEl) return;
+  if (e.target.classList.contains('sb-chat-rename-input')) return;
+  e.preventDefault();
+  sbCloseSearch(true);
+});
 
 // ─── Per-chat context menu (3-dot: rename, delete) ───────────────────────────
 let chatCtxMenuEl = null;
@@ -1912,8 +2085,10 @@ function startRenameSession(session) {
   const btn = row.querySelector('.sb-chat');
   const input = document.createElement('input');
   input.className = 'sb-chat-rename-input';
+  input.setAttribute('aria-label', 'Chat name');
   input.value = session.title;
   btn.replaceWith(input);
+  sb.renaming = true; // the list holds still until the name is saved
   input.focus();
   input.select();
 
@@ -1927,7 +2102,11 @@ function startRenameSession(session) {
       await api.renameSession(session.id, newTitle);
       if (session.id === state.currentSessionId) $('chatTitle').textContent = newTitle;
     }
+    sb.renaming = false;
+    const refocus = document.activeElement === input || document.activeElement === document.body;
     renderRecents();
+    const again = refocus && $('sbSections').querySelector(`[data-key="c:${CSS.escape(session.id)}"]`);
+    if (again) again.focus();
   };
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); finish(true); }
@@ -3107,6 +3286,7 @@ if (api) api.onAgentEvent((data) => {
     // A chat this window hasn't seen yet (e.g. started from the phone): add it.
     if (!meta && data.session && data.session.id) {
       state.sessions.unshift({ ...data.session });
+      if (data.origin && data.origin !== desktopClientId) sb.unread.add(data.session.id);
       renderRecents();
     }
     // A brand-new chat's first events (role badge, goal card) arrive before
@@ -3301,6 +3481,7 @@ async function openSession(id) {
   if (!s) return;
   state.currentSessionId = id;
   navRecord('s:' + id);
+  sbMarkUnread(id, false);
   if (window.CraftHandoff) window.CraftHandoff.show(id);
   if (s.cwd) {
     const r = await api.useProject(s.cwd);
@@ -3375,6 +3556,7 @@ $('deleteChatBtn').addEventListener('click', () => {
 
 $('newChatBtn').addEventListener('click', () => {
   state.currentSessionId = null;
+  renderSidebar(); // no chat is open now
   activeTaskList = null;
   currentTasks = [];
   refreshTasksUI();
@@ -3912,8 +4094,8 @@ async function refreshChats() {
     const before = state.sessions.find((s) => s.id === state.currentSessionId);
     const r = await api.listSessions();
     state.sessions = r.sessions;
-    state.runningSessions = r.running || [];
     renderRecents();
+    sbRunsChanged(r.running || []);
     const after = state.sessions.find((s) => s.id === state.currentSessionId);
     const runningHere = (state.runningSessions || []).includes(state.currentSessionId);
     if (before && after && after.updatedAt !== before.updatedAt && !runningHere) await openSession(state.currentSessionId);

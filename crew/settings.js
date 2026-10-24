@@ -16,10 +16,14 @@
     mic: '<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
     plug: '<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>',
     user: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
-    life: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
     brain: '<svg viewBox="0 0 24 24"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V6a2 2 0 0 0-3-2Z"/><path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1"/></svg>',
     chev: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
     out: '<svg viewBox="0 0 24 24"><path d="M14 4h5v5"/><path d="M19 4l-8 8"/><path d="M18 14v5H5V6h5"/></svg>',
+    eye: '<svg viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/></svg>',
+    bell: '<svg viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>',
+    phone: '<svg viewBox="0 0 24 24"><path d="M6.5 4.5h3l1.5 4-2 1.3a10 10 0 0 0 5.2 5.2l1.3-2 4 1.5v3a1.5 1.5 0 0 1-1.6 1.5A15 15 0 0 1 5 6.1a1.5 1.5 0 0 1 1.5-1.6z"/></svg>',
+    team: '<svg viewBox="0 0 24 24"><circle cx="9" cy="9" r="3"/><circle cx="16.5" cy="10" r="2.5"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M14 19a4.5 4.5 0 0 1 7 0"/></svg>',
+    lock: '<svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg>',
   };
   const NAV = [
     { group: 'Crew' },
@@ -28,9 +32,13 @@
     { id: 'voice', label: 'Voice', icon: ICON.mic },
     { group: 'Integrations' },
     { id: 'connections', label: 'Connections', icon: ICON.plug },
-    { group: 'Your data' },
-    { id: 'life', label: 'Life', icon: ICON.life, page: () => window.CrewLife && window.CrewLife.show() },
-    { id: 'brain', label: 'Brain', icon: ICON.brain, page: () => window.CrewBrain && window.CrewBrain.show() },
+    { group: 'Life and memory' },
+    { id: 'memory', label: 'Memory', icon: ICON.brain },
+    { id: 'see', label: 'What bots can see', icon: ICON.eye },
+    { id: 'reach', label: 'Reaching you', icon: ICON.bell },
+    { id: 'calls', label: 'Calls', icon: ICON.phone },
+    { id: 'team', label: 'Teamwork', icon: ICON.team },
+    { id: 'privacy', label: 'Privacy', icon: ICON.lock },
     { group: 'You' },
     { id: 'account', label: 'Account', icon: ICON.user },
   ];
@@ -141,6 +149,20 @@
       ]) : '');
     } },
 
+    // Life and memory: lifemem.js draws and wires these (window.CrewLifeMem).
+    ...Object.fromEntries([
+      ['memory', 'Memory', 'What your bots know about you. Fix anything that is wrong.'],
+      ['see', 'What bots can see', 'Choose what your bots may use to help with your day.'],
+      ['reach', 'Reaching you', 'When and how your bots message you first.'],
+      ['calls', 'Calls', 'Notes and quiet tips while you talk.'],
+      ['team', 'Teamwork', 'Which bot takes which job, and what they do on their own.'],
+      ['privacy', 'Privacy', 'What stays on this PC, who sees private things, and how to delete it.'],
+    ].map(([id, title, sub]) => [id, {
+      title, sub,
+      html: () => (window.CrewLifeMem ? window.CrewLifeMem.html(id) : Promise.resolve('')),
+      wire: (body) => window.CrewLifeMem && window.CrewLifeMem.wire(id, body),
+    }])),
+
     account: { title: 'Account', async html() {
       const u = S().user;
       return section('', [
@@ -157,7 +179,7 @@
       <div class="set-side-title">Settings</div>
       <nav class="set-nav">${NAV.map((n) => (n.group
     ? `<div class="set-nav-group">${esc(n.group)}</div>`
-    : `<button class="set-nav-item${n.id === page ? ' on' : ''}" data-nav="${n.id}">${n.icon}<span>${esc(n.label)}</span></button>`)).join('')}</nav>`;
+    : `<button class="set-nav-item${n.id === page ? ' on' : ''}" data-nav="${n.id}"${n.id === page ? ' aria-current="page"' : ''}>${n.icon}<span>${esc(n.label)}</span></button>`)).join('')}</nav>`;
     el.querySelectorAll('[data-nav]').forEach((b) => b.addEventListener('click', () => {
       const id = b.dataset.nav;
       if (id === 'back') { leave(); return; }
@@ -165,18 +187,32 @@
       if (n && n.page) { hide(); n.page(); return; }
       show(id);
     }));
+    paintCounts();
+  }
+  // A small number on Memory: things the bots are not sure about yet.
+  function paintCounts() {
+    const el = $('#sideSettings');
+    if (!el || !open || !window.CrewLifeMem) return;
+    el.querySelectorAll('[data-nav]').forEach((b) => {
+      const n = window.CrewLifeMem.count(b.dataset.nav);
+      let c = b.querySelector('.lm-count');
+      if (!n) { if (c) c.remove(); return; }
+      if (!c) { c = document.createElement('span'); c.className = 'lm-count'; b.appendChild(c); }
+      c.textContent = n;
+      c.setAttribute('aria-label', `${n} need a look`);
+    });
   }
 
   async function paint() {
     const p = PAGES[page] || PAGES.general;
     const view = $('#view');
-    view.innerHTML = `<div class="set-scroll"><div class="set-page"><h1 class="set-h1">${esc(p.title)}</h1>${p.sub ? `<p class="set-lede">${esc(p.sub)}</p>` : ''}<div class="set-body" aria-busy="true"></div></div></div>`;
+    view.innerHTML = `<div class="set-scroll"><div class="set-page"><h1 class="set-h1" tabindex="-1">${esc(p.title)}</h1>${p.sub ? `<p class="set-lede">${esc(p.sub)}</p>` : ''}<div class="set-body" aria-busy="true"></div></div></div>`;
     const body = $('.set-body', view);
     const html = await p.html();
     if (!open || PAGES[page] !== p) return;
     body.innerHTML = html;
     body.removeAttribute('aria-busy');
-    wire(body);
+    if (p.wire) p.wire(body); else wire(body);
   }
 
   function wire(body) {
@@ -251,7 +287,7 @@
     else UI.goHome();
   }
   // Capture phase: this runs before a dialog or menu closes itself, so Escape there never also leaves settings.
-  document.addEventListener('keydown', (e) => { if (open && e.key === 'Escape' && !document.querySelector('.modal-back:not(.hidden)') && $('#menu').classList.contains('hidden')) leave(); }, true);
+  document.addEventListener('keydown', (e) => { if (open && e.key === 'Escape' && !document.querySelector('.modal-back:not(.hidden)') && $('#menu').classList.contains('hidden') && !(window.CrewLifeMem && window.CrewLifeMem.ownsEscape(e))) leave(); }, true);
 
   // ─── The permissions chip in a composer ─────────────────────────────────
   function chipHtml() {
@@ -279,5 +315,5 @@
     ]));
   }
 
-  window.CrewSettings = { show, hide, leave, isOpen: () => open, chipHtml, wireChip, allowedWords };
+  window.CrewSettings = { show, hide, leave, isOpen: () => open, chipHtml, wireChip, allowedWords, paintCounts };
 })();

@@ -30,6 +30,12 @@
     pen: '<svg viewBox="0 0 24 24"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
     trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9.5 7V4.5h5V7M6 7l1 13h10l1-13"/></svg>',
     browser: '<svg viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/></svg>',
+    down: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
+    plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+    more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>',
+    edit: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16Z"/><path d="M13.5 6.5l4 4"/></svg>',
+    chat: '<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4Z"/><path d="M12 8v5M9.5 10.5h5"/></svg>',
+    folderPlus: '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 11v5M9.5 13.5h5"/></svg>',
   };
   const VERB = {
     read_file: ['Reading', 'Read'], list_dir: ['Listing', 'Listed'], search: ['Searching', 'Searched'], write_file: ['Writing', 'Wrote'],
@@ -49,44 +55,182 @@
   const ago = (t) => { const m = Math.round((Date.now() - (t || 0)) / 60000); if (m < 1) return 'now'; if (m < 60) return `${m}m ago`; const hr = Math.floor(m / 60); return hr < 24 ? `${hr}h ago` : `${Math.floor(hr / 24)}d ago`; };
   const slug = (t) => String(t || 'design').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'design';
 
-  const S = { designs: [], cur: null, sessionId: null, running: false, sending: false, kind: null, width: 1440, active: [], query: '', att: { start: [], chat: [] } };
+  const S = {
+    designs: [], categories: [], cur: null, sessionId: null, running: false, sending: false, kind: null, width: 1440, active: [], query: '', att: { start: [], chat: [] },
+    category: null, from: null,   // a new design's category, and the design it uses as its reference
+    editCat: null, freshCat: null, // the category whose name is being typed (fresh: just made)
+  };
 
-  // ─── sidebar ──────────────────────────────────────────────────────────────
+  // ─── sidebar: a few actions, then your designs in categories ──────────────
+  // Each category folds away (remembered on this PC) and shows five designs, then
+  // five more at a time. A design's row has Edit and "New chat from this" on hover;
+  // right-click (or the menu key) files it in another category.
+  const STEP = 5;
+  const LOOSE = '_';         // the section for designs without a category
+  const shown = new Map();   // section id -> how many of its designs show
+  const local = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  };
+  const closed = new Set(local.get('dz.closedSections', []));
+
   document.querySelectorAll('.app-switch-btn').forEach((b) => b.addEventListener('click', () => {
     if (b.dataset.app === 'craft') api.toCraft(); else if (b.dataset.app === 'crew') api.toCrew();
   }));
   $('newBtn').addEventListener('click', () => showStart());
-  $('folderBtn').addEventListener('click', () => api.openFolder());
-  $('searchBtn').addEventListener('click', () => {
-    const box = $('searchBox'); box.hidden = !box.hidden;
-    if (!box.hidden) $('searchInput').focus(); else { S.query = ''; $('searchInput').value = ''; renderList(); }
-  });
-  $('searchInput').addEventListener('input', (e) => { S.query = e.target.value.trim().toLowerCase(); renderList(); });
-  $('searchInput').addEventListener('keydown', (e) => { if (e.key === 'Escape') $('searchBtn').click(); });
+  $('catBtn').addEventListener('click', () => newCategory());
 
-  const thumb = (d, cls = 'dz-thumb') => `<span class="${cls}">${d.thumbUrl ? `<img src="${esc(d.thumbUrl)}" alt="" loading="lazy">` : kindSvg(d.kind)}</span>`;
-  function groupOf(t) {
-    const day = new Date(); day.setHours(0, 0, 0, 0);
-    if (t >= day.getTime()) return 'Today';
-    if (t >= day.getTime() - 86400000) return 'Yesterday';
-    if (t >= day.getTime() - 6 * 86400000) return 'This week';
-    return 'Earlier';
+  // Search: an inline field that filters every row. Ctrl+K opens it, Escape closes it.
+  function setSearch(open) {
+    $('searchBox').hidden = !open;
+    $('searchBtn').setAttribute('aria-expanded', String(open));
+    if (open) { $('searchInput').focus(); $('searchInput').select(); return; }
+    if (S.query || $('searchInput').value) { S.query = ''; $('searchInput').value = ''; renderList(); }
   }
-  function renderList() {
+  $('searchBtn').addEventListener('click', () => setSearch($('searchBox').hidden));
+  $('searchInput').addEventListener('input', (e) => { S.query = e.target.value.trim().toLowerCase(); renderList(); });
+  $('searchInput').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); setSearch(false); $('searchBtn').focus(); } });
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); setSearch(true); }
+  });
+
+  const thumb = (d, cls = 'pic') => `<span class="${cls}">${d.thumbUrl ? `<img src="${esc(d.thumbUrl)}" alt="" loading="lazy">` : kindSvg(d.kind)}</span>`;
+  const known = (id) => !!id && S.categories.some((c) => c.id === id);
+  function sectionsOf() {
+    const out = S.categories.map((c) => ({ id: c.id, name: c.name, cat: true, rows: S.designs.filter((d) => d.category === c.id) }));
+    const loose = S.designs.filter((d) => !known(d.category));
+    if (loose.length || !out.length) out.push({ id: LOOSE, name: out.length ? 'Uncategorized' : 'Designs', cat: false, rows: loose });
+    return out;
+  }
+  const hit = (d) => d.title.toLowerCase().includes(S.query) || kindOf(d.kind).label.toLowerCase().includes(S.query);
+
+  // Redrawn whole; keyboard focus stays on the same control. Not while a category's name is being typed.
+  function renderList(force) {
+    if (S.editCat && !force) return;
     const box = $('list');
+    const keep = box.contains(document.activeElement) ? document.activeElement.dataset.k : null;
     box.innerHTML = '';
-    const shown = S.designs.filter((d) => !S.query || d.title.toLowerCase().includes(S.query) || kindOf(d.kind).label.toLowerCase().includes(S.query));
-    if (!shown.length) { box.appendChild(h(`<div class="dz-none">${S.query ? 'No designs match.' : 'No designs yet.'}</div>`)); return; }
-    let group = null;
-    for (const d of shown) {
-      const g = groupOf(d.updatedAt);
-      if (g !== group) { group = g; box.appendChild(h(`<div class="dz-group">${g}</div>`)); }
-      const running = d.sessionId && S.active.includes(d.sessionId);
-      const b = h(`<button type="button" class="dz-item ${S.cur && S.cur.id === d.id ? 'on' : ''}">${thumb(d)}<span class="t"><b>${esc(d.title)}</b><small>${running ? '<span class="spin"></span>Designing' : `${esc(kindOf(d.kind).label)} · ${esc(ago(d.updatedAt))}`}</small></span></button>`);
-      b.addEventListener('click', () => openDesign(d.id));
-      box.appendChild(b);
+    let hits = 0;
+    for (const s of sectionsOf()) {
+      const rows = !S.query || s.name.toLowerCase().includes(S.query) ? s.rows : s.rows.filter(hit);
+      if (S.query && !rows.length && S.editCat !== s.id) continue;
+      hits += rows.length;
+      box.appendChild(section(s, rows));
     }
+    if (S.query && !hits) box.appendChild(h(`<div class="dz-none">No designs match "${esc($('searchInput').value.trim())}".</div>`));
+    const naming = box.querySelector('.dz-sec-input');
+    if (naming) { naming.focus(); naming.select(); naming.scrollIntoView({ block: 'nearest' }); }
+    else if (keep) { const el = box.querySelector(`[data-k="${CSS.escape(keep)}"]`); if (el) el.focus(); }
   }
+
+  function section(s, rows) {
+    const isClosed = closed.has(s.id) && !S.query;
+    const editing = S.editCat === s.id;
+    const at = S.cur ? rows.findIndex((d) => d.id === S.cur.id) : -1;
+    // The open design always shows, even past the first five.
+    const limit = S.query ? rows.length : Math.max(shown.get(s.id) || STEP, Math.ceil((at + 1) / STEP) * STEP);
+    const add = s.cat ? `New design in ${s.name}` : 'New design';
+    const el = h(`<section class="dz-sec${isClosed ? ' closed' : ''}">
+      <div class="dz-sec-head">
+        ${editing ? `<input class="dz-sec-input" value="${esc(s.name)}" aria-label="Category name" maxlength="60" spellcheck="false">`
+          : `<button type="button" class="dz-sec-toggle" data-k="tog:${esc(s.id)}" aria-expanded="${!isClosed}" aria-controls="sec-${esc(s.id)}"><span>${esc(s.name)}</span>${ICON.down}</button>
+        <button type="button" class="dz-sec-tool" data-k="opt:${esc(s.id)}" data-menu aria-label="${esc(s.name)} options" title="Options">${ICON.more}</button>
+        <button type="button" class="dz-sec-tool" data-k="add:${esc(s.id)}" aria-label="${esc(add)}" title="${esc(add)}">${ICON.plus}</button>`}
+      </div>
+      <div class="dz-sec-body" id="sec-${esc(s.id)}"><div class="dz-sec-rows"></div></div>
+    </section>`);
+    const body = el.querySelector('.dz-sec-body');
+    body.inert = isClosed;
+    const list = el.querySelector('.dz-sec-rows');
+    for (const d of rows.slice(0, limit)) list.appendChild(designRow(d));
+    if (!rows.length) list.appendChild(h(`<div class="dz-none">${s.cat ? 'No designs here yet' : 'No designs yet'}</div>`));
+    const left = rows.length - limit;
+    if (left > 0) {
+      const more = h(`<button type="button" class="dz-more" data-k="show:${esc(s.id)}">${ICON.down}Show ${Math.min(STEP, left)} more</button>`);
+      more.addEventListener('click', () => {
+        shown.set(s.id, limit + STEP);
+        renderList();
+        const next = $('list').querySelector(`[data-k="${CSS.escape('row:' + rows[limit].id)}"]`);
+        if (next) next.focus();
+      });
+      list.appendChild(more);
+    }
+
+    const head = el.querySelector('.dz-sec-head');
+    const tog = el.querySelector('.dz-sec-toggle');
+    if (tog) {
+      tog.addEventListener('click', () => {
+        const shut = !el.classList.contains('closed');
+        el.classList.toggle('closed', shut);
+        tog.setAttribute('aria-expanded', String(!shut));
+        body.inert = shut;
+        if (shut) closed.add(s.id); else closed.delete(s.id);
+        local.set('dz.closedSections', [...closed]);
+      });
+      const [opt, plus] = el.querySelectorAll('.dz-sec-tool');
+      plus.addEventListener('click', () => showStart({ category: s.cat ? s.id : null }));
+      opt.addEventListener('click', () => { if (!menu.hidden && menuFrom === opt) closeMenu(); else catMenu(s, opt); });
+      head.addEventListener('contextmenu', (e) => { e.preventDefault(); catMenu(s, tog, pointOf(e)); });
+    }
+    const inp = el.querySelector('.dz-sec-input');
+    if (inp) {
+      // Enter keeps the name, Escape takes it back, clicking away keeps it.
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); finishCat(s.id, inp.value); }
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finishCat(s.id, ''); }
+      });
+      inp.addEventListener('blur', () => finishCat(s.id, inp.value));
+    }
+    return el;
+  }
+
+  // One line: a small thumbnail, the title, and on hover Edit and "New chat from this".
+  function designRow(d) {
+    const running = d.sessionId && S.active.includes(d.sessionId);
+    const cur = S.cur && S.cur.id === d.id;
+    const tools = [`<button type="button" class="dz-tool" data-k="edit:${esc(d.id)}" aria-label="Edit ${esc(d.title)}" title="Edit">${ICON.edit}</button>`];
+    if (d.ready) tools.push(`<button type="button" class="dz-tool" data-k="from:${esc(d.id)}" aria-label="New chat from ${esc(d.title)}" title="New chat from this">${ICON.chat}</button>`);
+    const el = h(`<div class="dz-line" style="--n:${tools.length}">
+      <button type="button" class="dz-row dz-design" data-k="row:${esc(d.id)}"${cur ? ' aria-current="true"' : ''} title="${esc(`${d.title} · ${kindOf(d.kind).label} · ${ago(d.updatedAt)}`)}">${thumb(d, 'dz-sw')}<span class="label">${esc(d.title)}</span><span class="grow"></span>${running ? '<span class="busy" role="img" aria-label="Designing"></span>' : ''}</button>
+      <div class="dz-tools">${tools.join('')}</div>
+    </div>`);
+    const row = el.querySelector('.dz-design');
+    row.addEventListener('click', () => openDesign(d.id));
+    el.querySelector('[data-k^="edit:"]').addEventListener('click', () => openDesign(d.id));
+    const from = el.querySelector('[data-k^="from:"]');
+    if (from) from.addEventListener('click', () => newFrom(d));
+    el.addEventListener('contextmenu', (e) => { e.preventDefault(); designMenu(d, row, pointOf(e)); });
+    return el;
+  }
+
+  // "New chat from this": the start screen with this design as the reference (and its kind and
+  // category). design-main.js gives the agent its page, pictures and thumbnail with the first message.
+  function newFrom(d) { showStart({ from: d.id, category: known(d.category) ? d.category : null, kind: d.kind }); }
+
+  async function newCategory(moveId) {
+    if (S.editCat) return;
+    const c = await api.catCreate('New category');
+    if (!c) return;
+    if (moveId) await api.move(moveId, c.id);
+    closed.delete(c.id);
+    if (S.query) setSearch(false);
+    await loadList();
+    S.editCat = c.id; S.freshCat = c.id;
+    renderList(true);
+  }
+  async function finishCat(id, name) {
+    if (S.editCat !== id) return;
+    const fresh = S.freshCat === id;
+    S.editCat = null; S.freshCat = null;
+    name = String(name || '').trim();
+    // Escape on a category just made (with nothing in it yet) takes it back.
+    if (name) await api.catRename(id, name);
+    else if (fresh && !S.designs.some((d) => d.category === id)) await api.catDelete(id);
+    await loadList();
+    const t = $('list').querySelector(`[data-k="${CSS.escape('tog:' + id)}"]`);
+    if (document.activeElement === document.body) (t || $('catBtn')).focus();
+  }
+
   function renderRecent() {
     const box = $('recent');
     box.innerHTML = '';
@@ -99,8 +243,10 @@
   async function loadList() {
     const r = await api.list();
     S.designs = r.designs || [];
+    S.categories = r.categories || [];
     if (S.cur) { const fresh = S.designs.find((x) => x.id === S.cur.id); if (fresh) S.cur = { ...S.cur, ...fresh }; }
     renderList(); renderRecent();
+    if (!$('start').hidden) renderCtx();
   }
 
   // ─── reference images (start box and chat) ────────────────────────────────
@@ -148,14 +294,30 @@
       b.addEventListener('click', () => { S.kind = S.kind === k.id ? null : k.id; renderKinds(); startInput.focus(); });
       box.appendChild(b);
     }
-    startInput.placeholder = S.kind ? kindOf(S.kind).hint : 'Describe what to design: what it is, who it\'s for, the feel';
+    startInput.placeholder = S.from ? 'What should it be? A pricing page in the same style, a matching poster'
+      : S.kind ? kindOf(S.kind).hint : 'Describe what to design: what it is, who it\'s for, the feel';
   }
-  function showStart() {
+  // o: { category, from, kind } from a category's + or a design's "New chat from this"
+  function showStart(o = {}) {
     if (S.cur) api.close();
     S.cur = null; S.sessionId = null;
+    S.category = o.category || null; S.from = o.from || null;
+    if (o.kind) S.kind = o.kind;
     $('work').hidden = true; $('start').hidden = false;
-    renderList(); renderRecent();
+    renderList(); renderRecent(); renderCtx(); renderKinds();
     setTimeout(() => startInput.focus(), 30);
+  }
+  // What the new design starts with, above the box: its reference design and its category.
+  function renderCtx() {
+    const ref = S.from ? S.designs.find((d) => d.id === S.from) : null;
+    const cat = S.category ? S.categories.find((c) => c.id === S.category) : null;
+    if (!ref) S.from = null;
+    if (!cat) S.category = null;
+    const row = $('startCtx');
+    row.hidden = !ref && !cat;
+    row.innerHTML = (ref ? `<span class="dz-ctx">${thumb(ref, 'dz-sw')}<span class="t"><span class="k">Reference</span>${esc(ref.title)}</span><button type="button" data-x="from" aria-label="Don't use ${esc(ref.title)} as the reference" title="Remove">${ICON.x}</button></span>` : '')
+      + (cat ? `<span class="dz-ctx">${ICON.folder}<span class="t"><span class="k">In</span>${esc(cat.name)}</span><button type="button" data-x="category" aria-label="Don't put it in ${esc(cat.name)}" title="Remove">${ICON.x}</button></span>` : '');
+    row.querySelectorAll('[data-x]').forEach((b) => b.addEventListener('click', () => { S[b.dataset.x] = null; renderCtx(); renderKinds(); startInput.focus(); }));
   }
   const autosize = (t, max) => { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, max) + 'px'; };
   const syncStart = () => { $('startSend').disabled = S.sending || !startInput.value.trim(); };
@@ -167,10 +329,10 @@
     const text = startInput.value.trim();
     if (!text || S.sending) return;
     S.sending = true; syncStart();
-    const r = await api.create(text, S.kind, S.att.start);
+    const r = await api.create(text, S.kind, S.att.start, { category: S.category, from: S.from });
     S.sending = false;
     if (!r || r.error || !r.design) { syncStart(); startInput.placeholder = r && r.error ? r.error : 'Craft could not start that.'; return; }
-    startInput.value = ''; autosize(startInput, 220); S.kind = null; S.att.start = []; renderAtt('start'); renderKinds(); syncStart();
+    startInput.value = ''; autosize(startInput, 220); S.kind = null; S.category = null; S.from = null; S.att.start = []; renderAtt('start'); renderCtx(); renderKinds(); syncStart();
     await loadList();
     await openDesign(r.design.id);
   }
@@ -275,16 +437,91 @@
 
   // ─── menus ────────────────────────────────────────────────────────────────
   const menu = $('menu');
-  function openMenu(anchor, html) {
-    menu.innerHTML = html; menu.hidden = false;
+  let menuFrom = null; // what opened the menu, for focus to go back to
+  // Below the anchor, right-aligned; or at a point (a right-click). Kept on screen.
+  function openMenu(anchor, html, at) {
+    menu.innerHTML = html; menu.hidden = false; menuFrom = anchor;
     const a = anchor.getBoundingClientRect();
-    menu.style.top = Math.round(a.bottom + 6) + 'px';
-    menu.style.left = Math.round(Math.max(8, Math.min(a.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8))) + 'px';
+    const x = at ? at.x : a.right - menu.offsetWidth; const y = at ? at.y : a.bottom + 6;
+    menu.style.top = Math.round(Math.max(8, Math.min(y, window.innerHeight - menu.offsetHeight - 8))) + 'px';
+    menu.style.left = Math.round(Math.max(8, Math.min(x, window.innerWidth - menu.offsetWidth - 8))) + 'px';
     return menu;
   }
-  function closeMenu() { menu.hidden = true; menu.innerHTML = ''; }
+  function closeMenu() { menu.hidden = true; menu.innerHTML = ''; menuFrom = null; }
+  // A right-click opens at the pointer; the menu key (no pointer) under the row.
+  const pointOf = (e) => (e && (e.clientX || e.clientY) ? { x: e.clientX, y: e.clientY } : null);
+  const atRow = (el) => { const r = el.getBoundingClientRect(); return { x: r.left + 8, y: r.bottom + 4 }; };
   document.addEventListener('mousedown', (e) => { if (!menu.hidden && !menu.contains(e.target) && !e.target.closest('[data-menu]')) closeMenu(); });
   window.addEventListener('blur', closeMenu);
+  menu.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const items = [...menu.querySelectorAll('button')];
+    if (!items.length) return;
+    e.preventDefault();
+    const i = items.indexOf(document.activeElement);
+    items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
+  });
+  const on = (m, sel, fn) => { const b = m.querySelector(sel); if (b) b.addEventListener('click', () => { closeMenu(); fn(); }); };
+
+  // A design's menu in the sidebar: edit it, start from it, rename, file it in a category, or bin it.
+  function designMenu(d, row, at) {
+    const here = (id) => (id ? d.category === id : !known(d.category));
+    const move = (id, name) => `<button type="button" data-move="${esc(id)}"${here(id) ? ' aria-current="true"' : ''}>${here(id) ? ICON.check : ICON.folder}<span class="t">${esc(name)}</span></button>`;
+    const m = openMenu(row, `
+      <button type="button" data-a="edit">${ICON.edit}<span class="t">Edit</span></button>
+      ${d.ready ? `<button type="button" data-a="from">${ICON.chat}<span class="t">New chat from this<small>Uses its look, layout and colors</small></span></button>` : ''}
+      <button type="button" data-a="rename">${ICON.pen}<span class="t">Rename</span></button>
+      <hr><div class="dz-menu-label">Move to</div>
+      ${S.categories.map((c) => move(c.id, c.name)).join('')}${move('', 'Uncategorized')}
+      <button type="button" data-a="newcat">${ICON.folderPlus}<span class="t">New category</span></button>
+      <hr><button type="button" data-a="reveal">${ICON.folder}<span class="t">Show in folder</span></button>
+      <button type="button" class="danger" data-a="del">${ICON.trash}<span class="t">Move to Recycle Bin</span></button>`, at || atRow(row));
+    on(m, '[data-a="edit"]', () => openDesign(d.id));
+    on(m, '[data-a="from"]', () => newFrom(d));
+    on(m, '[data-a="rename"]', async () => { if (!S.cur || S.cur.id !== d.id) await openDesign(d.id); if (S.cur && S.cur.id === d.id) startRename(); });
+    on(m, '[data-a="newcat"]', () => newCategory(d.id));
+    on(m, '[data-a="reveal"]', () => api.reveal(d.id));
+    on(m, '[data-a="del"]', () => removeDesign(d.id));
+    m.querySelectorAll('[data-move]').forEach((b) => b.addEventListener('click', async () => {
+      closeMenu();
+      const to = b.dataset.move || null;
+      if (to) { closed.delete(to); local.set('dz.closedSections', [...closed]); }
+      await api.move(d.id, to);
+      await loadList();
+    }));
+    m.querySelector('button').focus();
+  }
+
+  // A category's menu: rename, a new design in it, or delete it (its designs go back to Uncategorized).
+  function catMenu(s, anchor, at) {
+    const m = openMenu(anchor, s.cat ? `
+      <button type="button" data-a="add">${ICON.plus}<span class="t">New design here</span></button>
+      <button type="button" data-a="rename">${ICON.pen}<span class="t">Rename</span></button>
+      <hr><button type="button" data-a="folder">${ICON.folder}<span class="t">Open the designs folder</span></button>
+      <hr><button type="button" class="danger" data-a="del">${ICON.trash}<span class="t">Delete category<small>Its designs move to Uncategorized</small></span></button>` : `
+      <button type="button" data-a="add">${ICON.plus}<span class="t">New design</span></button>
+      <button type="button" data-a="newcat">${ICON.folderPlus}<span class="t">New category</span></button>
+      <hr><button type="button" data-a="folder">${ICON.folder}<span class="t">Open the designs folder</span></button>`, at || atRow(anchor));
+    on(m, '[data-a="add"]', () => showStart({ category: s.cat ? s.id : null }));
+    on(m, '[data-a="rename"]', () => { S.editCat = s.id; S.freshCat = null; renderList(true); });
+    on(m, '[data-a="newcat"]', () => newCategory());
+    on(m, '[data-a="folder"]', () => api.openFolder());
+    on(m, '[data-a="del"]', async () => {
+      await api.catDelete(s.id);
+      closed.delete(s.id); local.set('dz.closedSections', [...closed]);
+      await loadList();
+      $('catBtn').focus();
+    });
+    m.querySelector('button').focus();
+  }
+
+  async function removeDesign(id) {
+    const r = await api.remove(id);
+    const open = S.cur && S.cur.id === id;
+    if (r && r.error) { if (open) note(r.error, true); return; }
+    await loadList();
+    if (open) showStart();
+  }
 
   $('exportBtn').addEventListener('click', (e) => {
     if (!menu.hidden) return closeMenu();
@@ -305,18 +542,16 @@
   });
   $('moreBtn').addEventListener('click', (e) => {
     if (!menu.hidden) return closeMenu();
+    const d = S.cur;
     const m = openMenu(e.currentTarget, `
       <button type="button" data-rename>${ICON.pen}<span class="t">Rename</span></button>
+      ${d.ready ? `<button type="button" data-from>${ICON.chat}<span class="t">New chat from this<small>Uses its look, layout and colors</small></span></button>` : ''}
       <button type="button" data-reveal>${ICON.folder}<span class="t">Show in folder</span></button>
       <hr><button type="button" class="danger" data-del>${ICON.trash}<span class="t">Move to Recycle Bin</span></button>`);
     m.querySelector('[data-rename]').addEventListener('click', () => { closeMenu(); startRename(); });
+    on(m, '[data-from]', () => newFrom(d));
     m.querySelector('[data-reveal]').addEventListener('click', () => { closeMenu(); api.reveal(S.cur.id); });
-    m.querySelector('[data-del]').addEventListener('click', async () => {
-      closeMenu();
-      const r = await api.remove(S.cur.id);
-      if (r && r.error) { note(r.error, true); return; }
-      await loadList(); showStart();
-    });
+    m.querySelector('[data-del]').addEventListener('click', () => { closeMenu(); removeDesign(d.id); });
   });
   let noteTimer = null;
   function note(text, bad) {
@@ -480,7 +715,14 @@
   sendBtn.addEventListener('click', send);
   input.addEventListener('input', () => { autosize(input, 180); syncSend(); });
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); if (!S.running) send(); } });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) closeMenu(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!menu.hidden) {
+      const from = menuFrom; const inMenu = menu.contains(document.activeElement);
+      closeMenu();
+      if (inMenu && from && from.isConnected) from.focus();
+    } else if (!$('searchBox').hidden && $('side').contains(document.activeElement)) { setSearch(false); $('searchBtn').focus(); }
+  });
 
   if (api.onSynced) api.onSynced(() => loadList());
   api.onShown(() => { if (window.applyDropTheme) window.applyDropTheme(); loadList(); if (S.cur) fitFrame(); });

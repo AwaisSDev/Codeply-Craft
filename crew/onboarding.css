@@ -1,0 +1,220 @@
+/* First run of Codeply Crew. Story-style steps: a short column of words and
+   controls on the left, one big visual on the right that answers the choices.
+   Everything lives under #onboard with ob- names so it never touches the app. */
+#onboard {
+  --ob-glow: rgba(255, 255, 255, 0.035);
+  --ob-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  position: fixed; inset: 0; z-index: 900; background: var(--bg); color: var(--text);
+  font-size: 15px; line-height: 1.5; overflow: auto;
+  transition: opacity 360ms var(--ob-ease);
+}
+@media (prefers-color-scheme: light) { #onboard { --ob-glow: rgba(0, 0, 0, 0.03); } }
+#onboard.ob-leave { opacity: 0; pointer-events: none; }
+#onboard button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+#onboard input { font: inherit; color: inherit; }
+#onboard svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#onboard :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+#onboard .ob-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* Frame */
+#onboard .ob { height: 100%; min-height: 560px; display: grid; grid-template-columns: minmax(380px, 1fr) minmax(0, 1.15fr); gap: 24px; padding: 24px; }
+#onboard .ob-copy { display: flex; flex-direction: column; padding: 8px 32px 8px 40px; min-height: 0; }
+#onboard .ob-brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14.5px; letter-spacing: -0.01em; }
+#onboard .ob-brand img { width: 22px; height: 22px; border-radius: 6px; }
+#onboard .ob-progress { display: flex; gap: 6px; margin: 28px 0 0; width: min(440px, 100%); }
+#onboard .ob-progress i { flex: 1; height: 3px; border-radius: 3px; background: var(--surface-3); overflow: hidden; position: relative; }
+#onboard .ob-progress i::after { content: ""; position: absolute; inset: 0; background: var(--text); transform: scaleX(0); transform-origin: left; transition: transform 420ms var(--ob-ease); }
+#onboard .ob-progress i.done::after { transform: scaleX(1); }
+#onboard .ob-steps { flex: 1; display: grid; align-items: center; min-height: 0; }
+#onboard .ob-step { grid-area: 1 / 1; width: min(440px, 100%); }
+#onboard .ob-step[hidden] { display: none; }
+
+#onboard h1 { font-size: 34px; line-height: 1.12; letter-spacing: -0.03em; font-weight: 650; margin: 0; text-wrap: balance; }
+#onboard h1:focus { outline: none; }
+#onboard .ob-lede { color: var(--text-dim); font-size: 16px; margin: 12px 0 0; max-width: 40ch; text-wrap: pretty; }
+#onboard .ob-body { margin-top: 28px; }
+#onboard .ob-actions { display: flex; align-items: center; gap: 10px; margin-top: 32px; }
+#onboard .ob-btn { height: 42px; padding: 0 22px; border-radius: 999px; font-weight: 600; font-size: 14.5px; display: inline-flex; align-items: center; gap: 8px; transition: background 150ms ease, opacity 150ms ease, transform 150ms var(--ob-ease); }
+#onboard .ob-btn:active:not(:disabled) { transform: scale(0.97); }
+#onboard .ob-btn.primary { background: var(--invert); color: var(--invert-text); }
+#onboard .ob-btn.primary:hover:not(:disabled) { opacity: 0.9; }
+#onboard .ob-btn.primary:disabled { opacity: 0.32; cursor: default; }
+#onboard .ob-btn.ghost { color: var(--text-dim); padding: 0 14px; }
+#onboard .ob-btn.ghost:hover { color: var(--text); background: var(--hover); }
+#onboard .ob-btn svg { width: 16px; height: 16px; }
+
+/* Staged entrance: each part of a step rises in a beat after the one before. */
+#onboard .ob-step.enter .ob-rise { animation: ob-rise 520ms var(--ob-ease) both; }
+#onboard .ob-step.enter .ob-rise:nth-child(2) { animation-delay: 50ms; }
+#onboard .ob-step.enter .ob-rise:nth-child(3) { animation-delay: 100ms; }
+#onboard .ob-step.enter .ob-rise:nth-child(4) { animation-delay: 150ms; }
+#onboard .ob-step.enter .ob-rise:nth-child(5) { animation-delay: 200ms; }
+@keyframes ob-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+/* Controls */
+#onboard .ob-facts { display: flex; flex-direction: column; gap: 16px; margin: 0; padding: 0; list-style: none; }
+#onboard .ob-facts li { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: start; }
+#onboard .ob-facts .ob-ic { width: 34px; height: 34px; border-radius: 10px; background: var(--surface-2); display: grid; place-items: center; color: var(--text-dim); }
+#onboard .ob-facts .ob-ic svg { width: 17px; height: 17px; }
+#onboard .ob-facts b { display: block; font-weight: 600; font-size: 15px; }
+#onboard .ob-facts span { color: var(--text-dim); font-size: 14px; }
+#onboard .ob-agree { display: flex; align-items: flex-start; gap: 12px; margin-top: 26px; cursor: pointer; font-size: 14.5px; }
+#onboard .ob-agree input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+#onboard .ob-box { width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--border-strong); flex: none; display: grid; place-items: center; margin-top: 1px; transition: background 160ms ease, border-color 160ms ease; }
+#onboard .ob-box svg { width: 13px; height: 13px; stroke-width: 2.6; color: var(--invert-text); stroke-dasharray: 20; stroke-dashoffset: 20; transition: stroke-dashoffset 260ms var(--ob-ease) 60ms; }
+#onboard .ob-agree input:checked + .ob-box { background: var(--invert); border-color: var(--invert); }
+#onboard .ob-agree input:checked + .ob-box svg { stroke-dashoffset: 0; }
+#onboard .ob-agree input:focus-visible + .ob-box { outline: 2px solid var(--accent); outline-offset: 3px; }
+#onboard .ob-agree a { color: var(--text); text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
+#onboard .ob-agree a:hover { text-decoration-color: var(--text); }
+
+#onboard .ob-field { display: block; }
+#onboard .ob-field input { width: 100%; height: 54px; padding: 0 18px; border-radius: 14px; border: 1px solid var(--border-strong); background: var(--surface); font-size: 18px; outline: none; transition: border-color 150ms ease, background 150ms ease; }
+#onboard .ob-field input::placeholder { color: var(--text-faint); }
+#onboard .ob-field input:focus { border-color: var(--text-faint); background: var(--surface-2); }
+#onboard .ob-sub { font-size: 13.5px; color: var(--text-dim); margin: 24px 0 10px; }
+#onboard .ob-sub em { font-style: normal; color: var(--text-faint); }
+#onboard .ob-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+#onboard .ob-chip { height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border-strong); color: var(--text-dim); font-size: 13.5px; transition: background 150ms ease, color 150ms ease, border-color 150ms ease; }
+#onboard .ob-chip:hover { color: var(--text); background: var(--hover); }
+#onboard .ob-chip[aria-pressed="true"] { background: var(--invert); color: var(--invert-text); border-color: var(--invert); }
+#onboard .ob-field.other { margin-top: 12px; }
+#onboard .ob-field.other input { height: 44px; font-size: 15px; border-radius: 12px; }
+#onboard .ob-field.other:not([hidden]) { animation: ob-rise 360ms var(--ob-ease) both; }
+
+#onboard .ob-choices { display: flex; flex-direction: column; gap: 10px; }
+#onboard .ob-choice { display: grid; grid-template-columns: 1fr 22px; gap: 14px; align-items: center; text-align: left; padding: 16px 18px; border-radius: 14px; border: 1px solid var(--border-strong); background: var(--surface); transition: border-color 160ms ease, background 160ms ease; }
+#onboard .ob-choice:hover { background: var(--surface-2); }
+#onboard .ob-choice b { display: block; font-weight: 600; font-size: 15px; }
+#onboard .ob-choice b + span { display: block; color: var(--text-dim); font-size: 13.5px; margin-top: 2px; }
+#onboard .ob-radio { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--border-strong); display: grid; place-items: center; transition: border-color 160ms ease; }
+#onboard .ob-radio::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--invert); transform: scale(0); transition: transform 240ms var(--ob-ease); }
+#onboard .ob-choice[aria-checked="true"] { border-color: var(--text-faint); background: var(--surface-2); }
+#onboard .ob-choice[aria-checked="true"] .ob-radio { border-color: var(--invert); }
+#onboard .ob-choice[aria-checked="true"] .ob-radio::after { transform: scale(1); }
+
+#onboard .ob-switches { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+#onboard .ob-sw-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; cursor: pointer; }
+#onboard .ob-sw-row + .ob-sw-row { border-top: 1px solid var(--border); }
+#onboard .ob-sw-row .t { flex: 1; min-width: 0; }
+#onboard .ob-sw-row b { display: block; font-weight: 600; font-size: 14.5px; }
+#onboard .ob-sw-row .t span { color: var(--text-dim); font-size: 13px; }
+#onboard .ob-switch { position: relative; width: 38px; height: 22px; flex: none; }
+#onboard .ob-switch input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
+#onboard .ob-switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--border-strong); transition: background 180ms ease; }
+#onboard .ob-switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform 220ms var(--ob-ease); }
+#onboard .ob-switch input:checked + span { background: var(--accent); box-shadow: none; }
+#onboard .ob-switch input:checked + span::after { transform: translateX(16px); }
+#onboard .ob-switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 3px; }
+#onboard .ob-later { color: var(--text-faint); font-size: 13px; margin: 12px 0 0; }
+
+#onboard .ob-summary { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+#onboard .ob-summary li { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 14.5px; }
+#onboard .ob-summary li span { color: var(--text-dim); text-align: right; }
+
+/* The stage: one big visual per step */
+#onboard .ob-stage { position: relative; border-radius: 22px; background: var(--surface); border: 1px solid var(--border); overflow: hidden; min-height: 0; }
+#onboard .ob-stage::before { content: ""; position: absolute; inset: -20%; background: radial-gradient(closest-side, var(--ob-glow), transparent 70%); pointer-events: none; }
+#onboard .ob-scene { position: absolute; inset: 0; display: grid; place-items: center; padding: 40px; opacity: 0; transform: scale(0.985); filter: blur(6px); transition: opacity 420ms var(--ob-ease), transform 520ms var(--ob-ease), filter 420ms var(--ob-ease); pointer-events: none; }
+#onboard .ob-scene.on { opacity: 1; transform: none; filter: none; pointer-events: auto; }
+
+/* Welcome: the mark, then the crew gathers around it. */
+#onboard .ob-orbit { position: relative; width: min(440px, 80%); aspect-ratio: 1; }
+#onboard .ob-orbit .ob-mark { position: absolute; left: 50%; top: 50%; width: 104px; height: 104px; margin: -52px 0 0 -52px; border-radius: 28px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35); will-change: transform, opacity; }
+#onboard .ob-scene.on .ob-orbit .ob-mark { animation: ob-land 900ms var(--ob-ease) both; }
+/* Each bot sits still at its spot; only an inner wrapper moves (transform only),
+   from the center out, so nothing snaps or jitters when the motion ends. */
+#onboard .ob-orbit .ob-bot { position: absolute; left: calc(50% + var(--x)); top: calc(50% + var(--y)); transform: translate(-50%, -50%); }
+#onboard .ob-orbit .ob-bot .in { display: block; will-change: transform, opacity; }
+#onboard .ob-scene.on .ob-orbit .ob-bot .in { animation: ob-gather 900ms var(--ob-ease) both; animation-delay: calc(260ms + var(--i) * 70ms); }
+@keyframes ob-land { from { opacity: 0; transform: scale(0.6); filter: blur(10px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes ob-gather { from { opacity: 0; transform: translate(var(--fx), var(--fy)) scale(0.4); } to { opacity: 1; transform: none; } }
+
+/* Meet: the crew, each with a short job. Rows of four and three, centered. */
+#onboard .ob-crew { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; width: min(640px, 100%); }
+#onboard .ob-member { width: 144px; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 10px 16px; border-radius: 16px; background: var(--bg); border: 1px solid var(--border); text-align: center; }
+#onboard .ob-member b { font-weight: 600; font-size: 14.5px; }
+#onboard .ob-member span { color: var(--text-dim); font-size: 12.5px; margin-top: -6px; }
+#onboard .ob-scene.on .ob-member { animation: ob-rise 620ms var(--ob-ease) both; animation-delay: calc(80ms + var(--i) * 60ms); }
+
+/* Terms: the crew around a PC with a lock. */
+#onboard .ob-pc { position: relative; width: min(380px, 80%); }
+#onboard .ob-pc .screen { aspect-ratio: 16 / 10; border-radius: 16px; background: var(--bg); border: 1px solid var(--border-strong); display: grid; place-items: center; }
+#onboard .ob-pc .lock { width: 64px; height: 64px; border-radius: 20px; background: var(--surface-2); display: grid; place-items: center; color: var(--text); }
+#onboard .ob-pc .lock svg { width: 30px; height: 30px; }
+#onboard .ob-pc .stand { width: 26%; height: 22px; margin: 0 auto; background: var(--surface-3); clip-path: polygon(18% 0, 82% 0, 100% 100%, 0 100%); }
+#onboard .ob-pc .base { width: 44%; height: 6px; margin: 0 auto; border-radius: 6px; background: var(--surface-3); }
+#onboard .ob-pc .peek { position: absolute; }
+#onboard .ob-pc .note { text-align: center; color: var(--text-dim); font-size: 13px; margin-top: 18px; }
+#onboard .ob-scene.on .ob-pc .peek { animation: ob-peek 700ms var(--ob-ease) both; animation-delay: calc(200ms + var(--i) * 90ms); }
+@keyframes ob-peek { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+
+/* Name: Orion says hello as you type. */
+#onboard .ob-chat { width: min(500px, 90%); display: flex; flex-direction: column; gap: 14px; }
+#onboard .ob-msg { display: flex; gap: 14px; align-items: flex-end; }
+#onboard .ob-bubble { background: var(--bg); border: 1px solid var(--border); border-radius: 22px 22px 22px 8px; padding: 16px 20px; font-size: 18px; line-height: 1.45; max-width: 380px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22); }
+#onboard .ob-bubble small { display: block; color: var(--text-faint); font-size: 13px; margin-bottom: 4px; }
+#onboard .ob-typing { display: inline-flex; gap: 4px; padding: 4px 0; }
+#onboard .ob-typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-faint); animation: ob-dot 1.2s ease-in-out infinite; }
+#onboard .ob-typing i:nth-child(2) { animation-delay: 0.15s; }
+#onboard .ob-typing i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes ob-dot { 0%, 60%, 100% { opacity: 0.35; transform: none; } 30% { opacity: 1; transform: translateY(-3px); } }
+
+/* Ask: a live approval card in the chosen mode. */
+#onboard .ob-card { width: min(500px, 92%); border-radius: 18px; border: 1px solid var(--border-strong); background: var(--bg); padding: 24px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28); }
+#onboard .ob-card-head { display: flex; align-items: center; gap: 10px; font-size: 14.5px; color: var(--text-dim); }
+#onboard .ob-card-title { font-weight: 600; font-size: 18px; margin: 14px 0 12px; }
+#onboard .ob-card-cmd { background: var(--surface); border-radius: 12px; padding: 12px 14px; font-size: 15px; color: var(--text-dim); }
+#onboard .ob-card-row { display: flex; align-items: center; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
+#onboard .ob-card-row .note { margin-right: auto; font-size: 13.5px; color: var(--text-faint); }
+#onboard .ob-mini { height: 34px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--border-strong); background: var(--surface-2); font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; }
+#onboard .ob-mini.primary { background: var(--invert); color: var(--invert-text); border-color: transparent; font-weight: 600; }
+#onboard .ob-swap { animation: ob-swap 420ms var(--ob-ease) both; }
+@keyframes ob-swap { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* See: what bots would know right now. */
+#onboard .ob-context { width: min(480px, 92%); border-radius: 18px; border: 1px solid var(--border-strong); background: var(--bg); padding: 22px 24px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22); }
+#onboard .ob-context h3 { margin: 0 0 14px; font-size: 14.5px; font-weight: 600; color: var(--text-dim); }
+#onboard .ob-ctx-item { display: flex; gap: 14px; align-items: center; padding: 13px 0; border-top: 1px solid var(--border); font-size: 16px; }
+#onboard .ob-ctx-item:first-of-type { border-top: 0; }
+#onboard .ob-ctx-item .ob-ic { width: 36px; height: 36px; border-radius: 9px; background: var(--surface-2); display: grid; place-items: center; color: var(--text-dim); flex: none; }
+#onboard .ob-ctx-item .ob-ic svg { width: 15px; height: 15px; }
+#onboard .ob-ctx-item span { color: var(--text-dim); font-size: 12.5px; display: block; }
+#onboard .ob-ctx-empty { color: var(--text-dim); font-size: 16px; display: flex; align-items: center; gap: 12px; padding: 6px 0; }
+#onboard .ob-ctx-empty .ob-ic { width: 30px; height: 30px; border-radius: 9px; background: var(--surface-2); display: grid; place-items: center; }
+#onboard .ob-ctx-empty svg { width: 15px; height: 15px; }
+
+/* Done: the crew lined up. */
+#onboard .ob-lineup { display: flex; justify-content: center; align-items: flex-end; gap: 10px; flex-wrap: nowrap; }
+#onboard .ob-lineup .ob-bot { display: grid; justify-items: center; gap: 8px; font-size: 13.5px; color: var(--text-dim); }
+#onboard .ob-scene.on .ob-lineup .ob-bot { animation: ob-hop 760ms var(--ob-ease) both; animation-delay: calc(120ms + var(--i) * 70ms); }
+@keyframes ob-hop { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
+#onboard .ob-done-line { text-align: center; color: var(--text-dim); font-size: 16px; margin-top: 30px; }
+
+/* Narrow windows: the visual sits above the words */
+@media (max-width: 900px) {
+  #onboard .ob { grid-template-columns: 1fr; grid-template-rows: 240px 1fr; padding: 16px; gap: 16px; }
+  #onboard .ob-stage { grid-row: 1; }
+  #onboard .ob-copy { grid-row: 2; padding: 4px 8px; }
+  #onboard .ob-progress { margin-top: 18px; }
+  #onboard h1 { font-size: 28px; }
+  #onboard .ob-scene { padding: 20px; }
+  #onboard .ob-orbit { width: 190px; }
+  #onboard .ob-orbit .ob-mark { width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 16px; }
+  #onboard .ob-orbit .ob-bot svg { width: 40px !important; height: 40px !important; }
+  #onboard .ob-pc { width: 200px; }
+  #onboard .ob-pc .peek > * { width: 34px !important; height: 34px !important; }
+  #onboard .ob-pc .note { display: none; }
+  #onboard .ob-lineup { flex-wrap: wrap; gap: 4px; }
+  #onboard .ob-lineup .ob-bot > :first-child { width: 44px !important; height: 44px !important; }
+  #onboard .ob-crew { gap: 8px; }
+  #onboard .ob-member { width: 84px; padding: 10px 6px; }
+  #onboard .ob-member > :first-child { width: 36px !important; height: 36px !important; }
+  #onboard .ob-member span { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #onboard *, #onboard *::before, #onboard *::after { animation: none !important; }
+  #onboard .ob-scene { transform: none; filter: none; transition: opacity 200ms linear; }
+  #onboard .ob-progress i::after, #onboard .ob-box svg, #onboard .ob-radio::after, #onboard .ob-switch span::after { transition: none; }
+}

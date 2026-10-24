@@ -772,15 +772,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
 }
 .sb-item-badge.hidden { display: none; }
 
-/* The sidebar itself never scrolls: the nav above stays put, Projects scrolls
-   inside its four rows and Recents scrolls in whatever height is left. */
-.sb-scroll { flex: 1; min-height: 0; overflow: hidden; padding: 6px 10px 0; display: flex; flex-direction: column; }
-#projectsSection { flex: none; }
-#recentsSection { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-bottom: 6px; }
-#recentsList {
-  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-}
-
+/* Kept for Design's sidebar (design/index.html shares this stylesheet). */
 .sb-section { margin-bottom: 18px; }
 
 .sb-section-title {
@@ -790,94 +782,197 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
   padding: 6px 10px 4px;
 }
 
-/* Four projects show; the rest scroll inside the list. */
-#projectsList {
-  max-height: calc(4 * 32px);
+/* ---- Craft's sidebar list: the same pattern as Crew ----
+   A few actions as icon + label rows, then one folding section per project,
+   each a list of plain one-line chat rows. Everything under the app switch
+   scrolls together. Rows are 32px tall with an 8px radius everywhere. */
+.sb-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  padding: 2px 8px 12px;
 }
-.sb-project-row {
-  position: relative;
-  flex: none;
-  display: flex;
-  align-items: center;
-  border-radius: 8px;
-}
-.sb-project-row:hover { background: var(--hover); }
+/* Rows sit inside clipped lists (the folding sections), so keyboard focus
+   draws its ring inside the row instead of around it. */
+.sb-scroll button:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 70%, transparent); }
 
-.sb-project {
+.sb-actions { display: flex; flex-direction: column; gap: 1px; margin-bottom: 14px; }
+.sb-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex: 1;
-  min-width: 0;
+  width: 100%;
   height: 32px;
   padding: 0 10px;
-  border-radius: 8px;
-  font-size: 13.5px;
+  border-radius: var(--r-sm);
+  font-size: 14px;
   color: var(--text);
   text-align: left;
+  transition: background var(--dur-fast) var(--ease-out);
 }
-/* The row already carries the hover fill; a second one on the button inside
-   it would just paint a lighter rectangle over part of the row. */
-.sb-project-row:hover .sb-project { background: none; }
-.sb-project.selected { background: var(--active); }
-.sb-project svg { width: 16px; height: 16px; color: var(--text-faint); flex-shrink: 0; }
-/* Long folder names have to give way to the 3-dot button rather than push it
-   out of the row. */
-.sb-project-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.sb-row:hover { background: var(--hover); }
+.sb-row svg { width: 17px; height: 17px; flex: none; color: var(--text-dim); }
+.sb-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.sb-chat-row {
-  position: relative;
+/* Search: an inline field above the actions that filters every chat row. */
+.sb-search {
   display: flex;
   align-items: center;
-  border-radius: 8px;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  margin: 2px 0 10px;
+  border-radius: 9px;
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
 }
-.sb-chat-row:hover { background: var(--hover); }
-
-.sb-chat {
-  display: block;
+.sb-search[hidden] { display: none; }
+.sb-search:focus-within { border-color: var(--accent); }
+.sb-search svg { width: 15px; height: 15px; flex: none; color: var(--text-faint); }
+.sb-search input {
   flex: 1;
   min-width: 0;
-  height: 32px;
-  line-height: 32px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  user-select: text;
+}
+.sb-search input::placeholder { color: var(--text-faint); }
+.sb-no-hits { color: var(--text-faint); font-size: 13px; padding: 6px 10px; }
+
+/* Sections: a small bold title that folds the list away, with a + (new chat
+   in this project) and the project's own menu on hover. */
+.sb-sec { margin-top: 10px; }
+.sb-sec-head { display: flex; align-items: center; gap: 2px; height: 30px; padding-right: 4px; }
+.sb-sec-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 6px 0 10px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-align: left;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.sb-sec-toggle span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-sec-toggle svg { width: 13px; height: 13px; flex: none; transition: transform var(--dur-slow) var(--ease-out); }
+.sb-sec-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.sb-sec-toggle:hover, .sb-sec.current .sb-sec-toggle { color: var(--text); }
+.sb-sec-tool {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--text-dim);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.sb-sec-tool svg { width: 15px; height: 15px; }
+.sb-sec-tool:hover, .sb-sec-tool.active { background: var(--hover); color: var(--text); }
+.sb-sec:hover .sb-sec-tool, .sb-sec-head:focus-within .sb-sec-tool, .sb-sec-tool.active { opacity: 1; }
+
+/* The fold: rows collapse to nothing through a grid-rows transition. */
+.sb-sec-body { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 240ms var(--ease-out); }
+.sb-sec-body > div { min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 1px; }
+.sb-sec.closed .sb-sec-body { grid-template-rows: 0fr; }
+.sb-empty { color: var(--text-faint); font-size: 13px; padding: 4px 10px 6px; }
+
+/* "Show 5 more": a long project's list grows five at a time. */
+.sb-more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
   padding: 0 10px;
-  border-radius: 8px;
-  font-size: 13.5px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  color: var(--text-faint);
+  text-align: left;
+}
+.sb-more:hover { background: var(--hover); color: var(--text); }
+.sb-more svg { width: 13px; height: 13px; flex: none; }
+
+/* Chats: plain one-line rows; a soft fill for the open one, a blue dot for
+   unread, a pulsing green dot while it runs. The ... menu (rename, save,
+   delete) takes the dot's place on hover. */
+.sb-chat-row { position: relative; }
+.sb-chat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  font-size: 14px;
   color: var(--text);
   text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  transition: background var(--dur-fast) var(--ease-out);
 }
-.sb-chat-row:hover .sb-chat { background: none; }
-.sb-chat.selected { background: var(--active); }
+.sb-chat:hover { background: var(--hover); }
+.sb-chat[aria-current="true"] { background: var(--active); }
+.sb-chat-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-chat-row:hover .sb-chat, .sb-chat-row:focus-within .sb-chat { padding-right: 34px; }
+/* cloud-ui.js marks cloud chats with a small cloud before the title. */
+.sb-chat-row .sb-chat .cloud-mark { flex: none; margin-right: 0; }
 
-/* Shared by Recents rows and Projects rows - same 3-dot affordance, same
-   hover-to-reveal behaviour in both lists. */
-.sb-chat-menu-btn { margin-right: 4px; display: none; }
+.sb-mark { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.sb-mark.unread { background: var(--accent); }
+.sb-mark.busy { background: var(--green); animation: sb-pulse 1.6s ease-in-out infinite; }
+@keyframes sb-pulse { 50% { opacity: 0.35; } }
+.sb-chat-row:hover .sb-mark, .sb-chat-row:focus-within .sb-mark { visibility: hidden; }
+
+.sb-chat-menu-btn {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--text-dim);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.sb-chat-menu-btn svg { width: 15px; height: 15px; }
 .sb-chat-row:hover .sb-chat-menu-btn,
-.sb-project-row:hover .sb-chat-menu-btn,
-.sb-chat-menu-btn:focus-visible,
-.sb-chat-menu-btn.active { display: inline-grid; }
-.sb-chat-menu-btn:hover:not(:disabled), .sb-chat-menu-btn.active { background: var(--active); color: var(--text); }
+.sb-chat-row:focus-within .sb-chat-menu-btn,
+.sb-chat-menu-btn.active { opacity: 1; pointer-events: auto; }
+.sb-chat-menu-btn:hover, .sb-chat-menu-btn.active { background: var(--active); color: var(--text); }
 
 .sb-chat-rename-input {
-  flex: 1;
-  min-width: 0;
-  padding: 6px 9px;
-  border-radius: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 9px;
+  border-radius: var(--r-sm);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--text);
   background: var(--panel-bg);
   border: 1px solid var(--accent);
   outline: none;
+  user-select: text;
+}
+/* While renaming, the ... button would sit on top of the field. */
+.sb-chat-row:has(.sb-chat-rename-input) .sb-chat-menu-btn { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sb-sec-body, .sb-sec-toggle svg, .sb-row, .sb-chat, .sb-chat-menu-btn, .sb-sec-tool { transition: none; }
+  .sb-mark.busy { animation: none; }
 }
 
 .chat-ctx-menu { min-width: 200px; }
@@ -973,8 +1068,6 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
   color: var(--text-dim);
 }
 .theme-toggle .segmented-item { flex: none; width: 30px; padding: 0; }
-
-.sb-chat.indent { padding-left: 38px; }
 
 /* ============ Sidebar footer ============ */
 .sb-footer { padding: 8px 10px 10px; flex-shrink: 0; }

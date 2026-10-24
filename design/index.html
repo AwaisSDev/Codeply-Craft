@@ -19,26 +19,19 @@
         <button class="app-switch-btn on" data-app="design" role="tab" aria-selected="true"><span class="dz-switch-ico" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 2.2a5.8 5.8 0 1 0 0 11.6c.8 0 1.3-.6 1.3-1.3 0-.4-.2-.7-.4-1-.2-.2-.3-.5-.3-.8 0-.7.6-1.3 1.3-1.3h1.6c1.6 0 2.9-1.3 2.9-2.9C14.4 4.5 11.5 2.2 8 2.2z"/><circle cx="5" cy="7.3" r=".9"/><circle cx="7.6" cy="4.9" r=".9"/><circle cx="10.6" cy="5.6" r=".9"/></svg></span>Design</button>
       </div>
     </div>
-    <nav class="sb-nav">
-      <button class="sb-item" id="newBtn" type="button">
-        <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
-        New design
-      </button>
-      <button class="sb-item" id="searchBtn" type="button">
-        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        Search designs
-      </button>
+    <!-- a few actions, then the designs in categories that fold away -->
+    <div class="dz-scroll">
       <label class="dz-search" id="searchBox" hidden>
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input id="searchInput" type="search" placeholder="Search designs" autocomplete="off" spellcheck="false">
+        <input id="searchInput" type="search" placeholder="Search designs" aria-label="Search designs" autocomplete="off" spellcheck="false">
       </label>
-      <button class="sb-item" id="folderBtn" type="button">
-        <svg viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3.6l2 2.2h7.4A2.5 2.5 0 0 1 21 9.7v7.8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></svg>
-        Designs folder
-      </button>
-    </nav>
-    <div class="sb-section-title dz-section-title">Designs</div>
-    <div class="dz-list" id="list"></div>
+      <nav class="dz-actions" aria-label="Actions">
+        <button class="dz-row" id="newBtn" type="button"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span class="label">New design</span></button>
+        <button class="dz-row" id="searchBtn" type="button" aria-expanded="false" aria-controls="searchBox" title="Search (Ctrl+K)"><span class="ic"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span><span class="label">Search</span></button>
+        <button class="dz-row" id="catBtn" type="button"><span class="ic"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 11v5M9.5 13.5h5"/></svg></span><span class="label">New category</span></button>
+      </nav>
+      <div class="dz-list" id="list"></div>
+    </div>
   </aside>
 
   <main class="dz-main">
@@ -53,6 +46,7 @@
       <div class="composer-wrap home-composer">
         <div class="composer-tray dz-tray" id="kinds" role="group" aria-label="Kind of design"></div>
         <div class="composer dz-composer" id="startComposer">
+          <div class="dz-ctx-row" id="startCtx" hidden></div>
           <div class="dz-attach-row" id="startAtt" hidden></div>
           <textarea class="composer-input" id="startInput" rows="1" placeholder="Describe what to design: what it is, who it's for, the feel"></textarea>
           <div class="composer-bottom">

@@ -101,38 +101,40 @@
       </button>
     </div>
 
-    <nav class="sb-nav">
-      <button class="sb-item" id="newChatBtn">
-        <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-        New chat
-      </button>
-      <button class="sb-item" id="openProjectBtn">
-        <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
-        Open project
-      </button>
-      <button class="sb-item" id="remoteControlBtn">
-        <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M8 9h.01M16 9h.01M9 14h6"/></svg>
-        Codeply Away
-      </button>
-      <button class="sb-item" id="tasksBtn">
-        <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-        Tasks
-        <span class="sb-item-badge hidden" id="tasksBadge">0</span>
-      </button>
-    </nav>
-
-    <div class="sb-scroll">
-      <div class="sb-section" id="projectsSection">
-        <div class="sb-section-title">Projects</div>
-        <div id="projectsList"></div>
+    <!-- Everything under the app switch scrolls together: the search field
+         (Search or Ctrl+K), a few actions, then one folding section per
+         project that renderSidebar() in app.js fills. -->
+    <div class="sb-scroll" id="sbScroll">
+      <div class="sb-search" id="sbSearch" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="sbSearchInput" type="text" placeholder="Search chats" aria-label="Search chats" spellcheck="false" autocomplete="off">
       </div>
 
-      <div class="sb-section" id="recentsSection">
-        <div class="sb-section-title sb-section-title-row">
-          <span>Recents</span>
-        </div>
-        <div id="recentsList"></div>
-      </div>
+      <nav class="sb-actions" aria-label="Actions">
+        <button class="sb-row" id="newChatBtn" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          <span class="sb-label">New chat</span>
+        </button>
+        <button class="sb-row" id="sbSearchBtn" type="button" title="Search (Ctrl+K)" aria-expanded="false" aria-controls="sbSearch">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <span class="sb-label">Search</span>
+        </button>
+        <button class="sb-row" id="openProjectBtn" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+          <span class="sb-label">Open project</span>
+        </button>
+        <button class="sb-row" id="remoteControlBtn" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="3"/><path d="M11 18h2"/></svg>
+          <span class="sb-label">Codeply Away</span>
+        </button>
+        <button class="sb-row" id="tasksBtn" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>
+          <span class="sb-label">Tasks</span>
+          <span class="sb-item-badge hidden" id="tasksBadge">0</span>
+        </button>
+      </nav>
+
+      <div id="sbSections"></div>
     </div>
 
     <div class="sb-footer">
