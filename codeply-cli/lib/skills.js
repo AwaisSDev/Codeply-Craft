@@ -57,7 +57,10 @@ const DAILY_SKILLS = new Set([
   'verification-loop', 'video-editing', 'x-api',
   // Codeply's own visual-quality bar - see the note above use_skill in
   // lib/agent.mjs's TOOL_REFERENCE for why these are non-speculative triggers.
-  'premium-web-design', 'frontend-design-direction', 'motion-ui', 'frontend-a11y',
+  // codeply-taste is Codeply's design layer (design_direction, design_lint);
+  // the older premium-web-design and frontend-design-direction stay one
+  // list_skills away so they do not compete with it.
+  'codeply-taste', 'motion-ui', 'frontend-a11y',
   // The end-to-end publish flow (lib/publish.js).
   'publish-website',
 ]);
