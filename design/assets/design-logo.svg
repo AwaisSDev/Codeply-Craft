@@ -1,12 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <!-- Codeply Design: one artist's brush, a plain white shape on Craft and Crew's blue -->
   <rect width="512" height="512" fill="#2F6BFF"/>
-  <g transform="rotate(45 256 256) translate(256 256) scale(1.08) translate(-256 -244)" fill="#FFFFFF">
-    <!-- handle, thin at the end and fuller toward the metal -->
-    <path d="M244 56Q256 28 268 56L288 264H224Z"/>
-    <!-- ferrule -->
-    <rect x="221" y="274" width="70" height="48" rx="8"/>
-    <!-- bristles, flaring out to a curled tip -->
-    <path d="M222 332H290C302 368 298 408 274 438C259 456 236 466 211 461C229 449 235 430 230 412C219 388 215 358 222 332Z"/>
+  <g transform="translate(256 262) rotate(45) scale(0.95) translate(-252 -276)">
+    <!-- handle: a long rounded taper, fullest near the top third -->
+    <path d="M250 44Q256 34 262 44C292 120 292 210 279 330H233C220 210 220 120 250 44Z" fill="#FFFFFF"/>
+    <!-- the little window in the metal -->
+    <rect x="241" y="270" width="30" height="40" rx="2" fill="#2F6BFF"/>
+    <!-- collar, cupped -->
+    <path d="M233 338H279Q283 352 272 360H240Q229 352 233 338Z" fill="#FFFFFF"/>
+    <!-- bristles: a full tuft sweeping out to pointed wisps -->
+    <path d="M236 366H276C298 380 312 406 306 440C290 446 278 460 270 476C262 494 246 506 220 514C232 500 236 488 234 474C224 481 210 483 194 477C211 463 216 441 214 418C212 396 220 378 236 366Z" fill="#FFFFFF"/>
+    <!-- a few hairs through it -->
+    <path d="M256 384C263 418 259 452 244 490M272 384C284 404 288 424 284 446M240 386C236 410 232 436 222 462" fill="none" stroke="#2F6BFF" stroke-width="5" stroke-linecap="round"/>
   </g>
 </svg>
