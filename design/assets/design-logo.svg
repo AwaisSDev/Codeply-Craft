@@ -1,16 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- Codeply Design: one artist's brush, a plain white shape on Craft and Crew's blue -->
+  <!-- Codeply Design: the paintbrush from Microsoft Fluent Emoji, in white on Codeply blue.
+       Brush shapes (c) Microsoft Corporation, MIT licence: see fluent-emoji-LICENSE.txt. -->
   <rect width="512" height="512" fill="#2F6BFF"/>
-  <g transform="translate(256 262) rotate(45) scale(0.95) translate(-252 -276)">
-    <!-- handle: a long rounded taper, fullest near the top third -->
-    <path d="M250 44Q256 34 262 44C292 120 292 210 279 330H233C220 210 220 120 250 44Z" fill="#FFFFFF"/>
-    <!-- the little window in the metal -->
-    <rect x="241" y="270" width="30" height="40" rx="2" fill="#2F6BFF"/>
-    <!-- collar, cupped -->
-    <path d="M233 338H279Q283 352 272 360H240Q229 352 233 338Z" fill="#FFFFFF"/>
-    <!-- bristles: a full tuft sweeping out to pointed wisps -->
-    <path d="M236 366H276C298 380 312 406 306 440C290 446 278 460 270 476C262 494 246 506 220 514C232 500 236 488 234 474C224 481 210 483 194 477C211 463 216 441 214 418C212 396 220 378 236 366Z" fill="#FFFFFF"/>
-    <!-- a few hairs through it -->
-    <path d="M256 384C263 418 259 452 244 490M272 384C284 404 288 424 284 446M240 386C236 410 232 436 222 462" fill="none" stroke="#2F6BFF" stroke-width="5" stroke-linecap="round"/>
-  </g>
+  <g transform="translate(18 2) scale(15.375)"><path d="M11.955 22.0137L10.5015 20.5544C9.47518 19.5241 7.85768 19.3782 6.66358 20.2083L5.98364 20.6809C5.20465 21.2225 4.72772 22.1005 4.69753 23.0488L4.66434 24.0914C4.6383 24.9097 4.27894 25.6818 3.66963 26.2286L3.17004 26.677C3.15437 26.6911 3.14381 26.7099 3.14002 26.7306C3.09653 26.9683 3.23828 27.2008 3.46948 27.2709L6.04827 28.0536L6.43469 28.1244C8.5665 28.5145 10.7474 27.7193 12.1329 26.0528C13.1225 24.8625 13.0474 23.1105 11.955 22.0137Z" fill="#FFFFFF"/>
+<path d="M11.3816 17.0868L15.2865 17.5938L15.5968 21.3568L13.8176 23.1131C13.4246 23.5011 12.7914 23.497 12.4034 23.1039L9.59334 20.2573C9.20535 19.8643 9.20944 19.2311 9.60248 18.8431L11.3816 17.0868Z" fill="#A6D3FF"/>
+<path d="M11.3816 17.0868L15.5968 21.3568L28.8084 7.69391C29.7746 6.69466 29.7664 5.10678 28.7899 4.11756C27.8134 3.12834 26.2257 3.09962 25.2141 4.05288L11.3816 17.0868Z" fill="#FFFFFF"/></g>
 </svg>
