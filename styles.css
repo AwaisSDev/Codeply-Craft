@@ -2665,10 +2665,11 @@ a.remote-url { text-decoration: none; cursor: pointer; }
 
 .tb-switch { margin-left: auto; gap: 2px; padding: 2px; border-radius: 10px; background: var(--hover); border: 0; }
 .tb-switch .app-switch-btn { width: 32px; height: 28px; padding: 0; gap: 0; justify-content: center; border-radius: 8px; }
-.tb-switch .app-switch-btn img { width: 17px; height: 17px; border-radius: 5px; opacity: .6; filter: grayscale(.6); }
+/* The real logo colours, always; the open app gets the lighter tile. */
+.tb-switch .app-switch-btn img { width: 18px; height: 18px; border-radius: 5px; opacity: 1; filter: none; }
 .tb-switch .app-switch-btn .dz-switch-ico { width: 17px; height: 17px; opacity: .6; }
 .tb-switch .app-switch-btn .dz-switch-ico svg { width: 17px; height: 17px; }
-.tb-switch .app-switch-btn:hover img, .tb-switch .app-switch-btn:hover .dz-switch-ico { opacity: .9; filter: none; }
+.tb-switch .app-switch-btn:hover { background: var(--hover); }
 .tb-switch .app-switch-btn.on { background: var(--active); box-shadow: 0 1px 2px rgba(0, 0, 0, .3); }
 .tb-switch .app-switch-btn.on img, .tb-switch .app-switch-btn.on .dz-switch-ico { opacity: 1; filter: none; }
 

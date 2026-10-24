@@ -319,6 +319,7 @@ function tbMenuItems(name) {
     ['Open folder…', 'Ctrl+O', () => $('openProjectBtn').click(), !signedIn],
     null,
     ['Connect apps', '', () => openConnectApps(), !signedIn],
+    ['Codeply Away', '', () => openRemoteModal(), !signedIn],
     null,
     ['Close window', 'Alt+F4', () => api && api.close()],
   ];
@@ -3947,7 +3948,8 @@ api.onRemoteServerError((data) => {
     setRemoteStatus(data.message || 'The phone connection failed to start.', 'error');
   }
 });
-$('remoteControlBtn').addEventListener('click', openRemoteModal);
+// Codeply Away lives in the File menu now (the sidebar row was removed).
+if ($('remoteControlBtn')) $('remoteControlBtn').addEventListener('click', openRemoteModal);
 $('remoteCloseBtn').addEventListener('click', closeRemoteModal);
 $('remoteBackdrop').addEventListener('click', (e) => { if (e.target === $('remoteBackdrop')) closeRemoteModal(); });
 $('skillsCloseBtn').addEventListener('click', closeSkillsModal);
