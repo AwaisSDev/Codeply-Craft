@@ -791,28 +791,28 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 2px 8px 12px;
+  padding: 2px 8px 16px;
 }
 /* Rows sit inside clipped lists (the folding sections), so keyboard focus
    draws its ring inside the row instead of around it. */
 .sb-scroll button:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 70%, transparent); }
 
-.sb-actions { display: flex; flex-direction: column; gap: 1px; margin-bottom: 14px; }
+.sb-actions { display: flex; flex-direction: column; gap: 2px; margin-bottom: 18px; }
 .sb-row {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  height: 32px;
+  height: 34px;
   padding: 0 10px;
   border-radius: var(--r-sm);
-  font-size: 14px;
+  font-size: 14.5px;
   color: var(--text);
   text-align: left;
   transition: background var(--dur-fast) var(--ease-out);
 }
 .sb-row:hover { background: var(--hover); }
-.sb-row svg { width: 17px; height: 17px; flex: none; color: var(--text-dim); }
+.sb-row svg { width: 18px; height: 18px; flex: none; color: var(--text); opacity: 0.85; }
 .sb-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Search: an inline field above the actions that filters every chat row. */
@@ -846,27 +846,29 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
 
 /* Sections: a small bold title that folds the list away, with a + (new chat
    in this project) and the project's own menu on hover. */
-.sb-sec { margin-top: 10px; }
-.sb-sec-head { display: flex; align-items: center; gap: 2px; height: 30px; padding-right: 4px; }
+.sb-sec { margin-top: 20px; }
+.sb-sec-head { display: flex; align-items: center; gap: 2px; height: 32px; padding-right: 2px; margin-bottom: 2px; }
 .sb-sec-toggle {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex: 1;
   min-width: 0;
   height: 100%;
   padding: 0 6px 0 10px;
   border-radius: var(--r-sm);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-dim);
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text);
   text-align: left;
   transition: color var(--dur-fast) var(--ease-out);
 }
 .sb-sec-toggle span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sb-sec-toggle svg { width: 13px; height: 13px; flex: none; transition: transform var(--dur-slow) var(--ease-out); }
+.sb-sec-toggle svg { width: 10px; height: 10px; flex: none; color: var(--text-dim); transition: transform var(--dur-slow) var(--ease-out); }
+.sb-sec-toggle svg path { fill: currentColor; stroke: none; }
 .sb-sec-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
-.sb-sec-toggle:hover, .sb-sec.current .sb-sec-toggle { color: var(--text); }
+.sb-sec-toggle:hover { background: var(--hover); }
 .sb-sec-tool {
   width: 26px;
   height: 26px;
@@ -881,10 +883,13 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
 .sb-sec-tool svg { width: 15px; height: 15px; }
 .sb-sec-tool:hover, .sb-sec-tool.active { background: var(--hover); color: var(--text); }
 .sb-sec:hover .sb-sec-tool, .sb-sec-head:focus-within .sb-sec-tool, .sb-sec-tool.active { opacity: 1; }
+/* The + is always there, like the reference; the ... only on hover. */
+.sb-sec-tool[data-act="add"] { opacity: 1; order: 2; }
+.sb-sec-tool svg { width: 16px; height: 16px; }
 
 /* The fold: rows collapse to nothing through a grid-rows transition. */
 .sb-sec-body { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 240ms var(--ease-out); }
-.sb-sec-body > div { min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 1px; }
+.sb-sec-body > div { min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 2px; }
 .sb-sec.closed .sb-sec-body { grid-template-rows: 0fr; }
 .sb-empty { color: var(--text-faint); font-size: 13px; padding: 4px 10px 6px; }
 
@@ -894,11 +899,11 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
   align-items: center;
   gap: 8px;
   width: 100%;
-  height: 30px;
+  height: 32px;
   padding: 0 10px;
   border-radius: var(--r-sm);
-  font-size: 13px;
-  color: var(--text-faint);
+  font-size: 13.5px;
+  color: var(--text-dim);
   text-align: left;
 }
 .sb-more:hover { background: var(--hover); color: var(--text); }
@@ -913,10 +918,10 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
   align-items: center;
   gap: 8px;
   width: 100%;
-  height: 32px;
+  height: 34px;
   padding: 0 10px;
   border-radius: var(--r-sm);
-  font-size: 14px;
+  font-size: 14.5px;
   color: var(--text);
   text-align: left;
   transition: background var(--dur-fast) var(--ease-out);
@@ -924,7 +929,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
 .sb-chat:hover { background: var(--hover); }
 .sb-chat[aria-current="true"] { background: var(--active); }
 .sb-chat-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sb-chat-row:hover .sb-chat, .sb-chat-row:focus-within .sb-chat { padding-right: 34px; }
+.sb-chat-row:hover .sb-chat, .sb-chat-row:focus-within .sb-chat { padding-right: 36px; }
 /* cloud-ui.js marks cloud chats with a small cloud before the title. */
 .sb-chat-row .sb-chat .cloud-mark { flex: none; margin-right: 0; }
 
@@ -936,8 +941,8 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
 
 .sb-chat-menu-btn {
   position: absolute;
-  right: 3px;
-  top: 3px;
+  right: 4px;
+  top: 4px;
   width: 26px;
   height: 26px;
   border-radius: 7px;
@@ -956,7 +961,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible, input[type="che
 
 .sb-chat-rename-input {
   width: 100%;
-  height: 32px;
+  height: 34px;
   padding: 0 9px;
   border-radius: var(--r-sm);
   font: inherit;

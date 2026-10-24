@@ -1802,6 +1802,7 @@ const sb = {
 };
 const SB_ICON = {
   chev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
+  caret: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-7 9z"/></svg>',
   plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
   more: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>',
 };
@@ -1854,7 +1855,7 @@ function sbSectionHtml(sec, chats, n) {
   const k = sbAttr(sec.key);
   return `<section class="sb-sec${closed ? ' closed' : ''}${isCurrent ? ' current' : ''}" data-sec="${k}">`
     + '<div class="sb-sec-head">'
-    + `<button class="sb-sec-toggle" type="button" data-key="t:${k}" aria-expanded="${!closed}" aria-controls="sbSec${n}"${sec.path ? ` title="${sbAttr(sec.path)}"` : ''}><span>${esc(sec.name)}</span>${SB_ICON.chev}</button>`
+    + `<button class="sb-sec-toggle" type="button" data-key="t:${k}" aria-expanded="${!closed}" aria-controls="sbSec${n}"${sec.path ? ` title="${sbAttr(sec.path)}"` : ''}><span>${esc(sec.name)}</span>${SB_ICON.caret}</button>`
     + `<button class="sb-sec-tool" type="button" data-act="add" data-key="a:${k}" title="${sbAttr(addLabel)}" aria-label="${sbAttr(addLabel)}">${SB_ICON.plus}</button>`
     + (sec.path ? `<button class="sb-sec-tool" type="button" data-act="project-menu" data-key="p:${k}" title="More" aria-label="More for ${sbAttr(sec.name)}">${SB_ICON.more}</button>` : '')
     + '</div>'
