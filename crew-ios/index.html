@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#0c0c0c">
+  <title>Codeply Crew</title>
+  <link rel="icon" type="image/png" href="mark-256.png">
+  <link rel="stylesheet" href="phone-calls.css">
+  <link rel="stylesheet" href="crew.css">
+  <script>
+    // An explicit theme choice wins over the system one, before the first paint.
+    try { const t = JSON.parse(localStorage.getItem('crew-theme')); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
+  </script>
+</head>
+<body>
+  <!-- Sign in -->
+  <section class="signin hidden" id="signin">
+    <div class="signin-top">
+      <img class="signin-mark" src="mark-256.png" alt="">
+      <h1>Codeply Crew</h1>
+      <p>Your agents, in your pocket. Sign in with your Codeply account.</p>
+    </div>
+    <form class="signin-form" id="loginForm" autocomplete="on">
+      <input id="loginEmail" type="email" inputmode="email" autocomplete="username" placeholder="Email" required>
+      <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Password">
+      <p class="form-err hidden" id="loginError"></p>
+      <button class="btn btn-brand" type="submit">Sign in</button>
+      <button class="btn btn-quiet" type="button" id="useCodeBtn">Email me a code instead</button>
+    </form>
+    <form class="signin-form hidden" id="otpForm">
+      <p class="otp-to" id="otpSentTo"></p>
+      <input id="loginOtp" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code" maxlength="10">
+      <p class="form-err hidden" id="otpError"></p>
+      <button class="btn btn-brand" type="submit">Sign in</button>
+      <button class="btn btn-quiet" type="button" id="otpBackBtn">Back</button>
+    </form>
+    <div class="signin-busy hidden" id="signinBusy"><span class="spin"></span><span id="signinBusyText">Signing in...</span></div>
+  </section>
+
+  <!-- The app -->
+  <div class="app hidden" id="app">
+    <main class="views">
+      <section class="view" id="viewChats"></section>
+      <section class="view hidden" id="viewCalls"></section>
+      <section class="view hidden" id="viewYou"></section>
+    </main>
+    <nav class="tabbar" id="tabbar">
+      <button data-tab="Chats" class="on"><svg viewBox="0 0 24 24"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 3.5V17A2.5 2.5 0 0 1 4 14.5Z"/></svg><span>Chats</span></button>
+      <button data-tab="Calls"><svg viewBox="0 0 24 24"><path d="M5.5 4h3.2l1.8 4.5-2.2 1.4a11 11 0 0 0 5.8 5.8l1.4-2.2 4.5 1.8v3.2a1.5 1.5 0 0 1-1.6 1.5A16.5 16.5 0 0 1 4 5.6 1.5 1.5 0 0 1 5.5 4Z"/></svg><span>Calls</span></button>
+      <button data-tab="You"><svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg><span>You</span></button>
+    </nav>
+  </div>
+
+  <!-- A chat with one agent, and its context page, slide over the tabs -->
+  <section class="page hidden" id="thread"></section>
+  <section class="page hidden" id="profile"></section>
+  <input type="file" id="pickImage" accept="image/*" hidden>
+  <input type="file" id="takePhoto" accept="image/*" capture="environment" hidden>
+
+  <!-- phone-calls.js (the call engine shared with Codeply Away) expects these -->
+  <section class="hidden" id="calls"><button id="callsBack"></button><div id="callsBody"></div></section>
+  <button class="hidden" id="drawerCalls"></button>
+  <section class="call hidden" id="call" role="dialog" aria-modal="true" aria-label="Voice call"></section>
+
+  <script src="supabase.js"></script>
+  <script src="bot-avatar.js"></script>
+  <script src="crew-core.js"></script>
+  <script src="phone-calls.js"></script>
+  <script src="crew-app.js"></script>
+</body>
+</html>

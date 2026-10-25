@@ -1,0 +1,101 @@
+name: Codeply Crew iOS
+
+# Builds Codeply Crew for iPhone on GitHub's Mac runner, unsigned, as an .ipa.
+# Install it on your own iPhone for free with Sideloadly (Windows or Mac) and
+# your normal Apple ID: Sideloadly signs it for your phone. A free Apple ID
+# signature lasts 7 days, then install again.
+#
+# The Xcode project is made fresh on every run (npx cap add ios), so nothing
+# generated is kept in the repo; the icon and permissions are set here.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'crew-ios/**'
+      - 'phone-calls.js'
+      - 'phone-calls.css'
+      - 'phone-stt-worker.js'
+      - 'bot-avatar.js'
+      - 'scripts/prepare-crew-ios.js'
+      - '.github/workflows/crew-ios.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Capacitor
+        working-directory: crew-ios
+        run: npm install --no-audit --no-fund
+
+      - name: Web layer
+        run: node scripts/prepare-crew-ios.js
+
+      - name: Xcode project
+        working-directory: crew-ios
+        run: |
+          npx cap add ios --packagemanager SPM
+          npx cap sync ios
+
+      - name: Icon, name and permissions
+        working-directory: crew-ios/ios/App/App
+        run: |
+          ICONSET=Assets.xcassets/AppIcon.appiconset
+          rm -f $ICONSET/*.png
+          cp ../../../assets/icon-1024.png $ICONSET/AppIcon-512@2x.png
+          cat > $ICONSET/Contents.json <<'JSON'
+          {"images":[{"filename":"AppIcon-512@2x.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"xcode","version":1}}
+          JSON
+          P=Info.plist
+          set_key() { /usr/libexec/PlistBuddy -c "Delete :$1" $P 2>/dev/null || true; /usr/libexec/PlistBuddy -c "Add :$1 $2 $3" $P; }
+          set_key CFBundleDisplayName string "Codeply Crew"
+          set_key NSMicrophoneUsageDescription string "Codeply Crew uses the microphone so you can talk to your agents on calls."
+          set_key NSCameraUsageDescription string "Codeply Crew uses the camera when you show something to an agent."
+          set_key NSPhotoLibraryUsageDescription string "Codeply Crew opens your photos when you share a screenshot with an agent."
+          set_key ITSAppUsesNonExemptEncryption bool false
+          /usr/libexec/PlistBuddy -c "Delete :UIBackgroundModes" $P 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" $P
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string audio" $P
+          /usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations" $P 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations array" $P
+          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait" $P
+
+      - name: Build (unsigned)
+        working-directory: crew-ios/ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            MARKETING_VERSION=0.1.0 CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            build | xcbeautify || exit ${PIPESTATUS[0]}
+
+      - name: Package .ipa
+        working-directory: crew-ios/ios/App
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/App.app Payload/
+          zip -qry ../../../CodeplyCrew.ipa Payload
+          ls -la ../../../CodeplyCrew.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CodeplyCrew-ipa
+          path: CodeplyCrew.ipa
+
+      # One fixed download link that always has the newest build.
+      - name: Publish to the crew-ios-latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view crew-ios-latest >/dev/null 2>&1 || gh release create crew-ios-latest --prerelease --title "Codeply Crew for iPhone (latest)" --notes "Unsigned test build. Install with Sideloadly and your Apple ID."
+          gh release upload crew-ios-latest CodeplyCrew.ipa --clobber

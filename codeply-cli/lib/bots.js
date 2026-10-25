@@ -1096,6 +1096,14 @@ You are on a live voice call with the user, talking out loud. Your final reply i
 - Ask one short question back when it helps.
 - Anything that needs the user's OK (sending, changing files, running commands) is asked on their screen; if they say no, tell them plainly.`;
 
+// The same turn as a text message from Codeply Crew on the phone: read, not spoken.
+const TEXT_RULES = `PHONE MESSAGES
+The user is texting you from Codeply Crew on their phone.
+- You still have all your tools. When the user asks for real work (check their email, look something up, read or change a file), do it now with your tools, then tell them the result.
+- Reply like a good text message: short and easy to read on a phone. A few sentences, or a short list when it really helps. Light markdown is fine; no headings, no long dash.
+- When an image comes with the message, it is something the user is showing you (a screenshot of their phone, a photo): look at it and answer about it.
+- Anything that needs the user's OK (sending, changing files, running commands) is asked on their screen; if they say no, tell them plainly.`;
+
 const VOICE_RULES_NO_TOOLS = `LIVE VOICE CALL
 You are on a live voice call with the user, talking out loud. Everything you write is spoken by a voice engine.
 - Reply in one to three short spoken sentences. Plain words, the way people talk.
@@ -1114,6 +1122,14 @@ function spoken(s) {
     .replace(/[*_#`>]+/g, '')
     .split(dash).join(', ')
     .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** A text reply for the phone: markdown kept, thinking and long dashes out. */
+function written(s) {
+  return String(s || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(new RegExp(`\\s*${String.fromCharCode(0x2014)}\\s*`, 'g'), ', ')
     .trim();
 }
 
@@ -1139,14 +1155,16 @@ function callTurns(turns) {
  * screen ("Checking Gmail..."). Returns { text } ready to speak, plus
  * { request, reply, steps } for reflectOnRun.
  */
-async function voiceTurn({ bot, team, turns, recentChat, runAgent, route, cwd, signal, approve, onStep, maxSteps = 16 }) {
+async function voiceTurn({ bot, team, turns, recentChat, runAgent, route, cwd, signal, approve, onStep, maxSteps = 16, mode, images }) {
   const { history, userMessage } = callTurns(turns);
   if (!userMessage) return { text: '' };
+  const text = mode === 'text'; // a message from Codeply Crew: read on screen, not spoken
   const extra = recentChat ? `\n\nRECENT CHAT BEFORE THIS CALL\n${recentChat}` : '';
   const run = runAgent({
     userMessage, history, mode: 'Build', cwd, signal, route, maxSteps, approve, botId: bot.id,
-    botPrompt: () => `${buildBotPrompt(bot, { team, request: userMessage })}\n\n${VOICE_RULES}${extra}`,
-    haze: { product: 'mobile', chatId: `call:${bot.id}` },
+    images: images && images.length ? images : undefined,
+    botPrompt: () => `${buildBotPrompt(bot, { team, request: userMessage })}\n\n${text ? TEXT_RULES : VOICE_RULES}${extra}`,
+    haze: { product: 'mobile', chatId: `${text ? 'text' : 'call'}:${bot.id}` },
   });
   let reply = '';
   const steps = []; // the trajectory, for reflectOnRun after the call turn
@@ -1162,7 +1180,7 @@ async function voiceTurn({ bot, team, turns, recentChat, runAgent, route, cwd, s
     else if (ev.type === 'done') break;
   }
   if (signal && signal.aborted) throw new Error('Stopped.'); // hung up or talked over: nothing to say
-  return { text: spoken(reply), request: userMessage, reply, steps };
+  return { text: text ? written(reply) : spoken(reply), request: userMessage, reply, steps };
 }
 
 /** One agent tool_end event as a trajectory step for reflectOnRun. */
@@ -1181,7 +1199,7 @@ const CALL_STEP = {
 const callStepLabel = (name) => CALL_STEP[name] || 'Working on it';
 
 module.exports = {
-  VOICE_RULES, VOICE_RULES_NO_TOOLS, spoken, callTurns, voiceTurn, callStepLabel,
+  VOICE_RULES, VOICE_RULES_NO_TOOLS, TEXT_RULES, spoken, written, callTurns, voiceTurn, callStepLabel,
   MAX_MEMORY, MAX_DEPTH, ROLES, TONES, APPROVALS, AVATAR_KEYS, TEMPLATES, WATCH_SOURCES, REACH,
   botsDir, setBotsDir, normalizeBot, normalizeAvatar, normalizeAlwaysOn, normalizeAutonomy, normalizeCallStyle, normalizeEmail, AUTONOMY, EXCUSE_STYLES,
   listBots, getBot, findBot, createBot, createFromTemplate, updateBot, removeBot,

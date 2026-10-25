@@ -1,0 +1,11 @@
+{
+  "appId": "app.codeply.crew",
+  "appName": "Codeply Crew",
+  "webDir": "www",
+  "backgroundColor": "#0c0c0c",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#0c0c0c",
+    "limitsNavigationsToAppBoundDomains": false
+  }
+}

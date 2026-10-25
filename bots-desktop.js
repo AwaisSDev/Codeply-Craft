@@ -304,7 +304,16 @@ function waitJob(j, version, ms) {
   });
 }
 
-async function startVoice({ botId, turns }) {
+/** Images shared from Codeply Crew (screenshots, photos): a few data: URLs, nothing else. */
+function sharedImages(list) {
+  return (Array.isArray(list) ? list : [])
+    .filter((u) => typeof u === 'string' && /^data:image\/(png|jpe?g|webp|gif);base64,/i.test(u) && u.length < 8 * 1024 * 1024)
+    .slice(0, 4);
+}
+
+// mode 'text' is a message from Codeply Crew (read on screen, may carry images);
+// anything else is a spoken call turn.
+async function startVoice({ botId, turns, mode, images }) {
   const b = bots();
   const bot = b.getBot(String(botId || ''));
   if (!bot) return { status: 404, body: { error: 'That bot is not on this PC any more.' } };
@@ -341,6 +350,7 @@ async function startVoice({ botId, turns }) {
     try {
       const r = await b.globalLock.run(token, () => b.voiceTurn({
         bot, team: b.listBots(), turns, runAgent: deps.agentMod().runAgent, route, cwd: botsFolder(), signal, approve,
+        mode: mode === 'text' ? 'text' : 'voice', images: sharedImages(images),
         onStep: (s) => { if (!s.done) { j.step = b.callStepLabel(s.name); bumpJob(j); } },
       }), signal);
       j.text = r.text; j.status = 'done';
