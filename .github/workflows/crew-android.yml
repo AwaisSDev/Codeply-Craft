@@ -1,0 +1,89 @@
+name: Codeply Crew Android
+
+# Builds Codeply Crew for Android as an installable APK (debug-signed, for
+# testing): download it on the phone and open it. Same web layer as the
+# iPhone app (scripts/prepare-crew-ios.js); the Android project is made fresh
+# on every run (npx cap add android), so nothing generated is kept in the repo.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'crew-ios/**'
+      - 'phone-calls.js'
+      - 'phone-calls.css'
+      - 'phone-stt-worker.js'
+      - 'bot-avatar.js'
+      - 'scripts/prepare-crew-ios.js'
+      - '.github/workflows/crew-android.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install Capacitor
+        working-directory: crew-ios
+        run: npm install --no-audit --no-fund && npm install --no-audit --no-fund @capacitor/android@^8.5.0
+
+      - name: Web layer
+        run: node scripts/prepare-crew-ios.js
+
+      - name: Android project
+        working-directory: crew-ios
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Icon and permissions
+        working-directory: crew-ios/android/app/src/main
+        run: |
+          # Plain icons from the logo; the template's adaptive icon would draw Capacitor's.
+          rm -rf res/mipmap-anydpi-v26
+          for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+            dir=res/mipmap-${d%%:*}; size=${d##*:}
+            mkdir -p $dir
+            rm -f $dir/ic_launcher*.png $dir/ic_launcher*.webp
+            convert ../../../../assets/icon-1024.png -resize ${size}x${size} $dir/ic_launcher.png
+            cp $dir/ic_launcher.png $dir/ic_launcher_round.png # launchers crop it round themselves
+          done
+          # Calls need the microphone; sharing a photo can use the camera.
+          for p in RECORD_AUDIO MODIFY_AUDIO_SETTINGS CAMERA; do
+            grep -q "android.permission.$p" AndroidManifest.xml || sed -i "s#</manifest>#    <uses-permission android:name=\"android.permission.$p\" />\n</manifest>#" AndroidManifest.xml
+          done
+          grep uses-permission AndroidManifest.xml
+
+      - name: Build APK
+        working-directory: crew-ios/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon -q
+          cp app/build/outputs/apk/debug/app-debug.apk ../../CodeplyCrew.apk
+          ls -la ../../CodeplyCrew.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CodeplyCrew-apk
+          path: CodeplyCrew.apk
+
+      # One fixed download link that always has the newest build.
+      - name: Publish to the crew-android-latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view crew-android-latest >/dev/null 2>&1 || gh release create crew-android-latest --prerelease --title "Codeply Crew for Android (latest)" --notes "Test build. Open the APK on your phone to install it."
+          gh release upload crew-android-latest CodeplyCrew.apk --clobber
