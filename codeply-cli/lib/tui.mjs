@@ -1,28 +1,39 @@
 /**
- * Codeply TUI - Google-brand interactive shell.
+ * Codeply TUI - interactive shell.
+ *
+ * Layout follows the shape every good coding CLI has settled on (Claude Code,
+ * Codex, Gemini CLI, OpenCode, Grok Build): a scrolling transcript, one quiet
+ * input box at the bottom, one footer line under it.
+ *
+ *   ● Read src/config.js                 a step: bullet, tool, target
+ *     ⎿  Read 84 lines                   its result, indented under it
+ *   ● Update src/config.js
+ *     ⎿  Updated src/config.js with 2 additions and 1 removal
+ *        12 - const port = Number(raw);  inline diff, line numbers from the file
+ *        12 + const port = parseInt(raw, 10);
+ *   ╭──────────────────────────────────╮
+ *   │ › _                              │
+ *   ╰──────────────────────────────────╯
+ *     Build mode (tab to switch)                       Haze 2
  *
  * Rendering model (important):
  *   Everything that is *finished* (banner + past messages + tool activity) is
  *   emitted through Ink's <Static>, which writes each item to stdout exactly
  *   once and never touches it again. Only the live area - spinner, approval
- *   prompt, command palette, composer, hints - lives in the re-rendered frame.
+ *   prompt, command palette, composer, footer - lives in the re-rendered frame.
  *
- *   This is what kills the flicker/duplicate-screen bug: Ink redraws a frame by
- *   erasing the previous one, but it can only erase lines still on screen. Once
- *   the frame grows taller than the terminal, the erase is incomplete and the
- *   frame gets appended instead of replaced - you see the conversation twice.
- *   Keeping the live frame a handful of lines tall makes the redraw exact.
+ *   Ink redraws a frame by erasing the previous one, but it can only erase
+ *   lines still on screen. Once the frame grows taller than the terminal, the
+ *   erase is incomplete and the frame gets appended instead of replaced - you
+ *   see the conversation twice. Keeping the live frame short makes the redraw
+ *   exact. Rule for future edits: nothing tall goes outside <Static>.
  *
- *   Rule for future edits: nothing tall goes outside <Static>.
- *
- *   ┌ scrollback (banner + conversation, via <Static>) ──┐
- *   ├ live frame ────────────────────────────────────────┤
- *   │ spinner · approval · palette · composer · hints    │
- *   └────────────────────────────────────────────────────┘
+ *   Resizing changes where every line wraps, and <Static> cannot reflow what it
+ *   already printed, so a width change clears the screen and reprints the
+ *   transcript at the new width (the same thing Claude Code does).
  */
 import React from 'react';
 import { Box, Text, Static, useInput, useApp, useStdout } from 'ink';
-import Spinner from 'ink-spinner';
 import { createRequire } from 'module';
 import path from 'path';
 import os from 'os';
@@ -34,132 +45,384 @@ const appConfig = require('../lib/config.js');
 const skills = require('../lib/skills.js');
 const VERSION = require('../package.json').version;
 import {
-  renderMarkdown, Panel, hexToAnsi, hexToAnsiBg, fillRow, SURFACE,
-  ANSI_RESET, ANSI_BOLD, ANSI_DIM,
+  renderMarkdown, Panel, hexToAnsi, hexToAnsiBg, visibleLength, SURFACE,
+  ANSI_RESET, ANSI_BOLD, ANSI_ITALIC, ANSI_STRIKE,
 } from '../lib/render-md.mjs';
 import { runAgent } from '../lib/agent.mjs';
 import { TOOL_DISPLAY } from '../lib/tools.mjs';
 import TextArea, { enableModifiedEnter, isTerminalReport } from '../lib/textarea.mjs';
+import { DshEngine, summarizeArgs } from '../lib/dsh-acp.mjs';
 
-// ─── Theme (Google brand) ───────────────────────────────────────────────────
-const G = {
-  blue: '#4285F4',
-  red: '#EA4335',
-  yellow: '#FBBC05',
-  green: '#34A853',
-};
+// ─── Glyphs ─────────────────────────────────────────────────────────────────
+//
+// Windows Terminal, VS Code and every macOS/Linux terminal have fonts with
+// these symbols. The old console host (powershell.exe opened on its own) uses
+// Consolas with no fallback, where most of them turn into boxes, so it gets a
+// plain set. CODEPLY_ASCII=1 forces the plain set anywhere.
+
+const FANCY = !process.env.CODEPLY_ASCII && (
+  process.platform !== 'win32' ||
+  !!process.env.WT_SESSION ||
+  !!process.env.TERM_PROGRAM ||
+  /xterm|kitty|alacritty|wezterm|ghostty/i.test(process.env.TERM || '')
+);
+
+const GL = FANCY
+  ? {
+    dot: '●', branch: '⎿', prompt: '›', pointer: '❯', star: '✻', warn: '⚠', cross: '✗',
+    open: '☐', done: '☒', bypass: '⏵⏵', rule: '─', border: 'round',
+    corners: ['╭', '╮', '╰', '╯'], spin: ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢'],
+  }
+  : {
+    dot: '•', branch: '└', prompt: '>', pointer: '>', star: '*', warn: '!', cross: 'x',
+    open: '[ ]', done: '[x]', bypass: '>>', rule: '─', border: 'single',
+    corners: ['┌', '┐', '└', '┘'], spin: ['-', '\\', '|', '/'],
+  };
+
+// ─── Theme ──────────────────────────────────────────────────────────────────
+//
+// Codeply blue (the app icon's #1f6bff) for the mascot and the welcome box, a
+// lighter step of it for text so it stays readable on a dark background, greys
+// for everything structural, and red/green/yellow kept for what they mean
+// (failed, succeeded, needs attention).
 
 const T = {
-  accent: G.blue,
-  text: '#e8eaed',
-  secondary: '#9aa0a6',
+  brand: '#1f6bff',
+  accent: '#5b9bff',
+  text: '#e3e3e3',
+  secondary: '#a8adb3',
   dim: '#80868b',
-  muted: '#5f6368',
-  faint: '#3c4043',
-  border: '#3c4043',
-  cycle: [G.blue, G.red, G.yellow, G.green],
+  faint: '#5f6368',
+  border: '#4a4f55',
+  ok: '#5bb974',
+  err: '#f28b82',
+  warn: '#fdd663',
 };
 
-// The mascot's own colour, from mascot.png - the home screen's box border and
-// headings pick this up too, so the splash reads as one themed piece instead
-// of the mascot looking like a sticker dropped on top of an unrelated blue box.
-const MASCOT_ORANGE = '#E8821E';
+const paint = (hex, s, extra = '') => hexToAnsi(hex) + extra + s + ANSI_RESET;
+const bold = (hex, s) => paint(hex, s, ANSI_BOLD);
+const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
+const stripAnsi = (s) => String(s || '').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+
+function fmtSecs(s) {
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+}
 
 const MODES = ['Build', 'Plan', 'Ask'];
-const MODE_COLOR = { Build: G.blue, Plan: G.yellow, Ask: G.green };
+const MODE_COLOR = { Build: T.accent, Plan: T.warn, Ask: '#81c995' };
 const MODE_HINT = {
   Build: 'reads, edits and verifies files',
   Plan: 'investigates, then writes a plan',
   Ask: 'answers from the codebase, read-only',
 };
 
-// CODEPLY block letters - fixed per-letter widths, one Google color each.
-// C=blue O=red D=yellow E=green P=blue L=red Y=yellow
-const LOGO_SEGMENTS = [
-  [
-    { t: ' ██████╗ ', c: G.blue }, { t: ' ██████╗ ', c: G.red },
-    { t: '██████╗  ', c: G.yellow }, { t: '███████╗ ', c: G.green },
-    { t: '██████╗  ', c: G.blue }, { t: '██╗      ', c: G.red },
-    { t: '██╗   ██╗', c: G.yellow },
-  ],
-  [
-    { t: '██╔════╝ ', c: G.blue }, { t: '██╔═══██╗', c: G.red },
-    { t: '██╔══██╗ ', c: G.yellow }, { t: '██╔════╝ ', c: G.green },
-    { t: '██╔══██╗ ', c: G.blue }, { t: '██║      ', c: G.red },
-    { t: '╚██╗ ██╔╝', c: G.yellow },
-  ],
-  [
-    { t: '██║      ', c: G.blue }, { t: '██║   ██║', c: G.red },
-    { t: '██║  ██║ ', c: G.yellow }, { t: '█████╗   ', c: G.green },
-    { t: '██████╔╝ ', c: G.blue }, { t: '██║      ', c: G.red },
-    { t: ' ╚████╔╝ ', c: G.yellow },
-  ],
-  [
-    { t: '██║      ', c: G.blue }, { t: '██║   ██║', c: G.red },
-    { t: '██║  ██║ ', c: G.yellow }, { t: '██╔══╝   ', c: G.green },
-    { t: '██╔═══╝  ', c: G.blue }, { t: '██║      ', c: G.red },
-    { t: '  ╚██╔╝  ', c: G.yellow },
-  ],
-  [
-    { t: '╚██████╗ ', c: G.blue }, { t: '╚██████╔╝', c: G.red },
-    { t: '██████╔╝ ', c: G.yellow }, { t: '███████╗ ', c: G.green },
-    { t: '██║      ', c: G.blue }, { t: '███████╗ ', c: G.red },
-    { t: '   ██║   ', c: G.yellow },
-  ],
-  [
-    { t: ' ╚═════╝ ', c: G.blue }, { t: ' ╚═════╝ ', c: G.red },
-    { t: '╚═════╝  ', c: G.yellow }, { t: '╚══════╝ ', c: G.green },
-    { t: '╚═╝      ', c: G.blue }, { t: '╚══════╝ ', c: G.red },
-    { t: '   ╚═╝   ', c: G.yellow },
-  ],
+// The Codeply agent: a solid blue ball with two eyes, in the spirit of Kimi
+// CLI's blue square. Drawn as pixels, two per character cell with half blocks
+// (▀: top pixel is the foreground colour, bottom pixel the background), which
+// comes out square in a normal terminal font. The eyes are holes, so they take
+// the terminal's own background colour. A slight top-to-bottom shade keeps it
+// reading as a ball rather than a flat disc. Mirror-symmetric by construction.
+const BALL_PIXELS = [
+  '...XXXX...',
+  '.XXXXXXXX.',
+  '.XXXXXXXX.',
+  'XXX.XX.XXX',
+  'XXX.XX.XXX',
+  'XXXXXXXXXX',
+  'XXXXXXXXXX',
+  '.XXXXXXXX.',
+  '.XXXXXXXX.',
+  '...XXXX...',
 ];
+const BALL_TOP = '#6fa3ff';
+const BALL_BOTTOM = '#1f56e0';
 
-// Pre-flattened to one ANSI string per row: 6 <Text> nodes instead of 42.
-const LOGO_ROWS = LOGO_SEGMENTS.map((row) =>
-  row.map((s) => hexToAnsi(s.c) + ANSI_BOLD + s.t + ANSI_RESET).join('')
-);
-const LOGO_WIDTH = LOGO_SEGMENTS[0].reduce((n, s) => n + s.t.length, 0);
+function shadeAt(y, h) {
+  const t = h > 1 ? y / (h - 1) : 0;
+  const a = [1, 3, 5].map((i) => parseInt(BALL_TOP.slice(i, i + 2), 16));
+  const b = [1, 3, 5].map((i) => parseInt(BALL_BOTTOM.slice(i, i + 2), 16));
+  return '#' + a.map((v, i) => Math.round(v + (b[i] - v) * t).toString(16).padStart(2, '0')).join('');
+}
 
-const WORDMARK = hexToAnsi(G.yellow) + ANSI_BOLD + 'codeply' + ANSI_RESET;
+function drawBall(pixels) {
+  const h = pixels.length;
+  const rows = [];
+  for (let y = 0; y < h; y += 2) {
+    let line = '';
+    for (let x = 0; x < pixels[y].length; x++) {
+      const top = pixels[y][x] === 'X' ? shadeAt(y, h) : null;
+      const bottom = pixels[y + 1] && pixels[y + 1][x] === 'X' ? shadeAt(y + 1, h) : null;
+      if (!top && !bottom) line += ANSI_RESET + ' ';
+      else if (top && !bottom) line += ANSI_RESET + hexToAnsi(top) + '▀';
+      else if (!top) line += ANSI_RESET + hexToAnsi(bottom) + '▄';
+      else line += hexToAnsi(top) + hexToAnsiBg(bottom) + '▀';
+    }
+    rows.push(line + ANSI_RESET);
+  }
+  return { rows, width: pixels[0].length };
+}
+
+const MASCOT = drawBall(BALL_PIXELS);
 
 const COMMANDS = [
-  { name: '/login', description: 'Sign in with your Codeply account' },
-  { name: '/logout', description: 'Sign out of current session' },
-  { name: '/whoami', description: 'Show currently signed-in account' },
-  { name: '/help', description: 'Show available commands' },
-  { name: '/clear', description: 'Clear conversation and context' },
+  { name: '/help', description: 'Show commands and keyboard shortcuts' },
+  { name: '/clear', description: 'Clear the conversation and start fresh' },
   { name: '/mode', description: 'Cycle Build → Plan → Ask' },
-  { name: '/provider', description: 'Show or switch model provider (BYOK: openrouter, groq, anthropic, openai)' },
+  { name: '/provider', description: 'Show or switch the model provider (Haze 2 or your own key)' },
   { name: '/skill', description: 'List, install, or remove agent skills' },
+  { name: '/login', description: 'Sign in with your Codeply account' },
+  { name: '/logout', description: 'Sign out of this computer' },
+  { name: '/whoami', description: 'Show the signed-in account' },
+  { name: '/engine', description: 'Show or switch the engine: classic or dsh' },
   { name: '/keys', description: 'Show what your terminal sends for a key' },
   { name: '/quit', description: 'Exit Codeply' },
 ];
 
-const TIPS = [
-  ['ctrl+j', 'inserts a new line - or end a line with \\ and press enter'],
-  ['Press tab', 'to cycle Build → Plan → Ask without leaving the composer'],
-  ['Press esc', 'while it is working to interrupt the run'],
-  ['Ask it to fix a failing test', 'it can run commands and iterate on the output'],
-  ['Run /keys', 'to see exactly what your terminal sends for a key'],
-];
-
 const WHATS_NEW = [
-  'Verification gate - the agent now has to check its changes (and can no longer claim tests or deploys it never ran) before it finishes',
-  'Added shift+tab to toggle bypass permissions without leaving the composer',
-  '/skill install now accepts a bare GitHub owner/repo, not just a full URL',
+  'New terminal UI with inline diffs and step results',
+  '↑ ↓ brings back earlier prompts',
+  'Type while it works to queue a follow-up',
 ];
 
-// A tiny pixel mascot echoing mascot.png's blocky orange creature - pointy
-// ear notches, a solid head, two eyes, comb-like legs. The terminal's own
-// background already stands in for every "black" pixel in the source art, so
-// only the orange pixels need marking; everything else is a plain space.
-const MASCOT_ROWS = [
-  ' █   █ ',
-  '████████',
-  '██ █ ███',
-  '████████',
-  '█ █ █ █',
-];
+// ─── Tool presentation ──────────────────────────────────────────────────────
+
+const TOOL_TITLE = {
+  read_file: ['Read', 'Reading'],
+  write_file: ['Write', 'Writing'],
+  edit_file: ['Update', 'Editing'],
+  apply_patch: ['Patch', 'Patching'],
+  search: ['Search', 'Searching'],
+  list_dir: ['List', 'Listing'],
+  run: ['Run', 'Running'],
+  job: ['Job', 'Checking job'],
+  web_fetch: ['Fetch', 'Fetching'],
+  web_search: ['Web search', 'Searching the web'],
+  image_search: ['Image search', 'Searching images'],
+  todo: ['Update todos', 'Updating todos'],
+  use_skill: ['Skill', 'Loading skill'],
+  list_skills: ['Skills', 'Listing skills'],
+  browser_check: ['Browser check', 'Checking in the browser'],
+  remember: ['Remember', 'Remembering'],
+  recall: ['Recall', 'Recalling'],
+  lsp: ['Code check', 'Checking code'],
+  // The DSH engine's own tool names.
+  read: ['Read', 'Reading'],
+  edit: ['Update', 'Editing'],
+  write: ['Write', 'Writing'],
+  glob: ['Search', 'Searching'],
+  grep: ['Search', 'Searching'],
+  pwsh: ['Run', 'Running'],
+  bash: ['Run', 'Running'],
+  shell: ['Run', 'Running'],
+};
+
+function toolTitle(name) {
+  if (TOOL_TITLE[name]) return TOOL_TITLE[name];
+  const verb = (TOOL_DISPLAY[name] && TOOL_DISPLAY[name].verb) || String(name || 'tool').replace(/_/g, ' ');
+  const cap = verb[0].toUpperCase() + verb.slice(1);
+  return [cap, cap];
+}
+
+const argTarget = (args = {}) =>
+  args.path || args.file_path || args.command || args.pattern || args.glob || args.url || args.query || args.name || '';
+
+/** Line-level diff (LCS), so unchanged lines show as context, not -/+ pairs. */
+function lineDiff(before, after) {
+  const A = String(before ?? '').split('\n');
+  const B = String(after ?? '').split('\n');
+  const n = A.length;
+  const m = B.length;
+  if (n * m > 90000) return [...A.map((s) => ({ t: '-', s })), ...B.map((s) => ({ t: '+', s }))];
+  const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  }
+  const out = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (A[i] === B[j]) { out.push({ t: ' ', s: A[i] }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) out.push({ t: '-', s: A[i++] });
+    else out.push({ t: '+', s: B[j++] });
+  }
+  while (i < n) out.push({ t: '-', s: A[i++] });
+  while (j < m) out.push({ t: '+', s: B[j++] });
+  return out;
+}
+
+/** 1-based line where `needle` starts in the file, or null. */
+function lineOf(cwd, rel, needle) {
+  if (!rel || !needle) return null;
+  try {
+    const content = fs.readFileSync(path.resolve(cwd, rel), 'utf8');
+    const idx = content.indexOf(needle);
+    return idx < 0 ? null : content.slice(0, idx).split('\n').length;
+  } catch { return null; }
+}
+
+/** Diff rows as finished ANSI strings, filled to `width` like Claude Code's. */
+function diffRows(diff, start, width, max = 24) {
+  const w = Math.max(20, width);
+  const numW = String((start || 1) + diff.length).length;
+  let oldN = start || 1;
+  let newN = start || 1;
+  const rows = [];
+  for (const d of diff.slice(0, max)) {
+    const num = start ? String(d.t === '+' ? newN : oldN).padStart(numW) : ' '.repeat(numW);
+    if (d.t !== '+') oldN++;
+    if (d.t !== '-') newN++;
+    let body = `${num} ${d.t} ${d.s.replace(/\t/g, '  ')}`;
+    if (body.length > w) body = body.slice(0, w - 1) + '…';
+    if (d.t === ' ') { rows.push(paint(T.dim, body)); continue; }
+    const bg = d.t === '+' ? SURFACE.diffAdd : SURFACE.diffDel;
+    const fg = d.t === '+' ? '#c8f2d2' : '#ffd4d4';
+    rows.push(hexToAnsiBg(bg) + hexToAnsi(fg) + body + ' '.repeat(Math.max(0, w - body.length)) + ANSI_RESET);
+  }
+  if (diff.length > max) rows.push(paint(T.faint, `… +${diff.length - max} more lines`));
+  return rows;
+}
+
+/** A finished tool call → a transcript entry with its result lines worked out. */
+function toolMessage(e, cwd) {
+  const meta = e.meta || {};
+  const args = e.args || {};
+  const [title] = toolTitle(e.name);
+  const rejected = !!meta.rejected;
+  const exitBad = meta.exitCode != null && meta.exitCode !== 0;
+  const failed = !e.ok && !rejected;
+  const msg = {
+    role: 'tool',
+    name: e.name,
+    title,
+    label: e.name === 'todo' ? '' : (meta.label || argTarget(args) || (e.ok ? e.summary : '') || ''),
+    status: rejected ? 'declined' : failed || exitBad ? 'error' : 'ok',
+    result: [],
+  };
+  const r = (s, color = T.dim) => msg.result.push(paint(color, s));
+
+  if (rejected) { r('Declined', T.warn); return msg; }
+  // A command that ran and failed still has output worth seeing: let it fall
+  // through to the run/job rendering, which leads with the exit code.
+  const ranAndFailed = (e.name === 'run' || e.name === 'job') && (meta.output != null || meta.exitCode != null);
+  if (failed && !ranAndFailed) {
+    msg.wrapResult = true;
+    const why = String(e.error || e.summary || 'Failed').trim().split('\n').filter(Boolean).slice(0, 4);
+    for (const line of why) r(stripAnsi(line), T.err);
+    return msg;
+  }
+
+  switch (e.name) {
+    case 'read_file':
+      if (meta.linesShown && meta.count && meta.linesShown < meta.count) {
+        const from = (meta.offset || 0) + 1;
+        r(`Read lines ${from}-${from + meta.linesShown - 1} of ${meta.count}`);
+      } else if (meta.count != null) r(`Read ${plural(meta.count, 'line')}`);
+      break;
+    case 'search':
+      r(meta.count ? `Found ${plural(meta.count, 'match', 'matches')}` : 'No matches');
+      break;
+    case 'glob':
+      r(meta.count ? `Found ${plural(meta.count, 'file')}` : 'No files found');
+      break;
+    case 'grep':
+      r(meta.count ? `Found ${plural(meta.count, 'match', 'matches')}` : 'No matches');
+      break;
+    case 'list_dir':
+      if (meta.count != null) r(plural(meta.count, 'entry', 'entries'));
+      break;
+    case 'edit_file': {
+      if (meta.noop) { r('No changes needed'); break; }
+      const search = args.search ?? args.old_string ?? args.old;
+      const replace = args.replace ?? args.new_string ?? args.new;
+      if (search != null && replace != null) {
+        msg.diff = lineDiff(search, replace);
+        msg.start = lineOf(cwd, args.path, replace);
+        const adds = msg.diff.filter((d) => d.t === '+').length;
+        const dels = msg.diff.filter((d) => d.t === '-').length;
+        r(`Updated ${msg.label} with ${plural(adds, 'addition')} and ${plural(dels, 'removal')}`);
+      } else {
+        r(`Updated ${msg.label} (-${meta.removed || 0} +${meta.added || 0} lines)`);
+      }
+      break;
+    }
+    case 'write_file':
+      if (meta.noop) { r('Already up to date, nothing written'); break; }
+      if (!meta.removed) {
+        r(`Wrote ${plural(meta.added || 0, 'line')} to ${msg.label}`);
+        if (typeof args.content === 'string') {
+          msg.diff = args.content.replace(/\n$/, '').split('\n').map((s) => ({ t: '+', s }));
+          msg.start = 1;
+          msg.maxDiff = 10;
+        }
+      } else {
+        r(`Rewrote ${msg.label} (${meta.removed} → ${plural(meta.added || 0, 'line')})`);
+      }
+      break;
+    case 'run':
+    case 'job': {
+      if (meta.background) { r(`Running in the background as job ${meta.jobId}`); break; }
+      if (exitBad) r(`Exit code ${meta.exitCode}`, T.err);
+      const out = stripAnsi(meta.output || '').replace(/\s+$/, '');
+      const lines = out ? out.split('\n') : [];
+      if (!lines.length && !exitBad) r('(no output)', T.faint);
+      const SHOW = 5;
+      if (lines.length > SHOW) r(`… ${plural(lines.length - SHOW, 'earlier line')}`, T.faint);
+      for (const line of lines.slice(-SHOW)) r(line, T.secondary);
+      break;
+    }
+    case 'todo':
+      for (const t of meta.todos || []) {
+        if (t.status === 'done') msg.result.push(paint(T.faint, `${GL.done} `) + paint(T.faint, t.text, ANSI_STRIKE));
+        else if (t.status === 'dropped') msg.result.push(paint(T.faint, `${GL.open} ${t.text}`, ANSI_STRIKE));
+        else if (t.status === 'in_progress') msg.result.push(paint(T.accent, `${GL.open} `) + bold(T.text, t.text));
+        else msg.result.push(paint(T.secondary, `${GL.open} ${t.text}`));
+      }
+      break;
+    default:
+      if (meta.deduped) r('Unchanged, reused the earlier result');
+      else if (meta.count != null) r(plural(meta.count, 'result'));
+      else if (e.summary && e.summary !== msg.label) r(stripAnsi(e.summary));
+  }
+
+  if (Array.isArray(meta.problems) && meta.problems.length) {
+    r(`${GL.warn} ${plural(meta.problems.length, 'problem')}: ${stripAnsi(meta.problems[0])}`, T.warn);
+  }
+  return msg;
+}
+
+/**
+ * A DSH tool result (name, args, raw output text) in the shape the Classic
+ * engine reports, so both engines get the same step rows and diffs.
+ */
+function fromDsh(e) {
+  const a = e.args || {};
+  const out = stripAnsi(e.output || '');
+  const file = a.file_path || a.path || a.filePath;
+  const lines = out.split('\n').filter((l) => l.trim());
+  switch (e.name) {
+    case 'read':
+      return { ...e, name: 'read_file', args: { path: file }, meta: { label: file, count: (out.match(/^\d+: /gm) || []).length || undefined } };
+    case 'edit':
+      return { ...e, name: 'edit_file', args: { path: file, search: a.old_string, replace: a.new_string }, meta: { label: file } };
+    case 'write':
+      return { ...e, name: 'write_file', args: { path: file, content: a.content }, meta: { label: file, added: String(a.content || '').split('\n').length, removed: 0 } };
+    case 'glob':
+    case 'grep':
+      return { ...e, meta: { label: a.pattern || a.query || '', count: e.ok ? lines.length : 0 } };
+    case 'pwsh':
+    case 'bash':
+    case 'shell': {
+      const code = /exit(?:\s+code)?:?\s*(-?\d+)/i.exec(out);
+      return {
+        ...e, name: 'run', args: { command: a.command },
+        meta: { label: a.command, output: out.replace(/\n?\[stderr\]\n?/g, '\n'), exitCode: code ? Number(code[1]) : e.ok ? 0 : 1 },
+      };
+    }
+    default:
+      return { ...e, summary: e.ok ? lines[0] : undefined, meta: { label: summarizeArgs(a) } };
+  }
+}
 
 function homePath(cwd) {
   const home = os.homedir();
@@ -167,301 +430,365 @@ function homePath(cwd) {
   return cwd;
 }
 
-/** Shorten a path from the left so it never blows out the footer. */
+/** Shorten a path from the left so it never blows out a line. */
 function fitPath(p, max) {
   if (p.length <= max) return p;
   return '…' + p.slice(p.length - max + 1);
 }
 
-// ─── Home screen ────────────────────────────────────────────────────────────
+const fit = (s, max) => (s.length > max ? s.slice(0, Math.max(0, max - 1)) + '…' : s);
+
+// ─── Banner (printed once into the scrollback) ──────────────────────────────
 //
-// A single bordered box - title baked into the top border, a left column
-// (identity: mascot, account, mode, cwd) and a right column (tips / what's
-// new) split by one interior divider that runs the full height. Everything
-// is pre-flattened to one ANSI string per row, same discipline as the rest of
-// this file: a handful of <Text> nodes, not one per glyph.
+// Laid out like Kimi CLI's: one blue box sized to its content, the mascot on
+// the left with the welcome text beside it, then where you are and what is
+// answering. Everything is pre-flattened to one ANSI string per row.
 
-const BOX_MIN_COLS = 74; // below this, two columns can't breathe - fall back to the compact mark
+// Picked once per launch, so a resize reprints the same line.
+const GREETINGS = [
+  (n) => `Hey ${n}! What are we building?`,
+  (n) => `Welcome back, ${n}!`,
+  (n) => `Good to see you, ${n}!`,
+  (n) => `Hi ${n}, ready when you are`,
+];
+const GREETING_PICK = Math.floor(Math.random() * GREETINGS.length);
+const GREETING = (name) => (name ? GREETINGS[GREETING_PICK](name) : 'Welcome to Codeply CLI!');
 
-/** Pad/truncate plain text to exactly `width` visible columns, then colour it. */
-function cell(text, width, color, opts = {}) {
-  const t = String(text ?? '');
-  const fit = t.length > width ? (width > 1 ? t.slice(0, width - 1) + '…' : t.slice(0, width)) : t;
-  const pad = ' '.repeat(Math.max(0, width - fit.length));
-  const styled = (color ? hexToAnsi(color) : '') + (opts.bold ? ANSI_BOLD : '') + (opts.dim ? ANSI_DIM : '') + fit + ANSI_RESET;
-  return styled + pad;
-}
-
-/** Centre plain text within `width` columns before it goes through cell(). */
-function centered(text, width) {
-  const t = String(text ?? '');
-  if (t.length >= width) return t;
-  const left = Math.floor((width - t.length) / 2);
-  return ' '.repeat(left) + t;
-}
-
-/** Shared by BoxHome and its caller - the caller needs leftInner/rightInner
- *  up front to centre text at the right width before the rows are built. */
-function boxHomeMetrics(cols) {
-  const boxWidth = Math.max(60, Math.min(cols - 2, 96));
-  const leftColW = Math.round(boxWidth * 0.44);
-  const rightColW = boxWidth - leftColW - 3; // 3 = two side borders + one divider
-  return { boxWidth, leftColW, rightColW, leftInner: leftColW - 2, rightInner: rightColW - 2 };
-}
-
-function BoxHome({ cols, title, left, right, borderColor }) {
-  const { boxWidth, leftInner, rightInner } = boxHomeMetrics(cols);
-  const rowCount = Math.max(left.length, right.length);
-  const border = hexToAnsi(borderColor);
-
-  const topPrefix = `── ${title} `;
-  const topDashes = Math.max(0, boxWidth - topPrefix.length - 2);
-  const top = border + '┌' + topPrefix + '─'.repeat(topDashes) + '┐' + ANSI_RESET;
-  const bottom = border + '└' + '─'.repeat(boxWidth - 2) + '┘' + ANSI_RESET;
-
-  const rows = [];
-  for (let i = 0; i < rowCount; i++) {
-    const l = left[i] || { text: '' };
-    const r = right[i] || { text: '' };
-    rows.push(
-      border + '│' + ANSI_RESET + ' ' +
-        cell(l.text, leftInner, l.color, l) +
-        ' ' + border + '│' + ANSI_RESET + ' ' +
-        cell(r.text, rightInner, r.color, r) +
-        ' ' + border + '│' + ANSI_RESET
-    );
+/** Styled pieces → { ansi, len } so rows can be padded by visible width. */
+function piece(parts, max) {
+  let ansi = '';
+  let len = 0;
+  for (const [text, color, isBold] of parts) {
+    if (len >= max) break;
+    const t = fit(String(text), max - len);
+    ansi += paint(color, t, isBold ? ANSI_BOLD : '');
+    len += t.length;
   }
+  return { ansi, len };
+}
+
+function Banner({ cols, account, needsLogin, model, cwd, name, mode }) {
+  const edge = (s) => paint(T.brand, s);
+  const [tl, tr, bl, br] = GL.corners;
+  const PAD = 3; // spaces between the border and the content, each side
+  const GAP = 3; // between the mascot and the text beside it
+
+  const side = [
+    null,
+    [[GREETING(name), T.text, true]],
+    [['Send ', T.secondary], ['/help', T.text], [' for help, ', T.secondary], ['?', T.text], [' for shortcuts', T.secondary]],
+    [[`${mode}`, T.accent], [mode === 'DSH engine' ? ' · /engine to switch' : ' · tab to switch', T.dim]],
+    null,
+  ];
+  const info = [
+    ['Directory:', [[homePath(cwd), T.secondary]], true],
+    ['Account:', needsLogin ? [['not signed in, send /login to sign in', T.warn]] : [[account, T.secondary]]],
+    ['Model:', [[model, T.secondary]]],
+  ];
+  const labelW = Math.max(...info.map(([l]) => l.length)) + 1;
+
+  const plainLen = (parts) => parts.reduce((n, [t]) => n + String(t).length, 0);
+  const wanted = Math.max(
+    MASCOT.width + GAP + Math.max(...side.filter(Boolean).map(plainLen)),
+    // A long path is shortened from the left rather than stretching the box.
+    ...info.map(([, parts, isPath]) => labelW + (isPath ? Math.min(plainLen(parts), 48) : plainLen(parts)))
+  );
+  const inner = Math.max(20, Math.min(cols - 2 - 2 - PAD * 2, wanted));
+  const width = inner + PAD * 2 + 2;
+
+  const line = (p) => edge('│') + ' '.repeat(PAD) + p.ansi + ' '.repeat(Math.max(0, inner - p.len)) + ' '.repeat(PAD) + edge('│');
+  const blank = line({ ansi: '', len: 0 });
+
+  const rows = [edge(tl + GL.rule.repeat(width - 2) + tr), blank];
+  const textRoom = inner - MASCOT.width - GAP;
+  MASCOT.rows.forEach((ball, i) => {
+    const text = side[i] && textRoom > 4 ? piece(side[i], textRoom) : { ansi: '', len: 0 };
+    rows.push(line({ ansi: ball + ' '.repeat(GAP) + text.ansi, len: MASCOT.width + GAP + text.len }));
+  });
+  rows.push(blank);
+  for (const [label, parts, isPath] of info) {
+    const room = inner - labelW;
+    const value = isPath ? [[fitPath(parts[0][0], room), parts[0][1]]] : parts;
+    const p = piece(value, room);
+    rows.push(line({ ansi: paint(T.dim, label.padEnd(labelW)) + p.ansi, len: labelW + p.len }));
+  }
+  rows.push(blank, edge(bl + GL.rule.repeat(width - 2) + br));
 
   return React.createElement(
     Box,
-    { flexDirection: 'column' },
-    React.createElement(Text, { key: 'top' }, top),
-    ...rows.map((row, i) => React.createElement(Text, { key: `r${i}` }, row)),
-    React.createElement(Text, { key: 'bot' }, bottom)
+    { flexDirection: 'column', marginBottom: 1 },
+    ...rows.map((row, i) => React.createElement(Text, { key: i }, row))
   );
 }
 
-function CompactMark({ cols }) {
-  const wide = cols >= LOGO_WIDTH + 4;
+// ─── Transcript entries ─────────────────────────────────────────────────────
+
+/** Bullet in a 2-column gutter, content beside it, one blank line after. */
+function Bulleted({ bullet, children, gap = 1 }) {
   return React.createElement(
     Box,
-    { flexDirection: 'column', width: cols, alignItems: 'center' },
-    wide
-      ? LOGO_ROWS.map((row, i) => React.createElement(Text, { key: `lg-${i}` }, row))
-      : React.createElement(Text, { key: 'lg' }, WORDMARK),
+    { flexDirection: 'row', marginBottom: gap },
+    React.createElement(Box, { width: 2, flexShrink: 0 }, React.createElement(Text, null, bullet)),
+    React.createElement(Box, { flexDirection: 'column', flexGrow: 1, flexShrink: 1 }, ...[].concat(children).filter(Boolean))
+  );
+}
+
+/** The ⎿ result block under a step. */
+function Result({ lines, wrap = 'truncate-end', extra = [] }) {
+  if (!lines.length && !extra.length) return null;
+  return React.createElement(
+    Box,
+    { flexDirection: 'row' },
+    React.createElement(Box, { width: 3, flexShrink: 0 }, React.createElement(Text, null, paint(T.faint, GL.branch))),
     React.createElement(
       Box,
-      { key: 'tag', marginTop: 1, flexDirection: 'column', alignItems: 'center' },
-      React.createElement(
-        Text,
-        null,
-        hexToAnsi(T.secondary) + 'An agent that reads your code, edits it, and checks its work.' + ANSI_RESET
-      ),
-      React.createElement(
-        Text,
-        null,
-        hexToAnsi(T.muted) + 'interactive shell' + ANSI_RESET +
-          hexToAnsi(T.faint) + '  ·  ' + ANSI_RESET +
-          hexToAnsi(T.muted) + 'v' + VERSION + ANSI_RESET
-      )
+      { flexDirection: 'column', flexGrow: 1, flexShrink: 1 },
+      ...lines.map((l, i) => React.createElement(Text, { key: `l${i}`, wrap }, l)),
+      ...extra.map((l, i) => React.createElement(Text, { key: `x${i}` }, l))
     )
   );
 }
 
-// ─── Message blocks ─────────────────────────────────────────────────────────
+function MessageBlock({ msg, cols, rows, banner }) {
+  const width = cols - 2;
 
-/** One line of tool activity in the transcript. */
-function ToolLine({ msg }) {
-  const display = TOOL_DISPLAY[msg.name] || { verb: msg.name, icon: '▸' };
-  const failed = !msg.ok;
-  const wrote = msg.name === 'write_file' || msg.name === 'edit_file';
-  const ran = msg.name === 'run';
+  if (msg.role === 'banner') return React.createElement(Banner, { cols, rows, ...banner });
 
-  const iconColor = failed ? G.red : wrote ? G.yellow : ran ? G.green : G.blue;
-  const detail = [msg.label, msg.detail].filter(Boolean).join('  ·  ');
-
-  return React.createElement(
-    Text,
-    { wrap: 'truncate-end' },
-    hexToAnsi(iconColor) + display.icon + ' ' + ANSI_RESET +
-      hexToAnsi(failed ? G.red : T.secondary) + display.verb.padEnd(6) + ANSI_RESET +
-      hexToAnsi(T.dim) + ' ' + detail + ANSI_RESET
-  );
-}
-
-function MessageBlock({ msg, cols }) {
   if (msg.role === 'user') {
     return React.createElement(
-      Box,
-      { flexDirection: 'row', marginBottom: 1, gap: 1 },
-      React.createElement(Text, { color: G.blue }, '▌'),
-      React.createElement(
-        Box,
-        { flexDirection: 'column', flexGrow: 1 },
-        React.createElement(Text, null, hexToAnsi(T.dim) + ANSI_DIM + 'you' + ANSI_RESET),
-        React.createElement(Text, { color: T.text, wrap: 'wrap' }, msg.content)
-      )
+      Bulleted,
+      { bullet: paint(T.dim, GL.prompt) },
+      React.createElement(Text, { wrap: 'wrap' }, paint(T.secondary, msg.content))
     );
   }
 
   if (msg.role === 'assistant') {
-    // A plan is a deliverable, not chatter - give it its own panel so it stands
-    // apart from the running commentary above and below it.
     if (msg.plan) {
       return React.createElement(
-        Box,
-        { flexDirection: 'row', marginBottom: 1, gap: 1 },
-        React.createElement(Text, { color: G.yellow }, '▌'),
-        React.createElement(
-          Box,
-          { flexDirection: 'column', flexGrow: 1 },
-          React.createElement(Panel, {
-            title: 'plan',
-            lines: msg.content.split('\n'),
-            width: cols - 4,
-            accent: G.yellow,
-          })
-        )
+        Bulleted,
+        { bullet: paint(T.warn, GL.dot) },
+        React.createElement(Panel, { title: 'Plan', lines: msg.content.split('\n'), width: width - 2, accent: T.warn })
       );
     }
-    return React.createElement(
-      Box,
-      { flexDirection: 'row', marginBottom: 1, gap: 1 },
-      React.createElement(Text, { color: G.green }, '▌'),
-      React.createElement(
-        Box,
-        { flexDirection: 'column', flexGrow: 1 },
-        React.createElement(Text, null, WORDMARK),
-        ...renderMarkdown(msg.content, cols - 4)
-      )
-    );
+    return React.createElement(Bulleted, { bullet: paint(T.text, GL.dot) }, ...renderMarkdown(msg.content, width - 2));
   }
 
   if (msg.role === 'tool') {
+    const color = msg.status === 'error' ? T.err : msg.status === 'declined' ? T.warn : T.ok;
+    const extra = msg.diff ? diffRows(msg.diff, msg.start, width - 5, msg.maxDiff || 24) : [];
     return React.createElement(
-      Box,
-      { flexDirection: 'row', marginBottom: 0, paddingLeft: 2 },
-      React.createElement(ToolLine, { msg })
+      Bulleted,
+      { bullet: paint(color, GL.dot) },
+      React.createElement(
+        Text,
+        { wrap: 'truncate-end' },
+        bold(T.text, msg.title) + (msg.label ? ' ' + paint(T.secondary, msg.label.replace(/\s*\n\s*/g, ' ')) : '')
+      ),
+      React.createElement(Result, { lines: msg.result, wrap: msg.wrapResult ? 'wrap' : 'truncate-end', extra })
+    );
+  }
+
+  if (msg.role === 'reasoning') {
+    const preview = String(msg.text || '').replace(/\s+/g, ' ').trim();
+    return React.createElement(
+      Bulleted,
+      { bullet: paint(T.faint, GL.star) },
+      React.createElement(Text, null, paint(T.dim, `Thought for ${fmtSecs(Math.max(1, Math.round((msg.ms || 0) / 1000)))}`, ANSI_ITALIC)),
+      preview && React.createElement(Text, { wrap: 'truncate-end' }, paint(T.faint, fit(preview, width * 2), ANSI_ITALIC))
+    );
+  }
+
+  if (msg.role === 'notice') {
+    const loud = msg.level === 'warn' || msg.level === 'limit';
+    return React.createElement(
+      Bulleted,
+      { bullet: paint(loud ? T.warn : T.dim, loud ? GL.warn : GL.dot) },
+      React.createElement(Text, { wrap: 'wrap' }, paint(loud ? T.warn : T.dim, msg.content))
     );
   }
 
   if (msg.role === 'system') {
     return React.createElement(
       Box,
-      { flexDirection: 'row', marginBottom: 1, gap: 1 },
-      React.createElement(Text, { color: G.yellow }, '◆'),
-      React.createElement(Text, { color: T.secondary, wrap: 'wrap' }, msg.content)
+      { flexDirection: 'row', marginBottom: 1, paddingLeft: 2 },
+      React.createElement(Result, { lines: [paint(T.secondary, msg.content)], wrap: 'wrap' })
     );
   }
 
   if (msg.role === 'error') {
     return React.createElement(
+      Bulleted,
+      { bullet: paint(T.err, GL.dot) },
+      React.createElement(Text, { wrap: 'wrap' }, paint(T.err, msg.content))
+    );
+  }
+
+  if (msg.role === 'done') {
+    const parts = [`Worked for ${fmtSecs(msg.secs)}`];
+    if (msg.steps) parts.push(plural(msg.steps, 'step'));
+    if (msg.files && msg.files.length) {
+      parts.push(msg.files.length <= 2 ? `changed ${msg.files.join(', ')}` : `changed ${plural(msg.files.length, 'file')}`);
+    }
+    const label = ` ${parts.join(' · ')} `;
+    const right = Math.max(0, width - label.length - 2);
+    return React.createElement(
       Box,
-      { flexDirection: 'row', marginBottom: 1, gap: 1 },
-      React.createElement(Text, { color: G.red }, '✗'),
-      React.createElement(Text, { color: G.red, wrap: 'wrap' }, msg.content)
+      { marginBottom: 1 },
+      React.createElement(Text, { wrap: 'truncate-end' }, paint(T.faint, GL.rule.repeat(2) + label + GL.rule.repeat(right)))
     );
   }
 
   return null;
 }
 
-// ─── Command palette ────────────────────────────────────────────────────────
+// ─── Live area ──────────────────────────────────────────────────────────────
 
-function CommandsMenu({ commands, selectedIndex }) {
-  return React.createElement(
-    Box,
-    {
-      flexDirection: 'column',
-      borderStyle: 'round',
-      borderColor: T.border,
-      paddingX: 1,
-      marginBottom: 1,
-      flexShrink: 0,
-    },
-    React.createElement(
-      Text,
-      null,
-      hexToAnsi(T.muted) + '↑↓' + ANSI_RESET + hexToAnsi(T.faint) + ' select   ' + ANSI_RESET +
-        hexToAnsi(T.muted) + 'tab' + ANSI_RESET + hexToAnsi(T.faint) + ' complete   ' + ANSI_RESET +
-        hexToAnsi(T.muted) + 'esc' + ANSI_RESET + hexToAnsi(T.faint) + ' dismiss' + ANSI_RESET
-    ),
-    ...commands.map((cmd, i) => {
-      const selected = i === selectedIndex;
-      const nameColor = selected ? T.cycle[i % T.cycle.length] : T.secondary;
-      return React.createElement(
-        Text,
-        { key: cmd.name, wrap: 'truncate-end' },
-        (selected ? hexToAnsi(G.blue) + '› ' + ANSI_RESET : '  ') +
-          hexToAnsi(nameColor) + (selected ? ANSI_BOLD : '') + cmd.name.padEnd(10) + ANSI_RESET +
-          hexToAnsi(selected ? T.dim : T.faint) + ' ' + cmd.description + ANSI_RESET
-      );
-    })
-  );
-}
+// While the model is thinking (no tool running), the spinner word rotates
+// every few seconds instead of sitting on one word for a minute.
+const THINKING_WORDS = ['Thinking', 'Pondering', 'Tinkering', 'Brewing', 'Noodling', 'Cooking', 'Scheming', 'Untangling', 'Doodling'];
 
-// ─── Approval prompt ────────────────────────────────────────────────────────
-
-function ApprovalPrompt({ request }) {
-  const accent = request.danger ? G.red : G.yellow;
-  const lines = [];
-
-  if (request.diff) {
-    const removed = request.diff.search.split('\n').slice(0, 6);
-    const added = request.diff.replace.split('\n').slice(0, 6);
-    for (const l of removed) lines.push(hexToAnsi(G.red) + '- ' + l + ANSI_RESET);
-    for (const l of added) lines.push(hexToAnsi(G.green) + '+ ' + l + ANSI_RESET);
+/** Spinner line with a soft shimmer running across the label. */
+function Working({ label, startedAt, steps, queued, width }) {
+  const wordOffset = React.useMemo(() => Math.floor(Math.random() * THINKING_WORDS.length), []);
+  const [tick, setTick] = React.useState(0);
+  React.useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 120);
+    return () => clearInterval(t);
+  }, []);
+  const secs = Math.floor((Date.now() - startedAt) / 1000);
+  const frame = GL.spin[tick % GL.spin.length];
+  const word = label === 'Thinking' ? THINKING_WORDS[(wordOffset + Math.floor(secs / 4)) % THINKING_WORDS.length] : label;
+  const text = `${word}…`;
+  const head = tick % (text.length + 12);
+  let shimmer = '';
+  for (let i = 0; i < text.length; i++) {
+    const d = Math.abs(i - head);
+    shimmer += hexToAnsi(d === 0 ? '#ffffff' : d <= 2 ? T.text : T.secondary) + text[i];
   }
-
+  const meta = [fmtSecs(secs), steps > 0 ? `step ${steps}` : null, 'esc to interrupt'].filter(Boolean).join(' · ');
   return React.createElement(
     Box,
-    {
-      flexDirection: 'column',
-      borderStyle: 'round',
-      borderColor: accent,
-      paddingX: 1,
-      marginBottom: 1,
-      flexShrink: 0,
-    },
-    React.createElement(
+    { flexDirection: 'column', marginBottom: 1, width },
+    React.createElement(Text, { wrap: 'truncate-end' }, paint(T.accent, frame + ' ') + shimmer + ANSI_RESET + paint(T.faint, ` (${meta})`)),
+    queued && React.createElement(
       Text,
       { wrap: 'truncate-end' },
-      hexToAnsi(accent) + ANSI_BOLD + request.title + ANSI_RESET +
-        (request.danger ? hexToAnsi(G.red) + '   ⚠ looks destructive' + ANSI_RESET : '')
-    ),
-    request.detail && React.createElement(
-      Text,
-      { wrap: 'truncate-end' },
-      hexToAnsi(T.secondary) + request.detail + ANSI_RESET
-    ),
-    ...lines.map((l, i) => React.createElement(Text, { key: i, wrap: 'truncate-end' }, l)),
-    React.createElement(
-      Text,
-      null,
-      hexToAnsi(G.green) + 'y' + ANSI_RESET + hexToAnsi(T.faint) + ' approve   ' + ANSI_RESET +
-        hexToAnsi(G.blue) + 'a' + ANSI_RESET + hexToAnsi(T.faint) + ' approve all this session   ' + ANSI_RESET +
-        hexToAnsi(G.red) + 'n' + ANSI_RESET + hexToAnsi(T.faint) + ' decline' + ANSI_RESET
+      paint(T.faint, `  ${GL.branch}  queued: `) + paint(T.secondary, queued.replace(/\s*\n\s*/g, ' '))
     )
   );
 }
 
-// ─── Status bar ─────────────────────────────────────────────────────────────
+function approvalOptions(req) {
+  const edits = ['edit_file', 'write_file', 'apply_patch'].includes(req.tool);
+  const what = req.tool === 'run' ? 'commands' : edits ? 'file edits' : toolTitle(req.tool)[0].toLowerCase();
+  return [
+    { verdict: 'once', label: 'Yes' },
+    { verdict: 'always', label: `Yes, and don't ask again for ${what} this session` },
+    { verdict: 'reject', label: 'No (esc)' },
+  ];
+}
 
-/** Permission-bypass state and the running-agent count, pinned bottom-left. */
-function StatusBar({ bypassMode, agentCount }) {
-  const glyphColor = bypassMode ? G.yellow : T.muted;
+function approvalQuestion(req) {
+  const base = req.path ? path.basename(req.path) : '';
+  if (req.tool === 'edit_file') return `Do you want to make this edit to ${base}?`;
+  if (req.tool === 'write_file') return /^Create/.test(req.title || '') ? `Do you want to create ${base}?` : `Do you want to overwrite ${base}?`;
+  if (req.tool === 'run') return 'Do you want to run this command?';
+  return 'Do you want to allow this?';
+}
+
+function ApprovalPrompt({ request, selected, cols, rows, cwd }) {
+  const accent = request.danger ? T.err : T.accent;
+  const width = cols - 2;
+  const body = [];
+
+  if (request.tool === 'run') {
+    body.push(React.createElement(Text, { key: 'cmd', wrap: 'wrap' }, paint(T.dim, '$ ') + paint(T.text, request.detail || '')));
+  } else if (request.detail && !request.diff) {
+    body.push(React.createElement(Text, { key: 'det', wrap: 'wrap' }, paint(T.secondary, request.detail)));
+  }
+  if (request.diff) {
+    const diff = lineDiff(request.diff.search, request.diff.replace);
+    const start = lineOf(cwd, request.path, request.diff.search);
+    const max = Math.max(3, rows - 16);
+    diffRows(diff, start, width - 4, max).forEach((l, i) => body.push(React.createElement(Text, { key: `d${i}` }, l)));
+  }
+
+  const options = approvalOptions(request);
   return React.createElement(
-    Text,
-    { wrap: 'truncate-end' },
-    hexToAnsi(glyphColor) + ANSI_BOLD + '⏵⏵ ' + ANSI_RESET +
-      hexToAnsi(bypassMode ? G.yellow : T.secondary) + `bypass permissions ${bypassMode ? 'on' : 'off'}` + ANSI_RESET +
-      hexToAnsi(T.faint) + ' (shift+tab to cycle)' + ANSI_RESET +
-      hexToAnsi(T.faint) + '  ·  ' + ANSI_RESET +
-      hexToAnsi(T.muted) + '← ' + agentCount + (agentCount === 1 ? ' agent' : ' agents') + ANSI_RESET
+    Box,
+    { flexDirection: 'column', borderStyle: GL.border, borderColor: accent, paddingX: 1, marginBottom: 1, width },
+    React.createElement(
+      Text,
+      { wrap: 'truncate-end' },
+      bold(accent, request.title || 'Permission needed') +
+        (request.path && !String(request.title || '').includes(request.path) ? paint(T.dim, '  ' + request.path) : '') +
+        (request.danger ? paint(T.err, `   ${GL.warn} looks destructive`) : '')
+    ),
+    ...body,
+    React.createElement(Text, { key: 'q' }, ' '),
+    React.createElement(Text, { key: 'qq', wrap: 'wrap' }, paint(T.text, approvalQuestion(request))),
+    ...options.map((o, i) => React.createElement(
+      Text,
+      { key: `o${i}`, wrap: 'truncate-end' },
+      i === selected
+        ? paint(accent, `${GL.pointer} ${i + 1}. ${o.label}`)
+        : paint(T.secondary, `  ${i + 1}. ${o.label}`)
+    ))
+  );
+}
+
+const PALETTE_ROWS = 8;
+
+function CommandsMenu({ commands, selectedIndex, width }) {
+  const start = Math.max(0, Math.min(selectedIndex - PALETTE_ROWS + 1, commands.length - PALETTE_ROWS));
+  const shown = commands.slice(start, start + PALETTE_ROWS);
+  const nameW = Math.max(...COMMANDS.map((c) => c.name.length)) + 3;
+  return React.createElement(
+    Box,
+    { flexDirection: 'column', paddingLeft: 2, width },
+    ...shown.map((cmd, k) => {
+      const selected = start + k === selectedIndex;
+      return React.createElement(
+        Text,
+        { key: cmd.name, wrap: 'truncate-end' },
+        selected
+          ? bold(T.accent, cmd.name.padEnd(nameW)) + paint(T.text, cmd.description)
+          : paint(T.secondary, cmd.name.padEnd(nameW)) + paint(T.dim, cmd.description)
+      );
+    }),
+    commands.length > PALETTE_ROWS && React.createElement(
+      Text,
+      { key: 'more' },
+      paint(T.faint, `${commands.length - PALETTE_ROWS} more, keep typing to filter`)
+    )
+  );
+}
+
+function Shortcuts({ width, newlineKey }) {
+  const items = [
+    ['/', 'for commands'], ['tab', 'to switch mode'], ['shift+tab', 'to toggle bypass'],
+    [newlineKey, 'for a new line'], ['\\ enter', 'for a new line'], ['↑ ↓', 'for prompt history'],
+    ['esc', 'to interrupt'], ['esc esc', 'to clear input'], ['ctrl+c', 'twice to quit'],
+  ];
+  const per = width >= 96 ? 3 : width >= 60 ? 2 : 1;
+  const colW = Math.floor((width - 2) / per);
+  const lines = [];
+  for (let i = 0; i < items.length; i += per) {
+    lines.push(items.slice(i, i + per).map(([k, d]) => {
+      const cell = paint(T.text, k) + ' ' + paint(T.dim, d);
+      return cell + ' '.repeat(Math.max(1, colW - k.length - d.length - 1));
+    }).join(''));
+  }
+  return React.createElement(
+    Box,
+    { flexDirection: 'column', paddingLeft: 2, width },
+    ...lines.map((l, i) => React.createElement(Text, { key: i, wrap: 'truncate-end' }, l))
   );
 }
 
 // ─── App ────────────────────────────────────────────────────────────────────
+
+const BANNER_ITEM = { id: 'banner', role: 'banner' };
 
 const App = () => {
   const { exit } = useApp();
@@ -472,23 +799,50 @@ const App = () => {
   const [input, setInput] = React.useState('');
   const [modeIndex, setModeIndex] = React.useState(0);
   const [session, setSession] = React.useState(null);
+  const [booted, setBooted] = React.useState(false);
   const [running, setRunning] = React.useState(false);
+  const [runStarted, setRunStarted] = React.useState(0);
   const [statusLine, setStatusLine] = React.useState('');
-  const [elapsed, setElapsed] = React.useState(0);
   const [steps, setSteps] = React.useState(0);
   const [chatHistory, setChatHistory] = React.useState([]);
   const [staticKey, setStaticKey] = React.useState(0);
   const [showCommands, setShowCommands] = React.useState(false);
   const [selectedCommand, setSelectedCommand] = React.useState(0);
   const [filteredCommands, setFilteredCommands] = React.useState(COMMANDS);
+  const [showShortcuts, setShowShortcuts] = React.useState(false);
   const [escArmed, setEscArmed] = React.useState(false);
+  const [ctrlCArmed, setCtrlCArmed] = React.useState(false);
   const [approval, setApproval] = React.useState(null);
+  const [approvalIndex, setApprovalIndex] = React.useState(0);
   const [bypassMode, setBypassMode] = React.useState(false);
   const [activeAgents, setActiveAgents] = React.useState([]); // [{id,label}] - running subagents, this session's own run excluded
+  const [queued, setQueued] = React.useState(null);
+  const [exiting, setExiting] = React.useState(false);
   // Only true once the terminal answers our capability query. Windows Terminal
   // never does, so there we advertise ctrl+j instead of lying about shift+enter.
   const [modifiedEnterWorks, setModifiedEnterWorks] = React.useState(false);
   const [keyProbe, setKeyProbe] = React.useState(false);
+  // 'classic' is codeply-cli's own agent; 'dsh' is Craft's DeepSeek Harness
+  // fork, driven over ACP (see dsh-acp.mjs). `codeply dsh` starts in DSH.
+  const [engine, setEngine] = React.useState(process.env.CODEPLY_ENGINE === 'dsh' ? 'dsh' : 'classic');
+  const dshRef = React.useRef(null);
+  const getDsh = React.useCallback(() => {
+    if (!dshRef.current) dshRef.current = new DshEngine({ cwd: process.cwd() });
+    return dshRef.current;
+  }, []);
+  const closeDsh = React.useCallback(() => {
+    if (dshRef.current) { dshRef.current.close(); dshRef.current = null; }
+  }, []);
+  React.useEffect(() => {
+    process.once('exit', closeDsh);
+    return () => { process.off('exit', closeDsh); closeDsh(); };
+  }, [closeDsh]);
+  // Boot the engine in the background as soon as DSH is picked: its first
+  // start takes a few seconds, and this hides most of it behind typing.
+  React.useEffect(() => {
+    if (engine !== 'dsh') return;
+    getDsh().start().catch((e) => push({ role: 'error', content: e.message }));
+  }, [engine]);
 
   const nextId = React.useRef(1);
   // A real AbortController, not a plain {aborted} object: its .signal ends up
@@ -501,18 +855,31 @@ const App = () => {
   const abortRef = React.useRef(new AbortController());
   const alwaysAllow = React.useRef(new Set());
   const convo = React.useRef([]); // {role,content} pairs handed to the agent
+  const runningRef = React.useRef(false);
+  const queuedRef = React.useRef(null);
+  const submitRef = React.useRef(null);
+  // Prompt history for up/down: past prompts, where we are in them, and the
+  // unsent draft to come back to.
+  const promptHistory = React.useRef([]);
+  const historyPos = React.useRef(-1);
+  const draft = React.useRef('');
 
   const cwd = process.cwd();
   const mode = MODES[modeIndex];
   const modeColor = MODE_COLOR[mode];
-  const tip = React.useMemo(() => TIPS[Math.floor(Math.random() * TIPS.length)], []);
 
   const push = React.useCallback((msg) => {
     setChatHistory((prev) => [...prev, { id: `m-${nextId.current++}`, ...msg }]);
   }, []);
 
+  // The banner names the account, so hold it back until the session lookup
+  // settles (or briefly times out) instead of printing "not signed in" first.
   React.useEffect(() => {
-    auth.getSession().then((s) => setSession(s)).catch(() => {});
+    let done = false;
+    const finish = () => { if (!done) { done = true; setBooted(true); } };
+    auth.getSession().then((s) => setSession(s)).catch(() => {}).finally(finish);
+    const t = setTimeout(finish, 1200);
+    return () => clearTimeout(t);
   }, []);
 
   // Ask the terminal to disambiguate shift+enter from enter (see textarea.mjs).
@@ -525,12 +892,24 @@ const App = () => {
     return () => stdout.off('resize', onResize);
   }, [stdout]);
 
+  // A width change reflows every line, and <Static> cannot reprint what it
+  // already wrote: clear and print the whole transcript again at the new width.
+  const firstWidth = React.useRef(true);
+  React.useEffect(() => {
+    if (firstWidth.current) { firstWidth.current = false; return; }
+    const t = setTimeout(() => {
+      if (stdout) stdout.write('\x1b[2J\x1b[3J\x1b[H');
+      setStaticKey((k) => k + 1);
+    }, 150);
+    return () => clearTimeout(t);
+  }, [cols]);
+
   React.useEffect(() => {
     if (input.startsWith('/') && !input.includes('\n')) {
       const query = input.toLowerCase().split(/\s/)[0];
       const filtered = COMMANDS.filter((cmd) => cmd.name.startsWith(query));
       setFilteredCommands(filtered);
-      setShowCommands(filtered.length > 0);
+      setShowCommands(filtered.length > 0 && !input.includes(' '));
       setSelectedCommand(0);
     } else {
       setShowCommands(false);
@@ -543,20 +922,26 @@ const App = () => {
     return () => clearTimeout(t);
   }, [escArmed]);
 
-  // Elapsed counter while the agent works. The spinner already repaints the
-  // live frame several times a second, so this ticker costs nothing extra.
   React.useEffect(() => {
-    if (!running) { setElapsed(0); return; }
-    const startedAt = Date.now();
-    const t = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
-    return () => clearInterval(t);
-  }, [running]);
+    if (!ctrlCArmed) return;
+    const t = setTimeout(() => setCtrlCArmed(false), 1500);
+    return () => clearTimeout(t);
+  }, [ctrlCArmed]);
+
+  // Leave nothing behind: blank the live frame first, then exit, so the shell
+  // prompt lands right under the transcript instead of under a dead input box.
+  const quit = React.useCallback(() => {
+    closeDsh();
+    setExiting(true);
+    setTimeout(() => exit(), 30);
+  }, [exit]);
 
   // ── approval bridge: tools await this promise, the keypress handler settles it ──
   const requestApproval = React.useCallback((request) => {
     if (bypassModeRef.current) return Promise.resolve('always');
     if (alwaysAllow.current.has(request.tool)) return Promise.resolve('always');
     return new Promise((resolve) => {
+      setApprovalIndex(0);
       setApproval({ request, resolve });
     });
   }, []);
@@ -568,7 +953,7 @@ const App = () => {
   const bypassModeRef = React.useRef(false);
   React.useEffect(() => { bypassModeRef.current = bypassMode; }, [bypassMode]);
 
-  // ── subagent bridge: nested runs report in here so the status bar can show them ──
+  // ── subagent bridge: nested runs report in here so the footer can show them ──
   const onSubagentEvent = React.useCallback((evt) => {
     if (evt.type === 'start') {
       setActiveAgents((prev) => [...prev, { id: evt.id, label: evt.label }]);
@@ -585,6 +970,36 @@ const App = () => {
       return null;
     });
   }, []);
+
+  // Up/down on the first/last line walks through earlier prompts.
+  const onHistory = React.useCallback((dir) => {
+    const list = promptHistory.current;
+    if (!list.length) return false;
+    let pos = historyPos.current;
+    if (pos === -1) {
+      if (dir > 0) return false;
+      draft.current = input;
+      pos = list.length - 1;
+    } else {
+      pos += dir;
+    }
+    if (pos < 0) pos = 0;
+    if (pos >= list.length) {
+      historyPos.current = -1;
+      setInput(draft.current);
+      return true;
+    }
+    historyPos.current = pos;
+    setInput(list[pos]);
+    return true;
+  }, [input]);
+
+  // "?" on an empty input opens the shortcuts list instead of typing a "?".
+  const onChange = React.useCallback((next) => {
+    if (input === '' && next === '?') { setShowShortcuts((s) => !s); return; }
+    if (showShortcuts) setShowShortcuts(false);
+    setInput(next);
+  }, [input, showShortcuts]);
 
   useInput((char, key) => {
     // The terminal's answer to our kitty query - proof that modified enter is
@@ -603,35 +1018,36 @@ const App = () => {
 
     // The approval prompt owns the keyboard while it is up.
     if (approval) {
-      if (char === 'y' || key.return) { settleApproval('once'); return; }
-      if (char === 'a') { settleApproval('always'); return; }
-      if (char === 'n' || key.escape) { settleApproval('reject'); return; }
+      const options = approvalOptions(approval.request);
+      if (key.upArrow) { setApprovalIndex((i) => (i > 0 ? i - 1 : options.length - 1)); return; }
+      if (key.downArrow || key.tab) { setApprovalIndex((i) => (i + 1) % options.length); return; }
+      if (key.return) { settleApproval(options[approvalIndex].verdict); return; }
+      if (char === '1' || char === 'y') { settleApproval('once'); return; }
+      if (char === '2' || char === 'a') { settleApproval('always'); return; }
+      if (char === '3' || char === 'n' || key.escape) { settleApproval('reject'); return; }
       return;
     }
 
     if (key.escape) {
-      if (running) { abortRef.current.abort(); setStatusLine('interrupting…'); return; }
+      if (running) { abortRef.current.abort(); setStatusLine('Interrupting'); return; }
       if (showCommands) { setShowCommands(false); return; }
+      if (showShortcuts) { setShowShortcuts(false); return; }
       if (input.length > 0) {
         if (escArmed) { setInput(''); setEscArmed(false); }
         else { setEscArmed(true); }
         return;
       }
-      if (escArmed) { exit(); } else { setEscArmed(true); }
       return;
     }
 
     if (key.ctrl && char === 'c') {
       if (running) { abortRef.current.abort(); return; }
       if (input.length > 0) { setInput(''); return; }
-      exit();
+      if (ctrlCArmed) { quit(); } else { setCtrlCArmed(true); }
       return;
     }
 
     if (key.tab && key.shift) {
-      // Deliberately no chat message here - this is a status-bar toggle, not
-      // conversation content, and pushing one would knock a bare "/"-free home
-      // screen straight into the compact conversation layout for no reason.
       setBypassMode((b) => !b);
       return;
     }
@@ -642,6 +1058,7 @@ const App = () => {
         if (sel) { setInput(sel.name + ' '); setShowCommands(false); }
         return;
       }
+      if (engine === 'dsh') return; // modes belong to the Classic engine
       setModeIndex((i) => (i + 1) % MODES.length);
       return;
     }
@@ -672,24 +1089,34 @@ const App = () => {
       const s = await auth.getSession();
       push({ role: 'system', content: s ? s.user.email : 'Not signed in' });
     } else if (cmd === '/help') {
+      const w = Math.max(...COMMANDS.map((c) => c.name.length)) + 3;
       push({
         role: 'system',
-        content: 'Commands\n' + COMMANDS.map((c) => `${c.name.padEnd(10)} ${c.description}`).join('\n') +
-          '\n\nKeys\nshift+enter / ctrl+j   new line\ntab                    switch mode\nesc                    interrupt a run\n' +
-          `\nModel\n${appConfig.describeProvider()}  -  change with \`codeply provider\`\n`,
+        content: 'Commands\n' + COMMANDS.map((c) => `  ${c.name.padEnd(w)}${c.description}`).join('\n') +
+          '\n\nKeys\n' +
+          `  ${(newlineKey + ' or \\ enter').padEnd(22)}new line\n` +
+          `  ${'tab'.padEnd(22)}switch mode (Build, Plan, Ask)\n` +
+          `  ${'shift+tab'.padEnd(22)}toggle bypass permissions\n` +
+          `  ${'↑ ↓'.padEnd(22)}prompt history\n` +
+          `  ${'esc'.padEnd(22)}interrupt a run, or twice to clear the input\n` +
+          `  ${'ctrl+c'.padEnd(22)}twice to quit\n` +
+          `\nModel\n  ${appConfig.describeProvider()}  (change with /provider)\n` +
+          `\nWhat's new\n${WHATS_NEW.map((l) => `  ${l}`).join('\n')}`,
       });
     } else if (cmd === '/clear') {
       // <Static> never re-renders what it already printed, so a clear means
-      // wiping the terminal and remounting it with a fresh key. Empty history
-      // also drops us back to the home splash.
+      // wiping the terminal and remounting it with a fresh key. The banner
+      // comes back with it.
       convo.current = [];
+      // A fresh DSH session too: the engine keeps its own history per session.
+      if (engine === 'dsh') closeDsh();
       if (stdout) stdout.write('\x1b[2J\x1b[3J\x1b[H');
       setChatHistory([]);
       setStaticKey((k) => k + 1);
     } else if (cmd === '/mode') {
       const next = (modeIndex + 1) % MODES.length;
       setModeIndex(next);
-      push({ role: 'system', content: `Mode → ${MODES[next]} - ${MODE_HINT[MODES[next]]}` });
+      push({ role: 'system', content: `${MODES[next]} mode: ${MODE_HINT[MODES[next]]}` });
     } else if (cmd === '/provider') {
       const parts = args.trim().split(/\s+/).filter(Boolean);
       const name = parts[0];
@@ -698,7 +1125,7 @@ const App = () => {
         const cfg = appConfig.getConfig();
         let msg = `Provider: ${appConfig.describeProvider(cfg)}\n` +
           `Providers: ${appConfig.PROVIDERS.join(', ')}\n` +
-          'Set with /provider <name> [key]  -  e.g. /provider openrouter sk-or-v1-...';
+          'Set with /provider <name> [key], for example /provider openrouter sk-or-v1-...';
         if (cfg.provider === 'codeply') msg += `\n\n${appConfig.byokHint()}`;
         push({ role: 'system', content: msg });
         return;
@@ -720,7 +1147,22 @@ const App = () => {
         push({ role: 'error', content: `Could not save config: ${saved.error}` });
         return;
       }
-      push({ role: 'system', content: `Provider → ${appConfig.describeProvider(appConfig.getConfig())}` });
+      setProvider(appConfig.getConfig());
+      push({ role: 'system', content: `Provider set to ${appConfig.describeProvider(appConfig.getConfig())}` });
+    } else if (cmd === '/engine') {
+      const want = args.trim().toLowerCase();
+      if (!want) {
+        push({ role: 'system', content: `Engine: ${engine === 'dsh' ? "DSH (Craft's DeepSeek Harness fork, over ACP)" : 'Classic (codeply-cli)'}\nSwitch with /engine classic or /engine dsh` });
+        return;
+      }
+      if (want !== 'dsh' && want !== 'classic') {
+        push({ role: 'error', content: `Unknown engine "${want}". Use classic or dsh.` });
+        return;
+      }
+      if (want === engine) { push({ role: 'system', content: `Already on the ${want === 'dsh' ? 'DSH' : 'Classic'} engine.` }); return; }
+      if (want === 'classic') closeDsh();
+      setEngine(want);
+      push({ role: 'system', content: want === 'dsh' ? 'Switched to the DSH engine. Starting it…' : 'Switched to the Classic engine.' });
     } else if (cmd === '/keys') {
       push({ role: 'system', content: 'Press any key (or combination)…' });
       setKeyProbe(true);
@@ -751,7 +1193,7 @@ const App = () => {
             : await skills.installFromGitHub(source);
           if (isLocal) {
             if (!result.ok) push({ role: 'error', content: result.error });
-            else push({ role: 'system', content: `Installed "${result.name}" → ${result.dest}` });
+            else push({ role: 'system', content: `Installed "${result.name}" to ${result.dest}` });
           } else if (!result.ok) {
             push({ role: 'error', content: result.error || `No skills installed from ${source}.` });
           } else {
@@ -779,7 +1221,7 @@ const App = () => {
 
       push({ role: 'error', content: `Unknown /skill subcommand "${sub}". Use list, install, or remove.` });
     } else if (cmd === '/quit' || cmd === '/exit') {
-      exit();
+      quit();
     } else {
       push({ role: 'error', content: `Unknown command: ${cmd}. Type /help for available commands.` });
     }
@@ -788,7 +1230,7 @@ const App = () => {
   // ── main turn ──
   const handleSubmit = async (value) => {
     const text = value.trim();
-    if (!text || running) return;
+    if (!text) return;
 
     let submitValue = text;
     if (showCommands && filteredCommands[selectedCommand]) {
@@ -798,23 +1240,44 @@ const App = () => {
       }
     }
     setShowCommands(false);
+    setShowShortcuts(false);
     setInput('');
+    historyPos.current = -1;
+    draft.current = '';
+    const list = promptHistory.current;
+    if (list[list.length - 1] !== submitValue) list.push(submitValue);
+
+    // Typed while a run is going: hold it and send it when the run ends.
+    if (runningRef.current) {
+      queuedRef.current = submitValue;
+      setQueued(submitValue);
+      return;
+    }
 
     if (submitValue.startsWith('/')) {
       const [first, ...rest] = submitValue.split(/\s+/);
-      await runCommand(first.toLowerCase(), rest.join(' '));
+      const cmd = first.toLowerCase();
+      if (cmd !== '/clear' && cmd !== '/quit' && cmd !== '/exit') push({ role: 'user', content: submitValue });
+      await runCommand(cmd, rest.join(' '));
       return;
     }
 
     push({ role: 'user', content: submitValue });
+    runningRef.current = true;
     setRunning(true);
-    setStatusLine('thinking…');
+    const startedAt = Date.now();
+    setRunStarted(startedAt);
+    setStatusLine('Thinking');
     setSteps(0);
     abortRef.current = new AbortController();
+    let runMode = mode;
 
     const turn = [];
     try {
-      const stream = runAgent({
+      if (engine === 'dsh' && !(dshRef.current && dshRef.current.sessionId)) setStatusLine('Starting the DSH engine');
+      const stream = engine === 'dsh'
+        ? getDsh().prompt(submitValue, { approve: requestApproval, signal: abortRef.current.signal })
+        : runAgent({
         userMessage: submitValue,
         history: convo.current.slice(-20),
         mode,
@@ -828,258 +1291,168 @@ const App = () => {
         if (event.type === 'text') {
           // In Plan mode the substantial reply is the plan itself; short
           // interstitial notes ("let me check X") stay as ordinary prose.
-          const isPlan = mode === 'Plan' && event.text.split('\n').length >= 3;
+          const isPlan = runMode === 'Plan' && !event.interim && event.text.split('\n').length >= 3;
           push({ role: 'assistant', content: event.text, plan: isPlan });
           turn.push({ role: 'assistant', content: event.text });
-          setStatusLine('working…');
+          setStatusLine('Thinking');
+        } else if (event.type === 'reasoning') {
+          push({ role: 'reasoning', text: event.text, ms: event.ms });
+        } else if (event.type === 'notice') {
+          push({ role: 'notice', level: event.level, content: event.text });
         } else if (event.type === 'tool_start') {
-          const display = TOOL_DISPLAY[event.name] || { verb: event.name };
+          const [, verb] = toolTitle(event.name);
+          const target = argTarget(event.args).split('\n')[0];
           setSteps((n) => n + 1);
-          setStatusLine(`${display.verb} ${event.args.path || event.args.command || event.args.pattern || ''}`.trim());
+          setStatusLine(target ? `${verb} ${target}` : verb);
         } else if (event.type === 'tool_end') {
-          const meta = event.meta || {};
-          const unit = event.name === 'search' ? 'matches'
-            : event.name === 'list_dir' ? 'entries'
-            : 'lines';
-          let detail = '';
-          if (meta.count != null) detail = `${meta.count} ${unit}`;
-          if (meta.added != null) detail = `-${meta.removed || 0} +${meta.added}`;
-          if (meta.exitCode != null) detail = `exit ${meta.exitCode}`;
-          if (meta.noop) detail = 'no change';
-          if (meta.rejected) detail = 'declined';
+          push(toolMessage(event.engine === 'dsh' ? fromDsh(event) : event, cwd));
+          setStatusLine('Thinking');
+        } else if (event.type === 'verifying') {
+          setStatusLine(`Verifying ${plural((event.files || []).length, 'file')}`);
+        } else if (event.type === 'mode_switch') {
+          const idx = MODES.indexOf(event.mode);
+          if (idx >= 0) { setModeIndex(idx); runMode = event.mode; }
+          push({ role: 'system', content: `Switched to ${event.mode} mode${event.planPath ? `. Plan saved to ${event.planPath}` : ''}` });
+        } else if (event.type === 'done') {
           push({
-            role: 'tool',
-            name: event.name,
-            ok: event.ok && !meta.rejected && (meta.exitCode == null || meta.exitCode === 0),
-            label: event.summary || '',
-            detail,
+            role: 'done',
+            secs: Math.max(1, Math.round((Date.now() - startedAt) / 1000)),
+            steps: event.steps,
+            files: event.writtenFiles || [],
           });
-          setStatusLine('thinking…');
         } else if (event.type === 'aborted') {
-          push({ role: 'system', content: 'Interrupted.' });
+          push({ role: 'notice', level: 'info', content: 'Interrupted. Tell Codeply what to do instead, or press ↑ to edit your last message.' });
         } else if (event.type === 'error') {
-          push({ role: 'error', content: event.error });
+          let content = event.error;
+          if (event.limited && event.resetsAt) {
+            const at = new Date(event.resetsAt);
+            if (!Number.isNaN(at.getTime())) content += `\nResets at ${at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`;
+          }
+          if (event.limited) content += `\n${appConfig.byokHint()}`;
+          push({ role: 'error', content });
         }
       }
     } catch (e) {
       push({ role: 'error', content: e.message });
     } finally {
       convo.current = [...convo.current, { role: 'user', content: submitValue }, ...turn];
+      runningRef.current = false;
       setRunning(false);
       setStatusLine('');
       // A run that ended while a prompt was up must not leave a dangling promise.
       setApproval((current) => { if (current) current.resolve('reject'); return null; });
+      const next = queuedRef.current;
+      if (next) {
+        queuedRef.current = null;
+        setQueued(null);
+        setTimeout(() => submitRef.current && submitRef.current(next), 0);
+      }
     }
   };
+  submitRef.current = handleSubmit;
 
   // Ollama needs no Codeply sign-in, so showing "not signed in" there would be
   // a false alarm - surface the model that is actually answering instead.
-  const provider = React.useMemo(() => appConfig.getConfig(), []);
-  const usingOllama = provider.provider === 'ollama';
-  const account = usingOllama
-    ? appConfig.describeProviderShort(provider)
-    : session ? session.user.email : 'not signed in';
+  const [provider, setProvider] = React.useState(() => appConfig.getConfig());
+  // The DSH engine always answers through Haze 2, whatever /provider says.
+  const usingHaze = engine === 'dsh' || provider.provider === 'codeply';
+  const needsLogin = usingHaze && !session;
+  const modelLabel = engine === 'dsh' ? 'Haze 2 (auto) on the DSH engine' : usingHaze ? 'Haze 2 (auto)' : appConfig.describeProvider(provider);
+  const modelShort = engine === 'dsh' ? 'DSH · Haze 2' : usingHaze ? 'Haze 2' : appConfig.describeProviderShort(provider);
+  const account = session ? session.user.email : usingHaze ? 'not signed in' : 'using your own key';
 
   // Advertise the key that actually inserts a newline in THIS terminal.
   const newlineKey = modifiedEnterWorks ? 'shift+enter' : 'ctrl+j';
 
-  const isHome = chatHistory.length === 0;
-  // The splash needs real estate; in a short or narrow window fall straight
-  // through to the compact layout rather than rendering a cramped one.
-  const showSplash = isHome && rows >= 22 && cols >= 44;
-  // 1 for this session's own run, plus whatever subagents it has spawned and
-  // are still going - matches what the status bar's "← N agent" is counting.
-  const agentCount = 1 + activeAgents.length;
+  if (exiting) return null;
 
-  // On home the composer is a centred column like an app window; in
-  // conversation it spans the width so long messages have room.
-  const shellWidth = showSplash ? Math.min(cols - 4, 92) : cols - 2;
-  const inner = Math.max(20, shellWidth);
+  const width = Math.max(20, cols - 2);
+  const items = booted ? [BANNER_ITEM, ...chatHistory] : [];
+  const bannerProps = {
+    account, needsLogin, model: modelLabel, cwd, mode: engine === 'dsh' ? 'DSH engine' : `${mode} mode`,
+    name: (session?.user?.email || '').split('@')[0] || null,
+  };
 
-  // Two-column rows are laid out by hand: Ink truncates each child against the
-  // width it was given, so without explicit widths the columns run into each
-  // other on narrow terminals instead of truncating cleanly.
-  const rightHint = escArmed
-    ? `esc again to ${input.length > 0 ? 'clear' : 'quit'}`
-    : running ? 'esc interrupts' : 'enter to send';
-  const footRight = fitPath(homePath(cwd), Math.max(12, Math.floor(inner * 0.45))) + '  codeply ' + VERSION;
-  const hintsWidth = Math.max(10, inner - rightHint.length - 2);
-  const tipWidth = inner - footRight.length - 2;
-  const showTip = tipWidth >= 24;
-
-  const composer = React.createElement(
-    Box,
-    {
-      key: 'composer',
-      flexDirection: 'column',
-      borderStyle: 'bold',
-      borderTop: false,
-      borderRight: false,
-      borderBottom: false,
-      borderLeftColor: running ? T.muted : modeColor,
-      paddingLeft: 1,
-      width: shellWidth,
-      marginTop: showSplash ? 2 : 0,
-      flexShrink: 0,
-    },
-    React.createElement(TextArea, {
-      value: input,
-      onChange: setInput,
-      onSubmit: handleSubmit,
-      width: inner - 3,
-      focus: !running && !approval,
-      allowVertical: !showCommands,
-      placeholder: running
-        ? 'working - esc to interrupt'
-        : 'Ask for a change, a fix, or an explanation…  (/ for commands)',
-    }),
-    React.createElement(
-      Text,
-      { wrap: 'truncate-end' },
-      hexToAnsi(modeColor) + ANSI_BOLD + mode + ANSI_RESET +
-        hexToAnsi(T.faint) + '  ·  ' + ANSI_RESET +
-        hexToAnsi(T.muted) + MODE_HINT[mode] + ANSI_RESET +
-        hexToAnsi(T.faint) + '  ·  ' + ANSI_RESET +
-        hexToAnsi(usingOllama || session ? T.dim : G.yellow) + account + ANSI_RESET
-    )
-  );
-
-  const hints = React.createElement(
-    Box,
-    { key: 'hints', flexDirection: 'row', justifyContent: 'space-between', width: shellWidth, marginTop: 1, flexShrink: 0 },
-    React.createElement(
-      Box,
-      { width: hintsWidth, flexShrink: 0 },
-      React.createElement(
-        Text,
-        { wrap: 'truncate-end' },
-        hexToAnsi(G.blue) + 'tab' + ANSI_RESET + hexToAnsi(T.faint) + ' mode   ' + ANSI_RESET +
-          hexToAnsi(G.red) + newlineKey + ANSI_RESET + hexToAnsi(T.faint) + ' newline   ' + ANSI_RESET +
-          hexToAnsi(G.yellow) + '/' + ANSI_RESET + hexToAnsi(T.faint) + ' commands   ' + ANSI_RESET +
-          hexToAnsi(G.green) + 'esc' + ANSI_RESET + hexToAnsi(T.faint) + ' interrupt' + ANSI_RESET
-      )
-    ),
-    React.createElement(
-      Text,
-      null,
-      (escArmed ? hexToAnsi(G.yellow) : hexToAnsi(T.faint)) + rightHint + ANSI_RESET
-    )
-  );
-
-  const tipLine = React.createElement(
-    Box,
-    { key: 'tip', width: shellWidth, flexShrink: 0 },
-    showTip && React.createElement(
-      Text,
-      { wrap: 'truncate-end' },
-      hexToAnsi(G.yellow) + '• ' + ANSI_RESET +
-        hexToAnsi(T.muted) + tip[0] + ANSI_RESET +
-        hexToAnsi(T.faint) + ' ' + tip[1] + ANSI_RESET
-    )
-  );
+  // ── footer: one line, left = state, right = model ──
+  let left;
+  if (escArmed) left = paint(T.warn, `Press esc again to clear`);
+  else if (ctrlCArmed) left = paint(T.warn, 'Press ctrl+c again to exit');
+  else {
+    left = (bypassMode ? paint(T.warn, `${GL.bypass} bypass permissions on`) + paint(T.faint, ' · ') : '') +
+      (engine === 'dsh'
+        ? paint(T.accent, 'DSH engine') + paint(T.faint, ' (/engine to switch)')
+        : paint(modeColor, `${mode} mode`) + paint(T.faint, ' (tab to switch)'));
+    if (!bypassMode && !running && !input) left += paint(T.faint, ' · ? for shortcuts');
+  }
+  const subagents = activeAgents.length;
+  const rightPlain = (subagents ? `${plural(subagents, 'subagent')} · ` : '') + (needsLogin ? 'not signed in · /login' : modelShort);
+  const right = (subagents ? paint(T.accent, `${plural(subagents, 'subagent')}`) + paint(T.faint, ' · ') : '') +
+    (needsLogin ? paint(T.warn, 'not signed in · /login') : paint(T.dim, modelShort));
+  const showRight = width - 4 - rightPlain.length >= 24;
 
   const footer = React.createElement(
     Box,
-    { key: 'footer', flexDirection: 'row', justifyContent: 'space-between', width: shellWidth, flexShrink: 0 },
+    { key: 'footer', flexDirection: 'row', width, paddingX: 2, flexShrink: 0 },
     React.createElement(
       Box,
-      { width: Math.max(0, tipWidth), flexShrink: 0 },
-      showTip && React.createElement(
-        Text,
-        { wrap: 'truncate-end' },
-        hexToAnsi(G.yellow) + '• ' + ANSI_RESET +
-          hexToAnsi(T.muted) + tip[0] + ANSI_RESET +
-          hexToAnsi(T.faint) + ' ' + tip[1] + ANSI_RESET
-      )
+      { flexGrow: 1, flexShrink: 1 },
+      React.createElement(Text, { wrap: 'truncate-end' }, left)
     ),
-    React.createElement(Text, null, hexToAnsi(T.faint) + footRight + ANSI_RESET)
+    showRight && React.createElement(Box, { flexShrink: 0, marginLeft: 2 }, React.createElement(Text, null, right))
   );
 
-  const statusBar = React.createElement(
+  const borderColor = approval ? T.faint : bypassMode ? T.warn : mode === 'Build' ? T.border : modeColor;
+  const composer = React.createElement(
     Box,
-    { key: 'statusbar', width: shellWidth, marginTop: 1, flexShrink: 0 },
-    React.createElement(StatusBar, { bypassMode, agentCount })
+    { key: 'composer', flexDirection: 'row', borderStyle: GL.border, borderColor, paddingX: 1, width, flexShrink: 0 },
+    React.createElement(Text, null, paint(running ? T.faint : T.accent, GL.prompt + ' ')),
+    React.createElement(TextArea, {
+      value: input,
+      onChange,
+      onSubmit: handleSubmit,
+      onHistory,
+      width: width - 6,
+      focus: !approval && !keyProbe,
+      allowVertical: !showCommands,
+      placeholder: running
+        ? 'Type to queue a follow-up'
+        : 'Ask for a change, a fix, or an explanation',
+    })
   );
 
-  // ── Home: one full-viewport screen, centred like an app ──
-  if (showSplash) {
-    const avail = rows - 1;
-    const canBox = cols >= BOX_MIN_COLS;
-
-    const { leftInner, rightInner } = boxHomeMetrics(cols);
-    const welcomeName = (session?.user?.email || '').split('@')[0] || null;
-    const leftRows = [
-      { text: '' },
-      { text: centered(welcomeName ? `Welcome back, ${welcomeName}!` : 'Welcome to Codeply', leftInner), bold: true, color: T.text },
-      { text: '' },
-      ...MASCOT_ROWS.map((row) => ({ text: centered(row, leftInner), color: T.accent })),
-      { text: '' },
-      { text: centered(`${mode} mode · v${VERSION}`, leftInner), color: T.muted },
-      { text: centered(usingOllama || session ? account : 'not signed in - /login', leftInner), color: usingOllama || session ? T.secondary : G.yellow },
-      { text: centered(fitPath(homePath(cwd), Math.max(10, leftInner - 2)), leftInner), color: T.faint },
-    ];
-    const rightRows = [
-      { text: 'Tips for getting started', bold: true, color: T.accent },
-      { text: `${tip[0]} ${tip[1]}` },
-      { text: '' },
-      { text: 'What\'s new', bold: true, color: T.accent },
-      ...WHATS_NEW.map((line) => ({ text: line, color: T.secondary })),
-    ].map((r) => ({ color: T.secondary, ...r }));
-
-    return React.createElement(
-      Box,
-      { flexDirection: 'column', width: cols, height: avail, alignItems: 'center', justifyContent: 'center' },
-      canBox
-        ? React.createElement(BoxHome, {
-            key: 'home', cols, title: `Codeply CLI v${VERSION}`,
-            left: leftRows, right: rightRows, borderColor: T.accent,
-          })
-        : React.createElement(CompactMark, { key: 'home', cols }),
-      composer,
-      hints,
-      tipLine,
-      statusBar
-    );
-  }
-
-  // ── Conversation: scrollback + a deliberately short live frame ──
   return React.createElement(
     Box,
-    { flexDirection: 'column', width: cols, paddingX: 1 },
+    { flexDirection: 'column', width: cols },
 
     // ── Scrollback: printed once, never redrawn. Keeps the live frame short. ──
+    // <Static> is absolutely positioned, so a parent's right padding does not
+    // narrow it: each item carries its own width instead, or every wrapped
+    // line comes out one column too wide and spills onto the next row.
     React.createElement(
       Static,
-      { key: staticKey, items: chatHistory },
-      (msg) => React.createElement(MessageBlock, { key: msg.id, msg, cols: cols - 2 })
+      { key: staticKey, items },
+      (msg) => React.createElement(
+        Box,
+        { key: msg.id, width: cols - 1, paddingLeft: 1 },
+        React.createElement(MessageBlock, { msg, cols, rows, banner: bannerProps })
+      )
     ),
 
     // ── Live frame below ──
-
-    running && React.createElement(
-      Box,
-      { flexDirection: 'row', gap: 1, marginBottom: 1, flexShrink: 0 },
-      React.createElement(Text, { color: T.accent }, React.createElement(Spinner, { type: 'dots' })),
-      React.createElement(
-        Text,
-        { wrap: 'truncate-end' },
-        hexToAnsi(T.dim) + (statusLine || 'working…') + ANSI_RESET +
-          hexToAnsi(T.faint) + '   ' + elapsed + 's' + ANSI_RESET +
-          (steps > 0 ? hexToAnsi(T.faint) + '  ·  step ' + steps + ANSI_RESET : '')
-      )
-    ),
-
-    approval && React.createElement(ApprovalPrompt, { request: approval.request }),
-
-    showCommands && React.createElement(CommandsMenu, {
-      commands: filteredCommands,
-      selectedIndex: selectedCommand,
+    React.createElement(Box, { flexDirection: 'column', paddingX: 1 },
+    running && !approval && React.createElement(Working, {
+      label: statusLine || 'Thinking', startedAt: runStarted, steps, queued, width,
     }),
 
-    composer,
-    hints,
-    footer,
-    statusBar
+    approval && React.createElement(ApprovalPrompt, {
+      request: approval.request, selected: approvalIndex, cols, rows, cwd,
+    }),
+
+    booted && composer,
+    booted && showCommands && React.createElement(CommandsMenu, { commands: filteredCommands, selectedIndex: selectedCommand, width }),
+    booted && showShortcuts && !showCommands && React.createElement(Shortcuts, { width, newlineKey }),
+    booted && !showCommands && footer
+    )
   );
 };
 

@@ -12,6 +12,15 @@ contextBridge.exposeInMainWorld('craft', {
   designEmbed: (bounds) => ipcRenderer.invoke('design:embed', bounds),
   designBounds: (bounds) => ipcRenderer.send('design:bounds', bounds),
   designUnembed: () => ipcRenderer.invoke('design:unembed'),
+  // The DSH engine (dsh-engine.js), laid over the main area when picked over Classic.
+  dshStatus: () => ipcRenderer.invoke('dsh:status'),
+  dshSetEngine: (which) => ipcRenderer.invoke('dsh:setEngine', which),
+  dshEmbed: (bounds) => ipcRenderer.invoke('dsh:embed', bounds),
+  dshBounds: (bounds) => ipcRenderer.send('dsh:bounds', bounds),
+  dshUnembed: () => ipcRenderer.invoke('dsh:unembed'),
+  dshRestart: () => ipcRenderer.invoke('dsh:restart'),
+  // Text and an image for the new Craft's composer (a browser point-at pick).
+  dshInsert: (payload) => ipcRenderer.invoke('dsh:insert', payload),
   onDesignShow: (cb) => ipcRenderer.on('design:show', () => cb()),
   onDesignHide: (cb) => ipcRenderer.on('design:hide', () => cb()),
   onOpenConnect: (cb) => ipcRenderer.on('connect:open', () => cb()),
@@ -146,6 +155,12 @@ contextBridge.exposeInMainWorld('craft', {
   // undo (true) or redo (false) everything one message changed
   setCheckpoint: (sessionId, checkpointId, undo) => ipcRenderer.invoke('checkpoint:set', { sessionId, checkpointId, undo }),
   onAgentEvent: (cb) => ipcRenderer.on('agent:event', (e, data) => cb(data)),
+  // background commands the agent started (run with background=true)
+  jobsList: () => ipcRenderer.invoke('jobs:list'),
+  jobsOutput: (id) => ipcRenderer.invoke('jobs:output', id),
+  jobsStop: (id) => ipcRenderer.invoke('jobs:stop', id),
+  jobsClear: () => ipcRenderer.invoke('jobs:clear'),
+  onJobsChanged: (cb) => ipcRenderer.on('jobs:changed', (e, list) => cb(list)),
   onOpenSessionFromDrop: (cb) => ipcRenderer.on('drop:openSession', (e, id) => cb(id)),
 
   // image picker
@@ -156,6 +171,8 @@ contextBridge.exposeInMainWorld('craft', {
 
   // embedded browser panel (docked BrowserView the agent's browser_check drives)
   toggleBrowserPanel: () => ipcRenderer.send('browserpanel:toggle'),
+  /** A dialog or menu covers the browser panel: hide the page under it until it closes. */
+  browserPanelCover: (on) => ipcRenderer.send('browserpanel:cover', !!on),
   browserPanelBack: () => ipcRenderer.send('browserpanel:back'),
   browserPanelForward: () => ipcRenderer.send('browserpanel:forward'),
   browserPanelReload: () => ipcRenderer.send('browserpanel:reload'),

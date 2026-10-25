@@ -216,6 +216,10 @@ function syncThemeToggleUI() {
   });
 }
 
+// Chats whose run was stopped here: the screen settles at once, and what the
+// engine still reports for that run is dropped until it says the run ended.
+const stoppedRuns = new Set();
+
 const state = {
   user: null,
   chatgpt: { signedIn: false }, // Sign in with ChatGPT: { signedIn, email, sharing }
@@ -506,6 +510,56 @@ function spans(s) {
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
 }
 
+// ─── Background commands ────────────────────────────────────────────────────
+// Commands the agent started with run background=true (dev servers, watchers).
+// A quiet strip behind the composer says how many run; it opens to each one's
+// latest output and a Stop button.
+const jobsBar = $('jobsBar');
+let jobsList = [];
+let jobsOpen = false;
+let jobsTimer = null;
+
+function renderJobs() {
+  if (!jobsBar) return;
+  const running = jobsList.filter((j) => j.running);
+  if (!jobsList.length) jobsOpen = false;
+  jobsBar.classList.toggle('hidden', !jobsList.length);
+  const title = running.length
+    ? `${running.length} command${running.length === 1 ? '' : 's'} running in the background`
+    : `${jobsList.length} background command${jobsList.length === 1 ? '' : 's'} finished`;
+  jobsBar.innerHTML =
+    `<div class="jobs-head-row"><button class="jobs-head" type="button" aria-expanded="${jobsOpen}"><span class="jobs-dot${running.length ? ' on' : ''}"></span><span class="jobs-title">${esc(title)}</span><svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>` +
+    `${running.length < jobsList.length ? '<button class="jobs-clear" type="button">Clear finished</button>' : ''}</div>` +
+    (jobsOpen ? `<div class="jobs-list">${jobsList.map((j) => `<div class="job"><div class="job-row"><span class="job-cmd" title="${esc(j.command)}">${esc(j.command)}</span>` +
+      `<span class="job-state${j.running ? ' on' : ''}">${j.running ? 'Running' : `Exit ${j.code}`}</span>` +
+      `${j.running ? `<button class="job-stop" type="button" data-stop="${esc(j.id)}">Stop</button>` : ''}</div><pre class="job-out" data-out="${esc(j.id)}"></pre></div>`).join('')}</div>` : '');
+  jobsBar.querySelector('.jobs-head').addEventListener('click', () => { jobsOpen = !jobsOpen; renderJobs(); });
+  const clear = jobsBar.querySelector('.jobs-clear');
+  if (clear) clear.addEventListener('click', async () => { jobsList = await window.craft.jobsClear(); renderJobs(); });
+  jobsBar.querySelectorAll('[data-stop]').forEach((b) => b.addEventListener('click', () => { b.disabled = true; b.textContent = 'Stopping'; window.craft.jobsStop(b.dataset.stop); }));
+  clearInterval(jobsTimer);
+  jobsTimer = null;
+  if (jobsOpen) {
+    fillJobOutputs();
+    if (running.length) jobsTimer = setInterval(fillJobOutputs, 1500);
+  }
+}
+
+async function fillJobOutputs() {
+  for (const pre of jobsBar.querySelectorAll('[data-out]')) {
+    const text = String(await window.craft.jobsOutput(pre.dataset.out)).replace(/\u001b\[[0-9;]*[A-Za-z]/g, '').trimEnd().slice(-4000);
+    if (pre.textContent === text) continue;
+    const atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
+    pre.textContent = text;
+    if (atEnd) pre.scrollTop = pre.scrollHeight;
+  }
+}
+
+if (window.craft && window.craft.jobsList) {
+  window.craft.jobsList().then((list) => { jobsList = list || []; renderJobs(); }).catch(() => {});
+  window.craft.onJobsChanged((list) => { jobsList = list || []; renderJobs(); });
+}
+
 // ─── Chat rendering ─────────────────────────────────────────────────────────
 const chatColumn = $('chatColumn');
 const chatScroll = $('chatScroll');
@@ -513,7 +567,7 @@ const chatScroll = $('chatScroll');
 const TOOL_DISPLAY = {
   todo: 'Updated task list', ask_user: 'Asked you', mcp: 'Used',
   list_dir: 'Listed', read_file: 'Read', write_file: 'Wrote', edit_file: 'Edited',
-  search: 'Searched', image_search: 'Searched images for', web_search: 'Searched the web for', run: 'Ran', use_skill: 'Loaded skill', list_skills: 'Searched skills',
+  search: 'Searched', image_search: 'Searched images for', web_search: 'Searched the web for', run: 'Ran', job: 'Checked background job', use_skill: 'Loaded skill', list_skills: 'Searched skills',
   fetch_image: 'Downloaded', browser_check: 'Checked',
   gmail_send: 'Emailed', gmail_search: 'Searched Gmail', slack_post_message: 'Posted',
   vercel_deploy: 'Deployed', supabase_create_project: 'Provisioned', supabase_delete_project: 'Deleted', github_create_repo: 'Pushed',
@@ -893,7 +947,7 @@ let activityRole = null;   // { mascot, name } of the role working this turn, sh
 const ACTIVITY_KIND = {
   read_file: ['read', 'file', 'files'], list_dir: ['listed', 'folder', 'folders'],
   write_file: ['wrote', 'file', 'files'], edit_file: ['edited', 'file', 'files'],
-  run: ['ran', 'command', 'commands'], search: ['searched', 'time', 'times'],
+  run: ['ran', 'command', 'commands'], job: ['checked', 'background job', 'background jobs'], search: ['searched', 'time', 'times'],
   browser_check: ['checked', 'page', 'pages'], fetch_image: ['downloaded', 'image', 'images'],
   image_search: ['searched images for', 'query', 'queries'], web_search: ['searched the web for', 'query', 'queries'],
   view_images: ['looked at', 'image', 'images'],
@@ -980,7 +1034,8 @@ function closeActivity() {
   const el = activityEl;
   activityEl = null;
   el.classList.remove('running');
-  if (!el.querySelector('.activity-body').children.length) { el.remove(); return; }
+  // Nothing to open (no steps, no thinking; the role badge alone is hidden in the card): no card.
+  if (!el.querySelector('.activity-body > :not(.role-badge)')) { el.remove(); return; }
   updateActivitySummary(el);
 }
 
@@ -1011,6 +1066,28 @@ function formatToolDetail(name, args) {
   return lines.join('\n\n');
 }
 
+// An opened command row: the command and the end of what it printed, like a
+// terminal. A background command's output keeps growing, so it can refresh.
+function commandDetail({ command, output, exitCode, background, jobId }) {
+  const box = document.createElement('div');
+  box.className = 'tool-term hidden';
+  const status = background ? `Background job${jobId ? ` ${jobId}` : ''}`
+    : typeof exitCode === 'number' ? `<span class="${exitCode ? 'bad' : 'ok'}">Exit ${exitCode}</span>` : '';
+  box.innerHTML = `<div class="tool-term-head"><span>Shell</span><span class="grow"></span>${status}</div><div class="tool-term-cmd"></div><pre class="tool-term-out"></pre>`;
+  box.querySelector('.tool-term-cmd').textContent = command;
+  const out = box.querySelector('.tool-term-out');
+  const show = (text) => {
+    const t = String(text || '').replace(/\u001b\[[0-9;]*[A-Za-z]/g, '').trimEnd(); // no colour codes
+    out.textContent = t || (output === undefined ? 'Output was not kept for this command.' : 'No output.');
+    out.classList.toggle('empty', !t);
+  };
+  show(output);
+  if (background && jobId && window.craft.jobsOutput) {
+    box.addEventListener('toggle-open', async () => { show((await window.craft.jobsOutput(jobId)).slice(-4000) || output); });
+  }
+  return box;
+}
+
 // A single fallback chain for "what's the one-line summary of this call's
 // arguments" - path/command/pattern/name covered the original file+shell
 // tools; to/channel cover the two new integrations, whose defining argument
@@ -1022,14 +1099,15 @@ function toolArgsLabel(args) {
     || args?.query || '';
 }
 
-function addToolRow({ name, label, ok, running: isRunning, auto, bypass, args, screenshotSrc, delegation, error }) {
+function addToolRow({ name, label, ok, running: isRunning, auto, bypass, args, screenshotSrc, delegation, error, output, exitCode, background, jobId }) {
   // A bot asking a teammate gets its own row (bots-ui.js): "Asked Vera: ...".
   if (name === 'ask_bot' && window.CraftBots) return window.CraftBots.delegationRow({ label, ok, running: isRunning, args, delegation });
   const row = document.createElement('div');
   row.className = 'tool-row' + (isRunning ? ' running' : '') + (ok === false ? ' failed' : '');
   row.dataset.tool = name;
   row.dataset.label = label || '';
-  const verb = TOOL_DISPLAY[name] || name;
+  const bg = name === 'run' && (background || /^(1|true|yes)$/i.test(String(args?.background || '')));
+  const verb = bg ? 'Started in background' : (TOOL_DISPLAY[name] || name);
   const badge = auto ? `<span class="tool-badge">${bypass ? 'bypass' : 'auto approved'}</span>` : '';
   const hasDetail = !isRunning && args && Object.keys(args).length > 0;
   row.innerHTML =
@@ -1038,14 +1116,19 @@ function addToolRow({ name, label, ok, running: isRunning, auto, bypass, args, s
   if (isRunning) row.querySelector('.tool-row-head').innerHTML += '<span class="spinner"></span>';
 
   if (hasDetail) {
-    const detail = document.createElement('pre');
-    detail.className = 'tool-detail hidden';
-    detail.textContent = formatToolDetail(name, args);
+    const detail = (name === 'run' && args.command) || name === 'job'
+      ? commandDetail({ command: args.command || (args.id ? `job ${args.id}` : 'jobs'), output, exitCode, background: bg, jobId })
+      : document.createElement('pre');
+    if (detail.tagName === 'PRE') {
+      detail.className = 'tool-detail hidden';
+      detail.textContent = formatToolDetail(name, args);
+    }
     row.appendChild(detail);
     row.classList.add('expandable');
     row.querySelector('.tool-row-head').addEventListener('click', () => {
       detail.classList.toggle('hidden');
       row.classList.toggle('expanded');
+      if (!detail.classList.contains('hidden')) detail.dispatchEvent(new Event('toggle-open'));
     });
   }
 
@@ -1226,19 +1309,79 @@ function setDesignMode(on) {
   if (on) api.designEmbed(crewArea()); else api.designUnembed();
 }
 function setAppView(name) {
-  if (name === 'crew') setCrewMode(true);
-  else if (name === 'design') setDesignMode(true);
-  else { setCrewMode(false); setDesignMode(false); }
+  if (name === 'crew') { setDshShown(false); setCrewMode(true); }
+  else if (name === 'design') { setDshShown(false); setDesignMode(true); }
+  else { setCrewMode(false); setDesignMode(false); setDshShown(engine === 'dsh'); }
 }
-window.CraftCrew = { show: () => setCrewMode(true), hide: () => setCrewMode(false), isOpen: () => crewMode };
-window.CraftDesign = { show: () => setDesignMode(true), hide: () => setDesignMode(false), isOpen: () => designMode };
+// ─── Engine switch: Classic (codeply-cli) or DSH (craft-dsh, see dsh-engine.js) ───
+// DSH is laid over the main area like Crew and Design, only while Craft itself is showing.
+let engine = 'classic';
+let dshShown = false;
+let dshSeq = 0;
+let dshBrowserWidth = 0; // Craft's browser panel on the right, 0 while closed
+// The new Craft's view: under the title bar, leaving room for Craft's browser when it's open.
+function dshArea() {
+  const a = crewArea();
+  return { ...a, width: Math.max(360, a.width - dshBrowserWidth) };
+}
+function paintEngineBtn() {
+  document.querySelectorAll('.engine-btn').forEach((b) => {
+    const on = b.dataset.engine === engine;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', String(on));
+  });
+}
+function dshOverlay(state, text) {
+  const el = $('dshOverlay');
+  if (!el) return;
+  el.hidden = state === 'off';
+  // While it starts the area stays plain (no message); only a failure says something.
+  el.classList.toggle('quiet', state === 'starting');
+  $('dshOverlayTitle').textContent = state === 'error' ? "The new Craft couldn't start" : 'Starting the new Craft';
+  $('dshOverlayText').textContent = text || 'This takes a few seconds the first time.';
+  $('dshRetry').hidden = state !== 'error';
+  $('dshBackClassic').hidden = state !== 'error';
+}
+async function setDshShown(on) {
+  if (!api || !api.dshEmbed || dshShown === on) return;
+  dshShown = on;
+  document.body.classList.toggle('dsh-mode', on);
+  const seq = ++dshSeq;
+  if (!on) { dshOverlay('off'); api.dshUnembed(); return; }
+  dshOverlay('starting');
+  const r = await api.dshEmbed(dshArea());
+  if (seq !== dshSeq) return; // switched away while it was starting
+  if (r && r.shown) dshOverlay('off');
+  else dshOverlay('error', (r && r.error) || 'Something went wrong.');
+}
+async function setEngine(which) {
+  if (!api || !api.dshSetEngine || engine === which) return;
+  engine = which;
+  paintEngineBtn();
+  await api.dshSetEngine(which);
+  if (which === 'dsh') setAppView('craft');
+  else setDshShown(false);
+}
+document.querySelectorAll('.engine-btn').forEach((b) => b.addEventListener('click', () => setEngine(b.dataset.engine)));
+if ($('dshRetry')) $('dshRetry').addEventListener('click', () => { dshShown = false; setDshShown(true); });
+if ($('dshBackClassic')) $('dshBackClassic').addEventListener('click', () => setEngine('classic'));
+if (api && api.dshStatus) {
+  api.dshStatus().then((s) => {
+    if (!s || s.engine !== 'dsh') return;
+    engine = 'dsh';
+    paintEngineBtn();
+    if (!crewMode && !designMode) setDshShown(true);
+  }).catch(() => {});
+}
+window.CraftCrew = { show: () => setAppView('crew'), hide: () => setAppView('craft'), isOpen: () => crewMode };
+window.CraftDesign = { show: () => setAppView('design'), hide: () => setAppView('craft'), isOpen: () => designMode };
 document.querySelectorAll('.app-switch-btn').forEach((b) => b.addEventListener('click', () => setAppView(b.dataset.app)));
-if (api && api.onCrewShow) api.onCrewShow(() => setCrewMode(true));
-if (api && api.onCrewHide) api.onCrewHide(() => setCrewMode(false));
-if (api && api.onDesignShow) api.onDesignShow(() => setDesignMode(true));
-if (api && api.onDesignHide) api.onDesignHide(() => setDesignMode(false));
+if (api && api.onCrewShow) api.onCrewShow(() => setAppView('crew'));
+if (api && api.onCrewHide) api.onCrewHide(() => setAppView('craft'));
+if (api && api.onDesignShow) api.onDesignShow(() => setAppView('design'));
+if (api && api.onDesignHide) api.onDesignHide(() => setAppView('craft'));
 if (api && api.onOpenConnect) api.onOpenConnect(() => openConnectApps());
-window.addEventListener('resize', () => { if (crewMode) api.crewBounds(crewArea()); if (designMode) api.designBounds(crewArea()); });
+window.addEventListener('resize', () => { if (crewMode) api.crewBounds(crewArea()); if (designMode) api.designBounds(crewArea()); if (dshShown) api.dshBounds(dshArea()); });
 $('tasksCloseBtn').addEventListener('click', closeTasksModal);
 $('tasksBackdrop').addEventListener('click', (e) => { if (e.target === $('tasksBackdrop')) closeTasksModal(); });
 
@@ -1269,7 +1412,11 @@ function addNote(text, kind = '') {
   const el = document.createElement('div');
   el.className = 'chat-note ' + kind;
   el.textContent = text;
-  if (!kind) { activityBody().appendChild(el); updateActivitySummary(activityEl); }
+  // A plain note always joins the steps; a warning or limit note joins the
+  // group that is open (live and reopened chats group the same way); an error
+  // or a stop ends it.
+  const open = activityEl && activityEl.isConnected;
+  if (!kind || (open && kind !== 'error' && kind !== 'stopped')) { activityBody().appendChild(el); updateActivitySummary(activityEl); }
   else { closeActivity(); chatColumn.appendChild(el); }
   if (nearBottom()) scrollToBottom();
 }
@@ -1741,8 +1888,41 @@ $('bcTabs').addEventListener('keydown', (e) => {
   if (next) { e.preventDefault(); api.browserPanelSelectTab(next.id); }
 });
 
+// The browser panel is a native view drawn over this window, so a dialog,
+// menu or popover reaching into its area would sit under the page. While one
+// does, the page steps aside (main.js, browserpanel:cover).
+let bcPanelWidth = 0;
+let bcCovered = false;
+const BC_OVERLAYS = '.modal-backdrop, [class*="backdrop"], .menu, .sheet, [role="dialog"], [role="menu"], [role="listbox"]';
+function syncBrowserCover() {
+  let covered = false;
+  if (bcPanelWidth > 0) {
+    const left = window.innerWidth - bcPanelWidth;
+    for (const el of document.querySelectorAll(BC_OVERLAYS)) {
+      if (el.classList.contains('hidden') || el.closest('.hidden')) continue;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height || r.right <= left) continue;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) continue;
+      covered = true;
+      break;
+    }
+  }
+  if (covered === bcCovered || !api || !api.browserPanelCover) return;
+  bcCovered = covered;
+  api.browserPanelCover(covered);
+}
+let bcCoverFrame = 0;
+new MutationObserver(() => {
+  if (bcCoverFrame || !bcPanelWidth) return;
+  bcCoverFrame = requestAnimationFrame(() => { bcCoverFrame = 0; syncBrowserCover(); });
+}).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'open'] });
+window.addEventListener('resize', () => syncBrowserCover());
+
 if (api) {
   api.onBrowserPanelState((data) => {
+    bcPanelWidth = data.visible ? Number(data.width) || 0 : 0;
+    syncBrowserCover();
     const opened = data.visible && !bc.visible;
     bc.visible = data.visible;
     bc.tabs = data.tabs || [];
@@ -1762,6 +1942,9 @@ if (api) {
     if (zoomEl) zoomEl.textContent = bc.zoom + '%';
     if (!data.visible) { closeBrowserFind(); closeBrowserMenu(); }
     if (opened || data.visible) requestAnimationFrame(reportBrowserLayout);
+    // The new Craft's view makes room for the browser, which docks on the right.
+    dshBrowserWidth = data.visible ? (Number(data.width) || 0) + 6 : 0;
+    if (dshShown) api.dshBounds(dshArea());
   });
   api.onBrowserPanelUrl((data) => {
     lastBrowserPanelUrl = data.url;
@@ -1899,14 +2082,17 @@ async function pickBrowserItem() {
   btn.classList.remove('active');
   if (!r || r.cancelled) return;
   if (r.error) { showToast(r.error, 'error'); return; }
+  let host = '';
+  try { host = r.url.startsWith('file:') ? decodeURIComponent(r.url.split(/[\\/]/).pop()) : new URL(r.url).host; } catch {}
+  const words = r.text ? ` "${r.text.replace(/\s+/g, ' ').slice(0, 120)}"` : '';
+  const about = `About this ${r.tag}${words} on ${host || 'the page'} (${r.selector}): `;
+  // The new Craft is showing: the pick goes into its composer, not the hidden Classic one.
+  if (dshShown && api.dshInsert) { api.dshInsert({ text: about, image: r.image || '' }); return; }
   const composer = [...document.querySelectorAll('.composer')].find((c) => c.offsetParent) || document.querySelector('.chat-composer .composer');
   if (!composer) return;
   if (r.image && composer.addImage) composer.addImage(r.image);
   const input = composer.querySelector('.composer-input');
-  let host = '';
-  try { host = r.url.startsWith('file:') ? decodeURIComponent(r.url.split(/[\\/]/).pop()) : new URL(r.url).host; } catch {}
-  const words = r.text ? ` "${r.text.replace(/\s+/g, ' ').slice(0, 120)}"` : '';
-  input.value = `About this ${r.tag}${words} on ${host || 'the page'} (${r.selector}): ${input.value}`;
+  input.value = `${about}${input.value}`;
   input.dispatchEvent(new Event('input'));
   input.focus();
   input.setSelectionRange(input.value.length, input.value.length);
@@ -2082,6 +2268,10 @@ const SB_ICON = {
   caret: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-7 9z"/></svg>',
   plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
   more: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>',
+  // A project's folder: closed while its chats are folded away, open otherwise.
+  folder: '<svg class="sb-ic-folder" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h3.6l2 2.2h7.4a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>',
+  folderOpen: '<svg class="sb-ic-folder-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 17.5V7.5a2 2 0 0 1 2-2h3.6l2 2.2h6.4a2 2 0 0 1 2 2v1.3"/><path d="M3.5 17.5l2.3-6a1.6 1.6 0 0 1 1.5-1h13.2a1 1 0 0 1 .9 1.4l-2.4 5.9a1.6 1.6 0 0 1-1.5 1H5a1.5 1.5 0 0 1-1.5-1.3z"/></svg>',
+  chats: '<svg class="sb-ic-chats" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a7.5 7.5 0 0 1-11.2 6.5L4 19.5l1-4.4A7.5 7.5 0 1 1 20 12z"/></svg>',
 };
 const sbAttr = (s) => esc(String(s == null ? '' : s)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 // Windows paths: one folder however its slashes or letter case were written.
@@ -2132,7 +2322,7 @@ function sbSectionHtml(sec, chats, n) {
   const k = sbAttr(sec.key);
   return `<section class="sb-sec${closed ? ' closed' : ''}${isCurrent ? ' current' : ''}" data-sec="${k}">`
     + '<div class="sb-sec-head">'
-    + `<button class="sb-sec-toggle" type="button" data-key="t:${k}" aria-expanded="${!closed}" aria-controls="sbSec${n}"${sec.path ? ` title="${sbAttr(sec.path)}"` : ''}><span>${esc(sec.name)}</span>${SB_ICON.caret}</button>`
+    + `<button class="sb-sec-toggle" type="button" data-key="t:${k}" aria-expanded="${!closed}" aria-controls="sbSec${n}"${sec.path ? ` title="${sbAttr(sec.path)}"` : ''}>${sec.path ? SB_ICON.folder + SB_ICON.folderOpen : SB_ICON.chats}<span>${esc(sec.name)}</span>${SB_ICON.caret}</button>`
     + `<button class="sb-sec-tool" type="button" data-act="add" data-key="a:${k}" title="${sbAttr(addLabel)}" aria-label="${sbAttr(addLabel)}">${SB_ICON.plus}</button>`
     + (sec.path ? `<button class="sb-sec-tool" type="button" data-act="project-menu" data-key="p:${k}" title="More" aria-label="More for ${sbAttr(sec.name)}">${SB_ICON.more}</button>` : '')
     + '</div>'
@@ -3020,6 +3210,22 @@ let runningToolRow = null;
 const COMPOSER_HINT = 'Ask Codeply anything, or type / for commands';
 const COMPOSER_BUSY_HINT = 'Enter to queue a message, it sends when this finishes';
 
+/** Stop: the chat looks stopped right away, without waiting for the engine. */
+function stopRunNow(sessionId) {
+  if (!api || !sessionId) return;
+  api.stop(sessionId);
+  if (stoppedRuns.has(sessionId)) return;
+  stoppedRuns.add(sessionId);
+  // If the engine never confirms, stop dropping this chat's events after a while.
+  setTimeout(() => { if (stoppedRuns.delete(sessionId) && sessionId === state.currentSessionId && !state.running) setRunning(false); }, 15000);
+  if (sessionId !== state.currentSessionId) return;
+  hideThinking();
+  if (runningToolRow) { runningToolRow.remove(); runningToolRow = null; }
+  closeActivity();
+  addNote('Stopped.', 'stopped');
+  setRunning(false);
+}
+
 function setRunning(on) {
   state.running = on;
   document.querySelectorAll('[data-role="send"]').forEach((btn) => {
@@ -3028,8 +3234,9 @@ function setRunning(on) {
     btn.title = on ? 'Stop' : 'Send';
   });
   document.querySelectorAll('.chat-composer .composer-input').forEach((el) => { el.placeholder = on ? COMPOSER_BUSY_HINT : COMPOSER_HINT; });
-  // A message queued during the run goes out once this chat is free again.
-  if (!on) {
+  // A message queued during the run goes out once this chat is free again
+  // (after Stop, once the engine says the stopped run has really ended).
+  if (!on && !stoppedRuns.has(state.currentSessionId)) {
     document.querySelectorAll('.composer').forEach((c) => {
       const q = c.queued;
       if (!q || q.sessionId !== state.currentSessionId) return;
@@ -3109,9 +3316,14 @@ function addThinkingRow(text) {
   row.innerHTML =
     '<div class="reasoning-row-head">' +
     '<svg viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2Z"/></svg>' +
-    '<span class="reasoning-label">Thinking</span>' +
+    '<span class="reasoning-label"></span>' +
     '<svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>' +
     '</div>';
+  // The row reads as what the agent said it was doing (its first line), like
+  // the steps around it; the whole note opens below.
+  const gist = String(text || '').replace(/[`*_#>\[\]]/g, '').split(/\r?\n/).map((l) => l.trim()).find(Boolean) || '';
+  row.querySelector('.reasoning-label').textContent = gist || 'Thinking';
+  row.querySelector('.reasoning-label').title = gist;
   const detail = document.createElement('div');
   detail.className = 'reasoning-detail thinking-detail hidden';
   detail.innerHTML = mdToHtml(text);
@@ -3321,8 +3533,17 @@ document.querySelectorAll('.composer').forEach((composer) => {
     queuedEl.classList.toggle('hidden', !q);
     if (!q) { queuedEl.innerHTML = ''; return; }
     const shown = window.CodeplyAttach ? window.CodeplyAttach.split(q.text).text || q.text : q.text;
-    queuedEl.innerHTML = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="cq-label">Queued</span><span class="cq-text"></span><button type="button" class="cq-x" title="Take it back" aria-label="Take the queued message back"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+    queuedEl.innerHTML = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="cq-label">Queued</span><span class="cq-text"></span><button type="button" class="cq-now" title="Stop the current run and send this now">Send now</button><button type="button" class="cq-x" title="Take it back" aria-label="Take the queued message back"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
     queuedEl.querySelector('.cq-text').textContent = shown;
+    // Send now: stop this run; the queued message goes out as soon as it has ended.
+    queuedEl.querySelector('.cq-now').addEventListener('click', () => {
+      const queued = composer.queued;
+      if (!queued) return;
+      if (state.running && queued.sessionId === state.currentSessionId) { stopRunNow(queued.sessionId); return; }
+      composer.queued = null;
+      composer.renderQueued();
+      if (!state.running) sendMessage(queued.text, false, queued.images);
+    });
     queuedEl.querySelector('.cq-x').addEventListener('click', () => {
       const back = composer.queued;
       composer.queued = null;
@@ -3341,7 +3562,7 @@ document.querySelectorAll('.composer').forEach((composer) => {
   const submit = (viaButton) => {
     if (dispatching) return;
     // While a run goes, the button stops it; Enter queues what was typed.
-    if (state.running && (viaButton === true || fromHome)) { api.stop(state.currentSessionId); return; }
+    if (state.running && (viaButton === true || fromHome)) { stopRunNow(state.currentSessionId); return; }
     if (state.running) {
       const typed = input.value.trim();
       if (!typed || composer.pendingFiles.some((f) => f.reading)) return;
@@ -3395,8 +3616,9 @@ document.querySelectorAll('.suggestion-card').forEach((card) =>
 );
 
 // ─── Approval cards ─────────────────────────────────────────────────────────
+// The card sits under the run's step group without closing it, so the steps
+// after it join the same group, as they do when the chat is reopened.
 function addApprovalCard(ev) {
-  closeActivity();
   if (ev.draft) return addEmailApprovalCard(ev);
   const card = document.createElement('div');
   card.className = 'approval-card' + (ev.danger ? ' danger' : '');
@@ -3527,7 +3749,6 @@ function renderQuestionCard(q, existing) {
 // what it would have auto-picked plus a live search the user can refine, and
 // clicking a photo swaps it in for the download.
 function addImagePickerCard(ev) {
-  closeActivity();
   const card = document.createElement('div');
   card.className = 'image-picker-card';
   card.dataset.requestId = ev.requestId;
@@ -3614,6 +3835,13 @@ let pendingAutoApproval = null; // set by approval_auto, consumed by the next to
 if (api && api.onOpenSessionFromDrop) api.onOpenSessionFromDrop((id) => { if (state.user) openSession(id); });
 
 if (api) api.onAgentEvent((data) => {
+  if (stoppedRuns.has(data.sessionId) && data.type !== 'session_sync') {
+    if (data.type !== 'run_finished') return;
+    stoppedRuns.delete(data.sessionId);
+    if (data.sessionId === state.currentSessionId) setRunning(false);
+    renderRecents();
+    return;
+  }
   const mine = data.sessionId === state.currentSessionId;
   const meta = state.sessions.find((s) => s.id === data.sessionId);
   if (meta) meta.updatedAt = Date.now();
@@ -3732,7 +3960,7 @@ if (api) api.onAgentEvent((data) => {
       break;
     case 'tool_end': {
       if (runningToolRow) { runningToolRow.remove(); runningToolRow = null; }
-      addToolRow({ name: data.name, label: data.summary || toolArgsLabel(data.args), ok: data.ok, args: data.args, screenshotSrc: data.meta?.screenshotDataUrl, auto: !!pendingAutoApproval, bypass: pendingAutoApproval?.bypass, delegation: data.meta?.delegation, error: data.error });
+      addToolRow({ name: data.name, label: data.summary || toolArgsLabel(data.args), ok: data.ok, args: data.args, screenshotSrc: data.meta?.screenshotDataUrl, auto: !!pendingAutoApproval, bypass: pendingAutoApproval?.bypass, delegation: data.meta?.delegation, error: data.error, output: data.meta?.output, exitCode: data.meta?.exitCode, background: data.meta?.background, jobId: data.meta?.jobId });
       if (data.meta?.publish && window.CraftPublish) window.CraftPublish.render(data.meta.publish);
       pendingAutoApproval = null;
       updateActivitySummary(activityEl);
@@ -3795,7 +4023,7 @@ if (api) api.onAgentEvent((data) => {
     case 'error':
       hideThinking();
       if (data.limited) addLimitCard(data.error);
-      else if (isQuietNotice(data.error)) closeActivity();
+      else if (isQuietNotice(data.error)) { /* bookkeeping, not news: the step group carries on */ }
       else addNote(data.error, 'error');
       break;
     case 'aborted':
@@ -3845,7 +4073,7 @@ async function openSession(id) {
     else if (m.kind === 'tool') {
       // Desktop can load a local file:// path directly, no server round trip.
       const screenshotSrc = m.screenshotPath ? 'file:///' + m.screenshotPath.replace(/\\/g, '/') : undefined;
-      addToolRow({ name: m.name, label: m.label, ok: m.ok, args: m.args, screenshotSrc, delegation: m.delegation });
+      addToolRow({ name: m.name, label: m.label, ok: m.ok, args: m.args, screenshotSrc, delegation: m.delegation, output: m.output, exitCode: m.exitCode, background: m.background });
       panelTrack(m.name, m.label);
     } else if (m.kind === 'tasklist') {
       addTaskList(m.tasks);

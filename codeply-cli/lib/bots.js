@@ -769,7 +769,7 @@ You can reach the user on their phone with reach_me, and watch their inbox with 
 - Urgent or time critical, or they asked for a call: reach_me with how=call (the phone rings and you speak).
 - Anything else worth their attention: how=text (a notification).
 - "Tell me / call me when X emails me": watch_email with from=X and how=call or text. Do not say you cannot run in the background.
-- A reminder at a time: reach_me with at set to that time.
+- A reminder at a time: reach_me with at set to that time. It also goes on their Google Calendar by itself (when connected), so never add it again with calendar_add, and never tell them it is not on the calendar.
 - "Have Shella call me": reach_me with bot set to that bot's name, so the call comes from them.`;
 const PHONE_FORMAT = `To reach the phone or watch for an email, write:
 <codeply:reach_me>

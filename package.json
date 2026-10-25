@@ -63,6 +63,7 @@
       "!dist",
       "!out",
       "!codeply-cli",
+      "!craft-dsh",
       "!.env",
       "!.env.*",
       "!scripts/engine-test.mjs",

@@ -104,11 +104,14 @@ export default function TextArea({
   // When the command palette is open it owns up/down for selection, so the
   // composer must not also move its cursor on those keys.
   allowVertical = true,
+  // Called with -1 / +1 when up is pressed on the first line or down on the
+  // last, for prompt history. Returns true when it handled the key.
+  onHistory,
 }) {
   const [cursor, setCursor] = React.useState(value.length);
 
   // Keep the cursor inside the value when it changes from outside (e.g. a
-  // command completion replacing the draft).
+  // command completion or a recalled prompt replacing the draft).
   React.useEffect(() => {
     setCursor((c) => Math.min(c, value.length));
   }, [value]);
@@ -192,7 +195,7 @@ export default function TextArea({
     }
 
     // ── movement ──
-    if (key.leftArrow) { setCursor((c) => Math.max(0, c - 1)); return; }
+    if (key.leftArrow) { setCursor((c) => Math.max(0, Math.min(c, value.length) - 1)); return; }
     if (key.rightArrow) { setCursor((c) => Math.min(value.length, c + 1)); return; }
 
     if (key.upArrow || key.downArrow) {
@@ -201,7 +204,10 @@ export default function TextArea({
       const li = value.slice(0, cursor).split('\n').length - 1;
       const col = cursor - lineOffset(value, li);
       const target = key.upArrow ? li - 1 : li + 1;
-      if (target < 0 || target >= lines.length) return;
+      if (target < 0 || target >= lines.length) {
+        if (onHistory && onHistory(key.upArrow ? -1 : 1)) setCursor(Infinity);
+        return;
+      }
       setCursor(lineOffset(value, target) + Math.min(col, lines[target].length));
       return;
     }

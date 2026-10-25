@@ -636,7 +636,7 @@ async function firstSpeakers(text, members, g, route) {
 
 function groupRules(bot, members) {
   const others = members.filter((b) => b.id !== bot.id);
-  return `GROUP CHAT\nYou are in a group chat with the user and these teammates:\n${others.map((b) => `- ${b.name}: ${b.specialty || 'general helper'}`).join('\n')}\nMessages from others appear as "[Name]: text". The user's appear as "[User]: text".\n- Reply only as yourself, ${bot.name}. Never write lines for anyone else, and do not start with your own name.\n- Keep it short and conversational, like a chat message. Do not repeat what a teammate already said; add to it, agree briefly, or push back if they are wrong.\n- To hand something to a teammate, @mention them by name, for example "@${others[0] ? others[0].name : 'Name'} can you check this?". They answer right after you. Only mention someone when you really need them.\n- If nothing is left for you to add, say so in a few words.\n- You can still use your tools for real work when the user asks for it.`;
+  return `GROUP CHAT\nYou are in a group chat with the user and these teammates:\n${others.map((b) => `- ${b.name}: ${b.specialty || 'general helper'}`).join('\n')}\nMessages from others appear as "[Name]: text". The user's appear as "[User]: text".\n- Reply only as yourself, ${bot.name}. Never write lines for anyone else, and do not start with your own name.\n- Keep it short and conversational, like a chat message. Do not repeat what a teammate already said; add to it, agree briefly, or push back if they are wrong.\n- To hand something to a teammate, @mention them by name, for example "@${others[0] ? others[0].name : 'Name'} can you check this?". They answer right after you, out of the user's sight, and then the one who handed off gets a last turn to tell the user the result. So a hand-off message is for your teammate: keep it to the ask. Only mention someone when you really need them.\n- If nothing is left for you to add, say so in a few words.\n- You can still use your tools for real work when the user asks for it.`;
 }
 
 /** The room as this bot sees it: its own lines are "assistant", everything else "user". */
@@ -680,70 +680,115 @@ ipcMain.handle('groups:send', guard(async (e, { groupId, text }) => {
   const cwd = workspace();
   const emit = (ev) => send('crew:event', { groupId, ...ev });
 
+  // The bots the user asked answer out in the open. When one hands work to a
+  // teammate, that check-in happens backstage: its handing-off message and every
+  // turn it sets off carry `back` (the room folds them into one line you can
+  // open), and then the bot that handed off reports back to the user.
+  const back = `b${Date.now().toString(36)}`;
+
+  /** One bot's turn. Returns its reply text. */
+  async function takeTurn(bot, { behind, wrapUp }) {
+    // What happened since this bot last spoke is its new message.
+    let lastOwn = -1;
+    g.messages.forEach((m, i) => { if (m.kind === 'assistant' && m.botId === bot.id) lastOwn = i; });
+    const history = groupHistoryFor(bot, g, members, lastOwn + 1);
+    const fresh = g.messages.slice(lastOwn + 1).filter((m) => m.kind === 'user' || m.kind === 'assistant')
+      .map((m) => (m.kind === 'user' ? `[User]: ${m.text}` : `[${(members.find((b) => b.id === m.botId) || {}).name || 'Bot'}]: ${m.text}`));
+    const cue = wrapUp
+      ? `(Your teammates have answered, ${bot.name}. Now reply to the user yourself with the result in one clear message. Do not @mention anyone and do not ask the team again.)`
+      : `(Your turn in the group, ${bot.name}.)`;
+    const userMessage = `${fresh.join('\n\n')}\n\n${cue}`;
+    const token = `crew:${key}:${bot.id}:${Date.now().toString(36)}`;
+    const tag = behind ? { back } : {};
+    emit({ type: 'turn', botId: bot.id, ...tag });
+    if (bots.globalLock.owner && bots.globalLock.owner !== token) emit({ type: 'notice', botId: bot.id, text: 'Waiting for another bot to finish. Only one works at a time.' });
+    let reply = '';
+    const steps = [];
+    await bots.globalLock.run(token, async () => {
+      const run = agentMod.runAgent({
+        userMessage, history, mode: 'Build', cwd, signal, route, maxSteps: 30,
+        approve: approverFor({ groupId, botId: bot.id }, bot, signal),
+        botPrompt: () => `${bots.buildBotPrompt(bot, { team: members, request: text })}\n\n${groupRules(bot, members)}`,
+        botId: bot.id,
+        haze: { product: 'crew', chatId: `group:${groupId}:${bot.id}` },
+      });
+      for await (const ev of run) {
+        if (ev.type === 'text') {
+          if (ev.interim) emit({ type: 'thinking', botId: bot.id, text: ev.text });
+          else {
+            const t = stripSelfPrefix(ev.text, bot);
+            if (!t.trim()) continue;
+            reply += (reply ? '\n\n' : '') + t;
+            groupPush(g, { kind: 'assistant', botId: bot.id, text: t, ...tag });
+            emit({ type: 'text', botId: bot.id, text: t, ...tag });
+          }
+        } else if (ev.type === 'reasoning') {
+          emit({ type: 'thinking', botId: bot.id, text: ev.text });
+        } else if (ev.type === 'tool_start') {
+          emit({ type: 'tool_start', botId: bot.id, name: ev.name, label: toolLabel(ev) });
+        } else if (ev.type === 'tool_end') {
+          const row = { kind: 'tool', botId: bot.id, name: ev.name, label: toolLabel(ev), ...(ev.name === 'run' && ev.args && ev.args.command ? { command: String(ev.args.command).slice(0, 600) } : {}), ok: !!ev.ok, error: ev.error, ...tag };
+          steps.push(bots.runStep(ev));
+          groupPush(g, row);
+          emit({ type: 'tool', ...row });
+        } else if (ev.type === 'error') {
+          groupPush(g, { kind: 'error', botId: bot.id, text: ev.error, ...tag });
+          emit({ type: 'error', botId: bot.id, text: ev.error, ...tag });
+        } else if (ev.type === 'done' || ev.type === 'aborted') break;
+      }
+    }, signal);
+    return { reply, steps };
+  }
+
+  /** A turn that turned out to be a hand-off: fold what it said and did backstage. */
+  function sendBackstage(bot, since) {
+    for (let i = g.messages.length - 1; i > since; i--) {
+      const m = g.messages[i];
+      if (m.kind === 'user') break;
+      if (m.botId === bot.id && !m.back) m.back = back;
+    }
+    saveStore();
+    emit({ type: 'backstage', botId: bot.id, back });
+  }
+
   (async () => {
     emit({ type: 'start' });
     let turnsLeft = MAX_GROUP_TURNS;
     try {
       const queue = await firstSpeakers(text, members, g, route);
+      const leads = new Set(queue);
+      const spoke = new Set();
+      let delegator = null; // the first bot the user asked that handed work to a teammate
       emit({ type: 'queue', botIds: queue });
       while (queue.length && turnsLeft > 0 && !signal.aborted) {
         const bot = bots.getBot(queue.shift());
         if (!bot) continue;
         turnsLeft--;
-        // What happened since this bot last spoke is its new message.
-        let lastOwn = -1;
-        g.messages.forEach((m, i) => { if (m.kind === 'assistant' && m.botId === bot.id) lastOwn = i; });
-        const history = groupHistoryFor(bot, g, members, lastOwn + 1);
-        const fresh = g.messages.slice(lastOwn + 1).filter((m) => m.kind === 'user' || m.kind === 'assistant')
-          .map((m) => (m.kind === 'user' ? `[User]: ${m.text}` : `[${(members.find((b) => b.id === m.botId) || {}).name || 'Bot'}]: ${m.text}`));
-        const userMessage = `${fresh.join('\n\n')}\n\n(Your turn in the group, ${bot.name}.)`;
-        const token = `crew:${key}:${bot.id}:${Date.now().toString(36)}`;
-        if (bots.globalLock.owner && bots.globalLock.owner !== token) emit({ type: 'notice', botId: bot.id, text: 'Waiting for another bot to finish. Only one works at a time.' });
-        emit({ type: 'turn', botId: bot.id });
-        let reply = '';
-        const steps = [];
-        await bots.globalLock.run(token, async () => {
-          const run = agentMod.runAgent({
-            userMessage, history, mode: 'Build', cwd, signal, route, maxSteps: 30,
-            approve: approverFor({ groupId, botId: bot.id }, bot, signal),
-            botPrompt: () => `${bots.buildBotPrompt(bot, { team: members, request: text })}\n\n${groupRules(bot, members)}`,
-            botId: bot.id,
-            haze: { product: 'crew', chatId: `group:${groupId}:${bot.id}` },
-          });
-          for await (const ev of run) {
-            if (ev.type === 'text') {
-              if (ev.interim) emit({ type: 'thinking', botId: bot.id, text: ev.text });
-              else {
-                const t = stripSelfPrefix(ev.text, bot);
-                if (!t.trim()) continue;
-                reply += (reply ? '\n\n' : '') + t;
-                groupPush(g, { kind: 'assistant', botId: bot.id, text: t });
-                emit({ type: 'text', botId: bot.id, text: t });
-              }
-            } else if (ev.type === 'reasoning') {
-              emit({ type: 'thinking', botId: bot.id, text: ev.text });
-            } else if (ev.type === 'tool_start') {
-              emit({ type: 'tool_start', botId: bot.id, name: ev.name, label: toolLabel(ev) });
-            } else if (ev.type === 'tool_end') {
-              const row = { kind: 'tool', botId: bot.id, name: ev.name, label: toolLabel(ev), ...(ev.name === 'run' && ev.args && ev.args.command ? { command: String(ev.args.command).slice(0, 600) } : {}), ok: !!ev.ok, error: ev.error };
-              steps.push(bots.runStep(ev));
-              groupPush(g, row);
-              emit({ type: 'tool', ...row });
-            } else if (ev.type === 'error') {
-              groupPush(g, { kind: 'error', botId: bot.id, text: ev.error });
-              emit({ type: 'error', botId: bot.id, text: ev.error });
-            } else if (ev.type === 'done' || ev.type === 'aborted') break;
-          }
-        }, signal);
-        emit({ type: 'turn_done', botId: bot.id });
+        const lead = leads.has(bot.id) && !spoke.has(bot.id);
+        spoke.add(bot.id);
+        const before = g.messages.length - 1;
+        const { reply, steps } = await takeTurn(bot, { behind: !lead });
+        let handed = [];
         if (reply && !signal.aborted) {
           learn(bot, text, reply, route);
           reflect(bot, { request: text, steps, reply }, route);
-          for (const id of mentionsIn(reply, members, bot.id)) if (!queue.includes(id)) queue.push(id);
+          handed = mentionsIn(reply, members, bot.id).filter((id) => !queue.includes(id));
+          queue.push(...handed);
         }
+        if (lead && handed.length) {
+          sendBackstage(bot, before);
+          if (!delegator) delegator = bot;
+        }
+        emit({ type: 'turn_done', botId: bot.id });
       }
-      if (queue.length && turnsLeft <= 0 && !signal.aborted) {
+      if (queue.length && turnsLeft <= 0 && !signal.aborted && !delegator) {
         emit({ type: 'notice', text: 'The crew paused here so they do not talk forever. Reply to keep going.' });
+      }
+      // The bot that handed off tells the user what came back, out in the open.
+      if (delegator && !signal.aborted) {
+        const { reply, steps } = await takeTurn(delegator, { wrapUp: true });
+        if (reply && !signal.aborted) reflect(delegator, { request: text, steps, reply }, route);
+        emit({ type: 'turn_done', botId: delegator.id });
       }
     } catch (err) {
       if (!signal.aborted) { groupPush(g, { kind: 'error', text: err.message }); emit({ type: 'error', text: err.message }); }

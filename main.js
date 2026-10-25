@@ -102,8 +102,16 @@ async function loadEngine() {
   try { const t = require(path.join(CLI_DIR, 'lib', 'telemetry.js')); t.setDefaults({ product: 'craft', version: app.getVersion(), platform: process.platform }); t.recordOpen('craft'); } catch {}
   require(path.join(CLI_DIR, 'lib', 'reach.js')).setHandler({ reach: (a) => botsWatch.reachPhone(a), watchEmail: (a) => botsWatch.addAlert(a) });
   agentMod = await import(pathToFileURL(agentPath).href);
+  // Background commands (run with background=true) are listed under the composer.
+  if (agentMod.backgroundJobs) agentMod.backgroundJobs.onChange(() => { if (win && !win.isDestroyed()) win.webContents.send('jobs:changed', agentMod.backgroundJobs.list()); });
   return true;
 }
+
+const jobsApi = () => (agentMod && agentMod.backgroundJobs) || null;
+ipcMain.handle('jobs:list', () => (jobsApi() ? jobsApi().list() : []));
+ipcMain.handle('jobs:output', (e, id) => (jobsApi() ? jobsApi().output(id) : ''));
+ipcMain.handle('jobs:stop', (e, id) => (jobsApi() ? jobsApi().stop(id) : false));
+ipcMain.handle('jobs:clear', () => { if (jobsApi()) jobsApi().clear(); return jobsApi() ? jobsApi().list() : []; });
 
 // ─── Session store ──────────────────────────────────────────────────────────
 // One JSON file in userData. Each session keeps the renderer-facing message
@@ -529,6 +537,10 @@ if (process.platform === 'win32') {
     } catch (e) { console.warn('[notify] app name:', e.message); }
   });
 }
+// Windows marks stacked views (the browser panel, Crew, Design, the new Craft)
+// as covered and throttles their frames, which shows up as stutter; drawing
+// them at full rate keeps motion smooth. Must run before the app is ready.
+if (process.platform === 'win32') app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -595,6 +607,7 @@ ipcMain.handle('app:init', async () => {
   cloudDesktop.resume(); // unfinished cloud runs pick up polling now that their chats are here
   handoffDesktop.recoverAll(); // runs cut off by a power cut or handed to the cloud come back
   if (user) startRelay();
+  if (user && store.lastProject) warmDshChat(store.lastProject); // the harness is ready by the first message
 
   return {
     engineOk: true,
@@ -977,13 +990,14 @@ globalThis.__codeplyHost = Object.assign(globalThis.__codeplyHost || {}, {
   },
 });
 
-ipcMain.handle('models:delete', async (e, id) => {
+ipcMain.handle('models:delete', (e, id) => deleteModelById(id));
+async function deleteModelById(id) {
   if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
   const r = configLib.deleteModel(id);
   // A synced copy is queued for removal (config.js) and removed now if possible.
   if (r.ok && configLib.getPhoneDeletes().some((d) => d.id === id)) syncPhoneModels();
   return r.ok ? { ok: true, state: modelsState() } : r;
-});
+}
 
 // The "Use on my phone" switch for a model already saved (also the one-click
 // "Sync to phone" for models added before the option existed). Waits for the
@@ -1511,6 +1525,9 @@ let checkerView = null;
 let checkerCollector = null; // { errors:[], warnings:[] } for whichever check is in flight
 let panelVisible = false;
 let panelDragging = false;
+// A dialog or menu in Craft's window reaches over the panel: the page is a
+// native view that would draw on top of it, so it steps aside until it closes.
+let panelCovered = false;
 
 // The tab strip, address bar and buttons live in Craft's own HTML
 // (index.html's #browserChrome), not inside the BrowserView - a BrowserView
@@ -1604,6 +1621,7 @@ function positionCheckerView() {
   // Tablet/mobile: a centered frame of the real width, so the page lays out
   // exactly as it would on that device.
   const viewWidth = panelSize ? Math.min(panelSize.width, panelWidth) : panelWidth;
+  if (panelCovered) { view.setBounds({ x: width + 100, y: top, width: 1, height: 1 }); return; }
   view.setBounds({
     x: width - panelWidth + Math.floor((panelWidth - viewWidth) / 2), y: top,
     width: viewWidth, height: Math.max(0, height - top),
@@ -1628,6 +1646,12 @@ function hideCheckerPanel() {
   panelVisible = false;
   sendPanelState();
 }
+
+ipcMain.on('browserpanel:cover', (e, on) => {
+  if (!win || e.sender !== win.webContents || panelCovered === !!on) return;
+  panelCovered = !!on;
+  positionCheckerView();
+});
 
 function toggleCheckerPanel() {
   if (panelVisible) hideCheckerPanel();
@@ -2037,12 +2061,14 @@ ipcMain.handle('project:choose', async () => {
   if (r.canceled || !r.filePaths[0]) return null;
   const p = r.filePaths[0];
   rememberProject(p);
+  warmDshChat(p);
   return { path: p, branch: gitBranch(p) };
 });
 
 ipcMain.handle('project:use', async (e, p) => {
   if (!fs.existsSync(p)) return null;
   rememberProject(p);
+  warmDshChat(p);
   return { path: p, branch: gitBranch(p) };
 });
 
@@ -2940,13 +2966,17 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
   // The chat's bot (bots-desktop.js): its prompt, approval boundary and ask_bot. null = no bots.
   const bot = await botsDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly, request: userMessage });
   try {
-    const run = agentMod.runAgent({
+    const classicRun = () => agentMod.runAgent({
       userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route,
       roleId, goal, maxSteps, verifyOnly, botPrompt: bot?.botPrompt, askBot: bot?.askBot, botId: bot?.botId,
       // Pass work to the bot whose job it is (brain-desktop.js); the user asked for this chat.
       handOff: bot && !verifyOnly ? brainDesktop.handOffFor({ botId: bot.botId || null, requester: 'user' }) : undefined,
       haze: { product: 'craft', chatId: session.id }, todos,
     });
+    // Build turns run on the DSH harness (dsh-chat.js); the rest on Classic's agent.
+    const run = (await dshChatFor({ mode, images, bot, verifyOnly, goal }))
+      ? dshTurnOrClassic(dshChat.runTurn({ session, userMessage, history, cwd, approve, signal, route }), classicRun)
+      : classicRun();
     for await (const ev of run) {
       if (bot) bot.see(ev); // the bot's trajectory, for its reflection after the reply
       handoffDesktop.see(session, ev); // steps and todos for Craft Cloud, should this PC drop
@@ -2968,6 +2998,8 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
           removed: typeof ev.meta?.removed === 'number' ? ev.meta.removed : undefined,
           screenshotPath: ev.meta?.screenshotPath || undefined,
           delegation: ev.meta?.delegation || undefined, // ask_bot result, for the chat row
+          output: typeof ev.meta?.output === 'string' ? ev.meta.output : undefined, // the end of a command's output, for the row
+          background: ev.meta?.background || undefined,
         });
         // The publish card (Database, Vercel, GitHub, Live): one per publish, kept up to date.
         if (ev.meta?.publish?.id) {
@@ -3748,6 +3780,66 @@ ipcMain.handle('design:embed', (e, bounds) => {
 });
 ipcMain.on('design:bounds', (e, bounds) => designTab.setBounds(bounds));
 ipcMain.handle('design:unembed', () => { designTab.unembed(); return { ok: true }; });
+// Classic's chats on the DSH harness (dsh-chat.js): DSH's loop and native tool
+// calling, Craft's UI, models, approvals and browser. Classic's own agent stays
+// for what DSH doesn't do yet (images, Plan and Ask, bots, goals, checks) and
+// when the harness can't start. CODEPLY_CHAT_ENGINE=classic turns it off.
+const dshChat = require('./dsh-chat');
+let toolsMod = null; // codeply-cli/lib/tools.mjs, for browser_check's report
+dshChat.init({
+  cliDir: CLI_DIR, aiLib: () => aiLib, configLib: () => configLib,
+  browserReport: async ({ url, viewport, wait }) => {
+    if (!toolsMod) toolsMod = await import(pathToFileURL(path.join(CLI_DIR, 'lib', 'tools.mjs')).href);
+    const r = await toolsMod.TOOLS.browser_check({ url, viewport, wait }, { browser: browserCheck, cwd: process.cwd() });
+    return { ok: !!r.ok, output: String(r.output || '') };
+  },
+});
+let dshChatReady = null; // whether the harness can run on this PC, checked once
+async function dshChatFor({ mode, images, bot, verifyOnly, goal }) {
+  if (process.env.CODEPLY_CHAT_ENGINE === 'classic' || store.chatEngine === 'classic') return false;
+  if ((mode || 'Build') !== 'Build' || (images && images.length) || bot || verifyOnly || goal) return false;
+  if (!dshChatReady) dshChatReady = dshChat.available();
+  const r = await dshChatReady;
+  if (!r.ok) console.log(`[dsh] chats stay on Classic: ${r.error}`);
+  return r.ok;
+}
+/** Start a folder's harness early, so the first message there doesn't wait for it. */
+function warmDshChat(folder) {
+  if (!folder || process.env.CODEPLY_CHAT_ENGINE === 'classic' || store.chatEngine === 'classic') return;
+  if (!dshChatReady) dshChatReady = dshChat.available();
+  dshChatReady.then((r) => { if (r.ok) dshChat.warm(folder); }).catch(() => {});
+}
+/** The harness's turn; when it can't start at all, the same turn on Classic's agent. */
+async function* dshTurnOrClassic(dshRun, classicRun) {
+  let started = false;
+  try {
+    for await (const ev of dshRun) { started = true; yield ev; }
+  } catch (e) {
+    if (started) throw e;
+    console.log(`[dsh] harness could not start, this turn runs on Classic: ${e.message}`);
+    yield* classicRun();
+  }
+}
+
+// The DSH engine (dsh-engine.js): the craft-dsh fork's own web UI. Retired: Craft is Classic's UI now.
+const dshEngine = require('./dsh-engine');
+dshEngine.init({
+  ipcMain, window: () => win, aiLib: () => aiLib, ensureEngine: loadEngine,
+  account: async () => (await authLib.getSession())?.user || null,
+  // Craft's own browser panel, docked on the right of the new Craft's view.
+  browser: { open: (url) => { if (url) openTab(url); else showCheckerPanel(); }, toggle: () => toggleCheckerPanel() },
+  // Craft Cloud runs for the new Craft's "Craft Cloud" model (cloud-desktop.js is set up further down).
+  cloud: () => cloudDesktop,
+  // Your own models (Classic's Add a model), shared with the new Craft: same list, same keys, same test.
+  models: {
+    list: async () => ((await loadEngine()) ? modelsState() : { selected: 'auto', models: [] }),
+    get: async (id) => ((await loadEngine()) ? configLib.getModel(id) || null : null),
+    save: async (input) => { const r = await saveModelInput(input); if (r.ok) emitModelsChanged(); return r; },
+    remove: async (id) => { const r = await deleteModelById(id); if (r.ok) emitModelsChanged(); return r; },
+    detectOllama: async (hostUrl) => ((await loadEngine()) ? aiLib.listOllamaModels(hostUrl || 'http://localhost:11434') : { ok: false, error: 'Engine not available.' }),
+  },
+  userDataDir: app.getPath('userData'), isPackaged: app.isPackaged, resourcesPath: process.resourcesPath,
+});
 function initDrop() {
   initDesignTab();
   drop.init({
@@ -4214,9 +4306,12 @@ app.on('quit', () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
+  if (jobsApi()) jobsApi().stopAll(); // background commands end with the app
   drop.dispose();
   voiceMode.dispose();
   convertWheel.dispose();
+  dshEngine.dispose(); // the DSH engine and its Haze bridge end with the app
+  dshChat.dispose(); // and the chats' harness engines
   for (const client of remoteEventClients) { try { client.end(); } catch {} }
   remoteEventClients.clear();
   if (remoteServer) remoteServer.close();

@@ -555,4 +555,42 @@ function replayInto(session, task, events) {
   return replay(session, { kind: 'cloud_task', task, seen: 0 }, events);
 }
 
-module.exports = { init, wants, startFromChat, afterLocalRun, bridge, replayInto, resume: () => lib().then(resume).catch(() => {}) };
+// ─── For the new Craft (dsh-engine.js) ──────────────────────────────────────
+// The same cloud runs, without a Classic chat: the new Craft's "Craft Cloud"
+// model starts a task, follows it and shows the answer in its own chat.
+
+/** Start a cloud run for a folder already set up for Craft Cloud. */
+async function startTask({ cwd, prompt, sessionId }) {
+  try {
+    const c = await lib();
+    const p = c.getProject(cwd);
+    if (!p || !p.repo) return { error: 'Craft Cloud is not set up for this folder yet. Open it in Classic and turn on the Cloud chip once; after that, Craft Cloud works here too.' };
+    const token = githubToken();
+    if (!token) return { error: 'GitHub is not connected. Connect it in Connect Apps.' };
+    const model = deps.configLib().getSelectedModel();
+    const task = await c.startCloudRun({ cwd, token, prompt, mode: 'Build', sessionId: `new:${sessionId || ''}`, model });
+    return { task: taskView(task, c.getProject(cwd)) };
+  } catch (e) { return { error: e.message }; }
+}
+
+/** Where a cloud run is now, with how many steps the runner has reported. */
+async function taskStatus({ cwd, taskId }) {
+  try {
+    const c = await lib();
+    const task = await c.cloudRunStatus({ cwd, taskId, token: githubToken() });
+    return { task: { ...taskView(task, c.getProject(cwd)), steps: (task.events || []).length } };
+  } catch (e) { return { error: e.message, retry: true }; }
+}
+
+async function cancelTask({ cwd, taskId }) {
+  try {
+    const c = await lib();
+    await c.cancelCloudRun({ cwd, taskId, token: githubToken() });
+    return { ok: true };
+  } catch (e) { return { error: e.message }; }
+}
+
+module.exports = {
+  init, wants, startFromChat, afterLocalRun, bridge, replayInto, resume: () => lib().then(resume).catch(() => {}),
+  startTask, taskStatus, applyTask, cancelTask,
+};

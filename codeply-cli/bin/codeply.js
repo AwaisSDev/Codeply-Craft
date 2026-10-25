@@ -677,8 +677,13 @@ program
     process.on('SIGTERM', stop);
   });
 
-// If no arguments provided, launch TUI
-if (process.argv.length <= 2) {
+// If no arguments provided, launch TUI. `codeply dsh` (or --engine dsh) opens
+// the same TUI driven by the DSH engine instead of the Classic one.
+const tuiArgs = process.argv.slice(2);
+const dshLaunch = (tuiArgs.length === 1 && (tuiArgs[0] === 'dsh' || tuiArgs[0] === '--dsh')) ||
+  (tuiArgs.length === 2 && tuiArgs[0] === '--engine' && tuiArgs[1] === 'dsh');
+if (process.argv.length <= 2 || dshLaunch) {
+  if (dshLaunch) process.env.CODEPLY_ENGINE = 'dsh';
   runTUI();
 } else {
   program.parseAsync(process.argv);

@@ -177,7 +177,7 @@
       return `<div class="sb-bot">
         <div class="sb-line">
           <button class="sb-row" data-toggle="${esc(b.id)}" aria-expanded="${open}">
-            <span class="sb-ic">${av(b, 20, { still: true })}</span><span class="sb-label">${esc(b.name)}</span>
+            <span class="sb-ic">${av(b, 26, { still: true })}</span><span class="sb-label">${esc(b.name)}</span>
             ${all.length ? `<span class="sb-fold">${ICON.chev}</span>` : ''}<span class="sb-grow"></span>${busy ? '<span class="sb-busy" title="Working"></span>' : ''}
           </button>
           <div class="sb-tools"><button class="sb-tool" data-newchat="${esc(b.id)}" aria-label="New chat with ${esc(b.name)}" title="New chat with ${esc(b.name)}">${ICON.plus || '+'}</button></div>

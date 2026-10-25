@@ -1,9 +1,19 @@
 /**
  * Codeply TUI - Markdown renderer for AI responses.
- * Parses markdown into Ink-compatible React elements with syntax coloring.
+ *
+ * Turns a reply into Ink elements, one pre-flattened ANSI string per row
+ * wherever possible (Ink allocates a layout node per element, so per-token
+ * <Text> nodes make long replies crawl).
+ *
+ * Code blocks are printed without line numbers or filled backgrounds on
+ * purpose: people select code straight out of the terminal, and a gutter or
+ * trailing fill comes along with every copy.
  */
 import React from 'react';
 import { Box, Text } from 'ink';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
 
 const G = {
   blue: '#4285F4',
@@ -12,66 +22,116 @@ const G = {
   green: '#34A853',
 };
 
-// Minimal syntax highlighter for code blocks
+// Reading colours for the transcript, shared with tui.mjs.
+const INK = {
+  text: '#e3e3e3',
+  secondary: '#a8adb3',
+  dim: '#80868b',
+  faint: '#5f6368',
+  code: '#8ab4f8',
+  link: '#8ab4f8',
+  bullet: '#8ab4f8',
+};
+
+// ─── Syntax highlighting ────────────────────────────────────────────────────
+//
+// highlight.js ships with the CLI (it comes in through marked-terminal), and
+// knows every language a model is likely to fence. It is loaded lazily and
+// optionally: if it is ever missing, the small regex highlighter below takes
+// over instead of the reply failing to render.
+
+const SYNTAX = {
+  keyword: '#c586c0',
+  built_in: '#4ec9b0',
+  type: '#4ec9b0',
+  literal: '#569cd6',
+  number: '#b5cea8',
+  string: '#ce9178',
+  regexp: '#d16969',
+  comment: '#6a9955',
+  title: '#dcdcaa',
+  function: '#dcdcaa',
+  params: '#9cdcfe',
+  attr: '#9cdcfe',
+  attribute: '#9cdcfe',
+  property: '#9cdcfe',
+  variable: '#9cdcfe',
+  tag: '#569cd6',
+  name: '#569cd6',
+  'selector-tag': '#d7ba7d',
+  'selector-class': '#d7ba7d',
+  'selector-id': '#d7ba7d',
+  meta: '#9b9b9b',
+  symbol: '#b5cea8',
+  addition: '#89d185',
+  deletion: '#f48771',
+  section: '#569cd6',
+  bullet: '#569cd6',
+};
+const CODE_TEXT = '#d4d4d4';
+
+let hljs;
+function loadHljs() {
+  if (hljs !== undefined) return hljs;
+  try { hljs = require('highlight.js'); } catch { hljs = null; }
+  return hljs;
+}
+
+const ENTITIES = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#x27;': "'", '&#39;': "'" };
+const decode = (s) => s.replace(/&(?:amp|lt|gt|quot|#x27|#39);/g, (m) => ENTITIES[m]);
+
+/** highlight.js HTML → rows of {text, color} segments. */
+function hljsRows(code, lang) {
+  const h = loadHljs();
+  if (!h || !lang || !h.getLanguage(lang)) return null;
+  let html;
+  try { html = h.highlight(code, { language: lang, ignoreIllegals: true }).value; } catch { return null; }
+  const rows = [[]];
+  const stack = [];
+  const re = /<span class="([^"]+)">|<\/span>|([^<]+)/g;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    if (m[1]) {
+      const cls = m[1].split(/\s+/).map((c) => c.replace(/^hljs-/, '')).find((c) => SYNTAX[c]);
+      stack.push(cls ? SYNTAX[cls] : stack[stack.length - 1] || null);
+    } else if (m[0] === '</span>') {
+      stack.pop();
+    } else {
+      const color = stack[stack.length - 1] || CODE_TEXT;
+      const parts = decode(m[2]).split('\n');
+      parts.forEach((p, i) => {
+        if (i > 0) rows.push([]);
+        if (p) rows[rows.length - 1].push({ text: p, color });
+      });
+    }
+  }
+  return rows;
+}
+
+/** Fallback highlighter for when highlight.js is unavailable or the language unknown. */
 function highlightCode(code, lang) {
-  const lines = code.split('\n');
-  return lines.map((line) => {
-    let colored = line;
-
-    // Comments
-    if (/^\s*\/\//.test(line) || /^\s*#/.test(line) || /^\s*\/\*/.test(line) || /^\s*\*/.test(line) || /^\s*<!--/.test(line)) {
-      return [{ text: line, color: '#5f6368' }];
-    }
-
-    // Strings (basic)
-    const parts = [];
-    let remaining = line;
-    // Match strings, keywords, tags, numbers, properties
-    const regex = /("[^"]*"|'[^']*'|`[^`]*`)|(\b(?:function|const|let|var|if|else|return|for|while|do|switch|case|break|continue|new|this|class|extends|import|export|from|default|async|await|try|catch|throw|typeof|instanceof|in|of|void|delete|null|undefined|true|false)\b)|(<\/?[a-zA-Z][a-zA-Z0-9]*(?:\s[^>]*)?>?)|(\b\d+\.?\d*\b)|(#[0-9a-fA-F]{3,8})|(\b(?:style|color|display|margin|padding|border|background|width|height|font|position|top|left|right|bottom|text|align|overflow|flex|grid|gap|opacity|transform|transition|animation|content|justify|items|center|none|block|inline|relative|absolute|fixed|solid|dashed|hidden|auto|inherit|initial|unset)\b)/g;
-
-    let lastIdx = 0;
+  const fromHljs = hljsRows(code, lang);
+  if (fromHljs) return fromHljs;
+  if (!lang) return code.split('\n').map((line) => [{ text: line, color: CODE_TEXT }]);
+  return code.split('\n').map((line) => {
+    if (/^\s*(\/\/|#|\/\*|\*|<!--)/.test(line)) return [{ text: line, color: SYNTAX.comment }];
+    const regex = /("[^"]*"|'[^']*'|`[^`]*`)|(\b(?:function|const|let|var|if|else|return|for|while|do|switch|case|break|continue|new|this|class|extends|import|export|from|default|async|await|try|catch|throw|typeof|instanceof|in|of|void|delete|def|fn|pub|use|struct|impl)\b)|(\b(?:null|undefined|true|false|None|True|False)\b)|(\b\d+\.?\d*\b)/g;
+    const out = [];
+    let last = 0;
     let match;
-    const result = [];
-
-    while ((match = regex.exec(remaining)) !== null) {
-      // Text before match
-      if (match.index > lastIdx) {
-        result.push({ text: remaining.slice(lastIdx, match.index), color: '#e8eaed' });
-      }
-
-      if (match[1]) {
-        // String
-        result.push({ text: match[0], color: '#34A853' });
-      } else if (match[2]) {
-        // Keyword
-        result.push({ text: match[0], color: '#4285F4' });
-      } else if (match[3]) {
-        // HTML tag
-        result.push({ text: match[0], color: '#EA4335' });
-      } else if (match[4]) {
-        // Number
-        result.push({ text: match[0], color: '#FBBC05' });
-      } else if (match[5]) {
-        // Hex color
-        result.push({ text: match[0], color: '#FBBC05' });
-      } else if (match[6]) {
-        // CSS property
-        result.push({ text: match[0], color: '#e8eaed' });
-      } else {
-        result.push({ text: match[0], color: '#e8eaed' });
-      }
-      lastIdx = match.index + match[0].length;
+    while ((match = regex.exec(line)) !== null) {
+      if (match.index > last) out.push({ text: line.slice(last, match.index), color: CODE_TEXT });
+      const color = match[1] ? SYNTAX.string : match[2] ? SYNTAX.keyword : match[3] ? SYNTAX.literal : SYNTAX.number;
+      out.push({ text: match[0], color });
+      last = match.index + match[0].length;
     }
-
-    if (lastIdx < remaining.length) {
-      result.push({ text: remaining.slice(lastIdx), color: '#e8eaed' });
-    }
-
-    return result.length ? result : [{ text: line, color: '#e8eaed' }];
+    if (last < line.length) out.push({ text: line.slice(last), color: CODE_TEXT });
+    return out.length ? out : [{ text: line, color: CODE_TEXT }];
   });
 }
 
-// Convert hex color to ANSI escape sequence
+// ─── ANSI helpers ───────────────────────────────────────────────────────────
+
 function hexToAnsi(hex) {
   if (!hex) return '';
   const h = hex.replace('#', '');
@@ -95,21 +155,21 @@ const ANSI_RESET = '\x1b[0m';
 const ANSI_BOLD = '\x1b[1m';
 const ANSI_DIM = '\x1b[2m';
 const ANSI_ITALIC = '\x1b[3m';
-const ANSI_BG_CODE = '\x1b[48;2;45;46;48m'; // #2d2e30
+const ANSI_UNDERLINE = '\x1b[4m';
+const ANSI_STRIKE = '\x1b[9m';
+const ANSI_BOLD_OFF = '\x1b[22m';
+const ANSI_ITALIC_OFF = '\x1b[23m';
 
 // Surface colours for filled blocks. Ink 5's <Box> has no backgroundColor, so
 // every filled row is built by hand: set the bg, emit the content, pad out to
-// the panel width so the fill reaches the right edge, then reset. Padding has
-// to be measured on the *visible* text, which is why widths are tracked
-// explicitly rather than using String#padEnd on an ANSI-laden string.
+// the panel width so the fill reaches the right edge, then reset.
 const SURFACE = {
-  codeHeader: '#20242b',
-  codeBody: '#15181c',
-  gutter: '#1b1f24',
   plan: '#161b22',
   planHeader: '#1d2530',
-  diffAdd: '#0e2417',
-  diffDel: '#2a1418',
+  diffAdd: '#173a24',
+  diffDel: '#45191e',
+  diffAddWord: '#22603a',
+  diffDelWord: '#7a2a33',
 };
 
 const ANSI_PATTERN = /\x1b\[[0-9;]*m/g;
@@ -140,82 +200,68 @@ function fillRow(content, usedWidth, width, bg) {
   return hexToAnsiBg(bg) + content + ' '.repeat(pad) + ANSI_RESET;
 }
 
-function InlineText({ segments }) {
-  // Build a single string with ANSI escape codes for styling.
-  // This avoids creating multiple <Text> elements which Ink wraps independently.
-  let flat = '';
-  for (const seg of segments) {
-    let prefix = '';
-    let suffix = '';
-    if (seg.bold) prefix += ANSI_BOLD;
-    if (seg.italic) prefix += ANSI_ITALIC;
-    if (seg.code) {
-      prefix += hexToAnsi(G.yellow) + ANSI_BG_CODE;
-      suffix = ANSI_RESET;
-      flat += prefix + ` ${seg.text} ` + suffix;
-    } else if (seg.color) {
-      prefix += hexToAnsi(seg.color);
-      suffix = ANSI_RESET;
-      flat += prefix + seg.text + suffix;
-    } else {
-      flat += seg.text;
-    }
-  }
-  return React.createElement(Text, { wrap: 'wrap' }, flat);
-}
+// ─── Inline markdown ────────────────────────────────────────────────────────
 
+/**
+ * Split a line into styled segments.
+ *
+ * Scans for whichever marker comes FIRST, so `code` before a **bold** run is
+ * still code (the old pattern-by-pattern pass swallowed it as plain text).
+ * Underscore emphasis needs a word boundary on both sides so snake_case
+ * identifiers in prose stay intact.
+ */
 function parseInline(text) {
   const segments = [];
-  let remaining = text;
-
-  while (remaining.length > 0) {
-    // Bold: **text** or __text__
-    let match = remaining.match(/^(.*?)\*\*(.+?)\*\*/s);
-    if (!match) match = remaining.match(/^(.*?)__(.+?)__/s);
-    if (match && match[1].length < remaining.length) {
-      if (match[1]) segments.push({ text: match[1] });
-      segments.push({ text: match[2], bold: true });
-      remaining = remaining.slice(match[0].length);
-      continue;
-    }
-
-    // Italic: *text* or _text_
-    match = remaining.match(/^(.*?)\*(.+?)\*/s);
-    if (!match) match = remaining.match(/^(.*?)_(.+?)_/s);
-    if (match && match[1].length < remaining.length) {
-      if (match[1]) segments.push({ text: match[1] });
-      segments.push({ text: match[2], italic: true });
-      remaining = remaining.slice(match[0].length);
-      continue;
-    }
-
-    // Inline code: `text`
-    match = remaining.match(/^(.*?)`(.+?)`/s);
-    if (match && match[1].length < remaining.length) {
-      if (match[1]) segments.push({ text: match[1] });
-      segments.push({ text: match[2], code: true });
-      remaining = remaining.slice(match[0].length);
-      continue;
-    }
-
-    // No more formatting
-    segments.push({ text: remaining });
-    break;
+  const re = /(`+)([^`]+?)\1|\*\*(.+?)\*\*|__(.+?)__|~~(.+?)~~|\[([^\]]+)\]\(([^)\s]+)\)|(?<![\w*])\*(?![\s*])(.+?)(?<![\s*])\*(?![\w*])|(?<![\w])_(?![\s_])(.+?)(?<![\s_])_(?![\w])/g;
+  let last = 0;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) segments.push({ text: text.slice(last, m.index) });
+    if (m[2] != null) segments.push({ text: m[2], code: true });
+    else if (m[3] != null) segments.push(...parseInline(m[3]).map((s) => ({ ...s, bold: true })));
+    else if (m[4] != null) segments.push(...parseInline(m[4]).map((s) => ({ ...s, bold: true })));
+    else if (m[5] != null) segments.push({ text: m[5], strike: true });
+    else if (m[6] != null) {
+      segments.push({ text: m[6], link: true });
+      if (m[7] !== m[6]) segments.push({ text: ` (${m[7]})`, color: INK.faint });
+    } else if (m[8] != null) segments.push(...parseInline(m[8]).map((s) => ({ ...s, italic: true })));
+    else if (m[9] != null) segments.push(...parseInline(m[9]).map((s) => ({ ...s, italic: true })));
+    last = m.index + m[0].length;
   }
-
+  if (last < text.length) segments.push({ text: text.slice(last) });
   return segments;
 }
 
-const MAX_VISIBLE_LINES = 30;
+/** Segments → one ANSI string, every run closed with a full reset. */
+function inlineAnsi(segments, baseColor = INK.text) {
+  let out = '';
+  for (const seg of segments) {
+    let pre = hexToAnsi(seg.code ? INK.code : seg.link ? INK.link : seg.color || baseColor);
+    if (seg.bold) pre += ANSI_BOLD;
+    if (seg.italic) pre += ANSI_ITALIC;
+    if (seg.strike) pre += ANSI_STRIKE;
+    if (seg.link) pre += ANSI_UNDERLINE;
+    out += pre + seg.text + ANSI_RESET;
+  }
+  return out;
+}
+
+function InlineText({ segments, color }) {
+  return React.createElement(Text, { wrap: 'wrap' }, inlineAnsi(segments, color));
+}
+
+// ─── Blocks ─────────────────────────────────────────────────────────────────
+
+const MAX_VISIBLE_LINES = 80;
 const DEFAULT_PANEL_WIDTH = 76;
 
 /**
  * A fenced block with no language that is plainly prose, not code.
  *
  * Models routinely wrap their closing summary in a bare ``` fence. Rendering
- * that as a code panel - line numbers, syntax colours, "15 lines" - is actively
- * misleading, so it gets rendered as markdown instead. Kept deliberately
- * conservative: any whiff of real code and it stays a code block.
+ * that as code is actively misleading, so it gets rendered as markdown
+ * instead. Kept deliberately conservative: any whiff of real code and it stays
+ * a code block.
  */
 function looksLikeProse(lang, code) {
   if (lang) return false;
@@ -231,84 +277,45 @@ function looksLikeProse(lang, code) {
   if (codeish > 0) return false;
 
   const proseish = lines.filter((l) =>
-    /\*\*[^*]+\*\*/.test(l) ||        // bold
-    /^\s*#{1,6}\s+\S/.test(l) ||      // heading
-    /^\s*[-*]\s+\S/.test(l) ||        // bullet
-    /^\s*\d+\.\s+\S/.test(l)          // numbered
+    /\*\*[^*]+\*\*/.test(l) ||
+    /^\s*#{1,6}\s+\S/.test(l) ||
+    /^\s*[-*]\s+\S/.test(l) ||
+    /^\s*\d+\.\s+\S/.test(l)
   ).length;
 
   return proseish / lines.length >= 0.4;
 }
 
 function CodeBlock({ lang, code, truncated, width }) {
-  const allLines = code.split('\n');
+  const allLines = code.replace(/\s+$/, '').split('\n');
   const totalLines = allLines.length;
   const shouldTruncate = truncated !== false && totalLines > MAX_VISIBLE_LINES;
   const visibleLines = shouldTruncate ? allLines.slice(0, MAX_VISIBLE_LINES) : allLines;
-  const highlighted = highlightCode(visibleLines.join('\n'), lang);
-  const langLabel = lang || 'code';
+  const isDiff = lang === 'diff' || lang === 'patch';
+  const rows = isDiff ? null : highlightCode(visibleLines.join('\n'), lang);
 
-  const panelWidth = Math.max(24, Math.min(width || DEFAULT_PANEL_WIDTH, 120));
-  const gutterWidth = String(visibleLines.length).length + 1;
-  const bodyWidth = panelWidth - gutterWidth - 2;
-
-  const countLabel = shouldTruncate
-    ? `${totalLines} lines · first ${MAX_VISIBLE_LINES}`
-    : `${totalLines} line${totalLines === 1 ? '' : 's'}`;
-
-  // Header: language on the left, line count pushed to the right edge.
-  const headLeft = ' ' + langLabel;
-  const headGap = Math.max(1, panelWidth - headLeft.length - countLabel.length - 1);
-  const header = fillRow(
-    hexToAnsi(G.blue) + ANSI_BOLD + headLeft + ANSI_RESET + hexToAnsiBg(SURFACE.codeHeader) +
-      ' '.repeat(headGap) + hexToAnsi('#6b7280') + countLabel + ' ',
-    headLeft.length + headGap + countLabel.length + 1,
-    panelWidth,
-    SURFACE.codeHeader
-  );
-
-  const rows = highlighted.map((segments, i) => {
-    const raw = visibleLines[i] ?? '';
-    // Diff hunks get a tinted row so +/- reads at a glance.
-    const isAdd = /^\+(?!\+)/.test(raw);
-    const isDel = /^-(?!-)/.test(raw);
-    const bg = isAdd ? SURFACE.diffAdd : isDel ? SURFACE.diffDel : SURFACE.codeBody;
-
-    const num = String(i + 1).padStart(gutterWidth - 1);
-    const gutter = hexToAnsiBg(SURFACE.gutter) + hexToAnsi('#4b5563') + ' ' + num + ANSI_RESET;
-    const { text, used } = clipSegments(segments, bodyWidth);
-    const body = hexToAnsiBg(bg) + ' ' + text;
-
-    return React.createElement(
-      Text,
-      { key: i },
-      gutter + fillRow(body, used + 1, panelWidth - gutterWidth, bg)
-    );
+  const lines = visibleLines.map((raw, i) => {
+    if (isDiff) {
+      const color = /^\+(?!\+\+)/.test(raw) ? SYNTAX.addition
+        : /^-(?!--)/.test(raw) ? SYNTAX.deletion
+        : /^@@/.test(raw) ? SYNTAX.literal : CODE_TEXT;
+      return '  ' + hexToAnsi(color) + raw + ANSI_RESET;
+    }
+    const segs = rows[i] || [];
+    return '  ' + segs.map((s) => hexToAnsi(s.color) + s.text).join('') + ANSI_RESET;
   });
 
   return React.createElement(
     Box,
-    { flexDirection: 'column', marginBottom: 1 },
-    React.createElement(Text, null, header),
-    // One <Text> per line, pre-flattened to ANSI. Ink allocates a Yoga layout
-    // node per element, so per-token <Text> nodes make long blocks crawl.
-    ...rows,
+    { flexDirection: 'column', width },
+    ...lines.map((l, i) => React.createElement(Text, { key: i, wrap: 'wrap' }, l || ' ')),
     shouldTruncate && React.createElement(
       Text,
-      null,
-      fillRow(
-        hexToAnsiBg(SURFACE.codeHeader) + hexToAnsi('#6b7280') +
-          `   ⋯ ${totalLines - MAX_VISIBLE_LINES} more lines`,
-        `   ⋯ ${totalLines - MAX_VISIBLE_LINES} more lines`.length,
-        panelWidth,
-        SURFACE.codeHeader
-      )
+      { key: 'more' },
+      hexToAnsi(INK.faint) + `  … ${totalLines - MAX_VISIBLE_LINES} more lines` + ANSI_RESET
     )
   );
 }
-
-const ANSI_BOLD_OFF = '\x1b[22m';
-const ANSI_ITALIC_OFF = '\x1b[23m';
 
 /**
  * Style one segment without ever emitting a full reset.
@@ -319,7 +326,7 @@ function styleSegment(seg, defaultColor) {
   let out = '';
   if (seg.bold) out += ANSI_BOLD;
   if (seg.italic) out += ANSI_ITALIC;
-  out += hexToAnsi(seg.color || defaultColor);
+  out += hexToAnsi(seg.code ? INK.code : seg.color || defaultColor);
   out += seg.text;
   if (seg.italic) out += ANSI_ITALIC_OFF;
   if (seg.bold) out += ANSI_BOLD_OFF;
@@ -345,16 +352,16 @@ function wrapStyledSegments(segments, width, nextWidth = width) {
     for (const word of seg.text.split(/(\s+)/)) {
       if (!word) continue;
       const isSpace = /^\s+$/.test(word);
-      if (isSpace && used === 0) continue;           // no leading space on a wrapped row
+      if (isSpace && used === 0) continue;
       if (used + word.length <= limit) {
         row.push({ ...seg, text: word });
         used += word.length;
         continue;
       }
-      if (isSpace) { flush(); continue; }            // break at the space itself
+      if (isSpace) { flush(); continue; }
       if (used > 0) flush();
       let rest = word;
-      while (rest.length > limit) {                  // pathologically long token
+      while (rest.length > limit) {
         row.push({ ...seg, text: rest.slice(0, limit) });
         used = limit;
         flush();
@@ -375,12 +382,10 @@ function formatPanelLine(raw) {
 
   const heading = line.match(/^(#{1,6})\s+(.*)$/);
   if (heading) {
-    const level = heading[1].length;
-    const color = level <= 2 ? G.blue : level === 3 ? G.green : G.yellow;
     return {
       indent,
       hanging: 0,
-      segments: parseInline(heading[2]).map((s) => ({ ...s, bold: true, color })),
+      segments: parseInline(heading[2]).map((s) => ({ ...s, bold: true, color: heading[1].length <= 2 ? INK.text : INK.secondary })),
     };
   }
 
@@ -390,53 +395,35 @@ function formatPanelLine(raw) {
 
   const bullet = line.match(/^([-*])\s+(.*)$/);
   if (bullet) {
-    return {
-      indent,
-      hanging: 2,
-      segments: [{ text: '• ', color: G.blue }, ...parseInline(bullet[2])],
-    };
+    return { indent, hanging: 2, segments: [{ text: '• ', color: INK.bullet }, ...parseInline(bullet[2])] };
   }
 
   const numbered = line.match(/^(\d+)\.\s+(.*)$/);
   if (numbered) {
     const marker = `${numbered[1]}. `;
-    return {
-      indent,
-      hanging: marker.length,
-      segments: [{ text: marker, color: G.blue }, ...parseInline(numbered[2])],
-    };
+    return { indent, hanging: marker.length, segments: [{ text: marker, color: INK.bullet }, ...parseInline(numbered[2])] };
   }
 
   return { indent, hanging: 0, segments: parseInline(line) };
 }
 
 /**
- * Filled panel for a plan / reasoning block - same visual family as CodeBlock
- * so the transcript reads as one system, but without the line-number gutter
- * since prose is not addressed by line.
- *
- * Content is wrapped, never clipped: a plan is meant to be read, so losing the
- * end of every long sentence defeats the point.
+ * Filled panel for a plan. Content is wrapped, never clipped: a plan is meant
+ * to be read, so losing the end of every long sentence defeats the point.
  */
 function Panel({ title, lines, width, accent = G.yellow, bg = SURFACE.plan, headerBg = SURFACE.planHeader }) {
   const panelWidth = Math.max(24, Math.min(width || DEFAULT_PANEL_WIDTH, 120));
   const textColor = '#d5d9df';
 
   const head = ' ' + title;
-  const header = fillRow(
-    hexToAnsi(accent) + ANSI_BOLD + head + ANSI_BOLD_OFF,
-    head.length,
-    panelWidth,
-    headerBg
-  );
+  const header = fillRow(hexToAnsi(accent) + ANSI_BOLD + head + ANSI_BOLD_OFF, head.length, panelWidth, headerBg);
 
   const rendered = [];
   for (const raw of lines) {
     const { indent, hanging, segments, rule } = formatPanelLine(raw);
 
     if (rule) {
-      const dash = '─'.repeat(Math.max(4, panelWidth - 4));
-      rendered.push(hexToAnsiBg(bg) + '  ' + hexToAnsi('#3a4048') + dash);
+      rendered.push(hexToAnsiBg(bg) + '  ' + hexToAnsi('#3a4048') + '─'.repeat(Math.max(4, panelWidth - 4)));
       continue;
     }
     if (segments.length === 0) {
@@ -447,162 +434,205 @@ function Panel({ title, lines, width, accent = G.yellow, bg = SURFACE.plan, head
     const avail = Math.max(8, panelWidth - 2 - indent);
     const rows = wrapStyledSegments(segments, avail, Math.max(4, avail - hanging));
     rows.forEach((row, i) => {
-      // Continuation rows line up under the text, not under the bullet.
       const pad = ' '.repeat(indent + (i > 0 ? hanging : 0));
-      const body = row.map((s) => styleSegment(s, textColor)).join('');
-      rendered.push(hexToAnsiBg(bg) + ' ' + pad + body);
+      rendered.push(hexToAnsiBg(bg) + ' ' + pad + row.map((s) => styleSegment(s, textColor)).join(''));
     });
   }
 
   return React.createElement(
     Box,
-    { flexDirection: 'column', marginBottom: 1 },
+    { flexDirection: 'column' },
     React.createElement(Text, { key: 'h' }, header),
-    ...rendered.map((content, i) => {
-      const used = visibleLength(content);
-      return React.createElement(
-        Text,
-        { key: i },
-        hexToAnsiBg(bg) + content + ' '.repeat(Math.max(0, panelWidth - used)) + ANSI_RESET
-      );
-    })
+    ...rendered.map((content, i) => React.createElement(
+      Text,
+      { key: i },
+      hexToAnsiBg(bg) + content + ' '.repeat(Math.max(0, panelWidth - visibleLength(content))) + ANSI_RESET
+    ))
   );
 }
 
 function Heading({ level, children }) {
-  const color = level === 1 ? G.blue : level === 2 ? G.green : G.yellow;
-  return React.createElement(
-    Box,
-    { marginBottom: 1, marginTop: level <= 2 ? 1 : 0 },
-    React.createElement(Text, { color, bold: level <= 2, wrap: 'wrap' }, children)
-  );
+  const color = level <= 2 ? INK.text : INK.secondary;
+  const segs = parseInline(children).map((s) => ({ ...s, bold: true, color: s.code ? undefined : color }));
+  return React.createElement(Text, { wrap: 'wrap' }, (level === 1 ? ANSI_UNDERLINE : '') + inlineAnsi(segs, color));
 }
 
-function ListItem({ children, ordered, index }) {
-  const bullet = ordered ? `${index}. ` : '  • ';
-  const bulletColored = hexToAnsi(G.blue) + bullet + ANSI_RESET;
-  const segments = parseInline(children);
-  let content = '';
-  for (const seg of segments) {
-    let prefix = '';
-    if (seg.bold) prefix += ANSI_BOLD;
-    if (seg.italic) prefix += ANSI_ITALIC;
-    if (seg.color) prefix += hexToAnsi(seg.color);
-    content += prefix + seg.text + (prefix ? ANSI_RESET : '');
-  }
-  return React.createElement(Text, { wrap: 'wrap' }, '  ' + bulletColored + content);
+/** A list item with a hanging indent, so wrapped lines sit under the text. */
+function ListItem({ children, ordered, index, depth = 0 }) {
+  const marker = ordered ? `${index}. ` : depth > 0 ? '· ' : '• ';
+  return React.createElement(
+    Box,
+    { flexDirection: 'row', paddingLeft: depth * 2 },
+    React.createElement(Text, null, hexToAnsi(INK.bullet) + marker + ANSI_RESET),
+    React.createElement(Box, { flexGrow: 1, flexShrink: 1 }, React.createElement(InlineText, { segments: parseInline(children) }))
+  );
 }
 
 function HorizontalRule({ width }) {
-  return React.createElement(
-    Box,
-    { marginY: 1 },
-    React.createElement(Text, { color: '#3c4043' }, '─'.repeat(Math.max(8, Math.min(width || 50, 72))))
-  );
+  return React.createElement(Text, null, hexToAnsi('#3c4043') + '─'.repeat(Math.max(8, Math.min(width || 50, 72))) + ANSI_RESET);
 }
 
 function Blockquote({ children }) {
   return React.createElement(
     Box,
-    {
-      borderStyle: 'bold',
-      borderTop: false,
-      borderRight: false,
-      borderBottom: false,
-      borderLeftColor: G.blue,
-      paddingLeft: 1,
-      marginBottom: 1,
-    },
-    React.createElement(Text, { color: '#9aa0a6', italic: true, wrap: 'wrap' }, children)
+    { flexDirection: 'row' },
+    React.createElement(Text, null, hexToAnsi(INK.faint) + '│ ' + ANSI_RESET),
+    React.createElement(Box, { flexGrow: 1, flexShrink: 1 }, React.createElement(InlineText, {
+      segments: parseInline(children).map((s) => ({ ...s, italic: true })),
+      color: INK.secondary,
+    }))
   );
 }
 
+// ─── Tables ─────────────────────────────────────────────────────────────────
+
+const splitRow = (line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+const isTableSep = (line) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line || '');
+const plainLength = (cell) => parseInline(cell).reduce((n, s) => n + s.text.length, 0);
+
+/** Fit a cell to `w` columns, keeping its inline styling. */
+function fitCell(cell, w) {
+  const segs = parseInline(cell);
+  const out = [];
+  let used = 0;
+  for (const s of segs) {
+    if (used >= w) break;
+    let t = s.text;
+    if (used + t.length > w) t = t.slice(0, Math.max(0, w - used - 1)) + '…';
+    out.push({ ...s, text: t });
+    used += t.length;
+  }
+  return inlineAnsi(out) + ' '.repeat(Math.max(0, w - used));
+}
+
+function Table({ header, rows, width }) {
+  const cols = header.length;
+  const all = [header, ...rows].map((r) => Array.from({ length: cols }, (_, i) => r[i] ?? ''));
+  let widths = Array.from({ length: cols }, (_, i) => Math.max(3, ...all.map((r) => plainLength(r[i]))));
+  // Shrink the widest columns until the table fits: 3 columns of chrome per cell.
+  const budget = Math.max(cols * 4, (width || 80) - (cols * 3 + 1));
+  while (widths.reduce((a, b) => a + b, 0) > budget) {
+    const max = Math.max(...widths);
+    if (max <= 4) break;
+    widths = widths.map((w) => (w === max ? w - 1 : w));
+  }
+  const line = (l, m, r) => hexToAnsi(INK.faint) + l + widths.map((w) => '─'.repeat(w + 2)).join(m) + r + ANSI_RESET;
+  const bar = hexToAnsi(INK.faint) + '│' + ANSI_RESET;
+  const row = (cells, bold) => bar + cells.map((c, i) => ' ' + (bold ? ANSI_BOLD : '') + fitCell(c, widths[i]) + ' ').join(bar) + bar;
+  return React.createElement(
+    Box,
+    { flexDirection: 'column' },
+    React.createElement(Text, { key: 't' }, line('┌', '┬', '┐')),
+    React.createElement(Text, { key: 'h' }, row(all[0], true)),
+    React.createElement(Text, { key: 's' }, line('├', '┼', '┤')),
+    ...all.slice(1).map((r, i) => React.createElement(Text, { key: `r${i}` }, row(r, false))),
+    React.createElement(Text, { key: 'b' }, line('└', '┴', '┘'))
+  );
+}
+
+// ─── Document ───────────────────────────────────────────────────────────────
+
+const Spacer = ({ k }) => React.createElement(Text, { key: k }, ' ');
+
 function renderMarkdown(md, width) {
   const elements = [];
-  const lines = md.split('\n');
+  const lines = String(md || '').replace(/\r\n?/g, '\n').split('\n');
   let i = 0;
+  let gap = false; // a blank source line was seen since the last block
+
+  const add = (el) => {
+    if (gap && elements.length) elements.push(Spacer({ k: `sp-${elements.length}` }));
+    gap = false;
+    elements.push(el);
+  };
 
   while (i < lines.length) {
     const line = lines[i];
+    const trimmed = line.trim();
 
-    // Code block: ```lang ... ```
-    if (line.trim().startsWith('```')) {
-      const lang = line.trim().slice(3).trim();
+    if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+      const fence = trimmed.slice(0, 3);
+      const lang = trimmed.slice(3).trim().split(/\s+/)[0].toLowerCase();
       const codeLines = [];
       i++;
-      while (i < lines.length && !lines[i].trim().startsWith('```')) {
+      while (i < lines.length && !lines[i].trim().startsWith(fence)) {
         codeLines.push(lines[i]);
         i++;
       }
-      i++; // skip closing ```
+      i++;
       const body = codeLines.join('\n');
       if (looksLikeProse(lang, body)) {
-        // A bare fence around a written summary - render it as what it is.
-        for (const el of renderMarkdown(body, width)) {
-          elements.push(React.cloneElement(el, { key: `fenced-${elements.length}-${el.key}` }));
-        }
+        for (const el of renderMarkdown(body, width)) add(React.cloneElement(el, { key: `fenced-${elements.length}-${el.key}` }));
       } else {
-        elements.push(React.createElement(CodeBlock, {
-          key: `code-${elements.length}`, lang, code: body, width,
-        }));
+        add(React.createElement(CodeBlock, { key: `code-${elements.length}`, lang, code: body, width }));
       }
       continue;
     }
 
-    // Heading: # ## ###
-    const headingMatch = line.match(/^(#{1,6})\s+(.+)/);
+    if (trimmed === '') { gap = true; i++; continue; }
+
+    const headingMatch = line.match(/^\s*(#{1,6})\s+(.+)/);
     if (headingMatch) {
-      elements.push(React.createElement(Heading, { key: `h-${elements.length}`, level: headingMatch[1].length }, headingMatch[2]));
+      if (elements.length) gap = true;
+      add(React.createElement(Heading, { key: `h-${elements.length}`, level: headingMatch[1].length }, headingMatch[2].replace(/\s+#+\s*$/, '')));
       i++;
       continue;
     }
 
-    // Horizontal rule: --- or *** or ___
-    if (/^[-*_]{3,}\s*$/.test(line.trim())) {
-      elements.push(React.createElement(HorizontalRule, { key: `hr-${elements.length}`, width }));
+    if (/^[-*_]{3,}$/.test(trimmed.replace(/\s/g, ''))) {
+      add(React.createElement(HorizontalRule, { key: `hr-${elements.length}`, width }));
       i++;
       continue;
     }
 
-    // Blockquote: > text
-    if (line.trim().startsWith('>')) {
-      elements.push(React.createElement(Blockquote, { key: `bq-${elements.length}`, children: line.trim().slice(1).trim() }));
+    if (trimmed.startsWith('|') && isTableSep(lines[i + 1])) {
+      const header = splitRow(line);
+      const rows = [];
+      i += 2;
+      while (i < lines.length && lines[i].trim().startsWith('|')) { rows.push(splitRow(lines[i])); i++; }
+      add(React.createElement(Table, { key: `tb-${elements.length}`, header, rows, width }));
+      continue;
+    }
+
+    if (trimmed.startsWith('>')) {
+      add(React.createElement(Blockquote, { key: `bq-${elements.length}`, children: trimmed.replace(/^>\s?/, '') }));
       i++;
       continue;
     }
 
-    // Unordered list: - or * text
-    const listMatch = line.match(/^(\s*)([-*])\s+(.+)/);
+    const listMatch = line.match(/^(\s*)([-*+])\s+(.+)/);
     if (listMatch) {
-      elements.push(React.createElement(ListItem, { key: `li-${elements.length}`, children: listMatch[3] }));
+      const task = listMatch[3].match(/^\[([ xX])\]\s+(.*)/);
+      const text = task ? (task[1] === ' ' ? '☐ ' : '☒ ') + task[2] : listMatch[3];
+      add(React.createElement(ListItem, { key: `li-${elements.length}`, children: text, depth: Math.min(3, Math.floor(listMatch[1].length / 2)) }));
       i++;
       continue;
     }
 
-    // Ordered list: 1. text
-    const olMatch = line.match(/^(\s*)(\d+)\.\s+(.+)/);
+    const olMatch = line.match(/^(\s*)(\d+)[.)]\s+(.+)/);
     if (olMatch) {
-      elements.push(React.createElement(ListItem, { key: `oli-${elements.length}`, children: olMatch[3], ordered: true, index: parseInt(olMatch[2]) }));
+      add(React.createElement(ListItem, {
+        key: `oli-${elements.length}`, children: olMatch[3], ordered: true, index: parseInt(olMatch[2], 10),
+        depth: Math.min(3, Math.floor(olMatch[1].length / 2)),
+      }));
       i++;
       continue;
     }
 
-    // Empty line
-    if (line.trim() === '') {
-      i++;
-      continue;
-    }
-
-    // Paragraph: collect consecutive non-empty lines
+    // Paragraph: consecutive plain lines, joined like markdown does.
     const paraLines = [];
-    while (i < lines.length && lines[i].trim() !== '' && !lines[i].trim().startsWith('```') && !lines[i].trim().startsWith('#') && !lines[i].trim().startsWith('>') && !/^[-*]\s/.test(lines[i].trim()) && !/^\d+\.\s/.test(lines[i].trim()) && !/^[-*_]{3,}\s*$/.test(lines[i].trim())) {
-      paraLines.push(lines[i]);
+    while (i < lines.length) {
+      const t = lines[i].trim();
+      if (!t || t.startsWith('```') || t.startsWith('~~~') || /^#{1,6}\s/.test(t) || t.startsWith('>') ||
+        /^[-*+]\s/.test(t) || /^\d+[.)]\s/.test(t) || /^[-*_]{3,}$/.test(t.replace(/\s/g, '')) ||
+        (t.startsWith('|') && isTableSep(lines[i + 1]))) break;
+      paraLines.push(t);
       i++;
     }
     if (paraLines.length) {
-      elements.push(
-        React.createElement(InlineText, { key: `p-${elements.length}`, segments: parseInline(paraLines.join(' ')) })
-      );
+      add(React.createElement(InlineText, { key: `p-${elements.length}`, segments: parseInline(paraLines.join(' ')) }));
+    } else {
+      i++;
     }
   }
 
@@ -610,8 +640,8 @@ function renderMarkdown(md, width) {
 }
 
 export {
-  renderMarkdown, CodeBlock, Panel, parseInline, looksLikeProse,
-  hexToAnsi, hexToAnsiBg, fillRow, clipSegments, visibleLength, SURFACE,
-  ANSI_RESET, ANSI_BOLD, ANSI_DIM, ANSI_ITALIC,
+  renderMarkdown, CodeBlock, Panel, parseInline, inlineAnsi, looksLikeProse, highlightCode,
+  hexToAnsi, hexToAnsiBg, fillRow, clipSegments, visibleLength, SURFACE, INK,
+  ANSI_RESET, ANSI_BOLD, ANSI_DIM, ANSI_ITALIC, ANSI_STRIKE,
 };
 export default renderMarkdown;

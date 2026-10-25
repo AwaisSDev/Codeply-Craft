@@ -13,7 +13,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
-import { exec } from 'child_process';
+import { exec, execSync, spawn } from 'child_process';
 import { createRequire } from 'module';
 import { searchLibrary, listCategories, designLibraryConfigured, CATEGORY_LABELS } from './design-library/query.mjs';
 import { design_direction, design_lint } from './design-tools.mjs';
@@ -1630,6 +1630,20 @@ async function run(args, ctx) {
   });
   if (verdict === 'reject') return { ok: false, output: `User declined to run: ${displayCommand}`, meta: { rejected: true } };
 
+  if (/^(1|true|yes)$/i.test(String(args.background || '').trim())) {
+    if (READ_ONLY_MODES.has(ctx.mode)) return { ok: false, output: `Background commands are not available in ${ctx.mode} mode.` };
+    const j = startJob(displayCommand, execCommand, ctx.cwd);
+    // A few seconds so an instant failure or a "listening on :3000" line comes back now.
+    await new Promise((r) => { const t = setTimeout(r, 4000); j.child.once('close', () => { clearTimeout(t); r(); }); });
+    const state = j.endedAt ? `exited with code ${j.code}` : 'still running in the background';
+    const tail = j.out.trim() ? truncate(j.out.trimEnd(), 3000, { keep: 'ends', spill: false }) : '(no output yet)';
+    return {
+      ok: true,
+      output: `$ ${displayCommand}\n[background job ${j.id}: ${state}]\n${tail}\n\nRead its output later with <codeply:job><id>${j.id}</id></codeply:job>, stop it with <stop>true</stop> in the same block. Do not start it again.`,
+      meta: { label: displayCommand, background: true, jobId: j.id, output: j.out.slice(-JOB_SHOWN), ...(j.endedAt ? { exitCode: j.code } : {}) },
+    };
+  }
+
   return new Promise((resolve) => {
     exec(execCommand, { cwd: ctx.cwd, timeout: RUN_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, windowsHide: true },
       (err, stdout, stderr) => {
@@ -1650,11 +1664,83 @@ async function run(args, ctx) {
         resolve({
           ok: true, // a non-zero exit is a real result the model must see, not a tool failure
           output: truncate(`$ ${displayCommand}\n[exit ${code}]\n${body}`, MAX_TOOL_OUTPUT, { keep: 'ends' }) + (hint ? `\n[hint] ${hint}` : ''),
-          meta: { label: displayCommand, exitCode: effectiveCode, ...(effectiveCode !== code ? { maskedFailure: true } : {}) },
+          // What the user sees when they open the row: the end of the real output.
+          meta: { label: displayCommand, exitCode: effectiveCode, output: body.slice(-JOB_SHOWN), ...(effectiveCode !== code ? { maskedFailure: true } : {}) },
         });
       });
   });
 }
+
+// ─── Background commands: dev servers, watchers, long builds ─────────────────
+// run with <background>true</background> starts the command and answers at once;
+// job reads its output later or stops it. Jobs live as long as the app does,
+// and the host (Craft) lists them under the composer through backgroundJobs.
+const jobs = new Map(); // id -> { id, command, cwd, child, out, startedAt, endedAt, code }
+const jobListeners = new Set();
+const JOB_KEEP = 64 * 1024; // output kept per job
+const JOB_SHOWN = 4000; // output shown on a chat row
+let jobSeq = 0;
+
+const jobCard = (j) => ({ id: j.id, command: j.command, cwd: j.cwd, startedAt: j.startedAt, endedAt: j.endedAt, code: j.code, running: !j.endedAt });
+function jobChanged(j) { for (const fn of jobListeners) { try { fn(jobCard(j)); } catch {} } }
+
+function startJob(command, execCommand, cwd) {
+  const win = process.platform === 'win32';
+  // detached on POSIX so the whole process group can be stopped; Windows uses taskkill /T.
+  const child = spawn(execCommand, { cwd, shell: true, windowsHide: true, detached: !win });
+  const j = { id: String(++jobSeq), command, cwd, child, out: '', startedAt: Date.now(), endedAt: 0, code: null };
+  const add = (d) => { j.out += d.toString(); if (j.out.length > JOB_KEEP) j.out = j.out.slice(-JOB_KEEP); };
+  child.stdout.on('data', add);
+  child.stderr.on('data', add);
+  child.on('error', (e) => add(`\n[error] ${e.message}\n`));
+  child.on('close', (code) => { j.code = code == null ? 1 : code; j.endedAt = Date.now(); jobChanged(j); });
+  jobs.set(j.id, j);
+  jobChanged(j);
+  return j;
+}
+
+function killJob(j, { sync = false } = {}) {
+  if (j.endedAt) return;
+  try {
+    if (process.platform === 'win32') {
+      const cmd = `taskkill /pid ${j.child.pid} /T /F`;
+      if (sync) execSync(cmd, { windowsHide: true, stdio: 'ignore' }); else exec(cmd, { windowsHide: true }, () => {});
+    } else process.kill(-j.child.pid, 'SIGTERM');
+  } catch { try { j.child.kill(); } catch {} }
+}
+
+function jobLine(j) {
+  const secs = Math.round(((j.endedAt || Date.now()) - j.startedAt) / 1000);
+  return `[job ${j.id}] ${j.endedAt ? `exited with code ${j.code} after ${secs}s` : `running for ${secs}s`}: ${j.command}`;
+}
+
+async function job(args) {
+  const id = String(args.id || '').trim().replace(/^#/, '');
+  if (!id) {
+    if (!jobs.size) return { ok: true, output: 'No background jobs.', meta: { label: 'no background jobs' } };
+    return { ok: true, output: [...jobs.values()].map(jobLine).join('\n'), meta: { label: `${jobs.size} background job${jobs.size === 1 ? '' : 's'}` } };
+  }
+  const j = jobs.get(id);
+  if (!j) return { ok: false, output: `No background job ${id}. Jobs: ${[...jobs.keys()].join(', ') || 'none'}.` };
+  if (/^(1|true|yes)$/i.test(String(args.stop || '').trim())) {
+    const wasRunning = !j.endedAt;
+    killJob(j);
+    if (wasRunning) await new Promise((r) => { const t = setTimeout(r, 2000); j.child.once('close', () => { clearTimeout(t); r(); }); });
+    return { ok: true, output: wasRunning ? `Stopped job ${id}: ${j.command}` : `Job ${id} had already ${jobLine(j).split(': ')[0].replace(/^\[job \d+\] /, '')}.`, meta: { label: `stopped: ${j.command}` } };
+  }
+  const out = j.out.trimEnd() || '(no output yet)';
+  return { ok: true, output: `${jobLine(j)}\n${truncate(out, MAX_TOOL_OUTPUT, { keep: 'ends' })}`, meta: { label: j.command, output: out.slice(-JOB_SHOWN), ...(j.endedAt ? { exitCode: j.code } : {}) } };
+}
+
+export const backgroundJobs = {
+  list: () => [...jobs.values()].map(jobCard),
+  output: (id) => (jobs.get(String(id)) || {}).out || '',
+  stop: (id) => { const j = jobs.get(String(id)); if (j) killJob(j); return !!j; },
+  /** Forget finished jobs (the list under the composer clears them). */
+  clear: () => { for (const [id, j] of jobs) if (j.endedAt) jobs.delete(id); },
+  stopAll: () => { for (const j of jobs.values()) killJob(j, { sync: true }); },
+  onChange: (fn) => { jobListeners.add(fn); return () => jobListeners.delete(fn); },
+};
 
 /**
  * Load one skill's full instructions on demand. Read-only, no approval - the
@@ -2328,8 +2414,30 @@ async function ask_bot(args, ctx) {
 }
 
 // ─── Reaching the user's phone (lib/reach.js; the host registers the handler) ─
-const reach_me = (args, ctx) => reachLib.reachMe(args, ctx);
-const watch_email = (args, ctx) => reachLib.watchEmail(args, ctx);
+// A reminder at a time also lands on the user's Google Calendar (when connected),
+// so the day's plan shows it without a second ask. No guests, so no approval.
+async function reach_me(args, ctx) {
+  const r = await reachLib.reachMe(args, ctx);
+  const at = r.ok ? reachLib.parseWhen(args.at) : null;
+  if (!at) return r;
+  try {
+    const t = await googleTokenFor('Google Calendar');
+    if (t.error) return r;
+    let tz = '';
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch {}
+    const title = String(args.message || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+    const end = new Date(at.getTime() + 30 * 60 * 1000);
+    await oauth.calendarInsertEvent(t.token, {
+      summary: title,
+      description: 'Set as a phone reminder in Codeply.',
+      start: { dateTime: localIso(at), ...(tz ? { timeZone: tz } : {}) },
+      end: { dateTime: localIso(end), ...(tz ? { timeZone: tz } : {}) },
+      reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 10 }] },
+    });
+    return { ...r, output: `${r.output} It is also on the user's Google Calendar at ${showLocal(at)} with a 10 minute reminder, so do not add it again.`, meta: { ...(r.meta || {}), label: `${(r.meta && r.meta.label) || 'Reminder'} (also on your calendar)` } };
+  } catch { return r; }
+}
+const watch_email =(args, ctx) => reachLib.watchEmail(args, ctx);
 
 // ─── The user's life context (lib/life.js; the host attaches the store) ──────
 // A bot reads only the sources its Life settings allow; the plain agent reads the non-sensitive ones.
@@ -2443,7 +2551,7 @@ export const TOOLS = {
   ask_user,
   mcp,
   web_fetch, web_search, image_search, apply_patch, plan_exit, plan_enter, lsp, reach_me, watch_email, life_context, remember, recall, hand_off, bot_email_send, look_at_screen, use_computer,
-  list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, browser_check,
+  list_dir, read_file, write_file, edit_file, search, run, job, use_skill, list_skills, fetch_image, browser_check,
   gmail_send, gmail_search, gmail_read, gmail_draft, drafts_list, calendar_list, calendar_add, calendar_update, slack_post_message, vercel_deploy, supabase_create_project, supabase_delete_project, github_create_repo,
   design_reference_search, view_images, supabase_api, supabase_sql, vercel_api, add_model,
   design_direction, design_lint,
@@ -2483,6 +2591,7 @@ export const TOOL_DISPLAY = {
   edit_file:  { verb: 'edit',   icon: '✎' },
   search:     { verb: 'search', icon: '▸' },
   run:        { verb: 'run',    icon: '$' },
+  job:        { verb: 'job',    icon: '$' },
   use_skill:  { verb: 'skill',  icon: '★' },
   list_skills:{ verb: 'skills', icon: '★' },
   fetch_image:{ verb: 'fetch',  icon: '⇩' },
@@ -2527,7 +2636,7 @@ const MUTATING_TOOLS = new Set([
 
 // Everything that isn't designing: commands, deploys, databases, messages, other projects.
 export const DESIGN_BLOCKED = new Set([
-  'run', 'use_computer', 'lsp', 'mcp', 'ask_bot', 'hand_off', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model', 'browser_check', 'bot_email_send',
+  'run', 'job', 'use_computer', 'lsp', 'mcp', 'ask_bot', 'hand_off', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model', 'browser_check', 'bot_email_send',
   'gmail_send', 'gmail_draft', 'gmail_search', 'gmail_read', 'drafts_list', 'calendar_list', 'calendar_add', 'calendar_update', 'slack_post_message',
   'vercel_deploy', 'vercel_api', 'supabase_create_project', 'supabase_delete_project', 'supabase_api', 'supabase_sql',
   'github_create_repo', 'publish_check', 'publish_connect', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github',

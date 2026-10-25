@@ -12,3 +12,5 @@ craft-deploy.txt
 *.token
 .vercel-token
 sim-out/
+# pnpm's package cache from installing craft-dsh
+.pnpm-store/

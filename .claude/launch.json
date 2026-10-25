@@ -12,6 +12,22 @@
         "."
       ],
       "port": 8123
+    },
+    {
+      "name": "crew-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "sim-out/crew-preview/serve.mjs"
+      ],
+      "port": 5179
+    },
+    {
+      "name": "tui-shots",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/Administrator/AppData/Local/Temp/claude/C--Users-Administrator-Downloads-Codeply-Codeply-Craft--claude-worktrees-codeply-brain/a0088a3e-1760-47e7-8c1a-c19434cf8a80/scratchpad/h/serve.mjs"
+      ],
+      "port": 5188
     }
   ]
 }

@@ -55,6 +55,19 @@
   </div>
 </header>
 
+<!-- ============ DSH ENGINE ============ -->
+<!-- Shown under the DSH engine's view while it starts, or when it can't. -->
+<div class="dsh-overlay" id="dshOverlay" hidden>
+  <div class="dsh-overlay-card">
+    <div class="dsh-overlay-title" id="dshOverlayTitle">Starting the new Craft</div>
+    <div class="dsh-overlay-text" id="dshOverlayText">This takes a few seconds the first time.</div>
+    <div class="dsh-overlay-actions">
+      <button class="dsh-overlay-btn" id="dshRetry" hidden>Try again</button>
+      <button class="dsh-overlay-btn" id="dshBackClassic" hidden>Back to Classic</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ EMBEDDED BROWSER CHROME ============ -->
 <!-- The page itself is a native BrowserView that main.js docks right below
      this chrome (it is told where the chrome ends). This part is real HTML:
@@ -352,6 +365,7 @@
       </div>
 
       <div class="composer-wrap chat-composer">
+        <div class="jobs-bar hidden" id="jobsBar"></div>
         <div class="composer" data-composer="chat">
           <div class="composer-image-previews hidden" data-role="image-previews"></div>
           <textarea class="composer-input" rows="1" placeholder="Ask Codeply anything, or type / for commands"></textarea>

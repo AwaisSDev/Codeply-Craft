@@ -56,7 +56,7 @@ const FORMAT_CORRECTION =
   'silently discarded and never runs. Write it exactly like this, as literal text in your reply, opening and ' +
   'closing tags complete:\n\n' +
   '<codeply:read_file>\n<path>run.html</path>\n</codeply:read_file>\n\n' +
-  'Valid names: todo, ask_user, mcp, list_dir, read_file, write_file, edit_file, search, run, use_skill, list_skills, fetch_image, ' +
+  'Valid names: todo, ask_user, mcp, list_dir, read_file, write_file, edit_file, search, run, job, use_skill, list_skills, fetch_image, ' +
   'browser_check, gmail_send, gmail_search, gmail_read, gmail_draft, drafts_list, calendar_list, calendar_add, calendar_update, add_model, slack_post_message, vercel_deploy, supabase_create_project, ' +
   'supabase_delete_project, github_create_repo, design_reference_search, view_images, design_direction, design_lint, supabase_api, supabase_sql, vercel_api, ' +
   'web_fetch, web_search, image_search, reach_me, watch_email, life_context, remember, recall, hand_off, bot_email_send, look_at_screen, use_computer, apply_patch, plan_exit, plan_enter, lsp, publish_check, publish_connect, supabase_setup, supabase_schema, ' +
@@ -361,7 +361,8 @@ const PARAMS = {
   write_file: ['path', 'content'],
   edit_file: ['path', 'search', 'replace', 'all'],
   search: ['pattern', 'glob', 'path', 'context', 'files_only'],
-  run: ['command'],
+  run: ['command', 'background'],
+  job: ['id', 'stop'],
   use_skill: ['name'],
   list_skills: ['query'],
   fetch_image: ['url', 'path'],
@@ -428,6 +429,7 @@ const NAME_ALIASES = {
   edit_file: 'edit_file', editfile: 'edit_file', edit: 'edit_file',
   grep: 'search', findtext: 'search',
   run: 'run', bash: 'run', shell: 'run', exec: 'run', runcommand: 'run',
+  job: 'job', jobs: 'job', bg: 'job', background_job: 'job', backgroundjob: 'job',
   use_skill: 'use_skill', useskill: 'use_skill', skill: 'use_skill', loadskill: 'use_skill',
   list_skills: 'list_skills', listskills: 'list_skills', skills: 'list_skills', findskill: 'list_skills',
   fetch_image: 'fetch_image', fetchimage: 'fetch_image', downloadimage: 'fetch_image',
@@ -869,6 +871,11 @@ match exactly one place.)
 <codeply:run>
 <command>node --check index.js</command>
 </codeply:run>
+
+(run option: <background>true</background> for anything that keeps running,
+like a dev server or a watcher. It starts, gives you the first lines and
+a job id, and keeps going. Read it later with <codeply:job><id>1</id></codeply:job>,
+stop it with <stop>true</stop> in that block; <codeply:job></codeply:job> lists all.)
 
 <codeply:use_skill>
 <name>deep-research</name>
@@ -2586,3 +2593,4 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
 }
 
 export { MAX_STEPS };
+export { backgroundJobs } from './tools.mjs';

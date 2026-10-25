@@ -1,0 +1,33 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../util/launch-environment"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../session/working-directory"
+    },
+    {
+      "path": "../../interaction/commands"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    }
+  ]
+}

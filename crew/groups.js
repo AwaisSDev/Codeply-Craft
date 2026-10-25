@@ -35,7 +35,7 @@
     const list = $('#groupList');
     const sorted = [...S.groups].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     list.innerHTML = sorted.length ? sorted.map((g) => `<button class="bot-item group-item${S.currentGroup === g.id ? ' on' : ''}" data-gid="${esc(g.id)}">
-        <span class="av${busy.has(g.id) ? ' busy' : ''}">${stack(g, 32)}</span>
+        <span class="av${busy.has(g.id) ? ' busy' : ''}">${stack(g, 30)}</span>
         <span class="bot-item-text"><div class="bot-item-name">${esc(g.name)}</div><div class="bot-item-sub">${esc(g.last || nameList(members(g).map((b) => b.name)))}</div></span>
       </button>`).join('') : '<div class="side-empty">Put two or more bots in one chat.</div>';
     list.querySelectorAll('[data-gid]').forEach((el) => el.addEventListener('click', () => open(el.dataset.gid)));
@@ -181,20 +181,55 @@
 
   function renderStored(box, list) {
     box.innerHTML = '';
-    let body = null; let who = null;
+    let body = null; let who = null; let where = null;
     for (const m of list) {
       if (m.kind === 'user') { UI.appendUser(box, m.text); body = null; who = null; continue; }
       const b = UI.bot(m.botId);
-      if (!body || who !== m.botId) { body = blockFor(box, b, false); who = m.botId; }
+      const into = m.back ? backBody(backSection(box, m.back)) : box;
+      if (!body || who !== m.botId || where !== into) { body = blockFor(into, b, false); who = m.botId; where = into; }
       if (m.kind === 'assistant') UI.addToBody(body, `<div class="m-text">${md(highlight(m.text))}</div>`);
       else if (m.kind === 'tool') UI.addToBody(body, UI.stepHtml(m));
       else if (m.kind === 'error') UI.addToBody(body, `<div class="note err">${esc(m.text)}</div>`);
     }
+    box.querySelectorAll('.gback').forEach((el) => labelBack(el, false));
   }
 
   function blockFor(box, b, working) {
-    const fallback = { name: 'Crew', avatar: { shape: 'round', eyes: 'ovals', color: '#8e8e93' } };
-    return UI.botBlock(box, b || fallback, working).querySelector('.m-bot-body');
+    const fallback = { id: '', name: 'Crew', avatar: { shape: 'round', eyes: 'ovals', color: '#8e8e93' } };
+    const el = UI.botBlock(box, b || fallback, working);
+    el.dataset.bot = (b && b.id) || '';
+    return el.querySelector('.m-bot-body');
+  }
+
+  // ─── Backstage: bots checking in with each other, folded to one line ────
+  // Like Craft's steps: one quiet line you can open to read the whole exchange.
+  function backSection(box, id) {
+    const last = box.lastElementChild;
+    if (last && last.classList.contains('gback') && last.dataset.back === id) return last;
+    const el = document.createElement('div');
+    el.className = 'gback';
+    el.dataset.back = id;
+    el.innerHTML = `<button class="gback-head" aria-expanded="false"><span class="gback-faces"></span><span class="gback-label"></span><span class="gback-chev">${ICON.chev}</span></button><div class="gback-body" hidden></div>`;
+    el.querySelector('.gback-head').addEventListener('click', () => openBack(el, el.querySelector('.gback-body').hidden));
+    box.appendChild(el);
+    return el;
+  }
+  const backBody = (el) => el.querySelector('.gback-body');
+  function openBack(el, open) {
+    backBody(el).hidden = !open;
+    el.querySelector('.gback-head').setAttribute('aria-expanded', String(open));
+  }
+  /** "Orion checked in with Shella and Maya", or "...is checking in..." while it runs. */
+  function labelBack(el, running) {
+    const ids = [...new Set([...el.querySelectorAll('.m-bot')].map((b) => b.dataset.bot))];
+    const list = ids.map((id) => UI.bot(id)).filter(Boolean);
+    if (!list.length) return;
+    const [lead, ...rest] = list;
+    const others = rest.length ? nameList(rest.map((b) => b.name)) : 'the team';
+    const text = running ? `${lead.name} is checking in with ${others}` : `${lead.name} checked in with ${others}`;
+    el.querySelector('.gback-faces').innerHTML = list.slice(0, 3).map((b) => `<span class="gback-face">${A.renderAvatar(b.avatar, 18, { still: true })}</span>`).join('');
+    el.querySelector('.gback-label').innerHTML = running ? `<span class="shimmer">${esc(text)}</span>` : esc(text);
+    el.classList.toggle('running', running);
   }
 
   /** @Name in a message gets a quiet highlight (markdown keeps the span text). */
@@ -211,7 +246,9 @@
     if (!box || !live || S.currentGroup !== live.groupId) return null;
     if (live.botId !== botId || !live.el || !box.contains(live.el)) {
       const b = UI.bot(botId);
-      const body = blockFor(box, b, true);
+      const section = live.back ? backSection(box, live.back) : null;
+      const body = blockFor(section ? backBody(section) : box, b, true);
+      if (section) labelBack(section, true);
       const th = document.createElement('div');
       th.className = 'thinking';
       th.innerHTML = `<span class="shimmer">${esc(b ? `${b.name} is typing` : 'Thinking')}</span><span class="detail"></span>`;
@@ -227,7 +264,11 @@
     const el = live.el;
     A.setAvatarState(el.querySelector('.av'), 'done');
     setTimeout(() => A.setAvatarState(el.querySelector('.av'), 'idle'), 1400);
-    if (!live.body.querySelector('.m-text, .step, .note, .helper, .approve')) el.remove();
+    if (!live.body.querySelector('.m-text, .step, .note, .helper, .approve')) {
+      const section = el.closest('.gback');
+      el.remove();
+      if (section && !section.querySelector('.m-bot')) section.remove();
+    }
     live.el = null; live.body = null; live.thinking = null;
   }
 
@@ -326,8 +367,21 @@
         UI.renderSide(); setSendState();
         break;
       case 'turn':
-        if (live) { live.botId = null; if (here) { liveBlock(ev.botId); UI.scrollDown(true); } else live.botId = ev.botId; }
+        if (live) { live.botId = null; live.back = ev.back || null; if (here) { liveBlock(ev.botId); UI.scrollDown(true); } else live.botId = ev.botId; }
         break;
+      case 'backstage': {
+        // The turn that just ended handed work to a teammate: fold it away.
+        for (let i = messages.length - 1; i >= 0 && messages[i].kind !== 'user'; i--) if (messages[i].botId === ev.botId && !messages[i].back) messages[i].back = ev.back;
+        const box = $('#msgs');
+        if (here && box && live && live.el && box.contains(live.el) && !live.el.closest('.gback')) {
+          const prev = live.el.previousElementSibling;
+          const section = prev && prev.classList.contains('gback') && prev.dataset.back === ev.back ? prev : backSection(box, ev.back);
+          if (section !== prev) box.insertBefore(section, live.el);
+          backBody(section).appendChild(live.el);
+          labelBack(section, true);
+        }
+        break;
+      }
       case 'thinking':
         if (here && liveBlock(ev.botId)) detail(String(ev.text || '').replace(/\s+/g, ' ').slice(0, 160));
         break;
@@ -339,7 +393,7 @@
         if (here && liveBlock(ev.botId)) { UI.addToBody(live.body, UI.stepHtml(ev)); UI.scrollDown(); }
         break;
       case 'text':
-        messages.push({ kind: 'assistant', botId: ev.botId, text: ev.text });
+        messages.push({ kind: 'assistant', botId: ev.botId, text: ev.text, ...(ev.back ? { back: ev.back } : {}) });
         g.last = `${b ? b.name : 'A bot'}: ${String(ev.text).replace(/\s+/g, ' ')}`.slice(0, 90);
         if (here && liveBlock(ev.botId)) { UI.addToBody(live.body, `<div class="m-text">${md(highlight(ev.text))}</div>`); UI.scrollDown(); }
         break;
@@ -355,7 +409,7 @@
         }
         break;
       case 'error':
-        messages.push({ kind: 'error', botId: ev.botId, text: ev.text });
+        messages.push({ kind: 'error', botId: ev.botId, text: ev.text, ...(ev.back ? { back: ev.back } : {}) });
         if (here) {
           const body = ev.botId ? liveBlock(ev.botId) : null;
           if (body) UI.addToBody(body, `<div class="note err">${esc(ev.text)}</div>`);
@@ -365,7 +419,12 @@
         break;
       case 'approval':
         if (!here) UI.toast(`${b ? b.name : 'A bot'} in ${g.name} needs your OK.`, 'alert');
-        else if (liveBlock(ev.botId)) { UI.addToBody(live.body, UI.approvalHtml(ev)); UI.wireApproval(ev.requestId); UI.scrollDown(true); }
+        else if (liveBlock(ev.botId)) {
+          UI.addToBody(live.body, UI.approvalHtml(ev)); UI.wireApproval(ev.requestId);
+          const section = live.body.closest('.gback');
+          if (section) openBack(section, true); // a question for you never stays folded away
+          UI.scrollDown(true);
+        }
         break;
       case 'approval_done': {
         const card = document.querySelector(`.approve[data-req="${ev.requestId}"]`);
@@ -375,6 +434,7 @@
       case 'done':
         busy.delete(g.id);
         if (here) finishLive();
+        if (here && $('#msgs')) $('#msgs').querySelectorAll('.gback.running').forEach((el) => labelBack(el, false));
         live = null;
         if (ev.last) g.last = ev.last;
         g.updatedAt = Date.now();
