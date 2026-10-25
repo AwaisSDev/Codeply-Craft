@@ -16,6 +16,8 @@ for (const [from, to] of [
   [path.join('crew-ios', 'crew.css'), 'crew.css'],
   [path.join('crew-ios', 'crew-core.js'), 'crew-core.js'],
   [path.join('crew-ios', 'crew-app.js'), 'crew-app.js'],
+  [path.join('crew-ios', 'crew-native.js'), 'crew-native.js'],
+  ['phone-reminders.js', 'phone-reminders.js'],
   [path.join('crew-ios', 'assets', 'mark-256.png'), 'mark-256.png'],
   ['phone-calls.js', 'phone-calls.js'],
   ['phone-calls.css', 'phone-calls.css'],
@@ -23,5 +25,13 @@ for (const [from, to] of [
   ['bot-avatar.js', 'bot-avatar.js'],
   [path.join('vendor', 'supabase', 'supabase.js'), 'supabase.js'],
 ]) fs.copyFileSync(path.join(root, from), path.join(target, to));
+
+// Safe areas: Android WebViews before Chromium 140 report them only through
+// Capacitor's --safe-area-inset-* variables, so the copied CSS reads --sa-*
+// (index.html sets each to the larger of the two).
+for (const css of ['crew.css', 'phone-calls.css']) {
+  const file = path.join(target, css);
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/env\(safe-area-inset-(top|bottom|left|right)(?:,\s*0(?:px)?)?\)/g, 'var(--sa-$1)'));
+}
 
 console.log(`Codeply Crew web layer ready in ${path.relative(root, target)}`);

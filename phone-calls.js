@@ -236,7 +236,8 @@ You are on a live voice call with the user, talking out loud. Everything you wri
 
   // ─── Voices ───────────────────────────────────────────────────────────────
   const synth = window.speechSynthesis || null;
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  // Codeply Crew's Android app hands in the phone's own recognizer (crew-ios/crew-native.js).
+  const SR = window.CraftNativeSR || window.SpeechRecognition || window.webkitSpeechRecognition || null;
   function hash(s) { let h = 2166136261; for (const ch of String(s)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
   /** A natural English voice, the same one for a bot every call. */
   function voiceFor(bot) {
@@ -257,7 +258,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   const IS_ANDROID = /Android/i.test(navigator.userAgent);
   let srBroken = false; // SpeechRecognition failed this session: hear with Whisper instead
   /** Hear with our own mic stream + Whisper (iOS, no SpeechRecognition, or it broke). */
-  const localEars = () => IS_IOS || IS_ANDROID || !SR || srBroken || !!api.localEars;
+  const localEars = () => (!window.CraftNativeSR && (IS_IOS || IS_ANDROID)) || !SR || srBroken || !!api.localEars;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const ECHO_TAIL_MS = 900;
   // The bot's voice goes straight out, untouched: nothing here (or in the

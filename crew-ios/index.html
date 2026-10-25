@@ -6,6 +6,15 @@
   <meta name="theme-color" content="#0c0c0c">
   <title>Codeply Crew</title>
   <link rel="icon" type="image/png" href="mark-256.png">
+  <style>
+    /* Edge to edge: the app draws under the status and navigation bars and pads by these. */
+    :root {
+      --sa-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+      --sa-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+      --sa-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
+      --sa-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
+    }
+  </style>
   <link rel="stylesheet" href="phone-calls.css">
   <link rel="stylesheet" href="crew.css">
   <script>
@@ -66,6 +75,8 @@
   <script src="supabase.js"></script>
   <script src="bot-avatar.js"></script>
   <script src="crew-core.js"></script>
+  <script src="crew-native.js"></script>
+  <script src="phone-reminders.js"></script>
   <script src="phone-calls.js"></script>
   <script src="crew-app.js"></script>
 </body>

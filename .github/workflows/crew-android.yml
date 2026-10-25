@@ -14,6 +14,7 @@ on:
       - 'phone-calls.js'
       - 'phone-calls.css'
       - 'phone-stt-worker.js'
+      - 'phone-reminders.js'
       - 'bot-avatar.js'
       - 'scripts/prepare-crew-ios.js'
       - '.github/workflows/crew-android.yml'
@@ -38,7 +39,8 @@ jobs:
 
       - name: Install Capacitor
         working-directory: crew-ios
-        run: npm install --no-audit --no-fund && npm install --no-audit --no-fund @capacitor/android@^8.5.0
+        # The phone's own speech recognizer is Android only (iPhone hears through the web path).
+        run: npm install --no-audit --no-fund && npm install --no-audit --no-fund @capacitor/android@^8.5.0 @capacitor-community/speech-recognition@7.0.1
 
       - name: Web layer
         run: node scripts/prepare-crew-ios.js
@@ -60,9 +62,16 @@ jobs:
             rm -f $dir/ic_launcher*.png $dir/ic_launcher*.webp
             cp ../../../../assets/android-icons/mipmap-$dpi/ic_launcher.png $dir/ic_launcher.png
             cp $dir/ic_launcher.png $dir/ic_launcher_round.png # launchers crop it round themselves
+            mkdir -p res/drawable-$dpi
+            cp ../../../../assets/android-icons/drawable-$dpi/ic_stat_crew.png res/drawable-$dpi/ic_stat_crew.png # notifications
           done
-          # Calls need the microphone; sharing a photo can use the camera.
-          for p in RECORD_AUDIO MODIFY_AUDIO_SETTINGS CAMERA; do
+          # Edge to edge: whatever shows behind the bars is the app's own dark background.
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="crew_bg">#0c0c0c</color>\n</resources>\n' > res/values/crew_colors.xml
+          sed -i 's#\(<style name="AppTheme.NoActionBar" [^>]*>\)#\1\n        <item name="android:windowBackground">@color/crew_bg</item>#' res/values/styles.xml
+          grep -A4 'name="AppTheme.NoActionBar"' res/values/styles.xml
+          # Calls need the microphone; sharing a photo can use the camera; agents ring
+          # and text you through notifications, on time even when the phone is idle.
+          for p in RECORD_AUDIO MODIFY_AUDIO_SETTINGS CAMERA POST_NOTIFICATIONS SCHEDULE_EXACT_ALARM USE_EXACT_ALARM VIBRATE; do
             grep -q "android.permission.$p" AndroidManifest.xml || sed -i "s#</manifest>#    <uses-permission android:name=\"android.permission.$p\" />\n</manifest>#" AndroidManifest.xml
           done
           grep uses-permission AndroidManifest.xml

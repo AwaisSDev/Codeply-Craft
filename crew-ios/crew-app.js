@@ -403,6 +403,13 @@ The user is texting you from Codeply Crew on their phone.
         if (e.timeout || /offline|didn't answer/i.test(e.message)) return askOffline(bot, turns, images, ctl.signal);
         throw e;
       }) : await askOffline(bot, turns, images, ctl.signal);
+      // "Remind me at 5" / "call me later": the reply's reminder lines become reminders (phone-reminders.js).
+      const R = window.CraftReminders;
+      if (R && reply) {
+        const { text: clean, reminds } = R.extract(reply);
+        reply = clean;
+        for (const t of reminds) R.createFromTag(t, bot).then(() => window.CrewNative && window.CrewNative.sync()).catch((e) => toast(e.message));
+      }
     } catch (e) { error = e.message || 'Something went wrong.'; }
     working.delete(bot.id);
     list.push(error ? { id: newId(), who: 'bot', text: error, error: true, at: Date.now() } : { id: newId(), who: 'bot', text: reply || '(no reply)', at: Date.now() });
@@ -412,6 +419,16 @@ The user is texting you from Codeply Crew on their phone.
   function refresh(botId) {
     if (openId === botId) paintThread();
     if (tab === 'Chats') renderChats();
+  }
+  /** An agent texted you on its own (crew-native.js, from a reminder): it lands in its chat once. */
+  function receive(botId, text, { id, at } = {}) {
+    if (!botId || !text) return;
+    const list = thread(botId);
+    if (id && list.some((m) => m.id === id)) return;
+    list.push({ id: id || newId(), who: 'bot', text, at: at || Date.now() });
+    list.sort((a, b) => a.at - b.at);
+    saveThread(botId);
+    refresh(botId);
   }
 
   // The turn runs on the PC as the agent's real run: a job we poll, which
@@ -447,7 +464,8 @@ The user is texting you from Codeply Crew on their phone.
 
   async function askOffline(bot, turns, images, signal) {
     const base = bot.prompt || `You are ${bot.name}, one of the user's agents in Codeply.${bot.specialty ? ` Your job: ${bot.specialty}.` : ''}${bot.instructions ? `\n${bot.instructions}` : ''}`;
-    const messages = [{ role: 'system', content: `${base}\n\n${TEXT_RULES_OFFLINE}` },
+    const R = window.CraftReminders;
+    const messages = [{ role: 'system', content: `${base}\n\n${TEXT_RULES_OFFLINE}${R ? R.chatRules() : ''}` },
       ...turns.map((t) => ({ role: t.who === 'bot' ? 'assistant' : 'user', content: String(t.text || '').slice(0, 4000) }))];
     const last = messages[messages.length - 1];
     if (images.length && last.role === 'user') last.content = [{ type: 'text', text: last.content || 'Look at this.' }, ...images.map((url) => ({ type: 'image_url', image_url: { url } }))];
@@ -535,6 +553,7 @@ The user is texting you from Codeply Crew on their phone.
     K.relay.user = (s && s.user) || K.relay.user;
     showTab('Chats');
     K.startRelay();
+    if (window.CrewNative) window.CrewNative.start(); // agents' calls and texts as notifications
   }
   $('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -598,6 +617,8 @@ The user is texting you from Codeply Crew on their phone.
       if (/\bbot\b/i.test(el.textContent)) el.textContent = el.textContent.replace(/\bbot\b/g, 'agent').replace(/\bBot\b/g, 'Agent');
     }
   }).observe(document.body, { childList: true, subtree: true, characterData: true });
+
+  window.CrewApp = { receive, openThread: (id) => { if (botById(id)) { $('profile').classList.add('hidden'); openThread(id); } } };
 
   (async () => {
     const s = await K.currentSession().catch(() => null);

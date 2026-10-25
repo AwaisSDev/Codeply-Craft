@@ -17,6 +17,7 @@ on:
       - 'phone-calls.js'
       - 'phone-calls.css'
       - 'phone-stt-worker.js'
+      - 'phone-reminders.js'
       - 'bot-avatar.js'
       - 'scripts/prepare-crew-ios.js'
       - '.github/workflows/crew-ios.yml'
