@@ -52,13 +52,13 @@ jobs:
       - name: Icon and permissions
         working-directory: crew-ios/android/app/src/main
         run: |
-          # Plain icons from the logo; the template's adaptive icon would draw Capacitor's.
+          # Plain icons from the logo (crew-ios/assets/android-icons); the template's adaptive icon would draw Capacitor's.
           rm -rf res/mipmap-anydpi-v26
-          for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
-            dir=res/mipmap-${d%%:*}; size=${d##*:}
+          for dpi in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            dir=res/mipmap-$dpi
             mkdir -p $dir
             rm -f $dir/ic_launcher*.png $dir/ic_launcher*.webp
-            convert ../../../../assets/icon-1024.png -resize ${size}x${size} $dir/ic_launcher.png
+            cp ../../../../assets/android-icons/mipmap-$dpi/ic_launcher.png $dir/ic_launcher.png
             cp $dir/ic_launcher.png $dir/ic_launcher_round.png # launchers crop it round themselves
           done
           # Calls need the microphone; sharing a photo can use the camera.
