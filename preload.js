@@ -173,6 +173,8 @@ contextBridge.exposeInMainWorld('craft', {
   toggleBrowserPanel: () => ipcRenderer.send('browserpanel:toggle'),
   /** A dialog or menu covers the browser panel: hide the page under it until it closes. */
   browserPanelCover: (on) => ipcRenderer.send('browserpanel:cover', !!on),
+  /** Room the docks take: the tasks column on the right, the terminal under the page. */
+  browserPanelInsets: (d) => ipcRenderer.send('browserpanel:insets', d),
   browserPanelBack: () => ipcRenderer.send('browserpanel:back'),
   browserPanelForward: () => ipcRenderer.send('browserpanel:forward'),
   browserPanelReload: () => ipcRenderer.send('browserpanel:reload'),

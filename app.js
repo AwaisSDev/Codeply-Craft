@@ -512,41 +512,101 @@ function spans(s) {
 
 // ─── Background commands ────────────────────────────────────────────────────
 // Commands the agent started with run background=true (dev servers, watchers).
-// A quiet strip behind the composer says how many run; it opens to each one's
-// latest output and a Stop button.
+// A quiet strip behind the composer says how many run and opens the
+// Background tasks panel on the right (Running, then Finished), like
+// Claude's: each row has its time and a stop square, and opens to its
+// latest output.
 const jobsBar = $('jobsBar');
 let jobsList = [];
-let jobsOpen = false;
 let jobsTimer = null;
+let jobsFinishedOpen = false;
+const jobsOpenRows = new Set(); // ids whose output is showing
+
+/** "6s", "5m 56s", "1h 4m". */
+function jobElapsed(j) {
+  const s = Math.max(0, Math.round(((j.endedAt || Date.now()) - (j.startedAt || Date.now())) / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+}
 
 function renderJobs() {
   if (!jobsBar) return;
   const running = jobsList.filter((j) => j.running);
-  if (!jobsList.length) jobsOpen = false;
-  jobsBar.classList.toggle('hidden', !jobsList.length);
+  // The strip is about this run; earlier runs' tasks wait in the column (header button).
+  const current = jobsList.filter((j) => !j.past);
+  jobsBar.classList.toggle('hidden', !current.length);
   const title = running.length
     ? `${running.length} command${running.length === 1 ? '' : 's'} running in the background`
-    : `${jobsList.length} background command${jobsList.length === 1 ? '' : 's'} finished`;
+    : `${current.length} background command${current.length === 1 ? '' : 's'} finished`;
   jobsBar.innerHTML =
-    `<div class="jobs-head-row"><button class="jobs-head" type="button" aria-expanded="${jobsOpen}"><span class="jobs-dot${running.length ? ' on' : ''}"></span><span class="jobs-title">${esc(title)}</span><svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>` +
-    `${running.length < jobsList.length ? '<button class="jobs-clear" type="button">Clear finished</button>' : ''}</div>` +
-    (jobsOpen ? `<div class="jobs-list">${jobsList.map((j) => `<div class="job"><div class="job-row"><span class="job-cmd" title="${esc(j.command)}">${esc(j.command)}</span>` +
-      `<span class="job-state${j.running ? ' on' : ''}">${j.running ? 'Running' : `Exit ${j.code}`}</span>` +
-      `${j.running ? `<button class="job-stop" type="button" data-stop="${esc(j.id)}">Stop</button>` : ''}</div><pre class="job-out" data-out="${esc(j.id)}"></pre></div>`).join('')}</div>` : '');
-  jobsBar.querySelector('.jobs-head').addEventListener('click', () => { jobsOpen = !jobsOpen; renderJobs(); });
-  const clear = jobsBar.querySelector('.jobs-clear');
-  if (clear) clear.addEventListener('click', async () => { jobsList = await window.craft.jobsClear(); renderJobs(); });
-  jobsBar.querySelectorAll('[data-stop]').forEach((b) => b.addEventListener('click', () => { b.disabled = true; b.textContent = 'Stopping'; window.craft.jobsStop(b.dataset.stop); }));
+    `<div class="jobs-head-row"><button class="jobs-head" type="button" title="Show background tasks"><span class="jobs-title">${esc(title)}</span><svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button></div>`;
+  jobsBar.querySelector('.jobs-head').addEventListener('click', () => openBgTasks());
+  renderBgTasks();
+}
+
+const BGT_CHEV = '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>';
+function bgTaskRow(j) {
+  const open = jobsOpenRows.has(j.id);
+  // How it ended: done, failed (its exit code), stopped by you, or interrupted
+  // (it was running when Craft closed); kept across restarts by main.js.
+  const status = j.status || (j.running ? 'running' : j.code ? 'failed' : 'done');
+  const word = status === 'failed' ? `exit ${esc(String(j.code))}` : status;
+  const end = j.running
+    ? `<span class="bgt-time">${jobElapsed(j)}</span><button class="bgt-stop" type="button" data-stop="${esc(j.id)}" title="Stop" aria-label="Stop ${esc(j.command)}"></button>`
+    : `<span class="bgt-time">${jobElapsed(j)}</span><span class="bgt-exit bgt-${status}">${word}</span>`;
+  return `<div class="bgt-row"><button class="bgt-main" type="button" data-toggle="${esc(j.id)}" aria-expanded="${open}" title="${esc(j.command)}"><span class="bgt-name">${esc(j.command)}</span></button>${end}</div>` +
+    `<pre class="bgt-out${open ? '' : ' hidden'}" data-out="${esc(j.id)}"></pre>`;
+}
+
+/** The Background tasks panel's list, kept current while it is open. */
+function renderBgTasks() {
+  const body = $('bgTasksBody');
+  if (!body || $('bgTasksPanel').classList.contains('hidden')) { clearInterval(jobsTimer); jobsTimer = null; return; }
+  const running = jobsList.filter((j) => j.running);
+  const finished = jobsList.filter((j) => !j.running).sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0));
+  body.innerHTML = (!jobsList.length ? '<div class="bgt-empty">Nothing running in the background.</div>' : '') +
+    (running.length ? `<div class="bgt-label">Running ${running.length}</div>${running.map(bgTaskRow).join('')}` : '') +
+    (finished.length ? `<button class="bgt-label${jobsFinishedOpen ? ' open' : ''}" type="button" data-fold="1" aria-expanded="${jobsFinishedOpen}">Finished ${finished.length} ${BGT_CHEV}</button>` +
+      (jobsFinishedOpen ? finished.map(bgTaskRow).join('') : '') : '');
+  $('bgTasksClearBtn').disabled = !finished.length;
   clearInterval(jobsTimer);
-  jobsTimer = null;
-  if (jobsOpen) {
-    fillJobOutputs();
-    if (running.length) jobsTimer = setInterval(fillJobOutputs, 1500);
-  }
+  jobsTimer = running.length ? setInterval(() => { tickBgTasks(); fillJobOutputs(); }, 1000) : null;
+  fillJobOutputs();
+}
+
+/** Only the times move each second; the rows stay put so clicks and scroll aren't lost. */
+function tickBgTasks() {
+  const body = $('bgTasksBody');
+  if (!body) return;
+  body.querySelectorAll('.bgt-row').forEach((row) => {
+    const id = row.querySelector('[data-toggle]')?.dataset.toggle;
+    const j = jobsList.find((x) => x.id === id);
+    const t = row.querySelector('.bgt-time');
+    if (j && t && j.running) t.textContent = jobElapsed(j);
+  });
+}
+
+if ($('bgTasksBody')) {
+  $('bgTasksBody').addEventListener('click', (e) => {
+    const stop = e.target.closest('[data-stop]');
+    if (stop) { stop.disabled = true; window.craft.jobsStop(stop.dataset.stop); return; }
+    if (e.target.closest('[data-fold]')) { jobsFinishedOpen = !jobsFinishedOpen; renderBgTasks(); return; }
+    const toggle = e.target.closest('[data-toggle]');
+    if (toggle) {
+      const id = toggle.dataset.toggle;
+      if (jobsOpenRows.has(id)) jobsOpenRows.delete(id); else jobsOpenRows.add(id);
+      renderBgTasks();
+    }
+  });
+  $('bgTasksClearBtn').addEventListener('click', async () => { jobsList = await window.craft.jobsClear(); renderJobs(); });
+  $('bgTasksCloseBtn').addEventListener('click', () => closeBgTasks());
 }
 
 async function fillJobOutputs() {
-  for (const pre of jobsBar.querySelectorAll('[data-out]')) {
+  const panel = $('bgTasksBody');
+  if (!panel) return;
+  for (const pre of panel.querySelectorAll('[data-out]:not(.hidden)')) {
     const text = String(await window.craft.jobsOutput(pre.dataset.out)).replace(/\u001b\[[0-9;]*[A-Za-z]/g, '').trimEnd().slice(-4000);
     if (pre.textContent === text) continue;
     const atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
@@ -1482,6 +1542,9 @@ function wireQuietLine(el) {
 }
 
 function addTurnSummary(data) {
+  // Not shown: the checks and changed files are already rows in the turn's
+  // step group above, like Claude's. Kept on the chat for the phone and Cloud.
+  if (!window.CRAFT_SHOW_TURN_SUMMARY) return;
   closeActivity();
   const files = data.files || [];
   const checks = data.checks || [];
@@ -1893,15 +1956,19 @@ $('bcTabs').addEventListener('keydown', (e) => {
 // does, the page steps aside (main.js, browserpanel:cover).
 let bcPanelWidth = 0;
 let bcCovered = false;
-const BC_OVERLAYS = '.modal-backdrop, [class*="backdrop"], .menu, .sheet, [role="dialog"], [role="menu"], [role="listbox"]';
+const BC_OVERLAYS = '.modal-backdrop, [class*="backdrop"], .menu, .sheet, [role="dialog"], [role="menu"], [role="listbox"], .term-dock.expanded';
 function syncBrowserCover() {
   let covered = false;
   if (bcPanelWidth > 0) {
-    const left = window.innerWidth - bcPanelWidth;
+    // Where the page is: left of the tasks column, under the chrome, above the terminal.
+    const right = window.innerWidth - (typeof dockTasksW === 'number' ? dockTasksW : 0);
+    const left = right - bcPanelWidth;
+    const term = document.getElementById('terminalPanel');
+    const bottom = term && term.classList.contains('under-browser') ? term.getBoundingClientRect().top : window.innerHeight;
     for (const el of document.querySelectorAll(BC_OVERLAYS)) {
       if (el.classList.contains('hidden') || el.closest('.hidden')) continue;
       const r = el.getBoundingClientRect();
-      if (!r.width || !r.height || r.right <= left) continue;
+      if (!r.width || !r.height || r.right <= left || r.left >= right || r.top >= bottom) continue;
       const cs = getComputedStyle(el);
       if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) continue;
       covered = true;
@@ -1923,6 +1990,7 @@ if (api) {
   api.onBrowserPanelState((data) => {
     bcPanelWidth = data.visible ? Number(data.width) || 0 : 0;
     syncBrowserCover();
+    requestAnimationFrame(() => layoutDock());
     const opened = data.visible && !bc.visible;
     bc.visible = data.visible;
     bc.tabs = data.tabs || [];
@@ -2118,7 +2186,7 @@ bcResize.addEventListener('pointerdown', async (e) => {
 });
 bcResize.addEventListener('pointermove', (e) => {
   if (!dragState) return;
-  dragState.ratio = (window.innerWidth - e.clientX) / window.innerWidth;
+  dragState.ratio = (window.innerWidth - dockTasksW - e.clientX) / window.innerWidth;
   if (dragState.raf) return;
   dragState.raf = requestAnimationFrame(() => {
     if (!dragState) return;
@@ -2165,7 +2233,7 @@ function ensureTerminal() {
     convertEol: true,
     fontSize: 13,
     fontFamily: 'ui-monospace, "Cascadia Mono", Consolas, monospace',
-    theme: { background: '#101012', foreground: '#e4e4e7', cursor: '#e4e4e7' },
+    theme: { background: getComputedStyle(document.body).getPropertyValue('--sidebar-bg').trim() || '#101012', foreground: '#e4e4e7', cursor: '#e4e4e7' },
     cursorBlink: true,
   });
   termFit = new FitAddon.FitAddon();
@@ -2217,26 +2285,132 @@ function ensureTerminal() {
 async function openTerminal() {
   ensureTerminal();
   $('terminalPanel').classList.remove('hidden');
-  document.querySelector('.app').classList.add('terminal-open');
   $('terminalToggleBtn').classList.add('active');
-  requestAnimationFrame(() => termFit.fit());
+  layoutDock();
   if (!termStarted && api) {
     termStarted = true;
-    await api.terminalStart(state.project || null);
+    const r = await api.terminalStart(state.project || null);
+    // The shell reads a pipe, so it prints its prompt only after a line: send one, so it opens ready.
+    if (r && r.ok && !r.already) api.terminalInput('\n');
   }
 }
 
 function closeTerminal() {
   $('terminalPanel').classList.add('hidden');
-  document.querySelector('.app').classList.remove('terminal-open');
+  $('terminalPanel').classList.remove('expanded');
   $('terminalToggleBtn').classList.remove('active');
+  layoutDock();
 }
+
+function openBgTasks() {
+  $('bgTasksPanel').classList.remove('hidden');
+  $('bgTasksToggleBtn')?.classList.add('active');
+  layoutDock();
+  renderBgTasks();
+}
+
+function closeBgTasks() {
+  $('bgTasksPanel').classList.add('hidden');
+  $('bgTasksToggleBtn')?.classList.remove('active');
+  $('bgTasksPanel').classList.remove('expanded');
+  layoutDock();
+  renderBgTasks();
+}
+
+// ─── Docks ───────────────────────────────────────────────────────────────────
+// Laid out like Claude's. Background tasks is its own column on the far
+// right. The terminal shares the browser's column: under the page when the
+// browser is open (its top edge drags), the whole column when it is closed.
+// Sizes follow the window, and the chat keeps at least CHAT_MIN wide.
+// main.js is told the insets, so Craft's page shrinks to fit instead of
+// drawing over the terminal; Expand gives the terminal the whole column, with
+// the page stepping aside under it.
+const CHAT_MIN = 420;
+let dockTasksW = 0;   // the tasks column's width, 0 while closed
+let termHeightPx = 0; // the terminal's height under the browser, once dragged
+const clampPx = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+function layoutDock() {
+  const term = $('terminalPanel');
+  const tasks = $('bgTasksPanel');
+  if (!term || !tasks) return;
+  const app = document.querySelector('.app');
+  const root = document.documentElement.style;
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  const sidebarW = document.querySelector('.sidebar')?.getBoundingClientRect().width || 0;
+  const termOpen = !term.classList.contains('hidden');
+  const tasksOpen = !tasks.classList.contains('hidden');
+  const browserOpen = !!(bc && bc.visible);
+  const termExpanded = termOpen && term.classList.contains('expanded');
+  const tasksExpanded = tasksOpen && tasks.classList.contains('expanded');
+  // The tasks column: about a fifth of the window, wider when expanded.
+  dockTasksW = !tasksOpen ? 0 : Math.round(tasksExpanded ? clampPx(W * 0.32, 320, 560) : clampPx(W * 0.2, 240, 340));
+  // The browser/terminal column, never squeezing the chat under CHAT_MIN.
+  const room = Math.max(280, W - sidebarW - dockTasksW - CHAT_MIN);
+  // With the browser open the column is the browser's own width (its edge drags it live).
+  const termW = Math.round(Math.min(clampPx(W * 0.32, 340, 620), room));
+  const column = browserOpen ? 'var(--browser-panel-width)' : termOpen ? termW + 'px' : '0px';
+  const termH = !termOpen ? 0 : (!browserOpen || termExpanded) ? H - 42 : Math.round(clampPx(termHeightPx || H * 0.38, 140, H - 42 - 220));
+  root.setProperty('--tasks-width', dockTasksW + 'px');
+  root.setProperty('--term-width', browserOpen ? 'var(--browser-panel-width)' : termW + 'px');
+  root.setProperty('--term-top', (H - termH) + 'px');
+  term.classList.toggle('under-browser', termOpen && browserOpen && !termExpanded);
+  app.style.marginRight = `calc(${column} + ${dockTasksW}px)`;
+  app.classList.toggle('dock-tasks-open', tasksOpen);
+  // Craft's browser: its chrome left of the tasks column; main.js fits the page above the terminal.
+  const chrome = $('browserChrome');
+  if (chrome) chrome.style.right = dockTasksW + 'px';
+  const edge = $('bcResize');
+  if (edge) edge.style.right = `calc(var(--browser-panel-width) + ${dockTasksW - 3}px)`;
+  const ghost = $('bcGhost');
+  if (ghost) { ghost.style.right = dockTasksW + 'px'; ghost.style.bottom = (browserOpen && termOpen && !termExpanded ? termH : 0) + 'px'; }
+  // The chat keeps CHAT_MIN: the browser gets narrower while the tasks column needs the room.
+  if (api && api.browserPanelInsets) api.browserPanelInsets({ right: dockTasksW, bottom: browserOpen && termOpen && !termExpanded ? termH : 0, maxWidth: Math.round(room) });
+  if (browserOpen) requestAnimationFrame(() => { reportBrowserLayout(); syncBrowserCover(); });
+  document.querySelectorAll('[data-dock-expand]').forEach((b) => {
+    const on = $(b.dataset.dockExpand).classList.contains('expanded');
+    b.classList.toggle('active', on);
+    b.title = on ? 'Collapse' : 'Expand';
+  });
+  if (term && termFit && termOpen) requestAnimationFrame(() => { try { termFit.fit(); } catch {} });
+}
+document.querySelectorAll('[data-dock-expand]').forEach((b) => b.addEventListener('click', () => {
+  const panel = $(b.dataset.dockExpand);
+  panel.classList.toggle('expanded');
+  layoutDock();
+}));
+window.addEventListener('resize', () => layoutDock());
+// Drag the terminal's top edge to give it more or less of the column.
+(() => {
+  const panel = $('terminalPanel');
+  if (!panel) return;
+  const grip = document.createElement('div');
+  grip.className = 'term-resize';
+  grip.setAttribute('role', 'separator');
+  grip.setAttribute('aria-orientation', 'horizontal');
+  grip.setAttribute('aria-label', 'Resize the terminal');
+  panel.prepend(grip);
+  let dragging = false;
+  grip.addEventListener('pointerdown', (e) => { if (e.button !== 0) return; dragging = true; grip.setPointerCapture(e.pointerId); e.preventDefault(); });
+  grip.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    termHeightPx = window.innerHeight - e.clientY;
+    layoutDock();
+  });
+  const end = () => { dragging = false; };
+  grip.addEventListener('pointerup', end);
+  grip.addEventListener('pointercancel', end);
+})();
 
 $('terminalToggleBtn').addEventListener('click', () => {
   if ($('terminalPanel').classList.contains('hidden')) openTerminal();
   else closeTerminal();
 });
 $('termCloseBtn').addEventListener('click', closeTerminal);
+$('bgTasksToggleBtn').addEventListener('click', () => {
+  if ($('bgTasksPanel').classList.contains('hidden')) openBgTasks();
+  else closeBgTasks();
+});
 $('termClearBtn').addEventListener('click', () => term && term.clear());
 
 // ─── Sidebar lists ──────────────────────────────────────────────────────────

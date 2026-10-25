@@ -103,15 +103,81 @@ async function loadEngine() {
   require(path.join(CLI_DIR, 'lib', 'reach.js')).setHandler({ reach: (a) => botsWatch.reachPhone(a), watchEmail: (a) => botsWatch.addAlert(a) });
   agentMod = await import(pathToFileURL(agentPath).href);
   // Background commands (run with background=true) are listed under the composer.
-  if (agentMod.backgroundJobs) agentMod.backgroundJobs.onChange(() => { if (win && !win.isDestroyed()) win.webContents.send('jobs:changed', agentMod.backgroundJobs.list()); });
+  if (agentMod.backgroundJobs) agentMod.backgroundJobs.onChange(() => { jobsChanged(); });
   return true;
 }
 
 const jobsApi = () => (agentMod && agentMod.backgroundJobs) || null;
-ipcMain.handle('jobs:list', () => (jobsApi() ? jobsApi().list() : []));
-ipcMain.handle('jobs:output', (e, id) => (jobsApi() ? jobsApi().output(id) : ''));
-ipcMain.handle('jobs:stop', (e, id) => (jobsApi() ? jobsApi().stop(id) : false));
-ipcMain.handle('jobs:clear', () => { if (jobsApi()) jobsApi().clear(); return jobsApi() ? jobsApi().list() : []; });
+
+// Background tasks outlive the app in the list: each one (with the end of its
+// output) is saved to background-tasks.json as it changes, and on the next
+// start the ones that were still running when Craft closed or crashed show as
+// "interrupted"; the rest keep how they ended: done, failed (exit code) or
+// stopped. Live jobs number from 1 each run, so a run stamp keeps ids apart.
+const JOBS_FILE = () => path.join(app.getPath('userData'), 'background-tasks.json');
+const JOBS_KEEP_OUT = 8000;  // characters of output kept per task
+const JOBS_KEEP = 40;        // finished tasks kept
+const RUN_STAMP = Date.now().toString(36);
+const stoppedJobs = new Set(); // live ids the person stopped
+let pastJobs = [];             // tasks from earlier runs of Craft
+let jobsQuitting = false;
+try {
+  const saved = JSON.parse(fs.readFileSync(JOBS_FILE(), 'utf8'));
+  pastJobs = (Array.isArray(saved.tasks) ? saved.tasks : []).map((t) => (t.status === 'running'
+    ? { ...t, status: 'interrupted', running: false, past: true, endedAt: t.endedAt || saved.savedAt || Date.now() }
+    : { ...t, running: false, past: true }));
+} catch {}
+
+/** One live job as a task card: id unique across runs, and how it stands. */
+function liveTask(j) {
+  const status = j.running ? 'running' : stoppedJobs.has(j.id) ? 'stopped' : j.code ? 'failed' : 'done';
+  return { ...j, id: `${RUN_STAMP}-${j.id}`, liveId: j.id, status };
+}
+function allTasks() {
+  const live = jobsApi() ? jobsApi().list().map(liveTask) : [];
+  return [...live, ...pastJobs];
+}
+const liveIdOf = (id) => {
+  const m = new RegExp(`^${RUN_STAMP}-(.+)$`).exec(String(id));
+  return m ? m[1] : null;
+};
+let jobsSaveTimer = null;
+function saveTasks() {
+  clearTimeout(jobsSaveTimer);
+  jobsSaveTimer = null;
+  if (jobsQuitting && !saveTasks.final) return;
+  const api = jobsApi();
+  const tasks = allTasks().map((t) => {
+    const out = t.liveId != null && api ? api.output(t.liveId) : (t.out || '');
+    const { liveId, ...rest } = t;
+    return { ...rest, out: String(out || '').slice(-JOBS_KEEP_OUT) };
+  });
+  const running = tasks.filter((t) => t.status === 'running');
+  const ended = tasks.filter((t) => t.status !== 'running').sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0)).slice(0, JOBS_KEEP);
+  try { fs.writeFileSync(JOBS_FILE(), JSON.stringify({ savedAt: Date.now(), tasks: [...running, ...ended] })); } catch {}
+}
+function jobsChanged() {
+  if (win && !win.isDestroyed()) win.webContents.send('jobs:changed', allTasks());
+  if (!jobsSaveTimer) jobsSaveTimer = setTimeout(saveTasks, 800);
+}
+ipcMain.handle('jobs:list', () => allTasks());
+ipcMain.handle('jobs:output', (e, id) => {
+  const live = liveIdOf(id);
+  if (live != null) return jobsApi() ? jobsApi().output(live) : '';
+  return (pastJobs.find((t) => t.id === id) || {}).out || '';
+});
+ipcMain.handle('jobs:stop', (e, id) => {
+  const live = liveIdOf(id);
+  if (live == null || !jobsApi()) return false;
+  stoppedJobs.add(live);
+  return jobsApi().stop(live);
+});
+ipcMain.handle('jobs:clear', () => {
+  if (jobsApi()) jobsApi().clear();
+  pastJobs = [];
+  saveTasks();
+  return allTasks();
+});
 
 // ─── Session store ──────────────────────────────────────────────────────────
 // One JSON file in userData. Each session keeps the renderer-facing message
@@ -1528,6 +1594,14 @@ let panelDragging = false;
 // A dialog or menu in Craft's window reaches over the panel: the page is a
 // native view that would draw on top of it, so it steps aside until it closes.
 let panelCovered = false;
+// Room Craft's docks take (app.js layoutDock): the Background tasks column on
+// the right, the terminal under the page. The page fits between them.
+let panelInsets = { right: 0, bottom: 0, maxWidth: 0 };
+/** The panel's width: the saved share of the window, narrower while the docks need the room (the saved share stays). */
+function panelWidthFor(width) {
+  const w = Math.round(width * panelRatio);
+  return panelInsets.maxWidth > 0 ? Math.max(280, Math.min(w, panelInsets.maxWidth)) : w;
+}
 
 // The tab strip, address bar and buttons live in Craft's own HTML
 // (index.html's #browserChrome), not inside the BrowserView - a BrowserView
@@ -1550,7 +1624,7 @@ const httpUrl = (u) => /^https?:\/\//i.test(String(u || ''));
 function sendPanelState() {
   if (!win || win.isDestroyed()) return;
   const { width } = win.getContentBounds();
-  const panelWidth = panelVisible ? Math.round(width * panelRatio) : 0;
+  const panelWidth = panelVisible ? panelWidthFor(width) : 0;
   const v = activeView();
   win.webContents.send('browserpanel:state', {
     visible: panelVisible,
@@ -1616,15 +1690,15 @@ function positionCheckerView() {
   const view = activeView();
   if (!win || win.isDestroyed() || !view || panelDragging) return;
   const { width, height } = win.getContentBounds();
-  const panelWidth = Math.round(width * panelRatio);
+  const panelWidth = panelWidthFor(width);
   const top = panelTop;
   // Tablet/mobile: a centered frame of the real width, so the page lays out
   // exactly as it would on that device.
   const viewWidth = panelSize ? Math.min(panelSize.width, panelWidth) : panelWidth;
   if (panelCovered) { view.setBounds({ x: width + 100, y: top, width: 1, height: 1 }); return; }
   view.setBounds({
-    x: width - panelWidth + Math.floor((panelWidth - viewWidth) / 2), y: top,
-    width: viewWidth, height: Math.max(0, height - top),
+    x: width - panelInsets.right - panelWidth + Math.floor((panelWidth - viewWidth) / 2), y: top,
+    width: viewWidth, height: Math.max(1, height - top - panelInsets.bottom),
   });
 }
 
@@ -1646,6 +1720,17 @@ function hideCheckerPanel() {
   panelVisible = false;
   sendPanelState();
 }
+
+ipcMain.on('browserpanel:insets', (e, d) => {
+  if (!win || e.sender !== win.webContents) return;
+  const px = (v) => Math.max(0, Math.min(4000, Math.round(Number(v) || 0)));
+  const next = { right: px(d && d.right), bottom: px(d && d.bottom), maxWidth: px(d && d.maxWidth) };
+  if (next.right === panelInsets.right && next.bottom === panelInsets.bottom && next.maxWidth === panelInsets.maxWidth) return;
+  const widthChanged = next.maxWidth !== panelInsets.maxWidth;
+  panelInsets = next;
+  positionCheckerView();
+  if (widthChanged) sendPanelState(); // the chrome and the chat follow the new width
+});
 
 ipcMain.on('browserpanel:cover', (e, on) => {
   if (!win || e.sender !== win.webContents || panelCovered === !!on) return;
@@ -4306,6 +4391,10 @@ app.on('quit', () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
+  // Saved first, as they stand: the ones still running show as interrupted next time.
+  saveTasks.final = true;
+  saveTasks();
+  jobsQuitting = true;
   if (jobsApi()) jobsApi().stopAll(); // background commands end with the app
   drop.dispose();
   voiceMode.dispose();
