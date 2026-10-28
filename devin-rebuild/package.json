@@ -1,0 +1,21 @@
+{
+  "name": "dvn",
+  "version": "0.1.0",
+  "description": "A clean-room terminal coding agent rebuilt from the observable behaviour of Devin CLI: same commands, config files, rules, skills, hooks, MCP and permission modes.",
+  "type": "module",
+  "bin": {
+    "dvn": "bin/dvn.mjs"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node bin/dvn.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "license": "MIT"
+}
