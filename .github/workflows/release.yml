@@ -38,16 +38,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 24: the DSH engine is built with it and ships with it (scripts/package-dsh.mjs).
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Install dependencies
         run: npm install
 
       - name: Engine tests
         run: npm run test:engine
+
+      - name: Build and stage the DSH engine
+        shell: bash
+        run: |
+          npm install -g pnpm@11.28.5
+          cd craft-dsh && pnpm install --frozen-lockfile && pnpm run build && cd ..
+          node scripts/package-dsh.mjs
 
       # Bakes the Connect Apps OAuth credentials into the build (see
       # scripts/embed-secrets.js). Add these as repository secrets.
@@ -71,6 +79,7 @@ jobs:
       - name: Build & publish Windows
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CODEPLY_REQUIRE_DSH: '1'
         run: npx electron-builder --win --publish always
 
   build-mac:
@@ -82,10 +91,17 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Install dependencies
         run: npm install
+
+      # Staged for this runner's CPU (Apple silicon); the Intel build leaves it out (scripts/after-pack.js).
+      - name: Build and stage the DSH engine
+        run: |
+          npm install -g pnpm@11.28.5
+          cd craft-dsh && pnpm install --frozen-lockfile && pnpm run build && cd ..
+          node scripts/package-dsh.mjs
 
       - name: Embed OAuth app credentials
         env:

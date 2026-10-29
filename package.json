@@ -14,7 +14,8 @@
     "android:build": "npm run android:sync && set \"JAVA_HOME=%CD%\\android\\jdk21\" && cd android && gradlew.bat assembleDebug --no-daemon && copy app\\build\\outputs\\apk\\debug\\app-debug.apk ..\\CodeplyCraft.apk",
     "android:open": "npx cap open android",
     "embed-secrets": "node scripts/embed-secrets.js",
-    "dist": "node scripts/embed-secrets.js && electron-builder --win",
+    "package:dsh": "node scripts/package-dsh.mjs",
+    "dist": "node scripts/embed-secrets.js && node scripts/package-dsh.mjs && electron-builder --win",
     "test:engine": "node scripts/engine-test.mjs",
     "test:brain": "node scripts/brain-test.mjs"
   },
@@ -64,6 +65,7 @@
       "!out",
       "!codeply-cli",
       "!craft-dsh",
+      "!dsh-runtime",
       "!.env",
       "!.env.*",
       "!scripts/engine-test.mjs",

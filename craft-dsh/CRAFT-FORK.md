@@ -103,5 +103,5 @@ The Claude Code subagent provider needs Claude Code installed and signed in on t
 
 ## Not done yet
 
-- Packaging: the installed app does not ship `craft-dsh` yet (it is excluded from the app files). It needs a Node 24 runtime or the single-exe build, plus `extraResources`.
+- Packaging, in progress: `scripts/package-dsh.mjs` stages the built CLI as a plain node_modules tree (no pnpm links; LibreOffice, offline speech models, the web GUI's client packages and other platforms' binaries left out) plus the Node 24 that runs it in `dsh-runtime/`; `scripts/after-pack.js` copies it into the app's resources, and `findDsh()` in `codeply-cli/lib/dsh-acp.mjs` uses it when no craft-dsh checkout is there. The release workflow builds and stages it; the Intel Mac build leaves it out (the staged Node is Apple silicon). `.github/workflows/dsh-build-test.yml` builds a test installer on push to `ci/dsh-build`.
 - Craft-only features (Life, bots, the shared brain, phone relay, the design layer) are still Classic only. They move over as DSH plugins next.

@@ -1,0 +1,59 @@
+name: Test build with DSH
+
+# A full Windows installer with the DSH engine inside, never published:
+# push to ci/dsh-build to run it. It builds DSH, stages it with Node 24
+# (scripts/package-dsh.mjs), builds the installer, starts the packaged engine
+# (scripts/dsh-smoke.mjs), reports the sizes and keeps the installer as an
+# artifact for 7 days.
+on:
+  push:
+    branches:
+      - 'ci/dsh-build'
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build and stage the DSH engine
+        shell: bash
+        run: |
+          npm install -g pnpm@11.28.5
+          cd craft-dsh && pnpm install --frozen-lockfile && pnpm run build && cd ..
+          node scripts/package-dsh.mjs
+
+      - name: Build the installer (not published)
+        env:
+          CODEPLY_REQUIRE_DSH: '1'
+        run: npx electron-builder --win --publish never
+
+      - name: Start the packaged engine
+        run: node scripts/dsh-smoke.mjs dist/win-unpacked/resources
+
+      - name: Sizes
+        shell: bash
+        run: |
+          {
+            echo "### Sizes"
+            echo "| What | Size |"
+            echo "|---|---|"
+            for f in dist/*.exe; do echo "| Installer $(basename "$f") | $(du -h "$f" | cut -f1) |"; done
+            echo "| Installed app (unpacked) | $(du -sh dist/win-unpacked | cut -f1) |"
+            echo "| DSH engine + Node 24 | $(du -sh dist/win-unpacked/resources/dsh-runtime | cut -f1) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codeply-installer-with-dsh
+          path: dist/*.exe
+          retention-days: 7

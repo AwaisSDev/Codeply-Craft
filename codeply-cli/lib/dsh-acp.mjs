@@ -52,16 +52,25 @@ const HAZE_PATCH = `# Written by the Codeply CLI: the ACP profile answers throug
 
 /** Where the engine lives and which Node runs it, or a readable reason it cannot start. */
 export function findDsh() {
-  const dir = process.env.CODEPLY_DSH_DIR || path.resolve(HERE, '..', '..', 'craft-dsh');
-  const bin = path.join(dir, 'apps', 'cli', 'lib', 'bin.js');
-  if (!fs.existsSync(bin)) {
-    return { error: `The DSH engine is not built at ${dir}. In craft-dsh run: pnpm install, then pnpm run build. Or set CODEPLY_DSH_DIR.` };
+  // A built craft-dsh checkout (development), else the engine the installer
+  // ships in resources/dsh-runtime (scripts/package-dsh.mjs), with its own Node.
+  const layout = (d) => {
+    const own = path.join(d, process.platform === 'win32' ? 'node.exe' : 'node');
+    if (fs.existsSync(path.join(d, 'apps', 'cli', 'lib', 'bin.js'))) return { dir: d, bin: path.join(d, 'apps', 'cli', 'lib', 'bin.js'), ownNode: '' };
+    if (fs.existsSync(path.join(d, 'engine', 'lib', 'bin.js'))) return { dir: d, bin: path.join(d, 'engine', 'lib', 'bin.js'), ownNode: fs.existsSync(own) ? own : '' };
+    return null;
+  };
+  const dev = process.env.CODEPLY_DSH_DIR || path.resolve(HERE, '..', '..', 'craft-dsh');
+  const found = layout(dev) || (process.env.CODEPLY_DSH_DIR ? null : layout(path.resolve(HERE, '..', '..', 'dsh-runtime')));
+  const { dir, bin, ownNode } = found || { dir: dev, bin: path.join(dev, 'apps', 'cli', 'lib', 'bin.js'), ownNode: '' };
+  if (!found) {
+    return { error: `The DSH engine is not built at ${dev}. In craft-dsh run: pnpm install, then pnpm run build. Or set CODEPLY_DSH_DIR.` };
   }
   const okVersion = (v) => {
     const [maj, min] = String(v).replace(/^v/, '').split('.').map(Number);
     return maj > MIN_NODE[0] || (maj === MIN_NODE[0] && min >= MIN_NODE[1]);
   };
-  let node = process.env.CODEPLY_DSH_NODE;
+  let node = process.env.CODEPLY_DSH_NODE || ownNode;
   if (!node && okVersion(process.version)) node = process.execPath;
   if (!node) node = 'node';
   if (node !== process.execPath) {
