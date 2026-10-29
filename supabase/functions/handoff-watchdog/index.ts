@@ -94,7 +94,7 @@ async function tokenFor(row: any): Promise<{ token: string; via: string } | null
 async function dispatch(row: any) {
   const access = await tokenFor(row);
   if (!access) {
-    await admin.rpc('handoff_mark', { p_session_id: row.session_id, p_state: 'no_credentials', p_note: 'No GitHub access for the cloud: connect GitHub in Craft or install the Codeply GitHub app.' });
+    await admin.rpc('handoff_mark', { p_session_id: row.session_id, p_state: 'no_credentials', p_note: 'No GitHub access for the cloud: connect GitHub in Codeply or install the Codeply GitHub app.' });
     return { session: row.session_id, ok: false, why: 'no credentials' };
   }
   const r = await gh(access.token, 'POST', `/repos/${row.repo}/actions/workflows/${WORKFLOW}/dispatches`, {

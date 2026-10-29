@@ -220,9 +220,9 @@
         const res = await fetch(`${API}/repos/${repo}/actions/jobs/${job.id}/logs`, { headers: { Authorization: `Bearer ${creds.token}` } });
         if (res.ok) log = await res.text();
       } catch {}
-      if (/No matching version found for codeply-cli|notarget[\s\S]{0,200}codeply-cli/i.test(log)) return 'GitHub couldn\'t install Craft\'s cloud engine: that version isn\'t on npm yet. Publish it, then run again.';
+      if (/No matching version found for codeply-cli|notarget[\s\S]{0,200}codeply-cli/i.test(log)) return 'GitHub couldn\'t install Codeply\'s cloud engine: that version isn\'t on npm yet. Publish it, then run again.';
       if (/Resource not accessible by integration/i.test(log)) return 'GitHub refused the run permission to save its work (mirror repo Settings > Actions > Workflow permissions).';
-      if (step) return step.name === 'Run Craft' ? 'Craft stopped before it could report back. Open the log for details.' : `The "${step.name}" step failed on GitHub.`;
+      if (step) return step.name === 'Run Craft' ? 'Codeply stopped before it could report back. Open the log for details.' : `The "${step.name}" step failed on GitHub.`;
       return null;
     } catch { return null; }
   }
@@ -246,7 +246,7 @@
         if (check && check.status === 'completed') {
           Object.assign(t, { status: check.conclusion === 'success' ? 'done' : 'failed', answer: data.answer || '', files: data.files || [], stats: data.stats || [], branch: data.branch || null, merged: data.merged || null, error: data.error || null });
         } else if (run.status === 'completed') {
-          Object.assign(t, { status: run.conclusion === 'cancelled' ? 'cancelled' : 'failed', error: run.conclusion === 'cancelled' ? null : (await diagnose(t.repo, run.id)) || 'The run ended before Craft could report back. The log has details.' });
+          Object.assign(t, { status: run.conclusion === 'cancelled' ? 'cancelled' : 'failed', error: run.conclusion === 'cancelled' ? null : (await diagnose(t.repo, run.id)) || 'The run ended before Codeply could report back. The log has details.' });
         } else t.status = run.status === 'in_progress' ? 'running' : 'queued';
       } catch (e) { t.lastError = e.message; }
     }
@@ -324,7 +324,7 @@
     const live = LIVE.has(t.status);
     // Repo projects merge on GitHub; a private copy waits for Apply on the PC.
     const note = t.status === 'done' && (t.files || []).length && !(t.merged && t.merged.ok) && t.kind !== 'repo'
-      ? '<div class="cloud-m-notice">Craft on your PC applies these changes: open the chat there, or the Cloud chip, and tap Apply.</div>' : '';
+      ? '<div class="cloud-m-notice">Codeply on your PC applies these changes: open the chat there, or the Cloud chip, and tap Apply.</div>' : '';
     const line = `<div class="cloud-m-card ${t.status}${live ? ' live' : ''}">${cardHtml(t)}</div>`;
     return `<article class="message-bubble user">${escapeHtml(t.prompt)}</article>
       ${live ? line : ''}${events}
@@ -348,7 +348,7 @@
       </header>
       <div class="cloud-chat-feed"></div>
       <form class="cloud-chat-composer">
-        <textarea rows="1" placeholder="Ask Craft in the cloud..."></textarea>
+        <textarea rows="1" placeholder="Ask Codeply in the cloud..."></textarea>
         <div class="cloud-chat-row">
           <div class="cloud-m-modes">${['Build', 'Ask', 'Plan'].map((m) => `<button type="button" data-cmode="${m}">${m}</button>`).join('')}</div>
           <button type="submit" class="cloud-chat-send" aria-label="Send"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button>
@@ -384,7 +384,7 @@
       alt.type = 'button';
       alt.addEventListener('click', open);
       find.insertBefore(alt, document.getElementById('findSignOutBtn'));
-      syncOfflineButton = () => { alt.textContent = creds && creds.token ? 'Run in the cloud instead' : 'Use Craft Cloud instead'; };
+      syncOfflineButton = () => { alt.textContent = creds && creds.token ? 'Run in the cloud instead' : 'Use the cloud instead'; };
       syncOfflineButton();
     }
   }
@@ -411,12 +411,12 @@
     if (!creds || !creds.token || creds.expired) {
       composer.classList.add('hidden');
       select.classList.add('hidden');
-      const link = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=Craft%20Cloud%20(phone)';
+      const link = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=Codeply%20cloud%20(phone)';
       feed.innerHTML = `<div class="cloud-chat-empty">
         <div class="cloud-chat-empty-mark">${ICON}</div>
-        <h2>Craft Cloud</h2>
+        <h2>Cloud runs</h2>
         <p>Runs on GitHub in your own account, even with your PC off. This phone needs to reach your GitHub first.</p>
-        <p><b>Easiest:</b> open Craft on your PC once. This phone picks up your GitHub login on its own.</p>
+        <p><b>Easiest:</b> open Codeply on your PC once. This phone picks up your GitHub login on its own.</p>
         <p><b>PC is off right now?</b> <a href="${link}" target="_blank" rel="noopener">Create a GitHub token</a> (repo and workflow come ticked), then paste it here. It stays on this phone.</p>
         <input class="cloud-m-select cloud-m-token" type="password" autocomplete="off" placeholder="ghp_... or github_pat_...">
         <button type="button" class="cloud-m-run" data-act="token">Connect GitHub</button>
@@ -436,7 +436,7 @@
       composer.classList.add('hidden');
       select.classList.add('hidden');
       feed.innerHTML = `<div class="cloud-chat-empty"><div class="cloud-chat-empty-mark">${ICON}</div><h2>No cloud projects yet</h2>
-        <p>GitHub is connected${creds.login ? ` as <b>${escapeHtml(creds.login)}</b>` : ''}. In Craft on your PC, open a project, tap the <b>Cloud</b> chip under the message box, then <b>Set up</b>. It shows up here right after, even with the PC off.</p>
+        <p>GitHub is connected${creds.login ? ` as <b>${escapeHtml(creds.login)}</b>` : ''}. In Codeply on your PC, open a project, tap the <b>Cloud</b> chip under the message box, then <b>Set up</b>. It shows up here right after, even with the PC off.</p>
         <button type="button" class="cloud-m-run" data-act="recheck">Check again</button></div>`;
       feed.querySelector('[data-act="recheck"]').addEventListener('click', async () => { await refreshCreds(); render(true); });
       lastSig = '';
@@ -454,7 +454,7 @@
     const nearBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 120;
     const openRows = new Set([...feed.querySelectorAll('details[open]')].map((d) => d.dataset.k));
     feed.innerHTML = list.length ? list.map(taskHtml).join('') : `<div class="cloud-chat-empty"><div class="cloud-chat-empty-mark">${ICON}</div><h2>Ask anything</h2>
-      <p>Craft works on the last backup of <b>${escapeHtml((creds.projects.find((p) => p.repo === repo) || {}).name || '')}</b> on GitHub. You'll see every command and change here, like a normal chat.</p></div>`;
+      <p>Codeply works on the last backup of <b>${escapeHtml((creds.projects.find((p) => p.repo === repo) || {}).name || '')}</b> on GitHub. You'll see every command and change here, like a normal chat.</p></div>`;
     feed.querySelectorAll('details').forEach((d, i) => { d.dataset.k = String(i); if (openRows.has(d.dataset.k)) d.open = true; });
     if (nearBottom || force || sig.split('|')[1] !== lastSig.split('|')[1]) feed.scrollTop = feed.scrollHeight;
     lastSig = sig;

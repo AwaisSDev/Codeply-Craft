@@ -310,7 +310,7 @@
         };
         src.connect(mic.node);
       } catch (e) {
-        api.send('mic-error', { error: e && e.name === 'NotAllowedError' ? 'the microphone is blocked. Allow it for Codeply Craft in your system settings.' : (e && e.message) || 'no microphone' });
+        api.send('mic-error', { error: e && e.name === 'NotAllowedError' ? 'the microphone is blocked. Allow it for Codeply in your system settings.' : (e && e.message) || 'no microphone' });
         micRelease();
       }
     })();

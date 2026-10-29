@@ -155,7 +155,7 @@ function buildPrompt(ctx, repo, pr) {
   if (ctx.hunk && ctx.hunk.path) lines.push('', `The request is on ${ctx.hunk.path}${ctx.hunk.line ? ` line ${ctx.hunk.line}` : ''}:`, '```diff', String(ctx.hunk.diff || '').slice(0, 3000), '```');
   if (pr) lines.push('', `The pull request branch "${pr.head}" is checked out. It targets ${pr.base}; use git diff origin/${pr.base}...HEAD to see its changes.`);
   lines.push('', `Request from @${ctx.author}: ${ctx.prompt}`, '',
-    'Make the change in the checked-out repository. Do not commit, push or open pull requests yourself; Craft does that after you finish. End with a short summary of what you did and why, written for the person who asked.');
+    'Make the change in the checked-out repository. Do not commit, push or open pull requests yourself; Codeply does that after you finish. End with a short summary of what you did and why, written for the person who asked.');
   return lines.join('\n');
 }
 
@@ -189,7 +189,7 @@ export async function runGithubAgent({
   };
 
   if (setupError) {
-    await say(`Craft can't start yet: ${setupError}`);
+    await say(`Codeply can't start yet: ${setupError}`);
     return { status: 'failed', message: setupError };
   }
 
@@ -245,7 +245,7 @@ export async function runGithubAgent({
     }
     const subject = ctx.prompt.split('\n')[0].slice(0, 60);
     await git(cwd, ['-c', 'user.name=codeply[bot]', '-c', 'user.email=codeply-bot@users.noreply.github.com', 'commit', '-m',
-      `${subject}\n\nRequested by @${ctx.author} in #${ctx.number}, done by Codeply Craft.`]);
+      `${subject}\n\nRequested by @${ctx.author} in #${ctx.number}, done by Codeply.`]);
     const sha = (await git(cwd, ['rev-parse', 'HEAD'])).slice(0, 7);
     await git(cwd, ['push', 'origin', `HEAD:refs/heads/${branch}`], { auth });
     const changed = staged.split('\n').length;
@@ -258,13 +258,13 @@ export async function runGithubAgent({
     try {
       made = await api('POST', `/repos/${repo}/pulls`, {
         title: ctx.title ? `Fix: ${ctx.title}`.slice(0, 120) : subject, head: branch, base,
-        body: `${answer}\n\nCloses #${ctx.number}\n\n<sub>Opened by Codeply Craft at @${ctx.author}'s request.</sub>`,
+        body: `${answer}\n\nCloses #${ctx.number}\n\n<sub>Opened by Codeply at @${ctx.author}'s request.</sub>`,
       });
     } catch (e) {
       // New repos block Actions from opening PRs; the branch is pushed, so hand over a one-click link.
       if (!/not permitted to create/i.test(e.message)) throw e;
       const compare = `${serverUrl}/${repo}/compare/${base}...${encodeURIComponent(branch)}?expand=1`;
-      await say(`${answer}\n\nPushed ${changed} changed file${changed === 1 ? '' : 's'} to \`${branch}\` (${sha}). [Open the pull request](${compare}).\n\nTo let Craft open pull requests itself, turn on Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests".`);
+      await say(`${answer}\n\nPushed ${changed} changed file${changed === 1 ? '' : 's'} to \`${branch}\` (${sha}). [Open the pull request](${compare}).\n\nTo let Codeply open pull requests itself, turn on Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests".`);
       return { status: 'pushed', message: answer, url: compare };
     }
     await say(`${answer}\n\nOpened ${made.html_url} (${changed} changed file${changed === 1 ? '' : 's'}, ${steps} steps).`);
@@ -305,7 +305,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Run Codeply Craft
+      - name: Run Codeply
         run: npx -y codeply-cli@0.3 github run
         env:
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}

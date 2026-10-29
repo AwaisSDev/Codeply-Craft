@@ -23,15 +23,15 @@ const ipcMain = {
   handle: (ch, fn) => rawIpc.handle(`crew:${ch}`, asCrew(fn)),
   on: (ch, fn) => rawIpc.on(`crew:${ch}`, asCrew(fn)),
 };
-let ENGINE = null; // Craft's codeply-cli folder, set by init()
+let ENGINE = null; // Codeply's codeply-cli folder, set by init()
 const brainLib = () => require(path.join(ENGINE, 'lib', 'brain.js'));
 // Crew's threads and settings stay where the standalone app kept them.
 const CREW_DATA = path.join(app.getPath('appData'), 'Codeply Crew');
 const voice = require('./voice');
 
 let win = null;
-let view = null;      // Crew inside Craft's window (the Crew tab), instead of its own window
-let viewHost = null;  // the Craft window it is attached to, while shown
+let view = null;      // Agents inside Codeply's window (the Agents tab), instead of its own window
+let viewHost = null;  // the Codeply window it is attached to, while shown
 let auth = null; let config = null; let ai = null; let bots = null; let history = null; let agentMod = null;
 
 async function engine() {
@@ -157,7 +157,7 @@ function createWindow() {
     show: false, frame: false, backgroundColor: '#0b0b0c',
     icon: path.join(__dirname, 'assets', 'icon.ico'),
     autoHideMenuBar: true,
-    title: 'Codeply Crew',
+    title: 'Codeply',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
   win.once('ready-to-show', () => win.show());

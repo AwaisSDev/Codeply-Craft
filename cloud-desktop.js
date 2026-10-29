@@ -130,7 +130,7 @@ function taskView(t, p) {
 async function setup(cwd, opts = {}) {
   if (!cwd) return { error: 'Pick a project folder first.' };
   if (!githubToken()) return { error: 'Connect GitHub first.', needsGithub: true };
-  if (!(await githubScopesOk())) return { error: 'Reconnect GitHub so Craft may create private repos and workflow files.', needsGithub: true };
+  if (!(await githubScopesOk())) return { error: 'Reconnect GitHub so Codeply may create private repos and workflow files.', needsGithub: true };
   const c = await lib();
   const model = deps.configLib().getSelectedModel();
   const check = c.cloudModelConfig(model);
@@ -485,7 +485,7 @@ function resume() {
   for (const session of deps.allSessions()) {
     for (const m of session.messages) {
       if (m.kind === 'cloud_task' && m.task && !TERMINAL.has(m.task.status)) {
-        if (String(m.task.id).startsWith('pending-')) { m.task = { ...m.task, status: 'failed', error: 'Craft closed before the run started.' }; deps.persist(session); }
+        if (String(m.task.id).startsWith('pending-')) { m.task = { ...m.task, status: 'failed', error: 'Codeply closed before the run started.' }; deps.persist(session); }
         else poll(session.id, session.cwd, m.task.id, 0);
       }
     }
@@ -564,7 +564,7 @@ async function startTask({ cwd, prompt, sessionId }) {
   try {
     const c = await lib();
     const p = c.getProject(cwd);
-    if (!p || !p.repo) return { error: 'Craft Cloud is not set up for this folder yet. Open it in Classic and turn on the Cloud chip once; after that, Craft Cloud works here too.' };
+    if (!p || !p.repo) return { error: 'The cloud is not set up for this folder yet. Open it in Classic and turn on the Cloud chip once; after that, the cloud works here too.' };
     const token = githubToken();
     if (!token) return { error: 'GitHub is not connected. Connect it in Connect Apps.' };
     const model = deps.configLib().getSelectedModel();

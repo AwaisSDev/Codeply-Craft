@@ -179,7 +179,7 @@
       </div>
       <div class="us-chart">${chart(ws, mode, sel)}<div class="us-tip" hidden></div></div>
       ${breakdown(ws, rows)}
-      <p class="us-foot">${short(data.calls)} model calls across Craft, Crew, the CLI, Cloud and your phone. Counts only, never what you wrote.</p>`;
+      <p class="us-foot">${short(data.calls)} model calls across the app, your agents, the CLI, cloud runs and your phone. Counts only, never what you wrote.</p>`;
     body.querySelectorAll('.us-seg button').forEach((b) => b.addEventListener('click', () => { mode = b.dataset.mode; sel = null; render(); }));
     const x = body.querySelector('.us-detail-x');
     if (x) x.addEventListener('click', () => { sel = null; render(); });
@@ -227,7 +227,7 @@
     requestAnimationFrame(() => root && root.classList.add('open'));
     data = null; sel = null; render();
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-    try { data = window.craft ? await window.craft.getUsage(tz) : { error: 'Usage needs the Craft app.' }; } catch (e) { data = { error: e.message || 'Could not load your usage.' }; }
+    try { data = window.craft ? await window.craft.getUsage(tz) : { error: 'Usage needs the Codeply app.' }; } catch (e) { data = { error: e.message || 'Could not load your usage.' }; }
     if (root) render();
   }
 

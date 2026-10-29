@@ -208,7 +208,7 @@ async function speak(text, where) {
 async function takeover() {
   if (!S.active) return view();
   const bot = S.botId ? BOTS().getBot(S.botId) : helperBot();
-  if (!bot) return { error: 'Make a bot in Crew first.' };
+  if (!bot) return { error: 'Make a bot in Agents first.' };
   S.takeover = { stage: 'speaking', text: '' };
   push();
   let say = '';

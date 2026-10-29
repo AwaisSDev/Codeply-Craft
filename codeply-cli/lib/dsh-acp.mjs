@@ -40,7 +40,7 @@ const HAZE_PATCH = `# Written by the Codeply CLI: the ACP profile answers throug
 - id: system-prompt
   config:
     personaPrefix: >-
-      You are Craft, Codeply's coding agent, powered by the {{model}} model.
+      You are Codeply, powered by the {{model}} model.
 - insert:
     - id: llm-haze
       name: '@codeply/dsh-llm-haze'

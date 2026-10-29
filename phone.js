@@ -821,9 +821,9 @@ async function showHandoff(c) {
   } catch { return; }
   if (!row || (state.current && chatMeta(state.current) || {}).id !== c.id || relay.pcId) return;
   let text = '';
-  if (row.holder === 'cloud' && row.state === 'running') text = 'Your PC went offline, so Craft Cloud is carrying this task on. It goes back to your PC when the PC is online.';
-  else if (row.holder === 'pc' && row.state === 'running') text = 'Your PC went offline in the middle of this task. Craft Cloud picks it up within a minute or two.';
-  else if (row.state === 'no_credentials' || row.state === 'cloud_failed') text = `${row.note || 'Craft Cloud could not take this task over.'} It carries on when your PC is back.`;
+  if (row.holder === 'cloud' && row.state === 'running') text = 'Your PC went offline, so the cloud is carrying this task on. It goes back to your PC when the PC is online.';
+  else if (row.holder === 'pc' && row.state === 'running') text = 'Your PC went offline in the middle of this task. The cloud picks it up within a minute or two.';
+  else if (row.state === 'no_credentials' || row.state === 'cloud_failed') text = `${row.note || 'The cloud could not take this task over.'} It carries on when your PC is back.`;
   if (!text) return;
   addMsg('note', text);
 }

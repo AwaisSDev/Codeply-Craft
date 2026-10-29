@@ -323,7 +323,7 @@ function tbMenuItems(name) {
     ['Open folder…', 'Ctrl+O', () => $('openProjectBtn').click(), !signedIn],
     null,
     ['Connect apps', '', () => openConnectApps(), !signedIn],
-    ['Codeply Away', '', () => openRemoteModal(), !signedIn],
+    ['Use from your phone', '', () => openRemoteModal(), !signedIn],
     null,
     ['Close window', 'Alt+F4', () => api && api.close()],
   ];
@@ -858,7 +858,7 @@ async function retryLastMessage() {
   if (changed) {
     const r = await CraftModal.confirm({
       title: 'Retry this message?',
-      body: 'Craft runs it again and replaces the last reply.',
+      body: 'Codeply runs it again and replaces the last reply.',
       confirmLabel: 'Retry',
       checkbox: { label: `Restore ${plural(changed, 'file')} first`, note: 'Puts the files the last reply changed back the way they were before it ran.', checked: true },
     });
@@ -1378,7 +1378,7 @@ function setAppView(name) {
 let engine = 'classic';
 let dshShown = false;
 let dshSeq = 0;
-let dshBrowserWidth = 0; // Craft's browser panel on the right, 0 while closed
+let dshBrowserWidth = 0; // Codeply's browser panel on the right, 0 while closed
 // The new Craft's view: under the title bar, leaving room for Craft's browser when it's open.
 function dshArea() {
   const a = crewArea();
@@ -1397,7 +1397,7 @@ function dshOverlay(state, text) {
   el.hidden = state === 'off';
   // While it starts the area stays plain (no message); only a failure says something.
   el.classList.toggle('quiet', state === 'starting');
-  $('dshOverlayTitle').textContent = state === 'error' ? "The new Craft couldn't start" : 'Starting the new Craft';
+  $('dshOverlayTitle').textContent = state === 'error' ? "Codeply couldn't start" : 'Starting Codeply';
   $('dshOverlayText').textContent = text || 'This takes a few seconds the first time.';
   $('dshRetry').hidden = state !== 'error';
   $('dshBackClassic').hidden = state !== 'error';
@@ -2099,7 +2099,7 @@ async function openBrowserMenu() {
     } else if (act === 'external') api.browserPanelExternal();
     else if (act === 'downloads') api.browserPanelDownloads();
     else if (act === 'clear') {
-      if (!confirm('Clear cookies, sign-ins and saved data in Craft\'s browser?')) return;
+      if (!confirm('Clear cookies, sign-ins and saved data in Codeply\'s browser?')) return;
       const res = await api.browserPanelClearData();
       if (res && res.ok) showToast('Browsing data cleared.');
     } else if (act === 'close') api.toggleBrowserPanel();
@@ -3037,7 +3037,7 @@ function openModelMenu(anchorBtn) {
   menu.querySelector('[data-action="chatgpt-usage"]')?.addEventListener('click', () => { closeModelMenu(); api.openExternal(CHATGPT_USAGE_URL); });
   menu.querySelector('[data-action="chatgpt-signout"]')?.addEventListener('click', async () => {
     closeModelMenu();
-    if (!(await CraftModal.confirm({ title: 'Disconnect ChatGPT?', body: 'Craft stops using your ChatGPT plan until you sign in again.', confirmLabel: 'Disconnect', danger: true })).ok) return;
+    if (!(await CraftModal.confirm({ title: 'Disconnect ChatGPT?', body: 'Codeply stops using your ChatGPT plan until you sign in again.', confirmLabel: 'Disconnect', danger: true })).ok) return;
     const r = await api.chatgptSignOut();
     if (!r.ok) { showToast(r.error || 'Could not disconnect.', 'error'); return; }
     state.chatgpt = r.status;
@@ -4862,7 +4862,7 @@ function renderUpdate(u) {
     gate.classList.remove('hidden');
     pill.classList.add('hidden');
     $('updateGateTitle').textContent = 'Installing update';
-    $('updateGateText').textContent = `Craft is closing to install ${u.version || 'the update'}. A small installer window shows the progress, and Craft reopens by itself when it is done, usually in 2 to 5 minutes. You do not need to open it.`;
+    $('updateGateText').textContent = `Codeply is closing to install ${u.version || 'the update'}. A small installer window shows the progress, and Codeply reopens by itself when it is done, usually in 2 to 5 minutes. You do not need to open it.`;
     $('updateGateNotes').classList.add('hidden');
     $('updateGateTrack').classList.remove('hidden');
     $('updateGateTrack').classList.add('indeterminate');
@@ -4880,7 +4880,7 @@ function renderUpdate(u) {
     gate.classList.add('installing');
     pill.classList.add('hidden');
     $('updateGateTitle').textContent = `Updating to ${u.version}`;
-    $('updateGateText').textContent = 'Craft downloads the update, closes, installs it and reopens by itself. It takes a few minutes. You do not need to open it again.';
+    $('updateGateText').textContent = 'Codeply downloads the update, closes, installs it and reopens by itself. It takes a few minutes. You do not need to open it again.';
     $('updateGateNotes').classList.add('hidden');
     $('updateGateTrack').classList.remove('hidden');
     $('updateGateBar').style.width = Math.max(3, u.status === 'ready' ? 100 : (u.percent || 0)) + '%';
@@ -4892,7 +4892,7 @@ function renderUpdate(u) {
   if (u.required && active) {
     gate.classList.remove('hidden');
     pill.classList.add('hidden');
-    $('updateGateText').textContent = `Version ${u.version} is required to keep using Codeply Craft. You're on ${u.current}.`;
+    $('updateGateText').textContent = `Version ${u.version} is required to keep using Codeply. You're on ${u.current}.`;
     $('updateGateNotes').textContent = u.notes || '';
     $('updateGateNotes').classList.toggle('hidden', !u.notes);
     const showBar = u.status === 'downloading';
@@ -4929,7 +4929,7 @@ function renderUpdate(u) {
   $('updatePillCta').classList.toggle('hidden', waiting);
   if (waiting) {
     $('updatePillText').textContent = `Updating · ${u.percent || 0}%`;
-    pill.title = 'Downloading the update. Craft restarts on the new version when it is done.';
+    pill.title = 'Downloading the update. Codeply restarts on the new version when it is done.';
   } else if (showPill) {
     $('updatePillText').textContent = `Version ${u.version} available`;
     $('updatePillCta').textContent = u.manual ? 'Download' : 'Update now';
@@ -4955,7 +4955,7 @@ $('updateGateBtn').addEventListener('click', () => {
 // ─── Boot ───────────────────────────────────────────────────────────────────
 (async function boot() {
   if (!api){
-    $('engineErrorText').textContent = 'Codeply Craft must run inside Electron: npm install && npm start';
+    $('engineErrorText').textContent = 'Codeply must run inside Electron: npm install && npm start';
     showView('viewEngineError');
     return;
   }

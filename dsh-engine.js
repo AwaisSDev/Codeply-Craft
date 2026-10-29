@@ -62,11 +62,11 @@ async function findNode() {
       execFile(bin, ['-v'], { encoding: 'utf8', windowsHide: true, timeout: 5000 }, (err, out) => (err ? reject(err) : resolve(String(out).trim())));
     });
   } catch {
-    return { error: `The new Craft needs Node ${MIN_NODE.join('.')} or newer, and no \`node\` was found. Install Node 24 or set CODEPLY_DSH_NODE.` };
+    return { error: `Codeply's engine needs Node ${MIN_NODE.join('.')} or newer, and no \`node\` was found. Install Node 24 or set CODEPLY_DSH_NODE.` };
   }
   const [maj, min] = v.replace(/^v/, '').split('.').map(Number);
   if (maj < MIN_NODE[0] || (maj === MIN_NODE[0] && min < MIN_NODE[1])) {
-    return { error: `The new Craft needs Node ${MIN_NODE.join('.')} or newer; this PC has ${v}.` };
+    return { error: `Codeply's engine needs Node ${MIN_NODE.join('.')} or newer; this PC has ${v}.` };
   }
   return { bin };
 }
@@ -123,7 +123,7 @@ function startBridge() {
           : action === 'status' ? await cloud.taskStatus({ cwd, taskId })
           : action === 'apply' ? await cloud.applyTask(cwd, taskId)
           : await cloud.cancelTask({ cwd, taskId });
-        return reply(200, r || { error: 'No answer from Craft Cloud.' });
+        return reply(200, r || { error: 'No answer from the cloud.' });
       } catch (e) {
         return reply(500, { error: e && e.message ? e.message : String(e) });
       }
@@ -134,12 +134,12 @@ function startBridge() {
       const body = JSON.parse(await readBody(req));
       if (!host.aiLib()) await host.ensureEngine();
       const ai = host.aiLib();
-      if (!ai) return reply(503, { success: false, unreachable: true, error: 'Craft\'s engine is still loading.' });
+      if (!ai) return reply(503, { success: false, unreachable: true, error: 'Codeply\'s engine is still loading.' });
       const h = body.haze || {};
       // One of your own models when the engine asks for it by id, else Haze 2.
       const ownId = typeof body.modelId === 'string' ? body.modelId : '';
       const own = ownId ? await host.models.get(ownId) : null;
-      if (ownId && !own) return reply(200, { success: false, error: 'That model is no longer in Craft. Pick another one.' });
+      if (ownId && !own) return reply(200, { success: false, error: 'That model is no longer in Codeply. Pick another one.' });
       const r = await ai.chat(Array.isArray(body.messages) ? body.messages : [], {
         route: own ? { custom: own } : { auto: true },
         ...(Array.isArray(body.tools) && body.tools.length ? { tools: body.tools } : {}),
@@ -182,7 +182,7 @@ function start() {
   starting = (async () => {
     const dir = dshDir();
     const bin = path.join(dir, 'apps', 'cli', 'lib', 'bin.js');
-    if (!fs.existsSync(bin)) throw new Error('The new Craft is not built yet. In craft-dsh: pnpm install, then pnpm run build.');
+    if (!fs.existsSync(bin)) throw new Error("Codeply's engine is not built yet. In craft-dsh: pnpm install, then pnpm run build.");
     const node = await findNode();
     if (node.error) throw new Error(node.error);
     const b = await startBridge();
@@ -217,7 +217,7 @@ function start() {
     const child = proc;
     return await new Promise((resolve, reject) => {
       // Dev mode compiles the engine from source on start, so it gets longer.
-      const timer = setTimeout(() => reject(new Error('The new Craft took too long to start.')), dev ? READY_TIMEOUT_MS * 4 : READY_TIMEOUT_MS);
+      const timer = setTimeout(() => reject(new Error("Codeply's engine took too long to start.")), dev ? READY_TIMEOUT_MS * 4 : READY_TIMEOUT_MS);
       const onData = (chunk) => {
         const text = chunk.toString();
         logTail = (logTail + text).slice(-4000);
@@ -238,7 +238,7 @@ function start() {
         if (proc === child) { proc = null; url = null; }
         const last = logTail.trim().split(/\r?\n/).slice(-3).join(' ');
         console.log(`[dsh] engine exited (${code})${last ? `: ${last}` : ''}`);
-        reject(new Error(`The new Craft stopped (exit ${code}). ${last}`.trim()));
+        reject(new Error(`Codeply's engine stopped (exit ${code}). ${last}`.trim()));
       });
     });
   })().catch((e) => {

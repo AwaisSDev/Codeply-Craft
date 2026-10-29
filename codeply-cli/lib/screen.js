@@ -55,7 +55,7 @@ function contextFor(chatId, now = Date.now()) {
 }
 
 async function lookTool(ctx = {}, args = {}) {
-  if (!host) return { ok: false, output: 'look_at_screen only works in the Codeply Craft app, which can see the screen. Ask the user to paste what they mean instead.' };
+  if (!host) return { ok: false, output: 'look_at_screen only works in the Codeply app, which can see the screen. Ask the user to paste what they mean instead.' };
   // <window>: an earlier screen from the picture buffer (the last 12 windows), no new screenshot.
   const want = String(args.window || '').trim();
   let r;

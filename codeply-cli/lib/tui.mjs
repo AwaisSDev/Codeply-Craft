@@ -1152,7 +1152,7 @@ const App = () => {
     } else if (cmd === '/engine') {
       const want = args.trim().toLowerCase();
       if (!want) {
-        push({ role: 'system', content: `Engine: ${engine === 'dsh' ? "DSH (Craft's DeepSeek Harness fork, over ACP)" : 'Classic (codeply-cli)'}\nSwitch with /engine classic or /engine dsh` });
+        push({ role: 'system', content: `Engine: ${engine === 'dsh' ? "DSH (Codeply's harness, over ACP)" : 'Classic (codeply-cli)'}\nSwitch with /engine classic or /engine dsh` });
         return;
       }
       if (want !== 'dsh' && want !== 'classic') {

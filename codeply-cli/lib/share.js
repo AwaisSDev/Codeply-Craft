@@ -96,7 +96,7 @@ function collect(session, opts = {}) {
 function toMarkdown(session, opts) {
   const c = collect(session, opts);
   const out = [`# ${c.title}`, ''];
-  const meta = [c.project && `Project: ${c.project}`, c.when && new Date(c.when).toISOString().slice(0, 10), 'Made with Codeply Craft'].filter(Boolean);
+  const meta = [c.project && `Project: ${c.project}`, c.when && new Date(c.when).toISOString().slice(0, 10), 'Made with Codeply'].filter(Boolean);
   out.push(`_${meta.join(' - ')}_`, '');
   let tools = [];
   const flush = () => { if (tools.length) { out.push(...tools, ''); tools = []; } };
@@ -179,7 +179,7 @@ function toHtml(session, opts) {
     else if (it.type === 'error') body += `<div class="note err">${esc(it.text)}</div>`;
   }
   flush();
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${esc(c.title)}</title><style>${CSS}</style></head><body><main><h1>${esc(c.title)}</h1><div class="meta">${meta}</div>${body}<footer>Made with Codeply Craft</footer></main></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${esc(c.title)}</title><style>${CSS}</style></head><body><main><h1>${esc(c.title)}</h1><div class="meta">${meta}</div>${body}<footer>Made with Codeply</footer></main></body></html>`;
 }
 
 /** Uploads the chat as a secret gist. Returns {ok, url} or {ok:false, error}. */
@@ -192,13 +192,13 @@ async function createGist(session, token, { fetchImpl = fetch, apiUrl = 'https:/
     res = await fetchImpl(`${apiUrl.replace(/\/$/, '')}/gists`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', 'User-Agent': 'codeply-craft' },
-      body: JSON.stringify({ description: `${c.title} (Codeply Craft)`.slice(0, 200), public: !!isPublic, files: { [`${base}.md`]: { content: toMarkdown(session, opts) } } }),
+      body: JSON.stringify({ description: `${c.title} (Codeply)`.slice(0, 200), public: !!isPublic, files: { [`${base}.md`]: { content: toMarkdown(session, opts) } } }),
     });
   } catch (e) { return { ok: false, error: `Could not reach GitHub: ${e.message}` }; }
   let json = null;
   try { json = JSON.parse(await res.text()); } catch {}
   if (!res.ok) {
-    const scopeHint = res.status === 404 || res.status === 403 ? ' Reconnect GitHub in Connect Apps so Craft can create gists.' : '';
+    const scopeHint = res.status === 404 || res.status === 403 ? ' Reconnect GitHub in Connect Apps so Codeply can create gists.' : '';
     return { ok: false, error: `GitHub said ${res.status}${json && json.message ? `: ${json.message}` : ''}.${scopeHint}` };
   }
   if (!json || typeof json.html_url !== 'string') return { ok: false, error: `GitHub answered ${res.status} but did not return a gist link. Try again in a moment.` };

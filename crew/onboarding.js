@@ -35,7 +35,7 @@
 
   const STEPS_HTML = `
     <div class="ob-step" data-step="welcome">
-      <h1 class="ob-rise" tabindex="-1">Your crew,<br>on your PC.</h1>
+      <h1 class="ob-rise" tabindex="-1">Your agents,<br>on your PC.</h1>
       <p class="ob-lede ob-rise">A small team of bots, each good at one thing. They work for you here, and remember what helps.</p>
       <div class="ob-actions ob-rise"><button class="ob-btn primary" data-next>Get started</button></div>
     </div>
@@ -57,7 +57,7 @@
       <div class="ob-actions ob-rise"><button class="ob-btn ghost" data-back>Back</button><button class="ob-btn primary" data-next id="obAgreeNext" disabled>Continue</button></div>
     </div>
     <div class="ob-step" data-step="name" hidden>
-      <h1 class="ob-rise" tabindex="-1">What should your crew call you?</h1>
+      <h1 class="ob-rise" tabindex="-1">What should your agents call you?</h1>
       <div class="ob-body ob-rise">
         <label class="ob-field"><span class="ob-sr">Your name</span><input id="obName" type="text" autocomplete="given-name" placeholder="Your name" maxlength="40"></label>
         <div class="ob-sub" id="obFocusLabel">What do you mostly do? <em>Pick any, optional</em></div>
@@ -81,7 +81,7 @@
     <div class="ob-step" data-step="done" hidden>
       <h1 class="ob-rise" tabindex="-1" id="obDoneTitle">You're all set.</h1>
       <div class="ob-body ob-rise"><ul class="ob-summary" id="obSummary"></ul></div>
-      <div class="ob-actions ob-rise"><button class="ob-btn ghost" data-back>Back</button><button class="ob-btn primary" id="obFinish">Open Crew<svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div>
+      <div class="ob-actions ob-rise"><button class="ob-btn ghost" data-back>Back</button><button class="ob-btn primary" id="obFinish">Open Agents<svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div>
     </div>`;
 
   const STAGE_HTML = `
@@ -90,7 +90,7 @@
     <div class="ob-scene" data-scene="terms"><div class="ob-pc" id="obPc">
       <div class="screen"><div class="lock"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div></div>
       <div class="stand"></div><div class="base"></div>
-      <div class="note">Your crew works here, on this computer.</div>
+      <div class="note">Your agents work here, on this computer.</div>
     </div></div>
     <div class="ob-scene" data-scene="name"><div class="ob-chat" id="obChat"></div></div>
     <div class="ob-scene" data-scene="ask"><div class="ob-card" id="obCard"></div></div>
@@ -118,10 +118,10 @@
       root.id = 'onboard';
       root.setAttribute('role', 'dialog');
       root.setAttribute('aria-modal', 'true');
-      root.setAttribute('aria-label', 'Set up Codeply Crew');
+      root.setAttribute('aria-label', 'Set up Codeply');
       root.innerHTML = `<div class="ob">
         <section class="ob-copy">
-          <div class="ob-brand"><img src="assets/logo/codeply-icon-small-48.png" alt="">Codeply Crew</div>
+          <div class="ob-brand"><img src="assets/logo/codeply-icon-small-48.png" alt="">Codeply</div>
           <div class="ob-progress" id="obProgress" aria-hidden="true"></div>
           <div class="ob-steps">${STEPS_HTML}</div>
         </section>
@@ -163,7 +163,7 @@
       function paintChat() {
         const n = state.name.trim();
         q('#obChat').innerHTML = `<div class="ob-msg">${face(crew[0], 56)}<div class="ob-bubble"><small>Orion</small>${n
-          ? `Hi ${esc(n)}, good to meet you. ${doings().length ? `I'll set the crew up for ${esc(joined(doings()))}.` : 'Tell me what you are working on and I will find the right teammate.'}`
+          ? `Hi ${esc(n)}, good to meet you. ${doings().length ? `I'll set your agents up for ${esc(joined(doings()))}.` : 'Tell me what you are working on and I will find the right teammate.'}`
           : '<span class="ob-typing" aria-hidden="true"><i></i><i></i><i></i></span>'}</div></div>`;
       }
       function paintCard() {
@@ -282,7 +282,7 @@
       q('#obFinish').addEventListener('click', async () => {
         if (saving) return;
         saving = true;
-        q('#obFinish').textContent = 'Opening Crew...';
+        q('#obFinish').textContent = 'Opening Agents...';
         const name = state.name.trim();
         const focus = doings();
         let saved = null;

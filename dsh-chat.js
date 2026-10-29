@@ -28,7 +28,7 @@ const MAX_ENGINES = 2;
 const HISTORY_TURNS = 12;      // messages a chat's first DSH turn gets from before
 const HISTORY_CHARS = 1500;    // per message
 
-const PATCH = `# Written by Codeply Craft: Classic's chats on the DSH harness.
+const PATCH = `# Written by Codeply: Classic's chats on the DSH harness.
 - id: acp
   config:
     provider: haze
@@ -36,7 +36,7 @@ const PATCH = `# Written by Codeply Craft: Classic's chats on the DSH harness.
 - id: system-prompt
   config:
     personaPrefix: >-
-      You are Craft, Codeply's coding agent, powered by the {{model}} model.
+      You are Codeply, powered by the {{model}} model.
 - insert:
     - id: llm-haze
       name: '@codeply/dsh-llm-haze'
@@ -121,7 +121,7 @@ function startBridge() {
     try {
       const body = JSON.parse(await readBody(req));
       const ai = host.aiLib();
-      if (!ai) return reply(503, { success: false, unreachable: true, error: 'Craft\'s engine is still loading.' });
+      if (!ai) return reply(503, { success: false, unreachable: true, error: 'Codeply\'s engine is still loading.' });
       const chatId = String(body.chatId || '');
       const ownId = typeof body.modelId === 'string' ? body.modelId : '';
       const own = ownId ? host.configLib()?.getModel(ownId) : null;

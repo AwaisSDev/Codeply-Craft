@@ -195,7 +195,7 @@
   }
 
   function blockFor(box, b, working) {
-    const fallback = { id: '', name: 'Crew', avatar: { shape: 'round', eyes: 'ovals', color: '#8e8e93' } };
+    const fallback = { id: '', name: 'Agents', avatar: { shape: 'round', eyes: 'ovals', color: '#8e8e93' } };
     const el = UI.botBlock(box, b || fallback, working);
     el.dataset.bot = (b && b.id) || '';
     return el.querySelector('.m-bot-body');
@@ -320,7 +320,7 @@
       { label: 'Haze 2', on: S.models.selected === 'auto' || !S.models.selected, run: () => UI.pickModel('auto') },
       ...S.models.models.map((m) => ({ label: m.name, on: S.models.selected === m.id, run: () => UI.pickModel(m.id) })),
       '-',
-      { note: 'Add your own models in Craft. They show up here too.' },
+      { note: 'Add your own models in Codeply. They show up here too.' },
     ]));
   }
 

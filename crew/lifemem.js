@@ -70,7 +70,7 @@
   const PROJECT_KINDS = ['decision', 'idea', 'requirement', 'todo'];
   const kindLabel = (k) => KIND[k] || ((brain && brain.kinds) || {})[k] || k;
   const CHANGE = { added: 'Learned', confirmed: 'Confirmed', reinforced: 'Heard again', replaced: 'Replaced', challenged: 'Heard different', kept: 'Kept', ignored: 'Ignored', forgotten: 'Forgot', corrected: 'Corrected' };
-  const PRODUCT = { craft: 'Craft', crew: 'Crew', orbit: 'Orbit', phone: 'your phone', drop: 'the drop' };
+  const PRODUCT = { craft: 'Codeply', crew: 'Agents', orbit: 'voice', phone: 'your phone', drop: 'quick chat' };
   const DOMAIN = { calendar: 'Calendar', email: 'Email', reminders: 'Reminders', calls: 'Calls', texts: 'Texts', research: 'Research', code: 'Code', social: 'Social', health: 'Health', money: 'Money' };
   const HANDOFF = { open: 'Waiting', queued: 'Working', done: 'Done', needs_user: 'Needs you', failed: 'Could not finish', cancelled: 'Cancelled', unrouted: 'Nobody for it' };
   const TASK = { queued: 'Waiting to start', running: 'Working', verifying: 'Checking its work', needs_you: 'Needs you', done: 'Done', failed: 'Could not finish', cancelled: 'Cancelled' };
@@ -203,7 +203,7 @@
     const b = brain;
     if (!b || (b.error && !b.memories)) return problem((b && b.error) || 'Your memories did not load.');
     const cant = !b.on && b.usable === false;
-    const out = [section('', [row({ title: 'Remember things', desc: cant ? 'This PC cannot keep memories, so this stays off.' : 'Bots learn from your chats in Craft, Crew, Orbit and your phone.', ctl: sw('mem-on', null, b.on, 'Remember things', cant) })])];
+    const out = [section('', [row({ title: 'Remember things', desc: cant ? 'This PC cannot keep memories, so this stays off.' : 'Bots learn from your chats in Codeply, voice and your phone.', ctl: sw('mem-on', null, b.on, 'Remember things', cant) })])];
     if (!b.on) { out.push(note('Off. Nothing new is learned, and no bot sees what was learned before.')); return out.join(''); }
 
     const d = ui.draft;
@@ -832,7 +832,7 @@
       case 'heard':
         if (v && !(life.calls || {}).consentAck) {
           el.checked = false;
-          if (await confirmIt({ title: 'Turn on the mic?', text: 'Your mic stays on while Craft runs, and only the important bits are kept as text.', ok: 'Turn on', check: 'I will tell people an assistant is listening' })) await setLife({ calls: { consentAck: true }, sources: { heard: true } }, k);
+          if (await confirmIt({ title: 'Turn on the mic?', text: 'Your mic stays on while Codeply runs, and only the important bits are kept as text.', ok: 'Turn on', check: 'I will tell people an assistant is listening' })) await setLife({ calls: { consentAck: true }, sources: { heard: true } }, k);
           return;
         }
         await setLife({ sources: { heard: v } }, k); return;

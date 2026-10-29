@@ -94,7 +94,7 @@ function outboxAction(id, action) {
   if (!h) {
     const s = store(); const o = s && s.getOutbox(id);
     if (o && ['waiting', 'needs_you'].includes(o.status)) s.saveOutbox({ id: o.id, status: 'expired' });
-    return { error: 'That action is no longer waiting (Craft was restarted, or it already went).' };
+    return { error: 'That action is no longer waiting (Codeply was restarted, or it already went).' };
   }
   h.settle(action === 'now' ? 'go' : 'cancelled');
   return { ok: true };

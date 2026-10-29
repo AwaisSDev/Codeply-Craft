@@ -30,7 +30,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1             || gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --title "Codeply Craft ${TAG#v}" --notes "Codeply Craft ${TAG#v}"
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1             || gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --title "Codeply ${TAG#v}" --notes "Codeply ${TAG#v}"
 
   build-windows:
     needs: create-release
