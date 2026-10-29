@@ -207,8 +207,8 @@ function fenced(run, why) {
   run.fenced = why;
   session.handoff = { ...session.handoff, status: why === 'taken' ? 'cloud' : 'paused', state: run.state, pausedAt: Date.now() };
   note(session, why === 'taken'
-    ? 'This PC was offline, so Craft Cloud took over this task. It comes back here when you are online.'
-    : 'Lost connection, so this task is paused here. If you stay offline, Craft Cloud carries it on from the last save, and it comes back here when you are online.', 'warn');
+    ? 'This PC was offline, so the cloud took over this task. It comes back here when you are online.'
+    : 'Lost connection, so this task is paused here. If you stay offline, the cloud carries it on from the last save, and it comes back here when you are online.', 'warn');
   deps.persist(session);
   emit(session, why === 'taken' ? 'cloud' : 'paused');
   deps.stopRun(session.id);
@@ -256,11 +256,11 @@ async function recover(session) {
   }
   if (row.holder === 'pc' && row.state === 'running' && row.epoch === h.epoch) {
     // Nobody took over: carry on here from where this PC stopped.
-    note(session, h.status === 'paused' ? 'Back online. Carrying on.' : 'Craft closed in the middle of this task. Carrying on from the last save.');
+    note(session, h.status === 'paused' ? 'Back online. Carrying on.' : 'Codeply closed in the middle of this task. Carrying on from the last save.');
     return resumeHere(session, h.state, false);
   }
   if (row.state === 'no_credentials' || row.state === 'cloud_failed') {
-    note(session, `${row.note || 'Craft Cloud could not take over.'} Carrying on here.`, 'warn');
+    note(session, `${row.note || 'The cloud could not take over.'} Carrying on here.`, 'warn');
     return resumeHere(session, h.state, true);
   }
   if (row.holder === 'cloud') return handBack(session, row);
@@ -284,7 +284,7 @@ function resumeHere(session, state, takeover) {
 /** Ask the cloud for the chat back, bring its steps and changes here, carry on. */
 async function handBack(session, row) {
   const token = deps.githubToken();
-  if (!token) { note(session, 'Craft Cloud has this task, but GitHub is not connected here any more. Reconnect it in Connect Apps to bring it back.', 'warn'); return; }
+  if (!token) { note(session, 'The cloud has this task, but GitHub is not connected here any more. Reconnect it in Connect Apps to bring it back.', 'warn'); return; }
   const api = cl.githubApi({ token });
   const files = cl.branchFiles(api, row.repo);
   const sid = session.id;
@@ -307,7 +307,7 @@ async function handBack(session, row) {
   const events = (doc && doc.events) || [];
   const steps = events.filter((e) => e.t === 'tool').length;
   const wentAt = session.handoff.pausedAt || session.handoff.at || Date.now();
-  note(session, `Your PC went offline at ${clock(wentAt)}. Craft Cloud carried on: ${steps} step${steps === 1 ? '' : 's'}.`);
+  note(session, `Your PC went offline at ${clock(wentAt)}. The cloud carried on: ${steps} step${steps === 1 ? '' : 's'}.`);
   try { await deps.replay(session, { id: row.cloud_task_id, repo: row.repo }, events); } catch (e) { console.warn('[handoff] replay failed:', e.message); }
 
   let state = session.handoff.state;
@@ -334,7 +334,7 @@ async function handBack(session, row) {
     }
     await files.remove(ho.HANDBACK.done(sid), done.fileSha).catch(() => {});
   } else {
-    note(session, 'Craft Cloud did not answer, so this PC carries on from its own last save.', 'warn');
+    note(session, 'The cloud did not answer, so this PC carries on from its own last save.', 'warn');
     await files.remove(ho.HANDBACK.want(sid)).catch(() => {});
   }
 

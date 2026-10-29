@@ -161,7 +161,7 @@ async function reachPhone({ botId, botName, how, message, at }) {
 async function addAlert({ botId, from, how, note, repeat }) {
   const B = lib('bots.js');
   const bot = botId ? B.getBot(botId) : null;
-  if (!bot) return { ok: false, output: 'Only a bot can watch the inbox. Ask the user to pick one of their bots (or to make one in Crew) for this.' };
+  if (!bot) return { ok: false, output: 'Only a bot can watch the inbox. Ask the user to pick one of their bots (or to make one in Agents) for this.' };
   if (!deps.configLib().getIntegration('gmail').accessToken) return { ok: false, output: 'Gmail is not connected. Ask the user to connect Gmail in Connect Apps first.' };
   const alerts = (bot.alwaysOn.alerts || []).filter((a) => a.from !== from);
   alerts.push({ from, how, note, repeat, at: Date.now() });
@@ -171,7 +171,7 @@ async function addAlert({ botId, from, how, note, repeat }) {
   return {
     ok: true,
     output: `Watching the inbox for email from ${from}. When one arrives, the user gets a ${how === 'call' ? 'call' : 'text'} on their phone${repeat ? ' every time' : ' (once)'}. ` +
-      'This runs while Craft is open or in the tray.' + (signedIn ? '' : ' The user is not signed in to Codeply on this PC, so only a desktop notification will show until they sign in.'),
+      'This runs while Codeply is open or in the tray.' + (signedIn ? '' : ' The user is not signed in to Codeply on this PC, so only a desktop notification will show until they sign in.'),
   };
 }
 

@@ -119,7 +119,7 @@ const JOBS_KEEP_OUT = 8000;  // characters of output kept per task
 const JOBS_KEEP = 40;        // finished tasks kept
 const RUN_STAMP = Date.now().toString(36);
 const stoppedJobs = new Set(); // live ids the person stopped
-let pastJobs = [];             // tasks from earlier runs of Craft
+let pastJobs = [];             // tasks from earlier runs of Codeply
 let jobsQuitting = false;
 try {
   const saved = JSON.parse(fs.readFileSync(JOBS_FILE(), 'utf8'));
@@ -381,7 +381,7 @@ function sessionMeta(s) {
   return {
     id: s.id, title: s.title, cwd: s.cwd, updatedAt: s.updatedAt,
     preview: last?.text || last?.label || '', messageCount: s.messages?.length || 0,
-    ...(s.messages?.some((m) => m.kind === 'cloud_task') ? { cloud: true } : {}), // Craft Cloud chat (cloud-desktop.js)
+    ...(s.messages?.some((m) => m.kind === 'cloud_task') ? { cloud: true } : {}), // the cloud chat (cloud-desktop.js)
   };
 }
 
@@ -509,15 +509,15 @@ function buildTrayMenu() {
   if (!tray) return;
   const key = drop.hotkeyLabel();
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Open Codeply Craft', click: showWindow },
-    { label: key ? `Open the drop (${key})` : 'Open the drop', click: () => drop.show() },
-    ...(voiceMode.available() ? [{ label: key ? `Orbit speaks its answers (hold ${key} to talk)` : 'Orbit speaks its answers', type: 'checkbox', checked: !voiceMode.isMuted(), click: (item) => voiceMode.setMuted(!item.checked) }] : []),
-    ...(voiceMode.available() && voiceMode.canAct() ? [{ label: 'Orbit can click and type for me', type: 'checkbox', checked: voiceMode.actionsOn(), click: (item) => voiceMode.setActions(item.checked) }] : []),
+    { label: 'Open Codeply', click: showWindow },
+    { label: key ? `Open quick chat (${key})` : 'Open quick chat', click: () => drop.show() },
+    ...(voiceMode.available() ? [{ label: key ? `Voice mode speaks its answers (hold ${key} to talk)` : 'Voice mode speaks its answers', type: 'checkbox', checked: !voiceMode.isMuted(), click: (item) => voiceMode.setMuted(!item.checked) }] : []),
+    ...(voiceMode.available() && voiceMode.canAct() ? [{ label: 'Voice mode can click and type for me', type: 'checkbox', checked: voiceMode.actionsOn(), click: (item) => voiceMode.setActions(item.checked) }] : []),
     ...convertWheel.trayItems(),
     { type: 'separator' },
     ...(app.isPackaged ? [{ label: process.platform === 'darwin' ? 'Open at login' : 'Start with Windows', type: 'checkbox', checked: startsWithSystem(), click: (item) => setStartWithSystem(item.checked) }] : []),
     {
-      label: 'Quit Codeply Craft',
+      label: 'Quit Codeply',
       click: () => { isQuitting = true; app.quit(); },
     },
   ]));
@@ -526,7 +526,7 @@ function buildTrayMenu() {
 function createTray() {
   if (tray) return;
   tray = new Tray(nativeImage.createFromPath(APP_ICON_PATH));
-  tray.setToolTip('Codeply Craft');
+  tray.setToolTip('Codeply');
   buildTrayMenu();
   // Windows/Linux convention: a left-click on the tray icon itself opens the
   // app (the menu above is reserved for right-click, which Electron already
@@ -1284,7 +1284,7 @@ ipcMain.handle('chatgpt:signIn', async () => {
       configLib.syncChatGPTModels([]);
       return {
         ok: true, status, state: modelsState(),
-        warning: 'You signed in, but Craft wasn’t allowed to use your ChatGPT plan. Sign in again and allow plan usage to get your ChatGPT models.',
+        warning: 'You signed in, but Codeply wasn’t allowed to use your ChatGPT plan. Sign in again and allow plan usage to get your ChatGPT models.',
       };
     }
     const state = await refreshChatGPTModels();
@@ -2219,7 +2219,7 @@ ipcMain.handle('session:share', async (e, { id, kind, thinking }) => {
       if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
       const gh = configLib.getIntegration('github');
       if (!gh.accessToken) return { ok: false, error: 'Connect GitHub first (Connect Apps), then share again.' };
-      if (typeof gh.scope === 'string' && !/\bgist\b/.test(gh.scope)) return { ok: false, error: 'Reconnect GitHub in Connect Apps so Craft is allowed to create gists.' };
+      if (typeof gh.scope === 'string' && !/\bgist\b/.test(gh.scope)) return { ok: false, error: 'Reconnect GitHub in Connect Apps so Codeply is allowed to create gists.' };
       return await share.createGist(session, gh.accessToken, opts);
     }
     const html = kind === 'html';
@@ -2268,7 +2268,7 @@ async function registerOpenverseClient() {
     signal: AbortSignal.timeout(IMAGE_SEARCH_TIMEOUT_MS),
     body: JSON.stringify({
       name: 'CodeplyCraft-' + Math.random().toString(36).slice(2, 10),
-      description: 'Codeply Craft desktop app - in-app image picker',
+      description: 'Codeply desktop app - in-app image picker',
       email: 'hello@codeply.online',
     }),
   });
@@ -2624,7 +2624,7 @@ async function handleBridgeApi(method, pathname, query, body) {
     if (method === 'POST' && act === 'create') { const r = await designTab.createDesign(body && body.text, body && body.kind, 'phone'); return { status: r.error ? 400 : 200, body: r.error ? r : { id: r.design.id, sessionId: r.sessionId } }; }
     if (method === 'POST' && act === 'send') { const r = await designTab.sendTo(body && body.id, body && body.text); return { status: r.error ? 400 : 200, body: r.error ? r : { id: r.design.id, sessionId: r.sessionId } }; }
     if (method === 'POST' && act === 'stop') { designTab.stopDesign(body && body.id); return { status: 200, body: { ok: true } }; }
-    if (method === 'POST' && act === 'build') { const r = await designTab.buildFromPhone(body && body.id, body || {}); return { status: r && r.error ? 400 : 200, body: r || { error: 'Craft could not start that.' } }; }
+    if (method === 'POST' && act === 'build') { const r = await designTab.buildFromPhone(body && body.id, body || {}); return { status: r && r.error ? 400 : 200, body: r || { error: 'Codeply could not start that.' } }; }
     if (method === 'GET' && act === 'html') { const r = designTab.inlineHtml(query.get('id')); return r ? { status: 200, body: r } : { status: 404, body: { error: 'That design is not on this PC.' } }; }
     if (method === 'GET' && act === 'state') { const st = designTab.designState(query.get('id')); return st ? { status: 200, body: st } : { status: 404, body: { error: 'That design is not on this PC yet.' } }; }
     return { status: 404, body: { error: 'Unknown design request.' } };
@@ -2881,13 +2881,13 @@ function startRemoteServer() {
         const body = await readRemoteBody(req);
         const accessToken = String(body.accessToken || '');
         if (!accessToken) return remoteJson(res, 400, { error: 'Missing sign-in token.' });
-        if (!(await loadEngine())) return remoteJson(res, 503, { error: 'Craft is still starting. Try again in a moment.' });
+        if (!(await loadEngine())) return remoteJson(res, 503, { error: 'Codeply is still starting. Try again in a moment.' });
         const desktop = await remoteAccount();
-        if (!desktop.signedIn) return remoteJson(res, 403, { error: 'Craft on your PC is signed out. Sign in there with the same account first.' });
+        if (!desktop.signedIn) return remoteJson(res, 403, { error: 'Codeply on your PC is signed out. Sign in there with the same account first.' });
         const { data, error } = await authLib.getClient().auth.getUser(accessToken);
         if (error || !data?.user) return remoteJson(res, 401, { error: 'Your sign-in expired. Sign in again.' });
         if (data.user.id !== desktop.id) {
-          return remoteJson(res, 403, { error: `This PC is signed in to Craft as ${desktop.email}. Sign in on your phone with that account.` });
+          return remoteJson(res, 403, { error: `This PC is signed in to Codeply as ${desktop.email}. Sign in on your phone with that account.` });
         }
         const token = crypto.randomBytes(32).toString('base64url');
         remoteTokens.set(token, { userId: data.user.id, email: data.user.email, createdAt: Date.now() });
@@ -2923,7 +2923,7 @@ function startRemoteServer() {
     remoteServer = null;
     if (err.code === 'EADDRINUSE' && win && !win.isDestroyed()) {
       win.webContents.send('remote:server-error', {
-        message: `Port ${REMOTE_PORT} is already in use. Close any other running copy of Craft and reopen this dialog.`,
+        message: `Port ${REMOTE_PORT} is already in use. Close any other running copy of Codeply and reopen this dialog.`,
       });
     }
   });
@@ -3064,7 +3064,7 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
       : classicRun();
     for await (const ev of run) {
       if (bot) bot.see(ev); // the bot's trajectory, for its reflection after the reply
-      handoffDesktop.see(session, ev); // steps and todos for Craft Cloud, should this PC drop
+      handoffDesktop.see(session, ev); // steps and todos for the cloud, should this PC drop
       if (ev.type === 'text') {
         session.messages.push({ kind: 'assistant', text: ev.text, interim: !!ev.interim, at: Date.now() });
         replyText += (replyText ? '\n\n' : '') + ev.text;
@@ -3418,7 +3418,7 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
   if (design) { session.design = design; markDesignSession(session.id); }
   if (activeRuns.has(session.id)) return { error: 'A run is already in progress for this chat.' };
   if (!resume && session.handoff && ['cloud', 'returning', 'resuming'].includes(session.handoff.status)) {
-    return { error: 'This task is coming back from Craft Cloud. Give it a moment.' };
+    return { error: 'This task is coming back from the cloud. Give it a moment.' };
   }
   if (!resume && session.handoff) session.handoff = null; // a new message replaces a paused run
 

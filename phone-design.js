@@ -194,12 +194,12 @@ Reply with the whole file in one \`\`\`html block, then one or two short lines o
   }
 
   async function build(d) {
-    if (!pcOn()) { note('Build it in Craft needs your PC on: Craft builds it there.', true); return; }
-    note('Setting it up in Craft on your PC…');
+    if (!pcOn()) { note('Build it in Code needs your PC on: Codeply builds it there.', true); return; }
+    note('Setting it up in Codeply on your PC…');
     try {
       const html = D.syncOk ? null : await htmlFor(d);
       const r = await P.relayRequest('POST', '/api/design/build', { id: d.id, ...(html ? { html, title: d.title, kind: d.kind } : {}) }, 120000);
-      note(r && r.error ? r.error : 'Craft is building it on your PC. The chat is in your chat list.', !!(r && r.error));
+      note(r && r.error ? r.error : 'Codeply is building it on your PC. The chat is in your chat list.', !!(r && r.error));
     } catch (e) { note(e.message, true); }
   }
 
@@ -223,7 +223,7 @@ Reply with the whole file in one \`\`\`html block, then one or two short lines o
     if (D.cur) return;
     const items = D.list.map((d) => `<button type="button" class="dg-item" data-id="${esc(d.id)}"><span class="dg-ico">${icon(d.kind)}</span><span class="dg-t"><b>${esc(d.title)}</b><small>${esc(kindOf(d.kind).label)} · ${esc(ago(d.updatedAt))}</small></span>${d.running ? '<span class="spinner"></span>' : ''}</button>`).join('');
     body.innerHTML = `
-      <div class="dg-hero"><h1>What should we design?</h1><p>Websites, app screens, slides, documents, posters, posts and logos. Designs only: when a website or app should really work, build it in Craft.</p></div>
+      <div class="dg-hero"><h1>What should we design?</h1><p>Websites, app screens, slides, documents, posters, posts and logos. Designs only: when a website or app should really work, build it in Code.</p></div>
       ${D.syncOk === false ? '<p class="dg-hint">Designs from your PC show up here after a one-time setup on the server.</p>' : ''}
       ${items ? `<div class="dg-label">Your designs</div><div class="dg-list">${items}</div>` : ''}`;
     body.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('click', () => openDesign(b.dataset.id)));
@@ -249,7 +249,7 @@ Reply with the whole file in one \`\`\`html block, then one or two short lines o
       <div class="dg-stage" id="dgStage">${old && !reload ? old.innerHTML : '<div class="dg-wait"><span class="spinner"></span></div>'}</div>
       <div class="dg-actions">
         ${d.kind === 'website' ? `<div class="dg-seg"><button type="button" data-w="phone" class="${D.width === 'phone' ? 'on' : ''}">Phone</button><button type="button" data-w="fit" class="${D.width === 'fit' ? 'on' : ''}">Desktop</button></div>` : `<span class="dg-kindtag">${icon(d.kind, 16)}${esc(kindOf(d.kind).label)}</span>`}
-        ${canBuild ? '<button type="button" class="dg-build" id="dgBuild"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 4-4 16M7 8l-4 4 4 4M17 8l4 4-4 4"/></svg>Build it in Craft</button>' : ''}
+        ${canBuild ? '<button type="button" class="dg-build" id="dgBuild"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14 4-4 16M7 8l-4 4 4 4M17 8l4 4-4 4"/></svg>Build it in Code</button>' : ''}
       </div>
       <div class="dg-chat">${chat}${steps}</div>`;
     body.innerHTML = html;

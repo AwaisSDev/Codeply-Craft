@@ -72,7 +72,7 @@ const FIRST_APPROVALS = ['edit_files', 'run_commands', 'send', 'publish', 'datab
 // reaches the user when it finds something.
 const WATCH_SOURCES = { gmail: 'Gmail inbox' };
 const REACH = {
-  message: 'Message me in Craft',
+  message: 'Message me in Codeply',
   push: 'Notify my phone',
   call: 'Call me when it is very important',
 };
@@ -744,11 +744,11 @@ async function reflectOnRun(bot, run, chatFn) {
 
 function approvalLine(bot) {
   if (normalizeAutonomy(bot.autonomy).level === 'none') {
-    return 'You are set to suggest only (the user chose this). Never edit files, run commands, send, post, publish, book or change anything, even when asked in this chat: Craft refuses those actions for you. Read, look things up, think, then give your suggestion or a ready-to-use draft and say what you would do.';
+    return 'You are set to suggest only (the user chose this). Never edit files, run commands, send, post, publish, book or change anything, even when asked in this chat: Codeply refuses those actions for you. Read, look things up, think, then give your suggestion or a ready-to-use draft and say what you would do.';
   }
   const must = (bot.approval || []).map((k) => APPROVALS[k] && APPROVALS[k].label.toLowerCase()).filter(Boolean);
   if (!must.length) return 'You may act without asking first. Still never do anything irreversible the user did not ask for.';
-  return `Always get the user's approval before: ${must.join('; ')}. Craft enforces this too. Do reversible, read-only work (reading, searching, thinking) without asking.`;
+  return `Always get the user's approval before: ${must.join('; ')}. Codeply enforces this too. Do reversible, read-only work (reading, searching, thinking) without asking.`;
 }
 
 function rosterLines(team, selfId) {
@@ -844,7 +844,7 @@ function buildBotPrompt(bot, o = {}) {
   if (!bot) return '';
   const parts = [];
   const role = bot.role === 'orchestrator' ? 'the orchestrator of a small team of bots' : 'a specialist bot';
-  parts.push(`BOT IDENTITY\nYou are ${bot.name}, ${role} inside Codeply Craft. Speak as ${bot.name}. You are still the same careful agent with the same tools and rules; this is who you are for this chat.`);
+  parts.push(`BOT IDENTITY\nYou are ${bot.name}, ${role} inside Codeply. Speak as ${bot.name}. You are still the same careful agent with the same tools and rules; this is who you are for this chat.`);
   if (bot.specialty) parts.push(`SPECIALTY\n${bot.specialty}. Stay in this lane; if a request is clearly outside it, say so briefly and do the best you can.`);
   if (bot.instructions) parts.push(`HOW YOU WORK\n${bot.instructions}`);
   const tone = TONES[bot.tone && bot.tone.preset] || TONES.friendly;
@@ -867,7 +867,7 @@ function buildBotPrompt(bot, o = {}) {
       try { block = L.nowBlock(L.snapshot({ allowed }), { skipEmpty: true }); } catch {}
       // Said up front, so the bot never promises "I'll list your calls" and then finds out it may not.
       const shut = L.SOURCE_KEYS.filter((k) => !allowed.has(k)).map((k) => L.SOURCES[k].label.toLowerCase());
-      const limits = shut.length ? `You cannot read: ${shut.join('; ')}. Never offer to check those; if the user wants it, they can allow it in your Life settings in Crew.` : '';
+      const limits = shut.length ? `You cannot read: ${shut.join('; ')}. Never offer to check those; if the user wants it, they can allow it in your Life settings in Agents.` : '';
       parts.push([block, o.native ? LIFE_RULES : `${LIFE_RULES}\n\n${LIFE_FORMAT}`, limits].filter(Boolean).join('\n\n'));
     }
   }
@@ -1010,7 +1010,7 @@ async function delegate(o) {
   const team = o.team || listBots();
   const task = clip(o.task, 8000);
   const target = findBot(o.name, team);
-  const callerName = o.caller ? o.caller.name : 'Craft';
+  const callerName = o.caller ? o.caller.name : 'Codeply';
   const fail = (output) => ({ ok: false, output, meta: { label: `ask ${o.name || '?'}: refused`, delegation: { bot: target ? botCard(target) : { name: String(o.name || '?') }, task, ok: false, error: output } } });
   if (!target) return fail(`There is no bot called "${o.name}". Teammates: ${team.map((b) => b.name).join(', ') || 'none'}.`);
   if (!task) return fail('ask_bot needs a task: say exactly what you want done, with the context.');
@@ -1047,7 +1047,7 @@ function botCard(b) {
 // ─── "Describe your bot" ────────────────────────────────────────────────────
 
 function describePrompt(description) {
-  return `Design a helpful AI bot from this description. The bot lives inside Codeply Craft, a desktop coding agent app, and has the same tools (read and edit project files, run commands, search the web).
+  return `Design a helpful AI bot from this description. The bot lives inside Codeply, a desktop AI agent app, and has the same tools (read and edit project files, run commands, search the web).
 
 Description: ${clip(description, 2000)}
 
@@ -1098,7 +1098,7 @@ You are on a live voice call with the user, talking out loud. Your final reply i
 
 // The same turn as a text message from Codeply Crew on the phone: read, not spoken.
 const TEXT_RULES = `PHONE MESSAGES
-The user is texting you from Codeply Crew on their phone.
+The user is texting you from Codeply on their phone.
 - You still have all your tools. When the user asks for real work (check their email, look something up, read or change a file), do it now with your tools, then tell them the result.
 - Reply like a good text message: short and easy to read on a phone. A few sentences, or a short list when it really helps. Light markdown is fine; no headings, no long dash.
 - When an image comes with the message, it is something the user is showing you (a screenshot of their phone, a photo): look at it and answer about it.
@@ -1158,7 +1158,7 @@ function callTurns(turns) {
 async function voiceTurn({ bot, team, turns, recentChat, runAgent, route, cwd, signal, approve, onStep, maxSteps = 16, mode, images }) {
   const { history, userMessage } = callTurns(turns);
   if (!userMessage) return { text: '' };
-  const text = mode === 'text'; // a message from Codeply Crew: read on screen, not spoken
+  const text = mode === 'text'; // a message from Codeply: read on screen, not spoken
   const extra = recentChat ? `\n\nRECENT CHAT BEFORE THIS CALL\n${recentChat}` : '';
   const run = runAgent({
     userMessage, history, mode: 'Build', cwd, signal, route, maxSteps, approve, botId: bot.id,

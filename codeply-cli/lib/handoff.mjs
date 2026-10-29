@@ -95,8 +95,8 @@ export function continuationPrompt(state, to = 'cloud') {
   const why = to === 'cloud'
     ? "This task was already running on the user's PC, which went offline (power cut, crash or lost connection). You are carrying on from where it stopped."
     : to === 'pc'
-      ? 'This task carried on in Craft Cloud while the PC was offline. The PC is back and you are carrying on from where the cloud stopped.'
-      : 'This task was cut off on this PC (lost connection, or Craft closed). You are carrying on from the last save.';
+      ? 'This task carried on in the cloud while the PC was offline. The PC is back and you are carrying on from where the cloud stopped.'
+      : 'This task was cut off on this PC (lost connection, or Codeply closed). You are carrying on from the last save.';
   const lines = [state.userMessage, '', '---', `[Handoff] ${why}`, 'The files on disk already include every change from the steps below.'];
   if (state.steps.length) lines.push('', 'Steps already done (do not redo them):', ...state.steps.map((s, i) => `${i + 1}. ${s}`));
   else lines.push('', 'No steps had finished yet.');

@@ -82,7 +82,7 @@ async function refreshGmailToken(clientId, clientSecret, refreshToken) {
     // still in Testing mode, where Google drops refresh tokens after 7 days.
     // Only a fresh sign-in fixes it, so say that instead of "Bad Request".
     if (body.error === 'invalid_grant') {
-      const e = new Error('The Gmail sign-in has expired or was revoked, so Craft disconnected it. Reconnect Gmail in Connect Apps (account menu → Connect Apps), then try again.');
+      const e = new Error('The Gmail sign-in has expired or was revoked, so Codeply disconnected it. Reconnect Gmail in Connect Apps (account menu → Connect Apps), then try again.');
       e.code = 'invalid_grant';
       throw e;
     }

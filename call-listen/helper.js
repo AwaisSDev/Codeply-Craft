@@ -35,7 +35,7 @@
       return;
     }
     if (!st.active) {
-      m.innerHTML = `<div class="dim">${st.takeover && st.takeover.stage === 'done' ? 'Call ended. The summary is in Crew, Life.' : 'Not on a call.'}</div>`;
+      m.innerHTML = `<div class="dim">${st.takeover && st.takeover.stage === 'done' ? 'Call ended. The summary is in Agents, Life.' : 'Not on a call.'}</div>`;
       return;
     }
     const t = st.takeover;

@@ -266,7 +266,7 @@
     root.style.setProperty('--call-tint', A.colorHex(b.avatar.color));
     root.className = 'call ringing';
     root.innerHTML = `
-      <div class="call-top"><span class="call-badge"><span class="dot"></span>Crew call, end to end on this PC</span><span class="call-timer"></span></div>
+      <div class="call-top"><span class="call-badge"><span class="dot"></span>Agent call, end to end on this PC</span><span class="call-timer"></span></div>
       <div class="call-center">
         <div class="call-orb">${A.renderAvatar(b.avatar, 168)}</div>
         <div class="call-name">${esc(b.name)}</div>
@@ -342,7 +342,7 @@
     } catch (e) {
       stopRing();
       if (c !== me) return;
-      const msg = /Permission|NotAllowed|denied/i.test(e.message) ? 'Crew needs your microphone for calls. Allow it in Windows Settings, Privacy, Microphone.' : e.message;
+      const msg = /Permission|NotAllowed|denied/i.test(e.message) ? 'Codeply needs your microphone for calls. Allow it in Windows Settings, Privacy, Microphone.' : e.message;
       setStatus('thinking', 'Call failed');
       caption(msg);
       window.crewToast(msg, 'error');

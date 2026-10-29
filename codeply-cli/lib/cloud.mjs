@@ -211,13 +211,13 @@ export async function diagnoseRun(api, repo, runId) {
     let log = '';
     try { log = (await api('GET', `/repos/${repo}/actions/jobs/${job.id}/logs`)).text || ''; } catch {}
     if (/No matching version found for codeply-cli|notarget[\s\S]{0,200}codeply-cli/i.test(log)) {
-      return `GitHub couldn't install Craft's cloud engine (${ENGINE}): that version isn't on npm yet. Publish it, then run again.`;
+      return `GitHub couldn't install Codeply's cloud engine (${ENGINE}): that version isn't on npm yet. Publish it, then run again.`;
     }
     if (/Resource not accessible by integration/i.test(log)) return 'GitHub refused the run permission to save its work. Check Settings > Actions > General > Workflow permissions on the mirror repo.';
-    if (/ENOTFOUND|ECONNRESET|ETIMEDOUT|network/i.test(log) && /npm (error|ERR)/i.test(log)) return 'GitHub\'s runner could not download Craft\'s engine (a network hiccup on GitHub\'s side). Run it again.';
+    if (/ENOTFOUND|ECONNRESET|ETIMEDOUT|network/i.test(log) && /npm (error|ERR)/i.test(log)) return 'GitHub\'s runner could not download Codeply\'s engine (a network hiccup on GitHub\'s side). Run it again.';
     const lastError = log.split('\n').map((l) => l.replace(/^\S+Z\s/, '').replace(/\x1b\[[0-9;]*m/g, '').trim())
       .filter((l) => /error|failed|fatal/i.test(l) && !/^##\[group\]/.test(l)).slice(-1)[0];
-    if (step && step.name === 'Run Craft') return `Craft stopped before it could report back${lastError ? `: ${lastError.replace(/^##\[error\]/, '').slice(0, 240)}` : '.'}`;
+    if (step && step.name === 'Run Craft') return `Codeply stopped before it could report back${lastError ? `: ${lastError.replace(/^##\[error\]/, '').slice(0, 240)}` : '.'}`;
     if (step) return `The "${step.name}" step failed on GitHub${lastError ? `: ${lastError.replace(/^##\[error\]/, '').slice(0, 240)}` : '.'}`;
     return null;
   } catch { return null; }
@@ -270,7 +270,7 @@ export function getTask(cwd, id, home = defaultHome()) {
 
 // ─── Snapshots ───────────────────────────────────────────────────────────
 
-export const BOT = ['-c', 'user.name=Codeply Craft', '-c', 'user.email=craft-bot@users.noreply.github.com'];
+export const BOT = ['-c', 'user.name=Codeply', '-c', 'user.email=craft-bot@users.noreply.github.com'];
 
 function mirrorGit(cwd, home) {
   const gitDir = path.join(home, 'cloud', `${projectId(cwd)}.git`);
@@ -350,7 +350,7 @@ export async function pushSnapshot({ cwd, token, home = defaultHome(), serverUrl
   const p = getProject(cwd, home);
   if (!p || !p.repo) throw new Error('Cloud is not set up for this project yet.');
   // A project that works in its own GitHub repo is never snapshotted: that would overwrite its real main.
-  if (p.kind === 'repo') throw new Error(`${p.repo} is this project's own repo; Craft does not back up over it.`);
+  if (p.kind === 'repo') throw new Error(`${p.repo} is this project's own repo; Codeply does not back up over it.`);
   const snap = await snapshot({ cwd, home });
   if (snap.changed || !p.lastPush || p.lastPush.sha !== snap.sha) {
     const url = remoteUrl || `${serverUrl.replace(/\/$/, '')}/${p.repo}.git`;
@@ -434,7 +434,7 @@ export async function checkToken(api) {
   const scopes = String(r.scopes || '').split(',').map((s) => s.trim()).filter(Boolean);
   // Fine-grained and app tokens send no scope header; let GitHub decide on those.
   if (r.scopes != null && scopes.length && !(scopes.includes('repo') && scopes.includes('workflow'))) {
-    return { ok: false, login: r.json.login, error: 'GitHub needs to be reconnected so Craft may create private repos and workflow files (repo and workflow access).' };
+    return { ok: false, login: r.json.login, error: 'GitHub needs to be reconnected so Codeply may create private repos and workflow files (repo and workflow access).' };
   }
   return { ok: true, login: r.json.login };
 }
@@ -463,7 +463,7 @@ export async function installWorkflowInRepo({ api, repo, base }) {
   const cur = await api('GET', `/repos/${repo}/contents/${WORKFLOW_PATH}?ref=${encodeURIComponent(base)}`, null, { allow: [404] });
   const want = Buffer.from(CLOUD_WORKFLOW).toString('base64');
   if (cur.status === 200 && String(cur.json.content || '').replace(/\s/g, '') === want) return false;
-  const ok = await files.writeBytes(WORKFLOW_PATH, Buffer.from(CLOUD_WORKFLOW), 'Add Craft Cloud workflow');
+  const ok = await files.writeBytes(WORKFLOW_PATH, Buffer.from(CLOUD_WORKFLOW), 'Add the Codeply cloud workflow');
   if (!ok) throw new Error(`Could not add ${WORKFLOW_PATH} to ${repo}. GitHub needs the workflow permission for that.`);
   return true;
 }
@@ -587,7 +587,7 @@ export async function setupCloud({ cwd, token, model, target, envText, home = de
   let repo; let created = false; let skipped = []; let base = 'main'; let kind = 'mirror';
   if (origin) {
     const r = await api('GET', `/repos/${origin}`, null, { allow: [404] });
-    if (r.status !== 200) throw new Error(`Craft can't open ${origin} with this GitHub login.`);
+    if (r.status !== 200) throw new Error(`Codeply can't open ${origin} with this GitHub login.`);
     if (!r.json.permissions || !r.json.permissions.push) throw new Error(`This GitHub login can't push to ${origin}.`);
     repo = origin; base = r.json.default_branch || 'main'; kind = 'repo';
     updateProject(cwd, home, (p) => ({ ...p, repo, base, kind }));
@@ -789,7 +789,7 @@ export async function cloudRunStatus({ cwd, taskId, token, home = defaultHome(),
       saveTask(cwd, home, next);
       return { ...next, events };
     }
-    const why = run.conclusion === 'cancelled' ? 'The run was cancelled.' : (await diagnoseRun(api, task.repo, run.id)) || `The run ended (${run.conclusion}) before Craft could report back. The run log has details.`;
+    const why = run.conclusion === 'cancelled' ? 'The run was cancelled.' : (await diagnoseRun(api, task.repo, run.id)) || `The run ended (${run.conclusion}) before Codeply could report back. The run log has details.`;
     Object.assign(next, { status: run.conclusion === 'cancelled' ? 'cancelled' : 'failed', error: why, finishedAt: Date.now() });
   } else {
     next.status = run.status === 'queued' || run.status === 'waiting' || run.status === 'pending' ? 'queued' : 'running';
@@ -841,7 +841,7 @@ export async function pullLatest(cwd, { token } = {}) {
   let stashed = false;
   if (st.dirty) { await git(cwd, ['stash', 'push', '-q', '-m', 'craft: before pulling cloud changes']); stashed = true; }
   try {
-    await git(cwd, [...QUIET_GIT, '-c', 'user.name=Codeply Craft', '-c', 'user.email=craft-bot@users.noreply.github.com', 'pull', '-q', '--no-rebase', '--no-edit'], { auth: quietAuth(token) });
+    await git(cwd, [...QUIET_GIT, '-c', 'user.name=Codeply', '-c', 'user.email=craft-bot@users.noreply.github.com', 'pull', '-q', '--no-rebase', '--no-edit'], { auth: quietAuth(token) });
   } catch (e) {
     // A conflicting pull is undone, so the project is never left half-merged.
     const conflicted = (await git(cwd, ['diff', '--name-only', '--diff-filter=U']).catch(() => '')).split('\n').filter(Boolean);
@@ -1265,7 +1265,7 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
     // Where this task starts (a later message in the same runner starts after the earlier merge).
     const taskBase = await git(cwd, ['rev-parse', 'HEAD']).catch(() => headSha);
     const hist = state ? { messages: Array.isArray(state.history) ? state.history : [] } : await loadHistory(files, sessionId);
-    if (state) events.push({ t: 'notice', level: 'info', text: `Your PC went offline, so Craft Cloud is carrying on from step ${state.steps.length + 1}.` });
+    if (state) events.push({ t: 'notice', level: 'info', text: `Your PC went offline, so the cloud is carrying on from step ${state.steps.length + 1}.` });
     await pushProgress(state ? 'Carrying on from your PC.' : hist.messages.length ? `Continuing the chat (${hist.messages.length / 2} earlier turns).` : 'Working on it.', true);
     // Risky actions (deploys...) ask the person unless the repo's Cloud permission is "full".
     const ASK_WAIT_MS = 15 * 60 * 1000;
@@ -1294,10 +1294,10 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
     };
     let answer = ''; let steps = 0; let failure = '';
     const userMessage = state
-      ? `${continuationPrompt(state, 'cloud')}\n\n(You are now in Craft Cloud, on a Linux machine with a copy of the project as the PC left it. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. Do not commit or push; Craft does that.)`
+      ? `${continuationPrompt(state, 'cloud')}\n\n(You are now in the cloud, on a Linux machine with a copy of the project as the PC left it. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. Do not commit or push; Codeply does that.)`
       : kind === 'task'
-      ? `${prompt}\n\n(You are running unattended in Codeply Cloud on a Linux machine, not on the user's PC: you cannot reach their local files or desktop apps. Use the shell, the web and this repository. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. Your final reply is read out to the user: say plainly what you did or found, in a few short sentences, no markdown. Do not commit or push; Craft does that when you finish.)`
-      : `${prompt}\n\n(You are running unattended in Craft Cloud, in a fresh copy of the repository on a Linux machine. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. You can install dependencies, run the app and tests, and check pages with browser_check. Do not commit or push; Craft does that when you finish.)`;
+      ? `${prompt}\n\n(You are running unattended in the cloud on a Linux machine, not on the user's PC: you cannot reach their local files or desktop apps. Use the shell, the web and this repository. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. Your final reply is read out to the user: say plainly what you did or found, in a few short sentences, no markdown. Do not commit or push; Codeply does that when you finish.)`
+      : `${prompt}\n\n(You are running unattended in the cloud, in a fresh copy of the repository on a Linux machine. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. You can install dependencies, run the app and tests, and check pages with browser_check. Do not commit or push; Codeply does that when you finish.)`;
     const ac = new AbortController();
     let handedBack = false; let lastWant = Date.now(); let lastWip = Date.now();
     for await (const ev of runAgentImpl({ userMessage, history: hist.messages.slice(-HISTORY_TURNS), mode, cwd, approve, browser: agentBrowser, signal: ac.signal, route, maxSteps, ...(bot ? { botPrompt: bot.prompt } : {}), ...(state ? { todos: state.todos } : {}) })) {

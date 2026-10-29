@@ -331,7 +331,7 @@
     S.sending = true; syncStart();
     const r = await api.create(text, S.kind, S.att.start, { category: S.category, from: S.from });
     S.sending = false;
-    if (!r || r.error || !r.design) { syncStart(); startInput.placeholder = r && r.error ? r.error : 'Craft could not start that.'; return; }
+    if (!r || r.error || !r.design) { syncStart(); startInput.placeholder = r && r.error ? r.error : 'Codeply could not start that.'; return; }
     startInput.value = ''; autosize(startInput, 220); S.kind = null; S.category = null; S.from = null; S.att.start = []; renderAtt('start'); renderCtx(); renderKinds(); syncStart();
     await loadList();
     await openDesign(r.design.id);
@@ -561,7 +561,7 @@
 
   $('buildBtn').addEventListener('click', async () => {
     const b = $('buildBtn'); b.disabled = true;
-    note('Setting up a project in Craft…');
+    note('Setting up a project in Codeply…');
     const r = await api.build(S.cur.id);
     b.disabled = false;
     note(r && r.error ? r.error : '', !!(r && r.error));
@@ -708,7 +708,7 @@
     startWorking(); S.running = true; syncSend();
     const r = await api.send(S.cur.id, text, images);
     S.sending = false;
-    if (!r || r.error) { S.running = false; stopWorking(); addNote(r && r.error ? r.error : 'Craft could not start that.', 'error'); }
+    if (!r || r.error) { S.running = false; stopWorking(); addNote(r && r.error ? r.error : 'Codeply could not start that.', 'error'); }
     else if (r.sessionId) S.sessionId = r.sessionId;
     syncSend();
   }

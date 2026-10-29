@@ -337,7 +337,7 @@ function scaffoldPlugin(name, parentDir) {
   fs.mkdirSync(path.join(dir, 'commands'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'skills', 'example'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'codeply-plugin.json'), JSON.stringify({
-    name: n, version: '0.1.0', description: 'What this plugin adds to Craft', author: '', homepage: '',
+    name: n, version: '0.1.0', description: 'What this plugin adds to Codeply', author: '', homepage: '',
     instructions: ['instructions.md'],
   }, null, 2) + '\n');
   fs.writeFileSync(path.join(dir, 'commands', 'hello.md'), `---\ndescription: Say hello (example command, run it as /${n}:hello)\n---\nGreet the user and tell them which project this is. $ARGUMENTS\n`);

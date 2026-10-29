@@ -22,7 +22,7 @@
 // Craft's own agents, the mascot balls: Craft (purple) picks a specialist by
   // itself; picking one here pins it for the chat ('role:<id>' goes to main.js).
   const ROLES = [
-    { id: '', file: 'general.png', label: 'Craft', sub: 'Main agent, picks the right specialist' },
+    { id: '', file: 'general.png', label: 'Codeply', sub: 'Main agent, picks the right specialist' },
     { id: 'role:frontend', file: 'frontend.png', label: 'Frontend', sub: 'Pixel, UI and pages' },
     { id: 'role:backend', file: 'backend.png', label: 'Backend', sub: 'Circuit, servers and APIs' },
     { id: 'role:database', file: 'database.png', label: 'Database', sub: 'Index, data and schemas' },
@@ -108,7 +108,7 @@
       closeMenu();
       const b = byId(el.dataset.id);
       const r = roleOf(el.dataset.id);
-      showToast(b ? `${b.name} answers your next messages.` : r && r.id ? `${r.label} works on your next messages.` : 'Craft picks the right specialist again.');
+      showToast(b ? `${b.name} answers your next messages.` : r && r.id ? `${r.label} works on your next messages.` : 'Codeply picks the right specialist again.');
     }));
     menu.querySelector('[data-act="manage"]').addEventListener('click', () => { closeMenu(); if (window.CraftCrew) window.CraftCrew.show(); else openModal(); });
   }
@@ -173,7 +173,7 @@
           <div class="bots-describe-row">
             <span class="bots-error">${screen.error ? esc(screen.error) : ''}</span>
             <button class="btn btn-secondary bots-btn" data-act="blank">Start blank</button>
-            <button class="btn btn-primary bots-btn" data-act="describe" ${screen.busy ? 'disabled' : ''}>${screen.busy ? 'Designing...' : 'Create with Craft'}</button>
+            <button class="btn btn-primary bots-btn" data-act="describe" ${screen.busy ? 'disabled' : ''}>${screen.busy ? 'Designing...' : 'Create with Codeply'}</button>
           </div>
         </div>
         <div class="bots-sub-title">Start from a template</div>
@@ -200,7 +200,7 @@
       render();
       const r = await api.botsDescribe(text);
       if (r.error) { screen = { view: 'gallery', error: r.error, describeText: text }; render(); return; }
-      editDraft(r.draft, 'Craft drafted this bot from your description. Change anything you like, then create it.');
+      editDraft(r.draft, 'Codeply drafted this bot from your description. Change anything you like, then create it.');
     });
     on('blank', () => editDraft({ name: '', role: 'specialist', avatar: A.randomAvatar(Date.now()) }));
   }
@@ -215,7 +215,7 @@
   const AO_DEFAULT = { on: false, watch: ['gmail'], reach: 'push', draft: true, quiet: { on: true, from: '22:00', to: '07:00' }, cloud: false };
   function alwaysOnHtml(d, c) {
     const ao = d.alwaysOn = { ...AO_DEFAULT, ...(d.alwaysOn || {}), quiet: { ...AO_DEFAULT.quiet, ...((d.alwaysOn && d.alwaysOn.quiet) || {}) } };
-    const reach = cat.reach || { message: 'Message me in Craft', push: 'Notify my phone', call: 'Call me when it is very important' };
+    const reach = cat.reach || { message: 'Message me in Codeply', push: 'Notify my phone', call: 'Call me when it is very important' };
     return `<div class="${c.field}" data-ao-box><div class="${c.label}">Always on</div>
       <label class="${c.check}"><input type="checkbox" data-ao="on" ${ao.on ? 'checked' : ''}><span>Watch my Gmail inbox in the background</span></label>
       <div class="ao-more"${ao.on ? '' : ' hidden'}>

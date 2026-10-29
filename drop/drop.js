@@ -110,7 +110,7 @@
     $('fullTag').hidden = !S.bypass;
     $('modeBtn').classList.toggle('full', S.bypass);
     $('modeBtn').title = S.bypass ? 'Full access: runs everything without asking' : 'Mode and permissions';
-    input.placeholder = S.sessionId ? 'Follow up' : 'Ask Craft anything';
+    input.placeholder = S.sessionId ? 'Follow up' : 'Ask Codeply anything';
     $('title').textContent = S.title || 'New chat';
     syncSend();
   }
@@ -365,7 +365,7 @@
     const detail = ev.detail || (ev.draft ? `To: ${ev.draft.to || ''}\n${ev.draft.subject || ''}` : '');
     const always = ev.tool === 'run' ? Array.isArray(ev.alwaysScope) && ev.alwaysScope.length > 0 : !danger;
     const el = add(h(`<div class="ask ${danger ? 'danger' : ''}" data-req="${ev.requestId}">
-      <h3>${danger ? 'This one needs a careful look' : `Allow Craft to ${esc(what)}?`}</h3>
+      <h3>${danger ? 'This one needs a careful look' : `Allow Codeply to ${esc(what)}?`}</h3>
       ${ev.title ? `<div class="what">${esc(ev.title)}</div>` : ''}
       ${detail ? `<pre>${esc(String(detail).slice(0, 1200))}</pre>` : ''}
       <div class="btns">
@@ -385,9 +385,9 @@
     steps = null;
     const opts = (ev.options || []).slice(0, 6);
     const el = add(h(`<div class="ask" data-req="${ev.requestId}">
-      <h3>${esc(ev.question || 'Craft has a question')}</h3>
+      <h3>${esc(ev.question || 'Codeply has a question')}</h3>
       ${opts.length ? `<div class="btns">${opts.map((o, i) => `<button type="button" class="btn ${i === 0 ? 'primary' : ''}" data-o="${esc(o)}">${esc(o)}</button>`).join('')}</div>` : ''}
-      ${ev.connect ? '<div class="what">This needs a connection. Open Craft to connect it.</div><div class="btns"><button type="button" class="btn" data-craft>Open in Craft</button></div>' : ''}
+      ${ev.connect ? '<div class="what">This needs a connection. Open Codeply to connect it.</div><div class="btns"><button type="button" class="btn" data-craft>Open in Codeply</button></div>' : ''}
       <input type="text" placeholder="${opts.length ? 'Or type an answer' : 'Type your answer'}" />
       <div class="result" hidden></div></div>`), true);
     const answer = (text) => { if (!text) return; api.answer(ev.requestId, text); resolveCard(ev.requestId, text); };
@@ -444,7 +444,7 @@
       case 'question_request': addQuestion(ev); break;
       case 'question_resolved': resolveCard(ev.requestId, ev.answer || 'Skipped'); break;
       case 'image_pick_request':
-        addNote('Craft wants you to pick an image. Open Craft to choose one.', 'warn'); break;
+        addNote('Codeply wants you to pick an image. Open Codeply to choose one.', 'warn'); break;
       case 'checkpoint': case 'checkpoint_update': addChanged(ev.checkpoint); break;
       case 'cloud_task': if (ev.task && ev.task.status) addNote(`Cloud: ${ev.task.status}`, ''); break;
       case 'run_finished': S.running = false; stopWorking(); syncSend(); break;
@@ -494,7 +494,7 @@
     S.sending = false;
     if (!r || r.error) {
       S.running = false; stopWorking();
-      addNote(r && r.error ? r.error : 'Craft could not start that.', 'error');
+      addNote(r && r.error ? r.error : 'Codeply could not start that.', 'error');
     } else {
       S.sessionId = r.sessionId; api.showing(S.sessionId);
       if (r.project && (!S.project || S.project.path !== r.project.path)) { S.project = r.project; }

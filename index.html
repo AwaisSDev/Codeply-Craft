@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Codeply Craft</title>
+<title>Codeply</title>
 <link rel="stylesheet" href="vendor/xterm/xterm.css">
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="cloud-ui.css">
@@ -35,9 +35,9 @@
     <button class="tb-btn" id="navBack" title="Back (Alt+Left)" disabled><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
     <button class="tb-btn" id="navForward" title="Forward (Alt+Right)" disabled><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
     <!-- Craft, Crew and Design: one small icon switch, shown over all three -->
-    <div class="app-switch tb-switch" role="tablist" aria-label="Switch between Craft, Crew and Design">
-      <button class="app-switch-btn on" data-app="craft" role="tab" aria-selected="true" title="Craft" aria-label="Craft"><span class="app-ic ic-craft" aria-hidden="true"></span></button>
-      <button class="app-switch-btn" data-app="crew" role="tab" aria-selected="false" title="Crew" aria-label="Crew"><span class="app-ic ic-crew" aria-hidden="true"></span></button>
+    <div class="app-switch tb-switch" role="tablist" aria-label="Switch between Code, Agents and Design">
+      <button class="app-switch-btn on" data-app="craft" role="tab" aria-selected="true" title="Code" aria-label="Code"><span class="app-ic ic-craft" aria-hidden="true"></span></button>
+      <button class="app-switch-btn" data-app="crew" role="tab" aria-selected="false" title="Agents" aria-label="Agents"><span class="app-ic ic-crew" aria-hidden="true"></span></button>
       <button class="app-switch-btn" data-app="design" role="tab" aria-selected="false" title="Design" aria-label="Design"><span class="app-ic ic-design" aria-hidden="true"></span></button>
     </div>
   </div>
@@ -59,7 +59,7 @@
 <!-- Shown under the DSH engine's view while it starts, or when it can't. -->
 <div class="dsh-overlay" id="dshOverlay" hidden>
   <div class="dsh-overlay-card">
-    <div class="dsh-overlay-title" id="dshOverlayTitle">Starting the new Craft</div>
+    <div class="dsh-overlay-title" id="dshOverlayTitle">Starting Codeply</div>
     <div class="dsh-overlay-text" id="dshOverlayText">This takes a few seconds the first time.</div>
     <div class="dsh-overlay-actions">
       <button class="dsh-overlay-btn" id="dshRetry" hidden>Try again</button>
@@ -107,7 +107,7 @@
 
 <!-- ============ DOCKS: terminal and background tasks ============ -->
 <!-- Laid out like Claude's (app.js layoutDock): Background tasks is its own
-     column on the far right; the terminal sits under Craft's browser in the
+     column on the far right; the terminal sits under Codeply's browser in the
      column left of it, or fills that column when the browser is closed. The
      terminal runs the user's own shell as a real child process (same PATH,
      same git/gh credentials already on disk). -->
@@ -196,7 +196,7 @@
     <!-- ===== LOGIN VIEW ===== -->
     <section class="view view-login hidden" id="viewLogin">
       <div class="login-center">
-        <img class="login-logo" src="logo.png" alt="Codeply Craft">
+        <img class="login-logo" src="logo.png" alt="Codeply">
         <h1 class="login-title">Welcome to Codeply</h1>
         <p class="login-sub">Same account as the Codeply desktop app and CLI.</p>
 
@@ -242,7 +242,7 @@
     <!-- ===== REFERRAL SURVEY (one-time, per account) ===== -->
     <section class="view view-login hidden" id="viewReferral">
       <div class="login-center">
-        <img class="login-logo" src="logo.png" alt="Codeply Craft">
+        <img class="login-logo" src="logo.png" alt="Codeply">
         <h1 class="login-title">Where'd you hear about Codeply?</h1>
         <p class="login-sub">This helps us know what's working. Pick one.</p>
         <div class="referral-options" id="referralOptions">
@@ -277,7 +277,7 @@
     <!-- ===== COUNTRY SURVEY (one-time, per account) ===== -->
     <section class="view view-login hidden" id="viewCountry">
       <div class="login-center">
-        <img class="login-logo" src="logo.png" alt="Codeply Craft">
+        <img class="login-logo" src="logo.png" alt="Codeply">
         <h1 class="login-title">Which country are you from?</h1>
         <p class="login-sub">Helps us understand where Codeply is used.</p>
         <select class="select input-lg login-input" id="countrySelect">
@@ -444,7 +444,7 @@
     <div class="modal-header">
       <div>
         <div class="modal-title" id="pluginsTitle">Plugins</div>
-        <div class="modal-desc">A plugin adds slash commands, skills, MCP servers and rules to Craft. Install one from GitHub (owner/repo), a git URL or a folder. Share yours by pushing it to GitHub.</div>
+        <div class="modal-desc">A plugin adds slash commands, skills, MCP servers and rules to Codeply. Install one from GitHub (owner/repo), a git URL or a folder. Share yours by pushing it to GitHub.</div>
       </div>
       <button class="icon-btn icon-btn-sm modal-close" id="pluginsCloseBtn" title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     </div>
@@ -537,8 +537,8 @@
   <div class="modal modal-sm remote-modal" role="dialog" aria-modal="true" aria-labelledby="remoteTitle">
     <button class="icon-btn icon-btn-sm remote-close" id="remoteCloseBtn" title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     <div class="remote-orb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="3"/><path d="M12 18h.01"/></svg></div>
-    <h2 class="modal-title" id="remoteTitle">Codeply Away</h2>
-    <p>Use Craft from your phone. Sign in with the same account and drive this PC from anywhere. No codes, no QR, any network.</p>
+    <h2 class="modal-title" id="remoteTitle">Use from your phone</h2>
+    <p>Use Codeply from your phone. Sign in with the same account and drive this PC from anywhere. No codes, no QR, any network.</p>
     <ol class="remote-steps">
       <li><span class="remote-step-num">1</span><div>On your phone, open <a class="remote-url" id="remoteUrl" href="#">mobile.codeply.app</a>.</div></li>
       <li><span class="remote-step-num">2</span><div>Sign in as <strong id="remoteEmail">your account</strong>.</div></li>
@@ -546,7 +546,7 @@
     </ol>
     <div class="remote-status" id="remoteStatus"></div>
     <label class="remote-awake">
-      <span>Keep this PC awake while Craft is open, so your phone can always reach it</span>
+      <span>Keep this PC awake while Codeply is open, so your phone can always reach it</span>
       <input type="checkbox" class="switch" id="keepAwakeToggle">
     </label>
     <div class="remote-note"><svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5Z"/><path d="M9 12l2 2 4-4"/></svg>Only phones signed in to this same account can connect. Everything still runs on this PC, and every action still asks for approval.</div>
@@ -642,7 +642,7 @@
   <div class="update-gate-card">
     <img class="update-gate-logo" src="logo.png" alt="">
     <h2 id="updateGateTitle">Update required</h2>
-    <p id="updateGateText">A new version of Codeply Craft is needed to keep going.</p>
+    <p id="updateGateText">A new version of Codeply is needed to keep going.</p>
     <div class="update-gate-notes hidden" id="updateGateNotes"></div>
     <div class="update-gate-track" id="updateGateTrack"><div class="update-gate-bar" id="updateGateBar"></div></div>
     <div class="update-gate-status" id="updateGateStatus">Downloading…</div>

@@ -26,7 +26,7 @@ async function threadOf(id) {
 }
 
 async function send(o) {
-  if (!handler) return { ok: false, output: 'Bot email is only available in the Craft app.' };
+  if (!handler) return { ok: false, output: 'Bot email is only available in the Codeply app.' };
   return handler.send(o);
 }
 

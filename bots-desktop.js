@@ -56,7 +56,7 @@ function wrapApprove(approve, bot, session, cwd) {
   const wrapped = async (req) => {
     // Suggest only (autonomy Level 1): the bot never acts in any chat.
     if (bots().suggestOnly(bot, req.tool)) {
-      deps.sendEvent(session.id, { type: 'notice', level: 'info', text: `${bot.name} is set to suggest only, so it did not do that. Change it in Crew: Edit bot, Autonomy.` });
+      deps.sendEvent(session.id, { type: 'notice', level: 'info', text: `${bot.name} is set to suggest only, so it did not do that. Change it in Agents: Edit bot, Autonomy.` });
       return 'reject';
     }
     const skip = !req.danger && req.tool !== 'fetch_image' && bots().canSkipApproval(bot, req.tool);
@@ -107,7 +107,7 @@ function recentChat(session, max = 8) {
   const msgs = (session && Array.isArray(session.messages) ? session.messages : [])
     .filter((m) => (m.kind === 'user' || (m.kind === 'assistant' && !m.interim)) && m.text)
     .slice(-max);
-  return msgs.map((m) => `${m.kind === 'user' ? 'User' : 'Craft'}: ${String(m.text).replace(/\s+/g, ' ').slice(0, 500)}`).join('\n');
+  return msgs.map((m) => `${m.kind === 'user' ? 'User' : 'Codeply'}: ${String(m.text).replace(/\s+/g, ' ').slice(0, 500)}`).join('\n');
 }
 
 /** One delegated teammate run: its own prompt, only the task, its own approval boundary. */

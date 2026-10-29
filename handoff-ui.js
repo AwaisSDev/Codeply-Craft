@@ -41,15 +41,15 @@
     if (d.status === 'protected' || d.status === 'starting') {
       html = `<div class="handoff-quiet"><span class="handoff-dot"></span>Cloud backup on${d.savedAt ? ` · saved ${ago(d.savedAt)}` : ''}</div>`;
     } else if (d.status === 'offline_local') {
-      html = warn(`You're offline. Cloud backup is paused, so changes since ${clock(d.since || d.savedAt || Date.now())} aren't backed up. Craft keeps working here and backs them up when you're back.`);
+      html = warn(`You're offline. Cloud backup is paused, so changes since ${clock(d.since || d.savedAt || Date.now())} aren't backed up. Codeply keeps working here and backs them up when you're back.`);
     } else if (d.status === 'offline') {
-      html = warn("You're offline. If the connection doesn't come back soon, this task pauses here and Craft Cloud carries it on.");
+      html = warn("You're offline. If the connection doesn't come back soon, this task pauses here and the cloud carries it on.");
     } else if (d.status === 'paused') {
-      html = warn('Paused: no connection. If this PC stays offline, Craft Cloud carries the task on, and it comes back here when you are online.');
+      html = warn('Paused: no connection. If this PC stays offline, the cloud carries the task on, and it comes back here when you are online.');
     } else if (d.status === 'cloud') {
-      html = warn('Craft Cloud has this task while this PC was offline. It comes back here when you are online.');
+      html = warn('The cloud has this task while this PC was offline. It comes back here when you are online.');
     } else if (d.status === 'returning' || d.status === 'resuming') {
-      html = '<div class="handoff-quiet"><span class="handoff-dot busy"></span>Bringing this task back from Craft Cloud...</div>';
+      html = '<div class="handoff-quiet"><span class="handoff-dot busy"></span>Bringing this task back from the cloud...</div>';
     }
     box.innerHTML = html;
     box.classList.toggle('hidden', !html);

@@ -459,7 +459,7 @@ function describeProviderShort(cfg = getConfig()) {
 
 /** Suggested next step when the hosted model is busy or unavailable. */
 function byokHint() {
-  return 'You can also use your own model: in Codeply Craft click the model name next to Send and choose ' +
+  return 'You can also use your own model: in Codeply click the model name next to Send and choose ' +
     '"Add a model" or "Connect Ollama" (CLI: codeply provider openrouter --key <key>).';
 }
 

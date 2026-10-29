@@ -1093,7 +1093,7 @@ function toResponsesRequest(messages, opts) {
 function chatgptErrorMessage(code, fallback) {
   switch (code) {
     case 'subscription_sharing_usage_limit_exceeded':
-      return 'You reached the ChatGPT plan usage allowed for Craft. Manage usage at chatgpt.com/settings/usage, or pick another model.';
+      return 'You reached the ChatGPT plan usage allowed for Codeply. Manage usage at chatgpt.com/settings/usage, or pick another model.';
     case 'subscription_sharing_user_not_eligible':
       return 'Your ChatGPT plan or workspace can’t be used in other apps. Pick another model, or check your plan at chatgpt.com.';
     case 'subscription_sharing_invalid_user':

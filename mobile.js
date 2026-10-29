@@ -379,7 +379,7 @@ function addToolItem(t) {
   if (t.screenshotPath) {
     const img = document.createElement('img');
     img.className = 'tool-screenshot';
-    img.alt = 'Screenshot Craft took of the page';
+    img.alt = 'Screenshot Codeply took of the page';
     img.addEventListener('click', (e) => { e.preventDefault(); openLightbox(img.src); });
     el.querySelector('.tool-body').appendChild(img);
     loadScreenshot(img, t.screenshotPath);
@@ -770,8 +770,8 @@ function receiveEvent(event) {
 
 function showApproval(event) {
   state.approval = event;
-  $('approvalTitle').textContent = event.title || 'Craft Needs Approval';
-  $('approvalDetail').textContent = event.detail || `Allow Craft to run ${String(event.tool || 'action').replace(/_/g, ' ')}?`;
+  $('approvalTitle').textContent = event.title || 'Codeply Needs Approval';
+  $('approvalDetail').textContent = event.detail || `Allow Codeply to run ${String(event.tool || 'action').replace(/_/g, ' ')}?`;
   $('approvalSheet').classList.remove('hidden');
 }
 
@@ -975,7 +975,7 @@ function friendlyAuthError(err, fallback) {
   if (s.includes('email not confirmed')) return 'Confirm your email first (check your inbox), then sign in.';
   if (s.includes('expired') || (s.includes('invalid') && (s.includes('otp') || s.includes('token')))) return 'That code is wrong or has expired. Request a new one.';
   if (s.includes('rate') || s.includes('too many') || s.includes('seconds')) return 'Too many attempts. Wait a minute and try again.';
-  if (s.includes('signups not allowed') || s.includes('user not found')) return 'No account with that email. Create one in Codeply Craft on your PC first.';
+  if (s.includes('signups not allowed') || s.includes('user not found')) return 'No account with that email. Create one in Codeply on your PC first.';
   if (s.includes('fetch') || s.includes('network')) return "Can't reach Codeply. Check your internet connection.";
   return err?.message || fallback;
 }
@@ -1034,7 +1034,7 @@ async function openRelay() {
   const { data, error } = await sb.auth.getUser();
   if (error || !data?.user) throw new Error('You are signed out. Sign in again.');
   const secret = data.user.user_metadata?.craft_relay;
-  if (!secret) throw Object.assign(new Error('Open Codeply Craft on your PC and sign in there once, then try again.'), { noPc: true });
+  if (!secret) throw Object.assign(new Error('Open Codeply on your PC and sign in there once, then try again.'), { noPc: true });
   const channel = sb.channel(`craft-${data.user.id}-${secret}`, { config: { broadcast: { self: false } } });
   channel.on('broadcast', { event: 'res' }, ({ payload }) => {
     const msg = relayAssemble(payload);
@@ -1085,7 +1085,7 @@ function waitForPc(ms = 5000) {
 
 async function relayRequest(method, path, body) {
   if (!relay.channel) throw new Error('Not connected to your PC.');
-  if (!relay.pcId) throw new Error('Your PC is offline. Open Codeply Craft on it and keep it on.');
+  if (!relay.pcId) throw new Error('Your PC is offline. Open Codeply on it and keep it on.');
   const id = newId();
   const token = await accessToken();
   return new Promise((resolve, reject) => {
@@ -1352,7 +1352,7 @@ async function offlineChat(pick, text) {
     // The account's row for this PC model (metadata only, the key stays sealed).
     const { models } = await cloudCall(USER_MODELS_URL, { action: 'list' });
     const row = (models || []).find((m) => m.clientId === pick.id);
-    if (!row) throw new Error(`${pick.name} is not synced yet. Turn on "Use on my phone" for it in Craft.`);
+    if (!row) throw new Error(`${pick.name} is not synced yet. Turn on "Use on my phone" for it in Codeply.`);
     state.offlineChat.push({ role: 'user', content: text });
     const data = await cloudCall(BYOK_PROXY_URL, {
       modelId: row.id,
