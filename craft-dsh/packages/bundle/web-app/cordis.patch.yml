@@ -642,6 +642,14 @@
     - id: codeply-browser-check
       name: '@codeply/dsh-browser-check'
 
+    # design_direction and design_lint for the codeply-taste skill, run by Craft.
+    - id: codeply-design-tools
+      name: '@codeply/dsh-design-tools'
+
+    # Codeply's shared context: the brain, the user's day and what Codeply did lately, from Craft.
+    - id: codeply-shared-context
+      name: '@codeply/dsh-shared-context'
+
     # Codeply Craft brand: the atomic mark and the name, no build badge.
     - id: ui-brand-craft
       name: '@codeply/dsh-client-ui-brand-craft'

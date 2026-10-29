@@ -370,10 +370,13 @@ async function tick() {
     const team = BOTS().listBots();
     const snap = LIFE().snapshot({ allowed: enabledSet() });
     const due = T.due({ store, snap, settings: settings.nudges, now: Date.now(), atPc: atPc() });
+    if (process.env.CODEPLY_DEBUG) console.log(`[life] tick: due ${JSON.stringify(due.map((c) => c.key))}`);
     if (!due.length) return;
     const picked = due.slice(0, 3).map((c) => ({ ...c, bot: T.chooseBot(c, team, settings.nudges) }));
     let msgs = null;
-    try {
+    // Messages sent as written (the morning message) need no judge call.
+    if (picked.every((c) => c.verbatim)) msgs = picked.map((c) => ({ key: c.key, send: true, how: 'text', text: c.fallback }));
+    if (!msgs) try {
       const prompt = T.judgePrompt(picked, snap);
       const r = await lib('telemetry.js').withProduct('crew', () => deps.aiLib().chatJson([{ role: 'user', content: prompt }], { route: deps.currentRoute() }));
       if (r && r.success && r.json) msgs = T.parseJudge(r.json, picked);
@@ -391,18 +394,26 @@ async function tick() {
   } finally { ticking = false; }
 }
 
+const shown = new Set(); // desktop notifications still on screen
 /** One nudge: the bot's Crew thread always; a desktop notification at the PC, the phone otherwise. */
 async function deliver(c, m) {
   const bot = c.bot;
-  const text = String(m.text || c.fallback).slice(0, 480);
+  const text = String(m.text || c.fallback).slice(0, c.verbatim ? 3000 : 480);
+  if (c.morning) { try { lib('morning.js').markSent(store); } catch {} }
   const how = m.how === 'call' && bot && bot.alwaysOn && bot.alwaysOn.reach === 'call' ? 'call' : 'text';
   const nudge = store.addNudge({ trigger: c.trigger, key: c.key, botId: bot ? bot.id : null, how, text });
   const msg = { kind: 'nudge', id: nudge.id, trigger: c.trigger, text, url: c.url || '', label: TRIG().TRIGGERS[c.trigger] ? TRIG().TRIGGERS[c.trigger].label : '' };
   if (bot && deps.crewThread) { try { deps.crewThread(bot.id, msg); } catch {} }
   const here = atPc();
   if (here && deps.Notification && deps.Notification.isSupported()) {
-    const n = new deps.Notification({ title: bot ? bot.name : 'Codeply', body: text.slice(0, 240), icon: deps.notifyIcon, silent: c.trigger === 'watched' });
+    const body = c.morning ? c.morning.summary : text;
+    const n = new deps.Notification({ title: bot ? bot.name : 'Codeply', body: body.slice(0, 240), icon: deps.notifyIcon, silent: c.trigger === 'watched' });
     n.on('click', () => { if (bot) deps.openBot(bot.id); });
+    // Hold on to it until it is gone: on Windows a toast whose object was collected can vanish unseen.
+    shown.add(n);
+    const drop = () => shown.delete(n);
+    n.on('close', drop); n.on('click', drop);
+    setTimeout(drop, 30 * 60000).unref?.();
     n.show();
   }
   if ((!here || how === 'call') && settings.nudges.phone !== false) {
@@ -477,6 +488,7 @@ function setSettings(patch = {}) {
       if (hh.test(n.quiet.from)) settings.nudges.quiet.from = n.quiet.from;
       if (hh.test(n.quiet.to)) settings.nudges.quiet.to = n.quiet.to;
     }
+    if (/^([01]\d|2[0-3]):[0-5]\d$/.test(n.briefAt || '')) settings.nudges.briefAt = n.briefAt;
     if (n.triggers && typeof n.triggers === 'object') for (const [k, v] of Object.entries(n.triggers)) if (TRIG().TRIGGERS[k]) settings.nudges.triggers[k] = !!v;
     if (n.botFor && typeof n.botFor === 'object') for (const [k, v] of Object.entries(n.botFor)) if (TRIG().TRIGGERS[k]) settings.nudges.botFor[k] = typeof v === 'string' ? v : '';
   }

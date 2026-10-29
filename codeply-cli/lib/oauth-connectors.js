@@ -210,6 +210,15 @@ async function calendarListEvents(accessToken, { timeMin, timeMax, maxResults = 
   return data.items || [];
 }
 
+/** One event by id, or null when Google has no such event. Cancelled events come back with status "cancelled". */
+async function calendarGetEvent(accessToken, id) {
+  const res = await fetch(`${CALENDAR_EVENTS_URL}/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (res.status === 404 || res.status === 410) return null;
+  const data = await readJson(res);
+  if (!res.ok) throw calendarError(data, res.status, 'Calendar read');
+  return data;
+}
+
 /** Creates an event on the primary calendar. `event` is a Calendar API event resource. Guests get an invite. */
 async function calendarInsertEvent(accessToken, event) {
   const invite = Array.isArray(event.attendees) && event.attendees.length ? '?sendUpdates=all' : '';
@@ -219,7 +228,11 @@ async function calendarInsertEvent(accessToken, event) {
     body: JSON.stringify(event),
   });
   const data = await readJson(res);
-  if (!res.ok) throw calendarError(data, res.status, 'Calendar add');
+  if (!res.ok) {
+    const e = calendarError(data, res.status, 'Calendar add');
+    e.duplicate = res.status === 409; // an event with this client-chosen id already exists
+    throw e;
+  }
   return data; // { id, htmlLink, ... }
 }
 
@@ -254,7 +267,7 @@ async function gmailGetMessage(accessToken, id) {
   const plain = parts.find((p) => p.type.startsWith('text/plain'));
   const html = parts.find((p) => p.type.startsWith('text/html'));
   const body = plain ? plain.text : html ? html.text.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, '').replace(/<br\s*\/?>|<\/p>|<\/div>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&') : (msg.snippet || '');
-  return { id: msg.id, threadId: msg.threadId, from: header('From'), to: header('To'), cc: header('Cc'), subject: header('Subject'), date: header('Date'), body };
+  return { id: msg.id, threadId: msg.threadId, labels: msg.labelIds || [], from: header('From'), to: header('To'), cc: header('Cc'), subject: header('Subject'), date: header('Date'), body };
 }
 
 async function gmailSearch(accessToken, query, maxResults = 10) {
@@ -689,7 +702,7 @@ async function checkAccessToken(name, token) {
 module.exports = {
   API, apiCall, checkAccessToken,
   buildGmailAuthUrl, exchangeGmailCode, refreshGmailToken, getGmailProfile, gmailSend, gmailSearch, gmailCreateDraft, gmailError, rawEmail,
-  calendarListEvents, calendarInsertEvent, calendarPatchEvent, calendarDeleteEvent, gmailGetMessage, calendarError, GOOGLE_SCOPE,
+  calendarListEvents, calendarGetEvent, calendarInsertEvent, calendarPatchEvent, calendarDeleteEvent, gmailGetMessage, calendarError, GOOGLE_SCOPE,
   buildSlackAuthUrl, exchangeSlackCode, slackPostMessage, slackListChannels, slackJoinChannel,
   buildVercelAuthUrl, exchangeVercelCode, getVercelProfile, vercelDeploy, vercelSetEnvVars,
   buildSupabaseAuthUrl, exchangeSupabaseCode, refreshSupabaseToken, supabaseListOrganizations, supabaseCreateProject, supabaseGetProjectKeys,

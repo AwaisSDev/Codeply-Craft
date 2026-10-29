@@ -99,6 +99,17 @@ async function notify(ev) {
   try { deps.crewThread(bot.id, { ...ev, text: line }); } catch (e) { console.warn('[always on] thread:', e.message); }
   // Work for another bot in it (a meeting request goes to the calendar bot; brain-desktop.js).
   if (deps.onImportant) { try { deps.onImportant(ev); } catch {} }
+  // A reply drafted overnight goes in the morning message's "Waiting on you".
+  if (ev.draftId) {
+    try {
+      const store = lib('life.js').getStore();
+      if (store) {
+        const day = Date.now() - 24 * 3600 * 1000;
+        const kept = (store.getState('morning.drafts', []) || []).filter((d) => d.at > day && d.id !== ev.draftId);
+        store.setState('morning.drafts', [...kept, { id: ev.draftId, at: Date.now(), from: ev.fromName || ev.fromEmail || '', subject: ev.subject || '' }].slice(-10));
+      }
+    } catch {}
+  }
   const { Notification } = deps;
   if (Notification && Notification.isSupported()) {
     const n = new Notification({ title: bot.name, body: `${line}${ev.summary ? `\n${ev.summary}` : ''}`.slice(0, 240), icon: deps.notifyIcon, silent: quiet });

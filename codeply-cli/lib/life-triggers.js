@@ -44,6 +44,7 @@ const short = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); retur
 const firstName = (p) => String(p || '').replace(/<.*>/, '').replace(/@.*/, '').trim().split(/\s+/)[0] || String(p || '');
 const emailOf = (p) => ((/<([^>]+)>/.exec(String(p || '')) || [])[1] || (String(p || '').includes('@') ? String(p).trim() : '')).toLowerCase();
 const localHour = (t, tz) => Number(L.clock(t, tz).slice(0, 2));
+const minutesOfDay = (t, tz) => { const c = L.clock(t, tz); return Number(c.slice(0, 2)) * 60 + Number(c.slice(3, 5)); };
 
 // ─── The triggers ───────────────────────────────────────────────────────────
 
@@ -117,17 +118,21 @@ function watched({ store, now }) {
     }));
 }
 
-function brief({ store, snap, now, atPc }) {
+function brief({ store, snap, now, atPc, settings = {} }) {
   const tz = snap.tz;
-  const h = localHour(now, tz);
-  if (h < 7 || h >= 11) return [];
-  if (!atPc && h < 9) return [];
-  const start = L.startOfDay(now, tz);
-  const today = store.items({ sources: ['calendar', 'plans'], from: start, to: start + DAY, limit: 20, order: 'asc' }).filter((x) => x.kind !== 'cancelled');
-  const waiting = (store.getState('gmail.waiting', []) || []).length;
-  const facts = [today.length ? `Today: ${today.map((x) => `${x.data && x.data.allDay ? 'all day' : L.clock(x.at, tz)} ${short(x.title, 50)}`).join('; ')}.` : 'Nothing on the calendar today.'];
-  if (waiting) facts.push(`${waiting} email${waiting === 1 ? '' : 's'} waiting on a reply.`);
-  return [{ key: `brief:${L.dayKey(now, tz)}`, trigger: 'brief', priority: PRIORITY.brief, how: 'text', facts, fallback: facts.join(' ') }];
+  // The user's morning time (default 07:00); it goes out in the four hours after.
+  const hm = /^(\d{1,2}):(\d{2})$/.exec(String(settings.briefAt || ''));
+  const chosen = hm ? Number(hm[1]) * 60 + Number(hm[2]) : null;
+  const mins = minutesOfDay(now, tz);
+  const from = chosen == null ? 7 * 60 : chosen;
+  if (mins < from || mins >= from + 4 * 60) return [];
+  // At the default time, not before 9 unless they are at the PC; a time they picked is theirs.
+  if (chosen == null && !atPc && mins < 9 * 60) return [];
+  // The morning message: built from the ledger and the stores, sent as written so it claims nothing they can't back.
+  let todos = [];
+  try { const B = require('./brain.js'); if (B.available()) todos = B.list({ scope: 'me', kinds: ['todo'], limit: 20 }).filter((m) => now - m.updatedAt < 21 * DAY); } catch {}
+  const m = require('./morning.js').build({ store, snap, now, todos });
+  return [{ key: `brief:${L.dayKey(now, tz)}`, trigger: 'brief', priority: PRIORITY.brief, how: 'text', verbatim: true, facts: ['The morning message, sent as written.'], fallback: m.text, morning: m }];
 }
 
 function activity({ store, snap, now }) {
@@ -172,7 +177,7 @@ function due({ store, snap, settings = {}, now = Date.now(), atPc = false }) {
   const all = [];
   for (const [k, gen] of Object.entries(GENERATORS)) {
     if (!triggerOn(k, settings)) continue;
-    try { all.push(...gen({ store, snap, now, atPc })); } catch {}
+    try { all.push(...gen({ store, snap, now, atPc, settings })); } catch {}
   }
   if (!all.length) return [];
   const today = store.nudgesSince(L.startOfDay(now, tz), 200);
@@ -275,6 +280,7 @@ function parseJudge(json, cands) {
   if (!list) return null;
   const out = [];
   for (const c of cands) {
+    if (c.verbatim) { out.push({ key: c.key, send: true, how: 'text', text: c.fallback }); continue; }
     const m = list.find((x) => x && x.key === c.key);
     if (!m) { out.push({ key: c.key, send: true, how: c.how || 'text', text: c.fallback }); continue; }
     const text = String(m.text || '').replace(/\s*\u2014\s*/g, ', ').replace(/\s+/g, ' ').trim().slice(0, 480);

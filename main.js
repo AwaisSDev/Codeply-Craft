@@ -3878,6 +3878,13 @@ dshChat.init({
     const r = await toolsMod.TOOLS.browser_check({ url, viewport, wait }, { browser: browserCheck, cwd: process.cwd() });
     return { ok: !!r.ok, output: String(r.output || '') };
   },
+  // codeply-taste's tools for the harness: Classic's design-tools.mjs, with the real render in Craft's browser.
+  designTool: async (name, args, cwd) => {
+    if (!cwd || !fs.existsSync(cwd)) return { ok: false, output: `${name}: no project folder.` };
+    const design = await import(pathToFileURL(path.join(CLI_DIR, 'lib', 'design-tools.mjs')).href);
+    const r = await design[name](args, { cwd, browser: browserCheck });
+    return { ok: !!(r && r.ok), output: String((r && r.output) || '') };
+  },
 });
 let dshChatReady = null; // whether the harness can run on this PC, checked once
 async function dshChatFor({ mode, images, bot, verifyOnly, goal }) {

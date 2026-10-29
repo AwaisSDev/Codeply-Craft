@@ -44,6 +44,10 @@ const HAZE_PATCH = `# Written by the Codeply CLI: the ACP profile answers throug
 - insert:
     - id: llm-haze
       name: '@codeply/dsh-llm-haze'
+    - id: codeply-design-tools
+      name: '@codeply/dsh-design-tools'
+    - id: codeply-shared-context
+      name: '@codeply/dsh-shared-context'
 `;
 
 /** Where the engine lives and which Node runs it, or a readable reason it cannot start. */
@@ -91,10 +95,38 @@ function startBridge() {
   const token = crypto.randomBytes(32).toString('hex');
   const server = http.createServer(async (req, res) => {
     const reply = (status, body) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
-    if (req.method !== 'POST' || req.url !== '/haze') return reply(404, { success: false, error: 'Not found.' });
+    const design = /^\/design\/(design_direction|design_lint)$/.exec(req.url || '');
+    const shared = req.url === '/context' || /^\/brain\/(remember|recall|life_context)$/.test(req.url || '');
+    if (req.method !== 'POST' || (req.url !== '/haze' && !design && !shared)) return reply(404, { success: false, error: 'Not found.' });
     const got = Buffer.from(String(req.headers.authorization || ''));
     const want = Buffer.from(`Bearer ${token}`);
     if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return reply(401, { success: false, error: 'Unauthorized.' });
+    // The shared context (brain, the user's day, what Codeply did lately), the same as the desktop app's chats get.
+    if (shared) {
+      try {
+        const body = JSON.parse(await readBody(req));
+        const sc = require('./shared-context.js');
+        const o = { cwd: String(body.cwd || ''), chatId: String(body.chatId || ''), request: String(body.request || '') };
+        if (req.url === '/context') return reply(200, { ok: true, text: sc.blockFor({ ...o, native: true }) });
+        const r = await sc.runTool(req.url.slice('/brain/'.length), body.args && typeof body.args === 'object' ? body.args : {}, o);
+        return reply(200, { ok: !!(r && r.ok), output: String((r && r.output) || '') });
+      } catch (e) {
+        return reply(200, { ok: false, output: `Codeply's shared context failed: ${e && e.message ? e.message : e}`, text: '' });
+      }
+    }
+    // codeply-taste's tools: Classic's design-tools.mjs (no browser here, so design_lint scans without a render).
+    if (design) {
+      try {
+        const body = JSON.parse(await readBody(req));
+        const cwd = String(body.cwd || '');
+        if (!cwd || !fs.existsSync(cwd)) return reply(200, { ok: false, output: `${design[1]}: no project folder.` });
+        const tools = await import('./design-tools.mjs');
+        const r = await tools[design[1]](body.args && typeof body.args === 'object' ? body.args : {}, { cwd });
+        return reply(200, { ok: !!(r && r.ok), output: String((r && r.output) || '') });
+      } catch (e) {
+        return reply(200, { ok: false, output: `${design[1]} failed: ${e && e.message ? e.message : e}` });
+      }
+    }
     const ac = new AbortController();
     res.on('close', () => { if (!res.writableEnded) ac.abort(); });
     try {
@@ -216,6 +248,8 @@ export class DshEngine {
       env: {
         ...process.env,
         DSH_HOME: dshHome(),
+        // Classic's bundled skills (codeply-taste and the rest) for the harness too.
+        DSH_BUNDLED_SKILL_DIR: path.resolve(HERE, '..', 'skills'),
         ...this.extraEnv,
         CODEPLY_HAZE_BRIDGE_URL: this.bridge.url,
         CODEPLY_HAZE_BRIDGE_TOKEN: this.bridge.token,

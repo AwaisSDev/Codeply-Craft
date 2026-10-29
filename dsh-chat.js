@@ -52,13 +52,17 @@ const PATCH = `# Written by Codeply Craft: Classic's chats on the DSH harness.
       name: '@codeply/dsh-web-search'
     - id: codeply-browser-check
       name: '@codeply/dsh-browser-check'
+    - id: codeply-design-tools
+      name: '@codeply/dsh-design-tools'
+    - id: codeply-shared-context
+      name: '@codeply/dsh-shared-context'
 - id: web
   config:
     searchProvider: codeply
     fetchProvider: http
 `;
 
-let host = null;   // { cliDir, aiLib(), configLib(), browserReport(args) }
+let host = null;   // { cliDir, aiLib(), configLib(), browserReport(args), designTool(name, args, cwd) }
 let acp = null;    // codeply-cli/lib/dsh-acp.mjs
 let bridge = null; // { server, url, token }
 const engines = new Map(); // folder key -> { engine, usedAt }
@@ -113,6 +117,30 @@ function startBridge() {
         return reply(200, await host.browserReport({ url: String(body.url || ''), viewport: body.viewport, wait: body.wait }));
       } catch (e) {
         return reply(200, { ok: false, output: `browser_check failed: ${e && e.message ? e.message : e}` });
+      }
+    }
+    // The shared context (brain, the user's day, what Codeply did lately) and its tools,
+    // from the same stores every part of Codeply uses.
+    if (req.url === '/context' || /^\/brain\/(remember|recall|life_context)$/.test(req.url || '')) {
+      try {
+        const body = JSON.parse(await readBody(req));
+        const shared = require(path.join(host.cliDir, 'lib', 'shared-context.js'));
+        const o = { cwd: String(body.cwd || ''), chatId: String(body.chatId || ''), request: String(body.request || '') };
+        if (req.url === '/context') return reply(200, { ok: true, text: shared.blockFor({ ...o, native: true }) });
+        const r = await shared.runTool(req.url.slice('/brain/'.length), body.args && typeof body.args === 'object' ? body.args : {}, o);
+        return reply(200, { ok: !!(r && r.ok), output: String((r && r.output) || '') });
+      } catch (e) {
+        return reply(200, { ok: false, output: `Codeply's shared context failed: ${e && e.message ? e.message : e}`, text: '' });
+      }
+    }
+    // The codeply-taste tools (design_direction, design_lint), run with Classic's code.
+    const design = /^\/design\/(design_direction|design_lint)$/.exec(req.url || '');
+    if (design) {
+      try {
+        const body = JSON.parse(await readBody(req));
+        return reply(200, await host.designTool(design[1], body.args && typeof body.args === 'object' ? body.args : {}, String(body.cwd || '')));
+      } catch (e) {
+        return reply(200, { ok: false, output: `${design[1]} failed: ${e && e.message ? e.message : e}` });
       }
     }
     if (req.url !== '/haze') return reply(404, { success: false, error: 'Not found.' });

@@ -8,6 +8,7 @@ import { execFileSync } from 'child_process';
 import { pathToFileURL, fileURLToPath } from 'url';
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'codeply-cli');
+process.env.CODEPLY_SPINE_DB = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'codeply-cloud-ledger-')), 'ledger.db');
 const cl = await import(pathToFileURL(path.join(CLI, 'lib/cloud.mjs')).href);
 
 let failures = 0;

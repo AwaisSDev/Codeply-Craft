@@ -34,6 +34,8 @@ const applyLimit = require('./apply-limit.js');
 const config = require('./config.js');
 const skills = require('./skills.js');
 const oauth = require('./oauth-connectors.js');
+const spine = require('./spine.js');
+const ONCE_ONLY = new Set(['gmail_send', 'bot_email_send', 'slack_post_message']);
 const webTools = require('./web-tools.js');
 const applyPatchLib = require('./apply-patch.js');
 const publishLib = require('./publish.js');
@@ -796,7 +798,10 @@ async function storeDraft(draft, token) {
     } else {
       try {
         const r = await oauth.gmailCreateDraft(token, draft);
-        return { ok: true, output: `Draft saved in Gmail's Drafts folder${draft.to ? ` (to ${draft.to})` : ''}, Gmail draft id ${r.id}. Nothing was sent.`, meta: { label: `draft: ${draft.subject || '(no subject)'}` } };
+        const proof = r.message && r.message.id
+          ? await readBackMessage(token, r.message.id, 'DRAFT', { subject: draft.subject })
+          : { type: 'api_readback', ok: false, detail: 'Gmail returned no message for the draft' };
+        return { ok: true, output: `Draft saved in Gmail's Drafts folder${draft.to ? ` (to ${draft.to})` : ''}, Gmail draft id ${r.id}. Nothing was sent.${proof.ok ? ' Checked: it is in Gmail Drafts.' : ` Warning: ${proof.detail}.`}`, meta: { label: `draft: ${draft.subject || '(no subject)'}`, evidence: [proof], gmailDraftId: r.id } };
       } catch (e) {
         if (!e.scopeMissing) return { ok: false, output: googleFailure('Gmail draft', 'email', e) };
         why = 'Gmail was connected before drafts were allowed, so it was saved in Codeply\'s drafts instead. Reconnect Gmail in Connect Apps to allow drafts in Gmail.';
@@ -806,10 +811,11 @@ async function storeDraft(draft, token) {
     why = 'Gmail is not connected, so it was saved in Codeply\'s own drafts (not in Gmail). Connect Gmail in Connect Apps to keep drafts in Gmail.';
   }
   const d = saveLocalDraft(draft);
+  const saved = !!readLocalDraft(d.id);
   return {
     ok: true,
     output: `Draft saved, id ${d.id}. ${why} Nothing was sent. drafts_list shows saved drafts; gmail_send with <draft>${d.id}</draft> sends it once Gmail is connected.`,
-    meta: { label: `draft ${d.id}: ${d.subject || '(no subject)'}`, draftId: d.id },
+    meta: { label: `draft ${d.id}: ${d.subject || '(no subject)'}`, draftId: d.id, evidence: [{ type: 'file_check', ok: saved, detail: saved ? "found in Codeply's drafts" : "not found in Codeply's drafts" }] },
   };
 }
 
@@ -855,7 +861,8 @@ async function gmail_send(args, ctx) {
     const note = edited ? ` The user edited it before sending; what went out: to ${email.to}${email.cc ? `, cc ${email.cc}` : ''}, subject "${email.subject}".` : '';
     // Whoever this answers is no longer waiting on the user (the life context).
     try { lifeLib.noteSent([email.to, email.cc].filter(Boolean).join(',')); } catch {}
-    return { ok: true, output: `Email sent to ${email.to}${email.cc ? `, cc ${email.cc}` : ''} (message id ${result.id}).${note}`, meta: { label: `to ${email.to}: ${email.subject}` } };
+    const proof = await readBackMessage(token, result.id, 'SENT', { to: email.to, subject: email.subject });
+    return { ok: true, output: `Email sent to ${email.to}${email.cc ? `, cc ${email.cc}` : ''} (message id ${result.id}).${note}${proof.ok ? ' Checked: it is in Gmail Sent.' : ` Warning: ${proof.detail}.`}`, meta: { label: `to ${email.to}: ${email.subject}`, evidence: [proof] } };
   } catch (e) {
     return { ok: false, output: googleFailure('Gmail send', 'email', e) };
   }
@@ -1019,15 +1026,76 @@ async function calendar_add(args, ctx) {
   let t;
   try { t = await googleTokenFor('Google Calendar'); } catch (e) { return { ok: false, output: `Calendar add failed: ${e.message}` }; }
   if (t.error) return { ok: false, output: t.error };
+  // The ledger's key as the event's own id: the same request sent twice is one event, not two.
+  if (ctx.spineAction && ctx.spineAction.key) event.id = eventIdFor(ctx.spineAction.key);
 
-  const detail = [`When: ${when} (local time)`, event.location ? `Where: ${event.location}` : '', guests.length ? `Guests (they get an invite): ${guests.join(', ')}` : '', mins.length ? `Reminders: ${mins.map((m) => `${m} min before`).join(', ')}` : '', event.description ? `\n${event.description}` : ''].filter(Boolean).join('\n');
+  const detail =[`When: ${when} (local time)`, event.location ? `Where: ${event.location}` : '', guests.length ? `Guests (they get an invite): ${guests.join(', ')}` : '', mins.length ? `Reminders: ${mins.map((m) => `${m} min before`).join(', ')}` : '', event.description ? `\n${event.description}` : ''].filter(Boolean).join('\n');
   const verdict = readVerdict(await ctx.approve({ tool: 'calendar_add', title: `Add "${title}" to your calendar`, detail, danger: false }));
   if (verdict.action === 'reject') return { ok: false, output: `User declined to add "${title}" to the calendar.`, meta: { rejected: true } };
+  let r;
+  let again = false;
   try {
-    const r = await oauth.calendarInsertEvent(t.token, event);
-    return { ok: true, output: `Added "${title}" to the calendar: ${when} (local time)${event.location ? `, at ${event.location}` : ''}${guests.length ? `; invites sent to ${guests.join(', ')}` : ''}. Event id ${r.id}.${r.htmlLink ? ` Link: ${r.htmlLink}` : ''}`, meta: { label: `${title}: ${when}` } };
+    r = await oauth.calendarInsertEvent(t.token, event);
   } catch (e) {
-    return { ok: false, output: googleFailure('Calendar add', 'calendar', e) };
+    if (!(e.duplicate && event.id)) return { ok: false, output: googleFailure('Calendar add', 'calendar', e) };
+    again = true; // already added by an earlier try of this same request
+    r = { id: event.id };
+  }
+  const proof = await readBackEvent(t.token, r.id, { summary: title, start: event.start });
+  const check = proof.ok ? ' Checked: it is on the calendar as asked.' : ` Warning: ${proof.detail}. Tell the user it may not have been added correctly.`;
+  return {
+    ok: true,
+    output: `${again ? `"${title}" was already added by an earlier try, so it was not added twice. It is` : `Added "${title}" to the calendar:`} ${when} (local time)${event.location ? `, at ${event.location}` : ''}${guests.length ? `; invites sent to ${guests.join(', ')}` : ''}. Event id ${r.id}.${r.htmlLink ? ` Link: ${r.htmlLink}` : ''}${check}`,
+    meta: { label: `${title}: ${when}`, evidence: [proof] },
+  };
+}
+
+/** A ledger key as a Google Calendar event id (lowercase hex is valid base32hex, 5 to 1024 chars). */
+function eventIdFor(key) { return `cp${String(key).slice(0, 30)}`; }
+
+/**
+ * Proof for the ledger: read the event back from Google and compare it with
+ * what was asked. want: { summary, start } or { cancelled: true }.
+ */
+async function readBackEvent(token, id, want) {
+  const type = 'api_readback';
+  try {
+    const ev = await oauth.calendarGetEvent(token, id);
+    if (want.cancelled) {
+      const gone = !ev || ev.status === 'cancelled';
+      return { type, ok: gone, detail: gone ? 'Google Calendar shows it cancelled' : 'Google Calendar still shows the event' };
+    }
+    if (!ev || ev.status === 'cancelled') return { type, ok: false, detail: `Google Calendar has no event ${id}` };
+    const wrong = [];
+    if (want.summary != null && String(ev.summary || '') !== String(want.summary)) wrong.push(`its title is "${ev.summary || ''}"`);
+    if (want.start) {
+      const got = ev.start || {};
+      const same = want.start.dateTime
+        ? !!got.dateTime && Date.parse(got.dateTime) === Date.parse(want.start.dateTime)
+        : got.date === want.start.date;
+      if (!same) wrong.push(`it starts ${got.dateTime || got.date || 'at no time'}`);
+    }
+    return wrong.length
+      ? { type, ok: false, detail: `read back from Google Calendar, but ${wrong.join(' and ')}` }
+      : { type, ok: true, detail: 'read back from Google Calendar' };
+  } catch (e) {
+    return { type, ok: false, detail: `could not read it back from Google Calendar (${String(e.message || e).slice(0, 120)})` };
+  }
+}
+
+/** Proof for the ledger: the message is really in Gmail with the label it should have (SENT or DRAFT). */
+async function readBackMessage(token, id, label, want = {}) {
+  const type = 'api_readback';
+  try {
+    const m = await oauth.gmailGetMessage(token, id);
+    const labelled = (m.labels || []).includes(label);
+    const toOk = !want.to || String(m.to || '').toLowerCase().includes(String(want.to).split(',')[0].trim().toLowerCase());
+    const subjOk = !want.subject || String(m.subject || '') === String(want.subject);
+    const ok = labelled && toOk && subjOk;
+    const where = label === 'SENT' ? 'Sent' : 'Drafts';
+    return { type, ok, detail: ok ? `found in Gmail ${where}` : `Gmail has the message but ${!labelled ? `not in ${where}` : !toOk ? `to ${m.to}` : `subject "${m.subject}"`}` };
+  } catch (e) {
+    return { type, ok: false, detail: `could not read it back from Gmail (${String(e.message || e).slice(0, 120)})` };
   }
 }
 
@@ -1061,9 +1129,14 @@ async function calendar_update(args, ctx) {
   const verdict = readVerdict(await ctx.approve({ tool: 'calendar_update', title, detail: cancel ? 'The event is removed; any guests are told.' : [when ? `When: ${when} (local time)` : '', patch.location ? `Where: ${patch.location}` : '', 'Guests are told about the change.'].filter(Boolean).join('\n'), danger: false }));
   if (verdict.action === 'reject') return { ok: false, output: 'User declined the calendar change.', meta: { rejected: true } };
   try {
-    if (cancel) { await oauth.calendarDeleteEvent(t.token, id); return { ok: true, output: `Cancelled event ${id}.`, meta: { label: `cancelled ${id}` } }; }
+    if (cancel) {
+      await oauth.calendarDeleteEvent(t.token, id);
+      const proof = await readBackEvent(t.token, id, { cancelled: true });
+      return { ok: true, output: `Cancelled event ${id}.${proof.ok ? ' Checked: it is off the calendar.' : ` Warning: ${proof.detail}.`}`, meta: { label: `cancelled ${id}`, evidence: [proof] } };
+    }
     const r = await oauth.calendarPatchEvent(t.token, id, patch);
-    return { ok: true, output: `Updated "${r.summary || patch.summary || id}"${when ? `: now ${when} (local time)` : ''}.`, meta: { label: `${r.summary || id}${when ? `: ${when}` : ''}` } };
+    const proof = await readBackEvent(t.token, id, { summary: patch.summary, start: patch.start });
+    return { ok: true, output: `Updated "${r.summary || patch.summary || id}"${when ? `: now ${when} (local time)` : ''}.${proof.ok ? ' Checked: the calendar shows the change.' : ` Warning: ${proof.detail}.`}`, meta: { label: `${r.summary || id}${when ? `: ${when}` : ''}`, evidence: [proof] } };
   } catch (e) {
     return { ok: false, output: googleFailure('Calendar update', 'calendar', e) };
   }
@@ -2665,8 +2738,23 @@ export async function executeTool(name, args, ctx) {
 
   const usingHosted = ctx.route ? !!ctx.route.auto : config.getConfig().provider === 'codeply';
 
+  // The spine's ledger: a side effect is written down before it runs, and its proof after.
+  let act = null;
+  if (MUTATING_TOOLS.has(name)) { try { act = spine.beginFor(ctx, name, args); } catch { act = null; } }
+  // Things that cannot be taken back or de-duplicated by the other side: the same request in the same task goes out once.
+  if (act && act.repeat && act.previous && act.previous.status === 'done' && ONCE_ONLY.has(name)) {
+    return { ok: true, output: `Already done earlier in this task, so not done again: ${act.previous.summary || name}. ${act.previous.output}`.trim(), meta: { label: 'already done', deduped: true } };
+  }
+  if (act) ctx.spineAction = act;
+  const settle = (result) => {
+    if (!act) return;
+    try { spine.endAction(act.id, { ok: result.ok, rejected: !!(result.meta && result.meta.rejected), summary: result.meta && result.meta.label, output: result.output, evidence: result.meta && result.meta.evidence }); } catch {}
+    if (ctx.spineAction === act) ctx.spineAction = null;
+  };
+
   try {
     const result = await fn(args, ctx);
+    settle(result);
     if (usingHosted && RECORDED_TOOLS.has(name) && result.ok && result.meta?.wrote) {
       applyLimit.recordApplyEvent(args.path, result.meta.added, result.meta.removed); // fire-and-forget
     } else if (usingHosted && name === 'apply_patch' && result.meta?.changes) {
@@ -2674,8 +2762,27 @@ export async function executeTool(name, args, ctx) {
     }
     return result;
   } catch (e) {
-    return { ok: false, output: `${name} failed: ${e.message}` };
+    const failed = { ok: false, output: `${name} failed: ${e.message}` };
+    settle(failed);
+    return failed;
   }
+}
+
+/**
+ * Settle side effects a crash left as "started": read the world back where we
+ * can (a calendar event's id comes from its ledger key), and mark the rest
+ * unknown so the user is told. Never retries.
+ */
+export async function recoverInterrupted(o = {}) {
+  return spine.recover({
+    calendar_add: async (a) => {
+      const t = await googleTokenFor('Google Calendar');
+      if (t.error) return null;
+      const ev = await oauth.calendarGetEvent(t.token, eventIdFor(a.key));
+      if (ev && ev.status !== 'cancelled') return { status: 'done', summary: `${ev.summary || 'event'}`, evidence: [{ type: 'api_readback', ok: true, detail: 'found on Google Calendar after an interruption' }] };
+      return { status: 'failed', output: 'Interrupted before Google added it; the event is not on the calendar.' };
+    },
+  }, o);
 }
 
 export { resolvePath, walkFiles, truncate, isPlanPath };

@@ -64,6 +64,8 @@
     "@codeply/dsh-undo": "workspace:*",
     "@codeply/dsh-web-search": "workspace:*",
     "@codeply/dsh-browser-check": "workspace:*",
+    "@codeply/dsh-design-tools": "workspace:*",
+    "@codeply/dsh-shared-context": "workspace:*",
     "@deepseek-ai/dsh-agent-instructions": "workspace:*",
     "@deepseek-ai/dsh-agent-preset": "workspace:*",
     "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",

@@ -30,6 +30,7 @@ DSH's own core, loop and native tool calling stay as they are. What Classic Craf
 | `@codeply/dsh-claim-check` | Sends the model back once when its answer claims file changes, tests or deploys no tool made this turn | the claim audit in `codeply-cli/lib/agent.mjs` |
 | `@codeply/dsh-undo` | `/undo` puts back the last turn's files, reversing DSH's own per-turn workspace changes, and only when every file still holds what that turn left | Classic's per-message Undo (`codeply-cli/lib/snapshot.js`) |
 | `@codeply/dsh-browser-check` | `browser_check`: the page opens in Craft's browser panel and the tool reports console errors, failed requests, broken images, sideways scroll and the visible text; registered only when Craft's bridge is present (`POST /browser-check`) | Classic's `browser_check` (`codeply-cli/lib/tools.mjs`), whose report code Craft reuses |
+| `@codeply/dsh-design-tools` | `design_direction` and `design_lint` for the codeply-taste skill, run by Craft (with the real render in its browser) or the terminal app through the bridge (`POST /design/<tool>`); Classic's bundled skills reach the engine as `DSH_BUNDLED_SKILL_DIR` (`codeply-cli/skills`) | `codeply-cli/lib/design-tools.mjs`, `codeply-cli/skills/codeply-taste` |
 | Config only | `CODEPLY.md` first among instruction files; `~/.codeply/AGENTS.md` and `~/.codeply/skills` through `DSH_AGENTS_HOME`, which Craft sets | Classic's instruction and skill lookup |
 
 ### Codeply Craft UI
