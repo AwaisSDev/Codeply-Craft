@@ -3089,3 +3089,21 @@ body { font-family: var(--font-ui); font-size: 14px; font-weight: 400; -webkit-f
 .plus-menu .plus-tick { width: 15px; height: 15px; flex: none; margin-left: auto; color: var(--text); }
 .plus-menu .plus-label { padding: 8px 10px 4px; font-size: 12.5px; font-weight: 500; color: var(--text-faint); }
 .plus-menu .plus-label:first-child { padding-top: 4px; }
+
+/* ─── The folder chip's list (openFolderMenu): three and a half rows, then it scrolls ── */
+.folder-menu { min-width: 260px; max-width: 340px; padding: 6px; z-index: 1000; }
+.folder-menu .folder-menu-list { max-height: 129px; overflow-y: auto; scrollbar-width: thin; } /* 3.5 rows of 34px + gaps */
+.folder-menu .menu-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; }
+.folder-menu .menu-item > svg:first-child { width: 16px; height: 16px; flex: none; color: var(--text-dim); }
+.folder-menu .plus-t { flex: 1; min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-menu .plus-tick { width: 15px; height: 15px; flex: none; color: var(--text); }
+.folder-menu .plus-label { padding: 4px 10px 4px; font-size: 12.5px; font-weight: 500; color: var(--text-faint); }
+
+/* ─── Sidebar folders: This Computer and Cloud pinned on top, the rest dragged by their title ── */
+.sb-sec-toggle .sb-ic-pinned { width: 16px; height: 16px; flex: none; color: var(--icon, var(--text-dim)); }
+.sb-sec-head[draggable="true"] { cursor: grab; }
+.sb-sec.dragging { opacity: .45; }
+.sb-sec.drop-above { box-shadow: inset 0 2px 0 var(--accent, #2f6bff); }
+.sb-sec.drop-below { box-shadow: inset 0 -2px 0 var(--accent, #2f6bff); }
+/* The scrollbar gets its own lane, so a long chat title ends in "..." before it instead of running under it. */
+.sb-scroll { scrollbar-gutter: stable; }

@@ -2446,11 +2446,23 @@ const SB_ICON = {
   folder: icon('folder', 'sb-ic-folder'),
   folderOpen: icon('folder-open', 'sb-ic-folder-open'),
   chats: icon('chat', 'sb-ic-chats'),
+  computer: icon('laptop', 'sb-ic-pinned'),
+  cloud: icon('cloud', 'sb-ic-pinned'),
 };
 const sbAttr = (s) => esc(String(s == null ? '' : s)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 // Windows paths: one folder however its slashes or letter case were written.
 const sbPathKey = (p) => String(p || '').replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
-const sbFolderName = (p) => String(p).split(/[\\/]/).filter(Boolean).pop() || String(p);
+// The two folders a chat falls back to (main.js defaultFolders): "This Computer"
+// when no project is picked, "Cloud" for cloud chats from no project. They sit
+// on top of the sidebar, always there, never dragged.
+const isComputerHome = (p) => !!p && !!(state.defaultFolders && state.defaultFolders.computer) && sbPathKey(p) === sbPathKey(state.defaultFolders.computer);
+const isCloudHome = (p) => !!p && !!(state.defaultFolders && state.defaultFolders.cloud) && sbPathKey(p) === sbPathKey(state.defaultFolders.cloud);
+const sbFolderName = (p) => (isComputerHome(p) ? 'This Computer' : isCloudHome(p) ? 'Cloud' : String(p).split(/[\\/]/).filter(Boolean).pop() || String(p));
+
+// Folders sort A to Z until one is dragged; then the dragged order is kept
+// (craft.sb.order) and folders added later follow it, A to Z.
+const SB_ORDER_KEY = 'craft.sb.order';
+function sbLoadOrder() { try { const v = JSON.parse(localStorage.getItem(SB_ORDER_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } }
 
 function sbSections() {
   const byKey = new Map();
@@ -2459,13 +2471,56 @@ function sbSections() {
     if (!byKey.has(key)) byKey.set(key, { key, path: p, name: sbFolderName(p), chats: [] });
     return byKey.get(key);
   };
+  const df = state.defaultFolders || {};
+  const pinned = [df.computer, df.cloud].filter(Boolean).map(add);
+  pinned.forEach((sec) => { sec.pinned = true; });
   for (const p of state.projects) add(p);
   const loose = [];
-  for (const s of state.sessions) (s.cwd ? add(s.cwd).chats : loose).push(s);
-  const list = [...byKey.values()];
+  // A chat that never had a folder belongs to This Computer.
+  for (const s of state.sessions) (s.cwd ? add(s.cwd).chats : pinned[0] ? pinned[0].chats : loose).push(s);
+  const order = sbLoadOrder();
+  const rank = (sec) => { const i = order.indexOf(sec.key); return i < 0 ? Infinity : i; };
+  const rest = [...byKey.values()].filter((sec) => !sec.pinned)
+    .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+  const list = [...pinned, ...rest];
   if (loose.length) list.push({ key: 'none', path: null, name: 'No project', chats: loose });
   return list;
 }
+
+// Dragging a folder by its title moves it; the drop line shows where it lands.
+let sbDragKey = null;
+$('sbSections').addEventListener('dragstart', (e) => {
+  const head = e.target.closest && e.target.closest('.sb-sec-head[draggable="true"]');
+  const sec = head && head.closest('.sb-sec');
+  if (!sec) return;
+  sbDragKey = sec.dataset.sec;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', sbDragKey);
+  sec.classList.add('dragging');
+});
+$('sbSections').addEventListener('dragover', (e) => {
+  if (!sbDragKey) return;
+  const sec = e.target.closest('.sb-sec[data-drag]');
+  document.querySelectorAll('.sb-sec.drop-above, .sb-sec.drop-below').forEach((x) => x.classList.remove('drop-above', 'drop-below'));
+  if (!sec || sec.dataset.sec === sbDragKey) return;
+  e.preventDefault();
+  const r = sec.getBoundingClientRect();
+  sec.classList.add(e.clientY < r.top + r.height / 2 ? 'drop-above' : 'drop-below');
+});
+$('sbSections').addEventListener('drop', (e) => {
+  const sec = e.target.closest('.sb-sec[data-drag]');
+  if (!sbDragKey || !sec || sec.dataset.sec === sbDragKey) return;
+  e.preventDefault();
+  const keys = [...document.querySelectorAll('#sbSections .sb-sec[data-drag]')].map((x) => x.dataset.sec).filter((k) => k !== sbDragKey);
+  const at = keys.indexOf(sec.dataset.sec) + (sec.classList.contains('drop-below') ? 1 : 0);
+  keys.splice(at, 0, sbDragKey);
+  try { localStorage.setItem(SB_ORDER_KEY, JSON.stringify(keys)); } catch {}
+  renderSidebar();
+});
+$('sbSections').addEventListener('dragend', () => {
+  sbDragKey = null;
+  document.querySelectorAll('.sb-sec.dragging, .sb-sec.drop-above, .sb-sec.drop-below').forEach((x) => x.classList.remove('dragging', 'drop-above', 'drop-below'));
+});
 
 function sbMarkHtml(id) {
   if ((state.runningSessions || []).includes(id)) return '<span class="sb-mark busy" role="img" aria-label="Running" title="Running"></span>';
@@ -2494,11 +2549,13 @@ function sbSectionHtml(sec, chats, n) {
   const isCurrent = sec.path && state.project && sbPathKey(sec.path) === sbPathKey(state.project);
   const addLabel = sec.path ? `New chat in ${sec.name}` : 'New chat without a project';
   const k = sbAttr(sec.key);
-  return `<section class="sb-sec${closed ? ' closed' : ''}${isCurrent ? ' current' : ''}" data-sec="${k}">`
-    + '<div class="sb-sec-head">'
-    + `<button class="sb-sec-toggle" type="button" data-key="t:${k}" aria-expanded="${!closed}" aria-controls="sbSec${n}"${sec.path ? ` title="${sbAttr(sec.path)}"` : ''}>${sec.path ? SB_ICON.folder + SB_ICON.folderOpen : SB_ICON.chats}<span>${esc(sec.name)}</span>${SB_ICON.caret}</button>`
+  const glyph = isComputerHome(sec.path) ? SB_ICON.computer : isCloudHome(sec.path) ? SB_ICON.cloud : sec.path ? SB_ICON.folder + SB_ICON.folderOpen : SB_ICON.chats;
+  const drag = sec.path && !sec.pinned;
+  return `<section class="sb-sec${closed ? ' closed' : ''}${isCurrent ? ' current' : ''}${sec.pinned ? ' pinned' : ''}" data-sec="${k}"${drag ? ' data-drag="1"' : ''}>`
+    + `<div class="sb-sec-head"${drag ? ' draggable="true"' : ''}>`
+    + `<button class="sb-sec-toggle" type="button" data-key="t:${k}" aria-expanded="${!closed}" aria-controls="sbSec${n}"${sec.path ? ` title="${sbAttr(drag ? `${sec.path}\nDrag to move` : sec.path)}"` : ''}>${glyph}<span>${esc(sec.name)}</span>${SB_ICON.caret}</button>`
     + `<button class="sb-sec-tool" type="button" data-act="add" data-key="a:${k}" title="${sbAttr(addLabel)}" aria-label="${sbAttr(addLabel)}">${SB_ICON.plus}</button>`
-    + (sec.path ? `<button class="sb-sec-tool" type="button" data-act="project-menu" data-key="p:${k}" title="More" aria-label="More for ${sbAttr(sec.name)}">${SB_ICON.more}</button>` : '')
+    + (drag ? `<button class="sb-sec-tool" type="button" data-act="project-menu" data-key="p:${k}" title="More" aria-label="More for ${sbAttr(sec.name)}">${SB_ICON.more}</button>` : '')
     + '</div>'
     + `<div class="sb-sec-body" id="sbSec${n}"${closed ? ' inert' : ''}><div>`
     + (rows.length ? rows.map(sbChatHtml).join('') : '<div class="sb-empty">No chats yet</div>')
@@ -2832,7 +2889,7 @@ async function removeProjectByPath(p) {
 function setProject(p, branch) {
   state.project = p;
   state.branch = branch || null;
-  const name = p ? p.split(/[\\/]/).filter(Boolean).pop() : 'Choose folder';
+  const name = p ? sbFolderName(p) : 'Choose folder';
   $('homeProjectName').textContent = name;
   document.querySelectorAll('[data-role="project-name"]').forEach((el) => (el.textContent = name));
   document.querySelectorAll('[data-role="branch-chip"]').forEach((el) => el.classList.toggle('hidden', !branch));
@@ -2851,7 +2908,40 @@ async function chooseProject() {
 
 $('openProjectBtn').addEventListener('click', chooseProject);
 $('homeProjectName').addEventListener('click', chooseProject);
-document.querySelectorAll('[data-role="project-chip"]').forEach((el) => el.addEventListener('click', chooseProject));
+document.querySelectorAll('[data-role="project-chip"]').forEach((el) => el.addEventListener('click', (e) => { e.stopPropagation(); openFolderMenu(el); }));
+
+// The folder chip above the box: every folder already connected, in the
+// sidebar's order (This Computer and Cloud first), about three and a half
+// rows tall so it's plain the list scrolls; "Open a folder..." adds another.
+function openFolderMenu(anchor) {
+  const open = document.querySelector('.folder-menu');
+  if (open) { open.remove(); if (open.anchorEl === anchor) return; } // a second click on the chip closes it
+  const secs = sbSections().filter((s) => s.path);
+  const cur = state.project ? sbPathKey(state.project) : '';
+  const menu = document.createElement('div');
+  menu.className = 'menu folder-menu';
+  menu.anchorEl = anchor;
+  menu.innerHTML = `<div class="plus-label">Work in</div><div class="folder-menu-list">${secs.map((s) => {
+    const glyph = isComputerHome(s.path) ? icon('laptop') : isCloudHome(s.path) ? icon('cloud') : icon('folder');
+    return `<button class="menu-item" data-path="${sbAttr(s.path)}" title="${sbAttr(s.path)}">${glyph}<span class="plus-t">${esc(s.name)}</span>${sbPathKey(s.path) === cur ? icon('check', 'plus-tick') : ''}</button>`;
+  }).join('')}</div><div class="menu-sep"></div><button class="menu-item" data-act="open">${icon('folder-open')}<span class="plus-t">Open a folder...</span></button>`;
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.left = `${Math.max(8, Math.min(r.left - 6, innerWidth - menu.offsetWidth - 8))}px`;
+  menu.style.top = `${Math.max(8, r.top - menu.offsetHeight - 6)}px`;
+  const close = () => { menu.remove(); document.removeEventListener('mousedown', outside, true); };
+  const outside = (e) => { if (!menu.contains(e.target) && !anchor.contains(e.target)) close(); };
+  setTimeout(() => document.addEventListener('mousedown', outside, true), 0);
+  menu.addEventListener('click', async (e) => {
+    const b = e.target.closest('.menu-item');
+    if (!b) return;
+    close();
+    if (b.dataset.act === 'open') { chooseProject(); return; }
+    const res = await api.useProject(b.dataset.path);
+    if (res) setProject(res.path, res.branch);
+  });
+}
 
 // ─── Mode + bypass toggles (synced across both composers) ───────────────────
 const MODES = ['Build', 'Plan', 'Ask'];
@@ -2909,7 +2999,16 @@ function openPlusMenu(composer, anchor, attachInput) {
     if (act === 'files') attachInput.click();
     else if (act === 'goal') fillCommand(input, '/goal ');
     else if (act === 'research' && rm) rm.click();
-    else if (act === 'cloud' && cloud) cloud.click();
+    else if (act === 'cloud' && cloud) {
+      // Turning cloud on from This Computer (no project picked): the chat moves to the Cloud folder first.
+      const home = state.defaultFolders || {};
+      if (!cloud.classList.contains('on') && home.cloud && (!state.project || isComputerHome(state.project))) {
+        api.useProject(home.cloud).then((res) => {
+          if (res) setProject(res.path, res.branch);
+          setTimeout(() => { const c = composer.querySelector('.cloud-chip'); if (c) c.click(); }, 300);
+        });
+      } else cloud.click();
+    }
   });
 }
 document.querySelectorAll('[data-role="mode-chip"]').forEach((el) =>
@@ -3574,14 +3673,9 @@ function addThinkingRow(text) {
 async function sendMessage(text, fromHome, images) {
   if (!api) return;
   if (!state.user) { showView('viewLogin'); return; }
-  if (!state.project) {
-    const name = api.newProject ? newProjectName(text) : null;
-    if (name) {
-      const r = await api.newProject(name);
-      if (r && r.path) { setProject(r.path, r.branch); if (!state.projects.includes(r.path)) state.projects.unshift(r.path); renderProjects(); }
-    }
-    if (!state.project) { await chooseProject(); if (!state.project) return; }
-  }
+  // No folder picked: the chat works on This Computer instead of making a new project folder for it.
+  if (!state.project && state.defaultFolders && state.defaultFolders.computer) setProject(state.defaultFolders.computer, null);
+  if (!state.project) { await chooseProject(); if (!state.project) return; }
 
   if (fromHome || !state.currentSessionId) {
     hideThinking();
@@ -5215,8 +5309,9 @@ $('updateGateBtn').addEventListener('click', () => {
   state.chatgpt = init.chatgpt || { signedIn: false };
   // Refresh the plan's model list in the background (models:changed repaints the picker).
   if (state.chatgpt.sharing) api.chatgptStatus({ refresh: true }).then((st) => { state.chatgpt = st; });
+  state.defaultFolders = init.defaultFolders || {};
   if (init.lastProject) setProject(init.lastProject, init.lastProjectBranch);
-  else setProject(null, null);
+  else setProject(state.defaultFolders.computer || null, null); // no project yet: This Computer
 
   if (init.needsLogin) { showView('viewLogin'); return; }
   if (init.needsOnboarding) {

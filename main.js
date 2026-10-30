@@ -688,8 +688,20 @@ ipcMain.handle('app:init', async () => {
     projects: store.projects,
     lastProject: store.lastProject,
     lastProjectBranch: store.lastProject ? gitBranch(store.lastProject) : null,
+    defaultFolders: defaultFolders(),
   };
 });
+
+// Where a chat works when no project folder is picked: "This Computer" (the
+// same folder the top bar's chat uses, drop.js), and "Cloud" for chats sent
+// to the cloud from no folder. Both live in the user's home, made on first use.
+function defaultFolders() {
+  const make = (dir) => { try { fs.mkdirSync(dir, { recursive: true }); return dir; } catch { return null; } };
+  return {
+    computer: make(path.join(app.getPath('home'), 'Codeply')),
+    cloud: make(path.join(app.getPath('home'), 'Codeply Cloud')),
+  };
+}
 
 // ─── Auth (same Supabase project + ~/.codeply session as the CLI/desktop app,
 // same account, same sign-in/sign-up/onboarding flow as the Codeply desktop
