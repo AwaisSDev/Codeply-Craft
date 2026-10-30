@@ -17,7 +17,7 @@
   const byName = (n) => cat.bots.find((b) => b.name.toLowerCase() === String(n || '').trim().toLowerCase()) || null;
   const av = (avatar, size, opts) => A.renderAvatar(avatar, size, opts);
   const ROLE = { orchestrator: 'Orchestrator', specialist: 'Specialist' };
-  const ICON_X = '<svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
+  const ICON_X = icon('close');
   const CRAFT_AVATAR = { shape: 'burst9', eyes: 'pills', color: '#8e8e93' }; // stand-in for an unknown bot
 // Craft's own agents, the mascot balls: Craft (purple) picks a specialist by
   // itself; picking one here pins it for the chat ('role:<id>' goes to main.js).
@@ -92,7 +92,7 @@
     if (menu) { closeMenu(); return; }
     menu = document.createElement('div');
     menu.className = 'menu bot-menu';
-    const item = (id, avatarHtml, name, sub) => `<button class="bot-menu-item${id === selected ? ' on' : ''}" data-id="${esc(id)}">${avatarHtml}<span class="bot-menu-text"><b>${esc(name)}</b><span>${esc(sub)}</span></span>${id === selected ? '<svg class="bot-menu-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>' : ''}</button>`;
+    const item = (id, avatarHtml, name, sub) => `<button class="bot-menu-item${id === selected ? ' on' : ''}" data-id="${esc(id)}">${avatarHtml}<span class="bot-menu-text"><b>${esc(name)}</b><span>${esc(sub)}</span></span>${id === selected ? icon('check', 'bot-menu-check') : ''}</button>`;
     menu.innerHTML = `<div class="bot-menu-head">Who answers</div>` +
       ROLES.map((r) => item(r.id, ball(r, 'mascot-menu'), r.label, r.sub)).join('') +
       (cat.bots.length ? '<div class="bot-menu-sep"></div><div class="bot-menu-head">Your bots</div>' : '') +
@@ -150,7 +150,7 @@
 
   function head(title, sub, back) {
     return `<div class="bots-head">
-      ${back ? '<button class="icon-btn icon-btn-sm bots-back" data-act="back" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>' : ''}
+      ${back ? '<button class="icon-btn icon-btn-sm bots-back" data-act="back" aria-label="Back">' + icon('chevron-left') + '</button>' : ''}
       <div class="bots-head-text"><div class="bots-title">${esc(title)}</div>${sub ? `<div class="bots-sub">${esc(sub)}</div>` : ''}</div>
       <button class="icon-btn icon-btn-sm modal-close" data-act="close" title="Close" aria-label="Close">${ICON_X}</button></div>`;
   }
@@ -504,7 +504,7 @@
     row.innerHTML = `<div class="bot-deleg-head">
         ${plain ? '' : `<span class="bot-deleg-av">${av(bot.avatar, 24, { state: running ? 'working' : ok === false ? 'idle' : 'done' })}</span>`}
         <span class="bot-deleg-verb">${verb}</span><span class="bot-deleg-task">${esc(headLine)}</span>
-        ${running ? '<span class="spinner"></span>' : '<svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>'}</div>
+        ${running ? '<span class="spinner"></span>' : icon('chevron-right', 'tool-chevron ico-sm')}</div>
       <div class="bot-deleg-body${running ? '' : ' hidden'}">
         ${who}${task && (plain ? !running : task.length > firstLine.length) ? `<div class="bot-deleg-fulltask">${esc(task)}</div>` : ''}
         <ul class="bot-deleg-steps">${steps}</ul>${result}</div>`;

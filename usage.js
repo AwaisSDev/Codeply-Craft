@@ -138,7 +138,7 @@
       <div class="us-detail">
         <div class="us-detail-head">
           <div><b>${esc(title)}</b><span>${short(t)} tokens · ${plural(n, 'call')}</span></div>
-          <button class="us-detail-x" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+          <button class="us-detail-x" aria-label="Close">${icon('close')}</button>
         </div>
         ${body}
       </div>`;
@@ -214,7 +214,7 @@
     root.className = 'us-backdrop';
     root.innerHTML = `
       <div class="us-page" role="dialog" aria-label="Usage">
-        <button class="us-close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+        <button class="us-close" aria-label="Close">${icon('close')}</button>
         <div class="us-avatar">${esc(initials)}</div>
         <h2 class="us-name">${esc(who)}</h2>
         <div class="us-handle">@${esc(handle)} <span>·</span> <em>Codeply</em></div>

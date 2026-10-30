@@ -6,7 +6,7 @@
 (() => {
   if (!window.craft || !window.craft.cloudState) return;
 
-  const ICON = '<svg viewBox="0 0 24 24"><path d="M7.5 19.25h10a4 4 0 0 0 .6-7.96 6 6 0 0 0-11.6-1.2A4.75 4.75 0 0 0 7.5 19.25Z"/></svg>';
+  const ICON = icon('cloud');
   const STATUS = { starting: 'Starting', queued: 'Working', running: 'Working', done: 'Done', failed: 'Failed', cancelled: 'Cancelled' };
   const LIVE = new Set(['starting', 'queued', 'running']);
   let current = null;       // last cloud state for state.project
@@ -28,7 +28,7 @@
       more.type = 'button';
       more.title = 'Cloud settings';
       more.setAttribute('aria-label', 'Cloud settings');
-      more.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
+      more.innerHTML = icon('more');
       more.addEventListener('click', openSheet);
       // Cloud sits before the Research chip, whichever script adds its chip first.
       const after = row.querySelector('.rm-chip');
@@ -112,7 +112,7 @@
     const box = sheet().querySelector('.cloud-modal');
     const s = current;
     const head = `<div class="cloud-head"><div class="cloud-title">${ICON}<span>Cloud runs</span></div>
-      <button class="icon-btn icon-btn-sm modal-close" data-act="close" title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button></div>`;
+      <button class="icon-btn icon-btn-sm modal-close" data-act="close" title="Close" aria-label="Close">${icon('close')}</button></div>`;
     if (loading || !s) { box.innerHTML = `${head}<div class="cloud-body"><p class="cloud-dim">${loading ? 'Checking...' : 'Cloud runs are not available.'}</p></div>`; wire(box); return; }
     const err = error ? `<div class="cloud-error">${esc(error)}</div>` : '';
     // Keep what was typed in the environment box when the sheet redraws.
@@ -279,7 +279,7 @@
   const cloudChats = new Set(); // chats with a cloud line, beyond what the sidebar list already knows
 
   // Cloud chats look like any chat, marked by a hollow blue cloud in the sidebar.
-  const HOLLOW = '<svg class="cloud-mark" viewBox="0 0 24 24" aria-label="Cloud chat"><path d="M7.5 19.25h10a4 4 0 0 0 .6-7.96 6 6 0 0 0-11.6-1.2A4.75 4.75 0 0 0 7.5 19.25Z"/></svg>';
+  const HOLLOW = icon('cloud', 'cloud-mark', 'aria-label="Cloud chat"');
   const isCloudChat = (id) => !!id && (cloudChats.has(id) || (state.sessions || []).some((s) => s.id === id && s.cloud));
   function markCloudChats() {
     document.querySelectorAll('.sb-chat-row').forEach((row) => {

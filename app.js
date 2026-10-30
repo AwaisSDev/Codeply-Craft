@@ -388,7 +388,7 @@ function openTbMenu(btn) {
     for (const [name, label] of TB_SUBS) {
       const b = document.createElement('button');
       b.className = 'menu-item';
-      b.innerHTML = `<span>${esc(label)}</span><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>`;
+      b.innerHTML = `<span>${esc(label)}</span>${icon('chevron-right', 'ico-sm')}`;
       b.addEventListener('mousedown', (e) => e.preventDefault());
       b.addEventListener('mouseenter', () => openTbSub(b, name));
       b.addEventListener('click', (e) => { e.stopPropagation(); openTbSub(b, name); });
@@ -540,12 +540,12 @@ function renderJobs() {
     ? `${running.length} command${running.length === 1 ? '' : 's'} running in the background`
     : `${current.length} background command${current.length === 1 ? '' : 's'} finished`;
   jobsBar.innerHTML =
-    `<div class="jobs-head-row"><button class="jobs-head" type="button" title="Show background tasks"><span class="jobs-title">${esc(title)}</span><svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button></div>`;
+    `<div class="jobs-head-row"><button class="jobs-head" type="button" title="Show background tasks"><span class="jobs-title">${esc(title)}</span>${icon('chevron-right', 'tool-chevron ico-sm')}</button></div>`;
   jobsBar.querySelector('.jobs-head').addEventListener('click', () => openBgTasks());
   renderBgTasks();
 }
 
-const BGT_CHEV = '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>';
+const BGT_CHEV = icon('chevron-right', 'ico-xs');
 function bgTaskRow(j) {
   const open = jobsOpenRows.has(j.id);
   // How it ended: done, failed (its exit code), stopped by you, or interrupted
@@ -655,21 +655,21 @@ const TOOL_NAME = {
 const toolName = (name) => TOOL_NAME[name] || name.replace(/_/g, ' ');
 
 const TOOL_ICON = {
-  read: '<svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6"/></svg>',
-  write: '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
-  run: '<svg viewBox="0 0 24 24"><path d="M4 17l6-5-6-5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>',
-  search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>',
-  skill: '<svg viewBox="0 0 24 24"><path d="M12 3l2.2 5.6L20 10.8l-5.8 2.2L12 19l-2.2-6L4 10.8l5.8-2.2Z"/></svg>',
-  image: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M3 15l5-4 4 3 4-4 5 5"/></svg>',
-  browser: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg>',
-  mail: '<svg viewBox="0 0 24 24"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg>',
-  slack: '<svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="14" rx="3"/><rect x="9" y="8" width="14" height="6" rx="3" transform="rotate(90 16 11)"/></svg>',
-  library: '<svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="7" y1="6" x2="17" y2="6"/><line x1="7" y1="17" x2="17" y2="17"/></svg>',
-  vercel: '<svg viewBox="0 0 24 24"><path d="M12 3l9 16H3Z"/></svg>',
-  database: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>',
+  read: icon('file'),
+  write: icon('edit'),
+  run: icon('prompt'),
+  search: icon('search'),
+  skill: icon('sparkle'),
+  image: icon('image'),
+  browser: icon('globe'),
+  mail: icon('mail'),
+  slack: icon('hash'),
+  library: icon('book'),
+  vercel: icon('triangle'),
+  database: icon('database'),
   github: '<svg viewBox="0 0 24 24"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1.16-.02-2.11-3.2.7-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.69 1.25 3.34.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.58.24 2.75.12 3.04.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.39-5.25 5.67.41.36.78 1.07.78 2.15 0 1.55-.01 2.8-.01 3.18 0 .3.2.66.79.55A10.52 10.52 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5Z"/></svg>',
-  agent: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>',
-  stop: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+  agent: icon('user'),
+  stop: icon('stop'),
 };
 
 function toolIcon(name) {
@@ -761,10 +761,10 @@ function addUserMessage(text, images) {
   scrollToBottom();
 }
 
-const ICON_COPY = '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>';
-const ICON_EDIT = '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
-const ICON_RETRY = '<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>';
-const ICON_CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>';
+const ICON_COPY = icon('copy');
+const ICON_EDIT = icon('edit');
+const ICON_RETRY = icon('refresh');
+const ICON_CHECK = icon('check');
 
 async function copyWithFeedback(text, btn) {
   try { await navigator.clipboard.writeText(text); } catch { showToast('Could not copy.', 'error'); return; }
@@ -1019,10 +1019,10 @@ function activityHead(el) { return el.querySelector('.activity-summary'); }
 // Puts the working agent's mascot where the plain dot sits on a work line.
 function setActivityAgent(el) {
   if (!el || !activityRole) return;
-  const icon = el.querySelector('.activity-icon');
-  if (icon.dataset.mascot === activityRole.mascot) return;
-  icon.dataset.mascot = activityRole.mascot;
-  icon.innerHTML = mascotHtml(activityRole.mascot, 'mascot-xs', activityRole.name);
+  const holder = el.querySelector('.activity-icon');
+  if (holder.dataset.mascot === activityRole.mascot) return;
+  holder.dataset.mascot = activityRole.mascot;
+  holder.innerHTML = mascotHtml(activityRole.mascot, 'mascot-xs', activityRole.name);
   el.classList.add('has-agent');
   el.querySelector('.activity-head').title = 'Worked as ' + activityRole.name;
 }
@@ -1074,7 +1074,7 @@ function activityBody() {
       '<button class="activity-head" type="button" aria-expanded="false">' +
       '<span class="activity-icon" aria-hidden="true"></span>' +
       '<span class="activity-summary">Working</span>' +
-      '<svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>' +
+      icon('chevron-right', 'tool-chevron ico-sm') + '</button>' +
       '<div class="activity-body"></div>';
     const el = activityEl;
     el.querySelector('.activity-head').addEventListener('click', () => {
@@ -1172,7 +1172,7 @@ function addToolRow({ name, label, ok, running: isRunning, auto, bypass, args, s
   const hasDetail = !isRunning && args && Object.keys(args).length > 0;
   row.innerHTML =
     `<div class="tool-row-head">${toolIcon(name)}<span class="tool-verb">${isRunning ? verb.replace(/ed$|^Ran$/, (m) => m === 'Ran' ? 'Running' : 'ing').replace('Listeding', 'Listing') : verb}</span>` +
-    `<span class="tool-label">${esc(label || '')}</span>${badge}${hasDetail ? '<svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>' : ''}</div>`;
+    `<span class="tool-label">${esc(label || '')}</span>${badge}${hasDetail ? icon('chevron-right', 'tool-chevron ico-sm') : ''}</div>`;
   if (isRunning) row.querySelector('.tool-row-head').innerHTML += '<span class="spinner"></span>';
 
   if (hasDetail) {
@@ -1452,7 +1452,7 @@ function addLimitCard(text) {
   const where = /limit for now (on this (?:computer|network))/i.exec(text || '');
   const el = document.createElement('div');
   el.className = 'limit-card';
-  el.innerHTML = '<div class="limit-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></div>' +
+  el.innerHTML = '<div class="limit-icon">' + icon('clock', 'ico-md') + '</div>' +
     '<div class="limit-text"><b></b><span></span></div><button class="limit-btn" type="button">Choose a model</button>';
   el.querySelector('b').textContent = `You've hit Haze 2's limit for now${where ? ` ${where[1]}` : ''}`;
   el.querySelector('span').textContent = at ? `It resets at ${at[1].trim()}. Your own model works in the meantime.` : String(text || '');
@@ -1522,7 +1522,7 @@ function addRoleBadge(data) {
 // written and the checks really run (with exit codes). If the model's
 // summary and this line ever disagree, this line is the truth. It reads like
 // the activity line above it: one quiet sentence that opens into the list.
-const QL_CHEV = '<svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>';
+const QL_CHEV = icon('chevron-right', 'tool-chevron ico-sm');
 const qlCount = (n, one) => `${n === 1 ? (/^[aeiou]/.test(one) ? 'an' : 'a') : n} ${n === 1 ? one : one + 's'}`;
 const qlBase = (p) => String(p).split(/[\\/]/).pop();
 
@@ -1559,7 +1559,7 @@ function addTurnSummary(data) {
     const label = c.tool === 'browser_check' ? `Opened ${c.label}` : c.label;
     const exit = !passed && typeof c.exitCode === 'number' ? `<span class="ql-exit">exit ${c.exitCode}</span>` : '';
     return `<div class="ql-row ${passed ? 'pass' : 'fail'}">
-      <span class="ql-ic">${passed ? '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'}</span>
+      <span class="ql-ic">${passed ? icon('check', 'ico-sm') : icon('close', 'ico-sm')}</span>
       <span class="ql-label" title="${esc(label || '')}">${esc(label || '')}</span>${exit}</div>`;
   };
   // "Ran 5 checks, all passed" / "Ran 5 checks, 1 failed" / "Changed app.js, not checked by a run"
@@ -1574,9 +1574,9 @@ function addTurnSummary(data) {
     </button>
     <div class="ql-body">
       ${checks.map(checkRow).join('')}
-      ${files.length ? `<div class="ql-row files"><span class="ql-ic"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg></span><span class="ql-label">${files.map((f) => esc(qlBase(f))).join(', ')}</span></div>` : ''}
+      ${files.length ? `<div class="ql-row files"><span class="ql-ic">${icon('file', 'ico-sm')}</span><span class="ql-label">${files.map((f) => esc(qlBase(f))).join(', ')}</span></div>` : ''}
     </div>
-    ${unverified.length ? `<div class="ql-warn"><svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>Not checked by a passing run: ${unverified.map((f) => esc(qlBase(f))).join(', ')}</div>` : ''}`;
+    ${unverified.length ? `<div class="ql-warn">${icon('warning', 'ico-sm')}Not checked by a passing run: ${unverified.map((f) => esc(qlBase(f))).join(', ')}</div>` : ''}`;
   wireQuietLine(card);
   card.classList.add('reveal-pending');
   chatColumn.appendChild(card);
@@ -1623,8 +1623,8 @@ function renderCheckpoint(cp) {
     <div class="ql-head" role="button" tabindex="0" aria-expanded="${open}">
       <span class="ql-dot"></span><span class="ql-text">${cp.undone ? `Undone: ${what.charAt(0).toLowerCase() + what.slice(1)}` : what}</span>${QL_CHEV}
       <button class="cp-action ql-action" type="button">${cp.undone
-        ? '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>Redo'
-        : '<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>Undo'}</button>
+        ? icon('redo', 'ico-sm') + 'Redo'
+        : icon('undo', 'ico-sm') + 'Undo'}</button>
     </div>
     <div class="ql-body">${list}${n > 40 ? `<div class="ql-row more">and ${n - 40} more</div>` : ''}</div>`;
   row.querySelector('.cp-action').addEventListener('click', async (e) => {
@@ -1658,7 +1658,7 @@ function renderGoalCard(data) {
     el.className = 'goal-card';
     el.innerHTML = `
       <div class="goal-head">
-        <span class="goal-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/></svg></span>
+        <span class="goal-icon">${icon('target')}</span>
         <span class="goal-kicker">Goal</span>
         <span class="goal-pill" data-role="pill"></span>
       </div>
@@ -1718,7 +1718,7 @@ function panelAdd(kind, label) {
   if (empty) empty.remove();
   const row = document.createElement('button');
   row.className = 'sp-row';
-  row.innerHTML = `<svg class="sp-ico" viewBox="0 0 24 24"><path d="M9 18l-5-6 5-6"/><path d="M15 6l5 6-5 6"/></svg><span>${esc(label)}</span>`;
+  row.innerHTML = `${icon('code', 'sp-ico')}<span>${esc(label)}</span>`;
   holder.appendChild(row);
 }
 
@@ -1812,11 +1812,11 @@ function openAccountMenu() {
     </div>
     <div class="menu-sep"></div>
     <button class="menu-item" data-action="usage">
-      <svg viewBox="0 0 24 24"><path d="M4.6 18.5a9 9 0 1 1 14.8 0"/><path d="M12 14.2l4.2-4.6"/><circle cx="12" cy="14.6" r="1.5"/><path d="M7.3 10.2l.9.6M12 6.4v1M16.7 10.2l-.9.6"/></svg>
+      ${icon('gauge')}
       Usage
     </button>
     <button class="menu-item" data-action="connect">
-      <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+      ${icon('link')}
       Connect Apps
     </button>
     <div class="menu-sep"></div>
@@ -1824,19 +1824,19 @@ function openAccountMenu() {
       <span>Theme</span>
       <div class="theme-toggle segmented segmented-sm" id="themeToggle" role="group" aria-label="Theme">
         <button type="button" class="theme-opt segmented-item" data-theme-choice="system" title="Match system">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          ${icon('monitor', 'ico-sm')}
         </button>
         <button type="button" class="theme-opt segmented-item" data-theme-choice="light" title="Light">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+          ${icon('sun', 'ico-sm')}
         </button>
         <button type="button" class="theme-opt segmented-item" data-theme-choice="dark" title="Dark">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.5a8.5 8.5 0 1 1-9-11 6.8 6.8 0 0 0 9 11Z"/></svg>
+          ${icon('moon', 'ico-sm')}
         </button>
       </div>
     </div>
     <div class="menu-sep"></div>
     <button class="menu-item" data-action="logout">
-      <svg viewBox="0 0 24 24"><path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3"/><path d="M16 17l5-5-5-5"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      ${icon('logout')}
       Sign out
     </button>
   `;
@@ -1922,18 +1922,18 @@ function reportBrowserLayout() {
 }
 window.addEventListener('resize', () => requestAnimationFrame(reportBrowserLayout));
 
-const BC_GLOBE = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg>';
+const BC_GLOBE = icon('globe');
 function renderBrowserTabs() {
   const host = $('bcTabs');
   host.innerHTML = bc.tabs.map((t) => {
     const on = t.id === bc.activeTabId;
-    const icon = t.loading ? '<span class="bc-tab-spin"></span>'
+    const tabIc = t.loading ? '<span class="bc-tab-spin"></span>'
       : t.kind === 'agent' ? '<span class="bc-tab-agent" title="Codeply checks pages here"></span>'
       : t.favicon ? `<img src="${esc(t.favicon)}" alt="">` : BC_GLOBE;
     const title = t.title || (t.url ? t.url.replace(/^https?:\/\//, '') : 'New tab');
     return `<div class="bc-tab${on ? ' on' : ''}" role="tab" aria-selected="${on}" tabindex="${on ? 0 : -1}" data-id="${t.id}" title="${esc(title)}">
-      <span class="bc-tab-ic">${icon}</span><span class="bc-tab-title">${esc(title)}</span>
-      ${t.kind === 'agent' ? '' : `<button class="bc-tab-x" type="button" data-close="${t.id}" aria-label="Close ${esc(title)}"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>`}
+      <span class="bc-tab-ic">${tabIc}</span><span class="bc-tab-title">${esc(title)}</span>
+      ${t.kind === 'agent' ? '' : `<button class="bc-tab-x" type="button" data-close="${t.id}" aria-label="Close ${esc(title)}">${icon('close', 'ico-xs')}</button>`}
     </div>`;
   }).join('');
 }
@@ -2061,7 +2061,7 @@ async function openBrowserMenu() {
   m.setAttribute('role', 'menu');
   const item = (act, label, keys = '') => `<button class="menu-item" role="menuitem" data-act="${act}"><span>${label}</span>${keys ? `<kbd>${keys}</kbd>` : ''}</button>`;
   m.innerHTML = item('find', 'Find in page', 'Ctrl+F') + item('print', 'Print')
-    + `<div class="bc-menu-row"><span>Zoom</span><span class="bc-zoom"><button class="bc-btn" data-act="zoom-out" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button><span data-zoom-label>${bc.zoom}%</span><button class="bc-btn" data-act="zoom-in" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button><button class="bc-btn" data-act="zoom-reset" aria-label="Actual size" title="Actual size"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button></span></div>`
+    + `<div class="bc-menu-row"><span>Zoom</span><span class="bc-zoom"><button class="bc-btn" data-act="zoom-out" aria-label="Zoom out">${icon('minus', 'ico-sm')}</button><span data-zoom-label>${bc.zoom}%</span><button class="bc-btn" data-act="zoom-in" aria-label="Zoom in">${icon('plus', 'ico-sm')}</button><button class="bc-btn" data-act="zoom-reset" aria-label="Actual size" title="Actual size">${icon('refresh', 'ico-sm')}</button></span></div>`
     + `<div class="bc-menu-row"><span>Device</span><span class="bc-devices">${BC_SIZES.map(([k, l]) => `<button class="${bc.viewport === k ? 'on' : ''}" data-act="size:${k}">${l}</button>`).join('')}</span></div>`
     + item('shot', 'Take a screenshot')
     + '<div class="menu-sep"></div>'
@@ -2438,14 +2438,14 @@ const sb = {
   renaming: false,                  // a rename field is open; the list waits for it to close
 };
 const SB_ICON = {
-  chev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
-  caret: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-7 9z"/></svg>',
-  plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
-  more: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>',
+  chev: icon('chevron-down', 'ico-sm'),
+  caret: icon('chevron-down', 'ico-sm'),
+  plus: icon('plus'),
+  more: icon('more'),
   // A project's folder: closed while its chats are folded away, open otherwise.
-  folder: '<svg class="sb-ic-folder" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h3.6l2 2.2h7.4a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>',
-  folderOpen: '<svg class="sb-ic-folder-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 17.5V7.5a2 2 0 0 1 2-2h3.6l2 2.2h6.4a2 2 0 0 1 2 2v1.3"/><path d="M3.5 17.5l2.3-6a1.6 1.6 0 0 1 1.5-1h13.2a1 1 0 0 1 .9 1.4l-2.4 5.9a1.6 1.6 0 0 1-1.5 1H5a1.5 1.5 0 0 1-1.5-1.3z"/></svg>',
-  chats: '<svg class="sb-ic-chats" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a7.5 7.5 0 0 1-11.2 6.5L4 19.5l1-4.4A7.5 7.5 0 1 1 20 12z"/></svg>',
+  folder: icon('folder', 'sb-ic-folder'),
+  folderOpen: icon('folder-open', 'sb-ic-folder-open'),
+  chats: icon('chat', 'sb-ic-chats'),
 };
 const sbAttr = (s) => esc(String(s == null ? '' : s)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 // Windows paths: one folder however its slashes or letter case were written.
@@ -2681,11 +2681,11 @@ function openChatMenu(session, anchorBtn) {
   const menu = document.createElement('div');
   menu.className = 'menu chat-ctx-menu';
   menu.innerHTML = `
-    <button class="menu-item" data-action="rename"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Rename</button>
-    <button class="menu-item" data-action="md"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Save as Markdown</button>
-    <button class="menu-item" data-action="html"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Save as web page</button>
-    <button class="menu-item" data-action="gist"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>Share as secret gist</button>
-    <button class="menu-item danger" data-action="delete"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg>Delete</button>`;
+    <button class="menu-item" data-action="rename">${icon('edit')}Rename</button>
+    <button class="menu-item" data-action="md">${icon('download')}Save as Markdown</button>
+    <button class="menu-item" data-action="html">${icon('download')}Save as web page</button>
+    <button class="menu-item" data-action="gist">${icon('link')}Share as secret gist</button>
+    <button class="menu-item danger" data-action="delete">${icon('trash')}Delete</button>`;
   document.body.appendChild(menu);
   const rect = anchorBtn.getBoundingClientRect();
   menu.style.top = rect.bottom + 4 + 'px';
@@ -2788,8 +2788,8 @@ function openProjectMenu(projectPath, anchorBtn) {
   const menu = document.createElement('div');
   menu.className = 'menu chat-ctx-menu';
   menu.innerHTML = `
-    <button class="menu-item" data-action="reveal"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>Show in Explorer</button>
-    <button class="menu-item danger" data-action="remove"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg>Remove from list</button>`;
+    <button class="menu-item" data-action="reveal">${icon('folder')}Show in Explorer</button>
+    <button class="menu-item danger" data-action="remove">${icon('trash')}Remove from list</button>`;
   document.body.appendChild(menu);
   const rect = anchorBtn.getBoundingClientRect();
   menu.style.top = rect.bottom + 4 + 'px';
@@ -2891,13 +2891,13 @@ const MODEL_PRESETS = [
   { label: 'DeepSeek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
 ];
 
-const SPARK_SVG = '<svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9Z"/><path d="M19 15l.7 1.8L21.5 17.5l-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7Z"/></svg>';
-const CHIP_SVG = '<svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M9 1.5v3M15 1.5v3M9 19.5v3M15 19.5v3M1.5 9h3M1.5 15h3M19.5 9h3M19.5 15h3"/></svg>';
+const SPARK_SVG = icon('sparkle');
+const CHIP_SVG = icon('chip');
 // OpenAI's own Blossom mark, unmodified, from openai.com/brand (assets/brand/).
 // styles.css swaps the white and black files with the theme; OpenAI's rules
 // forbid recoloring it, so it's never tinted with currentColor.
 const CHATGPT_SVG = '<span class="chatgpt-mark" role="img" aria-label="ChatGPT"></span>';
-const LLAMA_SVG = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2.5"/><path d="M8 20h8M12 16v4"/><path d="M7.5 9.5l2 1.5-2 1.5M12 12.5h4"/></svg>';
+const LLAMA_SVG = icon('laptop');
 
 function selectedModel() {
   if (state.models.selected === 'auto') return null;
@@ -2964,9 +2964,9 @@ function openModelMenu(anchorBtn) {
   const menu = document.createElement('div');
   menu.className = 'menu model-menu';
   const sel = state.models.selected;
-  const check = '<svg class="model-item-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>';
+  const check = icon('check', 'model-item-check');
   const custom = state.models.models.filter((m) => m.kind !== 'chatgpt');
-  const LOCK = '<svg class="model-item-lock" viewBox="0 0 16 16" aria-hidden="true"><path class="lock-shackle" d="M5.25 7.25V5.5a2.75 2.75 0 0 1 5.5 0v1.75"/><path class="lock-body" fill-rule="evenodd" d="M4.6 7h6.8A1.6 1.6 0 0 1 13 8.6v4.3a1.6 1.6 0 0 1-1.6 1.6H4.6A1.6 1.6 0 0 1 3 12.9V8.6A1.6 1.6 0 0 1 4.6 7Zm3.4 2.2a1 1 0 0 0-.55 1.84v.96a.55.55 0 0 0 1.1 0v-.96A1 1 0 0 0 8 9.2Z"/></svg>';
+  const LOCK = icon('lock', 'model-item-lock ico-sm');
   const autoModels = [['Sonnet 5.5', 'Code and hard tasks'], ['Haiku 5.5', 'Quick answers'], ['Non-disclosed models', 'Casual chat']].map(([name, why]) => `
     <div class="model-item locked" aria-disabled="true" title="Haze 2 picks these for you">
       <span class="model-item-icon custom">${CHIP_SVG}</span>
@@ -2989,12 +2989,12 @@ function openModelMenu(anchorBtn) {
           <span class="model-item-text"><strong>${esc(m.name)}${phoneBadge(m)}</strong><span>${esc(m.model)} · ${esc(m.kind === 'ollama' ? 'on this computer' : hostOf(m.baseUrl))}</span></span>
           ${sel === m.id ? check : ''}
         </button>
-        ${m.phone && m.phone.eligible ? `<button class="model-item-tool icon-btn icon-btn-xs${m.phone.on ? ' on' : ''}" data-phone="${esc(m.id)}" title="${esc(m.phone.on ? (m.phone.synced ? 'On your phone. Click to stop syncing it' : m.phone.reason || 'Syncing to your phone') : 'Sync to phone: use it there even when this PC is off')}"><svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 17.5h2"/></svg></button>` : ''}
-        <button class="model-item-tool icon-btn icon-btn-xs" data-edit="${esc(m.id)}" title="Edit"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-        <button class="model-item-tool icon-btn icon-btn-xs danger" data-delete="${esc(m.id)}" title="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg></button>
+        ${m.phone && m.phone.eligible ? `<button class="model-item-tool icon-btn icon-btn-xs${m.phone.on ? ' on' : ''}" data-phone="${esc(m.id)}" title="${esc(m.phone.on ? (m.phone.synced ? 'On your phone. Click to stop syncing it' : m.phone.reason || 'Syncing to your phone') : 'Sync to phone: use it there even when this PC is off')}">${icon('phone')}</button>` : ''}
+        <button class="model-item-tool icon-btn icon-btn-xs" data-edit="${esc(m.id)}" title="Edit">${icon('edit')}</button>
+        <button class="model-item-tool icon-btn icon-btn-xs danger" data-delete="${esc(m.id)}" title="Remove">${icon('trash')}</button>
       </div>`).join('')}
     <div class="model-menu-divider"></div>
-    <button class="model-menu-action" data-action="add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add a model</button>
+    <button class="model-menu-action" data-action="add">${icon('plus')}Add a model</button>
     <button class="model-menu-ollama" data-action="ollama">Connect Ollama</button>`;
   document.body.appendChild(menu);
 
@@ -3463,9 +3463,9 @@ function addReasoningRow(text, ms) {
   row.className = 'reasoning-row expandable';
   row.innerHTML =
     '<div class="reasoning-row-head">' +
-    '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
+    icon('clock', 'ico-sm') +
     `<span class="reasoning-label">Thought for ${seconds}s</span>` +
-    '<svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>' +
+    icon('chevron-right', 'tool-chevron ico-sm') +
     '</div>';
   const detail = document.createElement('pre');
   detail.className = 'reasoning-detail hidden';
@@ -3489,9 +3489,9 @@ function addThinkingRow(text) {
   row.className = 'reasoning-row thinking-step expandable';
   row.innerHTML =
     '<div class="reasoning-row-head">' +
-    '<svg viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2Z"/></svg>' +
+    icon('bulb', 'ico-sm') +
     '<span class="reasoning-label"></span>' +
-    '<svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>' +
+    icon('chevron-right', 'tool-chevron ico-sm') +
     '</div>';
   // The row reads as what the agent said it was doing (its first line), like
   // the steps around it; the whole note opens below.
@@ -3630,7 +3630,7 @@ document.querySelectorAll('.composer').forEach((composer) => {
     composer.pendingImages.forEach((src, i) => {
       const chip = document.createElement('div');
       chip.className = 'composer-image-preview';
-      chip.innerHTML = `<img src="${src}" alt=""><button class="remove-img-btn" title="Remove image"><svg viewBox="0 0 24 24"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg></button>`;
+      chip.innerHTML = `<img src="${src}" alt=""><button class="remove-img-btn" title="Remove image">${icon('close', 'ico-xs')}</button>`;
       chip.querySelector('.remove-img-btn').addEventListener('click', () => {
         composer.pendingImages.splice(i, 1);
         renderImagePreviews();
@@ -3670,7 +3670,7 @@ document.querySelectorAll('.composer').forEach((composer) => {
   // controls in a quiet row under it.
   if (!fromHome && attachBtn) {
     composer.classList.add('composer-slim');
-    attachBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
+    attachBtn.innerHTML = icon('plus', 'ico-md');
     composer.insertBefore(attachBtn, input);
     input.after(sendBtn);
   }
@@ -3707,7 +3707,7 @@ document.querySelectorAll('.composer').forEach((composer) => {
     queuedEl.classList.toggle('hidden', !q);
     if (!q) { queuedEl.innerHTML = ''; return; }
     const shown = window.CodeplyAttach ? window.CodeplyAttach.split(q.text).text || q.text : q.text;
-    queuedEl.innerHTML = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="cq-label">Queued</span><span class="cq-text"></span><button type="button" class="cq-now" title="Stop the current run and send this now">Send now</button><button type="button" class="cq-x" title="Take it back" aria-label="Take the queued message back"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+    queuedEl.innerHTML = `${icon('clock', 'ico-sm')}<span class="cq-label">Queued</span><span class="cq-text"></span><button type="button" class="cq-now" title="Stop the current run and send this now">Send now</button><button type="button" class="cq-x" title="Take it back" aria-label="Take the queued message back">${icon('close', 'ico-sm')}</button>`;
     queuedEl.querySelector('.cq-text').textContent = shown;
     // Send now: stop this run; the queued message goes out as soon as it has ended.
     queuedEl.querySelector('.cq-now').addEventListener('click', () => {
@@ -3753,7 +3753,11 @@ ${text}` : text, images: composer.pendingImages.length ? composer.pendingImages 
       composer.renderQueued();
       return;
     }
-    const typed = input.value.trim();
+    let typed = input.value.trim();
+    // /review, /security, /judge, /loop, /schedule (see typedCommand): a prompt to send instead, or handled here.
+    const cmd = typedCommand(typed);
+    if (cmd === true) { input.value = ''; input.style.height = 'auto'; return; }
+    if (cmd && cmd.text) typed = cmd.text;
     const images = composer.pendingImages;
     if (composer.pendingFiles.some((f) => f.reading)) { showToast('Still reading a file. One moment.'); return; }
     const files = composer.pendingFiles;
@@ -3770,6 +3774,7 @@ ${text}` : text, images: composer.pendingImages.length ? composer.pendingImages 
   };
 
   sendBtn.addEventListener('click', () => submit(true));
+  composer.submitNow = () => submit(); // slash commands that run at once (/review, /security)
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       // The slash-command menu (wired up further below, same input) owns
@@ -3810,7 +3815,7 @@ function addApprovalCard(ev) {
     : `Always allow ${toolName(ev.tool)} in this chat`;
   card.innerHTML = `
     <div class="approval-head">
-      <svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5Z"/></svg>
+      ${icon('shield')}
       <span class="approval-title">${esc(ev.title)}</span>
       ${ev.danger ? '<span class="approval-danger">outside project / risky</span>' : ''}
     </div>
@@ -3843,7 +3848,7 @@ function addEmailApprovalCard(ev) {
   card.dataset.requestId = ev.requestId;
   card.innerHTML = `
     <div class="approval-head">
-      <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+      ${icon('mail')}
       <span class="approval-title">${esc(ev.title)}</span>
     </div>
     <label class="email-field"><span>To</span><input data-f="to" type="text" spellcheck="false"></label>
@@ -3888,14 +3893,14 @@ function renderQuestionCard(q, existing) {
   const answered = q.answered || q.answer !== undefined;
   if (answered) {
     card.innerHTML = `
-      <div class="q-head"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/></svg><span class="q-text"></span></div>
+      <div class="q-head">${icon('help')}<span class="q-text"></span></div>
       <div class="q-answer">${q.answer == null ? '<em>Dismissed, the agent decided on its own</em>' : `Answered: <b>${esc(q.answer)}</b>`}</div>`;
     card.querySelector('.q-text').textContent = q.question;
     if (!existing) chatColumn.appendChild(card);
     return;
   }
   card.innerHTML = `
-    <div class="q-head"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/></svg><span class="q-text"></span></div>
+    <div class="q-head">${icon('help')}<span class="q-text"></span></div>
     <div class="q-options">${(q.options || []).map((o, i) => `<button class="btn btn-secondary btn-sm q-opt${i === 0 ? ' first' : ''}" type="button" data-i="${i}">${esc(o)}</button>`).join('')}</div>
     <form class="q-custom"><input class="input input-sm" type="text" placeholder="${(q.options || []).length ? 'Or type your own answer' : 'Type your answer'}" maxlength="2000"><button class="btn btn-secondary btn-sm" type="submit">Send</button></form>
     <button class="btn btn-ghost btn-sm q-skip" type="button">Let the agent decide</button>`;
@@ -3928,7 +3933,7 @@ function addImagePickerCard(ev) {
   card.dataset.requestId = ev.requestId;
   card.innerHTML = `
     <div class="approval-head">
-      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M3 15l5-4 4 3 4-4 5 5"/></svg>
+      ${icon('image')}
       <span class="approval-title">Choose an image</span>
       ${ev.danger ? '<span class="approval-danger">outside project / risky</span>' : ''}
     </div>
@@ -4746,14 +4751,189 @@ $('pluginsCloseBtn').addEventListener('click', closePluginsModal);
 $('pluginsBackdrop').addEventListener('click', (e) => { if (e.target === $('pluginsBackdrop')) closePluginsModal(); });
 
 // ─── Slash commands ("/" in the composer) ────────────────────────────────────
+// icon (optional) names one from icons.js; without it a row shows SLASH_ICON.
+const SLASH_ICON = 'prompt';
 const SLASH_COMMANDS = [
   {
-    name: '/goal', aliases: ['/g'], desc: 'Keep working until the goal is fully done and verified',
+    name: '/goal', aliases: ['/g'], icon: 'target', desc: 'Keep working until the goal is fully done and verified',
     run: (input) => { input.value = '/goal '; input.focus(); input.dispatchEvent(new Event('input')); },
   },
-  { name: '/skills', aliases: ['/skill-list', '/skill'], desc: 'Browse and search the skill library', run: (input) => openSkillsModal(input) },
-  { name: '/plugins', aliases: ['/plugin'], desc: 'Install and manage plugins (commands, skills, MCP servers)', run: () => openPluginsModal() },
+  { name: '/skills', aliases: ['/skill-list', '/skill'], icon: 'book', desc: 'Browse and search the skill library', run: (input) => openSkillsModal(input) },
+  { name: '/plugins', aliases: ['/plugin'], icon: 'chip', desc: 'Install and manage plugins (commands, skills, MCP servers)', run: () => openPluginsModal() },
+  { name: '/new', aliases: ['/clear'], icon: 'new-chat', desc: 'Start a new chat', run: () => $('newChatBtn').click() },
+  { name: '/model', aliases: ['/models'], icon: 'sparkle', desc: 'Pick the model', run: (input) => openModelMenu(modelChipOf(input)) },
+  { name: '/effort', aliases: ['/think'], icon: 'bulb', desc: 'How hard your own model thinks (Haze 2 sets its own)', run: (input) => openEffortMenu(modelChipOf(input)) },
+  { name: '/usage', aliases: ['/limits'], icon: 'gauge', desc: 'See how much you have used', run: () => window.CraftUsage && window.CraftUsage.open({ name: $('userName').textContent, email: state.user ? state.user.email : '' }) },
+  { name: '/agents', aliases: ['/specialists'], icon: 'users', desc: 'Open Agents: Codeply and its specialists', run: () => { const b = document.querySelector('.app-switch-btn[data-app="crew"]'); if (b) b.click(); } },
+  { name: '/loop', aliases: [], icon: 'refresh', desc: 'Run a prompt again every few minutes: /loop 10m check the build', run: (input) => fillCommand(input, '/loop ') },
+  { name: '/schedule', aliases: ['/at'], icon: 'clock', desc: 'Run a task later: /schedule 5pm send me the summary', run: (input) => fillCommand(input, '/schedule ') },
+  { name: '/review', aliases: [], icon: 'code', desc: 'Review the uncommitted changes like a strict senior reviewer', run: (input) => { input.value = '/review'; submitTyped(input); } },
+  { name: '/security', aliases: ['/sec'], icon: 'shield-alert', desc: 'Find the loopholes in this project before someone else does', run: (input) => { input.value = '/security'; submitTyped(input); } },
+  { name: '/judge', aliases: [], icon: 'target', desc: 'Judge an idea hard, guess what you mean, no yes man', run: (input) => fillCommand(input, '/judge ') },
 ];
+
+// ─── Commands that act on what's typed after them ───────────────────────────
+// Caught on send (see submit in the composer): some become a prompt for the
+// agent, /loop and /schedule set timers here. Returns { text } to send instead,
+// true when handled here, or null for an ordinary message.
+const REVIEW_PROMPT = 'Review the uncommitted changes in this project like a strict senior reviewer. Read the real diff (git diff and git status) and the code around it. Find real bugs first: wrong logic, missed edge cases, broken error handling, race conditions, security problems, things that break other callers. Then simpler or clearer ways to do the same. For each finding: file:line, what goes wrong and when, and the fix. Skip style nits. Do not change any code unless I ask. If the changes look right, say so plainly.';
+const SECURITY_PROMPT = (focus) => `Do a security review of this project. Think like an attacker looking for loopholes, not like a checklist, and read the real code. Look for: auth and permission gaps, injection (SQL, shell, path, prompt), secrets or keys in code, config or logs, unsafe defaults, missing input checks, insecure storage, SSRF and open redirects, risky dependencies, and anything a user could abuse to reach data or access they should not have. For each finding give the severity (critical, high, medium, low), where it is (file:line), how someone would exploit it, and the fix. Rank them, worst first. Do not change any code unless I ask. If something looks risky but you cannot confirm it, say so.${focus ? `\n\nFocus on: ${focus}` : ''}`;
+const JUDGE_PROMPT = (idea) => `Judge this idea hard. Do not be a yes man and do not be nice for the sake of it.
+1. First guess what I am really going for: the goal behind the idea, who it is for, and what I am probably assuming without saying it.
+2. Make the strongest honest case for it in a few lines.
+3. Then attack it: the fatal flaws, the assumptions most likely wrong, who would say no and why, what already exists that beats it, and what it would really cost in time, money and effort.
+4. Verdict: a score out of 10 and one line: do it, change it or drop it.
+5. What evidence would change your mind, and the cheapest test to get it this week.
+
+Idea: ${idea}`;
+
+function typedCommand(typed) {
+  const m = /^\/(\w+)\b\s*([\s\S]*)$/.exec(typed || '');
+  if (!m) return null;
+  const [, name, rest] = m;
+  const arg = rest.trim();
+  switch (name.toLowerCase()) {
+    case 'review': return { text: REVIEW_PROMPT + (arg ? `\n\nFocus on: ${arg}` : '') };
+    case 'security': case 'sec': return { text: SECURITY_PROMPT(arg) };
+    case 'judge':
+      if (!arg) { showToast('Add your idea after /judge, like: /judge an app that books barbers by voice'); return true; }
+      return { text: JUDGE_PROMPT(arg) };
+    case 'loop': return loopCommand(arg);
+    case 'schedule': case 'at': return scheduleCommand(arg);
+    default: return null;
+  }
+}
+
+function fillCommand(input, text) { input.value = text; input.focus(); input.dispatchEvent(new Event('input')); }
+// Sends what's in this input as if Enter was pressed (for commands that run at once from the menu).
+function submitTyped(input) { const c = input.closest('.composer'); if (c && c.submitNow) c.submitNow(); }
+function modelChipOf(input) {
+  const c = input && input.closest('.composer');
+  return (c && c.querySelector('[data-role="model-chip"]')) || document.querySelector('[data-role="model-chip"]');
+}
+
+// /effort: low, medium or high for the user's own models. Haze 2 picks its own, and that stays ours.
+function openEffortMenu(anchor) {
+  const m = selectedModel();
+  if (!m) { showToast('Haze 2 sets its own effort. Pick one of your own models to change it.'); return; }
+  if (m.kind === 'ollama') { showToast('Effort is not available for Ollama models.'); return; }
+  closeModelMenu();
+  const menu = document.createElement('div');
+  menu.className = 'menu model-menu effort-menu';
+  const now = m.effort || '';
+  const rows = [['', 'Default', 'Whatever the provider uses'], ['low', 'Low', 'Fast answers'], ['medium', 'Medium', 'Balanced'], ['high', 'High', 'Thinks longest, for hard problems']];
+  menu.innerHTML = `<div class="model-menu-title">Effort for ${esc(m.name)}</div>${rows.map(([id, name, why]) => `
+    <button class="model-item${now === id ? ' active' : ''}" data-effort="${id}">
+      <span class="model-item-text"><strong>${name}</strong><span>${why}</span></span>
+      ${now === id ? icon('check', 'model-item-check') : ''}
+    </button>`).join('')}`;
+  document.body.appendChild(menu);
+  const r = (anchor || document.body).getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.left = `${Math.max(8, Math.min(r.left, innerWidth - menu.offsetWidth - 8))}px`;
+  menu.style.top = `${Math.max(8, r.top - menu.offsetHeight - 8)}px`;
+  const close = () => { menu.remove(); document.removeEventListener('mousedown', outside, true); };
+  const outside = (e) => { if (!menu.contains(e.target)) close(); };
+  setTimeout(() => document.addEventListener('mousedown', outside, true), 0);
+  menu.querySelectorAll('[data-effort]').forEach((b) => b.addEventListener('click', async () => {
+    close();
+    const res = api && api.setModelEffort ? await api.setModelEffort(m.id, b.dataset.effort) : { ok: false, error: 'Not available here.' };
+    if (!res.ok) { showToast(res.error || 'Could not set the effort.', 'error'); return; }
+    applyModelsState(res.state);
+    showToast(b.dataset.effort ? `${m.name}: ${b.dataset.effort} effort` : `${m.name}: default effort`);
+  }));
+}
+
+// ─── /loop and /schedule: prompts that run later in the chat they were set in ──
+// Kept in this window's storage and armed again on the next start; they only
+// run while Codeply is open. A run that comes due mid-task waits for it to end.
+const TIMERS_KEY = 'codeply-timers';
+function readTimers() { try { return JSON.parse(localStorage.getItem(TIMERS_KEY) || '[]').filter((t) => t && t.prompt); } catch { return []; } }
+function writeTimers(list) { try { localStorage.setItem(TIMERS_KEY, JSON.stringify(list)); } catch {} }
+const clipPrompt = (t) => (t.length > 40 ? `${t.slice(0, 39)}…` : t);
+
+function parseEvery(s) {
+  const m = /^(\d+(?:\.\d+)?)\s*(s|sec|secs|m|min|mins|h|hr|hrs|hour|hours)$/i.exec(s || '');
+  if (!m) return 0;
+  const n = parseFloat(m[1]); const u = m[2][0].toLowerCase();
+  return Math.round(n * (u === 'h' ? 3600000 : u === 'm' ? 60000 : 1000));
+}
+
+function loopCommand(arg) {
+  const list = readTimers();
+  if (!arg || /^(list|status)$/i.test(arg)) {
+    const loops = list.filter((t) => t.kind === 'loop');
+    showToast(loops.length ? `Looping: ${loops.map((t) => `every ${Math.round(t.every / 60000)}m "${clipPrompt(t.prompt)}"`).join('; ')}. /loop stop ends them.` : 'No loops running. Try: /loop 10m check the build');
+    return true;
+  }
+  if (/^(stop|off|cancel|end)$/i.test(arg)) {
+    writeTimers(list.filter((t) => t.kind !== 'loop'));
+    showToast('Stopped every loop.');
+    return true;
+  }
+  const [first, ...more] = arg.split(/\s+/);
+  const every = parseEvery(first);
+  const prompt = more.join(' ').trim();
+  if (!every || !prompt) { showToast('Like this: /loop 10m check the build and tell me if it broke'); return true; }
+  if (every < 60000) { showToast('A loop runs at most once a minute.'); return true; }
+  list.push({ id: Date.now().toString(36), kind: 'loop', every, next: Date.now() + every, prompt, sessionId: state.currentSessionId || null });
+  writeTimers(list);
+  showToast(`Every ${Math.round(every / 60000)} min: "${clipPrompt(prompt)}". Running it now. /loop stop ends it.`);
+  return { text: prompt };
+}
+
+// "in 20m", "in 2h", "5pm", "17:30", "tomorrow 9am" at the start of the text: { at, rest }.
+function parseWhen(s) {
+  let m = /^in\s+(\d+(?:\.\d+)?\s*(?:s|sec|secs|m|min|mins|h|hr|hrs|hour|hours))\b\s*([\s\S]*)$/i.exec(s);
+  if (m) { const ms = parseEvery(m[1].replace(/\s+/g, '')); return ms ? { at: Date.now() + ms, rest: m[2].trim() } : null; }
+  m = /^(tomorrow\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b\s*([\s\S]*)$/i.exec(s);
+  if (!m) return null;
+  let h = Number(m[2]); const min = Number(m[3] || 0); const ap = (m[4] || '').toLowerCase();
+  if (!ap && !m[3]) return null; // a bare number isn't a time
+  if (ap === 'pm' && h < 12) h += 12;
+  if (ap === 'am' && h === 12) h = 0;
+  if (h > 23 || min > 59) return null;
+  const d = new Date(); d.setSeconds(0, 0); d.setHours(h, min);
+  if (m[1]) d.setDate(d.getDate() + 1);
+  else if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1); // that time already passed today: tomorrow
+  return { at: d.getTime(), rest: m[5].trim() };
+}
+
+function scheduleCommand(arg) {
+  const list = readTimers();
+  if (!arg || /^(list|status)$/i.test(arg)) {
+    const once = list.filter((t) => t.kind === 'once');
+    showToast(once.length ? `Scheduled: ${once.map((t) => `${new Date(t.next).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })} "${clipPrompt(t.prompt)}"`).join('; ')}. /schedule cancel clears them.` : 'Nothing scheduled. Try: /schedule 5pm send me a summary of today');
+    return true;
+  }
+  if (/^(cancel|clear|stop|off)$/i.test(arg)) {
+    writeTimers(list.filter((t) => t.kind !== 'once'));
+    showToast('Cleared everything scheduled.');
+    return true;
+  }
+  const when = parseWhen(arg);
+  if (!when || !when.rest) { showToast('Like this: /schedule 5pm send me a summary of today (or: in 30m, 17:30, tomorrow 9am)'); return true; }
+  list.push({ id: Date.now().toString(36), kind: 'once', next: when.at, prompt: when.rest, sessionId: state.currentSessionId || null });
+  writeTimers(list);
+  showToast(`Scheduled for ${new Date(when.at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}: "${clipPrompt(when.rest)}". Codeply needs to be open then.`);
+  return true;
+}
+
+// Every half minute: anything due runs in its chat (or a new one), one at a time, never over a running task.
+async function runDueTimers() {
+  if (!state.user || state.running) return;
+  const list = readTimers();
+  const due = list.find((t) => t.next <= Date.now());
+  if (!due) return;
+  if (due.kind === 'loop') due.next = Date.now() + due.every;
+  writeTimers(due.kind === 'loop' ? list : list.filter((t) => t.id !== due.id));
+  try {
+    if (due.sessionId && due.sessionId !== state.currentSessionId) await openSession(due.sessionId);
+    else if (!due.sessionId) $('newChatBtn').click();
+  } catch {}
+  setTimeout(() => { if (!state.running) sendMessage(due.prompt, !state.currentSessionId); }, 400);
+}
+setInterval(runDueTimers, 30000);
 
 document.querySelectorAll('.composer').forEach((composer) => {
   const input = composer.querySelector('.composer-input');
@@ -4773,7 +4953,7 @@ document.querySelectorAll('.composer').forEach((composer) => {
     customAt = Date.now();
     try {
       customCommands = (await api.listCommands(state.project || null)).map((c) => ({
-        name: `/${c.name}`, aliases: [], desc: c.description + (c.mode ? ` (${c.mode})` : ''),
+        name: `/${c.name}`, aliases: [], icon: 'file-text', desc: c.description + (c.mode ? ` (${c.mode})` : ''),
         run: (inp) => { inp.value = `/${c.name} `; inp.focus(); inp.dispatchEvent(new Event('input')); },
       }));
     } catch { customCommands = []; }
@@ -4799,7 +4979,10 @@ document.querySelectorAll('.composer').forEach((composer) => {
     list.forEach((cmd, i) => {
       const item = document.createElement('button');
       item.className = 'menu-item slash-item' + (i === 0 ? ' active' : '');
-      item.innerHTML = `<svg viewBox="0 0 24 24"><path d="M12 3l2.2 5.6L20 10.8l-5.8 2.2L12 19l-2.2-6L4 10.8l5.8-2.2Z"/></svg><strong>${esc(cmd.name)}</strong><span class="slash-desc">${esc(cmd.desc)}</span>`;
+      // Shown like Codex's: icon, the name without its slash ("Goal"), the description in gray.
+      const label = cmd.name.replace(/^\//, '').replace(/-/g, ' ');
+      item.title = cmd.name;
+      item.innerHTML = `${icon(cmd.icon || SLASH_ICON)}<strong>${esc(label.charAt(0).toUpperCase() + label.slice(1))}</strong><span class="slash-desc">${esc(cmd.desc)}</span>`;
       item.addEventListener('click', () => { closeMenu(); input.value = ''; cmd.run(input); });
       menu.appendChild(item);
     });
@@ -4996,7 +5179,7 @@ $('updateGateBtn').addEventListener('click', () => {
   let rm = { enabled: false, mode: 'cloud', model: '', context: '', hasKey: false, keyPreview: '' };
 
   let statusOk = null;
-  const RM_ICON = '<svg viewBox="0 0 24 24"><path d="M9 3h6"/><path d="M10 3.5v5.2l-5.1 8.7A2.4 2.4 0 0 0 7 21h10a2.4 2.4 0 0 0 2.1-3.6L14 8.7V3.5"/><path d="M6.9 14h10.2"/></svg>';
+  const RM_ICON = icon('flask');
 
   // The chip lives in each composer, right after Cloud. Click turns it on or off;
   // the dots (or a right click) open the settings popover above it.
@@ -5018,7 +5201,7 @@ $('updateGateBtn').addEventListener('click', () => {
     more.type = 'button';
     more.title = 'Research settings';
     more.setAttribute('aria-label', 'Research settings');
-    more.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
+    more.innerHTML = icon('more');
     more.addEventListener('click', () => ($('rmPanel').classList.contains('hidden') ? openPop(b) : closePop()));
     row.appendChild(b);
     row.appendChild(more);

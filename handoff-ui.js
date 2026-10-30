@@ -5,7 +5,7 @@
 (() => {
   if (!window.craft || !window.craft.handoffStatus) return;
 
-  const WARN_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4"/><path d="M12 17.5v.01"/></svg>';
+  const WARN_ICON = icon('warning');
   let el = null;
   let last = { status: 'off' };
   let ticker = null;
