@@ -1,0 +1,424 @@
+{
+  "at": "2026-10-30T19:45:26.748Z",
+  "host": {
+    "platform": "linux",
+    "arch": "x64",
+    "model": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "logical": 4,
+    "physical": 4,
+    "ramMB": 16091,
+    "freeMB": 14736,
+    "simd": {
+      "avx2": true,
+      "avx512": true,
+      "avx512vnni": true,
+      "avxvnni": false,
+      "fma": true,
+      "f16c": true,
+      "neon": false,
+      "dotprod": false
+    }
+  },
+  "llamaCpp": "aa588a3",
+  "kvCache": "q8_0",
+  "rows": [
+    {
+      "model": "lfm3-1.7b-q4",
+      "threads": 2,
+      "test": "pp768",
+      "tokensPerSecond": 52.5,
+      "stddev": 6.2,
+      "sizeMB": 1041,
+      "params": 1728801600,
+      "type": "lfm3 1.7B Q4_K - Medium"
+    },
+    {
+      "model": "lfm3-1.7b-q4",
+      "threads": 2,
+      "test": "tg160",
+      "tokensPerSecond": 9.6,
+      "stddev": 0.2,
+      "sizeMB": 1041,
+      "params": 1728801600,
+      "type": "lfm3 1.7B Q4_K - Medium"
+    },
+    {
+      "model": "lfm3-1.7b-q4",
+      "threads": 3,
+      "test": "pp768",
+      "tokensPerSecond": 67.1,
+      "stddev": 2.4,
+      "sizeMB": 1041,
+      "params": 1728801600,
+      "type": "lfm3 1.7B Q4_K - Medium"
+    },
+    {
+      "model": "lfm3-1.7b-q4",
+      "threads": 3,
+      "test": "tg160",
+      "tokensPerSecond": 13.7,
+      "stddev": 0.1,
+      "sizeMB": 1041,
+      "params": 1728801600,
+      "type": "lfm3 1.7B Q4_K - Medium"
+    },
+    {
+      "model": "lfm3-1.7b-q4",
+      "threads": 4,
+      "test": "pp768",
+      "tokensPerSecond": 102.4,
+      "stddev": 2,
+      "sizeMB": 1041,
+      "params": 1728801600,
+      "type": "lfm3 1.7B Q4_K - Medium"
+    },
+    {
+      "model": "lfm3-1.7b-q4",
+      "threads": 4,
+      "test": "tg160",
+      "tokensPerSecond": 17.8,
+      "stddev": 1.2,
+      "sizeMB": 1041,
+      "params": 1728801600,
+      "type": "lfm3 1.7B Q4_K - Medium"
+    },
+    {
+      "model": "lfm3-1.7b-qad-q4",
+      "threads": 2,
+      "test": "pp768",
+      "tokensPerSecond": 51.7,
+      "stddev": 0.1,
+      "sizeMB": 993,
+      "params": 1728801600,
+      "type": "lfm3 1.7B Q4_0"
+    },
+    {
+      "model": "lfm3-1.7b-qad-q4",
+      "threads": 2,
+      "test": "tg160",
+      "tokensPerSecond": 10.4,
+      "stddev": 0.2,
+      "sizeMB": 993,
+      "params": 1728801600,
+      "type": "lfm3 1.7B Q4_0"
+    },
+    {
+      "model": "lfm3-1.7b-qad-q4",
+      "threads": 3,
+      "test": "pp768",
+      "tokensPerSecond": 73.2,
+      "stddev": 3.7,
+      "sizeMB": 993,
+      "params": 1728801600,
+      "type": "lfm3 1.7B Q4_0"
+    },
+    {
+      "model": "lfm3-1.7b-qad-q4",
+      "threads": 3,
+      "test": "tg160",
+      "tokensPerSecond": 13.9,
+      "stddev": 0.1,
+      "sizeMB": 993,
+      "params": 1728801600,
+      "type": "lfm3 1.7B Q4_0"
+    },
+    {
+      "model": "lfm3-1.7b-qad-q4",
+      "threads": 4,
+      "test": "pp768",
+      "tokensPerSecond": 97.3,
+      "stddev": 5.2,
+      "sizeMB": 993,
+      "params": 1728801600,
+      "type": "lfm3 1.7B Q4_0"
+    },
+    {
+      "model": "lfm3-1.7b-qad-q4",
+      "threads": 4,
+      "test": "tg160",
+      "tokensPerSecond": 16.4,
+      "stddev": 1,
+      "sizeMB": 993,
+      "params": 1728801600,
+      "type": "lfm3 1.7B Q4_0"
+    },
+    {
+      "model": "lfm2.5-1.2b-q4",
+      "threads": 2,
+      "test": "pp768",
+      "tokensPerSecond": 76,
+      "stddev": 6.5,
+      "sizeMB": 695,
+      "params": 1170340608,
+      "type": "lfm2 1.2B Q4_K - Medium"
+    },
+    {
+      "model": "lfm2.5-1.2b-q4",
+      "threads": 2,
+      "test": "tg160",
+      "tokensPerSecond": 15.3,
+      "stddev": 0.4,
+      "sizeMB": 695,
+      "params": 1170340608,
+      "type": "lfm2 1.2B Q4_K - Medium"
+    },
+    {
+      "model": "lfm2.5-1.2b-q4",
+      "threads": 3,
+      "test": "pp768",
+      "tokensPerSecond": 103.4,
+      "stddev": 5.1,
+      "sizeMB": 695,
+      "params": 1170340608,
+      "type": "lfm2 1.2B Q4_K - Medium"
+    },
+    {
+      "model": "lfm2.5-1.2b-q4",
+      "threads": 3,
+      "test": "tg160",
+      "tokensPerSecond": 20.4,
+      "stddev": 0.9,
+      "sizeMB": 695,
+      "params": 1170340608,
+      "type": "lfm2 1.2B Q4_K - Medium"
+    },
+    {
+      "model": "lfm2.5-1.2b-q4",
+      "threads": 4,
+      "test": "pp768",
+      "tokensPerSecond": 131,
+      "stddev": 8.3,
+      "sizeMB": 695,
+      "params": 1170340608,
+      "type": "lfm2 1.2B Q4_K - Medium"
+    },
+    {
+      "model": "lfm2.5-1.2b-q4",
+      "threads": 4,
+      "test": "tg160",
+      "tokensPerSecond": 24.9,
+      "stddev": 0.4,
+      "sizeMB": 695,
+      "params": 1170340608,
+      "type": "lfm2 1.2B Q4_K - Medium"
+    },
+    {
+      "model": "qwen2.5-1.5b-q4",
+      "threads": 2,
+      "test": "pp768",
+      "tokensPerSecond": 51.2,
+      "stddev": 1.2,
+      "sizeMB": 1060,
+      "params": 1777088000,
+      "type": "qwen2 1.5B Q4_K - Medium"
+    },
+    {
+      "model": "qwen2.5-1.5b-q4",
+      "threads": 2,
+      "test": "tg160",
+      "tokensPerSecond": 11.5,
+      "stddev": 0.4,
+      "sizeMB": 1060,
+      "params": 1777088000,
+      "type": "qwen2 1.5B Q4_K - Medium"
+    },
+    {
+      "model": "qwen2.5-1.5b-q4",
+      "threads": 3,
+      "test": "pp768",
+      "tokensPerSecond": 74.7,
+      "stddev": 6.3,
+      "sizeMB": 1060,
+      "params": 1777088000,
+      "type": "qwen2 1.5B Q4_K - Medium"
+    },
+    {
+      "model": "qwen2.5-1.5b-q4",
+      "threads": 3,
+      "test": "tg160",
+      "tokensPerSecond": 15.5,
+      "stddev": 0.3,
+      "sizeMB": 1060,
+      "params": 1777088000,
+      "type": "qwen2 1.5B Q4_K - Medium"
+    },
+    {
+      "model": "qwen2.5-1.5b-q4",
+      "threads": 4,
+      "test": "pp768",
+      "tokensPerSecond": 90.2,
+      "stddev": 2.2,
+      "sizeMB": 1060,
+      "params": 1777088000,
+      "type": "qwen2 1.5B Q4_K - Medium"
+    },
+    {
+      "model": "qwen2.5-1.5b-q4",
+      "threads": 4,
+      "test": "tg160",
+      "tokensPerSecond": 18.7,
+      "stddev": 1.1,
+      "sizeMB": 1060,
+      "params": 1777088000,
+      "type": "qwen2 1.5B Q4_K - Medium"
+    },
+    {
+      "model": "qwen3-1.7b-q4",
+      "threads": 2,
+      "test": "pp768",
+      "tokensPerSecond": 42.4,
+      "stddev": 0.9,
+      "sizeMB": 1050,
+      "params": 1720574976,
+      "type": "qwen3 1.7B Q4_K - Medium"
+    },
+    {
+      "model": "qwen3-1.7b-q4",
+      "threads": 2,
+      "test": "tg160",
+      "tokensPerSecond": 10.1,
+      "stddev": 0.3,
+      "sizeMB": 1050,
+      "params": 1720574976,
+      "type": "qwen3 1.7B Q4_K - Medium"
+    },
+    {
+      "model": "qwen3-1.7b-q4",
+      "threads": 3,
+      "test": "pp768",
+      "tokensPerSecond": 62.9,
+      "stddev": 0.6,
+      "sizeMB": 1050,
+      "params": 1720574976,
+      "type": "qwen3 1.7B Q4_K - Medium"
+    },
+    {
+      "model": "qwen3-1.7b-q4",
+      "threads": 3,
+      "test": "tg160",
+      "tokensPerSecond": 12.7,
+      "stddev": 1.1,
+      "sizeMB": 1050,
+      "params": 1720574976,
+      "type": "qwen3 1.7B Q4_K - Medium"
+    },
+    {
+      "model": "qwen3-1.7b-q4",
+      "threads": 4,
+      "test": "pp768",
+      "tokensPerSecond": 72.4,
+      "stddev": 1.3,
+      "sizeMB": 1050,
+      "params": 1720574976,
+      "type": "qwen3 1.7B Q4_K - Medium"
+    },
+    {
+      "model": "qwen3-1.7b-q4",
+      "threads": 4,
+      "test": "tg160",
+      "tokensPerSecond": 16.5,
+      "stddev": 0.5,
+      "sizeMB": 1050,
+      "params": 1720574976,
+      "type": "qwen3 1.7B Q4_K - Medium"
+    },
+    {
+      "model": "gemma3-1b-q4",
+      "threads": 2,
+      "test": "pp768",
+      "tokensPerSecond": 69.8,
+      "stddev": 1.7,
+      "sizeMB": 762,
+      "params": 999885952,
+      "type": "gemma3 1B Q4_K - Medium"
+    },
+    {
+      "model": "gemma3-1b-q4",
+      "threads": 2,
+      "test": "tg160",
+      "tokensPerSecond": 12.6,
+      "stddev": 0.3,
+      "sizeMB": 762,
+      "params": 999885952,
+      "type": "gemma3 1B Q4_K - Medium"
+    },
+    {
+      "model": "gemma3-1b-q4",
+      "threads": 3,
+      "test": "pp768",
+      "tokensPerSecond": 88.5,
+      "stddev": 8.9,
+      "sizeMB": 762,
+      "params": 999885952,
+      "type": "gemma3 1B Q4_K - Medium"
+    },
+    {
+      "model": "gemma3-1b-q4",
+      "threads": 3,
+      "test": "tg160",
+      "tokensPerSecond": 18.2,
+      "stddev": 0.8,
+      "sizeMB": 762,
+      "params": 999885952,
+      "type": "gemma3 1B Q4_K - Medium"
+    },
+    {
+      "model": "gemma3-1b-q4",
+      "threads": 4,
+      "test": "pp768",
+      "tokensPerSecond": 106.9,
+      "stddev": 0.7,
+      "sizeMB": 762,
+      "params": 999885952,
+      "type": "gemma3 1B Q4_K - Medium"
+    },
+    {
+      "model": "gemma3-1b-q4",
+      "threads": 4,
+      "test": "tg160",
+      "tokensPerSecond": 20.2,
+      "stddev": 1,
+      "sizeMB": 762,
+      "params": 999885952,
+      "type": "gemma3 1B Q4_K - Medium"
+    }
+  ],
+  "memory": [
+    {
+      "model": "lfm3-1.7b-q4",
+      "rssMB": 1833,
+      "peakMB": 1833,
+      "startMs": 1822
+    },
+    {
+      "model": "lfm3-1.7b-qad-q4",
+      "rssMB": 1889,
+      "peakMB": 1889,
+      "startMs": 1780
+    },
+    {
+      "model": "lfm2.5-1.2b-q4",
+      "rssMB": 1242,
+      "peakMB": 1242,
+      "startMs": 1014
+    },
+    {
+      "model": "qwen2.5-1.5b-q4",
+      "rssMB": 1797,
+      "peakMB": 1797,
+      "startMs": 1773
+    },
+    {
+      "model": "qwen3-1.7b-q4",
+      "rssMB": 2006,
+      "peakMB": 2006,
+      "startMs": 2033
+    },
+    {
+      "model": "gemma3-1b-q4",
+      "rssMB": 938,
+      "peakMB": 938,
+      "startMs": 1270
+    }
+  ]
+}
