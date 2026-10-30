@@ -3,8 +3,10 @@
   "provider": "local:qwen3-1.7b-q4",
   "set": "test-mini",
   "style": "full",
+  "schema": true,
+  "promptVersion": 1,
   "examples": 92,
-  "at": "2026-10-30T15:21:56.916Z",
+  "at": "2026-10-30T20:01:18.628Z",
   "host": {
     "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
     "logical": 4,
@@ -12,13 +14,13 @@
     "threads": 4,
     "ctx": 4096
   },
-  "validity": 0.978,
+  "validity": 1,
   "extraction": {
-    "precision": 0.517,
+    "precision": 0.513,
     "recall": 0.847,
-    "f1": 0.642,
+    "f1": 0.639,
     "gold": 72,
-    "pred": 118,
+    "pred": 119,
     "tp": 61
   },
   "extractionUnseen": {
@@ -31,7 +33,7 @@
   },
   "kindAccuracy": 0.705,
   "certaintyAccuracy": 0.902,
-  "falseMemoryRate": 0.5,
+  "falseMemoryRate": 0.583,
   "noiseRejection": 1,
   "plans": {
     "precision": 0,
@@ -39,12 +41,12 @@
     "dateAccuracy": 0,
     "timeAccuracy": 0
   },
-  "memoryActions": 0.656,
+  "memoryActions": 0.625,
   "memoryActionsByTask": {
     "duplicate": 1,
     "contradiction": 0.5,
     "joking": 0.5,
-    "hypothetical": 0.5,
+    "hypothetical": 0.25,
     "quoting": 0.5
   },
   "temporal": 0,
@@ -133,9 +135,9 @@
       "recall": 1,
       "f1": 0,
       "gold": 0,
-      "pred": 4,
+      "pred": 5,
       "tp": 0,
-      "validity": 0.75
+      "validity": 1
     },
     "idea": {
       "n": 4,
@@ -155,7 +157,7 @@
       "gold": 0,
       "pred": 0,
       "tp": 0,
-      "validity": 0.75
+      "validity": 1
     },
     "joking": {
       "n": 4,
@@ -289,27 +291,15 @@
     }
   },
   "performance": {
-    "msMean": 15916,
-    "msP50": 11871,
-    "msP95": 44459,
-    "promptTokensMean": 822,
-    "completionTokensMean": 102,
-    "serverPeakMB": 2079,
-    "serverStartMs": 2611,
-    "serverCpuSecondsPerExample": 64.976,
-    "wallSeconds": 2065
+    "msMean": 10110,
+    "msP50": 11218,
+    "msP95": 17589,
+    "promptTokensMean": 840,
+    "completionTokensMean": 106,
+    "serverPeakMB": 2080,
+    "serverStartMs": 1833,
+    "serverCpuSecondsPerExample": 38.582,
+    "wallSeconds": 931
   },
-  "errors": [
-    {
-      "id": "test-00043",
-      "error": "The operation was aborted due to timeout",
-      "raw": "null"
-    },
-    {
-      "id": "test-00044",
-      "error": "The operation was aborted due to timeout",
-      "raw": "null"
-    }
-  ],
-  "rescoredAt": "2026-10-30T15:55:09.148Z"
+  "errors": []
 }
