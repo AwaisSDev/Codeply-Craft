@@ -440,8 +440,12 @@ async function learnFromTurn(bot, userText, replyText, chatFn) {
     const known = (bot.memory || []).slice(-30).map((m) => `- ${m.fact}`).join('\n') || '(nothing yet)';
     // Plans the user mentions go to the shared life context (life.js), from the same model call.
     const life = lifeLib().available() && lifeLib().allowedFor(bot).has('plans') ? lifeLib() : null;
-    // And what is worth knowing in every app goes to the shared brain (brain.js), from the same call too.
-    const brain = brainLib().available() ? brainLib() : null;
+    // And what is worth knowing in every app goes to the shared brain (brain.js), from the same call too,
+    // unless the Context Engine extracts it (the user picked a context-intelligence mode).
+    const elsewhere = brainLib().available() && brainLib().learnsElsewhere();
+    const brain = brainLib().available() && !elsewhere ? brainLib() : null;
+    let brainNotes = [];
+    if (elsewhere) { try { brainNotes = await brainLib().learnFromExchange({ userText, replyText, src: { botId: bot.id, botName: bot.name } }); } catch {} }
     const prompt = `You keep the long-term memory of an assistant called ${bot.name}${bot.specialty ? ` (${bot.specialty})` : ''}.
 From the exchange below, pick at most ${MAX_FACTS_PER_TURN} durable things worth remembering for future conversations: the user's preferences, decisions, standing instructions, facts about them or their project, or feedback on how ${bot.name} should work.
 Skip anything one-off, temporary, obvious, or already known. Never store passwords, keys or other secrets. Each item is one short sentence about the user or the work, written in the third person ("The user prefers ...").
@@ -457,7 +461,6 @@ Respond with ONLY a JSON object {"facts": ["..."]${life ? ', "plans": []' : ''}$
     const r = await chatFn([{ role: 'user', content: prompt }]);
     if (!r || !r.success || !r.json) return { added: [] };
     if (life && Array.isArray(r.json.plans) && r.json.plans.length) { try { life.notePlans(r.json.plans, { source: 'chat', botId: bot.id }); } catch {} }
-    let brainNotes = [];
     if (brain && Array.isArray(r.json.observations) && r.json.observations.length) {
       // The product (Crew or Craft) comes from the running one (telemetry.js).
       try { brainNotes = brain.noteObservations(r.json.observations, { botId: bot.id, botName: bot.name }); } catch {}

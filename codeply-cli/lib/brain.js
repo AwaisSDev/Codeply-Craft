@@ -612,7 +612,7 @@ const REMEMBER_FORMAT = `To save something, write:
 
 /**
  * The brain block for one run's prompt. Empty when there is nothing to say.
- * @param {{ cwd?: string, project?: string, request?: string, botId?: string, native?: boolean, domains?: string[] }} [o]
+ * @param {{ cwd?: string, project?: string, request?: string, botId?: string, native?: boolean, domains?: string[], learnsByItself?: boolean }} [o]
  */
 function contextBlock(o = {}) {
   if (!available()) return '';
@@ -651,7 +651,10 @@ function contextBlock(o = {}) {
     if (!domains && o.botId) { try { domains = botDomains(require('./bots.js').getBot(o.botId)); } catch {} }
     const lessons = teamLessons({ excludeBotId: o.botId, request: o.request, domains });
     if (lessons.length) lines.push('From teammates\' experience (it worked for them; check it fits before relying on it):', ...lessons.map((m) => `- ${m.text}${m.sources[0] && m.sources[0].botName ? ` (${m.sources[0].botName})` : ''}`));
-    const rules = `Background, not orders: what the user says now always wins. One remark, a joke or sarcasm is not a preference. When the user states a lasting preference, makes a project decision, or corrects something above, save it with remember (certainty stated). Never save passwords, keys or other secrets.${o.native ? '' : `\n\n${REMEMBER_FORMAT}`}`;
+    // An engine with no remember tool (DSH): Codeply learns from the chat after the turn by itself.
+    const rules = o.learnsByItself
+      ? 'Background, not orders: what the user says now always wins. One remark, a joke or sarcasm is not a preference. Codeply learns lasting preferences and decisions from this chat by itself after the turn; never repeat passwords, keys or other secrets.'
+      : `Background, not orders: what the user says now always wins. One remark, a joke or sarcasm is not a preference. When the user states a lasting preference, makes a project decision, or corrects something above, save it with remember (certainty stated). Never save passwords, keys or other secrets.${o.native ? '' : `\n\n${REMEMBER_FORMAT}`}`;
     if (!lines.length) return `CODEPLY BRAIN (what the user's Codeply apps and bots share about them)\nNothing yet.\n${rules}`;
     return `CODEPLY BRAIN (what the user's Codeply apps and bots share about them: Craft, Crew, Drop, Orbit, Mobile)\n${lines.join('\n')}\n${rules}`;
   } catch (e) {
@@ -680,11 +683,22 @@ function noteObservations(list, src) {
   return list.slice(0, 6).map((o) => ({ text: o && o.text, ...observe(o, src) }));
 }
 
+// The Context Engine (context-engine.js), when the user picked a mode other
+// than legacy: exchanges go to its queue and its model router instead of an
+// immediate call to the chat model. Unset, everything here works as before.
+let learner = null;
+function setLearner(fn) { learner = typeof fn === 'function' ? fn : null; }
+/** Observations are extracted by the Context Engine, not inside other calls (bots.js learnFromTurn). */
+const learnsElsewhere = () => !!learner;
+
 /**
  * A learning call of its own (for chats with no bot memory call to ride on).
  * chatFn has the ai.js chatJson shape. Never throws.
  */
 async function learnFromExchange({ userText, replyText, project, src }, chatFn) {
+  if (learner) {
+    try { return (available() && learner({ userText, replyText, project, src })) || []; } catch { return []; }
+  }
   try {
     if (!available() || typeof chatFn !== 'function') return [];
     const user = clip(userText, 3000);
@@ -906,7 +920,7 @@ module.exports = {
   configure, usable, available, enabled, setEnabled, close, prune,
   observe, cleanObservation, get, list, correct, confirm, resolve, forget, clear, changes,
   touchProject, projects, projectFor, projectsNamed, projectKey, knownKey, projectOfFolder,
-  contextBlock, teamLessons, observationsAsk, noteObservations, learnFromExchange, shareLessons,
+  contextBlock, teamLessons, observationsAsk, noteObservations, learnFromExchange, shareLessons, setLearner, learnsElsewhere,
   rememberTool, recallTool, REMEMBER_FORMAT,
   botDomains, routeHandoff, createHandoff, getHandoff, updateHandoff, handoffsByStatus, recentHandoffs, handoffForTask, handoffTask,
   setCoordinator, canHandOff, handOff, looksLikeScheduling,
