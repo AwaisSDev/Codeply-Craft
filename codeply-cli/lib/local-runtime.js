@@ -42,8 +42,9 @@ const CATALOG = {
   'qwen3.5-0.8b-q4': { repo: 'unsloth/Qwen3.5-0.8B-GGUF', file: 'Qwen3.5-0.8B-Q4_K_M.gguf', license: 'Apache-2.0', params: '0.8B', arch: 'hybrid (linear + full attention)', ctx: 8192, extra: { chat_template_kwargs: { enable_thinking: false } } },
   'lfm2.5-1.2b-q4': { repo: 'LiquidAI/LFM2.5-1.2B-Instruct-GGUF', file: 'LFM2.5-1.2B-Instruct-Q4_K_M.gguf', license: 'LFM Open License v1.0', params: '1.2B', arch: 'hybrid (conv + attention)', ctx: 8192 },
   // LFM3 (2026-10-23): conv + sliding-window + global attention, 256K context, built for local agents.
-  'lfm3-1.7b-q4': { repo: 'LiquidAI/LFM3-1.7B-GGUF', file: 'LFM3-1.7B-Q4_K_M.gguf', license: 'LFM Open License v1.0', params: '1.7B', arch: 'tri-hybrid (conv + sliding + global attention)', ctx: 8192 },
-  'lfm3-1.7b-qad-q4': { repo: 'LiquidAI/LFM3-1.7B-GGUF', file: 'LFM3-1.7B-QAD-Q4_0.gguf', license: 'LFM Open License v1.0', params: '1.7B', arch: 'tri-hybrid (conv + sliding + global attention), quantization-aware Q4_0', ctx: 8192 },
+  // Its chat template thinks by default (hundreds of tokens before the JSON): turned off like Qwen3.
+  'lfm3-1.7b-q4': { repo: 'LiquidAI/LFM3-1.7B-GGUF', file: 'LFM3-1.7B-Q4_K_M.gguf', license: 'LFM Open License v1.0', params: '1.7B', arch: 'tri-hybrid (conv + sliding + global attention)', ctx: 8192, extra: { chat_template_kwargs: { enable_thinking: false } } },
+  'lfm3-1.7b-qad-q4': { repo: 'LiquidAI/LFM3-1.7B-GGUF', file: 'LFM3-1.7B-QAD-Q4_0.gguf', license: 'LFM Open License v1.0', params: '1.7B', arch: 'tri-hybrid (conv + sliding + global attention), quantization-aware Q4_0', ctx: 8192, extra: { chat_template_kwargs: { enable_thinking: false } } },
   // Embedding models for meaning-based retrieval (context-retrieval.js).
   'nomic-embed-v1.5': { repo: 'nomic-ai/nomic-embed-text-v1.5-GGUF', file: 'nomic-embed-text-v1.5.Q8_0.gguf', license: 'Apache-2.0', params: '137M', arch: 'embedding (BERT)', ctx: 2048, embedding: { pooling: 'mean', prefix: { query: 'search_query: ', doc: 'search_document: ' } } },
   'bge-small-en-v1.5': { repo: 'CompendiumLabs/bge-small-en-v1.5-gguf', file: 'bge-small-en-v1.5-q8_0.gguf', license: 'MIT', params: '33M', arch: 'embedding (BERT)', ctx: 512, embedding: { pooling: 'cls', prefix: { query: 'Represent this sentence for searching relevant passages: ', doc: '' } } },
