@@ -3066,17 +3066,19 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
   // chosen it's Codeply with its specialists (bot.bot null); null only when bots can't load.
   const bot = await botsDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly, request: userMessage });
   const withTeam = !!bot && !!(bot.bot || bot.teamSize); // a chosen bot, or specialists to hand work to
+  const handOff = withTeam && !verifyOnly ? brainDesktop.handOffFor({ botId: bot.botId || null, requester: 'user' }) : undefined;
   try {
     const classicRun = () => agentMod.runAgent({
       userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route,
       roleId, goal, maxSteps, verifyOnly, botPrompt: bot?.botPrompt, askBot: bot?.askBot, botId: bot?.botId,
       // Pass work to the bot whose job it is (brain-desktop.js); the user asked for this chat.
-      handOff: withTeam && !verifyOnly ? brainDesktop.handOffFor({ botId: bot.botId || null, requester: 'user' }) : undefined,
+      handOff,
       haze: { product: 'craft', chatId: session.id }, todos,
     });
-    // Build turns run on the DSH harness (dsh-chat.js); the rest on Classic's agent.
-    const run = (await dshChatFor({ mode, images, bot: withTeam ? bot : null, verifyOnly, goal }))
-      ? dshTurnOrClassic(dshChat.runTurn({ session, userMessage, history, cwd, approve, signal, route }), classicRun)
+    // Build turns run on the DSH harness (dsh-chat.js); the rest on Classic's agent. A plain
+    // chat is Codeply with its specialists there too (@codeply/dsh-team); a chosen bot stays on Classic.
+    const run = (await dshChatFor({ mode, images, bot: bot && bot.bot ? bot : null, verifyOnly, goal }))
+      ? dshTurnOrClassic(dshChat.runTurn({ session, userMessage, history, cwd, approve, signal, route, team: bot ? { botPrompt: bot.botPrompt, askBot: bot.askBot, handOff } : null }), classicRun)
       : classicRun();
     for await (const ev of run) {
       if (bot) bot.see(ev); // the bot's trajectory, for its reflection after the reply
@@ -3885,7 +3887,7 @@ ipcMain.on('design:bounds', (e, bounds) => designTab.setBounds(bounds));
 ipcMain.handle('design:unembed', () => { designTab.unembed(); return { ok: true }; });
 // Classic's chats on the DSH harness (dsh-chat.js): DSH's loop and native tool
 // calling, Craft's UI, models, approvals and browser. Classic's own agent stays
-// for what DSH doesn't do yet (images, Plan and Ask, bots, goals, checks) and
+// for what DSH doesn't do yet (images, Plan and Ask, a chosen bot, goals, checks) and
 // when the harness can't start. CODEPLY_CHAT_ENGINE=classic turns it off.
 const dshChat = require('./dsh-chat');
 let toolsMod = null; // codeply-cli/lib/tools.mjs, for browser_check's report

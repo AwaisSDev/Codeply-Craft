@@ -15,6 +15,10 @@
 //     opens the page in Craft's browser panel.
 //   - Approvals go through Craft's own approve() (permissions file, Always
 //     allow, bypass), so the cards and rules are the same as before.
+//   - A chat Craft runs as Codeply gets its private specialists, as in
+//     Classic: the SPECIALISTS prompt, ask_bot (which can make a new
+//     specialist) and hand_off, answered here over the bridge
+//     (@codeply/dsh-team) by the same bots-desktop.js code Classic uses.
 //
 // Needs Node 24.9+ for the engine; when it can't start, the chat runs on
 // Classic's own agent instead (main.js decides).
@@ -56,6 +60,8 @@ const PATCH = `# Written by Codeply: Classic's chats on the DSH harness.
       name: '@codeply/dsh-design-tools'
     - id: codeply-shared-context
       name: '@codeply/dsh-shared-context'
+    - id: codeply-team
+      name: '@codeply/dsh-team'
 - id: web
   config:
     searchProvider: codeply
@@ -67,6 +73,7 @@ let acp = null;    // codeply-cli/lib/dsh-acp.mjs
 let bridge = null; // { server, url, token }
 const engines = new Map(); // folder key -> { engine, usedAt }
 const routes = new Map();  // DSH session id -> the turn's route
+const teams = new Map();   // DSH session id -> the turn's Codeply team ({ prompt, askBot, handOff, metas })
 
 const folderKey = (cwd) => path.resolve(String(cwd || '')).toLowerCase();
 
@@ -132,6 +139,37 @@ function startBridge() {
       } catch (e) {
         return reply(200, { ok: false, output: `Codeply's shared context failed: ${e && e.message ? e.message : e}`, text: '' });
       }
+    }
+    // Codeply's specialists for a chat's turn (bots-desktop.js forTurn): its prompt, and ask_bot and hand_off.
+    if (req.url === '/team' || /^\/team\/(ask_bot|hand_off)$/.test(req.url || '')) {
+      let body = {};
+      try { body = JSON.parse(await readBody(req)); } catch {}
+      const t = teams.get(String(body.chatId || ''));
+      if (req.url === '/team') return reply(200, t ? { prompt: t.prompt, askBot: !!t.askBot, handOff: !!t.handOff && canHandOff() } : {});
+      const tool = req.url.slice('/team/'.length);
+      const a = body.args && typeof body.args === 'object' ? body.args : {};
+      if (!t || (tool === 'ask_bot' ? !t.askBot : !t.handOff)) return reply(200, { ok: false, output: `${tool} is not available here. Do the work yourself.` });
+      if (tool === 'hand_off' && !String(a.intent || '').trim()) return reply(200, { ok: false, output: 'hand_off needs <intent>: what the other agent should get done.' });
+      const ac = new AbortController();
+      res.on('close', () => { if (!res.writableEnded) ac.abort(); });
+      // A specialist can work for many minutes: answer at once and keep the line warm
+      // (JSON allows leading spaces), so the engine's fetch never times out waiting.
+      res.writeHead(200, { 'content-type': 'application/json' });
+      const warmLine = setInterval(() => { if (!res.writableEnded) res.write(' '); }, 30_000);
+      let r;
+      try {
+        r = tool === 'ask_bot'
+          ? await t.askBot({ name: String(a.bot || '').trim(), task: String(a.task || '').trim(), specialty: String(a.specialty || '').trim(), signal: ac.signal })
+          : await t.handOff({ to: String(a.to || '').trim(), intent: String(a.intent || '').trim(), facts: a.facts, decision: a.decision });
+      } catch (e) {
+        r = { ok: false, output: `${tool} failed: ${e && e.message ? e.message : e}` };
+      } finally {
+        clearInterval(warmLine);
+      }
+      if (ac.signal.aborted) return res.end();
+      // The chat row (Worked on, or Passed on) comes from this, with the tool's end.
+      t.metas.push({ tool, meta: (r && r.meta) || null });
+      return res.end(JSON.stringify({ ok: !!(r && r.ok), output: String((r && r.output) || '') }));
     }
     // The codeply-taste tools (design_direction, design_lint), run with Classic's code.
     const design = /^\/design\/(design_direction|design_lint)$/.exec(req.url || '');
@@ -250,6 +288,11 @@ function exitCodeOf(output) {
   return m ? Number(m[1]) : undefined;
 }
 
+/** Whether a bot can take work handed on now (Classic offers hand_off only then). */
+function canHandOff() {
+  try { return !!require(path.join(host.cliDir, 'lib', 'brain.js')).canHandOff(); } catch { return false; }
+}
+
 const READ_ONLY = new Set(['read', 'read_image', 'grep', 'glob', 'web_search', 'web_fetch', 'todo_write', 'browser_check']);
 
 /** What the chat said before, for a chat's first DSH turn. */
@@ -272,8 +315,10 @@ function historyPreamble(history) {
  * @param {Function} o.approve - Craft's approve(request) for this run.
  * @param {AbortSignal} o.signal
  * @param {object} o.route - Craft's route for this turn ({ auto } or { custom }).
+ * @param {object} [o.team] - Codeply with its specialists: bots-desktop.js forTurn's
+ *   botPrompt and askBot, and brain-desktop.js handOffFor's handOff.
  */
-async function* runTurn({ session, userMessage, history, cwd, approve, signal, route }) {
+async function* runTurn({ session, userMessage, history, cwd, approve, signal, route, team }) {
   const engine = await engineFor(cwd);
   const key = folderKey(cwd);
   const saved = session.dsh && session.dsh.folder === key ? session.dsh.sessionId : null;
@@ -281,6 +326,14 @@ async function* runTurn({ session, userMessage, history, cwd, approve, signal, r
   const fresh = sid !== saved;
   session.dsh = { folder: key, sessionId: sid };
   routes.set(sid, route || { auto: true });
+  if (team) {
+    teams.set(sid, {
+      prompt: typeof team.botPrompt === 'function' ? String(team.botPrompt(true, { reach: false }) || '') : '', // no reach_me here
+      askBot: typeof team.askBot === 'function' ? team.askBot : null,
+      handOff: typeof team.handOff === 'function' ? team.handOff : null,
+      metas: [],
+    });
+  }
   const prompt = (fresh ? historyPreamble(history) : '') + userMessage;
 
   // DSH asks before a write, an edit or a command; reads just run, as in Classic.
@@ -328,10 +381,15 @@ async function* runTurn({ session, userMessage, history, cwd, approve, signal, r
         if (ok && (name === 'write_file' || name === 'edit_file') && args.path) written.add(args.path);
         actions.push({ tool: name, label, ok, exitCode, files: args.path ? [args.path] : undefined });
         stepStart = Date.now();
+        // ask_bot and hand_off: the meta Classic's row shows (a plain chat's "Worked on", never the specialist).
+        const t = (name === 'ask_bot' || name === 'hand_off') && teams.get(sid);
+        const i = t ? t.metas.findIndex((m) => m.tool === name) : -1;
+        const extra = i === -1 ? null : t.metas.splice(i, 1)[0].meta;
         yield {
           type: 'tool_end', name, args, ok,
           error: ok ? undefined : (ev.error || output).slice(0, 600),
-          meta: { output: name === 'run' ? output.slice(-4000) : undefined, exitCode },
+          summary: extra && extra.label ? extra.label : undefined,
+          meta: { output: name === 'run' ? output.slice(-4000) : undefined, exitCode, ...(extra && extra.delegation ? { delegation: extra.delegation } : {}) },
         };
         continue;
       }
@@ -348,6 +406,7 @@ async function* runTurn({ session, userMessage, history, cwd, approve, signal, r
     }
   } finally {
     routes.delete(sid);
+    teams.delete(sid);
   }
 }
 
