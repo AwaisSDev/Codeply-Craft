@@ -3100,7 +3100,12 @@ body { font-family: var(--font-ui); font-size: 14px; font-weight: 400; -webkit-f
 .folder-menu .plus-label { padding: 4px 10px 4px; font-size: 12.5px; font-weight: 500; color: var(--text-faint); }
 
 /* ─── Sidebar folders: This Computer and Cloud pinned on top, the rest dragged by their title ── */
-.sb-sec-toggle .sb-ic-pinned { width: 16px; height: 16px; flex: none; color: var(--icon, var(--text-dim)); }
+/* like the folder icons: first in the row, and never turned when the section folds (only the caret turns) */
+.sb-sec-toggle .sb-ic-pinned { order: -1; margin-right: 2px; width: 16px; height: 16px; flex: none; color: var(--icon, var(--text)); transform: none !important; }
+
+/* Chat titles fade out at the end instead of "..."; on hover the fade moves in
+   to make room for the "..." button. The full title is the row's own text, no tooltip. */
+.sb-chat-label { text-overflow: clip; -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
 .sb-sec-head[draggable="true"] { cursor: grab; }
 .sb-sec.dragging { opacity: .45; }
 .sb-sec.drop-above { box-shadow: inset 0 2px 0 var(--accent, #2f6bff); }

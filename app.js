@@ -2532,7 +2532,7 @@ function sbChatHtml(s) {
   const title = s.title || 'New chat';
   const cur = s.id === state.currentSessionId;
   return `<div class="sb-chat-row" data-id="${sbAttr(s.id)}">`
-    + `<button class="sb-chat" type="button" data-key="c:${sbAttr(s.id)}" title="${sbAttr(title)}"${cur ? ' aria-current="true"' : ''}><span class="sb-chat-label">${esc(title)}</span>${sbMarkHtml(s.id)}</button>`
+    + `<button class="sb-chat" type="button" data-key="c:${sbAttr(s.id)}"${cur ? ' aria-current="true"' : ''}><span class="sb-chat-label">${esc(title)}</span>${sbMarkHtml(s.id)}</button>`
     + `<button class="sb-chat-menu-btn" type="button" data-act="chat-menu" data-key="m:${sbAttr(s.id)}" title="More" aria-label="More for ${sbAttr(title)}">${SB_ICON.more}</button>`
     + '</div>';
 }
