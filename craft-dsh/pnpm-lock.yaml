@@ -2790,6 +2790,9 @@ importers:
       '@codeply/dsh-shell-hints':
         specifier: workspace:*
         version: link:../../codeply/shell-hints
+      '@codeply/dsh-team':
+        specifier: workspace:*
+        version: link:../../codeply/team
       '@codeply/dsh-undo':
         specifier: workspace:*
         version: link:../../codeply/undo
@@ -7097,6 +7100,24 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:*
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../../core/tools
+
+  packages/codeply/team:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:*
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-launch-environment':
+        specifier: workspace:*
+        version: link:../../util/launch-environment
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:*
+        version: link:../../core/system-prompt
       '@deepseek-ai/dsh-tools':
         specifier: workspace:*
         version: link:../../core/tools

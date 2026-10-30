@@ -650,6 +650,10 @@
     - id: codeply-shared-context
       name: '@codeply/dsh-shared-context'
 
+    # Codeply's private specialists: the SPECIALISTS prompt, ask_bot and hand_off, from Craft.
+    - id: codeply-team
+      name: '@codeply/dsh-team'
+
     # Codeply Craft brand: the atomic mark and the name, no build badge.
     - id: ui-brand-craft
       name: '@codeply/dsh-client-ui-brand-craft'

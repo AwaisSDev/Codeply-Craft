@@ -928,7 +928,7 @@ Gmail thread: 18c2f0a1b2
 function teamPrompt(team, o = {}) {
   const list = team || [];
   const roster = list.map((b) => `- ${b.name}: ${b.specialty || 'general help'}`);
-  const phone = roster.length && require('./reach.js').available()
+  const phone = roster.length && o.reach !== false && require('./reach.js').available()
     ? `\n\nWhen the user asks one of your specialists by name to call or text them ("tell Shella to call me"), do it yourself with reach_me and bot set to that name, so it comes from them. ${o.native ? '' : PHONE_FORMAT}`
     : '';
   const handOff = o.canHandOff && roster.length ? `\n\n${handOffRules(list, null, !!o.native)}` : '';

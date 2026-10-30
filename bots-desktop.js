@@ -177,7 +177,8 @@ async function forTurn({ session, approve, signal, route, cwd, mode, verifyOnly,
     plain: !bot, // Codeply itself, not a bot the user chose
     teamSize: team.length,
     approve: wrapApprove(approve, bot, session, cwd),
-    botPrompt: (native) => (bot ? b.buildBotPrompt(bot, { team, canDelegate: true, canHandOff: !!deps.canHandOff && deps.canHandOff(), native, request }) : b.teamPrompt(team, { native, canHandOff: !!deps.canHandOff && deps.canHandOff() })),
+    // extra: { reach: false } where the agent has no reach_me (the DSH harness).
+    botPrompt: (native, extra) => (bot ? b.buildBotPrompt(bot, { team, canDelegate: true, canHandOff: !!deps.canHandOff && deps.canHandOff(), native, request }) : b.teamPrompt(team, { native, canHandOff: !!deps.canHandOff && deps.canHandOff(), ...extra })),
     askBot: makeAskBot(c),
     botId: bot ? bot.id : null,
     /** runOneTurn passes every run event here; tool calls become the trajectory. */
