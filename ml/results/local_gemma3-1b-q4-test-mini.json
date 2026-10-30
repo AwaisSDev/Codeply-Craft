@@ -1,0 +1,303 @@
+{
+  "name": "local_gemma3-1b-q4-test-mini",
+  "provider": "local:gemma3-1b-q4",
+  "set": "test-mini",
+  "style": "full",
+  "examples": 92,
+  "at": "2026-10-30T15:52:38.953Z",
+  "host": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "logical": 4,
+    "ramMB": 16091,
+    "threads": 4,
+    "ctx": 4096
+  },
+  "validity": 1,
+  "extraction": {
+    "precision": 0.464,
+    "recall": 0.889,
+    "f1": 0.61,
+    "gold": 72,
+    "pred": 138,
+    "tp": 64
+  },
+  "extractionUnseen": {
+    "precision": 0.5,
+    "recall": 1,
+    "f1": 0.667,
+    "gold": 12,
+    "pred": 24,
+    "tp": 12
+  },
+  "kindAccuracy": 0.734,
+  "certaintyAccuracy": 0.906,
+  "falseMemoryRate": 0.917,
+  "noiseRejection": 0.25,
+  "plans": {
+    "precision": 0.2,
+    "recall": 0.75,
+    "dateAccuracy": 0,
+    "timeAccuracy": 0
+  },
+  "memoryActions": 0.531,
+  "memoryActionsByTask": {
+    "duplicate": 0.75,
+    "contradiction": 0.25,
+    "joking": 0.25,
+    "hypothetical": 0,
+    "quoting": 0
+  },
+  "temporal": 0,
+  "importanceSpearman": 0.441,
+  "importanceMAE": 0.093,
+  "safety": {
+    "secretsLeaked": 0,
+    "secretsTotal": 4,
+    "injectionsFollowed": 1,
+    "injectionsTotal": 4
+  },
+  "byTask": {
+    "contradiction": {
+      "n": 4,
+      "precision": 0.5,
+      "recall": 0.75,
+      "f1": 0.6,
+      "gold": 4,
+      "pred": 6,
+      "tp": 3,
+      "validity": 1
+    },
+    "decision": {
+      "n": 4,
+      "precision": 0.571,
+      "recall": 1,
+      "f1": 0.727,
+      "gold": 4,
+      "pred": 7,
+      "tp": 4,
+      "validity": 1
+    },
+    "dislike": {
+      "n": 4,
+      "precision": 0.571,
+      "recall": 1,
+      "f1": 0.727,
+      "gold": 4,
+      "pred": 7,
+      "tp": 4,
+      "validity": 1
+    },
+    "duplicate": {
+      "n": 4,
+      "precision": 0.8,
+      "recall": 1,
+      "f1": 0.889,
+      "gold": 4,
+      "pred": 5,
+      "tp": 4,
+      "validity": 1
+    },
+    "external": {
+      "n": 4,
+      "precision": 0.429,
+      "recall": 0.75,
+      "f1": 0.545,
+      "gold": 4,
+      "pred": 7,
+      "tp": 3,
+      "validity": 1
+    },
+    "fact": {
+      "n": 4,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "gold": 4,
+      "pred": 4,
+      "tp": 4,
+      "validity": 1
+    },
+    "heard": {
+      "n": 4,
+      "precision": 0.571,
+      "recall": 1,
+      "f1": 0.727,
+      "gold": 4,
+      "pred": 7,
+      "tp": 4,
+      "validity": 1
+    },
+    "hypothetical": {
+      "n": 4,
+      "precision": 0,
+      "recall": 1,
+      "f1": 0,
+      "gold": 0,
+      "pred": 7,
+      "tp": 0,
+      "validity": 1
+    },
+    "idea": {
+      "n": 4,
+      "precision": 0.8,
+      "recall": 1,
+      "f1": 0.889,
+      "gold": 4,
+      "pred": 5,
+      "tp": 4,
+      "validity": 1
+    },
+    "injection": {
+      "n": 4,
+      "precision": 0,
+      "recall": 1,
+      "f1": 0,
+      "gold": 0,
+      "pred": 7,
+      "tp": 0,
+      "validity": 1
+    },
+    "joking": {
+      "n": 4,
+      "precision": 0,
+      "recall": 1,
+      "f1": 0,
+      "gold": 0,
+      "pred": 7,
+      "tp": 0,
+      "validity": 1
+    },
+    "multi": {
+      "n": 4,
+      "precision": 0.714,
+      "recall": 0.625,
+      "f1": 0.667,
+      "gold": 8,
+      "pred": 7,
+      "tp": 5,
+      "validity": 1
+    },
+    "noise": {
+      "n": 4,
+      "precision": 0,
+      "recall": 1,
+      "f1": 0,
+      "gold": 0,
+      "pred": 3,
+      "tp": 0,
+      "validity": 1
+    },
+    "person": {
+      "n": 4,
+      "precision": 0.2,
+      "recall": 0.25,
+      "f1": 0.222,
+      "gold": 4,
+      "pred": 5,
+      "tp": 1,
+      "validity": 1
+    },
+    "plan": {
+      "n": 4,
+      "precision": 0,
+      "recall": 1,
+      "f1": 0,
+      "gold": 0,
+      "pred": 8,
+      "tp": 0,
+      "validity": 1
+    },
+    "preference": {
+      "n": 4,
+      "precision": 0.667,
+      "recall": 1,
+      "f1": 0.8,
+      "gold": 4,
+      "pred": 6,
+      "tp": 4,
+      "validity": 1
+    },
+    "quoting": {
+      "n": 4,
+      "precision": 0,
+      "recall": 1,
+      "f1": 0,
+      "gold": 0,
+      "pred": 4,
+      "tp": 0,
+      "validity": 1
+    },
+    "requirement": {
+      "n": 4,
+      "precision": 0.667,
+      "recall": 1,
+      "f1": 0.8,
+      "gold": 4,
+      "pred": 6,
+      "tp": 4,
+      "validity": 1
+    },
+    "routine": {
+      "n": 4,
+      "precision": 0.444,
+      "recall": 1,
+      "f1": 0.615,
+      "gold": 4,
+      "pred": 9,
+      "tp": 4,
+      "validity": 1
+    },
+    "secret": {
+      "n": 4,
+      "precision": 0.8,
+      "recall": 1,
+      "f1": 0.889,
+      "gold": 4,
+      "pred": 5,
+      "tp": 4,
+      "validity": 1
+    },
+    "temporary": {
+      "n": 4,
+      "precision": 0.8,
+      "recall": 1,
+      "f1": 0.889,
+      "gold": 4,
+      "pred": 5,
+      "tp": 4,
+      "validity": 1
+    },
+    "todo": {
+      "n": 4,
+      "precision": 0.571,
+      "recall": 1,
+      "f1": 0.727,
+      "gold": 4,
+      "pred": 7,
+      "tp": 4,
+      "validity": 1
+    },
+    "urdu": {
+      "n": 4,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "gold": 4,
+      "pred": 4,
+      "tp": 4,
+      "validity": 1
+    }
+  },
+  "performance": {
+    "msMean": 8730,
+    "msP50": 7659,
+    "msP95": 17099,
+    "promptTokensMean": 860,
+    "completionTokensMean": 145,
+    "serverPeakMB": 1064,
+    "serverStartMs": 3355,
+    "serverCpuSecondsPerExample": 32.882,
+    "wallSeconds": 804
+  },
+  "errors": []
+}
