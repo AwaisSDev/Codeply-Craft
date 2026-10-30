@@ -24,3 +24,5 @@ crew-ios/node_modules
 ml/data/out/sft-*.jsonl
 ml/finetune/runs/
 __pycache__/
+# The dataset itself is committed (the global "out" rule above would hide it).
+!ml/data/out/
