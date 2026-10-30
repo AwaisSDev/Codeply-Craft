@@ -80,15 +80,16 @@ body.top .card { animation: none; background: var(--panel); }
    fades to the panel's dark; going, it shrinks back into a light line and the bar takes over. */
 body.top.enter .card { animation: from-bar 360ms cubic-bezier(.22, 1, .36, 1) both; }
 body.top.enter .card > * { animation: fill-in 160ms 60ms var(--ease) both; }
-body.top.leave .card { animation: to-bar 220ms cubic-bezier(.5, 0, .75, .3) both; }
-body.top.leave .card > * { opacity: 0; transition: opacity 90ms; }
+body.top.leave .card { animation: to-bar 300ms cubic-bezier(.4, 0, .2, 1) both; }
+body.top.leave .card > * { opacity: 0; transition: opacity 120ms ease-out; }
 body.top.enter .card::before, body.top.leave .card::before { content: ""; position: absolute; inset: 0; z-index: 7; pointer-events: none; background: rgba(236, 236, 236, 0.55); }
 body.top.enter .card::before { animation: line-out 240ms ease-out both; }
-body.top.leave .card::before { animation: line-in 220ms ease-in both; }
+body.top.leave .card::before { animation: line-in 300ms ease-in both; }
 @keyframes from-bar { from { clip-path: inset(0 calc(50% - 66px) calc(100% - 5px) calc(50% - 66px) round 3px); } to { clip-path: inset(0 0 0 0 round 22px); } }
-@keyframes to-bar { from { clip-path: inset(0 0 0 0 round 22px); } to { clip-path: inset(0 calc(50% - 66px) calc(100% - 5px) calc(50% - 66px) round 3px); } }
+/* going: it folds up into a small pill first, then narrows into the line */
+@keyframes to-bar { from { clip-path: inset(0 0 0 0 round 22px); } 62% { clip-path: inset(0 calc(50% - 110px) calc(100% - 34px) calc(50% - 110px) round 17px); } to { clip-path: inset(0 calc(50% - 66px) calc(100% - 5px) calc(50% - 66px) round 3px); } }
 @keyframes line-out { from { opacity: 1; } to { opacity: 0; } }
-@keyframes line-in { 0%, 50% { opacity: 0; } to { opacity: 1; } }
+@keyframes line-in { 0%, 55% { opacity: 0; } to { opacity: 1; } }
 @keyframes fill-in { from { opacity: 0; } }
 
 /* Under the top bar it stays minimal, like the ChatGPT app: no header, no

@@ -170,7 +170,7 @@ function show({ focus = true, under = null, corner = false } = {}) {
 
 // Under the top bar the chat shrinks back up into the bar's line (drop:leave,
 // drop.css), then the window hides.
-const LEAVE_MS = 200; // body.top.leave in drop.css
+const LEAVE_MS = 310; // body.top.leave in drop.css (300ms), so it ends as the line before the window goes
 let hideTimer = null;
 function hide() {
   if (!win || win.isDestroyed()) return;
