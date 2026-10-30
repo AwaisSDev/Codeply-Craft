@@ -312,10 +312,12 @@ the fixed prompt prefix, CUDA) is in `docs/local-intelligence/RUNTIME.md`.
   pick a mode; new collection (Life to brain) is off until switched on.
 * **Separate `context.db`:** the queue is processing state, not memory; it
   stays out of `brain.db` so the brain's schema and file stay as they are.
-* **No embeddings yet:** the brain is small per user, and the retrieval
-  evaluation (`ml/eval/retrieval.mjs`) is the evidence for whether FTS5 or
-  vectors are needed. The hook point is `brain.rank`.
+* **Embeddings optional:** the retrieval evaluation (`ml/eval/retrieval.mjs`)
+  showed word ranking misses requests that share no words with the memory;
+  §6.1 adds local embeddings, off by default (block recall 0.83 → 0.93).
 * **Per-bot facts** (`bots.js` memory) stay as they are; merging them into the
   brain is a separate product decision.
-* **Dense transformer target:** see the model study in
-  `docs/local-intelligence/MODEL-SELECTION.md`.
+* **Architecture by measurement:** the first plan assumed a dense
+  transformer; the owner chose to pick whatever measures best. The best
+  model is LFM3-1.7B, a conv + attention hybrid
+  (`docs/local-intelligence/MODEL-SELECTION.md`).

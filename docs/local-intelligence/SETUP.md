@@ -9,7 +9,7 @@ Nothing changes until a mode is picked. Settings live in
 ```json
 {
   "mode": "local",
-  "model": "qwen3-1.7b-q4",
+  "model": "lfm3-1.7b-qad-q4",
   "localUrl": "", "localModel": "",
   "threads": 0, "ctx": 4096, "idleMinutes": 5,
   "minImportance": 0.35,
@@ -38,7 +38,7 @@ in every mode.
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF && cmake --build build -j --target llama-server
 mkdir -p ~/.codeply/runtime/bin && cp build/bin/llama-server ~/.codeply/runtime/bin/
 # models (download from Hugging Face, hash recorded in ~/.codeply/models/manifest.json)
-node scripts/context/fetch-model.mjs qwen3-1.7b-q4
+node scripts/context/fetch-model.mjs lfm3-1.7b-qad-q4   # the best model so far (MODEL-SELECTION.md)
 node scripts/context/fetch-model.mjs nomic-embed-v1.5
 ```
 
@@ -78,7 +78,7 @@ A new backend is any object with `info()`, `available()` and
 ## Tests
 
 ```bash
-npm run test:context     # the context layer: 126 checks, no network, no model
+npm run test:context     # the context layer: 133 checks, no network, no model
 npm run test:brain       # the brain, unchanged behaviour
 npm run test:engine      # the agent loop
 node scripts/life-test.mjs

@@ -30,13 +30,19 @@ huggingface-cli login            # only if the base model is gated (Llama, Gemma
 ## 3. Train
 
 ```bash
-python ml/finetune/train_lora.py --config ml/finetune/config.yaml
+python ml/finetune/train_lora.py --config ml/finetune/config-lfm3.yaml   # recommended base
+python ml/finetune/train_lora.py --config ml/finetune/config.yaml        # Apache-2.0 fallback
 ```
 
-* Base: `Qwen/Qwen3-1.7B` (Apache-2.0, dense, GQA, 32K native context); see
-  `docs/local-intelligence/MODEL-SELECTION.md` for why, and for the 1B
-  alternatives (`meta-llama/Llama-3.2-1B-Instruct`, `Qwen/Qwen3-0.6B`).
-  Change `base_model` and, for non-Qwen models, `chat_template_kwargs: {}`.
+* Recommended base: `LiquidAI/LFM3-1.7B` (hybrid conv + attention, best
+  off-the-shelf quality by a wide margin; LFM Open License, free below
+  US$10M annual revenue). `config-lfm3.yaml` sets `trust_remote_code` (its
+  modelling code is in the Hub repo) and LoRA on its attention, short-conv
+  and MLP projections.
+* Fallback: `Qwen/Qwen3-1.7B` (Apache-2.0, dense, GQA, 32K native
+  context), `config.yaml`. Why both: `docs/local-intelligence/MODEL-SELECTION.md`.
+  For another base, change `base_model`, `lora.target_modules` and, for
+  models without a thinking switch, `chat_template_kwargs: {}`.
 * LoRA r=32 on all attention and MLP projections, lr 2e-4, cosine, 2 epochs,
   effective batch 16. Loss only on the assistant JSON.
 * `chat_template_kwargs.enable_thinking: false` must match what the runtime
