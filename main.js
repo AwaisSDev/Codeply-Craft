@@ -3868,7 +3868,7 @@ function respondImagePick(requestId, chosenUrl) {
 
 ipcMain.handle('chat:send', (e, payload) => startChatRun(payload));
 
-// The drop: Alt+C anywhere opens Craft's agent in a small chat in the corner (see drop.js).
+// The drop: Alt+C anywhere opens Codeply's agent in a small chat under the top bar (see drop.js).
 const drop = require('./drop');
 // The top bar: a thin line at the top center of the screen that grows into the drop when clicked (see island.js).
 const island = require('./island');

@@ -269,6 +269,8 @@ function init(h) {
   });
   // The drop is about to go from under the bar: the shape comes back at its size and shrinks.
   drop.setClosingHandler((size) => send('blur', size));
+  // The chat always opens here, under the bar (Alt+C, the tray, Orbit), never in a corner.
+  drop.setUnderSpot(under);
   // The drop's height changed: the next grow lands on its real size.
   let sized = '';
   drop.setSizeHandler((size) => { const k = `${size.width}x${size.height}`; if (k !== sized) { sized = k; render(); } });

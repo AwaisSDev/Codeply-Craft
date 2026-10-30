@@ -1,4 +1,4 @@
-// The drop: Craft's agent in a small chat in the corner of the screen.
+// The drop: Codeply's agent in a small chat that grows out of the top bar (island.js).
 //
 // Alt+C anywhere opens it (and hides it again). It runs the same agent, on the
 // same projects, models and account as the main window: a message goes through
@@ -149,11 +149,16 @@ function placeUnder({ cx, y }) {
   win.setBounds({ x: underX, y: top, width: W, height });
 }
 
-// `under` ({ cx, y }): hang under the top bar. `corner`: back to the corner if it
-// was under the bar. Neither: it shows wherever it was last.
+// `under` ({ cx, y }): hang under the top bar. Without it, the top bar's spot
+// (island.js, setUnderSpot) when there is one: the chat in the corner is gone,
+// so Alt+C, the tray and Orbit all open the chat under the bar. `corner` only
+// without a top bar.
+let underSpot = null;
+function setUnderSpot(fn) { underSpot = fn; }
 function show({ focus = true, under = null, corner = false } = {}) {
   if (!win || win.isDestroyed()) create();
   clearTimeout(hideTimer); hideTimer = null; // was on its way out: it stays
+  if (!under && underSpot) { try { under = underSpot(); } catch {} }
   const was = mode;
   const opening = !!under && !win.isVisible();
   if (under) placeUnder(under);
@@ -248,7 +253,7 @@ function toggle() {
   if (win && !win.isDestroyed() && win.isVisible() && win.isFocused()) { hide(); return; }
   const visible = win && !win.isDestroyed() && win.isVisible();
   if (visible) { show(); return; }
-  // It opens at once; the screen's picture comes right after (the drop is kept out of captures).
+  // It opens at once (under the top bar, see show); the screen's picture comes right after (the drop is kept out of captures).
   show({ corner: true });
   pictureSoon();
 }
@@ -488,5 +493,5 @@ function voiceText(text, run) {
 
 const isShowing = (sessionId) => !!(win && !win.isDestroyed() && win.isVisible() && shownSession && shownSession === sessionId);
 
-module.exports = { init, event, runs, show, hide, toggle, captureNow, isShowing, dispose, setPressHandler, voiceText, showUnder, openChat, isUnderBar, setVisibilityHandler, setClosingHandler, setSizeHandler, prepare, warm, size, hotkeyLabel: () => (hotkey && process.platform === 'darwin' ? hotkey.replace('Alt', 'Option') : hotkey) };
+module.exports = { init, event, runs, show, hide, toggle, captureNow, isShowing, dispose, setPressHandler, voiceText, showUnder, openChat, isUnderBar, setVisibilityHandler, setClosingHandler, setSizeHandler, setUnderSpot, prepare, warm, size, hotkeyLabel: () => (hotkey && process.platform === 'darwin' ? hotkey.replace('Alt', 'Option') : hotkey) };
 
