@@ -75,4 +75,53 @@ Two findings:
    45 % against 87 %), so they re-read about 350 fixed tokens on every call.
    See the next section.
 
-<!-- cache-section -->
+## Prompt cache on the hybrid models (fixed)
+
+The system prompt (about 740 tokens) is the same on every call, so
+`llama-server` should read it once and reuse its cached state
+(`cache_prompt`). On the dense models it does. On the LFM models it reused
+only the first ~330–370 tokens, because their non-attention state cannot be
+rewound to an arbitrary point, only to a saved checkpoint:
+
+| Model | Server flags | Reused per call | Prompt time per call |
+|---|---|---|---|
+| lfm3-1.7b-qad-q4 | default | ~330 of ~845 | 5.5 s |
+| lfm3-1.7b-qad-q4 | `--swa-full` | **744** | **1.2 s** |
+| lfm3-1.7b-qad-q4 | `-ub 128` | 0 | 8.8 s |
+| lfm2.5-1.2b-q4 | default | ~370 of ~885 | 4.0 s |
+| lfm2.5-1.2b-q4 | `--swa-full` | ~370 | 3.8 s |
+| lfm2.5-1.2b-q4 | `-ub 128` | **751** | **1.3 s** |
+| lfm2.5-1.2b-q4 | `-ub 64` | 0 | 7.6 s |
+
+(5 consecutive real test-mini prompts at 4 threads; mean of calls 2–5.)
+
+* **LFM3** has sliding-window attention layers (window 256). By default
+  their cache only keeps the last window, so a prefix older than that cannot
+  be reused. `--swa-full` keeps the whole window cache: +18 MB resident.
+* **LFM2.5** has only short-convolution and full-attention layers. Its
+  convolution state is checkpointed one micro-batch before the end of the
+  prompt, so with the default 512-token micro-batch the checkpoint lands at
+  ~370. With 128 it lands after the system prompt. The first (uncached) call
+  is not slower.
+
+Both are set per model in `CATALOG[...].serverArgs` (`local-runtime.js`),
+so the app and the evaluation use them. End to end on test-mini,
+lfm3-1.7b-qad-q4 went from p50 15.3 s / p95 22.5 s / 60 CPU s per example
+to **p50 10.9 s / p95 18.0 s / 42 CPU s per example**, with the same answers
+(F1 0.82 → 0.83, within run-to-run noise). The other results in
+`RESULTS.md` (LFM3 Q4_K_M, LFM2.5) were measured before the fix; their
+latency is pessimistic by about the same share.
+
+## What this means for the product
+
+* At 3 threads on a 4-core laptop, a batch of events takes 10–20 s for the
+  best model (LFM3), using one core-minute or less. The engine's duty cycle
+  (wait 3× a batch's time before the next) keeps the background load at 25 %
+  of the cores it uses. That is acceptable for background memory, not for
+  anything the user waits on.
+* The 30 s p95 bar in the release gate (`ml/finetune/gate.mjs`) is met by
+  every candidate after the cache fix.
+* The next gains, in order: shorter answers (fine-tune on compact output),
+  grammar-aware skipping of forced tokens, and a persistent prefix cache so
+  even the first call after a start skips the system prompt (RUNTIME.md,
+  phase 2).

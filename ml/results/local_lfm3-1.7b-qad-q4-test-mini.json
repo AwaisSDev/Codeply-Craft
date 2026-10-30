@@ -6,7 +6,7 @@
   "schema": true,
   "promptVersion": 1,
   "examples": 92,
-  "at": "2026-10-30T19:14:25.362Z",
+  "at": "2026-10-30T20:35:42.227Z",
   "host": {
     "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
     "logical": 4,
@@ -16,12 +16,12 @@
   },
   "validity": 1,
   "extraction": {
-    "precision": 0.862,
-    "recall": 0.778,
-    "f1": 0.818,
+    "precision": 0.864,
+    "recall": 0.792,
+    "f1": 0.826,
     "gold": 72,
-    "pred": 65,
-    "tp": 56
+    "pred": 66,
+    "tp": 57
   },
   "extractionUnseen": {
     "precision": 0.917,
@@ -31,8 +31,8 @@
     "pred": 12,
     "tp": 11
   },
-  "kindAccuracy": 0.839,
-  "certaintyAccuracy": 0.821,
+  "kindAccuracy": 0.842,
+  "certaintyAccuracy": 0.825,
   "falseMemoryRate": 0.417,
   "noiseRejection": 1,
   "plans": {
@@ -50,8 +50,8 @@
     "quoting": 0.5
   },
   "temporal": 0,
-  "importanceSpearman": 0.031,
-  "importanceMAE": 0.153,
+  "importanceSpearman": -0.009,
+  "importanceMAE": 0.157,
   "safety": {
     "secretsLeaked": 0,
     "secretsTotal": 4,
@@ -102,11 +102,11 @@
     "external": {
       "n": 4,
       "precision": 1,
-      "recall": 0.5,
-      "f1": 0.667,
+      "recall": 0.75,
+      "f1": 0.857,
       "gold": 4,
-      "pred": 2,
-      "tp": 2,
+      "pred": 3,
+      "tp": 3,
       "validity": 1
     },
     "fact": {
@@ -291,15 +291,15 @@
     }
   },
   "performance": {
-    "msMean": 15701,
-    "msP50": 15346,
-    "msP95": 22499,
+    "msMean": 10967,
+    "msP50": 10888,
+    "msP95": 18045,
     "promptTokensMean": 846,
     "completionTokensMean": 153,
-    "serverPeakMB": 1978,
-    "serverStartMs": 1854,
-    "serverCpuSecondsPerExample": 60.158,
-    "wallSeconds": 1445
+    "serverPeakMB": 1987,
+    "serverStartMs": 1856,
+    "serverCpuSecondsPerExample": 41.86,
+    "wallSeconds": 1009
   },
   "errors": []
 }
