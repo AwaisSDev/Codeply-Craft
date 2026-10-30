@@ -4,7 +4,7 @@
   "set": "test",
   "style": "full",
   "examples": 800,
-  "at": "2026-10-30T14:47:17.429Z",
+  "at": "2026-10-30T15:55:03.882Z",
   "host": {
     "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
     "logical": 4,
@@ -297,7 +297,7 @@
     "serverPeakMB": null,
     "serverStartMs": null,
     "serverCpuSecondsPerExample": null,
-    "wallSeconds": 3
+    "wallSeconds": 17
   },
   "errors": []
 }

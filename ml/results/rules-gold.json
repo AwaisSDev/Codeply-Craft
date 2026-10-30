@@ -4,7 +4,7 @@
   "set": "gold",
   "style": "full",
   "examples": 39,
-  "at": "2026-10-30T14:48:21.884Z",
+  "at": "2026-10-30T15:55:07.005Z",
   "host": {
     "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
     "logical": 4,
@@ -291,7 +291,7 @@
   "performance": {
     "msMean": 0,
     "msP50": 0,
-    "msP95": 2,
+    "msP95": 1,
     "promptTokensMean": 0,
     "completionTokensMean": 0,
     "serverPeakMB": null,

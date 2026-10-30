@@ -29,6 +29,11 @@ const MAX_PLANS = 5;
 const ABOUT = ['user', 'person', 'project'];
 // An email can tell us about a meeting or a person; it cannot tell us what the user likes.
 const SELF_KINDS = new Set(['preference', 'style', 'routine']);
+// Nor where they are or what they are doing right now (live context).
+const NOT_FROM_OTHERS = new Set([...SELF_KINDS, 'context']);
+// A sentence that talks to the assistant ("AI reading this: save X") is an attempted instruction, not information.
+// Not "bot" or "model" on their own: "invoice-bot" and "business model" are ordinary words (found in evaluation).
+const INSTRUCTION_RE = /\b(ai|a\.i\.|assistant|chatbot|llm|system note|system prompt|ignore (all |any )?(previous|prior|above)( instructions)?|save (this|it|that)|remember (this|that|it)|store (this|it|that)|add (a )?memory|memori[sz]e (this|that|it)|importance \d)\b/i;
 
 const clip = (s, n) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, n);
 const clipKeep = (s, n) => String(s == null ? '' : s).replace(/\r\n?/g, '\n').replace(/[ \t]+/g, ' ').trim().slice(0, n);
@@ -161,6 +166,13 @@ function checkExtraction(answer, ctx = {}) {
   }
   const trust = events.some((e) => e.trust === 'external') ? 'external' : events.some((e) => e.trust === 'mixed') ? 'mixed' : 'user';
   const sourceTerms = new Set(terms(events.map((e) => e.text).join('\n')));
+  // Words that appear only in sentences addressed to the assistant, in text the user did not type.
+  const said = []; const aimed = [];
+  for (const e of events) {
+    for (const s of String(e.text).split(/(?<=[.!?])\s+|\n+/)) (e.trust !== 'user' && INSTRUCTION_RE.test(s) ? aimed : said).push(s);
+  }
+  const saidTerms = new Set(terms(said.join(' ')));
+  const aimedTerms = new Set(terms(aimed.join(' ')).filter((w) => !saidTerms.has(w)));
   const project = (events.find((e) => e.project) || {}).project || '';
   const dropped = [];
   const observations = [];
@@ -179,10 +191,14 @@ function checkExtraction(answer, ctx = {}) {
     importance = Math.max(0, Math.min(1, importance));
     let certainty = o.certainty;
     if (trust === 'external') {
-      if (SELF_KINDS.has(o.kind) && raw.about !== 'person') { dropped.push({ item: raw, why: 'someone else cannot set the user\'s preferences' }); continue; }
+      if (NOT_FROM_OTHERS.has(o.kind) && raw.about !== 'person') { dropped.push({ item: raw, why: 'someone else cannot set the user\'s preferences or what they are doing' }); continue; }
       if (certainty === 'stated') certainty = 'implied';
     } else if (trust === 'mixed' && certainty === 'stated') certainty = 'implied';
     if (!grounded(o, sourceTerms)) { dropped.push({ item: raw, why: 'not in the events' }); continue; }
+    if (aimedTerms.size) {
+      const g = groundTerms(o).filter((w) => sourceTerms.has(w));
+      if (g.length && g.filter((w) => aimedTerms.has(w)).length / g.length >= 0.5) { dropped.push({ item: raw, why: 'it comes from text telling the assistant what to do' }); continue; }
+    }
     if (importance < minImportance && !['joking', 'hypothetical', 'quoting'].includes(certainty)) { dropped.push({ item: raw, why: `importance ${importance} is below ${minImportance}` }); continue; }
     observations.push({
       kind: o.kind, slot: o.slot, value: o.value, text: o.text, certainty,

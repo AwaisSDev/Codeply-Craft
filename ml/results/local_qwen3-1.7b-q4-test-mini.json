@@ -14,11 +14,11 @@
   },
   "validity": 0.978,
   "extraction": {
-    "precision": 0.508,
+    "precision": 0.517,
     "recall": 0.847,
-    "f1": 0.635,
+    "f1": 0.642,
     "gold": 72,
-    "pred": 120,
+    "pred": 118,
     "tp": 61
   },
   "extractionUnseen": {
@@ -99,11 +99,11 @@
     },
     "external": {
       "n": 4,
-      "precision": 0.571,
+      "precision": 0.8,
       "recall": 1,
-      "f1": 0.727,
+      "f1": 0.889,
       "gold": 4,
-      "pred": 7,
+      "pred": 5,
       "tp": 4,
       "validity": 1
     },
@@ -310,5 +310,6 @@
       "error": "The operation was aborted due to timeout",
       "raw": "null"
     }
-  ]
+  ],
+  "rescoredAt": "2026-10-30T15:55:09.148Z"
 }

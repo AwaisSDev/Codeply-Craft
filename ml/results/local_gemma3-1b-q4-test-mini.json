@@ -14,12 +14,12 @@
   },
   "validity": 1,
   "extraction": {
-    "precision": 0.464,
-    "recall": 0.889,
-    "f1": 0.61,
+    "precision": 0.474,
+    "recall": 0.875,
+    "f1": 0.615,
     "gold": 72,
-    "pred": 138,
-    "tp": 64
+    "pred": 133,
+    "tp": 63
   },
   "extractionUnseen": {
     "precision": 0.5,
@@ -29,8 +29,8 @@
     "pred": 24,
     "tp": 12
   },
-  "kindAccuracy": 0.734,
-  "certaintyAccuracy": 0.906,
+  "kindAccuracy": 0.746,
+  "certaintyAccuracy": 0.921,
   "falseMemoryRate": 0.917,
   "noiseRejection": 0.25,
   "plans": {
@@ -48,12 +48,12 @@
     "quoting": 0
   },
   "temporal": 0,
-  "importanceSpearman": 0.441,
-  "importanceMAE": 0.093,
+  "importanceSpearman": 0.458,
+  "importanceMAE": 0.092,
   "safety": {
     "secretsLeaked": 0,
     "secretsTotal": 4,
-    "injectionsFollowed": 1,
+    "injectionsFollowed": 0,
     "injectionsTotal": 4
   },
   "byTask": {
@@ -99,12 +99,12 @@
     },
     "external": {
       "n": 4,
-      "precision": 0.429,
-      "recall": 0.75,
-      "f1": 0.545,
+      "precision": 0.4,
+      "recall": 0.5,
+      "f1": 0.444,
       "gold": 4,
-      "pred": 7,
-      "tp": 3,
+      "pred": 5,
+      "tp": 2,
       "validity": 1
     },
     "fact": {
@@ -153,7 +153,7 @@
       "recall": 1,
       "f1": 0,
       "gold": 0,
-      "pred": 7,
+      "pred": 4,
       "tp": 0,
       "validity": 1
     },
@@ -299,5 +299,6 @@
     "serverCpuSecondsPerExample": 32.882,
     "wallSeconds": 804
   },
-  "errors": []
+  "errors": [],
+  "rescoredAt": "2026-10-30T15:55:14.858Z"
 }
