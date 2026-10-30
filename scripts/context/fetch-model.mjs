@@ -26,13 +26,14 @@ if (!id || id === 'list') {
   for (const [k, m] of Object.entries(RT.CATALOG)) console.log(`${k.padEnd(18)} ${m.params.padEnd(5)} ${m.arch.padEnd(34)} ${m.license}`);
   process.exit(0);
 }
-const spec = RT.CATALOG[id];
-if (!spec) { console.error(`Unknown model "${id}". Run with "list".`); process.exit(2); }
+const from = opt('from');
+// A model Codeply trained (ml/finetune) is registered from its file: it is in no catalog yet.
+const spec = RT.CATALOG[id] || (/^codeply-[a-z0-9.-]+$/.test(id) && from ? { file: path.basename(from), license: opt('license') || 'inherits the base model licence' } : null);
+if (!spec) { console.error(`Unknown model "${id}". Run with "list" (or name a model you trained codeply-… and pass --from).`); process.exit(2); }
 
 const dir = RT.MODELS_DIR();
 fs.mkdirSync(dir, { recursive: true });
 const dest = path.join(dir, spec.file);
-const from = opt('from');
 
 async function sha256(file) {
   const h = crypto.createHash('sha256');

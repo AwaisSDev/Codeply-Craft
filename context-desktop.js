@@ -25,6 +25,7 @@ const crypto = require('crypto');
 
 let deps = null;
 let store = null; let engine = null; let runtime = null; let lifeTimer = null;
+let embedRuntime = null; let retriever = null;
 const lib = (name) => require(path.join(deps.cliDir, 'lib', name));
 
 const DIR = path.join(os.homedir(), '.codeply', 'context');
@@ -43,13 +44,15 @@ const DEFAULT_SETTINGS = {
   minImportance: 0.35,
   // Life items into long-term memory: off until the user turns it on, then only these sources (and only while each is on in Life).
   life: { on: false, sources: ['heard', 'orbit', 'calls', 'gmail'] },
+  // Meaning-based retrieval with a local embedding model (context-retrieval.js): off until turned on.
+  embed: { on: false, model: 'nomic-embed-v1.5' },
 };
 let settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
 
 function loadSettings() {
   try {
     const raw = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
-    settings = { ...DEFAULT_SETTINGS, ...raw, life: { ...DEFAULT_SETTINGS.life, ...(raw.life || {}) } };
+    settings = { ...DEFAULT_SETTINGS, ...raw, life: { ...DEFAULT_SETTINGS.life, ...(raw.life || {}) }, embed: { ...DEFAULT_SETTINGS.embed, ...(raw.embed || {}) } };
   } catch {}
 }
 function saveSettings() {
@@ -103,6 +106,25 @@ function providers() {
   };
 }
 
+// ─── Meaning-based retrieval ────────────────────────────────────────────────
+
+function applyEmbed() {
+  const B = lib('brain.js');
+  B.setRetriever(null);
+  if (embedRuntime) { embedRuntime.stop(); embedRuntime = null; }
+  if (retriever) { retriever.close(); retriever = null; }
+  if (!settings.embed.on) return;
+  const RT = lib('local-runtime.js');
+  const CR = lib('context-retrieval.js');
+  const model = RT.models().find((m) => m.id === settings.embed.model && m.embedding);
+  if (!model) { console.warn(`[context] embedding model ${settings.embed.model} is not installed`); return; }
+  embedRuntime = RT.createRuntime({ model, threads: 2, ctx: model.ctx, idleMs: settings.idleMinutes * 60000, args: ['--embedding', '--pooling', model.embedding.pooling, '-b', String(model.ctx), '-ub', String(model.ctx)], log: (s) => console.log(s) });
+  retriever = CR.createRetriever({ brain: B, model: model.id, embed: CR.llamaEmbedder({ ensure: embedRuntime.ensure }), prefix: model.embedding.prefix, modulePaths: deps.modulePaths });
+  B.setRetriever((q) => retriever.scores(q));
+  // Index what the brain already knows in the background, so the first turns are not the slow ones.
+  retriever.scores('warm up').catch(() => {});
+}
+
 // ─── The engine ─────────────────────────────────────────────────────────────
 
 let prov = null;
@@ -133,6 +155,7 @@ function state() {
     settings, modes: lib('context-model.js').MODES,
     stats: engine ? engine.stats() : null,
     runtime: runtime ? runtime.status() : null,
+    embedRuntime: embedRuntime ? embedRuntime.status() : null,
     hardware: RT.hardware(), models: RT.models().map((m) => ({ id: m.id, license: m.license, params: m.params, arch: m.arch })),
     binary: !!RT.findBinary(),
     // What happened to recent events, never their text.
@@ -146,9 +169,10 @@ function setSettings(patch = {}) {
   if (!M.MODES.includes(next.mode)) throw new Error(`Unknown mode "${next.mode}".`);
   if (next.localUrl && !M.isLocalUrl(next.localUrl)) throw new Error('The local model must run on this PC (localhost or 127.0.0.1).');
   const rebuild = ['model', 'localUrl', 'localModel', 'threads', 'ctx', 'idleMinutes'].some((k) => k in patch);
-  settings = next;
+  settings = { ...next, embed: { ...settings.embed, ...(patch.embed || {}) } };
   saveSettings();
   if (rebuild) prov.local = buildLocal();
+  if ('embed' in patch) applyEmbed();
   applyMode();
   return state();
 }
@@ -176,6 +200,7 @@ function init(d) {
       log: (s) => console.log(s),
     });
     applyMode();
+    applyEmbed();
     engine.start();
     store.purge();
     lifeTimer = setInterval(collectLife, LIFE_EVERY_MS);
@@ -188,7 +213,9 @@ function stop() {
   try { if (lifeTimer) clearInterval(lifeTimer); } catch {}
   try { if (engine) engine.stop(); } catch {}
   try { if (runtime) runtime.stop(); } catch {}
-  try { lib('brain.js').setLearner(null); } catch {}
+  try { if (embedRuntime) embedRuntime.stop(); } catch {}
+  try { if (retriever) retriever.close(); } catch {}
+  try { lib('brain.js').setLearner(null); lib('brain.js').setRetriever(null); } catch {}
   try { if (store) store.close(); } catch {}
 }
 

@@ -1,0 +1,276 @@
+{
+  "retrieval": "words + meaning (nomic-embed-text-v1.5.Q8_0.gguf)",
+  "embedMsMean": 760,
+  "memories": 67,
+  "queries": 22,
+  "blockPrecision": 0.249,
+  "blockRecall": 0.932,
+  "recallAt10": 0.618,
+  "tokensMean": 411.227,
+  "byFacetKind": {
+    "project": {
+      "n": 8,
+      "blockPrecision": 0.254,
+      "blockRecall": 1,
+      "recallAt10": 0.748
+    },
+    "writing": {
+      "n": 2,
+      "blockPrecision": 0.281,
+      "blockRecall": 0.9,
+      "recallAt10": 0.5
+    },
+    "coding": {
+      "n": 2,
+      "blockPrecision": 0.438,
+      "blockRecall": 1,
+      "recallAt10": 0.071
+    },
+    "schedule": {
+      "n": 2,
+      "blockPrecision": 0.344,
+      "blockRecall": 0.917,
+      "recallAt10": 0.5
+    },
+    "person": {
+      "n": 5,
+      "blockPrecision": 0.163,
+      "blockRecall": 1,
+      "recallAt10": 0.933
+    },
+    "lifestyle": {
+      "n": 2,
+      "blockPrecision": 0.188,
+      "blockRecall": 0.6,
+      "recallAt10": 0.4
+    },
+    "about": {
+      "n": 1,
+      "blockPrecision": 0.125,
+      "blockRecall": 0.667,
+      "recallAt10": 0
+    }
+  },
+  "rows": [
+    {
+      "facet": "project:pantry-pal",
+      "request": "add a payments page to pantry-pal",
+      "relevant": 7,
+      "blockLines": 23,
+      "blockPrecision": 0.3,
+      "blockRecall": 1,
+      "recallAt10": 1,
+      "tokens": 533
+    },
+    {
+      "facet": "project:pantry-pal",
+      "request": "what auth did we pick for pantry pal?",
+      "relevant": 7,
+      "blockLines": 23,
+      "blockPrecision": 0.3,
+      "blockRecall": 1,
+      "recallAt10": 1,
+      "tokens": 530
+    },
+    {
+      "facet": "project:LedgerLite",
+      "request": "set up the database migrations",
+      "relevant": 6,
+      "blockLines": 22,
+      "blockPrecision": 0.27,
+      "blockRecall": 1,
+      "recallAt10": 0.33,
+      "tokens": 520
+    },
+    {
+      "facet": "project:LedgerLite",
+      "request": "when is the ledgerlite release and how much does it cost",
+      "relevant": 6,
+      "blockLines": 22,
+      "blockPrecision": 0.27,
+      "blockRecall": 1,
+      "recallAt10": 1,
+      "tokens": 527
+    },
+    {
+      "facet": "project:tutor-match",
+      "request": "fix the login flow",
+      "relevant": 5,
+      "blockLines": 21,
+      "blockPrecision": 0.24,
+      "blockRecall": 1,
+      "recallAt10": 0.4,
+      "tokens": 503
+    },
+    {
+      "facet": "project:clinic-booking",
+      "request": "deploy the clinic booking site",
+      "relevant": 5,
+      "blockLines": 21,
+      "blockPrecision": 0.24,
+      "blockRecall": 1,
+      "recallAt10": 1,
+      "tokens": 504
+    },
+    {
+      "facet": "project:farm-ledger",
+      "request": "the app crashes when there is no internet",
+      "relevant": 4,
+      "blockLines": 20,
+      "blockPrecision": 0.2,
+      "blockRecall": 1,
+      "recallAt10": 0.25,
+      "tokens": 468
+    },
+    {
+      "facet": "project:event-hub",
+      "request": "add a checkout to event hub",
+      "relevant": 4,
+      "blockLines": 20,
+      "blockPrecision": 0.2,
+      "blockRecall": 1,
+      "recallAt10": 1,
+      "tokens": 470
+    },
+    {
+      "facet": "writing",
+      "request": "draft an email to the client about the delay",
+      "relevant": 5,
+      "blockLines": 16,
+      "blockPrecision": 0.31,
+      "blockRecall": 1,
+      "recallAt10": 0.6,
+      "tokens": 371
+    },
+    {
+      "facet": "writing",
+      "request": "write a reply to Sana thanking her for the intro",
+      "relevant": 5,
+      "blockLines": 16,
+      "blockPrecision": 0.25,
+      "blockRecall": 0.8,
+      "recallAt10": 0.4,
+      "tokens": 354
+    },
+    {
+      "facet": "coding",
+      "request": "set up a new typescript library with tests",
+      "relevant": 7,
+      "blockLines": 16,
+      "blockPrecision": 0.44,
+      "blockRecall": 1,
+      "recallAt10": 0.14,
+      "tokens": 362
+    },
+    {
+      "facet": "coding",
+      "request": "create a repo for my new side project",
+      "relevant": 7,
+      "blockLines": 16,
+      "blockPrecision": 0.44,
+      "blockRecall": 1,
+      "recallAt10": 0,
+      "tokens": 367
+    },
+    {
+      "facet": "schedule",
+      "request": "find a slot for a 1 hour call with the investor next week",
+      "relevant": 6,
+      "blockLines": 16,
+      "blockPrecision": 0.38,
+      "blockRecall": 1,
+      "recallAt10": 0.5,
+      "tokens": 347
+    },
+    {
+      "facet": "schedule",
+      "request": "book a meeting with the team on friday",
+      "relevant": 6,
+      "blockLines": 16,
+      "blockPrecision": 0.31,
+      "blockRecall": 0.83,
+      "recallAt10": 0.5,
+      "tokens": 355
+    },
+    {
+      "facet": "person:Inaya",
+      "request": "ideas for Inaya's birthday party",
+      "relevant": 3,
+      "blockLines": 16,
+      "blockPrecision": 0.19,
+      "blockRecall": 1,
+      "recallAt10": 1,
+      "tokens": 350
+    },
+    {
+      "facet": "person:Inaya",
+      "request": "what snacks should I pack for my daughter's school trip",
+      "relevant": 3,
+      "blockLines": 16,
+      "blockPrecision": 0.19,
+      "blockRecall": 1,
+      "recallAt10": 0.67,
+      "tokens": 338
+    },
+    {
+      "facet": "person:Hassan",
+      "request": "send Hassan the invoice totals for October",
+      "relevant": 3,
+      "blockLines": 16,
+      "blockPrecision": 0.19,
+      "blockRecall": 1,
+      "recallAt10": 1,
+      "tokens": 364
+    },
+    {
+      "facet": "person:Zoya",
+      "request": "ask Zoya for the new logo files",
+      "relevant": 2,
+      "blockLines": 16,
+      "blockPrecision": 0.13,
+      "blockRecall": 1,
+      "recallAt10": 1,
+      "tokens": 364
+    },
+    {
+      "facet": "person:Ammi",
+      "request": "gift ideas for my mother",
+      "relevant": 2,
+      "blockLines": 16,
+      "blockPrecision": 0.13,
+      "blockRecall": 1,
+      "recallAt10": 1,
+      "tokens": 357
+    },
+    {
+      "facet": "lifestyle",
+      "request": "order lunch for me",
+      "relevant": 5,
+      "blockLines": 16,
+      "blockPrecision": 0.25,
+      "blockRecall": 0.8,
+      "recallAt10": 0.4,
+      "tokens": 344
+    },
+    {
+      "facet": "lifestyle",
+      "request": "book my flight to Dubai",
+      "relevant": 5,
+      "blockLines": 16,
+      "blockPrecision": 0.13,
+      "blockRecall": 0.4,
+      "recallAt10": 0.4,
+      "tokens": 355
+    },
+    {
+      "facet": "about",
+      "request": "write a short bio for my LinkedIn",
+      "relevant": 3,
+      "blockLines": 16,
+      "blockPrecision": 0.13,
+      "blockRecall": 0.67,
+      "recallAt10": 0,
+      "tokens": 364
+    }
+  ]
+}

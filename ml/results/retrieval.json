@@ -1,4 +1,6 @@
 {
+  "retrieval": "words (brain as shipped)",
+  "embedMsMean": null,
   "memories": 67,
   "queries": 22,
   "blockPrecision": 0.22,

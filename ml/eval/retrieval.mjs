@@ -5,6 +5,9 @@
 // turn) and the recall tool return.
 //
 //   node ml/eval/retrieval.mjs   → ml/results/retrieval.json
+//   node ml/eval/retrieval.mjs --embed ~/models/bge-small-en-v1.5-q8_0.gguf --pooling cls --name bge-small
+//       the same queries with meaning-based scores (context-retrieval.js) added
+//       to the brain's ranking → ml/results/retrieval-<name>.json
 //
 // For each query, "relevant" is every memory of the facet it is about.
 //   block precision   relevant lines in the block / memory lines in the block
@@ -21,6 +24,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../..');
 const require = createRequire(import.meta.url);
 const BR = require(path.join(ROOT, 'codeply-cli/lib/brain.js'));
+const args = process.argv.slice(2);
+const opt = (n, d) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : d; };
+const EMBED = opt('embed', '');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'codeply-retrieval-'));
 let NOW = Date.UTC(2026, 9, 30, 9, 0, 0);
@@ -86,14 +92,26 @@ const QUERIES = [
 ];
 
 const memLines = (block) => block.split('\n').filter((l) => /^- /.test(l));
+let retriever = null; let runtime = null;
+if (EMBED) {
+  const RT = require(path.join(ROOT, 'codeply-cli/lib/local-runtime.js'));
+  const CR = require(path.join(ROOT, 'codeply-cli/lib/context-retrieval.js'));
+  runtime = RT.createRuntime({ model: { id: path.basename(EMBED), path: EMBED, ctx: 2048 }, idleMs: 0, args: ['--embedding', '--pooling', opt('pooling', 'mean'), '-b', '2048', '-ub', '2048'] });
+  retriever = CR.createRetriever({ brain: BR, model: path.basename(EMBED), embed: CR.llamaEmbedder({ ensure: runtime.ensure }), prefix: { query: opt('prefix-query', ''), doc: opt('prefix-doc', '') }, maxNewPerCall: 500, store: CR.vectorStore({ memory: true }) });
+}
 const rows = [];
+const embedMs = [];
 for (const [facet, request, o] of QUERIES) {
   const relevant = facets[facet] || [];
   const relMem = relevant.map((id) => BR.get(id));
-  const block = BR.contextBlock({ request, ...o, native: true });
+  let semantic = null;
+  if (retriever) { const t = Date.now(); semantic = await retriever.scores(request); embedMs.push(Date.now() - t); }
+  const block = BR.contextBlock({ request, ...o, native: true, semantic });
   const lines = memLines(block);
   const inBlock = relMem.filter((m) => lines.some((l) => l.includes(m.text)));
-  const hits = BR.recallTool({ query: request }).output.split('\n').filter((l) => /^- \[/.test(l)).slice(0, 10);
+  // recall@10: the recall tool, or with a retriever the 10 closest memories in meaning
+  const top = semantic ? [...semantic.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([id]) => id) : null;
+  const hits = top ? top : BR.recallTool({ query: request }).output.split('\n').filter((l) => /^- \[/.test(l)).slice(0, 10);
   const recallHits = relMem.filter((m) => hits.some((h) => h.includes(m.id)));
   rows.push({
     facet, request, relevant: relevant.length, blockLines: lines.length,
@@ -106,14 +124,16 @@ for (const [facet, request, o] of QUERIES) {
 const mean = (k, rs = rows) => Math.round((rs.reduce((s, r) => s + r[k], 0) / Math.max(1, rs.length)) * 1000) / 1000;
 const kinds = [...new Set(rows.map((r) => r.facet.split(':')[0]))];
 const result = {
+  retrieval: EMBED ? `words + meaning (${path.basename(EMBED)})` : 'words (brain as shipped)', embedMsMean: embedMs.length ? Math.round(embedMs.reduce((a, b) => a + b, 0) / embedMs.length) : null,
   memories: Object.values(facets).flat().length, queries: rows.length,
   blockPrecision: mean('blockPrecision'), blockRecall: mean('blockRecall'), recallAt10: mean('recallAt10'), tokensMean: mean('tokens'),
   byFacetKind: Object.fromEntries(kinds.map((k) => { const rs = rows.filter((r) => r.facet.split(':')[0] === k); return [k, { n: rs.length, blockPrecision: mean('blockPrecision', rs), blockRecall: mean('blockRecall', rs), recallAt10: mean('recallAt10', rs) }]; })),
   rows: rows.map((r) => ({ ...r, blockPrecision: Math.round(r.blockPrecision * 100) / 100, blockRecall: Math.round(r.blockRecall * 100) / 100, recallAt10: Math.round(r.recallAt10 * 100) / 100 })),
 };
 fs.mkdirSync(path.join(ROOT, 'ml/results'), { recursive: true });
-fs.writeFileSync(path.join(ROOT, 'ml/results', 'retrieval.json'), `${JSON.stringify(result, null, 2)}\n`);
+fs.writeFileSync(path.join(ROOT, 'ml/results', EMBED ? `retrieval-${opt('name', path.basename(EMBED, '.gguf'))}.json` : 'retrieval.json'), `${JSON.stringify(result, null, 2)}\n`);
 const { rows: _r, ...head } = result;
 console.log(JSON.stringify(head, null, 1));
 for (const r of rows) console.log(`${r.facet.padEnd(24)} P ${r.blockPrecision.toFixed(2)} R ${r.blockRecall.toFixed(2)} r@10 ${r.recallAt10.toFixed(2)}  ${r.request}`);
+if (runtime) runtime.stop();
 fs.rmSync(tmp, { recursive: true, force: true });

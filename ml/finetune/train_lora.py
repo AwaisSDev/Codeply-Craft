@@ -146,9 +146,27 @@ def main():
 
     model.save_pretrained(os.path.join(cfg["output_dir"], "adapter"))
     merged = model.merge_and_unload()
-    merged.save_pretrained(os.path.join(cfg["output_dir"], "merged"), safe_serialization=True)
-    tok.save_pretrained(os.path.join(cfg["output_dir"], "merged"))
+    merged_dir = os.path.join(cfg["output_dir"], "merged")
+    merged.save_pretrained(merged_dir, safe_serialization=True)
+    tok.save_pretrained(merged_dir)
+    copy_base_tokenizer(cfg["base_model"], merged_dir)
     print("saved", cfg["output_dir"])
+
+
+def copy_base_tokenizer(base_model, merged_dir):
+    """LoRA never changes the tokenizer. Ship the base model's own tokenizer files,
+    not the re-saved ones: llama.cpp's converter pins an older transformers that
+    cannot read every newer tokenizer_config.json (found in the smoke run)."""
+    import shutil
+    try:
+        from huggingface_hub import snapshot_download
+        src = base_model if os.path.isdir(base_model) else snapshot_download(
+            base_model, allow_patterns=["tokenizer*", "special_tokens_map.json", "vocab*", "merges.txt", "*.model", "chat_template*"])
+        for name in os.listdir(src):
+            if name.startswith(("tokenizer", "special_tokens_map", "vocab", "merges", "chat_template")) or name.endswith(".model"):
+                shutil.copy(os.path.join(src, name), os.path.join(merged_dir, name))
+    except Exception as e:  # keep the re-saved tokenizer rather than fail a finished run
+        print("could not copy the base tokenizer:", e)
 
 
 if __name__ == "__main__":

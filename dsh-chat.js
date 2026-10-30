@@ -241,12 +241,13 @@ function historyPreamble(history) {
  * and only when it changed since this session last saw it, so the session's
  * history does not fill up with copies.
  */
-function brainPreamble(session, cwd, userMessage, fresh) {
+async function brainPreamble(session, cwd, userMessage, fresh) {
   try {
     const brain = require(path.join(host.cliDir, 'lib', 'brain.js'));
     const project = brain.projectOfFolder(cwd);
     if (project) brain.touchProject({ name: project, path: cwd });
-    const block = brain.contextBlock({ cwd, request: userMessage, native: true, learnsByItself: true });
+    const semantic = await brain.semanticScores(userMessage).catch(() => null);
+    const block = brain.contextBlock({ cwd, request: userMessage, native: true, learnsByItself: true, semantic });
     if (!block) return '';
     const hash = crypto.createHash('sha1').update(block).digest('hex');
     if (!fresh && session.dsh && session.dsh.brainHash === hash) return '';
@@ -276,7 +277,7 @@ async function* runTurn({ session, userMessage, history, cwd, approve, signal, r
   const brainHash = !fresh && session.dsh ? session.dsh.brainHash : undefined;
   session.dsh = { folder: key, sessionId: sid, ...(brainHash ? { brainHash } : {}) };
   routes.set(sid, route || { auto: true });
-  const prompt = (fresh ? historyPreamble(history) : '') + brainPreamble(session, cwd, userMessage, fresh) + userMessage;
+  const prompt = (fresh ? historyPreamble(history) : '') + (await brainPreamble(session, cwd, userMessage, fresh)) + userMessage;
 
   // DSH asks before a write, an edit or a command; reads just run, as in Classic.
   const dshApprove = async (req) => {

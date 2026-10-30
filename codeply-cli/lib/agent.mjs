@@ -1880,7 +1880,10 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   // the user and this project. Per turn, because it ranks by this message.
   const brainProject = brainLib.projectOfFolder(cwd);
   if (brainProject) brainLib.touchProject({ name: brainProject, path: cwd });
-  const brainBlock = brainLib.contextBlock({ cwd, request: typeof userMessage === 'string' ? userMessage : '', botId, native });
+  // Meaning-based scores when the host runs a local embedding model (context-retrieval.js); null otherwise, never more than 400 ms.
+  const brainRequest = typeof userMessage === 'string' ? userMessage : '';
+  const semantic = await brainLib.semanticScores(brainRequest).catch(() => null);
+  const brainBlock = brainLib.contextBlock({ cwd, request: brainRequest, botId, native, semantic });
   const turnExtra = [screenBlock, brainBlock].filter(Boolean).join('\n\n');
   // A question about the screen needs careful reading: Haze 2 never treats it as small talk.
   if (haze && screenBlock) haze.screen = true;

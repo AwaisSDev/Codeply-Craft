@@ -583,9 +583,30 @@ function projectsNamed(text) {
 
 const ago = (ms) => { const m = Math.round(ms / 60000); if (m < 60) return `${Math.max(1, m)} min`; const h = Math.round(m / 60); if (h < 48) return `${h} h`; return `${Math.round(h / 24)} days`; };
 
-function rank(list, want, n) {
-  return list.map((m) => ({ m, s: (want.length ? overlap(want, `${m.slot} ${m.value} ${m.text}`) * 2 : 0) + m.confidence + Math.min(3, m.evidence) * 0.3 + (m.locked ? 1 : 0) + Math.max(0, 1 - (now() - m.seenAt) / (60 * DAY)) }))
+// semantic: memory id -> how far above the average this memory's meaning is to
+// the request, in standard deviations (context-retrieval.js), when the host
+// has a local embedding model. Words still count; meaning adds to them.
+const SEMANTIC_WEIGHT = 1.5;
+function rank(list, want, n, semantic) {
+  return list.map((m) => ({ m, s: (want.length ? overlap(want, `${m.slot} ${m.value} ${m.text}`) * 2 : 0) + m.confidence + Math.min(3, m.evidence) * 0.3 + (m.locked ? 1 : 0) + Math.max(0, 1 - (now() - m.seenAt) / (60 * DAY))
+    + (semantic ? SEMANTIC_WEIGHT * Math.max(0, semantic.get(m.id) || 0) : 0) }))
     .sort((a, b) => b.s - a.s).slice(0, n).map((x) => x.m);
+}
+
+// A host with a local embedding model (context-desktop.js) sets a retriever:
+// (query) => Promise<Map<memoryId, z-score>>. semanticScores() never waits
+// longer than timeoutMs: a slow or missing model leaves retrieval as it was.
+let retriever = null;
+function setRetriever(fn) { retriever = typeof fn === 'function' ? fn : null; }
+async function semanticScores(query, { timeoutMs = 400 } = {}) {
+  if (!retriever || !available() || !String(query || '').trim()) return null;
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve(retriever(String(query).slice(0, 2000))).catch(() => null),
+      new Promise((r) => { timer = setTimeout(() => r(null), timeoutMs); }),
+    ]);
+  } finally { clearTimeout(timer); }
 }
 
 /** Lessons teammates learned that fit this request (never the bot's own). */
@@ -612,20 +633,22 @@ const REMEMBER_FORMAT = `To save something, write:
 
 /**
  * The brain block for one run's prompt. Empty when there is nothing to say.
- * @param {{ cwd?: string, project?: string, request?: string, botId?: string, native?: boolean, domains?: string[], learnsByItself?: boolean }} [o]
+ * @param {{ cwd?: string, project?: string, request?: string, botId?: string, native?: boolean, domains?: string[], learnsByItself?: boolean, semantic?: Map<string, number> }} [o]
+ *   semantic: from semanticScores(request), when the host has a local embedding model
  */
 function contextBlock(o = {}) {
   if (!available()) return '';
   try {
     const want = terms(o.request);
+    const sem = o.semantic instanceof Map && o.semantic.size ? o.semantic : null;
     const keys = new Set();
     const here = knownKey(o.project || projectOfFolder(o.cwd));
     if (here && projectFor(here)) keys.add(here);
     for (const p of projectsNamed(o.request || '')) keys.add(p.key);
     // Standing rules count as personal too: "always CC hiring@" may come back as a requirement or decision.
     const personal = list({ scope: 'me', kinds: ['preference', 'fact', 'routine', 'style', 'decision', 'requirement'], limit: 300 });
-    const sure = rank(personal.filter((m) => m.status === 'confirmed'), want, BLOCK_LIMITS.personal);
-    const unsure = rank(personal.filter((m) => m.status === 'tentative'), want, 20).filter((m) => !want.length || overlap(want, m.text) > 0 || m.evidence > 1).slice(0, BLOCK_LIMITS.unsure);
+    const sure = rank(personal.filter((m) => m.status === 'confirmed'), want, BLOCK_LIMITS.personal, sem);
+    const unsure = rank(personal.filter((m) => m.status === 'tentative'), want, 20, sem).filter((m) => !want.length || overlap(want, m.text) > 0 || m.evidence > 1 || (sem && (sem.get(m.id) || 0) >= 1.5)).slice(0, BLOCK_LIMITS.unsure);
     const live = list({ kinds: ['context'], limit: 20 }).slice(0, BLOCK_LIMITS.live);
     const lines = [];
     const line = (m) => `- ${m.text}${m.review ? ' (recently changed; double check)' : ''}`;
@@ -634,11 +657,11 @@ function contextBlock(o = {}) {
     // Open to-dos from the last three weeks always; ideas only when this message is about them.
     const todos = list({ scope: 'me', kinds: ['todo'], limit: 50 }).filter((m) => now() - m.updatedAt < 21 * DAY).slice(0, BLOCK_LIMITS.todos);
     if (todos.length) lines.push('Open to-dos from earlier chats (say so if one is due or done):', ...todos.map((m) => `- ${m.text}${m.status === 'tentative' ? ' (not confirmed)' : ''}`));
-    const ideas = want.length ? rank(list({ scope: 'me', kinds: ['idea'], limit: 100 }), want, 10).filter((m) => overlap(want, m.text) > 0).slice(0, 3) : [];
+    const ideas = want.length ? rank(list({ scope: 'me', kinds: ['idea'], limit: 100 }), want, 10, sem).filter((m) => overlap(want, m.text) > 0 || (sem && (sem.get(m.id) || 0) >= 1.5)).slice(0, 3) : [];
     if (ideas.length) lines.push('Earlier ideas that fit this message:', ...ideas.map((m) => `- ${m.text}`));
     if (live.length) lines.push('Right now (temporary):', ...live.map((m) => `- ${m.text}${m.expiresAt ? ` (until about ${localStamp(m.expiresAt)}, their time)` : ''}`));
     for (const key of [...keys].slice(0, 2)) {
-      const items = rank(list({ scope: `project:${key}`, limit: 200 }), want, BLOCK_LIMITS.project);
+      const items = rank(list({ scope: `project:${key}`, limit: 200 }), want, BLOCK_LIMITS.project, sem);
       if (!items.length) continue;
       const p = projectFor(key);
       lines.push(`Project "${(p && p.name) || key}" (from earlier chats, in any Codeply app):`);
@@ -920,7 +943,7 @@ module.exports = {
   configure, usable, available, enabled, setEnabled, close, prune,
   observe, cleanObservation, get, list, correct, confirm, resolve, forget, clear, changes,
   touchProject, projects, projectFor, projectsNamed, projectKey, knownKey, projectOfFolder,
-  contextBlock, teamLessons, observationsAsk, noteObservations, learnFromExchange, shareLessons, setLearner, learnsElsewhere,
+  contextBlock, teamLessons, observationsAsk, noteObservations, learnFromExchange, shareLessons, setLearner, learnsElsewhere, setRetriever, semanticScores,
   rememberTool, recallTool, REMEMBER_FORMAT,
   botDomains, routeHandoff, createHandoff, getHandoff, updateHandoff, handoffsByStatus, recentHandoffs, handoffForTask, handoffTask,
   setCoordinator, canHandOff, handOff, looksLikeScheduling,

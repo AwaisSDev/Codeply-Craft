@@ -25,7 +25,7 @@ cmake --build build -j --target llama-server llama-bench llama-quantize llama-im
 mkdir -p ~/.codeply/runtime/bin && cp build/bin/llama-server ~/.codeply/runtime/bin/
 ```
 
-`GGML_NATIVE=ON` tunes for the build machine. Release builds for users must
+`GGML_NATIVE=ON` tunes for the build machine, and the default build links llama.cpp as shared libraries next to the binary (`libllama.so`, `libggml*.so`); for shipping, add `-DBUILD_SHARED_LIBS=OFF` to get one self-contained `llama-server`. Release builds for users must
 instead use `-DGGML_NATIVE=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON`,
 which ships one CPU backend per instruction-set level (SSE4.2, AVX2,
 AVX-512, ...) and picks the best at run time. Windows needs the MSVC or

@@ -41,6 +41,9 @@ const CATALOG = {
   'qwen2.5-1.5b-q4': { repo: 'Qwen/Qwen2.5-1.5B-Instruct-GGUF', file: 'qwen2.5-1.5b-instruct-q4_k_m.gguf', license: 'Apache-2.0', params: '1.5B', arch: 'dense transformer', ctx: 8192 },
   'qwen3.5-0.8b-q4': { repo: 'unsloth/Qwen3.5-0.8B-GGUF', file: 'Qwen3.5-0.8B-Q4_K_M.gguf', license: 'Apache-2.0', params: '0.8B', arch: 'hybrid (linear + full attention)', ctx: 8192, extra: { chat_template_kwargs: { enable_thinking: false } } },
   'lfm2.5-1.2b-q4': { repo: 'LiquidAI/LFM2.5-1.2B-Instruct-GGUF', file: 'LFM2.5-1.2B-Instruct-Q4_K_M.gguf', license: 'LFM Open License v1.0', params: '1.2B', arch: 'hybrid (conv + attention)', ctx: 8192 },
+  // Embedding models for meaning-based retrieval (context-retrieval.js).
+  'nomic-embed-v1.5': { repo: 'nomic-ai/nomic-embed-text-v1.5-GGUF', file: 'nomic-embed-text-v1.5.Q8_0.gguf', license: 'Apache-2.0', params: '137M', arch: 'embedding (BERT)', ctx: 2048, embedding: { pooling: 'mean', prefix: { query: 'search_query: ', doc: 'search_document: ' } } },
+  'bge-small-en-v1.5': { repo: 'CompendiumLabs/bge-small-en-v1.5-gguf', file: 'bge-small-en-v1.5-q8_0.gguf', license: 'MIT', params: '33M', arch: 'embedding (BERT)', ctx: 512, embedding: { pooling: 'cls', prefix: { query: 'Represent this sentence for searching relevant passages: ', doc: '' } } },
 };
 
 // ─── Hardware ───────────────────────────────────────────────────────────────

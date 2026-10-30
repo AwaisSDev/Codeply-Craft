@@ -324,11 +324,42 @@ if (section('DSH turns read the brain')) {
   const D = require(path.join(ROOT, 'dsh-chat.js'));
   D.init({ cliDir: path.join(ROOT, 'codeply-cli'), aiLib: () => ({}), configLib: () => ({}) });
   const session = { dsh: { folder: 'x', sessionId: 's1' } };
-  const first = D.brainPreamble(session, path.join(tmp, 'shop-app'), 'add a test runner', true);
+  const first = await D.brainPreamble(session, path.join(tmp, 'shop-app'), 'add a test runner', true);
   check('a fresh DSH session gets the brain block', /CODEPLY BRAIN/.test(first) && /pnpm/.test(first) && /learns lasting preferences/.test(first));
-  check('the next turn, unchanged: not repeated', D.brainPreamble(session, path.join(tmp, 'shop-app'), 'add a test runner', false) === '');
+  check('the next turn, unchanged: not repeated', await D.brainPreamble(session, path.join(tmp, 'shop-app'), 'add a test runner', false) === '');
   BR.observe({ kind: 'preference', slot: 'test runner', value: 'vitest', text: 'The user prefers vitest for tests.', certainty: 'stated' });
-  check('after the brain changed: sent again', /vitest/.test(D.brainPreamble(session, path.join(tmp, 'shop-app'), 'add a test runner', false)));
+  check('after the brain changed: sent again', /vitest/.test(await D.brainPreamble(session, path.join(tmp, 'shop-app'), 'add a test runner', false)));
+}
+
+if (section('Meaning-based retrieval (context-retrieval.js)')) {
+  freshBrain('semantic');
+  const CR = lib('context-retrieval.js');
+  // The food memory is the oldest of 19 and never confirmed by hand, so words alone rank it last.
+  const T0 = NOW; NOW -= 50 * 86400000;
+  const food = BR.observe({ kind: 'preference', slot: 'favorite food', value: 'nihari', text: 'The user loves nihari.', certainty: 'stated' }).memory;
+  NOW = T0;
+  for (let i = 0; i < 18; i++) BR.observe({ kind: 'preference', slot: `filler ${i}`, value: `thing ${i}`, text: `The user prefers thing number ${i} for filler ${i}.`, certainty: 'stated' });
+  // A fake embedder: "lunch", "food" and "nihari" share a dimension; everything else is spread out.
+  let embedded = 0;
+  const embed = async (texts) => texts.map((t) => { embedded++; const v = new Array(32).fill(0.01); if (/lunch|food|nihari|eat/i.test(t)) v[0] = 1; const n = (t.match(/\d+/) || [0])[0]; v[1 + (Number(n) % 30)] += 1; return v; });
+  const r = CR.createRetriever({ brain: BR, embed, model: 'fake-embed', store: CR.vectorStore({ memory: true }) });
+  const s1 = await r.scores('order lunch for me');
+  check('the memory closest in meaning scores highest (z-score)', [...s1.entries()].sort((a, b) => b[1] - a[1])[0][0] === food.id && s1.get(food.id) > 2);
+  const before = embedded;
+  await r.scores('order lunch for me');
+  check('vectors are cached: the second call embeds only the query', embedded - before === 1);
+  check('words alone: the food memory is not in the block for "order lunch for me"', !/nihari/.test(BR.contextBlock({ request: 'order lunch for me' })));
+  check('with meaning: it is', /nihari/.test(BR.contextBlock({ request: 'order lunch for me', semantic: await r.scores('order lunch for me') })));
+  BR.correct(food.id, { text: 'The user loves nihari and haleem.' });
+  const b2 = embedded; await r.scores('anything');
+  check('a changed memory is embedded again', embedded - b2 === 2);
+  check('no retriever: semanticScores is null', (await BR.semanticScores('lunch')) === null);
+  BR.setRetriever(() => new Promise((res) => setTimeout(() => res(new Map([['x', 1]])), 2000)));
+  const t0 = Date.now();
+  check('a slow retriever never holds a turn up (timeout → null)', (await BR.semanticScores('lunch', { timeoutMs: 100 })) === null && Date.now() - t0 < 1000);
+  BR.setRetriever((q) => r.scores(q));
+  check('a retriever: scores come back for the agent turn', (await BR.semanticScores('order lunch for me')).get(food.id) > 2);
+  BR.setRetriever(null);
 }
 
 if (section('Desktop host (context-desktop.js) with fake Electron')) {

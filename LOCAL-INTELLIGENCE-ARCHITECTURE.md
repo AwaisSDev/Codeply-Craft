@@ -242,11 +242,32 @@ sees exactly the prompt it was trained on.
 
 | File | Change | Default behaviour |
 |---|---|---|
-| `brain.js` | `setLearner(fn)` / `learnsElsewhere()`: when a learner is set, `learnFromExchange` hands the exchange to it; `contextBlock({ learnsByItself })` wording for engines without a `remember` tool | unchanged (no learner) |
+| `brain.js` | `setLearner(fn)` / `learnsElsewhere()`: when a learner is set, `learnFromExchange` hands the exchange to it; `contextBlock({ learnsByItself })` wording for engines without a `remember` tool; `setRetriever(fn)` / `semanticScores(query)` and `contextBlock({ semantic })` (§6.1) | unchanged (no learner, no retriever) |
 | `bots.js learnFromTurn` | when the brain learns elsewhere, the combined call omits the brain part and the exchange goes to the engine | unchanged |
-| `context-desktop.js` (new) | opens the engine in the Electron main process, the `cloud` backend on `ai.chatJson`, the local runtime, the Life collector timer | engine idle in `legacy` |
+| `agent.mjs` | awaits `brain.semanticScores(request)` (≤ 400 ms, `null` without a retriever) and passes it to `contextBlock` | unchanged without a retriever |
+| `context-desktop.js` (new) | opens the engine in the Electron main process, the `cloud` backend on `ai.chatJson`, the local runtime, the Life collector timer, the optional embedding retriever | engine idle in `legacy` |
 | `main.js` | `contextDesktop.init(deps)`; stop on quit | — |
-| `dsh-chat.js` | the brain block goes in front of a DSH turn when it changed since the last turn in that session | DSH turns now read the brain |
+| `dsh-chat.js` | the brain block (with semantic scores when available) goes in front of a DSH turn when it changed since the last turn in that session | DSH turns now read the brain |
+
+### 6.1 Meaning-based retrieval (optional, local)
+
+`ml/eval/retrieval.mjs` showed the brain's word-based ranking misses requests
+that share no words with the memory ("order lunch for me" never surfaced
+"the user prefers nihari": recall 0). `context-retrieval.js` adds meaning
+without moving retrieval out of the brain:
+
+* A small embedding GGUF (nomic-embed-text v1.5, Apache-2.0, 139 MB) runs on
+  the same managed `llama-server` (`--embedding`), loaded on first use and
+  stopped when idle.
+* Memory vectors are cached in `~/.codeply/context/vectors.db`, keyed by memory
+  id, model and a hash of the text (a corrected memory is embedded again); at
+  most 64 new memories per call, so a big brain is indexed over a few turns.
+* Scores are z-scores of cosine similarity across all memories; the brain adds
+  `1.5 × max(0, z)` to its existing rank (words, confidence, evidence, lock,
+  recency), so words still count and meaning adds to them.
+* `semanticScores` never waits more than 400 ms; a cold or slow model leaves
+  that turn's retrieval exactly as before.
+* Off until the user turns it on (`embed.on` in settings).
 
 ## 7. Local runtime (`local-runtime.js`)
 
