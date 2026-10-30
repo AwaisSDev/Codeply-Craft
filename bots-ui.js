@@ -1,7 +1,8 @@
 // Bots in the desktop window: the Bots screen (gallery, templates, "Describe
-// your bot", the editor with the avatar builder and memory), the bot chip in
-// each composer that picks who answers, and the bot rows in a chat (the
-// "Orion" badge on replies, "Asked Vera: ..." delegation rows).
+// your bot", the editor with the avatar builder and memory), "@Name" in a
+// message to ask one of Codeply's specialists directly (with a list as you
+// type "@"), and the bot rows in a chat (the "Orion" badge on replies,
+// delegation rows with the helper's avatar).
 // Loaded after app.js and bot-avatar.js; uses app.js globals (api, state,
 // chatColumn, esc, mdToHtml, showToast, nearBottom, scrollToBottom).
 (() => {
@@ -10,8 +11,10 @@
   const KEY = 'craft.bot';
 
   let cat = { bots: [], templates: [], tones: {}, approvals: {}, maxMemory: 60 };
+  // Codeply answers unless a message says "@Name"; there's no chip to pin someone any more,
+  // so a choice saved by an older version is dropped rather than kept out of sight.
   let selected = '';
-  try { selected = localStorage.getItem(KEY) || ''; } catch {}
+  try { localStorage.removeItem(KEY); } catch {}
 
   const byId = (id) => cat.bots.find((b) => b.id === id) || null;
   const byName = (n) => cat.bots.find((b) => b.name.toLowerCase() === String(n || '').trim().toLowerCase()) || null;
@@ -50,18 +53,73 @@
     paintChips();
   }
 
-  // ─── Composer chip ───────────────────────────────────────────────────────
-  function addChips() {
-    document.querySelectorAll('.composer-bottom-right').forEach((row) => {
-      if (row.querySelector('.bot-chip')) return;
-      const b = document.createElement('button');
-      b.className = 'bot-chip';
-      b.type = 'button';
-      b.title = 'Choose who answers';
-      b.addEventListener('click', (e) => { e.stopPropagation(); openMenu(b); });
-      const model = row.querySelector('.model-btn');
-      row.insertBefore(b, model || row.firstChild);
+  // ─── "@Name": ask one specialist directly ───────────────────────────────
+  // Codeply answers every message and brings in its specialists itself. To
+  // address one, start or put "@Name" in the message: that message goes to
+  // it (main.js gets its botId), the next one is Codeply's again.
+  const mentionable = () => [
+    ...cat.bots.map((b) => ({ id: b.id, name: b.name, sub: b.specialty || ROLE[b.role] || '', avatar: av(b.avatar, 22, { still: true }) })),
+    ...ROLES.filter((r) => r.id).map((r) => ({ id: r.id, name: r.label, sub: r.sub, avatar: ball(r, 'mascot-sm') })),
+  ];
+  /** The specialist a message addresses with "@Name" (the first one that matches), or '' for Codeply. */
+  function botFor(text) {
+    const names = mentionable();
+    for (const m of String(text || '').matchAll(/(?:^|\s)@([\p{L}\p{N}_-]+)/gu)) {
+      const hit = names.find((n) => n.name.toLowerCase() === m[1].toLowerCase());
+      if (hit) return hit.id;
+    }
+    return '';
+  }
+
+  // The list while "@..." is being typed: arrows and Enter or Tab pick, Escape closes.
+  function wireMentions(composer) {
+    const input = composer.querySelector('.composer-input');
+    if (!input || composer.dataset.mentions) return;
+    composer.dataset.mentions = '1';
+    let list = null; let items = []; let at = 0; let active = 0;
+    composer.mentionOpen = () => !!list;
+    const close = () => { if (list) { list.remove(); list = null; } };
+    const pick = (n) => {
+      const before = input.value.slice(0, at); const after = input.value.slice(input.selectionStart);
+      input.value = `${before}@${n.name} ${after.replace(/^\S*/, '').replace(/^\s+/, '')}`;
+      const caret = before.length + n.name.length + 2;
+      input.setSelectionRange(caret, caret);
+      close();
+      input.focus();
+      input.dispatchEvent(new Event('input'));
+    };
+    const paint = () => list.querySelectorAll('.slash-item').forEach((el, i) => el.classList.toggle('active', i === active));
+    input.addEventListener('input', () => {
+      const upto = input.value.slice(0, input.selectionStart);
+      const m = /(^|\s)@([\p{L}\p{N}_-]*)$/u.exec(upto);
+      if (!m) { close(); return; }
+      at = upto.length - m[2].length - 1;
+      const q = m[2].toLowerCase();
+      items = mentionable().filter((n) => n.name.toLowerCase().startsWith(q)).slice(0, 8);
+      if (!items.length) { close(); return; }
+      close();
+      active = 0;
+      list = document.createElement('div');
+      list.className = 'menu slash-menu mention-menu';
+      list.innerHTML = items.map((n, i) => `<button class="menu-item slash-item${i ? '' : ' active'}" type="button">${n.avatar}<strong>${esc(n.name)}</strong><span class="slash-desc">${esc(n.sub)}</span></button>`).join('');
+      list.querySelectorAll('.slash-item').forEach((el, i) => el.addEventListener('mousedown', (e) => { e.preventDefault(); pick(items[i]); }));
+      composer.style.position = 'relative';
+      composer.appendChild(list);
     });
+    input.addEventListener('keydown', (e) => {
+      if (!list) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); active = (active + 1) % items.length; paint(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); active = (active - 1 + items.length) % items.length; paint(); }
+      else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pick(items[active]); }
+      else if (e.key === 'Escape') close();
+    });
+    input.addEventListener('blur', () => setTimeout(close, 150));
+  }
+
+  function addChips() {
+    // The old "Who answers" chip, if a composer still has one, goes; every composer gets "@" instead.
+    document.querySelectorAll('.bot-chip').forEach((b) => b.remove());
+    document.querySelectorAll('.composer').forEach(wireMentions);
     paintChips();
   }
 
@@ -501,8 +559,10 @@
       ? `<div class="bot-deleg-error">${esc(d.error || 'It could not finish.')}</div>`
       : `${d.summary && !plain ? `<div class="bot-deleg-summary">${esc(d.summary)}</div>` : ''}${d.details ? `<div class="bot-deleg-details md">${mdToHtml(d.details)}</div>` : ''}`;
     const who = plain && !running && d.bot && d.bot.name ? `<div class="bot-deleg-fulltask">Specialist: ${esc(d.bot.name)}${d.created ? ' (new)' : ''}</div>` : '';
+    // Plain and finished: the helper's face shows (its name only on hover), so you see who helped without a roster.
+    const face = !plain || (!running && d.bot && d.bot.avatar);
     row.innerHTML = `<div class="bot-deleg-head">
-        ${plain ? '' : `<span class="bot-deleg-av">${av(bot.avatar, 24, { state: running ? 'working' : ok === false ? 'idle' : 'done' })}</span>`}
+        ${face ? `<span class="bot-deleg-av"${plain ? ` title="${esc(bot.name)}"` : ''}>${av(bot.avatar, 24, { state: running ? 'working' : ok === false ? 'idle' : 'done' })}</span>` : ''}
         <span class="bot-deleg-verb">${verb}</span><span class="bot-deleg-task">${esc(headLine)}</span>
         ${running ? '<span class="spinner"></span>' : icon('chevron-right', 'tool-chevron ico-sm')}</div>
       <div class="bot-deleg-body${running ? '' : ' hidden'}">
@@ -586,7 +646,7 @@
     }
   });
 
-  window.CraftBots = { selectedId: () => selected, delegationRow, renderBadge, open: openModal, refresh: load, setSelected };
+  window.CraftBots = { selectedId: () => selected, botFor, delegationRow, renderBadge, open: openModal, refresh: load, setSelected };
 
   addChips();
   load();

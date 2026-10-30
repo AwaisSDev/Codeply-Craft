@@ -894,7 +894,7 @@ async function rerunFrom(msg, text, restoreFiles) {
   const r = await api.editMessage({
     sessionId, userIndex, expectText, text, images, restoreFiles,
     cwd: state.project, mode: state.mode, bypass: state.bypass, clientId: desktopClientId,
-    botId: window.CraftBots ? window.CraftBots.selectedId() : undefined,
+    botId: window.CraftBots ? window.CraftBots.botFor(text) : undefined, // "@Name" picks a specialist (bots-ui.js)
   });
   if (r && r.restored) {
     const n = r.restored.files;
@@ -3609,7 +3609,7 @@ async function sendMessage(text, fromHome, images) {
     text,
     images,
     clientId: desktopClientId,
-    botId: window.CraftBots ? window.CraftBots.selectedId() : undefined, // who answers (bots-ui.js)
+    botId: window.CraftBots ? window.CraftBots.botFor(text) : undefined, // Codeply, or the specialist an "@Name" in it picks (bots-ui.js)
   });
 
   if (r.error) {
@@ -3834,6 +3834,7 @@ ${text}` : text, images: composer.pendingImages.length ? composer.pendingImages 
       // The slash-command menu (wired up further below, same input) owns
       // Enter while it's open - picking a command, not sending "/" as text.
       if (composer.slashMenuOpen && composer.slashMenuOpen()) return;
+      if (composer.mentionOpen && composer.mentionOpen()) return; // the "@" list (bots-ui.js) picks a name
       e.preventDefault();
       submit();
     }
