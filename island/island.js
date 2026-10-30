@@ -151,7 +151,7 @@
     shape.style.width = ''; shape.style.height = ''; shape.style.borderRadius = ''; shape.style.backgroundColor = '';
     settle('bar', 0, 0, () => {
       if (shapeIs() !== 'bar') return;
-      api.send('size', { width: WIDTH, height: REST_H });
+      restSize();
       clearTimeout(nextTimer); nextTimer = setTimeout(next, 120);
     });
   }
@@ -171,7 +171,7 @@
         shape.style.width = ''; shape.style.height = ''; shape.style.borderRadius = ''; shape.style.backgroundColor = '';
         render();
       });
-      api.send('size', { width: WIDTH, height: REST_H });
+      restSize();
       clearTimeout(nextTimer); nextTimer = setTimeout(next, 300);
       return;
     }
@@ -203,10 +203,15 @@
     if (w.say) $('said').textContent = `${$('said').textContent} ${w.say}`.trim();
     $('said').classList.toggle('note', !!w.note);
     if (!$('heard').textContent && !$('said').textContent) return;
+    if (S.attached) return; // the chat is open where the card would go: the words wait out of sight
     shelve();
     wordsUp = true;
     // Room for the card first (the window grows down, measured once the new text is laid out), then it shows.
     requestAnimationFrame(() => { sizeForWords(); card.classList.add('on'); });
+  }
+  // Back to the resting height, unless Orbit's words card is up: then never shorter than it.
+  function restSize() {
+    if (wordsUp) sizeForWords(); else api.send('size', { width: WIDTH, height: REST_H });
   }
   // The window as tall as the card and its shadow; again whenever the card's text makes it grow.
   function sizeForWords() {
@@ -287,6 +292,8 @@
       S.running = Math.max(0, Number(st.running) || 0);
       S.title = String(st.title || '');
       S.attached = !!st.attached;
+      // The chat opened (Alt+C, a click): it takes over the spot, so Orbit's words card steps aside.
+      if (S.attached && wordsUp) words({ clear: true });
       body.classList.toggle('under', !!st.under); // an app covers the top: the resting line fades (island.css)
       // Just clicked open: the drop's window is still on its way, so stay out of sight meanwhile.
       S.covered = !!st.covered || Date.now() - openedAt < 600;
