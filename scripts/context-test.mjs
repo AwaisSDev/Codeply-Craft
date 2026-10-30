@@ -318,6 +318,60 @@ if (section('Brain and bots hooks')) {
   check('contextBlock for an engine with no remember tool', /learns lasting preferences and decisions from this chat by itself/.test(BR.contextBlock({ learnsByItself: true })) && !/codeply:remember/.test(BR.contextBlock({ learnsByItself: true })));
 }
 
+if (section('DSH turns read the brain')) {
+  freshBrain('dsh');
+  BR.observe({ kind: 'preference', slot: 'package manager', value: 'pnpm', text: 'The user prefers pnpm over npm.', certainty: 'stated' });
+  const D = require(path.join(ROOT, 'dsh-chat.js'));
+  D.init({ cliDir: path.join(ROOT, 'codeply-cli'), aiLib: () => ({}), configLib: () => ({}) });
+  const session = { dsh: { folder: 'x', sessionId: 's1' } };
+  const first = D.brainPreamble(session, path.join(tmp, 'shop-app'), 'add a test runner', true);
+  check('a fresh DSH session gets the brain block', /CODEPLY BRAIN/.test(first) && /pnpm/.test(first) && /learns lasting preferences/.test(first));
+  check('the next turn, unchanged: not repeated', D.brainPreamble(session, path.join(tmp, 'shop-app'), 'add a test runner', false) === '');
+  BR.observe({ kind: 'preference', slot: 'test runner', value: 'vitest', text: 'The user prefers vitest for tests.', certainty: 'stated' });
+  check('after the brain changed: sent again', /vitest/.test(D.brainPreamble(session, path.join(tmp, 'shop-app'), 'add a test runner', false)));
+}
+
+if (section('Desktop host (context-desktop.js) with fake Electron')) {
+  freshBrain('desktop');
+  const home = path.join(tmp, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const oldHome = process.env.HOME;
+  process.env.HOME = home; process.env.USERPROFILE = home;
+  process.env.CODEPLY_MODELS_DIR = path.join(home, 'models');
+  process.env.CODEPLY_CONTEXT_DB = path.join(home, 'context.db');
+  const handlers = {};
+  const LS = lib('life-store.js');
+  const lifeStore = LS.openLifeStore({ file: path.join(home, 'life.db'), now: () => Date.now() });
+  const on = new Set(['heard']);
+  const lifeHost = { isOn: () => true, getStore: () => lifeStore, sourceOn: (s) => on.has(s), localTz: () => 'Asia/Karachi' };
+  let chatCalls = 0;
+  const aiLib = { chatJson: async () => { chatCalls++; return { success: true, json: { observations: [], plans: [] } }; } };
+  const CD = require(path.join(ROOT, 'context-desktop.js'));
+  CD.init({ ipcMain: { handle: (n, f) => { handlers[n] = f; } }, cliDir: path.join(ROOT, 'codeply-cli'), aiLib: () => aiLib, currentRoute: () => ({ auto: true }), life: lifeHost });
+  check('the IPC is there', ['context:state', 'context:set', 'context:process', 'context:undo'].every((n) => typeof handlers[n] === 'function'));
+  const st0 = await handlers['context:state']();
+  check('default: legacy, and the brain learns the old way', st0.settings.mode === 'legacy' && !BR.learnsElsewhere());
+  check('a remote server is refused as the local model', (await handlers['context:set']({}, { localUrl: 'https://example.com/v1' })).ok === false);
+  check('an unknown mode is refused', (await handlers['context:set']({}, { mode: 'turbo' })).ok === false);
+  const set = await handlers['context:set']({}, { mode: 'local' });
+  check('local mode: the engine takes over learning', set.ok && BR.learnsElsewhere() && fs.existsSync(path.join(home, '.codeply', 'context', 'settings.json')));
+  await BR.learnFromExchange({ userText: 'I prefer pnpm over npm for every project', replyText: 'ok', src: { product: 'craft' } }, async () => { throw new Error('must not call'); });
+  const r = await handlers['context:process']();
+  check('local mode with no local model installed: rules ran, the chat model was never called', chatCalls === 0 && r.batches[0] && r.batches[0].provider === 'rules', JSON.stringify(r));
+  check('state shows the hardware and what happened, without event text', (() => { const s = CD.state(); return s.hardware.logical >= 1 && s.recent.length >= 1 && !('text' in s.recent[0]); })());
+  lifeStore.upsertItem({ id: 'heard:9', source: 'heard', kind: 'todo', at: Date.now(), title: 'Send Ali the contract on Monday' });
+  lifeStore.upsertItem({ id: 'orbit:9', source: 'orbit', kind: 'question', at: Date.now(), title: 'what time is the Lahore flight' });
+  CD.collectLife();
+  check('Life collection stays off until the user turns it on', CD.state().stats.queue.pending === 0);
+  await handlers['context:set']({}, { life: { on: true } });
+  CD.collectLife();
+  check('then only Life sources that are on are collected (heard yes, orbit off in Life)', CD.state().stats.queue.pending === 1);
+  await handlers['context:set']({}, { mode: 'legacy' });
+  check('back to legacy: the old path again', !BR.learnsElsewhere());
+  CD.stop();
+  process.env.HOME = oldHome; process.env.USERPROFILE = oldHome;
+}
+
 if (section('Collectors: chats and Life')) {
   check('trivial turns are not events', C.exchangeEvent({ userText: 'thanks', replyText: 'np' }) === null && C.exchangeEvent({ userText: 'ok.' }) === null);
   const ex = C.exchangeEvent({ userText: 'I prefer Tailwind for styling', replyText: 'Got it', product: 'crew', botId: 'b1', botName: 'Mira', project: 'shop' });

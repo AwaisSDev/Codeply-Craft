@@ -170,6 +170,8 @@ function checkExtraction(answer, ctx = {}) {
     // A model may only propose: never a scope (team), never a delete, never a lesson.
     const { scope, forget, ...rest } = raw; // eslint-disable-line no-unused-vars
     if (String(rest.kind || '').toLowerCase() === 'lesson') { dropped.push({ item: raw, why: 'lessons come from bots, not events' }); continue; }
+    // "Ayesha loves sketching" is a fact about Ayesha, not the user's own preference.
+    if (raw.about === 'person' && SELF_KINDS.has(String(rest.kind || '').toLowerCase())) rest.kind = 'fact';
     const o = cleanObservation(rest);
     if (!o) { dropped.push({ item: raw, why: 'nothing to keep' }); continue; }
     let importance = Number(raw.importance);

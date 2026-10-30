@@ -235,6 +235,27 @@ function historyPreamble(history) {
 }
 
 /**
+ * The shared brain (codeply-cli/lib/brain.js) for a DSH turn: Classic turns get
+ * it in agent.mjs; DSH turns used to learn from the chat (main.js
+ * learnFromCraft) without ever reading it. It rides in front of the message,
+ * and only when it changed since this session last saw it, so the session's
+ * history does not fill up with copies.
+ */
+function brainPreamble(session, cwd, userMessage, fresh) {
+  try {
+    const brain = require(path.join(host.cliDir, 'lib', 'brain.js'));
+    const project = brain.projectOfFolder(cwd);
+    if (project) brain.touchProject({ name: project, path: cwd });
+    const block = brain.contextBlock({ cwd, request: userMessage, native: true, learnsByItself: true });
+    if (!block) return '';
+    const hash = crypto.createHash('sha1').update(block).digest('hex');
+    if (!fresh && session.dsh && session.dsh.brainHash === hash) return '';
+    session.dsh = { ...(session.dsh || {}), brainHash: hash };
+    return `${block}\n\n---\n\n`;
+  } catch { return ''; }
+}
+
+/**
  * Run one chat turn on the harness, yielding runAgent()-shaped events.
  * @param {object} o
  * @param {object} o.session - the Craft chat; its DSH session id is kept on it.
@@ -251,9 +272,11 @@ async function* runTurn({ session, userMessage, history, cwd, approve, signal, r
   const saved = session.dsh && session.dsh.folder === key ? session.dsh.sessionId : null;
   const sid = await engine.openSession(saved || undefined);
   const fresh = sid !== saved;
-  session.dsh = { folder: key, sessionId: sid };
+  // The same DSH session keeps the brain block it last saw (brainPreamble).
+  const brainHash = !fresh && session.dsh ? session.dsh.brainHash : undefined;
+  session.dsh = { folder: key, sessionId: sid, ...(brainHash ? { brainHash } : {}) };
   routes.set(sid, route || { auto: true });
-  const prompt = (fresh ? historyPreamble(history) : '') + userMessage;
+  const prompt = (fresh ? historyPreamble(history) : '') + brainPreamble(session, cwd, userMessage, fresh) + userMessage;
 
   // DSH asks before a write, an edit or a command; reads just run, as in Classic.
   const dshApprove = async (req) => {
@@ -333,4 +356,4 @@ function dispose() {
   if (bridge) { try { bridge.server.close(); } catch {} bridge = null; }
 }
 
-module.exports = { init, available, warm, runTurn, dispose };
+module.exports = { init, available, warm, runTurn, dispose, brainPreamble };

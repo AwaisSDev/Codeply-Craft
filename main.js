@@ -4011,6 +4011,15 @@ brainDesktop.init({
   crewEvent: (ev) => { if (crewMod) crewMod.pushEvent(ev); },
   onBotsChange: () => botsWatch.poke(),
 });
+// Context intelligence (context-desktop.js): what the brain learns from chats and
+// Life, extracted by the backend the user picks (legacy, the chat route, or a
+// local model on this PC). Legacy until the user picks a mode.
+const contextDesktop = require('./context-desktop');
+app.whenReady().then(() => contextDesktop.init({
+  ipcMain, cliDir: CLI_DIR, modulePaths: [__dirname, CLI_DIR], aiLib: () => aiLib, currentRoute,
+  safeStorage: require('electron').safeStorage, life: lifeDesktop,
+  onBrainChange: () => brainDesktop.push(),
+}));
 // Bots: named agents with a job, a tone, memory and an avatar (see bots-desktop.js).
 const botsDesktop = require('./bots-desktop');
 botsDesktop.init({
@@ -4396,6 +4405,7 @@ app.on('before-quit', () => {
   saveTasks();
   jobsQuitting = true;
   if (jobsApi()) jobsApi().stopAll(); // background commands end with the app
+  contextDesktop.stop(); // and the local model server with them
   drop.dispose();
   voiceMode.dispose();
   convertWheel.dispose();
