@@ -57,7 +57,7 @@ numbers. It matters for the planned consolidation jobs that read long
 documents (RUNTIME.md: a dense 1.7B model at 32K needs ~2 GB of KV cache
 in q8_0).
 
-## 3. Quality (off the shelf, prompt v1)
+## 3. Quality (off the shelf, prompt v1; v2 below)
 
 `test-mini`: 92 generated examples, every task 4 times. `gold`: 39
 hand-written examples in natural phrasing, the check for template
@@ -95,7 +95,30 @@ overfitting. Full metric definitions: `ml/eval/README.md`.
 * **Every model fails the release gate untrained** (false memories,
   certainty, memory actions). That is the fine-tune's job.
 
-<!-- prompt-v2 -->
+### Prompt v2
+
+Every model in v1 put meetings in observations instead of plans, split
+"back by 5" from the live context, or recorded the event time stamp as a
+memory. Prompt v2 (`context-prompt.js`, `PROMPT_VERSION = 2`) adds three
+rules for exactly that and one worked example with a date to compute. On
+the two models carried forward:
+
+| Model, set | F1 | Kind | Plans R | Temporal | Mem. actions | Noise ok | False mem. |
+|---|---|---|---|---|---|---|---|
+| lfm3-1.7b-qad-q4, test-mini, v1 → v2 | 0.83 → 0.80 | 84 → 74 % | 0 → 25 % | 0 → 20 % | 72 → 78 % | 100 → 100 % | 42 → 42 % |
+| lfm3-1.7b-qad-q4, gold, v1 → v2 | 0.73 → 0.70 | 44 → 50 % | 0 → 33 % | 0 → 33 % | 59 → 59 % | 100 → 100 % | 25 → 25 % |
+| qwen2.5-1.5b-q4, test-mini, v1 → v2 | 0.71 → 0.78 | 42 → 33 % | 100 → 100 % | 20 → 40 % | 47 → 41 % | 75 → 25 % | 92 → 100 % |
+| qwen2.5-1.5b-q4, gold, v1 → v2 | 0.54 → 0.58 | 50 → 32 % | 100 → 100 % | 0 → 33 % | 47 → 47 % | 40 → 60 % | 100 → 100 % |
+
+**Kept: v2 is the prompt now.** On the recommended model, plans and live
+context went from never working to working some of the time (with dates
+and times right when found), and the brain's actions improved, for 0.03 F1,
+mostly kind labels on person and idea examples (4 examples per task, so
+partly noise). Kind labels are what fine-tuning fixes best; a plan the
+model never emits cannot be fixed by the brain. The v1 results stay in
+`ml/results/` (files without `-p2`). The training data export
+(`ml/data/export-sft.mjs`) renders with this builder, so a fine-tune now
+learns the v2 rules.
 
 ## 4. Speed and memory (4-core Xeon, 4 threads, no GPU)
 
