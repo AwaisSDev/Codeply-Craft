@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('craft', {
   // a masked preview.
   listModels: () => ipcRenderer.invoke('models:list'),
   selectModel: (id) => ipcRenderer.invoke('models:select', id),
+  setModelEffort: (id, effort) => ipcRenderer.invoke('models:effort', { id, effort }),
   saveModel: (input) => ipcRenderer.invoke('models:save', input),
   deleteModel: (id) => ipcRenderer.invoke('models:delete', id),
   setModelPhone: (id, on) => ipcRenderer.invoke('models:setPhone', { id, on }),

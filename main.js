@@ -907,7 +907,7 @@ function currentRoute() {
 function publicModel(m) {
   const phone = modelSyncLib.phoneStatus(m, phoneUserId);
   return {
-    id: m.id, name: m.name, kind: m.kind, baseUrl: m.baseUrl, model: m.model,
+    id: m.id, name: m.name, kind: m.kind, baseUrl: m.baseUrl, model: m.model, effort: m.effort || '',
     hasKey: !!m.apiKey, keyPreview: m.apiKey ? configLib.maskKey(m.apiKey) : '',
     // phone: { eligible, on, synced, reason } - "synced" also tells the phone
     // it can use this model while the PC is off.
@@ -1005,6 +1005,13 @@ ipcMain.handle('models:list', async () => {
 ipcMain.handle('models:select', async (e, id) => {
   if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
   const r = configLib.selectModel(id || configLib.AUTO_MODEL_ID);
+  return r.ok ? { ok: true, state: modelsState() } : r;
+});
+
+// /effort: how hard one of the user's own models thinks. Haze 2 picks its own; it's never set from here.
+ipcMain.handle('models:effort', async (e, { id, effort } = {}) => {
+  if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
+  const r = configLib.setModelEffort(String(id || ''), String(effort || ''));
   return r.ok ? { ok: true, state: modelsState() } : r;
 });
 

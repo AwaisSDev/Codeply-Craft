@@ -1121,7 +1121,7 @@ async function chatViaChatGPT(messages, opts, m) {
       res = await fetch(`${chatgpt.RESOURCE}/responses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(toResponsesRequest(messages, { ...opts, model: m.model })),
+        body: JSON.stringify({ ...toResponsesRequest(messages, { ...opts, model: m.model }), ...(m.effort ? { reasoning: { effort: m.effort } } : {}) }),
         signal,
       });
     } catch (e) {
@@ -1222,6 +1222,8 @@ function chatViaCustom(messages, opts, m) {
   return streamingChatRequest({
     url, label: m.name || m.model, model: m.model, apiKey: m.apiKey, isLocal: local,
     messages, opts, hasSpare: false, idleMs: local ? LOCAL_IDLE_TIMEOUT_MS : REQUEST_TIMEOUT_MS,
+    // /effort on the user's own model (config.js setModelEffort); OpenAI-style APIs read reasoning_effort.
+    extraBody: m.effort ? { reasoning_effort: m.effort } : undefined,
   });
 }
 

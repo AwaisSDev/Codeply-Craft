@@ -344,6 +344,7 @@ function saveModel(input) {
   const phone = typeof input.phone === 'boolean' ? input.phone : existing?.phone;
   if (typeof phone === 'boolean') entry.phone = phone;
   for (const k of PHONE_FIELDS) if (existing && existing[k] !== undefined) entry[k] = existing[k];
+  if (existing && existing.effort) entry.effort = existing.effort; // set with setModelEffort (/effort)
   file.models = existing
     ? file.models.map((m) => (m.id === entry.id ? entry : m))
     : [...file.models, entry];
@@ -352,6 +353,22 @@ function saveModel(input) {
 }
 
 const PHONE_FIELDS = ['phoneSyncedAt', 'phoneUser', 'phoneError'];
+
+/**
+ * How hard one of the user's own models thinks (/effort): low, medium, high,
+ * or '' for the provider's default. Haze 2 (auto) isn't a saved model, so its
+ * effort can never be set here.
+ */
+const EFFORTS = ['low', 'medium', 'high'];
+function setModelEffort(id, effort) {
+  const file = readModelsState();
+  const m = file.models.find((x) => x.id === id);
+  if (!m) return { ok: false, error: 'Effort can only be set on your own models.' };
+  if (effort && !EFFORTS.includes(effort)) return { ok: false, error: 'Effort is low, medium or high.' };
+  if (effort) m.effort = effort; else delete m.effort;
+  const w = writeFile(file);
+  return w.ok ? { ok: true, model: m } : w;
+}
 
 /** Updates a model's phone sync state: { phone?, phoneSyncedAt?, phoneUser?, phoneError? }. */
 function setModelPhone(id, patch) {
@@ -468,5 +485,5 @@ module.exports = {
   configPath, PROVIDERS, BYOK_PROVIDERS,
   getIntegration, saveIntegration, disconnectIntegration, isIntegrationConnected, INTEGRATIONS,
   AUTO_MODEL_ID, getModels, getModel, getSelectedModel, getSelectedModelId, saveModel, deleteModel, selectModel, syncChatGPTModels,
-  setModelPhone, getPhoneDeletes, setPhoneDeletes,
+  setModelPhone, getPhoneDeletes, setPhoneDeletes, setModelEffort, EFFORTS,
 };
