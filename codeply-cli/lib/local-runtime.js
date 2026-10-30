@@ -40,11 +40,15 @@ const CATALOG = {
   'gemma3-1b-q4': { repo: 'ggml-org/gemma-3-1b-it-GGUF', file: 'gemma-3-1b-it-Q4_K_M.gguf', license: 'Gemma Terms of Use', params: '1.0B', arch: 'dense transformer', ctx: 8192 },
   'qwen2.5-1.5b-q4': { repo: 'Qwen/Qwen2.5-1.5B-Instruct-GGUF', file: 'qwen2.5-1.5b-instruct-q4_k_m.gguf', license: 'Apache-2.0', params: '1.5B', arch: 'dense transformer', ctx: 8192 },
   'qwen3.5-0.8b-q4': { repo: 'unsloth/Qwen3.5-0.8B-GGUF', file: 'Qwen3.5-0.8B-Q4_K_M.gguf', license: 'Apache-2.0', params: '0.8B', arch: 'hybrid (linear + full attention)', ctx: 8192, extra: { chat_template_kwargs: { enable_thinking: false } } },
-  'lfm2.5-1.2b-q4': { repo: 'LiquidAI/LFM2.5-1.2B-Instruct-GGUF', file: 'LFM2.5-1.2B-Instruct-Q4_K_M.gguf', license: 'LFM Open License v1.0', params: '1.2B', arch: 'hybrid (conv + attention)', ctx: 8192 },
+  // The conv state is checkpointed one micro-batch before the end of the prompt: with the default
+  // 512, only ~370 of ~880 tokens are reused; 128 reuses the whole system prompt (BENCHMARKS.md).
+  'lfm2.5-1.2b-q4': { repo: 'LiquidAI/LFM2.5-1.2B-Instruct-GGUF', file: 'LFM2.5-1.2B-Instruct-Q4_K_M.gguf', license: 'LFM Open License v1.0', params: '1.2B', arch: 'hybrid (conv + attention)', ctx: 8192, serverArgs: ['-ub', '128'] },
   // LFM3 (2026-10-23): conv + sliding-window + global attention, 256K context, built for local agents.
   // Its chat template thinks by default (hundreds of tokens before the JSON): turned off like Qwen3.
-  'lfm3-1.7b-q4': { repo: 'LiquidAI/LFM3-1.7B-GGUF', file: 'LFM3-1.7B-Q4_K_M.gguf', license: 'LFM Open License v1.0', params: '1.7B', arch: 'tri-hybrid (conv + sliding + global attention)', ctx: 8192, extra: { chat_template_kwargs: { enable_thinking: false } } },
-  'lfm3-1.7b-qad-q4': { repo: 'LiquidAI/LFM3-1.7B-GGUF', file: 'LFM3-1.7B-QAD-Q4_0.gguf', license: 'LFM Open License v1.0', params: '1.7B', arch: 'tri-hybrid (conv + sliding + global attention), quantization-aware Q4_0', ctx: 8192, extra: { chat_template_kwargs: { enable_thinking: false } } },
+  // --swa-full keeps the sliding-window cache whole, so the fixed system prompt is reused on every
+  // call (744 of ~845 tokens instead of ~330; prompt time 5.5 s -> 1.2 s, +18 MB; BENCHMARKS.md).
+  'lfm3-1.7b-q4': { repo: 'LiquidAI/LFM3-1.7B-GGUF', file: 'LFM3-1.7B-Q4_K_M.gguf', license: 'LFM Open License v1.0', params: '1.7B', arch: 'tri-hybrid (conv + sliding + global attention)', ctx: 8192, extra: { chat_template_kwargs: { enable_thinking: false } }, serverArgs: ['--swa-full'] },
+  'lfm3-1.7b-qad-q4': { repo: 'LiquidAI/LFM3-1.7B-GGUF', file: 'LFM3-1.7B-QAD-Q4_0.gguf', license: 'LFM Open License v1.0', params: '1.7B', arch: 'tri-hybrid (conv + sliding + global attention), quantization-aware Q4_0', ctx: 8192, extra: { chat_template_kwargs: { enable_thinking: false } }, serverArgs: ['--swa-full'] },
   // Embedding models for meaning-based retrieval (context-retrieval.js).
   'nomic-embed-v1.5': { repo: 'nomic-ai/nomic-embed-text-v1.5-GGUF', file: 'nomic-embed-text-v1.5.Q8_0.gguf', license: 'Apache-2.0', params: '137M', arch: 'embedding (BERT)', ctx: 2048, embedding: { pooling: 'mean', prefix: { query: 'search_query: ', doc: 'search_document: ' } } },
   'bge-small-en-v1.5': { repo: 'CompendiumLabs/bge-small-en-v1.5-gguf', file: 'bge-small-en-v1.5-q8_0.gguf', license: 'MIT', params: '33M', arch: 'embedding (BERT)', ctx: 512, embedding: { pooling: 'cls', prefix: { query: 'Represent this sentence for searching relevant passages: ', doc: '' } } },
@@ -142,7 +146,7 @@ function memoryOf(pid) {
 /**
  * @param {object} o
  * @param {string} [o.binary]       llama-server path (default findBinary())
- * @param {{ id: string, path: string, ctx?: number }} o.model
+ * @param {{ id: string, path: string, ctx?: number, serverArgs?: string[] }} o.model   serverArgs: per-model llama-server flags (CATALOG)
  * @param {number} [o.threads]      default pickThreads()
  * @param {number} [o.ctx]          context size (default the model's, else 8192)
  * @param {number} [o.idleMs]       stop after this long with no request (default 5 min)
@@ -194,7 +198,7 @@ function createRuntime(o) {
     const args = [
       '-m', o.model.path, '--host', '127.0.0.1', '--port', String(port), '--api-key-file', keyFile,
       '-t', String(threads), '-tb', String(threads), '-c', String(o.ctx || o.model.ctx || 8192), '-np', '1',
-      '--no-webui', '--jinja', '--prio', '-1', '--log-disable', '--offline', ...(o.args || []),
+      '--no-webui', '--jinja', '--prio', '-1', '--log-disable', '--offline', ...(o.model.serverArgs || []), ...(o.args || []),
     ];
     log(`[runtime] starting ${path.basename(binary)} ${o.model.id} on 127.0.0.1:${port}, ${threads} threads`);
     child = spawn(binary, args, { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });

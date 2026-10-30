@@ -183,6 +183,26 @@ if (section('Local backend: an OpenAI-compatible server on this PC')) {
   srv.close();
 }
 
+if (section('Local runtime: llama-server arguments')) {
+  const RT = lib('local-runtime.js');
+  const gguf = path.join(tmp, 'fake.gguf');
+  fs.writeFileSync(gguf, '');
+  const argsFor = async (model, extra) => {
+    let seen = null;
+    // A fake llama-server that exits at once: start() fails, but the arguments are recorded.
+    const spawn = (bin, args) => { seen = args; const child = new (require('events'))(); child.pid = 0; setImmediate(() => child.emit('exit', 1)); return child; };
+    const rt = RT.createRuntime({ binary: 'llama-server', model: { ...model, path: gguf }, spawn, threads: 3, idleMs: 0, startTimeoutMs: 2000, args: extra });
+    await rt.ensure().catch(() => {});
+    return seen || [];
+  };
+  const lfm3 = await argsFor({ id: 'lfm3-1.7b-qad-q4', ...RT.CATALOG['lfm3-1.7b-qad-q4'] }, ['-ctk', 'q8_0']);
+  check('LFM3 keeps the full sliding-window cache (prompt cache reuse)', lfm3.includes('--swa-full') && lfm3.indexOf('--swa-full') < lfm3.indexOf('-ctk'));
+  const lfm25 = await argsFor({ id: 'lfm2.5-1.2b-q4', ...RT.CATALOG['lfm2.5-1.2b-q4'] });
+  check('LFM2.5 uses 128-token micro-batches', lfm25[lfm25.indexOf('-ub') + 1] === '128');
+  const qwen = await argsFor({ id: 'qwen2.5-1.5b-q4', ...RT.CATALOG['qwen2.5-1.5b-q4'] });
+  check('other models get no extra flags; always loopback with a key file', !qwen.includes('--swa-full') && !qwen.includes('-ub') && qwen[qwen.indexOf('--host') + 1] === '127.0.0.1' && qwen.includes('--api-key-file'));
+}
+
 if (section('Event queue')) {
   const st = freshStore('queue');
   const a = st.ingest(chat('I prefer dark mode in every editor'));
