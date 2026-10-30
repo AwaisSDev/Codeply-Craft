@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 const DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../results');
 const results = fs.readdirSync(DIR).filter((f) => f.endsWith('.json') && f !== 'retrieval.json' && !f.startsWith('bench'))
   .map((f) => JSON.parse(fs.readFileSync(path.join(DIR, f), 'utf8')))
+  .filter((r) => r.set && r.extraction) // extraction runs only (not retrieval or bench)
   .sort((a, b) => (a.set === b.set ? (b.extraction.f1 - a.extraction.f1) : a.set.localeCompare(b.set)));
 const pct = (x) => (x == null ? '–' : `${Math.round(x * 100)}%`);
 const n2 = (x) => (x == null ? '–' : x.toFixed(2));
