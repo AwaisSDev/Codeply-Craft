@@ -2858,6 +2858,59 @@ const MODES = ['Build', 'Plan', 'Ask'];
 
 function syncMode() {
   document.querySelectorAll('[data-role="mode-name"]').forEach((el) => (el.textContent = state.mode));
+  // Build is the default and needs no pill; Plan or Ask shows one on the row (styles.css), with its own icon.
+  document.querySelectorAll('[data-role="mode-chip"]').forEach((el) => {
+    el.classList.toggle('set', state.mode !== 'Build');
+    const ic = el.querySelector('svg');
+    if (ic && ic.dataset.mode !== state.mode) ic.outerHTML = icon(MODE_INFO[state.mode][0]).replace('<svg', `<svg data-mode="${state.mode}"`);
+  });
+}
+const MODE_INFO = { Build: ['hammer', 'Makes the changes'], Plan: ['list', 'Plans first, changes nothing'], Ask: ['chat', 'Answers, changes nothing'] };
+
+// ─── The + menu: files, the mode, research, cloud and a goal ────────────────
+// Like ChatGPT's: the row under the box keeps only what's on (the permission
+// chip, a mode other than Build, Research or Cloud while on); everything else
+// lives here. Research and Cloud keep their own chips (hidden while off), so
+// their setup flows stay theirs: the menu just clicks them.
+function openPlusMenu(composer, anchor, attachInput) {
+  const open = document.querySelector('.plus-menu');
+  if (open) { const same = open.dataset.for === composer.dataset.composer; open.remove(); if (same) return; }
+  const input = composer.querySelector('.composer-input');
+  const rm = composer.querySelector('.rm-chip');
+  const cloud = composer.querySelector('.cloud-chip');
+  const tick = (on) => (on ? icon('check', 'plus-tick') : '');
+  const menu = document.createElement('div');
+  menu.className = 'menu plus-menu';
+  menu.dataset.for = composer.dataset.composer;
+  menu.innerHTML = `
+    <div class="plus-label">Add</div>
+    <button class="menu-item" data-act="files">${icon('paperclip')}<span class="plus-t">Files and photos</span></button>
+    <button class="menu-item" data-act="goal">${icon('target')}<span class="plus-t">Goal</span><span class="plus-d">Keep going until it's done and verified</span></button>
+    <div class="plus-label">Mode</div>
+    ${MODES.map((m) => `<button class="menu-item" data-mode="${m}">${icon(MODE_INFO[m][0])}<span class="plus-t">${m}</span><span class="plus-d">${MODE_INFO[m][1]}</span>${tick(state.mode === m)}</button>`).join('')}
+    ${rm || cloud ? '<div class="plus-label">Tools</div>' : ''}
+    ${rm ? `<button class="menu-item" data-act="research">${icon('flask')}<span class="plus-t">Research</span><span class="plus-d">Your research context with every message</span>${tick(rm.classList.contains('on'))}</button>` : ''}
+    ${cloud ? `<button class="menu-item" data-act="cloud">${icon('cloud')}<span class="plus-t">Cloud</span><span class="plus-d">Keep working while this PC is off</span>${tick(cloud.classList.contains('on'))}</button>` : ''}`;
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.left = `${Math.max(8, Math.min(r.left - 6, innerWidth - menu.offsetWidth - 8))}px`;
+  menu.style.top = `${Math.max(8, r.top - menu.offsetHeight - 8)}px`;
+  const close = () => { menu.remove(); document.removeEventListener('mousedown', outside, true); document.removeEventListener('keydown', esc, true); };
+  const outside = (e) => { if (!menu.contains(e.target) && !anchor.contains(e.target)) close(); };
+  const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  setTimeout(() => { document.addEventListener('mousedown', outside, true); document.addEventListener('keydown', esc, true); }, 0);
+  menu.addEventListener('click', (e) => {
+    const b = e.target.closest('.menu-item');
+    if (!b) return;
+    close();
+    if (b.dataset.mode) { state.mode = b.dataset.mode; syncMode(); input.focus(); return; }
+    const act = b.dataset.act;
+    if (act === 'files') attachInput.click();
+    else if (act === 'goal') fillCommand(input, '/goal ');
+    else if (act === 'research' && rm) rm.click();
+    else if (act === 'cloud' && cloud) cloud.click();
+  });
 }
 document.querySelectorAll('[data-role="mode-chip"]').forEach((el) =>
   el.addEventListener('click', () => {
@@ -3663,7 +3716,8 @@ document.querySelectorAll('.composer').forEach((composer) => {
   if (attachInput && window.CodeplyAttach) attachInput.accept = 'image/*,' + window.CodeplyAttach.ACCEPT;
   const attachBtn = composer.querySelector('[data-role="attach"]');
   if (attachBtn && attachInput) {
-    attachBtn.addEventListener('click', () => attachInput.click());
+    attachBtn.addEventListener('click', () => openPlusMenu(composer, attachBtn, attachInput));
+    attachBtn.title = 'Add files, switch mode, research and more';
     attachInput.addEventListener('change', () => { const list = [...attachInput.files]; attachInput.value = ''; addFiles(list); input.focus(); });
   }
   // The chat box is one slim row: + and send inside it, the mode and model

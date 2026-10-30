@@ -2631,11 +2631,14 @@ a.remote-url { text-decoration: none; cursor: pointer; }
 .composer-bottom .bot-chip { font-size: 13.5px; color: var(--text); } /* bots-ui.css draws it dim; the row is bright */
 .send-btn { flex-shrink: 0; }
 @container (max-width: 700px) {
-  .composer-bottom [data-role="bypass-label"], .composer-bottom .rm-chip > span { display: none; }
   .composer-bottom .model-btn { max-width: 150px; }
 }
+/* the row only holds what's on now (the + menu has the rest), so the label stays until it's really tight */
+@container (max-width: 420px) {
+  .composer-bottom [data-role="bypass-label"], .composer-bottom .rm-chip > span { display: none; }
+}
 @container (max-width: 560px) {
-  .composer-bottom [data-role="mode-name"], .composer-bottom .cloud-chip > span, .composer-bottom .bot-chip > span { display: none; }
+  .composer-bottom .cloud-chip > span, .composer-bottom .bot-chip > span { display: none; }
   .composer-bottom .approve-toggle, .composer-bottom .chip { padding: 0 8px; }
   .composer-bottom .model-btn { max-width: 120px; }
 }
@@ -3072,3 +3075,17 @@ body { font-family: var(--font-ui); font-size: 14px; font-weight: 400; -webkit-f
 .model-menu { border-radius: 14px; background: var(--cg-menu-bg); border-color: var(--cg-menu-border); box-shadow: var(--shadow-md); }
 .model-menu .model-item, .model-menu .model-menu-action { border-radius: 10px; }
 .modal { border-radius: 16px; }
+
+/* ─── The row under the box, like ChatGPT: only what's on ─────────────────────
+   Regular weight labels. The mode, Research and Cloud live in the + menu
+   (openPlusMenu in app.js); their pill shows here only while it's on. */
+.composer-bottom .approve-toggle, .composer-bottom .chip, .composer-slim .approve-toggle, .composer-slim .chip { font-weight: 400; }
+.composer [data-role="mode-chip"]:not(.set), .composer .rm-chip:not(.on), .composer .cloud-chip:not(.on), .composer .rm-chip-more, .composer .cloud-chip-more { display: none; }
+.plus-menu { min-width: 300px; max-width: 360px; padding: 6px; z-index: 1000; }
+.plus-menu .menu-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; }
+.plus-menu .menu-item > svg:first-child { width: 16px; height: 16px; flex: none; color: var(--text-dim); }
+.plus-menu .plus-t { flex: none; color: var(--text); font-weight: 400; }
+.plus-menu .plus-d { flex: 1; min-width: 0; color: var(--text-faint); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plus-menu .plus-tick { width: 15px; height: 15px; flex: none; margin-left: auto; color: var(--text); }
+.plus-menu .plus-label { padding: 8px 10px 4px; font-size: 12.5px; font-weight: 500; color: var(--text-faint); }
+.plus-menu .plus-label:first-child { padding-top: 4px; }
