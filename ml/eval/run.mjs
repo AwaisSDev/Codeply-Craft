@@ -3,6 +3,7 @@
 //
 //   node ml/eval/run.mjs --provider rules                     [--set test-mini] [--limit N]
 //   node ml/eval/run.mjs --provider local:qwen3-1.7b-q4       (starts llama-server via local-runtime.js)
+//   node ml/eval/run.mjs --provider local:qwen3-0.6b-q4 --no-schema   (plain JSON mode, no grammar; result name gets -noschema)
 //   node ml/eval/run.mjs --provider openai --base-url http://127.0.0.1:11434/v1 --model qwen3:1.7b
 //   CONTEXT_EVAL_API_KEY=... node ml/eval/run.mjs --provider openai --base-url https://... --model ...   (a cloud model, if you have a key)
 //
@@ -38,6 +39,7 @@ const S = lib('context-schema.js');
 const M = lib('context-model.js');
 const RT = lib('local-runtime.js');
 const { redact } = lib('context-redact.js');
+const { PROMPT_VERSION } = lib('context-prompt.js');
 
 const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : d; };
@@ -45,7 +47,8 @@ const SET = opt('set', 'test-mini');
 const PROVIDER = opt('provider', 'rules');
 const LIMIT = Number(opt('limit', 0));
 const STYLE = opt('style', 'full');
-const NAME = opt('name', `${PROVIDER.replace(/[^a-z0-9.-]+/gi, '_')}-${SET}${STYLE !== 'full' ? `-${STYLE}` : ''}`);
+const SCHEMA = !args.includes('--no-schema');
+const NAME = opt('name', `${PROVIDER.replace(/[^a-z0-9.-]+/gi, '_')}-${SET}${STYLE !== 'full' ? `-${STYLE}` : ''}${SCHEMA ? '' : '-noschema'}${PROMPT_VERSION > 1 ? `-p${PROMPT_VERSION}` : ''}`);
 const OUT = path.resolve(opt('out', path.join(ROOT, 'ml/results')));
 const THREADS = Number(opt('threads', 0)) || undefined;
 const CTX = Number(opt('ctx', 4096));
@@ -64,14 +67,14 @@ function makeProvider() {
     const model = RT.models().find((m) => m.id === id);
     if (!model) throw new Error(`Model ${id} is not installed (node scripts/context/fetch-model.mjs ${id}).`);
     runtime = RT.createRuntime({ model, threads: THREADS, ctx: CTX, idleMs: 0, args: ['-ctk', 'q8_0', '-ctv', 'q8_0'] });
-    return M.createLocalProvider({ id, model: id, ensure: runtime.ensure, canStart: runtime.canStart, extraBody: model.extra, style: STYLE, timeoutMs: 300000 });
+    return M.createLocalProvider({ id, model: id, ensure: runtime.ensure, canStart: runtime.canStart, extraBody: model.extra, style: STYLE, schema: SCHEMA, timeoutMs: 300000 });
   }
   if (PROVIDER === 'openai') {
     const baseUrl = opt('base-url', process.env.CONTEXT_EVAL_BASE_URL);
     const model = opt('model', process.env.CONTEXT_EVAL_MODEL);
     const apiKey = process.env.CONTEXT_EVAL_API_KEY || '';
     if (!baseUrl || !model) throw new Error('--base-url and --model are needed');
-    if (M.isLocalUrl(baseUrl)) return M.createLocalProvider({ baseUrl, model, apiKey, style: STYLE, schema: !args.includes('--no-schema') });
+    if (M.isLocalUrl(baseUrl)) return M.createLocalProvider({ baseUrl, model, apiKey, style: STYLE, schema: SCHEMA });
     // A remote model: the cloud backend over a plain OpenAI-compatible call (only with a key you have).
     const chatJson = async (messages) => {
       const res = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: JSON.stringify({ model, messages, temperature: 0, response_format: { type: 'json_object' } }) });
@@ -230,7 +233,7 @@ async function main() {
   const imp = rows.flatMap((r) => r.imp);
   const lat = rows.map((r) => r.ms).sort((a, b) => a - b);
   const result = {
-    name: NAME, provider: PROVIDER, set: SET, style: STYLE, examples: rows.length, at: new Date().toISOString(),
+    name: NAME, provider: PROVIDER, set: SET, style: STYLE, schema: SCHEMA, promptVersion: PROMPT_VERSION, examples: rows.length, at: new Date().toISOString(),
     host: { cpu: os.cpus()[0] && os.cpus()[0].model, logical: os.cpus().length, ramMB: Math.round(os.totalmem() / 1048576), threads: THREADS || (runtime ? RT.pickThreads() : null), ctx: runtime ? CTX : null },
     validity: rate(rows.map((r) => r.ok)),
     extraction: prf(rows),
