@@ -205,10 +205,15 @@
     if (!$('heard').textContent && !$('said').textContent) return;
     shelve();
     wordsUp = true;
-    // Room for the card first (the window grows down), then it shows.
-    api.send('size', { width: WIDTH, height: Math.max(REST_H, card.offsetTop + card.scrollHeight + 24) });
-    requestAnimationFrame(() => card.classList.add('on'));
+    // Room for the card first (the window grows down, measured once the new text is laid out), then it shows.
+    requestAnimationFrame(() => { sizeForWords(); card.classList.add('on'); });
   }
+  // The window as tall as the card and its shadow; again whenever the card's text makes it grow.
+  function sizeForWords() {
+    const card = $('say');
+    if (wordsUp) api.send('size', { width: WIDTH, height: Math.max(REST_H, card.offsetTop + card.offsetHeight + 40) });
+  }
+  new ResizeObserver(() => sizeForWords()).observe($('say'));
   function next() {
     if (ping || !queue.length || !free() || shapeIs() !== 'bar') return;
     ping = queue.shift();

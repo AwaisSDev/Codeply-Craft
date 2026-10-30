@@ -207,8 +207,22 @@ function voiceLevel(v) {
 }
 
 /** From voice-mode.js: what Orbit heard and says, for the card under the line ({ heard | say | hint | clear }). */
+// While Orbit's words show, the see-through window is redrawn now and then:
+// Windows can leave a see-through window drawn half wrong after Alt+Tab
+// shuffles the windows behind it, and the next full repaint puts it right.
+let repaintTimer = null;
+let repaintStop = null;
+function repaintWhileWords(on) {
+  clearInterval(repaintTimer); repaintTimer = null;
+  clearTimeout(repaintStop); repaintStop = null;
+  if (!on) return;
+  repaintTimer = setInterval(() => { try { if (alive()) win.webContents.invalidate(); } catch {} }, 500);
+  repaintStop = setTimeout(() => repaintWhileWords(false), 30000); // never left running if a clear goes missing
+}
+
 function voiceWords(w) {
   if (hidden() || !w || typeof w !== 'object') return;
+  repaintWhileWords(!w.clear);
   send('words', {
     clear: !!w.clear, note: !!w.note,
     heard: typeof w.heard === 'string' ? w.heard.slice(0, 400) : undefined,
@@ -284,6 +298,7 @@ function init(h) {
 function dispose() {
   quitting = true;
   clearInterval(watchTimer);
+  repaintWhileWords(false);
   try { if (alive()) win.destroy(); } catch {}
 }
 
