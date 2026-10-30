@@ -373,7 +373,10 @@
         showBuddy();
         buddy.classList.remove('listening', 'thinking', 'speaking', 'your-turn', 'working');
         buddy.classList.add(m.mode);
-        buddy.classList.toggle('bar-on', !!m.bar); // the top bar shows the waveform instead
+        // The top bar shows the waveform and the words instead. A mode without `bar`
+        // (mid-task "working") keeps the last setting. The bubble lives outside the
+        // buddy (see above), so it hides by the body's class.
+        if ('bar' in m) { buddy.classList.toggle('bar-on', !!m.bar); document.body.classList.toggle('bar-on', !!m.bar); }
         note.textContent = m.note || ''; note.classList.toggle('on', !!m.note);
         buddy.classList.toggle('has-note', !!m.note); // "Getting voice ready…" keeps its pill while loading
         if (m.hint) hint.textContent = m.hint;

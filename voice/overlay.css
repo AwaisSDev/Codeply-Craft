@@ -143,4 +143,4 @@ body.catching { cursor: crosshair; background: rgba(0, 0, 0, 0.01) !important; }
 .buddy.bar-on .pointer { transform: scale(0); }
 .buddy.bar-on.moving .pointer, .buddy.bar-on.arrived .pointer, .buddy.bar-on.your-turn .pointer, .buddy.bar-on.working .pointer { transform: scale(1); }
 /* what it heard and says shows in a card under the bar's waveform instead (island.css .say) */
-.buddy.bar-on .bubble { visibility: hidden; }
+.buddy.bar-on .bubble, body.bar-on .bubble { visibility: hidden; }
