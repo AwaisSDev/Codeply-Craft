@@ -6,7 +6,7 @@
   box-shadow: 0 12px 32px rgba(0,0,0,.35);
 }
 .rm-pop.hidden { display: none; }
-.rm-chip svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.rm-chip svg { fill: none; stroke: currentColor; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; }
 .rm-chip.on, .rm-chip.on:hover { color: var(--accent); background: var(--purple-chip-bg); }
 .rm-chip-dot { display: none; width: 6px; height: 6px; border-radius: 50%; background: var(--red); margin-left: -2px; }
 .rm-chip.bad .rm-chip-dot { display: block; }
@@ -945,8 +945,8 @@ button.bgt-label:hover { color: var(--text-dim); }
 .sb-sec-toggle svg path { fill: currentColor; stroke: none; }
 .sb-sec-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
 /* The folder (or chats) icon leads; the fold caret only shows on hover. */
-.sb-sec-toggle .sb-ic-folder, .sb-sec-toggle .sb-ic-folder-open, .sb-sec-toggle .sb-ic-chats { width: 16px; height: 16px; order: -1; transform: none !important; }
-.sb-sec-toggle .sb-ic-folder path, .sb-sec-toggle .sb-ic-folder-open path, .sb-sec-toggle .sb-ic-chats path { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
+.sb-sec-toggle .sb-ic-folder, .sb-sec-toggle .sb-ic-folder-open, .sb-sec-toggle .sb-ic-chats { width: 16px; height: 16px; order: -1; margin-right: 2px; transform: none !important; color: var(--text); }
+.sb-sec-toggle .sb-ic-folder path, .sb-sec-toggle .sb-ic-folder-open path, .sb-sec-toggle .sb-ic-chats path { fill: none; stroke: currentColor; stroke-width: 2.25; stroke-linejoin: round; stroke-linecap: round; }
 .sb-sec-toggle .sb-ic-folder-open, .sb-sec.closed .sb-sec-toggle .sb-ic-folder { display: block; }
 .sb-sec-toggle .sb-ic-folder, .sb-sec.closed .sb-sec-toggle .sb-ic-folder-open { display: none; }
 .sb-sec-toggle > svg:last-child { opacity: 0; }
@@ -1275,9 +1275,9 @@ button.bgt-label:hover { color: var(--text-dim); }
   max-width: 708px;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
   margin-bottom: -12px;
-  padding: 5px 8px 17px;
+  padding: 5px 6px 17px;
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 14px 14px 0 0;
@@ -1310,17 +1310,21 @@ button.bgt-label:hover { color: var(--text-dim); }
 .tray-btn {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   height: 26px;
   padding: 0 8px;
   border-radius: 7px;
-  font-size: 13px;
-  color: var(--text-dim);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
   max-width: 320px;
 }
 .tray-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tray-btn:hover { background: var(--hover); color: var(--text); }
-.tray-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+.tray-btn:hover { background: var(--hover); }
+/* Strip, chip and sidebar icons: 16px with a 2.25 stroke on the 24 grid
+   (about 1.5px on screen), in the label's own colour, like Codex's. The
+   1px drop centres the icon on the text's caps instead of its line box. */
+.tray-btn svg { width: 16px; height: 16px; flex-shrink: 0; stroke-width: 2.25; position: relative; top: 1px; }
 
 .composer-image-previews {
   display: flex;
@@ -1395,14 +1399,15 @@ button.bgt-label:hover { color: var(--text-dim); }
   align-items: center;
   gap: 6px;
   height: 30px;
-  padding: 0 10px;
+  padding: 0 10px 0 9px;
   border-radius: 999px;
-  font-size: 13px;
-  color: var(--text-dim);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
   transition: background 0.12s ease, color 0.12s ease;
 }
-.chip:hover { background: var(--hover); color: var(--text); }
-.chip svg { width: 14px; height: 14px; }
+.chip:hover { background: var(--hover); }
+.chip svg { width: 16px; height: 16px; flex: none; stroke-width: 2.25; position: relative; top: 1px; }
 
 .composer-input {
   width: 100%;
@@ -1429,15 +1434,17 @@ button.bgt-label:hover { color: var(--text-dim); }
   align-items: center;
   gap: 6px;
   height: 30px;
-  padding: 0 10px;
+  padding: 0 10px 0 9px;
   border-radius: 999px;
-  font-size: 13px;
-  color: var(--text-dim);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
   transition: background 0.12s ease, color 0.12s ease;
 }
-.approve-toggle:hover { background: var(--hover); color: var(--text); }
+.approve-toggle:hover { background: var(--hover); }
+/* Full access (runs without asking) is the one chip that turns orange. */
 .approve-toggle.on, .approve-toggle.on:hover { color: var(--warn); }
-.approve-toggle svg { width: 14px; height: 14px; }
+.approve-toggle svg { width: 16px; height: 16px; flex: none; stroke-width: 2.25; position: relative; top: 1px; }
 
 .send-btn {
   width: 32px;
@@ -2257,15 +2264,15 @@ button.bgt-label:hover { color: var(--text-dim); }
   height: 30px;
   padding: 0 8px 0 10px;
   border-radius: 999px;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 13.5px;
+  font-weight: 600;
   color: var(--text);
   max-width: 220px;
   transition: background 0.12s ease;
 }
 .model-btn:hover { background: var(--hover); }
 .model-btn > span[data-role="model-name"] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.model-btn svg { width: 14px; height: 14px; color: var(--text-faint); flex-shrink: 0; }
+.model-btn svg { width: 14px; height: 14px; color: var(--text-faint); flex-shrink: 0; stroke-width: 2.25; }
 /* Codex shows the model as plain text; the kind dot stays in the markup
    (app.js still sets data-kind) but isn't drawn. */
 .model-btn-dot { display: none; }
@@ -2623,9 +2630,10 @@ a.remote-url { text-decoration: none; cursor: pointer; }
 .app-switch .app-switch-btn { padding: 0 9px 0 7px; gap: 6px; }
 
 /* ============ Attached files (attachments.js) ============ */
-.attach-btn { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 999px; color: var(--text-dim); flex: none; transition: background .15s ease, color .15s ease; }
-.attach-btn:hover { background: var(--hover); color: var(--text); }
-.attach-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.attach-btn { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 999px; color: var(--text); flex: none; transition: background .15s ease, color .15s ease; }
+.attach-btn:hover { background: var(--hover); }
+/* A plain +, 18px at a 2 stroke (1.5px), no circle until hover. */
+.attach-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .composer.drop-on { box-shadow: 0 0 0 2px var(--accent) inset; }
 .att-chip { display: inline-flex; align-items: center; gap: 9px; max-width: 260px; padding: 7px 10px 7px 8px; border-radius: 12px; background: var(--card-bg); border: 1px solid var(--card-border); position: relative; }
 .att-ico { width: 30px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 7px; background: rgba(75, 149, 255, .12); color: var(--accent); }
@@ -2647,6 +2655,7 @@ a.remote-url { text-decoration: none; cursor: pointer; }
 .composer-bottom-right { flex: 0 0 auto; }
 .composer-bottom button, .composer-bottom span { white-space: nowrap; }
 .composer-bottom-left > * { flex-shrink: 0; }
+.composer-bottom .bot-chip { font-size: 13.5px; color: var(--text); } /* bots-ui.css draws it dim; the row is bright */
 .send-btn { flex-shrink: 0; }
 @container (max-width: 700px) {
   .composer-bottom [data-role="bypass-label"], .composer-bottom .rm-chip > span { display: none; }
@@ -2773,7 +2782,7 @@ a.remote-url { text-decoration: none; cursor: pointer; }
 .composer-slim > .composer-queued, .composer-slim > .composer-image-previews { grid-column: 1 / -1; }
 .composer-slim .composer-input { padding: 6px 4px; min-height: 32px; line-height: 1.45; font-size: 14.5px; }
 .composer-slim .attach-btn { width: 32px; height: 32px; }
-.composer-slim .attach-btn svg { width: 18px; height: 18px; stroke-width: 1.9; }
+.composer-slim .attach-btn svg { width: 18px; height: 18px; stroke-width: 2; }
 .composer-slim .composer-bottom { position: absolute; left: 4px; right: 4px; top: calc(100% + 5px); }
 .composer-slim .composer-bottom .chip, .composer-slim .composer-bottom .approve-toggle, .composer-slim .composer-bottom .model-btn { height: 26px; font-size: 12.5px; }
 
@@ -2811,9 +2820,9 @@ a.remote-url { text-decoration: none; cursor: pointer; }
 .tb-switch .app-switch-btn.on { background: var(--active); box-shadow: 0 1px 2px rgba(0, 0, 0, .3); }
 .tb-switch .app-switch-btn.on img, .tb-switch .app-switch-btn.on .dz-switch-ico { opacity: 1; filter: none; }
 
-/* Bigger action icons and text, like Claude's sidebar. */
-.sb-actions .sb-row { height: 36px; font-size: 15px; gap: 12px; }
-.sb-actions .sb-row svg { width: 20px; height: 20px; stroke-width: 1.7; opacity: .9; }
+/* Action rows like Codex's: 16px icons at a 2.25 stroke, medium labels. */
+.sb-actions .sb-row { height: 32px; font-size: 14px; font-weight: 500; gap: 8px; }
+.sb-actions .sb-row svg { width: 16px; height: 16px; stroke-width: 2.25; opacity: 1; position: relative; top: .5px; }
 .sb-scroll { padding-top: 6px; }
 .tb-root { min-width: 170px; }
 .tb-root .menu-item svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; color: var(--text-faint); }

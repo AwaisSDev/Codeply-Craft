@@ -30,11 +30,26 @@
     <div class="feed" id="feed"></div>
   </main>
 
+  <!-- Under the top bar only, while no chat is open: "Past chats" and the last three. -->
+  <div class="hist3" id="hist3"></div>
+
   <footer class="composer" id="composer">
     <button class="close" id="closeBtn" type="button" title="Hide (Esc)" aria-label="Hide">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>
     </button>
+    <!-- Under the top bar only: the files going with the next message, a folder
+         button for the project and a + for files. -->
+    <div class="files" id="files" hidden></div>
+    <i class="brk" aria-hidden="true"></i>
+    <button class="tool proj" id="folderBtn" type="button" title="Project folder" aria-label="Project folder">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h3.6l2 2.2h7.4a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>
+      <svg class="pc" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.5h15a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zM2.5 19.5h19"/></svg>
+      <span id="folderName">Pick a folder</span>
+    </button>
     <textarea id="input" rows="1" placeholder="Ask Codeply anything" spellcheck="true"></textarea>
+    <button class="tool round" id="attachBtn" type="button" data-menu title="Add files or a folder" aria-label="Add files or a folder">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6.5v11M6.5 12h11"/></svg>
+    </button>
     <div class="row">
       <button class="pill" id="projBtn" type="button" data-menu title="Project">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5c0-.8.7-1.5 1.5-1.5h2.6l1.4 1.5h5c.8 0 1.5.7 1.5 1.5v5.5c0 .8-.7 1.5-1.5 1.5h-9c-.8 0-1.5-.7-1.5-1.5z"/></svg>

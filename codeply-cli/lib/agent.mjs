@@ -410,7 +410,7 @@ const PARAMS = {
   plan_exit: ['path'],
   plan_enter: ['reason'],
   lsp: ['operation', 'path', 'line', 'character', 'symbol', 'query'],
-  ask_bot: ['bot', 'task'], // only offered when the host passes askBot (lib/bots.js)
+  ask_bot: ['bot', 'task', 'specialty'], // only offered when the host passes askBot (lib/bots.js)
 };
 
 // Names the model actually reaches for when it paraphrases the format.

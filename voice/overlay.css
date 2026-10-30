@@ -80,6 +80,8 @@ body.catching { cursor: crosshair; background: rgba(0, 0, 0, 0.01) !important; }
   pointer-events: none;
 }
 .buddy.listening .pill, .buddy.thinking .pill { opacity: 1; transform: none; }
+/* the top bar (island.js) has the waveform and the thinking shimmer: no pill by the cursor, unless it carries a note */
+.buddy.bar-on.listening:not(.has-note) .pill, .buddy.bar-on.thinking:not(.has-note) .pill { opacity: 0; transform: translateX(-6px) scale(0.92); }
 .buddy.detached .pill { left: 22px; top: 22px; }
 .wave { display: none; align-items: center; gap: 2.5px; height: 18px; }
 .buddy.listening .wave { display: flex; }
@@ -129,3 +131,16 @@ body.catching { cursor: crosshair; background: rgba(0, 0, 0, 0.01) !important; }
 }
 .actions button:hover { background: rgba(255, 255, 255, 0.14); }
 .turn { margin-right: auto; color: #93b8fb; font-size: 12px; font-weight: 600; }
+
+/* ── with the top bar on (island.js) ──
+   The bar has the waveform, the thinking shimmer and the voice, so nothing
+   rides along with the cursor: no knot, no pill, no spinner, no answer bubble.
+   Only when Codeply has something to do on screen does its arrow appear: while
+   it flies, points, clicks or waits for your turn, then it's gone again. */
+.buddy.bar-on .knot { opacity: 0 !important; transform: scale(0.4) !important; }
+.buddy.bar-on .pill { opacity: 0 !important; }
+.buddy.bar-on::after { display: none; }
+.buddy.bar-on .pointer { transform: scale(0); }
+.buddy.bar-on.moving .pointer, .buddy.bar-on.arrived .pointer, .buddy.bar-on.your-turn .pointer, .buddy.bar-on.working .pointer { transform: scale(1); }
+/* what it heard and says shows in a card under the bar's waveform instead (island.css .say) */
+.buddy.bar-on .bubble { visibility: hidden; }

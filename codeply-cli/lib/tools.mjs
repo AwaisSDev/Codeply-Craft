@@ -2483,7 +2483,7 @@ async function ask_bot(args, ctx) {
   if (typeof ctx.askBot !== 'function') {
     return { ok: false, output: 'ask_bot is not available here (no bots, or this run cannot delegate any further). Do the work yourself.' };
   }
-  return ctx.askBot({ name: String(args.bot || '').trim(), task: String(args.task || '').trim(), signal: ctx.signal });
+  return ctx.askBot({ name: String(args.bot || '').trim(), task: String(args.task || '').trim(), specialty: String(args.specialty || '').trim(), signal: ctx.signal });
 }
 
 // ─── Reaching the user's phone (lib/reach.js; the host registers the handler) ─

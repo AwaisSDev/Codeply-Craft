@@ -1,0 +1,138 @@
+/* The top bar: one shape. At rest a thin rounded line at the top center of
+   the screen, like the phone's home indicator turned upside down: soft white
+   with a faint dark edge, so it reads on light and dark wallpapers alike. It
+   grows into a ping's message card or into the chat (the drop's real window
+   takes over where it lands) and shrinks back, always the same element.
+   island.js sets data-mode (what Codeply is doing), data-shape (bar, popup or
+   chat), a few classes, and the grown size inline. Everything moves with CSS,
+   except the waveform (requestAnimationFrame, only while Orbit listens or talks).
+   Empty, the window is see-through and lets clicks fall through. */
+:root {
+  --line: rgba(236, 236, 236, 0.55);
+  --line-hi: rgba(255, 255, 255, 0.8);
+  --card: #1c1c1c;   /* the drop's colors (drop/drop.css): the bar grown into a card or the chat */
+  --edge: 0 0 0 0.5px rgba(0, 0, 0, 0.16), 0 1px 3px rgba(0, 0, 0, 0.24);
+  --lift: 0 10px 28px rgba(0, 0, 0, 0.32), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --glow: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 0 10px 1px rgba(255, 255, 255, 0.7);
+  --morph: cubic-bezier(.3, 1.18, .45, 1); /* a spring that barely overshoots */
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --font: ui-sans-serif, -apple-system, system-ui, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+body { font: 13px/1.38 var(--font); color: #f2f2f2; user-select: none; -webkit-font-smoothing: antialiased; }
+
+/* ─── the shape ───────────────────────────────────────────────────────────── */
+/* top: 8px matches the drop's top edge in island.js, so the chat lands where the line is */
+.shape {
+  position: absolute; top: 8px; left: 50%; width: 132px; height: 5px;
+  transform: translateX(-50%);
+  border-radius: 3px; background-color: var(--line); box-shadow: var(--edge);
+  overflow: hidden; pointer-events: none; cursor: pointer;
+  transition: width .36s var(--morph), height .36s var(--morph), border-radius .36s var(--morph),
+    background-color .3s var(--ease), box-shadow .3s var(--ease), opacity .12s;
+}
+body.hover[data-shape="bar"] .shape { width: 144px; background-color: var(--line-hi); }
+/* grown: a dark card, its size set inline by island.js */
+body[data-shape="popup"] .shape, body[data-shape="chat"] .shape { background-color: var(--card); box-shadow: var(--lift); }
+body[data-shape="popup"] .shape { pointer-events: auto; }
+/* the drop's real window is up where the shape landed: the shape steps aside
+   (a browser preview has no real window, so there the shape stays the panel) */
+body.covered .shape { opacity: 0; }
+/* an app in front covers the top of the screen: the resting line fades away,
+   the spot still takes a click and hover brings the line back; Orbit, a task
+   and pings always show */
+body.under[data-shape="bar"][data-mode="idle"]:not(.hover):not(.pinging) .shape { opacity: 0; transition: opacity .3s; }
+/* jumps without animating (back to the chat's exact size, just before it shrinks) */
+.shape.snap { transition: none !important; }
+
+/* a light that runs along the line: fast and bright while Orbit thinks, slow and faint while a task runs */
+.sweep {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.95), transparent);
+  opacity: 0; transform: translateX(-110%);
+}
+body[data-shape="bar"][data-mode="thinking"] .sweep { opacity: 1; animation: sweep 1.25s ease-in-out infinite; }
+body[data-shape="bar"][data-mode="run"] .sweep { opacity: .45; animation: sweep 3.6s ease-in-out infinite; }
+body[data-shape="bar"][data-mode="run"] .shape { animation: breathe 3.6s ease-in-out infinite; }
+@keyframes sweep { from { transform: translateX(-110%); } to { transform: translateX(250%); } }
+@keyframes breathe { 50% { opacity: .7; } }
+
+/* ─── Orbit listening or talking: the line becomes a row of small bars ───── */
+.wave {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center; gap: 3px;
+  opacity: 0; transition: opacity .18s;
+}
+.wave i {
+  flex: none; width: 3px; height: 22px; border-radius: 2px;
+  background: rgba(255, 255, 255, 0.9); box-shadow: 0 0 2px rgba(0, 0, 0, 0.35);
+  transform: scaleY(.14);
+}
+body[data-shape="bar"][data-mode="listening"] .shape, body[data-shape="bar"][data-mode="speaking"] .shape {
+  width: 180px; height: 22px; border-radius: 11px; background-color: transparent; box-shadow: none;
+}
+body[data-shape="bar"][data-mode="listening"] .wave, body[data-shape="bar"][data-mode="speaking"] .wave { opacity: 1; transition: opacity .22s .12s; }
+body[data-mode="speaking"] .wave i { background: rgba(255, 255, 255, 0.78); }
+
+/* ─── a ping: the line glows once, then grows into a card with the message ── */
+body.pinging[data-shape] .shape { animation: ping .7s var(--ease); }
+body.pinging[data-shape] .sweep { opacity: 1; animation: sweep .7s ease-in-out; }
+@keyframes ping {
+  0% { transform: translateX(-50%); }
+  45% { transform: translateX(-50%) scaleX(1.22) scaleY(1.3); background-color: rgba(255, 255, 255, 0.98); box-shadow: var(--glow); }
+  100% { transform: translateX(-50%); }
+}
+/* Codeply's blue square on the card's left, the text beside it (CARD_TEXT_X in island.js) */
+.logo {
+  position: absolute; top: 12px; left: 13px; width: 28px; height: 28px; border-radius: 8px;
+  opacity: 0; transform: scale(.7); transition: opacity .12s, transform .12s;
+}
+.msg {
+  position: absolute; top: 13px; left: 54px; right: 18px;
+  font-size: 14.5px; line-height: 21px; font-weight: 450;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; word-wrap: break-word;
+  letter-spacing: -.01em; opacity: 0; transition: opacity .12s;
+}
+/* the text comes in once the card has grown, and leaves before it shrinks */
+body.text .msg { opacity: 1; transition: opacity .2s; }
+body.text .logo { opacity: 1; transform: none; transition: opacity .2s, transform .28s var(--morph); }
+body[data-shape="popup"] .shape:hover { background-color: #242424; }
+body[data-shape="popup"] .shape:active { transform: translateX(-50%) scale(.985); }
+
+/* the same box and font as .msg, off screen */
+.measure { position: absolute; left: -9999px; top: 0; width: max-content; max-width: 308px; font: inherit; font-size: 14.5px; line-height: 21px; font-weight: 450; letter-spacing: -.01em; word-wrap: break-word; visibility: hidden; }
+
+/* ─── the hit area: catches the mouse at rest ─────────────────────────────── */
+/* Windows lets clicks fall through fully transparent pixels, so it carries a
+   tint nobody can see. Off while the shape is grown or the chat is up. */
+.hit {
+  position: absolute; top: 0; left: 50%; width: 180px; height: 24px;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.004); cursor: pointer;
+}
+body[data-mode="listening"] .hit, body[data-mode="speaking"] .hit { width: 200px; height: 36px; }
+body:not([data-shape="bar"]) .hit { pointer-events: none; background: transparent; }
+
+/* ─── Orbit's words: a card just under the waveform ───────────────────────── */
+/* what it heard in small grey, what it says under it, the keys at the bottom */
+.say {
+  position: absolute; top: 40px; left: 50%; width: 360px; padding: 12px 16px 10px;
+  transform: translate(-50%, -6px) scale(.97); transform-origin: top center;
+  border-radius: 18px; background: var(--card); box-shadow: var(--lift);
+  opacity: 0; pointer-events: none;
+  transition: opacity .18s var(--ease), transform .28s var(--morph);
+}
+.say.on { opacity: 1; transform: translate(-50%, 0); }
+.say .heard { color: #9a9a9a; font-size: 12.5px; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.say .heard:empty, .say .said:empty { display: none; }
+.say .said { font-size: 14.5px; line-height: 1.5; max-height: 160px; overflow: hidden; }
+.say .said.note { color: #c8c8c8; }
+.say .hint { color: #6e6e6e; font-size: 11.5px; text-align: right; margin-top: 6px; }
+.say .hint:empty { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .shape { transition-duration: .01s; }
+  body.pinging[data-shape] .shape { animation-duration: .01s; }
+}

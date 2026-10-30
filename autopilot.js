@@ -68,7 +68,7 @@ function hold({ botId, taskId, tool, title, detail, minutes, run, ask = false })
   const due = ask ? Date.now() + 365 * DAY : Date.now() + Math.max(1, Number(minutes) || 10) * 60000;
   const o = s.saveOutbox({ botId, taskId, tool, title: short(title, 280), detail: String(detail || '').slice(0, 4000), dueAt: due, status: ask ? 'needs_you' : 'waiting' });
   const bot = BOTS().getBot(botId);
-  if (bot) tell(bot, ask ? `${bot.name} needs your OK: ${short(title, 160)}` : `${bot.name} will ${short(title, 140)} in ${Math.round((due - Date.now()) / 60000)} min unless you cancel.`, { outbox: o.id });
+  if (bot) tell(bot, ask ? `I need your OK: ${short(title, 160)}` : `I will ${short(title, 140)} in ${Math.round((due - Date.now()) / 60000)} min unless you cancel.`, { outbox: o.id });
   deps.life.pushState('outbox');
   return new Promise((resolve) => {
     const settle = async (verdict) => {
@@ -104,10 +104,12 @@ function outboxAction(id, action) {
 
 async function tell(bot, text, extra = {}) {
   const atPc = deps.life.atPc ? deps.life.atPc() : true;
+  // From Codeply, the user's one agent, whichever bot did the work.
   if (atPc && deps.Notification && deps.Notification.isSupported()) {
-    const n = new deps.Notification({ title: bot.name, body: short(text, 240), icon: deps.notifyIcon });
+    const n = new deps.Notification({ title: 'Codeply', body: short(text, 240), icon: deps.notifyIcon });
     n.on('click', () => deps.openBot(bot.id));
     n.show();
+    try { require('./island').ping({ title: 'Codeply', text: short(text, 240) }); } catch {}
     return;
   }
   try {

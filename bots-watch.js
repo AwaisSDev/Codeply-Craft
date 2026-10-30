@@ -110,12 +110,15 @@ async function notify(ev) {
       }
     } catch {}
   }
+  // It comes from Codeply, the user's one agent; the bot that did it stays behind the scenes.
   const { Notification } = deps;
   if (Notification && Notification.isSupported()) {
-    const n = new Notification({ title: bot.name, body: `${line}${ev.summary ? `\n${ev.summary}` : ''}`.slice(0, 240), icon: deps.notifyIcon, silent: quiet });
+    const n = new Notification({ title: 'Codeply', body: `${line}${ev.summary ? `\n${ev.summary}` : ''}`.slice(0, 240), icon: deps.notifyIcon, silent: quiet });
     n.on('click', () => deps.openBot(bot.id));
     n.show();
   }
+  const islandText = ev.draftId ? `Drafted a reply to ${ev.fromName || ev.fromEmail || 'someone'}: ${ev.subject || '(no subject)'}` : line;
+  try { require('./island').ping({ title: 'Codeply', text: islandText.slice(0, 240) }); } catch {}
   if (ev.alert) {
     try { await tellPhone(ev, bot, ev.alert.how === 'call' ? 'call' : 'remind'); } catch (e) { if (!e.signedOut) console.warn('[always on] phone:', e.message); }
     if (!ev.alert.repeat) dropAlert(bot.id, ev.alert.from);

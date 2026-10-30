@@ -15,6 +15,8 @@
   const S = {
     project: null, projects: [], models: { selected: 'auto', models: [] }, recent: [], recentMore: false, recentLoading: false,
     mode: 'Build', bypass: readBypass(), sessionId: null, running: false, sending: false, hotkey: null, title: '',
+    files: [], // paths going with the next message (under the top bar: + or a drop)
+    computer: null, picked: false, // "This computer" (drop.js), and whether a folder was picked for this chat
   };
   function readBypass() { try { return localStorage.getItem('craft-drop-bypass') === '1'; } catch { return false; } }
   const card = $('card'); const thread = $('thread'); const feed = $('feed'); const input = $('input'); const sendBtn = $('sendBtn');
@@ -27,6 +29,7 @@
     chat: '<svg viewBox="0 0 16 16"><path d="M3 4.5C3 3.7 3.7 3 4.5 3h7c.8 0 1.5.7 1.5 1.5v5c0 .8-.7 1.5-1.5 1.5H7l-3 2.5V11h0c-.6 0-1-.4-1-1z"/></svg>',
     folder: '<svg viewBox="0 0 16 16"><path d="M2 4.5c0-.8.7-1.5 1.5-1.5h2.6l1.4 1.5h5c.8 0 1.5.7 1.5 1.5v5.5c0 .8-.7 1.5-1.5 1.5h-9c-.8 0-1.5-.7-1.5-1.5z"/></svg>',
     plus: '<svg viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></svg>',
+    clip: '<svg viewBox="0 0 16 16"><path d="M10.5 4.5 5.6 9.4a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4l-5 5a4.2 4.2 0 0 0 6 6l4.4-4.4"/></svg>',
     chev: '<svg class="chev" viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg>',
   };
 
@@ -104,19 +107,23 @@
   // ─── bar, chips, header ───────────────────────────────────────────────────
   function renderChips() {
     $('projName').textContent = S.project ? S.project.name : 'Project';
+    $('folderBtn').title = S.project ? `Project: ${S.project.path}` : 'Pick a project folder';
+    $('folderName').textContent = S.project ? S.project.name : 'Pick a folder';
+    $('folderBtn').classList.toggle('set', !!S.project);
+    $('folderBtn').classList.toggle('computer', !!(S.project && S.project.computer));
     const sel = S.models.models.find((m) => m.id === S.models.selected);
     $('modelName').textContent = sel ? sel.name || sel.model : 'Haze 2';
     $('modeName').textContent = S.mode;
     $('fullTag').hidden = !S.bypass;
     $('modeBtn').classList.toggle('full', S.bypass);
     $('modeBtn').title = S.bypass ? 'Full access: runs everything without asking' : 'Mode and permissions';
-    input.placeholder = S.sessionId ? 'Follow up' : 'Ask Codeply anything';
+    input.placeholder = topMode ? 'Ask Codeply...' : S.sessionId ? 'Follow up' : 'Ask Codeply anything';
     $('title').textContent = S.title || 'New chat';
     syncSend();
   }
   function syncSend() {
     card.classList.toggle('running', S.running);
-    sendBtn.disabled = !S.running && (S.sending || !input.value.trim());
+    sendBtn.disabled = !S.running && (S.sending || (!input.value.trim() && !S.files.length));
     sendBtn.setAttribute('aria-label', S.running ? 'Stop' : 'Send');
   }
   function ago(t) {
@@ -130,9 +137,13 @@
     S.hotkey = st.hotkey;
     S.projects = st.projects || [];
     if (!S.sessionId || !S.project) S.project = st.project || S.project;
+    // Under the top bar a new chat works on "This computer" until a folder is picked.
+    S.computer = st.computer || S.computer;
+    if (topMode && !S.sessionId && !S.picked && S.computer) S.project = S.computer;
     S.models = st.models || S.models;
     S.recent = (st.recent && st.recent.items) || [];
     S.recentMore = !!(st.recent && st.recent.more);
+    if (topMode) renderHist3();
     if (S.sessionId) S.running = (st.running || []).includes(S.sessionId);
     renderChips();
     // The page was reloaded: pick the chat back up instead of starting blank.
@@ -143,16 +154,28 @@
   // ─── menus ────────────────────────────────────────────────────────────────
   // They open above the button. While just the bar shows there is no room above
   // it, so the window grows for the menu and shrinks back when it closes.
+  // Hanging under the top bar the window grows down instead, so there a menu
+  // opens below its button unless the chat above it has the room.
   const menu = $('menu');
   let menuFor = null;
+  let topMode = false;
+  function placeMenu(anchor) {
+    const a = anchor.getBoundingClientRect();
+    if (topMode && a.top - 6 - menu.offsetHeight < 8) {
+      menu.style.bottom = ''; menu.style.top = (a.bottom + 6) + 'px';
+      menuNeed = Math.ceil(a.bottom + 6 + menu.offsetHeight + 8);
+    } else {
+      const fromBottom = window.innerHeight - a.top + 6;
+      menu.style.top = ''; menu.style.bottom = fromBottom + 'px';
+      menuNeed = Math.ceil(fromBottom + menu.offsetHeight + 8);
+    }
+  }
   function openMenu(anchor, html) {
     menuFor = anchor;
     menu.innerHTML = html; menu.hidden = false;
     const a = anchor.getBoundingClientRect();
-    const fromBottom = window.innerHeight - a.top + 6;
-    menu.style.bottom = fromBottom + 'px';
     menu.style.left = Math.max(8, Math.min(a.left, window.innerWidth - menu.offsetWidth - 8)) + 'px';
-    menuNeed = Math.ceil(fromBottom + menu.offsetHeight + 8);
+    placeMenu(anchor);
     fit();
     return menu;
   }
@@ -220,7 +243,7 @@
   $('recentBtn').addEventListener('click', (e) => toggleMenu(e.currentTarget, () => {
     const m = openMenu($('recentBtn'), `<div class="lbl">Recent</div>${S.recent.length ? '' : '<div class="none">No chats yet.</div>'}`);
     S.recent.forEach((r) => m.appendChild(recentRow(r)));
-    menuNeed = Math.ceil(window.innerHeight - $('recentBtn').getBoundingClientRect().top + 6 + m.offsetHeight + 8);
+    placeMenu($('recentBtn'));
     m.style.left = Math.max(8, window.innerWidth - m.offsetWidth - 8) + 'px';
     fit();
   }));
@@ -252,7 +275,7 @@
   let startedAt = 0;
 
   function newChat() {
-    S.sessionId = null; S.running = false; S.title = '';
+    S.sessionId = null; S.running = false; S.title = ''; S.picked = false;
     feed.innerHTML = ''; steps = null; stopWorking();
     setChat(false);
     api.showing(null);
@@ -461,6 +484,82 @@
     syncSend();
   });
   api.onShown(() => { if (window.applyDropTheme) window.applyDropTheme(); loadState(); setTimeout(() => input.focus(), 30); });
+  // Opened from the top bar (island.js) the drop hangs from the top and grows
+  // down, out of the bar's line with its chat already in it (drop.css); going,
+  // it shrinks back into the line. A new chat there opens on the home panel.
+  const body = document.body;
+  // `grow`: freshly opened from the bar, so it grows out of the bar's line (drop.css).
+  if (api.onAnchor) api.onAnchor((m) => {
+    topMode = (m && m.mode ? m.mode : m) === 'top';
+    body.classList.toggle('top', topMode);
+    body.classList.remove('leave', 'enter');
+    if (topMode && m.grow) { void card.offsetWidth; body.classList.add('enter'); }
+    renderChips(); renderHist3();
+    closeMenu(); fit();
+  });
+  if (api.onLeave) api.onLeave(() => { closeMenu(); body.classList.remove('enter'); body.classList.add('leave'); });
+
+  // ─── under the top bar: the last three chats, files, the project folder ──
+  // "Past chats" and three quiet lines above the box while no chat is open; a click opens that chat.
+  function renderHist3() {
+    const box = $('hist3');
+    box.innerHTML = '<div class="lbl">Past chats</div>';
+    for (const r of S.recent.slice(0, 3)) {
+      const b = h(`<button type="button"><span class="t">${esc(r.title || 'Chat')}</span><span class="s">${esc(ago(r.updatedAt))}</span></button>`);
+      b.addEventListener('click', () => openChat(r.id));
+      box.appendChild(b);
+    }
+    box.classList.toggle('some', S.recent.length > 0);
+    fit();
+  }
+
+  // Files going with the next message: added with +, or dropped anywhere on the chat.
+  function addFiles(paths) {
+    for (const p of paths || []) if (p && !S.files.includes(p) && S.files.length < 10) S.files.push(p);
+    renderFiles();
+  }
+  function renderFiles() {
+    const box = $('files');
+    box.innerHTML = '';
+    S.files.forEach((p, i) => {
+      const chip = h(`<span class="file" title="${esc(p)}"><span class="n">${esc(p.replace(/\\/g, '/').split('/').pop())}</span><button type="button" aria-label="Remove">${ICON.x || '×'}</button></span>`);
+      chip.querySelector('button').addEventListener('click', () => { S.files.splice(i, 1); renderFiles(); });
+      box.appendChild(chip);
+    });
+    box.hidden = !S.files.length;
+    syncSend(); fit();
+  }
+  // A folder: before the first message it's where the chat works (the pill on top);
+  // once a chat has started it goes with the next message, like a file.
+  async function pickFolder() {
+    const p = await api.chooseProject();
+    if (p) {
+      if (S.sessionId) addFiles([p.path]);
+      else { S.project = p; S.picked = true; renderChips(); }
+    }
+    input.focus();
+  }
+  async function pickFiles() { addFiles(await api.pickFiles()); input.focus(); }
+  // +: files or a folder.
+  $('attachBtn').addEventListener('click', (e) => toggleMenu(e.currentTarget, () => {
+    const m = openMenu($('attachBtn'), `<div class="lbl">Add</div><button type="button" data-files>${ICON.clip}<span class="t">Files</span></button><button type="button" data-folder>${ICON.folder}<span class="t">Folder</span></button>`);
+    m.querySelector('[data-files]').addEventListener('click', () => { closeMenu(); pickFiles(); });
+    m.querySelector('[data-folder]').addEventListener('click', () => { closeMenu(); pickFolder(); });
+  }));
+  $('folderBtn').addEventListener('click', pickFolder);
+  let dragDepth = 0;
+  document.addEventListener('dragenter', (e) => { if (!topMode || !e.dataTransfer || ![...e.dataTransfer.types].includes('Files')) return; e.preventDefault(); dragDepth++; body.classList.add('dragging'); });
+  document.addEventListener('dragover', (e) => { if (topMode) e.preventDefault(); });
+  document.addEventListener('dragleave', () => { if (dragDepth && --dragDepth === 0) body.classList.remove('dragging'); });
+  document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dragDepth = 0; body.classList.remove('dragging');
+    if (!topMode || !e.dataTransfer) return;
+    addFiles([...e.dataTransfer.files].map((f) => (api.pathFor ? api.pathFor(f) : f.path) || '').filter(Boolean));
+    input.focus();
+  });
+  // A ping about a chat was clicked: that chat.
+  if (api.onOpen) api.onOpen((id) => { if (id) openChat(id); });
   // Orbit: "Craft, do X" arrives as a task in a fresh chat; "Open in Drop" just fills the box.
   api.onVoiceText(async ({ text, run }) => {
     if (!text) return;
@@ -472,7 +571,9 @@
   // ─── sending ──────────────────────────────────────────────────────────────
   async function send() {
     if (S.running) { api.stop(S.sessionId); return; }
-    const text = input.value.trim();
+    const files = S.files.slice();
+    const names = files.map((p) => p.replace(/\\/g, '/').split('/').pop());
+    const text = input.value.trim() || (files.length ? `Have a look at ${names.join(', ')}` : '');
     if (!text || S.sending) return;
     let newProject = null;
     if (!S.project && !S.sessionId) {
@@ -485,11 +586,12 @@
     }
     S.sending = true; syncSend();
     setChat(true);
-    addUser(text);
+    addUser(files.length ? `${text}\n${names.map((n) => `+ ${n}`).join('\n')}` : text);
     input.value = ''; autosize();
+    S.files = []; renderFiles();
     startWorking(); S.running = true; syncSend();
     let r;
-    try { r = await api.send({ sessionId: S.sessionId, cwd: S.project ? S.project.path : null, mode: S.mode, bypass: S.bypass, text, newProject }); }
+    try { r = await api.send({ sessionId: S.sessionId, cwd: S.project ? S.project.path : null, mode: S.mode, bypass: S.bypass, text, newProject, files }); }
     catch (e) { r = { error: e.message }; }
     S.sending = false;
     if (!r || r.error) {
@@ -507,7 +609,7 @@
     const s = await api.session(id);
     if (!s) return;
     S.sessionId = s.id; S.running = !!s.running; S.title = s.title || '';
-    if (s.cwd) S.project = { path: s.cwd, name: s.cwd.replace(/\\/g, '/').split('/').pop() };
+    if (s.cwd) S.project = S.computer && s.cwd === S.computer.path ? S.computer : { path: s.cwd, name: s.cwd.replace(/\\/g, '/').split('/').pop() };
     feed.innerHTML = ''; steps = null; stopWorking();
     setChat(true);
     for (const m of s.messages) {

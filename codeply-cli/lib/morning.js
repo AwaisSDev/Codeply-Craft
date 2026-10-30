@@ -4,7 +4,8 @@
  *   While you slept   what came in that matters
  *   What I did        side effects from the ledger, each saying whether it was checked
  *   Waiting on you    drafts and actions that need the user's OK
- *   Your day          today's calendar and plans, open to-dos, replies owed
+ *   Your day          today's calendar and plans in order, a free stretch for
+ *                     focus, open to-dos, replies owed
  *   Anything to add?  the user answers in plain words; the agent puts it on
  *                     the calendar and reads each event back (tools.mjs)
  *
@@ -79,11 +80,34 @@ function day({ store, snap, now, todos = [] }) {
       .filter((x) => x.kind !== 'cancelled');
     for (const x of today.slice(0, MAX.day)) lines.push(`${x.data && x.data.allDay ? 'All day' : L.clock(x.at, tz)} ${short(x.title, 60)}${x.place ? `, ${short(x.place, 40)}` : ''}`);
     if (!today.length) lines.push('Nothing on the calendar yet');
+    const focus = focusBlock(today, { start, now, tz });
+    if (focus) lines.push(focus);
   }
   const owed = (snap.waiting || []).slice(0, 3);
   if (owed.length) lines.push(`Replies you owe: ${owed.map((w) => firstName(w.from)).join(', ')}`);
   for (const t of todos.slice(0, MAX.todos)) lines.push(`To do: ${short(t.text, 80)}`);
   return lines;
+}
+
+/**
+ * The first free stretch of at least 90 minutes between 09:00 and 18:00 (or
+ * from now, when later), on a day with timed events: a suggested focus block,
+ * at most 2 hours. None on an empty day: the whole day is free anyway.
+ */
+function focusBlock(today, { start, now, tz }) {
+  const busy = today.filter((x) => !(x.data && (x.data.allDay || x.data.untimed)))
+    .map((x) => ({ from: x.at, to: Math.max(x.end || x.at + HOUR, x.at) }))
+    .sort((a, b) => a.from - b.from);
+  if (!busy.length) return '';
+  const close = start + 18 * HOUR;
+  let free = Math.max(start + 9 * HOUR, Math.ceil(now / (15 * 60000)) * 15 * 60000);
+  for (const b of [...busy, { from: close, to: close }]) {
+    const until = Math.min(b.from, close);
+    if (until - free >= 90 * 60000) return `Focus time: ${L.clock(free, tz)} to ${L.clock(Math.min(until, free + 2 * HOUR), tz)} is free`;
+    free = Math.max(free, b.to);
+    if (free >= close) break;
+  }
+  return '';
 }
 
 /**
@@ -120,7 +144,7 @@ function summarize(sections) {
   }
   const waiting = get('waiting');
   if (waiting.length) parts.push(`${n(waiting.length, 'thing needs', 'things need')} your OK`);
-  const day = get('day').filter((l) => !/^(Replies you owe|To do):/.test(l));
+  const day = get('day').filter((l) => !/^(Replies you owe|To do|Focus time):/.test(l));
   if (day.length && /^Nothing on the calendar/.test(day[0])) parts.push('nothing on your calendar yet');
   else if (day.length) parts.push(`first up: ${day[0]}`);
   if (!parts.length) return 'Good morning. A quiet start: nothing new.';

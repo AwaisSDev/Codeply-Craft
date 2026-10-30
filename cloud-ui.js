@@ -6,7 +6,7 @@
 (() => {
   if (!window.craft || !window.craft.cloudState) return;
 
-  const ICON = '<svg viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1 .5 7.97V18Z"/></svg>';
+  const ICON = '<svg viewBox="0 0 24 24"><path d="M7.5 19.25h10a4 4 0 0 0 .6-7.96 6 6 0 0 0-11.6-1.2A4.75 4.75 0 0 0 7.5 19.25Z"/></svg>';
   const STATUS = { starting: 'Starting', queued: 'Working', running: 'Working', done: 'Done', failed: 'Failed', cancelled: 'Cancelled' };
   const LIVE = new Set(['starting', 'queued', 'running']);
   let current = null;       // last cloud state for state.project
@@ -279,7 +279,7 @@
   const cloudChats = new Set(); // chats with a cloud line, beyond what the sidebar list already knows
 
   // Cloud chats look like any chat, marked by a hollow blue cloud in the sidebar.
-  const HOLLOW = '<svg class="cloud-mark" viewBox="0 0 24 24" aria-label="Cloud chat"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1 .5 7.97V18Z"/></svg>';
+  const HOLLOW = '<svg class="cloud-mark" viewBox="0 0 24 24" aria-label="Cloud chat"><path d="M7.5 19.25h10a4 4 0 0 0 .6-7.96 6 6 0 0 0-11.6-1.2A4.75 4.75 0 0 0 7.5 19.25Z"/></svg>';
   const isCloudChat = (id) => !!id && (cloudChats.has(id) || (state.sessions || []).some((s) => s.id === id && s.cloud));
   function markCloudChats() {
     document.querySelectorAll('.sb-chat-row').forEach((row) => {

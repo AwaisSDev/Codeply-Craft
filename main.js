@@ -514,6 +514,7 @@ function buildTrayMenu() {
     ...(voiceMode.available() ? [{ label: key ? `Voice mode speaks its answers (hold ${key} to talk)` : 'Voice mode speaks its answers', type: 'checkbox', checked: !voiceMode.isMuted(), click: (item) => voiceMode.setMuted(!item.checked) }] : []),
     ...(voiceMode.available() && voiceMode.canAct() ? [{ label: 'Voice mode can click and type for me', type: 'checkbox', checked: voiceMode.actionsOn(), click: (item) => voiceMode.setActions(item.checked) }] : []),
     ...convertWheel.trayItems(),
+    { label: 'Show top bar', type: 'checkbox', checked: !island.isHidden(), click: (item) => island.setHidden(!item.checked) },
     { type: 'separator' },
     ...(app.isPackaged ? [{ label: process.platform === 'darwin' ? 'Open at login' : 'Start with Windows', type: 'checkbox', checked: startsWithSystem(), click: (item) => setStartWithSystem(item.checked) }] : []),
     {
@@ -2417,13 +2418,18 @@ const clip = (t, n) => { t = plainText(t); if (t.length <= n) return t; const cu
 const firstSentence = (t) => { const s = plainText(t); const m = /^(.{20,}?[.!?])(\s|$)/.exec(s); return m ? m[1] : s; };
 
 function notifyTaskComplete(session) {
-  if (!Notification.isSupported() || !win || win.isDestroyed() || win.isFocused()) return;
+  if (!win || win.isDestroyed() || win.isFocused()) return;
   // The drop is open on this chat: the answer is already in front of the person.
   if (drop.isShowing && drop.isShowing(session.id)) return;
   const last = session.messages?.filter((m) => m.kind === 'assistant').at(-1);
+  const title = clip(session.title || 'Done', 40);
+  const body = last?.text ? clip(firstSentence(last.text), 90) : 'Your task is done.';
+  // The top bar shows it too (a small card for a few seconds); clicking that opens this chat in the drop.
+  island.ping({ title, text: body, onClick: () => island.openChat(session.id) });
+  if (!Notification.isSupported()) return;
   const notification = new Notification({
-    title: clip(session.title || 'Done', 40),
-    body: last?.text ? clip(firstSentence(last.text), 90) : 'Your task is done.',
+    title,
+    body,
     icon: notifyIcon(),
     silent: false,
   });
@@ -2965,6 +2971,7 @@ function broadcastRunStatus() {
   if (win && !win.isDestroyed()) win.webContents.send('runs:status', active);
   broadcastRemote(null, { type: 'runs_status', active });
   drop.runs(active);
+  island.runs(active);
   designTab.runs(active);
 }
 
@@ -3048,18 +3055,20 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
   // A role the user picked wins over the guessed one (checks keep their own).
   if (session.pinnedRole && !verifyOnly) roleId = session.pinnedRole;
   emitRoleBadge(session, roleId);
-  // The chat's bot (bots-desktop.js): its prompt, approval boundary and ask_bot. null = no bots.
+  // The chat's bot (bots-desktop.js): its prompt, approval boundary and ask_bot. With no bot
+  // chosen it's Codeply with its specialists (bot.bot null); null only when bots can't load.
   const bot = await botsDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly, request: userMessage });
+  const withTeam = !!bot && !!(bot.bot || bot.teamSize); // a chosen bot, or specialists to hand work to
   try {
     const classicRun = () => agentMod.runAgent({
       userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route,
       roleId, goal, maxSteps, verifyOnly, botPrompt: bot?.botPrompt, askBot: bot?.askBot, botId: bot?.botId,
       // Pass work to the bot whose job it is (brain-desktop.js); the user asked for this chat.
-      handOff: bot && !verifyOnly ? brainDesktop.handOffFor({ botId: bot.botId || null, requester: 'user' }) : undefined,
+      handOff: withTeam && !verifyOnly ? brainDesktop.handOffFor({ botId: bot.botId || null, requester: 'user' }) : undefined,
       haze: { product: 'craft', chatId: session.id }, todos,
     });
     // Build turns run on the DSH harness (dsh-chat.js); the rest on Classic's agent.
-    const run = (await dshChatFor({ mode, images, bot, verifyOnly, goal }))
+    const run = (await dshChatFor({ mode, images, bot: withTeam ? bot : null, verifyOnly, goal }))
       ? dshTurnOrClassic(dshChat.runTurn({ session, userMessage, history, cwd, approve, signal, route }), classicRun)
       : classicRun();
     for await (const ev of run) {
@@ -3840,6 +3849,8 @@ ipcMain.handle('chat:send', (e, payload) => startChatRun(payload));
 
 // The drop: Alt+C anywhere opens Craft's agent in a small chat in the corner (see drop.js).
 const drop = require('./drop');
+// The top bar: a thin line at the top center of the screen that grows into the drop when clicked (see island.js).
+const island = require('./island');
 // The Design tab (design/design-main.js): Codeply Design laid over the main area, like Crew.
 const designTab = require('./design/design-main');
 function initDesignTab() {
@@ -3967,6 +3978,12 @@ function initDrop() {
     onAsk: (text, answer) => lifeDesktop.noteAsk(text, answer, 'orbit'),
   });
   drop.setPressHandler(voiceMode.press);
+  // The top bar (island.js): Orbit, running tasks and pings show on it; hidden from the tray menu.
+  island.init({
+    getSetting: (k) => store[k], setSetting: (k, v) => { store[k] = v; saveStore(); },
+    titleOf: (id) => { const s = store.sessions.find((x) => x.id === id); return s ? s.title : ''; },
+    activeRunIds: () => [...activeRuns.keys()],
+  });
   // Drag + Shift: a wheel of formats to convert a dragged file to (see convert-wheel.js).
   convertWheel.init({
     getSetting: (k) => store[k], setSetting: (k, v) => { store[k] = v; saveStore(); },
@@ -4404,6 +4421,7 @@ app.on('before-quit', () => {
   jobsQuitting = true;
   if (jobsApi()) jobsApi().stopAll(); // background commands end with the app
   drop.dispose();
+  island.dispose();
   voiceMode.dispose();
   convertWheel.dispose();
   dshEngine.dispose(); // the DSH engine and its Haze bridge end with the app

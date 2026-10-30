@@ -477,25 +477,36 @@
     return byName(args && args.bot) || { name: (args && args.bot) || 'a bot', avatar: CRAFT_AVATAR };
   }
 
+  /**
+   * A plain Codeply chat (the user picked no bot): Codeply's specialists stay
+   * behind the scenes. Finished rows say so themselves; a running one goes by
+   * the composer's choice until bot_working tells.
+   */
+  const isPlain = (running, delegation) => (delegation && delegation.plain) || (running && !byId(selected));
+
   /** Called by app.js addToolRow for ask_bot: running placeholder and the finished row. */
   function delegationRow({ ok, running, args, delegation }) {
     const bot = findBotFor(args, delegation);
+    const plain = isPlain(running, delegation);
     const task = (delegation && delegation.task) || (args && args.task) || '';
     const row = document.createElement('div');
-    row.className = `bot-deleg${running ? ' running' : ''}${ok === false ? ' failed' : ''}`;
-    const firstLine = String(task).split('\n')[0].slice(0, 140);
-    const verb = running ? `Asking <b>${esc(bot.name)}</b>` : `Asked <b>${esc(bot.name)}</b>`;
+    row.className = `bot-deleg${running ? ' running' : ''}${ok === false ? ' failed' : ''}${plain ? ' plain' : ''}`;
     const d = delegation || {};
+    const firstLine = String(task).split('\n')[0].slice(0, 140);
+    // Plain: "Worked on: <what came of it>", no name or avatar until the row is opened.
+    const headLine = plain && !running && d.summary ? String(d.summary).slice(0, 140) : firstLine;
+    const verb = plain ? (running ? 'Working on it' : 'Worked on:') : running ? `Asking <b>${esc(bot.name)}</b>` : `Asked <b>${esc(bot.name)}</b>`;
     const steps = (d.steps || []).map((s) => `<li class="${s.ok ? '' : 'fail'}"><code>${esc(s.name)}</code> ${esc(s.label || '')}</li>`).join('');
     const result = running ? '' : d.ok === false || ok === false
       ? `<div class="bot-deleg-error">${esc(d.error || 'It could not finish.')}</div>`
-      : `${d.summary ? `<div class="bot-deleg-summary">${esc(d.summary)}</div>` : ''}${d.details ? `<div class="bot-deleg-details md">${mdToHtml(d.details)}</div>` : ''}`;
+      : `${d.summary && !plain ? `<div class="bot-deleg-summary">${esc(d.summary)}</div>` : ''}${d.details ? `<div class="bot-deleg-details md">${mdToHtml(d.details)}</div>` : ''}`;
+    const who = plain && !running && d.bot && d.bot.name ? `<div class="bot-deleg-fulltask">Specialist: ${esc(d.bot.name)}${d.created ? ' (new)' : ''}</div>` : '';
     row.innerHTML = `<div class="bot-deleg-head">
-        <span class="bot-deleg-av">${av(bot.avatar, 24, { state: running ? 'working' : ok === false ? 'idle' : 'done' })}</span>
-        <span class="bot-deleg-verb">${verb}</span><span class="bot-deleg-task">${esc(firstLine)}</span>
+        ${plain ? '' : `<span class="bot-deleg-av">${av(bot.avatar, 24, { state: running ? 'working' : ok === false ? 'idle' : 'done' })}</span>`}
+        <span class="bot-deleg-verb">${verb}</span><span class="bot-deleg-task">${esc(headLine)}</span>
         ${running ? '<span class="spinner"></span>' : '<svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>'}</div>
       <div class="bot-deleg-body${running ? '' : ' hidden'}">
-        ${task && task.length > firstLine.length ? `<div class="bot-deleg-fulltask">${esc(task)}</div>` : ''}
+        ${who}${task && (plain ? !running : task.length > firstLine.length) ? `<div class="bot-deleg-fulltask">${esc(task)}</div>` : ''}
         <ul class="bot-deleg-steps">${steps}</ul>${result}</div>`;
     if (!running) {
       row.querySelector('.bot-deleg-head').addEventListener('click', () => {
@@ -503,7 +514,7 @@
         row.classList.toggle('expanded');
       });
       // The finished result is the interesting bit: show the summary line without a click.
-      if (d.summary) row.querySelector('.bot-deleg-head').insertAdjacentHTML('afterend', `<div class="bot-deleg-peek">${esc(d.summary)}</div>`);
+      if (d.summary && !plain) row.querySelector('.bot-deleg-head').insertAdjacentHTML('afterend', `<div class="bot-deleg-peek">${esc(d.summary)}</div>`);
       setTimeout(() => { const s = row.querySelector('svg.ba'); if (s) A.setAvatarState(s, 'idle'); }, 2500);
     }
     if (typeof enqueueReveal === 'function' && !running) {
@@ -531,9 +542,23 @@
   function markWorking(data) {
     const rows = chatColumn.querySelectorAll('.bot-deleg.running');
     const row = rows[rows.length - 1];
-    if (!row || !data.bot) return;
+    if (!row) return;
+    // A plain Codeply chat: what is being worked on, never who.
+    if (data.plain || !data.bot) {
+      if (!row.classList.contains('plain')) {
+        row.classList.add('plain');
+        const avEl = row.querySelector('.bot-deleg-av');
+        if (avEl) avEl.remove();
+        row.querySelector('.bot-deleg-verb').textContent = 'Working on it';
+      }
+      // A nested ask keeps the first line: the task Codeply started with.
+      const taskEl = row.querySelector('.bot-deleg-task');
+      if (!taskEl.textContent) taskEl.textContent = String(data.task || '').split('\n')[0].slice(0, 140);
+      return;
+    }
     const bot = byId(data.bot.id) || data.bot;
-    row.querySelector('.bot-deleg-av').innerHTML = av(bot.avatar, 24, { state: 'working' });
+    const avEl = row.querySelector('.bot-deleg-av');
+    if (avEl) avEl.innerHTML = av(bot.avatar, 24, { state: 'working' });
     row.querySelector('.bot-deleg-verb').innerHTML = `Asking <b>${esc(bot.name)}</b>`;
     row.querySelector('.bot-deleg-task').textContent = String(data.task || '').split('\n')[0].slice(0, 140);
   }

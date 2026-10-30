@@ -81,16 +81,23 @@ function wrapApprove(approve, bot, session, cwd) {
  */
 function makeAskBot(c) {
   const b = bots();
-  return async ({ name, task, signal }) => {
+  return async ({ name, task, specialty, signal }) => {
     const steps = [];
     const r = await b.delegate({
-      caller: c.caller, name, task, depth: c.depth, chain: c.chain, token: c.token, signal: signal || c.signal,
+      caller: c.caller, name, task, specialty, depth: c.depth, chain: c.chain, token: c.token, signal: signal || c.signal,
       runBot: (target, sub) => runSub(c, target, sub, steps),
     });
-    if (r.meta && r.meta.delegation) r.meta.delegation.steps = steps.slice(-12);
-    if (r.meta && r.meta.delegation && r.meta.delegation.bot) {
-      deps.sendEvent(c.session.id, { type: 'bot_working', bot: r.meta.delegation.bot, working: false, ok: r.ok });
+    const d = r.meta && r.meta.delegation;
+    if (d) d.steps = steps.slice(-12);
+    // A plain Codeply chat: the specialist stays behind the scenes (bots-ui.js shows "Worked on").
+    if (d && c.plain) {
+      d.plain = true;
+      r.meta.label = `Worked on: ${d.summary || String(d.task || '').split('\n')[0]}`.slice(0, 160);
     }
+    if (d && d.bot) {
+      deps.sendEvent(c.session.id, { type: 'bot_working', bot: c.plain ? null : d.bot, plain: !!c.plain, working: false, ok: r.ok });
+    }
+    if (d && d.created && deps.onChange) { try { deps.onChange(); } catch {} }
     return r;
   };
 }
@@ -114,7 +121,8 @@ function recentChat(session, max = 8) {
 async function runSub(c, target, sub, steps) {
   const b = bots();
   const card = b.botCard(target);
-  deps.sendEvent(c.session.id, { type: 'bot_working', bot: card, task: sub.task, working: true });
+  const shown = c.plain ? null : card; // plain Codeply chats never name the specialist
+  deps.sendEvent(c.session.id, { type: 'bot_working', bot: shown, plain: !!c.plain, task: sub.task, working: true });
   const canAsk = sub.depth < b.MAX_DEPTH;
   const run = deps.agentMod().runAgent({
     userMessage: withChat(sub.task, c.session), history: [], mode: c.mode, cwd: c.cwd,
@@ -132,7 +140,7 @@ async function runSub(c, target, sub, steps) {
       const step = { name: ev.name, label: String(label).slice(0, 140), ok: !!ev.ok };
       steps.push(step);
       if (trajectory.length < 60) trajectory.push(b.runStep(ev));
-      deps.sendEvent(c.session.id, { type: 'bot_step', bot: card, ...step });
+      deps.sendEvent(c.session.id, { type: 'bot_step', bot: shown, plain: !!c.plain, ...step });
     } else if (ev.type === 'error') throw new Error(ev.error || 'the run failed');
     else if (ev.type === 'aborted') throw new Error('Stopped.');
     else if (ev.type === 'done') break;
@@ -142,13 +150,14 @@ async function runSub(c, target, sub, steps) {
 }
 
 /**
- * runOneTurn: everything this turn needs to run as the chat's bot, or null
- * when the user has no bots (plain Craft, nothing changes). Never throws.
+ * runOneTurn: everything this turn needs to run as the chat's bot, or, with
+ * no bot chosen, as Codeply with its private specialists (bot is null, no
+ * lock, no badge; also with no bots at all, so it can make its first one).
+ * null only when the bots engine is not available. Never throws.
  */
 async function forTurn({ session, approve, signal, route, cwd, mode, verifyOnly, request }) {
   let b; let team;
   try { b = bots(); team = b.listBots(); } catch (e) { console.warn('[bots] not available:', e.message); return null; }
-  if (!team.length) return null;
   const bot = session.botId ? team.find((x) => x.id === session.botId) || null : null;
   const token = `chat:${session.id}:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
   let held = false;
@@ -161,10 +170,12 @@ async function forTurn({ session, approve, signal, route, cwd, mode, verifyOnly,
   } else {
     emitBadge(session, null);
   }
-  const c = { session, caller: bot, depth: 0, chain: bot ? [bot.id] : [], token, approve, signal, route, cwd, mode };
+  const c = { session, caller: bot, plain: !bot, depth: 0, chain: bot ? [bot.id] : [], token, approve, signal, route, cwd, mode };
   const steps = []; // this turn's tool calls, for the bot's reflection
   return {
     bot,
+    plain: !bot, // Codeply itself, not a bot the user chose
+    teamSize: team.length,
     approve: wrapApprove(approve, bot, session, cwd),
     botPrompt: (native) => (bot ? b.buildBotPrompt(bot, { team, canDelegate: true, canHandOff: !!deps.canHandOff && deps.canHandOff(), native, request }) : b.teamPrompt(team, { native, canHandOff: !!deps.canHandOff && deps.canHandOff() })),
     askBot: makeAskBot(c),

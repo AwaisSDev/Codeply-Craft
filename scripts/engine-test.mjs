@@ -1657,7 +1657,54 @@ process.stdin.on('data', (d) => {
     const self = await bots.delegate({ caller: dotNow, name: 'Orion', task: 'x', depth: 0, token: 't1', lock, team, runBot: work('S') });
     const deep = await bots.delegate({ caller: null, name: 'Vera', task: 'x', depth: bots.MAX_DEPTH, token: 't2', lock, team, runBot: work('D') });
     const ghost = await bots.delegate({ caller: null, name: 'Nobody', task: 'x', depth: 0, token: 't3', lock, team, runBot: work('G') });
-    check('bots: no self-calls, depth limit 2, unknown bots refused', !self.ok && /yourself/.test(self.output) && !deep.ok && /2 levels/.test(deep.output) && !ghost.ok && /no bot called/i.test(ghost.output));
+    check('bots: no self-calls, depth limit 2, unknown bots refused', !self.ok && /yourself/.test(self.output) && !deep.ok && /2 levels/.test(deep.output) && !ghost.ok && /no specialist called/i.test(ghost.output) && /specialty/.test(ghost.output));
+
+    // Codeply (the plain agent) and its private specialists.
+    {
+      const dash = String.fromCharCode(0x2014);
+      const tp = bots.teamPrompt(team);
+      const empty = bots.teamPrompt([]);
+      check('specialists: the plain agent is Codeply, with a SPECIALISTS section and no long dashes',
+        /You are Codeply, the user's one personal agent and assistant/.test(tp) && /\nSPECIALISTS\n/.test(tp) && !/^BOTS\n/m.test(tp) && /- Vera: Research/.test(tp) &&
+        /Never name a specialist/.test(tp) && /answer honestly/.test(tp) && !(tp + empty).includes(dash), tp);
+      check('specialists: with none yet, the prompt still says how to make one', /You are Codeply/.test(empty) && /You have no specialists yet/.test(empty) && /To make a new specialist/.test(empty) && empty.includes('<specialty>'));
+      check('specialists: the native prompt leaves out the tag example', !bots.teamPrompt(team, { native: true }).includes('<codeply:ask_bot>') && tp.includes('<codeply:ask_bot>'));
+      let ran = null;
+      const before = bots.listBots().length;
+      const made = await bots.delegate({ caller: null, name: 'Cal', task: 'What is on today?', specialty: 'Calendar: keeps the user\'s schedule', depth: 0, token: 'sp1', lock, runBot: async (b2) => { ran = b2; return 'Summary: Two meetings today.'; } });
+      const cal = bots.findBot('Cal');
+      check('specialists: delegate makes a missing specialist when given a specialty, then runs it',
+        made.ok && ran && ran.name === 'Cal' && cal && cal.role === 'specialist' && /Calendar/.test(cal.specialty) && bots.listBots().length === before + 1 &&
+        made.meta.delegation.created === true && /NEW SPECIALIST/.test(made.output) && made.meta.delegation.summary === 'Two meetings today.', JSON.stringify(made));
+      const again = await bots.delegate({ caller: null, name: 'Cal', task: 'And tomorrow?', specialty: 'Calendar again', depth: 0, token: 'sp2', lock, runBot: async () => 'Summary: Free.' });
+      check('specialists: an existing one is used, not made twice', again.ok && !again.meta.delegation.created && bots.listBots().length === before + 1);
+      const none = await bots.delegate({ caller: null, name: 'Inbox', task: 'x', depth: 0, token: 'sp3', lock, runBot: async () => 'Summary: never.' });
+      const byBot = await bots.delegate({ caller: dotNow, name: 'Inbox', task: 'x', specialty: 'Email', depth: 0, chain: [dot.id], token: 'sp4', lock, team, runBot: async () => 'Summary: never.' });
+      check('specialists: without a specialty it refuses, and a bot cannot make one', !none.ok && /no specialist called "Inbox"/.test(none.output) && !byBot.ok && /no bot called/i.test(byBot.output) && !bots.findBot('Inbox'));
+      const full = Array.from({ length: bots.MAX_SPECIALISTS }, (_, i) => bots.normalizeBot({ name: `S${i}`, role: 'specialist' }));
+      const capped2 = await bots.delegate({ caller: null, name: 'Extra', task: 'x', specialty: 'More', depth: 0, token: 'sp5', lock, team: full, runBot: async () => 'Summary: never.' });
+      check('specialists: no more than the cap, refused politely', !capped2.ok && /the most you can have/.test(capped2.output) && !bots.findBot('Extra'));
+      if (cal) bots.removeBot(cal.id);
+    }
+
+    // The morning message plans the day: today's events in order and a free stretch for focus.
+    {
+      const M = require(path.join(CLI, 'lib/morning.js'));
+      const at = (h, m = 0) => Date.parse(`2026-11-02T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00Z`);
+      const events = [
+        { id: 'c2', source: 'calendar', kind: 'event', at: at(13), end: at(14), title: 'Lunch with Sara', data: {} },
+        { id: 'c1', source: 'calendar', kind: 'event', at: at(9, 30), end: at(10), title: 'Standup', data: {} },
+      ];
+      const fakeStore = {
+        items: (q) => ((q.sources || []).includes('calendar') && !(q.kinds || []).includes('cancelled') ? events.filter((x) => x.at >= q.from && x.at < q.to).sort((a, b) => a.at - b.at) : []),
+        getState: (k, d) => d, outboxByStatus: () => [],
+      };
+      const m = M.build({ store: fakeStore, snap: { tz: 'UTC', waiting: [] }, now: at(7), since: at(6) });
+      const day = (m.sections.find((s) => s.key === 'day') || { lines: [] }).lines;
+      check('morning: the day in order, then a focus block in the first long gap', day[0] === '09:30 Standup' && day[1] === '13:00 Lunch with Sara' && day[2] === 'Focus time: 10:00 to 12:00 is free' && /First up: 09:30 Standup/.test(m.summary) && /^Good morning\./.test(m.text), JSON.stringify(day));
+      const packed = M.build({ store: { ...fakeStore, items: (q) => ((q.sources || []).includes('calendar') && !(q.kinds || []).includes('cancelled') ? [{ id: 'x', source: 'calendar', kind: 'event', at: at(9), end: at(18), title: 'Offsite', data: {} }] : []) }, snap: { tz: 'UTC', waiting: [] }, now: at(7), since: at(6) });
+      check('morning: no focus block on a packed day, and no long dash', !/Focus time/.test(packed.text) && !(m.text + packed.text).includes(String.fromCharCode(0x2014)));
+    }
     const pr = bots.parseResult('Summary: Found 3 docs.\nThey are in /docs.');
     check('bots: results come back structured', pr.summary === 'Found 3 docs.' && pr.details === 'They are in /docs.' && /RESULT FROM VERA/.test(x.output) && x.meta.delegation.bot.name === 'Vera');
 

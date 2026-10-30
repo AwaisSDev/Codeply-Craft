@@ -54,7 +54,7 @@
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
 /* The window grows upward, so everything sits on its bottom edge. */
-body { display: flex; flex-direction: column; justify-content: flex-end; font: 13.5px/1.5 var(--font); color: var(--text); -webkit-font-smoothing: antialiased; }
+body { display: flex; flex-direction: column; justify-content: flex-end; font: 14.5px/1.5 var(--font); color: var(--text); -webkit-font-smoothing: antialiased; }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
@@ -68,6 +68,78 @@ svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; s
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 .card.has-chat { background: var(--panel); border-radius: 22px; }
 
+/* Grown out of the top bar (island.js): the window hangs from the top and grows
+   down, so everything sits on its top edge. The card itself grows out of the
+   bar's thin line (132x5 at its top center) with its chat already in it, so
+   nothing waits on an empty box; going, it shrinks back into the line
+   (LEAVE_MS in drop.js). */
+body.top { justify-content: flex-start; }
+body.top .card { animation: none; background: var(--panel); }
+/* The bar's line itself turns into the chat: the card starts as exactly that line (same
+   spot, size and light color, island.css) and grows into the panel while the light
+   fades to the panel's dark; going, it shrinks back into a light line and the bar takes over. */
+body.top.enter .card { animation: from-bar 360ms cubic-bezier(.22, 1, .36, 1) both; }
+body.top.enter .card > * { animation: fill-in 160ms 60ms var(--ease) both; }
+body.top.leave .card { animation: to-bar 220ms cubic-bezier(.5, 0, .75, .3) both; }
+body.top.leave .card > * { opacity: 0; transition: opacity 90ms; }
+body.top.enter .card::before, body.top.leave .card::before { content: ""; position: absolute; inset: 0; z-index: 7; pointer-events: none; background: rgba(236, 236, 236, 0.55); }
+body.top.enter .card::before { animation: line-out 240ms ease-out both; }
+body.top.leave .card::before { animation: line-in 220ms ease-in both; }
+@keyframes from-bar { from { clip-path: inset(0 calc(50% - 66px) calc(100% - 5px) calc(50% - 66px) round 3px); } to { clip-path: inset(0 0 0 0 round 22px); } }
+@keyframes to-bar { from { clip-path: inset(0 0 0 0 round 22px); } to { clip-path: inset(0 calc(50% - 66px) calc(100% - 5px) calc(50% - 66px) round 3px); } }
+@keyframes line-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes line-in { 0%, 50% { opacity: 0; } to { opacity: 1; } }
+@keyframes fill-in { from { opacity: 0; } }
+
+/* Under the top bar it stays minimal, like the ChatGPT app: no header, no
+   chips, no step rows. Just the conversation and one plain box: the project
+   on top, then one line: a + for files, the text, the send button. */
+body.top .head, body.top .sg, body.top .changed, body.top .close { display: none !important; }
+body.top .thread { padding-top: 18px; -webkit-mask-image: none; }
+body.top .thread::-webkit-scrollbar { width: 0; }
+body.top .composer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px; padding: 8px; border-radius: 24px; background: var(--box); box-shadow: var(--edge); }
+body.top .has-chat .composer { margin: 0 10px 10px; }
+body.top .composer textarea { order: 4; flex: 1; min-width: 0; padding: 7px 4px; font-size: 16px; line-height: 1.45; align-self: center; }
+body.top .composer textarea::placeholder { color: var(--faint); }
+body.top .row { order: 5; height: auto; margin-left: auto; }
+body.top .row > :not(.send) { display: none; }
+body.top .send { width: 36px; height: 36px; margin: 0; background: var(--invert); color: var(--invert-text); box-shadow: none; }
+body.top .send:disabled { opacity: .25; }
+body.top .send svg { width: 17px; height: 17px; stroke-width: 2.2; }
+.tool, .hist3, .files, .brk { display: none; }
+body.top .brk { display: block; order: 2; flex-basis: 100%; height: 0; }
+/* once a chat has started: no project pill (a folder comes in through +), and no empty line for it */
+body.top .has-chat #folderBtn { display: none; }
+body.top .has-chat .composer:not(:has(.file)) .brk { display: none; }
+body.top .tool { display: inline-flex; align-items: center; justify-content: center; flex: none; color: var(--text); transition: background .12s; }
+body.top .tool svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* the project: a small outlined pill; a screen for "This computer", a folder for a picked one */
+body.top #folderBtn { order: 0; margin-bottom: 2px; gap: 7px; height: 30px; padding: 0 12px 0 10px; border-radius: 999px; font-size: 13px; font-weight: 600; box-shadow: inset 0 0 0 1px var(--line-2); max-width: 70%; }
+body.top #folderBtn svg { width: 15px; height: 15px; }
+body.top #folderBtn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.top #folderBtn:not(.set) { color: var(--dim); font-weight: 500; }
+body.top #folderBtn .pc, body.top #folderBtn.computer svg:first-child { display: none; }
+body.top #folderBtn.computer .pc { display: block; }
+body.top #folderBtn:hover { background: var(--hover); }
+/* + for files: a thin outlined circle */
+body.top #attachBtn { order: 3; width: 34px; height: 34px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--line-2); }
+body.top #attachBtn:hover { background: var(--hover); }
+/* "Past chats" and the last three, above the box while no chat is open */
+body.top .card:not(.has-chat) .hist3.some { display: flex; flex-direction: column; padding: 12px 10px 0; }
+.hist3 .lbl { color: var(--faint); font-size: 12px; font-weight: 600; padding: 0 8px 4px; }
+.hist3 button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; border-radius: 10px; text-align: left; font-size: 13.5px; color: var(--dim); }
+.hist3 button:hover { background: var(--hover); color: var(--text); }
+.hist3 .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist3 .s { color: var(--faint); font-size: 12px; flex: none; }
+/* files going with the next message: beside the project */
+body.top .files:not([hidden]) { display: contents; }
+.file { order: 1; display: inline-flex; align-items: center; gap: 4px; max-width: 100%; height: 30px; padding: 0 4px 0 11px; border-radius: 999px; font-size: 13px; box-shadow: inset 0 0 0 1px var(--line-2); }
+.file .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+.file button { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--dim); }
+.file button:hover { background: var(--hover); color: var(--text); }
+.file svg { width: 11px; height: 11px; }
+/* a file dragged over the chat */
+body.top.dragging .card::after { content: "Drop files to add them"; position: absolute; inset: 6px; z-index: 6; display: grid; place-items: center; border-radius: 18px; border: 1.5px dashed var(--line-2); background: rgba(0, 0, 0, 0.35); color: var(--text); font-weight: 600; pointer-events: none; }
 .head, .thread { display: none; }
 .has-chat .head { display: flex; }
 .has-chat .thread { display: block; }
@@ -75,22 +147,23 @@ svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; s
 /* header: the whole bar drags the window, its buttons don't */
 .head { align-items: center; gap: 8px; height: 44px; padding: 0 8px 0 18px; -webkit-app-region: drag; flex: none; }
 .head button { -webkit-app-region: no-drag; }
-.title { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; letter-spacing: -.005em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.title { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 600; letter-spacing: -.005em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .head-actions { display: flex; gap: 2px; }
 .icon { width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--dim); flex: none; transition: background .12s, color .12s; }
 .icon:hover { background: var(--hover); color: var(--text); }
 
+
 /* ─── the conversation ─────────────────────────────────────────────────────── */
-.thread { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 2px 18px 14px; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px); }
+.thread { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 22px 18px; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px); }
 .thread::-webkit-scrollbar { width: 8px; }
 .thread::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 8px; border: 2px solid var(--panel); }
 
-.feed { display: flex; flex-direction: column; gap: 12px; }
-.msg-user { align-self: flex-end; max-width: 85%; background: var(--bubble); padding: 8px 14px; border-radius: 18px; white-space: pre-wrap; word-wrap: break-word; font-size: 14px; }
-.msg-ai { word-wrap: break-word; font-size: 14px; line-height: 1.55; }
-.msg-ai p { margin: 0 0 8px; } .msg-ai p:last-child { margin-bottom: 0; }
+.feed { display: flex; flex-direction: column; gap: 16px; }
+.msg-user { align-self: flex-end; max-width: 85%; background: var(--bubble); padding: 10px 16px; border-radius: 20px; white-space: pre-wrap; word-wrap: break-word; font-size: 15.5px; line-height: 1.45; }
+.msg-ai { word-wrap: break-word; font-size: 15.5px; line-height: 1.6; letter-spacing: -.005em; }
+.msg-ai p { margin: 0 0 10px; } .msg-ai p:last-child { margin-bottom: 0; }
 .msg-ai ul, .msg-ai ol { margin: 4px 0 8px; padding-left: 20px; }
-.msg-ai h1, .msg-ai h2, .msg-ai h3 { font-size: 14.5px; margin: 10px 0 4px; }
+.msg-ai h1, .msg-ai h2, .msg-ai h3 { font-size: 16.5px; margin: 10px 0 4px; }
 .msg-ai code { font-family: var(--mono); font-size: 12.5px; background: var(--code); padding: 1px 5px; border-radius: 6px; }
 .msg-ai pre { background: var(--code); border-radius: 12px; padding: 9px 11px; overflow-x: auto; margin: 6px 0; box-shadow: inset 0 0 0 1px var(--line); }
 .msg-ai pre code { background: none; padding: 0; white-space: pre; }
@@ -102,7 +175,7 @@ svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; s
 
 /* The agent's steps fold into one row: what it's doing now while it works,
    a one-line summary after. Opening it lists every step. */
-.sg { color: var(--dim); font-size: 13px; }
+.sg { color: var(--dim); font-size: 14px; }
 .sg > summary { list-style: none; display: inline-flex; align-items: center; gap: 8px; min-height: 24px; max-width: 100%; cursor: pointer; }
 .sg > summary::-webkit-details-marker { display: none; }
 .sg > summary:hover { color: var(--text); }
@@ -115,26 +188,26 @@ svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; s
 .sg[open] .chev { transform: rotate(90deg); }
 .sg-body { display: flex; flex-direction: column; gap: 1px; margin: 6px 0 2px 5px; padding-left: 13px; border-left: 1px solid var(--line-2); }
 
-.step { display: flex; align-items: center; gap: 8px; min-height: 22px; color: var(--dim); font-size: 12.5px; }
+.step { display: flex; align-items: center; gap: 8px; min-height: 24px; color: var(--dim); font-size: 13.5px; }
 .step .st { width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .step .st svg { width: 13px; height: 13px; stroke-width: 1.8; }
 .step.ok .st { color: var(--green); }
 .step.bad .st { color: var(--red); }
 .step .v { color: var(--text); flex: none; }
-.step .l { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.step .l { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .step .n { font-size: 12px; font-variant-numeric: tabular-nums; flex: none; }
 .step .n .a { color: var(--green); } .step .n .r { color: var(--red); } .step .n .a + .r { margin-left: 4px; }
 .spin { width: 11px; height: 11px; border-radius: 50%; border: 1.6px solid var(--line-2); border-top-color: var(--text); animation: spin .8s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .task { font-size: 12px; color: var(--faint); }
 
-.note { font-size: 13px; color: var(--dim); }
+.note { font-size: 14px; color: var(--dim); }
 .note.error { color: var(--red); }
 .note.warn { color: var(--warn); }
 .note.limit { display: flex; align-items: center; gap: 7px; width: fit-content; padding: 5px 11px 5px 9px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); }
 .note.limit::before { content: ""; flex: none; width: 13px; height: 13px; background: currentColor; opacity: .8; -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27black%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27><path d=%27M13 3 5 14h6l-1 7 8-11h-6z%27/></svg>") center / contain no-repeat; }
 
-.working { display: flex; align-items: center; gap: 8px; color: var(--faint); font-size: 13px; min-height: 24px; }
+.working { display: flex; align-items: center; gap: 8px; color: var(--faint); font-size: 14px; min-height: 26px; }
 .working .time { font-variant-numeric: tabular-nums; }
 
 /* cards the agent waits on */
@@ -159,8 +232,8 @@ svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; s
 
 /* ─── the message bar ──────────────────────────────────────────────────────── */
 .composer { position: relative; flex: none; padding: 12px 8px 8px 14px; }
-.has-chat .composer { margin: 0 8px 8px; background: var(--box); border-radius: 20px; box-shadow: var(--edge); padding: 10px 8px 8px 14px; }
-.composer textarea { display: block; width: 100%; resize: none; overflow-y: hidden; border: 0; outline: none; background: none; color: var(--text); font: inherit; font-size: 14.5px; letter-spacing: -.005em; line-height: 1.45; max-height: 132px; padding: 2px 30px 10px 2px; }
+.has-chat .composer { margin: 0 10px 10px; background: var(--box); border-radius: 22px; box-shadow: var(--edge); padding: 12px 10px 10px 16px; }
+.composer textarea { display: block; width: 100%; resize: none; overflow-y: hidden; border: 0; outline: none; background: none; color: var(--text); font: inherit; font-size: 15.5px; letter-spacing: -.005em; line-height: 1.45; max-height: 140px; padding: 4px 30px 10px 4px; }
 .has-chat .composer textarea { padding-right: 2px; }
 .composer textarea::placeholder { color: var(--faint); }
 .row { display: flex; align-items: center; gap: 4px; height: 32px; }

@@ -80,10 +80,12 @@ function lifeNote(item) {
 
 async function tell(bot, text) {
   const here = deps.life && deps.life.atPc ? deps.life.atPc() : true;
+  // From Codeply, the user's one agent, whichever bot's mailbox it was.
   if (here && deps.Notification && deps.Notification.isSupported()) {
-    const n = new deps.Notification({ title: bot.name, body: short(text, 240), icon: deps.notifyIcon });
+    const n = new deps.Notification({ title: 'Codeply', body: short(text, 240), icon: deps.notifyIcon });
     n.on('click', () => deps.openBot(bot.id));
     n.show();
+    try { require('./island').ping({ title: 'Codeply', text: short(text, 240) }); } catch {}
     return;
   }
   try {

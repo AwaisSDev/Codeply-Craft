@@ -1,5 +1,5 @@
 // The Alt+C drop's bridge to the main process (drop.js).
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('drop', {
   state: () => ipcRenderer.invoke('drop:state'),
@@ -21,4 +21,11 @@ contextBridge.exposeInMainWorld('drop', {
   onRuns: (cb) => ipcRenderer.on('drop:runs', (e, d) => cb(d)),
   onShown: (cb) => ipcRenderer.on('drop:shown', (e, d) => cb(d)),
   onVoiceText: (cb) => ipcRenderer.on('drop:voiceText', (e, d) => cb(d)),
+  // The top bar (island.js): where the drop hangs ('top' or 'corner'), sliding back up, and a chat to open.
+  onAnchor: (cb) => ipcRenderer.on('drop:anchor', (e, m) => cb(m)),
+  onLeave: (cb) => ipcRenderer.on('drop:leave', (e, d) => cb(d)),
+  // Files for the next message: picked with +, or dropped on the chat (their paths on disk).
+  pickFiles: () => ipcRenderer.invoke('drop:pickFiles'),
+  pathFor: (file) => { try { return webUtils && webUtils.getPathForFile ? webUtils.getPathForFile(file) : file.path || ''; } catch { return ''; } },
+  onOpen: (cb) => ipcRenderer.on('drop:open', (e, id) => cb(id)),
 });

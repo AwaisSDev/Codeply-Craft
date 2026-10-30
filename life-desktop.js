@@ -405,9 +405,11 @@ async function deliver(c, m) {
   const msg = { kind: 'nudge', id: nudge.id, trigger: c.trigger, text, url: c.url || '', label: TRIG().TRIGGERS[c.trigger] ? TRIG().TRIGGERS[c.trigger].label : '' };
   if (bot && deps.crewThread) { try { deps.crewThread(bot.id, msg); } catch {} }
   const here = atPc();
+  // Every nudge and the morning message come from Codeply, the user's one agent, never a bot's name.
   if (here && deps.Notification && deps.Notification.isSupported()) {
     const body = c.morning ? c.morning.summary : text;
-    const n = new deps.Notification({ title: bot ? bot.name : 'Codeply', body: body.slice(0, 240), icon: deps.notifyIcon, silent: c.trigger === 'watched' });
+    const n = new deps.Notification({ title: 'Codeply', body: body.slice(0, 240), icon: deps.notifyIcon, silent: c.trigger === 'watched' });
+    try { require('./island').ping({ title: 'Codeply', text: body.slice(0, 240) }); } catch {}
     n.on('click', () => { if (bot) deps.openBot(bot.id); });
     // Hold on to it until it is gone: on Windows a toast whose object was collected can vanish unseen.
     shown.add(n);
@@ -420,7 +422,7 @@ async function deliver(c, m) {
     try {
       await deps.callFunction('reminders', { action: 'create', reminder: {
         text, due_at: new Date().toISOString(), kind: how === 'call' ? 'call' : 'remind', tz: localTz(),
-        bot_id: bot ? bot.id : null, bot_name: bot ? bot.name : 'Codeply', bot_voice: (bot && bot.voice) || null,
+        bot_id: bot ? bot.id : null, bot_name: bot && !c.morning ? bot.name : 'Codeply', bot_voice: (bot && bot.voice) || null,
         payload: { nudge: { id: nudge.id, trigger: c.trigger } },
       } });
     } catch (e) { if (!e.signedOut) console.warn('[life] phone:', e.message); }

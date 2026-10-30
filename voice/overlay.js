@@ -75,6 +75,8 @@
     bPos.y += (ty - bPos.y) * (pinned ? 1 : 0.22);
     bubble.style.left = `${Math.round(bPos.x)}px`; bubble.style.top = `${Math.round(bPos.y)}px`;
     // Tell the main process where it is, so the mouse can grab it there (and only there).
+    // Hidden (the top bar is on and it isn't pointing at anything): it never catches the mouse.
+    if (getComputedStyle(bubble).visibility === 'hidden') { if (lastSent) { lastSent = ''; api.send('bubble-rect', { display: DISPLAY, none: true }); } return; }
     const key = `${Math.round(bPos.x)},${Math.round(bPos.y)},${w},${h}`;
     if (key !== lastSent) { lastSent = key; api.send('bubble-rect', { display: DISPLAY, x: bPos.x, y: bPos.y, w, h }); }
   }
@@ -143,7 +145,7 @@
   function hideBuddy() {
     shown = false; flight = null;
     detached = false;
-    buddy.classList.remove('on', 'listening', 'thinking', 'speaking', 'arrived', 'your-turn', 'detached', 'working');
+    buddy.classList.remove('on', 'listening', 'thinking', 'speaking', 'arrived', 'your-turn', 'detached', 'working', 'moving');
     bubble.classList.remove('on'); bubble.hidden = true; label.hidden = true;
     buddy.hidden = true;
     bubbleGone();
@@ -166,10 +168,12 @@
     const dist = Math.hypot(dx, dy);
     const c = { x: (from.x + to.x) / 2 - dy * 0.18, y: (from.y + to.y) / 2 + dx * 0.18 - Math.min(120, dist * 0.15) };
     buddy.classList.remove('arrived');
+    buddy.classList.add('moving'); // with the top bar on, the arrow only shows while it's doing something (overlay.css)
     label.hidden = true;
     flight = {
       from, to, c, t0: performance.now(), ms: ms || Math.max(380, Math.min(900, 300 + dist * 0.45)),
       done: () => {
+        buddy.classList.remove('moving');
         target.x = to.x; target.y = to.y;
         if (!quiet) buddy.classList.add('arrived');
         if (text) { label.textContent = text; label.hidden = false; }
@@ -369,6 +373,7 @@
         showBuddy();
         buddy.classList.remove('listening', 'thinking', 'speaking', 'your-turn', 'working');
         buddy.classList.add(m.mode);
+        buddy.classList.toggle('bar-on', !!m.bar); // the top bar shows the waveform instead
         note.textContent = m.note || ''; note.classList.toggle('on', !!m.note);
         buddy.classList.toggle('has-note', !!m.note); // "Getting voice ready…" keeps its pill while loading
         if (m.hint) hint.textContent = m.hint;

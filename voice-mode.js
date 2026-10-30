@@ -170,7 +170,19 @@ function stopFollow() { clearInterval(S.followTimer); S.followTimer = null; }
 
 function setMode(mode, extra = {}) {
   if (S.buddyDisplay == null) S.buddyDisplay = displayAtCursor().id;
-  sendTo(S.buddyDisplay, { type: 'mode', mode, ...extra });
+  // With the top bar showing, it has the waveform and the shimmer, so the buddy's pill leaves them out.
+  let bar = false;
+  try { bar = !require('./island').isHidden(); } catch {}
+  sendTo(S.buddyDisplay, { type: 'mode', mode, bar, ...extra });
+  toBar('voiceState', mode);
+}
+
+// The top bar (island.js) mirrors Orbit: a waveform while you talk, a shimmer
+// while it thinks, and what it heard and says in a card under the line. Loaded on first use; the bar missing never stops a turn.
+let bar = null;
+function toBar(fn, arg) {
+  if (bar === null) { try { bar = require('./island'); } catch { bar = false; } }
+  if (bar) { try { bar[fn](arg); } catch {} }
 }
 
 // ─── Hotkey: tap opens the drop, hold talks ────────────────────────────────
@@ -275,6 +287,7 @@ async function beginListening() {
   await Promise.all([...overlays.values()].map(whenLoaded));
   if (turn !== S.turn) return;
   sendAll({ type: 'clear' });
+  toBar('voiceWords', { clear: true });
   S.buddyDisplay = null;
   startFollow();
   setMode('listening');
@@ -341,6 +354,7 @@ async function finishListening() {
   if (!text || (NOT_SPEECH.test(text.trim()) && pcm.length < 16000 * 2.5)) return finish('I didn\'t catch that. Try again?');
   S.question = text;
   sendTo(S.buddyDisplay, { type: 'heard', text });
+  toBar('voiceWords', { heard: text });
   await answer({ said: text, turn });
 }
 
@@ -480,6 +494,7 @@ async function callModel(messages, hasImages) {
 
 async function answer({ said, turn, followUp, screen }) {
   S.state = 'thinking';
+  toBar('voiceState', 'thinking');
   if (!followUp || followUp.kind !== 'act') setMode('thinking'); // mid-task it keeps its working ring
   const ok = await host.loadEngine();
   if (!ok) return finish('Codeply\'s engine isn\'t ready yet.');
@@ -795,6 +810,7 @@ async function perform({ chunks, next, agent, cont, plan, done, look }, shots, t
   };
   const key = (host.hotkeyLabel && host.hotkeyLabel()) || (isMac ? 'Option+C' : 'Alt+C');
   setMode('speaking', { hint: `Esc stops · tap ${key} for quick chat` });
+  toBar('voiceWords', { hint: `Esc stops · tap ${key} for quick chat` });
   // Every sentence in order; the next one is made while the current one plays.
   const queue = [];
   for (const c of chunks) {
@@ -821,6 +837,7 @@ async function perform({ chunks, next, agent, cont, plan, done, look }, shots, t
     if (firstAudio && q.text) { firstAudio = false; log(`first words after ${Date.now() - S.t0}ms`); }
     if (q.text) {
       sendTo(S.buddyDisplay, { type: 'say', text: q.text });
+      toBar('voiceWords', { say: q.text });
       await play(audio, q.text);
     }
   }
@@ -839,6 +856,7 @@ async function perform({ chunks, next, agent, cont, plan, done, look }, shots, t
     S.task.steps++;
     if (S.task.steps < MAX_ACT_STEPS) {
       S.state = 'thinking';
+      toBar('voiceState', 'thinking');
       // A small spinning ring on the cursor, not a stop: the flow keeps going.
       sendTo(S.buddyDisplay, { type: 'mode', mode: 'working' });
       await sleep(300); // let the screen settle
@@ -856,6 +874,7 @@ async function perform({ chunks, next, agent, cont, plan, done, look }, shots, t
     S.teach.steps++;
     if (S.teach.steps < MAX_TEACH_STEPS) {
       S.state = 'teaching';
+      toBar('voiceState', 'teaching');
       sendTo(S.buddyDisplay, { type: 'your-turn' });
       clearTimeout(S.idleTimer);
       S.idleTimer = setTimeout(() => { if (S.state === 'teaching') finish(); }, TEACH_WAIT_MS);
@@ -890,13 +909,15 @@ function stepDone(e) {
 
 // ─── Ending ─────────────────────────────────────────────────────────────────
 function finish(note) {
-  if (note) { setMode('speaking'); sendTo(S.buddyDisplay, { type: 'say', text: note, note: true }); }
+  if (note) { setMode('speaking'); sendTo(S.buddyDisplay, { type: 'say', text: note, note: true }); toBar('voiceWords', { say: note, note: true }); }
   S.state = 'idle';
+  toBar('voiceState', 'idle');
   clearTimeout(S.idleTimer);
   // The buddy stays on what it pointed at for a beat, comes home, the drawings fade, then everything hides.
   if (!note) S.lastAnswerAt = Date.now();
   S.idleTimer = setTimeout(() => {
     sendAll({ type: 'fade' });
+    toBar('voiceWords', { clear: true });
     S.idleTimer = setTimeout(() => { if (S.state === 'idle') { stopFollow(); hideOverlays(); S.buddyDisplay = null; } }, 700);
   }, note ? 3500 : 6000);
 }
@@ -916,6 +937,7 @@ function cancel() {
   catchMouse(false);
   sendTo(audioHost(), { type: 'mic-cancel' });
   S.state = 'idle';
+  toBar('voiceState', 'idle');
   sendAll({ type: 'fade' });
   setTimeout(() => { if (S.state === 'idle') { stopFollow(); hideOverlays(); S.buddyDisplay = null; } }, 500);
 }
@@ -965,7 +987,7 @@ function init(h) {
   host = h;
   ipcMain.on('voice:from', (e, m) => {
     if (!m || typeof m !== 'object') return;
-    if (m.type === 'level') { if (S.buddyDisplay != null) sendTo(S.buddyDisplay, { type: 'level', v: m.v }); }
+    if (m.type === 'level') { if (S.buddyDisplay != null) sendTo(S.buddyDisplay, { type: 'level', v: m.v }); toBar('voiceLevel', m.v); }
     else if (m.type === 'pcm') { const w = S.pcmWaiters.get(m.id); if (w) { S.pcmWaiters.delete(m.id); w(m.pcm); } }
     else if (m.type === 'played') { const w = S.playWaiters.get(m.id); if (w) { S.playWaiters.delete(m.id); w(); } }
     else if (m.type === 'stroke') {
