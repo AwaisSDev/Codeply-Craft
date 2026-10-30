@@ -1,0 +1,48 @@
+# Codeply context model v1: LoRA on a dense ~1-2B instruct model.
+# Base model choice: docs/local-intelligence/MODEL-SELECTION.md.
+base_model: Qwen/Qwen3-1.7B
+# Must match what the runtime sends (context-model.js extraBody for Qwen3):
+# thinking off, so the answer is the JSON and nothing else.
+chat_template_kwargs:
+  enable_thinking: false
+
+train_file: ml/data/out/sft-train.jsonl
+val_file: ml/data/out/sft-val.jsonl
+output_dir: ml/finetune/runs/codeply-context-v1
+max_seq_len: 2048
+seed: 7
+
+epochs: 2
+batch_size: 8
+grad_accum: 2          # effective batch 16
+learning_rate: 2.0e-4
+weight_decay: 0.0
+warmup_ratio: 0.03
+gradient_checkpointing: true
+log_every: 10
+eval_every: 200
+
+lora:
+  r: 32
+  alpha: 64
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+# --smoke: proves the pipeline end to end on a CPU in a few minutes.
+smoke:
+  base_model: HuggingFaceTB/SmolLM2-135M-Instruct
+  chat_template_kwargs: {}
+  output_dir: /tmp/codeply-ft-smoke
+  train_limit: 16
+  val_limit: 4
+  batch_size: 2
+  grad_accum: 1
+  max_steps: 2
+  epochs: 1
+  eval_every: 0
+  gradient_checkpointing: false
+  lora:
+    r: 8
+    alpha: 16
+    dropout: 0.0
+    target_modules: [q_proj, v_proj]

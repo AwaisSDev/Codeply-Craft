@@ -1,0 +1,303 @@
+{
+  "name": "rules-gold",
+  "provider": "rules",
+  "set": "gold",
+  "style": "full",
+  "examples": 39,
+  "at": "2026-10-30T14:48:21.884Z",
+  "host": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "logical": 4,
+    "ramMB": 16091,
+    "threads": null,
+    "ctx": null
+  },
+  "validity": 1,
+  "extraction": {
+    "precision": 1,
+    "recall": 0.091,
+    "f1": 0.167,
+    "gold": 33,
+    "pred": 3,
+    "tp": 3
+  },
+  "extractionUnseen": {
+    "precision": 1,
+    "recall": 0.091,
+    "f1": 0.167,
+    "gold": 33,
+    "pred": 3,
+    "tp": 3
+  },
+  "kindAccuracy": 0.667,
+  "certaintyAccuracy": 1,
+  "falseMemoryRate": 0,
+  "noiseRejection": 1,
+  "plans": {
+    "precision": 0,
+    "recall": 0,
+    "dateAccuracy": 0,
+    "timeAccuracy": 0
+  },
+  "memoryActions": 0.294,
+  "memoryActionsByTask": {
+    "duplicate": 0,
+    "contradiction": 0,
+    "joking": 1,
+    "hypothetical": 1,
+    "quoting": 1
+  },
+  "temporal": 0,
+  "importanceSpearman": 0.5,
+  "importanceMAE": 0.05,
+  "safety": {
+    "secretsLeaked": 0,
+    "secretsTotal": 2,
+    "injectionsFollowed": 0,
+    "injectionsTotal": 2
+  },
+  "byTask": {
+    "contradiction": {
+      "n": 3,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "gold": 3,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "decision": {
+      "n": 2,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "gold": 2,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "dislike": {
+      "n": 1,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "gold": 1,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "duplicate": {
+      "n": 1,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "gold": 1,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "external": {
+      "n": 1,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "gold": 1,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "fact": {
+      "n": 2,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "gold": 3,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "heard": {
+      "n": 1,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "gold": 1,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "hypothetical": {
+      "n": 1,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "gold": 0,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "idea": {
+      "n": 1,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "gold": 1,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "injection": {
+      "n": 2,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "gold": 0,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "joking": {
+      "n": 2,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "gold": 0,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "multi": {
+      "n": 1,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "gold": 3,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "noise": {
+      "n": 4,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "gold": 0,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "person": {
+      "n": 2,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "gold": 3,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "plan": {
+      "n": 2,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "gold": 0,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "preference": {
+      "n": 4,
+      "precision": 1,
+      "recall": 0.2,
+      "f1": 0.333,
+      "gold": 5,
+      "pred": 1,
+      "tp": 1,
+      "validity": 1
+    },
+    "quoting": {
+      "n": 1,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "gold": 0,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "requirement": {
+      "n": 1,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "gold": 1,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "routine": {
+      "n": 1,
+      "precision": 1,
+      "recall": 0.5,
+      "f1": 0.667,
+      "gold": 2,
+      "pred": 1,
+      "tp": 1,
+      "validity": 1
+    },
+    "secret": {
+      "n": 2,
+      "precision": 1,
+      "recall": 0.5,
+      "f1": 0.667,
+      "gold": 2,
+      "pred": 1,
+      "tp": 1,
+      "validity": 1
+    },
+    "temporary": {
+      "n": 2,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "gold": 2,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "todo": {
+      "n": 1,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "gold": 1,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "urdu": {
+      "n": 1,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "gold": 1,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    }
+  },
+  "performance": {
+    "msMean": 0,
+    "msP50": 0,
+    "msP95": 2,
+    "promptTokensMean": 0,
+    "completionTokensMean": 0,
+    "serverPeakMB": null,
+    "serverStartMs": null,
+    "serverCpuSecondsPerExample": null,
+    "wallSeconds": 1
+  },
+  "errors": []
+}

@@ -19,3 +19,8 @@ sim-out/
 crew-ios/www
 crew-ios/ios
 crew-ios/node_modules
+
+# Local intelligence: rebuilt from the committed dataset / not for the repo
+ml/data/out/sft-*.jsonl
+ml/finetune/runs/
+__pycache__/

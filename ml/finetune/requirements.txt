@@ -1,0 +1,8 @@
+# Versions the pipeline was checked with (smoke run, CPU). On a GPU machine
+# install torch for its CUDA version first (https://pytorch.org), then the rest.
+torch>=2.5
+transformers==5.22.1
+peft==0.21.2
+accelerate==1.15.0
+safetensors==0.8.0
+PyYAML==6.0.3
