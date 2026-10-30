@@ -51,7 +51,9 @@ def main():
     dtype = torch.bfloat16 if use_cuda and torch.cuda.is_bf16_supported() else (torch.float16 if use_cuda else torch.float32)
     device = "cuda" if use_cuda else "cpu"
 
-    tok = AutoTokenizer.from_pretrained(cfg["base_model"])
+    # Models whose architecture ships as code on the Hub (LFM3) need it; off by default.
+    remote = bool(cfg.get("trust_remote_code"))
+    tok = AutoTokenizer.from_pretrained(cfg["base_model"], trust_remote_code=remote)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     template_kwargs = cfg.get("chat_template_kwargs") or {}
@@ -73,7 +75,7 @@ def main():
     train = [x for x in train if any(l != -100 for l in x["labels"])]
     print(f"train {len(train)}  val {len(val)}  longest {max(len(x['input_ids']) for x in train)} tokens", flush=True)
 
-    model = AutoModelForCausalLM.from_pretrained(cfg["base_model"], dtype=dtype)
+    model = AutoModelForCausalLM.from_pretrained(cfg["base_model"], dtype=dtype, trust_remote_code=remote)
     if cfg.get("gradient_checkpointing") and use_cuda:
         model.gradient_checkpointing_enable()
         model.enable_input_require_grads()
