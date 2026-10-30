@@ -3120,7 +3120,7 @@ function openModelMenu(anchorBtn) {
   const custom = state.models.models.filter((m) => m.kind !== 'chatgpt');
   const LOCK = icon('lock', 'model-item-lock ico-sm');
   const autoModels = [['Sonnet 5.5', 'Code and hard tasks'], ['Haiku 5.5', 'Quick answers'], ['Non-disclosed models', 'Casual chat']].map(([name, why]) => `
-    <div class="model-item locked" aria-disabled="true" title="Haze 2 picks these for you">
+    <div class="model-item locked" aria-disabled="true" aria-label="${name}: used by Haze 2" data-tip="Used by Haze 2">
       <span class="model-item-icon custom">${CHIP_SVG}</span>
       <span class="model-item-text"><strong>${name}</strong><span>${why}</span></span>
       ${LOCK}

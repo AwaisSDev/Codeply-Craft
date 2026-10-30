@@ -2710,6 +2710,16 @@ a.remote-url { text-decoration: none; cursor: pointer; }
 .model-menu .model-item.locked:hover { background: none; }
 .model-menu .model-item.locked .model-item-text strong { font-size: 13px; }
 .model-menu .model-item.locked .model-item-text span { font-size: 11.5px; }
+/* Hovering a locked model: a small "Used by Haze 2" label pops up right before its lock. */
+.model-menu .model-item.locked { position: relative; }
+.model-menu .model-item.locked::after {
+  content: attr(data-tip); position: absolute; right: 34px; top: 50%; transform: translate(4px, -50%);
+  padding: 3px 8px; border-radius: 6px; background: var(--text); color: var(--cg-menu-bg); /* inverted, like a tooltip */
+  font-size: 11.5px; font-weight: 500; white-space: nowrap; pointer-events: none;
+  opacity: 0; transition: opacity .12s ease, transform .12s ease;
+}
+.model-menu .model-item.locked:hover::after { opacity: 1; transform: translate(0, -50%); }
+.model-menu .model-item.locked:hover { opacity: .85; }
 .model-menu .model-menu-label { padding: 10px 10px 4px; }
 .model-menu .model-menu-action { padding: 8px 10px; font-size: 14px; }
 .model-menu .model-menu-action svg { display: none; }
