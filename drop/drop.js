@@ -66,6 +66,7 @@
 
   // ─── the window's height ──────────────────────────────────────────────────
   const MAX_H = 500;       // the panel's tallest; the conversation scrolls past this
+  const MAX_H_TOP = 380;   // under the top bar it stays a quick look, shorter than in the corner
   const MIN_CHAT = 220;    // a fresh chat doesn't start as a sliver
   let fitRaf = 0; let lastFit = 0; let menuNeed = 0;
   function fit() {
@@ -75,7 +76,7 @@
       if (card.classList.contains('has-chat')) {
         const cs = getComputedStyle(composer);
         const want = head.offsetHeight + feed.scrollHeight + 16 + composer.offsetHeight + parseFloat(cs.marginBottom || 0);
-        h = Math.max(MIN_CHAT, Math.min(MAX_H, Math.ceil(want)));
+        h = Math.max(MIN_CHAT, Math.min(topMode ? MAX_H_TOP : MAX_H, Math.ceil(want)));
         card.style.height = h + 'px';
       } else {
         card.style.height = '';

@@ -98,6 +98,10 @@ body.top.leave .card::before { animation: line-in 300ms ease-in both; }
 body.top .head, body.top .sg, body.top .changed, body.top .close { display: none !important; }
 body.top .thread { padding-top: 18px; -webkit-mask-image: none; }
 body.top .thread::-webkit-scrollbar { width: 0; }
+/* your messages in the blue bubble, like the main window (styles.css --bubble-bg) */
+body.top .msg-user { background: #1d3fa6; color: #fff; border-radius: 18px; padding: 10px 16px; }
+:root[data-theme="light"] body.top .msg-user { background: #2458d8; }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) body.top .msg-user { background: #2458d8; } }
 body.top .composer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px; padding: 8px; border-radius: 24px; background: var(--box); box-shadow: var(--edge); }
 body.top .has-chat .composer { margin: 0 10px 10px; }
 body.top .composer textarea { order: 4; flex: 1; min-width: 0; padding: 7px 4px; font-size: 16px; line-height: 1.45; align-self: center; }
