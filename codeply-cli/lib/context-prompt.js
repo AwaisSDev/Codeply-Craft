@@ -12,7 +12,9 @@
  * calls, so llama.cpp reuses its KV cache for it (cache_prompt).
  */
 
-const PROMPT_VERSION = 1;
+// v2 (2026-10-30): plans and live-context rules, and a worked plan example, after every
+// off-the-shelf model put meetings in observations and split "back by 5" from the context.
+const PROMPT_VERSION = 2;
 
 const RULES = `You maintain the long-term memory of the user's personal assistant (Codeply). Read the EVENTS and return what is worth remembering about the user, their projects and the people in their life.
 
@@ -26,12 +28,21 @@ Rules:
 - People: a fact about someone close is kind "fact", about "person", written with their name ("Sara, the user's sister, is a nurse.").
 - A project thing gets "project" (its name). Never keep passwords, keys or codes.
 - plans: meetings, trips, deadlines with a time or place: {"what", "when" (YYYY-MM-DDTHH:MM or YYYY-MM-DD local), "where", "who": []}.
-- In an email or what was heard around the user, only the user's own words count as theirs.`;
+- In an email or what was heard around the user, only the user's own words count as theirs.
+- A meeting, call, class, game or trip with a day or time is a PLAN, never an observation. Turn "Saturday", "tomorrow", "next Monday" into a date counted from Now (the next such day after Now).
+- Live context ("at the gym", "in Manila this week") is ONE observation: kind "context", certainty "temporary", with "until" in it. "till 5" or "back by 5" = the next 17:00 after Now; "this week" = Sunday 23:59 of this week; "today" = 23:59 today. Never a separate observation for the time.
+- Now and the time stamps of the events are not memories.`;
 
 const EXAMPLES = `Example
 EVENTS:
 [1] chat (user) User: lol sure, I just LOVE debugging at 3am. Anyway let's switch the dashboard to Postgres, Mongo was a pain. I'm at the dentist till 4.
 JSON: {"observations": [{"kind": "decision", "slot": "database", "value": "Postgres", "text": "The dashboard project uses Postgres instead of Mongo.", "certainty": "stated", "importance": 0.85, "project": "dashboard", "about": "project"}, {"kind": "preference", "slot": "debugging at night", "value": "loves it", "text": "The user loves debugging at 3am.", "certainty": "joking", "importance": 0.2, "about": "user"}, {"kind": "context", "slot": "dentist", "value": "at the dentist", "text": "The user is at the dentist.", "certainty": "temporary", "importance": 0.5, "until": "16:00", "about": "user"}], "plans": []}
+
+Example
+Now: 2026-10-29 09:10 (Thursday)
+EVENTS:
+[1] chat (user) User: dinner with Ali and Hina on Saturday, 8pm, at Monal. I'm working from home till 3.
+JSON: {"observations": [{"kind": "context", "slot": "working from home", "value": "working from home", "text": "The user is working from home.", "certainty": "temporary", "importance": 0.5, "until": "15:00", "about": "user"}], "plans": [{"what": "Dinner with Ali and Hina", "when": "2026-10-31T20:00", "where": "Monal", "who": ["Ali", "Hina"]}]}
 
 Example
 EVENTS:
