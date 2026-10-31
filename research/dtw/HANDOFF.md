@@ -21,6 +21,13 @@ Production code and `main` stay untouched.
   W=<scratchpad>/dtw setsid nohup research/dtw/resume.sh > <scratchpad>/dtw-resume.log 2>&1 < /dev/null &
   ```
 
+Ettin-150M s1 is saved in `dtw-artifacts` (retrained 2026-10-31, validation
+span F1 0.909). The previous session's container may still be running the
+queue: before starting `resume.sh`, check `git log origin/codeply-li-dtw-experiment`
+for recent "DtW results:" commits; if one landed within the last ~2 hours,
+the old queue is probably still alive, so do the labelling work and leave
+the queue alone.
+
 ## Main finding so far, and the next step
 
 Ettin-150M trained on the 8,000 generated (templated) examples learns the
