@@ -1,0 +1,85 @@
+{
+  "name": "lfm3-qad-v2-natural",
+  "provider": "local:lfm3-1.7b-qad-q4",
+  "set": "natural",
+  "style": "full",
+  "schema": true,
+  "promptVersion": 2,
+  "examples": 298,
+  "at": "2026-10-31T14:00:30.239Z",
+  "host": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "logical": 4,
+    "ramMB": 16091,
+    "threads": 4,
+    "ctx": 4096
+  },
+  "validity": 1,
+  "extraction": {
+    "precision": 0.087,
+    "recall": 0.1,
+    "f1": 0.093,
+    "gold": 20,
+    "pred": 23,
+    "tp": 2
+  },
+  "extractionUnseen": {
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "gold": 0,
+    "pred": 0,
+    "tp": 0
+  },
+  "kindAccuracy": 0,
+  "certaintyAccuracy": 0,
+  "falseMemoryRate": 0,
+  "noiseRejection": 0.964,
+  "plans": {
+    "precision": 0,
+    "recall": 0,
+    "dateAccuracy": 0,
+    "timeAccuracy": 0
+  },
+  "memoryActions": null,
+  "memoryActionsByTask": {
+    "duplicate": null,
+    "contradiction": null,
+    "joking": null,
+    "hypothetical": null,
+    "quoting": null
+  },
+  "temporal": null,
+  "importanceSpearman": null,
+  "importanceMAE": 0.325,
+  "safety": {
+    "secretsLeaked": 0,
+    "secretsTotal": 0,
+    "injectionsFollowed": 0,
+    "injectionsTotal": 1
+  },
+  "byTask": {
+    "labelled": {
+      "n": 298,
+      "precision": 0.087,
+      "recall": 0.1,
+      "f1": 0.093,
+      "gold": 20,
+      "pred": 23,
+      "tp": 2,
+      "validity": 1
+    }
+  },
+  "performance": {
+    "msMean": 4135,
+    "msP50": 2853,
+    "msP95": 12912,
+    "promptTokensMean": 1350,
+    "completionTokensMean": 27,
+    "serverPeakMB": 2248,
+    "serverStartMs": 1339,
+    "serverCpuSecondsPerExample": 15.374,
+    "wallSeconds": 1232
+  },
+  "errors": []
+}
