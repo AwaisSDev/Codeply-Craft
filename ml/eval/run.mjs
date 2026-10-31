@@ -3,6 +3,7 @@
 //
 //   node ml/eval/run.mjs --provider rules                     [--set test-mini] [--limit N]
 //   node ml/eval/run.mjs --provider local:qwen3-1.7b-q4       (starts llama-server via local-runtime.js)
+//   node ml/eval/run.mjs --provider module:research/dtw/runtime/dtw-provider.mjs --name dtw-x   (an experimental backend file)
 //   node ml/eval/run.mjs --provider local:qwen3-0.6b-q4 --no-schema   (plain JSON mode, no grammar; result name gets -noschema)
 //   node ml/eval/run.mjs --provider openai --base-url http://127.0.0.1:11434/v1 --model qwen3:1.7b
 //   CONTEXT_EVAL_API_KEY=... node ml/eval/run.mjs --provider openai --base-url https://... --model ...   (a cloud model, if you have a key)
@@ -60,7 +61,8 @@ if (LIMIT) examples = examples.slice(0, LIMIT);
 // ─── The backend ────────────────────────────────────────────────────────────
 
 let runtime = null;
-function makeProvider() {
+let extraRuntimes = []; // module providers may run more than one server (e.g. an encoder and a writer)
+async function makeProvider() {
   if (PROVIDER === 'rules') return M.createRulesProvider();
   if (PROVIDER.startsWith('local:')) {
     const id = PROVIDER.slice(6);
@@ -68,6 +70,13 @@ function makeProvider() {
     if (!model) throw new Error(`Model ${id} is not installed (node scripts/context/fetch-model.mjs ${id}).`);
     runtime = RT.createRuntime({ model, threads: THREADS, ctx: CTX, idleMs: 0, args: ['-ctk', 'q8_0', '-ctv', 'q8_0'] });
     return M.createLocalProvider({ id, model: id, ensure: runtime.ensure, canStart: runtime.canStart, extraBody: model.extra, style: STYLE, schema: SCHEMA, timeoutMs: 300000 });
+  }
+  if (PROVIDER.startsWith('module:')) {
+    // An experimental backend in its own file: export createProvider(ctx) -> { provider, runtimes? }.
+    const mod = await import(path.resolve(PROVIDER.slice(7)));
+    const made = await mod.createProvider({ args, opt, RT, M, S, threads: THREADS, ctx: CTX });
+    extraRuntimes = made.runtimes || [];
+    return made.provider;
   }
   if (PROVIDER === 'openai') {
     const baseUrl = opt('base-url', process.env.CONTEXT_EVAL_BASE_URL);
@@ -207,9 +216,12 @@ function rescoreRows() {
 async function main() {
   const rescore = args.includes('--rescore');
   const prev = rescore ? JSON.parse(fs.readFileSync(path.join(OUT, `${NAME}.json`), 'utf8')) : null;
-  const provider = rescore ? null : makeProvider();
+  const provider = rescore ? null : await makeProvider();
   if (runtime) await runtime.ensure();
-  const cpu0 = runtime ? pidCpu(runtime.status().pid) : null;
+  for (const r of extraRuntimes) await r.ensure();
+  const servers = () => [runtime, ...extraRuntimes].filter(Boolean);
+  const cpuAll = () => { const v = servers().map((r) => pidCpu(r.status().pid)); return v.length && v.every((x) => x != null) ? v.reduce((a, b) => a + b, 0) : null; };
+  const cpu0 = cpuAll();
   const rows = rescore ? rescoreRows() : [];
   const t0 = Date.now();
   for (const [i, ex] of (rescore ? [] : examples).entries()) {
@@ -219,9 +231,10 @@ async function main() {
     rows.push(score(ex, r));
     if (process.stdout.isTTY || (i + 1) % 10 === 0) process.stdout.write(`\r${i + 1}/${examples.length} (${Math.round((Date.now() - t0) / (i + 1))} ms/ex)   `);
   }
-  const status = runtime ? runtime.status() : null;
-  const cpu1 = status ? pidCpu(status.pid) : null;
-  if (runtime) runtime.stop();
+  const statuses = servers().map((r) => r.status());
+  const status = statuses.length ? { lastStartMs: statuses[0].lastStartMs, memory: statuses.every((x) => x.memory) ? { peakMB: statuses.reduce((n, x) => n + x.memory.peakMB, 0) } : null } : null;
+  const cpu1 = cpuAll();
+  for (const r of servers()) r.stop();
   console.log('');
 
   // ─── Aggregate ──────────────────────────────────────────────────────────
@@ -271,4 +284,4 @@ async function main() {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
-main().catch((e) => { console.error(e.stack || e.message); if (runtime) runtime.stop(); process.exit(1); });
+main().catch((e) => { console.error(e.stack || e.message); for (const r of [runtime, ...extraRuntimes]) if (r) r.stop(); process.exit(1); });
