@@ -26,8 +26,9 @@ committed file.
 | Template-trained Ettin-150M (s1 / s1r) | Benchmark-520 | 0.306 / 0.328 | done, **old resolver: rerun needed** |
 | Template-trained Ettin-150M s1r | test-real / natural-300 | 0.123 / 0.015 | done, old resolver |
 | Claude labellers (Sonnet / Opus / hybrid) | Benchmark-520 | 0.838 / 0.844 / 0.831 | done (labeller quality, not a candidate) |
-| Ettin-150M ×3, Ettin-400M ×1 on realistic data | – | – | **Kaggle run 1 failed; version 2 running** (§4) |
-| LFM3-1.7B LoRA on realistic data | – | – | **Kaggle run 1 failed; version 2 running** (§4) |
+| Ettin-150M ×3 on realistic data | validation only so far | kind 0.74-0.76, certainty 0.85-0.87, gate 0.87-0.89, exact-span F1 0.05-0.07 | **trained on Kaggle (run 3)**; artifacts being retrieved; harness evaluation pending (§4) |
+| Ettin-400M ×1 on realistic data | – | – | run 3: out of memory at micro-batch 8; rerun at 2 × 16 |
+| LFM3-1.7B LoRA on realistic data | – | – | run 3 running |
 | Human agreement study (50 examples, 2 people) | – | – | **not started** (needs people) |
 
 ## 3. The realistic dataset and the frozen split
@@ -64,6 +65,17 @@ accumulation + gradient checkpointing, and removing torchao (micro-batch 4 ×
 4); effective batches unchanged. Both kernels pushed as version 2 at 15:33.
 The slow log retrieval was the CLI paging through every output file before
 writing the log; `KaggleApi().kernels_logs()` gets it in one request.
+
+Runs 2 and 3 (details in `research/dtw/KAGGLE-RUNS.md` on the DTW branch):
+run 2 failed on a device bug in the temperature fit (encoders) and on the
+128K-vocabulary logits (LoRA, out of memory); both fixed. Run 3 trained all
+three Ettin-150M seeds. **Exact-span F1 0.05-0.07 is a warning sign, not yet
+a result**: it scores exact token boundaries against Claude's evidence spans
+(often whole clauses), while the harness scores value words. The harness
+evaluation decides; until then no claim about the realistic-trained encoder
+should be made. The kernel output contained the whole cloned repository,
+which is why every log and artifact download was slow; the notebooks now
+clone under `/tmp` and save each run's artifacts as soon as it finishes.
 
 ## 5. Facts that constrain the architecture research
 
