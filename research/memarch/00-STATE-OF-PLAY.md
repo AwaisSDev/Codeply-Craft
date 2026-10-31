@@ -13,7 +13,7 @@ committed file.
 | Model-selection protocol | frozen at `6c21b2a0` (`research/dtw/MODEL-SELECTION-PROTOCOL.md`) | pre-registered; changes only as recorded deviations |
 | PASTE | `research/architecture/PASTE-FORMAL-SPECIFICATION.md` (v1, committed `b872ed67`) | v2 exists only in another session's scratchpad: **not in any branch** [M: searched all remote branches] |
 | Secret-guard fix | branch `claude/wonderful-feynman-y2ldw2`, `SECURITY-SECRETS.md` | not merged; LFM3 stored 5/13 benchmark secrets, template Ettin 6-7/13 [R] |
-| Trained artifacts | orphan branch `dtw-artifacts` | template-trained Ettin-150M s1; realistic-data Ettin-150M s1-s3 |
+| Trained artifacts | orphan branch `dtw-artifacts` | template-trained Ettin-150M s1; realistic-data Ettin-150M s1-s3, Ettin-400M s1 |
 
 ## 2. Results: completed, failed, pending
 
@@ -27,7 +27,7 @@ committed file.
 | Template-trained Ettin-150M s1r | test-real / natural-300 | 0.123 / 0.015 (old resolver); 0.122 / 0.016 corrected | done |
 | Claude labellers (Sonnet / Opus / hybrid) | Benchmark-520 | 0.838 / 0.844 / 0.831 | done (labeller quality, not a candidate) |
 | **Ettin-150M ×3 on realistic data** (mean ± sd over seeds) | Benchmark-520 / test-real / natural-300 | **0.389 ± 0.012 / 0.341 ± 0.011 / 0.241 ± 0.048** | done (§2a); results `dtw-real-ettin150-s{1,2,3}-*` on the DTW branch, weights on `dtw-artifacts` |
-| Ettin-400M ×1 on realistic data | – | – | run 3: out of memory at micro-batch 8; rerun at 2 × 16 |
+| **Ettin-400M ×1 on realistic data** (seed 1) | Benchmark-520 / test-real / natural-300 | **0.417 / 0.427 / 0.357** | done (§2b); Kaggle run 4, micro-batch 2 × 16 |
 | LFM3-1.7B LoRA on realistic data | – | – | run 3 running |
 | Human agreement study (50 examples, 2 people) | – | – | **not started** (needs people) |
 
@@ -76,6 +76,47 @@ What this changes:
    kind accuracy 0.60 there against 0.78-0.88 elsewhere.
 4. natural-300 cannot separate candidates; the test-only stress set in `03`
    is a precondition for any architecture claim.
+
+## 2b. Realistic-data Ettin-400M (one seed) [M]
+
+| Set | F1 | Precision | Recall | Kind | Certainty | False memories | Noise kept out | p50 / p95 ms | Paired Δ F1 vs LFM3 (95 %) |
+|---|---|---|---|---|---|---|---|---|---|
+| Benchmark-520 | 0.417 | 0.302 | 0.675 | 0.680 | 0.806 | 0.515 | 0.837 | 588 / 1,719 | −0.192 to −0.120 |
+| test-real | 0.427 | 0.318 | 0.648 | 0.840 | 0.899 | 0.600 | 0.883 | 996 / 2,892 | **+0.075 to +0.181** |
+| natural-300 | 0.357 | 0.278 | 0.500 | 1.0* | 1.0* | 0.333 | 0.961 | 1,022 / 2,883 | +0.032 to +0.442 |
+
+\* on 10 matched memories only.
+
+Benchmark-520 safety and memory actions (secrets stored of 13 / prompt
+injections followed of 11 / memory-action accuracy):
+
+| System | Secrets | Injections | Memory actions |
+|---|---|---|---|
+| LFM3 QAD prompt v2 (production) | 5 | 1 | 0.528 |
+| Template Ettin-150M s1r (corrected resolver) | 6 | 3 | 0.467 |
+| Realistic Ettin-150M s1 / s2 / s3 | 2 / 3 / 3 | 0 / 0 / 0 | 0.389 / 0.394 / 0.425 |
+| Realistic Ettin-400M s1 | 1 | 0 | 0.525 |
+
+Reading:
+
+1. Ettin-400M beats LFM3 on both realistic sets, and on test-real the
+   paired interval excludes zero (single comparison, uncorrected). Under
+   the protocol this is **one seed**: the multi-seed requirement and the
+   Holm correction across candidates are not yet met, so it is a strong
+   lead, not a selection.
+2. On Benchmark-520 LFM3 still leads by 0.12-0.19 F1. Benchmark-520 is
+   built around duplicates, contradictions, jokes, hypotheticals and quotes;
+   train has 15 jokes and 11 quotes (§3), and the per-task memory-action
+   scores (duplicate 0.05-0.28 for the 150M seeds against LFM3 0.385) show
+   where the gap is. That is a data-coverage gap first.
+3. Precision is still the binding weakness (0.30-0.32 at recall
+   0.65-0.68). The calibration layer and operating-point choice in `02`
+   apply directly; no architecture change is needed to test them.
+4. Every realistic-trained encoder stores fewer secrets than production LFM3
+   (1-3 of 13 against 5) and follows no injections. This is not a
+   substitute for the deterministic secret guard (still unmerged).
+5. Cost: 400M is about 2× the 150M latency (p50 ~1 s on test-real) but
+   still about 5× faster than LFM3 (4.8 s), at ~750 MB peak memory.
 
 ## 3. The realistic dataset and the frozen split
 
