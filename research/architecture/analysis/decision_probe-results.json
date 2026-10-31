@@ -1,0 +1,249 @@
+{
+ "trainN": 3000,
+ "sets": {
+  "test": 757,
+  "gold": 34,
+  "test-unseen": 154,
+  "test-mini": 89
+ },
+ "decision": {
+  "test": {
+   "tfidf": {
+    "n": 757,
+    "acc": 0.971,
+    "macroF1": 0.934
+   },
+   "nomic": {
+    "n": 757,
+    "acc": 0.974,
+    "macroF1": 0.958
+   },
+   "lfm3": {
+    "n": 757,
+    "acc": 0.984,
+    "macroF1": 0.969
+   }
+  },
+  "gold": {
+   "tfidf": {
+    "n": 34,
+    "acc": 0.706,
+    "macroF1": 0.514,
+    "vsGenerative": {
+     "probeOnlyRight": 14,
+     "generativeOnlyRight": 7,
+     "p": 0.1892
+    }
+   },
+   "nomic": {
+    "n": 34,
+    "acc": 0.706,
+    "macroF1": 0.645,
+    "vsGenerative": {
+     "probeOnlyRight": 13,
+     "generativeOnlyRight": 6,
+     "p": 0.1671
+    }
+   },
+   "lfm3": {
+    "n": 34,
+    "acc": 0.824,
+    "macroF1": 0.703,
+    "vsGenerative": {
+     "probeOnlyRight": 14,
+     "generativeOnlyRight": 3,
+     "p": 0.0127
+    }
+   },
+   "generative raw": {
+    "n": 34,
+    "acc": 0.471,
+    "macroF1": 0.188
+   },
+   "generative after guard": {
+    "n": 34,
+    "acc": 0.5,
+    "macroF1": 0.321
+   }
+  },
+  "test-unseen": {
+   "tfidf": {
+    "n": 154,
+    "acc": 0.864,
+    "macroF1": 0.683
+   },
+   "nomic": {
+    "n": 154,
+    "acc": 0.916,
+    "macroF1": 0.795
+   },
+   "lfm3": {
+    "n": 154,
+    "acc": 0.922,
+    "macroF1": 0.88
+   }
+  },
+  "test-mini": {
+   "tfidf": {
+    "n": 89,
+    "acc": 0.966,
+    "macroF1": 0.937,
+    "vsGenerative": {
+     "probeOnlyRight": 39,
+     "generativeOnlyRight": 0,
+     "p": 0.0
+    }
+   },
+   "nomic": {
+    "n": 89,
+    "acc": 0.989,
+    "macroF1": 0.985,
+    "vsGenerative": {
+     "probeOnlyRight": 42,
+     "generativeOnlyRight": 1,
+     "p": 0.0
+    }
+   },
+   "lfm3": {
+    "n": 89,
+    "acc": 0.989,
+    "macroF1": 0.981,
+    "vsGenerative": {
+     "probeOnlyRight": 41,
+     "generativeOnlyRight": 0,
+     "p": 0.0
+    }
+   },
+   "generative raw": {
+    "n": 89,
+    "acc": 0.607,
+    "macroF1": 0.25
+   },
+   "generative after guard": {
+    "n": 89,
+    "acc": 0.528,
+    "macroF1": 0.328
+   }
+  }
+ },
+ "kind": {
+  "test": {
+   "tfidf": {
+    "n": 614,
+    "acc": 1.0,
+    "macroF1": 1.0
+   },
+   "nomic": {
+    "n": 614,
+    "acc": 0.992,
+    "macroF1": 0.991
+   },
+   "lfm3": {
+    "n": 614,
+    "acc": 0.982,
+    "macroF1": 0.972
+   }
+  },
+  "gold": {
+   "tfidf": {
+    "n": 26,
+    "acc": 0.846,
+    "macroF1": 0.87,
+    "vsGenerative": {
+     "probeOnlyRight": 10,
+     "generativeOnlyRight": 1,
+     "p": 0.0117
+    }
+   },
+   "nomic": {
+    "n": 26,
+    "acc": 0.808,
+    "macroF1": 0.739,
+    "vsGenerative": {
+     "probeOnlyRight": 10,
+     "generativeOnlyRight": 2,
+     "p": 0.0386
+    }
+   },
+   "lfm3": {
+    "n": 26,
+    "acc": 0.808,
+    "macroF1": 0.695,
+    "vsGenerative": {
+     "probeOnlyRight": 10,
+     "generativeOnlyRight": 2,
+     "p": 0.0386
+    }
+   },
+   "generative raw": {
+    "n": 26,
+    "acc": 0.5,
+    "macroF1": 0.362
+   },
+   "generative after guard": {
+    "n": 26,
+    "acc": 0.5,
+    "macroF1": 0.384
+   }
+  },
+  "test-unseen": {
+   "tfidf": {
+    "n": 134,
+    "acc": 1.0,
+    "macroF1": 1.0
+   },
+   "nomic": {
+    "n": 134,
+    "acc": 0.985,
+    "macroF1": 0.977
+   },
+   "lfm3": {
+    "n": 134,
+    "acc": 0.955,
+    "macroF1": 0.921
+   }
+  },
+  "test-mini": {
+   "tfidf": {
+    "n": 77,
+    "acc": 1.0,
+    "macroF1": 1.0,
+    "vsGenerative": {
+     "probeOnlyRight": 33,
+     "generativeOnlyRight": 0,
+     "p": 0.0
+    }
+   },
+   "nomic": {
+    "n": 77,
+    "acc": 1.0,
+    "macroF1": 1.0,
+    "vsGenerative": {
+     "probeOnlyRight": 33,
+     "generativeOnlyRight": 0,
+     "p": 0.0
+    }
+   },
+   "lfm3": {
+    "n": 77,
+    "acc": 1.0,
+    "macroF1": 1.0,
+    "vsGenerative": {
+     "probeOnlyRight": 33,
+     "generativeOnlyRight": 0,
+     "p": 0.0
+    }
+   },
+   "generative raw": {
+    "n": 77,
+    "acc": 0.571,
+    "macroF1": 0.408
+   },
+   "generative after guard": {
+    "n": 77,
+    "acc": 0.571,
+    "macroF1": 0.438
+   }
+  }
+ }
+}

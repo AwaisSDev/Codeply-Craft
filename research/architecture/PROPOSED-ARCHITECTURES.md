@@ -255,4 +255,18 @@ worth it if Design A's copied spans and Design B's speed both fall short.
 
 ## Latency and memory estimates (4-core Xeon, 4 threads)
 
-<!-- latency-table -->
+Inputs from `analysis/RESULTS.md` §4 [M]: encoder prompt processing
+(150M: 286 ms per 256 tokens, 599 ms per 512; 400M: 805 / 1759 ms),
+LFM3 prefill ~110 tok/s, LFM3 decode 16.4 tok/s, today's measured p50
+10.9 s / p95 18.5 s. A typical encoder input (events + 8 known memories +
+now) is 250–500 tokens; it needs no instructions, so it is shorter than a
+decoder's prompt. Everything below except "today" is an estimate [I].
+
+| Design | Stages per batch | p50 estimate | p95 estimate | Model RAM | Noise events cost |
+|---|---|---|---|---|---|
+| Today: LFM3 QAD, JSON (measured) | prefill ~100 new tokens + ~150 generated | 10.9 s [M] | 18.5 s [M] | ~2.0 GB [M] | full price |
+| A, 150M encoder, no writer | encoder 250–500 tokens + code | **0.3–0.6 s** | ~1 s | **~0.22 GB** | same 0.3–0.6 s, then stop |
+| A, 400M encoder, no writer | encoder | 0.8–1.8 s | ~2.5 s | ~0.5 GB | 0.8–1.8 s, then stop |
+| A, 400M encoder + LFM3 writer on ~30 % of batches | encoder; writer: ~150-token prompt + ~20 tokens | ~1.5–3 s | ~6 s | ~2.5 GB while both loaded (writer unloaded when idle) | encoder only |
+| B1, LFM3 compact codes | prefill ~100–200 new tokens + ~40 generated | ~3.5–4.5 s | ~7 s | ~2.0 GB | full price |
+| C, 400M encoder + 150M decoder | encoder + ~20 decoder tokens | ~1–2 s | ~3 s | ~0.65 GB | encoder only |

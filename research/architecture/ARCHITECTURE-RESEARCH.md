@@ -112,7 +112,33 @@ examples (events text only) to predict one decision label per example
 its held-out-template part, and the hand-written gold set, next to LFM3's own
 generated decisions on the same examples.
 
-<!-- probe-table -->
+| Decision accuracy | generated test (757) | held-out templates (154) | hand-written gold (34) |
+|---|---|---|---|
+| TF-IDF + linear | 0.971 | 0.864 | 0.706 |
+| nomic-embed 137M encoder, frozen + linear | 0.974 | 0.916 | 0.706 |
+| **LFM3-1.7B, frozen hidden states + linear** | **0.984** | **0.922** | **0.824** |
+| LFM3-1.7B generating its answer (as today) | – | – | 0.47–0.50 |
+
+On gold, the frozen-LFM3 probe is right on 14 examples the generative model
+gets wrong and wrong on 3 it gets right (exact McNemar p = 0.013); for kind,
+all three probes beat generation (p = 0.012–0.039). Full tables:
+`analysis/RESULTS.md` §3.
+
+Three conclusions [M]:
+
+1. **The model already "knows" more than it says.** The same network,
+   read through a linear layer trained in seconds on generated data, gets
+   the decision right far more often than when it has to generate it.
+   Generating labels inside a JSON answer is the weak link, not the
+   backbone's understanding.
+2. **The generated data is template-learnable** (TF-IDF reaches 97–100 % on
+   it). Only hand-written and real-world sets can rank architectures.
+3. **A small encoder without any task training already matches TF-IDF on
+   gold**; Design A's bet is that fine-tuning it (not done here) closes the
+   rest of the gap at 1/8 of the cost (§6 of `PROPOSED-ARCHITECTURES.md`).
+
+Caveats: 34 gold examples; single-decision examples only; the generative
+label is a heuristic over its items.
 
 ### 1.4 What is prompt, fine-tuning, architecture, runtime?
 

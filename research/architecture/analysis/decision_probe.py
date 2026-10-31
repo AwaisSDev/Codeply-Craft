@@ -83,6 +83,16 @@ def gen_label(answer):
     return top.get("certainty"), top.get("kind")
 
 
+def mcnemar(b, c):
+    """Two-sided exact McNemar p-value from the discordant counts."""
+    from math import comb
+    n = b + c
+    if n == 0:
+        return 1.0
+    k = min(b, c)
+    return min(1.0, 2 * sum(comb(n, i) for i in range(k + 1)) / 2 ** n)
+
+
 def score(y, p):
     return {"n": len(y), "acc": round(accuracy_score(y, p), 3), "macroF1": round(f1_score(y, p, average="macro", zero_division=0), 3)}
 
@@ -111,6 +121,7 @@ def main():
         feats[name] = (int(port), prefix)
 
     results = {"trainN": len(train), "sets": {k: len(v) for k, v in sets.items()}}
+    correct = {}  # (task, set) -> name -> {example id: right?}, for paired tests
     for task, idx in (("decision", 0), ("kind", 1)):
         tr = [e for e in train if label(e)[idx]]
         ytr = [label(e)[idx] for e in tr]
@@ -128,7 +139,9 @@ def main():
             for s, es in sets.items():
                 es = [e for e in es if label(e)[idx]]
                 if es:
-                    results.setdefault(task, {}).setdefault(s, {})[name] = score([label(e)[idx] for e in es], clf.predict(fx(es)))
+                    pred = clf.predict(fx(es))
+                    results.setdefault(task, {}).setdefault(s, {})[name] = score([label(e)[idx] for e in es], pred)
+                    correct.setdefault((task, s), {})[name] = {e["id"]: p == label(e)[idx] for e, p in zip(es, pred)}
     # The generative model on the examples it answered.
     if a.gen:
         raw, kept = {}, {}
@@ -145,7 +158,21 @@ def main():
                 for nm, answers in (("generative raw", raw), ("generative after guard", kept)):
                     es = [e for e in sets[s] if label(e)[idx] and e["id"] in answers]
                     if es:
-                        results[task][s][nm] = score([label(e)[idx] for e in es], [str(gen_label(answers[e["id"]])[idx]) for e in es])
+                        pred = [str(gen_label(answers[e["id"]])[idx]) for e in es]
+                        results[task][s][nm] = score([label(e)[idx] for e in es], pred)
+                        correct.setdefault((task, s), {})[nm] = {e["id"]: p == label(e)[idx] for e, p in zip(es, pred)}
+        # Exact McNemar test: each probe against the generative model after the guard, same examples.
+        for (task, s), by in correct.items():
+            g = by.get("generative after guard")
+            if not g:
+                continue
+            for nm, c in by.items():
+                if nm.startswith("generative"):
+                    continue
+                ids = [i for i in g if i in c]
+                b = sum(1 for i in ids if c[i] and not g[i])
+                w = sum(1 for i in ids if g[i] and not c[i])
+                results[task][s][nm]["vsGenerative"] = {"probeOnlyRight": b, "generativeOnlyRight": w, "p": round(mcnemar(b, w), 4)}
     print(json.dumps(results, indent=1))
 
 
