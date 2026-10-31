@@ -13,7 +13,7 @@ committed file.
 | Model-selection protocol | frozen at `6c21b2a0` (`research/dtw/MODEL-SELECTION-PROTOCOL.md`) | pre-registered; changes only as recorded deviations |
 | PASTE | `research/architecture/PASTE-FORMAL-SPECIFICATION.md` (v1, committed `b872ed67`) | v2 exists only in another session's scratchpad: **not in any branch** [M: searched all remote branches] |
 | Secret-guard fix | branch `claude/wonderful-feynman-y2ldw2`, `SECURITY-SECRETS.md` | not merged; LFM3 stored 5/13 benchmark secrets, template Ettin 6-7/13 [R] |
-| Trained artifacts | orphan branch `dtw-artifacts` | template-trained Ettin-150M s1 only |
+| Trained artifacts | orphan branch `dtw-artifacts` | template-trained Ettin-150M s1; realistic-data Ettin-150M s1-s3 |
 
 ## 2. Results: completed, failed, pending
 
@@ -26,10 +26,49 @@ committed file.
 | Template-trained Ettin-150M (s1 / s1r) | Benchmark-520 | 0.306 / 0.328 | done, **old resolver: rerun needed** |
 | Template-trained Ettin-150M s1r | test-real / natural-300 | 0.123 / 0.015 | done, old resolver |
 | Claude labellers (Sonnet / Opus / hybrid) | Benchmark-520 | 0.838 / 0.844 / 0.831 | done (labeller quality, not a candidate) |
-| Ettin-150M ×3 on realistic data | validation only so far | kind 0.74-0.76, certainty 0.85-0.87, gate 0.87-0.89, exact-span F1 0.05-0.07 | **trained on Kaggle (run 3)**; artifacts being retrieved; harness evaluation pending (§4) |
+| **Ettin-150M ×3 on realistic data** (mean ± sd over seeds) | Benchmark-520 / test-real / natural-300 | **0.389 ± 0.012 / 0.341 ± 0.011 / 0.241 ± 0.048** | done (§2a); results `dtw-real-ettin150-s{1,2,3}-*` on the DTW branch, weights on `dtw-artifacts` |
 | Ettin-400M ×1 on realistic data | – | – | run 3: out of memory at micro-batch 8; rerun at 2 × 16 |
 | LFM3-1.7B LoRA on realistic data | – | – | run 3 running |
 | Human agreement study (50 examples, 2 people) | – | – | **not started** (needs people) |
+
+## 2a. Realistic-data Ettin-150M in the harness [M]
+
+Three seeds trained on the frozen realistic train split (Kaggle run 3),
+evaluated on CPU (4 threads, q8_0 backbone, corrected resolver) by
+`research/dtw/run-protocol-evals.sh`. Mean ± sd over seeds:
+
+| Set | F1 | Precision | Recall | Kind | Certainty | False memories | Noise kept out | p50 ms |
+|---|---|---|---|---|---|---|---|---|
+| Benchmark-520 | 0.389 ± 0.012 | 0.302 | 0.546 | 0.595 | 0.811 | 0.481 | 0.830 | 262 |
+| test-real (549) | 0.341 ± 0.011 | 0.243 | 0.571 | 0.783 | 0.888 | 0.633 | 0.873 | 445 |
+| natural-300 | 0.241 ± 0.048 | 0.153 | 0.567 | 0.883 | 0.789 | 0.222 | 0.912 | 464 |
+
+Paired bootstrap over conversations (5,000 resamples, seed-mean Ettin minus
+LFM3 QAD prompt v2):
+
+* Benchmark-520: **−0.151 to −0.219** (95 %). Production LFM3 (0.575) is
+  clearly better on the benchmark.
+* natural-300: **−0.045 to +0.300**. Ettin's point estimate (0.241) is far
+  above LFM3's (0.093), but natural-300 has only 20 gold memories in 16 of
+  298 conversations, so the interval includes zero. Not a win under the
+  protocol.
+
+What this changes:
+
+1. Realistic data fixed the template model's collapse (natural-300 F1 0.015
+   → 0.241, noise kept out 0.014 → 0.912; the template numbers used the old
+   resolver, and the corrected-resolver rerun is queued).
+2. The remaining failure is **precision**: about three predicted memories
+   per real one, at roughly 0.55 recall, on every set. That is an
+   operating-point and calibration problem before it is an architecture
+   problem, which is what the calibration layer in `02` targets. Seed-to-seed
+   spread is small (sd ≤ 0.012 on the two larger sets), so the gap to LFM3
+   on Benchmark-520 is not seed noise.
+3. Benchmark-520 is out of distribution for this training data (its jokes,
+   quotes and merge cases are thin in train, §3), which is consistent with
+   kind accuracy 0.60 there against 0.78-0.88 elsewhere.
+4. natural-300 cannot separate candidates; the test-only stress set in `03`
+   is a precondition for any architecture claim.
 
 ## 3. The realistic dataset and the frozen split
 
