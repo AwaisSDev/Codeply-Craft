@@ -437,8 +437,14 @@ function clearMemory(botId) {
 async function learnFromTurn(bot, userText, replyText, chatFn) {
   try {
     if (!bot || !bot.id || typeof chatFn !== 'function') return { added: [] };
-    const user = clip(userText, 3000);
-    if (!user) return { added: [] };
+    if (!clip(userText, 3000)) return { added: [] };
+    // Secrets out before the model reads the exchange (SECURITY-SECRETS.md); the removed values stay in
+    // memory only, so whatever the model writes back is checked against them.
+    const scan = require('./secret-scan.js');
+    const { redact } = require('./context-redact.js');
+    const ru = redact(clip(userText, 3000)); const rr = redact(clip(replyText, 3000));
+    const user = ru.text;
+    const guard = { secrets: [...ru.values, ...rr.values], sourceText: `${ru.text}\n${rr.text}` };
     const known = (bot.memory || []).slice(-30).map((m) => `- ${m.fact}`).join('\n') || '(nothing yet)';
     // Plans the user mentions go to the shared life context (life.js), from the same model call.
     const life = lifeLib().available() && lifeLib().allowedFor(bot).has('plans') ? lifeLib() : null;
@@ -457,20 +463,21 @@ ${known}
 
 User: ${user}
 
-${bot.name}: ${clip(replyText, 3000) || '(no reply)'}
+${bot.name}: ${rr.text || '(no reply)'}
 ${life ? `\n${life.plansAsk()}\n` : ''}${brain ? `\n${brain.observationsAsk()}\n` : ''}
 Respond with ONLY a JSON object {"facts": ["..."]${life ? ', "plans": []' : ''}${brain ? ', "observations": []' : ''}}. Use an empty list when nothing is worth keeping.`;
     const r = await chatFn([{ role: 'user', content: prompt }]);
     if (!r || !r.success || !r.json) return { added: [] };
-    if (life && Array.isArray(r.json.plans) && r.json.plans.length) { try { life.notePlans(r.json.plans, { source: 'chat', botId: bot.id }); } catch {} }
+    const plans = (Array.isArray(r.json.plans) ? r.json.plans : []).filter((p) => p && typeof p === 'object' && !scan.guardWhy({ what: p.what, where: p.where, who: Array.isArray(p.who) ? p.who.map(String) : [] }, { ...guard, topic: false }));
+    if (life && plans.length) { try { life.notePlans(plans, { source: 'chat', botId: bot.id }); } catch {} }
     if (brain && Array.isArray(r.json.observations) && r.json.observations.length) {
       // The product (Crew or Craft) comes from the running one (telemetry.js).
-      try { brainNotes = brain.noteObservations(r.json.observations, { botId: bot.id, botName: bot.name }); } catch {}
+      try { brainNotes = brain.noteObservations(r.json.observations, { botId: bot.id, botName: bot.name }, guard); } catch {}
     }
     const facts = (Array.isArray(r.json.facts) ? r.json.facts : [])
       .filter((f) => typeof f === 'string')
       .map((f) => f.trim())
-      .filter((f) => f.length >= 4 && !/(api[_ -]?key|password|secret|token)\s*[:=]/i.test(f))
+      .filter((f) => f.length >= 4 && !/(api[_ -]?key|password|secret|token)\s*[:=]/i.test(f) && !scan.guardWhy({ text: f }, guard))
       .filter((f) => !(bot.memory || []).some((m) => factKey(m.fact) === factKey(f)))
       .slice(0, MAX_FACTS_PER_TURN);
     if (!facts.length) return { added: [], brain: brainNotes };

@@ -116,16 +116,49 @@ const POSITIVE = [
   ['Roman Urdu root password', 'server ka root password Karachi#2291 hai, isko .env mein daal do', 'Karachi#2291'],
   ['Roman Urdu door code', 'ghar ka code 7781 hai, Ali ko bata dena', '7781'],
   ['account number', 'my account number is 00112233445566 at Meezan', '00112233445566'],
+  // Found by an independent red-team pass (SECURITY-SECRETS.md)
+  ['lock combination shaped like a score', 'my locker combination is 12-34-56', '12-34-56'],
+  ['bike lock combo shaped like a date', 'bike lock combo 04/27', '04/27'],
+  ['SSN', 'my SSN is 123-45-6789', '123-45-6789'],
+  ['CNIC', 'CNIC 35202-1234567-1 for the form', '35202-1234567-1'],
+  ['wifi pw', 'office wifi pw falcon2024', 'falcon2024'],
+  ['Roman Urdu wifi pass', 'wifi ka pass ali12345 hai', 'ali12345'],
+  ['wifi pass, plain word', 'wifi is ZongHome and the pass is bluemangoes', 'bluemangoes'],
+  ['code to the gate', 'the code to the gate is 4471', '4471'],
+  ['garage opens with', 'the garage opens with 2207', '2207'],
+  ['Roman Urdu door opens', 'darwaza 5814 se khulta hai', '5814'],
+  ['bike lock', 'my bike lock is 0427', '0427'],
+  ['alarm disarm', 'alarm disarm 1984', '1984'],
+  ['voicemail', 'voicemail is 4821', '4821'],
+  ['phone unlock', 'my phone unlock is 482913', '482913'],
+  ['locker key number', 'locker ki chabi number 2207 hai', '2207', 'locker chabi'],
+  ['code in single digits', 'locker code is 2 2 0 7', '2 2 0 7', 'locker code'],
+  ['keypad code with spaces', 'door code is 58 # 14', '58 # 14'],
+  ['code with dots', 'gate code 4.4.7.1', '4.4.7.1', 'gate code'],
+  ['PIN in Urdu number words', 'mera pin char aath do ek hai', 'char aath do ek'],
+  ['seed phrase', 'my seed phrase is abandon ability able about above absent absorb abstract absurd abuse access accident', 'abandon ability'],
+  ['security answer', 'security answer for HBL is Qureshi', 'Qureshi'],
+  ['env line', 'add DB_PASS=hunter22 to staging', 'hunter22', 'DB_PASS'],
+  ['env secret', 'STRIPE_SECRET=abc123xyz in the env', 'abc123xyz'],
+  ['mysql -p', 'run mysql -u root -phunter22 on the box', 'hunter22', 'mysql root password'],
+  ['wifi QR text', 'WIFI:S:ZongHome;T:WPA;P:falcon2024;;', 'falcon2024', 'wifi pw'],
+  ['token in a link', 'calendar feed https://cal.example.com/feed.ics?t=9fK2mQ7pL4vB8nR3', '9fK2mQ7pL4vB8nR3'],
+  ['short random key', 'use Kt9F3cQe7Xb2 for the maps', 'Kt9F3cQe7Xb2'],
+  ['routing number', 'routing 021000021 acct 123456789', '021000021'],
+  ['account number (acct)', 'routing 021000021 acct 123456789', '123456789'],
+  ['passport number', 'passport AB1234567 renew next year', 'AB1234567'],
+  ['authenticator seed', 'authenticator seed JBSWY3DPEHPK3PXP', 'JBSWY3DPEHPK3PXP'],
 ];
 
 if (section('Detection: every secret is removed from the input, refused by the guard and by the brain')) {
   freshBrain('detect');
-  for (const [label, text, secret] of POSITIVE) {
+  // slot: what a model would call it (the label is for the test report); with no source text, that is all the guard has.
+  for (const [label, text, secret, slot = label] of POSITIVE) {
     const r = R.redact(text);
     check(`redacted: ${label}`, !holds(r.text, secret) && r.found.length > 0 && r.values.length > 0, r.text);
     // The guard with NO help from the source (as if the model invented or remembered it).
     const asText = { kind: 'fact', slot: 'note', value: secret, text: `The user mentioned ${secret}.`, certainty: 'stated', importance: 0.9 };
-    const asLabel = { kind: 'fact', slot: label.toLowerCase(), value: secret, text: `${label}: ${secret}`, certainty: 'stated', importance: 0.9 };
+    const asLabel = { kind: 'fact', slot: slot.toLowerCase(), value: secret, text: `${slot}: ${secret}`, certainty: 'stated', importance: 0.9 };
     const g = S.checkExtraction({ observations: [asLabel], plans: [] }, { events: eventsFor([text]) });
     check(`guard drops it (labelled): ${label}`, g.ok && g.observations.length === 0 && g.dropped.every((d) => /secret/.test(d.why) && !JSON.stringify(d).includes(secret)), JSON.stringify(g.observations));
     // With the redacted source and the removed values, as the engine runs it.
@@ -170,6 +203,19 @@ const NEGATIVE = [
   ['gym schedule next to a code', 'locker code 2207. I go Mon/Wed/Fri at 6am before work', { kind: 'routine', slot: 'gym', value: 'Mon/Wed/Fri at 6am', text: 'The user goes to the gym Mon/Wed/Fri at 6am.' }],
   ['cleaner visit next to a door code', 'the cleaner comes thursday at 10, door code is 58#14.', { kind: 'routine', slot: 'cleaner', value: 'Thursday at 10', text: 'The cleaner comes on Thursday at 10.' }],
   ['Roman Urdu salary date', 'salary ab 1 tareekh ke bajaye 25 ko aati hai', { kind: 'fact', slot: 'salary date', value: '25th of the month', text: 'The user\'s salary comes on the 25th.' }],
+  // False positives the red-team pass found, now kept
+  ['token count', 'prompts stay under 8000 tokens', { kind: 'requirement', slot: 'prompt size', value: 'under 8000 tokens', text: 'Prompts stay under 8000 tokens.', project: 'shop' }],
+  ['max tokens setting', 'set max tokens to 4096', { kind: 'decision', slot: 'max tokens', value: '4096', text: 'Max tokens is set to 4096.', project: 'shop' }],
+  ['code size', 'the code is about 300 lines now', { kind: 'fact', slot: 'code size', value: 'about 300 lines', text: 'The code is about 300 lines now.', project: 'shop' }],
+  ['OTP expiry setting', 'sign-in OTP expires after 300 seconds', { kind: 'decision', slot: 'otp expiry', value: '300 seconds', text: 'Sign-in OTP expires after 300 seconds.', project: 'shop' }],
+  ['response code', 'the API keeps giving response code 502', { kind: 'fact', slot: 'api error', value: 'response code 502', text: 'The API returns response code 502.', project: 'shop' }],
+  ['user@host', 'we deploy to deploy@10.0.0.5', { kind: 'decision', slot: 'deploy target', value: 'deploy@10.0.0.5', text: 'The project deploys to deploy@10.0.0.5.', project: 'shop' }],
+  ['meal combo', 'my usual is the Zinger combo, it is 1250 now', { kind: 'preference', slot: 'usual order', value: 'Zinger combo, 1250', text: 'The user usually orders the Zinger combo (1250).' }],
+  ['pin as a verb', 'pin image node:22.11.0-alpine3.20 in the Dockerfile', { kind: 'decision', slot: 'base image', value: 'node:22.11.0-alpine3.20', text: 'The project pins image node:22.11.0-alpine3.20.', project: 'shop' }],
+  ['commit hash', 'commit 1844c10ab486fd830163aed5a9a2d420640658ab fixed the crash', { kind: 'fact', slot: 'crash fix', value: 'commit 1844c10ab486fd830163aed5a9a2d420640658ab', text: 'The crash was fixed in commit 1844c10ab486fd830163aed5a9a2d420640658ab.', project: 'shop' }],
+  ['UUID', 'azure subscription 123e4567-e89b-12d3-a456-426614174000', { kind: 'fact', slot: 'azure subscription', value: '123e4567-e89b-12d3-a456-426614174000', text: 'The Azure subscription is 123e4567-e89b-12d3-a456-426614174000.', project: 'shop' }],
+  ['hash algorithm', 'passwords are hashed with argon2id', { kind: 'decision', slot: 'hashing', value: 'argon2id', text: 'Passwords are hashed with argon2id.', project: 'shop' }],
+  ['API keys from env (no value)', 'API keys come from env vars, never hardcoded', { kind: 'decision', slot: 'config', value: 'env vars', text: 'API keys come from env vars, never hardcoded.', project: 'shop' }],
 ];
 
 if (section('Negative controls: ordinary numbers are kept')) {
@@ -305,6 +351,27 @@ if (section('Bot memory and Life plans: the same rule on the legacy path')) {
   ], { now: NOW, tz: 'Asia/Karachi', source: 'chat' });
   check('life.notePlans drops a plan with a code and keeps the rest', plans.length === 2 && plans.every((p) => !/4471|58#14/.test(JSON.stringify(p))), JSON.stringify(plans.map((p) => p.title)));
   L.detach(); ls.close();
+}
+
+if (section('Legacy paths: learnFromExchange and bot learnFromTurn redact first and check what comes back')) {
+  freshBrain('legacy');
+  NOW = Date.UTC(2026, 10, 1, 9, 0, 0);
+  const seen = [];
+  // A model that writes the code back without any cue word, as the red-team pass showed models do.
+  const chatFn = async (messages) => { seen.push(messages[0].content); return { success: true, json: { facts: ['The front door opens with 4471.', 'The user goes to the gym at 6am.'], plans: [{ what: 'Cleaner, door 4471', when: '2026-11-05T10:00', where: '', who: [] }], observations: [
+    { kind: 'fact', slot: 'front door', value: '4471', text: 'Front door: 4471.', certainty: 'stated' },
+    { kind: 'fact', slot: 'atm', value: 'uses 4821', text: 'HBL ATM card uses 4821.', certainty: 'stated' },
+    { kind: 'routine', slot: 'gym', value: '6am', text: 'The user goes to the gym at 6am.', certainty: 'stated' },
+  ] } }; };
+  const said = 'door code is 4471 and my ATM pin is 4821. I go to the gym at 6am every day.';
+  const r = await BR.learnFromExchange({ userText: said, replyText: 'Noted the gym time.', src: { product: 'craft' } }, chatFn);
+  check('legacy learnFromExchange: the model never sees the codes', !/4471|4821/.test(seen[0]));
+  check('legacy learnFromExchange: only the gym routine is kept', r.filter((x) => x.action === 'added').length === 1 && !/4471|4821/.test(brainDump()), JSON.stringify(r));
+  const B = lib('bots.js');
+  const bot = B.createBot({ name: 'Ops', role: 'assistant' });
+  const t = await B.learnFromTurn(bot, said, 'Noted.', chatFn);
+  check('bot learnFromTurn: the model never sees the codes', !/4471|4821/.test(seen[1]));
+  check('bot learnFromTurn: the bot\'s memory and the brain keep no code', !/4471|4821/.test(JSON.stringify(B.getBot(bot.id).memory)) && !/4471|4821/.test(brainDump()) && (t.added || []).length === 1, JSON.stringify(t));
 }
 
 // ─── A brain written before the fix ─────────────────────────────────────────

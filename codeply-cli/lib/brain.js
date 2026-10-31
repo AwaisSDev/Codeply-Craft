@@ -374,15 +374,17 @@ const sameValue = (m, o) => (o.value && m.value ? norm(o.value) === norm(m.value
  * One thing Codeply heard or was told. Decides what it does to memory.
  * @param {object} raw  { kind, text, slot?, value?, certainty?, project?, scope?, ttlHours?, domain? }
  * @param {object} [src] { product, botId, botName }
+ * @param {{ secrets?: string[], sourceText?: string }} [opts]  when the caller saw the source: what was
+ *   redacted from it (in memory only) and the redacted text, for secret-scan.guardWhy
  * @returns {{ action: 'added'|'reinforced'|'replaced'|'challenged'|'kept'|'ignored', memory?: object, why?: string }}
  */
-function observe(raw, src) {
+function observe(raw, src, opts = {}) {
   if (!available()) return { action: 'ignored', why: 'the brain is off' };
   const o = cleanObservation(raw);
   if (!o) return { action: 'ignored', why: 'nothing to keep' };
   const from = sourceOf(src);
   // Fail closed: the raw input too, since cleaning clips and could cut a secret in half.
-  if (SECRET_RE.test(`${o.text} ${o.value} ${o.slot}`) || secretScan.observationWhy(raw) || secretScan.observationWhy(o)) { log(null, 'ignored', 'something that looked sensitive (not kept)', from); return { action: 'ignored', why: 'looks like a secret' }; }
+  if (SECRET_RE.test(`${o.text} ${o.value} ${o.slot}`) || secretScan.guardWhy(raw, opts) || secretScan.guardWhy(o, opts)) { log(null, 'ignored', 'something that looked sensitive (not kept)', from); return { action: 'ignored', why: 'looks like a secret' }; }
   if (IGNORED.has(o.certainty)) {
     log(null, 'ignored', `${o.text} (${o.certainty === 'joking' ? 'a joke or sarcasm' : o.certainty === 'quoting' ? 'someone else\'s words' : 'hypothetical'})`, from);
     return { action: 'ignored', why: o.certainty };
@@ -735,9 +737,9 @@ People matter too: what the user tells you about someone close (who they are to 
 }
 
 /** Store what a learning call returned. Returns the outcome of each. */
-function noteObservations(list, src) {
+function noteObservations(list, src, opts = {}) {
   if (!available() || !Array.isArray(list)) return [];
-  return list.slice(0, 6).map((o) => ({ text: o && o.text, ...observe(o, src) }));
+  return list.slice(0, 6).map((o) => ({ text: o && o.text, ...observe(o, src, opts) }));
 }
 
 // The Context Engine (context-engine.js), when the user picked a mode other
@@ -758,20 +760,25 @@ async function learnFromExchange({ userText, replyText, project, src }, chatFn) 
   }
   try {
     if (!available() || typeof chatFn !== 'function') return [];
-    const user = clip(userText, 3000);
-    if (user.length < 12) return [];
+    if (clip(userText, 3000).length < 12) return [];
+    // As the Context Engine does: secrets out before the model reads the chat; the removed values
+    // (in memory only) and the redacted text go to observe() so a model cannot write one back.
+    const { redact } = require('./context-redact.js');
+    const ru = redact(clip(userText, 3000)); const rr = redact(clip(replyText, 2000));
+    const user = ru.text;
+    const guard = { secrets: [...ru.values, ...rr.values], sourceText: `${ru.text}\n${rr.text}` };
     const prompt = `You keep the shared memory of a user's Codeply apps.${project ? ` This chat is about the project "${project}".` : ''}
 
 User: ${user}
 
-Assistant: ${clip(replyText, 2000) || '(no reply)'}
+Assistant: ${rr.text || '(no reply)'}
 
 ${observationsAsk()}
 Respond with ONLY a JSON object {"observations": []}.`;
     const r = await chatFn([{ role: 'user', content: prompt }]);
     if (!r || !r.success || !r.json) return [];
     const obs = (Array.isArray(r.json.observations) ? r.json.observations : []).map((o) => (o && project && PROJECT_KINDS.has(String(o.kind)) && !o.project ? { ...o, project } : o));
-    return noteObservations(obs, src);
+    return noteObservations(obs, src, guard);
   } catch { return []; }
 }
 

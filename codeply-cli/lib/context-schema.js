@@ -189,18 +189,11 @@ function checkExtraction(answer, ctx = {}) {
   const observations = [];
   // Values that must never come back out: what the redactor took, and what the events mark as secret.
   const secrets = new Set([...(ctx.secrets || []), ...secretScan.secretValues(events.map((e) => e.text))].map((v) => String(v).trim()).filter((v) => v.length >= 3));
-  const secretWhy0 = (o, opt = {}) => secretScan.observationWhy(o, { secrets, ...opt });
   // When this batch had a secret redacted, a code-like value in the answer that is not in the
   // (redacted) events can only be the removed secret, copied from elsewhere or recalled: drop it.
   // This still works after a restart, when the removed values themselves are gone.
   const sourceText = events.map((e) => e.text).join('\n');
-  const hadRedaction = secretScan.MARK_RE.test(sourceText);
-  const secretWhy = (o, opt = {}) => {
-    const w = secretWhy0(o, opt);
-    if (w || !hadRedaction) return w;
-    const words = [o.slot, o.value, o.text, o.what, o.where, ...(Array.isArray(o.who) ? o.who : [])].filter((x) => typeof x === 'string').join(' \n ');
-    return secretScan.codeLikeTokens(words).some((t) => !secretScan.containsToken(sourceText, t)) ? 'a code-like value not in the events, where a secret was removed' : '';
-  };
+  const secretWhy = (o, opt = {}) => secretScan.guardWhy(o, { secrets, sourceText, ...opt });
   const list = Array.isArray(parsed.observations) ? parsed.observations : [];
   for (const raw of list.slice(0, MAX_OBSERVATIONS * 2)) {
     if (!raw || typeof raw !== 'object') { dropped.push({ item: null, why: 'not an object' }); continue; }

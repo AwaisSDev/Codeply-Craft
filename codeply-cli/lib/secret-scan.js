@@ -58,6 +58,16 @@ const PATTERNS = [
   ['jwt', /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g],
   ['url credentials', /\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:[^\s/@]+@/gi],
   ['bearer token', /\b(bearer)\s+[A-Za-z0-9._~+/-]{16,}=*/gi],
+  // Named group k: the part to leave in place. DB_PASS=hunter22, STRIPE_SECRET: abc123xyz
+  ['env secret', /\b(?<k>(?<name>[A-Z][A-Z0-9_]*(?:PASS|PASSWORD|PASSWD|PWD|SECRET|TOKEN|KEY|AUTH|CREDENTIALS?)[A-Z0-9_]*)\s*[=:]\s*["']?)[^\s"'`,;]{3,}/g],
+  // mysql -u root -phunter22, --password=hunter22
+  ['cli password', /(?<k>(?:^|\s)-u\s*\S+\s+-p)[^\s-]\S{2,}|(?<k2>--password[= ])\S{3,}/g],
+  // ?token=…, &key=…, &sig=… in a link
+  ['url secret', /(?<k>[?&](?:token|key|t|sig|signature|auth|api_key|apikey|access_token|password|pass|secret)=)[^&\s#"']{3,}/gi],
+  // A Wi-Fi QR code's text: WIFI:S:ZongHome;T:WPA;P:falcon2024;;
+  ['wifi qr', /(?<k>WIFI:[^\n]*?P:)[^;\n]+/g],
+  ['ssn', /\b\d{3}-\d{2}-\d{4}\b/g],
+  ['cnic', /\b\d{5}-\d{7}-\d\b/g],
   // "password is hunter2", "my pin: 4821", "otp 552190", "cvv 123"
   ['password', /\b(pass(?:word|wd|code|phrase)|wifi key)\b(\s*(?:is|was|=|:|-)?\s*)(["'`]?)([^\s"'`,;]{3,64})\3/gi],
   ['pin', /\b(pin(?:\s*code)?|otp|cvv|cvc|security code|one[- ]time code|verification code)\b(\s*(?:is|was|=|:|-)?\s*)(["'`]?)(\d{3,12})\3/gi],
@@ -106,6 +116,18 @@ function patternMatches(text) {
         keep = m[1].length + (m[2] || '').length;
       }
       if (name === 'bearer token') keep = m[1].length + 1;
+      const g = m.groups || {};
+      if (g.k != null || g.k2 != null) {
+        keep = (g.k != null ? g.k : g.k2).length;
+        if (whole.slice(keep).startsWith('[')) continue; // already redacted
+        // MAX_TOKENS=4096, TOKEN_TTL=3600: settings named after a secret, not one
+        if (g.name && /^(?:MAX|MIN|NUM)_|_(?:LIMIT|COUNT|TTL|EXPIRY|EXPIRES|LENGTH|LEN|SIZE|TIMEOUT|URL|URI|FILE|PATH|NAME|ID|HEADER|TYPE)$/.test(g.name)) continue;
+      }
+      if (name === 'long secret') {
+        // A UUID, or a commit hash said as one, is an id, not a secret.
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(whole)) continue;
+        if (/^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(whole) && /\b(?:commit|sha|revert|hash|rev|checkout|cherry-pick)\b[^\n]{0,20}$/i.test(s.slice(Math.max(0, m.index - 30), m.index))) continue;
+      }
       out.push({ name, start: m.index, end: m.index + whole.length, keep });
     }
   }
@@ -157,6 +179,8 @@ const MONEY_RE = /^(?:[$£€₹]|rs\.?|pkr|usd|aed|gbp|eur|inr|sar)\d/i;
 const DATE_RE = /^\d{1,4}[/.-]\d{1,2}(?:[/.-]\d{1,4})?$/;
 const SCORE_RE = /^\d{1,3}[-–:]\d{1,3}$/;
 const EXPIRY_RE = /^(?:0[1-9]|1[0-2])\/(?:\d{2}|20\d{2})$/;
+// Names of algorithms and formats with digits in them: "hashed with argon2id", "sha256", "ipv6".
+const TECH_RE = /^(?:argon2(?:id|i|d)?|sha-?\d+|md5|base\d+|utf-?\d+|http\/?\d|oauth\d?|s3|ec2|mp\d|h\.?26\d|x86(?:_64)?|arm64|ipv[46]|k8s|i18n|l10n|a11y|es\d+|web\d|gpt-?\d\w*|aes-?\d+|rsa-?\d+|ed25519|p256|tls\d?(?:\.\d)?|pbkdf2|hmac-?sha\d+|ps\d|xbox\d*|win\d+|ios\d+|w3c|log4j|neo4j|b2b|b2c|p2p|e2e|2d|3d|4k|5g|4g)$/i;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}(?:[t ]\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:z|[+-]\d{2}:?\d{2})?)?$/i;
 
 /** Ordinary numbers and number-words: never a secret by shape, and not after a cue either. */
@@ -191,12 +215,14 @@ function randomish(s, minLen) {
 }
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i;
+const USERHOST_RE = /^[\w.-]+@(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?$|^[\w.-]+@[a-z][\w-]*(?:\.[\w-]+)+$/i; // deploy@10.0.0.5
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const URLISH_RE = /:\/\/|^www\.|\.(?:com|org|net|io|dev|app|pk|ae|uk)(?:\/|$)/i;
 
 /** A token that is a secret by its shape alone, or ''. */
 function strongShape(w) {
   if (!w || w.length < 4 || !/\d/.test(w)) return '';
-  if (EMAIL_RE.test(w) || URLISH_RE.test(w)) return '';
+  if (EMAIL_RE.test(w) || URLISH_RE.test(w) || USERHOST_RE.test(w) || UUID_RE.test(w)) return '';
   // 58#14, *1234#, 1234#: a keypad code (not "#123", an issue number)
   if (/^[*#\d]+$/.test(w) && (w.match(/\d/g) || []).length >= 3 && /[*#]/.test(w.replace(/^#+/, ''))) return 'keypad code';
   // 7731-0042, ab12-cd34-ef56: equal groups (backup and recovery codes)
@@ -208,6 +234,11 @@ function strongShape(w) {
   const pre = /^[A-Za-z][A-Za-z0-9]{0,15}[-_.]([A-Za-z0-9_.-]{12,})$/.exec(w);
   if (pre && randomish(pre[1], 12)) return 'prefixed key';
   if (/^[A-Za-z0-9+/_=.-]{16,}$/.test(w) && randomish(w, 16)) return 'random string';
+  // Kt9F3cQe7Xb2: a short key, if it switches case and digits all the way through ("MacBookPro2023M3" does not)
+  if (/^[A-Za-z0-9]{12,15}$/.test(w) && /[a-z]/.test(w) && /[A-Z]/.test(w)) {
+    const { runs, maxLetters } = classRuns(w);
+    if ((w.match(/\d+/g) || []).length >= 3 && runs / w.length >= 0.5 && maxLetters <= 4) return 'random string';
+  }
   // Sameer@786, Kh@1ber_2026!: letters, digits and symbols together
   if (w.length >= 6 && /[A-Za-z]/.test(w) && /[@$%^&!~?*]/.test(w.slice(1)) && !/^[@#]/.test(w) && !/^[A-Za-z]{0,3}[$£€₹]\d/.test(w)) return 'password-like';
   return '';
@@ -228,9 +259,15 @@ function weakShape(w, cue) {
     return false;
   }
   if (cue === 'expiry') return EXPIRY_RE.test(w);
-  if (ordinaryNumber(w) || DATE_RE.test(w)) return false;
-  if (HARD.has(bare(w.toLowerCase()))) return false;
+  if (HARD.has(bare(w.toLowerCase())) || TECH_RE.test(w)) return false;
   const digits = (w.match(/\d/g) || []).length;
+  if (cue === 'hard' || cue === 'lock') {
+    // Right after "combination", "door code", "pin": 12-34-56, 04/27 and 4.4.7.1 are the value, not a date or a version.
+    if (TIME_RE.test(w) || MONEY_RE.test(w) || UNIT_RE.test(w) || ORDINAL_RE.test(w) || ISO_RE.test(w)) return false;
+    if (/^[\d#*.\-/]+$/.test(w)) return cue === 'lock' ? digits >= 3 && digits <= 8 : digits >= 3 && digits <= 19;
+    if (cue === 'lock') return false;
+  }
+  if (ordinaryNumber(w) || DATE_RE.test(w)) return false;
   if (/^\d+$/.test(w)) return cue !== 'soft' && digits >= 3 && digits <= 19;
   if (cue === 'soft') return w.length >= 6 && /[A-Za-z]/.test(w);
   return w.length >= 3;
@@ -239,8 +276,23 @@ function weakShape(w, cue) {
 // ─── Cues ───────────────────────────────────────────────────────────────────
 
 // Always a cue: whatever code-like value follows is a secret.
-const HARD = new Set(('password passwords passwd pwd passcode passcodes passphrase pasword paswrd paswd pin pins pincode otp otps ' +
-  'cvv cvc cvv2 cvn 2fa mfa totp combination combo secret secrets khufia token tokens apikey api-key ssn cnic iban puk').split(' '));
+const HARD = new Set(('password passwords passwd pwd pw p/w passcode passcodes passphrase pasword paswrd paswd pin pins pincode otp otps ' +
+  'cvv cvc cvv2 cvn 2fa mfa totp authenticator combination secret secrets khufia token tokens apikey api-key ssn cnic iban puk routing acct maiden').split(' '));
+// Open something: only a 3 to 8 digit value ("my bike lock is 0427", "garage opens with 2207", "darwaza 5814 se khulta hai").
+const LOCKISH = new Set('lock locks unlock unlocks disarm disarms voicemail chabi khulta khulti opens padlock'.split(' '));
+// "pin" and "token(s)" are also ordinary words.
+const PIN_NOT_NEXT = new Set('image images version versions package packages dependency dependencies deps it the this that to tab tabs message post location comment the down point'.split(' '));
+const TOKEN_NOT_PREV = new Set('max input output prompt context completion design nadra many few more fewer'.split(' '));
+const TOKEN_NOT_NEXT = new Set('number no tax limit limits count budget window per usage used cost costs bucket buckets refresh refreshes expiry expires rotation'.split(' '));
+const PASS_PREV = new Set('wifi wi-fi login router email gmail account netflix ka ki ke admin root user'.split(' '));
+const PHRASE_PREV = new Set('seed recovery mnemonic secret backup wallet'.split(' '));
+// After these a number is a count, not a code: "the code is about 300 lines", "OTP expires after 300 seconds".
+const UNIT_NOUNS = new Set(('lines line seconds second secs sec minutes minute mins min hours hour hrs days day weeks months years tries attempts ' +
+  'chars characters digits letters tokens times users people words rupees rs dollars bytes kb mb gb ms requests calls items rows steps pages').split(' '));
+const DIGIT_WORDS = { zero: 0, oh: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+  sifar: 0, ek: 1, aik: 1, do: 2, teen: 3, char: 4, chaar: 4, paanch: 5, panch: 5, chay: 6, chhe: 6, che: 6, saat: 7, aath: 8, aat: 8, nau: 9, no: 9 };
+const WORD_VALUE_CUES = new Set('password passwords passwd pwd pw p/w pass passcode passphrase pasword paswrd paswd secret secrets answer answers maiden khufia'.split(' '));
+const EN_COPULA = new Set('is was are were = : => ->'.split(' '));
 // Before "code(s)": the kinds of codes that open something.
 const CODE_QUAL = new Set(('door gate locker lock alarm access entry entrance building garage safe security verification verify confirmation ' +
   'auth authentication login backup recovery otp pin pass unlock wifi wi-fi parking lift elevator keypad combination reset 2fa mfa sms bank atm ' +
@@ -251,7 +303,7 @@ const CODE_QUAL = new Set(('door gate locker lock alarm access entry entrance bu
 const CODE_NOT = new Set(('zip postal post postcode area country dial dialing dialling source dress qr bar colour color error status exit morse ' +
   'iata airport language hs tax product discount promo coupon referral invite invitation course class subject flight train booking html css ' +
   'python js javascript java the my your our his her their this that clean legacy sample example vs visual studio claude xcode opencode unicode ' +
-  'barcode modern old new production prod test tests').split(' '));
+  'barcode modern old new production prod test tests response http').split(' '));
 // Before "key(s)": secret keys (an API key) as opposed to key points.
 const KEY_QUAL = new Set(('api access secret license licence product private ssh gpg pgp encryption wifi wi-fi activation serial recovery auth ' +
   'master root admin signing deploy client server stripe openai anthropic aws google firebase supabase maps weather openweather twilio sendgrid ' +
@@ -281,8 +333,19 @@ function cueAt(toks, i) {
   const nextW = next ? bare(next.lc) : '';
   const nextLooksValue = next && (COPULA.has(nextW) || COPULA.has(next.lc) || /\d/.test(next.word) || toks[i].colon);
   if (toks[i].mark) return '';
+  if ((w === 'pin' || w === 'pins') && PIN_NOT_NEXT.has(nextW)) return '';
+  if ((w === 'token' || w === 'tokens') && (TOKEN_NOT_PREV.has(prev) || /^\d/.test(prev) || TOKEN_NOT_NEXT.has(nextW))) return '';
   if (HARD.has(w)) return 'hard';
+  // DB_PASS, db_password, STRIPE_SECRET, apiToken said as a name
+  if (/(?:^|[_-])(?:pass|passwd|password|pwd|secret|token|apikey)(?:[_-]|$)|^[a-z]+(?:Password|Secret|Token|ApiKey)$/i.test(toks[i].word) && /[_-]|[a-z][A-Z]/.test(toks[i].word)) return 'hard';
+  if (LOCKISH.has(w)) return 'lock';
+  if (w === 'pass' && (PASS_PREV.has(prev) || toks[i].colon || EN_COPULA.has(nextW) || EN_COPULA.has(next ? next.lc : ''))) return 'hard';
+  if ((w === 'phrase' || w === 'words') && PHRASE_PREV.has(prev)) return 'phrase';
+  if ((w === 'answer' || w === 'answers') && (prev === 'security' || prev === 'question')) return 'hard';
+  if (w === 'passport') return 'soft';
   if (w === 'code' || w === 'codes' || w === 'kod') {
+    // "the code to the gate is 4471", "code for the locker: 2207"
+    if ((nextW === 'to' || nextW === 'for') && toks.slice(i + 2, i + 5).some((t) => CODE_QUAL.has(bare(t.lc)))) return 'hard';
     if (CODE_NOT.has(prev) && !CODE_QUAL.has(prev)) return '';
     if (CODE_QUAL.has(prev) || (CODE_QUAL.has(prev2) && /^(ka|ki|ke|of|for|the|my|our)$/.test(prev))) return 'hard';
     if (nextLooksValue && !CODE_NOT.has(prev)) return 'hard';
@@ -310,7 +373,12 @@ function shapeSpans(text) {
   const out = [];
   const add = (t, why) => { if (t.word && !t.mark) out.push({ start: t.start, end: t.end, why }); };
   // Strong shapes anywhere.
-  toks.forEach((t) => { const why = strongShape(t.word); if (why) add(t, why); });
+  toks.forEach((t, i) => {
+    const why = strongShape(t.word);
+    // "commit 1844c10ab486…": a commit hash said as one is an id
+    if (why === 'random string' && /^[0-9a-f]{7,64}$/.test(t.word) && i > 0 && /^(?:commit|sha|revert|hash|rev|checkout|cherry-pick)$/.test(bare(toks[i - 1].lc))) return;
+    if (why) add(t, why);
+  });
   // Equal groups of digits split by spaces: "7731 0042".
   const grp = /(?<![\d+][ -]?)(?<![\d+])\b(\d{4,6})((?: \d{4,6})+)\b(?![ -]?\d)/g;
   let m;
@@ -325,25 +393,61 @@ function shapeSpans(text) {
     // After the cue, in the same sentence, up to 6 words on. Right after a
     // copula ("password is …", "pin: …", "code hai …") even a plain word is the value.
     // "password is sunflower", "pin: sunflower"; not "OTP aya hai daraz se" (a word came between).
+    // Only an English copula or a colon puts the value after it ("security answer for HBL is Qureshi");
+    // Urdu "hai" ends the clause, the value came before it ("mera pin 4432 hai").
     let afterCopula = false; let clean = true;
+    // Only these can have a plain word as their value ("password is sunflower"); a CNIC or a PIN cannot.
+    const wordCue = WORD_VALUE_CUES.has(bare(toks[i].lc)) || /pass|pwd|secret|token/i.test(toks[i].word);
+    const plain = (t) => t.word.length >= 4 && !/(?:ed|ing)$/i.test(t.word) && !NOT_VALUE.test(t.word) && !FILLER.has(t.lc) && !HARD.has(bare(t.lc)) && !LOCKISH.has(bare(t.lc)) && /^[A-Za-z][A-Za-z'-]*$/.test(t.word);
+    if (cue === 'phrase') {
+      // "my seed phrase is abandon ability able …": every plain word after the copula, to the end of the sentence.
+      let on = toks[i].colon;
+      for (let j = i + 1; j < toks.length && j - i <= 30; j++) {
+        if (toks[j - 1].stop || toks[j].mark) break;
+        if (EN_COPULA.has(toks[j].lc) || EN_COPULA.has(bare(toks[j].lc))) { on = true; continue; }
+        if (on && /^[a-z]+$/i.test(toks[j].word)) add(toks[j], 'value after a cue');
+      }
+      continue;
+    }
     for (let j = i + 1; j < toks.length && j - i <= 6; j++) {
       if (toks[j - 1].stop) break;
       const t = toks[j];
       if (t.mark) break; // the redactor already took the value
-      if (weakShape(t.word, cue)) add(t, cue === 'expiry' ? 'expiry date' : 'value after a cue');
-      else if (cue === 'hard' && clean && (afterCopula || (j === i + 1 && toks[i].colon)) && t.word.length >= 4 && !NOT_VALUE.test(t.word) && !FILLER.has(t.lc) && /^[A-Za-z][A-Za-z'-]*$/.test(t.word)) add(t, 'value after a cue');
-      if (COPULA.has(t.lc) || COPULA.has(bare(t.lc))) afterCopula = true;
+      // "2 2 0 7", "58 # 14", "char aath do ek": a code typed in pieces
+      const run = pieces(toks, j);
+      if (run && cue !== 'expiry' && cue !== 'soft') { out.push({ start: toks[j].start, end: toks[run.last].end, why: 'value after a cue' }); j = run.last; continue; }
+      const count = j + 1 < toks.length && UNIT_NOUNS.has(bare(toks[j + 1].lc));
+      if (!count && weakShape(t.word, cue)) add(t, cue === 'expiry' ? 'expiry date' : 'value after a cue');
+      else if (cue === 'hard' && wordCue && clean && (afterCopula || (j === i + 1 && toks[i].colon)) && plain(t)) add(t, 'value after a cue');
+      if (EN_COPULA.has(t.lc) || EN_COPULA.has(bare(t.lc))) { afterCopula = true; clean = true; }
+      else if (COPULA.has(t.lc) || COPULA.has(bare(t.lc))) afterCopula = false;
       else if (!FILLER.has(t.lc)) { afterCopula = false; clean = false; }
     }
     // Before the cue (Roman Urdu: "482913 ye OTP aya hai"), up to 3 words back, no punctuation between.
     if (cue !== 'expiry') {
       for (let j = i - 1; j >= 0 && i - j <= 3; j--) {
         if (toks[j].pause || toks[j].mark) break;
+        if (cue === 'phrase') break;
         if (weakShape(toks[j].word, cue)) add(toks[j], 'value before a cue');
       }
     }
   }
   return mergeSpans(out);
+}
+
+/** A code typed in pieces from token j: single digits, digit words, # and * (at least 3 digits). */
+function pieces(toks, j) {
+  let k = j; let digits = 0; let n = 0;
+  for (; k < toks.length && n < 12; k++, n++) {
+    const w = bare(toks[k].lc) || toks[k].lc;
+    if (/^\d{1,2}$/.test(w)) digits += w.length;
+    else if (Object.prototype.hasOwnProperty.call(DIGIT_WORDS, w)) digits += 1;
+    else if (/^[#*.\-]+$/.test(toks[k].lc)) { /* separator */ } else break;
+    if (toks[k].stop && k > j) { k++; break; }
+  }
+  const last = k - 1;
+  // At least two pieces and three digits: "2 2 0 7", "58 # 14"; one token alone is weakShape's job.
+  return last > j && digits >= 3 ? { last } : null;
 }
 
 function mergeSpans(spans) {
@@ -362,6 +466,8 @@ function mergeSpans(spans) {
 // brain.SECRET_RE as it was: text that names one of these is refused even with no value in it
 // (unchanged on purpose, so nothing the brain refused before is kept now).
 const TOPIC_RE = /(?:api[_ -]?key|password|passwd|passcode|secret|token|bearer|private key|pin code|cvv|card number|iban|ssn)\b|\bsk-[a-z0-9]{8,}/i;
+// Secrets made of plain words: refused on their own, since a value cannot be told by its shape.
+const TOPIC_WORDS_RE = /\b(?:seed|recovery|mnemonic|wallet|backup) (?:phrase|words)\b|\bsecurity (?:answers?|questions?)\b|\bmaiden name\b/i;
 // What the Benchmark-520 leaks showed was missing. These are refused when the text also holds a
 // code-like value anywhere ("locker code location: 2207 at the gym"), but not on their own:
 // "sign-in is phone OTP only now" is a real project decision, and it holds no secret.
@@ -375,9 +481,11 @@ const TOPIC_VALUE_RE = new RegExp([
   String.raw`\b(?:account|acct|routing|card|cnic|ssn) (?:number|no\.?|#)`,
 ].join('|'), 'i');
 
-/** Tokens in the text that could be a code or a key (any shape a cue would accept). */
+/** Tokens in the text that could be a code or a key (any shape a cue would accept); not counts ("300 seconds"). */
 function codeLikeTokens(text) {
-  return tokenize(text).filter((t) => !t.mark && (strongShape(t.word) || weakShape(t.word, 'hard') || EXPIRY_RE.test(t.word))).map((t) => t.word);
+  const toks = tokenize(text);
+  return toks.filter((t, i) => !t.mark && !(i + 1 < toks.length && UNIT_NOUNS.has(bare(toks[i + 1].lc)))
+    && (strongShape(t.word) || weakShape(t.word, 'hard') || EXPIRY_RE.test(t.word))).map((t) => t.word);
 }
 const hasCodeLikeValue = (text) => codeLikeTokens(text).length > 0;
 /** Placeholders this code writes itself (change log, hidden memories): never counted as secrets. */
@@ -435,6 +543,7 @@ function why(texts, o = {}) {
   const joined = list.join(' \n ');
   if (MARK_RE.test(joined)) return 'mark';
   if (o.topic !== false && TOPIC_RE.test(joined)) return 'topic';
+  if (TOPIC_WORDS_RE.test(joined)) return 'topic';
   if (patternMatches(joined).length) return 'pattern';
   for (const s of list) {
     for (const sp of shapeSpans(s)) return /cue/.test(sp.why) || sp.why === 'expiry date' ? 'cue' : 'strong';
@@ -453,6 +562,20 @@ function observationWhy(o, opts = {}) {
   return why([...parts.map(String), ...labelled], opts);
 }
 
+/**
+ * observationWhy, plus: when the source had a secret removed, a code-like value
+ * in the answer that is not in the (redacted) source can only be that secret,
+ * copied from elsewhere or recalled. Used by the guard and by brain.observe on
+ * the paths that see the source (legacy learning, bots).
+ * @param {{ secrets?: Iterable<string>, sourceText?: string, topic?: boolean }} [opts]
+ */
+function guardWhy(o, opts = {}) {
+  const w = observationWhy(o, opts);
+  if (w || !opts.sourceText || !MARK_RE.test(opts.sourceText)) return w;
+  const words = [o.slot, o.value, o.text, o.fact, o.what, o.where, ...(Array.isArray(o.who) ? o.who : [])].filter((x) => typeof x === 'string').join(' \n ');
+  return codeLikeTokens(words).some((t) => !containsValue(opts.sourceText, t)) ? 'a code-like value not in the events, where a secret was removed' : '';
+}
+
 /** A stored memory, including what it used to say and what challenged it. */
 function memoryWhy(m) {
   if (!m) return '';
@@ -463,4 +586,4 @@ function memoryWhy(m) {
   return '';
 }
 
-module.exports = { MARK, MARK_RE, PATTERNS, TOPIC_RE, TOPIC_VALUE_RE, codeLikeTokens, containsToken: (t, v) => containsValue(t, v), luhn, patternMatches, spans, secretValues, containsValue, why, observationWhy, memoryWhy, strongShape, tokenize };
+module.exports = { MARK, MARK_RE, PATTERNS, TOPIC_RE, TOPIC_VALUE_RE, TOPIC_WORDS_RE, guardWhy, codeLikeTokens, containsToken: (t, v) => containsValue(t, v), luhn, patternMatches, spans, secretValues, containsValue, why, observationWhy, memoryWhy, strongShape, tokenize };
