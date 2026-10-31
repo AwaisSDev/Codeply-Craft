@@ -60,3 +60,46 @@ task prompts). The UCI Roman Urdu comments are about celebrities and
 politics, Topical-Chat about media and facts: almost never about the user.
 So there is too little to learn from, no temporary context, and too few
 memories to build merge examples. Do not scale this pool.
+
+# Result of pilot2: PASS (same criteria, thresholds unchanged)
+
+Pool v2 (`sources/screen.mjs`, `pool2.mjs`, `synth.mjs`): Claude Haiku 5.5
+screened 28,409 English WildChat conversations for **selection only** (2,488
+personal, $0.73); its answers are never labels. Composition of the 50: 26
+screened-personal WildChat, 9 task-only WildChat (negatives), 4 MultiWOZ, 5
+synthetic Roman Urdu, 6 synthetic mixed, 10 merge examples (Opus).
+
+| Check | Result | Pass? |
+|---|---|---|
+| Labels returned | 50 / 50 | pass |
+| Checker | 50 / 50 | pass |
+| Evidence spans resolve | 50 / 50 | pass |
+| Plan dates vs resolver | 0 plans in the 50, so tested on a plan supplement (`pilot2plans`: 8 WildChat conversations Haiku flagged as having plans + 7 MultiWOZ bookings with a day and time): **12 / 12** | pass |
+| Temporary context `until` | 3 / 3 | pass |
+| Merge target / relation | 9 / 10, 9 / 10 | pass |
+| Negatives | 27 / 50 = 54 % empty | pass |
+| Manual review (all 50 + 15) | 2-3 conservative misses of implied facts inside task requests ("my Puerto Rico travel guide book", applying for a cash-management role); one train plan without its time; no wrong memories stored. The one merge "miss" is a construction flaw: the generated earlier value ("learning Spanish") does not contradict "learning German", and Opus correctly made a new memory | pass |
+| Provenance | 50 / 50 | pass |
+| Cost | $0.0052 / example | pass |
+
+Watch-points: splitting, one resume split into two facts (Sonnet; Opus
+kept one). Long conversations: WildChat turns are capped, so pilot inputs are
+short; long-input recall remains measured on Benchmark-520 only. Certainty:
+used sensibly; one slip ("my foot is 25.5 cm" marked implied).
+
+Separate reports:
+* **Strata:** WildChat personal 13 / 26 empty (Haiku's selection is loose:
+  many "personal" conversations hold only mild facts); WildChat task-only
+  7 / 9 empty; MultiWOZ 4 / 4 empty (searches without a day and time are not
+  plans); synthetic Roman Urdu 3 / 5 empty; synthetic mixed 0 / 6 empty.
+* **Natural distribution** (`pilot2nat`, 20 unscreened WildChat): 19 / 20 have
+  nothing to remember. Real chat traffic is ~95 % negatives; the training mix
+  is enriched on purpose and evaluation must say which distribution it uses.
+* **Roman Urdu routing arm** (6 synthetic examples, Sonnet vs Opus): no
+  difference worth the cost, as on Benchmark-520 (`ROUTING.md`). Roman Urdu
+  stays on Sonnet.
+
+Changes for the full run, from what the pilot showed: synthetic sources are
+drawn only from conversations the labeller (Sonnet / Opus) found a memory in;
+the merge construction asks for an earlier value that cannot be true at the
+same time as the new one.

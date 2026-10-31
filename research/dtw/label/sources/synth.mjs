@@ -50,8 +50,10 @@ async function submit() {
   if (!(cap > 0)) throw new Error('--cap required');
   const screen = new Map(fs.readFileSync(opt('screen'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).map((r) => [r.id, r]));
   const exclude = new Set(opt('exclude') ? fs.readFileSync(opt('exclude'), 'utf8').split('\n').filter(Boolean) : []);
+  // --only: ids whose labels (Sonnet / Opus, never the screener) contain a memory
+  const only = opt('only') ? new Set(fs.readFileSync(opt('only'), 'utf8').split('\n').filter(Boolean)) : null;
   const rows = fs.readFileSync(opt('from'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))
-    .filter((r) => { const s = screen.get(r.id); return s && s.about_user && !s.task_only && !exclude.has(r.id); })
+    .filter((r) => { const s = screen.get(r.id); return s && s.about_user && !s.task_only && !exclude.has(r.id) && (!only || only.has(r.id)); })
     .sort((a, b) => (rank(a.id, `${seed}synth`) < rank(b.id, `${seed}synth`) ? -1 : 1)).slice(0, n);
   const est = rows.length * 0.008;
   if (est > cap) throw new Error(`estimated $${est.toFixed(2)} > cap $${cap}`);

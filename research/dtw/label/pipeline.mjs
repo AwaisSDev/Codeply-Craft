@@ -70,7 +70,7 @@ function stage1Final() {
 async function olderValue(client, o) {
   const msg = await client.messages.create({
     model: 'claude-sonnet-5-5', max_tokens: 2000, output_config: { effort: 'low', format: { type: 'json_schema', schema: { type: 'object', additionalProperties: false, required: ['value', 'text'], properties: { value: { type: 'string' }, text: { type: 'string' } } } } },
-    messages: [{ role: 'user', content: `A personal memory system stores short memories about a user. This memory comes from what the user just said:\nkind: ${o.kind}\nslot: ${o.slot}\nvalue: ${o.value}\ntext: ${o.text}\n\nWrite an EARLIER memory for the same slot with a different, plausible, specific value that the new statement would update or contradict (for example hosting "Heroku" before "Hetzner"). Return the earlier value (a few words) and its one-sentence third-person text.` }],
+    messages: [{ role: 'user', content: `A personal memory system stores short memories about a user. This memory comes from what the user just said:\nkind: ${o.kind}\nslot: ${o.slot}\nvalue: ${o.value}\ntext: ${o.text}\n\nWrite an EARLIER memory for the same slot with a different, plausible, specific value that CANNOT be true at the same time as the new one, so the new statement replaces it (for example hosting "Heroku" before "Hetzner"; "lives in Lahore" before "lives in Karachi"). Not something that could simply be true as well (not "learning Spanish" before "learning German"). Return the earlier value (a few words) and its one-sentence third-person text.` }],
   });
   return { ...JSON.parse(msg.content.filter((c) => c.type === 'text').map((c) => c.text).join('')), usage: msg.usage };
 }
