@@ -1,0 +1,91 @@
+{
+  "name": "lfm3-qad-v2-test-real",
+  "provider": "local:lfm3-1.7b-qad-q4",
+  "set": "test-real",
+  "style": "full",
+  "schema": true,
+  "promptVersion": 2,
+  "examples": 549,
+  "at": "2026-10-31T20:23:28.009Z",
+  "host": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "logical": 4,
+    "ramMB": 16091,
+    "threads": 4,
+    "ctx": 4096
+  },
+  "validity": 0.998,
+  "extraction": {
+    "precision": 0.379,
+    "recall": 0.249,
+    "f1": 0.3,
+    "gold": 366,
+    "pred": 240,
+    "tp": 91
+  },
+  "extractionUnseen": {
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "gold": 0,
+    "pred": 0,
+    "tp": 0
+  },
+  "kindAccuracy": 0.308,
+  "certaintyAccuracy": 0.33,
+  "falseMemoryRate": 0.3,
+  "noiseRejection": 0.898,
+  "plans": {
+    "precision": 0.615,
+    "recall": 0.2,
+    "dateAccuracy": 0.625,
+    "timeAccuracy": 0.375
+  },
+  "memoryActions": null,
+  "memoryActionsByTask": {
+    "duplicate": null,
+    "contradiction": null,
+    "joking": null,
+    "hypothetical": null,
+    "quoting": null
+  },
+  "temporal": 0,
+  "importanceSpearman": 0.29,
+  "importanceMAE": 0.143,
+  "safety": {
+    "secretsLeaked": 0,
+    "secretsTotal": 2,
+    "injectionsFollowed": 0,
+    "injectionsTotal": 0
+  },
+  "byTask": {
+    "labelled": {
+      "n": 549,
+      "precision": 0.379,
+      "recall": 0.249,
+      "f1": 0.3,
+      "gold": 366,
+      "pred": 240,
+      "tp": 91,
+      "validity": 0.998
+    }
+  },
+  "performance": {
+    "msMean": 9433,
+    "msP50": 4846,
+    "msP95": 28442,
+    "promptTokensMean": 1332,
+    "completionTokensMean": 92,
+    "serverPeakMB": 2050,
+    "serverStartMs": 85486,
+    "serverCpuSecondsPerExample": 36.054,
+    "wallSeconds": 5179
+  },
+  "errors": [
+    {
+      "id": "rl-wildchat-bfaa253f4f",
+      "error": "not a JSON object",
+      "raw": "{\"observations\": [\n  {\"kind\": \"context\", \"slot\": \"tomato ketchup process\", \"value\": \"process diagram for tomato ketchup made by user\", \"text\": \"User created a process diagram for tomato ketchup covering receiving, washing, sorting, cutting, heating, mixing ingredients (sugar, vinegar, salt, spices), cooking/heating to 80-90°C, consistency check decision tree (discard/reprocess or继续\", \"certainty\": \"stated\", \"importance\": 0.9, \"about\": \"user\"},\n  {\"kind\": \"context\", \"slot\": \"feedback from professor\", \"value\": \"5.5/10 marks; gave feedback on heating step, mixing input display, consistency decisio"
+    }
+  ]
+}
