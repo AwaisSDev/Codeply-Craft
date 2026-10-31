@@ -80,6 +80,14 @@ proposals these come from:
 | Weights on disk | ~150 MB INT8 | ~400 MB INT8 |
 | Input length | ~150–600 tokens (events + K = 8 known memories) | same |
 
+**Variant A′ (measured fallback)**: the same heads on LFM3-1.7B's hidden
+states instead of a small encoder (llama.cpp returns per-token states with
+`--pooling none`). A frozen LFM3 read through a linear layer already makes
+the per-example decision correctly on 82 % of hand-written gold examples,
+against 50 % when LFM3 generates the answer (`analysis/RESULTS.md` §3). It
+costs an LFM3 prefill (~2.5–4.5 s, 2 GB) instead of 0.3–1.8 s, and keeps the
+LFM license; it is what Design A becomes if the small encoders lose in E3.
+
 Heads (all small MLPs over final hidden states):
 
 | Head | Input | Output | Params (option 2) |

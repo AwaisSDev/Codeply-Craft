@@ -135,7 +135,8 @@ Three conclusions [M]:
    it). Only hand-written and real-world sets can rank architectures.
 3. **A small encoder without any task training already matches TF-IDF on
    gold**; Design A's bet is that fine-tuning it (not done here) closes the
-   rest of the gap at 1/8 of the cost (§6 of `PROPOSED-ARCHITECTURES.md`).
+   rest of the gap at 1/8 of the reading cost (latency table in
+   `PROPOSED-ARCHITECTURES.md`).
 
 Caveats: 34 gold examples; single-decision examples only; the generative
 label is a heuristic over its items.
