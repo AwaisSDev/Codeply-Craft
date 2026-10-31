@@ -31,3 +31,32 @@ The full run starts only if every line below holds:
 | Manual review of all 50 (`out/pilot1/REVIEW.md`): examples with a substantive error (wrong memory stored, important memory missed, wrong merge, wrong plan date) | ≤ 10 % |
 | Provenance complete (dataset, licence, URL, revision, file SHA-256, original id) | 100 % |
 | Cost per example | within 2x of the benchmark run's (Sonnet $0.003, Opus $0.010) |
+
+# Result of pilot1: FAIL (data mix), labeller quality passes
+
+| Check | Result | Pass? |
+|---|---|---|
+| Examples | 43, not 50: only 7 stage-1 examples had a memory, so only 3 merge examples could be built | **fail** |
+| Labels returned | 43 / 43 | pass |
+| Checker | 43 / 43 | pass |
+| Evidence spans resolve | 43 / 43 | pass |
+| Plan dates vs resolver | 1 / 1 (too few plans to test) | untested |
+| Temporary context `until` | 0 temporary items in the whole pilot | untested |
+| Merge target / relation | 2 / 3, 2 / 3 (too few) | **fail** |
+| Negatives | 36 / 43 = 84 % empty (limit 70 %) | **fail** |
+| Manual review (all 43) | 1 clear miss (MultiWOZ: train trip on Thursday arriving by 18:30 not kept as a plan), 1 borderline (WildChat: "my boyfriend isn't ready for a relationship" left out; sensitive, defensible), 1 merge where Opus made a new memory instead of matching the planted one; empty answers checked one by one and all correct (code, homework, fiction and role-play prompts, comments about celebrities) | pass (≤ 3 / 43) |
+| Provenance | 43 / 43 | pass |
+| Cost | $0.0034 / example | pass |
+
+Comparison arms (kept separate): Roman Urdu with Opus instead of Sonnet: 1
+of 5 differs (Opus keeps an ambiguous "higher education at Cambridge", subject
+unclear). Opus-routed examples with Sonnet instead: 1 of 6 differs (Sonnet
+misses "MPI staff member", implied). Too few to conclude.
+
+**Why it failed:** the pool, not the labeller. A random English WildChat
+shard is mostly tasks (code, homework, stories, role-play prompts), and the
+regex self-disclosure filter lets them through ("I", "my", "project" occur in
+task prompts). The UCI Roman Urdu comments are about celebrities and
+politics, Topical-Chat about media and facts: almost never about the user.
+So there is too little to learn from, no temporary context, and too few
+memories to build merge examples. Do not scale this pool.
