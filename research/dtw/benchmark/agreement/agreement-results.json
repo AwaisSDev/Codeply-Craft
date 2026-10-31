@@ -1,0 +1,37 @@
+{
+ "examples": 100,
+ "itemDetectionF1": 0.955,
+ "itemsA": 152,
+ "itemsB": 160,
+ "matched": 149,
+ "memorableItemF1": 0.944,
+ "memorableA": 113,
+ "memorableB": 120,
+ "keepVsReject": {
+  "n": 149,
+  "agreement": 1,
+  "kappa": 1
+ },
+ "certainty": {
+  "n": 149,
+  "agreement": 0.973,
+  "kappa": 0.956
+ },
+ "kind": {
+  "n": 149,
+  "agreement": 0.879,
+  "kappa": 0.846
+ },
+ "perExampleDecision": {
+  "n": 100,
+  "agreement": 0.97,
+  "kappa": 0.955
+ },
+ "plans": {
+  "a": 36,
+  "b": 37,
+  "matched": 35,
+  "f1": 0.959,
+  "sameDateOfMatched": 0.943
+ }
+}
