@@ -101,3 +101,20 @@ for s in train val test test-mini; do node research/dtw/data/dump.mjs ml/data/ou
 python research/dtw/model/train_encoder.py --model jhu-clsp/ettin-encoder-150m --train $W/train4k.spans.jsonl --val $W/val.spans.jsonl --out $W/runs/ettin150-s1 --epochs 2
 # export (heads + GGUF) and evaluate: research/dtw/run-queue.sh does all of it
 ```
+
+## 7. Change log
+
+* 2026-10-31, `runtime/time-resolve.mjs`: found on the realistic **training**
+  labels (never on Benchmark-520), before any trained model was evaluated.
+  Added durations ("3 weeks", "for two months", "2 more months", "in 2
+  weeks", "21 din baad", "do hafte"); "is / agle hafte" as this / next week
+  (Roman Urdu "hafta" was read only as Saturday); "till the weekend" ends
+  Sunday 23:59 (a weekend plan stays Saturday); "tonight" sets the evening;
+  "parso / parsoon" spellings; "X se Y tak" ends at Y for an end time, while a
+  plan keeps its start. Agreement with the labels on every quoted time in
+  the training data: end times 217 → 235 / 248, plan dates 311 / 322 →
+  315 / 324, no regressions. The remaining end-time differences are mostly
+  synthetic examples saying "till 6" after 18:00, where the guide's rule
+  (the next 18:00) is applied and the label is today's. Results computed
+  with the old resolver (template-trained Ettin) are re-run with the new one
+  for the comparison.

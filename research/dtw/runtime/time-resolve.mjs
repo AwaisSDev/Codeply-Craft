@@ -12,11 +12,14 @@ const WD = {
 const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12 };
 const MONTH_RE = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
 const WD_RE = Object.keys(WD).sort((a, b) => b.length - a.length).join('|');
-const DAY_WORDS = 'day after tomorrow|tomorrow|tmrw|tmrow|tmr|tomoz|today|tonight|aaj raat|aaj|kal|parson|this weekend|weekend|this week';
+const DAY_WORDS = 'day after tomorrow|tomorrow|tmrw|tmrow|tmr|tomoz|today|tonight|aaj raat|aaj|kal|parsoon|parson|parsun|parso|this weekend|weekend|all week|the whole week|whole week|this week|(?:is|iss|agle|agly)\\s+(?:hafte|hafta|haftay)';
+// Durations: "3 weeks", "for two months", "2 more months", "do hafte", "ek mahina".
+const NUMW = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, few: 3, couple: 2, ek: 1, do: 2, teen: 3, char: 4, chaar: 4, paanch: 5, panch: 5 };
+const DUR = `(?:\\d{1,2}|${Object.keys(NUMW).join('|')})\\s+(?:more\\s+|aur\\s+)?(?:days?|weeks?|months?|din|hafte|haftay|mahine|mahina|mahinay)`;
 const PART = '(?:subah|dopahar|dopehar|shaam|sham|raat|morning|evening|night|afternoon)';
 const TIME = `(?:(?:${PART}\\s+)?\\d{1,2}(?::\\d{2}|\\.\\d{2})?\\s*(?:am|pm|a\\.m\\.|p\\.m\\.|baje|bje|o'?clock)?|noon|midday|midnight)`;
 // One expression: optional lead word, then any mix of day / date / time pieces.
-const PIECE = `(?:(?:next|this|coming|agle|is)\\s+)?(?:${WD_RE})\\b|${DAY_WORDS}|(?:the\\s+)?\\d{1,2}(?:st|nd|rd|th)(?:\\s+(?:of\\s+)?${MONTH_RE})?|${MONTH_RE}\\s+\\d{1,2}(?:st|nd|rd|th)?|\\d{1,2}\\s+${MONTH_RE}|\\d{1,2}\\s+ko|(?:at|@|by|till|until|til|before|around|from)?\\s*${TIME}`;
+const PIECE = `(?:(?:for|approx\\.?|about|around|another)\\s+)?${DUR}\\b|(?:(?:next|this|coming|agle|is)\\s+)?(?:${WD_RE})\\b|${DAY_WORDS}|(?:the\\s+)?\\d{1,2}(?:st|nd|rd|th)(?:\\s+(?:of\\s+)?${MONTH_RE})?|${MONTH_RE}\\s+\\d{1,2}(?:st|nd|rd|th)?|\\d{1,2}\\s+${MONTH_RE}|\\d{1,2}\\s+ko|(?:at|@|by|till|until|til|before|around|from)?\\s*${TIME}`;
 const EXPR = new RegExp(`(?<![\\w:])(?:(?:till|until|til|back by|by|before|on|at|for|tak|se pehle)\\s+(?:about|around|like|approx\\.?|roughly)?\\s*)?(?:${PIECE})(?:[\\s,]+(?:at\\s+|@\\s*|ko\\s+|,\\s*)?(?:${PIECE}))*(?![\\w])`, 'gi');
 
 /** Local calendar parts of a UTC instant in a time zone. */
@@ -32,6 +35,11 @@ function addDays(p, n) {
   return { y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate(), wd: t.getUTCDay() };
 }
 const ymd = (p) => `${p.y}-${pad(p.m)}-${pad(p.d)}`;
+function addMonths(p, n) {
+  const last = new Date(Date.UTC(p.y, p.m - 1 + n + 1, 0)).getUTCDate();
+  const t = new Date(Date.UTC(p.y, p.m - 1 + n, Math.min(p.d, last)));
+  return { y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate(), wd: t.getUTCDay() };
+}
 
 /** Every time expression in a text: [{ start, end, text }]. Bare numbers ("3", "2024") are not times. */
 export function findTimes(text) {
@@ -48,15 +56,27 @@ export function findTimes(text) {
 }
 
 /** Parse an expression into { dayOffset | date, hour, minute, untilish, week } relative to now. */
-function parse(expr, now) {
+function parse(expr, now, opts = {}) {
   const s = ` ${expr.toLowerCase().replace(/\s+/g, ' ')} `;
   const r = { day: null, hour: null, minute: 0, part: null, week: false, untilish: /\b(till|until|til|back by|tak|by)\b/.test(s) };
-  if (/day after tomorrow|parson/.test(s)) r.day = addDays(now, 2);
+  const dur = s.match(new RegExp(`\\b${DUR}\\b`));
+  if (dur) {
+    const w = dur[0].trim().split(/\s+/); const n = /^\d+$/.test(w[0]) ? +w[0] : NUMW[w[0]];
+    const unit = w[w.length - 1];
+    r.dur = /^(day|days|din)$/.test(unit) ? { days: n } : /^(week|weeks|hafte|haftay)$/.test(unit) ? { days: 7 * n } : { months: n };
+    return r;
+  }
+  if (/\b(all week|the whole week|whole week)\b|\b(is|iss)\s+(hafte|hafta|haftay)\b/.test(s)) r.week = true;
+  else if (/\b(agle|agly)\s+(hafte|hafta|haftay)\b/.test(s)) { r.week = true; r.nextWeek = true; }
+  if (/day after tomorrow|\bpars(on|o|oon|un)\b/.test(s)) r.day = addDays(now, 2);
   else if (/\b(tomorrow|tmrw|tmrow|tmr|tomoz|kal)\b/.test(s)) r.day = addDays(now, 1);
   else if (/\b(today|tonight|aaj)\b/.test(s)) r.day = addDays(now, 0);
   else if (/\bthis week\b/.test(s)) r.week = true;
   else if (/\bweekend\b/.test(s)) r.day = addDays(now, (6 - now.wd + 7) % 7);
-  const wdm = s.match(new RegExp(`\\b(${WD_RE})\\b`));
+  // "aaj se friday tak" / "from today until Friday": the end is the weekday after se / until.
+  const sWd = s.match(new RegExp(`\\b(?:se|until|till|tak|to)\\s+(?:next\\s+|this\\s+)?(${WD_RE})\\b|\\b(${WD_RE})\\s+tak\\b`));
+  if (opts.end && sWd && r.day && !/(hafta|hafte)/.test(sWd[1] || sWd[2] || '')) r.day = null;  // an END time takes the end of the range; a plan keeps its start
+  const wdm = s.replace(/\b(is|iss|agle|agly)\s+(hafte|hafta|haftay)\b/g, ' ').match(new RegExp(`\\b(${WD_RE})\\b`));
   if (!r.day && wdm) {
     const want = WD[wdm[1]];
     let n = (want - now.wd + 7) % 7;
@@ -77,7 +97,7 @@ function parse(expr, now) {
     r.day = addDays({ y, m, d: dd }, 0);
   }
   const part = s.match(new RegExp(`\\b${PART}\\b`));
-  r.part = part ? part[0] : null;
+  r.part = part ? part[0] : (/\btonight\b|aaj raat/.test(s) ? 'night' : null);
   if (/\bnoon|midday\b/.test(s)) { r.hour = 12; r.minute = 0; }
   else if (/\bmidnight\b/.test(s)) { r.hour = 23; r.minute = 59; }
   const tm = s.match(/(?<![\d/])(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?(?!\s*(?:st|nd|rd|th|ko|people|times|min|hours?|days?|%))(?![\d/])/);
@@ -103,6 +123,7 @@ function parse(expr, now) {
 export function resolvePlan(expr, nowMs, tz) {
   const now = localParts(nowMs, tz);
   const r = parse(expr, now);
+  if (r.dur) return ymd(r.dur.days != null ? addDays(now, r.dur.days) : addMonths(now, r.dur.months));
   let day = r.day;
   if (!day && r.week) day = addDays(now, (7 - now.wd) % 7);
   if (!day && r.hour == null) return '';
@@ -116,9 +137,13 @@ export function resolvePlan(expr, nowMs, tz) {
 /** Live context's `until`: "HH:MM" today or "YYYY-MM-DDTHH:MM"; defaults to 23:59 today. */
 export function resolveUntil(expr, nowMs, tz) {
   const now = localParts(nowMs, tz);
-  const r = expr ? parse(expr, now) : { day: null, hour: null, week: false };
+  const r = expr ? parse(expr, now, { end: true }) : { day: null, hour: null, week: false };
   let day = r.day; let H = r.hour; let M = r.minute || 0;
-  if (r.week) { day = addDays(now, (7 - now.wd) % 7); H = 23; M = 59; }
+  if (r.week && !r.day) { day = addDays(now, (7 - now.wd) % 7 + (r.nextWeek ? 7 : 0)); H = 23; M = 59; }
+  // A duration ("3 weeks", "for two months"): that long from today, end of day.
+  if (r.dur) { day = r.dur.days != null ? addDays(now, r.dur.days) : addMonths(now, r.dur.months); H = 23; M = 59; }
+  // "till the weekend" / "is weekend tak": the end of the weekend (Sunday 23:59); a weekend PLAN stays Saturday.
+  if (/weekend/i.test(expr || '') && !r.dur && r.hour == null) { day = addDays(now, (7 - now.wd) % 7); H = 23; M = 59; }
   if (H == null) { H = 23; M = 59; }
   if (!day) {
     // "till 5": the next 17:00 (or 05:00) after now.
