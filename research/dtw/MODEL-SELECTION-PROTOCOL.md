@@ -33,8 +33,8 @@ train or validation; any `fullnat` example in train.
 |---|---|---|
 | **Benchmark-520** | hand-written gold (written by model instances; see `BENCHMARK-400.md` caveat) | **primary**, never trained or tuned on |
 | test-real (10 %) | Claude labels (silver) | in-distribution check |
-| natural-300 (`fullnat`) | Claude labels (silver) | natural traffic: ~95 % nothing to remember; reports false-memory behaviour in the real distribution |
-| Human check (planned) | a person labels ~50 Benchmark-520 examples blind | calibrates how far "gold" itself is from a human |
+| natural-300 (`fullnat`) | Claude labels (silver), **not ground truth** | natural traffic: ~95 % nothing to remember; reports false-memory behaviour in the real distribution. A person reviews a sample of each model's stored memories that Claude left empty (apparent false positives, up to 40) and of conversations both rejected (up to 40), and the corrected rates are reported next to the silver ones |
+| Human check | two people (if available; else one) label the same 50 Benchmark-520 examples blind, stratified by category and language | inter-annotator agreement (human-human, human-gold, human-Claude labeller) with κ for keep/reject, kind, certainty, plans; every disagreement listed and categorised. The benchmark was written by model instances, so this measures how far its gold is from people |
 
 Model selection, early stopping and thresholds use the validation split
 only.
@@ -48,7 +48,7 @@ only.
 | Ettin-150M + Decide heads, template data (`dtw-ettin150-s1`) | generated templates |
 | **Ettin-150M + Decide heads** | realistic train split, 3 seeds |
 | Ettin-400M + Decide heads | realistic train split, 1 seed (3 if it leads) |
-| **LFM3-1.7B LoRA fine-tune** | realistic train split, same targets, Kaggle GPU (`notebooks/kaggle-lfm3-lora-baseline.ipynb`), exported to GGUF Q4_0 |
+| **LFM3-1.7B LoRA fine-tune** | realistic train split, same targets, Kaggle GPU (`notebooks/kaggle-lfm3-lora-baseline.ipynb`), exported to GGUF Q4_0; **3 seeds**, like Ettin-150M. If GPU quota allows fewer, its results are reported with the number of seeds and wider intervals, and it is not ruled out on a difference that only the single-seed interval would show |
 
 Same inputs (harness normalisation and redaction), same guard, same
 evaluation harness (`ml/eval/run.mjs`), same CPU (4 threads, one job at a
@@ -73,6 +73,16 @@ A system cannot win if, behind the fixed guard, any secret reaches memory.
    actions, temporary context.
 4. **Cost:** p50 / p95 latency, peak RAM, CPU seconds per example.
 
-A difference counts only if its paired-bootstrap 95 % interval excludes 0
-(Ettin: across 3 seeds). If reliability and accuracy are not significantly
+A difference counts only if its paired-bootstrap 95 % interval excludes 0,
+with seed variation included (3 seeds per trained system). If reliability and accuracy are not significantly
 different, the cheaper system wins.
+
+## 6. Commitments
+
+* This protocol is frozen at the commit that adds this section. Thresholds,
+  decision rules, splits and evaluation sets are not changed after test
+  results are seen; any later change is recorded as a deviation with the
+  reason, and results are reported under both the original and the changed
+  rule.
+* The goal is the smallest, safest model that works, not a particular
+  winner.
