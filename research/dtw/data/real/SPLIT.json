@@ -1,0 +1,69 @@
+{
+ "inputs": {
+  "data/full.jsonl": "108c8db56fa3d2fb71be5de0c5480cfb08d2ed67782993f8a7182ff1f5986b5f",
+  "data/fullsyn.jsonl": "18885bcd2be13da8035c6d3af4f94a04ccbc1070b468cfd69c341216d763e16f",
+  "data/pilot2.jsonl": "3c442b20dca93720e178d9f05e1663ef838fc11520bc9d2f00167943025acca3",
+  "data/pilot2plans.jsonl": "bc6da070ff4c1cf5cfd7fc04293f2fa869ef54111a95f106a89b39a483387871"
+ },
+ "rule": "sha1('split-v1:' + family) % 100: <80 train, <90 val, else test",
+ "splits": {
+  "train": {
+   "n": 4096,
+   "empty": 2512,
+   "strata": {
+    "merge": 235,
+    "multiwoz": 541,
+    "romanurdu": 113,
+    "syn-mixed": 275,
+    "syn-ur": 279,
+    "topical": 118,
+    "wildchat": 2535
+   }
+  },
+  "val": {
+   "n": 478,
+   "empty": 307,
+   "strata": {
+    "multiwoz": 69,
+    "romanurdu": 17,
+    "syn-mixed": 37,
+    "syn-ur": 33,
+    "topical": 14,
+    "wildchat": 308
+   }
+  },
+  "test": {
+   "n": 549,
+   "empty": 323,
+   "strata": {
+    "merge": 52,
+    "multiwoz": 83,
+    "romanurdu": 21,
+    "syn-mixed": 30,
+    "syn-ur": 36,
+    "topical": 19,
+    "wildchat": 308
+   }
+  }
+ },
+ "hashes": {
+  "train": "d622b79475044d6895951c2003ce5a719820025176b58133e8f22d73dee888ce",
+  "val": "6a4c740eac410cf4cae4cec697ee6d59291a9e1dbab5dae2fbde459e3ce3c20d",
+  "test": "a46d1307b3eefc8a59414090e5be9c855c23be01b13c24715441146a416d56e2",
+  "split": "0250939c802104a3473dbce440b3c061075b2ea18f9d2fa66b554ff67b07d973"
+ },
+ "leakChecks": {
+  "families_in_two_splits": 0,
+  "ids_in_two_splits": 0,
+  "removed_for_natural_overlap": 94,
+  "natural_ids_in_train": 0,
+  "natural_families_in_train_or_val": 0,
+  "bench_exact_in_train_val": 0,
+  "bench_near_in_train_val": 0,
+  "dropped_for_cross_split_known_memories": {
+   "train": 163,
+   "val": 43
+  }
+ },
+ "leakChecksPass": true
+}
