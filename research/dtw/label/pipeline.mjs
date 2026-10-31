@@ -24,18 +24,18 @@ const cmd = args[0];
 const opt = (n, d = '') => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : d; };
 const run = opt('run');
 const dir = path.join(HERE, 'out', run);
-const POOL = path.join(HERE, 'data', 'pool.jsonl');
+const POOL = path.resolve(HERE, opt('pool', path.join('data', 'pool.jsonl')));
 const readJsonl = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 const writeJsonl = (f, rows) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : '')); };
 const rank = (id, seed) => crypto.createHash('sha1').update(`${seed}:${id}`).digest('hex');
 const MEMORABLE = new Set(['stated', 'implied', 'temporary']);
 const results = (name) => readJsonl(path.join(HERE, 'out', name, 'results.jsonl'));
-const srcOf = (ex) => ex.id.split('-')[1];
+const srcOf = (ex) => ex.stratum || ex.id.split('-')[1];
 
 function select() {
   const n = Number(opt('n', 40)); const seed = opt('seed', '1');
   const pool = readJsonl(POOL);
-  const quota = { wildchat: 0.6, multiwoz: 0.15, topical: 0.1, romanurdu: 0.15 };
+  const quota = opt('quota') ? JSON.parse(opt('quota')) : { wildchat: 0.6, multiwoz: 0.15, topical: 0.1, romanurdu: 0.15 };
   const taken = new Set(readJsonl(path.join(dir, 'exclude.jsonl')).map((r) => r.id));
   const out = [];
   for (const [src, share] of Object.entries(quota)) {

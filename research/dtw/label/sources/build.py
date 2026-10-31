@@ -42,6 +42,7 @@ DISCLOSE = re.compile(r"\b(i|i'm|im|i've|ive|my|we|our|me)\b", re.I)
 PERSONAL = re.compile(r"\b(prefer|like|love|hate|can't stand|work|job|boss|team|project|startup|company|client|live|moved|wife|husband|son|daughter|"
                       r"kids?|mom|mum|dad|brother|sister|friend|girlfriend|boyfriend|tomorrow|tonight|meeting|deadline|exam|usually|always|never|"
                       r"allerg|vegetarian|vegan|diet|gym|studying|student|university|college|school|birthday|wedding|trip|flight|budget|salary)", re.I)
+ALL_WILDCHAT = False  # --wildchat-all: every English candidate, for screening (pool v2)
 TEMPORAL = re.compile(r"\b(today|tonight|right now|at the moment|for now|currently|this week|this weekend|till|until|back by|on leave|out of office|"
                       r"sick|abhi|aaj|is hafte|kal tak)\b", re.I)
 
@@ -119,6 +120,11 @@ def wildchat(raw, rng):
             user = " ".join(t for r, t in turns if r == "user")
             ex = example(rng, "wildchat", row["conversation_hash"], [chat_text(turns)], ["chat"], os.path.basename(f), digest, len(turns))
             (out_pos if DISCLOSE.search(user) and PERSONAL.search(user) else out_rand).append(ex)
+    if ALL_WILDCHAT:
+        rows = out_pos + out_rand
+        rows.sort(key=lambda r: r["id"])
+        seen = set()
+        return [r for r in rows if not (r["id"] in seen or seen.add(r["id"]))]  # WildChat repeats some conversation hashes
     rng.shuffle(out_pos)
     rng.shuffle(out_rand)
     n = TARGET["wildchat"]
@@ -171,7 +177,17 @@ def main():
     ap.add_argument("--raw", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--wildchat-all", action="store_true", help="write every English WildChat candidate (pool v2 screening input)")
     a = ap.parse_args()
+    if a.wildchat_all:
+        global ALL_WILDCHAT
+        ALL_WILDCHAT = True
+        rows = wildchat(a.raw, random.Random(f"{a.seed}-wildchat"))
+        with open(a.out, "w", encoding="utf-8") as f:
+            for r in rows:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        print(f"wildchat candidates: {len(rows)} -> {a.out}")
+        return
     pool = []
     for name, fn in [("wildchat", wildchat), ("multiwoz", multiwoz), ("topical", topical), ("romanurdu", romanurdu)]:
         rows = fn(a.raw, random.Random(f"{a.seed}-{name}"))
