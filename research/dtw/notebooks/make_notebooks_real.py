@@ -16,10 +16,10 @@ LLAMA = "aa588a3463357ee990b314f41dda242869130704"
 
 SETUP = r'''# Setup: the experiment branch (public), dependencies, the frozen split
 import os, subprocess, hashlib, json
-if not os.path.exists("/kaggle/working/codeply"):
+if not os.path.exists("/tmp/codeply"):
     subprocess.run(["git", "clone", "--depth", "1", "-b", "codeply-li-dtw-experiment",
-                    "https://github.com/AwaisSDev/Codeply-Craft", "/kaggle/working/codeply"], check=True)
-os.chdir("/kaggle/working/codeply/research/dtw")
+                    "https://github.com/AwaisSDev/Codeply-Craft", "/tmp/codeply"], check=True)
+os.chdir("/tmp/codeply/research/dtw")  # outside /kaggle/working: the output keeps only artifacts
 subprocess.run("pip -q install 'transformers>=4.48' peft accelerate sentencepiece pyyaml", shell=True, check=True)
 subprocess.run("cd data/real && for f in *.gz; do gunzip -kf $f; done", shell=True, check=True)
 split = json.load(open("data/real/SPLIT.json"))
@@ -31,14 +31,14 @@ print({k: v["n"] for k, v in split["splits"].items()})
 
 LLAMA_BUILD = r'''# llama.cpp at the pinned commit: GGUF converter and quantizer
 import os, subprocess
-if not os.path.exists("/kaggle/working/llama.cpp"):
-    subprocess.run("git clone https://github.com/ggml-org/llama.cpp /kaggle/working/llama.cpp && cd /kaggle/working/llama.cpp && git checkout LLAMA_COMMIT", shell=True, check=True)
-    subprocess.run("cd /kaggle/working/llama.cpp && cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF > /dev/null && cmake --build build -j4 --target llama-quantize > /dev/null", shell=True, check=True)
-    subprocess.run("pip -q install -e /kaggle/working/llama.cpp/gguf-py", shell=True, check=True)
+if not os.path.exists("/tmp/llama.cpp"):
+    subprocess.run("git clone https://github.com/ggml-org/llama.cpp /tmp/llama.cpp && cd /tmp/llama.cpp && git checkout LLAMA_COMMIT", shell=True, check=True)
+    subprocess.run("cd /tmp/llama.cpp && cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF > /dev/null && cmake --build build -j4 --target llama-quantize > /dev/null", shell=True, check=True)
+    subprocess.run("pip -q install -e /tmp/llama.cpp/gguf-py", shell=True, check=True)
 def export_gguf(run):
-    subprocess.run(f"python /kaggle/working/llama.cpp/convert_hf_to_gguf.py {run}/backbone --outtype f16 --outfile {run}/backbone-f16.gguf", shell=True, check=True)
+    subprocess.run(f"python /tmp/llama.cpp/convert_hf_to_gguf.py {run}/backbone --outtype f16 --outfile {run}/backbone-f16.gguf", shell=True, check=True)
     for q in ("Q8_0", "Q4_0"):
-        subprocess.run(f"/kaggle/working/llama.cpp/build/bin/llama-quantize {run}/backbone-f16.gguf {run}/backbone-{q.lower()}.gguf {q}", shell=True, check=True)
+        subprocess.run(f"/tmp/llama.cpp/build/bin/llama-quantize {run}/backbone-f16.gguf {run}/backbone-{q.lower()}.gguf {q}", shell=True, check=True)
     subprocess.run(f"python model/export_heads.py {run}", shell=True, check=True)'''.replace("LLAMA_COMMIT", LLAMA)
 
 
@@ -60,24 +60,34 @@ ENCODERS = nb(
     "selection on the validation split only. Exports GGUF Q8_0 / Q4_0 + heads.",
     [SETUP, LLAMA_BUILD, r'''
 import subprocess
-RUNS = [("ettin150", "jhu-clsp/ettin-encoder-150m", 1), ("ettin150", "jhu-clsp/ettin-encoder-150m", 2),
-        ("ettin150", "jhu-clsp/ettin-encoder-150m", 3), ("ettin400", "jhu-clsp/ettin-encoder-400m", 1)]
-for name, hf, seed in RUNS:
+import shutil
+# (name, model, seed, micro-batch, accumulation): effective batch 32 for every run. Ettin-400M needs micro-batch 2 on a
+# T4 (micro-batch 8 ran out of memory in run 3, after the three 150M seeds had finished).
+RUNS = [("ettin150", "jhu-clsp/ettin-encoder-150m", 1, 8, 4), ("ettin150", "jhu-clsp/ettin-encoder-150m", 2, 8, 4),
+        ("ettin150", "jhu-clsp/ettin-encoder-150m", 3, 8, 4), ("ettin400", "jhu-clsp/ettin-encoder-400m", 1, 2, 16)]
+ONLY = os.environ.get("ONLY_RUNS", "")  # e.g. "real-ettin400-s1" to rerun only that one
+for name, hf, seed, bs, accum in RUNS:
     run = f"runs/real-{name}-s{seed}"
-    if os.path.exists(f"{run}/heads.json"):
+    if os.path.exists(f"{run}/heads.json") or (ONLY and run.split("/")[1] not in ONLY.split(",")):
         continue
     # Effective batch 32 as pre-registered: 8 x 4 accumulation + gradient checkpointing. The first run (bs 32)
     # ran out of memory on the T4 (16 GB): realistic inputs reach 1,462 tokens and T4 has no FlashAttention.
     subprocess.run(f"cd model && PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True python train_encoder.py --model {hf} "
                    f"--train ../data/real/train.spans.jsonl --val ../data/real/val.spans.jsonl "
-                   f"--out ../{run} --epochs 3 --bs 8 --accum 4 --grad-ckpt --seed {seed}", shell=True, check=True)
+                   f"--out ../{run} --epochs 3 --bs {bs} --accum {accum} --grad-ckpt --seed {seed}", shell=True, check=True)
     export_gguf(run)
+    # Save this run's artifacts at once, so a later failure cannot lose them.
+    out = f"/kaggle/working/runs/{run.split('/')[1]}"
+    os.makedirs(out, exist_ok=True)
+    for f in ("heads.bin", "heads.json", "config.json", "train-log.jsonl", "backbone-q8_0.gguf", "backbone-q4_0.gguf"):
+        if os.path.exists(f"{run}/{f}"):
+            shutil.copy(f"{run}/{f}", out)
 ''', r'''
 import json, glob
 for c in sorted(glob.glob("runs/*/config.json")):
     print(c.split("/")[1], json.load(open(c)).get("val"))
 ''', r'''
-!cd runs && zip -qr /kaggle/working/real-encoders.zip . -x "*/backbone/*" "*/backbone-f16.gguf"
+!cd /kaggle/working/runs && zip -qr /kaggle/working/real-encoders.zip .
 !ls -la /kaggle/working/real-encoders.zip
 '''])
 
@@ -89,7 +99,7 @@ LFM3 = nb(
     [SETUP, LLAMA_BUILD, r'''
 import subprocess, os, yaml
 SEEDS = [1, 2]   # set per kernel; the protocol asks for 3 seeds in total
-os.chdir("/kaggle/working/codeply")
+os.chdir("/tmp/codeply")
 subprocess.run("pip -q install -r ml/finetune/requirements.txt", shell=True, check=True)
 # Kaggle's image ships torchao 0.10; PEFT refuses any torchao below 0.16 (the first run failed on it). LoRA does not use it.
 subprocess.run("pip -q uninstall -y torchao", shell=True, check=True)
@@ -107,12 +117,12 @@ for seed in SEEDS:
     if not os.path.exists(f"ml/finetune/runs/real-lfm3-lora-s{seed}/merged"):
         subprocess.run(f"PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True python ml/finetune/train_lora.py --config /tmp/config-s{seed}.yaml", shell=True, check=True)
 ''', r'''
-!cd /kaggle/working/llama.cpp && cmake --build build -j4 --target llama-imatrix > /dev/null
+!cd /tmp/llama.cpp && cmake --build build -j4 --target llama-imatrix > /dev/null
 import subprocess
 for seed in SEEDS:
-    subprocess.run(f"cd /kaggle/working/codeply && LLAMA_CPP=/kaggle/working/llama.cpp bash ml/finetune/export_gguf.sh ml/finetune/runs/real-lfm3-lora-s{seed}/merged real-lfm3-lora-s{seed}", shell=True, check=True)
+    subprocess.run(f"cd /tmp/codeply && LLAMA_CPP=/tmp/llama.cpp bash ml/finetune/export_gguf.sh ml/finetune/runs/real-lfm3-lora-s{seed}/merged real-lfm3-lora-s{seed}", shell=True, check=True)
 ''', r'''
-!cd /kaggle/working/codeply/ml/finetune/runs && zip -qr /kaggle/working/real-lfm3-lora.zip . -i "*.gguf" "*train-log.jsonl"
+!cd /tmp/codeply/ml/finetune/runs && zip -qr /kaggle/working/real-lfm3-lora.zip . -i "*.gguf" "*train-log.jsonl"
 !ls -la /kaggle/working/real-lfm3-lora.zip
 '''])
 

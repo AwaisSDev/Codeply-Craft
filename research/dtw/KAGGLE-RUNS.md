@@ -39,3 +39,22 @@ they are recorded here so the runs can be compared.
 | `codeply-real-lfm3-lora` | model loaded, LoRA attached (torchao fix works) | first backward pass | `CUDA out of memory` allocating 2.94 GB: the 128K-vocabulary logits for micro-batch 4 × ~2K tokens | micro-batch 1 × accumulation 16 (effective 16, unchanged) + `expandable_segments` |
 
 Both kernels relaunched as version 3.
+
+## 2026-10-31, run 3 (version 3)
+
+| Kernel | Result |
+|---|---|
+| `codeply-real-encoders` | **Ettin-150M seeds 1-3 trained and exported** (peak GPU 7.2 GB, ~21 min each). Validation (realistic val split, best epoch): kind 0.764 / 0.736 / 0.747, certainty 0.853 / 0.870 / 0.863, gate 0.885 / 0.868 / 0.868, exact-span F1 0.051 / 0.060 / 0.072. Merge accuracy reads 0.0 because the validation split has no merge examples after the cross-split fix (0 of 0), not because merges fail. **Ettin-400M seed 1: CUDA out of memory at micro-batch 8.** The notebook's final zip cell never ran |
+| `codeply-real-lfm3-lora` | still running at the time of writing |
+
+**Low exact-span F1 needs checking** before anyone reads it as a model
+failure: it is exact token-boundary agreement with Claude's evidence spans,
+which are often whole clauses; the harness F1 (value words) is the metric
+that counts. Evaluate the checkpoints in the harness first.
+
+Fixes for the next runs: clone the repository and llama.cpp under `/tmp`, so
+the kernel output holds only artifacts (the output listing of run 3 starts
+with thousands of repository files, which is what made every log and output
+download slow and rate-limited); copy each run's heads, config, log and GGUFs
+to `/kaggle/working/runs/<run>` as soon as it finishes; Ettin-400M at
+micro-batch 2 × accumulation 16 (effective 32).
