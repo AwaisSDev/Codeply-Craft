@@ -18,6 +18,7 @@ export HF_HOME=$W/hf CODEPLY_LLAMA_SERVER=$L/build/bin/llama-server
 mkdir -p $W/logs $W/runs $R/$OUT
 cd $R
 step() { echo "== $(date +%T) $*"; }
+TRAILER=$'\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01PFdKPZVeAokuHGdsJQrAPa'
 push() { for d in 2 4 8 16; do git -C "$1" push -q -u origin "$2" && return 0; sleep $d; done; echo "   push of $2 failed"; }
 
 # ---------- setup ----------
@@ -58,11 +59,11 @@ save_run() {  # run-dir: heads + config + GGUF backbones (not the LFM3 base mode
     [ -f $run/$f ] || continue
     if [ $(stat -c %s $run/$f) -gt 94371840 ]; then split -b 90m -d $run/$f $ART/$name/$f.part; else cp $run/$f $ART/$name/; fi
   done
-  (cd $ART && git add -A $name && git commit -q -m "DtW artifacts: $name" && push $ART dtw-artifacts)
+  (cd $ART && git add -A $name && git commit -q -m "DtW artifacts: $name$TRAILER" && push $ART dtw-artifacts)
   echo "   saved $name to dtw-artifacts"
 }
 save_results() {
-  git add $OUT && git commit -q -m "DtW results: $*" -- $OUT && push $R $BRANCH
+  git add $OUT && git commit -q -m "DtW results: $*$TRAILER" -- $OUT && push $R $BRANCH
 }
 
 # ---------- experiments ----------
