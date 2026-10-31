@@ -77,7 +77,8 @@ async function submit() {
   if (!rows.length) { console.log('nothing to submit'); return; }
   // Estimate before spending: the cost per example measured so far, else a conservative guess.
   const prev = results();
-  const per = prev.length ? already / prev.length : (model.includes('opus') ? 0.06 : 0.03);
+  // Measured cost per example for this run, else --est (measured on the pilots), else a conservative guess.
+  const per = prev.length ? already / prev.length : (Number(opt('est')) || (model.includes('opus') ? 0.06 : 0.03));
   const est = per * rows.length;
   if (already + est > cap) {
     const fit = Math.max(0, Math.floor((cap - already) / per));
