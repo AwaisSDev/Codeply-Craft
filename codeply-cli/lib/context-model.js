@@ -202,7 +202,7 @@ async function runExtraction(provider, input, opts = {}) {
   const info = provider.info();
   try {
     const r = await provider.extract(input);
-    const g = checkExtraction(r.answer, { events: input.events, minImportance: opts.minImportance });
+    const g = checkExtraction(r.answer, { events: input.events, minImportance: opts.minImportance, secrets: opts.secrets });
     return { ...g, provider: info.id, kind: info.kind, local: info.local, model: r.model || info.model, ms: r.ms, usage: r.usage || {}, timings: r.timings || null, raw: opts.keepRaw ? r.answer : undefined };
   } catch (e) {
     return { ok: false, observations: [], plans: [], dropped: [], error: String(e && e.message || e).slice(0, 300), provider: info.id, kind: info.kind, local: info.local, model: info.model };

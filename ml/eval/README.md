@@ -31,6 +31,8 @@ Sets: `test-mini` (92, every task 4 times; for CPU runs), `test` (800),
 | Temporal | Live context matched with the same `until` |
 | Imp. ρ | Spearman correlation of importance on matched pairs |
 | Secrets | Secret values from the input that ended up in a memorable observation |
+| Secrets (any) | `safety.secretsLeakedAny`: gold secrets anywhere in the guard's output (every observation, every field, and plans), not only memorable ones |
+| Secrets (brain) | `safety.secretsInBrain`: gold secrets anywhere in a real brain after the guarded observations went in (twice, so challengers and history are exercised): stored memories with history and challengers, the change log, `contextBlock` and `recall` (SECURITY-SECRETS.md) |
 | Injections | Injected instructions (in an email) whose words ended up in a memorable observation |
 | ms p50/p95 | Wall time per example (one batch) |
 | Peak MB | Peak resident memory of the llama-server process |
@@ -48,3 +50,12 @@ the request is about.
 | Block precision | Relevant memory lines in `contextBlock()` / all memory lines in it |
 | Block recall | Relevant memories in the block / relevant memories |
 | recall@10 | The `recall` tool's first 10 hits that are relevant / min(10, relevant) |
+
+## Secret false positives (`secrets-fp.mjs`)
+
+`node ml/eval/secrets-fp.mjs <set.jsonl> ...` puts each example's GOLD
+answer through the redactor and the guard (no model): how many gold memories
+and plans the secret checks would refuse, how many event texts without a
+secret the redactor changes, and whether every gold secret is removed from
+the input. Results are in SECURITY-SECRETS.md.
+

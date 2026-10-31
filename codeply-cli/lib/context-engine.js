@@ -103,7 +103,7 @@ function createEngine(o) {
       const scopes = ['me', ...(pk ? [`project:${pk}`] : [])];
       const want = B.terms(batch.map((e) => e.text).join(' '));
       return B.list({ scopes, limit: 300 })
-        .filter((m) => m.kind !== 'lesson')
+        .filter((m) => m.kind !== 'lesson' && !(B.memoryLooksSecret && B.memoryLooksSecret(m)))
         .map((m) => ({ m, s: want.reduce((n, w) => n + (`${m.slot} ${m.value} ${m.text}`.toLowerCase().includes(w) ? 1 : 0), 0) + (m.status === 'confirmed' ? 0.2 : 0) }))
         .sort((a, b) => b.s - a.s).slice(0, 30)
         .map(({ m }) => ({ kind: m.kind, slot: m.slot, value: m.value, text: m.text, project: m.project }));
@@ -140,7 +140,15 @@ function createEngine(o) {
         if (!batch.length) break;
         for (const e of batch) o.store.mark(e.id, 'processing');
         const redactions = [];
-        const events = batch.map((e) => { const r = redact(e.text); if (r.found.length) redactions.push(...r.found); return { ...e, text: r.text }; });
+        // removed: the secret strings themselves, only so the guard can refuse them if a model writes one back. Never stored.
+        const removed = [];
+        const events = batch.map((e) => {
+          if (e.meta && Array.isArray(e.meta.redacted)) redactions.push(...e.meta.redacted); // redacted when queued
+          if (o.store.secretsFor) removed.push(...o.store.secretsFor(e.id));
+          const r = redact(e.text); // again, for a store written before that (and harmless on redacted text)
+          if (r.found.length) { redactions.push(...r.found); removed.push(...r.values); }
+          return { ...e, text: r.text };
+        });
         const sensitive = batch.some((e) => e.sensitive);
         const route = await routeFor({ mode: s.mode, sensitive, providers: o.providers });
         if (!route.provider) {
@@ -148,7 +156,7 @@ function createEngine(o) {
           out.push({ events: batch.length, skipped: route.why });
           continue;
         }
-        const r = await runExtraction(route.provider, { events, known: knownFor(batch), now: now(), tz: o.tz ? o.tz() : undefined, projects: safeProjects() }, { minImportance: s.minImportance });
+        const r = await runExtraction(route.provider, { events, known: knownFor(batch), now: now(), tz: o.tz ? o.tz() : undefined, projects: safeProjects() }, { minImportance: s.minImportance, secrets: removed });
         const meta = { provider: r.provider, model: r.model, local: r.local };
         if (!r.ok) {
           for (const e of batch) o.store.mark(e.id, 'failed', { ...meta, error: `${route.why}: ${r.error}` });

@@ -17,7 +17,8 @@
     "dist": "node scripts/embed-secrets.js && electron-builder --win",
     "test:engine": "node scripts/engine-test.mjs",
     "test:brain": "node scripts/brain-test.mjs",
-    "test:context": "node scripts/context-test.mjs"
+    "test:context": "node scripts/context-test.mjs",
+    "test:secrets": "node scripts/secret-test.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.0",
@@ -70,6 +71,8 @@
       "!scripts/engine-test.mjs",
       "!scripts/rewind-test.mjs",
       "!scripts/life-test.mjs",
+      "!scripts/secret-test.mjs",
+      "!scripts/fixtures",
       "!dev-app-update.yml",
       "!vercel.json"
     ],

@@ -14,6 +14,9 @@
  *   - sensitive text is stored only sealed with the host key (AES-256-GCM,
  *     the same sealing as life-store.js); without a key it is kept in memory
  *     until processed and never written
+ *   - text is redacted (context-redact.js) before it is stored, so a secret
+ *     typed in a chat never reaches this file, sealed or not
+ *     (SECURITY-SECRETS.md); identity and dedupe use the words as received
  *   - the text of processed events is cleared after textDays (default 7);
  *     rows go after rowDays (default 90)
  *
@@ -26,6 +29,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { loadDriver } = require('./session-db.js');
 const { normalizeEvent } = require('./context-schema.js');
+const { redact } = require('./context-redact.js');
 
 const DAY = 86400000;
 const MAX_ATTEMPTS = 3;
@@ -108,6 +112,9 @@ function openEventStore(opts = {}) {
   };
   // Sensitive text with no key never touches the disk: it waits here until processed.
   const volatile = new Map();
+  // What the redactor removed from each event, kept in memory only (never written) so the guard
+  // can refuse a model that writes one back. Gone after a restart; the guard has other checks.
+  const removed = new Map();
   // A crash mid-batch leaves rows "processing": they go back in the queue.
   q.stuck.run(now());
 
@@ -136,13 +143,17 @@ function openEventStore(opts = {}) {
     if (q.get.get(event.id)) return { status: 'duplicate', id: event.id };
     // The same words from the same source within a day is one event (a retry, a double hook).
     if (q.byHash.get(event.contentHash, now() - (o.dedupeMs || DAY))) return { status: 'duplicate', id: event.id };
-    let text = event.text;
+    const red = redact(event.text);
+    let text = red.text;
+    // The kinds removed (never the values), so the engine's outcome still says what was redacted.
+    const meta = red.found.length ? { ...(event.meta || {}), redacted: [...new Set(red.found)] } : (event.meta || {});
+    if (red.values.length) removed.set(event.id, red.values);
     if (event.sensitive) {
       if (box) text = box.seal(text); else { volatile.set(event.id, text); text = null; }
     }
     const t = now();
     q.insert.run(event.id, event.source, event.product, event.at, event.trust, event.sensitive ? 1 : 0, event.project || null,
-      event.actor ? JSON.stringify(event.actor) : null, text, JSON.stringify(event.meta || {}), event.contentHash, t, t);
+      event.actor ? JSON.stringify(event.actor) : null, text, JSON.stringify(meta), event.contentHash, t, t);
     return { status: 'queued', id: event.id };
   }
 
@@ -172,7 +183,7 @@ function openEventStore(opts = {}) {
     q.setStatus.run(st, attempts, next, o.provider || cur.provider || null, o.model || cur.model || null,
       o.local == null ? cur.local : o.local ? 1 : 0, o.outcome ? JSON.stringify(o.outcome).slice(0, 20000) : cur.outcome,
       o.error ? String(o.error).slice(0, 500) : null, now(), cur.id);
-    if (st !== 'pending' && st !== 'processing') volatile.delete(cur.id);
+    if (st !== 'pending' && st !== 'processing') { volatile.delete(cur.id); removed.delete(cur.id); }
     return rowToEvent(q.get.get(cur.id));
   }
 
@@ -191,6 +202,8 @@ function openEventStore(opts = {}) {
     persistent: !!driver, sealed: !!box,
     ingest, pending, mark, counts, purge,
     get: (id) => rowToEvent(q.get.get(String(id))),
+    /** The secrets redacted out of one queued event (in memory only; [] after a restart). Never store or show these. */
+    secretsFor: (id) => removed.get(String(id)) || [],
     recent: (n = 30) => q.recent.all(n).map(rowToEvent),
     getMeta: (k, d) => { const r = q.getMeta.get(String(k)); return r ? json(r.value, d) : d; },
     setMeta: (k, v) => q.setMeta.run(String(k), JSON.stringify(v)),

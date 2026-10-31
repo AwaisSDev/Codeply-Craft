@@ -14,6 +14,7 @@
  */
 const crypto = require('crypto');
 const { KINDS, KIND_KEYS, CERTAINTY, cleanObservation, terms } = require('./brain.js');
+const secretScan = require('./secret-scan.js');
 
 const SCHEMA_VERSION = 1;
 const SOURCES = ['chat', 'heard', 'call', 'orbit', 'email', 'test'];
@@ -150,8 +151,18 @@ function grounded(o, sourceTerms) {
 
 /**
  * The guard every backend's answer goes through before the brain sees it.
+ *
+ * Secrets (SECURITY-SECRETS.md) fail closed: an observation or a plan whose
+ * slot, value, text, project or people hold anything secret-scan.js calls a
+ * secret is dropped whole, never stored with the secret cut out. That covers
+ * a value the redactor removed from the events (ctx.secrets) and any value
+ * the events themselves mark as secret, so a model that copies one back from
+ * the known memories, or invents one, is caught too. Dropped secrets keep
+ * only their kind and the reason, never the words.
+ *
  * @param {object|string} answer   the backend's JSON (or raw text)
- * @param {{ events: object[], minImportance?: number }} ctx
+ * @param {{ events: object[], minImportance?: number, secrets?: Iterable<string> }} ctx
+ *   secrets: what redact() removed from these events (its .values); in memory only
  * @returns {{ ok: boolean, observations: object[], plans: object[], dropped: {item, why}[], error?: string }}
  */
 function checkExtraction(answer, ctx = {}) {
@@ -176,9 +187,26 @@ function checkExtraction(answer, ctx = {}) {
   const project = (events.find((e) => e.project) || {}).project || '';
   const dropped = [];
   const observations = [];
+  // Values that must never come back out: what the redactor took, and what the events mark as secret.
+  const secrets = new Set([...(ctx.secrets || []), ...secretScan.secretValues(events.map((e) => e.text))].map((v) => String(v).trim()).filter((v) => v.length >= 3));
+  const secretWhy0 = (o, opt = {}) => secretScan.observationWhy(o, { secrets, ...opt });
+  // When this batch had a secret redacted, a code-like value in the answer that is not in the
+  // (redacted) events can only be the removed secret, copied from elsewhere or recalled: drop it.
+  // This still works after a restart, when the removed values themselves are gone.
+  const sourceText = events.map((e) => e.text).join('\n');
+  const hadRedaction = secretScan.MARK_RE.test(sourceText);
+  const secretWhy = (o, opt = {}) => {
+    const w = secretWhy0(o, opt);
+    if (w || !hadRedaction) return w;
+    const words = [o.slot, o.value, o.text, o.what, o.where, ...(Array.isArray(o.who) ? o.who : [])].filter((x) => typeof x === 'string').join(' \n ');
+    return secretScan.codeLikeTokens(words).some((t) => !secretScan.containsToken(sourceText, t)) ? 'a code-like value not in the events, where a secret was removed' : '';
+  };
   const list = Array.isArray(parsed.observations) ? parsed.observations : [];
   for (const raw of list.slice(0, MAX_OBSERVATIONS * 2)) {
-    if (!raw || typeof raw !== 'object') { dropped.push({ item: raw, why: 'not an object' }); continue; }
+    if (!raw || typeof raw !== 'object') { dropped.push({ item: null, why: 'not an object' }); continue; }
+    // Before anything else, on the model's own words (cleanObservation clips, which could cut a secret in half).
+    const leak = secretWhy({ ...raw, who: [raw.project, raw.until, raw.about].filter((x) => typeof x === 'string') });
+    if (leak) { dropped.push({ item: { kind: String(raw.kind || '') }, why: `looks like a secret (${leak})` }); continue; }
     // A model may only propose: never a scope (team), never a delete, never a lesson.
     const { scope, forget, ...rest } = raw; // eslint-disable-line no-unused-vars
     if (String(rest.kind || '').toLowerCase() === 'lesson') { dropped.push({ item: raw, why: 'lessons come from bots, not events' }); continue; }
@@ -186,6 +214,8 @@ function checkExtraction(answer, ctx = {}) {
     if (raw.about === 'person' && SELF_KINDS.has(String(rest.kind || '').toLowerCase())) rest.kind = 'fact';
     const o = cleanObservation(rest);
     if (!o) { dropped.push({ item: raw, why: 'nothing to keep' }); continue; }
+    const leak2 = secretWhy(o);
+    if (leak2) { dropped.push({ item: { kind: o.kind }, why: `looks like a secret (${leak2})` }); continue; }
     let importance = Number(raw.importance);
     if (!Number.isFinite(importance)) importance = 0.5;
     importance = Math.max(0, Math.min(1, importance));
@@ -210,6 +240,13 @@ function checkExtraction(answer, ctx = {}) {
     if (observations.length >= MAX_OBSERVATIONS) break;
   }
   const plans = (Array.isArray(parsed.plans) ? parsed.plans : []).filter((p) => p && typeof p === 'object' && clip(p.what, 140).length >= 3)
+    .filter((p) => {
+      // A plan goes to life.js and the calendar: no secret value in it ("gate code 4471 at Ali's"). Naming
+      // one is fine here ("rotate the SSO password by Friday" is a reminder worth keeping), so no topic rule.
+      const leak = secretWhy({ what: p.what, where: p.where, text: [p.when, p.note, p.notes].filter((x) => typeof x === 'string').join(' '), who: Array.isArray(p.who) ? p.who.map(String) : p.who ? [String(p.who)] : [] }, { topic: false });
+      if (leak) dropped.push({ item: { plan: true }, why: `looks like a secret (${leak})` });
+      return !leak;
+    })
     .slice(0, MAX_PLANS).map((p) => ({
       what: clip(p.what, 140), when: clip(p.when, 20), where: clip(p.where, 120),
       who: (Array.isArray(p.who) ? p.who : p.who ? [p.who] : []).map((x) => clip(x, 60)).filter(Boolean).slice(0, 6),

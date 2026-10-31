@@ -45,6 +45,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { loadDriver } = require('./session-db.js');
+const secretScan = require('./secret-scan.js');
 
 const SCHEMA_VERSION = 1;
 const HOUR = 3600000;
@@ -84,7 +85,28 @@ const PROJECT_KINDS = new Set(['decision', 'idea', 'requirement', 'todo']);
 const CERTAINTY = ['stated', 'implied', 'temporary', 'joking', 'hypothetical', 'quoting'];
 const IGNORED = new Set(['joking', 'hypothetical', 'quoting']);
 
+// Kept for callers that import it; what the brain itself checks is secret-scan.js (SECURITY-SECRETS.md).
 const SECRET_RE = /(api[_ -]?key|password|passwd|passcode|secret|token|bearer|private key|pin code|cvv|card number|iban|ssn)\b|\bsk-[a-z0-9]{8,}/i;
+
+/**
+ * Why a stored memory looks like (or is about) a secret, or '': its slot,
+ * value and text, what challenged it and what it used to say. Memories
+ * stored before the stricter check are skipped by every read and cleaned by
+ * sweepSecrets(). Cached by id and update time, so reads stay cheap.
+ */
+const secretCache = new Map();
+function memorySecretWhy(m) {
+  if (!m) return '';
+  const key = m.id ? `${m.id}:${m.updatedAt}` : '';
+  if (key && secretCache.has(key)) return secretCache.get(key);
+  const w = secretScan.memoryWhy(m);
+  if (key) { if (secretCache.size > 5000) secretCache.clear(); secretCache.set(key, w); }
+  return w;
+}
+const memoryLooksSecret = (m) => !!memorySecretWhy(m);
+const HIDDEN = '(hidden: looked sensitive)';
+/** What a memory said, for a history entry or the change log, unless it was a secret. */
+const safeOld = (m) => (secretScan.observationWhy({ slot: m.slot, value: m.value, text: m.text }) ? null : m);
 
 const clip = (s, n) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, n);
 const json = (v, fallback) => { try { return v == null ? fallback : JSON.parse(v); } catch { return fallback; } };
@@ -179,6 +201,8 @@ function open() {
     db = driver.open(file);
     db.exec('PRAGMA journal_mode = WAL');
     db.exec('PRAGMA synchronous = NORMAL');
+    // A forgotten memory is overwritten on disk, not just unlinked (SECURITY-SECRETS.md).
+    try { db.exec('PRAGMA secure_delete = ON'); } catch {}
     db.exec(`
       CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memories (
@@ -357,7 +381,8 @@ function observe(raw, src) {
   const o = cleanObservation(raw);
   if (!o) return { action: 'ignored', why: 'nothing to keep' };
   const from = sourceOf(src);
-  if (SECRET_RE.test(`${o.text} ${o.value} ${o.slot}`)) { log(null, 'ignored', 'something that looked like a secret', from); return { action: 'ignored', why: 'looks like a secret' }; }
+  // Fail closed: the raw input too, since cleaning clips and could cut a secret in half.
+  if (SECRET_RE.test(`${o.text} ${o.value} ${o.slot}`) || secretScan.observationWhy(raw) || secretScan.observationWhy(o)) { log(null, 'ignored', 'something that looked sensitive (not kept)', from); return { action: 'ignored', why: 'looks like a secret' }; }
   if (IGNORED.has(o.certainty)) {
     log(null, 'ignored', `${o.text} (${o.certainty === 'joking' ? 'a joke or sarcasm' : o.certainty === 'quoting' ? 'someone else\'s words' : 'hypothetical'})`, from);
     return { action: 'ignored', why: o.certainty };
@@ -401,19 +426,22 @@ function observe(raw, src) {
     return { action: 'reinforced', memory: m };
   }
 
-  // A different value for the same thing.
-  const entry = { value: cur.value, text: cur.text, status: cur.status, until: t };
+  // A different value for the same thing. An old value that was a secret (stored before the stricter check) is not carried into history.
+  const oldSafe = safeOld(cur);
+  const entry = oldSafe ? { value: cur.value, text: cur.text, status: cur.status, until: t } : null;
+  const withEntry = (h) => (entry ? [...h, entry] : h.filter((x) => !secretScan.observationWhy(x)));
+  const oldText = oldSafe ? cur.text : HIDDEN;
   if (cur.locked) {
     const m = write({ ...cur, challenger: { value: o.value, text: o.text, count: ((cur.challenger && sameText(cur.challenger.text, o.text)) ? cur.challenger.count : 0) + 1, at: t, from: sourceLabel(from) }, review: stated || cur.review, seenAt: t });
-    log(cur.id, 'kept', `kept "${cur.text}" (you set it), heard "${o.text}"`, from);
+    log(cur.id, 'kept', `kept "${oldText}" (you set it), heard "${o.text}"`, from);
     return { action: 'kept', memory: m, why: 'you set this one yourself' };
   }
   if (stated || cur.status === 'tentative') {
     const m = write({
       ...cur, kind: o.kind, slot: o.slot || cur.slot, value: o.value, text: o.text, status: stated ? 'confirmed' : 'tentative',
-      confidence: stated ? 0.8 : 0.5, evidence: 1, challenger: null, review: false, history: [...cur.history, entry], sources: addSource(cur.sources, from), seenAt: t,
+      confidence: stated ? 0.8 : 0.5, evidence: 1, challenger: null, review: false, history: withEntry(cur.history), sources: addSource(cur.sources, from), seenAt: t,
     });
-    log(cur.id, 'replaced', `"${cur.text}" -> "${o.text}"`, from);
+    log(cur.id, 'replaced', `"${oldText}" -> "${o.text}"`, from);
     return { action: 'replaced', memory: m };
   }
   // Confirmed, and contradicted in passing: one remark is not enough.
@@ -422,17 +450,19 @@ function observe(raw, src) {
   if (count >= CHALLENGE_TO_SWITCH) {
     const m = write({
       ...cur, value: o.value, text: o.text, status: 'tentative', confidence: 0.55, evidence: count, challenger: null, review: true,
-      history: [...cur.history, entry], sources: addSource(cur.sources, from), seenAt: t,
+      history: withEntry(cur.history), sources: addSource(cur.sources, from), seenAt: t,
     });
-    log(cur.id, 'replaced', `"${cur.text}" -> "${o.text}" (heard ${count} times; check it)`, from);
+    log(cur.id, 'replaced', `"${oldText}" -> "${o.text}" (heard ${count} times; check it)`, from);
     return { action: 'replaced', memory: m };
   }
   const m = write({ ...cur, challenger: { value: o.value, text: o.text, count, at: t, from: sourceLabel(from) }, seenAt: t });
-  log(cur.id, 'challenged', `still "${cur.text}"; heard "${o.text}" once`, from);
+  log(cur.id, 'challenged', `still "${oldText}"; heard "${o.text}" once`, from);
   return { action: 'challenged', memory: m };
 }
 
 function get(id) { return open() ? rowToMemory(q.get.get(String(id))) : null; }
+/** get() for anything shown or sent: null for a memory that looks like a secret. */
+function getSafe(id) { const m = get(id); return m && !memoryLooksSecret(m) ? m : null; }
 
 /**
  * Memories, for the panel and the prompt.
@@ -451,7 +481,10 @@ function list(f = {}) {
     where.push("(text LIKE ? ESCAPE '\\' OR slot LIKE ? ESCAPE '\\' OR value LIKE ? ESCAPE '\\')"); args.push(like, like, like);
   }
   args.push(Math.max(1, Math.min(1000, Number(f.limit) || 300)));
-  return db.prepare(`SELECT * FROM memories${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY updated_at DESC LIMIT ?`).all(...args).map(rowToMemory);
+  const rows = db.prepare(`SELECT * FROM memories${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY updated_at DESC LIMIT ?`).all(...args).map(rowToMemory);
+  // Every read (the prompt block, recall, the Context Engine's known memories, embeddings, the Brain page)
+  // skips a memory that looks like a secret; sweepSecrets() removes them. includeSecrets is for the sweep only.
+  return f.includeSecrets ? rows : rows.filter((m) => !memoryLooksSecret(m));
 }
 
 /** The user fixes a memory by hand: it is locked, so no bot can change it again. */
@@ -460,15 +493,16 @@ function correct(id, patch = {}) {
   if (!cur) throw new Error('That memory is gone.');
   const text = clip(patch.text != null ? patch.text : cur.text, 280);
   if (!text) throw new Error('A memory needs some words.');
-  if (SECRET_RE.test(text)) throw new Error('That looks like a secret. Codeply does not keep passwords or keys.');
+  const value = patch.value != null ? clip(patch.value, 200) : cur.value;
+  if (SECRET_RE.test(text) || secretScan.observationWhy({ slot: cur.slot, value, text })) throw new Error('That looks like a secret. Codeply does not keep passwords or keys.');
   const changed = text !== cur.text || (patch.value != null && clip(patch.value, 200) !== cur.value);
   const m = write({
     ...cur, text, value: patch.value != null ? clip(patch.value, 200) : cur.value,
     kind: KINDS[patch.kind] ? patch.kind : cur.kind, status: cur.kind === 'context' ? 'temporary' : 'confirmed',
     confidence: 1, locked: true, review: false, challenger: null,
-    history: changed ? [...cur.history, { value: cur.value, text: cur.text, status: cur.status, until: now() }] : cur.history,
+    history: changed ? (safeOld(cur) ? [...cur.history, { value: cur.value, text: cur.text, status: cur.status, until: now() }] : cur.history.filter((x) => !secretScan.observationWhy(x))) : cur.history,
   });
-  log(id, 'corrected', changed ? `"${cur.text}" -> "${text}"` : `confirmed "${text}"`, { product: 'you' });
+  log(id, 'corrected', changed ? `"${safeOld(cur) ? cur.text : HIDDEN}" -> "${text}"` : `confirmed "${text}"`, { product: 'you' });
   return m;
 }
 /** "Yes, that's right": confirmed and locked as it is. */
@@ -495,7 +529,7 @@ function forget(id) {
   const cur = get(id);
   if (!cur) return false;
   q.remove.run(cur.id);
-  log(cur.id, 'forgotten', cur.text, { product: 'you' });
+  log(cur.id, 'forgotten', memoryLooksSecret(cur) ? HIDDEN : cur.text, { product: 'you' });
   return true;
 }
 
@@ -507,7 +541,7 @@ function clear(scope) {
   return Number(n) || 0;
 }
 
-const rowToChange = (r) => r && { seq: Number(r.seq), at: Number(r.at), memoryId: r.memory_id || '', action: r.action, text: r.text || '', source: r.source || '' };
+const rowToChange = (r) => r && { seq: Number(r.seq), at: Number(r.at), memoryId: r.memory_id || '', action: r.action, text: r.text && secretScan.why(r.text) ? HIDDEN : (r.text || ''), source: r.source || '' };
 /** What changed, newest first (all, or one memory's story). */
 function changes(o = {}) {
   if (!open()) return [];
@@ -866,7 +900,7 @@ function createHandoff({ fromBot, to, intent, facts, decision, requester, origin
   if (bounce) return { error: `${route.bot.name} handed you this job; passing the same job back would loop. Do it yourself, or say what blocks it.` };
   const t = now();
   const id = newId('h', t);
-  const list = (Array.isArray(facts) ? facts : String(facts || '').split(/\n+/)).map((f) => clip(String(f).replace(/^[-*\s]+/, ''), 300)).filter((f) => f && !SECRET_RE.test(f)).slice(0, 12);
+  const list = (Array.isArray(facts) ? facts : String(facts || '').split(/\n+/)).map((f) => clip(String(f).replace(/^[-*\s]+/, ''), 300)).filter((f) => f && !SECRET_RE.test(f) && !secretScan.why(f)).slice(0, 12);
   q.insertHandoff.run(id, fromBot ? fromBot.id : null, fromBot ? clip(fromBot.name, 40) : 'Codeply', route.bot ? route.bot.id : null, route.bot ? clip(route.bot.name, 40) : null,
     route.domain || null, why, JSON.stringify(list), clip(decision, 400) || null, requester === 'user' ? 'user' : 'other',
     origin ? JSON.stringify(origin).slice(0, 2000) : null, parent || null, null, route.bot ? 'open' : 'unrouted', null, t, t);
@@ -938,8 +972,61 @@ function looksLikeScheduling(subject, text) {
   return MEETING_RE.test(s) && WHEN_RE.test(s);
 }
 
+
+// ─── Secrets already stored ─────────────────────────────────────────────────
+
+/**
+ * Find (and with apply, remove) secrets a brain stored before the stricter
+ * check (SECURITY-SECRETS.md): memories whose slot, value or text look like
+ * one are deleted; a secret only in a memory's history or challenger is cut
+ * out of it; change-log lines that hold one are blanked. The report has ids,
+ * kinds and reasons, never the secrets. Dry run unless apply is true.
+ * @param {{ apply?: boolean }} [o]
+ */
+function sweepSecrets(o = {}) {
+  const report = { applied: !!o.apply, deleted: [], cleaned: [], changes: 0 };
+  if (!open()) return report;
+  const rows = db.prepare('SELECT * FROM memories').all().map(rowToMemory);
+  for (const m of rows) {
+    const own = secretScan.observationWhy(m);
+    if (own) {
+      report.deleted.push({ id: m.id, kind: m.kind, why: own });
+      if (o.apply) { q.remove.run(m.id); log(m.id, 'forgotten', HIDDEN, { product: 'sweep' }); }
+      continue;
+    }
+    const history = (m.history || []).filter((h) => !secretScan.observationWhy(h));
+    const challenger = m.challenger && secretScan.observationWhy(m.challenger) ? null : m.challenger;
+    if (history.length !== (m.history || []).length || challenger !== m.challenger) {
+      report.cleaned.push({ id: m.id, kind: m.kind, why: secretScan.memoryWhy(m) });
+      if (o.apply) {
+        q.update.run(m.kind, m.slot || null, m.value || null, m.text, m.status, m.confidence, m.evidence, m.locked ? 1 : 0, m.review ? 1 : 0,
+          challenger ? JSON.stringify(challenger) : null, JSON.stringify(history), JSON.stringify(m.sources || []),
+          m.domain || null, m.expiresAt == null ? null : Math.round(m.expiresAt), m.updatedAt, m.seenAt, m.id);
+      }
+    }
+  }
+  for (const c of db.prepare('SELECT seq, text FROM changes WHERE text IS NOT NULL').all()) {
+    if (c.text === HIDDEN || !secretScan.why(c.text)) continue;
+    report.changes++;
+    if (o.apply) db.prepare('UPDATE changes SET text = ? WHERE seq = ?').run(HIDDEN, c.seq);
+  }
+  for (const h of db.prepare('SELECT id, facts FROM handoffs').all()) {
+    const facts = json(h.facts, []);
+    const keep = facts.filter((f) => !secretScan.why(f));
+    if (keep.length === facts.length) continue;
+    report.handoffs = (report.handoffs || 0) + 1;
+    if (o.apply) db.prepare('UPDATE handoffs SET facts = ? WHERE id = ?').run(JSON.stringify(keep), h.id);
+  }
+  secretCache.clear();
+  if (o.apply) {
+    // Deleted text must not survive in free pages or the write-ahead log.
+    try { db.exec('PRAGMA secure_delete = ON'); db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); db.exec('VACUUM'); db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); } catch (e) { report.vacuumError = e.message; }
+  }
+  return report;
+}
+
 module.exports = {
-  KINDS, KIND_KEYS, CERTAINTY, DOMAINS, DOMAIN_KEYS, SECRET_RE,
+  KINDS, KIND_KEYS, CERTAINTY, DOMAINS, DOMAIN_KEYS, SECRET_RE, memoryLooksSecret, memorySecretWhy, sweepSecrets, getSafe,
   configure, usable, available, enabled, setEnabled, close, prune,
   observe, cleanObservation, get, list, correct, confirm, resolve, forget, clear, changes,
   touchProject, projects, projectFor, projectsNamed, projectKey, knownKey, projectOfFolder,

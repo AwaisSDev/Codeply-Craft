@@ -345,6 +345,9 @@ function notePlans(plans, o = {}) {
   for (const p of plans.slice(0, 5)) {
     const what = short(p && p.what, 140);
     if (!what || what.length < 3) continue;
+    // No secret value in a plan, from any path (SECURITY-SECRETS.md): "let the cleaner in, gate code 4471".
+    // Naming one is fine ("rotate the SSO password by Friday"), so values only, not topics.
+    if (require('./secret-scan.js').observationWhy({ what: p.what, where: p.where, who: Array.isArray(p.who) ? p.who.map(String) : p.who ? [String(p.who)] : [] }, { topic: false })) continue;
     let at = p.when ? localIso(p.when, tz) : NaN;
     const dateOnly = /^\s*\d{4}-\d{2}-\d{2}\s*$/.test(String(p.when || ''));
     const untimed = !Number.isFinite(at);

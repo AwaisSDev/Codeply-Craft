@@ -399,6 +399,8 @@ function mergeMemory(memory, facts, now = Date.now()) {
   for (const f of facts) {
     const fact = clip(f, 240);
     if (!fact) continue;
+    // A bot's memory is in every prompt it runs: the brain's rule for secrets applies (SECURITY-SECRETS.md).
+    if (require('./secret-scan.js').why(String(f))) continue;
     list = list.filter((m) => !sameFact(m.fact, fact));
     list.push({ fact, at: now });
     added.push(fact);
@@ -492,7 +494,8 @@ Respond with ONLY a JSON object {"facts": ["..."]${life ? ', "plans": []' : ''}$
 // All bounded, deduplicated, and stored on the bot file like memory.
 
 const SECRET_RE = /(api[_ -]?key|password|passwd|secret|token|bearer)\s*[:=]|\bsk-[a-z0-9]{8,}/i;
-const noSecret = (s) => !SECRET_RE.test(String(s || ''));
+// A secret value by format, shape or cue (secret-scan.js) is never kept either: "door code 58#14", "owm-…" keys.
+const noSecret = (s) => !SECRET_RE.test(String(s || '')) && !require('./secret-scan.js').why(String(s || ''), { topic: false });
 const cleanList = (v, max, n) => (Array.isArray(v) ? v : [])
   .filter((s) => typeof s === 'string' && s.trim() && noSecret(s))
   .map((s) => clip(s, n)).slice(0, max);
