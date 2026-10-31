@@ -54,7 +54,8 @@ const OUT = path.resolve(opt('out', path.join(ROOT, 'ml/results')));
 const THREADS = Number(opt('threads', 0)) || undefined;
 const CTX = Number(opt('ctx', 4096));
 
-const setFile = SET === 'gold' ? path.join(HERE, 'gold.jsonl') : path.join(ROOT, 'ml/data/out', `${SET}.jsonl`);
+// --set-file: any set in the same format (e.g. research/dtw/benchmark/bench.jsonl); --set then only names the run.
+const setFile = opt('set-file') ? path.resolve(opt('set-file')) : SET === 'gold' ? path.join(HERE, 'gold.jsonl') : path.join(ROOT, 'ml/data/out', `${SET}.jsonl`);
 let examples = fs.readFileSync(setFile, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
 if (LIMIT) examples = examples.slice(0, LIMIT);
 

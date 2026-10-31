@@ -78,20 +78,20 @@ def example_loss(heads, h, ctx, ex, tag_ids, event_mask, weights):
         a, b = sp["a"], sp["b"]
         o = heads.span_out(h, ctx, a, b)
         span_losses.append(
-            F.cross_entropy(o["kind"][None], torch.tensor([KINDS.index(sp["kind"])]), weight=weights.get("kind"))
-            + F.cross_entropy(o["cert"][None], torch.tensor([CERTS.index(sp["certainty"])]), weight=weights.get("cert"))
-            + 0.5 * F.cross_entropy(o["about"][None], torch.tensor([ABOUTS.index(sp["about"])]))
+            F.cross_entropy(o["kind"][None], torch.tensor([KINDS.index(sp["kind"])], device=h.device), weight=weights.get("kind"))
+            + F.cross_entropy(o["cert"][None], torch.tensor([CERTS.index(sp["certainty"])], device=h.device), weight=weights.get("cert"))
+            + 0.5 * F.cross_entropy(o["about"][None], torch.tensor([ABOUTS.index(sp["about"])], device=h.device))
             + 2.0 * (o["imp"] - sp["importance"]) ** 2)
         if ex["tok_mems"]:
             logits, rels = heads.merge_out(h, a, b, ex["tok_mems"])
             tgt = sp["merge"] + 1  # 0 = NEW
-            l = F.cross_entropy(logits[None], torch.tensor([tgt]))
+            l = F.cross_entropy(logits[None], torch.tensor([tgt], device=h.device))
             if tgt > 0 and sp["relation"] in RELS:
-                l = l + F.cross_entropy(rels[tgt - 1][None], torch.tensor([RELS.index(sp["relation"])]))
+                l = l + F.cross_entropy(rels[tgt - 1][None], torch.tensor([RELS.index(sp["relation"])], device=h.device))
             merge_losses.append(l)
     out["span"] = torch.stack(span_losses).mean() if span_losses else h.new_zeros(())
     out["merge"] = torch.stack(merge_losses).mean() if merge_losses else h.new_zeros(())
-    out["gate"] = F.binary_cross_entropy_with_logits(heads.gate(ctx).squeeze(-1), torch.tensor(float(ex["gate"])))
+    out["gate"] = F.binary_cross_entropy_with_logits(heads.gate(ctx).squeeze(-1), torch.tensor(float(ex["gate"]), device=h.device))
     out["total"] = out["tag"] + out["span"] + out["merge"] + 0.5 * out["gate"]
     return out
 
@@ -122,14 +122,22 @@ def decode_tags(tag_ids, event_mask):
 
 
 class DecideEncoder(nn.Module):
-    """A Hugging Face encoder (ModernBERT family) with the Decide heads."""
+    """A Hugging Face backbone with the Decide heads: an encoder (ModernBERT family),
+    or with causal=True a decoder (LFM3) whose last hidden states are used."""
 
-    def __init__(self, name):
+    def __init__(self, name, causal=False, trust_remote_code=False, dtype=None):
         super().__init__()
-        from transformers import AutoModel
-        self.backbone = AutoModel.from_pretrained(name)
-        self.heads = DecideHeads(self.backbone.config.hidden_size)
+        from transformers import AutoModel, AutoModelForCausalLM
+        self.causal = causal
+        if causal:
+            self.backbone = AutoModelForCausalLM.from_pretrained(name, trust_remote_code=trust_remote_code, dtype=dtype)
+        else:
+            self.backbone = AutoModel.from_pretrained(name, trust_remote_code=trust_remote_code, dtype=dtype)
+        cfg = self.backbone.config
+        self.heads = DecideHeads(getattr(cfg, "hidden_size", None) or cfg.text_config.hidden_size)
 
     def states(self, input_ids, attention_mask):
-        h = self.backbone(input_ids=input_ids, attention_mask=attention_mask).last_hidden_state
-        return h
+        if self.causal:
+            out = self.backbone(input_ids=input_ids, attention_mask=attention_mask, output_hidden_states=True)
+            return out.hidden_states[-1]
+        return self.backbone(input_ids=input_ids, attention_mask=attention_mask).last_hidden_state

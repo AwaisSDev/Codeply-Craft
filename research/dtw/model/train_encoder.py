@@ -85,6 +85,19 @@ def batches(rows, bs, shuffle):
         yield [rows[j] for j in b]
 
 
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# bf16 where the GPU has it (A100, L4, H100); fp16 + loss scaling on T4 (Kaggle).
+AMP = torch.bfloat16 if DEVICE == "cuda" and torch.cuda.is_bf16_supported() else torch.float16
+CTX = "cls"  # whole-input vector: [CLS] (encoders) or "mean" of the event tokens (causal models)
+
+
+def ctx_vec(h, event_mask):
+    if CTX == "mean":
+        m = torch.tensor(event_mask, dtype=torch.bool, device=h.device)
+        return h[m].mean(0) if m.any() else h.mean(0)
+    return h[0]
+
+
 def forward(model, batch, pad_id):
     T = max(len(r["input_ids"]) for r in batch)
     ids = torch.full((len(batch), T), pad_id, dtype=torch.long)
@@ -92,7 +105,9 @@ def forward(model, batch, pad_id):
     for k, r in enumerate(batch):
         ids[k, :len(r["input_ids"])] = torch.tensor(r["input_ids"])
         att[k, :len(r["input_ids"])] = 1
-    return model.states(ids, att)
+    with torch.autocast(DEVICE, dtype=AMP, enabled=DEVICE == "cuda"):
+        h = model.states(ids.to(DEVICE), att.to(DEVICE))
+    return h.float()
 
 
 @torch.no_grad()
@@ -105,7 +120,7 @@ def evaluate(model, rows, pad_id, bs=16):
         for k, r in enumerate(batch):
             n = len(r["input_ids"])
             h = H[k, :n]
-            ctx = h[0]
+            ctx = ctx_vec(h, r["event_mask"])
             pred_tags = model.heads.tag(h).argmax(-1).tolist()
             pred = {(t, a, b) for t, a, b in decode_tags(pred_tags, r["event_mask"])}
             gold = {(s["type"].upper(), s["a"], s["b"]) for s in r["tok_spans"]}
@@ -173,22 +188,37 @@ def main():
     ap.add_argument("--val-limit", type=int, default=400)
     ap.add_argument("--threads", type=int, default=0)
     ap.add_argument("--freeze-embeddings", action="store_true", help="for large-vocabulary models (mmBERT) on CPU")
+    ap.add_argument("--causal", action="store_true", help="a decoder backbone (LFM3): last hidden states, mean context")
+    ap.add_argument("--trust-remote-code", action="store_true")
+    ap.add_argument("--lora", type=int, default=0, help="LoRA rank on the backbone (0 = full fine-tuning)")
+    ap.add_argument("--lora-targets", default="q_proj,k_proj,v_proj,o_proj,in_proj,out_proj,w1,w2,w3")
+    ap.add_argument("--freeze-backbone", action="store_true", help="train the heads only")
     a = ap.parse_args()
+    global CTX
+    CTX = "mean" if a.causal else "cls"
     if a.threads:
         torch.set_num_threads(a.threads)
     random.seed(a.seed)
     torch.manual_seed(a.seed)
     from transformers import AutoTokenizer, get_linear_schedule_with_warmup
-    tok = AutoTokenizer.from_pretrained(a.model)
+    tok = AutoTokenizer.from_pretrained(a.model, trust_remote_code=a.trust_remote_code)
     train = [to_tokens(tok, r, a.max_len) for r in load(a.train, a.limit)]
     val = [to_tokens(tok, r, a.max_len) for r in load(a.val, a.val_limit)]
     print(f"train {len(train)} val {len(val)} longest {max(len(r['input_ids']) for r in train)} tokens", flush=True)
-    model = DecideEncoder(a.model)
+    model = DecideEncoder(a.model, causal=a.causal, trust_remote_code=a.trust_remote_code)
+    if a.lora:
+        from peft import LoraConfig, get_peft_model
+        model.backbone = get_peft_model(model.backbone, LoraConfig(r=a.lora, lora_alpha=2 * a.lora, lora_dropout=0.05, target_modules=a.lora_targets.split(",")))
+        model.backbone.print_trainable_parameters()
+    if a.freeze_backbone:
+        for p in model.backbone.parameters():
+            p.requires_grad = False
+    model.to(DEVICE)
     if a.freeze_embeddings:
         for p in model.backbone.embeddings.parameters():
             p.requires_grad = False
-    weights = {"kind": class_weights(train, "kind", KINDS), "cert": class_weights(train, "certainty", CERTS),
-               "tag": torch.tensor([0.3, 1.0, 1.0, 1.0, 1.0])}
+    weights = {"kind": class_weights(train, "kind", KINDS).to(DEVICE), "cert": class_weights(train, "certainty", CERTS).to(DEVICE),
+               "tag": torch.tensor([0.3, 1.0, 1.0, 1.0, 1.0], device=DEVICE)}
     params = [{"params": [p for p in model.backbone.parameters() if p.requires_grad], "lr": a.lr},
               {"params": model.heads.parameters(), "lr": a.head_lr}]
     opt = torch.optim.AdamW(params, weight_decay=0.01)
@@ -196,6 +226,7 @@ def main():
     sched = get_linear_schedule_with_warmup(opt, int(0.06 * steps), steps)
     os.makedirs(a.out, exist_ok=True)
     log = open(os.path.join(a.out, "train-log.jsonl"), "w")
+    scaler = torch.amp.GradScaler(enabled=DEVICE == "cuda" and AMP == torch.float16)
     pad = tok.pad_token_id if tok.pad_token_id is not None else 0
     best, step, t0 = None, 0, time.time()
     for ep in range(a.epochs):
@@ -204,12 +235,15 @@ def main():
             losses = []
             for k, r in enumerate(batch):
                 n = len(r["input_ids"])
-                losses.append(example_loss(model.heads, H[k, :n], H[k, 0], r, torch.tensor(r["tags"]), torch.tensor(r["event_mask"]), weights)["total"])
+                h = H[k, :n]
+                losses.append(example_loss(model.heads, h, ctx_vec(h, r["event_mask"]), r, torch.tensor(r["tags"], device=DEVICE), torch.tensor(r["event_mask"], device=DEVICE), weights)["total"])
             loss = torch.stack(losses).mean()
             opt.zero_grad()
-            loss.backward()
+            scaler.scale(loss).backward()
+            scaler.unscale_(opt)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            opt.step()
+            scaler.step(opt)
+            scaler.update()
             sched.step()
             step += 1
             if step % 20 == 0:
@@ -225,10 +259,15 @@ def main():
         score = res["span_f1"] + res["kind_acc"] + res["cert_acc"] + res["merge_acc"] + res["gate_acc"]
         if best is None or score > best[0]:
             best = (score, res, fit_temperature(kl, ky), fit_temperature(cl, cy))
-            model.backbone.save_pretrained(os.path.join(a.out, "backbone"))
+            # LoRA: keep the best adapter; it is merged into the base once training ends.
+            model.backbone.save_pretrained(os.path.join(a.out, "adapter" if a.lora else "backbone"))
             tok.save_pretrained(os.path.join(a.out, "backbone"))
             torch.save(model.heads.state_dict(), os.path.join(a.out, "heads.pt"))
-    cfg = {"base": a.model, "hidden": model.backbone.config.hidden_size, "tags": TAGS, "kinds": KINDS, "certs": CERTS, "abouts": ABOUTS,
+    if a.lora:
+        from peft import PeftModel
+        base = DecideEncoder(a.model, causal=a.causal, trust_remote_code=a.trust_remote_code).backbone
+        PeftModel.from_pretrained(base, os.path.join(a.out, "adapter")).merge_and_unload().save_pretrained(os.path.join(a.out, "backbone"))
+    cfg = {"base": a.model, "hidden": model.heads.new.in_features, "ctx": CTX, "tags": TAGS, "kinds": KINDS, "certs": CERTS, "abouts": ABOUTS,
            "rels": RELS, "temperature": {"kind": best[2], "cert": best[3]}, "val": best[1], "args": vars(a),
            "train_seconds": round(time.time() - t0)}
     json.dump(cfg, open(os.path.join(a.out, "config.json"), "w"), indent=1)
