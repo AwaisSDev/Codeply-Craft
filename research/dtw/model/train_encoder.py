@@ -180,6 +180,8 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--bs", type=int, default=16)
+    ap.add_argument("--accum", type=int, default=1, help="gradient accumulation: optimizer step every N batches (effective batch = bs x accum)")
+    ap.add_argument("--grad-ckpt", action="store_true", help="gradient checkpointing in the backbone (long inputs on a 16 GB GPU)")
     ap.add_argument("--lr", type=float, default=5e-5)
     ap.add_argument("--head-lr", type=float, default=1e-3)
     ap.add_argument("--max-len", type=int, default=512)
@@ -213,6 +215,8 @@ def main():
     if a.freeze_backbone:
         for p in model.backbone.parameters():
             p.requires_grad = False
+    if a.grad_ckpt:
+        model.backbone.gradient_checkpointing_enable()
     model.to(DEVICE)
     if a.freeze_embeddings:
         for p in model.backbone.embeddings.parameters():
@@ -222,13 +226,15 @@ def main():
     params = [{"params": [p for p in model.backbone.parameters() if p.requires_grad], "lr": a.lr},
               {"params": model.heads.parameters(), "lr": a.head_lr}]
     opt = torch.optim.AdamW(params, weight_decay=0.01)
-    steps = a.epochs * math.ceil(len(train) / a.bs)
+    steps = a.epochs * math.ceil(len(train) / (a.bs * a.accum))
     sched = get_linear_schedule_with_warmup(opt, int(0.06 * steps), steps)
     os.makedirs(a.out, exist_ok=True)
     log = open(os.path.join(a.out, "train-log.jsonl"), "w")
     scaler = torch.amp.GradScaler(enabled=DEVICE == "cuda" and AMP == torch.float16)
     pad = tok.pad_token_id if tok.pad_token_id is not None else 0
     best, step, t0 = None, 0, time.time()
+    micro = 0
+    opt.zero_grad()
     for ep in range(a.epochs):
         for batch in batches(train, a.bs, True):
             H = forward(model, batch, pad)
@@ -238,16 +244,21 @@ def main():
                 h = H[k, :n]
                 losses.append(example_loss(model.heads, h, ctx_vec(h, r["event_mask"]), r, torch.tensor(r["tags"], device=DEVICE), torch.tensor(r["event_mask"], device=DEVICE), weights)["total"])
             loss = torch.stack(losses).mean()
-            opt.zero_grad()
-            scaler.scale(loss).backward()
+            scaler.scale(loss / a.accum).backward()
+            micro += 1
+            if micro % a.accum:
+                continue
             scaler.unscale_(opt)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             scaler.step(opt)
             scaler.update()
+            opt.zero_grad()
             sched.step()
             step += 1
             if step % 20 == 0:
                 rec = {"step": step, "epoch": ep, "loss": round(loss.item(), 4), "sec": round(time.time() - t0)}
+                if DEVICE == "cuda":
+                    rec["gpu_peak_gb"] = round(torch.cuda.max_memory_allocated() / 2**30, 2)
                 log.write(json.dumps(rec) + "\n")
                 log.flush()
                 print(rec, flush=True)

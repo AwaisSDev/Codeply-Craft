@@ -66,8 +66,11 @@ for name, hf, seed in RUNS:
     run = f"runs/real-{name}-s{seed}"
     if os.path.exists(f"{run}/heads.json"):
         continue
-    subprocess.run(f"cd model && python train_encoder.py --model {hf} --train ../data/real/train.spans.jsonl --val ../data/real/val.spans.jsonl "
-                   f"--out ../{run} --epochs 3 --bs 32 --seed {seed}", shell=True, check=True)
+    # Effective batch 32 as pre-registered: 8 x 4 accumulation + gradient checkpointing. The first run (bs 32)
+    # ran out of memory on the T4 (16 GB): realistic inputs reach 1,462 tokens and T4 has no FlashAttention.
+    subprocess.run(f"cd model && PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True python train_encoder.py --model {hf} "
+                   f"--train ../data/real/train.spans.jsonl --val ../data/real/val.spans.jsonl "
+                   f"--out ../{run} --epochs 3 --bs 8 --accum 4 --grad-ckpt --seed {seed}", shell=True, check=True)
     export_gguf(run)
 ''', r'''
 import json, glob
@@ -88,10 +91,15 @@ import subprocess, os, yaml
 SEEDS = [1, 2]   # set per kernel; the protocol asks for 3 seeds in total
 os.chdir("/kaggle/working/codeply")
 subprocess.run("pip -q install -r ml/finetune/requirements.txt", shell=True, check=True)
+# Kaggle's image ships torchao 0.10; PEFT refuses any torchao below 0.16 (the first run failed on it). LoRA does not use it.
+subprocess.run("pip -q uninstall -y torchao", shell=True, check=True)
 subprocess.run("node --version || (curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs) > /dev/null", shell=True, check=True)
 subprocess.run("cp research/dtw/data/real/train.jsonl research/dtw/data/real/val.jsonl /tmp/ && node ml/data/export-sft.mjs --in /tmp --style full", shell=True, check=True)
 for seed in SEEDS:
     cfg = yaml.safe_load(open("ml/finetune/config-lfm3.yaml"))
+    # Same effective batch as config-lfm3.yaml (16), smaller micro-batches for the T4's 16 GB.
+    cfg["grad_accum"] = cfg["grad_accum"] * cfg["batch_size"] // 4
+    cfg["batch_size"] = 4
     cfg.update({"train_file": "/tmp/sft-train.jsonl", "val_file": "/tmp/sft-val.jsonl", "seed": seed,
                 "output_dir": f"ml/finetune/runs/real-lfm3-lora-s{seed}"})
     yaml.safe_dump(cfg, open(f"/tmp/config-s{seed}.yaml", "w"))
