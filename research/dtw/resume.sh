@@ -62,6 +62,20 @@ save_run() {  # run-dir: heads + config + GGUF backbones (not the LFM3 base mode
   (cd $ART && git add -A $name && git commit -q -m "DtW artifacts: $name$TRAILER" && push $ART dtw-artifacts)
   echo "   saved $name to dtw-artifacts"
 }
+restore_run() {  # name: bring a trained run back from dtw-artifacts instead of retraining it
+  local name=$1 run=$W/runs/$1 f
+  [ -f $run/heads.pt ] && return 0
+  [ -d $ART/$name ] || return 1
+  mkdir -p $run
+  for f in $ART/$name/*; do
+    case $f in
+      *.part00) cat ${f%.part00}.part* > $run/$(basename ${f%.part00}) ;;
+      *.part[0-9][0-9]) ;;
+      *) cp $f $run/ ;;
+    esac
+  done
+  echo "   restored $name from dtw-artifacts"
+}
 save_results() {
   git add $OUT && git commit -q -m "DtW results: $*$TRAILER" -- $OUT && push $R $BRANCH
 }
@@ -92,7 +106,7 @@ dtw3() {  # name run [extra]
 train_enc() {  # name hf seed [extra]
   local name=$1 hf=$2 seed=$3; shift 3
   local run=$W/runs/$name-s$seed
-  [ -f $run/heads.pt ] && { echo "   $name-s$seed already trained"; return 0; }
+  restore_run $name-s$seed; [ -f $run/heads.pt ] && { echo "   $name-s$seed already trained"; return 0; }
   (cd research/dtw/model && $V train_encoder.py --model $hf --train $W/train4k.spans.jsonl --val $W/val.spans.jsonl --out $run --epochs 2 --seed $seed --bs 16 "$@" > $W/logs/train-$name-s$seed.log 2>&1)
   echo "   train $name-s$seed exit $? $(grep -o 'done.*' $W/logs/train-$name-s$seed.log | head -c 300)"
   export_run $run; save_run $run
@@ -107,6 +121,7 @@ step "3 decide-then-write + LFM3 writer"
 evaluate dtw-ettin150-s1-writer-bench $DTW --dtw-run $W/runs/ettin150-s1 --dtw-writer lfm3 --set bench --set-file $BENCH
 
 step "4 LFM3 frozen features (train 4000, val 400) and heads"
+restore_run lfm3-heads-s1
 if [ ! -f $W/runs/lfm3-heads-s1/heads.pt ]; then
   $L/build/bin/llama-server -m $LFM3 -c 4096 -ub 2048 -b 2048 -t 4 --port 18097 --embedding --pooling none > $W/logs/lfm3-emb.log 2>&1 &
   SRV=$!
