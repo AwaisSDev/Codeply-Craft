@@ -23,8 +23,8 @@ committed file.
 | LFM3-1.7B QAD, prompt v2 (production) | Benchmark-520 | 0.575 (P 0.55, R 0.61) | done |
 | LFM3-1.7B QAD, prompt v2 | natural-300 | 0.093 (noise kept out 96 %) | done |
 | LFM3-1.7B QAD, prompt v2 | test-real | – | **pending** |
-| Template-trained Ettin-150M (s1 / s1r) | Benchmark-520 | 0.306 / 0.328 | done, **old resolver: rerun needed** |
-| Template-trained Ettin-150M s1r | test-real / natural-300 | 0.123 / 0.015 | done, old resolver |
+| Template-trained Ettin-150M (s1 / s1r) | Benchmark-520 | 0.306 / 0.328 (old resolver); s1r corrected resolver 0.326 | done |
+| Template-trained Ettin-150M s1r | test-real / natural-300 | 0.123 / 0.015 (old resolver); 0.122 / 0.016 corrected | done |
 | Claude labellers (Sonnet / Opus / hybrid) | Benchmark-520 | 0.838 / 0.844 / 0.831 | done (labeller quality, not a candidate) |
 | **Ettin-150M ×3 on realistic data** (mean ± sd over seeds) | Benchmark-520 / test-real / natural-300 | **0.389 ± 0.012 / 0.341 ± 0.011 / 0.241 ± 0.048** | done (§2a); results `dtw-real-ettin150-s{1,2,3}-*` on the DTW branch, weights on `dtw-artifacts` |
 | Ettin-400M ×1 on realistic data | – | – | run 3: out of memory at micro-batch 8; rerun at 2 × 16 |
@@ -56,8 +56,10 @@ LFM3 QAD prompt v2):
 What this changes:
 
 1. Realistic data fixed the template model's collapse (natural-300 F1 0.015
-   → 0.241, noise kept out 0.014 → 0.912; the template numbers used the old
-   resolver, and the corrected-resolver rerun is queued).
+   → 0.241, noise kept out 0.014 → 0.912). The corrected resolver does not
+   explain it: the template model scores 0.326 / 0.122 / 0.016 with it,
+   against 0.328 / 0.123 / 0.015 with the old one, so the gain is the
+   training data.
 2. The remaining failure is **precision**: about three predicted memories
    per real one, at roughly 0.55 recall, on every set. That is an
    operating-point and calibration problem before it is an architecture
