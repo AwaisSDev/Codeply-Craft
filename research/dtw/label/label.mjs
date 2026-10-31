@@ -154,6 +154,15 @@ async function status() {
   if (fs.existsSync(resultsFile)) summary();
 }
 
-const run = { submit, collect, status }[cmd];
+async function recheck() {  // re-run the checker (after a checker change) without calling the API
+  const rs = results();
+  const byId = new Map();
+  for (const b of loadState().batches) for (const l of fs.readFileSync(b.in, 'utf8').split('\n')) if (l.trim()) { const ex = JSON.parse(l); byId.set(ex.id, ex); }
+  for (const r of rs) { const ex = byId.get(r.id); if (r.output && ex) r.errors = check(r.output, { events: eventsOf(ex), known: ex.input.known || [] }); }
+  fs.writeFileSync(resultsFile, rs.map((r) => JSON.stringify(r)).join('\n') + '\n');
+  summary();
+}
+
+const run = { submit, collect, status, recheck }[cmd];
 if (!run) { console.error('usage: label.mjs submit|collect|status --name <run> ...'); process.exit(1); }
 run().catch((e) => { console.error(e.message || e); process.exit(1); });
