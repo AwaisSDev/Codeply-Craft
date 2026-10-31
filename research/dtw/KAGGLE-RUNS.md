@@ -58,3 +58,23 @@ with thousands of repository files, which is what made every log and output
 download slow and rate-limited); copy each run's heads, config, log and GGUFs
 to `/kaggle/working/runs/<run>` as soon as it finishes; Ettin-400M at
 micro-batch 2 × accumulation 16 (effective 32).
+
+## 2026-10-31, run 4 (encoders version 4: Ettin-400M seed 1 only)
+
+`ONLY_RUNS=real-ettin400-s1`, micro-batch 2 × accumulation 16 (effective 32,
+as pre-registered), gradient checkpointing. **Completed** at 19:25 UTC:
+peak GPU 8.8 GB, 3 epochs in 61 min. Validation (realistic val split) by
+epoch:
+
+| Epoch | Kind | Certainty | Gate | Importance MAE | Exact-span F1 |
+|---|---|---|---|---|---|
+| 1 | 0.668 | 0.846 | 0.878 | 0.123 | 0.068 |
+| 2 | 0.812 | 0.890 | 0.878 | 0.096 | 0.084 |
+| 3 (exported) | 0.808 | 0.877 | 0.885 | 0.096 | 0.095 |
+
+The Ettin-150M seeds reached kind 0.74-0.76 and certainty 0.85-0.87 on the
+same split. With the repository cloned under `/tmp`, the output listing was
+one page and the artifacts downloaded in one pass (no rate limiting). Saved
+to `dtw-artifacts/real-ettin400-s1`; harness evaluation via
+`research/dtw/run-protocol-evals.sh` step 4. Single seed: the protocol's
+seed requirement for a selection claim is not met by this run alone.

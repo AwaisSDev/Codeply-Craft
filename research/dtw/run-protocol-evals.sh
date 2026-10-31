@@ -4,7 +4,8 @@
 #     test-real and natural-300;
 #   * the template-trained Ettin-150M (s1r) again with the corrected resolver (18e1d232),
 #     saved under new names (suffix -r2) so the old-resolver results stay;
-#   * untrained LFM3 QAD prompt v2 on test-real (the pending production baseline).
+#   * untrained LFM3 QAD prompt v2 on test-real (the pending production baseline);
+#   * the realistic-data Ettin-400M seed 1 (Kaggle run 4) on the same three sets.
 # One job at a time on 4 cores. Each result is committed and pushed as it lands; the
 # trained runs are first saved to the orphan branch dtw-artifacts (files > 90 MB split).
 # Usage: W=<scratch> RUNS=<dir with real-ettin150-s{1,2,3}> research/dtw/run-protocol-evals.sh
@@ -33,15 +34,15 @@ evaluate() {  # name args...; skipped if already committed
 step "0 save the realistic runs to dtw-artifacts"
 ART=$W/artifacts
 if [ ! -e $ART/.git ]; then git fetch -q origin dtw-artifacts && git worktree add -q -B dtw-artifacts $ART origin/dtw-artifacts; fi
-for s in 1 2 3; do
-  name=real-ettin150-s$s; src=$RUNS/$name
+for name in real-ettin150-s1 real-ettin150-s2 real-ettin150-s3 real-ettin400-s1; do
+  src=$RUNS/$name; [ -d $src ] || continue
   [ -d $ART/$name ] && { echo "   $name already saved"; continue; }
   mkdir -p $ART/$name
   for f in heads.bin heads.json config.json train-log.jsonl backbone-q8_0.gguf backbone-q4_0.gguf; do
     [ -f $src/$f ] || continue
     if [ $(stat -c %s $src/$f) -gt 94371840 ]; then split -b 90m -d $src/$f $ART/$name/$f.part; else cp $src/$f $ART/$name/; fi
   done
-  (cd $ART && git add -A $name && git commit -q -m "DtW artifacts: $name (realistic data, Kaggle run 3)$TRAILER" && push $ART dtw-artifacts)
+  (cd $ART && git add -A $name && git commit -q -m "DtW artifacts: $name (realistic data, Kaggle)$TRAILER" && push $ART dtw-artifacts)
   echo "   saved $name"
 done
 
@@ -67,4 +68,9 @@ evaluate dtw-ettin150-s1r-r2-natural $DTW --dtw-run $T --set natural --set-file 
 
 step "3 LFM3 QAD prompt v2 on test-real (production baseline, ~1.7 h)"
 evaluate lfm3-qad-v2-test-real --provider local:lfm3-1.7b-qad-q4 --set test-real --set-file $TEST
+step "4 realistic Ettin-400M seed 1"
+run=$RUNS/real-ettin400-s1
+evaluate dtw-real-ettin400-s1-bench $DTW --dtw-run $run --set bench --set-file $BENCH
+evaluate dtw-real-ettin400-s1-test-real $DTW --dtw-run $run --set test-real --set-file $TEST
+evaluate dtw-real-ettin400-s1-natural $DTW --dtw-run $run --set natural --set-file $NAT
 step "all done"
