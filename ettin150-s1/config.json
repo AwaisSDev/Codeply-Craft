@@ -1,0 +1,77 @@
+{
+ "base": "jhu-clsp/ettin-encoder-150m",
+ "hidden": 768,
+ "ctx": "cls",
+ "tags": [
+  "O",
+  "B-OBS",
+  "I-OBS",
+  "B-PLAN",
+  "I-PLAN"
+ ],
+ "kinds": [
+  "preference",
+  "fact",
+  "routine",
+  "style",
+  "decision",
+  "idea",
+  "requirement",
+  "todo",
+  "context"
+ ],
+ "certs": [
+  "stated",
+  "implied",
+  "temporary",
+  "joking",
+  "hypothetical",
+  "quoting"
+ ],
+ "abouts": [
+  "user",
+  "person",
+  "project"
+ ],
+ "rels": [
+  "same",
+  "different"
+ ],
+ "temperature": {
+  "kind": 1.7,
+  "cert": 1.65
+ },
+ "val": {
+  "span_f1": 0.9093,
+  "kind_acc": 0.9945,
+  "cert_acc": 0.989,
+  "imp_mae": 0.0326,
+  "merge_acc": 0.9825,
+  "rel_acc": 1.0,
+  "gate_acc": 0.9925,
+  "epoch": 1,
+  "sec": 1796
+ },
+ "args": {
+  "model": "jhu-clsp/ettin-encoder-150m",
+  "train": "/tmp/claude-0/-home-user/9267795b-1b12-5151-ad3a-35d143fb3935/scratchpad/dtw/train4k.spans.jsonl",
+  "val": "/tmp/claude-0/-home-user/9267795b-1b12-5151-ad3a-35d143fb3935/scratchpad/dtw/val.spans.jsonl",
+  "out": "/tmp/claude-0/-home-user/9267795b-1b12-5151-ad3a-35d143fb3935/scratchpad/dtw/runs/ettin150-s1",
+  "epochs": 2,
+  "bs": 16,
+  "lr": 5e-05,
+  "head_lr": 0.001,
+  "max_len": 512,
+  "seed": 1,
+  "limit": 0,
+  "val_limit": 400,
+  "threads": 0,
+  "freeze_embeddings": false,
+  "causal": false,
+  "trust_remote_code": false,
+  "lora": 0,
+  "lora_targets": "q_proj,k_proj,v_proj,o_proj,in_proj,out_proj,w1,w2,w3",
+  "freeze_backbone": false
+ },
+ "train_seconds": 1799
+}

@@ -1,0 +1,189 @@
+{
+ "base": "jhu-clsp/ettin-encoder-150m",
+ "hidden": 768,
+ "tags": [
+  "O",
+  "B-OBS",
+  "I-OBS",
+  "B-PLAN",
+  "I-PLAN"
+ ],
+ "kinds": [
+  "preference",
+  "fact",
+  "routine",
+  "style",
+  "decision",
+  "idea",
+  "requirement",
+  "todo",
+  "context"
+ ],
+ "certs": [
+  "stated",
+  "implied",
+  "temporary",
+  "joking",
+  "hypothetical",
+  "quoting"
+ ],
+ "abouts": [
+  "user",
+  "person",
+  "project"
+ ],
+ "rels": [
+  "same",
+  "different"
+ ],
+ "temperature": {
+  "kind": 1.7,
+  "cert": 1.65
+ },
+ "ctx": "cls",
+ "tensors": {
+  "tag.1.weight": {
+   "shape": [
+    5,
+    768
+   ],
+   "offset": 0
+  },
+  "tag.1.bias": {
+   "shape": [
+    5
+   ],
+   "offset": 3840
+  },
+  "span.1.weight": {
+   "shape": [
+    512,
+    2304
+   ],
+   "offset": 3845
+  },
+  "span.1.bias": {
+   "shape": [
+    512
+   ],
+   "offset": 1183493
+  },
+  "kind.weight": {
+   "shape": [
+    9,
+    512
+   ],
+   "offset": 1184005
+  },
+  "kind.bias": {
+   "shape": [
+    9
+   ],
+   "offset": 1188613
+  },
+  "cert.weight": {
+   "shape": [
+    6,
+    512
+   ],
+   "offset": 1188622
+  },
+  "cert.bias": {
+   "shape": [
+    6
+   ],
+   "offset": 1191694
+  },
+  "about.weight": {
+   "shape": [
+    3,
+    512
+   ],
+   "offset": 1191700
+  },
+  "about.bias": {
+   "shape": [
+    3
+   ],
+   "offset": 1193236
+  },
+  "imp.weight": {
+   "shape": [
+    1,
+    512
+   ],
+   "offset": 1193239
+  },
+  "imp.bias": {
+   "shape": [
+    1
+   ],
+   "offset": 1193751
+  },
+  "pair.1.weight": {
+   "shape": [
+    512,
+    2304
+   ],
+   "offset": 1193752
+  },
+  "pair.1.bias": {
+   "shape": [
+    512
+   ],
+   "offset": 2373400
+  },
+  "pair_score.weight": {
+   "shape": [
+    1,
+    512
+   ],
+   "offset": 2373912
+  },
+  "pair_score.bias": {
+   "shape": [
+    1
+   ],
+   "offset": 2374424
+  },
+  "pair_rel.weight": {
+   "shape": [
+    2,
+    512
+   ],
+   "offset": 2374425
+  },
+  "pair_rel.bias": {
+   "shape": [
+    2
+   ],
+   "offset": 2375449
+  },
+  "new.weight": {
+   "shape": [
+    1,
+    768
+   ],
+   "offset": 2375451
+  },
+  "new.bias": {
+   "shape": [
+    1
+   ],
+   "offset": 2376219
+  },
+  "gate.1.weight": {
+   "shape": [
+    1,
+    768
+   ],
+   "offset": 2376220
+  },
+  "gate.1.bias": {
+   "shape": [
+    1
+   ],
+   "offset": 2376988
+  }
+ }
+}
