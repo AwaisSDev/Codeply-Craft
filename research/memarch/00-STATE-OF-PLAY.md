@@ -22,7 +22,7 @@ committed file.
 | Rules | Benchmark-520 / test-real / natural-300 | 0.091 / 0.097 / 0.080 | done |
 | LFM3-1.7B QAD, prompt v2 (production) | Benchmark-520 | 0.575 (P 0.55, R 0.61) | done |
 | LFM3-1.7B QAD, prompt v2 | natural-300 | 0.093 (noise kept out 96 %) | done |
-| LFM3-1.7B QAD, prompt v2 | test-real | – | **pending** |
+| LFM3-1.7B QAD, prompt v2 | test-real | 0.300 (P 0.38, R 0.25; kind 0.31, certainty 0.33; p50 4.8 s, p95 28 s) | done |
 | Template-trained Ettin-150M (s1 / s1r) | Benchmark-520 | 0.306 / 0.328 (old resolver); s1r corrected resolver 0.326 | done |
 | Template-trained Ettin-150M s1r | test-real / natural-300 | 0.123 / 0.015 (old resolver); 0.122 / 0.016 corrected | done |
 | Claude labellers (Sonnet / Opus / hybrid) | Benchmark-520 | 0.838 / 0.844 / 0.831 | done (labeller quality, not a candidate) |
@@ -48,6 +48,11 @@ LFM3 QAD prompt v2):
 
 * Benchmark-520: **−0.151 to −0.219** (95 %). Production LFM3 (0.575) is
   clearly better on the benchmark.
+* test-real: **−0.009 to +0.091** (Ettin 0.341 against LFM3 0.300; Ettin
+  ≤ LFM3 in 5.5 % of resamples). LFM3 is precise but misses three quarters
+  of memories (P 0.38, R 0.25); Ettin the reverse (P 0.24, R 0.57). Ettin is
+  far better on kind (0.78 against 0.31) and certainty (0.89 against 0.33)
+  and about 10× faster (p50 445 ms against 4.8 s).
 * natural-300: **−0.045 to +0.300**. Ettin's point estimate (0.241) is far
   above LFM3's (0.093), but natural-300 has only 20 gold memories in 16 of
   298 conversations, so the interval includes zero. Not a win under the
