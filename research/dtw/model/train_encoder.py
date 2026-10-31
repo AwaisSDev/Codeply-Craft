@@ -165,6 +165,7 @@ def fit_temperature(logits, y):
     if logits is None or not len(y):
         return 1.0
     best, bt = None, 1.0
+    logits, y = logits.float().cpu(), y.cpu()  # the logits come from the GPU, the labels were built on the CPU
     for t in [0.5 + 0.05 * i for i in range(60)]:
         nll = F.cross_entropy(logits / t, y).item()
         if best is None or nll < best:

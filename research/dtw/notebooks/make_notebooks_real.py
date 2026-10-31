@@ -97,14 +97,15 @@ subprocess.run("node --version || (curl -fsSL https://deb.nodesource.com/setup_2
 subprocess.run("cp research/dtw/data/real/train.jsonl research/dtw/data/real/val.jsonl /tmp/ && node ml/data/export-sft.mjs --in /tmp --style full", shell=True, check=True)
 for seed in SEEDS:
     cfg = yaml.safe_load(open("ml/finetune/config-lfm3.yaml"))
-    # Same effective batch as config-lfm3.yaml (16), smaller micro-batches for the T4's 16 GB.
-    cfg["grad_accum"] = cfg["grad_accum"] * cfg["batch_size"] // 4
-    cfg["batch_size"] = 4
+    # Same effective batch as config-lfm3.yaml (16), micro-batch 1 for the T4's 16 GB: with batch 4 the
+    # backward pass ran out of memory on the 128K-vocabulary logits (run 2).
+    cfg["grad_accum"] = cfg["grad_accum"] * cfg["batch_size"]
+    cfg["batch_size"] = 1
     cfg.update({"train_file": "/tmp/sft-train.jsonl", "val_file": "/tmp/sft-val.jsonl", "seed": seed,
                 "output_dir": f"ml/finetune/runs/real-lfm3-lora-s{seed}"})
     yaml.safe_dump(cfg, open(f"/tmp/config-s{seed}.yaml", "w"))
     if not os.path.exists(f"ml/finetune/runs/real-lfm3-lora-s{seed}/merged"):
-        subprocess.run(f"python ml/finetune/train_lora.py --config /tmp/config-s{seed}.yaml", shell=True, check=True)
+        subprocess.run(f"PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True python ml/finetune/train_lora.py --config /tmp/config-s{seed}.yaml", shell=True, check=True)
 ''', r'''
 !cd /kaggle/working/llama.cpp && cmake --build build -j4 --target llama-imatrix > /dev/null
 import subprocess

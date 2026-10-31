@@ -30,3 +30,12 @@ These are operational changes (memory and dependencies). Learning rate,
 epochs, effective batch, seeds, data and evaluation are unchanged, so they
 are not protocol deviations in the sense of `MODEL-SELECTION-PROTOCOL.md` §6;
 they are recorded here so the runs can be compared.
+
+## 2026-10-31, run 2 (version 2 of both kernels)
+
+| Kernel | Got to | Failed at | Cause | Fix |
+|---|---|---|---|---|
+| `codeply-real-encoders` | Ettin-150M s1 epoch 1 trained (peak GPU 7.2 GB, memory fix works); validation after epoch 1: kind 0.67, certainty 0.85, span F1 0.04 | `fit_temperature` after the first validation | bug in `train_encoder.py`: logits on the GPU, labels on the CPU (`RuntimeError: Expected all tensors to be on the same device`). CPU-only tests could not catch it | both moved to the CPU before the temperature search |
+| `codeply-real-lfm3-lora` | model loaded, LoRA attached (torchao fix works) | first backward pass | `CUDA out of memory` allocating 2.94 GB: the 128K-vocabulary logits for micro-batch 4 × ~2K tokens | micro-batch 1 × accumulation 16 (effective 16, unchanged) + `expandable_segments` |
+
+Both kernels relaunched as version 3.
