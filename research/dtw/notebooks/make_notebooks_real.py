@@ -217,6 +217,8 @@ if not merged:
     adapters = sorted(set(glob.glob("/kaggle/input/**/real-lfm3-lora-s*/adapter", recursive=True) + glob.glob("/tmp/inp/**/adapter", recursive=True)))
     print("adapters:", adapters)
     assert adapters, "no adapters in the input"
+    # As in the LoRA notebook (run 1): Kaggle ships torchao 0.10, which PEFT rejects when it loads LoRA layers.
+    subprocess.run("pip -q uninstall -y torchao", shell=True)
     open("/tmp/merge_lora.py", "w").write(MERGE)
     if subprocess.run("python -c 'import numpy, torch, transformers, peft'", shell=True).returncode:
         subprocess.run("pip -q install --force-reinstall --no-deps numpy==$(python -c 'import importlib.metadata as m; print(m.version(\"numpy\"))')", shell=True)

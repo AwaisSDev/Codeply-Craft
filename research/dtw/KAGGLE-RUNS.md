@@ -169,3 +169,9 @@ The v5 push was refused: **weekly GPU quota of 30 hours reached** (runs
 builds llama.cpp for the CPU, so the importance matrix takes ~3 h per seed
 as in LoRA run 4 (same 200 chunks, same calibration text); expected ~6.5 h
 in total.
+
+Export v5 (CPU session): no GPU detected, CPU build, both adapters found
+(Kaggle had unpacked the dataset); the merge then failed on the same
+torchao/PEFT incompatibility as LoRA run 1 (`torchao 0.10`, PEFT needs >
+0.16), which the export notebook did not yet handle. v6 uninstalls torchao
+before the merge, as the LoRA notebook does.
