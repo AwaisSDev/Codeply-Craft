@@ -164,7 +164,10 @@ if not os.path.exists("/tmp/llama.cpp/build/bin/llama-imatrix"):
     # Export v2 failed here: ggml-cuda links CUDA::cuda_driver, which Kaggle's image does not expose to CMake.
     # That link exists only for CUDA virtual memory management (GGML_CUDA_NO_VMM=ON drops it); the driver stub
     # directory is given as well. If the CUDA build still fails, fall back to the CPU build (~3 h per seed).
-    cuda = subprocess.run("cd /tmp/llama.cpp && cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF "
+    has_gpu = subprocess.run("nvidia-smi", shell=True, capture_output=True).returncode == 0
+    print("GPU:", has_gpu)
+    # No GPU (e.g. a CPU session once the weekly GPU quota is used up): skip the CUDA build entirely.
+    cuda = subprocess.run("false" if not has_gpu else "cd /tmp/llama.cpp && cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF "
                           "-DLLAMA_BUILD_EXAMPLES=OFF -DGGML_CUDA=ON -DGGML_CUDA_NO_VMM=ON -DCMAKE_CUDA_ARCHITECTURES=75 "
                           "-DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs && "
                           "cmake --build build -j4 --target llama-quantize llama-imatrix", shell=True, capture_output=True, text=True)

@@ -162,3 +162,10 @@ lines that find and unpack the adapters (a bug in the notebook, not in
 Kaggle or the data). v5 restores them; the adapter discovery was
 dry-run locally against a simulated Kaggle input (tar archive) before the
 push.
+
+The v5 push was refused: **weekly GPU quota of 30 hours reached** (runs
+1-5, LoRA runs 1-4, export v1-v4). v5 therefore runs as a **CPU session**
+(no GPU quota; 12 h limit): the notebook detects that there is no GPU and
+builds llama.cpp for the CPU, so the importance matrix takes ~3 h per seed
+as in LoRA run 4 (same 200 chunks, same calibration text); expected ~6.5 h
+in total.
