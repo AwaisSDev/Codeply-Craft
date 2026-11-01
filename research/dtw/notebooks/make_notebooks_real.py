@@ -158,11 +158,23 @@ LFM3_EXPORT = nb(
     "codeply-real-lfm3-lora.",
     [SETUP, r"""
 import os, subprocess, glob
+IMATRIX_ARGS = "-ngl 99"
 if not os.path.exists("/tmp/llama.cpp/build/bin/llama-imatrix"):
     subprocess.run("git clone https://github.com/ggml-org/llama.cpp /tmp/llama.cpp && cd /tmp/llama.cpp && git checkout LLAMA_COMMIT", shell=True, check=True)
-    subprocess.run("cd /tmp/llama.cpp && cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF "
-                   "-DLLAMA_BUILD_EXAMPLES=OFF -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75 > /dev/null && "
-                   "cmake --build build -j4 --target llama-quantize llama-imatrix > /dev/null", shell=True, check=True)
+    # Export v2 failed here: ggml-cuda links CUDA::cuda_driver, which Kaggle's image does not expose to CMake.
+    # That link exists only for CUDA virtual memory management (GGML_CUDA_NO_VMM=ON drops it); the driver stub
+    # directory is given as well. If the CUDA build still fails, fall back to the CPU build (~3 h per seed).
+    cuda = subprocess.run("cd /tmp/llama.cpp && cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF "
+                          "-DLLAMA_BUILD_EXAMPLES=OFF -DGGML_CUDA=ON -DGGML_CUDA_NO_VMM=ON -DCMAKE_CUDA_ARCHITECTURES=75 "
+                          "-DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs && "
+                          "cmake --build build -j4 --target llama-quantize llama-imatrix", shell=True, capture_output=True, text=True)
+    if cuda.returncode:
+        print("CUDA build failed, building for CPU:", cuda.stdout[-1500:], cuda.stderr[-1500:])
+        IMATRIX_ARGS = ""
+        subprocess.run("cd /tmp/llama.cpp && rm -rf build && cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF "
+                       "-DLLAMA_BUILD_EXAMPLES=OFF > /dev/null && cmake --build build -j4 --target llama-quantize llama-imatrix > /dev/null",
+                       shell=True, check=True)
+print("imatrix args:", repr(IMATRIX_ARGS))
 subprocess.run("pip -q install -e /tmp/llama.cpp/gguf-py", shell=True, check=True)
 subprocess.run("node --version || (curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs) > /dev/null", shell=True, check=True)
 os.chdir("/tmp/codeply")
@@ -204,7 +216,7 @@ for m in merged:
     os.makedirs(out, exist_ok=True)
     if glob.glob(f"{out}/*Q4_K_M.gguf"):
         continue
-    subprocess.run(f"cd /tmp/codeply && OUT=/tmp/gguf-{name} IMATRIX_ARGS='-ngl 99' LLAMA_CPP=/tmp/llama.cpp "
+    subprocess.run(f"cd /tmp/codeply && OUT=/tmp/gguf-{name} IMATRIX_ARGS='{IMATRIX_ARGS}' LLAMA_CPP=/tmp/llama.cpp "
                    f"bash ml/finetune/export_gguf.sh {m} {name}", shell=True, check=True)
     for f in glob.glob(f"/tmp/gguf-{name}/*Q4_K_M.gguf") + glob.glob(f"/tmp/gguf-{name}/*Q8_0.gguf") + glob.glob(f"{m}/../train-log.jsonl"):
         subprocess.run(f"cp {f} {out}/", shell=True, check=True)

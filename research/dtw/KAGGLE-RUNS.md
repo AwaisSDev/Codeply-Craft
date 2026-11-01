@@ -140,3 +140,12 @@ with CUDA (sm_75) and `IMATRIX_ARGS='-ngl 99'` (new optional hook in
 `export_gguf.sh`, empty by default), so the calibration runs on the GPU.
 Same calibration text (realistic val prompts), same 200 chunks, same
 Q4_K_M and Q8_0 outputs. Training is not repeated.
+
+Export v1 (kernel source) was rejected: Kaggle does not accept a cancelled
+run as a kernel source. The final adapters (129 MB each) were downloaded
+and uploaded as the private dataset `codeply-real-lfm3-lora-adapters`; the
+notebook merges them as `train_lora.py` does. Export v2 then failed while
+building llama.cpp with CUDA (`ggml-cuda` links `CUDA::cuda_driver`, not
+found in Kaggle's image). v3: `GGML_CUDA_NO_VMM=ON` (that link exists only
+for CUDA virtual memory management) plus the driver stub path, with a
+fallback to the CPU build (~3 h per seed, within the 12 h limit).
