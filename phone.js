@@ -207,7 +207,7 @@ if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEven
 // ─── State ──────────────────────────────────────────────────────────────────
 const KEY = {
   chats: 'craft-phone-chats', chat: (id) => `craft-phone-chat-${id}`, pc: 'craft-phone-pc', envs: 'craft-phone-envs',
-  ui: 'craft-phone-ui', creds: 'craft-cloud-creds', client: 'craft-client-id', bypass: 'craft-bypass',
+  ui: 'craft-phone-ui', creds: 'craft-cloud-creds', client: 'craft-client-id', bypass: 'craft-bypass', perm: 'craft-permission',
   synced: 'craft-phone-synced',
 };
 const clientId = localStorage.getItem(KEY.client) || makeClientId();
@@ -220,6 +220,8 @@ const state = {
   ui: { mode: 'chat', projectKey: null, codeMode: 'Build', chatModel: 'auto', useProject: false, ...load(KEY.ui, {}) },
   synced: load(KEY.synced, []),   // [{ id, clientId, name, model, baseUrl, key }] from user-models, keys masked
   bypass: localStorage.getItem(KEY.bypass) === '1',
+  // How the agent on the PC asks: 'ask' (every edit and command), 'edits' (file edits run, commands ask), 'full' (nothing asks).
+  perm: ['ask', 'edits', 'full'].includes(localStorage.getItem(KEY.perm)) ? localStorage.getItem(KEY.perm) : (localStorage.getItem(KEY.bypass) === '1' ? 'full' : 'ask'),
   pc: load(KEY.pc, { device: '', projects: [], sessions: [], models: null }),
   envs: load(KEY.envs, {}),       // repo -> cloud environment set up from the phone
   creds: load(KEY.creds, null),   // { token, login, projects: [{ cwd, name, repo }], at, source }
@@ -227,6 +229,7 @@ const state = {
   busy: new Set(),                // chat ids with a run or reply in flight
   chatAbort: null,
   approval: null,
+  approvals: new Map(),           // requestId -> approval_request from ANY chat on the PC (Home's inbox)
   imagePick: null,
 };
 const saveUi = () => save(KEY.ui, { mode: state.ui.mode, projectKey: state.ui.projectKey, codeMode: state.ui.codeMode, chatModel: state.ui.chatModel, useProject: !!state.ui.useProject });
@@ -644,7 +647,12 @@ function toolHtml(t, extraBody = '') {
   if (typeof t.exitCode === 'number') stats.push(`<span class="${t.exitCode === 0 ? 'add' : 'del'}">exit ${t.exitCode}</span>`);
   const a = t.args || {};
   let b = '';
-  if (t.name === 'run' && a.command) b = `<div class="step-body-label">Command</div><pre class="code">${esc(a.command)}</pre>`;
+  // A command reads like a terminal: the prompt line, the end of its output, and how it ended.
+  if (t.name === 'run' && (a.command || t.label)) {
+    const out = typeof t.output === 'string' ? t.output.replace(/\s+$/, '') : '';
+    const ended = typeof t.exitCode === 'number' ? `<div class="term-end ${t.exitCode === 0 ? 'ok' : 'bad'}">${t.exitCode === 0 ? 'Finished' : 'Failed'} · exit ${t.exitCode}</div>` : '';
+    b = `<div class="term"><button type="button" class="term-copy" data-copy="${esc(a.command || t.label)}" aria-label="Copy command">Copy</button><pre class="term-cmd"><span>$</span> ${esc(a.command || t.label)}</pre>${out ? `<pre class="term-out">${esc(clip(out, 40))}</pre>` : ''}${ended}</div>`;
+  }
   else if (t.name === 'edit_file' && (a.search || a.replace)) {
     b = `<div class="step-body-label">${esc(a.path || '')}</div>`
       + `<pre class="code del">${esc(clip(a.search)).replace(/^/gm, '- ')}</pre>`
@@ -655,7 +663,9 @@ function toolHtml(t, extraBody = '') {
   else if (Object.keys(a).length && !(t.name === 'browser_check' && extraBody)) b = `<pre class="code">${esc(clip(Object.entries(a).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join('\n'), 20))}</pre>`;
   b += extraBody;
   const label = t.label || a.path || a.command || a.pattern || a.url || '';
-  return `<details class="step tool${failed ? ' failed' : ''}${b ? '' : ' no-body'}" data-tool="${esc(t.name || '')}"${extraBody ? ' open' : ''}><summary>${ICONS.chev}`
+  // A failed command opens by itself: its output is the first thing you need.
+  const openIt = extraBody || (t.name === 'run' && failed && typeof t.output === 'string' && t.output.trim());
+  return `<details class="step tool${failed ? ' failed' : ''}${t.name === 'run' ? ' cmd' : ''}${b ? '' : ' no-body'}" data-tool="${esc(t.name || '')}"${openIt ? ' open' : ''}><summary>${ICONS.chev}`
     + `<span class="step-verb">${esc(TOOL_VERB[t.name] || t.name || 'Ran')}</span><span class="step-label">${esc(label)}</span>`
     + `${stats.length ? `<span class="step-stats">${stats.join('')}</span>` : ''}</summary><div class="step-body">${b}</div></details>`;
 }
@@ -700,6 +710,40 @@ function pushedHtml(e) {
 function screenshotFromPc(img, path) {
   relayRequest('GET', `/api/screenshot-data?path=${encodeURIComponent(path)}`).then((r) => { if (r && r.dataUrl) img.src = r.dataUrl; else img.remove(); }).catch(() => img.remove());
 }
+// ─── A step running right now: "Running npm test", with a clock ────────────
+let liveTool = null; // { el, timer }
+function addLiveTool(ev) {
+  clearLiveTool();
+  const a = ev.args || {};
+  const label = ev.summary || a.command || a.path || a.pattern || a.url || '';
+  const node = el('details', 'step tool running no-body', `<summary><span class="spinner"></span><span class="step-verb">${esc(LIVE_VERB[ev.name] || 'Working on')}</span><span class="step-label">${esc(label)}</span><span class="step-stats"><span class="step-clock">0s</span></span></summary><div class="step-body"></div>`);
+  if (ev.name === 'run') node.classList.add('cmd');
+  const started = Date.now();
+  const timer = setInterval(() => {
+    if (!node.isConnected) { clearInterval(timer); return; }
+    const s = Math.round((Date.now() - started) / 1000);
+    node.querySelector('.step-clock').textContent = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+  }, 1000);
+  liveTool = { el: node, timer };
+  append(node);
+  scrollToBottom();
+}
+function clearLiveTool() {
+  if (!liveTool) return;
+  clearInterval(liveTool.timer);
+  liveTool.el.remove();
+  liveTool = null;
+}
+const LIVE_VERB = { run: 'Running', read_file: 'Reading', edit_file: 'Editing', write_file: 'Writing', apply_patch: 'Patching', search: 'Searching', list_dir: 'Looking in', browser_check: 'Checking', web_search: 'Searching the web for', web_fetch: 'Reading', bring_in: 'Bringing in a specialist', fetch_image: 'Downloading' };
+/** A specialist the agent brought in works behind it: a quiet line among the steps. */
+function addSpecialistNote(d) {
+  if (!d || !d.agent) return;
+  const name = d.agent.name || 'a specialist';
+  if (d.phase === 'start') addThinking(`Brought in the ${name} specialist${d.task ? `: ${String(d.task).split('\n')[0].slice(0, 160)}` : ''}`, 'Specialist');
+  else if (d.phase === 'created') addThinking(`Made a new specialist: ${name}`, 'Specialist');
+  else if (d.phase === 'report' && !d.ok) addThinking(`The ${name} specialist could not finish`, 'Specialist');
+}
+
 function addTool(t) {
   streamEl = null;
   const wrap = el('div', null, toolHtml(t, t.screenshotPath ? '<img class="shot" alt="Screenshot of the page">' : ''));
@@ -779,6 +823,7 @@ function renderPcItem(item, chat) {
   else if (item.kind === 'assistant') (item.interim ? addThinking(item.text) : addMsg('agent', item.text));
   else if (item.kind === 'tool') addTool(item);
   else if (item.kind === 'role_active' || item.kind === 'subagent_active') addRole(item);
+  else if (item.kind === 'wisp_agent') addSpecialistNote(item);
   else if (item.kind === 'turn_summary') addSummary(item);
   else if (item.kind === 'checkpoint') renderCheckpoint(item, chat);
   else if (item.kind === 'question') renderQuestion({ ...item, answered: true });
@@ -932,6 +977,13 @@ function receiveEvent(event) {
     renderComposer();
     return;
   }
+  // Every chat's approvals reach the phone, not just the open one's: Home lists them all.
+  if (event.type === 'approval_request' && event.requestId) { state.approvals.set(event.requestId, { ...event, at: Date.now() }); approvalsChanged(); }
+  else if (event.type === 'approval_resolved') { state.approvals.delete(event.requestId); approvalsChanged(); }
+  else if ((event.type === 'run_finished' || event.type === 'aborted') && event.sessionId) {
+    for (const [id, a] of state.approvals) if (a.sessionId === event.sessionId) state.approvals.delete(id);
+    approvalsChanged();
+  }
   const c = state.chats.find((x) => x.pcSessionId && x.pcSessionId === event.sessionId);
   if (!c || c.id !== state.current) {
     if (c && (event.type === 'run_finished' || event.type === 'aborted')) { state.busy.delete(c.id); refreshPcSession(c, false).catch(() => {}); }
@@ -947,9 +999,12 @@ function receiveEvent(event) {
   else if (event.type === 'handoff') { if (event.status === 'back') addThinking('Back on your PC.', 'Note'); }
   else if (event.type === 'notice') { if (!/^Summarized earlier steps/i.test(event.text || '')) (event.level === 'info' ? addThinking(event.text, 'Note') : addMsg('error', event.text)); }
   else if (event.type === 'text') (event.interim ? addThinking(event.text) : addDelta(event.text));
+  else if (event.type === 'tool_start') addLiveTool(event);
+  else if (event.type === 'wisp_agent') addSpecialistNote(event);
   else if (event.type === 'tool_end') {
     const m = event.meta || {};
-    addTool({ name: event.name, label: event.summary || (event.args && (event.args.path || event.args.command)) || '', ok: event.ok, args: event.args, exitCode: m.exitCode, added: m.added, removed: m.removed, screenshotPath: m.screenshotPath });
+    clearLiveTool();
+    addTool({ name: event.name, label: event.summary || (event.args && (event.args.path || event.args.command)) || '', ok: event.ok, args: event.args, exitCode: m.exitCode, added: m.added, removed: m.removed, screenshotPath: m.screenshotPath, output: m.output });
   } else if (event.type === 'error') { if (!/^Stopped after \d+ steps/i.test(event.error || '')) addMsg('error', event.error); }
   else if (event.type === 'approval_request') showApproval(event);
   else if (event.type === 'question_request') renderQuestion(event);
@@ -983,15 +1038,38 @@ async function refreshPcSession(c, redraw = true) {
 function showApproval(event) {
   state.approval = event;
   $('approvalTitle').textContent = event.title || 'Codeply needs your OK';
+  $('approvalKind').textContent = APPROVAL_KIND[event.tool] || 'Needs your OK';
   $('approvalDetail').textContent = event.detail || `Allow Codeply to run ${String(event.tool || 'this action').replace(/_/g, ' ')}?`;
+  // An edit's diff says it all; the bare path above it would only repeat the title.
+  $('approvalDetail').classList.toggle('hidden', !!event.diff);
+  // What makes it risky, said in words.
+  $('approvalRisk').classList.toggle('hidden', !event.danger);
+  // An edit shows exactly what changes.
+  const d = event.diff;
+  $('approvalDiff').classList.toggle('hidden', !d);
+  $('approvalDiff').innerHTML = d ? `<pre class="code del">${esc(clip(d.search || '', 30)).replace(/^/gm, '- ')}</pre><pre class="code add">${esc(clip(d.replace || '', 30)).replace(/^/gm, '+ ')}</pre>` : '';
+  // "Always" covers commands by name ("npm test"), never every command; none offered for risky ones.
+  const scope = Array.isArray(event.alwaysScope) ? event.alwaysScope : null;
+  const always = event.danger || (scope && !scope.length) || event.tool === 'fetch_image' ? ''
+    : scope ? `Always allow ${scope.map((p) => `"${p}"`).join(' and ')} in this chat` : `Always allow ${String(event.tool || '').replace(/_/g, ' ')} in this chat`;
+  $('alwaysBtn').classList.toggle('hidden', !always);
+  $('alwaysBtn').textContent = always;
   $('approvalSheet').classList.remove('hidden');
+  renderChatList();
 }
-async function answerApproval(verdict) {
-  const p = state.approval;
+const APPROVAL_KIND = { run: 'Run a command', write_file: 'Create a file', edit_file: 'Edit a file', apply_patch: 'Change files', gmail_send: 'Send an email', gmail_draft: 'Save a draft', calendar_add: 'Add to your calendar', vercel_deploy: 'Deploy', publish_deploy: 'Publish', github_create_repo: 'Push to GitHub', supabase_sql: 'Run SQL', supabase_api: 'Change Supabase', vercel_api: 'Change Vercel', use_computer: 'Use your computer' };
+async function answerApproval(verdict, requestId = null) {
+  const p = requestId ? state.approvals.get(requestId) || (state.approval && state.approval.requestId === requestId ? state.approval : null) : state.approval;
   if (!p) return;
-  state.approval = null;
-  $('approvalSheet').classList.add('hidden');
+  if (state.approval && state.approval.requestId === p.requestId) { state.approval = null; $('approvalSheet').classList.add('hidden'); }
+  state.approvals.delete(p.requestId);
+  approvalsChanged();
   try { await relayRequest('POST', '/api/approval', { requestId: p.requestId, verdict }); } catch (err) { addMsg('error', err.message); }
+}
+/** Home's inbox and the chat list redraw when an approval comes or goes. */
+function approvalsChanged() {
+  renderChatList();
+  document.dispatchEvent(new CustomEvent('craft:approvals'));
 }
 function showImagePick(event) {
   state.imagePick = event;
@@ -1085,7 +1163,7 @@ async function pcSend(chat, text, images = []) {
   renderComposer();
   try {
     // The PC answers when the whole turn ends; events stream in meanwhile.
-    const r = await relayRequest('POST', '/api/send', { sessionId: chat.pcSessionId || null, cwd: project.cwd, ...(project.newProject && !project.cwd ? { newProject: project.newProject } : {}), mode: state.ui.codeMode, bypass: state.bypass, text: withContext(chat, text || 'Image attached.'), ...(images.length ? { images } : {}), clientId }, 6 * 3600 * 1000);
+    const r = await relayRequest('POST', '/api/send', { sessionId: chat.pcSessionId || null, cwd: project.cwd, ...(project.newProject && !project.cwd ? { newProject: project.newProject } : {}), mode: state.ui.codeMode, bypass: state.perm === 'full', autoEdits: state.perm === 'edits', text: withContext(chat, text || 'Image attached.'), ...(images.length ? { images } : {}), clientId }, 6 * 3600 * 1000);
     if (r && r.error) throw new Error(r.error);
     if (r && r.cwd && !project.cwd) {
       chat.project = { key: `cwd:${normCwd(r.cwd)}`, name: basename(r.cwd), cwd: r.cwd, repo: null };
@@ -2071,7 +2149,7 @@ function openPlus() {
     ${pickRow({ icon: ICONS.folder, title: proj ? esc(proj.name) : 'Work in a project', hint: proj ? (proj.cwd ? (relay.pcId ? 'On your PC' : 'On your PC, which is offline: runs in the cloud if set up') : 'In the cloud') : 'A folder on your PC or a GitHub repo', attrs: 'data-act="project"', kbd: proj ? 'Change' : '' })}
     ${proj ? `${pickRow({ icon: ICONS[modeHint ? modeHint[2] : 'build'], title: `Mode: ${esc(state.ui.codeMode)}`, hint: modeHint ? modeHint[1] : '', attrs: 'data-act="mode"' })}
     ${pickRow({ icon: ICONS.target, title: 'Set a goal', hint: 'Keep working until it is done and verified', attrs: 'data-act="goal"', kbd: '/goal' })}
-    ${!cloudChat ? pickRow({ icon: state.bypass ? ICONS.bolt : ICONS.shield, title: state.bypass ? 'Full access on your PC' : 'Ask first on your PC', hint: state.bypass ? 'Edits and commands run without asking' : 'You approve edits and commands from here', attrs: 'data-act="access"' }) : ''}
+    ${!cloudChat ? pickRow({ icon: state.perm === 'full' ? ICONS.bolt : ICONS.shield, title: PERM[state.perm].title + ' on your PC', hint: PERM[state.perm].hint, attrs: 'data-act="access"' }) : ''}
     ${cloudEnv ? pickRow({ icon: cperm === 'full' ? ICONS.bolt : ICONS.shield, title: cperm === 'full' ? 'Full access in the cloud' : 'Ask first in the cloud', hint: cperm === 'full' ? 'Everything runs without asking' : 'Deploys and risky steps wait for your OK', attrs: 'data-act="caccess"' }) : ''}` : ''}
     <div class="pick-divider"></div>
     ${pickRow({ icon: ICONS.github, title: 'Connect a GitHub repo', hint: 'Work with your PC off', attrs: 'data-act="setup"' })}
@@ -2090,18 +2168,33 @@ function openPlus() {
     act('commands', () => startSlash());
   }, $('plusBtn'));
 }
+/** The three ways the agent on the PC can ask (Claude Code's default / acceptEdits / bypass). */
+const PERM = {
+  ask: { title: 'Ask first', hint: 'You approve every edit and command' },
+  edits: { title: 'Auto-accept edits', hint: 'File edits run on their own; commands still ask' },
+  full: { title: 'Full access', hint: 'Edits and commands run without asking' },
+};
+function setPermission(v) {
+  if (!PERM[v]) return;
+  state.perm = v;
+  state.bypass = v === 'full';
+  localStorage.setItem(KEY.perm, v);
+  localStorage.setItem(KEY.bypass, state.bypass ? '1' : '0');
+  document.dispatchEvent(new CustomEvent('craft:permission', { detail: v }));
+}
 function openAccess(where, cloudEnv = null, cperm = 'ask') {
   const pc = where === 'pc';
-  const on = pc ? (state.bypass ? 'full' : 'ask') : cperm;
+  const on = pc ? state.perm : cperm;
   openPick(`<div class="sheet-title">${pc ? 'On your PC' : 'In the cloud'}</div>
-    ${pickRow({ icon: ICONS.shield, title: 'Ask first', hint: pc ? 'Approve edits and commands from here' : 'Deploys and other risky steps wait for your OK', on: on === 'ask', attrs: 'data-v="ask"' })}
-    ${pickRow({ icon: ICONS.bolt, title: 'Full access', hint: pc ? 'Edits and commands run without asking' : 'Everything runs without asking', on: on === 'full', attrs: 'data-v="full"' })}`, (root) => {
+    ${pickRow({ icon: ICONS.shield, title: 'Ask first', hint: pc ? PERM.ask.hint : 'Deploys and other risky steps wait for your OK', on: on === 'ask', attrs: 'data-v="ask"' })}
+    ${pc ? pickRow({ icon: ICONS.pencil, title: 'Auto-accept edits', hint: PERM.edits.hint, on: on === 'edits', attrs: 'data-v="edits"' }) : ''}
+    ${pickRow({ icon: ICONS.bolt, title: 'Full access', hint: pc ? PERM.full.hint : 'Everything runs without asking', on: on === 'full', attrs: 'data-v="full"' })}`, (root) => {
     root.querySelectorAll('[data-v]').forEach((b) => b.addEventListener('click', async () => {
       const v = b.dataset.v;
       if (v === on) { closePick(); return; }
       if (v === 'full' && !confirm(pc ? 'Full access runs edits and commands on your PC without asking first. Turn it on?' : 'Full access lets cloud runs deploy and do other risky steps without asking. Turn it on?')) return;
       closePick();
-      if (pc) { state.bypass = v === 'full'; localStorage.setItem(KEY.bypass, state.bypass ? '1' : '0'); return; }
+      if (pc) { setPermission(v); return; }
       try { if (!(await ensureGithub())) throw new Error('Connect GitHub first.'); await setCloudPermission(cloudEnv.repo, v); }
       catch (e) { addMsg('error', e.message); }
     }));
@@ -2283,11 +2376,11 @@ function renderChatList() {
     ...(state.pc.sessions || []).filter((s) => !linked.has(s.id)).map((s) => ({ type: 'pc', id: s.id, title: s.title || 'Untitled', kind: 'code', cloud: !!s.cloud, at: s.updatedAt || 0, meta: s })),
   ].filter((r) => !q || String(r.title).toLowerCase().includes(q)).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 200);
   // What needs the user comes first, then what is running: unblock an agent without opening each chat.
-  const approvalFor = state.approval && state.approval.sessionId;
+  const waiting = new Set([...state.approvals.values()].map((a) => a.sessionId).concat(state.approval ? [state.approval.sessionId] : []));
   for (const r of rows) {
     const c = r.type === 'local' ? state.chats.find((x) => x.id === r.id) : null;
     const pcId = c ? c.pcSessionId : r.id;
-    r.flag = approvalFor && pcId === approvalFor ? 'needs' : (c && state.busy.has(c.id)) ? 'running' : '';
+    r.flag = pcId && waiting.has(pcId) ? 'needs' : (c && state.busy.has(c.id)) || (r.type === 'pc' && (r.meta && r.meta.running)) ? 'running' : '';
   }
   const rank = (r) => (r.flag === 'needs' ? 0 : r.flag === 'running' ? 1 : 2);
   rows.sort((a, b) => rank(a) - rank(b));
@@ -2404,6 +2497,10 @@ function friendlyAuthError(err, fallback) {
   return (err && err.message) || fallback;
 }
 function signinStep(step, text) {
+  // Sign in and create account share one screen (phone-app.js switches the tabs).
+  if (step === 'signup') { $('loginForm').classList.add('hidden'); $('otpForm').classList.add('hidden'); $('signinBusy').classList.add('hidden'); $('signupForm').classList.remove('hidden'); $('authTabs').classList.remove('hidden'); return; }
+  $('signupForm').classList.add('hidden');
+  $('authTabs').classList.toggle('hidden', step !== 'login');
   $('loginForm').classList.toggle('hidden', step !== 'login');
   $('otpForm').classList.toggle('hidden', step !== 'otp');
   $('signinBusy').classList.toggle('hidden', step !== 'busy');
@@ -2479,13 +2576,16 @@ $('otpForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const err = $('otpError');
   err.classList.add('hidden');
-  const email = $('loginEmail').value.trim();
+  // A code from creating an account confirms the email (type signup); a sign-in code is type email.
+  const signup = $('otpForm').dataset.mode === 'signup';
+  const email = (signup && $('otpForm').dataset.email) || $('loginEmail').value.trim();
   const token = $('loginOtp').value.replace(/\D+/g, '');
   if (token.length < 6) { err.textContent = 'Enter the full code from the email.'; err.classList.remove('hidden'); return; }
-  signinStep('busy', 'Signing in...');
+  signinStep('busy', signup ? 'Confirming your email...' : 'Signing in...');
   try {
-    const { error } = await sb.auth.verifyOtp({ email, token, type: 'email' });
+    const { error } = await sb.auth.verifyOtp({ email, token, type: signup ? 'signup' : 'email' });
     if (error) throw error;
+    if (signup) { try { localStorage.setItem('craft-phone-onboard', 'pending'); } catch {} }
     await enterApp();
   } catch (x) {
     signinStep('otp');
@@ -2619,6 +2719,14 @@ $('searchInput').addEventListener('input', renderChatList);
 $('themeBtn').addEventListener('click', () => { const order = ['system', 'light', 'dark']; applyTheme(order[(order.indexOf(themeChoice()) + 1) % 3]); });
 $('signOutBtn').addEventListener('click', signOut);
 $('approveBtn').addEventListener('click', () => answerApproval('once'));
+$('alwaysBtn').addEventListener('click', () => answerApproval('always'));
+// Copy a command from its terminal block.
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('[data-copy]');
+  if (!b) return;
+  e.preventDefault();
+  try { navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy'; }, 1400); } catch {}
+});
 $('rejectBtn').addEventListener('click', () => answerApproval('reject'));
 $('imageYes').addEventListener('click', () => answerImagePick((state.imagePick && state.imagePick.url) || null));
 $('imageNo').addEventListener('click', () => answerImagePick(null));
@@ -2631,7 +2739,9 @@ currentSession().then((s) => { if (s) enterApp(); else showSignin(); }).catch(sh
 // For tests and debugging in the console.
 // phone-calls.js (Calls with bots) builds on these too.
 window.CraftPhone = { state, relay, sb, sealSecret, CLOUD_WORKFLOW, md, pollAll, relayRequest, accessToken, esc, load, save, newId, openDrawer, closeDrawer, AI_PROXY_URL, SUPABASE_ANON_KEY, deviceHeader,
-  cloudEnvForBots, startCloudTask, pollCloudTask: pollTask };
+  cloudEnvForBots, startCloudTask, pollCloudTask: pollTask,
+  // phone-app.js (tabs, Home, You, sign-up) builds on these
+  answerApproval, setPermission, PERM, signinStep, openChat, openPcSession, newChat, openSettings, openSetup, openProjectPicker, openModelPicker, chatMeta, signOut, applyTheme, themeChoice, renderChatList, enterApp, friendlyAuthError, currentSession };
 
 // Reminders and "calls" from your bots arrive as Web Push: phone-sw.js shows
 // them (phone-reminders.js asks for permission and subscribes).

@@ -2652,7 +2652,7 @@ async function handleBridgeApi(method, pathname, query, body) {
       if (made.error) return { status: 200, body: made };
       body.cwd = made.cwd;
     }
-    const run = await startChatRun({ ...body, bypass: body.bypass === true });
+    const run = await startChatRun({ ...body, bypass: body.bypass === true, autoEdits: body.autoEdits === true });
     return { status: 200, body: { ...run, cwd: body.cwd } };
   }
   // Models: names only. API keys never leave this PC.
@@ -2665,6 +2665,20 @@ async function handleBridgeApi(method, pathname, query, body) {
     return { status: 200, body: state };
   }
   if (method === 'POST' && pathname === '/api/stop') { stopChatRun(body.sessionId); return { status: 200, body: { ok: true } }; }
+  // Standing permission rules (~/.codeply/permissions.json): the phone's Permissions screen.
+  // Same-account phones only, like every bridge call; deny rules still beat everything.
+  if (pathname === '/api/permissions') {
+    if (!permissionsLib) return { status: 503, body: { error: 'Permissions are not loaded yet. Try again.' } };
+    if (method === 'GET') {
+      const cwd = query.get('cwd');
+      const known = cwd && store.projects.find((p) => path.resolve(p) === path.resolve(cwd));
+      return { status: 200, body: permissionsLib.listRules(known || null) };
+    }
+    if (method === 'POST') {
+      try { return { status: 200, body: permissionsLib.saveGlobalRules({ allow: body.allow, deny: body.deny }) }; }
+      catch (e) { return { status: 500, body: { error: `Could not save the rules: ${e.message}` } }; }
+    }
+  }
   // Edit or retry a sent message from the phone (same rewind as the desktop).
   if (method === 'POST' && pathname === '/api/edit') return { status: 200, body: await editAndRerun({ ...body, bypass: body.bypass === true }) };
   if (method === 'POST' && pathname === '/api/approval') { respondApproval(body.requestId, body.verdict); return { status: 200, body: { ok: true } }; }
@@ -3389,7 +3403,7 @@ async function runGoal({ session, goal, history, mode, cwd, approve, signal, rou
   else syncGoal({ status: 'incomplete', note: `Not finished after ${MAX_GOAL_ITERATIONS} iterations. Still missing: ${remaining.slice(0, 200)}` });
 }
 
-async function startChatRun({ sessionId, cwd, mode, bypass, text, images, clientId = null, botId, design = null, resume = null, screen = null }) {
+async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, text, images, clientId = null, botId, design = null, resume = null, screen = null }) {
   // resume: carry on a run that was cut off here or came back from Craft Cloud
   // (handoff-desktop.js). Its prompt says what is done; no new user message.
   if (resume) { text = String(resume.prompt || ''); mode = resume.mode; images = undefined; }
@@ -3523,6 +3537,13 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
     }
     if (bypass || autoAllowed(req)) {
       sendEvent(session.id, { type: 'approval_auto', tool: req.tool, title: req.title, bypass: !!bypass });
+      return 'once';
+    }
+    // "Auto-accept edits" (the phone's middle permission mode): file changes in
+    // the project run on their own; commands, deploys and messages still ask.
+    // Undo on the message puts the files back.
+    if (autoEdits && !req.danger && ['write_file', 'edit_file', 'apply_patch'].includes(req.tool)) {
+      sendEvent(session.id, { type: 'approval_auto', tool: req.tool, title: req.title, bypass: false, autoEdits: true });
       return 'once';
     }
 

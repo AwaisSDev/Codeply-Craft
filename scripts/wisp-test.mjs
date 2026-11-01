@@ -239,6 +239,19 @@ async function wispTurn(replies, userMessage, { route = textRoute, session } = {
   void listed;
 }
 
+// 4d. Permission rules the phone edits (lib/permissions.js).
+{
+  const perms = require(path.join(CLI, 'lib/permissions.js'));
+  fs.mkdirSync(path.join(scratch, '.codeply'), { recursive: true });
+  fs.writeFileSync(path.join(scratch, '.codeply', 'permissions.json'), JSON.stringify({ note: 'mine', allow: ['run:git status'] }));
+  const saved = perms.saveGlobalRules({ allow: ['run:npm test', 'run:npm test', 'not a rule!', 'edit_file:src/**'], deny: ['run:git push*'] });
+  check('permissions: rules saved, bad ones dropped, duplicates merged', JSON.stringify(saved.global) === JSON.stringify({ allow: ['run:npm test', 'edit_file:src/**'], deny: ['run:git push*'] }), JSON.stringify(saved));
+  check('permissions: other keys in the file are kept', JSON.parse(fs.readFileSync(path.join(scratch, '.codeply', 'permissions.json'), 'utf8')).note === 'mine');
+  check('permissions: a saved allow rule decides', perms.decide({ tool: 'run', detail: 'npm test', patterns: ['npm test'] }, null).decision === 'allow');
+  check('permissions: a saved deny rule decides', perms.decide({ tool: 'run', detail: 'git push origin main', patterns: ['git push'] }, null).decision === 'deny');
+  check('permissions: listRules reads them back', perms.listRules(null).global.deny[0] === 'run:git push*');
+}
+
 // 5. A name not on the team, and a specialist that fails.
 {
   const r = await wispTurn([

@@ -160,7 +160,7 @@
       holder.className = 'sheet-face';
       const el = document.createElement('div');
       holder.appendChild(el);
-      sheet.insertBefore(holder, sheet.querySelector('.sheet-title'));
+      sheet.insertBefore(holder, sheet.querySelector('.sheet-over') || sheet.querySelector('.sheet-title'));
       W.mount(el, { size: 'md', mood: 'worried' });
     }
     let q = false;
