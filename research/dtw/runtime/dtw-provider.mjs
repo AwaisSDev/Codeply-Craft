@@ -111,6 +111,9 @@ export async function createProvider({ opt, RT, threads }) {
   const gguf = opt('dtw-gguf', path.join(run, 'backbone-q8_0.gguf'));
   const heads = createHeads(run);
   const gateMin = Number(opt('dtw-gate', 0));
+  // Operating point (CALIBRATION-PROTOCOL.md): drop observations whose span confidence, the mean over the
+  // span's tokens of 1 - P(O), is below this. 0 = off (output unchanged).
+  const spanMin = Number(opt('dtw-span-min', 0));
   // Whole-input vector: [CLS] for encoders; the mean of the event tokens for a causal model (LFM3 + heads).
   const ctxMode = opt('dtw-ctx', heads.meta.ctx || 'cls');
   const encoder = RT.createRuntime({ model: { id: 'dtw-encoder', path: gguf, ctx: 2048 }, threads, ctx: 2048, idleMs: 0, args: ['--embedding', '--pooling', 'none', '-ub', '2048', '-b', '2048'] });
@@ -151,7 +154,9 @@ export async function createProvider({ opt, RT, threads }) {
         for (const r of rows) for (let j = 0; j < d; j++) ctx[j] += r[j] / rows.length;
       }
       const gate = heads.gate(ctx);
-      const spans = gate < gateMin ? [] : decodeSpans(heads.tags(H), inEvent, heads.meta.tags);
+      const tp = heads.tagsP(H);
+      const spans = gate < gateMin ? [] : decodeSpans(tp.map((x) => x[0]), inEvent, heads.meta.tags);
+      const spanConf = (sp) => { let s = 0; for (let i = sp.a; i < sp.b; i++) s += 1 - tp[i][1]; return s / (sp.b - sp.a); };
       const times = TR.findTimes(inp.text).filter((x) => inp.events.some((e) => x.start >= e.start && x.end <= e.end));
       const observations = []; const plans = []; const toName = []; const toTitle = [];
       for (const sp of spans) {
@@ -171,11 +176,13 @@ export async function createProvider({ opt, RT, threads }) {
           toTitle.push({ plan, clause });
           continue;
         }
+        const conf = spanConf(sp);
+        if (conf < spanMin) continue;
         const c = heads.span(H, ctx, sp.a, sp.b);
         let { kind, cert: certainty } = c;
         if (certainty === 'temporary') kind = 'context';
         else if (kind === 'context' && MEMORABLE.has(certainty)) certainty = 'temporary';
-        const o = { kind, certainty, importance: Math.round(c.importance * 100) / 100, about: c.about, slot: '', value: spanText, text: clause || spanText, p: { kind: c.kindP, certainty: c.certP } };
+        const o = { kind, certainty, importance: Math.round(c.importance * 100) / 100, about: c.about, slot: '', value: spanText, text: clause || spanText, p: { kind: c.kindP, certainty: c.certP, span: Math.round(conf * 1000) / 1000, gate: Math.round(gate * 1000) / 1000 } };
         if (c.about === 'project' || ['decision', 'idea', 'requirement'].includes(kind)) { if (project || projects[0]) o.project = project || projects[0]; }
         const m = heads.merge(H, sp.a, sp.b, mems);
         if (m.target >= 0 && known[m.target]) {

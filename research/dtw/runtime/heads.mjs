@@ -48,6 +48,8 @@ export function createHeads(dir) {
     meta,
     /** Tag ids per token. */
     tags(H) { return H.map((h) => argmax(linear(T, 'tag.1', h))); },
+    /** Per token: [tag id, P(O)] (P(O) = the tag head's probability that the token is outside every span). */
+    tagsP(H) { const o = meta.tags.indexOf('O'); return H.map((h) => { const pr = softmax(linear(T, 'tag.1', h)); return [argmax(pr), pr[o]]; }); },
     gate(ctx) { const z = linear(T, 'gate.1', ctx)[0]; return 1 / (1 + Math.exp(-z)); },
     span(H, ctx, a, b) {
       const z = gelu(linear(T, 'span.1', cat(mean(H, a, b), H[a], ctx)));
