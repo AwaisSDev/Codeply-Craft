@@ -1,0 +1,306 @@
+{
+ "model": "dtw-real-ettin150-s3",
+ "set": "test-real",
+ "frozen": {
+  "r=2": {
+   "decoder": "F2",
+   "tauA": 0.75,
+   "tauP": {
+    "rho=0.25": 0.6,
+    "rho=0.33": 0.7,
+    "rho=0.50": null
+   }
+  },
+  "r=3": {
+   "decoder": "F1",
+   "tauA": 0.8,
+   "tauP": {
+    "rho=0.25": 0.6,
+    "rho=0.33": 0.7,
+    "rho=0.50": null
+   }
+  },
+  "r=5": {
+   "decoder": "F1",
+   "tauA": 0.85,
+   "tauP": {
+    "rho=0.25": 0,
+    "rho=0.33": 0.6,
+    "rho=0.50": 0.75
+   }
+  }
+ },
+ "protocol": "research/dtw/TIERS-PROTOCOL.md",
+ "byRatio": {
+  "r=2": {
+   "F0sameTiers": {
+    "automatic": {
+     "tp": 120,
+     "pred": 194,
+     "gold": 366,
+     "precision": 0.619,
+     "recall": 0.328,
+     "f1": 0.429,
+     "falseMemoryRate": 0.3,
+     "noiseRejection": 0.987,
+     "examples": 549
+    },
+    "automaticOrPending": {
+     "tp": 146,
+     "pred": 300,
+     "recall": 0.399
+    },
+    "pending": {
+     "items": 106,
+     "per100inputs": 19.3,
+     "precision": 0.245,
+     "extraGold": 26
+    },
+    "cost": {
+     "C2": 394,
+     "C3": 468,
+     "C5": 616
+    },
+    "storeNothingCost": 366
+   },
+   "chosen": {
+    "automatic": {
+     "tp": 107,
+     "pred": 156,
+     "gold": 366,
+     "precision": 0.686,
+     "recall": 0.292,
+     "f1": 0.41,
+     "falseMemoryRate": 0.25,
+     "noiseRejection": 0.987,
+     "examples": 549
+    },
+    "automaticOrPending": {
+     "tp": 127,
+     "pred": 221,
+     "recall": 0.347
+    },
+    "pending": {
+     "items": 65,
+     "per100inputs": 11.8,
+     "precision": 0.308,
+     "extraGold": 20
+    },
+    "cost": {
+     "C2": 357,
+     "C3": 406,
+     "C5": 504
+    },
+    "storeNothingCost": 366
+   },
+   "chosenUserDisjoint": {
+    "automatic": {
+     "tp": 35,
+     "pred": 50,
+     "gold": 150,
+     "precision": 0.7,
+     "recall": 0.233,
+     "f1": 0.35,
+     "examples": 279
+    },
+    "automaticOrPending": {
+     "tp": 40,
+     "pred": 78,
+     "recall": 0.267
+    },
+    "pending": {
+     "items": 28,
+     "per100inputs": 10.0,
+     "precision": 0.179,
+     "extraGold": 5
+    },
+    "cost": {
+     "C2": 145,
+     "C3": 160,
+     "C5": 190
+    },
+    "storeNothingCost": 150
+   }
+  },
+  "r=3": {
+   "F0sameTiers": {
+    "automatic": {
+     "tp": 84,
+     "pred": 122,
+     "gold": 366,
+     "precision": 0.689,
+     "recall": 0.23,
+     "f1": 0.344,
+     "falseMemoryRate": 0.2,
+     "noiseRejection": 0.994,
+     "examples": 549
+    },
+    "automaticOrPending": {
+     "tp": 146,
+     "pred": 300,
+     "recall": 0.399
+    },
+    "pending": {
+     "items": 178,
+     "per100inputs": 32.4,
+     "precision": 0.348,
+     "extraGold": 62
+    },
+    "cost": {
+     "C2": 358,
+     "C3": 396,
+     "C5": 472
+    },
+    "storeNothingCost": 366
+   },
+   "chosen": {
+    "automatic": {
+     "tp": 79,
+     "pred": 110,
+     "gold": 366,
+     "precision": 0.718,
+     "recall": 0.216,
+     "f1": 0.332,
+     "falseMemoryRate": 0.2,
+     "noiseRejection": 0.994,
+     "examples": 549
+    },
+    "automaticOrPending": {
+     "tp": 129,
+     "pred": 231,
+     "recall": 0.352
+    },
+    "pending": {
+     "items": 121,
+     "per100inputs": 22.0,
+     "precision": 0.413,
+     "extraGold": 50
+    },
+    "cost": {
+     "C2": 349,
+     "C3": 380,
+     "C5": 442
+    },
+    "storeNothingCost": 366
+   },
+   "chosenUserDisjoint": {
+    "automatic": {
+     "tp": 26,
+     "pred": 36,
+     "gold": 150,
+     "precision": 0.722,
+     "recall": 0.173,
+     "f1": 0.28,
+     "examples": 279
+    },
+    "automaticOrPending": {
+     "tp": 40,
+     "pred": 80,
+     "recall": 0.267
+    },
+    "pending": {
+     "items": 44,
+     "per100inputs": 15.8,
+     "precision": 0.318,
+     "extraGold": 14
+    },
+    "cost": {
+     "C2": 144,
+     "C3": 154,
+     "C5": 174
+    },
+    "storeNothingCost": 150
+   }
+  },
+  "r=5": {
+   "F0sameTiers": {
+    "automatic": {
+     "tp": 55,
+     "pred": 72,
+     "gold": 366,
+     "precision": 0.764,
+     "recall": 0.15,
+     "f1": 0.251,
+     "falseMemoryRate": 0.1,
+     "noiseRejection": 0.994,
+     "examples": 549
+    },
+    "automaticOrPending": {
+     "tp": 174,
+     "pred": 513,
+     "recall": 0.475
+    },
+    "pending": {
+     "items": 441,
+     "per100inputs": 80.3,
+     "precision": 0.27,
+     "extraGold": 119
+    },
+    "cost": {
+     "C2": 345,
+     "C3": 362,
+     "C5": 396
+    },
+    "storeNothingCost": 366
+   },
+   "chosen": {
+    "automatic": {
+     "tp": 53,
+     "pred": 67,
+     "gold": 366,
+     "precision": 0.791,
+     "recall": 0.145,
+     "f1": 0.245,
+     "falseMemoryRate": 0.1,
+     "noiseRejection": 0.994,
+     "examples": 549
+    },
+    "automaticOrPending": {
+     "tp": 163,
+     "pred": 381,
+     "recall": 0.445
+    },
+    "pending": {
+     "items": 314,
+     "per100inputs": 57.2,
+     "precision": 0.35,
+     "extraGold": 110
+    },
+    "cost": {
+     "C2": 341,
+     "C3": 355,
+     "C5": 383
+    },
+    "storeNothingCost": 366
+   },
+   "chosenUserDisjoint": {
+    "automatic": {
+     "tp": 19,
+     "pred": 22,
+     "gold": 150,
+     "precision": 0.864,
+     "recall": 0.127,
+     "f1": 0.221,
+     "examples": 279
+    },
+    "automaticOrPending": {
+     "tp": 58,
+     "pred": 134,
+     "recall": 0.387
+    },
+    "pending": {
+     "items": 112,
+     "per100inputs": 40.1,
+     "precision": 0.348,
+     "extraGold": 39
+    },
+    "cost": {
+     "C2": 137,
+     "C3": 140,
+     "C5": 146
+    },
+    "storeNothingCost": 150
+   }
+  }
+ }
+}

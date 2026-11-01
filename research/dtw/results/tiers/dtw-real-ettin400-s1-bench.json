@@ -1,0 +1,222 @@
+{
+ "model": "dtw-real-ettin400-s1",
+ "set": "bench",
+ "frozen": {
+  "r=2": {
+   "decoder": "F2",
+   "tauA": 0.85,
+   "tauP": {
+    "rho=0.25": 0.7,
+    "rho=0.33": 0.75,
+    "rho=0.50": null
+   }
+  },
+  "r=3": {
+   "decoder": "F1",
+   "tauA": 0.9,
+   "tauP": {
+    "rho=0.25": 0,
+    "rho=0.33": 0.7,
+    "rho=0.50": 0.85
+   }
+  },
+  "r=5": {
+   "decoder": "F1",
+   "tauA": 0.95,
+   "tauP": {
+    "rho=0.25": 0,
+    "rho=0.33": 0,
+    "rho=0.50": 0.8
+   }
+  }
+ },
+ "protocol": "research/dtw/TIERS-PROTOCOL.md",
+ "byRatio": {
+  "r=2": {
+   "F0sameTiers": {
+    "automatic": {
+     "tp": 133,
+     "pred": 195,
+     "gold": 551,
+     "precision": 0.682,
+     "recall": 0.241,
+     "f1": 0.357,
+     "falseMemoryRate": 0.087,
+     "noiseRejection": 0.959,
+     "examples": 520
+    },
+    "automaticOrPending": {
+     "tp": 240,
+     "pred": 465,
+     "recall": 0.436
+    },
+    "pending": {
+     "items": 270,
+     "per100inputs": 51.9,
+     "precision": 0.396,
+     "extraGold": 107
+    },
+    "cost": {
+     "C2": 542,
+     "C3": 604,
+     "C5": 728
+    },
+    "storeNothingCost": 551
+   },
+   "chosen": {
+    "automatic": {
+     "tp": 113,
+     "pred": 148,
+     "gold": 551,
+     "precision": 0.764,
+     "recall": 0.205,
+     "f1": 0.323,
+     "falseMemoryRate": 0.077,
+     "noiseRejection": 0.959,
+     "examples": 520
+    },
+    "automaticOrPending": {
+     "tp": 202,
+     "pred": 332,
+     "recall": 0.367
+    },
+    "pending": {
+     "items": 184,
+     "per100inputs": 35.4,
+     "precision": 0.484,
+     "extraGold": 89
+    },
+    "cost": {
+     "C2": 508,
+     "C3": 543,
+     "C5": 613
+    },
+    "storeNothingCost": 551
+   }
+  },
+  "r=3": {
+   "F0sameTiers": {
+    "automatic": {
+     "tp": 83,
+     "pred": 113,
+     "gold": 551,
+     "precision": 0.735,
+     "recall": 0.151,
+     "f1": 0.25,
+     "falseMemoryRate": 0.041,
+     "noiseRejection": 0.959,
+     "examples": 520
+    },
+    "automaticOrPending": {
+     "tp": 279,
+     "pred": 598,
+     "recall": 0.506
+    },
+    "pending": {
+     "items": 485,
+     "per100inputs": 93.3,
+     "precision": 0.404,
+     "extraGold": 196
+    },
+    "cost": {
+     "C2": 528,
+     "C3": 558,
+     "C5": 618
+    },
+    "storeNothingCost": 551
+   },
+   "chosen": {
+    "automatic": {
+     "tp": 71,
+     "pred": 92,
+     "gold": 551,
+     "precision": 0.772,
+     "recall": 0.129,
+     "f1": 0.221,
+     "falseMemoryRate": 0.036,
+     "noiseRejection": 0.959,
+     "examples": 520
+    },
+    "automaticOrPending": {
+     "tp": 239,
+     "pred": 435,
+     "recall": 0.434
+    },
+    "pending": {
+     "items": 343,
+     "per100inputs": 66.0,
+     "precision": 0.49,
+     "extraGold": 168
+    },
+    "cost": {
+     "C2": 522,
+     "C3": 543,
+     "C5": 585
+    },
+    "storeNothingCost": 551
+   }
+  },
+  "r=5": {
+   "F0sameTiers": {
+    "automatic": {
+     "tp": 21,
+     "pred": 23,
+     "gold": 551,
+     "precision": 0.913,
+     "recall": 0.038,
+     "f1": 0.073,
+     "falseMemoryRate": 0.015,
+     "noiseRejection": 0.98,
+     "examples": 520
+    },
+    "automaticOrPending": {
+     "tp": 372,
+     "pred": 1232,
+     "recall": 0.675
+    },
+    "pending": {
+     "items": 1209,
+     "per100inputs": 232.5,
+     "precision": 0.29,
+     "extraGold": 351
+    },
+    "cost": {
+     "C2": 534,
+     "C3": 536,
+     "C5": 540
+    },
+    "storeNothingCost": 551
+   },
+   "chosen": {
+    "automatic": {
+     "tp": 17,
+     "pred": 18,
+     "gold": 551,
+     "precision": 0.944,
+     "recall": 0.031,
+     "f1": 0.06,
+     "falseMemoryRate": 0.015,
+     "noiseRejection": 0.98,
+     "examples": 520
+    },
+    "automaticOrPending": {
+     "tp": 320,
+     "pred": 703,
+     "recall": 0.581
+    },
+    "pending": {
+     "items": 685,
+     "per100inputs": 131.7,
+     "precision": 0.442,
+     "extraGold": 303
+    },
+    "cost": {
+     "C2": 536,
+     "C3": 537,
+     "C5": 539
+    },
+    "storeNothingCost": 551
+   }
+  }
+ }
+}
