@@ -111,3 +111,12 @@ fine-tuning path and should be ported there.
 CPU smoke test of the patched script (SmolLM2-135M, realistic SFT data, 2
 steps): train/val counts printed, finite val loss, epoch checkpoint
 written, merge and save succeed.
+
+## 2026-11-01, run 5 (encoders version 5: Ettin-400M seeds 2 and 3)
+
+Owner decision: three seeds before judging the 400M lead. Same settings
+as seed 1 (micro-batch 2 × 16, gradient checkpointing). **Completed**
+09:04 UTC; both seeds peak GPU 8.8 GB, ~63 min each. Validation (exported
+epoch 3): seed 2 kind 0.819, certainty 0.860, gate 0.898; seed 3 kind
+0.825, certainty 0.870, gate 0.885 (seed 1: 0.808 / 0.877 / 0.885).
+Artifacts fetched in one listing page.
