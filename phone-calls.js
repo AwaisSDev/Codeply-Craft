@@ -329,15 +329,26 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   // the stream is NEVER stopped: between calls its track is only disabled.
   const mic = { stream: null, pending: null, wired: null, wiring: null };
   const micTrack = () => (mic.stream && mic.stream.getAudioTracks()[0]) || null;
-  const micLive = () => { const t = micTrack(); return !!t && t.readyState === 'live'; };
+  // iOS can mute the kept track (another app took the mic, a call, an interruption): it stays
+  // "live" but only gives silence, so it counts as dead and a fresh one is asked for.
+  const micLive = () => { const t = micTrack(); return !!t && t.readyState === 'live' && !t.muted; };
   function micEnabled(on) { const t = micTrack(); if (t) t.enabled = !!on; }
   function getMic() {
     if (micLive()) { micEnabled(true); return Promise.resolve(mic.stream); }
     if (mic.pending) return mic.pending;
     const md = navigator.mediaDevices;
     if (!md || !md.getUserMedia) return Promise.reject(Object.assign(new Error('No microphone here.'), { name: 'NotFoundError' }));
+    const old = mic.stream;
     mic.pending = md.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
-      .then((s) => { mic.stream = s; return s; })
+      .then((s) => {
+        mic.stream = s;
+        // The old, silent track goes once the new one is live (never before: iOS would ask again).
+        if (old && old !== s) { try { old.getTracks().forEach((t) => t.stop()); } catch {} }
+        const t = s.getAudioTracks()[0];
+        if (t) { t.onmute = () => { mic.mutedAt = performance.now(); }; t.onunmute = () => { mic.mutedAt = 0; }; t.onended = () => { mic.mutedAt = performance.now(); }; }
+        mic.mutedAt = 0;
+        return s;
+      })
       .finally(() => { mic.pending = null; });
     return mic.pending;
   }
@@ -345,9 +356,9 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   // The tap: 1024-sample frames from the mic to the voice detector.
   const TAP_SRC = "class CraftTap extends AudioWorkletProcessor{constructor(){super();this.b=new Float32Array(1024);this.n=0}process(i){const x=i[0]&&i[0][0];if(x){for(let k=0;k<x.length;k++){this.b[this.n++]=x[k];if(this.n===1024){this.port.postMessage(this.b,[this.b.buffer]);this.b=new Float32Array(1024);this.n=0}}}return true}}registerProcessor('craft-tap',CraftTap)";
   let tapUrl = '';
-  function wireMic(ctx) {
+  function wireMic(ctx, force) {
     const key = `${mic.stream && mic.stream.id}`;
-    if (mic.wired && mic.wired.ctx === ctx && mic.wired.key === key) return Promise.resolve();
+    if (!force && mic.wired && mic.wired.ctx === ctx && mic.wired.key === key) return Promise.resolve();
     if (mic.wiring) return mic.wiring;
     mic.wiring = (async () => {
       if (mic.wired) { try { mic.wired.source.disconnect(); mic.wired.node.disconnect(); } catch {} }
@@ -377,6 +388,85 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     })().finally(() => { mic.wiring = null; });
     return mic.wiring;
   }
+
+  // ─── Keeping the ears alive ───────────────────────────────────────────────
+  // iOS can quietly stop the audio mid-session: it suspends the AudioContext
+  // (a notification, the bot's own voice, the screen dimming), mutes the kept
+  // mic track, or a re-enabled track feeds the tap only zeros. Then nothing you
+  // say gets in until the app restarts. This watchdog checks every second while
+  // a call is open and brings the ears back by itself: wake the context, a new
+  // tap, and a fresh mic stream when the old one went silent. Where only a tap
+  // can wake the audio (iOS), it asks for one, and any touch on the screen does it.
+  const ears = { frameAt: 0, soundAt: 0 };
+  async function healEars(me, why) {
+    if (!me || me.healing || me.ending || me.typing || me.muted) return;
+    // Tried a few times and it is still deaf: a touch usually does it on iOS (it unlocks audio).
+    if (why !== 'tap' && (me.heals || 0) >= 5) { needTap(me); return; }
+    if (why === 'tap') me.heals = 0;
+    me.healing = true;
+    me.heals = (me.heals || 0) + 1;
+    console.debug(`[calls] ears: bringing them back (${why})`);
+    try {
+      await wake(me.ctx);
+      const t = micTrack();
+      if (!t || t.readyState !== 'live' || t.muted || why === 'silent mic') {
+        // A fresh stream; the old one is stopped only once the new one is live.
+        const old = mic.stream;
+        mic.stream = null;
+        await getMic();
+        if (old && old !== mic.stream) { try { old.getTracks().forEach((x) => x.stop()); } catch {} }
+      } else await getMic();
+      if (c !== me || me.ending || me.muted) return;
+      micEnabled(true);
+      await wireMic(me.ctx, true);
+      await wake(me.ctx);
+      me.ears = true;
+      ears.frameAt = ears.soundAt = performance.now();
+    } catch (e) {
+      const n = (e && e.name) || '';
+      if (c === me && (n === 'NotAllowedError' || n === 'SecurityError')) useTyping(MIC_DENIED);
+    } finally {
+      me.healing = false;
+      me.healedAt = performance.now();
+    }
+  }
+  function needTap(me) {
+    if (me.tapAsked) return;
+    me.tapAsked = true;
+    const chip = q('.call-state');
+    if (chip) chip.textContent = 'Tap anywhere to keep talking';
+    const go = () => { root().removeEventListener('pointerdown', go, true); me.tapAsked = false; if (c === me) { healEars(me, 'tap'); if (me.phase === 'listening') setPhase('listening'); } };
+    root().addEventListener('pointerdown', go, true);
+  }
+  function earsWatch() {
+    const me = c;
+    if (!me || me.ending || !me.connectedAt) return;
+    const now = performance.now();
+    // The audio engine stopped: wake it. If iOS wants a touch for that, ask for one.
+    if (me.ctx && me.ctx.state !== 'running') {
+      wake(me.ctx).then((ok) => { if (!ok && c === me && !me.ending) needTap(me); });
+      // Its voice can't finish while the engine is stopped: don't stay stuck "speaking".
+      if (me.phase === 'speaking') { me.stuckAt = me.stuckAt || now; if (now - me.stuckAt > 2500) { me.stuckAt = 0; interrupt(); setPhase('listening'); } }
+    } else me.stuckAt = 0;
+    // Never stuck: a reply that never stops "speaking", or "thinking" with no job running, gives way.
+    const inPhase = now - (me.phaseAt || now);
+    if ((me.phase === 'speaking' && inPhase > 45000) || (me.phase === 'thinking' && !me.phaseLabel && !me.inWork && inPhase > 40000)) {
+      console.debug(`[calls] stuck ${me.phase} for ${Math.round(inPhase / 1000)} s: back to listening`);
+      const wasThinking = me.phase === 'thinking';
+      interrupt();
+      setPhase('listening');
+      if (wasThinking) caption("Sorry, I lost that. Say it again?", 'bot');
+    }
+    if (me.typing || me.muted || me.healing || !localEars()) return;
+    if (!me.ears) { if (now - (me.healedAt || 0) > 3000) healEars(me, 'not listening'); return; }
+    if (now - (me.healedAt || 0) < 2500) return;
+    if (now - ears.frameAt > 1500) healEars(me, 'no audio');
+    else if (now - ears.soundAt > 2500) healEars(me, 'silent mic');
+    else if (mic.mutedAt && now - mic.mutedAt > 1500 && me.phase !== 'speaking') healEars(me, 'muted track');
+    else if (me.heals && now - me.healedAt > 5000) me.heals = 0; // hearing fine again
+  }
+  // Any touch during a call also wakes the audio (iOS only allows it from a gesture).
+  document.addEventListener('pointerdown', () => { if (c && !c.ending && c.ctx && c.ctx.state !== 'running') wake(c.ctx); }, true);
 
   // ─── Voice activity detector ──────────────────────────────────────────────
   // Energy based with an adaptive noise floor. Speech starts once the level
@@ -408,7 +498,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       const bot = v.botSpeaking;
       const floor = bot ? Math.max(v.floorBot, v.floor) : v.floor;
       if (!v.inSpeech) {
-        const startThr = Math.max(floor * (bot ? 5 : 3), bot ? 0.03 : 0.012);
+        const startThr = Math.max(floor * (bot ? 5 : 3), bot ? 0.03 : 0.007);
         const needMs = bot ? 180 : 150;
         const winMs = bot ? 500 : 300;
         const loud = rms > startThr;
@@ -435,7 +525,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       }
       v.frames.push(frame);
       v.totalMs += ms;
-      const endThr = Math.max(floor * 2, bot ? 0.02 : 0.008);
+      const endThr = Math.max(floor * 2, bot ? 0.02 : 0.005);
       if (rms > endThr) { v.voicedMs += ms; v.quietMs = 0; } else v.quietMs += ms;
       if (v.quietMs >= END_MS || v.totalMs >= MAX_MS) finish();
     };
@@ -477,7 +567,8 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     if (stt.worker) { try { stt.worker.terminate(); } catch {} stt.worker = null; }
     for (const w of stt.waits.values()) w.reject(new Error(stt.error));
     stt.waits.clear();
-    if (c && !c.ending && localEars() && !c.typing) useTyping("Voice input couldn't start on this phone. Type below and the bot still talks back.");
+    // The voice server hears you anyway (voice-turn): only without it does the call fall back to typing.
+    if (c && !c.ending && localEars() && !c.typing && !serverEars()) useTyping("Voice input couldn't start on this phone. Type below and the bot still talks back.");
   }
   function sttLoad() {
     if (stt.worker || stt.state === 'failed') return;
@@ -527,13 +618,17 @@ You are on a live voice call with the user, talking out loud. Everything you wri
 
   // Frames from the tap -> the current call's voice detector.
   function onMicFrame(frame, sampleRate) {
+    // For the watchdog: frames are arriving, and they are not pure silence (a real mic always hisses).
+    const now = performance.now();
+    ears.frameAt = now;
+    for (let i = 0; i < frame.length; i += 64) if (frame[i] !== 0) { ears.soundAt = now; break; }
     if (!c || !c.ears || c.muted || c.typing || c.ending || c.phase === 'ringing') return;
     if (!c.vad || c.vad.sampleRate !== sampleRate) {
       c.vad = makeVad(sampleRate, {
         start: () => {
           if (!c) return;
           // Began over the bot's voice, or right after it stopped: maybe just its echo.
-          c.echoRisk = c.phase === 'speaking' || !!c.cueOn || performance.now() - (c.botEndedAt || 0) < ECHO_TAIL_MS;
+          c.echoRisk = c.phase === 'speaking' || performance.now() - (c.botEndedAt || 0) < ECHO_TAIL_MS;
           // Over the bot's voice nothing stops it yet: the words decide (see bargeCheck).
           c.bargeAt = c.phase === 'speaking' ? performance.now() : 0;
           if (c.phase !== 'speaking') caption('...', 'user');
@@ -598,7 +693,8 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     // a short clip is dropped as echo.
     if (me.echoRisk && !me.barged) {
       me.echoRisk = false;
-      if (stt.state !== 'ready') return; // cannot check it: most likely the bot's own voice
+      // Without the phone's model the voice server checks it: what it hears is dropped if it is the bot's own words.
+      if (stt.state !== 'ready') { if (!(serverEars() && me.phase !== 'speaking')) return; }
       else {
         let text = '';
         try { text = await transcribe(audio); } catch { return; }
@@ -987,6 +1083,8 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     if (!c) return;
     if (c.phase === 'speaking' && phase !== 'speaking') c.botEndedAt = performance.now();
     thinkingCue(phase === 'thinking');
+    if (c.phase !== phase) c.phaseAt = performance.now();
+    c.phaseLabel = label || '';
     c.phase = phase;
     const r = root();
     r.dataset.phase = phase;
@@ -1439,13 +1537,16 @@ You are on a live voice call; everything you write is spoken out loud right away
     if (me.ctx && me.ctx.state !== 'running') await wake(me.ctx);
     const t0 = performance.now();
     const auth = await P.accessToken();
+    let timedOut = false;
+    const slow = setTimeout(() => { timedOut = true; controller.abort(); }, 20000); // no answer in 20 s: try the next lane
+    const tooSlow = (e) => (timedOut ? Object.assign(new Error('The voice server took too long.'), { status: 504 }) : e);
     const res = await fetch(VOICE_TURN_URL, {
       method: 'POST', signal: controller.signal,
       headers: { Authorization: `Bearer ${auth}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...VOICE_REGION },
       body: JSON.stringify(audio
         ? { messages, voice: me.dgVoice, format: 'pcm', maxTokens: 320, audio_b64: wavB64(audio), hint: `${bot.name}. ${String(me.lastBotText || '').slice(-200)}` }
         : { messages, voice: me.dgVoice, format: 'pcm', maxTokens: 320 }),
-    });
+    }).catch((e) => { clearTimeout(slow); throw tooSlow(e); });
     if (!res.ok || !res.body || !/ndjson/i.test(res.headers.get('content-type') || '')) {
       let err = ''; try { err = (await res.json()).error || ''; } catch {}
       throw Object.assign(new Error(err || `voice-turn ${res.status}`), { status: res.status });
@@ -1462,6 +1563,7 @@ You are on a live voice call; everything you write is spoken out loud right away
     try {
       for (;;) {
         const { value, done } = await reader.read();
+        clearTimeout(slow);
         if (done) break;
         if (c !== me || token !== me.token) { player.stop(); return; }
         buf += value;
@@ -1486,6 +1588,7 @@ You are on a live voice call; everything you write is spoken out loud right away
       }
     } catch (e) {
       player.stop();
+      if (timedOut && !said && c === me && token === me.token) { me.abort = null; throw tooSlow(e); }
       if (e.name === 'AbortError' || c !== me || token !== me.token) return;
       if (!said) throw e; // nothing heard yet: let the slower path answer
     }
@@ -1515,6 +1618,10 @@ You are on a live voice call; everything you write is spoken out loud right away
 
   /** Real work on the PC (with the bot's tools) after the opening line; short updates on long jobs. */
   async function runWork(me, token, controller, task, playing) {
+    me.inWork = (me.inWork || 0) + 1; // real work can take minutes: the stuck-thinking limit waits for it
+    try { return await runWorkNow(me, token, controller, task, playing); } finally { me.inWork--; }
+  }
+  async function runWorkNow(me, token, controller, task, playing) {
     if (!pcOnline() && cloudReady()) return runCloudWork(me, token, task, playing);
     me.stepLabel = '';
     let lastSpokeAt = performance.now();
@@ -1734,8 +1841,9 @@ You are on a live voice call; everything you write is spoken out loud right away
       await getMic();
       if (c !== me || me.ending) return;
       if (me.muted) { micEnabled(false); return; }
-      await wireMic(me.ctx);
+      await wireMic(me.ctx, true); // a new tap each time: an old one can go silent on iOS
       await wake(me.ctx);
+      ears.frameAt = ears.soundAt = performance.now();
     } catch (e) {
       if (c !== me) return;
       const n = (e && e.name) || '';
@@ -1745,7 +1853,7 @@ You are on a live voice call; everything you write is spoken out loud right away
     }
     if (c !== me || me.typing || me.muted) return;
     me.ears = true;
-    if (stt.state === 'failed') useTyping("Voice input couldn't start on this phone. Type below and the bot still talks back.");
+    if (stt.state === 'failed' && !serverEars()) useTyping("Voice input couldn't start on this phone. Type below and the bot still talks back.");
   }
   /** SpeechRecognition gave up: switch this call (and the session) to Whisper. */
   function switchToLocalEars() {
@@ -1904,6 +2012,7 @@ You are on a live voice call; everything you write is spoken out loud right away
     c.stopRing();
     c.connectedAt = Date.now();
     c.timer = setInterval(tick, 500);
+    c.earsTimer = setInterval(earsWatch, 1000);
     // Keep the voice function warm through long quiet stretches.
     c.warmTimer = setInterval(() => { if (c && Date.now() - Math.max(c.lastTtsAt || 0, lastWarm) > 240000) warmTts(); }, 30000);
     tick();
@@ -2031,6 +2140,7 @@ You are on a live voice call; everything you write is spoken out loud right away
     call.queued = null;
     clearInterval(call.timer);
     clearInterval(call.warmTimer);
+    clearInterval(call.earsTimer);
     try { if (call.wake) call.wake.release(); } catch {}
     // The page keeps its one AudioContext; it is resumed in the next Call tap.
     const connected = !!call.connectedAt;
@@ -2292,6 +2402,8 @@ Respond with ONLY a JSON object:
     _test: {
       transcribe, to16k, deepgramVoice, chunks, hearAudio, isRealSpeech: (t, said) => { const was = c && c.lastBotText; if (c) c.lastBotText = said || ''; const r = c ? isRealSpeech(t) : clearWords(t).length >= 2; if (c) c.lastBotText = was; return r; }, wordPlan, metrics, ttsUrl: TTS_URL, loadModel: sttLoad, stt: () => ({ state: stt.state, device: stt.device, progress: stt.progress, error: stt.error }),
       mic: () => ({ live: micLive(), enabled: !!(micTrack() && micTrack().enabled), streamId: mic.stream && mic.stream.id }),
+      ears: () => ({ ...ears, heals: c ? c.heals || 0 : 0, listening: !!(c && c.ears), ctx: c && c.ctx ? c.ctx.state : '' }),
+      killMic: () => { const t = micTrack(); if (t) t.stop(); },
       /** Push audio through a fresh voice detector; returns the 16 kHz utterances it cut out. */
       vadFeed(samples, sampleRate = 16000, opts = {}) {
         const out = [];
