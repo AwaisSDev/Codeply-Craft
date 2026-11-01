@@ -122,6 +122,25 @@ def test_t11_parameter_counts(backbone, expected):
     assert total == expected == enc + heads + pathway
 
 
+def test_t11_head_norm_adds_no_parameters(text):
+    """D2: the head_norm pilot variant is parameter-free, and normalises exactly the head inputs."""
+    m = build_model()
+    n0 = sum(p.numel() for p in m.parameters())
+    m.cfg.head_norm = True
+    try:
+        ad = PasteAdapter(m, text)
+        s_in, *_ = ad.build(seg("My sister Ayesha moved to Lahore."), STORE, ad.empty_state())
+        e = m.encode([s_in])[0]
+        assert sum(p.numel() for p in m.parameters()) == n0
+        for t in (e.seg, e.prof, e.att, e.val):
+            assert torch.allclose(t.mean(-1), torch.zeros(t.shape[0]), atol=1e-5)
+            assert torch.allclose(t.var(-1, unbiased=False), torch.ones(t.shape[0]), atol=1e-3)
+        assert e.mem.abs().max() > 5, "memory-token outputs feed GRU_H and must stay raw"
+    finally:
+        m.cfg.head_norm = False
+    print(f"T11/D2 head_norm: parameters unchanged ({n0:,}); head inputs normalised; memory tokens raw")
+
+
 # ---------------------------------------------------------------- T12
 P = lambda v, c="stated", a="home city": {"attribute": a, "value": v, "certainty": c, "kind": "fact"}
 

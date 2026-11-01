@@ -4,10 +4,8 @@ Branch `research/paste-architecture`, base `672696c0` (`codeply-memarch-research
 
 ## Current phase
 
-Phase 3 (CPU prototype + unit tests T1-T12): **done**. See `PHASE3-REPORT.md`.
-Waiting for owner decisions D1 (MERGE vs invariant I1) and D2 (head-input
-scale) before Phase 5 training. Phase 4 (dataset) is not started; it waits
-for the owner's go-ahead.
+Phase 4 (dataset generator and pilot): **in progress**. Phase 3 was approved
+by the owner on 2026-11-01. Spec amended to v2.1 (D1, D2).
 
 ## Completed
 
@@ -148,6 +146,15 @@ No trained model. Phase 3 measurements: see `PHASE3-REPORT.md` §2 and §5 (untr
 | A5 | API pilot size: at most ~100 generated episodes, with the token count measured and costed before anything larger | "Small pilot" | Owner sets another size |
 | A6 | Free Kaggle quota is treated as ~30 GPU-hours per week; the exact remaining quota is read from Kaggle before launching | Kaggle's stated weekly limit; not yet verified for this account | Correct once read from the account |
 | A7 | No real conversational text enters generated datasets except rows from licence-verified sources (MultiWOZ MIT, Topical-Chat CDLA-Sharing-1.0, UCI Roman Urdu CC BY 4.0, plus sources the review verifies) | Owner decision 4 | Owner approves more sources |
+
+## Owner decisions (2026-11-01, third round: after Phase 3)
+
+| # | Decision |
+|---|---|
+| D1 | Record-pair MERGE needs its own threshold **and** the main write gate; 3:1 cost; merge P/R reported separately. Implemented as spec v2.1 §5.10 (a licensing gated PERSIST unit on one of the pair's profiles); tested (`test_t05_merge_needs_licensing_gated_unit`) |
+| D2 | Pilot both raw and normalised head inputs (`head_norm`) for PASTE and M1c under identical conditions; select on validation; document before the main experiment |
+| Phase 4 | Approved: generator + ~100-episode API pilot; estimate API cost before spending; ask before exceeding the approved budget; licensing and privacy rules unchanged |
+| Kaggle | Not yet: first the dataset audit, episode statistics, evaluation protocol and baseline plan go to the owner for approval |
 
 ## Decision log
 

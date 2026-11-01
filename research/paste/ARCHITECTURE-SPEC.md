@@ -11,6 +11,13 @@ itself is left unchanged. Prior art for each mechanism is in
 `ARCHITECTURE-HYPOTHESES.md`. Nothing here is claimed to be novel; §14 says
 what the experiments can and cannot establish.
 
+## Amendments
+
+| Version | Date | Change | Decided by |
+|---|---|---|---|
+| v2.1 | 2026-11-01 | **D1:** a record-pair MERGE must pass its own threshold θ_M **and** the main write gate: it needs a gated PERSIST unit in the same segment addressed to a record or profile of one of the two records. Invariant I1 is reworded accordingly. L_mrg carries the same 3:1 false-positive cost; θ_M is calibrated at 3:1; merge precision and recall are reported separately (§2.5, §5.10, §5.13, §6.1, §6.6) | Owner, after Phase 3 test T5 showed merges bypassing the gate |
+| v2.1 | 2026-11-01 | **D2:** a parameter-free LayerNorm on encoder outputs before the heads (`head_norm`) is a pre-registered **pilot choice**. Both variants are run in the Phase 5 pilot under identical data and conditions for PASTE and M1c, selected on validation only, and the choice is documented before the main experiment (§6.5) | Owner, after Phase 3 found saturated heads at initialisation |
+
 ## 0. Summary
 
 PASTE reads a conversation **one segment at a time**. For each segment it
@@ -125,7 +132,9 @@ kind, certainty), a confidence and an evidence span.
 ### 2.5 Invariants (all systems, enforced in code and unit-tested)
 
 * **I1.** Persistent proposals come only from the write gate (§5.3), or from
-  FORGET with its own threshold.
+  FORGET with its own threshold. A record-pair MERGE needs **both** its own
+  threshold and a unit in the same segment that passed the write gate
+  (§5.10; amendment D1).
 * **I2.** Temporary content reaches the Brain only through an explicit
   PROMOTE, which itself passes the write gate.
 * **I3.** No latent state crosses a session: h is reset to h₀ at every
@@ -339,6 +348,13 @@ the Brain's own retrieval remains the first stage.
 
 $$p^{mrg}_{jk} = \sigma\big(\mathrm{MLP}([\tilde v_j\odot\tilde v_k;\ |\tilde a_j-\tilde a_k|;\ \tilde\pi_{\varepsilon_j}\odot\tilde\pi_{\varepsilon_k};\ c_s])\big)$$
 
+* **Write-gate licence (D1).** MERGE(j, k) is proposed only if
+  p^mrg_jk ≥ θ_M **and** some unit u in the same segment has g_u ≥ θ_W, is
+  decoded as PERSIST, and is addressed either to a record of profile ε_j or ε_k,
+  or to NEW-ATTRIBUTE of ε_j or ε_k. Its confidence is
+  p^mrg_jk · max_u g_u over the licensing units. Example: "Ayesha is my
+  sister" (a gated unit about Ayesha) licenses merging two Ayesha records; a
+  segment with no gated unit can merge nothing.
 * **Execution:** the Brain keeps the record with more evidence (ties go to
   the newer one) and folds in the other's evidence.
 
@@ -393,7 +409,7 @@ gate: z → 1 keeps the state, z → 0 overwrites it.
 **Then:**
 
 * RETRIEVE(j) for p^ret_j ≥ θ_R;
-* MERGE(j, k) for p^mrg_jk ≥ θ_M;
+* MERGE(j, k) for p^mrg_jk ≥ θ_M, only when licensed by a gated PERSIST unit (§5.10, D1);
 * T-EXPIRE for p^exp_i ≥ θ_X.
 
 At most one operation per record per segment, in priority FORGET > UPDATE >
@@ -419,7 +435,7 @@ Per episode, averaged over segments.
 | L_ment | CE of the mention pointer for NEW-ENTITY | new-entity naming |
 | L_tmp | CE of temporary addressing + BCE of expiry | **temporary-state loss** |
 | L_ret | BCE (positive weight min(10, n₋/n₊)) | **retrieval relevance** |
-| L_mrg | BCE over candidate pairs (weighted) | merge correctness |
+| L_mrg | Cost-weighted BCE over candidate pairs: −[w₊ y log p + 3 (1−y) log(1−p)], w₊ = min(10, n₋/n₊) (D1: the same 3:1 false-positive cost as the write gate) | merge correctness |
 
 **Auxiliary losses** (off by default; each is tested by ablation, brief §7:
 "determine which objectives provide measurable improvements"):
@@ -481,12 +497,32 @@ single session. After that, full windows.
 **Tuning budget (equal per system):** learning rate ∈ {3e-5, 1e-4} for the
 encoder, 1 seed, chosen on validation. No other tuning.
 
+**Pre-registered pilot choice D2 (head-input normalisation).**
+
+* **Variants:**
+  * `head_norm = off`: the heads read raw final-layer states (the current
+    spec);
+  * `head_norm = on`: a parameter-free LayerNorm (no affine terms, no
+    parameters) on every encoder output read by a head (segment tokens,
+    temporary items, profiles, record fields). The memory-token outputs that
+    feed GRU_H are not heads and stay raw.
+* **Procedure:** in the Phase 5 pilot, both variants are trained for PASTE
+  and M1c, with 1 seed each, on identical data, budget and hyperparameters.
+* **Selection:** the variant with the higher **validation** primary metric,
+  averaged over PASTE and M1c, is used for every system in the main
+  experiment. A single shared choice keeps the central test fair.
+* The choice and its validation numbers are written to `PROGRESS.md` before
+  any multi-seed run. Test data is not read.
+
 ### 6.6 Calibration
 
 * Temperature scaling per binary head (write gate, FORGET, MERGE, expiry,
   RETRIEVE), fitted on validation.
 * θ_W at cost ratio 3:1 is the primary operating point; 2:1 and 5:1 are
   reported.
+* θ_M (MERGE) is calibrated the same way, at 3:1 (D1). Merge precision and
+  recall are reported separately from the primary endpoint's other
+  operations.
 * The same procedure is used for every system, so architecture and threshold
   are never confounded.
 

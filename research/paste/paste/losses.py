@@ -77,8 +77,10 @@ def segment_loss(model, enc, gold):
     pairs = model.merge_pairs(enc)
     if pairs and "merge_pos" in gold:
         pos = {tuple(p) for p in gold["merge_pos"]}
-        L["mrg"] = _bce_balanced(hd.merge_logits(pairs, enc.att, enc.val, enc.prof[enc.rec_prof], c),
-                                 torch.tensor([1 if p in pos else 0 for p in pairs]))
+        y = torch.tensor([1.0 if p in pos else 0.0 for p in pairs])
+        logit = hd.merge_logits(pairs, enc.att, enc.val, enc.prof[enc.rec_prof], c)
+        w_pos = torch.clamp((1 - y).sum() / y.sum().clamp(min=1), max=10.0) if y.sum() > 0 else torch.tensor(1.0)
+        L["mrg"] = -(w_pos * y * F.logsigmoid(logit) + C_FP * (1 - y) * F.logsigmoid(-logit)).mean()   # D1: 3:1 FP cost
     if enc.tmp.shape[0] and "expire" in gold:
         L["exp"] = F.binary_cross_entropy_with_logits(hd.expire_logits(enc.tmp, c), torch.tensor(gold["expire"]).float())
     return L

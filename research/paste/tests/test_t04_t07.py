@@ -74,11 +74,11 @@ def test_t05_no_persistent_ops_when_gate_closed(adapter):
     counts = {}
     for text in SEGS:
         out = adapter.step(seg(text), STORE, st0, gate_override=0.0)
-        bad = [o for o in out["operations"] if o["op"] in PERSISTENT_OPS] + [o for o in out["temp_ops"] if o["op"] == "PROMOTE"]
+        bad = [o for o in out["operations"] if o["op"] in PERSISTENT_OPS | {"MERGE"}] + [o for o in out["temp_ops"] if o["op"] == "PROMOTE"]
         assert not bad, bad
         for o in out["operations"]:
             counts[o["op"]] = counts.get(o["op"], 0) + 1
-    print(f"T5 gate closed: persistent writes 0; other proposals still possible (own thresholds): {counts}")
+    print(f"T5 gate closed: no WRITE/UPDATE/MERGE_INTO/MERGE/PROMOTE (D1); remaining proposals: {counts}")
 
 
 def test_t05_temp_to_persistent_only_by_promote(adapter):
@@ -121,6 +121,33 @@ def test_t05_until_and_cap_expiry(adapter):
     st["items"][2].update(ttl="OPEN", created_at=T0 - 15 * 86400)
     _, ev = adapter._prepare(st, seg("later", at=T0 + 200))
     assert {e["item_id"]: e["why"] for e in ev} == {"t0": "until passed", "t2": "14-day cap"}
+
+
+def test_t05_merge_needs_licensing_gated_unit(adapter, monkeypatch):
+    """D1: with the merge head saturated (p = 1), a MERGE appears only when a gated PERSIST unit in the segment
+    is addressed to a record or profile of one of the pair; never otherwise."""
+    hd = adapter.m.heads
+    monkeypatch.setattr(hd, "merge_logits", lambda pairs, *a: torch.full((len(pairs),), 20.0))
+    st0 = adapter.serialize(adapter.empty_state())
+    closed = adapter.step(seg(SEGS[0]), STORE, st0, gate_override=0.0)
+    assert not [o for o in closed["operations"] if o["op"] == "MERGE"]
+    def addr_profile(target):        # address every unit to record `target`
+        def f(q, prof, att, val, rec_prof):
+            lp = torch.full((att.shape[0] + prof.shape[0] + 1,), -30.0); lp[target] = 0.0
+            return lp
+        return f
+    monkeypatch.setattr(hd, "relation_logits", lambda q, a, v: torch.tensor([10.0, 0, 0, 0]))   # SAME -> MERGE_INTO
+    monkeypatch.setattr(hd, "address", addr_profile(1))       # record m2 (profile Ayesha)
+    opened = adapter.step(seg(SEGS[0]), STORE, st0, gate_override=1.0)
+    merges = [o for o in opened["operations"] if o["op"] == "MERGE"]
+    # licensed profiles: Ayesha only; every merge must involve an Ayesha record (m2) -- the only Ayesha record is
+    # m2, which is already targeted by MERGE_INTO (one operation per record), so no pair can be licensed here.
+    assert all("m2" in (o["target"], o["with"]) for o in merges)
+    monkeypatch.setattr(hd, "address", addr_profile(0))       # record m1 (profile user, which also owns m4)
+    opened = adapter.step(seg(SEGS[0]), STORE, st0, gate_override=1.0)
+    merges = [o for o in opened["operations"] if o["op"] == "MERGE"]
+    assert merges and all({o["target"], o["with"]} & {"m1", "m4"} for o in merges)
+    print(f"T5/D1 merge head saturated: gate closed -> 0 merges; gated unit on the user's profile -> {len(merges)} merge(s), all on user records")
 
 
 # ---------------------------------------------------------------- T6

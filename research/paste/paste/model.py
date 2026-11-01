@@ -188,6 +188,9 @@ class PasteModel(nn.Module):
                 return t
             mem, tmp, prof, att, val = take(r), take(T), take(E), take(K), take(K)
             seg = H[i, plens[i]:plens[i] + nlens[i]]
+            if self.cfg.head_norm:                       # D2: parameter-free LayerNorm on head inputs (mem feeds GRU_H, not a head)
+                ln = lambda t: F.layer_norm(t, t.shape[-1:]) if t.numel() else t
+                tmp, prof, att, val, seg = ln(tmp), ln(prof), ln(att), ln(val), ln(seg)
             out.append(Encoded(mem, tmp, prof, att, val, seg, torch.tensor([x.prof for x in s.records], dtype=torch.long)))
         return out
 
@@ -262,6 +265,7 @@ class PasteModel(nn.Module):
             if cur is None or prio[op["op"]] < prio[cur["op"]]:
                 per_record[tgt] = op
 
+        licence = {}                                            # profile index -> max gate of gated PERSIST units (D1)
         for span in units:
             u = self.unit_outputs(enc, span)
             g = torch.sigmoid(u["gate"]).item() if gate_override is None else gate_override
@@ -276,6 +280,9 @@ class PasteModel(nn.Module):
                            "value": temps_meta[u["src"]]["text"] if u["src"] >= 0 else text}
                 conf = g * p_src * p_w
                 ev = {"span": span, "text": text}
+                lic = int(enc.rec_prof[w]) if w < K else (w - K if w < K + E else None)
+                if lic is not None:
+                    licence[lic] = max(licence.get(lic, 0.0), g)
                 if w < K:
                     rel = RELS[int(hd.relation_logits(u["qs"], enc.att[w], enc.val[w]).argmax())]
                     if rel == "SAME":
@@ -319,11 +326,13 @@ class PasteModel(nn.Module):
             pairs = self.merge_pairs(enc)
             if pairs:
                 pm = torch.sigmoid(hd.merge_logits(pairs, enc.att, enc.val, enc.prof[enc.rec_prof], c_seg))
+                rp = enc.rec_prof.tolist()
                 for (j, k), p in zip(pairs, pm.tolist()):
-                    if p >= th["merge"]:
+                    g_lic = max(licence.get(rp[j], 0.0), licence.get(rp[k], 0.0))
+                    if p >= th["merge"] and g_lic >= th["write"]:       # D1: own threshold AND the write gate
                         a, b = records_meta[j]["id"], records_meta[k]["id"]
                         if a not in per_record and b not in per_record:
-                            per_record[a] = {"op": "MERGE", "target": a, "with": b, "confidence": p}
+                            per_record[a] = {"op": "MERGE", "target": a, "with": b, "confidence": p * g_lic}
         ops.extend(per_record.values())
         if enc.tmp.shape[0]:
             pe = torch.sigmoid(hd.expire_logits(enc.tmp, c_seg))
