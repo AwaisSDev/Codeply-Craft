@@ -102,7 +102,7 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible { outline: 
 .suggest button span { color: var(--muted); }
 
 /* ─── Composer: a floating card, text on top, a chip row below ─── */
-.composer { padding: 6px 12px max(8px, calc(env(safe-area-inset-bottom) - 14px)); /* sits just above the home bar, like ChatGPT */ background: var(--bg); }
+.composer { padding: 6px 12px max(8px, env(safe-area-inset-bottom)); /* rests on the home bar's line, like ChatGPT */ background: var(--bg); }
 /* Flat: no shadow under the box. Dark has the lighter fill; light gets a hairline. */
 .box { background: var(--float); border-radius: 26px; padding: 12px 10px 10px 14px; box-shadow: var(--box-ring); }
 .box textarea { font-size: 17px; padding: 2px 4px 12px 2px; }
@@ -284,5 +284,10 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible { outline: 
 .wisp-el .w-shine { pointer-events: none; }
 .wisp-lg { width: 88px; height: 88px; } .wisp-md { width: 44px; height: 44px; } .wisp-sm { width: 28px; height: 28px; } .wisp-xs { width: 20px; height: 20px; }
 
-/* iOS 26 home-screen app that came up short (phone.html): the page already ends above the home bar */
+/* iOS 26 home-screen apps get a viewport one status bar short (WebKit bug 301108) while the page
+   is shorter than the screen, and draw nothing below it. A page at least screen-tall gets the full
+   viewport; min() with 100lvh keeps it from scrolling. (Same fix as frappe-ui #1284.) */
+@media (display-mode: standalone) { html { min-height: min(100lvh, calc(100% + env(safe-area-inset-top))); } }
+html.ios-standalone { min-height: min(100lvh, calc(100% + env(safe-area-inset-top))); }
+/* If iOS still comes up short (phone.html measures it), the page already ends above the home bar */
 html.ios-short .composer { padding-bottom: 6px; }
