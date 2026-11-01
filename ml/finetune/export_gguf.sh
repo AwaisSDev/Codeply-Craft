@@ -8,6 +8,7 @@
 # Needs a llama.cpp checkout at $LLAMA_CPP (default ~/llama.cpp) built with
 # llama-quantize and llama-imatrix, and its Python requirements
 # (pip install -r $LLAMA_CPP/requirements/requirements-convert_hf_to_gguf.txt).
+# IMATRIX_ARGS: extra llama-imatrix flags (e.g. "-ngl 99" with a CUDA build); empty by default.
 set -euo pipefail
 MERGED="${1:?merged model folder}"
 NAME="${2:-codeply-context-v1}"
@@ -24,7 +25,7 @@ const fs = require("fs");
 const rows = fs.readFileSync(process.argv[1], "utf8").trim().split("\n").slice(0, 300);
 fs.writeFileSync(process.argv[2], rows.map((l) => JSON.parse(l).messages.map((m) => m.content).join("\n")).join("\n\n"));
 ' "$ROOT/ml/data/out/sft-val.jsonl" "$OUT/calibration.txt"
-"$LLAMA_CPP/build/bin/llama-imatrix" -m "$OUT/$NAME-f16.gguf" -f "$OUT/calibration.txt" -o "$OUT/imatrix.dat" -c 2048 --chunks "${IMATRIX_CHUNKS:-200}"
+"$LLAMA_CPP/build/bin/llama-imatrix" -m "$OUT/$NAME-f16.gguf" -f "$OUT/calibration.txt" -o "$OUT/imatrix.dat" -c 2048 --chunks "${IMATRIX_CHUNKS:-200}" ${IMATRIX_ARGS:-}
 
 "$LLAMA_CPP/build/bin/llama-quantize" --imatrix "$OUT/imatrix.dat" "$OUT/$NAME-f16.gguf" "$OUT/$NAME-Q4_K_M.gguf" Q4_K_M
 "$LLAMA_CPP/build/bin/llama-quantize" "$OUT/$NAME-f16.gguf" "$OUT/$NAME-Q8_0.gguf" Q8_0

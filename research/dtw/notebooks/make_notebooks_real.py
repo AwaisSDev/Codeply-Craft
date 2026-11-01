@@ -149,6 +149,44 @@ for seed in SEEDS:
 !ls -laR /kaggle/working/lora | grep -v "^total"
 '''])
 
-for fn, n in (("real-encoders.ipynb", ENCODERS), ("real-lfm3-lora.ipynb", LFM3)):
+LFM3_EXPORT = nb(
+    "Model selection: GGUF export of the LFM3-1.7B LoRA runs",
+    "Run 4 of the LoRA notebook trained both seeds (the merged models are in its output) but hit Kaggle's 12-hour "
+    "limit during export: the importance-matrix calibration ran on the CPU (~3 h per seed). This notebook only "
+    "exports: the same export_gguf.sh (f16, importance matrix on the realistic val prompts with 200 chunks, Q4_K_M, "
+    "Q8_0), with llama.cpp built with CUDA so the calibration runs on the GPU. Input: the output of "
+    "codeply-real-lfm3-lora.",
+    [SETUP, r"""
+import os, subprocess, glob
+if not os.path.exists("/tmp/llama.cpp/build/bin/llama-imatrix"):
+    subprocess.run("git clone https://github.com/ggml-org/llama.cpp /tmp/llama.cpp && cd /tmp/llama.cpp && git checkout LLAMA_COMMIT", shell=True, check=True)
+    subprocess.run("cd /tmp/llama.cpp && cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF "
+                   "-DLLAMA_BUILD_EXAMPLES=OFF -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75 > /dev/null && "
+                   "cmake --build build -j4 --target llama-quantize llama-imatrix > /dev/null", shell=True, check=True)
+subprocess.run("pip -q install -e /tmp/llama.cpp/gguf-py", shell=True, check=True)
+subprocess.run("node --version || (curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs) > /dev/null", shell=True, check=True)
+os.chdir("/tmp/codeply")
+# Calibration text = the realistic val prompts, as in run 4 (export_gguf.sh reads ml/data/out/sft-val.jsonl).
+subprocess.run("cp research/dtw/data/real/train.jsonl research/dtw/data/real/val.jsonl /tmp/ && node ml/data/export-sft.mjs --in /tmp --style full "
+               "&& cp /tmp/sft-val.jsonl ml/data/out/sft-val.jsonl", shell=True, check=True)
+merged = sorted(glob.glob("/kaggle/input/**/real-lfm3-lora-s*/merged", recursive=True))
+print(merged)
+assert merged, "no merged models in the input"
+for m in merged:
+    name = m.split("/")[-2]
+    out = f"/kaggle/working/runs/{name}"
+    os.makedirs(out, exist_ok=True)
+    if glob.glob(f"{out}/*Q4_K_M.gguf"):
+        continue
+    subprocess.run(f"cd /tmp/codeply && OUT=/tmp/gguf-{name} IMATRIX_ARGS='-ngl 99' LLAMA_CPP=/tmp/llama.cpp "
+                   f"bash ml/finetune/export_gguf.sh {m} {name}", shell=True, check=True)
+    for f in glob.glob(f"/tmp/gguf-{name}/*Q4_K_M.gguf") + glob.glob(f"/tmp/gguf-{name}/*Q8_0.gguf") + glob.glob(f"{m}/../train-log.jsonl"):
+        subprocess.run(f"cp {f} {out}/", shell=True, check=True)
+    subprocess.run(f"rm -rf /tmp/gguf-{name}", shell=True, check=True)
+""".replace("LLAMA_COMMIT", LLAMA), r"""
+!ls -laR /kaggle/working/runs
+"""])
+
+for fn, n in (("real-encoders.ipynb", ENCODERS), ("real-lfm3-lora.ipynb", LFM3), ("real-lfm3-export.ipynb", LFM3_EXPORT)):
     json.dump(n, open(os.path.join(HERE, fn), "w"), indent=1)
     print("wrote", fn)

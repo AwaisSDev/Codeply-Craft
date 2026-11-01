@@ -120,3 +120,23 @@ as seed 1 (micro-batch 2 × 16, gradient checkpointing). **Completed**
 epoch 3): seed 2 kind 0.819, certainty 0.860, gate 0.898; seed 3 kind
 0.825, certainty 0.870, gate 0.885 (seed 1: 0.808 / 0.877 / 0.885).
 Artifacts fetched in one listing page.
+
+## 2026-11-01, LFM3 LoRA run 4 (version 4): trained, export cut by the 12-hour limit
+
+**The fp16 fix worked**: ~28 s per optimizer step (run 3: ~124 s), both
+seeds in parallel on the two T4s, 508 steps each in ~4 h (seed 1 14,491 s,
+seed 2 14,236 s). Final val loss 0.1125 (seed 1) and 0.1129 (seed 2), no
+NaN (the val filter works). Merged models saved for both seeds.
+
+The export then ran out of time: llama.cpp in the notebook is built
+without CUDA, so the importance-matrix calibration (200 chunks × 2,048
+tokens of val prompts) ran on the CPU: 2 h 53 min for seed 1. Seed 1 had
+reached its Q4_K_M quantization when Kaggle stopped the kernel at 12 h
+(`CANCEL_ACKNOWLEDGED`); no GGUF reached the output.
+
+Fix: `real-lfm3-export.ipynb` (kernel `codeply-real-lfm3-export`), export
+only, reading the merged models from this run's output; llama.cpp built
+with CUDA (sm_75) and `IMATRIX_ARGS='-ngl 99'` (new optional hook in
+`export_gguf.sh`, empty by default), so the calibration runs on the GPU.
+Same calibration text (realistic val prompts), same 200 chunks, same
+Q4_K_M and Q8_0 outputs. Training is not repeated.
