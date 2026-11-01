@@ -3032,6 +3032,37 @@ ${text}`;
 }
 
 /**
+ * Keeps one finished tool call on the session, for the chat row after a
+ * reload (and the publish card). extra: { agent } when a Wisp specialist ran it.
+ */
+function recordToolEnd(session, ev, extra = {}) {
+  const persistedArgs = ev.args && ev.name === 'write_file' ? { path: ev.args.path }
+    : ev.args && ev.name === 'apply_patch' ? { files: ev.meta?.files || [] }
+    : ev.args;
+  session.messages.push({
+    kind: 'tool', name: ev.name,
+    label: ev.summary || ev.args?.path || ev.args?.command || ev.args?.pattern || '',
+    ok: ev.ok, args: persistedArgs, at: Date.now(),
+    exitCode: typeof ev.meta?.exitCode === 'number' ? ev.meta.exitCode : undefined,
+    added: typeof ev.meta?.added === 'number' ? ev.meta.added : undefined,
+    removed: typeof ev.meta?.removed === 'number' ? ev.meta.removed : undefined,
+    screenshotPath: ev.meta?.screenshotPath || undefined,
+    delegation: ev.meta?.delegation || undefined, // ask_bot result, for the chat row
+    output: typeof ev.meta?.output === 'string' ? ev.meta.output : undefined, // the end of a command's output, for the row
+    background: ev.meta?.background || undefined,
+    ...(extra.agent ? { agent: extra.agent } : {}),
+  });
+  session.updatedAt = Date.now();
+  // The publish card (Database, Vercel, GitHub, Live): one per publish, kept up to date.
+  if (ev.meta?.publish?.id) {
+    const card = { kind: 'publish', ...ev.meta.publish, at: Date.now() };
+    const i = session.messages.findIndex((m) => m.kind === 'publish' && m.id === card.id);
+    if (i === -1) session.messages.push(card); else session.messages[i] = card;
+    if (card.url) publishedUrls.add(card.url);
+  }
+}
+
+/**
  * Drives exactly one runAgent() turn to completion, forwarding every event to
  * the renderer/phone and persisting what matters on the session.
  *
@@ -3042,57 +3073,58 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
   let madeAnyEdit = false;
   let replyText = '';
   let error = '';
-  // No role detected for this particular text (a vague follow-up like "it
-  // still doesn't work"): keep the role the chat is already working in.
-  if (!roleId) roleId = session.stickyRole || null;
-  // A role the user picked wins over the guessed one (checks keep their own).
-  if (session.pinnedRole && !verifyOnly) roleId = session.pinnedRole;
-  emitRoleBadge(session, roleId);
+  // Wisp (wisp-desktop.js): the main agent of this chat, with its team. null = plain Craft.
+  const wisp = wispDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly });
+  if (wisp) {
+    // Wisp brings in Frontend, Testing... as specialists; it doesn't wear their role itself.
+    roleId = (session.pinnedRole && !verifyOnly) ? session.pinnedRole : (verifyOnly ? roleId : null);
+  } else {
+    // No role detected for this particular text (a vague follow-up like "it
+    // still doesn't work"): keep the role the chat is already working in.
+    if (!roleId) roleId = session.stickyRole || null;
+    // A role the user picked wins over the guessed one (checks keep their own).
+    if (session.pinnedRole && !verifyOnly) roleId = session.pinnedRole;
+    emitRoleBadge(session, roleId);
+  }
   // The chat's bot (bots-desktop.js): its prompt, approval boundary and ask_bot. null = no bots.
   const bot = await botsDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly, request: userMessage });
+  // Wisp's own section first, then the user's bots (they can still be asked by name).
+  const botPrompt = wisp
+    ? (native) => [wisp.prompt(native), bot && bot.botPrompt ? bot.botPrompt(native) : ''].filter(Boolean).join('\n\n')
+    : bot?.botPrompt;
   try {
     const classicRun = () => agentMod.runAgent({
       userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route,
-      roleId, goal, maxSteps, verifyOnly, botPrompt: bot?.botPrompt, askBot: bot?.askBot, botId: bot?.botId,
+      roleId, goal, maxSteps, verifyOnly, botPrompt, askBot: bot?.askBot, botId: bot?.botId,
+      bringIn: wisp?.bringIn, createSpecialist: wisp?.createSpecialist, agentRole: wisp ? wisp.agentRole : undefined,
       // Pass work to the bot whose job it is (brain-desktop.js); the user asked for this chat.
       handOff: bot && !verifyOnly ? brainDesktop.handOffFor({ botId: bot.botId || null, requester: 'user' }) : undefined,
       haze: { product: 'craft', chatId: session.id }, todos,
     });
     // Build turns run on the DSH harness (dsh-chat.js); the rest on Classic's agent.
-    const run = (await dshChatFor({ mode, images, bot, verifyOnly, goal }))
+    // Wisp's tools (bring_in, create_specialist) live in Classic's agent, so Wisp's turns run there.
+    const run = (!wisp && await dshChatFor({ mode, images, bot, verifyOnly, goal }))
       ? dshTurnOrClassic(dshChat.runTurn({ session, userMessage, history, cwd, approve, signal, route }), classicRun)
       : classicRun();
-    for await (const ev of run) {
+    for await (const raw of run) {
+      // Wisp's reply starts with a [mood: x] tag: it sets the face, and never shows.
+      const ev = wisp ? wisp.mood(raw) : raw;
+      if (wisp && ev.type === 'tool_start' && ev.name === 'bring_in') continue; // the specialist's own steps show instead
+      if (wisp && ev.type === 'tool_end' && ev.name === 'bring_in') {
+        if (bot) bot.see(ev);
+        handoffDesktop.see(session, ev);
+        continue;
+      }
       if (bot) bot.see(ev); // the bot's trajectory, for its reflection after the reply
       handoffDesktop.see(session, ev); // steps and todos for Craft Cloud, should this PC drop
       if (ev.type === 'text') {
-        session.messages.push({ kind: 'assistant', text: ev.text, interim: !!ev.interim, at: Date.now() });
+        session.messages.push({ kind: 'assistant', text: ev.text, interim: !!ev.interim, ...(ev.wisp ? { wisp: true } : {}), ...(ev.mood ? { mood: ev.mood } : {}), at: Date.now() });
         replyText += (replyText ? '\n\n' : '') + ev.text;
       } else if (ev.type === 'reasoning') {
         session.messages.push({ kind: 'reasoning', text: ev.text, ms: ev.ms, at: Date.now() });
       } else if (ev.type === 'tool_end') {
-        const persistedArgs = ev.args && ev.name === 'write_file' ? { path: ev.args.path }
-          : ev.args && ev.name === 'apply_patch' ? { files: ev.meta?.files || [] }
-          : ev.args;
-        session.messages.push({
-          kind: 'tool', name: ev.name,
-          label: ev.summary || ev.args?.path || ev.args?.command || ev.args?.pattern || '',
-          ok: ev.ok, args: persistedArgs, at: Date.now(),
-          exitCode: typeof ev.meta?.exitCode === 'number' ? ev.meta.exitCode : undefined,
-          added: typeof ev.meta?.added === 'number' ? ev.meta.added : undefined,
-          removed: typeof ev.meta?.removed === 'number' ? ev.meta.removed : undefined,
-          screenshotPath: ev.meta?.screenshotPath || undefined,
-          delegation: ev.meta?.delegation || undefined, // ask_bot result, for the chat row
-          output: typeof ev.meta?.output === 'string' ? ev.meta.output : undefined, // the end of a command's output, for the row
-          background: ev.meta?.background || undefined,
-        });
-        // The publish card (Database, Vercel, GitHub, Live): one per publish, kept up to date.
-        if (ev.meta?.publish?.id) {
-          const card = { kind: 'publish', ...ev.meta.publish, at: Date.now() };
-          const i = session.messages.findIndex((m) => m.kind === 'publish' && m.id === card.id);
-          if (i === -1) session.messages.push(card); else session.messages[i] = card;
-          if (card.url) publishedUrls.add(card.url);
-        }
+        // Wisp's bring_in shows as the specialist's own steps and report, not as a row of its own.
+        if (!(wisp && ev.name === 'bring_in')) recordToolEnd(session, ev);
       } else if (ev.type === 'notice') {
         session.messages.push({ kind: 'notice', level: ev.level || 'info', text: ev.text, at: Date.now() });
       } else if (ev.type === 'done' && Array.isArray(ev.actions)) {
@@ -3147,7 +3179,8 @@ const TASK_STATUS_DONE = new Set(['done', 'done-no-changes']);
  * outcome and the history threaded through it (used by /goal).
  */
 async function runTaskMaker({ session, originalMessage, history, mode, cwd, approve, signal, route, forceClassify = false, goal, maxSteps }) {
-  if (!forceClassify && !looksMultiPart(originalMessage)) {
+  // Wisp reads the job, splits it and brings in specialists itself: one turn.
+  if (wispDesktop.activeFor(session, mode) || (!forceClassify && !looksMultiPart(originalMessage))) {
     const r = await runOneTurn({ session, userMessage: originalMessage, history, mode, cwd, approve, signal, route, roleId: rolesLib.detectRole(originalMessage), goal, maxSteps });
     return { ...r, history: [...history, { role: 'user', content: originalMessage }, { role: 'assistant', content: r.replyText || '(no reply)' }] };
   }
@@ -3891,6 +3924,7 @@ async function dshChatFor({ mode, images, bot, verifyOnly, goal }) {
 /** Start a folder's harness early, so the first message there doesn't wait for it. */
 function warmDshChat(folder) {
   if (!folder || process.env.CODEPLY_CHAT_ENGINE === 'classic' || store.chatEngine === 'classic') return;
+  if (wispDesktop.enabled()) return; // Wisp's chats run on Classic's agent (its team's tools live there)
   if (!dshChatReady) dshChatReady = dshChat.available();
   dshChatReady.then((r) => { if (r.ok) dshChat.warm(folder); }).catch(() => {});
 }
@@ -4012,6 +4046,12 @@ brainDesktop.init({
   onBotsChange: () => botsWatch.poke(),
 });
 // Bots: named agents with a job, a tone, memory and an avatar (see bots-desktop.js).
+// Wisp (wisp-desktop.js): the main agent of every Craft chat, and its team of specialists.
+const wispDesktop = require('./wisp-desktop');
+wispDesktop.init({
+  ipcMain, cliDir: CLI_DIR, sendEvent, agentMod: () => agentMod, browser: browserCheck, recordToolEnd,
+  settings: { get: () => store.wisp !== false, set: (on) => { store.wisp = !!on; saveStore(); } },
+});
 const botsDesktop = require('./bots-desktop');
 botsDesktop.init({
   ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine, sendEvent, currentRoute, browser: browserCheck,

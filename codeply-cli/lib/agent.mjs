@@ -30,6 +30,7 @@ const brainLib = require('./brain.js');
 const screenLib = require('./screen.js');
 const computerLib = require('./computer.js');
 const botMailLib = require('./bot-mail.js');
+const wispLib = require('./wisp.js');
 const config = require('./config.js');
 
 // Enough room for a real task plus its verification pass. /goal runs pass a
@@ -411,6 +412,8 @@ const PARAMS = {
   plan_enter: ['reason'],
   lsp: ['operation', 'path', 'line', 'character', 'symbol', 'query'],
   ask_bot: ['bot', 'task'], // only offered when the host passes askBot (lib/bots.js)
+  bring_in: ['specialist', 'task'], // Wisp: only offered when the host passes bringIn (lib/wisp.js)
+  create_specialist: ['name', 'focus', 'instructions', 'shape', 'color'], // Wisp: only with createSpecialist
 };
 
 // Names the model actually reaches for when it paraphrases the format.
@@ -418,6 +421,8 @@ const PARAMS = {
 // those are parameter names, and treating them as action names would misread
 // an edit_file block as a search.
 const NAME_ALIASES = {
+  bring_in: 'bring_in', bringin: 'bring_in', delegate: 'bring_in', call_specialist: 'bring_in', callspecialist: 'bring_in', spawn_agent: 'bring_in', spawnagent: 'bring_in', run_agent: 'bring_in', subagent: 'bring_in',
+  create_specialist: 'create_specialist', createspecialist: 'create_specialist', create_agent: 'create_specialist', createagent: 'create_specialist', new_specialist: 'create_specialist', make_specialist: 'create_specialist',
   ask_user: 'ask_user', askuser: 'ask_user', ask: 'ask_user', question: 'ask_user', askquestion: 'ask_user',
   todo: 'todo', todos: 'todo', todowrite: 'todo', todo_write: 'todo', tasklist: 'todo', task_list: 'todo',
   read_file: 'read_file', readfile: 'read_file', read: 'read_file',
@@ -1406,7 +1411,7 @@ export function buildSystemPrompt(mode, cwd, userMessage, opts = {}) {
   const mcpSection = mcpServersSection(opts.mcp, opts.native);
   if (mcpSection) parts.push('', mcpSection);
   parts.push('', 'PROJECT CONTEXT', buildProjectContext(cwd));
-  return parts.join('\n');
+  return wispLib.agentRule(parts.join('\n'), opts.agentRole);
 }
 
 function goalSection(goal) {
@@ -1470,7 +1475,8 @@ export function buildSystemSections(mode, cwd, userMessage, opts = {}) {
   if (relevant) turn.push(relevant);
   turn.push(`PROJECT CONTEXT\n${buildProjectContext(cwd)}`);
 
-  return { core: core.join('\n'), project: project.join('\n\n'), turn: turn.join('\n\n') };
+  // Wisp and its specialists: the one-agent rule says who they are instead.
+  return { core: wispLib.agentRule(core.join('\n'), opts.agentRole), project: project.join('\n\n'), turn: turn.join('\n\n') };
 }
 
 /** The user's message with this turn's context in front of it (Haze layout). */
@@ -1817,7 +1823,7 @@ function withReasoning(msg, reasoning) {
  *                                  "claims an edit it didn't make this turn" check is skipped.
  * @yields {{type:string, ...}} text | reasoning | tool_start | tool_end | done | error | aborted
  */
-export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly, botPrompt, askBot, handOff, botId, haze: hazeOpts, todos }) {
+export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly, botPrompt, askBot, handOff, botId, haze: hazeOpts, todos, bringIn, createSpecialist, agentRole }) {
   let readOnly = READ_ONLY_MODES.has(mode);
   const stepBudget = Math.max(1, maxSteps || MAX_STEPS);
   // OpenAI-shaped content array only when there's actually an image to carry -
@@ -1845,6 +1851,8 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       if (n === 'plan_exit') return m === 'Plan';
       if (n === 'plan_enter') return m === 'Build';
       if (n === 'ask_bot') return typeof askBot === 'function';
+      if (n === 'bring_in') return typeof bringIn === 'function' && m !== 'Design';
+      if (n === 'create_specialist') return typeof createSpecialist === 'function' && m !== 'Design';
       if (n === 'reach_me' || n === 'watch_email') return reachLib.available();
       if (m === 'Design' && DESIGN_BLOCKED.has(n)) return false;
       if (n === 'life_context') return lifeLib.available();
@@ -1871,7 +1879,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   } : null;
   const hazeStep = (step) => (haze ? { ...haze, step } : undefined);
   const codeSkills = wantsCodeSkills(botPrompt, botId);
-  const sectionsFor = (m) => buildSystemSections(m, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt, codeSkills });
+  const sectionsFor = (m) => buildSystemSections(m, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt, codeSkills, agentRole });
   const sections = haze ? sectionsFor(mode) : null;
   // What this chat saw on the user's screen (the drop reads it with every message; lib/screen.js).
   const chatId = hazeOpts?.chatId || null;
@@ -1892,14 +1900,14 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       { role: 'user', content: withTurnContext(userContent, [sections.turn, turnExtra].filter(Boolean).join('\n\n')) },
     ]
     : [
-      { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt, codeSkills }) },
+      { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt, codeSkills, agentRole }) },
       ...history,
       { role: 'user', content: turnExtra ? withTurnContext(userContent, turnExtra) : userContent },
     ];
 
   // fileState: path -> mtime when this turn last read/wrote it (see tools.mjs).
   // userMessage lets the publish tools refuse when nobody asked to publish.
-  const ctx = { cwd, approve, browser, signal, mode, route, userMessage, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null, askBot: typeof askBot === 'function' ? askBot : null, handOff: typeof handOff === 'function' ? handOff : null, botId: botId || null, chatId };
+  const ctx = { cwd, approve, browser, signal, mode, route, userMessage, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null, askBot: typeof askBot === 'function' ? askBot : null, handOff: typeof handOff === 'function' ? handOff : null, botId: botId || null, chatId, bringIn: typeof bringIn === 'function' ? bringIn : null, createSpecialist: typeof createSpecialist === 'function' ? createSpecialist : null };
   // A run carried on from the other side (handoff.mjs) keeps its todo list.
   if (Array.isArray(todos) && todos.length) ctx.todos = todos;
   const recentCallKeys = [];      // executed calls, in order, for the stuck-loop guard
@@ -2021,7 +2029,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     if (native && !attempt.result.success && !signal.aborted && TOOLS_UNSUPPORTED.test(String(attempt.result.error || ''))) {
       native = false;
       nativeUnsupported.add(nativeKey);
-      messages[0] = { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native: false, mcp: mcpList, botPrompt, codeSkills }) };
+      messages[0] = { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native: false, mcp: mcpList, botPrompt, codeSkills, agentRole }) };
       outgoing = [messages[0], ...outgoing.slice(1)];
       yield { type: 'notice', level: 'info', text: 'This model does not support native tool calls, so Codeply switched to text actions.' };
       attempt = await callModel(outgoing, userMessage, signal, route);
@@ -2389,6 +2397,19 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
         ...(exitCode !== undefined ? { exitCode } : {}),
         ...(patchFiles ? { files: patchFiles } : {}),
       });
+      // Wisp brought in a specialist: what the specialist really did counts as
+      // this turn's ground truth too, so Wisp can report it without tripping
+      // the claim audit, and the "what actually happened" card lists it.
+      if (call.name === 'bring_in' && out.ok && out.meta?.specialist) {
+        const sp = out.meta.specialist;
+        for (const a of Array.isArray(sp.actions) ? sp.actions : []) actions.push({ ...a, by: sp.name });
+        for (const t of Array.isArray(sp.succeeded) ? sp.succeeded : []) succeededTools.add(t);
+        if (sp.madeAnyEdit) {
+          madeAnyEdit = true;
+          for (const f of Array.isArray(sp.files) ? sp.files : []) writtenBasenames.add(path.basename(String(f)).toLowerCase());
+        }
+        for (const f of Array.isArray(sp.unverified) ? sp.unverified : []) unverifiedEdits.add(String(f).replace(/\\/g, '/'));
+      }
       // The plan file is not a change to the project, so it must not count as an edit
       // (it would otherwise feed the "you claimed a change" audit after the switch to Build).
       const wasPlanFile = isPlanFileWrite;
@@ -2412,7 +2433,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
           // Haze layout: only the core (mode prompt and rules) changes with the
           // mode; the project block and the cached history after it stay put.
           if (haze) messages[0] = { role: 'system', content: sectionsFor(mode).core };
-          else messages[0] = { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList }) };
+          else messages[0] = { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt, codeSkills, agentRole }) };
           yield { type: 'mode_switch', mode, planPath: out.meta.planPath };
         }
         if ((call.name === 'write_file' || call.name === 'edit_file' || call.name === 'fetch_image') && !out.meta?.noop && call.args.path && !wasPlanFile) {

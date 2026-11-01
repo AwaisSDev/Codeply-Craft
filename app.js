@@ -1020,6 +1020,18 @@ function activityHead(el) { return el.querySelector('.activity-summary'); }
 function setActivityAgent(el) {
   if (!el || !activityRole) return;
   const icon = el.querySelector('.activity-icon');
+  // A specialist Wisp brought in: its own little face on the work line.
+  if (activityRole.wispAgent) {
+    if (icon.dataset.agent === activityRole.wispAgent) return;
+    const face = window.CraftWispUI && window.CraftWispUI.activityIcon(activityRole.wispAgent);
+    if (!face) return;
+    icon.dataset.agent = activityRole.wispAgent;
+    icon.innerHTML = '';
+    icon.appendChild(face);
+    el.classList.add('has-agent', 'has-wisp-agent');
+    el.querySelector('.activity-head').title = activityRole.name + ' worked on this';
+    return;
+  }
   if (icon.dataset.mascot === activityRole.mascot) return;
   icon.dataset.mascot = activityRole.mascot;
   icon.innerHTML = mascotHtml(activityRole.mascot, 'mascot-xs', activityRole.name);
@@ -1104,8 +1116,13 @@ function isQuietNotice(text) {
   return /^Summarized earlier steps/i.test(text || '') || /^Stopped after \d+ steps/i.test(text || '');
 }
 
-function addAssistantMessage(text) {
+function addAssistantMessage(text, wispMood) {
   closeActivity();
+  // Wisp's replies carry its face and name, in the mood of the reply.
+  if (wispMood !== undefined && window.CraftWispUI) {
+    const by = window.CraftWispUI.byline(wispMood || 'neutral');
+    if (by) chatColumn.appendChild(by);
+  }
   const msg = document.createElement('div');
   msg.className = 'msg assistant';
   msg.rawText = text;
@@ -1499,6 +1516,33 @@ function mascotHtml(mascotFile, sizeClass, altText) {
   </span>`;
 }
 
+// ─── Wisp's specialists ─────────────────────────────────────────────────────
+// Wisp brings a specialist in: a line saying so, the specialist's steps in a
+// work group under its own face, then its report as its own message. Wisp's
+// own steps after that start a fresh group again.
+let pendingWispMood = null; // the [mood: x] of the reply on its way (wisp_mood arrives just before its text)
+function renderWispAgent(data) {
+  const ui = window.CraftWispUI;
+  if (!ui || !data || !data.agent) return;
+  if (data.phase === 'start') {
+    closeActivity();
+    hideThinking();
+    chatColumn.appendChild(ui.agentStart(data));
+    activityRole = { wispAgent: data.agent.id, name: data.agent.name };
+    if (state.running && !revealInstant) showThinking();
+  } else if (data.phase === 'report') {
+    closeActivity();
+    hideThinking();
+    chatColumn.appendChild(ui.agentReport(data, mdToHtml));
+    activityRole = null;
+    if (state.running && !revealInstant) showThinking();
+  } else if (data.phase === 'created' || data.phase === 'updated') {
+    closeActivity();
+    chatColumn.appendChild(ui.agentCreated(data));
+  }
+  if (nearBottom() || revealInstant) scrollToBottom();
+}
+
 // ─── Role badge ─────────────────────────────────────────────────────────────
 // There's one agent; this marks the moment it switches role (Frontend,
 // Backend, Testing, ...) - shown only when the role actually changes.
@@ -1819,6 +1863,10 @@ function openAccountMenu() {
       <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
       Connect Apps
     </button>
+    <button class="menu-item" data-action="wisp">
+      <svg viewBox="0 0 24 24"><path d="M12 3.5l8.2 6-3.1 9.7H6.9L3.8 9.5z"/><circle cx="9.8" cy="11.6" r=".6"/><circle cx="14.2" cy="11.6" r=".6"/></svg>
+      Wisp and its team
+    </button>
     <div class="menu-sep"></div>
     <div class="account-menu-theme-row">
       <span>Theme</span>
@@ -1847,6 +1895,7 @@ function openAccountMenu() {
   menu.style.width = rect.width + 'px';
 
   menu.querySelector('[data-action="connect"]').addEventListener('click', openConnectApps);
+  menu.querySelector('[data-action="wisp"]').addEventListener('click', () => { closeAccountMenu(); if (window.CraftWispUI) window.CraftWispUI.openTeam(); });
   menu.querySelector('[data-action="usage"]').addEventListener('click', () => { closeAccountMenu(); window.CraftUsage && window.CraftUsage.open({ name: $('userName').textContent, email: state.user.email }); });
   menu.querySelector('[data-action="logout"]').addEventListener('click', async () => {
     closeAccountMenu();
@@ -3407,7 +3456,8 @@ function setRunning(on) {
     btn.querySelector('.ic-stop').classList.toggle('hidden', !on);
     btn.title = on ? 'Stop' : 'Send';
   });
-  document.querySelectorAll('.chat-composer .composer-input').forEach((el) => { el.placeholder = on ? COMPOSER_BUSY_HINT : COMPOSER_HINT; });
+  const idleHint = window.CraftWispUI && window.CraftWispUI.enabled ? 'Ask Wisp anything, or type / for commands' : COMPOSER_HINT;
+  document.querySelectorAll('.chat-composer .composer-input').forEach((el) => { el.placeholder = on ? COMPOSER_BUSY_HINT : idleHint; });
   // A message queued during the run goes out once this chat is free again
   // (after Stop, once the engine says the stopped run has really ended).
   if (!on && !stoppedRuns.has(state.currentSessionId)) {
@@ -3543,6 +3593,7 @@ async function sendMessage(text, fromHome, images) {
   }
 
   addUserMessage(text, images);
+  if (window.CraftWispUI) window.CraftWispUI.onSend(fromHome);
   if (window.CraftCloud && window.CraftCloud.beforeSend) window.CraftCloud.beforeSend(); // pull check, never blocks
 
   setRunning(true);
@@ -4073,7 +4124,15 @@ if (api) api.onAgentEvent((data) => {
 
   if (!mine) return;
 
+  if (window.CraftWispUI) window.CraftWispUI.onEvent(data);
+
   switch (data.type) {
+    case 'wisp_mood':
+      pendingWispMood = data.mood || null;
+      break;
+    case 'wisp_agent':
+      renderWispAgent(data);
+      break;
     case 'role_active':
       addRoleBadge(data);
       break;
@@ -4122,7 +4181,7 @@ if (api) api.onAgentEvent((data) => {
     case 'text':
       hideThinking();
       if (data.interim) addThinkingRow(data.text);
-      else addAssistantMessage(data.text);
+      else { addAssistantMessage(data.text, data.wisp ? (data.mood || pendingWispMood || 'neutral') : undefined); pendingWispMood = null; }
       break;
     case 'tool_start':
       hideThinking();
@@ -4242,7 +4301,8 @@ async function openSession(id) {
   revealInstant = true;
   for (const m of s.messages) {
     if (m.kind === 'user') addUserMessage(m.text, m.images);
-    else if (m.kind === 'assistant') (m.interim ? addThinkingRow(m.text) : addAssistantMessage(m.text));
+    else if (m.kind === 'assistant') (m.interim ? addThinkingRow(m.text) : addAssistantMessage(m.text, m.wisp ? (m.mood || 'neutral') : undefined));
+    else if (m.kind === 'wisp_agent') renderWispAgent(m);
     else if (m.kind === 'reasoning') addReasoningRow(m.text, m.ms);
     else if (m.kind === 'tool') {
       // Desktop can load a local file:// path directly, no server round trip.

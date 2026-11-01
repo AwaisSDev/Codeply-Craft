@@ -32,7 +32,11 @@
     { id: 'role:docs', file: 'docs.png', label: 'Docs', sub: 'Scribe, writing and READMEs' },
   ];
   const roleOf = (id) => ROLES.find((r) => r.id === (id || '')) || null;
-  const ball = (r, cls) => mascotHtml(r.file, cls, r.label);
+  // With Wisp on (wisp-ui.js), the main agent is Wisp: its own face and name.
+  const wispOn = () => !!(window.CraftWispUI && window.CraftWispUI.enabled && window.CraftWisp);
+  const mainOf = (r) => (r.id === '' && wispOn() ? { ...r, label: 'Wisp', sub: 'Main agent, brings in specialists' } : r);
+  const ball = (r, cls) => (r.id === '' && wispOn() ? `<span class="wisp-chip-face ${cls}" data-wisp-chip></span>` : mascotHtml(r.file, cls, r.label));
+  const mountWispFaces = (root) => root.querySelectorAll('[data-wisp-chip]').forEach((el) => window.CraftWisp.mount(el, { size: 'xs', morph: false, interactive: false }));
 
   async function load() {
     try {
@@ -67,19 +71,21 @@
 
   function paintChips() {
     const bot = byId(selected);
-    const role = bot ? null : roleOf(selected) || ROLES[0];
+    const role = bot ? null : mainOf(roleOf(selected) || ROLES[0]);
     document.querySelectorAll('.bot-chip').forEach((b) => {
-      const key = bot ? `${bot.id}:${JSON.stringify(bot.avatar)}:${bot.name}` : 'role' + role.id;
+      const key = bot ? `${bot.id}:${JSON.stringify(bot.avatar)}:${bot.name}` : 'role' + role.id + (wispOn() ? ':wisp' : '');
       if (b.dataset.key === key) return;
       b.dataset.key = key;
       b.classList.toggle('on', !!bot || !!role.id);
       b.innerHTML = bot
         ? `${av(bot.avatar, 20, { still: true })}<span>${esc(bot.name)}</span>`
         : `${ball(role, 'mascot-chip')}<span>${esc(role.label)}</span>`;
+      mountWispFaces(b);
     });
     document.querySelectorAll('.composer-input').forEach((t) => {
       if (!t.dataset.basePlaceholder) t.dataset.basePlaceholder = t.placeholder;
-      t.placeholder = bot ? `Ask ${bot.name} anything` : t.dataset.basePlaceholder;
+      const wispOn = window.CraftWispUI && window.CraftWispUI.enabled;
+      t.placeholder = bot ? `Ask ${bot.name} anything` : wispOn ? 'Ask Wisp anything, or type / for commands' : t.dataset.basePlaceholder;
     });
   }
 
@@ -94,11 +100,12 @@
     menu.className = 'menu bot-menu';
     const item = (id, avatarHtml, name, sub) => `<button class="bot-menu-item${id === selected ? ' on' : ''}" data-id="${esc(id)}">${avatarHtml}<span class="bot-menu-text"><b>${esc(name)}</b><span>${esc(sub)}</span></span>${id === selected ? '<svg class="bot-menu-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>' : ''}</button>`;
     menu.innerHTML = `<div class="bot-menu-head">Who answers</div>` +
-      ROLES.map((r) => item(r.id, ball(r, 'mascot-menu'), r.label, r.sub)).join('') +
+      ROLES.map(mainOf).map((r) => item(r.id, ball(r, 'mascot-menu'), r.label, r.sub)).join('') +
       (cat.bots.length ? '<div class="bot-menu-sep"></div><div class="bot-menu-head">Your bots</div>' : '') +
       cat.bots.map((b) => item(b.id, av(b.avatar, 26, { still: true }), b.name, b.specialty || ROLE[b.role])).join('') +
       `<div class="bot-menu-sep"></div><button class="bot-menu-manage" data-act="manage">${cat.bots.length ? 'Manage bots' : 'Create a bot'}</button>`;
     document.body.appendChild(menu);
+    mountWispFaces(menu);
     const r = anchor.getBoundingClientRect();
     const h = menu.offsetHeight;
     menu.style.left = `${Math.max(8, Math.min(window.innerWidth - menu.offsetWidth - 8, r.right - menu.offsetWidth))}px`;
@@ -108,7 +115,7 @@
       closeMenu();
       const b = byId(el.dataset.id);
       const r = roleOf(el.dataset.id);
-      showToast(b ? `${b.name} answers your next messages.` : r && r.id ? `${r.label} works on your next messages.` : 'Craft picks the right specialist again.');
+      showToast(b ? `${b.name} answers your next messages.` : r && r.id ? `${r.label} works on your next messages.` : (wispOn() ? 'Wisp leads again, and brings in specialists as needed.' : 'Craft picks the right specialist again.'));
     }));
     menu.querySelector('[data-act="manage"]').addEventListener('click', () => { closeMenu(); if (window.CraftCrew) window.CraftCrew.show(); else openModal(); });
   }
@@ -561,7 +568,7 @@
     }
   });
 
-  window.CraftBots = { selectedId: () => selected, delegationRow, renderBadge, open: openModal, refresh: load, setSelected };
+  window.CraftBots = { selectedId: () => selected, delegationRow, renderBadge, open: openModal, refresh: load, setSelected, paint: paintChips };
 
   addChips();
   load();

@@ -13,7 +13,24 @@ npm start
 
 ## What it does
 
-- **One agent, many roles.** A single agent does all the work, one step at a
+- **Wisp, the agent you talk to.** Every Craft chat is led by Wisp (the same
+  character as codeply.app/wisp: a pentagon with eyes that follow your cursor,
+  morphs, and shows how it feels). Wisp does small things itself. For real work
+  it brings in a specialist with `bring_in` (Frontend, Backend, Database,
+  DevOps, Security, Testing, Docs), and when nobody fits it creates a new
+  specialist with `create_specialist`. Those stay on the team for next time
+  (`~/.codeply/wisp/specialists.json`) and Wisp can refine them. A specialist
+  works in the same chat under its own face, then reports back, and Wisp gets
+  the report plus what the specialist really did (files, commands and exit
+  codes from the tool results) to check before it answers. Specialists run one
+  at a time and cannot bring in others. Wisp's reply starts with a
+  `[mood: x]` tag that sets its face and is never shown. Account menu, "Wisp
+  and its team" turns it off (chats go back to plain Craft and the DSH
+  harness) and lists the team. Crew bots' chats and Design are not Wisp's.
+  Code: `codeply-cli/lib/wisp.js` (team, prompts, moods), `wisp-desktop.js`
+  (runs specialists), `wisp.js` / `wisp-ui.js` / `wisp.css` (the character
+  and where it shows). Tests: `npm run test:wisp`.
+- **One agent, many roles** (with Wisp off). A single agent does all the work, one step at a
   time. For each task it takes on the role that fits (Frontend, Backend,
   Database, DevOps, Security, Testing, Docs) and holds its work to that role's
   guide (`codeply-cli/agents/*.md`). Nothing runs in parallel.

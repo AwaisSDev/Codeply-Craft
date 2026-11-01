@@ -452,6 +452,20 @@ function addMessage(kind, text, label, screenshotPath) {
   return el;
 }
 
+// Wisp's specialists (wisp-desktop.js): who Wisp brought in, and what they reported back.
+function addWispAgent(d) {
+  if (!d || !d.agent) return;
+  const name = d.agent.name || 'A specialist';
+  if (d.phase === 'start') addThinking(`Wisp brought in ${name}${d.task ? `: ${String(d.task).split('\n')[0].slice(0, 140)}` : ''}`);
+  else if (d.phase === 'created') addThinking(`${name} joined Wisp's team`);
+  else if (d.phase === 'updated') addThinking(`${name} got better at its job`);
+  else if (d.phase === 'report') {
+    const files = Array.isArray(d.files) && d.files.length ? `\n\nChanged: ${d.files.slice(0, 6).join(', ')}` : '';
+    const el = addMessage('agent', `**${name}** ${d.ok ? 'reported to Wisp' : 'could not finish'}\n\n${d.text || ''}${files}`);
+    if (el) { el.classList.add('wisp-agent'); if (d.agent.color) el.style.borderLeft = `3px solid ${d.agent.color}`; }
+  }
+}
+
 function clearChat() {
   $('chatFeed').innerHTML = '';
   state.activeAgentMessageEl = null;
@@ -563,6 +577,7 @@ function renderSession(session) {
       else if (item.kind === 'assistant') (item.interim ? addThinking(item.text) : addMessage('agent', item.text));
       else if (item.kind === 'tool') addToolItem(item);
       else if (item.kind === 'role_active' || item.kind === 'subagent_active') addRoleBadge(item);
+      else if (item.kind === 'wisp_agent') addWispAgent(item);
       else if (item.kind === 'turn_summary') addTurnSummary(item);
       else if (item.kind === 'checkpoint') renderCheckpoint(item);
       else if (item.kind === 'question') renderQuestion({ ...item, answered: true });
@@ -698,6 +713,9 @@ function receiveEvent(event) {
 
   if (event.type === 'role_active') {
     addRoleBadge(event);
+  } else if (event.type === 'wisp_agent') {
+    state.activeAgentMessageEl = null;
+    addWispAgent(event);
   } else if (event.type === 'checkpoint' || event.type === 'checkpoint_update') {
     renderCheckpoint(event.checkpoint);
   } else if (event.type === 'turn_summary') {

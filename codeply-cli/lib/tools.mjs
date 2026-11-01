@@ -2404,6 +2404,30 @@ async function plan_enter(args, ctx) {
   return { ok: true, output: 'The user wants to keep building. Carry on in Build mode.', meta: { label: 'plan' } };
 }
 
+// Wisp brings in a specialist from its team (lib/wisp.js) for one task and
+// waits for the report. The host provides ctx.bringIn, which runs the
+// specialist in this chat and returns its report plus what it really did.
+async function bring_in(args, ctx) {
+  if (typeof ctx.bringIn !== 'function') {
+    return { ok: false, output: 'bring_in is not available here (a specialist cannot bring in others). Do the work yourself.' };
+  }
+  const specialist = String(args.specialist || args.name || args.agent || '').trim();
+  const task = String(args.task || '').trim();
+  if (!specialist) return { ok: false, output: 'bring_in needs <specialist>: the name of someone on YOUR TEAM.' };
+  if (!task) return { ok: false, output: 'bring_in needs <task>: the one task, with everything they need to do it.' };
+  return ctx.bringIn({ specialist, task, signal: ctx.signal });
+}
+
+// Wisp creates a new specialist for its team, or refines one it made.
+async function create_specialist(args, ctx) {
+  if (typeof ctx.createSpecialist !== 'function') {
+    return { ok: false, output: 'create_specialist is not available here.' };
+  }
+  return ctx.createSpecialist({
+    name: args.name, focus: args.focus, instructions: args.instructions, shape: args.shape, color: args.color,
+  });
+}
+
 // Hand one task to another bot (lib/bots.js). The host provides ctx.askBot,
 // which runs that bot to completion, one agent at a time, and returns its result.
 async function ask_bot(args, ctx) {
@@ -2548,6 +2572,8 @@ export const TOOLS = {
   ...publishTools,
   todo,
   ask_bot,
+  bring_in,
+  create_specialist,
   ask_user,
   mcp,
   web_fetch, web_search, image_search, apply_patch, plan_exit, plan_enter, lsp, reach_me, watch_email, life_context, remember, recall, hand_off, bot_email_send, look_at_screen, use_computer,
@@ -2568,6 +2594,8 @@ export const TOOL_DISPLAY = {
   todo:       { verb: 'plan',   icon: '☐' },
   ask_user:   { verb: 'ask',    icon: '?' },
   ask_bot:    { verb: 'asked',  icon: '◉' },
+  bring_in:   { verb: 'brought in', icon: '◉' },
+  create_specialist: { verb: 'created', icon: '✦' },
   mcp:        { verb: 'mcp',    icon: '⧉' },
   web_fetch:  { verb: 'fetch',  icon: '⇩' },
   web_search: { verb: 'web',    icon: '▸' },
@@ -2636,7 +2664,7 @@ const MUTATING_TOOLS = new Set([
 
 // Everything that isn't designing: commands, deploys, databases, messages, other projects.
 export const DESIGN_BLOCKED = new Set([
-  'run', 'job', 'use_computer', 'lsp', 'mcp', 'ask_bot', 'hand_off', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model', 'browser_check', 'bot_email_send',
+  'run', 'job', 'use_computer', 'lsp', 'mcp', 'ask_bot', 'bring_in', 'create_specialist', 'hand_off', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model', 'browser_check', 'bot_email_send',
   'gmail_send', 'gmail_draft', 'gmail_search', 'gmail_read', 'drafts_list', 'calendar_list', 'calendar_add', 'calendar_update', 'slack_post_message',
   'vercel_deploy', 'vercel_api', 'supabase_create_project', 'supabase_delete_project', 'supabase_api', 'supabase_sql',
   'github_create_repo', 'publish_check', 'publish_connect', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github',

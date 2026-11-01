@@ -1,0 +1,115 @@
+/* Wisp in Craft: the character (wisp.js) and where it shows (wisp-ui.js). */
+
+/* ---- the character ---- */
+.wisp-el { display: inline-block; flex: none; line-height: 0; cursor: pointer; -webkit-user-select: none; user-select: none; }
+.wisp-el svg { width: 100%; height: 100%; overflow: visible; stroke: none; fill: none; } /* Craft's global svg icon stroke must not reach Wisp */
+.wisp-el .w-body { filter: drop-shadow(0 6px 14px rgba(31, 82, 224, .28)); }
+.wisp-el[data-mood="angry"] .w-body { filter: drop-shadow(0 6px 14px rgba(224, 48, 74, .3)); }
+.wisp-el[data-mood="love"] .w-body { filter: drop-shadow(0 6px 14px rgba(224, 69, 127, .3)); }
+.wisp-el .w-eyes { fill: #0b0b0f; }
+.wisp-el .w-shine { pointer-events: none; }
+.wisp-el .w-shape, .wisp-el linearGradient stop { transition: stop-color .45s ease; }
+.wisp-lg { width: 132px; height: 132px; }
+.wisp-md { width: 46px; height: 46px; }
+.wisp-sm { width: 30px; height: 30px; }
+.wisp-xs { width: 20px; height: 20px; }
+.wisp-sm .w-body, .wisp-xs .w-body { filter: none; }
+.wisp-av { display: inline-block; }
+
+/* ---- home ---- */
+.wisp-on .home-logo { display: none; }
+.wisp-home { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.wisp-home-char { margin-bottom: 2px; }
+.wisp-say {
+  min-height: 22px; margin: 0; font-size: 15px; color: var(--text-dim); text-align: center;
+  opacity: 0; transform: translateY(4px); transition: opacity .25s ease, transform .25s ease;
+}
+.wisp-say.on { opacity: 1; transform: none; }
+.wisp-on .home-title { margin-top: 10px; }
+
+/* ---- the chat's Wisp, sitting on the composer ---- */
+.wisp-buddy { position: absolute; right: 22px; top: -40px; z-index: 2; display: flex; align-items: flex-end; gap: 8px; flex-direction: row-reverse; pointer-events: none; }
+.wisp-buddy .wisp-el { pointer-events: auto; }
+.chat-composer:has(.jobs-bar:not(.hidden)) .wisp-buddy { top: -86px; }
+.wisp-bubble {
+  max-width: 240px; padding: 5px 10px; margin-bottom: 18px; border-radius: 12px 12px 4px 12px;
+  background: var(--popover-bg); border: 1px solid var(--card-border); box-shadow: var(--shadow-sm);
+  font-size: 12px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  opacity: 0; transform: translateY(4px) scale(.98); transition: opacity .2s ease, transform .2s ease;
+}
+.wisp-bubble.on { opacity: 1; transform: none; }
+
+/* ---- Wisp's replies ---- */
+.wisp-byline { display: flex; align-items: center; gap: 7px; margin: 4px 0 -6px; font-size: 12.5px; font-weight: 600; color: var(--text-dim); }
+
+/* ---- specialists ---- */
+.wisp-agent-start { display: flex; align-items: flex-start; gap: 9px; padding: 2px 0; font-size: 13px; color: var(--text-dim); }
+.wisp-agent-start .wisp-av { margin-top: 1px; }
+.wisp-agent-start-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wisp-agent-line { display: block; }
+.wisp-chip-face { display: inline-block; width: 20px; height: 20px; flex: none; }
+.wisp-chip-face.mascot-menu { width: 26px; height: 26px; }
+.wisp-agent-start b { color: var(--text); font-weight: 600; }
+.wisp-agent-start .wisp-agent-name { color: var(--agent); }
+.wisp-agent-task { color: var(--text-faint); font-size: 12.5px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 620px; }
+.wisp-agent-task.open { white-space: pre-wrap; }
+.activity.has-wisp-agent .activity-icon { width: 18px; height: 18px; border: 0 !important; animation: none !important; }
+.activity.has-wisp-agent .activity-icon::before { display: none; }
+.activity.has-wisp-agent .activity-icon .wisp-el { width: 18px; height: 18px; }
+
+.wisp-agent-report {
+  border: 1px solid var(--card-border); border-left: 3px solid var(--agent); border-radius: 12px;
+  background: color-mix(in srgb, var(--agent) 5%, var(--card-bg)); padding: 10px 14px 12px;
+}
+.wisp-agent-report.failed { border-left-color: var(--red); }
+.wisp-agent-head { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
+.wisp-agent-head b { display: block; font-size: 13px; color: var(--text); }
+.wisp-agent-head small { display: block; font-size: 11.5px; color: var(--text-faint); }
+.wisp-agent-body.msg.assistant { font-size: 13.5px; line-height: 1.6; }
+.wisp-agent-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--card-border); font-size: 12px; }
+.wisp-agent-facts .wf-label { color: var(--text-faint); }
+.wisp-agent-facts code { font-family: var(--font-mono); font-size: 11.5px; padding: 1px 6px; border-radius: 6px; background: var(--code-bg); color: var(--text-dim); }
+.wisp-agent-facts .wf-more { color: var(--text-faint); }
+.wisp-agent-facts .wf-check { padding: 1px 7px; border-radius: 999px; border: 1px solid var(--card-border); color: var(--text-dim); }
+.wisp-agent-facts .wf-check.ok { color: var(--green); }
+.wisp-agent-facts .wf-check.bad { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
+
+.wisp-agent-new { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 12px; border: 1px dashed color-mix(in srgb, var(--agent) 55%, var(--card-border)); font-size: 13px; color: var(--text-dim); }
+.wisp-agent-new b { color: var(--text); }
+.wisp-agent-new small { display: block; color: var(--text-faint); font-size: 12px; }
+
+/* ---- Wisp and its team ---- */
+.wisp-team-backdrop { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--overlay); }
+.wisp-team {
+  width: 100%; max-width: 520px; max-height: calc(100vh - 48px); overflow: auto;
+  background: var(--modal-bg); border: 1px solid var(--card-border); border-radius: 18px; box-shadow: var(--shadow-lg); padding: 20px 22px 18px;
+}
+.wisp-team-top { display: flex; align-items: flex-start; gap: 14px; }
+.wisp-team-top h2 { margin: 2px 0 4px; font-size: 18px; font-weight: 600; }
+.wisp-team-top p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-dim); }
+.wisp-team-face { flex: none; }
+.wisp-team-x { margin-left: auto; flex: none; }
+.wisp-switch { display: flex; align-items: center; gap: 10px; margin: 16px 0 6px; font-size: 13.5px; cursor: pointer; }
+.wisp-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.wisp-switch-track { width: 34px; height: 20px; flex: none; border-radius: 999px; background: var(--control-border); position: relative; transition: background .18s ease; }
+.wisp-switch-track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .18s ease; }
+.wisp-switch input:checked + .wisp-switch-track { background: var(--accent); }
+.wisp-switch input:checked + .wisp-switch-track::after { transform: translateX(14px); }
+.wisp-switch input:focus-visible + .wisp-switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wisp-team-head { margin: 16px 0 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); }
+.wisp-team-head small { font-weight: 400; text-transform: none; letter-spacing: 0; margin-left: 6px; }
+.wisp-team-list { display: flex; flex-direction: column; }
+.wisp-team-row { display: flex; align-items: center; gap: 11px; padding: 8px 4px; border-bottom: 1px solid var(--border); }
+.wisp-team-row:last-child { border-bottom: 0; }
+.wtr-text { flex: 1; min-width: 0; }
+.wtr-text b { display: block; font-size: 13.5px; font-weight: 600; }
+.wtr-text small { display: block; font-size: 12px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wtr-meta { flex: none; font-size: 11.5px; color: var(--text-faint); }
+.wtr-remove { flex: none; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; color: var(--text-faint); }
+.wtr-remove:hover { background: var(--hover); color: var(--red); }
+.wtr-remove svg, .wisp-team-x svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.wisp-team-note { margin: 12px 0 0; font-size: 12px; color: var(--text-faint); line-height: 1.5; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wisp-say, .wisp-bubble { transition: none; }
+}
