@@ -284,7 +284,3 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible { outline: 
 .wisp-el .w-shine { pointer-events: none; }
 .wisp-lg { width: 88px; height: 88px; } .wisp-md { width: 44px; height: 44px; } .wisp-sm { width: 28px; height: 28px; } .wisp-xs { width: 20px; height: 20px; }
 
-/* iOS 26 home-screen app sized short by the status bar's height (WebKit bug 301108): phone.html
-   measures the band and full-screen layers reach down over it. */
-html.ios-band .app, html.ios-band .signin, html.ios-band .panel, html.ios-band .onboard, html.ios-band .sheet,
-html.ios-band .drawer, html.ios-band .backdrop, html.ios-band .pop-layer { bottom: calc(-1 * var(--band, 0px)); }

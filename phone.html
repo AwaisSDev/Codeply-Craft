@@ -20,36 +20,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="phone-theme.css">
-  <script>
-    // iOS 26 home-screen apps can come up short by the status bar's height, drawn under the status
-    // bar on top but leaving an empty band above the home bar (WebKit bug 301108). When the page
-    // starts under the status bar AND is that much shorter than the screen, let the layers reach
-    // the real bottom (phone-theme.css, html.ios-band).
-    (function () {
-      var ua = navigator.userAgent;
-      if (!/iP(hone|od|ad)/.test(ua) && !(/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return;
-      var standalone = navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
-      if (!standalone) return;
-      function measure() {
-        var probe = document.createElement('div');
-        probe.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;pointer-events:none;height:env(safe-area-inset-top)';
-        document.documentElement.appendChild(probe);
-        var top = probe.getBoundingClientRect().height;
-        probe.remove();
-        var portrait = innerHeight > innerWidth;
-        var full = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
-        var gap = full - innerHeight;
-        var band = top > 10 && gap > 10 && Math.abs(gap - top) <= 8 ? gap : 0;
-        var root = document.documentElement;
-        root.classList.toggle('ios-band', band > 0);
-        root.style.setProperty('--band', band + 'px');
-      }
-      measure();
-      addEventListener('resize', measure);
-      addEventListener('orientationchange', function () { setTimeout(measure, 300); });
-      document.addEventListener('DOMContentLoaded', measure);
-    })();
-  </script>
   <link rel="stylesheet" href="phone-app.css">
   <script>
     // Apply a stored dark/light choice before first paint.
