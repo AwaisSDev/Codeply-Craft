@@ -198,7 +198,7 @@ function applyTheme(choice) {
 function syncTheme() {
   const c = themeChoice();
   const dark = c === 'dark' || (c === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  if ($('themeColorMeta')) $('themeColorMeta').content = dark ? '#0d0d0d' : '#ffffff';
+  if ($('themeColorMeta')) $('themeColorMeta').content = dark ? '#040A1C' : '#FAFAF7'; // the site's navy and paper (phone-theme.css)
   $('themeBtn').innerHTML = ICONS[c];
   $('themeBtn').title = c === 'system' ? 'Theme: match the phone' : `Theme: ${c}`;
 }
@@ -597,7 +597,7 @@ function refreshLiveSteps() {
   groups.forEach(updateStepsGroup);
   const w = f.querySelector(':scope > .pc-working');
   const last = f.lastElementChild;
-  const needs = busy && !!last && last.matches('.msg.user, .msg-files, .pc-working');
+  const needs = busy && !!last && last.matches('.msg.user, .msg-files, .pc-working, .turn-face'); // .turn-face: the agent's face (phone-wisp.js)
   if (needs && !w) f.append(el('div', 'working pc-working', '<span class="spinner"></span><span>Thinking...</span>'));
   else if (!needs && w) w.remove();
 }
@@ -2282,6 +2282,15 @@ function renderChatList() {
     ...state.chats.filter((c) => c.title).map((c) => ({ type: 'local', id: c.id, title: c.title, kind: c.kind, cloud: c.cloud, at: c.updatedAt })),
     ...(state.pc.sessions || []).filter((s) => !linked.has(s.id)).map((s) => ({ type: 'pc', id: s.id, title: s.title || 'Untitled', kind: 'code', cloud: !!s.cloud, at: s.updatedAt || 0, meta: s })),
   ].filter((r) => !q || String(r.title).toLowerCase().includes(q)).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 200);
+  // What needs the user comes first, then what is running: unblock an agent without opening each chat.
+  const approvalFor = state.approval && state.approval.sessionId;
+  for (const r of rows) {
+    const c = r.type === 'local' ? state.chats.find((x) => x.id === r.id) : null;
+    const pcId = c ? c.pcSessionId : r.id;
+    r.flag = approvalFor && pcId === approvalFor ? 'needs' : (c && state.busy.has(c.id)) ? 'running' : '';
+  }
+  const rank = (r) => (r.flag === 'needs' ? 0 : r.flag === 'running' ? 1 : 2);
+  rows.sort((a, b) => rank(a) - rank(b));
   list.innerHTML = rows.length ? '' : `<div class="chat-empty">${q ? 'No chats match.' : 'No chats yet.'}</div>`;
   const LIMIT = 10;
   const shown = q || showAllChats ? rows : rows.slice(0, LIMIT);
@@ -2291,6 +2300,7 @@ function renderChatList() {
     b.type = 'button';
     b.querySelector('span').textContent = r.title;
     b.dataset.kind = r.cloud ? 'cloud' : r.kind;
+    if (r.flag) b.insertAdjacentHTML('beforeend', r.flag === 'needs' ? '<em class="chat-flag needs">Needs you</em>' : '<em class="chat-flag running"><i></i>Working</em>');
     b.addEventListener('click', () => { if (b.dataset.pressed) { delete b.dataset.pressed; return; } closeDrawer(); if (r.type === 'pc') openPcSession(r.meta); else openChat(r.id); });
     let pressTimer = null;
     b.addEventListener('contextmenu', (e) => { e.preventDefault(); chatMenu(r, b); });

@@ -1,0 +1,258 @@
+/* Codeply on the phone, in the website's look (codeply.app).
+   Loaded after phone.css, phone-calls.css and phone-design.css: it changes
+   tokens and surfaces only, never layout logic, so every screen keeps working.
+
+   - Light: the site's warm paper (#FAFAF7), ink text, black pill buttons,
+     Codeply blue (#2F6BFF) for links and the user's own messages.
+   - Dark: the site's navy theme (#040A1C), not plain black.
+   - Geist, like the site. Glass only on bars and controls; content stays solid.
+   - The sky: the site's blue-to-pink scene behind sign-in, and a pale wash
+     behind the empty chat, where Wisp (the agent's face) waits. */
+
+:root {
+  --font: 'Geist', -apple-system, BlinkMacSystemFont, "SF Pro Text", Roboto, "Segoe UI", system-ui, sans-serif;
+  --mono: 'Geist Mono', ui-monospace, "SF Mono", "Roboto Mono", Consolas, monospace;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+
+  /* dark = the site's navy */
+  --bg: #040A1C;
+  --surface: #0B1736;
+  --surface-2: #12224B;
+  --sheet: #081330;
+  --pop: #0C1838;
+  --border: rgba(150, 180, 255, .13);
+  --border-strong: rgba(150, 180, 255, .22);
+  --text: #EEF3FF;
+  --muted: #97A6C9;
+  --faint: #6676A0;
+  --accent: #EEF3FF;
+  --accent-text: #06112E;
+  --link: #8DB0FF;
+  --brand: #2F6BFF;
+  --circle: rgba(17, 32, 72, .72);
+  --rim: rgba(150, 180, 255, .16);
+  --rim-top: rgba(255, 255, 255, .06);
+  --user-bg: #173072;
+  --user-text: #EEF3FF;
+  --code-bg: #071030;
+  --add: #5EE0A0;
+  --del: #FF7A8A;
+  --danger: #FF7A8A;
+  --invert-bg: #EEF3FF;
+  --invert-text: #06112E;
+  --glass: rgba(11, 23, 54, .72);
+  --glass-line: rgba(150, 180, 255, .16);
+  --lift: 0 1px 0 rgba(255, 255, 255, .04) inset, 0 18px 40px -22px rgba(0, 0, 0, .7);
+  --shadow: 0 18px 44px -12px rgba(0, 0, 0, .6), inset 0 0 0 1px rgba(150, 180, 255, .14);
+  --scrim: rgba(2, 6, 18, .35);
+  --sky-wash: radial-gradient(70% 38% at 88% 34%, rgba(236, 72, 153, .26), transparent 72%),
+              radial-gradient(60% 34% at 8% 40%, rgba(130, 110, 255, .24), transparent 72%),
+              radial-gradient(130% 62% at 50% -8%, rgba(47, 107, 255, .55), rgba(30, 70, 190, .22) 50%, transparent 78%);
+  --tint-1: rgba(92, 188, 242, .14); --tint-2: rgba(160, 140, 255, .14); --tint-3: rgba(80, 220, 190, .12); --tint-4: rgba(255, 160, 120, .12);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #FAFAF7; --surface: #F1F0EB; --surface-2: #E7E6E0; --sheet: #FFFFFF; --pop: #FFFFFF;
+    --border: rgba(14, 14, 16, .09); --border-strong: rgba(14, 14, 16, .16);
+    --text: #0E0E10; --muted: #5D5F66; --faint: #9A9BA1; --accent: #0E0E10; --accent-text: #FFFFFF;
+    --link: #2F6BFF; --circle: rgba(255, 255, 255, .78); --rim: rgba(14, 14, 16, .09); --rim-top: rgba(255, 255, 255, .95);
+    --user-bg: #2F6BFF; --user-text: #FFFFFF; --code-bg: #F4F3EF; --add: #12A150; --del: #E5484D; --danger: #E5484D;
+    --invert-bg: #0E0E10; --invert-text: #FFFFFF;
+    --glass: rgba(255, 255, 255, .78); --glass-line: rgba(255, 255, 255, .95);
+    --lift: 0 1px 0 #fff inset, 0 18px 40px -24px rgba(8, 30, 90, .32);
+    --shadow: 0 20px 44px -16px rgba(8, 30, 90, .28), 0 0 0 1px rgba(14, 14, 16, .07);
+    --scrim: rgba(8, 20, 50, .14);
+    --sky-wash: radial-gradient(70% 38% at 88% 34%, rgba(255, 92, 168, .34), transparent 72%),
+                radial-gradient(60% 34% at 8% 40%, rgba(150, 128, 255, .30), transparent 72%),
+                radial-gradient(130% 62% at 50% -8%, rgba(61, 152, 236, .78), rgba(111, 180, 241, .42) 48%, transparent 78%);
+    --tint-1: #E4F2FD; --tint-2: #EEEAFD; --tint-3: #E3F6F1; --tint-4: #FDEEE5;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #FAFAF7; --surface: #F1F0EB; --surface-2: #E7E6E0; --sheet: #FFFFFF; --pop: #FFFFFF;
+  --border: rgba(14, 14, 16, .09); --border-strong: rgba(14, 14, 16, .16);
+  --text: #0E0E10; --muted: #5D5F66; --faint: #9A9BA1; --accent: #0E0E10; --accent-text: #FFFFFF;
+  --link: #2F6BFF; --circle: rgba(255, 255, 255, .78); --rim: rgba(14, 14, 16, .09); --rim-top: rgba(255, 255, 255, .95);
+  --user-bg: #2F6BFF; --user-text: #FFFFFF; --code-bg: #F4F3EF; --add: #12A150; --del: #E5484D; --danger: #E5484D;
+  --invert-bg: #0E0E10; --invert-text: #FFFFFF;
+  --glass: rgba(255, 255, 255, .78); --glass-line: rgba(255, 255, 255, .95);
+  --lift: 0 1px 0 #fff inset, 0 18px 40px -24px rgba(8, 30, 90, .32);
+  --shadow: 0 20px 44px -16px rgba(8, 30, 90, .28), 0 0 0 1px rgba(14, 14, 16, .07);
+  --scrim: rgba(8, 20, 50, .14);
+  --sky-wash: radial-gradient(70% 38% at 88% 34%, rgba(255, 92, 168, .34), transparent 72%),
+              radial-gradient(60% 34% at 8% 40%, rgba(150, 128, 255, .30), transparent 72%),
+              radial-gradient(130% 62% at 50% -8%, rgba(61, 152, 236, .78), rgba(111, 180, 241, .42) 48%, transparent 78%);
+  --tint-1: #E4F2FD; --tint-2: #EEEAFD; --tint-3: #E3F6F1; --tint-4: #FDEEE5;
+  color-scheme: light;
+}
+
+html, body { font-feature-settings: "ss01", "cv11"; }
+body { letter-spacing: -.005em; }
+button:focus-visible, [role="button"]:focus-visible, a:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* ─── Glass controls: header buttons, the title, the composer ─── */
+.circle-btn, .round-btn, .top-title#titleBtn {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%);
+  box-shadow: inset 0 0 0 1px var(--glass-line), var(--lift);
+}
+.top-title#titleBtn { height: auto; min-height: 44px; padding: 5px 16px; border-radius: 999px; flex-direction: column; gap: 0; max-width: calc(100vw - 150px); }
+.top-title#titleBtn > .top-line { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; font-size: 16px; }
+.top-title#titleBtn > .top-line > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Where the work runs: the PC's name with a word for its state, not just a coloured dot. */
+.top-sub { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; letter-spacing: 0; color: var(--muted); line-height: 1.2; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.top-sub i { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); flex: none; }
+.top-sub.on i { background: var(--add); box-shadow: 0 0 0 3px color-mix(in srgb, var(--add) 22%, transparent); }
+.top-sub:empty, .top-sub.hidden { display: none; }
+.top { position: relative; z-index: 5; }
+.app { background: var(--bg); }
+
+/* ─── The empty chat: a pale sky, Wisp, a greeting ─── */
+/* The sky: full behind the empty chat, a thin band behind a conversation's top bar. */
+.app::before {
+  content: ""; position: absolute; inset: 0 0 auto; height: 150px; pointer-events: none; z-index: 0;
+  background: var(--sky-wash); opacity: .55;
+  -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent); mask-image: linear-gradient(180deg, #000 30%, transparent);
+  transition: height .4s var(--ease), opacity .4s var(--ease);
+}
+.app:has(#feed.hidden)::before { height: 78%; opacity: 1; -webkit-mask-image: linear-gradient(180deg, #000 58%, transparent); mask-image: linear-gradient(180deg, #000 58%, transparent); }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .app:has(#feed.hidden) .greeting { text-shadow: 0 1px 18px rgba(255, 255, 255, .6); } }
+:root[data-theme="light"] .app:has(#feed.hidden) .greeting { text-shadow: 0 1px 18px rgba(255, 255, 255, .6); }
+.app > * { position: relative; z-index: 1; }
+.empty-head { gap: 14px; padding-bottom: 56px; }
+.empty-wisp { margin-bottom: 4px; }
+.empty-wisp .wisp-el { width: 112px; height: 112px; }
+.greeting { font-size: 30px; font-weight: 600; letter-spacing: -.04em; line-height: 1.12; max-width: 300px; }
+.empty-sub { font-size: 15px; margin-top: -4px; }
+
+/* Starters: the site's pastel panels. */
+.suggest button {
+  background: var(--tint-1); box-shadow: inset 0 0 0 1px var(--border); border-radius: 20px; padding: 12px 15px;
+}
+.suggest button:nth-child(4n+2) { background: var(--tint-2); }
+.suggest button:nth-child(4n+3) { background: var(--tint-3); }
+.suggest button:nth-child(4n+4) { background: var(--tint-4); }
+.suggest button:active { background: var(--surface-2); }
+.suggest button strong { font-size: 15px; letter-spacing: -.015em; }
+
+/* ─── Composer: one glass card ─── */
+.box {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(22px) saturate(170%); backdrop-filter: blur(22px) saturate(170%);
+  border-radius: 26px; box-shadow: inset 0 0 0 1px var(--glass-line), var(--shadow);
+}
+:root:not([data-theme="dark"]) .box { box-shadow: inset 0 0 0 1px rgba(14, 14, 16, .08), 0 22px 44px -26px rgba(8, 30, 90, .40); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .box { box-shadow: inset 0 0 0 1px var(--glass-line), var(--shadow); } }
+:root[data-theme="dark"] .box { box-shadow: inset 0 0 0 1px var(--glass-line), var(--shadow); }
+.box textarea { font-size: 17px; }
+.round-btn { width: 38px; height: 38px; }
+.send-btn, .voice-btn { width: 38px; height: 38px; box-shadow: 0 6px 14px -6px rgba(8, 30, 90, .45); }
+.ctx-chip { background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); }
+
+/* ─── Feed ─── */
+.feed { gap: 16px; padding-top: 14px; }
+.msg { font-size: 16.5px; line-height: 1.55; }
+.msg.user { background: var(--user-bg); color: var(--user-text); border-radius: 22px 22px 6px 22px; padding: 10px 15px; box-shadow: 0 8px 18px -12px rgba(47, 107, 255, .55); }
+.msg.user a { color: inherit; text-decoration: underline; }
+.msg code { background: var(--surface); }
+.msg pre { border-radius: 16px; }
+
+/* Every answer starts with the agent's face, on the left. */
+.turn-face { display: flex; align-items: center; gap: 8px; margin-bottom: -6px; min-height: 34px; }
+.turn-face .wisp-el { width: 34px; height: 34px; }
+.turn-face-state { font-size: 13px; color: var(--muted); }
+.turn-face-state:empty { display: none; }
+
+/* The work line and its steps. */
+.steps-group > summary { padding: 6px 12px 6px 10px; border-radius: 999px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); }
+.steps-group.live > summary { background: color-mix(in srgb, var(--brand) 9%, var(--surface)); }
+.sg-body { border-left-color: var(--border-strong); }
+.working { padding: 6px 0; }
+.summary-card, .question, .inline-row, .cloud-ask { background: var(--sheet); border-color: var(--border); border-radius: 18px; box-shadow: var(--lift); }
+.verify > summary { padding: 4px 0; }
+
+/* ─── Drawer ─── */
+.drawer { background: var(--bg); box-shadow: 24px 0 60px -30px rgba(2, 8, 30, .5); }
+.drawer::before { content: ""; position: absolute; inset: 0 0 auto; height: 220px; background: var(--sky-wash); pointer-events: none; opacity: .8; }
+.drawer > * { position: relative; }
+.drawer-title { display: inline-flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 600; letter-spacing: -.03em; }
+.drawer-mark { width: 26px; height: 26px; flex: none; fill: currentColor; }
+.drawer-item { font-size: 17px; height: 50px; }
+.drawer-item svg { color: var(--muted); }
+.chat-row { font-size: 16px; }
+.chat-row.active { background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); }
+/* A chat that needs the user, or is running, says so in the list. */
+.chat-row .chat-flag { flex: none; margin-left: 8px; font-style: normal; font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px; display: inline-flex; align-items: center; gap: 5px; }
+.chat-flag.needs { background: color-mix(in srgb, #F5A524 22%, transparent); color: #B26A00; }
+:root[data-theme="dark"] .chat-flag.needs { color: #FFC56B; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .chat-flag.needs { color: #FFC56B; } }
+.chat-flag.running { background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--link); }
+.chat-flag.running i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: flagPulse 1.2s ease-in-out infinite; }
+@keyframes flagPulse { 50% { opacity: .3; } }
+.pill-new { background: var(--accent); color: var(--accent-text); box-shadow: 0 10px 22px -12px rgba(8, 30, 90, .55); height: 50px; font-size: 17px; }
+
+/* ─── Menus and sheets ─── */
+.pop { border-radius: 20px; }
+.sheet-bg, .backdrop { background: rgba(4, 10, 28, .42); }
+.sheet-card { border-radius: 28px 28px 0 0; box-shadow: 0 -1px 0 var(--rim), 0 -20px 50px -30px rgba(2, 8, 30, .5); }
+.sheet-handle { background: var(--border-strong); }
+.sheet-title { font-size: 19px; letter-spacing: -.02em; }
+.sheet-face { display: flex; justify-content: center; margin: 2px 0 10px; }
+.sheet-face .wisp-el { width: 54px; height: 54px; }
+/* An approval shows exactly what will run. */
+#approvalSheet .sheet-title { text-align: center; }
+#approvalDetail {
+  font-family: var(--mono); font-size: 13px; line-height: 1.5; color: var(--text); text-align: left;
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px;
+  white-space: pre-wrap; max-height: 34vh; overflow-y: auto;
+}
+#approvalDetail:empty { display: none; }
+.btn { height: 50px; font-size: 16px; }
+.btn-primary { box-shadow: 0 10px 22px -12px rgba(8, 30, 90, .55); }
+.btn-quiet { background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); }
+
+/* ─── Sign in: under the site's sky ─── */
+.signin {
+  background:
+    radial-gradient(70% 45% at 85% 70%, rgba(255, 70, 150, .55), transparent 70%),
+    radial-gradient(60% 40% at 20% 80%, rgba(170, 120, 255, .45), transparent 70%),
+    radial-gradient(80% 50% at 70% 20%, rgba(30, 80, 210, .55), transparent 70%),
+    linear-gradient(180deg, #3D98EC 0%, #6FB4F1 45%, #B9D9F7 100%);
+  color: #fff;
+}
+.signin-inner { gap: 0; }
+.signin-wisp .wisp-el { width: 104px; height: 104px; }
+.signin-wisp { margin-bottom: 18px; }
+.signin-mark { display: none; }
+.signin h1 { font-size: 32px; font-weight: 600; letter-spacing: -.04em; text-shadow: 0 1px 14px rgba(10, 50, 140, .3); }
+.signin p.muted, .signin .muted { color: rgba(255, 255, 255, .86); }
+.signin-form {
+  background: rgba(255, 255, 255, .88); color: #0E0E10; border-radius: 24px; padding: 16px;
+  -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: 0 1px 0 #fff inset, 0 24px 48px -24px rgba(8, 30, 90, .55);
+}
+.signin-form input { background: #fff; border: 1px solid rgba(14, 14, 16, .12); color: #0E0E10; height: 50px; font-size: 16px; }
+.signin-form input::placeholder { color: #9A9BA1; }
+.signin-form .btn-primary { background: #0E0E10; color: #fff; }
+.signin-form .link-btn, .signin-form p.muted { color: #5D5F66; }
+.signin-busy { color: rgba(255, 255, 255, .9); }
+.signin .spinner { border-color: rgba(255, 255, 255, .4); border-top-color: #fff; }
+
+/* ─── Full-screen panels (cloud setup, calls, design) ─── */
+.panel { background: var(--bg); }
+.field input, .field textarea, .field select, .repo-list { background: var(--sheet); border-color: var(--border); }
+.seg { background: var(--surface); }
+.seg button.on { background: var(--sheet); box-shadow: var(--lift); }
+
+/* ─── Wisp (wisp.js), the agent's face ─── */
+.wisp-el { display: inline-block; flex: none; line-height: 0; -webkit-user-select: none; user-select: none; cursor: pointer; }
+.wisp-el svg { width: 100%; height: 100%; overflow: visible; stroke: none; fill: none; }
+.wisp-el .w-body { filter: drop-shadow(0 6px 14px rgba(31, 82, 224, .28)); }
+.wisp-el[data-mood="angry"] .w-body { filter: drop-shadow(0 6px 14px rgba(224, 48, 74, .3)); }
+.wisp-el[data-mood="love"] .w-body { filter: drop-shadow(0 6px 14px rgba(224, 69, 127, .3)); }
+.wisp-el .w-eyes { fill: #0b0b0f; }
+.wisp-el .w-shine { pointer-events: none; }
+.wisp-lg { width: 120px; height: 120px; } .wisp-md { width: 46px; height: 46px; } .wisp-sm { width: 30px; height: 30px; } .wisp-xs { width: 20px; height: 20px; }
+.turn-face .wisp-el .w-body { filter: drop-shadow(0 4px 8px rgba(31, 82, 224, .25)); }

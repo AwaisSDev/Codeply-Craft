@@ -90,7 +90,8 @@
     sleepy: function () { return '<path d="M-4 0Q0 2.6 4 0" fill="none" stroke="' + INK + '" stroke-width="2.1" stroke-linecap="round"/>'; },
     // sorry: small eyes looking down, brows tilted up in the middle
     sad: function (s) { return '<ellipse rx="1.7" ry="2.5" cy="1.4"/><path d="' + (s < 0 ? 'M-4 -3.4L1.6 -5.6' : 'M4 -3.4L-1.6 -5.6') + '" fill="none" stroke="' + INK + '" stroke-width="1.5" stroke-linecap="round"/>'; },
-    worried: function (s) { return '<ellipse rx="1.6" ry="2.4" cy=".6"/><path d="' + (s < 0 ? 'M-3.6 -4.6L1.4 -3.4' : 'M3.6 -4.6L-1.4 -3.4') + '" fill="none" stroke="' + INK + '" stroke-width="1.4" stroke-linecap="round"/>'; },
+    // worried: brows raised in the middle (not slanted down, which reads as angry)
+    worried: function (s) { return '<ellipse rx="1.6" ry="2.4" cy=".6"/><path d="' + (s < 0 ? 'M-3.4 -3.5L1.4 -5.1' : 'M3.4 -3.5L-1.4 -5.1') + '" fill="none" stroke="' + INK + '" stroke-width="1.4" stroke-linecap="round"/>'; },
     angry: function (s) { return s < 0 ? '<path d="M-3.8 -2.2L3.6 .6L-3.2 2.2Z"/>' : '<path d="M3.8 -2.2L-3.6 .6L3.2 2.2Z"/>'; }
   };
 
