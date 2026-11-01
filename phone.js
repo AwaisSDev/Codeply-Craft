@@ -198,7 +198,7 @@ function applyTheme(choice) {
 function syncTheme() {
   const c = themeChoice();
   const dark = c === 'dark' || (c === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  if ($('themeColorMeta')) $('themeColorMeta').content = dark ? '#000000' : '#F2F2F7'; // the canvas (phone-theme.css)
+  if ($('themeColorMeta')) $('themeColorMeta').content = dark ? '#171717' : '#FFFFFF'; // the canvas (phone-theme.css)
   $('themeBtn').innerHTML = ICONS[c];
   $('themeBtn').title = c === 'system' ? 'Theme: match the phone' : `Theme: ${c}`;
 }
@@ -2387,7 +2387,13 @@ function renderChatList() {
   list.innerHTML = rows.length ? '' : `<div class="chat-empty">${q ? 'No chats match.' : 'No chats yet.'}</div>`;
   const LIMIT = 10;
   const shown = q || showAllChats ? rows : rows.slice(0, LIMIT);
+  // Grouped by when, like ChatGPT's sidebar (what needs you and what runs stay on top).
+  const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+  const groupOf = (r) => (r.flag ? 'Active' : (r.at || 0) >= dayStart.getTime() ? 'Today' : (r.at || 0) >= dayStart.getTime() - 86400000 ? 'Yesterday' : (r.at || 0) >= dayStart.getTime() - 7 * 86400000 ? 'Previous 7 days' : 'Older');
+  let lastGroup = null;
   for (const r of shown) {
+    const g = q ? null : groupOf(r);
+    if (g && g !== lastGroup) { list.append(el('div', 'chat-group', esc(g))); lastGroup = g; }
     // Plain titles, like ChatGPT: long-press (or right-click) for rename and delete.
     const b = el('button', `chat-row${r.type === 'local' && r.id === state.current ? ' active' : ''}`, '<span></span>');
     b.type = 'button';

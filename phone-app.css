@@ -1,201 +1,174 @@
-/* Codeply phone: the screens (phone-app.js). Native grouped lists, large
-   titles with a date overline, segmented controls, one accent, monochrome
-   1.8px icons, a translucent tab bar. No gradients, glows or colored tiles. */
+/* Codeply phone: the screens around the chat (phone-app.js), in the shape of
+   ChatGPT, Claude and DeepSeek. Chat is the app; the sidebar holds New chat,
+   Tasks, Calls, Design and history; Tasks is Claude's agent list; Settings
+   is ChatGPT's. Bordered cards on a white canvas, one accent. */
 
-/* ─── Views ─── */
-.tabview { display: none; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: calc(8px + env(safe-area-inset-top)) 16px calc(100px + env(safe-area-inset-bottom)); }
-body[data-view="home"] #homeView, body[data-view="chats"] #chatsView, body[data-view="you"] #youView { display: block; }
-body:not([data-view="chat"]) .app > .top, body:not([data-view="chat"]) .app > .scroll, body:not([data-view="chat"]) .app > .composer { display: none; }
-body[data-view="chat"] .tabbar { display: none; }
-body[data-view="chat"] #menuBtn .ico-menu { display: none; }
-#menuBtn .ico-back { display: none; color: var(--blue); }
-body[data-view="chat"] #menuBtn .ico-back { display: block; }
+/* ─── Chat-only extras ─── */
+body:not([data-view="chat"]) #menuBtn .ico-back { display: none; }
+/* phone.js's project chip above the text: shown on the Agent chip instead */
+#ctxRow { display: none !important; }
+#menuBtn .ico-back { display: none; }
 
-/* ─── Tab bar: full width, translucent, hairline on top ─── */
-.tabbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 30; display: flex; padding: 6px 6px max(6px, env(safe-area-inset-bottom));
-  background: var(--bar); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); box-shadow: 0 -.5px 0 var(--sep); }
-.tabbar button { position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding-top: 3px; height: 50px; color: var(--muted); font-size: 10.5px; font-weight: 500; letter-spacing: .01em; }
-.tabbar button svg { width: 25px; height: 25px; stroke-width: 1.8; }
-.tabbar button.on { color: var(--blue); }
-.tab-badge { position: absolute; top: 0; left: calc(50% + 7px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--red); color: #fff; font-style: normal; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
-.tab-avatar { width: 25px; height: 25px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 600; color: var(--text); background: var(--fill); }
-.tabbar button.on .tab-avatar { box-shadow: 0 0 0 1.5px var(--blue); }
+/* ─── Panels: a plain nav bar, then the content ─── */
+.panel .top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; background: var(--bg); }
+.panel .top > :last-child { justify-self: end; }
+.panel .top .icon-btn { color: var(--text); width: 40px; height: 40px; }
+.panel .top-title { font-size: 17px; font-weight: 600; letter-spacing: -.02em; }
+.panel-body { padding: 4px 16px calc(32px + env(safe-area-inset-bottom)); }
 
-/* ─── Large title, with the date above it ─── */
-.tv-head { display: flex; align-items: flex-end; gap: 8px; padding: 6px 4px 12px; }
-.tv-head .tv-titles, .tv-head > h1 { flex: 1; min-width: 0; }
-.tv-head small { display: block; font-size: 13px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
-.tv-head h1 { margin: 0; font-size: 34px; font-weight: 700; letter-spacing: -.035em; line-height: 1.1; }
-.nav-add { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: var(--blue); background: color-mix(in srgb, var(--blue) 14%, transparent); flex: none; margin-bottom: 4px; }
-.nav-me { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; color: var(--text); background: var(--fill); flex: none; margin-bottom: 4px; }
-
-/* ─── Sections and grouped lists ─── */
-.sec { display: flex; align-items: baseline; justify-content: space-between; margin: 26px 4px 8px; }
-.sec h2 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -.03em; }
-.sec span, .sec button { font-size: 15px; color: var(--muted); }
-.sec button { color: var(--blue); }
-.list { background: var(--group); border-radius: 12px; overflow: hidden; }
-.li { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 10px 16px; text-align: left; position: relative; color: var(--text); }
-.li + .li::before { content: ""; position: absolute; top: 0; left: 64px; right: 0; height: .5px; background: var(--sep); }
-.list.flat .li + .li::before { left: 16px; }
+/* ─── Shared: section labels, bordered lists ─── */
+.sec { display: flex; align-items: baseline; justify-content: space-between; margin: 24px 4px 8px; }
+.sec h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--muted); letter-spacing: 0; }
+.sec span, .sec button { font-size: 14px; color: var(--muted); }
+.sec button { color: var(--text); font-weight: 500; }
+.list { background: var(--group); border: 1px solid var(--sep); border-radius: 18px; overflow: hidden; }
+.li { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 10px 14px; text-align: left; position: relative; color: var(--text); }
+.li + .li { border-top: 1px solid var(--sep); }
 .li:active { background: var(--fill); }
-.li-ico { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--fill); color: var(--text); }
-.li-ico svg { width: 18px; height: 18px; stroke-width: 1.8; }
+.li-ico { width: 22px; display: grid; place-items: center; flex: none; color: var(--text); }
+.li-ico svg { width: 20px; height: 20px; }
 .li-main { flex: 1; min-width: 0; }
-.li-main b { display: block; font-size: 16px; font-weight: 600; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.li-main small { display: block; font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
-.li-main small code { font-family: var(--mono); font-size: 12.5px; }
-.li-end { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: 14px; color: var(--muted); }
-.li-end .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--blue); }
+.li-main b { display: block; font-size: 16px; font-weight: 500; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.li-main small { display: block; font-size: 13.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.li-main small.wrap { white-space: normal; line-height: 1.4; }
 .chev { color: var(--faint); flex: none; width: 14px; height: 14px; }
-.li .val { color: var(--muted); font-size: 16px; flex: none; }
-.li.danger { color: var(--red); justify-content: center; font-size: 17px; min-height: 50px; }
-.li.plain { font-size: 17px; min-height: 48px; }
-.note { margin: 8px 16px 0; font-size: 13px; color: var(--muted); line-height: 1.4; }
-
-/* Search field and segmented control */
-.searchbar { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 8px; border-radius: 10px; background: var(--fill); color: var(--muted); }
-.searchbar input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font-size: 17px; color: var(--text); }
-.searchbar input::placeholder { color: var(--muted); }
-.seg.wide { display: flex; margin: 12px 0 4px; }
-.seg.wide button { flex: 1; }
-
-/* Small data pills: what changed, how it ended */
-.pill { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border-radius: 6px; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.pill.ok { color: var(--green); background: color-mix(in srgb, var(--green) 14%, transparent); }
-.pill.bad { color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); }
-.pill.mute { color: var(--muted); background: var(--fill); }
-.status { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; color: var(--muted); }
-.status i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.li .val { color: var(--muted); font-size: 15px; flex: none; }
+.li.danger { color: var(--red); }
+.li.danger .li-ico { color: var(--red); }
+.note { margin: 8px 6px 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); }
+.status i { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
 .status.on i { background: var(--green); }
+.chat-flag { flex: none; font-style: normal; font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.chat-flag.needs { background: color-mix(in srgb, var(--blue) 12%, transparent); color: var(--blue); }
+.chat-flag.running { background: var(--surface); color: var(--muted); }
+.chat-flag.running i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: flagPulse 1.2s ease-in-out infinite; }
+@keyframes flagPulse { 50% { opacity: .3; } }
 
-/* ─── Home ─── */
-.ask-field { display: flex; align-items: center; gap: 10px; width: 100%; height: 44px; padding: 0 6px 0 14px; border-radius: 12px; background: var(--group); color: var(--muted); font-size: 17px; text-align: left; }
-.ask-field span { flex: 1; }
-.ask-field i { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-text); }
-.home-status { display: flex; gap: 16px; margin: 12px 4px 0; }
-
-/* An approval: what it wants, the exact command, the answers */
-.ap { background: var(--group); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
-.ap-head { display: flex; align-items: baseline; gap: 8px; }
-.ap-head b { flex: 1; min-width: 0; font-size: 16px; font-weight: 600; letter-spacing: -.02em; }
-.ap-head time { font-size: 14px; color: var(--muted); flex: none; }
-.ap-where { display: block; font-size: 14px; color: var(--muted); margin-top: 1px; }
-.ap-cmd { margin: 10px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--code-bg); font-family: var(--mono); font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; color: var(--text); }
-.ap-cmd span { color: var(--muted); user-select: none; }
-.ap-risk { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; color: var(--red); }
-.ap-risk svg { width: 14px; height: 14px; flex: none; }
-.ap-btns { display: flex; gap: 8px; margin-top: 12px; }
-.ap-btns .btn { flex: 1; height: 40px; border-radius: 10px; font-size: 15px; }
-.ap-always { display: block; margin: 10px auto 0; font-size: 14px; color: var(--blue); }
+/* ─── Tasks (Claude's agent list) ─── */
+.chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 8px -16px 14px; padding: 0 16px; }
+.chips::-webkit-scrollbar { display: none; }
+.chips button { flex: none; height: 34px; padding: 0 14px; border-radius: 999px; font-size: 14px; font-weight: 500; color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
+.chips button span { color: var(--muted); margin-left: 4px; }
+.chips button.on { background: var(--surface); box-shadow: none; }
+.task { background: var(--group); border: 1px solid var(--sep); border-radius: 18px; padding: 14px; margin-bottom: 10px; }
+.task-top { display: flex; align-items: flex-start; gap: 12px; }
+.task-ico { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; flex: none; background: var(--surface); color: var(--text); }
+.task-ico svg { width: 18px; height: 18px; }
+.task-ico.needs { background: color-mix(in srgb, var(--orange) 14%, transparent); color: var(--orange); }
+.task-ico.done { color: var(--green); }
+.task-main { flex: 1; min-width: 0; }
+.task-main b { display: block; font-size: 15.5px; font-weight: 500; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task-main small { display: flex; align-items: center; gap: 5px; font-size: 13.5px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; }
+.task-main small svg { width: 13px; height: 13px; flex: none; }
+.task-main small code { font-family: var(--mono); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; }
+.task time { font-size: 13px; color: var(--muted); flex: none; }
+.task-ask { margin-top: 12px; padding: 12px; border-radius: 14px; background: var(--surface); font-size: 15px; line-height: 1.45; }
+.task-ask pre { margin: 8px 0 0; font-family: var(--mono); font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; color: var(--text); }
+.task-ask pre span { color: var(--muted); }
+.task-risk { margin-top: 8px; font-size: 13px; color: var(--red); }
+.task .btn-outline { width: 100%; height: 44px; margin-top: 10px; font-size: 15px; }
+.task-more { display: flex; justify-content: center; gap: 22px; margin-top: 8px; }
+.task-more button { font-size: 14px; color: var(--muted); padding: 4px 2px; }
+.task-more button.deny { color: var(--red); }
 
 /* ─── Chat: commands read like a terminal ─── */
-.term { position: relative; border-radius: 10px; overflow: hidden; background: var(--code-bg); margin: 4px 0 6px; }
+.term { position: relative; border-radius: 12px; overflow: hidden; background: var(--code-bg); border: 1px solid var(--sep); margin: 4px 0 6px; }
 .term pre { margin: 0; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
 .term-cmd { padding: 9px 56px 6px 12px; color: var(--text); }
 .term-cmd span { color: var(--muted); user-select: none; }
 .term-out { padding: 0 12px 9px; color: var(--muted); max-height: 260px; overflow-y: auto; }
-.term-end { padding: 6px 12px; font-size: 12px; font-weight: 600; box-shadow: inset 0 .5px 0 var(--sep); }
+.term-end { padding: 6px 12px; font-size: 12px; font-weight: 600; border-top: 1px solid var(--sep); }
 .term-end.ok { color: var(--green); } .term-end.bad { color: var(--red); }
-.term-copy { position: absolute; top: 6px; right: 6px; height: 24px; padding: 0 9px; border-radius: 6px; font-size: 12px; font-weight: 500; color: var(--blue); }
+.term-copy { position: absolute; top: 6px; right: 6px; height: 24px; padding: 0 9px; border-radius: 6px; font-size: 12px; font-weight: 500; color: var(--muted); }
 .step.cmd > summary .step-label { font-family: var(--mono); font-size: 13px; }
 .step.running > summary { color: var(--text); }
 .step.running .step-clock { color: var(--muted); }
 
-/* ─── Approval sheet: stacked actions, like iOS ─── */
-.sheet-over { display: block; text-align: left; font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: .02em; text-transform: uppercase; }
-#approvalSheet .sheet-card { display: flex; flex-direction: column; gap: 10px; padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); }
+/* ─── Approval sheet (Claude's card): what it wants, the exact thing, Allow ─── */
+.sheet-over { display: block; font-size: 13px; font-weight: 500; color: var(--muted); }
+#approvalSheet .sheet-card { display: flex; flex-direction: column; gap: 10px; padding: 8px 18px calc(18px + env(safe-area-inset-bottom)); }
 #approvalSheet .sheet-title, #approvalSheet .sheet-text { margin: 0; }
-#approvalSheet .sheet-title { font-size: 22px; }
-#approvalDetail { font-family: var(--mono); font-size: 13.5px; line-height: 1.45; color: var(--text); background: var(--code-bg); border-radius: 10px; padding: 10px 12px; white-space: pre-wrap; max-height: 34vh; overflow-y: auto; }
+#approvalDetail { font-family: var(--mono); font-size: 13.5px; line-height: 1.45; color: var(--text); background: var(--surface); border-radius: 14px; padding: 12px; white-space: pre-wrap; max-height: 34vh; overflow-y: auto; }
 #approvalDetail:empty { display: none; }
-.risk-tag { align-self: flex-start; font-size: 14px; font-weight: 500; color: var(--red); }
-.risk-tag::before { content: "⚠︎ "; }
+.risk-tag { font-size: 14px; color: var(--red); }
 .approval-diff { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow-y: auto; }
 .approval-diff .code { margin: 0; }
 #approvalSheet .sheet-actions { flex-direction: column; gap: 8px; margin-top: 6px; }
 #approvalSheet .sheet-actions .btn { flex: none; width: 100%; }
-#approvalSheet #approveBtn { order: 1; background: var(--blue); color: #fff; }
-#approvalSheet #alwaysBtn { order: 2; background: var(--fill); color: var(--text); font-size: 16px; font-weight: 500; }
+#approvalSheet #approveBtn { order: 1; background: var(--accent); color: var(--accent-text); }
+#approvalSheet #alwaysBtn { order: 2; background: none; color: var(--text); box-shadow: inset 0 0 0 1px var(--border-strong); font-weight: 500; }
 #approvalSheet #rejectBtn { order: 3; background: none; color: var(--red); height: 44px; }
 
-/* ─── You ─── */
-.me { width: 100%; text-align: left; display: flex; align-items: center; gap: 14px; padding: 14px 16px; background: var(--group); border-radius: 12px; }
-.me-av { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; font-weight: 600; background: var(--fill); flex: none; }
-.me b { display: block; font-size: 20px; font-weight: 600; letter-spacing: -.03em; }
-.me small { display: block; font-size: 15px; color: var(--muted); }
-.usage { background: var(--group); border-radius: 12px; padding: 14px 16px 12px; }
-.usage small { font-size: 15px; color: var(--muted); }
-.usage .big { font-size: 40px; font-weight: 600; letter-spacing: -.04em; line-height: 1.1; margin: 2px 0 4px; }
-.usage .delta { display: flex; align-items: center; gap: 6px; font-size: 15px; color: var(--muted); }
+/* ─── Settings (ChatGPT's) ─── */
+.me { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 0 6px; text-align: center; }
+.me-av { width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; font-size: 28px; font-weight: 600; background: var(--blue); color: #fff; }
+.me b { font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+.me small { font-size: 15px; color: var(--muted); }
+.usage { background: var(--group); border: 1px solid var(--sep); border-radius: 18px; padding: 16px; }
+.usage small { font-size: 14px; color: var(--muted); }
+.usage .big { font-size: 34px; font-weight: 600; letter-spacing: -.03em; line-height: 1.15; margin: 2px 0 2px; font-variant-numeric: tabular-nums; }
+.usage .delta { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); }
 .usage .delta b { color: var(--green); font-weight: 600; }
 .usage .delta b.down { color: var(--red); }
-.bars { display: flex; align-items: flex-end; gap: 3px; height: 64px; margin-top: 14px; }
-.bars i { flex: 1; border-radius: 3px 3px 1px 1px; background: var(--fill); min-height: 3px; }
+.bars { display: flex; align-items: flex-end; gap: 3px; height: 56px; margin-top: 14px; }
+.bars i { flex: 1; border-radius: 3px 3px 1px 1px; background: var(--surface-2); min-height: 3px; }
 .bars i.today { background: var(--blue); }
-.usage .seg.wide { margin: 12px 0 0; }
 .axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 6px; }
-.meter { height: 4px; border-radius: 4px; background: var(--fill); overflow: hidden; margin-top: 8px; }
+.seg.wide { display: flex; margin: 14px 0 0; }
+.seg.wide button { flex: 1; }
+.meter { height: 4px; border-radius: 4px; background: var(--surface-2); overflow: hidden; margin-top: 8px; }
 .meter i { display: block; height: 100%; background: var(--blue); border-radius: 4px; }
 
 /* ─── Permissions ─── */
-.li .check { color: var(--blue); width: 20px; height: 20px; flex: none; visibility: hidden; }
+.li .check { color: var(--text); width: 20px; height: 20px; flex: none; visibility: hidden; }
 .li.on .check { visibility: visible; }
-.li-main .rec { font-size: 13px; color: var(--blue); font-weight: 500; margin-left: 6px; }
-.li-main small.wrap { white-space: normal; line-height: 1.35; }
+.li-main .rec { font-size: 12px; font-weight: 600; color: var(--blue); margin-left: 8px; }
 .rule-kind { font-size: 14px; color: var(--muted); width: 74px; flex: none; }
 .rule-pat { flex: 1; min-width: 0; font-family: var(--mono); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rule-x { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); flex: none; }
-.rule-add { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 16px; box-shadow: inset 0 .5px 0 var(--sep); }
-.rule-add select { flex: none; width: 124px; height: 34px; border: 0; border-radius: 8px; background: var(--fill); color: var(--text); padding: 0 8px; font-size: 15px; outline: none; }
-.rule-add input { flex: 1; min-width: 0; height: 34px; border: 0; outline: none; background: transparent; color: var(--text); font-family: var(--mono); font-size: 15px; }
-.rule-add button { flex: none; height: 34px; padding: 0 12px; border-radius: 8px; font-size: 15px; font-weight: 600; color: var(--blue); }
+.rule-add { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border-top: 1px solid var(--sep); }
+.rule-add select { flex: none; width: 124px; height: 36px; border: 0; border-radius: 10px; background: var(--surface); color: var(--text); padding: 0 8px; font-size: 15px; outline: none; }
+.rule-add input { flex: 1; min-width: 0; height: 36px; border: 0; outline: none; background: transparent; color: var(--text); font-family: var(--mono); font-size: 15px; }
+.rule-add button { flex: none; height: 36px; padding: 0 14px; border-radius: 999px; font-size: 14px; font-weight: 600; background: var(--accent); color: var(--accent-text); }
 
-/* ─── Panels (Usage, Permissions): a nav bar with a back button ─── */
-.panel .top { display: grid; grid-template-columns: 1fr auto 1fr; }
-.panel .top .icon-btn { color: var(--blue); }
-.panel .top-title { font-size: 17px; font-weight: 600; letter-spacing: -.02em; }
-.panel-body { padding: 4px 16px calc(32px + env(safe-area-inset-bottom)); }
-
-/* ─── Sign in / create account ─── */
-.signin { background: var(--bg); color: var(--text); align-items: stretch; }
-.signin-inner { align-items: stretch; text-align: left; max-width: 400px; margin: 0 auto; }
+/* ─── Sign in / create account: centered, the serif line ─── */
+.signin { background: var(--bg); color: var(--text); }
+.signin-inner { max-width: 380px; margin: 0 auto; }
 .signin .signin-mark { display: none; }
-.signin-brand { width: 40px; height: 40px; fill: var(--text); margin-bottom: 22px; }
-.signin h1 { font-size: 30px; font-weight: 700; letter-spacing: -.035em; margin: 0 0 6px; text-align: left; text-shadow: none; }
-.signin p.muted { margin: 0 0 22px; color: var(--muted); font-size: 16px; line-height: 1.4; text-align: left; }
-.auth-tabs { display: flex; padding: 2px; border-radius: 9px; background: var(--fill); margin: 0 0 18px; }
-.auth-tabs button { flex: 1; height: 30px; border-radius: 7px; font-size: 14px; font-weight: 500; color: var(--text); }
-.auth-tabs button.on { background: var(--group); font-weight: 600; box-shadow: 0 3px 8px rgba(0, 0, 0, .12); }
-.signin-form { background: none; padding: 0; border-radius: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; gap: 0; color: var(--text); }
-.signin-form input { height: 50px; border: 0; border-radius: 0; background: var(--group); color: var(--text); padding: 0 16px; font-size: 17px; box-shadow: none; }
-.signin-form input:first-of-type { border-radius: 12px 12px 0 0; }
-.signin-form input:last-of-type { border-radius: 0 0 12px 12px; }
-.signin-form input:only-of-type { border-radius: 12px; }
-.signin-form input + input { box-shadow: inset 0 .5px 0 var(--sep); }
+.signin-face .wisp-el { width: 64px; height: 64px; }
+.signin-face { margin-bottom: 18px; }
+.signin h1 { font-family: var(--serif); font-size: 40px; font-weight: 400; letter-spacing: -.01em; line-height: 1.05; margin: 0 0 10px; text-shadow: none; }
+.signin p.muted { margin: 0 0 26px; color: var(--muted); font-size: 16px; line-height: 1.4; }
+.auth-tabs { display: none; }
+.signin-form { background: none; padding: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; gap: 10px; color: var(--text); }
+.signin-form input { height: 52px; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--bg); color: var(--text); padding: 0 16px; font-size: 16px; box-shadow: none; }
+.signin-form input:focus { border-color: var(--text); }
 .signin-form input::placeholder { color: var(--faint); }
-.signin-form .btn { margin-top: 18px; }
+.signin-form .btn { margin-top: 4px; width: 100%; }
 .signin-form .btn-primary { background: var(--accent); color: var(--accent-text); }
-.signin-form .link-btn { margin-top: 6px; color: var(--blue); text-decoration: none; font-size: 15px; }
-.signin-form p.muted { color: var(--muted); margin: 0 0 12px; }
-.auth-fine { margin: 14px 4px 0; font-size: 13px; color: var(--muted); line-height: 1.4; text-align: center; }
-.auth-fine a { color: var(--blue); text-decoration: none; }
+.signin-form .link-btn { color: var(--muted); text-decoration: none; font-size: 15px; }
+.signin-form p.muted { color: var(--muted); margin: 0 0 4px; }
+.auth-fine { margin: 6px 4px 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; text-align: center; }
+.auth-fine a { color: var(--text); }
+.auth-switch { margin: 22px 0 0; font-size: 15px; color: var(--muted); text-align: center; }
+.auth-switch button { color: var(--text); font-weight: 600; font-size: 15px; }
 .signin-busy { color: var(--muted); }
 
 /* ─── Onboarding ─── */
-.onboard { position: fixed; inset: 0; z-index: 85; display: flex; flex-direction: column; background: var(--bg); color: var(--text); padding: calc(12px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); }
-.ob-top { display: flex; align-items: center; justify-content: space-between; height: 40px; padding: 0 4px; }
+.onboard { position: fixed; inset: 0; z-index: 85; display: flex; flex-direction: column; background: var(--bg); color: var(--text); padding: calc(12px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom)); }
+.ob-top { display: flex; align-items: center; justify-content: space-between; height: 40px; }
 .ob-dots { display: flex; gap: 6px; }
-.ob-dots i { width: 7px; height: 7px; border-radius: 999px; background: var(--fill); }
-.ob-dots i.on { background: var(--text); }
-.ob-skip { color: var(--blue); font-size: 17px; padding: 8px 4px; }
-.ob-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px; padding: 0 4px; }
-.ob-body .wisp-el { width: 80px; height: 80px; margin-bottom: 10px; }
-.ob-body h1 { margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -.035em; line-height: 1.12; }
-.ob-body > p { margin: 0 0 12px; font-size: 17px; line-height: 1.45; color: var(--muted); }
-.ob-body .list { margin: 0 -4px; }
-.ob-num { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 14px; font-weight: 600; background: var(--fill); flex: none; }
-.ob-found { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--muted); margin: 6px 0 0; }
+.ob-dots i { width: 6px; height: 6px; border-radius: 999px; background: var(--border-strong); transition: width .2s var(--ease); }
+.ob-dots i.on { width: 18px; background: var(--text); }
+.ob-skip { color: var(--muted); font-size: 16px; padding: 8px 4px; }
+.ob-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px; }
+.ob-body .wisp-el { width: 72px; height: 72px; margin-bottom: 14px; }
+.ob-body h1 { margin: 0; font-family: var(--serif); font-size: 40px; font-weight: 400; letter-spacing: -.01em; line-height: 1.05; }
+.ob-body > p { margin: 0 0 14px; font-size: 16.5px; line-height: 1.5; color: var(--muted); }
+.ob-num { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 600; background: var(--surface); flex: none; }
+.ob-found { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--muted); margin: 8px 0 0; }
 .ob-found.ok { color: var(--green); }
-.ob-actions { display: flex; flex-direction: column; gap: 4px; }
-.ob-actions .btn-ghost { height: 44px; }
+.ob-found svg { width: 16px; height: 16px; visibility: visible; }
+.ob-actions { display: flex; flex-direction: column; gap: 6px; }
+.ob-actions .btn-ghost { height: 46px; color: var(--muted); }
