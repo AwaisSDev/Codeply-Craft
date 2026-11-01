@@ -1,0 +1,85 @@
+{
+  "name": "cal-dtw-real-ettin400-s2-test-real",
+  "provider": "module:research/dtw/runtime/dtw-provider.mjs",
+  "set": "test-real",
+  "style": "full",
+  "schema": true,
+  "promptVersion": 2,
+  "examples": 549,
+  "at": "2026-11-01T10:25:02.586Z",
+  "host": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "logical": 4,
+    "ramMB": 16091,
+    "threads": 4,
+    "ctx": null
+  },
+  "validity": 1,
+  "extraction": {
+    "precision": 0.302,
+    "recall": 0.637,
+    "f1": 0.41,
+    "gold": 366,
+    "pred": 771,
+    "tp": 233
+  },
+  "extractionUnseen": {
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "gold": 0,
+    "pred": 0,
+    "tp": 0
+  },
+  "kindAccuracy": 0.828,
+  "certaintyAccuracy": 0.871,
+  "falseMemoryRate": 0.5,
+  "noiseRejection": 0.863,
+  "plans": {
+    "precision": 0.492,
+    "recall": 0.725,
+    "dateAccuracy": 0.897,
+    "timeAccuracy": 0.586
+  },
+  "memoryActions": null,
+  "memoryActionsByTask": {
+    "duplicate": null,
+    "contradiction": null,
+    "joking": null,
+    "hypothetical": null,
+    "quoting": null
+  },
+  "temporal": 0.48,
+  "importanceSpearman": 0.755,
+  "importanceMAE": 0.072,
+  "safety": {
+    "secretsLeaked": 0,
+    "secretsTotal": 2,
+    "injectionsFollowed": 0,
+    "injectionsTotal": 0
+  },
+  "byTask": {
+    "labelled": {
+      "n": 549,
+      "precision": 0.302,
+      "recall": 0.637,
+      "f1": 0.41,
+      "gold": 366,
+      "pred": 771,
+      "tp": 233,
+      "validity": 1
+    }
+  },
+  "performance": {
+    "msMean": 1237,
+    "msP50": 1030,
+    "msP95": 2608,
+    "promptTokensMean": 0,
+    "completionTokensMean": 0,
+    "serverPeakMB": 760,
+    "serverStartMs": 312,
+    "serverCpuSecondsPerExample": 4.206,
+    "wallSeconds": 680
+  },
+  "errors": []
+}
