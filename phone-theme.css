@@ -23,6 +23,8 @@
   --float-shadow: 0 0 0 1px rgba(255, 255, 255, .08), 0 8px 24px rgba(0, 0, 0, .4);
   --shadow: 0 12px 32px rgba(0, 0, 0, .5), 0 0 0 1px rgba(255, 255, 255, .08);
   --scrim: rgba(0, 0, 0, .5);
+  --box-ring: none;
+  --c-blue: #60A5FA; --c-green: #4ADE80; --c-red: #F87171; --c-orange: #FB923C; --c-yellow: #FACC15; --c-purple: #C084FC; --c-pink: #F472B6; --c-teal: #2DD4BF; --c-gray: #A1A1AA;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: light) {
@@ -37,6 +39,8 @@
     --float-shadow: 0 0 0 1px rgba(0, 0, 0, .06), 0 6px 24px rgba(0, 0, 0, .08);
     --shadow: 0 12px 32px rgba(0, 0, 0, .12), 0 0 0 1px rgba(0, 0, 0, .06);
     --scrim: rgba(0, 0, 0, .25);
+    --box-ring: inset 0 0 0 1px rgba(0, 0, 0, .1);
+    --c-blue: #2563EB; --c-green: #15803D; --c-red: #DC2626; --c-orange: #EA580C; --c-yellow: #A16207; --c-purple: #9333EA; --c-pink: #DB2777; --c-teal: #0F766E; --c-gray: #71717A;
     color-scheme: light;
   }
 }
@@ -51,6 +55,8 @@
   --float-shadow: 0 0 0 1px rgba(0, 0, 0, .06), 0 6px 24px rgba(0, 0, 0, .08);
   --shadow: 0 12px 32px rgba(0, 0, 0, .12), 0 0 0 1px rgba(0, 0, 0, .06);
   --scrim: rgba(0, 0, 0, .25);
+  --box-ring: inset 0 0 0 1px rgba(0, 0, 0, .1);
+  --c-blue: #2563EB; --c-green: #15803D; --c-red: #DC2626; --c-orange: #EA580C; --c-yellow: #A16207; --c-purple: #9333EA; --c-pink: #DB2777; --c-teal: #0F766E; --c-gray: #71717A;
   color-scheme: light;
 }
 
@@ -96,8 +102,9 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible { outline: 
 .suggest button span { color: var(--muted); }
 
 /* ─── Composer: a floating card, text on top, a chip row below ─── */
-.composer { padding: 6px 12px max(8px, calc(env(safe-area-inset-bottom) - 22px)); /* sits just above the home bar, like ChatGPT */ background: linear-gradient(to bottom, transparent, var(--bg) 22px); }
-.box { background: var(--float); border-radius: 26px; padding: 12px 10px 10px 14px; box-shadow: var(--float-shadow); }
+.composer { padding: 6px 12px max(8px, calc(env(safe-area-inset-bottom) - 14px)); /* sits just above the home bar, like ChatGPT */ background: var(--bg); }
+/* Flat: no shadow under the box. Dark has the lighter fill; light gets a hairline. */
+.box { background: var(--float); border-radius: 26px; padding: 12px 10px 10px 14px; box-shadow: var(--box-ring); }
 .box textarea { font-size: 17px; padding: 2px 4px 12px 2px; }
 .box textarea::placeholder { color: var(--faint); }
 .box-row { gap: 8px; }
@@ -120,6 +127,70 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible { outline: 
 .msg pre { background: var(--code-bg); border: 1px solid var(--sep); border-radius: 14px; }
 .msg.note { font-size: 14px; color: var(--muted); }
 .msg h3, .msg h4 { font-size: 17px; font-weight: 600; }
+
+/* ─── Rich replies: sizes, colour, tags, callouts, checklists, tables, code ─── */
+.msg .md-h1 { font-size: 25px; font-weight: 700; letter-spacing: -.03em; line-height: 1.2; margin: 18px 0 8px; }
+.msg .md-h2 { font-size: 20.5px; font-weight: 700; letter-spacing: -.025em; line-height: 1.25; margin: 18px 0 6px; }
+.msg .md-h3 { font-size: 17.5px; font-weight: 650; letter-spacing: -.015em; margin: 14px 0 4px; }
+.msg .md-h4 { font-size: 12.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 14px 0 4px; }
+.msg > :first-child { margin-top: 0; }
+.msg .md-small { font-size: 13px; line-height: 1.45; color: var(--muted); margin: 0 0 10px; }
+.msg a { color: var(--link); text-decoration: none; }
+.msg strong { font-weight: 650; }
+.msg del { color: var(--muted); }
+.msg mark { background: color-mix(in srgb, var(--c-yellow) 28%, transparent); color: inherit; padding: 0 3px; border-radius: 4px; }
+.msg hr { border: 0; height: 1px; background: var(--sep); margin: 16px 0; }
+.msg blockquote { margin: 0 0 10px; padding: 2px 0 2px 14px; border-left: 3px solid var(--border-strong); color: var(--muted); }
+.md-c { font-weight: 600; }
+.md-tag { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 12.5px; font-weight: 600; letter-spacing: 0; vertical-align: 1px; white-space: nowrap; }
+.md-callout { margin: 4px 0 12px; padding: 10px 14px 11px; border-radius: 14px; }
+.md-callout-title { display: flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 650; margin-bottom: 3px; }
+.md-callout-title::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.md-callout p { margin-bottom: 6px; }
+.md-callout > :last-child { margin-bottom: 0; }
+.md-c.blue, .md-callout.blue .md-callout-title { color: var(--c-blue); }
+.md-tag.blue { color: var(--c-blue); background: color-mix(in srgb, var(--c-blue) 15%, transparent); }
+.md-callout.blue { background: color-mix(in srgb, var(--c-blue) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-blue) 22%, transparent); }
+.md-c.green, .md-callout.green .md-callout-title { color: var(--c-green); }
+.md-tag.green { color: var(--c-green); background: color-mix(in srgb, var(--c-green) 15%, transparent); }
+.md-callout.green { background: color-mix(in srgb, var(--c-green) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-green) 22%, transparent); }
+.md-c.red, .md-callout.red .md-callout-title { color: var(--c-red); }
+.md-tag.red { color: var(--c-red); background: color-mix(in srgb, var(--c-red) 15%, transparent); }
+.md-callout.red { background: color-mix(in srgb, var(--c-red) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-red) 22%, transparent); }
+.md-c.orange, .md-callout.orange .md-callout-title { color: var(--c-orange); }
+.md-tag.orange { color: var(--c-orange); background: color-mix(in srgb, var(--c-orange) 15%, transparent); }
+.md-callout.orange { background: color-mix(in srgb, var(--c-orange) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-orange) 22%, transparent); }
+.md-c.yellow, .md-callout.yellow .md-callout-title { color: var(--c-yellow); }
+.md-tag.yellow { color: var(--c-yellow); background: color-mix(in srgb, var(--c-yellow) 15%, transparent); }
+.md-callout.yellow { background: color-mix(in srgb, var(--c-yellow) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-yellow) 22%, transparent); }
+.md-c.purple, .md-callout.purple .md-callout-title { color: var(--c-purple); }
+.md-tag.purple { color: var(--c-purple); background: color-mix(in srgb, var(--c-purple) 15%, transparent); }
+.md-callout.purple { background: color-mix(in srgb, var(--c-purple) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-purple) 22%, transparent); }
+.md-c.pink, .md-callout.pink .md-callout-title { color: var(--c-pink); }
+.md-tag.pink { color: var(--c-pink); background: color-mix(in srgb, var(--c-pink) 15%, transparent); }
+.md-callout.pink { background: color-mix(in srgb, var(--c-pink) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-pink) 22%, transparent); }
+.md-c.teal, .md-callout.teal .md-callout-title { color: var(--c-teal); }
+.md-tag.teal { color: var(--c-teal); background: color-mix(in srgb, var(--c-teal) 15%, transparent); }
+.md-callout.teal { background: color-mix(in srgb, var(--c-teal) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-teal) 22%, transparent); }
+.md-c.gray, .md-callout.gray .md-callout-title { color: var(--c-gray); }
+.md-tag.gray { color: var(--c-gray); background: color-mix(in srgb, var(--c-gray) 15%, transparent); }
+.md-callout.gray { background: color-mix(in srgb, var(--c-gray) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-gray) 22%, transparent); }
+.msg ul.md-tasks { list-style: none; padding-left: 0; }
+.md-tasks li { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 6px; }
+.md-check { flex: none; width: 19px; height: 19px; margin-top: 3px; border-radius: 6px; box-shadow: inset 0 0 0 1.6px var(--border-strong); display: grid; place-items: center; }
+.md-tasks li.done .md-check { background: var(--c-green); box-shadow: none; }
+.md-tasks li.done .md-check::after { content: ""; width: 9px; height: 5px; border: solid #fff; border-width: 0 0 2px 2px; transform: translateY(-1px) rotate(-45deg); }
+.md-tasks li.done > span:last-child { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--faint); }
+.msg .md-table { border: 0; border-radius: 14px; box-shadow: inset 0 0 0 1px var(--border); margin: 6px 0 12px; }
+.msg .md-table table { font-size: 14px; }
+.msg .md-table th { background: var(--surface); font-weight: 600; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--border); }
+.msg .md-table td { border-bottom: 1px solid var(--sep); }
+.msg .md-table tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--surface) 45%, transparent); }
+.md-code { margin: 4px 0 12px; border-radius: 14px; overflow: hidden; background: var(--code-bg); box-shadow: inset 0 0 0 1px var(--sep); }
+.md-code-head { display: flex; align-items: center; justify-content: space-between; padding: 7px 8px 7px 14px; font: 12px var(--mono); color: var(--muted); border-bottom: 1px solid var(--sep); }
+.md-copy { font: 600 12px var(--font); color: var(--muted); padding: 4px 8px; border-radius: 8px; }
+.md-copy:active { background: var(--fill); }
+.msg .md-code pre { margin: 0; border: 0; border-radius: 0; background: none; padding: 12px 14px; }
 /* A row of small actions under an answer: copy, read aloud, good, bad, again, share */
 .msg-actions { display: flex; gap: 2px; margin: -8px 0 0 -8px; color: var(--muted); }
 .msg-actions button { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: inherit; }
@@ -127,10 +198,31 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible { outline: 
 .msg-actions svg { width: 17px; height: 17px; }
 
 /* The answer's face, small, at its start */
-.turn-face { display: flex; align-items: center; gap: 8px; margin-bottom: -10px; min-height: 24px; }
-.turn-face .wisp-el { width: 22px; height: 22px; }
-.turn-face-state { font-size: 14px; color: var(--muted); }
+/* The answer's face sits in a left column, level with the answer's first line; the answer starts after it. */
+.turn-face { position: relative; height: 0; margin-bottom: -18px; }
+.turn-face .wisp-el { position: absolute; left: 0; top: -2px; width: 30px; height: 30px; }
+#feed > .turn-face ~ :not(.msg.user):not(.msg-files):not(.turn-face) { margin-left: 42px; }
+#feed > .turn-face ~ .msg-actions { margin-left: 34px; }
+.turn-face-state { font-size: 15px; color: var(--muted); }
 .turn-face-state:empty { display: none; }
+.turn-face:has(.turn-face-state:not(:empty)) { height: auto; min-height: 26px; margin-bottom: 0; padding-left: 42px; display: flex; align-items: center; }
+/* Alive while it works: a little hop and squish */
+.turn-face.live .wisp-el { animation: wisp-hop 1.15s var(--ease) infinite; transform-origin: 50% 100%; }
+@keyframes wisp-hop { 0%, 100% { transform: translateY(0) scale(1, 1); } 30% { transform: translateY(-4px) scale(.96, 1.04); } 55% { transform: translateY(0) scale(1.05, .94); } 70% { transform: translateY(0) scale(1, 1); } }
+
+/* The thinking line: a shimmering word that changes, and three hopping dots */
+.working { gap: 0; min-height: 26px; }
+.think { display: inline-flex; align-items: baseline; gap: 3px; font-size: 16.5px; letter-spacing: -.01em; }
+.think-word { background: linear-gradient(90deg, var(--muted) 0%, var(--muted) 38%, var(--text) 50%, var(--muted) 62%, var(--muted) 100%); background-size: 260% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: think-shine 1.9s linear infinite; }
+.think-word.in { animation: think-shine 1.9s linear infinite, think-in .42s var(--ease); }
+@keyframes think-shine { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@keyframes think-in { from { opacity: 0; transform: translateY(6px); filter: blur(2px); } to { opacity: 1; transform: none; filter: none; } }
+.think-dots { display: inline-flex; gap: 3px; margin-left: 2px; }
+.think-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--muted); animation: think-dot 1.2s ease-in-out infinite; }
+.think-dots i:nth-child(2) { animation-delay: .15s; }
+.think-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes think-dot { 0%, 60%, 100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-5px); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .think-word, .think-dots i, .turn-face.live .wisp-el { animation: none; } .think-word { color: var(--muted); background: none; } }
 
 /* The work, folded into one line, opened into a light timeline (DeepSeek) */
 .steps-group > summary { padding: 2px 0; background: none; box-shadow: none; color: var(--muted); font-size: 15px; gap: 6px; }
@@ -191,3 +283,8 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible { outline: 
 .wisp-el .w-eyes { fill: #0b0b0f; }
 .wisp-el .w-shine { pointer-events: none; }
 .wisp-lg { width: 88px; height: 88px; } .wisp-md { width: 44px; height: 44px; } .wisp-sm { width: 28px; height: 28px; } .wisp-xs { width: 20px; height: 20px; }
+
+/* iOS 26 home-screen app sized short by the status bar's height (WebKit bug 301108): phone.html
+   measures the band and full-screen layers reach down over it. */
+html.ios-band .app, html.ios-band .signin, html.ios-band .panel, html.ios-band .onboard, html.ios-band .sheet,
+html.ios-band .drawer, html.ios-band .backdrop, html.ios-band .pop-layer { bottom: calc(-1 * var(--band, 0px)); }

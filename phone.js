@@ -73,7 +73,7 @@ function keepDeviceId(id) {
 })();
 const deviceHeader = () => ({ 'x-codeply-device': deviceIdValue });
 
-const CHAT_SYSTEM = 'You are Codeply, the assistant in the Codeply phone app. This is a normal chat: you cannot see, open or change any files, run code or browse here. Answer clearly and keep it readable on a phone screen; use short paragraphs, lists and fenced code blocks when they help. If someone wants changes made to one of their projects, tell them to switch to Code in the composer. When a GMAIL note appears in the conversation, it is the user’s own inbox read live just now: answer from it directly (who wrote, about what, what needs a reply) and never say you cannot see their email.';
+const CHAT_SYSTEM = 'You are Codeply, the assistant in the Codeply phone app. This is a normal chat: you cannot see, open or change any files, run code or browse here. Answer clearly and keep it readable on a phone screen. The app draws rich markdown, so format answers well when it helps (never for a one-line reply): ## and ### headings, short paragraphs, lists, - [ ] / - [x] checklists, tables for comparisons, fenced code blocks with a language, **bold** for key words, ==highlight== for the one thing to remember, -# at the start of a line for small fine print, [[Label]] or [[Label|green]] for a coloured status tag (blue green red orange yellow purple pink teal gray), {{green: text}} for coloured text such as numbers going up or down, and > [!TIP] / > [!NOTE] / > [!WARNING] callouts for a tip or a caveat. Use colour and tags sparingly, where they carry meaning. No emoji as decoration. If someone wants changes made to one of their projects, tell them to switch to Code in the composer. When a GMAIL note appears in the conversation, it is the user’s own inbox read live just now: answer from it directly (who wrote, about what, what needs a reply) and never say you cannot see their email.';
 
 // ─── Small helpers ──────────────────────────────────────────────────────────
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c]);
@@ -129,24 +129,48 @@ const ICONS = {
   arrow: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>',
 };
 
-// Just enough markdown for replies on a phone: fenced code, `code`, **bold**,
-// *italic*, headings, lists, links. Escapes first, so text never injects markup.
+// The "thinking" line: a shimmering word that changes now and then, and three hopping dots (phone-wisp.js swaps the words).
+const THINK_HTML = (word = 'Thinking') => `<span class="think"><span class="think-word">${word}</span><span class="think-dots"><i></i><i></i><i></i></span></span>`;
+// Rich markdown for replies on a phone. Escapes first, so text never injects markup.
+//   # / ## / ###        big, medium and small headings
+//   -# text             a line of small, quiet text (fine print)
+//   **bold** *italic* ~~struck~~ ==highlight== `code` [link](https://...)
+//   [[Label]] [[Label|green]]   a coloured tag (colour picked from the word when not given)
+//   {{red: text}}       coloured text (blue green red orange yellow purple pink teal gray)
+//   > [!TIP] ...        a coloured callout (NOTE TIP SUCCESS WARNING IMPORTANT CAUTION); plain > is a quote
+//   - [ ] / - [x]       a checklist
+//   ---                 a divider;  | a | b | tables;  ```lang fenced code with a Copy button
+const MD_COLORS = ['blue', 'green', 'red', 'orange', 'yellow', 'purple', 'pink', 'teal', 'gray'];
+function tagColor(c, label) {
+  if (c && MD_COLORS.includes(c)) return c;
+  const t = String(label).toLowerCase();
+  if (/\b(done|pass(ed|ing)?|ok|success|fixed|live|ready|yes|merged|shipped|new feature)\b/.test(t)) return 'green';
+  if (/\b(fail(ed|ing)?|error|bug|broken|breaking|blocked|no|urgent|critical)\b/.test(t)) return 'red';
+  if (/\b(warn(ing)?|todo|pending|wip|draft|review|slow|risk)\b/.test(t)) return 'orange';
+  if (/\b(new|beta|idea|tip|pro)\b/.test(t)) return 'purple';
+  return 'blue';
+}
 function inlineMd(s) {
   return String(s).split(/(`[^`\n]+`)/).map((part, i) => {
     if (i % 2) return `<code>${esc(part.slice(1, -1))}</code>`;
     return esc(part)
+      .replace(/\[\[([^\]|\n]{1,40}?)(?:\|([a-z]+))?\]\]/g, (m, t, c) => `<span class="md-tag ${tagColor(c, t)}">${t.trim()}</span>`)
+      .replace(/\{\{([a-z]+):\s*([^}\n]+?)\}\}/g, (m, c, t) => (MD_COLORS.includes(c) ? `<span class="md-c ${c}">${t}</span>` : m))
       .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
       .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/~~([^~\n]+)~~/g, '<del>$1</del>')
+      .replace(/==([^=\n]+)==/g, '<mark>$1</mark>')
       .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>');
   }).join('');
 }
 function md(src) {
-  const parts = String(src || '').replace(/\r\n/g, '\n').split(/^```/m);
+  const parts = String(src || '').replace(/\r\n/g, '\n').split(/^\s*```/m);
   return parts.map((part, i) => {
     if (i % 2) {
       const nl = part.indexOf('\n');
+      const lang = (nl >= 0 ? part.slice(0, nl) : part).trim().split(/\s/)[0].slice(0, 20);
       const body = nl >= 0 ? part.slice(nl + 1) : '';
-      return `<pre><code>${esc(body.replace(/\n$/, ''))}</code></pre>`;
+      return `<div class="md-code"><div class="md-code-head"><span>${esc(lang || 'code')}</span><button type="button" class="md-copy">Copy</button></div><pre><code>${esc(body.replace(/\n$/, ''))}</code></pre></div>`;
     }
     return mdBlocks(part.replace(/^[^\n]*\n?/, i === 0 ? '$&' : ''));
   }).join('');
@@ -154,39 +178,74 @@ function md(src) {
 // A markdown table (| a | b | rows), drawn as a real table that scrolls sideways on a narrow screen.
 function mdTable(lines) {
   const cells = (l) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
-  const rows = lines.filter((l) => !/^\s*\|?\s*:?-{2,}/.test(l)).map(cells);
+  const sep = lines.find((l) => /^\s*\|?\s*:?-{2,}/.test(l));
+  const align = sep ? cells(sep).map((c) => (/^:-+:$/.test(c) ? 'center' : /-:$/.test(c) ? 'right' : '')) : [];
+  const rows = lines.filter((l) => l !== sep).map(cells);
   if (!rows.length) return '';
   const [head, ...rest] = rows;
-  return `<div class="md-table"><table><thead><tr>${head.map((c) => `<th>${inlineMd(c)}</th>`).join('')}</tr></thead><tbody>${rest.map((r) => `<tr>${r.map((c) => `<td>${inlineMd(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  const a = (j) => (align[j] ? ` style="text-align:${align[j]}"` : '');
+  return `<div class="md-table"><table><thead><tr>${head.map((c, j) => `<th${a(j)}>${inlineMd(c)}</th>`).join('')}</tr></thead><tbody>${rest.map((r) => `<tr>${r.map((c, j) => `<td${a(j)}>${inlineMd(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+const CALLOUTS = { note: ['blue', 'Note'], info: ['blue', 'Info'], tip: ['green', 'Tip'], success: ['green', 'Done'], warning: ['orange', 'Heads up'], important: ['purple', 'Important'], caution: ['red', 'Careful'], danger: ['red', 'Careful'] };
+function mdQuote(lines) {
+  const first = /^\s*\[!(\w+)\]\s*(.*)$/.exec(lines[0] || '');
+  const kind = first && CALLOUTS[first[1].toLowerCase()];
+  if (!kind) return `<blockquote>${mdBlocks(lines.join('\n'))}</blockquote>`;
+  const title = first[2] ? inlineMd(first[2]) : kind[1];
+  return `<div class="md-callout ${kind[0]}"><div class="md-callout-title">${title}</div>${mdBlocks(lines.slice(1).join('\n'))}</div>`;
 }
 function mdBlocks(text) {
   const out = [];
-  let para = []; let list = null; let table = null;
+  let para = []; let list = null; let table = null; let quote = null;
   const flushPara = () => { if (para.length) out.push(`<p>${para.map(inlineMd).join('<br>')}</p>`); para = []; };
-  const flushList = () => { if (list) out.push(`<${list.type}>${list.items.map((x) => `<li>${inlineMd(x)}</li>`).join('')}</${list.type}>`); list = null; };
+  const flushList = () => {
+    if (list) out.push(`<${list.type}${list.tasks ? ' class="md-tasks"' : ''}>${list.items.map((x) => {
+      const t = /^\[([ xX])\]\s+(.*)$/.exec(x);
+      return t ? `<li class="${t[1] === ' ' ? 'todo' : 'done'}"><span class="md-check"></span><span>${inlineMd(t[2])}</span></li>` : `<li>${inlineMd(x)}</li>`;
+    }).join('')}</${list.type}>`);
+    list = null;
+  };
   const flushTable = () => { if (table) out.push(mdTable(table)); table = null; };
+  const flushQuote = () => { if (quote) out.push(mdQuote(quote)); quote = null; };
+  const flushAll = () => { flushPara(); flushList(); flushTable(); flushQuote(); };
   for (const line of text.split('\n')) {
+    const q = /^\s*>\s?(.*)$/.exec(line);
+    if (q) { flushPara(); flushList(); flushTable(); (quote || (quote = [])).push(q[1]); continue; }
+    flushQuote();
     if (/^\s*\|.*\|\s*$/.test(line)) { flushPara(); flushList(); (table || (table = [])).push(line); continue; }
     flushTable();
+    if (!line.trim()) { flushPara(); flushList(); continue; }
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { flushAll(); out.push('<hr>'); continue; }
+    const small = /^\s*-#\s+(.*)$/.exec(line);
+    if (small) { flushAll(); out.push(`<p class="md-small">${inlineMd(small[1])}</p>`); continue; }
+    const h = /^\s*(#{1,6})\s+(.*)$/.exec(line);
+    if (h) { flushAll(); const n = Math.min(h[1].length, 4); out.push(`<h${n} class="md-h${n}">${inlineMd(h[2].replace(/\s+#+\s*$/, ''))}</h${n}>`); continue; }
     const ul = /^\s*[-*+]\s+(.*)$/.exec(line);
     const ol = /^\s*\d+[.)]\s+(.*)$/.exec(line);
-    const h = /^\s*(#{1,6})\s+(.*)$/.exec(line);
-    if (!line.trim()) { flushPara(); flushList(); continue; }
-    if (h) { flushPara(); flushList(); out.push(`<h${h[1].length <= 2 ? 3 : 4}>${inlineMd(h[2])}</h${h[1].length <= 2 ? 3 : 4}>`); continue; }
     if (ul || ol) {
       flushPara();
       const type = ul ? 'ul' : 'ol';
       if (!list || list.type !== type) { flushList(); list = { type, items: [] }; }
-      list.items.push((ul || ol)[1]);
+      const item = (ul || ol)[1];
+      if (/^\[[ xX]\]\s/.test(item)) list.tasks = true;
+      list.items.push(item);
       continue;
     }
     if (list && /^\s{2,}\S/.test(line)) { list.items[list.items.length - 1] += ` ${line.trim()}`; continue; }
     flushList();
     para.push(line);
   }
-  flushPara(); flushList(); flushTable();
+  flushAll();
   return out.join('');
 }
+// Copy on any code block in a reply.
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('.md-copy');
+  if (!b) return;
+  const code = b.closest('.md-code').querySelector('code');
+  const done = () => { b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy'; }, 1400); };
+  try { navigator.clipboard.writeText(code.textContent).then(done, done); } catch { done(); }
+});
 
 // ─── Theme ──────────────────────────────────────────────────────────────────
 const themeChoice = () => { const t = localStorage.getItem('craft-theme'); return t === 'dark' || t === 'light' ? t : 'system'; };
@@ -601,7 +660,7 @@ function refreshLiveSteps() {
   const w = f.querySelector(':scope > .pc-working');
   const last = f.lastElementChild;
   const needs = busy && !!last && last.matches('.msg.user, .msg-files, .pc-working, .turn-face'); // .turn-face: the agent's face (phone-wisp.js)
-  if (needs && !w) f.append(el('div', 'working pc-working', '<span class="spinner"></span><span>Thinking...</span>'));
+  if (needs && !w) f.append(el('div', 'working pc-working', THINK_HTML()));
   else if (!needs && w) w.remove();
 }
 function el(tag, cls, html) { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; }
@@ -848,7 +907,7 @@ function taskHtml(t) {
   h += (t.events || []).map(cloudEventHtml).join('');
   if (t.answer) h += `<div class="msg agent">${md(t.answer)}</div>`;
   if (isLive(t) && t.ask) h += `<div class="cloud-ask" data-ask-task="${esc(t.id)}" data-ask-id="${esc(t.ask.id)}"><b>Waiting for your OK</b><span>${esc(t.ask.title)}</span>${t.ask.detail ? `<pre class="code">${esc(t.ask.detail)}</pre>` : ''}<div class="cloud-ask-btns"><button type="button" class="btn btn-primary" data-ask-yes>Allow</button><button type="button" class="btn" data-ask-no>Don't allow</button></div></div>`;
-  else if (isLive(t)) h += '<div class="working"><span class="spinner"></span><span>Working...</span></div>';
+  else if (isLive(t)) h += `<div class="working">${THINK_HTML('Working')}</div>`;
   if (t.status === 'failed') h += `<div class="msg error">${esc(t.error || 'The cloud run failed.')}</div>`;
   if (t.status === 'cancelled') h += '<div class="msg note">Cancelled.</div>';
   if (t.status === 'done' && !t.answer && !(t.events || []).length) h += '<div class="msg note">Done.</div>';
@@ -886,7 +945,7 @@ function renderFeed({ force = false } = {}) {
   checkpointEls.clear(); questionEls.clear();
   if (c.kind === 'chat') {
     for (const m of b.messages) addMsg(m.role === 'user' ? 'user' : m.role === 'error' ? 'error' : 'agent', m.content, m.thumbs);
-    if (state.busy.has(c.id)) append(el('div', 'working', '<span class="spinner"></span><span>Thinking...</span>'));
+    if (state.busy.has(c.id)) append(el('div', 'working', THINK_HTML()));
   } else {
     for (const m of b.prelude || []) addMsg(m.role === 'user' ? 'user' : m.role === 'error' ? 'error' : 'agent', m.content, m.thumbs);
     for (const item of b.pcItems || []) renderPcItem(item, c);

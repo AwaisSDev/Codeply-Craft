@@ -125,6 +125,7 @@
         const w = face.querySelector('.wisp-el') && face.querySelector('.wisp-el').wisp;
         if (w && w.mood !== mood) { w.setMood(mood); if (last && !live && mood !== 'neutral') w.talk(1200); }
         face.querySelector('.turn-face-state').textContent = last && live === 'worried' ? 'Needs your OK' : '';
+        face.classList.toggle('live', last && (live === 'thinking' || live === 'working'));
       });
       // Faces whose user message went away (a redraw) go too.
       f.querySelectorAll(':scope > .turn-face').forEach((face) => {
@@ -133,6 +134,24 @@
         if (!prev || !prev.classList.contains('msg') || !prev.classList.contains('user')) face.remove();
       });
     } finally { busyFaces = false; }
+  }
+
+  // ─── The thinking line: a new word now and then, so a wait feels like something is happening ───
+  const THINK = ['Thinking', 'Pondering', 'Noodling', 'Mulling it over', 'Connecting the dots', 'Brewing an answer', 'Untangling it', 'Almost there'];
+  const WORK = ['Working', 'Tinkering', 'Wiring it up', 'Crunching', 'Checking twice', 'Putting it together'];
+  let thinkTurn = 0;
+  function nextWord() {
+    const els = document.querySelectorAll('#feed .working .think-word');
+    if (!els.length) { thinkTurn = 0; return; }
+    thinkTurn++;
+    els.forEach((w) => {
+      const list = /^(Working|Tinkering|Wiring|Crunching|Checking|Putting)/.test(w.textContent) || liveMood() === 'working' ? WORK : THINK;
+      // the first word stays a moment; after that, move on, never the same twice in a row
+      let word = list[thinkTurn % list.length];
+      if (word === w.textContent) word = list[(thinkTurn + 1) % list.length];
+      w.textContent = word;
+      w.classList.remove('in'); void w.offsetWidth; w.classList.add('in');
+    });
   }
 
   // ─── Where the work runs, in the title ────────────────────────────────────
@@ -164,6 +183,7 @@
     if (ap) new MutationObserver(() => { if (!ap.classList.contains('hidden') && navigator.vibrate) { try { navigator.vibrate(18); } catch {} } }).observe(ap, { attributes: true, attributeFilter: ['class'] });
     soon();
     setInterval(soon, 4000); // the PC's presence and a run's state change without a DOM change sometimes
+    if (!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) setInterval(nextWord, 2300);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
