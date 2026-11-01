@@ -284,3 +284,5 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible { outline: 
 .wisp-el .w-shine { pointer-events: none; }
 .wisp-lg { width: 88px; height: 88px; } .wisp-md { width: 44px; height: 44px; } .wisp-sm { width: 28px; height: 28px; } .wisp-xs { width: 20px; height: 20px; }
 
+/* iOS 26 home-screen app that came up short (phone.html): the page already ends above the home bar */
+html.ios-short .composer { padding-bottom: 6px; }
