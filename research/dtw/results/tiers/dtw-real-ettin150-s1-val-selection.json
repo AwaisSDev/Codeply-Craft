@@ -1,0 +1,567 @@
+{
+ "model": "dtw-real-ettin150-s1",
+ "protocol": "research/dtw/TIERS-PROTOCOL.md",
+ "chosenOn": "val",
+ "decoders": {
+  "F0": {
+   "0": {
+    "tp": 152,
+    "pred": 631,
+    "gold": 311,
+    "precision": 0.241,
+    "recall": 0.489,
+    "f1": 0.323,
+    "falseMemoryRate": 0.7,
+    "noiseRejection": 0.867,
+    "examples": 478
+   },
+   "0.1": {
+    "tp": 149,
+    "pred": 589,
+    "gold": 311,
+    "precision": 0.253,
+    "recall": 0.479,
+    "f1": 0.331,
+    "falseMemoryRate": 0.65,
+    "noiseRejection": 0.914,
+    "examples": 478
+   },
+   "0.2": {
+    "tp": 146,
+    "pred": 561,
+    "gold": 311,
+    "precision": 0.26,
+    "recall": 0.469,
+    "f1": 0.335,
+    "falseMemoryRate": 0.6,
+    "noiseRejection": 0.934,
+    "examples": 478
+   },
+   "0.3": {
+    "tp": 141,
+    "pred": 539,
+    "gold": 311,
+    "precision": 0.262,
+    "recall": 0.453,
+    "f1": 0.332,
+    "falseMemoryRate": 0.6,
+    "noiseRejection": 0.94,
+    "examples": 478
+   },
+   "0.4": {
+    "tp": 136,
+    "pred": 512,
+    "gold": 311,
+    "precision": 0.266,
+    "recall": 0.437,
+    "f1": 0.33,
+    "falseMemoryRate": 0.5,
+    "noiseRejection": 0.95,
+    "examples": 478
+   },
+   "0.5": {
+    "tp": 127,
+    "pred": 450,
+    "gold": 311,
+    "precision": 0.282,
+    "recall": 0.408,
+    "f1": 0.334,
+    "falseMemoryRate": 0.45,
+    "noiseRejection": 0.953,
+    "examples": 478
+   },
+   "0.6": {
+    "tp": 116,
+    "pred": 329,
+    "gold": 311,
+    "precision": 0.353,
+    "recall": 0.373,
+    "f1": 0.363,
+    "falseMemoryRate": 0.4,
+    "noiseRejection": 0.967,
+    "examples": 478
+   },
+   "0.7": {
+    "tp": 101,
+    "pred": 182,
+    "gold": 311,
+    "precision": 0.555,
+    "recall": 0.325,
+    "f1": 0.41,
+    "falseMemoryRate": 0.25,
+    "noiseRejection": 0.973,
+    "examples": 478
+   },
+   "0.75": {
+    "tp": 83,
+    "pred": 127,
+    "gold": 311,
+    "precision": 0.654,
+    "recall": 0.267,
+    "f1": 0.379,
+    "falseMemoryRate": 0.15,
+    "noiseRejection": 0.977,
+    "examples": 478
+   },
+   "0.8": {
+    "tp": 66,
+    "pred": 84,
+    "gold": 311,
+    "precision": 0.786,
+    "recall": 0.212,
+    "f1": 0.334,
+    "falseMemoryRate": 0.15,
+    "noiseRejection": 0.987,
+    "examples": 478
+   },
+   "0.85": {
+    "tp": 43,
+    "pred": 52,
+    "gold": 311,
+    "precision": 0.827,
+    "recall": 0.138,
+    "f1": 0.237,
+    "falseMemoryRate": 0.1,
+    "noiseRejection": 0.987,
+    "examples": 478
+   },
+   "0.9": {
+    "tp": 23,
+    "pred": 27,
+    "gold": 311,
+    "precision": 0.852,
+    "recall": 0.074,
+    "f1": 0.136,
+    "falseMemoryRate": 0.05,
+    "noiseRejection": 0.987,
+    "examples": 478
+   },
+   "0.95": {
+    "tp": 4,
+    "pred": 5,
+    "gold": 311,
+    "precision": 0.8,
+    "recall": 0.013,
+    "f1": 0.025,
+    "falseMemoryRate": 0,
+    "noiseRejection": 0.987,
+    "examples": 478
+   }
+  },
+  "F1": {
+   "0": {
+    "tp": 147,
+    "pred": 390,
+    "gold": 311,
+    "precision": 0.377,
+    "recall": 0.473,
+    "f1": 0.419,
+    "falseMemoryRate": 0.55,
+    "noiseRejection": 0.91,
+    "examples": 478
+   },
+   "0.1": {
+    "tp": 146,
+    "pred": 378,
+    "gold": 311,
+    "precision": 0.386,
+    "recall": 0.469,
+    "f1": 0.424,
+    "falseMemoryRate": 0.55,
+    "noiseRejection": 0.934,
+    "examples": 478
+   },
+   "0.2": {
+    "tp": 144,
+    "pred": 365,
+    "gold": 311,
+    "precision": 0.395,
+    "recall": 0.463,
+    "f1": 0.426,
+    "falseMemoryRate": 0.55,
+    "noiseRejection": 0.95,
+    "examples": 478
+   },
+   "0.3": {
+    "tp": 140,
+    "pred": 356,
+    "gold": 311,
+    "precision": 0.393,
+    "recall": 0.45,
+    "f1": 0.42,
+    "falseMemoryRate": 0.55,
+    "noiseRejection": 0.953,
+    "examples": 478
+   },
+   "0.4": {
+    "tp": 134,
+    "pred": 339,
+    "gold": 311,
+    "precision": 0.395,
+    "recall": 0.431,
+    "f1": 0.412,
+    "falseMemoryRate": 0.45,
+    "noiseRejection": 0.957,
+    "examples": 478
+   },
+   "0.5": {
+    "tp": 126,
+    "pred": 309,
+    "gold": 311,
+    "precision": 0.408,
+    "recall": 0.405,
+    "f1": 0.406,
+    "falseMemoryRate": 0.35,
+    "noiseRejection": 0.963,
+    "examples": 478
+   },
+   "0.6": {
+    "tp": 116,
+    "pred": 245,
+    "gold": 311,
+    "precision": 0.473,
+    "recall": 0.373,
+    "f1": 0.417,
+    "falseMemoryRate": 0.3,
+    "noiseRejection": 0.973,
+    "examples": 478
+   },
+   "0.7": {
+    "tp": 93,
+    "pred": 141,
+    "gold": 311,
+    "precision": 0.66,
+    "recall": 0.299,
+    "f1": 0.412,
+    "falseMemoryRate": 0.25,
+    "noiseRejection": 0.977,
+    "examples": 478
+   },
+   "0.75": {
+    "tp": 75,
+    "pred": 106,
+    "gold": 311,
+    "precision": 0.708,
+    "recall": 0.241,
+    "f1": 0.36,
+    "falseMemoryRate": 0.15,
+    "noiseRejection": 0.98,
+    "examples": 478
+   },
+   "0.8": {
+    "tp": 63,
+    "pred": 80,
+    "gold": 311,
+    "precision": 0.788,
+    "recall": 0.203,
+    "f1": 0.322,
+    "falseMemoryRate": 0.15,
+    "noiseRejection": 0.987,
+    "examples": 478
+   },
+   "0.85": {
+    "tp": 41,
+    "pred": 49,
+    "gold": 311,
+    "precision": 0.837,
+    "recall": 0.132,
+    "f1": 0.228,
+    "falseMemoryRate": 0.1,
+    "noiseRejection": 0.987,
+    "examples": 478
+   },
+   "0.9": {
+    "tp": 23,
+    "pred": 27,
+    "gold": 311,
+    "precision": 0.852,
+    "recall": 0.074,
+    "f1": 0.136,
+    "falseMemoryRate": 0.05,
+    "noiseRejection": 0.987,
+    "examples": 478
+   },
+   "0.95": {
+    "tp": 4,
+    "pred": 5,
+    "gold": 311,
+    "precision": 0.8,
+    "recall": 0.013,
+    "f1": 0.025,
+    "falseMemoryRate": 0,
+    "noiseRejection": 0.987,
+    "examples": 478
+   }
+  },
+  "F2": {
+   "0": {
+    "tp": 140,
+    "pred": 360,
+    "gold": 311,
+    "precision": 0.389,
+    "recall": 0.45,
+    "f1": 0.417,
+    "falseMemoryRate": 0.55,
+    "noiseRejection": 0.93,
+    "examples": 478
+   },
+   "0.1": {
+    "tp": 139,
+    "pred": 354,
+    "gold": 311,
+    "precision": 0.393,
+    "recall": 0.447,
+    "f1": 0.418,
+    "falseMemoryRate": 0.55,
+    "noiseRejection": 0.94,
+    "examples": 478
+   },
+   "0.2": {
+    "tp": 137,
+    "pred": 343,
+    "gold": 311,
+    "precision": 0.399,
+    "recall": 0.441,
+    "f1": 0.419,
+    "falseMemoryRate": 0.55,
+    "noiseRejection": 0.953,
+    "examples": 478
+   },
+   "0.3": {
+    "tp": 135,
+    "pred": 339,
+    "gold": 311,
+    "precision": 0.398,
+    "recall": 0.434,
+    "f1": 0.415,
+    "falseMemoryRate": 0.55,
+    "noiseRejection": 0.953,
+    "examples": 478
+   },
+   "0.4": {
+    "tp": 130,
+    "pred": 323,
+    "gold": 311,
+    "precision": 0.402,
+    "recall": 0.418,
+    "f1": 0.41,
+    "falseMemoryRate": 0.45,
+    "noiseRejection": 0.957,
+    "examples": 478
+   },
+   "0.5": {
+    "tp": 124,
+    "pred": 297,
+    "gold": 311,
+    "precision": 0.418,
+    "recall": 0.399,
+    "f1": 0.408,
+    "falseMemoryRate": 0.35,
+    "noiseRejection": 0.963,
+    "examples": 478
+   },
+   "0.6": {
+    "tp": 115,
+    "pred": 242,
+    "gold": 311,
+    "precision": 0.475,
+    "recall": 0.37,
+    "f1": 0.416,
+    "falseMemoryRate": 0.3,
+    "noiseRejection": 0.973,
+    "examples": 478
+   },
+   "0.7": {
+    "tp": 93,
+    "pred": 139,
+    "gold": 311,
+    "precision": 0.669,
+    "recall": 0.299,
+    "f1": 0.413,
+    "falseMemoryRate": 0.25,
+    "noiseRejection": 0.977,
+    "examples": 478
+   },
+   "0.75": {
+    "tp": 75,
+    "pred": 104,
+    "gold": 311,
+    "precision": 0.721,
+    "recall": 0.241,
+    "f1": 0.361,
+    "falseMemoryRate": 0.15,
+    "noiseRejection": 0.98,
+    "examples": 478
+   },
+   "0.8": {
+    "tp": 63,
+    "pred": 78,
+    "gold": 311,
+    "precision": 0.808,
+    "recall": 0.203,
+    "f1": 0.324,
+    "falseMemoryRate": 0.15,
+    "noiseRejection": 0.987,
+    "examples": 478
+   },
+   "0.85": {
+    "tp": 41,
+    "pred": 48,
+    "gold": 311,
+    "precision": 0.854,
+    "recall": 0.132,
+    "f1": 0.228,
+    "falseMemoryRate": 0.1,
+    "noiseRejection": 0.987,
+    "examples": 478
+   },
+   "0.9": {
+    "tp": 23,
+    "pred": 26,
+    "gold": 311,
+    "precision": 0.885,
+    "recall": 0.074,
+    "f1": 0.136,
+    "falseMemoryRate": 0.05,
+    "noiseRejection": 0.987,
+    "examples": 478
+   },
+   "0.95": {
+    "tp": 4,
+    "pred": 4,
+    "gold": 311,
+    "precision": 1,
+    "recall": 0.013,
+    "f1": 0.025,
+    "falseMemoryRate": 0,
+    "noiseRejection": 0.987,
+    "examples": 478
+   }
+  }
+ },
+ "choice": {
+  "r=2": {
+   "decoder": "F2",
+   "tauA": 0.7,
+   "valAutoTp": 93,
+   "precisionFloor": 0.667,
+   "tauP": {
+    "rho=0.33": null,
+    "rho=0.25": null,
+    "rho=0.50": null
+   },
+   "valAtChoice": {
+    "automatic": {
+     "tp": 93,
+     "pred": 139,
+     "gold": 311,
+     "precision": 0.669,
+     "recall": 0.299,
+     "f1": 0.413,
+     "falseMemoryRate": 0.25,
+     "noiseRejection": 0.977,
+     "examples": 478
+    },
+    "automaticOrPending": {
+     "tp": 93,
+     "pred": 139,
+     "recall": 0.299
+    },
+    "pending": {
+     "items": 0,
+     "per100inputs": 0.0,
+     "precision": null,
+     "extraGold": 0
+    },
+    "cost": {
+     "C2": 310,
+     "C3": 356,
+     "C5": 448
+    },
+    "storeNothingCost": 311
+   }
+  },
+  "r=3": {
+   "decoder": "F0",
+   "tauA": 0.8,
+   "valAutoTp": 66,
+   "precisionFloor": 0.75,
+   "tauP": {
+    "rho=0.33": 0.7,
+    "rho=0.25": 0.7,
+    "rho=0.50": null
+   },
+   "valAtChoice": {
+    "automatic": {
+     "tp": 66,
+     "pred": 84,
+     "gold": 311,
+     "precision": 0.786,
+     "recall": 0.212,
+     "f1": 0.334,
+     "falseMemoryRate": 0.15,
+     "noiseRejection": 0.987,
+     "examples": 478
+    },
+    "automaticOrPending": {
+     "tp": 101,
+     "pred": 182,
+     "recall": 0.325
+    },
+    "pending": {
+     "items": 98,
+     "per100inputs": 20.5,
+     "precision": 0.357,
+     "extraGold": 35
+    },
+    "cost": {
+     "C2": 281,
+     "C3": 299,
+     "C5": 335
+    },
+    "storeNothingCost": 311
+   }
+  },
+  "r=5": {
+   "decoder": "F1",
+   "tauA": 0.85,
+   "valAutoTp": 41,
+   "precisionFloor": 0.833,
+   "tauP": {
+    "rho=0.33": 0.6,
+    "rho=0.25": 0,
+    "rho=0.50": 0.7
+   },
+   "valAtChoice": {
+    "automatic": {
+     "tp": 41,
+     "pred": 49,
+     "gold": 311,
+     "precision": 0.837,
+     "recall": 0.132,
+     "f1": 0.228,
+     "falseMemoryRate": 0.1,
+     "noiseRejection": 0.987,
+     "examples": 478
+    },
+    "automaticOrPending": {
+     "tp": 116,
+     "pred": 245,
+     "recall": 0.373
+    },
+    "pending": {
+     "items": 196,
+     "per100inputs": 41.0,
+     "precision": 0.383,
+     "extraGold": 75
+    },
+    "cost": {
+     "C2": 286,
+     "C3": 294,
+     "C5": 310
+    },
+    "storeNothingCost": 311
+   }
+  }
+ }
+}

@@ -1,0 +1,89 @@
+{
+ "dtw-real-ettin150-s1": {
+  "r=2": {
+   "decoder": "F2",
+   "tauA": 0.7,
+   "tauP": {
+    "rho=0.25": null,
+    "rho=0.33": null,
+    "rho=0.50": null
+   }
+  },
+  "r=3": {
+   "decoder": "F0",
+   "tauA": 0.8,
+   "tauP": {
+    "rho=0.25": 0.7,
+    "rho=0.33": 0.7,
+    "rho=0.50": null
+   }
+  },
+  "r=5": {
+   "decoder": "F1",
+   "tauA": 0.85,
+   "tauP": {
+    "rho=0.25": 0,
+    "rho=0.33": 0.6,
+    "rho=0.50": 0.7
+   }
+  }
+ },
+ "dtw-real-ettin150-s2": {
+  "r=2": {
+   "decoder": "F0",
+   "tauA": 0.8,
+   "tauP": {
+    "rho=0.25": 0.7,
+    "rho=0.33": 0.7,
+    "rho=0.50": null
+   }
+  },
+  "r=3": {
+   "decoder": "F1",
+   "tauA": 0.85,
+   "tauP": {
+    "rho=0.25": 0,
+    "rho=0.33": 0.5,
+    "rho=0.50": 0.7
+   }
+  },
+  "r=5": {
+   "decoder": "F0",
+   "tauA": null,
+   "tauP": {
+    "rho=0.25": 0.3,
+    "rho=0.33": 0.6,
+    "rho=0.50": 0.7
+   }
+  }
+ },
+ "dtw-real-ettin150-s3": {
+  "r=2": {
+   "decoder": "F2",
+   "tauA": 0.75,
+   "tauP": {
+    "rho=0.25": 0.6,
+    "rho=0.33": 0.7,
+    "rho=0.50": null
+   }
+  },
+  "r=3": {
+   "decoder": "F1",
+   "tauA": 0.8,
+   "tauP": {
+    "rho=0.25": 0.6,
+    "rho=0.33": 0.7,
+    "rho=0.50": null
+   }
+  },
+  "r=5": {
+   "decoder": "F1",
+   "tauA": 0.85,
+   "tauP": {
+    "rho=0.25": 0,
+    "rho=0.33": 0.6,
+    "rho=0.50": 0.75
+   }
+  }
+ }
+}
