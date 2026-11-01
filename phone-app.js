@@ -275,6 +275,17 @@
 
   // ─── Shell ────────────────────────────────────────────────────────────────
   function shell() {
+    // The bars float over the chat (glass): the chat leaves room for them, sized live.
+    const app = $('app'); const topBar = app && app.querySelector(':scope > .top'); const comp = $('composer'); const sc = $('scroll');
+    if (app && topBar && comp && sc && 'ResizeObserver' in window) {
+      new ResizeObserver(() => {
+        const bottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 40;
+        app.style.setProperty('--top-h', `${topBar.offsetHeight}px`);
+        app.style.setProperty('--composer-h', `${comp.offsetHeight}px`);
+        if (bottom) sc.scrollTop = sc.scrollHeight; // typing a longer message keeps the last reply in view
+      }).observe(comp);
+      new ResizeObserver(() => app.style.setProperty('--top-h', `${topBar.offsetHeight}px`)).observe(topBar);
+    }
     document.body.dataset.view = 'chat';
     // Sign in: Wisp above the serif line, a line to switch forms.
     const inner = document.querySelector('#signin .signin-inner');

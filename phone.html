@@ -21,27 +21,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="phone-theme.css">
   <script>
-    // iOS 26 home-screen apps can come up short by the status bar's height (WebKit bug 301108):
-    // the page ends well above the home bar, yet still reports the home bar's safe-area inset.
-    // Then the composer needs no room for the home bar (phone-theme.css, html.ios-short).
+    // Home-screen app on iOS: phone-theme.css makes the page screen-tall (html.ios-standalone),
+    // which stops iOS 26 from starting it a status bar short (WebKit bug 301108).
     (function () {
       var ua = navigator.userAgent;
       if (!/iP(hone|od|ad)/.test(ua) && !(/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return;
-      if (!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches))) return;
-      document.documentElement.classList.add('ios-standalone');
-      function measure() {
-        var probe = document.createElement('div');
-        probe.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;pointer-events:none;height:env(safe-area-inset-top)';
-        document.documentElement.appendChild(probe);
-        var top = probe.getBoundingClientRect().height;
-        probe.remove();
-        var full = innerHeight > innerWidth ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
-        var gap = full - innerHeight;
-        document.documentElement.classList.toggle('ios-short', top > 10 && gap > 10 && Math.abs(gap - top) <= 8);
-      }
-      measure();
-      addEventListener('resize', measure);
-      document.addEventListener('DOMContentLoaded', measure);
+      if (navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches)) document.documentElement.classList.add('ios-standalone');
     })();
   </script>
   <link rel="stylesheet" href="phone-app.css">

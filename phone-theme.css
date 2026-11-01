@@ -289,5 +289,48 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible { outline: 
    viewport; min() with 100lvh keeps it from scrolling. (Same fix as frappe-ui #1284.) */
 @media (display-mode: standalone) { html { min-height: min(100lvh, calc(100% + env(safe-area-inset-top))); } }
 html.ios-standalone { min-height: min(100lvh, calc(100% + env(safe-area-inset-top))); }
-/* If iOS still comes up short (phone.html measures it), the page already ends above the home bar */
-html.ios-short .composer { padding-bottom: 6px; }
+
+/* ─── Glass: the top buttons and the composer float over the chat, like ChatGPT on iOS ─── */
+:root {
+  --glass: rgba(40, 40, 40, .58); --glass-2: rgba(255, 255, 255, .07); --glass-2-on: rgba(255, 255, 255, .14);
+  --glass-rim: inset 0 0 0 .5px rgba(255, 255, 255, .14), inset 0 1px 0 rgba(255, 255, 255, .08);
+  --glass-blur: blur(24px) saturate(1.8);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --glass: rgba(255, 255, 255, .62); --glass-2: rgba(0, 0, 0, .04); --glass-2-on: rgba(0, 0, 0, .09);
+    --glass-rim: inset 0 0 0 .5px rgba(0, 0, 0, .12), inset 0 1px 0 rgba(255, 255, 255, .9);
+  }
+}
+:root[data-theme="light"] {
+  --glass: rgba(255, 255, 255, .62); --glass-2: rgba(0, 0, 0, .04); --glass-2-on: rgba(0, 0, 0, .09);
+  --glass-rim: inset 0 0 0 .5px rgba(0, 0, 0, .12), inset 0 1px 0 rgba(255, 255, 255, .9);
+}
+#app > .top { position: absolute; top: 0; left: 0; right: 0; z-index: 6; pointer-events: none; background: none; }
+/* Behind the top buttons: the chat blurs and fades out as it scrolls up under them */
+#app > .top::before { content: ""; position: absolute; inset: 0 0 -18px; z-index: -1; pointer-events: none;
+  background: linear-gradient(to bottom, var(--bg) 0, color-mix(in srgb, var(--bg) 92%, transparent) 55%, color-mix(in srgb, var(--bg) 55%, transparent) 80%, transparent 100%);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 65%, transparent); mask-image: linear-gradient(to bottom, #000 65%, transparent); }
+#app > .top > * { pointer-events: auto; }
+#app > .scroll { padding-top: var(--top-h, 64px); padding-bottom: calc(var(--composer-h, 110px) + 8px); }
+#app > .composer { position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; pointer-events: none; background: none;
+  padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+#app > .composer > * { pointer-events: auto; }
+#app > .composer > .suggest { pointer-events: auto; }
+#menuBtn, #app .top-right, #app > .composer .box, #app > .composer .suggest button {
+  background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-rim); }
+#app .round-btn, #app .chip-btn { background: var(--glass-2); box-shadow: none; }
+#app .chip-btn.on { background: color-mix(in srgb, var(--blue) 16%, transparent); }
+
+/* Buttons answer the finger: a quick squeeze and a light fill, springing back */
+button { -webkit-tap-highlight-color: transparent; }
+#menuBtn, #app .top-right .circle-btn, #app .top-title, .round-btn, .chip-btn, .voice-btn, .send-btn, .suggest button, .msg-actions button,
+.drawer button, .li, .seg button, .btn, .md-copy {
+  transition: transform .32s cubic-bezier(.34, 1.56, .64, 1), background-color .18s ease, opacity .18s ease; }
+#menuBtn:active, #app .top-right .circle-btn:active, .round-btn:active, .chip-btn:active, .voice-btn:active, .send-btn:active, .msg-actions button:active { transform: scale(.88); transition-duration: .08s; }
+#app .top-title:active, .suggest button:active, .btn:active, .seg button:active { transform: scale(.96); transition-duration: .08s; }
+.drawer button:active, .li:active { transform: scale(.985); transition-duration: .08s; }
+#app .top-right .circle-btn:active, .round-btn:active, .chip-btn:active { background: var(--glass-2-on); }
+@media (prefers-reduced-motion: reduce) { button:active, .li:active { transform: none !important; } }
+
