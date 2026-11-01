@@ -74,6 +74,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   const WISP = () => window.CraftWisp || null;
   /** What a line feels like, for Wisp's face. */
   function moodOf(text) { try { return (WISP() && WISP().read(String(text || '')).mood) || 'neutral'; } catch { return 'neutral'; } }
+  const CALM = new Set(['neutral', 'thinking', 'listening']);
   function face(mood, talkMs) {
     const w = c && c.wisp;
     if (!w) return;
@@ -810,7 +811,12 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     const me = c;
     if (!me) return;
     const plan = wordPlan(text);
-    face((c && c.nextMood) || moodOf(text), 1200); // each sentence it says brings its own face
+    // Each sentence with a feeling of its own shows it; plain ones keep the reaction to what you said.
+    if (c) {
+      const own = c.nextMood || moodOf(text);
+      face(!CALM.has(own) ? own : c.react || 'neutral', 1200);
+      c.spoke = true;
+    }
     // dur may be a function: a streamed sentence's length is known only as its audio arrives.
     const total = typeof dur === 'function' ? dur : () => dur;
     const handle = { raf: 0 };
@@ -987,11 +993,13 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     const chip = q('.call-state');
     if (chip) chip.textContent = label || { ringing: '', listening: c.muted ? 'Muted' : (c.typing ? 'Type to talk' : 'Listening'), thinking: 'Thinking', speaking: '', ended: '' }[phase] || '';
     setAvatarState(q('.call-orb'), phase === 'thinking' ? 'working' : 'idle');
-    // Wisp: thinks, works through a job (a step label), listens; while it speaks the line's own mood shows.
-    if (phase === 'thinking') face(label ? 'working' : 'thinking');
-    if (phase === 'listening') c.nextMood = null;
-    if (phase === 'listening' && c.userMoodAt && performance.now() - c.userMoodAt < 2500) { /* keep your reaction a moment */ }
-    else if (phase === 'listening' && !(c.userMoodAt && performance.now() - c.userMoodAt < 2500)) face(c.muted ? 'sleepy' : 'listening');
+    // Wisp: how it feels about what you said (c.react) holds through the whole reply: thinking,
+    // and every sentence that has no feeling of its own. Real work in progress shows as working.
+    if (phase === 'thinking') face(label ? 'working' : c.react || 'thinking');
+    if (phase === 'listening') {
+      if (c.spoke) { c.react = null; c.nextMood = null; c.spoke = false; } // the reply is over: back to listening
+      face(c.react || (c.muted ? 'neutral' : 'listening'));
+    }
   }
   function caption(text, who) {
     if (!c) return;
@@ -1001,14 +1009,16 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     const box = cap.parentElement;
     if (box && box.classList.contains('vm-cap')) box.classList.toggle('over', cap.scrollWidth > box.clientWidth + 1);
     if (text && who === 'user') {
-      // What you said shows on Wisp's face first: happy, worried, excited, angry...
+      // What you said shows on Wisp's face at once and stays through its reply: angry with you
+      // at whoever upset you, a heart for "I love you", happy for "good job", sad with you...
       const m = moodOf(text);
-      c.userMoodAt = performance.now();
-      face(m === 'neutral' ? 'listening' : m);
+      c.react = CALM.has(m) ? null : m;
+      c.spoke = false;
+      face(c.react || 'listening');
     } else if (text && who === 'bot') face(null, 900); // its mouth moves with the words
   }
   function log(who, text) {
-    c.turns.push({ who, text, at: Date.now() });
+    c.turns.push({ who, text, at: Date.now(), ...(who === 'bot' && c.wisp && !CALM.has(c.wisp.mood) ? { mood: c.wisp.mood } : {}) });
     const box = q('.call-log-list');
     if (!box) return;
     const row = document.createElement('p');
@@ -1867,7 +1877,7 @@ You are on a live voice call; everything you write is spoken out loud right away
       startedAt: Date.now(), connectedAt: 0, lastBotText: '', rec: null, abort: null, ending: false,
       voice: voiceFor(bot), pitch: 0.92 + (hash(`${bot.id}p`) % 17) / 100, fails: 0, recAt: 0,
       ears: false, vad: null, queued: null, dgVoice: deepgramVoice(bot), ttsOff: !TTS_URL, ttsCtl: null, ttsNote: '', playing: null, noteBase: '',
-      context: String(opts.context || ''), reminder: opts.reminder || null, vm: true, wisp: null, userMoodAt: 0,
+      context: String(opts.context || ''), reminder: opts.reminder || null, vm: true, wisp: null, react: null, spoke: false,
     };
     try { if (WISP()) c.wisp = WISP().mount(q('.vm-wisp'), { size: 'lg', mood: 'happy', morph: true }); } catch {}
     if (c.typing) root().classList.add('typing');
@@ -2037,6 +2047,7 @@ You are on a live voice call; everything you write is spoken out loud right away
       status: connected ? 'done' : 'cancelled', turns: call.turns.map((t) => ({ who: t.who, text: t.text })), synced: call.bot.id === CODEPLY.id ? 'local' : false,
     });
     saveCalls();
+    if (call.vm) saveVoiceChat(call);
     setTimeout(() => {
       if (c === call) c = null;
       root().classList.add('hidden');
@@ -2056,6 +2067,23 @@ You are on a live voice call; everything you write is spoken out loud right away
     else if (!c.rec) startListening();
   });
   window.addEventListener('craft:pc-online', () => { pushPending().then(refreshBots).then(syncCalls); });
+
+  /**
+   * Voice history: a voice session is kept as a chat in the sidebar (with a
+   * voice mark), its turns as messages, so it reads like any other chat and
+   * can be carried on by typing.
+   */
+  function saveVoiceChat(call) {
+    const turns = call.turns.filter((t) => t.text && !/^\(Scheduled task\)/.test(t.text));
+    if (!turns.some((t) => t.who === 'user') || !P.createChat) return;
+    const first = turns.find((t) => t.who === 'user').text.replace(/\s+/g, ' ').trim();
+    const chat = P.createChat('chat', { voice: true, title: first.length > 46 ? `${first.slice(0, 45)}...` : first, updatedAt: Date.now() });
+    const b = P.state.bodies.get(chat.id);
+    for (const t of turns) b.messages.push({ role: t.who === 'bot' ? 'assistant' : 'user', content: t.text, at: t.at || Date.now(), ...(t.mood ? { mood: t.mood } : {}) });
+    P.saveBody(chat.id);
+    P.saveChats();
+    if (P.renderChatList) P.renderChatList();
+  }
 
   /** Voice mode: straight into talking with Codeply (from the composer's voice button). Inside the tap, so audio can start. */
   function openVoice(opts = {}) { return startCall(CODEPLY, { answered: true, ...opts }); }

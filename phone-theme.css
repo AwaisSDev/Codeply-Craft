@@ -334,3 +334,6 @@ button { -webkit-tap-highlight-color: transparent; }
 #app .top-right .circle-btn:active, .round-btn:active, .chip-btn:active { background: var(--glass-2-on); }
 @media (prefers-reduced-motion: reduce) { button:active, .li:active { transform: none !important; } }
 
+/* A voice session in the sidebar: a small waveform before its title */
+.chat-row[data-voice] { display: flex; align-items: center; gap: 8px; }
+.chat-voice { flex: none; color: var(--muted); }

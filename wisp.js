@@ -280,16 +280,29 @@
     sad: "Sorry. That's on me, fixing it right now.",
     angry: 'Nobody talks to you like that. Want me to draft a reply?',
     sleepy: "Still here. I'll keep going while you rest.", surprised: "Oh. Didn't see that coming.",
-    thinking: 'Good question. Give me a second.', excited: "Ooh. Let's do it.", worried: 'Hmm. Let me look carefully.'
+    thinking: 'Good question. Give me a second.', excited: "Ooh. Let's do it.", worried: 'Hmm. Let me look carefully.',
+    working: "Sleep well. I'll keep working while you rest."
   };
+  // Feelings the user has (not about Wisp): Wisp feels them with them.
+  var FEEL_ANGRY = /\b(angry|mad|furious|pissed|frustrat\w*|annoyed|irritated|livid|fuming|infuriat\w*|fed up|sick of|hate (him|her|them|this|that|it|my|when|how)|drives me (crazy|nuts|mad)|so done with)\b/i;
+  var FEEL_SAD = /\b(sad|upset|depressed|lonely|heartbroken|miserable|crying|cried|devastated|(bad|rough|terrible|awful) day|day was (bad|rough|terrible|awful)|feel(ing)? (down|low|awful|terrible)|i miss)\b|😢|😭/i;
+  var FEEL_WORRIED = /\b(worried|nervous|anxious|scared|afraid|stressed|stressing|panick?ing|freaking out|overwhelmed)\b/i;
+  var FEEL_LOVE = /\b(i (love|luv|adore) (you|u|ya)|love (you|u|ya|it|this)|ily|i like you|you('?re| are) (the best|amazing|awesome|great|cute|sweet|lovely))\b|<3|❤|💙|😍|🥰|😘/i;
+  var AT_YOU = /\b(at|with|of) (you|u|wisp|codeply)\b|\byou('?re| are) (useless|stupid|annoying|slow|bad|terrible)\b/i;
   function moodOf(t) {
     var letters = t.replace(/[^a-z]/gi, ''), caps = letters.replace(/[^A-Z]/g, '').length;
     var shouting = (letters.length > 3 && caps / letters.length > .6) || /!!/.test(t);
     if (OTHERS.test(t) && MEAN.test(t)) return 'angry';
+    if (FEEL_LOVE.test(t)) return 'love';
+    // Angry at Wisp itself: it's sorry. Angry at anyone or anything else: it's angry with you.
+    if (FEEL_ANGRY.test(t)) return AT_YOU.test(t) ? 'sad' : 'angry';
     if (shouting || (AT_WISP.test(t) && /\b(broke|broken|failed|wrong|again|useless|stupid|ugh|wtf|hate|bad|garbage|trash|annoying|slow)\b/i.test(t))) return 'sad';
-    if (/\b(love (you|u|it|this)|you('?re| are) (the best|amazing|awesome|great)|ily|<3)\b|❤|💙/i.test(t)) return 'love';
-    if (/\b(thanks|thank you|thx|great|nice|awesome|good job|perfect|amazing|cool|lol|yay)\b|:\)/i.test(t)) return 'happy';
-    if (/\b(sleep|sleepy|tired|good ?night|bed|bye|signing off)\b/i.test(t)) return 'sleepy';
+    if (FEEL_SAD.test(t)) return 'sad';
+    if (FEEL_WORRIED.test(t)) return 'worried';
+    if (/\b(got the job|i won|we won|promoted|i passed|good news|it worked|we did it)\b/i.test(t)) return 'excited';
+    if (/\b(thanks|thank you|thx|great|nice|awesome|good job|well done|perfect|amazing|cool|lol|haha|yay)\b|:\)/i.test(t)) return 'happy';
+    // Going to sleep: Wisp doesn't. It keeps working while you rest.
+    if (/\b(sleep|sleepy|tired|good ?night|bed|bye|signing off)\b/i.test(t)) return 'working';
     if (/\b(wow|omg|whoa|no way|really\?)\b/i.test(t)) return 'surprised';
     if (/\b(let'?s go|excited|can'?t wait|launch|ship it)\b|🚀/i.test(t)) return 'excited';
     if (/\?|\b(what|how|why|can you|could you)\b/i.test(t)) return 'thinking';

@@ -2431,7 +2431,7 @@ function renderChatList() {
   $('drawerSep').classList.toggle('hidden', !!q);
   const linked = new Set(state.chats.map((c) => c.pcSessionId).filter(Boolean));
   const rows = [
-    ...state.chats.filter((c) => c.title).map((c) => ({ type: 'local', id: c.id, title: c.title, kind: c.kind, cloud: c.cloud, at: c.updatedAt })),
+    ...state.chats.filter((c) => c.title).map((c) => ({ type: 'local', id: c.id, title: c.title, kind: c.kind, cloud: c.cloud, voice: !!c.voice, at: c.updatedAt })),
     ...(state.pc.sessions || []).filter((s) => !linked.has(s.id)).map((s) => ({ type: 'pc', id: s.id, title: s.title || 'Untitled', kind: 'code', cloud: !!s.cloud, at: s.updatedAt || 0, meta: s })),
   ].filter((r) => !q || String(r.title).toLowerCase().includes(q)).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 200);
   // What needs the user comes first, then what is running: unblock an agent without opening each chat.
@@ -2458,6 +2458,7 @@ function renderChatList() {
     b.type = 'button';
     b.querySelector('span').textContent = r.title;
     b.dataset.kind = r.cloud ? 'cloud' : r.kind;
+    if (r.voice) { b.dataset.voice = '1'; b.insertAdjacentHTML('afterbegin', '<svg class="chat-voice" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-label="Voice"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg>'); }
     if (r.flag) b.insertAdjacentHTML('beforeend', r.flag === 'needs' ? '<em class="chat-flag needs">Needs you</em>' : '<em class="chat-flag running"><i></i>Working</em>');
     b.addEventListener('click', () => { if (b.dataset.pressed) { delete b.dataset.pressed; return; } closeDrawer(); if (r.type === 'pc') openPcSession(r.meta); else openChat(r.id); });
     let pressTimer = null;
@@ -2806,6 +2807,7 @@ currentSession().then((s) => { if (s) enterApp(); else showSignin(); }).catch(sh
 window.CraftPhone = { state, relay, sb, sealSecret, CLOUD_WORKFLOW, md, pollAll, relayRequest, accessToken, esc, load, save, newId, openDrawer, closeDrawer, AI_PROXY_URL, SUPABASE_ANON_KEY, deviceHeader,
   cloudEnvForBots, startCloudTask, pollCloudTask: pollTask,
   // phone-app.js (tabs, Home, You, sign-up) builds on these
+  createChat, saveBody, saveChats,
   SUPABASE_URL, answerApproval, setPermission, PERM, signinStep, openChat, openPcSession, newChat, openSettings, openSetup, openProjectPicker, openModelPicker, chatMeta, signOut, applyTheme, themeChoice, renderChatList, enterApp, friendlyAuthError, currentSession };
 
 // Reminders and "calls" from your bots arrive as Web Push: phone-sw.js shows
