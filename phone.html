@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
-  <meta name="theme-color" content="#040A1C" id="themeColorMeta">
+  <meta name="theme-color" content="#000000" id="themeColorMeta">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <!-- Opaque, not black-translucent: on iOS 26 a see-through status bar leaves the home-screen app
        sized short by the status bar's height, with a dead band at the bottom (WebKit bug 301108). -->
@@ -15,10 +15,10 @@
   <link rel="stylesheet" href="phone.css">
   <link rel="stylesheet" href="phone-calls.css">
   <link rel="stylesheet" href="phone-design.css">
-  <!-- The website's look (codeply.app): Geist, the sky, glass controls, navy dark. -->
+  <!-- Native and quiet (phone-theme.css): grouped lists, one accent, no gradients. Inter where the phone has no SF Pro. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="phone-theme.css">
   <link rel="stylesheet" href="phone-app.css">
   <script>
@@ -99,14 +99,14 @@
           <h1 class="greeting" id="greeting">What can I help with?</h1>
           <p class="empty-sub" id="emptySub"></p>
         </div>
-        <div class="inbox" id="inbox"></div>
       </div>
       <div class="feed hidden" id="feed" aria-live="polite"></div>
     </main>
 
-    <!-- CHATS and YOU (phone-app.js): tabs next to Home -->
+    <!-- HOME, CHATS and YOU (phone-app.js): the tabs. A chat opens over them. -->
+    <section class="tabview" id="homeView" aria-label="Home"></section>
     <section class="tabview" id="chatsView" aria-label="Chats">
-      <header class="tv-head"><h1>Chats</h1></header>
+      <header class="tv-head"><h1>Chats</h1><button type="button" class="nav-add" data-q="new" aria-label="New chat"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button></header>
       <label class="tv-search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg><span id="chatsSearchSlot"></span></label>
       <div class="seg tv-filter" id="chatsFilter" role="group" aria-label="Show">
         <button type="button" data-f="all" class="on">All</button><button type="button" data-f="code">Agent</button><button type="button" data-f="chat">Chat</button><button type="button" data-f="cloud">Cloud</button>
@@ -235,8 +235,8 @@
       <div class="sheet-actions">
         <button class="btn btn-quiet" id="rejectBtn" type="button">Deny</button>
         <button class="btn btn-primary" id="approveBtn" type="button">Allow once</button>
+        <button class="btn always-btn hidden" id="alwaysBtn" type="button">Always allow</button>
       </div>
-      <button class="btn btn-ghost always-btn hidden" id="alwaysBtn" type="button">Always allow</button>
     </div>
   </section>
 

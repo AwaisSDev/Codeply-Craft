@@ -153,16 +153,7 @@
 
   function start() {
     mountHome();
-    mountSignin();
-    const sheet = document.querySelector('#approvalSheet .sheet-card');
-    if (sheet && !sheet.querySelector('.sheet-face')) {
-      const holder = document.createElement('div');
-      holder.className = 'sheet-face';
-      const el = document.createElement('div');
-      holder.appendChild(el);
-      sheet.insertBefore(holder, sheet.querySelector('.sheet-over') || sheet.querySelector('.sheet-title'));
-      W.mount(el, { size: 'md', mood: 'worried' });
-    }
+    // Wisp shows on the empty chat, at each answer and in onboarding. Sign-in and sheets stay plain.
     let q = false;
     const soon = () => { if (q) return; q = true; requestAnimationFrame(() => { q = false; decorate(); presence(); }); };
     const f = $('feed');

@@ -3,8 +3,8 @@
   "short_name": "Codeply",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#040A1C",
-  "theme_color": "#040A1C",
+  "background_color": "#000000",
+  "theme_color": "#000000",
   "icons": [
     {
       "src": "/logo.png",

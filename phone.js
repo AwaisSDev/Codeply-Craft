@@ -198,7 +198,7 @@ function applyTheme(choice) {
 function syncTheme() {
   const c = themeChoice();
   const dark = c === 'dark' || (c === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  if ($('themeColorMeta')) $('themeColorMeta').content = dark ? '#040A1C' : '#FAFAF7'; // the site's navy and paper (phone-theme.css)
+  if ($('themeColorMeta')) $('themeColorMeta').content = dark ? '#000000' : '#F2F2F7'; // the canvas (phone-theme.css)
   $('themeBtn').innerHTML = ICONS[c];
   $('themeBtn').title = c === 'system' ? 'Theme: match the phone' : `Theme: ${c}`;
 }
