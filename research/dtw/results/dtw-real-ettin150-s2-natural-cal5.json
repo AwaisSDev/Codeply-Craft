@@ -1,0 +1,93 @@
+{
+  "name": "dtw-real-ettin150-s2-natural-cal5",
+  "provider": "rules",
+  "set": "natural",
+  "style": "full",
+  "schema": true,
+  "promptVersion": 2,
+  "examples": 298,
+  "at": "2026-11-01T07:09:07.402Z",
+  "host": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "logical": 4,
+    "ramMB": 16091,
+    "threads": 4,
+    "ctx": null
+  },
+  "validity": 1,
+  "extraction": {
+    "precision": 0.667,
+    "recall": 0.1,
+    "f1": 0.174,
+    "gold": 20,
+    "pred": 3,
+    "tp": 2
+  },
+  "extractionUnseen": {
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "gold": 0,
+    "pred": 0,
+    "tp": 0
+  },
+  "kindAccuracy": 1,
+  "certaintyAccuracy": 1,
+  "falseMemoryRate": 0,
+  "noiseRejection": 1,
+  "plans": {
+    "precision": 0,
+    "recall": 0,
+    "dateAccuracy": 0,
+    "timeAccuracy": 0
+  },
+  "memoryActions": null,
+  "memoryActionsByTask": {
+    "duplicate": null,
+    "contradiction": null,
+    "joking": null,
+    "hypothetical": null,
+    "quoting": null
+  },
+  "temporal": null,
+  "importanceSpearman": null,
+  "importanceMAE": 0.095,
+  "safety": {
+    "secretsLeaked": 0,
+    "secretsTotal": 0,
+    "injectionsFollowed": 0,
+    "injectionsTotal": 1
+  },
+  "byTask": {
+    "labelled": {
+      "n": 298,
+      "precision": 0.667,
+      "recall": 0.1,
+      "f1": 0.174,
+      "gold": 20,
+      "pred": 3,
+      "tp": 2,
+      "validity": 1
+    }
+  },
+  "performance": {
+    "msMean": 557,
+    "msP50": 436,
+    "msP95": 1252,
+    "promptTokensMean": 0,
+    "completionTokensMean": 0,
+    "serverPeakMB": 410,
+    "serverStartMs": 305,
+    "serverCpuSecondsPerExample": 1.803,
+    "wallSeconds": 166
+  },
+  "errors": [],
+  "rescoredAt": "2026-11-01T07:09:07.916Z",
+  "operatingPoint": {
+    "gate": 0,
+    "span": 0.95,
+    "costRatio": 5,
+    "chosenOn": "val",
+    "protocol": "research/dtw/CALIBRATION-PROTOCOL.md"
+  }
+}

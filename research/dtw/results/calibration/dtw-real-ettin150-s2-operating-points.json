@@ -1223,5 +1223,22 @@
   "memorable": 671,
   "fragments": 324,
   "share": 0.483
+ },
+ "fragments": {
+  "test-real": {
+   "memorable": 877,
+   "fragments": 403,
+   "share": 0.46
+  },
+  "bench": {
+   "memorable": 1075,
+   "fragments": 529,
+   "share": 0.492
+  },
+  "natural": {
+   "memorable": 71,
+   "fragments": 43,
+   "share": 0.606
+  }
  }
 }
