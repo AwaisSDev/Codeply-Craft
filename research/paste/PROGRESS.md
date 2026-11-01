@@ -4,8 +4,10 @@ Branch `research/paste-architecture`, base `672696c0` (`codeply-memarch-research
 
 ## Current phase
 
-Phase 2 (literature review, hypotheses, specification): **done**. Next: Phase 3 (prototype + unit tests).
-Phase 1 (repository inspection) is done; see `REPOSITORY-CONTEXT.md`.
+Phase 3 (CPU prototype + unit tests T1-T12): **done**. See `PHASE3-REPORT.md`.
+Waiting for owner decisions D1 (MERGE vs invariant I1) and D2 (head-input
+scale) before Phase 5 training. Phase 4 (dataset) is not started; it waits
+for the owner's go-ahead.
 
 ## Completed
 
@@ -14,6 +16,12 @@ Phase 1 (repository inspection) is done; see `REPOSITORY-CONTEXT.md`.
   `codeply-memarch-research`, `dtw-artifacts` and
   `claude/wonderful-feynman-y2ldw2`. Wrote `REPOSITORY-CONTEXT.md`.
 * 2026-11-01: owner answered the four open questions (below).
+* 2026-11-01, Phase 2: `LITERATURE-REVIEW.md` (synthesis + 4 verified parts),
+  `ARCHITECTURE-HYPOTHESES.md` (H0-H9 with recorded priors),
+  `ARCHITECTURE-SPEC.md` (v2). Headline: no PASTE mechanism is new; my prior
+  for the central test is ~30 %.
+* 2026-11-01, Phase 3: CPU prototype (`paste/`), tests T1-T12 + S1 (25/25
+  pass), CPU benchmark, `PHASE3-REPORT.md`.
 
 ## Running jobs
 
@@ -77,46 +85,47 @@ review and saved it section by section.
   with false permanent memories no worse than 1.1× and latency ≤1.5×.
   M1c+W is reported as the "text window suffices" check.
 
-## Phase 2 status (2026-11-01)
+## Phase 3 status (2026-11-01)
 
-Done:
+* Prototype in `paste/` implemented from the spec.
+* Exact parameter counts (39,256,598 / 20,699,030).
+* **25/25 tests pass** (`results/phase3/test-run.txt`).
 
-* `ARCHITECTURE-SPEC.md` (v2);
-* `LITERATURE-REVIEW.md`: synthesis plus 4 parts, ~22k words, primary
-  sources tagged [V]/[S]/[U];
-* `ARCHITECTURE-HYPOTHESES.md`: H0-H9, with recorded prior expectations.
+First-run failures, all reported:
 
-Spec updated with the literature's risks: possible UPDATE collapse;
-recurrence not learned; soft tokens are only semi-joint; omission
-dominance. Per-operation diagnostics added.
+| Failure | Cause |
+|---|---|
+| T3 spec tolerance in fp32 | Rounding: fp64 shows exact equivariance |
+| T8 precondition | Test design |
+| S1 toy episode | Test design |
+| T8 history dependence | **Implementation bug** (cached record encodings depended on batch composition), fixed; its own test was seeded |
 
-Headline from the literature: **no PASTE mechanism is new**. A defensible
-claim is at most an integration plus an empirical result at 20-50M. My
-recorded prior for the central test is ~30 % that PASTE beats M1c / M1c-m.
+Design issues documented, **not changed**:
+
+* D1: pair-MERGE bypasses the write gate (I1 vs §5.10);
+* D2: large head-input scale saturates the heads at initialisation.
+
+CPU, 32M, 3 units/segment, warm: 30 / 40 / 113 ms per segment at
+K = 8 / 32 / 128; peak RSS 482-496 MB.
 
 ## Next action
 
-Phase 3: the prototype (ModernBERT reimplementation, PASTE model, heads,
-Brain simulator, adapter) and unit tests T1-T12 on CPU. Then Phase 4:
-dataset generator, programmatic first, then the API pilot (≤ ~100 episodes,
-cost estimate to the owner before any further spend).
+1. Owner decisions D1 and D2.
+2. Phase 4 dataset generator: programmatic first, then the API pilot
+   (≤ ~100 episodes; cost estimate before any further spend).
+3. Baselines (M1c, M1c-m, M1c+W, RMT, KV) and the closed-loop trainer,
+   before any training run.
 
 ## Latest metrics
 
-None. Nothing has been trained.
+No trained model. Phase 3 measurements: see `PHASE3-REPORT.md` §2 and §5 (untrained weights; latency and memory only).
 
 ## Blockers
 
-None. Expensive training stays blocked by rule until the sequential dataset
-and the evaluation protocol are validated (owner decision 5).
-
-## Next actions
-
-1. Phase 2 documents: done.
-2. CPU environment: done (`/home/user/paste-venv`, torch 2.15 CPU).
-3. Then, in order: prototype + unit tests; dataset generator + API pilot
-   (cost estimate shown to the owner before any further spend); dataset and
-   protocol validation; only then Kaggle training.
+* Owner decisions D1 and D2 (`PHASE3-REPORT.md` §3 and §7). They block
+  Phase 5 training, not Phase 4.
+* Expensive training stays blocked by rule until the sequential dataset and
+  the evaluation protocol are validated (owner decision 5).
 
 ## Owner decisions (2026-11-01, second round)
 

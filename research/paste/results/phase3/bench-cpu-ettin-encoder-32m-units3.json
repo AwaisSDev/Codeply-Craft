@@ -1,0 +1,60 @@
+{
+ "backbone": "ettin-encoder-32m",
+ "fixed_units": 3,
+ "threads": 4,
+ "segment_tokens": 91,
+ "params": 39256598,
+ "rss_mb_python_baseline": 222.6,
+ "rss_mb_after_load": 481.8,
+ "temp_state_json_bytes": 26211,
+ "runs": [
+  {
+   "K": 8,
+   "E": 2,
+   "T": 8,
+   "prefix_tokens": 30,
+   "paste_input_tokens": 121,
+   "m1c_input_tokens_est": 275,
+   "units_decoded": 3,
+   "step_ms_cold_p50": 69.0,
+   "step_ms_cold_p95": 109.5,
+   "step_ms_warm_p50": 29.9,
+   "step_ms_warm_p95": 47.6,
+   "encoder_only_ms_at_paste_len": 16.3,
+   "encoder_only_ms_at_m1c_len": 28.5,
+   "rss_peak_mb": 481.8
+  },
+  {
+   "K": 32,
+   "E": 8,
+   "T": 8,
+   "prefix_tokens": 84,
+   "paste_input_tokens": 175,
+   "m1c_input_tokens_est": 599,
+   "units_decoded": 3,
+   "step_ms_cold_p50": 224.0,
+   "step_ms_cold_p95": 281.9,
+   "step_ms_warm_p50": 39.6,
+   "step_ms_warm_p95": 53.8,
+   "encoder_only_ms_at_paste_len": 22.8,
+   "encoder_only_ms_at_m1c_len": 64.3,
+   "rss_peak_mb": 481.8
+  },
+  {
+   "K": 128,
+   "E": 16,
+   "T": 8,
+   "prefix_tokens": 284,
+   "paste_input_tokens": 375,
+   "m1c_input_tokens_est": 1875,
+   "units_decoded": 3,
+   "step_ms_cold_p50": 925.5,
+   "step_ms_cold_p95": 1082.9,
+   "step_ms_warm_p50": 112.7,
+   "step_ms_warm_p95": 164.2,
+   "encoder_only_ms_at_paste_len": 33.8,
+   "encoder_only_ms_at_m1c_len": 367.1,
+   "rss_peak_mb": 496.2
+  }
+ ]
+}

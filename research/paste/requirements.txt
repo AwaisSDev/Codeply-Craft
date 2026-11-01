@@ -1,0 +1,8 @@
+# PASTE prototype (CPU). Versions used for the Phase 3 results:
+torch==2.15.0          # CPU wheel: pip install torch --index-url https://download.pytorch.org/whl/cpu
+tokenizers==0.23.3
+huggingface_hub==2.4.0
+numpy==2.5.3
+# tests only (T1 compares against Hugging Face ModernBertModel)
+transformers==5.22.1
+pytest
