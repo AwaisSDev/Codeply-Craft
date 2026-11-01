@@ -137,15 +137,30 @@ function inlineMd(s) {
     return esc(part)
       .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
       .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>');
+      .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>')
+      // Craft's coloured text and pills (:green[..], :pill-amber[..], :kbd[..]).
+      .replace(/:([a-z]+(?:-[a-z]+)?)\[([^\]\n]+)\]/g, (m, name, text) => {
+        const c = RICH_COLORS[name.replace(/^(?:pill|badge)-/, '')];
+        if (name === 'kbd') return `<kbd class="md-kbd">${text}</kbd>`;
+        if (name === 'pill' || name === 'badge') return `<span class="md-pill">${text}</span>`;
+        if (/^(?:pill|badge)-/.test(name) && c) return `<span class="md-pill md-c-${c}">${text}</span>`;
+        return c ? `<span class="md-c-${c}">${text}</span>` : m;
+      });
   }).join('');
 }
+const RICH_COLORS = { green: 'green', success: 'green', red: 'red', danger: 'red', error: 'red', blue: 'blue', info: 'blue', amber: 'amber', orange: 'amber', yellow: 'amber', warning: 'amber', purple: 'purple', violet: 'purple', gray: 'gray', grey: 'gray', muted: 'gray' };
 function md(src) {
   const parts = String(src || '').replace(/\r\n/g, '\n').split(/^```/m);
   return parts.map((part, i) => {
     if (i % 2) {
       const nl = part.indexOf('\n');
       const body = nl >= 0 ? part.slice(nl + 1) : '';
+      // Craft's interactive widgets only run in the desktop app; documents read as text.
+      const head = (nl >= 0 ? part.slice(0, nl) : part).trim();
+      const kind = head.split(/\s+/)[0].toLowerCase();
+      const title = head.slice(kind.length).trim().replace(/^(["'])(.*)\1$/, '$2');
+      if (kind === 'widget' || kind === 'ui' || kind === 'interactive') return `<div class="md-widget-note"><strong>${esc(title || 'Interactive widget')}</strong><span>Open this chat in Craft on your PC to use it.</span></div>`;
+      if (kind === 'doc' || kind === 'document' || kind === 'writing') return `<div class="md-doc">${title ? `<h3>${esc(title)}</h3>` : ''}${mdBlocks(body)}</div>`;
       return `<pre><code>${esc(body.replace(/\n$/, ''))}</code></pre>`;
     }
     return mdBlocks(part.replace(/^[^\n]*\n?/, i === 0 ? '$&' : ''));

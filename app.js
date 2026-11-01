@@ -442,72 +442,11 @@ function esc(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function mdToHtml(text) {
-  const src = esc(text);
-  const parts = src.split(/```/);
-  let html = '';
-  for (let i = 0; i < parts.length; i++) {
-    if (i % 2 === 1) {
-      // fenced code block; first line may be a language tag
-      const nl = parts[i].indexOf('\n');
-      const lang = nl > -1 ? parts[i].slice(0, nl).trim() : '';
-      const code = nl > -1 ? parts[i].slice(nl + 1) : parts[i];
-      html += `<div class="code-card"><div class="code-card-head"><span>${lang || 'code'}</span></div><pre><code>${code}</code></pre></div>`;
-    } else {
-      html += inlineMd(parts[i]);
-    }
-  }
-  return html;
-}
-
-function inlineMd(src) {
-  const lines = src.split('\n');
-  let out = '';
-  let inList = false;
-  let para = [];
-  const flush = () => {
-    if (para.length) {
-      out += `<p>${para.join('<br>')}</p>`;
-      para = [];
-    }
-  };
-  for (const raw of lines) {
-    const line = raw.trimEnd();
-    const m = line.match(/^\s*[-*•]\s+(.*)/);
-    if (m) {
-      flush();
-      if (!inList) { out += '<ul>'; inList = true; }
-      out += `<li>${spans(m[1])}</li>`;
-      continue;
-    }
-    if (inList) { out += '</ul>'; inList = false; }
-    if (!line.trim()) { flush(); continue; }
-    const h = line.match(/^(#{1,4})\s+(.*)/);
-    if (h) { flush(); out += `<p class="md-h">${spans(h[2])}</p>`; continue; }
-    para.push(spans(line));
-  }
-  if (inList) out += '</ul>';
-  flush();
-  return out;
-}
-
-// Models occasionally slip into LaTeX-style math tokens in plain prose
-// (e.g. "Homepage $\rightarrow$ Login") even though this is a plain-text
-// chat, not a math renderer. Swap the common ones for their Unicode glyph
-// so they read normally instead of showing the raw markup.
-const LATEX_TOKEN = /\$?\\(rightarrow|Rightarrow|leftrightarrow|Leftrightarrow|leftarrow|Leftarrow|to|times|cdot|approx|neq|leq|geq|pm|infty)\$?/g;
-const LATEX_MAP = {
-  rightarrow: '→', to: '→', Rightarrow: '⇒',
-  leftarrow: '←', Leftarrow: '⇐',
-  leftrightarrow: '↔', Leftrightarrow: '⇔',
-  times: '×', cdot: '·', approx: '≈', neq: '≠', leq: '≤', geq: '≥', pm: '±', infty: '∞',
-};
-
-function spans(s) {
-  return s
-    .replace(LATEX_TOKEN, (_, name) => LATEX_MAP[name] || '')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+// The renderer lives in rich-ui.js: headings, tables, pills, callouts,
+// document cards and sandboxed interactive widgets. `live` is set while a
+// reply is still arriving, so a half-written widget waits instead of loading.
+function mdToHtml(text, opts) {
+  return window.CraftRich.render(text, opts);
 }
 
 // ─── Background commands ────────────────────────────────────────────────────
@@ -985,7 +924,7 @@ function runFastTypewriter(msg, text, done) {
   let i = 0;
   activeTypewriterTimer = setInterval(() => {
     i = Math.min(words.length, i + wordsPerTick);
-    msg.innerHTML = mdToHtml(words.slice(0, i).join(''));
+    msg.innerHTML = mdToHtml(words.slice(0, i).join(''), { live: i < words.length });
     if (nearBottom()) scrollToBottom();
     if (i >= words.length) {
       clearInterval(activeTypewriterTimer);
