@@ -97,33 +97,54 @@ LFM3 = nb(
     "split, rendered with the production prompt (v2, full style, as in the evaluation). One run per seed in SEEDS; "
     "each exported to GGUF. LFM Open License v1.0.",
     [SETUP, LLAMA_BUILD, r'''
-import subprocess, os, yaml
-SEEDS = [1, 2]   # set per kernel; the protocol asks for 3 seeds in total
+import subprocess, os, yaml, time
+SEEDS = [1, 2]   # one per T4 (the kernel has two); the protocol asks for 3 seeds in total
+W = "/kaggle/working/lora"   # under /kaggle/working so that a run stopped by the 12 h limit keeps its checkpoints
 os.chdir("/tmp/codeply")
 subprocess.run("pip -q install -r ml/finetune/requirements.txt", shell=True, check=True)
 # Kaggle's image ships torchao 0.10; PEFT refuses any torchao below 0.16 (the first run failed on it). LoRA does not use it.
 subprocess.run("pip -q uninstall -y torchao", shell=True, check=True)
 subprocess.run("node --version || (curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs) > /dev/null", shell=True, check=True)
 subprocess.run("cp research/dtw/data/real/train.jsonl research/dtw/data/real/val.jsonl /tmp/ && node ml/data/export-sft.mjs --in /tmp --style full", shell=True, check=True)
-for seed in SEEDS:
+# export_gguf.sh calibrates the INT4 importance matrix on ml/data/out/sft-val.jsonl: give it the realistic val prompts.
+subprocess.run("cp /tmp/sft-val.jsonl ml/data/out/sft-val.jsonl", shell=True, check=True)
+procs = {}
+for gpu, seed in enumerate(SEEDS):
     cfg = yaml.safe_load(open("ml/finetune/config-lfm3.yaml"))
     # Same effective batch as config-lfm3.yaml (16), micro-batch 1 for the T4's 16 GB: with batch 4 the
     # backward pass ran out of memory on the 128K-vocabulary logits (run 2).
     cfg["grad_accum"] = cfg["grad_accum"] * cfg["batch_size"]
     cfg["batch_size"] = 1
-    cfg.update({"train_file": "/tmp/sft-train.jsonl", "val_file": "/tmp/sft-val.jsonl", "seed": seed,
-                "output_dir": f"ml/finetune/runs/real-lfm3-lora-s{seed}"})
+    out = f"{W}/real-lfm3-lora-s{seed}"
+    cfg.update({"train_file": "/tmp/sft-train.jsonl", "val_file": "/tmp/sft-val.jsonl", "seed": seed, "output_dir": out})
+    os.makedirs(out, exist_ok=True)
     yaml.safe_dump(cfg, open(f"/tmp/config-s{seed}.yaml", "w"))
-    if not os.path.exists(f"ml/finetune/runs/real-lfm3-lora-s{seed}/merged"):
-        subprocess.run(f"PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True python ml/finetune/train_lora.py --config /tmp/config-s{seed}.yaml", shell=True, check=True)
+    if not os.path.exists(f"{out}/merged"):
+        # Both seeds at once, one GPU each (run 3 used one of the two T4s and needed ~17.6 h per seed).
+        procs[seed] = subprocess.Popen(f"CUDA_VISIBLE_DEVICES={gpu} PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True "
+                                       f"python ml/finetune/train_lora.py --config /tmp/config-s{seed}.yaml > {out}/stdout.log 2>&1", shell=True)
+while any(p.poll() is None for p in procs.values()):
+    time.sleep(600)
+    for seed in procs:
+        print(seed, open(f"{W}/real-lfm3-lora-s{seed}/stdout.log").read().strip().splitlines()[-1][:200], flush=True)
+for seed, p in procs.items():
+    print(f"seed {seed} exit {p.returncode}:", open(f"{W}/real-lfm3-lora-s{seed}/stdout.log").read()[-3000:], flush=True)
 ''', r'''
 !cd /tmp/llama.cpp && cmake --build build -j4 --target llama-imatrix > /dev/null
-import subprocess
+import subprocess, shutil, glob, os
 for seed in SEEDS:
-    subprocess.run(f"cd /tmp/codeply && LLAMA_CPP=/tmp/llama.cpp bash ml/finetune/export_gguf.sh ml/finetune/runs/real-lfm3-lora-s{seed}/merged real-lfm3-lora-s{seed}", shell=True, check=True)
+    out = f"{W}/real-lfm3-lora-s{seed}"
+    if not os.path.exists(f"{out}/merged"):
+        print(f"seed {seed}: no merged model (training did not finish); adapters:", glob.glob(f"{out}/adapter*")); continue
+    # f16 GGUF and imatrix in /tmp (not kept); the two quantised models go to the output; the merged weights are
+    # deleted once exported (the adapter, ~130 MB, stays and can be merged again).
+    subprocess.run(f"cd /tmp/codeply && OUT=/tmp/gguf-s{seed} LLAMA_CPP=/tmp/llama.cpp bash ml/finetune/export_gguf.sh {out}/merged real-lfm3-lora-s{seed}", shell=True, check=True)
+    for f in glob.glob(f"/tmp/gguf-s{seed}/*Q4_K_M.gguf") + glob.glob(f"/tmp/gguf-s{seed}/*Q8_0.gguf"):
+        shutil.copy(f, out)
+    shutil.rmtree(f"{out}/merged")
+    shutil.rmtree(f"/tmp/gguf-s{seed}")
 ''', r'''
-!cd /tmp/codeply/ml/finetune/runs && zip -qr /kaggle/working/real-lfm3-lora.zip . -i "*.gguf" "*train-log.jsonl"
-!ls -la /kaggle/working/real-lfm3-lora.zip
+!ls -laR /kaggle/working/lora | grep -v "^total"
 '''])
 
 for fn, n in (("real-encoders.ipynb", ENCODERS), ("real-lfm3-lora.ipynb", LFM3)):

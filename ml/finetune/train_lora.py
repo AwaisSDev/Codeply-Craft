@@ -48,7 +48,12 @@ def main():
     random.seed(cfg.get("seed", 7))
     torch.manual_seed(cfg.get("seed", 7))
     use_cuda = torch.cuda.is_available()
-    dtype = torch.bfloat16 if use_cuda and torch.cuda.is_bf16_supported() else (torch.float16 if use_cuda else torch.float32)
+    # bf16 only where the GPU has it natively (compute capability 8+). torch.cuda.is_bf16_supported()
+    # also says yes when bf16 is merely emulated (a T4, capability 7.5), which ran ~8x slower than fp16
+    # on Kaggle. Older GPUs: fp16 base weights, fp32 adapter weights, fp16 autocast with loss scaling.
+    native_bf16 = use_cuda and torch.cuda.get_device_capability()[0] >= 8
+    dtype = torch.bfloat16 if native_bf16 else (torch.float16 if use_cuda else torch.float32)
+    amp_fp16 = dtype == torch.float16
     device = "cuda" if use_cuda else "cpu"
 
     # Models whose architecture ships as code on the Hub (LFM3) need it; off by default.
@@ -72,8 +77,13 @@ def main():
 
     train = [encode(m) for m in load_rows(cfg["train_file"], cfg.get("train_limit", 0))]
     val = [encode(m) for m in load_rows(cfg["val_file"], cfg.get("val_limit", 0))]
+    # An example whose answer lies beyond max_seq_len has nothing to learn or score; in validation one
+    # such example made the mean loss NaN. Drop them from both, and say how many.
+    n_train, n_val = len(train), len(val)
     train = [x for x in train if any(l != -100 for l in x["labels"])]
-    print(f"train {len(train)}  val {len(val)}  longest {max(len(x['input_ids']) for x in train)} tokens", flush=True)
+    val = [x for x in val if any(l != -100 for l in x["labels"])]
+    print(f"train {len(train)} (dropped {n_train - len(train)})  val {len(val)} (dropped {n_val - len(val)})  "
+          f"longest {max(len(x['input_ids']) for x in train)} tokens  dtype {str(dtype).replace('torch.', '')}", flush=True)
 
     model = AutoModelForCausalLM.from_pretrained(cfg["base_model"], dtype=dtype, trust_remote_code=remote)
     if cfg.get("gradient_checkpointing") and use_cuda:
@@ -82,6 +92,10 @@ def main():
     lora = LoraConfig(r=cfg["lora"]["r"], lora_alpha=cfg["lora"]["alpha"], lora_dropout=cfg["lora"]["dropout"],
                       target_modules=cfg["lora"]["target_modules"], task_type="CAUSAL_LM")
     model = get_peft_model(model, lora)
+    if amp_fp16:  # adapter weights and their optimizer state in fp32; the frozen base stays fp16
+        for p in model.parameters():
+            if p.requires_grad:
+                p.data = p.data.float()
     model.print_trainable_parameters()
     model.to(device)
 
@@ -113,7 +127,8 @@ def main():
         tot, n = 0.0, 0
         with torch.no_grad():
             for ids, lab, att in batches(val, cfg["batch_size"], False):
-                tot += model(input_ids=ids, attention_mask=att, labels=lab).loss.item()
+                with torch.autocast("cuda", dtype=torch.float16, enabled=amp_fp16):
+                    tot += model(input_ids=ids, attention_mask=att, labels=lab).loss.float().item()
                 n += 1
         model.train()
         return tot / max(1, n)
@@ -123,14 +138,17 @@ def main():
     step, t0 = 0, time.time()
     model.train()
     done = False
+    scaler = torch.amp.GradScaler("cuda", enabled=amp_fp16)
     for epoch in range(cfg["epochs"]):
         for k, (ids, lab, att) in enumerate(batches(train, cfg["batch_size"], True)):
-            loss = model(input_ids=ids, attention_mask=att, labels=lab).loss / cfg["grad_accum"]
-            loss.backward()
+            with torch.autocast("cuda", dtype=torch.float16, enabled=amp_fp16):
+                loss = model(input_ids=ids, attention_mask=att, labels=lab).loss.float() / cfg["grad_accum"]
+            scaler.scale(loss).backward()
             if (k + 1) % cfg["grad_accum"]:
                 continue
+            scaler.unscale_(opt)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            opt.step(); sched.step(); opt.zero_grad()
+            scaler.step(opt); scaler.update(); sched.step(); opt.zero_grad()
             step += 1
             if step % cfg.get("log_every", 10) == 0 or step == 1:
                 rec = {"step": step, "epoch": epoch, "loss": round(loss.item() * cfg["grad_accum"], 4), "lr": sched.get_last_lr()[0], "s": round(time.time() - t0)}
@@ -141,6 +159,8 @@ def main():
             if step >= total:
                 done = True
                 break
+        # Adapter checkpoint after every epoch, so a run stopped by a time limit keeps its progress.
+        model.save_pretrained(os.path.join(cfg["output_dir"], f"adapter-epoch{epoch + 1}"))
         if done:
             break
     rec = {"step": step, "final_val_loss": round(evaluate(), 4), "seconds": round(time.time() - t0)}

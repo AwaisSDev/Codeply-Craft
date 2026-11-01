@@ -78,3 +78,36 @@ one page and the artifacts downloaded in one pass (no rate limiting). Saved
 to `dtw-artifacts/real-ettin400-s1`; harness evaluation via
 `research/dtw/run-protocol-evals.sh` step 4. Single seed: the protocol's
 seed requirement for a selection claim is not met by this run alone.
+
+## 2026-11-01, LFM3 LoRA run 3 (version 3): stopped by the 12-hour limit
+
+Started 16:36 UTC, `CANCEL_ACKNOWLEDGED` at the 12 h limit. Seed 1 reached
+optimizer step 330 of 512 (epoch 2 of 2) after 42,755 s: **~124 s per step
+of 16 examples × ~1,450 tokens**. Nothing was saved: the script wrote the
+adapter and the merged model only at the end. Training loss was falling
+normally (0.0-0.27 at steps 270-330). Three faults, none in the data or the
+configuration:
+
+| Fault | Evidence | Fix |
+|---|---|---|
+| **Emulated bf16 on the T4** (the main cause of the speed) | `train_lora.py` chose bf16 when `torch.cuda.is_bf16_supported()` is true; that function also returns true when bf16 is only emulated (`including_emulation=True` by default; the T4 is compute capability 7.5). Observed ~124 s per step against an estimated 15-30 s with fp16 tensor cores | bf16 only on capability ≥ 8; otherwise fp16 base weights, fp32 adapter weights and optimizer state, fp16 autocast with loss scaling (`GradScaler`) |
+| **Validation loss NaN** (`{"step": 200, "val_loss": NaN}`) | train dropped examples whose answer lies beyond `max_seq_len` 2048 (4,096 → 4,072); val did not, and one example with no supervised token makes the mean NaN | the same filter on val, with the dropped counts printed. Training was not affected |
+| **The export would have failed** after training | `export_gguf.sh` calibrates the INT4 importance matrix on `ml/data/out/sft-val.jsonl`, which the notebook never wrote (it exports SFT to `/tmp`) | the notebook copies the realistic val prompts there |
+
+Operational changes in the notebook: the kernel has **two T4s** and run 3
+used one, so seeds 1 and 2 now train at the same time, one GPU each; the
+run directory is under `/kaggle/working/lora` and the script saves the
+adapter after every epoch, so a time limit keeps progress; f16 GGUFs go to
+`/tmp`, only Q4_K_M and Q8_0 are kept, and the merged weights are deleted
+after export (the adapter stays).
+
+Effective batch (16), learning rate, epochs, LoRA rank and targets,
+`max_seq_len`, prompt style, seeds, data and evaluation are unchanged. The
+precision change (emulated bf16 → fp16 with loss scaling) is a numerical
+change, not a configuration change; it is recorded here so that the result
+can be compared. The same `train_lora.py` fixes apply to the production
+fine-tuning path and should be ported there.
+
+CPU smoke test of the patched script (SmolLM2-135M, realistic SFT data, 2
+steps): train/val counts printed, finite val loss, epoch checkpoint
+written, merge and save succeed.
