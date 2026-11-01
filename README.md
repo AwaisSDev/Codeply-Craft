@@ -19,12 +19,15 @@ npm start
   it brings in a specialist with `bring_in` (Frontend, Backend, Database,
   DevOps, Security, Testing, Docs), and when nobody fits it creates a new
   specialist with `create_specialist`. Those stay on the team for next time
-  (`~/.codeply/wisp/specialists.json`) and Wisp can refine them. A specialist
-  works in the same chat under its own face, then reports back, and Wisp gets
-  the report plus what the specialist really did (files, commands and exit
-  codes from the tool results) to check before it answers. Specialists run one
+  (`~/.codeply/wisp/specialists.json`) and Wisp can refine them. You only ever
+  talk to Wisp: a specialist works behind it (its steps fold into Wisp's work
+  line, with one quiet "Brought in ..." row), and Wisp gets its report plus
+  what it really did (files, commands and exit codes from the tool results)
+  to check before it answers in its own voice. Ask Wisp who worked on
+  something and it can tell you (the chat history records it). Specialists run one
   at a time and cannot bring in others. Wisp's reply starts with a
-  `[mood: x]` tag that sets its face and is never shown. Account menu, "Wisp
+  `[mood: x]` tag that sets its eyes and colour (it stays a pentagon; only the
+  home screen's Wisp morphs, like the website's demo) and is never shown. Account menu, "Wisp
   and its team" turns it off (chats go back to plain Craft and the DSH
   harness) and lists the team. Crew bots' chats and Design are not Wisp's.
   Code: `codeply-cli/lib/wisp.js` (team, prompts, moods), `wisp-desktop.js`

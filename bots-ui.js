@@ -12,6 +12,8 @@
   let cat = { bots: [], templates: [], tones: {}, approvals: {}, maxMemory: 60 };
   let selected = '';
   try { selected = localStorage.getItem(KEY) || ''; } catch {}
+  // The old role pins (Pixel, Circuit, ...) are gone: Wisp brings in specialists itself.
+  if (selected.startsWith('role:')) { selected = ''; try { localStorage.setItem(KEY, ''); } catch {} }
 
   const byId = (id) => cat.bots.find((b) => b.id === id) || null;
   const byName = (n) => cat.bots.find((b) => b.name.toLowerCase() === String(n || '').trim().toLowerCase()) || null;
@@ -19,17 +21,10 @@
   const ROLE = { orchestrator: 'Orchestrator', specialist: 'Specialist' };
   const ICON_X = '<svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
   const CRAFT_AVATAR = { shape: 'burst9', eyes: 'pills', color: '#8e8e93' }; // stand-in for an unknown bot
-// Craft's own agents, the mascot balls: Craft (purple) picks a specialist by
-  // itself; picking one here pins it for the chat ('role:<id>' goes to main.js).
+// The main agent answers unless one of your bots is picked. The old role
+  // mascots (Pixel, Circuit, ...) are gone: Wisp brings in specialists itself.
   const ROLES = [
     { id: '', file: 'general.png', label: 'Craft', sub: 'Main agent, picks the right specialist' },
-    { id: 'role:frontend', file: 'frontend.png', label: 'Frontend', sub: 'Pixel, UI and pages' },
-    { id: 'role:backend', file: 'backend.png', label: 'Backend', sub: 'Circuit, servers and APIs' },
-    { id: 'role:database', file: 'database.png', label: 'Database', sub: 'Index, data and schemas' },
-    { id: 'role:testing', file: 'testing.png', label: 'QA', sub: 'Scout, tests and checks' },
-    { id: 'role:security', file: 'security.png', label: 'Security', sub: 'Warden, safety review' },
-    { id: 'role:devops', file: 'devops.png', label: 'DevOps', sub: 'Rocket, deploys and builds' },
-    { id: 'role:docs', file: 'docs.png', label: 'Docs', sub: 'Scribe, writing and READMEs' },
   ];
   const roleOf = (id) => ROLES.find((r) => r.id === (id || '')) || null;
   // With Wisp on (wisp-ui.js), the main agent is Wisp: its own face and name.

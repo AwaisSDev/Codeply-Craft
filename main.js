@@ -3076,8 +3076,9 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
   // Wisp (wisp-desktop.js): the main agent of this chat, with its team. null = plain Craft.
   const wisp = wispDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly });
   if (wisp) {
-    // Wisp brings in Frontend, Testing... as specialists; it doesn't wear their role itself.
-    roleId = (session.pinnedRole && !verifyOnly) ? session.pinnedRole : (verifyOnly ? roleId : null);
+    // Wisp brings in Frontend, Testing... as specialists; it doesn't wear their role itself,
+    // and an old role pin from before Wisp no longer applies.
+    roleId = verifyOnly ? roleId : null;
   } else {
     // No role detected for this particular text (a vague follow-up like "it
     // still doesn't work"): keep the role the chat is already working in.

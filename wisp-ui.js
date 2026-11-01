@@ -125,7 +125,7 @@
     holder.className = 'wisp-buddy';
     holder.innerHTML = '<span class="wisp-buddy-char" title="Wisp"></span><span class="wisp-bubble" aria-live="polite"></span>';
     composer.appendChild(holder);
-    buddy = W().mount(holder.querySelector('.wisp-buddy-char'), { size: 'md', morph: true });
+    buddy = W().mount(holder.querySelector('.wisp-buddy-char'), { size: 'md' }); // always the pentagon
     const input = composer.querySelector('.composer-input');
     let t = null;
     if (input) {
@@ -136,8 +136,7 @@
           const v = input.value.trim();
           if (!v) { setBuddy('neutral'); return; }
           const r = W().read(v);
-          buddy.setMood(r.mood === 'neutral' ? 'listening' : r.mood, !!r.shape);
-          if (r.shape) buddy.setShape(r.shape);
+          buddy.setMood(r.mood === 'neutral' ? 'listening' : r.mood);
           poke();
         }, 260);
       });
@@ -177,13 +176,10 @@
   function onEvent(data) {
     if (!enabled || !buddy) return;
     switch (data.type) {
-      case 'tool_start': {
-        const who = data.agent ? card(data.agent) : null;
+      case 'tool_start':
         setBuddy('working');
-        if (data.name === 'create_specialist') bubble('Making a new specialist…');
-        else if (!who && data.name === 'remember') bubble('Noted.', 1600);
+        if (!data.agent && data.name === 'remember') bubble('Noted.', 1600);
         break;
-      }
       case 'verifying': setBuddy('thinking'); break;
       case 'approval_request':
       case 'image_pick_request': setBuddy('worried'); bubble('Needs your yes'); break;
@@ -191,9 +187,8 @@
       case 'approval_resolved':
       case 'question_resolved': setBuddy('working'); break;
       case 'wisp_agent':
-        if (data.phase === 'start') { setBuddy('working'); bubble(`${data.agent.name} is on it`); }
-        else if (data.phase === 'report') { setBuddy(data.ok ? 'thinking' : 'worried'); bubble(data.ok ? `${data.agent.name} reported back` : `${data.agent.name} hit a snag`); }
-        else if (data.phase === 'created') { setBuddy('excited', 2400); bubble(`New on the team: ${data.agent.name}`); }
+        // The team works behind Wisp: its face just keeps working, then checks what came back.
+        setBuddy(data.phase === 'report' ? 'thinking' : 'working');
         break;
       case 'wisp_mood': buddyRest = data.mood || 'neutral'; break;
       case 'text':
@@ -230,77 +225,27 @@
     return el;
   }
 
-  function agentAvatar(agent, mood, size) {
-    const a = card(agent && agent.id) || agent || {};
-    return W().avatar({ size: size || 'xs', mood: mood || 'neutral', shape: a.shape || 'blob', color: a.color || '#58b9e6', morph: false });
-  }
-
-  /** The face for a specialist's work line (the activity group's icon). */
-  function activityIcon(agentId) {
-    const a = card(agentId);
-    if (!a || !W()) return null;
-    return agentAvatar(a, 'working', 'xs');
-  }
-
-  /** "Frontend is on it": the line that opens a specialist's work. */
-  function agentStart(data) {
+  /**
+   * A specialist Wisp brought in: one quiet row inside Wisp's work line, seen
+   * only when it is opened. The user talks to Wisp; the team works behind it.
+   */
+  function agentNote(data) {
+    if (!data || !data.agent) return null;
+    const name = escHtml(data.agent.name);
     const el = document.createElement('div');
-    el.className = 'wisp-agent-start';
-    el.style.setProperty('--agent', (data.agent && data.agent.color) || 'var(--accent)');
-    el.appendChild(agentAvatar(data.agent, 'thinking', 'xs'));
-    const text = document.createElement('div');
-    text.className = 'wisp-agent-start-text';
-    text.innerHTML = `<span class="wisp-agent-line"><b>Wisp</b> brought in <b class="wisp-agent-name">${escHtml(data.agent.name)}</b></span>` +
-      (data.task ? `<span class="wisp-agent-task">${escHtml(String(data.task).split('\n')[0].slice(0, 200))}</span>` : '');
-    if (data.task) {
-      text.title = data.task;
-      text.querySelector('.wisp-agent-task').addEventListener('click', (e) => {
-        const t = e.currentTarget;
-        t.classList.toggle('open');
-        t.textContent = t.classList.contains('open') ? String(data.task) : String(data.task).split('\n')[0].slice(0, 200);
-      });
-    }
-    el.appendChild(text);
-    return el;
-  }
-
-  /** A specialist's report: its own face and name, its words, and what it really changed and checked. */
-  function agentReport(data, render) {
-    const el = document.createElement('div');
-    el.className = 'wisp-agent-report' + (data.ok ? '' : ' failed');
-    el.style.setProperty('--agent', (data.agent && data.agent.color) || 'var(--accent)');
-    const head = document.createElement('div');
-    head.className = 'wisp-agent-head';
-    head.appendChild(agentAvatar(data.agent, data.ok ? 'happy' : 'sad', 'sm'));
-    head.insertAdjacentHTML('beforeend', `<div><b>${escHtml(data.agent.name)}</b><small>${data.ok ? 'reported to Wisp' : 'could not finish'}</small></div>`);
-    el.appendChild(head);
-    const body = document.createElement('div');
-    body.className = 'wisp-agent-body msg assistant';
-    body.innerHTML = render ? render(data.text || '') : escHtml(data.text || '');
-    el.appendChild(body);
-    const files = Array.isArray(data.files) ? data.files : [];
-    const checks = Array.isArray(data.checks) ? data.checks : [];
-    if (files.length || checks.length) {
-      const facts = document.createElement('div');
-      facts.className = 'wisp-agent-facts';
-      if (files.length) facts.insertAdjacentHTML('beforeend', `<span class="wf-label">Changed</span>${files.slice(0, 8).map((f) => `<code>${escHtml(f)}</code>`).join('')}${files.length > 8 ? `<span class="wf-more">+${files.length - 8}</span>` : ''}`);
-      for (const c of checks.slice(-4)) {
-        const passed = c.ok && (c.exitCode === undefined || c.exitCode === null || c.exitCode === 0);
-        const label = c.tool === 'run' ? String(c.label || '').slice(0, 48) : 'page check';
-        facts.insertAdjacentHTML('beforeend', `<span class="wf-check ${passed ? 'ok' : 'bad'}">${passed ? '✓' : '✗'} ${escHtml(label)}${!passed && typeof c.exitCode === 'number' ? ` (exit ${c.exitCode})` : ''}</span>`);
-      }
-      el.appendChild(facts);
-    }
-    return el;
-  }
-
-  /** A new specialist on the team. */
-  function agentCreated(data) {
-    const el = document.createElement('div');
-    el.className = 'wisp-agent-new';
-    el.style.setProperty('--agent', (data.agent && data.agent.color) || 'var(--accent)');
-    el.appendChild(agentAvatar(data.agent, 'excited', 'sm'));
-    el.insertAdjacentHTML('beforeend', `<div><b>${escHtml(data.agent.name)}</b> ${data.phase === 'updated' ? 'got better at its job' : 'joined Wisp\'s team'}<small>${escHtml(data.agent.focus || '')}</small></div>`);
+    el.className = 'wisp-note';
+    if (data.phase === 'start') {
+      el.innerHTML = `Brought in the ${name} specialist${data.task ? `<span class="wisp-note-task">${escHtml(String(data.task).replace(/\s+/g, ' ').slice(0, 220))}</span>` : ''}`;
+      if (data.task) el.title = data.task;
+    } else if (data.phase === 'report') {
+      if (data.ok) return null; // the steps above already say what it did
+      el.classList.add('bad');
+      el.textContent = `The ${data.agent.name} specialist could not finish`;
+    } else if (data.phase === 'created') {
+      el.innerHTML = `Made a new specialist: ${name}${data.agent.focus ? `<span class="wisp-note-task">${escHtml(data.agent.focus)}</span>` : ''}`;
+    } else if (data.phase === 'updated') {
+      el.textContent = `Improved the ${data.agent.name} specialist`;
+    } else return null;
     return el;
   }
 
@@ -317,12 +262,12 @@
       <div class="wisp-team-top"><div class="wisp-team-face"></div><div><h2 id="wispTeamTitle">Wisp</h2><p>The agent you talk to. It does small things itself and brings in a specialist for real work, then checks the result before it comes back to you.</p></div>
       <button class="icon-btn wisp-team-x" title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
       <label class="wisp-switch"><input type="checkbox" ${enabled ? 'checked' : ''}><span class="wisp-switch-track"></span><span>Wisp leads every chat</span></label>
-      <div class="wisp-team-head">The team <small>${team.length} specialists</small></div>
+      <div class="wisp-team-head">Behind the scenes <small>${team.length} specialists</small></div>
       <div class="wisp-team-list"></div>
-      <p class="wisp-team-note">Wisp makes new specialists when a job needs one nobody on the team fits, and they stay for next time. Built-in ones can't be removed.</p>
+      <p class="wisp-team-note">You only ever talk to Wisp. For bigger jobs it quietly brings in one of these, and makes a new one when nobody fits; ask Wisp and it will tell you who worked on what. Built-in ones can't be removed.</p>
     </div>`;
     document.body.appendChild(back);
-    W().mount(back.querySelector('.wisp-team-face'), { size: 'md', morph: true, mood: 'happy' });
+    W().mount(back.querySelector('.wisp-team-face'), { size: 'md', mood: 'happy' });
     const list = back.querySelector('.wisp-team-list');
     const drawList = () => {
       list.innerHTML = '';
@@ -330,7 +275,6 @@
       for (const s of team) {
         const row = document.createElement('div');
         row.className = 'wisp-team-row';
-        row.appendChild(agentAvatar(s, 'neutral', 'sm'));
         row.insertAdjacentHTML('beforeend', `<div class="wtr-text"><b>${escHtml(s.name)}</b><small>${escHtml(s.focus || '')}</small></div><span class="wtr-meta">${s.builtin ? 'Built in' : 'Made by Wisp'}${s.uses ? ` · ${s.uses} job${s.uses === 1 ? '' : 's'}` : ''}</span>`);
         if (!s.builtin) {
           const rm = document.createElement('button');
@@ -364,7 +308,7 @@
 
   window.CraftWispUI = {
     get enabled() { return enabled; },
-    refresh, onEvent, onSend, byline, activityIcon, agentStart, agentReport, agentCreated, openTeam, card,
+    refresh, onEvent, onSend, byline, agentNote, openTeam, card,
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', refresh);

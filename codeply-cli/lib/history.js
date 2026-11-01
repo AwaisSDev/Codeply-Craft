@@ -41,6 +41,13 @@ function buildHistory(session) {
     if (m.kind === 'user') {
       flushActions();
       turns.push({ role: 'user', content: m.expanded || m.text, images: m.images || null });
+    } else if (m.kind === 'wisp_agent' && m.agent) {
+      // Wisp's specialists: never shown as their own voice, but Wisp knows whom it brought in.
+      if (m.phase === 'start') pendingActions.push(`brought in the ${m.agent.name} specialist for: ${String(m.task || '').replace(/\s+/g, ' ').slice(0, 160)}`);
+      else if (m.phase === 'report' && !m.ok) pendingActions.push(`the ${m.agent.name} specialist could not finish`);
+      else if (m.phase === 'created') pendingActions.push(`created a new specialist, ${m.agent.name} (${m.agent.focus || ''})`);
+    } else if (m.kind === 'assistant' && m.text && m.agent) {
+      // A specialist's narration while it worked: not part of the conversation.
     } else if (m.kind === 'assistant' && m.text) {
       const last = turns[turns.length - 1];
       if (last && last.role === 'assistant') last.content += '\n\n' + m.text;

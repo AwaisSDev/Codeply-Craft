@@ -4,9 +4,9 @@
 //   - Wisp's persona and team go into the turn's prompt (codeply-cli/lib/wisp.js)
 //   - bring_in runs one specialist in this chat: its own prompt, only the task
 //     Wisp wrote (plus the recent chat), the same approvals and project folder.
-//     Its steps show in the chat under its own face, its report lands as its
-//     own message, and Wisp gets the report plus what the specialist REALLY
-//     did (files, commands with exit codes) to check before it answers
+//     It works behind Wisp: its steps fold into Wisp's work line (one quiet
+//     "Brought in ..." row), and Wisp gets its report plus what it REALLY did
+//     (files, commands with exit codes) to check before it answers
 //   - create_specialist adds a new specialist to the team (or refines one)
 //   - the reply's [mood: x] tag becomes Wisp's face (wisp_mood) and is never shown
 //

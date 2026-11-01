@@ -1020,18 +1020,6 @@ function activityHead(el) { return el.querySelector('.activity-summary'); }
 function setActivityAgent(el) {
   if (!el || !activityRole) return;
   const icon = el.querySelector('.activity-icon');
-  // A specialist Wisp brought in: its own little face on the work line.
-  if (activityRole.wispAgent) {
-    if (icon.dataset.agent === activityRole.wispAgent) return;
-    const face = window.CraftWispUI && window.CraftWispUI.activityIcon(activityRole.wispAgent);
-    if (!face) return;
-    icon.dataset.agent = activityRole.wispAgent;
-    icon.innerHTML = '';
-    icon.appendChild(face);
-    el.classList.add('has-agent', 'has-wisp-agent');
-    el.querySelector('.activity-head').title = activityRole.name + ' worked on this';
-    return;
-  }
   if (icon.dataset.mascot === activityRole.mascot) return;
   icon.dataset.mascot = activityRole.mascot;
   icon.innerHTML = mascotHtml(activityRole.mascot, 'mascot-xs', activityRole.name);
@@ -1517,36 +1505,27 @@ function mascotHtml(mascotFile, sizeClass, altText) {
 }
 
 // ─── Wisp's specialists ─────────────────────────────────────────────────────
-// Wisp brings a specialist in: a line saying so, the specialist's steps in a
-// work group under its own face, then its report as its own message. Wisp's
-// own steps after that start a fresh group again.
+// You talk to Wisp only. A specialist it brings in works behind it: its steps
+// fold into Wisp's own work line, and one quiet row there says who it was,
+// seen only when the line is opened.
 let pendingWispMood = null; // the [mood: x] of the reply on its way (wisp_mood arrives just before its text)
 function renderWispAgent(data) {
   const ui = window.CraftWispUI;
-  if (!ui || !data || !data.agent) return;
-  if (data.phase === 'start') {
-    closeActivity();
-    hideThinking();
-    chatColumn.appendChild(ui.agentStart(data));
-    activityRole = { wispAgent: data.agent.id, name: data.agent.name };
-    if (state.running && !revealInstant) showThinking();
-  } else if (data.phase === 'report') {
-    closeActivity();
-    hideThinking();
-    chatColumn.appendChild(ui.agentReport(data, mdToHtml));
-    activityRole = null;
-    if (state.running && !revealInstant) showThinking();
-  } else if (data.phase === 'created' || data.phase === 'updated') {
-    closeActivity();
-    chatColumn.appendChild(ui.agentCreated(data));
-  }
-  if (nearBottom() || revealInstant) scrollToBottom();
+  const note = ui && ui.agentNote(data);
+  if (!note) return;
+  const live = state.running && !revealInstant;
+  activityBody().appendChild(note);
+  updateActivitySummary(activityEl);
+  if (live) showThinking();
+  if (nearBottom()) scrollToBottom();
 }
 
 // ─── Role badge ─────────────────────────────────────────────────────────────
 // There's one agent; this marks the moment it switches role (Frontend,
 // Backend, Testing, ...) - shown only when the role actually changes.
 function addRoleBadge(data) {
+  // Wisp leads the chat: the old "Working as Frontend" mascots have nothing to say any more.
+  if (window.CraftWispUI && window.CraftWispUI.enabled) return;
   const el = document.createElement('div');
   el.className = 'role-badge';
   el.style.setProperty('--role-color', data.color || '');

@@ -112,6 +112,7 @@ async function wispTurn(replies, userMessage, { route = textRoute, session } = {
   check('prompt: Wisp may bring people in (the one-agent rule is swapped)', /You are Wisp, the lead agent/.test(lead.core) && !/There is no one to delegate to/.test(lead.core));
   check('prompt: Wisp knows its team and the bring_in format', /YOUR TEAM\n- Frontend: /.test(lead.project) && lead.project.includes('<codeply:bring_in>') && /YOUR FACE/.test(lead.project));
   const nat = wisp.wispPrompt({ native: true });
+  check('prompt: one voice, specialists only when asked', /as one voice/.test(lead.project) && /If the user asks how you did it/.test(lead.project));
   check('prompt: native leaves out the tag format', !nat.includes('<codeply:bring_in>'));
   const plain = agentMod.buildSystemSections('Build', scratch, 'hi', {});
   check('prompt: plain Craft keeps the one-agent rule', /There is no one to delegate to/.test(plain.core));
@@ -145,6 +146,10 @@ async function wispTurn(replies, userMessage, { route = textRoute, session } = {
   check('window: "Frontend is on it", then its report', start && start.agent.name === 'Frontend' && rep && rep.ok && rep.files.includes('cart.js') && rep.checks.some((c) => c.tool === 'run' && c.exitCode === 0), JSON.stringify(rep));
   check('window: the specialist\'s steps carry its id', sent.some((e) => e.type === 'tool_end' && e.name === 'write_file' && e.agent === 'frontend'));
   check('chat: start and report are saved for a reload', r.session.messages.filter((m) => m.kind === 'wisp_agent').map((m) => m.phase).join() === 'start,report');
+  const hist = require(path.join(CLI, 'lib/history.js')).buildHistory({ messages: [{ kind: 'user', text: 'fix it' }, ...r.session.messages, { kind: 'assistant', text: 'Fixed.', wisp: true }] });
+  const said = hist.map((t) => t.content).join('\n');
+  check('history: Wisp can say later who it brought in', /brought in the Frontend specialist for: cart\.js adds tax twice/.test(said), said);
+  check('history: a specialist\'s narration is not Wisp\'s words', hist.length === 2, JSON.stringify(hist));
   check('stats: the job counts toward Frontend', wisp.listSpecialists().find((s) => s.id === 'frontend').uses === 1);
 }
 

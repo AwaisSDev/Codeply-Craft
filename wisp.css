@@ -42,41 +42,12 @@
 /* ---- Wisp's replies ---- */
 .wisp-byline { display: flex; align-items: center; gap: 7px; margin: 4px 0 -6px; font-size: 12.5px; font-weight: 600; color: var(--text-dim); }
 
-/* ---- specialists ---- */
-.wisp-agent-start { display: flex; align-items: flex-start; gap: 9px; padding: 2px 0; font-size: 13px; color: var(--text-dim); }
-.wisp-agent-start .wisp-av { margin-top: 1px; }
-.wisp-agent-start-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.wisp-agent-line { display: block; }
+/* ---- specialists: one quiet row inside Wisp's work line ---- */
+.wisp-note { display: flex; flex-direction: column; gap: 2px; padding: 4px 14px; font-size: 12.5px; color: var(--text-dim); }
+.wisp-note.bad { color: var(--red); }
+.wisp-note-task { color: var(--text-faint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wisp-chip-face { display: inline-block; width: 20px; height: 20px; flex: none; }
 .wisp-chip-face.mascot-menu { width: 26px; height: 26px; }
-.wisp-agent-start b { color: var(--text); font-weight: 600; }
-.wisp-agent-start .wisp-agent-name { color: var(--agent); }
-.wisp-agent-task { color: var(--text-faint); font-size: 12.5px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 620px; }
-.wisp-agent-task.open { white-space: pre-wrap; }
-.activity.has-wisp-agent .activity-icon { width: 18px; height: 18px; border: 0 !important; animation: none !important; }
-.activity.has-wisp-agent .activity-icon::before { display: none; }
-.activity.has-wisp-agent .activity-icon .wisp-el { width: 18px; height: 18px; }
-
-.wisp-agent-report {
-  border: 1px solid var(--card-border); border-left: 3px solid var(--agent); border-radius: 12px;
-  background: color-mix(in srgb, var(--agent) 5%, var(--card-bg)); padding: 10px 14px 12px;
-}
-.wisp-agent-report.failed { border-left-color: var(--red); }
-.wisp-agent-head { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
-.wisp-agent-head b { display: block; font-size: 13px; color: var(--text); }
-.wisp-agent-head small { display: block; font-size: 11.5px; color: var(--text-faint); }
-.wisp-agent-body.msg.assistant { font-size: 13.5px; line-height: 1.6; }
-.wisp-agent-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--card-border); font-size: 12px; }
-.wisp-agent-facts .wf-label { color: var(--text-faint); }
-.wisp-agent-facts code { font-family: var(--font-mono); font-size: 11.5px; padding: 1px 6px; border-radius: 6px; background: var(--code-bg); color: var(--text-dim); }
-.wisp-agent-facts .wf-more { color: var(--text-faint); }
-.wisp-agent-facts .wf-check { padding: 1px 7px; border-radius: 999px; border: 1px solid var(--card-border); color: var(--text-dim); }
-.wisp-agent-facts .wf-check.ok { color: var(--green); }
-.wisp-agent-facts .wf-check.bad { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
-
-.wisp-agent-new { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 12px; border: 1px dashed color-mix(in srgb, var(--agent) 55%, var(--card-border)); font-size: 13px; color: var(--text-dim); }
-.wisp-agent-new b { color: var(--text); }
-.wisp-agent-new small { display: block; color: var(--text-faint); font-size: 12px; }
 
 /* ---- Wisp and its team ---- */
 .wisp-team-backdrop { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--overlay); }

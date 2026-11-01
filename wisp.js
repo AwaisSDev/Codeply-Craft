@@ -8,8 +8,10 @@
 //        talk(ms), boop(), lookAt({x,y}|null), destroy()
 //   CraftWisp.read(text) -> { mood, shape|null, line }   what a message feels like
 //
-// The main Wisp morphs (morph: true): a mood or a topic can change its shape.
-// Specialists keep the shape they were given and only change their eyes.
+// Wisp is a pentagon everywhere: a mood changes its eyes, colour and how it
+// moves, never its shape. Only the home screen's Wisp (morph: true, like the
+// "Meet Wisp" demo on the website) takes a shape from a mood or a topic, and
+// goes back to the pentagon after.
 (function () {
   var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   var N = 144, TAU = Math.PI * 2, CX = 50, CY = 54, R = 40;
@@ -113,7 +115,7 @@
       r: SHAPES[base].slice(), from: null, to: SHAPES[base], t0: 0, dur: 560, base: base,
       lx: 0, ly: 0, blinkAt: performance.now() + 1500 + Math.random() * 3000, blink: 0,
       mood: null, phase: Math.random() * 10, visible: true, small: size === 'sm' || size === 'xs', kick: 0,
-      morph: opts.morph !== undefined ? !!opts.morph : size === 'lg', color: opts.color || null,
+      morph: !!opts.morph, color: opts.color || null,
       talkUntil: 0, look: null, hop: 0, io: null,
       // Small Wisps get bigger eyes, or the face is lost at 20px.
       eyeScale: { lg: 1.15, md: 1.45, sm: 1.7, xs: 1.9 }[size] || 1

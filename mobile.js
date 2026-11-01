@@ -452,18 +452,12 @@ function addMessage(kind, text, label, screenshotPath) {
   return el;
 }
 
-// Wisp's specialists (wisp-desktop.js): who Wisp brought in, and what they reported back.
+// Wisp's specialists (wisp-desktop.js) work behind Wisp: one quiet progress line, no voice of their own.
 function addWispAgent(d) {
   if (!d || !d.agent) return;
-  const name = d.agent.name || 'A specialist';
-  if (d.phase === 'start') addThinking(`Wisp brought in ${name}${d.task ? `: ${String(d.task).split('\n')[0].slice(0, 140)}` : ''}`);
-  else if (d.phase === 'created') addThinking(`${name} joined Wisp's team`);
-  else if (d.phase === 'updated') addThinking(`${name} got better at its job`);
-  else if (d.phase === 'report') {
-    const files = Array.isArray(d.files) && d.files.length ? `\n\nChanged: ${d.files.slice(0, 6).join(', ')}` : '';
-    const el = addMessage('agent', `**${name}** ${d.ok ? 'reported to Wisp' : 'could not finish'}\n\n${d.text || ''}${files}`);
-    if (el) { el.classList.add('wisp-agent'); if (d.agent.color) el.style.borderLeft = `3px solid ${d.agent.color}`; }
-  }
+  if (d.phase === 'start') addThinking(`Brought in the ${d.agent.name} specialist`);
+  else if (d.phase === 'created') addThinking(`Made a new specialist: ${d.agent.name}`);
+  else if (d.phase === 'report' && !d.ok) addThinking(`The ${d.agent.name} specialist could not finish`);
 }
 
 function clearChat() {
