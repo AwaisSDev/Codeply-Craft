@@ -79,3 +79,57 @@ Reading:
 * Most of the value is in the pending tier, so its mechanism (confirm,
   promote on recurrence, expire) is the next design question; it needs
   multi-session behaviour, which the owner has deferred.
+
+## 3. Ettin-400M on three seeds (added after Kaggle run 5)
+
+Seeds 2 and 3 went through the same steps; each seed's tier
+configuration was frozen and committed before its test sets were read
+(`0dc8d8a6`, `b7d75f87`). At 3:1 all three seeds chose a threshold of 0.9
+on val.
+
+Uncalibrated (no tiers), mean ± sd over seeds: Benchmark-520 F1 0.412 ±
+0.005, test-real 0.413 ± 0.012 (natural-300 0.314 ± 0.042, supporting
+only). Against production LFM3, paired bootstrap of the seed mean:
+test-real **+0.113 (+0.062 to +0.166)**, user-disjoint test-real **+0.173
+(+0.090 to +0.257)**, Benchmark-520 **−0.162 (−0.195 to −0.128)**.
+
+Three tiers, frozen per seed, seed-mean automatic tier; Δ = cost minus
+store-nothing cost with a 95 % bootstrap over examples:
+
+| Set | r | Auto P / R | Δ cost (95 %) |
+|---|---|---|---|
+| test-real (store nothing = 366) | 2 | 0.74 / 0.35 | **−38 (−65 to −7)** |
+| | **3** | **0.79 / 0.25** | −17 (−45 to +12) |
+| | 5 | 0.87 / 0.17 | −9 (−32 to +15) |
+| test-real user-disjoint (150) | 2 | 0.76 / 0.28 | −16 (−33 to +2) |
+| | 3 | 0.84 / 0.20 | −13 (−29 to +3) |
+| | 5 | 0.91 / 0.15 | **−12 (−24 to −2)** |
+| Benchmark-520 (551) | 2 | 0.70 / 0.24 | −11 (−38 to +18) |
+| | **3** | **0.71 / 0.14** | +20 (−7 to +48) |
+| | 5 | 0.81 / 0.07 | +21 (−1 to +44) |
+
+Per seed at 3:1, automatic precision on test-real 0.777 / 0.806 / 0.777
+(all at or above 0.75; all three cost less than storing nothing: 354, 338,
+354 against 366) and on Benchmark-520 0.772 / 0.707 / 0.653 (only seed 1
+below store-nothing: 543, 571, 599 against 551). Pending tier at 3:1:
+41-91 items per 100 inputs, precision 0.37-0.49.
+
+Reading, three seeds:
+
+1. On test-real the val-chosen thresholds hold for every seed: automatic
+   precision stays at or above the break-even for each ratio, and the
+   automatic tier is never worse than storing nothing; at 2:1 it is
+   clearly better. At 3:1 the gain is real in direction for every seed but
+   small (about 5 % of the store-nothing cost) and its interval includes
+   zero.
+2. On Benchmark-520 the thresholds do not hold: automatic precision falls
+   to 0.65-0.71 for seeds 2 and 3, below the 3:1 break-even, and at 3:1
+   the automatic tier costs about as much as storing nothing (point
+   estimate slightly worse). Benchmark-520 is out of distribution for the
+   training and val data (jokes, quotes, duplicates); that is where
+   calibration fails to transfer.
+3. So the evidence for automatic storage at 3:1 is: supported on realistic
+   data, narrowly; not supported on the adversarial benchmark. 2:1 is
+   supported on realistic data with a clear margin. The decision between
+   them is the owner's (it is the cost ratio itself).
+4. The pending tier carries most correct memories on every seed and set.
