@@ -156,3 +156,9 @@ failed importing peft/transformers in the notebook's own process
 pip installs earlier in the notebook had replaced numpy under the running
 process). v4 runs the merge in a fresh Python process, after checking the
 imports there (and reinstalling numpy cleanly if they fail).
+
+Export v4: failed with `NameError: adapters` — my edit for v4 removed the
+lines that find and unpack the adapters (a bug in the notebook, not in
+Kaggle or the data). v5 restores them; the adapter discovery was
+dry-run locally against a simulated Kaggle input (tar archive) before the
+push.

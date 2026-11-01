@@ -207,6 +207,13 @@ if not merged:
     # ml/finetune/train_lora.py does: base in fp16 on the T4, PEFT merge_and_unload, base tokenizer files.
     # The merge runs in a fresh Python process: export v3 failed importing peft/transformers in the notebook's
     # own process after the pip installs above had changed numpy under it.
+    # The dataset may hold one archive per seed (kaggle datasets create -r tar); unpack them if so.
+    os.makedirs("/tmp/inp", exist_ok=True)
+    for a in glob.glob("/kaggle/input/**/*.tar", recursive=True) + glob.glob("/kaggle/input/**/*.zip", recursive=True):
+        subprocess.run(f"cd /tmp/inp && (tar -xf {a} 2>/dev/null || unzip -oq {a})", shell=True)
+    adapters = sorted(set(glob.glob("/kaggle/input/**/real-lfm3-lora-s*/adapter", recursive=True) + glob.glob("/tmp/inp/**/adapter", recursive=True)))
+    print("adapters:", adapters)
+    assert adapters, "no adapters in the input"
     open("/tmp/merge_lora.py", "w").write(MERGE)
     if subprocess.run("python -c 'import numpy, torch, transformers, peft'", shell=True).returncode:
         subprocess.run("pip -q install --force-reinstall --no-deps numpy==$(python -c 'import importlib.metadata as m; print(m.version(\"numpy\"))')", shell=True)
