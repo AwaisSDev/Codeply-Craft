@@ -81,8 +81,11 @@ systems, benchmarks and dataset licences.
 
 ## Next action on resume
 
-Write `ARCHITECTURE-SPEC.md` from the resume notes; run the literature
-review with ≤2 agents; then `ARCHITECTURE-HYPOTHESES.md`.
+`ARCHITECTURE-SPEC.md` is written (v2, from the resume notes). Two fresh
+literature agents were restarted by the owner (≤2 at a time): (1) prior art +
+explicit memory/identity, (2) recurrence/linear/SSM + memory systems,
+benchmarks and licences. They save their files section by section. Next:
+integrate them into `LITERATURE-REVIEW.md`, then `ARCHITECTURE-HYPOTHESES.md`.
 
 ## Latest metrics
 
