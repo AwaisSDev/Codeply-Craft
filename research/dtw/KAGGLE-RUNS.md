@@ -149,3 +149,10 @@ building llama.cpp with CUDA (`ggml-cuda` links `CUDA::cuda_driver`, not
 found in Kaggle's image). v3: `GGML_CUDA_NO_VMM=ON` (that link exists only
 for CUDA virtual memory management) plus the driver stub path, with a
 fallback to the CPU build (~3 h per seed, within the 12 h limit).
+
+Export v3: the CUDA build worked (`-ngl 99`), then the adapter merge
+failed importing peft/transformers in the notebook's own process
+(`ImportError: cannot import name '_slice' from 'numpy._core.umath'`: the
+pip installs earlier in the notebook had replaced numpy under the running
+process). v4 runs the merge in a fresh Python process, after checking the
+imports there (and reinstalling numpy cleanly if they fail).

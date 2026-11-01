@@ -181,32 +181,36 @@ os.chdir("/tmp/codeply")
 # Calibration text = the realistic val prompts, as in run 4 (export_gguf.sh reads ml/data/out/sft-val.jsonl).
 subprocess.run("cp research/dtw/data/real/train.jsonl research/dtw/data/real/val.jsonl /tmp/ && node ml/data/export-sft.mjs --in /tmp --style full "
                "&& cp /tmp/sft-val.jsonl ml/data/out/sft-val.jsonl", shell=True, check=True)
+MERGE = '''
+import glob, subprocess, sys, torch, yaml
+from peft import PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer
+sys.path.insert(0, "/tmp/codeply/ml/finetune")
+from train_lora import copy_base_tokenizer
+base = yaml.safe_load(open("/tmp/codeply/ml/finetune/config-lfm3.yaml"))["base_model"]
+for ad in sys.argv[1:]:
+    name = [x for x in ad.split("/") if x.startswith("real-lfm3-lora-s")][-1]
+    m = f"/tmp/merged/{name}/merged"
+    model = AutoModelForCausalLM.from_pretrained(base, dtype=torch.float16, trust_remote_code=True)
+    model = PeftModel.from_pretrained(model, ad).merge_and_unload()
+    model.save_pretrained(m, safe_serialization=True)
+    AutoTokenizer.from_pretrained(base, trust_remote_code=True).save_pretrained(m)
+    copy_base_tokenizer(base, m)
+    subprocess.run(f"cp {ad}/../train-log.jsonl /tmp/merged/{name}/ 2>/dev/null", shell=True)
+    print("merged", name, flush=True)
+    del model
+'''
 merged = sorted(glob.glob("/kaggle/input/**/real-lfm3-lora-s*/merged", recursive=True))
 if not merged:
     # Kaggle does not accept a cancelled run as a kernel source, so the adapters come in as a private dataset
     # (codeply-real-lfm3-lora-adapters: the final adapter of each seed from run 4). Merge them exactly as
     # ml/finetune/train_lora.py does: base in fp16 on the T4, PEFT merge_and_unload, base tokenizer files.
-    import sys, torch, yaml
-    from peft import PeftModel
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    sys.path.insert(0, "/tmp/codeply/ml/finetune")
-    from train_lora import copy_base_tokenizer
-    base = yaml.safe_load(open("/tmp/codeply/ml/finetune/config-lfm3.yaml"))["base_model"]
-    # The dataset may hold one archive per seed (kaggle datasets create -r tar); unpack them if so.
-    os.makedirs("/tmp/inp", exist_ok=True)
-    for a in glob.glob("/kaggle/input/**/*.tar", recursive=True) + glob.glob("/kaggle/input/**/*.zip", recursive=True):
-        subprocess.run(f"cd /tmp/inp && (tar -xf {a} 2>/dev/null || unzip -oq {a})", shell=True)
-    adapters = sorted(set(glob.glob("/kaggle/input/**/real-lfm3-lora-s*/adapter", recursive=True) + glob.glob("/tmp/inp/**/adapter", recursive=True)))
-    print("adapters:", adapters)
-    for ad in adapters:
-        name = [x for x in ad.split("/") if x.startswith("real-lfm3-lora-s")][-1]; m = f"/tmp/merged/{name}/merged"
-        model = AutoModelForCausalLM.from_pretrained(base, dtype=torch.float16, trust_remote_code=True)
-        model = PeftModel.from_pretrained(model, ad).merge_and_unload()
-        model.save_pretrained(m, safe_serialization=True)
-        AutoTokenizer.from_pretrained(base, trust_remote_code=True).save_pretrained(m)
-        copy_base_tokenizer(base, m)
-        subprocess.run(f"cp {ad}/../train-log.jsonl /tmp/merged/{name}/ 2>/dev/null", shell=True)
-        del model
+    # The merge runs in a fresh Python process: export v3 failed importing peft/transformers in the notebook's
+    # own process after the pip installs above had changed numpy under it.
+    open("/tmp/merge_lora.py", "w").write(MERGE)
+    if subprocess.run("python -c 'import numpy, torch, transformers, peft'", shell=True).returncode:
+        subprocess.run("pip -q install --force-reinstall --no-deps numpy==$(python -c 'import importlib.metadata as m; print(m.version(\"numpy\"))')", shell=True)
+    subprocess.run("python /tmp/merge_lora.py " + " ".join(adapters), shell=True, check=True)
     merged = sorted(glob.glob("/tmp/merged/real-lfm3-lora-s*/merged"))
 print(merged)
 assert merged, "no merged models and no adapters in the input"
