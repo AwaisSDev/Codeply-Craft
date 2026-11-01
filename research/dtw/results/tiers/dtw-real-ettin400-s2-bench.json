@@ -1,0 +1,222 @@
+{
+ "model": "dtw-real-ettin400-s2",
+ "set": "bench",
+ "frozen": {
+  "r=2": {
+   "decoder": "F1",
+   "tauA": 0.85,
+   "tauP": {
+    "rho=0.25": 0.6,
+    "rho=0.33": 0.7,
+    "rho=0.50": null
+   }
+  },
+  "r=3": {
+   "decoder": "F0",
+   "tauA": 0.9,
+   "tauP": {
+    "rho=0.25": 0.7,
+    "rho=0.33": 0.75,
+    "rho=0.50": null
+   }
+  },
+  "r=5": {
+   "decoder": "F1",
+   "tauA": 0.9,
+   "tauP": {
+    "rho=0.25": 0,
+    "rho=0.33": 0.7,
+    "rho=0.50": null
+   }
+  }
+ },
+ "protocol": "research/dtw/TIERS-PROTOCOL.md",
+ "byRatio": {
+  "r=2": {
+   "F0sameTiers": {
+    "automatic": {
+     "tp": 141,
+     "pred": 215,
+     "gold": 551,
+     "precision": 0.656,
+     "recall": 0.256,
+     "f1": 0.368,
+     "falseMemoryRate": 0.133,
+     "noiseRejection": 0.959,
+     "examples": 520
+    },
+    "automaticOrPending": {
+     "tp": 251,
+     "pred": 569,
+     "recall": 0.456
+    },
+    "pending": {
+     "items": 354,
+     "per100inputs": 68.1,
+     "precision": 0.311,
+     "extraGold": 110
+    },
+    "cost": {
+     "C2": 558,
+     "C3": 632,
+     "C5": 780
+    },
+    "storeNothingCost": 551
+   },
+   "chosen": {
+    "automatic": {
+     "tp": 128,
+     "pred": 175,
+     "gold": 551,
+     "precision": 0.731,
+     "recall": 0.232,
+     "f1": 0.353,
+     "falseMemoryRate": 0.133,
+     "noiseRejection": 0.959,
+     "examples": 520
+    },
+    "automaticOrPending": {
+     "tp": 232,
+     "pred": 430,
+     "recall": 0.421
+    },
+    "pending": {
+     "items": 255,
+     "per100inputs": 49.0,
+     "precision": 0.408,
+     "extraGold": 104
+    },
+    "cost": {
+     "C2": 517,
+     "C3": 564,
+     "C5": 658
+    },
+    "storeNothingCost": 551
+   }
+  },
+  "r=3": {
+   "F0sameTiers": {
+    "automatic": {
+     "tp": 82,
+     "pred": 116,
+     "gold": 551,
+     "precision": 0.707,
+     "recall": 0.149,
+     "f1": 0.246,
+     "falseMemoryRate": 0.061,
+     "noiseRejection": 0.959,
+     "examples": 520
+    },
+    "automaticOrPending": {
+     "tp": 221,
+     "pred": 437,
+     "recall": 0.401
+    },
+    "pending": {
+     "items": 321,
+     "per100inputs": 61.7,
+     "precision": 0.433,
+     "extraGold": 139
+    },
+    "cost": {
+     "C2": 537,
+     "C3": 571,
+     "C5": 639
+    },
+    "storeNothingCost": 551
+   },
+   "chosen": {
+    "automatic": {
+     "tp": 82,
+     "pred": 116,
+     "gold": 551,
+     "precision": 0.707,
+     "recall": 0.149,
+     "f1": 0.246,
+     "falseMemoryRate": 0.061,
+     "noiseRejection": 0.959,
+     "examples": 520
+    },
+    "automaticOrPending": {
+     "tp": 221,
+     "pred": 437,
+     "recall": 0.401
+    },
+    "pending": {
+     "items": 321,
+     "per100inputs": 61.7,
+     "precision": 0.433,
+     "extraGold": 139
+    },
+    "cost": {
+     "C2": 537,
+     "C3": 571,
+     "C5": 639
+    },
+    "storeNothingCost": 551
+   }
+  },
+  "r=5": {
+   "F0sameTiers": {
+    "automatic": {
+     "tp": 82,
+     "pred": 116,
+     "gold": 551,
+     "precision": 0.707,
+     "recall": 0.149,
+     "f1": 0.246,
+     "falseMemoryRate": 0.061,
+     "noiseRejection": 0.959,
+     "examples": 520
+    },
+    "automaticOrPending": {
+     "tp": 251,
+     "pred": 569,
+     "recall": 0.456
+    },
+    "pending": {
+     "items": 453,
+     "per100inputs": 87.1,
+     "precision": 0.373,
+     "extraGold": 169
+    },
+    "cost": {
+     "C2": 537,
+     "C3": 571,
+     "C5": 639
+    },
+    "storeNothingCost": 551
+   },
+   "chosen": {
+    "automatic": {
+     "tp": 72,
+     "pred": 96,
+     "gold": 551,
+     "precision": 0.75,
+     "recall": 0.131,
+     "f1": 0.223,
+     "falseMemoryRate": 0.061,
+     "noiseRejection": 0.959,
+     "examples": 520
+    },
+    "automaticOrPending": {
+     "tp": 232,
+     "pred": 430,
+     "recall": 0.421
+    },
+    "pending": {
+     "items": 334,
+     "per100inputs": 64.2,
+     "precision": 0.479,
+     "extraGold": 160
+    },
+    "cost": {
+     "C2": 527,
+     "C3": 551,
+     "C5": 599
+    },
+    "storeNothingCost": 551
+   }
+  }
+ }
+}

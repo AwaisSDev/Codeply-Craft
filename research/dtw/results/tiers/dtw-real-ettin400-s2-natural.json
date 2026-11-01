@@ -1,0 +1,222 @@
+{
+ "model": "dtw-real-ettin400-s2",
+ "set": "natural",
+ "frozen": {
+  "r=2": {
+   "decoder": "F1",
+   "tauA": 0.85,
+   "tauP": {
+    "rho=0.25": 0.6,
+    "rho=0.33": 0.7,
+    "rho=0.50": null
+   }
+  },
+  "r=3": {
+   "decoder": "F0",
+   "tauA": 0.9,
+   "tauP": {
+    "rho=0.25": 0.7,
+    "rho=0.33": 0.75,
+    "rho=0.50": null
+   }
+  },
+  "r=5": {
+   "decoder": "F1",
+   "tauA": 0.9,
+   "tauP": {
+    "rho=0.25": 0,
+    "rho=0.33": 0.7,
+    "rho=0.50": null
+   }
+  }
+ },
+ "protocol": "research/dtw/TIERS-PROTOCOL.md",
+ "byRatio": {
+  "r=2": {
+   "F0sameTiers": {
+    "automatic": {
+     "tp": 5,
+     "pred": 7,
+     "gold": 20,
+     "precision": 0.714,
+     "recall": 0.25,
+     "f1": 0.37,
+     "falseMemoryRate": 0,
+     "noiseRejection": 1,
+     "examples": 298
+    },
+    "automaticOrPending": {
+     "tp": 9,
+     "pred": 15,
+     "recall": 0.45
+    },
+    "pending": {
+     "items": 8,
+     "per100inputs": 2.7,
+     "precision": 0.5,
+     "extraGold": 4
+    },
+    "cost": {
+     "C2": 19,
+     "C3": 21,
+     "C5": 25
+    },
+    "storeNothingCost": 20
+   },
+   "chosen": {
+    "automatic": {
+     "tp": 5,
+     "pred": 7,
+     "gold": 20,
+     "precision": 0.714,
+     "recall": 0.25,
+     "f1": 0.37,
+     "falseMemoryRate": 0,
+     "noiseRejection": 1,
+     "examples": 298
+    },
+    "automaticOrPending": {
+     "tp": 9,
+     "pred": 13,
+     "recall": 0.45
+    },
+    "pending": {
+     "items": 6,
+     "per100inputs": 2.0,
+     "precision": 0.667,
+     "extraGold": 4
+    },
+    "cost": {
+     "C2": 19,
+     "C3": 21,
+     "C5": 25
+    },
+    "storeNothingCost": 20
+   }
+  },
+  "r=3": {
+   "F0sameTiers": {
+    "automatic": {
+     "tp": 4,
+     "pred": 5,
+     "gold": 20,
+     "precision": 0.8,
+     "recall": 0.2,
+     "f1": 0.32,
+     "falseMemoryRate": 0,
+     "noiseRejection": 1,
+     "examples": 298
+    },
+    "automaticOrPending": {
+     "tp": 8,
+     "pred": 10,
+     "recall": 0.4
+    },
+    "pending": {
+     "items": 5,
+     "per100inputs": 1.7,
+     "precision": 0.8,
+     "extraGold": 4
+    },
+    "cost": {
+     "C2": 18,
+     "C3": 19,
+     "C5": 21
+    },
+    "storeNothingCost": 20
+   },
+   "chosen": {
+    "automatic": {
+     "tp": 4,
+     "pred": 5,
+     "gold": 20,
+     "precision": 0.8,
+     "recall": 0.2,
+     "f1": 0.32,
+     "falseMemoryRate": 0,
+     "noiseRejection": 1,
+     "examples": 298
+    },
+    "automaticOrPending": {
+     "tp": 8,
+     "pred": 10,
+     "recall": 0.4
+    },
+    "pending": {
+     "items": 5,
+     "per100inputs": 1.7,
+     "precision": 0.8,
+     "extraGold": 4
+    },
+    "cost": {
+     "C2": 18,
+     "C3": 19,
+     "C5": 21
+    },
+    "storeNothingCost": 20
+   }
+  },
+  "r=5": {
+   "F0sameTiers": {
+    "automatic": {
+     "tp": 4,
+     "pred": 5,
+     "gold": 20,
+     "precision": 0.8,
+     "recall": 0.2,
+     "f1": 0.32,
+     "falseMemoryRate": 0,
+     "noiseRejection": 1,
+     "examples": 298
+    },
+    "automaticOrPending": {
+     "tp": 9,
+     "pred": 15,
+     "recall": 0.45
+    },
+    "pending": {
+     "items": 10,
+     "per100inputs": 3.4,
+     "precision": 0.5,
+     "extraGold": 5
+    },
+    "cost": {
+     "C2": 18,
+     "C3": 19,
+     "C5": 21
+    },
+    "storeNothingCost": 20
+   },
+   "chosen": {
+    "automatic": {
+     "tp": 4,
+     "pred": 5,
+     "gold": 20,
+     "precision": 0.8,
+     "recall": 0.2,
+     "f1": 0.32,
+     "falseMemoryRate": 0,
+     "noiseRejection": 1,
+     "examples": 298
+    },
+    "automaticOrPending": {
+     "tp": 9,
+     "pred": 13,
+     "recall": 0.45
+    },
+    "pending": {
+     "items": 8,
+     "per100inputs": 2.7,
+     "precision": 0.625,
+     "extraGold": 5
+    },
+    "cost": {
+     "C2": 18,
+     "C3": 19,
+     "C5": 21
+    },
+    "storeNothingCost": 20
+   }
+  }
+ }
+}
