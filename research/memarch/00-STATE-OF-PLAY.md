@@ -15,7 +15,7 @@ committed file.
 | Model-selection protocol | frozen at `6c21b2a0` (`research/dtw/MODEL-SELECTION-PROTOCOL.md`) | pre-registered; changes only as recorded deviations |
 | PASTE | `research/architecture/PASTE-FORMAL-SPECIFICATION.md` (v1, committed `b872ed67`) | v2 exists only in another session's scratchpad: **not in any branch** [M: searched all remote branches] |
 | Secret-guard fix | branch `claude/wonderful-feynman-y2ldw2`, `SECURITY-SECRETS.md` | not merged; LFM3 stored 5/13 benchmark secrets, template Ettin 6-7/13 [R] |
-| Trained artifacts | orphan branch `dtw-artifacts` | template-trained Ettin-150M s1; realistic-data Ettin-150M s1-s3, Ettin-400M s1 |
+| Trained artifacts | orphan branch `dtw-artifacts` | template-trained Ettin-150M s1; realistic-data Ettin-150M s1-s3, Ettin-400M s1-s3 |
 
 ## 2. Results: completed, failed, pending
 
@@ -29,7 +29,7 @@ committed file.
 | Template-trained Ettin-150M s1r | test-real / natural-300 | 0.123 / 0.015 (old resolver); 0.122 / 0.016 corrected | done |
 | Claude labellers (Sonnet / Opus / hybrid) | Benchmark-520 | 0.838 / 0.844 / 0.831 | done (labeller quality, not a candidate) |
 | **Ettin-150M ×3 on realistic data** (mean ± sd over seeds) | Benchmark-520 / test-real / natural-300 | **0.389 ± 0.012 / 0.341 ± 0.011 / 0.241 ± 0.048** | done (§2a); results `dtw-real-ettin150-s{1,2,3}-*` on the DTW branch, weights on `dtw-artifacts` |
-| **Ettin-400M ×1 on realistic data** (seed 1) | Benchmark-520 / test-real / natural-300 | **0.417 / 0.427 / 0.357** | done (§2b); Kaggle run 4, micro-batch 2 × 16 |
+| **Ettin-400M ×3 on realistic data** (mean ± sd) | Benchmark-520 / test-real / natural-300 | **0.412 ± 0.005 / 0.413 ± 0.012 / 0.314 ± 0.042** | done (§2b, §2c); Kaggle runs 4-5 |
 | LFM3-1.7B LoRA on realistic data | – | – | run 3 running |
 | Human agreement study (50 examples, 2 people) | – | – | **not started** (needs people) |
 
@@ -119,6 +119,35 @@ Reading:
    substitute for the deterministic secret guard (still unmerged).
 5. Cost: 400M is about 2× the 150M latency (p50 ~1 s on test-real) but
    still about 5× faster than LFM3 (4.8 s), at ~750 MB peak memory.
+
+## 2c. Three seeds of Ettin-400M, calibration, tiers, WildChat audit (2026-11-01)
+
+* **Three seeds** (owner decision): test-real F1 0.413 ± 0.012; paired
+  bootstrap of the seed mean against production LFM3: test-real **+0.113
+  (+0.062 to +0.166)**, user-disjoint test-real **+0.173 (+0.090 to
+  +0.257)**, Benchmark-520 **−0.162 (−0.195 to −0.128)**. The realistic-data
+  lead holds across seeds; LFM3 still wins the adversarial benchmark.
+* **WildChat audit** (`research/dtw/label/audit/WILDCHAT-AUDIT.md`, DTW
+  branch): provenance clean (4,416 examples, pinned revision, verified
+  shard); no quasi-identifiers in our files; ODC-BY covers the database,
+  not the users' text (owner/counsel); 0 moderation-flagged conversations,
+  17 weak minors-score ids for review; residual PII patterns need manual
+  review. The split is by conversation, not user (64 % of test-real's
+  WildChat examples have their user in train), but the Ettin lead is
+  larger on the user-disjoint subset, so overlap does not explain it.
+* **Calibration and tiers** (`research/dtw/CALIBRATION-PROTOCOL.md`,
+  `TIERS-PROTOCOL.md`, results in `TIERS-RESULTS.md`): under C = r·FP + FN
+  a stored memory pays only above precision r/(r+1); production LFM3 costs
+  about twice storing nothing at 3:1. Ettin-400M's frozen automatic tier is
+  better than storing nothing on test-real at 2:1 (−38, −65 to −7) and
+  in direction at 3:1 (−17, −45 to +12); on Benchmark-520 calibration does
+  not transfer (3:1: +20, −7 to +48). Most correct memories sit in the
+  pending tier (precision 0.37-0.49). Fragment filtering adds little once
+  tiers are in place. Ettin-150M's thresholds do not transfer.
+* **Implication for architecture work**: the binding constraints are the
+  operating point (precision ≥ r/(r+1) on out-of-distribution input) and
+  what happens to pending memories, not encoder architecture; this
+  strengthens the ranking in `01` (calibration and data before SRDE).
 
 ## 3. The realistic dataset and the frozen split
 
