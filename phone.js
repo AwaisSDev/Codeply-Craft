@@ -2676,7 +2676,7 @@ const SLASH = [
   { name: '/attach', desc: 'Photos, PDFs, text or code', icon: 'attach', run: () => pickFiles() },
   { name: '/access', desc: 'Ask first or full access on your PC', icon: 'shield', run: () => openAccess('pc') },
   { name: '/repo', desc: 'Connect a GitHub repo for the cloud', icon: 'github', run: () => openSetup({}) },
-  { name: '/calls', desc: 'Talk to your bots', icon: 'phone', run: () => $('drawerCalls').click() },
+  { name: '/voice', desc: 'Talk to Codeply out loud', icon: 'phone', run: () => $('drawerCalls').click() },
   { name: '/stop', desc: 'Stop the current run', icon: 'stop', run: () => { const c = state.current && chatMeta(state.current); if (c && state.busy.has(c.id)) stopCurrent(c); } },
   { name: '/theme', desc: 'System, light or dark', icon: 'system', run: () => { const order = ['system', 'light', 'dark']; applyTheme(order[(order.indexOf(themeChoice()) + 1) % 3]); } },
 ];

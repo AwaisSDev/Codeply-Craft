@@ -4076,9 +4076,51 @@ wispDesktop.init({
   // A specialist's scheduled job: a message from Wisp to itself in the job's own chat, through the usual approvals.
   startRun: ({ sessionId, cwd, text }) => startChatRun({ sessionId, cwd, text, mode: 'Build', bypass: false, clientId: 'wisp-schedule' }),
 });
+// Voice mode on the phone: you talk to Codeply itself, out loud. A turn that
+// needs real work comes here (bots-desktop.js /api/bots/voice, botId "codeply")
+// and runs as the main agent (Wisp) with every tool and its specialists; the
+// reply is spoken, and its [mood: x] goes back for Wisp's face on the phone.
+const voiceSession = { id: 'voice-codeply', title: 'Voice mode', messages: [], updatedAt: 0 };
+function voiceCwd() {
+  // Where the user last worked, so "fix the build" means their project; else their home folder.
+  const s = (store.sessions || []).filter((x) => x && x.cwd && fs.existsSync(x.cwd)).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+  return s ? s.cwd : os.homedir();
+}
+async function codeplyVoice({ turns, signal, approve, onStep, mode }) {
+  const bots = require(path.join(CLI_DIR, 'lib', 'bots.js'));
+  const { history, userMessage } = bots.callTurns(turns);
+  if (!userMessage) return { text: '' };
+  const text = mode === 'text';
+  const cwd = voiceCwd();
+  const route = currentRoute();
+  voiceSession.messages = voiceSession.messages.slice(-30);
+  voiceSession.messages.push({ kind: 'user', text: userMessage, at: Date.now() });
+  const wisp = wispDesktop.forTurn({ session: voiceSession, approve, signal, route, cwd, mode: 'Build' });
+  const rules = text ? bots.TEXT_RULES : bots.VOICE_RULES;
+  const run = agentMod.runAgent({
+    userMessage, history, mode: 'Build', cwd, approve, browser: browserCheck, signal, route, maxSteps: 24,
+    botPrompt: (native) => [wisp ? wisp.prompt(native) : '', rules].filter(Boolean).join('\n\n'),
+    bringIn: wisp?.bringIn, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, agentRole: wisp ? wisp.agentRole : undefined,
+    haze: { product: 'mobile', chatId: 'voice:codeply' },
+  });
+  let reply = ''; let mood = '';
+  for await (const raw of run) {
+    const ev = wisp ? wisp.mood(raw) : raw;
+    if (ev.type === 'text' && !ev.interim) { reply += (reply ? ' ' : '') + ev.text; if (ev.mood) mood = ev.mood; }
+    else if (ev.type === 'tool_start' && onStep) {
+      const who = ev.name === 'bring_in' && ev.args && ev.args.specialist ? `Bringing in ${ev.args.specialist}` : '';
+      onStep({ name: ev.name, args: ev.args || {}, label: who });
+    } else if (ev.type === 'error') throw new Error(ev.error || 'The run failed.');
+    else if (ev.type === 'aborted') throw new Error('Stopped.');
+    else if (ev.type === 'done') break;
+  }
+  if (signal && signal.aborted) throw new Error('Stopped.');
+  voiceSession.messages.push({ kind: 'assistant', text: reply, at: Date.now() });
+  return { text: text ? bots.written(reply) : bots.spoken(reply), mood, request: userMessage, reply };
+}
 const botsDesktop = require('./bots-desktop');
 botsDesktop.init({
-  ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine, sendEvent, currentRoute, browser: browserCheck,
+  ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine, sendEvent, currentRoute, browser: browserCheck, codeplyVoice,
   canHandOff: () => require(path.join(CLI_DIR, 'lib', 'brain.js')).canHandOff(),
   agentMod: () => agentMod, aiLib: () => aiLib, permissionsLib: () => permissionsLib,
   onChange: () => botsWatch.poke(),

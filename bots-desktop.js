@@ -284,7 +284,7 @@ function botsFolder() {
 
 function jobView(j) {
   return {
-    jobId: j.id, version: j.version, status: j.status, step: j.step || '', text: j.text || '', error: j.error || '',
+    jobId: j.id, version: j.version, status: j.status, step: j.step || '', text: j.text || '', error: j.error || '', mood: j.mood || '',
     approval: j.approval ? { requestId: j.approval.requestId, title: j.approval.title, detail: j.approval.detail, danger: j.approval.danger, draft: j.approval.draft || null, draftOnly: !!j.approval.draftOnly } : null,
   };
 }
@@ -315,7 +315,9 @@ function sharedImages(list) {
 // anything else is a spoken call turn.
 async function startVoice({ botId, turns, mode, images }) {
   const b = bots();
-  const bot = b.getBot(String(botId || ''));
+  // Voice mode on the phone talks to Codeply itself: the main agent with every tool (main.js codeplyVoice).
+  const codeply = String(botId || '') === 'codeply' && typeof deps.codeplyVoice === 'function';
+  const bot = codeply ? { id: 'codeply', name: 'Codeply' } : b.getBot(String(botId || ''));
   if (!bot) return { status: 404, body: { error: 'That bot is not on this PC any more.' } };
   if (!(await deps.ensureEngine())) return { status: 503, body: { error: 'The engine is not ready on your PC.' } };
   // One turn per bot at a time: a new one replaces the old (the user talked over it).
@@ -329,7 +331,12 @@ async function startVoice({ botId, turns, mode, images }) {
   const token = `phone-call:${id}`;
   const approve = async (req) => {
     if (signal.aborted) return 'reject';
-    if (!req.danger && req.tool !== 'fetch_image' && b.canSkipApproval(bot, req.tool)) {
+    if (codeply && !req.danger) {
+      // Codeply follows the user's standing rules (Settings > Permissions); everything else asks on the phone.
+      const perms = deps.permissionsLib && deps.permissionsLib();
+      const rule = perms ? perms.decide(req, botsFolder()) : { decision: null };
+      if (rule.decision === 'allow') return 'once';
+    } else if (!req.danger && req.tool !== 'fetch_image' && b.canSkipApproval(bot, req.tool)) {
       const perms = deps.permissionsLib && deps.permissionsLib();
       const rule = perms ? perms.decide(req, botsFolder()) : { decision: null };
       if (rule.decision !== 'deny') return 'once';
@@ -348,14 +355,17 @@ async function startVoice({ botId, turns, mode, images }) {
   };
   (async () => {
     try {
-      const r = await b.globalLock.run(token, () => b.voiceTurn({
+      const r = codeply ? await b.globalLock.run(token, () => deps.codeplyVoice({
+        turns, signal, approve, mode: mode === 'text' ? 'text' : 'voice', images: sharedImages(images),
+        onStep: (s) => { if (!s.done) { j.step = s.label || b.callStepLabel(s.name); bumpJob(j); } },
+      }), signal) : await b.globalLock.run(token, () => b.voiceTurn({
         bot, team: b.listBots(), turns, runAgent: deps.agentMod().runAgent, route, cwd: botsFolder(), signal, approve,
         mode: mode === 'text' ? 'text' : 'voice', images: sharedImages(images),
         onStep: (s) => { if (!s.done) { j.step = b.callStepLabel(s.name); bumpJob(j); } },
       }), signal);
-      j.text = r.text; j.status = 'done';
+      j.text = r.text; j.mood = r.mood || ''; j.status = 'done';
       // The bot learns from the work it did on the call, in the background.
-      if (r.reply) reflect(bot, { request: r.request, steps: r.steps, reply: r.reply }, route, null);
+      if (r.reply && !codeply) reflect(bot, { request: r.request, steps: r.steps, reply: r.reply }, route, null);
     } catch (e) {
       j.status = signal.aborted ? 'cancelled' : 'error';
       j.error = e.message;

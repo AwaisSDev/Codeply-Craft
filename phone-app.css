@@ -179,3 +179,57 @@ body:not([data-view="chat"]) #menuBtn .ico-back { display: none; }
 .ob-found svg { width: 16px; height: 16px; visibility: visible; }
 .ob-actions { display: flex; flex-direction: column; gap: 6px; }
 .ob-actions .btn-ghost { height: 46px; color: var(--muted); }
+
+/* ─── Voice mode: talk to Codeply, Wisp in the middle ─── */
+.call.vm { background: #08090C; padding: calc(env(safe-area-inset-top) + 18px) 20px calc(env(safe-area-inset-bottom) + 18px); }
+.vm-head .call-name { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.vm-head .call-status { font-size: 14px; margin-top: 2px; color: rgba(255, 255, 255, .5); }
+.vm-orb::before { display: none; }
+.vm-wisp, .vm-wisp .wisp-el { width: min(210px, 30vh); height: min(210px, 30vh); }
+.call.vm .call-state { font-size: 15px; color: rgba(255, 255, 255, .55); min-height: 20px; margin-top: 14px; }
+.call.vm[data-phase="thinking"] .call-state { background: linear-gradient(90deg, rgba(255,255,255,.45) 0%, rgba(255,255,255,.45) 38%, #fff 50%, rgba(255,255,255,.45) 62%, rgba(255,255,255,.45) 100%);
+  background-size: 260% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: think-shine 1.9s linear infinite; }
+/* Captions: one short line; the newest words come in on the right and older ones slide off the left */
+.vm-cap { width: 100%; max-width: 340px; height: 30px; overflow: hidden; display: flex; justify-content: center; align-items: center; }
+/* Longer than the line: the newest words stay in view on the right, the oldest fade off the left */
+.vm-cap.over { justify-content: flex-end; -webkit-mask-image: linear-gradient(to right, transparent, #000 18%, #000 100%); mask-image: linear-gradient(to right, transparent, #000 18%, #000 100%); }
+.call.vm .call-caption { flex: none; max-width: none; min-height: 0; white-space: nowrap; text-align: right; font-size: 18px; line-height: 30px; font-weight: 500; letter-spacing: -.01em; color: rgba(255, 255, 255, .92); font-style: normal; }
+.call.vm .call-caption.you { color: rgba(255, 255, 255, .55); font-style: normal; }
+.call.vm.no-cc .vm-cap { visibility: hidden; }
+.call.vm .call-note { color: rgba(255, 255, 255, .6); }
+.vm-bar { flex: none; display: flex; justify-content: center; gap: 22px; margin: 8px auto 6px; }
+.vm-btn { width: 64px; height: 64px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: #fff;
+  background: rgba(255, 255, 255, .12); -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6);
+  box-shadow: inset 0 0 0 .5px rgba(255, 255, 255, .18), inset 0 1px 0 rgba(255, 255, 255, .1);
+  transition: transform .32s cubic-bezier(.34, 1.56, .64, 1), background-color .18s ease; }
+.vm-btn svg { width: 26px; height: 26px; }
+.vm-btn:active { transform: scale(.88); transition-duration: .08s; }
+.vm-btn[data-c="cc"]:not(.on) { color: rgba(255, 255, 255, .45); }
+.vm-btn[data-c="mute"].on { background: #fff; color: #111; }
+.vm-btn.end { background: #FF453A; box-shadow: none; }
+.call.vm[data-phase="ended"] .vm-bar { opacity: .4; }
+
+/* Codeply calling you: Wisp ringing in waves of light */
+.call.vm.incoming { justify-content: space-between; }
+.vm-ring-wrap { position: relative; width: 190px; height: 190px; display: grid; place-items: center; margin-bottom: 22px; animation: vm-bob 1.3s ease-in-out infinite; }
+.vm-ring-wrap .vm-wisp, .vm-ring-wrap .vm-wisp .wisp-el { width: 170px; height: 170px; }
+.vm-ripple { position: absolute; inset: 10px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, .28);
+  animation: vm-ripple 2.4s cubic-bezier(.2, .6, .3, 1) infinite; opacity: 0; }
+.vm-ripple:nth-child(2) { animation-delay: .8s; }
+.vm-ripple:nth-child(3) { animation-delay: 1.6s; }
+@keyframes vm-ripple { 0% { transform: scale(.75); opacity: .9; } 100% { transform: scale(2.1); opacity: 0; } }
+@keyframes vm-bob { 0%, 100% { transform: translateY(0) rotate(0); } 20% { transform: translateY(-6px) rotate(-4deg); } 40% { transform: translateY(0) rotate(3deg); } 55% { transform: translateY(-3px) rotate(-2deg); } 70% { transform: translateY(0) rotate(0); } }
+.vm-in-name { font-size: 34px; font-weight: 700; letter-spacing: -.03em; line-height: 1.1; }
+.vm-in-sub { font-size: 17px; color: rgba(255, 255, 255, .6); margin-top: 4px; }
+.vm-in-preview { margin-top: 18px; max-width: 300px; padding: 10px 16px; border-radius: 18px; font-size: 15px; line-height: 1.4; text-align: center; color: rgba(255, 255, 255, .88);
+  background: rgba(255, 255, 255, .08); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); box-shadow: inset 0 0 0 .5px rgba(255, 255, 255, .14); }
+.vm-answer-row { flex: none; display: flex; justify-content: space-between; width: 100%; max-width: 300px; margin: 0 auto 22px; }
+.vm-ans { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 14px; color: rgba(255, 255, 255, .75); }
+.vm-decline, .vm-accept { width: 74px; height: 74px; border-radius: 50%; display: grid; place-items: center; color: #fff; transition: transform .32s cubic-bezier(.34, 1.56, .64, 1); }
+.vm-decline { background: #FF453A; }
+.vm-accept { background: #30D158; animation: vm-answer 1.6s ease-in-out infinite; }
+.vm-accept svg { width: 30px; height: 30px; }
+.vm-decline svg { width: 28px; height: 28px; }
+.vm-decline:active, .vm-accept:active { transform: scale(.88); }
+@keyframes vm-answer { 0%, 100% { box-shadow: 0 0 0 0 rgba(48, 209, 88, .55); } 60% { box-shadow: 0 0 0 16px rgba(48, 209, 88, 0); } }
+@media (prefers-reduced-motion: reduce) { .vm-ripple, .vm-ring-wrap, .vm-accept { animation: none !important; } }

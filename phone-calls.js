@@ -58,6 +58,29 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     chev: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
   };
 
+  ICON.cc = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3.5"/><path d="M10.5 10.2a2.4 2.4 0 1 0 0 3.6M17 10.2a2.4 2.4 0 1 0 0 3.6"/></svg>';
+  ICON.x = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>';
+
+  // ─── Voice mode: you talk to Codeply itself, with Wisp's face ──────────────
+  // The same call engine as before (Deepgram hears and speaks, small talk is
+  // answered at once), but there is one voice now: Codeply. Real work runs on
+  // the PC as the main agent with every tool and its specialists (bots-desktop.js,
+  // botId "codeply"), or in Codeply Cloud when the PC is off. Codeply can also
+  // call you (a reminder or a scheduled job): answering opens this same screen.
+  const CODEPLY = {
+    id: 'codeply', name: 'Codeply', voice: 'aura-2-thalia-en', avatar: null, memory: [],
+    prompt: "You are Codeply, the user's own AI agent. On screen you are Wisp: a small blue pentagon with eyes that react to what they say. You are warm, quick and a little playful, and you get real work done: on their PC you can use every tool (email, calendar, files, code, the web, their apps) and bring in specialists from your team. You are not one of several bots; you are Codeply, the one they talk to.",
+  };
+  const WISP = () => window.CraftWisp || null;
+  /** What a line feels like, for Wisp's face. */
+  function moodOf(text) { try { return (WISP() && WISP().read(String(text || '')).mood) || 'neutral'; } catch { return 'neutral'; } }
+  function face(mood, talkMs) {
+    const w = c && c.wisp;
+    if (!w) return;
+    if (mood && w.mood !== mood) w.setMood(mood);
+    if (talkMs) w.talk(talkMs);
+  }
+
   const cache = { bots: [], templates: [], at: 0, ...load(KEY.bots, {}) };
   let calls = load(KEY.calls, []);
   let refreshing = false;
@@ -680,7 +703,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
         me.ttsNote = e.status === 429 ? "Daily voice limit reached, using the phone's voice"
           : e.status === 401 ? "Sign in again for the bot's voice, using the phone's voice"
           : e.status === 503 ? "Bot voices are not set up yet, using the phone's voice"
-          : `Bot voice failed (${e.status || e.message}), using the phone's voice for that line`;
+          : `The voice failed (${e.status || e.message}), using the phone's voice for that line`;
         showNote();
       }
       return null;
@@ -787,6 +810,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     const me = c;
     if (!me) return;
     const plan = wordPlan(text);
+    face((c && c.nextMood) || moodOf(text), 1200); // each sentence it says brings its own face
     // dur may be a function: a streamed sentence's length is known only as its audio arrives.
     const total = typeof dur === 'function' ? dur : () => dur;
     const handle = { raf: 0 };
@@ -963,12 +987,25 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     const chip = q('.call-state');
     if (chip) chip.textContent = label || { ringing: '', listening: c.muted ? 'Muted' : (c.typing ? 'Type to talk' : 'Listening'), thinking: 'Thinking', speaking: '', ended: '' }[phase] || '';
     setAvatarState(q('.call-orb'), phase === 'thinking' ? 'working' : 'idle');
+    // Wisp: thinks, works through a job (a step label), listens; while it speaks the line's own mood shows.
+    if (phase === 'thinking') face(label ? 'working' : 'thinking');
+    if (phase === 'listening') c.nextMood = null;
+    if (phase === 'listening' && c.userMoodAt && performance.now() - c.userMoodAt < 2500) { /* keep your reaction a moment */ }
+    else if (phase === 'listening' && !(c.userMoodAt && performance.now() - c.userMoodAt < 2500)) face(c.muted ? 'sleepy' : 'listening');
   }
   function caption(text, who) {
     if (!c) return;
     const cap = q('.call-caption');
     cap.textContent = text || '';
     cap.classList.toggle('you', who === 'user');
+    const box = cap.parentElement;
+    if (box && box.classList.contains('vm-cap')) box.classList.toggle('over', cap.scrollWidth > box.clientWidth + 1);
+    if (text && who === 'user') {
+      // What you said shows on Wisp's face first: happy, worried, excited, angry...
+      const m = moodOf(text);
+      c.userMoodAt = performance.now();
+      face(m === 'neutral' ? 'listening' : m);
+    } else if (text && who === 'bot') face(null, 900); // its mouth moves with the words
   }
   function log(who, text) {
     c.turns.push({ who, text, at: Date.now() });
@@ -1151,7 +1188,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     try {
       for (;;) {
         if (signal.aborted) throw abortError();
-        if (r.status === 'done') return r.text || '';
+        if (r.status === 'done') { if (r.mood && c) c.nextMood = r.mood; return r.text || ''; } // the face Codeply ended on (its [mood: x])
         if (r.status === 'cancelled') throw abortError();
         if (r.status === 'error' || (r.error && !r.jobId)) throw new Error(r.error || 'Your PC could not answer.');
         if (r.step) ui.step(r.step);
@@ -1797,23 +1834,19 @@ You are on a live voice call; everything you write is spoken out loud right away
     unlockVoiceEl(); // inside the tap, so iOS lets it play the bot's voice later
     warmTts(); // wakes the voice function while it rings
 
-    const tint = tintOf(bot.avatar);
     const r = root();
-    r.style.setProperty('--tint', tint);
-    r.style.setProperty('--tint-bg', shade(tint, 0.62));
-    r.className = 'call';
+    r.className = 'call vm';
     r.dataset.phase = 'ringing';
     r.innerHTML = `
-      <div class="call-bg" aria-hidden="true"><div class="call-bg-blob">${avatarHtml(bot, 320, { still: true, flat: true })}</div></div>
-      <div class="call-head">
+      <div class="call-head vm-head">
         <div class="call-name">${esc(bot.name)}</div>
-        <div class="call-status">${opts.answered ? 'connecting...' : 'calling...'}</div>
+        <div class="call-status">${opts.answered ? 'Connecting' : ''}</div>
       </div>
       <div class="call-mid">
         <div class="call-face">
-          <div class="call-orb">${avatarHtml(bot, 168)}</div>
+          <div class="call-orb vm-orb"><div class="vm-wisp"></div></div>
           <div class="call-state"></div>
-          <div class="call-caption"></div>
+          <div class="vm-cap"><div class="call-caption"></div></div>
         </div>
         <div class="call-log"><div class="call-log-list"></div></div>
         <p class="call-note"></p>
@@ -1822,12 +1855,11 @@ You are on a live voice call; everything you write is spoken out loud right away
           <button type="submit" aria-label="Say it">${ICON.send}</button>
         </form>
       </div>
-      <div class="call-grid">
-        <div class="cb-wrap"><button type="button" class="cb" data-c="mute" aria-label="Mute">${ICON.mic}</button><span>mute</span></div>
-        <div class="cb-wrap"><button type="button" class="cb" data-c="log" aria-label="Transcript">${ICON.text}</button><span>transcript</span></div>
-        <div class="cb-wrap"><button type="button" class="cb on" data-c="speaker" aria-label="Speaker">${ICON.speaker}</button><span>speaker</span></div>
-      </div>
-      <button type="button" class="call-end" data-c="end" aria-label="End call">${ICON.end}</button>`;
+      <div class="vm-bar">
+        <button type="button" class="vm-btn on" data-c="cc" aria-label="Captions" aria-pressed="true">${ICON.cc}</button>
+        <button type="button" class="vm-btn" data-c="mute" aria-label="Mute">${ICON.mic}</button>
+        <button type="button" class="vm-btn end" data-c="end" aria-label="End">${ICON.x}</button>
+      </div>`;
 
     const canHear = local ? !!(ctx && window.Worker && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) : !!SR;
     c = {
@@ -1835,13 +1867,13 @@ You are on a live voice call; everything you write is spoken out loud right away
       startedAt: Date.now(), connectedAt: 0, lastBotText: '', rec: null, abort: null, ending: false,
       voice: voiceFor(bot), pitch: 0.92 + (hash(`${bot.id}p`) % 17) / 100, fails: 0, recAt: 0,
       ears: false, vad: null, queued: null, dgVoice: deepgramVoice(bot), ttsOff: !TTS_URL, ttsCtl: null, ttsNote: '', playing: null, noteBase: '',
-      context: String(opts.context || ''), reminder: opts.reminder || null,
+      context: String(opts.context || ''), reminder: opts.reminder || null, vm: true, wisp: null, userMoodAt: 0,
     };
+    try { if (WISP()) c.wisp = WISP().mount(q('.vm-wisp'), { size: 'lg', mood: 'happy', morph: true }); } catch {}
     if (c.typing) root().classList.add('typing');
     q('[data-c="end"]').addEventListener('click', () => endCall());
     q('[data-c="mute"]').addEventListener('click', toggleMute);
-    q('[data-c="speaker"]').addEventListener('click', toggleSpeaker);
-    q('[data-c="log"]').addEventListener('click', toggleLog);
+    q('[data-c="cc"]').addEventListener('click', toggleCaptions);
     q('.call-type').addEventListener('submit', (e) => {
       e.preventDefault();
       const input = q('.call-type input');
@@ -1867,7 +1899,9 @@ You are on a live voice call; everything you write is spoken out loud right away
     tick();
     const canWork = pcOnline() || cloudReady();
     const custom = typeof opts.opening === 'function' ? opts.opening({ canWork }) : opts.opening;
-    const greet = spoken(custom) || ((bot.memory && bot.memory.length) ? `Hey, it's ${bot.name} again. What's on your mind?` : `Hey, it's ${bot.name}. What can I do for you?`);
+    const HELLO = ["Hey! What's up?", 'Hi! What can I do?', "Hey, I'm here. What do you need?", 'Hi there. What are we doing?'];
+    const greet = spoken(custom) || (bot.id === CODEPLY.id ? HELLO[Math.floor(Math.random() * HELLO.length)]
+      : (bot.memory && bot.memory.length) ? `Hey, it's ${bot.name} again. What's on your mind?` : `Hey, it's ${bot.name}. What can I do for you?`);
     c.lastBotText = greet;
     log('bot', greet);
     await say(greet, c.token);
@@ -1898,28 +1932,25 @@ You are on a live voice call; everything you write is spoken out loud right away
   let ringing = null;
   function incoming(bot, opts = {}) {
     if (c || ringing) return false;
-    const tint = tintOf(bot.avatar);
     const r = root();
-    r.style.setProperty('--tint', tint);
-    r.style.setProperty('--tint-bg', shade(tint, 0.62));
-    r.className = 'call incoming';
+    r.className = 'call vm incoming';
     r.dataset.phase = 'ringing';
     r.innerHTML = `
-      <div class="call-bg" aria-hidden="true"><div class="call-bg-blob">${avatarHtml(bot, 320, { still: true, flat: true })}</div></div>
-      <div class="call-head">
-        <div class="call-name">${esc(bot.name)}</div>
-        <div class="call-status">Codeply call</div>
-      </div>
       <div class="call-mid">
         <div class="call-face">
-          <div class="call-orb">${avatarHtml(bot, 168)}</div>
-          <div class="call-caption">${esc(opts.preview || '')}</div>
+          <div class="vm-ring-wrap"><i class="vm-ripple"></i><i class="vm-ripple"></i><i class="vm-ripple"></i><div class="vm-wisp"></div></div>
+          <div class="vm-in-name">Codeply</div>
+          <div class="vm-in-sub">is calling you</div>
+          ${opts.preview ? `<div class="vm-in-preview">${esc(String(opts.preview).slice(0, 140))}</div>` : ''}
         </div>
       </div>
-      <div class="call-answer-row">
-        <div class="cb-wrap"><button type="button" class="call-end" data-in="decline" aria-label="Decline">${ICON.end}</button><span>Decline</span></div>
-        <div class="cb-wrap"><button type="button" class="call-accept" data-in="answer" aria-label="Answer">${ICON.phone}</button><span>Answer</span></div>
+      <div class="vm-answer-row">
+        <div class="vm-ans"><button type="button" class="vm-decline" data-in="decline" aria-label="Decline">${ICON.x}</button><span>Decline</span></div>
+        <div class="vm-ans"><button type="button" class="vm-accept" data-in="answer" aria-label="Answer">${ICON.phone}</button><span>Answer</span></div>
       </div>`;
+    let ringFace = null;
+    try { if (WISP()) ringFace = WISP().mount(r.querySelector('.vm-wisp'), { size: 'lg', mood: 'excited' }); } catch {}
+    const wiggle = setInterval(() => { if (ringFace) ringFace.talk(500); }, 1300);
     // Ring only if this page's audio is already unlocked (it was used since the app opened).
     let stopRing = () => {};
     const a0 = audioCtx();
@@ -1932,6 +1963,7 @@ You are on a live voice call; everything you write is spoken out loud right away
     const close = () => {
       if (!ringing) return;
       clearTimeout(ringing.timer);
+      clearInterval(wiggle);
       ringing = null;
       stopRing(); stopRing = () => {};
       try { if (navigator.vibrate) navigator.vibrate(0); } catch {}
@@ -1955,6 +1987,13 @@ You are on a live voice call; everything you write is spoken out loud right away
     btn.innerHTML = c.muted ? ICON.micOff : ICON.mic;
     if (c.muted) { stopListening(); micEnabled(false); } else startListening();
     if (c.phase === 'listening') setPhase('listening');
+  }
+  function toggleCaptions() {
+    if (!c) return;
+    const off = root().classList.toggle('no-cc');
+    const b = q('[data-c="cc"]');
+    b.classList.toggle('on', !off);
+    b.setAttribute('aria-pressed', String(!off));
   }
   function toggleSpeaker() {
     if (!c) return;
@@ -1989,12 +2028,13 @@ You are on a live voice call; everything you write is spoken out loud right away
     root().dataset.phase = 'ended';
     root().classList.remove('show-log', 'typing');
     q('.call-note').textContent = '';
-    q('.call-status').textContent = connected ? `Call ended ${dur(ms)}` : 'Call cancelled';
+    q('.call-status').textContent = call.vm ? (connected ? dur(ms) : '') : connected ? `Call ended ${dur(ms)}` : 'Call cancelled';
+    face('happy');
     q('.call-state').textContent = '';
     root().querySelectorAll('button').forEach((b) => { b.disabled = true; });
     calls.unshift({
       id: call.id, botId: call.bot.id, name: call.bot.name, avatar: call.bot.avatar, at: call.startedAt, ms,
-      status: connected ? 'done' : 'cancelled', turns: call.turns.map((t) => ({ who: t.who, text: t.text })), synced: false,
+      status: connected ? 'done' : 'cancelled', turns: call.turns.map((t) => ({ who: t.who, text: t.text })), synced: call.bot.id === CODEPLY.id ? 'local' : false,
     });
     saveCalls();
     setTimeout(() => {
@@ -2017,7 +2057,9 @@ You are on a live voice call; everything you write is spoken out loud right away
   });
   window.addEventListener('craft:pc-online', () => { pushPending().then(refreshBots).then(syncCalls); });
 
-  $('drawerCalls').addEventListener('click', () => { P.closeDrawer(); openCalls(); });
+  /** Voice mode: straight into talking with Codeply (from the composer's voice button). Inside the tap, so audio can start. */
+  function openVoice(opts = {}) { return startCall(CODEPLY, { answered: true, ...opts }); }
+  $('drawerCalls').addEventListener('click', () => { P.closeDrawer(); openVoice(); });
   $('callsBack').addEventListener('click', closeCalls);
 
   // ─── Build a bot from a prompt ────────────────────────────────────────────
@@ -2216,7 +2258,7 @@ Respond with ONLY a JSON object:
   // forces the kept-mic + Whisper path on browsers that have SpeechRecognition.
   const api = { reply: askBot, fast_: askFast, fast: true, stream: true, serverStt: true, thinkingSound: true, ringMs: 2400, answerMs: 500, incomingMs: 60000, endedMs: 1100, localEars: false };
   window.CraftCalls = {
-    api, openCalls, closeCalls, startCall, endCall, incoming, refreshBots, syncCalls, spoken, sentences, VOICE_RULES, openBuilder, pushPending,
+    api, openCalls, closeCalls, startCall, openVoice, CODEPLY, endCall, incoming, refreshBots, syncCalls, spoken, sentences, VOICE_RULES, openBuilder, pushPending,
     heard: heardText, active: () => c, cache, calls: () => calls,
     supported: { recognition: !!SR, synthesis: !!synth, localEars: localEars(), ios: IS_IOS },
     _test: {
