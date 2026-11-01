@@ -85,9 +85,9 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible { outline: 
 .top-sub.hidden { display: none; }
 
 /* ─── Empty chat: the face and one line, like DeepSeek; Claude's serif ─── */
-.empty-head { gap: 14px; padding-bottom: 64px; }
-.empty-wisp .wisp-el { width: 56px; height: 56px; }
-.greeting { font-family: var(--serif); font-size: 38px; font-weight: 400; letter-spacing: -.01em; line-height: 1.08; max-width: 300px; }
+.empty-head { gap: 18px; padding-bottom: 56px; }
+.empty-wisp .wisp-el { width: 120px; height: 120px; }
+.greeting { font-family: var(--font); font-size: 28px; font-weight: 600; letter-spacing: -.035em; line-height: 1.15; max-width: 300px; }
 .empty-sub { font-size: 15px; color: var(--muted); margin-top: -4px; }
 .empty-sub strong { color: var(--text); }
 .suggest button { background: var(--surface); border-radius: 16px; padding: 11px 14px; box-shadow: none; }
@@ -96,7 +96,7 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible { outline: 
 .suggest button span { color: var(--muted); }
 
 /* ─── Composer: a floating card, text on top, a chip row below ─── */
-.composer { padding: 6px 12px max(10px, env(safe-area-inset-bottom)); background: linear-gradient(to bottom, transparent, var(--bg) 22px); }
+.composer { padding: 6px 12px max(8px, calc(env(safe-area-inset-bottom) - 22px)); /* sits just above the home bar, like ChatGPT */ background: linear-gradient(to bottom, transparent, var(--bg) 22px); }
 .box { background: var(--float); border-radius: 26px; padding: 12px 10px 10px 14px; box-shadow: var(--float-shadow); }
 .box textarea { font-size: 17px; padding: 2px 4px 12px 2px; }
 .box textarea::placeholder { color: var(--faint); }

@@ -136,9 +136,9 @@ body:not([data-view="chat"]) #menuBtn .ico-back { display: none; }
 .signin { background: var(--bg); color: var(--text); }
 .signin-inner { max-width: 380px; margin: 0 auto; }
 .signin .signin-mark { display: none; }
-.signin-face .wisp-el { width: 64px; height: 64px; }
+.signin-face .wisp-el { width: 88px; height: 88px; }
 .signin-face { margin-bottom: 18px; }
-.signin h1 { font-family: var(--serif); font-size: 40px; font-weight: 400; letter-spacing: -.01em; line-height: 1.05; margin: 0 0 10px; text-shadow: none; }
+.signin h1 { font-family: var(--font); font-size: 30px; font-weight: 700; letter-spacing: -.035em; line-height: 1.1; margin: 0 0 10px; text-shadow: none; }
 .signin p.muted { margin: 0 0 26px; color: var(--muted); font-size: 16px; line-height: 1.4; }
 .auth-tabs { display: none; }
 .signin-form { background: none; padding: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; gap: 10px; color: var(--text); }
@@ -164,7 +164,7 @@ body:not([data-view="chat"]) #menuBtn .ico-back { display: none; }
 .ob-skip { color: var(--muted); font-size: 16px; padding: 8px 4px; }
 .ob-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px; }
 .ob-body .wisp-el { width: 72px; height: 72px; margin-bottom: 14px; }
-.ob-body h1 { margin: 0; font-family: var(--serif); font-size: 40px; font-weight: 400; letter-spacing: -.01em; line-height: 1.05; }
+.ob-body h1 { margin: 0; font-family: var(--font); font-size: 30px; font-weight: 700; letter-spacing: -.035em; line-height: 1.12; }
 .ob-body > p { margin: 0 0 14px; font-size: 16.5px; line-height: 1.5; color: var(--muted); }
 .ob-num { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 600; background: var(--surface); flex: none; }
 .ob-found { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--muted); margin: 8px 0 0; }

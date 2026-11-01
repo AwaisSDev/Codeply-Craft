@@ -118,6 +118,8 @@
       mood: null, phase: Math.random() * 10, visible: true, small: size === 'sm' || size === 'xs', kick: 0,
       morph: !!opts.morph, color: opts.color || null,
       talkUntil: 0, look: null, hop: 0, io: null,
+      // Idle glances: the eyes jump to a spot, rest, jump again (alive, not drifting).
+      gx: 0, gy: 0, nextGlance: 0,
       // Small Wisps get bigger eyes, or the face is lost at 20px.
       eyeScale: { lg: 1.15, md: 1.45, sm: 1.7, xs: 1.9 }[size] || 1
     };
@@ -228,9 +230,18 @@
           var b = w.svg.getBoundingClientRect(), cx = b.left + b.width / 2, cy = b.top + b.height * .44;
           var dx = target.x - cx, dy = target.y - cy, dist = Math.hypot(dx, dy) || 1, reach = Math.min(1, dist / (b.width * 2.2 + 120));
           tx = dx / dist * 6 * reach; ty = dy / dist * 4.5 * reach;
-        } else if (!reduce) { tx = Math.sin(now / 1700 + w.phase) * 3; ty = Math.sin(now / 2300 + w.phase) * 1.5; }
+        } else if (!reduce) {
+          if (now > w.nextGlance) {
+            // Mostly a look somewhere, sometimes straight ahead; now and then a double blink.
+            const r = Math.random();
+            if (r < .22) { w.gx = 0; w.gy = 0; } else { w.gx = (Math.random() * 2 - 1) * 6; w.gy = (Math.random() * 2 - 1) * 4.2; }
+            w.nextGlance = now + 650 + Math.random() * 2100;
+            if (Math.random() < .18) { w.blink = now; w.blinkAt = now + 260; }
+          }
+          tx = w.gx; ty = w.gy;
+        }
       }
-      var lerp = reduce ? 1 : (w.mood === 'working' ? .22 : .14); w.lx += (tx - w.lx) * lerp; w.ly += (ty - w.ly) * lerp;
+      var lerp = reduce ? 1 : (w.mood === 'working' || (!w.look && (px === null || now - lastMove >= 4000)) ? .24 : .14); /* glances are quick, like real eyes */ w.lx += (tx - w.lx) * lerp; w.ly += (ty - w.ly) * lerp;
       // blink
       var sc = 1;
       if (M.blink && !reduce) {
@@ -245,6 +256,8 @@
   }
 
   addEventListener('pointermove', function (e) { px = e.clientX; py = e.clientY; lastMove = performance.now(); }, { passive: true });
+  // On a phone there is no cursor: the eyes look where you tap, then go back to glancing.
+  addEventListener('pointerdown', function (e) { px = e.clientX; py = e.clientY; lastMove = performance.now() - 2200; }, { passive: true });
 
   // ---- reading a message: the mood it carries, and a shape when it names one ----
   // Wisp reads who a feeling is aimed at. Upset with Wisp: it's sorry, not
