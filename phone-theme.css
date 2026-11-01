@@ -317,6 +317,9 @@ html.ios-standalone { min-height: min(100lvh, calc(100% + env(safe-area-inset-to
 #app > .composer { position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; pointer-events: none; background: none;
   padding-bottom: max(8px, env(safe-area-inset-bottom)); }
 #app > .composer > * { pointer-events: auto; }
+/* Below the box (down to the home bar) the chat does not show through: it fades into the background */
+#app > .composer::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; z-index: -1; pointer-events: none;
+  height: calc(max(8px, env(safe-area-inset-bottom)) + 26px); background: linear-gradient(to bottom, transparent, var(--bg) 26px); }
 #app > .composer > .suggest { pointer-events: auto; }
 #menuBtn, #app .top-right, #app > .composer .box, #app > .composer .suggest button {
   background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-rim); }

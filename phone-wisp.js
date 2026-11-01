@@ -74,22 +74,42 @@
     if (!b) return [];
     const moods = [];
     const items = c.kind === 'chat'
-      ? (b.messages || []).map((m) => ({ user: m.role === 'user', mood: m.mood, error: m.role === 'error' }))
-      : [...(b.prelude || []).map((m) => ({ user: m.role === 'user' })), ...(b.pcItems || []).map((m) => ({ user: m.kind === 'user', mood: m.kind === 'assistant' && !m.interim ? (m.mood || 'neutral') : undefined, error: m.kind === 'notice' && m.level === 'error' }))];
+      ? (b.messages || []).map((m) => ({ user: m.role === 'user', mood: m.mood, text: m.content, error: m.role === 'error' }))
+      : [...(b.prelude || []).map((m) => ({ user: m.role === 'user', text: m.content })), ...(b.pcItems || []).map((m) => ({ user: m.kind === 'user', mood: m.kind === 'assistant' && !m.interim ? m.mood : undefined, text: m.kind === 'assistant' && !m.interim ? m.text : m.kind === 'user' ? m.text : '', error: m.kind === 'notice' && m.level === 'error' }))];
+    // Like voice mode: Wisp's face is how it feels about what you said (angry with you, a heart
+    // for "love you"), or else the feeling of its own answer. A mood the agent sent ([mood: x]) wins.
+    let react = null;
     for (const it of items) {
-      if (it.user) moods.push('neutral');
-      else if (moods.length && it.mood) moods[moods.length - 1] = it.mood;
-      else if (moods.length && it.error) moods[moods.length - 1] = 'sad';
+      if (it.user) { react = feel(it.text); moods.push(react || 'neutral'); }
+      else if (!moods.length) continue;
+      else if (it.mood) moods[moods.length - 1] = it.mood;
+      else if (it.error) moods[moods.length - 1] = 'sad';
+      else if (!react && it.text && moods[moods.length - 1] === 'neutral') moods[moods.length - 1] = feel(it.text) || 'neutral';
     }
     return moods;
   }
 
+  const CALM = new Set(['neutral', 'thinking', 'listening']);
+  /** The feeling in a line (wisp.js read), or null when it is just neutral. */
+  function feel(text) {
+    if (!text) return null;
+    try { const m = W.read(String(text).slice(0, 600)).mood; return CALM.has(m) ? null : m; } catch { return null; }
+  }
+  /** How Wisp feels about the last thing you sent, while it answers. */
+  function lastReaction() {
+    const st = P().state;
+    const c = st && (st.chats || []).find((x) => x.id === st.current);
+    const b = c && st.bodies && st.bodies.get(c.id);
+    if (!b) return null;
+    const list = c.kind === 'chat' ? (b.messages || []).filter((m) => m.role === 'user').map((m) => m.content) : (b.pcItems || []).filter((m) => m.kind === 'user').map((m) => m.text);
+    return feel(list[list.length - 1]);
+  }
   function liveMood() {
     const st = P().state;
     if (!st || !st.current) return null;
     if ($('approvalSheet') && !$('approvalSheet').classList.contains('hidden')) return 'worried';
     if ($('imageSheet') && !$('imageSheet').classList.contains('hidden')) return 'worried';
-    if (st.busy && st.busy.has(st.current)) return document.querySelector('#feed .steps-group.live') ? 'working' : 'thinking';
+    if (st.busy && st.busy.has(st.current)) return document.querySelector('#feed .steps-group.live') ? 'working' : lastReaction() || 'thinking';
     return null;
   }
 
@@ -117,7 +137,7 @@
           state.className = 'turn-face-state';
           holder.appendChild(state);
           (face ? f.insertBefore(holder, face) : f.appendChild(holder));
-          W.mount(el, { size: 'sm' });
+          W.mount(el, { size: 'sm', morph: true }); // the same shapes as voice mode: a heart for love, spiky when angry
           face = holder;
         }
         const last = i === users.length - 1;
