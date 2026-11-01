@@ -15,6 +15,7 @@ const ACTION_VERBS = {
   supabase_create_project: 'created Supabase project', gmail_send: 'emailed', slack_post_message: 'posted to Slack',
   use_computer: 'on the computer:', look_at_screen: 'looked at the screen', life_context: 'looked up', calendar_add: 'added to the calendar',
   calendar_update: 'changed the calendar:', gmail_search: 'searched email for', gmail_read: 'read the email', remember: 'remembered', hand_off: 'handed off',
+  schedule: 'scheduled', create_specialist: 'set up the specialist',
 };
 
 /** One line per tool call the agent really made, for grounding later turns. */

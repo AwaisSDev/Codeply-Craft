@@ -10,10 +10,10 @@
   const KEY = 'craft.bot';
 
   let cat = { bots: [], templates: [], tones: {}, approvals: {}, maxMemory: 60 };
+  // Craft's chats always go to Codeply's main agent, which brings in specialists
+  // itself; there is no "who answers" chip any more (bots live in Crew).
   let selected = '';
-  try { selected = localStorage.getItem(KEY) || ''; } catch {}
-  // The old role pins (Pixel, Circuit, ...) are gone: Wisp brings in specialists itself.
-  if (selected.startsWith('role:')) { selected = ''; try { localStorage.setItem(KEY, ''); } catch {} }
+  try { localStorage.setItem(KEY, ''); } catch {}
 
   const byId = (id) => cat.bots.find((b) => b.id === id) || null;
   const byName = (n) => cat.bots.find((b) => b.name.toLowerCase() === String(n || '').trim().toLowerCase()) || null;
@@ -21,17 +21,20 @@
   const ROLE = { orchestrator: 'Orchestrator', specialist: 'Specialist' };
   const ICON_X = '<svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
   const CRAFT_AVATAR = { shape: 'burst9', eyes: 'pills', color: '#8e8e93' }; // stand-in for an unknown bot
-// The main agent answers unless one of your bots is picked. The old role
-  // mascots (Pixel, Circuit, ...) are gone: Wisp brings in specialists itself.
+// Craft's own agents, the mascot balls: Craft (purple) picks a specialist by
+  // itself; picking one here pins it for the chat ('role:<id>' goes to main.js).
   const ROLES = [
     { id: '', file: 'general.png', label: 'Craft', sub: 'Main agent, picks the right specialist' },
+    { id: 'role:frontend', file: 'frontend.png', label: 'Frontend', sub: 'Pixel, UI and pages' },
+    { id: 'role:backend', file: 'backend.png', label: 'Backend', sub: 'Circuit, servers and APIs' },
+    { id: 'role:database', file: 'database.png', label: 'Database', sub: 'Index, data and schemas' },
+    { id: 'role:testing', file: 'testing.png', label: 'QA', sub: 'Scout, tests and checks' },
+    { id: 'role:security', file: 'security.png', label: 'Security', sub: 'Warden, safety review' },
+    { id: 'role:devops', file: 'devops.png', label: 'DevOps', sub: 'Rocket, deploys and builds' },
+    { id: 'role:docs', file: 'docs.png', label: 'Docs', sub: 'Scribe, writing and READMEs' },
   ];
   const roleOf = (id) => ROLES.find((r) => r.id === (id || '')) || null;
-  // With Wisp on (wisp-ui.js), the main agent is Wisp: its own face and name.
-  const wispOn = () => !!(window.CraftWispUI && window.CraftWispUI.enabled && window.CraftWisp);
-  const mainOf = (r) => (r.id === '' && wispOn() ? { ...r, label: 'Wisp', sub: 'Main agent, brings in specialists' } : r);
-  const ball = (r, cls) => (r.id === '' && wispOn() ? `<span class="wisp-chip-face ${cls}" data-wisp-chip></span>` : mascotHtml(r.file, cls, r.label));
-  const mountWispFaces = (root) => root.querySelectorAll('[data-wisp-chip]').forEach((el) => window.CraftWisp.mount(el, { size: 'xs', morph: false, interactive: false }));
+  const ball = (r, cls) => mascotHtml(r.file, cls, r.label);
 
   async function load() {
     try {
@@ -50,7 +53,9 @@
   }
 
   // ─── Composer chip ───────────────────────────────────────────────────────
+  const SHOW_CHIP = false; // off: the main agent answers every Craft chat
   function addChips() {
+    if (!SHOW_CHIP) return;
     document.querySelectorAll('.composer-bottom-right').forEach((row) => {
       if (row.querySelector('.bot-chip')) return;
       const b = document.createElement('button');
@@ -66,21 +71,19 @@
 
   function paintChips() {
     const bot = byId(selected);
-    const role = bot ? null : mainOf(roleOf(selected) || ROLES[0]);
+    const role = bot ? null : roleOf(selected) || ROLES[0];
     document.querySelectorAll('.bot-chip').forEach((b) => {
-      const key = bot ? `${bot.id}:${JSON.stringify(bot.avatar)}:${bot.name}` : 'role' + role.id + (wispOn() ? ':wisp' : '');
+      const key = bot ? `${bot.id}:${JSON.stringify(bot.avatar)}:${bot.name}` : 'role' + role.id;
       if (b.dataset.key === key) return;
       b.dataset.key = key;
       b.classList.toggle('on', !!bot || !!role.id);
       b.innerHTML = bot
         ? `${av(bot.avatar, 20, { still: true })}<span>${esc(bot.name)}</span>`
         : `${ball(role, 'mascot-chip')}<span>${esc(role.label)}</span>`;
-      mountWispFaces(b);
     });
     document.querySelectorAll('.composer-input').forEach((t) => {
       if (!t.dataset.basePlaceholder) t.dataset.basePlaceholder = t.placeholder;
-      const wispOn = window.CraftWispUI && window.CraftWispUI.enabled;
-      t.placeholder = bot ? `Ask ${bot.name} anything` : wispOn ? 'Ask Wisp anything, or type / for commands' : t.dataset.basePlaceholder;
+      t.placeholder = bot ? `Ask ${bot.name} anything` : t.dataset.basePlaceholder;
     });
   }
 
@@ -95,12 +98,11 @@
     menu.className = 'menu bot-menu';
     const item = (id, avatarHtml, name, sub) => `<button class="bot-menu-item${id === selected ? ' on' : ''}" data-id="${esc(id)}">${avatarHtml}<span class="bot-menu-text"><b>${esc(name)}</b><span>${esc(sub)}</span></span>${id === selected ? '<svg class="bot-menu-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>' : ''}</button>`;
     menu.innerHTML = `<div class="bot-menu-head">Who answers</div>` +
-      ROLES.map(mainOf).map((r) => item(r.id, ball(r, 'mascot-menu'), r.label, r.sub)).join('') +
+      ROLES.map((r) => item(r.id, ball(r, 'mascot-menu'), r.label, r.sub)).join('') +
       (cat.bots.length ? '<div class="bot-menu-sep"></div><div class="bot-menu-head">Your bots</div>' : '') +
       cat.bots.map((b) => item(b.id, av(b.avatar, 26, { still: true }), b.name, b.specialty || ROLE[b.role])).join('') +
       `<div class="bot-menu-sep"></div><button class="bot-menu-manage" data-act="manage">${cat.bots.length ? 'Manage bots' : 'Create a bot'}</button>`;
     document.body.appendChild(menu);
-    mountWispFaces(menu);
     const r = anchor.getBoundingClientRect();
     const h = menu.offsetHeight;
     menu.style.left = `${Math.max(8, Math.min(window.innerWidth - menu.offsetWidth - 8, r.right - menu.offsetWidth))}px`;
@@ -110,7 +112,7 @@
       closeMenu();
       const b = byId(el.dataset.id);
       const r = roleOf(el.dataset.id);
-      showToast(b ? `${b.name} answers your next messages.` : r && r.id ? `${r.label} works on your next messages.` : (wispOn() ? 'Wisp leads again, and brings in specialists as needed.' : 'Craft picks the right specialist again.'));
+      showToast(b ? `${b.name} answers your next messages.` : r && r.id ? `${r.label} works on your next messages.` : 'Craft picks the right specialist again.');
     }));
     menu.querySelector('[data-act="manage"]').addEventListener('click', () => { closeMenu(); if (window.CraftCrew) window.CraftCrew.show(); else openModal(); });
   }
@@ -563,7 +565,7 @@
     }
   });
 
-  window.CraftBots = { selectedId: () => selected, delegationRow, renderBadge, open: openModal, refresh: load, setSelected, paint: paintChips };
+  window.CraftBots = { selectedId: () => selected, delegationRow, renderBadge, open: openModal, refresh: load, setSelected };
 
   addChips();
   load();

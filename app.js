@@ -1106,11 +1106,8 @@ function isQuietNotice(text) {
 
 function addAssistantMessage(text, wispMood) {
   closeActivity();
-  // Wisp's replies carry its face and name, in the mood of the reply.
-  if (wispMood !== undefined && window.CraftWispUI) {
-    const by = window.CraftWispUI.byline(wispMood || 'neutral');
-    if (by) chatColumn.appendChild(by);
-  }
+  // The answer's avatar (at its start, on the left) takes the mood of the reply.
+  if (wispMood !== undefined && window.CraftWispUI) window.CraftWispUI.replyMood(wispMood || 'neutral', text);
   const msg = document.createElement('div');
   msg.className = 'msg assistant';
   msg.rawText = text;
@@ -1844,7 +1841,7 @@ function openAccountMenu() {
     </button>
     <button class="menu-item" data-action="wisp">
       <svg viewBox="0 0 24 24"><path d="M12 3.5l8.2 6-3.1 9.7H6.9L3.8 9.5z"/><circle cx="9.8" cy="11.6" r=".6"/><circle cx="14.2" cy="11.6" r=".6"/></svg>
-      Wisp and its team
+      Specialists
     </button>
     <div class="menu-sep"></div>
     <div class="account-menu-theme-row">
@@ -3435,8 +3432,7 @@ function setRunning(on) {
     btn.querySelector('.ic-stop').classList.toggle('hidden', !on);
     btn.title = on ? 'Stop' : 'Send';
   });
-  const idleHint = window.CraftWispUI && window.CraftWispUI.enabled ? 'Ask Wisp anything, or type / for commands' : COMPOSER_HINT;
-  document.querySelectorAll('.chat-composer .composer-input').forEach((el) => { el.placeholder = on ? COMPOSER_BUSY_HINT : idleHint; });
+  document.querySelectorAll('.chat-composer .composer-input').forEach((el) => { el.placeholder = on ? COMPOSER_BUSY_HINT : COMPOSER_HINT; });
   // A message queued during the run goes out once this chat is free again
   // (after Stop, once the engine says the stopped run has really ended).
   if (!on && !stoppedRuns.has(state.currentSessionId)) {
@@ -3572,7 +3568,12 @@ async function sendMessage(text, fromHome, images) {
   }
 
   addUserMessage(text, images);
-  if (window.CraftWispUI) window.CraftWispUI.onSend(fromHome);
+  if (window.CraftWispUI) {
+    window.CraftWispUI.onSend(fromHome);
+    // The answer starts with the agent's face, on the left, thinking.
+    const face = window.CraftWispUI.turnStart('thinking');
+    if (face) chatColumn.appendChild(face);
+  }
   if (window.CraftCloud && window.CraftCloud.beforeSend) window.CraftCloud.beforeSend(); // pull check, never blocks
 
   setRunning(true);
@@ -4101,6 +4102,9 @@ if (api) api.onAgentEvent((data) => {
     return;
   }
 
+  // Wisp's team or its scheduled jobs changed (not tied to one chat): the team window and state refresh.
+  if (data.type === 'wisp_team') { if (window.CraftWispUI) window.CraftWispUI.refresh(); return; }
+
   if (!mine) return;
 
   if (window.CraftWispUI) window.CraftWispUI.onEvent(data);
@@ -4278,8 +4282,21 @@ async function openSession(id) {
   currentTasks = [];
   activeGoalCard = null;
   revealInstant = true;
-  for (const m of s.messages) {
-    if (m.kind === 'user') addUserMessage(m.text, m.images);
+  s.messages.forEach((m, i) => {
+    if (m.kind === 'user') {
+      addUserMessage(m.text, m.images);
+      // The answer's face, in the mood its reply ended on (only for the main agent's answers).
+      if (window.CraftWispUI) {
+        let mood = null;
+        for (let j = i + 1; j < s.messages.length && s.messages[j].kind !== 'user'; j++) {
+          const n = s.messages[j];
+          if (n.kind === 'assistant' && n.wisp && !n.interim) mood = n.mood || 'neutral';
+        }
+        const face = mood ? window.CraftWispUI.turnStart(mood) : null;
+        if (face) chatColumn.appendChild(face);
+      }
+      return;
+    }
     else if (m.kind === 'assistant') (m.interim ? addThinkingRow(m.text) : addAssistantMessage(m.text, m.wisp ? (m.mood || 'neutral') : undefined));
     else if (m.kind === 'wisp_agent') renderWispAgent(m);
     else if (m.kind === 'reasoning') addReasoningRow(m.text, m.ms);
@@ -4310,7 +4327,7 @@ async function openSession(id) {
     } else if (m.kind === 'bot_active' && window.CraftBots) {
       window.CraftBots.renderBadge(m.bot, true);
     }
-  }
+  });
   closeActivity();
   revealInstant = false;
   activeTaskList = null; // reopening a past chat is read-only history, not a live run - no further task_start/task_end will arrive for it

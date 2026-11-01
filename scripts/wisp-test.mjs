@@ -15,6 +15,8 @@ const CLI = path.join(ROOT, 'codeply-cli');
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'codeply-wisp-'));
 process.env.CODEPLY_BRAIN_DB = path.join(scratch, 'brain.db');
 process.env.CODEPLY_WISP_DIR = path.join(scratch, 'wisp');
+process.env.HOME = scratch; // models saved by these checks go to a throwaway ~/.codeply
+process.env.USERPROFILE = scratch;
 const agentMod = await import(pathToFileURL(path.join(CLI, 'lib/agent.mjs')).href);
 const require = createRequire(import.meta.url);
 const wisp = require(path.join(CLI, 'lib/wisp.js'));
@@ -82,7 +84,7 @@ async function wispTurn(replies, userMessage, { route = textRoute, session } = {
   const events = [];
   for await (const raw of agentMod.runAgent({
     userMessage, history: [], mode: 'Build', cwd, approve, signal, route, maxSteps: 12,
-    botPrompt: (native) => w.prompt(native), bringIn: w.bringIn, createSpecialist: w.createSpecialist, agentRole: w.agentRole,
+    botPrompt: (native) => w.prompt(native), bringIn: w.bringIn, createSpecialist: w.createSpecialist, schedule: w.schedule, agentRole: w.agentRole,
   })) events.push(w.mood(raw));
   return { events, cwd, session, done: events.find((e) => e.type === 'done'), texts: events.filter((e) => e.type === 'text' && !e.interim).map((e) => e.text) };
 }
@@ -93,7 +95,10 @@ async function wispTurn(replies, userMessage, { route = textRoute, session } = {
   check('team: seven built-in specialists', team.filter((s) => s.builtin).length === 7, team.map((s) => s.name).join());
   check('team: shown by their role names', ['Frontend', 'Backend', 'Database', 'DevOps', 'Security', 'Testing', 'Docs'].every((n) => team.some((s) => s.name === n)));
   check('find: "the frontend specialist" and the old name Pixel', wisp.findSpecialist('the frontend specialist')?.id === 'frontend' && wisp.findSpecialist('Pixel')?.id === 'frontend');
-  check('create: a built-in name is refused', !wisp.createSpecialist({ name: 'Testing', focus: 'x', instructions: 'y' }).ok);
+  check('create: a built-in name alone is refused', !wisp.createSpecialist({ name: 'Testing' }).ok);
+  const tuned = wisp.createSpecialist({ name: 'Testing', instructions: 'Always run the whole suite, not one file.' });
+  check('create: a built-in name with instructions tunes it (house rules)', tuned.ok && tuned.updated && /whole suite/.test(wisp.findSpecialist('testing').notes) && /HOUSE RULES[\s\S]*whole suite/.test(wisp.specialistPrompt(wisp.findSpecialist('testing'))));
+  wisp.updateSpecialist('testing', { notes: '' });
   check('create: needs a focus and instructions', !wisp.createSpecialist({ name: 'Nobody' }).ok);
   const made = wisp.createSpecialist({ name: 'Copywriter', focus: 'Landing page copy', instructions: 'Write short, concrete copy. Read it aloud before you report.', shape: 'star' });
   check('create: a new specialist joins the team', made.ok && !made.updated && wisp.findSpecialist('copywriter')?.focus === 'Landing page copy', JSON.stringify(made));
@@ -109,15 +114,16 @@ async function wispTurn(replies, userMessage, { route = textRoute, session } = {
 // 2. The prompts.
 {
   const lead = agentMod.buildSystemSections('Build', scratch, 'hi', { agentRole: 'lead', botPrompt: wisp.wispPrompt({ native: false }) });
-  check('prompt: Wisp may bring people in (the one-agent rule is swapped)', /You are Wisp, the lead agent/.test(lead.core) && !/There is no one to delegate to/.test(lead.core));
+  check('prompt: Wisp may bring people in (the one-agent rule is swapped)', /You are Codeply, the lead agent/.test(lead.core) && !/There is no one to delegate to/.test(lead.core));
   check('prompt: Wisp knows its team and the bring_in format', /YOUR TEAM\n- Frontend: /.test(lead.project) && lead.project.includes('<codeply:bring_in>') && /YOUR FACE/.test(lead.project));
   const nat = wisp.wispPrompt({ native: true });
+  check('prompt: the agent is Codeply, not Wisp', /YOU ARE CODEPLY/.test(lead.project) && !/\bWisp\b/.test(lead.project + lead.core));
   check('prompt: one voice, specialists only when asked', /as one voice/.test(lead.project) && /If the user asks how you did it/.test(lead.project));
   check('prompt: native leaves out the tag format', !nat.includes('<codeply:bring_in>'));
   const plain = agentMod.buildSystemSections('Build', scratch, 'hi', {});
   check('prompt: plain Craft keeps the one-agent rule', /There is no one to delegate to/.test(plain.core));
   const spec = wisp.specialistPrompt(wisp.findSpecialist('testing'));
-  check('prompt: a specialist gets its role guide and the report rules', /YOU ARE TESTING, A SPECIALIST ON WISP'S TEAM/.test(spec) && /YOUR REPORT/.test(spec) && spec.length > 600);
+  check('prompt: a specialist gets its role guide and the report rules', /YOU ARE TESTING, A SPECIALIST ON CODEPLY'S TEAM/.test(spec) && /YOUR REPORT/.test(spec) && spec.length > 600);
 }
 
 // 3. Wisp brings in Frontend, Frontend really fixes and checks, Wisp reports it.
@@ -132,7 +138,7 @@ async function wispTurn(replies, userMessage, { route = textRoute, session } = {
     '[mood: proud]\nFixed. Frontend changed cart.js so tax is added once, and checked it with node --check (it passes).',
   ], 'The checkout total is wrong, fix it');
   const specBody = bodies[1];
-  check('bring_in: the specialist runs with its own prompt', specBody && /YOU ARE FRONTEND, A SPECIALIST ON WISP'S TEAM/.test(systemOf(specBody)) && /You are a specialist doing one task for Wisp/.test(systemOf(specBody)), systemOf(specBody || {}).slice(0, 300));
+  check('bring_in: the specialist runs with its own prompt', specBody && /YOU ARE FRONTEND, A SPECIALIST ON CODEPLY'S TEAM/.test(systemOf(specBody)) && /You are a specialist doing one task for Codeply/.test(systemOf(specBody)), systemOf(specBody || {}).slice(0, 300));
   check('bring_in: the specialist gets the task Wisp wrote', specBody && /adds tax twice/.test(lastUserOf(specBody)));
   check('bring_in: the specialist cannot bring in others', specBody && !/<codeply:bring_in>/.test(systemOf(specBody)));
   check('bring_in: the file really changed', fs.readFileSync(path.join(r.cwd, 'cart.js'), 'utf8').includes('i.price * 1.2, 0'));
@@ -168,6 +174,69 @@ async function wispTurn(replies, userMessage, { route = textRoute, session } = {
   check('native: a specialist has neither', !(bodies[2].tools || []).some((t) => t.function.name === 'bring_in' || t.function.name === 'create_specialist'));
   check('native: Wisp\'s reply comes through', r.texts[0] === 'Copywriter wrote the hero line: "Steep slow. Sip slower."', JSON.stringify(r.texts));
   check('track record: a made specialist remembers its last job', /hero for a tea shop/.test(wisp.specialistPrompt(wisp.findSpecialist('Copywriter'))));
+}
+
+// 4b. Each specialist on its own model: pinned to one of the user's models, it runs there.
+{
+  const cfg = require(path.join(CLI, 'lib/config.js'));
+  const saved = cfg.saveModel({ name: 'Qwen Coder', model: 'qwen-coder', baseUrl: `http://127.0.0.1:${port}/v1`, apiKey: 'x' });
+  check('models: a test model saved in a throwaway config', saved && saved.ok !== false && cfg.getModels().some((m) => m.name === 'Qwen Coder'), JSON.stringify(saved));
+  const r = await wispTurn([
+    '<codeply:create_specialist>\n<name>Backend</name>\n<model>Qwen Coder</model>\n</codeply:create_specialist>',
+    '<codeply:bring_in>\n<specialist>Backend</specialist>\n<task>\nSay which file holds the cart.\n</task>\n</codeply:bring_in>',
+    'cart.js holds the cart.',
+    '[mood: neutral]\ncart.js holds the cart.',
+  ], 'run Backend on my Qwen model');
+  check('models: Codeply can pin a built-in to one of the user\'s models', wisp.findSpecialist('backend').model === cfg.getModels().find((m) => m.name === 'Qwen Coder').id);
+  check('models: the specialist runs on its own model, the main agent on the chat\'s', bodies[2] && bodies[2].model === 'qwen-coder' && bodies[0].model === 'fake', JSON.stringify(bodies.map((b) => b.model)));
+  check('models: the main agent sees who runs on what', /Backend: Backend & API\. Runs on Qwen Coder/.test(wisp.wispPrompt({ models: [{ id: wisp.findSpecialist('backend').model, name: 'Qwen Coder' }] })));
+  const bad = await wispTurn([
+    '<codeply:create_specialist>\n<name>Backend</name>\n<model>GPT-9</model>\n</codeply:create_specialist>',
+    '[mood: neutral]\nNo such model.',
+  ], 'x');
+  check('models: an unknown model is refused with the list', /no model called "GPT-9"[\s\S]*auto, Qwen Coder/.test(lastUserOf(bodies[1] || {})), lastUserOf(bodies[1] || {}));
+  check('models: a removed model falls back to the chat\'s', host.routeFor({ model: 'm-gone' }, textRoute) === textRoute);
+  wisp.updateSpecialist('backend', { model: 'auto' });
+  check('models: auto uses the chat\'s route (Haze 2 picks per specialist)', host.routeFor(wisp.findSpecialist('backend'), textRoute) === textRoute);
+  void bad;
+}
+
+// 4c. Standing jobs.
+{
+  const mon10 = new Date(2026, 10, 2, 10, 0).getTime(); // a Monday, 10:00
+  const at = (t) => { const r = wisp.parseWhen(t, mon10); return r.error ? `ERR ${r.error}` : `${wisp.describeRule(r)} -> ${new Date(wisp.nextRun(r, mon10)).toString().slice(0, 21)}`; };
+  check('when: every Monday at 9', at('every Monday at 9') === 'every Monday at 09:00 -> Mon Nov 09 2026 09:00', at('every Monday at 9'));
+  check('when: every weekday at 6:30pm', at('every weekday at 6:30pm') === 'every weekday at 18:30 -> Mon Nov 02 2026 18:30', at('every weekday at 6:30pm'));
+  check('when: every 2 hours', at('every 2 hours') === 'every 2 hours -> Mon Nov 02 2026 12:00', at('every 2 hours'));
+  check('when: tomorrow at 9 is once', at('tomorrow at 9') === 'once, Tue 3 Nov 09:00 -> Tue Nov 03 2026 09:00', at('tomorrow at 9'));
+  check('when: every tuesday and friday at noon', at('every tuesday and friday at noon').startsWith('every Tuesday and Friday at 12:00 -> Tue Nov 03'), at('every tuesday and friday at noon'));
+  check('when: too often is refused', at('every 5 minutes').startsWith('ERR'));
+  check('when: vague is refused', at('sometime next week').startsWith('ERR'));
+
+  const r = await wispTurn([
+    '<codeply:schedule>\n<action>add</action>\n<specialist>Security</specialist>\n<task>Check for leaked keys.</task>\n<when>every Monday at 9</when>\n</codeply:schedule>',
+    '[mood: happy]\nDone. Security checks for leaked keys every Monday at 9.',
+  ], 'have security check for leaked keys every monday at 9');
+  const jobs = wisp.listSchedules();
+  check('schedule: the main agent adds a standing job for a specialist', jobs.length === 1 && jobs[0].specialist === 'security' && jobs[0].cwd === r.cwd && /Scheduled j/.test(lastUserOf(bodies[1])), JSON.stringify(jobs));
+  check('schedule: the specialist\'s detail shows it', wisp.detail(wisp.findSpecialist('security')).schedules.length === 1);
+  const fired = [];
+  host.init({ ipcMain: { handle() {} }, cliDir: CLI, sendEvent: () => {}, agentMod: () => agentMod, browser: null, recordToolEnd: () => {}, settings: { get: () => wispOn, set() {} }, startRun: async (p) => { fired.push(p); return { sessionId: 'job-chat' }; } });
+  await host.tick();
+  check('schedule: nothing fires before its time', fired.length === 0);
+  const all = JSON.parse(fs.readFileSync(path.join(scratch, 'wisp', 'schedules.json'), 'utf8'));
+  all[0].nextAt = Date.now() - 1000; fs.writeFileSync(path.join(scratch, 'wisp', 'schedules.json'), JSON.stringify(all));
+  await host.tick();
+  check('schedule: a due job fires as a message in its own chat', fired.length === 1 && /^Scheduled job for Security \(every Monday at 09:00\): Check for leaked keys\./.test(fired[0].text) && fired[0].cwd === r.cwd, JSON.stringify(fired));
+  const after = wisp.listSchedules()[0];
+  check('schedule: then waits for its next time, in the same chat', after.sessionId === 'job-chat' && after.runs === 1 && after.nextAt > Date.now() && new Date(after.nextAt).getDay() === 1);
+  await host.tick();
+  check('schedule: and does not fire twice', fired.length === 1);
+  const lead = agentMod.buildSystemSections('Build', scratch, 'hi', { botPrompt: wisp.wispPrompt({}) }).project;
+  check('schedule: the main agent knows what a firing job looks like', /starts with "Scheduled job for"/.test(lead));
+  const listed = await wispTurn(['<codeply:schedule>\n<action>cancel</action>\n<id>' + after.id + '</id>\n</codeply:schedule>', '[mood: neutral]\nCancelled.'], 'stop that job');
+  check('schedule: cancel stops it', wisp.listSchedules().length === 0);
+  void listed;
 }
 
 // 5. A name not on the team, and a specialist that fails.

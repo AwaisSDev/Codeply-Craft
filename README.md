@@ -13,27 +13,30 @@ npm start
 
 ## What it does
 
-- **Wisp, the agent you talk to.** Every Craft chat is led by Wisp (the same
-  character as codeply.app/wisp: a pentagon with eyes that follow your cursor,
-  morphs, and shows how it feels). Wisp does small things itself. For real work
-  it brings in a specialist with `bring_in` (Frontend, Backend, Database,
-  DevOps, Security, Testing, Docs), and when nobody fits it creates a new
-  specialist with `create_specialist`. Those stay on the team for next time
-  (`~/.codeply/wisp/specialists.json`) and Wisp can refine them. You only ever
-  talk to Wisp: a specialist works behind it (its steps fold into Wisp's work
-  line, with one quiet "Brought in ..." row), and Wisp gets its report plus
-  what it really did (files, commands and exit codes from the tool results)
-  to check before it answers in its own voice. Ask Wisp who worked on
-  something and it can tell you (the chat history records it). Specialists run one
-  at a time and cannot bring in others. Wisp's reply starts with a
-  `[mood: x]` tag that sets its eyes and colour (it stays a pentagon; only the
-  home screen's Wisp morphs, like the website's demo) and is never shown. Account menu, "Wisp
-  and its team" turns it off (chats go back to plain Craft and the DSH
-  harness) and lists the team. Crew bots' chats and Design are not Wisp's.
-  Code: `codeply-cli/lib/wisp.js` (team, prompts, moods), `wisp-desktop.js`
-  (runs specialists), `wisp.js` / `wisp-ui.js` / `wisp.css` (the character
-  and where it shows). Tests: `npm run test:wisp`.
-- **One agent, many roles** (with Wisp off). A single agent does all the work, one step at a
+- **The main agent and its specialists.** Every Craft chat is answered by
+  Codeply's main agent. Its face is Wisp, the pentagon with eyes from
+  codeply.app/wisp: big on the home screen (it reads what you type), and at
+  the start of every answer, where it shows the work (thinking, working,
+  worried when something needs your yes) and then the reply's mood (a
+  `[mood: x]` tag at the start of the reply, never shown). Small jobs it does
+  itself. For real work it brings in a specialist (`bring_in`): Frontend,
+  Backend, Database, DevOps, Security, Testing, Docs, or one it made with
+  `create_specialist` when nobody fits. Each specialist is its own agent: its
+  own system prompt (the role guide plus house rules, or the instructions the
+  main agent wrote), its own model (default: Haze 2 picks per specialist, the
+  request says which specialist it is; or pinned to one of your own models),
+  its track record, and standing jobs (`schedule`: "Security checks for leaked
+  keys every Monday at 9"), which fire as a message in the job's own chat
+  through the usual approvals. Specialists work behind the main agent (one
+  quiet "Brought in ..." row in the answer's work line); it checks what they
+  really did (files, commands and exit codes from the tool results) and
+  answers in one voice, and can tell you later who worked on what. Account
+  menu, Specialists: switch them off (chats go back to plain Craft and the
+  DSH harness), and see or edit each one's prompt, model, last jobs and
+  scheduled jobs. Stored in `~/.codeply/wisp/`. Code:
+  `codeply-cli/lib/wisp.js`, `wisp-desktop.js`, `wisp.js` / `wisp-ui.js` /
+  `wisp.css`. Tests: `npm run test:wisp`.
+- **One agent, many roles** (with specialists off). A single agent does all the work, one step at a
   time. For each task it takes on the role that fits (Frontend, Backend,
   Database, DevOps, Security, Testing, Docs) and holds its work to that role's
   guide (`codeply-cli/agents/*.md`). Nothing runs in parallel.

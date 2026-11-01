@@ -413,7 +413,8 @@ const PARAMS = {
   lsp: ['operation', 'path', 'line', 'character', 'symbol', 'query'],
   ask_bot: ['bot', 'task'], // only offered when the host passes askBot (lib/bots.js)
   bring_in: ['specialist', 'task'], // Wisp: only offered when the host passes bringIn (lib/wisp.js)
-  create_specialist: ['name', 'focus', 'instructions', 'shape', 'color'], // Wisp: only with createSpecialist
+  create_specialist: ['name', 'focus', 'instructions', 'model', 'shape', 'color'], // Wisp: only with createSpecialist
+  schedule: ['action', 'specialist', 'task', 'when', 'id'], // Wisp: a specialist's standing job, only with the host's schedule
 };
 
 // Names the model actually reaches for when it paraphrases the format.
@@ -422,6 +423,7 @@ const PARAMS = {
 // an edit_file block as a search.
 const NAME_ALIASES = {
   bring_in: 'bring_in', bringin: 'bring_in', delegate: 'bring_in', call_specialist: 'bring_in', callspecialist: 'bring_in', spawn_agent: 'bring_in', spawnagent: 'bring_in', run_agent: 'bring_in', subagent: 'bring_in',
+  schedule: 'schedule', schedule_task: 'schedule', scheduletask: 'schedule', schedule_job: 'schedule', cron: 'schedule',
   create_specialist: 'create_specialist', createspecialist: 'create_specialist', create_agent: 'create_specialist', createagent: 'create_specialist', new_specialist: 'create_specialist', make_specialist: 'create_specialist',
   ask_user: 'ask_user', askuser: 'ask_user', ask: 'ask_user', question: 'ask_user', askquestion: 'ask_user',
   todo: 'todo', todos: 'todo', todowrite: 'todo', todo_write: 'todo', tasklist: 'todo', task_list: 'todo',
@@ -1823,7 +1825,7 @@ function withReasoning(msg, reasoning) {
  *                                  "claims an edit it didn't make this turn" check is skipped.
  * @yields {{type:string, ...}} text | reasoning | tool_start | tool_end | done | error | aborted
  */
-export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly, botPrompt, askBot, handOff, botId, haze: hazeOpts, todos, bringIn, createSpecialist, agentRole }) {
+export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly, botPrompt, askBot, handOff, botId, haze: hazeOpts, todos, bringIn, createSpecialist, schedule, agentRole }) {
   let readOnly = READ_ONLY_MODES.has(mode);
   const stepBudget = Math.max(1, maxSteps || MAX_STEPS);
   // OpenAI-shaped content array only when there's actually an image to carry -
@@ -1853,6 +1855,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       if (n === 'ask_bot') return typeof askBot === 'function';
       if (n === 'bring_in') return typeof bringIn === 'function' && m !== 'Design';
       if (n === 'create_specialist') return typeof createSpecialist === 'function' && m !== 'Design';
+      if (n === 'schedule') return typeof schedule === 'function' && m !== 'Design';
       if (n === 'reach_me' || n === 'watch_email') return reachLib.available();
       if (m === 'Design' && DESIGN_BLOCKED.has(n)) return false;
       if (n === 'life_context') return lifeLib.available();
@@ -1876,6 +1879,8 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     chatId: hazeOpts?.chatId || `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     turnId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
     historyCount: history.length,
+    // A Wisp specialist: the router can pick the model that does this kind of work best.
+    ...(hazeOpts?.specialist ? { specialist: hazeOpts.specialist, specialty: hazeOpts.specialty || '' } : {}),
   } : null;
   const hazeStep = (step) => (haze ? { ...haze, step } : undefined);
   const codeSkills = wantsCodeSkills(botPrompt, botId);
@@ -1907,7 +1912,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
 
   // fileState: path -> mtime when this turn last read/wrote it (see tools.mjs).
   // userMessage lets the publish tools refuse when nobody asked to publish.
-  const ctx = { cwd, approve, browser, signal, mode, route, userMessage, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null, askBot: typeof askBot === 'function' ? askBot : null, handOff: typeof handOff === 'function' ? handOff : null, botId: botId || null, chatId, bringIn: typeof bringIn === 'function' ? bringIn : null, createSpecialist: typeof createSpecialist === 'function' ? createSpecialist : null };
+  const ctx = { cwd, approve, browser, signal, mode, route, userMessage, fileState: new Map(), ask: typeof approve?.ask === 'function' ? approve.ask : null, askBot: typeof askBot === 'function' ? askBot : null, handOff: typeof handOff === 'function' ? handOff : null, botId: botId || null, chatId, bringIn: typeof bringIn === 'function' ? bringIn : null, createSpecialist: typeof createSpecialist === 'function' ? createSpecialist : null, schedule: typeof schedule === 'function' ? schedule : null };
   // A run carried on from the other side (handoff.mjs) keeps its todo list.
   if (Array.isArray(todos) && todos.length) ctx.todos = todos;
   const recentCallKeys = [];      // executed calls, in order, for the stuck-loop guard

@@ -3097,7 +3097,7 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
     const classicRun = () => agentMod.runAgent({
       userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route,
       roleId, goal, maxSteps, verifyOnly, botPrompt, askBot: bot?.askBot, botId: bot?.botId,
-      bringIn: wisp?.bringIn, createSpecialist: wisp?.createSpecialist, agentRole: wisp ? wisp.agentRole : undefined,
+      bringIn: wisp?.bringIn, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, agentRole: wisp ? wisp.agentRole : undefined,
       // Pass work to the bot whose job it is (brain-desktop.js); the user asked for this chat.
       handOff: bot && !verifyOnly ? brainDesktop.handOffFor({ botId: bot.botId || null, requester: 'user' }) : undefined,
       haze: { product: 'craft', chatId: session.id }, todos,
@@ -4052,6 +4052,8 @@ const wispDesktop = require('./wisp-desktop');
 wispDesktop.init({
   ipcMain, cliDir: CLI_DIR, sendEvent, agentMod: () => agentMod, browser: browserCheck, recordToolEnd,
   settings: { get: () => store.wisp !== false, set: (on) => { store.wisp = !!on; saveStore(); } },
+  // A specialist's scheduled job: a message from Wisp to itself in the job's own chat, through the usual approvals.
+  startRun: ({ sessionId, cwd, text }) => startChatRun({ sessionId, cwd, text, mode: 'Build', bypass: false, clientId: 'wisp-schedule' }),
 });
 const botsDesktop = require('./bots-desktop');
 botsDesktop.init({

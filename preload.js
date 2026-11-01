@@ -104,6 +104,9 @@ contextBridge.exposeInMainWorld('craft', {
   wispState: () => ipcRenderer.invoke('wisp:state'),
   wispSet: (on) => ipcRenderer.invoke('wisp:set', !!on),
   wispRemoveSpecialist: (id) => ipcRenderer.invoke('wisp:removeSpecialist', id),
+  wispUpdateSpecialist: (id, patch) => ipcRenderer.invoke('wisp:updateSpecialist', id, patch),
+  wispCancelSchedule: (id) => ipcRenderer.invoke('wisp:cancelSchedule', id),
+  wispRunSchedule: (id) => ipcRenderer.invoke('wisp:runSchedule', id),
   // Bots (bots-desktop.js)
   botsList: () => ipcRenderer.invoke('bots:list'),
   botsCreate: (data) => ipcRenderer.invoke('bots:create', data),

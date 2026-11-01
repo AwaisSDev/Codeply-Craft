@@ -2424,7 +2424,16 @@ async function create_specialist(args, ctx) {
     return { ok: false, output: 'create_specialist is not available here.' };
   }
   return ctx.createSpecialist({
-    name: args.name, focus: args.focus, instructions: args.instructions, shape: args.shape, color: args.color,
+    name: args.name, focus: args.focus, instructions: args.instructions, shape: args.shape, color: args.color, model: args.model,
+  });
+}
+
+// Wisp gives a specialist a standing job (lib/wisp.js schedules): add, list, cancel.
+async function schedule(args, ctx) {
+  if (typeof ctx.schedule !== 'function') return { ok: false, output: 'schedule is not available here.' };
+  return ctx.schedule({
+    action: String(args.action || 'add').trim().toLowerCase(),
+    specialist: args.specialist, task: args.task, when: args.when, id: args.id,
   });
 }
 
@@ -2574,6 +2583,7 @@ export const TOOLS = {
   ask_bot,
   bring_in,
   create_specialist,
+  schedule,
   ask_user,
   mcp,
   web_fetch, web_search, image_search, apply_patch, plan_exit, plan_enter, lsp, reach_me, watch_email, life_context, remember, recall, hand_off, bot_email_send, look_at_screen, use_computer,
@@ -2596,6 +2606,7 @@ export const TOOL_DISPLAY = {
   ask_bot:    { verb: 'asked',  icon: '◉' },
   bring_in:   { verb: 'brought in', icon: '◉' },
   create_specialist: { verb: 'created', icon: '✦' },
+  schedule:   { verb: 'scheduled', icon: '◷' },
   mcp:        { verb: 'mcp',    icon: '⧉' },
   web_fetch:  { verb: 'fetch',  icon: '⇩' },
   web_search: { verb: 'web',    icon: '▸' },
@@ -2664,7 +2675,7 @@ const MUTATING_TOOLS = new Set([
 
 // Everything that isn't designing: commands, deploys, databases, messages, other projects.
 export const DESIGN_BLOCKED = new Set([
-  'run', 'job', 'use_computer', 'lsp', 'mcp', 'ask_bot', 'bring_in', 'create_specialist', 'hand_off', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model', 'browser_check', 'bot_email_send',
+  'run', 'job', 'use_computer', 'lsp', 'mcp', 'ask_bot', 'bring_in', 'create_specialist', 'schedule', 'hand_off', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model', 'browser_check', 'bot_email_send',
   'gmail_send', 'gmail_draft', 'gmail_search', 'gmail_read', 'drafts_list', 'calendar_list', 'calendar_add', 'calendar_update', 'slack_post_message',
   'vercel_deploy', 'vercel_api', 'supabase_create_project', 'supabase_delete_project', 'supabase_api', 'supabase_sql',
   'github_create_repo', 'publish_check', 'publish_connect', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github',
