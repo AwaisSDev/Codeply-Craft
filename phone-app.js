@@ -113,23 +113,81 @@
 
   // ─── Usage ────────────────────────────────────────────────────────────────
   /** data: { today, week, month, total, days: [n...30], models: [{ name, tokens, calls }] } */
+  // The period picker and the chart: 7D, 14D, 30D as days, 1Y as 52 weeks. Touch or drag
+  // across the bars to read one day (or week); tap the number to go back to the total.
+  const RANGES = [[7, '7D', 'Last 7 days', '7 days ago'], [14, '14D', 'Last 14 days', '14 days ago'], [30, '30D', 'Last 30 days', '30 days ago'], [365, '1Y', 'Last 12 months', '12 months ago']];
+  let usageRange = 30;
+  let usageSource = null; // range → the data renderUsage draws (live or preview)
+  const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const dayName = (d) => d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  /** u: { byDay: {day: tokens}, mByDay: {day: {model: [tokens, calls]}}, today, week, total } → what the Usage page draws for a range */
+  function usageView(u, range) {
+    const now = new Date();
+    const day = (i) => new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    const val = (d) => (u.byDay && u.byDay[dayKey(d)]) || 0;
+    const bars = []; const keys = [];
+    if (range <= 30) {
+      for (let i = range - 1; i >= 0; i--) { const d = day(i); keys.push(dayKey(d)); bars.push({ n: val(d), label: i === 0 ? 'Today' : i === 1 ? 'Yesterday' : dayName(d) }); }
+    } else {
+      for (let w = 51; w >= 0; w--) {
+        let n = 0;
+        for (let k = 0; k < 7; k++) { const d = day(w * 7 + k); n += val(d); keys.push(dayKey(d)); }
+        bars.push({ n, label: w === 0 ? 'This week' : `Week of ${dayName(day(w * 7 + 6))}` });
+      }
+    }
+    const models = {};
+    for (const k of keys) for (const [m, v] of Object.entries((u.mByDay && u.mByDay[k]) || {})) { const x = models[m] || (models[m] = { tokens: 0, calls: 0 }); x.tokens += Number(v[0]) || 0; x.calls += Number(v[1]) || 0; }
+    return {
+      range, bars, sum: bars.reduce((x, b) => x + b.n, 0), today: u.today || 0, week: u.week || 0, total: u.total || 0,
+      models: Object.entries(models).map(([name, v]) => ({ name, ...v })).filter((m) => m.tokens > 0).sort((a, b) => b.tokens - a.tokens).slice(0, 8),
+    };
+  }
+  /** data: usageView(...) */
   function renderUsage(data) {
     const body = $('usageBody');
     if (!body) return;
-    const days = data.days || [];
-    const peak = Math.max(1, ...days);
+    const r = RANGES.find((x) => x[0] === data.range) || RANGES[2];
+    const bars = data.bars || [];
+    const peak = Math.max(1, ...bars.map((b) => b.n));
     const models = data.models || [];
     const top = Math.max(1, ...models.map((m) => m.tokens));
+    const head = `<small>${r[2]}</small><div class="big">${short(data.sum)} tokens</div>`;
     body.innerHTML = `
-      <div class="usage" style="margin-top:8px"><small>Last 30 days</small><div class="big">${short(data.month)} tokens</div>
+      <div class="usage" style="margin-top:8px"><button type="button" class="usage-head" data-total>${head}</button>
         <div class="delta"><span>${short(data.today)} today · ${short(data.week)} this week · ${short(data.total)} all time</span></div>
-        <div class="bars" style="height:120px">${days.map((n, i) => `<i class="${i === days.length - 1 ? 'today' : ''}" style="height:${Math.max(3, Math.round(n / peak * 100))}%"></i>`).join('')}</div>
-        <div class="axis"><span>30 days ago</span><span>Today</span></div>
-        <div class="seg wide"><button type="button">7D</button><button type="button">14D</button><button type="button" class="on">30D</button><button type="button">1Y</button></div></div>
-      ${sec('By model', '<span>30 days</span>')}
-      <div class="list">${models.map((m) => `<div class="li" style="flex-direction:column;align-items:stretch;gap:0"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:16px;font-weight:500">${esc(m.name)}</b><span style="color:var(--muted);font-size:15px">${short(m.tokens)}</span></div><small style="color:var(--muted);font-size:13.5px">${short(m.calls)} calls</small><div class="meter"><i style="width:${Math.round(m.tokens / top * 100)}%"></i></div></div>`).join('') || '<div class="li" style="color:var(--muted)">No usage yet.</div>'}</div>
+        <div class="bars${bars.length > 40 ? ' dense' : ''}" style="height:120px">${bars.map((b, i) => `<i class="${i === bars.length - 1 ? 'today' : ''}" style="height:${b.n ? Math.max(4, Math.round(b.n / peak * 100)) : 2}%"></i>`).join('')}</div>
+        <div class="axis"><span>${r[3]}</span><span>${data.range > 30 ? 'This week' : 'Today'}</span></div>
+        <div class="seg wide" role="tablist">${RANGES.map(([n, t]) => `<button type="button" role="tab" data-range="${n}" class="${n === r[0] ? 'on' : ''}" aria-selected="${n === r[0]}">${t}</button>`).join('')}</div></div>
+      ${sec('By model', `<span>${r[2].replace('Last ', '')}</span>`)}
+      <div class="list">${models.map((m) => `<div class="li" style="flex-direction:column;align-items:stretch;gap:0"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:16px;font-weight:500">${esc(m.name)}</b><span style="color:var(--muted);font-size:15px">${short(m.tokens)}</span></div><small style="color:var(--muted);font-size:13.5px">${short(m.calls)} calls</small><div class="meter"><i style="width:${Math.round(m.tokens / top * 100)}%"></i></div></div>`).join('') || '<div class="li" style="color:var(--muted)">No usage in this period.</div>'}</div>
       <p class="note">Counts from Craft, Crew, the CLI, Cloud and this phone. Counts only, never what you wrote. Chat and Code share one daily limit; your own models use your own keys.</p>`;
+    // Read one bar: touch or drag across the chart
+    const chart = body.querySelector('.bars');
+    const headEl = body.querySelector('.usage-head');
+    let sel = -1;
+    const pick = (i) => {
+      if (i === sel) return;
+      sel = i;
+      chart.querySelectorAll('i').forEach((el, j) => el.classList.toggle('sel', j === i));
+      chart.classList.toggle('picking', i >= 0);
+      headEl.innerHTML = i < 0 ? head : `<small>${esc(bars[i].label)}</small><div class="big">${short(bars[i].n)} tokens</div>`;
+    };
+    const at = (e) => { const rc = chart.getBoundingClientRect(); return Math.max(0, Math.min(bars.length - 1, Math.floor((e.clientX - rc.left) / rc.width * bars.length))); };
+    let down = false;
+    chart.addEventListener('pointerdown', (e) => { down = true; try { chart.setPointerCapture(e.pointerId); } catch {} pick(at(e)); });
+    chart.addEventListener('pointermove', (e) => { if (down) pick(at(e)); });
+    const up = () => { down = false; };
+    chart.addEventListener('pointerup', up); chart.addEventListener('pointercancel', up);
+    headEl.addEventListener('click', () => pick(-1));
   }
+  // The period buttons (delegated, so they work after every redraw)
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('#usageBody [data-range]');
+    if (!b) return;
+    usageRange = Number(b.dataset.range) || 30;
+    if (usageSource) renderUsage(usageSource(usageRange));
+    try { if (navigator.vibrate) navigator.vibrate(8); } catch {}
+  });
 
   // ─── Permissions ──────────────────────────────────────────────────────────
   const MODES = [
@@ -282,7 +340,18 @@
     if (screen.startsWith('onboard')) { renderOnboard(Number(screen.slice(7)) || 0, { name: 'Awais', email: 'awais@codeply.app', pcOnline: true, pcName: 'Awais-PC', perm: 'edits' }); return; }
     if (screen === 'tasks') { renderTasks(SAMPLE.tasks); open('tasksPanel'); return; }
     if (screen === 'settings') { renderYou(SAMPLE.you); open('settingsPanel'); return; }
-    if (screen === 'usage') { renderUsage(SAMPLE.usage); open('usagePanel'); return; }
+    if (screen === 'usage') {
+      const u = SAMPLE.usage; const byDay = {}; const mByDay = {}; const now = new Date();
+      for (let i = 0; i < 365; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+        const n = i < u.days.length ? u.days[u.days.length - 1 - i] : Math.round((Math.sin(i / 9) + 1.1) * 160000 * (i % 7 === 3 ? 0 : 1));
+        byDay[dayKey(d)] = n;
+        mByDay[dayKey(d)] = Object.fromEntries(u.models.map((m, j) => [m.name, [Math.round(n * [0.72, 0.18, 0.1][j]), Math.max(1, Math.round(n / 12000 * [0.72, 0.18, 0.1][j]))]]));
+      }
+      const cache = { byDay, mByDay, today: u.today, week: u.week, total: u.total };
+      usageSource = (r) => usageView(cache, r);
+      renderUsage(usageSource(usageRange)); open('usagePanel'); return;
+    }
     if (screen === 'perms') { renderPerms(SAMPLE.perms); open('permsPanel'); }
   }
 
@@ -334,16 +403,16 @@
   }
 
   // ─── Usage (my_usage in the database, the same numbers as Craft on the PC) ───
-  const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   async function loadUsage() {
     const sb = P().sb;
     if (!sb) return null;
     try {
       const { data, error } = await sb.rpc('my_usage', { tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' });
       if (error) throw error;
-      const byDay = {}; const models = {};
+      const byDay = {}; const models = {}; const mByDay = {};
       for (const r of (data && data.days) || []) {
         byDay[r.d] = Number(r.t) || 0;
+        mByDay[r.d] = r.m || {};
         for (const [m, v] of Object.entries(r.m || {})) { const x = models[m] || (models[m] = { tokens: 0, calls: 0, recent: 0 }); x.tokens += Number(v[0]) || 0; x.calls += Number(v[1]) || 0; }
       }
       const series = (n) => { const out = []; const d = new Date(); for (let i = n - 1; i >= 0; i--) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate() - i); out.push(byDay[dayKey(x)] || 0); } return out; };
@@ -351,7 +420,7 @@
       const sum = (a) => a.reduce((x, y) => x + y, 0);
       usageCache = {
         today: d30[29], yesterday: d30[28], week: sum(d30.slice(-7)), month: sum(d30), total: Number(data && data.tokens) || sum(Object.values(byDay)),
-        days14: series(14), days30: d30,
+        days14: series(14), days30: d30, byDay, mByDay,
         models: Object.entries(models).map(([name, v]) => ({ name, tokens: v.tokens, calls: v.calls })).sort((a, b) => b.tokens - a.tokens).slice(0, 8),
       };
     } catch (e) { usageCache = usageCache || { error: e.message || 'Could not load your usage.' }; }
@@ -379,11 +448,12 @@
     if (!$('settingsPanel').classList.contains('hidden')) renderYou(settingsData());
   }
   async function openUsage() {
-    renderUsage(usageCache && !usageCache.error ? { ...usageCache, days: usageCache.days30 } : { today: 0, week: 0, month: 0, total: 0, days: [], models: [] });
+    usageSource = (r) => usageView(usageCache && !usageCache.error ? usageCache : {}, r);
+    renderUsage(usageSource(usageRange));
     open('usagePanel');
     const u = await loadUsage();
     if (u && u.error) { $('usageBody').insertAdjacentHTML('afterbegin', `<p class="note" style="color:var(--red)">${esc(u.error)}</p>`); return; }
-    if (u) renderUsage({ ...u, days: u.days30 });
+    if (u && !$('usagePanel').classList.contains('hidden')) renderUsage(usageSource(usageRange));
   }
 
   // ─── Permissions: the mode lives on this phone, the rules on the PC ───

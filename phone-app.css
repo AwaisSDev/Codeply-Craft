@@ -114,6 +114,13 @@ body:not([data-view="chat"]) #menuBtn .ico-back { display: none; }
 .bars { display: flex; align-items: flex-end; gap: 3px; height: 56px; margin-top: 14px; }
 .bars i { flex: 1; border-radius: 3px 3px 1px 1px; background: var(--surface-2); min-height: 3px; }
 .bars i.today { background: var(--blue); }
+.bars { touch-action: none; cursor: pointer; }
+.bars.dense { gap: 1.5px; }
+.bars.dense i { border-radius: 2px 2px 1px 1px; }
+.bars.picking i { opacity: .45; }
+.bars.picking i.sel { opacity: 1; background: var(--text); }
+.usage-head { display: block; width: 100%; text-align: left; padding: 0; background: none; color: inherit; font: inherit; }
+.usage-head small { display: block; }
 .axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 6px; }
 .seg.wide { display: flex; margin: 14px 0 0; }
 .seg.wide button { flex: 1; }
