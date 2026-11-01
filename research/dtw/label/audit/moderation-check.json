@@ -1,0 +1,68 @@
+{
+ "counts": {
+  "train": {
+   "conversations": 3315,
+   "anyTurnFlagged": 0,
+   "sexualFlag": 0,
+   "minorsFlag": 0,
+   "minorsScore>0.1": 14,
+   "minorsScore>0.5": 0,
+   "detoxifyToxicity>0.5": 0
+  },
+  "val": {
+   "conversations": 378,
+   "anyTurnFlagged": 0,
+   "sexualFlag": 0,
+   "minorsFlag": 0,
+   "minorsScore>0.1": 1,
+   "minorsScore>0.5": 0,
+   "detoxifyToxicity>0.5": 0
+  },
+  "test-real": {
+   "conversations": 425,
+   "anyTurnFlagged": 0,
+   "sexualFlag": 0,
+   "minorsFlag": 0,
+   "minorsScore>0.1": 1,
+   "minorsScore>0.5": 0,
+   "detoxifyToxicity>0.5": 0
+  },
+  "natural-300": {
+   "conversations": 298,
+   "anyTurnFlagged": 0,
+   "sexualFlag": 0,
+   "minorsFlag": 0,
+   "minorsScore>0.1": 1,
+   "minorsScore>0.5": 0,
+   "detoxifyToxicity>0.5": 0
+  }
+ },
+ "minorsFlagIds": {
+  "train": [
+   "rl-synmixed-a91fce8e36",
+   "rl-synmixed-c06ff2b86d",
+   "rl-wildchat-00f05fa799",
+   "rl-wildchat-2019c59472",
+   "rl-wildchat-2f8d3a0684",
+   "rl-wildchat-76c74ee154",
+   "rl-wildchat-7fc1a4bc70",
+   "rl-wildchat-98fa560318",
+   "rl-wildchat-a91fce8e36",
+   "rl-wildchat-a91fce8e36-mg",
+   "rl-wildchat-c06ff2b86d",
+   "rl-wildchat-c33a31bb61",
+   "rl-wildchat-c33a31bb61-mg",
+   "rl-wildchat-e264418128"
+  ],
+  "val": [
+   "rl-wildchat-a4a7c3c5e6"
+  ],
+  "test-real": [
+   "rl-wildchat-068fe7de86"
+  ],
+  "natural-300": [
+   "rl-wildchat-cd7ef28e2d"
+  ]
+ },
+ "thresholds": "flag = OpenAI moderation category true; score>0.5 = category score above 0.5"
+}
