@@ -175,3 +175,13 @@ Export v5 (CPU session): no GPU detected, CPU build, both adapters found
 torchao/PEFT incompatibility as LoRA run 1 (`torchao 0.10`, PEFT needs >
 0.16), which the export notebook did not yet handle. v6 uninstalls torchao
 before the merge, as the LoRA notebook does.
+
+Export v6: torchao fixed; loading the base model then failed
+(`layer_types entries must be one of ('full_attention',
+'sliding_attention', 'conv'); got ['linear_attention', …]`): the export
+notebook had the newest transformers, not the versions the training run
+used (`ml/finetune/requirements.txt`: transformers 5.22.1, peft 0.21.2).
+Checked locally: transformers 5.22.1 loads LFM3's own config code
+(layer types conv / full_attention / sliding_attention). v7 installs that
+requirements file before the merge and pins LFM3 to revision `ac2586a3`
+(2026-10-28, the revision current when run 4 trained).

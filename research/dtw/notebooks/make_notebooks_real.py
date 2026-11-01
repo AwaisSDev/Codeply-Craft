@@ -194,10 +194,11 @@ base = yaml.safe_load(open("/tmp/codeply/ml/finetune/config-lfm3.yaml"))["base_m
 for ad in sys.argv[1:]:
     name = [x for x in ad.split("/") if x.startswith("real-lfm3-lora-s")][-1]
     m = f"/tmp/merged/{name}/merged"
-    model = AutoModelForCausalLM.from_pretrained(base, dtype=torch.float16, trust_remote_code=True)
+    # LFM3 revision current when run 4 trained (latest commit 2026-10-28; training started 2026-11-01).
+    model = AutoModelForCausalLM.from_pretrained(base, revision="ac2586a34f1a1c03329dbdcdefabd8b6478ddaa7", dtype=torch.float16, trust_remote_code=True)
     model = PeftModel.from_pretrained(model, ad).merge_and_unload()
     model.save_pretrained(m, safe_serialization=True)
-    AutoTokenizer.from_pretrained(base, trust_remote_code=True).save_pretrained(m)
+    AutoTokenizer.from_pretrained(base, revision="ac2586a34f1a1c03329dbdcdefabd8b6478ddaa7", trust_remote_code=True).save_pretrained(m)
     copy_base_tokenizer(base, m)
     subprocess.run(f"cp {ad}/../train-log.jsonl /tmp/merged/{name}/ 2>/dev/null", shell=True)
     print("merged", name, flush=True)
@@ -218,6 +219,9 @@ if not merged:
     print("adapters:", adapters)
     assert adapters, "no adapters in the input"
     # As in the LoRA notebook (run 1): Kaggle ships torchao 0.10, which PEFT rejects when it loads LoRA layers.
+    # The same library versions as the training run (LoRA notebook): export v6 got the newest transformers,
+    # whose built-in LFM class rejects LFM3's layer types; transformers 5.22.1 loads LFM3's own code.
+    subprocess.run("cd /tmp/codeply && pip -q install -r ml/finetune/requirements.txt", shell=True, check=True)
     subprocess.run("pip -q uninstall -y torchao", shell=True)
     open("/tmp/merge_lora.py", "w").write(MERGE)
     if subprocess.run("python -c 'import numpy, torch, transformers, peft'", shell=True).returncode:
