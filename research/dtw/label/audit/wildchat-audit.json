@@ -1,0 +1,151 @@
+{
+ "revision": "7d6490e462285cf85d91eabea0f9a954fbddcd1f",
+ "shardSha256Matches": true,
+ "shardRows": 59363,
+ "examples": {
+  "train": {
+   "all": 4096,
+   "wildchat": 3315,
+   "synthetic_rewrites": 556
+  },
+  "val": {
+   "all": 478,
+   "wildchat": 378,
+   "synthetic_rewrites": 70
+  },
+  "test-real": {
+   "all": 549,
+   "wildchat": 425,
+   "synthetic_rewrites": 67
+  },
+  "natural-300": {
+   "all": 298,
+   "wildchat": 298,
+   "synthetic_rewrites": 0
+  },
+  "benchmark-520": {
+   "all": 520,
+   "wildchat": 0,
+   "synthetic_rewrites": 0
+  }
+ },
+ "provenance": {
+  "records": 4416,
+  "revision_ok": 4416,
+  "shard_sha_ok": 4416,
+  "conversation_found": 4416
+ },
+ "quasiIdentifierFieldsInOurFiles": {},
+ "conversationsInMoreThanOneFile": 0,
+ "usersByFileCount": {
+  "1": 1351,
+  "3": 63,
+  "2": 233,
+  "4": 19
+ },
+ "usersSharedBetweenFiles": {
+  "test-real & train": 128,
+  "natural-300 & test-real": 44,
+  "natural-300 & train": 126,
+  "train & val": 147,
+  "test-real & val": 49,
+  "natural-300 & val": 42
+ },
+ "evalExamplesWhoseUserIsInTrain": {
+  "val": {
+   "examples": 238,
+   "of": 378
+  },
+  "test-real": {
+   "examples": 270,
+   "of": 425
+  },
+  "natural-300": {
+   "examples": 186,
+   "of": 298
+  }
+ },
+ "largestUsersExampleCounts": [
+  38,
+  38,
+  41,
+  54,
+  84
+ ],
+ "publisherFlags": {
+  "train:toxic": 0,
+  "train:redacted_by_publisher": 126,
+  "val:toxic": 0,
+  "val:redacted_by_publisher": 10,
+  "test-real:toxic": 0,
+  "test-real:redacted_by_publisher": 6,
+  "natural-300:toxic": 0,
+  "natural-300:redacted_by_publisher": 5
+ },
+ "conversationDates": {
+  "from": "2023-04-09",
+  "to": "2023-05-04"
+ },
+ "countriesTop": [
+  [
+   "United States",
+   865
+  ],
+  [
+   "Canada",
+   273
+  ],
+  [
+   "Nigeria",
+   254
+  ],
+  [
+   "India",
+   213
+  ],
+  [
+   "Russia",
+   201
+  ],
+  [
+   "United Kingdom",
+   185
+  ],
+  [
+   "Germany",
+   166
+  ],
+  [
+   "China",
+   147
+  ]
+ ],
+ "residualPiiPatternExamples": {
+  "natural-300:events:email": 1,
+  "natural-300:events:ipv4": 1,
+  "natural-300:events:long_digits": 1,
+  "natural-300:events:phone": 2,
+  "natural-300:events:url": 14,
+  "test-real:events:card_like": 1,
+  "test-real:events:email": 2,
+  "test-real:events:ipv4": 1,
+  "test-real:events:long_digits": 2,
+  "test-real:events:phone": 5,
+  "test-real:events:url": 11,
+  "test-real:labels:phone": 2,
+  "train:events:card_like": 20,
+  "train:events:email": 10,
+  "train:events:ipv4": 9,
+  "train:events:long_digits": 44,
+  "train:events:phone": 91,
+  "train:events:url": 163,
+  "train:labels:phone": 6,
+  "train:labels:url": 1,
+  "val:events:email": 1,
+  "val:events:ipv4": 1,
+  "val:events:long_digits": 2,
+  "val:events:phone": 7,
+  "val:events:url": 20,
+  "val:labels:phone": 2
+ }
+}
