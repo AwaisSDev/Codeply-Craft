@@ -44,7 +44,8 @@
   const clock = (ms) => { const s = Math.round(ms / 1000); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`; };
   const short = (n) => { n = Number(n) || 0; const f = (x) => (x >= 100 ? Math.round(x) : x.toFixed(1).replace(/\.0$/, '')); return n >= 1e9 ? f(n / 1e9) + 'B' : n >= 1e6 ? f(n / 1e6) + 'M' : n >= 1e3 ? f(n / 1e3) + 'K' : String(Math.round(n)); };
   const sec = (title, end = '') => `<div class="sec"><h2>${esc(title)}</h2>${end}</div>`;
-  const open = (id) => { const el = $(id); if (el) el.classList.remove('hidden'); };
+  // A panel opened from another (Usage from Settings) must land on top of it: move it last.
+  const open = (id) => { const el = $(id); if (!el) return; el.parentNode.appendChild(el); el.classList.remove('hidden'); };
 
   // ─── Tasks (Claude's agent list) ──────────────────────────────────────────
   /** data: { filter, tasks: [{ id, title, state: 'needs'|'running'|'done'|'failed', where, cloud, step, since, at, ask: { text, cmd, isCmd, danger, always } }] } */
@@ -247,15 +248,7 @@
     // Sidebar: Tasks, and the account row opens Settings.
     const t = $('drawerTasks');
     if (t) t.addEventListener('click', () => { if (P().closeDrawer) P().closeDrawer(); open('tasksPanel'); });
-    const me = $('drawerMe');
-    if (me) me.addEventListener('click', () => { if (P().closeDrawer) P().closeDrawer(); open('settingsPanel'); });
     document.querySelectorAll('[data-close-panel]').forEach((b) => b.addEventListener('click', () => b.closest('.panel').classList.add('hidden')));
-    document.addEventListener('click', (ev) => {
-      const a = ev.target.closest('#youView [data-act]');
-      if (!a) return;
-      if (a.dataset.act === 'usage') open('usagePanel');
-      else if (a.dataset.act === 'perm') open('permsPanel');
-    });
     const f = $('feed');
     if (f) new MutationObserver(addActions).observe(f, { childList: true });
   }
@@ -293,12 +286,337 @@
     if (screen === 'perms') { renderPerms(SAMPLE.perms); open('permsPanel'); }
   }
 
-  window.CraftApp = { renderTasks, renderYou, renderUsage, renderPerms, renderOnboard, setAuthTab, preview, SAMPLE };
+  // ═══ Live data and actions ═══════════════════════════════════════════════
+  // Everything above draws; this feeds it from CraftPhone (phone.js) and wires
+  // its buttons. Nothing here runs in the preview.
+  const S = () => P().state || {};
+  const pcOnline = () => !!(P().relay && P().relay.pcId);
+  const userName = () => { const u = S().user || {}; const m = u.user_metadata || {}; return m.full_name || m.name || (u.email ? u.email.split('@')[0] : ''); };
+  const toast = (msg) => { try { alert(msg); } catch {} };
+  let usageCache = null;   // my_usage, loaded when Settings or Usage opens
+  let rulesCache = null;   // { allow, deny } from the PC
+
+  // ─── Tasks from real chats and approvals ───
+  function chatTitleFor(sessionId) {
+    const st = S();
+    const c = (st.chats || []).find((x) => x.pcSessionId === sessionId);
+    if (c) return c.title;
+    const s2 = ((st.pc && st.pc.sessions) || []).find((x) => x.id === sessionId);
+    return (s2 && s2.title) || 'A task on your PC';
+  }
+  function alwaysLabel(a) {
+    const scope = Array.isArray(a.alwaysScope) ? a.alwaysScope : null;
+    if (a.danger || (scope && !scope.length) || a.tool === 'fetch_image') return '';
+    return scope ? `Always allow ${scope.join(' and ')}` : `Always allow ${String(a.tool || '').replace(/_/g, ' ')}`;
+  }
+  function tasksData() {
+    const st = S();
+    const tasks = [];
+    for (const a of (st.approvals ? st.approvals.values() : [])) {
+      tasks.push({ id: `ap:${a.requestId}`, title: chatTitleFor(a.sessionId), state: 'needs', where: st.pc && st.pc.device ? st.pc.device : 'Your PC', at: a.at || Date.now(), session: a.sessionId,
+        ask: { text: a.title || 'Codeply needs your OK', cmd: a.detail || '', isCmd: a.tool === 'run', danger: !!a.danger, always: alwaysLabel(a) } });
+    }
+    const where = (c) => `${(c.project && c.project.name) || 'Project'} · ${c.cloud ? 'cloud' : (st.pc && st.pc.device) || 'your PC'}`;
+    const code = (st.chats || []).filter((c) => c.kind === 'code').sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    for (const c of code) {
+      if (tasks.some((t) => t.session && t.session === c.pcSessionId)) continue;
+      const busy = st.busy && st.busy.has(c.id);
+      tasks.push({ id: `c:${c.id}`, title: c.title || 'Untitled task', state: busy ? 'running' : 'done', cloud: !!c.cloud, where: where(c), step: busy ? 'Working' : '', since: busy ? c.updatedAt : 0, at: c.updatedAt || Date.now() });
+      if (tasks.length > 40) break;
+    }
+    return { tasks };
+  }
+  function refreshTasks() {
+    const n = S().approvals ? S().approvals.size : 0;
+    const b = $('tasksBadge');
+    if (b) { b.textContent = String(n); b.classList.toggle('hidden', !n); }
+    if (!$('tasksPanel').classList.contains('hidden')) renderTasks(tasksData());
+  }
+
+  // ─── Usage (my_usage in the database, the same numbers as Craft on the PC) ───
+  const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  async function loadUsage() {
+    const sb = P().sb;
+    if (!sb) return null;
+    try {
+      const { data, error } = await sb.rpc('my_usage', { tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' });
+      if (error) throw error;
+      const byDay = {}; const models = {};
+      for (const r of (data && data.days) || []) {
+        byDay[r.d] = Number(r.t) || 0;
+        for (const [m, v] of Object.entries(r.m || {})) { const x = models[m] || (models[m] = { tokens: 0, calls: 0, recent: 0 }); x.tokens += Number(v[0]) || 0; x.calls += Number(v[1]) || 0; }
+      }
+      const series = (n) => { const out = []; const d = new Date(); for (let i = n - 1; i >= 0; i--) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate() - i); out.push(byDay[dayKey(x)] || 0); } return out; };
+      const d30 = series(30);
+      const sum = (a) => a.reduce((x, y) => x + y, 0);
+      usageCache = {
+        today: d30[29], yesterday: d30[28], week: sum(d30.slice(-7)), month: sum(d30), total: Number(data && data.tokens) || sum(Object.values(byDay)),
+        days14: series(14), days30: d30,
+        models: Object.entries(models).map(([name, v]) => ({ name, tokens: v.tokens, calls: v.calls })).sort((a, b) => b.tokens - a.tokens).slice(0, 8),
+      };
+    } catch (e) { usageCache = usageCache || { error: e.message || 'Could not load your usage.' }; }
+    return usageCache;
+  }
+
+  // ─── Settings ───
+  function settingsData() {
+    const st = S();
+    const m = st.pc && st.pc.models;
+    const cur = m && (m.models || []).find((x) => x.id === m.selected);
+    const u = usageCache && !usageCache.error ? usageCache : { today: 0, yesterday: 0, days: [] };
+    return {
+      name: userName(), email: (st.user && st.user.email) || '', perm: st.perm || 'ask', model: cur ? cur.name : 'Haze 2',
+      theme: P().themeChoice ? P().themeChoice() : 'system',
+      notifications: ('Notification' in window) && Notification.permission === 'granted' ? 'On' : 'Off',
+      pc: { name: (st.pc && st.pc.device) || 'Your PC', online: pcOnline(), projects: ((st.pc && st.pc.projects) || []).length },
+      usage: { today: u.today, yesterday: u.yesterday, days: u.days14 || [] },
+    };
+  }
+  async function openSettings() {
+    renderYou(settingsData());
+    open('settingsPanel');
+    await loadUsage();
+    if (!$('settingsPanel').classList.contains('hidden')) renderYou(settingsData());
+  }
+  async function openUsage() {
+    renderUsage(usageCache && !usageCache.error ? { ...usageCache, days: usageCache.days30 } : { today: 0, week: 0, month: 0, total: 0, days: [], models: [] });
+    open('usagePanel');
+    const u = await loadUsage();
+    if (u && u.error) { $('usageBody').insertAdjacentHTML('afterbegin', `<p class="note" style="color:var(--red)">${esc(u.error)}</p>`); return; }
+    if (u) renderUsage({ ...u, days: u.days30 });
+  }
+
+  // ─── Permissions: the mode lives on this phone, the rules on the PC ───
+  async function openPerms() {
+    const draw = (extra = '') => { renderPerms({ perm: S().perm || 'ask', online: pcOnline(), allow: (rulesCache && rulesCache.allow) || [], deny: (rulesCache && rulesCache.deny) || [] }); if (extra) $('permsBody').insertAdjacentHTML('beforeend', `<p class="note" style="color:var(--red)">${esc(extra)}</p>`); };
+    draw();
+    open('permsPanel');
+    if (!pcOnline()) return;
+    try {
+      const r = await P().relayRequest('GET', '/api/permissions');
+      rulesCache = { allow: (r.global && r.global.allow) || [], deny: (r.global && r.global.deny) || [] };
+      draw();
+    } catch (e) { draw(/not found|unknown|404/i.test(e.message) ? 'Update Codeply on your PC to edit its rules from here.' : `Couldn't read the rules: ${e.message}`); }
+  }
+  async function saveRules(next) {
+    try {
+      const r = await P().relayRequest('POST', '/api/permissions', next);
+      rulesCache = { allow: (r.global && r.global.allow) || [], deny: (r.global && r.global.deny) || [] };
+    } catch (e) { toast(`Couldn't save the rule: ${e.message}`); }
+    openPerms();
+  }
+
+  // ─── Onboarding (after creating an account) ───
+  let obStep = 0; let obTimer = null;
+  const obData = () => ({ name: (userName() || '').split(' ')[0], email: (S().user && S().user.email) || '', pcOnline: pcOnline(), pcName: S().pc && S().pc.device, perm: S().perm || 'edits' });
+  function startOnboarding() {
+    obStep = 0;
+    if (P().setPermission && !localStorage.getItem('craft-permission')) P().setPermission('edits'); // the recommended mode, shown preselected
+    renderOnboard(0, obData());
+    clearInterval(obTimer);
+    obTimer = setInterval(() => { if (obStep === 1) renderOnboard(1, obData()); }, 3000); // "Looking for your PC" turns to "Found"
+  }
+  function endOnboarding() {
+    clearInterval(obTimer);
+    try { localStorage.removeItem('craft-phone-onboard'); } catch {}
+    $('onboard').classList.add('hidden');
+  }
+
+  // ─── Sign up ───
+  async function signUp(e) {
+    e.preventDefault();
+    const err = $('signupError');
+    err.classList.add('hidden');
+    const name = $('signupName').value.trim();
+    const email = $('signupEmail').value.trim();
+    const password = $('signupPassword').value;
+    const fail = (m) => { err.textContent = m; err.classList.remove('hidden'); };
+    if (!name) return fail('Add your name.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('Enter a real email address.');
+    if (password.length < 8) return fail('Use at least 8 characters for the password.');
+    const btn = $('signupBtn');
+    btn.disabled = true; btn.textContent = 'Creating your account...';
+    try {
+      const { data, error } = await P().sb.auth.signUp({ email, password, options: { data: { full_name: name } } });
+      if (error) throw error;
+      if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) return fail('There is already an account with this email. Sign in instead.');
+      $('signupPassword').value = '';
+      if (data.session) { // email confirmation is off for this project: straight in
+        try { localStorage.setItem('craft-phone-onboard', 'pending'); } catch {}
+        await P().enterApp();
+        return;
+      }
+      $('otpForm').dataset.mode = 'signup';
+      $('otpForm').dataset.email = email;
+      $('otpSentTo').textContent = `We emailed a code to ${email}. Enter it to confirm your email.`;
+      $('loginOtp').value = '';
+      P().signinStep('otp');
+      $('authTitle').textContent = 'Check your email';
+      $('authSub').textContent = '';
+      $('authSwitch').innerHTML = '';
+      $('loginOtp').focus();
+    } catch (x) {
+      fail(P().friendlyAuthError ? P().friendlyAuthError(x, 'Could not create the account.') : x.message);
+    } finally { btn.disabled = false; btn.textContent = 'Create account'; }
+  }
+
+  // ─── Account deletion (supabase/functions/delete-account) ───
+  async function deleteAccount() {
+    const email = (S().user && S().user.email) || '';
+    const typed = prompt(`This deletes your Codeply account, your chats in the cloud and your usage. It can't be undone.\n\nType ${email} to confirm.`);
+    if (typed == null) return;
+    try {
+      const token = await P().accessToken();
+      const res = await fetch(`${P().SUPABASE_URL || 'https://zswkhfkfseclgadhvobg.supabase.co'}/functions/v1/delete-account`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: P().SUPABASE_ANON_KEY },
+        body: JSON.stringify({ confirm: typed }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.status === 404) throw new Error('Account deletion is not switched on yet. Email hello@codeply.app and we will delete it for you.');
+      if (!res.ok) throw new Error(j.error || `Codeply could not delete it (${res.status}).`);
+      try { localStorage.clear(); } catch {}
+      await P().signOut();
+    } catch (e) { toast(e.message); }
+  }
+
+  // ─── Under every answer ───
+  function answerAction(kind, m, btn) {
+    const text = m.innerText;
+    if (kind === 'speak') {
+      if (!('speechSynthesis' in window)) return toast("This browser can't read aloud.");
+      if (speechSynthesis.speaking) { speechSynthesis.cancel(); return; }
+      speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+    } else if (kind === 'up' || kind === 'down') {
+      const row = btn.parentElement;
+      row.querySelectorAll('[data-msg="up"],[data-msg="down"]').forEach((b) => b.classList.toggle('on', b === btn && !b.classList.contains('on')));
+    } else if (kind === 'again') {
+      const users = [...$('feed').querySelectorAll(':scope > .msg.user')].filter((u) => u.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING);
+      const last = users[users.length - 1];
+      if (!last) return;
+      $('input').value = last.innerText.trim();
+      $('input').dispatchEvent(new Event('input'));
+      $('composer').requestSubmit();
+    } else if (kind === 'share') {
+      if (navigator.share) navigator.share({ text }).catch(() => {});
+      else { try { navigator.clipboard.writeText(text); } catch {} }
+    }
+  }
+
+  function wire() {
+    // Panels open with live data.
+    $('drawerTasks').addEventListener('click', () => renderTasks(tasksData()), true);
+    $('drawerMe').addEventListener('click', (e) => { e.stopImmediatePropagation(); if (P().closeDrawer) P().closeDrawer(); openSettings(); }, true);
+    $('settingsBtn').addEventListener('click', (e) => { e.stopImmediatePropagation(); if (P().closeDrawer) P().closeDrawer(); openSettings(); }, true);
+    document.addEventListener('craft:approvals', refreshTasks);
+    document.addEventListener('craft:permission', () => { if (!$('permsPanel').classList.contains('hidden')) openPerms(); });
+    setInterval(() => { if (!document.hidden) refreshTasks(); }, 4000);
+
+    // Tasks: allow / always / deny on the card, or open the chat.
+    $('tasksBody').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-ap]');
+      if (b) { e.stopPropagation(); const id = Number(b.dataset.ap.slice(3)); b.disabled = true; P().answerApproval(b.dataset.v, id); setTimeout(refreshTasks, 50); return; }
+      const card = e.target.closest('[data-open]');
+      if (!card) return;
+      const id = card.dataset.open;
+      const st = S();
+      $('tasksPanel').classList.add('hidden');
+      if (id.startsWith('c:')) P().openChat(id.slice(2));
+      else {
+        const t = tasksData().tasks.find((x) => x.id === id);
+        const local = t && (st.chats || []).find((c) => c.pcSessionId === t.session);
+        if (local) P().openChat(local.id);
+        else { const meta = ((st.pc && st.pc.sessions) || []).find((x) => x.id === (t && t.session)); if (meta) P().openPcSession(meta); }
+      }
+    });
+    document.querySelector('#tasksPanel [data-q="new"]').addEventListener('click', () => { $('tasksPanel').classList.add('hidden'); P().newChat(); setTimeout(() => $('agentChip').click(), 50); });
+
+    // Settings rows.
+    $('youView').addEventListener('click', async (e) => {
+      const t = e.target.closest('[data-theme]');
+      if (t) { P().applyTheme(t.dataset.theme); renderYou(settingsData()); return; }
+      const a = e.target.closest('[data-act]');
+      if (!a) return;
+      const act = a.dataset.act;
+      e.stopImmediatePropagation();
+      if (act === 'usage') openUsage();
+      else if (act === 'perm') openPerms();
+      else if (act === 'model') P().openModelPicker();
+      else if (act === 'pc') P().openProjectPicker({ anchor: a });
+      else if (act === 'cloud') { $('settingsPanel').classList.add('hidden'); P().openSetup({}); }
+      else if (act === 'design') { $('settingsPanel').classList.add('hidden'); $('drawerDesign').click(); }
+      else if (act === 'bell') { if (window.CraftReminders && window.CraftReminders.enablePush) { await window.CraftReminders.enablePush(); renderYou(settingsData()); } else toast("This phone can't show notifications from Codeply."); }
+      else if (act === 'signout') { $('settingsPanel').classList.add('hidden'); P().signOut(); }
+      else if (act === 'delete') deleteAccount();
+    }, true);
+
+    // Permissions: the mode, and the PC's rules.
+    $('permsBody').addEventListener('click', (e) => {
+      const m = e.target.closest('[data-mode]');
+      if (m) { if (m.dataset.mode === 'full' && !confirm('Full access runs edits and commands on your PC without asking. Turn it on?')) return; P().setPermission(m.dataset.mode); openPerms(); return; }
+      const rm = e.target.closest('[data-rm]');
+      if (rm) { const [which, rule] = [rm.dataset.rm.slice(0, rm.dataset.rm.indexOf('|')), rm.dataset.rm.slice(rm.dataset.rm.indexOf('|') + 1)]; const next = { allow: [...((rulesCache && rulesCache.allow) || [])], deny: [...((rulesCache && rulesCache.deny) || [])] }; next[which] = next[which].filter((r) => r !== rule); saveRules(next); return; }
+      const add = e.target.closest('[data-add]');
+      if (add) {
+        if (!pcOnline()) return toast('Your PC is offline. Rules live on it, so it has to be online.');
+        const row = add.closest('.rule-add');
+        const pat = row.querySelector('input').value.trim();
+        if (!pat) return row.querySelector('input').focus();
+        const rule = `${row.querySelector('select').value}:${pat}`;
+        const next = { allow: [...((rulesCache && rulesCache.allow) || [])], deny: [...((rulesCache && rulesCache.deny) || [])] };
+        next[add.dataset.add] = [...next[add.dataset.add].filter((r) => r !== rule), rule];
+        saveRules(next);
+      }
+    });
+
+    // Onboarding buttons.
+    $('onboard').addEventListener('click', async (e) => {
+      const m = e.target.closest('[data-mode]');
+      if (m) { P().setPermission(m.dataset.mode); renderOnboard(2, obData()); return; }
+      const b = e.target.closest('[data-ob]');
+      if (!b) return;
+      const v = b.dataset.ob;
+      if (v === 'next') { obStep = Math.min(3, obStep + 1); renderOnboard(obStep, obData()); }
+      else if (v === 'cloud') { endOnboarding(); P().openSetup({}); }
+      else if (v === 'notify') { if (window.CraftReminders && window.CraftReminders.enablePush) { try { await window.CraftReminders.enablePush(); } catch {} } endOnboarding(); }
+      else if (v === 'done') endOnboarding();
+    });
+
+    // Sign up; a plain sign-in code is never a sign-up code.
+    $('signupForm').addEventListener('submit', signUp);
+    $('useCodeBtn').addEventListener('click', () => { delete $('otpForm').dataset.mode; }, true);
+    $('otpBackBtn').addEventListener('click', () => { delete $('otpForm').dataset.mode; setAuthTab('in'); });
+
+    // The answer actions.
+    $('feed').addEventListener('click', (e) => {
+      const b = e.target.closest('.msg-actions [data-msg]');
+      if (!b || b.dataset.msg === 'copy') return;
+      answerAction(b.dataset.msg, b.parentElement.previousElementSibling, b);
+    });
+
+    // Signed in: who you are in the sidebar, and onboarding after a new account.
+    const entered = async () => {
+      if ($('app').classList.contains('hidden')) return;
+      // phone.js shows the app a moment before it has the user; ask for it.
+      // (and after signing out and into another account, the old user would show).
+      try { const sess = await P().currentSession(); if (sess && sess.user) S().user = sess.user; } catch {}
+      const n = userName();
+      $('drawerName').textContent = n || 'Your account';
+      $('drawerAvatar').textContent = (n || 'C')[0].toUpperCase();
+      refreshTasks();
+      let pending = false; try { pending = localStorage.getItem('craft-phone-onboard') === 'pending'; } catch {}
+      if (pending && $('onboard').classList.contains('hidden')) startOnboarding();
+    };
+    new MutationObserver(entered).observe($('app'), { attributes: true, attributeFilter: ['class'] });
+    entered();
+  }
+
+  window.CraftApp = { renderTasks, renderYou, renderUsage, renderPerms, renderOnboard, setAuthTab, preview, SAMPLE, openSettings, openUsage, openPerms, startOnboarding };
 
   function start() {
     shell();
     const m = /[?&#]preview=([a-z0-9]+)/.exec(location.search + location.hash);
     if (m) setTimeout(() => preview(m[1]), 300);
+    else wire();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();

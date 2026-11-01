@@ -25,6 +25,8 @@ for (const [from, to] of [
   ['phone-design.css', 'phone-design.css'],
   ['phone-theme.css', 'phone-theme.css'], // the website's look
   ['phone-wisp.js', 'phone-wisp.js'],     // Wisp, the agent's face
+  ['phone-app.js', 'phone-app.js'],       // the screens around the chat (Tasks, Settings, sign up...)
+  ['phone-app.css', 'phone-app.css'],
   ['wisp.js', 'wisp.js'],
   ['phone-stt-worker.js', 'phone-stt-worker.js'],
   ['bot-avatar.js', 'bot-avatar.js'],
@@ -58,7 +60,7 @@ for (const f of fs.readdirSync(mascots).filter((f) => f.endsWith('.png'))) {
 fs.writeFileSync(path.join(target, 'vercel.json'), JSON.stringify({
   cleanUrls: true,
   headers: [
-    { source: '/(index.html|phone.js|phone.css|phone-calls.js|phone-calls.css|phone-reminders.js|phone-life.js|phone-sw.js|phone-stt-worker.js|phone-theme.css|phone-wisp.js|wisp.js|bot-avatar.js|classic.html|classic|mobile.js|mobile.css|mobile-cloud.js|mobile-cloud.css|)', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
+    { source: '/(index.html|phone.js|phone.css|phone-calls.js|phone-calls.css|phone-reminders.js|phone-life.js|phone-sw.js|phone-stt-worker.js|phone-theme.css|phone-wisp.js|phone-app.js|phone-app.css|wisp.js|bot-avatar.js|classic.html|classic|mobile.js|mobile.css|mobile-cloud.js|mobile-cloud.css|)', headers: [{ key: 'Cache-Control', value: 'no-cache' }] },
     { source: '/(.*)', headers: [{ key: 'X-Content-Type-Options', value: 'nosniff' }, { key: 'Referrer-Policy', value: 'no-referrer' }] },
   ],
 }, null, 2));

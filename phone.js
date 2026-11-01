@@ -2747,7 +2747,7 @@ currentSession().then((s) => { if (s) enterApp(); else showSignin(); }).catch(sh
 window.CraftPhone = { state, relay, sb, sealSecret, CLOUD_WORKFLOW, md, pollAll, relayRequest, accessToken, esc, load, save, newId, openDrawer, closeDrawer, AI_PROXY_URL, SUPABASE_ANON_KEY, deviceHeader,
   cloudEnvForBots, startCloudTask, pollCloudTask: pollTask,
   // phone-app.js (tabs, Home, You, sign-up) builds on these
-  answerApproval, setPermission, PERM, signinStep, openChat, openPcSession, newChat, openSettings, openSetup, openProjectPicker, openModelPicker, chatMeta, signOut, applyTheme, themeChoice, renderChatList, enterApp, friendlyAuthError, currentSession };
+  SUPABASE_URL, answerApproval, setPermission, PERM, signinStep, openChat, openPcSession, newChat, openSettings, openSetup, openProjectPicker, openModelPicker, chatMeta, signOut, applyTheme, themeChoice, renderChatList, enterApp, friendlyAuthError, currentSession };
 
 // Reminders and "calls" from your bots arrive as Web Push: phone-sw.js shows
 // them (phone-reminders.js asks for permission and subscribes).
