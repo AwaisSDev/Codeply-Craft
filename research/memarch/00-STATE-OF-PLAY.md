@@ -1,5 +1,7 @@
 # State of play (verified 2026-10-31, before any new architecture work)
 
+> Owner decisions of 2026-11-01 (seeds, calibration, Track B, WildChat, natural-300): `04-OWNER-DECISIONS.md`. natural-300 numbers below are supporting evidence only (20 gold memories).
+
 Branch `codeply-memarch-research` (from `codeply-li-dtw-experiment` at
 `30b228c6`). Everything below was checked against the repository, not
 taken from summaries. Labels: [M] measured or counted here, [R] read from a

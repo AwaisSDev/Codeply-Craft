@@ -16,6 +16,7 @@ Read in order:
    readout, cached set store with gated cross-attention), equations, cost,
    what counts as evidence.
 4. `03-EXPERIMENT-PLAN.md`: systems, data additions, ablations, metrics,
+* `04-OWNER-DECISIONS.md`: the owner's decisions of 2026-11-01 and what they change (incl. WildChat already in the data).
    statistics, frozen decision rules, compute and cost, Option A vs B.
 
 Short answer to the brief's question: the evidence does not support
