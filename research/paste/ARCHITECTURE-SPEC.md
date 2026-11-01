@@ -624,6 +624,7 @@ forced** (gold store), as a diagnostic.
 | Efficiency | Parameters; CPU p50/p95 per segment at K ∈ {8, 32, 128} (4 threads, fp32 and int8); peak RAM; segments/s; carried bytes; GPU-hours; peak GPU memory |
 | Generalisation | Unseen templates, entities and families; long episodes (stress); Roman Urdu / multilingual; noisy text; generator shift (programmatic ↔ API-realised); clean-licence real-text segments |
 | Final state | End-of-episode store F1 against the gold store (closed loop) |
+| Per-operation diagnostics | Confusion matrix over WRITE / UPDATE / MERGE_INTO / FORGET / IGNORE (literature F6: operation prediction dominates errors); UPDATE prediction rate against gold (F7); results also collapsed to ADD / UPDATE / DELETE / NOOP for comparability with Mem0-style systems (F9); recall reported at the chosen threshold next to precision (F8: omission is the dominant real-world failure) |
 
 ### 10.4 Primary endpoint
 
@@ -723,6 +724,10 @@ Code lives under `research/paste/paste/`: `modernbert.py`, `model.py`,
 | Closed-loop training is unstable | Teacher-forced fallback (A5) |
 | Quota too small for every ablation at 3 seeds | Priority order (§9.3); fewer seeds labelled exploratory |
 | Integration mismatch (no entity field in the Brain) | Adapter mapping; open question for the owner after the evaluation |
+| Collapse toward UPDATE: a small learned memory router reportedly over-predicted UPDATE (MemRouter, literature F7, secondary source) | UPDATE rate monitored on validation from epoch 1; class-balanced relation loss if UPDATE exceeds its gold share by > 50 % (decided on validation, recorded as a deviation) |
+| Recurrence silently not learned (RMT needs a curriculum; Infini-attention reproduction failed; literature F2-F3) | Curriculum (§6.4); distance-stratified validation accuracy tracked during training; if it does not improve, the report says "not learned", not "not useful" |
+| Soft tokens are only semi-joint; text cross-encoding wins identity by 1.6-3.7 points in entity linking (BLINK, F4) | This is exactly what the central test measures. Distillation from M1c is allowed only after the central test, as a labelled variant |
+| Threshold at 3:1 pushes recall down until omissions dominate (HaluMem, F8) | Recall reported at the chosen threshold; 2:1 and 5:1 operating points reported |
 
 ## 14. What the experiments can and cannot establish
 
@@ -730,8 +735,16 @@ Code lives under `research/paste/paste/`: `modernbert.py`, `model.py`,
   memory-native pathway beats chunked explicit memory with identical heads,
   and which components carry the difference.
 * They cannot show that PASTE is novel as a mechanism. Each component has
-  prior art (`LITERATURE-REVIEW.md`). At most, the contribution is an
-  empirical answer for this task and scale.
+  close prior art (`LITERATURE-REVIEW.md` §1):
+  * Toshniwal et al. 2020 and Zep/Graphiti (addressing);
+  * Keep Me Updated (relation → operation);
+  * KBLaM, LUKE and Set-Encoder (soft-token store);
+  * RMT on BERT, MemoryOS and MemRouter (temporary/persistent split);
+  * SOM-DST (dense per-record heads);
+  * scheduled sampling / FPDSC (closed loop);
+  * cost thresholds and A-MAC / ConsistencyGate (write gate).
+  At most, the contribution is an integration and an empirical answer for
+  this task and scale.
 * They cannot show production value on their own, because the data is
   synthetic and licence-clean rather than real Codeply traffic. A positive
   result justifies an integration discussion; it does not justify a launch.

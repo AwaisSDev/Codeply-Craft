@@ -4,7 +4,7 @@ Branch `research/paste-architecture`, base `672696c0` (`codeply-memarch-research
 
 ## Current phase
 
-Phase 2: literature review and architecture specification (in progress).
+Phase 2 (literature review, hypotheses, specification): **done**. Next: Phase 3 (prototype + unit tests).
 Phase 1 (repository inspection) is done; see `REPOSITORY-CONTEXT.md`.
 
 ## Completed
@@ -17,16 +17,14 @@ Phase 1 (repository inspection) is done; see `REPOSITORY-CONTEXT.md`.
 
 ## Running jobs
 
-None. **Paused by the owner on 2026-11-01 (usage limit).** At most **2
+None. (The owner paused once on 2026-11-01 for a usage limit; work resumed.) At most **2
 research agents at a time** from now on (owner instruction).
 
-The five literature agents were stopped before writing any output. The
-literature review restarts with at most 2 agents, in this order:
-(1) adversarial prior-art search per PASTE mechanism, plus explicit memory
-and identity; (2) segment recurrence, linear attention and SSMs, plus memory
-systems, benchmarks and dataset licences.
+Literature history: the first five agents were stopped before producing any
+output. Two fresh agents, restarted with the owner's approval, completed the
+review and saved it section by section.
 
-## Resume notes (design state at the pause; not yet in the spec)
+## Resume notes from the pause (now written into `ARCHITECTURE-SPEC.md`)
 
 * Exact parameter counts: `tools/param_count.py`.
   * Ettin-32M backbone: PASTE **39.26M**, M1c (same heads) 36.42M,
@@ -79,13 +77,29 @@ systems, benchmarks and dataset licences.
   with false permanent memories no worse than 1.1× and latency ≤1.5×.
   M1c+W is reported as the "text window suffices" check.
 
-## Next action on resume
+## Phase 2 status (2026-11-01)
 
-`ARCHITECTURE-SPEC.md` is written (v2, from the resume notes). Two fresh
-literature agents were restarted by the owner (≤2 at a time): (1) prior art +
-explicit memory/identity, (2) recurrence/linear/SSM + memory systems,
-benchmarks and licences. They save their files section by section. Next:
-integrate them into `LITERATURE-REVIEW.md`, then `ARCHITECTURE-HYPOTHESES.md`.
+Done:
+
+* `ARCHITECTURE-SPEC.md` (v2);
+* `LITERATURE-REVIEW.md`: synthesis plus 4 parts, ~22k words, primary
+  sources tagged [V]/[S]/[U];
+* `ARCHITECTURE-HYPOTHESES.md`: H0-H9, with recorded prior expectations.
+
+Spec updated with the literature's risks: possible UPDATE collapse;
+recurrence not learned; soft tokens are only semi-joint; omission
+dominance. Per-operation diagnostics added.
+
+Headline from the literature: **no PASTE mechanism is new**. A defensible
+claim is at most an integration plus an empirical result at 20-50M. My
+recorded prior for the central test is ~30 % that PASTE beats M1c / M1c-m.
+
+## Next action
+
+Phase 3: the prototype (ModernBERT reimplementation, PASTE model, heads,
+Brain simulator, adapter) and unit tests T1-T12 on CPU. Then Phase 4:
+dataset generator, programmatic first, then the API pilot (≤ ~100 episodes,
+cost estimate to the owner before any further spend).
 
 ## Latest metrics
 
@@ -98,8 +112,8 @@ and the evaluation protocol are validated (owner decision 5).
 
 ## Next actions
 
-1. `LITERATURE-REVIEW.md`, `ARCHITECTURE-HYPOTHESES.md`, `ARCHITECTURE-SPEC.md`.
-2. CPU environment (PyTorch CPU); exact parameter counts for the spec.
+1. Phase 2 documents: done.
+2. CPU environment: done (`/home/user/paste-venv`, torch 2.15 CPU).
 3. Then, in order: prototype + unit tests; dataset generator + API pilot
    (cost estimate shown to the owner before any further spend); dataset and
    protocol validation; only then Kaggle training.
