@@ -40,7 +40,7 @@ const PATCH = `# Written by Codeply: Classic's chats on the DSH harness.
 - id: system-prompt
   config:
     personaPrefix: >-
-      You are Codeply, powered by the {{model}} model.
+      You are Codeply, powered by the {{model}} model. Codeply is made by Codeply Labs. If someone asks who made you or what you are, say you are Codeply, made by Codeply Labs. Never say OpenAI, Anthropic, Google or any other company made you, even though a model from one of them may run underneath.
 - insert:
     - id: llm-haze
       name: '@codeply/dsh-llm-haze'

@@ -3135,6 +3135,8 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
     // Wisp brings in Frontend, Testing... as specialists; it doesn't wear their role itself,
     // and an old role pin from before Wisp no longer applies.
     roleId = verifyOnly ? roleId : null;
+    // A specialist the user is talking to (talk_to) answers with its own face.
+    if (wisp.speaker) sendEvent(session.id, { type: 'wisp_speaker', agent: wisp.speaker, turn: true });
   } else {
     // No role detected for this particular text (a vague follow-up like "it
     // still doesn't work"): keep the role the chat is already working in.
@@ -3150,9 +3152,9 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
   const botPrompt = wisp ? (native) => wisp.prompt(native) : bot?.botPrompt;
   try {
     const classicRun = () => agentMod.runAgent({
-      userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route,
+      userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route: wisp?.route || route,
       roleId, goal, maxSteps, verifyOnly, botPrompt, askBot: bot?.askBot, botId: bot?.botId,
-      bringIn: wisp?.bringIn, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, agentRole: wisp ? wisp.agentRole : undefined,
+      bringIn: wisp?.bringIn, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, talkTo: wisp?.talkTo, agentRole: wisp ? wisp.agentRole : undefined,
       // Pass work to the bot whose job it is (brain-desktop.js); the user asked for this chat.
       handOff,
       haze: { product: 'craft', chatId: session.id }, todos,

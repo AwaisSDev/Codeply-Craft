@@ -1368,7 +1368,7 @@ async function offlineChat(pick, text) {
     state.offlineChat.push({ role: 'user', content: text });
     const data = await cloudCall(BYOK_PROXY_URL, {
       modelId: row.id,
-      messages: [{ role: 'system', content: 'You are Codeply. The PC is offline, so this is a plain chat: you cannot see or change files or run commands. Keep answers readable on a phone.' }, ...state.offlineChat.slice(-30)],
+      messages: [{ role: 'system', content: 'You are Codeply, made by Codeply Labs. The PC is offline, so this is a plain chat: you cannot see or change files or run commands. Keep answers readable on a phone.' }, ...state.offlineChat.slice(-30)],
     });
     const reply = data.data?.choices?.[0]?.message?.content || '';
     state.offlineChat.push({ role: 'assistant', content: reply });

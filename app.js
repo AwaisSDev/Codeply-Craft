@@ -315,6 +315,16 @@ function setZoom(z) {
 }
 try { const z = Number(localStorage.getItem(ZOOM_KEY)); if (z && z !== 1) setZoom(z); } catch {}
 const currentZoom = () => Number(document.documentElement.style.zoom) || 1;
+// The zoom above scales the page, but the window's own size (innerWidth / innerHeight) doesn't
+// scale with it, so a menu placed from the window's edges lands off by the zoom (an account
+// menu floating far above its button). After placing one, this measures where it really is
+// and moves it the rest of the way, in whatever units this Chromium measures in.
+function settleAt(el, { bottom, right } = {}) {
+  const m = el.getBoundingClientRect();
+  const k = m.height ? el.offsetHeight / m.height : 1; // measured px -> the element's own CSS px
+  if (bottom !== undefined) el.style.bottom = (parseFloat(el.style.bottom) + (m.bottom - bottom) * k) + 'px';
+  if (right !== undefined) el.style.right = (parseFloat(el.style.right) + (m.right - right) * k) + 'px';
+}
 const editCmd = (cmd) => () => document.execCommand(cmd);
 function tbMenuItems(name) {
   const signedIn = !!state.user;
@@ -1418,6 +1428,14 @@ function renderWispAgent(data) {
   if (nearBottom()) scrollToBottom();
 }
 
+/** Where the chat switched to a specialist (or back): a small line with its face. */
+function renderWispSpeaker(data) {
+  const note = window.CraftWispUI && window.CraftWispUI.speakerNote(data);
+  if (!note) return;
+  chatColumn.appendChild(note);
+  if (nearBottom()) scrollToBottom();
+}
+
 // ─── Role badge ─────────────────────────────────────────────────────────────
 // There's one agent; this marks the moment it switches role (Frontend,
 // Backend, Testing, ...) - shown only when the role actually changes.
@@ -1765,7 +1783,8 @@ function openAccountMenu() {
   const rect = $('sbUserBtn').getBoundingClientRect();
   menu.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
   menu.style.left = rect.left + 'px';
-  menu.style.width = rect.width + 'px';
+  menu.style.width = $('sbUserBtn').offsetWidth + 'px';
+  settleAt(menu, { bottom: rect.top - 6 });
 
   menu.querySelector('[data-action="connect"]').addEventListener('click', openConnectApps);
   menu.querySelector('[data-action="wisp"]').addEventListener('click', () => { closeAccountMenu(); if (window.CraftWispUI) window.CraftWispUI.openTeam(); });
@@ -1788,6 +1807,14 @@ const SETTINGS_TABS = [
 ];
 let settingsTab = 'general';
 let settingsData = null;
+
+// The home screen shows Codeply (the agent's face) or the Codeply logo.
+function getHomeLook() { try { return localStorage.getItem('craft-home-look') === 'logo' ? 'logo' : 'agent'; } catch { return 'agent'; } }
+function setHomeLook(v) {
+  try { if (v === 'logo') localStorage.setItem('craft-home-look', 'logo'); else localStorage.removeItem('craft-home-look'); } catch {}
+  document.body.classList.toggle('home-look-logo', v === 'logo');
+}
+setHomeLook(getHomeLook());
 
 function setRow(title, desc, control) {
   return `<div class="set-row"><div class="set-text"><div class="set-title">${esc(title)}</div>${desc ? `<div class="set-desc">${esc(desc)}</div>` : ''}</div><div class="set-ctl">${control}</div></div>`;
@@ -1815,6 +1842,7 @@ function settingsPane(tab) {
     const t = window.CraftRich ? window.CraftRich.getType() : { size: 14, font: 'system', spacing: 'normal', width: 'normal' };
     return [
       setRow('Theme', '', setSeg('theme', [['system', 'System', 'monitor'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']], getThemeChoice())),
+      setRow('Home screen', 'What greets you above the box: Codeply itself, or the Codeply logo.', setSeg('home', [['agent', 'Codeply'], ['logo', 'Logo']], getHomeLook())),
       setRow('Text size', 'How big the chat reads.', `<div class="set-range"><span class="rx-a-sm">A</span><input type="range" min="12" max="22" step="1" value="${t.size}" data-type-size aria-label="Text size"><span class="rx-a-lg">A</span><span class="set-val">${t.size}px</span></div>`),
       setRow('Font', '', setSeg('font', [['system', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono']], t.font)),
       setRow('Line spacing', '', setSeg('spacing', [['compact', 'Compact'], ['normal', 'Normal'], ['relaxed', 'Relaxed']], t.spacing)),
@@ -1907,6 +1935,7 @@ function buildSettings() {
     if (opt) {
       const k = opt.parentElement.dataset.seg;
       if (k === 'theme') applyTheme(opt.dataset.val);
+      else if (k === 'home') setHomeLook(opt.dataset.val);
       else if (window.CraftRich) window.CraftRich.setType({ [k]: opt.dataset.val });
       drawSettings();
       return;
@@ -3229,6 +3258,7 @@ function openModelMenu(anchorBtn) {
   const rect = anchorBtn.getBoundingClientRect();
   menu.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
   menu.style.right = Math.max(8, window.innerWidth - rect.right) + 'px';
+  settleAt(menu, { bottom: rect.top - 8, right: rect.right });
 
   menu.querySelectorAll('.model-item[data-id]').forEach((btn) => btn.addEventListener('click', () => pickModel(btn.dataset.id)));
   menu.querySelectorAll('[data-edit]').forEach((btn) => btn.addEventListener('click', (e) => {
@@ -3794,7 +3824,8 @@ async function sendMessage(text, fromHome, images) {
   if (window.CraftWispUI) {
     window.CraftWispUI.onSend(fromHome);
     // The answer starts with the agent's face, on the left, thinking.
-    const face = window.CraftWispUI.turnStart('thinking', text); // reacts to what you wrote while it thinks
+    // Reacts to what you wrote while it thinks; a specialist you're talking to (talk_to) answers with its own face.
+    const face = window.CraftWispUI.turnStart('thinking', text, window.CraftWispUI.speakerOf(state.currentSessionId));
     if (face) chatColumn.appendChild(face);
   }
   if (window.CraftCloud && window.CraftCloud.beforeSend) window.CraftCloud.beforeSend(); // pull check, never blocks
@@ -4345,6 +4376,12 @@ if (api) api.onAgentEvent((data) => {
     case 'wisp_agent':
       renderWispAgent(data);
       break;
+    case 'wisp_speaker':
+      if (window.CraftWispUI) {
+        window.CraftWispUI.onSpeaker(state.currentSessionId, data);
+        if (!data.turn) renderWispSpeaker(data);
+      }
+      break;
     case 'role_active':
       addRoleBadge(data);
       break;
@@ -4511,6 +4548,7 @@ async function openSession(id) {
   currentTasks = [];
   activeGoalCard = null;
   revealInstant = true;
+  let speaker = null; // the specialist the user was talking to (talk_to), as the chat went
   s.messages.forEach((m, i) => {
     if (m.kind === 'user') {
       addUserMessage(m.text, m.images);
@@ -4520,13 +4558,15 @@ async function openSession(id) {
         for (let j = i + 1; j < s.messages.length && s.messages[j].kind !== 'user'; j++) {
           const n = s.messages[j];
           if (n.kind === 'assistant' && n.wisp && !n.interim) { mood = n.mood || 'neutral'; reply = n.text || ''; }
+          if (n.kind === 'wisp_speaker') speaker = n.agent || null; // the answer after a switch is the new speaker's hello
         }
         // Like the phone: the agent's own mood, else how it felt about this message, else its answer's feeling.
-        const face = mood ? window.CraftWispUI.turnStart(window.CraftWispUI.moodFor(mood, m.text, reply), m.text) : null;
+        const face = mood ? window.CraftWispUI.turnStart(window.CraftWispUI.moodFor(mood, m.text, reply), m.text, speaker) : null;
         if (face) chatColumn.appendChild(face);
       }
       return;
     }
+    else if (m.kind === 'wisp_speaker') renderWispSpeaker(m);
     else if (m.kind === 'assistant') (m.interim ? addThinkingRow(m.text) : addAssistantMessage(m.text, m.wisp ? (m.mood || 'neutral') : undefined));
     else if (m.kind === 'wisp_agent') renderWispAgent(m);
     else if (m.kind === 'reasoning') addReasoningRow(m.text, m.ms);
@@ -4558,6 +4598,7 @@ async function openSession(id) {
       window.CraftBots.renderBadge(m.bot, true);
     }
   });
+  if (window.CraftWispUI) window.CraftWispUI.setSpeaker(id, speaker);
   closeActivity();
   revealInstant = false;
   activeTaskList = null; // reopening a past chat is read-only history, not a live run - no further task_start/task_end will arrive for it
@@ -5498,6 +5539,7 @@ $('updateGateBtn').addEventListener('click', () => {
     const w = pop.offsetWidth;
     pop.style.left = Math.max(12, Math.min(r.left, window.innerWidth - w - 12)) + 'px';
     pop.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+    settleAt(pop, { bottom: r.top - 8 });
   }
   function closePop() { $('rmPanel').classList.add('hidden'); }
   document.addEventListener('mousedown', (e) => {

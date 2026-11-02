@@ -159,24 +159,65 @@ function forTurn({ session, approve, signal, route, cwd, mode, verifyOnly }) {
     };
   };
 
+  // talk_to: from the next message the user talks to that specialist itself (session.speaker),
+  // with its own face and voice; "Codeply" hands them back. The face changes right away.
+  const talkTo = async ({ specialist }) => {
+    const q = String(specialist || '').trim();
+    const back = !q || /^(codeply|wisp|you|back|main|lead)\b/i.test(q);
+    const spec = back ? null : W.findSpecialist(q);
+    if (!back && !spec) {
+      const names = W.listSpecialists().map((s) => s.name).join(', ');
+      return { ok: false, output: `No one on your team is called "${specialist}". Your team: ${names}. Pick one, or create_specialist first.` };
+    }
+    session.speaker = spec ? spec.id : null;
+    const card = spec ? W.card(spec) : null;
+    push(session, { kind: 'wisp_speaker', agent: card });
+    deps.sendEvent(session.id, { type: 'wisp_speaker', agent: card });
+    // The face on screen has already changed, so the rest of this answer is the new speaker saying hi.
+    const voice = spec ? (spec.voice || `someone who lives and breathes ${spec.focus}`) : '';
+    return {
+      ok: true,
+      output: card
+        ? `Switched. The user now sees ${card.name}'s face and talks to ${card.name} from their next message. Finish this answer AS ${card.name} saying hi in one or two short lines, in its voice (${voice}), and ask what they need. Don't mention switching tools.`
+        : 'Switched. The user now sees Codeply\'s face again. Finish this answer AS Codeply: a short, warm "welcome back" line in Codeply\'s voice. Don\'t mention switching tools.',
+      meta: { label: card ? card.name : 'Codeply' },
+    };
+  };
+  const mood = (ev) => {
+    if (!ev || ev.type !== 'text' || typeof ev.text !== 'string') return ev;
+    const { mood: m, text } = W.parseMood(ev.text);
+    const out = { ...ev, text: W.stripMoodTags(text), wisp: true };
+    if (m && !ev.interim) {
+      out.mood = m;
+      deps.sendEvent(session.id, { type: 'wisp_mood', mood: m });
+    }
+    return out;
+  };
+
+  // The user is talking to a specialist: it answers itself, on its own model, until it hands them back.
+  const speaker = session && session.speaker ? W.findSpecialist(session.speaker) : null;
+  if (session && session.speaker && !speaker) session.speaker = null; // removed from the team
+  if (speaker) {
+    return {
+      prompt: () => W.chatPrompt(speaker),
+      talkTo,
+      agentRole: 'speaker',
+      speaker: W.card(speaker),
+      route: routeFor(speaker, route),
+      mood,
+    };
+  }
+
   return {
     // Wisp's persona, its team and the ambient jobs. Built per prompt so a specialist made this turn is on the list next time.
     prompt: (native) => W.wispPrompt({ native, canDelegate, life, phone, models: userModels() }),
     bringIn: canDelegate ? bringIn : undefined,
     createSpecialist: canDelegate ? createSpecialist : undefined,
     schedule: canDelegate ? (args) => scheduleTool(args, { cwd }) : undefined,
+    talkTo: canDelegate ? talkTo : undefined,
     agentRole: 'lead',
     /** Splits the [mood: x] tag off a reply; the face goes to the window, the text stays clean. */
-    mood(ev) {
-      if (!ev || ev.type !== 'text' || typeof ev.text !== 'string') return ev;
-      const { mood, text } = W.parseMood(ev.text);
-      const out = { ...ev, text: W.stripMoodTags(text), wisp: true };
-      if (mood && !ev.interim) {
-        out.mood = mood;
-        deps.sendEvent(session.id, { type: 'wisp_mood', mood });
-      }
-      return out;
-    },
+    mood,
   };
 }
 

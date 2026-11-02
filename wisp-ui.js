@@ -103,14 +103,41 @@
   }
   let reaction = null; // how Wisp feels about the message it is answering, shown while it works
 
-  /** `userText`: the message this answer is to, so the face reacts to it while it thinks. */
-  function turnStart(mood, userText) {
+  // ─── Talking to a specialist (talk_to) ───────────────────────────────────
+  // Per chat: the specialist the user is talking to (its card), or none for Codeply.
+  // Its answers wear its own character: its shape, colour and gear (wisp.js).
+  const speakers = new Map();
+  const lookOf = (card) => (card ? { shape: card.shape, color: card.color, gear: card.gear } : null);
+  function speakerOf(sessionId) { return (sessionId && speakers.get(sessionId)) || null; }
+  function setSpeaker(sessionId, card) { if (sessionId) { if (card) speakers.set(sessionId, card); else speakers.delete(sessionId); } }
+  /** The chat switched who talks: the answer's face spins into the new character (a quiet swap at a turn's start). */
+  function onSpeaker(sessionId, data) {
+    const card = (data && data.agent) || null;
+    setSpeaker(sessionId, card);
+    if (turnFace && turnFace.el.isConnected) turnFace.dress(lookOf(card), !(data && data.turn));
+  }
+  /** A small line in the chat where the switch happened: "Frontend is here" with its face, or "Back to Codeply". */
+  function speakerNote(data) {
+    if (!W()) return null;
+    const card = (data && data.agent) || null;
+    const el = document.createElement('div');
+    el.className = 'wisp-switch-note';
+    const face = W().avatar({ size: 'xs', mood: 'happy', look: lookOf(card) });
+    el.appendChild(face);
+    const t = document.createElement('span');
+    t.textContent = card ? `You're talking to ${card.name}` : 'Back to Codeply';
+    el.appendChild(t);
+    return el;
+  }
+
+  /** `userText`: the message this answer is to, so the face reacts to it while it thinks. `who`: the specialist answering, if any. */
+  function turnStart(mood, userText, who) {
     if (!enabled || !W()) return null;
     reaction = feel(userText);
     lastUserText = userText || '';
     const el = document.createElement('div');
     el.className = 'wisp-turn';
-    const face = W().avatar({ size: 'sm', mood: (mood === 'thinking' && reaction) || mood || 'neutral', morph: true });
+    const face = W().avatar({ size: 'sm', mood: (mood === 'thinking' && reaction) || mood || 'neutral', morph: true, look: lookOf(who) });
     face.classList.add('wisp-turn-face');
     el.appendChild(face);
     turnFace = face.wisp;
@@ -240,7 +267,7 @@
       const open = s.id === openId;
       const modelName = s.model && s.model !== 'auto' ? (models.find((m) => m.id === s.model)?.name || 'a removed model') : 'Haze 2';
       const jobs = (s.schedules || []);
-      const head = `<button class="wisp-team-row" data-open="${escHtml(s.id)}" aria-expanded="${open}"><span class="wtr-text"><b>${escHtml(s.name)}</b><small>${escHtml(s.focus || '')}</small></span>` +
+      const head = `<button class="wisp-team-row" data-open="${escHtml(s.id)}" aria-expanded="${open}"><span class="wtr-face" data-face="${escHtml(s.id)}"></span><span class="wtr-text"><b>${escHtml(s.name)}</b><small>${escHtml(s.focus || '')}</small></span>` +
         `<span class="wtr-meta">${escHtml(modelName)}${jobs.length ? ` · ${jobs.length} scheduled` : ''}${s.uses ? ` · ${s.uses} job${s.uses === 1 ? '' : 's'}` : ''}</span><svg class="wtr-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>`;
       if (!open) return `<div class="wisp-team-item">${head}</div>`;
       const prompt = s.builtin
@@ -259,6 +286,11 @@
         ${history}${sched}</div></div>`;
     }).join('');
     body.innerHTML = `<div class="wisp-team-head">The team <small>${team.length}</small></div><div class="wisp-team-list">${rows}</div>`;
+    // Each specialist's own little character, so you know who you'd be talking to.
+    body.querySelectorAll('[data-face]').forEach((slot) => {
+      const s = card(slot.dataset.face);
+      if (s) slot.appendChild(W().avatar({ size: 'sm', mood: 'neutral', look: lookOf(s) }));
+    });
     body.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => { openId = openId === b.dataset.open ? null : b.dataset.open; drawTeam(); }));
     const det = body.querySelector('.wisp-team-detail');
     if (!det) return;
@@ -280,6 +312,7 @@
   window.CraftWispUI = {
     get enabled() { return enabled; },
     refresh, onEvent, onSend, turnStart, replyMood, moodFor, agentNote, openTeam, card,
+    speakerOf, setSpeaker, onSpeaker, speakerNote,
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', refresh);

@@ -3,9 +3,11 @@
 // shapes, and the mood changes the eyes, the colour and how it moves.
 // Drawn in SVG, one animation loop for every Wisp in the window.
 //
-//   CraftWisp.mount(el, { size: 'lg'|'md'|'sm'|'xs', mood, shape, color, morph })
+//   CraftWisp.mount(el, { size: 'lg'|'md'|'sm'|'xs', mood, shape, color, morph, look })
 //     -> el.wisp: setMood(m, keepShape), setShape(name), setColor('#hex'|null),
-//        talk(ms), boop(), lookAt({x,y}|null), destroy()
+//        dress(look|null, fun), talk(ms), boop(), lookAt({x,y}|null), destroy()
+//   look: { shape, color, gear } is a specialist's own character (a beret, shades, a
+//   sprout...); dress(look, true) is the costume change: a spin, a poof, a new face.
 //   CraftWisp.read(text) -> { mood, shape|null, line }   what a message feels like
 //
 // Wisp is a pentagon everywhere: a mood changes its eyes, colour and how it
@@ -77,6 +79,23 @@
     listening: { shape: 'pentagon', c: ['#7eb0ff', '#2457e6'], blink: true, lean: true }
   };
   var INK = '#0b0b0f';
+  // ---- gear: what a specialist wears. Head gear is drawn for a head whose top is at y=14
+  // (moved to the real top every frame); face gear sits on the eyes and follows them. ----
+  var HEAD_GEAR = {
+    beret: '<ellipse cx="46" cy="15" rx="21" ry="7.5" fill="#b8324a" transform="rotate(-12 46 15)"/><ellipse cx="42" cy="12.6" rx="9" ry="2.2" fill="#fff" fill-opacity=".22" transform="rotate(-12 42 12.6)"/><circle cx="46" cy="7.2" r="2.4" fill="#8f2236"/>',
+    cap: '<path d="M29 21C30 8 70 8 71 21Z" fill="#2f5bd8"/><path d="M66 19.5C76 17.5 84 19 86 23C78 24.6 70 24 63 22Z" fill="#2348b5"/><circle cx="50" cy="9.6" r="1.8" fill="#2348b5"/>',
+    bow: '<path d="M63 14L52 7.5L53.5 21.5Z M63 14L74 7.5L72.5 21.5Z" fill="#ff5fa8"/><circle cx="63" cy="14" r="3.2" fill="#e23d8a"/>',
+    flower: '<g transform="translate(36 15)"><circle cy="-5" r="3.6" fill="#fff"/><circle cx="4.8" cy="-1.5" r="3.6" fill="#fff"/><circle cx="3" cy="4" r="3.6" fill="#fff"/><circle cx="-3" cy="4" r="3.6" fill="#fff"/><circle cx="-4.8" cy="-1.5" r="3.6" fill="#fff"/><circle r="2.6" fill="#ffc83d"/></g>',
+    sprout: '<path d="M50 16C50 10 51 6 52 3" fill="none" stroke="#3d9e3f" stroke-width="2" stroke-linecap="round"/><path d="M52 5C56 -1 63 0 64 2C60 6 55 7 52 5Z" fill="#5cc45a"/><path d="M51 7C47 2 41 3 40 5C43 9 48 9 51 7Z" fill="#4db34b"/>',
+    antennae: '<path d="M43 17C41 10 37 6 33 4 M57 17C59 10 63 6 67 4" fill="none" stroke="#9a9ab4" stroke-width="1.9" stroke-linecap="round"/><circle cx="33" cy="4" r="3.6" fill="#fff"/><circle cx="67" cy="4" r="3.6" fill="#fff"/><circle cx="33.6" cy="4.4" r="1.7" fill="#0b0b0f"/><circle cx="67.6" cy="4.4" r="1.7" fill="#0b0b0f"/>',
+    star: '<path d="M66 7l2.2 4.5 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5-3.6-3.5 5-.7z" fill="#ffd23f" stroke="#e8a900" stroke-width=".8"/>',
+    crown: '<path d="M36 17L34 5L42 11L50 2L58 11L66 5L64 17Z" fill="#ffcf3a" stroke="#e0a400" stroke-width=".8" stroke-linejoin="round"/><circle cx="50" cy="12" r="1.6" fill="#ff5f7a"/>',
+    headphones: '<path d="M15 50C15 20 30 10 50 10S85 20 85 50" fill="none" stroke="#2a2a33" stroke-width="5" stroke-linecap="round"/><path d="M15 50C15 20 30 10 50 10S85 20 85 50" fill="none" stroke="#ff8a5c" stroke-width="2.8" stroke-linecap="round"/><rect x="8.5" y="42" width="10" height="17" rx="4.5" fill="#ff8a5c" stroke="#2a2a33" stroke-width="1.2"/><rect x="81.5" y="42" width="10" height="17" rx="4.5" fill="#ff8a5c" stroke="#2a2a33" stroke-width="1.2"/>'
+  };
+  var FACE_GEAR = {
+    glasses: '<g fill="rgba(255,255,255,.18)" stroke="#16161c" stroke-width="1.4"><circle cx="41" cy="44" r="5.6"/><circle cx="57" cy="44" r="5.6"/></g><path d="M46.6 43.4Q49 42 51.4 43.4" fill="none" stroke="#16161c" stroke-width="1.3"/>',
+    shades: '<path d="M34.5 40.5h13l-1 6.2a3.6 3.6 0 0 1-3.5 3h-4.2a3.6 3.6 0 0 1-3.5-3z M50.5 40.5h13l-1 6.2a3.6 3.6 0 0 1-3.5 3h-4.2a3.6 3.6 0 0 1-3.5-3z" fill="#111116"/><path d="M47.5 41.6h3" stroke="#111116" stroke-width="1.4"/><path d="M37 42.5l3 0" stroke="#fff" stroke-opacity=".5" stroke-width="1" stroke-linecap="round"/>'
+  };
   var EYES = {
     neutral: function () { return '<ellipse rx="1.8" ry="2.9"/>'; },
     thinking: function () { return '<ellipse rx="1.7" ry="2.7"/>'; },
@@ -108,15 +127,18 @@
     el.classList.add('wisp-el', 'wisp-' + size);
     el.innerHTML = '<svg viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="' + id + '" x1=".2" y1="0" x2=".8" y2="1"><stop offset="0"/><stop offset="1"/></linearGradient>' +
       '<radialGradient id="' + id + 'h" cx=".35" cy=".25" r=".6"><stop offset="0" stop-color="#fff" stop-opacity=".45"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>' +
-      '<g class="w-body"><path class="w-shape" fill="url(#' + id + ')"/><path class="w-shine" fill="url(#' + id + 'h)"/><g class="w-eyes"><g class="w-eye l" transform="translate(41 44)"></g><g class="w-eye r" transform="translate(57 44)"></g></g></g></svg>';
-    var base = SHAPES[opts.shape] ? opts.shape : 'pentagon';
+      '<g class="w-body"><path class="w-shape" fill="url(#' + id + ')"/><path class="w-shine" fill="url(#' + id + 'h)"/><g class="w-eyes"><g class="w-eye l" transform="translate(41 44)"></g><g class="w-eye r" transform="translate(57 44)"></g></g><g class="w-face-gear"></g><g class="w-head-gear"></g></g></svg>';
+    var look = opts.look && SHAPES[opts.look.shape] ? opts.look : null;
+    var base = look ? look.shape : SHAPES[opts.shape] ? opts.shape : 'pentagon';
     var w = {
-      el: el, svg: el.firstChild, path: el.querySelector('.w-shape'), shine: el.querySelector('.w-shine'), eyes: el.querySelector('.w-eyes'),
+      el: el, svg: el.firstChild, body: el.querySelector('.w-body'), headGear: el.querySelector('.w-head-gear'), faceGear: el.querySelector('.w-face-gear'),
+      gear: null, morph0: !!opts.morph, swapAt: 0, swapLook: undefined,
+      path: el.querySelector('.w-shape'), shine: el.querySelector('.w-shine'), eyes: el.querySelector('.w-eyes'),
       eyeL: el.querySelector('.w-eye.l'), eyeR: el.querySelector('.w-eye.r'), stops: el.querySelectorAll('linearGradient stop'),
       r: SHAPES[base].slice(), from: null, to: SHAPES[base], t0: 0, dur: 560, base: base,
       lx: 0, ly: 0, blinkAt: performance.now() + 1500 + Math.random() * 3000, blink: 0,
       mood: null, phase: Math.random() * 10, visible: true, small: size === 'sm' || size === 'xs', kick: 0,
-      morph: !!opts.morph, color: opts.color || null,
+      morph: !!opts.morph && !look, color: (look && look.color) || opts.color || null,
       talkUntil: 0, look: null, hop: 0, io: null,
       // Idle glances: the eyes jump to a spot, rest, jump again (alive, not drifting).
       gx: 0, gy: 0, nextGlance: 0,
@@ -147,11 +169,37 @@
       if (M.hop) w.hop = performance.now();
       w.kick = performance.now();
     };
+    // A specialist's character (its shape, colour and gear) or, with null, Codeply's own face.
+    // A specialist keeps its shape through every mood; Codeply's morphing face goes back to morphing.
+    function wear(look) {
+      var on = look && SHAPES[look.shape] ? look : null;
+      w.base = on ? on.shape : 'pentagon';
+      w.morph = on ? false : w.morph0;
+      w.gear = on && (HEAD_GEAR[on.gear] || FACE_GEAR[on.gear]) ? on.gear : null;
+      w.headGear.innerHTML = w.gear && HEAD_GEAR[w.gear] ? HEAD_GEAR[w.gear] : '';
+      w.faceGear.innerHTML = w.gear && FACE_GEAR[w.gear] ? FACE_GEAR[w.gear] : '';
+      w.color = on && /^#[0-9a-f]{6}$/i.test(on.color || '') ? on.color : null;
+      el.dataset.look = on ? on.gear || on.shape : '';
+      var target = SHAPES[w.base];
+      if (target !== w.to) { w.from = w.r.slice(); w.to = target; w.t0 = performance.now(); }
+      w.paint();
+    }
+    w.dress = function (look, fun) {
+      if (!fun || reduce) { wear(look); return; }
+      // The costume change: it spins and shrinks, poofs into the new look halfway, and pops back.
+      w.swapAt = performance.now(); w.swapLook = look || null;
+      var poof = document.createElement('span');
+      poof.className = 'wisp-poof';
+      for (var k = 0; k < 8; k++) { var dot = document.createElement('i'); dot.style.setProperty('--a', (k * 45) + 'deg'); poof.appendChild(dot); }
+      el.appendChild(poof);
+      setTimeout(function () { poof.remove(); }, 900);
+    };
     w.talk = function (ms) { w.talkUntil = performance.now() + (ms || 1200); };
     w.lookAt = function (p) { w.look = p || null; };
     w.boop = function () { w.hop = performance.now(); w.kick = performance.now(); };
     w.destroy = function () { var i = all.indexOf(w); if (i >= 0) all.splice(i, 1); if (w.io) w.io.disconnect(); el.wisp = null; };
     w.setMood(opts.mood || el.dataset.mood || 'neutral');
+    if (look) wear(look);
     if ('IntersectionObserver' in window) {
       w.io = new IntersectionObserver(function (es) { w.visible = es[0].isIntersecting; });
       w.io.observe(el);
@@ -208,6 +256,13 @@
         if (hopT >= 0 && hopT < 1) { oy -= Math.sin(hopT * Math.PI) * 5; sy += Math.sin(hopT * Math.PI) * .04; }
         if (now < w.talkUntil) { var tk = Math.abs(Math.sin(now / 95)); sy += tk * .03; sx -= tk * .015; }
       }
+      // The costume change (dress(look, true)): half a spin down, the new look, half a spin back up.
+      var swapK = -1;
+      if (w.swapAt) {
+        swapK = Math.min(1, (now - w.swapAt) / 720);
+        if (swapK >= .5 && w.swapLook !== undefined) { var nl = w.swapLook; w.swapLook = undefined; w.dress(nl, false); w.from = null; w.r = SHAPES[w.base].slice(); w.to = SHAPES[w.base]; w.hop = now; }
+        if (swapK >= 1) { w.swapAt = 0; swapK = -1; }
+      }
       var d = '', ca = Math.cos(rot * Math.PI / 180), sa = Math.sin(rot * Math.PI / 180);
       for (i = 0; i < N; i++) {
         var a = -Math.PI / 2 + TAU * i / N, rr = R * w.r[i];
@@ -218,6 +273,15 @@
       d += 'Z';
       w.path.setAttribute('d', d);
       w.shine.setAttribute('d', d);
+      // Head gear rides on top of the head (the shape's highest point), face gear on the eyes below.
+      if (w.gear) {
+        var top = CY + oy - R * w.r[0] * sy;
+        w.headGear.setAttribute('transform', 'translate(' + ox.toFixed(2) + ' ' + (top - 14).toFixed(2) + ') rotate(' + rot.toFixed(2) + ' 50 ' + (54 - top + 14).toFixed(2) + ')');
+      }
+      if (swapK >= 0) {
+        var sw = Math.sin(swapK * Math.PI), spin = swapK * 360;
+        w.body.setAttribute('transform', 'rotate(' + spin.toFixed(1) + ' 50 54) translate(50 54) scale(' + (1 - .55 * sw).toFixed(3) + ') translate(-50 -54)');
+      } else if (w.body.hasAttribute('transform')) w.body.removeAttribute('transform');
       // eyes: follow the cursor (or what Wisp is looking at), wander when nothing moves
       var tx = 0, ty = 0;
       if (w.mood === 'thinking') { tx = 4; ty = -4; }
@@ -253,6 +317,8 @@
       if (M.lean) sc *= 1.06;
       var es = w.eyeScale;
       w.eyes.setAttribute('transform', 'translate(' + (w.lx + ox).toFixed(2) + ' ' + (w.ly + oy).toFixed(2) + ') translate(49 46) scale(' + es + ' ' + (es * sc).toFixed(3) + ') translate(-49 -46)');
+      // Glasses follow the eyes but never blink; shades look a little less far than the eyes do.
+      if (w.gear && FACE_GEAR[w.gear]) w.faceGear.setAttribute('transform', 'translate(' + (w.lx * .7 + ox).toFixed(2) + ' ' + (w.ly * .7 + oy).toFixed(2) + ') translate(49 46) scale(' + es + ') translate(-49 -46)');
     }
     if (all.length) requestAnimationFrame(frame); else running = false;
   }
@@ -336,6 +402,7 @@
     avatar: avatar,
     read: read,
     SHAPES: Object.keys(SHAPES),
+    GEAR: Object.keys(HEAD_GEAR).concat(Object.keys(FACE_GEAR)),
     MOODS: Object.keys(MOODS)
   };
 })();

@@ -83,8 +83,8 @@ async function wispTurn(replies, userMessage, { route = textRoute, session } = {
   const w = host.forTurn({ session, approve, signal, route, cwd, mode: 'Build' });
   const events = [];
   for await (const raw of agentMod.runAgent({
-    userMessage, history: [], mode: 'Build', cwd, approve, signal, route, maxSteps: 12,
-    botPrompt: (native) => w.prompt(native), bringIn: w.bringIn, createSpecialist: w.createSpecialist, schedule: w.schedule, agentRole: w.agentRole,
+    userMessage, history: [], mode: 'Build', cwd, approve, signal, route: w.route || route, maxSteps: 12,
+    botPrompt: (native) => w.prompt(native), bringIn: w.bringIn, createSpecialist: w.createSpecialist, schedule: w.schedule, talkTo: w.talkTo, agentRole: w.agentRole,
   })) events.push(w.mood(raw));
   return { events, cwd, session, done: events.find((e) => e.type === 'done'), texts: events.filter((e) => e.type === 'text' && !e.interim).map((e) => e.text) };
 }
@@ -271,6 +271,35 @@ async function wispTurn(replies, userMessage, { route = textRoute, session } = {
   check('Design mode stays Design', host.forTurn({ session: { id: 'x', messages: [] }, mode: 'Design' }) === null);
   const v = host.forTurn({ session: { id: 'x', messages: [] }, mode: 'Build', verifyOnly: true });
   check('a checking turn is Wisp but brings no one in', v && !v.bringIn && !v.createSpecialist);
+}
+
+// 7. Talking to a specialist directly (talk_to): its own face and voice, then back to Codeply.
+{
+  // The host again with the window that records events (a check above swapped it out).
+  host.init({ ipcMain: { handle() {} }, cliDir: CLI, sendEvent: (id, ev) => sent.push(ev), agentMod: () => agentMod, browser: null, recordToolEnd: () => {}, settings: { get: () => wispOn, set() {} } });
+  const session = { id: 's7', messages: [] };
+  const mailer = wisp.createSpecialist({ name: 'Mailer', focus: 'Drafts and sorts the user\'s emails', instructions: 'Keep emails short.', voice: 'A chirpy postie who loves an empty inbox.' });
+  check('gear: every specialist wears something', wisp.listSpecialists().every((s) => wisp.GEAR.includes(wisp.card(s).gear)));
+  check('gear: a new specialist gets gear and keeps its voice', mailer.ok && wisp.GEAR.includes(mailer.specialist.gear) && /postie/.test(mailer.specialist.voice));
+  await wispTurn([
+    '<codeply:talk_to>\n<specialist>Mailer</specialist>\n</codeply:talk_to>',
+    '[mood: happy]\nMailer here! What can I sort for you?',
+  ], 'can I talk to the one who does my emails?', { session });
+  check('talk_to: Codeply knows who it is (Codeply Labs)', /Codeply Labs/.test(JSON.stringify(bodies[0])));
+  check('talk_to: the chat now talks to Mailer', session.speaker === 'mailer');
+  check('talk_to: the face changes at once', sent.some((e) => e.type === 'wisp_speaker' && e.agent && e.agent.name === 'Mailer' && e.agent.gear));
+  check('talk_to: the switch is kept in the chat', session.messages.some((m) => m.kind === 'wisp_speaker' && m.agent && m.agent.id === 'mailer'));
+  check('talk_to: the rest of the answer is Mailer saying hi', bodies[1] && /AS Mailer/.test(lastUserOf(bodies[1])), bodies[1] && lastUserOf(bodies[1]));
+  const w = host.forTurn({ session, mode: 'Build' });
+  check('speaker: Mailer answers in its own voice', w.agentRole === 'speaker' && /YOU ARE MAILER/.test(w.prompt(false)) && /postie/.test(w.prompt(false)) && !w.bringIn && w.speaker.id === 'mailer' && typeof w.talkTo === 'function');
+  await wispTurn([
+    '<codeply:talk_to>\n<specialist>Codeply</specialist>\n</codeply:talk_to>',
+    '[mood: happy]\nWelcome back!',
+  ], 'ok, back to codeply', { session });
+  check('speaker: its turn ran on its own prompt', /YOU ARE MAILER/.test(JSON.stringify(bodies[0])));
+  check('talk_to Codeply: back to Codeply', !session.speaker && sent.some((e) => e.type === 'wisp_speaker' && !e.agent));
+  check('talk_to: an unknown name lists the team', !(await host.forTurn({ session, mode: 'Build' }).talkTo({ specialist: 'Astronaut' })).ok);
+  wisp.removeSpecialist('mailer');
 }
 
 server.close();
