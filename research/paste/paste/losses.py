@@ -39,6 +39,7 @@ def segment_loss(model, enc, gold):
     """Core losses for one encoded segment. Returns a dict of scalar terms (unweighted, lambda = 1)."""
     hd = model.heads
     L = {}
+    gold = {k: v for k, v in gold.items() if not k.startswith("_")}
     L["tag"] = F.cross_entropy(hd.bio_unit(enc.seg), torch.tensor(gold["unit_bio"])) + \
         F.cross_entropy(hd.bio_ent(enc.seg), torch.tensor(gold["ent_bio"]))
     terms = {k: [] for k in ("cls", "gate", "addr", "rel", "src", "ment", "tmp")}

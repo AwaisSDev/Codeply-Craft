@@ -1,0 +1,99 @@
+# PASTE test run (Phase 4: ontology attributes, single embedding lookup)
+Mon Nov  2 19:20:21 UTC 2026
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-9.2.0, pluggy-1.7.0 -- /home/user/paste-venv/bin/python
+rootdir: /home/user/codeply-craft/research/paste
+plugins: anyio-4.16.0
+collecting ... collected 27 items
+S1 step-0 gradient norms: {'encoder': '1.33e+05', 'heads': '2.16e+04', 'W_h': '7.86e+03', 'W_z': '7.87e+02', 'W_att': '3.76e+04', 'gru_h': '0.00e+00', 'gru_t': '0.00e+00', 'W_new': '0.00e+00', 'h0': '0.00e+00'}
+S1 step-1 gradient norms: {'gru_h': '7.69e+01', 'gru_t': '5.26e-01', 'W_new': '1.41e+00'}
+S1 loss 362.846 -> 3.130 after 42 steps; 789 ms per 4-segment step (CPU, 4 threads)
+S1 final terms: {'tag': 1.7684, 'cls': 0.6788, 'gate': 0.4369, 'addr': 0.0856, 'rel': 0.0, 'src': 0.0, 'ment': 0.0, 'tmp': 0.0, 'ret': 0.0032, 'mrg': 0.0, 'exp': 0.1575}
+PASSED
+ettin-encoder-32m n=7: ours-sdpa 0.00e+00  ours-eager 4.86e-05  hf eager-sdpa 4.86e-05  max|h| 34.5
+ettin-encoder-32m n=64: ours-sdpa 0.00e+00  ours-eager 3.65e-04  hf eager-sdpa 3.65e-04  max|h| 40.8
+ettin-encoder-32m n=65: ours-sdpa 0.00e+00  ours-eager 3.24e-04  hf eager-sdpa 3.24e-04  max|h| 40.9
+ettin-encoder-32m n=150: ours-sdpa 0.00e+00  ours-eager 5.30e-04  hf eager-sdpa 5.30e-04  max|h| 41.1
+ettin-encoder-32m n=300: ours-sdpa 0.00e+00  ours-eager 8.85e-04  hf eager-sdpa 8.85e-04  max|h| 41.1
+PASSED
+ettin-encoder-17m n=7: ours-sdpa 0.00e+00  ours-eager 1.62e-05  hf eager-sdpa 1.62e-05  max|h| 18.0
+ettin-encoder-17m n=64: ours-sdpa 0.00e+00  ours-eager 2.00e-05  hf eager-sdpa 2.00e-05  max|h| 21.5
+ettin-encoder-17m n=65: ours-sdpa 0.00e+00  ours-eager 2.10e-05  hf eager-sdpa 2.10e-05  max|h| 19.8
+ettin-encoder-17m n=150: ours-sdpa 0.00e+00  ours-eager 3.53e-05  hf eager-sdpa 3.53e-05  max|h| 22.3
+ettin-encoder-17m n=300: ours-sdpa 0.00e+00  ours-eager 3.72e-05  hf eager-sdpa 3.72e-05  max|h| 19.4
+PASSED
+tests/test_t02_t03.py::test_t02_masked_prefix_equals_encoder T2 masked-prefix vs plain encoder: max|diff| 4.58e-05 (max|h| 114.4); prefix-content change: 0.00e+00
+PASSED
+tests/test_t02_t03.py::test_t03_fp32_spec_tolerance_report T3 fp32 records (att): max|diff| 5.72e-06
+T3 fp32 records (val): max|diff| 1.19e-05
+T3 fp32 profiles: max|diff| 1.05e-05
+T3 fp32 temporary items: max|diff| 5.96e-06
+T3 fp32 segment tokens: max|diff| 1.53e-05
+T3 fp32 memory tokens: max|diff| 1.24e-05
+T3 fp32 unit gate logit: max|diff| 3.58e-07
+T3 fp32 address log-probs: max|diff| 1.91e-06
+T3 fp32 temporary address: max|diff| 7.15e-07
+PASSED
+tests/test_t02_t03.py::test_t03_fp64_exact_equivariance T3 fp64 records (att): max|diff| 2.13e-14
+T3 fp64 records (val): max|diff| 1.07e-14
+T3 fp64 profiles: max|diff| 2.13e-14
+T3 fp64 temporary items: max|diff| 4.26e-14
+T3 fp64 segment tokens: max|diff| 6.66e-14
+T3 fp64 memory tokens: max|diff| 2.13e-14
+T3 fp64 unit gate logit: max|diff| 1.11e-16
+T3 fp64 address log-probs: max|diff| 1.33e-15
+T3 fp64 temporary address: max|diff| 1.44e-15
+PASSED
+tests/test_t04_t07.py::test_t04_addressing_distribution T4 logsumexp over Omega = 0.00e+00 (K=4, E=3)
+T4 factorisation max|log-prob diff| = 0.00e+00
+PASSED
+tests/test_t04_t07.py::test_t04_absent_records_and_new_entity[store0] T4 store size 0: |Omega| = 2, P(NEW-ENT) = 0.203
+PASSED
+tests/test_t04_t07.py::test_t04_absent_records_and_new_entity[store1] T4 store size 1: |Omega| = 3, P(NEW-ENT) = 0.330
+PASSED
+tests/test_t04_t07.py::test_t04_absent_records_and_new_entity[store2] T4 store size 1: |Omega| = 4, P(NEW-ENT) = 0.305
+PASSED
+tests/test_t04_t07.py::test_t05_no_persistent_ops_when_gate_closed T5 gate closed: no WRITE/UPDATE/MERGE_INTO/MERGE/PROMOTE (D1); remaining proposals: {}
+PASSED
+tests/test_t04_t07.py::test_t05_temp_to_persistent_only_by_promote T5 gate open: 5 PROMOTE operations, every temp-sourced write accompanied by PROMOTE
+PASSED
+tests/test_t04_t07.py::test_t05_session_boundary_resets T5 session boundary: h reset, dropped ['t0', 't2']
+PASSED
+tests/test_t04_t07.py::test_t05_until_and_cap_expiry PASSED
+tests/test_t04_t07.py::test_t05_merge_needs_licensing_gated_unit T5/D1 merge head saturated: gate closed -> 0 merges; gated unit on the user's profile -> 2 merge(s), all on user records
+PASSED
+tests/test_t04_t07.py::test_t06_thresholds_respected T6 gate=0.49 (theta_W=0.5): persistent proposals 0
+T6 gate=0.5 (theta_W=0.5): persistent proposals 45
+PASSED
+tests/test_t04_t07.py::test_t06_cost_weighted_gradient T6 gradient FP side / plain BCE = 3.0000
+PASSED
+tests/test_t04_t07.py::test_t07_contradiction_maps_to_challenge T7 relation SAME -> MERGE_INTO challenge=None
+T7 relation UPDATE -> UPDATE challenge=False
+T7 relation CORRECTION -> UPDATE challenge=False
+T7 relation CONTRADICTION -> UPDATE challenge=True
+PASSED
+tests/test_t04_t07.py::test_t07_simulator_challenge_then_replace T7 simulator: challenged once, replaced on the second challenge (brain.js CHALLENGE_TO_SWITCH = 2)
+PASSED
+tests/test_t08_t12.py::test_t08_serialisation_round_trip T8 state with 1 items, 10514 bytes JSON; exact round trip; identical next step
+PASSED
+tests/test_t08_t12.py::test_t09_determinism T9 two fresh models and a warm-cache rerun: identical outputs over 6 segments
+PASSED
+tests/test_t08_t12.py::test_t09_independent_of_cache_history T9 record encoding independent of batch composition; cold-cache and differently-warmed outputs identical
+PASSED
+tests/test_t08_t12.py::test_t10_checkpoint_restore_mid_episode T10 6 segments uninterrupted == 3 segments + checkpoint + 3 segments in a fresh model (identical)
+PASSED
+tests/test_t08_t12.py::test_t11_parameter_counts[ettin-encoder-32m-39256598] T11 ettin-encoder-32m: total 39,256,598 (spec 39,256,598); encoder 31,883,136; shared heads 4,535,702 (spec 4,535,702); memory pathway 2,837,760 (spec 2,837,760)
+PASSED
+tests/test_t08_t12.py::test_t11_parameter_counts[ettin-encoder-17m-20699030] T11 ettin-encoder-17m: total 20,699,030 (spec 20,699,030); encoder 16,797,440; shared heads 2,632,342 (spec 2,632,342); memory pathway 1,269,248 (spec 1,269,248)
+PASSED
+tests/test_t08_t12.py::test_t11_head_norm_adds_no_parameters T11/D2 head_norm: parameters unchanged (39,256,598); head inputs normalised; memory tokens raw
+PASSED
+tests/test_t08_t12.py::test_t12_brain_rules T12 Brain simulator: added/ignored/reinforced/confirmed/replaced/challenged/kept/merged/forgotten/evicted all as specified
+PASSED
+=============================== warnings summary ===============================
+tests/test_s1_training.py::test_s1_gradients_and_overfit
+  /home/user/codeply-craft/research/paste/tests/test_s1_training.py:92: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+  Consider using tensor.detach() first. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:820.)
+    first = float(loss)
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 27 passed, 1 warning in 58.98s ========================

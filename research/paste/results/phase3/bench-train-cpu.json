@@ -1,0 +1,15 @@
+{
+ "device": "cpu",
+ "threads": 4,
+ "backbone": "ettin-encoder-32m",
+ "episodes_timed": 10,
+ "segments_timed": 84,
+ "paste_segments_per_s": 3.48,
+ "paste_ms_per_segment": 287.5,
+ "encoder_fwd_bwd_ms_at_tokens": {
+  "76": 117.8,
+  "175": 195.3,
+  "264": 185.2
+ },
+ "note": "batch = 1 episode; teacher forced; heads run per unit in Python; M1c not built: encoder-only numbers are a lower bound"
+}

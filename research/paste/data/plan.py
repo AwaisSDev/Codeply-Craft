@@ -43,7 +43,7 @@ CATEGORIES = ["new_info", "repeated", "preference_change", "contradiction", "ide
 WEIGHTS = {"write": 10, "write_implied": 2, "repeat": 4, "change": 5, "contradict": 3, "correct": 3, "alias": 4,
            "lookalike": 3, "temp_plan": 6, "temp_update": 3, "temp_done": 3, "frame_open": 2, "frame_cont": 3,
            "frame_close": 1, "joke": 3, "quote": 2, "uncertain": 3,     # offer/promote/decline are structural (segment end/start)
-           "forget": 2, "forget_profile": 0.4, "retrieve": 4, "merge": 1.5, "chitchat": 3, "real_distractor": 2,
+           "forget": 2, "forget_profile": 0.4, "retrieve": 4, "merge": 4, "chitchat": 3, "real_distractor": 2,
            "project_write": 4, "project_change": 2}
 
 DAY, HOUR, MIN = 86400.0, 3600.0, 60.0
@@ -112,7 +112,7 @@ class Planner:
                     e.values[a] = r.choice(O.values(a, self.split))
         # merge scenario: the same person stored under two profiles with a duplicate record
         self.merge_pair = None
-        if r.random() < 0.3:
+        if r.random() < 0.6:                      # owner decision 2026-11-02: 60 % of episodes (was 30 %)
             p = r.choice([e for e in ents if e.kind == "person"])
             role2 = r.choice([x for x in (ROLES_F if p.gender == "f" else ROLES_M) if x != p.role])
             dup = Entity(f"{role2}:{p.name}#dup", "person", p.name, role2, p.gender)

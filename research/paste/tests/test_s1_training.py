@@ -38,7 +38,7 @@ def _gold(adapter, text_user, units, ments=()):
 def toy_episode(adapter):
     K, E = len(STORE), 3
     s1, g1 = _gold(adapter, "My sister Ayesha moved to Lahore.", [dict(text="Lahore", route="PERSIST", kind=KINDS.index("fact"),
-              cert=CERTS.index("stated"), attr=ATTRS.index("attr_001"), src=-1, omega=1, rel=RELS.index("UPDATE"))], ["sister Ayesha"])
+              cert=CERTS.index("stated"), attr=ATTRS.index("home city"), src=-1, omega=1, rel=RELS.index("UPDATE"))], ["sister Ayesha"])
     s2, g2 = _gold(adapter, "I'm calling the bank at 3pm today.", [dict(text="calling the bank at 3pm", route="TEMP", kind=KINDS.index("context"),
               cert=CERTS.index("temporary"), attr=ATTRS.index("OTHER"), ttype=TTYPES.index("TASK"), ttl=TTLS.index("UNTIL"), tmp=0)])
     s3, g3 = _gold(adapter, "Actually make that 5pm.", [dict(text="5pm", route="TEMP", kind=KINDS.index("context"),

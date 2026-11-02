@@ -123,31 +123,43 @@ class PasteModel(nn.Module):
                 self._ctx_cache[t] = self.enc.encode_ids(torch.tensor([t]))[0].clone()
         return [self._ctx_cache[tuple(t)] for t in texts]
 
-    def _static(self, ids, idx):
-        return self.enc.embed(torch.tensor(ids)[idx]).mean(0)
+    def _static_all(self, s: StepInput):
+        """Every static pooled embedding of a step from ONE embedding lookup (a lookup per record made the backward
+        pass build a dense 19M-element embedding gradient per call; Phase 4 speed measurement). Same values."""
+        spans, ids = [], []
+        for ids_, idx in ([(t.ids, t.idx) for t in s.temps] + [(p.ids, p.idx) for p in s.profiles]
+                          + [(r.ids, r.att) for r in s.records] + [(r.ids, r.val) for r in s.records]):
+            sel = [ids_[i] for i in idx]
+            spans.append((len(ids), len(ids) + len(sel))); ids.extend(sel)
+        n_seg = len(s.seg_ids)
+        emb = self.enc.embed(torch.tensor(ids + list(s.seg_ids)))
+        pooled = [emb[a:b].mean(0) for a, b in spans]
+        T, E, K = len(s.temps), len(s.profiles), len(s.records)
+        return (pooled[:T], pooled[T:T + E], pooled[T + E:T + E + K], pooled[T + E + K:], emb[len(ids):len(ids) + n_seg])
 
     # ---- input assembly (§4.1-4.4) ------------------------------------------------------
-    def prefix(self, s: StepInput):
+    def prefix(self, s: StepInput, static=None):
         e = self.emb
         g = e["group"].weight
+        st_t, st_p, st_a, st_v, _ = static if static is not None else self._static_all(s)
         h = s.h if s.h is not None else self.h0
         mem = self.W_h(h) + e["mem_index"].weight + e["dt"].weight[s.dt]
         parts = [mem]
         if s.temps:
-            st = torch.stack([self._static(t.ids, t.idx) for t in s.temps])
+            st = torch.stack(st_t)
             z = torch.stack([t.z for t in s.temps])
             tt = torch.tensor([t.ttype for t in s.temps]); ta = torch.tensor([t.tage for t in s.temps])
             parts.append(st + self.W_z(z) + e["temp_type"](tt) + e["temp_age"](ta) + g[0])
         prof_static = prof_ctx = None
         if s.profiles:
-            prof_static = torch.stack([self._static(p.ids, p.idx) for p in s.profiles])
+            prof_static = torch.stack(st_p)
             ctx = self._ctx([p.ids for p in s.profiles])
             prof_ctx = torch.stack([c[p.idx].mean(0) for c, p in zip(ctx, s.profiles)])
             parts.append(prof_static + self.W_prof(prof_ctx) + g[1])
         if s.records:
             rp = torch.tensor([r.prof for r in s.records])
-            a0 = torch.stack([self._static(r.ids, r.att) for r in s.records])
-            v0 = torch.stack([self._static(r.ids, r.val) for r in s.records])
+            a0 = torch.stack(st_a)
+            v0 = torch.stack(st_v)
             ctx = self._ctx([r.ids for r in s.records])
             aL = torch.stack([c[r.att].mean(0) for c, r in zip(ctx, s.records)])
             vL = torch.stack([c[r.val].mean(0) for c, r in zip(ctx, s.records)])
@@ -162,8 +174,9 @@ class PasteModel(nn.Module):
         """Batched encoder pass. prefix_masked=True hides every prefix token from the segment (test T2)."""
         seqs, plens, nlens = [], [], []
         for s in batch:
-            p = self.prefix(s)
-            seg = self.enc.embed(torch.tensor(s.seg_ids))
+            static = self._static_all(s)
+            p = self.prefix(s, static)
+            seg = static[4]
             seqs.append(torch.cat([p, seg])); plens.append(p.shape[0]); nlens.append(seg.shape[0])
         B, N, d = len(batch), max(x.shape[0] for x in seqs), self.cfg.d
         x0 = torch.zeros(B, N, d)

@@ -5,9 +5,13 @@ from dataclasses import dataclass, field
 KINDS = ["preference", "fact", "routine", "style", "decision", "idea", "requirement", "todo", "context"]
 CERTS = ["stated", "implied", "temporary", "joking", "hypothetical", "quoting"]
 IGNORED_CERTS = {"joking", "hypothetical", "quoting"}
-# Attribute ontology: |A| = 100 classes + OTHER (spec §5.2). The class names are fixed in
-# DATASET-DESIGN.md (Phase 4); until then the prototype uses positional placeholders.
-ATTRS = [f"attr_{i:03d}" for i in range(100)] + ["OTHER"]
+# Attribute ontology: |A| = 100 classes + OTHER (spec §5.2), fixed in data/ontology.py (DATASET-DESIGN.md §3).
+try:
+    from data.ontology import NAMES as _NAMES
+    ATTRS = list(_NAMES) + ["OTHER"]
+except ImportError:                      # the model package alone (no data package on the path)
+    ATTRS = [f"attr_{i:03d}" for i in range(100)] + ["OTHER"]
+assert len(ATTRS) == 101
 TTYPES = ["PLAN", "TASK", "CONTEXT", "REFERENCE", "FRAME", "PENDING"]
 TTLS = ["SESSION", "UNTIL", "OPEN"]
 ROUTE3 = ["TEMP", "IGNORE", "FORGET"]
