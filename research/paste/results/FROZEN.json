@@ -1,0 +1,38 @@
+{
+ "version": 1,
+ "frozen_at_utc": "2026-11-02",
+ "generator_commit": "7300129003ee67418c7326b427a620800e179f61",
+ "seeds": {
+  "test": 20261102,
+  "stress": 20261103
+ },
+ "private_location": "hf://datasets/Awais1290/paste-data/frozen-v1/",
+ "files": {
+  "stress-plans.jsonl": {
+   "sha256": "23b7384380c4207f8f30d3b8b263e94ffe1ab984b28b52ac31d4c7413236b96b",
+   "episodes": 200
+  },
+  "stress-programmatic.jsonl": {
+   "sha256": "7e12e7cac9ad9bf586f71cd572a7db40436625a766de7ad721ae7acb42905d20",
+   "episodes": 200
+  },
+  "test-plans.jsonl": {
+   "sha256": "eaa19af054dada11a903d832f7f92121d58c40bbf1746e73a082a1e5e778a206",
+   "episodes": 600
+  },
+  "test-programmatic.jsonl": {
+   "sha256": "759ff5a2e0ba7f880f2672e001b00a588e3ff5fff40f87d2caca12271abbbc48",
+   "episodes": 600
+  }
+ },
+ "rules": [
+  "Loaded only by evaluate.py --final, after the system's checkpoint, thresholds and these hashes are committed in results/final/FROZEN-RUNS.json",
+  "Never used for training, model selection, calibration, early stopping or the D2 choice",
+  "API wording of the same plans is added as version 2 of this record, with its own hashes"
+ ],
+ "power_check": {
+  "test_gold_persistent_ops": 5850,
+  "minimum": 3000,
+  "passed": true
+ }
+}
