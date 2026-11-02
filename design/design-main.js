@@ -668,4 +668,4 @@ function stopDesign(id) { const d = byId(id); if (d && d.sessionId) host.stopCha
 /** The session ids of every design chat (main.js keeps them out of Craft's lists). */
 function sessionIds() { return new Set(records().map((d) => d.sessionId).filter(Boolean)); }
 
-module.exports = { init, embed, setBounds, unembed, event, runs, sessionIds, KINDS, createDesign, sendTo, designState, buildFromPhone, stopDesign, pull, exportDesign, renderForLint, inlineHtml, isDesignFolder };
+module.exports = { init, embed, setBounds, unembed, event, runs, sessionIds, KINDS, newFolder, createDesign, sendTo, designState, buildFromPhone, stopDesign, pull, exportDesign, renderForLint, inlineHtml, isDesignFolder };

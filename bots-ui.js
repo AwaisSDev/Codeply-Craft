@@ -114,7 +114,7 @@
       const r = roleOf(el.dataset.id);
       showToast(b ? `${b.name} answers your next messages.` : r && r.id ? `${r.label} works on your next messages.` : 'Codeply picks the right specialist again.');
     }));
-    menu.querySelector('[data-act="manage"]').addEventListener('click', () => { closeMenu(); if (window.CraftCrew) window.CraftCrew.show(); else openModal(); });
+    menu.querySelector('[data-act="manage"]').addEventListener('click', () => { closeMenu(); openModal(); });
   }
 
   // ─── Modal ───────────────────────────────────────────────────────────────

@@ -1274,48 +1274,16 @@ function closeTasksModal() {
 }
 
 $('tasksBtn').addEventListener('click', openTasksModal);
-// ─── Crew tab ───────────────────────────────────────────────────────────────
-// Crew opens inside this window, over the main area, instead of in a window of
-// its own. The sidebar button then reads "Craft" and switches back.
-// Design (design/) works the same way: its page laid over the main area.
-let crewMode = false;
-let designMode = false;
-// Crew and Design take the whole window under the title bar (their own sidebars have the switch back).
+// ─── One view ───────────────────────────────────────────────────────────────
+// The window has one view, Codeply's chat. The old Agents and Design tabs are gone (Wisp and
+// its specialists do the agents' work, and Design is a mode in the + menu).
 function crewArea() {
   const top = Math.round(document.querySelector('.titlebar').getBoundingClientRect().bottom);
   return { x: 0, y: top, width: window.innerWidth, height: window.innerHeight - top };
 }
-function paintCrewBtn() {
-  const cur = designMode ? 'design' : crewMode ? 'crew' : 'craft';
-  document.querySelectorAll('.app-switch-btn').forEach((b) => {
-    const on = b.dataset.app === cur;
-    b.classList.toggle('on', on);
-    b.setAttribute('aria-selected', String(on));
-  });
-}
-function setCrewMode(on) {
-  if (!api || !api.crewEmbed || crewMode === on) return;
-  if (on && designMode) setDesignMode(false);
-  crewMode = on;
-  document.body.classList.toggle('crew-mode', on);
-  paintCrewBtn();
-  if (on) api.crewEmbed(crewArea()); else api.crewUnembed();
-}
-function setDesignMode(on) {
-  if (!api || !api.designEmbed || designMode === on) return;
-  if (on && crewMode) setCrewMode(false);
-  designMode = on;
-  document.body.classList.toggle('design-mode', on);
-  paintCrewBtn();
-  if (on) api.designEmbed(crewArea()); else api.designUnembed();
-}
-function setAppView(name) {
-  if (name === 'crew') { setDshShown(false); setCrewMode(true); }
-  else if (name === 'design') { setDshShown(false); setDesignMode(true); }
-  else { setCrewMode(false); setDesignMode(false); setDshShown(engine === 'dsh'); }
-}
+function setAppView() { setDshShown(engine === 'dsh'); }
 // ─── Engine switch: Classic (codeply-cli) or DSH (craft-dsh, see dsh-engine.js) ───
-// DSH is laid over the main area like Crew and Design, only while Craft itself is showing.
+// DSH is laid over the main area.
 let engine = 'classic';
 let dshShown = false;
 let dshSeq = 0;
@@ -1371,18 +1339,12 @@ if (api && api.dshStatus) {
     if (!s || s.engine !== 'dsh') return;
     engine = 'dsh';
     paintEngineBtn();
-    if (!crewMode && !designMode) setDshShown(true);
+    setDshShown(true);
   }).catch(() => {});
 }
-window.CraftCrew = { show: () => setAppView('crew'), hide: () => setAppView('craft'), isOpen: () => crewMode };
-window.CraftDesign = { show: () => setAppView('design'), hide: () => setAppView('craft'), isOpen: () => designMode };
-document.querySelectorAll('.app-switch-btn').forEach((b) => b.addEventListener('click', () => setAppView(b.dataset.app)));
-if (api && api.onCrewShow) api.onCrewShow(() => setAppView('crew'));
-if (api && api.onCrewHide) api.onCrewHide(() => setAppView('craft'));
-if (api && api.onDesignShow) api.onDesignShow(() => setAppView('design'));
-if (api && api.onDesignHide) api.onDesignHide(() => setAppView('craft'));
+if (api && api.onCrewShow) api.onCrewShow(() => { if (window.CraftWispUI) window.CraftWispUI.openTeam(); });
 if (api && api.onOpenConnect) api.onOpenConnect(() => openConnectApps());
-window.addEventListener('resize', () => { if (crewMode) api.crewBounds(crewArea()); if (designMode) api.designBounds(crewArea()); if (dshShown) api.dshBounds(dshArea()); });
+window.addEventListener('resize', () => { if (dshShown) api.dshBounds(dshArea()); });
 $('tasksCloseBtn').addEventListener('click', closeTasksModal);
 $('tasksBackdrop').addEventListener('click', (e) => { if (e.target === $('tasksBackdrop')) closeTasksModal(); });
 
@@ -1759,6 +1721,13 @@ function closeAccountMenu() {
   if (accountMenuEl) { accountMenuEl.remove(); accountMenuEl = null; }
 }
 
+async function signOut() {
+  await api.logout();
+  state.user = null;
+  renderUser();
+  showView('viewLogin');
+}
+
 function openAccountMenu() {
   closeAccountMenu();
   if (!state.user) return;
@@ -1770,6 +1739,10 @@ function openAccountMenu() {
       <div class="account-menu-email">${esc(state.user.email)}</div>
     </div>
     <div class="menu-sep"></div>
+    <button class="menu-item" data-action="settings">
+      ${icon('settings')}
+      Settings
+    </button>
     <button class="menu-item" data-action="usage">
       ${icon('gauge')}
       Usage
@@ -1782,21 +1755,6 @@ function openAccountMenu() {
       ${icon('users')}
       Specialists
     </button>
-    <div class="menu-sep"></div>
-    <div class="account-menu-theme-row">
-      <span>Theme</span>
-      <div class="theme-toggle segmented segmented-sm" id="themeToggle" role="group" aria-label="Theme">
-        <button type="button" class="theme-opt segmented-item" data-theme-choice="system" title="Match system">
-          ${icon('monitor', 'ico-sm')}
-        </button>
-        <button type="button" class="theme-opt segmented-item" data-theme-choice="light" title="Light">
-          ${icon('sun', 'ico-sm')}
-        </button>
-        <button type="button" class="theme-opt segmented-item" data-theme-choice="dark" title="Dark">
-          ${icon('moon', 'ico-sm')}
-        </button>
-      </div>
-    </div>
     <div class="menu-sep"></div>
     <button class="menu-item" data-action="logout">
       ${icon('logout')}
@@ -1812,19 +1770,173 @@ function openAccountMenu() {
   menu.querySelector('[data-action="connect"]').addEventListener('click', openConnectApps);
   menu.querySelector('[data-action="wisp"]').addEventListener('click', () => { closeAccountMenu(); if (window.CraftWispUI) window.CraftWispUI.openTeam(); });
   menu.querySelector('[data-action="usage"]').addEventListener('click', () => { closeAccountMenu(); window.CraftUsage && window.CraftUsage.open({ name: $('userName').textContent, email: state.user.email }); });
-  menu.querySelector('[data-action="logout"]').addEventListener('click', async () => {
-    closeAccountMenu();
-    await api.logout();
-    state.user = null;
-    renderUser();
-    showView('viewLogin');
-  });
-  menu.querySelectorAll('.theme-opt').forEach((btn) => {
-    btn.addEventListener('click', () => applyTheme(btn.dataset.themeChoice));
-  });
-  syncThemeToggleUI();
+  menu.querySelector('[data-action="settings"]').addEventListener('click', () => { closeAccountMenu(); openSettings(); });
+  menu.querySelector('[data-action="logout"]').addEventListener('click', () => { closeAccountMenu(); signOut(); });
   accountMenuEl = menu;
 }
+
+// ─── Settings ────────────────────────────────────────────────────────────────
+// One page for every setting, like ChatGPT's: the theme and reading text, Codeply and
+// its specialists, the top bar and voice (the tray menu's switches), and the account.
+// Each change applies at once; there is nothing to save.
+const SETTINGS_TABS = [
+  ['general', 'settings', 'General'],
+  ['appearance', 'sun', 'Appearance'],
+  ['codeply', 'sparkle', 'Codeply'],
+  ['voice', 'mic', 'Top bar and voice'],
+  ['account', 'user', 'Account'],
+];
+let settingsTab = 'general';
+let settingsData = null;
+
+function setRow(title, desc, control) {
+  return `<div class="set-row"><div class="set-text"><div class="set-title">${esc(title)}</div>${desc ? `<div class="set-desc">${esc(desc)}</div>` : ''}</div><div class="set-ctl">${control}</div></div>`;
+}
+const setSwitch = (key, on, label) => `<input type="checkbox" class="switch" role="switch" data-set="${key}" aria-label="${esc(label)}"${on ? ' checked' : ''}>`;
+const setButton = (act, label) => `<button type="button" class="btn btn-secondary btn-sm" data-set-act="${act}">${esc(label)}</button>`;
+const has = (v) => v !== null && v !== undefined;
+function setSeg(key, options, current) {
+  return `<div class="segmented segmented-sm set-seg" role="radiogroup" data-seg="${key}">${options.map(([v, label, ic]) =>
+    `<button type="button" role="radio" class="segmented-item${v === current ? ' active' : ''}" data-val="${v}" aria-checked="${v === current}">${ic ? icon(ic, 'ico-sm') : ''}${esc(label)}</button>`).join('')}</div>`;
+}
+
+function settingsPane(tab) {
+  const d = settingsData || {};
+  const key = d.hotkey || 'Alt+C';
+  if (tab === 'general') {
+    return [
+      has(d.startWithSystem) ? setRow('Start with Windows', `Codeply waits quietly in the tray, so ${key} works right away.`, setSwitch('startWithSystem', d.startWithSystem, 'Start with Windows')) : '',
+      setRow('Keep this PC awake', 'While Codeply is open, so your phone can always reach it.', setSwitch('keepAwake', d.keepAwake, 'Keep this PC awake')),
+      has(d.convert) ? setRow('Convert files with drag + Shift', 'Hold Shift while dragging a file to turn it into another format.', setSwitch('convert', d.convert, 'Convert files')) : '',
+      setRow('Use on your phone', 'Drive this PC from mobile.codeply.app with the same account.', setButton('phone', 'Set up')),
+    ].join('');
+  }
+  if (tab === 'appearance') {
+    const t = window.CraftRich ? window.CraftRich.getType() : { size: 14, font: 'system', spacing: 'normal', width: 'normal' };
+    return [
+      setRow('Theme', '', setSeg('theme', [['system', 'System', 'monitor'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']], getThemeChoice())),
+      setRow('Text size', 'How big the chat reads.', `<div class="set-range"><span class="rx-a-sm">A</span><input type="range" min="12" max="22" step="1" value="${t.size}" data-type-size aria-label="Text size"><span class="rx-a-lg">A</span><span class="set-val">${t.size}px</span></div>`),
+      setRow('Font', '', setSeg('font', [['system', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono']], t.font)),
+      setRow('Line spacing', '', setSeg('spacing', [['compact', 'Compact'], ['normal', 'Normal'], ['relaxed', 'Relaxed']], t.spacing)),
+      setRow('Chat width', '', setSeg('width', [['normal', 'Normal'], ['wide', 'Wide'], ['full', 'Full']], t.width)),
+      setRow('Reset text', 'Back to the default size, font and spacing.', setButton('type-reset', 'Reset')),
+    ].join('');
+  }
+  if (tab === 'codeply') {
+    const wisp = window.CraftWispUI;
+    return [
+      wisp ? setRow('Specialists', 'Codeply brings in specialists for the parts they know best, and keeps the ones that help.', setSwitch('wisp', wisp.enabled, 'Specialists')) : '',
+      wisp ? setRow('Your team', 'See, edit or remove the specialists Codeply works with.', setButton('team', 'Manage')) : '',
+      setRow('Models', 'Haze 2 picks the model for you, or use your own keys and local models.', setButton('models', 'Manage')),
+      setRow('Connected apps', 'Gmail, GitHub, Slack and more, for Codeply to use when you ask.', setButton('connect', 'Manage')),
+    ].join('');
+  }
+  if (tab === 'voice') {
+    return [
+      setRow('Show top bar', `The thin bar at the top of your screen. Click it, or press ${key}, to chat.`, setSwitch('topBar', d.topBar, 'Show top bar')),
+      has(d.voiceSpeaks) ? setRow('Voice speaks its answers', `Hold ${key} to talk, and Codeply answers out loud.`, setSwitch('voiceSpeaks', d.voiceSpeaks, 'Voice speaks its answers')) : '',
+      has(d.voiceActions) ? setRow('Voice can click and type for you', 'Lets voice mode open apps and fill things in on this PC.', setSwitch('voiceActions', d.voiceActions, 'Voice can click and type')) : '',
+    ].join('');
+  }
+  if (tab === 'account') {
+    return [
+      setRow('Signed in as', state.user ? state.user.email : '', ''),
+      setRow('Usage', 'What you have used today and this month.', setButton('usage', 'Open')),
+      setRow('Sign out', 'Signs this PC out of Codeply.', setButton('logout', 'Sign out')),
+    ].join('');
+  }
+  return '';
+}
+
+function drawSettings() {
+  const el = $('settingsBackdrop');
+  if (!el) return;
+  el.querySelectorAll('.settings-tab').forEach((b) => {
+    const on = b.dataset.tab === settingsTab;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+  });
+  const tab = SETTINGS_TABS.find((t) => t[0] === settingsTab);
+  el.querySelector('.settings-heading').textContent = tab ? tab[2] : 'Settings';
+  el.querySelector('.settings-pane').innerHTML = settingsPane(settingsTab);
+}
+
+function buildSettings() {
+  const el = document.createElement('div');
+  el.className = 'modal-backdrop hidden';
+  el.id = 'settingsBackdrop';
+  el.innerHTML = `
+    <div class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <nav class="settings-nav" role="tablist" aria-label="Settings">
+        <div class="settings-nav-title" id="settingsTitle">Settings</div>
+        ${SETTINGS_TABS.map(([id, ic, label]) => `<button type="button" class="settings-tab" role="tab" data-tab="${id}">${icon(ic)}<span>${esc(label)}</span></button>`).join('')}
+      </nav>
+      <div class="settings-main">
+        <div class="settings-top">
+          <div class="settings-heading"></div>
+          <button class="icon-btn icon-btn-sm modal-close" title="Close" aria-label="Close">${icon('close')}</button>
+        </div>
+        <div class="settings-pane"></div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('mousedown', (e) => { if (e.target === el) CraftModal.close(el); });
+  el.querySelector('.modal-close').addEventListener('click', () => CraftModal.close(el));
+  el.querySelectorAll('.settings-tab').forEach((b) => b.addEventListener('click', () => { settingsTab = b.dataset.tab; drawSettings(); }));
+  const pane = el.querySelector('.settings-pane');
+  pane.addEventListener('change', async (e) => {
+    const sw = e.target.closest('[data-set]');
+    if (!sw) return;
+    const k = sw.dataset.set;
+    if (k === 'wisp') {
+      if (api && api.wispSet) await api.wispSet(sw.checked);
+      if (window.CraftWispUI) await window.CraftWispUI.refresh();
+      return;
+    }
+    if (k === 'keepAwake' && $('keepAwakeToggle')) $('keepAwakeToggle').checked = sw.checked;
+    if (api && api.settingsSet) settingsData = await api.settingsSet(k, sw.checked);
+  });
+  pane.addEventListener('input', (e) => {
+    const r = e.target.closest('[data-type-size]');
+    if (!r || !window.CraftRich) return;
+    window.CraftRich.setType({ size: Number(r.value) });
+    r.parentElement.querySelector('.set-val').textContent = r.value + 'px';
+  });
+  pane.addEventListener('click', (e) => {
+    const opt = e.target.closest('.set-seg [data-val]');
+    if (opt) {
+      const k = opt.parentElement.dataset.seg;
+      if (k === 'theme') applyTheme(opt.dataset.val);
+      else if (window.CraftRich) window.CraftRich.setType({ [k]: opt.dataset.val });
+      drawSettings();
+      return;
+    }
+    const b = e.target.closest('[data-set-act]');
+    if (!b) return;
+    const act = b.dataset.setAct;
+    if (act === 'type-reset') { if (window.CraftRich) window.CraftRich.setType(null); drawSettings(); return; }
+    CraftModal.close(el);
+    if (act === 'phone') openRemoteModal();
+    else if (act === 'team') { if (window.CraftWispUI) window.CraftWispUI.openTeam(); }
+    else if (act === 'models') openModelsModal();
+    else if (act === 'connect') openConnectApps();
+    else if (act === 'usage') { if (window.CraftUsage) window.CraftUsage.open({ name: $('userName').textContent, email: state.user ? state.user.email : '' }); }
+    else if (act === 'logout') signOut();
+  });
+  return el;
+}
+
+async function openSettings(tab) {
+  if (tab) settingsTab = tab;
+  const el = $('settingsBackdrop') || buildSettings();
+  try { settingsData = api && api.settingsGet ? await api.settingsGet() : null; } catch { settingsData = null; }
+  drawSettings();
+  CraftModal.open(el);
+}
+// Ctrl+, opens Settings, like most apps.
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === ',' && state.user) { e.preventDefault(); openSettings(); }
+});
 
 $('sbUserBtn').addEventListener('click', (e) => {
   e.stopPropagation();
@@ -2908,7 +3020,7 @@ function openFolderMenu(anchor) {
 }
 
 // ─── Mode + bypass toggles (synced across both composers) ───────────────────
-const MODES = ['Build', 'Plan', 'Ask'];
+const MODES = ['Build', 'Plan', 'Ask', 'Design'];
 
 function syncMode() {
   document.querySelectorAll('[data-role="mode-name"]').forEach((el) => (el.textContent = state.mode));
@@ -2919,7 +3031,7 @@ function syncMode() {
     if (ic && ic.dataset.mode !== state.mode) ic.outerHTML = icon(MODE_INFO[state.mode][0]).replace('<svg', `<svg data-mode="${state.mode}"`);
   });
 }
-const MODE_INFO = { Build: ['hammer', 'Makes the changes'], Plan: ['list', 'Plans first, changes nothing'], Ask: ['chat', 'Answers, changes nothing'] };
+const MODE_INFO = { Build: ['hammer', 'Makes the changes'], Plan: ['list', 'Plans first, changes nothing'], Ask: ['chat', 'Answers, changes nothing'], Design: ['palette', 'Designs a page, app screen or slides'] };
 
 // ─── The + menu: files, the mode, research, cloud and a goal ────────────────
 // Like ChatGPT's: the row under the box keeps only what's on (the permission
@@ -4933,7 +5045,8 @@ const SLASH_COMMANDS = [
   { name: '/model', aliases: ['/models'], icon: 'sparkle', desc: 'Pick the model', run: (input) => openModelMenu(modelChipOf(input)) },
   { name: '/effort', aliases: ['/think'], icon: 'bulb', desc: 'How hard your own model thinks (Haze 2 sets its own)', run: (input) => openEffortMenu(modelChipOf(input)) },
   { name: '/usage', aliases: ['/limits'], icon: 'gauge', desc: 'See how much you have used', run: () => window.CraftUsage && window.CraftUsage.open({ name: $('userName').textContent, email: state.user ? state.user.email : '' }) },
-  { name: '/agents', aliases: ['/specialists'], icon: 'users', desc: 'Open Agents: Codeply and its specialists', run: () => { const b = document.querySelector('.app-switch-btn[data-app="crew"]'); if (b) b.click(); } },
+  { name: '/specialists', aliases: ['/agents', '/team'], icon: 'users', desc: 'The specialists Wisp works with', run: () => { if (window.CraftWispUI) window.CraftWispUI.openTeam(); } },
+  { name: '/settings', aliases: ['/preferences', '/theme'], icon: 'settings', desc: 'Theme, text, voice and every other setting', run: () => openSettings() },
   { name: '/loop', aliases: [], icon: 'refresh', desc: 'Run a prompt again every few minutes: /loop 10m check the build', run: (input) => fillCommand(input, '/loop ') },
   { name: '/schedule', aliases: ['/at'], icon: 'clock', desc: 'Run a task later: /schedule 5pm send me the summary', run: (input) => fillCommand(input, '/schedule ') },
   { name: '/review', aliases: [], icon: 'code', desc: 'Review the uncommitted changes like a strict senior reviewer', run: (input) => { input.value = '/review'; submitTyped(input); } },

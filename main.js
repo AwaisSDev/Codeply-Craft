@@ -3454,8 +3454,9 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
   const ok = await loadEngine();
   if (!ok) return { error: 'Engine not available.' };
   if (!cwd || !fs.existsSync(cwd)) return { error: 'Pick a project folder first.' };
-  // Design mode only for the Design tab's own chats (design is the design's id).
-  mode = design ? 'Design' : ['Build', 'Plan', 'Ask'].includes(mode) ? mode : 'Build';
+  // Design: the phone's Design tab (design is the design's id), or the + menu's Design mode in an
+  // ordinary chat, which designs in a folder of its own (see designDir below).
+  mode = design ? 'Design' : ['Build', 'Plan', 'Ask', 'Design'].includes(mode) ? mode : 'Build';
 
   // A custom slash command (.codeply/commands/<name>.md) becomes its prompt.
   // The chat shows what the user typed; the model gets the expanded text.
@@ -3484,7 +3485,7 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
   if (goal && mode !== 'Build') return { error: '/goal needs Build mode, since it changes files. Switch the mode chip to Build.' };
 
   // Cloud chip on: the message runs on GitHub Actions (cloud-desktop.js), not here.
-  const toCloud = !resume && cloudDesktop.wants(cwd);
+  const toCloud = !resume && mode !== 'Design' && cloudDesktop.wants(cwd);
   if (toCloud && images?.length) return { error: 'Cloud runs take text only for now. Turn the Cloud chip off to send images.' };
   if (toCloud && goal) return { error: '/goal runs on this PC. Turn the Cloud chip off to use it.' };
 
@@ -3513,6 +3514,13 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
   if (!resume && session.handoff) session.handoff = null; // a new message replaces a paused run
 
   if (!design) rememberProject(cwd); // a design's folder is not a project
+  // A Design chat stays under its folder in the sidebar, but the agent works in Documents/Codeply
+  // Designs/<name>, so its index.html never lands in a project.
+  let designDir = null;
+  if (mode === 'Design' && !design) {
+    if (!session.designDir || !fs.existsSync(session.designDir)) session.designDir = designTab.newFolder(typedText);
+    designDir = session.designDir;
+  }
   const detectedRole = resume ? (resume.state && resume.state.roleId) || null : rolesLib.detectRole(goal || text);
   if (detectedRole) session.stickyRole = detectedRole;
   session.lastRole = null; // every reply opens with a "Working as ..." badge
@@ -3531,6 +3539,7 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
   if (!resume) session.messages.push({ kind: 'user', text: typedText, ...(expandedText ? { expanded: expandedText } : {}), images: images?.length ? images : undefined, at: Date.now() });
   session.updatedAt = Date.now();
   session.cwd = cwd;
+  if (designDir) cwd = designDir;
   saveStore();
   syncSessionToDb(session);
   sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session), ...(resume ? {} : { message: session.messages.at(-1) }), origin: clientId });
@@ -3729,6 +3738,11 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
       // Paused or handed to the cloud: not finished, so no "done" notification.
       if (!session.handoff) notifyTaskComplete(session);
       cloudDesktop.afterLocalRun(cwd);
+      // The design on screen: its index.html in the chat's browser panel.
+      const designFile = designDir && path.join(designDir, 'index.html');
+      if (designFile && fs.existsSync(designFile) && !signal.aborted) {
+        try { const t = tabs.find((x) => x.kind === 'user' && x.designFor === session.id); if (t) { selectTab(t.id); if (!panelVisible) showCheckerPanel(); t.view.webContents.reload(); } else openTab(pathToFileURL(designFile).href).designFor = session.id; } catch (e) { console.warn('[design] preview:', e.message); }
+      }
       // Named once it has TITLE_AFTER messages from the user (a goal or a design is named already).
       const sent = session.messages.filter((m) => m.kind === 'user').length;
       if (sent === TITLE_AFTER && session.title === CASUAL_TITLE) generateSessionTitle(session);
@@ -4296,6 +4310,35 @@ ipcMain.handle('remote:setKeepAwake', (e, on) => {
   saveStore();
   updateSleepBlocker();
   return { ok: true };
+});
+// The Settings page (app.js openSettings): the tray menu's switches and keep-awake, in one place.
+// null means this PC doesn't have that one (voice without its model, a dev build's login item).
+function appSettings() {
+  const voice = voiceMode.available();
+  return {
+    hotkey: drop.hotkeyLabel(),
+    topBar: !island.isHidden(),
+    voiceSpeaks: voice ? !voiceMode.isMuted() : null,
+    voiceActions: voice && voiceMode.canAct() ? voiceMode.actionsOn() : null,
+    convert: convertWheel.trayItems().length ? convertWheel.isEnabled() : null,
+    startWithSystem: app.isPackaged ? startsWithSystem() : null,
+    keepAwake: !!store.keepAwake,
+  };
+}
+const SETTERS = {
+  topBar: (on) => island.setHidden(!on),
+  voiceSpeaks: (on) => voiceMode.setMuted(!on),
+  voiceActions: (on) => voiceMode.setActions(on),
+  convert: (on) => convertWheel.setEnabled(on),
+  startWithSystem: (on) => setStartWithSystem(on),
+  keepAwake: (on) => { store.keepAwake = on; saveStore(); updateSleepBlocker(); },
+};
+ipcMain.handle('settings:get', () => appSettings());
+ipcMain.handle('settings:set', (e, { key, on } = {}) => {
+  if (!Object.hasOwn(SETTERS, key)) return appSettings();
+  SETTERS[key](!!on);
+  buildTrayMenu();
+  return appSettings();
 });
 // Only our own phone-app address and ChatGPT's usage settings are ever opened this way.
 ipcMain.handle('shell:openExternal', (e, url) => {

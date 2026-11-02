@@ -143,6 +143,8 @@ contextBridge.exposeInMainWorld('craft', {
   retryUpdate: () => ipcRenderer.invoke('update:retry'),
   onUpdateState: (cb) => ipcRenderer.on('update:state', (e, data) => cb(data)),
   setKeepAwake: (on) => ipcRenderer.invoke('remote:setKeepAwake', !!on),
+  settingsGet: () => ipcRenderer.invoke('settings:get'),
+  settingsSet: (key, on) => ipcRenderer.invoke('settings:set', { key, on: !!on }),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   onRemoteServerError: (cb) => ipcRenderer.on('remote:server-error', (e, data) => cb(data)),
   stop: (sessionId) => ipcRenderer.send('chat:stop', sessionId),

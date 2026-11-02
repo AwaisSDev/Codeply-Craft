@@ -529,5 +529,12 @@ code,pre{font-family:var(--mono);font-size:12.5px}
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && typePop) closeTypePop(); });
   window.addEventListener('blur', closeTypePop);
 
-  window.CraftRich = { render, inline: (s) => inline(esc(s)), widgetDoc, applyType, getType: () => ({ ...type }) };
+  // The Settings page changes the same text settings (null: back to the defaults).
+  function setType(patch) {
+    type = patch ? { ...type, ...patch } : { ...TYPE_DEFAULT };
+    applyType(type);
+    saveType(type);
+    if (typePop) drawTypePop();
+  }
+  window.CraftRich = { render, inline: (s) => inline(esc(s)), widgetDoc, applyType, getType: () => ({ ...type }), setType };
 })();
