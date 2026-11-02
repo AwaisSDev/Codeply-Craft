@@ -171,6 +171,9 @@ def main():
     ap.add_argument("--out")
     ap.add_argument("--max-usd", type=float, default=0.0)
     ap.add_argument("--batch-id")
+    ap.add_argument("--ledger", help="JSON budget ledger: {budget_usd, spent_usd, batches: [...]}; enforces a cumulative cap")
+    ap.add_argument("--only-ids", help="file with one plan id per line (retry of failed episodes)")
+    ap.add_argument("--tag", default="api", help="output name: <split>-<tag>.jsonl")
     ap.add_argument("--max-tokens", type=int, default=7000, help="per-request output ceiling (thinking + JSON); bounds the worst-case cost")
     ap.add_argument("--output-tokens-per-episode", type=int, default=4000,
                     help="assumed output incl. thinking, for the estimate (measured in the run)")
@@ -178,6 +181,10 @@ def main():
     import anthropic
     client = anthropic.Anthropic()
     plans = [json.loads(l) for l in open(a.plans)]
+    if a.only_ids:
+        keep = {l.strip() for l in open(a.only_ids) if l.strip()}
+        plans = [p for p in plans if p["id"] in keep]
+    ledger = json.load(open(a.ledger)) if a.ledger and os.path.exists(a.ledger) else None
     pin, pout = PRICES[a.model]
     if a.cmd == "estimate":
         tot = 0
@@ -205,6 +212,11 @@ def main():
         print(f"input tokens {tot_in}; worst-case batch cost ${worst:.2f} (cap ${a.max_usd:.2f})")
         if worst > a.max_usd:
             sys.exit("worst-case cost exceeds the approved cap; nothing submitted")
+        if ledger is not None:
+            pending = sum(b["worst_usd"] for b in ledger["batches"] if b.get("actual_usd") is None)
+            if ledger["spent_usd"] + pending + worst > ledger["budget_usd"]:
+                sys.exit(f"ledger: spent ${ledger['spent_usd']:.2f} + pending worst ${pending:.2f} + this worst ${worst:.2f} "
+                         f"> budget ${ledger['budget_usd']:.2f}; nothing submitted")
         from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
         from anthropic.types.messages.batch_create_params import Request
         reqs = [Request(custom_id=p["id"], params=MessageCreateParamsNonStreaming(**params(p, a.model, a.effort, a.max_tokens))) for p in plans]
@@ -213,6 +225,10 @@ def main():
         json.dump({"batch_id": batch.id, "model": a.model, "effort": a.effort, "n": len(reqs), "max_usd": a.max_usd,
                    "max_tokens": a.max_tokens, "input_tokens_counted": tot_in, "worst_case_usd": round(worst, 2)},
                   open(os.path.join(a.out, "batch.json"), "w"))
+        if ledger is not None:
+            ledger["batches"].append({"batch_id": batch.id, "plans": os.path.basename(a.plans), "n": len(reqs), "worst_usd": round(worst, 2),
+                                      "actual_usd": None, "out": a.out})
+            json.dump(ledger, open(a.ledger, "w"), indent=1)
         print(f"batch {batch.id} submitted ({len(reqs)} requests)")
         return
     # collect
@@ -244,11 +260,19 @@ def main():
             fails.append({"id": pid, "why": str(e)[:300]})
     raw.close()
     cost = (usage_in / 1e6 * pin + usage_out / 1e6 * pout) / 2
-    with open(os.path.join(a.out, "pilot-api.jsonl"), "w") as f:
+    split = plans[0]["id"].split("-")[0] if plans else "unknown"
+    with open(os.path.join(a.out, f"{split}-{a.tag}.jsonl"), "w") as f:
         for ep in ok:
             f.write(json.dumps(ep, default=sorted) + "\n")
     json.dump({"ok": len(ok), "failed": len(fails), "failures": fails, "input_tokens": usage_in, "output_tokens": usage_out,
                "usd_batch": round(cost, 4)}, open(os.path.join(a.out, "collect.json"), "w"), indent=1)
+    with open(os.path.join(a.out, "failed-ids.txt"), "w") as f:
+        f.write("".join(x["id"] + "\n" for x in fails))
+    if ledger is not None:
+        for b in ledger["batches"]:
+            if b["batch_id"] == meta["batch_id"] and b.get("actual_usd") is None:
+                b["actual_usd"] = round(cost, 4); ledger["spent_usd"] = round(ledger["spent_usd"] + cost, 4)
+        json.dump(ledger, open(a.ledger, "w"), indent=1)
     print(json.dumps({"ok": len(ok), "failed": len(fails), "input_tokens": usage_in, "output_tokens": usage_out, "usd_batch": round(cost, 4)}))
 
 
