@@ -46,13 +46,13 @@ class BrainSim:
             self.log.append(("evicted", victim["id"]))
 
     # ---- operations -------------------------------------------------------------------------
-    def add(self, entity, profile_text, payload, provenance="spurious", locked=False):
+    def add(self, entity, profile_text, payload, provenance="spurious", locked=False, rid=None):
         why = self._ignored(payload)
         if why:
             self.log.append(("ignored", why)); return {"action": "ignored", "why": why}
         self.t += 1
         stated = payload.get("certainty") == "stated"
-        rid = self._new_id()
+        rid = rid or self._new_id()                        # rid: the dataset generator keeps gold fact ids as record ids
         self.records[rid] = {"id": rid, "entity": entity, "profile_text": profile_text, "attribute": payload["attribute"],
                              "value": payload["value"], "kind": payload.get("kind", "fact"),
                              "status": "confirmed" if stated else "tentative", "confidence": 0.8 if stated else 0.5,
