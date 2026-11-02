@@ -68,144 +68,9 @@ class Encoded:
 
 
 # ---------------------------------------------------------------------------------------------
-class PasteModel(nn.Module):
-    def __init__(self, cfg: PasteConfig, encoder: ModernBert):
-        super().__init__()
-        self.cfg, self.enc = cfg, encoder
-        d = cfg.d
-        self.heads = SharedHeads(cfg)
-        # memory pathway (PASTE-only; §4, §5.11-5.12)
-        self.W_h, self.W_z, self.W_prof = nn.Linear(d, d), nn.Linear(d, d), nn.Linear(d, d)
-        self.W_att, self.W_val, self.W_bind = nn.Linear(d, d), nn.Linear(d, d), nn.Linear(d, d)
-        self.emb = nn.ModuleDict({
-            "mem_index": nn.Embedding(cfg.r_mem, d), "group": nn.Embedding(len(GROUPS), d),
-            "temp_type": nn.Embedding(len(TTYPES), d), "temp_age": nn.Embedding(N_TEMP_AGE, d),
-            "rec_kind": nn.Embedding(N_REC_KIND, d), "rec_status": nn.Embedding(len(STATUSES), d),
-            "rec_age": nn.Embedding(N_REC_AGE, d), "rec_evidence": nn.Embedding(N_REC_EV, d),
-            "dt": nn.Embedding(N_DT, d)})
-        self.h0 = nn.Parameter(torch.zeros(cfg.r_mem, d))
-        self.gru_h, self.gru_t = nn.GRUCell(d, d), nn.GRUCell(d, d)
-        self.W_new = nn.Linear(d, d)
-        self._init_memory_pathway()
-        self._ctx_cache = {}
-
-    def _init_memory_pathway(self):
-        std = self.cfg.init_std
-        for lin in (self.W_h, self.W_z, self.W_prof, self.W_att, self.W_val, self.W_bind):   # zero-init (§4.1-4.3)
-            nn.init.zeros_(lin.weight), nn.init.zeros_(lin.bias)
-        for name in ("temp_type", "temp_age", "rec_kind", "rec_status", "rec_age", "rec_evidence", "dt"):
-            nn.init.zeros_(self.emb[name].weight)                                       # metadata tables: zero (§4.1)
-        # Clarification C2 (PHASE3-REPORT): group and memory-index embeddings and h0 start N(0, std^2).
-        # The memory tokens share position 0; identical initial values would never become distinct.
-        for name in ("group", "mem_index"):
-            nn.init.normal_(self.emb[name].weight, std=std)
-        nn.init.normal_(self.h0, std=std)
-
-    def memory_pathway_parameters(self):
-        mods = [self.W_h, self.W_z, self.W_prof, self.W_att, self.W_val, self.W_bind, self.emb,
-                self.gru_h, self.gru_t, self.W_new]
-        return [p for m in mods for p in m.parameters()] + [self.h0]
-
-    # ---- cached contextual pooling (stop-gradient, once per record version) ---------------
-    def clear_cache(self):
-        self._ctx_cache = {}
-
-    @torch.no_grad()
-    def _ctx(self, texts):
-        """Final-layer states of each id list, computed without gradient and cached by content.
-
-        Each text is encoded alone at its exact length. Batching cache misses with padding made the cached
-        states depend on which texts happened to share a batch (max diff 4.6e-5), so decisions depended on
-        cache history (found in Phase 3; violates I4). Encoding alone makes them bitwise history-independent.
-        """
-        for t in {tuple(t) for t in texts}:
-            if t not in self._ctx_cache:
-                self._ctx_cache[t] = self.enc.encode_ids(torch.tensor([t]))[0].clone()
-        return [self._ctx_cache[tuple(t)] for t in texts]
-
-    def _static_all(self, s: StepInput):
-        """Every static pooled embedding of a step from ONE embedding lookup (a lookup per record made the backward
-        pass build a dense 19M-element embedding gradient per call; Phase 4 speed measurement). Same values."""
-        spans, ids = [], []
-        for ids_, idx in ([(t.ids, t.idx) for t in s.temps] + [(p.ids, p.idx) for p in s.profiles]
-                          + [(r.ids, r.att) for r in s.records] + [(r.ids, r.val) for r in s.records]):
-            sel = [ids_[i] for i in idx]
-            spans.append((len(ids), len(ids) + len(sel))); ids.extend(sel)
-        n_seg = len(s.seg_ids)
-        emb = self.enc.embed(torch.tensor(ids + list(s.seg_ids)))
-        pooled = [emb[a:b].mean(0) for a, b in spans]
-        T, E, K = len(s.temps), len(s.profiles), len(s.records)
-        return (pooled[:T], pooled[T:T + E], pooled[T + E:T + E + K], pooled[T + E + K:], emb[len(ids):len(ids) + n_seg])
-
-    # ---- input assembly (§4.1-4.4) ------------------------------------------------------
-    def prefix(self, s: StepInput, static=None):
-        e = self.emb
-        g = e["group"].weight
-        st_t, st_p, st_a, st_v, _ = static if static is not None else self._static_all(s)
-        h = s.h if s.h is not None else self.h0
-        mem = self.W_h(h) + e["mem_index"].weight + e["dt"].weight[s.dt]
-        parts = [mem]
-        if s.temps:
-            st = torch.stack(st_t)
-            z = torch.stack([t.z for t in s.temps])
-            tt = torch.tensor([t.ttype for t in s.temps]); ta = torch.tensor([t.tage for t in s.temps])
-            parts.append(st + self.W_z(z) + e["temp_type"](tt) + e["temp_age"](ta) + g[0])
-        prof_static = prof_ctx = None
-        if s.profiles:
-            prof_static = torch.stack(st_p)
-            ctx = self._ctx([p.ids for p in s.profiles])
-            prof_ctx = torch.stack([c[p.idx].mean(0) for c, p in zip(ctx, s.profiles)])
-            parts.append(prof_static + self.W_prof(prof_ctx) + g[1])
-        if s.records:
-            rp = torch.tensor([r.prof for r in s.records])
-            a0 = torch.stack(st_a)
-            v0 = torch.stack(st_v)
-            ctx = self._ctx([r.ids for r in s.records])
-            aL = torch.stack([c[r.att].mean(0) for c, r in zip(ctx, s.records)])
-            vL = torch.stack([c[r.val].mean(0) for c, r in zip(ctx, s.records)])
-            mu = (e["rec_kind"](torch.tensor([r.kind for r in s.records])) + e["rec_status"](torch.tensor([r.status for r in s.records]))
-                  + e["rec_age"](torch.tensor([r.age for r in s.records])) + e["rec_evidence"](torch.tensor([r.ev for r in s.records])))
-            bind = 0.5 * prof_static[rp] + self.W_bind(prof_ctx[rp])
-            parts.append(a0 + bind + self.W_att(aL) + mu + g[2])
-            parts.append(v0 + bind + self.W_val(vL) + mu + g[3])
-        return torch.cat(parts)
-
-    def encode(self, batch, prefix_masked=False):
-        """Batched encoder pass. prefix_masked=True hides every prefix token from the segment (test T2)."""
-        seqs, plens, nlens = [], [], []
-        for s in batch:
-            static = self._static_all(s)
-            p = self.prefix(s, static)
-            seg = static[4]
-            seqs.append(torch.cat([p, seg])); plens.append(p.shape[0]); nlens.append(seg.shape[0])
-        B, N, d = len(batch), max(x.shape[0] for x in seqs), self.cfg.d
-        x0 = torch.zeros(B, N, d)
-        pos = torch.zeros(B, N, dtype=torch.long)
-        valid = torch.zeros(B, N, dtype=torch.bool)
-        pre = torch.zeros(B, N, dtype=torch.bool)
-        for i, (x, P, n) in enumerate(zip(seqs, plens, nlens)):
-            x0[i, :P + n] = x
-            pos[i, P:P + n] = torch.arange(1, n + 1)
-            valid[i, :P + n] = True
-            pre[i, :P] = True
-            if prefix_masked:
-                valid[i, :P] = False
-        H = self.enc(x0, pos, valid, pre)
-        out = []
-        for i, s in enumerate(batch):
-            r, T, E, K = self.cfg.r_mem, len(s.temps), len(s.profiles), len(s.records)
-            o = 0
-            def take(k):
-                nonlocal o
-                t = H[i, o:o + k]; o += k
-                return t
-            mem, tmp, prof, att, val = take(r), take(T), take(E), take(K), take(K)
-            seg = H[i, plens[i]:plens[i] + nlens[i]]
-            if self.cfg.head_norm:                       # D2: parameter-free LayerNorm on head inputs (mem feeds GRU_H, not a head)
-                ln = lambda t: F.layer_norm(t, t.shape[-1:]) if t.numel() else t
-                tmp, prof, att, val, seg = ln(tmp), ln(prof), ln(att), ln(val), ln(seg)
-            out.append(Encoded(mem, tmp, prof, att, val, seg, torch.tensor([x.prof for x in s.records], dtype=torch.long)))
-        return out
+class DecisionMixin:
+    """Decoding shared by PASTE and every encoder baseline: identical heads and decision procedure (A2).
+    Needs self.heads (SharedHeads) and self.cfg; operates on an Encoded, whatever memory pathway produced it."""
 
     # ---- per-segment decisions (§5.13) and transition (§5.11-5.12) ------------------------
     @staticmethod
@@ -353,6 +218,148 @@ class PasteModel(nn.Module):
                 if p >= th["expire"]:
                     temp_ops.append({"op": "T-EXPIRE", "item": i, "confidence": p})
         return {"operations": ops, "temp_ops": temp_ops, "retrieval": retrieval, "units": units, "mentions": ments}
+
+
+
+# ---------------------------------------------------------------------------------------------
+class PasteModel(DecisionMixin, nn.Module):
+    def __init__(self, cfg: PasteConfig, encoder: ModernBert):
+        super().__init__()
+        self.cfg, self.enc = cfg, encoder
+        d = cfg.d
+        self.heads = SharedHeads(cfg)
+        # memory pathway (PASTE-only; §4, §5.11-5.12)
+        self.W_h, self.W_z, self.W_prof = nn.Linear(d, d), nn.Linear(d, d), nn.Linear(d, d)
+        self.W_att, self.W_val, self.W_bind = nn.Linear(d, d), nn.Linear(d, d), nn.Linear(d, d)
+        self.emb = nn.ModuleDict({
+            "mem_index": nn.Embedding(cfg.r_mem, d), "group": nn.Embedding(len(GROUPS), d),
+            "temp_type": nn.Embedding(len(TTYPES), d), "temp_age": nn.Embedding(N_TEMP_AGE, d),
+            "rec_kind": nn.Embedding(N_REC_KIND, d), "rec_status": nn.Embedding(len(STATUSES), d),
+            "rec_age": nn.Embedding(N_REC_AGE, d), "rec_evidence": nn.Embedding(N_REC_EV, d),
+            "dt": nn.Embedding(N_DT, d)})
+        self.h0 = nn.Parameter(torch.zeros(cfg.r_mem, d))
+        self.gru_h, self.gru_t = nn.GRUCell(d, d), nn.GRUCell(d, d)
+        self.W_new = nn.Linear(d, d)
+        self._init_memory_pathway()
+        self._ctx_cache = {}
+
+    def _init_memory_pathway(self):
+        std = self.cfg.init_std
+        for lin in (self.W_h, self.W_z, self.W_prof, self.W_att, self.W_val, self.W_bind):   # zero-init (§4.1-4.3)
+            nn.init.zeros_(lin.weight), nn.init.zeros_(lin.bias)
+        for name in ("temp_type", "temp_age", "rec_kind", "rec_status", "rec_age", "rec_evidence", "dt"):
+            nn.init.zeros_(self.emb[name].weight)                                       # metadata tables: zero (§4.1)
+        # Clarification C2 (PHASE3-REPORT): group and memory-index embeddings and h0 start N(0, std^2).
+        # The memory tokens share position 0; identical initial values would never become distinct.
+        for name in ("group", "mem_index"):
+            nn.init.normal_(self.emb[name].weight, std=std)
+        nn.init.normal_(self.h0, std=std)
+
+    def memory_pathway_parameters(self):
+        mods = [self.W_h, self.W_z, self.W_prof, self.W_att, self.W_val, self.W_bind, self.emb,
+                self.gru_h, self.gru_t, self.W_new]
+        return [p for m in mods for p in m.parameters()] + [self.h0]
+
+    # ---- cached contextual pooling (stop-gradient, once per record version) ---------------
+    def clear_cache(self):
+        self._ctx_cache = {}
+
+    @torch.no_grad()
+    def _ctx(self, texts):
+        """Final-layer states of each id list, computed without gradient and cached by content.
+
+        Each text is encoded alone at its exact length. Batching cache misses with padding made the cached
+        states depend on which texts happened to share a batch (max diff 4.6e-5), so decisions depended on
+        cache history (found in Phase 3; violates I4). Encoding alone makes them bitwise history-independent.
+        """
+        for t in {tuple(t) for t in texts}:
+            if t not in self._ctx_cache:
+                self._ctx_cache[t] = self.enc.encode_ids(torch.tensor([t]))[0].clone()
+        return [self._ctx_cache[tuple(t)] for t in texts]
+
+    def _static_all(self, s: StepInput):
+        """Every static pooled embedding of a step from ONE embedding lookup (a lookup per record made the backward
+        pass build a dense 19M-element embedding gradient per call; Phase 4 speed measurement). Same values."""
+        spans, ids = [], []
+        for ids_, idx in ([(t.ids, t.idx) for t in s.temps] + [(p.ids, p.idx) for p in s.profiles]
+                          + [(r.ids, r.att) for r in s.records] + [(r.ids, r.val) for r in s.records]):
+            sel = [ids_[i] for i in idx]
+            spans.append((len(ids), len(ids) + len(sel))); ids.extend(sel)
+        n_seg = len(s.seg_ids)
+        emb = self.enc.embed(torch.tensor(ids + list(s.seg_ids)))
+        pooled = [emb[a:b].mean(0) for a, b in spans]
+        T, E, K = len(s.temps), len(s.profiles), len(s.records)
+        return (pooled[:T], pooled[T:T + E], pooled[T + E:T + E + K], pooled[T + E + K:], emb[len(ids):len(ids) + n_seg])
+
+    # ---- input assembly (§4.1-4.4) ------------------------------------------------------
+    def prefix(self, s: StepInput, static=None):
+        e = self.emb
+        g = e["group"].weight
+        st_t, st_p, st_a, st_v, _ = static if static is not None else self._static_all(s)
+        h = s.h if s.h is not None else self.h0
+        mem = self.W_h(h) + e["mem_index"].weight + e["dt"].weight[s.dt]
+        parts = [mem]
+        if s.temps:
+            st = torch.stack(st_t)
+            z = torch.stack([t.z for t in s.temps])
+            tt = torch.tensor([t.ttype for t in s.temps]); ta = torch.tensor([t.tage for t in s.temps])
+            parts.append(st + self.W_z(z) + e["temp_type"](tt) + e["temp_age"](ta) + g[0])
+        prof_static = prof_ctx = None
+        if s.profiles:
+            prof_static = torch.stack(st_p)
+            ctx = self._ctx([p.ids for p in s.profiles])
+            prof_ctx = torch.stack([c[p.idx].mean(0) for c, p in zip(ctx, s.profiles)])
+            parts.append(prof_static + self.W_prof(prof_ctx) + g[1])
+        if s.records:
+            rp = torch.tensor([r.prof for r in s.records])
+            a0 = torch.stack(st_a)
+            v0 = torch.stack(st_v)
+            ctx = self._ctx([r.ids for r in s.records])
+            aL = torch.stack([c[r.att].mean(0) for c, r in zip(ctx, s.records)])
+            vL = torch.stack([c[r.val].mean(0) for c, r in zip(ctx, s.records)])
+            mu = (e["rec_kind"](torch.tensor([r.kind for r in s.records])) + e["rec_status"](torch.tensor([r.status for r in s.records]))
+                  + e["rec_age"](torch.tensor([r.age for r in s.records])) + e["rec_evidence"](torch.tensor([r.ev for r in s.records])))
+            bind = 0.5 * prof_static[rp] + self.W_bind(prof_ctx[rp])
+            parts.append(a0 + bind + self.W_att(aL) + mu + g[2])
+            parts.append(v0 + bind + self.W_val(vL) + mu + g[3])
+        return torch.cat(parts)
+
+    def encode(self, batch, prefix_masked=False):
+        """Batched encoder pass. prefix_masked=True hides every prefix token from the segment (test T2)."""
+        seqs, plens, nlens = [], [], []
+        for s in batch:
+            static = self._static_all(s)
+            p = self.prefix(s, static)
+            seg = static[4]
+            seqs.append(torch.cat([p, seg])); plens.append(p.shape[0]); nlens.append(seg.shape[0])
+        B, N, d = len(batch), max(x.shape[0] for x in seqs), self.cfg.d
+        x0 = torch.zeros(B, N, d)
+        pos = torch.zeros(B, N, dtype=torch.long)
+        valid = torch.zeros(B, N, dtype=torch.bool)
+        pre = torch.zeros(B, N, dtype=torch.bool)
+        for i, (x, P, n) in enumerate(zip(seqs, plens, nlens)):
+            x0[i, :P + n] = x
+            pos[i, P:P + n] = torch.arange(1, n + 1)
+            valid[i, :P + n] = True
+            pre[i, :P] = True
+            if prefix_masked:
+                valid[i, :P] = False
+        H = self.enc(x0, pos, valid, pre)
+        out = []
+        for i, s in enumerate(batch):
+            r, T, E, K = self.cfg.r_mem, len(s.temps), len(s.profiles), len(s.records)
+            o = 0
+            def take(k):
+                nonlocal o
+                t = H[i, o:o + k]; o += k
+                return t
+            mem, tmp, prof, att, val = take(r), take(T), take(E), take(K), take(K)
+            seg = H[i, plens[i]:plens[i] + nlens[i]]
+            if self.cfg.head_norm:                       # D2: parameter-free LayerNorm on head inputs (mem feeds GRU_H, not a head)
+                ln = lambda t: F.layer_norm(t, t.shape[-1:]) if t.numel() else t
+                tmp, prof, att, val, seg = ln(tmp), ln(prof), ln(att), ln(val), ln(seg)
+            out.append(Encoded(mem, tmp, prof, att, val, seg, torch.tensor([x.prof for x in s.records], dtype=torch.long)))
+        return out
 
     @torch.no_grad()
     def next_h(self, enc: Encoded, h_prev):
