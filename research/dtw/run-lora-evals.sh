@@ -19,6 +19,9 @@ evaluate() {  # name provider set
   local name=$1 prov=$2 set=$3
   [ -f $OUT/$name.json ] && { echo "   $name already done"; return 0; }
   echo "== $(date -u +%T) $name"
+  # Warm the page cache: after a container restart the first server start can exceed the runtime's 90 s
+  # start timeout while it reads the 1 GB base file and the adapter (seed 1's first try failed that way).
+  cat ~/.codeply/models/LFM3-1.7B-Q4_K_M.gguf $G/*.gguf > /dev/null 2>&1
   node ml/eval/run.mjs --provider $prov --set $set --set-file ${SETFILE[$set]} --threads 4 --name $name --out $OUT > $W/logs/$name.log 2>&1
   echo "   $name exit $? $(grep -o '"f1": [0-9.]*' $OUT/$name.json 2>/dev/null | head -1)"
   git pull -q --rebase origin $BRANCH; git add $OUT && git commit -q -m "DtW results: $name$TRAILER" -- $OUT && push
