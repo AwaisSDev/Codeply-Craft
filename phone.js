@@ -73,7 +73,7 @@ function keepDeviceId(id) {
 })();
 const deviceHeader = () => ({ 'x-codeply-device': deviceIdValue });
 
-const CHAT_SYSTEM = 'You are Codeply, the assistant in the Codeply phone app. This is a normal chat: you cannot see, open or change any files, run code or browse here. Answer clearly and keep it readable on a phone screen. The app draws rich markdown, so format answers well when it helps (never for a one-line reply): ## and ### headings, short paragraphs, lists, - [ ] / - [x] checklists, tables for comparisons, fenced code blocks with a language, **bold** for key words, ==highlight== for the one thing to remember, -# at the start of a line for small fine print, [[Label]] or [[Label|green]] for a coloured status tag (blue green red orange yellow purple pink teal gray), {{green: text}} for coloured text such as numbers going up or down, and > [!TIP] / > [!NOTE] / > [!WARNING] callouts for a tip or a caveat. Use colour and tags sparingly, where they carry meaning. No emoji as decoration. If someone wants changes made to one of their projects, tell them to switch to Code in the composer. When a GMAIL note appears in the conversation, it is the user’s own inbox read live just now: answer from it directly (who wrote, about what, what needs a reply) and never say you cannot see their email.';
+const CHAT_SYSTEM = 'You are Codeply, the assistant in the Codeply phone app. This is a normal chat: you cannot see, open or change files or run code here, but you can search the web (see WEB SEARCH). Answer clearly and keep it readable on a phone screen. The app draws rich markdown, so format answers well when it helps (never for a one-line reply): ## and ### headings, short paragraphs, lists, - [ ] / - [x] checklists, tables for comparisons, fenced code blocks with a language, **bold** for key words, ==highlight== for the one thing to remember, -# at the start of a line for small fine print, [[Label]] or [[Label|green]] for a coloured status tag (blue green red orange yellow purple pink teal gray), {{green: text}} for coloured text such as numbers going up or down, and > [!TIP] / > [!NOTE] / > [!WARNING] callouts for a tip or a caveat. Use colour and tags sparingly, where they carry meaning. No emoji as decoration. If someone wants changes made to one of their projects, tell them to switch to Code in the composer. When a GMAIL note appears in the conversation, it is the user’s own inbox read live just now: answer from it directly (who wrote, about what, what needs a reply) and never say you cannot see their email.\n\nWEB SEARCH\nYou can search the web whenever you want. To search, reply with ONLY this one line and nothing else: [[SEARCH: your search query]]. The app runs the search and sends you the results; then you answer (you may search once more if the first results miss). Search whenever the answer depends on anything current or checkable: news, prices, weather, scores, schedules, releases and versions, people and companies, places and opening hours, anything after your training data or that you are not sure of, and always when the user says search, look up, google, check online or find. Never say you cannot browse or search the web. Answering from results: the key facts first, short, and cite sources as markdown links like [The Verge](https://...).';
 
 // ─── Small helpers ──────────────────────────────────────────────────────────
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c]);
@@ -1166,21 +1166,38 @@ async function chatSend(chat, text, images = []) {
     if (images.length && history.length) history[history.length - 1] = { role: 'user', content: [{ type: 'text', text: text || 'What is in this image?' }, ...images.map((url) => ({ type: 'image_url', image_url: { url } }))] };
     // A synced model goes through byok-proxy (same reply shape as ai-proxy).
     const own = chatModel();
-    const messages = [{ role: 'system', content: CHAT_SYSTEM + (window.CraftReminders ? window.CraftReminders.chatRules() : '') }, ...history];
-    const res = await fetch(own ? BYOK_PROXY_URL : AI_PROXY_URL, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...deviceHeader() },
-      // inbox: when the message is about email, the server reads Gmail (the link turned on for calls) first
-      body: JSON.stringify(own ? { modelId: own.id, messages, opts: { inbox: true, tz: localTz() } } : { messages, opts: { inbox: true, tz: localTz() } }),
-      signal: controller.signal,
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data.success) {
-      const choice = data.data && data.data.choices && data.data.choices[0];
-      reply = (choice && choice.message && choice.message.content) || '';
-      if (!reply) error = 'Codeply sent back an empty reply. Try again.';
-    } else if (res.status === 401 && !data.error) error = 'Your sign-in expired. Sign out and sign in again.';
-    else error = data.error || data.message || data.msg || `Codeply could not answer (${res.status}).`;
+    let messages = [{ role: 'system', content: `${CHAT_SYSTEM}\nToday is ${new Date().toDateString()}.${window.CraftReminders ? window.CraftReminders.chatRules() : ''}` }, ...history];
+    // Up to two web searches: the model asks with [[SEARCH: ...]], the phone searches, the model answers from the results.
+    for (let round = 0; ; round++) {
+      const res = await fetch(own ? BYOK_PROXY_URL : AI_PROXY_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...deviceHeader() },
+        // inbox: when the message is about email, the server reads Gmail (the link turned on for calls) first
+        body: JSON.stringify(own ? { modelId: own.id, messages, opts: { inbox: true, tz: localTz() } } : { messages, opts: { inbox: true, tz: localTz() } }),
+        signal: controller.signal,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        const choice = data.data && data.data.choices && data.data.choices[0];
+        reply = (choice && choice.message && choice.message.content) || '';
+        if (!reply) error = 'Codeply sent back an empty reply. Try again.';
+      } else if (res.status === 401 && !data.error) error = 'Your sign-in expired. Sign out and sign in again.';
+      else error = data.error || data.message || data.msg || `Codeply could not answer (${res.status}).`;
+      const asked = reply && SEARCH_TAG.exec(reply);
+      if (!asked || round >= 2) break;
+      const query = asked[1].trim();
+      workingWord(chat.id, 'Searching the web');
+      let found = '';
+      try { found = await webSearch(query, { signal: controller.signal }); } catch (e) {
+        if (e.name === 'AbortError') throw e;
+        found = `(${e.message}. Answer from what you know, and say briefly that the web search did not work just now.)`;
+      }
+      workingWord(chat.id, '');
+      messages = [...messages, { role: 'assistant', content: `[[SEARCH: ${query}]]` },
+        { role: 'user', content: `WEB RESULTS for "${query}" (searched just now, ${new Date().toDateString()}):\n\n${found}\n\nNow answer my last message from these results. Cite sources as markdown links. Only write [[SEARCH: ...]] again if these results really miss what I asked.` }];
+      reply = '';
+    }
+    if (reply) reply = reply.replace(/\[\[\s*SEARCH\s*:[^\]]*\]\]/gi, '').trim() || 'I searched but could not put an answer together. Try asking again.';
   } catch (e) {
     if (e.name === 'AbortError') error = null;
     else error = /fetch|network/i.test(e.message) ? "Can't reach Codeply. Check your internet connection." : e.message;
@@ -1207,6 +1224,57 @@ async function chatSend(chat, text, images = []) {
   saveBody(chat.id);
   touchChat(chat.id);
   if (chat.id === state.current) renderFeed();
+}
+
+// ─── Web search ─────────────────────────────────────────────────────────────
+// Straight from the phone through Exa's public search (the same one the
+// engine's web_search uses; open to browsers, no key), so it works with the PC
+// off; the PC's own search (Exa, then DuckDuckGo) is the fallback.
+const EXA_URL = 'https://mcp.exa.ai/mcp';
+const SEARCH_TAG = /\[\[\s*SEARCH\s*:\s*([^\]\n]{2,240})\]\]/i;
+function timeoutSignal(ms, parent) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  if (parent) { if (parent.aborted) ctl.abort(); else parent.addEventListener('abort', () => ctl.abort(), { once: true }); }
+  ctl.signal.addEventListener('abort', () => clearTimeout(t), { once: true });
+  return ctl.signal;
+}
+async function exaSearch(query, num, signal) {
+  const res = await fetch(EXA_URL, {
+    method: 'POST', signal: timeoutSignal(20000, signal),
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'web_search_exa', arguments: { query, numResults: num, type: 'auto', livecrawl: 'fallback' } } }),
+  });
+  if (!res.ok) throw new Error(`search returned ${res.status}`);
+  const raw = await res.text();
+  const payloads = raw.trimStart().startsWith('{') ? [raw] : raw.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim());
+  for (const p of payloads) {
+    let j; try { j = JSON.parse(p); } catch { continue; }
+    if (j.error) throw new Error(j.error.message || 'search error');
+    const text = ((j.result && j.result.content) || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n').trim();
+    if (text) return text;
+  }
+  throw new Error('no results');
+}
+/** Search the web: the results as text (titles, links and page extracts). */
+async function webSearch(query, { num = 6, signal } = {}) {
+  query = String(query || '').trim().slice(0, 300);
+  if (!query) throw new Error('Nothing to search for.');
+  try { return (await exaSearch(query, num, signal)).slice(0, 14000); } catch (e) {
+    if (signal && signal.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
+    if (relay.pcId) {
+      const r = await relayRequest('POST', '/api/web/search', { query, num }, 40000).catch(() => null);
+      if (r && r.text) return String(r.text).slice(0, 14000);
+    }
+    throw new Error(`the search did not work (${e.message})`);
+  }
+}
+/** The thinking line says what is happening ("Searching the web"); phone-wisp.js leaves it alone. */
+function workingWord(chatId, word) {
+  if (chatId !== state.current) return;
+  const w = document.querySelector('#feed .working .think-word');
+  if (!w) return;
+  if (word) { w.textContent = word; w.dataset.fixed = '1'; } else delete w.dataset.fixed;
 }
 
 // ─── Code mode on the PC ────────────────────────────────────────────────────
@@ -2807,7 +2875,7 @@ currentSession().then((s) => { if (s) enterApp(); else showSignin(); }).catch(sh
 window.CraftPhone = { state, relay, sb, sealSecret, CLOUD_WORKFLOW, md, pollAll, relayRequest, accessToken, esc, load, save, newId, openDrawer, closeDrawer, AI_PROXY_URL, SUPABASE_ANON_KEY, deviceHeader,
   cloudEnvForBots, startCloudTask, pollCloudTask: pollTask,
   // phone-app.js (tabs, Home, You, sign-up) builds on these
-  createChat, saveBody, saveChats,
+  createChat, saveBody, saveChats, webSearch,
   SUPABASE_URL, answerApproval, setPermission, PERM, signinStep, openChat, openPcSession, newChat, openSettings, openSetup, openProjectPicker, openModelPicker, chatMeta, signOut, applyTheme, themeChoice, renderChatList, enterApp, friendlyAuthError, currentSession };
 
 // Reminders and "calls" from your bots arrive as Web Push: phone-sw.js shows

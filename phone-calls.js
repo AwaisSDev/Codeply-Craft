@@ -1363,13 +1363,14 @@ You are on a live voice call with the user, talking out loud. Everything you wri
 You are on a live voice call. Reply with ONLY a JSON object: {"say": "...", "work": null}
 - "say" is spoken out loud right away: one to three short spoken sentences, plain words, no markdown, no lists, no emojis, no links, no long dash.
 - If the user wants something that needs real tools (their email, calendar, files, code, sending a message, searching the web for current facts, anything on their computer), set "work" to one clear sentence describing the task for your tools, and make "say" a short natural line that fits what they asked, like you are starting on it now. Vary it. Never say "one sec" or "one moment". Do not invent results.
-- Otherwise "work" is null and "say" is your full answer.`;
+- Otherwise "work" is null and "say" is your full answer.
+- Looking something up on the web (news, prices, weather, scores, opening hours, anything current or that you are not sure of) is real work you can ALWAYS do, even when their PC is off. Never say you can't search the web. For a lookup set "work" to "search the web for <what to search>".`;
   const CLOUD_SCOPE = 'it has a shell, the web and the project repo, but not the user\'s own files, email or desktop apps (for those, say they need the PC on)';
   const cloudBusyNote = () => (c && c.cloudJobs && c.cloudJobs.length ? `\n- Still running in the cloud: ${c.cloudJobs.map((j) => j.task).join('; ')}. If they ask, say it is still working and you will tell them when it is done.` : '');
   /** The PC-offline rule: with Codeply Cloud set up, work still goes ahead there. */
   const FAST_OFFLINE = () => (cloudReady()
     ? `\n- Right now the user's PC is offline, so real work runs in Codeply Cloud instead: you may still set "work"; ${CLOUD_SCOPE}.${cloudBusyNote()}`
-    : `\n- Right now the user's PC is offline, so you cannot use tools: never set "work"; if they ask for that kind of thing, say in one sentence you can do it ${NO_CLOUD_OFFER}.`);
+    : `\n- Right now the user's PC is offline, so the only work you can do is a web lookup ("work": "search the web for ..."); for anything else never set "work": say in one sentence you can do it ${NO_CLOUD_OFFER}.`);
   async function askFast(bot, turns, signal) {
     const last = calls.find((x) => x.botId === bot.id && x.status === 'done' && x.turns.length);
     const recent = last ? last.turns.slice(-6).map((t) => `${t.who === 'bot' ? bot.name : 'User'}: ${String(t.text).slice(0, 300)}`).join('\n') : '';
@@ -1415,10 +1416,11 @@ You are on a live voice call; everything you write is spoken out loud right away
 - Talk the way a warm, relaxed friend talks on the phone: flowing, natural sentences with contractions (I'm, you've, that's), the odd "so", "okay" or "honestly" where it fits, and sentences that connect instead of choppy fragments. Vary how you open; do not start every reply with "Sure" or "Got it".
 - Plain spoken words only: no markdown, no lists, no emojis, no links, no long dash, and write numbers and times the way you would say them. Usually one to three sentences.
 - If the user wants something that needs real tools (their email, calendar, files, code, sending a message, current news, anything on their computer), say one short natural line that fits what they asked, as if you are starting on it now (vary it, never "one sec" or "one moment"), then on a new line write [[WORK: one clear sentence describing the task]] and stop. Do not invent results.
-- Things you already know (facts, advice, ideas, jokes, math, small talk) are not work: just answer.${R() ? `\n${R().RULES}` : ''}`;
+- Things you already know (facts, advice, ideas, jokes, math, small talk) are not work: just answer.
+- Looking something up on the web (news, prices, weather, scores, opening hours, anything current or that you are not sure of) is real work you can ALWAYS do, even when their PC is off. Never say you can't search the web. For a lookup say a short natural line, then [[WORK: search the web for <what to search>]].${R() ? `\n${R().RULES}` : ''}`;
   const STREAM_OFFLINE = () => (cloudReady()
     ? `\n- Right now the user's PC is offline, so real work runs in Codeply Cloud instead: you may still write [[WORK: ...]]; ${CLOUD_SCOPE}.${cloudBusyNote()}`
-    : `\n- Right now the user's PC is offline, so you cannot use tools: never write [[WORK: ...]]; if they ask for that kind of thing, say in one sentence you can do it ${NO_CLOUD_OFFER}.`);
+    : `\n- Right now the user's PC is offline, so the only work you can do is a web lookup ([[WORK: search the web for ...]]); for anything else never write [[WORK: ...]]: say in one sentence you can do it ${NO_CLOUD_OFFER}.`);
 
   function pcmToFloat(b64) {
     const bin = atob(b64);
@@ -1596,7 +1598,7 @@ You are on a live voice call; everything you write is spoken out loud right away
     for (let i = 0; i < said; i++) player.noAudio(i);
     const text = player.text();
     if (text) log('bot', text);
-    if (work && (pcOnline() || cloudReady())) {
+    if (work && (pcOnline() || cloudReady() || isLookup(work))) {
       // The opening line plays while the PC (or the cloud) starts on the job.
       const playing = player.finished();
       await runWork(me, token, controller, work, playing);
@@ -1622,6 +1624,8 @@ You are on a live voice call; everything you write is spoken out loud right away
     try { return await runWorkNow(me, token, controller, task, playing); } finally { me.inWork--; }
   }
   async function runWorkNow(me, token, controller, task, playing) {
+    // A web lookup runs right here on the phone: quick, and it works with the PC off.
+    if (isLookup(task) && (await lookUp(me, token, controller, task, playing) || !pcOnline())) return;
     if (!pcOnline() && cloudReady()) return runCloudWork(me, token, task, playing);
     me.stepLabel = '';
     let lastSpokeAt = performance.now();
@@ -1657,6 +1661,49 @@ You are on a live voice call; everything you write is spoken out loud right away
     me.abort = null;
     showNote();
     await sayNow(result || 'Done.', token);
+  }
+
+  // ─── Web lookups on a call ────────────────────────────────────────────────
+  const isLookup = (task) => /^\s*(please\s+)?(search|look|google|check|find)\b[^.]{0,40}\b(web|online|internet|google)\b/i.test(String(task || ''));
+  const LOOKUP_RULES = `LIVE VOICE CALL: You just searched the web for the user. Everything you write is spoken out loud.
+- Answer their last question from the results below in one to three short spoken sentences, the key fact first, the way people talk.
+- No links, no markdown, no lists, no emojis, no long dash; say numbers, dates and times the way you would say them.
+- If the results do not answer it, say so briefly and offer what you do know.`;
+  /** Search on the phone and say the answer. false: the search failed (the PC may still try). */
+  async function lookUp(me, token, controller, task, playing) {
+    const query = String(task).replace(/^\s*(please\s+)?(search|look|google|check|find)( it)?( up)?( on)?( the)? (web|online|internet|google)( for| about| to see)?\s*/i, '').trim() || task;
+    me.stepLabel = 'Searching the web...';
+    if (me.phase !== 'speaking') setPhase('thinking', me.stepLabel);
+    let found = '';
+    try { found = await P.webSearch(query, { signal: controller.signal, num: 5 }); } catch (e) {
+      if (c !== me || token !== me.token || e.name === 'AbortError') return true;
+      console.debug('[calls] lookup failed:', e.message);
+      if (pcOnline()) return false;
+      await playing;
+      await sayNow("Hmm, the web search isn't working right now. Want to try again in a bit?", token);
+      return true;
+    }
+    if (c !== me || token !== me.token) return true;
+    const system = `${me.bot.prompt || ''}\n\n${LOOKUP_RULES}\n\nToday is ${new Date().toDateString()}.\n\nWEB RESULTS for "${query}":\n${found.slice(0, 7000)}`;
+    const messages = [{ role: 'system', content: system },
+      ...me.turns.slice(-10).map((t) => ({ role: t.who === 'bot' ? 'assistant' : 'user', content: String(t.text || '').slice(0, 1000) }))];
+    let answer = '';
+    try {
+      const auth = await P.accessToken();
+      const res = await fetch(P.AI_PROXY_URL, {
+        method: 'POST', signal: controller.signal,
+        headers: { Authorization: `Bearer ${auth}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...(P.deviceHeader ? P.deviceHeader() : {}) },
+        body: JSON.stringify({ messages, opts: { maxTokens: 220, temperature: 0.5 }, meta: { source: 'phone-call-lookup' } }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) answer = (data.data && data.data.choices && data.data.choices[0] && data.data.choices[0].message && data.data.choices[0].message.content) || '';
+    } catch (e) { if (e.name === 'AbortError' || c !== me || token !== me.token) return true; }
+    await playing;
+    if (c !== me || token !== me.token) return true;
+    me.abort = null;
+    showNote();
+    await sayNow(spoken(answer) || "I looked, but couldn't find a clear answer to that.", token);
+    return true;
   }
 
   /**
@@ -1747,6 +1794,10 @@ You are on a live voice call; everything you write is spoken out loud right away
     if (c !== me || token !== me.token) return;
     metrics.push({ kind: 'fastReply', ms: Math.round(performance.now() - t0), work: !!fast.work, at: Date.now() });
     console.debug(`[calls] fast reply in ${Math.round(performance.now() - t0)} ms${fast.work ? ` (work: ${fast.work})` : ''}`);
+    if (fast.work && isLookup(fast.work)) {
+      me.abort = null;
+      return runWork(me, token, controller, fast.work, sayNow(fast.say, token));
+    }
     if (fast.work && !pcOnline() && cloudReady()) {
       me.abort = null;
       return runCloudWork(me, token, fast.work, sayNow(fast.say, token));

@@ -165,6 +165,7 @@
     if (!els.length) { thinkTurn = 0; return; }
     thinkTurn++;
     els.forEach((w) => {
+      if (w.dataset.fixed) return; // says what is happening ("Searching the web")
       const list = /^(Working|Tinkering|Wiring|Crunching|Checking|Putting)/.test(w.textContent) || liveMood() === 'working' ? WORK : THINK;
       // the first word stays a moment; after that, move on, never the same twice in a row
       let word = list[thinkTurn % list.length];

@@ -2679,6 +2679,11 @@ async function handleBridgeApi(method, pathname, query, body) {
       catch (e) { return { status: 500, body: { error: `Could not save the rules: ${e.message}` } }; }
     }
   }
+  // Web search for the phone (chat and voice), when its own search could not get through.
+  if (method === 'POST' && pathname === '/api/web/search') {
+    const r = await require(path.join(CLI_DIR, 'lib', 'web-tools.js')).webSearch(String(body.query || '').slice(0, 300), { num: Math.min(10, Number(body.num) || 6) });
+    return r.ok ? { status: 200, body: { text: r.text, via: r.via } } : { status: 502, body: { error: r.error } };
+  }
   // Edit or retry a sent message from the phone (same rewind as the desktop).
   if (method === 'POST' && pathname === '/api/edit') return { status: 200, body: await editAndRerun({ ...body, bypass: body.bypass === true }) };
   if (method === 'POST' && pathname === '/api/approval') { respondApproval(body.requestId, body.verdict); return { status: 200, body: { ok: true } }; }
