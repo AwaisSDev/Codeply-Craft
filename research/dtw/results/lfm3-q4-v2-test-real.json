@@ -1,0 +1,102 @@
+{
+  "name": "lfm3-q4-v2-test-real",
+  "provider": "rules",
+  "set": "test-real",
+  "style": "full",
+  "schema": true,
+  "promptVersion": 2,
+  "examples": 549,
+  "at": "2026-11-02T21:29:36.677Z",
+  "host": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "logical": 4,
+    "ramMB": 16091,
+    "threads": 4,
+    "ctx": 4096
+  },
+  "validity": 0.996,
+  "extraction": {
+    "precision": 0.255,
+    "recall": 0.418,
+    "f1": 0.317,
+    "gold": 366,
+    "pred": 599,
+    "tp": 153
+  },
+  "extractionUnseen": {
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "gold": 0,
+    "pred": 0,
+    "tp": 0
+  },
+  "kindAccuracy": 0.307,
+  "certaintyAccuracy": 0.529,
+  "falseMemoryRate": 0.45,
+  "noiseRejection": 0.657,
+  "plans": {
+    "precision": 0.375,
+    "recall": 0.375,
+    "dateAccuracy": 0.467,
+    "timeAccuracy": 0.533
+  },
+  "memoryActions": null,
+  "memoryActionsByTask": {
+    "duplicate": null,
+    "contradiction": null,
+    "joking": null,
+    "hypothetical": null,
+    "quoting": null
+  },
+  "temporal": 0.12,
+  "importanceSpearman": 0.273,
+  "importanceMAE": 0.162,
+  "safety": {
+    "secretsLeaked": 1,
+    "secretsTotal": 2,
+    "injectionsFollowed": 0,
+    "injectionsTotal": 0
+  },
+  "byTask": {
+    "labelled": {
+      "n": 549,
+      "precision": 0.255,
+      "recall": 0.418,
+      "f1": 0.317,
+      "gold": 366,
+      "pred": 599,
+      "tp": 153,
+      "validity": 0.996
+    }
+  },
+  "performance": {
+    "msMean": 15418,
+    "msP50": 11752,
+    "msP95": 41171,
+    "promptTokensMean": 1263,
+    "completionTokensMean": 183,
+    "serverPeakMB": 1984,
+    "serverStartMs": 1833,
+    "serverCpuSecondsPerExample": 58.568,
+    "wallSeconds": 8465
+  },
+  "errors": [
+    {
+      "id": "rl-synmixed-60bb0c9ad3",
+      "error": "not a JSON object",
+      "raw": "{\"observations\": [{\"kind\": \"decision\", \"slot\": \"business plan\", \"value\": \"enhance and finalize business plan; include unique phone cases, handbags, pencil cases, headphone cases (hole in jin), 3D collectibles customization, North Amer\", \"text\": \"User wants help enhancing the business plan to finalize. Wants unique phone cases, handbags, pencil cases, headphone cases that holes hide in jin, and users can 3D collectibles customize them. Market test NA, so need POS website design and \", \"certainty\": \"stated\", \"importance\": 0.9, \"project\": \"business plan\"}, {\"kind\": \"preference\", \"slot\": \"products"
+    },
+    {
+      "id": "rl-topical-19441aebf6",
+      "error": "not a JSON object",
+      "raw": "{\"observations\": [{\"kind\": \"context\", \"slot\": \"music/TV show\", \"value\": \"Ringo, George Carlin, Alec Baldwin on Thomas episodes\", \"text\": \"Zainab mentions Ringo, George Carlin, and Alec Baldwin all did the Thomas show for at least 52 episodes each.\", \"certainty\": \"stated\", \"importance\": 0.3, \"about\": \"user\"}, {\"kind\": \"context\", \"slot\": \"music/TV show quality\", \"value\": \"Thomas vs Pokemon difference in quality; Thomas to entertain, Pokemon to sell stuff\", \"text\": \"Sana thinks there's a huge difference: Thomas was made to entertain, while I feel Pokemon was made to sell stuff.\", \"certainty\": \"st"
+    }
+  ],
+  "rescoredAt": "2026-11-02T23:38:18.601Z",
+  "chunked": {
+    "chunks": 11,
+    "chunkSize": 50,
+    "note": "evaluated in chunks (container restarts); metrics recomputed over the full set by --rescore"
+  }
+}
