@@ -185,3 +185,16 @@ Checked locally: transformers 5.22.1 loads LFM3's own config code
 (layer types conv / full_attention / sliding_attention). v7 installs that
 requirements file before the merge and pins LFM3 to revision `ac2586a3`
 (2026-10-28, the revision current when run 4 trained).
+
+Export v7 (CPU session): both adapters merged; seed 1 converted to f16;
+its importance matrix took **4 h 34 min** on Kaggle's CPU session; its
+Q4_K_M quantization finished (147 s); the kernel was then stopped at the
+12 h limit (`CANCEL_ACKNOWLEDGED`) before the notebook copied the file to
+`/kaggle/working`: **no output**. Design flaw in the notebook: the copy ran
+only after both quantizations of a seed (Q4_K_M, then Q8_0).
+
+Next: without GPU quota, a CPU export of two seeds does not fit in 12 h.
+Alternative tried locally: convert each adapter to a GGUF LoRA
+(`convert_lora_to_gguf.py`) and apply it at load time (`llama-server
+--lora`) on the same LFM3 Q4_K_M base file the untrained baseline uses
+(see below).
