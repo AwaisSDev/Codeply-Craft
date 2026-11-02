@@ -165,6 +165,62 @@ class TextMemoryModel(DecisionMixin, nn.Module):
         return enc.mem if self.r else None
 
 
+class KVModel(DecisionMixin, nn.Module):
+    """Learned key-value memory (brief baseline 7): the segment is encoded alone; profiles, records and temporary
+    items are cached pooled encodings (stop-gradient, as in PASTE) projected by three learned maps and read only by
+    the heads; addressing is flat."""
+
+    def __init__(self, cfg: PasteConfig, encoder: ModernBert, text=None):
+        super().__init__()
+        import dataclasses
+        self.cfg = dataclasses.replace(cfg, flat_address=True)
+        self.enc, self.heads = encoder, SharedHeads(self.cfg)
+        self.W_kv_prof, self.W_kv_att, self.W_kv_val = nn.Linear(cfg.d, cfg.d), nn.Linear(cfg.d, cfg.d), nn.Linear(cfg.d, cfg.d)
+        self.register_buffer("h0", torch.zeros(cfg.r_mem, cfg.d), persistent=False)
+        self._cache = {}
+
+    def clear_cache(self):
+        self._cache = {}
+
+    @torch.no_grad()
+    def _ctx(self, ids):
+        t = tuple(ids)
+        if t not in self._cache:
+            self._cache[t] = self.enc.encode_ids(torch.tensor([ids]))[0].clone()
+        return self._cache[t]
+
+    def encode(self, batch, prefix_masked=False):
+        out = []
+        for s in batch:
+            seg = self.enc.encode_ids(torch.tensor([s.seg_ids]))[0]
+            d = self.cfg.d
+            prof = torch.stack([self.W_kv_prof(self._ctx(p.ids)[p.idx].mean(0)) for p in s.profiles]) if s.profiles else torch.zeros(0, d)
+            att = torch.stack([self.W_kv_att(self._ctx(r.ids)[r.att].mean(0)) for r in s.records]) if s.records else torch.zeros(0, d)
+            val = torch.stack([self.W_kv_val(self._ctx(r.ids)[r.val].mean(0)) for r in s.records]) if s.records else torch.zeros(0, d)
+            tmp = torch.stack([self.W_kv_val(self._ctx(t.ids)[t.idx].mean(0)) for t in s.temps]) if s.temps else torch.zeros(0, d)
+            if self.cfg.head_norm:
+                ln = lambda t: F.layer_norm(t, t.shape[-1:]) if t.numel() else t
+                tmp, prof, att, val, seg = ln(tmp), ln(prof), ln(att), ln(val), ln(seg)
+            out.append(Encoded(torch.zeros(self.cfg.r_mem, d), tmp, prof, att, val, seg,
+                               torch.tensor([r.prof for r in s.records], dtype=torch.long)))
+        return out
+
+    @torch.no_grad()
+    def next_h(self, enc, h_prev):
+        return torch.zeros_like(h_prev)
+
+    @torch.no_grad()
+    def new_item_vector(self, q):
+        return torch.zeros(self.cfg.d)
+
+    @torch.no_grad()
+    def update_item_vector(self, q, z):
+        return z
+
+    def train_transition(self, enc, h_prev):
+        return None
+
+
 def build(name, cfg, encoder, text):
     """Factory for the baselines named in BASELINE-PLAN §1."""
     if name == "M1c":
@@ -177,4 +233,6 @@ def build(name, cfg, encoder, text):
         return TextMemoryModel(cfg, encoder, text, window=None)
     if name == "RMT":
         return TextMemoryModel(cfg, encoder, text, memory_tokens=4)
+    if name == "KV":
+        return KVModel(cfg, encoder, text)
     raise ValueError(name)

@@ -119,6 +119,18 @@ class SharedHeads(nn.Module):
             out_new[e] = log_ae[e] + la[-1]
         return torch.cat([out_rec, out_new, log_ae[-1:]])
 
+    def address_flat(self, q, prof, att, val, rec_prof):
+        """Ablation A1 / KV: a flat pointer. One softmax over Omega with bilinear scores only (no entity stage, no
+        interaction MLP); no new parameters. Same output layout as address()."""
+        E, K = prof.shape[0], att.shape[0]
+        parts = []
+        if K:
+            parts.append(self.att_bil(q, self.rec_key(torch.cat([att, val], -1))))
+        if E:
+            parts.append(torch.stack([self.att_new(torch.cat([q, prof[e]])).squeeze(-1) for e in range(E)]))
+        parts.append(self.ent_new(q))
+        return F.log_softmax(torch.cat(parts), -1)
+
     def relation_logits(self, q, a, v):
         return self.relation(torch.cat([q, a, v, q * v, (q - v).abs()]))
 

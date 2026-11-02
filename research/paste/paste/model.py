@@ -108,10 +108,11 @@ class DecisionMixin:
         src_logits = hd.source(q, enc.tmp)
         s = src if src is not None else int(src_logits.argmax()) - 1
         qs = q if s < 0 else hd.item_query(enc.tmp[s], c)
+        addr = hd.address_flat if self.cfg.flat_address else hd.address
         return {"q": q, "c": c, "qs": qs, "src": s, "src_logits": src_logits, "gate": hd.gate(q, c),
                 "cls": hd.classify(q), "cls_s": hd.classify(qs),
-                "addr": hd.address(qs, enc.prof, enc.att, enc.val, enc.rec_prof),
-                "addr_q": hd.address(q, enc.prof, enc.att, enc.val, enc.rec_prof),
+                "addr": addr(qs, enc.prof, enc.att, enc.val, enc.rec_prof),
+                "addr_q": addr(q, enc.prof, enc.att, enc.val, enc.rec_prof),
                 "tmp": hd.temp_address(q, enc.tmp)}
 
     @torch.no_grad()

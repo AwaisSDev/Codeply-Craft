@@ -49,6 +49,7 @@ class PasteConfig:
     window: int = 16                 # +-16 token context window in the unit query
     merge_cross_pairs: int = 32      # cross-profile merge candidates (spec §5.10)
     init_std: float = 0.02
+    flat_address: bool = False       # ablation A1 and the KV baseline: one softmax over Omega, bilinear scores only
     head_norm: bool = False          # D2 pilot choice: parameter-free LayerNorm on encoder outputs read by heads
     thresholds: dict = field(default_factory=lambda: {
         "write": 0.5, "forget": 0.5, "retrieve": 0.5, "merge": 0.5, "expire": 0.5})

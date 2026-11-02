@@ -14,7 +14,7 @@ from paste.config import PasteConfig
 from paste.modernbert import load_backbone
 from test_t02_t03 import _with_temps
 
-SPEC = {"M1c": 36_418_838, "M1c-m": 39_074_966, "RMT": 36_568_214, "M1c+W": 36_418_838, "FC": 36_418_838}
+SPEC = {"M1c": 36_418_838, "M1c-m": 39_074_966, "RMT": 36_568_214, "M1c+W": 36_418_838, "FC": 36_418_838, "KV": 36_862_358}
 
 
 @pytest.fixture(scope="module")
@@ -51,3 +51,18 @@ def test_m1c_eval_independent_of_row_order(backbone, text):
         torch.manual_seed(5)
         b = m.encode([s_in])[0]
     assert torch.equal(a.att, b.att) and torch.equal(a.seg, b.seg)
+
+
+def test_flat_address_is_a_distribution(text):
+    from conftest import build_model
+    m = build_model()
+    m.cfg.flat_address = True
+    try:
+        ad = PasteAdapter(m, text)
+        s_in, *_ = ad.build(seg("My sister Ayesha moved to Lahore."), STORE, ad.empty_state())
+        enc = m.encode([s_in])[0]
+        with torch.no_grad():
+            lp = m.unit_outputs(enc, (3, 8), src=-1)["addr"]
+        assert lp.shape[0] == len(STORE) + enc.prof.shape[0] + 1 and abs(torch.logsumexp(lp, 0).item()) < 1e-5
+    finally:
+        m.cfg.flat_address = False
