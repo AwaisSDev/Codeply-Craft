@@ -182,7 +182,9 @@
     for (var j = all.length - 1; j >= 0; j--) {
       var w = all[j];
       if (!w.el.isConnected) { w.destroy(); continue; }
-      if (!w.visible) continue;
+      // Off screen it rests, but a shape change it started always finishes: otherwise a face the
+      // browser counts as off screen keeps the new mood's colour on the old shape (a pentagon).
+      if (!w.visible && !w.from) continue;
       // morph
       if (w.from) {
         var k = Math.min(1, (now - w.t0) / w.dur), e = reduce ? 1 : ease(k);

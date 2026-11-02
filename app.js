@@ -1779,7 +1779,7 @@ function openAccountMenu() {
       Connect Apps
     </button>
     <button class="menu-item" data-action="wisp">
-      <svg viewBox="0 0 24 24"><path d="M12 3.5l8.2 6-3.1 9.7H6.9L3.8 9.5z"/><circle cx="9.8" cy="11.6" r=".6"/><circle cx="14.2" cy="11.6" r=".6"/></svg>
+      ${icon('users')}
       Specialists
     </button>
     <div class="menu-sep"></div>
