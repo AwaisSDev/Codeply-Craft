@@ -28,6 +28,8 @@ class PasteAdapter:
     def __init__(self, model: PasteModel, text: Text, thresholds=None):
         self.m, self.text = model.eval(), text
         self.th = thresholds or dict(model.cfg.thresholds)
+        # raw segment history is kept in the temporary state only for text-window baselines (M1c+W, FC)
+        self.keeps_history = getattr(model, "window", 0) != 0
 
     # ---- temporary state ------------------------------------------------------------------
     def empty_state(self):
@@ -53,7 +55,7 @@ class PasteAdapter:
         st = copy.deepcopy(st)
         now, events = seg["at"], []
         if st["session_id"] is not None and seg["session_id"] != st["session_id"]:
-            st["h"] = None                                     # h <- h0: nothing latent crosses a session
+            st["h"] = None                                     # h <- h0: nothing latent crosses a session (RMT too)
             kept = []
             for it in st["items"]:
                 (events.append({"op": "T-EXPIRE", "item_id": it["id"], "why": "session ended"}) if it["ttl"] == "SESSION" else kept.append(it))
@@ -90,7 +92,11 @@ class PasteAdapter:
         temps = [TempIn(*self.text.span(it["text"]), z=it["z"], ttype=TTYPES.index(it["type"]),
                         tage=temp_age_bucket(st["seg_index"] - it["created_seg"])) for it in st["items"]]
         dt = dt_bucket(None if st["last_at"] is None else seg["at"] - st["last_at"])
-        s = StepInput(seg_ids=seg_ids, profiles=profiles, records=records, temps=temps, h=st["h"], dt=dt)
+        history = []
+        if self.keeps_history:
+            for hseg in st.get("history", []):
+                history.append((hseg["session_id"] == seg["session_id"], self.text.encode(hseg["text"], self.m.cfg.seg_max)[0]))
+        s = StepInput(seg_ids=seg_ids, profiles=profiles, records=records, temps=temps, h=st["h"], dt=dt, history=history)
         return s, text, seg_offs, profiles_meta
 
     def step(self, seg, persistent, temp_state, gate_override=None):
@@ -144,6 +150,8 @@ class PasteAdapter:
         # promoted items carry their text to the Brain proposal
         for op in out["operations"]:
             op.pop("q", None)
+        if self.keeps_history:
+            st["history"] = (st.get("history", []) + [{"session_id": seg["session_id"], "text": text}])[-64:]
         st.update(h=new_h, items=items, session_id=seg["session_id"], last_at=seg["at"], seg_index=st["seg_index"] + 1)
         return {"operations": out["operations"], "retrieval": out["retrieval"], "temp_ops": temp_ops,
                 "units": out["units"], "temp_state": self.serialize(st)}

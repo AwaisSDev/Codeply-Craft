@@ -54,6 +54,7 @@ class StepInput:
     temps: list = field(default_factory=list)
     h: torch.Tensor = None                        # [r, d]
     dt: int = 0
+    history: list = field(default_factory=list)   # [(same_session, seg_ids)] for text-window baselines only
 
 
 @dataclass
