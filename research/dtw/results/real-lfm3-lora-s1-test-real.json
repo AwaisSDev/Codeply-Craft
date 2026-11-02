@@ -1,0 +1,97 @@
+{
+  "name": "real-lfm3-lora-s1-test-real",
+  "provider": "rules",
+  "set": "test-real",
+  "style": "full",
+  "schema": true,
+  "promptVersion": 2,
+  "examples": 549,
+  "at": "2026-11-02T18:56:42.647Z",
+  "host": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "logical": 4,
+    "ramMB": 16091,
+    "threads": 4,
+    "ctx": 4096
+  },
+  "validity": 0.998,
+  "extraction": {
+    "precision": 0.752,
+    "recall": 0.563,
+    "f1": 0.644,
+    "gold": 366,
+    "pred": 274,
+    "tp": 206
+  },
+  "extractionUnseen": {
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "gold": 0,
+    "pred": 0,
+    "tp": 0
+  },
+  "kindAccuracy": 0.85,
+  "certaintyAccuracy": 0.84,
+  "falseMemoryRate": 0.35,
+  "noiseRejection": 0.981,
+  "plans": {
+    "precision": 1,
+    "recall": 0.725,
+    "dateAccuracy": 0.966,
+    "timeAccuracy": 0.828
+  },
+  "memoryActions": null,
+  "memoryActionsByTask": {
+    "duplicate": null,
+    "contradiction": null,
+    "joking": null,
+    "hypothetical": null,
+    "quoting": null
+  },
+  "temporal": 0.52,
+  "importanceSpearman": 0.675,
+  "importanceMAE": 0.078,
+  "safety": {
+    "secretsLeaked": 0,
+    "secretsTotal": 2,
+    "injectionsFollowed": 0,
+    "injectionsTotal": 0
+  },
+  "byTask": {
+    "labelled": {
+      "n": 549,
+      "precision": 0.752,
+      "recall": 0.563,
+      "f1": 0.644,
+      "gold": 366,
+      "pred": 274,
+      "tp": 206,
+      "validity": 0.998
+    }
+  },
+  "performance": {
+    "msMean": 8053,
+    "msP50": 5739,
+    "msP95": 23092,
+    "promptTokensMean": 1263,
+    "completionTokensMean": 23,
+    "serverPeakMB": 2021,
+    "serverStartMs": 5896,
+    "serverCpuSecondsPerExample": 19.262,
+    "wallSeconds": 4421
+  },
+  "errors": [
+    {
+      "id": "rl-wildchat-e46587c528-mg",
+      "error": "not a JSON object",
+      "raw": "{\"observations\":[{\"kind\":\"requirement\",\"slot\":\"guild system goal\",\"value\":\"use DnD tool proficiencies, 5-10 min at session start\",\"text\":\"The user's DnD guild system should make more use of the Tool proficiencies and take only 5 to 10 minutes at the start of a session.\",\"certainty\":\"stated\",\"importance\":0.85,\"project\":\"DnD guild system\",\"about\":\"project\"},{\"kind\":\"requirement\",\"slot\":\"guild room structure\",\"value\":\"rooms have two levels: basic on level 1, more powerful on level 2\",\"text\":\"The user's DnD guild system has rooms with two levels, where the first level provides a basic function and"
+    }
+  ],
+  "rescoredAt": "2026-11-02T20:06:35.042Z",
+  "chunked": {
+    "chunks": 11,
+    "chunkSize": 50,
+    "note": "evaluated in chunks (container restarts); metrics recomputed over the full set by --rescore"
+  }
+}
