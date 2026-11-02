@@ -4,8 +4,8 @@ Branch `research/paste-architecture`, base `672696c0` (`codeply-memarch-research
 
 ## Current phase
 
-Phase 4 (dataset generator and pilot): **in progress**. Phase 3 was approved
-by the owner on 2026-11-01. Spec amended to v2.1 (D1, D2).
+Phase 4 (dataset generator, pilot, audit, protocol, baseline plan): **ready for owner review**. Nothing is
+trained; no Kaggle job has run. Waiting for the owner's decisions in `DATASET-AUDIT.md` §6.
 
 ## Completed
 
@@ -19,7 +19,14 @@ by the owner on 2026-11-01. Spec amended to v2.1 (D1, D2).
   `ARCHITECTURE-SPEC.md` (v2). Headline: no PASTE mechanism is new; my prior
   for the central test is ~30 %.
 * 2026-11-01, Phase 3: CPU prototype (`paste/`), tests T1-T12 + S1 (25/25
-  pass), CPU benchmark, `PHASE3-REPORT.md`.
+  pass), CPU benchmark, `PHASE3-REPORT.md`. Approved by the owner.
+* 2026-11-01: spec v2.1 (D1 merges pass the write gate; D2 head_norm pilot flag); 27/27 tests pass.
+* 2026-11-02, Phase 4:
+  * generator (`data/`), 100-episode pilot (programmatic + Opus 5.5 API, 95/100 valid, **$1.87** of the
+    $8 cap);
+  * drafts of 1,650 episodes, all valid; leakage 0; PII scan 0;
+  * `DATASET-DESIGN.md`, `DATASET-AUDIT.md`, `EVALUATION-PROTOCOL.md`, `BASELINE-PLAN.md`;
+  * pilot stored in the private HF dataset `Awais1290/paste-data` (verified private).
 
 ## Running jobs
 
@@ -108,22 +115,29 @@ K = 8 / 32 / 128; peak RSS 482-496 MB.
 
 ## Next action
 
-1. Owner decisions D1 and D2.
-2. Phase 4 dataset generator: programmatic first, then the API pilot
-   (≤ ~100 episodes; cost estimate before any further spend).
-3. Baselines (M1c, M1c-m, M1c+W, RMT, KV) and the closed-loop trainer,
-   before any training run.
+After the owner's decisions:
+
+1. Freeze test and stress (generate, hash into `results/FROZEN.json`, upload privately).
+2. Generate train and val with the chosen generator mix (API spend only within the approved budget).
+3. Build the loader, the baselines, the trainer and the evaluator (`BASELINE-PLAN.md` §2).
+4. CPU and Kaggle throughput smoke runs; then the D2 pilot; then the central test.
 
 ## Latest metrics
 
-No trained model. Phase 3 measurements: see `PHASE3-REPORT.md` §2 and §5 (untrained weights; latency and memory only).
+No trained model. Data pilot: diversity, API vs programmatic: distinct-2 0.43 vs 0.22. Shortcut probe:
+a template-trained bag-of-words model scores 0.97 on template text and 0.60 on API wording (majority 0.65);
+see `DATASET-AUDIT.md` §5.
 
 ## Blockers
 
-* Owner decisions D1 and D2 (`PHASE3-REPORT.md` §3 and §7). They block
-  Phase 5 training, not Phase 4.
-* Expensive training stays blocked by rule until the sequential dataset and
-  the evaluation protocol are validated (owner decision 5).
+Owner decisions (`DATASET-AUDIT.md` §6):
+
+1. generator mix and budget (A ≈ $152, B ≈ $95, C ≈ $37);
+2. merge frequency 60 %;
+3. no artificial long-range references;
+4. approval of `EVALUATION-PROTOCOL.md` and `BASELINE-PLAN.md`, including the compute-budget gap
+   (`BASELINE-PLAN.md` §3: the full central test does not fit one week of free T4 at the assumed
+   throughput; options are listed).
 
 ## Owner decisions (2026-11-01, second round)
 
@@ -155,6 +169,7 @@ No trained model. Phase 3 measurements: see `PHASE3-REPORT.md` §2 and §5 (untr
 | D2 | Pilot both raw and normalised head inputs (`head_norm`) for PASTE and M1c under identical conditions; select on validation; document before the main experiment |
 | Phase 4 | Approved: generator + ~100-episode API pilot; estimate API cost before spending; ask before exceeding the approved budget; licensing and privacy rules unchanged |
 | Kaggle | Not yet: first the dataset audit, episode statistics, evaluation protocol and baseline plan go to the owner for approval |
+| API pilot model | Opus 5.5 only (owner's choice, 2026-11-02). A hard cap is enforced in code via worst-case arithmetic ($7.80 cap, $7.67 worst case); actual spend $1.87 |
 
 ## Decision log
 
