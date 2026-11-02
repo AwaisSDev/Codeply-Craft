@@ -1,6 +1,6 @@
 {
  "budget_usd": 95.0,
- "spent_usd": 0.0,
+ "spent_usd": 24.7914,
  "approved": "owner 2026-11-02, option B (DATASET-AUDIT section 6); the pilot ($1.87) was a separate approval",
  "batches": [
   {
@@ -8,7 +8,7 @@
    "plans": "test-plans.jsonl",
    "n": 600,
    "worst_usd": 39.94,
-   "actual_usd": null,
+   "actual_usd": 11.0314,
    "out": "/home/user/paste-data/frozen/api-test"
   },
   {
@@ -16,8 +16,24 @@
    "plans": "stress-plans.jsonl",
    "n": 200,
    "worst_usd": 27.58,
-   "actual_usd": null,
+   "actual_usd": 13.76,
    "out": "/home/user/paste-data/frozen/api-stress"
+  },
+  {
+   "batch_id": "msgbatch_015d28K5Y5qB9yrix4tciEg2",
+   "plans": "test-plans.jsonl",
+   "n": 17,
+   "worst_usd": 1.14,
+   "actual_usd": null,
+   "out": "/home/user/paste-data/frozen/api-test-retry"
+  },
+  {
+   "batch_id": "msgbatch_019YUpKRje1qRpD4ZsZ4Rs9K",
+   "plans": "stress-plans.jsonl",
+   "n": 22,
+   "worst_usd": 3.07,
+   "actual_usd": null,
+   "out": "/home/user/paste-data/frozen/api-stress-retry"
   }
  ]
 }
