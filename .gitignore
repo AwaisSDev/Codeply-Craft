@@ -19,3 +19,6 @@ sim-out/
 crew-ios/www
 crew-ios/ios
 crew-ios/node_modules
+
+# Rendered promo films (large; shared from the artifact page instead)
+media/*.mp4
