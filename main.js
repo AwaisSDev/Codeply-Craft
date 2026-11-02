@@ -349,26 +349,35 @@ function renameSessionInDb(id, title) {
   }).catch(() => {});
 }
 
-// Fired once, right after a brand-new session's first turn finishes - swaps
-// the raw truncated-first-message title for a short AI-written one, the same
-// way ChatGPT/Claude retitle a chat once there's enough to summarize. Never
-// awaited by the caller: a slow or failed title call should never hold up
-// `run_finished`, so any failure here just leaves the truncated title in place.
+// A chat is "Casual chat" until it has TITLE_AFTER messages from the user; when
+// the turn of the third one finishes, it gets a short AI-written name from those
+// messages and the answers to them. A name the user gave it (session.named) is
+// never replaced. Never awaited by the caller: a slow or failed title call never
+// holds up `run_finished`, it just leaves "Casual chat" in place.
+const CASUAL_TITLE = 'Casual chat';
+const TITLE_AFTER = 3;
 async function generateSessionTitle(session) {
   try {
-    const firstUser = session.messages.find((m) => m.kind === 'user');
-    const firstAssistant = session.messages.find((m) => m.kind === 'assistant');
-    if (!firstUser) return;
-    const transcript = `User: ${(firstUser.text || '').slice(0, 500)}` +
-      (firstAssistant ? `\nAssistant: ${(firstAssistant.text || '').slice(0, 500)}` : '');
+    if (session.named) return;
+    const said = session.messages.filter((m) => (m.kind === 'user' || (m.kind === 'assistant' && !m.interim)) && m.text);
+    const firstUsers = [];
+    for (const m of said) {
+      if (m.kind !== 'user') continue;
+      if (firstUsers.length === TITLE_AFTER) break;
+      firstUsers.push(m);
+    }
+    if (!firstUsers.length) return;
+    const upto = said.indexOf(firstUsers[firstUsers.length - 1]);
+    const transcript = said.slice(0, upto + 2)
+      .map((m) => `${m.kind === 'user' ? 'User' : 'Assistant'}: ${String(m.text).replace(/\s+/g, ' ').slice(0, 300)}`).join('\n');
     const r = await aiLib.chat([{
       role: 'user',
-      content: `Write a short title (3-6 words, title case, no quotes, no trailing punctuation) that names what this chat is about. Reply with only the title, nothing else.\n\n${transcript}`,
+      content: `Write a short title (2-5 words, title case, no quotes, no trailing punctuation) that names what this chat is about, from its first messages. Reply with only the title, nothing else.\n\n${transcript}`,
     }], { maxTokens: 20, route: currentRoute() });
     if (!r.success) return;
     const raw = r.data.choices?.[0]?.message?.content || '';
     const title = raw.trim().replace(/^["'“”]+|["'“”]+$/g, '').split('\n')[0].slice(0, 60);
-    if (!title || !store.sessions.includes(session)) return;
+    if (!title || !store.sessions.includes(session) || session.named) return;
     session.title = title;
     saveStore();
     renameSessionInDb(session.id, title);
@@ -2222,6 +2231,7 @@ ipcMain.handle('session:rename', (e, { id, title }) => {
   const session = store.sessions.find((s) => s.id === id);
   if (!session) return { ok: false };
   session.title = title;
+  session.named = true; // the user's own name: the automatic one never replaces it
   saveStore();
   renameSessionInDb(id, title);
   return { ok: true };
@@ -2724,6 +2734,7 @@ async function handleBridgeApi(method, pathname, query, body) {
     const title = String(body.title || '').trim().slice(0, 120);
     if (!title) return { status: 400, body: { error: 'Title cannot be empty.' } };
     session.title = title;
+    session.named = true;
     saveStore();
     renameSessionInDb(session.id, title);
     sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
@@ -3480,10 +3491,11 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
   let session = sessionId ? store.sessions.find((s) => s.id === sessionId) : null;
   if (!session && resume) return { error: 'That chat is no longer available.' };
   if (!session) {
-    const titleSource = goal || typedText;
+    // "Casual chat" until it has TITLE_AFTER messages (generateSessionTitle); a goal or a design names itself.
+    const titleSource = goal || (design ? typedText : '');
     session = {
       id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      title: titleSource.length > 46 ? titleSource.slice(0, 46) + '…' : titleSource,
+      title: !titleSource ? CASUAL_TITLE : titleSource.length > 46 ? titleSource.slice(0, 46) + '…' : titleSource,
       cwd,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -3717,9 +3729,9 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
       // Paused or handed to the cloud: not finished, so no "done" notification.
       if (!session.handoff) notifyTaskComplete(session);
       cloudDesktop.afterLocalRun(cwd);
-      if (session.messages.filter((m) => m.kind === 'user').length === 1) {
-        generateSessionTitle(session);
-      }
+      // Named once it has TITLE_AFTER messages from the user (a goal or a design is named already).
+      const sent = session.messages.filter((m) => m.kind === 'user').length;
+      if (sent === TITLE_AFTER && session.title === CASUAL_TITLE) generateSessionTitle(session);
     }
   })();
 
