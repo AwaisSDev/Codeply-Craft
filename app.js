@@ -3546,24 +3546,49 @@ let thinkingEl = null;
 let thinkingTimer = null;
 let thinkingStart = 0;
 
+// The thinking line, like the phone app's (phone-wisp.js): a shimmering word
+// that changes now and then, three hopping dots, and Wisp hopping beside it,
+// so a wait feels like something is happening. Never the same word twice in a row.
+const THINK_WORDS = ['Thinking', 'Pondering', 'Noodling', 'Mulling it over', 'Connecting the dots', 'Brewing an answer', 'Untangling it', 'Almost there'];
+const THINK_EVERY_MS = 2300;
+let thinkTurn = 0;
+let thinkWordTimer = null;
+function nextThinkWord() {
+  const w = thinkingEl && thinkingEl.querySelector('.think-word');
+  if (!w) return;
+  thinkTurn++;
+  let word = THINK_WORDS[thinkTurn % THINK_WORDS.length];
+  if (word === w.textContent) word = THINK_WORDS[(thinkTurn + 1) % THINK_WORDS.length];
+  w.textContent = word;
+  w.classList.remove('in'); void w.offsetWidth; w.classList.add('in');
+}
+const lastWispFace = () => { const all = chatColumn.querySelectorAll('.wisp-turn'); return all[all.length - 1] || null; };
+
 function showThinking() {
   if (activityEl && activityEl.isConnected) { activityEl.classList.add('running'); updateActivitySummary(activityEl); return; }
   if (thinkingEl) return;
   thinkingEl = document.createElement('div');
   thinkingEl.className = 'thinking-row';
-  thinkingEl.innerHTML = '<span class="spark">✦</span><span class="thinking-label">Thinking</span><span class="thinking-time">0s</span>';
+  thinkingEl.innerHTML = '<span class="think-word">Thinking</span><span class="think-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="thinking-time">0s</span>';
   chatColumn.appendChild(thinkingEl);
   thinkingStart = Date.now();
+  thinkTurn = 0;
+  const face = lastWispFace();
+  if (face) face.classList.add('live'); // Wisp hops while it thinks (styles.css)
   thinkingTimer = setInterval(() => {
     if (!thinkingEl) return;
     thinkingEl.querySelector('.thinking-time').textContent = Math.floor((Date.now() - thinkingStart) / 1000) + 's';
   }, 1000);
+  const still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!still) thinkWordTimer = setInterval(nextThinkWord, THINK_EVERY_MS);
   if (nearBottom()) scrollToBottom();
 }
 
 function hideThinking() {
   if (thinkingTimer) { clearInterval(thinkingTimer); thinkingTimer = null; }
+  if (thinkWordTimer) { clearInterval(thinkWordTimer); thinkWordTimer = null; }
   if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
+  chatColumn.querySelectorAll('.wisp-turn.live').forEach((f) => f.classList.remove('live'));
 }
 
 // A reasoning-capable model (Laguna, gpt-oss) hands back its chain-of-thought
@@ -3657,7 +3682,7 @@ async function sendMessage(text, fromHome, images) {
   if (window.CraftWispUI) {
     window.CraftWispUI.onSend(fromHome);
     // The answer starts with the agent's face, on the left, thinking.
-    const face = window.CraftWispUI.turnStart('thinking');
+    const face = window.CraftWispUI.turnStart('thinking', text); // reacts to what you wrote while it thinks
     if (face) chatColumn.appendChild(face);
   }
   if (window.CraftCloud && window.CraftCloud.beforeSend) window.CraftCloud.beforeSend(); // pull check, never blocks
@@ -4379,12 +4404,13 @@ async function openSession(id) {
       addUserMessage(m.text, m.images);
       // The answer's face, in the mood its reply ended on (only for the main agent's answers).
       if (window.CraftWispUI) {
-        let mood = null;
+        let mood = null; let reply = '';
         for (let j = i + 1; j < s.messages.length && s.messages[j].kind !== 'user'; j++) {
           const n = s.messages[j];
-          if (n.kind === 'assistant' && n.wisp && !n.interim) mood = n.mood || 'neutral';
+          if (n.kind === 'assistant' && n.wisp && !n.interim) { mood = n.mood || 'neutral'; reply = n.text || ''; }
         }
-        const face = mood ? window.CraftWispUI.turnStart(mood) : null;
+        // Like the phone: the agent's own mood, else how it felt about this message, else its answer's feeling.
+        const face = mood ? window.CraftWispUI.turnStart(window.CraftWispUI.moodFor(mood, m.text, reply), m.text) : null;
         if (face) chatColumn.appendChild(face);
       }
       return;

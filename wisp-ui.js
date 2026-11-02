@@ -87,16 +87,36 @@
    * Starts an answer: the avatar in the chat's left gutter, right after the
    * user's message. Returns the element to append, or null when off.
    */
-  function turnStart(mood) {
+  // Like the phone (phone-wisp.js): the face is how Wisp feels about what you
+  // wrote (angry with you at someone, a heart for "love you", sad on a rough
+  // day), or else the feeling of its own answer. A real mood the agent sent
+  // ([mood: x]) wins. It takes the mood's shape too: a heart, spiky, a star.
+  const CALM = new Set(['neutral', 'thinking', 'listening']);
+  function feel(text) {
+    if (!text || !W() || !W().read) return null;
+    try { const m = W().read(String(text).slice(0, 600)).mood; return CALM.has(m) ? null : m; } catch { return null; }
+  }
+  /** The face for an answer: the agent's own mood, else the reaction to the user's message, else the answer's feeling. */
+  function moodFor(agentMood, userText, replyText) {
+    if (agentMood && !CALM.has(agentMood)) return agentMood;
+    return feel(userText) || feel(replyText) || 'neutral';
+  }
+  let reaction = null; // how Wisp feels about the message it is answering, shown while it works
+
+  /** `userText`: the message this answer is to, so the face reacts to it while it thinks. */
+  function turnStart(mood, userText) {
     if (!enabled || !W()) return null;
+    reaction = feel(userText);
+    lastUserText = userText || '';
     const el = document.createElement('div');
     el.className = 'wisp-turn';
-    const face = W().avatar({ size: 'sm', mood: mood || 'neutral' });
+    const face = W().avatar({ size: 'sm', mood: (mood === 'thinking' && reaction) || mood || 'neutral', morph: true });
     face.classList.add('wisp-turn-face');
     el.appendChild(face);
     turnFace = face.wisp;
     return el;
   }
+  let lastUserText = '';
 
   function setFace(mood, hold) {
     if (!turnFace || !turnFace.el.isConnected) return;
@@ -108,7 +128,7 @@
   /** The reply has landed: the answer's face takes its mood and says it. */
   function replyMood(mood, text) {
     if (!turnFace) return;
-    setFace(mood || 'neutral');
+    setFace(moodFor(mood, lastUserText, text));
     turnFace.talk(Math.min(4000, 400 + String(text || '').length * 6));
   }
 
@@ -117,10 +137,10 @@
     if (!enabled) return;
     switch (data.type) {
       case 'tool_start': case 'approval_resolved': case 'question_resolved': setFace('working'); break;
-      case 'wisp_agent': setFace(data.phase === 'report' ? 'thinking' : 'working'); break;
-      case 'verifying': setFace('thinking'); break;
+      case 'wisp_agent': setFace(data.phase === 'report' ? reaction || 'thinking' : 'working'); break;
+      case 'verifying': setFace(reaction || 'thinking'); break; // still showing how it feels about your message
       case 'approval_request': case 'image_pick_request': setFace('worried'); break;
-      case 'question_request': setFace('thinking'); break;
+      case 'question_request': setFace(reaction || 'thinking'); break;
       case 'error': setFace('sad'); break;
       case 'aborted': setFace('neutral'); break;
       case 'run_finished': if (turnFace && (turnFace.mood === 'working' || turnFace.mood === 'thinking')) setFace('neutral'); break;
@@ -259,7 +279,7 @@
 
   window.CraftWispUI = {
     get enabled() { return enabled; },
-    refresh, onEvent, onSend, turnStart, replyMood, agentNote, openTeam, card,
+    refresh, onEvent, onSend, turnStart, replyMood, moodFor, agentNote, openTeam, card,
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', refresh);
