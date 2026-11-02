@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="ollama-connect.css">
 <link rel="stylesheet" href="publish-ui.css">
 <link rel="stylesheet" href="bots-ui.css">
+<link rel="stylesheet" href="rich-ui.css">
 <script>
   // Applies a stored explicit dark/light choice before styles.css even
   // finishes loading, so the window doesn't flash the wrong theme for a
@@ -347,6 +348,7 @@
           <span class="chat-title" id="chatTitle"></span>
         </div>
         <div class="topbar-icons">
+          <button class="icon-btn rx-type-btn" id="chatTypeBtn" title="Text size and style" aria-label="Text size and style"><span class="rx-aa" aria-hidden="true">Aa</span></button>
           <button class="icon-btn browser-toggle-btn" title="Toggle browser panel"><i data-icon="globe" class="ico-md"></i></button>
           <button class="icon-btn" id="bgTasksToggleBtn" title="Background tasks" aria-label="Background tasks"><i data-icon="list" class="ico-md"></i></button>
           <button class="icon-btn" id="terminalToggleBtn" title="Toggle terminal"><i data-icon="terminal" class="ico-md"></i></button>
@@ -674,6 +676,7 @@
 <script src="attachments.js"></script>
 <script src="usage.js"></script>
 <script src="new-project-name.js"></script>
+<script src="rich-ui.js"></script>
 <script src="app.js"></script>
 <script src="ollama-connect.js"></script>
 <script src="cloud-ui.js"></script>

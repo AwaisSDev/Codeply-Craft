@@ -1269,6 +1269,18 @@ Be concise and concrete. Quote the relevant code and cite it as path:line. If th
 
 const READ_ONLY_MODES = new Set(['Plan', 'Ask']);
 
+// What Craft's chat can draw (rich-ui.js in the desktop app). Bots talk in
+// Crew, email and calls, which show plain text, so they don't get this.
+const RICH_REPLIES = `RICH REPLIES
+Your replies are drawn in Codeply Craft's chat as rich Markdown. Format them so they read well, but only use what helps: a short answer stays short, and after coding work the short final-answer rule above still applies.
+- Markdown: headings # to ###### (six sizes), **bold**, *italic*, ~~strike~~, ==highlight==, \`code\`, [links](https://...), > quotes, --- dividers, numbered and nested lists, task lists (- [ ] / - [x]), and tables (| a | b | with a |---| row; :--: centres a column).
+- Coloured text: :green[...], :red[...], :blue[...], :amber[...], :purple[...], :gray[...] (or :success, :danger, :info, :warning, :muted).
+- Pills for statuses and labels: :pill[Beta], :pill-green[Automatic], :pill-amber[Pending], :pill-red[Discard], :pill-blue[...], :pill-purple[...]. Keyboard keys: :kbd[Ctrl+K].
+- Callouts: a quote whose first line is [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION], optionally followed by a title.
+- Documents the user will copy or keep (a handover, an email, a spec, a long write-up) go in a doc fence with the title after it, for example \`\`\`doc Project handover. It shows as a card with Copy and Expand. If the document contains code fences, open and close it with four backticks.
+- Interactive widgets: when something is clearer shown than told (a slider playground, a calculator, a chart, a before/after toggle, a small quiz, a colour or type preview), write a widget fence with a title, for example \`\`\`widget Typography playground, holding self-contained HTML, CSS and JS. It runs in a sandboxed frame in the chat with no network: no external scripts, fonts, images or fetch, and no localStorage. Draw with HTML, CSS, inline SVG or canvas. Use these CSS variables so it matches the app in light and dark: --bg, --surface, --surface-2, --text, --text-dim, --border, --accent, --green, --red, --amber, --font, --mono. Buttons, inputs, selects and range sliders already have tidy styles, and .card, .row and .muted classes exist. Keep it under about 150 lines and make it work at any width. A widget never replaces real work: when the user wants an app or page in their project, write the files.`;
+
+
 /** Files an apply_patch text adds, updates or moves to (for gates that run before the tool does). */
 function patchTargets(text) {
   return [...String(text || '').matchAll(/^\*\*\* (?:Add File|Update File|Move to):\s*(.+?)\s*$/gm)].map((m) => m[1]);
@@ -1396,6 +1408,7 @@ export function buildSystemPrompt(mode, cwd, userMessage, opts = {}) {
   // Native mode swaps the tag examples for a short note; the tools themselves
   // arrive as function definitions. The RULES apply either way.
   parts.push('', toolSection(opts.native));
+  if (!botPrompt) parts.push('', RICH_REPLIES);
   parts.push('', connectedServicesSection());
   const restriction = modeRestriction(mode);
   if (restriction) parts.push('', restriction);
@@ -1446,6 +1459,7 @@ function modeRestriction(mode) {
  */
 export function buildSystemSections(mode, cwd, userMessage, opts = {}) {
   const core = [MODE_PROMPT[mode] || MODE_PROMPT.Build, '', toolSection(opts.native)];
+  if (!opts.botPrompt) core.push('', RICH_REPLIES);
   const restriction = modeRestriction(mode);
   if (restriction) core.push('', restriction);
 
