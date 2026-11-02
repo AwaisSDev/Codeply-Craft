@@ -198,3 +198,20 @@ Alternative tried locally: convert each adapter to a GGUF LoRA
 (`convert_lora_to_gguf.py`) and apply it at load time (`llama-server
 --lora`) on the same LFM3 Q4_K_M base file the untrained baseline uses
 (see below).
+
+**Deviation, LFM3 LoRA evaluation format (2026-11-02).** Merging and
+re-quantizing with an importance matrix (`export_gguf.sh`) did not fit
+Kaggle's limits without GPU quota. Instead: each run's final adapter
+(seeds 1 and 2) converted to a GGUF LoRA with llama.cpp's
+`convert_lora_to_gguf.py` at the pinned commit `aa588a3` (f16, 284
+tensors = A and B of all 142 adapted modules, 64 MB; config from LFM3
+revision `ac2586a3`), applied at load time with `llama-server --lora` on
+the same `LFM3-1.7B-Q4_K_M.gguf` base file that the untrained baseline
+`lfm3-q4-v2-test-real` uses. llama.cpp loaded every adapter tensor (it
+refuses adapters with unmatched tensors). Smoke test on 4 test-real
+examples: the adapted model's answers differ from the base model's
+(no false memories on gold-empty examples; ~3× fewer generated tokens).
+Consequences: the fine-tuned weights are not re-quantized (the adapter
+stays f16 on a Q4_K_M base), so this is not the production export path;
+it isolates the effect of fine-tuning against the untrained model on the
+identical base file. Evaluation: `research/dtw/run-lora-evals.sh`.
