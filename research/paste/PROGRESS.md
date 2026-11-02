@@ -4,8 +4,33 @@ Branch `research/paste-architecture`, base `672696c0` (`codeply-memarch-research
 
 ## Current phase
 
-Phase 4 (dataset generator, pilot, audit, protocol, baseline plan): **ready for owner review**. Nothing is
-trained; no Kaggle job has run. Waiting for the owner's decisions in `DATASET-AUDIT.md` §6.
+Phase 5 preparation (2026-11-02). The owner approved option B, 60 % merges and the 3,000-episode fallback.
+Working autonomously (DECISIONS.md, 2026-11-02). In progress, in order:
+
+1. freeze the test and stress sets (generate, hash, store privately);
+2. generate train and val (option B);
+3. build the baselines, trainer and evaluator;
+4. measure T4 speed and check the Kaggle quota;
+5. D2 pilot, then the central test.
+
+## Resume instructions (a fresh container)
+
+```bash
+# 1. code
+git clone https://github.com/AwaisSDev/codeply-craft && cd codeply-craft && git checkout research/paste-architecture
+cd research/paste
+# 2. environment (CPU)
+python3 -m venv ~/paste-venv && ~/paste-venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
+~/paste-venv/bin/pip install -r requirements.txt anthropic kaggle six
+export PASTE_HF_CACHE=~/paste-cache/hf          # Ettin weights download here on first use
+# 3. credentials: the owner's env file (never committed); then for API/HF/Kaggle calls:
+#    set -a; . <owner env file>; set +a
+#    unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN   # inside Claude Code sessions, so calls reach api.anthropic.com
+# 4. data (private): huggingface-cli download Awais1290/paste-data --repo-type dataset --local-dir ~/paste-data/hf
+# 5. tests: ~/paste-venv/bin/python -m pytest tests -q      (expect 27 passed)
+# 6. DtW clean real-text rows (read only): clone branch codeply-memarch-research into a worktree and
+#    set PASTE_DTW_REAL=<worktree>/research/dtw/data/real
+```
 
 ## Completed
 
@@ -30,8 +55,7 @@ trained; no Kaggle job has run. Waiting for the owner's decisions in `DATASET-AU
 
 ## Running jobs
 
-None. (The owner paused once on 2026-11-01 for a usage limit; work resumed.) At most **2
-research agents at a time** from now on (owner instruction).
+None. At most **2 research agents at a time** (owner instruction). Experiments: `EXPERIMENTS.md`.
 
 Literature history: the first five agents were stopped before producing any
 output. Two fresh agents, restarted with the owner's approval, completed the
@@ -139,44 +163,6 @@ Owner decisions (`DATASET-AUDIT.md` §6):
    (`BASELINE-PLAN.md` §3: the full central test does not fit one week of free T4 at the assumed
    throughput; options are listed).
 
-## Owner decisions (2026-11-01, second round)
+## Decisions
 
-| # | Decision | What it permits | What it forbids |
-|---|---|---|---|
-| 1 | **Sequential data approved.** The earlier "Track B: not now" restriction is overridden for synthetic and properly licensed sequential data | Multi-segment and multi-session examples | Linking WildChat users; any WildChat-derived data. Temporary state and persistent Brain memory must stay separate |
-| 2 | **Data budget: pilot first** | A small API-generated conversation pilot | Any API spend beyond the pilot before the owner has seen a cost estimate. API data must be **compared** with programmatic generation for diversity and quality, not assumed better |
-| 3 | **Kaggle approved** | Up to one week of available **free** T4 quota | Paid compute or unexpected spending without asking. Checkpoints saved; jobs resumable |
-| 4 | **Private data and checkpoints** | Code and research documents in the public repo | Generated datasets and checkpoints in public places; publishing real conversational data or potentially sensitive artifacts. Dataset licences verified before use |
-| 5 | **Central scientific test**: PASTE against the same encoder run chunk by chunk with Brain memories fed forward (M1c) | | Treating M1c as an optional baseline. No expensive training before the sequential dataset and evaluation protocol are validated |
-
-## Assumptions (reversible; recorded so they can be challenged)
-
-| # | Assumption | Why | How to undo |
-|---|---|---|---|
-| A1 | "Brain memories fed forward" for M1c means **every Brain row the store would return for the conversation**, persistent and temporary (`status: temporary`, the Brain's `context` rows with expiry), rendered as text, up to the same capacity K that PASTE receives | Production Brain keeps temporary rows with `expiresAt`; omitting them would handicap the baseline | Re-run M1c with persistent rows only (reported as a variant) |
-| A2 | M1c uses **the same heads, losses, data, seeds, step budget and calibration** as PASTE; only the memory pathway differs | Otherwise a PASTE win could come from heads that could be added to M1c | n/a (design rule) |
-| A3 | M1c is also run parameter-matched (extra capacity until its count equals PASTE's) and with a raw-text window of the previous segments (M1c+W); the strongest of the three is the bar | The baseline gets the benefit of the doubt | Report each separately (always done) |
-| A4 | "Private" storage = private Hugging Face repos (dataset and model) under the owner's account, plus private Kaggle datasets for training input; the public repo holds only code, documents, configs, manifests and SHA-256 hashes | HF token and Kaggle credentials were provided; both support private storage | Owner names another location |
-| A5 | API pilot size: at most ~100 generated episodes, with the token count measured and costed before anything larger | "Small pilot" | Owner sets another size |
-| A6 | Free Kaggle quota is treated as ~30 GPU-hours per week; the exact remaining quota is read from Kaggle before launching | Kaggle's stated weekly limit; not yet verified for this account | Correct once read from the account |
-| A7 | No real conversational text enters generated datasets except rows from licence-verified sources (MultiWOZ MIT, Topical-Chat CDLA-Sharing-1.0, UCI Roman Urdu CC BY 4.0, plus sources the review verifies) | Owner decision 4 | Owner approves more sources |
-
-## Owner decisions (2026-11-01, third round: after Phase 3)
-
-| # | Decision |
-|---|---|
-| D1 | Record-pair MERGE needs its own threshold **and** the main write gate; 3:1 cost; merge P/R reported separately. Implemented as spec v2.1 §5.10 (a licensing gated PERSIST unit on one of the pair's profiles); tested (`test_t05_merge_needs_licensing_gated_unit`) |
-| D2 | Pilot both raw and normalised head inputs (`head_norm`) for PASTE and M1c under identical conditions; select on validation; document before the main experiment |
-| Phase 4 | Approved: generator + ~100-episode API pilot; estimate API cost before spending; ask before exceeding the approved budget; licensing and privacy rules unchanged |
-| Kaggle | Not yet: first the dataset audit, episode statistics, evaluation protocol and baseline plan go to the owner for approval |
-| API pilot model | Opus 5.5 only (owner's choice, 2026-11-02). A hard cap is enforced in code via worst-case arithmetic ($7.80 cap, $7.67 worst case); actual spend $1.87 |
-
-## Decision log
-
-| Date | Decision | Reversible | Why |
-|---|---|---|---|
-| 2026-11-01 | Base on `codeply-memarch-research` @ `672696c0` | yes | Holds the PASTE v1 spec, critique, harness and Brain code; DTW frozen data is identical to the DTW tip |
-| 2026-11-01 | All PASTE files under `research/paste/`; checkpoints in private storage (A4), not in git | yes | Isolation from DTW and production; owner decision 4 |
-| 2026-11-01 | No WildChat-derived rows for training, selection or evaluation | yes (if the audit clears it) | Licence, privacy and moderation unresolved; owner decision 1 |
-| 2026-11-01 | Pretrained Ettin-32M backbone (MIT); no scratch training | yes | ~5K-50K examples cannot teach language |
-| 2026-11-01 | M1c with shared heads is the central test (A1-A3) | no (owner decision 5) | Owner mandate; isolates the memory pathway |
+All owner decisions, assumptions and the decision log are in `DECISIONS.md`.
