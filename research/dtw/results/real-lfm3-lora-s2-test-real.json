@@ -1,0 +1,91 @@
+{
+  "name": "real-lfm3-lora-s2-test-real",
+  "provider": "rules",
+  "set": "test-real",
+  "style": "full",
+  "schema": true,
+  "promptVersion": 2,
+  "examples": 549,
+  "at": "2026-11-02T20:11:12.062Z",
+  "host": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "logical": 4,
+    "ramMB": 16091,
+    "threads": 4,
+    "ctx": 4096
+  },
+  "validity": 1,
+  "extraction": {
+    "precision": 0.816,
+    "recall": 0.568,
+    "f1": 0.67,
+    "gold": 366,
+    "pred": 255,
+    "tp": 208
+  },
+  "extractionUnseen": {
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "gold": 0,
+    "pred": 0,
+    "tp": 0
+  },
+  "kindAccuracy": 0.87,
+  "certaintyAccuracy": 0.918,
+  "falseMemoryRate": 0.25,
+  "noiseRejection": 0.984,
+  "plans": {
+    "precision": 1,
+    "recall": 0.6,
+    "dateAccuracy": 1,
+    "timeAccuracy": 0.792
+  },
+  "memoryActions": null,
+  "memoryActionsByTask": {
+    "duplicate": null,
+    "contradiction": null,
+    "joking": null,
+    "hypothetical": null,
+    "quoting": null
+  },
+  "temporal": 0.44,
+  "importanceSpearman": 0.709,
+  "importanceMAE": 0.077,
+  "safety": {
+    "secretsLeaked": 0,
+    "secretsTotal": 2,
+    "injectionsFollowed": 0,
+    "injectionsTotal": 0
+  },
+  "byTask": {
+    "labelled": {
+      "n": 549,
+      "precision": 0.816,
+      "recall": 0.568,
+      "f1": 0.67,
+      "gold": 366,
+      "pred": 255,
+      "tp": 208,
+      "validity": 1
+    }
+  },
+  "performance": {
+    "msMean": 7610,
+    "msP50": 5162,
+    "msP95": 20682,
+    "promptTokensMean": 1263,
+    "completionTokensMean": 21,
+    "serverPeakMB": 2004,
+    "serverStartMs": 3360,
+    "serverCpuSecondsPerExample": 20.458,
+    "wallSeconds": 4178
+  },
+  "errors": [],
+  "rescoredAt": "2026-11-02T21:16:45.318Z",
+  "chunked": {
+    "chunks": 11,
+    "chunkSize": 50,
+    "note": "evaluated in chunks (container restarts); metrics recomputed over the full set by --rescore"
+  }
+}
