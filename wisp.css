@@ -1,0 +1,85 @@
+/* Wisp in Craft: the character (wisp.js) and where it shows (wisp-ui.js). */
+
+/* ---- the character ---- */
+.wisp-el { display: inline-block; flex: none; line-height: 0; cursor: pointer; -webkit-user-select: none; user-select: none; }
+.wisp-el svg { width: 100%; height: 100%; overflow: visible; stroke: none; fill: none; } /* Craft's global svg icon stroke must not reach Wisp */
+.wisp-el .w-body { filter: drop-shadow(0 6px 14px rgba(31, 82, 224, .28)); }
+.wisp-el[data-mood="angry"] .w-body { filter: drop-shadow(0 6px 14px rgba(224, 48, 74, .3)); }
+.wisp-el[data-mood="love"] .w-body { filter: drop-shadow(0 6px 14px rgba(224, 69, 127, .3)); }
+.wisp-el .w-eyes { fill: #0b0b0f; }
+.wisp-el .w-shine { pointer-events: none; }
+.wisp-el .w-shape, .wisp-el linearGradient stop { transition: stop-color .45s ease; }
+.wisp-lg { width: 132px; height: 132px; }
+.wisp-md { width: 46px; height: 46px; }
+.wisp-sm { width: 30px; height: 30px; }
+.wisp-xs { width: 20px; height: 20px; }
+.wisp-sm .w-body, .wisp-xs .w-body { filter: none; }
+.wisp-av { display: inline-block; }
+
+/* ---- home: the avatar in place of the logo ---- */
+.wisp-on .home-logo { display: none; }
+.wisp-home { display: flex; flex-direction: column; align-items: center; }
+.wisp-on .home-title { margin-top: 14px; }
+
+/* ---- chat: every answer starts with the avatar, on the left ---- */
+.wisp-on .chat-column { padding-left: 70px; }
+.wisp-turn { position: relative; height: 0; }
+.wisp-turn-face { position: absolute; left: -48px; top: 0; }
+.wisp-turn-face.wisp-sm { width: 36px; height: 36px; }
+
+/* ---- specialists: one quiet row inside the answer's work line ---- */
+.wisp-note { display: flex; flex-direction: column; gap: 2px; padding: 4px 14px; font-size: 12.5px; color: var(--text-dim); }
+.wisp-note.bad { color: var(--red); }
+.wisp-note-task { color: var(--text-faint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- Wisp and its team ---- */
+.wisp-team-backdrop { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--overlay); }
+.wisp-team {
+  width: 100%; max-width: 520px; max-height: calc(100vh - 48px); overflow: auto;
+  background: var(--modal-bg); border: 1px solid var(--card-border); border-radius: 18px; box-shadow: var(--shadow-lg); padding: 20px 22px 18px;
+}
+.wisp-team-top { display: flex; align-items: flex-start; gap: 14px; }
+.wisp-team-top h2 { margin: 2px 0 4px; font-size: 18px; font-weight: 600; }
+.wisp-team-top p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-dim); }
+.wisp-team-face { flex: none; }
+.wisp-team-x { margin-left: auto; flex: none; }
+.wisp-switch { display: flex; align-items: center; gap: 10px; margin: 16px 0 6px; font-size: 13.5px; cursor: pointer; }
+.wisp-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.wisp-switch-track { width: 34px; height: 20px; flex: none; border-radius: 999px; background: var(--control-border); position: relative; transition: background .18s ease; }
+.wisp-switch-track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .18s ease; }
+.wisp-switch input:checked + .wisp-switch-track { background: var(--accent); }
+.wisp-switch input:checked + .wisp-switch-track::after { transform: translateX(14px); }
+.wisp-switch input:focus-visible + .wisp-switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wisp-team-head { margin: 16px 0 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); }
+.wisp-team-head small { font-weight: 400; text-transform: none; letter-spacing: 0; margin-left: 6px; }
+.wisp-team { max-width: 620px; }
+.wisp-team-list { display: flex; flex-direction: column; }
+.wisp-team-item { border-bottom: 1px solid var(--border); }
+.wisp-team-item:last-child { border-bottom: 0; }
+.wisp-team-row { width: 100%; display: flex; align-items: center; gap: 11px; padding: 9px 4px; text-align: left; color: inherit; border-radius: 8px; }
+.wisp-team-row:hover { background: var(--hover); }
+.wisp-team-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.wtr-text { flex: 1; min-width: 0; }
+.wtr-text b { display: block; font-size: 13.5px; font-weight: 600; }
+.wtr-text small { display: block; font-size: 12px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wtr-meta { flex: none; font-size: 11.5px; color: var(--text-faint); }
+.wtr-chev { width: 14px; height: 14px; flex: none; color: var(--text-faint); transition: transform .15s ease; }
+.wisp-team-row[aria-expanded="true"] .wtr-chev { transform: rotate(90deg); }
+.wisp-team-detail { padding: 2px 4px 14px; display: flex; flex-direction: column; gap: 6px; }
+.wtd-label { margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--text-dim); }
+.wtd-label small { font-weight: 400; color: var(--text-faint); margin-left: 4px; }
+.wtd-model, .wtd-text { width: 100%; font: inherit; font-size: 13px; color: var(--text); background: var(--control-bg); border: 1px solid var(--control-border); border-radius: 9px; padding: 7px 9px; }
+.wtd-text { resize: vertical; line-height: 1.5; }
+.wtd-model:focus-visible, .wtd-text:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.wtd-guide { margin: 0; max-height: 140px; overflow: auto; white-space: pre-wrap; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5; color: var(--text-dim); background: var(--code-bg); border-radius: 9px; padding: 8px 10px; }
+.wtd-actions { display: flex; gap: 8px; margin-top: 4px; }
+.wtd-remove { margin-left: auto; color: var(--red); }
+.wtd-history { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--text-dim); }
+.wtd-history small, .wtd-job small { color: var(--text-faint); }
+.wtd-history .ok { color: var(--green); } .wtd-history .bad, .wtd-job .bad { color: var(--red); }
+.wtd-job { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--card-border); border-radius: 10px; font-size: 12.5px; }
+.wtd-job > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.wtd-job small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wtd-empty { margin: 0; font-size: 12.5px; color: var(--text-faint); }
+.wisp-team-note { margin: 12px 0 0; font-size: 12px; color: var(--text-faint); line-height: 1.5; }
+

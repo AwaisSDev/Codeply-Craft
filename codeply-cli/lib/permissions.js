@@ -106,4 +106,33 @@ function decide(req, cwd) {
   return { decision: null };
 }
 
-module.exports = { decide, wildcard };
+// ─── The global rules, edited from the phone (Craft's /api/permissions) ────
+const globalFile = () => path.join(os.homedir(), '.codeply', 'permissions.json');
+const RULE_RE = /^[a-z_*]+(?::.{1,200})?$/;
+
+/** A rule as typed: "run:npm test", "write_file:*.env", "supabase_delete_project". */
+function cleanRule(r) {
+  const s = String(r || '').trim().replace(/\s+/g, ' ');
+  return RULE_RE.test(s) ? s : null;
+}
+
+/** The every-project rules, plus this project's own (read only) when a folder is given. */
+function listRules(cwd) {
+  const out = { global: readRules(globalFile()), file: globalFile() };
+  if (cwd) out.project = readRules(path.join(cwd, '.codeply', 'permissions.json'));
+  return out;
+}
+
+/** Replaces the every-project rules. Bad entries are dropped, duplicates merged; other keys in the file are kept. */
+function saveGlobalRules({ allow, deny } = {}) {
+  const file = globalFile();
+  let current = {};
+  try { current = JSON.parse(fs.readFileSync(file, 'utf8')) || {}; } catch {}
+  const tidy = (list) => [...new Set((Array.isArray(list) ? list : []).map(cleanRule).filter(Boolean))].slice(0, 200);
+  const next = { ...current, allow: tidy(allow), deny: tidy(deny) };
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(next, null, 2));
+  return { global: { allow: next.allow, deny: next.deny }, file };
+}
+
+module.exports = { decide, wildcard, listRules, saveGlobalRules, cleanRule };

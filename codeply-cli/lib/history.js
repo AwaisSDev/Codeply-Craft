@@ -15,6 +15,7 @@ const ACTION_VERBS = {
   supabase_create_project: 'created Supabase project', gmail_send: 'emailed', slack_post_message: 'posted to Slack',
   use_computer: 'on the computer:', look_at_screen: 'looked at the screen', life_context: 'looked up', calendar_add: 'added to the calendar',
   calendar_update: 'changed the calendar:', gmail_search: 'searched email for', gmail_read: 'read the email', remember: 'remembered', hand_off: 'handed off',
+  schedule: 'scheduled', create_specialist: 'set up the specialist',
 };
 
 /** One line per tool call the agent really made, for grounding later turns. */
@@ -41,6 +42,13 @@ function buildHistory(session) {
     if (m.kind === 'user') {
       flushActions();
       turns.push({ role: 'user', content: m.expanded || m.text, images: m.images || null });
+    } else if (m.kind === 'wisp_agent' && m.agent) {
+      // Wisp's specialists: never shown as their own voice, but Wisp knows whom it brought in.
+      if (m.phase === 'start') pendingActions.push(`brought in the ${m.agent.name} specialist for: ${String(m.task || '').replace(/\s+/g, ' ').slice(0, 160)}`);
+      else if (m.phase === 'report' && !m.ok) pendingActions.push(`the ${m.agent.name} specialist could not finish`);
+      else if (m.phase === 'created') pendingActions.push(`created a new specialist, ${m.agent.name} (${m.agent.focus || ''})`);
+    } else if (m.kind === 'assistant' && m.text && m.agent) {
+      // A specialist's narration while it worked: not part of the conversation.
     } else if (m.kind === 'assistant' && m.text) {
       const last = turns[turns.length - 1];
       if (last && last.role === 'assistant') last.content += '\n\n' + m.text;

@@ -278,6 +278,8 @@
   // ─── A bot calling you ────────────────────────────────────────────────────
   function botFor(r) {
     const C = window.CraftCalls;
+    // Codeply itself calls you now (voice mode); the bots are no longer separate voices.
+    if (C && C.CODEPLY) return C.CODEPLY;
     const known = C && C.cache && r.bot_id ? C.cache.bots.find((b) => b.id === r.bot_id) : null;
     if (known) return known;
     return { id: r.bot_id || `codeply-${r.bot_name || 'bot'}`, name: r.bot_name || 'Codeply', voice: r.bot_voice || '', avatar: null };

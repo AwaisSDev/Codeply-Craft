@@ -73,7 +73,7 @@ function keepDeviceId(id) {
 })();
 const deviceHeader = () => ({ 'x-codeply-device': deviceIdValue });
 
-const CHAT_SYSTEM = 'You are Codeply, the assistant in the Codeply phone app. This is a normal chat: you cannot see, open or change any files, run code or browse here. Answer clearly and keep it readable on a phone screen; use short paragraphs, lists and fenced code blocks when they help. If someone wants changes made to one of their projects, tell them to switch to Code in the composer. When a GMAIL note appears in the conversation, it is the user’s own inbox read live just now: answer from it directly (who wrote, about what, what needs a reply) and never say you cannot see their email.';
+const CHAT_SYSTEM = 'You are Codeply, the assistant in the Codeply phone app. This is a normal chat: you cannot see, open or change files or run code here, but you can search the web (see WEB SEARCH). Answer clearly and keep it readable on a phone screen. The app draws rich markdown, so format answers well when it helps (never for a one-line reply): ## and ### headings, short paragraphs, lists, - [ ] / - [x] checklists, tables for comparisons, fenced code blocks with a language, **bold** for key words, ==highlight== for the one thing to remember, -# at the start of a line for small fine print, [[Label]] or [[Label|green]] for a coloured status tag (blue green red orange yellow purple pink teal gray), {{green: text}} for coloured text such as numbers going up or down, and > [!TIP] / > [!NOTE] / > [!WARNING] callouts for a tip or a caveat. Use colour and tags sparingly, where they carry meaning. No emoji as decoration. If someone wants changes made to one of their projects, tell them to switch to Code in the composer. When a GMAIL note appears in the conversation, it is the user’s own inbox read live just now: answer from it directly (who wrote, about what, what needs a reply) and never say you cannot see their email.\n\nWEB SEARCH\nYou can search the web whenever you want. To search, reply with ONLY this one line and nothing else: [[SEARCH: your search query]]. The app runs the search and sends you the results; then you answer (you may search once more if the first results miss). Search whenever the answer depends on anything current or checkable: news, prices, weather, scores, schedules, releases and versions, people and companies, places and opening hours, anything after your training data or that you are not sure of, and always when the user says search, look up, google, check online or find. Never say you cannot browse or search the web. Answering from results: the key facts first, short, and cite sources as markdown links like [The Verge](https://...).';
 
 // ─── Small helpers ──────────────────────────────────────────────────────────
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c]);
@@ -129,14 +129,37 @@ const ICONS = {
   arrow: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>',
 };
 
-// Just enough markdown for replies on a phone: fenced code, `code`, **bold**,
-// *italic*, headings, lists, links. Escapes first, so text never injects markup.
+// The "thinking" line: a shimmering word that changes now and then, and three hopping dots (phone-wisp.js swaps the words).
+const THINK_HTML = (word = 'Thinking') => `<span class="think"><span class="think-word">${word}</span><span class="think-dots"><i></i><i></i><i></i></span></span>`;
+// Rich markdown for replies on a phone. Escapes first, so text never injects markup.
+//   # / ## / ###        big, medium and small headings
+//   -# text             a line of small, quiet text (fine print)
+//   **bold** *italic* ~~struck~~ ==highlight== `code` [link](https://...)
+//   [[Label]] [[Label|green]]   a coloured tag (colour picked from the word when not given)
+//   {{red: text}}       coloured text (blue green red orange yellow purple pink teal gray)
+//   > [!TIP] ...        a coloured callout (NOTE TIP SUCCESS WARNING IMPORTANT CAUTION); plain > is a quote
+//   - [ ] / - [x]       a checklist
+//   ---                 a divider;  | a | b | tables;  ```lang fenced code with a Copy button
+const MD_COLORS = ['blue', 'green', 'red', 'orange', 'yellow', 'purple', 'pink', 'teal', 'gray'];
+function tagColor(c, label) {
+  if (c && MD_COLORS.includes(c)) return c;
+  const t = String(label).toLowerCase();
+  if (/\b(done|pass(ed|ing)?|ok|success|fixed|live|ready|yes|merged|shipped|new feature)\b/.test(t)) return 'green';
+  if (/\b(fail(ed|ing)?|error|bug|broken|breaking|blocked|no|urgent|critical)\b/.test(t)) return 'red';
+  if (/\b(warn(ing)?|todo|pending|wip|draft|review|slow|risk)\b/.test(t)) return 'orange';
+  if (/\b(new|beta|idea|tip|pro)\b/.test(t)) return 'purple';
+  return 'blue';
+}
 function inlineMd(s) {
   return String(s).split(/(`[^`\n]+`)/).map((part, i) => {
     if (i % 2) return `<code>${esc(part.slice(1, -1))}</code>`;
     return esc(part)
+      .replace(/\[\[([^\]|\n]{1,40}?)(?:\|([a-z]+))?\]\]/g, (m, t, c) => `<span class="md-tag ${tagColor(c, t)}">${t.trim()}</span>`)
+      .replace(/\{\{([a-z]+):\s*([^}\n]+?)\}\}/g, (m, c, t) => (MD_COLORS.includes(c) ? `<span class="md-c ${c}">${t}</span>` : m))
       .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
       .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/~~([^~\n]+)~~/g, '<del>$1</del>')
+      .replace(/==([^=\n]+)==/g, '<mark>$1</mark>')
       .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>')
       // Craft's coloured text and pills (:green[..], :pill-amber[..], :kbd[..]).
       .replace(/:([a-z]+(?:-[a-z]+)?)\[([^\]\n]+)\]/g, (m, name, text) => {
@@ -150,10 +173,11 @@ function inlineMd(s) {
 }
 const RICH_COLORS = { green: 'green', success: 'green', red: 'red', danger: 'red', error: 'red', blue: 'blue', info: 'blue', amber: 'amber', orange: 'amber', yellow: 'amber', warning: 'amber', purple: 'purple', violet: 'purple', gray: 'gray', grey: 'gray', muted: 'gray' };
 function md(src) {
-  const parts = String(src || '').replace(/\r\n/g, '\n').split(/^```/m);
+  const parts = String(src || '').replace(/\r\n/g, '\n').split(/^\s*```/m);
   return parts.map((part, i) => {
     if (i % 2) {
       const nl = part.indexOf('\n');
+      const lang = (nl >= 0 ? part.slice(0, nl) : part).trim().split(/\s/)[0].slice(0, 20);
       const body = nl >= 0 ? part.slice(nl + 1) : '';
       // Craft's interactive widgets only run in the desktop app; documents read as text.
       const head = (nl >= 0 ? part.slice(0, nl) : part).trim();
@@ -161,7 +185,7 @@ function md(src) {
       const title = head.slice(kind.length).trim().replace(/^(["'])(.*)\1$/, '$2');
       if (kind === 'widget' || kind === 'ui' || kind === 'interactive') return `<div class="md-widget-note"><strong>${esc(title || 'Interactive widget')}</strong><span>Open this chat in Craft on your PC to use it.</span></div>`;
       if (kind === 'doc' || kind === 'document' || kind === 'writing') return `<div class="md-doc">${title ? `<h3>${esc(title)}</h3>` : ''}${mdBlocks(body)}</div>`;
-      return `<pre><code>${esc(body.replace(/\n$/, ''))}</code></pre>`;
+      return `<div class="md-code"><div class="md-code-head"><span>${esc(lang || 'code')}</span><button type="button" class="md-copy">Copy</button></div><pre><code>${esc(body.replace(/\n$/, ''))}</code></pre></div>`;
     }
     return mdBlocks(part.replace(/^[^\n]*\n?/, i === 0 ? '$&' : ''));
   }).join('');
@@ -169,39 +193,74 @@ function md(src) {
 // A markdown table (| a | b | rows), drawn as a real table that scrolls sideways on a narrow screen.
 function mdTable(lines) {
   const cells = (l) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
-  const rows = lines.filter((l) => !/^\s*\|?\s*:?-{2,}/.test(l)).map(cells);
+  const sep = lines.find((l) => /^\s*\|?\s*:?-{2,}/.test(l));
+  const align = sep ? cells(sep).map((c) => (/^:-+:$/.test(c) ? 'center' : /-:$/.test(c) ? 'right' : '')) : [];
+  const rows = lines.filter((l) => l !== sep).map(cells);
   if (!rows.length) return '';
   const [head, ...rest] = rows;
-  return `<div class="md-table"><table><thead><tr>${head.map((c) => `<th>${inlineMd(c)}</th>`).join('')}</tr></thead><tbody>${rest.map((r) => `<tr>${r.map((c) => `<td>${inlineMd(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  const a = (j) => (align[j] ? ` style="text-align:${align[j]}"` : '');
+  return `<div class="md-table"><table><thead><tr>${head.map((c, j) => `<th${a(j)}>${inlineMd(c)}</th>`).join('')}</tr></thead><tbody>${rest.map((r) => `<tr>${r.map((c, j) => `<td${a(j)}>${inlineMd(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+const CALLOUTS = { note: ['blue', 'Note'], info: ['blue', 'Info'], tip: ['green', 'Tip'], success: ['green', 'Done'], warning: ['orange', 'Heads up'], important: ['purple', 'Important'], caution: ['red', 'Careful'], danger: ['red', 'Careful'] };
+function mdQuote(lines) {
+  const first = /^\s*\[!(\w+)\]\s*(.*)$/.exec(lines[0] || '');
+  const kind = first && CALLOUTS[first[1].toLowerCase()];
+  if (!kind) return `<blockquote>${mdBlocks(lines.join('\n'))}</blockquote>`;
+  const title = first[2] ? inlineMd(first[2]) : kind[1];
+  return `<div class="md-callout ${kind[0]}"><div class="md-callout-title">${title}</div>${mdBlocks(lines.slice(1).join('\n'))}</div>`;
 }
 function mdBlocks(text) {
   const out = [];
-  let para = []; let list = null; let table = null;
+  let para = []; let list = null; let table = null; let quote = null;
   const flushPara = () => { if (para.length) out.push(`<p>${para.map(inlineMd).join('<br>')}</p>`); para = []; };
-  const flushList = () => { if (list) out.push(`<${list.type}>${list.items.map((x) => `<li>${inlineMd(x)}</li>`).join('')}</${list.type}>`); list = null; };
+  const flushList = () => {
+    if (list) out.push(`<${list.type}${list.tasks ? ' class="md-tasks"' : ''}>${list.items.map((x) => {
+      const t = /^\[([ xX])\]\s+(.*)$/.exec(x);
+      return t ? `<li class="${t[1] === ' ' ? 'todo' : 'done'}"><span class="md-check"></span><span>${inlineMd(t[2])}</span></li>` : `<li>${inlineMd(x)}</li>`;
+    }).join('')}</${list.type}>`);
+    list = null;
+  };
   const flushTable = () => { if (table) out.push(mdTable(table)); table = null; };
+  const flushQuote = () => { if (quote) out.push(mdQuote(quote)); quote = null; };
+  const flushAll = () => { flushPara(); flushList(); flushTable(); flushQuote(); };
   for (const line of text.split('\n')) {
+    const q = /^\s*>\s?(.*)$/.exec(line);
+    if (q) { flushPara(); flushList(); flushTable(); (quote || (quote = [])).push(q[1]); continue; }
+    flushQuote();
     if (/^\s*\|.*\|\s*$/.test(line)) { flushPara(); flushList(); (table || (table = [])).push(line); continue; }
     flushTable();
+    if (!line.trim()) { flushPara(); flushList(); continue; }
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { flushAll(); out.push('<hr>'); continue; }
+    const small = /^\s*-#\s+(.*)$/.exec(line);
+    if (small) { flushAll(); out.push(`<p class="md-small">${inlineMd(small[1])}</p>`); continue; }
+    const h = /^\s*(#{1,6})\s+(.*)$/.exec(line);
+    if (h) { flushAll(); const n = Math.min(h[1].length, 4); out.push(`<h${n} class="md-h${n}">${inlineMd(h[2].replace(/\s+#+\s*$/, ''))}</h${n}>`); continue; }
     const ul = /^\s*[-*+]\s+(.*)$/.exec(line);
     const ol = /^\s*\d+[.)]\s+(.*)$/.exec(line);
-    const h = /^\s*(#{1,6})\s+(.*)$/.exec(line);
-    if (!line.trim()) { flushPara(); flushList(); continue; }
-    if (h) { flushPara(); flushList(); out.push(`<h${h[1].length <= 2 ? 3 : 4}>${inlineMd(h[2])}</h${h[1].length <= 2 ? 3 : 4}>`); continue; }
     if (ul || ol) {
       flushPara();
       const type = ul ? 'ul' : 'ol';
       if (!list || list.type !== type) { flushList(); list = { type, items: [] }; }
-      list.items.push((ul || ol)[1]);
+      const item = (ul || ol)[1];
+      if (/^\[[ xX]\]\s/.test(item)) list.tasks = true;
+      list.items.push(item);
       continue;
     }
     if (list && /^\s{2,}\S/.test(line)) { list.items[list.items.length - 1] += ` ${line.trim()}`; continue; }
     flushList();
     para.push(line);
   }
-  flushPara(); flushList(); flushTable();
+  flushAll();
   return out.join('');
 }
+// Copy on any code block in a reply.
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('.md-copy');
+  if (!b) return;
+  const code = b.closest('.md-code').querySelector('code');
+  const done = () => { b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy'; }, 1400); };
+  try { navigator.clipboard.writeText(code.textContent).then(done, done); } catch { done(); }
+});
 
 // ─── Theme ──────────────────────────────────────────────────────────────────
 const themeChoice = () => { const t = localStorage.getItem('craft-theme'); return t === 'dark' || t === 'light' ? t : 'system'; };
@@ -213,7 +272,7 @@ function applyTheme(choice) {
 function syncTheme() {
   const c = themeChoice();
   const dark = c === 'dark' || (c === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  if ($('themeColorMeta')) $('themeColorMeta').content = dark ? '#0d0d0d' : '#ffffff';
+  if ($('themeColorMeta')) $('themeColorMeta').content = dark ? '#171717' : '#FFFFFF'; // the canvas (phone-theme.css)
   $('themeBtn').innerHTML = ICONS[c];
   $('themeBtn').title = c === 'system' ? 'Theme: match the phone' : `Theme: ${c}`;
 }
@@ -222,7 +281,7 @@ if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEven
 // ─── State ──────────────────────────────────────────────────────────────────
 const KEY = {
   chats: 'craft-phone-chats', chat: (id) => `craft-phone-chat-${id}`, pc: 'craft-phone-pc', envs: 'craft-phone-envs',
-  ui: 'craft-phone-ui', creds: 'craft-cloud-creds', client: 'craft-client-id', bypass: 'craft-bypass',
+  ui: 'craft-phone-ui', creds: 'craft-cloud-creds', client: 'craft-client-id', bypass: 'craft-bypass', perm: 'craft-permission',
   synced: 'craft-phone-synced',
 };
 const clientId = localStorage.getItem(KEY.client) || makeClientId();
@@ -235,6 +294,8 @@ const state = {
   ui: { mode: 'chat', projectKey: null, codeMode: 'Build', chatModel: 'auto', useProject: false, ...load(KEY.ui, {}) },
   synced: load(KEY.synced, []),   // [{ id, clientId, name, model, baseUrl, key }] from user-models, keys masked
   bypass: localStorage.getItem(KEY.bypass) === '1',
+  // How the agent on the PC asks: 'ask' (every edit and command), 'edits' (file edits run, commands ask), 'full' (nothing asks).
+  perm: ['ask', 'edits', 'full'].includes(localStorage.getItem(KEY.perm)) ? localStorage.getItem(KEY.perm) : (localStorage.getItem(KEY.bypass) === '1' ? 'full' : 'ask'),
   pc: load(KEY.pc, { device: '', projects: [], sessions: [], models: null }),
   envs: load(KEY.envs, {}),       // repo -> cloud environment set up from the phone
   creds: load(KEY.creds, null),   // { token, login, projects: [{ cwd, name, repo }], at, source }
@@ -242,6 +303,7 @@ const state = {
   busy: new Set(),                // chat ids with a run or reply in flight
   chatAbort: null,
   approval: null,
+  approvals: new Map(),           // requestId -> approval_request from ANY chat on the PC (Home's inbox)
   imagePick: null,
 };
 const saveUi = () => save(KEY.ui, { mode: state.ui.mode, projectKey: state.ui.projectKey, codeMode: state.ui.codeMode, chatModel: state.ui.chatModel, useProject: !!state.ui.useProject });
@@ -612,8 +674,8 @@ function refreshLiveSteps() {
   groups.forEach(updateStepsGroup);
   const w = f.querySelector(':scope > .pc-working');
   const last = f.lastElementChild;
-  const needs = busy && !!last && last.matches('.msg.user, .msg-files, .pc-working');
-  if (needs && !w) f.append(el('div', 'working pc-working', '<span class="spinner"></span><span>Thinking...</span>'));
+  const needs = busy && !!last && last.matches('.msg.user, .msg-files, .pc-working, .turn-face'); // .turn-face: the agent's face (phone-wisp.js)
+  if (needs && !w) f.append(el('div', 'working pc-working', THINK_HTML()));
   else if (!needs && w) w.remove();
 }
 function el(tag, cls, html) { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; }
@@ -659,7 +721,12 @@ function toolHtml(t, extraBody = '') {
   if (typeof t.exitCode === 'number') stats.push(`<span class="${t.exitCode === 0 ? 'add' : 'del'}">exit ${t.exitCode}</span>`);
   const a = t.args || {};
   let b = '';
-  if (t.name === 'run' && a.command) b = `<div class="step-body-label">Command</div><pre class="code">${esc(a.command)}</pre>`;
+  // A command reads like a terminal: the prompt line, the end of its output, and how it ended.
+  if (t.name === 'run' && (a.command || t.label)) {
+    const out = typeof t.output === 'string' ? t.output.replace(/\s+$/, '') : '';
+    const ended = typeof t.exitCode === 'number' ? `<div class="term-end ${t.exitCode === 0 ? 'ok' : 'bad'}">${t.exitCode === 0 ? 'Finished' : 'Failed'} · exit ${t.exitCode}</div>` : '';
+    b = `<div class="term"><button type="button" class="term-copy" data-copy="${esc(a.command || t.label)}" aria-label="Copy command">Copy</button><pre class="term-cmd"><span>$</span> ${esc(a.command || t.label)}</pre>${out ? `<pre class="term-out">${esc(clip(out, 40))}</pre>` : ''}${ended}</div>`;
+  }
   else if (t.name === 'edit_file' && (a.search || a.replace)) {
     b = `<div class="step-body-label">${esc(a.path || '')}</div>`
       + `<pre class="code del">${esc(clip(a.search)).replace(/^/gm, '- ')}</pre>`
@@ -670,7 +737,9 @@ function toolHtml(t, extraBody = '') {
   else if (Object.keys(a).length && !(t.name === 'browser_check' && extraBody)) b = `<pre class="code">${esc(clip(Object.entries(a).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join('\n'), 20))}</pre>`;
   b += extraBody;
   const label = t.label || a.path || a.command || a.pattern || a.url || '';
-  return `<details class="step tool${failed ? ' failed' : ''}${b ? '' : ' no-body'}" data-tool="${esc(t.name || '')}"${extraBody ? ' open' : ''}><summary>${ICONS.chev}`
+  // A failed command opens by itself: its output is the first thing you need.
+  const openIt = extraBody || (t.name === 'run' && failed && typeof t.output === 'string' && t.output.trim());
+  return `<details class="step tool${failed ? ' failed' : ''}${t.name === 'run' ? ' cmd' : ''}${b ? '' : ' no-body'}" data-tool="${esc(t.name || '')}"${openIt ? ' open' : ''}><summary>${ICONS.chev}`
     + `<span class="step-verb">${esc(TOOL_VERB[t.name] || t.name || 'Ran')}</span><span class="step-label">${esc(label)}</span>`
     + `${stats.length ? `<span class="step-stats">${stats.join('')}</span>` : ''}</summary><div class="step-body">${b}</div></details>`;
 }
@@ -715,6 +784,40 @@ function pushedHtml(e) {
 function screenshotFromPc(img, path) {
   relayRequest('GET', `/api/screenshot-data?path=${encodeURIComponent(path)}`).then((r) => { if (r && r.dataUrl) img.src = r.dataUrl; else img.remove(); }).catch(() => img.remove());
 }
+// ─── A step running right now: "Running npm test", with a clock ────────────
+let liveTool = null; // { el, timer }
+function addLiveTool(ev) {
+  clearLiveTool();
+  const a = ev.args || {};
+  const label = ev.summary || a.command || a.path || a.pattern || a.url || '';
+  const node = el('details', 'step tool running no-body', `<summary><span class="spinner"></span><span class="step-verb">${esc(LIVE_VERB[ev.name] || 'Working on')}</span><span class="step-label">${esc(label)}</span><span class="step-stats"><span class="step-clock">0s</span></span></summary><div class="step-body"></div>`);
+  if (ev.name === 'run') node.classList.add('cmd');
+  const started = Date.now();
+  const timer = setInterval(() => {
+    if (!node.isConnected) { clearInterval(timer); return; }
+    const s = Math.round((Date.now() - started) / 1000);
+    node.querySelector('.step-clock').textContent = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+  }, 1000);
+  liveTool = { el: node, timer };
+  append(node);
+  scrollToBottom();
+}
+function clearLiveTool() {
+  if (!liveTool) return;
+  clearInterval(liveTool.timer);
+  liveTool.el.remove();
+  liveTool = null;
+}
+const LIVE_VERB = { run: 'Running', read_file: 'Reading', edit_file: 'Editing', write_file: 'Writing', apply_patch: 'Patching', search: 'Searching', list_dir: 'Looking in', browser_check: 'Checking', web_search: 'Searching the web for', web_fetch: 'Reading', bring_in: 'Bringing in a specialist', fetch_image: 'Downloading' };
+/** A specialist the agent brought in works behind it: a quiet line among the steps. */
+function addSpecialistNote(d) {
+  if (!d || !d.agent) return;
+  const name = d.agent.name || 'a specialist';
+  if (d.phase === 'start') addThinking(`Brought in the ${name} specialist${d.task ? `: ${String(d.task).split('\n')[0].slice(0, 160)}` : ''}`, 'Specialist');
+  else if (d.phase === 'created') addThinking(`Made a new specialist: ${name}`, 'Specialist');
+  else if (d.phase === 'report' && !d.ok) addThinking(`The ${name} specialist could not finish`, 'Specialist');
+}
+
 function addTool(t) {
   streamEl = null;
   const wrap = el('div', null, toolHtml(t, t.screenshotPath ? '<img class="shot" alt="Screenshot of the page">' : ''));
@@ -794,6 +897,7 @@ function renderPcItem(item, chat) {
   else if (item.kind === 'assistant') (item.interim ? addThinking(item.text) : addMsg('agent', item.text));
   else if (item.kind === 'tool') addTool(item);
   else if (item.kind === 'role_active' || item.kind === 'subagent_active') addRole(item);
+  else if (item.kind === 'wisp_agent') addSpecialistNote(item);
   else if (item.kind === 'turn_summary') addSummary(item);
   else if (item.kind === 'checkpoint') renderCheckpoint(item, chat);
   else if (item.kind === 'question') renderQuestion({ ...item, answered: true });
@@ -818,7 +922,7 @@ function taskHtml(t) {
   h += (t.events || []).map(cloudEventHtml).join('');
   if (t.answer) h += `<div class="msg agent">${md(t.answer)}</div>`;
   if (isLive(t) && t.ask) h += `<div class="cloud-ask" data-ask-task="${esc(t.id)}" data-ask-id="${esc(t.ask.id)}"><b>Waiting for your OK</b><span>${esc(t.ask.title)}</span>${t.ask.detail ? `<pre class="code">${esc(t.ask.detail)}</pre>` : ''}<div class="cloud-ask-btns"><button type="button" class="btn btn-primary" data-ask-yes>Allow</button><button type="button" class="btn" data-ask-no>Don't allow</button></div></div>`;
-  else if (isLive(t)) h += '<div class="working"><span class="spinner"></span><span>Working...</span></div>';
+  else if (isLive(t)) h += `<div class="working">${THINK_HTML('Working')}</div>`;
   if (t.status === 'failed') h += `<div class="msg error">${esc(t.error || 'The cloud run failed.')}</div>`;
   if (t.status === 'cancelled') h += '<div class="msg note">Cancelled.</div>';
   if (t.status === 'done' && !t.answer && !(t.events || []).length) h += '<div class="msg note">Done.</div>';
@@ -856,7 +960,7 @@ function renderFeed({ force = false } = {}) {
   checkpointEls.clear(); questionEls.clear();
   if (c.kind === 'chat') {
     for (const m of b.messages) addMsg(m.role === 'user' ? 'user' : m.role === 'error' ? 'error' : 'agent', m.content, m.thumbs);
-    if (state.busy.has(c.id)) append(el('div', 'working', '<span class="spinner"></span><span>Thinking...</span>'));
+    if (state.busy.has(c.id)) append(el('div', 'working', THINK_HTML()));
   } else {
     for (const m of b.prelude || []) addMsg(m.role === 'user' ? 'user' : m.role === 'error' ? 'error' : 'agent', m.content, m.thumbs);
     for (const item of b.pcItems || []) renderPcItem(item, c);
@@ -947,6 +1051,13 @@ function receiveEvent(event) {
     renderComposer();
     return;
   }
+  // Every chat's approvals reach the phone, not just the open one's: Home lists them all.
+  if (event.type === 'approval_request' && event.requestId) { state.approvals.set(event.requestId, { ...event, at: Date.now() }); approvalsChanged(); }
+  else if (event.type === 'approval_resolved') { state.approvals.delete(event.requestId); approvalsChanged(); }
+  else if ((event.type === 'run_finished' || event.type === 'aborted') && event.sessionId) {
+    for (const [id, a] of state.approvals) if (a.sessionId === event.sessionId) state.approvals.delete(id);
+    approvalsChanged();
+  }
   const c = state.chats.find((x) => x.pcSessionId && x.pcSessionId === event.sessionId);
   if (!c || c.id !== state.current) {
     if (c && (event.type === 'run_finished' || event.type === 'aborted')) { state.busy.delete(c.id); refreshPcSession(c, false).catch(() => {}); }
@@ -962,9 +1073,12 @@ function receiveEvent(event) {
   else if (event.type === 'handoff') { if (event.status === 'back') addThinking('Back on your PC.', 'Note'); }
   else if (event.type === 'notice') { if (!/^Summarized earlier steps/i.test(event.text || '')) (event.level === 'info' ? addThinking(event.text, 'Note') : addMsg('error', event.text)); }
   else if (event.type === 'text') (event.interim ? addThinking(event.text) : addDelta(event.text));
+  else if (event.type === 'tool_start') addLiveTool(event);
+  else if (event.type === 'wisp_agent') addSpecialistNote(event);
   else if (event.type === 'tool_end') {
     const m = event.meta || {};
-    addTool({ name: event.name, label: event.summary || (event.args && (event.args.path || event.args.command)) || '', ok: event.ok, args: event.args, exitCode: m.exitCode, added: m.added, removed: m.removed, screenshotPath: m.screenshotPath });
+    clearLiveTool();
+    addTool({ name: event.name, label: event.summary || (event.args && (event.args.path || event.args.command)) || '', ok: event.ok, args: event.args, exitCode: m.exitCode, added: m.added, removed: m.removed, screenshotPath: m.screenshotPath, output: m.output });
   } else if (event.type === 'error') { if (!/^Stopped after \d+ steps/i.test(event.error || '')) addMsg('error', event.error); }
   else if (event.type === 'approval_request') showApproval(event);
   else if (event.type === 'question_request') renderQuestion(event);
@@ -998,15 +1112,38 @@ async function refreshPcSession(c, redraw = true) {
 function showApproval(event) {
   state.approval = event;
   $('approvalTitle').textContent = event.title || 'Codeply needs your OK';
+  $('approvalKind').textContent = APPROVAL_KIND[event.tool] || 'Needs your OK';
   $('approvalDetail').textContent = event.detail || `Allow Codeply to run ${String(event.tool || 'this action').replace(/_/g, ' ')}?`;
+  // An edit's diff says it all; the bare path above it would only repeat the title.
+  $('approvalDetail').classList.toggle('hidden', !!event.diff);
+  // What makes it risky, said in words.
+  $('approvalRisk').classList.toggle('hidden', !event.danger);
+  // An edit shows exactly what changes.
+  const d = event.diff;
+  $('approvalDiff').classList.toggle('hidden', !d);
+  $('approvalDiff').innerHTML = d ? `<pre class="code del">${esc(clip(d.search || '', 30)).replace(/^/gm, '- ')}</pre><pre class="code add">${esc(clip(d.replace || '', 30)).replace(/^/gm, '+ ')}</pre>` : '';
+  // "Always" covers commands by name ("npm test"), never every command; none offered for risky ones.
+  const scope = Array.isArray(event.alwaysScope) ? event.alwaysScope : null;
+  const always = event.danger || (scope && !scope.length) || event.tool === 'fetch_image' ? ''
+    : scope ? `Always allow ${scope.map((p) => `"${p}"`).join(' and ')} in this chat` : `Always allow ${String(event.tool || '').replace(/_/g, ' ')} in this chat`;
+  $('alwaysBtn').classList.toggle('hidden', !always);
+  $('alwaysBtn').textContent = always;
   $('approvalSheet').classList.remove('hidden');
+  renderChatList();
 }
-async function answerApproval(verdict) {
-  const p = state.approval;
+const APPROVAL_KIND = { run: 'Run a command', write_file: 'Create a file', edit_file: 'Edit a file', apply_patch: 'Change files', gmail_send: 'Send an email', gmail_draft: 'Save a draft', calendar_add: 'Add to your calendar', vercel_deploy: 'Deploy', publish_deploy: 'Publish', github_create_repo: 'Push to GitHub', supabase_sql: 'Run SQL', supabase_api: 'Change Supabase', vercel_api: 'Change Vercel', use_computer: 'Use your computer' };
+async function answerApproval(verdict, requestId = null) {
+  const p = requestId ? state.approvals.get(requestId) || (state.approval && state.approval.requestId === requestId ? state.approval : null) : state.approval;
   if (!p) return;
-  state.approval = null;
-  $('approvalSheet').classList.add('hidden');
+  if (state.approval && state.approval.requestId === p.requestId) { state.approval = null; $('approvalSheet').classList.add('hidden'); }
+  state.approvals.delete(p.requestId);
+  approvalsChanged();
   try { await relayRequest('POST', '/api/approval', { requestId: p.requestId, verdict }); } catch (err) { addMsg('error', err.message); }
+}
+/** Home's inbox and the chat list redraw when an approval comes or goes. */
+function approvalsChanged() {
+  renderChatList();
+  document.dispatchEvent(new CustomEvent('craft:approvals'));
 }
 function showImagePick(event) {
   state.imagePick = event;
@@ -1044,21 +1181,38 @@ async function chatSend(chat, text, images = []) {
     if (images.length && history.length) history[history.length - 1] = { role: 'user', content: [{ type: 'text', text: text || 'What is in this image?' }, ...images.map((url) => ({ type: 'image_url', image_url: { url } }))] };
     // A synced model goes through byok-proxy (same reply shape as ai-proxy).
     const own = chatModel();
-    const messages = [{ role: 'system', content: CHAT_SYSTEM + (window.CraftReminders ? window.CraftReminders.chatRules() : '') }, ...history];
-    const res = await fetch(own ? BYOK_PROXY_URL : AI_PROXY_URL, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...deviceHeader() },
-      // inbox: when the message is about email, the server reads Gmail (the link turned on for calls) first
-      body: JSON.stringify(own ? { modelId: own.id, messages, opts: { inbox: true, tz: localTz() } } : { messages, opts: { inbox: true, tz: localTz() } }),
-      signal: controller.signal,
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data.success) {
-      const choice = data.data && data.data.choices && data.data.choices[0];
-      reply = (choice && choice.message && choice.message.content) || '';
-      if (!reply) error = 'Codeply sent back an empty reply. Try again.';
-    } else if (res.status === 401 && !data.error) error = 'Your sign-in expired. Sign out and sign in again.';
-    else error = data.error || data.message || data.msg || `Codeply could not answer (${res.status}).`;
+    let messages = [{ role: 'system', content: `${CHAT_SYSTEM}\nToday is ${new Date().toDateString()}.${window.CraftReminders ? window.CraftReminders.chatRules() : ''}` }, ...history];
+    // Up to two web searches: the model asks with [[SEARCH: ...]], the phone searches, the model answers from the results.
+    for (let round = 0; ; round++) {
+      const res = await fetch(own ? BYOK_PROXY_URL : AI_PROXY_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...deviceHeader() },
+        // inbox: when the message is about email, the server reads Gmail (the link turned on for calls) first
+        body: JSON.stringify(own ? { modelId: own.id, messages, opts: { inbox: true, tz: localTz() } } : { messages, opts: { inbox: true, tz: localTz() } }),
+        signal: controller.signal,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        const choice = data.data && data.data.choices && data.data.choices[0];
+        reply = (choice && choice.message && choice.message.content) || '';
+        if (!reply) error = 'Codeply sent back an empty reply. Try again.';
+      } else if (res.status === 401 && !data.error) error = 'Your sign-in expired. Sign out and sign in again.';
+      else error = data.error || data.message || data.msg || `Codeply could not answer (${res.status}).`;
+      const asked = reply && SEARCH_TAG.exec(reply);
+      if (!asked || round >= 2) break;
+      const query = asked[1].trim();
+      workingWord(chat.id, 'Searching the web');
+      let found = '';
+      try { found = await webSearch(query, { signal: controller.signal }); } catch (e) {
+        if (e.name === 'AbortError') throw e;
+        found = `(${e.message}. Answer from what you know, and say briefly that the web search did not work just now.)`;
+      }
+      workingWord(chat.id, '');
+      messages = [...messages, { role: 'assistant', content: `[[SEARCH: ${query}]]` },
+        { role: 'user', content: `WEB RESULTS for "${query}" (searched just now, ${new Date().toDateString()}):\n\n${found}\n\nNow answer my last message from these results. Cite sources as markdown links. Only write [[SEARCH: ...]] again if these results really miss what I asked.` }];
+      reply = '';
+    }
+    if (reply) reply = reply.replace(/\[\[\s*SEARCH\s*:[^\]]*\]\]/gi, '').trim() || 'I searched but could not put an answer together. Try asking again.';
   } catch (e) {
     if (e.name === 'AbortError') error = null;
     else error = /fetch|network/i.test(e.message) ? "Can't reach Codeply. Check your internet connection." : e.message;
@@ -1087,6 +1241,57 @@ async function chatSend(chat, text, images = []) {
   if (chat.id === state.current) renderFeed();
 }
 
+// ─── Web search ─────────────────────────────────────────────────────────────
+// Straight from the phone through Exa's public search (the same one the
+// engine's web_search uses; open to browsers, no key), so it works with the PC
+// off; the PC's own search (Exa, then DuckDuckGo) is the fallback.
+const EXA_URL = 'https://mcp.exa.ai/mcp';
+const SEARCH_TAG = /\[\[\s*SEARCH\s*:\s*([^\]\n]{2,240})\]\]/i;
+function timeoutSignal(ms, parent) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  if (parent) { if (parent.aborted) ctl.abort(); else parent.addEventListener('abort', () => ctl.abort(), { once: true }); }
+  ctl.signal.addEventListener('abort', () => clearTimeout(t), { once: true });
+  return ctl.signal;
+}
+async function exaSearch(query, num, signal) {
+  const res = await fetch(EXA_URL, {
+    method: 'POST', signal: timeoutSignal(20000, signal),
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'web_search_exa', arguments: { query, numResults: num, type: 'auto', livecrawl: 'fallback' } } }),
+  });
+  if (!res.ok) throw new Error(`search returned ${res.status}`);
+  const raw = await res.text();
+  const payloads = raw.trimStart().startsWith('{') ? [raw] : raw.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim());
+  for (const p of payloads) {
+    let j; try { j = JSON.parse(p); } catch { continue; }
+    if (j.error) throw new Error(j.error.message || 'search error');
+    const text = ((j.result && j.result.content) || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n').trim();
+    if (text) return text;
+  }
+  throw new Error('no results');
+}
+/** Search the web: the results as text (titles, links and page extracts). */
+async function webSearch(query, { num = 6, signal } = {}) {
+  query = String(query || '').trim().slice(0, 300);
+  if (!query) throw new Error('Nothing to search for.');
+  try { return (await exaSearch(query, num, signal)).slice(0, 14000); } catch (e) {
+    if (signal && signal.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
+    if (relay.pcId) {
+      const r = await relayRequest('POST', '/api/web/search', { query, num }, 40000).catch(() => null);
+      if (r && r.text) return String(r.text).slice(0, 14000);
+    }
+    throw new Error(`the search did not work (${e.message})`);
+  }
+}
+/** The thinking line says what is happening ("Searching the web"); phone-wisp.js leaves it alone. */
+function workingWord(chatId, word) {
+  if (chatId !== state.current) return;
+  const w = document.querySelector('#feed .working .think-word');
+  if (!w) return;
+  if (word) { w.textContent = word; w.dataset.fixed = '1'; } else delete w.dataset.fixed;
+}
+
 // ─── Code mode on the PC ────────────────────────────────────────────────────
 async function pcSend(chat, text, images = []) {
   const project = chat.project;
@@ -1100,7 +1305,7 @@ async function pcSend(chat, text, images = []) {
   renderComposer();
   try {
     // The PC answers when the whole turn ends; events stream in meanwhile.
-    const r = await relayRequest('POST', '/api/send', { sessionId: chat.pcSessionId || null, cwd: project.cwd, ...(project.newProject && !project.cwd ? { newProject: project.newProject } : {}), mode: state.ui.codeMode, bypass: state.bypass, text: withContext(chat, text || 'Image attached.'), ...(images.length ? { images } : {}), clientId }, 6 * 3600 * 1000);
+    const r = await relayRequest('POST', '/api/send', { sessionId: chat.pcSessionId || null, cwd: project.cwd, ...(project.newProject && !project.cwd ? { newProject: project.newProject } : {}), mode: state.ui.codeMode, bypass: state.perm === 'full', autoEdits: state.perm === 'edits', text: withContext(chat, text || 'Image attached.'), ...(images.length ? { images } : {}), clientId }, 6 * 3600 * 1000);
     if (r && r.error) throw new Error(r.error);
     if (r && r.cwd && !project.cwd) {
       chat.project = { key: `cwd:${normCwd(r.cwd)}`, name: basename(r.cwd), cwd: r.cwd, repo: null };
@@ -2086,7 +2291,7 @@ function openPlus() {
     ${pickRow({ icon: ICONS.folder, title: proj ? esc(proj.name) : 'Work in a project', hint: proj ? (proj.cwd ? (relay.pcId ? 'On your PC' : 'On your PC, which is offline: runs in the cloud if set up') : 'In the cloud') : 'A folder on your PC or a GitHub repo', attrs: 'data-act="project"', kbd: proj ? 'Change' : '' })}
     ${proj ? `${pickRow({ icon: ICONS[modeHint ? modeHint[2] : 'build'], title: `Mode: ${esc(state.ui.codeMode)}`, hint: modeHint ? modeHint[1] : '', attrs: 'data-act="mode"' })}
     ${pickRow({ icon: ICONS.target, title: 'Set a goal', hint: 'Keep working until it is done and verified', attrs: 'data-act="goal"', kbd: '/goal' })}
-    ${!cloudChat ? pickRow({ icon: state.bypass ? ICONS.bolt : ICONS.shield, title: state.bypass ? 'Full access on your PC' : 'Ask first on your PC', hint: state.bypass ? 'Edits and commands run without asking' : 'You approve edits and commands from here', attrs: 'data-act="access"' }) : ''}
+    ${!cloudChat ? pickRow({ icon: state.perm === 'full' ? ICONS.bolt : ICONS.shield, title: PERM[state.perm].title + ' on your PC', hint: PERM[state.perm].hint, attrs: 'data-act="access"' }) : ''}
     ${cloudEnv ? pickRow({ icon: cperm === 'full' ? ICONS.bolt : ICONS.shield, title: cperm === 'full' ? 'Full access in the cloud' : 'Ask first in the cloud', hint: cperm === 'full' ? 'Everything runs without asking' : 'Deploys and risky steps wait for your OK', attrs: 'data-act="caccess"' }) : ''}` : ''}
     <div class="pick-divider"></div>
     ${pickRow({ icon: ICONS.github, title: 'Connect a GitHub repo', hint: 'Work with your PC off', attrs: 'data-act="setup"' })}
@@ -2105,18 +2310,33 @@ function openPlus() {
     act('commands', () => startSlash());
   }, $('plusBtn'));
 }
+/** The three ways the agent on the PC can ask (Claude Code's default / acceptEdits / bypass). */
+const PERM = {
+  ask: { title: 'Ask first', hint: 'You approve every edit and command' },
+  edits: { title: 'Auto-accept edits', hint: 'File edits run on their own; commands still ask' },
+  full: { title: 'Full access', hint: 'Edits and commands run without asking' },
+};
+function setPermission(v) {
+  if (!PERM[v]) return;
+  state.perm = v;
+  state.bypass = v === 'full';
+  localStorage.setItem(KEY.perm, v);
+  localStorage.setItem(KEY.bypass, state.bypass ? '1' : '0');
+  document.dispatchEvent(new CustomEvent('craft:permission', { detail: v }));
+}
 function openAccess(where, cloudEnv = null, cperm = 'ask') {
   const pc = where === 'pc';
-  const on = pc ? (state.bypass ? 'full' : 'ask') : cperm;
+  const on = pc ? state.perm : cperm;
   openPick(`<div class="sheet-title">${pc ? 'On your PC' : 'In the cloud'}</div>
-    ${pickRow({ icon: ICONS.shield, title: 'Ask first', hint: pc ? 'Approve edits and commands from here' : 'Deploys and other risky steps wait for your OK', on: on === 'ask', attrs: 'data-v="ask"' })}
-    ${pickRow({ icon: ICONS.bolt, title: 'Full access', hint: pc ? 'Edits and commands run without asking' : 'Everything runs without asking', on: on === 'full', attrs: 'data-v="full"' })}`, (root) => {
+    ${pickRow({ icon: ICONS.shield, title: 'Ask first', hint: pc ? PERM.ask.hint : 'Deploys and other risky steps wait for your OK', on: on === 'ask', attrs: 'data-v="ask"' })}
+    ${pc ? pickRow({ icon: ICONS.pencil, title: 'Auto-accept edits', hint: PERM.edits.hint, on: on === 'edits', attrs: 'data-v="edits"' }) : ''}
+    ${pickRow({ icon: ICONS.bolt, title: 'Full access', hint: pc ? PERM.full.hint : 'Everything runs without asking', on: on === 'full', attrs: 'data-v="full"' })}`, (root) => {
     root.querySelectorAll('[data-v]').forEach((b) => b.addEventListener('click', async () => {
       const v = b.dataset.v;
       if (v === on) { closePick(); return; }
       if (v === 'full' && !confirm(pc ? 'Full access runs edits and commands on your PC without asking first. Turn it on?' : 'Full access lets cloud runs deploy and do other risky steps without asking. Turn it on?')) return;
       closePick();
-      if (pc) { state.bypass = v === 'full'; localStorage.setItem(KEY.bypass, state.bypass ? '1' : '0'); return; }
+      if (pc) { setPermission(v); return; }
       try { if (!(await ensureGithub())) throw new Error('Connect GitHub first.'); await setCloudPermission(cloudEnv.repo, v); }
       catch (e) { addMsg('error', e.message); }
     }));
@@ -2294,18 +2514,35 @@ function renderChatList() {
   $('drawerSep').classList.toggle('hidden', !!q);
   const linked = new Set(state.chats.map((c) => c.pcSessionId).filter(Boolean));
   const rows = [
-    ...state.chats.filter((c) => c.title).map((c) => ({ type: 'local', id: c.id, title: c.title, kind: c.kind, cloud: c.cloud, at: c.updatedAt })),
+    ...state.chats.filter((c) => c.title).map((c) => ({ type: 'local', id: c.id, title: c.title, kind: c.kind, cloud: c.cloud, voice: !!c.voice, at: c.updatedAt })),
     ...(state.pc.sessions || []).filter((s) => !linked.has(s.id)).map((s) => ({ type: 'pc', id: s.id, title: s.title || 'Untitled', kind: 'code', cloud: !!s.cloud, at: s.updatedAt || 0, meta: s })),
   ].filter((r) => !q || String(r.title).toLowerCase().includes(q)).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 200);
+  // What needs the user comes first, then what is running: unblock an agent without opening each chat.
+  const waiting = new Set([...state.approvals.values()].map((a) => a.sessionId).concat(state.approval ? [state.approval.sessionId] : []));
+  for (const r of rows) {
+    const c = r.type === 'local' ? state.chats.find((x) => x.id === r.id) : null;
+    const pcId = c ? c.pcSessionId : r.id;
+    r.flag = pcId && waiting.has(pcId) ? 'needs' : (c && state.busy.has(c.id)) || (r.type === 'pc' && (r.meta && r.meta.running)) ? 'running' : '';
+  }
+  const rank = (r) => (r.flag === 'needs' ? 0 : r.flag === 'running' ? 1 : 2);
+  rows.sort((a, b) => rank(a) - rank(b));
   list.innerHTML = rows.length ? '' : `<div class="chat-empty">${q ? 'No chats match.' : 'No chats yet.'}</div>`;
   const LIMIT = 10;
   const shown = q || showAllChats ? rows : rows.slice(0, LIMIT);
+  // Grouped by when, like ChatGPT's sidebar (what needs you and what runs stay on top).
+  const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+  const groupOf = (r) => (r.flag ? 'Active' : (r.at || 0) >= dayStart.getTime() ? 'Today' : (r.at || 0) >= dayStart.getTime() - 86400000 ? 'Yesterday' : (r.at || 0) >= dayStart.getTime() - 7 * 86400000 ? 'Previous 7 days' : 'Older');
+  let lastGroup = null;
   for (const r of shown) {
+    const g = q ? null : groupOf(r);
+    if (g && g !== lastGroup) { list.append(el('div', 'chat-group', esc(g))); lastGroup = g; }
     // Plain titles, like ChatGPT: long-press (or right-click) for rename and delete.
     const b = el('button', `chat-row${r.type === 'local' && r.id === state.current ? ' active' : ''}`, '<span></span>');
     b.type = 'button';
     b.querySelector('span').textContent = r.title;
     b.dataset.kind = r.cloud ? 'cloud' : r.kind;
+    if (r.voice) { b.dataset.voice = '1'; b.insertAdjacentHTML('afterbegin', '<svg class="chat-voice" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-label="Voice"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg>'); }
+    if (r.flag) b.insertAdjacentHTML('beforeend', r.flag === 'needs' ? '<em class="chat-flag needs">Needs you</em>' : '<em class="chat-flag running"><i></i>Working</em>');
     b.addEventListener('click', () => { if (b.dataset.pressed) { delete b.dataset.pressed; return; } closeDrawer(); if (r.type === 'pc') openPcSession(r.meta); else openChat(r.id); });
     let pressTimer = null;
     b.addEventListener('contextmenu', (e) => { e.preventDefault(); chatMenu(r, b); });
@@ -2409,6 +2646,10 @@ function friendlyAuthError(err, fallback) {
   return (err && err.message) || fallback;
 }
 function signinStep(step, text) {
+  // Sign in and create account share one screen (phone-app.js switches the tabs).
+  if (step === 'signup') { $('loginForm').classList.add('hidden'); $('otpForm').classList.add('hidden'); $('signinBusy').classList.add('hidden'); $('signupForm').classList.remove('hidden'); $('authTabs').classList.remove('hidden'); return; }
+  $('signupForm').classList.add('hidden');
+  $('authTabs').classList.toggle('hidden', step !== 'login');
   $('loginForm').classList.toggle('hidden', step !== 'login');
   $('otpForm').classList.toggle('hidden', step !== 'otp');
   $('signinBusy').classList.toggle('hidden', step !== 'busy');
@@ -2484,13 +2725,16 @@ $('otpForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const err = $('otpError');
   err.classList.add('hidden');
-  const email = $('loginEmail').value.trim();
+  // A code from creating an account confirms the email (type signup); a sign-in code is type email.
+  const signup = $('otpForm').dataset.mode === 'signup';
+  const email = (signup && $('otpForm').dataset.email) || $('loginEmail').value.trim();
   const token = $('loginOtp').value.replace(/\D+/g, '');
   if (token.length < 6) { err.textContent = 'Enter the full code from the email.'; err.classList.remove('hidden'); return; }
-  signinStep('busy', 'Signing in...');
+  signinStep('busy', signup ? 'Confirming your email...' : 'Signing in...');
   try {
-    const { error } = await sb.auth.verifyOtp({ email, token, type: 'email' });
+    const { error } = await sb.auth.verifyOtp({ email, token, type: signup ? 'signup' : 'email' });
     if (error) throw error;
+    if (signup) { try { localStorage.setItem('craft-phone-onboard', 'pending'); } catch {} }
     await enterApp();
   } catch (x) {
     signinStep('otp');
@@ -2516,7 +2760,7 @@ const SLASH = [
   { name: '/attach', desc: 'Photos, PDFs, text or code', icon: 'attach', run: () => pickFiles() },
   { name: '/access', desc: 'Ask first or full access on your PC', icon: 'shield', run: () => openAccess('pc') },
   { name: '/repo', desc: 'Connect a GitHub repo for the cloud', icon: 'github', run: () => openSetup({}) },
-  { name: '/calls', desc: 'Talk to your bots', icon: 'phone', run: () => $('drawerCalls').click() },
+  { name: '/voice', desc: 'Talk to Codeply out loud', icon: 'phone', run: () => $('drawerCalls').click() },
   { name: '/stop', desc: 'Stop the current run', icon: 'stop', run: () => { const c = state.current && chatMeta(state.current); if (c && state.busy.has(c.id)) stopCurrent(c); } },
   { name: '/theme', desc: 'System, light or dark', icon: 'system', run: () => { const order = ['system', 'light', 'dark']; applyTheme(order[(order.indexOf(themeChoice()) + 1) % 3]); } },
 ];
@@ -2624,6 +2868,14 @@ $('searchInput').addEventListener('input', renderChatList);
 $('themeBtn').addEventListener('click', () => { const order = ['system', 'light', 'dark']; applyTheme(order[(order.indexOf(themeChoice()) + 1) % 3]); });
 $('signOutBtn').addEventListener('click', signOut);
 $('approveBtn').addEventListener('click', () => answerApproval('once'));
+$('alwaysBtn').addEventListener('click', () => answerApproval('always'));
+// Copy a command from its terminal block.
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('[data-copy]');
+  if (!b) return;
+  e.preventDefault();
+  try { navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy'; }, 1400); } catch {}
+});
 $('rejectBtn').addEventListener('click', () => answerApproval('reject'));
 $('imageYes').addEventListener('click', () => answerImagePick((state.imagePick && state.imagePick.url) || null));
 $('imageNo').addEventListener('click', () => answerImagePick(null));
@@ -2636,7 +2888,10 @@ currentSession().then((s) => { if (s) enterApp(); else showSignin(); }).catch(sh
 // For tests and debugging in the console.
 // phone-calls.js (Calls with bots) builds on these too.
 window.CraftPhone = { state, relay, sb, sealSecret, CLOUD_WORKFLOW, md, pollAll, relayRequest, accessToken, esc, load, save, newId, openDrawer, closeDrawer, AI_PROXY_URL, SUPABASE_ANON_KEY, deviceHeader,
-  cloudEnvForBots, startCloudTask, pollCloudTask: pollTask };
+  cloudEnvForBots, startCloudTask, pollCloudTask: pollTask,
+  // phone-app.js (tabs, Home, You, sign-up) builds on these
+  createChat, saveBody, saveChats, webSearch,
+  SUPABASE_URL, answerApproval, setPermission, PERM, signinStep, openChat, openPcSession, newChat, openSettings, openSetup, openProjectPicker, openModelPicker, chatMeta, signOut, applyTheme, themeChoice, renderChatList, enterApp, friendlyAuthError, currentSession };
 
 // Reminders and "calls" from your bots arrive as Web Push: phone-sw.js shows
 // them (phone-reminders.js asks for permission and subscribes).

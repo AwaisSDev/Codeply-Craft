@@ -58,6 +58,30 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     chev: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
   };
 
+  ICON.cc = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3.5"/><path d="M10.5 10.2a2.4 2.4 0 1 0 0 3.6M17 10.2a2.4 2.4 0 1 0 0 3.6"/></svg>';
+  ICON.x = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>';
+
+  // ─── Voice mode: you talk to Codeply itself, with Wisp's face ──────────────
+  // The same call engine as before (Deepgram hears and speaks, small talk is
+  // answered at once), but there is one voice now: Codeply. Real work runs on
+  // the PC as the main agent with every tool and its specialists (bots-desktop.js,
+  // botId "codeply"), or in Codeply Cloud when the PC is off. Codeply can also
+  // call you (a reminder or a scheduled job): answering opens this same screen.
+  const CODEPLY = {
+    id: 'codeply', name: 'Codeply', voice: 'aura-2-thalia-en', avatar: null, memory: [],
+    prompt: "You are Codeply, the user's own AI agent. On screen you are Wisp: a small blue pentagon with eyes that react to what they say. You are warm, quick and a little playful, and you get real work done: on their PC you can use every tool (email, calendar, files, code, the web, their apps) and bring in specialists from your team. You are not one of several bots; you are Codeply, the one they talk to.",
+  };
+  const WISP = () => window.CraftWisp || null;
+  /** What a line feels like, for Wisp's face. */
+  function moodOf(text) { try { return (WISP() && WISP().read(String(text || '')).mood) || 'neutral'; } catch { return 'neutral'; } }
+  const CALM = new Set(['neutral', 'thinking', 'listening']);
+  function face(mood, talkMs) {
+    const w = c && c.wisp;
+    if (!w) return;
+    if (mood && w.mood !== mood) w.setMood(mood);
+    if (talkMs) w.talk(talkMs);
+  }
+
   const cache = { bots: [], templates: [], at: 0, ...load(KEY.bots, {}) };
   let calls = load(KEY.calls, []);
   let refreshing = false;
@@ -305,15 +329,26 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   // the stream is NEVER stopped: between calls its track is only disabled.
   const mic = { stream: null, pending: null, wired: null, wiring: null };
   const micTrack = () => (mic.stream && mic.stream.getAudioTracks()[0]) || null;
-  const micLive = () => { const t = micTrack(); return !!t && t.readyState === 'live'; };
+  // iOS can mute the kept track (another app took the mic, a call, an interruption): it stays
+  // "live" but only gives silence, so it counts as dead and a fresh one is asked for.
+  const micLive = () => { const t = micTrack(); return !!t && t.readyState === 'live' && !t.muted; };
   function micEnabled(on) { const t = micTrack(); if (t) t.enabled = !!on; }
   function getMic() {
     if (micLive()) { micEnabled(true); return Promise.resolve(mic.stream); }
     if (mic.pending) return mic.pending;
     const md = navigator.mediaDevices;
     if (!md || !md.getUserMedia) return Promise.reject(Object.assign(new Error('No microphone here.'), { name: 'NotFoundError' }));
+    const old = mic.stream;
     mic.pending = md.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
-      .then((s) => { mic.stream = s; return s; })
+      .then((s) => {
+        mic.stream = s;
+        // The old, silent track goes once the new one is live (never before: iOS would ask again).
+        if (old && old !== s) { try { old.getTracks().forEach((t) => t.stop()); } catch {} }
+        const t = s.getAudioTracks()[0];
+        if (t) { t.onmute = () => { mic.mutedAt = performance.now(); }; t.onunmute = () => { mic.mutedAt = 0; }; t.onended = () => { mic.mutedAt = performance.now(); }; }
+        mic.mutedAt = 0;
+        return s;
+      })
       .finally(() => { mic.pending = null; });
     return mic.pending;
   }
@@ -321,9 +356,9 @@ You are on a live voice call with the user, talking out loud. Everything you wri
   // The tap: 1024-sample frames from the mic to the voice detector.
   const TAP_SRC = "class CraftTap extends AudioWorkletProcessor{constructor(){super();this.b=new Float32Array(1024);this.n=0}process(i){const x=i[0]&&i[0][0];if(x){for(let k=0;k<x.length;k++){this.b[this.n++]=x[k];if(this.n===1024){this.port.postMessage(this.b,[this.b.buffer]);this.b=new Float32Array(1024);this.n=0}}}return true}}registerProcessor('craft-tap',CraftTap)";
   let tapUrl = '';
-  function wireMic(ctx) {
+  function wireMic(ctx, force) {
     const key = `${mic.stream && mic.stream.id}`;
-    if (mic.wired && mic.wired.ctx === ctx && mic.wired.key === key) return Promise.resolve();
+    if (!force && mic.wired && mic.wired.ctx === ctx && mic.wired.key === key) return Promise.resolve();
     if (mic.wiring) return mic.wiring;
     mic.wiring = (async () => {
       if (mic.wired) { try { mic.wired.source.disconnect(); mic.wired.node.disconnect(); } catch {} }
@@ -353,6 +388,85 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     })().finally(() => { mic.wiring = null; });
     return mic.wiring;
   }
+
+  // ─── Keeping the ears alive ───────────────────────────────────────────────
+  // iOS can quietly stop the audio mid-session: it suspends the AudioContext
+  // (a notification, the bot's own voice, the screen dimming), mutes the kept
+  // mic track, or a re-enabled track feeds the tap only zeros. Then nothing you
+  // say gets in until the app restarts. This watchdog checks every second while
+  // a call is open and brings the ears back by itself: wake the context, a new
+  // tap, and a fresh mic stream when the old one went silent. Where only a tap
+  // can wake the audio (iOS), it asks for one, and any touch on the screen does it.
+  const ears = { frameAt: 0, soundAt: 0 };
+  async function healEars(me, why) {
+    if (!me || me.healing || me.ending || me.typing || me.muted) return;
+    // Tried a few times and it is still deaf: a touch usually does it on iOS (it unlocks audio).
+    if (why !== 'tap' && (me.heals || 0) >= 5) { needTap(me); return; }
+    if (why === 'tap') me.heals = 0;
+    me.healing = true;
+    me.heals = (me.heals || 0) + 1;
+    console.debug(`[calls] ears: bringing them back (${why})`);
+    try {
+      await wake(me.ctx);
+      const t = micTrack();
+      if (!t || t.readyState !== 'live' || t.muted || why === 'silent mic') {
+        // A fresh stream; the old one is stopped only once the new one is live.
+        const old = mic.stream;
+        mic.stream = null;
+        await getMic();
+        if (old && old !== mic.stream) { try { old.getTracks().forEach((x) => x.stop()); } catch {} }
+      } else await getMic();
+      if (c !== me || me.ending || me.muted) return;
+      micEnabled(true);
+      await wireMic(me.ctx, true);
+      await wake(me.ctx);
+      me.ears = true;
+      ears.frameAt = ears.soundAt = performance.now();
+    } catch (e) {
+      const n = (e && e.name) || '';
+      if (c === me && (n === 'NotAllowedError' || n === 'SecurityError')) useTyping(MIC_DENIED);
+    } finally {
+      me.healing = false;
+      me.healedAt = performance.now();
+    }
+  }
+  function needTap(me) {
+    if (me.tapAsked) return;
+    me.tapAsked = true;
+    const chip = q('.call-state');
+    if (chip) chip.textContent = 'Tap anywhere to keep talking';
+    const go = () => { root().removeEventListener('pointerdown', go, true); me.tapAsked = false; if (c === me) { healEars(me, 'tap'); if (me.phase === 'listening') setPhase('listening'); } };
+    root().addEventListener('pointerdown', go, true);
+  }
+  function earsWatch() {
+    const me = c;
+    if (!me || me.ending || !me.connectedAt) return;
+    const now = performance.now();
+    // The audio engine stopped: wake it. If iOS wants a touch for that, ask for one.
+    if (me.ctx && me.ctx.state !== 'running') {
+      wake(me.ctx).then((ok) => { if (!ok && c === me && !me.ending) needTap(me); });
+      // Its voice can't finish while the engine is stopped: don't stay stuck "speaking".
+      if (me.phase === 'speaking') { me.stuckAt = me.stuckAt || now; if (now - me.stuckAt > 2500) { me.stuckAt = 0; interrupt(); setPhase('listening'); } }
+    } else me.stuckAt = 0;
+    // Never stuck: a reply that never stops "speaking", or "thinking" with no job running, gives way.
+    const inPhase = now - (me.phaseAt || now);
+    if ((me.phase === 'speaking' && inPhase > 45000) || (me.phase === 'thinking' && !me.phaseLabel && !me.inWork && inPhase > 40000)) {
+      console.debug(`[calls] stuck ${me.phase} for ${Math.round(inPhase / 1000)} s: back to listening`);
+      const wasThinking = me.phase === 'thinking';
+      interrupt();
+      setPhase('listening');
+      if (wasThinking) caption("Sorry, I lost that. Say it again?", 'bot');
+    }
+    if (me.typing || me.muted || me.healing || !localEars()) return;
+    if (!me.ears) { if (now - (me.healedAt || 0) > 3000) healEars(me, 'not listening'); return; }
+    if (now - (me.healedAt || 0) < 2500) return;
+    if (now - ears.frameAt > 1500) healEars(me, 'no audio');
+    else if (now - ears.soundAt > 2500) healEars(me, 'silent mic');
+    else if (mic.mutedAt && now - mic.mutedAt > 1500 && me.phase !== 'speaking') healEars(me, 'muted track');
+    else if (me.heals && now - me.healedAt > 5000) me.heals = 0; // hearing fine again
+  }
+  // Any touch during a call also wakes the audio (iOS only allows it from a gesture).
+  document.addEventListener('pointerdown', () => { if (c && !c.ending && c.ctx && c.ctx.state !== 'running') wake(c.ctx); }, true);
 
   // ─── Voice activity detector ──────────────────────────────────────────────
   // Energy based with an adaptive noise floor. Speech starts once the level
@@ -384,7 +498,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       const bot = v.botSpeaking;
       const floor = bot ? Math.max(v.floorBot, v.floor) : v.floor;
       if (!v.inSpeech) {
-        const startThr = Math.max(floor * (bot ? 5 : 3), bot ? 0.03 : 0.012);
+        const startThr = Math.max(floor * (bot ? 5 : 3), bot ? 0.03 : 0.007);
         const needMs = bot ? 180 : 150;
         const winMs = bot ? 500 : 300;
         const loud = rms > startThr;
@@ -411,7 +525,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       }
       v.frames.push(frame);
       v.totalMs += ms;
-      const endThr = Math.max(floor * 2, bot ? 0.02 : 0.008);
+      const endThr = Math.max(floor * 2, bot ? 0.02 : 0.005);
       if (rms > endThr) { v.voicedMs += ms; v.quietMs = 0; } else v.quietMs += ms;
       if (v.quietMs >= END_MS || v.totalMs >= MAX_MS) finish();
     };
@@ -453,7 +567,8 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     if (stt.worker) { try { stt.worker.terminate(); } catch {} stt.worker = null; }
     for (const w of stt.waits.values()) w.reject(new Error(stt.error));
     stt.waits.clear();
-    if (c && !c.ending && localEars() && !c.typing) useTyping("Voice input couldn't start on this phone. Type below and the bot still talks back.");
+    // The voice server hears you anyway (voice-turn): only without it does the call fall back to typing.
+    if (c && !c.ending && localEars() && !c.typing && !serverEars()) useTyping("Voice input couldn't start on this phone. Type below and the bot still talks back.");
   }
   function sttLoad() {
     if (stt.worker || stt.state === 'failed') return;
@@ -503,13 +618,17 @@ You are on a live voice call with the user, talking out loud. Everything you wri
 
   // Frames from the tap -> the current call's voice detector.
   function onMicFrame(frame, sampleRate) {
+    // For the watchdog: frames are arriving, and they are not pure silence (a real mic always hisses).
+    const now = performance.now();
+    ears.frameAt = now;
+    for (let i = 0; i < frame.length; i += 64) if (frame[i] !== 0) { ears.soundAt = now; break; }
     if (!c || !c.ears || c.muted || c.typing || c.ending || c.phase === 'ringing') return;
     if (!c.vad || c.vad.sampleRate !== sampleRate) {
       c.vad = makeVad(sampleRate, {
         start: () => {
           if (!c) return;
           // Began over the bot's voice, or right after it stopped: maybe just its echo.
-          c.echoRisk = c.phase === 'speaking' || !!c.cueOn || performance.now() - (c.botEndedAt || 0) < ECHO_TAIL_MS;
+          c.echoRisk = c.phase === 'speaking' || performance.now() - (c.botEndedAt || 0) < ECHO_TAIL_MS;
           // Over the bot's voice nothing stops it yet: the words decide (see bargeCheck).
           c.bargeAt = c.phase === 'speaking' ? performance.now() : 0;
           if (c.phase !== 'speaking') caption('...', 'user');
@@ -574,7 +693,8 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     // a short clip is dropped as echo.
     if (me.echoRisk && !me.barged) {
       me.echoRisk = false;
-      if (stt.state !== 'ready') return; // cannot check it: most likely the bot's own voice
+      // Without the phone's model the voice server checks it: what it hears is dropped if it is the bot's own words.
+      if (stt.state !== 'ready') { if (!(serverEars() && me.phase !== 'speaking')) return; }
       else {
         let text = '';
         try { text = await transcribe(audio); } catch { return; }
@@ -680,7 +800,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
         me.ttsNote = e.status === 429 ? "Daily voice limit reached, using the phone's voice"
           : e.status === 401 ? "Sign in again for the bot's voice, using the phone's voice"
           : e.status === 503 ? "Bot voices are not set up yet, using the phone's voice"
-          : `Bot voice failed (${e.status || e.message}), using the phone's voice for that line`;
+          : `The voice failed (${e.status || e.message}), using the phone's voice for that line`;
         showNote();
       }
       return null;
@@ -787,6 +907,12 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     const me = c;
     if (!me) return;
     const plan = wordPlan(text);
+    // Each sentence with a feeling of its own shows it; plain ones keep the reaction to what you said.
+    if (c) {
+      const own = c.nextMood || moodOf(text);
+      face(!CALM.has(own) ? own : c.react || 'neutral', 1200);
+      c.spoke = true;
+    }
     // dur may be a function: a streamed sentence's length is known only as its audio arrives.
     const total = typeof dur === 'function' ? dur : () => dur;
     const handle = { raf: 0 };
@@ -957,21 +1083,40 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     if (!c) return;
     if (c.phase === 'speaking' && phase !== 'speaking') c.botEndedAt = performance.now();
     thinkingCue(phase === 'thinking');
+    if (c.phase !== phase) c.phaseAt = performance.now();
+    c.phaseLabel = label || '';
     c.phase = phase;
     const r = root();
     r.dataset.phase = phase;
     const chip = q('.call-state');
     if (chip) chip.textContent = label || { ringing: '', listening: c.muted ? 'Muted' : (c.typing ? 'Type to talk' : 'Listening'), thinking: 'Thinking', speaking: '', ended: '' }[phase] || '';
     setAvatarState(q('.call-orb'), phase === 'thinking' ? 'working' : 'idle');
+    // Wisp: how it feels about what you said (c.react) holds through the whole reply: thinking,
+    // and every sentence that has no feeling of its own. Real work in progress shows as working.
+    if (phase === 'thinking') face(label ? 'working' : c.react || 'thinking');
+    if (phase === 'listening') {
+      if (c.spoke) { c.react = null; c.nextMood = null; c.spoke = false; } // the reply is over: back to listening
+      face(c.react || (c.muted ? 'neutral' : 'listening'));
+    }
   }
   function caption(text, who) {
     if (!c) return;
     const cap = q('.call-caption');
     cap.textContent = text || '';
     cap.classList.toggle('you', who === 'user');
+    const box = cap.parentElement;
+    if (box && box.classList.contains('vm-cap')) box.classList.toggle('over', cap.scrollWidth > box.clientWidth + 1);
+    if (text && who === 'user') {
+      // What you said shows on Wisp's face at once and stays through its reply: angry with you
+      // at whoever upset you, a heart for "I love you", happy for "good job", sad with you...
+      const m = moodOf(text);
+      c.react = CALM.has(m) ? null : m;
+      c.spoke = false;
+      face(c.react || 'listening');
+    } else if (text && who === 'bot') face(null, 900); // its mouth moves with the words
   }
   function log(who, text) {
-    c.turns.push({ who, text, at: Date.now() });
+    c.turns.push({ who, text, at: Date.now(), ...(who === 'bot' && c.wisp && !CALM.has(c.wisp.mood) ? { mood: c.wisp.mood } : {}) });
     const box = q('.call-log-list');
     if (!box) return;
     const row = document.createElement('p');
@@ -1151,7 +1296,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
     try {
       for (;;) {
         if (signal.aborted) throw abortError();
-        if (r.status === 'done') return r.text || '';
+        if (r.status === 'done') { if (r.mood && c) c.nextMood = r.mood; return r.text || ''; } // the face Codeply ended on (its [mood: x])
         if (r.status === 'cancelled') throw abortError();
         if (r.status === 'error' || (r.error && !r.jobId)) throw new Error(r.error || 'Your PC could not answer.');
         if (r.step) ui.step(r.step);
@@ -1218,13 +1363,14 @@ You are on a live voice call with the user, talking out loud. Everything you wri
 You are on a live voice call. Reply with ONLY a JSON object: {"say": "...", "work": null}
 - "say" is spoken out loud right away: one to three short spoken sentences, plain words, no markdown, no lists, no emojis, no links, no long dash.
 - If the user wants something that needs real tools (their email, calendar, files, code, sending a message, searching the web for current facts, anything on their computer), set "work" to one clear sentence describing the task for your tools, and make "say" a short natural line that fits what they asked, like you are starting on it now. Vary it. Never say "one sec" or "one moment". Do not invent results.
-- Otherwise "work" is null and "say" is your full answer.`;
+- Otherwise "work" is null and "say" is your full answer.
+- Looking something up on the web (news, prices, weather, scores, opening hours, anything current or that you are not sure of) is real work you can ALWAYS do, even when their PC is off. Never say you can't search the web. For a lookup set "work" to "search the web for <what to search>".`;
   const CLOUD_SCOPE = 'it has a shell, the web and the project repo, but not the user\'s own files, email or desktop apps (for those, say they need the PC on)';
   const cloudBusyNote = () => (c && c.cloudJobs && c.cloudJobs.length ? `\n- Still running in the cloud: ${c.cloudJobs.map((j) => j.task).join('; ')}. If they ask, say it is still working and you will tell them when it is done.` : '');
   /** The PC-offline rule: with Codeply Cloud set up, work still goes ahead there. */
   const FAST_OFFLINE = () => (cloudReady()
     ? `\n- Right now the user's PC is offline, so real work runs in Codeply Cloud instead: you may still set "work"; ${CLOUD_SCOPE}.${cloudBusyNote()}`
-    : `\n- Right now the user's PC is offline, so you cannot use tools: never set "work"; if they ask for that kind of thing, say in one sentence you can do it ${NO_CLOUD_OFFER}.`);
+    : `\n- Right now the user's PC is offline, so the only work you can do is a web lookup ("work": "search the web for ..."); for anything else never set "work": say in one sentence you can do it ${NO_CLOUD_OFFER}.`);
   async function askFast(bot, turns, signal) {
     const last = calls.find((x) => x.botId === bot.id && x.status === 'done' && x.turns.length);
     const recent = last ? last.turns.slice(-6).map((t) => `${t.who === 'bot' ? bot.name : 'User'}: ${String(t.text).slice(0, 300)}`).join('\n') : '';
@@ -1270,10 +1416,11 @@ You are on a live voice call; everything you write is spoken out loud right away
 - Talk the way a warm, relaxed friend talks on the phone: flowing, natural sentences with contractions (I'm, you've, that's), the odd "so", "okay" or "honestly" where it fits, and sentences that connect instead of choppy fragments. Vary how you open; do not start every reply with "Sure" or "Got it".
 - Plain spoken words only: no markdown, no lists, no emojis, no links, no long dash, and write numbers and times the way you would say them. Usually one to three sentences.
 - If the user wants something that needs real tools (their email, calendar, files, code, sending a message, current news, anything on their computer), say one short natural line that fits what they asked, as if you are starting on it now (vary it, never "one sec" or "one moment"), then on a new line write [[WORK: one clear sentence describing the task]] and stop. Do not invent results.
-- Things you already know (facts, advice, ideas, jokes, math, small talk) are not work: just answer.${R() ? `\n${R().RULES}` : ''}`;
+- Things you already know (facts, advice, ideas, jokes, math, small talk) are not work: just answer.
+- Looking something up on the web (news, prices, weather, scores, opening hours, anything current or that you are not sure of) is real work you can ALWAYS do, even when their PC is off. Never say you can't search the web. For a lookup say a short natural line, then [[WORK: search the web for <what to search>]].${R() ? `\n${R().RULES}` : ''}`;
   const STREAM_OFFLINE = () => (cloudReady()
     ? `\n- Right now the user's PC is offline, so real work runs in Codeply Cloud instead: you may still write [[WORK: ...]]; ${CLOUD_SCOPE}.${cloudBusyNote()}`
-    : `\n- Right now the user's PC is offline, so you cannot use tools: never write [[WORK: ...]]; if they ask for that kind of thing, say in one sentence you can do it ${NO_CLOUD_OFFER}.`);
+    : `\n- Right now the user's PC is offline, so the only work you can do is a web lookup ([[WORK: search the web for ...]]); for anything else never write [[WORK: ...]]: say in one sentence you can do it ${NO_CLOUD_OFFER}.`);
 
   function pcmToFloat(b64) {
     const bin = atob(b64);
@@ -1392,13 +1539,16 @@ You are on a live voice call; everything you write is spoken out loud right away
     if (me.ctx && me.ctx.state !== 'running') await wake(me.ctx);
     const t0 = performance.now();
     const auth = await P.accessToken();
+    let timedOut = false;
+    const slow = setTimeout(() => { timedOut = true; controller.abort(); }, 20000); // no answer in 20 s: try the next lane
+    const tooSlow = (e) => (timedOut ? Object.assign(new Error('The voice server took too long.'), { status: 504 }) : e);
     const res = await fetch(VOICE_TURN_URL, {
       method: 'POST', signal: controller.signal,
       headers: { Authorization: `Bearer ${auth}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...VOICE_REGION },
       body: JSON.stringify(audio
         ? { messages, voice: me.dgVoice, format: 'pcm', maxTokens: 320, audio_b64: wavB64(audio), hint: `${bot.name}. ${String(me.lastBotText || '').slice(-200)}` }
         : { messages, voice: me.dgVoice, format: 'pcm', maxTokens: 320 }),
-    });
+    }).catch((e) => { clearTimeout(slow); throw tooSlow(e); });
     if (!res.ok || !res.body || !/ndjson/i.test(res.headers.get('content-type') || '')) {
       let err = ''; try { err = (await res.json()).error || ''; } catch {}
       throw Object.assign(new Error(err || `voice-turn ${res.status}`), { status: res.status });
@@ -1415,6 +1565,7 @@ You are on a live voice call; everything you write is spoken out loud right away
     try {
       for (;;) {
         const { value, done } = await reader.read();
+        clearTimeout(slow);
         if (done) break;
         if (c !== me || token !== me.token) { player.stop(); return; }
         buf += value;
@@ -1439,6 +1590,7 @@ You are on a live voice call; everything you write is spoken out loud right away
       }
     } catch (e) {
       player.stop();
+      if (timedOut && !said && c === me && token === me.token) { me.abort = null; throw tooSlow(e); }
       if (e.name === 'AbortError' || c !== me || token !== me.token) return;
       if (!said) throw e; // nothing heard yet: let the slower path answer
     }
@@ -1446,7 +1598,7 @@ You are on a live voice call; everything you write is spoken out loud right away
     for (let i = 0; i < said; i++) player.noAudio(i);
     const text = player.text();
     if (text) log('bot', text);
-    if (work && (pcOnline() || cloudReady())) {
+    if (work && (pcOnline() || cloudReady() || isLookup(work))) {
       // The opening line plays while the PC (or the cloud) starts on the job.
       const playing = player.finished();
       await runWork(me, token, controller, work, playing);
@@ -1468,6 +1620,12 @@ You are on a live voice call; everything you write is spoken out loud right away
 
   /** Real work on the PC (with the bot's tools) after the opening line; short updates on long jobs. */
   async function runWork(me, token, controller, task, playing) {
+    me.inWork = (me.inWork || 0) + 1; // real work can take minutes: the stuck-thinking limit waits for it
+    try { return await runWorkNow(me, token, controller, task, playing); } finally { me.inWork--; }
+  }
+  async function runWorkNow(me, token, controller, task, playing) {
+    // A web lookup runs right here on the phone: quick, and it works with the PC off.
+    if (isLookup(task) && (await lookUp(me, token, controller, task, playing) || !pcOnline())) return;
     if (!pcOnline() && cloudReady()) return runCloudWork(me, token, task, playing);
     me.stepLabel = '';
     let lastSpokeAt = performance.now();
@@ -1503,6 +1661,49 @@ You are on a live voice call; everything you write is spoken out loud right away
     me.abort = null;
     showNote();
     await sayNow(result || 'Done.', token);
+  }
+
+  // ─── Web lookups on a call ────────────────────────────────────────────────
+  const isLookup = (task) => /^\s*(please\s+)?(search|look|google|check|find)\b[^.]{0,40}\b(web|online|internet|google)\b/i.test(String(task || ''));
+  const LOOKUP_RULES = `LIVE VOICE CALL: You just searched the web for the user. Everything you write is spoken out loud.
+- Answer their last question from the results below in one to three short spoken sentences, the key fact first, the way people talk.
+- No links, no markdown, no lists, no emojis, no long dash; say numbers, dates and times the way you would say them.
+- If the results do not answer it, say so briefly and offer what you do know.`;
+  /** Search on the phone and say the answer. false: the search failed (the PC may still try). */
+  async function lookUp(me, token, controller, task, playing) {
+    const query = String(task).replace(/^\s*(please\s+)?(search|look|google|check|find)( it)?( up)?( on)?( the)? (web|online|internet|google)( for| about| to see)?\s*/i, '').trim() || task;
+    me.stepLabel = 'Searching the web...';
+    if (me.phase !== 'speaking') setPhase('thinking', me.stepLabel);
+    let found = '';
+    try { found = await P.webSearch(query, { signal: controller.signal, num: 5 }); } catch (e) {
+      if (c !== me || token !== me.token || e.name === 'AbortError') return true;
+      console.debug('[calls] lookup failed:', e.message);
+      if (pcOnline()) return false;
+      await playing;
+      await sayNow("Hmm, the web search isn't working right now. Want to try again in a bit?", token);
+      return true;
+    }
+    if (c !== me || token !== me.token) return true;
+    const system = `${me.bot.prompt || ''}\n\n${LOOKUP_RULES}\n\nToday is ${new Date().toDateString()}.\n\nWEB RESULTS for "${query}":\n${found.slice(0, 7000)}`;
+    const messages = [{ role: 'system', content: system },
+      ...me.turns.slice(-10).map((t) => ({ role: t.who === 'bot' ? 'assistant' : 'user', content: String(t.text || '').slice(0, 1000) }))];
+    let answer = '';
+    try {
+      const auth = await P.accessToken();
+      const res = await fetch(P.AI_PROXY_URL, {
+        method: 'POST', signal: controller.signal,
+        headers: { Authorization: `Bearer ${auth}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...(P.deviceHeader ? P.deviceHeader() : {}) },
+        body: JSON.stringify({ messages, opts: { maxTokens: 220, temperature: 0.5 }, meta: { source: 'phone-call-lookup' } }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) answer = (data.data && data.data.choices && data.data.choices[0] && data.data.choices[0].message && data.data.choices[0].message.content) || '';
+    } catch (e) { if (e.name === 'AbortError' || c !== me || token !== me.token) return true; }
+    await playing;
+    if (c !== me || token !== me.token) return true;
+    me.abort = null;
+    showNote();
+    await sayNow(spoken(answer) || "I looked, but couldn't find a clear answer to that.", token);
+    return true;
   }
 
   /**
@@ -1593,6 +1794,10 @@ You are on a live voice call; everything you write is spoken out loud right away
     if (c !== me || token !== me.token) return;
     metrics.push({ kind: 'fastReply', ms: Math.round(performance.now() - t0), work: !!fast.work, at: Date.now() });
     console.debug(`[calls] fast reply in ${Math.round(performance.now() - t0)} ms${fast.work ? ` (work: ${fast.work})` : ''}`);
+    if (fast.work && isLookup(fast.work)) {
+      me.abort = null;
+      return runWork(me, token, controller, fast.work, sayNow(fast.say, token));
+    }
     if (fast.work && !pcOnline() && cloudReady()) {
       me.abort = null;
       return runCloudWork(me, token, fast.work, sayNow(fast.say, token));
@@ -1687,8 +1892,9 @@ You are on a live voice call; everything you write is spoken out loud right away
       await getMic();
       if (c !== me || me.ending) return;
       if (me.muted) { micEnabled(false); return; }
-      await wireMic(me.ctx);
+      await wireMic(me.ctx, true); // a new tap each time: an old one can go silent on iOS
       await wake(me.ctx);
+      ears.frameAt = ears.soundAt = performance.now();
     } catch (e) {
       if (c !== me) return;
       const n = (e && e.name) || '';
@@ -1698,7 +1904,7 @@ You are on a live voice call; everything you write is spoken out loud right away
     }
     if (c !== me || me.typing || me.muted) return;
     me.ears = true;
-    if (stt.state === 'failed') useTyping("Voice input couldn't start on this phone. Type below and the bot still talks back.");
+    if (stt.state === 'failed' && !serverEars()) useTyping("Voice input couldn't start on this phone. Type below and the bot still talks back.");
   }
   /** SpeechRecognition gave up: switch this call (and the session) to Whisper. */
   function switchToLocalEars() {
@@ -1797,23 +2003,19 @@ You are on a live voice call; everything you write is spoken out loud right away
     unlockVoiceEl(); // inside the tap, so iOS lets it play the bot's voice later
     warmTts(); // wakes the voice function while it rings
 
-    const tint = tintOf(bot.avatar);
     const r = root();
-    r.style.setProperty('--tint', tint);
-    r.style.setProperty('--tint-bg', shade(tint, 0.62));
-    r.className = 'call';
+    r.className = 'call vm';
     r.dataset.phase = 'ringing';
     r.innerHTML = `
-      <div class="call-bg" aria-hidden="true"><div class="call-bg-blob">${avatarHtml(bot, 320, { still: true, flat: true })}</div></div>
-      <div class="call-head">
+      <div class="call-head vm-head">
         <div class="call-name">${esc(bot.name)}</div>
-        <div class="call-status">${opts.answered ? 'connecting...' : 'calling...'}</div>
+        <div class="call-status">${opts.answered ? 'Connecting' : ''}</div>
       </div>
       <div class="call-mid">
         <div class="call-face">
-          <div class="call-orb">${avatarHtml(bot, 168)}</div>
+          <div class="call-orb vm-orb"><div class="vm-wisp"></div></div>
           <div class="call-state"></div>
-          <div class="call-caption"></div>
+          <div class="vm-cap"><div class="call-caption"></div></div>
         </div>
         <div class="call-log"><div class="call-log-list"></div></div>
         <p class="call-note"></p>
@@ -1822,12 +2024,11 @@ You are on a live voice call; everything you write is spoken out loud right away
           <button type="submit" aria-label="Say it">${ICON.send}</button>
         </form>
       </div>
-      <div class="call-grid">
-        <div class="cb-wrap"><button type="button" class="cb" data-c="mute" aria-label="Mute">${ICON.mic}</button><span>mute</span></div>
-        <div class="cb-wrap"><button type="button" class="cb" data-c="log" aria-label="Transcript">${ICON.text}</button><span>transcript</span></div>
-        <div class="cb-wrap"><button type="button" class="cb on" data-c="speaker" aria-label="Speaker">${ICON.speaker}</button><span>speaker</span></div>
-      </div>
-      <button type="button" class="call-end" data-c="end" aria-label="End call">${ICON.end}</button>`;
+      <div class="vm-bar">
+        <button type="button" class="vm-btn on" data-c="cc" aria-label="Captions" aria-pressed="true">${ICON.cc}</button>
+        <button type="button" class="vm-btn" data-c="mute" aria-label="Mute">${ICON.mic}</button>
+        <button type="button" class="vm-btn end" data-c="end" aria-label="End">${ICON.x}</button>
+      </div>`;
 
     const canHear = local ? !!(ctx && window.Worker && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) : !!SR;
     c = {
@@ -1835,13 +2036,13 @@ You are on a live voice call; everything you write is spoken out loud right away
       startedAt: Date.now(), connectedAt: 0, lastBotText: '', rec: null, abort: null, ending: false,
       voice: voiceFor(bot), pitch: 0.92 + (hash(`${bot.id}p`) % 17) / 100, fails: 0, recAt: 0,
       ears: false, vad: null, queued: null, dgVoice: deepgramVoice(bot), ttsOff: !TTS_URL, ttsCtl: null, ttsNote: '', playing: null, noteBase: '',
-      context: String(opts.context || ''), reminder: opts.reminder || null,
+      context: String(opts.context || ''), reminder: opts.reminder || null, vm: true, wisp: null, react: null, spoke: false,
     };
+    try { if (WISP()) c.wisp = WISP().mount(q('.vm-wisp'), { size: 'lg', mood: 'happy', morph: true }); } catch {}
     if (c.typing) root().classList.add('typing');
     q('[data-c="end"]').addEventListener('click', () => endCall());
     q('[data-c="mute"]').addEventListener('click', toggleMute);
-    q('[data-c="speaker"]').addEventListener('click', toggleSpeaker);
-    q('[data-c="log"]').addEventListener('click', toggleLog);
+    q('[data-c="cc"]').addEventListener('click', toggleCaptions);
     q('.call-type').addEventListener('submit', (e) => {
       e.preventDefault();
       const input = q('.call-type input');
@@ -1862,12 +2063,15 @@ You are on a live voice call; everything you write is spoken out loud right away
     c.stopRing();
     c.connectedAt = Date.now();
     c.timer = setInterval(tick, 500);
+    c.earsTimer = setInterval(earsWatch, 1000);
     // Keep the voice function warm through long quiet stretches.
     c.warmTimer = setInterval(() => { if (c && Date.now() - Math.max(c.lastTtsAt || 0, lastWarm) > 240000) warmTts(); }, 30000);
     tick();
     const canWork = pcOnline() || cloudReady();
     const custom = typeof opts.opening === 'function' ? opts.opening({ canWork }) : opts.opening;
-    const greet = spoken(custom) || ((bot.memory && bot.memory.length) ? `Hey, it's ${bot.name} again. What's on your mind?` : `Hey, it's ${bot.name}. What can I do for you?`);
+    const HELLO = ["Hey! What's up?", 'Hi! What can I do?', "Hey, I'm here. What do you need?", 'Hi there. What are we doing?'];
+    const greet = spoken(custom) || (bot.id === CODEPLY.id ? HELLO[Math.floor(Math.random() * HELLO.length)]
+      : (bot.memory && bot.memory.length) ? `Hey, it's ${bot.name} again. What's on your mind?` : `Hey, it's ${bot.name}. What can I do for you?`);
     c.lastBotText = greet;
     log('bot', greet);
     await say(greet, c.token);
@@ -1898,28 +2102,25 @@ You are on a live voice call; everything you write is spoken out loud right away
   let ringing = null;
   function incoming(bot, opts = {}) {
     if (c || ringing) return false;
-    const tint = tintOf(bot.avatar);
     const r = root();
-    r.style.setProperty('--tint', tint);
-    r.style.setProperty('--tint-bg', shade(tint, 0.62));
-    r.className = 'call incoming';
+    r.className = 'call vm incoming';
     r.dataset.phase = 'ringing';
     r.innerHTML = `
-      <div class="call-bg" aria-hidden="true"><div class="call-bg-blob">${avatarHtml(bot, 320, { still: true, flat: true })}</div></div>
-      <div class="call-head">
-        <div class="call-name">${esc(bot.name)}</div>
-        <div class="call-status">Codeply call</div>
-      </div>
       <div class="call-mid">
         <div class="call-face">
-          <div class="call-orb">${avatarHtml(bot, 168)}</div>
-          <div class="call-caption">${esc(opts.preview || '')}</div>
+          <div class="vm-ring-wrap"><i class="vm-ripple"></i><i class="vm-ripple"></i><i class="vm-ripple"></i><div class="vm-wisp"></div></div>
+          <div class="vm-in-name">Codeply</div>
+          <div class="vm-in-sub">is calling you</div>
+          ${opts.preview ? `<div class="vm-in-preview">${esc(String(opts.preview).slice(0, 140))}</div>` : ''}
         </div>
       </div>
-      <div class="call-answer-row">
-        <div class="cb-wrap"><button type="button" class="call-end" data-in="decline" aria-label="Decline">${ICON.end}</button><span>Decline</span></div>
-        <div class="cb-wrap"><button type="button" class="call-accept" data-in="answer" aria-label="Answer">${ICON.phone}</button><span>Answer</span></div>
+      <div class="vm-answer-row">
+        <div class="vm-ans"><button type="button" class="vm-decline" data-in="decline" aria-label="Decline">${ICON.x}</button><span>Decline</span></div>
+        <div class="vm-ans"><button type="button" class="vm-accept" data-in="answer" aria-label="Answer">${ICON.phone}</button><span>Answer</span></div>
       </div>`;
+    let ringFace = null;
+    try { if (WISP()) ringFace = WISP().mount(r.querySelector('.vm-wisp'), { size: 'lg', mood: 'excited' }); } catch {}
+    const wiggle = setInterval(() => { if (ringFace) ringFace.talk(500); }, 1300);
     // Ring only if this page's audio is already unlocked (it was used since the app opened).
     let stopRing = () => {};
     const a0 = audioCtx();
@@ -1932,6 +2133,7 @@ You are on a live voice call; everything you write is spoken out loud right away
     const close = () => {
       if (!ringing) return;
       clearTimeout(ringing.timer);
+      clearInterval(wiggle);
       ringing = null;
       stopRing(); stopRing = () => {};
       try { if (navigator.vibrate) navigator.vibrate(0); } catch {}
@@ -1955,6 +2157,13 @@ You are on a live voice call; everything you write is spoken out loud right away
     btn.innerHTML = c.muted ? ICON.micOff : ICON.mic;
     if (c.muted) { stopListening(); micEnabled(false); } else startListening();
     if (c.phase === 'listening') setPhase('listening');
+  }
+  function toggleCaptions() {
+    if (!c) return;
+    const off = root().classList.toggle('no-cc');
+    const b = q('[data-c="cc"]');
+    b.classList.toggle('on', !off);
+    b.setAttribute('aria-pressed', String(!off));
   }
   function toggleSpeaker() {
     if (!c) return;
@@ -1982,6 +2191,7 @@ You are on a live voice call; everything you write is spoken out loud right away
     call.queued = null;
     clearInterval(call.timer);
     clearInterval(call.warmTimer);
+    clearInterval(call.earsTimer);
     try { if (call.wake) call.wake.release(); } catch {}
     // The page keeps its one AudioContext; it is resumed in the next Call tap.
     const connected = !!call.connectedAt;
@@ -1989,14 +2199,16 @@ You are on a live voice call; everything you write is spoken out loud right away
     root().dataset.phase = 'ended';
     root().classList.remove('show-log', 'typing');
     q('.call-note').textContent = '';
-    q('.call-status').textContent = connected ? `Call ended ${dur(ms)}` : 'Call cancelled';
+    q('.call-status').textContent = call.vm ? (connected ? dur(ms) : '') : connected ? `Call ended ${dur(ms)}` : 'Call cancelled';
+    face('happy');
     q('.call-state').textContent = '';
     root().querySelectorAll('button').forEach((b) => { b.disabled = true; });
     calls.unshift({
       id: call.id, botId: call.bot.id, name: call.bot.name, avatar: call.bot.avatar, at: call.startedAt, ms,
-      status: connected ? 'done' : 'cancelled', turns: call.turns.map((t) => ({ who: t.who, text: t.text })), synced: false,
+      status: connected ? 'done' : 'cancelled', turns: call.turns.map((t) => ({ who: t.who, text: t.text })), synced: call.bot.id === CODEPLY.id ? 'local' : false,
     });
     saveCalls();
+    if (call.vm) saveVoiceChat(call);
     setTimeout(() => {
       if (c === call) c = null;
       root().classList.add('hidden');
@@ -2017,7 +2229,26 @@ You are on a live voice call; everything you write is spoken out loud right away
   });
   window.addEventListener('craft:pc-online', () => { pushPending().then(refreshBots).then(syncCalls); });
 
-  $('drawerCalls').addEventListener('click', () => { P.closeDrawer(); openCalls(); });
+  /**
+   * Voice history: a voice session is kept as a chat in the sidebar (with a
+   * voice mark), its turns as messages, so it reads like any other chat and
+   * can be carried on by typing.
+   */
+  function saveVoiceChat(call) {
+    const turns = call.turns.filter((t) => t.text && !/^\(Scheduled task\)/.test(t.text));
+    if (!turns.some((t) => t.who === 'user') || !P.createChat) return;
+    const first = turns.find((t) => t.who === 'user').text.replace(/\s+/g, ' ').trim();
+    const chat = P.createChat('chat', { voice: true, title: first.length > 46 ? `${first.slice(0, 45)}...` : first, updatedAt: Date.now() });
+    const b = P.state.bodies.get(chat.id);
+    for (const t of turns) b.messages.push({ role: t.who === 'bot' ? 'assistant' : 'user', content: t.text, at: t.at || Date.now(), ...(t.mood ? { mood: t.mood } : {}) });
+    P.saveBody(chat.id);
+    P.saveChats();
+    if (P.renderChatList) P.renderChatList();
+  }
+
+  /** Voice mode: straight into talking with Codeply (from the composer's voice button). Inside the tap, so audio can start. */
+  function openVoice(opts = {}) { return startCall(CODEPLY, { answered: true, ...opts }); }
+  $('drawerCalls').addEventListener('click', () => { P.closeDrawer(); openVoice(); });
   $('callsBack').addEventListener('click', closeCalls);
 
   // ─── Build a bot from a prompt ────────────────────────────────────────────
@@ -2216,12 +2447,14 @@ Respond with ONLY a JSON object:
   // forces the kept-mic + Whisper path on browsers that have SpeechRecognition.
   const api = { reply: askBot, fast_: askFast, fast: true, stream: true, serverStt: true, thinkingSound: true, ringMs: 2400, answerMs: 500, incomingMs: 60000, endedMs: 1100, localEars: false };
   window.CraftCalls = {
-    api, openCalls, closeCalls, startCall, endCall, incoming, refreshBots, syncCalls, spoken, sentences, VOICE_RULES, openBuilder, pushPending,
+    api, openCalls, closeCalls, startCall, openVoice, CODEPLY, endCall, incoming, refreshBots, syncCalls, spoken, sentences, VOICE_RULES, openBuilder, pushPending,
     heard: heardText, active: () => c, cache, calls: () => calls,
     supported: { recognition: !!SR, synthesis: !!synth, localEars: localEars(), ios: IS_IOS },
     _test: {
       transcribe, to16k, deepgramVoice, chunks, hearAudio, isRealSpeech: (t, said) => { const was = c && c.lastBotText; if (c) c.lastBotText = said || ''; const r = c ? isRealSpeech(t) : clearWords(t).length >= 2; if (c) c.lastBotText = was; return r; }, wordPlan, metrics, ttsUrl: TTS_URL, loadModel: sttLoad, stt: () => ({ state: stt.state, device: stt.device, progress: stt.progress, error: stt.error }),
       mic: () => ({ live: micLive(), enabled: !!(micTrack() && micTrack().enabled), streamId: mic.stream && mic.stream.id }),
+      ears: () => ({ ...ears, heals: c ? c.heals || 0 : 0, listening: !!(c && c.ears), ctx: c && c.ctx ? c.ctx.state : '' }),
+      killMic: () => { const t = micTrack(); if (t) t.stop(); },
       /** Push audio through a fresh voice detector; returns the 16 kHz utterances it cut out. */
       vadFeed(samples, sampleRate = 16000, opts = {}) {
         const out = [];

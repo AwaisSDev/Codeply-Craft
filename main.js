@@ -2677,7 +2677,7 @@ async function handleBridgeApi(method, pathname, query, body) {
       if (made.error) return { status: 200, body: made };
       body.cwd = made.cwd;
     }
-    const run = await startChatRun({ ...body, bypass: body.bypass === true });
+    const run = await startChatRun({ ...body, bypass: body.bypass === true, autoEdits: body.autoEdits === true });
     return { status: 200, body: { ...run, cwd: body.cwd } };
   }
   // Models: names only. API keys never leave this PC.
@@ -2690,6 +2690,25 @@ async function handleBridgeApi(method, pathname, query, body) {
     return { status: 200, body: state };
   }
   if (method === 'POST' && pathname === '/api/stop') { stopChatRun(body.sessionId); return { status: 200, body: { ok: true } }; }
+  // Standing permission rules (~/.codeply/permissions.json): the phone's Permissions screen.
+  // Same-account phones only, like every bridge call; deny rules still beat everything.
+  if (pathname === '/api/permissions') {
+    if (!permissionsLib) return { status: 503, body: { error: 'Permissions are not loaded yet. Try again.' } };
+    if (method === 'GET') {
+      const cwd = query.get('cwd');
+      const known = cwd && store.projects.find((p) => path.resolve(p) === path.resolve(cwd));
+      return { status: 200, body: permissionsLib.listRules(known || null) };
+    }
+    if (method === 'POST') {
+      try { return { status: 200, body: permissionsLib.saveGlobalRules({ allow: body.allow, deny: body.deny }) }; }
+      catch (e) { return { status: 500, body: { error: `Could not save the rules: ${e.message}` } }; }
+    }
+  }
+  // Web search for the phone (chat and voice), when its own search could not get through.
+  if (method === 'POST' && pathname === '/api/web/search') {
+    const r = await require(path.join(CLI_DIR, 'lib', 'web-tools.js')).webSearch(String(body.query || '').slice(0, 300), { num: Math.min(10, Number(body.num) || 6) });
+    return r.ok ? { status: 200, body: { text: r.text, via: r.via } } : { status: 502, body: { error: r.error } };
+  }
   // Edit or retry a sent message from the phone (same rewind as the desktop).
   if (method === 'POST' && pathname === '/api/edit') return { status: 200, body: await editAndRerun({ ...body, bypass: body.bypass === true }) };
   if (method === 'POST' && pathname === '/api/approval') { respondApproval(body.requestId, body.verdict); return { status: 200, body: { ok: true } }; }
@@ -3058,6 +3077,37 @@ ${text}`;
 }
 
 /**
+ * Keeps one finished tool call on the session, for the chat row after a
+ * reload (and the publish card). extra: { agent } when a Wisp specialist ran it.
+ */
+function recordToolEnd(session, ev, extra = {}) {
+  const persistedArgs = ev.args && ev.name === 'write_file' ? { path: ev.args.path }
+    : ev.args && ev.name === 'apply_patch' ? { files: ev.meta?.files || [] }
+    : ev.args;
+  session.messages.push({
+    kind: 'tool', name: ev.name,
+    label: ev.summary || ev.args?.path || ev.args?.command || ev.args?.pattern || '',
+    ok: ev.ok, args: persistedArgs, at: Date.now(),
+    exitCode: typeof ev.meta?.exitCode === 'number' ? ev.meta.exitCode : undefined,
+    added: typeof ev.meta?.added === 'number' ? ev.meta.added : undefined,
+    removed: typeof ev.meta?.removed === 'number' ? ev.meta.removed : undefined,
+    screenshotPath: ev.meta?.screenshotPath || undefined,
+    delegation: ev.meta?.delegation || undefined, // ask_bot result, for the chat row
+    output: typeof ev.meta?.output === 'string' ? ev.meta.output : undefined, // the end of a command's output, for the row
+    background: ev.meta?.background || undefined,
+    ...(extra.agent ? { agent: extra.agent } : {}),
+  });
+  session.updatedAt = Date.now();
+  // The publish card (Database, Vercel, GitHub, Live): one per publish, kept up to date.
+  if (ev.meta?.publish?.id) {
+    const card = { kind: 'publish', ...ev.meta.publish, at: Date.now() };
+    const i = session.messages.findIndex((m) => m.kind === 'publish' && m.id === card.id);
+    if (i === -1) session.messages.push(card); else session.messages[i] = card;
+    if (card.url) publishedUrls.add(card.url);
+  }
+}
+
+/**
  * Drives exactly one runAgent() turn to completion, forwarding every event to
  * the renderer/phone and persisting what matters on the session.
  *
@@ -3068,61 +3118,58 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
   let madeAnyEdit = false;
   let replyText = '';
   let error = '';
-  // No role detected for this particular text (a vague follow-up like "it
-  // still doesn't work"): keep the role the chat is already working in.
-  if (!roleId) roleId = session.stickyRole || null;
-  // A role the user picked wins over the guessed one (checks keep their own).
-  if (session.pinnedRole && !verifyOnly) roleId = session.pinnedRole;
-  emitRoleBadge(session, roleId);
-  // The chat's bot (bots-desktop.js): its prompt, approval boundary and ask_bot. With no bot
-  // chosen it's Codeply with its specialists (bot.bot null); null only when bots can't load.
-  const bot = await botsDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly, request: userMessage });
-  const withTeam = !!bot && !!(bot.bot || bot.teamSize); // a chosen bot, or specialists to hand work to
-  const handOff = withTeam && !verifyOnly ? brainDesktop.handOffFor({ botId: bot.botId || null, requester: 'user' }) : undefined;
+  // Wisp (wisp-desktop.js): the main agent of this chat, with its team. null = plain Craft.
+  const wisp = wispDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly });
+  if (wisp) {
+    // Wisp brings in Frontend, Testing... as specialists; it doesn't wear their role itself,
+    // and an old role pin from before Wisp no longer applies.
+    roleId = verifyOnly ? roleId : null;
+  } else {
+    // No role detected for this particular text (a vague follow-up like "it
+    // still doesn't work"): keep the role the chat is already working in.
+    if (!roleId) roleId = session.stickyRole || null;
+    // A role the user picked wins over the guessed one (checks keep their own).
+    if (session.pinnedRole && !verifyOnly) roleId = session.pinnedRole;
+    emitRoleBadge(session, roleId);
+  }
+  // A chat with one of the user's Crew bots runs as that bot (bots-desktop.js): its prompt,
+  // approval boundary and ask_bot. A plain chat is Wisp and its team only, no bots.
+  const bot = session.botId ? await botsDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly, request: userMessage }) : null;
+  const handOff = bot && !verifyOnly ? brainDesktop.handOffFor({ botId: bot.botId || null, requester: 'user' }) : undefined;
+  const botPrompt = wisp ? (native) => wisp.prompt(native) : bot?.botPrompt;
   try {
     const classicRun = () => agentMod.runAgent({
       userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route,
-      roleId, goal, maxSteps, verifyOnly, botPrompt: bot?.botPrompt, askBot: bot?.askBot, botId: bot?.botId,
+      roleId, goal, maxSteps, verifyOnly, botPrompt, askBot: bot?.askBot, botId: bot?.botId,
+      bringIn: wisp?.bringIn, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, agentRole: wisp ? wisp.agentRole : undefined,
       // Pass work to the bot whose job it is (brain-desktop.js); the user asked for this chat.
       handOff,
       haze: { product: 'craft', chatId: session.id }, todos,
     });
-    // Build turns run on the DSH harness (dsh-chat.js); the rest on Classic's agent. A plain
-    // chat is Codeply with its specialists there too (@codeply/dsh-team); a chosen bot stays on Classic.
-    const run = (await dshChatFor({ mode, images, bot: bot && bot.bot ? bot : null, verifyOnly, goal }))
-      ? dshTurnOrClassic(dshChat.runTurn({ session, userMessage, history, cwd, approve, signal, route, team: bot ? { botPrompt: bot.botPrompt, askBot: bot.askBot, handOff } : null }), classicRun)
+    // Build turns run on the DSH harness (dsh-chat.js); the rest on Classic's agent.
+    // Wisp's tools (bring_in, create_specialist) live in Classic's agent, so Wisp's turns run there.
+    const run = (!wisp && await dshChatFor({ mode, images, bot, verifyOnly, goal }))
+      ? dshTurnOrClassic(dshChat.runTurn({ session, userMessage, history, cwd, approve, signal, route }), classicRun)
       : classicRun();
-    for await (const ev of run) {
+    for await (const raw of run) {
+      // Wisp's reply starts with a [mood: x] tag: it sets the face, and never shows.
+      const ev = wisp ? wisp.mood(raw) : raw;
+      if (wisp && ev.type === 'tool_start' && ev.name === 'bring_in') continue; // the specialist's own steps show instead
+      if (wisp && ev.type === 'tool_end' && ev.name === 'bring_in') {
+        if (bot) bot.see(ev);
+        handoffDesktop.see(session, ev);
+        continue;
+      }
       if (bot) bot.see(ev); // the bot's trajectory, for its reflection after the reply
       handoffDesktop.see(session, ev); // steps and todos for the cloud, should this PC drop
       if (ev.type === 'text') {
-        session.messages.push({ kind: 'assistant', text: ev.text, interim: !!ev.interim, at: Date.now() });
+        session.messages.push({ kind: 'assistant', text: ev.text, interim: !!ev.interim, ...(ev.wisp ? { wisp: true } : {}), ...(ev.mood ? { mood: ev.mood } : {}), at: Date.now() });
         replyText += (replyText ? '\n\n' : '') + ev.text;
       } else if (ev.type === 'reasoning') {
         session.messages.push({ kind: 'reasoning', text: ev.text, ms: ev.ms, at: Date.now() });
       } else if (ev.type === 'tool_end') {
-        const persistedArgs = ev.args && ev.name === 'write_file' ? { path: ev.args.path }
-          : ev.args && ev.name === 'apply_patch' ? { files: ev.meta?.files || [] }
-          : ev.args;
-        session.messages.push({
-          kind: 'tool', name: ev.name,
-          label: ev.summary || ev.args?.path || ev.args?.command || ev.args?.pattern || '',
-          ok: ev.ok, args: persistedArgs, at: Date.now(),
-          exitCode: typeof ev.meta?.exitCode === 'number' ? ev.meta.exitCode : undefined,
-          added: typeof ev.meta?.added === 'number' ? ev.meta.added : undefined,
-          removed: typeof ev.meta?.removed === 'number' ? ev.meta.removed : undefined,
-          screenshotPath: ev.meta?.screenshotPath || undefined,
-          delegation: ev.meta?.delegation || undefined, // ask_bot result, for the chat row
-          output: typeof ev.meta?.output === 'string' ? ev.meta.output : undefined, // the end of a command's output, for the row
-          background: ev.meta?.background || undefined,
-        });
-        // The publish card (Database, Vercel, GitHub, Live): one per publish, kept up to date.
-        if (ev.meta?.publish?.id) {
-          const card = { kind: 'publish', ...ev.meta.publish, at: Date.now() };
-          const i = session.messages.findIndex((m) => m.kind === 'publish' && m.id === card.id);
-          if (i === -1) session.messages.push(card); else session.messages[i] = card;
-          if (card.url) publishedUrls.add(card.url);
-        }
+        // Wisp's bring_in shows as the specialist's own steps and report, not as a row of its own.
+        if (!(wisp && ev.name === 'bring_in')) recordToolEnd(session, ev);
       } else if (ev.type === 'notice') {
         session.messages.push({ kind: 'notice', level: ev.level || 'info', text: ev.text, at: Date.now() });
       } else if (ev.type === 'done' && Array.isArray(ev.actions)) {
@@ -3177,7 +3224,8 @@ const TASK_STATUS_DONE = new Set(['done', 'done-no-changes']);
  * outcome and the history threaded through it (used by /goal).
  */
 async function runTaskMaker({ session, originalMessage, history, mode, cwd, approve, signal, route, forceClassify = false, goal, maxSteps }) {
-  if (!forceClassify && !looksMultiPart(originalMessage)) {
+  // Wisp reads the job, splits it and brings in specialists itself: one turn.
+  if (wispDesktop.activeFor(session, mode) || (!forceClassify && !looksMultiPart(originalMessage))) {
     const r = await runOneTurn({ session, userMessage: originalMessage, history, mode, cwd, approve, signal, route, roleId: rolesLib.detectRole(originalMessage), goal, maxSteps });
     return { ...r, history: [...history, { role: 'user', content: originalMessage }, { role: 'assistant', content: r.replyText || '(no reply)' }] };
   }
@@ -3385,7 +3433,7 @@ async function runGoal({ session, goal, history, mode, cwd, approve, signal, rou
   else syncGoal({ status: 'incomplete', note: `Not finished after ${MAX_GOAL_ITERATIONS} iterations. Still missing: ${remaining.slice(0, 200)}` });
 }
 
-async function startChatRun({ sessionId, cwd, mode, bypass, text, images, clientId = null, botId, design = null, resume = null, screen = null }) {
+async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, text, images, clientId = null, botId, design = null, resume = null, screen = null }) {
   // resume: carry on a run that was cut off here or came back from Craft Cloud
   // (handoff-desktop.js). Its prompt says what is done; no new user message.
   if (resume) { text = String(resume.prompt || ''); mode = resume.mode; images = undefined; }
@@ -3519,6 +3567,13 @@ async function startChatRun({ sessionId, cwd, mode, bypass, text, images, client
     }
     if (bypass || autoAllowed(req)) {
       sendEvent(session.id, { type: 'approval_auto', tool: req.tool, title: req.title, bypass: !!bypass });
+      return 'once';
+    }
+    // "Auto-accept edits" (the phone's middle permission mode): file changes in
+    // the project run on their own; commands, deploys and messages still ask.
+    // Undo on the message puts the files back.
+    if (autoEdits && !req.danger && ['write_file', 'edit_file', 'apply_patch'].includes(req.tool)) {
+      sendEvent(session.id, { type: 'approval_auto', tool: req.tool, title: req.title, bypass: false, autoEdits: true });
       return 'once';
     }
 
@@ -3930,6 +3985,7 @@ async function dshChatFor({ mode, images, bot, verifyOnly, goal }) {
 /** Start a folder's harness early, so the first message there doesn't wait for it. */
 function warmDshChat(folder) {
   if (!folder || process.env.CODEPLY_CHAT_ENGINE === 'classic' || store.chatEngine === 'classic') return;
+  if (wispDesktop.enabled()) return; // Wisp's chats run on Classic's agent (its team's tools live there)
   if (!dshChatReady) dshChatReady = dshChat.available();
   dshChatReady.then((r) => { if (r.ok) dshChat.warm(folder); }).catch(() => {});
 }
@@ -4057,9 +4113,59 @@ brainDesktop.init({
   onBotsChange: () => botsWatch.poke(),
 });
 // Bots: named agents with a job, a tone, memory and an avatar (see bots-desktop.js).
+// Wisp (wisp-desktop.js): the main agent of every Craft chat, and its team of specialists.
+const wispDesktop = require('./wisp-desktop');
+wispDesktop.init({
+  ipcMain, cliDir: CLI_DIR, sendEvent, agentMod: () => agentMod, browser: browserCheck, recordToolEnd,
+  settings: { get: () => store.wisp !== false, set: (on) => { store.wisp = !!on; saveStore(); } },
+  // A specialist's scheduled job: a message from Wisp to itself in the job's own chat, through the usual approvals.
+  startRun: ({ sessionId, cwd, text }) => startChatRun({ sessionId, cwd, text, mode: 'Build', bypass: false, clientId: 'wisp-schedule' }),
+});
+// Voice mode on the phone: you talk to Codeply itself, out loud. A turn that
+// needs real work comes here (bots-desktop.js /api/bots/voice, botId "codeply")
+// and runs as the main agent (Wisp) with every tool and its specialists; the
+// reply is spoken, and its [mood: x] goes back for Wisp's face on the phone.
+const voiceSession = { id: 'voice-codeply', title: 'Voice mode', messages: [], updatedAt: 0 };
+function voiceCwd() {
+  // Where the user last worked, so "fix the build" means their project; else their home folder.
+  const s = (store.sessions || []).filter((x) => x && x.cwd && fs.existsSync(x.cwd)).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+  return s ? s.cwd : os.homedir();
+}
+async function codeplyVoice({ turns, signal, approve, onStep, mode }) {
+  const bots = require(path.join(CLI_DIR, 'lib', 'bots.js'));
+  const { history, userMessage } = bots.callTurns(turns);
+  if (!userMessage) return { text: '' };
+  const text = mode === 'text';
+  const cwd = voiceCwd();
+  const route = currentRoute();
+  voiceSession.messages = voiceSession.messages.slice(-30);
+  voiceSession.messages.push({ kind: 'user', text: userMessage, at: Date.now() });
+  const wisp = wispDesktop.forTurn({ session: voiceSession, approve, signal, route, cwd, mode: 'Build' });
+  const rules = text ? bots.TEXT_RULES : bots.VOICE_RULES;
+  const run = agentMod.runAgent({
+    userMessage, history, mode: 'Build', cwd, approve, browser: browserCheck, signal, route, maxSteps: 24,
+    botPrompt: (native) => [wisp ? wisp.prompt(native) : '', rules].filter(Boolean).join('\n\n'),
+    bringIn: wisp?.bringIn, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, agentRole: wisp ? wisp.agentRole : undefined,
+    haze: { product: 'mobile', chatId: 'voice:codeply' },
+  });
+  let reply = ''; let mood = '';
+  for await (const raw of run) {
+    const ev = wisp ? wisp.mood(raw) : raw;
+    if (ev.type === 'text' && !ev.interim) { reply += (reply ? ' ' : '') + ev.text; if (ev.mood) mood = ev.mood; }
+    else if (ev.type === 'tool_start' && onStep) {
+      const who = ev.name === 'bring_in' && ev.args && ev.args.specialist ? `Bringing in ${ev.args.specialist}` : '';
+      onStep({ name: ev.name, args: ev.args || {}, label: who });
+    } else if (ev.type === 'error') throw new Error(ev.error || 'The run failed.');
+    else if (ev.type === 'aborted') throw new Error('Stopped.');
+    else if (ev.type === 'done') break;
+  }
+  if (signal && signal.aborted) throw new Error('Stopped.');
+  voiceSession.messages.push({ kind: 'assistant', text: reply, at: Date.now() });
+  return { text: text ? bots.written(reply) : bots.spoken(reply), mood, request: userMessage, reply };
+}
 const botsDesktop = require('./bots-desktop');
 botsDesktop.init({
-  ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine, sendEvent, currentRoute, browser: browserCheck,
+  ipcMain, cliDir: CLI_DIR, ensureEngine: loadEngine, sendEvent, currentRoute, browser: browserCheck, codeplyVoice,
   canHandOff: () => require(path.join(CLI_DIR, 'lib', 'brain.js')).canHandOff(),
   agentMod: () => agentMod, aiLib: () => aiLib, permissionsLib: () => permissionsLib,
   onChange: () => botsWatch.poke(),

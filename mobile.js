@@ -452,6 +452,14 @@ function addMessage(kind, text, label, screenshotPath) {
   return el;
 }
 
+// Wisp's specialists (wisp-desktop.js) work behind Wisp: one quiet progress line, no voice of their own.
+function addWispAgent(d) {
+  if (!d || !d.agent) return;
+  if (d.phase === 'start') addThinking(`Brought in the ${d.agent.name} specialist`);
+  else if (d.phase === 'created') addThinking(`Made a new specialist: ${d.agent.name}`);
+  else if (d.phase === 'report' && !d.ok) addThinking(`The ${d.agent.name} specialist could not finish`);
+}
+
 function clearChat() {
   $('chatFeed').innerHTML = '';
   state.activeAgentMessageEl = null;
@@ -563,6 +571,7 @@ function renderSession(session) {
       else if (item.kind === 'assistant') (item.interim ? addThinking(item.text) : addMessage('agent', item.text));
       else if (item.kind === 'tool') addToolItem(item);
       else if (item.kind === 'role_active' || item.kind === 'subagent_active') addRoleBadge(item);
+      else if (item.kind === 'wisp_agent') addWispAgent(item);
       else if (item.kind === 'turn_summary') addTurnSummary(item);
       else if (item.kind === 'checkpoint') renderCheckpoint(item);
       else if (item.kind === 'question') renderQuestion({ ...item, answered: true });
@@ -698,6 +707,9 @@ function receiveEvent(event) {
 
   if (event.type === 'role_active') {
     addRoleBadge(event);
+  } else if (event.type === 'wisp_agent') {
+    state.activeAgentMessageEl = null;
+    addWispAgent(event);
   } else if (event.type === 'checkpoint' || event.type === 'checkpoint_update') {
     renderCheckpoint(event.checkpoint);
   } else if (event.type === 'turn_summary') {

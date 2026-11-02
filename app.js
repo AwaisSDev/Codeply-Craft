@@ -833,7 +833,7 @@ async function rerunFrom(msg, text, restoreFiles) {
   const r = await api.editMessage({
     sessionId, userIndex, expectText, text, images, restoreFiles,
     cwd: state.project, mode: state.mode, bypass: state.bypass, clientId: desktopClientId,
-    botId: window.CraftBots ? window.CraftBots.botFor(text) : undefined, // "@Name" picks a specialist (bots-ui.js)
+    botId: window.CraftBots ? window.CraftBots.selectedId() : undefined,
   });
   if (r && r.restored) {
     const n = r.restored.files;
@@ -1043,8 +1043,10 @@ function isQuietNotice(text) {
   return /^Summarized earlier steps/i.test(text || '') || /^Stopped after \d+ steps/i.test(text || '');
 }
 
-function addAssistantMessage(text) {
+function addAssistantMessage(text, wispMood) {
   closeActivity();
+  // The answer's avatar (at its start, on the left) takes the mood of the reply.
+  if (wispMood !== undefined && window.CraftWispUI) window.CraftWispUI.replyMood(wispMood || 'neutral', text);
   const msg = document.createElement('div');
   msg.className = 'msg assistant';
   msg.rawText = text;
@@ -1438,10 +1440,28 @@ function mascotHtml(mascotFile, sizeClass, altText) {
   </span>`;
 }
 
+// ─── Wisp's specialists ─────────────────────────────────────────────────────
+// You talk to Wisp only. A specialist it brings in works behind it: its steps
+// fold into Wisp's own work line, and one quiet row there says who it was,
+// seen only when the line is opened.
+let pendingWispMood = null; // the [mood: x] of the reply on its way (wisp_mood arrives just before its text)
+function renderWispAgent(data) {
+  const ui = window.CraftWispUI;
+  const note = ui && ui.agentNote(data);
+  if (!note) return;
+  const live = state.running && !revealInstant;
+  activityBody().appendChild(note);
+  updateActivitySummary(activityEl);
+  if (live) showThinking();
+  if (nearBottom()) scrollToBottom();
+}
+
 // ─── Role badge ─────────────────────────────────────────────────────────────
 // There's one agent; this marks the moment it switches role (Frontend,
 // Backend, Testing, ...) - shown only when the role actually changes.
 function addRoleBadge(data) {
+  // Wisp leads the chat: the old "Working as Frontend" mascots have nothing to say any more.
+  if (window.CraftWispUI && window.CraftWispUI.enabled) return;
   const el = document.createElement('div');
   el.className = 'role-badge';
   el.style.setProperty('--role-color', data.color || '');
@@ -1758,6 +1778,10 @@ function openAccountMenu() {
       ${icon('link')}
       Connect Apps
     </button>
+    <button class="menu-item" data-action="wisp">
+      <svg viewBox="0 0 24 24"><path d="M12 3.5l8.2 6-3.1 9.7H6.9L3.8 9.5z"/><circle cx="9.8" cy="11.6" r=".6"/><circle cx="14.2" cy="11.6" r=".6"/></svg>
+      Specialists
+    </button>
     <div class="menu-sep"></div>
     <div class="account-menu-theme-row">
       <span>Theme</span>
@@ -1786,6 +1810,7 @@ function openAccountMenu() {
   menu.style.width = rect.width + 'px';
 
   menu.querySelector('[data-action="connect"]').addEventListener('click', openConnectApps);
+  menu.querySelector('[data-action="wisp"]').addEventListener('click', () => { closeAccountMenu(); if (window.CraftWispUI) window.CraftWispUI.openTeam(); });
   menu.querySelector('[data-action="usage"]').addEventListener('click', () => { closeAccountMenu(); window.CraftUsage && window.CraftUsage.open({ name: $('userName').textContent, email: state.user.email }); });
   menu.querySelector('[data-action="logout"]').addEventListener('click', async () => {
     closeAccountMenu();
@@ -3629,6 +3654,12 @@ async function sendMessage(text, fromHome, images) {
   }
 
   addUserMessage(text, images);
+  if (window.CraftWispUI) {
+    window.CraftWispUI.onSend(fromHome);
+    // The answer starts with the agent's face, on the left, thinking.
+    const face = window.CraftWispUI.turnStart('thinking');
+    if (face) chatColumn.appendChild(face);
+  }
   if (window.CraftCloud && window.CraftCloud.beforeSend) window.CraftCloud.beforeSend(); // pull check, never blocks
 
   setRunning(true);
@@ -3642,7 +3673,7 @@ async function sendMessage(text, fromHome, images) {
     text,
     images,
     clientId: desktopClientId,
-    botId: window.CraftBots ? window.CraftBots.botFor(text) : undefined, // Codeply, or the specialist an "@Name" in it picks (bots-ui.js)
+    botId: window.CraftBots ? window.CraftBots.selectedId() : undefined, // "" in Craft: Codeply's main agent (bots live in Crew)
   });
 
   if (r.error) {
@@ -3867,7 +3898,6 @@ ${text}` : text, images: composer.pendingImages.length ? composer.pendingImages 
       // The slash-command menu (wired up further below, same input) owns
       // Enter while it's open - picking a command, not sending "/" as text.
       if (composer.slashMenuOpen && composer.slashMenuOpen()) return;
-      if (composer.mentionOpen && composer.mentionOpen()) return; // the "@" list (bots-ui.js) picks a name
       e.preventDefault();
       submit();
     }
@@ -4164,9 +4194,20 @@ if (api) api.onAgentEvent((data) => {
     return;
   }
 
+  // Wisp's team or its scheduled jobs changed (not tied to one chat): the team window and state refresh.
+  if (data.type === 'wisp_team') { if (window.CraftWispUI) window.CraftWispUI.refresh(); return; }
+
   if (!mine) return;
 
+  if (window.CraftWispUI) window.CraftWispUI.onEvent(data);
+
   switch (data.type) {
+    case 'wisp_mood':
+      pendingWispMood = data.mood || null;
+      break;
+    case 'wisp_agent':
+      renderWispAgent(data);
+      break;
     case 'role_active':
       addRoleBadge(data);
       break;
@@ -4215,7 +4256,7 @@ if (api) api.onAgentEvent((data) => {
     case 'text':
       hideThinking();
       if (data.interim) addThinkingRow(data.text);
-      else addAssistantMessage(data.text);
+      else { addAssistantMessage(data.text, data.wisp ? (data.mood || pendingWispMood || 'neutral') : undefined); pendingWispMood = null; }
       break;
     case 'tool_start':
       hideThinking();
@@ -4333,9 +4374,23 @@ async function openSession(id) {
   currentTasks = [];
   activeGoalCard = null;
   revealInstant = true;
-  for (const m of s.messages) {
-    if (m.kind === 'user') addUserMessage(m.text, m.images);
-    else if (m.kind === 'assistant') (m.interim ? addThinkingRow(m.text) : addAssistantMessage(m.text));
+  s.messages.forEach((m, i) => {
+    if (m.kind === 'user') {
+      addUserMessage(m.text, m.images);
+      // The answer's face, in the mood its reply ended on (only for the main agent's answers).
+      if (window.CraftWispUI) {
+        let mood = null;
+        for (let j = i + 1; j < s.messages.length && s.messages[j].kind !== 'user'; j++) {
+          const n = s.messages[j];
+          if (n.kind === 'assistant' && n.wisp && !n.interim) mood = n.mood || 'neutral';
+        }
+        const face = mood ? window.CraftWispUI.turnStart(mood) : null;
+        if (face) chatColumn.appendChild(face);
+      }
+      return;
+    }
+    else if (m.kind === 'assistant') (m.interim ? addThinkingRow(m.text) : addAssistantMessage(m.text, m.wisp ? (m.mood || 'neutral') : undefined));
+    else if (m.kind === 'wisp_agent') renderWispAgent(m);
     else if (m.kind === 'reasoning') addReasoningRow(m.text, m.ms);
     else if (m.kind === 'tool') {
       // Desktop can load a local file:// path directly, no server round trip.
@@ -4364,7 +4419,7 @@ async function openSession(id) {
     } else if (m.kind === 'bot_active' && window.CraftBots) {
       window.CraftBots.renderBadge(m.bot, true);
     }
-  }
+  });
   closeActivity();
   revealInstant = false;
   activeTaskList = null; // reopening a past chat is read-only history, not a live run - no further task_start/task_end will arrive for it

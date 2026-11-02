@@ -1314,6 +1314,7 @@ function hazeField(h) {
       continuation: (h.step || 0) > 0,
       historyCount: h.historyCount || 0,
       ...(h.screen ? { screen: true } : {}), // this turn carries the user's screen
+      ...(h.specialist ? { specialist: h.specialist, specialty: h.specialty || '' } : {}), // a Wisp specialist's run: route to what it does best
       state: hazeStates.get(h.chatId) || undefined,
     },
   };
