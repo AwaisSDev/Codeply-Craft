@@ -17,3 +17,5 @@ artifacts are in the private HF dataset `Awais1290/paste-data`.
 | E10 | 2026-11-02 | Training speed, CPU, before the fix | PASTE-32M, teacher forced, batch 1 episode, 84 segments | 1,123 ms per segment; backward 87 % of the time | done (superseded) | — |
 | E11 | 2026-11-02 | Training speed, CPU, after one-lookup fix | same | **288 ms per segment** (3.48 segments/s); encoder fwd+bwd at 175 tokens (M1c lower bound) 195 ms | done | results/phase3/bench-train-cpu.json |
 | E12 | 2026-11-02 | Tests after E11 | — | 27/27 pass (S1 needed the attribute name updated) | done | results/phase3/test-run-phase4.txt |
+| E13 | 2026-11-02 | Freeze test/stress v1 (plans + programmatic wording) | seeds 20261102 / 20261103; 600 + 200 episodes | 0 validation errors; test has 5,850 gold persistent ops and 172 merges | done | results/FROZEN.json |
+| E14 | 2026-11-02 | API wording of frozen test and stress (Opus 5.5, batch, medium) | test: max 6,000 tokens, worst $39.94; stress: max 12,000, worst $27.58; ledger budget $95 (option B) | submitted; collection running (resume: `realize_api collect` with the ids in results/api-ledger.json) | running | results/api-ledger.json |
