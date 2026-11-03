@@ -64,6 +64,13 @@ Groups are generated from the chosen recipe by `tools/make_groups.py --recipe re
 2. 3,000-episode training if the learning curve shows ≤ 1 PE point loss vs 6,000 on validation.
 3. Free Kaggle CPU sessions for calibration and any remaining validation work (no GPU quota used).
 
+**Central training on free Kaggle CPU instead of T4 (costed 2026-11-03, not adopted).** At the measured CPU speed
+(~2,000 episodes per 50 min, 4 cores), one 6,000-episode run with up to 4 epochs needs ~10.5 h of training plus
+per-epoch validation and ~1.2 h of calibration: more than one 12 h session, so it would need cross-session resume
+(untested). The 3,000-episode recipe fits one session (~7 h); 12 runs at Kaggle's limit of 5 concurrent CPU sessions
+take ~3 waves, about 21 h, i.e. results before 2026-11-07. That would use the 3,000 fallback for speed rather than
+because compute forces it, which the owner's rule does not cover, so it is an **owner decision**, not taken here.
+
 ## 5. Interpretation notes fixed in advance
 
 * Bootstrap unit: plans (both wordings move together), as in EVALUATION-PROTOCOL §6 (spec §10.5 says episodes;

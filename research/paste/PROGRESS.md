@@ -18,12 +18,27 @@ Status:
   `paste.final_report` (§10.5 outcome), `tools/bench_systems.py`, Kaggle notebooks (smoke, training groups with
   calibration, CPU queues), private Kaggle dataset `paste-trainval` (train + val only). Plan: CENTRAL-TEST-PLAN.md.
 
-Next actions, in order:
+Central-test preparation (2026-11-03, 21:10 UTC):
+* **Procedure verified end to end (E30, `DRYRUN OK`)** on validation stand-ins: calibrate_full → freeze → commit →
+  guarded final_eval (all 7 guard refusals exercised) → bench_systems → final_report, for all four systems.
+* **Recipe rules fixed before the results** (DECISIONS 2026-11-03; `tools/choose_recipe.py`, tested;
+  `scripts/recipe.sh` gathers every finished run). Groups from the recipe: `tools/make_groups.py` (tested).
+* Recipe fields still pending on validation runs (CENTRAL-TEST-PLAN §2): variant, δ, LR per family, 3,000-fallback
+  permission. Precision (AMP) waits on the T4 smoke test (GPU quota 0 h until 2026-11-07 00:00 UTC).
 
-1. Training variants V1-V4 (+ seed-2 noise run) finish here → choose the recipe (mean over PASTE and M1c,
-   cross-fitted `tools/val_compare.py`).
-2. Kaggle CPU kernels finish (learning curve 1,500 / 3,000; LR 3e-5 / 1e-4) → push the 6,000 and 3,000 x 2 runs.
-3. Fill the TBDs in CENTRAL-TEST-PLAN.md; on 2026-11-07 run the T4 smoke test, then the central-test groups.
+Running (validation only):
+* Local: V1-M1c, then V3-PASTE, V3-M1c (~75 min each when the machine is not shared).
+* Kaggle CPU (5 sessions max; `scripts/kaggle/scheduler.sh`, log `~/paste-kaggle/scheduler.log`): lc-paste-a,
+  lc-m1c-a, lr-paste, lr-m1c, var-v2-paste running; queued lc-paste-b, lc-m1c-b, lc-paste-c, lc-m1c-c, var-v2-m1c,
+  var-v4-paste, var-v4-m1c, var-s2-paste. Outputs land in `~/paste-runs/kaggle/<slug>/runs/`.
+
+Next actions, in order:
+1. When all runs are in: `scripts/recipe.sh results/recipe.json`; record the decisions (DECISIONS, plan §2,
+   EXPERIMENTS: variants, LR, learning curve incl. "still improving?"); commit.
+2. 2026-11-07 after 00:00 UTC: `kaggle quota`; T4 smoke (`paste-smoke`); precision rule; budget; `tools/make_groups.py`
+   → `make_notebooks.py --runs groups.json --device cuda` at the then-current commit; push seed-1 groups first.
+3. Download, freeze (`paste.final_eval --freeze`), commit FROZEN-RUNS.json, final_eval on test here, bench_systems,
+   final_report (CENTRAL-TEST-PLAN §3).
 
 ## Protocol and baseline plan, summary (full text: EVALUATION-PROTOCOL.md, BASELINE-PLAN.md)
 
