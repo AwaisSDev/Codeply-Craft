@@ -4,19 +4,23 @@ Branch `research/paste-architecture`, base `672696c0` (`codeply-memarch-research
 
 ## Current phase (2026-11-03)
 
-Phase 5 preparation. Data frozen (test/stress v2), train/val generated. Baselines, evaluator and trainer built
-and tested. **Kaggle GPU quota is 0 h until 2026-11-07 (E18)**, so training runs on this container's CPU.
+Phase 5 (training) on CPU. Data frozen (test/stress v2, private); train 6,000 (2,824 in API wording) and val 600
+generated; API wording finished (**$91.96 of $95 spent; no further API spend**). **Kaggle GPU quota is 0 h until
+2026-11-07 (E18)**, so training runs on this container's CPU (4 cores, ~6.5 segments/s).
 
-Running: train API wording, budget-bounded (`data/api_chunks.py`; log `~/paste-data/train/api-train.log`;
-re-run the same command to resume).
+Status of the D2 pilot:
+* E21 (accum 16, 125 steps) failed: val PE 0.0. Recorded, not hidden.
+* Diagnosis (E22): with raw head inputs (head_norm off) the initial gradient norm is 12k-19k, and clipping at 1.0
+  starves the heads.
+* E23: the same run with head_norm on reached val PE 0.13 (gate acc 0.92, attr acc 0.83, address acc 0.30).
+* E24, the pre-registered four-arm pilot, is running with a budget that learns (accum 2, 1,000 steps, BIO weight 5).
 
 Next actions, in order:
 
-1. D2 pilot on CPU (PASTE and M1c × head_norm off/on; 2,000 train episodes, 1 epoch, seed 1), once the first
-   train API chunk exists;
-2. learning curve 1,500 / 3,000 / 6,000 for the 3,000-episode fallback;
-3. closed-loop scheduled sampling in the trainer; calibration sweep; paired bootstrap;
-4. on 2026-11-07, a Kaggle T4 throughput check, then the 3-seed central test.
+1. Read E24 (`~/paste-runs/d2b/D2-choice.json`); record the D2 choice in DECISIONS.md and spec §6.5.
+2. Learning curve 1,500 / 3,000 / 6,000 (the 3,000-episode fallback), CPU, chosen head_norm.
+3. Address accuracy (0.30 in E23) is the weakest component: investigate before the main runs.
+4. Closed-loop scheduled sampling; then on 2026-11-07 a Kaggle T4 throughput check and the 3-seed central test.
 
 ## Protocol and baseline plan, summary (full text: EVALUATION-PROTOCOL.md, BASELINE-PLAN.md)
 
@@ -69,7 +73,7 @@ export PASTE_HF_CACHE=~/paste-cache/hf          # Ettin weights download here on
 #    set -a; . <owner env file>; set +a
 #    unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN   # inside Claude Code sessions, so calls reach api.anthropic.com
 # 4. data (private): huggingface-cli download Awais1290/paste-data --repo-type dataset --local-dir ~/paste-data/hf
-# 5. tests: ~/paste-venv/bin/python -m pytest tests -q      (expect 27 passed)
+# 5. tests: ~/paste-venv/bin/python -m pytest tests -q      (expect 39 passed)
 # 6. DtW clean real-text rows (read only): clone branch codeply-memarch-research into a worktree and
 #    set PASTE_DTW_REAL=<worktree>/research/dtw/data/real
 ```
@@ -97,11 +101,10 @@ export PASTE_HF_CACHE=~/paste-cache/hf          # Ettin weights download here on
 
 ## Running jobs
 
-None. At most **2 research agents at a time** (owner instruction). Experiments: `EXPERIMENTS.md`.
-
-Literature history: the first five agents were stopped before producing any
-output. Two fresh agents, restarted with the owner's approval, completed the
-review and saved it section by section.
+* E24 D2 pilot: `scripts/d2_pilot.sh` with `RUNS=~/paste-runs/d2b`, `TRAIN_ARGS="--epochs 1 --accum 2 --bio-weight 5
+  --val-tf 10 --ckpt-every 250"`; log `~/paste-runs/d2b-pilot.log`. It is resumable: rerun the same command.
+* At most **2 research agents at a time** (owner instruction). One research agent is writing
+  `research-queue-2026-11-03.md` (closed-loop schedules, soft-token detail loss, calibration under shift).
 
 ## Resume notes from the pause (now written into `ARCHITECTURE-SPEC.md`)
 
@@ -181,29 +184,24 @@ K = 8 / 32 / 128; peak RSS 482-496 MB.
 
 ## Next action
 
-After the owner's decisions:
-
-1. Freeze test and stress (generate, hash into `results/FROZEN.json`, upload privately).
-2. Generate train and val with the chosen generator mix (API spend only within the approved budget).
-3. Build the loader, the baselines, the trainer and the evaluator (`BASELINE-PLAN.md` §2).
-4. CPU and Kaggle throughput smoke runs; then the D2 pilot; then the central test.
+See *Current phase* above.
 
 ## Latest metrics
 
-No trained model. Data pilot: diversity, API vs programmatic: distinct-2 0.43 vs 0.22. Shortcut probe:
-a template-trained bag-of-words model scores 0.97 on template text and 0.60 on API wording (majority 0.65);
-see `DATASET-AUDIT.md` §5.
+Validation only; never test.
+
+| Run | Setup | val PE | Notes |
+|---|---|---|---|
+| E21 | PASTE, head_norm off, 125 steps | 0.0 | undertrained |
+| E22 | PASTE, head_norm off, 300 steps | 0.0016 | heads at chance |
+| E23 | PASTE, head_norm on, 300 steps | **0.1315** | 50 val episodes; component metrics in EXPERIMENTS.md |
+
+Data pilot: API vs programmatic distinct-2 0.43 vs 0.22; the shortcut probe does not transfer (DATASET-AUDIT §5).
 
 ## Blockers
 
-Owner decisions (`DATASET-AUDIT.md` §6):
-
-1. generator mix and budget (A ≈ $152, B ≈ $95, C ≈ $37);
-2. merge frequency 60 %;
-3. no artificial long-range references;
-4. approval of `EVALUATION-PROTOCOL.md` and `BASELINE-PLAN.md`, including the compute-budget gap
-   (`BASELINE-PLAN.md` §3: the full central test does not fit one week of free T4 at the assumed
-   throughput; options are listed).
+None. Owner gates that remain: paid compute, API spend beyond $95, merging to main, changes to the frozen
+protocol or test data.
 
 ## Decisions
 
