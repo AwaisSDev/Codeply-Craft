@@ -1,6 +1,6 @@
 {
  "budget_usd": 95.0,
- "spent_usd": 26.7654,
+ "spent_usd": 38.1042,
  "approved": "owner 2026-11-02, option B (DATASET-AUDIT section 6); the pilot ($1.87) was a separate approval",
  "batches": [
   {
@@ -40,7 +40,7 @@
    "plans": "val-plans.jsonl",
    "n": 600,
    "worst_usd": 33.99,
-   "actual_usd": null,
+   "actual_usd": 11.3388,
    "out": "/home/user/paste-data/train/api-val"
   }
  ]

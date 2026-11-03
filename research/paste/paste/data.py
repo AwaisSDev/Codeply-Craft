@@ -99,7 +99,12 @@ def episode_loss_teacher_forced(model, adapter, ep, k_bptt=4, window=8):
         enc = model.encode([s_in])[0]
         L = segment_loss(model, enc, gold)
         total = total + sum(L.values()); n += 1
-        h = model.gru_h(enc.mem, h if h is not None else model.h0)
+        if hasattr(model, "gru_h"):                              # PASTE: GRU-gated memory tokens
+            h = model.gru_h(enc.mem, h if h is not None else model.h0)
+        else:                                                    # baselines: RMT replacement, or no latent state
+            h = model.train_transition(enc, h)
+        if not hasattr(model, "W_new"):                          # temporary items are text rows: no vectors to carry
+            continue
         units = {u["tag"]: u for u in seg["units"]}
         for op in seg["temp_ops"]:
             if op["op"] in ("T-WRITE", "T-UPDATE") and op.get("unit") in units:
