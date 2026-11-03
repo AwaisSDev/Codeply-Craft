@@ -5,6 +5,7 @@
 #   3. merge (release/memory-model/merge_adapter.py: as ml/finetune/train_lora.py does)
 #   4. the commands of ml/finetune/export_gguf.sh, verbatim: f16 GGUF, importance matrix (200 chunks), Q4_K_M, Q8_0
 #   5. checksums; the merged weights and the f16 GGUF are deleted afterwards (disk)
+# IMATRIX_ARGS: extra llama-imatrix flags, e.g. "-ngl 99" with a CUDA build (as export_gguf.sh).
 # Usage: W=<work dir> LLAMA_SRC=<llama.cpp checkout at the pinned commit> PY=<python with torch/peft/transformers>
 #        release/memory-model/export_local.sh <seed> <adapter_dir>
 set -euo pipefail
@@ -50,7 +51,7 @@ const fs = require("fs");
 const rows = fs.readFileSync(process.argv[1], "utf8").trim().split("\n").slice(0, 300);
 fs.writeFileSync(process.argv[2], rows.map((l) => JSON.parse(l).messages.map((m) => m.content).join("\n")).join("\n\n"));
 ' ml/data/out/sft-val.jsonl "$D/calibration.txt"
-  "$LL/llama-imatrix" -m "$D/$NAME-f16.gguf" -f "$D/calibration.txt" -o "$D/imatrix.dat.part" -c 2048 --chunks "${IMATRIX_CHUNKS:-200}"
+  "$LL/llama-imatrix" -m "$D/$NAME-f16.gguf" -f "$D/calibration.txt" -o "$D/imatrix.dat.part" -c 2048 --chunks "${IMATRIX_CHUNKS:-200}" ${IMATRIX_ARGS:-}
   mv "$D/imatrix.dat.part" "$D/imatrix.dat"
 fi
 for q in Q4_K_M Q8_0; do
