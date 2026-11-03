@@ -5,6 +5,8 @@
 //   node release/memory-model/verify-frozen.mjs --gguf <file>   also hash the model file (1.1 GB, ~5 s)
 //   node release/memory-model/verify-frozen.mjs --write         (re)create the manifest: only for a NEW release
 //
+// Files kept out of the public repository (PRIVATE-DATA-MANIFEST.json) may be absent: they are reported, not
+// failed, unless --require-private; restore them with release/memory-model/fetch-private-data.sh.
 // Exit 1 if anything differs. Run before any commit that touches release/memory-model/results/.
 import fs from 'fs';
 import path from 'path';
@@ -45,11 +47,15 @@ async function main() {
     return;
   }
   const m = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
-  let bad = 0;
+  let bad = 0; let privateMissing = 0;
+  const priv = JSON.parse(fs.readFileSync(path.join(HERE, 'PRIVATE-DATA-MANIFEST.json'), 'utf8')).files;
   if (m.artifact.sha256 !== ARTIFACT.sha256) { console.log(`DIFF artifact checksum in manifest ${m.artifact.sha256}`); bad++; }
   for (const [f, want] of Object.entries(m.files)) {
     let got = 'missing';
     try { got = await hashFile(path.join(HERE, f)); } catch {}
+    const p = priv[`release/memory-model/${f}`];
+    if (p && p.sha256 !== want) { console.log(`DIFF ${f}: private manifest ${p.sha256.slice(0, 12)} is not the frozen ${want.slice(0, 12)}`); bad++; continue; }
+    if (got === 'missing' && p && !args.includes('--require-private')) { console.log(`priv ${f}: kept private, not present (fetch-private-data.sh)`); privateMissing++; continue; }
     if (got !== want) { console.log(`DIFF ${f}: ${got.slice(0, 12)} (frozen ${want.slice(0, 12)})`); bad++; }
   }
   const gguf = opt('gguf');
@@ -57,7 +63,8 @@ async function main() {
     const got = await hashFile(gguf); const size = fs.statSync(gguf).size;
     if (got !== m.artifact.sha256 || size !== m.artifact.bytes) { console.log(`DIFF model file ${gguf}: ${got} (${size} bytes)`); bad++; } else console.log(`ok   model file ${m.artifact.name}`);
   }
-  console.log(bad ? `FROZEN RELEASE CHANGED: ${bad} difference(s)` : `ok   ${Object.keys(m.files).length} frozen files, artifact ${m.artifact.sha256.slice(0, 12)}`);
+  const n = Object.keys(m.files).length;
+  console.log(bad ? `FROZEN RELEASE CHANGED: ${bad} difference(s)` : `ok   ${n - privateMissing} frozen files verified${privateMissing ? `, ${privateMissing} private not present` : ''}, artifact ${m.artifact.sha256.slice(0, 12)}`);
   process.exitCode = bad ? 1 : 0;
 }
 main();

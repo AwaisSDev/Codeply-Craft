@@ -1,0 +1,407 @@
+{
+ "fetch": "release/memory-model/fetch-private-data.sh",
+ "files": {
+  "release/memory-model/results/details/release-s1-test-real.jsonl": {
+   "bytes": 483841,
+   "sha256": "ffb121eb2b18d0014ff23ff0541f2d10fe16652694d06290f1b846e00ed6d4ef"
+  },
+  "release/memory-model/results/details/release-s1-val.jsonl": {
+   "bytes": 394105,
+   "sha256": "4dd440c94c8a91f6c0eacca699e37eb4ba237c2ffc6534e674e1fa4d8e3d8fec"
+  },
+  "research/dtw/data/real/test.jsonl": {
+   "bytes": 1088554,
+   "sha256": "a46d1307b3eefc8a59414090e5be9c855c23be01b13c24715441146a416d56e2"
+  },
+  "research/dtw/data/real/test.spans.jsonl.gz": {
+   "bytes": 182039,
+   "sha256": "fb7c18dc4affbd43f4a4a05c21a90c5f0993f733e6ab89a45842d0cecacaa3bb",
+   "sha256Uncompressed": "6852913a9242a6e3cac5195ee517db4f72ec14631d12e7b4a3b490f4bff9428c"
+  },
+  "research/dtw/data/real/train.jsonl": {
+   "bytes": 8099640,
+   "sha256": "d622b79475044d6895951c2003ce5a719820025176b58133e8f22d73dee888ce"
+  },
+  "research/dtw/data/real/train.spans.jsonl.gz": {
+   "bytes": 1421530,
+   "sha256": "56e9423271e22ef65bf8007699d3d196355abef71a33a9c3715d993b775bbdaf",
+   "sha256Uncompressed": "a904a02e8fb9da7bfbeb9721090f0b42ea3f9f2828f05b0fe7db929da101749f"
+  },
+  "research/dtw/data/real/val.jsonl": {
+   "bytes": 927912,
+   "sha256": "6a4c740eac410cf4cae4cec697ee6d59291a9e1dbab5dae2fbde459e3ce3c20d"
+  },
+  "research/dtw/data/real/val.spans.jsonl.gz": {
+   "bytes": 177498,
+   "sha256": "decc909ef9ef36c31a22741a7fd946ca7664865e157986c37a65a73c60f1b163",
+   "sha256Uncompressed": "0f269261604c3894052c8d72b1dea9a9579b6783ee4c78289978b5408112c1c5"
+  },
+  "research/dtw/label/data/full.jsonl": {
+   "bytes": 8712960,
+   "sha256": "108c8db56fa3d2fb71be5de0c5480cfb08d2ed67782993f8a7182ff1f5986b5f"
+  },
+  "research/dtw/label/data/fullnat.jsonl": {
+   "bytes": 499700,
+   "sha256": "cdd15ea63dd8f890c3dccffad7343f36624cf51417d219e03cedf7f48172c29b"
+  },
+  "research/dtw/label/data/fullsyn.jsonl": {
+   "bytes": 1695615,
+   "sha256": "18885bcd2be13da8035c6d3af4f94a04ccbc1070b468cfd69c341216d763e16f"
+  },
+  "research/dtw/label/data/natural-v2.jsonl": {
+   "bytes": 3056220,
+   "sha256": "ebaabd8a58975f1164e0ae4693049c6b785f31679266bc75feb9782d8a68f24a"
+  },
+  "research/dtw/label/data/pilot1.jsonl": {
+   "bytes": 70063,
+   "sha256": "856415513d4df99aec00b6fb7565c76193b03dd1c1bf328ee6a6d630ac675e5a"
+  },
+  "research/dtw/label/data/pilot2.jsonl": {
+   "bytes": 105288,
+   "sha256": "3c442b20dca93720e178d9f05e1663ef838fc11520bc9d2f00167943025acca3"
+  },
+  "research/dtw/label/data/pilot2nat.jsonl": {
+   "bytes": 34560,
+   "sha256": "c3d2a0f817d1e469c02a7843da52722780f764825129c5a39d698da0ac30baa2"
+  },
+  "research/dtw/label/data/pilot2plans.jsonl": {
+   "bytes": 26903,
+   "sha256": "bc6da070ff4c1cf5cfd7fc04293f2fa869ef54111a95f106a89b39a483387871"
+  },
+  "research/dtw/label/data/pool-v2.jsonl": {
+   "bytes": 11648506,
+   "sha256": "61bfce0214bacea6eba57824e5e551a86481f638ff722044f7d7d3846c028b2d"
+  },
+  "research/dtw/label/data/pool.jsonl": {
+   "bytes": 7800359,
+   "sha256": "55fad3ceb95050b591f61bb881b6c9f02eb563eb8ac5489ac77d33ec5659e55c"
+  },
+  "research/dtw/label/data/synthetic-synth-full.jsonl": {
+   "bytes": 1070948,
+   "sha256": "17614c2081fd074841b509d4388703262ef3b18072b8506d5e70458ccde9eba3"
+  },
+  "research/dtw/label/data/synthetic-synth-pilot2.jsonl": {
+   "bytes": 16683,
+   "sha256": "11fb0184df6e67d972eb0a274bef32a60eb11594b655847967b346ab62253776"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin150-s1-natural.jsonl": {
+   "bytes": 204292,
+   "sha256": "907f297fc79e78d08611d56dddd6a058a30d2527d8c3c3525a8693fe90886a6a"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin150-s1-test-real.jsonl": {
+   "bytes": 949263,
+   "sha256": "78f1deb18c174602ace81d386059e8919ac7267da36d22adfebf9c818302b8c4"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin150-s1-val.jsonl": {
+   "bytes": 772290,
+   "sha256": "1de87509cd1dd9c48e33f10ae049ffa0ce23441f62d23b2f404d37f489ac94cc"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin150-s2-natural.jsonl": {
+   "bytes": 203214,
+   "sha256": "57e3119e0923b19f4127f55f3fac051f19e1aa8b792973b4f550331f30cc0855"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin150-s2-test-real.jsonl": {
+   "bytes": 973323,
+   "sha256": "a6186aa5fa3b1e25d9546660065ef938227a0595893922b3a15ae277ad43d92d"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin150-s2-val.jsonl": {
+   "bytes": 775290,
+   "sha256": "516361e068fdd13e2f7c2756844d600f462f9ddc8718c8ce5715ed512f816858"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin150-s3-natural.jsonl": {
+   "bytes": 214422,
+   "sha256": "b61c9ee6dfbf8c6e183617abbc3d00572cd39e4ba2272e896a6f60b4ee5571ce"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin150-s3-test-real.jsonl": {
+   "bytes": 1039067,
+   "sha256": "b58ae773167892c2dda51258b0b4782055a671aa3a301894d1c9d55041e99e24"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin150-s3-val.jsonl": {
+   "bytes": 821401,
+   "sha256": "8b3c8b7bb010877f5e3456eabb0e84c9785fef4a29404748ae3f3adbeb532e4e"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin400-s1-natural.jsonl": {
+   "bytes": 179059,
+   "sha256": "c53c59d24a1918458ecf4095192421aca14016625424e59494c373a68321c126"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin400-s1-test-real.jsonl": {
+   "bytes": 913924,
+   "sha256": "83c4d8de3e57dc90cba0a99358d9451275384729c68979d49cba109f76b6b0d4"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin400-s1-val.jsonl": {
+   "bytes": 778937,
+   "sha256": "1c0eb864ad490b822c3ff92e5ee747f155ff1ca381f21d9ac6287ebf85f04fcb"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin400-s2-natural.jsonl": {
+   "bytes": 196091,
+   "sha256": "01fe493c89efb68a20817ad909f689577f9b9af583f043f33b316cf99b31a844"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin400-s2-test-real.jsonl": {
+   "bytes": 906180,
+   "sha256": "268f069f9e2fed77619c77958e1d09df83cddcbd70bf76a8adda68521abcda14"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin400-s2-val.jsonl": {
+   "bytes": 759587,
+   "sha256": "ba0a58390e3028a64b2bd46fc06e55713e4fd884b04005badb8dfb6e14f5c04b"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin400-s3-natural.jsonl": {
+   "bytes": 191695,
+   "sha256": "d1d9a63694108260cbcc09c7d1ddab5846e677f4c8d78c20fbf396735d4cb4d0"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin400-s3-test-real.jsonl": {
+   "bytes": 924063,
+   "sha256": "b5c4cb23acb01359d3769c8224120ee95c4a1cab8dce6dea15ed7e8b170540f5"
+  },
+  "research/dtw/results/calibration/details/cal-dtw-real-ettin400-s3-val.jsonl": {
+   "bytes": 729252,
+   "sha256": "7d4d194a916a064b5d8c020f44e06e3efd0a2a2113a64d69b746fba8a400752e"
+  },
+  "research/dtw/results/details/dtw-ettin150-s1r-natural.jsonl": {
+   "bytes": 2329933,
+   "sha256": "8f19dbd40909eba76644d7df2e02575de9ae2eb899d1df2e33f094710c41cbd9"
+  },
+  "research/dtw/results/details/dtw-ettin150-s1r-r2-natural.jsonl": {
+   "bytes": 2327868,
+   "sha256": "70a63444f94d2bdab218941e3f2799b7b7bab3f87a91ae4c040d79f4712d6ed3"
+  },
+  "research/dtw/results/details/dtw-ettin150-s1r-r2-test-real.jsonl": {
+   "bytes": 3576722,
+   "sha256": "a3996519e66e4f7b493c66653f847e8d1486cea35b787929e7194d58289e7941"
+  },
+  "research/dtw/results/details/dtw-ettin150-s1r-test-real.jsonl": {
+   "bytes": 3576592,
+   "sha256": "0cf52d63bee712c261097a03f0a113a75c390f85c79e56f8a84de682e4feb688"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s1-natural-cal2.jsonl": {
+   "bytes": 158915,
+   "sha256": "445b53c3e26e1d1c3d12d93e4aeb776b7451a84961bdc627c0a535b387b33510"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s1-natural-cal3.jsonl": {
+   "bytes": 158915,
+   "sha256": "445b53c3e26e1d1c3d12d93e4aeb776b7451a84961bdc627c0a535b387b33510"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s1-natural-cal5.jsonl": {
+   "bytes": 157356,
+   "sha256": "2312209e4817e9fd02955a2da1b3af2093d2c61e3b034ff924db59a4f43cd758"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s1-natural.jsonl": {
+   "bytes": 202048,
+   "sha256": "d826ada84416409b8a0bfb86b70a66811f626b12e1a94cfdcbaddc765fff7c8c"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s1-test-real-cal2.jsonl": {
+   "bytes": 394154,
+   "sha256": "dcd36452bc2b812dc2f9941481b247e75488f7246edafd6dc272d7e5922c6036"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s1-test-real-cal3.jsonl": {
+   "bytes": 394154,
+   "sha256": "dcd36452bc2b812dc2f9941481b247e75488f7246edafd6dc272d7e5922c6036"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s1-test-real-cal5.jsonl": {
+   "bytes": 351653,
+   "sha256": "dd1640970041cc926c9d4d1c9876f95ce862252618c545768bef9cba601b6a7d"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s1-test-real.jsonl": {
+   "bytes": 915786,
+   "sha256": "a6fcd3a3c3189eb41da139f402e3192501bf54012b4f01594c67a099332c0fa1"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s2-natural-cal2.jsonl": {
+   "bytes": 162971,
+   "sha256": "43fa7e7b2247732d4cb89965c60e3f7472d7454b09741bd64162f552a645827e"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s2-natural-cal3.jsonl": {
+   "bytes": 158419,
+   "sha256": "9008c7babbf529ef8e2c12f3d326626aa77da95e54d1e950598544d6a9f0065b"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s2-natural-cal5.jsonl": {
+   "bytes": 158419,
+   "sha256": "9008c7babbf529ef8e2c12f3d326626aa77da95e54d1e950598544d6a9f0065b"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s2-natural.jsonl": {
+   "bytes": 200956,
+   "sha256": "13f8f75fcbef657ee89b8dc47e928d3d1c0eed4b4511ca3b7f304cbe3598c326"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s2-test-real-cal2.jsonl": {
+   "bytes": 407847,
+   "sha256": "9cd883962f821e7b44d041ac566cdc7c4515e3e2892c7c65f1d26e4d3529b855"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s2-test-real-cal3.jsonl": {
+   "bytes": 325486,
+   "sha256": "9e7916ac731baf75df66017af07d0ae05e00009dfcdbd9aa50b925f12a9788cf"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s2-test-real-cal5.jsonl": {
+   "bytes": 325486,
+   "sha256": "9e7916ac731baf75df66017af07d0ae05e00009dfcdbd9aa50b925f12a9788cf"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s2-test-real.jsonl": {
+   "bytes": 938980,
+   "sha256": "a4fd4ab724071f0e583e86f97b82ded0a152c6fd4d4e04d1c5d5124aceba03d4"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s3-natural-cal2.jsonl": {
+   "bytes": 160295,
+   "sha256": "5802486421fe23e26e9a81888d01384f24e5e90ac2029f5b660c2d1d6bb3dde2"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s3-natural-cal3.jsonl": {
+   "bytes": 159686,
+   "sha256": "1883c2c6572886b143d2d4510227c463dd69f233e946f6f8d10a2bfbe77de032"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s3-natural-cal5.jsonl": {
+   "bytes": 157896,
+   "sha256": "7865374b4917d899468c45afac06b38ba0bee3a5d38108ac4b50823121c91033"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s3-natural.jsonl": {
+   "bytes": 211735,
+   "sha256": "ec61afafcc8fef99f4c7825019ddd9977b7c01f2d6bddc095f5e6757c62d9879"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s3-test-real-cal2.jsonl": {
+   "bytes": 371203,
+   "sha256": "0da50eb6c7be41aae49d13750e04b1c017c799868a7859535a7616cd734a89b5"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s3-test-real-cal3.jsonl": {
+   "bytes": 347170,
+   "sha256": "3f1a5bf92f6f5aa7434d19be7080ae38528d6512388b84e543eb5bc6034a9e61"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s3-test-real-cal5.jsonl": {
+   "bytes": 318980,
+   "sha256": "edc7acf9979b4b14b68b27a4ad8ec27735e400b5fe84542d9aabffb4457b3199"
+  },
+  "research/dtw/results/details/dtw-real-ettin150-s3-test-real.jsonl": {
+   "bytes": 1000591,
+   "sha256": "05fd4f6c78dac1873a5803d31bc454b8a71cf9e909e4f1e6ac8757b6d3cd140b"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s1-natural-cal2.jsonl": {
+   "bytes": 158833,
+   "sha256": "6491d0c3910082bb0ba7fe79e5367ef1d0659b3d37cf26a347fe2cb94ad07031"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s1-natural-cal3.jsonl": {
+   "bytes": 158833,
+   "sha256": "6491d0c3910082bb0ba7fe79e5367ef1d0659b3d37cf26a347fe2cb94ad07031"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s1-natural-cal5.jsonl": {
+   "bytes": 158833,
+   "sha256": "6491d0c3910082bb0ba7fe79e5367ef1d0659b3d37cf26a347fe2cb94ad07031"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s1-natural.jsonl": {
+   "bytes": 177947,
+   "sha256": "92635ee2c97151003a7a28e8b1b6bfd608079ab79a17cb1fe9914b8cd5968ac4"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s1-test-real-cal2.jsonl": {
+   "bytes": 346166,
+   "sha256": "57cdd11ac151862c192a4daeecbe0679ccfbf44575833dbabbe2d7b97fa1878a"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s1-test-real-cal3.jsonl": {
+   "bytes": 346166,
+   "sha256": "57cdd11ac151862c192a4daeecbe0679ccfbf44575833dbabbe2d7b97fa1878a"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s1-test-real-cal5.jsonl": {
+   "bytes": 346166,
+   "sha256": "57cdd11ac151862c192a4daeecbe0679ccfbf44575833dbabbe2d7b97fa1878a"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s1-test-real.jsonl": {
+   "bytes": 883034,
+   "sha256": "d7100266bb5e2fd4731e952b05d6647509977a90ccc1f33c50fd5e17b5203a00"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s2-natural-cal2.jsonl": {
+   "bytes": 160589,
+   "sha256": "d703bf2e98c758f686833c6c39bed6251c388375be63417409addab9a9c928a7"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s2-natural-cal3.jsonl": {
+   "bytes": 157484,
+   "sha256": "dca66b73a4307a1e9e17f464fac6e4b073d88bf0129d3c7a23da0ec649e5f38c"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s2-natural-cal5.jsonl": {
+   "bytes": 157484,
+   "sha256": "dca66b73a4307a1e9e17f464fac6e4b073d88bf0129d3c7a23da0ec649e5f38c"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s2-natural.jsonl": {
+   "bytes": 196094,
+   "sha256": "004e281361e38120368c3a90a7ccc5f3f024e0a0e62e352c9adc4afe5503077d"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s2-test-real-cal2.jsonl": {
+   "bytes": 407119,
+   "sha256": "b0566f00ab7fa2c153480e2514e357df559580b5a70242ebea096126b3c49bcb"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s2-test-real-cal3.jsonl": {
+   "bytes": 353339,
+   "sha256": "49c5aba454e55dd7a2db6889f94c8c3180e2b4c95b421fa2d3e6a0eb2bc998d1"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s2-test-real-cal5.jsonl": {
+   "bytes": 353339,
+   "sha256": "49c5aba454e55dd7a2db6889f94c8c3180e2b4c95b421fa2d3e6a0eb2bc998d1"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s2-test-real.jsonl": {
+   "bytes": 906222,
+   "sha256": "d8ae8f7f6e6aba0833e4c0b71e7bb4291759ac70948ce2b2abe4d188448e305c"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s3-natural-cal2.jsonl": {
+   "bytes": 158569,
+   "sha256": "8329b196cba6bad7eb066d4c02108050a691414a8a9119032e896f24a28cb198"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s3-natural-cal3.jsonl": {
+   "bytes": 158569,
+   "sha256": "8329b196cba6bad7eb066d4c02108050a691414a8a9119032e896f24a28cb198"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s3-natural-cal5.jsonl": {
+   "bytes": 158569,
+   "sha256": "8329b196cba6bad7eb066d4c02108050a691414a8a9119032e896f24a28cb198"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s3-natural.jsonl": {
+   "bytes": 191659,
+   "sha256": "df34071f9566bd5229377c7941d07c125821ed91eaa99414deeef2a52570dc30"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s3-test-real-cal2.jsonl": {
+   "bytes": 340702,
+   "sha256": "5dfe8dd0499074ce46fc070d042c73c9ab3ba069406456cbf35a8ca6a0c296a3"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s3-test-real-cal3.jsonl": {
+   "bytes": 340702,
+   "sha256": "5dfe8dd0499074ce46fc070d042c73c9ab3ba069406456cbf35a8ca6a0c296a3"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s3-test-real-cal5.jsonl": {
+   "bytes": 340702,
+   "sha256": "5dfe8dd0499074ce46fc070d042c73c9ab3ba069406456cbf35a8ca6a0c296a3"
+  },
+  "research/dtw/results/details/dtw-real-ettin400-s3-test-real.jsonl": {
+   "bytes": 924103,
+   "sha256": "f5a0046d0900cd68ff68b8ac48f01bfd7b3e008fc1965b7c0e9d52a345080bbd"
+  },
+  "research/dtw/results/details/lfm3-q4-v2-test-real.jsonl": {
+   "bytes": 840418,
+   "sha256": "0c14b43e51760c7deb97c72fe8ac844befb59f5677c039e5496c5edf6b8840fc"
+  },
+  "research/dtw/results/details/lfm3-qad-v2-natural.jsonl": {
+   "bytes": 188323,
+   "sha256": "730589c1e935fbca15e0a132bec28631a697c265dc0c053b5b941baca38daa8c"
+  },
+  "research/dtw/results/details/lfm3-qad-v2-test-real.jsonl": {
+   "bytes": 542731,
+   "sha256": "07d7d7d97202fa9093af80e72cf5213b3fda53d64aa8a587f535f1a7e6298eba"
+  },
+  "research/dtw/results/details/real-lfm3-lora-s1-natural.jsonl": {
+   "bytes": 168598,
+   "sha256": "bcd3ff9794761b823702efea76ab5869721fd9d2506351612fa36a7172b5ba31"
+  },
+  "research/dtw/results/details/real-lfm3-lora-s1-test-real.jsonl": {
+   "bytes": 458703,
+   "sha256": "e5f26db1c4c1e39f75685b3c76f83517659041284e3f6eac30962f8518ff8e94"
+  },
+  "research/dtw/results/details/real-lfm3-lora-s2-natural.jsonl": {
+   "bytes": 167702,
+   "sha256": "8d711e4dc55bdc90c9e3ddceee5b946bc7ce3781f4c9c9e4b3179ce0cef1d617"
+  },
+  "research/dtw/results/details/real-lfm3-lora-s2-test-real.jsonl": {
+   "bytes": 451155,
+   "sha256": "2a4e34d52674751be8fc90978a0848b3442f9ea3e29505516a6c6a7461f7908a"
+  },
+  "research/dtw/results/details/rules-natural.jsonl": {
+   "bytes": 130373,
+   "sha256": "4a1cbb0294b2ac7189cad89533da8a8249eb2d7016117c832df88c79d74ae1da"
+  },
+  "research/dtw/results/details/rules-test-real.jsonl": {
+   "bytes": 261144,
+   "sha256": "1dec5e930eb8b0e220cbd6221706cf8d15e267b4a6644bca5cfa765cb32168eb"
+  }
+ },
+ "location": "private Kaggle dataset awaissididique/codeply-memory-derived-data (derived-data.tar)",
+ "note": "Kaggle stores .gz files decompressed; .gz entries are also verified by their uncompressed content (sha256Uncompressed).",
+ "what": "WildChat-derived files kept out of the public repository (owner decision 2026-11-03, until legal/privacy clearance). Paths and checksums only; no content."
+}

@@ -6,7 +6,8 @@
      micro-batch 1 x accumulation 16, the frozen realistic train split, full-style prompt);
   3. export seed 3 the same way.
 Every finished file is written under /kaggle/working at once (a 12 h stop keeps what is done).
-Input: the private dataset awaissididique/codeply-real-lfm3-lora-adapters (seeds 1, 2 final adapters).
+Inputs: the private datasets awaissididique/codeply-real-lfm3-lora-adapters (seeds 1, 2 final adapters) and
+awaissididique/codeply-memory-derived-data (the WildChat-derived split, kept out of the public repository).
 
   python3 release/memory-model/make_seed3_notebook.py   ->  release/memory-model/kaggle-memory-model.ipynb
 """
@@ -22,6 +23,11 @@ if not os.path.exists("/tmp/codeply"):
     subprocess.run(["git", "clone", "--depth", "1", "-b", "codeply-memory-model",
                     "https://github.com/AwaisSDev/Codeply-Craft", "/tmp/codeply"], check=True)
 os.chdir("/tmp/codeply")
+# The derived data is not in the public repository (PRIVATE-DATA.md): restore it from the attached private dataset.
+import glob
+src = [os.path.dirname(d) for d in glob.glob("/kaggle/input/**/derived-data", recursive=True)]
+assert src, "attach the private dataset awaissididique/codeply-memory-derived-data"
+subprocess.run(f"PRIVATE_DATA_DIR={src[0]} release/memory-model/fetch-private-data.sh", shell=True, check=True)
 subprocess.run("cd research/dtw/data/real && for f in *.gz; do gunzip -kf $f; done", shell=True, check=True)
 split = json.load(open("research/dtw/data/real/SPLIT.json"))
 assert split["leakChecksPass"], "leak checks failed: do not train"
@@ -107,8 +113,8 @@ def nb(title, intro, cells):
 
 
 NB = nb("Memory model release: production export of seeds 1-2, training and export of seed 3",
-        "See release/memory-model/PROGRESS.md. Settings: GPU T4, Internet on, dataset "
-        "awaissididique/codeply-real-lfm3-lora-adapters attached. LFM Open License v1.0 (base model).",
+        "See release/memory-model/PROGRESS.md. Settings: GPU T4, Internet on, private datasets "
+        "awaissididique/codeply-real-lfm3-lora-adapters and awaissididique/codeply-memory-derived-data attached. LFM Open License v1.0 (base model).",
         [SETUP, TOOLS, EXPORT_12, TRAIN_3, EXPORT_3])
 json.dump(NB, open(os.path.join(HERE, "kaggle-memory-model.ipynb"), "w"), indent=1)
 print("wrote kaggle-memory-model.ipynb")

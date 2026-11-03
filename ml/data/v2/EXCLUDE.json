@@ -1,0 +1,39 @@
+{
+ "why": "Owner decision 2026-11-03: exclude from any v2 training or evaluation data until their minors-category moderation scores (0.1-0.5, no flag) are reviewed by a person. Source: research/dtw/label/audit/moderation-check.json.",
+ "status": "excluded pending review",
+ "exampleIds": [
+  "rl-synmixed-a91fce8e36",
+  "rl-synmixed-c06ff2b86d",
+  "rl-wildchat-00f05fa799",
+  "rl-wildchat-068fe7de86",
+  "rl-wildchat-2019c59472",
+  "rl-wildchat-2f8d3a0684",
+  "rl-wildchat-76c74ee154",
+  "rl-wildchat-7fc1a4bc70",
+  "rl-wildchat-98fa560318",
+  "rl-wildchat-a4a7c3c5e6",
+  "rl-wildchat-a91fce8e36",
+  "rl-wildchat-a91fce8e36-mg",
+  "rl-wildchat-c06ff2b86d",
+  "rl-wildchat-c33a31bb61",
+  "rl-wildchat-c33a31bb61-mg",
+  "rl-wildchat-cd7ef28e2d",
+  "rl-wildchat-e264418128"
+ ],
+ "wildchatConversationIds": [
+  "11f31174e3aa354377bce9a752c7f92a",
+  "1b250a0d9de335f65bc8261325cd41ec",
+  "1d95c25baed06a62162cb92cd9607bf7",
+  "233dffcec7cfafbef24c11c63f91f12d",
+  "37accf4503caff764b59a03c4d34ba4d",
+  "664c1ff08df46fa06114f56e5d54f560",
+  "af95fa63d5279d2c743a3bd1cbda95ec",
+  "b15842f55a20cbc0d23bf6d2162fd9b2",
+  "b605ab5275b8907f4c12d501fc9a861f",
+  "d313963e4ab60e68f0839d821d1b22d8",
+  "e67c3e4d2d21dcf17646424130938167",
+  "e7682cf1e8d19b596c8590715d568896",
+  "f481b05b1086bc84659bc68e6b3c7b62"
+ ],
+ "rule": "An example is excluded if its id is listed, or its source.original_id is listed (covers rewrites and merged derivatives of the same conversation)."
+}
