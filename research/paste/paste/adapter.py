@@ -17,11 +17,11 @@ _DAY = 86400.0
 
 
 def _b64(t: torch.Tensor) -> str:
-    return base64.b64encode(t.detach().to(torch.float32).contiguous().numpy().tobytes()).decode()
+    return base64.b64encode(t.detach().to(device="cpu", dtype=torch.float32).contiguous().numpy().tobytes()).decode()
 
 
 def _unb64(s: str, shape) -> torch.Tensor:
-    return torch.from_numpy(np.frombuffer(base64.b64decode(s), dtype=np.float32).copy()).reshape(shape)
+    return torch.from_numpy(np.frombuffer(base64.b64decode(s), dtype=np.float32).copy()).reshape(shape).to(torch.get_default_device())
 
 
 class PasteAdapter:
