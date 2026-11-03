@@ -11,15 +11,22 @@ from .losses import segment_loss
 _DAY = 86400.0
 
 
-def corrupt_store(seg, rng, p_del=0.0, p_ins=0.0, pool=()):
+def corrupt_store(seg, rng, p_del=0.0, p_ins=0.0, pool=(), p_prof=0.0):
     """Low-rate corruption of the gold store (research-queue Q3; Correctable-DST style), teacher-forced only.
 
     Each record is dropped with probability p_del (a missed write: its later updates become NEW-ATTR / NEW-ENT
     targets through the provenance remapping in segment_gold, FORGETs of it become no-ops). With probability p_ins
     per segment one spurious record is inserted on an existing profile, copied from `pool` (records of other
     episodes) with an attribute that neither the store nor any unit of this segment uses for that profile, so no
-    gold target changes. Returns a shallow copy of seg."""
+    gold target changes. With probability p_prof per segment, every record of one non-user profile is dropped, so the
+    profile disappears and its units' targets become NEW-ENT (NIL training, research-queue-2026-11-03b item 1).
+    Returns a shallow copy of seg."""
     rows = [r for r in seg["store_before"] if rng.random() >= p_del]
+    if p_prof and rng.random() < p_prof:
+        ents = sorted({r["entity"] for r in rows if r["entity"] != "user"})
+        if ents:
+            gone = ents[rng.randrange(len(ents))]
+            rows = [r for r in rows if r["entity"] != gone]
     if p_ins and pool and rows and rng.random() < p_ins:
         ents = sorted({r["entity"] for r in rows})
         e = ents[rng.randrange(len(ents))]
@@ -98,8 +105,8 @@ def segment_gold(adapter, seg, rep=None):
             else:                                                   # NEW-ATTR if the entity has a profile, else NEW-ENT
                 ek = ent_key(tg["entity"]) if tg["type"] != "record" else ent_key(u["entity"])
                 g["omega"] = K + prof_index[ek] if ek in prof_index else K + E
-                if g["omega"] == K + E and u["route"] == "PERSIST" and tg["type"] == "record":
-                    tg = {"type": "new_ent"}                        # a recovered write about an unknown profile needs a mention
+                if g["omega"] == K + E and u["route"] == "PERSIST" and tg["type"] in ("record", "new_attr"):
+                    tg = {"type": "new_ent"}                        # a write about a profile absent from this store needs a mention
         if u["route"] == "PERSIST":
             g["src"] = temp_index[u["src"]] if u.get("src") else -1
             if tg and tg["type"] == "new_ent":

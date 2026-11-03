@@ -55,6 +55,10 @@ class Replay:
                  "attribute": r["attribute"], "value": r["value"], "kind": r.get("kind"), "status": r["status"],
                  "evidence": r["evidence"], "locked": r.get("locked", False)} for r in self.sim.records.values()]
 
+    def has_entity(self, gold_key):
+        """True when the system's store has a profile for this gold entity (the user always exists)."""
+        return gold_key == "user" or any(self.gold_entity(r["entity"]) == gold_key for r in self.sim.records.values())
+
     def gold_entity(self, sys_key):
         return self.alias.get(sys_key, sys_key)
 
@@ -103,7 +107,11 @@ def match_segment(rep, seg, preds, gold):
             if p.get("new_entity"):
                 gu = units.get(g.get("unit"))
                 gm = ment_text.get(f"m{gu['mention']}") if gu and gu.get("mention") is not None else None
-                if not g.get("new_entity") or gm is None or not (set(norm_tokens(p.get("mention") or "")) & set(norm_tokens(gm))):
+                # NEW-ENT is correct when gold is a new entity, or when the system's own store has no profile for the
+                # gold entity (it missed the earlier write that created it): protocol §3, "NEW-ENT with the mention
+                # resolving to the gold entity". Before 2026-11-03 the second case could never match (DECISIONS).
+                g_new = g.get("new_entity") or not rep.has_entity(g["entity"])
+                if not g_new or gm is None or not (set(norm_tokens(p.get("mention") or "")) & set(norm_tokens(gm))):
                     return False
             elif rep.gold_entity(p["entity"]) != g["entity"]:
                 return False

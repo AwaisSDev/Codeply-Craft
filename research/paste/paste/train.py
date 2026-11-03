@@ -82,6 +82,7 @@ def main():
                     help="closed-loop granularity: one coin per episode (spec v2.1) or per segment (scheduled sampling per step)")
     ap.add_argument("--corrupt-del", type=float, default=0.0, help="per-record drop rate of the gold store (teacher-forced episodes after the curriculum)")
     ap.add_argument("--corrupt-ins", type=float, default=0.0, help="per-segment probability of one spurious record in the gold store")
+    ap.add_argument("--corrupt-prof", type=float, default=0.0, help="per-segment probability that one non-user profile is removed from the gold store (NIL training)")
     ap.add_argument("--warmup", type=float, default=0.06, help="warm-up share of optimizer steps")
     ap.add_argument("--val-every-epoch", action="store_true",
                     help="closed-loop val (default thresholds) after every epoch; final.pt = best epoch (spec §6.5)")
@@ -177,8 +178,8 @@ def main():
         cl = cl_rng.random() < eps_cl if a.mix == "episode" else False
         mix = eps_cl if (a.mix == "segment" and eps_cl > 0) else None
         corrupt = None
-        if (a.corrupt_del or a.corrupt_ins) and pos >= a.curriculum * len(order):
-            corrupt = (random.Random(a.seed * 7919 + pos), a.corrupt_del, a.corrupt_ins, pool)
+        if (a.corrupt_del or a.corrupt_ins or a.corrupt_prof) and pos >= a.curriculum * len(order):
+            corrupt = (random.Random(a.seed * 7919 + pos), a.corrupt_del, a.corrupt_ins, pool, a.corrupt_prof)
         with torch.autocast("cuda", dtype=torch.float16, enabled=use_amp):
             loss, n = episode_loss_teacher_forced(model, ad, ep, closed_loop=cl, bio_w=a.bio_weight, terms=terms, corrupt=corrupt,
                                                   mix=mix, mix_rng=cl_rng)
