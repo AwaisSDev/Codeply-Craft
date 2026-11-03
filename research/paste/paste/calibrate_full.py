@@ -88,16 +88,19 @@ def main():
     ap.add_argument("--ckpt", default="final.pt")
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--out", default="calibration-full.json")
+    ap.add_argument("--device", default="cpu", help="cpu or cuda (Kaggle: calibrate right after training)")
     a = ap.parse_args()
     if any("frozen" in v or "/test-" in v or "/stress-" in v for v in a.val):
         raise SystemExit("calibration uses validation data only")
     torch.set_num_threads(a.threads)
+    if a.device == "cuda":
+        torch.set_default_device("cuda")
     conf = json.load(open(os.path.join(a.run, "config.json")))
     cfg = PasteConfig.from_run(conf)
     text = Text(ettin_files(cfg.backbone)[1])
     model = make_model(conf["system"], cfg, text)
     model.load_state_dict(torch.load(os.path.join(a.run, a.ckpt), weights_only=False, map_location="cpu")["model"])
-    model.eval()
+    model.to(torch.device(a.device)).eval()
     eps, tf_eps = [], []
     for v in a.val:
         e = load_eps([v])
@@ -106,19 +109,20 @@ def main():
     out = {"run": a.run, "ckpt": a.ckpt, "val_files": a.val, "limit": a.limit, "tf_limit": a.tf_limit, "cost_ratio": 3.0}
 
     # 1. teacher-forced: theta_R and temperatures (reporting)
-    g_l, g_y, r_l, r_y = teacher_forced_scores(model, PasteAdapter(model, text), tf_eps)
-    p_r = torch.sigmoid(r_l)
-    rows_r = []
-    for th in G_R:
-        pred = p_r >= th
-        tp, fp, fn = int((pred & r_y).sum()), int((pred & ~r_y).sum()), int((~pred & r_y).sum())
-        rows_r.append({"theta_R": th, "F1": round(_f1(tp, fp, fn), 4)})
-    th_r = max(rows_r, key=lambda r: (r["F1"], -abs(r["theta_R"] - 0.5)))["theta_R"]
-    temps = {}
-    for name, (lg, y) in {"gate": (g_l, g_y), "retrieve": (r_l, r_y)}.items():
-        if len(lg):
-            T = _temperature(lg, y)
-            temps[name] = {"T": round(T, 4), "ece_raw": _ece(torch.sigmoid(lg), y), "ece_scaled": _ece(torch.sigmoid(lg / T), y)}
+    g_l, g_y, r_l, r_y = (t.cpu() for t in teacher_forced_scores(model, PasteAdapter(model, text), tf_eps))
+    with torch.device("cpu"):                         # teacher-forced statistics on CPU whatever the device
+        p_r = torch.sigmoid(r_l)
+        rows_r = []
+        for th in G_R:
+            pred = p_r >= th
+            tp, fp, fn = int((pred & r_y).sum()), int((pred & ~r_y).sum()), int((~pred & r_y).sum())
+            rows_r.append({"theta_R": th, "F1": round(_f1(tp, fp, fn), 4)})
+        th_r = max(rows_r, key=lambda r: (r["F1"], -abs(r["theta_R"] - 0.5)))["theta_R"]
+        temps = {}
+        for name, (lg, y) in {"gate": (g_l, g_y), "retrieve": (r_l, r_y)}.items():
+            if len(lg):
+                T = _temperature(lg, y)
+                temps[name] = {"T": round(T, 4), "ece_raw": _ece(torch.sigmoid(lg), y), "ece_scaled": _ece(torch.sigmoid(lg / T), y)}
     out["retrieve"] = {"grid": rows_r, "theta_R": th_r}
     out["temperature"] = temps
     print(json.dumps({"theta_R": th_r, "temperature": temps}), flush=True)

@@ -68,6 +68,11 @@ for r in RUNS:
            f"--device cuda {r['args']} --out {out}")
     print(cmd, flush=True)
     subprocess.run(cmd, shell=True, check=True)
+    if r.get("calibrate", True) and not os.path.exists(f"{out}/calibration-full.json"):
+        cal = (f"python -m paste.calibrate_full --run {out} --val {VAL} --device cuda --limit {r.get('cal_limit', 0)} "
+               f"--tf-limit {r.get('cal_tf_limit', 200)}")
+        print(cal, flush=True)
+        subprocess.run(cal, shell=True, check=True)
 subprocess.run("cd /kaggle/working && tar czf runs.tgz --exclude='*/last.pt' runs && rm -rf runs", shell=True, check=True)'''
 
 
