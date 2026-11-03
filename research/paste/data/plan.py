@@ -723,7 +723,7 @@ class Planner:
 
     def ev_forget_profile(self, seg, s, now):
         ents = [e for e in self.entities.values() if e.kind == "person" and not e.key.endswith("#dup")
-                and any(x["entity"] == e.key for x in self.brain.records.values())]
+                and any(x["entity"] == e.key for x in self.seg_start_store)]      # addressable: in the segment-start store
         if not ents:
             return False
         e = self.rng.choice(ents)

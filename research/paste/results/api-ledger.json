@@ -1,6 +1,6 @@
 {
  "budget_usd": 95.0,
- "spent_usd": 24.7914,
+ "spent_usd": 26.7654,
  "approved": "owner 2026-11-02, option B (DATASET-AUDIT section 6); the pilot ($1.87) was a separate approval",
  "batches": [
   {
@@ -24,7 +24,7 @@
    "plans": "test-plans.jsonl",
    "n": 17,
    "worst_usd": 1.14,
-   "actual_usd": null,
+   "actual_usd": 0.3172,
    "out": "/home/user/paste-data/frozen/api-test-retry"
   },
   {
@@ -32,7 +32,7 @@
    "plans": "stress-plans.jsonl",
    "n": 22,
    "worst_usd": 3.07,
-   "actual_usd": null,
+   "actual_usd": 1.6568,
    "out": "/home/user/paste-data/frozen/api-stress-retry"
   }
  ]
