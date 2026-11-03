@@ -44,9 +44,9 @@ print(subprocess.run("nvidia-smi --query-gpu=name,memory.total --format=csv", sh
 
 SMOKE = r'''# Throughput: 40 episodes per configuration, no curriculum, accum 2; segments/s from the trainer log
 res = {}
-for system in ("PASTE", "M1c"):
+for system in ("PASTE", "M1c", "M1c-m", "M1c+W"):
     for amp in ("", "--amp"):
-        name = f"smoke-{system}{amp.replace('--', '-')}"
+        name = f"smoke-{system.replace('+', 'p')}{amp.replace('--', '-')}"
         out = f"/kaggle/working/runs/{name}"
         t = time.time()
         r = subprocess.run(f"python -m paste.train --system {system} --head-norm __PASTE_FLAGS__ --train {TRAIN}:0-40 --val {DATA}/val-programmatic.jsonl "
