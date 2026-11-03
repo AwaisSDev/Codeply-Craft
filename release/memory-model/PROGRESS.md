@@ -81,7 +81,7 @@ to production Brain without explicit approval.
 * Built meanwhile: tier selection script (`select_tiers.py`), deployment and
   rollback guide (`DEPLOYMENT.md`), rollback tool + test.
 
-### 2026-11-03 15:10 UTC — release candidate complete
+### 2026-11-03 14:50 UTC — release candidate complete
 * Exported seed 1 evaluated through the production backend: test-real F1
   0.658 (P 0.792), Benchmark-520 0.675 (P 0.733); export vs adapter at
   load CIs include zero; vs production LFM3 +0.30..+0.41 / +0.06..+0.14.
