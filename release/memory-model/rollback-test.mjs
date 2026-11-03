@@ -1,0 +1,30 @@
+// Test of rollback-memories.mjs against a real (temp) brain and event store, with the engine processing
+// batches from two "models": only the target model's work is rolled back.
+import fs from 'fs'; import os from 'os'; import path from 'path'; import { createRequire } from 'module';
+const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..'); const require = createRequire(import.meta.url);
+const lib = (n) => require(path.join(ROOT, 'codeply-cli/lib', n));
+const BR = lib('brain.js'); const M = lib('context-model.js'); const EV = lib('context-events.js'); const EN = lib('context-engine.js');
+const { planRollback, applyRollback } = await import(path.join(ROOT, 'release/memory-model/rollback-memories.mjs'));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-')); let NOW = Date.UTC(2026, 10, 3); let fails = 0;
+const check = (n, c, x = '') => { console.log(`  ${c ? 'ok  ' : 'FAIL'}  ${n}${c ? '' : ' -- ' + x}`); if (!c) fails++; };
+BR.configure({ file: path.join(tmp, 'b.db'), now: () => NOW });
+const st = EV.openEventStore({ file: path.join(tmp, 'e.db'), now: () => NOW });
+let model = 'old-model'; let answer;
+const prov = { info: () => ({ id: 'local', kind: 'local', local: true, model, style: 'full' }), available: async () => true, extract: async () => ({ answer: JSON.stringify(answer), model, ms: 1, usage: {} }) };
+const engine = EN.createEngine({ store: st, brain: BR, providers: { rules: M.createRulesProvider(), local: prov }, settings: () => ({ mode: 'local' }), now: () => NOW });
+const chat = (t) => ({ source: 'chat', trust: 'user', product: 'craft', text: `User: ${t}\nAssistant: ok`, at: NOW });
+const O = (slot, value, text) => ({ kind: 'fact', slot, value, text, certainty: 'stated', importance: 0.8, about: 'user' });
+answer = { observations: [O('city', 'Lahore', 'The user lives in Lahore.')], plans: [] };
+engine.ingest(chat('I live in Lahore')); await engine.process(); NOW += 1000;
+model = 'memory-v1';
+answer = { observations: [O('city', 'Karachi', 'The user lives in Karachi.'), O('job', 'nurse', 'The user is a nurse.'), O('pet', 'Biscuit', 'The user has a cat named Biscuit.')], plans: [] };
+engine.ingest(chat('I moved from Lahore to Karachi, I am a nurse and have a cat named Biscuit')); await engine.process(); NOW += 1000;
+const pet = BR.list({}).find((m) => /Biscuit/.test(m.text)); BR.confirm(pet.id);
+const plan = planRollback(st, BR, 'memory-v1');
+check('plan: undo the city replacement, forget the new job, keep the user-confirmed pet', plan.length === 3 && plan.find((p) => /Karachi/.test(p.text)).do === 'undo' && plan.find((p) => /nurse/.test(p.text)).do === 'forget' && plan.find((p) => /Biscuit/.test(p.text)).do === 'keep', JSON.stringify(plan));
+check('nothing changes in a dry run', BR.list({}).length === 3);
+applyRollback(plan, BR);
+const after = BR.list({});
+check('after --apply: Lahore is back, nurse gone, the confirmed pet kept', after.some((m) => /Lahore/.test(m.text)) && !after.some((m) => /Karachi|nurse/.test(m.text)) && after.some((m) => /Biscuit/.test(m.text)), JSON.stringify(after.map((m) => m.text)));
+check('the other model\'s work is not touched', planRollback(st, BR, 'old-model').every((p) => p.do !== 'undo'));
+st.close(); BR.close(); console.log(fails ? `${fails} FAILED` : 'All passed'); process.exitCode = fails ? 1 : 0;
