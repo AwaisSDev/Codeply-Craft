@@ -1,0 +1,2 @@
+# Training variant / seed-noise run (task 16), moved from the local queue to a parallel free CPU session
+V2-PASTE | PASTE | 0-1000 3000-4000 | --epochs 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --profile-rows --closed-loop 0.5 --mix segment
