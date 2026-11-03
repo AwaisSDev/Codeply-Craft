@@ -62,7 +62,8 @@ test-real. Seeds 1 and 2 with the adapter at load agree (mean 0.657 /
 * **Duplicates**: a known fact is often not repeated, or is rephrased, so the
   Brain replaces or adds instead of reinforcing (integration suite 1 / 4,
   production 0 / 4). This slows promotion of pending memories by
-  recurrence.
+  recurrence. One cause is a Brain bug (exact value comparison); a
+  proposed fix is on `codeply-brain-value-match` (`results/BRAIN-DEDUP.md`).
 * **Roman Urdu**: a wedding announcement was missed and a Roman Urdu joke
   stored as fact in the integration suite.
 * **Latency**: seconds per batch on CPU (p95 ~20 s); fine for background
@@ -70,8 +71,10 @@ test-real. Seeds 1 and 2 with the adapter at load agree (mean 0.657 /
 * **Language**: trained mostly on English, with some Urdu and mixed
   Roman Urdu; other languages untested.
 * **Two seeds**, not the protocol's three.
-* **Training data rights**: most training examples come from WildChat-1M;
-  licensing and privacy questions are open (`WILDCHAT-OPEN-ISSUES.md`).
+* **Training data rights and base licence**: most training examples come
+  from WildChat-1M; licensing and privacy questions are open, and the LFM
+  Open License limits commercial use to entities under US $10M revenue
+  (`LEGAL-AND-PRIVACY-QUESTIONS.md`).
 * Long inputs: trained up to 2,048 tokens per example; batches are capped
   by the engine's token budget (1,800).
 

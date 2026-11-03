@@ -32,7 +32,7 @@ to production Brain without explicit approval.
 | 5 | WildChat licensing and privacy | `WILDCHAT-OPEN-ISSUES.md`: 8 open items for owner/counsel; licence notice added next to the published data |
 | 6 | Automatic / pending / discard tiers, confirmation workflow | **Done**: frozen on val (`TIERS-FROZEN.json`), tested once (`TIERS.md` Results). 3:1 → all automatic (ships as `tiers: null`); 5:1 option offered to owner |
 | 7 | Brain integration package (no production change) | **Done**: branch `codeply-memory-model-integration` (rebased on this branch, not merged): tiers, pending memories, catalog entry with the release sha256, prompt-style fix; all tests pass |
-| 8 | Integration test suite | **Done**: exported seed 1 41 / 48 (gate fails on duplicates, production also fails), production 35 / 48; malformed 18 / 18; `scripts/memory-model-test.mjs` 28 checks |
+| 8 | Integration test suite | **Done** (48 cases): exported seed 1 41 / 48 (gate fails on duplicates, production also fails), production 35 / 48; malformed 18 / 18; `scripts/memory-model-test.mjs` 28 checks |
 | 9 | Limitations, performance, deployment, rollback | **Done**: `MODEL-CARD.md` (final numbers), `DEPLOYMENT.md`, `rollback-memories.mjs` (tested) |
 
 ## Log
@@ -96,3 +96,28 @@ to production Brain without explicit approval.
 * Integration branch rebased, catalog sha256 set; tests pass.
 * Remaining: seed 3 (GPU quota, daily retry), WildChat items (owner/counsel),
   owner approval to merge and host the artifact.
+
+### 2026-11-03 17:25 UTC — readiness round 2 (owner directive: no merge, no hosting, no production change)
+* **Correction:** the integration suite has 48 cases; the release candidate
+  passes 41 / 48 and production 35 / 48 (first reported as 43 / 50 and
+  37 / 50). Per-category numbers were right; erratum in
+  `FROZEN-MANIFEST.json`.
+* Frozen release pinned: `results/FROZEN-MANIFEST.json` + `verify-frozen.mjs`
+  (artifact checksum and 13 result files). Commit `42775672`; git tags
+  cannot be pushed from this environment (proxy 403).
+* Legal/privacy: `LEGAL-AND-PRIVACY-QUESTIONS.md` (counsel vs owner vs
+  technical). New item B1: the LFM Open License limits commercial use to
+  entities under US $10M revenue (applies to the current production model
+  too). Notices to ship with the file in `notices/`.
+* Private opt-in: `PRIVATE-OPT-IN.md`; integration branch now makes the model
+  opt-in only and refuses any file whose SHA-256 is not the release's;
+  counts-only `optin-report.mjs` (tested).
+* Duplicates: `results/BRAIN-DEDUP.md`. One Brain bug (exact value match),
+  fixed on branch `codeply-brain-value-match` (proposal; 15 new tests; suite
+  42 / 48, only dup-02 changes); dup-03 is model behaviour, dup-04 a design
+  question. Gate unchanged.
+* Tiers: val-only 3:1 vs 5:1 trade-off in `TIERS.md`; 5:1 recommended for
+  the opt-in, owner's call.
+* Seed 3: daily retry kept (free Kaggle quota); its prompt now forbids
+  overwriting the frozen seed-1 artifact or results.
+* Summary for the owner: `READINESS.md`.
