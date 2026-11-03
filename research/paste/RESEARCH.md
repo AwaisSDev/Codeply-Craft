@@ -32,7 +32,10 @@ Pre-registered hypotheses are in `ARCHITECTURE-HYPOTHESES.md` and are not edited
   fixes the scale but not the dominance: one dimension still holds ≈ 75 % of each normalised vector's energy
   (research-queue Q1). The exact optimisation mechanism is not established.
 * **Addressing is the weakest head** (teacher-forced 0.30 after 300 steps vs ≈ 6 % chance; E23). Half the gold
-  targets are NEW-ATTR on an existing profile (val: 228 NEW-ATTR, 184 record, 44 NEW-ENT).
+  targets are NEW-ATTR on an existing profile (val: 228 NEW-ATTR, 184 record, 44 NEW-ENT). E25 splits it:
+  the entity factor (which profile) is 0.43, while given the gold entity a rule using the model's own predicted
+  attribute picks the right record or NEW-ATTR 98 % of the time (the head: 0.72). Entity resolution is the
+  bottleneck, which is also where soft-token profiles (PASTE) and text rows (M1c) differ most.
 
 ## Open hypotheses (mine; untested)
 
