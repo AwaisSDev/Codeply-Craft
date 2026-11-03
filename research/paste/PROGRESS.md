@@ -20,7 +20,7 @@ Status of the D2 pilot:
 
 Next actions, in order:
 
-1. A3 (spec v2.2 candidate): PASTE profiles as verbatim token rows instead of one pooled soft token, behind a
+1. A3 (spec v2.2 candidate, **implemented; E27 running**): PASTE profiles as verbatim token rows instead of one pooled soft token, behind a
    config flag (default off, v2.1 kept as ablation). Unit tests, then the E24 budget with head_norm on,
    `tools/addr_diag.py` and calibrated val PE vs PASTE-on (0.397) and M1c-on (0.677).
 2. Widen the θ_W grid (0.95 / 0.97 / 0.99; validation only): all four E24 arms chose the 0.9 edge.
@@ -107,7 +107,10 @@ export PASTE_HF_CACHE=~/paste-cache/hf          # Ettin weights download here on
 
 ## Running jobs
 
-* None training. E24 finished (`~/paste-runs/d2b/`, choice in `D2-choice.json`).
+* **E27** (A3 profile rows, PASTE, head_norm on, E24 budget): `PASTE_HOME=/home/user scripts/e27_profile_rows.sh`;
+  log `~/paste-runs/e27.log`, run `~/paste-runs/e27/PASTE-rows-hnon`. Resumable (rerun the same command). Started
+  2026-11-03; training ~40 min, then val, calibration and `addr_diag`. A3 code committed 49491fb4; full suite 50 passed.
+* E24 finished (`~/paste-runs/d2b/`, choice in `D2-choice.json`).
 * At most **2 research agents at a time** (owner instruction).
 
 ## Resume notes from the pause (now written into `ARCHITECTURE-SPEC.md`)
