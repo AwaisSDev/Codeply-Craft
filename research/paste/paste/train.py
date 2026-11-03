@@ -20,6 +20,7 @@ from .baselines import build
 from .config import PasteConfig
 from .data import episode_loss_teacher_forced
 from .evaluate import evaluate, model_propose
+from .tf_metrics import tf_metrics
 from .model import PasteModel
 from .modernbert import ettin_files, load_backbone
 from .text import Text
@@ -75,6 +76,7 @@ def main():
     ap.add_argument("--ckpt-every", type=int, default=100, help="episodes between checkpoints")
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--bio-weight", type=float, default=1.0, help="class weight of B/I tokens in the BIO losses (O = 1)")
+    ap.add_argument("--val-tf", type=int, default=0, help="teacher-forced component metrics on the first N episodes of the first val file, at every checkpoint log")
     ap.add_argument("--warmup", type=float, default=0.06, help="warm-up share of optimizer steps")
     a = ap.parse_args()
     if any(("frozen" in f or "/test-" in f or "/stress-" in f) for f in a.train + a.val):
@@ -112,7 +114,8 @@ def main():
         random.setstate(st["py_rng"]); torch.set_rng_state(st["torch_rng"])
         print(f"resumed at episode {pos}/{len(order)}, step {step}", flush=True)
     log = open(os.path.join(a.out, "log.jsonl"), "a")
-    t0, seg_count, run_loss, terms = time.time(), 0, 0.0, {}
+    t0, seg_count, run_loss, terms, gnorms = time.time(), 0, 0.0, {}, []
+    tf_eps = load_eps([a.val[0]])[:a.val_tf] if a.val_tf else []
     model.train()
     while pos < len(order):
         ep = train[order[pos]]
@@ -127,15 +130,19 @@ def main():
         seg_count += n; run_loss += float(loss.detach())
         pos += 1
         if pos % a.accum == 0 or pos == len(order):
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            gnorms.append(float(torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)))   # pre-clip norm
             opt.step(); opt.zero_grad(); sched.step(); step += 1
         if pos % a.ckpt_every == 0 or pos == len(order):
             el = time.time() - t0
             rec = {"pos": pos, "of": len(order), "step": step, "loss": round(run_loss / max(1, a.ckpt_every), 4),
                    "seg_per_s": round(seg_count / max(el, 1e-9), 3), "lr_enc": sched.get_last_lr()[0], "time": time.time(),
-                   "terms": {k: round(v / max(1, terms.get("_n", 1)), 4) for k, v in terms.items() if k != "_n"}}
+                   "terms": {k: round(v / max(1, terms.get("_n", 1)), 4) for k, v in terms.items() if k != "_n"},
+                   "grad_norm_median": round(float(np.median(gnorms)), 2) if gnorms else None,
+                   "grad_norm_max": round(max(gnorms), 2) if gnorms else None}
+            if tf_eps:
+                rec["val_tf"] = tf_metrics(model, ad, tf_eps)
             log.write(json.dumps(rec) + "\n"); log.flush(); print(json.dumps(rec), flush=True)
-            run_loss, terms = 0.0, {}
+            run_loss, terms, gnorms = 0.0, {}, []
             save(ck, {"model": model.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(), "pos": pos, "step": step,
                       "py_rng": random.getstate(), "torch_rng": torch.get_rng_state()})
     # closed-loop validation (default thresholds; calibration is a separate step)
