@@ -33,6 +33,7 @@ node -e "
 PAR=$OUT/logprobs-parity-s$SEED.json
 if [ ! -f "$PAR" ]; then
   echo "== $(date -u +%T) logprobs parity"
+  cat "$GGUF" > /dev/null  # warm the page cache: the plain backend has the runtime's 90 s start timeout
   python3 - "$W/par.jsonl" <<'PY'
 import json, sys
 rows = [l for l in open("research/dtw/data/real/val.jsonl") if any(o["certainty"] in ("stated", "implied", "temporary") for o in json.loads(l)["target"]["observations"])][:8]
