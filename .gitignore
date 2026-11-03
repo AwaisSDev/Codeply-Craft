@@ -26,3 +26,18 @@ ml/finetune/runs/
 __pycache__/
 # The dataset itself is committed (the global "out" rule above would hide it).
 !ml/data/out/
+
+# WildChat-derived data: kept out of the public repository until legal/privacy clearance (owner decision
+# 2026-11-03). Private copy + checksums: release/memory-model/PRIVATE-DATA.md, fetch-private-data.sh.
+research/dtw/data/real/*.jsonl
+!research/dtw/data/real/split.jsonl
+research/dtw/data/real/*.gz
+research/dtw/label/data/*.jsonl
+research/dtw/results/details/*-val*.jsonl
+research/dtw/results/details/*-test-real*.jsonl
+research/dtw/results/details/*-natural*.jsonl
+research/dtw/results/calibration/details/*-val*.jsonl
+research/dtw/results/calibration/details/*-test-real*.jsonl
+research/dtw/results/calibration/details/*-natural*.jsonl
+release/memory-model/results/details/*-val*.jsonl
+release/memory-model/results/details/*-test-real*.jsonl
