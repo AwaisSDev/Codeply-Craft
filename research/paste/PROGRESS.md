@@ -107,11 +107,14 @@ export PASTE_HF_CACHE=~/paste-cache/hf          # Ettin weights download here on
 
 ## Running jobs
 
-* **E27** (A3 profile rows, PASTE, head_norm on, E24 budget): `PASTE_HOME=/home/user scripts/e27_profile_rows.sh`;
-  log `~/paste-runs/e27.log`, run `~/paste-runs/e27/PASTE-rows-hnon`. Resumable (rerun the same command). Started
-  2026-11-03; training ~40 min, then val, calibration and `addr_diag`. A3 code committed 49491fb4; full suite 50 passed.
-* E24 finished (`~/paste-runs/d2b/`, choice in `D2-choice.json`).
-* At most **2 research agents at a time** (owner instruction).
+* **Here (CPU):** `~/paste-runs/chain1.sh` (log `~/paste-runs/chain1.log`): full-val sweeps (θ_W 0.8/0.9/0.95/0.98) of
+  E27 PASTE-PR, E24 PASTE-hnon, E24 M1c-hnon with the fixed evaluator, then `scripts/queue.sh` on
+  `~/paste-runs/q/queue.txt`: training variants V1 (closed loop, per episode), V2 (per segment), V3 (record
+  corruption), V4 (profile drop) for PASTE-PR and M1c, then S2-PASTE (seed noise). Resumable: rerun the chain.
+* **Kaggle CPU (private kernels, free):** `paste-lc-paste-a`, `paste-lc-m1c-a` (learning curve 1,500 / 3,000),
+  `paste-lr-paste`, `paste-lr-m1c` (encoder LR 3e-5 / 1e-4). Outputs: `kaggle kernels output awaissididique/<slug>`
+  (runs.tgz). Queues in `scripts/kaggle/queues/`. Still to push: lc-*-b (6,000) and lc-*-c (3,000 x 2).
+* At most 2 research agents at a time (owner instruction).
 
 ## Resume notes from the pause (now written into `ARCHITECTURE-SPEC.md`)
 
