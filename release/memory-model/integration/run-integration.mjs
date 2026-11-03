@@ -8,7 +8,11 @@
 // the brain, not exact wording. Malformed backend output is covered by malformed.mjs (deterministic, no model).
 //
 //   node release/memory-model/integration/run-integration.mjs --model <installed model id> [--style full]
-//        [--threads 4] [--out report.json] [--only <category>]
+//        [--threads 4] [--out report.json] [--only <category>] [--tiers]
+//
+// --tiers: the storage tiers of the model's catalog entry, as the engine applies them (token log-probabilities ->
+// confidence -> automatic / pending / discard; pending memories are stored tentative with an expiry). Needs the
+// integration branch (context-tiers.js).
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -25,7 +29,7 @@ const { redact } = lib('context-redact.js');
 const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : d; };
 const MODEL = opt('model'); const STYLE = opt('style', 'full'); const ONLY = opt('only', '');
-const OUT = opt('out', '');
+const OUT = opt('out', ''); const TIERS = args.includes('--tiers');
 
 // Gate per category: share of cases that must pass. Jokes and quotes are a documented limitation of every
 // model so far (JOKES-AND-QUOTES.md): reported, not gating, until a model is trained for them.
@@ -74,15 +78,17 @@ export function eventsFor(c, now) {
 }
 
 /** One case through the production path. provider: a context-model.js provider. */
-export async function runCase(c, provider, tmpDir, k) {
+export async function runCase(c, provider, tmpDir, k, tiers = null) {
   const now = Date.parse('2026-11-03T10:00:00Z');
   const events = eventsFor(c, now);
   const known = (c.known || []).map((m) => ({ ...m, certainty: 'stated', importance: m.importance || 0.7, about: m.about || (m.project ? 'project' : 'user') }));
   BR.configure({ file: path.join(tmpDir, `b${k}.db`), now: () => now });
   for (const m of known) BR.observe(m, { product: 'test' });
   const g = await M.runExtraction(provider, { events, known, now, tz: 'Asia/Karachi', projects: c.project ? [c.project] : [] }, { minImportance: 0.35, keepRaw: true });
-  const results = (g.observations || []).map((o) => { const r = BR.observe(o, { product: 'context' }); return { o, action: r.action, memory: r.memory || null, why: r.why || '' }; });
-  const outcome = { ok: g.ok, error: g.error || '', raw: g.raw, results, plans: g.plans || [], dropped: g.dropped || [], allMemories: BR.list({}), ms: g.ms };
+  let obs = g.observations || []; let discarded = [];
+  if (tiers) { const t = lib('context-tiers.js').applyTiers(obs, tiers); obs = t.keep; discarded = t.discarded; }
+  const results = obs.map((o) => { const r = BR.observe(o, { product: 'context' }); return { o, action: r.action, memory: r.memory || null, why: r.why || '' }; });
+  const outcome = { ok: g.ok, error: g.error || '', raw: g.raw, results, discarded, plans: g.plans || [], dropped: g.dropped || [], allMemories: BR.list({}), ms: g.ms };
   BR.close();
   return { outcome, fails: evaluateCase(c, outcome) };
 }
@@ -102,23 +108,26 @@ async function main() {
   const model = RT.models().find((m) => m.id === MODEL);
   if (!model) { console.error(`model ${MODEL} is not installed`); process.exit(2); }
   const runtime = RT.createRuntime({ model, threads: Number(opt('threads', 0)) || undefined, ctx: model.ctx || 8192, idleMs: 0, args: ['-ctk', 'q8_0', '-ctv', 'q8_0'] });
-  const provider = M.createLocalProvider({ id: 'local', model: model.id, ensure: runtime.ensure, canStart: runtime.canStart, extraBody: model.extra, style: STYLE });
+  const tiers = TIERS ? model.tiers : null;
+  if (TIERS && !lib('context-tiers.js').tiersConfig(tiers)) { console.error(`--tiers: model ${MODEL} has no valid tiers in its catalog entry`); process.exit(2); }
+  const provider = M.createLocalProvider({ id: 'local', model: model.id, ensure: runtime.ensure, canStart: runtime.canStart, extraBody: model.extra, style: STYLE, confidence: !!tiers });
   const cases = fs.readFileSync(path.join(HERE, 'cases.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((c) => !ONLY || c.category === ONLY);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'codeply-integration-'));
   const rows = [];
   try {
     for (const [k, c] of cases.entries()) {
-      const { outcome, fails } = await runCase(c, provider, tmp, k);
+      const { outcome, fails } = await runCase(c, provider, tmp, k, tiers);
       const pass = outcome.ok && !fails.length;
       rows.push({ id: c.id, category: c.category, pass, fails: outcome.ok ? fails : [`backend error: ${outcome.error}`], ms: outcome.ms, actions: outcome.results.map((r) => `${r.action}:${r.o.certainty}:${(r.memory && r.memory.text) || r.o.text}`),
-        observations: outcome.results.map((r) => ({ kind: r.o.kind, slot: r.o.slot || '', value: r.o.value || '', certainty: r.o.certainty, action: r.action })) });
+        observations: outcome.results.map((r) => ({ kind: r.o.kind, slot: r.o.slot || '', value: r.o.value || '', certainty: r.o.certainty, action: r.action, ...(tiers ? { tier: r.o.tier || 'automatic', exist: r.o.confidence ? r.o.confidence.exist : null, status: r.memory ? r.memory.status : null, expires: !!(r.memory && r.memory.expiresAt) } : {}) })),
+        ...(tiers ? { discarded: outcome.discarded.length } : {}) });
       console.log(`${pass ? 'PASS' : 'FAIL'} ${c.id.padEnd(9)} ${pass ? '' : rows[rows.length - 1].fails.join(' | ').slice(0, 220)}`);
     }
   } finally { runtime.stop(); }
   const sum = summarize(rows);
   console.log('\n' + Object.entries(sum.byCategory).map(([c, v]) => `${c.padEnd(15)} ${v.pass}/${v.n}  ${v.gate}${v.need != null ? ` (needs ${v.need})` : ''}`).join('\n'));
-  console.log(`\nGATE: ${sum.passed ? 'PASS' : 'FAIL'}   model ${MODEL}, style ${STYLE}`);
-  if (OUT) fs.writeFileSync(OUT, JSON.stringify({ model: MODEL, style: STYLE, at: new Date().toISOString(), ...sum, rows }, null, 2));
+  console.log(`\nGATE: ${sum.passed ? 'PASS' : 'FAIL'}   model ${MODEL}, style ${STYLE}${tiers ? `, tiers ${JSON.stringify(tiers)}` : ''}`);
+  if (OUT) fs.writeFileSync(OUT, JSON.stringify({ model: MODEL, style: STYLE, tiers, at: new Date().toISOString(), ...sum, rows }, null, 2));
   process.exitCode = sum.passed ? 0 : 1;
 }
 
