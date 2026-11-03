@@ -34,6 +34,14 @@
    "worst_usd": 3.07,
    "actual_usd": 1.6568,
    "out": "/home/user/paste-data/frozen/api-stress-retry"
+  },
+  {
+   "batch_id": "msgbatch_01L7bWB3zDMxF9FoDbiqKQDQ",
+   "plans": "val-plans.jsonl",
+   "n": 600,
+   "worst_usd": 33.99,
+   "actual_usd": null,
+   "out": "/home/user/paste-data/train/api-val"
   }
  ]
 }
