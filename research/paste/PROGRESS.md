@@ -13,14 +13,20 @@ Status of the D2 pilot:
 * Diagnosis (E22): with raw head inputs (head_norm off) the initial gradient norm is 12k-19k, and clipping at 1.0
   starves the heads.
 * E23: the same run with head_norm on reached val PE 0.13 (gate acc 0.92, attr acc 0.83, address acc 0.30).
-* E24, the pre-registered four-arm pilot, is running with a budget that learns (accum 2, 1,000 steps, BIO weight 5).
+* **E24 done. D2 = head_norm on** (pre-registered rule: mean calibrated val PE 0.537 on vs 0.524 off).
+  * PASTE 0.356 off / 0.397 on; M1c 0.693 off / 0.677 on (seed 1, 1,000 steps, validation only).
+  * **At pilot scale M1c beats PASTE by ~0.28 PE.** E26 traces the whole gap to entity resolution
+    (teacher-forced entity factor 0.50 PASTE vs 0.89 M1c; record factor given entity ≥ 0.94 for both).
 
 Next actions, in order:
 
-1. Read E24 (`~/paste-runs/d2b/D2-choice.json`); record the D2 choice in DECISIONS.md and spec §6.5.
-2. Learning curve 1,500 / 3,000 / 6,000 (the 3,000-episode fallback), CPU, chosen head_norm.
-3. Address accuracy (0.30 in E23) is the weakest component: investigate before the main runs.
-4. Closed-loop scheduled sampling; then on 2026-11-07 a Kaggle T4 throughput check and the 3-seed central test.
+1. A3 (spec v2.2 candidate): PASTE profiles as verbatim token rows instead of one pooled soft token, behind a
+   config flag (default off, v2.1 kept as ablation). Unit tests, then the E24 budget with head_norm on,
+   `tools/addr_diag.py` and calibrated val PE vs PASTE-on (0.397) and M1c-on (0.677).
+2. Widen the θ_W grid (0.95 / 0.97 / 0.99; validation only): all four E24 arms chose the 0.9 edge.
+3. Validation comparison of `--mix segment` vs episode and corruption on/off (applied to every system).
+4. Learning curve 1,500 / 3,000 / 6,000 (the 3,000-episode fallback).
+5. From 2026-11-07: Kaggle T4 throughput check, then the 3-seed central test.
 
 ## Protocol and baseline plan, summary (full text: EVALUATION-PROTOCOL.md, BASELINE-PLAN.md)
 
@@ -101,10 +107,8 @@ export PASTE_HF_CACHE=~/paste-cache/hf          # Ettin weights download here on
 
 ## Running jobs
 
-* E24 D2 pilot: `scripts/d2_pilot.sh` with `RUNS=~/paste-runs/d2b`, `TRAIN_ARGS="--epochs 1 --accum 2 --bio-weight 5
-  --val-tf 10 --ckpt-every 250"`; log `~/paste-runs/d2b-pilot.log`. It is resumable: rerun the same command.
-* At most **2 research agents at a time** (owner instruction). One research agent is writing
-  `research-queue-2026-11-03.md` (closed-loop schedules, soft-token detail loss, calibration under shift).
+* None training. E24 finished (`~/paste-runs/d2b/`, choice in `D2-choice.json`).
+* At most **2 research agents at a time** (owner instruction).
 
 ## Resume notes from the pause (now written into `ARCHITECTURE-SPEC.md`)
 

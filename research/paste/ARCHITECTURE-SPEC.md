@@ -513,6 +513,9 @@ encoder, 1 seed, chosen on validation. No other tuning.
   experiment. A single shared choice keeps the central test fair.
 * The choice and its validation numbers are written to `PROGRESS.md` before
   any multi-seed run. Test data is not read.
+* **Outcome (2026-11-03, E24): `head_norm = on`.** Calibrated validation PE
+  (pooled 200 + 200 episodes, seed 1, 1,000 steps): PASTE 0.356 off / 0.397 on;
+  M1c 0.693 off / 0.677 on; mean 0.524 off / 0.537 on. Applies to every system.
 
 ### 6.6 Calibration
 
