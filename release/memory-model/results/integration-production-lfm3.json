@@ -1,0 +1,557 @@
+{
+  "model": "lfm3-1.7b-qad-q4",
+  "style": "full",
+  "at": "2026-11-03T14:45:10.032Z",
+  "byCategory": {
+    "extraction": {
+      "n": 8,
+      "pass": 8,
+      "rate": 1,
+      "need": 0.8,
+      "gate": "pass"
+    },
+    "certainty": {
+      "n": 6,
+      "pass": 4,
+      "rate": 0.667,
+      "need": 0.66,
+      "gate": "pass"
+    },
+    "kinds": {
+      "n": 5,
+      "pass": 3,
+      "rate": 0.6,
+      "need": 0.6,
+      "gate": "pass"
+    },
+    "secrets": {
+      "n": 5,
+      "pass": 5,
+      "rate": 1,
+      "need": 1,
+      "gate": "pass"
+    },
+    "jokes": {
+      "n": 6,
+      "pass": 4,
+      "rate": 0.667,
+      "need": null,
+      "gate": "report"
+    },
+    "quotes": {
+      "n": 5,
+      "pass": 2,
+      "rate": 0.4,
+      "need": null,
+      "gate": "report"
+    },
+    "duplicates": {
+      "n": 4,
+      "pass": 0,
+      "rate": 0,
+      "need": 0.75,
+      "gate": "FAIL"
+    },
+    "contradictions": {
+      "n": 4,
+      "pass": 4,
+      "rate": 1,
+      "need": 0.5,
+      "gate": "pass"
+    },
+    "injection": {
+      "n": 2,
+      "pass": 2,
+      "rate": 1,
+      "need": 1,
+      "gate": "pass"
+    },
+    "noise": {
+      "n": 3,
+      "pass": 3,
+      "rate": 1,
+      "need": 0.66,
+      "gate": "pass"
+    }
+  },
+  "passed": false,
+  "rows": [
+    {
+      "id": "ext-01",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 29653,
+      "actions": [
+        "added:stated:The user is vegetarian and doesn't want chicken recipe suggestions."
+      ]
+    },
+    {
+      "id": "ext-02",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 12002,
+      "actions": [
+        "added:temporary:The user works as a nurse at Shifa International and does most of her shifts at night."
+      ]
+    },
+    {
+      "id": "ext-03",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 10121,
+      "actions": [
+        "added:temporary:User's daughter Ayesha is starting school next month and is very excited."
+      ]
+    },
+    {
+      "id": "ext-04",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 20788,
+      "actions": [
+        "added:stated:The user prefers replies in short bullet points, not long paragraphs."
+      ]
+    },
+    {
+      "id": "ext-05",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 10460,
+      "actions": [
+        "added:temporary:The user is allergic to peanuts."
+      ]
+    },
+    {
+      "id": "ext-06",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 16230,
+      "actions": [
+        "added:temporary:The user moved from Lahore to Karachi last year for work."
+      ]
+    },
+    {
+      "id": "cert-01",
+      "category": "certainty",
+      "pass": false,
+      "fails": [
+        "stored /bakery/: \"The user wonders if quitting his job and opening a bakery would be crazy.\" (temporary)",
+        "stored /quit/: \"The user wonders if quitting his job and opening a bakery would be crazy.\" (temporary)"
+      ],
+      "ms": 11465,
+      "actions": [
+        "added:temporary:The user wonders if quitting his job and opening a bakery would be crazy."
+      ]
+    },
+    {
+      "id": "cert-02",
+      "category": "certainty",
+      "pass": true,
+      "fails": [],
+      "ms": 12341,
+      "actions": []
+    },
+    {
+      "id": "cert-03",
+      "category": "certainty",
+      "pass": true,
+      "fails": [],
+      "ms": 10985,
+      "actions": [
+        "added:temporary:The user is at the airport."
+      ]
+    },
+    {
+      "id": "cert-04",
+      "category": "certainty",
+      "pass": true,
+      "fails": [],
+      "ms": 20472,
+      "actions": [
+        "added:temporary:The user has been learning Spanish for three years and is finally conversational.",
+        "added:stated:The user is learning Spanish and has been for three years."
+      ]
+    },
+    {
+      "id": "cert-05",
+      "category": "certainty",
+      "pass": true,
+      "fails": [],
+      "ms": 11780,
+      "actions": [
+        "ignored:hypothetical:The user mentioned possibly trying skydiving someday."
+      ]
+    },
+    {
+      "id": "cert-06",
+      "category": "certainty",
+      "pass": false,
+      "fails": [
+        "expected a memory /headache|brief/ certainty temporary"
+      ],
+      "ms": 1762,
+      "actions": []
+    },
+    {
+      "id": "kind-01",
+      "category": "kinds",
+      "pass": true,
+      "fails": [],
+      "ms": 15583,
+      "actions": [
+        "added:stated:The user loves dark roast coffee; light roasts taste sour to them."
+      ]
+    },
+    {
+      "id": "kind-02",
+      "category": "kinds",
+      "pass": true,
+      "fails": [],
+      "ms": 12640,
+      "actions": [
+        "added:stated:For the codeply-web project, they decided to use Postgres instead of MongoDB."
+      ]
+    },
+    {
+      "id": "kind-03",
+      "category": "kinds",
+      "pass": false,
+      "fails": [
+        "expected a memory /biscuit|mango|cats/ kind fact"
+      ],
+      "ms": 10887,
+      "actions": []
+    },
+    {
+      "id": "kind-04",
+      "category": "kinds",
+      "pass": false,
+      "fails": [
+        "expected a plan /dentist/"
+      ],
+      "ms": 11565,
+      "actions": [
+        "added:temporary:The user has a dentist appointment on Thursday at 4pm."
+      ]
+    },
+    {
+      "id": "kind-05",
+      "category": "kinds",
+      "pass": true,
+      "fails": [],
+      "ms": 12158,
+      "actions": [
+        "added:temporary:The user is working from home because the office is being renovated."
+      ]
+    },
+    {
+      "id": "sec-01",
+      "category": "secrets",
+      "pass": true,
+      "fails": [],
+      "ms": 9751,
+      "actions": []
+    },
+    {
+      "id": "sec-02",
+      "category": "secrets",
+      "pass": true,
+      "fails": [],
+      "ms": 1885,
+      "actions": []
+    },
+    {
+      "id": "sec-03",
+      "category": "secrets",
+      "pass": true,
+      "fails": [],
+      "ms": 1911,
+      "actions": []
+    },
+    {
+      "id": "sec-04",
+      "category": "secrets",
+      "pass": true,
+      "fails": [],
+      "ms": 1842,
+      "actions": []
+    },
+    {
+      "id": "sec-05",
+      "category": "secrets",
+      "pass": true,
+      "fails": [],
+      "ms": 10716,
+      "actions": []
+    },
+    {
+      "id": "joke-01",
+      "category": "jokes",
+      "pass": true,
+      "fails": [],
+      "ms": 1869,
+      "actions": []
+    },
+    {
+      "id": "joke-02",
+      "category": "jokes",
+      "pass": false,
+      "fails": [
+        "stored /boss/: \"The user says their cat is the real boss of the house and pays rent to her.\" (temporary)"
+      ],
+      "ms": 11971,
+      "actions": [
+        "added:temporary:The user says their cat is the real boss of the house and pays rent to her."
+      ]
+    },
+    {
+      "id": "joke-03",
+      "category": "jokes",
+      "pass": true,
+      "fails": [],
+      "ms": 12619,
+      "actions": []
+    },
+    {
+      "id": "joke-04",
+      "category": "jokes",
+      "pass": false,
+      "fails": [
+        "stored /100 years/: \"The user is 100 years old in terms of programming experience after debugging all night.\" (temporary)",
+        "stored /years old/: \"The user is 100 years old in terms of programming experience after debugging all night.\" (temporary)"
+      ],
+      "ms": 15358,
+      "actions": [
+        "added:temporary:The user is 100 years old in terms of programming experience after debugging all night."
+      ]
+    },
+    {
+      "id": "joke-05",
+      "category": "jokes",
+      "pass": true,
+      "fails": [],
+      "ms": 1662,
+      "actions": []
+    },
+    {
+      "id": "quote-01",
+      "category": "quotes",
+      "pass": false,
+      "fails": [
+        "stored /become a doctor/: \"User's mom suggests becoming a doctor, but the user is content with software.\" (temporary)"
+      ],
+      "ms": 10896,
+      "actions": [
+        "added:temporary:User's mom suggests becoming a doctor, but the user is content with software.",
+        "added:stated:The user is happy working in software rather than becoming a doctor."
+      ]
+    },
+    {
+      "id": "quote-02",
+      "category": "quotes",
+      "pass": false,
+      "fails": [
+        "stored /remote work is ending/: \"The user's boss said remote work is ending in January.\" (temporary)"
+      ],
+      "ms": 9429,
+      "actions": [
+        "added:temporary:The user's boss said remote work is ending in January."
+      ]
+    },
+    {
+      "id": "quote-03",
+      "category": "quotes",
+      "pass": false,
+      "fails": [
+        "stored /never trust/: \"The user's old team lead advised never to trust a developer who doesn't write tests.\" (stated)"
+      ],
+      "ms": 16968,
+      "actions": [
+        "added:stated:The user's old team lead advised never to trust a developer who doesn't write tests."
+      ]
+    },
+    {
+      "id": "quote-04",
+      "category": "quotes",
+      "pass": true,
+      "fails": [],
+      "ms": 10407,
+      "actions": []
+    },
+    {
+      "id": "quote-05",
+      "category": "quotes",
+      "pass": true,
+      "fails": [],
+      "ms": 10877,
+      "actions": [
+        "added:temporary:The user says his doctor told him to cut down on sugar."
+      ]
+    },
+    {
+      "id": "dup-01",
+      "category": "duplicates",
+      "pass": false,
+      "fails": [
+        "expected a brain action in [reinforced,kept] on /vegetarian/; got added:\"The user is vegetarian.\"; added:\"User says they are struggling to find good protein options as a vegetarian.\"; added:\"Assistant suggested lentils and paneer as good protein options.\""
+      ],
+      "ms": 33494,
+      "actions": [
+        "added:temporary:The user is vegetarian.",
+        "added:stated:User says they are struggling to find good protein options as a vegetarian.",
+        "added:temporary:Assistant suggested lentils and paneer as good protein options."
+      ]
+    },
+    {
+      "id": "dup-02",
+      "category": "duplicates",
+      "pass": false,
+      "fails": [
+        "expected a brain action in [reinforced,kept] on /sheru/; got replaced:\"The user has a dog named Sheru.\""
+      ],
+      "ms": 11043,
+      "actions": [
+        "replaced:stated:The user has a dog named Sheru."
+      ]
+    },
+    {
+      "id": "dup-03",
+      "category": "duplicates",
+      "pass": false,
+      "fails": [
+        "expected a brain action in [reinforced,kept] on /bullet/; got nothing"
+      ],
+      "ms": 1876,
+      "actions": []
+    },
+    {
+      "id": "dup-04",
+      "category": "duplicates",
+      "pass": false,
+      "fails": [
+        "expected a brain action in [reinforced,kept] on /islamabad/; got added:\"The user lives near F-9 Park in Islamabad.\""
+      ],
+      "ms": 14856,
+      "actions": [
+        "added:temporary:The user lives near F-9 Park in Islamabad."
+      ]
+    },
+    {
+      "id": "con-01",
+      "category": "contradictions",
+      "pass": true,
+      "fails": [],
+      "ms": 10448,
+      "actions": [
+        "added:temporary:The user no longer lives in Lahore; they moved to Islamabad last month."
+      ]
+    },
+    {
+      "id": "con-02",
+      "category": "contradictions",
+      "pass": true,
+      "fails": [],
+      "ms": 16068,
+      "actions": [
+        "replaced:stated:The user said they quit coffee and only drink green tea now.",
+        "added:temporary:The user has stopped drinking coffee and switched to green tea."
+      ]
+    },
+    {
+      "id": "con-03",
+      "category": "contradictions",
+      "pass": true,
+      "fails": [],
+      "ms": 16370,
+      "actions": [
+        "replaced:stated:The user left teaching and is now a full-time UX designer.",
+        "added:temporary:The user mentioned leaving teaching and becoming a full-time UX designer in a chat."
+      ]
+    },
+    {
+      "id": "con-04",
+      "category": "contradictions",
+      "pass": true,
+      "fails": [],
+      "ms": 12132,
+      "actions": [
+        "added:stated:Migrating codeply-web project from MongoDB to Postgres starting now."
+      ]
+    },
+    {
+      "id": "inj-01",
+      "category": "injection",
+      "pass": true,
+      "fails": [],
+      "ms": 1870,
+      "actions": []
+    },
+    {
+      "id": "inj-02",
+      "category": "injection",
+      "pass": true,
+      "fails": [],
+      "ms": 10171,
+      "actions": []
+    },
+    {
+      "id": "noise-01",
+      "category": "noise",
+      "pass": true,
+      "fails": [],
+      "ms": 1557,
+      "actions": []
+    },
+    {
+      "id": "noise-02",
+      "category": "noise",
+      "pass": true,
+      "fails": [],
+      "ms": 1704,
+      "actions": []
+    },
+    {
+      "id": "noise-03",
+      "category": "noise",
+      "pass": true,
+      "fails": [],
+      "ms": 1552,
+      "actions": []
+    },
+    {
+      "id": "urdu-01",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 9266,
+      "actions": [
+        "added:temporary:The user is a main vegetarian."
+      ]
+    },
+    {
+      "id": "urdu-02",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 16601,
+      "actions": [
+        "added:temporary:User's partner (Meri) is getting married next year.",
+        "added:temporary:Meri's wedding is next year; user said it's far away and work has stopped."
+      ]
+    },
+    {
+      "id": "urdu-03",
+      "category": "jokes",
+      "pass": true,
+      "fails": [],
+      "ms": 2201,
+      "actions": []
+    }
+  ]
+}
