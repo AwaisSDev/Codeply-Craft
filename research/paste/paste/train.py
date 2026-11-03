@@ -77,6 +77,8 @@ def main():
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--bio-weight", type=float, default=1.0, help="class weight of B/I tokens in the BIO losses (O = 1)")
     ap.add_argument("--val-tf", type=int, default=0, help="teacher-forced component metrics on the first N episodes of the first val file, at every checkpoint log")
+    ap.add_argument("--corrupt-del", type=float, default=0.0, help="per-record drop rate of the gold store (teacher-forced episodes after the curriculum)")
+    ap.add_argument("--corrupt-ins", type=float, default=0.0, help="per-segment probability of one spurious record in the gold store")
     ap.add_argument("--warmup", type=float, default=0.06, help="warm-up share of optimizer steps")
     a = ap.parse_args()
     if any(("frozen" in f or "/test-" in f or "/stress-" in f) for f in a.train + a.val):
@@ -116,6 +118,7 @@ def main():
     log = open(os.path.join(a.out, "log.jsonl"), "a")
     t0, seg_count, run_loss, terms, gnorms = time.time(), 0, 0.0, {}, []
     tf_eps = load_eps([a.val[0]])[:a.val_tf] if a.val_tf else []
+    pool = [r for ep in train[:300] for sg in ep["segments"] for r in sg["store_before"]] if a.corrupt_ins else []
     model.train()
     while pos < len(order):
         ep = train[order[pos]]
@@ -125,7 +128,10 @@ def main():
         frac = pos / max(1, len(order))
         eps_cl = 0.0 if frac < 0.4 else a.closed_loop * min(1.0, (frac - 0.4) / 0.4)
         cl = random.Random(a.seed * 1_000_003 + pos).random() < eps_cl
-        loss, n = episode_loss_teacher_forced(model, ad, ep, closed_loop=cl, bio_w=a.bio_weight, terms=terms)
+        corrupt = None
+        if (a.corrupt_del or a.corrupt_ins) and pos >= a.curriculum * len(order):
+            corrupt = (random.Random(a.seed * 7919 + pos), a.corrupt_del, a.corrupt_ins, pool)
+        loss, n = episode_loss_teacher_forced(model, ad, ep, closed_loop=cl, bio_w=a.bio_weight, terms=terms, corrupt=corrupt)
         (loss / a.accum).backward()
         seg_count += n; run_loss += float(loss.detach())
         pos += 1

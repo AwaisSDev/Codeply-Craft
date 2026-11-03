@@ -11,6 +11,29 @@ from .losses import segment_loss
 _DAY = 86400.0
 
 
+def corrupt_store(seg, rng, p_del=0.0, p_ins=0.0, pool=()):
+    """Low-rate corruption of the gold store (research-queue Q3; Correctable-DST style), teacher-forced only.
+
+    Each record is dropped with probability p_del (a missed write: its later updates become NEW-ATTR / NEW-ENT
+    targets through the provenance remapping in segment_gold, FORGETs of it become no-ops). With probability p_ins
+    per segment one spurious record is inserted on an existing profile, copied from `pool` (records of other
+    episodes) with an attribute that neither the store nor any unit of this segment uses for that profile, so no
+    gold target changes. Returns a shallow copy of seg."""
+    rows = [r for r in seg["store_before"] if rng.random() >= p_del]
+    if p_ins and pool and rows and rng.random() < p_ins:
+        ents = sorted({r["entity"] for r in rows})
+        e = ents[rng.randrange(len(ents))]
+        used = {r["attribute"] for r in seg["store_before"] if r["entity"] == e}
+        used |= {u.get("attr") for u in seg["units"] if u.get("entity") == e}
+        cand = [r for r in pool if r["attribute"] not in used]
+        if cand:
+            src = cand[rng.randrange(len(cand))]
+            prof = next(r["profile_text"] for r in rows if r["entity"] == e)
+            rows.append(dict(src, id=f"spurious{seg['index']}", entity=e, profile_text=prof, provenance="spurious",
+                             history=[], challenger=None, locked=False))
+    return {**seg, "store_before": rows}
+
+
 def segment_gold(adapter, seg, rep=None):
     """StepInput builder + gold dict for one segment (indices follow adapter.build's ordering).
 
@@ -98,12 +121,14 @@ def segment_gold(adapter, seg, rep=None):
     return s_in, gold
 
 
-def episode_loss_teacher_forced(model, adapter, ep, k_bptt=4, window=8, closed_loop=False, bio_w=1.0, terms=None):
+def episode_loss_teacher_forced(model, adapter, ep, k_bptt=4, window=8, closed_loop=False, bio_w=1.0, terms=None,
+                                corrupt=None):
     """Loss over an episode: h and temporary-item vectors carried by id, truncated BPTT (spec §6.2).
 
     closed_loop=True: the persistent store is the one the model's own decoded operations build (executed by the
     Brain simulator through paste.evaluate.Replay); temporary items stay teacher-forced (DECISIONS 2026-11-03).
-    terms: optional dict; per-term loss sums and a segment count ("_n") are accumulated into it for logging."""
+    terms: optional dict; per-term loss sums and a segment count ("_n") are accumulated into it for logging.
+    corrupt: optional (rng, p_del, p_ins, pool) for teacher-forced gold-store corruption (corrupt_store)."""
     from .evaluate import Replay, match_segment, execute
     rep = Replay(ep) if closed_loop else None
     h, z, total, n = None, {}, 0.0, 0
@@ -115,6 +140,8 @@ def episode_loss_teacher_forced(model, adapter, ep, k_bptt=4, window=8, closed_l
         if i % k_bptt == 0:
             h = None if h is None else h.detach()
             z = {k: v.detach() for k, v in z.items()}
+        if corrupt is not None and rep is None:
+            seg = corrupt_store(seg, *corrupt)
         s_in, gold = segment_gold(adapter, seg, rep)
         s_in.h = h
         for t, it in zip(s_in.temps, seg["temp_before"]):
