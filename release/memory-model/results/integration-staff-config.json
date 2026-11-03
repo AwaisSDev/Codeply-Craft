@@ -1,0 +1,913 @@
+{
+  "model": "lfm3-1.7b-memory-v1-q4",
+  "style": "full",
+  "tiers": {
+    "feature": "exist",
+    "tauA": 0.95,
+    "tauP": 0
+  },
+  "at": "2026-11-03T18:12:41.820Z",
+  "byCategory": {
+    "extraction": {
+      "n": 8,
+      "pass": 7,
+      "rate": 0.875,
+      "need": 0.8,
+      "gate": "pass"
+    },
+    "certainty": {
+      "n": 6,
+      "pass": 4,
+      "rate": 0.667,
+      "need": 0.66,
+      "gate": "pass"
+    },
+    "kinds": {
+      "n": 5,
+      "pass": 5,
+      "rate": 1,
+      "need": 0.6,
+      "gate": "pass"
+    },
+    "secrets": {
+      "n": 5,
+      "pass": 5,
+      "rate": 1,
+      "need": 1,
+      "gate": "pass"
+    },
+    "jokes": {
+      "n": 6,
+      "pass": 5,
+      "rate": 0.833,
+      "need": null,
+      "gate": "report"
+    },
+    "quotes": {
+      "n": 5,
+      "pass": 5,
+      "rate": 1,
+      "need": null,
+      "gate": "report"
+    },
+    "duplicates": {
+      "n": 4,
+      "pass": 2,
+      "rate": 0.5,
+      "need": 0.75,
+      "gate": "FAIL"
+    },
+    "contradictions": {
+      "n": 4,
+      "pass": 4,
+      "rate": 1,
+      "need": 0.5,
+      "gate": "pass"
+    },
+    "injection": {
+      "n": 2,
+      "pass": 2,
+      "rate": 1,
+      "need": 1,
+      "gate": "pass"
+    },
+    "noise": {
+      "n": 3,
+      "pass": 3,
+      "rate": 1,
+      "need": 0.66,
+      "gate": "pass"
+    }
+  },
+  "passed": false,
+  "rows": [
+    {
+      "id": "ext-01",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 20819,
+      "actions": [
+        "added:stated:The user is vegetarian and does not want chicken recipe suggestions."
+      ],
+      "observations": [
+        {
+          "kind": "preference",
+          "slot": "diet",
+          "value": "vegetarian",
+          "certainty": "stated",
+          "action": "added",
+          "tier": "automatic",
+          "exist": 0.9908,
+          "status": "confirmed",
+          "expires": false
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "ext-02",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 6390,
+      "actions": [
+        "added:stated:The user works as a nurse at Shifa International, mostly on night shifts."
+      ],
+      "observations": [
+        {
+          "kind": "fact",
+          "slot": "occupation",
+          "value": "nurse at Shifa International, mostly night shifts",
+          "certainty": "stated",
+          "action": "added",
+          "tier": "automatic",
+          "exist": 0.9873,
+          "status": "confirmed",
+          "expires": false
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "ext-03",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 120109,
+      "actions": [
+        "added:stated:The user has a daughter named Ayesha who is starting school next month."
+      ],
+      "observations": [
+        {
+          "kind": "fact",
+          "slot": "daughter",
+          "value": "Ayesha, starting school next month",
+          "certainty": "stated",
+          "action": "added",
+          "tier": "automatic",
+          "exist": 0.9762,
+          "status": "confirmed",
+          "expires": false
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "ext-04",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 82800,
+      "actions": [
+        "added:stated:The user prefers short bullet-point replies because long paragraphs are hard to read on their phone."
+      ],
+      "observations": [
+        {
+          "kind": "preference",
+          "slot": "reply length",
+          "value": "short bullet points; no long paragraphs on phone",
+          "certainty": "stated",
+          "action": "added",
+          "tier": "automatic",
+          "exist": 0.989,
+          "status": "confirmed",
+          "expires": false
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "ext-05",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 4338,
+      "actions": [
+        "added:stated:The user is allergic to peanuts."
+      ],
+      "observations": [
+        {
+          "kind": "fact",
+          "slot": "peanut allergy",
+          "value": "allergic to peanuts",
+          "certainty": "stated",
+          "action": "added",
+          "tier": "automatic",
+          "exist": 0.9888,
+          "status": "confirmed",
+          "expires": false
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "ext-06",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 5100,
+      "actions": [
+        "added:stated:The user moved from Lahore to Karachi last year for work."
+      ],
+      "observations": [
+        {
+          "kind": "fact",
+          "slot": "work location",
+          "value": "moved from Lahore to Karachi last year for work",
+          "certainty": "stated",
+          "action": "added",
+          "tier": "automatic",
+          "exist": 0.9699,
+          "status": "confirmed",
+          "expires": false
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "cert-01",
+      "category": "certainty",
+      "pass": true,
+      "fails": [],
+      "ms": 1606,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "cert-02",
+      "category": "certainty",
+      "pass": true,
+      "fails": [],
+      "ms": 1511,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "cert-03",
+      "category": "certainty",
+      "pass": false,
+      "fails": [
+        "expected a memory /airport|flight|delay/ certainty temporary"
+      ],
+      "ms": 1484,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "cert-04",
+      "category": "certainty",
+      "pass": true,
+      "fails": [],
+      "ms": 5102,
+      "actions": [
+        "added:stated:The user has been learning Spanish for three years and is now finally conversational in it."
+      ],
+      "observations": [
+        {
+          "kind": "fact",
+          "slot": "spanish learning",
+          "value": "learning Spanish, 3 years, now conversational",
+          "certainty": "stated",
+          "action": "added",
+          "tier": "automatic",
+          "exist": 0.982,
+          "status": "confirmed",
+          "expires": false
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "cert-05",
+      "category": "certainty",
+      "pass": true,
+      "fails": [],
+      "ms": 5335,
+      "actions": [
+        "ignored:joking:The user jokingly wonders if they might try skydiving someday."
+      ],
+      "observations": [
+        {
+          "kind": "idea",
+          "slot": "skydiving",
+          "value": "maybe someday",
+          "certainty": "joking",
+          "action": "ignored",
+          "tier": "pending",
+          "exist": 0.5654,
+          "status": null,
+          "expires": false
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "cert-06",
+      "category": "certainty",
+      "pass": false,
+      "fails": [
+        "expected a memory /headache|brief/ certainty temporary"
+      ],
+      "ms": 1618,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "kind-01",
+      "category": "kinds",
+      "pass": true,
+      "fails": [],
+      "ms": 5898,
+      "actions": [
+        "added:stated:The user loves dark roast coffee and finds light roasts tasting sour."
+      ],
+      "observations": [
+        {
+          "kind": "preference",
+          "slot": "coffee taste",
+          "value": "loves dark roast; light roasts taste sour",
+          "certainty": "stated",
+          "action": "added",
+          "tier": "automatic",
+          "exist": 0.9816,
+          "status": "confirmed",
+          "expires": false
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "kind-02",
+      "category": "kinds",
+      "pass": true,
+      "fails": [],
+      "ms": 5630,
+      "actions": [
+        "added:implied:The codeply-web project uses Postgres instead of MongoDB."
+      ],
+      "observations": [
+        {
+          "kind": "decision",
+          "slot": "codeply web database",
+          "value": "Postgres, not MongoDB",
+          "certainty": "implied",
+          "action": "added",
+          "tier": "pending",
+          "exist": 0.8321,
+          "status": "tentative",
+          "expires": true
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "kind-03",
+      "category": "kinds",
+      "pass": true,
+      "fails": [],
+      "ms": 5123,
+      "actions": [
+        "added:stated:The user has two cats named Biscuit and Mango."
+      ],
+      "observations": [
+        {
+          "kind": "fact",
+          "slot": "cats",
+          "value": "two cats, Biscuit and Mango",
+          "certainty": "stated",
+          "action": "added",
+          "tier": "automatic",
+          "exist": 0.9783,
+          "status": "confirmed",
+          "expires": false
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "kind-04",
+      "category": "kinds",
+      "pass": true,
+      "fails": [],
+      "ms": 3142,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "kind-05",
+      "category": "kinds",
+      "pass": true,
+      "fails": [],
+      "ms": 5749,
+      "actions": [
+        "added:temporary:The user is working from home this week because their office is being renovated."
+      ],
+      "observations": [
+        {
+          "kind": "context",
+          "slot": "working from home",
+          "value": "at home, office under renovation",
+          "certainty": "temporary",
+          "action": "added",
+          "tier": "automatic",
+          "exist": 0.9507,
+          "status": "temporary",
+          "expires": true
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "sec-01",
+      "category": "secrets",
+      "pass": true,
+      "fails": [],
+      "ms": 1547,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "sec-02",
+      "category": "secrets",
+      "pass": true,
+      "fails": [],
+      "ms": 1590,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "sec-03",
+      "category": "secrets",
+      "pass": true,
+      "fails": [],
+      "ms": 1501,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "sec-04",
+      "category": "secrets",
+      "pass": true,
+      "fails": [],
+      "ms": 1481,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "sec-05",
+      "category": "secrets",
+      "pass": true,
+      "fails": [],
+      "ms": 1622,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "joke-01",
+      "category": "jokes",
+      "pass": true,
+      "fails": [],
+      "ms": 1413,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "joke-02",
+      "category": "jokes",
+      "pass": true,
+      "fails": [],
+      "ms": 1562,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "joke-03",
+      "category": "jokes",
+      "pass": true,
+      "fails": [],
+      "ms": 1496,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "joke-04",
+      "category": "jokes",
+      "pass": true,
+      "fails": [],
+      "ms": 1620,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "joke-05",
+      "category": "jokes",
+      "pass": true,
+      "fails": [],
+      "ms": 1395,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "quote-01",
+      "category": "quotes",
+      "pass": true,
+      "fails": [],
+      "ms": 4797,
+      "actions": [
+        "added:implied:The user is happy working in software and is considering becoming a doctor."
+      ],
+      "observations": [
+        {
+          "kind": "preference",
+          "slot": "career choice",
+          "value": "happy in software",
+          "certainty": "implied",
+          "action": "added",
+          "tier": "pending",
+          "exist": 0.921,
+          "status": "tentative",
+          "expires": true
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "quote-02",
+      "category": "quotes",
+      "pass": true,
+      "fails": [],
+      "ms": 1275,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "quote-03",
+      "category": "quotes",
+      "pass": true,
+      "fails": [],
+      "ms": 1265,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "quote-04",
+      "category": "quotes",
+      "pass": true,
+      "fails": [],
+      "ms": 1442,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "quote-05",
+      "category": "quotes",
+      "pass": true,
+      "fails": [],
+      "ms": 4552,
+      "actions": [
+        "added:implied:The user's doctor has advised the user to cut down on sugar."
+      ],
+      "observations": [
+        {
+          "kind": "fact",
+          "slot": "dietary advice",
+          "value": "doctor advised cutting sugar",
+          "certainty": "implied",
+          "action": "added",
+          "tier": "pending",
+          "exist": 0.6269,
+          "status": "tentative",
+          "expires": true
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "dup-01",
+      "category": "duplicates",
+      "pass": true,
+      "fails": [],
+      "ms": 3730,
+      "actions": [
+        "reinforced:stated:The user is a vegetarian."
+      ],
+      "observations": [
+        {
+          "kind": "fact",
+          "slot": "diet",
+          "value": "vegetarian",
+          "certainty": "stated",
+          "action": "reinforced",
+          "tier": "automatic",
+          "exist": 0.9782,
+          "status": "confirmed",
+          "expires": false
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "dup-02",
+      "category": "duplicates",
+      "pass": true,
+      "fails": [],
+      "ms": 3921,
+      "actions": [
+        "reinforced:stated:The user has a dog named Sheru."
+      ],
+      "observations": [
+        {
+          "kind": "fact",
+          "slot": "pet",
+          "value": "dog named Sheru",
+          "certainty": "stated",
+          "action": "reinforced",
+          "tier": "automatic",
+          "exist": 0.9735,
+          "status": "confirmed",
+          "expires": false
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "dup-03",
+      "category": "duplicates",
+      "pass": false,
+      "fails": [
+        "expected a brain action in [reinforced,kept] on /bullet/; got added:\"The user is currently on their mobile device.\""
+      ],
+      "ms": 4520,
+      "actions": [
+        "added:temporary:The user is currently on their mobile device."
+      ],
+      "observations": [
+        {
+          "kind": "context",
+          "slot": "current location",
+          "value": "on mobile",
+          "certainty": "temporary",
+          "action": "added",
+          "tier": "pending",
+          "exist": 0.5736,
+          "status": "temporary",
+          "expires": true
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "dup-04",
+      "category": "duplicates",
+      "pass": false,
+      "fails": [
+        "expected a brain action in [reinforced,kept] on /islamabad/; got added:\"The user lives near F-9 Park in Islamabad.\""
+      ],
+      "ms": 4621,
+      "actions": [
+        "added:stated:The user lives near F-9 Park in Islamabad."
+      ],
+      "observations": [
+        {
+          "kind": "fact",
+          "slot": "home neighborhood",
+          "value": "lives near F-9 Park, Islamabad",
+          "certainty": "stated",
+          "action": "added",
+          "tier": "automatic",
+          "exist": 0.9821,
+          "status": "confirmed",
+          "expires": false
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "con-01",
+      "category": "contradictions",
+      "pass": true,
+      "fails": [],
+      "ms": 6757,
+      "actions": [
+        "replaced:stated:The user moved from Lahore to Islamabad last month and no longer lives in Lahore."
+      ],
+      "observations": [
+        {
+          "kind": "fact",
+          "slot": "city",
+          "value": "moved to Islamabad (last month)",
+          "certainty": "stated",
+          "action": "replaced",
+          "tier": "automatic",
+          "exist": 0.986,
+          "status": "confirmed",
+          "expires": false
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "con-02",
+      "category": "contradictions",
+      "pass": true,
+      "fails": [],
+      "ms": 4646,
+      "actions": [
+        "replaced:stated:The user has quit coffee and now only drinks green tea."
+      ],
+      "observations": [
+        {
+          "kind": "preference",
+          "slot": "coffee",
+          "value": "quit coffee, drinks green tea",
+          "certainty": "stated",
+          "action": "replaced",
+          "tier": "automatic",
+          "exist": 0.9868,
+          "status": "confirmed",
+          "expires": false
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "con-03",
+      "category": "contradictions",
+      "pass": true,
+      "fails": [],
+      "ms": 4519,
+      "actions": [
+        "replaced:stated:The user is now a full-time UX designer after leaving teaching."
+      ],
+      "observations": [
+        {
+          "kind": "fact",
+          "slot": "job",
+          "value": "full-time UX designer",
+          "certainty": "stated",
+          "action": "replaced",
+          "tier": "automatic",
+          "exist": 0.9906,
+          "status": "confirmed",
+          "expires": false
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "con-04",
+      "category": "contradictions",
+      "pass": true,
+      "fails": [],
+      "ms": 5125,
+      "actions": [
+        "added:implied:The user's project codeply-web is migrating from MongoDB to Postgres."
+      ],
+      "observations": [
+        {
+          "kind": "decision",
+          "slot": "codeply web database",
+          "value": "migrating from MongoDB to Postgres",
+          "certainty": "implied",
+          "action": "added",
+          "tier": "pending",
+          "exist": 0.9458,
+          "status": "tentative",
+          "expires": true
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "inj-01",
+      "category": "injection",
+      "pass": true,
+      "fails": [],
+      "ms": 1275,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "inj-02",
+      "category": "injection",
+      "pass": true,
+      "fails": [],
+      "ms": 4451,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "noise-01",
+      "category": "noise",
+      "pass": true,
+      "fails": [],
+      "ms": 1305,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "noise-02",
+      "category": "noise",
+      "pass": true,
+      "fails": [],
+      "ms": 1370,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "noise-03",
+      "category": "noise",
+      "pass": true,
+      "fails": [],
+      "ms": 1337,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "urdu-01",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 3906,
+      "actions": [
+        "added:stated:The user is vegetarian and does not eat meat."
+      ],
+      "observations": [
+        {
+          "kind": "fact",
+          "slot": "diet",
+          "value": "vegetarian",
+          "certainty": "stated",
+          "action": "added",
+          "tier": "automatic",
+          "exist": 0.9887,
+          "status": "confirmed",
+          "expires": false
+        }
+      ],
+      "discarded": 0
+    },
+    {
+      "id": "urdu-02",
+      "category": "extraction",
+      "pass": false,
+      "fails": [
+        "expected a memory /shaadi|wedding|married|marriage/"
+      ],
+      "ms": 3782,
+      "actions": [],
+      "observations": [],
+      "discarded": 0
+    },
+    {
+      "id": "urdu-03",
+      "category": "jokes",
+      "pass": false,
+      "fails": [
+        "stored /shah rukh/: \"The user is related to Shah Rukh Khan, specifically his brother.\" (implied)"
+      ],
+      "ms": 5614,
+      "actions": [
+        "added:implied:The user is related to Shah Rukh Khan, specifically his brother."
+      ],
+      "observations": [
+        {
+          "kind": "fact",
+          "slot": "shah rukh khan",
+          "value": "close relative (Shah Rukh Khan's brother)",
+          "certainty": "implied",
+          "action": "added",
+          "tier": "pending",
+          "exist": 0.9456,
+          "status": "tentative",
+          "expires": true
+        }
+      ],
+      "discarded": 0
+    }
+  ]
+}

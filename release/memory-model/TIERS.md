@@ -169,7 +169,16 @@ Val cost curve for the chosen feature (`exist`), all thresholds:
 | 0.97 | 58 | 8 | 0.862 | 0.161 | 285 | 301 |
 | 0.99 | 23 | 3 | 0.870 | 0.064 | 300 | 306 |
 
-**Recommendation for the opt-in release:** the 5:1 configuration. Opt-in
+**Owner decision (2026-11-03): 5:1 for restricted opt-in testing.** The
+integration branch's catalog entry now carries `tiers: { feature: 'exist',
+tauA: 0.95, tauP: 0 }` (checked against `TIERS-FROZEN.json` by
+`memory-model-test.mjs`). Live check of that exact path on the release
+file (`results/integration-staff-config.json`): 42 / 48, same cases as
+without tiers; 17 observations automatic, 7 pending (stored tentative with
+a 30-day expiry), none discarded; the Roman Urdu joke (urdu-03) now lands
+in pending instead of a confirmed fact.
+
+*Recommendation as written before the decision:* the 5:1 configuration. Opt-in
 testers can confirm pending memories, wrong memories are the failure users
 notice, and on val it never does worse than storing nothing at either
 ratio. This is an owner decision on principle; the frozen 3:1 result stays

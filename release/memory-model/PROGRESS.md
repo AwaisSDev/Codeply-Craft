@@ -121,3 +121,27 @@ to production Brain without explicit approval.
 * Seed 3: daily retry kept (free Kaggle quota); its prompt now forbids
   overwriting the frozen seed-1 artifact or results.
 * Summary for the owner: `READINESS.md`.
+
+### 2026-11-03 18:30 UTC — owner decisions applied (no main merge, no production change)
+* **Tiers 5:1** set in the integration branch catalog (checked against
+  `TIERS-FROZEN.json` by a test). Live suite on that exact configuration with
+  the Brain fix, real install path (`fetch-model --from`, checksum enforced):
+  42 / 48 (`results/integration-staff-config.json`); 17 automatic, 7 pending
+  (tentative, 30-day expiry), none discarded.
+* **Brain value-match fix** merged into the integration branch only
+  (fast-forward); `codeply-brain-value-match` now points at the same commit.
+* **WildChat-derived data out of the public repo**: 99 files (90 MB) found by
+  searching every tracked file, copied to the private Kaggle dataset
+  `awaissididique/codeply-memory-derived-data` (anonymous access 403; round
+  trip 99 / 99 verified), untracked + gitignored on all six branches that
+  had them (removed blobs all identical to the private copy; nothing on
+  `main`). Public: `PRIVATE-DATA-MANIFEST.json` (checksums only),
+  `fetch-private-data.sh`. Seed-3 notebook attaches the private dataset;
+  `verify-frozen.mjs` reports absent private files instead of failing.
+  **Git history still holds the files and the repo is public**: owner to
+  make it private (recommended) or approve a history purge.
+* **v2 exclusions**: `ml/data/v2/EXCLUDE.json` (17 ids, 13 conversations;
+  18 v1 examples match incl. a derivative) + `check-exclusions.mjs`.
+* **Duplicates gap accepted for staff-only testing**: phase-1 plan with
+  monitoring thresholds and rollback in `PRIVATE-OPT-IN.md`.
+* Seed-3 retry prompt updated for the private data.

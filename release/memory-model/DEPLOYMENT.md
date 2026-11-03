@@ -1,11 +1,10 @@
 # Integrating the memory model into Brain (instructions, rollout, rollback)
 
 Nothing here is applied to production. The code changes are on branch
-`codeply-memory-model-integration` (three commits on top of
-`codeply-memory-model`), to be merged only with the owner's approval. A
-separate, optional Brain fix for duplicate values is on
-`codeply-brain-value-match` (on top of the integration branch; see
-`results/BRAIN-DEDUP.md`). Before any release, the legal and privacy
+`codeply-memory-model-integration` (five commits on top of
+`codeply-memory-model`, including the Brain value-match fix and the 5:1
+tiers, both by owner decision), to be merged into main only with the
+owner's approval (`results/BRAIN-DEDUP.md`, `TIERS.md`). Before any release, the legal and privacy
 questions in `LEGAL-AND-PRIVACY-QUESTIONS.md` must be answered; the private
 opt-in path is in `PRIVATE-OPT-IN.md`.
 
@@ -13,7 +12,7 @@ opt-in path is in `PRIVATE-OPT-IN.md`.
 
 | File | Change | Effect when merged but not configured |
 |---|---|---|
-| `codeply-cli/lib/local-runtime.js` | catalog entry `lfm3-1.7b-memory-v1-q4` (full prompt, thinking off, `--swa-full`, ctx 8,192, `sha256` of the release candidate, `tiers: null`, `optIn: true`); `selectModel`: an opt-in model is never the fallback | none until the model is installed **and** selected |
+| `codeply-cli/lib/local-runtime.js` | catalog entry `lfm3-1.7b-memory-v1-q4` (full prompt, thinking off, `--swa-full`, ctx 8,192, `sha256` of the release candidate, `tiers` = frozen 5:1, `optIn: true`); `selectModel`: an opt-in model is never the fallback | none until the model is installed **and** selected |
 | `context-desktop.js` | the catalog's `style` wins over the "`codeply-*` reads the compact prompt" rule; `tiers` from the catalog | none for existing models (no `style`, no `tiers`) |
 | `codeply-cli/lib/context-model.js` | local backend option `confidence`: requests token log-probabilities, returns a confidence per observation | off unless asked |
 | `codeply-cli/lib/context-schema.js` | the guard carries confidences, by position, next to the answer (a confidence written in the answer is ignored) | none |

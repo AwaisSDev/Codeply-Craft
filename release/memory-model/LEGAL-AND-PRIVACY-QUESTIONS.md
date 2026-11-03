@@ -35,7 +35,7 @@ Facts the questions rest on:
 | A1 (L1) | Under ODC-BY 1.0, are the fine-tuned weights a **"Produced Work"** (§4.3: public use needs an attribution notice only) or a **"Derivative Database"** (§4.2: public conveyance must itself be under ODC-BY)? | Counsel | Decides whether distributing the weights carries ODC-BY obligations beyond a notice |
 | A2 (L2) | If a Produced Work: is the attribution in `MODEL-CARD.md` ("contains information from WildChat-1M, made available under ODC-BY 1.0") a sufficient §4.3 notice, and where must it appear (model card, app's licences screen, download page)? | Counsel (wording) / Technical (placement) | Notice drafted; placement is cheap once counsel says where |
 | A3 (L4) | The public repository republishes our relabelled WildChat excerpts (`research/dtw/data/real/`, with `NOTICE.md`). Does that meet ODC-BY §4.2 (same licence, notices kept), and does Topical-Chat's CDLA-Sharing share-alike reach the relabelled files or the model? | Counsel | If in doubt, the owner can move the data out of the public repo (A4) |
-| A4 (L4) | Keep the derived data public, or move it to a private location? | Owner | Execution is technical; removing it from **existing git history** is a destructive history rewrite and needs explicit approval |
+| A4 (L4) | Keep the derived data public, or move it to a private location? | Owner: **decided 2026-11-03, keep it out of the public repo** | Done for the current tips of all six branches (private Kaggle copy, `PRIVATE-DATA.md`); git **history** still holds it while the repo is public: owner to make the repo private and/or approve a history purge |
 
 ## B. Base model licence (found in this review; applies to production already)
 
@@ -66,7 +66,7 @@ Facts the questions rest on:
 
 | # | Question | Kind | Notes |
 |---|---|---|---|
-| E1 (S1) | 17 conversations have a weak minors-category moderation score (0.1-0.5, no flag; 14 in train). Review or exclude? | Owner; **Technical** for v2 | Recommended: exclude from any v2 data. v1 was trained on them; whether that alone blocks v1 is an owner/counsel call |
+| E1 (S1) | 17 conversations have a weak minors-category moderation score (0.1-0.5, no flag; 14 in train). Review or exclude? | Owner: **decided 2026-11-03, excluded from v2 until a person reviews them** | `ml/data/v2/EXCLUDE.json` (17 example ids, 13 source conversations; derivatives excluded too: 18 v1 examples match) + `check-exclusions.mjs`. v1 was trained on them; whether that matters for v1 is an owner/counsel call |
 
 ## What we can resolve ourselves (status)
 

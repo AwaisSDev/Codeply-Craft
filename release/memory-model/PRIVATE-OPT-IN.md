@@ -39,6 +39,37 @@ with the file (LFM Open License §4: licence copy and "modified" notice).
    A1, A2, B2, C1, C2, D2.
 3. **Public opt-in**, then default: everything in the legal file.
 
+## Phase 1 plan: staff-only testing (owner decisions 2026-11-03)
+
+Configuration on branch `codeply-memory-model-integration` (not merged into
+main): the release file (SHA-256 `7360aaed…ac14f9`), **5:1 tiers**, the
+**Brain value-match fix**. Live suite on exactly this configuration: 42 / 48
+(`results/integration-staff-config.json`).
+
+**Accepted known gap (owner, staff-only, not for public release):** the
+duplicates gate fails (2 / 4). Expected effect: some repeated facts are
+stored as a new memory or not reinforced, so pending memories are promoted
+by recurrence less often than they could be. Mitigated by monitoring and
+rollback below; must be fixed or re-decided before external testers.
+
+Still to clear before the file goes to staff machines (our suggestion, not
+legal advice): B1, C3, D1. Starting phase 1 needs the owner's go-ahead.
+
+Monitoring (each staff tester, weekly, `optin-report.mjs` counts only):
+
+| Signal | Watch | Stop and roll back if |
+|---|---|---|
+| Memories the user forgot or corrected | share of the model's writes | above 25 % in any week, or any memory the tester reports as clearly wrong and sensitive |
+| Secrets or injected instructions stored | tester report | any single case |
+| Duplicates | memories the tester says repeat an existing one | more than 1 in 10 of the model's writes |
+| Pending memories | confirmed vs expired | recorded only (decides whether the pending tier is worth keeping) |
+| Backend failures / latency | `optin-report.mjs` | > 1 % failed batches, or p95 > 30 s |
+
+Rollback (`DEPLOYMENT.md` §4): (1) select the previous model, instant;
+(2) `rollback-memories.mjs --apply` to undo what the model wrote, keeping
+anything the tester confirmed or edited; pending memories expire on their
+own after 30 days.
+
 ## Tester procedure (phase 1 or 2)
 
 ```
@@ -70,9 +101,9 @@ confirmed. A tester can send it without sending their memories.
 
 ## Open technical gaps for this path
 
-* The tiers come from the catalog; trying the 5:1 configuration needs the
-  catalog value changed on the integration branch (one line, `TIERS.md`).
-  There is no per-user setting for it, on purpose.
+* The tiers come from the catalog (now the frozen 5:1 values, owner
+  decision); a tester can only turn them off (`settings.tiers = false`),
+  not change the thresholds, on purpose.
 * The installed model id `lfm3-1.7b-memory-v1-q4` and the evaluation id
   `codeply-memory-lfm3-s1-q4` name the same file; reports should use the
   installed id.
