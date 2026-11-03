@@ -245,7 +245,7 @@ def main():
     if ("frozen" in a.data or "test-" in a.data or "stress-" in a.data) and not a.final:
         sys.exit("frozen data: only evaluate.py --final may read it (EVALUATION-PROTOCOL §2)")
     if a.final:
-        sys.exit("--final runs require results/final/FROZEN-RUNS.json entries (not implemented until systems are frozen)")
+        sys.exit("final evaluation runs through paste.final_eval (frozen runs, hashes, access log)")
     eps = [json.loads(l) for l in open(a.data)]
     eps = eps[:a.limit] if a.limit else eps
     if a.system != "oracle":
