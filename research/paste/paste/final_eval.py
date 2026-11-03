@@ -31,6 +31,10 @@ from .text import Text
 from .train import load_eps, make_model
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Dry run of the whole procedure (tools/dryrun_central.sh): a scratch git repository with its own results/FROZEN.json
+# listing validation stand-ins. In that mode, files named like test or stress data are refused outright.
+DRY_ROOT = os.environ.get("PASTE_FINAL_DRYRUN_ROOT")
+ROOT = DRY_ROOT or ROOT
 FINAL = os.path.join(ROOT, "results", "final")
 FROZEN_RUNS = os.path.join(FINAL, "FROZEN-RUNS.json")
 ACCESS = os.path.join(FINAL, "ACCESS-LOG.md")
@@ -97,6 +101,8 @@ def main():
     frozen = json.load(open(os.path.join(ROOT, "results", "FROZEN.json")))["files"]
     log = open(ACCESS).read() if os.path.exists(ACCESS) else ""
     for f in a.files:
+        if DRY_ROOT and (any(x in f for x in ("test", "stress")) or "frozen" in os.path.abspath(a.data_dir)):
+            sys.exit("dry run: validation stand-ins only")
         if f not in frozen:
             sys.exit(f"{f} is not a frozen file")
         if sha256(os.path.join(a.data_dir, f)) != frozen[f]["sha256"]:

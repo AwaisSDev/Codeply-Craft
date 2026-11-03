@@ -1,0 +1,90 @@
+{
+ "files": [
+  "dry-val-programmatic.jsonl",
+  "dry-val-api.jsonl"
+ ],
+ "systems": {
+  "PASTE": {
+   "seeds": 1,
+   "PE_seed_mean": 0.6221,
+   "PE_per_seed": [
+    0.6221
+   ],
+   "FPM_seed_mean": 27.442,
+   "exploratory": true
+  },
+  "M1c": {
+   "seeds": 1,
+   "PE_seed_mean": 0.6538,
+   "PE_per_seed": [
+    0.6538
+   ],
+   "FPM_seed_mean": 23.721,
+   "exploratory": true
+  },
+  "M1c-m": {
+   "seeds": 1,
+   "PE_seed_mean": 0.0,
+   "PE_per_seed": [
+    0.0
+   ],
+   "FPM_seed_mean": 0.0,
+   "exploratory": true
+  },
+  "M1c+W": {
+   "seeds": 1,
+   "PE_seed_mean": 0.0,
+   "PE_per_seed": [
+    0.0
+   ],
+   "FPM_seed_mean": 0.0,
+   "exploratory": true
+  }
+ },
+ "comparisons": {
+  "PASTE - M1c": {
+   "delta_PE": -0.0316,
+   "ci95": [
+    -0.1162,
+    0.0632
+   ],
+   "ci_adjusted_97.5": [
+    -0.1272,
+    0.0772
+   ],
+   "p_one_sided": 0.746,
+   "FPM_ratio": 1.157,
+   "FPM_ratio_upper95": 1.634,
+   "holm_reject_H0": false
+  },
+  "PASTE - M1c-m": {
+   "delta_PE": 0.6221,
+   "ci95": [
+    0.5381,
+    0.7131
+   ],
+   "ci_adjusted_97.5": [
+    0.5177,
+    0.7273
+   ],
+   "p_one_sided": 0.0,
+   "FPM_ratio": 27441860465.116,
+   "FPM_ratio_upper95": 35426008968.61,
+   "holm_reject_H0": true
+  },
+  "M1c+W - PASTE": {
+   "delta_PE": -0.6221,
+   "ci95": [
+    -0.7131,
+    -0.5381
+   ]
+  }
+ },
+ "latency_p50_ms_K32": {
+  "PASTE": 191.9,
+  "M1c": 330.9,
+  "M1c-m": 416.4,
+  "M1cpW": 328.2
+ },
+ "outcome": "Inconclusive [exploratory: fewer than 3 seeds]"
+}

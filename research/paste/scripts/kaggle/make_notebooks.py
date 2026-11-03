@@ -64,12 +64,13 @@ for r in RUNS:
     out = f"/kaggle/working/runs/{r['name']}"
     if os.path.exists(f"{out}/final.pt"):
         continue
-    cmd = (f"python -m paste.train --system {r['system']} --seed {r['seed']} --train {TRAIN}{r.get('slice', '')} --val {VAL} "
-           f"--device cuda {r['args']} --out {out}")
+    train = " ".join(f"{TRAIN}:{s}" for s in r["slices"]) if r.get("slices") else f"{TRAIN}{r.get('slice', '')}"
+    cmd = (f"python -m paste.train --system {r['system']} --seed {r['seed']} --train {train} --val {VAL} "
+           f"--device __DEVICE__ {r['args']} --out {out}")
     print(cmd, flush=True)
     subprocess.run(cmd, shell=True, check=True)
     if r.get("calibrate", True) and not os.path.exists(f"{out}/calibration-full.json"):
-        cal = (f"python -m paste.calibrate_full --run {out} --val {VAL} --device cuda --limit {r.get('cal_limit', 0)} "
+        cal = (f"python -m paste.calibrate_full --run {out} --val {VAL} --device __DEVICE__ --limit {r.get('cal_limit', 0)} "
                f"--tf-limit {r.get('cal_tf_limit', 200)}")
         print(cal, flush=True)
         subprocess.run(cal, shell=True, check=True)
@@ -103,12 +104,13 @@ def nb(title, intro, cells, gpu=True):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--commit", required=True)
-    ap.add_argument("--runs", help="JSON: list of groups, each a list of {name, system, seed, args, slice?}")
+    ap.add_argument("--runs", help="JSON: list of groups, each a list of {name, system, seed, args, slices?} (tools/make_groups.py)")
     ap.add_argument("--paste-flags", default="", help="PASTE-only flags for the smoke run (e.g. --profile-rows)")
     ap.add_argument("--out", default=os.path.join(HERE, "out"))
     ap.add_argument("--cpu-queue", help="queue file (scripts/queue.sh format) for a CPU-only validation notebook")
     ap.add_argument("--slug", help="notebook name for --cpu-queue")
     ap.add_argument("--grid", default="0.8 0.9 0.95 0.98")
+    ap.add_argument("--device", default="cuda", choices=("cuda", "cpu"), help="training groups: T4 (cuda) or a free CPU session")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     setup = SETUP.replace("__COMMIT__", a.commit)
@@ -117,8 +119,9 @@ def main():
                  [setup, smoke]), open(os.path.join(a.out, "paste-smoke.ipynb"), "w"), indent=1)
     if a.runs:
         for k, group in enumerate(json.load(open(a.runs))):
-            cell = TRAIN_CELL.replace("__RUNS__", json.dumps(group, indent=1))
-            json.dump(nb(f"PASTE training group {k}", "Train + val only; test is evaluated off Kaggle.", [setup, cell]),
+            cell = TRAIN_CELL.replace("__RUNS__", json.dumps(group, indent=1)).replace("__DEVICE__", a.device)
+            json.dump(nb(f"PASTE training group {k}", "Train + val only; test is evaluated off Kaggle.", [setup, cell],
+                         gpu=a.device == "cuda"),
                       open(os.path.join(a.out, f"paste-train-{k}.ipynb"), "w"), indent=1)
     if a.cpu_queue:
         cell = CPU_QUEUE.replace("__QUEUE__", open(a.cpu_queue).read()).replace("__GRID__", a.grid)

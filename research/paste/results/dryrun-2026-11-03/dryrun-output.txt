@@ -1,0 +1,26 @@
+calibrated PASTE-s1: {"chosen": {"write": 0.995, "forget": 0.9, "merge": 0.9, "retrieve": 0.85, "expire": 0.5, "PE": 0.638, "FPM": 26.923}}
+guard ok: must be committed
+calibrated M1c-s1: {"chosen": {"write": 0.995, "forget": 0.9, "merge": 0.5, "retrieve": 0.95, "expire": 0.5, "PE": 0.6579, "FPM": 23.077}}
+calibrated M1c-m-s1: {"chosen": {"write": 0.5, "forget": 0.5, "merge": 0.5, "retrieve": 0.05, "expire": 0.5, "PE": 0.0, "FPM": 0.0}}
+calibrated M1cpW-s1: {"chosen": {"write": 0.5, "forget": 0.5, "merge": 0.5, "retrieve": 0.1, "expire": 0.5, "PE": 0.0, "FPM": 0.0}}
+guard ok: must be committed
+guard ok: already frozen
+guard ok: not a frozen file
+guard ok: validation stand-ins only
+guard ok: checkpoint hash differs
+guard ok: data hash differs
+{"run": "PASTE-s1", "file": "dry-val-programmatic.jsonl", "PE": 0.7342, "FPM": 22.609}
+{"run": "PASTE-s1", "file": "dry-val-api.jsonl", "PE": 0.5124, "FPM": 33.0}
+{"run": "M1c-s1", "file": "dry-val-programmatic.jsonl", "PE": 0.7281, "FPM": 16.522}
+{"run": "M1c-s1", "file": "dry-val-api.jsonl", "PE": 0.5823, "FPM": 32.0}
+{"run": "M1c-m-s1", "file": "dry-val-programmatic.jsonl", "PE": 0.0, "FPM": 0.0}
+{"run": "M1c-m-s1", "file": "dry-val-api.jsonl", "PE": 0.0, "FPM": 0.0}
+{"run": "M1cpW-s1", "file": "dry-val-programmatic.jsonl", "PE": 0.0, "FPM": 0.0}
+{"run": "M1cpW-s1", "file": "dry-val-api.jsonl", "PE": 0.0, "FPM": 0.0}
+guard ok: already evaluated
+guard ok: rerun logged as deviation
+{"K": 32, "E": 8, "setting": "steady", "PASTE": {"p50_ms": 191.9, "p95_ms": 223.6}, "M1c": {"p50_ms": 330.9, "p95_ms": 369.5}, "M1c-m": {"p50_ms": 416.4, "p95_ms": 447.2}, "M1cpW": {"p50_ms": 328.2, "p95_ms": 385.3}, "PASTE/M1c_p50": 0.58}
+outcome: Inconclusive [exploratory: fewer than 3 seeds]
+{"PASTE": {"seeds": 1, "PE_seed_mean": 0.6221, "PE_per_seed": [0.6221], "FPM_seed_mean": 27.442, "exploratory": true}, "M1c": {"seeds": 1, "PE_seed_mean": 0.6538, "PE_per_seed": [0.6538], "FPM_seed_mean": 23.721, "exploratory": true}, "M1c-m": {"seeds": 1, "PE_seed_mean": 0.0, "PE_per_seed": [0.0], "FPM_seed_mean": 0.0, "exploratory": true}, "M1c+W": {"seeds": 1, "PE_seed_mean": 0.0, "PE_per_seed": [0.0], "FPM_seed_mean": 0.0, "exploratory": true}}
+DRYRUN OK
+rc=0

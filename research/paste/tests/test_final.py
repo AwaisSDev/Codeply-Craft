@@ -32,3 +32,19 @@ def test_outcomes(tmp_path, monkeypatch, paste, expect):
     fr.main()
     o = json.load(open(out))["outcome"]
     assert o.startswith(expect), o
+
+
+def test_report_reads_bench_systems_latency(tmp_path, monkeypatch):
+    S = {"PASTE": [_rows(60, 9, 1, 1, 1)] * 3, "M1c": [_rows(60, 5, 2, 2, 2)] * 3, "M1c-m": [_rows(60, 5, 2, 2, 2)] * 3}
+    monkeypatch.setattr(fr, "load", lambda files: S)
+    lat = {"results": [{"K": 32, "E": 8, "setting": "cold", "PASTE": {"p50_ms": 10.0}, "M1c": {"p50_ms": 50.0}},
+                       {"K": 32, "E": 8, "setting": "steady", "PASTE": {"p50_ms": 80.0}, "M1c": {"p50_ms": 50.0},
+                        "PASTE/M1c_p50": 1.6}]}
+    (tmp_path / "lat.json").write_text(json.dumps(lat))
+    out = tmp_path / "r.json"
+    monkeypatch.setattr(sys, "argv", ["final_report", "--files", "t.jsonl", "--n-boot", "300", "--latency",
+                                      str(tmp_path / "lat.json"), "--out", str(out)])
+    fr.main()
+    r = json.load(open(out))
+    assert r["latency_p50_ms_K32"] == {"PASTE": 80.0, "M1c": 50.0}        # steady row, not cold
+    assert not r["outcome"].startswith("Pass")                             # 80 > 1.5 x 50

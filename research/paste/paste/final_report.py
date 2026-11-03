@@ -6,7 +6,8 @@
   the two comparisons; the adjusted CI is the Bonferroni 97.5 % CI (conservative; equals Holm's first step).
 * FPM non-inferiority: one-sided 95 % upper bound of FPM(PASTE) / FPM(B) <= 1.10.
 * M1c+W reading: PE(M1c+W) - PE(PASTE) CI.
-* Latency (optional JSON {system: p50_ms at K=32}): PASTE <= 1.5 x M1c.
+* Latency (optional; tools/bench_systems.py output, or JSON {system: p50_ms at K=32}): steady p50 at K = 32,
+  PASTE <= 1.5 x M1c.
 * Outcome by the table of spec §10.5. Equivalence: both CIs within +-1.0 F1 point.
 
     python -m paste.final_report --files test-programmatic.jsonl test-api.jsonl [--latency lat.json] --out REPORT.json
@@ -90,6 +91,10 @@ def main():
         d, lo, hi, _ = paired_bootstrap(S["M1c+W"], S["PASTE"], n=a.n_boot)
         rep["comparisons"]["M1c+W - PASTE"] = {"delta_PE": round(d, 4), "ci95": [round(lo, 4), round(hi, 4)]}
     lat = json.load(open(a.latency)) if a.latency else None
+    if lat and "results" in lat:                      # tools/bench_systems.py output: steady setting, K = 32, p50
+        row = next(r for r in lat["results"] if r["K"] == 32 and r["setting"] == "steady")
+        lat = {s: row[s]["p50_ms"] for s in row if isinstance(row[s], dict)}
+    rep["latency_p50_ms_K32"] = lat
     lat_ok = None if not lat else lat.get("PASTE", 1e9) <= 1.5 * lat.get("M1c", 0)
     C = [rep["comparisons"].get(f"PASTE - {B}") for B in ("M1c", "M1c-m")]
     if all(C):
