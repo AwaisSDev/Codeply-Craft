@@ -36,6 +36,13 @@ Pre-registered hypotheses are in `ARCHITECTURE-HYPOTHESES.md` and are not edited
   the entity factor (which profile) is 0.43, while given the gold entity a rule using the model's own predicted
   attribute picks the right record or NEW-ATTR 98 % of the time (the head: 0.72). Entity resolution is the
   bottleneck, which is also where soft-token profiles (PASTE) and text rows (M1c) differ most.
+* **The PASTE vs M1c gap in the D2 pilot is entity resolution (E24, E26).** At 1,000 steps M1c reaches val PE
+  0.69 vs PASTE 0.36-0.40. Teacher-forced, the entity factor is 0.89 for M1c and 0.50 for PASTE (both head_norm
+  settings), while the record factor given the entity is ≈ 0.96-0.98 for both. In v2.1 a profile enters as ONE
+  soft token: the mean of its input embeddings ("Bushra", "(", "cousin", ")") plus a projection of its pooled
+  final-layer states, so the name-role binding that separates "brother Adeel" from "manager Adeel" is blurred
+  before any attention happens. M1c's segment tokens attend to name and role tokens individually.
+  Proposal A3 (below) tests this directly.
 
 ## Open hypotheses (mine; untested)
 
@@ -48,11 +55,20 @@ Pre-registered hypotheses are in `ARCHITECTURE-HYPOTHESES.md` and are not edited
 
 ## Research queue (to investigate, in priority order)
 
+0. **A3: verbatim profile rows (PASTE v2.2 candidate).** Profiles enter as token rows after the segment, as in
+   M1c; records and temporary items stay soft tokens (the store's size, and PASTE's efficiency case, scale with
+   records, not profiles: E median 5, max 9). Profile vectors for the heads become the row-token means, as in
+   M1c. v2.1 stays as an ablation. Run PASTE-v2.2 for the same 1,000-step pilot budget and compare entity factor
+   and val PE with v2.1 and M1c. If it closes the gap, the finding is that identity needs verbatim tokens while
+   attribute/value content can be compressed; the report must state that v2.2 is no longer a pure soft-token
+   memory.
+
 Answers to the 2026-11-03 queue are in `research-queue-2026-11-03.md` (evidence-tagged). Planned work drawn from
 them, in order; each change to training or to the shared heads applies to PASTE and every baseline identically
 and is recorded as a spec amendment before the main runs:
 
-1. **Addressing diagnostics first (no code change to the model):** teacher-forced accuracy per level (entity
+1. ~~Addressing diagnostics first~~ done (E25, E26): the record factor is solved, so (a) below is not needed;
+   the entity factor is the target (A3, then (b)/(c) if needed). Original item: teacher-forced accuracy per level (entity
    factor; record factor given gold entity; per gold type) on E24 checkpoints, plus a rule reference (gold
    entity + predicted attribute → existing record of that class, else NEW-ATTR). Only if the rule clearly beats
    the head: (a) an attribute-agreement term in the record score; (b) NEW-* scores that depend on the best
