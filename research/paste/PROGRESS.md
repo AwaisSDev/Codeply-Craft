@@ -8,25 +8,22 @@ Phase 5 (training) on CPU. Data frozen (test/stress v2, private); train 6,000 (2
 generated; API wording finished (**$91.96 of $95 spent; no further API spend**). **Kaggle GPU quota is 0 h until
 2026-11-07 (E18)**, so training runs on this container's CPU (4 cores, ~6.5 segments/s).
 
-Status of the D2 pilot:
-* E21 (accum 16, 125 steps) failed: val PE 0.0. Recorded, not hidden.
-* Diagnosis (E22): with raw head inputs (head_norm off) the initial gradient norm is 12k-19k, and clipping at 1.0
-  starves the heads.
-* E23: the same run with head_norm on reached val PE 0.13 (gate acc 0.92, attr acc 0.83, address acc 0.30).
-* **E24 done. D2 = head_norm on** (pre-registered rule: mean calibrated val PE 0.537 on vs 0.524 off).
-  * PASTE 0.356 off / 0.397 on; M1c 0.693 off / 0.677 on (seed 1, 1,000 steps, validation only).
-  * **At pilot scale M1c beats PASTE by ~0.28 PE.** E26 traces the whole gap to entity resolution
-    (teacher-forced entity factor 0.50 PASTE vs 0.89 M1c; record factor given entity ≥ 0.94 for both).
+Status:
+* D2 = head_norm on (E24). **PASTE = spec v2.2 (profile rows, PR) adopted (E28):** full-val cross-fitted PE 0.610
+  vs 0.389 (v2.1) and **0.688 (M1c)**; PR − M1c = −0.079 [−0.089, −0.068]. One seed, pilot scale, validation.
+* Evaluator and training-gold cascade fixes (2026-11-03) are in; all comparisons from E28 on use them.
+* Error taxonomy (`tools/error_diag.py`): shared errors (look-alike entities, add-vs-update, API-wording spans);
+  PASTE-specific: wrong attribute (soft-token records hide attribute names).
+* Central-test tooling ready: `paste.calibrate_full`, `paste.final_eval` (freeze + guarded test access),
+  `paste.final_report` (§10.5 outcome), `tools/bench_systems.py`, Kaggle notebooks (smoke, training groups with
+  calibration, CPU queues), private Kaggle dataset `paste-trainval` (train + val only). Plan: CENTRAL-TEST-PLAN.md.
 
 Next actions, in order:
 
-1. A3 (spec v2.2 candidate, **implemented; E27 running**): PASTE profiles as verbatim token rows instead of one pooled soft token, behind a
-   config flag (default off, v2.1 kept as ablation). Unit tests, then the E24 budget with head_norm on,
-   `tools/addr_diag.py` and calibrated val PE vs PASTE-on (0.397) and M1c-on (0.677).
-2. Widen the θ_W grid (0.95 / 0.97 / 0.99; validation only): all four E24 arms chose the 0.9 edge.
-3. Validation comparison of `--mix segment` vs episode and corruption on/off (applied to every system).
-4. Learning curve 1,500 / 3,000 / 6,000 (the 3,000-episode fallback).
-5. From 2026-11-07: Kaggle T4 throughput check, then the 3-seed central test.
+1. Training variants V1-V4 (+ seed-2 noise run) finish here → choose the recipe (mean over PASTE and M1c,
+   cross-fitted `tools/val_compare.py`).
+2. Kaggle CPU kernels finish (learning curve 1,500 / 3,000; LR 3e-5 / 1e-4) → push the 6,000 and 3,000 x 2 runs.
+3. Fill the TBDs in CENTRAL-TEST-PLAN.md; on 2026-11-07 run the T4 smoke test, then the central-test groups.
 
 ## Protocol and baseline plan, summary (full text: EVALUATION-PROTOCOL.md, BASELINE-PLAN.md)
 
