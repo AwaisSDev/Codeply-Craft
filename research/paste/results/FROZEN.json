@@ -1,5 +1,5 @@
 {
- "version": 1,
+ "version": 2,
  "frozen_at_utc": "2026-11-02",
  "generator_commit": "7300129003ee67418c7326b427a620800e179f61",
  "seeds": {
@@ -23,16 +23,40 @@
   "test-programmatic.jsonl": {
    "sha256": "759ff5a2e0ba7f880f2672e001b00a588e3ff5fff40f87d2caca12271abbbc48",
    "episodes": 600
+  },
+  "test-api.jsonl": {
+   "sha256": "7f5a5ea4931199b65578921147374b3ce00c3b7e8ee5be41409cba4a554d8222",
+   "episodes": 599,
+   "wording": "Claude Opus 5.5, batch, effort medium; one retry of failed episodes; failures rejected, not repaired",
+   "missing_plans": [
+    "test-20261102-00322"
+   ]
+  },
+  "stress-api.jsonl": {
+   "sha256": "e75cc91f8272b44764e240455c532f58d5c1fd92b93f641d90d8ef4d3563074c",
+   "episodes": 194,
+   "wording": "Claude Opus 5.5, batch, effort medium; one retry of failed episodes; failures rejected, not repaired",
+   "missing_plans": [
+    "stress-20261103-00014",
+    "stress-20261103-00024",
+    "stress-20261103-00081",
+    "stress-20261103-00154",
+    "stress-20261103-00194",
+    "stress-20261103-00197"
+   ]
   }
  },
  "rules": [
   "Loaded only by evaluate.py --final, after the system's checkpoint, thresholds and these hashes are committed in results/final/FROZEN-RUNS.json",
   "Never used for training, model selection, calibration, early stopping or the D2 choice",
-  "API wording of the same plans is added as version 2 of this record, with its own hashes"
+  "API wording of the same plans is added as version 2 of this record, with its own hashes",
+  "Plans without API wording are evaluated in programmatic wording only; paired comparisons use the same episode set for every system"
  ],
  "power_check": {
   "test_gold_persistent_ops": 5850,
   "minimum": 3000,
   "passed": true
- }
+ },
+ "v2_at_utc": "2026-11-03",
+ "v2_generator_commit": "46a8c77a638363225d0ab23d6847cf69bfc9a75e"
 }
