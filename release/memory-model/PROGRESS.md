@@ -27,13 +27,13 @@ to production Brain without explicit approval.
 |---|---|---|
 | 1 | Third seed | Blocked on free GPU quota (Kaggle refused 2026-11-03 10:00). Ready: `kaggle-memory-model.ipynb` (exports seeds 1-2 with GPU imatrix, trains + exports seed 3); daily retry scheduled 14:17 UTC |
 | 2 | Production export path (merge, imatrix, Q4_K_M) | **Seed 1 exported** (12:00 UTC): Q4_K_M 1,099,627,456 B, SHA-256 `7360aaed…ac14f9`; stored in private Kaggle dataset `awaissididique/codeply-memory-model-gguf` (s1.tar: Q4_K_M, imatrix.dat, SHA256SUMS) |
-| 3 | Post-export evaluation (test-real, Benchmark-520) | Pending 2 |
+| 3 | Post-export evaluation (test-real, Benchmark-520) | **Done** (`results/EXPORT-PARITY.md`): test-real F1 0.658, Benchmark-520 0.675; no loss vs adapter at load; +0.36 / +0.10 vs production |
 | 4 | Jokes and quotes | Done: `JOKES-AND-QUOTES.md` (labels never learned; same rate as production; fix = v2 data; cue guard rejected) |
 | 5 | WildChat licensing and privacy | `WILDCHAT-OPEN-ISSUES.md`: 8 open items for owner/counsel; licence notice added next to the published data |
-| 6 | Automatic / pending / discard tiers, confirmation workflow | Design + selection pre-registered (`TIERS.md`); thresholds pending the exported model's val run |
-| 7 | Brain integration package (no production change) | Branch `codeply-memory-model-integration` (not merged): tiers, pending memories, catalog entry, prompt-style fix; all tests pass |
-| 8 | Integration test suite | `integration/`: 50 live cases (to run on the exported model) + 18 malformed-output cases (pass); `scripts/memory-model-test.mjs` on the integration branch (28 checks) |
-| 9 | Limitations, performance, deployment, rollback | Drafts: `MODEL-CARD.md`, `DEPLOYMENT.md`; rollback tool `rollback-memories.mjs` (tested) |
+| 6 | Automatic / pending / discard tiers, confirmation workflow | **Done**: frozen on val (`TIERS-FROZEN.json`), tested once (`TIERS.md` Results). 3:1 → all automatic (ships as `tiers: null`); 5:1 option offered to owner |
+| 7 | Brain integration package (no production change) | **Done**: branch `codeply-memory-model-integration` (rebased on this branch, not merged): tiers, pending memories, catalog entry with the release sha256, prompt-style fix; all tests pass |
+| 8 | Integration test suite | **Done**: exported seed 1 43 / 50 (gate fails on duplicates, production also fails), production 37 / 50; malformed 18 / 18; `scripts/memory-model-test.mjs` 28 checks |
+| 9 | Limitations, performance, deployment, rollback | **Done**: `MODEL-CARD.md` (final numbers), `DEPLOYMENT.md`, `rollback-memories.mjs` (tested) |
 
 ## Log
 
@@ -80,3 +80,19 @@ to production Brain without explicit approval.
   integration suite.
 * Built meanwhile: tier selection script (`select_tiers.py`), deployment and
   rollback guide (`DEPLOYMENT.md`), rollback tool + test.
+
+### 2026-11-03 15:10 UTC — release candidate complete
+* Exported seed 1 evaluated through the production backend: test-real F1
+  0.658 (P 0.792), Benchmark-520 0.675 (P 0.733); export vs adapter at
+  load CIs include zero; vs production LFM3 +0.30..+0.41 / +0.06..+0.14.
+  Logprobs do not change answers (8 / 8).
+* Integration suite: 43 / 50 (production 37 / 50). Duplicates gate fails
+  for both models (Brain exact-value dedup + the model not repeating known
+  facts); gate not loosened; Brain follow-up needs owner approval.
+* Tiers frozen on val, tested once: 3:1 → everything automatic; Benchmark-520
+  cost 582 vs 551 for storing nothing. 5:1 config (exist ≥ 0.95 automatic,
+  rest pending) better on both sets but is the owner's call, not selected
+  on test.
+* Integration branch rebased, catalog sha256 set; tests pass.
+* Remaining: seed 3 (GPU quota, daily retry), WildChat items (owner/counsel),
+  owner approval to merge and host the artifact.

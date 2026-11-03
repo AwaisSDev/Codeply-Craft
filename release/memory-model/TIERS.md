@@ -77,4 +77,37 @@ stale tentative memories from the model.
 
 ## Results
 
-Filled in after the val selection and the frozen test evaluation.
+Selection on val only (`select_tiers.py select --seed 1`, frozen in
+`results/TIERS-FROZEN.json`, commit c7c1a139 before any test file was read).
+Feature chosen: `exist` (probability of the observation's opening token).
+
+| Ratio r | Break-even precision | τa (automatic) | τp (pending) | val automatic P / R |
+|---|---|---|---|---|
+| 2 | 0.67 | 0 (everything) | – | 0.776 / 0.479 |
+| 3 | 0.75 | 0 (everything) | – | 0.776 / 0.479 |
+| 5 | 0.83 | 0.95 | 0 (rest pending) | see `tiers-s1-val-selection.json` |
+
+At r = 2 and r = 3 the model's precision on val is already above
+break-even, so the rule stores everything automatically and there is no
+pending tier. At r = 5 observations with exist ≥ 0.95 are automatic and the
+rest are pending; nothing is discarded by confidence (the guard and the
+Brain still drop secrets, ignored certainties and ungrounded values).
+
+Frozen thresholds tested once (`select_tiers.py test --seed 1`,
+`results/tiers-s1-test.json`):
+
+| Config | Set | Automatic P / R | Pending per 100 inputs (P) | Cost at 3:1 | Store nothing |
+|---|---|---|---|---|---|
+| r = 3 | test-real | 0.792 / 0.563 | – | 322 | 366 |
+| r = 3 | Benchmark-520 | 0.733 / 0.624 | – | 582 | 551 |
+| r = 5 | test-real | 0.867 / 0.284 | 25.5 (0.73) | 310 | 366 |
+| r = 5 | Benchmark-520 | 0.808 / 0.343 | 45.2 (0.66) | 497 | 551 |
+
+Decision, as pre-registered: the 3:1 configuration ships, i.e. `tiers:
+null` in the catalog (no confidence pass needed). On Benchmark-520 it costs
+slightly more than storing nothing (582 vs 551; production LFM3 1,056). The
+r = 5 configuration beats storing nothing on both sets; adopting it because
+of these test numbers would be tuning on test, so it is the owner's choice
+on principle ("wrong memories cost 5× a missed one"). To adopt it, set the
+catalog `tiers` to `{ feature: 'exist', tauA: 0.95, tauP: 0 }`.
+

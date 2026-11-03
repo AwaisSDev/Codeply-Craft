@@ -1,9 +1,10 @@
 # Model card: Codeply memory model v1 (LFM3-1.7B, fine-tuned)
 
-**Status: release candidate, not shipped.** Final numbers for the exported
-artifact are filled in from `results/` once the post-export evaluation is
-done; until then the numbers below are from the same weights with the
-adapter applied at load time (`research/dtw/LORA-RESULTS.md`).
+**Status: release candidate, not shipped.** Artifact
+`codeply-memory-lfm3-s1-Q4_K_M.gguf` (seed 1), 1,099,627,456 bytes, SHA-256
+`7360aaed7410cac445d9901f8a85b876bee6b76d1cb83b05404480b5b9ac14f9`, private
+Kaggle dataset `awaissididique/codeply-memory-model-gguf` (`s1.tar`).
+Full evaluation: `results/EXPORT-PARITY.md`.
 
 ## What it does
 
@@ -28,21 +29,25 @@ local extraction backend.
 
 ## Evaluation (frozen sets, never tuned on)
 
-Mean of seeds 1-2, adapter at load time on the LFM3 Q4_K_M base (final
-exported-artifact numbers: see `results/EXPORT-PARITY.md`).
+The shipped artifact (exported seed 1, Q4_K_M), through the production
+local backend on 4 CPU threads:
 
-| | test-real (549) | Benchmark-520 | natural-300 (20 gold, supporting) |
-|---|---|---|---|
-| F1 / precision / recall | **0.657** / 0.78 / 0.57 | **0.653** / 0.73 / 0.59 | 0.445 / 0.61 / 0.35 |
-| vs production LFM3 (paired bootstrap, 95 %) | +0.356 (+0.298, +0.412) | +0.079 (+0.045, +0.115) | +0.352 (+0.084, +0.598) |
-| Kind / certainty accuracy | 0.86 / 0.88 | 0.80 / 0.85 | 0.93 / 1.00 |
-| False-memory rate | 0.30 | 0.30 | 0.17 |
-| Secrets stored (Benchmark-520) | – | 0 / 13 (production 5) | – |
-| Median / p95 latency, 4 CPU threads | 5.5 s / 21.9 s | 6.1 s / 19.9 s | 2.8 s / 7.3 s |
+| | test-real (549) | Benchmark-520 |
+|---|---|---|
+| F1 / precision / recall | **0.658** / 0.792 / 0.563 | **0.675** / 0.733 / 0.624 |
+| vs production LFM3 (paired bootstrap, 95 %) | +0.358 (+0.302, +0.414) | +0.100 (+0.064, +0.136) |
+| vs the adapter at load time (export loss) | (−0.029, +0.057) | (−0.007, +0.038) |
+| Kind / certainty accuracy | 0.86 / 0.89 | 0.78 / 0.82 |
+| False-memory rate | 0.25 | 0.24 |
+| Secrets stored / injections followed | – | 1 / 13 (production 5) / 1 / 11 |
+| Median / p95 latency | 3.3 s / 15.5 s | 5.5 s / 18.8 s |
+| Peak memory (llama-server) | 1,944 MB | 1,972 MB |
 
-The gain is from fine-tuning: the untrained model on the same base file
-scores 0.317 on test-real. The lead holds on the user-disjoint part of
-test-real (+0.365 against production).
+Integration suite (50 live cases through the production path): 43 / 50
+(production LFM3 37 / 50); malformed backend output 18 / 18. The gain is
+from fine-tuning: the untrained model on the same base scores 0.317 on
+test-real. Seeds 1 and 2 with the adapter at load agree (mean 0.657 /
+0.653), so seed 1 is not a lucky draw.
 
 ## Limitations
 
@@ -50,9 +55,16 @@ test-real (+0.365 against production).
   outputs `joking` or `quoting`; `JOKES-AND-QUOTES.md`). About a third of
   jokes and quotes are stored as facts, the same rate as the production
   model. Fix: v2 with more joke/quote training data.
-* **Precision 0.73-0.78**: about one stored memory in four is wrong or not
-  in the gold. The automatic / pending / discard tiers (`TIERS.md`) are the
-  mitigation.
+* **Precision 0.73-0.79**: about one stored memory in four is wrong or not
+  in the gold. On Benchmark-520 precision (0.733) is below the 3:1
+  break-even (0.75). The tiers (`TIERS.md`) are the mitigation; at 3:1 the
+  frozen rule puts everything in the automatic tier.
+* **Duplicates**: a known fact is often not repeated, or is rephrased, so the
+  Brain replaces or adds instead of reinforcing (integration suite 1 / 4,
+  production 0 / 4). This slows promotion of pending memories by
+  recurrence.
+* **Roman Urdu**: a wedding announcement was missed and a Roman Urdu joke
+  stored as fact in the integration suite.
 * **Latency**: seconds per batch on CPU (p95 ~20 s); fine for background
   extraction (the engine runs at a 25 % duty cycle), not for interactive use.
 * **Language**: trained mostly on English, with some Urdu and mixed
@@ -65,8 +77,8 @@ test-real (+0.365 against production).
 
 ## Deployment requirements
 
-* Disk: ~1.1 GB (Q4_K_M). RAM: llama-server with the model, ctx 8,192,
-  q8_0 KV cache (measured peak in `results/`).
+* Disk: ~1.1 GB (Q4_K_M). RAM: llama-server peak ~2.0 GB (ctx 8,192,
+  q8_0 KV cache).
 * CPU: 4 threads used in all measurements; no GPU needed.
 * Codeply runtime: `llama-server` at llama.cpp `aa588a3` or a version known
   to run LFM3 (tri-hybrid conv + attention) with `--swa-full`.
