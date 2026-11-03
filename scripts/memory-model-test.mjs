@@ -141,6 +141,8 @@ console.log('\nCatalog');
   check('the memory model reads the full prompt it was trained on, with thinking off and --swa-full', c && c.style === 'full' && c.extra.chat_template_kwargs.enable_thinking === false && c.serverArgs.includes('--swa-full'));
   check('it has no download repository until it is published', c.repo === '');
   check('it is opt-in: only used when selected', c.optIn === true);
+  const frozen = JSON.parse(fs.readFileSync(path.join(ROOT, 'release/memory-model/results/TIERS-FROZEN.json'), 'utf8')).s1;
+  check('its tiers are the frozen 5:1 configuration (owner decision for opt-in testing)', c.tiers && c.tiers.feature === frozen.feature && c.tiers.tauA === frozen.byRatio['r=5'].tauA && c.tiers.tauP === frozen.byRatio['r=5'].tauP && T.tiersConfig(c.tiers) !== null, JSON.stringify(c.tiers));
   const inst = [{ id: 'lfm3-1.7b-memory-v1-q4', optIn: true }, { id: 'lfm3-1.7b-qad-q4' }];
   check('an installed opt-in model is not the fallback', RT.selectModel(inst, '').id === 'lfm3-1.7b-qad-q4');
   check('a selected opt-in model is used', RT.selectModel(inst, 'lfm3-1.7b-memory-v1-q4').id === 'lfm3-1.7b-memory-v1-q4');
