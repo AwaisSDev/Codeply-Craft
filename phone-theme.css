@@ -198,11 +198,18 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible { outline: 
 .msg-actions svg { width: 17px; height: 17px; }
 
 /* The answer's face, small, at its start */
-/* The answer's face sits in a left column, level with the answer's first line; the answer starts after it. */
-.turn-face { position: relative; height: 0; margin-bottom: -18px; }
+/* The answer's face comes first, like a speaker before they talk: the answer's first line starts after
+   it, and every line after that uses the full width (no empty column under the face). */
+.turn-face { position: relative; height: 0; margin-bottom: -18px; z-index: 1; }
 .turn-face .wisp-el { position: absolute; left: 0; top: -2px; width: 30px; height: 30px; }
-#feed > .turn-face ~ :not(.msg.user):not(.msg-files):not(.turn-face) { margin-left: 42px; }
-#feed > .turn-face ~ .msg-actions { margin-left: 34px; }
+/* text first: only its first line moves over */
+#feed > .turn-face + .msg:not(.user) > :is(p, h1, h2, h3, h4, h5, h6):first-child { text-indent: 42px; }
+#feed > .turn-face + .msg:not(.user):not(:has(> *)) { text-indent: 42px; }
+/* one-line rows (thinking, the steps summary) sit next to the face */
+#feed > .turn-face + .working, #feed > .turn-face + .steps-group > summary { margin-left: 42px; }
+/* anything else first (a list, table, code, a card) starts on the line below the face */
+#feed > .turn-face + .msg:not(.user) > :not(p, h1, h2, h3, h4, h5, h6):first-child,
+#feed > .turn-face + :is(.question, .inline-row, .msg.note) { margin-top: 34px; }
 .turn-face-state { font-size: 15px; color: var(--muted); }
 .turn-face-state:empty { display: none; }
 .turn-face:has(.turn-face-state:not(:empty)) { height: auto; min-height: 26px; margin-bottom: 0; padding-left: 42px; display: flex; align-items: center; }

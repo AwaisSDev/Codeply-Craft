@@ -22,3 +22,4 @@ crew-ios/node_modules
 
 # Rendered promo films (large; shared from the artifact page instead)
 media/*.mp4
+media/wisp-thumbnail*.jpg
