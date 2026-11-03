@@ -27,6 +27,8 @@ for (const [from, to] of [
   ['phone-wisp.js', 'phone-wisp.js'],     // Wisp, the agent's face
   ['phone-app.js', 'phone-app.js'],       // the screens around the chat (Tasks, Settings, sign up...)
   ['phone-app.css', 'phone-app.css'],
+  ['phone-work.js', 'phone-work.js'],     // Schedules, Calendar and Checks (no PC needed)
+  ['phone-work.css', 'phone-work.css'],
   ['wisp.js', 'wisp.js'],
   ['phone-stt-worker.js', 'phone-stt-worker.js'],
   ['bot-avatar.js', 'bot-avatar.js'],

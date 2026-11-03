@@ -57,15 +57,17 @@
     const n = (s) => tasks.filter((t) => t.state === s).length;
     const shown = taskFilter === 'all' ? tasks : tasks.filter((t) => t.state === taskFilter);
     const chip = (k, label, count) => `<button type="button" data-filter="${k}" class="${taskFilter === k ? 'on' : ''}">${label}${count ? `<span>${count}</span>` : ''}</button>`;
-    body.innerHTML = `<div class="chips">${chip('all', 'All', tasks.length)}${chip('needs', 'Needs you', n('needs'))}${chip('running', 'Running', n('running'))}${chip('done', 'Done', 0)}</div>`
+    body.innerHTML = (window.CraftWork && window.CraftWork.schedulesHtml ? window.CraftWork.schedulesHtml() : '')
+      + `<div class="chips">${chip('all', 'All', tasks.length)}${chip('needs', 'Needs you', n('needs'))}${chip('running', 'Running', n('running'))}${chip('failed', 'Failed', n('failed'))}${chip('done', 'Done', n('done'))}</div>`
       + shown.map((t) => {
-        const ico = t.state === 'needs' ? `<span class="task-ico needs">${I.hand}</span>` : t.state === 'running' ? '<span class="task-ico"><span class="spinner"></span></span>' : `<span class="task-ico done">${I.done}</span>`;
-        const sub = t.state === 'running' && t.step ? `<code>${esc(t.step)}</code>` : `${t.cloud ? I.cloud : I.pc}<span>${esc(t.where || '')}</span>`;
+        const ico = t.state === 'needs' ? `<span class="task-ico needs">${I.hand}</span>` : t.state === 'running' ? '<span class="task-ico"><span class="spinner"></span></span>'
+          : t.state === 'failed' ? `<span class="task-ico failed">${I.x}</span>` : `<span class="task-ico done">${I.done}</span>`;
+        const sub = t.state === 'running' && t.step ? `<code>${esc(t.step)}</code>` : t.state === 'failed' && t.error ? `<span class="task-err">${esc(t.error)}</span>` : `${t.cloud ? I.cloud : I.pc}<span>${esc(t.where || '')}</span>`;
         const when = t.state === 'running' && t.since ? clock(Date.now() - t.since) : ago(t.at || Date.now());
         const ask = t.state === 'needs' && t.ask ? `<div class="task-ask">${esc(t.ask.text)}${t.ask.cmd ? `<pre>${t.ask.isCmd ? '<span>$ </span>' : ''}${esc(t.ask.cmd)}</pre>` : ''}</div>
           ${t.ask.danger ? '<div class="task-risk">Outside the project or hard to undo</div>' : ''}
-          <button type="button" class="btn btn-outline" data-ap="${esc(t.id)}" data-v="once">Allow</button>
-          <div class="task-more">${t.ask.always ? `<button type="button" data-ap="${esc(t.id)}" data-v="always">${esc(t.ask.always)}</button>` : ''}<button type="button" class="deny" data-ap="${esc(t.id)}" data-v="reject">Deny</button></div>` : '';
+          ${t.chatOnly ? '<div class="task-risk" style="color:inherit">Open the chat to answer</div>' : `<button type="button" class="btn btn-outline" data-ap="${esc(t.id)}" data-v="once">Allow</button>`}
+          ${t.chatOnly ? '' : `<div class="task-more">${t.ask.always ? `<button type="button" data-ap="${esc(t.id)}" data-v="always">${esc(t.ask.always)}</button>` : ''}<button type="button" class="deny" data-ap="${esc(t.id)}" data-v="reject">Deny</button></div>`}` : '';
         return `<div class="task" data-open="${esc(t.id)}"><div class="task-top">${ico}<div class="task-main"><b>${esc(t.title)}</b><small>${sub}</small></div><time>${esc(when)}</time></div>${ask}</div>`;
       }).join('') + (shown.length ? '' : '<p class="note" style="text-align:center;margin-top:40px">Nothing here.</p>');
     body.querySelectorAll('[data-filter]').forEach((b) => b.addEventListener('click', () => { taskFilter = b.dataset.filter; renderTasks(data); }));
@@ -400,10 +402,24 @@
     const code = (st.chats || []).filter((c) => c.kind === 'code').sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     for (const c of code) {
       if (tasks.some((t) => t.session && t.session === c.pcSessionId)) continue;
-      const busy = st.busy && st.busy.has(c.id);
-      tasks.push({ id: `c:${c.id}`, title: c.title || 'Untitled task', state: busy ? 'running' : 'done', cloud: !!c.cloud, where: where(c), step: busy ? 'Working' : '', since: busy ? c.updatedAt : 0, at: c.updatedAt || Date.now() });
+      if (c.cloud) {
+        // A cloud task's state is what its run reported (phone.js pollTask), never a guess.
+        const b = P().chatBody ? P().chatBody(c.id) : null;
+        const last = b && b.tasks && b.tasks.length ? b.tasks[b.tasks.length - 1] : null;
+        const s = last ? last.status : '';
+        const state = last && last.ask ? 'needs' : s === 'done' ? 'done' : s === 'failed' || s === 'cancelled' ? 'failed' : last ? 'running' : 'done';
+        tasks.push({ id: `c:${c.id}`, title: c.title || 'Untitled task', state, cloud: true, where: where(c),
+          step: state === 'running' ? (s === 'starting' || last.queued ? 'Starting in the cloud' : 'Working in the cloud') : '',
+          error: state === 'failed' ? (s === 'cancelled' ? 'Cancelled' : last.error || 'The cloud run failed.') : '',
+          ask: state === 'needs' ? { text: last.ask.title || last.ask.text || 'Codeply needs your OK', cmd: last.ask.detail || '' } : null, chatOnly: state === 'needs',
+          since: state === 'running' ? (last.startedAt || c.updatedAt) : 0, at: (last && last.finishedAt) || c.updatedAt || Date.now() });
+      } else {
+        const busy = st.busy && st.busy.has(c.id);
+        tasks.push({ id: `c:${c.id}`, title: c.title || 'Untitled task', state: busy ? 'running' : 'done', cloud: false, where: where(c), step: busy ? 'Working' : '', since: busy ? c.updatedAt : 0, at: c.updatedAt || Date.now() });
+      }
       if (tasks.length > 40) break;
     }
+    if (window.CraftWork && window.CraftWork.scheduledTasks) tasks.push(...window.CraftWork.scheduledTasks());
     return { tasks };
   }
   function refreshTasks() {
@@ -596,10 +612,12 @@
     $('tasksBody').addEventListener('click', (e) => {
       const b = e.target.closest('[data-ap]');
       if (b) { e.stopPropagation(); const id = Number(b.dataset.ap.slice(3)); b.disabled = true; P().answerApproval(b.dataset.v, id); setTimeout(refreshTasks, 50); return; }
+      if (e.target.closest('[data-work]')) return; // the Schedules block (phone-work.js) handles its own taps
       const card = e.target.closest('[data-open]');
       if (!card) return;
       const id = card.dataset.open;
       const st = S();
+      if (id.startsWith('s:')) { if (window.CraftWork) window.CraftWork.openRun(id.slice(2)); return; }
       $('tasksPanel').classList.add('hidden');
       if (id.startsWith('c:')) P().openChat(id.slice(2));
       else {

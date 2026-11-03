@@ -57,6 +57,8 @@ body:not([data-view="chat"]) #menuBtn .ico-back { display: none; }
 .task-ico svg { width: 18px; height: 18px; }
 .task-ico.needs { background: color-mix(in srgb, var(--orange) 14%, transparent); color: var(--orange); }
 .task-ico.done { color: var(--green); }
+.task-ico.failed { color: var(--red, #e5484d); }
+.task-err { color: var(--red, #e5484d); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .task-main { flex: 1; min-width: 0; }
 .task-main b { display: block; font-size: 15.5px; font-weight: 500; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .task-main small { display: flex; align-items: center; gap: 5px; font-size: 13.5px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; }

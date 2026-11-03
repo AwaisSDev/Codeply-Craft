@@ -73,7 +73,7 @@ function keepDeviceId(id) {
 })();
 const deviceHeader = () => ({ 'x-codeply-device': deviceIdValue });
 
-const CHAT_SYSTEM = 'You are Codeply, the assistant in the Codeply phone app. This is a normal chat: you cannot see, open or change files or run code here, but you can search the web (see WEB SEARCH). Answer clearly and keep it readable on a phone screen. The app draws rich markdown, so format answers well when it helps (never for a one-line reply): ## and ### headings, short paragraphs, lists, - [ ] / - [x] checklists, tables for comparisons, fenced code blocks with a language, **bold** for key words, ==highlight== for the one thing to remember, -# at the start of a line for small fine print, [[Label]] or [[Label|green]] for a coloured status tag (blue green red orange yellow purple pink teal gray), {{green: text}} for coloured text such as numbers going up or down, and > [!TIP] / > [!NOTE] / > [!WARNING] callouts for a tip or a caveat. Use colour and tags sparingly, where they carry meaning. No emoji as decoration. If someone wants changes made to one of their projects, tell them to switch to Code in the composer. When a GMAIL note appears in the conversation, it is the user’s own inbox read live just now: answer from it directly (who wrote, about what, what needs a reply) and never say you cannot see their email.\n\nWEB SEARCH\nYou can search the web whenever you want. To search, reply with ONLY this one line and nothing else: [[SEARCH: your search query]]. The app runs the search and sends you the results; then you answer (you may search once more if the first results miss). Search whenever the answer depends on anything current or checkable: news, prices, weather, scores, schedules, releases and versions, people and companies, places and opening hours, anything after your training data or that you are not sure of, and always when the user says search, look up, google, check online or find. Never say you cannot browse or search the web. Answering from results: the key facts first, short, and cite sources as markdown links like [The Verge](https://...).';
+const CHAT_SYSTEM = 'You are Codeply, the assistant in the Codeply phone app. This is a normal chat: you cannot see, open or change files or run code here, but you can search the web (see WEB SEARCH). Answer clearly and keep it readable on a phone screen. The app draws rich markdown, so format answers well when it helps (never for a one-line reply): ## and ### headings, short paragraphs, lists, - [ ] / - [x] checklists, tables for comparisons, fenced code blocks with a language, **bold** for key words, ==highlight== for the one thing to remember, -# at the start of a line for small fine print, [[Label]] or [[Label|green]] for a coloured status tag (blue green red orange yellow purple pink teal gray), {{green: text}} for coloured text such as numbers going up or down, and > [!TIP] / > [!NOTE] / > [!WARNING] callouts for a tip or a caveat. Use colour and tags sparingly, where they carry meaning. No emoji as decoration. If someone wants changes made to one of their projects, tell them to switch to Code in the composer. When a GMAIL note appears in the conversation, it is the user’s own inbox read live just now: answer from it directly (who wrote, about what, what needs a reply) and never say you cannot see their email.\n\nLIVE STATUS\nYou cannot see the user’s GitHub checks, pull requests, Actions runs, Vercel deployments, Supabase projects, calendar or scheduled cloud tasks on your own. When a CHECKS note appears in the conversation, the app read those APIs just now: answer only from it, say what it covers and when it was read, and never add anything it does not say. When there is no CHECKS note, or it says something could not be read, never guess or invent a status (no passing, failing, deployed, healthy or similar tags): say plainly that you have not checked it, and that the Checks screen (menu, Checks) reads it live.\n\nWEB SEARCH\nYou can search the web whenever you want. To search, reply with ONLY this one line and nothing else: [[SEARCH: your search query]]. The app runs the search and sends you the results; then you answer (you may search once more if the first results miss). Search whenever the answer depends on anything current or checkable: news, prices, weather, scores, schedules, releases and versions, people and companies, places and opening hours, anything after your training data or that you are not sure of, and always when the user says search, look up, google, check online or find. Never say you cannot browse or search the web. Answering from results: the key facts first, short, and cite sources as markdown links like [The Verge](https://...).';
 
 // ─── Small helpers ──────────────────────────────────────────────────────────
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c]);
@@ -1167,6 +1167,12 @@ async function chatSend(chat, text, images = []) {
     // A synced model goes through byok-proxy (same reply shape as ai-proxy).
     const own = chatModel();
     let messages = [{ role: 'system', content: `${CHAT_SYSTEM}\nToday is ${new Date().toDateString()}.${window.CraftReminders ? window.CraftReminders.chatRules() : ''}` }, ...history];
+    // Asked about builds, checks, deploys, Supabase, the calendar or schedules: read them live first (phone-work.js), so the
+    // answer comes from the APIs, never from a guess. A read that fails says so in the note.
+    if (window.CraftWork && window.CraftWork.isStatusQuestion(text)) {
+      const note = await window.CraftWork.statusNote(text).catch((e) => `The live check could not run: ${e.message}`);
+      if (note) messages.push({ role: 'system', content: `CHECKS (read live by the app at ${new Date().toLocaleTimeString()}):\n${note}` });
+    }
     // Up to two web searches: the model asks with [[SEARCH: ...]], the phone searches, the model answers from the results.
     for (let round = 0; ; round++) {
       const res = await fetch(own ? BYOK_PROXY_URL : AI_PROXY_URL, {
@@ -1349,13 +1355,18 @@ on:
         required: false
         default: ''
         type: string
+      handoff:
+        description: resume = carry on a run from the PC (craft/wip-<chat>)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
   checks: write
 
 concurrency:
-  group: craft-\${{ inputs.session_id || inputs.task_id }}
+  group: craft-\${{ inputs.handoff }}\${{ inputs.session_id || inputs.task_id }}
   cancel-in-progress: false
 
 jobs:
@@ -1365,6 +1376,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: \${{ inputs.handoff == 'resume' && format('craft/wip-{0}', inputs.session_id) || '' }}
           fetch-depth: 1
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -1388,6 +1400,7 @@ jobs:
           CRAFT_MODE: \${{ inputs.mode }}
           CRAFT_TASK_ID: \${{ inputs.task_id }}
           CRAFT_SESSION_ID: \${{ inputs.session_id }}
+          CRAFT_HANDOFF: \${{ inputs.handoff }}
 `;
 
 async function gh(method, route, reqBody, { allow = [], accept, token } = {}) {
@@ -1452,7 +1465,9 @@ async function setVariable(repo, name, value) {
   if (r.status === 404) await gh('POST', `/repos/${repo}/actions/variables`, { name, value });
 }
 // ─── Getting a repo ready for cloud runs (no model step: Auto unless Craft set one) ───
-const PHONE_WORKFLOW_REV = 3;
+// Same file and number as the desktop's (codeply-cli/lib/cloud.mjs, WORKFLOW_REV): the phone and the PC
+// must write the identical workflow, or each would overwrite the other's (and the PC's handoff input).
+const PHONE_WORKFLOW_REV = 4;
 const b64ToText = (b64) => new TextDecoder().decode(b64ToBytes(b64));
 /** The GitHub login connected in Craft (synced, encrypted, to the account): no token to paste. */
 async function githubFromAccount() {
@@ -1468,6 +1483,22 @@ async function githubFromAccount() {
     save(KEY.creds, state.creds);
     return true;
   } catch { return false; }
+}
+/**
+ * Every app connected in Craft (Gmail/Google, Slack, Vercel, Supabase, GitHub), as the account's
+ * connections function returns them: { gmail: { accessToken, refreshToken, clientId, clientSecret, ... }, ... }.
+ * Cached for a minute; {} when signed out or nothing is connected. Errors are thrown, not hidden.
+ */
+let connCache = null;
+async function accountConnections({ fresh = false } = {}) {
+  if (!fresh && connCache && Date.now() - connCache.at < 60000) return connCache.data;
+  const token = await accessToken();
+  if (!token) throw new Error('Sign in to Codeply first.');
+  const r = await fetch(`${SUPABASE_URL}/functions/v1/connections`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get' }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`Couldn't load your connected apps (HTTP ${r.status}${j && j.error ? `: ${j.error}` : ''}).`);
+  connCache = { at: Date.now(), data: (j && j.connections) || {} };
+  return connCache.data;
 }
 const hasGithub = () => !!(state.creds && state.creds.token && !state.creds.expired);
 async function ensureGithub() { return hasGithub() || githubFromAccount(); }
@@ -2874,6 +2905,8 @@ currentSession().then((s) => { if (s) enterApp(); else showSignin(); }).catch(sh
 // phone-calls.js (Calls with bots) builds on these too.
 window.CraftPhone = { state, relay, sb, sealSecret, CLOUD_WORKFLOW, md, pollAll, relayRequest, accessToken, esc, load, save, newId, openDrawer, closeDrawer, AI_PROXY_URL, SUPABASE_ANON_KEY, deviceHeader,
   cloudEnvForBots, startCloudTask, pollCloudTask: pollTask,
+  // phone-work.js (Schedules, Calendar, Checks) builds on these
+  gh, ensureGithub, hasGithub, ensureRepoReady, readSessionJson, envFor, chatBody: body, accountConnections,
   // phone-app.js (tabs, Home, You, sign-up) builds on these
   createChat, saveBody, saveChats, webSearch,
   SUPABASE_URL, answerApproval, setPermission, PERM, signinStep, openChat, openPcSession, newChat, openSettings, openSetup, openProjectPicker, openModelPicker, chatMeta, signOut, applyTheme, themeChoice, renderChatList, enterApp, friendlyAuthError, currentSession };

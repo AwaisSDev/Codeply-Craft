@@ -22,13 +22,18 @@ on:
         required: false
         default: ''
         type: string
+      handoff:
+        description: resume = carry on a run from the PC (craft/wip-<chat>)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
   checks: write
 
 concurrency:
-  group: craft-${{ inputs.session_id || inputs.task_id }}
+  group: craft-${{ inputs.handoff }}${{ inputs.session_id || inputs.task_id }}
   cancel-in-progress: false
 
 jobs:
@@ -38,6 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.handoff == 'resume' && format('craft/wip-{0}', inputs.session_id) || '' }}
           fetch-depth: 1
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -61,3 +67,4 @@ jobs:
           CRAFT_MODE: ${{ inputs.mode }}
           CRAFT_TASK_ID: ${{ inputs.task_id }}
           CRAFT_SESSION_ID: ${{ inputs.session_id }}
+          CRAFT_HANDOFF: ${{ inputs.handoff }}
