@@ -28,7 +28,11 @@ if not os.path.exists("/tmp/codeply"):
 subprocess.run(["git", "-C", "/tmp/codeply", "checkout", COMMIT], check=True)
 os.chdir("/tmp/codeply/research/paste")
 subprocess.run("pip -q install tokenizers==0.23.3 huggingface_hub==2.4.0", shell=True, check=True)
-DATA = "__DATA__"
+import glob
+_m = sorted(glob.glob("/kaggle/input/**/MANIFEST.json", recursive=True))
+print("manifests found:", _m)
+assert _m, "paste-trainval dataset not mounted"
+DATA = os.path.dirname(next((m for m in _m if "paste-trainval" in m), _m[0]))
 man = json.load(open(f"{DATA}/MANIFEST.json"))
 for f, h in man["sha256"].items():
     assert hashlib.sha256(open(f"{DATA}/{f}", "rb").read()).hexdigest() == h, f"{f} changed"
@@ -102,7 +106,7 @@ def main():
     ap.add_argument("--grid", default="0.8 0.9 0.95 0.98")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    setup = SETUP.replace("__COMMIT__", a.commit).replace("__DATA__", DATA)
+    setup = SETUP.replace("__COMMIT__", a.commit)
     smoke = SMOKE.replace("__PASTE_FLAGS__", "{'" + a.paste_flags + "' if system == 'PASTE' else ''}") if a.paste_flags else SMOKE.replace("__PASTE_FLAGS__", "")
     json.dump(nb("PASTE: T4 throughput smoke test", "Measures segments/s for PASTE and M1c (fp32, AMP). Train data only.",
                  [setup, smoke]), open(os.path.join(a.out, "paste-smoke.ipynb"), "w"), indent=1)
