@@ -8,7 +8,7 @@
   "catalogId": "lfm3-1.7b-memory-v1-q4"
  },
  "files": {
-  "results/EXPORT-PARITY.md": "e413f4eedb87e9cf47833ae072f02e553d41a1ef19238cd7b1f9a511231fdeed",
+  "results/EXPORT-PARITY.md": "331d9901e2e05aaec7fbb82d693a19ca978b18a2dbbd11bf65ba076c3f65afc2",
   "results/TIERS-FROZEN.json": "34411cc7a19d3a8d0625785bcf6dd6b991db1b5dbb670127b91d19b8cc165197",
   "results/logprobs-parity-s1.json": "cdb3a14dd45199f376b7d7225bdd85956cb092a7f9b8ef7755e1f7d7e24ce798",
   "results/release-s1-val.json": "8ea7172c66d5d5b1df3e85ef4e92af93faa8c28b8383b20e61d68ae8158db6cd",
@@ -21,5 +21,14 @@
   "results/tiers-s1-test.json": "f136c28bf9b441c86c2407c5ee86714b5bb3ea8ff43a78a328dd7f7c8c7e913a",
   "results/integration-s1.json": "72672d559e59defb59b96087ce64c7f6b0ac5f492a33118e6a703117ebaf924b",
   "results/integration-production-lfm3.json": "760ab87c69035850d9f25135def86951e5b2f58c7fd37e1c2853d8139d8e18a3"
- }
+ },
+ "errata": [
+  {
+   "at": "2026-11-03",
+   "file": "results/EXPORT-PARITY.md",
+   "from": "e413f4eedb87e9cf47833ae072f02e553d41a1ef19238cd7b1f9a511231fdeed",
+   "to": "331d9901e2e05aaec7fbb82d693a19ca978b18a2dbbd11bf65ba076c3f65afc2",
+   "what": "integration-suite totals corrected from 43/50 and 37/50 to 41/48 and 35/48 (addition error in the summary line; no result data changed)"
+  }
+ ]
 }

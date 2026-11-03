@@ -43,8 +43,8 @@ local backend on 4 CPU threads:
 | Median / p95 latency | 3.3 s / 15.5 s | 5.5 s / 18.8 s |
 | Peak memory (llama-server) | 1,944 MB | 1,972 MB |
 
-Integration suite (50 live cases through the production path): 43 / 50
-(production LFM3 37 / 50); malformed backend output 18 / 18. The gain is
+Integration suite (48 live cases through the production path): 41 / 48
+(production LFM3 35 / 48); malformed backend output 18 / 18. The gain is
 from fine-tuning: the untrained model on the same base scores 0.317 on
 test-real. Seeds 1 and 2 with the adapter at load agree (mean 0.657 /
 0.653), so seed 1 is not a lucky draw.

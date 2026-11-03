@@ -32,7 +32,7 @@ to production Brain without explicit approval.
 | 5 | WildChat licensing and privacy | `WILDCHAT-OPEN-ISSUES.md`: 8 open items for owner/counsel; licence notice added next to the published data |
 | 6 | Automatic / pending / discard tiers, confirmation workflow | **Done**: frozen on val (`TIERS-FROZEN.json`), tested once (`TIERS.md` Results). 3:1 → all automatic (ships as `tiers: null`); 5:1 option offered to owner |
 | 7 | Brain integration package (no production change) | **Done**: branch `codeply-memory-model-integration` (rebased on this branch, not merged): tiers, pending memories, catalog entry with the release sha256, prompt-style fix; all tests pass |
-| 8 | Integration test suite | **Done**: exported seed 1 43 / 50 (gate fails on duplicates, production also fails), production 37 / 50; malformed 18 / 18; `scripts/memory-model-test.mjs` 28 checks |
+| 8 | Integration test suite | **Done**: exported seed 1 41 / 48 (gate fails on duplicates, production also fails), production 35 / 48; malformed 18 / 18; `scripts/memory-model-test.mjs` 28 checks |
 | 9 | Limitations, performance, deployment, rollback | **Done**: `MODEL-CARD.md` (final numbers), `DEPLOYMENT.md`, `rollback-memories.mjs` (tested) |
 
 ## Log
@@ -86,7 +86,7 @@ to production Brain without explicit approval.
   0.658 (P 0.792), Benchmark-520 0.675 (P 0.733); export vs adapter at
   load CIs include zero; vs production LFM3 +0.30..+0.41 / +0.06..+0.14.
   Logprobs do not change answers (8 / 8).
-* Integration suite: 43 / 50 (production 37 / 50). Duplicates gate fails
+* Integration suite: 41 / 48 (production 35 / 48; first reported as 43 / 50 and 37 / 50, an addition error). Duplicates gate fails
   for both models (Brain exact-value dedup + the model not repeating known
   facts); gate not loosened; Brain follow-up needs owner approval.
 * Tiers frozen on val, tested once: 3:1 → everything automatic; Benchmark-520

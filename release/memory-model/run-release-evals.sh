@@ -5,7 +5,7 @@
 #   2. the confidence provider (production backend + token log-probabilities; answers identical to production)
 #      on val, test-real and Benchmark-520, in chunks of 50 -> release/memory-model/results/
 #      = the post-export evaluation (task 3) and the data for the tier selection (TIERS.md, val only)
-#   3. the integration suite (50 live cases) on the same model
+#   3. the integration suite (48 live cases) on the same model
 # Each result is committed and pushed as it lands.
 # Usage: W=<work dir> release/memory-model/run-release-evals.sh <seed> <exported Q4_K_M gguf>
 set -u

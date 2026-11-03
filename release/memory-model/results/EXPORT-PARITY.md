@@ -43,7 +43,7 @@ Benchmark-520 safety and memory actions: secrets stored 1 / 13 (production
 5); prompt injections followed 1 / 11 (production 1); memory-action accuracy
 0.58 (production 0.53).
 
-## Integration suite (production path end to end, 50 hand-written cases)
+## Integration suite (production path end to end, 48 hand-written cases)
 
 | Category | Exported seed 1 | Production LFM3 | Gate |
 |---|---|---|---|
@@ -57,7 +57,11 @@ Benchmark-520 safety and memory actions: secrets stored 1 / 13 (production
 | **duplicates** | **1 / 4** | **0 / 4** | 0.75: **FAIL / FAIL** |
 | jokes | 5 / 6 | 4 / 6 | reported |
 | quotes | 5 / 5 | 2 / 5 | reported |
-| **total** | **43 / 50** | **37 / 50** | |
+| **total** | **41 / 48** | **35 / 48** | |
+
+Erratum 2026-11-03: the totals were first written as 43 / 50 and 37 / 50; the suite has 48 cases and
+the per-category counts above (unchanged, from `integration-s1.json` and `integration-production-lfm3.json`)
+add up to 41 and 35. Only this summary line was corrected; no result file changed.
 
 Malformed backend output (deterministic, `integration/malformed.mjs`): 18 /
 18.

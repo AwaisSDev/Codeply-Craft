@@ -1,30 +1,40 @@
 # Integrating the memory model into Brain (instructions, rollout, rollback)
 
 Nothing here is applied to production. The code changes are on branch
-`codeply-memory-model-integration` (one commit on top of
-`codeply-memory-model`), to be merged only with the owner's approval.
+`codeply-memory-model-integration` (three commits on top of
+`codeply-memory-model`), to be merged only with the owner's approval. A
+separate, optional Brain fix for duplicate values is on
+`codeply-brain-value-match` (on top of the integration branch; see
+`results/BRAIN-DEDUP.md`). Before any release, the legal and privacy
+questions in `LEGAL-AND-PRIVACY-QUESTIONS.md` must be answered; the private
+opt-in path is in `PRIVATE-OPT-IN.md`.
 
 ## 1. What changes in production code
 
 | File | Change | Effect when merged but not configured |
 |---|---|---|
-| `codeply-cli/lib/local-runtime.js` | catalog entry `lfm3-1.7b-memory-v1-q4` (full prompt, thinking off, `--swa-full`, ctx 8,192; `sha256`, `tiers` filled at release) | none until the model is installed and selected |
+| `codeply-cli/lib/local-runtime.js` | catalog entry `lfm3-1.7b-memory-v1-q4` (full prompt, thinking off, `--swa-full`, ctx 8,192, `sha256` of the release candidate, `tiers: null`, `optIn: true`); `selectModel`: an opt-in model is never the fallback | none until the model is installed **and** selected |
 | `context-desktop.js` | the catalog's `style` wins over the "`codeply-*` reads the compact prompt" rule; `tiers` from the catalog | none for existing models (no `style`, no `tiers`) |
 | `codeply-cli/lib/context-model.js` | local backend option `confidence`: requests token log-probabilities, returns a confidence per observation | off unless asked |
 | `codeply-cli/lib/context-schema.js` | the guard carries confidences, by position, next to the answer (a confidence written in the answer is ignored) | none |
 | `codeply-cli/lib/context-tiers.js` | new: confidences and the automatic / pending / discard decision | none |
 | `codeply-cli/lib/context-engine.js` | applies tiers when the settings have them | `tiers: null` by default |
 | `codeply-cli/lib/brain.js` | an observation marked `pending` is stored `tentative` with a 30-day expiry; promotion (seen again, stated) or the user's confirm clears it | none (no one sends `pending` yet) |
-| `scripts/context/fetch-model.mjs` | an unpublished model installs from a file | none |
+| `scripts/context/fetch-model.mjs` | an unpublished model installs from a file; a catalog model whose file does not match the catalog SHA-256 is refused | none |
 
-Tests: `node scripts/memory-model-test.mjs` (28 checks),
-`node scripts/brain-test.mjs`, `node scripts/context-test.mjs` (unchanged,
-all pass on the branch).
+Tests (all pass on the branch): `node scripts/memory-model-test.mjs` (33
+checks), `node scripts/brain-test.mjs`, `node scripts/context-test.mjs`,
+`node release/memory-model/rollback-test.mjs`,
+`node release/memory-model/optin-report-test.mjs`,
+`node release/memory-model/integration/malformed.mjs` (18), and
+`node release/memory-model/verify-frozen.mjs` (frozen results and checksum).
 
 ## 2. Release steps (after owner approval and the WildChat decisions)
 
-1. Pick the artifact: the exported Q4_K_M of the selected seed
-   (`results/EXPORT-PARITY.md` names it, with its SHA-256).
+1. The artifact: `codeply-memory-lfm3-s1-Q4_K_M.gguf`, SHA-256
+   `7360aaed…ac14f9` (`results/FROZEN-MANIFEST.json`; check a copy with
+   `verify-frozen.mjs --gguf <file>`). Ship `notices/NOTICE.md` and
+   `notices/LFM-OPEN-LICENSE-v1.0.txt` with it in every channel.
 2. Host it where clients can download it (a Hugging Face repo under the
    owner's account; public hosting waits for `WILDCHAT-OPEN-ISSUES.md`), then
    set `repo` and `sha256` in the catalog entry.
@@ -35,9 +45,10 @@ all pass on the branch).
    `node release/memory-model/integration/run-integration.mjs --model lfm3-1.7b-memory-v1-q4`
    (gate: secrets and injection 100 %, the other categories at their
    thresholds; jokes and quotes reported).
-5. Ship as **opt-in** first: the user selects the model in local
-   intelligence settings; the current default (`lfm3-1.7b-qad-q4`) stays the
-   default for one release.
+5. Ship as **opt-in** first, in phases (`PRIVATE-OPT-IN.md`: internal, named
+   testers, public opt-in): the user selects the model in local intelligence
+   settings; the current default (`lfm3-1.7b-qad-q4`) stays the default.
+   Testers share the counts-only `optin-report.mjs` output.
 6. Make it the default after a clean opt-in period (no rise in memories
    the users delete or correct, no latency complaints).
 

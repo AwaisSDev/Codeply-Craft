@@ -1,5 +1,9 @@
 # WildChat: licensing and privacy issues that are not resolved (task 5)
 
+> **Superseded for decisions by `LEGAL-AND-PRIVACY-QUESTIONS.md`** (2026-11-03): the
+> same items as specific questions, split into counsel / owner / technical, plus the
+> base model's licence (B1) and the labelling terms (C3). This file keeps the evidence.
+
 No legal clearance is assumed. This lists exactly what is open, what was
 checked, and what was done that needs no legal judgement. Facts and sources:
 `research/dtw/label/audit/WILDCHAT-AUDIT.md`.
