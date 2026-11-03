@@ -17,6 +17,7 @@ what the experiments can and cannot establish.
 |---|---|---|---|
 | v2.1 | 2026-11-01 | **D1:** a record-pair MERGE must pass its own threshold θ_M **and** the main write gate: it needs a gated PERSIST unit in the same segment addressed to a record or profile of one of the two records. Invariant I1 is reworded accordingly. L_mrg carries the same 3:1 false-positive cost; θ_M is calibrated at 3:1; merge precision and recall are reported separately (§2.5, §5.10, §5.13, §6.1, §6.6) | Owner, after Phase 3 test T5 showed merges bypassing the gate |
 | v2.1 | 2026-11-01 | **D2:** a parameter-free LayerNorm on encoder outputs before the heads (`head_norm`) is a pre-registered **pilot choice**. Both variants are run in the Phase 5 pilot under identical data and conditions for PASTE and M1c, selected on validation only, and the choice is documented before the main experiment (§6.5) | Owner, after Phase 3 found saturated heads at initialisation |
+| v2.2 candidate | 2026-11-03 | **A3, profile rows** (`profile_rows`, default off; v2.1 stays the reference and becomes an ablation if v2.2 is adopted): PASTE profiles enter as verbatim token rows after the segment instead of one pooled soft token; π̃_e = mean of the row's body-token outputs. Records, temporary items and memory tokens are unchanged (record binding still uses the pooled profile embedding). Adopted only if it improves the validation primary metric over v2.1 at equal budget (§4.4). **With this flag PASTE is no longer a pure soft-token memory for profiles**; this must be stated wherever v2.2 results are reported | me (owner authorisation of 2026-11-03 for in-scope research decisions), after E26 traced PASTE's whole addressing deficit vs M1c to entity resolution (entity factor 0.50 vs 0.87-0.89) |
 
 ## 0. Summary
 
@@ -217,6 +218,18 @@ $$X^0_s = [\,x^{mem}_{1..r};\ x^{tmp}_{1..T};\ x^{prof}_{1..E};\ x^{att}_{1..K};
   profiles and temporary items, because they share a position and no other
   order signal exists. Order shuffling is therefore unnecessary for PASTE
   (M1c needs it). Unit test T3 checks this.
+* **v2.2 candidate, profile rows (A3).** With `profile_rows` the prefix has
+  no profile tokens; instead each profile's verbatim tokens plus [SEP] form a
+  row appended after the segment:
+  $X^0_s = [\,\dots;\ \mathrm{LN}_0(\mathrm{Emb}(x_s));\ \mathrm{LN}_0(\mathrm{Emb}(\rho^{prof}_1));\dots;\ \mathrm{LN}_0(\mathrm{Emb}(\rho^{prof}_E))\,]$.
+  Every row's k-th token has position n_s + 1 + k (parallel rows, as in
+  parallel context windows), row tokens are global like prefix tokens, and a
+  block mask forbids attention between tokens of different rows. Rows are
+  therefore unambiguous and the encoder stays exactly permutation-equivariant
+  over profiles (T3 holds; `tests/test_profile_rows.py`). π̃_e is the mean of
+  row e's body-token outputs (the [SEP] state for an empty body). W_prof is
+  unused under this flag. Motivation: E25/E26 show that one pooled vector per
+  profile loses the name evidence M1c resolves entities with.
 
 ### 4.5 Encoder
 

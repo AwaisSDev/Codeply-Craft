@@ -67,20 +67,28 @@ class ModernBert(nn.Module):
         """LN0(Emb(ids)): the layer-0 input map (spec §3)."""
         return self.emb_norm(self.tok(ids))
 
-    def build_masks(self, pos, valid, prefix):
-        """Boolean attention masks [B, 1, N, N] for global and local layers (spec §4.4)."""
+    def build_masks(self, pos, valid, prefix, block=None):
+        """Boolean attention masks [B, 1, N, N] for global and local layers (spec §4.4).
+
+        block (optional, [B, N] long): tokens with block ids b > 0 and b' > 0, b != b', do not attend to each other
+        (parallel rows, A3); block 0 attends and is attended as usual."""
         keyok = valid[:, None, None, :]
         full = keyok.expand(-1, 1, pos.shape[1], -1)
         near = (pos[:, :, None] - pos[:, None, :]).abs() <= self.cfg.local_window // 2
         glob = prefix[:, :, None] | prefix[:, None, :]
         local = (near | glob)[:, None] & keyok
+        if block is not None:
+            bq, bk = block[:, :, None], block[:, None, :]
+            ok = ((bq == bk) | (bq == 0) | (bk == 0))[:, None]
+            full, local = full & ok, local & ok
         return full, local
 
-    def forward(self, x0, pos, valid, prefix=None):
-        """x0: [B, N, d] layer-0 inputs; pos: [B, N] positions; valid: [B, N] bool; prefix: [B, N] bool."""
+    def forward(self, x0, pos, valid, prefix=None, block=None):
+        """x0: [B, N, d] layer-0 inputs; pos: [B, N] positions; valid: [B, N] bool; prefix: [B, N] bool;
+        block: [B, N] long or None (see build_masks)."""
         if prefix is None:
             prefix = torch.zeros_like(valid)
-        full, local = self.build_masks(pos, valid, prefix)
+        full, local = self.build_masks(pos, valid, prefix, block)
         hd = self.cfg.d // self.cfg.heads
         cg, sg = _rope_cache(pos, hd, self.cfg.rope_theta_global)
         cl, sl = _rope_cache(pos, hd, self.cfg.rope_theta_local)

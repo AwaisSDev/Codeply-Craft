@@ -2,7 +2,10 @@
 loop at each theta_W and keep the one minimising 3*FP + FN over persistent operations. Each threshold is a full
 replay, because thresholds change the closed-loop trajectory.
 
-    python -m paste.calibrate --run RUN_DIR --val V.jsonl [--limit 200]
+    python -m paste.calibrate --run RUN_DIR --val V.jsonl [--limit 200] [--grid 0.9 0.95 0.97 0.99 --out-name calibration-wide.json]
+
+The pre-registered grid is GRID. E24 chose its edge (0.9) for every arm, so a wider grid can be run into a separate
+file (DECISIONS 2026-11-03); it is applied identically to every system and uses validation only.
 """
 import argparse
 import json
@@ -26,11 +29,13 @@ def main():
     ap.add_argument("--val", nargs="+", required=True)
     ap.add_argument("--limit", type=int, default=200)
     ap.add_argument("--cost", type=float, default=3.0)
+    ap.add_argument("--grid", type=float, nargs="+", default=list(GRID))
+    ap.add_argument("--out-name", default="calibration.json")
     a = ap.parse_args()
     if any("frozen" in v or "/test-" in v or "/stress-" in v for v in a.val):
         raise SystemExit("calibration uses validation data only")
     conf = json.load(open(os.path.join(a.run, "config.json")))
-    cfg = PasteConfig(head_norm=conf.get("head_norm", False), flat_address=conf.get("flat_address", False))
+    cfg = PasteConfig.from_run(conf)
     text = Text(ettin_files(cfg.backbone)[1])
     model = make_model(conf["system"], cfg, text)
     model.load_state_dict(torch.load(os.path.join(a.run, "final.pt"), weights_only=False)["model"])
@@ -39,7 +44,7 @@ def main():
     for v in a.val:
         eps += load_eps([v])[:a.limit]
     rows = []
-    for th in GRID:
+    for th in a.grid:
         thr = dict(cfg.thresholds, write=th, merge=max(th, cfg.thresholds["merge"]))
         with torch.no_grad():
             s, per = evaluate(eps, model_propose(PasteAdapter(model, text, thresholds=thr)))
@@ -49,7 +54,7 @@ def main():
         print(json.dumps(rows[-1]), flush=True)
     best = min(rows, key=lambda r: r["cost"])
     json.dump({"grid": rows, "chosen": best, "cost_ratio": a.cost, "val_files": a.val, "limit": a.limit},
-              open(os.path.join(a.run, "calibration.json"), "w"), indent=1)
+              open(os.path.join(a.run, a.out_name), "w"), indent=1)
     print(json.dumps({"chosen": best}), flush=True)
 
 

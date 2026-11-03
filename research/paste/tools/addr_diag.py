@@ -42,7 +42,7 @@ def main():
         raise SystemExit("validation data only")
     torch.set_num_threads(a.threads)
     conf = json.load(open(os.path.join(a.run, "config.json")))
-    cfg = PasteConfig(head_norm=conf.get("head_norm", False), flat_address=conf.get("flat_address", False))
+    cfg = PasteConfig.from_run(conf)
     text = Text(ettin_files(cfg.backbone)[1])
     m = make_model(conf["system"], cfg, text)
     m.load_state_dict(torch.load(os.path.join(a.run, "final.pt"), weights_only=False)["model"])

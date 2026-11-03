@@ -311,7 +311,8 @@ class PasteModel(DecisionMixin, nn.Module):
             prof_static = torch.stack(st_p)
             ctx = self._ctx([p.ids for p in s.profiles])
             prof_ctx = torch.stack([c[p.idx].mean(0) for c, p in zip(ctx, s.profiles)])
-            parts.append(prof_static + self.W_prof(prof_ctx) + g[1])
+            if not self.cfg.profile_rows:             # A3: profiles enter as token rows after the segment instead
+                parts.append(prof_static + self.W_prof(prof_ctx) + g[1])
         if s.records:
             rp = torch.tensor([r.prof for r in s.records])
             a0 = torch.stack(st_a)
@@ -326,27 +327,54 @@ class PasteModel(DecisionMixin, nn.Module):
             parts.append(v0 + bind + self.W_val(vL) + mu + g[3])
         return torch.cat(parts)
 
+    def _profile_rows(self, s: StepInput):
+        """A3: each profile's verbatim tokens + [SEP] as a row after the segment. Every row starts at the position
+        after the segment (parallel rows) and is block-masked from the other rows, so the encoding is exactly
+        equivariant to profile order (T3) and rows cannot be confused with one another; the segment, the prefix and
+        the row itself see each row in every layer (rows are global like prefix tokens)."""
+        sep = s.seg_ids[-1]
+        ids, lens = [], []
+        for p in s.profiles:
+            body = [p.ids[i] for i in p.idx]
+            ids += body + [sep]; lens.append(len(body))
+        return ids, lens
+
     def encode(self, batch, prefix_masked=False):
-        """Batched encoder pass. prefix_masked=True hides every prefix token from the segment (test T2)."""
-        seqs, plens, nlens = [], [], []
+        """Batched encoder pass. prefix_masked=True hides every prefix token (and A3 profile row) from the segment
+        (test T2)."""
+        rows_on = self.cfg.profile_rows
+        seqs, plens, nlens, rlens = [], [], [], []
         for s in batch:
             static = self._static_all(s)
             p = self.prefix(s, static)
             seg = static[4]
-            seqs.append(torch.cat([p, seg])); plens.append(p.shape[0]); nlens.append(seg.shape[0])
+            parts, rl = [p, seg], []
+            if rows_on and s.profiles:
+                rids, rl = self._profile_rows(s)
+                parts.append(self.enc.embed(torch.tensor(rids)))
+            seqs.append(torch.cat(parts)); plens.append(p.shape[0]); nlens.append(seg.shape[0]); rlens.append(rl)
         B, N, d = len(batch), max(x.shape[0] for x in seqs), self.cfg.d
         x0 = torch.zeros(B, N, d)
         pos = torch.zeros(B, N, dtype=torch.long)
         valid = torch.zeros(B, N, dtype=torch.bool)
         pre = torch.zeros(B, N, dtype=torch.bool)
+        block = torch.zeros(B, N, dtype=torch.long) if rows_on else None
         for i, (x, P, n) in enumerate(zip(seqs, plens, nlens)):
-            x0[i, :P + n] = x
+            L = x.shape[0]
+            x0[i, :L] = x
             pos[i, P:P + n] = torch.arange(1, n + 1)
-            valid[i, :P + n] = True
+            valid[i, :L] = True
             pre[i, :P] = True
+            o = P + n
+            for e, ln_ in enumerate(rlens[i]):              # row e: tokens + SEP at positions n+1 .. n+1+len
+                pos[i, o:o + ln_ + 1] = torch.arange(n + 1, n + 2 + ln_)
+                pre[i, o:o + ln_ + 1] = True
+                block[i, o:o + ln_ + 1] = e + 1
+                o += ln_ + 1
             if prefix_masked:
                 valid[i, :P] = False
-        H = self.enc(x0, pos, valid, pre)
+                valid[i, P + n:L] = False
+        H = self.enc(x0, pos, valid, pre, block)
         out = []
         for i, s in enumerate(batch):
             r, T, E, K = self.cfg.r_mem, len(s.temps), len(s.profiles), len(s.records)
@@ -355,8 +383,15 @@ class PasteModel(DecisionMixin, nn.Module):
                 nonlocal o
                 t = H[i, o:o + k]; o += k
                 return t
-            mem, tmp, prof, att, val = take(r), take(T), take(E), take(K), take(K)
+            mem, tmp = take(r), take(T)
+            prof = None if rows_on else take(E)
+            att, val = take(K), take(K)
             seg = H[i, plens[i]:plens[i] + nlens[i]]
+            if rows_on:
+                o, pl = plens[i] + nlens[i], []
+                for ln_ in rlens[i]:
+                    pl.append(H[i, o:o + max(ln_, 1)].mean(0)); o += ln_ + 1     # empty body: the SEP state
+                prof = torch.stack(pl) if pl else H.new_zeros(0, self.cfg.d)
             if self.cfg.head_norm:                       # D2: parameter-free LayerNorm on head inputs (mem feeds GRU_H, not a head)
                 ln = lambda t: F.layer_norm(t, t.shape[-1:]) if t.numel() else t
                 tmp, prof, att, val, seg = ln(tmp), ln(prof), ln(att), ln(val), ln(seg)

@@ -51,6 +51,7 @@ class PasteConfig:
     init_std: float = 0.02
     flat_address: bool = False       # ablation A1 and the KV baseline: one softmax over Omega, bilinear scores only
     head_norm: bool = False          # D2 pilot choice: parameter-free LayerNorm on encoder outputs read by heads
+    profile_rows: bool = False       # A3 (v2.2 candidate, PASTE only): profiles as verbatim token rows, not pooled soft tokens
     thresholds: dict = field(default_factory=lambda: {
         "write": 0.5, "forget": 0.5, "retrieve": 0.5, "merge": 0.5, "expire": 0.5})
 
@@ -61,6 +62,12 @@ class PasteConfig:
         if name == "ettin-encoder-17m":
             return PasteConfig(backbone=name, d=256, layers=7, heads=4, ff=384)
         raise ValueError(name)
+
+    @staticmethod
+    def from_run(conf: dict) -> "PasteConfig":
+        """The model config of a training run's config.json (missing keys: the v2.1 defaults)."""
+        return PasteConfig(head_norm=conf.get("head_norm", False), flat_address=conf.get("flat_address", False),
+                           profile_rows=conf.get("profile_rows", False))
 
     def is_global(self, layer: int) -> bool:
         return layer % self.global_every == 0
