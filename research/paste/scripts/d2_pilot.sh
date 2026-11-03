@@ -4,10 +4,11 @@
 # Resumable: finished runs (final.pt + calibration.json) are skipped; unfinished runs resume from last.pt.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-PY=${PY:-$HOME/paste-venv/bin/python}
-DATA=${DATA:-$HOME/paste-data/train}
-RUNS=${RUNS:-$HOME/paste-runs/d2}
-export PASTE_HF_CACHE=${PASTE_HF_CACHE:-$HOME/paste-cache/hf}
+PASTE_HOME=${PASTE_HOME:-$HOME}
+PY=${PY:-$PASTE_HOME/paste-venv/bin/python}
+DATA=${DATA:-$PASTE_HOME/paste-data/train}
+RUNS=${RUNS:-$PASTE_HOME/paste-runs/d2}
+export PASTE_HF_CACHE=${PASTE_HF_CACHE:-$PASTE_HOME/paste-cache/hf}
 mkdir -p "$RUNS"
 $PY -m data.mix --train-dir "$DATA" --out "$DATA/train-mix.jsonl" | tee "$RUNS/mix.json"
 VAL="$DATA/val-programmatic.jsonl $DATA/api-val/val-api.jsonl"
