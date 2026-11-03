@@ -83,17 +83,27 @@ def main():
     ap.add_argument("--corrupt-del", type=float, default=0.0, help="per-record drop rate of the gold store (teacher-forced episodes after the curriculum)")
     ap.add_argument("--corrupt-ins", type=float, default=0.0, help="per-segment probability of one spurious record in the gold store")
     ap.add_argument("--warmup", type=float, default=0.06, help="warm-up share of optimizer steps")
+    ap.add_argument("--val-every-epoch", action="store_true",
+                    help="closed-loop val (default thresholds) after every epoch; final.pt = best epoch (spec §6.5)")
+    ap.add_argument("--patience", type=int, default=1, help="early stopping: epochs without val improvement (with --val-every-epoch)")
+    ap.add_argument("--device", default="cpu", help="cpu or cuda (sets the default device; T4 runs)")
+    ap.add_argument("--amp", action="store_true", help="fp16 autocast + GradScaler (cuda only; spec §6.5)")
     a = ap.parse_args()
     if any(("frozen" in f or "/test-" in f or "/stress-" in f) for f in a.train + a.val):
         raise SystemExit("frozen test/stress data can never be used for training or validation")
     torch.set_num_threads(a.threads)
+    dev = torch.device(a.device)
+    if dev.type == "cuda":
+        torch.set_default_device(dev)               # every torch.tensor(...) in the model code lands on the GPU
+    use_amp = a.amp and dev.type == "cuda"
     os.makedirs(a.out, exist_ok=True)
     json.dump(vars(a), open(os.path.join(a.out, "config.json"), "w"), indent=1)
     random.seed(a.seed); np.random.seed(a.seed); torch.manual_seed(a.seed)
     cfg = PasteConfig(head_norm=a.head_norm, flat_address=a.flat_address, profile_rows=a.profile_rows)
     text = Text(ettin_files(cfg.backbone)[1])
-    model = make_model(a.system, cfg, text)
+    model = make_model(a.system, cfg, text).to(dev)
     ad = PasteAdapter(model, text)
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
     enc_params = list(model.enc.parameters())
     ids = {id(p) for p in enc_params}
     new_params = [p for p in model.parameters() if id(p) not in ids]
@@ -112,12 +122,45 @@ def main():
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_at)
     ck = os.path.join(a.out, "last.pt")
     pos, step = 0, 0
+    ep_hist = []                                    # per-epoch val (with --val-every-epoch)
     if os.path.exists(ck):
-        st = torch.load(ck, weights_only=False)
+        st = torch.load(ck, weights_only=False, map_location=dev)
         model.load_state_dict(st["model"]); opt.load_state_dict(st["opt"]); sched.load_state_dict(st["sched"])
         pos, step = st["pos"], st["step"]
-        random.setstate(st["py_rng"]); torch.set_rng_state(st["torch_rng"])
+        random.setstate(st["py_rng"]); torch.set_rng_state(st["torch_rng"].cpu())
+        if dev.type == "cuda" and st.get("cuda_rng") is not None:
+            torch.cuda.set_rng_state_all([t.cpu() for t in st["cuda_rng"]])
+        if st.get("scaler"):
+            scaler.load_state_dict(st["scaler"])
+        ep_hist = st.get("ep_hist", [])
         print(f"resumed at episode {pos}/{len(order)}, step {step}", flush=True)
+    n_ep = len(train)
+
+    def run_val(tag):
+        """Closed-loop val at default thresholds; per-episode files and val<tag>.json. Returns pooled PE."""
+        model.eval()
+        res = {}
+        for vf in a.val:
+            eps = load_eps([vf])
+            eps = eps[:a.val_limit] if a.val_limit else eps
+            with torch.no_grad():
+                summary, per_ep = evaluate(eps, model_propose(PasteAdapter(model, text)))
+            res[os.path.basename(vf)] = summary
+            json.dump(per_ep, open(os.path.join(a.out, f"val{tag}-per-episode-{os.path.basename(vf)}"), "w"))
+        pooled_tp = sum(sum(r["per_op"][k]["tp"] for k in r["per_op"]) for r in res.values())
+        pooled_fp = sum(sum(r["per_op"][k]["fp"] for k in r["per_op"]) for r in res.values())
+        pooled_fn = sum(sum(r["per_op"][k]["fn"] for k in r["per_op"]) for r in res.values())
+        res["pooled_PE"] = round(2 * pooled_tp / max(1, 2 * pooled_tp + pooled_fp + pooled_fn), 4)
+        json.dump(res, open(os.path.join(a.out, f"val{tag}.json"), "w"), indent=1)
+        model.train()
+        return res["pooled_PE"]
+
+    def checkpoint():
+        save(ck, {"model": model.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(), "pos": pos, "step": step,
+                  "py_rng": random.getstate(), "torch_rng": torch.get_rng_state(),
+                  "cuda_rng": torch.cuda.get_rng_state_all() if dev.type == "cuda" else None,
+                  "scaler": scaler.state_dict() if use_amp else None, "ep_hist": ep_hist})
+    stopped = False
     log = open(os.path.join(a.out, "log.jsonl"), "a")
     t0, seg_count, run_loss, terms, gnorms = time.time(), 0, 0.0, {}, []
     tf_eps = load_eps([a.val[0]])[:a.val_tf] if a.val_tf else []
@@ -136,14 +179,16 @@ def main():
         corrupt = None
         if (a.corrupt_del or a.corrupt_ins) and pos >= a.curriculum * len(order):
             corrupt = (random.Random(a.seed * 7919 + pos), a.corrupt_del, a.corrupt_ins, pool)
-        loss, n = episode_loss_teacher_forced(model, ad, ep, closed_loop=cl, bio_w=a.bio_weight, terms=terms, corrupt=corrupt,
-                                              mix=mix, mix_rng=cl_rng)
-        (loss / a.accum).backward()
+        with torch.autocast("cuda", dtype=torch.float16, enabled=use_amp):
+            loss, n = episode_loss_teacher_forced(model, ad, ep, closed_loop=cl, bio_w=a.bio_weight, terms=terms, corrupt=corrupt,
+                                                  mix=mix, mix_rng=cl_rng)
+        scaler.scale(loss / a.accum).backward()
         seg_count += n; run_loss += float(loss.detach())
         pos += 1
         if pos % a.accum == 0 or pos == len(order):
+            scaler.unscale_(opt)
             gnorms.append(float(torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)))   # pre-clip norm
-            opt.step(); opt.zero_grad(); sched.step(); step += 1
+            scaler.step(opt); scaler.update(); opt.zero_grad(); sched.step(); step += 1
         if pos % a.ckpt_every == 0 or pos == len(order):
             el = time.time() - t0
             rec = {"pos": pos, "of": len(order), "step": step, "loss": round(run_loss / max(1, a.ckpt_every), 4),
@@ -155,25 +200,42 @@ def main():
                 rec["val_tf"] = tf_metrics(model, ad, tf_eps)
             log.write(json.dumps(rec) + "\n"); log.flush(); print(json.dumps(rec), flush=True)
             run_loss, terms, gnorms = 0.0, {}, []
-            save(ck, {"model": model.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(), "pos": pos, "step": step,
-                      "py_rng": random.getstate(), "torch_rng": torch.get_rng_state()})
+            checkpoint()
+        if a.val_every_epoch and pos % n_ep == 0 and pos < len(order) + 1 and len(ep_hist) < pos // n_ep:
+            e = pos // n_ep
+            pe = run_val(f"-epoch{e}")
+            save(os.path.join(a.out, f"epoch{e}.pt"), {"model": model.state_dict(), "config": vars(a), "epoch": e, "val_pooled_PE": pe})
+            ep_hist.append({"epoch": e, "val_pooled_PE": pe})
+            log.write(json.dumps({"epoch": e, "val_pooled_PE": pe, "pos": pos}) + "\n"); log.flush()
+            print(json.dumps({"epoch": e, "val_pooled_PE": pe}), flush=True)
+            checkpoint()
+            best = max(h["val_pooled_PE"] for h in ep_hist)
+            since = len(ep_hist) - 1 - max(i for i, h in enumerate(ep_hist) if h["val_pooled_PE"] == best)
+            if since >= a.patience and pos < len(order):
+                print(json.dumps({"early_stop_after_epoch": e, "best": best}), flush=True)
+                stopped = True
+                break
+    if a.val_every_epoch and ep_hist:
+        # final.pt = the best epoch on validation (default thresholds); its val files are copied to the plain names
+        import shutil
+        bi = max(range(len(ep_hist)), key=lambda i: (ep_hist[i]["val_pooled_PE"], -i))
+        e = ep_hist[bi]["epoch"]
+        best = torch.load(os.path.join(a.out, f"epoch{e}.pt"), weights_only=False, map_location="cpu")
+        torch.save({"model": best["model"], "config": vars(a), "epoch": e, "epochs_run": [h["epoch"] for h in ep_hist],
+                    "early_stopped": stopped}, os.path.join(a.out, "final.pt"))
+        for vf in a.val:
+            b = os.path.basename(vf)
+            shutil.copy(os.path.join(a.out, f"val-epoch{e}-per-episode-{b}"), os.path.join(a.out, f"val-per-episode-{b}"))
+        shutil.copy(os.path.join(a.out, f"val-epoch{e}.json"), os.path.join(a.out, "val.json"))
+        json.dump({"epochs": ep_hist, "best_epoch": e, "early_stopped": stopped}, open(os.path.join(a.out, "epochs.json"), "w"), indent=1)
+        print(json.dumps({"best_epoch": e, "val_pooled_PE": ep_hist[bi]["val_pooled_PE"]}), flush=True)
+        return
     # closed-loop validation (default thresholds; calibration is a separate step)
+    pe = run_val("")
     model.eval()
-    res = {}
-    for vf in a.val:
-        eps = load_eps([vf])
-        eps = eps[:a.val_limit] if a.val_limit else eps
-        with torch.no_grad():
-            summary, per_ep = evaluate(eps, model_propose(PasteAdapter(model, text)))
-        res[os.path.basename(vf)] = summary
-        json.dump(per_ep, open(os.path.join(a.out, f"val-per-episode-{os.path.basename(vf)}"), "w"))
-    pooled_tp = sum(sum(r["per_op"][k]["tp"] for k in r["per_op"]) for r in res.values())
-    pooled_fp = sum(sum(r["per_op"][k]["fp"] for k in r["per_op"]) for r in res.values())
-    pooled_fn = sum(sum(r["per_op"][k]["fn"] for k in r["per_op"]) for r in res.values())
-    res["pooled_PE"] = round(2 * pooled_tp / max(1, 2 * pooled_tp + pooled_fp + pooled_fn), 4)
-    json.dump(res, open(os.path.join(a.out, "val.json"), "w"), indent=1)
-    torch.save({"model": model.state_dict(), "config": vars(a)}, os.path.join(a.out, "final.pt"))
-    print(json.dumps({"val_pooled_PE": res["pooled_PE"]}), flush=True)
+    sd = {k: v.cpu() for k, v in model.state_dict().items()}
+    torch.save({"model": sd, "config": vars(a)}, os.path.join(a.out, "final.pt"))
+    print(json.dumps({"val_pooled_PE": pe}), flush=True)
 
 
 if __name__ == "__main__":
