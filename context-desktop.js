@@ -87,7 +87,7 @@ function localTiers() {
   try {
     const RT = lib('local-runtime.js');
     const installed = RT.models();
-    const model = installed.find((m) => m.id === settings.model) || installed[0];
+    const model = RT.selectModel(installed, settings.model);
     return (model && model.tiers) || null;
   } catch { return null; }
 }
@@ -100,7 +100,7 @@ function buildLocal() {
     return M.createLocalProvider({ baseUrl: settings.localUrl, model: settings.localModel, style: 'full' });
   }
   const installed = RT.models();
-  const model = installed.find((m) => m.id === settings.model) || installed[0];
+  const model = RT.selectModel(installed, settings.model);
   if (!model) return M.createLocalProvider({ ensure: async () => { throw new Error('no local model installed'); }, canStart: () => false });
   runtime = RT.createRuntime({ model, threads: settings.threads || undefined, ctx: settings.ctx, idleMs: settings.idleMinutes * 60000, args: ['-ctk', 'q8_0', '-ctv', 'q8_0'], log: (s) => console.log(s) });
   // The prompt the model was trained on: the catalog says (style); otherwise a Codeply-trained model (id starts

@@ -140,6 +140,22 @@ console.log('\nCatalog');
   const c = RT.CATALOG['lfm3-1.7b-memory-v1-q4'];
   check('the memory model reads the full prompt it was trained on, with thinking off and --swa-full', c && c.style === 'full' && c.extra.chat_template_kwargs.enable_thinking === false && c.serverArgs.includes('--swa-full'));
   check('it has no download repository until it is published', c.repo === '');
+  check('it is opt-in: only used when selected', c.optIn === true);
+  const inst = [{ id: 'lfm3-1.7b-memory-v1-q4', optIn: true }, { id: 'lfm3-1.7b-qad-q4' }];
+  check('an installed opt-in model is not the fallback', RT.selectModel(inst, '').id === 'lfm3-1.7b-qad-q4');
+  check('a selected opt-in model is used', RT.selectModel(inst, 'lfm3-1.7b-memory-v1-q4').id === 'lfm3-1.7b-memory-v1-q4');
+  check('only an opt-in model installed: nothing runs until it is selected', RT.selectModel([inst[0]], '') === null);
+}
+
+// Installing from a file: the catalog checksum is enforced (a wrong file is refused and not linked).
+{
+  const { spawnSync } = await import('child_process');
+  const dir = path.join(tmp, 'models'); const bogus = path.join(tmp, 'not-the-model.gguf');
+  fs.writeFileSync(bogus, 'not the release candidate');
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts/context/fetch-model.mjs'), 'lfm3-1.7b-memory-v1-q4', '--from', bogus], { env: { ...process.env, CODEPLY_MODELS_DIR: dir }, encoding: 'utf8' });
+  const linked = fs.existsSync(path.join(dir, RT.CATALOG['lfm3-1.7b-memory-v1-q4'].file));
+  const manifest = fs.existsSync(path.join(dir, 'manifest.json')) ? fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8') : '';
+  check('fetch-model refuses a file whose SHA-256 is not the catalog\'s', r.status === 1 && /not the catalog/.test(r.stderr) && !linked && !manifest.includes('memory-v1'), r.stderr);
 }
 
 console.log(failures ? `\n${failures} FAILED` : '\nAll passed');

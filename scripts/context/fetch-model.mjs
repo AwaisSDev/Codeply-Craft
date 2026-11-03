@@ -58,6 +58,12 @@ if (from) {
 }
 
 const hash = await sha256(dest);
+// A catalog model has a known checksum: a different file (wrong seed, re-export, corruption) is not installed.
+if (spec.sha256 && hash !== spec.sha256 && !args.includes('--force')) {
+  console.error(`${id}: the file's SHA-256 ${hash} is not the catalog's ${spec.sha256}. Not installed.`);
+  if (from) { try { fs.unlinkSync(dest); } catch {} }
+  process.exit(1);
+}
 const manifestFile = path.join(dir, 'manifest.json');
 let manifest = [];
 try { manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8')); } catch {}
