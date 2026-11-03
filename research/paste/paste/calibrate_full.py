@@ -31,7 +31,7 @@ from .modernbert import ettin_files
 from .text import Text
 from .train import load_eps, make_model
 
-G_W = (0.5, 0.8, 0.9, 0.95, 0.98)
+G_W = (0.5, 0.8, 0.9, 0.95, 0.98, 0.99, 0.995)
 G_F = (0.5, 0.7, 0.9)
 G_M = (0.5, 0.7, 0.9, 0.95)
 G_R = tuple(round(0.05 * i, 2) for i in range(1, 20))
