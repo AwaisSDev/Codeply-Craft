@@ -43,6 +43,21 @@ Pre-registered hypotheses are in `ARCHITECTURE-HYPOTHESES.md` and are not edited
   final-layer states, so the name-role binding that separates "brother Adeel" from "manager Adeel" is blurred
   before any attention happens. M1c's segment tokens attend to name and role tokens individually.
   Proposal A3 (below) tests this directly.
+* **Verbatim profile rows close the identity gap (E27, PR, formerly "A3").** Same budget and data: calibrated
+  val PE 0.598 vs 0.397 (v2.1) vs 0.677 (M1c), pre-fix evaluator, 200 + 200 val. Teacher-forced entity factor
+  0.88 (v2.1 0.50, M1c 0.87). Identity needs verbatim name/role tokens; the remaining gap to M1c (≈ 0.08) is not
+  identity. Full-val cross-fitted bootstrap pending.
+* **Closed-loop error taxonomy (`tools/error_diag.py`, 100 + 100 val episodes).** Shared by PASTE-PR and M1c:
+  WRITE to another existing profile (74 / 63 on programmatic: look-alike names such as sister Bushra vs friend
+  Bushra, pronouns), duplicate WRITE where gold is UPDATE/MERGE_INTO (44 / 48), and on API wording spans that
+  match no gold unit (WRITE 209 / 179). PASTE-specific: wrong attribute (29 vs 9 programmatic; 42 vs 25 API),
+  more UPDATE/MERGE_INTO where gold is WRITE, FORGET addressed to a profile instead of a record. Plausible reason
+  for the attribute gap: M1c reads existing attribute names as text; PASTE's records are soft tokens. This bears
+  directly on the central hypothesis and is reported as a finding, not patched around.
+* **Two evaluation/training-gold cascades found and fixed (DECISIONS 2026-11-03).** A system that missed the
+  write creating a person could never be credited for later correct NEW-ENT writes about them (≈ 13 % of
+  PASTE-PR's wrong-entity false writes), and closed-loop training gave such units no mention target. Both fixed
+  before any final evaluation, with tests.
 
 ## Open hypotheses (mine; untested)
 
@@ -55,7 +70,8 @@ Pre-registered hypotheses are in `ARCHITECTURE-HYPOTHESES.md` and are not edited
 
 ## Research queue (to investigate, in priority order)
 
-0. **A3: verbatim profile rows (PASTE v2.2 candidate).** Profiles enter as token rows after the segment, as in
+0. ~~A3~~ **PR: verbatim profile rows (PASTE v2.2 candidate)** — implemented and run (E27); adoption decided on
+   the full-val cross-fitted bootstrap. Original item: Profiles enter as token rows after the segment, as in
    M1c; records and temporary items stay soft tokens (the store's size, and PASTE's efficiency case, scale with
    records, not profiles: E median 5, max 9). Profile vectors for the heads become the row-token means, as in
    M1c. v2.1 stays as an ablation. Run PASTE-v2.2 for the same 1,000-step pilot budget and compare entity factor
@@ -81,3 +97,6 @@ and is recorded as a spec amendment before the main runs:
 4. **Optional shared remedies to evaluate after D2:** frozen per-dimension standardisation before head LN
    (Timkey & van Schijndel 2021); LP-FT warm start (heads first, encoder frozen; Kumar et al. 2022).
 5. Still open: does pooled soft-token detail loss hurt exact-value matching at sub-100M (KBLaM, xRAG)?
+6. **Closed-loop error classes (research-queue-2026-11-03b.md):** profile-drop corruption for NIL training (V4,
+   running), FORGET upsampling if variants do not fix FORGET_PROFILE false positives, an add-vs-update decoding
+   rule only if it helps both systems on validation, span changes only after the learning curve.
