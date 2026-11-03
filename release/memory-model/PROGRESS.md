@@ -26,14 +26,14 @@ to production Brain without explicit approval.
 | # | Task | Status |
 |---|---|---|
 | 1 | Third seed | Blocked on free GPU quota (Kaggle refused 2026-11-03 10:00). Ready: `kaggle-memory-model.ipynb` (exports seeds 1-2 with GPU imatrix, trains + exports seed 3); daily retry scheduled 14:17 UTC |
-| 2 | Production export path (merge, imatrix, Q4_K_M) | Seed 1 running locally (CPU): merge + f16 done in 3 min, importance matrix ~2 h |
+| 2 | Production export path (merge, imatrix, Q4_K_M) | **Seed 1 exported** (12:00 UTC): Q4_K_M 1,099,627,456 B, SHA-256 `7360aaed…ac14f9`; stored in private Kaggle dataset `awaissididique/codeply-memory-model-gguf` (s1.tar: Q4_K_M, imatrix.dat, SHA256SUMS) |
 | 3 | Post-export evaluation (test-real, Benchmark-520) | Pending 2 |
 | 4 | Jokes and quotes | Done: `JOKES-AND-QUOTES.md` (labels never learned; same rate as production; fix = v2 data; cue guard rejected) |
 | 5 | WildChat licensing and privacy | `WILDCHAT-OPEN-ISSUES.md`: 8 open items for owner/counsel; licence notice added next to the published data |
 | 6 | Automatic / pending / discard tiers, confirmation workflow | Design + selection pre-registered (`TIERS.md`); thresholds pending the exported model's val run |
 | 7 | Brain integration package (no production change) | Branch `codeply-memory-model-integration` (not merged): tiers, pending memories, catalog entry, prompt-style fix; all tests pass |
 | 8 | Integration test suite | `integration/`: 50 live cases (to run on the exported model) + 18 malformed-output cases (pass); `scripts/memory-model-test.mjs` on the integration branch (28 checks) |
-| 9 | Limitations, performance, deployment, rollback | Pending |
+| 9 | Limitations, performance, deployment, rollback | Drafts: `MODEL-CARD.md`, `DEPLOYMENT.md`; rollback tool `rollback-memories.mjs` (tested) |
 
 ## Log
 
@@ -66,3 +66,17 @@ to production Brain without explicit approval.
 * Brain already has the pending state the tiers need (`tentative`, promoted
   by a second sighting or `confirm`), but tentative memories never expired;
   the integration branch adds a 30-day expiry for pending memories only.
+
+### 2026-11-03 12:01 UTC
+* **Production export path works** for seed 1 on CPU: merge (PEFT, fp16,
+  pinned base revision) + f16 conversion 3 min; importance matrix over 200
+  chunks of the realistic val prompts ~2 h; Q4_K_M + Q8_0 quantization.
+  Q4_K_M SHA-256 `7360aaed7410cac445d9901f8a85b876bee6b76d1cb83b05404480b5b9ac14f9`
+  (1,099,627,456 bytes); Q8_0 `017bdbfa…01f5eb`.
+* Artifact stored durably in the private Kaggle dataset
+  `awaissididique/codeply-memory-model-gguf`.
+* Release evaluation started automatically (`run-release-evals.sh 1`):
+  logprobs parity, confidence runs (val, test-real, Benchmark-520), live
+  integration suite.
+* Built meanwhile: tier selection script (`select_tiers.py`), deployment and
+  rollback guide (`DEPLOYMENT.md`), rollback tool + test.
