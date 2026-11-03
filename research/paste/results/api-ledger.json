@@ -1,6 +1,6 @@
 {
  "budget_usd": 95.0,
- "spent_usd": 38.1042,
+ "spent_usd": 54.8003,
  "approved": "owner 2026-11-02, option B (DATASET-AUDIT section 6); the pilot ($1.87) was a separate approval",
  "batches": [
   {
@@ -42,6 +42,22 @@
    "worst_usd": 33.99,
    "actual_usd": 11.3388,
    "out": "/home/user/paste-data/train/api-val"
+  },
+  {
+   "batch_id": "msgbatch_01DbvF1hGDYcaLeSyhSsSbTd",
+   "plans": "plans.jsonl",
+   "n": 900,
+   "worst_usd": 46.39,
+   "actual_usd": 16.6961,
+   "out": "/home/user/paste-data/train/api-train/chunk-00"
+  },
+  {
+   "batch_id": "msgbatch_011XVCWaJC5Q1yB4ZrHTtgkq",
+   "plans": "plans.jsonl",
+   "n": 739,
+   "worst_usd": 38.07,
+   "actual_usd": null,
+   "out": "/home/user/paste-data/train/api-train/chunk-01"
   }
  ]
 }
