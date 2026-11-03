@@ -110,7 +110,8 @@ async function main() {
     for (const [k, c] of cases.entries()) {
       const { outcome, fails } = await runCase(c, provider, tmp, k);
       const pass = outcome.ok && !fails.length;
-      rows.push({ id: c.id, category: c.category, pass, fails: outcome.ok ? fails : [`backend error: ${outcome.error}`], ms: outcome.ms, actions: outcome.results.map((r) => `${r.action}:${r.o.certainty}:${(r.memory && r.memory.text) || r.o.text}`) });
+      rows.push({ id: c.id, category: c.category, pass, fails: outcome.ok ? fails : [`backend error: ${outcome.error}`], ms: outcome.ms, actions: outcome.results.map((r) => `${r.action}:${r.o.certainty}:${(r.memory && r.memory.text) || r.o.text}`),
+        observations: outcome.results.map((r) => ({ kind: r.o.kind, slot: r.o.slot || '', value: r.o.value || '', certainty: r.o.certainty, action: r.action })) });
       console.log(`${pass ? 'PASS' : 'FAIL'} ${c.id.padEnd(9)} ${pass ? '' : rows[rows.length - 1].fails.join(' | ').slice(0, 220)}`);
     }
   } finally { runtime.stop(); }

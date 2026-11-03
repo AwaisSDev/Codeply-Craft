@@ -1,0 +1,25 @@
+{
+ "frozenAt": "2026-11-03T17:13:13.747Z",
+ "artifact": {
+  "name": "codeply-memory-lfm3-s1-Q4_K_M.gguf",
+  "bytes": 1099627456,
+  "sha256": "7360aaed7410cac445d9901f8a85b876bee6b76d1cb83b05404480b5b9ac14f9",
+  "location": "private Kaggle dataset awaissididique/codeply-memory-model-gguf, s1.tar",
+  "catalogId": "lfm3-1.7b-memory-v1-q4"
+ },
+ "files": {
+  "results/EXPORT-PARITY.md": "e413f4eedb87e9cf47833ae072f02e553d41a1ef19238cd7b1f9a511231fdeed",
+  "results/TIERS-FROZEN.json": "34411cc7a19d3a8d0625785bcf6dd6b991db1b5dbb670127b91d19b8cc165197",
+  "results/logprobs-parity-s1.json": "cdb3a14dd45199f376b7d7225bdd85956cb092a7f9b8ef7755e1f7d7e24ce798",
+  "results/release-s1-val.json": "8ea7172c66d5d5b1df3e85ef4e92af93faa8c28b8383b20e61d68ae8158db6cd",
+  "results/release-s1-test-real.json": "a22d7653cb38c1734e8b90f91618f8419cf7b8305103bc780ad5c6cb5e3e1d38",
+  "results/release-s1-bench.json": "53b71e293c65492e39526f428b101b515f520a9bedad053e88467c3e1267c55d",
+  "results/details/release-s1-val.jsonl": "4dd440c94c8a91f6c0eacca699e37eb4ba237c2ffc6534e674e1fa4d8e3d8fec",
+  "results/details/release-s1-test-real.jsonl": "ffb121eb2b18d0014ff23ff0541f2d10fe16652694d06290f1b846e00ed6d4ef",
+  "results/details/release-s1-bench.jsonl": "a2a30a718ba6d2aa7639dd1c857699c38915c4ea53a78631d49f79e0425644c5",
+  "results/tiers-s1-val-selection.json": "03da25577b15b7a14e92ed96a8d88dab3d0307263aa203b9c40a7eefa42e45d7",
+  "results/tiers-s1-test.json": "f136c28bf9b441c86c2407c5ee86714b5bb3ea8ff43a78a328dd7f7c8c7e913a",
+  "results/integration-s1.json": "72672d559e59defb59b96087ce64c7f6b0ac5f492a33118e6a703117ebaf924b",
+  "results/integration-production-lfm3.json": "760ab87c69035850d9f25135def86951e5b2f58c7fd37e1c2853d8139d8e18a3"
+ }
+}
