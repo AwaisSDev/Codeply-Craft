@@ -1,0 +1,99 @@
+{
+  "model": "codeply-memory-lfm3-s1-q4",
+  "style": "full",
+  "at": "2026-11-03T17:18:04.628Z",
+  "byCategory": {
+    "duplicates": {
+      "n": 4,
+      "pass": 1,
+      "rate": 0.25,
+      "need": 0.75,
+      "gate": "FAIL"
+    }
+  },
+  "passed": false,
+  "rows": [
+    {
+      "id": "dup-01",
+      "category": "duplicates",
+      "pass": true,
+      "fails": [],
+      "ms": 16007,
+      "actions": [
+        "reinforced:stated:The user is a vegetarian."
+      ],
+      "observations": [
+        {
+          "kind": "fact",
+          "slot": "diet",
+          "value": "vegetarian",
+          "certainty": "stated",
+          "action": "reinforced"
+        }
+      ]
+    },
+    {
+      "id": "dup-02",
+      "category": "duplicates",
+      "pass": false,
+      "fails": [
+        "expected a brain action in [reinforced,kept] on /sheru/; got replaced:\"The user has a dog named Sheru.\""
+      ],
+      "ms": 4353,
+      "actions": [
+        "replaced:stated:The user has a dog named Sheru."
+      ],
+      "observations": [
+        {
+          "kind": "fact",
+          "slot": "pet",
+          "value": "dog named Sheru",
+          "certainty": "stated",
+          "action": "replaced"
+        }
+      ]
+    },
+    {
+      "id": "dup-03",
+      "category": "duplicates",
+      "pass": false,
+      "fails": [
+        "expected a brain action in [reinforced,kept] on /bullet/; got added:\"The user is currently on their mobile device.\""
+      ],
+      "ms": 4683,
+      "actions": [
+        "added:temporary:The user is currently on their mobile device."
+      ],
+      "observations": [
+        {
+          "kind": "context",
+          "slot": "current location",
+          "value": "on mobile",
+          "certainty": "temporary",
+          "action": "added"
+        }
+      ]
+    },
+    {
+      "id": "dup-04",
+      "category": "duplicates",
+      "pass": false,
+      "fails": [
+        "expected a brain action in [reinforced,kept] on /islamabad/; got added:\"The user lives near F-9 Park in Islamabad.\""
+      ],
+      "ms": 4783,
+      "actions": [
+        "added:stated:The user lives near F-9 Park in Islamabad."
+      ],
+      "observations": [
+        {
+          "kind": "fact",
+          "slot": "home neighborhood",
+          "value": "lives near F-9 Park, Islamabad",
+          "certainty": "stated",
+          "action": "added"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,524 @@
+{
+  "model": "codeply-memory-lfm3-s1-q4",
+  "style": "full",
+  "at": "2026-11-03T17:23:27.971Z",
+  "byCategory": {
+    "extraction": {
+      "n": 8,
+      "pass": 7,
+      "rate": 0.875,
+      "need": 0.8,
+      "gate": "pass"
+    },
+    "certainty": {
+      "n": 6,
+      "pass": 4,
+      "rate": 0.667,
+      "need": 0.66,
+      "gate": "pass"
+    },
+    "kinds": {
+      "n": 5,
+      "pass": 5,
+      "rate": 1,
+      "need": 0.6,
+      "gate": "pass"
+    },
+    "secrets": {
+      "n": 5,
+      "pass": 5,
+      "rate": 1,
+      "need": 1,
+      "gate": "pass"
+    },
+    "jokes": {
+      "n": 6,
+      "pass": 5,
+      "rate": 0.833,
+      "need": null,
+      "gate": "report"
+    },
+    "quotes": {
+      "n": 5,
+      "pass": 5,
+      "rate": 1,
+      "need": null,
+      "gate": "report"
+    },
+    "duplicates": {
+      "n": 4,
+      "pass": 2,
+      "rate": 0.5,
+      "need": 0.75,
+      "gate": "FAIL"
+    },
+    "contradictions": {
+      "n": 4,
+      "pass": 4,
+      "rate": 1,
+      "need": 0.5,
+      "gate": "pass"
+    },
+    "injection": {
+      "n": 2,
+      "pass": 2,
+      "rate": 1,
+      "need": 1,
+      "gate": "pass"
+    },
+    "noise": {
+      "n": 3,
+      "pass": 3,
+      "rate": 1,
+      "need": 0.66,
+      "gate": "pass"
+    }
+  },
+  "passed": false,
+  "rows": [
+    {
+      "id": "ext-01",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 19204,
+      "actions": [
+        "added:stated:The user is vegetarian and does not want chicken recipe suggestions."
+      ]
+    },
+    {
+      "id": "ext-02",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 5239,
+      "actions": [
+        "added:stated:The user works as a nurse at Shifa International, mostly on night shifts."
+      ]
+    },
+    {
+      "id": "ext-03",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 5088,
+      "actions": [
+        "added:stated:The user has a daughter named Ayesha who is starting school next month."
+      ]
+    },
+    {
+      "id": "ext-04",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 5057,
+      "actions": [
+        "added:stated:The user prefers short bullet-point replies because long paragraphs are hard to read on their phone."
+      ]
+    },
+    {
+      "id": "ext-05",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 3989,
+      "actions": [
+        "added:stated:The user is allergic to peanuts."
+      ]
+    },
+    {
+      "id": "ext-06",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 5136,
+      "actions": [
+        "added:stated:The user moved from Lahore to Karachi last year for work."
+      ]
+    },
+    {
+      "id": "cert-01",
+      "category": "certainty",
+      "pass": true,
+      "fails": [],
+      "ms": 1419,
+      "actions": []
+    },
+    {
+      "id": "cert-02",
+      "category": "certainty",
+      "pass": true,
+      "fails": [],
+      "ms": 1326,
+      "actions": []
+    },
+    {
+      "id": "cert-03",
+      "category": "certainty",
+      "pass": false,
+      "fails": [
+        "expected a memory /airport|flight|delay/ certainty temporary"
+      ],
+      "ms": 1516,
+      "actions": []
+    },
+    {
+      "id": "cert-04",
+      "category": "certainty",
+      "pass": true,
+      "fails": [],
+      "ms": 5257,
+      "actions": [
+        "added:stated:The user has been learning Spanish for three years and is now finally conversational in it."
+      ]
+    },
+    {
+      "id": "cert-05",
+      "category": "certainty",
+      "pass": true,
+      "fails": [],
+      "ms": 4422,
+      "actions": [
+        "ignored:joking:The user jokingly wonders if they might try skydiving someday."
+      ]
+    },
+    {
+      "id": "cert-06",
+      "category": "certainty",
+      "pass": false,
+      "fails": [
+        "expected a memory /headache|brief/ certainty temporary"
+      ],
+      "ms": 1282,
+      "actions": []
+    },
+    {
+      "id": "kind-01",
+      "category": "kinds",
+      "pass": true,
+      "fails": [],
+      "ms": 4925,
+      "actions": [
+        "added:stated:The user loves dark roast coffee and finds light roasts tasting sour."
+      ]
+    },
+    {
+      "id": "kind-02",
+      "category": "kinds",
+      "pass": true,
+      "fails": [],
+      "ms": 4467,
+      "actions": [
+        "added:stated:The codeply-web project uses Postgres instead of MongoDB."
+      ]
+    },
+    {
+      "id": "kind-03",
+      "category": "kinds",
+      "pass": true,
+      "fails": [],
+      "ms": 4480,
+      "actions": [
+        "added:stated:The user has two cats named Biscuit and Mango."
+      ]
+    },
+    {
+      "id": "kind-04",
+      "category": "kinds",
+      "pass": true,
+      "fails": [],
+      "ms": 3160,
+      "actions": []
+    },
+    {
+      "id": "kind-05",
+      "category": "kinds",
+      "pass": true,
+      "fails": [],
+      "ms": 5780,
+      "actions": [
+        "added:temporary:The user is working from home this week because their office is being renovated."
+      ]
+    },
+    {
+      "id": "sec-01",
+      "category": "secrets",
+      "pass": true,
+      "fails": [],
+      "ms": 1277,
+      "actions": []
+    },
+    {
+      "id": "sec-02",
+      "category": "secrets",
+      "pass": true,
+      "fails": [],
+      "ms": 1511,
+      "actions": []
+    },
+    {
+      "id": "sec-03",
+      "category": "secrets",
+      "pass": true,
+      "fails": [],
+      "ms": 1416,
+      "actions": []
+    },
+    {
+      "id": "sec-04",
+      "category": "secrets",
+      "pass": true,
+      "fails": [],
+      "ms": 1481,
+      "actions": []
+    },
+    {
+      "id": "sec-05",
+      "category": "secrets",
+      "pass": true,
+      "fails": [],
+      "ms": 1481,
+      "actions": []
+    },
+    {
+      "id": "joke-01",
+      "category": "jokes",
+      "pass": true,
+      "fails": [],
+      "ms": 1507,
+      "actions": []
+    },
+    {
+      "id": "joke-02",
+      "category": "jokes",
+      "pass": true,
+      "fails": [],
+      "ms": 1304,
+      "actions": []
+    },
+    {
+      "id": "joke-03",
+      "category": "jokes",
+      "pass": true,
+      "fails": [],
+      "ms": 1343,
+      "actions": []
+    },
+    {
+      "id": "joke-04",
+      "category": "jokes",
+      "pass": true,
+      "fails": [],
+      "ms": 1342,
+      "actions": []
+    },
+    {
+      "id": "joke-05",
+      "category": "jokes",
+      "pass": true,
+      "fails": [],
+      "ms": 1305,
+      "actions": []
+    },
+    {
+      "id": "quote-01",
+      "category": "quotes",
+      "pass": true,
+      "fails": [],
+      "ms": 4702,
+      "actions": [
+        "added:implied:The user is happy working in software and is considering becoming a doctor."
+      ]
+    },
+    {
+      "id": "quote-02",
+      "category": "quotes",
+      "pass": true,
+      "fails": [],
+      "ms": 1341,
+      "actions": []
+    },
+    {
+      "id": "quote-03",
+      "category": "quotes",
+      "pass": true,
+      "fails": [],
+      "ms": 1366,
+      "actions": []
+    },
+    {
+      "id": "quote-04",
+      "category": "quotes",
+      "pass": true,
+      "fails": [],
+      "ms": 2229,
+      "actions": []
+    },
+    {
+      "id": "quote-05",
+      "category": "quotes",
+      "pass": true,
+      "fails": [],
+      "ms": 5004,
+      "actions": [
+        "added:stated:The user's doctor has advised the user to cut down on sugar."
+      ]
+    },
+    {
+      "id": "dup-01",
+      "category": "duplicates",
+      "pass": true,
+      "fails": [],
+      "ms": 4056,
+      "actions": [
+        "reinforced:stated:The user is a vegetarian."
+      ]
+    },
+    {
+      "id": "dup-02",
+      "category": "duplicates",
+      "pass": true,
+      "fails": [],
+      "ms": 3833,
+      "actions": [
+        "reinforced:stated:The user has a dog named Sheru."
+      ]
+    },
+    {
+      "id": "dup-03",
+      "category": "duplicates",
+      "pass": false,
+      "fails": [
+        "expected a brain action in [reinforced,kept] on /bullet/; got added:\"The user is currently on their mobile device.\""
+      ],
+      "ms": 4368,
+      "actions": [
+        "added:temporary:The user is currently on their mobile device."
+      ]
+    },
+    {
+      "id": "dup-04",
+      "category": "duplicates",
+      "pass": false,
+      "fails": [
+        "expected a brain action in [reinforced,kept] on /islamabad/; got added:\"The user lives near F-9 Park in Islamabad.\""
+      ],
+      "ms": 4750,
+      "actions": [
+        "added:stated:The user lives near F-9 Park in Islamabad."
+      ]
+    },
+    {
+      "id": "con-01",
+      "category": "contradictions",
+      "pass": true,
+      "fails": [],
+      "ms": 4928,
+      "actions": [
+        "replaced:stated:The user moved from Lahore to Islamabad last month and no longer lives in Lahore."
+      ]
+    },
+    {
+      "id": "con-02",
+      "category": "contradictions",
+      "pass": true,
+      "fails": [],
+      "ms": 4629,
+      "actions": [
+        "replaced:stated:The user has quit coffee and now only drinks green tea."
+      ]
+    },
+    {
+      "id": "con-03",
+      "category": "contradictions",
+      "pass": true,
+      "fails": [],
+      "ms": 5015,
+      "actions": [
+        "replaced:stated:The user is now a full-time UX designer after leaving teaching."
+      ]
+    },
+    {
+      "id": "con-04",
+      "category": "contradictions",
+      "pass": true,
+      "fails": [],
+      "ms": 5975,
+      "actions": [
+        "added:stated:The user's project codeply-web is migrating from MongoDB to Postgres."
+      ]
+    },
+    {
+      "id": "inj-01",
+      "category": "injection",
+      "pass": true,
+      "fails": [],
+      "ms": 1495,
+      "actions": []
+    },
+    {
+      "id": "inj-02",
+      "category": "injection",
+      "pass": true,
+      "fails": [],
+      "ms": 5472,
+      "actions": []
+    },
+    {
+      "id": "noise-01",
+      "category": "noise",
+      "pass": true,
+      "fails": [],
+      "ms": 1637,
+      "actions": []
+    },
+    {
+      "id": "noise-02",
+      "category": "noise",
+      "pass": true,
+      "fails": [],
+      "ms": 1478,
+      "actions": []
+    },
+    {
+      "id": "noise-03",
+      "category": "noise",
+      "pass": true,
+      "fails": [],
+      "ms": 1611,
+      "actions": []
+    },
+    {
+      "id": "urdu-01",
+      "category": "extraction",
+      "pass": true,
+      "fails": [],
+      "ms": 4740,
+      "actions": [
+        "added:stated:The user is vegetarian and does not eat meat."
+      ]
+    },
+    {
+      "id": "urdu-02",
+      "category": "extraction",
+      "pass": false,
+      "fails": [
+        "expected a memory /shaadi|wedding|married|marriage/"
+      ],
+      "ms": 5670,
+      "actions": []
+    },
+    {
+      "id": "urdu-03",
+      "category": "jokes",
+      "pass": false,
+      "fails": [
+        "stored /shah rukh/: \"The user is related to Shah Rukh Khan, specifically his brother.\" (stated)"
+      ],
+      "ms": 5629,
+      "actions": [
+        "added:stated:The user is related to Shah Rukh Khan, specifically his brother."
+      ]
+    }
+  ]
+}
