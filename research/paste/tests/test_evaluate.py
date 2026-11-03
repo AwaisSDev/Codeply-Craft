@@ -53,3 +53,17 @@ def test_spurious_writes_are_false_memories(episodes):
     s, _ = evaluate(episodes, noisy)
     print("noisy", s["PE"], s["FPM_per_100_segments"])
     assert s["FPM_per_100_segments"] == 100.0 and s["recall"] == 1.0
+
+
+def test_closed_loop_gold_equals_teacher_forced_on_identical_store(episodes, text):
+    """At segment 0 the model's store equals the gold store, so closed-loop gold must equal teacher-forced gold."""
+    from conftest import build_model
+    from paste.adapter import PasteAdapter
+    from paste.data import segment_gold
+    from paste.evaluate import Replay
+    ad = PasteAdapter(build_model(), text)
+    for ep in episodes[:10]:
+        _, g_tf = segment_gold(ad, ep["segments"][0])
+        _, g_cl = segment_gold(ad, ep["segments"][0], Replay(ep))
+        strip = lambda g: {k: v for k, v in g.items() if not k.startswith("_")}
+        assert strip(g_tf) == strip(g_cl)

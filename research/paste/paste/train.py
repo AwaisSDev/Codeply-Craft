@@ -67,6 +67,8 @@ def main():
     ap.add_argument("--lr-new", type=float, default=5e-4)
     ap.add_argument("--accum", type=int, default=16)
     ap.add_argument("--curriculum", type=float, default=0.2)
+    ap.add_argument("--closed-loop", type=float, default=0.0,
+                    help="max share of closed-loop episodes; ramps 0 -> value between 40 %% and 80 %% of training (spec §6.3)")
     ap.add_argument("--head-norm", action="store_true")
     ap.add_argument("--flat-address", action="store_true")
     ap.add_argument("--val-limit", type=int, default=0, help="first N val episodes per val file")
@@ -115,7 +117,10 @@ def main():
         if pos < a.curriculum * len(order):
             ep = truncate(ep)
         model.clear_cache()
-        loss, n = episode_loss_teacher_forced(model, ad, ep)
+        frac = pos / max(1, len(order))
+        eps_cl = 0.0 if frac < 0.4 else a.closed_loop * min(1.0, (frac - 0.4) / 0.4)
+        cl = random.Random(a.seed * 1_000_003 + pos).random() < eps_cl
+        loss, n = episode_loss_teacher_forced(model, ad, ep, closed_loop=cl)
         (loss / a.accum).backward()
         seg_count += n; run_loss += float(loss.detach())
         pos += 1

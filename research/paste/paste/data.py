@@ -11,13 +11,26 @@ from .losses import segment_loss
 _DAY = 86400.0
 
 
-def segment_gold(adapter, seg):
-    """StepInput builder + gold dict for one segment (indices follow adapter.build's ordering)."""
+def segment_gold(adapter, seg, rep=None):
+    """StepInput builder + gold dict for one segment (indices follow adapter.build's ordering).
+
+    rep: a paste.evaluate.Replay holding the model's own store (closed-loop training, spec §6.3). Gold targets are
+    then remapped through provenance: a fact the model never wrote becomes NEW-ATTR / NEW-ENT (FORGET: nothing).
+    """
     st = {"version": 1, "session_id": None, "last_at": None, "seg_index": seg["index"], "h": None, "items": [], "next_item": 1}
     st["items"] = [dict(it, z=torch.zeros(adapter.m.cfg.d)) for it in seg["temp_before"]]
-    rows = [{"id": r["id"], "entity": r["entity"], "profile_text": r["profile_text"], "attribute": r["attribute"],
-             "value": r["value"], "kind": r["kind"], "status": r["status"], "evidence": r["evidence"], "locked": r.get("locked", False)}
-            for r in seg["store_before"]]
+    if rep is None:
+        src_rows = seg["store_before"]
+        fact_to_row = {r["id"]: r["id"] for r in src_rows}
+        ent_key = lambda e: e
+    else:
+        src_rows = list(rep.sim.records.values())
+        fact_to_row = {r.get("provenance"): r["id"] for r in src_rows if r.get("provenance") not in (None, "spurious")}
+        rev = {v: k for k, v in rep.alias.items()}
+        ent_key = lambda e: rev.get(e, e)
+    rows = [{"id": r["id"], "entity": r["entity"], "profile_text": r.get("profile_text") or r["entity"], "attribute": r["attribute"],
+             "value": r["value"], "kind": r.get("kind"), "status": r["status"], "evidence": r["evidence"], "locked": r.get("locked", False)}
+            for r in src_rows]
     s_in, text, offs, profiles_meta = adapter.build({"turns": seg["turns"], "at": seg["at"], "session_id": seg["session_id"]}, rows, st)
     tx = adapter.text
     n = len(s_in.seg_ids)
@@ -53,14 +66,17 @@ def segment_gold(adapter, seg):
              "attr": ATTRS.index(u["attr"]) if u["attr"] in ATTRS else ATTRS.index("OTHER")}
         tg = u.get("target")
         if tg:
-            if tg["type"] == "record":
-                g["omega"] = rec_index[tg["fact"]]
-            elif tg["type"] == "new_attr":
-                g["omega"] = K + prof_index[tg["entity"]]
-            else:
-                g["omega"] = K + E
-        if u.get("rel"):
-            g["rel"] = RELS.index(u["rel"])
+            if tg["type"] == "record" and fact_to_row.get(tg["fact"]) in rec_index:
+                g["omega"] = rec_index[fact_to_row[tg["fact"]]]
+                if u.get("rel"):
+                    g["rel"] = RELS.index(u["rel"])
+            elif tg["type"] == "record" and u["route"] == "FORGET":
+                g["omega"] = K + E                                  # nothing to forget in the model's own store
+            else:                                                   # NEW-ATTR if the entity has a profile, else NEW-ENT
+                ek = ent_key(tg["entity"]) if tg["type"] != "record" else ent_key(u["entity"])
+                g["omega"] = K + prof_index[ek] if ek in prof_index else K + E
+                if g["omega"] == K + E and u["route"] == "PERSIST" and tg["type"] == "record":
+                    tg = {"type": "new_ent"}                        # a recovered write about an unknown profile needs a mention
         if u["route"] == "PERSIST":
             g["src"] = temp_index[u["src"]] if u.get("src") else -1
             if tg and tg["type"] == "new_ent":
@@ -71,18 +87,24 @@ def segment_gold(adapter, seg):
             g["ttype"], g["ttl"] = TTYPES.index(u["ttype"]), TTLS.index(u["ttl"])
             g["tmp"] = len(temp_index) if u["tmp"] == "NEW" else temp_index[u["tmp"]]
         units.append(g)
-    retrieve = {r["fact"] for r in seg["retrieve"]}
+    retrieve = {fact_to_row.get(r["fact"]) for r in seg["retrieve"]}
     expire = {x["item"] for x in seg["expire"]}
     gold = {"unit_bio": bio, "ent_bio": ebio, "units": units, "ment_spans": [sp for sp in ments if sp],
             "retrieve": [1 if r["id"] in retrieve else 0 for r in rows],
-            "merge_pos": [tuple(sorted((rec_index[a], rec_index[b]))) for mg in seg["merges"] for a, b in [mg["facts"]]],
+            "merge_pos": [tuple(sorted((rec_index[fact_to_row[a]], rec_index[fact_to_row[b]]))) for mg in seg["merges"]
+                          for a, b in [mg["facts"]] if fact_to_row.get(a) in rec_index and fact_to_row.get(b) in rec_index],
             "expire": [1 if it["id"] in expire else 0 for it in seg["temp_before"]]}
     gold["_offs"] = offs
     return s_in, gold
 
 
-def episode_loss_teacher_forced(model, adapter, ep, k_bptt=4, window=8):
-    """Teacher-forced loss over an episode: h and temporary-item vectors carried by id, truncated BPTT (spec §6.2)."""
+def episode_loss_teacher_forced(model, adapter, ep, k_bptt=4, window=8, closed_loop=False):
+    """Loss over an episode: h and temporary-item vectors carried by id, truncated BPTT (spec §6.2).
+
+    closed_loop=True: the persistent store is the one the model's own decoded operations build (executed by the
+    Brain simulator through paste.evaluate.Replay); temporary items stay teacher-forced (DECISIONS 2026-11-03)."""
+    from .evaluate import Replay, match_segment, execute
+    rep = Replay(ep) if closed_loop else None
     h, z, total, n = None, {}, 0.0, 0
     prev_session = None
     for i, seg in enumerate(ep["segments"]):
@@ -92,13 +114,33 @@ def episode_loss_teacher_forced(model, adapter, ep, k_bptt=4, window=8):
         if i % k_bptt == 0:
             h = None if h is None else h.detach()
             z = {k: v.detach() for k, v in z.items()}
-        s_in, gold = segment_gold(adapter, seg)
+        s_in, gold = segment_gold(adapter, seg, rep)
         s_in.h = h
         for t, it in zip(s_in.temps, seg["temp_before"]):
             t.z = z.get(it["id"], torch.zeros(model.cfg.d))
         enc = model.encode([s_in])[0]
         L = segment_loss(model, enc, gold)
         total = total + sum(L.values()); n += 1
+        if rep is not None:                                       # the model's own operations build its next store
+            with torch.no_grad():
+                rows = rep.rows()
+                text, _ = None, None
+                from .text import segment_text
+                stext, _ = segment_text(seg["turns"])
+                offs = gold["_offs"]
+                def seg_text_of(span, offs=offs, stext=stext):
+                    chars = [o for o in offs[span[0]:span[1]] if o[1] > o[0]]
+                    return stext[chars[0][0]:chars[-1][1]] if chars else ""
+                pm = [{"key": "user", "text": "the user"}]
+                seen = {"user"}
+                for r in rows:
+                    if r["entity"] not in seen:
+                        seen.add(r["entity"]); pm.append({"key": r["entity"], "text": r["profile_text"]})
+                out = model.decide(s_in, enc, seg_text_of, [{"id": r["id"]} for r in rows], pm,
+                                   [dict(it) for it in seg["temp_before"]], adapter.th)
+                cl_gold = rep.closed_loop_gold(seg)
+                _, _, _, _, pairs = match_segment(rep, seg, out["operations"], cl_gold)
+                execute(rep, out["operations"], pairs)
         if hasattr(model, "gru_h"):                              # PASTE: GRU-gated memory tokens
             h = model.gru_h(enc.mem, h if h is not None else model.h0)
         else:                                                    # baselines: RMT replacement, or no latent state
