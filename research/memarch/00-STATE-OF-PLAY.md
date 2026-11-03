@@ -30,7 +30,7 @@ committed file.
 | Claude labellers (Sonnet / Opus / hybrid) | Benchmark-520 | 0.838 / 0.844 / 0.831 | done (labeller quality, not a candidate) |
 | **Ettin-150M ×3 on realistic data** (mean ± sd over seeds) | Benchmark-520 / test-real / natural-300 | **0.389 ± 0.012 / 0.341 ± 0.011 / 0.241 ± 0.048** | done (§2a); results `dtw-real-ettin150-s{1,2,3}-*` on the DTW branch, weights on `dtw-artifacts` |
 | **Ettin-400M ×3 on realistic data** (mean ± sd) | Benchmark-520 / test-real / natural-300 | **0.412 ± 0.005 / 0.413 ± 0.012 / 0.314 ± 0.042** | done (§2b, §2c); Kaggle runs 4-5 |
-| LFM3-1.7B LoRA on realistic data | – | – | run 3 running |
+| **LFM3-1.7B LoRA on realistic data** (2 seeds, adapter at load time) | Benchmark-520 / test-real / natural-300 | **0.653 / 0.657 / 0.445** | done (§2d); best candidate on both primary sets |
 | Human agreement study (50 examples, 2 people) | – | – | **not started** (needs people) |
 
 ## 2a. Realistic-data Ettin-150M in the harness [M]
@@ -148,6 +148,36 @@ Reading:
   operating point (precision ≥ r/(r+1) on out-of-distribution input) and
   what happens to pending memories, not encoder architecture; this
   strengthens the ranking in `01` (calibration and data before SRDE).
+
+## 2d. LFM3-1.7B LoRA, the last protocol candidate (2026-11-03)
+
+Details: `research/dtw/LORA-RESULTS.md` (DTW branch). Two seeds (the GPU
+quota ran out before a third); evaluated as GGUF LoRA adapters applied at
+load time on the same LFM3 Q4_K_M file as the untrained baseline (the
+merged export did not fit Kaggle's limits; deviation recorded).
+
+* F1, seed mean: test-real **0.657**, Benchmark-520 **0.653** (natural-300
+  0.445, supporting). Paired bootstrap: against production LFM3 +0.356
+  (+0.298 to +0.412) on test-real and **+0.079 (+0.045 to +0.115) on
+  Benchmark-520**; against the Ettin-400M three-seed mean +0.244 and +0.241
+  (both intervals ≥ +0.196). The lead holds on the user-disjoint test-real
+  subset.
+* Fine-tuning itself is the cause: +0.340 F1 over the untrained model on
+  the identical base file.
+* Precision 0.78 / 0.73, kind 0.86 / 0.80, certainty 0.88 / 0.85, false
+  memories 0.30, 0 of 13 benchmark secrets stored (production 5). Slightly
+  worse than production on jokes and quotes (thin in train).
+* Cost: beats storing nothing on test-real at 3:1 (332 vs 366) without
+  calibration; at 2:1 on both sets; on Benchmark-520 at 3:1 slightly above
+  storing nothing (588 vs 551) but far below every other candidate.
+* Cost of choosing it: p50 5.5-6 s, p95 ~20 s on 4 CPU threads (Ettin-400M
+  ~1 s), a 1.7B model.
+
+**Consequence for this research.** The strongest result of the whole
+programme is supervised fine-tuning of the existing decoder on realistic
+labels, not a new architecture: data quality again outweighs
+architecture. Before a selection: a third seed, the production export
+path, and the WildChat decisions.
 
 ## 3. The realistic dataset and the frozen split
 
