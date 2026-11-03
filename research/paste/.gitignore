@@ -9,3 +9,4 @@ CACHEDIR.TAG
 *.pt
 *.bin
 *.safetensors
+scripts/kaggle/out/
