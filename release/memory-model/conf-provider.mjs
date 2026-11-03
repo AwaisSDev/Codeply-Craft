@@ -50,7 +50,8 @@ export async function createProvider({ opt, RT, threads, ctx }) {
   const id = opt('conf-model');
   const model = RT.models().find((m) => m.id === id);
   if (!model) throw new Error(`model ${id} is not installed`);
-  const runtime = RT.createRuntime({ model, threads, ctx, idleMs: 0, args: ['-ctk', 'q8_0', '-ctv', 'q8_0'] });
+  // Start timeout 5 min (evaluation only): a cold page cache or a busy CPU can exceed the runtime's 90 s default.
+  const runtime = RT.createRuntime({ model, threads, ctx, idleMs: 0, startTimeoutMs: 300000, args: ['-ctk', 'q8_0', '-ctv', 'q8_0'] });
   const style = opt('style', 'full');
   const provider = {
     info: () => ({ id: 'local', kind: 'local', local: true, model: id, style }),
