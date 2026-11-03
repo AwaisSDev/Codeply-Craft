@@ -53,6 +53,9 @@ const MAX_TEMP_HOURS = 24 * 14;
 const MAX_HISTORY = 8;
 const MAX_SOURCES = 8;
 const CHALLENGE_TO_SWITCH = 2;
+// A pending memory (the extraction model was not sure enough to store it for good, context-tiers.js) waits this
+// long to be seen again or confirmed by the user, then expires.
+const PENDING_DAYS = 30;
 const MAX_HANDOFF_CHAIN = 3;
 const BLOCK_LIMITS = { personal: 16, unsure: 4, live: 5, project: 12, lessons: 3, todos: 5 };
 
@@ -328,6 +331,7 @@ function cleanObservation(o) {
     kind, certainty, slot, value, text,
     project: clip(o.project, 80), scope: o.scope ? String(o.scope) : '',
     ttlHours: Number(o.ttlHours || o.ttl_hours) || 0, until: untilAt(o.until || o.expires, now()), domain: clip(o.domain, 40).toLowerCase(),
+    pending: o.pending === true,
   };
 }
 
@@ -381,12 +385,12 @@ function observe(raw, src) {
     return { action: 'added', memory: get(id) };
   }
 
-  const stated = o.certainty === 'stated';
+  const stated = o.certainty === 'stated' && !o.pending;
   const cur = findExisting(scope, o);
   if (!cur) {
     const id = newId('m', t);
-    q.insert.run(id, o.kind, scope, o.slot || null, o.value || null, o.text, stated ? 'confirmed' : 'tentative', stated ? 0.8 : 0.5, 1, 0, 0, null, '[]', JSON.stringify([from]), o.domain || null, null, t, t, t);
-    log(id, 'added', `${o.text}${stated ? '' : ' (not sure yet)'}`, from);
+    q.insert.run(id, o.kind, scope, o.slot || null, o.value || null, o.text, stated ? 'confirmed' : 'tentative', stated ? 0.8 : o.pending ? 0.4 : 0.5, 1, 0, 0, null, '[]', JSON.stringify([from]), o.domain || null, o.pending ? t + PENDING_DAYS * DAY : null, t, t, t);
+    log(id, 'added', `${o.text}${o.pending ? ' (waiting for confirmation)' : stated ? '' : ' (not sure yet)'}`, from);
     return { action: 'added', memory: get(id) };
   }
 
@@ -396,6 +400,7 @@ function observe(raw, src) {
     const m = write({
       ...cur, text: cur.locked ? cur.text : o.text, evidence, confidence: Math.min(1, cur.confidence + (stated ? 0.2 : 0.1)),
       status: confirm ? 'confirmed' : cur.status, challenger: null, sources: addSource(cur.sources, from), seenAt: t,
+      expiresAt: confirm ? null : cur.expiresAt,
     });
     log(cur.id, confirm ? 'confirmed' : 'reinforced', m.text, from);
     return { action: 'reinforced', memory: m };
@@ -412,6 +417,7 @@ function observe(raw, src) {
     const m = write({
       ...cur, kind: o.kind, slot: o.slot || cur.slot, value: o.value, text: o.text, status: stated ? 'confirmed' : 'tentative',
       confidence: stated ? 0.8 : 0.5, evidence: 1, challenger: null, review: false, history: [...cur.history, entry], sources: addSource(cur.sources, from), seenAt: t,
+      expiresAt: stated ? null : o.pending ? t + PENDING_DAYS * DAY : cur.expiresAt,
     });
     log(cur.id, 'replaced', `"${cur.text}" -> "${o.text}"`, from);
     return { action: 'replaced', memory: m };
@@ -465,7 +471,7 @@ function correct(id, patch = {}) {
   const m = write({
     ...cur, text, value: patch.value != null ? clip(patch.value, 200) : cur.value,
     kind: KINDS[patch.kind] ? patch.kind : cur.kind, status: cur.kind === 'context' ? 'temporary' : 'confirmed',
-    confidence: 1, locked: true, review: false, challenger: null,
+    confidence: 1, locked: true, review: false, challenger: null, expiresAt: cur.kind === 'context' ? cur.expiresAt : null,
     history: changed ? [...cur.history, { value: cur.value, text: cur.text, status: cur.status, until: now() }] : cur.history,
   });
   log(id, 'corrected', changed ? `"${cur.text}" -> "${text}"` : `confirmed "${text}"`, { product: 'you' });

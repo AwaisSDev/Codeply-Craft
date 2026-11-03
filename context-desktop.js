@@ -81,6 +81,17 @@ function routeIsLocal() {
   } catch { return false; }
 }
 
+/** The storage tiers of the selected local model (catalog), unless the user turned them off. */
+function localTiers() {
+  if (settings.localUrl || settings.tiers === false) return null;
+  try {
+    const RT = lib('local-runtime.js');
+    const installed = RT.models();
+    const model = installed.find((m) => m.id === settings.model) || installed[0];
+    return (model && model.tiers) || null;
+  } catch { return null; }
+}
+
 function buildLocal() {
   const M = lib('context-model.js');
   const RT = lib('local-runtime.js');
@@ -92,8 +103,9 @@ function buildLocal() {
   const model = installed.find((m) => m.id === settings.model) || installed[0];
   if (!model) return M.createLocalProvider({ ensure: async () => { throw new Error('no local model installed'); }, canStart: () => false });
   runtime = RT.createRuntime({ model, threads: settings.threads || undefined, ctx: settings.ctx, idleMs: settings.idleMinutes * 60000, args: ['-ctk', 'q8_0', '-ctv', 'q8_0'], log: (s) => console.log(s) });
-  // A Codeply-trained model (id starts with "codeply-") reads the short prompt it was trained on.
-  return M.createLocalProvider({ id: 'local', model: model.id, ensure: runtime.ensure, canStart: runtime.canStart, extraBody: model.extra, style: /^codeply-/.test(model.id) ? 'compact' : 'full' });
+  // The prompt the model was trained on: the catalog says (style); otherwise a Codeply-trained model (id starts
+  // with "codeply-") reads the short prompt. A model with storage tiers also returns confidences.
+  return M.createLocalProvider({ id: 'local', model: model.id, ensure: runtime.ensure, canStart: runtime.canStart, extraBody: model.extra, style: model.style || (/^codeply-/.test(model.id) ? 'compact' : 'full'), confidence: !!model.tiers });
 }
 
 function providers() {
@@ -194,7 +206,7 @@ function init(d) {
     prov = providers();
     engine = lib('context-engine.js').createEngine({
       store, brain: lib('brain.js'), life: lib('life.js'), providers: prov,
-      settings: () => ({ mode: settings.mode, minImportance: settings.minImportance }),
+      settings: () => ({ mode: settings.mode, minImportance: settings.minImportance, tiers: localTiers() }),
       tz: () => (deps.life && deps.life.localTz ? deps.life.localTz() : Intl.DateTimeFormat().resolvedOptions().timeZone),
       onChange: () => { try { if (deps.onBrainChange) deps.onBrainChange(); } catch {} },
       log: (s) => console.log(s),

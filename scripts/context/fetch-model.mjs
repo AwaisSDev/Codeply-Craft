@@ -46,6 +46,8 @@ if (from) {
   try { fs.unlinkSync(dest); } catch {}
   fs.symlinkSync(path.resolve(from), dest);
   console.log(`Linked ${from}`);
+} else if (!fs.existsSync(dest) && !spec.repo) {
+  console.error(`${id} is not published for download: install it from the file with --from <path>.`); process.exit(2);
 } else if (!fs.existsSync(dest)) {
   const url = `https://huggingface.co/${spec.repo}/resolve/main/${spec.file}`;
   console.log(`Downloading ${url}`);

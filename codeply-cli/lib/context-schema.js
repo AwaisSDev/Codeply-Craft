@@ -177,7 +177,10 @@ function checkExtraction(answer, ctx = {}) {
   const dropped = [];
   const observations = [];
   const list = Array.isArray(parsed.observations) ? parsed.observations : [];
-  for (const raw of list.slice(0, MAX_OBSERVATIONS * 2)) {
+  // Confidences come from the backend next to the answer (token log-probabilities, context-tiers.js), aligned
+  // with the answer's observations; never from the answer itself.
+  const conf = Array.isArray(ctx.confidences) && ctx.confidences.length === list.length ? ctx.confidences : null;
+  for (const [idx, raw] of list.slice(0, MAX_OBSERVATIONS * 2).entries()) {
     if (!raw || typeof raw !== 'object') { dropped.push({ item: raw, why: 'not an object' }); continue; }
     // A model may only propose: never a scope (team), never a delete, never a lesson.
     const { scope, forget, ...rest } = raw; // eslint-disable-line no-unused-vars
@@ -206,6 +209,7 @@ function checkExtraction(answer, ctx = {}) {
       ...(o.project || (project && ['decision', 'idea', 'requirement', 'todo'].includes(o.kind)) ? { project: o.project || project } : {}),
       ...(o.kind === 'context' && raw.until ? { until: clip(raw.until, 20) } : {}),
       ...(ABOUT.includes(raw.about) ? { about: raw.about } : {}),
+      ...(conf && conf[idx] ? { confidence: conf[idx] } : {}),
     });
     if (observations.length >= MAX_OBSERVATIONS) break;
   }

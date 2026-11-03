@@ -23,6 +23,7 @@
  */
 const { buildExtractionMessages } = require('./context-prompt.js');
 const { checkExtraction, extractionJsonSchema } = require('./context-schema.js');
+const { confidences } = require('./context-tiers.js');
 
 const MODES = ['legacy', 'cloud', 'auto', 'local', 'rules', 'off'];
 const isLocalUrl = (u) => /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:\d+)?(\/|$)/i.test(String(u || ''));
@@ -150,6 +151,8 @@ function createCloudProvider(o) {
  * @param {'full'|'compact'} [o.style]
  * @param {boolean} [o.schema]   send the JSON Schema (default true)
  * @param {object} [o.extraBody] e.g. { chat_template_kwargs: { enable_thinking: false } } for Qwen3
+ * @param {boolean} [o.confidence] ask the server for token log-probabilities and return a confidence per
+ *   observation (context-tiers.js); the answer itself is unchanged
  * @param {number} [o.timeoutMs]
  * @param {Function} [o.fetch]
  */
@@ -178,6 +181,7 @@ function createLocalProvider(o = {}) {
         temperature: 0, max_tokens: o.maxTokens || 700, stream: false, cache_prompt: true,
         ...(o.schema === false ? { response_format: { type: 'json_object' } } : { response_format: { type: 'json_schema', json_schema: { name: 'extraction', strict: true, schema: extractionJsonSchema() } } }),
         ...(o.extraBody || {}),
+        ...(o.confidence ? { logprobs: true, top_logprobs: 1 } : {}),
       };
       const res = await doFetch(`${tgt.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
@@ -186,8 +190,11 @@ function createLocalProvider(o = {}) {
       });
       if (!res.ok) throw new Error(`the local model answered HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
       const data = await res.json();
-      const msg = data.choices && data.choices[0] && data.choices[0].message;
-      return { answer: (msg && msg.content) || '', model: data.model || body.model, ms: Date.now() - t0, usage: data.usage || {}, timings: data.timings || null };
+      const ch = data.choices && data.choices[0];
+      const msg = ch && ch.message;
+      const answer = (msg && msg.content) || '';
+      const conf = o.confidence && ch && ch.logprobs ? confidences(answer, ch.logprobs.content) : null;
+      return { answer, model: data.model || body.model, ms: Date.now() - t0, usage: data.usage || {}, timings: data.timings || null, ...(conf ? { confidences: conf } : {}) };
     },
   };
 }
@@ -202,7 +209,7 @@ async function runExtraction(provider, input, opts = {}) {
   const info = provider.info();
   try {
     const r = await provider.extract(input);
-    const g = checkExtraction(r.answer, { events: input.events, minImportance: opts.minImportance });
+    const g = checkExtraction(r.answer, { events: input.events, minImportance: opts.minImportance, confidences: r.confidences });
     return { ...g, provider: info.id, kind: info.kind, local: info.local, model: r.model || info.model, ms: r.ms, usage: r.usage || {}, timings: r.timings || null, raw: opts.keepRaw ? r.answer : undefined };
   } catch (e) {
     return { ok: false, observations: [], plans: [], dropped: [], error: String(e && e.message || e).slice(0, 300), provider: info.id, kind: info.kind, local: info.local, model: info.model };

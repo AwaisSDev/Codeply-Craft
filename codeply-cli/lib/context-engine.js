@@ -26,6 +26,7 @@ const { redact } = require('./context-redact.js');
 const { routeFor, runExtraction } = require('./context-model.js');
 const { estimateTokens } = require('./context-prompt.js');
 const { exchangeEvent } = require('./context-collectors.js');
+const { applyTiers, tiersConfig } = require('./context-tiers.js');
 
 const DEFAULTS = {
   mode: 'legacy',
@@ -35,6 +36,9 @@ const DEFAULTS = {
   debounceMs: 20000,
   maxWaitMs: 120000,
   duty: 0.25,
+  // Storage tiers for a local model that returns confidences (context-tiers.js, release/memory-model/TIERS.md):
+  // { feature, tauA, tauP }. null: every kept observation is stored as before.
+  tiers: null,
 };
 
 /**
@@ -116,7 +120,7 @@ function createEngine(o) {
     const src = { product: first.product || 'craft', botId: first.actor ? first.actor.botId : '', botName: first.actor ? first.actor.botName : '' };
     const actions = r.observations.map((obs) => {
       const res = o.brain.observe(obs, src);
-      return { text: obs.text, kind: obs.kind, slot: obs.slot, certainty: obs.certainty, importance: obs.importance, action: res.action, id: res.memory ? res.memory.id : '', why: res.why || '' };
+      return { text: obs.text, kind: obs.kind, slot: obs.slot, certainty: obs.certainty, importance: obs.importance, action: res.action, id: res.memory ? res.memory.id : '', why: res.why || '', ...(obs.tier ? { tier: obs.tier } : {}) };
     });
     let plans = 0;
     if (r.plans.length && o.life && o.life.available && o.life.available()) {
@@ -156,9 +160,13 @@ function createEngine(o) {
           out.push({ events: batch.length, error: r.error, ...meta });
           continue;
         }
-        const applied = apply(events, r);
+        // Tiers (only with a config and confidences): discard the unsure, keep the middle as pending.
+        const tiers = tiersConfig(s.tiers);
+        const tiered = tiers ? applyTiers(r.observations, tiers) : { keep: r.observations, discarded: [] };
+        const applied = apply(events, { ...r, observations: tiered.keep });
         const outcome = {
-          route: route.why, ms: r.ms, kept: r.observations.length, dropped: r.dropped.map((d) => d.why).slice(0, 10),
+          route: route.why, ms: r.ms, kept: tiered.keep.length, dropped: [...r.dropped.map((d) => d.why), ...tiered.discarded.map(() => 'low confidence')].slice(0, 10),
+          ...(tiers ? { tiers: { ...tiers, pending: tiered.keep.filter((x) => x.tier === 'pending').length, discarded: tiered.discarded.length } } : {}),
           actions: applied.actions, plans: applied.plans, redacted: [...new Set(redactions)], batch: batch.map((e) => e.id),
         };
         for (const e of batch) o.store.mark(e.id, 'done', { ...meta, outcome });
