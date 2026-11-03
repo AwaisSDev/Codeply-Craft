@@ -28,6 +28,33 @@ node -e "
   m.push({id:'$ID',file:'$GGUF',license:'LFM Open License v1.0 (base); fine-tuned',ctx:base.ctx,extra:base.extra,serverArgs:base.serverArgs,style:'full',arch:base.arch+', LoRA fine-tune merged, Q4_K_M imatrix',params:base.params,addedAt:new Date().toISOString()});
   fs.writeFileSync(f,JSON.stringify(m,null,2)+'\n'); console.log('registered $ID ->', '$GGUF');"
 
+# 1b. parity: does asking for log-probabilities change the answers? (same model, same threads, 8 examples with
+#     memories). If it does, the headline post-export numbers come from the plain production backend (step 2b).
+PAR=$OUT/logprobs-parity-s$SEED.json
+if [ ! -f "$PAR" ]; then
+  echo "== $(date -u +%T) logprobs parity"
+  python3 - "$W/par.jsonl" <<'PY'
+import json, sys
+rows = [l for l in open("research/dtw/data/real/val.jsonl") if any(o["certainty"] in ("stated", "implied", "temporary") for o in json.loads(l)["target"]["observations"])][:8]
+open(sys.argv[1], "w").write("".join(rows))
+PY
+  rm -rf "$W/par"; mkdir -p "$W/par"
+  node ml/eval/run.mjs --provider "local:$ID" --set val --set-file "$W/par.jsonl" --threads 4 --name plain --out "$W/par" > "$W/logs/par-plain.log" 2>&1
+  node ml/eval/run.mjs --provider module:release/memory-model/conf-provider.mjs --conf-model "$ID" --set val --set-file "$W/par.jsonl" --threads 4 --name conf --out "$W/par" > "$W/logs/par-conf.log" 2>&1
+  python3 - "$W/par" "$PAR" <<'PY'
+import json, sys
+d, out = sys.argv[1], sys.argv[2]
+load = lambda n: {json.loads(l)["id"]: json.loads(l) for l in open(f"{d}/details/{n}.jsonl")}
+strip = lambda raw: [{k: v for k, v in o.items() if k != "p"} for o in json.loads(raw)["observations"]]
+a, b = load("plain"), load("conf")
+same = [i for i in a if strip(a[i]["raw"]) == strip(b[i]["raw"])]
+json.dump({"examples": len(a), "identical": len(same), "differ": sorted(set(a) - set(same))}, open(out, "w"), indent=1)
+print(f"   parity: {len(same)}/{len(a)} identical")
+PY
+  commit "logprobs parity, seed $SEED"
+fi
+PLAIN=$(python3 -c "import json; r=json.load(open('$PAR')); print('yes' if r['identical'] < r['examples'] else 'no')")
+
 # 2. confidence runs (val first: the tier selection reads only val)
 for set in val test-real bench; do
   name=release-s$SEED-$set
@@ -39,6 +66,18 @@ for set in val test-real bench; do
   echo "   $name exit $? $(grep -o '"f1": [0-9.]*' "$OUT/$name.json" 2>/dev/null | head -1)"
   commit "$name"
 done
+
+# 2b. only if log-probabilities changed answers: the plain production backend on the primary sets
+if [ "$PLAIN" = yes ]; then
+  for set in test-real bench; do
+    name=release-s$SEED-plain-$set
+    [ -f "$OUT/$name.json" ] && continue
+    echo "== $(date -u +%T) $name (plain production backend)"
+    python3 research/dtw/run-chunked-eval.py --name "$name" --provider "local:$ID" --set "$set" --set-file "${SETFILE[$set]}" --work "$W/chunks" --chunk 50 --out "$OUT" >> "$W/logs/$name.log" 2>&1
+    echo "   $name exit $? $(grep -o '"f1": [0-9.]*' "$OUT/$name.json" 2>/dev/null | head -1)"
+    commit "$name"
+  done
+fi
 
 # 3. integration suite (live)
 if [ ! -f "$OUT/integration-s$SEED.json" ]; then
