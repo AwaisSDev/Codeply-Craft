@@ -26,7 +26,7 @@ owner's approval.
 | B. Private Hugging Face model repo, named members | HF accounts the owner adds | Free | Needs a new upload; would let the catalog `repo` point at it later, but the app would then need an HF token to download, which it does not support (it would stay `--from`) |
 | C. Direct transfer inside the team | Team members | Free | No access control after transfer |
 
-Every channel ships `dist/NOTICE.md` and `dist/LFM-OPEN-LICENSE-v1.0.txt`
+Every channel ships `notices/NOTICE.md` and `notices/LFM-OPEN-LICENSE-v1.0.txt`
 with the file (LFM Open License §4: licence copy and "modified" notice).
 
 ## Phases

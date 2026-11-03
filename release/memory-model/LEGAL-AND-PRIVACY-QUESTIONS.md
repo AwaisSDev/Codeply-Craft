@@ -42,7 +42,7 @@ Facts the questions rest on:
 | # | Question | Kind | Notes |
 |---|---|---|---|
 | B1 | LFM Open License v1.0 §5: commercial use is licensed only while the user's legal entity has **annual revenue under US $10M** ("Threshold"). Is Codeply under it, and what is the plan when it is not (a commercial licence from Liquid AI, or another base)? | Owner + Counsel | Same exposure as the current production model |
-| B2 | §4 redistribution: give recipients a copy of the licence; mark modified files as changed; keep notices. Does shipping the merged, quantized weights through a download count as distributing a Derivative Work? | Counsel (interpretation) / Technical (compliance) | Compliance is cheap: ship `LICENSE` and a "modified by Codeply (LoRA fine-tune, merged, quantized)" notice next to the file (`dist/NOTICE.md` drafted) |
+| B2 | §4 redistribution: give recipients a copy of the licence; mark modified files as changed; keep notices. Does shipping the merged, quantized weights through a download count as distributing a Derivative Work? | Counsel (interpretation) / Technical (compliance) | Compliance is cheap: ship `LICENSE` and a "modified by Codeply (LoRA fine-tune, merged, quantized)" notice next to the file (`notices/NOTICE.md` drafted) |
 
 ## C. Rights in the users' own text and in model outputs
 
@@ -73,7 +73,7 @@ Facts the questions rest on:
 | # | Item | Status |
 |---|---|---|
 | T1 | Attribution text for WildChat, MultiWOZ, Topical-Chat, Roman Urdu, LFM3 | Done: `MODEL-CARD.md`, `research/dtw/data/real/NOTICE.md` |
-| T2 | LFM licence copy + "modified" notice to ship with the file | Done: `dist/NOTICE.md` (LICENSE fetched at the pinned revision, checksum recorded) |
+| T2 | LFM licence copy + "modified" notice to ship with the file | Done: `notices/NOTICE.md` (LICENSE fetched at the pinned revision, checksum recorded) |
 | T3 | Memorised training text cannot be written into a user's Brain | Verified (guard grounding; integration suite) |
 | T4 | Memorisation probe on the 14 residual contact strings | Not run; cheap (CPU, minutes); evidence for D2 only, not a clearance |
 | T5 | v2 data hygiene: scrub residual contact data, drop the 17 E1 ids, split by user | Ready to apply for v2; v1 unchanged (frozen) |
