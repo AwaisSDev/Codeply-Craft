@@ -2,16 +2,58 @@
 
 Branch `research/paste-architecture`, base `672696c0` (`codeply-memarch-research`).
 
-## Current phase
+## Current phase (2026-11-03)
 
-Phase 5 preparation (2026-11-02). The owner approved option B, 60 % merges and the 3,000-episode fallback.
-Working autonomously (DECISIONS.md, 2026-11-02). In progress, in order:
+Phase 5 preparation. Data frozen (test/stress v2), train/val generated. Baselines, evaluator and trainer built
+and tested. **Kaggle GPU quota is 0 h until 2026-11-07 (E18)**, so training runs on this container's CPU.
 
-1. freeze the test and stress sets (generate, hash, store privately);
-2. generate train and val (option B);
-3. build the baselines, trainer and evaluator;
-4. measure T4 speed and check the Kaggle quota;
-5. D2 pilot, then the central test.
+Running: train API wording, budget-bounded (`data/api_chunks.py`; log `~/paste-data/train/api-train.log`;
+re-run the same command to resume).
+
+Next actions, in order:
+
+1. D2 pilot on CPU (PASTE and M1c × head_norm off/on; 2,000 train episodes, 1 epoch, seed 1), once the first
+   train API chunk exists;
+2. learning curve 1,500 / 3,000 / 6,000 for the 3,000-episode fallback;
+3. closed-loop scheduled sampling in the trainer; calibration sweep; paired bootstrap;
+4. on 2026-11-07, a Kaggle T4 throughput check, then the 3-seed central test.
+
+## Protocol and baseline plan, summary (full text: EVALUATION-PROTOCOL.md, BASELINE-PLAN.md)
+
+* **Central test:** PASTE vs M1c and M1c-m (parameter-matched).
+  * Same Ettin-32M encoder, identical heads, losses, data, seeds {1,2,3}, budget, calibration and D2 choice.
+  * M1c reads the Brain's records and temporary items as text; PASTE as soft tokens plus recurrent memory tokens.
+* **Primary endpoint (PE):** micro-F1 of persistent operations (WRITE, UPDATE, MERGE_INTO, FORGET,
+  FORGET_PROFILE, MERGE), in **closed loop**: each system reads the store its own operations built. Gold is
+  re-expressed through provenance; a missed fact's later update becomes an expected WRITE. Matching:
+  entity + attribute + value token-F1 ≥ 0.5 for writes; target + value for updates; target or pair otherwise.
+  Seed-mean of 3 seeds, on frozen test, both wordings of the 600 plans pooled.
+* **Co-primary:** false permanent memories (FPM) per 100 segments.
+* **Statistics:** 95 % paired bootstrap over test plans (10,000 resamples, both wordings of a plan together),
+  Holm over {M1c, M1c-m}.
+* **Decision rule:**
+
+  | Outcome | Condition |
+  |---|---|
+  | **Pass** | Both Holm CIs of PE(PASTE) − PE(baseline) > 0, **and** FPM(PASTE) ≤ 1.10 × FPM(baseline) (one-sided 95 % bound), **and** CPU p50 latency ≤ 1.5 × M1c at K = 32 |
+  | Equivalent | Both CIs within ±1 F1 point |
+  | Fail | A CI < 0 |
+  | Inconclusive | Otherwise |
+
+  M1c+W ≥ PASTE is reported as "a text window recovers the gain".
+* **Thresholds:** calibrated on val only: write and merge at cost 3:1, forget 3:1, retrieve and expire max-F1.
+* **Secondary metrics** (CIs, exploratory):
+  * per-operation P/R/F1 and confusion; merge P/R separately (D1);
+  * look-alike wrong-entity rate (H2); temporary-leak rate (H3); continuity by dependency distance 1 / 2-4 (H1);
+  * expiry, retrieval and deletion P/R; end-of-episode store F1;
+  * latency and RAM at K = 8 / 32 / 128;
+  * generalisation (family C, unseen entities/values, Roman Urdu, real-text segments, stress, wording shift).
+* **Baselines:** M1c, M1c-m, M1c+W, RMT, KV, FC, rules; existing DtW checkpoints and LFM3 zero-shot
+  (optional, labelled).
+* **Ablations:** flat addressing (A1), no memory tokens (A2), single pool (A3), no look-alike negatives (A4),
+  teacher forcing only (A5), auxiliary losses (A6), 17M scale.
+* **Data access:** test and stress are read only by `evaluate.py --final` after a system's checkpoint,
+  thresholds and data hashes are committed. Never used for selection, calibration or the D2 choice.
 
 ## Resume instructions (a fresh container)
 
