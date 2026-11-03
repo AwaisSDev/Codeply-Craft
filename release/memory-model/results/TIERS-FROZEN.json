@@ -1,0 +1,22 @@
+{
+ "s1": {
+  "byRatio": {
+   "r=2": {
+    "tauA": 0,
+    "tauP": null
+   },
+   "r=3": {
+    "tauA": 0,
+    "tauP": null
+   },
+   "r=5": {
+    "tauA": 0.95,
+    "tauP": 0
+   }
+  },
+  "chosenOn": "val",
+  "feature": "exist",
+  "protocol": "release/memory-model/TIERS.md",
+  "seed": 1
+ }
+}

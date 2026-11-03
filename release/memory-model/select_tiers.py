@@ -92,7 +92,7 @@ def select(seed):
     frozen = {"seed": seed, "feature": best, "protocol": "release/memory-model/TIERS.md", "chosenOn": "val",
               "byRatio": {f"r={r}": {"tauA": choice[r][best]["tauA"], "tauP": choice[r][best]["tauP"]} for r in RATIOS}}
     val = {f"r={r}": tiers_at(src, "val", best, choice[r][best]["tauA"] if choice[r][best]["tauA"] is not None else 1.01,
-                               choice[r][best]["tauP"] if choice[r][best]["tauP"] is not None else (choice[r][best]["tauA"] or 1.01)) for r in RATIOS}
+                               choice[r][best]["tauP"] if choice[r][best]["tauP"] is not None else (choice[r][best]["tauA"] if choice[r][best]["tauA"] is not None else 1.01)) for r in RATIOS}
     json.dump({"grid": {f: {str(t): auto[f][t] for t in GRID} for f in FEATURES}, "perFeature": {f"r={r}": choice[r] for r in RATIOS}, "frozen": frozen, "valAtChoice": val},
               open(f"{ROOT}/{RES}/tiers-s{seed}-val-selection.json", "w"), indent=1)
     path = f"{ROOT}/{RES}/TIERS-FROZEN.json"
