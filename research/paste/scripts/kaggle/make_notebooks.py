@@ -22,18 +22,18 @@ DATA = "/kaggle/input/paste-trainval"
 SETUP = r'''# Setup: pinned code (public branch), dependencies, data hashes
 import os, subprocess, hashlib, json, time
 COMMIT = "__COMMIT__"
-if not os.path.exists("/kaggle/working/codeply"):
+if not os.path.exists("/tmp/codeply"):
     subprocess.run(["git", "clone", "-b", "research/paste-architecture", "https://github.com/AwaisSDev/Codeply-Craft",
-                    "/kaggle/working/codeply"], check=True)
-subprocess.run(["git", "-C", "/kaggle/working/codeply", "checkout", COMMIT], check=True)
-os.chdir("/kaggle/working/codeply/research/paste")
+                    "/tmp/codeply"], check=True)
+subprocess.run(["git", "-C", "/tmp/codeply", "checkout", COMMIT], check=True)
+os.chdir("/tmp/codeply/research/paste")
 subprocess.run("pip -q install tokenizers==0.23.3 huggingface_hub==2.4.0", shell=True, check=True)
 DATA = "__DATA__"
 man = json.load(open(f"{DATA}/MANIFEST.json"))
 for f, h in man["sha256"].items():
     assert hashlib.sha256(open(f"{DATA}/{f}", "rb").read()).hexdigest() == h, f"{f} changed"
     assert not any(x in f for x in ("test", "stress", "frozen")), "Kaggle must not receive test/stress data"
-os.environ["PASTE_HF_CACHE"] = "/kaggle/working/hf"
+os.environ["PASTE_HF_CACHE"] = "/tmp/hf"
 TRAIN = f"{DATA}/train-mix-full.jsonl"
 VAL = f"{DATA}/val-programmatic.jsonl {DATA}/val-api.jsonl"
 print(subprocess.run("nvidia-smi --query-gpu=name,memory.total --format=csv", shell=True, capture_output=True, text=True).stdout)'''
@@ -64,7 +64,7 @@ for r in RUNS:
            f"--device cuda {r['args']} --out {out}")
     print(cmd, flush=True)
     subprocess.run(cmd, shell=True, check=True)
-subprocess.run("cd /kaggle/working && tar czf runs.tgz --exclude='*/last.pt' runs", shell=True, check=True)'''
+subprocess.run("cd /kaggle/working && tar czf runs.tgz --exclude='*/last.pt' runs && rm -rf runs", shell=True, check=True)'''
 
 
 CPU_QUEUE = r'''# Validation experiments on a free Kaggle CPU session (no GPU quota): scripts/queue.sh lines, train + full-val sweep
@@ -72,10 +72,10 @@ QUEUE = """__QUEUE__"""
 os.makedirs("/kaggle/working/runs", exist_ok=True)
 open("/kaggle/working/runs/queue.txt", "w").write(QUEUE)
 env = dict(os.environ, PY="python", DATA=DATA, VAL_API=f"{DATA}/val-api.jsonl", RUNS="/kaggle/working/runs",
-           PASTE_HF_CACHE="/kaggle/working/hf", GRID="__GRID__")
+           PASTE_HF_CACHE="/tmp/hf", GRID="__GRID__")
 r = subprocess.run("bash scripts/queue.sh", shell=True, env=env, capture_output=True, text=True)
 print(r.stdout[-5000:]); print(r.stderr[-3000:])
-subprocess.run("cd /kaggle/working && tar czf runs.tgz --exclude='*/last.pt' --exclude='*/epoch*.pt' runs && ls -la runs.tgz", shell=True)'''
+subprocess.run("cd /kaggle/working && tar czf runs.tgz --exclude='*/last.pt' --exclude='*/epoch*.pt' runs && rm -rf runs && ls -la runs.tgz", shell=True)'''
 
 
 def nb(title, intro, cells, gpu=True):
