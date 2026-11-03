@@ -1,0 +1,311 @@
+{
+  "name": "real-lfm3-lora-s2-bench",
+  "provider": "rules",
+  "set": "bench",
+  "style": "full",
+  "schema": true,
+  "promptVersion": 2,
+  "examples": 520,
+  "at": "2026-11-03T00:57:44.258Z",
+  "host": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "logical": 4,
+    "ramMB": 16091,
+    "threads": 4,
+    "ctx": 4096
+  },
+  "validity": 1,
+  "extraction": {
+    "precision": 0.748,
+    "recall": 0.57,
+    "f1": 0.647,
+    "gold": 551,
+    "pred": 420,
+    "tp": 314
+  },
+  "extractionUnseen": {
+    "precision": 0.748,
+    "recall": 0.57,
+    "f1": 0.647,
+    "gold": 551,
+    "pred": 420,
+    "tp": 314
+  },
+  "kindAccuracy": 0.806,
+  "certaintyAccuracy": 0.866,
+  "falseMemoryRate": 0.281,
+  "noiseRejection": 0.98,
+  "plans": {
+    "precision": 1.049,
+    "recall": 0.4,
+    "dateAccuracy": 0.813,
+    "timeAccuracy": 0.922
+  },
+  "memoryActions": 0.543,
+  "memoryActionsByTask": {
+    "duplicate": 0.615,
+    "contradiction": 0.483,
+    "joking": 0.538,
+    "hypothetical": 0.683,
+    "quoting": 0.597
+  },
+  "temporal": 0.106,
+  "importanceSpearman": 0.65,
+  "importanceMAE": 0.081,
+  "safety": {
+    "secretsLeaked": 0,
+    "secretsTotal": 13,
+    "injectionsFollowed": 0,
+    "injectionsTotal": 11
+  },
+  "byTask": {
+    "contradiction": {
+      "n": 45,
+      "precision": 0.727,
+      "recall": 0.769,
+      "f1": 0.748,
+      "gold": 52,
+      "pred": 55,
+      "tp": 40,
+      "validity": 1
+    },
+    "decision": {
+      "n": 12,
+      "precision": 0.909,
+      "recall": 0.667,
+      "f1": 0.769,
+      "gold": 15,
+      "pred": 11,
+      "tp": 10,
+      "validity": 1
+    },
+    "dislike": {
+      "n": 9,
+      "precision": 1,
+      "recall": 0.364,
+      "f1": 0.533,
+      "gold": 11,
+      "pred": 4,
+      "tp": 4,
+      "validity": 1
+    },
+    "duplicate": {
+      "n": 33,
+      "precision": 0.833,
+      "recall": 0.946,
+      "f1": 0.886,
+      "gold": 37,
+      "pred": 42,
+      "tp": 35,
+      "validity": 1
+    },
+    "external": {
+      "n": 21,
+      "precision": 0.333,
+      "recall": 0.222,
+      "f1": 0.267,
+      "gold": 9,
+      "pred": 6,
+      "tp": 2,
+      "validity": 1
+    },
+    "fact": {
+      "n": 12,
+      "precision": 0.8,
+      "recall": 0.6,
+      "f1": 0.686,
+      "gold": 20,
+      "pred": 15,
+      "tp": 12,
+      "validity": 1
+    },
+    "heard": {
+      "n": 21,
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "gold": 11,
+      "pred": 3,
+      "tp": 0,
+      "validity": 1
+    },
+    "hypothetical": {
+      "n": 40,
+      "precision": 0.478,
+      "recall": 0.5,
+      "f1": 0.489,
+      "gold": 22,
+      "pred": 23,
+      "tp": 11,
+      "validity": 1
+    },
+    "idea": {
+      "n": 5,
+      "precision": 0.333,
+      "recall": 0.167,
+      "f1": 0.222,
+      "gold": 6,
+      "pred": 3,
+      "tp": 1,
+      "validity": 1
+    },
+    "injection": {
+      "n": 11,
+      "precision": 0.5,
+      "recall": 0.25,
+      "f1": 0.333,
+      "gold": 4,
+      "pred": 2,
+      "tp": 1,
+      "validity": 1
+    },
+    "joking": {
+      "n": 46,
+      "precision": 0.591,
+      "recall": 0.565,
+      "f1": 0.578,
+      "gold": 46,
+      "pred": 44,
+      "tp": 26,
+      "validity": 1
+    },
+    "long": {
+      "n": 40,
+      "precision": 0.8,
+      "recall": 0.662,
+      "f1": 0.724,
+      "gold": 139,
+      "pred": 115,
+      "tp": 92,
+      "validity": 1
+    },
+    "noise": {
+      "n": 33,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "gold": 0,
+      "pred": 0,
+      "tp": 0,
+      "validity": 1
+    },
+    "person": {
+      "n": 13,
+      "precision": 0.818,
+      "recall": 0.474,
+      "f1": 0.6,
+      "gold": 19,
+      "pred": 11,
+      "tp": 9,
+      "validity": 1
+    },
+    "plan": {
+      "n": 51,
+      "precision": 0.75,
+      "recall": 0.462,
+      "f1": 0.571,
+      "gold": 13,
+      "pred": 8,
+      "tp": 6,
+      "validity": 1
+    },
+    "preference": {
+      "n": 11,
+      "precision": 1,
+      "recall": 0.25,
+      "f1": 0.4,
+      "gold": 12,
+      "pred": 3,
+      "tp": 3,
+      "validity": 1
+    },
+    "quoting": {
+      "n": 40,
+      "precision": 0.714,
+      "recall": 0.526,
+      "f1": 0.606,
+      "gold": 38,
+      "pred": 28,
+      "tp": 20,
+      "validity": 1
+    },
+    "requirement": {
+      "n": 5,
+      "precision": 1,
+      "recall": 0.625,
+      "f1": 0.769,
+      "gold": 8,
+      "pred": 5,
+      "tp": 5,
+      "validity": 1
+    },
+    "routine": {
+      "n": 10,
+      "precision": 0.889,
+      "recall": 0.571,
+      "f1": 0.696,
+      "gold": 14,
+      "pred": 9,
+      "tp": 8,
+      "validity": 1
+    },
+    "secret": {
+      "n": 11,
+      "precision": 0.833,
+      "recall": 0.833,
+      "f1": 0.833,
+      "gold": 12,
+      "pred": 12,
+      "tp": 10,
+      "validity": 1
+    },
+    "style": {
+      "n": 5,
+      "precision": 1,
+      "recall": 0.5,
+      "f1": 0.667,
+      "gold": 8,
+      "pred": 4,
+      "tp": 4,
+      "validity": 1
+    },
+    "temporary": {
+      "n": 36,
+      "precision": 1,
+      "recall": 0.293,
+      "f1": 0.453,
+      "gold": 41,
+      "pred": 12,
+      "tp": 12,
+      "validity": 1
+    },
+    "todo": {
+      "n": 10,
+      "precision": 0.6,
+      "recall": 0.214,
+      "f1": 0.316,
+      "gold": 14,
+      "pred": 5,
+      "tp": 3,
+      "validity": 1
+    }
+  },
+  "performance": {
+    "msMean": 6038,
+    "msP50": 5229,
+    "msP95": 15654,
+    "promptTokensMean": 1206,
+    "completionTokensMean": 67,
+    "serverPeakMB": 2006,
+    "serverStartMs": 1847,
+    "serverCpuSecondsPerExample": 27.108,
+    "wallSeconds": 3144
+  },
+  "errors": [],
+  "rescoredAt": "2026-11-03T01:52:34.270Z",
+  "chunked": {
+    "chunks": 11,
+    "chunkSize": 50,
+    "note": "evaluated in chunks (container restarts); metrics recomputed over the full set by --rescore"
+  }
+}
