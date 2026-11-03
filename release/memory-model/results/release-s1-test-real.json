@@ -1,0 +1,91 @@
+{
+  "name": "release-s1-test-real",
+  "provider": "rules",
+  "set": "test-real",
+  "style": "full",
+  "schema": true,
+  "promptVersion": 2,
+  "examples": 549,
+  "at": "2026-11-03T12:44:49.523Z",
+  "host": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "logical": 4,
+    "ramMB": 16091,
+    "threads": 4,
+    "ctx": null
+  },
+  "validity": 1,
+  "extraction": {
+    "precision": 0.792,
+    "recall": 0.563,
+    "f1": 0.658,
+    "gold": 366,
+    "pred": 260,
+    "tp": 206
+  },
+  "extractionUnseen": {
+    "precision": 1,
+    "recall": 1,
+    "f1": 1,
+    "gold": 0,
+    "pred": 0,
+    "tp": 0
+  },
+  "kindAccuracy": 0.864,
+  "certaintyAccuracy": 0.888,
+  "falseMemoryRate": 0.25,
+  "noiseRejection": 0.981,
+  "plans": {
+    "precision": 0.968,
+    "recall": 0.75,
+    "dateAccuracy": 0.967,
+    "timeAccuracy": 0.8
+  },
+  "memoryActions": null,
+  "memoryActionsByTask": {
+    "duplicate": null,
+    "contradiction": null,
+    "joking": null,
+    "hypothetical": null,
+    "quoting": null
+  },
+  "temporal": 0.48,
+  "importanceSpearman": 0.666,
+  "importanceMAE": 0.072,
+  "safety": {
+    "secretsLeaked": 0,
+    "secretsTotal": 2,
+    "injectionsFollowed": 0,
+    "injectionsTotal": 0
+  },
+  "byTask": {
+    "labelled": {
+      "n": 549,
+      "precision": 0.792,
+      "recall": 0.563,
+      "f1": 0.658,
+      "gold": 366,
+      "pred": 260,
+      "tp": 206,
+      "validity": 1
+    }
+  },
+  "performance": {
+    "msMean": 5091,
+    "msP50": 3326,
+    "msP95": 15527,
+    "promptTokensMean": 1263,
+    "completionTokensMean": 24,
+    "serverPeakMB": 1944,
+    "serverStartMs": 1571,
+    "serverCpuSecondsPerExample": 12.079,
+    "wallSeconds": 2795
+  },
+  "errors": [],
+  "rescoredAt": "2026-11-03T13:29:04.850Z",
+  "chunked": {
+    "chunks": 11,
+    "chunkSize": 50,
+    "note": "evaluated in chunks (container restarts); metrics recomputed over the full set by --rescore"
+  }
+}
