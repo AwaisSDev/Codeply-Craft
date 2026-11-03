@@ -22,8 +22,11 @@ def main():
     ap.add_argument("--set", required=True); ap.add_argument("--set-file", required=True)
     ap.add_argument("--work", required=True); ap.add_argument("--chunk", type=int, default=50)
     ap.add_argument("--threads", default="4")
+    ap.add_argument("--out", default=OUT, help="results folder (default research/dtw/results)")
+    ap.add_argument("--extra", default="", help="extra harness arguments, e.g. \"--conf-model <id>\"")
     a = ap.parse_args()
-    if os.path.exists(f"{ROOT}/{OUT}/{a.name}.json"):
+    out = a.out
+    if os.path.exists(f"{ROOT}/{out}/{a.name}.json"):
         print(f"{a.name} already done"); return
     rows = open(f"{ROOT}/{a.set_file}").read().strip().split("\n")
     wd = os.path.join(a.work, a.name); os.makedirs(f"{wd}/sets", exist_ok=True)
@@ -36,31 +39,31 @@ def main():
         open(sf, "w").write("\n".join(rows[i:i + a.chunk]) + "\n")
         print(f"  chunk {k + 1}/{(len(rows) + a.chunk - 1) // a.chunk}", flush=True)
         rc = subprocess.run(["node", "ml/eval/run.mjs", "--provider", a.provider, "--set", a.set, "--set-file", sf,
-                             "--threads", a.threads, "--name", pname, "--out", wd], cwd=ROOT,
+                             "--threads", a.threads, "--name", pname, "--out", wd] + a.extra.split(), cwd=ROOT,
                             stdout=open(f"{wd}/{pname}.log", "w"), stderr=subprocess.STDOUT).returncode
         if rc or not os.path.exists(f"{wd}/{pname}.json"):
             sys.exit(f"chunk {pname} failed (exit {rc}); see {wd}/{pname}.log; rerun to resume")
     # Merge: all per-example rows into one details file, then the harness rescore over the full set.
-    os.makedirs(f"{ROOT}/{OUT}/details", exist_ok=True)
-    with open(f"{ROOT}/{OUT}/details/{a.name}.jsonl", "w") as fo:
+    os.makedirs(f"{ROOT}/{out}/details", exist_ok=True)
+    with open(f"{ROOT}/{out}/details/{a.name}.jsonl", "w") as fo:
         for p in parts:
             fo.write(open(f"{wd}/details/{p}.jsonl").read().rstrip("\n") + "\n")
     first = json.load(open(f"{wd}/{parts[0]}.json"))
     first["name"] = a.name
-    json.dump(first, open(f"{ROOT}/{OUT}/{a.name}.json", "w"), indent=2)
+    json.dump(first, open(f"{ROOT}/{out}/{a.name}.json", "w"), indent=2)
     rc = subprocess.run(["node", "ml/eval/run.mjs", "--rescore", "--set", a.set, "--set-file", a.set_file,
-                         "--name", a.name, "--out", OUT], cwd=ROOT).returncode
+                         "--name", a.name, "--out", out], cwd=ROOT).returncode
     if rc:
-        os.remove(f"{ROOT}/{OUT}/{a.name}.json"); sys.exit("merge rescore failed")
-    r = json.load(open(f"{ROOT}/{OUT}/{a.name}.json"))
-    ms = sorted(json.loads(l)["ms"] for l in open(f"{ROOT}/{OUT}/details/{a.name}.jsonl"))
+        os.remove(f"{ROOT}/{out}/{a.name}.json"); sys.exit("merge rescore failed")
+    r = json.load(open(f"{ROOT}/{out}/{a.name}.json"))
+    ms = sorted(json.loads(l)["ms"] for l in open(f"{ROOT}/{out}/details/{a.name}.jsonl"))
     perfs = [json.load(open(f"{wd}/{p}.json")).get("performance", {}) for p in parts]
     r["performance"] = {**perfs[0], "msMean": round(statistics.mean(ms)), "msP50": ms[len(ms) // 2],
                         "msP95": ms[min(len(ms) - 1, int(0.95 * len(ms)))],
                         "wallSeconds": sum(p.get("wallSeconds") or 0 for p in perfs),
                         "serverPeakMB": max((p.get("serverPeakMB") or 0) for p in perfs) or None}
     r["chunked"] = {"chunks": len(parts), "chunkSize": a.chunk, "note": "evaluated in chunks (container restarts); metrics recomputed over the full set by --rescore"}
-    json.dump(r, open(f"{ROOT}/{OUT}/{a.name}.json", "w"), indent=2)
+    json.dump(r, open(f"{ROOT}/{out}/{a.name}.json", "w"), indent=2)
     print(f"{a.name} done: F1 {r['extraction']['f1']}", flush=True)
 
 
