@@ -348,7 +348,19 @@ function findExisting(scope, o) {
   return null;
 }
 
-const sameValue = (m, o) => (o.value && m.value ? norm(o.value) === norm(m.value) : sameText(m.text, o.text));
+// Words that never change what a value means: "a dog named Sheru" and "dog named Sheru" are one value.
+// Deliberately tiny: negations ("no", "not", "never", "quit"), numbers and every content word still count,
+// and word order is kept, so "Lahore" vs "Karachi", "coffee" vs "no coffee", "2 cats" vs "3 cats" stay different.
+const VALUE_FILLER = new Set(['a', 'an', 'the', 'my', 'our', 's']);
+/** A value's words in order, filler dropped, lightly stemmed ("short bullet points" = "short bullet-point"). */
+const valueKey = (v) => norm(v).split(' ').filter((w) => w && !VALUE_FILLER.has(w)).map(stem).join(' ');
+/** Two values that say the same thing: equal as written, or equal once filler and plural endings are ignored. */
+function sameValueText(a, b) {
+  if (norm(a) === norm(b)) return true;
+  const k = valueKey(a);
+  return !!k && k === valueKey(b);
+}
+const sameValue = (m, o) => (o.value && m.value ? sameValueText(o.value, m.value) : sameText(m.text, o.text));
 
 /**
  * One thing Codeply heard or was told. Decides what it does to memory.
@@ -423,7 +435,7 @@ function observe(raw, src) {
     return { action: 'replaced', memory: m };
   }
   // Confirmed, and contradicted in passing: one remark is not enough.
-  const ch = cur.challenger && (o.value ? norm(cur.challenger.value) === norm(o.value) : sameText(cur.challenger.text, o.text)) ? cur.challenger : null;
+  const ch = cur.challenger && (o.value ? sameValueText(cur.challenger.value, o.value) : sameText(cur.challenger.text, o.text)) ? cur.challenger : null;
   const count = (ch ? ch.count : 0) + 1;
   if (count >= CHALLENGE_TO_SWITCH) {
     const m = write({
