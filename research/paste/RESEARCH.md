@@ -26,6 +26,13 @@ Pre-registered hypotheses are in `ARCHITECTURE-HYPOTHESES.md` and are not edited
   baseline on natural wording of the same plans (E08). This matches the DtW template collapse.
 * Training cost is dominated by framework overhead, not by the encoder: one embedding lookup per record made
   the backward pass 6× the forward pass (E10, E11).
+* **Head-input scale decides trainability (E21-E23).** Raw Ettin-32M outputs reach row norm ≈ 113 with a few
+  dimensions near |x| ≈ 100. Fed raw into new heads, 300 steps leave every head at chance (E22). With
+  parameter-free LayerNorm the identical run reaches val PE 0.13, gate 0.92, attribute 0.83 (E23). LayerNorm
+  fixes the scale but not the dominance: one dimension still holds ≈ 75 % of each normalised vector's energy
+  (research-queue Q1). The exact optimisation mechanism is not established.
+* **Addressing is the weakest head** (teacher-forced 0.30 after 300 steps vs ≈ 6 % chance; E23). Half the gold
+  targets are NEW-ATTR on an existing profile (val: 228 NEW-ATTR, 184 record, 44 NEW-ENT).
 
 ## Open hypotheses (mine; untested)
 
@@ -38,9 +45,20 @@ Pre-registered hypotheses are in `ARCHITECTURE-HYPOTHESES.md` and are not edited
 
 ## Research queue (to investigate, in priority order)
 
-1. Closed-loop training for state trackers: what schedule works (FPDSC, Correctable-DST, DSDN) and how big
-   the gains are at BERT scale. This decides the scheduled-sampling schedule (spec §6.3).
-2. Evidence on soft-token knowledge injection into small encoders (KBLaM, xRAG reproductions) at sub-100M:
-   does pooled-token detail loss hurt exact-value matching? This decides whether X1-type variants or
-   multi-vector record tokens are worth a run.
-3. Calibration under prior shift for write decisions (BBSE, BCTS+EM) with synthetic → natural shift.
+Answers to the 2026-11-03 queue are in `research-queue-2026-11-03.md` (evidence-tagged). Planned work drawn from
+them, in order; each change to training or to the shared heads applies to PASTE and every baseline identically
+and is recorded as a spec amendment before the main runs:
+
+1. **Addressing diagnostics first (no code change to the model):** teacher-forced accuracy per level (entity
+   factor; record factor given gold entity; per gold type) on E24 checkpoints, plus a rule reference (gold
+   entity + predicted attribute → existing record of that class, else NEW-ATTR). Only if the rule clearly beats
+   the head: (a) an attribute-agreement term in the record score; (b) NEW-* scores that depend on the best
+   candidate score (fixed-zero dummy, Lee et al. 2017); (c) L_idc with same-attribute hard negatives.
+2. **Closed-loop mixing per segment, not per episode** (`train.py` currently flips one coin per episode, the
+   variant Bengio et al. 2015 found much worse). Cheaper complement: low-rate corruption of the gold store
+   (Correctable-DST: about 6 % per slot worked best). Start the ramp on a competence condition, not at a fixed 40 %.
+3. **Threshold transfer inside validation:** fit θ_W on template family A, evaluate on B (and programmatic ↔
+   API); report the analytic threshold (g = 0.5 under the 3:1 loss) next to the tuned one.
+4. **Optional shared remedies to evaluate after D2:** frozen per-dimension standardisation before head LN
+   (Timkey & van Schijndel 2021); LP-FT warm start (heads first, encoder frozen; Kumar et al. 2022).
+5. Still open: does pooled soft-token detail loss hurt exact-value matching at sub-100M (KBLaM, xRAG)?
