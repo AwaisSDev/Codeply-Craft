@@ -1,6 +1,6 @@
 {
  "budget_usd": 95.0,
- "spent_usd": 54.8003,
+ "spent_usd": 91.9596,
  "approved": "owner 2026-11-02, option B (DATASET-AUDIT section 6); the pilot ($1.87) was a separate approval",
  "batches": [
   {
@@ -56,8 +56,56 @@
    "plans": "plans.jsonl",
    "n": 739,
    "worst_usd": 38.07,
-   "actual_usd": null,
+   "actual_usd": 13.4805,
    "out": "/home/user/paste-data/train/api-train/chunk-01"
+  },
+  {
+   "batch_id": "msgbatch_01BAnF9WdyzWDLNucuWBzp9X",
+   "plans": "plans.jsonl",
+   "n": 485,
+   "worst_usd": 25.0,
+   "actual_usd": 8.9831,
+   "out": "/home/user/paste-data/train/api-train/chunk-02"
+  },
+  {
+   "batch_id": "msgbatch_014H7DDQXT49Ng2Lcxrv36e6",
+   "plans": "plans.jsonl",
+   "n": 315,
+   "worst_usd": 16.25,
+   "actual_usd": 5.9218,
+   "out": "/home/user/paste-data/train/api-train/chunk-03"
+  },
+  {
+   "batch_id": "msgbatch_015aCfXYW8BSCctAiqumrXjs",
+   "plans": "plans.jsonl",
+   "n": 204,
+   "worst_usd": 10.49,
+   "actual_usd": 3.7071,
+   "out": "/home/user/paste-data/train/api-train/chunk-04"
+  },
+  {
+   "batch_id": "msgbatch_011mUJTFHs6DPZSh4m7XPAqG",
+   "plans": "plans.jsonl",
+   "n": 134,
+   "worst_usd": 6.91,
+   "actual_usd": 2.475,
+   "out": "/home/user/paste-data/train/api-train/chunk-05"
+  },
+  {
+   "batch_id": "msgbatch_01JpVGdE2t3JfuoDSUFQvHYt",
+   "plans": "plans.jsonl",
+   "n": 87,
+   "worst_usd": 4.47,
+   "actual_usd": 1.5651,
+   "out": "/home/user/paste-data/train/api-train/chunk-06"
+  },
+  {
+   "batch_id": "msgbatch_01APzfjS4hzo2dqyFL49yyPs",
+   "plans": "plans.jsonl",
+   "n": 57,
+   "worst_usd": 2.93,
+   "actual_usd": 1.0267,
+   "out": "/home/user/paste-data/train/api-train/chunk-07"
   }
  ]
 }
