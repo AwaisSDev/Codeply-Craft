@@ -57,11 +57,22 @@ def classify(p, seg, cl_gold, rep):
         g = g[0]
         if g["op"] != "WRITE" or g.get("recovered"):
             return "duplicate" if g["op"] != "WRITE" else "recovered_write_mismatch"
-        if p.get("new_entity") != bool(g.get("new_entity")) or (not p.get("new_entity") and rep.gold_entity(p["entity"]) != g["entity"]):
-            return "wrong_entity"
+        if p.get("new_entity") and not g.get("new_entity"):
+            return "wrong_entity:pred_new_gold_existing"
+        if not p.get("new_entity") and g.get("new_entity"):
+            return "wrong_entity:pred_existing_gold_new"
+        if not p.get("new_entity") and rep.gold_entity(p["entity"]) != g["entity"]:
+            ge = g["entity"]
+            pe = rep.gold_entity(p["entity"])
+            if pe == "user" or ge == "user":
+                return "wrong_entity:user_vs_other"
+            same_rel = pe.split(":")[0] == ge.split(":")[0]
+            return "wrong_entity:same_relation" if same_rel else "wrong_entity:other_profile"
         if p["payload"]["attribute"] != g["attribute"]:
             return "wrong_attribute"
-        return "value_mismatch"
+        if value_f1(p["payload"]["value"], g["value"]) < 0.5:
+            return "value_mismatch"
+        return "wrong_entity:new_mention_mismatch" if p.get("new_entity") else "other"
     if op in ("UPDATE", "MERGE_INTO", "FORGET"):
         if u is None:
             return "no_gold_unit"
