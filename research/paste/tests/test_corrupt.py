@@ -73,3 +73,28 @@ def test_no_corruption_is_identity(setup):
     ad, eps = setup
     seg = eps[0]["segments"][5]
     assert corrupt_store(seg, random.Random(0))["store_before"] == seg["store_before"]
+
+
+def test_oracle_replay_tracks_gold_store(setup):
+    """mix=0 (all oracle steps) must reproduce the gold store sizes segment by segment."""
+    from paste.evaluate import Replay, execute, match_segment, oracle_propose
+    _, eps = setup
+    for ep in eps:
+        rep = Replay(ep)
+        for seg in ep["segments"]:
+            assert len(rep.rows()) == len(seg["store_before"])
+            gold = rep.closed_loop_gold(seg)
+            ops, _ = oracle_propose(rep, seg, rep.rows(), None)
+            _, _, _, _, pairs = match_segment(rep, seg, ops, gold)
+            execute(rep, ops, pairs)
+
+
+def test_segment_mix_runs(setup):
+    import math
+    from paste.data import episode_loss_teacher_forced
+    from paste.train import truncate
+    ad, eps = setup
+    ep = truncate(eps[1], k=4)
+    for mix in (0.0, 1.0):
+        loss, n = episode_loss_teacher_forced(ad.m, ad, ep, mix=mix, mix_rng=random.Random(0))
+        assert n == len(ep["segments"]) and math.isfinite(float(loss))

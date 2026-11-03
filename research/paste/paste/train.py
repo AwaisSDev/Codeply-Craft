@@ -77,6 +77,8 @@ def main():
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--bio-weight", type=float, default=1.0, help="class weight of B/I tokens in the BIO losses (O = 1)")
     ap.add_argument("--val-tf", type=int, default=0, help="teacher-forced component metrics on the first N episodes of the first val file, at every checkpoint log")
+    ap.add_argument("--mix", choices=["episode", "segment"], default="episode",
+                    help="closed-loop granularity: one coin per episode (spec v2.1) or per segment (scheduled sampling per step)")
     ap.add_argument("--corrupt-del", type=float, default=0.0, help="per-record drop rate of the gold store (teacher-forced episodes after the curriculum)")
     ap.add_argument("--corrupt-ins", type=float, default=0.0, help="per-segment probability of one spurious record in the gold store")
     ap.add_argument("--warmup", type=float, default=0.06, help="warm-up share of optimizer steps")
@@ -127,11 +129,14 @@ def main():
         model.clear_cache()
         frac = pos / max(1, len(order))
         eps_cl = 0.0 if frac < 0.4 else a.closed_loop * min(1.0, (frac - 0.4) / 0.4)
-        cl = random.Random(a.seed * 1_000_003 + pos).random() < eps_cl
+        cl_rng = random.Random(a.seed * 1_000_003 + pos)
+        cl = cl_rng.random() < eps_cl if a.mix == "episode" else False
+        mix = eps_cl if (a.mix == "segment" and eps_cl > 0) else None
         corrupt = None
         if (a.corrupt_del or a.corrupt_ins) and pos >= a.curriculum * len(order):
             corrupt = (random.Random(a.seed * 7919 + pos), a.corrupt_del, a.corrupt_ins, pool)
-        loss, n = episode_loss_teacher_forced(model, ad, ep, closed_loop=cl, bio_w=a.bio_weight, terms=terms, corrupt=corrupt)
+        loss, n = episode_loss_teacher_forced(model, ad, ep, closed_loop=cl, bio_w=a.bio_weight, terms=terms, corrupt=corrupt,
+                                              mix=mix, mix_rng=cl_rng)
         (loss / a.accum).backward()
         seg_count += n; run_loss += float(loss.detach())
         pos += 1

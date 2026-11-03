@@ -122,14 +122,20 @@ def segment_gold(adapter, seg, rep=None):
 
 
 def episode_loss_teacher_forced(model, adapter, ep, k_bptt=4, window=8, closed_loop=False, bio_w=1.0, terms=None,
-                                corrupt=None):
+                                corrupt=None, mix=None, mix_rng=None):
     """Loss over an episode: h and temporary-item vectors carried by id, truncated BPTT (spec §6.2).
 
     closed_loop=True: the persistent store is the one the model's own decoded operations build (executed by the
     Brain simulator through paste.evaluate.Replay); temporary items stay teacher-forced (DECISIONS 2026-11-03).
     terms: optional dict; per-term loss sums and a segment count ("_n") are accumulated into it for logging.
-    corrupt: optional (rng, p_del, p_ins, pool) for teacher-forced gold-store corruption (corrupt_store)."""
-    from .evaluate import Replay, match_segment, execute
+    corrupt: optional (rng, p_del, p_ins, pool) for teacher-forced gold-store corruption (corrupt_store).
+    mix: per-segment scheduled sampling (research-queue Q3; Bengio et al. 2015 mix per step, not per sequence).
+      The store input is always the replayed store; after each segment, with probability `mix` the model's own
+      decoded operations update it, otherwise the oracle's (the closed-loop gold). mix=1 equals closed_loop=True;
+      mix=0 replays the gold trajectory through the Brain simulator."""
+    from .evaluate import Replay, match_segment, execute, oracle_propose
+    if mix is not None:
+        closed_loop = True
     rep = Replay(ep) if closed_loop else None
     h, z, total, n = None, {}, 0.0, 0
     prev_session = None
@@ -153,7 +159,13 @@ def episode_loss_teacher_forced(model, adapter, ep, k_bptt=4, window=8, closed_l
             for k, v in L.items():
                 terms[k] = terms.get(k, 0.0) + float(v.detach())
             terms["_n"] = terms.get("_n", 0) + 1
-        if rep is not None:                                       # the model's own operations build its next store
+        if rep is not None and mix is not None and not (mix_rng.random() < mix):   # oracle step
+            with torch.no_grad():
+                cl_gold = rep.closed_loop_gold(seg)
+                ops, _ = oracle_propose(rep, seg, rep.rows(), None)
+                _, _, _, _, pairs = match_segment(rep, seg, ops, cl_gold)
+                execute(rep, ops, pairs)
+        elif rep is not None:                                     # the model's own operations build its next store
             with torch.no_grad():
                 rows = rep.rows()
                 text, _ = None, None
