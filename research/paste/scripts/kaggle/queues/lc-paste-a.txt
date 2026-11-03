@@ -1,0 +1,3 @@
+# Learning curve (task 17), PASTE-PR, V0 recipe (teacher forced), seed 1. Same API/programmatic proportions as E27.
+LC1500-PASTE | PASTE | 0-750 3000-3750 | --epochs 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --profile-rows
+LC3000-PASTE | PASTE | 0-1500 3000-4500 | --epochs 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --profile-rows

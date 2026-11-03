@@ -1,0 +1,1 @@
+LC6000-PASTE | PASTE | 0-6000 | --epochs 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --profile-rows

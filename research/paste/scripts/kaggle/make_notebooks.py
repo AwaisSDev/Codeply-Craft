@@ -67,7 +67,18 @@ for r in RUNS:
 subprocess.run("cd /kaggle/working && tar czf runs.tgz --exclude='*/last.pt' runs", shell=True, check=True)'''
 
 
-def nb(title, intro, cells):
+CPU_QUEUE = r'''# Validation experiments on a free Kaggle CPU session (no GPU quota): scripts/queue.sh lines, train + full-val sweep
+QUEUE = """__QUEUE__"""
+os.makedirs("/kaggle/working/runs", exist_ok=True)
+open("/kaggle/working/runs/queue.txt", "w").write(QUEUE)
+env = dict(os.environ, PY="python", DATA=DATA, VAL_API=f"{DATA}/val-api.jsonl", RUNS="/kaggle/working/runs",
+           PASTE_HF_CACHE="/kaggle/working/hf", GRID="__GRID__")
+r = subprocess.run("bash scripts/queue.sh", shell=True, env=env, capture_output=True, text=True)
+print(r.stdout[-5000:]); print(r.stderr[-3000:])
+subprocess.run("cd /kaggle/working && tar czf runs.tgz --exclude='*/last.pt' --exclude='*/epoch*.pt' runs && ls -la runs.tgz", shell=True)'''
+
+
+def nb(title, intro, cells, gpu=True):
     def cell(src, kind="code"):
         c = {"cell_type": kind, "metadata": {}, "source": src.strip("\n").splitlines(keepends=True)}
         if kind == "code":
@@ -75,7 +86,8 @@ def nb(title, intro, cells):
         return c
     return {"cells": [cell(f"# {title}\n\n{intro}", "markdown")] + [cell(c) for c in cells],
             "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
-                         "language_info": {"name": "python"}, "kaggle": {"accelerator": "nvidiaTeslaT4", "isInternetEnabled": True}},
+                         "language_info": {"name": "python"},
+                         "kaggle": {"accelerator": "nvidiaTeslaT4" if gpu else "none", "isInternetEnabled": True}},
             "nbformat": 4, "nbformat_minor": 5}
 
 
@@ -85,6 +97,9 @@ def main():
     ap.add_argument("--runs", help="JSON: list of groups, each a list of {name, system, seed, args, slice?}")
     ap.add_argument("--paste-flags", default="", help="PASTE-only flags for the smoke run (e.g. --profile-rows)")
     ap.add_argument("--out", default=os.path.join(HERE, "out"))
+    ap.add_argument("--cpu-queue", help="queue file (scripts/queue.sh format) for a CPU-only validation notebook")
+    ap.add_argument("--slug", help="notebook name for --cpu-queue")
+    ap.add_argument("--grid", default="0.8 0.9 0.95 0.98")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     setup = SETUP.replace("__COMMIT__", a.commit).replace("__DATA__", DATA)
@@ -96,6 +111,10 @@ def main():
             cell = TRAIN_CELL.replace("__RUNS__", json.dumps(group, indent=1))
             json.dump(nb(f"PASTE training group {k}", "Train + val only; test is evaluated off Kaggle.", [setup, cell]),
                       open(os.path.join(a.out, f"paste-train-{k}.ipynb"), "w"), indent=1)
+    if a.cpu_queue:
+        cell = CPU_QUEUE.replace("__QUEUE__", open(a.cpu_queue).read()).replace("__GRID__", a.grid)
+        json.dump(nb(f"PASTE validation experiments: {a.slug}", "Free CPU session; train + validation only.", [setup, cell], gpu=False),
+                  open(os.path.join(a.out, f"{a.slug}.ipynb"), "w"), indent=1)
     print("written to", a.out)
 
 

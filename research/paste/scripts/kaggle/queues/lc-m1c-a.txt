@@ -1,0 +1,2 @@
+LC1500-M1c | M1c | 0-750 3000-3750 | --epochs 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm
+LC3000-M1c | M1c | 0-1500 3000-4500 | --epochs 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm

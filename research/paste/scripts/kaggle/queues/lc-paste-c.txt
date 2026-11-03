@@ -1,0 +1,2 @@
+# 3,000 episodes x 2 epochs: same optimizer steps as 6,000 x 1 (data vs steps)
+LC3000x2-PASTE | PASTE | 0-1500 3000-4500 | --epochs 2 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --profile-rows

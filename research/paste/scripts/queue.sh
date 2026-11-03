@@ -13,7 +13,8 @@ RUNS=${RUNS:-$PASTE_HOME/paste-runs/q}
 QUEUE=${QUEUE:-$RUNS/queue.txt}
 GRID=${GRID:-0.8 0.9 0.95 0.98}
 export PASTE_HF_CACHE=${PASTE_HF_CACHE:-$PASTE_HOME/paste-cache/hf}
-VAL="$DATA/val-programmatic.jsonl $DATA/api-val/val-api.jsonl"
+VAL_API=${VAL_API:-$DATA/api-val/val-api.jsonl}
+VAL="$DATA/val-programmatic.jsonl $VAL_API"
 MIX=$DATA/train-mix-full.jsonl
 while true; do
   [ -f "$RUNS/STOP" ] && { echo "STOP file"; exit 0; }

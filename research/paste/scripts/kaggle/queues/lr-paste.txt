@@ -1,0 +1,3 @@
+# Pre-registered encoder-LR tuning (BASELINE-PLAN §4): {3e-5, 1e-4}, 1 seed, validation; default 5e-5 = E27
+LR3e5-PASTE | PASTE | 0-1000 3000-4000 | --epochs 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --profile-rows --lr-enc 3e-5
+LR1e4-PASTE | PASTE | 0-1000 3000-4000 | --epochs 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --profile-rows --lr-enc 1e-4
