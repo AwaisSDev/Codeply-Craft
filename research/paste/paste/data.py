@@ -98,11 +98,12 @@ def segment_gold(adapter, seg, rep=None):
     return s_in, gold
 
 
-def episode_loss_teacher_forced(model, adapter, ep, k_bptt=4, window=8, closed_loop=False):
+def episode_loss_teacher_forced(model, adapter, ep, k_bptt=4, window=8, closed_loop=False, bio_w=1.0, terms=None):
     """Loss over an episode: h and temporary-item vectors carried by id, truncated BPTT (spec §6.2).
 
     closed_loop=True: the persistent store is the one the model's own decoded operations build (executed by the
-    Brain simulator through paste.evaluate.Replay); temporary items stay teacher-forced (DECISIONS 2026-11-03)."""
+    Brain simulator through paste.evaluate.Replay); temporary items stay teacher-forced (DECISIONS 2026-11-03).
+    terms: optional dict; per-term loss sums and a segment count ("_n") are accumulated into it for logging."""
     from .evaluate import Replay, match_segment, execute
     rep = Replay(ep) if closed_loop else None
     h, z, total, n = None, {}, 0.0, 0
@@ -119,8 +120,12 @@ def episode_loss_teacher_forced(model, adapter, ep, k_bptt=4, window=8, closed_l
         for t, it in zip(s_in.temps, seg["temp_before"]):
             t.z = z.get(it["id"], torch.zeros(model.cfg.d))
         enc = model.encode([s_in])[0]
-        L = segment_loss(model, enc, gold)
+        L = segment_loss(model, enc, gold, bio_w=bio_w)
         total = total + sum(L.values()); n += 1
+        if terms is not None:
+            for k, v in L.items():
+                terms[k] = terms.get(k, 0.0) + float(v.detach())
+            terms["_n"] = terms.get("_n", 0) + 1
         if rep is not None:                                       # the model's own operations build its next store
             with torch.no_grad():
                 rows = rep.rows()

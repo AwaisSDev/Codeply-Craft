@@ -74,6 +74,8 @@ def main():
     ap.add_argument("--val-limit", type=int, default=0, help="first N val episodes per val file")
     ap.add_argument("--ckpt-every", type=int, default=100, help="episodes between checkpoints")
     ap.add_argument("--threads", type=int, default=4)
+    ap.add_argument("--bio-weight", type=float, default=1.0, help="class weight of B/I tokens in the BIO losses (O = 1)")
+    ap.add_argument("--warmup", type=float, default=0.06, help="warm-up share of optimizer steps")
     a = ap.parse_args()
     if any(("frozen" in f or "/test-" in f or "/stress-" in f) for f in a.train + a.val):
         raise SystemExit("frozen test/stress data can never be used for training or validation")
@@ -98,7 +100,7 @@ def main():
     for _ in range(a.epochs):
         o = list(range(len(train))); rng.shuffle(o); order += o
     total_steps = math.ceil(len(order) / a.accum)
-    warm = max(1, int(0.06 * total_steps))
+    warm = max(1, int(a.warmup * total_steps))
     lr_at = lambda step: (step + 1) / warm if step < warm else 0.5 * (1 + math.cos(math.pi * (step - warm) / max(1, total_steps - warm)))
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_at)
     ck = os.path.join(a.out, "last.pt")
@@ -110,7 +112,7 @@ def main():
         random.setstate(st["py_rng"]); torch.set_rng_state(st["torch_rng"])
         print(f"resumed at episode {pos}/{len(order)}, step {step}", flush=True)
     log = open(os.path.join(a.out, "log.jsonl"), "a")
-    t0, seg_count, run_loss = time.time(), 0, 0.0
+    t0, seg_count, run_loss, terms = time.time(), 0, 0.0, {}
     model.train()
     while pos < len(order):
         ep = train[order[pos]]
@@ -120,7 +122,7 @@ def main():
         frac = pos / max(1, len(order))
         eps_cl = 0.0 if frac < 0.4 else a.closed_loop * min(1.0, (frac - 0.4) / 0.4)
         cl = random.Random(a.seed * 1_000_003 + pos).random() < eps_cl
-        loss, n = episode_loss_teacher_forced(model, ad, ep, closed_loop=cl)
+        loss, n = episode_loss_teacher_forced(model, ad, ep, closed_loop=cl, bio_w=a.bio_weight, terms=terms)
         (loss / a.accum).backward()
         seg_count += n; run_loss += float(loss.detach())
         pos += 1
@@ -130,9 +132,10 @@ def main():
         if pos % a.ckpt_every == 0 or pos == len(order):
             el = time.time() - t0
             rec = {"pos": pos, "of": len(order), "step": step, "loss": round(run_loss / max(1, a.ckpt_every), 4),
-                   "seg_per_s": round(seg_count / max(el, 1e-9), 3), "lr_enc": sched.get_last_lr()[0], "time": time.time()}
+                   "seg_per_s": round(seg_count / max(el, 1e-9), 3), "lr_enc": sched.get_last_lr()[0], "time": time.time(),
+                   "terms": {k: round(v / max(1, terms.get("_n", 1)), 4) for k, v in terms.items() if k != "_n"}}
             log.write(json.dumps(rec) + "\n"); log.flush(); print(json.dumps(rec), flush=True)
-            run_loss = 0.0
+            run_loss, terms = 0.0, {}
             save(ck, {"model": model.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(), "pos": pos, "step": step,
                       "py_rng": random.getstate(), "torch_rng": torch.get_rng_state()})
     # closed-loop validation (default thresholds; calibration is a separate step)

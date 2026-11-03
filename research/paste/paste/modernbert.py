@@ -119,7 +119,7 @@ class ModernBert(nn.Module):
 def ettin_files(name: str):
     """Paths to the released checkpoint and tokenizer (downloaded once into PASTE_HF_CACHE)."""
     from huggingface_hub import hf_hub_download
-    cache = os.environ.get("PASTE_HF_CACHE", os.path.expanduser("~/.cache/paste-hf"))
+    cache = os.environ.get("PASTE_HF_CACHE") or os.path.expanduser("~/.cache/paste-hf")   # empty means unset
     repo = f"jhu-clsp/{name}"
     return (hf_hub_download(repo, "pytorch_model.bin", cache_dir=cache),
             hf_hub_download(repo, "tokenizer.json", cache_dir=cache))

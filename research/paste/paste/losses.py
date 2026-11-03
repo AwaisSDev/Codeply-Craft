@@ -35,13 +35,18 @@ def _bce_balanced(logits, y):
     return F.binary_cross_entropy_with_logits(logits, y, pos_weight=w)
 
 
-def segment_loss(model, enc, gold):
-    """Core losses for one encoded segment. Returns a dict of scalar terms (unweighted, lambda = 1)."""
+def segment_loss(model, enc, gold, bio_w=1.0):
+    """Core losses for one encoded segment. Returns a dict of scalar terms (unweighted, lambda = 1).
+
+    bio_w: class weight of B and I in the two BIO cross-entropies (O = 1). 1.0 is the spec default; the trainer's
+    --bio-weight changes it identically for every system (DECISIONS 2026-11-03, E21 diagnosis: ~90 % of tokens are
+    O and an undertrained tagger predicts O almost everywhere)."""
     hd = model.heads
     L = {}
     gold = {k: v for k, v in gold.items() if not k.startswith("_")}
-    L["tag"] = F.cross_entropy(hd.bio_unit(enc.seg), torch.tensor(gold["unit_bio"])) + \
-        F.cross_entropy(hd.bio_ent(enc.seg), torch.tensor(gold["ent_bio"]))
+    w = None if bio_w == 1.0 else torch.tensor([1.0, bio_w, bio_w])
+    L["tag"] = F.cross_entropy(hd.bio_unit(enc.seg), torch.tensor(gold["unit_bio"]), weight=w) + \
+        F.cross_entropy(hd.bio_ent(enc.seg), torch.tensor(gold["ent_bio"]), weight=w)
     terms = {k: [] for k in ("cls", "gate", "addr", "rel", "src", "ment", "tmp")}
     ments = gold.get("ment_spans", [])
     ment_vecs = torch.stack([enc.seg[a:b].mean(0) for a, b in ments]) if ments else torch.zeros(0, model.cfg.d)

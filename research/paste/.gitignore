@@ -1,3 +1,11 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+# never commit model weights, HF caches or run outputs (private storage only)
+blobs/
+models--*/
+.locks/
+CACHEDIR.TAG
+*.pt
+*.bin
+*.safetensors
