@@ -1715,6 +1715,8 @@ async function ensureSessionsBranch(env) {
   const head = await gh('GET', `/repos/${env.repo}/git/ref/heads/${encodeURIComponent(base)}`);
   const sha = head.json && head.json.object && head.json.object.sha;
   if (sha) await gh('POST', `/repos/${env.repo}/git/refs`, { ref: `refs/heads/${SESSIONS_BRANCH}`, sha }, { allow: [422] });
+  // Only task state lives on craft-sessions; Vercel must not deploy each write to it (cloud.mjs does the same).
+  await putFile(env.repo, 'vercel.json', textToB64('{\n  "git": { "deploymentEnabled": false }\n}\n'), 'Craft: never deploy this branch', SESSIONS_BRANCH).catch(() => {});
 }
 /**
  * Hand a task to the cloud. A runner still up for its chat takes it at once
