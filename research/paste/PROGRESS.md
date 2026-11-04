@@ -37,7 +37,7 @@ Results in (2026-11-04 00:50 UTC; validation, cross-fitted, one seed):
   at every measured budget.
 
 Running on Kaggle CPU (5 at once; stateless check-ins `scripts/kaggle/sched_all.sh`): lc-paste-b, lc-m1c-b,
-lc-paste-c (since 00:48), lc-m1c-c, var-v2-m1c (since 01:58). Not yet pushed: var-v1-m1c, var-v3-paste, var-v3-m1c,
+lc-paste-c (since 00:48), lc-m1c-c (since 01:58), var-v1-m1c (since 05:21). Not yet pushed: var-v3-paste, var-v3-m1c,
 var-v4-paste, var-v4-m1c, var-s2-paste. ETA all recipe runs ≈ 10:00-12:00 UTC 2026-11-04.
 
 Next actions, in order:
