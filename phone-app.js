@@ -34,6 +34,7 @@
     up: svg('<path d="M7 11v9H4v-9ZM7 11l4-7a2 2 0 0 1 3 2l-1 4h5.5a2 2 0 0 1 2 2.4l-1.3 6A2 2 0 0 1 17.2 20H7"/>'),
     down: svg('<path d="M7 13V4H4v9ZM7 13l4 7a2 2 0 0 0 3-2l-1-4h5.5a2 2 0 0 0 2-2.4l-1.3-6A2 2 0 0 0 17.2 4H7"/>'),
     again: svg('<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4"/>'),
+    apps: svg('<rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><path d="M17 13.5v7M13.5 17h7"/>'),
     share: svg('<path d="M12 15V4M8 8l4-4 4 4M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/>'),
   };
   const ago = (t) => {
@@ -100,6 +101,7 @@
         ${li('pc', I.pc, (data.pc && data.pc.name) || 'Your PC', `<span class="status${data.pc && data.pc.online ? ' on' : ''}"><i></i>${data.pc && data.pc.online ? 'Online' : 'Offline'}</span>`)}
         ${li('perm', I.shield, 'Permissions', esc(PERM_TITLE[data.perm] || 'Ask first'))}
         ${li('model', I.spark, 'Model', esc(data.model || 'Haze 2'))}
+        ${li('apps', I.apps, 'Connected apps')}
         ${li('cloud', I.cloud, 'Cloud')}
         ${li('design', I.design, 'Design')}
       </div>
@@ -642,6 +644,7 @@
       else if (act === 'perm') openPerms();
       else if (act === 'model') P().openModelPicker();
       else if (act === 'pc') P().openProjectPicker({ anchor: a });
+      else if (act === 'apps') { $('settingsPanel').classList.add('hidden'); if (window.CraftWork) window.CraftWork.openApps(); }
       else if (act === 'cloud') { $('settingsPanel').classList.add('hidden'); P().openSetup({}); }
       else if (act === 'design') { $('settingsPanel').classList.add('hidden'); $('drawerDesign').click(); }
       else if (act === 'bell') { if (window.CraftReminders && window.CraftReminders.enablePush) { await window.CraftReminders.enablePush(); renderYou(settingsData()); } else toast("This phone can't show notifications from Codeply."); }

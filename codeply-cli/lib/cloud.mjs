@@ -532,6 +532,14 @@ export async function syncCloudConnections({ home = defaultHome(), fetchImpl = f
     const auth = require('./auth.js');
     const token = await auth.getAccessToken().catch(() => null);
     if (!token) return false;
+    // An app connected from the phone (a token pasted there) lives only in the account's copy: keep it, unless
+    // this PC disconnected that app itself (then it's gone everywhere).
+    try {
+      const cur = await fetchImpl(auth.SUPABASE_URL + '/functions/v1/connections', { method: 'POST', headers: { Authorization: 'Bearer ' + token, apikey: auth.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get' }), signal: AbortSignal.timeout(15_000) });
+      const j = await cur.json().catch(() => ({}));
+      const dropped = new Set(config.disconnectedApps ? config.disconnectedApps() : []);
+      for (const name of CONNECTION_APPS) if (!connections[name] && !dropped.has(name) && j && j.connections && j.connections[name] && j.connections[name].accessToken) connections[name] = j.connections[name];
+    } catch {}
     const r = await fetchImpl(auth.SUPABASE_URL + '/functions/v1/connections', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + token, apikey: auth.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },

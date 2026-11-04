@@ -93,3 +93,18 @@
 .wk-spec-main small { font-size: 13px; color: var(--muted); }
 .wk-spec-ins { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wk-spec-n { flex: none; font-size: 13px; color: var(--muted); }
+
+/* Connected apps */
+.wk-apps-lede { margin: 14px 4px 2px; font-size: 15px; line-height: 1.5; color: var(--text); }
+.wk-app { display: flex; align-items: center; gap: 13px; width: 100%; padding: 12px 14px; text-align: left; color: var(--text); }
+.wk-app-logo { width: 36px; height: 36px; border-radius: 10px; object-fit: contain; background: #fff; box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); padding: 5px; box-sizing: border-box; flex: none; }
+.wk-app-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wk-app-main b { font-size: 15.5px; font-weight: 600; }
+.wk-app-main small { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wk-app-act { flex: none; font-size: 13.5px; font-weight: 600; padding: 7px 13px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--border); }
+.wk-app-act.on { box-shadow: none; color: var(--muted); padding-right: 2px; }
+.wk-app-head { display: flex; align-items: center; gap: 14px; margin: 4px 0 6px; }
+.wk-app-head img { width: 44px; height: 44px; border-radius: 12px; background: #fff; padding: 6px; box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); object-fit: contain; }
+.wk-app-head .wk-title { margin: 0; }
+.wk-app-head .wk-text { margin: 2px 0 0; }
+.wk-text a { color: var(--link, var(--blue)); }

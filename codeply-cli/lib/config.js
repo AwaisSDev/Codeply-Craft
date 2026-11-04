@@ -201,8 +201,14 @@ function isIntegrationConnected(name) {
 function saveIntegration(name, patch) {
   if (!INTEGRATIONS.includes(name)) throw new Error(`Unknown integration: ${name}`);
   const stored = readFile()[name] || {};
-  return saveConfig({ [name]: { ...INTEGRATION_DEFAULTS[name], ...stored, ...patch } });
+  // Apps this PC disconnected on purpose (the account's copy drops them too; cloud.mjs syncCloudConnections).
+  const dropped = new Set(readFile().disconnectedApps || []);
+  if (patch && patch.accessToken) dropped.delete(name); else if (patch && patch.accessToken === '') dropped.add(name);
+  return saveConfig({ [name]: { ...INTEGRATION_DEFAULTS[name], ...stored, ...patch }, disconnectedApps: [...dropped] });
 }
+
+/** Apps this PC disconnected on purpose (kept out of the account's copy when it syncs). */
+function disconnectedApps() { return readFile().disconnectedApps || []; }
 
 /** Disconnects by wiping the stored tokens - client id/secret are left in place so reconnecting doesn't need them re-entered. */
 function disconnectIntegration(name) {
@@ -463,7 +469,7 @@ function byokHint() {
     '"Add a model" or "Connect Ollama" (CLI: codeply provider openrouter --key <key>).';
 }
 
-module.exports = {
+module.exports = { disconnectedApps,
   getConfig, saveConfig, maskKey, describeProvider, describeProviderShort, byokHint,
   configPath, PROVIDERS, BYOK_PROVIDERS,
   getIntegration, saveIntegration, disconnectIntegration, isIntegrationConnected, INTEGRATIONS,

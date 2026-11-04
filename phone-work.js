@@ -670,6 +670,120 @@ ${block}
     const item = (id, icon, label, fn) => { const b = document.createElement('button'); b.className = 'drawer-item'; b.id = id; b.innerHTML = `${icon}<span>${label}</span>`; b.addEventListener('click', () => { if (P().closeDrawer) P().closeDrawer(); fn(); }); return b; };
     tasks.after(item('drawerCalendar', ICON.cal, 'Calendar', openCalendar), item('drawerSpecialists', ICON.bots, 'Specialists', openSpecialists));
   }
+  // ═══ CONNECTED APPS (Settings) ══════════════════════════════════════════════
+  // The five apps Codeply connects to. Status comes from the PC when it's online (its own Connect Apps), else from
+  // the account's copy (the connections function), which is what the phone and cloud runs use. Connecting:
+  //   - a token, from the phone, for GitHub, Vercel and Supabase (checked against the app before it's saved);
+  //   - the sign-in page, opened on your PC, for Gmail and Slack (they need a browser sign-in there once).
+  const APPS = [
+    { id: 'gmail', name: 'Gmail', logo: 'apps/gmail.webp', what: 'Email and Google Calendar', label: (c) => c.email },
+    { id: 'slack', name: 'Slack', logo: 'apps/slack.webp', what: 'Messages to your bots, drafts for you', label: (c) => c.teamName },
+    { id: 'github', name: 'GitHub', logo: 'apps/github.webp', what: 'Repos, cloud runs and checks', label: (c) => c.userName || c.login, token: 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=Codeply', hint: 'A classic token with the repo and workflow scopes.' },
+    { id: 'vercel', name: 'Vercel', logo: 'apps/vercel.png', what: 'Deployments', label: (c) => c.userName, token: 'https://vercel.com/account/settings/tokens', hint: 'A token from your Vercel account settings.' },
+    { id: 'supabase', name: 'Supabase', logo: 'apps/supabase.jpg', what: 'Projects and databases', label: (c) => c.email, token: 'https://supabase.com/dashboard/account/tokens', hint: 'An access token from your Supabase account.' },
+  ];
+  const apps = { status: {}, source: '', at: 0, loading: false, error: '' };
+  const pcOn = () => !!(P().relay && P().relay.pcId);
+  async function loadApps() {
+    apps.loading = true; apps.error = ''; renderApps();
+    try {
+      if (pcOn()) {
+        const r = await P().relayRequest('GET', '/api/integrations');
+        if (!r || r.error) throw new Error((r && r.error) || 'No answer from your PC.');
+        apps.status = Object.fromEntries(APPS.map((a) => [a.id, r[a.id] && r[a.id].connected ? { connected: true, label: a.label(r[a.id]) || '' } : { connected: false }]));
+        apps.source = 'pc';
+      } else {
+        const c = await P().accountConnections({ fresh: true });
+        apps.status = Object.fromEntries(APPS.map((a) => [a.id, c[a.id] && c[a.id].accessToken ? { connected: true, label: a.label(c[a.id]) || '' } : { connected: false }]));
+        apps.source = 'account';
+      }
+      apps.at = Date.now();
+    } catch (e) { apps.error = /404|not found/i.test(e.message) ? 'Update Codeply on your PC to manage apps from here.' : e.message; }
+    finally { apps.loading = false; renderApps(); }
+  }
+  function openApps() {
+    const p = panel('appsPanel', 'Connected apps');
+    show(p); renderApps(); loadApps();
+  }
+  function renderApps() {
+    const p = $('appsPanel'); if (!p) return;
+    const body = p.querySelector('.panel-body');
+    const src = apps.loading ? 'Checking…' : apps.error ? apps.error : apps.source === 'pc' ? `From your PC · ${stamp(apps.at)}` : apps.at ? `From your Codeply account · ${stamp(apps.at)}` : '';
+    body.innerHTML = `<p class="wk-apps-lede">Connect these once and Wisp can use them: from your PC, from this phone, and in cloud runs.</p><p class="note ${apps.error ? 'wk-err' : ''}">${esc(src)}</p>
+      <div class="wk-list">${APPS.map((a) => { const s = apps.status[a.id]; return `<button type="button" class="wk-app" data-app="${a.id}">
+        <img class="wk-app-logo" src="${a.logo}" alt="" width="36" height="36">
+        <span class="wk-app-main"><b>${esc(a.name)}</b><small>${s && s.connected ? `${dot('pass')} Connected${s.label ? ` · ${esc(s.label)}` : ''}` : apps.loading ? 'Checking…' : esc(a.what)}</small></span>
+        <span class="wk-app-act ${s && s.connected ? 'on' : ''}">${s && s.connected ? 'Manage' : 'Connect'}</span></button>`; }).join('')}</div>`;
+    body.querySelectorAll('[data-app]').forEach((b) => b.addEventListener('click', () => appSheet(APPS.find((a) => a.id === b.dataset.app))));
+  }
+  async function saveToAccount(id, value) {
+    // The account's copy holds every app; change one and keep the rest.
+    const all = { ...(await P().accountConnections({ fresh: true })) };
+    if (value) all[id] = value; else delete all[id];
+    const token = await P().accessToken();
+    const r = await fetch(`${P().SUPABASE_URL}/functions/v1/connections`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, apikey: P().SUPABASE_ANON_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save', connections: all }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.success === false) throw new Error(j.error || `Couldn't save it to your account (HTTP ${r.status}).`);
+    await P().accountConnections({ fresh: true }).catch(() => {});
+  }
+  /** Checks a token with the app itself before anything is saved. */
+  async function checkToken(id, t) {
+    if (id === 'github') { const r = await fetch('https://api.github.com/user', { headers: { Authorization: `Bearer ${t}` } }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error('GitHub didn’t accept that token.'); return { accessToken: t, userName: j.login || '' }; }
+    if (id === 'vercel') { const r = await fetch('https://api.vercel.com/v2/user', { headers: { Authorization: `Bearer ${t}` } }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error('Vercel didn’t accept that token.'); return { accessToken: t, userName: (j.user && (j.user.username || j.user.email)) || '' }; }
+    if (id === 'supabase') {
+      const token = await P().accessToken();
+      const r = await fetch(`${P().SUPABASE_URL}/functions/v1/integration-status`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, apikey: P().SUPABASE_ANON_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ app: 'supabase', path: '/v1/projects', token: t }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'The Supabase check isn’t available.');
+      if (j.status !== 200) throw new Error('Supabase didn’t accept that token.');
+      return { accessToken: t, refreshToken: '', expiresAt: 0, email: '' };
+    }
+    throw new Error('That app needs a sign-in on your PC.');
+  }
+  function appSheet(a) {
+    const s = apps.status[a.id] || {};
+    const pc = pcOn();
+    const tokenForm = a.token ? `<label class="wk-field"><span>Access token</span><input id="apTok" type="password" autocomplete="off" placeholder="Paste the token"></label>
+      <p class="wk-text small">${esc(a.hint)} <a href="${a.token}" target="_blank" rel="noopener">Create one</a>. It's checked with ${esc(a.name)} before it's saved, and kept encrypted in your Codeply account.</p>` : '';
+    const html = s.connected
+      ? `<div class="wk-app-head"><img src="${a.logo}" alt="" width="44" height="44"><div><h2 class="wk-title">${esc(a.name)}</h2><p class="wk-text">${dot('pass')} Connected${s.label ? ` as ${esc(s.label)}` : ''}</p></div></div>
+         <p class="wk-text small">${esc(a.what)}. Used by Wisp on your PC, on this phone and in cloud runs.</p><p class="wk-text small wk-err" data-err></p>
+         <div class="wk-actions"><button class="btn btn-outline danger" data-dis>Disconnect</button><button class="btn btn-quiet" data-wk-close>Close</button></div>`
+      : `<div class="wk-app-head"><img src="${a.logo}" alt="" width="44" height="44"><div><h2 class="wk-title">Connect ${esc(a.name)}</h2><p class="wk-text">${esc(a.what)}</p></div></div>
+         ${tokenForm}
+         ${!a.token && !pc ? `<p class="wk-text">${esc(a.name)} needs a one-time sign-in in a browser on your PC, and your PC is offline right now. Open Codeply on it and come back here.</p>` : ''}
+         <p class="wk-text small wk-err" data-err></p>
+         <div class="wk-actions wrap">${pc ? `<button class="btn ${a.token ? 'btn-outline' : 'btn-primary'}" data-pc>Sign in on your PC</button>` : ''}${a.token ? '<button class="btn btn-primary" data-tok>Connect</button>' : ''}<button class="btn btn-quiet" data-wk-close>Cancel</button></div>`;
+    const sh = sheet(html);
+    const err = sh.q('[data-err]');
+    const done = (msg) => { sh.close(); toast(msg); loadApps(); };
+    const busy = (b, on, label) => { b.disabled = on; if (label) b.textContent = label; };
+    const dis = sh.q('[data-dis]');
+    if (dis) dis.addEventListener('click', async () => {
+      if (!confirm(`Disconnect ${a.name} from Codeply? Wisp won't be able to use it until you connect it again.`)) return;
+      busy(dis, true, 'Disconnecting…');
+      try { if (pc) { const r = await P().relayRequest('POST', '/api/integrations/disconnect', { name: a.id }); if (r && r.ok === false) throw new Error(r.error); } await saveToAccount(a.id, null); done(`${a.name} disconnected`); }
+      catch (e) { err.textContent = e.message; busy(dis, false, 'Disconnect'); }
+    });
+    const viaPc = sh.q('[data-pc]');
+    if (viaPc) viaPc.addEventListener('click', async () => {
+      busy(viaPc, true, 'Waiting for the sign-in on your PC…');
+      try { const r = await P().relayRequest('POST', '/api/integrations/connect', { name: a.id }); if (r && r.ok === false) throw new Error(r.error || 'The sign-in didn’t finish.'); done(`${a.name} connected`); }
+      catch (e) { err.textContent = e.message; busy(viaPc, false, 'Sign in on your PC'); }
+    });
+    const tok = sh.q('[data-tok]');
+    if (tok) tok.addEventListener('click', async () => {
+      const t = sh.q('#apTok').value.trim();
+      if (!t) { err.textContent = 'Paste a token first.'; return; }
+      busy(tok, true, 'Checking…');
+      try {
+        if (pc) { const r = await P().relayRequest('POST', '/api/integrations/token', { name: a.id, token: t }); if (!r || r.ok === false) throw new Error((r && r.error) || 'Your PC didn’t accept it.'); }
+        else await saveToAccount(a.id, await checkToken(a.id, t));
+        done(`${a.name} connected`);
+      } catch (e) { err.textContent = e.message; busy(tok, false, 'Connect'); }
+    });
+  }
+
   // ═══ SPECIALISTS: the ones Wisp has called or made ══════════════════════════
   // From the PC when it's online (Wisp's team: built-in specialists Wisp has called, and the ones it made), kept
   // on the phone for when it's offline; plus every specialist seen in this phone's chats (wisp_agent events).
@@ -759,5 +873,5 @@ ${block}
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
 
-  window.CraftWork = { openSpecialists, setTab, schedulesHtml, scheduledTasks, openRun, loadSchedules, openCalendar, openChecks, isStatusQuestion, statusNote, cronFor, nextRun, loopYaml, whenText, runChecks };
+  window.CraftWork = { openApps, openSpecialists, setTab, schedulesHtml, scheduledTasks, openRun, loadSchedules, openCalendar, openChecks, isStatusQuestion, statusNote, cronFor, nextRun, loopYaml, whenText, runChecks };
 })();

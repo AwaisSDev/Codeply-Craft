@@ -16,6 +16,10 @@ if (process.env.CRAFT_VOICE_SELFTEST) { require('./voice/selftest'); return; }
 // Same for Life Integrated Bots: `CRAFT_LIFE_SELFTEST=<folder>` (life-selftest.js).
 if (process.env.CRAFT_LIFE_SELFTEST) { require('./life-selftest'); return; }
 const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, Tray, Menu, nativeImage, powerSaveBlocker, Notification, clipboard } = require('electron');
+// Every ipcMain.handle is also kept here, so the phone's relay can run the same handler as Craft's own window
+// (the phone's Connected apps uses Connect Apps' handlers rather than copies of them).
+const ipcHandlers = {};
+{ const handle = ipcMain.handle.bind(ipcMain); ipcMain.handle = (ch, fn) => { ipcHandlers[ch] = fn; return handle(ch, fn); }; }
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -2594,6 +2598,22 @@ async function handleBridgeApi(method, pathname, query, body) {
   if (pathname === '/api/life' || pathname.startsWith('/api/life/')) {
     const r = await autopilot.bridge(method, pathname, body);
     if (r) return r;
+  }
+  // Connected apps from the phone's Settings: the same handlers as Craft's Connect Apps. A sign-in that needs a
+  // browser (Gmail, Slack, and the OAuth way for the others) opens on this PC. After a change the account's copy
+  // (the connections function, which the phone and cloud runs read) is updated.
+  if (pathname.startsWith('/api/integrations')) {
+    const name = String((body && body.name) || '');
+    const sync = () => import(require('url').pathToFileURL(path.join(CLI_DIR, 'lib', 'cloud.mjs')).href).then((m) => m.syncCloudConnections()).catch(() => {});
+    const call = (ch, ...args) => new Promise((resolve) => { const h = ipcHandlers[ch]; if (!h) resolve({ ok: false, error: 'Not available.' }); else Promise.resolve(h({}, ...args)).then(resolve, (e) => resolve({ ok: false, error: e.message })); });
+    if (method === 'GET' && pathname === '/api/integrations') return { status: 200, body: await call('integrations:status') };
+    if (method === 'POST' && pathname === '/api/integrations/connect') {
+      const ch = { gmail: 'integrations:connectGmail', slack: 'integrations:connectSlack', vercel: 'integrations:connectVercel', supabase: 'integrations:connectSupabase', github: 'integrations:connectGithub' }[name];
+      if (!ch) return { status: 400, body: { error: 'Unknown app.' } };
+      const r = await call(ch); await sync(); return { status: 200, body: r || { ok: true } };
+    }
+    if (method === 'POST' && pathname === '/api/integrations/token') { const r = await call('integrations:connectToken', { name, token: String((body && body.token) || '') }); await sync(); return { status: 200, body: r }; }
+    if (method === 'POST' && pathname === '/api/integrations/disconnect') { const r = await call('integrations:disconnect', name); await sync(); return { status: 200, body: r }; }
   }
   // Wisp's team for the phone's Specialists page (the ones it has called and the ones it made).
   if (method === 'GET' && pathname === '/api/wisp/team') return { status: 200, body: wispDesktop.teamState() };
