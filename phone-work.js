@@ -29,8 +29,8 @@
     cal: svg('<rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>', 22),
     checks: svg('<path d="M4 7l2 2 3.5-3.5M4 14l2 2 3.5-3.5M13 7.5h7M13 14.5h7"/>', 22),
     clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', 18),
-    // Specialists: Wisp's face, its soft pentagon and two eyes, drawn like the menu's other line icons.
-    bots: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.32 5.45Q12.00 3.50 14.68 5.45L18.26 8.05Q20.94 10.00 19.92 13.15L18.55 17.35Q17.53 20.50 14.21 20.50L9.79 20.50Q6.47 20.50 5.45 17.35L4.08 13.15Q3.06 10.00 5.74 8.05Z"/><ellipse cx="9.9" cy="12.1" rx="1.15" ry="1.8" fill="currentColor" stroke="none"/><ellipse cx="14.1" cy="12.1" rx="1.15" ry="1.8" fill="currentColor" stroke="none"/></svg>',
+    // Specialists: Wisp's face, a solid soft pentagon (white in dark mode) with eyes in the background colour.
+    bots: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.32 5.45Q12.00 3.50 14.68 5.45L18.26 8.05Q20.94 10.00 19.92 13.15L18.55 17.35Q17.53 20.50 14.21 20.50L9.79 20.50Q6.47 20.50 5.45 17.35L4.08 13.15Q3.06 10.00 5.74 8.05Z"/><ellipse cx="9.75" cy="12" rx="1.4" ry="2.15" style="fill:var(--bg,#000)" stroke="none"/><ellipse cx="14.25" cy="12" rx="1.4" ry="2.15" style="fill:var(--bg,#000)" stroke="none"/></svg>',
   };
   const time = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const stamp = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
