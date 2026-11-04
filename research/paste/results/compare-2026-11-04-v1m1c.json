@@ -1,0 +1,230 @@
+{
+ "runs": {
+  "M0": {
+   "dir": "/home/user/paste-runs/d2b/M1c-hnon",
+   "grid": [
+    0.8,
+    0.9,
+    0.95,
+    0.98
+   ],
+   "crossfit_theta_by_fold": {
+    "0": 0.98,
+    "1": 0.98
+   },
+   "crossfit": {
+    "PE": 0.6884,
+    "FPM": 24.018,
+    "precision": 0.6752,
+    "recall": 0.7021,
+    "per_op_f1": {
+     "WRITE": 0.7015,
+     "UPDATE": 0.6703,
+     "MERGE_INTO": 0.8138,
+     "FORGET": 0.7563,
+     "FORGET_PROFILE": 0.2266,
+     "MERGE": 0.4412
+    },
+    "episodes": 1172
+   },
+   "crossfit_by_file": {
+    "val-api.jsonl": {
+     "PE": 0.602,
+     "FPM": 32.331,
+     "precision": 0.5751,
+     "recall": 0.6315,
+     "per_op_f1": {
+      "WRITE": 0.6323,
+      "UPDATE": 0.5095,
+      "MERGE_INTO": 0.7912,
+      "FORGET": 0.7224,
+      "FORGET_PROFILE": 0.1843,
+      "MERGE": 0.3744
+     },
+     "episodes": 572
+    },
+    "val-programmatic.jsonl": {
+     "PE": 0.7743,
+     "FPM": 16.134,
+     "precision": 0.7802,
+     "recall": 0.7685,
+     "per_op_f1": {
+      "WRITE": 0.7735,
+      "UPDATE": 0.8166,
+      "MERGE_INTO": 0.8343,
+      "FORGET": 0.7856,
+      "FORGET_PROFILE": 0.2857,
+      "MERGE": 0.4981
+     },
+     "episodes": 600
+    }
+   },
+   "insample_theta": 0.98,
+   "insample": {
+    "PE": 0.6884,
+    "FPM": 24.018,
+    "precision": 0.6752,
+    "recall": 0.7021,
+    "per_op_f1": {
+     "WRITE": 0.7015,
+     "UPDATE": 0.6703,
+     "MERGE_INTO": 0.8138,
+     "FORGET": 0.7563,
+     "FORGET_PROFILE": 0.2266,
+     "MERGE": 0.4412
+    },
+    "episodes": 1172
+   },
+   "theta_0.5": null,
+   "by_theta": {
+    "0.8": {
+     "PE": 0.6917,
+     "FPM": 28.735,
+     "precision": 0.6534,
+     "recall": 0.7349
+    },
+    "0.9": {
+     "PE": 0.6941,
+     "FPM": 27.159,
+     "precision": 0.6621,
+     "recall": 0.7295
+    },
+    "0.95": {
+     "PE": 0.6923,
+     "FPM": 25.978,
+     "precision": 0.6673,
+     "recall": 0.7192
+    },
+    "0.98": {
+     "PE": 0.6884,
+     "FPM": 24.018,
+     "precision": 0.6752,
+     "recall": 0.7021
+    }
+   }
+  },
+  "V1M": {
+   "dir": "/home/user/paste-runs/kaggle/var-v1-m1c/runs/V1-M1c",
+   "grid": [
+    0.8,
+    0.9,
+    0.95,
+    0.98
+   ],
+   "crossfit_theta_by_fold": {
+    "0": 0.98,
+    "1": 0.98
+   },
+   "crossfit": {
+    "PE": 0.6931,
+    "FPM": 25.03,
+    "precision": 0.6772,
+    "recall": 0.7097,
+    "per_op_f1": {
+     "WRITE": 0.6991,
+     "UPDATE": 0.6756,
+     "MERGE_INTO": 0.809,
+     "FORGET": 0.7737,
+     "FORGET_PROFILE": 0.2778,
+     "MERGE": 0.5862
+    },
+    "episodes": 1172
+   },
+   "crossfit_by_file": {
+    "val-api.jsonl": {
+     "PE": 0.6064,
+     "FPM": 33.333,
+     "precision": 0.5784,
+     "recall": 0.6372,
+     "per_op_f1": {
+      "WRITE": 0.6312,
+      "UPDATE": 0.5156,
+      "MERGE_INTO": 0.7712,
+      "FORGET": 0.75,
+      "FORGET_PROFILE": 0.2239,
+      "MERGE": 0.4957
+     },
+     "episodes": 572
+    },
+    "val-programmatic.jsonl": {
+     "PE": 0.7789,
+     "FPM": 17.157,
+     "precision": 0.7799,
+     "recall": 0.7779,
+     "per_op_f1": {
+      "WRITE": 0.7697,
+      "UPDATE": 0.8212,
+      "MERGE_INTO": 0.8427,
+      "FORGET": 0.794,
+      "FORGET_PROFILE": 0.35,
+      "MERGE": 0.6597
+     },
+     "episodes": 600
+    }
+   },
+   "insample_theta": 0.98,
+   "insample": {
+    "PE": 0.6931,
+    "FPM": 25.03,
+    "precision": 0.6772,
+    "recall": 0.7097,
+    "per_op_f1": {
+     "WRITE": 0.6991,
+     "UPDATE": 0.6756,
+     "MERGE_INTO": 0.809,
+     "FORGET": 0.7737,
+     "FORGET_PROFILE": 0.2778,
+     "MERGE": 0.5862
+    },
+    "episodes": 1172
+   },
+   "theta_0.5": null,
+   "by_theta": {
+    "0.8": {
+     "PE": 0.6881,
+     "FPM": 30.282,
+     "precision": 0.6488,
+     "recall": 0.7326
+    },
+    "0.9": {
+     "PE": 0.692,
+     "FPM": 28.388,
+     "precision": 0.6593,
+     "recall": 0.7282
+    },
+    "0.95": {
+     "PE": 0.6933,
+     "FPM": 26.925,
+     "precision": 0.6667,
+     "recall": 0.722
+    },
+    "0.98": {
+     "PE": 0.6931,
+     "FPM": 25.03,
+     "precision": 0.6772,
+     "recall": 0.7097
+    }
+   }
+  }
+ },
+ "pairs": {
+  "V1M - M0": {
+   "PE": {
+    "delta": 0.0047,
+    "ci95": [
+     -0.0025,
+     0.0118
+    ],
+    "p_one_sided_le0": 0.0969
+   },
+   "FPM": {
+    "delta": 1.0128,
+    "ci95": [
+     0.2096,
+     1.8026
+    ],
+    "p_one_sided_le0": 0.0085
+   }
+  }
+ }
+}
