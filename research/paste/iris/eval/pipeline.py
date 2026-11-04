@@ -85,11 +85,26 @@ def rank(recs, query, n, now):
     return sorted(recs, key=score, reverse=True)[:n]
 
 
+SENSITIVE_RE = re.compile(r"\b(card|cvv|pin|password|passcode|cnic|passport|national id|ssn|iban|account number|diagnos\w*|asthma|"
+                          r"diabetes|thyroid|migraine|medication|medicine|metformin|inhaler|therapy|therapist|counsel\w*|salary|"
+                          r"income|address|house \d+|flat \d+|street)\b|\d{4}[ -]?\d{4}[ -]?\d{4}|\d{5}-\d{7}-\d", re.I)
+
+
+def shareable(r, policy):
+    """Privacy boundary for frontier-bound context: none (production today), labels (the extractor's sensitivity
+    label), regex (a rules classifier on the memory's text, for systems without labels)."""
+    if policy == "labels":
+        return r.get("sensitivity", "personal") not in ("secret", "private")
+    if policy == "regex":
+        return not SENSITIVE_RE.search(f"{r.get('slot', '')} {r.get('value', '')} {r.get('text', '')}")
+    return True
+
+
 def found(gold_m, recs):
     return any(ent_match(r["entity"], gold_m["entity"]) and value_f1(r["value"], gold_m["value"]) >= 0.5 for r in recs)
 
 
-def score_life(life, outputs):
+def score_life(life, outputs, policy="none"):
     """outputs: {event_id: output dict}. Events without an output are treated as producing nothing."""
     st = Store()
     for ev in life["events"]:
@@ -114,7 +129,8 @@ def score_life(life, outputs):
             hit = sum(any(abs(_ts(p.get("when")) - lp["when"]) <= 3600 for p in st.plans if _ts(p.get("when")) is not None) for lp in live.values())
             tasks.append({"task": t["task_id"], "agent": t["agent"], "needed": len(live), "found": hit, "leaked": 0})
             continue
-        ctx = rank(recs, t["request"], 16, t["at"])
+        pool = [r for r in recs if shareable(r, policy)] if t.get("frontier") else recs
+        ctx = rank(pool, t["request"], 16, t["at"])
         needed = [gold[k] for k in t["needed"] if k in gold]
         leaked = sum(found(m, ctx) for m in sens) if t.get("frontier") else 0
         tasks.append({"task": t["task_id"], "agent": t["agent"], "needed": len(needed), "found": sum(found(m, ctx) for m in needed),

@@ -1,0 +1,41 @@
+{
+ "none": {
+  "task_context_recall": 0.9557,
+  "task_recall_by_agent": {
+   "coding_agent": 0.7931,
+   "design_agent": 0.907,
+   "gift_agent": 1.0,
+   "planner_agent": 1.0,
+   "study_agent": 0.6296
+  },
+  "leaks": 38,
+  "tasks_with_leak": 32,
+  "tasks": 100
+ },
+ "labels": {
+  "task_context_recall": 0.9557,
+  "task_recall_by_agent": {
+   "coding_agent": 0.7931,
+   "design_agent": 0.907,
+   "gift_agent": 1.0,
+   "planner_agent": 1.0,
+   "study_agent": 0.6296
+  },
+  "leaks": 0,
+  "tasks_with_leak": 0,
+  "tasks": 100
+ },
+ "regex": {
+  "task_context_recall": 0.9557,
+  "task_recall_by_agent": {
+   "coding_agent": 0.7931,
+   "design_agent": 0.907,
+   "gift_agent": 1.0,
+   "planner_agent": 1.0,
+   "study_agent": 0.6296
+  },
+  "leaks": 0,
+  "tasks_with_leak": 0,
+  "tasks": 100
+ }
+}
