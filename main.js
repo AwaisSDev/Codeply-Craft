@@ -2588,6 +2588,30 @@ function screenshotFile(p) {
   return resolved.startsWith(checksDir) && fs.existsSync(resolved) ? resolved : null;
 }
 
+// A screenshot for the phone. The relay carries every byte as 60 KB broadcast
+// chunks, and a full-size capture from a HiDPI screen is often 2-4 MB once
+// base64'd: dozens of chunks per picture, a few pictures at once, and Realtime
+// drops or throttles them until the phone gives up. So it travels as a JPEG no
+// wider than 1280px (a few hundred KB), and never more than 3 MB.
+// Only the PNG/JPEG/WebP files Craft saved itself (browser-checks, which also
+// holds the cloud's screenshots the PC downloaded) can be read this way.
+const PHONE_SHOT_MAX_W = 1280;
+const PHONE_SHOT_MAX_BYTES = 3 * 1024 * 1024;
+function screenshotForPhone(p) {
+  const file = screenshotFile(p);
+  if (!file || !/\.(png|jpe?g|webp)$/i.test(file) || !fs.statSync(file).isFile()) return { status: 404, body: { error: 'That screenshot is no longer on this PC.' } };
+  if (fs.statSync(file).size > 40 * 1024 * 1024) return { status: 413, body: { error: 'That screenshot is too large to send.' } };
+  let img = nativeImage.createFromPath(file);
+  if (img.isEmpty()) return { status: 415, body: { error: 'That screenshot could not be read on this PC.' } };
+  if (img.getSize().width > PHONE_SHOT_MAX_W) img = img.resize({ width: PHONE_SHOT_MAX_W, quality: 'good' });
+  const { width, height } = img.getSize();
+  for (const q of [82, 68, 52]) {
+    const dataUrl = `data:image/jpeg;base64,${img.toJPEG(q).toString('base64')}`;
+    if (dataUrl.length <= PHONE_SHOT_MAX_BYTES) return { status: 200, body: { dataUrl, width, height } };
+  }
+  return { status: 413, body: { error: 'That screenshot is too large to send.' } };
+}
+
 async function handleBridgeApi(method, pathname, query, body) {
   body = body || {};
   if (pathname.startsWith('/api/cloud/')) {
@@ -2658,11 +2682,7 @@ async function handleBridgeApi(method, pathname, query, body) {
     const list = [...commandsLib.loadCommands(known || null).values()].map((c) => ({ name: c.name, description: c.description, mode: c.mode }));
     return { status: 200, body: { commands: list } };
   }
-  if (method === 'GET' && pathname === '/api/screenshot-data') {
-    const file = screenshotFile(query.get('path'));
-    if (!file) return { status: 404, body: { error: 'Screenshot not found.' } };
-    return { status: 200, body: { dataUrl: `data:image/png;base64,${fs.readFileSync(file).toString('base64')}` } };
-  }
+  if (method === 'GET' && pathname === '/api/screenshot-data') return screenshotForPhone(query.get('path'));
   if (method === 'GET' && pathname === '/api/images/search') {
     return { status: 200, body: await searchImages(query.get('q') || '') };
   }

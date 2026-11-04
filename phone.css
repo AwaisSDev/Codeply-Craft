@@ -240,7 +240,20 @@ div.top-title { display: block; text-align: center; line-height: 40px; white-spa
 .code.add { color: var(--add); }
 .add { color: var(--add); }
 .del { color: var(--del); }
-.shot { display: block; max-width: 100%; max-height: 260px; object-fit: contain; border-radius: 8px; border: 1px solid var(--border); margin-top: 6px; cursor: zoom-in; background: var(--surface); min-height: 40px; }
+/* A screenshot on its step: drawn at the page's own shape (--sw/--sh), never taller than --shot-h. */
+.shot { --shot-h: 260px; position: relative; display: block; margin: 8px 0 4px; width: min(100%, calc(var(--shot-h) * var(--sw, 16) / var(--sh, 10))); aspect-ratio: var(--sw, 16) / var(--sh, 10); border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); -webkit-tap-highlight-color: transparent; }
+.shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; animation: shotIn .28s var(--ease) both; }
+.shot::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--border); pointer-events: none; }
+.shot[data-state="ready"] { cursor: zoom-in; }
+.shot[data-state="ready"]:active { transform: scale(.985); transition: transform .12s var(--ease); }
+.shot:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.shot-ph { position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, var(--fill, rgba(255,255,255,.06)) 50%, transparent 70%) var(--surface); background-size: 220% 100%; animation: shotWait 1.4s linear infinite; }
+.shot[data-state="ready"] .shot-ph { display: none; }
+@keyframes shotWait { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+@keyframes shotIn { from { opacity: 0; } }
+.shot-fail { display: flex; align-items: flex-start; gap: 7px; margin: 6px 0 4px; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+.shot-fail svg { flex: none; width: 15px; height: 15px; margin-top: 1px; fill: none; stroke: var(--faint); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+@media (prefers-reduced-motion: reduce) { .shot-ph, .shot img { animation: none; } }
 
 .summary-card { border: 1px solid var(--border); background: var(--surface); border-radius: 16px; padding: 10px 12px; font-size: 13.5px; display: flex; flex-direction: column; gap: 5px; }
 .summary-head { font-size: 12px; color: var(--faint); font-weight: 500; }
@@ -378,8 +391,10 @@ div.top-title { display: block; text-align: center; line-height: 40px; white-spa
 .progress li.done::before { content: "\2713  "; color: var(--add); }
 .panel-body .btn { width: 100%; }
 
-.lightbox { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,.9); display: flex; align-items: center; justify-content: center; padding: 12px; }
-.lightbox img { max-width: 100%; max-height: 100%; border-radius: 6px; }
+.lightbox { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,.92); display: flex; align-items: center; justify-content: center; padding: calc(env(safe-area-inset-top, 0px) + 56px) 12px calc(env(safe-area-inset-bottom, 0px) + 24px); animation: fade .18s ease both; cursor: zoom-out; }
+.lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px; box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 18px 48px rgba(0,0,0,.5); }
+.lightbox-close { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 10px); right: 12px; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: rgba(255,255,255,.14); }
+.lightbox-close svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 
 /* Crew logo marks the bots (Calls) entry; the app itself uses the Codeply logo */
 .drawer-crew { width: 18px; height: 18px; border-radius: 5px; flex: none; }
