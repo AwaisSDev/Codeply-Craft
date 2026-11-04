@@ -1,7 +1,9 @@
 # Iris 1: implementation steps (for owner review)
 
-Status 2026-11-04: **proposed, not started** (except step 0 measurements, which use free compute only and change no
-code path of the central test). Design: IRIS-DESIGN.md. Every step: research code only under `research/paste/`
+Status 2026-11-05 00:00 UTC: **owner said go (2026-11-04).** Done: step 0 (E51), step 1 (`iris/schema.py`), step 2
+(`iris/sim/`), step 3 v0 (`iris/render/`, CPU pilots on Kaggle running), step 4 draft (IRISBENCH-PROTOCOL.md), step 5 v0
+(`iris/eval/`: extraction, pipeline, closed loop, report; LoCoMo adapter), step 6 v0 (`iris/baselines/`: production
+rules + prompt v2 ports, Iris prompt). Findings so far: E52 / E53 (privacy). Steps 7-8 not started (GPU). Design: IRIS-DESIGN.md. Every step: research code only under `research/paste/`
 (an `iris/` package next to `paste/`), production untouched, frozen central-test assets untouched, no API or paid
 compute, all outputs backed up through `paste.backup` (append-only, private HF) and restorable on any Kaggle
 account (RESTORE.md).

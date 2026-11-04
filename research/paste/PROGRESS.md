@@ -48,6 +48,13 @@ production local model), IRIS-IMPLEMENTATION-PLAN.md (steps 0-8, for owner revie
 before review). Public benchmarks backed up privately: `paste-data/public/commercial/` (LongMemEval) and
 `paste-data/public/noncommercial/` (LoCoMo, PerLTQA, HaluMem), unmodified, licence + sha256 per set.
 
+Iris night of 2026-11-04/05 (owner: "go"): schema v0, life simulator v2, renderer + verifier, extraction / pipeline /
+closed-loop evaluators, production baselines (rules-v1 port; prompt v2 verbatim + LFM3-1.7B QAD Q4_0, production's
+local model) and an Iris-schema prompt are implemented and tested (`iris/`, tests/test_iris_*.py). E52: with perfect
+memory, production-style context assembly leaks sensitive memories into 32 / 100 frontier-agent tasks; E53: a
+boundary at context assembly removes them at no recall cost (upper bound). Running: 3 Kaggle CPU render pilots
+(Qwen3-30B-A3B, Qwen3-4B, Phi-4-mini) to choose the generator; LoCoMo production baseline here.
+
 Next actions, in order (all recipe runs done; validation phase complete):
 1. **2026-11-07 after 00:00 UTC:** `kaggle quota`; generate the T4 smoke with the recipe's flags
    (`make_notebooks.py --commit <HEAD> --paste-flags=--profile-rows --smoke-args="--closed-loop 0.5 --lr-enc 1e-4"`),
