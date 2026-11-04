@@ -1,0 +1,230 @@
+{
+ "runs": {
+  "P0": {
+   "dir": "/home/user/paste-runs/e27/PASTE-rows-hnon",
+   "grid": [
+    0.8,
+    0.9,
+    0.95,
+    0.98
+   ],
+   "crossfit_theta_by_fold": {
+    "0": 0.98,
+    "1": 0.98
+   },
+   "crossfit": {
+    "PE": 0.6096,
+    "FPM": 31.52,
+    "precision": 0.5849,
+    "recall": 0.6365,
+    "per_op_f1": {
+     "WRITE": 0.6208,
+     "UPDATE": 0.5787,
+     "MERGE_INTO": 0.7232,
+     "FORGET": 0.6313,
+     "FORGET_PROFILE": 0.239,
+     "MERGE": 0.5805
+    },
+    "episodes": 1172
+   },
+   "crossfit_by_file": {
+    "val-api.jsonl": {
+     "PE": 0.523,
+     "FPM": 39.807,
+     "precision": 0.4866,
+     "recall": 0.5651,
+     "per_op_f1": {
+      "WRITE": 0.561,
+      "UPDATE": 0.3942,
+      "MERGE_INTO": 0.6909,
+      "FORGET": 0.5991,
+      "FORGET_PROFILE": 0.1875,
+      "MERGE": 0.475
+     },
+     "episodes": 572
+    },
+    "val-programmatic.jsonl": {
+     "PE": 0.6969,
+     "FPM": 23.662,
+     "precision": 0.6901,
+     "recall": 0.7038,
+     "per_op_f1": {
+      "WRITE": 0.6826,
+      "UPDATE": 0.7537,
+      "MERGE_INTO": 0.7544,
+      "FORGET": 0.6622,
+      "FORGET_PROFILE": 0.3084,
+      "MERGE": 0.6667
+     },
+     "episodes": 600
+    }
+   },
+   "insample_theta": 0.98,
+   "insample": {
+    "PE": 0.6096,
+    "FPM": 31.52,
+    "precision": 0.5849,
+    "recall": 0.6365,
+    "per_op_f1": {
+     "WRITE": 0.6208,
+     "UPDATE": 0.5787,
+     "MERGE_INTO": 0.7232,
+     "FORGET": 0.6313,
+     "FORGET_PROFILE": 0.239,
+     "MERGE": 0.5805
+    },
+    "episodes": 1172
+   },
+   "theta_0.5": null,
+   "by_theta": {
+    "0.8": {
+     "PE": 0.6118,
+     "FPM": 35.534,
+     "precision": 0.5688,
+     "recall": 0.6617
+    },
+    "0.9": {
+     "PE": 0.6117,
+     "FPM": 34.531,
+     "precision": 0.5727,
+     "recall": 0.6564
+    },
+    "0.95": {
+     "PE": 0.6125,
+     "FPM": 33.227,
+     "precision": 0.5786,
+     "recall": 0.6506
+    },
+    "0.98": {
+     "PE": 0.6096,
+     "FPM": 31.52,
+     "precision": 0.5849,
+     "recall": 0.6365
+    }
+   }
+  },
+  "V4P": {
+   "dir": "/home/user/paste-runs/kaggle/var-v4-paste/runs/V4-PASTE",
+   "grid": [
+    0.8,
+    0.9,
+    0.95,
+    0.98
+   ],
+   "crossfit_theta_by_fold": {
+    "0": 0.98,
+    "1": 0.98
+   },
+   "crossfit": {
+    "PE": 0.6048,
+    "FPM": 30.226,
+    "precision": 0.5859,
+    "recall": 0.625,
+    "per_op_f1": {
+     "WRITE": 0.6209,
+     "UPDATE": 0.5647,
+     "MERGE_INTO": 0.7154,
+     "FORGET": 0.6115,
+     "FORGET_PROFILE": 0.2385,
+     "MERGE": 0.5556
+    },
+    "episodes": 1172
+   },
+   "crossfit_by_file": {
+    "val-api.jsonl": {
+     "PE": 0.5221,
+     "FPM": 38.189,
+     "precision": 0.4913,
+     "recall": 0.5571,
+     "per_op_f1": {
+      "WRITE": 0.5619,
+      "UPDATE": 0.3903,
+      "MERGE_INTO": 0.6742,
+      "FORGET": 0.5847,
+      "FORGET_PROFILE": 0.1853,
+      "MERGE": 0.5242
+     },
+     "episodes": 572
+    },
+    "val-programmatic.jsonl": {
+     "PE": 0.6878,
+     "FPM": 22.675,
+     "precision": 0.6866,
+     "recall": 0.6889,
+     "per_op_f1": {
+      "WRITE": 0.6818,
+      "UPDATE": 0.7304,
+      "MERGE_INTO": 0.7538,
+      "FORGET": 0.6378,
+      "FORGET_PROFILE": 0.3014,
+      "MERGE": 0.5839
+     },
+     "episodes": 600
+    }
+   },
+   "insample_theta": 0.98,
+   "insample": {
+    "PE": 0.6048,
+    "FPM": 30.226,
+    "precision": 0.5859,
+    "recall": 0.625,
+    "per_op_f1": {
+     "WRITE": 0.6209,
+     "UPDATE": 0.5647,
+     "MERGE_INTO": 0.7154,
+     "FORGET": 0.6115,
+     "FORGET_PROFILE": 0.2385,
+     "MERGE": 0.5556
+    },
+    "episodes": 1172
+   },
+   "theta_0.5": null,
+   "by_theta": {
+    "0.8": {
+     "PE": 0.6048,
+     "FPM": 34.362,
+     "precision": 0.5681,
+     "recall": 0.6467
+    },
+    "0.9": {
+     "PE": 0.6061,
+     "FPM": 32.918,
+     "precision": 0.5744,
+     "recall": 0.6416
+    },
+    "0.95": {
+     "PE": 0.6073,
+     "FPM": 31.717,
+     "precision": 0.5803,
+     "recall": 0.6369
+    },
+    "0.98": {
+     "PE": 0.6048,
+     "FPM": 30.226,
+     "precision": 0.5859,
+     "recall": 0.625
+    }
+   }
+  }
+ },
+ "pairs": {
+  "V4P - P0": {
+   "PE": {
+    "delta": -0.0048,
+    "ci95": [
+     -0.013,
+     0.0033
+    ],
+    "p_one_sided_le0": 0.8814
+   },
+   "FPM": {
+    "delta": -1.2942,
+    "ci95": [
+     -2.319,
+     -0.3059
+    ],
+    "p_one_sided_le0": 0.996
+   }
+  }
+ }
+}
