@@ -437,14 +437,13 @@ function showView(name) {
   if (name === 'viewHome') navRecord('home');
 }
 
-// ─── Tiny markdown renderer (safe: everything escaped first) ────────────────
+// ─── Tiny markdown renderer (safe: every piece is escaped as it's placed) ───
 function esc(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function mdToHtml(text) {
-  const src = esc(text);
-  const parts = src.split(/```/);
+  const parts = String(text).split(/```/);
   let html = '';
   for (let i = 0; i < parts.length; i++) {
     if (i % 2 === 1) {
@@ -452,7 +451,7 @@ function mdToHtml(text) {
       const nl = parts[i].indexOf('\n');
       const lang = nl > -1 ? parts[i].slice(0, nl).trim() : '';
       const code = nl > -1 ? parts[i].slice(nl + 1) : parts[i];
-      html += `<div class="code-card"><div class="code-card-head"><span>${lang || 'code'}</span></div><pre><code>${code}</code></pre></div>`;
+      html += `<div class="code-card"><div class="code-card-head"><span>${esc(lang) || 'code'}</span></div><pre><code>${esc(code)}</code></pre></div>`;
     } else {
       html += inlineMd(parts[i]);
     }
@@ -503,12 +502,31 @@ const LATEX_MAP = {
   times: '×', cdot: '·', approx: '≈', neq: '≠', leq: '≤', geq: '≥', pm: '±', infty: '∞',
 };
 
+// One line of raw text as HTML. `code` is left exactly as written; outside it,
+// links become link chips or [text](url) links (link-chips.js), then the rest
+// is escaped and formatted.
 function spans(s) {
-  return s
-    .replace(LATEX_TOKEN, (_, name) => LATEX_MAP[name] || '')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  return s.split(/(`[^`]+`)/).map((part, i) => {
+    if (i % 2) return `<code>${esc(part.slice(1, -1))}</code>`;
+    const links = window.CodeplyLinks ? window.CodeplyLinks.protect(part) : null;
+    const html = esc(links ? links.text : part)
+      .replace(LATEX_TOKEN, (_, name) => LATEX_MAP[name] || '')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    return links ? links.restore(html) : html;
+  }).join('');
 }
+
+// Links in the chat (link chips, [text](url) links) open in a new tab of the
+// built-in browser, like a link that opens a new window there; never in this
+// window, and never in a bare Electron window.
+function chatLinkOpen(e) {
+  const a = e.target.closest && e.target.closest('a.link-chip, a.md-link');
+  if (!a || (e.type === 'auxclick' && e.button !== 1)) return;
+  e.preventDefault();
+  if (api && api.browserPanelNewTab && /^https?:\/\//i.test(a.href)) api.browserPanelNewTab(a.href);
+}
+document.addEventListener('click', chatLinkOpen);
+document.addEventListener('auxclick', chatLinkOpen);
 
 // ─── Background commands ────────────────────────────────────────────────────
 // Commands the agent started with run background=true (dev servers, watchers).
@@ -741,7 +759,7 @@ function addUserMessage(text, images) {
   }
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.textContent = shown.text;
+  bubble.innerHTML = window.CodeplyLinks ? window.CodeplyLinks.linkText(shown.text) : esc(shown.text); // links as chips
   if (shown.text || !shown.files.length) msg.appendChild(bubble);
   msg.userText = text;
   msg.userImages = images && images.length ? images : undefined;

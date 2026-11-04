@@ -34,6 +34,7 @@ for (const [from, to] of [
   ['phone-stt-worker.js', 'phone-stt-worker.js'],
   ['bot-avatar.js', 'bot-avatar.js'],
   ['attachments.js', 'attachments.js'],
+  ['link-chips.js', 'link-chips.js'],     // links in messages as chips (shared with Craft)
   ['phone.manifest.json', 'manifest.json'],
   [path.join('vendor', 'phone', 'nacl-fast.min.js'), 'nacl-fast.min.js'],
   [path.join('vendor', 'phone', 'blake2b.js'), 'blake2b.js'],

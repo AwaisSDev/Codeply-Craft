@@ -271,7 +271,7 @@
       row.className = 'msg-actions';
       row.innerHTML = [['copy', 'Copy'], ['speak', 'Read aloud'], ['up', 'Good answer'], ['down', 'Bad answer'], ['again', 'Try again'], ['share', 'Share']]
         .map(([k, l]) => `<button type="button" data-msg="${k}" aria-label="${l}">${I[k]}</button>`).join('');
-      row.querySelector('[data-msg="copy"]').addEventListener('click', () => { try { navigator.clipboard.writeText(m.innerText); } catch {} });
+      row.querySelector('[data-msg="copy"]').addEventListener('click', () => { try { navigator.clipboard.writeText(window.CodeplyLinks ? window.CodeplyLinks.textOf(m) : m.innerText); } catch {} });
       m.after(row);
     });
   }
@@ -591,7 +591,7 @@
       const users = [...$('feed').querySelectorAll(':scope > .msg.user')].filter((u) => u.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING);
       const last = users[users.length - 1];
       if (!last) return;
-      $('input').value = last.innerText.trim();
+      $('input').value = (window.CodeplyLinks ? window.CodeplyLinks.textOf(last) : last.innerText).trim();
       $('input').dispatchEvent(new Event('input'));
       $('composer').requestSubmit();
     } else if (kind === 'share') {
