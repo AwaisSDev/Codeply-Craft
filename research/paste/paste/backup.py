@@ -40,8 +40,9 @@ SKIP_SUFFIXES = (".tmp",)
 def token():
     if os.environ.get("HF_TOKEN"):
         return os.environ["HF_TOKEN"]
-    for p in glob.glob("/kaggle/input/**/paste-hf-token", recursive=True):
-        return open(p).read().strip()
+    for p in sorted(glob.glob("/kaggle/input/**/paste-hf-token", recursive=True)):
+        if os.path.isfile(p):                           # the dataset directory has the same name as the file
+            return open(p).read().strip()
     return None
 
 

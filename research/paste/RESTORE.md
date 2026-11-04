@@ -33,7 +33,7 @@ The run directory holds everything needed to continue exactly where it stopped:
 | `calibration-full.json.partial.json` | finished calibration configurations (calibration resumes from it) |
 | `calibration-full.json` | frozen thresholds (used by `paste.final_eval --freeze`) |
 
-Labels: `periodic` (every 45 min of a running session), `trained`, `calibrated`, `time-guard` (the session stopped at
+Labels: `periodic` (every 60 min of a running session), `trained`, `calibrated`, `time-guard` (the session stopped at
 11 h 15 min), `failed`, `kaggle-output` (uploaded from the scheduler machine after a kernel finished),
 `validation-run` (validation-phase runs, prefix `validation/`).
 

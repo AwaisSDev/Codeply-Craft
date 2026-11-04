@@ -217,7 +217,7 @@ def main():
     ap.add_argument("--slug", help="notebook name for --cpu-queue")
     ap.add_argument("--grid", default="0.8 0.9 0.95 0.98")
     ap.add_argument("--budget-s", type=int, default=40500, help="time guard (s) for CPU queues and training groups; Kaggle stops sessions at 12 h")
-    ap.add_argument("--backup-every", type=int, default=2700, help="seconds between mid-run HF snapshots")
+    ap.add_argument("--backup-every", type=int, default=3600, help="seconds between mid-run HF snapshots")
     ap.add_argument("--backup-prefix", default="central", help="path prefix in the private HF backup repo")
     ap.add_argument("--device", default="cuda", choices=("cuda", "cpu"), help="training groups: T4 (cuda) or a free CPU session")
     a = ap.parse_args()
