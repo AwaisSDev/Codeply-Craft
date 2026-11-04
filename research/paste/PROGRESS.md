@@ -31,8 +31,9 @@ Recipe status (2026-11-04 07:45 UTC; validation, cross-fitted; E31-E41):
   permitted); δ = **0.024** (E41: seed 2 − seed 1 of the same recipe). Epochs ≤ 4 with early stopping (E40:
   3,000 x 2 beats 6,000 x 1 by +0.030 at equal steps: PASTE is step-limited).
 * **Pending:** variant (V1-M1c, V3 x 2, V4 x 2 running/queued on Kaggle); precision (T4 smoke, 2026-11-07).
-* Equal-budget PASTE − M1c (one seed): 1,500 −0.050; 2,000 −0.079; 3,000 −0.025; 6,000 −0.028 (FPM +1.8).
-  The last two are about one δ: the central test's 3 seeds matter.
+* Equal-budget PASTE − M1c (one seed): 1,500 −0.050; 2,000 −0.079; 3,000 −0.025; 6,000 −0.028 (FPM +1.8);
+  **3,000 x 2 epochs −0.001 [−0.010, +0.009], FPM −1.0** (E43). PASTE gains more from a second epoch (+0.030 vs
+  6,000 x 1) than M1c (+0.003). Gaps are within ~1 δ: the central test's 3 seeds decide.
 
 Next actions, in order:
 1. When all runs are in: `scripts/recipe.sh results/recipe.json`; record the decisions (DECISIONS, plan §2,
