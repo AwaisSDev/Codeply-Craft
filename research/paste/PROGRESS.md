@@ -31,10 +31,14 @@ Results in (2026-11-04 00:50 UTC; validation, cross-fitted, one seed):
 * **PASTE learning curve: 0.569 (1,500) → 0.610 (2,000) → 0.732 (3,000)**: still improving steeply.
 * V1-PASTE −0.005 [−0.012, 0.002], V2-PASTE +0.018 [0.009, 0.027] vs V0 (variant decision needs M1c + S2).
 * Kaggle CPU ≈ 3.0 segments/s (local 5.6); 6,000-episode run ≈ 5.3 h.
+* **M1c LR 1e-4: 0.759** (+0.071 over 5e-5) → both families LR 1e-4 (provisional until δ).
+* **Equal budgets, PASTE − M1c:** 1,500 −0.050; 2,000 −0.079; **3,000 −0.025 [−0.036, −0.015], FPM equal**;
+  2,000 at LR 1e-4 −0.064. PASTE gains faster with data (+0.123 vs +0.069 from 2,000 to 3,000) but is below M1c
+  at every measured budget.
 
-Running on Kaggle CPU (5 at once; stateless check-ins `scripts/kaggle/sched_all.sh`): lc-m1c-a, lr-m1c (since
-19:01), lc-paste-b, lc-m1c-b, lc-paste-c (since 00:48). Not yet pushed: lc-m1c-c, var-v2-m1c, var-v1-m1c,
-var-v3-paste, var-v3-m1c, var-v4-paste, var-v4-m1c, var-s2-paste. ETA all recipe runs ≈ 10:00-12:00 UTC 2026-11-04.
+Running on Kaggle CPU (5 at once; stateless check-ins `scripts/kaggle/sched_all.sh`): lc-paste-b, lc-m1c-b,
+lc-paste-c (since 00:48), lc-m1c-c, var-v2-m1c (since 01:58). Not yet pushed: var-v1-m1c, var-v3-paste, var-v3-m1c,
+var-v4-paste, var-v4-m1c, var-s2-paste. ETA all recipe runs ≈ 10:00-12:00 UTC 2026-11-04.
 
 Next actions, in order:
 1. When all runs are in: `scripts/recipe.sh results/recipe.json`; record the decisions (DECISIONS, plan §2,
