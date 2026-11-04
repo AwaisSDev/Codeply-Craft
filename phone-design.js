@@ -245,7 +245,7 @@ Reply with the whole file in one \`\`\`html block, then one or two short lines o
     $('designTitle').textContent = d.title;
     const old = body.querySelector('.dg-stage');
     const steps = d.running ? `<div class="dg-status"><span class="spinner"></span><span class="shine">${esc(STEP[d.step] || (d.onPc ? 'Designing on your PC' : 'Designing'))}</span></div>` : '';
-    const chat = (d.chat || []).map((m) => m.role === 'user' ? `<div class="msg user">${esc(m.text)}</div>` : m.role === 'error' ? `<div class="dg-err">${esc(m.text)}</div>` : `<div class="dg-reply">${P.md ? P.md(m.text) : esc(m.text)}</div>`).join('');
+    const chat = (d.chat || []).map((m) => m.role === 'user' ? `<div class="msg user">${P.linkText ? P.linkText(m.text) : esc(m.text)}</div>` : m.role === 'error' ? `<div class="dg-err">${esc(m.text)}</div>` : `<div class="dg-reply">${P.md ? P.md(m.text) : esc(m.text)}</div>`).join('');
     const canBuild = d.kind === 'website' || d.kind === 'app';
     const html = `
       <div class="dg-stage" id="dgStage">${old && !reload ? old.innerHTML : '<div class="dg-wait"><span class="spinner"></span></div>'}</div>

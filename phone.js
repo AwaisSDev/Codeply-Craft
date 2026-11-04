@@ -153,7 +153,9 @@ function tagColor(c, label) {
 function inlineMd(s) {
   return String(s).split(/(`[^`\n]+`)/).map((part, i) => {
     if (i % 2) return `<code>${esc(part.slice(1, -1))}</code>`;
-    return esc(part)
+    // Links become placeholders first (link-chips.js): a bare one shows as a chip, [text](url) keeps its text.
+    const links = window.CodeplyLinks ? window.CodeplyLinks.protect(part) : null;
+    const html = esc(links ? links.text : part)
       .replace(/\[\[([^\]|\n]{1,40}?)(?:\|([a-z]+))?\]\]/g, (m, t, c) => `<span class="md-tag ${tagColor(c, t)}">${t.trim()}</span>`)
       .replace(/\{\{([a-z]+):\s*([^}\n]+?)\}\}/g, (m, c, t) => (MD_COLORS.includes(c) ? `<span class="md-c ${c}">${t}</span>` : m))
       .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
@@ -161,8 +163,11 @@ function inlineMd(s) {
       .replace(/~~([^~\n]+)~~/g, '<del>$1</del>')
       .replace(/==([^=\n]+)==/g, '<mark>$1</mark>')
       .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>');
+    return links ? links.restore(html) : html;
   }).join('');
 }
+// What you typed, escaped, with its links as chips (link-chips.js).
+const linkText = (text) => (window.CodeplyLinks ? window.CodeplyLinks.linkText(text) : esc(text));
 function md(src) {
   const parts = String(src || '').replace(/\r\n/g, '\n').split(/^\s*```/m);
   return parts.map((part, i) => {
@@ -678,7 +683,8 @@ function addMsg(kind, text, images) {
     text = sh.text;
   }
   const n = el('div', `msg ${kind}`);
-  if (kind === 'user' || kind === 'error' || kind === 'note') n.textContent = text || '';
+  if (kind === 'user') n.innerHTML = linkText(text || '');
+  else if (kind === 'error' || kind === 'note') n.textContent = text || '';
   else n.innerHTML = md(text);
   return append(n);
 }
@@ -903,7 +909,7 @@ function cloudEventHtml(e) {
 }
 const isLive = (t) => t && ['starting', 'queued', 'running'].includes(t.status);
 function taskHtml(t) {
-  let h = `<div class="msg user">${esc(stripCtx(t.prompt))}</div>`;
+  let h = `<div class="msg user">${linkText(stripCtx(t.prompt))}</div>`;
   h += (t.events || []).map(cloudEventHtml).join('');
   if (t.answer) h += `<div class="msg agent">${md(t.answer)}</div>`;
   if (isLive(t) && t.ask) h += `<div class="cloud-ask" data-ask-task="${esc(t.id)}" data-ask-id="${esc(t.ask.id)}"><b>Waiting for your OK</b><span>${esc(t.ask.title)}</span>${t.ask.detail ? `<pre class="code">${esc(t.ask.detail)}</pre>` : ''}<div class="cloud-ask-btns"><button type="button" class="btn btn-primary" data-ask-yes>Allow</button><button type="button" class="btn" data-ask-no>Don't allow</button></div></div>`;
@@ -2903,7 +2909,7 @@ currentSession().then((s) => { if (s) enterApp(); else showSignin(); }).catch(sh
 
 // For tests and debugging in the console.
 // phone-calls.js (Calls with bots) builds on these too.
-window.CraftPhone = { state, relay, sb, sealSecret, CLOUD_WORKFLOW, md, pollAll, relayRequest, accessToken, esc, load, save, newId, openDrawer, closeDrawer, AI_PROXY_URL, SUPABASE_ANON_KEY, deviceHeader,
+window.CraftPhone = { state, relay, sb, sealSecret, CLOUD_WORKFLOW, md, linkText, pollAll, relayRequest, accessToken, esc, load, save, newId, openDrawer, closeDrawer, AI_PROXY_URL, SUPABASE_ANON_KEY, deviceHeader,
   cloudEnvForBots, startCloudTask, pollCloudTask: pollTask,
   // phone-work.js (Schedules, Calendar, Checks) builds on these
   gh, ensureGithub, hasGithub, ensureRepoReady, readSessionJson, envFor, chatBody: body, accountConnections,
