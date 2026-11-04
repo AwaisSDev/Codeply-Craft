@@ -44,11 +44,14 @@ Groups are generated from the chosen recipe by `tools/make_groups.py --recipe re
    (`make_notebooks.py --commit <HEAD> --paste-flags=--profile-rows --smoke-args="--closed-loop 0.5 --lr-enc 1e-4"`;
    `push.sh ... paste-smoke gpu`); run `paste-smoke` (≈15 min): segments/s for all four
    systems, fp32 vs AMP; apply the precision rule. Compute the budget: runs × epochs × segments / throughput, plus
-   per-epoch val and calibration.
+   per-epoch val and calibration: `tools/t4_plan.py --smoke smoke.json --quota-h <remaining>` applies the AMP rule
+   and lists which runs fit the quota (worst case 4 epochs) and which wait for the weekly refresh.
 2. Fix the remaining pending fields above in this file and in DECISIONS.md; commit.
 3. Generate the training groups (`tools/make_groups.py`, then `scripts/kaggle/make_notebooks.py --runs groups.json`; one 12 h session per group,
-   priority order: seed 1 of all four systems first, then seeds 2 and 3). Each run trains, picks its best epoch on
-   validation, and runs `paste.calibrate_full --device cuda` (validation only).
+   priority order (owner, 2026-11-04): **PASTE and M1c seeds 1-3 first**, then M1c-m and M1c+W). Each run trains,
+   picks its best epoch on validation, and runs `paste.calibrate_full --device cuda` (validation only). Sessions
+   stop at 11 h 15 min (time guard); an unfinished run is resumed in a new session with the old kernel's output
+   attached (`KERNEL_SOURCES=<owner/slug> push.sh ...`).
 4. Download `runs.tgz` per group (`kaggle kernels output`; outputs are private).
 5. **Freeze** each run here: `python -m paste.final_eval --freeze --run-name <SYS>-s<seed> --run-dir <dir>`; commit
    `results/final/FROZEN-RUNS.json` (checkpoint SHA-256, model config, thresholds).

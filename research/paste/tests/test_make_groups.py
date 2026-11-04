@@ -11,7 +11,8 @@ import make_groups as mg  # noqa: E402
 
 def test_runs_identical_except_lr_and_profile_rows():
     rs = mg.runs("V3", {"PASTE": 5e-5, "M1c": 1e-4}, 3000, amp=True)
-    assert [r["name"] for r in rs[:4]] == ["PASTE-s1", "M1c-s1", "M1c-m-s1", "M1cpW-s1"] and len(rs) == 12
+    assert [r["name"] for r in rs[:7]] == ["PASTE-s1", "M1c-s1", "PASTE-s2", "M1c-s2", "PASTE-s3", "M1c-s3", "M1c-m-s1"]
+    assert len(rs) == 12
     strip = lambda a: a.replace(" --profile-rows", "").replace("--lr-enc 5e-05", "LR").replace("--lr-enc 0.0001", "LR")
     assert len({strip(r["args"]) for r in rs}) == 1
     assert all("--corrupt-del 0.06" in r["args"] and "--amp" in r["args"] for r in rs)

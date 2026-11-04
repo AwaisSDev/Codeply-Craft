@@ -35,16 +35,19 @@ def main():
     ap.add_argument("--limit", type=int, default=0, help="first N episodes per val file (0 = all)")
     ap.add_argument("--ckpt", default="final.pt")
     ap.add_argument("--threads", type=int, default=4)
+    ap.add_argument("--device", default="cpu", help="cpu or cuda")
     a = ap.parse_args()
     if any("frozen" in v or "/test-" in v or "/stress-" in v for v in a.val):
         raise SystemExit("validation data only")
     torch.set_num_threads(a.threads)
+    if a.device == "cuda":
+        torch.set_default_device("cuda")
     conf = json.load(open(os.path.join(a.run, "config.json")))
     cfg = PasteConfig.from_run(conf)
     text = Text(ettin_files(cfg.backbone)[1])
     model = make_model(conf["system"], cfg, text)
     model.load_state_dict(torch.load(os.path.join(a.run, a.ckpt), weights_only=False, map_location="cpu")["model"])
-    model.eval()
+    model.to(torch.device(a.device)).eval()
     files = {os.path.basename(v): (load_eps([v])[:a.limit] if a.limit else load_eps([v])) for v in a.val}
     out_dir = os.path.join(a.run, "sweep" if a.ckpt == "final.pt" else f"sweep-{os.path.splitext(a.ckpt)[0]}")
     os.makedirs(out_dir, exist_ok=True)

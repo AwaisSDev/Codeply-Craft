@@ -42,39 +42,78 @@ TRAIN = f"{DATA}/train-mix-full.jsonl"
 VAL = f"{DATA}/val-programmatic.jsonl {DATA}/val-api.jsonl"
 print(subprocess.run("nvidia-smi --query-gpu=name,memory.total --format=csv", shell=True, capture_output=True, text=True).stdout)'''
 
-SMOKE = r'''# Throughput: 40 episodes per configuration, no curriculum, accum 2; segments/s from the trainer log
+SMOKE = r'''# Throughput and the AMP rule (DECISIONS 2026-11-03/-04): 100 episodes per configuration, no curriculum, accum 2,
+# a log entry every 10 episodes (10 entries: the AMP rule compares the mean loss of the last 10). Same seed and data
+# order for fp32 and AMP. Closed-loop evaluation speed: one theta, first 20 episodes of each val file, fp32 checkpoint.
 res = {}
+def n_segments(path, k):
+    with open(path) as f:
+        return sum(len(json.loads(l)["segments"]) for _, l in zip(range(k), f))
+VAL_SEGS = sum(n_segments(v, 20) for v in VAL.split())
 for system in ("PASTE", "M1c", "M1c-m", "M1c+W"):
     for amp in ("", "--amp"):
         name = f"smoke-{system.replace('+', 'p')}{amp.replace('--', '-')}"
         out = f"/kaggle/working/runs/{name}"
         t = time.time()
-        r = subprocess.run(f"python -m paste.train --system {system} --head-norm __PASTE_FLAGS__ --train {TRAIN}:0-40 --val {DATA}/val-programmatic.jsonl "
-                           f"--val-limit 5 --epochs 1 --accum 2 --curriculum 0 --bio-weight 5 --ckpt-every 20 --device cuda {amp} __SMOKE_ARGS__ --out {out}",
+        r = subprocess.run(f"python -m paste.train --system {system} --head-norm __PASTE_FLAGS__ --train {TRAIN}:0-100 --val {DATA}/val-programmatic.jsonl "
+                           f"--val-limit 5 --epochs 1 --accum 2 --curriculum 0 --bio-weight 5 --ckpt-every 10 --device cuda {amp} __SMOKE_ARGS__ --out {out}",
                            shell=True, capture_output=True, text=True)
         log = [json.loads(l) for l in open(f"{out}/log.jsonl")] if os.path.exists(f"{out}/log.jsonl") else []
         res[name] = {"rc": r.returncode, "wall_s": round(time.time() - t), "seg_per_s": [x.get("seg_per_s") for x in log],
                      "loss": [x.get("loss") for x in log], "err": r.stderr[-1500:] if r.returncode else ""}
+        if not amp and r.returncode == 0:
+            t = time.time()
+            e = subprocess.run(f"python tools/val_sweep.py --run {out} --val {VAL} --grid 0.98 --limit 20 --device cuda",
+                               shell=True, capture_output=True, text=True)
+            res[name]["eval_seg_per_s"] = round(VAL_SEGS / (time.time() - t), 2) if e.returncode == 0 else None
+            res[name]["eval_err"] = e.stderr[-800:] if e.returncode else ""
         print(name, json.dumps(res[name]), flush=True)
-json.dump(res, open("/kaggle/working/smoke.json", "w"), indent=1)'''
+json.dump(res, open("/kaggle/working/smoke.json", "w"), indent=1)
+subprocess.run("cd /kaggle/working && rm -rf runs", shell=True)'''
 
-TRAIN_CELL = r'''# Runs of this group (resumable within the session; each run: train with per-epoch val + early stopping)
+
+TRAIN_CELL = r'''# Runs of this group: train (per-epoch val, early stopping) then paste.calibrate_full, validation only.
+# Time guard: Kaggle stops a session at 12 h; work stops at __BUDGET_S__ s after this cell starts. An unfinished run keeps
+# last.pt and its epoch checkpoints; a later session resumes it when this kernel's output is attached
+# (push.sh with KERNEL_SOURCES=<owner/slug>): runs.tgz found under /kaggle/input is unpacked first.
+import glob, signal
+DEADLINE = time.time() + __BUDGET_S__
+def run_until_deadline(cmd):
+    """Run cmd in its own process group; on the deadline kill exactly that group (no pattern-based pkill, which
+    could match this notebook's own name)."""
+    p = subprocess.Popen(cmd, shell=True, start_new_session=True)
+    try:
+        rc = p.wait(timeout=max(1, DEADLINE - time.time()))
+    except subprocess.TimeoutExpired:
+        os.killpg(p.pid, signal.SIGKILL); p.wait()
+        raise
+    if rc:
+        raise subprocess.CalledProcessError(rc, cmd)
+for p in sorted(glob.glob("/kaggle/input/**/runs.tgz", recursive=True)):
+    print("resuming from", p, flush=True)
+    subprocess.run(f"tar xzf {p} -C /kaggle/working", shell=True, check=True)
 RUNS = __RUNS__
 for r in RUNS:
     out = f"/kaggle/working/runs/{r['name']}"
-    if os.path.exists(f"{out}/final.pt"):
-        continue
-    train = " ".join(f"{TRAIN}:{s}" for s in r["slices"]) if r.get("slices") else f"{TRAIN}{r.get('slice', '')}"
-    cmd = (f"python -m paste.train --system {r['system']} --seed {r['seed']} --train {train} --val {VAL} "
-           f"--device __DEVICE__ {r['args']} --out {out}")
-    print(cmd, flush=True)
-    subprocess.run(cmd, shell=True, check=True)
-    if r.get("calibrate", True) and not os.path.exists(f"{out}/calibration-full.json"):
-        cal = (f"python -m paste.calibrate_full --run {out} --val {VAL} --device __DEVICE__ --limit {r.get('cal_limit', 0)} "
-               f"--tf-limit {r.get('cal_tf_limit', 200)}")
-        print(cal, flush=True)
-        subprocess.run(cal, shell=True, check=True)
-subprocess.run("cd /kaggle/working && tar czf runs.tgz --exclude='*/last.pt' runs && rm -rf runs", shell=True, check=True)'''
+    try:
+        if not os.path.exists(f"{out}/final.pt"):
+            train = " ".join(f"{TRAIN}:{s}" for s in r["slices"]) if r.get("slices") else f"{TRAIN}{r.get('slice', '')}"
+            cmd = (f"python -m paste.train --system {r['system']} --seed {r['seed']} --train {train} --val {VAL} "
+                   f"--device __DEVICE__ {r['args']} --out {out}")
+            print(cmd, flush=True)
+            run_until_deadline(cmd)
+        if r.get("calibrate", True) and not os.path.exists(f"{out}/calibration-full.json"):
+            cal = (f"python -m paste.calibrate_full --run {out} --val {VAL} --device __DEVICE__ --limit {r.get('cal_limit', 0)} "
+                   f"--tf-limit {r.get('cal_tf_limit', 200)}")
+            print(cal, flush=True)
+            run_until_deadline(cal)
+    except subprocess.TimeoutExpired:
+        open(f"{out}/TIME_GUARD", "w").write("stopped by the session time guard; resume in a new session\n")
+        print("TIME GUARD:", r["name"], flush=True)
+        break
+# finished runs (calibrated) are packed without resume checkpoints; unfinished ones keep last.pt and epoch*.pt
+subprocess.run("cd /kaggle/working && for d in runs/*/; do rm -f $d/*.tmp; [ -f $d/calibration-full.json ] && rm -f $d/last.pt $d/epoch*.pt; done; "
+               "tar czf runs.tgz runs && rm -rf runs && ls -la runs.tgz", shell=True, check=True)'''
 
 
 CPU_QUEUE = r'''# Validation experiments on a free Kaggle CPU session (no GPU quota): scripts/queue.sh lines, train + full-val sweep
@@ -85,12 +124,13 @@ env = dict(os.environ, PY="python", DATA=DATA, VAL_API=f"{DATA}/val-api.jsonl", 
            PASTE_HF_CACHE="/tmp/hf", GRID="__GRID__")
 # Time guard: Kaggle stops a session at 12 h and an unfinished run would leave no output. The queue is stopped at
 # 11 h 15 min; finished runs (DONE) are packed without checkpoints, an unfinished run keeps last.pt so it can be resumed.
+import signal
+p = subprocess.Popen("bash scripts/queue.sh", shell=True, env=env, start_new_session=True)
 try:
-    r = subprocess.run("bash scripts/queue.sh", shell=True, env=env, capture_output=True, text=True, timeout=__BUDGET_S__)
-    print(r.stdout[-5000:]); print(r.stderr[-3000:])
-except subprocess.TimeoutExpired as e:
-    subprocess.run("pkill -f paste.train; pkill -f val_sweep", shell=True)
-    print("TIME GUARD: queue stopped;", (e.stdout or b"")[-3000:])
+    p.wait(timeout=__BUDGET_S__)
+except subprocess.TimeoutExpired:
+    os.killpg(p.pid, signal.SIGKILL); p.wait()                # exactly the queue's process group
+    print("TIME GUARD: queue stopped")
     open("/kaggle/working/runs/TIME_GUARD", "w").write("stopped by the 11 h 15 min guard\n")
 subprocess.run("cd /kaggle/working && for d in runs/*/; do [ -f $d/DONE ] && rm -f $d/last.pt; done; "
                "tar czf runs.tgz --exclude='*/epoch*.pt' runs && rm -rf runs && ls -la runs.tgz", shell=True)'''
@@ -119,7 +159,7 @@ def main():
     ap.add_argument("--cpu-queue", help="queue file (scripts/queue.sh format) for a CPU-only validation notebook")
     ap.add_argument("--slug", help="notebook name for --cpu-queue")
     ap.add_argument("--grid", default="0.8 0.9 0.95 0.98")
-    ap.add_argument("--budget-s", type=int, default=40500, help="CPU queue time guard (s); Kaggle stops sessions at 12 h")
+    ap.add_argument("--budget-s", type=int, default=40500, help="time guard (s) for CPU queues and training groups; Kaggle stops sessions at 12 h")
     ap.add_argument("--device", default="cuda", choices=("cuda", "cpu"), help="training groups: T4 (cuda) or a free CPU session")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
@@ -130,7 +170,8 @@ def main():
                  [setup, smoke]), open(os.path.join(a.out, "paste-smoke.ipynb"), "w"), indent=1)
     if a.runs:
         for k, group in enumerate(json.load(open(a.runs))):
-            cell = TRAIN_CELL.replace("__RUNS__", json.dumps(group, indent=1)).replace("__DEVICE__", a.device)
+            cell = (TRAIN_CELL.replace("__RUNS__", json.dumps(group, indent=1)).replace("__DEVICE__", a.device)
+                    .replace("__BUDGET_S__", str(a.budget_s)))
             json.dump(nb(f"PASTE training group {k}", "Train + val only; test is evaluated off Kaggle.", [setup, cell],
                          gpu=a.device == "cuda"),
                       open(os.path.join(a.out, f"paste-train-{k}.ipynb"), "w"), indent=1)
