@@ -99,13 +99,34 @@ data stays private.
    colleagues, calendar and document snippets, short screen-text excerpts. Options: (a) a local open-weights
    instruction model (Apache-2.0 / MIT licence) on Kaggle GPU: free, but competes with the central test for quota;
    (b) an API model: needs owner approval of budget. Programmatic templates alone reproduce the E50 problem.
-3. **Licensed public dialogue for surface diversity** (no gold needed): see §5 table (licence-verified).
-4. **Evaluation data never used for training:** LongMemEval (MIT) and LoCoMo (NC) stay evaluation-only; IrisBench test
-   splits are frozen like the central test.
+3. **Licensed public dialogue for surface diversity and some labels**: PersonaMem-v2, Conversation Chronicles,
+   REALTALK, SODA (all commercially licensed; §5).
+4. **Evaluation data never used for training:** LongMemEval, LoCoMo (and, if approved, HaluMem, PerLTQA) stay
+   evaluation-only; IrisBench test splits are frozen like the central test.
 
 ## 5. Public datasets (licences verified from primary sources; see table)
 
-*Licence verification in progress (2026-11-04); this table is filled from primary sources before the plan is final. Until then no public dataset other than LongMemEval (MIT) and LoCoMo (CC BY-NC 4.0, internal evaluation only) is used.*
+Licences read from each dataset's own LICENSE file or HF card (main branch) on 2026-11-04 (research pass; URLs kept in
+the session notes). "LLM-generated" sets raise a separate question (the generating provider's output terms) that has
+not been checked.
+
+| Dataset | Licence | Commercial use | Useful gold | Proposed role |
+|---|---|---|---|---|
+| LongMemEval (cleaned) | MIT | yes (filler sessions come from ShareGPT / UltraChat) | evidence turns, knowledge-update and temporal types, 500 QA | **evaluation only** (E50; pre-registered) |
+| LoCoMo | CC BY-NC 4.0 | no | per-session `observation` facts (natural-language sentences with evidence turn ids), `event_summary` with dates, 1,986 QA (10 conversations released) | **evaluation only**, internal (approved) |
+| HaluMem (2025) | CC BY-NC-ND 4.0 | no; no modified redistribution | per-session memory points typed Persona / Event / Relationship, `is_update` with original memories, 3,467 QA; the closest public match to Iris's extraction + update + relationship pipeline | **evaluation only**, internal: needs the same owner approval as LoCoMo |
+| PerLTQA | CC BY-NC 4.0 | no | structured profiles, social relationships with types, memory-anchored QA | evaluation only, internal: needs approval |
+| PersonaMem-v2 | CC BY 4.0 (v3 is NC) | yes (LLM-generated) | 1,000 personas, categorised preferences with updates, train / val / benchmark splits | **training** candidate (preferences, updates) |
+| Conversation Chronicles | CC BY 4.0 | yes (LLM-generated) | 200k five-session episodes, time gaps, relationship type per episode, session summaries | **training** candidate (surface diversity, relationships, time) |
+| REALTALK | Apache-2.0 | yes (real human chats) | 10 pairs x 21 days, per-session events, 728 memory probes | dev / small fine-tuning; realistic surface check |
+| SODA | CC BY 4.0 | yes (LLM-generated) | grounded social dialogues (no memory labels) | surface diversity only |
+| MSC, PersonaChat, Dialogue NLI | **data licence not stated** (ParlAI code is MIT; ConvAI2 card says CC BY) | unclear | Dialogue NLI: (subject, relation, object) triples for persona sentences; MSC: per-utterance persona summaries | **not used** until the licence is cleared |
+| DialSim | not stated; built from copyrighted TV scripts | no | multi-party QA | not used |
+
+Conclusion: no public dataset has attribute-value + update + relationship gold under a clearly commercial licence. The
+gold for training must come from our own simulator (§4.1); public data adds realistic surface (PersonaMem-v2,
+Conversation Chronicles, REALTALK, SODA) and external evaluation (LongMemEval, LoCoMo, and with approval HaluMem and
+PerLTQA).
 
 ## 6. End-to-end evaluation: IrisBench (proposed)
 
@@ -114,10 +135,10 @@ plus public sets for external validity. Each metric is computed on the system's 
 
 | Layer | Metric (gold from the simulator) | Public check |
 |---|---|---|
-| Extraction | fact-level precision / recall / F1; matching = entity + attribute (alias table from the simulator; open-vocabulary attributes matched by canonical id) + value; **hallucination rate** (facts with no source support); **misattribution rate** (right value, wrong entity or attribute) | LoCoMo observation annotations (if present; see §5) |
+| Extraction | fact-level precision / recall / F1; matching = entity + attribute (alias table from the simulator; open-vocabulary attributes matched by canonical id) + value; **hallucination rate** (facts with no source support); **misattribution rate** (right value, wrong entity or attribute) | LoCoMo `observation` facts; HaluMem memory points (if approved) |
 | Typing | confusion over fact / preference / plan / commitment / suggestion / intention / hypothetical / joke | — |
 | Structure | duplicate rate; stable-name reuse (new fact attached to the existing named memory) | — |
-| Updating | current-state accuracy after changes; stale-memory rate; contradiction detection P/R; temporal validity (from / to) | LongMemEval knowledge-update questions |
+| Updating | current-state accuracy after changes; stale-memory rate; contradiction detection P/R; temporal validity (from / to) | LongMemEval knowledge-update; HaluMem `is_update` (if approved) |
 | Connection | cross-source entity linking accuracy; conflict detection P/R (overlapping commitments, as in the 7 PM example) | — |
 | Retrieval | for each agent task with a gold context set: recall at a token budget, precision, evidence (source) correctness; latency | LongMemEval / LoCoMo evidence recall (E50 metric) |
 | Privacy | **leak rate** of sensitive items into frontier-bound context (target 0), over-blocking rate, per-agent permission violations | — |
@@ -173,5 +194,7 @@ evidence rate on LongMemEval).
    quota; would start after the central runs) or an API budget (amount to be proposed with a pilot cost estimate).
 2. GPU budget for X3 / X6 beyond Kaggle's free quota (X6 at ≈1-2B likely needs more than 30 h/week).
 3. Whether IrisBench may later include consented real data from the team (privacy review first).
-4. Whether the Iris memory schema should match the production Brain's current row format or define a new one
+4. HaluMem (CC BY-NC-ND 4.0) and PerLTQA (CC BY-NC 4.0) for internal evaluation, under the same conditions as
+   LoCoMo.
+5. Whether the Iris memory schema should match the production Brain's current row format or define a new one
    (production stays untouched either way; this only fixes the research interface).
