@@ -63,6 +63,13 @@ Groups are generated from the chosen recipe by `tools/make_groups.py --recipe re
    outcome by spec §10.5.
 9. Report with every result, including unflattering ones (protocol §10).
 
+## 3b. Persistence (RESTORE.md)
+
+Every run is backed up to the private HF repo `Awais1290/paste-checkpoints` (append-only snapshots, sha256-verified;
+every 60 min and at trained / calibrated / time-guard / failed) and restored from its latest snapshot by any later
+session, on any Kaggle account (`scripts/kaggle/make_datasets.sh` recreates the private datasets). Verified: E48
+(local, bit-identical resume) and E49 (Kaggle sessions).
+
 ## 4. Fallbacks if the quota is short (in order; each is recorded as a deviation with its reason)
 
 1. Seeds 1-3 for PASTE and M1c first; M1c-m and M1c+W with fewer seeds are labelled exploratory.

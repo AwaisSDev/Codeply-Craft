@@ -1,0 +1,21 @@
+{
+ "prefix": "selftest-20261104T190212Z",
+ "resume_point": {
+  "pos": 8,
+  "step": 4,
+  "epochs_done": 1
+ },
+ "resumed_message": "resumed at episode 8/16, step 4",
+ "exact_resume_final_pt_equal": true,
+ "calibration_resumed": {
+  "resumed_configs": 3
+ },
+ "calibration_equal": true,
+ "restore_refuses_overwrite": true,
+ "snapshots": [
+  "20261104T190629Z-killed-mid-training",
+  "20261104T191203Z-killed-mid-calibration",
+  "20261104T191535Z-finished"
+ ],
+ "PASS": true
+}
