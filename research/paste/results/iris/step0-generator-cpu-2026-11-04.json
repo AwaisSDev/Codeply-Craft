@@ -1,0 +1,9 @@
+{"what": "Iris step 0: candidate generator throughput, CPU", "date": "2026-11-04",
+ "model": "Qwen/Qwen3-4B-Instruct-2507 (Apache-2.0), unsloth GGUF Q4_K_M, 2.32 GiB, 4.02 B params",
+ "runtime": "llama.cpp (source build, GGML_NATIVE, CPU), llama-bench -t 4 -p 512 -n 128 -r 2",
+ "machine": "this container: 4 vCPU Intel Xeon @ 2.10 GHz",
+ "prompt_processing_tok_s": 77.99, "generation_tok_s": 6.80,
+ "derived_estimate": {"assumption": "one rendered conversation = ~600 prompt + ~1,500 generated tokens",
+   "seconds_per_conversation": 230, "conversations_per_hour_this_machine": 15.6,
+   "kaggle_cpu_factor": "Kaggle CPU ran PASTE training 1.85x slower than this container (E31); applied as an estimate only",
+   "conversations_per_day_5_kaggle_cpu_sessions": "about 900-1,000 (estimate)"}}
