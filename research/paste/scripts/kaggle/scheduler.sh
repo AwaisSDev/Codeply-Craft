@@ -16,6 +16,9 @@ PH=${PASTE_HOME:-$HOME}
 OUT=${OUT:-$PH/paste-kaggle/out}; NB=${NB:-$PH/paste-kaggle/nb}; RUNS_OUT=${RUNS_OUT:-$PH/paste-runs/kaggle}
 EVERY=${EVERY:-600}; MAXS=${MAXS:-5}; ONCE=${ONCE:-0}
 mkdir -p "$OUT" "$NB" "$RUNS_OUT"
+# one scheduler at a time: two could both see a slug as new and push it twice (a second push restarts the kernel)
+exec 9>"$PH/paste-kaggle/scheduler.lock"
+flock -n 9 || { echo "$(date -u +%FT%TZ) another scheduler holds the lock; nothing done"; exit 0; }
 log() { echo "$(date -u +%FT%TZ) $*"; }
 status() {
   if ! grep -qx "$USER_/paste-$1" <<<"$MINE"; then echo NEW; return; fi
