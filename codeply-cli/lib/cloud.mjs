@@ -699,6 +699,7 @@ export async function startCloudRun({ cwd, token, prompt, mode = 'Build', sessio
   if (b) task.bot = { name: b.name };
   if (extra.kind) task.kind = 'task';
   const files = branchFiles(api, p.repo);
+  if (baseSha) await files.ensure(baseSha).catch(() => {}); // craft-sessions, with Vercel told not to deploy it
   const live = await liveRunner(api, p.repo, task.sessionId);
   if (live) {
     await files.write(`${SESSION_PATHS.queue(task.sessionId)}/${Date.now()}-${task.id}.json`, { id: task.id, prompt, mode, ...extra }, `Craft queue ${task.id}`);

@@ -1621,7 +1621,7 @@ async function ensureGithub() { return hasGithub() || githubFromAccount(); }
  */
 async function ensureRepoReady(repo, base) {
   const e = state.envs[repo] || {};
-  if (e.rev === PHONE_WORKFLOW_REV && e.trackKey) return;
+  if (e.rev === PHONE_WORKFLOW_REV && e.trackKey && e.noDeploy) return;
   base = base || e.base || ((await gh('GET', `/repos/${repo}`)).json.default_branch) || 'main';
   const cur = await gh('GET', `/repos/${repo}/contents/${encPath(WORKFLOW_PATH)}?ref=${encodeURIComponent(base)}`, null, { allow: [404] });
   const have = cur.status === 200 ? b64ToText(cur.json.content || '') : '';
@@ -1638,7 +1638,8 @@ async function ensureRepoReady(repo, base) {
     await gh('PUT', `/repos/${repo}/actions/secrets/CODEPLY_TRACK_KEY`, { encrypted_value: sealSecret(pk.key, m.key), key_id: pk.key_id });
   }
   if ((await gh('GET', `/repos/${repo}/actions/variables/CODEPLY_MODEL_KIND`, null, { allow: [404] })).status === 404) await setVariable(repo, 'CODEPLY_MODEL_KIND', 'auto');
-  state.envs[repo] = { ...(state.envs[repo] || {}), repo, base, rev: PHONE_WORKFLOW_REV, trackKey: true };
+  await noDeploySessions({ repo, base }).catch(() => {});
+  state.envs[repo] = { ...(state.envs[repo] || {}), repo, base, rev: PHONE_WORKFLOW_REV, trackKey: true, noDeploy: true };
   save(KEY.envs, state.envs);
 }
 /** A new private repo for a new project, made from the phone. */
@@ -1708,6 +1709,14 @@ async function dispatch(env, task) {
 // ─── Starting a cloud task (Code chats and bot calls) ───────────────────────
 const newCloudTask = (prompt, mode, sessionId) => ({ id: `${Date.now().toString(36)}${randHex(6)}`, prompt, mode: ['Build', 'Plan', 'Ask'].includes(mode) ? mode : 'Build', sessionId: sessionId || '', status: 'starting', startedAt: Date.now(), events: [] });
 /** craft-sessions, created from the base branch when this repo never had a run. */
+/** craft-sessions only holds task state: make sure it exists and tells Vercel never to deploy it. */
+async function noDeploySessions(env) {
+  await ensureSessionsBranch(env);
+  const cur = await gh('GET', `/repos/${env.repo}/contents/vercel.json?ref=${SESSIONS_BRANCH}`, null, { allow: [404], accept: 'application/vnd.github.raw+json' });
+  let ok = false;
+  try { ok = cur.status === 200 && JSON.parse(cur.text).git.deploymentEnabled === false; } catch {}
+  if (!ok) await putFile(env.repo, 'vercel.json', textToB64('{\n  "git": { "deploymentEnabled": false }\n}\n'), 'Craft: never deploy this branch', SESSIONS_BRANCH);
+}
 async function ensureSessionsBranch(env) {
   const ref = await gh('GET', `/repos/${env.repo}/git/ref/heads/${SESSIONS_BRANCH}`, null, { allow: [404] });
   if (ref.status === 200) return;
