@@ -1,37 +1,3 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null,
-  "installCommand": "echo \"no install needed\"",
-  "buildCommand": "node scripts/prepare-mobile.js",
-  "outputDirectory": "mobile-app",
-  "ignoreCommand": "P=${VERCEL_GIT_PREVIOUS_SHA:-HEAD^}; if git cat-file -e \"$P^{commit}\" 2>/dev/null; then git diff --quiet \"$P\" HEAD -- 'phone*' 'mobile*' bot-avatar.js attachments.js vendor logo.png assets/agents scripts/prepare-mobile.js vercel.json; else exit 1; fi",
-  "cleanUrls": true,
-  "headers": [
-    {
-      "source": "/(index.html|phone.js|phone.css|phone-calls.js|phone-calls.css|phone-design.js|phone-design.css|phone-life.js|phone-reminders.js|phone-sw.js|phone-stt-worker.js|bot-avatar.js|classic.html|classic|mobile.js|mobile.css|mobile-cloud.js|mobile-cloud.css|)",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "no-cache"
-        }
-      ]
-    },
-    {
-      "source": "/(.*)",
-      "headers": [
-        {
-          "key": "X-Content-Type-Options",
-          "value": "nosniff"
-        },
-        {
-          "key": "Referrer-Policy",
-          "value": "no-referrer"
-        },
-        {
-          "key": "X-Frame-Options",
-          "value": "DENY"
-        }
-      ]
-    }
-  ]
+  "git": { "deploymentEnabled": false }
 }
