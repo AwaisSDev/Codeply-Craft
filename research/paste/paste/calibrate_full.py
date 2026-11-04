@@ -37,6 +37,15 @@ G_M = (0.5, 0.7, 0.9, 0.95)
 G_R = tuple(round(0.05 * i, 2) for i in range(1, 20))
 
 
+def _sha256(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for b in iter(lambda: fh.read(1 << 20), b""):
+            h.update(b)
+    return h.hexdigest()
+
+
 def _f1(tp, fp, fn):
     return 2 * tp / max(1, 2 * tp + fp + fn)
 
@@ -127,8 +136,22 @@ def main():
     out["temperature"] = temps
     print(json.dumps({"theta_R": th_r, "temperature": temps}), flush=True)
 
-    # 2-4. closed loop, coordinate descent with caching
+    # 2-4. closed loop, coordinate descent with caching. Resumable: every finished configuration is appended to
+    # <out>.partial.json (keyed to this checkpoint, val set, limit and theta_R), so a session cut mid-calibration
+    # continues where it stopped; paste.backup snapshots carry the partial file.
     cache = {}
+    partial = os.path.join(a.run, a.out + ".partial.json")
+    key_meta = {"ckpt_sha256": _sha256(os.path.join(a.run, a.ckpt)), "val_files": a.val, "limit": a.limit, "theta_R": th_r}
+    if os.path.exists(partial):
+        pj = json.load(open(partial))
+        if pj.get("meta") == key_meta:
+            cache = {tuple(r["key"]): r["row"] for r in pj["rows"]}
+            print(json.dumps({"resumed_configs": len(cache)}), flush=True)
+
+    def save_partial():
+        tmp = partial + ".tmp"
+        json.dump({"meta": key_meta, "rows": [{"key": list(k), "row": v} for k, v in cache.items()]}, open(tmp, "w"))
+        os.replace(tmp, partial)
 
     def run(w, f, m):
         key = (w, f, m)
@@ -141,6 +164,7 @@ def main():
                           "FPM": s["FPM_per_100_segments"], "precision": s["precision"], "recall": s["recall"],
                           "merge_PR": s["merge_PR"], "forget_profile": s["per_op"]["FORGET_PROFILE"], "forget": s["per_op"]["FORGET"]}
             print(json.dumps(cache[key]), flush=True)
+            save_partial()
         return cache[key]
 
     cost = lambda r, c=3.0: c * r["fp"] + r["fn"]

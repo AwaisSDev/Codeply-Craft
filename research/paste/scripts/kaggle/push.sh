@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Push one generated notebook as a PRIVATE Kaggle kernel with the private paste-trainval dataset attached.
+# Push one generated notebook as a PRIVATE Kaggle kernel with the private datasets paste-trainval (train + val) and
+# paste-hf-token (HF write token for paste.backup) attached. Re-create both in any account: scripts/kaggle/make_datasets.sh.
 #   [KERNEL_SOURCES=owner/slug] scripts/kaggle/push.sh NOTEBOOK.ipynb SLUG gpu|cpu
 # Credentials come from the environment (KAGGLE_USERNAME / KAGGLE_KEY); nothing is written to the repo.
 set -euo pipefail
@@ -11,6 +12,6 @@ ks=$(echo "${KERNEL_SOURCES:-}" | awk -F, '{for(i=1;i<=NF;i++) printf "%s\"%s\""
 cat > "$d/kernel-metadata.json" <<JSON
 {"id": "$KAGGLE_USERNAME/$slug", "title": "$slug", "code_file": "$slug.ipynb", "language": "python",
  "kernel_type": "notebook", "is_private": true, "enable_gpu": $gpu, "enable_internet": true,
- "dataset_sources": ["$KAGGLE_USERNAME/paste-trainval"], "competition_sources": [], "kernel_sources": [$ks]}
+ "dataset_sources": ["$KAGGLE_USERNAME/paste-trainval", "$KAGGLE_USERNAME/paste-hf-token"], "competition_sources": [], "kernel_sources": [$ks]}
 JSON
 ${KAGGLE:-kaggle} kernels push -p "$d"

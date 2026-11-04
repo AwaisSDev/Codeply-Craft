@@ -5,7 +5,7 @@
 # Stateless: every pass asks Kaggle for each slug's status, so it can be restarted at any time (the container may be
 # reclaimed while the session is idle; Kaggle kernels keep running). A slug is pushed only when it is absent from the
 # account's kernel list (never pushed): an API error never re-pushes, which would restart a running kernel.
-#   ONCE=1: one pass, then exit.
+#   ONCE=1: one pass, then exit.  BACKUP_PREFIX=central: also snapshot each fetched run to the private HF repo.
 # Credentials come from the environment. Outputs: $OUT/<slug>/runs.tgz, extracted to $RUNS_OUT/<slug>/ (own directory;
 # nothing in it is executed).
 set -uo pipefail
@@ -40,6 +40,13 @@ while true; do
         $KAGGLE kernels output "$USER_/paste-$s" -p "$OUT/$s" --file-pattern 'runs.tgz' >/dev/null 2>&1
         if [ -s "$OUT/$s/runs.tgz" ] && mkdir -p "$RUNS_OUT/$s" && tar xzf "$OUT/$s/runs.tgz" -C "$RUNS_OUT/$s" --no-same-owner; then
           touch "$RUNS_OUT/$s/FETCHED"; log "fetched $s"; done_+=("$s")
+          if [ -n "${BACKUP_PREFIX:-}" ]; then           # second persistent copy of the kernel output (append-only HF)
+            for rd in "$RUNS_OUT/$s"/runs/*/; do
+              [ -f "$rd/config.json" ] && HF_HUB_DISABLE_PROGRESS_BARS=1 $PY -m paste.backup snapshot --run-dir "$rd" \
+                --run "$(basename "$rd")" --prefix "$BACKUP_PREFIX" --label kaggle-output >/dev/null 2>&1 \
+                && log "backed up $(basename "$rd")" || log "BACKUP FAILED $(basename "$rd")"
+            done
+          fi
         else log "COMPLETE, fetch failed (retry next pass): $s"; other+=("$s"); fi ;;
       RUNNING|QUEUED) run+=("$s") ;;
       ERROR|CANCEL*) log "FAILED $s ($st): needs attention"; other+=("$s:$st") ;;

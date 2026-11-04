@@ -38,6 +38,7 @@ for f, h in man["sha256"].items():
     assert hashlib.sha256(open(f"{DATA}/{f}", "rb").read()).hexdigest() == h, f"{f} changed"
     assert not any(x in f for x in ("test", "stress", "frozen")), "Kaggle must not receive test/stress data"
 os.environ["PASTE_HF_CACHE"] = "/tmp/hf"
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
 TRAIN = f"{DATA}/train-mix-full.jsonl"
 VAL = f"{DATA}/val-programmatic.jsonl {DATA}/val-api.jsonl"
 print(subprocess.run("nvidia-smi --query-gpu=name,memory.total --format=csv", shell=True, capture_output=True, text=True).stdout)'''
@@ -73,45 +74,101 @@ subprocess.run("cd /kaggle/working && rm -rf runs", shell=True)'''
 
 
 TRAIN_CELL = r'''# Runs of this group: train (per-epoch val, early stopping) then paste.calibrate_full, validation only.
-# Time guard: Kaggle stops a session at 12 h; work stops at __BUDGET_S__ s after this cell starts. An unfinished run keeps
-# last.pt and its epoch checkpoints; a later session resumes it when this kernel's output is attached
-# (push.sh with KERNEL_SOURCES=<owner/slug>): runs.tgz found under /kaggle/input is unpacked first.
-import glob, signal
+# Persistence (paste.backup -> private HF repo, append-only, sha256-verified):
+#   * before a run: if it has no local state, restore its latest snapshot (any machine / Kaggle account) or, without
+#     a token, unpack it from an attached earlier kernel output (KERNEL_SOURCES);
+#   * while it runs: a snapshot every __BACKUP_EVERY__ s (last.pt = model, optimizer, scheduler, RNG, scaler, epoch
+#     history, position; logs; per-epoch val; calibration partial file);
+#   * after training, after calibration, and at the time guard: a snapshot.
+# Time guard: Kaggle stops a session at 12 h; work stops __BUDGET_S__ s after this cell starts.
+import glob, signal, threading, traceback
+sys_path = "/tmp/codeply/research/paste"
+import sys; sys.path.insert(0, sys_path)
+from paste import backup
 DEADLINE = time.time() + __BUDGET_S__
-def run_until_deadline(cmd):
-    """Run cmd in its own process group; on the deadline kill exactly that group (no pattern-based pkill, which
-    could match this notebook's own name)."""
-    p = subprocess.Popen(cmd, shell=True, start_new_session=True)
-    try:
-        rc = p.wait(timeout=max(1, DEADLINE - time.time()))
-    except subprocess.TimeoutExpired:
-        os.killpg(p.pid, signal.SIGKILL); p.wait()
-        raise
+PREFIX = "__PREFIX__"
+HAVE_TOKEN = backup.token() is not None
+print("HF backup:", "on" if HAVE_TOKEN else "OFF (no token): outputs persist only via this kernel's output", flush=True)
+os.makedirs("/kaggle/working/runs", exist_ok=True)
+BLOCK = threading.Lock()
+
+def snap(run_dir, name, label):
+    if not HAVE_TOKEN or not os.path.isdir(run_dir):
+        return
+    with BLOCK:
+        for attempt in range(3):
+            try:
+                backup.snapshot(run_dir, name, prefix=PREFIX, label=label,
+                                meta={"kaggle_user": os.environ.get("KAGGLE_USERNAME", ""), "commit": COMMIT})
+                return
+            except Exception:
+                traceback.print_exc(); time.sleep(30 * (attempt + 1))
+        print("BACKUP FAILED", name, label, flush=True)
+
+def restore_if_needed(name):
+    out = f"/kaggle/working/runs/{name}"
+    if os.path.exists(out):
+        return
+    if HAVE_TOKEN and backup.snapshots(name, PREFIX):
+        backup.restore(name, out, prefix=PREFIX)
+        return
+    for p in sorted(glob.glob("/kaggle/input/**/runs.tgz", recursive=True)):
+        r = subprocess.run(f"tar xzf {p} -C /kaggle/working runs/{name}", shell=True)
+        if r.returncode == 0:
+            print("resumed", name, "from", p, flush=True)
+            return
+
+def run_until_deadline(cmd, log):
+    # own process group; on the deadline kill exactly that group (a pattern-based pkill could match this notebook)
+    with open(log, "a") as fh:
+        p = subprocess.Popen(cmd, shell=True, start_new_session=True, stdout=fh, stderr=subprocess.STDOUT)
+        try:
+            rc = p.wait(timeout=max(1, DEADLINE - time.time()))
+        except subprocess.TimeoutExpired:
+            os.killpg(p.pid, signal.SIGKILL); p.wait()
+            raise
     if rc:
         raise subprocess.CalledProcessError(rc, cmd)
-for p in sorted(glob.glob("/kaggle/input/**/runs.tgz", recursive=True)):
-    print("resuming from", p, flush=True)
-    subprocess.run(f"tar xzf {p} -C /kaggle/working", shell=True, check=True)
+
+class Periodic(threading.Thread):
+    def __init__(self, run_dir, name):
+        super().__init__(daemon=True); self.run_dir, self.name, self.stop = run_dir, name, threading.Event()
+    def run(self):
+        while not self.stop.wait(__BACKUP_EVERY__):
+            snap(self.run_dir, self.name, "periodic")
+
 RUNS = __RUNS__
 for r in RUNS:
-    out = f"/kaggle/working/runs/{r['name']}"
+    name = r["name"]; out = f"/kaggle/working/runs/{name}"
+    restore_if_needed(name)
+    os.makedirs(out, exist_ok=True)
+    per = Periodic(out, name); per.start()
     try:
         if not os.path.exists(f"{out}/final.pt"):
             train = " ".join(f"{TRAIN}:{s}" for s in r["slices"]) if r.get("slices") else f"{TRAIN}{r.get('slice', '')}"
             cmd = (f"python -m paste.train --system {r['system']} --seed {r['seed']} --train {train} --val {VAL} "
                    f"--device __DEVICE__ {r['args']} --out {out}")
             print(cmd, flush=True)
-            run_until_deadline(cmd)
+            run_until_deadline(cmd, f"{out}/train.out")
+            per.stop.set(); snap(out, name, "trained")
         if r.get("calibrate", True) and not os.path.exists(f"{out}/calibration-full.json"):
             cal = (f"python -m paste.calibrate_full --run {out} --val {VAL} --device __DEVICE__ --limit {r.get('cal_limit', 0)} "
                    f"--tf-limit {r.get('cal_tf_limit', 200)}")
             print(cal, flush=True)
-            run_until_deadline(cal)
+            run_until_deadline(cal, f"{out}/calibrate.out")
+        per.stop.set(); snap(out, name, "calibrated")
+        print("done", name, flush=True)
     except subprocess.TimeoutExpired:
-        open(f"{out}/TIME_GUARD", "w").write("stopped by the session time guard; resume in a new session\n")
-        print("TIME GUARD:", r["name"], flush=True)
+        per.stop.set()
+        open(f"{out}/TIME_GUARD", "a").write("stopped by the session time guard; resume in a new session\n")
+        snap(out, name, "time-guard")
+        print("TIME GUARD:", name, flush=True)
         break
-# finished runs (calibrated) are packed without resume checkpoints; unfinished ones keep last.pt and epoch*.pt
+    except subprocess.CalledProcessError:
+        per.stop.set(); snap(out, name, "failed")
+        print("FAILED:", name, open(f"{out}/train.out").read()[-2000:] if os.path.exists(f"{out}/train.out") else "", flush=True)
+        break
+# Kaggle output as a second copy: finished runs without resume checkpoints, unfinished ones with them
 subprocess.run("cd /kaggle/working && for d in runs/*/; do rm -f $d/*.tmp; [ -f $d/calibration-full.json ] && rm -f $d/last.pt $d/epoch*.pt; done; "
                "tar czf runs.tgz runs && rm -rf runs && ls -la runs.tgz", shell=True, check=True)'''
 
@@ -160,6 +217,8 @@ def main():
     ap.add_argument("--slug", help="notebook name for --cpu-queue")
     ap.add_argument("--grid", default="0.8 0.9 0.95 0.98")
     ap.add_argument("--budget-s", type=int, default=40500, help="time guard (s) for CPU queues and training groups; Kaggle stops sessions at 12 h")
+    ap.add_argument("--backup-every", type=int, default=2700, help="seconds between mid-run HF snapshots")
+    ap.add_argument("--backup-prefix", default="central", help="path prefix in the private HF backup repo")
     ap.add_argument("--device", default="cuda", choices=("cuda", "cpu"), help="training groups: T4 (cuda) or a free CPU session")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
@@ -171,7 +230,8 @@ def main():
     if a.runs:
         for k, group in enumerate(json.load(open(a.runs))):
             cell = (TRAIN_CELL.replace("__RUNS__", json.dumps(group, indent=1)).replace("__DEVICE__", a.device)
-                    .replace("__BUDGET_S__", str(a.budget_s)))
+                    .replace("__BUDGET_S__", str(a.budget_s)).replace("__BACKUP_EVERY__", str(a.backup_every))
+                    .replace("__PREFIX__", a.backup_prefix))
             json.dump(nb(f"PASTE training group {k}", "Train + val only; test is evaluated off Kaggle.", [setup, cell],
                          gpu=a.device == "cuda"),
                       open(os.path.join(a.out, f"paste-train-{k}.ipynb"), "w"), indent=1)
