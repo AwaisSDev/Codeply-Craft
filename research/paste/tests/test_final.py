@@ -48,3 +48,14 @@ def test_report_reads_bench_systems_latency(tmp_path, monkeypatch):
     r = json.load(open(out))
     assert r["latency_p50_ms_K32"] == {"PASTE": 80.0, "M1c": 50.0}        # steady row, not cold
     assert not r["outcome"].startswith("Pass")                             # 80 > 1.5 x 50
+
+
+def test_report_per_seed_differences(tmp_path, monkeypatch):
+    S = {"PASTE": [_rows(60, 9, 1, 1, 1), _rows(60, 5, 2, 2, 2), _rows(60, 9, 1, 1, 1)],
+         "M1c": [_rows(60, 5, 2, 2, 2)] * 3, "M1c-m": [_rows(60, 5, 2, 2, 2)] * 3}
+    monkeypatch.setattr(fr, "load", lambda files: S)
+    out = tmp_path / "r.json"
+    monkeypatch.setattr(sys, "argv", ["final_report", "--files", "t.jsonl", "--n-boot", "200", "--out", str(out)])
+    fr.main()
+    d = json.load(open(out))["comparisons"]["PASTE - M1c"]["delta_PE_per_seed"]
+    assert len(d) == 3 and d[1] == 0.0 and d[0] > 0

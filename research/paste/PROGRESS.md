@@ -26,19 +26,13 @@ Central-test preparation (2026-11-03, 21:10 UTC):
 * Recipe fields still pending on validation runs (CENTRAL-TEST-PLAN §2): variant, δ, LR per family, 3,000-fallback
   permission. Precision (AMP) waits on the T4 smoke test (GPU quota 0 h until 2026-11-07 00:00 UTC).
 
-Results in (2026-11-04 00:50 UTC; validation, cross-fitted, one seed):
-* **PASTE LR 1e-4: 0.695** vs 0.610 at 5e-5 (+0.086 [0.076, 0.095]); rule → PASTE LR 1e-4 (provisional until δ).
-* **PASTE learning curve: 0.569 (1,500) → 0.610 (2,000) → 0.732 (3,000)**: still improving steeply.
-* V1-PASTE −0.005 [−0.012, 0.002], V2-PASTE +0.018 [0.009, 0.027] vs V0 (variant decision needs M1c + S2).
-* Kaggle CPU ≈ 3.0 segments/s (local 5.6); 6,000-episode run ≈ 5.3 h.
-* **M1c LR 1e-4: 0.759** (+0.071 over 5e-5) → both families LR 1e-4 (provisional until δ).
-* **Equal budgets, PASTE − M1c:** 1,500 −0.050; 2,000 −0.079; **3,000 −0.025 [−0.036, −0.015], FPM equal**;
-  2,000 at LR 1e-4 −0.064. PASTE gains faster with data (+0.123 vs +0.069 from 2,000 to 3,000) but is below M1c
-  at every measured budget.
-
-Running on Kaggle CPU (5 at once; stateless check-ins `scripts/kaggle/sched_all.sh`): lc-paste-b, lc-m1c-b,
-lc-paste-c (since 00:48), lc-m1c-c (since 01:58), var-v1-m1c (since 05:21). Not yet pushed: var-v3-paste, var-v3-m1c,
-var-v4-paste, var-v4-m1c, var-s2-paste. ETA all recipe runs ≈ 10:00-12:00 UTC 2026-11-04.
+Recipe status (2026-11-04 07:45 UTC; validation, cross-fitted; E31-E41):
+* **Decided:** LR **1e-4** both families (E32/E35, final); data **6,000 episodes** (E38/E39; 3,000 fallback not
+  permitted); δ = **0.024** (E41: seed 2 − seed 1 of the same recipe). Epochs ≤ 4 with early stopping (E40:
+  3,000 x 2 beats 6,000 x 1 by +0.030 at equal steps: PASTE is step-limited).
+* **Pending:** variant (V1-M1c, V3 x 2, V4 x 2 running/queued on Kaggle); precision (T4 smoke, 2026-11-07).
+* Equal-budget PASTE − M1c (one seed): 1,500 −0.050; 2,000 −0.079; 3,000 −0.025; 6,000 −0.028 (FPM +1.8).
+  The last two are about one δ: the central test's 3 seeds matter.
 
 Next actions, in order:
 1. When all runs are in: `scripts/recipe.sh results/recipe.json`; record the decisions (DECISIONS, plan §2,

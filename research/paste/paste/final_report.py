@@ -8,6 +8,7 @@
 * M1c+W reading: PE(M1c+W) - PE(PASTE) CI.
 * Latency (optional; tools/bench_systems.py output, or JSON {system: p50_ms at K=32}): steady p50 at K = 32,
   PASTE <= 1.5 x M1c.
+* Secondary (DECISIONS 2026-11-04): per-seed PE differences; the plan bootstrap excludes training-seed variance.
 * Outcome by the table of spec §10.5. Equivalence: both CIs within +-1.0 F1 point.
 
     python -m paste.final_report --files test-programmatic.jsonl test-api.jsonl [--latency lat.json] --out REPORT.json
@@ -82,6 +83,8 @@ def main():
             rep["comparisons"][f"PASTE - {B}"] = {"delta_PE": round(d, 4), "ci95": [round(lo, 4), round(hi, 4)],
                                                    "ci_adjusted_97.5": [round(alo, 4), round(ahi, 4)], "p_one_sided": round(p_le0, 4),
                                                    "FPM_ratio": round(r, 3), "FPM_ratio_upper95": round(ub, 3)}
+            if len(S["PASTE"]) == len(S[B]):                 # secondary (disclosed): per-seed differences, seed k vs seed k
+                rep["comparisons"][f"PASTE - {B}"]["delta_PE_per_seed"] = [round(_pe(a) - _pe(b), 4) for a, b in zip(S["PASTE"], S[B])]
             pv[B] = p_le0
     if pv:
         rej = holm(pv)

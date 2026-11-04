@@ -24,8 +24,8 @@ learning-curve results, and are applied mechanically by `tools/choose_recipe.py`
 | Item | Rule | Value |
 |---|---|---|
 | Closed-loop / corruption variant | Mean cross-fitted val PE over PASTE and M1c; FPM guard ≤ 1.10 x V0 for both; within δ of the best → prefer V1 (spec §6.3), then V0 | pending (V1-V4 runs) |
-| Noise allowance δ | max(0.010, \|PE(S2-PASTE) − PE(V0-PASTE)\|) | pending (S2 run) |
-| Encoder LR | per family (PASTE; M1c family from M1c): 5e-5 unless another of {3e-5, 1e-4} beats it by > δ | PASTE **1e-4** (E32), M1c family **1e-4** (E35); both provisional until δ (margins ≥ 7x the floor) |
+| Noise allowance δ | max(0.010, \|PE(S2-PASTE) − PE(V0-PASTE)\|) | **0.024** (E41) |
+| Encoder LR | per family (PASTE; M1c family from M1c): 5e-5 unless another of {3e-5, 1e-4} beats it by > δ | **1e-4 for both families** (E32, E35; final: margins 0.086 / 0.071 > δ) |
 | Training data | 6,000 episodes (`train-mix-full` 0-5,999). 3,000 only as the owner's compute fallback and only if PE(3,000) ≥ PE(6,000) − 0.010 for both systems | **6,000** (E38/E39: +0.084 / +0.087 over 3,000; 3,000 fallback not permitted) |
 | Epochs | ≤ 4, per-epoch val, early stopping patience 1 (`--val-every-epoch --patience 1`); best epoch = `final.pt` | fixed |
 | Accumulation | 2 episodes per step, every system, any hardware (pilot effective batch) | fixed: 2 |
@@ -79,5 +79,7 @@ shows a ~0.085 PE loss at 3,000, so the fallback condition fails and this route 
 * Holm-adjusted CI for the two comparisons: reported as the Bonferroni 97.5 % CI (conservative), with Holm on the
   one-sided p-values; Pass needs both adjusted lower bounds > 0.
 * FPM non-inferiority: one-sided 95 % bootstrap upper bound of FPM(PASTE)/FPM(B) ≤ 1.10.
+* Scope of the CI (secondary, disclosed): the plan bootstrap does not include training-seed variance (E41: two
+  seeds of one recipe differ by 0.024 PE). The report also lists per-seed PE and per-seed differences.
 * At pilot scale (E28) PASTE-v2.2 is 0.079 PE **below** M1c on validation. The central test may well end in
   "Fail" or "Inconclusive"; that result is reported as such.
