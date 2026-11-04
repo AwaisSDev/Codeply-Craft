@@ -10,7 +10,7 @@ declare -A M=(
   [V1/PASTE]=$RUNS/q/V1-PASTE [V1/M1c]=$KRUNS/var-v1-m1c/runs/V1-M1c [V3/PASTE]=$KRUNS/var-v3-paste/runs/V3-PASTE [V3/M1c]=$KRUNS/var-v3-m1c/runs/V3-M1c
   [V2/PASTE]=$KRUNS/var-v2-paste/runs/V2-PASTE [V2/M1c]=$KRUNS/var-v2-m1c/runs/V2-M1c
   [V4/PASTE]=$KRUNS/var-v4-paste/runs/V4-PASTE [V4/M1c]=$KRUNS/var-v4-m1c/runs/V4-M1c
-  [S2/PASTE]=$KRUNS/var-s2-paste/runs/S2-PASTE
+  [S2/PASTE]=$RUNS/q2/S2-PASTE
   [LR3e-5/PASTE]=$KRUNS/lr-paste/runs/LR3e5-PASTE [LR1e-4/PASTE]=$KRUNS/lr-paste/runs/LR1e4-PASTE
   [LR3e-5/M1c]=$KRUNS/lr-m1c/runs/LR3e5-M1c [LR1e-4/M1c]=$KRUNS/lr-m1c/runs/LR1e4-M1c
   [LC1500/PASTE]=$KRUNS/lc-paste-a/runs/LC1500-PASTE [LC3000/PASTE]=$KRUNS/lc-paste-a/runs/LC3000-PASTE
