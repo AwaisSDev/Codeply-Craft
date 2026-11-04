@@ -35,3 +35,15 @@ def test_gold_as_prediction_is_perfect():
     s = summarise(cs, len(cs))
     assert s["f1"] == 1.0 and s["false_memory_share"] == 0.0 and s["on_matched"]["op"] == 1.0
     assert s["plans"]["recall"] == 1.0 and s["plans"]["status_acc_on_matched"] == 1.0
+
+
+def test_pipeline_gold_vs_empty():
+    from iris.eval.pipeline import score_life, summarise
+    life = Life(5, "pilot", 21).simulate()
+    gold_out = {ev["event_id"]: {"observations": [{k: v for k, v in o.items() if not k.startswith("_")} for o in ev["gold"]["observations"]],
+                                 "plans": ev["gold"]["plans"], "relations": []} for ev in life["events"]}
+    g = summarise([score_life(life, gold_out)])
+    e = summarise([score_life(life, {})])
+    assert g["state_accuracy"] == 1.0 and g["stale_rate"] == 0.0 and g["conflict_pairs_captured"] in (1.0, None)
+    assert e["state_accuracy"] == 0.0 and e["task_context_recall"] in (0.0, None) and e["leaks"] == 0
+    assert g["task_context_recall"] >= 0.5

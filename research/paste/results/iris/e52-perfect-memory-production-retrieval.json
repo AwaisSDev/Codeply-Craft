@@ -1,0 +1,19 @@
+{
+ "lives": 20,
+ "state_accuracy": 1.0,
+ "stale_rate": 0.0,
+ "duplicates_per_life": 0.0,
+ "secrets_kept": 7,
+ "task_context_recall": 0.9557,
+ "task_recall_by_agent": {
+  "coding_agent": 0.7931,
+  "design_agent": 0.907,
+  "gift_agent": 1.0,
+  "planner_agent": 1.0,
+  "study_agent": 0.6296
+ },
+ "leaks": 38,
+ "tasks_with_leak": 32,
+ "tasks": 100,
+ "conflict_pairs_captured": 1.0
+}
