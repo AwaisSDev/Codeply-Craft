@@ -44,6 +44,9 @@ def terms(text):
 
 
 class Store:
+    """The system's own memory store (ids s1, s2, ...): explicit op + target is honoured when the target exists;
+    otherwise Brain-like matching by entity + normalised slot."""
+
     def __init__(self):
         self.recs, self.plans, self.n = {}, [], 0
 
@@ -59,7 +62,9 @@ class Store:
                 continue
             if SECRET_RE.search(f"{o.get('text', '')} {o.get('value', '')} {o.get('slot', '')}") and o.get("sensitivity") != "secret":
                 continue                                      # brain.js refuses secret-looking text unless Iris labels it secret
-            cur = self.find(o.get("entity", "user"), o.get("slot", ""))
+            tgt = self.recs.get(o.get("target") or "")
+            cur = tgt if (tgt and o.get("op") in ("update", "contradict", "reinforce", "duplicate")) else \
+                self.find(o.get("entity", "user"), o.get("slot", ""))
             if cur and norm(cur["value"]) == norm(o.get("value", "")):
                 cur["evidence"] += 1; cur["updated"] = t
             elif cur:
@@ -74,6 +79,11 @@ class Store:
         for p in (out or {}).get("plans", []) or []:
             if isinstance(p, dict):
                 self.plans.append(dict(p, seen=t))
+
+
+    def known(self, n=40):
+        """What a closed-loop system is shown before an event: its own most recent memories, with its own ids."""
+        return sorted(self.recs.values(), key=lambda r: r["updated"])[-n:]
 
 
 def rank(recs, query, n, now):
