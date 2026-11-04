@@ -50,7 +50,7 @@ for system in ("PASTE", "M1c", "M1c-m", "M1c+W"):
         out = f"/kaggle/working/runs/{name}"
         t = time.time()
         r = subprocess.run(f"python -m paste.train --system {system} --head-norm __PASTE_FLAGS__ --train {TRAIN}:0-40 --val {DATA}/val-programmatic.jsonl "
-                           f"--val-limit 5 --epochs 1 --accum 2 --curriculum 0 --bio-weight 5 --ckpt-every 20 --device cuda {amp} --out {out}",
+                           f"--val-limit 5 --epochs 1 --accum 2 --curriculum 0 --bio-weight 5 --ckpt-every 20 --device cuda {amp} __SMOKE_ARGS__ --out {out}",
                            shell=True, capture_output=True, text=True)
         log = [json.loads(l) for l in open(f"{out}/log.jsonl")] if os.path.exists(f"{out}/log.jsonl") else []
         res[name] = {"rc": r.returncode, "wall_s": round(time.time() - t), "seg_per_s": [x.get("seg_per_s") for x in log],
@@ -114,6 +114,7 @@ def main():
     ap.add_argument("--commit", required=True)
     ap.add_argument("--runs", help="JSON: list of groups, each a list of {name, system, seed, args, slices?} (tools/make_groups.py)")
     ap.add_argument("--paste-flags", default="", help="PASTE-only flags for the smoke run (e.g. --profile-rows)")
+    ap.add_argument("--smoke-args", default="", help="recipe flags for every smoke run (e.g. '--closed-loop 0.5 --lr-enc 1e-4'), so throughput matches the central recipe")
     ap.add_argument("--out", default=os.path.join(HERE, "out"))
     ap.add_argument("--cpu-queue", help="queue file (scripts/queue.sh format) for a CPU-only validation notebook")
     ap.add_argument("--slug", help="notebook name for --cpu-queue")
@@ -124,6 +125,7 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     setup = SETUP.replace("__COMMIT__", a.commit)
     smoke = SMOKE.replace("__PASTE_FLAGS__", "{'" + a.paste_flags + "' if system == 'PASTE' else ''}") if a.paste_flags else SMOKE.replace("__PASTE_FLAGS__", "")
+    smoke = smoke.replace("__SMOKE_ARGS__", a.smoke_args)
     json.dump(nb("PASTE: T4 throughput smoke test", "Measures segments/s for PASTE and M1c (fp32, AMP). Train data only.",
                  [setup, smoke]), open(os.path.join(a.out, "paste-smoke.ipynb"), "w"), indent=1)
     if a.runs:

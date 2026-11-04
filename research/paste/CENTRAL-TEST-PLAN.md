@@ -1,6 +1,6 @@
 # Central test: execution plan (recipe fields are fixed from validation before any run)
 
-Status 2026-11-03: **procedure ready; recipe fields pending validation runs (§2)**. It implements EVALUATION-PROTOCOL.md and spec §10.5; it changes neither. Every pending field
+Status 2026-11-04: **procedure verified (E30); recipe fixed from validation (§2) except precision (T4 smoke, 2026-11-07)**. It implements EVALUATION-PROTOCOL.md and spec §10.5; it changes neither. Every pending field
 is filled from validation results (EXPERIMENTS.md) and committed **before** the first central-test training run.
 
 ## 1. Systems and seeds
@@ -23,7 +23,7 @@ learning-curve results, and are applied mechanically by `tools/choose_recipe.py`
 
 | Item | Rule | Value |
 |---|---|---|
-| Closed-loop / corruption variant | Mean cross-fitted val PE over PASTE and M1c; FPM guard ≤ 1.10 x V0 for both; within δ of the best → prefer V1 (spec §6.3), then V0 | pending (V1-V4 runs) |
+| Closed-loop / corruption variant | Mean cross-fitted val PE over PASTE and M1c; FPM guard ≤ 1.10 x V0 for both; within δ of the best → prefer V1 (spec §6.3), then V0 | **V1** (E47: all variants within δ of the best; spec default kept) |
 | Noise allowance δ | max(0.010, \|PE(S2-PASTE) − PE(V0-PASTE)\|) | **0.024** (E41) |
 | Encoder LR | per family (PASTE; M1c family from M1c): 5e-5 unless another of {3e-5, 1e-4} beats it by > δ | **1e-4 for both families** (E32, E35; final: margins 0.086 / 0.071 > δ) |
 | Training data | 6,000 episodes (`train-mix-full` 0-5,999). 3,000 only as the owner's compute fallback and only if PE(3,000) ≥ PE(6,000) − 0.010 for both systems | **6,000** (E38/E39: +0.084 / +0.087 over 3,000; 3,000 fallback not permitted) |
@@ -40,7 +40,9 @@ Groups are generated from the chosen recipe by `tools/make_groups.py --recipe re
 0. **Before the quota reset (validation only):** all recipe runs finish; `tools/choose_recipe.py --runs ... --out
    results/recipe.json`; fill §2 and DECISIONS.md; commit. `tools/dryrun_central.sh` (steps 5-8 on validation
    stand-ins in a scratch repository, with every guard exercised) must end in `DRYRUN OK` on the current commit.
-1. **2026-11-07, after the quota reset:** `kaggle quota`; run `paste-smoke` (≈15 min): segments/s for all four
+1. **2026-11-07, after the quota reset:** `kaggle quota`; generate and push the smoke notebook with the recipe's flags
+   (`make_notebooks.py --commit <HEAD> --paste-flags=--profile-rows --smoke-args="--closed-loop 0.5 --lr-enc 1e-4"`;
+   `push.sh ... paste-smoke gpu`); run `paste-smoke` (≈15 min): segments/s for all four
    systems, fp32 vs AMP; apply the precision rule. Compute the budget: runs × epochs × segments / throughput, plus
    per-epoch val and calibration.
 2. Fix the remaining pending fields above in this file and in DECISIONS.md; commit.

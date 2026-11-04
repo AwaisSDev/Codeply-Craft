@@ -1,0 +1,134 @@
+[
+ [
+  {
+   "name": "PASTE-s1",
+   "system": "PASTE",
+   "seed": 1,
+   "slices": [
+    "0-6000"
+   ],
+   "args": "--epochs 4 --val-every-epoch --patience 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --profile-rows --closed-loop 0.5 --lr-enc 0.0001"
+  }
+ ],
+ [
+  {
+   "name": "M1c-s1",
+   "system": "M1c",
+   "seed": 1,
+   "slices": [
+    "0-6000"
+   ],
+   "args": "--epochs 4 --val-every-epoch --patience 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --closed-loop 0.5 --lr-enc 0.0001"
+  }
+ ],
+ [
+  {
+   "name": "M1c-m-s1",
+   "system": "M1c-m",
+   "seed": 1,
+   "slices": [
+    "0-6000"
+   ],
+   "args": "--epochs 4 --val-every-epoch --patience 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --closed-loop 0.5 --lr-enc 0.0001"
+  }
+ ],
+ [
+  {
+   "name": "M1cpW-s1",
+   "system": "M1c+W",
+   "seed": 1,
+   "slices": [
+    "0-6000"
+   ],
+   "args": "--epochs 4 --val-every-epoch --patience 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --closed-loop 0.5 --lr-enc 0.0001"
+  }
+ ],
+ [
+  {
+   "name": "PASTE-s2",
+   "system": "PASTE",
+   "seed": 2,
+   "slices": [
+    "0-6000"
+   ],
+   "args": "--epochs 4 --val-every-epoch --patience 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --profile-rows --closed-loop 0.5 --lr-enc 0.0001"
+  }
+ ],
+ [
+  {
+   "name": "M1c-s2",
+   "system": "M1c",
+   "seed": 2,
+   "slices": [
+    "0-6000"
+   ],
+   "args": "--epochs 4 --val-every-epoch --patience 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --closed-loop 0.5 --lr-enc 0.0001"
+  }
+ ],
+ [
+  {
+   "name": "M1c-m-s2",
+   "system": "M1c-m",
+   "seed": 2,
+   "slices": [
+    "0-6000"
+   ],
+   "args": "--epochs 4 --val-every-epoch --patience 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --closed-loop 0.5 --lr-enc 0.0001"
+  }
+ ],
+ [
+  {
+   "name": "M1cpW-s2",
+   "system": "M1c+W",
+   "seed": 2,
+   "slices": [
+    "0-6000"
+   ],
+   "args": "--epochs 4 --val-every-epoch --patience 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --closed-loop 0.5 --lr-enc 0.0001"
+  }
+ ],
+ [
+  {
+   "name": "PASTE-s3",
+   "system": "PASTE",
+   "seed": 3,
+   "slices": [
+    "0-6000"
+   ],
+   "args": "--epochs 4 --val-every-epoch --patience 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --profile-rows --closed-loop 0.5 --lr-enc 0.0001"
+  }
+ ],
+ [
+  {
+   "name": "M1c-s3",
+   "system": "M1c",
+   "seed": 3,
+   "slices": [
+    "0-6000"
+   ],
+   "args": "--epochs 4 --val-every-epoch --patience 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --closed-loop 0.5 --lr-enc 0.0001"
+  }
+ ],
+ [
+  {
+   "name": "M1c-m-s3",
+   "system": "M1c-m",
+   "seed": 3,
+   "slices": [
+    "0-6000"
+   ],
+   "args": "--epochs 4 --val-every-epoch --patience 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --closed-loop 0.5 --lr-enc 0.0001"
+  }
+ ],
+ [
+  {
+   "name": "M1cpW-s3",
+   "system": "M1c+W",
+   "seed": 3,
+   "slices": [
+    "0-6000"
+   ],
+   "args": "--epochs 4 --val-every-epoch --patience 1 --accum 2 --bio-weight 5 --val-tf 10 --ckpt-every 250 --head-norm --closed-loop 0.5 --lr-enc 0.0001"
+  }
+ ]
+]

@@ -26,22 +26,26 @@ Central-test preparation (2026-11-03, 21:10 UTC):
 * Recipe fields still pending on validation runs (CENTRAL-TEST-PLAN §2): variant, δ, LR per family, 3,000-fallback
   permission. Precision (AMP) waits on the T4 smoke test (GPU quota 0 h until 2026-11-07 00:00 UTC).
 
-Recipe status (2026-11-04 07:45 UTC; validation, cross-fitted; E31-E41):
+Recipe status (2026-11-04 10:45 UTC; validation, cross-fitted; E31-E41):
 * **Decided:** LR **1e-4** both families (E32/E35, final); data **6,000 episodes** (E38/E39; 3,000 fallback not
   permitted); δ = **0.024** (E41: seed 2 − seed 1 of the same recipe). Epochs ≤ 4 with early stopping (E40:
   3,000 x 2 beats 6,000 x 1 by +0.030 at equal steps: PASTE is step-limited).
-* **Pending:** variant (V1-M1c, V3 x 2, V4 x 2 running/queued on Kaggle); precision (T4 smoke, 2026-11-07).
+* **Variant = V1** (E47; no variant beats seed noise). **Only precision remains** (AMP rule, T4 smoke 2026-11-07).
+  Draft groups: `results/central/groups-draft.json`.
 * Equal-budget PASTE − M1c (one seed): 1,500 −0.050; 2,000 −0.079; 3,000 −0.025; 6,000 −0.028 (FPM +1.8);
   **3,000 x 2 epochs −0.001 [−0.010, +0.009], FPM −1.0** (E43). PASTE gains more from a second epoch (+0.030 vs
   6,000 x 1) than M1c (+0.003). Gaps are within ~1 δ: the central test's 3 seeds decide.
 
-Next actions, in order:
-1. When all runs are in: `scripts/recipe.sh results/recipe.json`; record the decisions (DECISIONS, plan §2,
-   EXPERIMENTS: variants, LR, learning curve incl. "still improving?"); commit.
-2. 2026-11-07 after 00:00 UTC: `kaggle quota`; T4 smoke (`paste-smoke`); precision rule; budget; `tools/make_groups.py`
-   → `make_notebooks.py --runs groups.json --device cuda` at the then-current commit; push seed-1 groups first.
-3. Download, freeze (`paste.final_eval --freeze`), commit FROZEN-RUNS.json, final_eval on test here, bench_systems,
-   final_report (CENTRAL-TEST-PLAN §3).
+Next actions, in order (all recipe runs done; validation phase complete):
+1. **2026-11-07 after 00:00 UTC:** `kaggle quota`; generate the T4 smoke with the recipe's flags
+   (`make_notebooks.py --commit <HEAD> --paste-flags=--profile-rows --smoke-args="--closed-loop 0.5 --lr-enc 1e-4"`),
+   push as GPU (`push.sh ... paste-smoke gpu`), ~15 min. Apply the AMP rule (CENTRAL-TEST-PLAN §2); record it.
+2. Budget from the smoke throughput: 12 runs x ≤ 4 epochs x 6,000 episodes + per-epoch val + calibration vs
+   30 GPU-h/week. If short, plan §4 fallbacks in order (seeds 1-3 of PASTE and M1c first); never the 3,000 fallback.
+3. `tools/make_groups.py --recipe results/recipe.json [--amp] --per-group N` → `make_notebooks.py --runs groups.json
+   --device cuda` at the then-current commit; push seed-1 groups first.
+4. Per run: download runs.tgz; `paste.final_eval --freeze`; commit FROZEN-RUNS.json; `paste.final_eval` on test
+   here (CPU); `tools/bench_systems.py`; `paste.final_report` (outcome by spec §10.5; per-seed differences).
 
 ## Protocol and baseline plan, summary (full text: EVALUATION-PROTOCOL.md, BASELINE-PLAN.md)
 
