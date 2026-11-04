@@ -63,9 +63,13 @@ def known_before(life, upto_event_id):
     return list(g.mem.values()), list(plans.values())
 
 
+EXTRA = {}
+
+
 def call(base_url, model, messages, schema=None, timeout=900):
     body = {"model": model, "temperature": 0.0, "max_tokens": 1200, "messages": messages,
-            "response_format": ({"type": "json_schema", "json_schema": {"name": "x", "schema": schema}} if schema else {"type": "json_object"})}
+            "response_format": ({"type": "json_schema", "json_schema": {"name": "x", "schema": schema}} if schema else {"type": "json_object"}),
+            **EXTRA}
     req = urllib.request.Request(base_url.rstrip("/") + "/chat/completions", data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -90,7 +94,10 @@ def main():
     ap.add_argument("--base-url", default="http://127.0.0.1:8080/v1")
     ap.add_argument("--model", default="local")
     ap.add_argument("--max-events", type=int, default=0)
+    ap.add_argument("--extra-body", default="", help='JSON merged into each request, e.g. {"chat_template_kwargs": {"enable_thinking": false}} (as production does for LFM3 / Qwen3)')
     a = ap.parse_args()
+    if a.extra_body:
+        EXTRA.update(json.loads(a.extra_body))
     rend = {(r["life_id"], r["event_id"]): r for r in map(json.loads, open(a.rendered)) if r.get("ok")}
     done = {(r["life_id"], r["event_id"]) for r in map(json.loads, open(a.out))} if os.path.exists(a.out) else set()
     n = 0

@@ -175,7 +175,12 @@ def main():
         restore(a.run, a.dest, a.prefix, a.snapshot)
     else:
         api = _api()
-        runs = [a.run] if a.run else sorted({e.path.rsplit("/", 1)[-1] for e in api.list_repo_tree(REPO, path_in_repo=a.prefix)})
+        from huggingface_hub.errors import EntryNotFoundError
+        try:
+            runs = [a.run] if a.run else sorted({e.path.rsplit("/", 1)[-1] for e in api.list_repo_tree(REPO, path_in_repo=a.prefix)})
+        except EntryNotFoundError:
+            runs = []
+            print(f"no backups under {a.prefix}/")
         for run in runs:
             print(run, snapshots(run, a.prefix, api))
 
