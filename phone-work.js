@@ -254,7 +254,7 @@ ${block}
         <span class="wk-last ${ls}">${last ? `${esc(RUN_TEXT[ls])}<em>${esc(ago(last.updated || last.at))}</em>` : esc(RUN_TEXT.none)}</span></button>`;
     }).join('');
     const status = sched.error ? `<p class="note wk-err">${esc(sched.error)}</p>` : sched.loading && !sched.list.length ? '<p class="note">Checking GitHub…</p>' : !sched.list.length ? '<p class="note">Nothing scheduled. A scheduled task runs in the cloud at the times you pick, with your PC off.</p>' : '';
-    return `<div class="wk-block" data-work="sched"><div class="sec"><h2>Scheduled</h2><button type="button" data-work="new">New</button></div>${rows ? `<div class="wk-list">${rows}</div>` : ''}${status}</div>`;
+    return `<div id="wkBots" data-work="bots"></div><div class="wk-block" data-work="sched"><div class="sec"><h2>Scheduled</h2><button type="button" data-work="new">New</button></div>${rows ? `<div class="wk-list">${rows}</div>` : ''}${status}</div>`;
   }
   /** Recent scheduled runs as Tasks rows. */
   function scheduledTasks() {
@@ -560,21 +560,40 @@ ${block}
     try { Object.assign(checks, await runChecks(checks.repo)); }
     finally { checks.loading = false; renderChecks(); }
   }
+  // ─── Tasks has two tabs: Tasks (phone-app.js draws it) and Checks (drawn here) ─
+  let tab = 'tasks';
+  function tabs() {
+    const panelEl = $('tasksPanel');
+    if (!panelEl || $('wkTabs')) return;
+    const bar = document.createElement('div');
+    bar.id = 'wkTabs'; bar.className = 'wk-tabs seg wide';
+    bar.innerHTML = '<button type="button" data-tab="tasks" class="on">Tasks</button><button type="button" data-tab="checks">Checks</button>';
+    panelEl.querySelector('.top').after(bar);
+    const box = document.createElement('div'); box.id = 'tasksChecks'; box.className = 'panel-body hidden';
+    $('tasksBody').after(box);
+    bar.addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
+  }
+  function setTab(t) {
+    tabs(); tab = t;
+    document.querySelectorAll('#wkTabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === t));
+    $('tasksBody').classList.toggle('hidden', t !== 'tasks');
+    $('tasksChecks').classList.toggle('hidden', t !== 'checks');
+    const plus = document.querySelector('#tasksPanel [data-q="new"]'); if (plus) plus.style.visibility = t === 'tasks' ? '' : 'hidden';
+    if (t === 'checks') { if (!checks.repo || !envs().some((e) => e.repo === checks.repo)) checks.repo = currentRepo(); loadChecks(); }
+  }
   function openChecks() {
-    const p = panel('checksPanel', 'Checks', `<button class="icon-btn" data-wk-reload aria-label="Check again">${ICON.again}</button>`);
-    if (!p.dataset.wired) { p.dataset.wired = '1'; p.querySelector('[data-wk-reload]').addEventListener('click', loadChecks); }
-    if (!checks.repo || !envs().some((e) => e.repo === checks.repo)) checks.repo = currentRepo();
-    show(p); loadChecks();
+    tabs();
+    const p = $('tasksPanel'); if (!p) return;
+    show(p); setTab('checks');
   }
   const row = (state, title, sub, url, right = '') => `<${url ? `a href="${esc(url)}" target="_blank" rel="noopener"` : 'div'} class="wk-ck">${dot(state)}<span class="wk-ck-main"><b>${esc(title)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span>${right ? `<span class="wk-ck-r">${esc(right)}</span>` : ''}</${url ? 'a' : 'div'}>`;
   const sectionHead = (name, part) => `<div class="sec"><h2>${esc(name)}</h2><span class="wk-pill ${part ? part.state : ''}">${part ? esc(LABEL[part.state] || '') : ''}</span></div>`;
   function renderChecks() {
-    const p = $('checksPanel'); if (!p) return;
-    const body = p.querySelector('.panel-body');
+    const body = $('tasksChecks'); if (!body) return;
     const list = envs();
     const picker = list.length ? `<div class="chips">${list.map((e) => `<button type="button" data-repo="${esc(e.repo)}" class="${e.repo === checks.repo ? 'on' : ''}">${esc(e.repo.split('/')[1] || e.repo)}</button>`).join('')}</div>` : '<p class="note">No GitHub repo yet. Set up Codeply Cloud for a project (menu, Cloud) to check it here.</p>';
     const when = checks.loading ? 'Checking…' : checks.at ? `Read live from the GitHub, Vercel and Supabase APIs at ${stamp(checks.at)}. Tap a line to open it.` : '';
-    let html = `${picker}<p class="note">${esc(when)}</p>`;
+    let html = `<div class="wk-calbar"><span>Live status</span><button type="button" data-wk-recheck aria-label="Check again">${ICON.again}</button></div>${picker}<p class="note">${esc(when)}</p>`;
     const g = checks.gh;
     if (g && checks.repo) {
       html += sectionHead(`GitHub · ${checks.repo}`, g);
@@ -602,6 +621,7 @@ ${block}
     }
     body.innerHTML = html;
     body.querySelectorAll('[data-repo]').forEach((b) => b.addEventListener('click', () => { checks.repo = b.dataset.repo; save('craft-phone-checks-repo', checks.repo); loadChecks(); }));
+    const re = body.querySelector('[data-wk-recheck]'); if (re) re.addEventListener('click', loadChecks);
   }
 
   // ═══ Chat: answer status questions from live reads ══════════════════════════
@@ -647,11 +667,87 @@ ${block}
     const tasks = $('drawerTasks');
     if (!tasks || $('drawerCalendar')) return;
     const item = (id, icon, label, fn) => { const b = document.createElement('button'); b.className = 'drawer-item'; b.id = id; b.innerHTML = `${icon}<span>${label}</span>`; b.addEventListener('click', () => { if (P().closeDrawer) P().closeDrawer(); fn(); }); return b; };
-    const openBots = () => { if (window.CraftCalls && window.CraftCalls.openCalls) window.CraftCalls.openCalls(); };
-    tasks.after(item('drawerCalendar', ICON.cal, 'Calendar', openCalendar), item('drawerChecks', ICON.checks, 'Checks', openChecks), item('drawerBots', ICON.bots, 'Bots', openBots));
+    tasks.after(item('drawerCalendar', ICON.cal, 'Calendar', openCalendar), item('drawerSpecialists', ICON.bots, 'Specialists', openSpecialists));
   }
+  // ═══ SPECIALISTS: the ones Wisp has called or made ══════════════════════════
+  // From the PC when it's online (Wisp's team: built-in specialists Wisp has called, and the ones it made), kept
+  // on the phone for when it's offline; plus every specialist seen in this phone's chats (wisp_agent events).
+  const TKEY = 'craft-phone-team';
+  const team = { list: load(TKEY, { team: [], at: 0 }), loading: false, error: '' };
+  function seenInChats() {
+    const st = P().state || {}; const seen = {};
+    const visit = (o, chat, depth = 0) => {
+      if (!o || typeof o !== 'object' || depth > 6) return;
+      if ((o.kind === 'wisp_agent' || o.type === 'wisp_agent') && o.agent && o.agent.name) {
+        const k = String(o.agent.id || o.agent.name).toLowerCase();
+        const s = seen[k] || (seen[k] = { ...o.agent, calls: 0, made: false, chats: new Set(), lastAt: 0 });
+        if (o.phase === 'start') s.calls++;
+        if (o.phase === 'created') s.made = true;
+        if (chat) s.chats.add(chat.id);
+        s.lastAt = Math.max(s.lastAt, Number(o.at) || chat && chat.updatedAt || 0);
+        s.lastChat = chat ? chat.id : s.lastChat;
+        return;
+      }
+      for (const v of Array.isArray(o) ? o : Object.values(o)) visit(v, chat, depth + 1);
+    };
+    for (const c of st.chats || []) { try { visit(P().chatBody(c.id), c); } catch {} }
+    return seen;
+  }
+  async function loadTeam() {
+    if (team.loading) return;
+    team.loading = true; team.error = ''; renderSpecialists();
+    try {
+      if (P().relay && P().relay.pcId) {
+        const r = await P().relayRequest('GET', '/api/wisp/team');
+        if (r && Array.isArray(r.team)) { team.list = { team: r.team, at: Date.now() }; save(TKEY, team.list); }
+      }
+    } catch (e) { team.error = /404|not found/i.test(e.message) ? 'Update Codeply on your PC to see its whole team here.' : `Couldn't get the team from your PC: ${e.message}`; }
+    finally { team.loading = false; renderSpecialists(); }
+  }
+  function openSpecialists() {
+    const p = panel('specPanel', 'Specialists');
+    show(p); renderSpecialists(); loadTeam();
+  }
+  function renderSpecialists() {
+    const p = $('specPanel'); if (!p) return;
+    const body = p.querySelector('.panel-body');
+    const seen = seenInChats();
+    const map = new Map();
+    for (const s of team.list.team || []) map.set(String(s.id || s.name).toLowerCase(), { ...s, made: !s.builtin, calls: s.uses || 0 });
+    for (const [k, s] of Object.entries(seen)) {
+      const cur = map.get(k) || [...map.values()].find((x) => String(x.name).toLowerCase() === String(s.name).toLowerCase());
+      if (cur) { cur.calls = Math.max(cur.calls || 0, s.calls); cur.lastChat = s.lastChat; cur.lastAt = s.lastAt; if (s.made) cur.made = true; }
+      else map.set(k, { id: s.id || k, name: s.name, focus: s.focus || '', shape: s.shape, color: s.color, made: s.made, calls: s.calls, lastChat: s.lastChat, lastAt: s.lastAt });
+    }
+    const all = [...map.values()];
+    const made = all.filter((s) => s.made);
+    const called = all.filter((s) => !s.made && s.calls > 0).sort((a, b) => (b.calls || 0) - (a.calls || 0));
+    const row = (s) => `<button type="button" class="wk-spec" data-spec="${esc(s.id)}"><span class="wk-spec-face" data-face="${esc(s.shape || 'pentagon')}" data-color="${esc(s.color || '')}"></span>
+      <span class="wk-spec-main"><b>${esc(s.name)}</b><small>${esc(s.focus || (s.made ? 'Made by Wisp' : ''))}</small>${s.instructions ? `<small class="wk-spec-ins">${esc(short(s.instructions, 120))}</small>` : ''}</span>
+      <span class="wk-spec-n">${s.calls ? `${s.calls} call${s.calls === 1 ? '' : 's'}` : s.made ? 'New' : ''}</span></button>`;
+    const note = team.loading ? 'Getting the team from your PC…' : team.error ? team.error : team.list.at ? `From your PC · ${ago(team.list.at)}` : P().relay && P().relay.pcId ? '' : 'Your PC is offline: showing what this phone has seen.';
+    body.innerHTML = `<p class="note ${team.error ? 'wk-err' : ''}">${esc(note)}</p>`
+      + (made.length ? `<div class="sec"><h2>Made by Wisp</h2><span>${made.length}</span></div><div class="wk-list">${made.map(row).join('')}</div>` : '')
+      + (called.length ? `<div class="sec"><h2>Called in your chats</h2><span>${called.length}</span></div><div class="wk-list">${called.map(row).join('')}</div>` : '')
+      + (!made.length && !called.length ? '<p class="note" style="text-align:center;margin-top:40px">No specialists yet. When Wisp calls one into a chat (Frontend, Testing…) or makes a new one, it shows up here.</p>' : '');
+    body.querySelectorAll('.wk-spec-face').forEach((el) => { try { const w = window.CraftWisp.mount(el, { size: 'md', shape: el.dataset.face, morph: false }); if (el.dataset.color) w.setColor(el.dataset.color); w.setMood('happy', true); } catch {} });
+    body.querySelectorAll('[data-spec]').forEach((b) => b.addEventListener('click', () => {
+      const s = all.find((x) => String(x.id) === b.dataset.spec); if (!s) return;
+      const hist = (s.history || []).slice(0, 5);
+      const sh = sheet(`<h2 class="wk-title">${esc(s.name)}</h2><p class="wk-text">${esc(s.focus || '')}${s.made ? ' · made by Wisp' : ''}</p>
+        ${s.instructions ? `<div class="wk-prompt">${esc(s.instructions)}</div>` : ''}
+        ${hist.length ? `<div class="sec"><h2>Recent jobs</h2></div><div class="wk-list">${hist.map((h) => `<div class="wk-ck">${dot(h.ok === false ? 'fail' : 'pass')}<span class="wk-ck-main"><b>${esc(short(h.task || h.title || '', 90))}</b>${h.at ? `<small>${esc(ago(h.at))}</small>` : ''}</span></div>`).join('')}</div>` : ''}
+        <div class="wk-actions">${s.lastChat ? '<button class="btn btn-outline" data-go>Open its last chat</button>' : ''}<button class="btn btn-quiet" data-wk-close>Close</button></div>`);
+      const go = sh.q('[data-go]'); if (go) go.addEventListener('click', () => { sh.close(); p.classList.add('hidden'); P().openChat(s.lastChat); });
+    }));
+  }
+  const short = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
+
   function wire() {
     addDrawerItems();
+    tabs();
+    // The drawer's Tasks always opens on the Tasks tab.
+    const dt = $('drawerTasks'); if (dt) dt.addEventListener('click', () => setTab('tasks'));
     const tb = $('tasksBody');
     if (tb) tb.addEventListener('click', (e) => {
       const n = e.target.closest('[data-work="new"]'); if (n) { newSchedule(); return; }
@@ -662,5 +758,5 @@ ${block}
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
 
-  window.CraftWork = { schedulesHtml, scheduledTasks, openRun, loadSchedules, openCalendar, openChecks, isStatusQuestion, statusNote, cronFor, nextRun, loopYaml, whenText, runChecks };
+  window.CraftWork = { openSpecialists, setTab, schedulesHtml, scheduledTasks, openRun, loadSchedules, openCalendar, openChecks, isStatusQuestion, statusNote, cronFor, nextRun, loopYaml, whenText, runChecks };
 })();

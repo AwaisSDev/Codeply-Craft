@@ -211,10 +211,12 @@ Respond with ONLY JSON: {"summary": "one sentence for the user", "needsReply": t
     }));
   }
   function mount(el) { if (!el) return; mounted = el; paint(); poll(true); }
+  /** The Tasks tab: shown only while there is something to look at (drafts, running or finished tasks). */
+  function attach(el) { if (!el) return; mounted = el; paint(); if (!/bw-row|err/.test(el.innerHTML)) el.innerHTML = ''; }
 
   setInterval(() => { if (!document.hidden) poll(false); }, 30000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(true); });
   setTimeout(() => poll(true), 4000);
 
-  window.CraftBots = { mount, poll, state: () => st };
+  window.CraftBots = { mount, attach, poll, state: () => st };
 })();

@@ -348,4 +348,4 @@ function init(d) {
   }
 }
 
-module.exports = { init, forTurn, enabled, activeFor, tick, routeFor };
+module.exports = { init, forTurn, enabled, activeFor, tick, routeFor, teamState };

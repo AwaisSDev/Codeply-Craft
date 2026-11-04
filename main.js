@@ -2595,6 +2595,8 @@ async function handleBridgeApi(method, pathname, query, body) {
     const r = await autopilot.bridge(method, pathname, body);
     if (r) return r;
   }
+  // Wisp's team for the phone's Specialists page (the ones it has called and the ones it made).
+  if (method === 'GET' && pathname === '/api/wisp/team') return { status: 200, body: wispDesktop.teamState() };
   // Bots for the phone's Calls (list, starter templates, save a finished call).
   if (pathname === '/api/bots' || pathname.startsWith('/api/bots/')) {
     const r = await botsDesktop.bridge(method, pathname, query, body);

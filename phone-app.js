@@ -71,6 +71,7 @@
         return `<div class="task" data-open="${esc(t.id)}"><div class="task-top">${ico}<div class="task-main"><b>${esc(t.title)}</b><small>${sub}</small></div><time>${esc(when)}</time></div>${ask}</div>`;
       }).join('') + (shown.length ? '' : '<p class="note" style="text-align:center;margin-top:40px">Nothing here.</p>');
     body.querySelectorAll('[data-filter]').forEach((b) => b.addEventListener('click', () => { taskFilter = b.dataset.filter; renderTasks(data); }));
+    const bw = body.querySelector('#wkBots'); if (bw && window.CraftBots) window.CraftBots.attach(bw);
   }
 
   // ─── Settings ─────────────────────────────────────────────────────────────
