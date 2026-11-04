@@ -42,6 +42,12 @@ metrics. **Exploratory result (E50): on real assistant-style conversations neith
 synthetic training data is the main open risk for real-world use, independent of the central test's outcome.
 Persistence (RESTORE.md): private HF backups + restore verified locally (E48, bit-identical) and on Kaggle (E49).
 
+Iris 1 (owner-approved roadmap 2026-11-04): IRIS-ROADMAP.md (direction), IRIS-DESIGN.md (Brain-compatible schema
+v0, IrisBench v0 with life simulator v2 + local-model rendering + verifier, metrics per layer, baselines incl. the
+production local model), IRIS-IMPLEMENTATION-PLAN.md (steps 0-8, for owner review; only step 0 measurements may run
+before review). Public benchmarks backed up privately: `paste-data/public/commercial/` (LongMemEval) and
+`paste-data/public/noncommercial/` (LoCoMo, PerLTQA, HaluMem), unmodified, licence + sha256 per set.
+
 Next actions, in order (all recipe runs done; validation phase complete):
 1. **2026-11-07 after 00:00 UTC:** `kaggle quota`; generate the T4 smoke with the recipe's flags
    (`make_notebooks.py --commit <HEAD> --paste-flags=--profile-rows --smoke-args="--closed-loop 0.5 --lr-enc 1e-4"`),
