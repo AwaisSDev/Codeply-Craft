@@ -1,0 +1,351 @@
+{
+ "runs": {
+  "P6000": {
+   "dir": "/home/user/paste-runs/kaggle/lc-paste-b/runs/LC6000-PASTE",
+   "grid": [
+    0.8,
+    0.9,
+    0.95,
+    0.98
+   ],
+   "crossfit_theta_by_fold": {
+    "0": 0.98,
+    "1": 0.95
+   },
+   "crossfit": {
+    "PE": 0.816,
+    "FPM": 15.268,
+    "precision": 0.8069,
+    "recall": 0.8252,
+    "per_op_f1": {
+     "WRITE": 0.7974,
+     "UPDATE": 0.8393,
+     "MERGE_INTO": 0.8904,
+     "FORGET": 0.892,
+     "FORGET_PROFILE": 0.5372,
+     "MERGE": 0.8255
+    },
+    "episodes": 1172
+   },
+   "crossfit_by_file": {
+    "val-api.jsonl": {
+     "PE": 0.7855,
+     "FPM": 17.707,
+     "precision": 0.7691,
+     "recall": 0.8027,
+     "per_op_f1": {
+      "WRITE": 0.7714,
+      "UPDATE": 0.7982,
+      "MERGE_INTO": 0.891,
+      "FORGET": 0.8768,
+      "FORGET_PROFILE": 0.4086,
+      "MERGE": 0.791
+     },
+     "episodes": 572
+    },
+    "val-programmatic.jsonl": {
+     "PE": 0.8453,
+     "FPM": 12.955,
+     "precision": 0.8441,
+     "recall": 0.8465,
+     "per_op_f1": {
+      "WRITE": 0.8227,
+      "UPDATE": 0.878,
+      "MERGE_INTO": 0.8899,
+      "FORGET": 0.9055,
+      "FORGET_PROFILE": 0.7317,
+      "MERGE": 0.8563
+     },
+     "episodes": 600
+    }
+   },
+   "insample_theta": 0.98,
+   "insample": {
+    "PE": 0.8158,
+    "FPM": 15.211,
+    "precision": 0.8073,
+    "recall": 0.8245,
+    "per_op_f1": {
+     "WRITE": 0.7977,
+     "UPDATE": 0.8388,
+     "MERGE_INTO": 0.8904,
+     "FORGET": 0.892,
+     "FORGET_PROFILE": 0.5372,
+     "MERGE": 0.819
+    },
+    "episodes": 1172
+   },
+   "theta_0.5": null,
+   "by_theta": {
+    "0.8": {
+     "PE": 0.8174,
+     "FPM": 15.465,
+     "precision": 0.8056,
+     "recall": 0.8296
+    },
+    "0.9": {
+     "PE": 0.817,
+     "FPM": 15.39,
+     "precision": 0.8062,
+     "recall": 0.8282
+    },
+    "0.95": {
+     "PE": 0.8168,
+     "FPM": 15.277,
+     "precision": 0.8069,
+     "recall": 0.8269
+    },
+    "0.98": {
+     "PE": 0.8158,
+     "FPM": 15.211,
+     "precision": 0.8073,
+     "recall": 0.8245
+    }
+   }
+  },
+  "M6000": {
+   "dir": "/home/user/paste-runs/kaggle/lc-m1c-b/runs/LC6000-M1c",
+   "grid": [
+    0.8,
+    0.9,
+    0.95,
+    0.98
+   ],
+   "crossfit_theta_by_fold": {
+    "0": 0.95,
+    "1": 0.95
+   },
+   "crossfit": {
+    "PE": 0.8442,
+    "FPM": 13.42,
+    "precision": 0.8325,
+    "recall": 0.8561,
+    "per_op_f1": {
+     "WRITE": 0.829,
+     "UPDATE": 0.8638,
+     "MERGE_INTO": 0.9005,
+     "FORGET": 0.8856,
+     "FORGET_PROFILE": 0.5552,
+     "MERGE": 0.8947
+    },
+    "episodes": 1172
+   },
+   "crossfit_by_file": {
+    "val-api.jsonl": {
+     "PE": 0.8253,
+     "FPM": 15.723,
+     "precision": 0.8042,
+     "recall": 0.8475,
+     "per_op_f1": {
+      "WRITE": 0.81,
+      "UPDATE": 0.843,
+      "MERGE_INTO": 0.9027,
+      "FORGET": 0.8756,
+      "FORGET_PROFILE": 0.475,
+      "MERGE": 0.8902
+     },
+     "episodes": 572
+    },
+    "val-programmatic.jsonl": {
+     "PE": 0.8624,
+     "FPM": 11.237,
+     "precision": 0.8605,
+     "recall": 0.8642,
+     "per_op_f1": {
+      "WRITE": 0.8477,
+      "UPDATE": 0.8835,
+      "MERGE_INTO": 0.8985,
+      "FORGET": 0.8947,
+      "FORGET_PROFILE": 0.6612,
+      "MERGE": 0.8986
+     },
+     "episodes": 600
+    }
+   },
+   "insample_theta": 0.95,
+   "insample": {
+    "PE": 0.8442,
+    "FPM": 13.42,
+    "precision": 0.8325,
+    "recall": 0.8561,
+    "per_op_f1": {
+     "WRITE": 0.829,
+     "UPDATE": 0.8638,
+     "MERGE_INTO": 0.9005,
+     "FORGET": 0.8856,
+     "FORGET_PROFILE": 0.5552,
+     "MERGE": 0.8947
+    },
+    "episodes": 1172
+   },
+   "theta_0.5": null,
+   "by_theta": {
+    "0.8": {
+     "PE": 0.8439,
+     "FPM": 13.627,
+     "precision": 0.8308,
+     "recall": 0.8574
+    },
+    "0.9": {
+     "PE": 0.8439,
+     "FPM": 13.533,
+     "precision": 0.8316,
+     "recall": 0.8566
+    },
+    "0.95": {
+     "PE": 0.8442,
+     "FPM": 13.42,
+     "precision": 0.8325,
+     "recall": 0.8561
+    },
+    "0.98": {
+     "PE": 0.8433,
+     "FPM": 13.42,
+     "precision": 0.8326,
+     "recall": 0.8543
+    }
+   }
+  },
+  "M3000": {
+   "dir": "/home/user/paste-runs/kaggle/lc-m1c-a/runs/LC3000-M1c",
+   "grid": [
+    0.8,
+    0.9,
+    0.95,
+    0.98
+   ],
+   "crossfit_theta_by_fold": {
+    "0": 0.98,
+    "1": 0.98
+   },
+   "crossfit": {
+    "PE": 0.7576,
+    "FPM": 20.782,
+    "precision": 0.7385,
+    "recall": 0.7777,
+    "per_op_f1": {
+     "WRITE": 0.7469,
+     "UPDATE": 0.7688,
+     "MERGE_INTO": 0.8542,
+     "FORGET": 0.8324,
+     "FORGET_PROFILE": 0.3744,
+     "MERGE": 0.7745
+    },
+    "episodes": 1172
+   },
+   "crossfit_by_file": {
+    "val-api.jsonl": {
+     "PE": 0.7028,
+     "FPM": 26.455,
+     "precision": 0.67,
+     "recall": 0.7391,
+     "per_op_f1": {
+      "WRITE": 0.7026,
+      "UPDATE": 0.6784,
+      "MERGE_INTO": 0.8414,
+      "FORGET": 0.8099,
+      "FORGET_PROFILE": 0.2712,
+      "MERGE": 0.7629
+     },
+     "episodes": 572
+    },
+    "val-programmatic.jsonl": {
+     "PE": 0.8117,
+     "FPM": 15.403,
+     "precision": 0.8093,
+     "recall": 0.814,
+     "per_op_f1": {
+      "WRITE": 0.7921,
+      "UPDATE": 0.8521,
+      "MERGE_INTO": 0.8661,
+      "FORGET": 0.8527,
+      "FORGET_PROFILE": 0.5325,
+      "MERGE": 0.785
+     },
+     "episodes": 600
+    }
+   },
+   "insample_theta": 0.98,
+   "insample": {
+    "PE": 0.7576,
+    "FPM": 20.782,
+    "precision": 0.7385,
+    "recall": 0.7777,
+    "per_op_f1": {
+     "WRITE": 0.7469,
+     "UPDATE": 0.7688,
+     "MERGE_INTO": 0.8542,
+     "FORGET": 0.8324,
+     "FORGET_PROFILE": 0.3744,
+     "MERGE": 0.7745
+    },
+    "episodes": 1172
+   },
+   "theta_0.5": null,
+   "by_theta": {
+    "0.8": {
+     "PE": 0.7556,
+     "FPM": 22.386,
+     "precision": 0.7276,
+     "recall": 0.7859
+    },
+    "0.9": {
+     "PE": 0.7563,
+     "FPM": 21.889,
+     "precision": 0.7307,
+     "recall": 0.7837
+    },
+    "0.95": {
+     "PE": 0.7574,
+     "FPM": 21.42,
+     "precision": 0.7342,
+     "recall": 0.7821
+    },
+    "0.98": {
+     "PE": 0.7576,
+     "FPM": 20.782,
+     "precision": 0.7385,
+     "recall": 0.7777
+    }
+   }
+  }
+ },
+ "pairs": {
+  "P6000 - M6000": {
+   "PE": {
+    "delta": -0.0282,
+    "ci95": [
+     -0.0368,
+     -0.0196
+    ],
+    "p_one_sided_le0": 1.0
+   },
+   "FPM": {
+    "delta": 1.8475,
+    "ci95": [
+     0.9312,
+     2.7458
+    ],
+    "p_one_sided_le0": 0.0
+   }
+  },
+  "M6000 - M3000": {
+   "PE": {
+    "delta": 0.0865,
+    "ci95": [
+     0.0776,
+     0.0955
+    ],
+    "p_one_sided_le0": 0.0
+   },
+   "FPM": {
+    "delta": -7.3619,
+    "ci95": [
+     -8.416,
+     -6.3203
+    ],
+    "p_one_sided_le0": 1.0
+   }
+  }
+ }
+}

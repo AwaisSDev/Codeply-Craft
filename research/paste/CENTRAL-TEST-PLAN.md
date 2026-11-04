@@ -26,7 +26,7 @@ learning-curve results, and are applied mechanically by `tools/choose_recipe.py`
 | Closed-loop / corruption variant | Mean cross-fitted val PE over PASTE and M1c; FPM guard ≤ 1.10 x V0 for both; within δ of the best → prefer V1 (spec §6.3), then V0 | pending (V1-V4 runs) |
 | Noise allowance δ | max(0.010, \|PE(S2-PASTE) − PE(V0-PASTE)\|) | pending (S2 run) |
 | Encoder LR | per family (PASTE; M1c family from M1c): 5e-5 unless another of {3e-5, 1e-4} beats it by > δ | PASTE **1e-4** (E32), M1c family **1e-4** (E35); both provisional until δ (margins ≥ 7x the floor) |
-| Training data | 6,000 episodes (`train-mix-full` 0-5,999). 3,000 only as the owner's compute fallback and only if PE(3,000) ≥ PE(6,000) − 0.010 for both systems | 6,000 (fallback permission pending: learning curve) |
+| Training data | 6,000 episodes (`train-mix-full` 0-5,999). 3,000 only as the owner's compute fallback and only if PE(3,000) ≥ PE(6,000) − 0.010 for both systems | **6,000** (E38/E39: +0.084 / +0.087 over 3,000; 3,000 fallback not permitted) |
 | Epochs | ≤ 4, per-epoch val, early stopping patience 1 (`--val-every-epoch --patience 1`); best epoch = `final.pt` | fixed |
 | Accumulation | 2 episodes per step, every system, any hardware (pilot effective batch) | fixed: 2 |
 | Precision | `--amp` for all iff T4 smoke: mean loss of the last 10 logged steps within 2 % of fp32 for every system, no failed run; else fp32 for all | pending (T4 smoke, needs GPU quota) |
@@ -69,7 +69,8 @@ Groups are generated from the chosen recipe by `tools/make_groups.py --recipe re
 per-epoch validation and ~1.2 h of calibration: more than one 12 h session, so it would need cross-session resume
 (untested). The 3,000-episode recipe fits one session (~7 h); 12 runs at Kaggle's limit of 5 concurrent CPU sessions
 take ~3 waves, about 21 h, i.e. results before 2026-11-07. That would use the 3,000 fallback for speed rather than
-because compute forces it, which the owner's rule does not cover, so it is an **owner decision**, not taken here.
+because compute forces it, which the owner's rule does not cover. **Closed 2026-11-04:** the learning curve (E38/E39)
+shows a ~0.085 PE loss at 3,000, so the fallback condition fails and this route is not available.
 
 ## 5. Interpretation notes fixed in advance
 
