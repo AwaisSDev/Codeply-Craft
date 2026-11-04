@@ -29,6 +29,7 @@ for (const [from, to] of [
   ['phone-app.css', 'phone-app.css'],
   ['phone-work.js', 'phone-work.js'],     // Schedules, Calendar and Checks (no PC needed)
   ['phone-work.css', 'phone-work.css'],
+  ['phone-bots.js', 'phone-bots.js'],     // the bots, run from the phone while the PC is off
   ['wisp.js', 'wisp.js'],
   ['phone-stt-worker.js', 'phone-stt-worker.js'],
   ['bot-avatar.js', 'bot-avatar.js'],

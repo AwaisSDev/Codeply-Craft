@@ -226,6 +226,9 @@ function phoneBot(bot, team) {
   return {
     id: bot.id, name: bot.name, role: bot.role, specialty: bot.specialty, instructions: bot.instructions,
     tone: bot.tone, sources: bot.sources, avatar: bot.avatar, voice: bot.voice || '',
+    // what the phone needs to run this bot while the PC is off (phone-bots.js)
+    email: bot.email && bot.email.on && bot.email.address ? { on: true, address: bot.email.address } : null,
+    autonomy: bot.autonomy ? { level: bot.autonomy.level || 'ask' } : { level: 'ask' },
     memory: (bot.memory || []).map((m) => m.fact),
     prompt: b.buildBotPrompt(bot, { team }),
     updatedAt: bot.updatedAt || 0,

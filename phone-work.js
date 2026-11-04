@@ -29,6 +29,7 @@
     cal: svg('<rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>', 22),
     checks: svg('<path d="M4 7l2 2 3.5-3.5M4 14l2 2 3.5-3.5M13 7.5h7M13 14.5h7"/>', 22),
     clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', 18),
+    bots: svg('<rect x="4.5" y="7" width="15" height="11.5" rx="3.5"/><path d="M12 7V4M9.5 12v1M14.5 12v1"/>', 22),
   };
   const time = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const stamp = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
@@ -646,7 +647,8 @@ ${block}
     const tasks = $('drawerTasks');
     if (!tasks || $('drawerCalendar')) return;
     const item = (id, icon, label, fn) => { const b = document.createElement('button'); b.className = 'drawer-item'; b.id = id; b.innerHTML = `${icon}<span>${label}</span>`; b.addEventListener('click', () => { if (P().closeDrawer) P().closeDrawer(); fn(); }); return b; };
-    tasks.after(item('drawerCalendar', ICON.cal, 'Calendar', openCalendar), item('drawerChecks', ICON.checks, 'Checks', openChecks));
+    const openBots = () => { if (window.CraftCalls && window.CraftCalls.openCalls) window.CraftCalls.openCalls(); };
+    tasks.after(item('drawerCalendar', ICON.cal, 'Calendar', openCalendar), item('drawerChecks', ICON.checks, 'Checks', openChecks), item('drawerBots', ICON.bots, 'Bots', openBots));
   }
   function wire() {
     addDrawerItems();
