@@ -1,0 +1,91 @@
+{
+ "scores": {
+  "V2/PASTE": {
+   "PE": 0.6277,
+   "FPM": 28.585
+  },
+  "LR1e-4/PASTE": {
+   "PE": 0.6951,
+   "FPM": 22.17
+  },
+  "V0/M1c": {
+   "PE": 0.6884,
+   "FPM": 24.018
+  },
+  "LC3000/PASTE": {
+   "PE": 0.7322,
+   "FPM": 20.388
+  },
+  "V0/PASTE": {
+   "PE": 0.6096,
+   "FPM": 31.52
+  },
+  "LR3e-5/PASTE": {
+   "PE": 0.5491,
+   "FPM": 33.771
+  },
+  "LC1500/PASTE": {
+   "PE": 0.5685,
+   "FPM": 31.595
+  },
+  "V1/PASTE": {
+   "PE": 0.6045,
+   "FPM": 31.792
+  }
+ },
+ "delta": 0.01,
+ "delta_source": "floor (S2 pending)",
+ "variant": {
+  "decision": "pending",
+  "missing": [
+   "V1/M1c",
+   "V2/M1c",
+   "V3/PASTE",
+   "V3/M1c",
+   "V4/PASTE",
+   "V4/M1c"
+  ]
+ },
+ "lr": {
+  "PASTE": {
+   "decision": 0.0001,
+   "PE": {
+    "3e-05": 0.5491,
+    "5e-05": 0.6096,
+    "0.0001": 0.6951
+   }
+  },
+  "M1c": {
+   "decision": "pending",
+   "missing": [
+    "LR3e-5/M1c",
+    "LR1e-4/M1c"
+   ]
+  }
+ },
+ "data": {
+  "decision": "pending",
+  "curve": {
+   "PASTE": {
+    "1500": {
+     "PE": 0.5685,
+     "FPM": 31.595
+    },
+    "2000": {
+     "PE": 0.6096,
+     "FPM": 31.52
+    },
+    "3000": {
+     "PE": 0.7322,
+     "FPM": 20.388
+    }
+   },
+   "M1c": {
+    "2000": {
+     "PE": 0.6884,
+     "FPM": 24.018
+    }
+   }
+  }
+ }
+}

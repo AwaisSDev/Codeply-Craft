@@ -25,7 +25,7 @@ learning-curve results, and are applied mechanically by `tools/choose_recipe.py`
 |---|---|---|
 | Closed-loop / corruption variant | Mean cross-fitted val PE over PASTE and M1c; FPM guard ≤ 1.10 x V0 for both; within δ of the best → prefer V1 (spec §6.3), then V0 | pending (V1-V4 runs) |
 | Noise allowance δ | max(0.010, \|PE(S2-PASTE) − PE(V0-PASTE)\|) | pending (S2 run) |
-| Encoder LR | per family (PASTE; M1c family from M1c): 5e-5 unless another of {3e-5, 1e-4} beats it by > δ | pending (LR runs) |
+| Encoder LR | per family (PASTE; M1c family from M1c): 5e-5 unless another of {3e-5, 1e-4} beats it by > δ | PASTE **1e-4** (E32; provisional until δ); M1c family pending |
 | Training data | 6,000 episodes (`train-mix-full` 0-5,999). 3,000 only as the owner's compute fallback and only if PE(3,000) ≥ PE(6,000) − 0.010 for both systems | 6,000 (fallback permission pending: learning curve) |
 | Epochs | ≤ 4, per-epoch val, early stopping patience 1 (`--val-every-epoch --patience 1`); best epoch = `final.pt` | fixed |
 | Accumulation | 2 episodes per step, every system, any hardware (pilot effective batch) | fixed: 2 |

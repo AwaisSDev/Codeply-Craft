@@ -26,16 +26,15 @@ Central-test preparation (2026-11-03, 21:10 UTC):
 * Recipe fields still pending on validation runs (CENTRAL-TEST-PLAN §2): variant, δ, LR per family, 3,000-fallback
   permission. Precision (AMP) waits on the T4 smoke test (GPU quota 0 h until 2026-11-07 00:00 UTC).
 
-Running (validation only), all on free Kaggle CPU sessions (5 at once; local jobs die when the idle container is
-reclaimed, as happened at ~21:26 UTC):
-* Running since 19:01: lc-paste-a, lc-m1c-a, lr-paste, lr-m1c; since 20:31: var-v2-paste (none finished at 22:43,
-  so Kaggle CPU is at least ~1.5x slower than this container).
-* Not yet pushed (priority order): lc-paste-b, lc-m1c-b, lc-paste-c, lc-m1c-c, var-v2-m1c, var-v1-m1c, var-v3-paste,
-  var-v3-m1c, var-v4-paste, var-v4-m1c, var-s2-paste.
-* Each check-in runs one stateless pass: `PASTE_HOME=/home/user KAGGLE=... PY=... scripts/kaggle/sched_all.sh`
-  (pushes into free slots, fetches finished outputs to `~/paste-runs/kaggle/<slug>/runs/`), then `scripts/recipe.sh`.
-* ETA (3 waves, Kaggle at ~2x local time): all recipe runs ~06:00-10:00 UTC on 2026-11-04. Still well before the
-  GPU quota reset (2026-11-07 00:00 UTC), which bounds the central training anyway.
+Results in (2026-11-04 00:50 UTC; validation, cross-fitted, one seed):
+* **PASTE LR 1e-4: 0.695** vs 0.610 at 5e-5 (+0.086 [0.076, 0.095]); rule → PASTE LR 1e-4 (provisional until δ).
+* **PASTE learning curve: 0.569 (1,500) → 0.610 (2,000) → 0.732 (3,000)**: still improving steeply.
+* V1-PASTE −0.005 [−0.012, 0.002], V2-PASTE +0.018 [0.009, 0.027] vs V0 (variant decision needs M1c + S2).
+* Kaggle CPU ≈ 3.0 segments/s (local 5.6); 6,000-episode run ≈ 5.3 h.
+
+Running on Kaggle CPU (5 at once; stateless check-ins `scripts/kaggle/sched_all.sh`): lc-m1c-a, lr-m1c (since
+19:01), lc-paste-b, lc-m1c-b, lc-paste-c (since 00:48). Not yet pushed: lc-m1c-c, var-v2-m1c, var-v1-m1c,
+var-v3-paste, var-v3-m1c, var-v4-paste, var-v4-m1c, var-s2-paste. ETA all recipe runs ≈ 10:00-12:00 UTC 2026-11-04.
 
 Next actions, in order:
 1. When all runs are in: `scripts/recipe.sh results/recipe.json`; record the decisions (DECISIONS, plan §2,
