@@ -10,7 +10,8 @@ import argparse
 import json
 import random
 
-METRICS = ("evidence_recall@10", "evidence_recall@5", "answer_in_memory", "evidence_captured_rate", "memories_per_100_turns")
+METRICS = ("evidence_recall@10", "evidence_recall@5", "answer_in_memory", "evidence_captured_rate", "memories_per_100_turns",
+           "chance_recall@10", "recency_recall@10", "lift_over_chance@10")
 
 
 def load(path):
@@ -18,6 +19,10 @@ def load(path):
     for r in rows:
         r["evidence_captured_rate"] = r["evidence_captured"] / r["n_evidence"] if r["n_evidence"] else None
         r["memories_per_100_turns"] = 100 * r["n_memories"] / max(1, r["n_turns"])
+        if "chance_recall@10" in r:
+            r["lift_over_chance@10"] = float(r["evidence_recall@10"]) - r["chance_recall@10"]
+        else:
+            r["chance_recall@10"] = r["recency_recall@10"] = r["lift_over_chance@10"] = None
     return {r["question_id"]: r for r in rows}
 
 
@@ -60,15 +65,17 @@ def main():
     types = sorted({ref[q]["question_type"] for q in common})
     rep = {"questions_common": len(common), "primary_questions": len(prim), "systems": {}, "pairs": {}}
     for name, seeds in S.items():
+        rd = lambda x: None if x is None else round(x, 4)
         rep["systems"][name] = {"seeds": len(seeds),
-                                "primary": {m: round(seed_mean(seeds, prim, m), 4) for m in METRICS},
-                                "primary_per_seed": {m: [round(mean(s[q][m] for q in prim), 4) for s in seeds] for m in METRICS},
+                                "primary": {m: rd(seed_mean(seeds, prim, m)) for m in METRICS},
+                                "primary_per_seed": {m: [rd(mean(s[q][m] for q in prim)) for s in seeds] for m in METRICS},
                                 "by_type": {t: {m: round(seed_mean(seeds, [q for q in common if ref[q]["question_type"] == t and not ref[q]["abstention"]], m) or 0, 4)
                                                 for m in ("evidence_recall@10", "answer_in_memory")} for t in types}}
     for pr in a.pairs:
         A, B = pr.split(":")
         rep["pairs"][f"{A} - {B}"] = {m: dict(zip(("delta", "lo", "hi"), (round(x, 4) for x in boot(S[A], S[B], prim, m, a.n_boot))))
-                                      for m in ("evidence_recall@10", "evidence_recall@5", "answer_in_memory")}
+                                      for m in ("evidence_recall@10", "evidence_recall@5", "answer_in_memory", "lift_over_chance@10")
+                                      if seed_mean(S[A], prim, m) is not None}
     json.dump(rep, open(a.out, "w"), indent=1)
     print(json.dumps(rep, indent=1))
 

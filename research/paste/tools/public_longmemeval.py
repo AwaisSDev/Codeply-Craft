@@ -13,6 +13,7 @@ Resumable: questions already in OUT.jsonl are skipped. Data files are read only 
 import argparse
 import collections
 import datetime
+import math
 import json
 import os
 import sys
@@ -115,11 +116,23 @@ def run_question(q, adapter, ranker):
             scores[r["id"]] = r["score"]
     ranked = sorted(scores, key=lambda k: -scores[k])
     hit = lambda k: any(sources.get(rid, set()) & evidence for rid in ranked[:k])
+    # reference rankings (DECISIONS 2026-11-04): chance (hypergeometric, exact) and most-recent-first
+    n_mem = len(allrows)
+    n_ev_mem = sum(1 for r in allrows if sources.get(r["id"], set()) & evidence)
+    def chance(k):
+        if n_ev_mem == 0:
+            return 0.0
+        k = min(k, n_mem)
+        return 1.0 - math.comb(n_mem - n_ev_mem, k) / math.comb(n_mem, k)
+    recency = [r["id"] for r in allrows]                 # rows_of is most recently updated first
+    rec_hit = lambda k: any(sources.get(rid, set()) & evidence for rid in recency[:k])
     return {"question_id": q["question_id"], "question_type": q["question_type"],
             "abstention": q["question_id"].endswith("_abs"), "n_turns": n_turns, "n_evidence": len(evidence),
             "n_memories": len(sim.records), "evidence_recall@10": hit(10), "evidence_recall@5": hit(5),
             "answer_in_memory": answer_in_memory(q["answer"], sim) if not q["question_id"].endswith("_abs") else None,
-            "evidence_captured": len(captured)}
+            "evidence_captured": len(captured), "n_evidence_memories": n_ev_mem,
+            "chance_recall@10": round(chance(10), 4), "chance_recall@5": round(chance(5), 4),
+            "recency_recall@10": rec_hit(10), "recency_recall@5": rec_hit(5)}
 
 
 def main():
