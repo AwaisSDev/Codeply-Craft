@@ -36,6 +36,12 @@ Recipe status (2026-11-04 10:45 UTC; validation, cross-fitted; E31-E41):
   **3,000 x 2 epochs −0.001 [−0.010, +0.009], FPM −1.0** (E43). PASTE gains more from a second epoch (+0.030 vs
   6,000 x 1) than M1c (+0.003). Gaps are within ~1 δ: the central test's 3 seeds decide.
 
+Public benchmark (2026-11-04; PUBLIC-BENCHMARK-PLAN.md, pre-registered): LongMemEval (MIT), LLM-free memory-level
+metrics. **Exploratory result (E50): on real assistant-style conversations neither system's retrieval beats chance**
+(PASTE −0.042 [−0.068, −0.015] below chance; M1c at chance); both store mostly noise. Domain shift from the
+synthetic training data is the main open risk for real-world use, independent of the central test's outcome.
+Persistence (RESTORE.md): private HF backups + restore verified locally (E48, bit-identical) and on Kaggle (E49).
+
 Next actions, in order (all recipe runs done; validation phase complete):
 1. **2026-11-07 after 00:00 UTC:** `kaggle quota`; generate the T4 smoke with the recipe's flags
    (`make_notebooks.py --commit <HEAD> --paste-flags=--profile-rows --smoke-args="--closed-loop 0.5 --lr-enc 1e-4"`),
