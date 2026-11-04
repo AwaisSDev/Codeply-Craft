@@ -615,7 +615,7 @@ function stepsSummary(steps) {
     if (st.classList.contains('failed')) failed++;
     const name = st.dataset.tool || '';
     const k = ['read_file', 'view_images'].includes(name) ? 'read' : ['edit_file', 'write_file', 'apply_patch'].includes(name) ? 'edit'
-      : name === 'run' ? 'run' : ['search', 'list_dir', 'design_reference_search', 'list_skills'].includes(name) ? 'search' : 'other';
+      : name === 'run' ? 'run' : name === 'browser_check' ? 'check' : ['search', 'list_dir', 'design_reference_search', 'list_skills'].includes(name) ? 'search' : 'other';
     if (k === 'other') other++; else count[k] = (count[k] || 0) + 1;
   }
   const parts = [];
@@ -623,6 +623,7 @@ function stepsSummary(steps) {
   if (count.search) parts.push(count.search === 1 ? 'searched' : `searched ${count.search} times`);
   if (count.edit) parts.push(`edited ${plural(count.edit, 'file', 'files')}`);
   if (count.run) parts.push(`ran ${plural(count.run, 'command', 'commands')}`);
+  if (count.check) parts.push(`checked ${count.check === 1 ? 'a page' : `${count.check} pages`}`);
   if (other) parts.push(`used ${plural(other, 'tool', 'tools')}`);
   let text = parts.join(', ');
   if (!text) text = thought ? 'thought it through' : 'worked on it';
@@ -765,10 +766,118 @@ function pushedHtml(e) {
   return `<div class="summary-card pushed"><div class="pushed-head">${head} <span class="add">+${e.added || 0}</span> <span class="del">-${e.removed || 0}</span></div>${fileListHtml(files)}</div>`;
 }
 
-// ─── Live rows from the PC (copied from mobile.js, made quieter) ────────────
-function screenshotFromPc(img, path) {
-  relayRequest('GET', `/api/screenshot-data?path=${encodeURIComponent(path)}`).then((r) => { if (r && r.dataUrl) img.src = r.dataUrl; else img.remove(); }).catch(() => img.remove());
+// ─── Screenshots in the feed ────────────────────────────────────────────────
+// A browser_check's screenshot sits on its step, as on the PC. A PC chat's
+// pictures live on the PC (only their path is mirrored): they come over the
+// relay, one at a time and only once the step is on screen, shrunk by the PC
+// first. A cloud run's are committed to craft-sessions (shots/<task>/<n>.png).
+// Loading is a soft placeholder at the page's shape; a picture that can't be
+// had says why in one line. Nothing is ever drawn in its place.
+const shotDone = new Map(); // key -> { url, w, h } | { error } (errors that won't fix themselves)
+const shotWait = new Map(); // key -> Promise<{ url, w, h }>
+let shotQueue = Promise.resolve();
+let shotObserver = null;
+/** The shape of the page a check rendered, from its viewport: what the placeholder is drawn at. */
+function shotShape(args) {
+  const v = String((args && args.viewport) || 'desktop').trim().toLowerCase();
+  const m = /^(\d{3,4})\s*[x×]\s*(\d{3,4})$/.exec(v);
+  if (m) return [Number(m[1]), Number(m[2])];
+  return v === 'mobile' ? [390, 844] : v === 'tablet' ? [768, 1024] : [1280, 800];
 }
+function shotHtml(key, args, label) {
+  const done = shotDone.get(key);
+  const [w, h] = done && done.w ? [done.w, done.h] : shotShape(args);
+  return `<figure class="shot" data-shot="${esc(key)}" data-label="${esc(label || '')}" style="--sw:${w};--sh:${h}" role="button" tabindex="0" aria-label="Screenshot${label ? ` of ${esc(label)}` : ''}, tap to open"><span class="shot-ph" aria-hidden="true"></span></figure>`;
+}
+function shotReason(e) {
+  if (e && e.timeout) return "your PC didn't answer in time";
+  if (e && e.status === 404) return /GitHub/.test(e.message || '') ? 'it is no longer in the repository' : 'it is no longer on your PC';
+  if (e && e.status === 413) return 'it is too large to send';
+  const m = String((e && e.message) || 'it could not be loaded').replace(/\.\s*$/, '');
+  return m[0].toLowerCase() + m.slice(1);
+}
+function loadShot(key) {
+  if (shotWait.has(key)) return shotWait.get(key);
+  let p;
+  if (key.startsWith('pc:')) {
+    const path = key.slice(3);
+    // One at a time: each is a burst of relay chunks.
+    p = shotQueue.then(() => relayRequest('GET', `/api/screenshot-data?path=${encodeURIComponent(path)}`, null, 40000)).then((r) => {
+      if (!r || typeof r.dataUrl !== 'string' || !r.dataUrl.startsWith('data:image/')) throw new Error('Your PC sent no picture');
+      return { url: r.dataUrl, w: r.width, h: r.height };
+    });
+    shotQueue = p.catch(() => {});
+  } else {
+    const rel = key.slice(3);
+    p = (async () => {
+      const c = state.current && chatMeta(state.current);
+      const env = c && envFor(c.project);
+      if (!env) throw new Error('This project is not connected to the cloud on this phone');
+      if (!state.creds || !state.creds.token) throw new Error('Connect GitHub on this phone to see it');
+      const blob = await ghRawBlob(env.repo, rel);
+      return { url: URL.createObjectURL(blob.type.startsWith('image/') ? blob : new Blob([blob], { type: 'image/png' })) };
+    })();
+  }
+  shotWait.set(key, p);
+  p.then((r) => shotDone.set(key, r), (e) => {
+    shotWait.delete(key);
+    // Offline or slow: try again next time it is drawn. Gone: say so for good.
+    if (e && (e.status === 404 || e.status === 413 || e.status === 415)) shotDone.set(key, { error: shotReason(e) });
+  });
+  return p;
+}
+function shotFail(fig, reason) {
+  const line = el('div', 'shot-fail', `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 16l5-5 4 4 3-3 6 6"/><path d="M4 4l16 16"/></svg><span></span>`);
+  line.querySelector('span').textContent = `Screenshot isn't available on this phone: ${reason}.`;
+  fig.replaceWith(line);
+}
+function showShot(fig, r) {
+  const img = new Image();
+  img.alt = fig.dataset.label ? `Screenshot of ${fig.dataset.label}` : 'Screenshot';
+  img.decoding = 'async';
+  img.onload = () => {
+    if (img.naturalWidth) { fig.style.setProperty('--sw', img.naturalWidth); fig.style.setProperty('--sh', img.naturalHeight); }
+    const d = shotDone.get(fig.dataset.shot);
+    if (d && !d.w) { d.w = img.naturalWidth; d.h = img.naturalHeight; }
+    fig.append(img);
+    fig.dataset.state = 'ready';
+  };
+  img.onerror = () => shotFail(fig, 'the picture could not be opened');
+  img.src = r.url;
+}
+function fillShot(fig) {
+  const key = fig.dataset.shot;
+  const done = shotDone.get(key);
+  if (done) return done.error ? shotFail(fig, done.error) : showShot(fig, done);
+  fig.dataset.state = 'loading';
+  loadShot(key).then((r) => showShot(fig, r), (e) => shotFail(fig, shotReason(e)));
+}
+/** Every new screenshot under root: ready ones at once, the rest when they scroll into view. */
+function hydrateShots(root) {
+  const figs = (root || feed()).querySelectorAll('figure.shot:not([data-state])');
+  if (!figs.length) return;
+  if (!shotObserver && 'IntersectionObserver' in window) {
+    shotObserver = new IntersectionObserver((entries) => {
+      for (const en of entries) if (en.isIntersecting) { shotObserver.unobserve(en.target); fillShot(en.target); }
+    }, { rootMargin: '400px 0px' });
+  }
+  figs.forEach((fig) => {
+    const done = shotDone.get(fig.dataset.shot);
+    if (done || !shotObserver) return fillShot(fig);
+    fig.dataset.state = 'waiting';
+    shotObserver.observe(fig);
+  });
+}
+function openLightbox(src, alt) {
+  const lb = $('lightbox');
+  const img = lb.querySelector('img');
+  img.src = src;
+  img.alt = alt || 'Screenshot';
+  lb.classList.remove('hidden');
+}
+function closeLightbox() { $('lightbox').classList.add('hidden'); }
+
+// ─── Live rows from the PC (copied from mobile.js, made quieter) ────────────
 // ─── A step running right now: "Running npm test", with a clock ────────────
 let liveTool = null; // { el, timer }
 function addLiveTool(ev) {
@@ -805,11 +914,10 @@ function addSpecialistNote(d) {
 
 function addTool(t) {
   streamEl = null;
-  const wrap = el('div', null, toolHtml(t, t.screenshotPath ? '<img class="shot" alt="Screenshot of the page">' : ''));
-  const node = wrap.firstElementChild;
-  const img = node.querySelector('.shot');
-  if (img) screenshotFromPc(img, t.screenshotPath);
-  return append(node);
+  const wrap = el('div', null, toolHtml(t, t.screenshotPath ? shotHtml(`pc:${t.screenshotPath}`, t.args, t.label) : ''));
+  const node = append(wrap.firstElementChild);
+  hydrateShots(node);
+  return node;
 }
 function addThinking(text, label) { streamEl = null; return append(el('div', null, thinkingHtml(text, label)).firstElementChild); }
 function addSummary(d) { const h = summaryHtml(d); if (h) append(el('div', null, h).firstElementChild); }
@@ -892,9 +1000,8 @@ function renderPcItem(item, chat) {
 }
 
 // ─── Cloud rows: the status doc's events, drawn like the chat ───────────────
-const shotCache = new Map(); // repo|path -> Promise<objectURL|null>
 function cloudEventHtml(e) {
-  if (e.t === 'tool') return toolHtml({ ...e, label: e.summary || '' }, e.screenshot ? `<img class="shot" alt="Screenshot of the page" data-shot="${esc(e.screenshot)}">` : '');
+  if (e.t === 'tool') return toolHtml({ ...e, label: e.summary || '' }, e.screenshot ? shotHtml(`gh:${e.screenshot}`, e.args, e.summary) : '');
   if (e.t === 'text' || e.t === 'reasoning') return thinkingHtml(e.text || '');
   if (e.t === 'notice') return e.level === 'error' || e.level === 'warn' ? `<div class="msg error">${esc(e.text)}</div>` : `<div class="msg note">${esc(e.text)}</div>`;
   if (e.t === 'summary') return summaryHtml(e);
@@ -957,19 +1064,10 @@ function renderFeed({ force = false } = {}) {
   refreshLiveSteps();
   showFeed(f.children.length > 0);
   f.querySelectorAll('details').forEach((d, i) => { d.dataset.k = String(i); if (open.has(d.dataset.k)) d.open = true; });
-  hydrateShots(c);
+  hydrateShots(f);
   if (force || wasNear || !hadRows) scrollToBottom();
   renderTitle();
   renderComposer();
-}
-function hydrateShots(c) {
-  const env = c && envFor(c.project);
-  feed().querySelectorAll('img[data-shot]').forEach((img) => {
-    if (!env) return img.remove();
-    const key = `${env.repo}|${img.dataset.shot}`;
-    if (!shotCache.has(key)) shotCache.set(key, ghRawBlob(env.repo, img.dataset.shot).then((blob) => (blob ? URL.createObjectURL(blob) : null)).catch(() => { shotCache.delete(key); return null; }));
-    shotCache.get(key).then((url) => { if (url) img.src = url; else img.alt = 'Screenshot not available'; });
-  });
 }
 document.addEventListener('click', async (e) => {
   const btn = e.target.closest && e.target.closest('[data-ask-yes],[data-ask-no]');
@@ -987,10 +1085,15 @@ document.addEventListener('click', async (e) => {
     } catch (err) { box.querySelectorAll('button').forEach((b) => { b.disabled = false; }); addMsg('error', err.message); }
     return;
   }
-  const img = e.target.closest && e.target.closest('img.shot');
-  if (img && img.src) { e.preventDefault(); const lb = $('lightbox'); lb.querySelector('img').src = img.src; lb.classList.remove('hidden'); }
+  const shot = e.target.closest && e.target.closest('figure.shot[data-state="ready"]');
+  if (shot) { e.preventDefault(); const img = shot.querySelector('img'); openLightbox(img.src, img.alt); }
 });
-$('lightbox').addEventListener('click', () => $('lightbox').classList.add('hidden'));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('lightbox').classList.contains('hidden')) { closeLightbox(); return; }
+  const shot = (e.key === 'Enter' || e.key === ' ') && e.target.closest && e.target.closest('figure.shot[data-state="ready"]');
+  if (shot) { e.preventDefault(); const img = shot.querySelector('img'); openLightbox(img.src, img.alt); }
+});
+$('lightbox').addEventListener('click', closeLightbox);
 
 // ─── Events from the PC ─────────────────────────────────────────────────────
 function receiveEvent(event) {
@@ -1430,11 +1533,14 @@ async function readSessionJson(repo, path) {
   if (r.status !== 200) return null;
   try { return JSON.parse(r.text); } catch { return null; }
 }
+/** A file's bytes from craft-sessions (a screenshot). Throws with the status when GitHub says no. */
 async function ghRawBlob(repo, path) {
   const res = await fetch(`${GH}/repos/${repo}/contents/${encPath(path)}?ref=${SESSIONS_BRANCH}`, {
     cache: 'no-store', headers: { Authorization: `Bearer ${state.creds.token}`, Accept: 'application/vnd.github.raw+json', 'X-GitHub-Api-Version': '2022-11-28' },
   });
-  return res.ok ? res.blob() : null;
+  if (res.ok) return res.blob();
+  if (res.status === 401 && state.creds) { state.creds.expired = true; save(KEY.creds, state.creds); }
+  throw Object.assign(new Error(res.status === 401 ? 'GitHub signed this phone out' : res.status === 404 ? 'GitHub no longer has it' : `GitHub answered ${res.status}`), { status: res.status });
 }
 /** Create or replace a file (base64 content) on a branch, with retries for concurrent writes. */
 async function putFile(repo, path, contentB64, message, branch) {
