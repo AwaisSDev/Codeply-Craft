@@ -1,6 +1,6 @@
 /* The Claude Code card in Connect Apps (claude-code-ui.js). Builds on .app-card. */
 .cc-card { align-items: flex-start; }
-.cc-card .app-card-logo.cc-logo { background: #1f1d1a; color: #e08b6a; padding: 9px; }
+.cc-card .app-card-logo.cc-logo { background: #faf9f5; padding: 8px; }
 .cc-card .app-card-logo.cc-logo svg { width: 100%; height: 100%; }
 .cc-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
 .cc-actions .hidden, .cc-card .hidden { display: none; }

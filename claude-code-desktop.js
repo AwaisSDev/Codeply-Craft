@@ -243,11 +243,24 @@ async function runForChat({ session, task, chat, fresh, model, approve, signal, 
 
 function loginEvent(data) { try { deps.sendWindow('claudeCode:login', data); } catch {} }
 
+// The sign-in page Claude Code printed for the login in progress. "Open the sign-in page
+// again" opens only this, and only on Claude's or Anthropic's own sites.
+let loginUrl = '';
+const LOGIN_HOSTS = /^(?:claude\.ai|claude\.com|(?:[a-z0-9-]+\.)?anthropic\.com)$/i;
+function openLoginPage() {
+  let u = null;
+  try { u = new URL(loginUrl); } catch { return { ok: false }; }
+  if (u.protocol !== 'https:' || !LOGIN_HOSTS.test(u.hostname)) return { ok: false };
+  require('electron').shell.openExternal(u.href);
+  return { ok: true };
+}
+
 function startLogin({ console: useConsole } = {}) {
   if (loginRun) return { ok: true, already: true };
+  loginUrl = '';
   const run = cc().login({
     console: !!useConsole,
-    onUrl: (url) => loginEvent({ phase: 'url', url }),
+    onUrl: (url) => { loginUrl = url; loginEvent({ phase: 'url', url }); },
     onNeedCode: () => loginEvent({ phase: 'code' }),
     onOutput: (s) => term(`${C.dim}${s}${C.off}`),
   });
@@ -255,6 +268,12 @@ function startLogin({ console: useConsole } = {}) {
   term(`\n${C.claude}✳ claude auth login${C.off} ${C.dim}(finish signing in in your browser)${C.off}\n`);
   run.done.then(async (r) => {
     loginRun = null;
+    loginUrl = '';
+    if (r.cancelled) {
+      term(`${C.dim}Login cancelled.${C.off}\n`);
+      loginEvent({ phase: 'done', ok: false, cancelled: true, error: '', state: publicState(await refresh()) });
+      return;
+    }
     const st = await refresh();
     const ok = !!(r.ok && st && st.loggedIn);
     term(ok ? `${C.ok}✓ Claude Code is logged in${st.email ? ` as ${st.email}` : ''}${C.off}\n` : `${C.bad}✗ ${r.error || 'Not logged in'}${C.off}\n`);
@@ -270,6 +289,7 @@ function init(d) {
   h('claudeCode:login', (e, opts) => startLogin(opts || {}));
   h('claudeCode:code', (e, code) => { if (loginRun) loginRun.submitCode(code); return { ok: !!loginRun }; });
   h('claudeCode:cancelLogin', () => { if (loginRun) loginRun.cancel(); return { ok: true }; });
+  h('claudeCode:openLogin', () => openLoginPage());
   h('claudeCode:logout', async () => { const r = await cc().logout(); const st = await refresh(); return { ...r, state: publicState(st) }; });
   h('claudeCode:settings', (e, patch) => {
     const p = patch && typeof patch === 'object' ? patch : {};

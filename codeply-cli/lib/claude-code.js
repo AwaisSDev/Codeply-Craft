@@ -156,8 +156,22 @@ function login({ console: useConsole = false, onUrl, onNeedCode, onOutput } = {}
   };
   child.stdout.on('data', onData);
   child.stderr.on('data', onData);
+  let finish = null;
+  // On Windows `claude` runs through cmd.exe (shell: true), so child.kill() would stop only cmd and
+  // leave Claude Code waiting in the background: end the whole tree.
+  // taskkill walks the tree from cmd.exe, so cmd must still be alive when it runs: kill() only after.
+  const stop = () => {
+    const kill = () => { try { child.kill(); } catch {} };
+    if (!IS_WIN || !child.pid) { kill(); return; }
+    try {
+      const tk = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+      tk.on('exit', kill);
+      tk.on('error', kill);
+    } catch { kill(); }
+  };
   const done = new Promise((resolve) => {
-    const t = setTimeout(() => { try { child.kill(); } catch {} }, 10 * 60 * 1000);
+    finish = resolve;
+    const t = setTimeout(stop, 10 * 60 * 1000);
     child.on('error', (e) => { clearTimeout(t); settled = true; resolve({ ok: false, error: e.message }); });
     child.on('close', (code) => {
       clearTimeout(t);
@@ -170,7 +184,8 @@ function login({ console: useConsole = false, onUrl, onNeedCode, onOutput } = {}
   return {
     child,
     submitCode(code) { if (!settled && child.stdin.writable) child.stdin.write(`${String(code || '').trim()}\n`); },
-    cancel() { if (!settled) try { child.kill(); } catch {} },
+    // Cancel settles at once (the user asked to stop), then ends the process tree.
+    cancel() { if (settled) return; settled = true; finish({ ok: false, cancelled: true, error: '' }); stop(); },
     done,
   };
 }

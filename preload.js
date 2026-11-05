@@ -237,6 +237,7 @@ contextBridge.exposeInMainWorld('craft', {
   claudeCodeLogin: (opts) => ipcRenderer.invoke('claudeCode:login', opts || {}),
   claudeCodeSubmitCode: (code) => ipcRenderer.invoke('claudeCode:code', String(code || '')),
   claudeCodeCancelLogin: () => ipcRenderer.invoke('claudeCode:cancelLogin'),
+  claudeCodeOpenLogin: () => ipcRenderer.invoke('claudeCode:openLogin'),
   claudeCodeLogout: () => ipcRenderer.invoke('claudeCode:logout'),
   claudeCodeSettings: (patch) => ipcRenderer.invoke('claudeCode:settings', patch || {}),
   onClaudeCodeLogin: (cb) => ipcRenderer.on('claudeCode:login', (e, data) => cb(data)),
