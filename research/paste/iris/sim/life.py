@@ -179,8 +179,8 @@ class Life:
                         "valid_from": iso(t) if op in ("new", "update") else "", "_memory": rid, "_how": u["how"]})
             obs[-1]["_brain"] = brain_would_store(obs[-1])          # what production's observe() would do with it
         if n_user_turns is None and source in ("assistant_chat", "personal_chat", "work_chat"):
-            # ~10-20 % of user turns carry a fact (LongMemEval oracle: 15 % evidence turns)
-            n_user_turns = max(len(units) + len(plans), self.rng.randint(2, 6), round(len(units) / 0.15))
+            # ~10-20 % of user turns carry a fact (LongMemEval oracle: 15 % evidence turns; 1 fact -> 6 user messages)
+            n_user_turns = max(len(units) + len(plans), self.rng.randint(2, 6), round(len(units) / 0.18))
         ev = {"event_id": eid, "at": t, "at_iso": iso(t), "day": (t - self.t0) // DAY, "source": source,
               "trust": TRUST[source], "participants": participants, "render": render,
               "gold": {"observations": obs, "plans": list(plans), "relations": list(relations)}}

@@ -24,7 +24,8 @@ SYSTEM = ("You check a generated transcript against its specification. Be strict
           "answer whether the transcript states exactly that fact with that meaning (same person, same attribute, same "
           "certainty: a joke stays a joke, a suggestion stays a suggestion). Then list every OTHER personal fact the "
           "transcript states about any real person (the user or anyone they know): preferences, possessions, jobs, plans, "
-          "dates, places, health, numbers. Generic small talk and the AI assistant's general advice are not personal facts.")
+          "dates, places, health, numbers. Restating, paraphrasing or reacting to a REQUIRED item is NOT an extra fact. Generic "
+          "small talk and the AI assistant's general advice or questions are not personal facts.")
 
 
 def check(base_url, model, ev, turns, timeout=900):

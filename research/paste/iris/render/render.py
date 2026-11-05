@@ -69,7 +69,9 @@ def prompt(ev, seed=0):
                 where = f"user message {i}" if sp == "user" else f"{sp}'s reply after user message {i}"
                 lines.append(f"  {where}: {m['instruction']} -- use the exact words "
                              f"{', '.join(repr(a) for a in m['anchors'])}, in passing, with this meaning and no other.")
-    lines.append("Do not mention any other people, names, dates, numbers, places or personal details.")
+    lines.append("Do not mention any other people, names, dates, numbers or places, and do not add ANY detail about anyone "
+                 "(their feelings, stress, health, plans, schedule, work, studies or preferences) beyond the required details. "
+                 "Messages without a required detail stay about the purpose only.")
     lines.append('Return {"turns": [{"speaker": "...", "text": "..."}, ...]}.')
     return "\n".join(lines)
 
