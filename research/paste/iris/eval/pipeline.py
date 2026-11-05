@@ -111,7 +111,11 @@ def shareable(r, policy):
 
 
 def found(gold_m, recs):
-    return any(ent_match(r["entity"], gold_m["entity"]) and value_f1(r["value"], gold_m["value"]) >= 0.5 for r in recs)
+    """Same entity rule as iris.eval.extraction.effective_entity: a 'user' / 'project' record naming the gold entity
+    in its slot or text counts for that entity (systems without an entity field)."""
+    from iris.eval.extraction import effective_entity
+    return any(ent_match(effective_entity(r, [gold_m["entity"]]), gold_m["entity"]) and value_f1(r["value"], gold_m["value"]) >= 0.5
+               for r in recs)
 
 
 def score_life(life, outputs, policy="none"):

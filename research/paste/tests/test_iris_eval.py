@@ -47,3 +47,15 @@ def test_pipeline_gold_vs_empty():
     assert g["state_accuracy"] == 1.0 and g["stale_rate"] == 0.0 and g["conflict_pairs_captured"] in (1.0, None)
     assert e["state_accuracy"] == 0.0 and e["task_context_recall"] in (0.0, None) and e["leaks"] == 0
     assert g["task_context_recall"] >= 0.5
+
+
+def test_entity_named_in_slot_counts_for_that_person_and_temporary_capture():
+    ev = {"gold": {"observations": [
+        {"entity": "Komal Nawaz", "slot": "favourite colour", "value": "navy blue", "kind": "fact", "certainty": "stated", "op": "new", "sensitivity": "personal"},
+        {"entity": "user", "slot": "bank", "value": "Standard Chartered", "kind": "fact", "certainty": "stated", "op": "new", "sensitivity": "personal"}],
+        "plans": []}}
+    out = {"observations": [
+        {"entity": "user", "slot": "komal nawaz favorite colour", "value": "navy blue", "certainty": "implied", "kind": "fact"},
+        {"entity": "user", "slot": "bank", "value": "Standard Chartered", "certainty": "temporary", "kind": "context"}], "plans": []}
+    c = score_event(ev, out)
+    assert c["tp"] == 1 and c["fn"] == 1 and c["captured_as_temporary"] == 1 and c["fp"] == 0

@@ -43,6 +43,24 @@ def ent_match(a, b):
     return a.split()[0] == b.split()[0] if a and b else False
 
 
+def effective_entity(p, gold_entities):
+    """A system without an entity field (production) stores person / project facts as the user's, naming them in the
+    slot or text ("Sara, the user's sister, ..."). Score the information, not the field: a predicted 'user' (or
+    'project') observation whose slot or text names a gold entity's first word is attributed to that entity. Applied to
+    every system alike."""
+    e = p.get("entity", "user")
+    if ent_key(e) not in ("user", "project"):
+        return e
+    hay = norm(f"{p.get('slot', '')} {p.get('text', '')} {p.get('project', '')}")
+    for g in gold_entities:
+        if ent_key(g) == "user":
+            continue
+        first = norm(g).split()[0] if norm(g) else ""
+        if first and f" {first} " in f" {hay} ":
+            return g
+    return e
+
+
 def slot_ok(pred, gold):
     p, g = set(norm(pred).split()), set(norm(gold).split())
     return norm(pred) == norm(gold) or (g and len(p & g) / len(g) >= 0.5)
@@ -63,7 +81,10 @@ def score_event(gold_ev, out):
     g = gold_ev["gold"]
     gs = [o for o in g["observations"] if o["op"] in STORE_OPS]
     gn = [o for o in g["observations"] if o["op"] == "none"]
-    ps = [o for o in (out or {}).get("observations", []) if isinstance(o, dict) and storable(o)]
+    gents = {o["entity"] for o in g["observations"]}
+    ps = [dict(o, entity=effective_entity(o, gents)) for o in (out or {}).get("observations", []) if isinstance(o, dict) and storable(o)]
+    pt = [dict(o, entity=effective_entity(o, gents)) for o in (out or {}).get("observations", []) if isinstance(o, dict)
+          and o.get("certainty") == "temporary"]
     c = collections.Counter()
     cand = sorted(((value_f1(p.get("value", ""), q["value"]), i, j) for i, p in enumerate(ps) for j, q in enumerate(gs)
                    if ent_match(p.get("entity", "user"), q["entity"]) and value_f1(p.get("value", ""), q["value"]) >= 0.5), reverse=True)
@@ -91,6 +112,9 @@ def score_event(gold_ev, out):
         elif any(value_f1(v, q["value"]) >= 0.5 for q in gn):
             c["stored_nonstorable"] += 1
     c["fn"] = len(gs) - len(used_g)
+    # secondary: gold facts captured only as temporary ("context") rows, which production expires within 24 h
+    c["captured_as_temporary"] = sum(1 for j, q in enumerate(gs) if j not in used_g and any(
+        ent_match(p.get("entity", "user"), q["entity"]) and value_f1(p.get("value", ""), q["value"]) >= 0.5 for p in pt))
     c["gold_nonstorable"] = len(gn)
     c["pred"] = len(ps)
     # plans
@@ -123,6 +147,7 @@ def summarise(counts, n_events):
     out = {"events": n_events, "precision": f(tp, tp + fp), "recall": f(tp, tp + fn), "f1": f(2 * tp, 2 * tp + fp + fn),
            "false_memory_share": f(fp, tp + fp), "false_memories_per_100_events": f(100 * fp, n_events),
            "misattributed": c["misattributed"], "stored_nonstorable": c["stored_nonstorable"],
+           "recall_incl_temporary": f(tp + c["captured_as_temporary"], tp + fn), "captured_as_temporary": c["captured_as_temporary"],
            "gold_nonstorable": c["gold_nonstorable"],
            "on_matched": {k: f(c[f"{k}_ok"], tp) for k in ("slot", "kind", "cert", "op", "sens")},
            "op_recall_by_gold_op": {o: f(c[f"op_hit_{o}"], c[f"op_gold_{o}"]) for o in STORE_OPS},
