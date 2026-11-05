@@ -148,6 +148,30 @@ EXAMPLES = open(__file__.replace("production.py", "production_prompt.txt")).read
 TRUST_LABEL = {"user": "user", "mixed": "user and others", "external": "someone else"}
 
 
+# Request settings production's local provider sends (context-model.js createLocalProvider: temperature 0,
+# max_tokens 700, strict json_schema = context-schema.js extractionJsonSchema, MAX_OBSERVATIONS 8, MAX_PLANS 5).
+PROD_MAX_TOKENS = 700
+_PROD_KINDS = ["preference", "fact", "routine", "style", "decision", "idea", "requirement", "todo", "context"]
+PROD_SCHEMA = {
+    "type": "object", "additionalProperties": False, "required": ["observations", "plans"],
+    "properties": {
+        "observations": {"type": "array", "maxItems": 8, "items": {
+            "type": "object", "additionalProperties": False,
+            "required": ["kind", "slot", "value", "text", "certainty", "importance"],
+            "properties": {"kind": {"type": "string", "enum": _PROD_KINDS},
+                           "slot": {"type": "string", "maxLength": 60}, "value": {"type": "string", "maxLength": 160},
+                           "text": {"type": "string", "maxLength": 240},
+                           "certainty": {"type": "string", "enum": ["stated", "implied", "temporary", "joking", "hypothetical", "quoting"]},
+                           "importance": {"type": "number", "minimum": 0, "maximum": 1},
+                           "project": {"type": "string", "maxLength": 80}, "until": {"type": "string", "maxLength": 20},
+                           "about": {"type": "string", "enum": ["user", "person", "project"]}}}},
+        "plans": {"type": "array", "maxItems": 5, "items": {
+            "type": "object", "additionalProperties": False, "required": ["what", "when"],
+            "properties": {"what": {"type": "string", "maxLength": 140}, "when": {"type": "string", "maxLength": 20},
+                           "where": {"type": "string", "maxLength": 120},
+                           "who": {"type": "array", "maxItems": 6, "items": {"type": "string", "maxLength": 60}}}}}}}
+
+
 def local_time(t):
     d = datetime.datetime.fromtimestamp(t, datetime.timezone.utc)
     return d.strftime("%Y-%m-%d %H:%M (%A)")

@@ -59,8 +59,8 @@ def main():
                     if a.system == "rules":
                         out = to_iris(check_extraction(rules_extract([pev]), [pev]))
                     elif a.system == "prodprompt":
-                        raw, _ = R.call(a.base_url, a.model, production_messages([pev], known=known, now=ev["at"], projects=life["projects"]))
-                        out = to_iris(check_extraction(raw, [pev]))      # production's guard, as in production
+                        raw, _, _ = R.prod_call(a.base_url, a.model, production_messages([pev], known=known, now=ev["at"], projects=life["projects"]))
+                        out = to_iris(check_extraction(raw, [pev])) if raw is not None else dict(R.EMPTY)   # production's guard
                     else:
                         raw, _ = R.call(a.base_url, a.model, R.iris_messages(ev, text, known, plans, life), schema=S.EXTRACTION_SCHEMA)
                         out = raw

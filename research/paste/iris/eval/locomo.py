@@ -113,7 +113,8 @@ def main():
                 if a.system == "rules":
                     out = to_iris(check_extraction(rules_extract([ev]), [ev]))
                 elif a.system == "prodprompt":
-                    raw, _ = R.call(a.base_url, a.model, production_messages([ev], now=ev["at"])); out = to_iris(check_extraction(raw, [ev]))
+                    raw, _, _ = R.prod_call(a.base_url, a.model, production_messages([ev], now=ev["at"]))
+                    out = to_iris(check_extraction(raw, [ev])) if raw is not None else dict(R.EMPTY)
                 else:
                     fake = {"at_iso": datetime.datetime.fromtimestamp(ev["at"], datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M"),
                             "source": "personal_chat", "trust": "mixed"}

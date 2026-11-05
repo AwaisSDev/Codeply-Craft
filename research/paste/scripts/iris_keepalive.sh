@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Restart this container's Iris research jobs after a container restart (idempotent; run at every check-in):
-#   * llama-server on :8080 (Qwen3-4B-Instruct Q4_K_M) and :8081 (LFM3-1.7B QAD Q4_0, production settings --swa-full)
+#   * llama-server on :8080 (Qwen3-4B-Instruct Q4_K_M) and :8081 (LFM3-1.7B QAD Q4_0 with production's server flags: local-runtime.js
+#     --swa-full -np 1 --jinja, context-desktop.js -ctk q8_0 -ctv q8_0)
 #   * the resumable job list in $PASTE_HOME/paste-runs/iris-jobs.txt (one shell command per line; each must be
 #     resumable; a line is re-run only if its process is not already running)
 # Model files and llama.cpp build live in $PASTE_HOME/paste-tools (re-creatable: README in RESTORE.md).
 set -uo pipefail
 cd "$(dirname "$0")/.."
-PH=${PASTE_HOME:-$HOME}
+PH=${PASTE_HOME:-$HOME}; [ -d "$PH/paste-tools" ] || PH=/home/user
 BIN=$PH/paste-tools/llamacpp/src/build/bin
 M=$PH/paste-tools/models
 running() { ps -eo args | grep -v grep | grep -qF -- "$1"; }
@@ -17,7 +18,7 @@ serve() {   # port model threads extra
     echo "started llama-server :$1 ($2)"
   fi
 }
-[ -x "$BIN/llama-server" ] && serve 8080 Qwen3-4B-Instruct-2507-Q4_K_M.gguf 2 "" && serve 8081 LFM3-1.7B-QAD-Q4_0.gguf 2 "--swa-full"
+[ -x "$BIN/llama-server" ] && serve 8080 Qwen3-4B-Instruct-2507-Q4_K_M.gguf 2 "" && serve 8081 LFM3-1.7B-QAD-Q4_0.gguf 2 "--swa-full -np 1 -tb 2 --jinja -ctk q8_0 -ctv q8_0"
 for p in 8080 8081; do for i in $(seq 1 60); do curl -s "http://127.0.0.1:$p/health" | grep -q '"ok"' && break; sleep 2; done; done
 JOBS=$PH/paste-runs/iris-jobs.txt
 if [ -f "$JOBS" ]; then

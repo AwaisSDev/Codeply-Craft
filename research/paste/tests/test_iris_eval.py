@@ -59,3 +59,17 @@ def test_entity_named_in_slot_counts_for_that_person_and_temporary_capture():
         {"entity": "user", "slot": "bank", "value": "Standard Chartered", "certainty": "temporary", "kind": "context"}], "plans": []}
     c = score_event(ev, out)
     assert c["tp"] == 1 and c["fn"] == 1 and c["captured_as_temporary"] == 1 and c["fp"] == 0
+
+
+def test_production_request_matches_production_schema():
+    """The prodprompt baseline sends production's strict schema (context-schema.js extractionJsonSchema) and 700 tokens."""
+    import re
+    from iris.baselines.production import PROD_MAX_TOKENS, PROD_SCHEMA
+    src = open(__import__("os").path.join(__import__("os").path.dirname(__file__), "../../../codeply-cli/lib/context-schema.js")).read()
+    assert f"MAX_OBSERVATIONS = {PROD_SCHEMA['properties']['observations']['maxItems']};" in src
+    assert f"MAX_PLANS = {PROD_SCHEMA['properties']['plans']['maxItems']};" in src
+    item = PROD_SCHEMA["properties"]["observations"]["items"]
+    for k, n in (("slot", 60), ("value", 160), ("text", 240)):
+        assert item["properties"][k]["maxLength"] == n and re.search(rf"{k}: {{ type: 'string', maxLength: {n} }}", src)
+    model_src = open(__import__("os").path.join(__import__("os").path.dirname(__file__), "../../../codeply-cli/lib/context-model.js")).read()
+    assert f"max_tokens: o.maxTokens || {PROD_MAX_TOKENS}" in model_src

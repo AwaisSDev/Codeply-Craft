@@ -20,7 +20,7 @@ import urllib.request
 from iris import schema as S
 from iris.sim.life import GoldStore
 
-from .production import check_extraction, production_messages, rules_extract, to_iris
+from .production import PROD_MAX_TOKENS, PROD_SCHEMA, check_extraction, production_messages, rules_extract, to_iris
 
 SOURCE_MAP = {"assistant_chat": ("chat", "user"), "personal_chat": ("chat", "mixed"), "work_chat": ("chat", "mixed"),
               "email": ("email", "external"), "calendar": ("chat", "user"), "screen": ("chat", "user"), "document": ("chat", "mixed")}
@@ -66,8 +66,8 @@ def known_before(life, upto_event_id):
 EXTRA = {}
 
 
-def call(base_url, model, messages, schema=None, timeout=900):
-    body = {"model": model, "temperature": 0.0, "max_tokens": 1200, "messages": messages,
+def call(base_url, model, messages, schema=None, timeout=900, max_tokens=1200):
+    body = {"model": model, "temperature": 0.0, "max_tokens": max_tokens, "messages": messages,
             "response_format": ({"type": "json_schema", "json_schema": {"name": "x", "schema": schema}} if schema else {"type": "json_object"}),
             **EXTRA}
     req = urllib.request.Request(base_url.rstrip("/") + "/chat/completions", data=json.dumps(body).encode(),
@@ -75,6 +75,19 @@ def call(base_url, model, messages, schema=None, timeout=900):
     with urllib.request.urlopen(req, timeout=timeout) as r:
         out = json.load(r)
     return json.loads(out["choices"][0]["message"]["content"]), out.get("usage", {})
+
+
+def prod_call(base_url, model, messages):
+    """Exactly what production's local provider sends (strict schema, 700 tokens). An unparseable answer is a
+    production outcome, not an infrastructure error: the guard keeps nothing. Returns (raw or None, usage, parse_failed)."""
+    try:
+        raw, usage = call(base_url, model, messages, schema=PROD_SCHEMA, max_tokens=PROD_MAX_TOKENS)
+        return raw, usage, ""
+    except json.JSONDecodeError as e:
+        return None, {}, str(e)[:120]
+
+
+EMPTY = {"observations": [], "plans": [], "relations": []}
 
 
 def iris_messages(ev, text, known, plans, life):
@@ -114,14 +127,14 @@ def main():
                 src, trust = SOURCE_MAP[ev["source"]]
                 pev = {"source": src, "trust": trust, "at": ev["at"], "text": text}
                 known, plans = known_before(life, ev["event_id"])
-                t0, raw, usage, err = time.time(), None, {}, ""
+                t0, raw, usage, err, parse_failed = time.time(), None, {}, "", ""
                 try:
                     if a.system == "rules":
                         raw = rules_extract([pev]); out = to_iris(check_extraction(raw, [pev]))
                     elif a.system == "prodprompt":
                         kn = [{"kind": m["kind"], "slot": m["slot"], "value": m["value"]} for m in known]
-                        raw, usage = call(a.base_url, a.model, production_messages([pev], known=kn, now=ev["at"], projects=life["projects"]))
-                        out = to_iris(check_extraction(raw, [pev]))      # production's guard, as in production
+                        raw, usage, parse_failed = prod_call(a.base_url, a.model, production_messages([pev], known=kn, now=ev["at"], projects=life["projects"]))
+                        out = to_iris(check_extraction(raw, [pev])) if raw is not None else dict(EMPTY)   # production's guard
                     else:
                         raw, usage = call(a.base_url, a.model, iris_messages(ev, text, known, plans, life), schema=S.EXTRACTION_SCHEMA)
                         out = raw
@@ -130,7 +143,7 @@ def main():
                     if "Connection refused" in err or "URLError" in err:
                         raise SystemExit(f"model server unavailable: {err}")
                 fh.write(json.dumps({"life_id": life["life_id"], "event_id": ev["event_id"], "system": a.system, "model": a.model,
-                                     "output": out, "raw": raw, "usage": usage, "error": err,
+                                     "output": out, "raw": raw, "usage": usage, "error": err, "parse_failed": parse_failed,
                                      "seconds": round(time.time() - t0, 2)}) + "\n")
                 fh.flush()
                 n += 1
