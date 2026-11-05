@@ -49,3 +49,24 @@ def test_common_words_not_enforced():
     assert not distinctive("Saturday") and not distinctive("weekends") and distinctive("Bilal") and distinctive("navy and gold")
     ev = dict(EV, fact_sheet=dict(EV["fact_sheet"], must_not_contain=["Saturday", "navy and gold"]))
     assert verify(ev, _turns(["teal and coral on Saturday", "b", "c", "d"]))[0]
+
+
+def test_review_packets_blind_and_summary(tmp_path):
+    import json
+    from iris.render.review import packets, summarise
+    from iris.sim.life import Life
+    life = Life(7, "pilot", 7).simulate()
+    lp = tmp_path / "l.jsonl"; lp.write_text(json.dumps(life) + "\n")
+    evs = [e for e in life["events"] if e["render"] == "llm"][:4]
+    for g in ("ga", "gb"):
+        (tmp_path / f"{g}.jsonl").write_text("".join(json.dumps({"life_id": life["life_id"], "event_id": e["event_id"], "ok": True, "model": g,
+                                                                  "turns": [{"speaker": "user", "text": "hi"}]}) + "\n" for e in evs))
+    packets([("ga", f"{lp}:{tmp_path}/ga.jsonl"), ("gb", f"{lp}:{tmp_path}/gb.jsonl")], 3, 0, str(tmp_path / "out"))
+    rows = [json.loads(l) for l in open(tmp_path / "out" / "packets.jsonl")]
+    assert len(rows) == 6 and all("generator" not in json.dumps(r) and "ga" not in r["rid"] for r in rows)
+    key = json.load(open(tmp_path / "out" / "key.json"))
+    vp = tmp_path / "v.jsonl"
+    vp.write_text("".join(json.dumps({"rid": r["rid"], "items_ok": [True], "contrary": [], "extra": ["x"] if key[r["rid"]]["generator"] == "gb" else []}) + "\n" for r in rows))
+    summarise(str(tmp_path / "out" / "key.json"), [str(vp)], str(tmp_path / "s.json"))
+    s = json.load(open(tmp_path / "s.json"))
+    assert s["ga"]["meets_rule"] and not s["gb"]["meets_rule"] and s["gb"]["share_contrary_or_extra"] == 1.0
