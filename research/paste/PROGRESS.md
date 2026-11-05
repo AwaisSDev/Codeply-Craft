@@ -55,6 +55,22 @@ memory, production-style context assembly leaks sensitive memories into 32 / 100
 boundary at context assembly removes them at no recall cost (upper bound). Running: 3 Kaggle CPU render pilots
 (Qwen3-30B-A3B, Qwen3-4B, Phi-4-mini) to choose the generator; LoCoMo production baseline here.
 
+Iris, 2026-11-05 morning (E55-E58):
+* **Generator rule not met by any model yet.** Blind review (two reviewers, generators mixed, anonymous ids;
+  agreement 28 / 30): renders with a contrary or extra memory-worthy fact: Phi-4-mini 37 %, Qwen3-4B 31 %,
+  Qwen3-30B 38 % (rule: ≤ 5 %). The exact-string verifier cannot see invented extras (deadlines, plans, habits) in
+  free filler messages. **No val rendering started** (would have baked these errors into the benchmark).
+* Model checkers do not fix it: as an in-loop gate, Qwen3-4B catches 9 / 12 flawed (false reject 4 / 12), Qwen3-30B
+  catches 0.68 of flawed and rejects 0.45 of clean renders (193 renders): ~27 % flawed would remain.
+* Running on Kaggle (pilot only; done ~10:30 UTC): round 3b (prompt v3 + Qwen3-4B gate; Phi-4-mini, Qwen3-4B) and
+  prompt v4 (hard length caps on messages without a required detail; Qwen3-4B gated / plain paired, Phi-4-mini
+  plain). Then one blind review over all sets and the §4 rule.
+* Production-faithful baseline fixed (strict schema, 700 tokens: 0 parse failures). E55 (pilot): production stores
+  mostly non-gold memories (false-memory share 0.98), Iris zero-shot 0.92, rules 0.25; **caveat: render extras
+  inflate these**. E57 LoCoMo (non-commercial, internal): production recall 0.378, precision 0.784; rules 0.030 /
+  0.414; Iris zero-shot running locally.
+* Nov 7 central test: trigger set for 00:10 UTC (unchanged).
+
 Next actions, in order (all recipe runs done; validation phase complete):
 1. **2026-11-07 after 00:00 UTC:** `kaggle quota`; generate the T4 smoke with the recipe's flags
    (`make_notebooks.py --commit <HEAD> --paste-flags=--profile-rows --smoke-args="--closed-loop 0.5 --lr-enc 1e-4"`),
