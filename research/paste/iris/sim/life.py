@@ -322,7 +322,10 @@ class Life:
             self._pending.remove(spec)
             units.append(self._unit(spec, r.choice(spec[4]), "stated", "agreed in the discussion"))
         plans = self._plan_flow(t, c, "work_chat") if r.random() < 0.4 else []
-        self._event(t, "work_chat", f"{c['name']} and the user discuss the {spec[0] if spec else self.projects[0]} project.",
+        purpose = (f"{c['name']} and the user discuss the {spec[0]} project." if spec else      # no required project fact:
+                   f"{c['name']} and the user coordinate a time." if plans else              # a fact-neutral purpose (E60)
+                   f"{c['name']} and the user exchange a quick hello at work.")
+        self._event(t, "work_chat", purpose,
                     [self.user["name"], c["name"]], units, plans)
 
     # ---- plans, conflicts, templates -------------------------------------------------------------------------
@@ -388,7 +391,7 @@ class Life:
     def _email(self, t):
         r = self.rng
         if r.random() < 0.6:          # newsletters and notifications: nothing to remember
-            self._event(t, "email", r.choice(["a newsletter from an online store", "a shipping notification",
+            self._event(t, "email", r.choice(["a newsletter from an online store", "a generic newsletter about a sale",
                                                "a university announcement about the library hours", "a promotional offer"]),
                         ["external"], [])
             return

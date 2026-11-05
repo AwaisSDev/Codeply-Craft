@@ -116,3 +116,12 @@ def test_plan_items_anchor_date_and_activity():
     plans = [m for ev in life["events"] if ev["render"] == "llm" for m in ev["fact_sheet"]["must_express"]
              if " on " in m["instruction"] and ("suggests" in m["instruction"] or "agrees to" in m["instruction"] or "proposes" in m["instruction"])]
     assert plans and all(any(a[0].isdigit() and " " in a for a in m["anchors"]) for m in plans)
+
+
+def test_purposes_fact_neutral_and_rng_preserved():
+    """E60: purposes of events without required facts must not imply memory-worthy facts; pool sizes are fixed so the
+    simulator's random stream (and so the gold) does not change."""
+    from iris.sim import pools as P
+    assert len(P.ASSISTANT_PURPOSES) == 22 and len(P.CHAT_PURPOSES) == 10
+    banned = ("weekend plans", "arranging a lift", "cover letter", "plan a weekend trip", "planning a birthday", "favour", "exam")
+    assert not any(b in x for b in banned for x in P.ASSISTANT_PURPOSES + P.CHAT_PURPOSES)

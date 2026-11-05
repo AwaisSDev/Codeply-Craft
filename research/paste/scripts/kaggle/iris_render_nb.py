@@ -38,7 +38,7 @@ print("build s", round(time.time() - t0), flush=True)
 from huggingface_hub import hf_hub_download
 model = hf_hub_download("__REPO__", "__FILE__", local_dir="/tmp/models")
 print("model", model, round(os.path.getsize(model) / 1e9, 2), "GB; s", round(time.time() - t0), flush=True)
-srv = subprocess.Popen(["/tmp/llama/build/bin/llama-server", "-m", model, "-t", "4", "-c", "8192", "--host", "127.0.0.1",
+srv = subprocess.Popen(["/tmp/llama/build/bin/llama-server", "-m", model, "-t", "4", "-c", "8192", "--cache-ram", "2048", "--host", "127.0.0.1",
                         "--port", "8080"], stdout=open(f"{RUN}/server.log", "w"), stderr=subprocess.STDOUT,
                        env=dict(os.environ, LD_LIBRARY_PATH="/tmp/llama/build/bin"))
 for _ in range(600):
@@ -52,7 +52,7 @@ print("server up; s", round(time.time() - t0), flush=True)
 CHECK_REPO, CHECK_FILE, CHECK_URL = "__CREPO__", "__CFILE__", ""
 if CHECK_REPO:   # meaning gate: a second (different) model checks each verified render; generation and checks alternate
     cmodel = hf_hub_download(CHECK_REPO, CHECK_FILE, local_dir="/tmp/models")
-    csrv = subprocess.Popen(["/tmp/llama/build/bin/llama-server", "-m", cmodel, "-t", "4", "-c", "8192", "--host", "127.0.0.1",
+    csrv = subprocess.Popen(["/tmp/llama/build/bin/llama-server", "-m", cmodel, "-t", "4", "-c", "8192", "--cache-ram", "2048", "--host", "127.0.0.1",
                              "--port", "8081"], stdout=open(f"{RUN}/server-check.log", "w"), stderr=subprocess.STDOUT,
                             env=dict(os.environ, LD_LIBRARY_PATH="/tmp/llama/build/bin"))
     for _ in range(600):

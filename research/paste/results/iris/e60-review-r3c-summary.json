@@ -1,0 +1,42 @@
+{
+ "anchor_r2_phi4mini": {
+  "reviewed": 5,
+  "contrary": 0,
+  "extra": 3,
+  "contrary_or_extra": 3,
+  "item_unfaithful": 0,
+  "share_contrary_or_extra": 0.6,
+  "share_item_unfaithful": 0.0,
+  "meets_rule": false
+ },
+ "anchor_r2_qwen4b": {
+  "reviewed": 5,
+  "contrary": 0,
+  "extra": 1,
+  "contrary_or_extra": 1,
+  "item_unfaithful": 0,
+  "share_contrary_or_extra": 0.2,
+  "share_item_unfaithful": 0.0,
+  "meets_rule": false
+ },
+ "anchor_v4_plain": {
+  "reviewed": 5,
+  "contrary": 0,
+  "extra": 2,
+  "contrary_or_extra": 2,
+  "item_unfaithful": 0,
+  "share_contrary_or_extra": 0.4,
+  "share_item_unfaithful": 0.0,
+  "meets_rule": false
+ },
+ "r3c_qwen4b": {
+  "reviewed": 100,
+  "contrary": 2,
+  "extra": 7,
+  "contrary_or_extra": 9,
+  "item_unfaithful": 8,
+  "share_contrary_or_extra": 0.09,
+  "share_item_unfaithful": 0.08,
+  "meets_rule": false
+ }
+}

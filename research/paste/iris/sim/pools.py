@@ -73,18 +73,18 @@ SENSITIVE = [
 ]
 
 # Why the user is talking to an assistant (facts are incidental to these purposes)
-ASSISTANT_PURPOSES = [
-    "asks for help writing a cover letter", "asks for a recipe idea for dinner", "asks to debug a Python error",
-    "asks for a workout plan", "asks how to prepare for an exam", "asks for gift ideas", "asks to plan a weekend trip",
-    "asks to summarise an article", "asks for advice on a difficult conversation", "asks for a budget spreadsheet layout",
-    "asks for feedback on a logo idea", "asks to draft an email to a colleague", "asks to explain a statistics concept",
-    "asks for book recommendations", "asks for productivity tips", "asks to compare two laptops",
-    "asks how to set up a React project", "asks for a study timetable", "asks to rewrite a paragraph more formally",
-    "asks for a packing list", "asks to brainstorm names for a project", "asks about healthy breakfast options",
+ASSISTANT_PURPOSES = [   # fact-neutral: a faithful render of the purpose states nothing memory-worthy about anyone (E60)
+    "asks how compound interest works", "asks for a recipe idea for dinner", "asks to debug a Python error",
+    "asks for a riddle", "asks how photosynthesis works", "asks for the rules of chess", "asks how to boil an egg perfectly",
+    "asks to summarise an article", "asks to translate a sentence into French", "asks for a budget spreadsheet layout",
+    "asks what an API is", "asks to proofread a sample paragraph", "asks to explain a statistics concept",
+    "asks for a fun fact about space", "asks for productivity tips", "asks to compare two laptops",
+    "asks how to set up a React project", "asks how vaccines work", "asks to rewrite a paragraph more formally",
+    "asks for a packing list template", "asks how to convert cups to grams", "asks about healthy breakfast options",
 ]
-CHAT_PURPOSES = ["catching up", "making weekend plans", "sharing news", "complaining about work", "planning a birthday",
-                 "talking about an exam", "arranging a lift", "discussing a group project", "gossiping about a show",
-                 "asking for a favour"]
+CHAT_PURPOSES = ["saying hello after a while", "sending each other memes", "chatting about the weather", "trading jokes",
+                 "reacting to a viral video", "talking about a cricket match on TV", "chatting about a news headline",
+                 "complaining about the traffic today", "wishing each other a good day", "discussing a trending meme"]
 
 
 def split_pool(items, split):

@@ -18,7 +18,7 @@ serve() {   # port model threads extra
     echo "started llama-server :$1 ($2)"
   fi
 }
-[ -x "$BIN/llama-server" ] && serve 8080 Qwen3-4B-Instruct-2507-Q4_K_M.gguf 2 "" && serve 8081 LFM3-1.7B-QAD-Q4_0.gguf 2 "--swa-full -np 1 -tb 2 --jinja -ctk q8_0 -ctv q8_0"
+[ -x "$BIN/llama-server" ] && serve 8080 Qwen3-4B-Instruct-2507-Q4_K_M.gguf 4 "--cache-ram 1024" && serve 8081 LFM3-1.7B-QAD-Q4_0.gguf 2 "--cache-ram 1024 --swa-full -np 1 -tb 2 --jinja -ctk q8_0 -ctv q8_0"
 for p in 8080 8081; do for i in $(seq 1 60); do curl -s "http://127.0.0.1:$p/health" | grep -q '"ok"' && break; sleep 2; done; done
 JOBS=$PH/paste-runs/iris-jobs.txt
 if [ -f "$JOBS" ]; then
