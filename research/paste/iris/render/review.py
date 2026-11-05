@@ -20,11 +20,11 @@ import random
 def packets(sets, n, seed, out):
     pool = []
     for name, spec in sets:
-        lives_p, rend_p = spec.split(":", 1)
+        lives_p, rend_p, *cap = spec.split(":")   # optional :N caps this set (e.g. anchors already reviewed)
         evs = {(l["life_id"], e["event_id"]): e for l in map(json.loads, open(lives_p)) for e in l["events"]}
         rows = sorted((r for r in map(json.loads, open(rend_p)) if r.get("ok")), key=lambda r: (r["life_id"], r["event_id"]))
         random.Random(seed).shuffle(rows)
-        for r in rows[:n]:
+        for r in rows[:int(cap[0]) if cap else n]:
             pool.append((name, r, evs[(r["life_id"], r["event_id"])]))
     random.Random(seed + 1).shuffle(pool)
     os.makedirs(out, exist_ok=True)
@@ -72,7 +72,7 @@ def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("packets")
-    p.add_argument("--set", action="append", required=True, help="NAME=LIVES.jsonl:RENDERED.jsonl")
+    p.add_argument("--set", action="append", required=True, help="NAME=LIVES.jsonl:RENDERED.jsonl[:N]")
     p.add_argument("--n", type=int, default=100)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--out", required=True)
