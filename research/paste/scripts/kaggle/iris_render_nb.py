@@ -1,6 +1,6 @@
 """Kaggle CPU notebook: render simulator lives with a local GGUF model (llama.cpp server), verify, and back up every
 30 minutes to the private HF repo (paste.backup, prefix iris-render). Free CPU sessions only; no GPU, no API.
-Validation-phase data only (split 'pilot' lives, generated in the session from the pinned code).
+Pilot, train or val lives only (generated in the session from the pinned code); test / stress never go to Kaggle.
 
     python scripts/kaggle/iris_render_nb.py --commit SHA --slug paste-iris-render-qwen30b \\
         --repo unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF --file Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf \\
@@ -47,7 +47,7 @@ for _ in range(600):
 print("server up; s", round(time.time() - t0), flush=True)
 json.dump({"repo": "__REPO__", "file": "__FILE__", "llama_commit": "__LLAMA__", "code_commit": COMMIT, "cpus": os.cpu_count()},
           open(f"{RUN}/config.json", "w"), indent=1)
-subprocess.run(f"python -m iris.sim.life --split pilot --n __LIVES__ --seed __SEED__ --out {RUN}/lives.jsonl", shell=True, check=True)
+subprocess.run(f"python -m iris.sim.life --split __SPLIT__ --n __LIVES__ --seed __SEED__ --out {RUN}/lives.jsonl", shell=True, check=True)
 lock = threading.Lock()
 def snap(label):
     with lock:
@@ -84,6 +84,8 @@ def main():
     ap.add_argument("--repo", required=True)
     ap.add_argument("--file", required=True)
     ap.add_argument("--lives", type=int, default=3)
+    ap.add_argument("--split", default="pilot", choices=("pilot", "train", "val"),
+                    help="test / stress are never rendered on Kaggle (IRISBENCH-PROTOCOL §1)")
     ap.add_argument("--seed", type=int, default=100)
     ap.add_argument("--budget-s", type=int, default=23400)
     ap.add_argument("--llama-commit", required=True)
@@ -91,6 +93,7 @@ def main():
     a = ap.parse_args()
     cell = (CELL.replace("__BUDGET__", str(a.budget_s)).replace("__SLUG__", a.slug).replace("__REPO__", a.repo)
             .replace("__FILE__", a.file).replace("__LIVES__", str(a.lives)).replace("__SEED__", str(a.seed))
+            .replace("__SPLIT__", a.split)
             .replace("__LLAMA__", a.llama_commit))
     os.makedirs(a.out, exist_ok=True)
     json.dump(nb(f"Iris render pilot: {a.slug}", "Free CPU session; pilot lives rendered by a local model; validation only.",
