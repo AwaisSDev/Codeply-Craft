@@ -899,16 +899,22 @@ async function chatViaAnthropic(messages, opts, cfg) {
       const message = { role: 'assistant', content: text };
       const uses = body.content.filter((b) => b.type === 'tool_use');
       if (uses.length) message.tool_calls = uses.map((b) => ({ id: b.id, type: 'function', function: { name: b.name, arguments: JSON.stringify(b.input || {}) } }));
+      // Anthropic's input_tokens is only the uncached part. prompt_tokens here
+      // is ALL input, cached included (the OpenAI and Haze 2 convention), with
+      // the cached part beside it, so usage counts mean the same on every route.
+      const cacheRead = body.usage?.cache_read_input_tokens || 0;
+      const cacheWrite = body.usage?.cache_creation_input_tokens || 0;
+      const promptTokens = (body.usage?.input_tokens || 0) + cacheRead + cacheWrite;
       const data = {
         choices: [{ message, finish_reason: body.stop_reason === 'max_tokens' ? 'length' : body.stop_reason === 'tool_use' ? 'tool_calls' : 'stop' }],
         usage: {
-          prompt_tokens: body.usage?.input_tokens || 0,
+          prompt_tokens: promptTokens,
           completion_tokens: body.usage?.output_tokens || 0,
-          total_tokens: (body.usage?.input_tokens || 0) + (body.usage?.output_tokens || 0),
-          // Cache use, in Anthropic's terms and in OpenAI's (telemetry.js reads the latter for every provider).
-          cache_read_tokens: body.usage?.cache_read_input_tokens || 0,
-          cache_write_tokens: body.usage?.cache_creation_input_tokens || 0,
-          prompt_tokens_details: { cached_tokens: body.usage?.cache_read_input_tokens || 0 },
+          total_tokens: promptTokens + (body.usage?.output_tokens || 0),
+          // Cache use, in Anthropic's terms and in OpenAI's (telemetry.js reads either).
+          cache_read_tokens: cacheRead,
+          cache_write_tokens: cacheWrite,
+          prompt_tokens_details: { cached_tokens: cacheRead },
         },
       };
       return { done: true, value: { success: true, data, modelUsed: model } };
