@@ -79,9 +79,12 @@ def main():
     ap.add_argument("--model", default="local")
     ap.add_argument("--extra-body", default="")
     ap.add_argument("--max-sessions", type=int, default=0)
+    ap.add_argument("--first-sessions", type=int, default=0, help="restrict to the first N sessions (in file order) for runs and scoring")
     a = ap.parse_args()
     data = json.load(open(a.data))
     S = [s for c in data for s in sessions(c)]
+    if a.first_sessions:
+        S = S[:a.first_sessions]
     if a.score:
         preds = {(r["conv"], r["session"]): r["output"] for r in map(json.loads, open(a.score)) if not r.get("error")}
         rows = [score(s, preds[(s["conv"], s["session"])]) for s in S if (s["conv"], s["session"]) in preds]
