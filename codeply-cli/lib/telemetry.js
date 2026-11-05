@@ -1,6 +1,7 @@
 /**
  * Usage counts for Codeply's admin dashboard: which app was used (Craft, Crew
- * or the CLI), which model, Auto or the user's own key, tokens in and out, and
+ * or the CLI), which model, Auto or the user's own key, tokens in and out (and
+ * how much of the input came from the prompt cache), and
  * the app version. Never prompts, replies, files or anything typed.
  *
  * Events wait in memory and go out in small batches (about once a minute, and
@@ -46,7 +47,7 @@ function push(ev) {
   else if (!timer) { timer = setTimeout(() => { timer = null; flush(); }, FLUSH_MS); if (timer.unref) timer.unref(); }
 }
 
-/** One model call: { model, provider, tokens_in, tokens_out, ms }. */
+/** One model call: { model, provider, tokens_in, tokens_out, cache_read_tokens?, cache_write_tokens?, ms }. */
 function recordAi(ev) {
   if (ev && ev.model === 'fake') return; // the engine tests' stand-in model is not real use
   push({ kind: 'ai', ...ev });
@@ -85,12 +86,34 @@ async function flush() {
   }
 }
 
+/**
+ * The cached part of the input, from any provider's usage shape. tokens_in is
+ * ALL input; these say how much of it came from the prompt cache (read, billed
+ * at about a tenth) or went into it (write, billed a little above input).
+ *   Haze 2 / Craft's Anthropic route: cache_read_tokens, cache_write_tokens
+ *   Anthropic's own shape: cache_read_input_tokens, cache_creation_input_tokens
+ *   OpenAI / OpenRouter: prompt_tokens_details.cached_tokens
+ *   DeepSeek: prompt_cache_hit_tokens
+ */
+function cacheOf(u) {
+  const n = (v) => Math.max(0, Number(v) || 0);
+  const read = n(u.cache_read_tokens ?? u.cache_read_input_tokens ?? (u.prompt_tokens_details && u.prompt_tokens_details.cached_tokens) ?? u.prompt_cache_hit_tokens);
+  const write = n(u.cache_write_tokens ?? u.cache_creation_input_tokens);
+  return { ...(read ? { cache_read_tokens: read } : {}), ...(write ? { cache_write_tokens: write } : {}) };
+}
+
 /** Token counts from any provider's response shape, or an estimate from the text. */
 function tokensOf(data, messages) {
   const u = (data && data.usage) || {};
   const tin = u.prompt_tokens ?? u.input_tokens ?? (data && data.prompt_eval_count);
   const tout = u.completion_tokens ?? u.output_tokens ?? (data && data.eval_count);
-  if (tin != null || tout != null) return { tokens_in: Number(tin) || 0, tokens_out: Number(tout) || 0 };
+  if (tin != null || tout != null) {
+    const cache = cacheOf(u);
+    // A bare Anthropic-shaped usage counts only the uncached part as input_tokens: add the cached part back.
+    const anthropicShape = u.prompt_tokens == null && u.input_tokens != null;
+    const extra = anthropicShape ? (cache.cache_read_tokens || 0) + (cache.cache_write_tokens || 0) : 0;
+    return { tokens_in: (Number(tin) || 0) + extra, tokens_out: Number(tout) || 0, ...cache };
+  }
   const chars = (arr) => arr.reduce((n, m) => n + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content || '').length), 0);
   const reply = data && data.choices && data.choices[0] && data.choices[0].message ? String(data.choices[0].message.content || '') : '';
   return { tokens_in: Math.round(chars(messages || []) / 4), tokens_out: Math.round(reply.length / 4) };
