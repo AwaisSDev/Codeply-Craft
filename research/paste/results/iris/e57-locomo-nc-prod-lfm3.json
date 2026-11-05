@@ -1,0 +1,11 @@
+{
+ "sessions": 80,
+ "licence": "CC BY-NC 4.0 (internal research only)",
+ "gold": 405,
+ "recalled": 153,
+ "pred": 278,
+ "supported": 218,
+ "recall": 0.3778,
+ "precision": 0.7842,
+ "memories_per_session": 3.48
+}
