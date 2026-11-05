@@ -1,0 +1,16 @@
+{
+ "meaning-paste-iris-render2-phi4mini.jsonl": {
+  "checked": 101,
+  "meaning_ok": 45,
+  "extra_fact_renders": 51,
+  "unfaithful_item_renders": 11,
+  "errors": 0
+ },
+ "meaning-paste-iris-render2-qwen4b.jsonl": {
+  "checked": 93,
+  "meaning_ok": 43,
+  "extra_fact_renders": 41,
+  "unfaithful_item_renders": 11,
+  "errors": 0
+ }
+}

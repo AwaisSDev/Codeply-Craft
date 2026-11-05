@@ -1,0 +1,1 @@
+{"overlap": 193, "human_bad": 76, "caught": 52, "missed": 24, "false_reject": 53, "clean_pass": 64, "sensitivity": 0.684, "false_reject_rate": 0.453, "base_bad_rate": 0.394, "expected_bad_share_among_accepted": 0.273}
