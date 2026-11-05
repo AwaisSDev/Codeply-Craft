@@ -20,7 +20,7 @@ import urllib.request
 from iris import schema as S
 from iris.sim.life import GoldStore
 
-from .production import production_messages, rules_extract, to_iris
+from .production import check_extraction, production_messages, rules_extract, to_iris
 
 SOURCE_MAP = {"assistant_chat": ("chat", "user"), "personal_chat": ("chat", "mixed"), "work_chat": ("chat", "mixed"),
               "email": ("email", "external"), "calendar": ("chat", "user"), "screen": ("chat", "user"), "document": ("chat", "mixed")}
@@ -117,11 +117,11 @@ def main():
                 t0, raw, usage, err = time.time(), None, {}, ""
                 try:
                     if a.system == "rules":
-                        raw = rules_extract([pev]); out = to_iris(raw)
+                        raw = rules_extract([pev]); out = to_iris(check_extraction(raw, [pev]))
                     elif a.system == "prodprompt":
                         kn = [{"kind": m["kind"], "slot": m["slot"], "value": m["value"]} for m in known]
                         raw, usage = call(a.base_url, a.model, production_messages([pev], known=kn, now=ev["at"], projects=life["projects"]))
-                        out = to_iris(raw)
+                        out = to_iris(check_extraction(raw, [pev]))      # production's guard, as in production
                     else:
                         raw, usage = call(a.base_url, a.model, iris_messages(ev, text, known, plans, life), schema=S.EXTRACTION_SCHEMA)
                         out = raw

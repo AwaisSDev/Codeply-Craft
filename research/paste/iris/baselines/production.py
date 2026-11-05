@@ -165,3 +165,81 @@ def production_messages(events, known=(), now=None, projects=()):
                                    "KNOWN memories:\n" + ("\n".join(known_l) if known_l else "(none)"),
                                    f"<events>\n{block}\n</events>", "JSON:"] if x)
     return [{"role": "system", "content": f"{RULES}\n\n{EXAMPLES}"}, {"role": "user", "content": user}]
+
+
+# ---- production output guard: research port of context-schema.js checkExtraction (read-only reference) --------
+SELF_KINDS = {"preference", "style", "routine"}
+NOT_FROM_OTHERS = SELF_KINDS | {"context"}
+INSTRUCTION_RE = re.compile(r"\b(ai|a\.i\.|assistant|chatbot|llm|system note|system prompt|ignore (all |any )?(previous|prior|above)"
+                            r"( instructions)?|save (this|it|that)|remember (this|that|it)|store (this|it|that)|add (a )?memory|"
+                            r"memori[sz]e (this|that|it)|importance \d)\b", re.I)
+GROUND_STOP = re.compile(r"^(user|their|them|prefer|prefers|likes|like|want|wants|use|uses)$")
+
+
+def _ground_terms(o):
+    from iris.eval.pipeline import terms
+    return [w for w in terms(f"{o.get('value', '')} {o.get('text', '')}") if not GROUND_STOP.match(w)]
+
+
+def check_extraction(answer, events, min_importance=0.35):
+    """Port of checkExtraction: clean, clamp by trust, ground against the event text, drop text aimed at the
+    assistant, apply the importance floor; at most 8 observations and 5 plans."""
+    from iris.eval.pipeline import terms
+    from iris.schema import clean_observation
+    if not isinstance(answer, dict) or not (isinstance(answer.get("observations"), list) or isinstance(answer.get("plans"), list)):
+        return {"observations": [], "plans": []}
+    trust = "external" if any(e.get("trust") == "external" for e in events) else "mixed" if any(e.get("trust") == "mixed" for e in events) else "user"
+    source_terms = set(terms("\n".join(e["text"] for e in events)))
+    said, aimed = [], []
+    for e in events:
+        for s in re.split(r"(?<=[.!?])\s+|\n+", str(e["text"])):
+            (aimed if e.get("trust") != "user" and INSTRUCTION_RE.search(s) else said).append(s)
+    said_t = set(terms(" ".join(said)))
+    aimed_t = {w for w in terms(" ".join(aimed)) if w not in said_t}
+    obs = []
+    for raw in (answer.get("observations") or [])[:16]:
+        if not isinstance(raw, dict):
+            continue
+        rest = {k: v for k, v in raw.items() if k not in ("scope", "forget")}
+        if str(rest.get("kind", "")).lower() == "lesson":
+            continue
+        if raw.get("about") == "person" and str(rest.get("kind", "")).lower() in SELF_KINDS:
+            rest["kind"] = "fact"
+        o = clean_observation(rest)
+        if not o:
+            continue
+        try:
+            imp = float(raw.get("importance", 0.5))
+        except (TypeError, ValueError):
+            imp = 0.5
+        imp = max(0.0, min(1.0, imp))
+        cert = o["certainty"]
+        if trust == "external":
+            if o["kind"] in NOT_FROM_OTHERS and raw.get("about") != "person":
+                continue
+            if cert == "stated":
+                cert = "implied"
+        elif trust == "mixed" and cert == "stated":
+            cert = "implied"
+        g = _ground_terms(o)
+        if not g or not any(w in source_terms for w in g):
+            continue                                              # not in the events
+        if aimed_t:
+            gg = [w for w in g if w in source_terms]
+            if gg and sum(w in aimed_t for w in gg) / len(gg) >= 0.5:
+                continue
+        if imp < min_importance and cert not in ("joking", "hypothetical", "quoting"):
+            continue
+        out = {"kind": o["kind"], "slot": o["slot"], "value": o["value"], "text": o["text"], "certainty": cert,
+               "importance": round(imp, 2), **({"about": raw["about"]} if raw.get("about") in ("user", "person", "project") else {})}
+        if o.get("project"):
+            out["project"] = o["project"]
+        if raw.get("_name"):
+            out["_name"] = raw["_name"]
+        obs.append(out)
+        if len(obs) >= 8:
+            break
+    plans = [{"what": str(p.get("what", ""))[:140], "when": str(p.get("when", ""))[:20], "where": str(p.get("where", ""))[:120],
+              "who": [str(x)[:60] for x in (p.get("who") if isinstance(p.get("who"), list) else [p.get("who")] if p.get("who") else [])][:6]}
+             for p in (answer.get("plans") or []) if isinstance(p, dict) and len(str(p.get("what", "")).strip()) >= 3][:5]
+    return {"observations": obs, "plans": plans}

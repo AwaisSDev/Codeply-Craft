@@ -14,7 +14,7 @@ from iris import schema as S
 from iris.eval.pipeline import Store
 
 from . import run as R
-from .production import production_messages, rules_extract, to_iris
+from .production import check_extraction, production_messages, rules_extract, to_iris
 
 
 def main():
@@ -57,10 +57,10 @@ def main():
                 t0, err = time.time(), ""
                 try:
                     if a.system == "rules":
-                        out = to_iris(rules_extract([pev]))
+                        out = to_iris(check_extraction(rules_extract([pev]), [pev]))
                     elif a.system == "prodprompt":
                         raw, _ = R.call(a.base_url, a.model, production_messages([pev], known=known, now=ev["at"], projects=life["projects"]))
-                        out = to_iris(raw)
+                        out = to_iris(check_extraction(raw, [pev]))      # production's guard, as in production
                     else:
                         raw, _ = R.call(a.base_url, a.model, R.iris_messages(ev, text, known, plans, life), schema=S.EXTRACTION_SCHEMA)
                         out = raw

@@ -94,7 +94,7 @@ def main():
                "memories_per_session": round(t["pred"] / max(1, len(rows)), 2)}
         json.dump(rep, open(a.out, "w"), indent=1); print(json.dumps(rep)); return
     from iris.baselines import run as R
-    from iris.baselines.production import production_messages, rules_extract, to_iris
+    from iris.baselines.production import check_extraction, production_messages, rules_extract, to_iris
     from iris import schema as SC
     if a.extra_body:
         R.EXTRA.update(json.loads(a.extra_body))
@@ -111,9 +111,9 @@ def main():
             t0, err = time.time(), ""
             try:
                 if a.system == "rules":
-                    out = to_iris(rules_extract([ev]))
+                    out = to_iris(check_extraction(rules_extract([ev]), [ev]))
                 elif a.system == "prodprompt":
-                    raw, _ = R.call(a.base_url, a.model, production_messages([ev], now=ev["at"])); out = to_iris(raw)
+                    raw, _ = R.call(a.base_url, a.model, production_messages([ev], now=ev["at"])); out = to_iris(check_extraction(raw, [ev]))
                 else:
                     fake = {"at_iso": datetime.datetime.fromtimestamp(ev["at"], datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M"),
                             "source": "personal_chat", "trust": "mixed"}
@@ -125,6 +125,7 @@ def main():
                 if "Connection refused" in err or "URLError" in err:
                     raise SystemExit(f"model server unavailable: {err}")      # do not burn through sessions
             fh.write(json.dumps({"conv": s["conv"], "session": s["session"], "system": a.system, "model": a.model, "output": out,
+                                 "raw": locals().get("raw"),
                                  "error": err, "seconds": round(time.time() - t0, 1)}) + "\n"); fh.flush()
             n += 1
 
