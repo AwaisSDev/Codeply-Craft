@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 PH=${PASTE_HOME:-$HOME}; [ -d "$PH/paste-tools" ] || PH=/home/user
 BIN=$PH/paste-tools/llamacpp/src/build/bin
 M=$PH/paste-tools/models
-running() { ps -eo args | grep -v grep | grep -qF -- "$1"; }
+running() { ps -eww -o args | grep -v grep | grep -qF -- "$1"; }
 serve() {   # port model threads extra
   if ! running "--port $1"; then
     (cd "$BIN" && LD_LIBRARY_PATH=. nohup ./llama-server -m "$M/$2" -t "$3" -c 8192 $4 --host 127.0.0.1 --port "$1" \
@@ -24,7 +24,7 @@ JOBS=$PH/paste-runs/iris-jobs.txt
 if [ -f "$JOBS" ]; then
   while IFS= read -r cmd; do
     [[ -z "$cmd" || "$cmd" == \#* ]] && continue
-    tag=$(echo "$cmd" | grep -o -- '--out [^ ]*' | head -1)
+    tag=$(echo "$cmd" | grep -o -- '--out [^ ]*' | tail -1)
     if [ -n "$tag" ] && ! running "$tag"; then
       nohup bash -c "$cmd" >> "$PH/paste-runs/iris-jobs.log" 2>&1 &
       echo "resumed: ${cmd:0:120}"
