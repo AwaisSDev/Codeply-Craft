@@ -1515,8 +1515,9 @@ function logCacheUse(model, u) {
   if (!u) return;
   const read = u.cache_read_tokens ?? u.prompt_tokens_details?.cached_tokens ?? u.cache_read_input_tokens ?? 0;
   const write = u.cache_write_tokens ?? u.cache_creation_input_tokens ?? 0;
-  // Anthropic's input count leaves out the cached part; OpenAI's includes it.
-  const total = u.cache_read_tokens !== undefined || u.cache_read_input_tokens !== undefined ? (u.prompt_tokens || u.input_tokens || 0) + read + write : (u.prompt_tokens || 0);
+  // prompt_tokens is all input on every route (cached included); a bare Anthropic
+  // shape (input_tokens only) leaves the cached part out, so it is added back.
+  const total = u.prompt_tokens != null ? u.prompt_tokens : (u.input_tokens || 0) + read + write;
   if (!total) return;
   cacheTally.input += total; cacheTally.cached += read;
   console.error(`[cache] ${model}: ${read}/${total} input tokens from cache (${Math.round((100 * read) / total)}%), ${write} written; session ${Math.round((100 * cacheTally.cached) / cacheTally.input)}%`);
