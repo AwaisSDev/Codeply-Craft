@@ -88,9 +88,10 @@ function skillsFor(task, cwd) {
   try { skillsLib = require(path.join(deps.cliDir, 'lib', 'skills.js')); } catch { return { taste: null, skills: [], dirs: [] }; }
   let all = [];
   try { all = skillsLib.listSkills(cwd); } catch {}
-  const visual = cc().looksVisual(task);
+  // Taste goes to every job, visual or not: it lives in the system prompt
+  // Claude Code caches, and one fixed prompt is cheaper than two that each miss.
   let taste = null;
-  const tasteSkill = visual ? all.find((s) => s.name === 'codeply-taste') : null;
+  const tasteSkill = all.find((s) => s.name === 'codeply-taste');
   if (tasteSkill) {
     try { taste = { dir: tasteSkill.dir, body: fs.readFileSync(path.join(tasteSkill.dir, 'SKILL.md'), 'utf8') }; } catch {}
   }
@@ -132,14 +133,18 @@ async function runForChat({ session, task, chat, fresh, model, approve, signal, 
   }
 
   busyChats.add(session.id);
-  const brief = cc().buildPrompt({ task, chat: round === 1 ? chat : '', round });
   const { taste, skills, dirs } = skillsFor(task, cwd);
+  // Skills already named on an earlier round are in Claude's context; only new ones are listed again.
+  const named = new Set((prev && resume && prev.skills) || []);
+  const brief = cc().buildPrompt({ task, chat: round === 1 ? chat : '', round, skills: skills.filter((s) => !named.has(s.name)) });
   let appendFile = '';
   try {
+    // The same text every job: one file per content, written once.
+    const text = cc().systemAppend({ taste, level: conf.level });
     const dir = path.join(os.tmpdir(), 'codeply-claude');
     fs.mkdirSync(dir, { recursive: true });
-    appendFile = path.join(dir, `brief-${process.pid}-${Date.now()}.md`);
-    fs.writeFileSync(appendFile, cc().systemAppend({ taste, skills, level: conf.level }), 'utf8');
+    appendFile = path.join(dir, `system-${require('crypto').createHash('sha1').update(text).digest('hex').slice(0, 12)}.md`);
+    if (!fs.existsSync(appendFile)) fs.writeFileSync(appendFile, text, 'utf8');
   } catch { appendFile = ''; }
 
   const card = { ...CARD, round };
@@ -148,6 +153,7 @@ async function runForChat({ session, task, chat, fresh, model, approve, signal, 
   deps.sendEvent(session.id, { type: 'wisp_agent', phase: 'start', agent: card, task: oneLine(task, 600) });
   term(`\n${C.claude}✳ Claude Code${C.off} ${C.dim}round ${round}${resume ? ' (resumed)' : ''} in ${cwd}${C.off}\n${C.dim}${oneLine(task, 200)}${C.off}\n`);
 
+  const before = cc().snapshot(cwd);
   const pending = new Map(); // tool_use id -> { name, args, label }
   const actions = [];
   const denials = [];
@@ -203,7 +209,6 @@ async function runForChat({ session, task, chat, fresh, model, approve, signal, 
     result = { ok: false, error: e.message || String(e), denials: [] };
   } finally {
     busyChats.delete(session.id);
-    if (appendFile) fs.promises.unlink(appendFile).catch(() => {});
   }
 
   if (result && result.auth) { cached = { at: 0, status: null }; refresh().catch(() => {}); }
@@ -213,19 +218,25 @@ async function runForChat({ session, task, chat, fresh, model, approve, signal, 
   // What it was not allowed to do, one line each: the result's list has the commands, the live events the reasons.
   const fromResult = ((result && result.denials) || []).map((d) => (d.input && d.input.command ? `${d.tool}: ${oneLine(d.input.command, 160)}` : d.tool));
   const notAllowed = [...new Set(fromResult.length ? fromResult : denials.map((d) => `${d.tool}${d.reason ? ` (${oneLine(d.reason, 120)})` : ''}`))].slice(0, 12);
-  session.claudeCode = { ...(session.claudeCode || {}), sessionId: sessionId || (session.claudeCode && session.claudeCode.sessionId) || '', cwd, approved: true, round, lastAt: Date.now() };
+  session.claudeCode = { ...(session.claudeCode || {}), sessionId: sessionId || (session.claudeCode && session.claudeCode.sessionId) || '', cwd, approved: true, round, lastAt: Date.now(), skills: [...new Set([...named, ...skills.map((s) => s.name)])] };
   session.updatedAt = Date.now();
 
+  // Files changed by shell commands too (echo > file, generators): the folder before and after says.
+  const disk = cc().diffSnapshots(before, cc().snapshot(cwd));
+  const viaTools = new Set(actions.filter((a) => a.ok && ['edit_file', 'write_file'].includes(a.tool)).map((a) => a.label));
+  for (const f of disk.added) if (!viaTools.has(f)) actions.push({ tool: 'write_file', label: f, ok: true, by: 'Claude Code', via: 'shell' });
+  for (const f of disk.changed) if (!viaTools.has(f)) actions.push({ tool: 'edit_file', label: f, ok: true, by: 'Claude Code', via: 'shell' });
   const files = [...new Set(actions.filter((a) => a.ok && ['edit_file', 'write_file'].includes(a.tool)).map((a) => a.label).filter(Boolean))];
   const checks = actions.filter((a) => a.tool === 'run').map((a) => ({ tool: 'run', label: a.label, ok: a.ok, exitCode: a.exitCode }));
   const report = { phase: 'report', agent: card, text: text || (failed ? `Couldn't finish: ${failed}` : 'Done.'), ok, files: files.map((f) => f.split('/').pop()), checks: checks.slice(-10), costUsd: result && result.costUsd, turns: result && result.turns };
   session.messages.push({ kind: 'wisp_agent', ...report, at: Date.now() });
   deps.sendEvent(session.id, { type: 'wisp_agent', ...report });
+  const cached = cc().cacheShare(result && result.usage);
   term(ok
-    ? `${C.ok}✓ Claude Code finished${C.off} ${C.dim}${files.length} file${files.length === 1 ? '' : 's'} changed${result && result.turns ? `, ${result.turns} turns` : ''}${C.off}\n`
+    ? `${C.ok}✓ Claude Code finished${C.off} ${C.dim}${files.length} file${files.length === 1 ? '' : 's'} changed${result && result.turns ? `, ${result.turns} turns` : ''}${cached != null ? `, ${Math.round(cached * 100)}% of input from cache` : ''}${C.off}\n`
     : `${C.bad}✗ Claude Code did not finish:${C.off} ${oneLine(failed, 200)}\n`);
 
-  return { ok, text, actions, files, denials: notAllowed, sessionId, round, costUsd: result && result.costUsd, failed, auth: !!(result && result.auth) };
+  return { ok, text, actions, files, removed: disk.removed.slice(0, 40), denials: notAllowed, sessionId, round, cached, costUsd: result && result.costUsd, failed, auth: !!(result && result.auth) };
 }
 
 // ─── Login, from the Connect Apps card ──────────────────────────────────────

@@ -174,6 +174,52 @@ with Wisp as the lead that briefs it, reviews it and publishes the result.
   (2.1.x): a two-round bakery site, taste references read, lint run, round 2
   resumed the same session.
 
+### Prompt cache on every route (2026-11-05)
+
+Every request should resend the previous one byte for byte plus what is new,
+so a prefix cache (Anthropic, OpenAI, OpenRouter, DeepSeek, a local model's
+KV cache, Haze's router) serves almost all of it. `npm run test:cache`
+measures it on the user's own key: within a turn 100% of what was already
+sent comes back as a cached prefix (91.6% before), a turn that outgrows the
+context budget keeps 91% (83%, 2 breaks), and in a 50-turn chat 87% of the
+history is reused from one turn to the next (0.9% before).
+
+What breaks a cache, and what changed:
+- The layout from `buildSystemSections` (core, then project, then the turn's
+  context on the user message) was only used for Haze 2. On the user's own
+  keys `buildSystemPrompt` put the bot/Wisp prompt in front of the 30 KB tool
+  reference and the per-message skills and git status inside the system
+  prompt, so every new turn re-billed all of it. Every route uses the
+  sections now; `ai.js cacheShapedMessages` folds the two system blocks into
+  one (core first) for providers that want a single system message.
+- The transcript is append-only on every route. A stale `read_file` result
+  is no longer rewritten when the file is edited (the edit's result says so).
+- `trimTranscript` keeps a sticky cut (`trimState.cut`) and trims down to 60%
+  of the budget at once. Trimming just enough each step changed an earlier
+  message on every step after the budget was reached.
+- `history.js`: the window is the last 20 to 39 messages and its start moves
+  20 at a time. `slice(-20)` moved the first message of the history on every
+  turn once a chat was long.
+- Wisp: the team list in the prompt has no job counts, and a specialist's
+  last jobs go with its task (`wisp.trackRecord`), not its system prompt.
+- Anthropic (`ai.js anthropicCacheLayout`): one text block per system
+  message with a 1-hour breakpoint on the core and on the project block (the
+  next user message is often 5 to 60 minutes away), and a 5-minute breakpoint
+  on the newest message on every request. It used to mark the
+  second-to-last message only when that message alone was 4000+ characters,
+  so most steps had no message breakpoint at all. A fourth breakpoint sits 16
+  messages back in long runs (20-position lookback). Never more than four.
+- OpenRouter, Claude models: explicit markers on the system blocks and the
+  newest message (OpenRouter only caches those with markers).
+- Claude Code: the appended system prompt is the same for every job (house
+  rules and Codeply taste; the matching skills go in the task), written once
+  per content, and `--exclude-dynamic-system-prompt-sections` is passed when
+  the CLI lists it, so the system prompt is the same in every project. The
+  run's cache share is shown in the terminal line. Real runs: 83 to 90% of
+  input from cache, the rest the new task and tool output.
+- `CODEPLY_CACHE_LOG=1` prints, per model call, how much input came from the
+  cache wherever the provider reports it.
+
 ## Worth doing next (from the study, not built yet)
 
 1. UX: group consecutive reads into one "Gathered context" row, docked approvals,

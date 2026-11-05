@@ -1533,19 +1533,47 @@ function isToolResult(content) {
   return toolResultText(content).startsWith('[tool result');
 }
 
-function trimTranscript(messages, budget = CONTEXT_CHAR_BUDGET) {
+// Once trimming starts it cuts down to this share of the budget, so the next
+// several steps fit without cutting again. Cutting just enough each time
+// changed an earlier message on every step, and every step after the cut
+// missed the prompt cache.
+const TRIM_LOW_WATER = 0.6;
+
+function collapseToolResult(m) {
+  const head = toolResultText(m.content).slice(0, 200);
+  return { role: 'user', content: `${head}\n[… older tool output dropped to save context]` };
+}
+
+/**
+ * state (optional, kept for one turn): { cut } - every tool result before
+ * index cut is collapsed, always the same way, so a cut once made never
+ * moves the bytes of an earlier message again.
+ */
+function trimTranscript(messages, budget = CONTEXT_CHAR_BUDGET, state = null) {
+  const st = state || { cut: 0 };
   let total = messages.reduce((n, m) => n + contentLength(m.content), 0);
-  if (total <= budget) return messages;
+  if (total <= budget && !st.cut) return messages;
 
   const kept = [...messages];
-  // index 0 is the system prompt; never touch the last 6 messages.
-  for (let i = 1; i < kept.length - 6 && total > budget; i++) {
+  const limit = kept.length - 6; // never touch the last 6 messages; the system blocks are not tool results
+  for (let i = 0; i < Math.min(st.cut, limit); i++) {
     if (kept[i].role === 'user' && isToolResult(kept[i].content)) {
       total -= contentLength(kept[i].content);
-      const head = toolResultText(kept[i].content).slice(0, 200);
-      kept[i] = { role: 'user', content: `${head}\n[… older tool output dropped to save context]` };
+      kept[i] = collapseToolResult(kept[i]);
       total += contentLength(kept[i].content);
     }
+  }
+  if (total > budget) {
+    const target = budget * TRIM_LOW_WATER;
+    let i = Math.max(st.cut, 0);
+    for (; i < limit && total > target; i++) {
+      if (kept[i].role === 'user' && isToolResult(kept[i].content)) {
+        total -= contentLength(kept[i].content);
+        kept[i] = collapseToolResult(kept[i]);
+        total += contentLength(kept[i].content);
+      }
+    }
+    st.cut = Math.max(st.cut, i);
   }
   return kept;
 }
@@ -1887,8 +1915,14 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   } : null;
   const hazeStep = (step) => (haze ? { ...haze, step } : undefined);
   const codeSkills = wantsCodeSkills(botPrompt, botId);
+  // Every route uses the cache layout (buildSystemSections): the stable core
+  // and project blocks lead, and what changes per turn rides on the user's
+  // message. Haze's router caches each system message; ai.js gives Anthropic
+  // one breakpoint per block and folds them into one system message for
+  // providers that want one. Before, only Haze got this, and every new turn
+  // on the user's own keys re-billed the whole 30 KB tool reference.
   const sectionsFor = (m) => buildSystemSections(m, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt, codeSkills, agentRole });
-  const sections = haze ? sectionsFor(mode) : null;
+  const sections = sectionsFor(mode);
   // What this chat saw on the user's screen (the drop reads it with every message; lib/screen.js).
   const chatId = hazeOpts?.chatId || null;
   const screenBlock = screenLib.contextFor(chatId);
@@ -1900,18 +1934,14 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   const turnExtra = [screenBlock, brainBlock].filter(Boolean).join('\n\n');
   // A question about the screen needs careful reading: Haze 2 never treats it as small talk.
   if (haze && screenBlock) haze.screen = true;
-  const messages = sections
-    ? [
-      { role: 'system', content: sections.core },
-      { role: 'system', content: sections.project },
-      ...history,
-      { role: 'user', content: withTurnContext(userContent, [sections.turn, turnExtra].filter(Boolean).join('\n\n')) },
-    ]
-    : [
-      { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt, codeSkills, agentRole }) },
-      ...history,
-      { role: 'user', content: turnExtra ? withTurnContext(userContent, turnExtra) : userContent },
-    ];
+  const messages = [
+    { role: 'system', content: sections.core },
+    { role: 'system', content: sections.project },
+    ...history,
+    { role: 'user', content: withTurnContext(userContent, [sections.turn, turnExtra].filter(Boolean).join('\n\n')) },
+  ];
+  // Old tool output collapsed to save room stays collapsed: see trimTranscript.
+  const trimState = { cut: 0 };
 
   // fileState: path -> mtime when this turn last read/wrote it (see tools.mjs).
   // userMessage lets the publish tools refuse when nobody asked to publish.
@@ -1966,8 +1996,9 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   //    for that same path in the transcript no longer describes what's on
   //    disk. Besides being a real correctness hazard (the model reasoning off
   //    stale content), keeping it around costs tokens for information that is
-  //    now wrong. It gets collapsed to a pointer the moment the edit lands,
-  //    not deferred to trimTranscript()'s budget-driven pass.
+  //    now wrong. The edit's own result says so; the earlier message is left
+  //    as it was (append-only, so the prompt cache holds), and a fresh
+  //    read_file after the edit is never short-circuited by the old one.
   const DEDUPABLE = new Set(['read_file', 'list_dir', 'search', 'use_skill', 'list_skills', 'web_fetch', 'web_search']);
   const servedCalls = new Map();     // callKey -> message index of its result
   const readIndexByPath = new Map(); // resolved path -> message index of its read_file result
@@ -2015,13 +2046,14 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     if (signal.aborted) { yield { type: 'aborted' }; return; }
 
     const budget = contextBudgetFor(route);
-    let outgoing = trimTranscript(messages, budget);
+    let outgoing = trimTranscript(messages, budget, trimState);
     if (transcriptLength(outgoing) > budget && await compactTranscript(messages, userMessage, signal, route, { actions, todos: ctx.todos || [] })) {
       // Message positions moved, so the index-based caches below point at the
       // wrong entries now. They are only shortcuts; starting them over is safe.
       servedCalls.clear();
       readIndexByPath.clear();
-      outgoing = trimTranscript(messages, budget);
+      trimState.cut = 0;
+      outgoing = trimTranscript(messages, budget, trimState);
     }
     if (outgoing !== messages) {
       const ledger = actionLedger(actions, ctx.todos || []);
@@ -2037,8 +2069,10 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     if (native && !attempt.result.success && !signal.aborted && TOOLS_UNSUPPORTED.test(String(attempt.result.error || ''))) {
       native = false;
       nativeUnsupported.add(nativeKey);
-      messages[0] = { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native: false, mcp: mcpList, botPrompt, codeSkills, agentRole }) };
-      outgoing = [messages[0], ...outgoing.slice(1)];
+      const textSections = sectionsFor(mode); // native is false now: the text-format reference and examples
+      messages[0] = { role: 'system', content: textSections.core };
+      messages[1] = { role: 'system', content: textSections.project };
+      outgoing = [messages[0], messages[1], ...outgoing.slice(2)];
       yield { type: 'notice', level: 'info', text: 'This model does not support native tool calls, so Codeply switched to text actions.' };
       attempt = await callModel(outgoing, userMessage, signal, route);
     }
@@ -2438,10 +2472,8 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
           readOnly = READ_ONLY_MODES.has(mode);
           ctx.mode = mode;
           toolSchemas = schemasFor(mode);
-          // Haze layout: only the core (mode prompt and rules) changes with the
-          // mode; the project block and the cached history after it stay put.
-          if (haze) messages[0] = { role: 'system', content: sectionsFor(mode).core };
-          else messages[0] = { role: 'system', content: buildSystemPrompt(mode, cwd, userMessage, { roleId, goal, native, mcp: mcpList, botPrompt, codeSkills, agentRole }) };
+          // Only the core (mode prompt and rules) changes with the mode.
+          messages[0] = { role: 'system', content: sectionsFor(mode).core };
           yield { type: 'mode_switch', mode, planPath: out.meta.planPath };
         }
         if ((call.name === 'write_file' || call.name === 'edit_file' || call.name === 'fetch_image') && !out.meta?.noop && call.args.path && !wasPlanFile) {
@@ -2498,18 +2530,13 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
           // outdated content sitting in the transcript for the model to
           // (mis)reason from, and drop it from the dedup cache so a genuinely
           // fresh read_file after this point is not short-circuited by it.
-          // Under Haze 2 the transcript stays append-only instead: the
-          // edit's own result below says the file changed, and rewriting an
-          // earlier message would make every step after it miss the cache.
+          // The transcript stays append-only on every route: the edit's own
+          // result says the file changed, and rewriting an earlier message
+          // would make every step after it miss the prompt cache (and a local
+          // model's KV cache).
           const abs = resolvePath(p, cwd).abs;
           const stale = readIndexByPath.get(abs);
           if (stale) {
-            if (!haze) {
-              messages[stale.msgIndex] = {
-                role: 'user',
-                content: `[tool result: read_file] ${p} - superseded by the ${call.name} below; that earlier content no longer matches the file. Re-read if you need to see it again.`,
-              };
-            }
             servedCalls.delete(stale.key);
             readIndexByPath.delete(abs);
           }
@@ -2600,7 +2627,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   // real account of where things stand instead of a bare "stopped". Its
   // answer is checked the same way: no action blocks, no invented results.
   if (!signal.aborted && actions.length) {
-    const closing = await callModel([...trimTranscript(messages, contextBudgetFor(route)), { role: 'user', content: FINAL_SUMMARY_PROMPT }], userMessage, signal, route, null, null, hazeStep(stepBudget));
+    const closing = await callModel([...trimTranscript(messages, contextBudgetFor(route), trimState), { role: 'user', content: FINAL_SUMMARY_PROMPT }], userMessage, signal, route, null, null, hazeStep(stepBudget));
     const text = closing.result?.success ? String(closing.result.data?.choices?.[0]?.message?.content || '') : '';
     const { prose, calls: stray } = parseReply(text);
     // Keep only what comes before any action block it wrote anyway.

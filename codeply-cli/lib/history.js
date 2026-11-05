@@ -7,6 +7,8 @@
  * recent pasted images.
  */
 const MAX_HISTORY_IMAGES = 4;
+const HISTORY_TURNS = 20;
+const HISTORY_STEP = 20;
 
 const ACTION_VERBS = {
   write_file: 'wrote', edit_file: 'edited', apply_patch: 'patched', web_fetch: 'fetched', web_search: 'searched the web for', image_search: 'searched images for', reach_me: 'reached the phone:', watch_email: 'set an email alert for',
@@ -44,6 +46,12 @@ function buildHistory(session) {
       turns.push({ role: 'user', content: m.expanded || m.text, images: m.images || null });
     } else if (m.kind === 'wisp_agent' && m.agent) {
       // Wisp's specialists: never shown as their own voice, but Wisp knows whom it brought in.
+      if (m.agent.kind === 'claude') {
+        // Claude Code (claude-code-desktop.js): what it was asked, and whether it finished.
+        if (m.phase === 'start') pendingActions.push(`asked Claude Code${m.agent.round > 1 ? ` (round ${m.agent.round})` : ''} to: ${String(m.task || '').replace(/\s+/g, ' ').slice(0, 160)}`);
+        else if (m.phase === 'report') pendingActions.push(m.ok ? `Claude Code finished${Array.isArray(m.files) && m.files.length ? `, changed ${m.files.slice(0, 6).join(', ')}` : ''}` : 'Claude Code could not finish');
+        continue;
+      }
       if (m.phase === 'start') pendingActions.push(`brought in the ${m.agent.name} specialist for: ${String(m.task || '').replace(/\s+/g, ' ').slice(0, 160)}`);
       else if (m.phase === 'report' && !m.ok) pendingActions.push(`the ${m.agent.name} specialist could not finish`);
       else if (m.phase === 'created') pendingActions.push(`created a new specialist, ${m.agent.name} (${m.agent.focus || ''})`);
@@ -66,7 +74,11 @@ function buildHistory(session) {
     }
   }
   flushActions();
-  const kept = turns.slice(-20);
+  // The last 20 to 39 messages. The window's start moves 20 at a time, not
+  // one per turn: a start that moved every turn changed the first message of
+  // the history on every turn, and the whole history missed the prompt cache.
+  const start = turns.length > HISTORY_TURNS ? Math.floor((turns.length - HISTORY_TURNS) / HISTORY_STEP) * HISTORY_STEP : 0;
+  const kept = turns.slice(start);
   // A history must start with a user turn for most providers.
   while (kept.length && kept[0].role !== 'user') kept.shift();
 

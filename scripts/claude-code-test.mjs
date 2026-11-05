@@ -69,6 +69,7 @@ if (argv[0] === 'auth' && argv[1] === 'status') {
     const file = path.join(process.cwd(), 'index.html');
     out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: round2 ? 'Edit' : 'Write', input: { file_path: file } }] }, session_id: sid });
     fs.writeFileSync(file, round2 ? '<h1 style="color:#111">Bakery</h1>\\n' : '<h1 style="color:#ccc">Bakery</h1>\\n');
+    if (!round2) { fs.writeFileSync(path.join(process.cwd(), 'styles.css'), 'h1{}\\n'); try { fs.unlinkSync(path.join(process.cwd(), 'old.txt')); } catch {} }
     out({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: 'File written', is_error: false }] }, session_id: sid });
     out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't2', name: 'Bash', input: { command: 'node --check app.js' } }] }, session_id: sid });
     out({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't2', content: round2 ? '' : 'Exit code 1\\nSyntaxError', is_error: !round2 }] }, session_id: sid });
@@ -116,8 +117,12 @@ const host = require(path.join(ROOT, 'wisp-desktop.js'));
   check('permissions: edits runs no commands', !ccLib.permissionArgs('edits').allow.some((a) => a.startsWith('Bash')));
   check('permissions: full still never publishes', ccLib.permissionArgs('full').mode === 'bypassPermissions' && ccLib.permissionArgs('full').deny.includes('Bash(gh:*)'));
   check('visual: a website is visual, a migration is not', ccLib.looksVisual('Build a landing page for a bakery') && !ccLib.looksVisual('Add a migration for the orders table'));
-  const sys = ccLib.systemAppend({ taste: { dir: '/x/codeply-taste', body: '---\nname: codeply-taste\n---\n# Codeply taste\nOne idea.' }, skills: [{ name: 'seo', description: 'Search', file: '/x/seo/SKILL.md' }] });
-  check('brief: house rules, taste body without frontmatter, skill files', /Never publish/.test(sys) && /# Codeply taste\nOne idea/.test(sys) && !/name: codeply-taste/.test(sys) && sys.includes('/x/seo/SKILL.md') && sys.includes('lint.mjs'));
+  const taste = { dir: '/x/codeply-taste', body: '---\nname: codeply-taste\n---\n# Codeply taste\nOne idea.' };
+  const sys = ccLib.systemAppend({ taste });
+  check('brief: house rules and the taste body without frontmatter', /Never publish/.test(sys) && /# Codeply taste\nOne idea/.test(sys) && !/name: codeply-taste/.test(sys) && sys.includes('lint.mjs'));
+  check('brief: the system part is the same for every job (cache)', ccLib.systemAppend({ taste }) === sys);
+  const p1 = ccLib.buildPrompt({ task: 'Build it', skills: [{ name: 'seo', description: 'Search', file: '/x/seo/SKILL.md' }] });
+  check('brief: the skills that fit go in the prompt, not the system part', p1.includes('/x/seo/SKILL.md') && !sys.includes('SKILL.md'));
   check('brief: a later round says it was reviewed', /REVIEWED YOUR WORK[\s\S]*round 2/.test(ccLib.buildPrompt({ task: 'Darken the h1', round: 2 })));
   check('map: Claude tools become Codeply rows', ccLib.asCodeplyTool('Edit', { file_path: '/p/src/a.js' }, '/p').name === 'edit_file' && ccLib.asCodeplyTool('Edit', { file_path: '/p/src/a.js' }, '/p').args.path === 'src/a.js' && ccLib.asCodeplyTool('Bash', { command: 'ls' }).name === 'run');
   check('map: exit code from a failed Bash result', ccLib.exitCodeOf('Exit code 2\nboom', false) === 2 && ccLib.exitCodeOf('ok', true) === 0);
@@ -199,6 +204,7 @@ host.init({
 // 4. Wisp hands the build to Claude Code, reviews, sends it back, reports.
 {
   const cwd = fs.mkdtempSync(path.join(scratch, 'proj-'));
+  fs.writeFileSync(path.join(cwd, 'old.txt'), 'gone soon');
   const session = { id: 'chat-1', messages: [{ kind: 'user', text: 'hey wisp, can you use Claude to make a website for my bakery?' }] };
   let approvals = 0;
   const approve = async (req) => { approvals++; return req.tool === 'claude_code' ? 'once' : 'once'; };
@@ -221,10 +227,12 @@ host.init({
   check('turn: Claude Code ran twice', calls.length === 2, calls.length);
   check('turn: the first brief has the task and the chat it came from', /family bakery/.test(calls[0].prompt) && /THE CHAT THIS CAME FROM[\s\S]*bakery/.test(calls[0].prompt));
   check('turn: a website brief carries Codeply taste', /CODEPLY TASTE/.test(calls[0].sys) && /# Codeply taste/.test(calls[0].sys) && calls[0].argv.includes('--add-dir'));
+  check('turn: both rounds get the same system part (Claude Code reads it from its cache)', calls[0].sys === calls[1].sys && calls[0].sys.length > 1000);
   check('turn: round 2 resumes the same Claude session', calls[1].argv.includes('--resume') && calls[1].argv[calls[1].argv.indexOf('--resume') + 1] === 'sess-1' && /round 2/.test(calls[1].prompt));
   check('turn: one approval for both rounds', approvals === 1, approvals);
   const report = lastUserOf(bodies[1]);
   check('turn: Wisp gets the report and what Claude Code really did', /CLAUDE CODE'S REPORT \(round 1\)/.test(report) && /Files changed: index\.html/.test(report) && /node --check app\.js`: FAILED \(exit 1\)/.test(report), report);
+  check('turn: files written by shell commands and deletions are in the record too', /Files changed: [^\n]*styles\.css/.test(report) && /Files deleted: old\.txt/.test(report), report);
   check('turn: Wisp is told what was not allowed and to review', /Not allowed to run[\s\S]*vercel deploy/.test(report) && /Now review it/.test(report));
   check('turn: the file holds round 2\'s fix', /#111/.test(fs.readFileSync(path.join(cwd, 'index.html'), 'utf8')));
   const done = events.find((e) => e.type === 'done');

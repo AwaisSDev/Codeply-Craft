@@ -192,7 +192,8 @@ async function runSpecialist({ session, spec, task, approve, signal, route, cwd,
   const W = wisp();
   const card = W.card(spec);
   const chat = recentChat(session);
-  const brief = `${task}${chat ? `\n\nRECENT CHAT THIS CAME FROM (newest last). When the task points at something said here, it means this:\n${chat}` : ''}`;
+  const track = W.trackRecord ? W.trackRecord(spec) : '';
+  const brief = `${task}${chat ? `\n\nRECENT CHAT THIS CAME FROM (newest last). When the task points at something said here, it means this:\n${chat}` : ''}${track ? `\n\n${track}` : ''}`;
   push(session, { kind: 'wisp_agent', phase: 'start', agent: card, task: task.slice(0, 600) });
   deps.sendEvent(session.id, { type: 'wisp_agent', phase: 'start', agent: card, task: task.slice(0, 600) });
 
@@ -279,6 +280,7 @@ async function runClaude({ session, task, fresh, model, approve, signal, cwd }) 
   if (!r.actions && r.failed) return { ok: false, output: r.failed };
   const facts = factsOf(r.actions);
   const lines = [`CLAUDE CODE'S REPORT (round ${r.round})`, r.text || (r.failed ? `It couldn't finish: ${r.failed}.` : 'Done, nothing to add.'), '', factsText('Claude Code', facts, facts.files, r.ok ? '' : r.failed)];
+  if (r.removed && r.removed.length) lines.push(`Files deleted: ${r.removed.join(', ')}`);
   if (r.denials && r.denials.length) lines.push(`Not allowed to run (Codeply's limits for Claude Code): ${r.denials.join('; ')}. Run what is still needed yourself with run (the user approves it), and publishing is yours.`);
   lines.push('', r.ok
     ? 'Now review it: read the key files, browser_check the page, design_lint pages, run the build or tests. To send it back, call claude_code again with exactly what to fix; it remembers this round.'

@@ -220,8 +220,11 @@ function looksVisual(task) { return VISUAL.test(String(task || '')); }
 
 /**
  * What Claude Code is told on top of its own system prompt: who it works
- * for, the house rules, and Codeply's taste guide and skills.
- * @param {{ skillsDir?: string, taste?: {dir:string, body:string}|null, skills?: {name:string, description?:string, file:string}[], level?: string }} o
+ * for, the house rules, and Codeply's taste guide. The same bytes for every
+ * job (only the permission level changes it), so Claude Code reads it from
+ * the prompt cache from the second job on. What differs per job (the skills
+ * that match the task) goes in the prompt: skillsNote.
+ * @param {{ taste?: {dir:string, body:string}|null, level?: string }} o
  */
 function systemAppend(o = {}) {
   const parts = [];
@@ -241,21 +244,35 @@ Codeply's tools in this guide are Codeply's, not yours: design_direction was alr
 ${String(o.taste.body).replace(/^---[\s\S]*?---\s*/, '').trim()}`);
   }
 
-  if (Array.isArray(o.skills) && o.skills.length) {
-    parts.push(`CODEPLY SKILLS THAT FIT THIS TASK
-Read the ones that apply before you start (Read the file):
-${o.skills.map((s) => `- ${s.name}: ${String(s.description || '').replace(/\s+/g, ' ').slice(0, 200)} (${s.file})`).join('\n')}`);
-  }
   return parts.join('\n\n');
 }
 
-/** The prompt for one round: the task, and on the first round the chat it came from. */
-function buildPrompt({ task, chat, round = 1 }) {
+/** The skills that fit this task, for the prompt. '' when none. */
+function skillsNote(skills) {
+  if (!Array.isArray(skills) || !skills.length) return '';
+  return `CODEPLY SKILLS THAT FIT THIS TASK
+Read the ones that apply before you start (Read the file):
+${skills.map((s) => `- ${s.name}: ${String(s.description || '').replace(/\s+/g, ' ').slice(0, 200)} (${s.file})`).join('\n')}`;
+}
+
+/** The prompt for one round: the task, and on the first round the chat it came from and the skills that fit. */
+function buildPrompt({ task, chat, round = 1, skills }) {
   const t = String(task || '').trim();
+  const note = skillsNote(skills);
   if (round > 1) {
-    return `CODEPLY REVIEWED YOUR WORK AND SENDS YOU BACK (round ${round})\n${t}\n\nFix exactly this, check it, and report again the same way.`;
+    return `CODEPLY REVIEWED YOUR WORK AND SENDS YOU BACK (round ${round})\n${t}${note ? `\n\n${note}` : ''}\n\nFix exactly this, check it, and report again the same way.`;
   }
-  return `${t}${chat ? `\n\nTHE CHAT THIS CAME FROM (newest last; the user talks to Codeply, not to you):\n${chat}` : ''}`;
+  return `${t}${chat ? `\n\nTHE CHAT THIS CAME FROM (newest last; the user talks to Codeply, not to you):\n${chat}` : ''}${note ? `\n\n${note}` : ''}`;
+}
+
+/** The flags this CLI's --help lists, once per binary. */
+const helpCache = new Map();
+async function cliFlags(bin) {
+  if (helpCache.has(bin)) return helpCache.get(bin);
+  const r = await execClaude(bin, ['--help']);
+  const flags = new Set((String(r.stdout || '').match(/--[a-z][a-z0-9-]+/g) || []));
+  helpCache.set(bin, flags);
+  return flags;
 }
 
 // ─── Running it ─────────────────────────────────────────────────────────────
@@ -294,6 +311,10 @@ function normalize(e) {
       type: 'result', ok, text: typeof e.result === 'string' ? e.result : '',
       sessionId: e.session_id || '', costUsd: typeof e.total_cost_usd === 'number' ? e.total_cost_usd : null,
       turns: e.num_turns || 0, durationMs: e.duration_ms || 0,
+      usage: e.usage ? {
+        input: e.usage.input_tokens || 0, output: e.usage.output_tokens || 0,
+        cacheRead: e.usage.cache_read_input_tokens || 0, cacheWrite: e.usage.cache_creation_input_tokens || 0,
+      } : null,
       denials: Array.isArray(e.permission_denials) ? e.permission_denials.map((d) => ({ tool: d.tool_name, input: d.tool_input })) : [],
       error: ok ? '' : (e.subtype && e.subtype !== 'success' ? e.subtype.replace(/_/g, ' ') : '') || (typeof e.result === 'string' ? e.result : 'Claude Code stopped'),
     }];
@@ -315,6 +336,9 @@ async function* run({ cwd, prompt, resume, model, level = 'dev', appendFile, add
   if (!bin) { yield { type: 'result', ok: false, error: 'Claude Code is not installed.', denials: [] }; return; }
   const perm = permissionArgs(level);
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', perm.mode];
+  // The folder and git status go in the first message instead of the system
+  // prompt, so the system prompt is the same in every project and stays cached.
+  if ((await cliFlags(bin)).has('--exclude-dynamic-system-prompt-sections')) args.push('--exclude-dynamic-system-prompt-sections');
   if (resume) args.push('--resume', String(resume));
   if (model && model !== 'default') args.push('--model', String(model));
   if (appendFile) args.push('--append-system-prompt-file', appendFile);
@@ -428,9 +452,52 @@ function exitCodeOf(output, ok) {
   return ok ? 0 : undefined;
 }
 
+// ─── What really changed on disk ────────────────────────────────────────────
+// Claude Code also writes files with shell commands (echo > file, npm init,
+// a generator), which its tool record does not show as edits. A cheap before
+// and after look at the folder catches those, so Wisp reviews every file
+// that really changed.
+const SNAP_SKIP = new Set(['node_modules', '.git', '.next', '.nuxt', '.svelte-kit', 'dist', 'build', 'out', '.vercel', '.turbo', 'coverage', '.cache', '__pycache__', '.venv', 'venv', 'target']);
+const SNAP_MAX = 6000;
+
+/** path -> "size:mtimeMs" for the files under cwd (bounded). */
+function snapshot(cwd) {
+  const out = new Map();
+  const walk = (dir, rel) => {
+    if (out.size >= SNAP_MAX) return;
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (out.size >= SNAP_MAX) return;
+      if (SNAP_SKIP.has(e.name)) continue;
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      const abs = path.join(dir, e.name);
+      if (e.isDirectory()) walk(abs, r);
+      else if (e.isFile()) { try { const st = fs.statSync(abs); out.set(r, `${st.size}:${Math.round(st.mtimeMs)}`); } catch {} }
+    }
+  };
+  if (cwd) walk(cwd, '');
+  return out;
+}
+
+/** { added, changed, removed } between two snapshots. */
+function diffSnapshots(before, after) {
+  const added = []; const changed = []; const removed = [];
+  for (const [k, v] of after) { if (!before.has(k)) added.push(k); else if (before.get(k) !== v) changed.push(k); }
+  for (const k of before.keys()) if (!after.has(k)) removed.push(k);
+  return { added, changed, removed };
+}
+
+/** Share of a run's input tokens read from the prompt cache (0 to 1), or null when unknown. */
+function cacheShare(usage) {
+  if (!usage) return null;
+  const total = usage.input + usage.cacheRead + usage.cacheWrite;
+  return total ? usage.cacheRead / total : null;
+}
+
 module.exports = {
   findClaude, installCommand, status, login, logout,
   permissionArgs, LEVELS, DENY,
-  looksVisual, systemAppend, buildPrompt,
-  run, normalize, asCodeplyTool, labelOf, exitCodeOf, rel,
+  looksVisual, systemAppend, buildPrompt, skillsNote,
+  run, normalize, cacheShare, snapshot, diffSnapshots, asCodeplyTool, labelOf, exitCodeOf, rel,
 };
