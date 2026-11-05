@@ -18,7 +18,7 @@ SCHEMA = {"type": "object", "required": ["items", "extra_facts"], "additionalPro
                                                                "additionalProperties": False,
                                                                "properties": {"n": {"type": "integer"},
                                                                               "stated_with_this_meaning": {"type": "boolean"}}}},
-                         "extra_facts": {"type": "array", "items": {"type": "string"}, "maxItems": 10}}}
+                         "extra_facts": {"type": "array", "items": {"type": "string", "maxLength": 160}, "maxItems": 6}}}
 
 SYSTEM = ("You check a generated transcript against its specification. Be strict and literal. For each REQUIRED item, "
           "answer whether the transcript states exactly that fact with that meaning (same person, same value, same time or "
@@ -29,14 +29,18 @@ SYSTEM = ("You check a generated transcript against its specification. Be strict
           "deadline, commitment, or a plan with a time - whoever says it, including the user agreeing to an assistant's "
           "suggestion. NOT extra: restating, paraphrasing or reacting to a REQUIRED item; greetings, small talk, questions, "
           "thanks, feelings about the moment; the AI assistant's generic advice, suggestions or recipes that the user does "
-          "not adopt; vague filler with no specific content. Ask: would a careful personal-memory system store it as a fact "
-          "about this person? If yes, list it.")
+          "not adopt; vague filler with no specific content; the conversation's given PURPOSE itself (what the user asks for or "
+          "talks about there, e.g. asking for gift ideas or a recipe is not a fact about them), and someone merely asking about, "
+          "being interested in or thanking for something. Ask: would a careful personal-memory system store it as a lasting "
+          "fact about this person? If yes, list it. Most transcripts have no extra facts.")
 
 
 def check(base_url, model, ev, turns, timeout=900):
     items = "\n".join(f"{i}. [{m.get('speaker', 'user')}] {m['instruction']}" for i, m in enumerate(ev["fact_sheet"]["must_express"])) or "(none)"
     text = "\n".join(f"{t['speaker']}: {t['text']}" for t in turns)
-    user = f"REQUIRED items:\n{items}\n\nTRANSCRIPT:\n{text}\n\nJSON:"
+    fs = ev["fact_sheet"]
+    user = (f"PURPOSE: {fs.get('purpose', '')}\nPARTICIPANTS: {', '.join(fs.get('participants', []))}\n"
+            f"REQUIRED items:\n{items}\n\nTRANSCRIPT:\n{text}\n\nJSON:")
     body = {"model": model, "temperature": 0.0, "max_tokens": 600, "messages": [{"role": "system", "content": SYSTEM},
                                                                               {"role": "user", "content": user}],
             "response_format": {"type": "json_schema", "json_schema": {"name": "check", "schema": SCHEMA}}}
