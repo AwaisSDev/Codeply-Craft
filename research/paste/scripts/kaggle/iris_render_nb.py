@@ -23,8 +23,12 @@ sys_path = "/tmp/codeply/research/paste"; import sys; sys.path.insert(0, sys_pat
 from paste import backup
 DEADLINE = time.time() + __BUDGET__
 NAME = "__SLUG__"
-RUN = f"/kaggle/working/runs/{NAME}"; os.makedirs(RUN, exist_ok=True)
+RUN = f"/kaggle/working/runs/{NAME}"
 t0 = time.time()
+# resume: a later session (any account) continues from the run's latest HF snapshot; renders are keyed by event
+if not os.path.exists(RUN) and backup.snapshots(NAME, "iris-render"):
+    backup.restore(NAME, RUN, prefix="iris-render"); print("restored from HF", flush=True)
+os.makedirs(RUN, exist_ok=True)
 if not os.path.exists("/tmp/llama/build/bin/llama-server"):
     subprocess.run("git clone -q https://github.com/ggml-org/llama.cpp /tmp/llama && cd /tmp/llama && git checkout -q __LLAMA__ && "
                    "cmake -B build -DGGML_NATIVE=ON -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF "
@@ -47,7 +51,12 @@ for _ in range(600):
 print("server up; s", round(time.time() - t0), flush=True)
 json.dump({"repo": "__REPO__", "file": "__FILE__", "llama_commit": "__LLAMA__", "code_commit": COMMIT, "cpus": os.cpu_count()},
           open(f"{RUN}/config.json", "w"), indent=1)
-subprocess.run(f"python -m iris.sim.life --split __SPLIT__ --n __LIVES__ --seed __SEED__ --out {RUN}/lives.jsonl", shell=True, check=True)
+subprocess.run(f"python -m iris.sim.life --split __SPLIT__ --n __LIVES__ --seed __SEED__ --out {RUN}/lives.new.jsonl", shell=True, check=True)
+if os.path.exists(f"{RUN}/lives.jsonl"):   # resumed: the pinned code must regenerate identical lives
+    assert open(f"{RUN}/lives.jsonl").read() == open(f"{RUN}/lives.new.jsonl").read(), "lives differ from the restored run"
+    os.remove(f"{RUN}/lives.new.jsonl")
+else:
+    os.rename(f"{RUN}/lives.new.jsonl", f"{RUN}/lives.jsonl")
 lock = threading.Lock()
 def snap(label):
     with lock:
@@ -96,7 +105,7 @@ def main():
             .replace("__SPLIT__", a.split)
             .replace("__LLAMA__", a.llama_commit))
     os.makedirs(a.out, exist_ok=True)
-    json.dump(nb(f"Iris render pilot: {a.slug}", "Free CPU session; pilot lives rendered by a local model; validation only.",
+    json.dump(nb(f"Iris render {a.split}: {a.slug}", f"Free CPU session; {a.split} lives rendered by a local model (test / stress never on Kaggle).",
                  [SETUP.replace("__COMMIT__", a.commit), cell], gpu=False), open(os.path.join(a.out, f"{a.slug}.ipynb"), "w"), indent=1)
     print("written", os.path.join(a.out, f"{a.slug}.ipynb"))
 

@@ -11,10 +11,10 @@ IrisBench result exists, as for the central test (EVALUATION-PROTOCOL.md). Build
 
 | Split | Lives | Use |
 |---|---|---|
-| pilot | ≤ 10 | generator choice, prompt and pipeline debugging only (results never reported as IrisBench numbers) |
-| train | as many as compute allows | Iris training |
-| val | 20 | model selection, thresholds, early stopping |
-| test | 40 (21 days each) | primary results, once per frozen system |
+| pilot | ≤ 10 (seeds 100-109) | generator choice, prompt and pipeline debugging only (results never reported as IrisBench numbers) |
+| train | as many as compute allows (seeds from 10000) | Iris training |
+| val | 20 (seeds 2000-2019) | model selection, thresholds, early stopping |
+| test | 40 (21 days each; seeds drawn locally at freeze time, never committed before the freeze) | primary results, once per frozen system |
 | stress | 20 (42 days each, twice the change / conflict / sensitive rate) | secondary |
 
 * Test and stress lives are generated and rendered only in sessions that run no training, written under a `frozen`
