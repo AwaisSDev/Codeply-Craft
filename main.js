@@ -3158,7 +3158,7 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
     const classicRun = () => agentMod.runAgent({
       userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route,
       roleId, goal, maxSteps, verifyOnly, botPrompt, askBot: bot?.askBot, botId: bot?.botId,
-      bringIn: wisp?.bringIn, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, agentRole: wisp ? wisp.agentRole : undefined,
+      bringIn: wisp?.bringIn, claudeCode: wisp?.claudeCode, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, agentRole: wisp ? wisp.agentRole : undefined,
       // Pass work to the bot whose job it is (brain-desktop.js); the user asked for this chat.
       handOff: bot && !verifyOnly ? brainDesktop.handOffFor({ botId: bot.botId || null, requester: 'user' }) : undefined,
       haze: { product: 'craft', chatId: session.id }, todos,
@@ -3171,8 +3171,11 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
     for await (const raw of run) {
       // Wisp's reply starts with a [mood: x] tag: it sets the face, and never shows.
       const ev = wisp ? wisp.mood(raw) : raw;
-      if (wisp && ev.type === 'tool_start' && ev.name === 'bring_in') continue; // the specialist's own steps show instead
-      if (wisp && ev.type === 'tool_end' && ev.name === 'bring_in') {
+      // bring_in and claude_code show as the specialist's (or Claude Code's) own steps instead of a row of their own.
+      const delegated = wisp && (ev.name === 'bring_in' || ev.name === 'claude_code');
+      if (delegated && ev.type === 'tool_start') continue;
+      // A claude_code call that never started (not connected, said no) keeps its row, so the chat shows why.
+      if (delegated && ev.type === 'tool_end' && (ev.name === 'bring_in' || ev.meta?.specialist)) {
         if (bot) bot.see(ev);
         handoffDesktop.see(session, ev);
         continue;
@@ -4115,6 +4118,14 @@ brainDesktop.init({
   onBotsChange: () => botsWatch.poke(),
 });
 // Bots: named agents with a job, a tone, memory and an avatar (see bots-desktop.js).
+// Claude Code (claude-code-desktop.js): the user's own Claude plan as a background
+// coding agent that Wisp briefs and reviews. Its login card lives in Connect Apps.
+const claudeDesktop = require('./claude-code-desktop');
+claudeDesktop.init({
+  ipcMain, cliDir: CLI_DIR, sendEvent, recordToolEnd,
+  sendWindow: (channel, data) => { if (win && !win.isDestroyed()) win.webContents.send(channel, data); },
+  store: { get: () => store.claudeCode || {}, set: (next) => { store.claudeCode = { ...(store.claudeCode || {}), ...next }; saveStore(); } },
+});
 // Wisp (wisp-desktop.js): the main agent of every Craft chat, and its team of specialists.
 const wispDesktop = require('./wisp-desktop');
 wispDesktop.init({
@@ -4147,7 +4158,7 @@ async function codeplyVoice({ turns, signal, approve, onStep, mode }) {
   const run = agentMod.runAgent({
     userMessage, history, mode: 'Build', cwd, approve, browser: browserCheck, signal, route, maxSteps: 24,
     botPrompt: (native) => [wisp ? wisp.prompt(native) : '', rules].filter(Boolean).join('\n\n'),
-    bringIn: wisp?.bringIn, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, agentRole: wisp ? wisp.agentRole : undefined,
+    bringIn: wisp?.bringIn, claudeCode: wisp?.claudeCode, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, agentRole: wisp ? wisp.agentRole : undefined,
     haze: { product: 'mobile', chatId: 'voice:codeply' },
   });
   let reply = ''; let mood = '';
@@ -4155,7 +4166,7 @@ async function codeplyVoice({ turns, signal, approve, onStep, mode }) {
     const ev = wisp ? wisp.mood(raw) : raw;
     if (ev.type === 'text' && !ev.interim) { reply += (reply ? ' ' : '') + ev.text; if (ev.mood) mood = ev.mood; }
     else if (ev.type === 'tool_start' && onStep) {
-      const who = ev.name === 'bring_in' && ev.args && ev.args.specialist ? `Bringing in ${ev.args.specialist}` : '';
+      const who = ev.name === 'bring_in' && ev.args && ev.args.specialist ? `Bringing in ${ev.args.specialist}` : ev.name === 'claude_code' ? 'Asking Claude Code' : '';
       onStep({ name: ev.name, args: ev.args || {}, label: who });
     } else if (ev.type === 'error') throw new Error(ev.error || 'The run failed.');
     else if (ev.type === 'aborted') throw new Error('Stopped.');

@@ -227,4 +227,14 @@ contextBridge.exposeInMainWorld('craft', {
   connectToken: (name, token) => ipcRenderer.invoke('integrations:connectToken', { name, token }),
   disconnectIntegration: (name) => ipcRenderer.invoke('integrations:disconnect', name),
   publishState: (cwd) => ipcRenderer.invoke('publish:state', cwd),
+
+  // Claude Code (claude-code-desktop.js): the user's Claude plan as Wisp's background coding agent.
+  // The login is Claude Code's own (`claude auth login` in the browser); Codeply never sees the token.
+  claudeCodeState: (opts) => ipcRenderer.invoke('claudeCode:state', opts || {}),
+  claudeCodeLogin: (opts) => ipcRenderer.invoke('claudeCode:login', opts || {}),
+  claudeCodeSubmitCode: (code) => ipcRenderer.invoke('claudeCode:code', String(code || '')),
+  claudeCodeCancelLogin: () => ipcRenderer.invoke('claudeCode:cancelLogin'),
+  claudeCodeLogout: () => ipcRenderer.invoke('claudeCode:logout'),
+  claudeCodeSettings: (patch) => ipcRenderer.invoke('claudeCode:settings', patch || {}),
+  onClaudeCodeLogin: (cb) => ipcRenderer.on('claudeCode:login', (e, data) => cb(data)),
 });

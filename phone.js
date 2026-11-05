@@ -908,7 +908,7 @@ function clearLiveTool() {
   liveTool.el.remove();
   liveTool = null;
 }
-const LIVE_VERB = { run: 'Running', read_file: 'Reading', edit_file: 'Editing', write_file: 'Writing', apply_patch: 'Patching', search: 'Searching', list_dir: 'Looking in', browser_check: 'Checking', web_search: 'Searching the web for', web_fetch: 'Reading', bring_in: 'Bringing in a specialist', fetch_image: 'Downloading' };
+const LIVE_VERB = { run: 'Running', read_file: 'Reading', edit_file: 'Editing', write_file: 'Writing', apply_patch: 'Patching', search: 'Searching', list_dir: 'Looking in', browser_check: 'Checking', web_search: 'Searching the web for', web_fetch: 'Reading', bring_in: 'Bringing in a specialist', claude_code: 'Asking Claude Code', fetch_image: 'Downloading' };
 /** A specialist the agent brought in works behind it: a quiet line among the steps. */
 function addSpecialistNote(d) {
   if (!d || !d.agent) return;
