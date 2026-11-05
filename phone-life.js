@@ -54,7 +54,7 @@
     if (!force && Date.now() - lastFetch < 10000) { paint(); return; }
     lastFetch = Date.now();
     try { data = await P.relayRequest('GET', '/api/life'); error = ''; }
-    catch (e) { data = null; error = /404|not found/i.test(e.message) ? '' : ''; }
+    catch (e) { data = null; error = /404|not found|offline/i.test(e.message) ? '' : `Couldn't get your bots' work from your PC: ${e.message}`; }
     paint();
   }
 

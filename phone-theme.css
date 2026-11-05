@@ -141,6 +141,24 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible { outline: 
 .msg mark { background: color-mix(in srgb, var(--c-yellow) 28%, transparent); color: inherit; padding: 0 3px; border-radius: 4px; }
 .msg hr { border: 0; height: 1px; background: var(--sep); margin: 16px 0; }
 .msg blockquote { margin: 0 0 10px; padding: 2px 0 2px 14px; border-left: 3px solid var(--border-strong); color: var(--muted); }
+/* Link chips (link-chips.js): a bare link reads as a quiet pill with the
+   site's icon and name. Inline-block, so it sits on the text's baseline. */
+a.link-chip .link-globe { -webkit-mask-size: 18px 18px; mask-size: 18px 18px; }
+a.link-chip, .msg a.link-chip {
+  display: inline-block; height: 30px; margin: 1px 1px; padding: 0 11px 0 6px; border-radius: 9px; vertical-align: middle;
+  background: var(--fill); box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text); font-size: 16px; line-height: 30px; letter-spacing: -.01em; text-decoration: none; white-space: nowrap;
+  -webkit-tap-highlight-color: transparent; transition: background-color .12s var(--ease);
+}
+a.link-chip:active { background: color-mix(in srgb, var(--text) 14%, transparent); }
+@media (hover: hover) { a.link-chip:hover { background: color-mix(in srgb, var(--text) 11%, transparent); } }
+.link-chip-icon { display: inline-block; width: 20px; height: 20px; margin-right: 8px; border-radius: 5px; vertical-align: -5px; }
+.link-chip-name { font-weight: 500; }
+.link-chip-sep { margin: 0 5px; color: var(--faint); }
+.link-chip-path { color: var(--muted); }
+.link-globe { background: currentColor; color: var(--faint); border-radius: 0; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M3.5 12h17M12 3c2.4 2.6 3.6 5.6 3.6 9s-1.2 6.4-3.6 9c-2.4-2.6-3.6-5.6-3.6-9S9.6 5.6 12 3z'/%3E%3C/svg%3E") center / 14px 14px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M3.5 12h17M12 3c2.4 2.6 3.6 5.6 3.6 9s-1.2 6.4-3.6 9c-2.4-2.6-3.6-5.6-3.6-9S9.6 5.6 12 3z'/%3E%3C/svg%3E") center / 14px 14px no-repeat; }
+a.md-link-short { white-space: nowrap; }
+.md-link-icon { display: inline-block; width: 15px; height: 15px; margin: 0 4px 0 1px; border-radius: 3px; vertical-align: -2px; }
 .md-c { font-weight: 600; }
 .md-tag { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 12.5px; font-weight: 600; letter-spacing: 0; vertical-align: 1px; white-space: nowrap; }
 .md-callout { margin: 4px 0 12px; padding: 10px 14px 11px; border-radius: 14px; }
@@ -198,11 +216,18 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible { outline: 
 .msg-actions svg { width: 17px; height: 17px; }
 
 /* The answer's face, small, at its start */
-/* The answer's face sits in a left column, level with the answer's first line; the answer starts after it. */
-.turn-face { position: relative; height: 0; margin-bottom: -18px; }
+/* The answer's face comes first, like a speaker before they talk: the answer's first line starts after
+   it, and every line after that uses the full width (no empty column under the face). */
+.turn-face { position: relative; height: 0; margin-bottom: -18px; z-index: 1; }
 .turn-face .wisp-el { position: absolute; left: 0; top: -2px; width: 30px; height: 30px; }
-#feed > .turn-face ~ :not(.msg.user):not(.msg-files):not(.turn-face) { margin-left: 42px; }
-#feed > .turn-face ~ .msg-actions { margin-left: 34px; }
+/* text first: only its first line moves over */
+#feed > .turn-face + .msg:not(.user) > :is(p, h1, h2, h3, h4, h5, h6):first-child { text-indent: 42px; }
+#feed > .turn-face + .msg:not(.user):not(:has(> *)) { text-indent: 42px; }
+/* one-line rows (thinking, the steps summary) sit next to the face */
+#feed > .turn-face + .working, #feed > .turn-face + .steps-group > summary { margin-left: 42px; }
+/* anything else first (a list, table, code, a card) starts on the line below the face */
+#feed > .turn-face + .msg:not(.user) > :not(p, h1, h2, h3, h4, h5, h6):first-child,
+#feed > .turn-face + :is(.question, .inline-row, .msg.note) { margin-top: 34px; }
 .turn-face-state { font-size: 15px; color: var(--muted); }
 .turn-face-state:empty { display: none; }
 .turn-face:has(.turn-face-state:not(:empty)) { height: auto; min-height: 26px; margin-bottom: 0; padding-left: 42px; display: flex; align-items: center; }

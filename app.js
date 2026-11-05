@@ -447,7 +447,7 @@ function showView(name) {
   if (name === 'viewHome') navRecord('home');
 }
 
-// ─── Tiny markdown renderer (safe: everything escaped first) ────────────────
+// ─── Tiny markdown renderer (safe: every piece is escaped as it's placed) ───
 function esc(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -458,6 +458,18 @@ function esc(s) {
 function mdToHtml(text, opts) {
   return window.CraftRich.render(text, opts);
 }
+
+// Links in the chat (link chips, [text](url) links) open in a new tab of the
+// built-in browser, like a link that opens a new window there; never in this
+// window, and never in a bare Electron window.
+function chatLinkOpen(e) {
+  const a = e.target.closest && e.target.closest('a.link-chip, a.md-link');
+  if (!a || (e.type === 'auxclick' && e.button !== 1)) return;
+  e.preventDefault();
+  if (api && api.browserPanelNewTab && /^https?:\/\//i.test(a.href)) api.browserPanelNewTab(a.href);
+}
+document.addEventListener('click', chatLinkOpen);
+document.addEventListener('auxclick', chatLinkOpen);
 
 // ─── Background commands ────────────────────────────────────────────────────
 // Commands the agent started with run background=true (dev servers, watchers).
@@ -690,7 +702,7 @@ function addUserMessage(text, images) {
   }
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.textContent = shown.text;
+  bubble.innerHTML = window.CodeplyLinks ? window.CodeplyLinks.linkText(shown.text) : esc(shown.text); // links as chips
   if (shown.text || !shown.files.length) msg.appendChild(bubble);
   msg.userText = text;
   msg.userImages = images && images.length ? images : undefined;

@@ -27,10 +27,15 @@ for (const [from, to] of [
   ['phone-wisp.js', 'phone-wisp.js'],     // Wisp, the agent's face
   ['phone-app.js', 'phone-app.js'],       // the screens around the chat (Tasks, Settings, sign up...)
   ['phone-app.css', 'phone-app.css'],
+  ['phone-work.js', 'phone-work.js'],     // Schedules, Calendar and Checks (no PC needed)
+  ['phone-work.css', 'phone-work.css'],
+  ['phone-bots.js', 'phone-bots.js'],     // the bots, run from the phone while the PC is off
+  ['phone-taste.js', 'phone-taste.js'],   // Codeply's taste skill for designs made on the phone
   ['wisp.js', 'wisp.js'],
   ['phone-stt-worker.js', 'phone-stt-worker.js'],
   ['bot-avatar.js', 'bot-avatar.js'],
   ['attachments.js', 'attachments.js'],
+  ['link-chips.js', 'link-chips.js'],     // links in messages as chips (shared with Craft)
   ['phone.manifest.json', 'manifest.json'],
   [path.join('vendor', 'phone', 'nacl-fast.min.js'), 'nacl-fast.min.js'],
   [path.join('vendor', 'phone', 'blake2b.js'), 'blake2b.js'],
@@ -53,6 +58,22 @@ for (const f of ['pdf.min.mjs', 'pdf.worker.min.mjs', 'LICENSE']) fs.copyFileSyn
 const mascots = path.join(root, 'assets', 'agents');
 for (const f of fs.readdirSync(mascots).filter((f) => f.endsWith('.png'))) {
   fs.copyFileSync(path.join(mascots, f), path.join(target, 'agent-mascots', f));
+}
+
+// The logos on the phone's Connected apps screen.
+fs.mkdirSync(path.join(target, 'apps'), { recursive: true });
+for (const [from, to] of [['Gmail.webp', 'gmail.webp'], ['Slack.webp', 'slack.webp'], ['Github.webp', 'github.webp'], ['Vercel.png', 'vercel.png'], ['Supabase.jpg', 'supabase.jpg']]) fs.copyFileSync(path.join(root, from), path.join(target, 'apps', to));
+
+// Codeply's taste skill for designs made on the phone (phone-taste.js): the art-direction library and the
+// guides, from the same skill folder the PC's agent uses, so both follow the same rules.
+{
+  const skill = path.join(root, 'codeply-cli', 'skills', 'codeply-taste');
+  const lib = (n) => JSON.parse(fs.readFileSync(path.join(skill, 'library', `${n}.json`), 'utf8'));
+  const md = (n) => fs.readFileSync(path.join(skill, n), 'utf8');
+  fs.writeFileSync(path.join(target, 'taste.json'), JSON.stringify({
+    directions: lib('directions'), palettes: lib('palettes'), type: lib('type'),
+    guides: { skill: md('SKILL.md'), tells: md('references/tells.md'), copy: md('references/copy.md'), colour: md('references/colour.md'), type: md('references/type.md'), layout: md('references/layout.md') },
+  }));
 }
 
 // Static hosting config for Vercel: no build step, and never cache the app

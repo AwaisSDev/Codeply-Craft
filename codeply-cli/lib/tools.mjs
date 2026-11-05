@@ -2491,6 +2491,20 @@ async function bring_in(args, ctx) {
   return ctx.bringIn({ specialist, task, signal: ctx.signal });
 }
 
+// Wisp hands coding work to Claude Code (lib/claude-code.js), the user's own
+// Claude plan running headless in this project, and waits for its report.
+// The host provides ctx.claudeCode, which runs it, shows its steps in the
+// chat and returns its report plus what it really did, for Wisp to review.
+async function claude_code(args, ctx) {
+  if (typeof ctx.claudeCode !== 'function') {
+    return { ok: false, output: 'Claude Code is not connected here. Do the work yourself, or tell the user they can log in to Claude Code in Connect Apps.' };
+  }
+  const task = String(args.task || args.prompt || '').trim();
+  if (!task) return { ok: false, output: 'claude_code needs <task>: the goal, the files, what you already know, and what "done" means (or, on a later round, exactly what to fix).' };
+  const fresh = /^(1|true|yes)$/i.test(String(args.fresh || '').trim());
+  return ctx.claudeCode({ task, fresh, model: String(args.model || '').trim(), signal: ctx.signal });
+}
+
 // Wisp creates a new specialist for its team, or refines one it made.
 async function create_specialist(args, ctx) {
   if (typeof ctx.createSpecialist !== 'function') {
@@ -2661,6 +2675,7 @@ export const TOOLS = {
   todo,
   ask_bot,
   bring_in,
+  claude_code,
   create_specialist,
   schedule,
   talk_to,
@@ -2685,6 +2700,7 @@ export const TOOL_DISPLAY = {
   ask_user:   { verb: 'ask',    icon: '?' },
   ask_bot:    { verb: 'asked',  icon: '◉' },
   bring_in:   { verb: 'brought in', icon: '◉' },
+  claude_code: { verb: 'claude code', icon: '✳' },
   create_specialist: { verb: 'created', icon: '✦' },
   schedule:   { verb: 'scheduled', icon: '◷' },
   talk_to:    { verb: 'switched to', icon: '◉' },
@@ -2749,14 +2765,14 @@ export const TOOL_DISPLAY = {
 // agent.mjs; this covers every other tool that changes something outside the
 // conversation, so read-only can't be escaped through a side door.
 const MUTATING_TOOLS = new Set([
-  'write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'calendar_update', 'slack_post_message', 'add_model', 'use_computer',
+  'write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'calendar_update', 'slack_post_message', 'add_model', 'use_computer', 'claude_code',
   'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo',
   'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github',
 ]);
 
 // Everything that isn't designing: commands, deploys, databases, messages, other projects.
 export const DESIGN_BLOCKED = new Set([
-  'run', 'job', 'use_computer', 'lsp', 'mcp', 'ask_bot', 'bring_in', 'create_specialist', 'schedule', 'talk_to', 'hand_off', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model', 'browser_check', 'bot_email_send',
+  'run', 'job', 'use_computer', 'lsp', 'mcp', 'ask_bot', 'bring_in', 'claude_code', 'create_specialist', 'schedule', 'talk_to', 'hand_off', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model', 'browser_check', 'bot_email_send',
   'gmail_send', 'gmail_draft', 'gmail_search', 'gmail_read', 'drafts_list', 'calendar_list', 'calendar_add', 'calendar_update', 'slack_post_message',
   'vercel_deploy', 'vercel_api', 'supabase_create_project', 'supabase_delete_project', 'supabase_api', 'supabase_sql',
   'github_create_repo', 'publish_check', 'publish_connect', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github',

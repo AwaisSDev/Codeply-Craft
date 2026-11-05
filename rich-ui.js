@@ -56,7 +56,9 @@
       .replace(LATEX_TOKEN, (_, n) => LATEX_MAP[n] || '');
     // [text](url) and bare links. Only web and mail links become links.
     s = s.replace(/\[([^\]\n]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/g, (_, t, u) => hold(`<a class="rx-link" href="${u}" data-rx="link">${t}</a>`));
-    s = s.replace(/(^|[\s(])(https?:\/\/[^\s<)\u0000]+[^\s<).,;:!?'\u0000])/g, (_, pre, u) => pre + hold(`<a class="rx-link" href="${u}" data-rx="link">${u}</a>`));
+    // A bare link shows as a chip with the site's icon and name (link-chips.js), when that is loaded.
+    const chipOf = (u) => (window.CodeplyLinks ? window.CodeplyLinks.chip(u.replace(/&amp;/g, '&')) : '');
+    s = s.replace(/(^|[\s(])(https?:\/\/[^\s<)\u0000]+[^\s<).,;:!?'\u0000])/g, (_, pre, u) => pre + hold(chipOf(u) || `<a class="rx-link" href="${u}" data-rx="link">${u}</a>`));
     s = s.replace(/:([a-z]+(?:-[a-z]+)?)\[([^\]\n]+)\]/g, (m, name, text) => directive(name, text) ?? m);
     s = s
       .replace(/\*\*(?=\S)([^*\n]*?\S)\*\*/g, '<strong>$1</strong>')

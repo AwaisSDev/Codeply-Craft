@@ -37,6 +37,8 @@ export const WORKFLOW_PATH = `.github/workflows/${WORKFLOW_FILE}`;
 export const MIRROR_PREFIX = 'craft-workspace-';
 export const MIRROR_DESCRIPTION = 'Craft workspace mirror: a private backup that Craft cloud runs work in.';
 export const SESSIONS_BRANCH = 'craft-sessions';
+/** craft-sessions' vercel.json: Vercel never deploys that branch (each task writes to it many times). */
+export const NO_DEPLOY = { git: { deploymentEnabled: false } };
 export const ENGINE = 'codeply-cli@0.5';
 export const taskBranch = (id) => `craft/task-${id}`;
 export const checkName = (id) => `craft ${id}`;
@@ -532,6 +534,14 @@ export async function syncCloudConnections({ home = defaultHome(), fetchImpl = f
     const auth = require('./auth.js');
     const token = await auth.getAccessToken().catch(() => null);
     if (!token) return false;
+    // An app connected from the phone (a token pasted there) lives only in the account's copy: keep it, unless
+    // this PC disconnected that app itself (then it's gone everywhere).
+    try {
+      const cur = await fetchImpl(auth.SUPABASE_URL + '/functions/v1/connections', { method: 'POST', headers: { Authorization: 'Bearer ' + token, apikey: auth.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get' }), signal: AbortSignal.timeout(15_000) });
+      const j = await cur.json().catch(() => ({}));
+      const dropped = new Set(config.disconnectedApps ? config.disconnectedApps() : []);
+      for (const name of CONNECTION_APPS) if (!connections[name] && !dropped.has(name) && j && j.connections && j.connections[name] && j.connections[name].accessToken) connections[name] = j.connections[name];
+    } catch {}
     const r = await fetchImpl(auth.SUPABASE_URL + '/functions/v1/connections', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + token, apikey: auth.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
@@ -689,6 +699,7 @@ export async function startCloudRun({ cwd, token, prompt, mode = 'Build', sessio
   if (b) task.bot = { name: b.name };
   if (extra.kind) task.kind = 'task';
   const files = branchFiles(api, p.repo);
+  if (baseSha) await files.ensure(baseSha).catch(() => {}); // craft-sessions, with Vercel told not to deploy it
   const live = await liveRunner(api, p.repo, task.sessionId);
   if (live) {
     await files.write(`${SESSION_PATHS.queue(task.sessionId)}/${Date.now()}-${task.id}.json`, { id: task.id, prompt, mode, ...extra }, `Craft queue ${task.id}`);
@@ -1071,6 +1082,14 @@ export function branchFiles(api, repo, branch = SESSIONS_BRANCH) {
   const ensure = async (baseSha) => {
     const ref = await api('GET', `/repos/${repo}/git/ref/heads/${branch}`, null, { allow: [404] });
     if (ref.status === 404) await api('POST', `/repos/${repo}/git/refs`, { ref: `refs/heads/${branch}`, sha: baseSha }, { allow: [422] });
+    // craft-sessions is only task state, written many times per task. Hosts that deploy every branch (Vercel)
+    // would start a deployment for each write, so the branch tells them not to deploy it.
+    if (branch === SESSIONS_BRANCH) {
+      const cur = await read('vercel.json').catch(() => null);
+      if (!(cur && cur.json && cur.json.git && cur.json.git.deploymentEnabled === false)) {
+        await put('vercel.json', Buffer.from(`${JSON.stringify(NO_DEPLOY, null, 2)}\n`).toString('base64'), 'Craft: never deploy this branch').catch(() => {});
+      }
+    }
   };
   return { read, list, write, writeBytes, remove, ensure };
 }

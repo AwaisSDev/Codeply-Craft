@@ -166,10 +166,12 @@ Reply with the whole file in one \`\`\`html block, then one or two short lines o
       const ask = current
         ? `This is the current ${kindOf(d.kind).label.toLowerCase()} design:\n${fence}html\n${current.slice(0, 120000)}\n${fence}\n\nChange it: ${text}\nReply with the whole updated file.`
         : `Make a ${kindOf(d.kind).label.toLowerCase()} design: ${text}`;
+      // A new design gets an art direction dealt by Codeply's taste skill (phone-taste.js); a change keeps the design's own.
+      const taste = !current && window.CraftTaste ? await window.CraftTaste.brief({ kind: d.kind, text }).catch(() => '') : '';
       const res = await fetch(P.AI_PROXY_URL, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, apikey: P.SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...P.deviceHeader() },
-        body: JSON.stringify({ messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: ask }], opts: { maxTokens: 16000 } }),
+        body: JSON.stringify({ messages: [{ role: 'system', content: SYSTEM }, ...(taste ? [{ role: 'system', content: taste }] : []), { role: 'user', content: ask }], opts: { maxTokens: 16000 } }),
       });
       const data = await res.json().catch(() => ({}));
       const reply = res.ok && data.success && data.data && data.data.choices && data.data.choices[0] ? String(data.data.choices[0].message.content || '') : '';
@@ -243,7 +245,7 @@ Reply with the whole file in one \`\`\`html block, then one or two short lines o
     $('designTitle').textContent = d.title;
     const old = body.querySelector('.dg-stage');
     const steps = d.running ? `<div class="dg-status"><span class="spinner"></span><span class="shine">${esc(STEP[d.step] || (d.onPc ? 'Designing on your PC' : 'Designing'))}</span></div>` : '';
-    const chat = (d.chat || []).map((m) => m.role === 'user' ? `<div class="msg user">${esc(m.text)}</div>` : m.role === 'error' ? `<div class="dg-err">${esc(m.text)}</div>` : `<div class="dg-reply">${P.md ? P.md(m.text) : esc(m.text)}</div>`).join('');
+    const chat = (d.chat || []).map((m) => m.role === 'user' ? `<div class="msg user">${P.linkText ? P.linkText(m.text) : esc(m.text)}</div>` : m.role === 'error' ? `<div class="dg-err">${esc(m.text)}</div>` : `<div class="dg-reply">${P.md ? P.md(m.text) : esc(m.text)}</div>`).join('');
     const canBuild = d.kind === 'website' || d.kind === 'app';
     const html = `
       <div class="dg-stage" id="dgStage">${old && !reload ? old.innerHTML : '<div class="dg-wait"><span class="spinner"></span></div>'}</div>

@@ -16,6 +16,10 @@ if (process.env.CRAFT_VOICE_SELFTEST) { require('./voice/selftest'); return; }
 // Same for Life Integrated Bots: `CRAFT_LIFE_SELFTEST=<folder>` (life-selftest.js).
 if (process.env.CRAFT_LIFE_SELFTEST) { require('./life-selftest'); return; }
 const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell, screen, Tray, Menu, nativeImage, powerSaveBlocker, Notification, clipboard } = require('electron');
+// Every ipcMain.handle is also kept here, so the phone's relay can run the same handler as Craft's own window
+// (the phone's Connected apps uses Connect Apps' handlers rather than copies of them).
+const ipcHandlers = {};
+{ const handle = ipcMain.handle.bind(ipcMain); ipcMain.handle = (ch, fn) => { ipcHandlers[ch] = fn; return handle(ch, fn); }; }
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -2619,6 +2623,30 @@ function screenshotFile(p) {
   return resolved.startsWith(checksDir) && fs.existsSync(resolved) ? resolved : null;
 }
 
+// A screenshot for the phone. The relay carries every byte as 60 KB broadcast
+// chunks, and a full-size capture from a HiDPI screen is often 2-4 MB once
+// base64'd: dozens of chunks per picture, a few pictures at once, and Realtime
+// drops or throttles them until the phone gives up. So it travels as a JPEG no
+// wider than 1280px (a few hundred KB), and never more than 3 MB.
+// Only the PNG/JPEG/WebP files Craft saved itself (browser-checks, which also
+// holds the cloud's screenshots the PC downloaded) can be read this way.
+const PHONE_SHOT_MAX_W = 1280;
+const PHONE_SHOT_MAX_BYTES = 3 * 1024 * 1024;
+function screenshotForPhone(p) {
+  const file = screenshotFile(p);
+  if (!file || !/\.(png|jpe?g|webp)$/i.test(file) || !fs.statSync(file).isFile()) return { status: 404, body: { error: 'That screenshot is no longer on this PC.' } };
+  if (fs.statSync(file).size > 40 * 1024 * 1024) return { status: 413, body: { error: 'That screenshot is too large to send.' } };
+  let img = nativeImage.createFromPath(file);
+  if (img.isEmpty()) return { status: 415, body: { error: 'That screenshot could not be read on this PC.' } };
+  if (img.getSize().width > PHONE_SHOT_MAX_W) img = img.resize({ width: PHONE_SHOT_MAX_W, quality: 'good' });
+  const { width, height } = img.getSize();
+  for (const q of [82, 68, 52]) {
+    const dataUrl = `data:image/jpeg;base64,${img.toJPEG(q).toString('base64')}`;
+    if (dataUrl.length <= PHONE_SHOT_MAX_BYTES) return { status: 200, body: { dataUrl, width, height } };
+  }
+  return { status: 413, body: { error: 'That screenshot is too large to send.' } };
+}
+
 async function handleBridgeApi(method, pathname, query, body) {
   body = body || {};
   if (pathname.startsWith('/api/cloud/')) {
@@ -2630,6 +2658,24 @@ async function handleBridgeApi(method, pathname, query, body) {
     const r = await autopilot.bridge(method, pathname, body);
     if (r) return r;
   }
+  // Connected apps from the phone's Settings: the same handlers as Craft's Connect Apps. A sign-in that needs a
+  // browser (Gmail, Slack, and the OAuth way for the others) opens on this PC. After a change the account's copy
+  // (the connections function, which the phone and cloud runs read) is updated.
+  if (pathname.startsWith('/api/integrations')) {
+    const name = String((body && body.name) || '');
+    const sync = () => import(require('url').pathToFileURL(path.join(CLI_DIR, 'lib', 'cloud.mjs')).href).then((m) => m.syncCloudConnections()).catch(() => {});
+    const call = (ch, ...args) => new Promise((resolve) => { const h = ipcHandlers[ch]; if (!h) resolve({ ok: false, error: 'Not available.' }); else Promise.resolve(h({}, ...args)).then(resolve, (e) => resolve({ ok: false, error: e.message })); });
+    if (method === 'GET' && pathname === '/api/integrations') return { status: 200, body: await call('integrations:status') };
+    if (method === 'POST' && pathname === '/api/integrations/connect') {
+      const ch = { gmail: 'integrations:connectGmail', slack: 'integrations:connectSlack', vercel: 'integrations:connectVercel', supabase: 'integrations:connectSupabase', github: 'integrations:connectGithub' }[name];
+      if (!ch) return { status: 400, body: { error: 'Unknown app.' } };
+      const r = await call(ch); await sync(); return { status: 200, body: r || { ok: true } };
+    }
+    if (method === 'POST' && pathname === '/api/integrations/token') { const r = await call('integrations:connectToken', { name, token: String((body && body.token) || '') }); await sync(); return { status: 200, body: r }; }
+    if (method === 'POST' && pathname === '/api/integrations/disconnect') { const r = await call('integrations:disconnect', name); await sync(); return { status: 200, body: r }; }
+  }
+  // Wisp's team for the phone's Specialists page (the ones it has called and the ones it made).
+  if (method === 'GET' && pathname === '/api/wisp/team') return { status: 200, body: wispDesktop.teamState() };
   // Bots for the phone's Calls (list, starter templates, save a finished call).
   if (pathname === '/api/bots' || pathname.startsWith('/api/bots/')) {
     const r = await botsDesktop.bridge(method, pathname, query, body);
@@ -2671,11 +2717,7 @@ async function handleBridgeApi(method, pathname, query, body) {
     const list = [...commandsLib.loadCommands(known || null).values()].map((c) => ({ name: c.name, description: c.description, mode: c.mode }));
     return { status: 200, body: { commands: list } };
   }
-  if (method === 'GET' && pathname === '/api/screenshot-data') {
-    const file = screenshotFile(query.get('path'));
-    if (!file) return { status: 404, body: { error: 'Screenshot not found.' } };
-    return { status: 200, body: { dataUrl: `data:image/png;base64,${fs.readFileSync(file).toString('base64')}` } };
-  }
+  if (method === 'GET' && pathname === '/api/screenshot-data') return screenshotForPhone(query.get('path'));
   if (method === 'GET' && pathname === '/api/images/search') {
     return { status: 200, body: await searchImages(query.get('q') || '') };
   }
@@ -3154,7 +3196,7 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
     const classicRun = () => agentMod.runAgent({
       userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route: wisp?.route || route,
       roleId, goal, maxSteps, verifyOnly, botPrompt, askBot: bot?.askBot, botId: bot?.botId,
-      bringIn: wisp?.bringIn, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, talkTo: wisp?.talkTo, agentRole: wisp ? wisp.agentRole : undefined,
+      bringIn: wisp?.bringIn, claudeCode: wisp?.claudeCode, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, talkTo: wisp?.talkTo, agentRole: wisp ? wisp.agentRole : undefined,
       // Pass work to the bot whose job it is (brain-desktop.js); the user asked for this chat.
       handOff,
       haze: { product: 'craft', chatId: session.id }, todos,
@@ -3167,8 +3209,11 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
     for await (const raw of run) {
       // Wisp's reply starts with a [mood: x] tag: it sets the face, and never shows.
       const ev = wisp ? wisp.mood(raw) : raw;
-      if (wisp && ev.type === 'tool_start' && ev.name === 'bring_in') continue; // the specialist's own steps show instead
-      if (wisp && ev.type === 'tool_end' && ev.name === 'bring_in') {
+      // bring_in and claude_code show as the specialist's (or Claude Code's) own steps instead of a row of their own.
+      const delegated = wisp && (ev.name === 'bring_in' || ev.name === 'claude_code');
+      if (delegated && ev.type === 'tool_start') continue;
+      // A claude_code call that never started (not connected, said no) keeps its row, so the chat shows why.
+      if (delegated && ev.type === 'tool_end' && (ev.name === 'bring_in' || ev.meta?.specialist)) {
         if (bot) bot.see(ev);
         handoffDesktop.see(session, ev);
         continue;
@@ -4141,6 +4186,14 @@ brainDesktop.init({
   onBotsChange: () => botsWatch.poke(),
 });
 // Bots: named agents with a job, a tone, memory and an avatar (see bots-desktop.js).
+// Claude Code (claude-code-desktop.js): the user's own Claude plan as a background
+// coding agent that Wisp briefs and reviews. Its login card lives in Connect Apps.
+const claudeDesktop = require('./claude-code-desktop');
+claudeDesktop.init({
+  ipcMain, cliDir: CLI_DIR, sendEvent, recordToolEnd,
+  sendWindow: (channel, data) => { if (win && !win.isDestroyed()) win.webContents.send(channel, data); },
+  store: { get: () => store.claudeCode || {}, set: (next) => { store.claudeCode = { ...(store.claudeCode || {}), ...next }; saveStore(); } },
+});
 // Wisp (wisp-desktop.js): the main agent of every Craft chat, and its team of specialists.
 const wispDesktop = require('./wisp-desktop');
 wispDesktop.init({
@@ -4173,7 +4226,7 @@ async function codeplyVoice({ turns, signal, approve, onStep, mode }) {
   const run = agentMod.runAgent({
     userMessage, history, mode: 'Build', cwd, approve, browser: browserCheck, signal, route, maxSteps: 24,
     botPrompt: (native) => [wisp ? wisp.prompt(native) : '', rules].filter(Boolean).join('\n\n'),
-    bringIn: wisp?.bringIn, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, agentRole: wisp ? wisp.agentRole : undefined,
+    bringIn: wisp?.bringIn, claudeCode: wisp?.claudeCode, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, agentRole: wisp ? wisp.agentRole : undefined,
     haze: { product: 'mobile', chatId: 'voice:codeply' },
   });
   let reply = ''; let mood = '';
@@ -4181,7 +4234,7 @@ async function codeplyVoice({ turns, signal, approve, onStep, mode }) {
     const ev = wisp ? wisp.mood(raw) : raw;
     if (ev.type === 'text' && !ev.interim) { reply += (reply ? ' ' : '') + ev.text; if (ev.mood) mood = ev.mood; }
     else if (ev.type === 'tool_start' && onStep) {
-      const who = ev.name === 'bring_in' && ev.args && ev.args.specialist ? `Bringing in ${ev.args.specialist}` : '';
+      const who = ev.name === 'bring_in' && ev.args && ev.args.specialist ? `Bringing in ${ev.args.specialist}` : ev.name === 'claude_code' ? 'Asking Claude Code' : '';
       onStep({ name: ev.name, args: ev.args || {}, label: who });
     } else if (ev.type === 'error') throw new Error(ev.error || 'The run failed.');
     else if (ev.type === 'aborted') throw new Error('Stopped.');

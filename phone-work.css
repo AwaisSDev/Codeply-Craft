@@ -1,0 +1,110 @@
+/* Schedules, Calendar and Checks (phone-work.js). Built on phone-app.css's panels, lists and chips. */
+.wk-list { background: var(--group); border: 1px solid var(--sep); border-radius: 18px; overflow: hidden; }
+.wk-list > * + * { border-top: 1px solid var(--sep); }
+.wk-block { margin-bottom: 6px; }
+.wk-block .sec { margin-top: 10px; }
+.wk-err { color: var(--red) !important; }
+.wk-on { color: var(--green); }
+.wk-warn { color: var(--orange); }
+.wk-off { color: var(--muted); }
+
+/* a scheduled task row */
+.wk-sched { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; text-align: left; color: var(--text); }
+.wk-sched-ico { width: 36px; height: 36px; border-radius: 10px; background: var(--surface); display: grid; place-items: center; flex: none; }
+.wk-sched-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wk-sched-main b { font-size: 15.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wk-sched-main small { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wk-last { flex: none; font-size: 13px; font-weight: 600; text-align: right; display: flex; flex-direction: column; color: var(--muted); }
+.wk-last em { font-style: normal; font-weight: 400; font-size: 12px; }
+.wk-last.done { color: var(--green); }
+.wk-last.failed, .wk-last.cancelled { color: var(--red); }
+.wk-last.running { color: var(--blue); }
+
+/* status dots and pills */
+.wk-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; background: var(--muted); }
+.wk-dot.pass { background: var(--green); }
+.wk-dot.fail, .wk-dot.err { background: var(--red); }
+.wk-dot.pending { background: var(--orange); animation: wk-pulse 1.4s ease-in-out infinite; }
+.wk-dot.cancel, .wk-dot.skip, .wk-dot.none, .wk-dot.off { background: var(--muted); opacity: .6; }
+@keyframes wk-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .wk-dot.pending { animation: none; } }
+.wk-pill { font-size: 12.5px !important; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--surface); }
+.wk-pill:empty { display: none; }
+.wk-pill.pass { color: var(--green) !important; }
+.wk-pill.fail, .wk-pill.err { color: var(--red) !important; }
+.wk-pill.pending { color: var(--orange) !important; }
+
+/* a check line (a link when it has somewhere to go) */
+.wk-ck { display: flex; align-items: center; gap: 11px; padding: 11px 14px; color: var(--text); text-decoration: none; }
+.wk-ck-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.wk-ck-main b { font-size: 14.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wk-ck-main small { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wk-ck-r { flex: none; font-size: 12.5px; color: var(--muted); }
+
+/* calendar */
+.wk-calbar { display: flex; align-items: center; justify-content: space-between; margin: 10px 4px 0; font-size: 15px; font-weight: 600; }
+.wk-calbar button { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: var(--muted); }
+.wk-ev { display: flex; gap: 14px; width: 100%; padding: 12px 14px; text-align: left; color: var(--text); align-items: flex-start; }
+.wk-ev-time { flex: none; width: 66px; font-size: 13.5px; font-weight: 600; display: flex; flex-direction: column; }
+.wk-ev-time em { font-style: normal; font-weight: 400; color: var(--muted); font-size: 12.5px; }
+.wk-ev-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wk-ev-main b { font-size: 15px; font-weight: 500; }
+.wk-ev-main small { font-size: 13px; color: var(--muted); }
+
+/* runs in a schedule */
+.wk-run { display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 14px; text-align: left; color: var(--text); }
+.wk-run span { display: flex; flex-direction: column; }
+.wk-run b { font-size: 14.5px; font-weight: 600; }
+.wk-run small { font-size: 12.5px; color: var(--muted); }
+
+/* bottom sheet */
+.wk-sheet { position: fixed; inset: 0; z-index: 400; display: flex; align-items: flex-end; }
+.wk-sheet-bg { position: absolute; inset: 0; background: rgba(0, 0, 0, .45); }
+.wk-sheet-card { position: relative; width: 100%; max-height: 88vh; overflow-y: auto; background: var(--bg); border-radius: 24px 24px 0 0; padding: 8px 18px calc(22px + env(safe-area-inset-bottom)); box-shadow: 0 -10px 40px rgba(0, 0, 0, .25); animation: wk-up .28s var(--ease, ease-out); }
+@keyframes wk-up { from { transform: translateY(40px); opacity: 0; } }
+.wk-handle { width: 38px; height: 5px; border-radius: 3px; background: var(--border-strong, var(--sep)); margin: 2px auto 12px; }
+.wk-title { font-size: 19px; font-weight: 600; letter-spacing: -.02em; margin: 2px 0 8px; }
+.wk-text { font-size: 15px; line-height: 1.5; color: var(--text); margin: 6px 0; }
+.wk-text.small { font-size: 13px; color: var(--muted); }
+.wk-text .wk-dot { margin-right: 4px; vertical-align: 1px; }
+.wk-prompt { background: var(--group); border: 1px solid var(--sep); border-radius: 14px; padding: 12px 14px; font-size: 14.5px; line-height: 1.5; white-space: pre-wrap; margin: 10px 0; }
+.wk-md { font-size: 15px; line-height: 1.55; margin: 10px 0; }
+.wk-field { display: flex; flex-direction: column; gap: 6px; margin: 12px 0 0; font-size: 13px; color: var(--muted); font-weight: 500; flex: 1; min-width: 0; }
+.wk-field[hidden] { display: none; }
+.wk-field input, .wk-field select, .wk-field textarea { font: inherit; font-size: 16px; color: var(--text); background: var(--group); border: 1px solid var(--border); border-radius: 12px; padding: 11px 12px; width: 100%; box-sizing: border-box; outline: none; }
+.wk-field textarea { resize: vertical; line-height: 1.45; }
+.wk-row2 { display: flex; gap: 10px; }
+.wk-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+.wk-actions.wrap { flex-wrap: wrap; justify-content: flex-start; }
+.wk-actions .btn { text-decoration: none; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; }
+.wk-actions .danger { color: var(--red); }
+.wk-toast { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 500; background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 500; box-shadow: 0 8px 24px rgba(0, 0, 0, .2); max-width: 90vw; }
+
+/* Tasks | Checks tabs */
+.wk-tabs { margin: 2px 16px 6px; }
+.wk-tabs button.on { background: var(--surface); }
+#tasksChecks.hidden, #tasksBody.hidden { display: none; }
+/* Specialists */
+.wk-spec { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; text-align: left; color: var(--text); }
+.wk-spec-face { width: 40px; height: 40px; flex: none; display: block; }
+.wk-spec-face .wisp-el, .wk-spec-face svg { width: 100%; height: 100%; }
+.wk-spec-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wk-spec-main b { font-size: 15.5px; font-weight: 600; }
+.wk-spec-main small { font-size: 13px; color: var(--muted); }
+.wk-spec-ins { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wk-spec-n { flex: none; font-size: 13px; color: var(--muted); }
+
+/* Connected apps */
+.wk-apps-lede { margin: 14px 4px 2px; font-size: 15px; line-height: 1.5; color: var(--text); }
+.wk-app { display: flex; align-items: center; gap: 13px; width: 100%; padding: 12px 14px; text-align: left; color: var(--text); }
+.wk-app-logo { width: 36px; height: 36px; border-radius: 10px; object-fit: contain; background: #fff; box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); padding: 5px; box-sizing: border-box; flex: none; }
+.wk-app-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wk-app-main b { font-size: 15.5px; font-weight: 600; }
+.wk-app-main small { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wk-app-act { flex: none; font-size: 13.5px; font-weight: 600; padding: 7px 13px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--border); }
+.wk-app-act.on { box-shadow: none; color: var(--muted); padding-right: 2px; }
+.wk-app-head { display: flex; align-items: center; gap: 14px; margin: 4px 0 6px; }
+.wk-app-head img { width: 44px; height: 44px; border-radius: 12px; background: #fff; padding: 6px; box-sizing: border-box; box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); object-fit: contain; }
+.wk-app-head .wk-title { margin: 0; }
+.wk-app-head .wk-text { margin: 2px 0 0; }
+.wk-text a { color: var(--link, var(--blue)); }

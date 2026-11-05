@@ -179,3 +179,12 @@
 .life-btn { height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border); background: none; color: inherit; font: inherit; font-size: 13px; flex: none; }
 .life-btn.danger { color: var(--danger); }
 .life-btn[disabled] { opacity: .5; }
+
+/* Bots at work, run from the phone while the PC is off (phone-bots.js) */
+.bw-row { flex-wrap: wrap; align-items: flex-start; }
+.bw-row .bot-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 100%; }
+.bw-row small.err { color: var(--red); }
+.bw-draft { width: 100%; box-sizing: border-box; margin-top: 6px; font: inherit; font-size: 14px; line-height: 1.45; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 9px 11px; resize: vertical; }
+.bw-acts { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.bw-acts .life-btn { display: inline-flex; align-items: center; }
+.bw-acts a.life-btn { text-decoration: none; }

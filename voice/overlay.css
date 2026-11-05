@@ -44,12 +44,13 @@ body.catching { cursor: crosshair; background: rgba(0, 0, 0, 0.01) !important; }
 .buddy.on .knot { transform: scale(1); opacity: 1; }
 .buddy.detached .knot { transform: scale(0.4); opacity: 0; }
 
-/* the second cursor: after you let go it takes over, so yours stays free */
+/* the second cursor: after you let go it takes over, so yours stays free.
+   A smooth, rounded arrowhead with a soft notch at the back, solid blue, no outline; its tip is the hot spot. */
 .pointer {
-  position: absolute; left: -1px; top: -1px; width: 17px; height: 23px; overflow: visible;
-  fill: var(--blue); stroke: #fff; stroke-width: 1.3; stroke-linejoin: round;
+  position: absolute; left: -3px; top: -3px; width: 26px; height: 26px; overflow: visible;
+  fill: var(--blue); stroke: none;
   filter: drop-shadow(0 2px 5px rgba(29, 78, 216, 0.45)) drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
-  transform: scale(0); transform-origin: 1px 1px; transition: transform 0.35s var(--ease);
+  transform: scale(0); transform-origin: 3px 3px; transition: transform 0.35s var(--ease);
 }
 .buddy.detached .pointer { transform: scale(1); }
 /* Loading (thinking, or between steps of a task): just a spinner where the cursor

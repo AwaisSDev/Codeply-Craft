@@ -13,6 +13,7 @@
 // Specialists run one at a time and cannot bring in others, so a chat never
 // has two agents editing the same folder at once.
 const path = require('path');
+const claudeDesktop = require('./claude-code-desktop');
 
 let deps = null; // { ipcMain, cliDir, sendEvent, agentMod(), browser, settings: { get(), set(on) }, recordToolEnd(session, ev, extra), startRun(payload) }
 let lib = null;
@@ -159,6 +160,11 @@ function forTurn({ session, approve, signal, route, cwd, mode, verifyOnly }) {
     };
   };
 
+  // Claude Code (claude-code-desktop.js): the user's own Claude plan as a coding agent Wisp briefs and reviews.
+  const claudeCode = canDelegate && claudeDesktop.ready()
+    ? ({ task, fresh, model, signal: sig }) => runClaude({ session, task, fresh, model, approve, signal: sig || signal, cwd })
+    : undefined;
+
   // talk_to: from the next message the user talks to that specialist itself (session.speaker),
   // with its own face and voice; "Codeply" hands them back. The face changes right away.
   const talkTo = async ({ specialist }) => {
@@ -210,8 +216,9 @@ function forTurn({ session, approve, signal, route, cwd, mode, verifyOnly }) {
 
   return {
     // Wisp's persona, its team and the ambient jobs. Built per prompt so a specialist made this turn is on the list next time.
-    prompt: (native) => W.wispPrompt({ native, canDelegate, life, phone, models: userModels() }),
+    prompt: (native) => W.wispPrompt({ native, canDelegate, life, phone, models: userModels(), claudeCode: claudeDesktop.promptState() }),
     bringIn: canDelegate ? bringIn : undefined,
+    claudeCode,
     createSpecialist: canDelegate ? createSpecialist : undefined,
     schedule: canDelegate ? (args) => scheduleTool(args, { cwd }) : undefined,
     talkTo: canDelegate ? talkTo : undefined,
@@ -226,7 +233,8 @@ async function runSpecialist({ session, spec, task, approve, signal, route, cwd,
   const W = wisp();
   const card = W.card(spec);
   const chat = recentChat(session);
-  const brief = `${task}${chat ? `\n\nRECENT CHAT THIS CAME FROM (newest last). When the task points at something said here, it means this:\n${chat}` : ''}`;
+  const track = W.trackRecord ? W.trackRecord(spec) : '';
+  const brief = `${task}${chat ? `\n\nRECENT CHAT THIS CAME FROM (newest last). When the task points at something said here, it means this:\n${chat}` : ''}${track ? `\n\n${track}` : ''}`;
   push(session, { kind: 'wisp_agent', phase: 'start', agent: card, task: task.slice(0, 600) });
   deps.sendEvent(session.id, { type: 'wisp_agent', phase: 'start', agent: card, task: task.slice(0, 600) });
 
@@ -300,6 +308,39 @@ async function runSpecialist({ session, spec, task, approve, signal, route, cwd,
         madeAnyEdit: !!(done && done.madeAnyEdit),
         files: facts.files,
         unverified,
+      },
+    },
+  };
+}
+
+/** One claude_code call: Claude Code works, then Wisp gets its report and the factual record to review. */
+async function runClaude({ session, task, fresh, model, approve, signal, cwd }) {
+  const r = await claudeDesktop.runForChat({ session, task, chat: recentChat(session), fresh, model, approve, signal, cwd });
+  if (r.rejected) return { ok: false, output: `${r.failed} Do it yourself or with your team, or ask the user how they want it done.`, meta: { rejected: true } };
+  if (signal && signal.aborted) return { ok: false, output: 'Claude Code was stopped by the user.' };
+  if (!r.actions && r.failed) return { ok: false, output: r.failed };
+  const facts = factsOf(r.actions);
+  const lines = [`CLAUDE CODE'S REPORT (round ${r.round})`, r.text || (r.failed ? `It couldn't finish: ${r.failed}.` : 'Done, nothing to add.'), '', factsText('Claude Code', facts, facts.files, r.ok ? '' : r.failed)];
+  if (r.removed && r.removed.length) lines.push(`Files deleted: ${r.removed.join(', ')}`);
+  if (r.denials && r.denials.length) lines.push(`Not allowed to run (Codeply's limits for Claude Code): ${r.denials.join('; ')}. Run what is still needed yourself with run (the user approves it), and publishing is yours.`);
+  lines.push('', r.ok
+    ? 'Now review it: read the key files, browser_check the page, design_lint pages, run the build or tests. To send it back, call claude_code again with exactly what to fix; it remembers this round.'
+    : r.auth ? 'Claude Code needs the user to log in again (Connect Apps, Claude Code). Tell them, and carry on yourself meanwhile.'
+      : 'Decide: send it back with claude_code and a clearer task, or finish the work yourself.');
+  return {
+    ok: r.ok,
+    output: lines.join('\n'),
+    meta: {
+      label: `Claude Code, round ${r.round}`,
+      specialist: {
+        id: claudeDesktop.CARD.id,
+        name: 'Claude Code',
+        actions: r.actions,
+        succeeded: [...new Set(r.actions.filter((a) => a.ok).map((a) => a.tool))],
+        madeAnyEdit: facts.files.length > 0,
+        files: facts.files,
+        // Nothing Claude Code wrote counts as checked until Wisp has looked at it.
+        unverified: facts.files,
       },
     },
   };
@@ -389,4 +430,4 @@ function init(d) {
   }
 }
 
-module.exports = { init, forTurn, enabled, activeFor, tick, routeFor };
+module.exports = { init, forTurn, enabled, activeFor, tick, routeFor, teamState };

@@ -73,7 +73,7 @@ function keepDeviceId(id) {
 })();
 const deviceHeader = () => ({ 'x-codeply-device': deviceIdValue });
 
-const CHAT_SYSTEM = 'You are Codeply, the assistant in the Codeply phone app. This is a normal chat: you cannot see, open or change files or run code here, but you can search the web (see WEB SEARCH). Answer clearly and keep it readable on a phone screen. The app draws rich markdown, so format answers well when it helps (never for a one-line reply): ## and ### headings, short paragraphs, lists, - [ ] / - [x] checklists, tables for comparisons, fenced code blocks with a language, **bold** for key words, ==highlight== for the one thing to remember, -# at the start of a line for small fine print, [[Label]] or [[Label|green]] for a coloured status tag (blue green red orange yellow purple pink teal gray), {{green: text}} for coloured text such as numbers going up or down, and > [!TIP] / > [!NOTE] / > [!WARNING] callouts for a tip or a caveat. Use colour and tags sparingly, where they carry meaning. No emoji as decoration. If someone wants changes made to one of their projects, tell them to switch to Code in the composer. When a GMAIL note appears in the conversation, it is the user’s own inbox read live just now: answer from it directly (who wrote, about what, what needs a reply) and never say you cannot see their email.\n\nWEB SEARCH\nYou can search the web whenever you want. To search, reply with ONLY this one line and nothing else: [[SEARCH: your search query]]. The app runs the search and sends you the results; then you answer (you may search once more if the first results miss). Search whenever the answer depends on anything current or checkable: news, prices, weather, scores, schedules, releases and versions, people and companies, places and opening hours, anything after your training data or that you are not sure of, and always when the user says search, look up, google, check online or find. Never say you cannot browse or search the web. Answering from results: the key facts first, short, and cite sources as markdown links like [The Verge](https://...).';
+const CHAT_SYSTEM = 'You are Codeply, the assistant in the Codeply phone app. This is a normal chat: you cannot see, open or change files or run code here, but you can search the web (see WEB SEARCH). Answer clearly and keep it readable on a phone screen. The app draws rich markdown, so format answers well when it helps (never for a one-line reply): ## and ### headings, short paragraphs, lists, - [ ] / - [x] checklists, tables for comparisons, fenced code blocks with a language, **bold** for key words, ==highlight== for the one thing to remember, -# at the start of a line for small fine print, [[Label]] or [[Label|green]] for a coloured status tag (blue green red orange yellow purple pink teal gray), {{green: text}} for coloured text such as numbers going up or down, and > [!TIP] / > [!NOTE] / > [!WARNING] callouts for a tip or a caveat. Use colour and tags sparingly, where they carry meaning. No emoji as decoration. If someone wants changes made to one of their projects, tell them to switch to Code in the composer. When a GMAIL note appears in the conversation, it is the user’s own inbox read live just now: answer from it directly (who wrote, about what, what needs a reply) and never say you cannot see their email.\n\nLIVE STATUS\nYou cannot see the user’s GitHub checks, pull requests, Actions runs, Vercel deployments, Supabase projects, calendar or scheduled cloud tasks on your own. When a CHECKS note appears in the conversation, the app read those APIs just now: answer only from it, say what it covers and when it was read, and never add anything it does not say. When there is no CHECKS note, or it says something could not be read, never guess or invent a status (no passing, failing, deployed, healthy or similar tags): say plainly that you have not checked it, and that the Checks screen (menu, Checks) reads it live.\n\nWEB SEARCH\nYou can search the web whenever you want. To search, reply with ONLY this one line and nothing else: [[SEARCH: your search query]]. The app runs the search and sends you the results; then you answer (you may search once more if the first results miss). Search whenever the answer depends on anything current or checkable: news, prices, weather, scores, schedules, releases and versions, people and companies, places and opening hours, anything after your training data or that you are not sure of, and always when the user says search, look up, google, check online or find. Never say you cannot browse or search the web. Answering from results: the key facts first, short, and cite sources as markdown links like [The Verge](https://...).';
 
 // ─── Small helpers ──────────────────────────────────────────────────────────
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c]);
@@ -153,7 +153,9 @@ function tagColor(c, label) {
 function inlineMd(s) {
   return String(s).split(/(`[^`\n]+`)/).map((part, i) => {
     if (i % 2) return `<code>${esc(part.slice(1, -1))}</code>`;
-    return esc(part)
+    // Links become placeholders first (link-chips.js): a bare one shows as a chip, [text](url) keeps its text.
+    const links = window.CodeplyLinks ? window.CodeplyLinks.protect(part) : null;
+    const html = esc(links ? links.text : part)
       .replace(/\[\[([^\]|\n]{1,40}?)(?:\|([a-z]+))?\]\]/g, (m, t, c) => `<span class="md-tag ${tagColor(c, t)}">${t.trim()}</span>`)
       .replace(/\{\{([a-z]+):\s*([^}\n]+?)\}\}/g, (m, c, t) => (MD_COLORS.includes(c) ? `<span class="md-c ${c}">${t}</span>` : m))
       .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
@@ -169,9 +171,12 @@ function inlineMd(s) {
         if (/^(?:pill|badge)-/.test(name) && c) return `<span class="md-pill md-c-${c}">${text}</span>`;
         return c ? `<span class="md-c-${c}">${text}</span>` : m;
       });
+    return links ? links.restore(html) : html;
   }).join('');
 }
 const RICH_COLORS = { green: 'green', success: 'green', red: 'red', danger: 'red', error: 'red', blue: 'blue', info: 'blue', amber: 'amber', orange: 'amber', yellow: 'amber', warning: 'amber', purple: 'purple', violet: 'purple', gray: 'gray', grey: 'gray', muted: 'gray' };
+// What you typed, escaped, with its links as chips (link-chips.js).
+const linkText = (text) => (window.CodeplyLinks ? window.CodeplyLinks.linkText(text) : esc(text));
 function md(src) {
   const parts = String(src || '').replace(/\r\n/g, '\n').split(/^\s*```/m);
   return parts.map((part, i) => {
@@ -630,7 +635,7 @@ function stepsSummary(steps) {
     if (st.classList.contains('failed')) failed++;
     const name = st.dataset.tool || '';
     const k = ['read_file', 'view_images'].includes(name) ? 'read' : ['edit_file', 'write_file', 'apply_patch'].includes(name) ? 'edit'
-      : name === 'run' ? 'run' : ['search', 'list_dir', 'design_reference_search', 'list_skills'].includes(name) ? 'search' : 'other';
+      : name === 'run' ? 'run' : name === 'browser_check' ? 'check' : ['search', 'list_dir', 'design_reference_search', 'list_skills'].includes(name) ? 'search' : 'other';
     if (k === 'other') other++; else count[k] = (count[k] || 0) + 1;
   }
   const parts = [];
@@ -638,6 +643,7 @@ function stepsSummary(steps) {
   if (count.search) parts.push(count.search === 1 ? 'searched' : `searched ${count.search} times`);
   if (count.edit) parts.push(`edited ${plural(count.edit, 'file', 'files')}`);
   if (count.run) parts.push(`ran ${plural(count.run, 'command', 'commands')}`);
+  if (count.check) parts.push(`checked ${count.check === 1 ? 'a page' : `${count.check} pages`}`);
   if (other) parts.push(`used ${plural(other, 'tool', 'tools')}`);
   let text = parts.join(', ');
   if (!text) text = thought ? 'thought it through' : 'worked on it';
@@ -693,7 +699,8 @@ function addMsg(kind, text, images) {
     text = sh.text;
   }
   const n = el('div', `msg ${kind}`);
-  if (kind === 'user' || kind === 'error' || kind === 'note') n.textContent = text || '';
+  if (kind === 'user') n.innerHTML = linkText(text || '');
+  else if (kind === 'error' || kind === 'note') n.textContent = text || '';
   else n.innerHTML = md(text);
   return append(n);
 }
@@ -780,10 +787,118 @@ function pushedHtml(e) {
   return `<div class="summary-card pushed"><div class="pushed-head">${head} <span class="add">+${e.added || 0}</span> <span class="del">-${e.removed || 0}</span></div>${fileListHtml(files)}</div>`;
 }
 
-// ─── Live rows from the PC (copied from mobile.js, made quieter) ────────────
-function screenshotFromPc(img, path) {
-  relayRequest('GET', `/api/screenshot-data?path=${encodeURIComponent(path)}`).then((r) => { if (r && r.dataUrl) img.src = r.dataUrl; else img.remove(); }).catch(() => img.remove());
+// ─── Screenshots in the feed ────────────────────────────────────────────────
+// A browser_check's screenshot sits on its step, as on the PC. A PC chat's
+// pictures live on the PC (only their path is mirrored): they come over the
+// relay, one at a time and only once the step is on screen, shrunk by the PC
+// first. A cloud run's are committed to craft-sessions (shots/<task>/<n>.png).
+// Loading is a soft placeholder at the page's shape; a picture that can't be
+// had says why in one line. Nothing is ever drawn in its place.
+const shotDone = new Map(); // key -> { url, w, h } | { error } (errors that won't fix themselves)
+const shotWait = new Map(); // key -> Promise<{ url, w, h }>
+let shotQueue = Promise.resolve();
+let shotObserver = null;
+/** The shape of the page a check rendered, from its viewport: what the placeholder is drawn at. */
+function shotShape(args) {
+  const v = String((args && args.viewport) || 'desktop').trim().toLowerCase();
+  const m = /^(\d{3,4})\s*[x×]\s*(\d{3,4})$/.exec(v);
+  if (m) return [Number(m[1]), Number(m[2])];
+  return v === 'mobile' ? [390, 844] : v === 'tablet' ? [768, 1024] : [1280, 800];
 }
+function shotHtml(key, args, label) {
+  const done = shotDone.get(key);
+  const [w, h] = done && done.w ? [done.w, done.h] : shotShape(args);
+  return `<figure class="shot" data-shot="${esc(key)}" data-label="${esc(label || '')}" style="--sw:${w};--sh:${h}" role="button" tabindex="0" aria-label="Screenshot${label ? ` of ${esc(label)}` : ''}, tap to open"><span class="shot-ph" aria-hidden="true"></span></figure>`;
+}
+function shotReason(e) {
+  if (e && e.timeout) return "your PC didn't answer in time";
+  if (e && e.status === 404) return /GitHub/.test(e.message || '') ? 'it is no longer in the repository' : 'it is no longer on your PC';
+  if (e && e.status === 413) return 'it is too large to send';
+  const m = String((e && e.message) || 'it could not be loaded').replace(/\.\s*$/, '');
+  return m[0].toLowerCase() + m.slice(1);
+}
+function loadShot(key) {
+  if (shotWait.has(key)) return shotWait.get(key);
+  let p;
+  if (key.startsWith('pc:')) {
+    const path = key.slice(3);
+    // One at a time: each is a burst of relay chunks.
+    p = shotQueue.then(() => relayRequest('GET', `/api/screenshot-data?path=${encodeURIComponent(path)}`, null, 40000)).then((r) => {
+      if (!r || typeof r.dataUrl !== 'string' || !r.dataUrl.startsWith('data:image/')) throw new Error('Your PC sent no picture');
+      return { url: r.dataUrl, w: r.width, h: r.height };
+    });
+    shotQueue = p.catch(() => {});
+  } else {
+    const rel = key.slice(3);
+    p = (async () => {
+      const c = state.current && chatMeta(state.current);
+      const env = c && envFor(c.project);
+      if (!env) throw new Error('This project is not connected to the cloud on this phone');
+      if (!state.creds || !state.creds.token) throw new Error('Connect GitHub on this phone to see it');
+      const blob = await ghRawBlob(env.repo, rel);
+      return { url: URL.createObjectURL(blob.type.startsWith('image/') ? blob : new Blob([blob], { type: 'image/png' })) };
+    })();
+  }
+  shotWait.set(key, p);
+  p.then((r) => shotDone.set(key, r), (e) => {
+    shotWait.delete(key);
+    // Offline or slow: try again next time it is drawn. Gone: say so for good.
+    if (e && (e.status === 404 || e.status === 413 || e.status === 415)) shotDone.set(key, { error: shotReason(e) });
+  });
+  return p;
+}
+function shotFail(fig, reason) {
+  const line = el('div', 'shot-fail', `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 16l5-5 4 4 3-3 6 6"/><path d="M4 4l16 16"/></svg><span></span>`);
+  line.querySelector('span').textContent = `Screenshot isn't available on this phone: ${reason}.`;
+  fig.replaceWith(line);
+}
+function showShot(fig, r) {
+  const img = new Image();
+  img.alt = fig.dataset.label ? `Screenshot of ${fig.dataset.label}` : 'Screenshot';
+  img.decoding = 'async';
+  img.onload = () => {
+    if (img.naturalWidth) { fig.style.setProperty('--sw', img.naturalWidth); fig.style.setProperty('--sh', img.naturalHeight); }
+    const d = shotDone.get(fig.dataset.shot);
+    if (d && !d.w) { d.w = img.naturalWidth; d.h = img.naturalHeight; }
+    fig.append(img);
+    fig.dataset.state = 'ready';
+  };
+  img.onerror = () => shotFail(fig, 'the picture could not be opened');
+  img.src = r.url;
+}
+function fillShot(fig) {
+  const key = fig.dataset.shot;
+  const done = shotDone.get(key);
+  if (done) return done.error ? shotFail(fig, done.error) : showShot(fig, done);
+  fig.dataset.state = 'loading';
+  loadShot(key).then((r) => showShot(fig, r), (e) => shotFail(fig, shotReason(e)));
+}
+/** Every new screenshot under root: ready ones at once, the rest when they scroll into view. */
+function hydrateShots(root) {
+  const figs = (root || feed()).querySelectorAll('figure.shot:not([data-state])');
+  if (!figs.length) return;
+  if (!shotObserver && 'IntersectionObserver' in window) {
+    shotObserver = new IntersectionObserver((entries) => {
+      for (const en of entries) if (en.isIntersecting) { shotObserver.unobserve(en.target); fillShot(en.target); }
+    }, { rootMargin: '400px 0px' });
+  }
+  figs.forEach((fig) => {
+    const done = shotDone.get(fig.dataset.shot);
+    if (done || !shotObserver) return fillShot(fig);
+    fig.dataset.state = 'waiting';
+    shotObserver.observe(fig);
+  });
+}
+function openLightbox(src, alt) {
+  const lb = $('lightbox');
+  const img = lb.querySelector('img');
+  img.src = src;
+  img.alt = alt || 'Screenshot';
+  lb.classList.remove('hidden');
+}
+function closeLightbox() { $('lightbox').classList.add('hidden'); }
+
+// ─── Live rows from the PC (copied from mobile.js, made quieter) ────────────
 // ─── A step running right now: "Running npm test", with a clock ────────────
 let liveTool = null; // { el, timer }
 function addLiveTool(ev) {
@@ -808,7 +923,7 @@ function clearLiveTool() {
   liveTool.el.remove();
   liveTool = null;
 }
-const LIVE_VERB = { run: 'Running', read_file: 'Reading', edit_file: 'Editing', write_file: 'Writing', apply_patch: 'Patching', search: 'Searching', list_dir: 'Looking in', browser_check: 'Checking', web_search: 'Searching the web for', web_fetch: 'Reading', bring_in: 'Bringing in a specialist', fetch_image: 'Downloading' };
+const LIVE_VERB = { run: 'Running', read_file: 'Reading', edit_file: 'Editing', write_file: 'Writing', apply_patch: 'Patching', search: 'Searching', list_dir: 'Looking in', browser_check: 'Checking', web_search: 'Searching the web for', web_fetch: 'Reading', bring_in: 'Bringing in a specialist', claude_code: 'Asking Claude Code', fetch_image: 'Downloading' };
 /** A specialist the agent brought in works behind it: a quiet line among the steps. */
 function addSpecialistNote(d) {
   if (!d || !d.agent) return;
@@ -820,11 +935,10 @@ function addSpecialistNote(d) {
 
 function addTool(t) {
   streamEl = null;
-  const wrap = el('div', null, toolHtml(t, t.screenshotPath ? '<img class="shot" alt="Screenshot of the page">' : ''));
-  const node = wrap.firstElementChild;
-  const img = node.querySelector('.shot');
-  if (img) screenshotFromPc(img, t.screenshotPath);
-  return append(node);
+  const wrap = el('div', null, toolHtml(t, t.screenshotPath ? shotHtml(`pc:${t.screenshotPath}`, t.args, t.label) : ''));
+  const node = append(wrap.firstElementChild);
+  hydrateShots(node);
+  return node;
 }
 function addThinking(text, label) { streamEl = null; return append(el('div', null, thinkingHtml(text, label)).firstElementChild); }
 function addSummary(d) { const h = summaryHtml(d); if (h) append(el('div', null, h).firstElementChild); }
@@ -907,9 +1021,8 @@ function renderPcItem(item, chat) {
 }
 
 // ─── Cloud rows: the status doc's events, drawn like the chat ───────────────
-const shotCache = new Map(); // repo|path -> Promise<objectURL|null>
 function cloudEventHtml(e) {
-  if (e.t === 'tool') return toolHtml({ ...e, label: e.summary || '' }, e.screenshot ? `<img class="shot" alt="Screenshot of the page" data-shot="${esc(e.screenshot)}">` : '');
+  if (e.t === 'tool') return toolHtml({ ...e, label: e.summary || '' }, e.screenshot ? shotHtml(`gh:${e.screenshot}`, e.args, e.summary) : '');
   if (e.t === 'text' || e.t === 'reasoning') return thinkingHtml(e.text || '');
   if (e.t === 'notice') return e.level === 'error' || e.level === 'warn' ? `<div class="msg error">${esc(e.text)}</div>` : `<div class="msg note">${esc(e.text)}</div>`;
   if (e.t === 'summary') return summaryHtml(e);
@@ -918,7 +1031,7 @@ function cloudEventHtml(e) {
 }
 const isLive = (t) => t && ['starting', 'queued', 'running'].includes(t.status);
 function taskHtml(t) {
-  let h = `<div class="msg user">${esc(stripCtx(t.prompt))}</div>`;
+  let h = `<div class="msg user">${linkText(stripCtx(t.prompt))}</div>`;
   h += (t.events || []).map(cloudEventHtml).join('');
   if (t.answer) h += `<div class="msg agent">${md(t.answer)}</div>`;
   if (isLive(t) && t.ask) h += `<div class="cloud-ask" data-ask-task="${esc(t.id)}" data-ask-id="${esc(t.ask.id)}"><b>Waiting for your OK</b><span>${esc(t.ask.title)}</span>${t.ask.detail ? `<pre class="code">${esc(t.ask.detail)}</pre>` : ''}<div class="cloud-ask-btns"><button type="button" class="btn btn-primary" data-ask-yes>Allow</button><button type="button" class="btn" data-ask-no>Don't allow</button></div></div>`;
@@ -972,19 +1085,10 @@ function renderFeed({ force = false } = {}) {
   refreshLiveSteps();
   showFeed(f.children.length > 0);
   f.querySelectorAll('details').forEach((d, i) => { d.dataset.k = String(i); if (open.has(d.dataset.k)) d.open = true; });
-  hydrateShots(c);
+  hydrateShots(f);
   if (force || wasNear || !hadRows) scrollToBottom();
   renderTitle();
   renderComposer();
-}
-function hydrateShots(c) {
-  const env = c && envFor(c.project);
-  feed().querySelectorAll('img[data-shot]').forEach((img) => {
-    if (!env) return img.remove();
-    const key = `${env.repo}|${img.dataset.shot}`;
-    if (!shotCache.has(key)) shotCache.set(key, ghRawBlob(env.repo, img.dataset.shot).then((blob) => (blob ? URL.createObjectURL(blob) : null)).catch(() => { shotCache.delete(key); return null; }));
-    shotCache.get(key).then((url) => { if (url) img.src = url; else img.alt = 'Screenshot not available'; });
-  });
 }
 document.addEventListener('click', async (e) => {
   const btn = e.target.closest && e.target.closest('[data-ask-yes],[data-ask-no]');
@@ -1002,10 +1106,15 @@ document.addEventListener('click', async (e) => {
     } catch (err) { box.querySelectorAll('button').forEach((b) => { b.disabled = false; }); addMsg('error', err.message); }
     return;
   }
-  const img = e.target.closest && e.target.closest('img.shot');
-  if (img && img.src) { e.preventDefault(); const lb = $('lightbox'); lb.querySelector('img').src = img.src; lb.classList.remove('hidden'); }
+  const shot = e.target.closest && e.target.closest('figure.shot[data-state="ready"]');
+  if (shot) { e.preventDefault(); const img = shot.querySelector('img'); openLightbox(img.src, img.alt); }
 });
-$('lightbox').addEventListener('click', () => $('lightbox').classList.add('hidden'));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('lightbox').classList.contains('hidden')) { closeLightbox(); return; }
+  const shot = (e.key === 'Enter' || e.key === ' ') && e.target.closest && e.target.closest('figure.shot[data-state="ready"]');
+  if (shot) { e.preventDefault(); const img = shot.querySelector('img'); openLightbox(img.src, img.alt); }
+});
+$('lightbox').addEventListener('click', closeLightbox);
 
 // ─── Events from the PC ─────────────────────────────────────────────────────
 function receiveEvent(event) {
@@ -1182,6 +1291,12 @@ async function chatSend(chat, text, images = []) {
     // A synced model goes through byok-proxy (same reply shape as ai-proxy).
     const own = chatModel();
     let messages = [{ role: 'system', content: `${CHAT_SYSTEM}\nToday is ${new Date().toDateString()}.${window.CraftReminders ? window.CraftReminders.chatRules() : ''}` }, ...history];
+    // Asked about builds, checks, deploys, Supabase, the calendar or schedules: read them live first (phone-work.js), so the
+    // answer comes from the APIs, never from a guess. A read that fails says so in the note.
+    if (window.CraftWork && window.CraftWork.isStatusQuestion(text)) {
+      const note = await window.CraftWork.statusNote(text).catch((e) => `The live check could not run: ${e.message}`);
+      if (note) messages.push({ role: 'system', content: `CHECKS (read live by the app at ${new Date().toLocaleTimeString()}):\n${note}` });
+    }
     // Up to two web searches: the model asks with [[SEARCH: ...]], the phone searches, the model answers from the results.
     for (let round = 0; ; round++) {
       const res = await fetch(own ? BYOK_PROXY_URL : AI_PROXY_URL, {
@@ -1364,13 +1479,18 @@ on:
         required: false
         default: ''
         type: string
+      handoff:
+        description: resume = carry on a run from the PC (craft/wip-<chat>)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
   checks: write
 
 concurrency:
-  group: craft-\${{ inputs.session_id || inputs.task_id }}
+  group: craft-\${{ inputs.handoff }}\${{ inputs.session_id || inputs.task_id }}
   cancel-in-progress: false
 
 jobs:
@@ -1380,6 +1500,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: \${{ inputs.handoff == 'resume' && format('craft/wip-{0}', inputs.session_id) || '' }}
           fetch-depth: 1
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -1403,6 +1524,7 @@ jobs:
           CRAFT_MODE: \${{ inputs.mode }}
           CRAFT_TASK_ID: \${{ inputs.task_id }}
           CRAFT_SESSION_ID: \${{ inputs.session_id }}
+          CRAFT_HANDOFF: \${{ inputs.handoff }}
 `;
 
 async function gh(method, route, reqBody, { allow = [], accept, token } = {}) {
@@ -1432,11 +1554,14 @@ async function readSessionJson(repo, path) {
   if (r.status !== 200) return null;
   try { return JSON.parse(r.text); } catch { return null; }
 }
+/** A file's bytes from craft-sessions (a screenshot). Throws with the status when GitHub says no. */
 async function ghRawBlob(repo, path) {
   const res = await fetch(`${GH}/repos/${repo}/contents/${encPath(path)}?ref=${SESSIONS_BRANCH}`, {
     cache: 'no-store', headers: { Authorization: `Bearer ${state.creds.token}`, Accept: 'application/vnd.github.raw+json', 'X-GitHub-Api-Version': '2022-11-28' },
   });
-  return res.ok ? res.blob() : null;
+  if (res.ok) return res.blob();
+  if (res.status === 401 && state.creds) { state.creds.expired = true; save(KEY.creds, state.creds); }
+  throw Object.assign(new Error(res.status === 401 ? 'GitHub signed this phone out' : res.status === 404 ? 'GitHub no longer has it' : `GitHub answered ${res.status}`), { status: res.status });
 }
 /** Create or replace a file (base64 content) on a branch, with retries for concurrent writes. */
 async function putFile(repo, path, contentB64, message, branch) {
@@ -1467,7 +1592,9 @@ async function setVariable(repo, name, value) {
   if (r.status === 404) await gh('POST', `/repos/${repo}/actions/variables`, { name, value });
 }
 // ─── Getting a repo ready for cloud runs (no model step: Auto unless Craft set one) ───
-const PHONE_WORKFLOW_REV = 3;
+// Same file and number as the desktop's (codeply-cli/lib/cloud.mjs, WORKFLOW_REV): the phone and the PC
+// must write the identical workflow, or each would overwrite the other's (and the PC's handoff input).
+const PHONE_WORKFLOW_REV = 4;
 const b64ToText = (b64) => new TextDecoder().decode(b64ToBytes(b64));
 /** The GitHub login connected in Craft (synced, encrypted, to the account): no token to paste. */
 async function githubFromAccount() {
@@ -1484,6 +1611,22 @@ async function githubFromAccount() {
     return true;
   } catch { return false; }
 }
+/**
+ * Every app connected in Craft (Gmail/Google, Slack, Vercel, Supabase, GitHub), as the account's
+ * connections function returns them: { gmail: { accessToken, refreshToken, clientId, clientSecret, ... }, ... }.
+ * Cached for a minute; {} when signed out or nothing is connected. Errors are thrown, not hidden.
+ */
+let connCache = null;
+async function accountConnections({ fresh = false } = {}) {
+  if (!fresh && connCache && Date.now() - connCache.at < 60000) return connCache.data;
+  const token = await accessToken();
+  if (!token) throw new Error('Sign in to Codeply first.');
+  const r = await fetch(`${SUPABASE_URL}/functions/v1/connections`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get' }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`Couldn't load your connected apps (HTTP ${r.status}${j && j.error ? `: ${j.error}` : ''}).`);
+  connCache = { at: Date.now(), data: (j && j.connections) || {} };
+  return connCache.data;
+}
 const hasGithub = () => !!(state.creds && state.creds.token && !state.creds.expired);
 async function ensureGithub() { return hasGithub() || githubFromAccount(); }
 /**
@@ -1493,7 +1636,7 @@ async function ensureGithub() { return hasGithub() || githubFromAccount(); }
  */
 async function ensureRepoReady(repo, base) {
   const e = state.envs[repo] || {};
-  if (e.rev === PHONE_WORKFLOW_REV && e.trackKey) return;
+  if (e.rev === PHONE_WORKFLOW_REV && e.trackKey && e.noDeploy) return;
   base = base || e.base || ((await gh('GET', `/repos/${repo}`)).json.default_branch) || 'main';
   const cur = await gh('GET', `/repos/${repo}/contents/${encPath(WORKFLOW_PATH)}?ref=${encodeURIComponent(base)}`, null, { allow: [404] });
   const have = cur.status === 200 ? b64ToText(cur.json.content || '') : '';
@@ -1510,7 +1653,8 @@ async function ensureRepoReady(repo, base) {
     await gh('PUT', `/repos/${repo}/actions/secrets/CODEPLY_TRACK_KEY`, { encrypted_value: sealSecret(pk.key, m.key), key_id: pk.key_id });
   }
   if ((await gh('GET', `/repos/${repo}/actions/variables/CODEPLY_MODEL_KIND`, null, { allow: [404] })).status === 404) await setVariable(repo, 'CODEPLY_MODEL_KIND', 'auto');
-  state.envs[repo] = { ...(state.envs[repo] || {}), repo, base, rev: PHONE_WORKFLOW_REV, trackKey: true };
+  await noDeploySessions({ repo, base }).catch(() => {});
+  state.envs[repo] = { ...(state.envs[repo] || {}), repo, base, rev: PHONE_WORKFLOW_REV, trackKey: true, noDeploy: true };
   save(KEY.envs, state.envs);
 }
 /** A new private repo for a new project, made from the phone. */
@@ -1580,6 +1724,14 @@ async function dispatch(env, task) {
 // ─── Starting a cloud task (Code chats and bot calls) ───────────────────────
 const newCloudTask = (prompt, mode, sessionId) => ({ id: `${Date.now().toString(36)}${randHex(6)}`, prompt, mode: ['Build', 'Plan', 'Ask'].includes(mode) ? mode : 'Build', sessionId: sessionId || '', status: 'starting', startedAt: Date.now(), events: [] });
 /** craft-sessions, created from the base branch when this repo never had a run. */
+/** craft-sessions only holds task state: make sure it exists and tells Vercel never to deploy it. */
+async function noDeploySessions(env) {
+  await ensureSessionsBranch(env);
+  const cur = await gh('GET', `/repos/${env.repo}/contents/vercel.json?ref=${SESSIONS_BRANCH}`, null, { allow: [404], accept: 'application/vnd.github.raw+json' });
+  let ok = false;
+  try { ok = cur.status === 200 && JSON.parse(cur.text).git.deploymentEnabled === false; } catch {}
+  if (!ok) await putFile(env.repo, 'vercel.json', textToB64('{\n  "git": { "deploymentEnabled": false }\n}\n'), 'Craft: never deploy this branch', SESSIONS_BRANCH);
+}
 async function ensureSessionsBranch(env) {
   const ref = await gh('GET', `/repos/${env.repo}/git/ref/heads/${SESSIONS_BRANCH}`, null, { allow: [404] });
   if (ref.status === 200) return;
@@ -1587,6 +1739,8 @@ async function ensureSessionsBranch(env) {
   const head = await gh('GET', `/repos/${env.repo}/git/ref/heads/${encodeURIComponent(base)}`);
   const sha = head.json && head.json.object && head.json.object.sha;
   if (sha) await gh('POST', `/repos/${env.repo}/git/refs`, { ref: `refs/heads/${SESSIONS_BRANCH}`, sha }, { allow: [422] });
+  // Only task state lives on craft-sessions; Vercel must not deploy each write to it (cloud.mjs does the same).
+  await putFile(env.repo, 'vercel.json', textToB64('{\n  "git": { "deploymentEnabled": false }\n}\n'), 'Craft: never deploy this branch', SESSIONS_BRANCH).catch(() => {});
 }
 /**
  * Hand a task to the cloud. A runner still up for its chat takes it at once
@@ -2887,8 +3041,10 @@ currentSession().then((s) => { if (s) enterApp(); else showSignin(); }).catch(sh
 
 // For tests and debugging in the console.
 // phone-calls.js (Calls with bots) builds on these too.
-window.CraftPhone = { state, relay, sb, sealSecret, CLOUD_WORKFLOW, md, pollAll, relayRequest, accessToken, esc, load, save, newId, openDrawer, closeDrawer, AI_PROXY_URL, SUPABASE_ANON_KEY, deviceHeader,
+window.CraftPhone = { state, relay, sb, sealSecret, CLOUD_WORKFLOW, md, linkText, pollAll, relayRequest, accessToken, esc, load, save, newId, openDrawer, closeDrawer, AI_PROXY_URL, SUPABASE_ANON_KEY, deviceHeader,
   cloudEnvForBots, startCloudTask, pollCloudTask: pollTask,
+  // phone-work.js (Schedules, Calendar, Checks) builds on these
+  gh, ensureGithub, hasGithub, ensureRepoReady, readSessionJson, envFor, chatBody: body, accountConnections,
   // phone-app.js (tabs, Home, You, sign-up) builds on these
   createChat, saveBody, saveChats, webSearch,
   SUPABASE_URL, answerApproval, setPermission, PERM, signinStep, openChat, openPcSession, newChat, openSettings, openSetup, openProjectPicker, openModelPicker, chatMeta, signOut, applyTheme, themeChoice, renderChatList, enterApp, friendlyAuthError, currentSession };

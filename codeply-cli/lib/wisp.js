@@ -506,9 +506,44 @@ When the user wants to talk to a specialist directly, write:
 <specialist>Security</specialist>
 </codeply:talk_to>`;
 
+const CLAUDE_CODE_FORMAT = `To hand coding work to Claude Code, write:
+<codeply:claude_code>
+<task>
+The job, with everything it needs: the goal, who it is for, the stack, the files, the DIRECTION sheet for anything visual, and what "done" means.
+</task>
+</codeply:claude_code>
+To send it back after your review, write the same block with exactly what is wrong and what it should be; it remembers its earlier rounds. (<fresh>yes</fresh> starts it over.)`;
+
+/**
+ * Wisp's section on Claude Code: the user's own Claude plan as a background
+ * coding agent (lib/claude-code.js), with Wisp as its reviewer.
+ * @param {{ready?: boolean, installed?: boolean, plan?: string, email?: string}|null} cc
+ */
+function claudeCodeSection(cc, native) {
+  if (!cc) return '';
+  if (!cc.ready) {
+    return `CLAUDE CODE
+Not connected${cc.installed ? ' (installed, not logged in)' : ''}. If the user asks you to use Claude or Claude Code, tell them in one line: open Connect Apps, find Claude Code and press ${cc.installed ? 'Log in' : 'Install, then Log in'} (it uses their own Claude plan). Until then, do the work yourself or with your team.`;
+  }
+  const who = [cc.plan ? `${cc.plan} plan` : '', cc.email].filter(Boolean).join(', ');
+  return `CLAUDE CODE (connected${who ? `: ${who}` : ''})
+Claude Code is a strong coding agent that runs in the background on the user's own Claude plan. You hand it coding work with claude_code and you stay in charge: you brief it, review it and answer the user.
+1. When: the user asks for Claude ("use Claude", "hey, can Claude build this website"), or a big build (a whole website or app, a large feature across many files) when the user wants Claude on it. Quick questions and small changes: do them yourself.
+2. Brief it like a senior engineer it has never met: the goal, who it is for, the stack (for a simple site: plain HTML, CSS and JS in this folder, no build step), the files, and what "done" means. It sees only your task and the last lines of this chat.
+3. Taste: for anything people look at (a website, a landing page, app screens), deal a direction with design_direction first and paste the whole sheet into the task under DIRECTION. Claude Code gets Codeply's taste guide and the skills that fit; the sheet is what makes the design yours instead of generic.
+4. Review it yourself, actively, before you say anything to the user. Its report comes with WHAT CLAUDE CODE ACTUALLY DID (files, commands, exit codes): trust that over its prose. Read the key files, open the page with browser_check, run design_lint on pages, run the build or the tests. For large or risky work, bring in a specialist (Testing, Security, Frontend) for a second look.
+5. Not right yet? Call claude_code again with exactly what is wrong: the file, what you saw, what it should be. It remembers its earlier rounds in this chat. Three rounds at most; then fix the last bits yourself or tell the user plainly what is left.
+6. Claude Code never publishes. When the user wants it live (they say so, or press Publish), you publish it with publish_check, then supabase_setup / supabase_schema when it needs a database, publish_deploy for Vercel and publish_github when they want GitHub, through the apps they connected.
+7. Then answer the user as one voice: what was built, how you checked it, the live link if published. If they ask who built it, say Claude Code wrote it and you reviewed it.${native ? '' : `
+
+${CLAUDE_CODE_FORMAT}`}`;
+}
+
 function teamLines(team, models) {
   const nameOf = (id) => (models || []).find((m) => m.id === id)?.name || id;
-  return team.map((s) => `- ${s.name}${s.builtin ? '' : ' (made by you)'}: ${s.focus}${s.model && s.model !== 'auto' ? `. Runs on ${nameOf(s.model)}` : ''}${s.uses ? ` (${s.uses} job${s.uses === 1 ? '' : 's'})` : ''}`);
+  // No job counts here: they change after every run, and this list sits in the
+  // cached part of the prompt (a change there re-bills the whole chat).
+  return team.map((s) => `- ${s.name}${s.builtin ? '' : ' (made by you)'}: ${s.focus}${s.model && s.model !== 'auto' ? `. Runs on ${nameOf(s.model)}` : ''}`);
 }
 
 function modelLines(models) {
@@ -518,7 +553,7 @@ function modelLines(models) {
 
 /**
  * Wisp's own section of the system prompt.
- * @param {{native?: boolean, team?: object[], canDelegate?: boolean, life?: boolean, phone?: boolean}} o
+ * @param {{native?: boolean, team?: object[], canDelegate?: boolean, life?: boolean, phone?: boolean, claudeCode?: object|null}} o
  */
 function wispPrompt(o = {}) {
   const team = o.team || listSpecialists();
@@ -549,6 +584,10 @@ ${modelLines(o.models)}${o.native ? '' : `\n\n${BRING_IN_FORMAT}`}`);
   } else {
     parts.push('You are working on your own this time: there is no team to bring in.');
   }
+  if (delegate) {
+    const cc = claudeCodeSection(o.claudeCode, o.native);
+    if (cc) parts.push(cc);
+  }
 
   const day = [];
   if (o.life) day.push('- Their day: life_context reads their calendar, email (and who is waiting on a reply), calls and plans. "Plan my day" or "what\'s on today" starts there: a short brief, the most important thing first.');
@@ -576,15 +615,15 @@ function specialistPrompt(spec) {
   const role = spec.builtin ? roles.getSubagent(spec.id) : null;
   const how = role ? role.persona : String(spec.instructions || '');
   const rules = spec.builtin && spec.notes ? `\n\nHOUSE RULES (from the user and Codeply; they win over the guide above)\n${spec.notes}` : '';
-  const track = Array.isArray(spec.history) && spec.history.length
-    ? `\n\nYOUR LAST JOBS\n${spec.history.map((h) => `- ${h.ok ? 'done' : 'did not finish'}: ${h.task}`).join('\n')}`
-    : '';
+  // The track record changes after every job, so it goes with the task
+  // (trackRecord), not in this prompt: this stays byte-identical between jobs
+  // and is read from the prompt cache.
   return `YOU ARE ${spec.name.toUpperCase()}, A SPECIALIST ON CODEPLY'S TEAM
 Codeply, the user's main agent, brought you in for one task. Your focus: ${spec.focus}.
 You do this task yourself, one step at a time. You cannot bring anyone else in. If the task is outside your focus, or you are blocked, say so in your report instead of guessing.
 
 HOW YOU WORK
-${how}${rules}${track}
+${how}${rules}
 
 YOUR REPORT
 Do the task fully and check it the way your standards say. Then reply to Codeply with a short report: what you did (files, commands), how you checked it and what the check showed, and anything not done or uncertain. Plain sentences, no greeting, no sign-off. Codeply also reads the tool record, so never claim anything a tool did not do.`;
@@ -617,9 +656,16 @@ YOUR FACE
 Start every final reply with one mood tag, alone on the first line, like [mood: happy]: neutral, happy, excited, proud, love, sad, angry, sleepy, surprised, thinking or worried. The app reads it to set your face. Never mention the tag.`;
 }
 
+/** A specialist's last jobs, for the top of its task. '' when it has none. */
+function trackRecord(spec) {
+  return spec && Array.isArray(spec.history) && spec.history.length
+    ? `YOUR LAST JOBS\n${spec.history.map((h) => `- ${h.ok ? 'done' : 'did not finish'}: ${h.task}`).join('\n')}`
+    : '';
+}
+
 /** The one-line rule in the core prompt that says there is no one to delegate to, for Wisp and for its specialists. */
 const ONE_AGENT_RULE = '- You are one agent and you do all of the work yourself, one step at a time. There is no one to delegate to and no background worker - never say you\'ve handed something off.';
-const WISP_RULE = '- You are Codeply, the lead agent. You do the work yourself, or bring in specialists from YOUR TEAM with bring_in (see YOU ARE CODEPLY). Never say you handed something off unless a bring_in or hand_off result shows it.';
+const WISP_RULE = '- You are Codeply, the lead agent. You do the work yourself, or bring in specialists from YOUR TEAM with bring_in, or Claude Code with claude_code when it is connected (see YOU ARE CODEPLY). Never say you handed something off unless a bring_in, claude_code or hand_off result shows it.';
 const SPECIALIST_RULE = '- You are a specialist doing one task for Codeply, the main agent, yourself, one step at a time. You cannot delegate - never say you\'ve handed something off.';
 const SPEAKER_RULE = '- You are the specialist the user is talking to right now (see YOU ARE). You do the work yourself, one step at a time, and cannot bring anyone in - never say you\'ve handed something off. talk_to Codeply hands the user back.';
 
@@ -649,5 +695,5 @@ module.exports = {
   SHAPES, MOODS, GEAR, MAX_CUSTOM,
   listSpecialists, findSpecialist, createSpecialist, updateSpecialist, removeSpecialist, noteRun, card, detail,
   parseWhen, nextRun, describeRule, listSchedules, addSchedule, cancelSchedule, dueSchedules, markFired,
-  wispPrompt, specialistPrompt, chatPrompt, agentRule, parseMood, stripMoodTags,
+  wispPrompt, specialistPrompt, chatPrompt, trackRecord, claudeCodeSection, agentRule, parseMood, stripMoodTags,
 };

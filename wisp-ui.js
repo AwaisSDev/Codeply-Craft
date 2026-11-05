@@ -189,6 +189,25 @@
     const name = escHtml(data.agent.name);
     const el = document.createElement('div');
     el.className = 'wisp-note';
+    // Claude Code (claude-code-desktop.js): the user's Claude plan doing the coding, Wisp reviewing.
+    if (data.agent.kind === 'claude') {
+      el.classList.add('cc-note');
+      const round = Number(data.agent.round) || 1;
+      if (data.phase === 'start') {
+        el.innerHTML = `<span><b class="cc-mark">✳</b>${round > 1 ? `Sent it back to Claude Code (round ${round})` : 'Asked Claude Code to build this'}</span>${data.task ? `<span class="wisp-note-task">${escHtml(String(data.task).replace(/\s+/g, ' ').slice(0, 220))}</span>` : ''}`;
+        if (data.task) el.title = data.task;
+      } else if (data.phase === 'report') {
+        const files = Array.isArray(data.files) ? data.files : [];
+        if (!data.ok) {
+          el.classList.add('bad');
+          el.innerHTML = `<span><b class="cc-mark">✳</b>Claude Code could not finish</span>${data.text ? `<span class="wisp-note-task">${escHtml(String(data.text).slice(0, 220))}</span>` : ''}`;
+        } else {
+          const n = files.length;
+          el.innerHTML = `<span><b class="cc-mark">✳</b>Claude Code is done${n ? `, ${n} file${n === 1 ? '' : 's'} changed` : ''}. Reviewing it now.</span>${n ? `<span class="cc-files">${escHtml(files.slice(0, 8).join(', '))}${n > 8 ? '…' : ''}</span>` : ''}`;
+        }
+      } else return null;
+      return el;
+    }
     if (data.phase === 'start') {
       el.innerHTML = `Brought in the ${name} specialist${data.task ? `<span class="wisp-note-task">${escHtml(String(data.task).replace(/\s+/g, ' ').slice(0, 220))}</span>` : ''}`;
       if (data.task) el.title = data.task;

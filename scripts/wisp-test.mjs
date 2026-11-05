@@ -173,7 +173,8 @@ async function wispTurn(replies, userMessage, { route = textRoute, session } = {
   check('native: bring_in and create_specialist are real tools for Wisp', (bodies[0].tools || []).some((t) => t.function.name === 'bring_in') && (bodies[0].tools || []).some((t) => t.function.name === 'create_specialist'));
   check('native: a specialist has neither', !(bodies[2].tools || []).some((t) => t.function.name === 'bring_in' || t.function.name === 'create_specialist'));
   check('native: Wisp\'s reply comes through', r.texts[0] === 'Copywriter wrote the hero line: "Steep slow. Sip slower."', JSON.stringify(r.texts));
-  check('track record: a made specialist remembers its last job', /hero for a tea shop/.test(wisp.specialistPrompt(wisp.findSpecialist('Copywriter'))));
+  // Its record goes with its next task, not in its (cached) prompt.
+  check('track record: a made specialist remembers its last job', /YOUR LAST JOBS[\s\S]*hero for a tea shop/.test(wisp.trackRecord(wisp.findSpecialist('Copywriter'))) && !/YOUR LAST JOBS/.test(wisp.specialistPrompt(wisp.findSpecialist('Copywriter'))));
 }
 
 // 4b. Each specialist on its own model: pinned to one of the user's models, it runs there.
