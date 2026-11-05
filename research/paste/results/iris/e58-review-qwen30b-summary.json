@@ -1,0 +1,32 @@
+{
+ "anchor_phi4mini": {
+  "reviewed": 15,
+  "contrary": 2,
+  "extra": 8,
+  "contrary_or_extra": 9,
+  "item_unfaithful": 3,
+  "share_contrary_or_extra": 0.6,
+  "share_item_unfaithful": 0.2,
+  "meets_rule": false
+ },
+ "anchor_qwen4b": {
+  "reviewed": 15,
+  "contrary": 0,
+  "extra": 2,
+  "contrary_or_extra": 2,
+  "item_unfaithful": 2,
+  "share_contrary_or_extra": 0.1333,
+  "share_item_unfaithful": 0.1333,
+  "meets_rule": false
+ },
+ "qwen30b": {
+  "reviewed": 100,
+  "contrary": 2,
+  "extra": 36,
+  "contrary_or_extra": 38,
+  "item_unfaithful": 6,
+  "share_contrary_or_extra": 0.38,
+  "share_item_unfaithful": 0.06,
+  "meets_rule": false
+ }
+}
