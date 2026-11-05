@@ -200,10 +200,11 @@ class Life:
         for p in plans:
             must.append({"speaker": p.get("speaker", "user"), "how": p["how"], "anchors": p["anchors"], "instruction": p["instruction"]})
         said = {a for m in must for a in m["anchors"]}
-        own = " ".join(m["instruction"] for m in must)
+        own = " ".join(m["instruction"] for m in must) + " " + purpose
+        context = set(self.projects) | {self.org, self.school}           # the life's own names are context, not facts
         for (ent, slot, kind, about, vals, sens, cat) in self.fact_specs:       # no stray values of tracked slots
             for v in vals:
-                if v not in said and len(v) > 3 and v not in own:
+                if v not in said and len(v) > 3 and v not in own and v not in context:
                     forbid.add(v)
         return {"source": source, "purpose": purpose, "participants": participants,
                 "n_user_turns": n_user_turns, "language": self.lang(), "must_express": must,

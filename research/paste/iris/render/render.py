@@ -95,13 +95,15 @@ def extra_forbidden(life, ev):
     own = " ".join(m["instruction"] for m in fs["must_express"]).lower() + " " + fs["purpose"].lower()
     vals = {v for c in O.CLASSES for v in c[3]} | {v for _, _, _, vs in P.IRIS_SLOTS if vs for v in vs} | \
            {v for _, _, _, vs in P.SENSITIVE for v in vs}
+    context = {x.lower() for x in life.get("projects", []) + [life.get("org", ""), life.get("school", "")] if x}
     names = set()
     for p in life.get("people", []):
         full = p["name"]
         if full not in fs["participants"] and full.split()[0].lower() not in own:
             names.add(full.split()[0])
     from .verify import distinctive
-    return sorted(v for v in vals | names if len(v) > 3 and distinctive(v) and v.lower() not in said and v.lower() not in own)
+    return sorted(v for v in vals | names if len(v) > 3 and distinctive(v) and v.lower() not in said and v.lower() not in own
+                  and v.lower() not in context)
 
 
 def render_event(ev, base_url, model, tries=3, life=None):
