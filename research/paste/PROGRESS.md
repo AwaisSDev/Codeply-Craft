@@ -62,9 +62,12 @@ Iris, 2026-11-05 morning (E55-E58):
   free filler messages. **No val rendering started** (would have baked these errors into the benchmark).
 * Model checkers do not fix it: as an in-loop gate, Qwen3-4B catches 9 / 12 flawed (false reject 4 / 12), Qwen3-30B
   catches 0.68 of flawed and rejects 0.45 of clean renders (193 renders): ~27 % flawed would remain.
-* Running on Kaggle (pilot only; done ~10:30 UTC): round 3b (prompt v3 + Qwen3-4B gate; Phi-4-mini, Qwen3-4B) and
-  prompt v4 (hard length caps on messages without a required detail; Qwen3-4B gated / plain paired, Phi-4-mini
-  plain). Then one blind review over all sets and the §4 rule.
+* Afternoon (E59-E60): Qwen3-4B is the only generator near the rule; prompt v3 + Qwen3-4B gate keeps required items
+  most faithful (v4 length caps cut extras but drop dates and framing). Two benchmark-design gaps found and fixed,
+  gold unchanged: plan items now anchor their date and activity; events without required facts get fact-neutral
+  purposes (old ones like "making weekend plans" forced facts the gold lacked). Fresh test before the fix: 9 %.
+* Running (pilot only; done ~19:30 UTC): round 5 = Qwen3-4B + v3 + gate + both fixes on pilot lives 100-104; then
+  blind review → rule → val rendering (20 lives, 10 sessions in two waves) if met.
 * Production-faithful baseline fixed (strict schema, 700 tokens: 0 parse failures). E55 (pilot): production stores
   mostly non-gold memories (false-memory share 0.98), Iris zero-shot 0.92, rules 0.25; **caveat: render extras
   inflate these**. E57 LoCoMo (non-commercial, internal): production recall 0.378, precision 0.784; rules 0.030 /
