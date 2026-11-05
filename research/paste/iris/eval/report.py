@@ -17,6 +17,9 @@ def main():
     ap.add_argument("--lives", required=True)
     ap.add_argument("--pred", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--rendered", help="with --ground: verified renders, to rebuild the event text")
+    ap.add_argument("--ground", action="store_true",
+                    help="drop observations with no meaningful word in the event text (production's grounding guard), keeping Iris fields")
     a = ap.parse_args()
     preds = collections.defaultdict(dict)
     meta = {}
@@ -26,6 +29,21 @@ def main():
             meta = {"system": r.get("system"), "model": r.get("model")}
     lives = [json.loads(l) for l in open(a.lives)]
     lives = [l for l in lives if l["life_id"] in preds]
+    if a.ground:
+        from iris.baselines.production import _ground_terms
+        from iris.baselines.run import event_text
+        from iris.eval.pipeline import terms
+        rend = {(r["life_id"], r["event_id"]): r for r in map(json.loads, open(a.rendered)) if r.get("ok")}
+        for life in lives:
+            for ev in life["events"]:
+                out = preds[life["life_id"]].get(ev["event_id"])
+                if not out:
+                    continue
+                k = (life["life_id"], ev["event_id"])
+                src = set(terms(event_text(ev, rend.get(k)) if (ev["render"] != "llm" or k in rend) else ""))
+                out["observations"] = [o for o in out.get("observations", []) if isinstance(o, dict) and
+                                       any(w in src for w in _ground_terms(o))]
+        meta["grounded"] = True
     ex, by_src, pipe = [], collections.defaultdict(list), {p: [] for p in ("none", "labels", "regex")}
     for life in lives:
         P = preds[life["life_id"]]
