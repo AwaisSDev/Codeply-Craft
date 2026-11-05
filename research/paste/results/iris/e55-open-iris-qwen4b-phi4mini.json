@@ -1,0 +1,157 @@
+{
+ "system": "iris",
+ "model": "qwen3-4b-q4",
+ "lives": 3,
+ "events_scored": 107,
+ "extraction": {
+  "events": 107,
+  "precision": 0.0843,
+  "recall": 0.3889,
+  "f1": 0.1386,
+  "false_memory_share": 0.9157,
+  "false_memories_per_100_events": 71.028,
+  "misattributed": 0,
+  "stored_nonstorable": 0,
+  "recall_incl_temporary": 0.3889,
+  "captured_as_temporary": 0,
+  "gold_nonstorable": 0,
+  "on_matched": {
+   "slot": 0.2857,
+   "kind": 0.5714,
+   "cert": 0.4286,
+   "op": 0.7143,
+   "sens": 0.7143
+  },
+  "op_recall_by_gold_op": {
+   "new": 0.7143,
+   "reinforce": null,
+   "update": null,
+   "contradict": null
+  },
+  "plans": {
+   "precision": 0.7551,
+   "recall": 0.8605,
+   "status_acc_on_matched": 0.9459
+  },
+  "counts": {
+   "tp": 7,
+   "kind_ok": 4,
+   "op_ok": 5,
+   "sens_ok": 5,
+   "op_gold_new": 7,
+   "op_hit_new": 5,
+   "fp": 76,
+   "pred": 83,
+   "plan_tp": 37,
+   "plan_status_ok": 35,
+   "fn": 11,
+   "plan_fp": 12,
+   "plan_fn": 6,
+   "slot_ok": 2,
+   "cert_ok": 3
+  }
+ },
+ "extraction_by_source": {
+  "assistant_chat": {
+   "events": 20,
+   "precision": 0.1707,
+   "recall": 0.4375,
+   "f1": 0.2456,
+   "false_memory_share": 0.8293
+  },
+  "calendar": {
+   "events": 31,
+   "precision": 0.0,
+   "recall": null,
+   "f1": 0.0,
+   "false_memory_share": 1.0
+  },
+  "email": {
+   "events": 5,
+   "precision": 0.0,
+   "recall": null,
+   "f1": 0.0,
+   "false_memory_share": 1.0
+  },
+  "personal_chat": {
+   "events": 9,
+   "precision": 0.0,
+   "recall": 0.0,
+   "f1": 0.0,
+   "false_memory_share": 1.0
+  },
+  "screen": {
+   "events": 35,
+   "precision": null,
+   "recall": null,
+   "f1": null,
+   "false_memory_share": null
+  },
+  "work_chat": {
+   "events": 7,
+   "precision": 0.0,
+   "recall": 0.0,
+   "f1": 0.0,
+   "false_memory_share": 1.0
+  }
+ },
+ "pipeline": {
+  "none": {
+   "lives": 3,
+   "state_accuracy": 0.0526,
+   "stale_rate": 0.05,
+   "duplicates_per_life": 0.0,
+   "secrets_kept": 0,
+   "task_context_recall": 0.4872,
+   "task_recall_by_agent": {
+    "coding_agent": 0.0,
+    "design_agent": 0.0,
+    "gift_agent": 0.0,
+    "planner_agent": 0.7451,
+    "study_agent": 0.0
+   },
+   "leaks": 0,
+   "tasks_with_leak": 0,
+   "tasks": 15,
+   "conflict_pairs_captured": 1.0
+  },
+  "labels": {
+   "lives": 3,
+   "state_accuracy": 0.0526,
+   "stale_rate": 0.05,
+   "duplicates_per_life": 0.0,
+   "secrets_kept": 0,
+   "task_context_recall": 0.4872,
+   "task_recall_by_agent": {
+    "coding_agent": 0.0,
+    "design_agent": 0.0,
+    "gift_agent": 0.0,
+    "planner_agent": 0.7451,
+    "study_agent": 0.0
+   },
+   "leaks": 0,
+   "tasks_with_leak": 0,
+   "tasks": 15,
+   "conflict_pairs_captured": 1.0
+  },
+  "regex": {
+   "lives": 3,
+   "state_accuracy": 0.0526,
+   "stale_rate": 0.05,
+   "duplicates_per_life": 0.0,
+   "secrets_kept": 0,
+   "task_context_recall": 0.4872,
+   "task_recall_by_agent": {
+    "coding_agent": 0.0,
+    "design_agent": 0.0,
+    "gift_agent": 0.0,
+    "planner_agent": 0.7451,
+    "study_agent": 0.0
+   },
+   "leaks": 0,
+   "tasks_with_leak": 0,
+   "tasks": 15,
+   "conflict_pairs_captured": 1.0
+  }
+ }
+}

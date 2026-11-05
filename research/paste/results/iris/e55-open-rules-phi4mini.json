@@ -1,0 +1,153 @@
+{
+ "system": "rules",
+ "model": "local",
+ "lives": 3,
+ "events_scored": 107,
+ "extraction": {
+  "events": 107,
+  "precision": 0.75,
+  "recall": 0.1667,
+  "f1": 0.2727,
+  "false_memory_share": 0.25,
+  "false_memories_per_100_events": 0.9346,
+  "misattributed": 0,
+  "stored_nonstorable": 0,
+  "recall_incl_temporary": 0.1667,
+  "captured_as_temporary": 0,
+  "gold_nonstorable": 0,
+  "on_matched": {
+   "slot": 0.0,
+   "kind": 1.0,
+   "cert": 1.0,
+   "op": 1.0,
+   "sens": 1.0
+  },
+  "op_recall_by_gold_op": {
+   "new": 1.0,
+   "reinforce": null,
+   "update": null,
+   "contradict": null
+  },
+  "plans": {
+   "precision": null,
+   "recall": 0.0,
+   "status_acc_on_matched": null
+  },
+  "counts": {
+   "fn": 15,
+   "plan_fn": 43,
+   "tp": 3,
+   "kind_ok": 3,
+   "cert_ok": 3,
+   "op_ok": 3,
+   "sens_ok": 3,
+   "op_gold_new": 3,
+   "op_hit_new": 3,
+   "pred": 4,
+   "fp": 1
+  }
+ },
+ "extraction_by_source": {
+  "assistant_chat": {
+   "events": 20,
+   "precision": 0.75,
+   "recall": 0.1875,
+   "f1": 0.3,
+   "false_memory_share": 0.25
+  },
+  "calendar": {
+   "events": 31,
+   "precision": null,
+   "recall": null,
+   "f1": null,
+   "false_memory_share": null
+  },
+  "email": {
+   "events": 5,
+   "precision": null,
+   "recall": null,
+   "f1": null,
+   "false_memory_share": null
+  },
+  "personal_chat": {
+   "events": 9,
+   "precision": null,
+   "recall": 0.0,
+   "f1": 0.0,
+   "false_memory_share": null
+  },
+  "screen": {
+   "events": 35,
+   "precision": null,
+   "recall": null,
+   "f1": null,
+   "false_memory_share": null
+  },
+  "work_chat": {
+   "events": 7,
+   "precision": null,
+   "recall": 0.0,
+   "f1": 0.0,
+   "false_memory_share": null
+  }
+ },
+ "pipeline": {
+  "none": {
+   "lives": 3,
+   "state_accuracy": 0.0211,
+   "stale_rate": 0.25,
+   "duplicates_per_life": 0.0,
+   "secrets_kept": 0,
+   "task_context_recall": 0.0128,
+   "task_recall_by_agent": {
+    "coding_agent": 0.0,
+    "design_agent": 0.0,
+    "gift_agent": 0.0,
+    "planner_agent": 0.0,
+    "study_agent": 0.2
+   },
+   "leaks": 0,
+   "tasks_with_leak": 0,
+   "tasks": 15,
+   "conflict_pairs_captured": 0.0
+  },
+  "labels": {
+   "lives": 3,
+   "state_accuracy": 0.0211,
+   "stale_rate": 0.25,
+   "duplicates_per_life": 0.0,
+   "secrets_kept": 0,
+   "task_context_recall": 0.0128,
+   "task_recall_by_agent": {
+    "coding_agent": 0.0,
+    "design_agent": 0.0,
+    "gift_agent": 0.0,
+    "planner_agent": 0.0,
+    "study_agent": 0.2
+   },
+   "leaks": 0,
+   "tasks_with_leak": 0,
+   "tasks": 15,
+   "conflict_pairs_captured": 0.0
+  },
+  "regex": {
+   "lives": 3,
+   "state_accuracy": 0.0211,
+   "stale_rate": 0.25,
+   "duplicates_per_life": 0.0,
+   "secrets_kept": 0,
+   "task_context_recall": 0.0128,
+   "task_recall_by_agent": {
+    "coding_agent": 0.0,
+    "design_agent": 0.0,
+    "gift_agent": 0.0,
+    "planner_agent": 0.0,
+    "study_agent": 0.2
+   },
+   "leaks": 0,
+   "tasks_with_leak": 0,
+   "tasks": 15,
+   "conflict_pairs_captured": 0.0
+  }
+ }
+}
