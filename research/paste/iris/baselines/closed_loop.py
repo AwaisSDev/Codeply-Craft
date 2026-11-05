@@ -65,7 +65,8 @@ def main():
                         raw, _ = R.call(a.base_url, a.model, R.iris_messages(ev, text, known, plans, life), schema=S.EXTRACTION_SCHEMA)
                         out = raw
                 except Exception as e:
-                    out, err = {"observations": [], "plans": [], "relations": []}, f"{type(e).__name__}: {str(e)[:160]}"
+                    raise SystemExit(f"{life['life_id']} {ev['event_id']}: {type(e).__name__}: {str(e)[:160]} "
+                                     f"(life aborted; it restarts from its first event on resume)")
                 st.apply(out, ev["at"])
                 fh.write(json.dumps({"life_id": life["life_id"], "event_id": ev["event_id"], "system": a.system, "model": a.model,
                                      "output": out, "error": err, "seconds": round(time.time() - t0, 2)}) + "\n"); fh.flush()

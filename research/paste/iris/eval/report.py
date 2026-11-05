@@ -21,7 +21,7 @@ def main():
     preds = collections.defaultdict(dict)
     meta = {}
     for r in map(json.loads, open(a.pred)):
-        if r.get("event_id"):
+        if r.get("event_id") and not r.get("error"):
             preds[r["life_id"]][r["event_id"]] = r["output"]
             meta = {"system": r.get("system"), "model": r.get("model")}
     lives = [json.loads(l) for l in open(a.lives)]

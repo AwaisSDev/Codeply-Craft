@@ -83,7 +83,7 @@ def main():
     data = json.load(open(a.data))
     S = [s for c in data for s in sessions(c)]
     if a.score:
-        preds = {(r["conv"], r["session"]): r["output"] for r in map(json.loads, open(a.score))}
+        preds = {(r["conv"], r["session"]): r["output"] for r in map(json.loads, open(a.score)) if not r.get("error")}
         rows = [score(s, preds[(s["conv"], s["session"])]) for s in S if (s["conv"], s["session"]) in preds]
         t = {k: sum(r[k] for r in rows) for k in ("gold", "recalled", "pred", "supported")}
         rep = {"sessions": len(rows), "licence": "CC BY-NC 4.0 (internal research only)", **t,
@@ -95,7 +95,8 @@ def main():
     from iris import schema as SC
     if a.extra_body:
         R.EXTRA.update(json.loads(a.extra_body))
-    done = {(r["conv"], r["session"]) for r in map(json.loads, open(a.out))} if os.path.exists(a.out) else set()
+    # failed calls (server down, malformed JSON) are not done: they are retried and never scored
+    done = {(r["conv"], r["session"]) for r in map(json.loads, open(a.out)) if not r.get("error")} if os.path.exists(a.out) else set()
     n = 0
     with open(a.out, "a") as fh:
         for s in S:
@@ -118,6 +119,8 @@ def main():
                     out = raw
             except Exception as e:
                 out, err = {"observations": [], "plans": []}, f"{type(e).__name__}: {str(e)[:160]}"
+                if "Connection refused" in err or "URLError" in err:
+                    raise SystemExit(f"model server unavailable: {err}")      # do not burn through sessions
             fh.write(json.dumps({"conv": s["conv"], "session": s["session"], "system": a.system, "model": a.model, "output": out,
                                  "error": err, "seconds": round(time.time() - t0, 1)}) + "\n"); fh.flush()
             n += 1

@@ -99,7 +99,7 @@ def main():
     if a.extra_body:
         EXTRA.update(json.loads(a.extra_body))
     rend = {(r["life_id"], r["event_id"]): r for r in map(json.loads, open(a.rendered)) if r.get("ok")}
-    done = {(r["life_id"], r["event_id"]) for r in map(json.loads, open(a.out))} if os.path.exists(a.out) else set()
+    done = {(r["life_id"], r["event_id"]) for r in map(json.loads, open(a.out)) if not r.get("error")} if os.path.exists(a.out) else set()
     n = 0
     with open(a.out, "a") as fh:
         for line in open(a.lives):
@@ -127,6 +127,8 @@ def main():
                         out = raw
                 except Exception as e:
                     out, err = {"observations": [], "plans": [], "relations": []}, f"{type(e).__name__}: {str(e)[:200]}"
+                    if "Connection refused" in err or "URLError" in err:
+                        raise SystemExit(f"model server unavailable: {err}")
                 fh.write(json.dumps({"life_id": life["life_id"], "event_id": ev["event_id"], "system": a.system, "model": a.model,
                                      "output": out, "raw": raw, "usage": usage, "error": err,
                                      "seconds": round(time.time() - t0, 2)}) + "\n")
