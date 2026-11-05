@@ -72,7 +72,7 @@ def main():
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     head = (HEAD.replace("__BUDGET__", str(a.budget_s)).replace("__SLUG__", a.slug).replace("__REPO__", a.repo)
-            .replace("__FILE__", a.file).replace("__LLAMA__", a.llama_commit).replace("__CREPO__", "").replace("__CFILE__", ""))
+            .replace("__FILE__", a.file).replace("__LLAMA__", a.llama_commit).replace("__CREPO__", "").replace("__CFILE__", "").replace("__STYLE__", "v3"))
     cell = "import glob\n" + head + TAIL.replace("__PILOTS__", json.dumps(a.pilots)).replace("__SAMPLE__", str(a.sample))
     os.makedirs(a.out, exist_ok=True)
     json.dump(nb(f"Iris meaning check: {a.slug}", "Free CPU session; checker model judges the generator pilots' renders.",

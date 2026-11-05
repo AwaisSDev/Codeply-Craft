@@ -96,3 +96,13 @@ def test_meaning_gate_retries_and_reverify_keeps_rejection(tmp_path, monkeypatch
     from iris.render import reverify
     reverify.main()
     assert json.loads((tmp_path / "o.jsonl").read_text())["ok"] is False
+
+
+def test_prompt_v4_caps_free_messages():
+    import iris.render.render as R
+    R.STYLE["v"] = "v4"
+    try:
+        p = prompt(EV)
+    finally:
+        R.STYLE["v"] = "v3"
+    assert "at most 15 words" in p and "30 to 70" in p and "at most 15 words" not in prompt(EV)

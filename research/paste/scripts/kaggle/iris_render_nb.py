@@ -84,7 +84,7 @@ def periodic():
     while not stop.wait(1800):
         snap("periodic")
 threading.Thread(target=periodic, daemon=True).start()
-p = subprocess.Popen(f"python -m iris.render.render --lives {RUN}/lives.jsonl --out {RUN}/rendered.jsonl --model __SLUG__ --tries 3"
+p = subprocess.Popen(f"python -m iris.render.render --lives {RUN}/lives.jsonl --out {RUN}/rendered.jsonl --model __SLUG__ --tries 3 --style __STYLE__"
                      + (f" --check-base-url {CHECK_URL}" if CHECK_URL else ""),
                      shell=True, start_new_session=True, stdout=open(f"{RUN}/render.log", "a"), stderr=subprocess.STDOUT)
 try:
@@ -118,11 +118,12 @@ def main():
     ap.add_argument("--llama-commit", required=True)
     ap.add_argument("--check-repo", default="", help="optional meaning-gate model (GGUF repo); empty = verifier only")
     ap.add_argument("--check-file", default="")
+    ap.add_argument("--style", default="v3", choices=("v3", "v4"))
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     cell = (CELL.replace("__BUDGET__", str(a.budget_s)).replace("__SLUG__", a.slug).replace("__REPO__", a.repo)
             .replace("__FILE__", a.file).replace("__LIVES__", str(a.lives)).replace("__SEED__", str(a.seed))
-            .replace("__SPLIT__", a.split).replace("__CREPO__", a.check_repo).replace("__CFILE__", a.check_file)
+            .replace("__SPLIT__", a.split).replace("__CREPO__", a.check_repo).replace("__CFILE__", a.check_file).replace("__STYLE__", a.style)
             .replace("__LLAMA__", a.llama_commit))
     os.makedirs(a.out, exist_ok=True)
     json.dump(nb(f"Iris render {a.split}: {a.slug}", f"Free CPU session; {a.split} lives rendered by a local model (test / stress never on Kaggle).",

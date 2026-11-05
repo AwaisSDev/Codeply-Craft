@@ -42,7 +42,11 @@ def message_plan(ev, seed=0):
     return n, plan
 
 
+STYLE = {"v": "v3"}   # v4: hard length caps on messages that carry no required detail (less room to invent facts)
+
+
 def prompt(ev, seed=0):
+    v4 = STYLE["v"] == "v4"
     fs = ev["fact_sheet"]
     src = fs["source"]
     who = fs["participants"]
@@ -52,11 +56,14 @@ def prompt(ev, seed=0):
         form = (f"One email from {who[0]} to {who[1] if len(who) > 1 else 'the user'}: a single turn whose speaker is "
                 f"\"{who[0].split()[0]}\", starting with a 'Subject:' line.")
         lines = [f"Purpose: {fs['purpose']}", f"Format: {form}", f"Language: {fs['language']}."]
+        if v4:
+            lines.append("Keep the email under 120 words.")
         for m in fs["must_express"]:
             lines.append(f"- Include: {m['instruction']} (exact words: {', '.join(repr(a) for a in m['anchors'])})")
     else:
-        reply = ("an AI assistant reply of 40 to 120 words (general help only; it never asserts facts about the user)"
-                 if src == "assistant_chat" else f"a short reply from {other} that only reacts or asks and adds no new fact, plan, time or deadline")
+        reply = (f"an AI assistant reply of {'30 to 70' if v4 else '40 to 120'} words (general help only; it never asserts facts about the user)"
+                 if src == "assistant_chat" else f"a {'reply of at most 12 words' if v4 else 'short reply'} from {other} that only "
+                 f"reacts or asks and adds no new fact, plan, time or deadline")
         speaker2 = "assistant" if src == "assistant_chat" else other
         lines = [f"Purpose: {fs['purpose']}", f"Language: {fs['language']}.",
                  f"Write exactly {n} messages from speaker \"user\" ({who[0]}), each followed by {reply} "
@@ -64,7 +71,7 @@ def prompt(ev, seed=0):
         for i in range(1, n + 1):
             items = plan[i]
             if not items:
-                lines.append(f"  user message {i}: a question, reaction or thanks about the purpose; it states no fact about "
+                lines.append(f"  user message {i}: {'at most 15 words: ' if v4 else ''}a question, reaction or thanks about the purpose; it states no fact about "
                              f"anyone (no plan, time, deadline, habit, preference, job, possession or decision).")
             for m in items:
                 sp = "user" if m.get("speaker", "user") == "user" else m["speaker"]
@@ -150,7 +157,9 @@ def main():
     ap.add_argument("--tries", type=int, default=3)
     ap.add_argument("--check-base-url", default="", help="meaning gate server (OpenAI-compatible); empty = verifier only")
     ap.add_argument("--check-model", default="checker")
+    ap.add_argument("--style", default="v3", choices=("v3", "v4"), help="render prompt version")
     a = ap.parse_args()
+    STYLE["v"] = a.style
     done = set()
     if os.path.exists(a.out):
         done = {(r["life_id"], r["event_id"]) for r in map(json.loads, open(a.out)) if r.get("event_id")}
@@ -167,7 +176,7 @@ def main():
                                    check_model=a.check_model)
                 fh.write(json.dumps({"life_id": life["life_id"], "event_id": ev["event_id"], "source": ev["source"],
                                      "n_gold": len(ev["gold"]["observations"]) + len(ev["gold"]["plans"]),
-                                     "model": a.model, "gated": bool(a.check_base_url), **res}) + "\n")
+                                     "model": a.model, "gated": bool(a.check_base_url), "style": a.style, **res}) + "\n")
                 fh.flush()
                 n += 1
                 print(json.dumps({"n": n, "event": ev["event_id"], "ok": res["ok"], "tries": res["tries"], "s": res["seconds"],
