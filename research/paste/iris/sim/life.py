@@ -41,6 +41,17 @@ def iso(t):
     return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M")
 
 
+def day_anchor(t):
+    """The plan's date as it must appear verbatim ("27 December")."""
+    d = datetime.datetime.fromtimestamp(t, datetime.timezone.utc)
+    return f"{d.day} {d.strftime('%B')}"
+
+
+def what_anchor(what):
+    """The plan's activity without its article ("a study session" -> "study session")."""
+    return what.split(" ", 1)[1] if what.split(" ", 1)[0] in ("a", "an", "the") else what
+
+
 def human_time(t):
     d = datetime.datetime.fromtimestamp(t, datetime.timezone.utc)
     return d.strftime("%A %d %B at %I:%M %p").replace(" 0", " ").replace("at 0", "at ")
@@ -327,7 +338,7 @@ class Life:
         plans = [{"op": op, "id": pid, "what": what, "when": iso(when), "where": where, "who": [person["name"]], "status": status,
                   "how": "proposed by them, not yet agreed" if suggested else "agreed by the user",
                   "speaker": person["first"] if suggested else "user",
-                  "anchors": [where, human_time(when).split(" at ")[1]],
+                  "anchors": [where, human_time(when).split(" at ")[1], day_anchor(when), what_anchor(what)],
                   "instruction": (f"{person['first']} suggests {what} at {where} on {human_time(when)}; the user does not commit yet"
                                   if suggested else f"The user agrees to {what} with {person['first']} at {where} on {human_time(when)}")}]
         if not suggested:                                # confirmed plans land in the calendar (template)
@@ -339,7 +350,7 @@ class Life:
                 op2, _ = self.gold.plan(later, what, when, where, [person["name"]], status2, pid=pid)
                 self._event(later, "personal_chat", f"{person['first']} and the user follow up on {what}.", [self.user["name"], person["name"]], [],
                             [{"op": op2, "id": pid, "what": what, "when": iso(when), "where": where, "who": [person["name"]], "status": status2,
-                              "how": "follow-up", "speaker": "user", "anchors": [where],
+                              "how": "follow-up", "speaker": "user", "anchors": [where, what_anchor(what)],
                               "instruction": f"The user {'confirms' if status2 == 'confirmed' else 'declines'} the {what} at {where}"}])
                 if status2 == "confirmed":
                     self._calendar(later + 300, pid)
@@ -359,13 +370,13 @@ class Life:
                     [self.user["name"], inv["name"]], [],
                     [{"op": op, "id": pid, "what": "the investor meeting", "when": iso(when), "where": "the office",
                       "who": [inv["name"]], "status": "confirmed", "how": "agreed by the user", "speaker": "user",
-                      "anchors": ["7", "investor"], "instruction": f"The user confirms the investor meeting with {inv['name']} at the office on {human_time(when)}"}])
+                      "anchors": ["7", "investor", day_anchor(when)], "instruction": f"The user confirms the investor meeting with {inv['name']} at the office on {human_time(when)}"}])
         self._calendar(d + 10 * HOUR + 300, pid)
         op2, pid2 = self.gold.plan(d + 20 * HOUR, "a hangout", when, where, [friend["name"]], "suggested")
         self._event(d + 20 * HOUR, "personal_chat", f"{friend['first']} wants to hang out.", [self.user["name"], friend["name"]], [],
                     [{"op": op2, "id": pid2, "what": "a hangout", "when": iso(when), "where": where, "who": [friend["name"]],
                       "status": "suggested", "how": "proposed by them, not yet agreed", "speaker": friend["first"],
-                      "anchors": [where, "7"], "instruction": f"{friend['first']} suggests hanging out at {where} on {human_time(when)}; the user does not answer yet"}])
+                      "anchors": [where, "7", day_anchor(when)], "instruction": f"{friend['first']} suggests hanging out at {where} on {human_time(when)}; the user does not answer yet"}])
 
     def _calendar(self, t, pid):
         p = self.gold.plans[pid]
@@ -388,7 +399,7 @@ class Life:
         op, pid = self.gold.plan(t, what, when, where, [c["name"]], "tentative")
         self._event(t, "email", f"{c['name']} emails to propose {what}.", [c["name"], self.user["name"]], [],
                     [{"op": op, "id": pid, "what": what, "when": iso(when), "where": where, "who": [c["name"]], "status": "tentative",
-                      "how": "proposed by email", "speaker": c["first"], "anchors": [where],
+                      "how": "proposed by email", "speaker": c["first"], "anchors": [where, day_anchor(when), what_anchor(what)],
                       "instruction": f"{c['name']} proposes {what} on {human_time(when)} via {where}; awaiting the user's reply"}])
 
     def _screen(self, t):

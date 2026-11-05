@@ -106,3 +106,13 @@ def test_prompt_v4_caps_free_messages():
     finally:
         R.STYLE["v"] = "v3"
     assert "at most 15 words" in p and "30 to 70" in p and "at most 15 words" not in prompt(EV)
+
+
+def test_plan_items_anchor_date_and_activity():
+    """Plan items must state their date and activity verbatim, not just place and time (E59: bare 'Cafe X, 7:00 PM')."""
+    from iris.sim.life import Life, day_anchor, what_anchor
+    assert what_anchor("a study session") == "study session" and what_anchor("coffee") == "coffee"
+    life = Life(103, "pilot", 21).simulate()
+    plans = [m for ev in life["events"] if ev["render"] == "llm" for m in ev["fact_sheet"]["must_express"]
+             if " on " in m["instruction"] and ("suggests" in m["instruction"] or "agrees to" in m["instruction"] or "proposes" in m["instruction"])]
+    assert plans and all(any(a[0].isdigit() and " " in a for a in m["anchors"]) for m in plans)
