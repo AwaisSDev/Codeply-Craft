@@ -35,7 +35,7 @@ def test_message_plan_and_prompt():
     n, plan = message_plan(EV, seed=1)
     assert n == 4 and sum(len(v) for v in plan.values()) == 1
     p = prompt(EV, seed=1)
-    assert "exactly 4 messages" in p and "'teal and coral'" in p and "no personal details" in p
+    assert "exactly 4 messages" in p and "'teal and coral'" in p and "states no fact about" in p
 
 
 def test_extra_forbidden_keeps_required_values():
@@ -70,3 +70,29 @@ def test_review_packets_blind_and_summary(tmp_path):
     summarise(str(tmp_path / "out" / "key.json"), [str(vp)], str(tmp_path / "s.json"))
     s = json.load(open(tmp_path / "s.json"))
     assert s["ga"]["meets_rule"] and not s["gb"]["meets_rule"] and s["gb"]["share_contrary_or_extra"] == 1.0
+
+
+def test_meaning_gate_retries_and_reverify_keeps_rejection(tmp_path, monkeypatch):
+    """A render that passes the exact verifier but fails the meaning gate is retried; a gate rejection survives reverify."""
+    import json
+    import iris.render.render as R
+    import iris.render.meaning_check as M
+    good = _turns(["My brand colours are teal and coral btw", "ok", "thanks", "great"])
+    monkeypatch.setattr(R, "call", lambda *a, **k: (good, {"completion_tokens": 1}))
+    verdicts = iter([{"items": [{"n": 0, "stated_with_this_meaning": True}], "extra_facts": ["I run marathons"]},
+                     {"items": [{"n": 0, "stated_with_this_meaning": True}], "extra_facts": []}])
+    monkeypatch.setattr(M, "check", lambda *a, **k: next(verdicts))
+    res = R.render_event(EV, "x", "m", tries=3, check_url="y")
+    assert res["ok"] and res["tries"] == 2
+    verdicts = iter([{"items": [{"n": 0, "stated_with_this_meaning": False}], "extra_facts": []}] * 3)
+    res = R.render_event(EV, "x", "m", tries=3, check_url="y")
+    assert not res["ok"] and res["reasons"] == ["meaning: item 0 not faithful"]
+    life = {"life_id": "L", "people": [], "projects": [], "events": [dict(EV, render="llm")]}
+    (tmp_path / "l.jsonl").write_text(json.dumps(life) + "\n")
+    (tmp_path / "r.jsonl").write_text(json.dumps({"life_id": "L", "event_id": "ev9", **res}) + "\n")
+    import sys
+    monkeypatch.setattr(sys, "argv", ["x", "--lives", str(tmp_path / "l.jsonl"), "--rendered", str(tmp_path / "r.jsonl"),
+                                      "--out", str(tmp_path / "o.jsonl")])
+    from iris.render import reverify
+    reverify.main()
+    assert json.loads((tmp_path / "o.jsonl").read_text())["ok"] is False

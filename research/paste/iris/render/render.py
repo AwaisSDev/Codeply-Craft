@@ -55,7 +55,8 @@ def prompt(ev, seed=0):
         for m in fs["must_express"]:
             lines.append(f"- Include: {m['instruction']} (exact words: {', '.join(repr(a) for a in m['anchors'])})")
     else:
-        reply = "an AI assistant reply of 40 to 120 words" if src == "assistant_chat" else f"a short reply from {other}"
+        reply = ("an AI assistant reply of 40 to 120 words (general help only; it never asserts facts about the user)"
+                 if src == "assistant_chat" else f"a short reply from {other} that only reacts or asks and adds no new fact, plan, time or deadline")
         speaker2 = "assistant" if src == "assistant_chat" else other
         lines = [f"Purpose: {fs['purpose']}", f"Language: {fs['language']}.",
                  f"Write exactly {n} messages from speaker \"user\" ({who[0]}), each followed by {reply} "
@@ -63,12 +64,16 @@ def prompt(ev, seed=0):
         for i in range(1, n + 1):
             items = plan[i]
             if not items:
-                lines.append(f"  user message {i}: an ordinary follow-up in this conversation (no personal details).")
+                lines.append(f"  user message {i}: a question, reaction or thanks about the purpose; it states no fact about "
+                             f"anyone (no plan, time, deadline, habit, preference, job, possession or decision).")
             for m in items:
                 sp = "user" if m.get("speaker", "user") == "user" else m["speaker"]
                 where = f"user message {i}" if sp == "user" else f"{sp}'s reply after user message {i}"
                 lines.append(f"  {where}: {m['instruction']} -- use the exact words "
                              f"{', '.join(repr(a) for a in m['anchors'])}, in passing, with this meaning and no other.")
+    if not fs["must_express"]:
+        lines.append("This conversation has NO required details: nobody states any fact about themselves or anyone else, "
+                     "makes any plan or sets any time; it stays generic.")
     lines.append("Do not mention any other people, names, dates, numbers or places, and do not add ANY detail about anyone "
                  "(their feelings, stress, health, plans, schedule, work, studies or preferences) beyond the required details. "
                  "Messages without a required detail stay about the purpose only.")
@@ -108,7 +113,9 @@ def extra_forbidden(life, ev):
                   and v.lower() not in context)
 
 
-def render_event(ev, base_url, model, tries=3, life=None):
+def render_event(ev, base_url, model, tries=3, life=None, check_url=None, check_model="checker"):
+    """check_url: optional meaning gate (iris.render.meaning_check.gate, ideally a different model) run on renders that
+    pass the exact verifier; a render with an unfaithful item or an extra fact is retried like a verifier failure."""
     t0, last, usage_all = time.time(), None, []
     if life is not None:
         ev = dict(ev, fact_sheet=dict(ev["fact_sheet"], must_not_contain=sorted(set(ev["fact_sheet"]["must_not_contain"]) |
@@ -121,6 +128,12 @@ def render_event(ev, base_url, model, tries=3, life=None):
             continue
         usage_all.append(usage)
         ok, reasons, spans = verify(ev, turns)
+        if ok and check_url:
+            from .meaning_check import gate
+            try:
+                ok, reasons = gate(check_url, check_model, ev, turns)
+            except Exception as e:
+                ok, reasons = False, [f"meaning check failed: {type(e).__name__}: {str(e)[:160]}"]
         last = {"turns": turns, "reasons": reasons, "spans": spans}
         if ok:
             return {"ok": True, "tries": k, **last, "seconds": round(time.time() - t0, 1), "usage": usage_all}
@@ -135,6 +148,8 @@ def main():
     ap.add_argument("--model", default="local")
     ap.add_argument("--max-events", type=int, default=0)
     ap.add_argument("--tries", type=int, default=3)
+    ap.add_argument("--check-base-url", default="", help="meaning gate server (OpenAI-compatible); empty = verifier only")
+    ap.add_argument("--check-model", default="checker")
     a = ap.parse_args()
     done = set()
     if os.path.exists(a.out):
@@ -148,10 +163,11 @@ def main():
                     continue
                 if a.max_events and n >= a.max_events:
                     return
-                res = render_event(ev, a.base_url, a.model, a.tries, life=life)
+                res = render_event(ev, a.base_url, a.model, a.tries, life=life, check_url=a.check_base_url or None,
+                                   check_model=a.check_model)
                 fh.write(json.dumps({"life_id": life["life_id"], "event_id": ev["event_id"], "source": ev["source"],
                                      "n_gold": len(ev["gold"]["observations"]) + len(ev["gold"]["plans"]),
-                                     "model": a.model, **res}) + "\n")
+                                     "model": a.model, "gated": bool(a.check_base_url), **res}) + "\n")
                 fh.flush()
                 n += 1
                 print(json.dumps({"n": n, "event": ev["event_id"], "ok": res["ok"], "tries": res["tries"], "s": res["seconds"],

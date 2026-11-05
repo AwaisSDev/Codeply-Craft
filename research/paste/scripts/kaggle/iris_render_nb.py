@@ -49,7 +49,22 @@ for _ in range(600):
         pass
     time.sleep(2)
 print("server up; s", round(time.time() - t0), flush=True)
-json.dump({"repo": "__REPO__", "file": "__FILE__", "llama_commit": "__LLAMA__", "code_commit": COMMIT, "cpus": os.cpu_count()},
+CHECK_REPO, CHECK_FILE, CHECK_URL = "__CREPO__", "__CFILE__", ""
+if CHECK_REPO:   # meaning gate: a second (different) model checks each verified render; generation and checks alternate
+    cmodel = hf_hub_download(CHECK_REPO, CHECK_FILE, local_dir="/tmp/models")
+    csrv = subprocess.Popen(["/tmp/llama/build/bin/llama-server", "-m", cmodel, "-t", "4", "-c", "8192", "--host", "127.0.0.1",
+                             "--port", "8081"], stdout=open(f"{RUN}/server-check.log", "w"), stderr=subprocess.STDOUT,
+                            env=dict(os.environ, LD_LIBRARY_PATH="/tmp/llama/build/bin"))
+    for _ in range(600):
+        try:
+            if b'"ok"' in urllib.request.urlopen("http://127.0.0.1:8081/health", timeout=5).read():
+                break
+        except Exception:
+            pass
+        time.sleep(2)
+    CHECK_URL = "http://127.0.0.1:8081/v1"; print("checker up; s", round(time.time() - t0), flush=True)
+json.dump({"repo": "__REPO__", "file": "__FILE__", "check_repo": CHECK_REPO, "check_file": CHECK_FILE,
+           "llama_commit": "__LLAMA__", "code_commit": COMMIT, "cpus": os.cpu_count()},
           open(f"{RUN}/config.json", "w"), indent=1)
 subprocess.run(f"python -m iris.sim.life --split __SPLIT__ --n __LIVES__ --seed __SEED__ --out {RUN}/lives.new.jsonl", shell=True, check=True)
 if os.path.exists(f"{RUN}/lives.jsonl"):   # resumed: the pinned code must regenerate identical lives
@@ -69,7 +84,8 @@ def periodic():
     while not stop.wait(1800):
         snap("periodic")
 threading.Thread(target=periodic, daemon=True).start()
-p = subprocess.Popen(f"python -m iris.render.render --lives {RUN}/lives.jsonl --out {RUN}/rendered.jsonl --model __SLUG__ --tries 3",
+p = subprocess.Popen(f"python -m iris.render.render --lives {RUN}/lives.jsonl --out {RUN}/rendered.jsonl --model __SLUG__ --tries 3"
+                     + (f" --check-base-url {CHECK_URL}" if CHECK_URL else ""),
                      shell=True, start_new_session=True, stdout=open(f"{RUN}/render.log", "a"), stderr=subprocess.STDOUT)
 try:
     p.wait(timeout=max(1, DEADLINE - time.time()))
@@ -77,6 +93,8 @@ except subprocess.TimeoutExpired:
     os.killpg(p.pid, signal.SIGKILL); p.wait()
     open(f"{RUN}/TIME_GUARD", "w").write("stopped by the time guard\n")
 stop.set(); srv.terminate()
+if CHECK_URL:
+    csrv.terminate()
 rows = [json.loads(l) for l in open(f"{RUN}/rendered.jsonl")] if os.path.exists(f"{RUN}/rendered.jsonl") else []
 summ = {"events": len(rows), "ok": sum(r["ok"] for r in rows), "pass_rate": round(sum(r["ok"] for r in rows) / max(1, len(rows)), 3),
         "mean_s": round(sum(r["seconds"] for r in rows) / max(1, len(rows)), 1),
@@ -98,11 +116,13 @@ def main():
     ap.add_argument("--seed", type=int, default=100)
     ap.add_argument("--budget-s", type=int, default=23400)
     ap.add_argument("--llama-commit", required=True)
+    ap.add_argument("--check-repo", default="", help="optional meaning-gate model (GGUF repo); empty = verifier only")
+    ap.add_argument("--check-file", default="")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     cell = (CELL.replace("__BUDGET__", str(a.budget_s)).replace("__SLUG__", a.slug).replace("__REPO__", a.repo)
             .replace("__FILE__", a.file).replace("__LIVES__", str(a.lives)).replace("__SEED__", str(a.seed))
-            .replace("__SPLIT__", a.split)
+            .replace("__SPLIT__", a.split).replace("__CREPO__", a.check_repo).replace("__CFILE__", a.check_file)
             .replace("__LLAMA__", a.llama_commit))
     os.makedirs(a.out, exist_ok=True)
     json.dump(nb(f"Iris render {a.split}: {a.slug}", f"Free CPU session; {a.split} lives rendered by a local model (test / stress never on Kaggle).",

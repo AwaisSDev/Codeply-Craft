@@ -29,6 +29,9 @@ def main():
             old = {v for v in ev["fact_sheet"]["must_not_contain"] if v.lower() not in ctx and v.lower() not in purpose}
             ev = dict(ev, fact_sheet=dict(ev["fact_sheet"], must_not_contain=sorted(old | set(extra_forbidden(life, ev)))))
             good, reasons, spans = verify(ev, r["turns"]) if r.get("turns") else (False, ["no turns"], [])
+            gate_fail = [x for x in r.get("reasons", []) if x.startswith("meaning")]   # a meaning-gate rejection stands
+            if gate_fail:
+                good, reasons = False, reasons + gate_fail
             fh.write(json.dumps(dict(r, ok=good, reasons=reasons, spans=spans, reverified=True)) + "\n")
             n += 1; ok += good
     print(json.dumps({"events": n, "ok": ok, "pass_rate": round(ok / max(1, n), 3)}))

@@ -1,0 +1,22 @@
+{
+ "phi4mini": {
+  "reviewed": 100,
+  "contrary": 12,
+  "extra": 27,
+  "contrary_or_extra": 37,
+  "item_unfaithful": 15,
+  "share_contrary_or_extra": 0.37,
+  "share_item_unfaithful": 0.15,
+  "meets_rule": false
+ },
+ "qwen4b": {
+  "reviewed": 93,
+  "contrary": 6,
+  "extra": 23,
+  "contrary_or_extra": 29,
+  "item_unfaithful": 14,
+  "share_contrary_or_extra": 0.3118,
+  "share_item_unfaithful": 0.1505,
+  "meets_rule": false
+ }
+}

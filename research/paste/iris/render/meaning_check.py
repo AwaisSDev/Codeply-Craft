@@ -21,11 +21,16 @@ SCHEMA = {"type": "object", "required": ["items", "extra_facts"], "additionalPro
                          "extra_facts": {"type": "array", "items": {"type": "string"}, "maxItems": 10}}}
 
 SYSTEM = ("You check a generated transcript against its specification. Be strict and literal. For each REQUIRED item, "
-          "answer whether the transcript states exactly that fact with that meaning (same person, same attribute, same "
-          "certainty: a joke stays a joke, a suggestion stays a suggestion). Then list every OTHER personal fact the "
-          "transcript states about any real person (the user or anyone they know): preferences, possessions, jobs, plans, "
-          "dates, places, health, numbers. Restating, paraphrasing or reacting to a REQUIRED item is NOT an extra fact. Generic "
-          "small talk and the AI assistant's general advice or questions are not personal facts.")
+          "answer whether the transcript states exactly that fact with that meaning (same person, same value, same time or "
+          "date, same certainty: a joke stays a joke, a hypothetical stays hypothetical, a suggestion stays a suggestion, "
+          "a correction is clearly a correction, a declined plan stays declined). Then list, as short quotes, every OTHER "
+          "lasting, memory-worthy fact the transcript asserts about the user, a named person or a project: a preference, "
+          "habit or routine, personal fact (job, family, health, location, possessions), relationship, project decision or "
+          "deadline, commitment, or a plan with a time - whoever says it, including the user agreeing to an assistant's "
+          "suggestion. NOT extra: restating, paraphrasing or reacting to a REQUIRED item; greetings, small talk, questions, "
+          "thanks, feelings about the moment; the AI assistant's generic advice, suggestions or recipes that the user does "
+          "not adopt; vague filler with no specific content. Ask: would a careful personal-memory system store it as a fact "
+          "about this person? If yes, list it.")
 
 
 def check(base_url, model, ev, turns, timeout=900):
@@ -39,6 +44,16 @@ def check(base_url, model, ev, turns, timeout=900):
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(json.load(r)["choices"][0]["message"]["content"])
+
+
+def gate(base_url, model, ev, turns):
+    """In-loop meaning gate for rendering: (ok, reasons). ok = every required item faithful and no extra fact."""
+    res = check(base_url, model, ev, turns)
+    need = len(ev["fact_sheet"]["must_express"])
+    faithful = [bool(x["stated_with_this_meaning"]) for x in sorted(res["items"], key=lambda x: x["n"])]
+    reasons = [f"meaning: item {i} not faithful" for i in range(need) if i >= len(faithful) or not faithful[i]]
+    reasons += [f"meaning: extra fact: {x[:80]}" for x in res["extra_facts"]]
+    return not reasons, reasons
 
 
 def main():
