@@ -29,6 +29,8 @@ for (const [from, to] of [
   ['phone-app.css', 'phone-app.css'],
   ['phone-work.js', 'phone-work.js'],     // Schedules, Calendar and Checks (no PC needed)
   ['phone-work.css', 'phone-work.css'],
+  ['phone-specialists.js', 'phone-specialists.js'], // the team, made and run from the phone (works with the PC off)
+  ['phone-specialists.css', 'phone-specialists.css'],
   ['phone-bots.js', 'phone-bots.js'],     // the bots, run from the phone while the PC is off
   ['phone-taste.js', 'phone-taste.js'],   // Codeply's taste skill for designs made on the phone
   ['wisp.js', 'wisp.js'],
