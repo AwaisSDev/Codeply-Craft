@@ -3,9 +3,11 @@
 // shapes, and the mood changes the eyes, the colour and how it moves.
 // Drawn in SVG, one animation loop for every Wisp in the window.
 //
-//   CraftWisp.mount(el, { size: 'lg'|'md'|'sm'|'xs', mood, shape, color, morph })
+//   CraftWisp.mount(el, { size: 'lg'|'md'|'sm'|'xs', mood, shape, color, morph, look })
 //     -> el.wisp: setMood(m, keepShape), setShape(name), setColor('#hex'|null),
-//        talk(ms), boop(), lookAt({x,y}|null), destroy()
+//        dress(look|null, fun), talk(ms), boop(), lookAt({x,y}|null), destroy()
+//   look: { shape, color, gear } is a specialist's own character (a beret, shades, a
+//   sprout...); dress(look, true) is the costume change: a spin, a poof, a new face.
 //   CraftWisp.read(text) -> { mood, shape|null, line }   what a message feels like
 //
 // Wisp is a pentagon everywhere: a mood changes its eyes, colour and how it
@@ -50,11 +52,11 @@
   var SHAPES = {
     pentagon: polar(poly(5), 11),
     circle: polar(function () { return 1; }, 1),
-    square: polar(poly(4, Math.PI / 4), 13),
-    triangle: polar(poly(3), 15),
-    hexagon: polar(poly(6), 11),
-    star: polar(function (t) { return .8 + .2 * Math.cos(5 * (t + Math.PI / 2)); }, 5),
-    spiky: polar(function (t) { var c = Math.cos(8 * (t + Math.PI / 2)); return .84 + .16 * Math.sign(c) * Math.pow(Math.abs(c), .6); }, 3),
+    square: polar(poly(4, Math.PI / 4), 27), // soft, stuffed-toy corners
+    triangle: polar(poly(3), 33),
+    hexagon: polar(poly(6), 21),
+    star: polar(function (t) { return .8 + .2 * Math.cos(5 * (t + Math.PI / 2)); }, 11),
+    spiky: polar(function (t) { var c = Math.cos(8 * (t + Math.PI / 2)); return .84 + .16 * Math.sign(c) * Math.pow(Math.abs(c), .6); }, 7),
     blob: polar(function (t) { return 1 + .07 * Math.sin(3 * t + 1) + .05 * Math.cos(5 * t - .4); }, 5),
     cloud: polar(function (t) { return .9 + .1 * Math.abs(Math.cos(3.5 * (t + Math.PI / 2))); }, 5),
     heart: polar(heart(), 7)
@@ -77,12 +79,32 @@
     listening: { shape: 'pentagon', c: ['#7eb0ff', '#2457e6'], blink: true, lean: true }
   };
   var INK = '#0b0b0f';
+  // How long a reaction shows (ms) before the face relaxes to neutral.
+  var REACTIONS = { happy: 4000, excited: 3500, proud: 4000, love: 4500, surprised: 2500, sad: 5000, worried: 4500, angry: 4000 };
+  // ---- gear: what a specialist wears. Head gear is drawn for a head whose top is at y=14
+  // (moved to the real top every frame); face gear sits on the eyes and follows them. ----
+  var HEAD_GEAR = {
+    beret: '<ellipse cx="46" cy="15" rx="21" ry="7.5" fill="#b8324a" transform="rotate(-12 46 15)"/><ellipse cx="42" cy="12.6" rx="9" ry="2.2" fill="#fff" fill-opacity=".22" transform="rotate(-12 42 12.6)"/><circle cx="46" cy="7.2" r="2.4" fill="#8f2236"/>',
+    cap: '<path d="M29 21C30 8 70 8 71 21Z" fill="#2f5bd8"/><path d="M66 19.5C76 17.5 84 19 86 23C78 24.6 70 24 63 22Z" fill="#2348b5"/><circle cx="50" cy="9.6" r="1.8" fill="#2348b5"/>',
+    bow: '<path d="M63 14L52 7.5L53.5 21.5Z M63 14L74 7.5L72.5 21.5Z" fill="#ff5fa8"/><circle cx="63" cy="14" r="3.2" fill="#e23d8a"/>',
+    flower: '<g transform="translate(36 15)"><circle cy="-5" r="3.6" fill="#fff"/><circle cx="4.8" cy="-1.5" r="3.6" fill="#fff"/><circle cx="3" cy="4" r="3.6" fill="#fff"/><circle cx="-3" cy="4" r="3.6" fill="#fff"/><circle cx="-4.8" cy="-1.5" r="3.6" fill="#fff"/><circle r="2.6" fill="#ffc83d"/></g>',
+    sprout: '<path d="M50 16C50 10 51 6 52 3" fill="none" stroke="#3d9e3f" stroke-width="2" stroke-linecap="round"/><path d="M52 5C56 -1 63 0 64 2C60 6 55 7 52 5Z" fill="#5cc45a"/><path d="M51 7C47 2 41 3 40 5C43 9 48 9 51 7Z" fill="#4db34b"/>',
+    antennae: '<path d="M43 17C41 10 37 6 33 4 M57 17C59 10 63 6 67 4" fill="none" stroke="#9a9ab4" stroke-width="1.9" stroke-linecap="round"/><circle cx="33" cy="4" r="3.6" fill="#fff"/><circle cx="67" cy="4" r="3.6" fill="#fff"/><circle cx="33.6" cy="4.4" r="1.7" fill="#0b0b0f"/><circle cx="67.6" cy="4.4" r="1.7" fill="#0b0b0f"/>',
+    star: '<path d="M66 7l2.2 4.5 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5-3.6-3.5 5-.7z" fill="#ffd23f" stroke="#e8a900" stroke-width=".8"/>',
+    crown: '<path d="M36 17L34 5L42 11L50 2L58 11L66 5L64 17Z" fill="#ffcf3a" stroke="#e0a400" stroke-width=".8" stroke-linejoin="round"/><circle cx="50" cy="12" r="1.6" fill="#ff5f7a"/>',
+    headphones: '<path d="M15 50C15 20 30 10 50 10S85 20 85 50" fill="none" stroke="#2a2a33" stroke-width="5" stroke-linecap="round"/><path d="M15 50C15 20 30 10 50 10S85 20 85 50" fill="none" stroke="#ff8a5c" stroke-width="2.8" stroke-linecap="round"/><rect x="8.5" y="42" width="10" height="17" rx="4.5" fill="#ff8a5c" stroke="#2a2a33" stroke-width="1.2"/><rect x="81.5" y="42" width="10" height="17" rx="4.5" fill="#ff8a5c" stroke="#2a2a33" stroke-width="1.2"/>'
+  };
+  var FACE_GEAR = {
+    glasses: '<g fill="rgba(255,255,255,.14)" stroke="#16161c" stroke-width="1.6"><circle cx="41.6" cy="44" r="6.8"/><circle cx="56.4" cy="44" r="6.8"/></g><path d="M48.4 43.2Q49 42.4 49.6 43.2" fill="none" stroke="#16161c" stroke-width="1.5"/><path d="M34.8 43.4L31.5 42.2M63.2 43.4L66.5 42.2" stroke="#16161c" stroke-width="1.5" stroke-linecap="round"/>',
+    shades: '<circle cx="41.8" cy="44.4" r="6.3" fill="#111116"/><circle cx="56.2" cy="44.4" r="6.3" fill="#111116"/><path d="M48 43.2Q49 42.2 50 43.2" fill="none" stroke="#111116" stroke-width="1.5"/>'
+  };
   var EYES = {
-    neutral: function () { return '<ellipse rx="1.8" ry="2.9"/>'; },
-    thinking: function () { return '<ellipse rx="1.7" ry="2.7"/>'; },
-    working: function () { return '<ellipse rx="1.7" ry="2.6"/>'; },
-    listening: function () { return '<ellipse rx="2.1" ry="3.2"/><circle r=".7" cx=".7" cy="-1.1" fill="#fff"/>'; },
-    surprised: function () { return '<circle r="2.9"/><circle r=".9" cx=".8" cy="-1" fill="#fff"/>'; },
+    // Tall upright pill eyes. Looking aside they turn in 3D (see the eye perspective in frame()).
+    neutral: function () { return pill(2.5, 5.7); },
+    thinking: function () { return pill(2.35, 5.2); },
+    working: function () { return pill(2.35, 5.3); },
+    listening: function () { return pill(2.7, 6.1); },
+    surprised: function () { return '<circle r="2.8"/>'; },
     happy: function () { return '<path d="M-4.2 1.8Q0 -4.6 4.2 1.8" fill="none" stroke="' + INK + '" stroke-width="2.3" stroke-linecap="round"/>'; },
     excited: function () { return '<path d="M0 -3.6L1 -1L3.6 -.9L1.5 .8L2.2 3.4L0 1.9L-2.2 3.4L-1.5 .8L-3.6 -.9L-1 -1Z"/>'; },
     proud: function (s) { return '<path d="M-4 .6Q0 -3.2 4 .6" fill="none" stroke="' + INK + '" stroke-width="2.2" stroke-linecap="round"/>' + (s > 0 ? '<path d="M5.4 -6.4l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z" fill="#fff" opacity=".9"/>' : ''); },
@@ -95,9 +117,53 @@
     angry: function (s) { return s < 0 ? '<path d="M-3.8 -2.2L3.6 .6L-3.2 2.2Z"/>' : '<path d="M3.8 -2.2L-3.6 .6L3.2 2.2Z"/>'; }
   };
 
+  var dot = function (r) { return function () { return '<circle r="' + r + '"/>'; }; };
+  var ROUND_BEHIND_GLASSES = { neutral: dot(2.5), thinking: dot(2.3), working: dot(2.3), listening: dot(2.7), surprised: dot(2.9) };
+
+  /** A pill: w half-width, h half-height, rounded ends. Plain black. */
+  function pill(w, h) { return '<rect x="' + (-w) + '" y="' + (-h) + '" width="' + (2 * w) + '" height="' + (2 * h) + '" rx="' + w + '"/>'; }
+
+  /**
+   * A plush, felt-toy skin (like a soft toy's): the outline goes fuzzy with fine
+   * noise, a blurred height map lit from the top left gives it soft volume and a
+   * sheen, and a fibre grain sits over the colour. The eyes and gear stay crisp.
+   */
+  // Fur noise, made once as a small picture and shared by every face (noise made
+  // inside the filter on every frame halved the frame rate).
+  var furUrl = null;
+  function fur() {
+    if (furUrl !== null) return furUrl;
+    try {
+      var S = 200, c = document.createElement('canvas'); c.width = c.height = S;
+      var g = c.getContext('2d'), img = g.createImageData(S, S), d = img.data;
+      for (var i = 0; i < d.length; i += 4) { d[i] = Math.random() * 255; d[i + 1] = Math.random() * 255; d[i + 2] = 128; d[i + 3] = 255; }
+      g.putImageData(img, 0, 0);
+      furUrl = c.toDataURL('image/png');
+    } catch (e) { furUrl = ''; }
+    return furUrl;
+  }
+
+  /**
+   * A plush skin, like a soft toy's: the colour stays smooth (the volume is the
+   * body's three-tone gradient) and only the silhouette turns into a fine fur
+   * fringe. The eyes and gear stay crisp.
+   */
+  function plush(fid) {
+    var url = fur();
+    if (!url) return '';
+    return '<filter id="' + fid + '" x="-8%" y="-8%" width="116%" height="116%" color-interpolation-filters="sRGB">' +
+      '<feImage href="' + url + '" x="0" y="0" width="100" height="100" preserveAspectRatio="none" result="n"/>' +
+      '<feMorphology in="SourceGraphic" operator="dilate" radius="1.3" result="big"/>' +
+      '<feDisplacementMap in="SourceAlpha" in2="n" scale="3" xChannelSelector="R" yChannelSelector="G" result="fringe"/>' +
+      '<feComposite in="big" in2="fringe" operator="in"/>' +
+      '</filter>';
+  }
+
   function hexToRgb(h) { var n = parseInt(String(h).slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
   function mix(h, t, k) { var a = hexToRgb(h), b = hexToRgb(t); return 'rgb(' + a.map(function (v, i) { return Math.round(v + (b[i] - v) * k); }).join(',') + ')'; }
-  function tint(hex) { return [mix(hex, '#ffffff', .38), mix(hex, '#000000', .12)]; }
+  function tint(hex) { return [mix(hex, '#ffffff', .3), hex, mix(hex, '#000000', .26)]; }
+  /** A mood's two colours as the three tones of the body. */
+  function tones(c) { return [mix(c[0], '#ffffff', .12), mix(c[0], c[1], .55), mix(c[1], '#000000', .18)]; }
 
   var all = [], uid = 0, px = null, py = null, lastMove = 0, running = false;
 
@@ -106,17 +172,21 @@
     var id = 'cwg' + (++uid);
     var size = opts.size || el.dataset.wisp || 'md';
     el.classList.add('wisp-el', 'wisp-' + size);
-    el.innerHTML = '<svg viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="' + id + '" x1=".2" y1="0" x2=".8" y2="1"><stop offset="0"/><stop offset="1"/></linearGradient>' +
-      '<radialGradient id="' + id + 'h" cx=".35" cy=".25" r=".6"><stop offset="0" stop-color="#fff" stop-opacity=".45"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>' +
-      '<g class="w-body"><path class="w-shape" fill="url(#' + id + ')"/><path class="w-shine" fill="url(#' + id + 'h)"/><g class="w-eyes"><g class="w-eye l" transform="translate(41 44)"></g><g class="w-eye r" transform="translate(57 44)"></g></g></g></svg>';
-    var base = SHAPES[opts.shape] ? opts.shape : 'pentagon';
+    el.innerHTML = '<svg viewBox="0 0 100 100" aria-hidden="true"><defs><radialGradient id="' + id + '" cx=".4" cy=".34" r=".78" fx=".34" fy=".24"><stop offset="0"/><stop offset=".55"/><stop offset="1"/></radialGradient>' +
+      '<radialGradient id="' + id + 'h" cx=".35" cy=".25" r=".6"><stop offset="0" stop-color="#fff" stop-opacity=".34"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>' +
+      (opts.texture === true ? plush(id + 'f') : '') + '</defs>' +
+      '<g class="w-body"><g class="w-skin"' + (opts.texture === true ? ' filter="url(#' + id + 'f)"' : '') + '><path class="w-shape" fill="url(#' + id + ')"/><path class="w-shine" fill="url(#' + id + 'h)"/></g><g class="w-eyes"><g class="w-eye l" transform="translate(43 44)"></g><g class="w-eye r" transform="translate(55 44)"></g></g><g class="w-face-gear"></g><g class="w-head-gear"></g></g></svg>';
+    var look = opts.look && SHAPES[opts.look.shape] ? opts.look : null;
+    var base = look ? look.shape : SHAPES[opts.shape] ? opts.shape : 'pentagon';
     var w = {
-      el: el, svg: el.firstChild, path: el.querySelector('.w-shape'), shine: el.querySelector('.w-shine'), eyes: el.querySelector('.w-eyes'),
-      eyeL: el.querySelector('.w-eye.l'), eyeR: el.querySelector('.w-eye.r'), stops: el.querySelectorAll('linearGradient stop'),
+      el: el, svg: el.firstChild, body: el.querySelector('.w-body'), headGear: el.querySelector('.w-head-gear'), faceGear: el.querySelector('.w-face-gear'),
+      gear: null, morph0: !!opts.morph, swapAt: 0, swapLook: undefined,
+      path: el.querySelector('.w-shape'), shine: el.querySelector('.w-shine'), eyes: el.querySelector('.w-eyes'),
+      eyeL: el.querySelector('.w-eye.l'), eyeR: el.querySelector('.w-eye.r'), stops: el.querySelectorAll('radialGradient[id="' + id + '"] stop'),
       r: SHAPES[base].slice(), from: null, to: SHAPES[base], t0: 0, dur: 560, base: base,
       lx: 0, ly: 0, blinkAt: performance.now() + 1500 + Math.random() * 3000, blink: 0,
       mood: null, phase: Math.random() * 10, visible: true, small: size === 'sm' || size === 'xs', kick: 0,
-      morph: !!opts.morph, color: opts.color || null,
+      morph: !!opts.morph && !look, color: (look && look.color) || opts.color || null,
       talkUntil: 0, look: null, hop: 0, io: null,
       // Idle glances: the eyes jump to a spot, rest, jump again (alive, not drifting).
       gx: 0, gy: 0, nextGlance: 0,
@@ -131,27 +201,64 @@
     };
     w.paint = function () {
       var M = MOODS[w.mood] || MOODS.neutral;
-      var c = w.color && w.mood !== 'angry' && w.mood !== 'love' ? tint(w.color) : M.c;
-      w.stops[0].style.stopColor = c[0]; w.stops[1].style.stopColor = c[1];
+      var c = w.color && w.mood !== 'angry' && w.mood !== 'love' ? tint(w.color) : tones(M.c);
+      // Three tones make the volume: lit top, the colour itself, a deeper underside.
+      w.stops[0].style.stopColor = c[0]; w.stops[1].style.stopColor = c[1]; w.stops[2].style.stopColor = c[2];
     };
     w.setColor = function (hex) { w.color = /^#[0-9a-f]{6}$/i.test(hex || '') ? hex : null; w.paint(); };
+    // Behind glasses the everyday eyes are round dots; the expressive ones (happy, love...) stay.
+    w.drawEyes = function () {
+      var m = w.mood || 'neutral';
+      var eye = w.gear === 'glasses' && ROUND_BEHIND_GLASSES[m] ? ROUND_BEHIND_GLASSES[m] : EYES[m] || EYES.neutral;
+      w.eyeL.innerHTML = eye(-1); w.eyeR.innerHTML = eye(1);
+    };
     w.setMood = function (m, keepShape) {
       if (!MOODS[m]) m = 'neutral';
       var M = MOODS[m];
       if (m === w.mood) { w.kick = performance.now(); return; }
       w.mood = m; el.dataset.mood = m;
-      var eye = EYES[m] || EYES.neutral;
-      w.eyeL.innerHTML = eye(-1); w.eyeR.innerHTML = eye(1);
+      w.drawEyes();
       w.paint();
       if (!keepShape) w.setShape(w.morph ? M.shape : w.base);
       if (M.hop) w.hop = performance.now();
       w.kick = performance.now();
+      // A reaction (happy, love, sad...) shows for a moment, then the face relaxes back to
+      // its everyday look. States (working, thinking, listening, sleepy) stay until changed.
+      clearTimeout(w.relaxTimer);
+      if (REACTIONS[m] && !opts.holdMood) w.relaxTimer = setTimeout(function () { if (w.mood === m && !el.dataset.restMood) w.setMood('neutral', true); }, REACTIONS[m]);
+    };
+    // A specialist's character (its shape, colour and gear) or, with null, Codeply's own face.
+    // A specialist keeps its shape through every mood; Codeply's morphing face goes back to morphing.
+    function wear(look) {
+      var on = look && SHAPES[look.shape] ? look : null;
+      w.base = on ? on.shape : 'pentagon';
+      w.morph = on ? false : w.morph0;
+      w.gear = on && (HEAD_GEAR[on.gear] || FACE_GEAR[on.gear]) ? on.gear : null;
+      w.headGear.innerHTML = w.gear && HEAD_GEAR[w.gear] ? HEAD_GEAR[w.gear] : '';
+      w.faceGear.innerHTML = w.gear && FACE_GEAR[w.gear] ? FACE_GEAR[w.gear] : '';
+      w.drawEyes();
+      w.color = on && /^#[0-9a-f]{6}$/i.test(on.color || '') ? on.color : null;
+      el.dataset.look = on ? on.gear || on.shape : '';
+      var target = SHAPES[w.base];
+      if (target !== w.to) { w.from = w.r.slice(); w.to = target; w.t0 = performance.now(); }
+      w.paint();
+    }
+    w.dress = function (look, fun) {
+      if (!fun || reduce) { wear(look); return; }
+      // The costume change: it spins and shrinks, poofs into the new look halfway, and pops back.
+      w.swapAt = performance.now(); w.swapLook = look || null;
+      var poof = document.createElement('span');
+      poof.className = 'wisp-poof';
+      for (var k = 0; k < 8; k++) { var dot = document.createElement('i'); dot.style.setProperty('--a', (k * 45) + 'deg'); poof.appendChild(dot); }
+      el.appendChild(poof);
+      setTimeout(function () { poof.remove(); }, 900);
     };
     w.talk = function (ms) { w.talkUntil = performance.now() + (ms || 1200); };
     w.lookAt = function (p) { w.look = p || null; };
     w.boop = function () { w.hop = performance.now(); w.kick = performance.now(); };
     w.destroy = function () { var i = all.indexOf(w); if (i >= 0) all.splice(i, 1); if (w.io) w.io.disconnect(); el.wisp = null; };
     w.setMood(opts.mood || el.dataset.mood || 'neutral');
+    if (look) wear(look);
     if ('IntersectionObserver' in window) {
       w.io = new IntersectionObserver(function (es) { w.visible = es[0].isIntersecting; });
       w.io.observe(el);
@@ -182,7 +289,9 @@
     for (var j = all.length - 1; j >= 0; j--) {
       var w = all[j];
       if (!w.el.isConnected) { w.destroy(); continue; }
-      if (!w.visible) continue;
+      // Off screen it rests, but a shape change it started always finishes: otherwise a face the
+      // browser counts as off screen keeps the new mood's colour on the old shape (a pentagon).
+      if (!w.visible && !w.from) continue;
       // morph
       if (w.from) {
         var k = Math.min(1, (now - w.t0) / w.dur), e = reduce ? 1 : ease(k);
@@ -206,6 +315,13 @@
         if (hopT >= 0 && hopT < 1) { oy -= Math.sin(hopT * Math.PI) * 5; sy += Math.sin(hopT * Math.PI) * .04; }
         if (now < w.talkUntil) { var tk = Math.abs(Math.sin(now / 95)); sy += tk * .03; sx -= tk * .015; }
       }
+      // The costume change (dress(look, true)): half a spin down, the new look, half a spin back up.
+      var swapK = -1;
+      if (w.swapAt) {
+        swapK = Math.min(1, (now - w.swapAt) / 720);
+        if (swapK >= .5 && w.swapLook !== undefined) { var nl = w.swapLook; w.swapLook = undefined; w.dress(nl, false); w.from = null; w.r = SHAPES[w.base].slice(); w.to = SHAPES[w.base]; w.hop = now; }
+        if (swapK >= 1) { w.swapAt = 0; swapK = -1; }
+      }
       var d = '', ca = Math.cos(rot * Math.PI / 180), sa = Math.sin(rot * Math.PI / 180);
       for (i = 0; i < N; i++) {
         var a = -Math.PI / 2 + TAU * i / N, rr = R * w.r[i];
@@ -216,6 +332,15 @@
       d += 'Z';
       w.path.setAttribute('d', d);
       w.shine.setAttribute('d', d);
+      // Head gear rides on top of the head (the shape's highest point), face gear on the eyes below.
+      if (w.gear) {
+        var top = CY + oy - R * w.r[0] * sy;
+        w.headGear.setAttribute('transform', 'translate(' + ox.toFixed(2) + ' ' + (top - 14).toFixed(2) + ') rotate(' + rot.toFixed(2) + ' 50 ' + (54 - top + 14).toFixed(2) + ')');
+      }
+      if (swapK >= 0) {
+        var sw = Math.sin(swapK * Math.PI), spin = swapK * 360;
+        w.body.setAttribute('transform', 'rotate(' + spin.toFixed(1) + ' 50 54) translate(50 54) scale(' + (1 - .55 * sw).toFixed(3) + ') translate(-50 -54)');
+      } else if (w.body.hasAttribute('transform')) w.body.removeAttribute('transform');
       // eyes: follow the cursor (or what Wisp is looking at), wander when nothing moves
       var tx = 0, ty = 0;
       if (w.mood === 'thinking') { tx = 4; ty = -4; }
@@ -241,16 +366,40 @@
           tx = w.gx; ty = w.gy;
         }
       }
-      var lerp = reduce ? 1 : (w.mood === 'working' || (!w.look && (px === null || now - lastMove >= 4000)) ? .24 : .14); /* glances are quick, like real eyes */ w.lx += (tx - w.lx) * lerp; w.ly += (ty - w.ly) * lerp;
+      // Glances travel fast and settle soft: a spring toward the target, not a plain lerp.
+      if (reduce) { w.lx = tx; w.ly = ty; } else {
+        var stiff = (w.mood === 'working' || (!w.look && (px === null || now - lastMove >= 4000))) ? .2 : .1;
+        w.vx = ((w.vx || 0) + (tx - w.lx) * stiff) * .62; w.vy = ((w.vy || 0) + (ty - w.ly) * stiff) * .62;
+        w.lx += w.vx; w.ly += w.vy;
+      }
       // blink
-      var sc = 1;
+      // Blink, squash and stretch (like the Grok bot's): the eyes flatten into wide slits
+      // in ~90 ms, hold a beat, then pop open a little taller than they rest.
+      var sc = 1, sw = 1;
       if (M.blink && !reduce) {
         if (now > w.blinkAt) { w.blink = now; w.blinkAt = now + 2200 + Math.random() * 3800; }
-        var bt = (now - w.blink) / 150; if (bt < 1) sc = Math.max(.08, Math.abs(1 - 2 * bt));
+        var bt = now - w.blink;
+        if (bt < 90) { var q = bt / 90; q = q * q; sc = 1 - .9 * q; sw = 1 + .22 * q; }
+        else if (bt < 150) { sc = .1; sw = 1.22; }
+        else if (bt < 330) { var o = (bt - 150) / 180; sc = .1 + .9 * o + Math.sin(o * Math.PI) * .16; sw = 1.22 - .22 * o; }
       }
       if (M.lean) sc *= 1.06;
       var es = w.eyeScale;
-      w.eyes.setAttribute('transform', 'translate(' + (w.lx + ox).toFixed(2) + ' ' + (w.ly + oy).toFixed(2) + ') translate(49 46) scale(' + es + ' ' + (es * sc).toFixed(3) + ') translate(-49 -46)');
+      // The eyes sit on a round face that turns with the look (like the Grok bot's):
+      // the eye toward the edge narrows and shortens, looking up flattens both into
+      // ovals, looking down stretches them a little, and a diagonal look tilts them
+      // with the curve. Both slide toward the look, the outer one a little inward.
+      var n = Math.max(-1, Math.min(1, w.lx / 6)), up = Math.max(-1, Math.min(1, w.ly / 4.5));
+      var outL = Math.max(0, -n), outR = Math.max(0, n);
+      var vy = up < 0 ? 1 + .34 * up : 1 + .06 * up;
+      var sxL = (1 - .36 * outL + .04 * outR), syL = (1 - .16 * outL) * vy;
+      var sxR = (1 - .36 * outR + .04 * outL), syR = (1 - .16 * outR) * vy;
+      var tilt = (n * up * 16).toFixed(2);
+      w.eyeL.setAttribute('transform', 'translate(' + (43 + 1.2 * outL).toFixed(2) + ' 44) rotate(' + tilt + ') scale(' + sxL.toFixed(3) + ' ' + syL.toFixed(3) + ')');
+      w.eyeR.setAttribute('transform', 'translate(' + (55 - 1.2 * outR).toFixed(2) + ' 44) rotate(' + tilt + ') scale(' + sxR.toFixed(3) + ' ' + syR.toFixed(3) + ')');
+      w.eyes.setAttribute('transform', 'translate(' + (w.lx + ox).toFixed(2) + ' ' + (w.ly + oy).toFixed(2) + ') translate(49 46) scale(' + (es * sw).toFixed(3) + ' ' + (es * sc).toFixed(3) + ') translate(-49 -46)');
+      // Glasses follow the eyes but never blink; shades look a little less far than the eyes do.
+      if (w.gear && FACE_GEAR[w.gear]) w.faceGear.setAttribute('transform', 'translate(' + (w.lx * .7 + ox).toFixed(2) + ' ' + (w.ly * .7 + oy).toFixed(2) + ') translate(49 46) scale(' + es + ') translate(-49 -46)');
     }
     if (all.length) requestAnimationFrame(frame); else running = false;
   }
@@ -334,6 +483,7 @@
     avatar: avatar,
     read: read,
     SHAPES: Object.keys(SHAPES),
+    GEAR: Object.keys(HEAD_GEAR).concat(Object.keys(FACE_GEAR)),
     MOODS: Object.keys(MOODS)
   };
 })();
