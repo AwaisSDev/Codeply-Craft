@@ -137,8 +137,14 @@
       const box = $('topWho');
       if (box) box.classList.toggle('live', live === 'thinking' || live === 'working');
       const said = $('topWhoState');
+      // The pill morphs: the words slide in while it works and slide back out after
+      // (the last words stay in place while they slide out, so it shrinks, not snaps).
       const words = (live && LIVE_WORDS[live]) || '';
-      if (said && said.textContent !== words) said.textContent = words;
+      if (said) {
+        if (words && said.textContent !== words) said.textContent = words;
+        const on = words ? '1' : '';
+        if ((said.dataset.on || '') !== on) said.dataset.on = on;
+      }
     } finally { busyFaces = false; }
   }
 
