@@ -6,6 +6,6 @@
 [ "$VERCEL_GIT_COMMIT_REF" = "main" ] || exit 0
 P=${VERCEL_GIT_PREVIOUS_SHA:-HEAD^}
 git cat-file -e "$P^{commit}" 2>/dev/null || exit 1
-git diff --quiet "$P" HEAD -- 'phone*' 'mobile*' bot-avatar.js attachments.js link-chips.js vendor logo.png assets/agents \
+git diff --quiet "$P" HEAD -- 'phone*' 'mobile*' bot-avatar.js attachments.js link-chips.js wisp.js vendor logo.png assets/agents \
   scripts/prepare-mobile.js scripts/vercel-ignore.sh vercel.json codeply-cli/skills/codeply-taste \
   Gmail.webp Slack.webp Github.webp Vercel.png Supabase.jpg

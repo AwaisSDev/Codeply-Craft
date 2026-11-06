@@ -515,8 +515,40 @@
     loadTeam().catch(() => {});
   }
 
+  // ─── Its own face on its answers ───────────────────────────────────────────
+  // phone-wisp.js puts Wisp's face above every answer. An answer from a
+  // specialist (its chat, or an @mention: the answer starts with "-# Name")
+  // wears that specialist's look instead: its shape, colour and gear.
+  function faceSpecialists() {
+    const f = $('feed');
+    if (!f) return;
+    const list = cachedTeam();
+    if (!list.length) return;
+    const st = P().state || {};
+    const chat = st.current && P().chatMeta ? P().chatMeta(st.current) : null;
+    const own = chat && chat.specialist ? list.find((x) => x.id === chat.specialist.id) : null;
+    f.querySelectorAll(':scope > .turn-face').forEach((face) => {
+      let n = face.nextElementSibling;
+      while (n && !(n.classList.contains('msg') && (n.classList.contains('agent') || n.classList.contains('user')))) n = n.nextElementSibling;
+      const small = n && n.classList.contains('agent') ? n.querySelector(':scope > .md-small:first-child') : null;
+      const name = small ? small.textContent.trim().toLowerCase() : '';
+      const spec = (name && list.find((x) => String(x.name).toLowerCase() === name)) || own;
+      const key = spec ? spec.id : '';
+      if ((face.dataset.spec || '') === key) return;
+      const holder = face.querySelector('.wisp-el');
+      const w = holder && holder.wisp;
+      if (!w || !w.dress) return;
+      face.dataset.spec = key;
+      w.dress(spec ? { shape: spec.shape || 'circle', color: spec.color, gear: spec.gear || undefined } : null, false);
+    });
+  }
+  let faceQueued = false;
+  const queueFaces = () => { if (faceQueued) return; faceQueued = true; requestAnimationFrame(() => { faceQueued = false; faceSpecialists(); }); };
+
   function wire() {
     wireMentions();
+    new MutationObserver(queueFaces).observe(document.body, { childList: true, subtree: true });
+    queueFaces();
     // The drawer's Specialists opens this screen (phone-work.js adds the item).
     const hook = () => {
       if (window.CraftWork) window.CraftWork.openSpecialists = open;
