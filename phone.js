@@ -933,6 +933,19 @@ function addSpecialistNote(d) {
   else if (d.phase === 'report' && !d.ok) addThinking(`The ${name} specialist could not finish`, 'Specialist');
 }
 
+/**
+ * The chat switched who talks (wisp_speaker: an @mention or talk_to on the PC). The turn's
+ * user message carries it, and every answer from there on wears that specialist's face
+ * (phone-specialists.js) until the chat switches back to Codeply.
+ */
+function markSpeaker(d) {
+  const users = feed().querySelectorAll(':scope > .msg.user');
+  const u = users[users.length - 1];
+  if (!u) return;
+  const a = d && d.agent;
+  u.dataset.speaker = a ? JSON.stringify({ id: a.id, name: a.name, shape: a.shape, color: a.color, gear: a.gear || '' }) : 'codeply';
+}
+
 function addTool(t) {
   streamEl = null;
   const wrap = el('div', null, toolHtml(t, t.screenshotPath ? shotHtml(`pc:${t.screenshotPath}`, t.args, t.label) : ''));
@@ -1012,6 +1025,7 @@ function renderPcItem(item, chat) {
   else if (item.kind === 'tool') addTool(item);
   else if (item.kind === 'role_active' || item.kind === 'subagent_active') addRole(item);
   else if (item.kind === 'wisp_agent') addSpecialistNote(item);
+  else if (item.kind === 'wisp_speaker') markSpeaker(item);
   else if (item.kind === 'turn_summary') addSummary(item);
   else if (item.kind === 'checkpoint') renderCheckpoint(item, chat);
   else if (item.kind === 'question') renderQuestion({ ...item, answered: true });
@@ -1184,6 +1198,7 @@ function receiveEvent(event) {
   else if (event.type === 'text') (event.interim ? addThinking(event.text) : addDelta(event.text));
   else if (event.type === 'tool_start') addLiveTool(event);
   else if (event.type === 'wisp_agent') addSpecialistNote(event);
+  else if (event.type === 'wisp_speaker') markSpeaker(event);
   else if (event.type === 'tool_end') {
     const m = event.meta || {};
     clearLiveTool();
@@ -2443,6 +2458,7 @@ function openPlus() {
   const modeHint = CODE_MODES.find(([m]) => m === state.ui.codeMode);
   openPick(`<div class="pop-tiles">${tile('camera', ICONS.camera, 'Camera')}${tile('photos', ICONS.image, 'Photos')}${tile('files', ICONS.attach, 'Files')}</div>
     ${pickRow({ icon: ICONS.folder, title: proj ? esc(proj.name) : 'Work in a project', hint: proj ? (proj.cwd ? (relay.pcId ? 'On your PC' : 'On your PC, which is offline: runs in the cloud if set up') : 'In the cloud') : 'A folder on your PC or a GitHub repo', attrs: 'data-act="project"', kbd: proj ? 'Change' : '' })}
+    ${proj && !inCode ? pickRow({ icon: ICONS.chat || ICONS.spark, title: 'Just chat', hint: `Stop working in ${esc(proj.name)}`, attrs: 'data-act="detach"' }) : ''}
     ${proj ? `${pickRow({ icon: ICONS[modeHint ? modeHint[2] : 'build'], title: `Mode: ${esc(state.ui.codeMode)}`, hint: modeHint ? modeHint[1] : '', attrs: 'data-act="mode"' })}
     ${pickRow({ icon: ICONS.target, title: 'Set a goal', hint: 'Keep working until it is done and verified', attrs: 'data-act="goal"', kbd: '/goal' })}
     ${!cloudChat ? pickRow({ icon: state.perm === 'full' ? ICONS.bolt : ICONS.shield, title: PERM[state.perm].title + ' on your PC', hint: PERM[state.perm].hint, attrs: 'data-act="access"' }) : ''}
@@ -2455,7 +2471,8 @@ function openPlus() {
     act('photos', () => pickFiles('photos'));
     act('files', () => pickFiles());
     act('project', () => openProjectPicker({ anchor: $('plusBtn') }));
-    act('mode', () => openCodeModePicker($('plusBtn')));
+    act('detach', () => detachProject());
+    act('mode',() => openCodeModePicker($('plusBtn')));
     act('goal', () => { if (!proj) { openProjectPicker({ anchor: $('plusBtn') }); return; } insertCommand('/goal '); });
     act('access', () => openAccess('pc'));
     act('caccess', () => openAccess('cloud', cloudEnv, cperm));
@@ -2595,6 +2612,9 @@ function renderComposer() {
   const p = code ? currentProject() : null;
   $('topTitle').textContent = modelLabel();
   $('ctxRow').classList.toggle('hidden', !p);
+  // The project is in + now (no chip in the box): + wears a small dot while one is on.
+  $('plusBtn').classList.toggle('has-project', !!p);
+  $('plusBtn').setAttribute('aria-label', p ? `Add, working in ${p.name}` : 'Add');
   if (p) {
     const cloud = (c && c.cloud) || !p.cwd;
     $('projectChipName').textContent = p.name;

@@ -108,6 +108,10 @@ contextBridge.exposeInMainWorld('craft', {
   wispUpdateSpecialist: (id, patch) => ipcRenderer.invoke('wisp:updateSpecialist', id, patch),
   wispCancelSchedule: (id) => ipcRenderer.invoke('wisp:cancelSchedule', id),
   wispRunSchedule: (id) => ipcRenderer.invoke('wisp:runSchedule', id),
+  wispDraftSpecialist: (o) => ipcRenderer.invoke('wisp:draftSpecialist', o || {}),
+  wispCreateSpecialist: (o) => ipcRenderer.invoke('wisp:createSpecialist', o || {}),
+  wispAddSchedule: (o) => ipcRenderer.invoke('wisp:addSchedule', o || {}),
+  wispSync: () => ipcRenderer.invoke('wisp:sync'),
   // Bots (bots-desktop.js)
   botsList: () => ipcRenderer.invoke('bots:list'),
   botsCreate: (data) => ipcRenderer.invoke('bots:create', data),
@@ -190,6 +194,9 @@ contextBridge.exposeInMainWorld('craft', {
   browserPanelReload: () => ipcRenderer.send('browserpanel:reload'),
   browserPanelNavigate: (url) => ipcRenderer.send('browserpanel:navigate', url),
   browserPanelViewport: (name) => ipcRenderer.send('browserpanel:viewport', name),
+  // Responsive mode: any size, dragged or typed; main says where the device frame sits.
+  browserPanelViewSize: (d) => ipcRenderer.send('browserpanel:viewsize', d || {}),
+  onBrowserPanelFrame: (cb) => ipcRenderer.on('browserpanel:frame', (e, data) => cb(data)),
   onBrowserPanelViewport: (cb) => ipcRenderer.on('browserpanel:viewport', (e, data) => cb(data)),
   onBrowserPanelState: (cb) => ipcRenderer.on('browserpanel:state', (e, data) => cb(data)),
   onBrowserPanelUrl: (cb) => ipcRenderer.on('browserpanel:url', (e, data) => cb(data)),
@@ -241,4 +248,15 @@ contextBridge.exposeInMainWorld('craft', {
   claudeCodeLogout: () => ipcRenderer.invoke('claudeCode:logout'),
   claudeCodeSettings: (patch) => ipcRenderer.invoke('claudeCode:settings', patch || {}),
   onClaudeCodeLogin: (cb) => ipcRenderer.on('claudeCode:login', (e, data) => cb(data)),
+  // The Review area: the branch's changes and its pull request (review-desktop.js).
+  reviewState: (cwd) => ipcRenderer.invoke('review:state', { cwd: String(cwd || '') }),
+  reviewDiff: (cwd, path) => ipcRenderer.invoke('review:diff', { cwd: String(cwd || ''), path: String(path || '') }),
+  // The Claude panel: Claude agents working in the background, several at once.
+  claudeCodeAgents: () => ipcRenderer.invoke('claudeCode:agents'),
+  claudeCodeStartAgent: (o) => ipcRenderer.invoke('claudeCode:startAgent', o || {}),
+  claudeCodeSend: (o) => ipcRenderer.invoke('claudeCode:send', o || {}),
+  claudeCodeStop: (id) => ipcRenderer.invoke('claudeCode:stop', String(id || '')),
+  claudeCodeClose: (id) => ipcRenderer.invoke('claudeCode:close', String(id || '')),
+  claudeCodeSetAgent: (o) => ipcRenderer.invoke('claudeCode:setAgent', o || {}),
+  onClaudeCodeAgent: (cb) => ipcRenderer.on('claudeCode:agent', (e, data) => cb(data)),
 });

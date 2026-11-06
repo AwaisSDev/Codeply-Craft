@@ -12,6 +12,9 @@
 <link rel="stylesheet" href="ollama-connect.css">
 <link rel="stylesheet" href="publish-ui.css">
 <link rel="stylesheet" href="claude-code-ui.css">
+<link rel="stylesheet" href="browser-responsive.css">
+<link rel="stylesheet" href="review-ui.css">
+<link rel="stylesheet" href="specialists-ui.css">
 <link rel="stylesheet" href="bots-ui.css">
 <link rel="stylesheet" href="rich-ui.css">
 <link rel="stylesheet" href="wisp.css">
@@ -85,8 +88,22 @@
     </div>
     <button class="bc-btn" id="bcReload" title="Reload" aria-label="Reload"><i data-icon="refresh"></i></button>
     <button class="bc-btn" id="bcPick" title="Point at an item to ask about or change it (Ctrl+Shift+.)" aria-label="Point at an item"><i data-icon="pick"></i></button>
+    <button class="bc-btn" id="bcDeviceBtn" title="Responsive mode: drag the page to any size (Ctrl+Shift+M)" aria-label="Responsive mode"><i data-icon="phone"></i></button>
     <input class="bc-url" id="bcUrl" type="text" placeholder="Search or type a web address" spellcheck="false" autocomplete="off" aria-label="Address">
     <button class="bc-btn" id="bcMenuBtn" title="More" aria-label="More" aria-haspopup="menu"><i data-icon="more"></i></button>
+  </div>
+  <!-- Responsive mode (browser-responsive.js): a device, its width x height, rotate. -->
+  <div class="bc-row bc-device hidden" id="bcDevice">
+    <select class="bc-dev-select" id="bcDevicePreset" aria-label="Device"></select>
+    <span class="bc-dev-dims">
+      <input id="bcDevW" type="text" inputmode="numeric" spellcheck="false" autocomplete="off" aria-label="Width">
+      <span aria-hidden="true">×</span>
+      <input id="bcDevH" type="text" inputmode="numeric" spellcheck="false" autocomplete="off" aria-label="Height">
+    </span>
+    <button class="bc-btn" id="bcDevRotate" title="Rotate" aria-label="Rotate"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="3" width="8" height="13" rx="2"/><path d="M4 14a8 8 0 0 0 12.5 6.5"/><path d="M17 17.5l-.5 3 3 .3"/></svg></button>
+    <span class="bc-dev-note" id="bcDevNote"></span>
+    <span class="bc-grow"></span>
+    <button class="bc-btn" id="bcDevClose" title="Back to desktop (Ctrl+Shift+M)" aria-label="Back to desktop"><i data-icon="close"></i></button>
   </div>
   <div class="bc-row bc-find hidden" id="bcFind">
     <i data-icon="search" class="ico-sm"></i>
@@ -101,6 +118,18 @@
 <div class="bc-resize hidden" id="bcResize" role="separator" aria-orientation="vertical" aria-label="Resize the browser" tabindex="0"></div>
 <!-- While the edge is dragged, a still of the page stands in for it. -->
 <div class="bc-ghost hidden" id="bcGhost"></div>
+<!-- Responsive mode: the area around the device frame, and the frame's drag handles. -->
+<div class="bc-stage hidden" id="bcStage">
+  <div class="bc-frame" id="bcFrame">
+    <div class="bc-frame-ghost"></div>
+    <div class="bc-h bc-h-l" data-edge="l" title="Drag to resize · double-click to fill"><i></i></div>
+    <div class="bc-h bc-h-r" data-edge="r" title="Drag to resize · double-click to fill"><i></i></div>
+    <div class="bc-h bc-h-b" data-edge="b" title="Drag to resize · double-click to fill"><i></i></div>
+    <div class="bc-h bc-h-rb" data-edge="rb" title="Drag to resize"></div>
+    <div class="bc-h bc-h-lb" data-edge="lb" title="Drag to resize"></div>
+    <div class="bc-size-pill" id="bcSizePill"></div>
+  </div>
+</div>
 
 <!-- ============ DOCKS: terminal and background tasks ============ -->
 <!-- Laid out like Claude's (app.js layoutDock): Background tasks is its own
@@ -165,6 +194,10 @@
           <i data-icon="tasks" class="ico-md"></i>
           <span class="sb-label">Tasks</span>
           <span class="sb-item-badge hidden" id="tasksBadge">0</span>
+        </button>
+        <button class="sb-row" id="specialistsBtn" type="button">
+          <i data-icon="users" class="ico-md"></i>
+          <span class="sb-label">Specialists</span>
         </button>
       </nav>
 
@@ -348,6 +381,7 @@
           <button class="icon-btn browser-toggle-btn" title="Toggle browser panel"><i data-icon="globe" class="ico-md"></i></button>
           <button class="icon-btn" id="bgTasksToggleBtn" title="Background tasks" aria-label="Background tasks"><i data-icon="list" class="ico-md"></i></button>
           <button class="icon-btn" id="terminalToggleBtn" title="Toggle terminal"><i data-icon="terminal" class="ico-md"></i></button>
+          <button class="icon-btn" id="reviewToggleBtn" title="Review changes" aria-label="Review changes"><i data-icon="branch" class="ico-md"></i></button>
           <button class="icon-btn" id="deleteChatBtn" title="Delete chat"><i data-icon="trash" class="ico-md"></i></button>
           <button class="icon-btn" id="togglePanelBtn" title="Toggle details panel"><i data-icon="panel-right" class="ico-md"></i></button>
         </div>
@@ -360,6 +394,7 @@
 
         <button class="scroll-down icon-btn icon-btn-round hidden" id="scrollDown" title="Scroll to bottom" aria-label="Scroll to bottom"><i data-icon="arrow-down"></i></button>
 
+        <aside class="review-panel hidden" id="reviewPanel" aria-label="Review changes"><div class="rv" id="spReview"></div></aside>
         <aside class="side-panel hidden" id="sidePanel">
           <div class="sp-section">
             <div class="sp-head">Project</div>
@@ -684,5 +719,8 @@
 <script src="bots-ui.js"></script>
 <script src="publish-ui.js"></script>
 <script src="claude-code-ui.js"></script>
+<script src="browser-responsive.js"></script>
+<script src="review-ui.js"></script>
+<script src="specialists-ui.js"></script>
 </body>
 </html>

@@ -14,6 +14,11 @@
 // has two agents editing the same folder at once.
 const path = require('path');
 const claudeDesktop = require('./claude-code-desktop');
+const fs = require('fs');
+const os = require('os');
+// The team and its standing jobs in the user's account: the phone and the server timer share them.
+const sync = require('./specialists-sync');
+let lastSyncTick = 0;
 
 let deps = null; // { ipcMain, cliDir, sendEvent, agentMod(), browser, settings: { get(), set(on) }, recordToolEnd(session, ev, extra), startRun(payload) }
 let lib = null;
@@ -113,14 +118,51 @@ function push(session, msg) {
 }
 
 /**
- * Everything a turn needs to run as Wisp, or null when this chat is not
- * Wisp's. Never throws.
+ * Who the user @mentioned in their message: { spec } for one specialist,
+ * { back: true } for @Codeply, or null (no one, or two or more: Codeply
+ * brings each in, wisp.js rule 10). Names can have spaces ("@Inbox Watch").
  */
-function forTurn({ session, approve, signal, route, cwd, mode, verifyOnly }) {
+function mentionedIn(text, W) {
+  const s = String(text || '');
+  if (!s.includes('@')) return null;
+  const team = W.listSpecialists().slice().sort((a, b) => b.name.length - a.name.length); // "Inbox Watch" before "Inbox"
+  const found = new Set();
+  let back = false;
+  const re = /(^|\s)@/g;
+  let m;
+  while ((m = re.exec(s))) {
+    const rest = s.slice(m.index + m[0].length).toLowerCase();
+    const ends = (n) => !/[\w-]/.test(rest.charAt(n));
+    if (rest.startsWith('codeply') && ends(7)) { back = true; continue; }
+    const hit = team.find((t) => rest.startsWith(t.name.toLowerCase()) && ends(t.name.length));
+    if (hit) found.add(hit.id);
+  }
+  if (found.size === 1 && !back) return { spec: W.findSpecialist([...found][0]) };
+  if (back && !found.size) return { back: true };
+  return null;
+}
+
+/**
+ * Everything a turn needs to run as Wisp, or null when this chat is not
+ * Wisp's. Never throws. `request`: the user's message; an @mention of one
+ * specialist switches the chat to it before the turn, so it answers this message itself.
+ */
+function forTurn({ session, approve, signal, route, cwd, mode, verifyOnly, request }) {
   if (!activeFor(session, mode)) return null;
   let W;
   try { W = wisp(); } catch (e) { console.warn('[wisp] not available:', e.message); return null; }
   const canDelegate = !verifyOnly;
+  if (canDelegate && session && request) {
+    let picked = null;
+    try { picked = mentionedIn(request, W); } catch {}
+    const to = picked && picked.spec ? picked.spec.id : null;
+    if (picked && (picked.spec || session.speaker) && (session.speaker || null) !== to) {
+      session.speaker = to;
+      const card = picked.spec ? W.card(picked.spec) : null;
+      push(session, { kind: 'wisp_speaker', agent: card });
+      deps.sendEvent(session.id, { type: 'wisp_speaker', agent: card });
+    }
+  }
   let life = false; let phone = false;
   try { life = require(path.join(deps.cliDir, 'lib', 'life.js')).available(); } catch {}
   try { phone = require(path.join(deps.cliDir, 'lib', 'reach.js')).available(); } catch {}
@@ -162,8 +204,10 @@ function forTurn({ session, approve, signal, route, cwd, mode, verifyOnly }) {
 
   // Claude Code (claude-code-desktop.js): the user's own Claude plan as a coding agent Wisp briefs and reviews.
   const claudeCode = canDelegate && claudeDesktop.ready()
-    ? ({ task, fresh, model, signal: sig }) => runClaude({ session, task, fresh, model, approve, signal: sig || signal, cwd })
+    ? ({ task, fresh, model, effort, agent, wait, bare, browser, signal: sig }) => runClaude({ session, task, fresh, model, effort, agent, wait, bare, browser, approve, signal: sig || signal, cwd })
     : undefined;
+  // A swarm: several Claude agents on one task at once, one combined report later.
+  if (claudeCode) claudeCode.swarm = (o) => runSwarm({ session, approve, cwd, ...o });
 
   // talk_to: from the next message the user talks to that specialist itself (session.speaker),
   // with its own face and voice; "Codeply" hands them back. The face changes right away.
@@ -313,28 +357,60 @@ async function runSpecialist({ session, spec, task, approve, signal, route, cwd,
   };
 }
 
-/** One claude_code call: Claude Code works, then Wisp gets its report and the factual record to review. */
-async function runClaude({ session, task, fresh, model, approve, signal, cwd }) {
-  const r = await claudeDesktop.runForChat({ session, task, chat: recentChat(session), fresh, model, approve, signal, cwd });
-  if (r.rejected) return { ok: false, output: `${r.failed} Do it yourself or with your team, or ask the user how they want it done.`, meta: { rejected: true } };
-  if (signal && signal.aborted) return { ok: false, output: 'Claude Code was stopped by the user.' };
-  if (!r.actions && r.failed) return { ok: false, output: r.failed };
-  const facts = factsOf(r.actions);
-  const lines = [`CLAUDE CODE'S REPORT (round ${r.round})`, r.text || (r.failed ? `It couldn't finish: ${r.failed}.` : 'Done, nothing to add.'), '', factsText('Claude Code', facts, facts.files, r.ok ? '' : r.failed)];
+/** What Wisp reads when a Claude agent reports: its words, then what it really did. */
+function claudeReport(r, auto) {
+  const name = (r.agent && r.agent.name) || 'Claude Code';
+  const facts = factsOf(r.actions || []);
+  const lines = [];
+  if (auto) lines.push(`[Automatic message from Codeply, not typed by the user: ${name} finished working in the background.]`, '');
+  lines.push(`CLAUDE CODE'S REPORT (${name}, round ${r.round})`, r.text || (r.failed ? `It couldn't finish: ${r.failed}.` : 'Done, nothing to add.'), '', factsText(name, facts, facts.files, r.ok ? '' : r.failed));
   if (r.removed && r.removed.length) lines.push(`Files deleted: ${r.removed.join(', ')}`);
   if (r.denials && r.denials.length) lines.push(`Not allowed to run (Codeply's limits for Claude Code): ${r.denials.join('; ')}. Run what is still needed yourself with run (the user approves it), and publishing is yours.`);
   lines.push('', r.ok
-    ? 'Now review it: read the key files, browser_check the page, design_lint pages, run the build or tests. To send it back, call claude_code again with exactly what to fix; it remembers this round.'
+    ? `Now review it: read the key files, browser_check the page, design_lint pages, run the build or tests. To send it back, call claude_code with agent ${name} and exactly what to fix; it remembers this round.${auto ? ' Then tell the user what was built and how you checked it.' : ''}`
     : r.auth ? 'Claude Code needs the user to log in again (Connect Apps, Claude Code). Tell them, and carry on yourself meanwhile.'
-      : 'Decide: send it back with claude_code and a clearer task, or finish the work yourself.');
+      : `Decide: send it back with claude_code (agent ${name}) and a clearer task, or finish the work yourself.`);
+  return lines.join('\n');
+}
+
+/** One claude_swarm call: the swarm starts in the background; one combined report comes later. */
+async function runSwarm({ session, task, parts, browser, url, model, effort, approve, cwd }) {
+  const r = await claudeDesktop.swarmForChat({ session, task, parts, browser, url, model, effort, approve, cwd, onReport: (res) => claudeReport(res, true) });
+  if (r.rejected) return { ok: false, output: `${r.failed} Do it yourself or with your team, or ask the user how they want it done.`, meta: { rejected: true } };
+  if (!r.started) return { ok: false, output: r.failed || 'The swarm could not start.' };
+  const names = r.swarm.agents.map((a) => a.name).join(', ');
+  return {
+    ok: true,
+    output: `A swarm of ${r.swarm.agents.length} is working on it in the background: ${names}. Their board is ${r.swarm.board}.${browser ? ' They share a tab in Codeply\'s browser, each with its own cursor, so the user can watch.' : ''} Don't wait or check on them: one combined report arrives in this chat when the last one finishes. Tell the user in a line or two who is doing what, and that you'll review it all when they report.`,
+    meta: { label: `Swarm of ${r.swarm.agents.length} is working` },
+  };
+}
+
+/** One claude_code call. In the background by default: the report comes back as its own message (claude-code-desktop.js). */
+async function runClaude({ session, task, fresh, model, effort, agent, wait, bare, browser, approve, signal, cwd }) {
+  const r = await claudeDesktop.runForChat({ session, task, chat: recentChat(session), fresh, model, effort, agent, wait, bare, browser, approve, signal, cwd, onReport: (res) => claudeReport(res, true) });
+  if (r.rejected) return { ok: false, output: `${r.failed} Do it yourself or with your team, or ask the user how they want it done.`, meta: { rejected: true } };
+  if (r.started) {
+    const a = r.agent;
+    const how = [a.modelLabel, a.effortLabel ? `${a.effortLabel} effort` : ''].filter(Boolean).join(', ');
+    return {
+      ok: true,
+      output: `${a.name} is working on it in the background${how ? ` (${how})` : ''}, in Background tasks, where the user can watch its log and message it. Don't wait or check on it: its report arrives in this chat as an automatic message when it finishes (agents started together report together, once the last one is done), and you review it then. Now tell the user in a line or two what you handed to ${a.name} and that you'll review it when it reports; you can keep talking with them meanwhile. For another part in parallel, call claude_code with a different agent name and separate files.`,
+      meta: { label: `${a.name} is working${how ? ` (${how})` : ''}` },
+    };
+  }
+  if (signal && signal.aborted) return { ok: false, output: 'Claude Code was stopped by the user.' };
+  if (!r.actions && r.failed) return { ok: false, output: r.failed };
+  const facts = factsOf(r.actions);
+  const name = (r.agent && r.agent.name) || 'Claude Code';
   return {
     ok: r.ok,
-    output: lines.join('\n'),
+    output: claudeReport(r, false),
     meta: {
-      label: `Claude Code, round ${r.round}`,
+      label: `${name}, round ${r.round}`,
       specialist: {
         id: claudeDesktop.CARD.id,
-        name: 'Claude Code',
+        name,
         actions: r.actions,
         succeeded: [...new Set(r.actions.filter((a) => a.ok).map((a) => a.tool))],
         madeAnyEdit: facts.files.length > 0,
@@ -376,17 +452,36 @@ async function fire(job) {
   const spec = W.findSpecialist(job.specialist);
   if (!spec) { W.cancelSchedule(job.id); return; }
   const text = `Scheduled job for ${spec.name} (${W.describeRule(job.rule)}): ${job.task}`;
+  // A job made on another PC (or the phone) may name a folder this PC does not have.
+  const cwd = job.cwd && fs.existsSync(job.cwd) ? job.cwd : os.homedir();
   let r;
-  try { r = await deps.startRun({ sessionId: job.sessionId || null, cwd: job.cwd, text }); } catch (e) { r = { error: e.message }; }
+  try { r = await deps.startRun({ sessionId: job.sessionId || null, cwd, text }); } catch (e) { r = { error: e.message }; }
   W.markFired(job.id, r && r.error ? { error: r.error } : { sessionId: r && r.sessionId });
+  if (!(r && r.error)) sync.recordRun(job, { ok: true, output: 'Ran on your PC. The report is in its chat in Codeply.' });
+  sync.syncSoon(500);
   deps.sendEvent(null, { type: 'wisp_team' });
+}
+
+/** Always on: its jobs run on time even with the Codeply window closed (and, through the account, with the PC off). */
+function alwaysOn(id) {
+  try { const s = wisp().listSpecialists().find((x) => x.id === id); return !!(s && s.alwaysOn); } catch { return false; }
 }
 
 async function tick() {
   if (!enabled() || !deps.startRun) return;
+  if (Date.now() - lastSyncTick > 2 * 60000) { lastSyncTick = Date.now(); await sync.syncNow(); }
   let due = [];
   try { due = wisp().dueSchedules(); } catch { return; }
-  for (const job of due) await fire(job); // one at a time; a busy chat retries in a few minutes
+  if (!due.length) return;
+  // The account has the last word on timing: take the other devices' changes first.
+  await sync.syncNow();
+  try { due = wisp().dueSchedules(); } catch { return; }
+  const shown = deps.windowShown ? deps.windowShown() : true;
+  for (const job of due) { // one at a time; a busy chat retries in a few minutes
+    if (!shown && !alwaysOn(job.specialist)) continue; // waits until Codeply is open
+    if (!(await sync.claim(job))) continue; // another PC or the cloud runs this one
+    await fire(job);
+  }
 }
 
 function teamState() {
@@ -398,6 +493,7 @@ function teamState() {
       models: userModels(),
       schedules: W.listSchedules().map((j) => ({ ...j, specialistName: W.findSpecialist(j.specialist)?.name || j.specialist })),
       shapes: W.SHAPES, moods: W.MOODS,
+      sync: sync.status(), cloudRuns: sync.runs(),
     };
   } catch (e) {
     return { enabled: enabled(), team: [], models: [], schedules: [], error: e.message };
@@ -406,19 +502,76 @@ function teamState() {
 
 function init(d) {
   deps = d;
+  sync.init({
+    wisp, supabase: d.supabase, userId: d.userId, deviceId: d.deviceId || (() => 'pc'), dataDir: d.dataDir || os.tmpdir(),
+    onChange: () => deps.sendEvent(null, { type: 'wisp_team' }),
+  });
+  // Any change from the window or from Wisp's tools goes to the account a moment later.
+  d.ipcMain.handle('wisp:sync', async () => { await sync.syncNow(); return teamState(); });
   d.ipcMain.handle('wisp:state', () => teamState());
   d.ipcMain.handle('wisp:set', (e, on) => { deps.settings.set(!!on); return teamState(); });
   d.ipcMain.handle('wisp:removeSpecialist', (e, id) => {
     try { wisp().removeSpecialist(String(id || '')); } catch {}
+    sync.syncSoon();
     return teamState();
   });
   d.ipcMain.handle('wisp:updateSpecialist', (e, id, patch) => {
     const p = { ...(patch || {}) };
     if (p.model !== undefined) { const m = resolveModel(p.model); p.model = m === undefined ? 'auto' : m; }
     try { wisp().updateSpecialist(String(id || ''), p); } catch {}
+    if (p.alwaysOn === true && deps.keepRunning) deps.keepRunning();
+    sync.syncSoon();
     return teamState();
   });
-  d.ipcMain.handle('wisp:cancelSchedule', (e, id) => { try { wisp().cancelSchedule(String(id || '')); } catch {} return teamState(); });
+  // Make your own specialist: describe it, and Codeply writes its instructions (its system
+  // prompt), a short focus, a name if you gave none, and a look. Nothing is saved until Create.
+  d.ipcMain.handle('wisp:draftSpecialist', async (e, o) => {
+    const description = String((o && o.description) || '').trim().slice(0, 4000);
+    const wanted = String((o && o.name) || '').trim().slice(0, 40);
+    if (!description) return { ok: false, error: 'Describe what it should do.' };
+    if (!deps.draftJson) return { ok: false, error: 'Drafting is not available here.' };
+    const W = wisp();
+    const prompt = `You design a specialist agent for Codeply, a personal AI agent. The user describes what they want; write the specialist.
+
+The user's description:
+${description}
+${wanted ? `\nIts name must be: ${wanted}` : ''}
+
+Write its instructions as a system prompt in the second person ("You are ..."): its job, how it works step by step, its standards, what it must never do, how it checks its own work before reporting, and what its report to Codeply contains. Concrete and specific to this job, 120 to 300 words, plain sentences, no markdown headings. It works inside Codeply with Codeply's tools (files, commands, the web, the browser, the user's connected apps), and it reports back to Codeply, which answers the user.
+
+Respond with ONLY a JSON object: {"name": "${wanted ? wanted : 'a short name, one or two words, like Copywriter or Price Watch'}", "focus": "what it is for, under 8 words", "instructions": "...", "voice": "how it talks when the user talks to it directly, one sentence", "shape": one of ${JSON.stringify(W.SHAPES.filter((x) => x !== 'pentagon'))}, "color": "#rrggbb, a vivid colour that fits it", "gear": one of ${JSON.stringify(W.GEAR)} or null}`;
+    let r;
+    try { r = await deps.draftJson(prompt); } catch (err) { return { ok: false, error: err.message }; }
+    if (!r || !r.success || !r.json) return { ok: false, error: (r && r.error) || 'Could not write it. Try again.' };
+    const j = r.json;
+    return { ok: true, draft: {
+      name: wanted || String(j.name || '').trim().slice(0, 40) || 'Specialist',
+      focus: String(j.focus || '').trim().slice(0, 160),
+      instructions: String(j.instructions || '').trim().slice(0, 4000),
+      voice: String(j.voice || '').trim().slice(0, 300),
+      shape: W.SHAPES.includes(j.shape) && j.shape !== 'pentagon' ? j.shape : 'circle',
+      color: /^#[0-9a-f]{6}$/i.test(String(j.color || '')) ? String(j.color) : '#1f8bff',
+      gear: W.GEAR.includes(j.gear) ? j.gear : null,
+    } };
+  });
+  d.ipcMain.handle('wisp:createSpecialist', (e, o) => {
+    const p = o && typeof o === 'object' ? o : {};
+    let r;
+    try {
+      const m = p.model !== undefined ? resolveModel(p.model) : undefined;
+      r = wisp().createSpecialist({ name: p.name, focus: p.focus, instructions: p.instructions, shape: p.shape, color: p.color, gear: p.gear || undefined, voice: p.voice, model: m === undefined ? undefined : m });
+    } catch (err) { r = { ok: false, error: err.message }; }
+    if (r && r.ok) { deps.sendEvent(null, { type: 'wisp_team' }); sync.syncSoon(); }
+    return { ...teamState(), ok: !!(r && r.ok), error: r && r.error, id: r && r.specialist ? r.specialist.id : null };
+  });
+  d.ipcMain.handle('wisp:addSchedule', (e, o) => {
+    const p = o && typeof o === 'object' ? o : {};
+    let r;
+    try { r = wisp().addSchedule({ specialist: String(p.specialist || ''), task: String(p.task || ''), when: String(p.when || ''), cwd: p.cwd || undefined }); } catch (err) { r = { ok: false, error: err.message }; }
+    if (r && r.ok) { deps.sendEvent(null, { type: 'wisp_team' }); sync.syncSoon(); }
+    return { ...teamState(), ok: !!(r && r.ok), error: r && r.error };
+  });
+  d.ipcMain.handle('wisp:cancelSchedule', (e, id) => { try { wisp().cancelSchedule(String(id || '')); } catch {} sync.syncSoon(); return teamState(); });
   d.ipcMain.handle('wisp:runSchedule', async (e, id) => {
     const job = wisp().listSchedules().find((j) => j.id === id);
     if (job) await fire(job);

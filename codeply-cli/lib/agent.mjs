@@ -413,7 +413,8 @@ const PARAMS = {
   lsp: ['operation', 'path', 'line', 'character', 'symbol', 'query'],
   ask_bot: ['bot', 'task'], // only offered when the host passes askBot (lib/bots.js)
   bring_in: ['specialist', 'task'], // Wisp: only offered when the host passes bringIn (lib/wisp.js)
-  claude_code: ['task', 'fresh', 'model'], // Wisp: only when the host passes claudeCode (lib/claude-code.js)
+  claude_code: ['task', 'agent', 'model', 'effort', 'bare', 'browser', 'fresh', 'wait'],
+  claude_swarm: ['task', 'parts', 'browser', 'url', 'model', 'effort'], // Wisp: several Claude agents on one task (lib/claude-code.js) // Wisp: only when the host passes claudeCode (lib/claude-code.js)
   create_specialist: ['name', 'focus', 'instructions', 'model', 'shape', 'color', 'gear', 'voice'], // Wisp: only with createSpecialist
   schedule: ['action', 'specialist', 'task', 'when', 'id'], // Wisp: a specialist's standing job, only with the host's schedule
   talk_to: ['specialist'], // Wisp: the user talks to a specialist directly (or back to Codeply), only with the host's talkTo
@@ -425,6 +426,7 @@ const PARAMS = {
 // an edit_file block as a search.
 const NAME_ALIASES = {
   claude_code: 'claude_code', claudecode: 'claude_code', claude: 'claude_code', use_claude: 'claude_code', ask_claude: 'claude_code',
+  claude_swarm: 'claude_swarm', swarm: 'claude_swarm', agent_swarm: 'claude_swarm',
   bring_in: 'bring_in', bringin: 'bring_in', delegate: 'bring_in', call_specialist: 'bring_in', callspecialist: 'bring_in', spawn_agent: 'bring_in', spawnagent: 'bring_in', run_agent: 'bring_in', subagent: 'bring_in',
   talk_to: 'talk_to', talkto: 'talk_to', switch_to: 'talk_to', put_on: 'talk_to',
   schedule: 'schedule', schedule_task: 'schedule', scheduletask: 'schedule', schedule_job: 'schedule', cron: 'schedule',
@@ -1759,7 +1761,7 @@ const NO_NATIVE_TOOLS_REMINDER =
 // unless their entry says toolMode: 'text', or CODEPLY_TOOLS=text is set.
 // A model that rejects tools is remembered for the rest of the session.
 const nativeUnsupported = new Set();
-const MUTATING_ACTIONS = new Set(['use_computer', 'write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'bot_email_send', 'calendar_add', 'calendar_update', 'add_model', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github', 'claude_code']);
+const MUTATING_ACTIONS = new Set(['use_computer', 'write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'bot_email_send', 'calendar_add', 'calendar_update', 'add_model', 'slack_post_message', 'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github', 'claude_code', 'claude_swarm']);
 
 /**
  * Native function names for MCP tools (mcp__server__tool, within the 64-char
@@ -1874,7 +1876,7 @@ function withReasoning(msg, reasoning) {
  *                                  "claims an edit it didn't make this turn" check is skipped.
  * @yields {{type:string, ...}} text | reasoning | tool_start | tool_end | done | error | aborted
  */
-export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly, botPrompt, askBot, handOff, botId, haze: hazeOpts, todos, bringIn, claudeCode, createSpecialist, schedule, talkTo, agentRole }) {
+export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly, botPrompt, askBot, handOff, botId, haze: hazeOpts, todos, bringIn, claudeCode, createSpecialist, schedule, talkTo, agentRole, credit }) {
   let readOnly = READ_ONLY_MODES.has(mode);
   const stepBudget = Math.max(1, maxSteps || MAX_STEPS);
   // OpenAI-shaped content array only when there's actually an image to carry -
@@ -1904,6 +1906,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       if (n === 'ask_bot') return typeof askBot === 'function';
       if (n === 'bring_in') return typeof bringIn === 'function' && m !== 'Design';
       if (n === 'claude_code') return typeof claudeCode === 'function' && m !== 'Design' && !ro;
+      if (n === 'claude_swarm') return typeof claudeCode === 'function' && typeof claudeCode.swarm === 'function' && m !== 'Design' && !ro;
       if (n === 'create_specialist') return typeof createSpecialist === 'function' && m !== 'Design';
       if (n === 'schedule') return typeof schedule === 'function' && m !== 'Design';
       if (n === 'talk_to') return typeof talkTo === 'function' && m !== 'Design';
@@ -1990,6 +1993,17 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
   let codeBlockNudged = false;
   let madeAnyEdit = false; // true once a write_file/edit_file actually succeeds this turn - gates the check below
   const writtenBasenames = new Set(); // basenames of files actually write_file'd/edit_file'd this turn - feeds the overclaim check below
+  // A turn that reviews work done outside it (a Claude Code agent that ran in
+  // the background) starts with that work's record, so describing it is not an overclaim.
+  if (credit && typeof credit === 'object') {
+    for (const a of Array.isArray(credit.actions) ? credit.actions : []) actions.push({ ...a });
+    for (const t of Array.isArray(credit.succeeded) ? credit.succeeded : []) succeededTools.add(t);
+    const files = Array.isArray(credit.files) ? credit.files : [];
+    if (files.length) {
+      madeAnyEdit = true;
+      for (const f of files) { writtenBasenames.add(path.basename(String(f)).toLowerCase()); unverifiedEdits.add(String(f).replace(/\\/g, '/')); }
+    }
+  }
 
   // A prompt instruction alone ("call view_images before designing") was not
   // reliable enough - real runs showed the model calling

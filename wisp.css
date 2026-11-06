@@ -3,9 +3,7 @@
 /* ---- the character ---- */
 .wisp-el { display: inline-block; flex: none; line-height: 0; cursor: pointer; -webkit-user-select: none; user-select: none; }
 .wisp-el svg { width: 100%; height: 100%; overflow: visible; stroke: none; fill: none; } /* Craft's global svg icon stroke must not reach Wisp */
-.wisp-el .w-body { filter: drop-shadow(0 6px 14px rgba(31, 82, 224, .28)); }
-.wisp-el[data-mood="angry"] .w-body { filter: drop-shadow(0 6px 14px rgba(224, 48, 74, .3)); }
-.wisp-el[data-mood="love"] .w-body { filter: drop-shadow(0 6px 14px rgba(224, 69, 127, .3)); }
+/* No glow behind the face: the body's own shading gives it depth. */
 .wisp-el .w-eyes { fill: #0b0b0f; }
 .wisp-el .w-shine { pointer-events: none; }
 .wisp-el .w-shape, .wisp-el linearGradient stop { transition: stop-color .45s ease; }
@@ -36,7 +34,7 @@
 /* ---- chat: every answer starts with the avatar, on the left ---- */
 .wisp-on .chat-column { padding-left: 70px; }
 .wisp-turn { position: relative; height: 0; }
-.wisp-turn-face { position: absolute; left: -48px; top: 0; }
+.wisp-turn-face { position: absolute; left: -48px; top: -6px; } /* centered on the first line beside it */
 .wisp-turn-face.wisp-sm { width: 36px; height: 36px; }
 
 /* ---- specialists: one quiet row inside the answer's work line ---- */

@@ -47,7 +47,46 @@ function insideCwd(p, cwd) {
 
 const DIRECTION_FLAGS = ['sector', 'brief', 'tone', 'sections', 'have', 'keep', 'avoid', 'direction', 'redraw', 'list', 'site', 'seed'];
 
+// The sectors draw.mjs knows, and how people say them. A missing or loose sector is
+// read from the brief, so a direction is never refused for want of one.
+const SECTORS = ['saas', 'dev-tool', 'ai-product', 'consumer-app', 'finance', 'agency', 'studio-portfolio', 'personal-portfolio', 'ecommerce', 'physical-product', 'fashion', 'hospitality', 'restaurant', 'real-estate', 'architecture', 'event', 'health', 'education', 'nonprofit', 'culture', 'music', 'other'];
+const SECTOR_WORDS = [
+  ['dev-tool', /\b(dev ?tools?|developer|api|sdk|cli|ide|devops|database|open[- ]source|library|framework)\b/i],
+  ['ai-product', /\b(ai|a\.i\.|llm|agent|chatbot|gpt|machine learning|copilot)\b/i],
+  ['finance', /\b(bank|fintech|finance|crypto|invest|trading|payments?|budget|accounting|insurance|wallet)\b/i],
+  ['restaurant', /\b(restaurant|cafe|café|coffee|bakery|bar|pizza|bistro|food truck|menu|diner|brewery)\b/i],
+  ['hospitality', /\b(hotel|resort|hostel|b&b|travel|tour|airbnb|spa)\b/i],
+  ['ecommerce', /\b(shop|store|e-?commerce|marketplace|checkout|cart|merch|sell)\b/i],
+  ['fashion', /\b(fashion|clothing|apparel|jewelry|jewellery|streetwear|beauty|cosmetics)\b/i],
+  ['physical-product', /\b(product launch|hardware|gadget|device|headphones|bike|furniture)\b/i],
+  ['real-estate', /\b(real estate|property|apartment|realtor|rental|homes? for sale)\b/i],
+  ['architecture', /\b(architect|architecture|interior design)\b/i],
+  ['event', /\b(event|conference|wedding|festival|meetup|concert|party|summit)\b/i],
+  ['health', /\b(health|clinic|doctor|dental|fitness|gym|yoga|wellness|therapy|medical)\b/i],
+  ['education', /\b(school|course|learn|education|tutor|university|academy|class)\b/i],
+  ['nonprofit', /\b(nonprofit|non-profit|charity|ngo|donate|foundation|volunteer)\b/i],
+  ['music', /\b(music|band|album|musician|dj|label|podcast)\b/i],
+  ['culture', /\b(museum|gallery|art|magazine|culture|theatre|theater|film|book)\b/i],
+  ['agency', /\b(agency|consultancy|consulting|marketing studio)\b/i],
+  ['studio-portfolio', /\b(studio)\b/i],
+  ['personal-portfolio', /\b(portfolio|resume|cv|personal site|my site|about me|blog)\b/i],
+  ['consumer-app', /\b(app|to-?do|todo|tracker|habit|notes?|planner|game|social|mobile|chat)\b/i],
+  ['saas', /\b(saas|b2b|startup|platform|dashboard|crm|analytics|landing page|software|tool)\b/i],
+];
+function sectorFor(sector, brief) {
+  const s = String(sector || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+  if (SECTORS.includes(s)) return s;
+  const near = SECTORS.find((x) => x !== 'other' && (s && (x.startsWith(s) || s.startsWith(x) || x.replace('-', '') === s.replace('-', ''))));
+  if (near) return near;
+  const text = `${sector || ''} ${brief || ''}`;
+  for (const [id, re] of SECTOR_WORDS) if (re.test(text)) return id;
+  return 'other';
+}
+
 export async function design_direction(args, ctx) {
+  // A fresh direction needs a sector: take the given one, or the brief's, or "other".
+  const fresh = !args.direction && !args.redraw && !/^(1|true|yes)$/i.test(String(args.show || '').trim()) && !args.list;
+  if (fresh && (args.brief || args.sector)) args = { ...args, sector: sectorFor(args.sector, args.brief) };
   const argv = [];
   for (const k of DIRECTION_FLAGS) {
     const v = args[k] == null ? '' : String(args[k]).trim();

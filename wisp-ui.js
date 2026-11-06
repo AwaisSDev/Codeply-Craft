@@ -116,14 +116,12 @@
     setSpeaker(sessionId, card);
     if (turnFace && turnFace.el.isConnected) turnFace.dress(lookOf(card), !(data && data.turn));
   }
-  /** A small line in the chat where the switch happened: "Frontend is here" with its face, or "Back to Codeply". */
+  /** A small line in the chat where the switch happened: "You're talking to Frontend", or "Back to Codeply".
+   *  Just words: the answer right below already wears the new speaker's face, so a second face here doubled it. */
   function speakerNote(data) {
-    if (!W()) return null;
     const card = (data && data.agent) || null;
     const el = document.createElement('div');
     el.className = 'wisp-switch-note';
-    const face = W().avatar({ size: 'xs', mood: 'happy', look: lookOf(card) });
-    el.appendChild(face);
     const t = document.createElement('span');
     t.textContent = card ? `You're talking to ${card.name}` : 'Back to Codeply';
     el.appendChild(t);
@@ -193,19 +191,29 @@
     if (data.agent.kind === 'claude') {
       el.classList.add('cc-note');
       const round = Number(data.agent.round) || 1;
+      const who = escHtml(data.agent.name && data.agent.name !== 'Claude Code' ? data.agent.name : 'Claude Code');
+      const watch = data.agentId && window.CraftClaudePanel ? `<button type="button" class="cc-watch" data-cc-open="${escHtml(data.agentId)}">Watch</button>` : '';
       if (data.phase === 'start') {
-        el.innerHTML = `<span><b class="cc-mark">✳</b>${round > 1 ? `Sent it back to Claude Code (round ${round})` : 'Asked Claude Code to build this'}</span>${data.task ? `<span class="wisp-note-task">${escHtml(String(data.task).replace(/\s+/g, ' ').slice(0, 220))}</span>` : ''}`;
+        el.innerHTML = `<span><b class="cc-mark">✳</b>${round > 1 ? `Sent it back to ${who} (round ${round})` : `${who} is building this in the background`}${watch}</span>${data.task ? `<span class="wisp-note-task">${escHtml(String(data.task).replace(/\s+/g, ' ').slice(0, 220))}</span>` : ''}`;
         if (data.task) el.title = data.task;
       } else if (data.phase === 'report') {
         const files = Array.isArray(data.files) ? data.files : [];
         if (!data.ok) {
           el.classList.add('bad');
-          el.innerHTML = `<span><b class="cc-mark">✳</b>Claude Code could not finish</span>${data.text ? `<span class="wisp-note-task">${escHtml(String(data.text).slice(0, 220))}</span>` : ''}`;
+          el.innerHTML = `<span><b class="cc-mark">✳</b>${who} could not finish${watch}</span>${data.text ? `<span class="wisp-note-task">${escHtml(String(data.text).slice(0, 220))}</span>` : ''}`;
         } else {
           const n = files.length;
-          el.innerHTML = `<span><b class="cc-mark">✳</b>Claude Code is done${n ? `, ${n} file${n === 1 ? '' : 's'} changed` : ''}. Reviewing it now.</span>${n ? `<span class="cc-files">${escHtml(files.slice(0, 8).join(', '))}${n > 8 ? '…' : ''}</span>` : ''}`;
+          el.innerHTML = `<span><b class="cc-mark">✳</b>${who} is done${n ? `, ${n} file${n === 1 ? '' : 's'} changed` : ''}. Codeply reviews it next.${watch}</span>${n ? `<span class="cc-files">${escHtml(files.slice(0, 8).join(', '))}${n > 8 ? '…' : ''}</span>` : ''}`;
         }
       } else return null;
+      // The agent's own face (one of Wisp's family) instead of a mark.
+      const mk = data.agent.look && window.CraftWisp ? el.querySelector('.cc-mark') : null;
+      if (mk) {
+        mk.textContent = '';
+        mk.appendChild(window.CraftWisp.avatar({ look: data.agent.look, mood: data.phase === 'report' ? (data.ok ? 'happy' : 'sad') : 'working', size: 'xs', interactive: false }));
+      }
+      const w = el.querySelector('[data-cc-open]');
+      if (w) w.addEventListener('click', (e) => { e.stopPropagation(); window.CraftClaudePanel.open(w.dataset.ccOpen); });
       return el;
     }
     if (data.phase === 'start') {

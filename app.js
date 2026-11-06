@@ -312,6 +312,8 @@ function setZoom(z) {
   z = Math.min(1.6, Math.max(0.7, Math.round(z * 10) / 10));
   document.documentElement.style.zoom = z === 1 ? '' : String(z);
   try { localStorage.setItem(ZOOM_KEY, String(z)); } catch {}
+  // The docks and the browser fit to the new size.
+  requestAnimationFrame(() => { if (typeof layoutDock === 'function') layoutDock(); });
 }
 try { const z = Number(localStorage.getItem(ZOOM_KEY)); if (z && z !== 1) setZoom(z); } catch {}
 const currentZoom = () => Number(document.documentElement.style.zoom) || 1;
@@ -526,10 +528,16 @@ function renderBgTasks() {
   if (!body || $('bgTasksPanel').classList.contains('hidden')) { clearInterval(jobsTimer); jobsTimer = null; return; }
   const running = jobsList.filter((j) => j.running);
   const finished = jobsList.filter((j) => !j.running).sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0));
-  body.innerHTML = (!jobsList.length ? '<div class="bgt-empty">Nothing running in the background.</div>' : '') +
+  // Claude agents keep a section of their own at the top (claude-code-ui.js); it survives the redraw.
+  const subagents = $('bgtSubagents');
+  if (subagents) subagents.remove();
+  const agentCount = window.CraftClaudePanel ? window.CraftClaudePanel.count() : 0;
+  body.innerHTML = (!jobsList.length && !agentCount ? '<div class="bgt-empty">Nothing running in the background.</div>' : '') +
+    (agentCount && jobsList.length ? '<div class="bgt-label">Commands</div>' : '') +
     (running.length ? `<div class="bgt-label">Running ${running.length}</div>${running.map(bgTaskRow).join('')}` : '') +
     (finished.length ? `<button class="bgt-label${jobsFinishedOpen ? ' open' : ''}" type="button" data-fold="1" aria-expanded="${jobsFinishedOpen}">Finished ${finished.length} ${BGT_CHEV}</button>` +
       (jobsFinishedOpen ? finished.map(bgTaskRow).join('') : '') : '');
+  if (subagents) body.prepend(subagents);
   $('bgTasksClearBtn').disabled = !finished.length;
   clearInterval(jobsTimer);
   jobsTimer = running.length ? setInterval(() => { tickBgTasks(); fillJobOutputs(); }, 1000) : null;
@@ -669,7 +677,27 @@ function nearBottom() {
 // resend this" judgment call.
 let lastUserMessage = null; // { text, imageCount, at }
 
+/**
+ * A message Codeply wrote for itself (its agents reported). Nothing shows for it: Codeply
+ * answers as one voice, and the agents who did the work show as a row of faces under
+ * that answer ("3 agents contributed"), once it is written (flushCrew).
+ */
+let pendingCrew = null;
+function addAutoNote(m) {
+  pendingCrew = Array.isArray(m.crew) && m.crew.length && window.CraftClaudePanel && window.CraftClaudePanel.contributed ? m.crew : null;
+}
+function flushCrew() {
+  // The crew's running row goes to the bottom of the prompt's work, once that turn is written.
+  chatColumn.querySelectorAll('.crew-sum.working:not(.placed)').forEach((el) => { el.classList.add('placed'); chatColumn.appendChild(el); });
+  if (!pendingCrew) return;
+  const el = window.CraftClaudePanel.contributed(pendingCrew);
+  pendingCrew = null;
+  chatColumn.appendChild(el);
+  if (nearBottom()) scrollToBottom();
+}
+
 function addUserMessage(text, images) {
+  flushCrew(); // the crew of the answer before this message
   closeActivity();
   activityRole = null;
   const imageCount = images ? images.length : 0;
@@ -1029,6 +1057,8 @@ function updateActivitySummary(el) {
 
 function activityBody() {
   if (!activityEl || !activityEl.isConnected) {
+    // The working row says what is happening now: no "Pondering" line next to it.
+    if (thinkingEl) hideThinking();
     activityEl = document.createElement('div');
     activityEl.className = 'activity running';
     activityEl.innerHTML =
@@ -1430,6 +1460,13 @@ function mascotHtml(mascotFile, sizeClass, altText) {
 // seen only when the line is opened.
 let pendingWispMood = null; // the [mood: x] of the reply on its way (wisp_mood arrives just before its text)
 function renderWispAgent(data) {
+  // A Claude agent: one live line in the chat itself ("Nova edited styles.css"), not a note in the work log.
+  if (data && data.agent && data.agent.kind === 'claude' && data.agentId && window.CraftClaudePanel && window.CraftClaudePanel.crewLine) {
+    const atEnd = nearBottom();
+    window.CraftClaudePanel.crewLine(data, chatColumn);
+    if (atEnd) scrollToBottom();
+    return;
+  }
   const ui = window.CraftWispUI;
   const note = ui && ui.agentNote(data);
   if (!note) return;
@@ -1444,7 +1481,10 @@ function renderWispAgent(data) {
 function renderWispSpeaker(data) {
   const note = window.CraftWispUI && window.CraftWispUI.speakerNote(data);
   if (!note) return;
-  chatColumn.appendChild(note);
+  // An @mention switches before the answer starts: the line goes above the answer's face, not between it and the reply.
+  const last = chatColumn.lastElementChild;
+  if (last && last.classList.contains('wisp-turn')) chatColumn.insertBefore(note, last);
+  else chatColumn.appendChild(note);
   if (nearBottom()) scrollToBottom();
 }
 
@@ -1994,7 +2034,10 @@ document.addEventListener('keydown', (e) => {
   if (chatCtxMenuEl) { const a = chatCtxAnchorBtn; closeChatMenu(); if (a) a.focus(); }
 });
 
-$('togglePanelBtn').addEventListener('click', () => $('sidePanel').classList.toggle('hidden'));
+$('togglePanelBtn').addEventListener('click', () => {
+  const opening = $('sidePanel').classList.toggle('hidden') === false;
+  if (opening && window.CraftReview) window.CraftReview.show(false); // one popover at a time
+});
 
 // ─── Embedded browser panel (docked BrowserViews the agent's browser_check drives) ─
 // Tabs, back / forward / reload, the point-at tool, the address bar and a ...
@@ -2114,7 +2157,7 @@ if (api) {
     bc.activeTabId = data.activeTabId;
     bc.zoom = data.zoom || 100;
     document.querySelectorAll('.browser-toggle-btn').forEach((btn) => btn.classList.toggle('active', data.visible));
-    if (!dragState) document.documentElement.style.setProperty('--browser-panel-width', data.width + 'px');
+    if (!dragState) document.documentElement.style.setProperty('--browser-panel-width', (data.width / currentZoom()) + 'px');
     document.querySelector('.app').classList.toggle('browser-panel-open', data.visible);
     $('browserChrome').classList.toggle('hidden', !data.visible);
     $('bcResize').classList.toggle('hidden', !data.visible);
@@ -2169,7 +2212,7 @@ function closeBrowserMenu() {
   $('bcMenuBtn').setAttribute('aria-expanded', 'false');
   freezeBrowser(false);
 }
-const BC_SIZES = [['desktop', 'Desktop'], ['tablet', 'Tablet'], ['mobile', 'Phone']];
+const BC_SIZES = [['desktop', 'Desktop'], ['tablet', 'Tablet'], ['mobile', 'Phone'], ['responsive', 'Any size']];
 async function openBrowserMenu() {
   if (bc.menu) { closeBrowserMenu(); return; }
   await freezeBrowser(true);
@@ -2179,7 +2222,7 @@ async function openBrowserMenu() {
   const item = (act, label, keys = '') => `<button class="menu-item" role="menuitem" data-act="${act}"><span>${label}</span>${keys ? `<kbd>${keys}</kbd>` : ''}</button>`;
   m.innerHTML = item('find', 'Find in page', 'Ctrl+F') + item('print', 'Print')
     + `<div class="bc-menu-row"><span>Zoom</span><span class="bc-zoom"><button class="bc-btn" data-act="zoom-out" aria-label="Zoom out">${icon('minus', 'ico-sm')}</button><span data-zoom-label>${bc.zoom}%</span><button class="bc-btn" data-act="zoom-in" aria-label="Zoom in">${icon('plus', 'ico-sm')}</button><button class="bc-btn" data-act="zoom-reset" aria-label="Actual size" title="Actual size">${icon('refresh', 'ico-sm')}</button></span></div>`
-    + `<div class="bc-menu-row"><span>Device</span><span class="bc-devices">${BC_SIZES.map(([k, l]) => `<button class="${bc.viewport === k ? 'on' : ''}" data-act="size:${k}">${l}</button>`).join('')}</span></div>`
+    + `<div class="bc-menu-row"><span>Device</span><span class="bc-devices">${BC_SIZES.map(([k, l]) => `<button class="${bc.viewport === k || (k === 'responsive' && /^\d+x\d+$/.test(String(bc.viewport))) ? 'on' : ''}" data-act="size:${k}">${l}</button>`).join('')}</span></div>`
     + item('shot', 'Take a screenshot')
     + '<div class="menu-sep"></div>'
     + item('external', 'Open in your browser') + item('downloads', 'Downloads') + item('clear', 'Clear browsing data')
@@ -2201,6 +2244,11 @@ async function openBrowserMenu() {
     if (act === 'zoom-in') return api.browserPanelZoom(1);
     if (act === 'zoom-out') return api.browserPanelZoom(-1);
     if (act === 'zoom-reset') return api.browserPanelZoom(0);
+    if (act === 'size:responsive' && window.CraftResponsive) {
+      closeBrowserMenu();
+      window.CraftResponsive.enter();
+      return;
+    }
     if (act.startsWith('size:')) {
       bc.viewport = act.slice(5);
       m.querySelectorAll('.bc-devices button').forEach((x) => x.classList.toggle('on', x === b));
@@ -2289,7 +2337,7 @@ let dragState = null;
 const bcResize = $('bcResize');
 function setPanelRatio(ratio, live) {
   const r = Math.min(0.75, Math.max(0.25, ratio));
-  document.documentElement.style.setProperty('--browser-panel-width', Math.round(r * window.innerWidth) + 'px');
+  document.documentElement.style.setProperty('--browser-panel-width', Math.round(r * window.innerWidth / currentZoom()) + 'px');
   if (live) api.browserPanelResize(r);
   return r;
 }
@@ -2444,6 +2492,8 @@ function closeBgTasks() {
 // the page stepping aside under it.
 const CHAT_MIN = 420;
 let dockTasksW = 0;   // the tasks column's width, 0 while closed
+let tasksWidthPx = 0; // the width the user dragged the tasks column to (0 = automatic)
+try { tasksWidthPx = Number(localStorage.getItem('craft.tasksWidth')) || 0; } catch {}
 let termHeightPx = 0; // the terminal's height under the browser, once dragged
 const clampPx = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 function layoutDock() {
@@ -2452,8 +2502,9 @@ function layoutDock() {
   if (!term || !tasks) return;
   const app = document.querySelector('.app');
   const root = document.documentElement.style;
-  const W = window.innerWidth;
-  const H = window.innerHeight;
+  // In CSS pixels: the Aa zoom draws everything bigger than the window's own pixels.
+  const W = window.innerWidth / currentZoom();
+  const H = window.innerHeight / currentZoom();
   const sidebarW = document.querySelector('.sidebar')?.getBoundingClientRect().width || 0;
   const termOpen = !term.classList.contains('hidden');
   const tasksOpen = !tasks.classList.contains('hidden');
@@ -2461,7 +2512,8 @@ function layoutDock() {
   const termExpanded = termOpen && term.classList.contains('expanded');
   const tasksExpanded = tasksOpen && tasks.classList.contains('expanded');
   // The tasks column: about a fifth of the window, wider when expanded.
-  dockTasksW = !tasksOpen ? 0 : Math.round(tasksExpanded ? clampPx(W * 0.32, 320, 560) : clampPx(W * 0.2, 240, 340));
+  // Its width: what the user dragged it to (kept), else a fifth of the window; Expand makes it wide.
+  dockTasksW = !tasksOpen ? 0 : Math.round(tasksExpanded ? clampPx(W * 0.32, 320, 560) : tasksWidthPx ? clampPx(tasksWidthPx, 240, Math.max(260, W * 0.5)) : clampPx(W * 0.2, 240, 340));
   // The browser/terminal column, never squeezing the chat under CHAT_MIN.
   const room = Math.max(280, W - sidebarW - dockTasksW - CHAT_MIN);
   // With the browser open the column is the browser's own width (its edge drags it live).
@@ -2482,7 +2534,9 @@ function layoutDock() {
   const ghost = $('bcGhost');
   if (ghost) { ghost.style.right = dockTasksW + 'px'; ghost.style.bottom = (browserOpen && termOpen && !termExpanded ? termH : 0) + 'px'; }
   // The chat keeps CHAT_MIN: the browser gets narrower while the tasks column needs the room.
-  if (api && api.browserPanelInsets) api.browserPanelInsets({ right: dockTasksW, bottom: browserOpen && termOpen && !termExpanded ? termH : 0, maxWidth: Math.round(room) });
+  // main places the native page in window pixels: with the Aa zoom on, the columns here are drawn that much bigger.
+  const zk = currentZoom();
+  if (api && api.browserPanelInsets) api.browserPanelInsets({ right: Math.round(dockTasksW * zk), bottom: Math.round((browserOpen && termOpen && !termExpanded ? termH : 0) * zk), maxWidth: Math.round(room * zk) });
   if (browserOpen) requestAnimationFrame(() => { reportBrowserLayout(); syncBrowserCover(); });
   document.querySelectorAll('[data-dock-expand]').forEach((b) => {
     const on = $(b.dataset.dockExpand).classList.contains('expanded');
@@ -2517,6 +2571,58 @@ window.addEventListener('resize', () => layoutDock());
   const end = () => { dragging = false; };
   grip.addEventListener('pointerup', end);
   grip.addEventListener('pointercancel', end);
+})();
+
+// Drag the tasks column's left edge to make it wider or narrower; the browser and the chat
+// fit around it as it moves. The page steps aside for a still while dragging (like the
+// browser's own edge), since a native page would swallow the mouse.
+(() => {
+  const panel = $('bgTasksPanel');
+  if (!panel) return;
+  const grip = document.createElement('div');
+  grip.className = 'tasks-resize';
+  grip.setAttribute('role', 'separator');
+  grip.setAttribute('aria-orientation', 'vertical');
+  grip.setAttribute('aria-label', 'Resize Background tasks');
+  grip.tabIndex = 0;
+  panel.prepend(grip);
+  let drag = null;
+  const apply = (w) => {
+    tasksWidthPx = Math.round(clampPx(w, 240, Math.max(260, window.innerWidth * 0.5)));
+    panel.classList.remove('expanded');
+    layoutDock();
+  };
+  grip.addEventListener('pointerdown', async (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    drag = { raf: 0, w: dockTasksW };
+    document.body.classList.add('tasks-dragging');
+    if (typeof freezeBrowser === 'function') await freezeBrowser(true);
+  });
+  grip.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    drag.w = window.innerWidth - e.clientX;
+    if (drag.raf) return;
+    drag.raf = requestAnimationFrame(() => { if (drag) { drag.raf = 0; apply(drag.w); } });
+  });
+  const end = async () => {
+    if (!drag) return;
+    drag = null;
+    document.body.classList.remove('tasks-dragging');
+    try { localStorage.setItem('craft.tasksWidth', String(tasksWidthPx)); } catch {}
+    if (typeof freezeBrowser === 'function') await freezeBrowser(false);
+    layoutDock();
+  };
+  grip.addEventListener('pointerup', end);
+  grip.addEventListener('pointercancel', end);
+  grip.addEventListener('dblclick', () => { tasksWidthPx = 0; try { localStorage.removeItem('craft.tasksWidth'); } catch {} layoutDock(); });
+  grip.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    apply(dockTasksW + (e.key === 'ArrowLeft' ? 24 : -24));
+    try { localStorage.setItem('craft.tasksWidth', String(tasksWidthPx)); } catch {}
+  });
 })();
 
 $('terminalToggleBtn').addEventListener('click', () => {
@@ -2848,6 +2954,17 @@ document.addEventListener('click', (e) => {
   if (chatCtxMenuEl && !chatCtxMenuEl.contains(e.target)) closeChatMenu();
 });
 
+/** Puts a sidebar "..." menu by its button: below it, or above it when the window has no room below. */
+function placeCtxMenu(menu, anchorBtn) {
+  const rect = anchorBtn.getBoundingClientRect();
+  const h = menu.offsetHeight;
+  const below = rect.bottom + 4;
+  const top = below + h > window.innerHeight - 8 && rect.top - 4 - h >= 8 ? rect.top - 4 - h
+    : Math.max(8, Math.min(below, window.innerHeight - h - 8));
+  menu.style.top = top + 'px';
+  menu.style.left = Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8) + 'px';
+}
+
 function openChatMenu(session, anchorBtn) {
   closeChatMenu();
   anchorBtn.classList.add('active');
@@ -2861,9 +2978,7 @@ function openChatMenu(session, anchorBtn) {
     <button class="menu-item" data-action="gist">${icon('link')}Share as secret gist</button>
     <button class="menu-item danger" data-action="delete">${icon('trash')}Delete</button>`;
   document.body.appendChild(menu);
-  const rect = anchorBtn.getBoundingClientRect();
-  menu.style.top = rect.bottom + 4 + 'px';
-  menu.style.left = Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8) + 'px';
+  placeCtxMenu(menu, anchorBtn);
 
   menu.querySelector('[data-action="rename"]').addEventListener('click', () => {
     closeChatMenu();
@@ -2965,9 +3080,7 @@ function openProjectMenu(projectPath, anchorBtn) {
     <button class="menu-item" data-action="reveal">${icon('folder')}Show in Explorer</button>
     <button class="menu-item danger" data-action="remove">${icon('trash')}Remove from list</button>`;
   document.body.appendChild(menu);
-  const rect = anchorBtn.getBoundingClientRect();
-  menu.style.top = rect.bottom + 4 + 'px';
-  menu.style.left = Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8) + 'px';
+  placeCtxMenu(menu, anchorBtn);
 
   menu.querySelector('[data-action="reveal"]').addEventListener('click', () => {
     closeChatMenu();
@@ -3670,13 +3783,23 @@ function stopRunNow(sessionId) {
   setRunning(false);
 }
 
+/** The send button: Stop while a run goes and the box is empty; with something typed it sends (queues). */
+function paintSendButtons() {
+  const on = state.running;
+  document.querySelectorAll('[data-role="send"]').forEach((btn) => {
+    const box = btn.closest('.composer');
+    const input = box && box.querySelector('.composer-input');
+    const typed = !!(input && input.value.trim()) || !!(box && box.pendingImages && box.pendingImages.length);
+    const stop = on && !typed;
+    btn.querySelector('.ic-send').classList.toggle('hidden', stop);
+    btn.querySelector('.ic-stop').classList.toggle('hidden', !stop);
+    btn.title = stop ? 'Stop' : on ? 'Queue: sends when this finishes' : 'Send';
+  });
+}
+
 function setRunning(on) {
   state.running = on;
-  document.querySelectorAll('[data-role="send"]').forEach((btn) => {
-    btn.querySelector('.ic-send').classList.toggle('hidden', on);
-    btn.querySelector('.ic-stop').classList.toggle('hidden', !on);
-    btn.title = on ? 'Stop' : 'Send';
-  });
+  paintSendButtons();
   document.querySelectorAll('.chat-composer .composer-input').forEach((el) => { el.placeholder = on ? COMPOSER_BUSY_HINT : COMPOSER_HINT; });
   // A message queued during the run goes out once this chat is free again
   // (after Stop, once the engine says the stopped run has really ended).
@@ -3992,6 +4115,7 @@ document.querySelectorAll('.composer').forEach((composer) => {
   input.addEventListener('input', () => {
     input.style.height = 'auto';
     input.style.height = Math.min(input.scrollHeight, 180) + 'px';
+    paintSendButtons();
   });
 
   // A message typed while a run is going waits above the box and goes out
@@ -4033,9 +4157,14 @@ document.querySelectorAll('.composer').forEach((composer) => {
   let dispatching = false;
   const submit = (viaButton) => {
     if (dispatching) return;
-    // While a run goes, the button stops it; Enter queues what was typed.
-    if (state.running && (viaButton === true || fromHome)) { stopRunNow(state.currentSessionId); return; }
-    if (state.running) {
+    // A run that is still stopping counts as running: what is typed waits for it to end.
+    const busy = state.running || (!!state.currentSessionId && stoppedRuns.has(state.currentSessionId));
+    // While a run goes, the button stops it only when nothing is typed; anything typed is queued.
+    if (busy && (viaButton === true || fromHome) && !input.value.trim() && !composer.pendingImages.length) {
+      if (state.running) stopRunNow(state.currentSessionId);
+      return;
+    }
+    if (busy) {
       const typed = input.value.trim();
       if (!typed || composer.pendingFiles.some((f) => f.reading)) return;
       const prev = composer.queued;
@@ -4049,6 +4178,7 @@ ${text}` : text, images: composer.pendingImages.length ? composer.pendingImages 
       composer.pendingFiles = [];
       renderImagePreviews();
       composer.renderQueued();
+      paintSendButtons();
       return;
     }
     let typed = input.value.trim();
@@ -4077,7 +4207,7 @@ ${text}` : text, images: composer.pendingImages.length ? composer.pendingImages 
     if (e.key === 'Enter' && !e.shiftKey) {
       // The slash-command menu (wired up further below, same input) owns
       // Enter while it's open - picking a command, not sending "/" as text.
-      if (composer.slashMenuOpen && composer.slashMenuOpen()) return;
+      if ((composer.slashMenuOpen && composer.slashMenuOpen()) || (composer.mentionMenuOpen && composer.mentionMenuOpen())) return;
       e.preventDefault();
       submit();
     }
@@ -4107,10 +4237,27 @@ function addApprovalCard(ev) {
   // Shell commands are allowed by name ("npm test", "git checkout"), never
   // wholesale. No names (a subshell, a redirect, a risky command) = no offer.
   const scope = Array.isArray(ev.alwaysScope) ? ev.alwaysScope : null;
-  const alwaysWhat = scope ? scope.map((p) => `"${p}"`).join(' and ') : toolName(ev.tool);
+  // A long command (a full path to a script) is named by its program and file, not its whole path.
+  const shortCmd = (p) => {
+    const s = String(p);
+    if (s.length <= 40) return s;
+    const base = (w) => `…/${w.replace(/["']/g, '').split(/[\\/]/).filter(Boolean).pop()}`;
+    const tidy = s.replace(/(["'])([^"']*[\\/][^"']*)\1/g, (m, q, w) => base(w))
+      .split(/\s+/).map((w) => (/[\\/]/.test(w) && !w.startsWith('…/') ? base(w) : w)).join(' ');
+    return tidy.length <= 48 ? tidy : `${tidy.slice(0, 46)}…`;
+  };
+  const alwaysWhat = scope ? scope.map((p) => `"${shortCmd(p)}"`).join(' and ') : toolName(ev.tool);
   const alwaysLabel = scope && !scope.length ? '' : scope
     ? `Always allow ${alwaysWhat} commands in this chat`
     : `Always allow ${toolName(ev.tool)} in this chat`;
+  // Pickers the tool offers (Claude Code: model and effort); the picks ride back with Accept.
+  const choices = ev.choices && typeof ev.choices === 'object' ? Object.entries(ev.choices).filter(([, c]) => c && Array.isArray(c.options)) : [];
+  const choicesHtml = choices.length ? `<div class="approval-choices">${choices.map(([key, c]) => {
+    const pinned = c.options.filter(([v]) => /^claude-/.test(String(v)));
+    const rest = c.options.filter(([v]) => !/^claude-/.test(String(v)));
+    const opt = (l) => l.map(([v, t]) => `<option value="${esc(v)}"${String(v) === String(c.value) ? ' selected' : ''}>${esc(t)}</option>`).join('');
+    return `<label>${esc(c.label || key)}<select data-choice="${esc(key)}">${opt(rest)}${pinned.length ? `<optgroup label="Pin a version">${opt(pinned)}</optgroup>` : ''}</select></label>`;
+  }).join('')}</div>` : '';
   card.innerHTML = `
     <div class="approval-head">
       ${icon('shield')}
@@ -4119,20 +4266,42 @@ function addApprovalCard(ev) {
     </div>
     ${ev.detail ? `<div class="approval-detail">${esc(ev.detail)}</div>` : ''}
     ${diffHtml}
+    ${choicesHtml}
     <div class="approval-actions">
       <button class="btn btn-primary btn-sm appr-btn" data-v="once">Accept</button>
-      ${alwaysLabel ? `<button class="btn btn-secondary btn-sm appr-btn" data-v="always">${esc(alwaysLabel)}</button>` : ''}
+      ${alwaysLabel ? `<button class="btn btn-secondary btn-sm appr-btn appr-always" data-v="always" title="${esc(scope ? scope.join(' and ') : alwaysLabel)}">${esc(alwaysLabel)}</button>` : ''}
       <button class="btn btn-ghost btn-sm btn-danger-hover appr-btn" data-v="reject">Reject</button>
     </div>`;
   card.querySelectorAll('.appr-btn').forEach((btn) =>
     btn.addEventListener('click', () => {
-      api.respondApproval(ev.requestId, btn.dataset.v);
-      const verdictText = btn.dataset.v === 'reject' ? 'Rejected' : btn.dataset.v === 'always' ? `Accepted, always allowing ${alwaysWhat} for the rest of this chat` : 'Accepted';
-      card.outerHTML = `<div class="chat-note ${btn.dataset.v === 'reject' ? 'error' : 'ok'}">${esc(ev.title)}: ${verdictText}</div>`;
+      const picks = {};
+      card.querySelectorAll('[data-choice]').forEach((s) => { picks[s.dataset.choice] = s.value; });
+      api.respondApproval(ev.requestId, choices.length && btn.dataset.v !== 'reject' ? { verdict: btn.dataset.v, edits: picks } : btn.dataset.v);
+      const picked = choices.length && btn.dataset.v !== 'reject' ? ` (${[...card.querySelectorAll('[data-choice]')].map((s) => s.selectedOptions[0]?.textContent || s.value).join(', ')})` : '';
+      const v = btn.dataset.v;
+      settleApproval(card, verdictLine(v !== 'reject', ev.title, v === 'always' ? `always, for ${alwaysWhat} in this chat` : picked.replace(/^ \(|\)$/g, ''), v === 'always' ? 'Always allowed' : ''));
     })
   );
   chatColumn.appendChild(card);
   scrollToBottom();
+}
+
+/**
+ * An answered approval leaves the chat: the card goes, and what was said to it joins
+ * the run's steps in the dropdown (where reopening the chat shows the steps too).
+ */
+function settleApproval(card, html) {
+  const open = activityEl && activityEl.isConnected;
+  card.remove();
+  if (!open) return;
+  const holder = document.createElement('div');
+  holder.innerHTML = html;
+  if (holder.firstElementChild) { activityBody().appendChild(holder.firstElementChild); updateActivitySummary(activityEl); }
+}
+
+/** What the user said to an approval, as one quiet line: "✓ Allowed  Create hello.html". */
+function verdictLine(ok, title, detail, word) {
+  return `<div class="chat-note verdict ${ok ? 'ok' : 'error'}">${icon(ok ? 'check' : 'close', 'ico-xs')}<span class="v-word">${esc(word || (ok ? 'Allowed' : 'Declined'))}</span><span class="v-title">${esc(title || '')}</span>${detail ? `<span class="v-detail">${esc(detail)}</span>` : ''}</div>`;
 }
 
 // An email the agent wants to send or save as a draft: To, Subject and Body
@@ -4171,7 +4340,7 @@ function addEmailApprovalCard(ev) {
       card.querySelectorAll('[data-f]').forEach((f) => { edits[f.dataset.f] = f.value; });
       api.respondApproval(ev.requestId, v === 'reject' ? 'reject' : { verdict: v, edits });
       const text = v === 'reject' ? 'Not sent' : v === 'draft' || draftOnly ? 'Saving as a draft' : `Sending to ${edits.to || 'nobody'}`;
-      card.outerHTML = `<div class="chat-note ${v === 'reject' ? 'error' : 'ok'}">${esc(edits.subject || ev.title)}: ${esc(text)}</div>`;
+      settleApproval(card, verdictLine(v !== 'reject', edits.subject || ev.title, '', text));
     })
   );
   chatColumn.appendChild(card);
@@ -4190,25 +4359,37 @@ function renderQuestionCard(q, existing) {
   card.dataset.q = JSON.stringify({ requestId: q.requestId, question: q.question, options: q.options || [] });
   const answered = q.answered || q.answer !== undefined;
   if (answered) {
-    card.innerHTML = `
-      <div class="q-head">${icon('help')}<span class="q-text"></span></div>
-      <div class="q-answer">${q.answer == null ? '<em>Dismissed, the agent decided on its own</em>' : `Answered: <b>${esc(q.answer)}</b>`}</div>`;
+    // Answered: one quiet line, the question small above what was chosen.
+    card.classList.add('done');
+    card.innerHTML = `<div class="q-text q-text-sm"></div><div class="q-answer">${icon(q.answer == null ? 'sparkle' : 'check', 'ico-xs')}<span></span></div>`;
     card.querySelector('.q-text').textContent = q.question;
+    card.querySelector('.q-answer span').textContent = q.answer == null ? 'Left it to Codeply' : q.answer;
     if (!existing) chatColumn.appendChild(card);
     return;
   }
+  const opts = q.options || [];
   card.innerHTML = `
-    <div class="q-head">${icon('help')}<span class="q-text"></span></div>
-    <div class="q-options">${(q.options || []).map((o, i) => `<button class="btn btn-secondary btn-sm q-opt${i === 0 ? ' first' : ''}" type="button" data-i="${i}">${esc(o)}</button>`).join('')}</div>
-    <form class="q-custom"><input class="input input-sm" type="text" placeholder="${(q.options || []).length ? 'Or type your own answer' : 'Type your answer'}" maxlength="2000"><button class="btn btn-secondary btn-sm" type="submit">Send</button></form>
-    <button class="btn btn-ghost btn-sm q-skip" type="button">Let the agent decide</button>`;
+    <div class="q-text"></div>
+    ${opts.length ? `<div class="q-list" role="listbox">${opts.map((o, i) => `<button class="q-row" type="button" role="option" data-i="${i}"><span class="q-num">${i + 1}</span><span class="q-label"></span><span class="q-go">${icon('arrow-right', 'ico-xs')}</span></button>`).join('')}</div>` : ''}
+    <form class="q-custom"><span class="q-num q-num-pen">${icon('edit', 'ico-xs')}</span><input type="text" placeholder="${opts.length ? 'Something else…' : 'Type your answer…'}" maxlength="2000"><button class="q-send" type="submit" aria-label="Send">${icon('arrow-up', 'ico-xs')}</button></form>
+    <div class="q-foot"><button class="q-skip" type="button">Let Codeply decide</button>${opts.length > 1 ? `<span class="q-keys">Press 1 to ${Math.min(opts.length, 9)}</span>` : ''}</div>`;
   card.querySelector('.q-text').textContent = q.question;
+  card.querySelectorAll('.q-row').forEach((b) => { b.querySelector('.q-label').textContent = opts[Number(b.dataset.i)]; });
+  // Number keys pick a choice while this is the open question and nothing else has the keyboard.
+  const onKey = (e) => {
+    if (!card.isConnected || card.classList.contains('done')) { document.removeEventListener('keydown', onKey); return; }
+    const t = e.target;
+    if (e.ctrlKey || e.metaKey || e.altKey || (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable))) return;
+    const n = Number(e.key);
+    if (n >= 1 && n <= Math.min(opts.length, 9)) { e.preventDefault(); send(opts[n - 1]); }
+  };
+  document.addEventListener('keydown', onKey);
   const send = (answer) => {
     if (!api) return;
     api.respondQuestion(q.requestId, answer);
     renderQuestionCard({ ...q, answer, answered: true }, card);
   };
-  card.querySelectorAll('.q-opt').forEach((b) => b.addEventListener('click', () => send(q.options[Number(b.dataset.i)])));
+  card.querySelectorAll('.q-row').forEach((b) => b.addEventListener('click', () => send(opts[Number(b.dataset.i)])));
   card.querySelector('.q-custom').addEventListener('submit', (e) => {
     e.preventDefault();
     const v = e.currentTarget.querySelector('input').value.trim();
@@ -4341,7 +4522,9 @@ if (api) api.onAgentEvent((data) => {
       state.currentSessionId = data.sessionId;
       navRecord('s:' + data.sessionId);
     }
-    if (mine && data.message?.kind === 'user' && data.origin && data.origin !== desktopClientId) {
+    if (mine && data.message?.kind === 'user' && data.message.auto) {
+      addAutoNote(data.message);
+    } else if (mine && data.message?.kind === 'user' && data.origin && data.origin !== desktopClientId) {
       addUserMessage(data.message.text, data.message.images);
     }
     // Covers the AI-generated retitle that lands shortly after a brand-new
@@ -4497,8 +4680,8 @@ if (api) api.onAgentEvent((data) => {
       // answer, which otherwise had nothing to ever remove it.
       const card = chatColumn.querySelector(`.approval-card[data-request-id="${data.requestId}"]`);
       if (card) {
-        const verdictText = data.verdict === 'reject' ? 'Rejected' : data.verdict === 'always' ? 'Accepted, always allowed' : data.verdict === 'draft' ? 'Saved as a draft' : 'Accepted';
-        card.outerHTML = `<div class="chat-note ${data.verdict === 'reject' ? 'error' : 'ok'}">${verdictText} on another device</div>`;
+        const title = (card.querySelector('.approval-title') || {}).textContent || '';
+        settleApproval(card, verdictLine(data.verdict !== 'reject', title, 'on another device', data.verdict === 'always' ? 'Always allowed' : data.verdict === 'draft' ? 'Saved as a draft' : ''));
       }
       break;
     }
@@ -4526,6 +4709,7 @@ if (api) api.onAgentEvent((data) => {
       addNote('Stopped.', 'stopped');
       break;
     case 'run_finished':
+      flushCrew();
       hideThinking();
       if (runningToolRow) { runningToolRow.remove(); runningToolRow = null; }
       closeActivity();
@@ -4553,6 +4737,7 @@ async function openSession(id) {
   $('chatTitle').textContent = s.title;
   hideThinking();
   stopRevealQueue();
+  pendingCrew = null;
   chatColumn.innerHTML = '';
   activityEl = null;
   activityRole = null;
@@ -4562,6 +4747,7 @@ async function openSession(id) {
   revealInstant = true;
   let speaker = null; // the specialist the user was talking to (talk_to), as the chat went
   s.messages.forEach((m, i) => {
+    if (m.kind === 'user' && m.auto) { addAutoNote(m); return; }
     if (m.kind === 'user') {
       addUserMessage(m.text, m.images);
       // The answer's face, in the mood its reply ended on (only for the main agent's answers).
@@ -4612,6 +4798,7 @@ async function openSession(id) {
   });
   if (window.CraftWispUI) window.CraftWispUI.setSpeaker(id, speaker);
   closeActivity();
+  flushCrew();
   revealInstant = false;
   activeTaskList = null; // reopening a past chat is read-only history, not a live run - no further task_start/task_end will arrive for it
   refreshTasksUI();

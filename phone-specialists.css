@@ -1,0 +1,85 @@
+/* Specialists on the phone (phone-specialists.js). */
+.sp-make { display: flex; align-items: center; gap: 10px; width: 100%; height: 48px; margin: 4px 0 6px; padding: 0 14px; border: 1px dashed var(--border, rgba(127,127,127,.3)); border-radius: 14px; background: transparent; color: var(--text); font: inherit; font-size: 15px; }
+.sp-make:active { background: var(--hover, rgba(127,127,127,.08)); }
+.sp-list { display: flex; flex-direction: column; gap: 2px; }
+.sp-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 8px; border: 0; border-radius: 14px; background: transparent; color: var(--text); font: inherit; text-align: left; }
+.sp-row:active { background: var(--hover, rgba(127,127,127,.08)); }
+.sp-face { flex: none; width: 34px; height: 34px; display: grid; place-items: center; }
+.sp-face > * { width: 34px; height: 34px; }
+.sp-face-lg, .sp-face-lg > * { width: 52px; height: 52px; }
+.sp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sp-main b { font-size: 15px; font-weight: 600; }
+.sp-main small { font-size: 13px; color: var(--text-dim, #888); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-on { display: inline-block; width: 7px; height: 7px; margin-left: 7px; border-radius: 50%; background: #2fb66b; vertical-align: 2px; box-shadow: 0 0 0 3px rgba(47, 182, 107, .2); }
+.sp-count { flex: none; display: inline-flex; align-items: center; gap: 3px; font-size: 12.5px; color: var(--text-dim, #888); }
+.sp-foot { margin-top: 22px; font-size: 13px; line-height: 1.45; color: var(--text-dim, #888); }
+
+.sp-sheet .wk-sheet-card { max-height: 88vh; overflow-y: auto; }
+.sp-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+.sp-head-text { flex: 1; min-width: 0; }
+.sp-head .wk-title { margin: 0; }
+.sp-head .wk-text { margin: 3px 0 0; }
+.sp-chat { display: block; width: 100%; margin: 4px 0 2px; }
+.sp-badge { padding: 1px 8px; border-radius: 999px; background: var(--hover, rgba(127,127,127,.12)); color: var(--text-dim, #888); font-size: 11.5px; font-weight: 500; vertical-align: 3px; }
+.sp-in { display: block; width: 100%; box-sizing: border-box; margin: 6px 0; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--border, rgba(127,127,127,.25)); background: var(--input-bg, transparent); color: var(--text); font: inherit; font-size: 15px; outline: none; }
+textarea.sp-in { resize: vertical; line-height: 1.5; }
+.sp-title { font-size: 18px; font-weight: 650; padding: 6px 10px; margin: 0; }
+.sp-sub { font-size: 14px; padding: 6px 10px; margin: 2px 0 0; }
+.sp-label { display: block; margin: 16px 0 4px; font-size: 13px; font-weight: 600; color: var(--text-dim, #888); }
+.sp-label small { font-weight: 400; margin-left: 4px; }
+.sp-err { min-height: 0; margin: 6px 0; font-size: 13px; color: #e5534b; }
+.sp-err:empty { display: none; }
+.sp-danger { color: #e5534b !important; }
+
+.sp-always { display: flex; align-items: center; gap: 12px; margin: 10px 0 4px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--border, rgba(127,127,127,.25)); }
+.sp-always.on { border-color: rgba(47, 182, 107, .5); background: rgba(47, 182, 107, .07); }
+.sp-always > span:first-child { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.sp-always b { font-size: 15px; }
+.sp-always small { font-size: 13px; line-height: 1.4; color: var(--text-dim, #888); }
+.sp-switch { position: relative; flex: none; }
+.sp-switch input { position: absolute; opacity: 0; inset: 0; margin: 0; }
+.sp-switch i { display: block; width: 44px; height: 26px; border-radius: 999px; background: var(--hover, rgba(127,127,127,.25)); position: relative; transition: background .15s ease; }
+.sp-switch i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .15s ease; }
+.sp-switch input:checked + i { background: #2fb66b; }
+.sp-switch input:checked + i::after { transform: translateX(18px); }
+
+.sp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.sp-chips button { height: 30px; padding: 0 12px; border: 1px solid var(--border, rgba(127,127,127,.25)); border-radius: 999px; background: transparent; color: var(--text-dim, #888); font: inherit; font-size: 13px; text-transform: capitalize; }
+.sp-chips button.on { background: var(--text); border-color: var(--text); color: var(--bg, #fff); }
+.sp-swatches { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 8px; }
+.sp-swatches button { width: 28px; height: 28px; border-radius: 50%; border: 2px solid transparent; background: var(--sw); box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
+.sp-swatches button.on { border-color: var(--text); }
+
+.sp-ask { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+.sp-ask .sp-in { margin: 0; }
+.sp-out { margin-top: 10px; padding: 12px 14px; border-radius: 14px; background: var(--hover, rgba(127,127,127,.08)); font-size: 14.5px; line-height: 1.55; }
+.sp-out.hidden, .sp-run-out.hidden { display: none; }
+.sp-shine { background: linear-gradient(90deg, rgba(127,127,127,.55) 0%, var(--text) 45%, rgba(127,127,127,.55) 90%); background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: sp-shine 1.6s linear infinite; }
+@keyframes sp-shine { from { background-position: 120% 0; } to { background-position: -100% 0; } }
+
+.sp-jobs { display: flex; flex-direction: column; gap: 6px; }
+.sp-job { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 13px; border: 1px solid var(--border, rgba(127,127,127,.25)); }
+.sp-job > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.sp-job small { font-size: 12.5px; color: var(--text-dim, #888); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-meta { opacity: .8; }
+.sp-ghost { flex: none; height: 32px; padding: 0 11px; border: 1px solid var(--border, rgba(127,127,127,.25)); border-radius: 10px; background: transparent; color: var(--text); font: inherit; font-size: 13px; }
+.sp-add { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+.sp-add .sp-in { margin: 0; padding: 9px 11px; font-size: 14px; }
+.sp-when { max-width: 42%; }
+
+.sp-runs { display: flex; flex-direction: column; }
+.sp-run { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 2px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; text-align: left; }
+.sp-run span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-run em { flex: none; font-style: normal; padding: 0 7px; border-radius: 999px; background: var(--hover, rgba(127,127,127,.12)); color: var(--text-dim, #888); font-size: 11.5px; }
+.sp-run small { flex: none; color: var(--text-dim, #888); font-size: 12px; }
+.sp-run-out { margin: 0 0 8px 24px; padding: 10px 12px; border-radius: 12px; background: var(--hover, rgba(127,127,127,.08)); font-size: 14px; line-height: 1.5; }
+.sp-mark { flex: none; }
+.sp-mark.ok { color: #2fb66b; } .sp-mark.bad { color: #e5534b; }
+
+/* @ in the composer */
+.sp-mention { position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px); z-index: 40; display: flex; flex-direction: column; padding: 6px; border-radius: 16px; border: 1px solid var(--border, rgba(127,127,127,.25)); background: var(--popover, var(--bg, #fff)); box-shadow: 0 10px 30px rgba(0,0,0,.18); }
+.sp-mention button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 11px; background: transparent; color: var(--text); font: inherit; text-align: left; }
+.sp-mention button:active { background: var(--hover, rgba(127,127,127,.1)); }
+.sp-mention .sp-face, .sp-mention .sp-face > * { width: 26px; height: 26px; }
+.sp-mention b { font-size: 15px; font-weight: 600; }
+.sp-mention small { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim, #888); font-size: 13px; }

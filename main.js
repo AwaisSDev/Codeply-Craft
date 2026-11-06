@@ -1727,12 +1727,31 @@ function positionCheckerView() {
   const top = panelTop;
   // Tablet/mobile: a centered frame of the real width, so the page lays out
   // exactly as it would on that device.
-  const viewWidth = panelSize ? Math.min(panelSize.width, panelWidth) : panelWidth;
+  // A device size is a frame with room around it for the drag handles (app.js responsive mode).
+  const panelX = width - panelInsets.right - panelWidth;
+  const availH = Math.max(1, height - top - panelInsets.bottom);
+  let rect = { x: panelX, y: top, width: panelWidth, height: availH };
+  if (panelSize) {
+    const w = Math.max(120, Math.min(panelSize.width, panelWidth - 2 * FRAME_GUTTER));
+    const hh = Math.max(120, Math.min(panelSize.height || availH, availH - FRAME_TOP - FRAME_GUTTER));
+    rect = { x: panelX + Math.floor((panelWidth - w) / 2), y: top + FRAME_TOP, width: w, height: hh };
+  }
+  sendPanelFrame(rect, { x: panelX, y: top, width: panelWidth, height: availH });
   if (panelCovered) { view.setBounds({ x: width + 100, y: top, width: 1, height: 1 }); return; }
-  view.setBounds({
-    x: width - panelInsets.right - panelWidth + Math.floor((panelWidth - viewWidth) / 2), y: top,
-    width: viewWidth, height: Math.max(1, height - top - panelInsets.bottom),
-  });
+  view.setBounds(rect);
+}
+
+// Where the page sits, for the renderer's device frame and handles (window pixels).
+const FRAME_GUTTER = 22;
+const FRAME_TOP = 10;
+let lastFrame = '';
+function sendPanelFrame(frame, panel) {
+  if (!win || win.isDestroyed()) return;
+  const data = { frame, panel, size: panelSize ? { width: panelSize.width, height: panelSize.height } : null, gutter: FRAME_GUTTER, top: FRAME_TOP };
+  const key = JSON.stringify(data);
+  if (key === lastFrame) return;
+  lastFrame = key;
+  win.webContents.send('browserpanel:frame', data);
 }
 
 function showCheckerPanel() {
@@ -1991,7 +2010,10 @@ function parseViewport(v) {
 
 function applyViewport(wc, size) {
   if (!defaultCheckerUA) defaultCheckerUA = wc.getUserAgent();
-  wc.setUserAgent(size && size.mobile ? MOBILE_UA : defaultCheckerUA);
+  const ua = size && size.mobile ? MOBILE_UA : defaultCheckerUA;
+  const changed = wc.getUserAgent() !== ua;
+  if (changed) wc.setUserAgent(ua);
+  return changed;
 }
 
 let panelSize = null; // null = fill the panel (desktop)
@@ -1999,19 +2021,32 @@ function setPanelViewport(name) {
   const vp = parseViewport(name);
   panelSize = vp.size;
   const view = activeView() || checkerView;
+  let uaChanged = false;
   if (view) {
-    applyViewport(view.webContents, vp.size);
+    uaChanged = applyViewport(view.webContents, vp.size);
     positionCheckerView();
   }
-  if (win && !win.isDestroyed()) win.webContents.send('browserpanel:viewport', { name: vp.name });
-  return vp;
+  if (win && !win.isDestroyed()) win.webContents.send('browserpanel:viewport', { name: vp.name, size: vp.size });
+  return { ...vp, uaChanged };
 }
 
+// A size switch reloads the page only when it changes between phone and desktop
+// (the user agent); a resize alone just lays the page out again, live.
 ipcMain.on('browserpanel:viewport', (e, name) => {
   getCheckerView();
-  setPanelViewport(name);
+  const vp = setPanelViewport(name);
   const view = activeView();
-  if (view && view.webContents.getURL()) view.webContents.reload();
+  if (vp.uaChanged && view && view.webContents.getURL()) view.webContents.reload();
+});
+// Responsive mode: the device frame dragged or typed to any size (app.js).
+ipcMain.on('browserpanel:viewsize', (e, d) => {
+  const w = Math.round(Number(d && d.width));
+  const hgt = Math.round(Number(d && d.height));
+  if (!(w >= 200 && w <= 4000 && hgt >= 200 && hgt <= 4000)) return;
+  getCheckerView();
+  const vp = setPanelViewport(`${w}x${hgt}`);
+  const view = activeView();
+  if (vp.uaChanged && view && view.webContents.getURL()) view.webContents.reload();
 });
 
 /** Loads a page in an invisible off-screen window and captures it (works while Craft is hidden). */
@@ -3172,7 +3207,7 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
   let replyText = '';
   let error = '';
   // Wisp (wisp-desktop.js): the main agent of this chat, with its team. null = plain Craft.
-  const wisp = wispDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly });
+  const wisp = wispDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly, request: userMessage });
   if (wisp) {
     // Wisp brings in Frontend, Testing... as specialists; it doesn't wear their role itself,
     // and an old role pin from before Wisp no longer applies.
@@ -3197,6 +3232,8 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
       userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route: wisp?.route || route,
       roleId, goal, maxSteps, verifyOnly, botPrompt, askBot: bot?.askBot, botId: bot?.botId,
       bringIn: wisp?.bringIn, claudeCode: wisp?.claudeCode, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, talkTo: wisp?.talkTo, agentRole: wisp ? wisp.agentRole : undefined,
+      // A Claude agent's report: what it did counts as this review turn's record (claude-code-desktop.js wake).
+      credit: wisp ? takeClaudeCredit(session) : undefined,
       // Pass work to the bot whose job it is (brain-desktop.js); the user asked for this chat.
       handOff,
       haze: { product: 'craft', chatId: session.id }, todos,
@@ -3210,7 +3247,7 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
       // Wisp's reply starts with a [mood: x] tag: it sets the face, and never shows.
       const ev = wisp ? wisp.mood(raw) : raw;
       // bring_in and claude_code show as the specialist's (or Claude Code's) own steps instead of a row of their own.
-      const delegated = wisp && (ev.name === 'bring_in' || ev.name === 'claude_code');
+      const delegated = wisp && (ev.name === 'bring_in' || ev.name === 'claude_code' || ev.name === 'claude_swarm');
       if (delegated && ev.type === 'tool_start') continue;
       // A claude_code call that never started (not connected, said no) keeps its row, so the chat shows why.
       if (delegated && ev.type === 'tool_end' && (ev.name === 'bring_in' || ev.meta?.specialist)) {
@@ -3491,7 +3528,7 @@ async function runGoal({ session, goal, history, mode, cwd, approve, signal, rou
   else syncGoal({ status: 'incomplete', note: `Not finished after ${MAX_GOAL_ITERATIONS} iterations. Still missing: ${remaining.slice(0, 200)}` });
 }
 
-async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, text, images, clientId = null, botId, design = null, resume = null, screen = null }) {
+async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, text, images, clientId = null, botId, design = null, resume = null, screen = null, auto = null, crew = null }) {
   // resume: carry on a run that was cut off here or came back from Craft Cloud
   // (handoff-desktop.js). Its prompt says what is done; no new user message.
   if (resume) { text = String(resume.prompt || ''); mode = resume.mode; images = undefined; }
@@ -3554,7 +3591,9 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
     store.sessions.unshift(session);
   }
   if (design) { session.design = design; markDesignSession(session.id); }
-  if (activeRuns.has(session.id)) return { error: 'A run is already in progress for this chat.' };
+  // A run that is being stopped gets a moment to end: the user's next message then just goes.
+  if (activeRuns.has(session.id) && activeRuns.get(session.id).signal.aborted) await waitForRunEnd(session.id, 10000);
+  if (activeRuns.has(session.id)) return { error: 'A run is already in progress for this chat.', busy: true };
   if (!resume && session.handoff && ['cloud', 'returning', 'resuming'].includes(session.handoff.status)) {
     return { error: 'This task is coming back from the cloud. Give it a moment.' };
   }
@@ -3583,7 +3622,8 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
   // them; buildHistory() only re-sends the last few to the model.
   // The screen's text sent with this message (the drop): the agent sees it, and the chat remembers it.
   if (screen && (screen.text || (screen.earlier || []).length)) { try { require(path.join(CLI_DIR, 'lib', 'screen.js')).remember(session.id, screen); } catch {} }
-  if (!resume) session.messages.push({ kind: 'user', text: typedText, ...(expandedText ? { expanded: expandedText } : {}), images: images?.length ? images : undefined, at: Date.now() });
+  // auto: a message Codeply wrote for the agent (a Claude agent's report); the chat shows it as a note.
+  if (!resume) session.messages.push({ kind: 'user', text: typedText, ...(expandedText ? { expanded: expandedText } : {}), ...(auto ? { auto, ...(Array.isArray(crew) && crew.length ? { crew: crew.slice(0, 8) } : {}) } : {}), images: images?.length ? images : undefined, at: Date.now() });
   session.updatedAt = Date.now();
   session.cwd = cwd;
   if (designDir) cwd = designDir;
@@ -3686,6 +3726,8 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
       // An email (gmail_send / gmail_draft): the card shows it as editable fields.
       draft: req.draft || null,
       draftOnly: !!req.draftOnly,
+      // Pickers on the card (Claude Code: model and effort); the user's picks ride back as edits.
+      choices: req.choices && typeof req.choices === 'object' ? req.choices : null,
     });
     return new Promise((resolve) => {
       pendingApprovals.set(id, { sessionId: session.id, resolve: (verdict) => {
@@ -3986,7 +4028,7 @@ function respondApproval(requestId, verdict) {
   const v = verdict && typeof verdict === 'object' ? verdict.verdict : verdict;
   const clean = ['once', 'always', 'reject', 'draft'].includes(v) ? v : 'reject';
   const e = verdict && typeof verdict === 'object' && verdict.edits && typeof verdict.edits === 'object' ? verdict.edits : null;
-  const edits = e && Object.fromEntries(['to', 'subject', 'body'].filter((k) => typeof e[k] === 'string').map((k) => [k, e[k].slice(0, 100000)]));
+  const edits = e && Object.fromEntries(['to', 'subject', 'body', 'model', 'effort'].filter((k) => typeof e[k] === 'string').map((k) => [k, e[k].slice(0, 100000)]));
   p.resolve(edits && clean !== 'reject' ? { verdict: clean, edits } : clean);
 }
 function respondImagePick(requestId, chosenUrl) {
@@ -4189,18 +4231,61 @@ brainDesktop.init({
 // Claude Code (claude-code-desktop.js): the user's own Claude plan as a background
 // coding agent that Wisp briefs and reviews. Its login card lives in Connect Apps.
 const claudeDesktop = require('./claude-code-desktop');
+// The Review area (review-desktop.js): what the branch changes, like a pull request.
+require('./review-desktop').init({ ipcMain });
+// Codeply's browser as hands for Claude agents (swarm-browser-desktop.js): each with its own cursor.
+const swarmBrowser = require('./swarm-browser-desktop');
+swarmBrowser.init({
+  openTab: (url) => openTab(url), selectTab: (id) => selectTab(id),
+  getTab: (id) => tabs.find((t) => t.id === id) || null, activeTabId: () => activeTabId,
+  showPanel: () => { if (!panelVisible) showCheckerPanel(); },
+});
 claudeDesktop.init({
+  browser: swarmBrowser,
   ipcMain, cliDir: CLI_DIR, sendEvent, recordToolEnd,
   sendWindow: (channel, data) => { if (win && !win.isDestroyed()) win.webContents.send(channel, data); },
   store: { get: () => store.claudeCode || {}, set: (next) => { store.claudeCode = { ...(store.claudeCode || {}), ...next }; saveStore(); } },
+  findSession: (id) => store.sessions.find((s) => s.id === id),
+  saveSession: (session) => { saveStore(); syncSessionToDb(session); },
+  wake: (sessionId, text, credit, crew) => wakeForClaude(sessionId, text, credit, crew),
+  dataDir: app.getPath('userData'),
 });
+
+// A Claude agent Wisp started in the background finished: its report goes to
+// the chat as an automatic message, and Wisp reviews it in a turn of its own.
+// While the chat is busy (the user is talking with Wisp) it waits its turn.
+const claudeCredit = new Map(); // sessionId -> { actions, files, succeeded }
+function takeClaudeCredit(session) {
+  const c = claudeCredit.get(session.id);
+  claudeCredit.delete(session.id);
+  return c || undefined;
+}
+function wakeForClaude(sessionId, text, credit, crew, tries = 0) {
+  const session = store.sessions.find((s) => s.id === sessionId);
+  if (!session || !text) return;
+  if (activeRuns.has(sessionId)) {
+    if (tries < 1200) setTimeout(() => wakeForClaude(sessionId, text, credit, crew, tries + 1), 1500); // up to half an hour
+    return;
+  }
+  if (credit) claudeCredit.set(sessionId, credit);
+  startChatRun({ sessionId, cwd: session.cwd, mode: 'Build', text, auto: 'claude_code', crew }).then((r) => {
+    if (r && r.error) { claudeCredit.delete(sessionId); console.warn('[claude] wake:', r.error); }
+  }).catch((e) => console.warn('[claude] wake:', e.message));
+}
 // Wisp (wisp-desktop.js): the main agent of every Craft chat, and its team of specialists.
 const wispDesktop = require('./wisp-desktop');
 wispDesktop.init({
   ipcMain, cliDir: CLI_DIR, sendEvent, agentMod: () => agentMod, browser: browserCheck, recordToolEnd,
   settings: { get: () => store.wisp !== false, set: (on) => { store.wisp = !!on; saveStore(); } },
+  // Making a specialist from the user's description (wisp:draftSpecialist): one JSON call on the current model.
+  draftJson: async (prompt) => { if (!(await loadEngine())) throw new Error('Engine not available.'); return aiLib.chatJson([{ role: 'user', content: prompt }], { route: currentRoute() }); },
   // A specialist's scheduled job: a message from Wisp to itself in the job's own chat, through the usual approvals.
   startRun: ({ sessionId, cwd, text }) => startChatRun({ sessionId, cwd, text, mode: 'Build', bypass: false, clientId: 'wisp-schedule' }),
+  // The team in the user's account (specialists-sync.js, supabase/specialists.sql).
+  supabase: () => (authLib ? authLib.getClient() : null), userId: getLoggedInUserId, deviceId, dataDir: app.getPath('userData'),
+  // Always-on specialists: their jobs also run with the window closed, and Codeply starts with the PC.
+  windowShown: () => !!(win && !win.isDestroyed() && win.isVisible()),
+  keepRunning: () => { try { if (app.isPackaged && !startsWithSystem()) setStartWithSystem(true); } catch {} },
 });
 // Voice mode on the phone: you talk to Codeply itself, out loud. A turn that
 // needs real work comes here (bots-desktop.js /api/bots/voice, botId "codeply")
@@ -4399,7 +4484,7 @@ ipcMain.handle('settings:set', (e, { key, on } = {}) => {
 ipcMain.handle('shell:openExternal', (e, url) => {
   if (url === MOBILE_APP_URL || url === 'https://chatgpt.com/settings/usage') shell.openExternal(url);
   else if (url === 'https://codeply.app' || url === 'https://github.com/AwaisSDev/Codeply-Craft/issues') shell.openExternal(url); // Help menu
-  else if (/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(\/actions\/runs\/\d+)?$/.test(String(url))) shell.openExternal(url); // cloud: View run, repo links
+  else if (/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(\/actions\/runs\/\d+|\/pull\/\d+)?$/.test(String(url))) shell.openExternal(url); // cloud: View run, repo links; Review: the pull request
   else if (publishedUrls.has(url) || /^https:\/\/[a-z0-9-]+\.vercel\.app\/?$/.test(String(url))) shell.openExternal(url); // a publish's live link
   else if (PUBLISH_HELP_URLS.has(url)) shell.openExternal(url); // where to create a token
   else if (/^https:\/\/supabase\.com\/dashboard\/project\/[a-z0-9]+$/.test(String(url))) shell.openExternal(url); // publish card: Database
@@ -4657,6 +4742,7 @@ app.on('before-quit', () => {
   saveTasks();
   jobsQuitting = true;
   if (jobsApi()) jobsApi().stopAll(); // background commands end with the app
+  try { claudeDesktop.stopAll(); } catch {} // and Claude agents
   drop.dispose();
   island.dispose();
   voiceMode.dispose();

@@ -103,6 +103,7 @@ function builtins() {
       history: own.history || [],
       uses: own.uses || 0,
       lastUsedAt: own.lastUsedAt || 0,
+      alwaysOn: !!own.alwaysOn,
     };
   });
 }
@@ -151,6 +152,8 @@ function updateSpecialist(id, patch = {}) {
     const own = all[id] || {};
     if (patch.model !== undefined) own.model = cleanModel(patch.model);
     if (patch.notes !== undefined) own.notes = clean(patch.notes, 3000);
+    if (patch.alwaysOn !== undefined) own.alwaysOn = !!patch.alwaysOn;
+    own.updatedAt = Date.now();
     all[id] = own;
     saveBuiltinSettings(all);
     return builtins().find((x) => x.id === id);
@@ -165,6 +168,14 @@ function updateSpecialist(id, patch = {}) {
     s.instructions = clean(patch.instructions, 4000);
     s.version = (s.version || 1) + 1;
   }
+  // Its name (the id stays, so schedules and chats keep finding it) and its look.
+  const newName = patch.name !== undefined ? clean(patch.name, 40).replace(/\s+/g, ' ') : '';
+  if (newName && !builtins().some((b) => b.name.toLowerCase() === newName.toLowerCase()) && !list.some((x, j) => j !== i && x.name.toLowerCase() === newName.toLowerCase())) s.name = newName;
+  if (patch.shape !== undefined && SHAPES.includes(String(patch.shape).toLowerCase()) && String(patch.shape).toLowerCase() !== 'pentagon') s.shape = String(patch.shape).toLowerCase();
+  if (patch.color !== undefined && /^#[0-9a-f]{6}$/i.test(String(patch.color))) s.color = String(patch.color).toLowerCase();
+  if (patch.gear !== undefined) s.gear = GEAR.includes(String(patch.gear).toLowerCase()) ? String(patch.gear).toLowerCase() : null;
+  if (patch.voice !== undefined) s.voice = clean(patch.voice, 300);
+  if (patch.alwaysOn !== undefined) s.alwaysOn = !!patch.alwaysOn;
   s.updatedAt = Date.now();
   saveCustom(list);
   return { model: 'auto', ...s, builtin: false };
@@ -233,6 +244,7 @@ function createSpecialist({ name, focus, instructions, shape, color, model, gear
     gear: pickGear || gearOf(slug(shown)),
     voice: theVoice,
     createdAt: Date.now(),
+    updatedAt: Date.now(),
     uses: 0,
     version: 1,
   };
@@ -406,7 +418,7 @@ function addSchedule({ specialist, task, when, cwd, now = Date.now() } = {}) {
   const sc = {
     id: 'j' + now.toString(36) + Math.random().toString(36).slice(2, 5),
     specialist: spec.id, task: job, when: clean(when, 120), rule, cwd: String(cwd || ''),
-    nextAt: nextRun(rule, now), createdAt: now, enabled: true, runs: 0,
+    nextAt: nextRun(rule, now), createdAt: now, updatedAt: now, enabled: true, runs: 0,
   };
   if (!sc.nextAt) return { ok: false, error: 'That time has already passed.' };
   list.push(sc);
@@ -437,6 +449,7 @@ function markFired(id, { sessionId, error } = {}, now = Date.now()) {
   const i = list.findIndex((s) => s.id === id);
   if (i < 0) return null;
   const s = list[i];
+  s.updatedAt = now;
   if (error) {
     s.lastError = clean(error, 300);
     s.nextAt = now + 10 * 60000; // try again in a bit
@@ -455,7 +468,7 @@ function markFired(id, { sessionId, error } = {}, now = Date.now()) {
 /** What the UI shows: no instructions body, no history. */
 function card(s) {
   if (!s) return null;
-  return { id: s.id, name: s.name, focus: s.focus, shape: s.shape, color: s.color, gear: s.gear || gearOf(s.id), builtin: !!s.builtin, uses: s.uses || 0, model: s.model || 'auto' };
+  return { id: s.id, name: s.name, focus: s.focus, shape: s.shape, color: s.color, gear: s.gear || gearOf(s.id), builtin: !!s.builtin, uses: s.uses || 0, model: s.model || 'auto', alwaysOn: !!s.alwaysOn };
 }
 
 /** Everything the team window shows for one specialist: its prompt, model, track record and jobs. */
@@ -464,6 +477,8 @@ function detail(s) {
   const role = s.builtin ? roles.getSubagent(s.id) : null;
   return {
     ...card(s),
+    lastUsedAt: s.lastUsedAt || 0,
+    createdAt: s.builtin ? 0 : (s.createdAt || 0),
     instructions: s.builtin ? '' : String(s.instructions || ''),
     guide: role ? role.persona : '',
     notes: s.builtin ? String(s.notes || '') : '',
@@ -512,7 +527,8 @@ const CLAUDE_CODE_FORMAT = `To hand coding work to Claude Code, write:
 The job, with everything it needs: the goal, who it is for, the stack, the files, the DIRECTION sheet for anything visual, and what "done" means.
 </task>
 </codeply:claude_code>
-To send it back after your review, write the same block with exactly what is wrong and what it should be; it remembers its earlier rounds. (<fresh>yes</fresh> starts it over.)`;
+Optional, inside the block: <agent>a name</agent> (an existing agent's name sends it back; a new name starts another one in parallel), <model>opus 5.5</model> and <effort>medium</effort> only when the user named them, <fresh>yes</fresh> to start that agent over, <wait>yes</wait> to wait for its report here.
+To send it back after your review, write the same block with its <agent> name and exactly what is wrong and what it should be; it remembers its earlier rounds.`;
 
 /**
  * Wisp's section on Claude Code: the user's own Claude plan as a background
@@ -526,15 +542,22 @@ function claudeCodeSection(cc, native) {
 Not connected${cc.installed ? ' (installed, not logged in)' : ''}. If the user asks you to use Claude or Claude Code, tell them in one line: open Connect Apps, find Claude Code and press ${cc.installed ? 'Log in' : 'Install, then Log in'} (it uses their own Claude plan). Until then, do the work yourself or with your team.`;
   }
   const who = [cc.plan ? `${cc.plan} plan` : '', cc.email].filter(Boolean).join(', ');
+  const defaults = [cc.model && cc.model !== 'default' ? `model ${cc.modelLabel || cc.model}` : 'the plan\'s default model', cc.effort && cc.effort !== 'default' ? `${cc.effortLabel || cc.effort} effort` : 'default effort'].join(', ');
   return `CLAUDE CODE (connected${who ? `: ${who}` : ''})
-Claude Code is a strong coding agent that runs in the background on the user's own Claude plan. You hand it coding work with claude_code and you stay in charge: you brief it, review it and answer the user.
+Claude Code is a strong coding agent that runs on the user's own Claude plan. You hand it coding work with claude_code and you stay in charge: you brief it, review it and answer the user.
 1. When: the user asks for Claude ("use Claude", "hey, can Claude build this website"), or a big build (a whole website or app, a large feature across many files) when the user wants Claude on it. Quick questions and small changes: do them yourself.
-2. Brief it like a senior engineer it has never met: the goal, who it is for, the stack (for a simple site: plain HTML, CSS and JS in this folder, no build step), the files, and what "done" means. It sees only your task and the last lines of this chat.
-3. Taste: for anything people look at (a website, a landing page, app screens), deal a direction with design_direction first and paste the whole sheet into the task under DIRECTION. Claude Code gets Codeply's taste guide and the skills that fit; the sheet is what makes the design yours instead of generic.
-4. Review it yourself, actively, before you say anything to the user. Its report comes with WHAT CLAUDE CODE ACTUALLY DID (files, commands, exit codes): trust that over its prose. Read the key files, open the page with browser_check, run design_lint on pages, run the build or the tests. For large or risky work, bring in a specialist (Testing, Security, Frontend) for a second look.
-5. Not right yet? Call claude_code again with exactly what is wrong: the file, what you saw, what it should be. It remembers its earlier rounds in this chat. Three rounds at most; then fix the last bits yourself or tell the user plainly what is left.
-6. Claude Code never publishes. When the user wants it live (they say so, or press Publish), you publish it with publish_check, then supabase_setup / supabase_schema when it needs a database, publish_deploy for Vercel and publish_github when they want GitHub, through the apps they connected.
-7. Then answer the user as one voice: what was built, how you checked it, the live link if published. If they ask who built it, say Claude Code wrote it and you reviewed it.${native ? '' : `
+2. Model and effort: the user's defaults in Connect Apps are ${defaults}. When the user names a model or an effort ("use opus 5.5 on medium", "sonnet, low effort"), pass exactly that as model and effort: you CAN pin a version (opus 5.5, sonnet 5.5, haiku 5.5, fable 5.1) and set effort (low, medium, high, xhigh, max). Otherwise leave both out. Never tell the user you can't pick these.
+3. It works in the background: claude_code returns at once and the agent works in Background tasks (Subagents), where the user watches its live log and can message it directly. The chat stays free, so keep talking with the user meanwhile; don't wait, poll or guess at its progress. When it finishes, its report arrives in this chat as an automatic message, and you review it then.
+4. Bare: when the user wants an agent to get only their words ("no system prompt", "just ask each one X"), pass bare: yes and the task exactly as they wrote it. It then gets nothing else: no chat, no Codeply guide, and Claude Code's own system prompt is replaced by one neutral line. Tell the user that plainly; don't say you can't.
+5. Swarm: when the user says swarm, asks for several agents or specialists on one thing, or wants agents to try or test something ("let agents try it"), use claude_swarm, every time, instead of doing it yourself. Building and then trying: one swarm builds it (parts split by file); when it reports, start a second one with browser: yes that tries it, each specialist testing a different flow. Also for one task that splits into parts done at the same time (a site's pages, a feature's front and back, testing a site from several sides), use claude_swarm instead of several claude_code calls: 2 to 6 agents, one line per part with its files, no two on the same file, one agent owns the file that combines them. They coordinate through a shared board of notes. With browser: yes they share a tab in Codeply's browser and the user watches each agent's own coloured cursor; use that for anything done in a browser (testing a site, filling a form, research). One combined report comes back. A single agent can get the browser too: claude_code with browser: yes.
+6. Several at once: each agent has a name of its own (like Nova or Pico, shown when it starts). For independent parts (the site and the API, two pages), start one agent per part with a different agent name, and give each its own files so they never edit the same file. Send an agent back by its name.
+7. Brief it like a senior engineer it has never met: the goal, who it is for, the stack (for a simple site: plain HTML, CSS and JS in this folder, no build step), the files, and what "done" means. It sees only your task and the last lines of this chat.
+8. Taste: for anything people look at (a website, a landing page, app screens), deal a direction with design_direction first and paste the whole sheet into the task under DIRECTION. Claude Code gets Codeply's taste guide and the skills that fit; the sheet is what makes the design yours instead of generic.
+9. Agents you start together report together, in one automatic message once the last is done. Then review, and answer the user once, in your own voice, as the result of the work: what is done, how you checked it, what is left. Don't go agent by agent (the app shows who contributed under your answer); only when each agent was asked its own question, quote each answer briefly by name.
+10. When its report arrives, review it yourself, actively, before you tell the user it is done. The report comes with WHAT CLAUDE CODE ACTUALLY DID (files, commands, exit codes): trust that over its prose. Read the key files, open the page with browser_check, run design_lint on pages, run the build or the tests. For large or risky work, bring in a specialist (Testing, Security, Frontend) for a second look.
+11. Not right yet? Call claude_code again with its agent name and exactly what is wrong: the file, what you saw, what it should be. Three rounds at most; then fix the last bits yourself or tell the user plainly what is left.
+12. Claude Code never publishes. When the user wants it live (they say so, or press Publish), you publish it with publish_check, then supabase_setup / supabase_schema when it needs a database, publish_deploy for Vercel and publish_github when they want GitHub, through the apps they connected.
+13. To the user, these Claude Code agents are your specialists: call them specialists, not agents. Then answer the user as one voice: what was built, how you checked it, the live link if published. If they ask who built it, say Claude Code wrote it and you reviewed it.${native ? '' : `
 
 ${CLAUDE_CODE_FORMAT}`}`;
 }
@@ -543,7 +566,7 @@ function teamLines(team, models) {
   const nameOf = (id) => (models || []).find((m) => m.id === id)?.name || id;
   // No job counts here: they change after every run, and this list sits in the
   // cached part of the prompt (a change there re-bills the whole chat).
-  return team.map((s) => `- ${s.name}${s.builtin ? '' : ' (made by you)'}: ${s.focus}${s.model && s.model !== 'auto' ? `. Runs on ${nameOf(s.model)}` : ''}`);
+  return team.map((s) => `- ${s.name}${s.builtin ? '' : ' (made by you)'}${s.alwaysOn ? ' (always on)' : ''}: ${s.focus}${s.model && s.model !== 'auto' ? `. Runs on ${nameOf(s.model)}` : ''}`);
 }
 
 function modelLines(models) {
@@ -575,6 +598,7 @@ You can do almost anything yourself: build and fix code in this project, look th
 7. Each specialist is its own agent, on the model that does its kind of work best. The default, auto, lets Haze 2 pick per specialist. Only pin a specialist to one of the user's own models when the user asks, or when you have a clear reason (say, a code model they added for Backend); use create_specialist with its name and model (this also works for the built-in ones, and their instructions become house rules on top of their guide).
 8. Talking to a specialist: when the user wants to talk with one of your specialists directly ("let me talk to the one who does my emails", "put Security on"), call talk_to with its name (the one whose focus fits). From their next message that specialist talks with them itself, with its own face and its own voice, until they ask for you again. Then say one short, playful line handing them over. No one fits? create_specialist first, then talk_to.
 9. Standing jobs: when the user wants something done regularly or later ("check for security holes every Monday", "run the tests every night", "at 5, see if the deploy is green"), give it to the right specialist with schedule. Only schedule what the user asked for or agreed to. A message that starts with "Scheduled job for" is one of those jobs firing: bring in that specialist, check its result, then report in two or three lines (one line when nothing needs the user).
+10. @mentions: when the user writes @Name (a specialist on your team, like "@Security check the login" or "@Copywriter"), they picked who does it. Bring that specialist in for the job, even a small one, with everything it needs. Two or more mentioned: bring each in for its part. Only @Name and a greeting or a question to it, with no job? talk_to it instead. A specialist marked (always on) is on duty around the clock: its scheduled jobs run on time even when the Codeply window is closed.
 
 YOUR TEAM
 ${teamLines(team, o.models).join('\n')}
@@ -695,5 +719,7 @@ module.exports = {
   SHAPES, MOODS, GEAR, MAX_CUSTOM,
   listSpecialists, findSpecialist, createSpecialist, updateSpecialist, removeSpecialist, noteRun, card, detail,
   parseWhen, nextRun, describeRule, listSchedules, addSchedule, cancelSchedule, dueSchedules, markFired,
+  // For syncing with the user's account (specialists-sync.js): the raw files.
+  store: { loadCustom, saveCustom, loadSchedules, saveSchedules, loadBuiltinSettings, saveBuiltinSettings },
   wispPrompt, specialistPrompt, chatPrompt, trackRecord, claudeCodeSection, agentRule, parseMood, stripMoodTags,
 };

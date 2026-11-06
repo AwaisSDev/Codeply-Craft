@@ -31,6 +31,7 @@
   </script>
   <link rel="stylesheet" href="phone-app.css">
   <link rel="stylesheet" href="phone-work.css">
+  <link rel="stylesheet" href="phone-specialists.css">
   <script>
     // Apply a stored dark/light choice before first paint.
     (function () {
@@ -88,11 +89,11 @@
       <button class="circle-btn" id="menuBtn" aria-label="Open sidebar">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M4.5 9h15M4.5 15h9"/></svg>
       </button>
-      <button type="button" class="top-title" id="titleBtn" aria-haspopup="menu" aria-label="Choose model">
-        <span class="top-line"><span id="topTitle">Haze 2</span>
-        <svg class="caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10l5 5 5-5"/></svg></span>
-        <span class="top-sub hidden" id="topSub"><i></i><span></span></span>
-      </button>
+      <!-- Who you're talking to: its face on top of a pill with its name, in its colour (phone-wisp.js) -->
+      <div class="top-who" id="topWho">
+        <span class="top-who-face" id="topWhoFace" aria-hidden="true"></span>
+        <span class="top-who-pill"><b id="topWhoName">Codeply</b><span class="top-who-state" id="topWhoState"></span><span class="top-sub hidden" id="topSub"><i></i><span></span></span></span>
+      </div>
       <div class="top-right">
       <button class="circle-btn hidden" id="chatMoreBtn" aria-label="Chat options" aria-haspopup="menu">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
@@ -119,6 +120,13 @@
       <div class="suggest" id="suggest"></div>
       <div class="box">
         <div class="att-row hidden" id="attRow"></div>
+        <span class="ctx-status hidden" id="pcStatus"><i></i><span>PC offline</span></span>
+        <input type="file" id="attInput" multiple hidden>
+        <textarea id="input" rows="1" placeholder="Ask anything"></textarea>
+        <div class="box-row">
+          <button type="button" class="round-btn" id="plusBtn" aria-label="Add" aria-haspopup="menu">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
         <div class="ctx-row hidden" id="ctxRow">
           <span class="ctx-chip" id="projectChip">
             <button type="button" class="ctx-main" id="projectChipBtn" aria-haspopup="menu">
@@ -133,14 +141,12 @@
             <button type="button" class="ctx-x" id="codeModeX" aria-label="Back to Build"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7 7l10 10M17 7 7 17"/></svg></button>
           </span>
         </div>
-        <span class="ctx-status hidden" id="pcStatus"><i></i><span>PC offline</span></span>
-        <input type="file" id="attInput" multiple hidden>
-        <textarea id="input" rows="1" placeholder="Ask anything"></textarea>
-        <div class="box-row">
-          <button type="button" class="round-btn" id="plusBtn" aria-label="Add" aria-haspopup="menu">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-          </button>
           <span class="spacer"></span>
+          <!-- The model, in the box (like Claude's): a quiet label that opens the picker -->
+          <button type="button" class="model-btn" id="titleBtn" aria-haspopup="menu" aria-label="Choose model">
+            <span id="topTitle">Haze 2</span>
+            <svg class="caret" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10l5 5 5-5"/></svg>
+          </button>
           <button type="button" class="voice-btn" id="voiceBtn" aria-label="Voice call">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg>
           </button>
@@ -346,6 +352,7 @@
   <script src="wisp.js"></script>
   <script src="phone-wisp.js"></script>
   <script src="phone-work.js"></script>
+  <script src="phone-specialists.js"></script>
   <script src="phone-bots.js"></script>
   <script src="phone-app.js"></script>
 </body>

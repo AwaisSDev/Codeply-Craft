@@ -2501,8 +2501,25 @@ async function claude_code(args, ctx) {
   }
   const task = String(args.task || args.prompt || '').trim();
   if (!task) return { ok: false, output: 'claude_code needs <task>: the goal, the files, what you already know, and what "done" means (or, on a later round, exactly what to fix).' };
-  const fresh = /^(1|true|yes)$/i.test(String(args.fresh || '').trim());
-  return ctx.claudeCode({ task, fresh, model: String(args.model || '').trim(), signal: ctx.signal });
+  const yes = (v) => /^(1|true|yes)$/i.test(String(v || '').trim());
+  return ctx.claudeCode({
+    task, fresh: yes(args.fresh), wait: yes(args.wait), bare: yes(args.bare), browser: yes(args.browser),
+    agent: String(args.agent || '').trim(), model: String(args.model || '').trim(), effort: String(args.effort || '').trim(),
+    signal: ctx.signal,
+  });
+}
+
+// Wisp starts a swarm: several Claude Code agents on one task at once, each on
+// its part, coordinating through a shared board (claude-code-desktop.js).
+async function claude_swarm(args, ctx) {
+  const run = ctx.claudeCode && ctx.claudeCode.swarm;
+  if (typeof run !== 'function') return { ok: false, output: 'Swarms need Claude Code connected (Connect Apps, Claude Code).' };
+  const task = String(args.task || '').trim();
+  const parts = String(args.parts || '').split(/\r?\n|;\s*(?=[A-Z][\w ]{0,20}:)/).map((l) => l.trim().replace(/^[-*\d.)\s]+/, '')).filter(Boolean);
+  if (!task) return { ok: false, output: 'claude_swarm needs <task>: the shared goal.' };
+  if (parts.length < 2) return { ok: false, output: 'claude_swarm needs <parts>: at least two lines, "Name: the part | files: a, b".' };
+  const yes = (v) => /^(1|true|yes)$/i.test(String(v || '').trim());
+  return run({ task, parts, browser: yes(args.browser), url: String(args.url || '').trim(), model: String(args.model || '').trim(), effort: String(args.effort || '').trim(), signal: ctx.signal });
 }
 
 // Wisp creates a new specialist for its team, or refines one it made.
@@ -2676,6 +2693,7 @@ export const TOOLS = {
   ask_bot,
   bring_in,
   claude_code,
+  claude_swarm,
   create_specialist,
   schedule,
   talk_to,
@@ -2701,6 +2719,7 @@ export const TOOL_DISPLAY = {
   ask_bot:    { verb: 'asked',  icon: '◉' },
   bring_in:   { verb: 'brought in', icon: '◉' },
   claude_code: { verb: 'claude code', icon: '✳' },
+  claude_swarm: { verb: 'swarm', icon: '✳' },
   create_specialist: { verb: 'created', icon: '✦' },
   schedule:   { verb: 'scheduled', icon: '◷' },
   talk_to:    { verb: 'switched to', icon: '◉' },
@@ -2765,14 +2784,14 @@ export const TOOL_DISPLAY = {
 // agent.mjs; this covers every other tool that changes something outside the
 // conversation, so read-only can't be escaped through a side door.
 const MUTATING_TOOLS = new Set([
-  'write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'calendar_update', 'slack_post_message', 'add_model', 'use_computer', 'claude_code',
+  'write_file', 'edit_file', 'apply_patch', 'fetch_image', 'gmail_send', 'gmail_draft', 'calendar_add', 'calendar_update', 'slack_post_message', 'add_model', 'use_computer', 'claude_code', 'claude_swarm',
   'vercel_deploy', 'supabase_create_project', 'supabase_delete_project', 'github_create_repo',
   'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github',
 ]);
 
 // Everything that isn't designing: commands, deploys, databases, messages, other projects.
 export const DESIGN_BLOCKED = new Set([
-  'run', 'job', 'use_computer', 'lsp', 'mcp', 'ask_bot', 'bring_in', 'claude_code', 'create_specialist', 'schedule', 'talk_to', 'hand_off', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model', 'browser_check', 'bot_email_send',
+  'run', 'job', 'use_computer', 'lsp', 'mcp', 'ask_bot', 'bring_in', 'claude_code', 'claude_swarm', 'create_specialist', 'schedule', 'talk_to', 'hand_off', 'plan_enter', 'plan_exit', 'reach_me', 'watch_email', 'add_model', 'browser_check', 'bot_email_send',
   'gmail_send', 'gmail_draft', 'gmail_search', 'gmail_read', 'drafts_list', 'calendar_list', 'calendar_add', 'calendar_update', 'slack_post_message',
   'vercel_deploy', 'vercel_api', 'supabase_create_project', 'supabase_delete_project', 'supabase_api', 'supabase_sql',
   'github_create_repo', 'publish_check', 'publish_connect', 'supabase_setup', 'supabase_schema', 'publish_deploy', 'publish_github',

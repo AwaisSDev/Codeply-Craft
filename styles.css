@@ -1638,7 +1638,12 @@ a.md-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 /* A tool call is a quiet gray line (Codex's "Edited files"), brightening on
    hover; one that's click-to-expand shows a chevron and a hand cursor so the
    affordance is obvious before the user ever clicks it. */
-.tool-row { margin: 4px 0 8px; }
+.tool-row { margin: 4px 0 8px; min-width: 0; max-width: 100%; }
+/* Long paths and commands with no spaces wrap or trim inside the chat, never run out of it. */
+.tool-row-head { min-width: 0; }
+.tool-row .tool-label { flex: 0 1 auto; }
+.tool-detail, .tool-term-cmd, .tool-term-out, .tool-error { overflow-wrap: anywhere; }
+.tool-term { max-width: 100%; box-sizing: border-box; }
 /* Created and appended the instant its event arrives (so tool_start's
    "running" placeholder and tool_end's swap-in land in the right DOM
    order), but not shown until the reveal queue reaches it - see
@@ -1911,9 +1916,13 @@ a.md-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 .approval-detail {
   margin-top: 6px;
   font-size: 12.5px;
+  line-height: 1.5;
   color: var(--text-dim);
-  font-family: var(--font-mono);
-  word-break: break-all;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
 }
 .approval-diff { margin-top: 10px; max-height: 260px; overflow: auto; border-radius: 8px; }
 .approval-diff pre {
@@ -1926,7 +1935,11 @@ a.md-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 .diff-del { background: rgba(229, 98, 77, 0.10); color: var(--red); }
 .diff-add { background: rgba(76, 195, 138, 0.10); color: var(--green); }
-.approval-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.approval-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; min-width: 0; }
+/* A long "Always allow ..." label wraps inside the card instead of running out of it. */
+.approval-actions .btn { max-width: 100%; min-width: 0; }
+.approval-actions .appr-always { height: auto; min-height: var(--ctl-sm, 30px); padding-top: 6px; padding-bottom: 6px; line-height: 1.35; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+.approval-card { min-width: 0; max-width: 100%; box-sizing: border-box; }
 /* An email to send or save as a draft: editable in place */
 .email-field { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--card-border); font-size: 13px; }
 .email-field span { width: 56px; flex-shrink: 0; color: var(--text-dim); }
@@ -2531,21 +2544,44 @@ a.md-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 .cp-action:disabled { opacity: 0.6; cursor: default; }
 
 /* ============ Question from the agent ============ */
-.question-card {
-  margin: 4px 0 18px; padding: 12px 14px;
-  border-radius: 12px; border: 1px solid color-mix(in srgb, var(--accent-purple) 40%, var(--border));
-  background: var(--card-bg);
-}
-.q-head { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; line-height: 1.45; color: var(--text); }
-.q-head svg { margin-top: 1px; color: var(--accent-purple); }
-.q-text { user-select: text; }
-.q-options { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.q-opt.first { border-color: color-mix(in srgb, var(--accent-purple) 55%, var(--control-border)); }
-.q-custom { display: flex; gap: 6px; margin-top: 8px; }
-.q-custom .input { flex: 1; min-width: 0; }
-.q-skip { margin: 6px 0 0 -10px; }
-.q-answer { margin-top: 8px; font-size: 13px; color: var(--text-dim); }
-.q-answer b { color: var(--text); font-weight: 600; }
+/* A quiet list: the question, numbered choices (1-9 on the keyboard), something else, or leave it to Codeply. */
+.question-card { margin: 4px 0 18px; padding: 14px 14px 10px; border-radius: 14px; border: 1px solid var(--card-border); background: var(--card-bg); }
+.q-text { font-size: 14.5px; line-height: 1.5; color: var(--text); user-select: text; padding: 0 2px; }
+.q-list { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
+.q-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 38px; padding: 7px 8px; border: 0; border-radius: 9px; background: transparent; color: var(--text); font: inherit; font-size: 13.5px; text-align: left; cursor: pointer; transition: background .1s ease; }
+.q-row:hover, .q-row:focus-visible { background: var(--hover); outline: none; }
+.q-num { flex: none; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; background: var(--surface-2); color: var(--text-dim); font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.q-row:hover .q-num { background: var(--text); color: var(--card-bg); }
+.q-label { flex: 1; min-width: 0; line-height: 1.4; }
+.q-go { flex: none; color: var(--text-faint); opacity: 0; transition: opacity .1s ease, transform .1s ease; }
+.q-row:hover .q-go { opacity: 1; transform: translateX(2px); }
+.q-custom { display: flex; align-items: center; gap: 10px; margin-top: 4px; padding: 3px 4px 3px 8px; border-radius: 9px; }
+.q-custom:focus-within { background: var(--hover); }
+.q-num-pen { background: transparent; color: var(--text-faint); }
+.q-custom input { flex: 1; min-width: 0; height: 30px; border: 0; outline: none; background: transparent; color: var(--text); font: inherit; font-size: 13.5px; }
+.q-custom input::placeholder { color: var(--text-faint); }
+.q-send { flex: none; width: 26px; height: 26px; display: grid; place-items: center; border: 0; border-radius: 7px; background: var(--text); color: var(--card-bg); cursor: pointer; opacity: 0; transition: opacity .1s ease; }
+.q-custom:focus-within .q-send { opacity: 1; }
+.q-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; padding: 6px 2px 0; border-top: 1px solid var(--card-border); }
+.q-skip { border: 0; background: transparent; padding: 4px 6px; margin-left: -6px; border-radius: 6px; color: var(--text-dim); font: inherit; font-size: 12.5px; cursor: pointer; }
+.q-skip:hover { background: var(--hover); color: var(--text); }
+.q-keys { font-size: 11.5px; color: var(--text-faint); }
+/* Answered: just the choice, under the question */
+.question-card.done { padding: 2px 0; border: 0; background: transparent; margin: 2px 0 14px; }
+.q-text-sm { font-size: 12.5px; color: var(--text-faint); padding: 0; }
+.q-answer { display: flex; align-items: center; gap: 7px; margin-top: 3px; font-size: 13.5px; color: var(--text); }
+.q-answer svg { color: var(--green); flex: none; }
+
+/* A verdict on an approval: one quiet line */
+.chat-note.verdict { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding: 2px 0; margin: 2px 0 12px; border: 0; font-size: 13px; color: var(--text-faint); }
+.chat-note.verdict svg { flex: none; }
+.chat-note.verdict.ok svg { color: var(--green); }
+.chat-note.verdict.error svg { color: var(--red); }
+.chat-note.verdict .v-word { color: var(--text-dim); }
+.chat-note.verdict.error .v-word { color: var(--red); }
+.chat-note.verdict .v-title { color: var(--text); }
+.chat-note.verdict .v-detail { color: var(--text-faint); }
+.chat-note.verdict .v-detail::before { content: "·"; margin-right: 7px; }
 
 /* ============ Goal card ============ */
 .goal-card {
@@ -3211,3 +3247,33 @@ body { font-family: var(--font-ui); font-size: 14px; font-weight: 400; -webkit-f
 .sb-sec.drop-below { box-shadow: inset 0 -2px 0 var(--accent, #2f6bff); }
 /* The scrollbar gets its own lane, so a long chat title ends in "..." before it instead of running under it. */
 .sb-scroll { scrollbar-gutter: stable; }
+
+/* The working row ("Searched the web, read index.html"): clean, like ChatGPT's. No spinner or
+   dot, a bigger label that shimmers black and white while it works, and a clean arrow. */
+.activity-head { gap: 6px; font-size: 15px; padding: 4px 0; }
+.activity .activity-icon { display: none; }
+.activity.has-agent .activity-icon { display: grid; }
+.activity.running.has-agent .activity-icon::after { display: none; }
+.activity.running .activity-summary { background: linear-gradient(90deg, var(--text-faint) 0%, var(--text) 45%, var(--text-faint) 90%); background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: crew-shine 2.2s linear infinite; }
+.activity-head > .tool-chevron { width: 17px; height: 17px; stroke-width: 2.2; color: var(--text-faint); transition: transform .15s ease, color .12s ease; }
+.activity-head:hover > .tool-chevron { color: var(--text); }
+.activity.open .activity-head > .tool-chevron { transform: rotate(90deg); }
+@keyframes crew-shine { from { background-position: 120% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .activity.running .activity-summary { animation: none; background: none; color: var(--text-dim); } }
+
+/* One text animation everywhere work is happening (thinking, the working row, specialists
+   running): a broad black-to-white shimmer across the words, no dots or spinners. */
+.thinking-row .think-word { background: linear-gradient(90deg, var(--text-faint) 0%, var(--text) 45%, var(--text-faint) 90%); background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: crew-shine 2.2s linear infinite; }
+.thinking-row .think-word.in { animation: crew-shine 2.2s linear infinite, think-in .42s cubic-bezier(.2, .8, .2, 1); }
+.thinking-row .think-dots { display: none; }
+.thinking-row .thinking-time { margin-left: 10px; }
+
+/* While a working row shows what is happening, no separate thinking line under it. */
+.activity.running ~ .thinking-row { display: none; }
+
+/* Background tasks' left edge: drag it (double-click puts it back) */
+.tasks-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 2; }
+.tasks-resize::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent; transition: background .12s ease; }
+.tasks-resize:hover::after, .tasks-resize:focus-visible::after, .tasks-dragging .tasks-resize::after { background: var(--accent); width: 2px; left: 2px; }
+.tasks-resize:focus-visible { outline: none; }
+.tasks-dragging, .tasks-dragging * { cursor: col-resize !important; user-select: none !important; }

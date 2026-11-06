@@ -8,7 +8,7 @@
   "cleanUrls": true,
   "headers": [
     {
-      "source": "/(index.html|phone.js|phone.css|phone-theme.css|phone-app.js|phone-app.css|phone-wisp.js|wisp.js|phone-work.js|phone-work.css|phone-bots.js|phone-taste.js|taste.json|phone-calls.js|phone-calls.css|phone-design.js|phone-design.css|phone-life.js|phone-reminders.js|phone-sw.js|phone-stt-worker.js|bot-avatar.js|attachments.js|classic.html|classic|mobile.js|mobile.css|mobile-cloud.js|mobile-cloud.css|link-chips.js|)",
+      "source": "/(index.html|phone.js|phone.css|phone-theme.css|phone-app.js|phone-app.css|phone-wisp.js|wisp.js|phone-work.js|phone-work.css|phone-specialists.js|phone-specialists.css|phone-bots.js|phone-taste.js|taste.json|phone-calls.js|phone-calls.css|phone-design.js|phone-design.css|phone-life.js|phone-reminders.js|phone-sw.js|phone-stt-worker.js|bot-avatar.js|attachments.js|classic.html|classic|mobile.js|mobile.css|mobile-cloud.js|mobile-cloud.css|link-chips.js|)",
       "headers": [
         {
           "key": "Cache-Control",
