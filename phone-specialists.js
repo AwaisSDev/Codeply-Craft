@@ -191,8 +191,10 @@
   async function fn(body) {
     const token = await P().accessToken();
     if (!token) throw new Error('Sign in to Codeply first.');
-    if ((body.action === 'run' || body.action === 'chat') && !body.modelId) {
-      const own = ownModelFor(body.specialist);
+    if (body.action === 'run' || body.action === 'chat') {
+      // Your time zone, so "today's mail" in the inbox read means your today.
+      body = { tz: TZ, ...body };
+      const own = !body.modelId && ownModelFor(body.specialist);
       if (own) body = { ...body, modelId: own };
     }
     const device = P().deviceHeader ? P().deviceHeader() : {};
