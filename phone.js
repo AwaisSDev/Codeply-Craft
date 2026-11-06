@@ -162,10 +162,19 @@ function inlineMd(s) {
       .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
       .replace(/~~([^~\n]+)~~/g, '<del>$1</del>')
       .replace(/==([^=\n]+)==/g, '<mark>$1</mark>')
-      .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>');
+      .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>')
+      // Craft's coloured text and pills (:green[..], :pill-amber[..], :kbd[..]).
+      .replace(/:([a-z]+(?:-[a-z]+)?)\[([^\]\n]+)\]/g, (m, name, text) => {
+        const c = RICH_COLORS[name.replace(/^(?:pill|badge)-/, '')];
+        if (name === 'kbd') return `<kbd class="md-kbd">${text}</kbd>`;
+        if (name === 'pill' || name === 'badge') return `<span class="md-pill">${text}</span>`;
+        if (/^(?:pill|badge)-/.test(name) && c) return `<span class="md-pill md-c-${c}">${text}</span>`;
+        return c ? `<span class="md-c-${c}">${text}</span>` : m;
+      });
     return links ? links.restore(html) : html;
   }).join('');
 }
+const RICH_COLORS = { green: 'green', success: 'green', red: 'red', danger: 'red', error: 'red', blue: 'blue', info: 'blue', amber: 'amber', orange: 'amber', yellow: 'amber', warning: 'amber', purple: 'purple', violet: 'purple', gray: 'gray', grey: 'gray', muted: 'gray' };
 // What you typed, escaped, with its links as chips (link-chips.js).
 const linkText = (text) => (window.CodeplyLinks ? window.CodeplyLinks.linkText(text) : esc(text));
 function md(src) {
@@ -175,6 +184,12 @@ function md(src) {
       const nl = part.indexOf('\n');
       const lang = (nl >= 0 ? part.slice(0, nl) : part).trim().split(/\s/)[0].slice(0, 20);
       const body = nl >= 0 ? part.slice(nl + 1) : '';
+      // Craft's interactive widgets only run in the desktop app; documents read as text.
+      const head = (nl >= 0 ? part.slice(0, nl) : part).trim();
+      const kind = head.split(/\s+/)[0].toLowerCase();
+      const title = head.slice(kind.length).trim().replace(/^(["'])(.*)\1$/, '$2');
+      if (kind === 'widget' || kind === 'ui' || kind === 'interactive') return `<div class="md-widget-note"><strong>${esc(title || 'Interactive widget')}</strong><span>Open this chat in Craft on your PC to use it.</span></div>`;
+      if (kind === 'doc' || kind === 'document' || kind === 'writing') return `<div class="md-doc">${title ? `<h3>${esc(title)}</h3>` : ''}${mdBlocks(body)}</div>`;
       return `<div class="md-code"><div class="md-code-head"><span>${esc(lang || 'code')}</span><button type="button" class="md-copy">Copy</button></div><pre><code>${esc(body.replace(/\n$/, ''))}</code></pre></div>`;
     }
     return mdBlocks(part.replace(/^[^\n]*\n?/, i === 0 ? '$&' : ''));
@@ -908,7 +923,7 @@ function clearLiveTool() {
   liveTool.el.remove();
   liveTool = null;
 }
-const LIVE_VERB = { run: 'Running', read_file: 'Reading', edit_file: 'Editing', write_file: 'Writing', apply_patch: 'Patching', search: 'Searching', list_dir: 'Looking in', browser_check: 'Checking', web_search: 'Searching the web for', web_fetch: 'Reading', bring_in: 'Bringing in a specialist', fetch_image: 'Downloading' };
+const LIVE_VERB = { run: 'Running', read_file: 'Reading', edit_file: 'Editing', write_file: 'Writing', apply_patch: 'Patching', search: 'Searching', list_dir: 'Looking in', browser_check: 'Checking', web_search: 'Searching the web for', web_fetch: 'Reading', bring_in: 'Bringing in a specialist', claude_code: 'Asking Claude Code', fetch_image: 'Downloading' };
 /** A specialist the agent brought in works behind it: a quiet line among the steps. */
 function addSpecialistNote(d) {
   if (!d || !d.agent) return;
@@ -916,6 +931,19 @@ function addSpecialistNote(d) {
   if (d.phase === 'start') addThinking(`Brought in the ${name} specialist${d.task ? `: ${String(d.task).split('\n')[0].slice(0, 160)}` : ''}`, 'Specialist');
   else if (d.phase === 'created') addThinking(`Made a new specialist: ${name}`, 'Specialist');
   else if (d.phase === 'report' && !d.ok) addThinking(`The ${name} specialist could not finish`, 'Specialist');
+}
+
+/**
+ * The chat switched who talks (wisp_speaker: an @mention or talk_to on the PC). The turn's
+ * user message carries it, and every answer from there on wears that specialist's face
+ * (phone-specialists.js) until the chat switches back to Codeply.
+ */
+function markSpeaker(d) {
+  const users = feed().querySelectorAll(':scope > .msg.user');
+  const u = users[users.length - 1];
+  if (!u) return;
+  const a = d && d.agent;
+  u.dataset.speaker = a ? JSON.stringify({ id: a.id, name: a.name, shape: a.shape, color: a.color, gear: a.gear || '' }) : 'codeply';
 }
 
 function addTool(t) {
@@ -997,6 +1025,7 @@ function renderPcItem(item, chat) {
   else if (item.kind === 'tool') addTool(item);
   else if (item.kind === 'role_active' || item.kind === 'subagent_active') addRole(item);
   else if (item.kind === 'wisp_agent') addSpecialistNote(item);
+  else if (item.kind === 'wisp_speaker') markSpeaker(item);
   else if (item.kind === 'turn_summary') addSummary(item);
   else if (item.kind === 'checkpoint') renderCheckpoint(item, chat);
   else if (item.kind === 'question') renderQuestion({ ...item, answered: true });
@@ -1038,9 +1067,9 @@ async function showHandoff(c) {
   } catch { return; }
   if (!row || (state.current && chatMeta(state.current) || {}).id !== c.id || relay.pcId) return;
   let text = '';
-  if (row.holder === 'cloud' && row.state === 'running') text = 'Your PC went offline, so Craft Cloud is carrying this task on. It goes back to your PC when the PC is online.';
-  else if (row.holder === 'pc' && row.state === 'running') text = 'Your PC went offline in the middle of this task. Craft Cloud picks it up within a minute or two.';
-  else if (row.state === 'no_credentials' || row.state === 'cloud_failed') text = `${row.note || 'Craft Cloud could not take this task over.'} It carries on when your PC is back.`;
+  if (row.holder === 'cloud' && row.state === 'running') text = 'Your PC went offline, so the cloud is carrying this task on. It goes back to your PC when the PC is online.';
+  else if (row.holder === 'pc' && row.state === 'running') text = 'Your PC went offline in the middle of this task. The cloud picks it up within a minute or two.';
+  else if (row.state === 'no_credentials' || row.state === 'cloud_failed') text = `${row.note || 'The cloud could not take this task over.'} It carries on when your PC is back.`;
   if (!text) return;
   addMsg('note', text);
 }
@@ -1169,6 +1198,7 @@ function receiveEvent(event) {
   else if (event.type === 'text') (event.interim ? addThinking(event.text) : addDelta(event.text));
   else if (event.type === 'tool_start') addLiveTool(event);
   else if (event.type === 'wisp_agent') addSpecialistNote(event);
+  else if (event.type === 'wisp_speaker') markSpeaker(event);
   else if (event.type === 'tool_end') {
     const m = event.meta || {};
     clearLiveTool();
@@ -2428,6 +2458,7 @@ function openPlus() {
   const modeHint = CODE_MODES.find(([m]) => m === state.ui.codeMode);
   openPick(`<div class="pop-tiles">${tile('camera', ICONS.camera, 'Camera')}${tile('photos', ICONS.image, 'Photos')}${tile('files', ICONS.attach, 'Files')}</div>
     ${pickRow({ icon: ICONS.folder, title: proj ? esc(proj.name) : 'Work in a project', hint: proj ? (proj.cwd ? (relay.pcId ? 'On your PC' : 'On your PC, which is offline: runs in the cloud if set up') : 'In the cloud') : 'A folder on your PC or a GitHub repo', attrs: 'data-act="project"', kbd: proj ? 'Change' : '' })}
+    ${proj && !inCode ? pickRow({ icon: ICONS.chat || ICONS.spark, title: 'Just chat', hint: `Stop working in ${esc(proj.name)}`, attrs: 'data-act="detach"' }) : ''}
     ${proj ? `${pickRow({ icon: ICONS[modeHint ? modeHint[2] : 'build'], title: `Mode: ${esc(state.ui.codeMode)}`, hint: modeHint ? modeHint[1] : '', attrs: 'data-act="mode"' })}
     ${pickRow({ icon: ICONS.target, title: 'Set a goal', hint: 'Keep working until it is done and verified', attrs: 'data-act="goal"', kbd: '/goal' })}
     ${!cloudChat ? pickRow({ icon: state.perm === 'full' ? ICONS.bolt : ICONS.shield, title: PERM[state.perm].title + ' on your PC', hint: PERM[state.perm].hint, attrs: 'data-act="access"' }) : ''}
@@ -2440,7 +2471,8 @@ function openPlus() {
     act('photos', () => pickFiles('photos'));
     act('files', () => pickFiles());
     act('project', () => openProjectPicker({ anchor: $('plusBtn') }));
-    act('mode', () => openCodeModePicker($('plusBtn')));
+    act('detach', () => detachProject());
+    act('mode',() => openCodeModePicker($('plusBtn')));
     act('goal', () => { if (!proj) { openProjectPicker({ anchor: $('plusBtn') }); return; } insertCommand('/goal '); });
     act('access', () => openAccess('pc'));
     act('caccess', () => openAccess('cloud', cloudEnv, cperm));
@@ -2580,6 +2612,9 @@ function renderComposer() {
   const p = code ? currentProject() : null;
   $('topTitle').textContent = modelLabel();
   $('ctxRow').classList.toggle('hidden', !p);
+  // The project is in + now (no chip in the box): + wears a small dot while one is on.
+  $('plusBtn').classList.toggle('has-project', !!p);
+  $('plusBtn').setAttribute('aria-label', p ? `Add, working in ${p.name}` : 'Add');
   if (p) {
     const cloud = (c && c.cloud) || !p.cwd;
     $('projectChipName').textContent = p.name;

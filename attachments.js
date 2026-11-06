@@ -114,8 +114,9 @@
     const base = f.type === 'pdf' ? `PDF${f.pages ? ` · ${f.pages} page${f.pages === 1 ? '' : 's'}` : ''}` : `${(ext(f.name) || 'text').toUpperCase()} · ${f.size != null ? sizeLabel(f.size) : kb(f.chars || 0)}`;
     return f.truncated ? `${base} · first part` : base;
   }
-  const FILE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>';
-  const PDF_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><text x="7.2" y="17.5" font-size="5.6" font-weight="700" fill="currentColor" stroke="none" font-family="sans-serif">PDF</text></svg>';
+  // The desktop window draws these from icons.js; the phone page has no icon set, so it keeps its own.
+  const FILE_ICON = window.icon ? window.icon('file-text') : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>';
+  const PDF_ICON = window.icon ? window.icon('file-pdf') : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><text x="7.2" y="17.5" font-size="5.6" font-weight="700" fill="currentColor" stroke="none" font-family="sans-serif">PDF</text></svg>';
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   /** One file chip (sent or about to be sent). */
   function chipHtml(f, { removable = false } = {}) {

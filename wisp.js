@@ -54,7 +54,9 @@
     circle: polar(function () { return 1; }, 1),
     square: polar(poly(4, Math.PI / 4), 27), // soft, stuffed-toy corners
     triangle: polar(poly(3), 33),
-    hexagon: polar(poly(6), 21),
+    // Flat side up (gear sits on it). A hexagon's corners stick out only 15%, so it gets light
+    // smoothing: at 21 it came out a circle (1.8% off round); at 7 it's ~10%, like the square.
+    hexagon: polar(poly(6, Math.PI / 6), 7),
     star: polar(function (t) { return .8 + .2 * Math.cos(5 * (t + Math.PI / 2)); }, 11),
     spiky: polar(function (t) { var c = Math.cos(8 * (t + Math.PI / 2)); return .84 + .16 * Math.sign(c) * Math.pow(Math.abs(c), .6); }, 7),
     blob: polar(function (t) { return 1 + .07 * Math.sin(3 * t + 1) + .05 * Math.cos(5 * t - .4); }, 5),

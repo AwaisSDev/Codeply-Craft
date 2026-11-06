@@ -3,9 +3,10 @@
 //   - The empty chat: Wisp, big, above the greeting. Its eyes follow your
 //     finger, and it reads what you type as you type (a mood, and a shape
 //     when you name one: "make it feel like a cloud").
-//   - Every answer starts with Wisp's face. The newest one shows the work:
-//     working while the agent runs, worried while an approval waits, sad on an
-//     error, then the mood of the reply (the [mood: x] the desktop sends).
+//   - One face in a chat, on top: whoever you're talking to (Codeply or a
+//     specialist), on a pill with its name. It shows the work: working while the
+//     agent runs, worried while an approval waits, sad on an error, then the
+//     mood of the reply (the [mood: x] the desktop sends). Answers carry no face.
 //   - Approval sheets and sign-in show Wisp too.
 //   - The title shows where the work runs: the PC's name and "online" or
 //     "offline", in words, not just a coloured dot.
@@ -113,46 +114,31 @@
     return null;
   }
 
+  // One face, on top (setWho): no face beside each answer. It takes the newest
+  // turn's mood (a heart for "love you", sad on an error), hops while the agent
+  // works, and the pill under it says what is going on ("Thinking", "Needs your OK").
   let busyFaces = false;
+  let saidKey = '';
+  const LIVE_WORDS = { thinking: 'Thinking', working: 'Working', worried: 'Needs your OK' };
   function decorate() {
     const f = $('feed');
     if (!f || busyFaces) return;
     busyFaces = true;
     try {
-      const users = [...f.querySelectorAll(':scope > .msg.user')];
-      // A user message that ends the feed has no answer yet, but the face shows it is coming.
+      f.querySelectorAll(':scope > .turn-face').forEach((n) => n.remove());
       const moods = turnMoods();
       const live = liveMood();
-      users.forEach((u, i) => {
-        let face = u.nextElementSibling;
-        // attachments sit after the user message; the face goes after them
-        while (face && face.classList.contains('msg-files')) face = face.nextElementSibling;
-        if (!face || !face.classList.contains('turn-face')) {
-          const holder = document.createElement('div');
-          holder.className = 'turn-face';
-          holder.setAttribute('aria-hidden', 'true');
-          const el = document.createElement('span');
-          holder.appendChild(el);
-          const state = document.createElement('span');
-          state.className = 'turn-face-state';
-          holder.appendChild(state);
-          (face ? f.insertBefore(holder, face) : f.appendChild(holder));
-          W.mount(el, { size: 'sm', morph: true }); // the same shapes as voice mode: a heart for love, spiky when angry
-          face = holder;
-        }
-        const last = i === users.length - 1;
-        const mood = last && live ? live : moods[i] || 'neutral';
-        const w = face.querySelector('.wisp-el') && face.querySelector('.wisp-el').wisp;
-        if (w && w.mood !== mood) { w.setMood(mood); if (last && !live && mood !== 'neutral') w.talk(1200); }
-        face.querySelector('.turn-face-state').textContent = last && live === 'worried' ? 'Needs your OK' : '';
-        face.classList.toggle('live', last && (live === 'thinking' || live === 'working'));
-      });
-      // Faces whose user message went away (a redraw) go too.
-      f.querySelectorAll(':scope > .turn-face').forEach((face) => {
-        let prev = face.previousElementSibling;
-        while (prev && prev.classList.contains('msg-files')) prev = prev.previousElementSibling;
-        if (!prev || !prev.classList.contains('msg') || !prev.classList.contains('user')) face.remove();
-      });
+      const mood = live || moods[moods.length - 1] || 'neutral';
+      if (whoFace && whoFace.mood !== mood) {
+        whoFace.setMood(mood);
+        const key = `${moods.length}:${mood}`;
+        if (!live && mood !== 'neutral' && key !== saidKey) { saidKey = key; whoFace.talk(1200); } // a new reply: it says it
+      }
+      const box = $('topWho');
+      if (box) box.classList.toggle('live', live === 'thinking' || live === 'working');
+      const said = $('topWhoState');
+      const words = (live && LIVE_WORDS[live]) || '';
+      if (said && said.textContent !== words) said.textContent = words;
     } finally { busyFaces = false; }
   }
 
@@ -175,6 +161,31 @@
     });
   }
 
+  // ─── Who you're talking to, in the header ─────────────────────────────────
+  // Its face on top, a small pill below with its name and where the work runs,
+  // tinted in its colour: Codeply's blue, or the specialist the chat switched to
+  // (phone-specialists.js calls setWho). On the empty chat the big Wisp is the face.
+  const CODEPLY_COLOR = '#4C8DFF';
+  let whoFace = null;
+  let whoKey = null;
+  function setWho(spec) {
+    const box = $('topWho');
+    const slot = $('topWhoFace');
+    if (!box || !slot) return;
+    const key = spec ? `${spec.id}|${spec.shape}|${spec.color}|${spec.gear || ''}` : 'codeply';
+    if (whoFace && key === whoKey) return;
+    const look = spec && spec.shape ? { shape: spec.shape, color: spec.color, gear: spec.gear || undefined } : null;
+    box.style.setProperty('--who', (spec && spec.color) || CODEPLY_COLOR);
+    const name = $('topWhoName');
+    if (name) name.textContent = spec ? spec.name : 'Codeply';
+    if (!whoFace) {
+      const el = W.avatar({ size: 'sm', mood: 'happy', look: look || undefined });
+      slot.appendChild(el);
+      whoFace = el.wisp || null;
+    } else if (whoFace.dress) whoFace.dress(look, whoKey !== null); // the costume change when the chat switches
+    whoKey = key;
+  }
+
   // ─── Where the work runs, in the title ────────────────────────────────────
   function presence() {
     const sub = $('topSub');
@@ -191,8 +202,11 @@
     if (t && t.textContent !== text) t.textContent = text;
   }
 
+  window.CraftPhoneWho = { set: setWho };
+
   function start() {
     mountHome();
+    if (!whoFace) setWho(null);
     // Wisp shows on the empty chat, at each answer and in onboarding. Sign-in and sheets stay plain.
     let q = false;
     const soon = () => { if (q) return; q = true; requestAnimationFrame(() => { q = false; decorate(); presence(); }); };

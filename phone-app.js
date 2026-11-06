@@ -303,22 +303,7 @@
       sw.addEventListener('click', (ev) => { const b = ev.target.closest('[data-to]'); if (b) setAuthTab(b.dataset.to); });
       setAuthTab('in');
     }
-    // Composer: an "Agent" chip next to +, like DeepSeek's Think and Search.
-    const row = document.querySelector('#composer .box-row');
-    if (row && !$('agentChip')) {
-      row.querySelector('#plusBtn').insertAdjacentHTML('afterend', `<button type="button" class="chip-btn" id="agentChip">${I.agent}<span>Agent</span></button>`);
-      $('agentChip').addEventListener('click', () => { if (P().openProjectPicker) P().openProjectPicker({ anchor: $('agentChip') }); });
-      // The project the message goes to (phone.js's chip above the text) shows on this one chip instead.
-      const sync = () => {
-        const on = !$('ctxRow').classList.contains('hidden');
-        const name = ($('projectChipName').textContent || '').trim();
-        const mode = !$('codeModeChip').classList.contains('hidden') ? ($('codeModeName').textContent || '').trim() : '';
-        $('agentChip').classList.toggle('on', on);
-        $('agentChip').querySelector('span').textContent = on && name && name !== 'Project' ? `${name}${mode ? ` · ${mode}` : ''}` : 'Agent';
-      };
-      new MutationObserver(sync).observe($('ctxRow'), { attributes: true, subtree: true, childList: true, characterData: true });
-      sync();
-    }
+    // Composer: no project chip in the box; the project lives in + (phone.js openPlus), and + wears a dot while one is on.
     // Sidebar: Tasks, and the account row opens Settings.
     const t = $('drawerTasks');
     if (t) t.addEventListener('click', () => { if (P().closeDrawer) P().closeDrawer(); open('tasksPanel'); });
@@ -630,7 +615,7 @@
         else { const meta = ((st.pc && st.pc.sessions) || []).find((x) => x.id === (t && t.session)); if (meta) P().openPcSession(meta); }
       }
     });
-    document.querySelector('#tasksPanel [data-q="new"]').addEventListener('click', () => { $('tasksPanel').classList.add('hidden'); P().newChat(); setTimeout(() => $('agentChip').click(), 50); });
+    document.querySelector('#tasksPanel [data-q="new"]').addEventListener('click', () => { $('tasksPanel').classList.add('hidden'); P().newChat(); setTimeout(() => { if (P().openProjectPicker) P().openProjectPicker({ anchor: $('plusBtn') }); }, 50); });
 
     // Settings rows.
     $('youView').addEventListener('click', async (e) => {

@@ -166,7 +166,7 @@
       team.error = team.missing ? '' : (e.message || 'Could not load your team.');
     }
     team.loaded = true;
-    try { localStorage.setItem('craft-phone-specialists', JSON.stringify(team.list.map((s) => ({ id: s.id, name: s.name, focus: s.focus, shape: s.shape, color: s.color, gear: s.gear })))); } catch {}
+    try { localStorage.setItem('craft-phone-specialists', JSON.stringify(team.list.map((s) => ({ id: s.id, name: s.name, focus: s.focus, shape: s.shape, color: s.color, gear: s.gear, builtin: !!s.builtin, createdAt: s.createdAt || 0 })))); } catch {}
     return team;
   }
   const cachedTeam = () => { if (team.list.length) return team.list; try { return JSON.parse(localStorage.getItem('craft-phone-specialists') || '[]'); } catch { return []; } };
@@ -419,7 +419,27 @@
     input.dataset.mentions = '1';
     let menu = null; let at = -1; let items = [];
     const shut = () => { if (menu) menu.remove(); menu = null; };
+    // Just "@": the 3 you used last. Keep typing: everyone whose name matches.
+    const RECENT = 'codeply.mentions.recent';
+    const times = () => { try { return JSON.parse(localStorage.getItem(RECENT) || '{}') || {}; } catch { return {}; } };
+    function choices(q) {
+      const all = cachedTeam();
+      if (!q) {
+        const t = times();
+        const lastRun = (s) => { const r = team.runs.find((x) => x.specialist === s.id); return r ? Date.parse(r.at) || 0 : 0; };
+        const seen = (s) => Math.max(t[s.id] || 0, lastRun(s), s.createdAt || 0);
+        return all.map((s, i) => ({ s, i, at: seen(s) }))
+          .sort((a, b) => b.at - a.at || (a.s.builtin === b.s.builtin ? a.i - b.i : a.s.builtin ? 1 : -1))
+          .slice(0, 3).map((x) => x.s);
+      }
+      const nm = (s) => String(s.name).toLowerCase();
+      const starts = all.filter((s) => nm(s).startsWith(q));
+      const words = all.filter((s) => !starts.includes(s) && nm(s).split(/\s+/).some((w) => w.startsWith(q)));
+      const inside = q.length > 1 ? all.filter((s) => !starts.includes(s) && !words.includes(s) && nm(s).includes(q)) : [];
+      return [...starts, ...words, ...inside].slice(0, 6);
+    }
     function pick(s) {
+      try { const t = times(); t[s.id] = Date.now(); localStorage.setItem(RECENT, JSON.stringify(t)); } catch {}
       const v = input.value; const end = input.selectionStart;
       input.value = `${v.slice(0, at)}@${s.name} ${v.slice(end)}`;
       const caret = at + s.name.length + 2;
@@ -430,9 +450,11 @@
       const before = input.value.slice(0, input.selectionStart);
       const m = /(^|\s)@([\w .-]{0,24})$/.exec(before);
       if (!m) { shut(); return; }
-      const q = m[2].toLowerCase();
-      items = cachedTeam().filter((s) => String(s.name).toLowerCase().startsWith(q)).slice(0, 6);
-      if (!items.length || (items.length === 1 && items[0].name.toLowerCase() === q.trim())) { shut(); return; }
+      // A fresh "@": get the team (with its faces) if this phone does not have it yet, then show it.
+      if (!menu && !team.list.length && !team.loaded) loadTeam().then(() => { if (!menu) input.dispatchEvent(new Event('input')); }).catch(() => {});
+      const q = m[2].toLowerCase().trim();
+      items = choices(q);
+      if (!items.length || (items.length === 1 && items[0].name.toLowerCase() === q)) { shut(); return; }
       at = before.length - m[2].length - 1;
       shut();
       menu = document.createElement('div');
@@ -517,22 +539,49 @@
 
   // ─── Its own face on its answers ───────────────────────────────────────────
   // phone-wisp.js puts Wisp's face above every answer. An answer from a
-  // specialist (its chat, or an @mention: the answer starts with "-# Name")
+  // specialist (its chat, an @mention answered from the cloud: the answer starts
+  // with "-# Name", or a PC chat the user switched to it: phone.js markSpeaker)
   // wears that specialist's look instead: its shape, colour and gear.
+  const CODEPLY_COLOR = '#4C8DFF';
+  /** Dark text on a light colour (yellow, lime), white on a deep one, so a bubble always reads. */
+  function inkOn(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+    if (!m) return '#fff';
+    const n = parseInt(m[1], 16);
+    const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+    const L = 0.2126 * lin(n >> 16) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+    return L > 0.36 ? '#141414' : '#fff';
+  }
+  function paintBubble(el, color) {
+    if (el.dataset.bubble === color) return;
+    el.dataset.bubble = color;
+    el.style.setProperty('--bubble', color);
+    el.style.setProperty('--bubble-ink', inkOn(color));
+  }
+
   function faceSpecialists() {
     const f = $('feed');
     if (!f) return;
     const list = cachedTeam();
-    if (!list.length) return;
     const st = P().state || {};
     const chat = st.current && P().chatMeta ? P().chatMeta(st.current) : null;
     const own = chat && chat.specialist ? list.find((x) => x.id === chat.specialist.id) : null;
-    f.querySelectorAll(':scope > .turn-face').forEach((face) => {
+    let speaking = null; // who the PC chat is talking to, as the feed goes
+    [...f.children].forEach((face) => {
+      if (face.classList.contains('msg') && face.classList.contains('user')) {
+        if (face.dataset.speaker) {
+          try { speaking = face.dataset.speaker === 'codeply' ? null : JSON.parse(face.dataset.speaker); } catch { speaking = null; }
+        }
+        return;
+      }
+      if (!face.classList.contains('turn-face')) return;
       let n = face.nextElementSibling;
       while (n && !(n.classList.contains('msg') && (n.classList.contains('agent') || n.classList.contains('user')))) n = n.nextElementSibling;
       const small = n && n.classList.contains('agent') ? n.querySelector(':scope > .md-small:first-child') : null;
       const name = small ? small.textContent.trim().toLowerCase() : '';
-      const spec = (name && list.find((x) => String(x.name).toLowerCase() === name)) || own;
+      // The card from the PC has the look; the team on this phone may have a newer one.
+      const live = speaking && (list.find((x) => x.id === speaking.id) || speaking);
+      const spec = (name && list.find((x) => String(x.name).toLowerCase() === name)) || live || own;
       const key = spec ? spec.id : '';
       if ((face.dataset.spec || '') === key) return;
       const holder = face.querySelector('.wisp-el');
@@ -541,13 +590,21 @@
       face.dataset.spec = key;
       w.dress(spec ? { shape: spec.shape || 'circle', color: spec.color, gear: spec.gear || undefined } : null, false);
     });
+    // The header (phone-wisp.js): who answers your next message, in its colour.
+    const now = (speaking && (list.find((x) => x.id === speaking.id) || speaking)) || own || null;
+    if (window.CraftPhoneWho) window.CraftPhoneWho.set(now && now.shape ? now : now ? { ...now, shape: 'circle' } : null);
+    // All your messages wear the colour of whoever is answering now (like Todd's green bubbles):
+    // Codeply's blue, or the specialist's. Switch agents and the whole chat changes colour.
+    const color = (now && now.color) || CODEPLY_COLOR;
+    f.querySelectorAll(':scope > .msg.user').forEach((u) => paintBubble(u, color));
   }
   let faceQueued = false;
   const queueFaces = () => { if (faceQueued) return; faceQueued = true; requestAnimationFrame(() => { faceQueued = false; faceSpecialists(); }); };
 
   function wire() {
     wireMentions();
-    new MutationObserver(queueFaces).observe(document.body, { childList: true, subtree: true });
+    // data-speaker: phone.js marks a turn with who answers it after the face is already drawn.
+    new MutationObserver(queueFaces).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-speaker'] });
     queueFaces();
     // The drawer's Specialists opens this screen (phone-work.js adds the item).
     const hook = () => {
