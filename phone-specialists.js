@@ -9,9 +9,10 @@
 //   - Ask it now: runs it in Codeply's cloud (action "run") and shows the report.
 //   - Chat with it: a chat of its own, where it answers in its own voice
 //     (action "chat"), with the PC off. Rename or delete the ones you made.
-//   - @mentions: type @ in the composer to pick one. In a chat (or with the PC
-//     off) "@Name do this" runs that specialist in the cloud, in the chat. With
-//     the PC online, a code chat sends it to the PC, where Codeply brings it in.
+//   - @mentions: type @ in the composer to pick one. "@Name ..." and you talk to
+//     it from then on (its face on top, its colour), until "@Codeply". In a chat,
+//     or with the PC off, it answers from the cloud with your own model; with the
+//     PC online, a code chat goes to the PC, which hands the chat to it.
 //
 // Always-on specialists' jobs run on time with the PC off: the server timer
 // (specialists-tick, every 2 minutes) runs any job a PC did not take, and the
@@ -166,15 +167,36 @@
       team.error = team.missing ? '' : (e.message || 'Could not load your team.');
     }
     team.loaded = true;
-    try { localStorage.setItem('craft-phone-specialists', JSON.stringify(team.list.map((s) => ({ id: s.id, name: s.name, focus: s.focus, shape: s.shape, color: s.color, gear: s.gear, builtin: !!s.builtin, createdAt: s.createdAt || 0 })))); } catch {}
+    try { localStorage.setItem('craft-phone-specialists', JSON.stringify(team.list.map((s) => ({ id: s.id, name: s.name, focus: s.focus, shape: s.shape, color: s.color, gear: s.gear, builtin: !!s.builtin, createdAt: s.createdAt || 0, model: s.model || 'auto' })))); } catch {}
     return team;
   }
   const cachedTeam = () => { if (team.list.length) return team.list; try { return JSON.parse(localStorage.getItem('craft-phone-specialists') || '[]'); } catch { return []; } };
 
+  /**
+   * Your own model for a specialist's answer: the one it is set to on the PC, else the
+   * model picked on this phone, else the PC's model, as long as it is synced here
+   * ("Use on my phone"). null = Haze 2 (the server tries the free model only after those).
+   */
+  function ownModelFor(specId) {
+    const st = P().state || {};
+    const synced = st.synced || [];
+    if (!synced.length) return null;
+    const spec = cachedTeam().find((s) => s.id === specId);
+    const byPc = (id) => id && id !== 'auto' && synced.find((m) => m.clientId === id);
+    const picked = st.ui && st.ui.chatModel && st.ui.chatModel !== 'auto' && synced.find((m) => m.id === st.ui.chatModel);
+    const m = byPc(spec && spec.model) || picked || byPc(st.pc && st.pc.models && st.pc.models.selected);
+    return m ? m.id : null;
+  }
+
   async function fn(body) {
     const token = await P().accessToken();
     if (!token) throw new Error('Sign in to Codeply first.');
-    const r = await fetch(`${P().SUPABASE_URL}/functions/v1/specialists`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, apikey: P().SUPABASE_ANON_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if ((body.action === 'run' || body.action === 'chat') && !body.modelId) {
+      const own = ownModelFor(body.specialist);
+      if (own) body = { ...body, modelId: own };
+    }
+    const device = P().deviceHeader ? P().deviceHeader() : {};
+    const r = await fetch(`${P().SUPABASE_URL}/functions/v1/specialists`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, apikey: P().SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...device }, body: JSON.stringify(body) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok && !j.error) throw new Error(`The server did not answer (HTTP ${r.status}).`);
     return j;
@@ -469,22 +491,39 @@
     // The team for @ (also kept on this phone, so @ works before the screen was opened).
     setTimeout(() => { if (!team.loaded) loadTeam().catch(() => {}); }, 2500);
 
-    // "@Name do this": in a chat, or with the PC off, the specialist answers right here (from the cloud).
+    // "@Name ...": you talk to that specialist from now on, like on the PC. With the PC on and a
+    // project, the PC switches the chat (wisp-desktop.js); otherwise this chat becomes its chat,
+    // answered from the cloud, with its face on top and its colour. "@Codeply" hands you back.
     form.addEventListener('submit', (e) => {
       const text = input.value.trim();
       const st = P().state;
       const c0 = st.current && P().chatMeta && P().chatMeta(st.current);
       if (c0 && st.busy && st.busy.has(c0.id)) return;
-      // A chat with one specialist: everything typed here goes to it.
-      if (c0 && c0.specialist && text) { e.preventDefault(); e.stopImmediatePropagation(); shut(); chatSend(c0, text); return; }
-      const spec = cachedTeam().slice().sort((a, b) => b.name.length - a.name.length).find((s) => text.toLowerCase().startsWith(`@${String(s.name).toLowerCase()}`));
-      if (!spec) return;
+      const low = text.toLowerCase();
+      const ends = (n) => !/[\w-]/.test(low.charAt(n));
+      const spec = low.startsWith('@') ? cachedTeam().slice().sort((a, b) => b.name.length - a.name.length).find((s) => { const n = String(s.name).toLowerCase(); return low.startsWith(`@${n}`) && ends(n.length + 1); }) : null;
+      const back = low.startsWith('@codeply') && ends(8);
       const pcOn = !!(P().relay && P().relay.pcId);
       const toPc = pcOn && ((c0 && c0.kind === 'code') || (st.ui && st.ui.useProject));
-      if (toPc) return; // the PC's Codeply brings it in, with the project
-      e.preventDefault(); e.stopImmediatePropagation();
-      shut();
-      mentionSend(spec, text);
+      if (back && c0 && c0.specialist) {
+        // Back to Codeply: this chat is Codeply's again; the message goes on as usual.
+        delete c0.specialist;
+        if (P().saveChats) P().saveChats();
+        input.placeholder = 'Ask anything';
+        return;
+      }
+      if (spec && !toPc) {
+        e.preventDefault(); e.stopImmediatePropagation(); shut();
+        const chat = c0 && c0.kind === 'chat' ? c0 : P().createChat('chat', { title: text.slice(0, 48) });
+        chat.specialist = { id: spec.id, name: spec.name };
+        if (P().saveChats) P().saveChats();
+        input.placeholder = `Message ${spec.name}`;
+        chatSend(chat, text);
+        return;
+      }
+      if (spec) return; // the PC's Codeply hands the chat to it, with the project
+      // A chat with one specialist: everything typed here goes to it.
+      if (c0 && c0.specialist && text) { e.preventDefault(); e.stopImmediatePropagation(); shut(); chatSend(c0, text); return; }
     }, true);
   }
 
@@ -514,27 +553,6 @@
     b.messages.push({ role: 'assistant', content: `-# ${chat.specialist.name}\n${r && r.ok ? r.reply : (r && r.error) || 'It could not answer.'}`, at: Date.now() });
     C.saveBody(chat.id); if (C.saveChats) C.saveChats();
     if (st.current === chat.id) C.openChat(chat.id, { keepMode: true });
-  }
-
-  async function mentionSend(spec, text) {
-    const C = P(); const st = C.state;
-    const task = text.slice(spec.name.length + 1).replace(/^[\s,:]+/, '') || 'Say hi and tell me in one line what you can do for me.';
-    const c0 = st.current && C.chatMeta(st.current);
-    const chat = c0 && c0.kind === 'chat' ? c0 : C.createChat('chat');
-    const b = C.chatBody(chat.id);
-    b.messages.push({ role: 'user', content: text, at: Date.now() });
-    if (!chat.title) chat.title = text.slice(0, 48);
-    C.saveBody(chat.id); if (C.saveChats) C.saveChats();
-    const input = $('input'); input.value = ''; input.dispatchEvent(new Event('input'));
-    st.busy.add(chat.id);
-    C.openChat(chat.id, { keepMode: true });
-    let r;
-    try { r = await fn({ action: 'run', specialist: spec.id, task }); } catch (err) { r = { ok: false, error: err.message }; }
-    st.busy.delete(chat.id);
-    b.messages.push({ role: 'assistant', content: r && r.ok ? `-# ${spec.name}\n${r.output}` : `-# ${spec.name}\n${(r && r.error) || 'It could not run.'}`, at: Date.now() });
-    C.saveBody(chat.id); if (C.saveChats) C.saveChats();
-    if (st.current === chat.id) C.openChat(chat.id, { keepMode: true });
-    loadTeam().catch(() => {});
   }
 
   // ─── Its own face on its answers ───────────────────────────────────────────
