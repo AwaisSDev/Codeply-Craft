@@ -236,6 +236,15 @@ contextBridge.exposeInMainWorld('craft', {
   // Token fallback (publish-ui.js): the token goes to the main process and is never read back.
   connectToken: (name, token) => ipcRenderer.invoke('integrations:connectToken', { name, token }),
   disconnectIntegration: (name) => ipcRenderer.invoke('integrations:disconnect', name),
+  // Apps (any remote MCP server, codeply-cli/lib/apps.js): directory, registry search, OAuth sign-in in the browser.
+  // Only public views come back; tokens stay in the main process.
+  appsDirectory: () => ipcRenderer.invoke('apps:directory'),
+  appsSearch: (query, cursor) => ipcRenderer.invoke('apps:search', { query, cursor }),
+  appsConnect: (entry) => ipcRenderer.invoke('apps:connect', entry || {}),
+  appsCancel: () => ipcRenderer.invoke('apps:cancel'),
+  appsAddWithKey: (opts) => ipcRenderer.invoke('apps:addWithKey', opts || {}),
+  appsTools: (id) => ipcRenderer.invoke('apps:tools', id),
+  appsDisconnect: (id) => ipcRenderer.invoke('apps:disconnect', id),
   publishState: (cwd) => ipcRenderer.invoke('publish:state', cwd),
 
   // Claude Code (claude-code-desktop.js): the user's Claude plan as Wisp's background coding agent.

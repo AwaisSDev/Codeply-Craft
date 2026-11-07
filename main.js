@@ -1603,6 +1603,107 @@ ipcMain.handle('integrations:disconnect', async (e, name) => {
   return { ok: true };
 });
 
+// ─── Apps (any app with a remote MCP server, like ChatGPT apps) ─────────────
+// codeply-cli/lib/apps.js does the directory, the OAuth sign-in and the
+// tokens; lib/mcp.js hands every connected app's tools to the agent. These
+// handlers only open the user's browser and pass public views to the window:
+// a token or client secret never reaches the renderer.
+let appsLib = null;
+let mcpLib = null;
+let appsSignIn = null; // AbortController of the sign-in in progress
+function appsLibs() {
+  if (!appsLib) {
+    appsLib = require(path.join(CLI_DIR, 'lib', 'apps.js'));
+    mcpLib = require(path.join(CLI_DIR, 'lib', 'mcp.js'));
+  }
+  return appsLib;
+}
+// The sign-in page is the app's own authorization server, any https host.
+const openSignInPage = (url) => {
+  if (!/^https:\/\//i.test(String(url))) throw new Error('That app\'s sign-in page isn\'t https, so Codeply won\'t open it.');
+  return shell.openExternal(String(url));
+};
+
+ipcMain.handle('apps:directory', () => {
+  try {
+    const lib = appsLibs();
+    return { ok: true, featured: lib.featured(), connected: lib.listConnected() };
+  } catch (e) { return { ok: false, error: e.message, featured: [], connected: [] }; }
+});
+
+ipcMain.handle('apps:search', async (e, { query, cursor } = {}) => {
+  try { return { ok: true, ...(await appsLibs().searchRegistry(String(query || ''), String(cursor || ''))) }; }
+  catch (err) { return { ok: false, error: err.message, apps: [], next: '' }; }
+});
+
+ipcMain.handle('apps:connect', async (e, entry = {}) => {
+  const lib = appsLibs();
+  if (appsSignIn) return { ok: false, error: 'Another app is signing in right now. Finish or cancel that one first.' };
+  appsSignIn = new AbortController();
+  try {
+    const app = await lib.connect({
+      url: String(entry.url || ''), title: entry.title, description: entry.description, icon: entry.icon,
+      domain: entry.domain, category: entry.category, registry: entry.registry, id: entry.id,
+    }, {
+      openBrowser: openSignInPage,
+      signal: appsSignIn.signal,
+      clientId: entry.clientId, clientSecret: entry.clientSecret,
+    });
+    mcpLib.forget(app.id); // the next chat turn connects with the new sign-in
+    // Ask for its tools now, so the card can say how many and a broken server shows up here, not mid-chat.
+    let tools = [];
+    let toolError = '';
+    try {
+      const list = await mcpLib.listServers(os.homedir());
+      const mine = list.find((s) => s.name === app.id);
+      tools = (mine?.tools || []).map((t) => ({ name: t.name, title: t.title || t.annotations?.title || '', description: String(t.description || '').slice(0, 240), readOnly: !!t.annotations?.readOnlyHint }));
+      toolError = mine?.error || '';
+    } catch (err) { toolError = err.message; }
+    return { ok: true, app: lib.listConnected().find((a) => a.id === app.id) || app, tools, toolError };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  } finally {
+    appsSignIn = null;
+  }
+});
+
+ipcMain.handle('apps:cancel', () => {
+  if (appsSignIn) appsSignIn.abort();
+  return { ok: true };
+});
+
+ipcMain.handle('apps:addWithKey', async (e, { url, title, headerName, headerValue } = {}) => {
+  try {
+    const lib = appsLibs();
+    const app = lib.addWithHeader({ url, title }, headerName, headerValue);
+    mcpLib.forget(app.id);
+    const list = await mcpLib.listServers(os.homedir());
+    const mine = list.find((s) => s.name === app.id);
+    if (mine?.error) { lib.removeApp(app.id); mcpLib.forget(app.id); return { ok: false, error: `Couldn't connect with that key: ${mine.error}` }; }
+    return { ok: true, app: lib.listConnected().find((a) => a.id === app.id) || app };
+  } catch (err) { return { ok: false, error: err.message }; }
+});
+
+ipcMain.handle('apps:tools', async (e, id) => {
+  try {
+    appsLibs();
+    const list = await mcpLib.listServers(os.homedir());
+    const mine = list.find((s) => s.name === String(id));
+    if (!mine) return { ok: false, error: 'That app isn\'t connected.' };
+    if (mine.error) return { ok: false, error: mine.error };
+    return { ok: true, tools: mine.tools.map((t) => ({ name: t.name, title: t.title || t.annotations?.title || '', description: String(t.description || '').slice(0, 240), readOnly: !!t.annotations?.readOnlyHint })) };
+  } catch (err) { return { ok: false, error: err.message }; }
+});
+
+ipcMain.handle('apps:disconnect', (e, id) => {
+  try {
+    const lib = appsLibs();
+    const ok = lib.removeApp(String(id));
+    mcpLib.forget(String(id));
+    return { ok };
+  } catch (err) { return { ok: false, error: err.message }; }
+});
+
 // ─── Browser check - the agent's own "open it and look" tool ───────────────
 // This is what makes browser_check (agent.mjs/tools.mjs) real instead of
 // theoretical: a genuine embedded Chromium view (a BrowserView docked into

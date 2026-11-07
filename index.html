@@ -492,15 +492,43 @@
 
 <!-- ============ CONNECT APPS (opened from the account menu) ============ -->
 <div class="modal-backdrop hidden" id="connectAppsBackdrop">
-  <div class="modal modal-md connect-apps-modal" role="dialog" aria-modal="true" aria-labelledby="connectAppsTitle">
+  <div class="modal modal-lg connect-apps-modal" role="dialog" aria-modal="true" aria-labelledby="connectAppsTitle">
     <div class="modal-header">
       <div>
-        <div class="modal-title" id="connectAppsTitle">Connect Apps</div>
-        <div class="modal-desc">Let the agent build with Claude Code, send real email, post to Slack and publish your projects. Every send and deploy still asks first, same as any other action.</div>
+        <div class="modal-title" id="connectAppsTitle">Apps</div>
+        <div class="modal-desc">Connect your accounts so Codeply can work in them, in any chat. Anything that sends, changes or deletes still asks you first.</div>
       </div>
       <button class="icon-btn icon-btn-sm modal-close" id="connectAppsCloseBtn" title="Close" aria-label="Close"><i data-icon="close"></i></button>
     </div>
-    <div class="modal-body connect-apps-list">
+    <div class="modal-toolbar apps-toolbar">
+      <div class="apps-search-wrap">
+        <i data-icon="search" class="apps-search-ico"></i>
+        <input class="input apps-search" id="appsSearch" type="search" placeholder="Search 34,000+ apps" autocomplete="off" spellcheck="false" aria-label="Search apps">
+      </div>
+      <button class="btn btn-secondary btn-lg" id="appsAddUrlBtn">Add by URL</button>
+    </div>
+    <div class="apps-add hidden" id="appsAdd">
+      <div class="apps-add-row">
+        <input class="input" id="appsAddUrl" type="url" placeholder="https://example.com/mcp" autocomplete="off" spellcheck="false" aria-label="App server URL">
+        <input class="input apps-add-name" id="appsAddName" type="text" placeholder="Name (optional)" autocomplete="off" spellcheck="false" aria-label="App name">
+        <button class="btn btn-primary" id="appsAddGo">Connect</button>
+      </div>
+      <button class="apps-add-more" id="appsAddMoreBtn" type="button">It needs an API key instead of a sign-in</button>
+      <div class="apps-add-row hidden" id="appsAddKeyRow">
+        <input class="input apps-add-name" id="appsAddHeader" type="text" value="Authorization" autocomplete="off" spellcheck="false" aria-label="Header name">
+        <input class="input" id="appsAddKey" type="password" placeholder="Bearer your-key" autocomplete="off" spellcheck="false" aria-label="Key">
+      </div>
+      <div class="apps-add-note">Any remote MCP server works. Codeply hasn't reviewed servers you add yourself: only connect ones you trust.</div>
+    </div>
+    <div class="apps-status hidden" id="appsStatus" role="status" aria-live="polite"></div>
+    <div class="modal-body apps-body" id="appsBody">
+      <section class="apps-section hidden" id="appsConnectedSection">
+        <div class="apps-section-title">Connected</div>
+        <div class="apps-list" id="appsConnected"></div>
+      </section>
+      <section class="apps-section" id="appsBuiltInSection">
+        <div class="apps-section-title">Built in</div>
+    <div class="connect-apps-list">
       <div class="app-card" id="caGmail">
         <div class="app-card-logo gmail"><img src="Gmail.webp" alt=""></div>
         <div class="app-card-body">
@@ -561,6 +589,18 @@
         </div>
         <button class="btn btn-primary btn-sm app-card-btn" data-role="action">Connect</button>
       </div>
+    </div>
+      </section>
+      <section class="apps-section" id="appsFeaturedSection">
+        <div class="apps-section-title">Featured</div>
+        <div class="apps-grid" id="appsFeatured"></div>
+      </section>
+      <section class="apps-section hidden" id="appsResultsSection">
+        <div class="apps-section-title" id="appsResultsTitle">Results</div>
+        <div class="apps-grid" id="appsResults"></div>
+        <div class="apps-results-foot" id="appsResultsFoot"></div>
+      </section>
+      <div class="apps-foot">More apps come from the official <span class="apps-foot-strong">MCP Registry</span>. Featured apps are each vendor's own server; anything else is not reviewed by Codeply.</div>
     </div>
   </div>
 </div>

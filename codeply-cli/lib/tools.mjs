@@ -2240,11 +2240,12 @@ async function mcp(args, ctx) {
   }
   const def = mcpLib.findTool(ctx.cwd, server, tool);
   if (!def) return { ok: false, output: `No tool "${tool}" on MCP server "${server}". Use one listed under MCP SERVERS.` };
-  const label = `${server}/${tool}`;
+  const appTitle = mcpLib.titleOf(ctx.cwd, server);
+  const label = appTitle ? `${appTitle}: ${def.title || def.annotations?.title || tool}` : `${server}/${tool}`;
   if (!def.annotations?.readOnlyHint) {
     const verdict = await ctx.approve({
       tool: 'mcp',
-      title: `Use ${tool} (${server})`,
+      title: appTitle ? `Use ${def.title || def.annotations?.title || tool} in ${appTitle}` : `Use ${tool} (${server})`,
       detail: JSON.stringify(toolArgs).slice(0, 600),
       danger: !!def.annotations?.destructiveHint,
     });

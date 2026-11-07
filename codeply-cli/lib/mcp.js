@@ -15,6 +15,10 @@
  *       "docs":    { "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer ..." } },
  *       "old":     { "command": "...", "disabled": true } } }
  *
+ * Apps the user connected (lib/apps.js, the Apps directory) join every
+ * project as HTTP servers whose Authorization header comes from apps.js on
+ * each request; a project or global entry with the same name wins.
+ *
  * Connections are kept for the life of the process and reused across turns.
  */
 const fs = require('fs');
@@ -22,6 +26,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const plugins = require('./plugins.js');
+const apps = require('./apps.js');
 
 const PROTOCOL_VERSION = '2025-06-18';
 const CONNECT_TIMEOUT_MS = 20000;
@@ -37,7 +42,9 @@ function readConfig(file) {
 
 /** Merged server config for a project: project entries override global ones. */
 function loadServers(cwd) {
-  const merged = { ...plugins.mcpServers(cwd), ...readConfig(path.join(os.homedir(), '.codeply', 'mcp.json')) };
+  let connectedApps = {};
+  try { connectedApps = apps.mcpServers(); } catch {}
+  const merged = { ...connectedApps, ...plugins.mcpServers(cwd), ...readConfig(path.join(os.homedir(), '.codeply', 'mcp.json')) };
   if (cwd) Object.assign(merged, readConfig(path.join(cwd, '.codeply', 'mcp.json')));
   return Object.fromEntries(Object.entries(merged).filter(([, s]) => s && !s.disabled && (s.command || s.url)));
 }
@@ -124,11 +131,15 @@ class HttpConnection {
     this.name = name;
     this.url = spec.url;
     this.headers = spec.headers || {};
+    this.appId = spec.app || null; // a connected app: its sign-in header comes from apps.js
+    this.title = spec.title || name;
     this.sessionId = null;
     this.nextId = 1;
+    this.reinit = null; // set by connect(): starts a new session when the server forgets ours
   }
 
   async post(body, timeoutMs) {
+    const auth = this.appId ? await apps.authHeaders(this.appId) : {};
     const res = await fetch(this.url, {
       method: 'POST',
       headers: {
@@ -137,6 +148,7 @@ class HttpConnection {
         'MCP-Protocol-Version': PROTOCOL_VERSION,
         ...(this.sessionId ? { 'Mcp-Session-Id': this.sessionId } : {}),
         ...this.headers,
+        ...auth,
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
@@ -146,10 +158,22 @@ class HttpConnection {
     return res;
   }
 
-  async request(method, params, timeoutMs) {
+  async request(method, params, timeoutMs, retried = false) {
     const id = this.nextId++;
     const res = await this.post({ jsonrpc: '2.0', id, method, params }, timeoutMs);
-    if (!res.ok) throw new Error(`${method}: HTTP ${res.status}${res.status === 401 ? ' (needs authorization - add a token under "headers")' : ''}`);
+    if (!retried && res.status === 401 && this.appId) {
+      // The token ran out early or was revoked: refresh once and try again.
+      if (await apps.refresh(this.appId)) return this.request(method, params, timeoutMs, true);
+      apps.noteStatus(this.appId, { needsReconnect: true });
+      throw new Error(`${method}: ${this.title} needs you to sign in again (Apps, then Reconnect).`);
+    }
+    if (!retried && res.status === 404 && this.sessionId && this.reinit && method !== 'initialize') {
+      // Our session expired on the server: start a new one and try again.
+      this.sessionId = null;
+      await this.reinit();
+      return this.request(method, params, timeoutMs, true);
+    }
+    if (!res.ok) throw new Error(`${method}: HTTP ${res.status}${res.status === 401 ? (this.appId ? ` (${this.title} needs you to sign in again: Apps, then Reconnect)` : ' (needs authorization - add a token under "headers")') : ''}`);
     const type = res.headers.get('content-type') || '';
     let msg = null;
     if (type.includes('text/event-stream')) {
@@ -183,9 +207,14 @@ function specKey(spec) { return JSON.stringify(spec); }
 
 async function connect(name, spec, cwd) {
   const conn = spec.url ? new HttpConnection(name, spec) : new StdioConnection(name, spec, cwd);
-  try {
-    const init = await conn.request('initialize', { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: CLIENT_INFO }, CONNECT_TIMEOUT_MS);
+  const initialize = async () => {
+    const r = await conn.request('initialize', { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: CLIENT_INFO }, CONNECT_TIMEOUT_MS);
     await conn.notify('notifications/initialized');
+    return r;
+  };
+  if (conn instanceof HttpConnection) conn.reinit = initialize;
+  try {
+    const init = await initialize();
     const tools = [];
     let cursor;
     do {
@@ -193,12 +222,16 @@ async function connect(name, spec, cwd) {
       tools.push(...(page.tools || []));
       cursor = page.nextCursor;
     } while (cursor && tools.length < 500);
+    if (spec.app) apps.noteStatus(spec.app, { toolCount: tools.length, needsReconnect: false });
     return { name, conn, tools, instructions: init?.instructions || '', error: null };
   } catch (e) {
     conn.close();
-    return { name, conn: null, tools: [], instructions: '', error: e.message };
+    return { name, conn: null, tools: [], instructions: '', error: e.message, failedAt: Date.now() };
   }
 }
+
+/** A server that just failed is tried again after this long, not on every turn. */
+const RETRY_FAILED_MS = 60_000;
 
 /**
  * Connect to every configured server for this project (reusing live
@@ -211,13 +244,13 @@ async function listServers(cwd) {
   await Promise.all(Object.entries(wanted).map(async ([name, spec]) => {
     const key = `${cwd}::${name}`;
     let s = servers.get(key);
-    const stale = s && (s.specKey !== specKey(spec) || (s.conn && s.conn.closed) || s.error);
+    const stale = s && (s.specKey !== specKey(spec) || (s.conn && s.conn.closed) || (s.error && Date.now() - (s.failedAt || 0) > RETRY_FAILED_MS));
     if (!s || stale) {
       if (s?.conn) s.conn.close();
-      s = { ...(await connect(name, spec, cwd)), specKey: specKey(spec) };
+      s = { ...(await connect(name, spec, cwd)), specKey: specKey(spec), title: spec.app ? spec.title || name : '' };
       servers.set(key, s);
     }
-    out.push({ name, tools: s.tools, error: s.error, instructions: s.instructions });
+    out.push({ name, tools: s.tools, error: s.error, instructions: s.instructions, ...(spec.app ? { app: true, title: spec.title || name } : {}) });
   }));
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -249,10 +282,22 @@ function findTool(cwd, serverName, toolName) {
   return s ? s.tools.find((t) => t.name === toolName) || null : null;
 }
 
+/** Drop one server's connection (an app was disconnected or signed in again), everywhere. */
+function forget(name) {
+  for (const [key, s] of servers) {
+    if (key.endsWith(`::${name}`)) { if (s.conn) s.conn.close(); servers.delete(key); }
+  }
+}
+
+/** An app's display name ("Linear") for approval cards, or '' for a plain MCP server. */
+function titleOf(cwd, serverName) {
+  return servers.get(`${cwd}::${serverName}`)?.title || '';
+}
+
 function closeAll() {
   for (const [, s] of servers) if (s.conn) s.conn.close();
   servers.clear();
 }
 process.on('exit', closeAll);
 
-module.exports = { listServers, callTool, findTool, loadServers, closeAll, flattenResult };
+module.exports = { listServers, callTool, findTool, titleOf, loadServers, closeAll, forget, flattenResult };

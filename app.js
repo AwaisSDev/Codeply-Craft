@@ -334,7 +334,7 @@ function tbMenuItems(name) {
     ['New chat', 'Ctrl+N', () => $('newChatBtn').click(), !signedIn],
     ['Open folder…', 'Ctrl+O', () => $('openProjectBtn').click(), !signedIn],
     null,
-    ['Connect apps', '', () => openConnectApps(), !signedIn],
+    ['Apps', '', () => openConnectApps(), !signedIn],
     ['Use from your phone', '', () => openRemoteModal(), !signedIn],
     null,
     ['Close window', 'Alt+F4', () => api && api.close()],
@@ -1771,10 +1771,245 @@ wireIntegrationRow('caVercel', 'vercel', () => api.connectVercel(), 'Vercel');
 wireIntegrationRow('caSupabase', 'supabase', () => api.connectSupabase(), 'Supabase');
 wireIntegrationRow('caGithub', 'github', () => api.connectGithub(), 'GitHub');
 
+// ─── Apps directory (any app with a remote MCP server, like ChatGPT apps) ───
+// codeply-cli/lib/apps.js does the work; this draws Connected, Featured and
+// registry search results, and runs Connect / Disconnect. The built-in cards
+// above (Gmail, Slack, Vercel, Supabase, GitHub, Claude Code) stay as they are.
+const appsUi = { featured: [], connected: [], results: [], next: '', query: '', searchSeq: 0, busyKey: '', confirmKey: '', tools: {} };
+const attr = (s) => esc(String(s ?? '')).replace(/"/g, '&quot;');
+const appKey = (a) => a.connectedId || a.id || a.url;
+
+// One line under the search box: what just happened (works with no chat open).
+let appsNoteTimer = null;
+function appsNote(text, kind = 'info') {
+  const el = $('appsStatus');
+  el.textContent = text;
+  el.className = `apps-status ${kind}`;
+  clearTimeout(appsNoteTimer);
+  appsNoteTimer = setTimeout(() => el.classList.add('hidden'), kind === 'error' ? 12000 : 6000);
+}
+
+function appLogo(a) {
+  const letter = esc((String(a.title || a.domain || '?').trim()[0] || '?').toUpperCase());
+  const src = a.icon || (a.domain ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(a.domain)}&sz=128` : '');
+  return `<div class="app-card-logo apps-logo" data-letter="${letter}">${src ? `<img src="${attr(src)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span>${letter}</span>`}</div>`;
+}
+
+// A logo that fails to load becomes the app's first letter.
+function wireAppLogos(root) {
+  root.querySelectorAll('.apps-logo img').forEach((img) => {
+    img.addEventListener('error', () => {
+      const box = img.parentElement;
+      if (box) box.innerHTML = `<span>${box.dataset.letter || '?'}</span>`;
+    }, { once: true });
+  });
+}
+
+// "create_page" -> "Create page" when the server gives no title of its own.
+const toolLabel = (t) => t.title || (String(t.name || '').replace(/[_-]+/g, ' ').trim().replace(/^\w/, (c) => c.toUpperCase()));
+
+function connectedRow(a) {
+  const tools = appsUi.tools[a.id];
+  const bits = [a.needsReconnect ? 'Needs you to sign in again' : 'Connected'];
+  if (a.account) bits.push(a.account);
+  if (a.toolCount) bits.push(`${a.toolCount} ${a.toolCount === 1 ? 'tool' : 'tools'}`);
+  const busy = appsUi.busyKey === a.id;
+  return `<div class="app-card apps-row${a.needsReconnect ? ' needs' : ' connected'}" data-id="${attr(a.id)}">
+    ${appLogo(a)}
+    <div class="app-card-body">
+      <div class="app-card-top"><span class="app-card-name">${esc(a.title)}</span>${a.verified ? '' : '<span class="app-card-badge apps-unreviewed">Not reviewed</span>'}</div>
+      <div class="app-card-desc">${esc(bits.join(' · '))}</div>
+      ${tools ? `<div class="apps-tools">${tools.length ? tools.slice(0, 40).map((t) => `<span class="apps-tool${t.readOnly ? '' : ' writes'}" title="${attr(t.description)}">${esc(toolLabel(t))}</span>`).join('') : '<span class="apps-tool-none">No tools</span>'}</div>` : ''}
+    </div>
+    <div class="apps-row-actions">
+      ${a.toolCount && !tools ? '<button class="btn btn-ghost btn-sm" data-act="tools">Tools</button>' : ''}
+      ${busy ? '<button class="btn btn-secondary btn-sm" data-act="cancel">Cancel</button>'
+        : a.needsReconnect ? '<button class="btn btn-primary btn-sm" data-act="reconnect">Reconnect</button>' : ''}
+      <button class="btn btn-secondary btn-sm btn-danger-hover" data-act="disconnect"${busy ? ' disabled' : ''}>Disconnect</button>
+    </div>
+  </div>`;
+}
+
+function appTile(a) {
+  const key = appKey(a);
+  const busy = appsUi.busyKey === key;
+  const confirming = appsUi.confirmKey === key;
+  const action = a.connectedId
+    ? '<span class="apps-tile-on">Connected</span>'
+    : busy ? '<button class="btn btn-secondary btn-sm" data-act="cancel">Cancel</button>'
+      : `<button class="btn ${confirming ? 'btn-danger' : 'btn-primary'} btn-sm" data-act="connect">${confirming ? 'Connect anyway' : 'Connect'}</button>`;
+  return `<div class="apps-tile${a.connectedId ? ' connected' : ''}" data-key="${attr(key)}">
+    <div class="apps-tile-head">
+      ${appLogo(a)}
+      <div class="apps-tile-name">
+        <span class="app-card-name">${esc(a.title)}</span>
+        <span class="apps-tile-domain">${esc(a.domain || '')}${a.verified ? ' <span class="apps-verified" title="This is the vendor\'s own server">✓</span>' : ''}</span>
+      </div>
+      ${action}
+    </div>
+    <div class="app-card-desc apps-tile-desc">${esc(a.description || 'No description.')}</div>
+    ${busy ? '<div class="apps-tile-note">Finish signing in in your browser…</div>' : ''}
+    ${confirming ? '<div class="apps-tile-warn">Codeply hasn\'t reviewed this app. It will see what Codeply sends it, and can see your account there. Only connect apps you trust.</div>' : ''}
+  </div>`;
+}
+
+function renderApps() {
+  const connected = appsUi.connected;
+  $('appsConnectedSection').classList.toggle('hidden', !connected.length);
+  $('appsConnected').innerHTML = connected.map(connectedRow).join('');
+  const connectedByUrl = new Map(connected.map((a) => [a.url, a.id]));
+  const mark = (a) => ({ ...a, connectedId: connectedByUrl.get(a.url) || '' });
+  const q = appsUi.query.toLowerCase();
+  const searching = !!q;
+  // While searching, the built-in cards that match stay, the rest hide.
+  document.querySelectorAll('#appsBuiltInSection .connect-apps-list > .app-card').forEach((card) => {
+    const name = (card.querySelector('.app-card-name, .cc-name')?.textContent || '').toLowerCase();
+    card.classList.toggle('hidden', searching && !name.includes(q));
+  });
+  const anyBuiltIn = [...document.querySelectorAll('#appsBuiltInSection .connect-apps-list > .app-card')].some((c) => !c.classList.contains('hidden'));
+  $('appsBuiltInSection').classList.toggle('hidden', searching && !anyBuiltIn);
+  $('appsFeaturedSection').classList.toggle('hidden', searching);
+  $('appsFeatured').innerHTML = appsUi.featured.map(mark).map(appTile).join('');
+  $('appsResultsSection').classList.toggle('hidden', !searching);
+  if (searching) {
+    const results = appsUi.results.map(mark);
+    $('appsResultsTitle').textContent = appsUi.loading && !results.length ? 'Searching…' : results.length ? 'Results' : 'No apps found';
+    $('appsResults').innerHTML = results.map(appTile).join('');
+    $('appsResultsFoot').innerHTML = appsUi.error
+      ? `<span class="apps-error">${esc(appsUi.error)}</span>`
+      : appsUi.next ? `<button class="btn btn-secondary btn-sm" id="appsMoreBtn"${appsUi.loading ? ' disabled' : ''}>${appsUi.loading ? 'Loading…' : 'Show more'}</button>`
+        : results.length ? '' : '<span class="apps-empty">Try another name, or add the app by its URL.</span>';
+  }
+  wireAppLogos($('appsBody'));
+}
+
+async function loadAppsDirectory() {
+  if (!api || !api.appsDirectory) return;
+  const r = await api.appsDirectory();
+  appsUi.featured = r.featured || [];
+  appsUi.connected = r.connected || [];
+  renderApps();
+}
+
+async function searchApps(query, more = false) {
+  const seq = ++appsUi.searchSeq;
+  appsUi.loading = true;
+  appsUi.error = '';
+  if (!more) { appsUi.results = []; appsUi.next = ''; }
+  renderApps();
+  const r = await api.appsSearch(query, more ? appsUi.next : '');
+  if (seq !== appsUi.searchSeq) return; // a newer search started
+  appsUi.loading = false;
+  if (!r.ok || r.error) appsUi.error = r.error || 'Search failed.';
+  const seen = new Set(appsUi.results.map((a) => a.url));
+  appsUi.results = appsUi.results.concat((r.apps || []).filter((a) => !seen.has(a.url)));
+  appsUi.next = r.next || '';
+  renderApps();
+}
+
+let appsSearchTimer = null;
+$('appsSearch').addEventListener('input', (e) => {
+  appsUi.query = e.target.value.trim();
+  appsUi.confirmKey = '';
+  clearTimeout(appsSearchTimer);
+  if (!appsUi.query) { appsUi.searchSeq++; appsUi.loading = false; renderApps(); return; }
+  appsSearchTimer = setTimeout(() => searchApps(appsUi.query), 300);
+});
+
+async function connectApp(entry, key) {
+  appsUi.busyKey = key;
+  appsUi.confirmKey = '';
+  renderApps();
+  const r = await api.appsConnect(entry);
+  appsUi.busyKey = '';
+  if (r.ok) {
+    if (r.tools) appsUi.tools[r.app.id] = r.tools;
+    appsNote(r.toolError ? `${r.app.title} is connected, but Codeply couldn't load its tools yet: ${r.toolError}` : `${r.app.title} is connected. Ask for it in any chat.`, r.toolError ? 'error' : 'info');
+  } else if (!/cancelled/i.test(r.error || '')) {
+    appsNote(`Couldn't connect ${entry.title || 'that app'}: ${r.error}`, 'error');
+  }
+  await loadAppsDirectory();
+  return r;
+}
+
+$('appsBody').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-act], #appsMoreBtn');
+  if (!btn) return;
+  if (btn.id === 'appsMoreBtn') { searchApps(appsUi.query, true); return; }
+  const act = btn.dataset.act;
+  if (act === 'cancel') { api.appsCancel(); return; }
+  const row = btn.closest('.apps-row');
+  if (row) {
+    const a = appsUi.connected.find((x) => x.id === row.dataset.id);
+    if (!a) return;
+    if (act === 'disconnect') {
+      await api.appsDisconnect(a.id);
+      delete appsUi.tools[a.id];
+      await loadAppsDirectory();
+    } else if (act === 'reconnect') {
+      connectApp({ url: a.url, title: a.title, id: a.id }, a.id);
+    } else if (act === 'tools') {
+      btn.disabled = true;
+      const r = await api.appsTools(a.id);
+      if (r.ok) appsUi.tools[a.id] = r.tools; else appsNote(`Couldn't load ${a.title}'s tools: ${r.error}`, 'error');
+      renderApps();
+    }
+    return;
+  }
+  const tile = btn.closest('.apps-tile');
+  if (!tile || act !== 'connect') return;
+  const key = tile.dataset.key;
+  const a = [...appsUi.featured, ...appsUi.results].find((x) => appKey(x) === key);
+  if (!a) return;
+  if (appsUi.busyKey) { appsNote('Another app is signing in right now. Finish or cancel that one first.', 'error'); return; }
+  // An app Codeply hasn't checked asks once more, right on its card.
+  if (!a.verified && appsUi.confirmKey !== key) { appsUi.confirmKey = key; renderApps(); return; }
+  connectApp(a, key);
+});
+
+// Add by URL: any remote MCP server, with a sign-in or a pasted key.
+$('appsAddUrlBtn').addEventListener('click', () => {
+  const box = $('appsAdd');
+  box.classList.toggle('hidden');
+  if (!box.classList.contains('hidden')) $('appsAddUrl').focus();
+});
+$('appsAddMoreBtn').addEventListener('click', () => {
+  $('appsAddKeyRow').classList.toggle('hidden');
+  if (!$('appsAddKeyRow').classList.contains('hidden')) $('appsAddKey').focus();
+});
+async function addAppByUrl() {
+  const url = $('appsAddUrl').value.trim();
+  const title = $('appsAddName').value.trim();
+  if (!url) { $('appsAddUrl').focus(); return; }
+  const go = $('appsAddGo');
+  go.disabled = true;
+  const useKey = !$('appsAddKeyRow').classList.contains('hidden') && $('appsAddKey').value.trim();
+  let r;
+  if (useKey) {
+    go.textContent = 'Connecting…';
+    r = await api.appsAddWithKey({ url, title, headerName: $('appsAddHeader').value.trim(), headerValue: $('appsAddKey').value });
+    if (r.ok) { appsNote(`${r.app.title} is connected. Ask for it in any chat.`, 'info'); await loadAppsDirectory(); }
+    else appsNote(`Couldn't connect that app: ${r.error}`, 'error');
+  } else {
+    go.textContent = 'Waiting for sign-in…';
+    r = await connectApp({ url, title }, url);
+  }
+  go.disabled = false;
+  go.textContent = 'Connect';
+  if (r.ok) {
+    $('appsAddUrl').value = ''; $('appsAddName').value = ''; $('appsAddKey').value = '';
+    $('appsAdd').classList.add('hidden');
+  }
+}
+$('appsAddGo').addEventListener('click', addAppByUrl);
+['appsAddUrl', 'appsAddName', 'appsAddKey'].forEach((id) => $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') addAppByUrl(); }));
+
 function openConnectApps() {
   closeAccountMenu();
   refreshIntegrations();
+  loadAppsDirectory();
   CraftModal.open('connectAppsBackdrop', { onClose: closeConnectApps });
+  setTimeout(() => $('appsSearch').focus(), 50);
 }
 function closeConnectApps() {
   CraftModal.close('connectAppsBackdrop');
@@ -1819,7 +2054,7 @@ function openAccountMenu() {
     </button>
     <button class="menu-item" data-action="connect">
       ${icon('link')}
-      Connect Apps
+      Apps
     </button>
     <button class="menu-item" data-action="wisp">
       ${icon('users')}
