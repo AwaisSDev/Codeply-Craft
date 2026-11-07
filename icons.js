@@ -106,6 +106,8 @@
 
     // Time and motion
     clock: RING + '<path d="M12 7.5V12l3 2"/>',
+    calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/>',
+    chart: '<path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/>',
     history: '<path d="M4 12a8 8 0 1 0 2.34-5.66L4 8.5M4 4v4.5h4.5"/><path d="M12 8v4l2.75 2"/>',
     refresh: '<path d="M20 12a8 8 0 1 1-2.34-5.66L20 8.5M20 4v4.5h-4.5"/>',
     undo: '<path d="M9 14 4.5 9.5 9 5M4.5 9.5h10a5 5 0 0 1 0 10H12"/>',

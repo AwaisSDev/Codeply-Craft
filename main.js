@@ -453,6 +453,10 @@ let tray = null;
 // 'before-quit' could set this flag, 'close' has already had to decide.
 let isQuitting = false;
 const APP_ICON_PATH = path.join(__dirname, 'assets', 'icon.ico');
+// Windows groups taskbar buttons and toasts by this id. A dev run (electron.exe
+// from node_modules) gets its own: under the installed app's id, whose only
+// registered icon is the PNG for toasts below, Windows drew a blank button.
+const APP_USER_MODEL_ID = app.isPackaged ? 'app.codeply.craft' : 'app.codeply.craft.dev';
 
 function createWindow() {
   win = new BrowserWindow({
@@ -470,6 +474,11 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
+  // A dev run names its own taskbar icon file (see APP_USER_MODEL_ID). An
+  // installed build has the icon inside its own exe and needs none of this.
+  if (process.platform === 'win32' && !app.isPackaged) {
+    try { win.setAppDetails({ appId: APP_USER_MODEL_ID, appIconPath: APP_ICON_PATH, appIconIndex: 0, relaunchDisplayName: 'Codeply (dev)' }); } catch {}
+  }
   // Launch maximized; the width/height above become the restore size when
   // the user later unmaximizes, and the window stays freely resizable.
   win.once('ready-to-show', () => {
@@ -603,17 +612,18 @@ async function handleAuthCallback(url) {
 // installer gives the Start menu shortcut (build.appId), the toast says
 // "Codeply Craft" with the app icon.
 if (process.platform === 'win32') {
-  app.setAppUserModelId('app.codeply.craft');
+  app.setAppUserModelId(APP_USER_MODEL_ID);
   // The name and icon Windows puts over every toast: "Codeply", not the raw id (it shows that when
   // nothing names the id, as in a dev build). The icon has to be a real file, not one inside app.asar.
   app.whenReady().then(() => {
     try {
       const icon = path.join(app.getPath('userData'), 'notify-icon.png');
       if (!fs.existsSync(icon)) fs.writeFileSync(icon, fs.readFileSync(path.join(__dirname, 'logo.png')));
-      const key = 'HKCU\\Software\\Classes\\AppUserModelId\\app.codeply.craft';
+      const key = `HKCU\\Software\\Classes\\AppUserModelId\\${APP_USER_MODEL_ID}`;
       const { execFile } = require('child_process');
-      execFile('reg', ['add', key, '/v', 'DisplayName', '/t', 'REG_SZ', '/d', 'Codeply', '/f'], { windowsHide: true }, () => {});
-      execFile('reg', ['add', key, '/v', 'IconUri', '/t', 'REG_SZ', '/d', icon, '/f'], { windowsHide: true }, () => {});
+      execFile('reg', ['add', key, '/v', 'DisplayName', '/t', 'REG_SZ', '/d', app.isPackaged ? 'Codeply' : 'Codeply (dev)', '/f'], { windowsHide: true }, () => {});
+      // The toast icon only for the installed app: a dev run's taskbar button takes its icon from the window.
+      if (app.isPackaged) execFile('reg', ['add', key, '/v', 'IconUri', '/t', 'REG_SZ', '/d', icon, '/f'], { windowsHide: true }, () => {});
     } catch (e) { console.warn('[notify] app name:', e.message); }
   });
 }
@@ -1650,6 +1660,8 @@ ipcMain.handle('apps:connect', async (e, entry = {}) => {
       clientId: entry.clientId, clientSecret: entry.clientSecret,
     });
     mcpLib.forget(app.id); // the next chat turn connects with the new sign-in
+    // Back from the browser: bring Codeply to the front so the person sees it connected.
+    try { if (win && !win.isDestroyed()) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } } catch {}
     // Ask for its tools now, so the card can say how many and a broken server shows up here, not mid-chat.
     let tools = [];
     let toolError = '';
@@ -4334,6 +4346,23 @@ brainDesktop.init({
 const claudeDesktop = require('./claude-code-desktop');
 // The Review area (review-desktop.js): what the branch changes, like a pull request.
 require('./review-desktop').init({ ipcMain });
+// Settings > Appearance > Background: the user's own images, kept in this PC's app data (wallpapers-desktop.js).
+require('./wallpapers-desktop').init({ ipcMain, app, dialog, nativeImage, getWindow: () => win });
+// The home screen's Pull requests card: the user's own recent PRs, read with the GitHub CLI
+// when it is installed and signed in. Read-only, and kept for two minutes.
+let homePrsCache = null;
+ipcMain.handle('home:prs', () => {
+  if (homePrsCache && Date.now() - homePrsCache.at < 120000) return homePrsCache.data;
+  return new Promise((resolve) => {
+    require('child_process').execFile('gh', ['search', 'prs', '--author=@me', '--sort=updated', '--limit', '4', '--json', 'title,url,updatedAt,state,repository'],
+      { timeout: 10000, windowsHide: true }, (err, out) => {
+        let data;
+        try { data = err ? { error: 'gh' } : { prs: JSON.parse(String(out || '[]')) }; } catch { data = { error: 'gh' }; }
+        homePrsCache = { at: Date.now(), data };
+        resolve(data);
+      });
+  });
+});
 // Codeply's browser as hands for Claude agents (swarm-browser-desktop.js): each with its own cursor.
 const swarmBrowser = require('./swarm-browser-desktop');
 swarmBrowser.init({

@@ -407,6 +407,61 @@ async function authHeaders(id) {
 
 let signInActive = null; // one browser sign-in at a time (they share the loopback port)
 
+let logoDataUrl = null;
+/** Codeply's app icon as a data URL when the app's files are next to this one (the desktop app), else ''. */
+function codeplyLogo() {
+  if (logoDataUrl !== null) return logoDataUrl;
+  logoDataUrl = '';
+  try { logoDataUrl = `data:image/png;base64,${fs.readFileSync(path.join(__dirname, '..', '..', 'assets', 'icon.png')).toString('base64')}`; } catch {}
+  return logoDataUrl;
+}
+
+/**
+ * The page the browser shows when the sign-in comes back to this computer,
+ * in codeply.app's hero style: a soft blue gradient with warm glows, the logo
+ * and name top left, and one big light headline in two tones. `heading`,
+ * `text` and `app` arrive already escaped. Self-contained: no scripts from
+ * anywhere, no requests out.
+ */
+function signInPage(ok, heading, text, app = '') { // eslint-disable-line no-unused-vars
+  const logo = codeplyLogo();
+  const second = ok ? 'You&#39;re all set.' : 'Let&#39;s try that again.';
+  const glow = ok
+    ? 'radial-gradient(42vw 42vw at 78% 18%, rgba(29, 78, 216, .85), transparent 70%), radial-gradient(38vw 38vw at 72% 78%, rgba(244, 114, 182, .75), transparent 70%), radial-gradient(30vw 30vw at 96% 96%, rgba(251, 146, 60, .7), transparent 70%)'
+    : 'radial-gradient(42vw 42vw at 78% 18%, rgba(127, 29, 29, .7), transparent 70%), radial-gradient(38vw 38vw at 72% 78%, rgba(244, 63, 94, .7), transparent 70%), radial-gradient(30vw 30vw at 96% 96%, rgba(251, 146, 60, .75), transparent 70%)';
+  const base = ok ? 'linear-gradient(160deg, #2f6fe0 0%, #4f8ff0 45%, #8ab8f5 100%)' : 'linear-gradient(160deg, #3a3f63 0%, #6b4d78 50%, #b0727e 100%)';
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">
+<title>${ok ? 'Connected' : 'Not connected'} · Codeply</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { min-height: 100%; color: #fff; background: ${base}; font: 400 18px/1.55 Geist, "Segoe UI Variable Display", "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; overflow: hidden; }
+  /* the glows drift a little, like the site's hero */
+  body::before { content: ""; position: fixed; inset: -10%; background: ${glow}; filter: blur(20px); animation: drift 14s ease-in-out infinite alternate; pointer-events: none; }
+  .top { position: relative; display: flex; align-items: center; gap: 10px; padding: 26px 32px; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+  .top img { width: 26px; height: 26px; border-radius: 7px; display: block; }
+  main { position: relative; padding: 9vh 32px 0; max-width: 980px; }
+  h1 { margin: 0; font-weight: 400; font-size: clamp(44px, 7.2vw, 80px); line-height: .98; letter-spacing: -.045em; animation: rise .7s cubic-bezier(.2,0,0,1) both; }
+  h1 span { display: block; color: rgba(255, 255, 255, .72); }
+  p { margin: 28px 0 0; max-width: 600px; font-size: 20px; line-height: 1.5; animation: rise .7s .08s cubic-bezier(.2,0,0,1) both; }
+  .pill { display: inline-flex; align-items: center; margin-top: 36px; height: 52px; padding: 0 26px; border-radius: 999px; background: #fff; color: #0b1628; font-size: 16px; font-weight: 500; box-shadow: 0 10px 30px -12px rgba(8, 40, 110, .45); animation: rise .7s .16s cubic-bezier(.2,0,0,1) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  @keyframes drift { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(-3%, 2%, 0) scale(1.06); } }
+  @media (max-width: 600px) { .top { padding: 20px; } main { padding: 7vh 20px 0; } p { font-size: 17px; } }
+  @media (prefers-reduced-motion: reduce) { body::before, h1, p, .pill { animation: none; } }
+</style></head>
+<body>
+  <div class="top">${logo ? `<img src="${logo}" alt="">` : ''}Codeply</div>
+  <main>
+    <h1>${heading}.<span>${second}</span></h1>
+    <p>${text}</p>
+    <div class="pill">${ok ? 'You can close this tab' : 'Close this tab and try again from Apps'}</div>
+  </main>
+</body></html>`;
+}
+
 /** One-shot loopback server: resolves with the redirect's query, or rejects. */
 function awaitRedirect(authUrl, state, openBrowser, title, signal) {
   return new Promise((resolve, reject) => {
@@ -420,20 +475,22 @@ function awaitRedirect(authUrl, state, openBrowser, title, signal) {
       try { server.close(); server.closeAllConnections?.(); } catch {}
       if (err) reject(err); else resolve(value);
     };
-    const page = (msg) => `<!doctype html><meta charset="utf-8"><title>Codeply</title><body style="font-family:system-ui,sans-serif;background:#0a0a0c;color:#e4e4e7;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div>${msg}</div></body>`;
     const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const page = (ok, heading, text) => signInPage(ok, esc(heading), esc(text), esc(title || ''));
     const server = http.createServer((req, res) => {
       const u = new URL(req.url, REDIRECT_URI);
       if (u.pathname !== REDIRECT_PATH) { res.writeHead(404); res.end(); return; }
       const q = Object.fromEntries(u.searchParams);
       if (q.state !== state) {
         res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8', Connection: 'close' });
-        res.end(page('This sign-in link is out of date. Start again from Codeply.'));
+        res.end(page(false, 'This sign-in link is out of date', 'Start again from Apps in Codeply.'));
         return; // not ours: keep waiting for the real one
       }
       const ok = !q.error && q.code;
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', Connection: 'close' });
-      res.end(page(ok ? `${esc(title)} is connected to Codeply. You can close this tab.` : `Couldn't connect ${esc(title)}: ${esc(q.error_description || q.error || 'no code came back')}`));
+      res.end(ok
+        ? page(true, `${title} is connected`, `Codeply can now work in ${title} from any chat. Anything that sends, changes or deletes still asks you first.`)
+        : page(false, `Couldn't connect ${title}`, `${q.error_description || q.error || 'No code came back from the sign-in.'} Go back to Codeply and try again.`));
       if (q.error) finish(new Error(q.error_description || q.error));
       else if (!q.code) finish(new Error('The sign-in came back without a code.'));
       else finish(null, q);
@@ -644,5 +701,5 @@ module.exports = {
   featured, searchRegistry, listConnected, mcpServers, getApp, removeApp, noteStatus,
   connect, addWithHeader, authHeaders, refresh, discover,
   // for tests
-  _internal: { parseWwwAuthenticate, canonicalResource, usableRemote, prettyName, slug, checkServerUrl, readStore, writeStore },
+  _internal: { signInPage, parseWwwAuthenticate, canonicalResource, usableRemote, prettyName, slug, checkServerUrl, readStore, writeStore },
 };

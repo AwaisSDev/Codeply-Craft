@@ -2628,11 +2628,12 @@ a.md-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 .q-skip { border: 0; background: transparent; padding: 4px 6px; margin-left: -6px; border-radius: 6px; color: var(--text-dim); font: inherit; font-size: 12.5px; cursor: pointer; }
 .q-skip:hover { background: var(--hover); color: var(--text); }
 .q-keys { font-size: 11.5px; color: var(--text-faint); }
-/* Answered: just the choice, under the question */
-.question-card.done { padding: 2px 0; border: 0; background: transparent; margin: 2px 0 14px; }
-.q-text-sm { font-size: 12.5px; color: var(--text-faint); padding: 0; }
-.q-answer { display: flex; align-items: center; gap: 7px; margin-top: 3px; font-size: 13.5px; color: var(--text); }
-.q-answer svg { color: var(--green); flex: none; }
+/* Answered: like a quoted reply. A thin rule on the left, the question small
+   and faint, the choice under it in plain text after a small green check. No box. */
+.question-card.done { margin: 6px 0 18px; padding: 1px 0 1px 13px; border: 0; border-left: 2px solid color-mix(in srgb, var(--text) 14%, transparent); border-radius: 0; background: transparent; }
+.q-text-sm { font-size: 12.5px; line-height: 1.45; color: var(--text-faint); padding: 0; }
+.q-answer { display: flex; align-items: baseline; gap: 7px; margin-top: 4px; font-size: 14px; line-height: 1.45; color: var(--text); }
+.question-card .q-answer svg { flex: none; align-self: center; width: 13px; height: 13px; stroke-width: 2.6; color: var(--green); }
 
 /* A verdict on an approval: one quiet line */
 .chat-note.verdict { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding: 2px 0; margin: 2px 0 12px; border: 0; font-size: 13px; color: var(--text-faint); }
@@ -3339,3 +3340,21 @@ body { font-family: var(--font-ui); font-size: 14px; font-weight: 400; -webkit-f
 .tasks-resize:hover::after, .tasks-resize:focus-visible::after, .tasks-dragging .tasks-resize::after { background: var(--accent); width: 2px; left: 2px; }
 .tasks-resize:focus-visible { outline: none; }
 .tasks-dragging, .tasks-dragging * { cursor: col-resize !important; user-select: none !important; }
+
+/* Apps search: shimmering placeholder cards while the registry answers */
+.apps-searching { display: inline-flex; align-items: center; gap: 8px; }
+.apps-searching-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent, var(--green)); animation: apps-pulse 1.1s var(--ease-out, ease-out) infinite; }
+@keyframes apps-pulse { 0% { transform: scale(0.6); opacity: 0.4; } 50% { transform: scale(1); opacity: 1; } 100% { transform: scale(0.6); opacity: 0.4; } }
+.apps-skeleton { pointer-events: none; animation: apps-sk-in 260ms var(--ease-out, ease-out) both; }
+@keyframes apps-sk-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.apps-sk {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--hover) 0%, color-mix(in srgb, var(--hover) 40%, var(--text) 10%) 50%, var(--hover) 100%);
+  background-size: 200% 100%;
+  animation: apps-shimmer 1.3s linear infinite;
+}
+@keyframes apps-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.apps-sk-logo { width: 36px; height: 36px; border-radius: var(--r-md); flex-shrink: 0; }
+.apps-sk-line { height: 11px; width: 100%; }
+.apps-sk-thin { height: 8px; margin-top: 4px; }
+@media (prefers-reduced-motion: reduce) { .apps-sk, .apps-searching-dot, .apps-skeleton { animation: none; } }

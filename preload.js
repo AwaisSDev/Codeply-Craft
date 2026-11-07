@@ -149,6 +149,12 @@ contextBridge.exposeInMainWorld('craft', {
   setKeepAwake: (on) => ipcRenderer.invoke('remote:setKeepAwake', !!on),
   settingsGet: () => ipcRenderer.invoke('settings:get'),
   settingsSet: (key, on) => ipcRenderer.invoke('settings:set', { key, on: !!on }),
+  // Appearance > Background: the user's own images, copied into this PC's app data
+  wallpaperList: () => ipcRenderer.invoke('wallpaper:list'),
+  wallpaperAdd: () => ipcRenderer.invoke('wallpaper:add'),
+  wallpaperRead: (id) => ipcRenderer.invoke('wallpaper:read', id),
+  wallpaperRemove: (id) => ipcRenderer.invoke('wallpaper:remove', id),
+  homePrs: () => ipcRenderer.invoke('home:prs'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   onRemoteServerError: (cb) => ipcRenderer.on('remote:server-error', (e, data) => cb(data)),
   stop: (sessionId) => ipcRenderer.send('chat:stop', sessionId),

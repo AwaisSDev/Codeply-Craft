@@ -327,6 +327,25 @@ function settleAt(el, { bottom, right } = {}) {
   if (bottom !== undefined) el.style.bottom = (parseFloat(el.style.bottom) + (m.bottom - bottom) * k) + 'px';
   if (right !== undefined) el.style.right = (parseFloat(el.style.right) + (m.right - right) * k) + 'px';
 }
+// A menu placed above its button that runs off the top of the window (the home box
+// sits higher when Home has cards): open it below the button when it fits there,
+// else keep it above and let it scroll.
+function keepMenuOnScreen(el, rect) {
+  const TOP = 48; // under the title bar
+  const m = el.getBoundingClientRect();
+  if (m.top >= TOP) return;
+  const k = m.height ? el.offsetHeight / m.height : 1;
+  const below = window.innerHeight - rect.bottom - 16;
+  if (m.height <= below) {
+    el.style.bottom = 'auto';
+    el.style.top = (rect.bottom + 8) * k + 'px';
+    const n = el.getBoundingClientRect();
+    el.style.top = (parseFloat(el.style.top) + (rect.bottom + 8 - n.top) * k) + 'px';
+  } else {
+    el.style.maxHeight = Math.max(160, m.bottom - TOP) * k + 'px';
+    el.style.overflowY = 'auto';
+  }
+}
 const editCmd = (cmd) => () => document.execCommand(cmd);
 function tbMenuItems(name) {
   const signedIn = !!state.user;
@@ -446,7 +465,7 @@ const VIEWS = ['viewLogin', 'viewReferral', 'viewCountry', 'viewHome', 'viewChat
 function showView(name) {
   if ((name === 'viewHome' || name === 'viewChat') && !state.user) name = 'viewLogin';
   for (const v of VIEWS) $(v).classList.toggle('hidden', v !== name);
-  if (name === 'viewHome') navRecord('home');
+  if (name === 'viewHome') { navRecord('home'); if (window.CraftHomeCards) window.CraftHomeCards.render(); }
 }
 
 // ─── Tiny markdown renderer (safe: every piece is escaped as it's placed) ───
@@ -1873,12 +1892,17 @@ function renderApps() {
   $('appsResultsSection').classList.toggle('hidden', !searching);
   if (searching) {
     const results = appsUi.results.map(mark);
-    $('appsResultsTitle').textContent = appsUi.loading && !results.length ? 'Searching…' : results.length ? 'Results' : 'No apps found';
-    $('appsResults').innerHTML = results.map(appTile).join('');
+    // While the registry answers: a few shimmering cards after whatever already matched.
+    const firstPage = appsUi.loading && !appsUi.next;
+    const skeletons = firstPage ? Array.from({ length: Math.max(2, 6 - results.length) }, (_, i) => `<div class="apps-tile apps-skeleton" style="animation-delay:${i * 60}ms" aria-hidden="true"><div class="apps-tile-head"><div class="apps-sk apps-sk-logo"></div><div class="apps-tile-name"><div class="apps-sk apps-sk-line" style="width:${52 + ((i * 17) % 30)}%"></div><div class="apps-sk apps-sk-line apps-sk-thin" style="width:${34 + ((i * 11) % 20)}%"></div></div></div><div class="apps-sk apps-sk-line apps-sk-thin"></div><div class="apps-sk apps-sk-line apps-sk-thin" style="width:70%"></div></div>`).join('') : '';
+    $('appsResultsTitle').innerHTML = firstPage
+      ? `<span class="apps-searching"><span class="apps-searching-dot"></span>Searching the MCP Registry</span>`
+      : results.length ? 'Results' : 'No apps found';
+    $('appsResults').innerHTML = results.map(appTile).join('') + skeletons;
     $('appsResultsFoot').innerHTML = appsUi.error
       ? `<span class="apps-error">${esc(appsUi.error)}</span>`
       : appsUi.next ? `<button class="btn btn-secondary btn-sm" id="appsMoreBtn"${appsUi.loading ? ' disabled' : ''}>${appsUi.loading ? 'Loading…' : 'Show more'}</button>`
-        : results.length ? '' : '<span class="apps-empty">Try another name, or add the app by its URL.</span>';
+        : results.length || appsUi.loading ? '' : '<span class="apps-empty">Try another name, or add the app by its URL.</span>';
   }
   wireAppLogos($('appsBody'));
 }
@@ -1895,7 +1919,12 @@ async function searchApps(query, more = false) {
   const seq = ++appsUi.searchSeq;
   appsUi.loading = true;
   appsUi.error = '';
-  if (!more) { appsUi.results = []; appsUi.next = ''; }
+  if (!more) {
+    // Featured apps that match show at once; the registry's answer joins them.
+    const q = String(query).toLowerCase();
+    appsUi.results = appsUi.featured.filter((a) => `${a.title} ${a.domain} ${a.category}`.toLowerCase().includes(q));
+    appsUi.next = '';
+  }
   renderApps();
   const r = await api.appsSearch(query, more ? appsUi.next : '');
   if (seq !== appsUi.searchSeq) return; // a newer search started
@@ -2129,6 +2158,8 @@ function settingsPane(tab) {
     const t = window.CraftRich ? window.CraftRich.getType() : { size: 14, font: 'system', spacing: 'normal', width: 'normal' };
     return [
       setRow('Theme', '', setSeg('theme', [['system', 'System', 'monitor'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']], getThemeChoice())),
+      window.CraftWallpaper ? window.CraftWallpaper.settingsHtml() : '',
+      window.CraftHomeCards ? setRow('Home cards', 'Activity, recent chats, usage and pull requests under the box on Home.', setSwitch('homeCards', window.CraftHomeCards.enabled(), 'Home cards')) : '',
       setRow('Home screen', 'What greets you above the box: Codeply itself, or the Codeply logo.', setSeg('home', [['agent', 'Codeply'], ['logo', 'Logo']], getHomeLook())),
       setRow('Text size', 'How big the chat reads.', `<div class="set-range"><span class="rx-a-sm">A</span><input type="range" min="12" max="22" step="1" value="${t.size}" data-type-size aria-label="Text size"><span class="rx-a-lg">A</span><span class="set-val">${t.size}px</span></div>`),
       setRow('Font', '', setSeg('font', [['system', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono']], t.font)),
@@ -2174,6 +2205,7 @@ function drawSettings() {
   const tab = SETTINGS_TABS.find((t) => t[0] === settingsTab);
   el.querySelector('.settings-heading').textContent = tab ? tab[2] : 'Settings';
   el.querySelector('.settings-pane').innerHTML = settingsPane(settingsTab);
+  if (settingsTab === 'appearance' && window.CraftWallpaper) window.CraftWallpaper.hydrate(drawSettings);
 }
 
 function buildSettings() {
@@ -2199,10 +2231,12 @@ function buildSettings() {
   el.querySelector('.modal-close').addEventListener('click', () => CraftModal.close(el));
   el.querySelectorAll('.settings-tab').forEach((b) => b.addEventListener('click', () => { settingsTab = b.dataset.tab; drawSettings(); }));
   const pane = el.querySelector('.settings-pane');
+  if (window.CraftWallpaper) window.CraftWallpaper.bind(pane, drawSettings);
   pane.addEventListener('change', async (e) => {
     const sw = e.target.closest('[data-set]');
     if (!sw) return;
     const k = sw.dataset.set;
+    if (k === 'homeCards') { if (window.CraftHomeCards) window.CraftHomeCards.setEnabled(sw.checked); return; }
     if (k === 'wisp') {
       if (api && api.wispSet) await api.wispSet(sw.checked);
       if (window.CraftWispUI) await window.CraftWispUI.refresh();
@@ -2246,6 +2280,7 @@ async function openSettings(tab) {
   if (tab) settingsTab = tab;
   const el = $('settingsBackdrop') || buildSettings();
   try { settingsData = api && api.settingsGet ? await api.settingsGet() : null; } catch { settingsData = null; }
+  if (window.CraftWallpaper) window.CraftWallpaper.forget();
   drawSettings();
   CraftModal.open(el);
 }
@@ -3619,6 +3654,7 @@ function openModelMenu(anchorBtn) {
   menu.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
   menu.style.right = Math.max(8, window.innerWidth - rect.right) + 'px';
   settleAt(menu, { bottom: rect.top - 8, right: rect.right });
+  keepMenuOnScreen(menu, rect);
 
   menu.querySelectorAll('.model-item[data-id]').forEach((btn) => btn.addEventListener('click', () => pickModel(btn.dataset.id)));
   menu.querySelectorAll('[data-edit]').forEach((btn) => btn.addEventListener('click', (e) => {
@@ -5974,6 +6010,7 @@ $('updateGateBtn').addEventListener('click', () => {
     pop.style.left = Math.max(12, Math.min(r.left, window.innerWidth - w - 12)) + 'px';
     pop.style.bottom = (window.innerHeight - r.top + 8) + 'px';
     settleAt(pop, { bottom: r.top - 8 });
+    keepMenuOnScreen(pop, r);
   }
   function closePop() { $('rmPanel').classList.add('hidden'); }
   document.addEventListener('mousedown', (e) => {

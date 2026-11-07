@@ -1,0 +1,264 @@
+/* Settings > Appearance > Background (wallpaper.js).
+   The picture is one canvas pinned to the bottom right of the main area, under
+   the views. While it is on, the composer, its tray and dialogs turn to frosted
+   glass; the sidebar and title bar stay solid. Without a background none of
+   this applies and nothing changes. */
+.wp-layer, .wp-dim { position: absolute; right: 0; bottom: 0; pointer-events: none; z-index: 0; }
+.wp-layer { opacity: 0; transition: opacity .45s ease; image-rendering: pixelated; }
+.wp-layer.on { opacity: 1; }
+.wp-dim { left: 0; top: 0; background: #000; opacity: 0; transition: opacity .2s ease; }
+body:not(.has-wallpaper) .wp-dim { display: none; }
+
+body.has-wallpaper .app { position: relative; overflow: hidden; background: #000; }
+body.has-wallpaper .app > .sidebar, body.has-wallpaper .app > .main { position: relative; z-index: 1; }
+body.has-wallpaper .main { background: transparent; }
+
+/* Sidebar: solid by default; Glass lets the picture show through, frosted. */
+body.wp-glass-sidebar .sidebar {
+  background: var(--glass-side);
+  -webkit-backdrop-filter: blur(28px) saturate(140%);
+  backdrop-filter: blur(28px) saturate(140%);
+}
+body.wp-glass-sidebar .main { border-left-color: var(--glass-line); border-top-color: var(--glass-line); }
+
+/* Glass in the dark theme */
+body.has-wallpaper {
+  --glass-bg: rgba(24, 25, 28, 0.5);
+  --glass-strip: rgba(30, 31, 34, 0.42);
+  --glass-modal: rgba(26, 27, 30, 0.72);
+  --glass-line: rgba(255, 255, 255, 0.1);
+  --glass-hi: rgba(255, 255, 255, 0.06);
+  --glass-filter: blur(22px) saturate(150%);
+  --wp-scrim: rgba(22, 22, 24, 0.8);
+  --glass-side: rgba(14, 14, 16, 0.58);
+  --glass-card: rgba(24, 25, 28, 0.46);
+}
+/* and in the light theme: white frost, the same dark text as without a background */
+:root[data-theme="light"] body.has-wallpaper {
+  --glass-bg: rgba(255, 255, 255, 0.62);
+  --glass-strip: rgba(255, 255, 255, 0.46);
+  --glass-modal: rgba(255, 255, 255, 0.8);
+  --glass-line: rgba(255, 255, 255, 0.6);
+  --glass-hi: rgba(255, 255, 255, 0.5);
+  --wp-scrim: rgba(255, 255, 255, 0.84);
+  --glass-side: rgba(250, 250, 250, 0.62);
+  --glass-card: rgba(255, 255, 255, 0.58);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) body.has-wallpaper {
+    --glass-bg: rgba(255, 255, 255, 0.62);
+    --glass-strip: rgba(255, 255, 255, 0.46);
+    --glass-modal: rgba(255, 255, 255, 0.8);
+    --glass-line: rgba(255, 255, 255, 0.6);
+    --glass-hi: rgba(255, 255, 255, 0.5);
+    --wp-scrim: rgba(255, 255, 255, 0.84);
+    --glass-side: rgba(250, 250, 250, 0.62);
+    --glass-card: rgba(255, 255, 255, 0.58);
+  }
+}
+
+body.has-wallpaper .composer {
+  background: var(--glass-bg);
+  border-color: var(--glass-line);
+  box-shadow: inset 0 1px 0 var(--glass-hi), 0 10px 40px rgba(0, 0, 0, 0.25);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+}
+/* The tray tucks behind the box; cut off the tucked part so it doesn't show through the glass. */
+body.has-wallpaper .composer-tray, body.has-wallpaper .jobs-bar {
+  background: var(--glass-strip);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  clip-path: inset(0 0 13px 0 round 14px 14px 0 0);
+}
+
+/* Reading a chat needs a calm page: the picture shows through faintly. */
+body.has-wallpaper .view-chat { background: var(--wp-scrim); }
+
+/* Home text sits right on the picture: white on a dark one, ink on a light one. */
+body.has-wallpaper[data-wp-tone="dark"] #viewHome .main-topbar .icon-btn { color: rgba(255, 255, 255, 0.85); }
+body.has-wallpaper[data-wp-tone="light"] #viewHome .main-topbar .icon-btn { color: rgba(0, 0, 0, 0.7); }
+/* Text inside the glass follows the theme; on a light picture in the dark theme it gets a darker frost to stay readable. */
+body.has-wallpaper[data-wp-tone="light"] { --glass-bg: rgba(24, 25, 28, 0.7); --glass-strip: rgba(30, 31, 34, 0.6); }
+:root[data-theme="light"] body.has-wallpaper[data-wp-tone] { --glass-bg: rgba(255, 255, 255, 0.62); --glass-strip: rgba(255, 255, 255, 0.46); }
+:root[data-theme="light"] body.has-wallpaper[data-wp-tone="dark"] { --glass-bg: rgba(255, 255, 255, 0.74); --glass-strip: rgba(255, 255, 255, 0.6); }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) body.has-wallpaper[data-wp-tone] { --glass-bg: rgba(255, 255, 255, 0.62); --glass-strip: rgba(255, 255, 255, 0.46); }
+  :root:not([data-theme="dark"]) body.has-wallpaper[data-wp-tone="dark"] { --glass-bg: rgba(255, 255, 255, 0.74); --glass-strip: rgba(255, 255, 255, 0.6); }
+}
+
+/* Dialogs */
+body.has-wallpaper .modal {
+  background: var(--glass-modal);
+  border-color: var(--glass-line);
+  -webkit-backdrop-filter: blur(30px) saturate(150%);
+  backdrop-filter: blur(30px) saturate(150%);
+}
+body.has-wallpaper .modal-backdrop { background: rgba(0, 0, 0, 0.35); }
+
+@media (prefers-reduced-transparency: reduce) {
+  body.has-wallpaper .composer, body.has-wallpaper .composer-tray, body.has-wallpaper .jobs-bar { background: var(--composer-bg); backdrop-filter: none; }
+  body.has-wallpaper .modal { background: var(--modal-bg); backdrop-filter: none; }
+}
+
+/* ─── The picker ─────────────────────────────────────────────────────────── */
+.set-row.set-row-block { flex-direction: column; align-items: stretch; gap: 12px; }
+.wp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 12px 10px; }
+.wp-tile-wrap { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.wp-tile {
+  position: relative; display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 10;
+  padding: 0; overflow: hidden; border-radius: 10px; border: 1px solid var(--card-border);
+  background: var(--main-bg); color: var(--text-dim); cursor: pointer;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+.wp-tile img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.wp-tile:hover { border-color: color-mix(in srgb, var(--text) 30%, transparent); }
+.wp-tile.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.wp-tile:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.wp-none { background: linear-gradient(135deg, var(--sidebar-bg) 0 30%, var(--main-bg) 30%); }
+.wp-add { border-style: dashed; background: transparent; }
+.wp-add:hover { color: var(--text); background: var(--hover); }
+.wp-name { font-size: 12.5px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wp-tile.on + .wp-name { color: var(--text); }
+.wp-remove {
+  position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; display: grid; place-items: center;
+  border-radius: 50%; background: rgba(0, 0, 0, 0.6); color: #fff; opacity: 0; transition: opacity .12s ease;
+}
+.wp-tile-wrap:hover .wp-remove, .wp-remove:focus-visible { opacity: 1; }
+.wp-remove:hover { background: rgba(0, 0, 0, 0.8); }
+.wp-error { font-size: 12.5px; color: var(--red); }
+.wp-error.hidden { display: none; }
+
+/* ─── Home cards (home-cards.js) ──────────────────────────────────────────
+   With cards on, Home becomes a short column: the question, the box, then the
+   cards, scrolling together when the window is short. */
+#viewHome.has-cards { overflow-y: auto; }
+/* the question and the box sit a little below the middle, the cards under them */
+#viewHome.has-cards .home-center { flex: 1 0 auto; justify-content: flex-end; padding-top: 40px; padding-bottom: 26px; }
+#viewHome.has-cards .home-composer { padding-bottom: 14px; }
+.home-cards { width: 100%; flex: none; display: flex; justify-content: center; padding: 0 24px max(24px, 7vh); }
+#viewHome:not(.has-cards) .home-cards { display: none; }
+.hc-grid { width: 100%; max-width: 810px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.hc-card { grid-column: span 2; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 11px 14px; border-radius: 14px; background: var(--card-bg); border: 1px solid var(--card-border); color: var(--text); user-select: none; }
+.hc-activity { grid-column: span 4; }
+.hc-prs { grid-column: span 2; }
+.hc-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-dim); }
+.hc-head .ico { color: var(--text-faint); }
+.hc-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.hc-foot { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-faint); }
+.hc-activity .hc-body { justify-content: center; }
+.hc-heat { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 1fr); gap: 3px; }
+.hc-sq { display: block; aspect-ratio: 1; border-radius: 50%; background: color-mix(in srgb, var(--text) 8%, transparent); }
+.hc-sq.l1 { background: #1f6f43; }
+.hc-sq.l2 { background: #2a9d58; }
+.hc-sq.l3 { background: #3fc56f; }
+.hc-sq.l4 { background: #6ee893; box-shadow: 0 0 6px rgba(110, 232, 147, 0.45); }
+.hc-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; width: calc(100% + 16px); min-width: 0; padding: 4px 8px; margin: 0 -8px; border-radius: 10px; text-align: left; color: var(--text); }
+.hc-row:hover { background: var(--hover); }
+.hc-row-t { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hc-row-s { flex: none; font-size: 12px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hc-row-t > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.hc-pr { display: inline-grid; flex: none; color: var(--green); }
+.hc-pr.merged { color: #a371f7; }
+.hc-pr.closed { color: var(--red); }
+.hc-more { align-self: flex-start; padding: 0; font-size: 12.5px; color: var(--text-dim); }
+.hc-more:hover { color: var(--text); }
+.hc-empty { font-size: 12.5px; line-height: 1.45; color: var(--text-faint); }
+.hc-big { font-size: 28px; font-weight: 500; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
+.hc-sub { font-size: 12.5px; color: var(--text-faint); }
+.hc-stats { display: flex; gap: 26px; }
+.hc-stat .hc-sub { margin-top: 1px; }
+.hc-total { display: flex; align-items: baseline; gap: 7px; margin-top: 2px; }
+.hc-unit { font-size: 13px; color: var(--text-faint); }
+.hc-pill { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 12px; border-radius: 999px; font-size: 12.5px; font-weight: 500; color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); border: 1px solid color-mix(in srgb, var(--text) 10%, transparent); transition: background .12s ease; }
+.hc-pill:hover { background: color-mix(in srgb, var(--text) 14%, transparent); }
+.hc-pill .ico { width: 14px; height: 14px; }
+.hc-usage .hc-body { justify-content: center; }
+.hc-bars { display: flex; align-items: flex-end; gap: 3px; height: 34px; margin-top: 8px; }
+.hc-bar { flex: 1; min-width: 2px; border-radius: 3px 3px 1px 1px; background: linear-gradient(to top, rgba(163, 113, 247, 0.35), #b48cff); }
+.hc-bar.empty { background: color-mix(in srgb, var(--text) 12%, transparent); }
+.hc-bar.future { height: 8%; background: color-mix(in srgb, var(--text) 7%, transparent); }
+.hc-bar.today { background: linear-gradient(to top, rgba(180, 140, 255, 0.55), #d2b8ff); box-shadow: 0 0 10px rgba(180, 140, 255, 0.45); }
+.hc-num { display: flex; align-items: baseline; gap: 6px; font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.hc-num.a { color: var(--accent); }
+.hc-num.b { color: #a371f7; }
+.hc-delta { font-size: 12.5px; font-weight: 500; }
+.hc-delta.up { color: var(--green); }
+@media (max-width: 900px) { .hc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hc-card, .hc-activity, .hc-prs { grid-column: span 2; } }
+@media (min-width: 901px) and (max-width: 1100px) { .hc-card { grid-column: span 3; } .hc-activity { grid-column: span 6; } }
+
+/* Over a background the cards are glass too. */
+body.has-wallpaper .hc-card {
+  background: var(--glass-card);
+  border-color: var(--glass-line);
+  box-shadow: inset 0 1px 0 var(--glass-hi);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+}
+
+/* ─── Whole window ────────────────────────────────────────────────────────
+   With a background the title bar floats over it: the picture runs to the top
+   edge, the sidebar grows up under the title bar's left buttons, and the
+   lines between the title bar, sidebar and main area go away. */
+body.has-wallpaper .titlebar { position: fixed; top: 0; left: 0; right: 0; z-index: 30; background: transparent; }
+body.has-wallpaper .sidebar { padding-top: 42px; }
+body.has-wallpaper .main { margin-top: 42px; border-top: 0; border-left: 0; }
+body.has-wallpaper[data-wp-tone="dark"] .titlebar .win-btn { color: rgba(255, 255, 255, 0.8); }
+body.has-wallpaper[data-wp-tone="light"] .titlebar .win-btn { color: rgba(0, 0, 0, 0.7); }
+
+/* Dots that move with the cursor (wallpaper.js): a small patch of the same
+   dots, redrawn around the pointer only while they are moving. */
+.wp-mover { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; image-rendering: pixelated; display: none; }
+body:not(.has-wallpaper) .wp-mover { display: none !important; }
+@media (prefers-reduced-motion: reduce) { .wp-mover { display: none !important; } }
+
+/* The home question: white or ink from the picture right behind it (retone()
+   in wallpaper.js), with a halo so it reads over a busy patch either way. */
+body.has-wallpaper[data-wp-title-tone] #viewHome .home-title,
+body.has-wallpaper[data-wp-title-tone] #viewHome .proj-link { color: #fff; text-shadow: 0 0 2px rgba(0, 0, 0, 0.55), 0 1px 4px rgba(0, 0, 0, 0.5), 0 0 26px rgba(0, 0, 0, 0.6); }
+body.has-wallpaper[data-wp-title-tone] #viewHome .home-logo { fill: #fff; filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.5)) drop-shadow(0 0 16px rgba(0, 0, 0, 0.5)); }
+body.has-wallpaper[data-wp-title-tone="light"] #viewHome .home-title,
+body.has-wallpaper[data-wp-title-tone="light"] #viewHome .proj-link { color: #111; text-shadow: 0 0 2px rgba(255, 255, 255, 0.8), 0 0 24px rgba(255, 255, 255, 0.85); }
+body.has-wallpaper[data-wp-title-tone="light"] #viewHome .home-logo { fill: #111; filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.85)); }
+/* a soft haze right behind the question, so it reads over the brightest part of a photo */
+body.has-wallpaper[data-wp-title-tone] #viewHome .home-title { padding: 14px 36px; margin-top: 4px; background: radial-gradient(closest-side, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.2) 60%, rgba(0, 0, 0, 0)); }
+body.has-wallpaper[data-wp-title-tone="light"] #viewHome .home-title { background: radial-gradient(closest-side, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.22) 60%, rgba(255, 255, 255, 0)); }
+
+/* Menus over a background: frosted glass, and the model list gets its icons back. */
+body.has-wallpaper { --glass-menu: rgba(26, 27, 31, 0.66); }
+:root[data-theme="light"] body.has-wallpaper { --glass-menu: rgba(255, 255, 255, 0.74); }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) body.has-wallpaper { --glass-menu: rgba(255, 255, 255, 0.74); } }
+body.has-wallpaper .menu, body.has-wallpaper .model-menu, body.has-wallpaper .rm-pop {
+  background: var(--glass-menu);
+  border: 1px solid var(--glass-line);
+  border-radius: 16px;
+  box-shadow: inset 0 1px 0 var(--glass-hi), 0 18px 50px rgba(0, 0, 0, 0.4);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  backdrop-filter: blur(28px) saturate(160%);
+}
+body.has-wallpaper .model-menu { width: 316px; padding: 8px; }
+body.has-wallpaper .model-menu .model-menu-title { padding: 4px 10px 8px; font-size: 12px; font-weight: 500; letter-spacing: 0.2px; color: var(--text-faint); }
+body.has-wallpaper .model-menu .model-item-icon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 10px; border: 1px solid var(--glass-line); }
+body.has-wallpaper .model-menu .model-item-icon svg { width: 16px; height: 16px; }
+body.has-wallpaper .model-menu .model-item { gap: 11px; border-radius: 11px; }
+body.has-wallpaper .model-menu .model-item.active { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+body.has-wallpaper .model-menu .model-item:not(.locked):hover { background: rgba(255, 255, 255, 0.08); }
+body.has-wallpaper .model-menu .model-item.locked { opacity: 0.62; }
+body.has-wallpaper .model-menu .model-menu-label { padding: 10px 10px 4px; }
+body.has-wallpaper .model-menu .model-menu-divider { background: var(--glass-line); margin: 6px 4px; }
+body.has-wallpaper .model-menu .model-menu-action { border-radius: 11px; }
+body.has-wallpaper .model-menu .model-menu-ollama { border-radius: 11px; background: rgba(255, 255, 255, 0.9); color: #111; }
+
+/* In a chat the calm layer runs all the way to the top edge, under the
+   title bar, instead of stopping below it, */
+/* and it is the sidebar's own surface (frosted glass, or solid with a solid sidebar), with square corners */
+body.has-wallpaper:has(#viewChat:not(.hidden)) .main { margin-top: 0; padding-top: 42px; border-radius: 0; background: var(--sidebar-bg); }
+body.wp-glass-sidebar:has(#viewChat:not(.hidden)) .main {
+  background: var(--glass-side);
+  -webkit-backdrop-filter: blur(28px) saturate(140%);
+  backdrop-filter: blur(28px) saturate(140%);
+}
+body.has-wallpaper:has(#viewChat:not(.hidden)) .view-chat { background: transparent; }
+/* a thin line between the sidebar and the chat, which also hides where the two panes' blur meets */
+body.has-wallpaper:has(#viewChat:not(.hidden)) .main { border-left: 1px solid var(--glass-line); }
+body.has-wallpaper:has(#viewChat:not(.hidden)) .sidebar.collapsed + .main { border-left-color: transparent; }
