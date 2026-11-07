@@ -943,10 +943,28 @@ function cancel() {
 }
 
 // ─── Speech to text, in its own process ─────────────────────────────────────
+// Whisper takes about 700 MB while it is loaded, so it loads when the voice
+// shortcut is pressed (warmStt in press) and its process ends after a few
+// quiet minutes. Never at app start.
+const STT_IDLE_MS = 5 * 60 * 1000;
 let sttProc = null;
 let sttReady = false;
+let sttIdleTimer = null;
 const sttWaiters = new Map();
+/** Push back the moment the speech process ends for being idle. */
+function sttTouch() {
+  clearTimeout(sttIdleTimer);
+  sttIdleTimer = setTimeout(sttUnloadIfIdle, STT_IDLE_MS);
+}
+function sttUnloadIfIdle() {
+  sttIdleTimer = null;
+  if (!sttProc) return;
+  if (sttWaiters.size || S.state === 'listening' || S.state === 'thinking') { sttTouch(); return; } // still in use
+  log('speech model unloaded after being idle');
+  try { sttProc.kill(); } catch {}
+}
 function sttProcess() {
+  sttTouch();
   if (sttProc) return sttProc;
   const cache = path.join(app.getPath('appData'), 'Codeply Crew', 'voice-models');
   sttProc = utilityProcess.fork(path.join(__dirname, 'voice', 'stt-process.js'), [cache], { serviceName: 'Codeply voice' });
@@ -959,6 +977,7 @@ function sttProcess() {
   });
   sttProc.on('exit', () => {
     sttProc = null; sttReady = false;
+    clearTimeout(sttIdleTimer); sttIdleTimer = null;
     for (const w of sttWaiters.values()) w({ type: 'error', error: 'the speech process stopped' });
     sttWaiters.clear();
   });
@@ -969,7 +988,7 @@ function transcribe(pcm) {
   return new Promise((resolve, reject) => {
     const id = Math.random().toString(36).slice(2);
     const t = setTimeout(() => { sttWaiters.delete(id); reject(new Error('speech to text took too long')); }, 90000);
-    sttWaiters.set(id, (m) => { clearTimeout(t); if (m.type === 'result') resolve(m.text); else reject(new Error(m.error)); });
+    sttWaiters.set(id, (m) => { clearTimeout(t); sttTouch(); if (m.type === 'result') resolve(m.text); else reject(new Error(m.error)); });
     sttProcess().postMessage({ type: 'transcribe', id, pcm });
   });
 }
@@ -1008,8 +1027,7 @@ function init(h) {
   startHook();
   // The overlays load once, early, so the first hold shows the buddy at once.
   setTimeout(() => { try { syncOverlays(); } catch (e) { log(e.message); } }, 3000);
-  // Someone who uses voice gets Whisper loaded in the background, so the first answer isn't the slow one.
-  if (hook && host.getSetting('voiceUsed')) setTimeout(warmStt, 10000);
+  // Whisper is not loaded here: pressing the voice shortcut loads it (press -> warmStt) while the person talks.
   // The Windows helper (clicks, and the "are the keys still held?" check) compiles
   // once per launch: do it early while idle, never on a key press.
   if (hook) setTimeout(() => act.warm(), 6000);
@@ -1017,6 +1035,7 @@ function init(h) {
 
 function dispose() {
   try { if (hook) hook.stop(); } catch {}
+  clearTimeout(sttIdleTimer);
   try { if (sttProc) sttProc.kill(); } catch {}
   for (const w of overlays.values()) { try { w.destroy(); } catch {} }
 }

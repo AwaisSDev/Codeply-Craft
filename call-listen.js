@@ -33,14 +33,28 @@ const short = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); retur
 
 // ─── Speech to text in its own process ──────────────────────────────────────
 
+// Whisper takes about 700 MB while loaded: it loads when a call starts and
+// its process ends once no call has needed it for a few minutes.
+const STT_IDLE_MS = 5 * 60 * 1000;
 let stt = null;
+let sttIdleTimer = null;
 const waiting = new Map();
+function sttTouch() {
+  clearTimeout(sttIdleTimer);
+  sttIdleTimer = setTimeout(() => {
+    sttIdleTimer = null;
+    if (!stt) return;
+    if (S.active || waiting.size) { sttTouch(); return; } // a call is still on
+    try { stt.kill(); } catch {}
+  }, STT_IDLE_MS);
+}
 function sttProc() {
+  sttTouch();
   if (stt) return stt;
   const cache = deps.sttCacheDir || path.join(app.getPath('appData'), 'Codeply Crew', 'voice-models');
   stt = utilityProcess.fork(path.join(__dirname, 'voice', 'stt-process.js'), [cache], { serviceName: 'Codeply call helper' });
   stt.on('message', (m) => { if (!m || !m.id) return; const w = waiting.get(m.id); if (w) { waiting.delete(m.id); w(m); } });
-  stt.on('exit', () => { stt = null; for (const w of waiting.values()) w({ type: 'error', error: 'stopped' }); waiting.clear(); });
+  stt.on('exit', () => { stt = null; clearTimeout(sttIdleTimer); sttIdleTimer = null; for (const w of waiting.values()) w({ type: 'error', error: 'stopped' }); waiting.clear(); });
   return stt;
 }
 function transcribe(pcm) {
