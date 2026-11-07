@@ -2757,6 +2757,9 @@ importers:
       '@codeply/dsh-approval-memory':
         specifier: workspace:*
         version: link:../../codeply/approval-memory
+      '@codeply/dsh-apps':
+        specifier: workspace:*
+        version: link:../../codeply/apps
       '@codeply/dsh-browser-check':
         specifier: workspace:*
         version: link:../../codeply/browser-check
@@ -6900,6 +6903,24 @@ importers:
       '@deepseek-ai/dsh-user-approval':
         specifier: workspace:*
         version: link:../../interaction/user-approval
+
+  packages/codeply/apps:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:*
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-launch-environment':
+        specifier: workspace:*
+        version: link:../../util/launch-environment
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:*
+        version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../../core/tools
 
   packages/codeply/browser-check:
     devDependencies:

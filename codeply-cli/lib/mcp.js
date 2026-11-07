@@ -236,10 +236,13 @@ const RETRY_FAILED_MS = 60_000;
 /**
  * Connect to every configured server for this project (reusing live
  * connections) and return what they offer. Never throws.
+ * @param {string} cwd
+ * @param {{ appsOnly?: boolean }} [opts] - appsOnly: just the user's connected apps.
  * @returns {Promise<Array<{name, tools, error, instructions}>>}
  */
-async function listServers(cwd) {
-  const wanted = loadServers(cwd);
+async function listServers(cwd, { appsOnly = false } = {}) {
+  let wanted = loadServers(cwd);
+  if (appsOnly) wanted = Object.fromEntries(Object.entries(wanted).filter(([, s]) => s.app));
   const out = [];
   await Promise.all(Object.entries(wanted).map(async ([name, spec]) => {
     const key = `${cwd}::${name}`;

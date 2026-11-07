@@ -654,6 +654,10 @@
     - id: codeply-team
       name: '@codeply/dsh-team'
 
+    # The user's connected Apps: their tools in the prompt and use_app, run by Craft.
+    - id: codeply-apps
+      name: '@codeply/dsh-apps'
+
     # Codeply Craft brand: the atomic mark and the name, no build badge.
     - id: ui-brand-craft
       name: '@codeply/dsh-client-ui-brand-craft'

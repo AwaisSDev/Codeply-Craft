@@ -67,6 +67,7 @@
     "@codeply/dsh-design-tools": "workspace:*",
     "@codeply/dsh-shared-context": "workspace:*",
     "@codeply/dsh-team": "workspace:*",
+    "@codeply/dsh-apps": "workspace:*",
     "@deepseek-ai/dsh-agent-instructions": "workspace:*",
     "@deepseek-ai/dsh-agent-preset": "workspace:*",
     "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",

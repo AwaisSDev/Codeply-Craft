@@ -462,6 +462,7 @@
     { "path": "./packages/codeply/design-tools" },
     { "path": "./packages/codeply/shared-context" },
     { "path": "./packages/codeply/team" },
+    { "path": "./packages/codeply/apps" },
     { "path": "./packages/codeply/approval-memory" },
     { "path": "./packages/codeply/craft-cloud" },
     { "path": "./packages/llm/llm-deepseek-account" },

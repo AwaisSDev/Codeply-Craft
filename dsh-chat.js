@@ -19,6 +19,10 @@
 //     Classic: the SPECIALISTS prompt, ask_bot (which can make a new
 //     specialist) and hand_off, answered here over the bridge
 //     (@codeply/dsh-team) by the same bots-desktop.js code Classic uses.
+//   - The user's connected Apps (codeply-cli/lib/apps.js) are in every chat,
+//     as in Classic: their tools join the prompt and use_app calls one,
+//     answered here over the bridge (@codeply/dsh-apps) through lib/mcp.js,
+//     with Classic's approval rule (anything not read-only asks first).
 //
 // Needs Node 24.9+ for the engine; when it can't start, the chat runs on
 // Classic's own agent instead (main.js decides).
@@ -62,6 +66,8 @@ const PATCH = `# Written by Codeply: Classic's chats on the DSH harness.
       name: '@codeply/dsh-shared-context'
     - id: codeply-team
       name: '@codeply/dsh-team'
+    - id: codeply-apps
+      name: '@codeply/dsh-apps'
 - id: web
   config:
     searchProvider: codeply
@@ -74,6 +80,12 @@ let bridge = null; // { server, url, token }
 const engines = new Map(); // folder key -> { engine, usedAt }
 const routes = new Map();  // DSH session id -> the turn's route
 const teams = new Map();   // DSH session id -> the turn's Codeply team ({ prompt, askBot, handOff, metas })
+const turns = new Map();   // DSH session id -> the turn's { cwd, approve, request }, for the user's apps
+const appLists = new Map(); // folder -> the apps listing in flight, so steps don't connect twice
+
+const APPS_HOW = 'Call one with the use_app tool (app, tool, and args as a JSON object).';
+const APPS_WAIT_MS = 12_000;      // the prompt goes without an app still connecting
+const APP_OUTPUT_CHARS = 30_000;  // what one app call may put in front of the model
 
 const folderKey = (cwd) => path.resolve(String(cwd || '')).toLowerCase();
 
@@ -171,6 +183,17 @@ function startBridge() {
       t.metas.push({ tool, meta: (r && r.meta) || null });
       return res.end(JSON.stringify({ ok: !!(r && r.ok), output: String((r && r.output) || '') }));
     }
+    // The user's connected apps (lib/apps.js) for a chat: the prompt, and use_app.
+    if (req.url === '/apps' || req.url === '/apps/call') {
+      let body = {};
+      try { body = JSON.parse(await readBody(req)); } catch {}
+      const turn = turns.get(String(body.chatId || ''));
+      const cwd = turn ? turn.cwd : String(body.cwd || '');
+      if (req.url === '/apps') {
+        try { return reply(200, await appsState(cwd, turn)); } catch { return reply(200, {}); }
+      }
+      return callApp(cwd, turn, body.args && typeof body.args === 'object' ? body.args : {}, res);
+    }
     // The codeply-taste tools (design_direction, design_lint), run with Classic's code.
     const design = /^\/design\/(design_direction|design_lint)$/.exec(req.url || '');
     if (design) {
@@ -221,6 +244,105 @@ function startBridge() {
       resolve(bridge);
     });
   });
+}
+
+// ─── Apps ────────────────────────────────────────────────────────────────────
+const cliLib = (name) => require(path.join(host.cliDir, 'lib', name));
+
+/** The connected apps for a folder, with their tools (connections are shared with Classic's chats). */
+function listApps(cwd) {
+  const key = folderKey(cwd);
+  let p = appLists.get(key);
+  if (!p) {
+    p = cliLib('mcp.js').listServers(cwd, { appsOnly: true }).finally(() => appLists.delete(key));
+    appLists.set(key, p);
+  }
+  return p;
+}
+
+/** What @codeply/dsh-apps adds to a step: the APPS AND MCP SERVERS section, and whether use_app is offered. */
+async function appsState(cwd, turn) {
+  if (!Object.keys(cliLib('apps.js').mcpServers()).length) return {};
+  let timer;
+  const list = await Promise.race([
+    listApps(cwd),
+    new Promise((resolve) => { timer = setTimeout(() => resolve(null), APPS_WAIT_MS); }),
+  ]).finally(() => clearTimeout(timer));
+  if (!list || !list.length) return {};
+  const agent = await import(pathToFileURL(path.join(host.cliDir, 'lib', 'agent.mjs')).href);
+  const ranked = agent.rankMcp(list, turn ? turn.request : '');
+  return { prompt: agent.mcpServersSection(ranked, true, APPS_HOW), apps: list.length };
+}
+
+/** "Microsoft Learn: Search docs" for a chat row, as Classic's mcp tool says it. */
+function appLabel(cwd, server, tool) {
+  const mcp = cliLib('mcp.js');
+  const def = mcp.findTool(cwd, server, tool);
+  const title = mcp.titleOf(cwd, server);
+  const toolTitle = (def && (def.title || def.annotations?.title)) || tool;
+  return title ? `${title}: ${toolTitle}` : `${server}/${tool}`;
+}
+
+/**
+ * One use_app call, the way Classic's mcp tool (codeply-cli/lib/tools.mjs)
+ * runs it: a tool not marked read-only asks the user first with Craft's own
+ * card. Only the user's connected apps, never another MCP server.
+ */
+async function callApp(cwd, turn, a, res) {
+  const answer = (ok, output) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok, output })); };
+  const server = String(a.app || '').trim();
+  const tool = String(a.tool || '').trim();
+  if (!server || !tool) return answer(false, 'use_app needs an app and a tool.');
+  let toolArgs = {};
+  if (a.args && typeof a.args === 'object') toolArgs = a.args;
+  else if (String(a.args ?? '').trim()) {
+    try { toolArgs = JSON.parse(String(a.args)); } catch { return answer(false, 'args must be a JSON object, like {"query": "x"}.'); }
+  }
+  if (!toolArgs || typeof toolArgs !== 'object' || Array.isArray(toolArgs)) return answer(false, 'args must be a JSON object, like {"query": "x"}.');
+  let list = [];
+  try { list = await listApps(cwd); } catch {}
+  const app = list.find((s) => s.name === server);
+  if (!app) return answer(false, `No connected app "${server}". Use one listed under APPS AND MCP SERVERS.`);
+  if (app.error) return answer(false, `${app.title || server} is not connected right now (${app.error.slice(0, 200)}).`);
+  const mcp = cliLib('mcp.js');
+  const def = mcp.findTool(cwd, server, tool);
+  if (!def) return answer(false, `No tool "${tool}" in ${app.title || server}. Use one listed under APPS AND MCP SERVERS.`);
+  const label = appLabel(cwd, server, tool);
+  const ac = new AbortController();
+  res.on('close', () => { if (!res.writableEnded) ac.abort(); });
+  // Waiting on the user's answer can take minutes: answer at once and keep the
+  // line warm (JSON allows leading spaces), so the engine's fetch never times out.
+  res.writeHead(200, { 'content-type': 'application/json' });
+  const warmLine = setInterval(() => { if (!res.writableEnded) res.write(' '); }, 30_000);
+  let r;
+  try {
+    if (!def.annotations?.readOnlyHint) {
+      if (!turn) {
+        r = { ok: false, output: `${label} changes something, so it can only run in a chat where the user can approve it.` };
+      } else {
+        const verdict = await turn.approve({
+          tool: 'mcp',
+          title: `Use ${def.title || def.annotations?.title || tool} in ${app.title || server}`,
+          detail: JSON.stringify(toolArgs).slice(0, 600),
+          danger: !!def.annotations?.destructiveHint,
+        });
+        if (verdict === 'reject') r = { ok: false, output: `User declined ${label}.` };
+      }
+    }
+    if (!r && !ac.signal.aborted) {
+      const out = await mcp.callTool(cwd, server, tool, toolArgs);
+      let text = `${out.isError ? '[the tool reported an error]\n' : ''}${out.text}`;
+      if (text.length > APP_OUTPUT_CHARS) text = `${text.slice(0, APP_OUTPUT_CHARS)}\n[cut: ${text.length - APP_OUTPUT_CHARS} more characters]`;
+      if (out.images.length) text += `\n[${out.images.length} image${out.images.length === 1 ? '' : 's'} returned, not shown here]`;
+      r = { ok: !out.isError, output: text };
+    }
+  } catch (e) {
+    r = { ok: false, output: `${label} failed: ${e && e.message ? e.message : e}` };
+  } finally {
+    clearInterval(warmLine);
+  }
+  if (ac.signal.aborted) return res.end();
+  return res.end(JSON.stringify({ ok: !!(r && r.ok), output: String((r && r.output) || '') }));
 }
 
 // ─── Engines ─────────────────────────────────────────────────────────────────
@@ -278,6 +400,7 @@ function classicTool(name, args) {
       return { name: 'edit_file', args: { ...a, path: filePath } };
     case 'pwsh': case 'bash': return { name: 'run', args: { ...a, command: a.command || a.cmd || '' } };
     case 'grep': case 'glob': return { name: 'search', args: { ...a, pattern: a.pattern || a.query || '' } };
+    case 'use_app': return { name: 'mcp', args: { server: a.app || '', tool: a.tool || '' } };
     default: return { name, args: a };
   }
 }
@@ -293,7 +416,8 @@ function canHandOff() {
   try { return !!require(path.join(host.cliDir, 'lib', 'brain.js')).canHandOff(); } catch { return false; }
 }
 
-const READ_ONLY = new Set(['read', 'read_image', 'grep', 'glob', 'web_search', 'web_fetch', 'todo_write', 'browser_check']);
+// use_app asks on its own, over the bridge, and only for a tool that is not read-only.
+const READ_ONLY = new Set(['read', 'read_image', 'grep', 'glob', 'web_search', 'web_fetch', 'todo_write', 'browser_check', 'use_app']);
 
 /** What the chat said before, for a chat's first DSH turn. */
 function historyPreamble(history) {
@@ -326,6 +450,7 @@ async function* runTurn({ session, userMessage, history, cwd, approve, signal, r
   const fresh = sid !== saved;
   session.dsh = { folder: key, sessionId: sid };
   routes.set(sid, route || { auto: true });
+  turns.set(sid, { cwd: path.resolve(cwd), approve, request: String(userMessage || '') });
   if (team) {
     teams.set(sid, {
       prompt: typeof team.botPrompt === 'function' ? String(team.botPrompt(true, { reach: false }) || '') : '', // no reach_me here
@@ -377,7 +502,7 @@ async function* runTurn({ session, userMessage, history, cwd, approve, signal, r
         const output = String(ev.output || '');
         const exitCode = name === 'run' ? exitCodeOf(output) : undefined;
         const ok = ev.ok !== false && (exitCode === undefined || exitCode === 0);
-        const label = args.path || args.command || args.pattern || args.url || args.query || '';
+        const label = name === 'mcp' ? appLabel(path.resolve(cwd), args.server, args.tool) : args.path || args.command || args.pattern || args.url || args.query || '';
         if (ok && (name === 'write_file' || name === 'edit_file') && args.path) written.add(args.path);
         actions.push({ tool: name, label, ok, exitCode, files: args.path ? [args.path] : undefined });
         stepStart = Date.now();
@@ -388,7 +513,7 @@ async function* runTurn({ session, userMessage, history, cwd, approve, signal, r
         yield {
           type: 'tool_end', name, args, ok,
           error: ok ? undefined : (ev.error || output).slice(0, 600),
-          summary: extra && extra.label ? extra.label : undefined,
+          summary: extra && extra.label ? extra.label : name === 'mcp' ? label : undefined,
           meta: { output: name === 'run' ? output.slice(-4000) : undefined, exitCode, ...(extra && extra.delegation ? { delegation: extra.delegation } : {}) },
         };
         continue;
@@ -407,6 +532,7 @@ async function* runTurn({ session, userMessage, history, cwd, approve, signal, r
   } finally {
     routes.delete(sid);
     teams.delete(sid);
+    turns.delete(sid);
   }
 }
 
