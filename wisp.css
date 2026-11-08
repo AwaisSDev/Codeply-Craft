@@ -5,6 +5,9 @@
 .wisp-el svg { width: 100%; height: 100%; overflow: visible; stroke: none; fill: none; } /* Craft's global svg icon stroke must not reach Wisp */
 /* No glow behind the face: the body's own shading gives it depth. */
 .wisp-el .w-eyes { fill: #0b0b0f; }
+/* Wisp itself: white pill eyes on the flat blue hexagon (specialists keep dark eyes). */
+.wisp-self .w-eyes { fill: #fff; }
+.wisp-self .w-eyes path { stroke: #fff; }
 .wisp-el .w-shine { pointer-events: none; }
 .wisp-el .w-shape, .wisp-el linearGradient stop { transition: stop-color .45s ease; }
 /* The costume change (wisp.js dress): confetti dots burst out while it spins into a new look. */

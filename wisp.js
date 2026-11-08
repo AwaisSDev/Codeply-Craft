@@ -1,4 +1,4 @@
-// Wisp: a soft blue pentagon with eyes, the same character as on codeply.app/wisp.
+// Wisp: a flat blue hexagon with two white pill eyes, the same character as on codeply.app/wisp.
 // The eyes follow your cursor and blink, the body breathes and morphs between
 // shapes, and the mood changes the eyes, the colour and how it moves.
 // Drawn in SVG, one animation loop for every Wisp in the window.
@@ -10,10 +10,10 @@
 //   sprout...); dress(look, true) is the costume change: a spin, a poof, a new face.
 //   CraftWisp.read(text) -> { mood, shape|null, line }   what a message feels like
 //
-// Wisp is a pentagon everywhere: a mood changes its eyes, colour and how it
-// moves, never its shape. Only the home screen's Wisp (morph: true, like the
+// Wisp is a hexagon everywhere, one flat blue: a mood changes its eyes and how
+// it moves, never its shape. Only the home screen's Wisp (morph: true, like the
 // "Meet Wisp" demo on the website) takes a shape from a mood or a topic, and
-// goes back to the pentagon after.
+// goes back to the hexagon after. Specialists keep their own shape, colour and dark eyes.
 (function () {
   var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   var N = 144, TAU = Math.PI * 2, CX = 50, CY = 54, R = 40;
@@ -56,7 +56,7 @@
     triangle: polar(poly(3), 33),
     // Flat side up (gear sits on it). A hexagon's corners stick out only 15%, so it gets light
     // smoothing: at 21 it came out a circle (1.8% off round); at 7 it's ~10%, like the square.
-    hexagon: polar(poly(6, Math.PI / 6), 7),
+    hexagon: polar(poly(6, Math.PI / 6), 9),
     star: polar(function (t) { return .8 + .2 * Math.cos(5 * (t + Math.PI / 2)); }, 11),
     spiky: polar(function (t) { var c = Math.cos(8 * (t + Math.PI / 2)); return .84 + .16 * Math.sign(c) * Math.pow(Math.abs(c), .6); }, 7),
     blob: polar(function (t) { return 1 + .07 * Math.sin(3 * t + 1) + .05 * Math.cos(5 * t - .4); }, 5),
@@ -66,19 +66,19 @@
 
   // ---- moods: eyes, a shape for the morphing Wisp, a colour, and how it moves ----
   var MOODS = {
-    neutral: { shape: 'pentagon', c: ['#74a6ff', '#1f52e0'], blink: true },
+    neutral: { shape: 'hexagon', c: ['#74a6ff', '#1f52e0'], blink: true },
     happy: { shape: 'circle', c: ['#7fb2ff', '#2a5fea'], bounce: true },
     excited: { shape: 'star', c: ['#86b9ff', '#2f6bff'], bounce: true, fast: true },
-    proud: { shape: 'pentagon', c: ['#7cb0ff', '#2457e6'], puff: true },
+    proud: { shape: 'hexagon', c: ['#7cb0ff', '#2457e6'], puff: true },
     love: { shape: 'heart', c: ['#ff9ec4', '#e0457f'], bounce: true },
-    sad: { shape: 'pentagon', c: ['#9db2e6', '#4e66b4'], blink: true, sag: true },
+    sad: { shape: 'hexagon', c: ['#9db2e6', '#4e66b4'], blink: true, sag: true },
     angry: { shape: 'spiky', c: ['#ff8f7a', '#e0304a'], shake: true },
     sleepy: { shape: 'blob', c: ['#9fb4e8', '#4c64b8'], doze: true },
-    surprised: { shape: 'pentagon', c: ['#8ab8ff', '#2f6bff'], blink: true, hop: true },
-    thinking: { shape: 'pentagon', c: ['#86b0ff', '#3a5fe0'], blink: true },
-    worried: { shape: 'pentagon', c: ['#8fb0ee', '#3d5bc4'], blink: true, tremble: true },
-    working: { shape: 'pentagon', c: ['#7aaeff', '#1f5af0'], blink: true, busy: true },
-    listening: { shape: 'pentagon', c: ['#7eb0ff', '#2457e6'], blink: true, lean: true }
+    surprised: { shape: 'hexagon', c: ['#8ab8ff', '#2f6bff'], blink: true, hop: true },
+    thinking: { shape: 'hexagon', c: ['#86b0ff', '#3a5fe0'], blink: true },
+    worried: { shape: 'hexagon', c: ['#8fb0ee', '#3d5bc4'], blink: true, tremble: true },
+    working: { shape: 'hexagon', c: ['#7aaeff', '#1f5af0'], blink: true, busy: true },
+    listening: { shape: 'hexagon', c: ['#7eb0ff', '#2457e6'], blink: true, lean: true }
   };
   var INK = '#0b0b0f';
   // How long a reaction shows (ms) before the face relaxes to neutral.
@@ -165,6 +165,7 @@
   function mix(h, t, k) { var a = hexToRgb(h), b = hexToRgb(t); return 'rgb(' + a.map(function (v, i) { return Math.round(v + (b[i] - v) * k); }).join(',') + ')'; }
   function tint(hex) { return [mix(hex, '#ffffff', .3), hex, mix(hex, '#000000', .26)]; }
   /** A mood's two colours as the three tones of the body. */
+  function m2flat(m) { return m === 'angry' ? '#E5484D' : m === 'love' ? '#F0508C' : '#2F6BFF'; }
   function tones(c) { return [mix(c[0], '#ffffff', .12), mix(c[0], c[1], .55), mix(c[1], '#000000', .18)]; }
 
   var all = [], uid = 0, px = null, py = null, lastMove = 0, running = false;
@@ -179,7 +180,7 @@
       (opts.texture === true ? plush(id + 'f') : '') + '</defs>' +
       '<g class="w-body"><g class="w-skin"' + (opts.texture === true ? ' filter="url(#' + id + 'f)"' : '') + '><path class="w-shape" fill="url(#' + id + ')"/><path class="w-shine" fill="url(#' + id + 'h)"/></g><g class="w-eyes"><g class="w-eye l" transform="translate(43 44)"></g><g class="w-eye r" transform="translate(55 44)"></g></g><g class="w-face-gear"></g><g class="w-head-gear"></g></g></svg>';
     var look = opts.look && SHAPES[opts.look.shape] ? opts.look : null;
-    var base = look ? look.shape : SHAPES[opts.shape] ? opts.shape : 'pentagon';
+    var base = look ? look.shape : SHAPES[opts.shape] ? opts.shape : 'hexagon';
     var w = {
       el: el, svg: el.firstChild, body: el.querySelector('.w-body'), headGear: el.querySelector('.w-head-gear'), faceGear: el.querySelector('.w-face-gear'),
       gear: null, morph0: !!opts.morph, swapAt: 0, swapLook: undefined,
@@ -203,7 +204,12 @@
     };
     w.paint = function () {
       var M = MOODS[w.mood] || MOODS.neutral;
-      var c = w.color && w.mood !== 'angry' && w.mood !== 'love' ? tint(w.color) : tones(M.c);
+      // Wisp itself is flat: one colour, no shine (red when angry, pink in love). Specialists keep their shading.
+      var self = !w.color && !w.gear && w.base === 'hexagon';
+      w.el.classList.toggle('wisp-self', self);
+      w.shine.style.display = self ? 'none' : '';
+      var flat = m2flat(w.mood);
+      var c = self ? [flat, flat, flat] : w.color && w.mood !== 'angry' && w.mood !== 'love' ? tint(w.color) : tones(M.c);
       // Three tones make the volume: lit top, the colour itself, a deeper underside.
       w.stops[0].style.stopColor = c[0]; w.stops[1].style.stopColor = c[1]; w.stops[2].style.stopColor = c[2];
     };
@@ -233,7 +239,7 @@
     // A specialist keeps its shape through every mood; Codeply's morphing face goes back to morphing.
     function wear(look) {
       var on = look && SHAPES[look.shape] ? look : null;
-      w.base = on ? on.shape : 'pentagon';
+      w.base = on ? on.shape : 'hexagon';
       w.morph = on ? false : w.morph0;
       w.gear = on && (HEAD_GEAR[on.gear] || FACE_GEAR[on.gear]) ? on.gear : null;
       w.headGear.innerHTML = w.gear && HEAD_GEAR[w.gear] ? HEAD_GEAR[w.gear] : '';
@@ -292,7 +298,7 @@
       var w = all[j];
       if (!w.el.isConnected) { w.destroy(); continue; }
       // Off screen it rests, but a shape change it started always finishes: otherwise a face the
-      // browser counts as off screen keeps the new mood's colour on the old shape (a pentagon).
+      // browser counts as off screen keeps the new mood's colour on the old shape (a hexagon).
       if (!w.visible && !w.from) continue;
       // morph
       if (w.from) {
@@ -386,7 +392,9 @@
         else if (bt < 330) { var o = (bt - 150) / 180; sc = .1 + .9 * o + Math.sin(o * Math.PI) * .16; sw = 1.22 - .22 * o; }
       }
       if (M.lean) sc *= 1.06;
-      var es = w.eyeScale;
+      var self = w.el.classList.contains('wisp-self');
+      // Wisp's own eyes are the logo's: bigger pills, set near the middle of the hexagon.
+      var es = w.eyeScale * (self ? 1.25 : 1);
       // The eyes sit on a round face that turns with the look (like the Grok bot's):
       // the eye toward the edge narrows and shortens, looking up flattens both into
       // ovals, looking down stretches them a little, and a diagonal look tilts them
@@ -399,7 +407,7 @@
       var tilt = (n * up * 16).toFixed(2);
       w.eyeL.setAttribute('transform', 'translate(' + (43 + 1.2 * outL).toFixed(2) + ' 44) rotate(' + tilt + ') scale(' + sxL.toFixed(3) + ' ' + syL.toFixed(3) + ')');
       w.eyeR.setAttribute('transform', 'translate(' + (55 - 1.2 * outR).toFixed(2) + ' 44) rotate(' + tilt + ') scale(' + sxR.toFixed(3) + ' ' + syR.toFixed(3) + ')');
-      w.eyes.setAttribute('transform', 'translate(' + (w.lx + ox).toFixed(2) + ' ' + (w.ly + oy).toFixed(2) + ') translate(49 46) scale(' + (es * sw).toFixed(3) + ' ' + (es * sc).toFixed(3) + ') translate(-49 -46)');
+      w.eyes.setAttribute('transform', 'translate(' + (w.lx + ox).toFixed(2) + ' ' + (w.ly + oy + (self ? 5 : 0)).toFixed(2) + ') translate(49 46) scale(' + (es * sw).toFixed(3) + ' ' + (es * sc).toFixed(3) + ') translate(-49 -46)');
       // Glasses follow the eyes but never blink; shades look a little less far than the eyes do.
       if (w.gear && FACE_GEAR[w.gear]) w.faceGear.setAttribute('transform', 'translate(' + (w.lx * .7 + ox).toFixed(2) + ' ' + (w.ly * .7 + oy).toFixed(2) + ') translate(49 46) scale(' + es + ') translate(-49 -46)');
     }

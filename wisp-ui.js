@@ -68,18 +68,18 @@
 
   function reactHome(text) {
     if (!homeWisp || !enabled) return;
-    if (!String(text || '').trim()) { homeWisp.setMood('listening'); homeWisp.setShape('pentagon'); return; }
+    if (!String(text || '').trim()) { homeWisp.setMood('listening'); homeWisp.setShape('hexagon'); return; }
     const r = W().read(text);
     homeWisp.setMood(r.mood === 'neutral' ? 'listening' : r.mood, !!r.shape);
     if (r.shape) homeWisp.setShape(r.shape);
   }
 
-  /** A message went out from home: a quick happy hop, then back to the pentagon. */
+  /** A message went out from home: a quick happy hop, then back to the hexagon. */
   function homeSent() {
     if (!homeWisp) return;
     homeWisp.setMood('happy');
     homeWisp.boop();
-    setTimeout(() => { if (homeWisp) { homeWisp.setMood('neutral'); homeWisp.setShape('pentagon'); } }, 900);
+    setTimeout(() => { if (homeWisp) { homeWisp.setMood('neutral'); homeWisp.setShape('hexagon'); } }, 900);
   }
 
   // ─── The avatar at the start of each answer ───────────────────────────────

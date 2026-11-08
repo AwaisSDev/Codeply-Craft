@@ -14,7 +14,7 @@ npm start
 ## What it does
 
 - **The main agent and its specialists.** Every Craft chat is answered by
-  Codeply's main agent. Its face is Wisp, the pentagon with eyes from
+  Codeply's main agent. Its face is Wisp, the blue hexagon with eyes from
   codeply.app/wisp: big on the home screen (it reads what you type), and at
   the start of every answer, where it shows the work (thinking, working,
   worried when something needs your yes) and then the reply's mood (a

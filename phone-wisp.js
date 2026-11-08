@@ -39,14 +39,14 @@
       t = setTimeout(() => {
         if (!home) return;
         const v = input.value.trim();
-        if (!v) { home.setMood('listening'); home.setShape('pentagon'); return; }
+        if (!v) { home.setMood('listening'); home.setShape('hexagon'); return; }
         const r = W.read(v);
         home.setMood(r.mood === 'neutral' ? 'listening' : r.mood, !!r.shape);
         if (r.shape) home.setShape(r.shape);
       }, 240);
     });
     input.addEventListener('focus', () => { if (home && !input.value.trim()) home.setMood('listening'); });
-    input.addEventListener('blur', () => { if (home && !input.value.trim()) { home.setMood('neutral'); home.setShape('pentagon'); } });
+    input.addEventListener('blur', () => { if (home && !input.value.trim()) { home.setMood('neutral'); home.setShape('hexagon'); } });
   }
 
   function mountSignin() {
