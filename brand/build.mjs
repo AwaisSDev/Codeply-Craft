@@ -107,12 +107,33 @@ ${wisp({ x: 1072, y: 378, size: 355, rot: -4, look: [-1.5, -2.5] })}
 </svg>`;
 }
 
-const files = { 'codeply-logo.svg': logo(), 'codeply-logo-dark.svg': logo({ dark: true }), 'codeply-banner.svg': banner() };
+// ---- share card: the link preview (og:image), 1200 x 630, the team heap centred ----
+function card() {
+  const back = [
+    { x: 300, y: 215, size: 250, rot: -8, shape: 'cloud', color: '#E2B33A', gear: 'bow' },
+    { x: 520, y: 170, size: 245, rot: 10, shape: 'star', color: '#4CB977', gear: 'sprout' },
+    { x: 760, y: 185, size: 260, rot: -6, shape: 'spiky', color: '#EC6A66', gear: 'shades' },
+    { x: 970, y: 230, size: 250, rot: 12, shape: 'triangle', color: '#8E70E6', gear: 'antennae' },
+  ];
+  const front = [
+    { x: 205, y: 520, size: 270, rot: 7, shape: 'square', color: '#F39A62', gear: 'cap' },
+    { x: 425, y: 545, size: 280, rot: -5, shape: 'circle', color: '#EE6FA6', gear: 'beret' },
+    { x: 1000, y: 535, size: 290, rot: 6, shape: 'hexagon', color: '#33B2A4', gear: 'glasses' },
+  ];
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+<rect width="1200" height="630" fill="#ECEEF2"/>
+${back.map(specialist).join('\n')}
+${front.map(specialist).join('\n')}
+${wisp({ x: 705, y: 470, size: 390, rot: -4, look: [-1.5, -2.5] })}
+</svg>`;
+}
+
+const files = { 'codeply-logo.svg': logo(), 'codeply-logo-dark.svg': logo({ dark: true }), 'codeply-banner.svg': banner(), 'codeply-card.svg': card() };
 for (const [name, svg] of Object.entries(files)) writeFileSync(join(OUT, name), svg);
 
 const { chromium } = createRequire(import.meta.url)('playwright');
 const browser = await chromium.launch();
-for (const [name, w, h] of [['codeply-logo', 400, 400], ['codeply-logo-dark', 400, 400], ['codeply-banner', 1500, 500]]) {
+for (const [name, w, h] of [['codeply-logo', 400, 400], ['codeply-logo-dark', 400, 400], ['codeply-banner', 1500, 500], ['codeply-card', 1200, 630]]) {
   for (const scale of [1, 2]) {
     const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: scale });
     await page.setContent(`<html><body style="margin:0">${files[name + '.svg']}</body></html>`);
