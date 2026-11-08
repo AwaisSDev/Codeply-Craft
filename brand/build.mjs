@@ -82,7 +82,7 @@ function specialist({ x, y, size, rot = 0, shape, color, gear }) {
 function logo({ dark = false } = {}) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
 <rect width="400" height="400" fill="${dark ? '#000000' : '#FFFFFF'}"/>
-${wisp({ x: 214, y: 250, size: 440, look: [3, -2.5] })}
+${wisp({ x: 150, y: 192, size: 400, look: [3.5, -1.5] })}
 </svg>`;
 }
 
