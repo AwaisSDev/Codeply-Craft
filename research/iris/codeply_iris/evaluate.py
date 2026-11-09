@@ -62,7 +62,9 @@ class Cache:
 def make_system(a):
     if a.system in ("iris", "zeroshot"):
         from .infer import Iris
-        kw = {} if a.system == "iris" else {"system": prompt.ZERO_SHOT_SYSTEM, "retrieve_system": prompt.ZERO_SHOT_RETRIEVE_SYSTEM}
+        # untrained Qwen3 thinks by default: the baseline gets an empty think block, i.e. thinking switched off
+        kw = {} if a.system == "iris" else {"system": prompt.ZERO_SHOT_SYSTEM, "retrieve_system": prompt.ZERO_SHOT_RETRIEVE_SYSTEM,
+                                            "answer_prefix": "<think>\n\n</think>\n\n"}
         return Iris.load(a.model, adapter=a.adapter, threads=a.threads, constrain=a.constrain, **kw)
     if a.system == "rules":
         return baselines.Rules()

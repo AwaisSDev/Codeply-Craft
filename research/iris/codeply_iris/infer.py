@@ -130,10 +130,11 @@ class ServerBackend:
 
 
 class Iris:
-    def __init__(self, backend, system=prompt.SYSTEM, retrieve_system=None):
+    def __init__(self, backend, system=prompt.SYSTEM, retrieve_system=None, answer_prefix=""):
         self.backend = backend
         self.system = system
         self.retrieve_system = retrieve_system or system
+        self.answer_prefix = answer_prefix          # baselines only: e.g. an empty think block for untrained Qwen3
 
     @classmethod
     def load(cls, path, adapter=None, threads=0, constrain=False, **kw):
@@ -160,7 +161,7 @@ class Iris:
         return out, back
 
     def observe_raw(self, now, source, memories, messages, max_new_tokens=900):
-        text = prompt.chatml(prompt.observe_prompt(now, source, memories, messages), self.system)
+        text = prompt.chatml(prompt.observe_prompt(now, source, memories, messages), self.system) + self.answer_prefix
         t = time.time()
         raw, usage = self.backend.generate(text, max_new_tokens, contract.OUTPUT_SCHEMA)
         return raw, {**usage, "ms": round((time.time() - t) * 1000)}
@@ -178,7 +179,7 @@ class Iris:
         return {"ops": ops, "rejected": rejected, "valid": parsed["ok"], "raw": raw, **stats}
 
     def retrieve_raw(self, now, memories, query, max_new_tokens=160):
-        text = prompt.chatml(prompt.retrieve_prompt(now, memories, query), self.retrieve_system)
+        text = prompt.chatml(prompt.retrieve_prompt(now, memories, query), self.retrieve_system) + self.answer_prefix
         t = time.time()
         raw, usage = self.backend.generate(text, max_new_tokens, contract.USE_SCHEMA)
         return raw, {**usage, "ms": round((time.time() - t) * 1000)}
