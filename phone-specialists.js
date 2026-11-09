@@ -585,10 +585,14 @@
     if (!team.loaded) await loadTeam(); // its Always on setting and its jobs
     const spec = (team.list.length ? team.list : cachedTeam()).find((x) => x.id === chat.specialist.id) || {};
     let jobNote = '';
+    let jobLine = ''; // the app's own line under the reply: true whatever the model says
     const order = standingOrder(text);
     if (order) {
       const dupe = team.jobs.find((j) => j.specialist === chat.specialist.id && j.chatId === chat.id && j.task === order.task);
       const saved = dupe ? { rule: dupe.rule } : await saveJob(chat.specialist.id, order.task, order.when, { chatId: chat.id }).catch((e) => ({ error: e.message }));
+      jobLine = saved.error
+        ? `-# Couldn't save this as ${chat.specialist.name}'s standing job: ${saved.error}`
+        : `-# ✓ Saved as ${chat.specialist.name}'s standing job, ${describeRule(saved.rule)}. Reports come to this chat and as a notification${spec.alwaysOn ? ', even with your PC off' : ' (turn on Always on to run it with your PC off)'}. Change or stop it in Specialists › ${chat.specialist.name}.`;
       jobNote = saved.error
         ? `The app tried to save this as your standing job but could not (${saved.error}). Say so in one line.`
         : `The app saved this as your standing job, ${describeRule(saved.rule)}: "${order.task.slice(0, 300)}". Confirm it in one or two lines (what you will look for and when you will message me), then do a first check right now from the web results below if there are any. Each run's report reaches me as a phone notification and in this chat.`;
@@ -600,7 +604,9 @@
       ? 'You are Always on: standing jobs (like "every hour, check ...") run on schedule even with my PC off, and each report reaches me as a phone notification and in this chat.'
       : 'Standing jobs (like "every hour, check ...") run on schedule while my PC is on; turning on Always on (in your settings) runs them with the PC off too. Each report reaches me as a notification and in this chat.';
     const ACT = `(App note: ${jobNote ? `${jobNote} ` : ''}${ALWAYS} The app searches the web and reads links for you, so never say you cannot browse, open links, run in the background or message me. Do what I ask now: no plans, no asking permission. Keep it short unless I ask for detail or Research is on. Today is ${new Date().toDateString()}.)`;
-    messages[messages.length - 1] = { role: 'user', content: `${text}\n\n${web.note ? `${web.note}\n\n` : ''}${ACT}` };
+    // the note goes before the message too: a long message can bury the one at the end
+    const lead = jobNote && !jobLine.startsWith("-# Couldn't") ? `(App note: this is now your saved standing job; it runs ${describeRule(order && parseWhen(order.when))}. Never say you cannot do it on a schedule or message me.)\n\n` : '';
+    messages[messages.length - 1] = { role: 'user', content: `${lead}${text}\n\n${web.note ? `${web.note}\n\n` : ''}${ACT}` };
     let r;
     try { r = await fn({ action: 'chat', specialist: chat.specialist.id, messages }); } catch (err) { r = { ok: false, error: err.message }; }
     // "I can't browse the web": search for it and ask once more
@@ -612,10 +618,17 @@
         try { const r2 = await fn({ action: 'chat', specialist: chat.specialist.id, messages }); if (r2 && r2.ok) r = r2; } catch { /* keep the first reply */ }
       }
     }
+    // "I can't run every hour / text you / work in the background": wrong (the job runs), so ask once more, firmly
+    const BG_REFUSE = /\b(can'?t|cannot|can not|unable to|not able to|don'?t have (the )?(ability|way) to)\b[^.!?\n]{0,80}\b(every hour|hourly|schedule|background|on (my|its) own|automatically|text you|message you|notify you|ping you|alert you|reach you)|\bonly (reply|respond|work|answer) when you (message|text|ask)/i;
+    if (r && r.ok && (jobLine.startsWith('-# ✓') || spec.alwaysOn) && BG_REFUSE.test(r.reply)) {
+      const firm = `(App note, important: your reply said you cannot work on a schedule or message me. That is wrong: ${jobLine.startsWith('-# ✓') ? `this request is saved as your standing job, ${describeRule(order && parseWhen(order.when))}, ` : ''}standing jobs run on schedule and their reports reach me as notifications. Answer again without saying you can't.)`;
+      messages[messages.length - 1] = { role: 'user', content: `${firm}\n\n${messages[messages.length - 1].content}` };
+      try { const r2 = await fn({ action: 'chat', specialist: chat.specialist.id, messages }); if (r2 && r2.ok) r = r2; } catch { /* keep the first reply */ }
+    }
     st.busy.delete(chat.id);
     const seen = new Set();
     const sources = web.sources.filter((x) => x && x.url && !seen.has(x.url) && seen.add(x.url)).slice(0, 8);
-    b.messages.push({ role: 'assistant', content: `-# ${chat.specialist.name}\n${r && r.ok ? r.reply : (r && r.error) || 'It could not answer.'}`, at: Date.now(), ...(r && r.ok && sources.length ? { sources } : {}) });
+    b.messages.push({ role: 'assistant', content: `-# ${chat.specialist.name}\n${r && r.ok ? r.reply : (r && r.error) || 'It could not answer.'}${jobLine ? `\n\n${jobLine}` : ''}`, at: Date.now(), ...(r && r.ok && sources.length ? { sources } : {}) });
     C.saveBody(chat.id); if (C.saveChats) C.saveChats();
     if (st.current === chat.id) C.openChat(chat.id, { keepMode: true });
   }
