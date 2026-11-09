@@ -401,7 +401,8 @@
       out.classList.remove('hidden');
       out.innerHTML = `<span class="sp-shine">${esc(s.name)} is working…</span>`;
       let r;
-      try { r = await fn({ action: 'run', specialist: s.id, task, jobId }); } catch (err) { r = { ok: false, error: err.message }; }
+      const web = await webFor(task, null);
+      try { r = await fn({ action: 'run', specialist: s.id, task: web.note ? `${task}\n\n${web.note}` : task, jobId }); } catch (err) { r = { ok: false, error: err.message }; }
       out.innerHTML = r && r.ok ? (P().md ? P().md(r.output) : esc(r.output)) : `<span class="sp-err">${esc((r && r.error) || 'It could not run.')}</span>`;
       loadTeam().then(render);
     }
@@ -433,6 +434,32 @@
       sh.close(); await loadTeam(); render(); detailSheet(team.list.find((x) => x.id === s.id) || s);
     });
     sh.qa('.sp-run').forEach((b) => b.addEventListener('click', () => b.nextElementSibling.classList.toggle('hidden')));
+  }
+
+  // ─── The web for a specialist ──────────────────────────────────────────────
+  // The same search as the main chat (web-search.js): a message that needs the web (asked outright, or about
+  // news, prices, weather, "latest"...) is searched first, and links in it are read. The results go to the
+  // specialist with the message. force: search even if the message did not look like it needed it.
+  async function webFor(text, prev, force = false) {
+    const W = window.CodeplyWeb; const C = P();
+    const out = { note: '', sources: [], searched: false };
+    if (!W) return out;
+    const links = force ? [] : W.linksIn(text);
+    const query = force || W.needsSearch(text) ? W.queryFor(text, prev) : '';
+    if (!links.length && !query) return out;
+    const word = document.querySelector('#feed .working .think-word');
+    if (word) { word.textContent = query ? 'Searching the web' : 'Reading the link'; word.dataset.fixed = '1'; }
+    const token = await C.accessToken().catch(() => null);
+    const [page, found] = await Promise.all([
+      links.length ? W.read(links, { token }).catch((e) => ({ text: `(Could not read ${links.join(', ')}: ${e.message}.)`, sources: [] })) : null,
+      query ? C.webSearch(query, { full: true }).catch((e) => ({ text: `(${e.message}. Answer from what you know, and say the web search did not work just now.)`, sources: [] })) : null,
+    ]);
+    if (word) { delete word.dataset.fixed; }
+    const parts = [];
+    if (page) { parts.push(`PAGES I LINKED (read just now):\n\n${page.text.slice(0, 12000)}`); out.sources.push(...page.sources); }
+    if (found) { parts.push(`WEB RESULTS for "${query}" (the app searched the web just now, ${new Date().toDateString()}):\n\n${found.text.slice(0, 12000)}`); out.sources.push(...found.sources); out.searched = true; }
+    out.note = `${parts.join('\n\n')}\n\nAnswer from these, the key facts first, and cite sources as markdown links.`;
+    return out;
   }
 
   // ─── @mentions in the composer ─────────────────────────────────────────────
@@ -549,10 +576,25 @@
     st.busy.add(chat.id);
     C.openChat(chat.id, { keepMode: true });
     const messages = b.messages.filter((m) => m.role === 'user' || m.role === 'assistant').slice(-20).map((m) => ({ role: m.role, content: strip(m.content).slice(0, 4000) }));
+    const prev = b.messages.filter((m) => m.role === 'user').slice(-2, -1).map((m) => m.content)[0];
+    // The web, like the main chat: searched (or the links read) before the specialist answers
+    const web = await webFor(text, prev);
+    if (web.note) messages[messages.length - 1] = { role: 'user', content: `${text}\n\n${web.note}` };
     let r;
     try { r = await fn({ action: 'chat', specialist: chat.specialist.id, messages }); } catch (err) { r = { ok: false, error: err.message }; }
+    // "I can't browse the web": search for it and ask once more
+    if (r && r.ok && !web.searched && window.CodeplyWeb && window.CodeplyWeb.refused(r.reply)) {
+      const again = await webFor(text, prev, true);
+      if (again.note) {
+        messages[messages.length - 1] = { role: 'user', content: `${text}\n\n${again.note}` };
+        web.sources.push(...again.sources);
+        try { const r2 = await fn({ action: 'chat', specialist: chat.specialist.id, messages }); if (r2 && r2.ok) r = r2; } catch { /* keep the first reply */ }
+      }
+    }
     st.busy.delete(chat.id);
-    b.messages.push({ role: 'assistant', content: `-# ${chat.specialist.name}\n${r && r.ok ? r.reply : (r && r.error) || 'It could not answer.'}`, at: Date.now() });
+    const seen = new Set();
+    const sources = web.sources.filter((x) => x && x.url && !seen.has(x.url) && seen.add(x.url)).slice(0, 8);
+    b.messages.push({ role: 'assistant', content: `-# ${chat.specialist.name}\n${r && r.ok ? r.reply : (r && r.error) || 'It could not answer.'}`, at: Date.now(), ...(r && r.ok && sources.length ? { sources } : {}) });
     C.saveBody(chat.id); if (C.saveChats) C.saveChats();
     if (st.current === chat.id) C.openChat(chat.id, { keepMode: true });
   }
