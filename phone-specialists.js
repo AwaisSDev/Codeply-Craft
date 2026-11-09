@@ -671,6 +671,7 @@
     if (!chats.length) return;
     await loadTeam();
     let changed = false;
+    let land = null; // the chat a fresh report landed in
     for (const c of chats) {
       const jobs = team.jobs.filter((j) => j.chatId === c.id);
       if (!jobs.length) continue;
@@ -681,14 +682,18 @@
       const b = C.chatBody(c.id);
       for (const r of fresh) b.messages.push({ role: 'assistant', content: `-# ${c.specialist.name} · ${r.task ? 'standing job' : 'job'}\n${r.ok ? r.output : `The job did not finish: ${r.output}`}`, at: Date.parse(r.at) });
       c.runsSeenAt = Date.parse(fresh[fresh.length - 1].at);
+      if (!land || c.runsSeenAt > land.runsSeenAt) land = c;
       C.saveBody(c.id); changed = true;
       if (st.current === c.id) C.openChat(c.id, { keepMode: true });
     }
     if (changed && C.saveChats) { C.saveChats(); C.renderChatList(); }
+    // Opened from the report's notification (the app just came to the front): go straight to that chat
+    if (land && Date.now() - shownAt < 20000 && st.current !== land.id) C.openChat(land.id, { keepMode: true });
   }
+  let shownAt = Date.now(); // when the app last came to the front (launching counts)
   setTimeout(() => syncJobRuns().catch(() => {}), 4000);
   setInterval(() => { if (document.visibilityState === 'visible') syncJobRuns().catch(() => {}); }, 3 * 60 * 1000);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncJobRuns().catch(() => {}); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { shownAt = Date.now(); syncJobRuns().catch(() => {}); } });
 
   // ─── Its own face on its answers ───────────────────────────────────────────
   // phone-wisp.js puts Wisp's face above every answer. An answer from a
