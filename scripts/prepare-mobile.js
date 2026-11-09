@@ -49,6 +49,8 @@ for (const [from, to] of [
   ['mobile-cloud.css', 'mobile-cloud.css'],
   ['logo.png', 'logo.png'],
   ['phone-favicon.png', 'phone-favicon.png'],
+  [path.join('brand', 'icons', 'wisp.svg'), 'favicon.svg'],   // the tab icon, sharp at any size
+  [path.join('brand', 'icons', 'favicon.ico'), 'favicon.ico'], // for browsers that only ask for /favicon.ico
   ['notify-badge.png', 'notify-badge.png'], // Android's status-bar icon: only its shape is drawn
   [path.join('crew', 'assets', 'logo', 'codeply-icon-small-48.png'), 'crew-logo.png'],
   [path.join('vendor', 'supabase', 'supabase.js'), 'supabase.js'],

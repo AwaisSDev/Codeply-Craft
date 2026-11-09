@@ -41,6 +41,6 @@ fs.writeFileSync(path.join(site, 'chat.html'), `<!-- Built by codeply-craft scri
 
 // Installable as its own desktop app (Chrome and Edge: Install), opening on /chat/
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'phone.manifest.json'), 'utf8'));
-fs.writeFileSync(path.join(out, 'manifest.json'), JSON.stringify({ ...manifest, id: '/chat/', start_url: '/chat/', scope: '/chat/', display_override: ['window-controls-overlay', 'standalone'], icons: manifest.icons.map((i) => ({ ...i, src: '/chat/logo.png' })) }, null, 2));
+fs.writeFileSync(path.join(out, 'manifest.json'), JSON.stringify({ ...manifest, id: '/chat/', start_url: '/chat/', scope: '/chat/', display_override: ['window-controls-overlay', 'standalone'], icons: manifest.icons.map((i) => ({ ...i, src: `/chat/${i.src.replace(/^\//, '')}` })) }, null, 2));
 
 console.log(`Built the desktop web app into ${path.relative(process.cwd(), out) || out}/ (commit it in the website repo).`);
