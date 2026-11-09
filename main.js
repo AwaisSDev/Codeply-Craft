@@ -943,6 +943,7 @@ function publicModel(m) {
   const phone = modelSyncLib.phoneStatus(m, phoneUserId);
   return {
     id: m.id, name: m.name, kind: m.kind, baseUrl: m.baseUrl, model: m.model, effort: m.effort || '',
+    effortLevels: Array.isArray(m.effortLevels) && m.effortFor === `${m.baseUrl}|${m.model}` ? m.effortLevels : null, effortNote: m.effortNote || '',
     hasKey: !!m.apiKey, keyPreview: m.apiKey ? configLib.maskKey(m.apiKey) : '',
     // phone: { eligible, on, synced, reason } - "synced" also tells the phone
     // it can use this model while the PC is off.
@@ -1048,6 +1049,19 @@ ipcMain.handle('models:effort', async (e, { id, effort } = {}) => {
   if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
   const r = configLib.setModelEffort(String(id || ''), String(effort || ''));
   return r.ok ? { ok: true, state: modelsState() } : r;
+});
+
+// Which effort levels one of the user's models takes, asked from its provider
+// once (ai.js probeEffortLevels) and saved with the model until it changes.
+ipcMain.handle('models:effortLevels', async (e, { id, force } = {}) => {
+  if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
+  const m = configLib.getModel(String(id || ''));
+  if (!m) return { ok: false, error: 'Effort can only be set on your own models.' };
+  if (!force && Array.isArray(m.effortLevels) && m.effortFor === `${m.baseUrl}|${m.model}`) return { ok: true, state: modelsState() };
+  const r = await aiLib.probeEffortLevels(m);
+  if (!r.ok) return r;
+  const w = configLib.setModelEffortLevels(m.id, r);
+  return w.ok ? { ok: true, state: modelsState() } : w;
 });
 
 // Saves (and selects) a model, testing it with a tiny real request first so a
@@ -4005,14 +4019,14 @@ async function rewindChat({ sessionId, userIndex, expectText, restoreFiles, clie
 }
 
 /** Rewind to a user message, then run the (possibly edited) text there. */
-async function editAndRerun({ sessionId, userIndex, expectText, text, images, restoreFiles, cwd, mode, bypass, clientId = null, botId }) {
+async function editAndRerun({ sessionId, userIndex, expectText, text, images, restoreFiles, cwd, mode, bypass, autoEdits = false, clientId = null, botId }) {
   if (!String(text || '').trim()) return { error: 'Write a message before sending it.' };
   const rw = await rewindChat({ sessionId, userIndex, expectText, restoreFiles, clientId });
   if (rw.error) return rw;
   // The images stay with the message unless the edit says otherwise.
   const keepImages = images === undefined ? rw.original.images : images;
   const run = await startChatRun({
-    sessionId, cwd: cwd || rw.session.cwd, mode, bypass, text, images: keepImages, clientId, botId,
+    sessionId, cwd: cwd || rw.session.cwd, mode, bypass, autoEdits, text, images: keepImages, clientId, botId,
   });
   return { ...run, restored: rw.restored };
 }

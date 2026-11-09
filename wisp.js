@@ -1,4 +1,4 @@
-// Wisp: a soft blue pentagon with eyes, the same character as on codeply.app/wisp.
+// Wisp: the Codeply mascot, a soft blue blob with eyes, the same character as on codeply.app.
 // The eyes follow your cursor and blink, the body breathes and morphs between
 // shapes, and the mood changes the eyes, the colour and how it moves.
 // Drawn in SVG, one animation loop for every Wisp in the window.
@@ -10,7 +10,7 @@
 //   sprout...); dress(look, true) is the costume change: a spin, a poof, a new face.
 //   CraftWisp.read(text) -> { mood, shape|null, line }   what a message feels like
 //
-// Wisp is a pentagon everywhere: a mood changes its eyes, colour and how it
+// Wisp keeps its mascot body everywhere (the shape is still named "pentagon"): a mood changes its eyes, colour and how it
 // moves, never its shape. Only the home screen's Wisp (morph: true, like the
 // "Meet Wisp" demo on the website) takes a shape from a mood or a topic, and
 // goes back to the pentagon after.
@@ -49,8 +49,12 @@
       return p[1] + (q[1] - p[1]) * Math.min(1, Math.max(0, (a - p[0]) / span));
     };
   }
+  var MASCOT = [0.9299,0.9304,0.932,0.9348,0.9389,0.9445,0.9519,0.9615,0.9745,0.9845,0.9912,0.9949,0.9958,0.9942,0.9902,0.983,0.9723,0.9592,0.9498,0.9425,0.9366,0.9326,0.9297,0.9282,0.9276,0.928,0.9297,0.9325,0.9365,0.9422,0.9495,0.959,0.9722,0.9825,0.9895,0.9932,0.9944,0.9932,0.9895,0.9825,0.9722,0.959,0.9495,0.9422,0.9365,0.9325,0.9297,0.928,0.9276,0.9282,0.9297,0.9326,0.9366,0.9425,0.9498,0.9592,0.9723,0.983,0.9902,0.9942,0.9958,0.9949,0.9912,0.9845,0.9745,0.9615,0.9519,0.9445,0.9389,0.9348,0.932,0.9304,0.9299,0.9305,0.9322,0.9351,0.9392,0.9448,0.9522,0.9618,0.9747,0.9856,0.9928,0.997,0.9985,0.9976,0.994,0.9872,0.9772,0.9639,0.9545,0.9471,0.9413,0.9372,0.9344,0.9329,0.9324,0.9328,0.9346,0.9374,0.9415,0.9472,0.9546,0.9641,0.9773,0.9878,0.9949,0.9987,1,0.9987,0.9949,0.9878,0.9773,0.9641,0.9546,0.9472,0.9415,0.9374,0.9346,0.9328,0.9324,0.9329,0.9344,0.9372,0.9413,0.9471,0.9545,0.9639,0.9772,0.9872,0.994,0.9976,0.9985,0.997,0.9928,0.9856,0.9747,0.9618,0.9522,0.9448,0.9392,0.9351,0.9322,0.9305];
   var SHAPES = {
-    pentagon: polar(poly(5), 11),
+    // Wisp's own body: the Codeply mascot's outline (assets/logo/codeply-mascot.svg,
+    // the same one as on codeply.app), sampled to N radii. Still called "pentagon"
+    // so every mood, specialist and saved setting that names it keeps working.
+    pentagon: norm(smooth(MASCOT, 3)),
     circle: polar(function () { return 1; }, 1),
     square: polar(poly(4, Math.PI / 4), 27), // soft, stuffed-toy corners
     triangle: polar(poly(3), 33),
@@ -66,7 +70,7 @@
 
   // ---- moods: eyes, a shape for the morphing Wisp, a colour, and how it moves ----
   var MOODS = {
-    neutral: { shape: 'pentagon', c: ['#74a6ff', '#1f52e0'], blink: true },
+    neutral: { shape: 'pentagon', c: ['#2f6bff', '#2f6bff'], blink: true },
     happy: { shape: 'circle', c: ['#7fb2ff', '#2a5fea'], bounce: true },
     excited: { shape: 'star', c: ['#86b9ff', '#2f6bff'], bounce: true, fast: true },
     proud: { shape: 'pentagon', c: ['#7cb0ff', '#2457e6'], puff: true },
@@ -80,7 +84,7 @@
     working: { shape: 'pentagon', c: ['#7aaeff', '#1f5af0'], blink: true, busy: true },
     listening: { shape: 'pentagon', c: ['#7eb0ff', '#2457e6'], blink: true, lean: true }
   };
-  var INK = '#0b0b0f';
+  var INK = '#ffffff'; // white eyes and faces, like the mascot on codeply.app
   // How long a reaction shows (ms) before the face relaxes to neutral.
   var REACTIONS = { happy: 4000, excited: 3500, proud: 4000, love: 4500, surprised: 2500, sad: 5000, worried: 4500, angry: 4000 };
   // ---- gear: what a specialist wears. Head gear is drawn for a head whose top is at y=14
@@ -102,10 +106,10 @@
   };
   var EYES = {
     // Tall upright pill eyes. Looking aside they turn in 3D (see the eye perspective in frame()).
-    neutral: function () { return pill(2.5, 5.7); },
-    thinking: function () { return pill(2.35, 5.2); },
-    working: function () { return pill(2.35, 5.3); },
-    listening: function () { return pill(2.7, 6.1); },
+    neutral: function () { return pill(3.1, 6.25); },
+    thinking: function () { return pill(2.9, 5.7); },
+    working: function () { return pill(2.9, 5.8); },
+    listening: function () { return pill(3.3, 6.7); },
     surprised: function () { return '<circle r="2.8"/>'; },
     happy: function () { return '<path d="M-4.2 1.8Q0 -4.6 4.2 1.8" fill="none" stroke="' + INK + '" stroke-width="2.3" stroke-linecap="round"/>'; },
     excited: function () { return '<path d="M0 -3.6L1 -1L3.6 -.9L1.5 .8L2.2 3.4L0 1.9L-2.2 3.4L-1.5 .8L-3.6 -.9L-1 -1Z"/>'; },
@@ -163,9 +167,10 @@
 
   function hexToRgb(h) { var n = parseInt(String(h).slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
   function mix(h, t, k) { var a = hexToRgb(h), b = hexToRgb(t); return 'rgb(' + a.map(function (v, i) { return Math.round(v + (b[i] - v) * k); }).join(',') + ')'; }
-  function tint(hex) { return [mix(hex, '#ffffff', .3), hex, mix(hex, '#000000', .26)]; }
+  function tint(hex) { return [hex, hex, hex]; }
   /** A mood's two colours as the three tones of the body. */
-  function tones(c) { return [mix(c[0], '#ffffff', .12), mix(c[0], c[1], .55), mix(c[1], '#000000', .18)]; }
+  // Flat, like the mascot on codeply.app: one colour, no shading.
+  function tones(c) { var x = mix(c[0], c[1], .5); return [x, x, x]; }
 
   var all = [], uid = 0, px = null, py = null, lastMove = 0, running = false;
 
@@ -177,7 +182,7 @@
     el.innerHTML = '<svg viewBox="0 0 100 100" aria-hidden="true"><defs><radialGradient id="' + id + '" cx=".4" cy=".34" r=".78" fx=".34" fy=".24"><stop offset="0"/><stop offset=".55"/><stop offset="1"/></radialGradient>' +
       '<radialGradient id="' + id + 'h" cx=".35" cy=".25" r=".6"><stop offset="0" stop-color="#fff" stop-opacity=".34"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>' +
       (opts.texture === true ? plush(id + 'f') : '') + '</defs>' +
-      '<g class="w-body"><g class="w-skin"' + (opts.texture === true ? ' filter="url(#' + id + 'f)"' : '') + '><path class="w-shape" fill="url(#' + id + ')"/><path class="w-shine" fill="url(#' + id + 'h)"/></g><g class="w-eyes"><g class="w-eye l" transform="translate(43 44)"></g><g class="w-eye r" transform="translate(55 44)"></g></g><g class="w-face-gear"></g><g class="w-head-gear"></g></g></svg>';
+      '<g class="w-body"><g class="w-skin"' + (opts.texture === true ? ' filter="url(#' + id + 'f)"' : '') + '><path class="w-shape" fill="url(#' + id + ')"/><path class="w-shine" fill="url(#' + id + 'h)"/></g><g class="w-eyes"><g class="w-eye l" transform="translate(41 52.2)"></g><g class="w-eye r" transform="translate(59 52.2)"></g></g><g class="w-face-gear"></g><g class="w-head-gear"></g></g></svg>';
     var look = opts.look && SHAPES[opts.look.shape] ? opts.look : null;
     var base = look ? look.shape : SHAPES[opts.shape] ? opts.shape : 'pentagon';
     var w = {
@@ -227,7 +232,7 @@
       // A reaction (happy, love, sad...) shows for a moment, then the face relaxes back to
       // its everyday look. States (working, thinking, listening, sleepy) stay until changed.
       clearTimeout(w.relaxTimer);
-      if (REACTIONS[m] && !opts.holdMood) w.relaxTimer = setTimeout(function () { if (w.mood === m && !el.dataset.restMood) w.setMood('neutral', true); }, REACTIONS[m]);
+      if (REACTIONS[m] && !opts.holdMood) w.relaxTimer = setTimeout(function () { if (w.mood === m && !el.dataset.restMood) w.setMood('neutral'); }, REACTIONS[m]);
     };
     // A specialist's character (its shape, colour and gear) or, with null, Codeply's own face.
     // A specialist keeps its shape through every mood; Codeply's morphing face goes back to morphing.
@@ -397,9 +402,9 @@
       var sxL = (1 - .36 * outL + .04 * outR), syL = (1 - .16 * outL) * vy;
       var sxR = (1 - .36 * outR + .04 * outL), syR = (1 - .16 * outR) * vy;
       var tilt = (n * up * 16).toFixed(2);
-      w.eyeL.setAttribute('transform', 'translate(' + (43 + 1.2 * outL).toFixed(2) + ' 44) rotate(' + tilt + ') scale(' + sxL.toFixed(3) + ' ' + syL.toFixed(3) + ')');
-      w.eyeR.setAttribute('transform', 'translate(' + (55 - 1.2 * outR).toFixed(2) + ' 44) rotate(' + tilt + ') scale(' + sxR.toFixed(3) + ' ' + syR.toFixed(3) + ')');
-      w.eyes.setAttribute('transform', 'translate(' + (w.lx + ox).toFixed(2) + ' ' + (w.ly + oy).toFixed(2) + ') translate(49 46) scale(' + (es * sw).toFixed(3) + ' ' + (es * sc).toFixed(3) + ') translate(-49 -46)');
+      w.eyeL.setAttribute('transform', 'translate(' + (41 + 1.2 * outL).toFixed(2) + ' 52.2) rotate(' + tilt + ') scale(' + sxL.toFixed(3) + ' ' + syL.toFixed(3) + ')');
+      w.eyeR.setAttribute('transform', 'translate(' + (59 - 1.2 * outR).toFixed(2) + ' 52.2) rotate(' + tilt + ') scale(' + sxR.toFixed(3) + ' ' + syR.toFixed(3) + ')');
+      w.eyes.setAttribute('transform', 'translate(' + (w.lx + ox).toFixed(2) + ' ' + (w.ly + oy).toFixed(2) + ') translate(50 52.2) scale(' + (es * sw).toFixed(3) + ' ' + (es * sc).toFixed(3) + ') translate(-50 -52.2)');
       // Glasses follow the eyes but never blink; shades look a little less far than the eyes do.
       if (w.gear && FACE_GEAR[w.gear]) w.faceGear.setAttribute('transform', 'translate(' + (w.lx * .7 + ox).toFixed(2) + ' ' + (w.ly * .7 + oy).toFixed(2) + ') translate(49 46) scale(' + es + ') translate(-49 -46)');
     }

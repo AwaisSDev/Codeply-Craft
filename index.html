@@ -172,6 +172,17 @@
     <!-- Everything under the app switch scrolls together: the search field
          (Search or Ctrl+K), a few actions, then one folding section per
          project that renderSidebar() in app.js fills. -->
+    <!-- Brand row: the app icon and name, with search on the right. -->
+    <div class="sb-top">
+      <div class="sb-top-brand">
+        <img class="sb-top-logo" src="assets/logo/codeply-mascot-sidebar.svg" alt="">
+        <span>Codeply</span>
+      </div>
+      <button class="sb-top-btn" id="sbSearchBtn" type="button" title="Search (Ctrl+K)" aria-label="Search" aria-expanded="false" aria-controls="sbSearch">
+        <i data-icon="oai-search"></i>
+      </button>
+    </div>
+
     <div class="sb-scroll" id="sbScroll">
       <div class="sb-search" id="sbSearch" hidden>
         <i data-icon="search"></i>
@@ -180,24 +191,20 @@
 
       <nav class="sb-actions" aria-label="Actions">
         <button class="sb-row" id="newChatBtn" type="button">
-          <i data-icon="new-chat" class="ico-md"></i>
+          <i data-icon="oai-compose" class="ico-md"></i>
           <span class="sb-label">New chat</span>
         </button>
-        <button class="sb-row" id="sbSearchBtn" type="button" title="Search (Ctrl+K)" aria-expanded="false" aria-controls="sbSearch">
-          <i data-icon="search" class="ico-md"></i>
-          <span class="sb-label">Search</span>
-        </button>
         <button class="sb-row" id="openProjectBtn" type="button">
-          <i data-icon="folder" class="ico-md"></i>
+          <i data-icon="oai-folder" class="ico-md"></i>
           <span class="sb-label">Open project</span>
         </button>
         <button class="sb-row" id="tasksBtn" type="button">
-          <i data-icon="tasks" class="ico-md"></i>
+          <i data-icon="oai-tasks" class="ico-md"></i>
           <span class="sb-label">Tasks</span>
           <span class="sb-item-badge hidden" id="tasksBadge">0</span>
         </button>
         <button class="sb-row" id="specialistsBtn" type="button">
-          <i data-icon="users" class="ico-md"></i>
+          <i data-icon="oai-users" class="ico-md"></i>
           <span class="sb-label">Specialists</span>
         </button>
       </nav>
@@ -211,13 +218,17 @@
         <span id="updatePillText">Update ready</span>
         <span class="update-pill-cta" id="updatePillCta">Update now</span>
       </button>
-      <button class="sb-user" id="sbUserBtn">
-        <div class="sb-user-left">
-          <div class="avatar" id="userAvatar">·</div>
-          <span class="sb-user-name" id="userName">Not signed in</span>
-        </div>
-        <i data-icon="chevron-down" class="sb-user-caret"></i>
-      </button>
+      <div class="sb-user-bar">
+        <button class="sb-user" id="sbUserBtn">
+          <div class="sb-user-left">
+            <div class="avatar" id="userAvatar">·</div>
+            <span class="sb-user-name" id="userName">Not signed in</span>
+          </div>
+        </button>
+        <button class="sb-top-btn" id="sbSettingsBtn" type="button" title="Settings (Ctrl+,)" aria-label="Settings">
+          <i data-icon="oai-settings"></i>
+        </button>
+      </div>
     </div>
   </aside>
 
@@ -227,7 +238,7 @@
     <!-- ===== LOGIN VIEW ===== -->
     <section class="view view-login hidden" id="viewLogin">
       <div class="login-center">
-        <img class="login-logo" src="logo.png" alt="Codeply">
+        <img class="login-logo" src="assets/logo/codeply-mascot.svg" alt="Codeply">
         <h1 class="login-title">Welcome to Codeply</h1>
         <p class="login-sub">Same account as the Codeply desktop app and CLI.</p>
 
@@ -273,7 +284,7 @@
     <!-- ===== REFERRAL SURVEY (one-time, per account) ===== -->
     <section class="view view-login hidden" id="viewReferral">
       <div class="login-center">
-        <img class="login-logo" src="logo.png" alt="Codeply">
+        <img class="login-logo" src="assets/logo/codeply-mascot.svg" alt="Codeply">
         <h1 class="login-title">Where'd you hear about Codeply?</h1>
         <p class="login-sub">This helps us know what's working. Pick one.</p>
         <div class="referral-options" id="referralOptions">
@@ -308,7 +319,7 @@
     <!-- ===== COUNTRY SURVEY (one-time, per account) ===== -->
     <section class="view view-login hidden" id="viewCountry">
       <div class="login-center">
-        <img class="login-logo" src="logo.png" alt="Codeply">
+        <img class="login-logo" src="assets/logo/codeply-mascot.svg" alt="Codeply">
         <h1 class="login-title">Which country are you from?</h1>
         <p class="login-sub">Helps us understand where Codeply is used.</p>
         <select class="select input-lg login-input" id="countrySelect">
@@ -361,7 +372,7 @@
             <div class="composer-bottom-right">
               <button class="model-btn" data-role="model-chip" title="Choose the model">
                 <span class="model-btn-dot" data-role="model-dot"></span>
-                <span data-role="model-name">Haze 2</span>
+                <span data-role="model-name">Haze 2</span><span class="model-btn-effort" data-role="model-effort"></span>
                 <i data-icon="chevron-down" class="ico-sm"></i>
               </button>
               <button class="send-btn" data-role="send" title="Send"><i data-icon="arrow-up" class="ic-send ico-md"></i><i data-icon="stop" class="ic-stop hidden ico-md"></i></button>
@@ -433,7 +444,7 @@
             <div class="composer-bottom-right">
               <button class="model-btn" data-role="model-chip" title="Choose the model">
                 <span class="model-btn-dot" data-role="model-dot"></span>
-                <span data-role="model-name">Haze 2</span>
+                <span data-role="model-name">Haze 2</span><span class="model-btn-effort" data-role="model-effort"></span>
                 <i data-icon="chevron-down" class="ico-sm"></i>
               </button>
               <button class="send-btn" data-role="send" title="Send"><i data-icon="arrow-up" class="ic-send ico-md"></i><i data-icon="stop" class="ic-stop hidden ico-md"></i></button>
@@ -446,7 +457,7 @@
     <!-- ===== ENGINE ERROR ===== -->
     <section class="view view-login hidden" id="viewEngineError">
       <div class="login-center">
-        <img class="login-logo" src="logo.png" alt="">
+        <img class="login-logo" src="assets/logo/codeply-mascot.svg" alt="">
         <h1 class="login-title">Engine not found</h1>
         <p class="login-sub" id="engineErrorText"></p>
       </div>
@@ -714,7 +725,7 @@
 <!-- ============ REQUIRED UPDATE GATE ============ -->
 <div class="update-gate hidden" id="updateGate" role="dialog" aria-modal="true" aria-labelledby="updateGateTitle">
   <div class="update-gate-card">
-    <img class="update-gate-logo" src="logo.png" alt="">
+    <img class="update-gate-logo" src="assets/logo/codeply-mascot.svg" alt="">
     <h2 id="updateGateTitle">Update required</h2>
     <p id="updateGateText">A new version of Codeply is needed to keep going.</p>
     <div class="update-gate-notes hidden" id="updateGateNotes"></div>

@@ -3358,3 +3358,189 @@ body { font-family: var(--font-ui); font-size: 14px; font-weight: 400; -webkit-f
 .apps-sk-line { height: 11px; width: 100%; }
 .apps-sk-thin { height: 8px; margin-top: 4px; }
 @media (prefers-reduced-motion: reduce) { .apps-sk, .apps-searching-dot, .apps-skeleton { animation: none; } }
+
+/* ============ Sidebar: Lucide icons, roomy rows ============
+   The brand row up top with search on the right, 36px rows with 17px
+   Lucide icons in the text colour, gray section heads, chat titles lined
+   up with the action labels (a running chat's spinner sits in the icon
+   column), and the account with a settings button at the bottom. The
+   surface stays whatever the sidebar already is (solid, or glass). */
+.sb-top { display: flex; align-items: center; gap: 4px; height: 46px; padding: 6px 8px 8px 16px; flex-shrink: 0; }
+.sb-top-brand { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; font-size: 16px; font-weight: 600; color: var(--text); }
+.sb-top-brand span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-top-logo { width: 26px; height: 26px; border-radius: 7px; flex: none; }
+.sb-top-btn { width: 32px; height: 32px; flex: none; border-radius: 8px; display: grid; place-items: center; color: var(--text-dim); transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
+.sb-top-btn:hover, .sb-top-btn[aria-expanded="true"] { background: var(--hover); color: var(--text); }
+.sb-top-btn .ico { width: 18px; height: 18px; stroke-width: 1.6; }
+
+.sidebar .sb-actions { gap: 2px; margin-bottom: 22px; }
+.sidebar .sb-row { height: 36px; gap: 12px; padding: 0 10px; font-size: 14.5px; }
+.sidebar .sb-row .ico { width: 17px; height: 17px; stroke-width: 1.6; color: var(--text); opacity: .85; }
+.sidebar .sb-row:hover .ico { opacity: 1; }
+.sidebar .sb-search { height: 36px; margin: 0 0 8px; padding: 0 10px; }
+.sidebar .sb-search input { font-size: 14px; }
+
+/* Section heads read as group labels: gray, with a gray icon. */
+.sidebar .sb-sec { margin-top: 12px; }
+.sidebar .sb-sec-head { height: 32px; margin-bottom: 2px; }
+.sidebar .sb-sec-toggle { padding: 0 6px 0 10px; gap: 12px; font-size: 14px; font-weight: 400; color: var(--text-faint); }
+.sidebar .sb-sec-toggle:hover { color: var(--text-dim); }
+.sidebar .sb-sec-toggle .ico { width: 16px; height: 16px; stroke-width: 1.6; }
+.sidebar .sb-sec-toggle .sb-ic-folder, .sidebar .sb-sec-toggle .sb-ic-folder-open, .sidebar .sb-sec-toggle .sb-ic-chats, .sidebar .sb-sec-toggle .sb-ic-pinned { margin: 0 0 0 1px; color: var(--text-faint); }
+.sidebar .sb-sec-tool { width: 28px; height: 28px; color: var(--text-dim); }
+.sidebar .sb-sec-tool .ico { width: 17px; height: 17px; stroke-width: 1.6; }
+
+/* Chats: no tree line; titles start where the action labels do. */
+.sidebar .sb-sec-body > div { margin-left: 0; padding-left: 0; border-left: 0; gap: 2px; }
+.sidebar .sb-chat { height: 36px; padding-left: 39px; font-size: 14.5px; }
+.sidebar .sb-chat-row:hover .sb-chat, .sidebar .sb-chat-row:focus-within .sb-chat { padding-right: 36px; }
+.sidebar .sb-chat .sb-mark { position: absolute; left: 15px; top: 50%; margin-top: -3.5px; }
+.sidebar .sb-chat .sb-mark.busy { left: 13px; width: 13px; height: 13px; margin-top: -6.5px; }
+.sidebar .sb-chat-row:hover .sb-mark, .sidebar .sb-chat-row:focus-within .sb-mark { visibility: visible; }
+.sidebar .sb-chat-row .sb-chat .cloud-mark { position: absolute; left: 11px; }
+.sidebar .sb-more { height: 36px; padding-left: 39px; font-size: 14px; color: var(--text-faint); }
+.sidebar .sb-more .ico { display: none; }
+
+/* Footer: the account fills the row, settings sits beside it. */
+.sb-user-bar { display: flex; align-items: center; gap: 2px; }
+.sb-user-bar .sb-user { flex: 1; min-width: 0; padding: 6px 8px; }
+.sidebar .avatar { width: 26px; height: 26px; font-size: 10.5px; }
+.sidebar .sb-user-name { max-width: none; font-size: 14px; }
+
+/* ChatGPT's icons (icons.js OAI) are filled shapes, not strokes. They draw a
+   touch smaller inside their box than the line icons, so they get 20px. */
+/* !important: a few places (bot chips, rich buttons) force line styling on every svg inside them. */
+svg.ico-fill { fill: currentColor !important; stroke: none !important; }
+.sidebar .sb-row .ico-fill, .sb-top-btn .ico-fill { width: 20px; height: 20px; }
+.sidebar .sb-sec-toggle .ico-fill { width: 18px; height: 18px; }
+.sidebar .sb-sec-tool .ico-fill { width: 18px; height: 18px; }
+.sidebar .sb-row { gap: 11px; }
+.sidebar .sb-chat, .sidebar .sb-more { padding-left: 41px; }
+.sidebar .sb-chat .sb-mark { left: 16px; }
+.sidebar .sb-chat .sb-mark.busy { left: 14px; }
+
+/* ============ Model picker, like Codex ============
+   The list: "Select model", then plain one-line rows with a check on the
+   right, then Add a model and Connect Ollama. The effort card (your own
+   models only): the model and its effort on top, a slider with a stop per
+   level underneath. */
+.model-menu { width: 280px; padding: 6px; border-radius: 16px; }
+.model-menu-title { padding: 8px 10px 6px; font-size: 13px; color: var(--text-faint); }
+.model-menu .model-item { padding: 8px 10px; border-radius: 10px; min-height: 36px; }
+.model-menu .model-item-text strong { font-size: 14px; font-weight: 500; }
+.model-menu .model-item-text span { font-size: 12.5px; color: var(--text-faint); white-space: normal; }
+.model-menu .model-item-check { color: var(--text); }
+.model-menu .model-item-badge { background: none; padding: 0; margin-left: 8px; font-weight: 500; color: var(--text-faint); }
+.model-menu .model-menu-label { padding: 10px 10px 4px; }
+
+.model-btn-effort { color: var(--text-faint); font-weight: 500; white-space: nowrap; }
+.model-btn-effort[hidden] { display: none; }
+
+.effort-card { width: 280px; padding: 10px 12px 14px; border-radius: 16px; --menu-origin: bottom right; }
+.effort-head { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 32px; margin-bottom: 8px; border-radius: 9px; font-size: 14px; color: var(--text); }
+.effort-head strong { font-weight: 600; }
+.effort-head span { color: var(--text-faint); font-weight: 500; }
+.effort-head svg { color: var(--text-faint); }
+.effort-head:hover { background: var(--hover); }
+.effort-track { --f: 0; position: relative; height: 34px; margin: 0 2px; border-radius: 999px; background: var(--hover); cursor: pointer; touch-action: none; outline: none; }
+.effort-track:focus-visible { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent); }
+/* Stops and knob share one line: 17px in from each end (half the knob plus its 2px gap). */
+.effort-fill { position: absolute; left: 0; top: 0; bottom: 0; width: calc(34px + (100% - 34px) * var(--f)); border-radius: 999px; background: var(--accent); transition: width .16s var(--ease-out); }
+.effort-stop { position: absolute; top: 50%; left: calc(17px + (100% - 34px) * var(--f)); width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: var(--text-faint); pointer-events: none; }
+.effort-stop.passed { background: rgba(255, 255, 255, .75); }
+.effort-knob { position: absolute; top: 2px; left: calc(2px + (100% - 34px) * var(--f)); width: 30px; height: 30px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .35); transition: left .16s var(--ease-out); pointer-events: none; }
+.effort-track.dragging .effort-knob, .effort-track.dragging .effort-fill { transition: none; }
+@media (prefers-reduced-motion: reduce) { .effort-knob, .effort-fill { transition: none; } }
+/* Locked rows (the models Haze 2 uses) and the locked effort slider are grayed. */
+.model-menu .model-item.locked { opacity: .45; cursor: default; padding-top: 6px; padding-bottom: 6px; }
+.model-menu .model-item.locked:hover { background: none; }
+.model-menu .model-item.locked .model-item-text strong { font-size: 13.5px; }
+.effort-card.locked .effort-track { opacity: .4; cursor: not-allowed; }
+.effort-card.locked .effort-fill { width: 0; }
+
+/* Model list polish: two quiet lines per row, a section label per group,
+   tools only on hover, and a soft Connect Ollama button. */
+.model-menu { width: 300px; padding: 6px; }
+.model-menu .model-item { padding: 8px 10px; gap: 10px; }
+.model-menu .model-item-text { gap: 2px; }
+.model-menu .model-item-text strong { font-size: 14px; font-weight: 500; color: var(--text); }
+.model-menu .model-item-text span { font-size: 12.5px; color: var(--text-faint); white-space: nowrap; }
+.model-menu .model-item-text em { font-style: normal; }
+.model-menu .model-item-text em.warn { color: var(--red); }
+.model-menu .model-item.active .model-item-text strong { font-weight: 600; }
+.model-menu .model-item-check { width: 16px; height: 16px; color: var(--text); flex: none; }
+/* Haze 2's models: readable gray, not faded out. */
+.model-menu .model-item.locked { opacity: 1; padding: 6px 10px; }
+.model-menu .model-item.locked .model-item-text strong { font-size: 13.5px; font-weight: 400; color: var(--text-faint); }
+.model-menu .model-item.locked .model-item-text span { font-size: 12px; color: color-mix(in srgb, var(--text-faint) 70%, transparent); }
+.model-menu .model-item.locked .model-item-lock { width: 14px; height: 14px; color: var(--text-faint); opacity: .7; }
+.model-menu .model-menu-label { padding: 12px 10px 4px; font-size: 12px; color: var(--text-faint); }
+.model-menu .model-item-row { gap: 0; }
+.model-menu .model-item-tool, .model-menu .model-item-tool.on { opacity: 0; color: var(--text-faint); }
+.model-menu .model-item-row:hover .model-item-tool, .model-menu .model-item-tool:focus-visible { opacity: 1; }
+.model-menu .model-item-tool:hover { color: var(--text); }
+.model-menu .model-item-tool.danger:hover { color: var(--red); }
+.model-menu .model-menu-divider { margin: 6px 4px; }
+.model-menu .model-menu-action { display: flex; align-items: center; gap: 10px; width: 100%; height: 36px; padding: 0 10px; border-radius: 10px; font-size: 14px; color: var(--text); }
+.model-menu .model-menu-action svg { display: block; width: 16px; height: 16px; color: var(--text-dim); }
+.model-menu .model-menu-action:hover { background: var(--hover); }
+.model-menu .model-menu-ollama { width: calc(100% - 8px); height: 36px; margin: 4px 4px 2px; border-radius: 10px; background: var(--hover); color: var(--text); font-size: 13.5px; font-weight: 500; }
+.model-menu .model-menu-ollama:hover { opacity: 1; background: var(--active); }
+
+/* Model list, matched to Codex's: a soft rounded panel, one-line rows, Haze 2
+   with one gray line under it, a thin check, thin dividers between groups,
+   and Add a model / Connect Ollama as plain rows. */
+.model-menu { width: 270px; padding: 6px; border-radius: 18px; background: var(--popover-bg); }
+.model-menu-title { padding: 10px 12px 6px; font-size: 13.5px; color: var(--text-faint); }
+.model-menu .model-item { min-height: 0; padding: 8px 12px; border-radius: 12px; }
+.model-menu .model-item-text strong, .model-menu .model-item.active .model-item-text strong { font-size: 14px; font-weight: 500; color: var(--text); }
+.model-menu .model-item-text span { font-size: 13px; color: var(--text-faint); margin-top: 1px; }
+.model-menu .model-item-check { width: 18px; height: 18px; color: var(--text-dim); }
+.model-menu .model-item-check, .model-menu .model-item-check * { stroke-width: 1.5; }
+.model-menu .model-item.locked { padding: 8px 12px; }
+.model-menu .model-item.locked .model-item-text strong { font-size: 14px; font-weight: 400; color: var(--text-faint); opacity: .7; }
+.model-menu .model-item.locked .model-item-lock { width: 14px; height: 14px; opacity: .5; }
+.model-menu .model-menu-divider { height: 1px; margin: 5px 12px; background: var(--border); }
+.model-menu .model-menu-row .model-item-text strong { color: var(--text-dim); font-weight: 400; }
+.model-menu .model-menu-row:hover .model-item-text strong { color: var(--text); }
+
+/* The chip: a soft pill, effort in gray beside the name. */
+.composer .model-btn, .model-btn { height: 32px; padding: 0 10px 0 12px; gap: 6px; border-radius: 999px; background: var(--hover); font-size: 14px; font-weight: 500; }
+.model-btn:hover { background: var(--active); }
+.model-btn-effort { margin-left: -1px; }
+.menu.model-menu .model-item-icon { display: none; }
+.menu.model-menu .model-item.active { background: none; }
+.menu.model-menu .model-item:hover:not(.locked) { background: var(--hover); }
+/* the row's phone / edit / remove buttons take no room until you hover the row */
+.menu.model-menu .model-item-row .model-item-tool { display: none; }
+.menu.model-menu .model-item-row:hover .model-item-tool, .menu.model-menu .model-item-row:focus-within .model-item-tool { display: grid; opacity: 1; }
+.menu.model-menu .model-menu-title { font-size: 13.5px; }
+
+/* The model chip and Approve button rest flat; the soft fill only shows on
+   hover (and never sticks around from a click's focus). */
+.composer .model-btn, .model-btn { background: none; }
+.model-btn:hover, .approve-toggle:hover { background: var(--hover); }
+.model-btn:focus:not(:focus-visible), .approve-toggle:focus:not(:focus-visible) { background: none; }
+.model-btn:focus:not(:focus-visible):hover, .approve-toggle:focus:not(:focus-visible):hover { background: var(--hover); }
+
+/* Permissions menu: Codex's Mode list. */
+.perm-menu { width: 330px; --menu-origin: bottom left; }
+.perm-menu .model-item { gap: 10px; }
+.perm-menu .model-item-text span { white-space: normal; }
+.perm-menu .perm-check { width: 17px; height: 17px; color: var(--accent); }
+.perm-menu .perm-key { width: 14px; flex: none; text-align: right; font-size: 13px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.effort-note { margin: 8px 4px 0; font-size: 12.5px; color: var(--text-faint); text-align: center; line-height: 1.4; }
+/* Permissions rows: the mode in use reads in full white, the rest in gray (no tick, no numbers). */
+.perm-menu .model-item:not(.active) .model-item-text strong { color: var(--text-dim); font-weight: 400; }
+.perm-menu .model-item.active .model-item-text strong { color: var(--text); font-weight: 600; }
+.perm-menu .model-item-text span { white-space: normal; }
+/* Effort card for a model whose provider takes no effort: just the note, no empty bar. */
+.effort-card.no-effort .effort-track { display: none; }
+.effort-card.no-effort .effort-note { margin-top: 2px; }
+.effort-card.locked .effort-knob { background: #d9dce3; box-shadow: none; }
+.model-btn:focus:not(:focus-visible) { box-shadow: none; outline: none; }
+
+/* Sidebar brand: a bigger mascot and name. */
+.sb-top { height: 52px; padding: 8px 8px 8px 14px; }
+.sb-top-brand { gap: 10px; font-size: 18px; font-weight: 650; letter-spacing: -0.2px; }
+.sb-top-logo { width: 32px; height: 32px; border-radius: 0; }

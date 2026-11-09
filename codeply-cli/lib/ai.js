@@ -881,6 +881,8 @@ async function chatViaAnthropic(messages, opts, cfg) {
           max_tokens: opts.maxTokens || 8192,
           ...temperatureParam(model, opts),
           ...(opts.tools ? { tools: toAnthropicTools(opts.tools) } : {}),
+          // /effort on the user's own Anthropic model: Claude reads it from output_config.
+          ...(opts.effort ? { output_config: { effort: opts.effort } } : {}),
         }),
         signal,
       });
@@ -1266,6 +1268,10 @@ async function chatViaChatGPT(messages, opts, m) {
 function chatViaCustom(messages, opts, m) {
   if (m.kind === 'chatgpt') return chatViaChatGPT(messages, opts, m);
   if (m.kind === 'ollama') return chatViaOllamaNative(messages, opts, m);
+  // Anthropic keys go to Anthropic's own Messages API: its OpenAI-compatible
+  // endpoint ignores reasoning_effort (and output_config), so effort only
+  // works there. Same tools and answer shape (chatViaAnthropic).
+  if (isAnthropicUrl(m.baseUrl)) return chatViaAnthropic(messages, { ...opts, effort: m.effort || '' }, { anthropic: { apiKey: m.apiKey, model: m.model } });
   const url = chatCompletionsUrl(m.baseUrl);
   const local = isLocalUrl(url);
   return streamingChatRequest({
@@ -1275,6 +1281,50 @@ function chatViaCustom(messages, opts, m) {
     extraBody: m.effort ? { reasoning_effort: m.effort } : undefined,
   });
 }
+
+// The effort words providers use, lowest to highest.
+const EFFORT_WORDS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+/**
+ * Asks a provider which effort levels one of the user's models takes, the way
+ * the API itself answers: a tiny request (max_tokens 1) with an effort value
+ * no provider has. One that supports effort rejects it and names its values
+ * ("Supported values are: 'low', 'medium', and 'high'"); one that ignores the
+ * field just answers, so that model gets no effort setting. Returns
+ * { ok, levels, note } or { ok: false, error } when the provider can't be reached.
+ */
+async function probeEffortLevels(m) {
+  if (!m || m.kind === 'ollama' || m.kind === 'chatgpt') return { ok: true, levels: [], note: 'Reasoning not available' };
+  const native = isAnthropicUrl(m.baseUrl);
+  const url = native ? 'https://api.anthropic.com/v1/messages' : chatCompletionsUrl(m.baseUrl);
+  const headers = { 'Content-Type': 'application/json' };
+  if (native) { headers['x-api-key'] = m.apiKey || ''; headers['anthropic-version'] = '2023-06-01'; }
+  else if (m.apiKey) headers.Authorization = `Bearer ${m.apiKey}`;
+  const probe = native ? { output_config: { effort: 'codeply-check' } } : { reasoning_effort: 'codeply-check' };
+  let res, text = '';
+  try {
+    res = await fetch(url, {
+      method: 'POST', headers,
+      body: JSON.stringify({ model: m.model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 1, ...probe }),
+      signal: AbortSignal.timeout(20000),
+    });
+    text = await res.text();
+  } catch (e) {
+    return { ok: false, error: `Couldn't reach ${hostOfUrl(url)}: ${e.message}` };
+  }
+  if (res.ok) return { ok: true, levels: [], note: 'Reasoning not available' };
+  let msg = text;
+  try { const j = JSON.parse(text); msg = (j.error && (j.error.message || j.error)) || j.message || text; } catch {}
+  msg = String(typeof msg === 'string' ? msg : JSON.stringify(msg));
+  if (res.status === 401 || res.status === 403) return { ok: false, error: `${hostOfUrl(url)} turned the key down (HTTP ${res.status}).` };
+  if (!/effort|reasoning/i.test(msg)) return { ok: true, levels: [], note: 'Reasoning not available' };
+  const found = [];
+  for (const m2 of msg.toLowerCase().matchAll(/[a-z]+/g)) if (EFFORT_WORDS.includes(m2[0]) && !found.includes(m2[0])) found.push(m2[0]);
+  const levels = EFFORT_WORDS.filter((w) => found.includes(w));
+  if (levels.length >= 2) return { ok: true, levels, note: '' };
+  return { ok: true, levels: ['low', 'medium', 'high'], note: '' };
+}
+function hostOfUrl(u) { try { return new URL(u).host; } catch { return 'The provider'; } }
+function isAnthropicUrl(u) { try { return /(^|\.)anthropic\.com$/i.test(new URL(String(u || '').trim()).host); } catch { return false; } }
 
 /** Lists the models an Ollama host has pulled - powers "Connect Ollama". */
 async function listOllamaModels(baseUrl) {
@@ -1623,4 +1673,4 @@ async function chatVision(messages, opts = {}) {
   return r;
 }
 
-module.exports = { anthropicCacheLayout, cacheShapedMessages, chatResearch, chat, chatJson, chatVision, isRateLimitError, listOllamaModels, testModel, chatCompletionsUrl, hazeNotice };
+module.exports = { probeEffortLevels, anthropicCacheLayout, cacheShapedMessages, chatResearch, chat, chatJson, chatVision, isRateLimitError, listOllamaModels, testModel, chatCompletionsUrl, hazeNotice };

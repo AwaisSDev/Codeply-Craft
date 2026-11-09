@@ -236,18 +236,10 @@ body.has-wallpaper .menu, body.has-wallpaper .model-menu, body.has-wallpaper .rm
   -webkit-backdrop-filter: blur(28px) saturate(160%);
   backdrop-filter: blur(28px) saturate(160%);
 }
-body.has-wallpaper .model-menu { width: 316px; padding: 8px; }
-body.has-wallpaper .model-menu .model-menu-title { padding: 4px 10px 8px; font-size: 12px; font-weight: 500; letter-spacing: 0.2px; color: var(--text-faint); }
-body.has-wallpaper .model-menu .model-item-icon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 10px; border: 1px solid var(--glass-line); }
-body.has-wallpaper .model-menu .model-item-icon svg { width: 16px; height: 16px; }
-body.has-wallpaper .model-menu .model-item { gap: 11px; border-radius: 11px; }
-body.has-wallpaper .model-menu .model-item.active { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+/* Over a wallpaper the model list keeps its plain Codex-style rows (styles.css);
+   only the hover and the dividers follow the glass. */
 body.has-wallpaper .model-menu .model-item:not(.locked):hover { background: rgba(255, 255, 255, 0.08); }
-body.has-wallpaper .model-menu .model-item.locked { opacity: 0.62; }
-body.has-wallpaper .model-menu .model-menu-label { padding: 10px 10px 4px; }
-body.has-wallpaper .model-menu .model-menu-divider { background: var(--glass-line); margin: 6px 4px; }
-body.has-wallpaper .model-menu .model-menu-action { border-radius: 11px; }
-body.has-wallpaper .model-menu .model-menu-ollama { border-radius: 11px; background: rgba(255, 255, 255, 0.9); color: #111; }
+body.has-wallpaper .model-menu .model-menu-divider { background: var(--glass-line); }
 
 /* In a chat the calm layer runs all the way to the top edge, under the
    title bar, instead of stopping below it, */

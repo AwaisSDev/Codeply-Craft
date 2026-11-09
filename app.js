@@ -901,7 +901,7 @@ async function rerunFrom(msg, text, restoreFiles) {
 
   const r = await api.editMessage({
     sessionId, userIndex, expectText, text, images, restoreFiles,
-    cwd: state.project, mode: state.mode, bypass: state.bypass, clientId: desktopClientId,
+    cwd: state.project, mode: state.mode, bypass: state.bypass, autoEdits: !!state.autoEdits, clientId: desktopClientId,
     botId: window.CraftBots ? window.CraftBots.selectedId() : undefined,
   });
   if (r && r.restored) {
@@ -2096,10 +2096,12 @@ function openAccountMenu() {
     </button>
   `;
   document.body.appendChild(menu);
-  const rect = $('sbUserBtn').getBoundingClientRect();
+  // Span the whole footer row (account button plus the settings button).
+  const bar = $('sbUserBtn').parentElement;
+  const rect = bar.getBoundingClientRect();
   menu.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
   menu.style.left = rect.left + 'px';
-  menu.style.width = $('sbUserBtn').offsetWidth + 'px';
+  menu.style.width = bar.offsetWidth + 'px';
   settleAt(menu, { bottom: rect.top - 6 });
 
   menu.querySelector('[data-action="connect"]').addEventListener('click', openConnectApps);
@@ -2289,6 +2291,7 @@ document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === ',' && state.user) { e.preventDefault(); openSettings(); }
 });
 
+$('sbSettingsBtn').addEventListener('click', () => { if (accountMenuEl) closeAccountMenu(); openSettings(); });
 $('sbUserBtn').addEventListener('click', (e) => {
   e.stopPropagation();
   if (accountMenuEl) closeAccountMenu();
@@ -2931,16 +2934,16 @@ const sb = {
   renaming: false,                  // a rename field is open; the list waits for it to close
 };
 const SB_ICON = {
-  chev: icon('chevron-down', 'ico-sm'),
-  caret: icon('chevron-down', 'ico-sm'),
-  plus: icon('plus'),
-  more: icon('more'),
+  chev: icon('oai-chevron-down', 'ico-sm'),
+  caret: icon('oai-chevron-down', 'ico-sm'),
+  plus: icon('oai-plus'),
+  more: icon('oai-more'),
   // A project's folder: closed while its chats are folded away, open otherwise.
-  folder: icon('folder', 'sb-ic-folder'),
-  folderOpen: icon('folder-open', 'sb-ic-folder-open'),
-  chats: icon('chat', 'sb-ic-chats'),
-  computer: icon('laptop', 'sb-ic-pinned'),
-  cloud: icon('cloud', 'sb-ic-pinned'),
+  folder: icon('oai-folder', 'sb-ic-folder'),
+  folderOpen: icon('oai-folder-open', 'sb-ic-folder-open'),
+  chats: icon('oai-chat', 'sb-ic-chats'),
+  computer: icon('oai-desktop', 'sb-ic-pinned'),
+  cloud: icon('oai-cloud', 'sb-ic-pinned'),
 };
 const sbAttr = (s) => esc(String(s == null ? '' : s)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 // Windows paths: one folder however its slashes or letter case were written.
@@ -3454,6 +3457,7 @@ function syncMode() {
     const ic = el.querySelector('svg');
     if (ic && ic.dataset.mode !== state.mode) ic.outerHTML = icon(MODE_INFO[state.mode][0]).replace('<svg', `<svg data-mode="${state.mode}"`);
   });
+  try { syncBypass(); } catch {} // the permission label shows Plan while the mode is Plan
 }
 const MODE_INFO = { Build: ['hammer', 'Makes the changes'], Plan: ['list', 'Plans first, changes nothing'], Ask: ['chat', 'Answers, changes nothing'], Design: ['palette', 'Designs a page, app screen or slides'] };
 
@@ -3518,15 +3522,54 @@ document.querySelectorAll('[data-role="mode-chip"]').forEach((el) =>
   })
 );
 
+// The permission mode the row shows: Plan (the chat mode) wins, then Full
+// access, then Accept edits, else Approve manually.
+function permMode() { return state.mode === 'Plan' ? 'plan' : state.bypass ? 'full' : state.autoEdits ? 'edits' : 'manual'; }
 function syncBypass() {
-  document.querySelectorAll('[data-role="bypass"]').forEach((el) => el.classList.toggle('on', state.bypass));
-  document.querySelectorAll('[data-role="bypass-label"]').forEach((el) =>
-    (el.textContent = state.bypass ? 'Full access' : 'Approve manually'));
+  const id = permMode();
+  document.querySelectorAll('[data-role="bypass"]').forEach((el) => el.classList.toggle('on', id === 'full'));
+  document.querySelectorAll('[data-role="bypass-label"]').forEach((el) => (el.textContent = PERMS.find((p) => p.id === id).label));
+}
+// The permissions menu, like the model list: plain rows, a gray line under
+// each, the one in use set in bold. Accept edits is the engine's autoEdits
+// (file changes run, commands still ask); Plan is the Plan chat mode.
+const PERMS = [
+  { id: 'manual', label: 'Approve manually', name: 'Approve manually', sub: 'Asks before every edit or command' },
+  { id: 'edits', label: 'Accept edits', name: 'Accept edits', sub: 'File edits run on their own, commands still ask' },
+  { id: 'plan', label: 'Plan', name: 'Plan', sub: 'Makes a plan first and changes nothing' },
+  { id: 'full', label: 'Full access', name: 'Full access', sub: 'Edits and commands run without asking' },
+];
+function openPermMenu(anchor) {
+  if (modelMenuEl) { const was = modelMenuEl.classList.contains('perm-menu'); closeModelMenu(); if (was) return; }
+  const now = permMode();
+  const menu = document.createElement('div');
+  menu.className = 'menu model-menu perm-menu';
+  menu.innerHTML = `<div class="model-menu-title">Permissions</div>${PERMS.map((p) => `
+    <button class="model-item${now === p.id ? ' active' : ''}" data-perm="${p.id}">
+      <span class="model-item-text"><strong>${p.name}</strong><span>${p.sub}</span></span>
+    </button>`).join('')}`;
+  document.body.appendChild(menu);
+  modelMenuEl = menu;
+  const r = anchor.getBoundingClientRect();
+  menu.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+  menu.style.left = Math.max(8, r.left) + 'px';
+  keepMenuOnScreen(menu, r);
+  menu.querySelectorAll('[data-perm]').forEach((b) => b.addEventListener('click', () => {
+    const id = b.dataset.perm;
+    closeModelMenu();
+    state.bypass = id === 'full';
+    state.autoEdits = id === 'edits';
+    if (id === 'plan') state.mode = 'Plan';
+    else if (state.mode === 'Plan') state.mode = 'Build';
+    syncMode();
+    syncBypass();
+    anchor.blur();
+  }));
 }
 document.querySelectorAll('[data-role="bypass"]').forEach((el) =>
-  el.addEventListener('click', () => {
-    state.bypass = !state.bypass;
-    syncBypass();
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openPermMenu(el);
   })
 );
 
@@ -3576,12 +3619,23 @@ function applyModelsState(models) {
     // OpenAI asks for "Using ChatGPT plan" next to the model picker while a plan model is in use.
     el.toggleAttribute('data-plan', kind === 'chatgpt');
   });
+  // The chosen effort sits beside the name in gray ("Sonnet 5.5 Medium"), like Codex.
+  const eff = m && canSetEffort(m) && m.effort ? (EFFORT_LABELS[m.effort] || m.effort) : '';
+  document.querySelectorAll('[data-role="model-effort"]').forEach((el) => { el.textContent = eff; el.hidden = !eff; });
   document.querySelectorAll('[data-role="model-chip"]').forEach((el) => {
     el.dataset.kind = kind;
     el.title = !m ? 'Haze 2: the routing brain, run by Codeply'
       : kind === 'chatgpt' ? `${m.name} - using your ChatGPT plan`
       : `${m.name} - ${m.model} on ${hostOf(m.baseUrl)}`;
   });
+}
+
+/** " · On phone" (usable there with this PC off), or that syncing failed, for the model list's second line. */
+function phoneNote(m) {
+  const p = m.phone;
+  if (!p || !p.on) return '';
+  if (p.synced) return ' · On phone';
+  return p.reason ? ' · <em class="warn">Not synced</em>' : ' · Syncing';
 }
 
 /** "Synced" (usable on the phone with this PC off) or why syncing failed. */
@@ -3597,12 +3651,13 @@ function closeModelMenu() {
   if (modelMenuEl) { modelMenuEl.remove(); modelMenuEl = null; }
 }
 document.addEventListener('click', (e) => {
-  if (modelMenuEl && !modelMenuEl.contains(e.target) && !e.target.closest('[data-role="model-chip"]')) closeModelMenu();
+  if (modelMenuEl && !modelMenuEl.contains(e.target) && !e.target.closest('[data-role="model-chip"], [data-role="bypass"]')) closeModelMenu();
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModelMenu(); });
 
 async function pickModel(id) {
   closeModelMenu();
+  if (document.activeElement && document.activeElement.closest && document.activeElement.closest('[data-role="model-chip"]')) document.activeElement.blur();
   if (id === state.models.selected) return;
   const r = await api.selectModel(id);
   if (!r.ok) { showToast(r.error || 'Could not switch model.', 'error'); return; }
@@ -3618,27 +3673,26 @@ function openModelMenu(anchorBtn) {
   const sel = state.models.selected;
   const check = icon('check', 'model-item-check');
   const custom = state.models.models.filter((m) => m.kind !== 'chatgpt');
+  // The models Haze 2 routes to: shown grayed, never picked by hand.
   const LOCK = icon('lock', 'model-item-lock ico-sm');
   const autoModels = [['Sonnet 5.5', 'Code and hard tasks'], ['Haiku 5.5', 'Quick answers'], ['Non-disclosed models', 'Casual chat']].map(([name, why]) => `
-    <div class="model-item locked" aria-disabled="true" aria-label="${name}: used by Haze 2" data-tip="Used by Haze 2">
-      <span class="model-item-icon custom">${CHIP_SVG}</span>
-      <span class="model-item-text"><strong>${name}</strong><span>${why}</span></span>
+    <div class="model-item locked" aria-disabled="true" aria-label="${name}: used by Haze 2" data-tip="${why}. Haze 2 picks it for you">
+      <span class="model-item-text"><strong>${name}</strong></span>
       ${LOCK}
     </div>`).join('');
   menu.innerHTML = `
     <div class="model-menu-title">Select model</div>
     <button class="model-item${sel === 'auto' ? ' active' : ''}" data-id="auto">
-      <span class="model-item-icon auto">${SPARK_SVG}</span>
       <span class="model-item-text"><strong>Haze 2</strong><span>The routing brain</span></span>
       ${sel === 'auto' ? check : ''}
     </button>
     ${autoModels}
-    ${custom.length ? '<div class="model-menu-label">Your models</div>' : ''}
+    ${custom.length ? '<div class="model-menu-divider"></div>' : ''}
     ${custom.map((m) => `
       <div class="model-item-row">
         <button class="model-item${sel === m.id ? ' active' : ''}" data-id="${esc(m.id)}">
           <span class="model-item-icon ${m.kind === 'ollama' ? 'local' : 'custom'}">${m.kind === 'ollama' ? LLAMA_SVG : CHIP_SVG}</span>
-          <span class="model-item-text"><strong>${esc(m.name)}${phoneBadge(m)}</strong><span>${esc(m.model)} · ${esc(m.kind === 'ollama' ? 'on this computer' : hostOf(m.baseUrl))}</span></span>
+          <span class="model-item-text" data-tip="${esc(m.model)} · ${esc(m.kind === 'ollama' ? 'On this computer' : hostOf(m.baseUrl))}${phoneNote(m).replace(/<[^>]+>/g, '')}"><strong>${esc(m.name)}</strong></span>
           ${sel === m.id ? check : ''}
         </button>
         ${m.phone && m.phone.eligible ? `<button class="model-item-tool icon-btn icon-btn-xs${m.phone.on ? ' on' : ''}" data-phone="${esc(m.id)}" title="${esc(m.phone.on ? (m.phone.synced ? 'On your phone. Click to stop syncing it' : m.phone.reason || 'Syncing to your phone') : 'Sync to phone: use it there even when this PC is off')}">${icon('phone')}</button>` : ''}
@@ -3646,8 +3700,8 @@ function openModelMenu(anchorBtn) {
         <button class="model-item-tool icon-btn icon-btn-xs danger" data-delete="${esc(m.id)}" title="Remove">${icon('trash')}</button>
       </div>`).join('')}
     <div class="model-menu-divider"></div>
-    <button class="model-menu-action" data-action="add">${icon('plus')}Add a model</button>
-    <button class="model-menu-ollama" data-action="ollama">Connect Ollama</button>`;
+    <button class="model-item model-menu-row" data-action="add"><span class="model-item-text"><strong>Add a model</strong></span></button>
+    <button class="model-item model-menu-row" data-action="ollama"><span class="model-item-text"><strong>Connect Ollama</strong></span></button>`;
   document.body.appendChild(menu);
 
   const rect = anchorBtn.getBoundingClientRect();
@@ -3731,7 +3785,7 @@ document.querySelectorAll('[data-role="model-chip"]').forEach((btn) =>
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
     if (modelMenuEl) { closeModelMenu(); return; }
-    openModelMenu(btn);
+    openEffortMenu(btn);
   })
 );
 
@@ -4244,6 +4298,7 @@ async function sendMessage(text, fromHome, images) {
     cwd: state.project,
     mode: state.mode,
     bypass: state.bypass,
+    autoEdits: !!state.autoEdits,
     text,
     images,
     clientId: desktopClientId,
@@ -5605,36 +5660,95 @@ function modelChipOf(input) {
   return (c && c.querySelector('[data-role="model-chip"]')) || document.querySelector('[data-role="model-chip"]');
 }
 
-// /effort: low, medium or high for the user's own models. Haze 2 picks its own, and that stays ours.
+// Effort for the user's own models (Haze 2 picks its own, and that stays ours).
+// Ollama models have none.
+function canSetEffort(m) { return !!m && m.kind !== 'ollama' && m.kind !== 'chatgpt' && !(Array.isArray(m.effortLevels) && !m.effortLevels.length); }
+
+// The levels come from the provider itself (main.js models:effortLevels asks
+// it once): OpenAI-style APIs answer with their own list, and a provider that
+// ignores effort gets none. Default always comes first.
+const EFFORT_LABELS = { none: 'None', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' };
+const effortsFor = (m) => [['', 'Default'], ...((m && m.effortLevels) || ['low', 'medium', 'high']).map((id) => [id, EFFORT_LABELS[id] || id])];
+
 function openEffortMenu(anchor) {
+  // Haze 2 sets its own effort (strictly ours), and Ollama models have none:
+  // the card still opens for them, with the slider grayed out.
   const m = selectedModel();
-  if (!m) { showToast('Haze 2 sets its own effort. Pick one of your own models to change it.'); return; }
-  if (m.kind === 'ollama') { showToast('Effort is not available for Ollama models.'); return; }
+  anchor = anchor || document.querySelector('[data-role="model-chip"]');
+  // First time for this model: ask its provider which levels it takes, then draw.
+  const checking = !!m && m.kind !== 'ollama' && m.kind !== 'chatgpt' && !Array.isArray(m.effortLevels) && api && api.probeEffortLevels;
+  if (checking) {
+    api.probeEffortLevels(m.id).then((r) => {
+      if (r && r.state) applyModelsState(r.state);
+      if (r && !r.ok) showToast(r.error || 'Could not check the effort levels.', 'error');
+      if (modelMenuEl && modelMenuEl.classList.contains('effort-card')) openEffortMenu(anchor);
+    }).catch(() => {});
+  }
+  const EFFORTS = effortsFor(m);
+  const locked = checking || !canSetEffort(m);
   closeModelMenu();
   const menu = document.createElement('div');
-  menu.className = 'menu model-menu effort-menu';
-  const now = m.effort || '';
-  const rows = [['', 'Default', 'Whatever the provider uses'], ['low', 'Low', 'Fast answers'], ['medium', 'Medium', 'Balanced'], ['high', 'High', 'Thinks longest, for hard problems']];
-  menu.innerHTML = `<div class="model-menu-title">Effort for ${esc(m.name)}</div>${rows.map(([id, name, why]) => `
-    <button class="model-item${now === id ? ' active' : ''}" data-effort="${id}">
-      <span class="model-item-text"><strong>${name}</strong><span>${why}</span></span>
-      ${now === id ? icon('check', 'model-item-check') : ''}
-    </button>`).join('')}`;
+  const none = !!m && !checking && !canSetEffort(m);
+  menu.className = 'menu effort-card' + (locked ? ' locked' : '') + (none ? ' no-effort' : '');
+  let at = locked ? 0 : Math.max(0, EFFORTS.findIndex(([id]) => id === (m.effort || '')));
+  const why = checking ? 'Checking which levels this model takes' : !m ? 'Haze 2 sets its own effort' : 'Reasoning not available';
+  menu.innerHTML = `
+    <button class="effort-head" type="button" data-act="models" title="Choose another model">
+      <strong>${esc(m ? m.name : 'Haze 2')}</strong><span data-role="effort-label"></span>${icon('chevron-right', 'ico-sm')}
+    </button>
+    <div class="effort-track" role="slider" ${locked ? `aria-disabled="true" data-tip="${why}"` : 'tabindex="0"'} aria-label="Effort" aria-valuemin="0" aria-valuemax="${EFFORTS.length - 1}">
+      <div class="effort-fill"></div>
+      ${EFFORTS.map((e, i) => `<span class="effort-stop" style="--f:${EFFORTS.length > 1 ? i / (EFFORTS.length - 1) : 0}"></span>`).join('')}
+      <div class="effort-knob"></div>
+    </div>${locked ? `<div class="effort-note">${esc(why)}</div>` : ''}`;
   document.body.appendChild(menu);
-  const r = (anchor || document.body).getBoundingClientRect();
-  menu.style.position = 'fixed';
-  menu.style.left = `${Math.max(8, Math.min(r.left, innerWidth - menu.offsetWidth - 8))}px`;
-  menu.style.top = `${Math.max(8, r.top - menu.offsetHeight - 8)}px`;
-  const close = () => { menu.remove(); document.removeEventListener('mousedown', outside, true); };
-  const outside = (e) => { if (!menu.contains(e.target)) close(); };
-  setTimeout(() => document.addEventListener('mousedown', outside, true), 0);
-  menu.querySelectorAll('[data-effort]').forEach((b) => b.addEventListener('click', async () => {
-    close();
-    const res = api && api.setModelEffort ? await api.setModelEffort(m.id, b.dataset.effort) : { ok: false, error: 'Not available here.' };
+  modelMenuEl = menu;
+  const track = menu.querySelector('.effort-track');
+  const draw = (i) => {
+    track.style.setProperty('--f', String(EFFORTS.length > 1 ? i / (EFFORTS.length - 1) : 0));
+    track.setAttribute('aria-valuenow', String(i));
+    track.setAttribute('aria-valuetext', EFFORTS[i][1]);
+    menu.querySelector('[data-role="effort-label"]').textContent = checking ? 'Checking…' : locked ? (m ? '' : 'Auto') : EFFORTS[i][1];
+    menu.querySelectorAll('.effort-stop').forEach((s, j) => s.classList.toggle('passed', j <= i));
+  };
+  draw(at);
+
+  const rect = anchor.getBoundingClientRect();
+  menu.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
+  menu.style.right = Math.max(8, window.innerWidth - rect.right) + 'px';
+  keepMenuOnScreen(menu, rect);
+
+  let saved = at;
+  const save = async (i) => {
+    if (i === saved) return;
+    saved = i;
+    const id = EFFORTS[i][0];
+    const res = api && api.setModelEffort ? await api.setModelEffort(m.id, id) : { ok: false, error: 'Not available here.' };
     if (!res.ok) { showToast(res.error || 'Could not set the effort.', 'error'); return; }
     applyModelsState(res.state);
-    showToast(b.dataset.effort ? `${m.name}: ${b.dataset.effort} effort` : `${m.name}: default effort`);
-  }));
+  };
+  const stopAt = (x) => {
+    const r = track.getBoundingClientRect();
+    const f = Math.min(1, Math.max(0, (x - r.left - 17) / (r.width - 34)));
+    return Math.round(f * (EFFORTS.length - 1));
+  };
+  if (locked) { menu.querySelector('[data-act="models"]').addEventListener('click', (e) => { e.stopPropagation(); openModelMenu(anchor); }); return; }
+  track.addEventListener('pointerdown', (e) => {
+    track.setPointerCapture(e.pointerId);
+    track.classList.add('dragging');
+    at = stopAt(e.clientX); draw(at);
+    const move = (ev) => { const i = stopAt(ev.clientX); if (i !== at) { at = i; draw(at); } };
+    const up = () => { track.classList.remove('dragging'); track.removeEventListener('pointermove', move); track.removeEventListener('pointerup', up); save(at); };
+    track.addEventListener('pointermove', move);
+    track.addEventListener('pointerup', up);
+  });
+  track.addEventListener('keydown', (e) => {
+    const d = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 0;
+    if (!d) return;
+    e.preventDefault();
+    at = Math.min(EFFORTS.length - 1, Math.max(0, at + d)); draw(at); save(at);
+  });
+  menu.querySelector('[data-act="models"]').addEventListener('click', (e) => { e.stopPropagation(); openModelMenu(anchor); });
 }
 
 // ─── /loop and /schedule: prompts that run later in the chat they were set in ──

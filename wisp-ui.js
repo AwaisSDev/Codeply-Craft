@@ -135,7 +135,8 @@
     lastUserText = userText || '';
     const el = document.createElement('div');
     el.className = 'wisp-turn';
-    const face = W().avatar({ size: 'sm', mood: (mood === 'thinking' && reaction) || mood || 'neutral', morph: true, look: lookOf(who) });
+    // morph off: in chat the face keeps the mascot's body whatever the mood (no circle, star or heart).
+    const face = W().avatar({ size: 'sm', mood: (mood === 'thinking' && reaction) || mood || 'neutral', morph: false, look: lookOf(who) });
     face.classList.add('wisp-turn-face');
     el.appendChild(face);
     turnFace = face.wisp;
@@ -150,11 +151,13 @@
     if (hold) restTimer = setTimeout(() => { if (turnFace) turnFace.setMood('neutral'); }, hold);
   }
 
-  /** The reply has landed: the answer's face takes its mood and says it. */
+  /** The reply has landed: the answer's face shows its mood for a moment while it says it, then rests. */
   function replyMood(mood, text) {
     if (!turnFace) return;
-    setFace(moodFor(mood, lastUserText, text));
-    turnFace.talk(Math.min(4000, 400 + String(text || '').length * 6));
+    const talkMs = Math.min(4000, 400 + String(text || '').length * 6);
+    const m = moodFor(mood, lastUserText, text);
+    setFace(m, m === 'neutral' ? 0 : talkMs + 1800);
+    turnFace.talk(talkMs);
   }
 
   /** Every event of the open chat, before app.js draws it: the answer's face follows the work. */
@@ -164,9 +167,9 @@
       case 'tool_start': case 'approval_resolved': case 'question_resolved': setFace('working'); break;
       case 'wisp_agent': setFace(data.phase === 'report' ? reaction || 'thinking' : 'working'); break;
       case 'verifying': setFace(reaction || 'thinking'); break; // still showing how it feels about your message
-      case 'approval_request': case 'image_pick_request': setFace('worried'); break;
+      case 'approval_request': case 'image_pick_request': setFace('worried', 5000); break;
       case 'question_request': setFace(reaction || 'thinking'); break;
-      case 'error': setFace('sad'); break;
+      case 'error': setFace('sad', 4000); break;
       case 'aborted': setFace('neutral'); break;
       case 'run_finished': if (turnFace && (turnFace.mood === 'working' || turnFace.mood === 'thinking')) setFace('neutral'); break;
     }

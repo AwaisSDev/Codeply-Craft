@@ -351,6 +351,11 @@ function saveModel(input) {
   if (typeof phone === 'boolean') entry.phone = phone;
   for (const k of PHONE_FIELDS) if (existing && existing[k] !== undefined) entry[k] = existing[k];
   if (existing && existing.effort) entry.effort = existing.effort; // set with setModelEffort (/effort)
+  // The effort levels this provider answered with (setModelEffortLevels), kept
+  // while the model and URL stay the same; a changed model is asked again.
+  if (existing && existing.effortFor && existing.effortFor === `${baseUrl}|${model}`) {
+    for (const k of ['effortLevels', 'effortNote', 'effortFor']) if (existing[k] !== undefined) entry[k] = existing[k];
+  }
   file.models = existing
     ? file.models.map((m) => (m.id === entry.id ? entry : m))
     : [...file.models, entry];
@@ -370,8 +375,26 @@ function setModelEffort(id, effort) {
   const file = readModelsState();
   const m = file.models.find((x) => x.id === id);
   if (!m) return { ok: false, error: 'Effort can only be set on your own models.' };
-  if (effort && !EFFORTS.includes(effort)) return { ok: false, error: 'Effort is low, medium or high.' };
+  const allowed = Array.isArray(m.effortLevels) && m.effortFor === `${m.baseUrl}|${m.model}` ? m.effortLevels : EFFORTS;
+  if (effort && !allowed.includes(effort)) return { ok: false, error: allowed.length ? `Effort is one of: ${allowed.join(', ')}.` : 'This model has no effort setting.' };
   if (effort) m.effort = effort; else delete m.effort;
+  const w = writeFile(file);
+  return w.ok ? { ok: true, model: m } : w;
+}
+
+/**
+ * Saves the effort levels a provider answered with (ai.js probeEffortLevels):
+ * levels in order (empty when it ignores effort) and a short note. A saved
+ * effort the provider doesn't have is dropped.
+ */
+function setModelEffortLevels(id, { levels, note } = {}) {
+  const file = readModelsState();
+  const m = file.models.find((x) => x.id === id);
+  if (!m) return { ok: false, error: 'No such model.' };
+  m.effortLevels = Array.isArray(levels) ? levels.filter((x) => typeof x === 'string').slice(0, 8) : [];
+  if (note) m.effortNote = String(note).slice(0, 200); else delete m.effortNote;
+  m.effortFor = `${m.baseUrl}|${m.model}`;
+  if (m.effort && !m.effortLevels.includes(m.effort)) delete m.effort;
   const w = writeFile(file);
   return w.ok ? { ok: true, model: m } : w;
 }
@@ -491,5 +514,5 @@ module.exports = { disconnectedApps,
   configPath, PROVIDERS, BYOK_PROVIDERS,
   getIntegration, saveIntegration, disconnectIntegration, isIntegrationConnected, INTEGRATIONS,
   AUTO_MODEL_ID, getModels, getModel, getSelectedModel, getSelectedModelId, saveModel, deleteModel, selectModel, syncChatGPTModels,
-  setModelPhone, getPhoneDeletes, setPhoneDeletes, setModelEffort, EFFORTS,
+  setModelPhone, getPhoneDeletes, setPhoneDeletes, setModelEffort, setModelEffortLevels, EFFORTS,
 };
