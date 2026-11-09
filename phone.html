@@ -183,6 +183,7 @@
     <nav class="drawer-nav" id="drawerNav">
       <button class="drawer-item" id="drawerNewChat"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4H6.5A2.5 2.5 0 0 0 4 6.5v11A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5V12"/><path d="M17.6 3.6a2 2 0 0 1 2.8 2.8L12.5 14.3l-3.7.9.9-3.7Z"/></svg><span>New chat</span></button>
       <button class="drawer-item" id="drawerTasks"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg><span>Tasks</span><i class="drawer-badge hidden" id="tasksBadge"></i></button>
+      <button class="drawer-item" id="drawerReminders"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 1 1 12 0c0 5 2 6.5 2 6.5H4S6 14 6 9Z"/><path d="M10 19a2 2 0 0 0 4 0"/></svg><span>Reminders</span><i class="drawer-badge hidden" id="remindersBadge"></i></button>
       <button class="drawer-item" id="drawerProjects"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2h7.4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/><path d="M3.5 10.5h17"/></svg><span>Projects</span></button>
       <button class="drawer-item hidden" id="drawerCloud"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18.5a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 9a4 4 0 0 1 .5 7.97V18.5Z"/></svg><span>Cloud</span></button>
       <button class="drawer-item hidden" id="drawerCalls"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg><span>Voice mode</span></button>
@@ -330,6 +331,26 @@
       <button class="icon-btn" data-q="new" aria-label="New task"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
     </header>
     <div class="panel-body" id="tasksBody"></div>
+  </section>
+  <!-- REMINDERS (phone-reminders.js): what is coming up, add one, cancel one -->
+  <section class="panel hidden" id="remindersPanel" role="dialog" aria-modal="true" aria-label="Reminders">
+    <header class="top">
+      <button class="icon-btn" data-close-panel aria-label="Back"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="top-title">Reminders</div>
+      <span class="icon-btn" aria-hidden="true"></span>
+    </header>
+    <div class="panel-body">
+      <form class="rem-add" id="remAdd" autocomplete="off">
+        <input id="remAddText" type="text" placeholder="What to remember, like call mom" maxlength="200">
+        <div class="rem-add-row">
+          <input id="remAddWhen" type="text" placeholder="When: in 10 min, at 5pm, tomorrow" maxlength="80">
+          <button type="submit" class="btn btn-primary" id="remAddBtn">Add</button>
+        </div>
+        <p class="rem-add-err hidden" id="remAddErr"></p>
+      </form>
+      <div id="remCard"></div>
+      <div id="remList"></div>
+    </div>
   </section>
   <section class="panel hidden" id="settingsPanel" role="dialog" aria-modal="true" aria-label="Settings">
     <header class="top">

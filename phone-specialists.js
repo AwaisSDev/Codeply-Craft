@@ -588,7 +588,13 @@
     let jobLine = ''; // the app's own line under the reply: true whatever the model says
     // "remind me in 2 minutes: test": the app sets it now, from this specialist (its name on the notification)
     const R = window.CraftReminders;
-    const plain = R && R.parseAsk ? R.parseAsk(text) : null;
+    // "cancel my test reminder": the app does it, and the specialist is told
+    const cancelled = R && R.cancelAsk ? await R.cancelAsk(text).catch((e) => ({ done: [], note: `Couldn't cancel it: ${e.message}` })) : null;
+    if (cancelled) {
+      jobLine = `-# ${cancelled.done.length ? '✓ ' : ''}${cancelled.note}`;
+      jobNote = `The app handled the request to cancel reminders: ${cancelled.note} Say this in one short sentence.`;
+    }
+    const plain = !cancelled && R && R.parseAsk ? R.parseAsk(text) : null;
     if (plain) {
       try {
         const rem = await R.createFromTag(plain, { id: chat.specialist.id, name: chat.specialist.name, voice: spec.voice || null });

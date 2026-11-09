@@ -1320,6 +1320,7 @@ async function chatSend(chat, text, images = []) {
   let reply = null; let error = null;
   const sources = []; // the pages searched or read for this reply, shown under it
   let preset = null; let presetError = ''; // a reminder the app set itself from the user's words
+  let cancelled = null; // { done, note }: reminders the app cancelled from the user's words
   const CLAIMS_REMINDER = /\b(reminder (is |has been |'s )?set|set (a|the|your|that) reminder|i('| wi)ll remind you|i('| wi)ll (call|ping|notify|text|message|nudge) you|i('ve| have) (set|scheduled|added) (a|the|your|it)|you'?ll get (a|the) (reminder|notification|call))\b/i;
   try {
     const token = await accessToken();
@@ -1338,7 +1339,10 @@ async function chatSend(chat, text, images = []) {
     // "remind me in 2 minutes: test": the app sets it right now, so a reminder never depends on the model writing
     // its [[REMIND]] line (it used to say "set!" and save nothing). The model is told it is done.
     const R0 = window.CraftReminders;
-    const plain = R0 && R0.parseAsk ? R0.parseAsk(text) : null;
+    // "cancel my test reminder", "delete all reminders": done by the app first (and never read as a new one)
+    cancelled = R0 && R0.cancelAsk ? await R0.cancelAsk(text).catch((e) => ({ done: [], note: `Couldn't cancel it: ${e.message}` })) : null;
+    if (cancelled) messages.push({ role: 'system', content: `THE APP HANDLED THE USER'S REQUEST TO CANCEL REMINDERS: ${cancelled.note} Say this in one short sentence; do not claim anything else was cancelled.` });
+    const plain = !cancelled && R0 && R0.parseAsk ? R0.parseAsk(text) : null;
     if (plain) {
       try {
         preset = await R0.createFromTag(plain, null);
@@ -1415,7 +1419,7 @@ async function chatSend(chat, text, images = []) {
     }
     if (reply) reply = reply.replace(/\[\[\s*SEARCH\s*:[^\]]*\]\]/gi, '').trim() || 'I searched but could not put an answer together. Try asking again.';
     // It says a reminder is set but wrote no [[REMIND]] line, so nothing would be saved: ask once for just the line
-    if (reply && !preset && !presetError && window.CraftReminders && CLAIMS_REMINDER.test(reply) && !window.CraftReminders.extract(reply).reminds.length) {
+    if (reply && !preset && !presetError && !cancelled && window.CraftReminders && CLAIMS_REMINDER.test(reply) && !window.CraftReminders.extract(reply).reminds.length) {
       try {
         const res = await fetch(own ? BYOK_PROXY_URL : AI_PROXY_URL, {
           method: 'POST',
@@ -1437,6 +1441,7 @@ async function chatSend(chat, text, images = []) {
     state.busy.delete(chat.id);
   }
   // The model did not answer, but the reminder the app set is real: say so
+  if (!reply && cancelled && cancelled.done.length) { reply = cancelled.note; error = null; cancelled = null; }
   if (!reply && preset && window.CraftReminders) { reply = `Reminder set: ${preset.text}, ${window.CraftReminders.whenLabel(preset.due_at)}.`; error = null; preset = null; }
   // Reminders the reply asked for ([[REMIND: ...]] lines, phone-reminders.js): saved, and the lines hidden.
   if (reply && window.CraftReminders) {
@@ -1445,6 +1450,7 @@ async function chatSend(chat, text, images = []) {
     // the one the app already set is not set twice
     const fresh = preset ? reminds.filter((t) => Math.abs(Date.parse(t.at) - Date.parse(preset.due_at)) > 3 * 60000) : reminds;
     const notes = [];
+    if (cancelled) notes.push(cancelled.note);
     if (preset) notes.push(`Reminder set: ${preset.text}, ${R.whenLabel(preset.due_at)}${preset.kind === 'call' ? ' (a call)' : ''}.`);
     if (presetError) notes.push(`Couldn't set the reminder: ${presetError}`);
     for (const t of fresh) {
@@ -1452,7 +1458,7 @@ async function chatSend(chat, text, images = []) {
       catch (e) { notes.push(`Couldn't set a reminder: ${e.message}`); }
     }
     // it said "set" and nothing was: say so instead of leaving a false promise
-    if (!notes.length && CLAIMS_REMINDER.test(text)) notes.push('No reminder was actually saved. Try "remind me in 10 minutes: what to do" and it will be.');
+    if (!notes.length && !cancelled && CLAIMS_REMINDER.test(text)) notes.push('No reminder was actually saved. Try "remind me in 10 minutes: what to do" and it will be.');
     if (notes.length && (preset || fresh.length) && R.pushState() !== 'granted') notes.push('Notifications are off on this device: open + › Calls to allow them, or the reminder only shows in the app.');
     if (notes.length || reminds.length) reply = `${text}\n\n${notes.map((n) => `- ${n}`).join('\n')}`.trim();
   }

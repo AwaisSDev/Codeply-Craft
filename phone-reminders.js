@@ -111,7 +111,7 @@
     const r = await api.create(fromTag(t, bot));
     list = [...list.filter((x) => x.id !== r.id), r].sort((a, b) => Date.parse(a.due_at) - Date.parse(b.due_at));
     save(KEY.list, list);
-    paint();
+    paint(); badge();
     return r;
   }
 
@@ -291,7 +291,7 @@
         <button type="button" class="rem-x" data-rdel="${esc(r.id)}" aria-label="Remove">${ICON_X}</button>
       </div>`;
     }).join('') + '</div>' : '';
-    if (!up.length) return `${html}<p class="calls-none">Nothing coming up. On a call, say "remind me at 5" or "plan my day".</p>${pastHtml}`;
+    if (!up.length) return `${html}<p class="calls-none">Nothing coming up. Add one above, or say "remind me at 5: call mom" in any chat.</p>${pastHtml}`;
     html += '<div class="calls-list">';
     for (const r of up) {
       const sub = [whenLabel(r.due_at), KIND_LABEL[r.kind] || '', REPEAT_LABEL[r.repeat] || '', r.status === 'snoozed' ? 'Snoozed' : ''].filter(Boolean).join(' · ');
@@ -322,13 +322,95 @@
         save(KEY.list, list);
         listError = '';
       } catch (e) { listError = e.message; }
-      paint();
+      paint(); badge();
     }));
   }
   async function refresh() {
     try { list = await api.list(); save(KEY.list, list); listError = ''; } catch (e) { if (e.status !== 401) listError = navigator.onLine === false ? '' : e.message; }
-    paint();
+    paint(); badge();
   }
+  const upcoming = () => list.filter((r) => (r.status === 'pending' || r.status === 'snoozed') && Date.parse(r.due_at) > Date.now() - 60000)
+    .sort((a, b) => Date.parse(a.due_at) - Date.parse(b.due_at));
+  /** The sidebar's count of what is coming up. */
+  function badge() {
+    const el = document.getElementById('remindersBadge');
+    if (!el) return;
+    const n = upcoming().length;
+    el.textContent = n ? String(n) : '';
+    el.classList.toggle('hidden', !n);
+  }
+
+  // ─── The Reminders screen (sidebar › Reminders) ───────────────────────────
+  function openPanel() {
+    const panel = document.getElementById('remindersPanel');
+    if (!panel) return;
+    if (window.CraftPhone && window.CraftPhone.closeDrawer) window.CraftPhone.closeDrawer();
+    panel.parentNode.appendChild(panel); // on top of anything open
+    panel.classList.remove('hidden');
+    mount(document.getElementById('remCard'), document.getElementById('remList'));
+    lastRefresh = Date.now(); refresh();
+  }
+  function wirePanel() {
+    const btn = document.getElementById('drawerReminders');
+    if (btn) btn.addEventListener('click', openPanel);
+    const form = document.getElementById('remAdd');
+    if (!form) return;
+    const err = document.getElementById('remAddErr');
+    const say = (m) => { err.textContent = m || ''; err.classList.toggle('hidden', !m); };
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const what = document.getElementById('remAddText').value.trim();
+      const when = document.getElementById('remAddWhen').value.trim();
+      if (!what || !when) { say('Write what to remember and when.'); return; }
+      // the same reading as "remind me ...: ..." in a chat
+      const w = /^(in|at|after|by|around|for|tomorrow|tonight|this|every|daily|weekdays|weekly|noon|midday)\b/i.test(when) ? when : `at ${when}`;
+      const t = parseAsk(`remind me ${w}: ${what}`);
+      if (!t) { say('Say when, like "in 10 minutes", "at 5pm" or "tomorrow at 9".'); return; }
+      const b = document.getElementById('remAddBtn');
+      b.disabled = true; say('');
+      try {
+        await createFromTag(t, null);
+        document.getElementById('remAddText').value = ''; document.getElementById('remAddWhen').value = '';
+        badge();
+      } catch (x) { say(x.message); }
+      b.disabled = false;
+    });
+  }
+  setTimeout(() => { wirePanel(); badge(); }, 0);
+  setTimeout(() => { refresh().catch(() => {}); }, 3500); // the sidebar count from the account, once signed in
+
+  // ─── Cancel in plain words ────────────────────────────────────────────────
+  // "cancel my test reminder", "delete all my reminders", "remove the last reminder", "don't remind me about
+  // the meeting". Resolves null when the message is not about cancelling, else { done: [rows], note }.
+  const CANCEL = /\b(cancel|delete|remove|clear|stop|turn off|get rid of|undo|scrap|drop)\b[^.?!\n]{0,60}\b(reminders?|alarms?|alerts?)\b|\b(reminders?)\b[^.?!\n]{0,30}\b(cancel|delete|remove|off)\b|\b(don'?t|do not|no need to) (remind|call|ping|notify) me\b/i;
+  const STOP = new Set('a an the my me of to for about at in on and or please pls can could you u that this those these all every reminder reminders cancel delete remove clear stop turn off get rid undo scrap drop don dont do not no need remind call ping notify one ones last latest just set i is it its'.split(' '));
+  async function cancelAsk(raw) {
+    const t = String(raw || '').replace(/(^|\s)@[\w.-]+/g, ' ').trim();
+    if (!CANCEL.test(t)) return null;
+    try { list = await api.list(); save(KEY.list, list); } catch { /* the copy on this device */ }
+    const up = upcoming();
+    if (!up.length) return { done: [], note: 'There were no upcoming reminders to cancel.' };
+    const low = t.toLowerCase();
+    let pick = [];
+    if (/\b(all|every|each)\b/.test(low)) pick = up;
+    else if (/\b(last|latest|newest|just set|that one|the one you just)\b/.test(low)) {
+      pick = [up.slice().sort((a, b) => Date.parse(b.created_at || 0) - Date.parse(a.created_at || 0) || Date.parse(b.due_at) - Date.parse(a.due_at))[0]];
+    } else {
+      const words = low.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length > 1 && !STOP.has(w));
+      const score = (r) => words.filter((w) => String(r.text).toLowerCase().includes(w)).length;
+      const best = Math.max(0, ...up.map(score));
+      if (best > 0) pick = up.filter((r) => score(r) === best);
+      else if (up.length === 1) pick = up;
+    }
+    if (!pick.length) return { done: [], note: `Which one? Coming up: ${up.slice(0, 6).map((r) => `"${r.text}" (${whenLabel(r.due_at)})`).join(', ')}.` };
+    const done = [];
+    for (const r of pick) { try { await api.remove(r.id); done.push(r); } catch { /* left as it was */ } }
+    list = list.filter((r) => !done.some((d) => d.id === r.id));
+    save(KEY.list, list); paint(); badge();
+    return { done, note: done.length ? `Cancelled: ${done.map((r) => `"${r.text}" (${whenLabel(r.due_at)})`).join(', ')}.` : "Couldn't cancel it just now. Try again from Reminders in the menu." };
+  }
+
+
   /** phone-calls.js renders the Calls panel and gives us two spots in it. */
   function mount(card, box) {
     if (!card || !box) return;
@@ -457,7 +539,7 @@
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(keepPush, 1500); });
 
   window.CraftReminders = {
-    api, RULES, voiceRules, chatRules, nowContext, extract, fromTag, createFromTag, pushState, enablePush, subscribe, parseAsk,
+    api, RULES, voiceRules, chatRules, nowContext, extract, fromTag, createFromTag, pushState, enablePush, subscribe, parseAsk, cancelAsk, openPanel,
     mount, refresh, openReminder, whenLabel, list: () => list, VAPID_PUBLIC_KEY,
   };
 })();

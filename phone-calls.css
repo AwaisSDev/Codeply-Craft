@@ -188,3 +188,13 @@
 .bw-acts { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 .bw-acts .life-btn { display: inline-flex; align-items: center; }
 .bw-acts a.life-btn { text-decoration: none; }
+
+/* The Reminders screen (phone-reminders.js openPanel): add one at the top, the list below */
+.rem-add { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 16px; padding: 12px; border: 1px solid var(--border); border-radius: 16px; }
+.rem-add input { height: 44px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); padding: 0 13px; color: var(--text); font-size: 16px; outline: none; min-width: 0; }
+.rem-add input:focus { border-color: var(--muted); }
+.rem-add-row { display: flex; gap: 8px; }
+.rem-add-row input { flex: 1; }
+.rem-add-row .btn { flex: none; width: auto; min-width: 76px; height: 44px; padding: 0 16px; }
+.rem-add-err { margin: 0; color: var(--red, #e5484d); font-size: 13.5px; }
+@media (hover: hover) { .rem-x:hover { background: var(--surface); color: var(--text); } }
