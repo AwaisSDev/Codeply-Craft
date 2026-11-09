@@ -115,6 +115,70 @@
     return r;
   }
 
+  // ─── Asked in plain words ─────────────────────────────────────────────────
+  // "remind me in 2 minutes: test", "notify me after 5 mins", "call me at 7pm about the report",
+  // "remind me to drink water every day at 9": the app sets these itself, so a reminder never depends on
+  // the model remembering to write its [[REMIND]] line. Returns a tag ({ at, repeat, kind, text }) or null.
+  const NUM = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, fifteen: 15, twenty: 20, thirty: 30, forty: 40, 'forty-five': 45, fifty: 50, sixty: 60 };
+  const UNIT = (u) => (/^s/.test(u) ? 1000 : /^(m|min)/.test(u) ? 60000 : /^h/.test(u) ? 3600000 : 86400000);
+  function parseAsk(raw) {
+    const t = String(raw || '').replace(/(^|\s)@[\w.-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const low = t.toLowerCase();
+    if (!/\b(remind (me|us)|set (a |an )?(reminder|alarm|timer)|reminder (for|to|in|at|about)|notify me|send me a (notification|reminder|ping)|ping me|alert me|wake me|call me (in|at|after|tomorrow|tonight|this|every)|text me (in|at|after|tomorrow|tonight|this|every))\b/.test(low)) return null;
+    const now = Date.now();
+    let due = null; let used = [];
+    // in / after N minutes, an hour, half an hour
+    let m = /\b(?:in|after|within)\s+(half an?|\d+(?:\.\d+)?|an?|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty-five|forty|fifty|sixty)\s*(seconds?|secs?|minutes?|mins?|m|hours?|hrs?|hr|h|days?)\b/.exec(low);
+    if (m) {
+      const n = /^half/.test(m[1]) ? 0.5 : NUM[m[1]] != null ? NUM[m[1]] : Number(m[1]);
+      due = now + Math.max(n * UNIT(m[2]), 60000);
+      used.push(m[0]);
+    } else if ((m = /\b(?:in|after)\s+half an? hour\b/.exec(low))) { due = now + 1800000; used.push(m[0]); }
+    // at 5, at 5pm, at 17:30, tomorrow, tonight, this evening
+    if (due == null) {
+      const d = new Date();
+      let day = 0;
+      const tm = /\btomorrow\b/.exec(low); if (tm) { day = 1; used.push(tm[0]); }
+      const at = /\b(?:at|by|around)\s+(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?(?=\s|$|[,.;:!?])/.exec(low)
+        || /\bfor\s+(\d{1,2})(?:[:.](\d{2})\s*(am|pm|a\.m\.|p\.m\.)?|()\s*(am|pm|a\.m\.|p\.m\.))(?=\s|$|[,.;:!?])/.exec(low); // "for 10:30", "for 5pm" (not "for 5": that could be minutes)
+      if (at && at[5]) at[3] = at[5];
+      const part = /\b(tonight|this evening|in the evening|this morning|in the morning|this afternoon|in the afternoon|noon|midday)\b/.exec(low);
+      let h = null, min = 0, ap = '';
+      if (at) { h = Number(at[1]); min = Number(at[2] || 0); ap = (at[3] || '').replace(/\./g, ''); used.push(at[0]); }
+      if (part) used.push(part[0]);
+      if (h == null && part) h = /night/.test(part[1]) ? 21 : /evening/.test(part[1]) ? 19 : /afternoon/.test(part[1]) ? 14 : /noon|midday/.test(part[1]) ? 12 : 9;
+      if (h == null && day === 1) h = 9; // "tomorrow": the morning
+      if (h != null && h <= 23 && min <= 59) {
+        if (ap === 'pm' && h < 12) h += 12;
+        if (ap === 'am' && h === 12) h = 0;
+        if (!ap && h < 12 && part && /evening|night|afternoon/.test(part[1])) h += 12;
+        const c = new Date(d.getFullYear(), d.getMonth(), d.getDate() + day, h, min, 0, 0);
+        // "at 5" with no am/pm: the next 5 o'clock still ahead
+        if (!ap && !part && day === 0 && h < 12 && c.getTime() <= now) { c.setHours(h + 12); }
+        if (c.getTime() <= now) c.setDate(c.getDate() + 1);
+        due = c.getTime();
+      }
+    }
+    if (due == null) return null; // no clear time: the model asks
+    const repeat = /\b(every ?day|daily|each day)\b/.test(low) ? 'daily' : /\b(weekdays|every weekday)\b/.test(low) ? 'weekdays' : /\b(every week|weekly)\b/.test(low) ? 'weekly' : 'none';
+    const kind = /\bcall me\b/.test(low) ? 'call' : 'remind';
+    // what it is about: after a colon, or "to / about / that ...", without the time words
+    let text = '';
+    // the time words out first, so "10:30" or "for 5pm" are never taken for what it is about
+    let rest = t;
+    for (const u of used) rest = rest.replace(new RegExp(u.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), ' ');
+    const colon = rest.search(/(?<!\d):(?!\d)/);
+    if (colon >= 0 && colon < rest.length - 1) text = rest.slice(colon + 1);
+    else {
+      const after = rest.replace(/^.*?\b(remind (me|us)|notify me|ping me|alert me|call me|text me|wake me|reminder)\b/i, '');
+      const w = /\b(?:to|about|that)\s+(.+)$/i.exec(after) || /\bfor\s+(.+)$/i.exec(after);
+      if (w) text = w[1];
+    }
+    text = text.replace(/\b(every ?day|daily|each day|weekdays|every weekday|every week|weekly|tomorrow|today|later|please|pls|ok|okay)\b/gi, ' ').replace(/\s+/g, ' ').replace(/^[\s,.;:-]+|[\s,.;:!?-]+$/g, '').trim();
+    if (!text) text = kind === 'call' ? 'Call from Codeply' : 'Reminder';
+    return { at: new Date(due).toISOString(), repeat, kind, text: text.slice(0, 200) };
+  }
+
   // ─── Push: permission, subscription ──────────────────────────────────────
   const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const standalone = () => navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
@@ -393,7 +457,7 @@
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(keepPush, 1500); });
 
   window.CraftReminders = {
-    api, RULES, voiceRules, chatRules, nowContext, extract, fromTag, createFromTag, pushState, enablePush, subscribe,
+    api, RULES, voiceRules, chatRules, nowContext, extract, fromTag, createFromTag, pushState, enablePush, subscribe, parseAsk,
     mount, refresh, openReminder, whenLabel, list: () => list, VAPID_PUBLIC_KEY,
   };
 })();

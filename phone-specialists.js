@@ -586,7 +586,21 @@
     const spec = (team.list.length ? team.list : cachedTeam()).find((x) => x.id === chat.specialist.id) || {};
     let jobNote = '';
     let jobLine = ''; // the app's own line under the reply: true whatever the model says
-    const order = standingOrder(text);
+    // "remind me in 2 minutes: test": the app sets it now, from this specialist (its name on the notification)
+    const R = window.CraftReminders;
+    const plain = R && R.parseAsk ? R.parseAsk(text) : null;
+    if (plain) {
+      try {
+        const rem = await R.createFromTag(plain, { id: chat.specialist.id, name: chat.specialist.name, voice: spec.voice || null });
+        jobLine = `-# ✓ Reminder set: ${rem.text}, ${R.whenLabel(rem.due_at)}${rem.kind === 'call' ? ' (a call)' : ''}.`
+          + (R.pushState && R.pushState() !== 'granted' ? '\n-# Notifications are off on this device: turn them on in + › Calls to get it with the app closed.' : '');
+        jobNote = `The app just set a reminder the user asked for: "${rem.text}", ${R.whenLabel(rem.due_at)}. Confirm it in one short sentence.`;
+      } catch (e) {
+        jobLine = `-# Couldn't set the reminder: ${e.message}`;
+        jobNote = `The app could not set the reminder (${e.message}). Say so in one short sentence.`;
+      }
+    }
+    const order = jobLine ? null : standingOrder(text);
     if (order) {
       const dupe = team.jobs.find((j) => j.specialist === chat.specialist.id && j.chatId === chat.id && j.task === order.task);
       const saved = dupe ? { rule: dupe.rule } : await saveJob(chat.specialist.id, order.task, order.when, { chatId: chat.id }).catch((e) => ({ error: e.message }));

@@ -1319,6 +1319,8 @@ async function chatSend(chat, text, images = []) {
   state.chatAbort = controller;
   let reply = null; let error = null;
   const sources = []; // the pages searched or read for this reply, shown under it
+  let preset = null; let presetError = ''; // a reminder the app set itself from the user's words
+  const CLAIMS_REMINDER = /\b(reminder (is |has been |'s )?set|set (a|the|your|that) reminder|i('| wi)ll remind you|i('| wi)ll (call|ping|notify|text|message|nudge) you|i('ve| have) (set|scheduled|added) (a|the|your|it)|you'?ll get (a|the) (reminder|notification|call))\b/i;
   try {
     const token = await accessToken();
     const history = b.messages.filter((m) => m.role === 'user' || m.role === 'assistant').slice(-30).map((m) => ({ role: m.role, content: m.thumbs ? `${m.content}\n\n[${m.thumbs.length} image(s) attached]` : m.content }));
@@ -1332,6 +1334,19 @@ async function chatSend(chat, text, images = []) {
     if (window.CraftWork && window.CraftWork.isStatusQuestion(text)) {
       const note = await window.CraftWork.statusNote(text).catch((e) => `The live check could not run: ${e.message}`);
       if (note) messages.push({ role: 'system', content: `CHECKS (read live by the app at ${new Date().toLocaleTimeString()}):\n${note}` });
+    }
+    // "remind me in 2 minutes: test": the app sets it right now, so a reminder never depends on the model writing
+    // its [[REMIND]] line (it used to say "set!" and save nothing). The model is told it is done.
+    const R0 = window.CraftReminders;
+    const plain = R0 && R0.parseAsk ? R0.parseAsk(text) : null;
+    if (plain) {
+      try {
+        preset = await R0.createFromTag(plain, null);
+        messages.push({ role: 'system', content: `THE APP JUST SET A REMINDER the user asked for: "${preset.text}", ${R0.whenLabel(preset.due_at)}${preset.kind === 'call' ? ' (a call)' : ''}. Confirm it in one short sentence with the time. Do not write a [[REMIND: ...]] line for it.` });
+      } catch (e) {
+        presetError = e.message;
+        messages.push({ role: 'system', content: `The app could not set the reminder the user asked for (${e.message}). Say so in one short sentence; do not claim it is set.` });
+      }
     }
     // The web, at once: links in the message are read, and a question that needs the web (asked outright, or about
     // news, prices, weather, scores, "latest"...) is searched before the model is asked, never left to the model.
@@ -1399,6 +1414,21 @@ async function chatSend(chat, text, images = []) {
       reply = '';
     }
     if (reply) reply = reply.replace(/\[\[\s*SEARCH\s*:[^\]]*\]\]/gi, '').trim() || 'I searched but could not put an answer together. Try asking again.';
+    // It says a reminder is set but wrote no [[REMIND]] line, so nothing would be saved: ask once for just the line
+    if (reply && !preset && !presetError && window.CraftReminders && CLAIMS_REMINDER.test(reply) && !window.CraftReminders.extract(reply).reminds.length) {
+      try {
+        const res = await fetch(own ? BYOK_PROXY_URL : AI_PROXY_URL, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...deviceHeader() },
+          body: JSON.stringify({ ...(own ? { modelId: own.id } : {}), messages: [...messages, { role: 'assistant', content: reply }, { role: 'user', content: 'App note: you said a reminder is set, but there is no [[REMIND: ...]] line, so nothing was saved. Reply with only the [[REMIND: ...]] line(s) for it, nothing else.' }], opts: { tz: localTz() } }),
+          signal: controller.signal,
+        });
+        const data = await res.json().catch(() => ({}));
+        const fix = res.ok && data.success && data.data && data.data.choices && data.data.choices[0] && data.data.choices[0].message ? data.data.choices[0].message.content || '' : '';
+        const lines = (fix.match(/\[\[\s*REMIND\s*:[\s\S]*?\]\]/gi) || []).join('\n');
+        if (lines) reply = `${reply}\n${lines}`;
+      } catch (e) { if (e.name === 'AbortError') throw e; }
+    }
   } catch (e) {
     if (e.name === 'AbortError') error = null;
     else error = /fetch|network/i.test(e.message) ? "Can't reach Codeply. Check your internet connection." : e.message;
@@ -1406,19 +1436,25 @@ async function chatSend(chat, text, images = []) {
     state.chatAbort = null;
     state.busy.delete(chat.id);
   }
+  // The model did not answer, but the reminder the app set is real: say so
+  if (!reply && preset && window.CraftReminders) { reply = `Reminder set: ${preset.text}, ${window.CraftReminders.whenLabel(preset.due_at)}.`; error = null; preset = null; }
   // Reminders the reply asked for ([[REMIND: ...]] lines, phone-reminders.js): saved, and the lines hidden.
   if (reply && window.CraftReminders) {
     const R = window.CraftReminders;
     const { text, reminds } = R.extract(reply);
-    if (reminds.length) {
-      const notes = [];
-      for (const t of reminds) {
-        try { const r = await R.createFromTag(t, null); notes.push(`Reminder set: ${r.text}, ${R.whenLabel(r.due_at)}${r.kind === 'call' ? ' (a call)' : ''}.`); }
-        catch (e) { notes.push(`Couldn't set a reminder: ${e.message}`); }
-      }
-      if (R.pushState() !== 'granted') notes.push('Open Calls to let Codeply send you notifications.');
-      reply = `${text}\n\n${notes.map((n) => `- ${n}`).join('\n')}`.trim();
+    // the one the app already set is not set twice
+    const fresh = preset ? reminds.filter((t) => Math.abs(Date.parse(t.at) - Date.parse(preset.due_at)) > 3 * 60000) : reminds;
+    const notes = [];
+    if (preset) notes.push(`Reminder set: ${preset.text}, ${R.whenLabel(preset.due_at)}${preset.kind === 'call' ? ' (a call)' : ''}.`);
+    if (presetError) notes.push(`Couldn't set the reminder: ${presetError}`);
+    for (const t of fresh) {
+      try { const r = await R.createFromTag(t, null); notes.push(`Reminder set: ${r.text}, ${R.whenLabel(r.due_at)}${r.kind === 'call' ? ' (a call)' : ''}.`); }
+      catch (e) { notes.push(`Couldn't set a reminder: ${e.message}`); }
     }
+    // it said "set" and nothing was: say so instead of leaving a false promise
+    if (!notes.length && CLAIMS_REMINDER.test(text)) notes.push('No reminder was actually saved. Try "remind me in 10 minutes: what to do" and it will be.');
+    if (notes.length && (preset || fresh.length) && R.pushState() !== 'granted') notes.push('Notifications are off on this device: open + › Calls to allow them, or the reminder only shows in the app.');
+    if (notes.length || reminds.length) reply = `${text}\n\n${notes.map((n) => `- ${n}`).join('\n')}`.trim();
   }
   if (reply) {
     const seen = new Set();
