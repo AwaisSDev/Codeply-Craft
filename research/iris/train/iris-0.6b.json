@@ -1,0 +1,27 @@
+{
+ "base": "Qwen/Qwen3-0.6B",
+ "train": "data/built/train.jsonl",
+ "val": "data/built/val.jsonl",
+ "out": "runs/iris-0.6b-r1",
+ "epochs": 3,
+ "lr": 0.0002,
+ "warmup_steps": 30,
+ "accum": 8,
+ "max_tokens": 2048,
+ "seed": 1,
+ "lora_r": 32,
+ "lora_alpha": 64,
+ "lora_dropout": 0.05,
+ "target_modules": [
+  "q_proj",
+  "k_proj",
+  "v_proj",
+  "o_proj",
+  "gate_proj",
+  "up_proj",
+  "down_proj"
+ ],
+ "save_every": 25,
+ "eval_every": 100,
+ "val_examples": 120
+}

@@ -1,0 +1,67 @@
+{
+ "contract": "iris.ops/1",
+ "seed": 1,
+ "splits": {
+  "train": {
+   "episodes": 174,
+   "rejected_episodes": [],
+   "sessions": 699,
+   "examples": 1365,
+   "observe": 986,
+   "retrieve": 379,
+   "empty_targets": 100,
+   "ops": {
+    "add": 1446,
+    "skip": 537,
+    "confirm": 70,
+    "update": 182,
+    "retract": 38
+   },
+   "langs": {
+    "en": 115,
+    "roman-ur": 56,
+    "mixed": 2,
+    "ur": 1
+   },
+   "sha256": "57d28351d37e9682d2512e9a560691c9f2009b5335cae6440b302445577632c6"
+  },
+  "val": {
+   "episodes": 0,
+   "rejected_episodes": [],
+   "sessions": 0,
+   "examples": 0,
+   "observe": 0,
+   "retrieve": 0,
+   "empty_targets": 0,
+   "ops": {},
+   "langs": {},
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "test": {
+   "episodes": 0,
+   "rejected_episodes": [],
+   "sessions": 0,
+   "examples": 0,
+   "observe": 0,
+   "retrieve": 0,
+   "empty_targets": 0,
+   "ops": {},
+   "langs": {},
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+ },
+ "leakage": {
+  "train-val": {
+   "shared_entities": [],
+   "near_duplicate_sessions": []
+  },
+  "train-test": {
+   "shared_entities": [],
+   "near_duplicate_sessions": []
+  },
+  "val-test": {
+   "shared_entities": [],
+   "near_duplicate_sessions": []
+  }
+ }
+}
