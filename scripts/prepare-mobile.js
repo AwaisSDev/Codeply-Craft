@@ -48,6 +48,7 @@ for (const [from, to] of [
   ['mobile-cloud.js', 'mobile-cloud.js'],
   ['mobile-cloud.css', 'mobile-cloud.css'],
   ['logo.png', 'logo.png'],
+  ['apple-touch-icon.png', 'apple-touch-icon.png'], // the home-screen icon: the mascot alone, no tile
   ['phone-favicon.png', 'phone-favicon.png'],
   [path.join('brand', 'icons', 'wisp.svg'), 'favicon.svg'],   // the tab icon, sharp at any size
   [path.join('brand', 'icons', 'favicon.ico'), 'favicon.ico'], // for browsers that only ask for /favicon.ico
