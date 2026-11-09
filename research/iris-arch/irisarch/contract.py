@@ -14,7 +14,7 @@ bridge to the production Brain: `to_v0()` and `to_brain_observation()` map every
 import json
 import re
 
-from iris.schema import (ABOUT, CERTAINTY, KINDS, PLAN_STATUS, RELATIONS, SECRET_RE, SENSITIVITY,
+from iris.schema import (ABOUT, CERTAINTY, KINDS, PLAN_STATUS, RELATIONS, SECRET_RE, SENSITIVITY,  # noqa: F401
                          SENSITIVITY_CATEGORIES, ENTITY_TYPES, clip, norm)
 
 VERSION = "iris.v1"
@@ -176,7 +176,7 @@ def validate(out, request=None):
                     errs.append(f"{p}: op {op} needs {k}")
         if op == "link" and not (it.get("related") and it.get("link")):
             errs.append(f"{p}: op link needs related and link")
-        if op != "ignore" and not it["evidence"]:
+        if op not in ("ignore", "link") and not it["evidence"]:   # a link can rest on the memories alone
             errs.append(f"{p}: op {op} needs evidence")
         if op == "ignore" and it["persist"] not in ("ignore", "reject"):
             errs.append(f"{p}: op ignore must persist ignore or reject")
