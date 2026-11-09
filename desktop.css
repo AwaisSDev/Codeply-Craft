@@ -26,6 +26,8 @@ html.desk button, html.desk a, html.desk .chat-row, html.desk .drawer-item { cur
     transition: transform .22s var(--ease), visibility .22s;
   }
   html.desk.side-closed .drawer, html.desk.side-closed .drawer.hidden { transform: translateX(-100%); visibility: hidden; }
+  /* signed out: just the sign-in screen */
+  html.desk body:has(#app.hidden) .drawer { display: none !important; }
   html.desk .drawer-head { min-height: 44px; padding: 0 2px 4px 8px; gap: 4px; }
   html.desk .drawer-title { font-size: 17px; gap: 9px; }
   html.desk .drawer-mark { width: 20px; height: 20px; }
