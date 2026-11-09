@@ -1,0 +1,143 @@
+/* Codeply on the desktop web (codeply.app/chat). The same app as the phone (phone.html, phone.js and the
+   rest), laid out for a big screen: a sidebar that stays, a centred conversation, settings and pickers as
+   dialogs instead of full-screen sheets, hover states, and keyboard shortcuts (desktop.js).
+   Everything here is scoped to html.desk and a wide window; a narrow window falls back to the phone layout. */
+
+html.desk { --side: 272px; --col: 780px; }
+html.desk .box textarea:focus-visible { outline: none; }
+html.desk :focus-visible { outline: 2px solid color-mix(in srgb, var(--blue, #2F6BFF) 70%, transparent); outline-offset: 2px; }
+html.desk button, html.desk a, html.desk .chat-row, html.desk .drawer-item { cursor: pointer; }
+
+@media (min-width: 900px) {
+  html.desk.side-closed { --side: 0px; }
+  html.desk { --side-bg: color-mix(in srgb, var(--surface) 55%, var(--bg)); }
+
+  /* Thin scrollbars, like a desktop app */
+  html.desk * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 18%, transparent) transparent; }
+  html.desk ::-webkit-scrollbar { width: 10px; height: 10px; }
+  html.desk ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text) 16%, transparent); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
+  html.desk ::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--text) 28%, transparent); }
+
+  /* ─── Sidebar: always there, collapsible (Ctrl+B) ─── */
+  html.desk .backdrop { display: none !important; }
+  html.desk .drawer, html.desk .drawer.hidden {
+    display: flex !important; transform: none; width: 272px; z-index: 30;
+    padding: 10px 10px 12px; background: var(--side-bg); box-shadow: inset -1px 0 0 var(--sep);
+    transition: transform .22s var(--ease), visibility .22s;
+  }
+  html.desk.side-closed .drawer, html.desk.side-closed .drawer.hidden { transform: translateX(-100%); visibility: hidden; }
+  html.desk .drawer-head { min-height: 44px; padding: 0 2px 4px 8px; gap: 4px; }
+  html.desk .drawer-title { font-size: 17px; gap: 9px; }
+  html.desk .drawer-mark { width: 20px; height: 20px; }
+  html.desk .drawer-head .circle-btn { width: 34px; height: 34px; background: none; color: var(--muted); border-radius: 9px; }
+  html.desk .drawer-head .circle-btn svg { width: 19px; height: 19px; }
+  html.desk .drawer-head .circle-btn:hover { background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); }
+  html.desk .drawer-search { height: 36px; margin-left: -4px; padding: 0 10px; border-radius: 10px; background: var(--bg); box-shadow: inset 0 0 0 1px var(--border); }
+  html.desk .drawer-search input { font-size: 14px; }
+  html.desk .drawer-nav { padding: 4px 0 2px; }
+  html.desk .drawer-item { height: 36px; gap: 11px; padding: 0 9px; border-radius: 9px; font-size: 14px; font-weight: 500; }
+  html.desk .drawer-item svg { width: 18px; height: 18px; }
+  html.desk .drawer-item kbd { margin-left: auto; background: none; box-shadow: none; color: var(--faint); font-size: 11.5px; opacity: 0; transition: opacity .12s; }
+  html.desk .drawer-item:hover kbd { opacity: 1; }
+  html.desk .drawer-item:hover, html.desk .chat-row:hover, html.desk .drawer-me:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+  html.desk .drawer-sep { margin: 6px 8px 4px; }
+  html.desk .chat-group { font-size: 12px; padding: 12px 9px 4px; color: var(--faint); }
+  html.desk .chat-row { min-height: 34px; padding: 0 9px; border-radius: 9px; font-size: 14px; }
+  html.desk .chat-row.active { background: color-mix(in srgb, var(--text) 9%, transparent); }
+  html.desk .drawer-foot { margin: 0 -10px; padding: 8px 10px 0; }
+  html.desk .drawer-me { height: 44px; font-size: 14px; border-radius: 10px; }
+  html.desk .drawer-me .avatar { width: 28px; height: 28px; font-size: 12px; }
+  html.desk .drawer-foot .circle-btn { width: 34px; height: 34px; background: none; border-radius: 9px; }
+  html.desk .drawer-foot .circle-btn:hover { background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); }
+
+  /* ─── The main column ─── */
+  html.desk .app { left: var(--side); max-width: none; margin: 0; transition: left .22s var(--ease); }
+  html.desk:not(.side-closed) #menuBtn { visibility: hidden; }
+  html.desk #app > .top { padding: 10px 16px 6px; }
+  html.desk #menuBtn:hover, html.desk .top-right .circle-btn:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
+  html.desk .top-who-face, html.desk .top-who-face > * { width: 52px; height: 52px; }
+  html.desk .top-who-face { margin-bottom: -8px; }
+  html.desk #app > .scroll { padding-left: 24px; padding-right: 24px; scroll-padding-bottom: calc(var(--composer-h, 110px) + 8px); }
+  html.desk #feed { max-width: var(--col); margin: 0 auto; gap: 16px; }
+  html.desk .msg { font-size: 16px; line-height: 1.6; }
+  html.desk .msg.user { max-width: 72%; }
+  html.desk .msg pre { font-size: 13px; }
+  html.desk .msg table { font-size: 14.5px; }
+  html.desk .web-src { margin-top: -6px; }
+
+  /* The composer under the column, the same width */
+  html.desk #app > .composer { padding: 0 24px 14px; }
+  html.desk #app > .composer > .box, html.desk #app > .composer > .suggest { width: 100%; max-width: var(--col); margin-left: auto; margin-right: auto; }
+  html.desk .box:focus-within { box-shadow: var(--glass-rim), 0 0 0 1px color-mix(in srgb, var(--text) 14%, transparent); }
+  html.desk #app > .composer > .box { border-radius: 24px; padding: 12px 10px 10px 16px; }
+  html.desk .box textarea { font-size: 16px; max-height: 40vh; }
+  html.desk .slash { left: max(24px, calc((100% - var(--col)) / 2)); right: max(24px, calc((100% - var(--col)) / 2)); }
+  html.desk .suggest { flex-wrap: wrap; justify-content: center; overflow: visible; margin: 0 auto 12px; padding: 0; }
+  html.desk .suggest::after { display: none; }
+  html.desk .suggest button:hover { background: var(--surface-2); }
+  html.desk .composer .round-btn:hover, html.desk .model-btn:hover, html.desk .voice-btn:hover { filter: brightness(.94); }
+
+  /* A new chat: the greeting and the box together in the middle of the screen, the ideas under the box */
+  html.desk #app:has(#feed.hidden) > .scroll { padding-bottom: 0; overflow: hidden; }
+  html.desk #app:has(#feed.hidden) .empty { height: 100%; min-height: 0; }
+  html.desk #app:has(#feed.hidden) .empty-head { flex: none; height: calc(50% - 22px); justify-content: flex-end; padding-bottom: 26px; }
+  html.desk #app:has(#feed.hidden) .greeting { max-width: 560px; font-size: 30px; }
+  html.desk #app:has(#feed.hidden) > .composer { bottom: auto; top: calc(50% + 10px); display: flex; flex-direction: column; }
+  html.desk #app:has(#feed.hidden) > .composer::after { display: none; }
+  html.desk #app:has(#feed.hidden) > .composer > .suggest { order: 2; margin-top: 16px; margin-bottom: 0; }
+  html.desk #app:has(#feed.hidden) > .composer .slash { bottom: auto; top: calc(100% - 40px); }
+
+  /* ─── Settings, Tasks, Usage...: dialogs over the app, not full screen ─── */
+  html.desk .panel {
+    inset: 5vh max(24px, calc(50% - 380px)); max-width: none; margin: 0;
+    border-radius: 20px; overflow: hidden; z-index: 70;
+    box-shadow: 0 0 0 100vmax var(--scrim, rgba(0, 0, 0, .45)), 0 24px 80px rgba(0, 0, 0, .3), inset 0 0 0 1px var(--border);
+    animation: deskIn .2s var(--ease);
+  }
+  html.desk .panel > .top { padding: 10px 12px 6px; }
+  html.desk .panel .panel-body { padding: 8px 24px 24px; }
+  html.desk #design.panel { inset: 3vh max(24px, calc(50% - 600px)); }
+  html.desk .panel .icon-btn:hover { background: color-mix(in srgb, var(--text) 7%, transparent); border-radius: 50%; }
+
+  /* Bottom sheets become centred dialogs */
+  html.desk .sheet { align-items: center; padding: 24px; }
+  html.desk .sheet-card { max-width: 480px; border-radius: 20px; padding: 22px 24px 22px; animation: deskIn .18s var(--ease); box-shadow: 0 24px 80px rgba(0, 0, 0, .3), inset 0 0 0 1px var(--border); }
+  html.desk #pickSheet .sheet-card { max-width: 560px; }
+  html.desk .sheet-handle { display: none; }
+  html.desk .sheet-actions { justify-content: flex-end; }
+  html.desk .sheet-actions .btn { flex: none; min-width: 112px; }
+
+  /* Menus answer the mouse */
+  html.desk .pop .pick-row:hover { background: var(--surface-2); }
+  html.desk .pop .pick-row { min-height: 40px; font-size: 14.5px; }
+  html.desk .pop-catch { background: transparent; }
+}
+
+@keyframes deskIn { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
+
+/* ─── Bits desktop.js adds (any width) ─── */
+html.desk kbd {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px;
+  border-radius: 5px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border), 0 1px 0 var(--border);
+  font: 500 11px/1 var(--font, Inter, system-ui, sans-serif); color: var(--muted);
+}
+.desk-drop {
+  position: fixed; inset: 0; z-index: 95; display: flex; align-items: center; justify-content: center; pointer-events: none;
+  background: color-mix(in srgb, var(--bg) 70%, transparent); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  opacity: 0; transition: opacity .12s ease;
+}
+.desk-drop.on { opacity: 1; }
+.desk-drop > div {
+  display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 36px 56px; border-radius: 24px;
+  border: 2px dashed color-mix(in srgb, var(--blue, #2F6BFF) 60%, transparent); background: var(--bg); color: var(--text);
+  font-size: 17px; font-weight: 600;
+}
+.desk-drop small { font-size: 13px; font-weight: 400; color: var(--muted); }
+.desk-keys { position: fixed; inset: 0; z-index: 96; display: flex; align-items: center; justify-content: center; background: var(--scrim, rgba(0, 0, 0, .45)); animation: fade .15s ease; }
+.desk-keys > div { width: min(440px, calc(100vw - 32px)); max-height: 80vh; overflow-y: auto; padding: 20px 22px; border-radius: 20px; background: var(--pop, var(--bg)); box-shadow: var(--shadow); animation: deskIn .18s var(--ease); }
+.desk-keys h2 { margin: 0 0 12px; font-size: 18px; font-weight: 600; letter-spacing: -.02em; }
+.desk-keys dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; align-items: center; font-size: 14px; }
+.desk-keys dt { color: var(--text); }
+.desk-keys dd { margin: 0; display: flex; gap: 4px; }
+.desk-side-btn svg { display: block; }
+@media (max-width: 899.98px) { .desk-side-btn { display: none !important; } }

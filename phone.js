@@ -684,6 +684,11 @@ function refreshLiveSteps() {
   if (needs && !w) f.append(el('div', 'working pc-working', THINK_HTML()));
   else if (!needs && w) w.remove();
 }
+/** "Searched the web" and the sites, under a reply that used them. */
+function sourcesHtml(list) {
+  const chips = list.map((x) => `<a class="web-src-chip" href="${esc(x.url)}" target="_blank" rel="noopener noreferrer" title="${esc(x.title || x.url)}"><img src="https://icons.duckduckgo.com/ip3/${esc(x.host)}.ico" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()"><span>${esc(x.host)}</span></a>`).join('');
+  return `<span class="web-src-label"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3Z"/></svg>Searched the web</span>${chips}`;
+}
 function el(tag, cls, html) { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; }
 
 function addMsg(kind, text, images) {
@@ -1086,7 +1091,10 @@ function renderFeed({ force = false } = {}) {
   streamEl = null;
   checkpointEls.clear(); questionEls.clear();
   if (c.kind === 'chat') {
-    for (const m of b.messages) addMsg(m.role === 'user' ? 'user' : m.role === 'error' ? 'error' : 'agent', m.content, m.thumbs);
+    for (const m of b.messages) {
+      addMsg(m.role === 'user' ? 'user' : m.role === 'error' ? 'error' : 'agent', m.content, m.thumbs);
+      if (m.sources && m.sources.length) append(el('div', 'web-src', sourcesHtml(m.sources)));
+    }
     if (state.busy.has(c.id)) append(el('div', 'working', THINK_HTML()));
   } else {
     for (const m of b.prelude || []) addMsg(m.role === 'user' ? 'user' : m.role === 'error' ? 'error' : 'agent', m.content, m.thumbs);
@@ -1298,6 +1306,7 @@ async function chatSend(chat, text, images = []) {
   const controller = new AbortController();
   state.chatAbort = controller;
   let reply = null; let error = null;
+  const sources = []; // the pages searched or read for this reply, shown under it
   try {
     const token = await accessToken();
     const history = b.messages.filter((m) => m.role === 'user' || m.role === 'assistant').slice(-30).map((m) => ({ role: m.role, content: m.thumbs ? `${m.content}\n\n[${m.thumbs.length} image(s) attached]` : m.content }));
@@ -1312,7 +1321,30 @@ async function chatSend(chat, text, images = []) {
       const note = await window.CraftWork.statusNote(text).catch((e) => `The live check could not run: ${e.message}`);
       if (note) messages.push({ role: 'system', content: `CHECKS (read live by the app at ${new Date().toLocaleTimeString()}):\n${note}` });
     }
-    // Up to two web searches: the model asks with [[SEARCH: ...]], the phone searches, the model answers from the results.
+    // The web, at once: links in the message are read, and a question that needs the web (asked outright, or about
+    // news, prices, weather, scores, "latest"...) is searched before the model is asked, never left to the model.
+    const W = window.CodeplyWeb;
+    let searched = false;
+    if (W) {
+      const links = W.linksIn(text);
+      const prevUser = b.messages.filter((m) => m.role === 'user').slice(-2, -1).map((m) => m.content)[0];
+      const query = W.needsSearch(text) ? W.queryFor(text, prevUser) : '';
+      if (links.length || query) {
+        workingWord(chat.id, links.length && !query ? 'Reading the link' : 'Searching the web');
+        const [page, found] = await Promise.all([
+          links.length ? W.read(links, { signal: controller.signal, token }).catch((e) => { if (e.name === 'AbortError') throw e; return { text: `(Could not read ${links.join(', ')}: ${e.message}.)`, sources: [] }; }) : null,
+          query ? webSearch(query, { signal: controller.signal, full: true }).catch((e) => { if (e.name === 'AbortError') throw e; return { text: `(${e.message}. Answer from what you know, and say briefly that the web search did not work just now.)`, sources: [] }; }) : null,
+        ]);
+        workingWord(chat.id, '');
+        if (page) { sources.push(...page.sources); messages.push({ role: 'system', content: `PAGES THE USER LINKED (read just now):\n\n${page.text}` }); }
+        if (found) {
+          sources.push(...found.sources);
+          searched = true;
+          messages.push({ role: 'system', content: `WEB RESULTS for "${query}" (the app searched the web just now, ${new Date().toDateString()}):\n\n${found.text}\n\nAnswer the user's last message from these results: the key facts first, and cite sources as markdown links. Write [[SEARCH: a better query]] only if these results really miss what they asked.` });
+        }
+      }
+    }
+    // Up to two more web searches: the model asks with [[SEARCH: ...]], the phone searches, the model answers from the results.
     for (let round = 0; ; round++) {
       const res = await fetch(own ? BYOK_PROXY_URL : AI_PROXY_URL, {
         method: 'POST',
@@ -1328,12 +1360,14 @@ async function chatSend(chat, text, images = []) {
         if (!reply) error = 'Codeply sent back an empty reply. Try again.';
       } else if (res.status === 401 && !data.error) error = 'Your sign-in expired. Sign out and sign in again.';
       else error = data.error || data.message || data.msg || `Codeply could not answer (${res.status}).`;
-      const asked = reply && SEARCH_TAG.exec(reply);
+      let asked = reply && SEARCH_TAG.exec(reply);
+      // "I can't browse the web" / "as of my training data": search for it anyway and ask again
+      if (!asked && reply && !searched && W && W.refused(reply)) asked = [null, W.queryFor(text)];
       if (!asked || round >= 2) break;
       const query = asked[1].trim();
       workingWord(chat.id, 'Searching the web');
       let found = '';
-      try { found = await webSearch(query, { signal: controller.signal }); } catch (e) {
+      try { const r = await webSearch(query, { signal: controller.signal, full: true }); found = r.text; sources.push(...r.sources); searched = true; } catch (e) {
         if (e.name === 'AbortError') throw e;
         found = `(${e.message}. Answer from what you know, and say briefly that the web search did not work just now.)`;
       }
@@ -1364,55 +1398,40 @@ async function chatSend(chat, text, images = []) {
       reply = `${text}\n\n${notes.map((n) => `- ${n}`).join('\n')}`.trim();
     }
   }
-  if (reply) b.messages.push({ role: 'assistant', content: reply, at: Date.now() });
-  else if (error) b.messages.push({ role: 'error', content: error, at: Date.now() });
+  if (reply) {
+    const seen = new Set();
+    const src = sources.filter((x) => x && x.url && !seen.has(x.url) && seen.add(x.url)).slice(0, 8);
+    b.messages.push({ role: 'assistant', content: reply, at: Date.now(), ...(src.length ? { sources: src } : {}) });
+  } else if (error) b.messages.push({ role: 'error', content: error, at: Date.now() });
   saveBody(chat.id);
   touchChat(chat.id);
   if (chat.id === state.current) renderFeed();
 }
 
 // ─── Web search ─────────────────────────────────────────────────────────────
-// Straight from the phone through Exa's public search (the same one the
-// engine's web_search uses; open to browsers, no key), so it works with the PC
-// off; the PC's own search (Exa, then DuckDuckGo) is the fallback.
-const EXA_URL = 'https://mcp.exa.ai/mcp';
+// web-search.js (window.CodeplyWeb): Codeply's /api/search first, then Exa and Wikipedia straight from the
+// browser, so it works with the PC off; the PC's own search is the last resort.
 const SEARCH_TAG = /\[\[\s*SEARCH\s*:\s*([^\]\n]{2,240})\]\]/i;
-function timeoutSignal(ms, parent) {
-  const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), ms);
-  if (parent) { if (parent.aborted) ctl.abort(); else parent.addEventListener('abort', () => ctl.abort(), { once: true }); }
-  ctl.signal.addEventListener('abort', () => clearTimeout(t), { once: true });
-  return ctl.signal;
-}
-async function exaSearch(query, num, signal) {
-  const res = await fetch(EXA_URL, {
-    method: 'POST', signal: timeoutSignal(20000, signal),
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'web_search_exa', arguments: { query, numResults: num, type: 'auto', livecrawl: 'fallback' } } }),
-  });
-  if (!res.ok) throw new Error(`search returned ${res.status}`);
-  const raw = await res.text();
-  const payloads = raw.trimStart().startsWith('{') ? [raw] : raw.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim());
-  for (const p of payloads) {
-    let j; try { j = JSON.parse(p); } catch { continue; }
-    if (j.error) throw new Error(j.error.message || 'search error');
-    const text = ((j.result && j.result.content) || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n').trim();
-    if (text) return text;
-  }
-  throw new Error('no results');
-}
-/** Search the web: the results as text (titles, links and page extracts). */
-async function webSearch(query, { num = 6, signal } = {}) {
+/**
+ * Search the web: the results as text (titles, links and page extracts).
+ * opts.full: resolve { text, sources } instead of the text alone.
+ */
+async function webSearch(query, { num = 6, signal, full = false } = {}) {
   query = String(query || '').trim().slice(0, 300);
   if (!query) throw new Error('Nothing to search for.');
-  try { return (await exaSearch(query, num, signal)).slice(0, 14000); } catch (e) {
-    if (signal && signal.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' });
-    if (relay.pcId) {
-      const r = await relayRequest('POST', '/api/web/search', { query, num }, 40000).catch(() => null);
-      if (r && r.text) return String(r.text).slice(0, 14000);
-    }
-    throw new Error(`the search did not work (${e.message})`);
+  let firstError;
+  if (window.CodeplyWeb) {
+    try {
+      const token = await accessToken().catch(() => null);
+      const r = await window.CodeplyWeb.search(query, { num, signal, token });
+      return full ? r : r.text;
+    } catch (e) { if (e.name === 'AbortError' || (signal && signal.aborted)) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' }); firstError = e; }
   }
+  if (relay.pcId) {
+    const r = await relayRequest('POST', '/api/web/search', { query, num }, 40000).catch(() => null);
+    if (r && r.text) { const text = String(r.text).slice(0, 14000); return full ? { text, sources: window.CodeplyWeb ? window.CodeplyWeb.sourcesOf(text) : [] } : text; }
+  }
+  throw firstError || new Error('the search did not work');
 }
 /** The thinking line says what is happening ("Searching the web"); phone-wisp.js leaves it alone. */
 function workingWord(chatId, word) {
@@ -2701,7 +2720,7 @@ function renderChatList() {
   const rank = (r) => (r.flag === 'needs' ? 0 : r.flag === 'running' ? 1 : 2);
   rows.sort((a, b) => rank(a) - rank(b));
   list.innerHTML = rows.length ? '' : `<div class="chat-empty">${q ? 'No chats match.' : 'No chats yet.'}</div>`;
-  const LIMIT = 10;
+  const LIMIT = document.documentElement.classList.contains('desk') ? 40 : 10; // the desktop sidebar has room for more
   const shown = q || showAllChats ? rows : rows.slice(0, LIMIT);
   // Grouped by when, like ChatGPT's sidebar (what needs you and what runs stay on top).
   const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
@@ -3067,6 +3086,8 @@ window.CraftPhone = { state, relay, sb, sealSecret, CLOUD_WORKFLOW, md, linkText
   gh, ensureGithub, hasGithub, ensureRepoReady, readSessionJson, envFor, chatBody: body, accountConnections,
   // phone-app.js (tabs, Home, You, sign-up) builds on these
   createChat, saveBody, saveChats, webSearch,
+  // desktop.js (codeply.app/chat): files dropped on the window or pasted
+  addAttFiles,
   SUPABASE_URL, answerApproval, setPermission, PERM, signinStep, openChat, openPcSession, newChat, openSettings, openSetup, openProjectPicker, openModelPicker, chatMeta, signOut, applyTheme, themeChoice, renderChatList, enterApp, friendlyAuthError, currentSession };
 
 // Reminders and "calls" from your bots arrive as Web Push: phone-sw.js shows

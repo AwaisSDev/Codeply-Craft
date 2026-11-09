@@ -38,6 +38,9 @@ for (const [from, to] of [
   ['bot-avatar.js', 'bot-avatar.js'],
   ['attachments.js', 'attachments.js'],
   ['link-chips.js', 'link-chips.js'],     // links in messages as chips (shared with Craft)
+  ['web-search.js', 'web-search.js'],     // web search: Codeply's /api/search, then Exa and Wikipedia from the browser
+  ['desktop.css', 'desktop.css'],         // the desktop web app (chat/index.html below)
+  ['desktop.js', 'desktop.js'],
   ['phone.manifest.json', 'manifest.json'],
   [path.join('vendor', 'phone', 'nacl-fast.min.js'), 'nacl-fast.min.js'],
   [path.join('vendor', 'phone', 'blake2b.js'), 'blake2b.js'],
@@ -76,6 +79,30 @@ for (const [from, to] of [['Gmail.webp', 'gmail.webp'], ['Slack.webp', 'slack.we
     directions: lib('directions'), palettes: lib('palettes'), type: lib('type'),
     guides: { skill: md('SKILL.md'), tells: md('references/tells.md'), copy: md('references/copy.md'), colour: md('references/colour.md'), type: md('references/type.md'), layout: md('references/layout.md') },
   }));
+}
+
+// The desktop web app: the same app laid out for a big screen (desktop.css, desktop.js), at /chat/ here and at
+// codeply.app/chat (the website proxies /chat to this deployment). <base href="/chat/"> keeps every file under
+// /chat/, which vercel.json rewrites to the files at the root, so nothing is copied twice and the proxy only
+// needs /chat.
+{
+  let html = fs.readFileSync(path.join(root, 'phone.html'), 'utf8');
+  const swap = (from, to) => {
+    if (!html.includes(from)) throw new Error(`prepare-mobile: phone.html no longer has ${JSON.stringify(from)}`);
+    html = html.replace(from, to);
+  };
+  swap('<html lang="en">', '<html lang="en" class="desk">');
+  swap('<meta charset="utf-8">', '<meta charset="utf-8">\n  <base href="/chat/">');
+  swap('<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">', '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">');
+  swap('<title>Codeply</title>', '<title>Codeply</title>\n  <meta name="description" content="Codeply in your browser: chat, search the web, and start work on your PC or in the cloud.">');
+  swap('<link rel="manifest" href="manifest.json">', '<link rel="manifest" href="desktop.manifest.json">');
+  swap('<link rel="stylesheet" href="phone-specialists.css">', '<link rel="stylesheet" href="phone-specialists.css">\n  <link rel="stylesheet" href="desktop.css">');
+  swap('<script src="phone-app.js"></script>', '<script src="phone-app.js"></script>\n  <script src="desktop.js"></script>');
+  fs.mkdirSync(path.join(target, 'chat'), { recursive: true });
+  fs.writeFileSync(path.join(target, 'chat', 'index.html'), html);
+  // Installable as its own desktop app (Chrome and Edge: Install), opening on /chat/
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'phone.manifest.json'), 'utf8'));
+  fs.writeFileSync(path.join(target, 'desktop.manifest.json'), JSON.stringify({ ...manifest, id: '/chat/', start_url: '/chat/', scope: '/chat/', display: 'standalone', display_override: ['window-controls-overlay', 'standalone'], icons: manifest.icons.map((i) => ({ ...i, src: '/chat/logo.png' })) }, null, 2));
 }
 
 // Static hosting config for Vercel: no build step, and never cache the app

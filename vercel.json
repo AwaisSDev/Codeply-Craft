@@ -6,9 +6,32 @@
   "outputDirectory": "mobile-app",
   "ignoreCommand": "bash scripts/vercel-ignore.sh",
   "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/chat",
+      "destination": "/chat/index.html"
+    },
+    {
+      "source": "/chat/",
+      "destination": "/chat/index.html"
+    },
+    {
+      "source": "/chat/:path+",
+      "destination": "/:path+"
+    }
+  ],
   "headers": [
     {
-      "source": "/(index.html|phone.js|phone.css|phone-theme.css|phone-app.js|phone-app.css|phone-wisp.js|wisp.js|phone-work.js|phone-work.css|phone-specialists.js|phone-specialists.css|phone-bots.js|phone-taste.js|taste.json|phone-calls.js|phone-calls.css|phone-design.js|phone-design.css|phone-life.js|phone-reminders.js|phone-sw.js|phone-stt-worker.js|bot-avatar.js|attachments.js|classic.html|classic|mobile.js|mobile.css|mobile-cloud.js|mobile-cloud.css|link-chips.js|)",
+      "source": "/(index.html|phone.js|phone.css|phone-theme.css|phone-app.js|phone-app.css|phone-wisp.js|wisp.js|phone-work.js|phone-work.css|phone-specialists.js|phone-specialists.css|phone-bots.js|phone-taste.js|taste.json|phone-calls.js|phone-calls.css|phone-design.js|phone-design.css|phone-life.js|phone-reminders.js|phone-sw.js|phone-stt-worker.js|bot-avatar.js|attachments.js|classic.html|classic|mobile.js|mobile.css|mobile-cloud.js|mobile-cloud.css|link-chips.js|web-search.js|desktop.js|desktop.css|desktop.manifest.json|chat|)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    },
+    {
+      "source": "/chat/(.*)",
       "headers": [
         {
           "key": "Cache-Control",

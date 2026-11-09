@@ -55,9 +55,9 @@ self.addEventListener('push', (e) => {
   const title = String(d.title || 'Codeply').slice(0, 60);
   const opts = {
     body: bodyFor(d).slice(0, 240),
-    icon: '/logo.png',
+    icon: new URL('logo.png', self.registration.scope).href, // relative to the scope: the app also runs at codeply.app/chat/
     // The small status-bar icon: Android draws only its shape, so it is the knot alone on transparent.
-    badge: '/notify-badge.png',
+    badge: new URL('notify-badge.png', self.registration.scope).href,
     tag: d.reminderId ? `reminder-${d.reminderId}` : 'codeply',
     renotify: true,
     requireInteraction: d.kind === 'call',
@@ -105,7 +105,7 @@ self.addEventListener('notificationclick', (e) => {
     return;
   }
   const answer = e.action === 'answer' && d.kind === 'call';
-  const url = d.reminderId ? `/?call=${encodeURIComponent(d.reminderId)}${answer ? '&answer=1' : ''}` : '/';
+  const url = new URL(d.reminderId ? `./?call=${encodeURIComponent(d.reminderId)}${answer ? '&answer=1' : ''}` : './', self.registration.scope).href;
   e.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const w of wins) {
