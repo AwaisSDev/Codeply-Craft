@@ -592,7 +592,9 @@
       const saved = dupe ? { rule: dupe.rule } : await saveJob(chat.specialist.id, order.task, order.when, { chatId: chat.id }).catch((e) => ({ error: e.message }));
       jobLine = saved.error
         ? `-# Couldn't save this as ${chat.specialist.name}'s standing job: ${saved.error}`
-        : `-# ✓ Saved as ${chat.specialist.name}'s standing job, ${describeRule(saved.rule)}. Reports come to this chat and as a notification${spec.alwaysOn ? ', even with your PC off' : ' (turn on Always on to run it with your PC off)'}. Change or stop it in Specialists › ${chat.specialist.name}.`;
+        : `-# ✓ Saved as ${chat.specialist.name}'s standing job, ${describeRule(saved.rule)}. Reports come to this chat and as a notification${spec.alwaysOn ? ', even with your PC off' : ' (turn on Always on to run it with your PC off)'}. Change or stop it in Specialists › ${chat.specialist.name}.`
+          // reports reach a closed app only with notifications allowed on this device
+          + (window.CraftReminders && window.CraftReminders.pushState && window.CraftReminders.pushState() !== 'granted' ? '\n-# Notifications are off on this device, so reports only show when you open the app. Turn them on in + › Calls to get them with the app closed.' : '');
       jobNote = saved.error
         ? `The app tried to save this as your standing job but could not (${saved.error}). Say so in one line.`
         : `The app saved this as your standing job, ${describeRule(saved.rule)}: "${order.task.slice(0, 300)}". Confirm it in one or two lines (what you will look for and when you will message me), then do a first check right now from the web results below if there are any. Each run's report reaches me as a phone notification and in this chat.`;
