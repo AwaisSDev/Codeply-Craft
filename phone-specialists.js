@@ -201,6 +201,8 @@
     const r = await fetch(`${P().SUPABASE_URL}/functions/v1/specialists`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, apikey: P().SUPABASE_ANON_KEY, 'Content-Type': 'application/json', ...device }, body: JSON.stringify(body) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok && !j.error) throw new Error(`The server did not answer (HTTP ${r.status}).`);
+    // Codeply's models at their limit: the calm line (the user's own model's errors stay as they are)
+    if (j.error && !body.modelId && window.codeplyBusyText) j.error = window.codeplyBusyText(j.error);
     return j;
   }
 

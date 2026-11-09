@@ -185,7 +185,8 @@
     const name = $('topWhoName');
     if (name) name.textContent = spec ? spec.name : 'Codeply';
     if (!whoFace) {
-      const el = W.avatar({ size: 'sm', mood: 'happy', look: look || undefined });
+      // 'lg': the logo's eye size. 'sm' is for tiny faces and makes the eyes round blobs at this size.
+      const el = W.avatar({ size: 'lg', mood: 'happy', look: look || undefined });
       slot.appendChild(el);
       whoFace = el.wisp || null;
     } else if (whoFace.dress) whoFace.dress(look, whoKey !== null); // the costume change when the chat switches

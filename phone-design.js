@@ -175,7 +175,7 @@ Reply with the whole file in one \`\`\`html block, then one or two short lines o
       });
       const data = await res.json().catch(() => ({}));
       const reply = res.ok && data.success && data.data && data.data.choices && data.data.choices[0] ? String(data.data.choices[0].message.content || '') : '';
-      if (!reply) throw new Error(data.error || `Codeply could not design that (${res.status}).`);
+      if (!reply) throw new Error((window.codeplyBusyText || String)(data.error || `Codeply could not design that (${res.status}).`));
       const m = reply.match(/```html\s*([\s\S]*?)```/i) || reply.match(/(<!doctype html[\s\S]*<\/html>)/i);
       const html = m ? m[1].trim() : '';
       if (!/<html|<body|<section|<svg/i.test(html)) throw new Error('The reply had no design in it. Try again.');

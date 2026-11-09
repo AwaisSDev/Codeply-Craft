@@ -1345,7 +1345,7 @@ You are on a live voice call with the user, talking out loud. Everything you wri
       return (choice && choice.message && choice.message.content) || '';
     }
     if (res.status === 401 && !data.error) throw new Error('Your sign-in expired. Sign in again.');
-    throw new Error(data.error || data.message || `Codeply could not answer (${res.status}).`);
+    throw new Error((window.codeplyBusyText || String)(data.error || data.message || `Codeply could not answer (${res.status}).`));
   }
 
   async function heardText(text, typed = false) {
@@ -1395,7 +1395,7 @@ You are on a live voice call. Reply with ONLY a JSON object: {"say": "...", "wor
       });
     }
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.success) throw new Error(data.error || `Codeply could not answer (${res.status}).`);
+    if (!res.ok || !data.success) throw new Error((window.codeplyBusyText || String)(data.error || `Codeply could not answer (${res.status}).`));
     const raw = (data.data && data.data.choices && data.data.choices[0] && data.data.choices[0].message && data.data.choices[0].message.content) || '';
     let j = null;
     try { j = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)); } catch {}
@@ -2300,7 +2300,7 @@ Respond with ONLY a JSON object:
       body: JSON.stringify({ messages: [{ role: 'user', content: describePrompt(text) }], opts: { json: true, maxTokens: 500, temperature: 0.6 }, meta: { source: 'phone-bot-builder' } }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.success) throw new Error(data.error || `Codeply could not build it (${res.status}).`);
+    if (!res.ok || !data.success) throw new Error((window.codeplyBusyText || String)(data.error || `Codeply could not build it (${res.status}).`));
     const raw = (data.data && data.data.choices && data.data.choices[0] && data.data.choices[0].message && data.data.choices[0].message.content) || '';
     let json = {};
     try { json = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)); } catch {}
