@@ -33,7 +33,9 @@ DEFAULTS = {
 
 
 def load_examples(path):
-    return [json.loads(l) for l in Path(path).read_text(encoding="utf-8").splitlines() if l.strip()]
+    """Examples from one JSONL file, a comma-separated list of files, or a list."""
+    paths = path if isinstance(path, list) else str(path).split(",")
+    return [json.loads(l) for p in paths if p.strip() for l in Path(p.strip()).read_text(encoding="utf-8").splitlines() if l.strip()]
 
 
 def encode(tok, ex, max_tokens):
@@ -101,7 +103,7 @@ def main(argv=None):
     train = [e for e in (encode(tok, ex, cfg["max_tokens"]) for ex in load_examples(cfg["train"])) if e]
     n_all = len(load_examples(cfg["train"]))
     val = []
-    if cfg["val"] and Path(cfg["val"]).exists():
+    if cfg["val"] and Path(cfg["val"]).exists() and Path(cfg["val"]).stat().st_size:
         vex = load_examples(cfg["val"])
         random.Random(0).shuffle(vex)
         val = [e for e in (encode(tok, ex, cfg["max_tokens"]) for ex in vex[:cfg["val_examples"]]) if e]

@@ -1,7 +1,8 @@
 """Iris runtime: one predictable interface over two local backends.
 
     from codeply_iris.infer import Iris
-    iris = Iris.load("release/iris-1-q8_0.gguf")            # llama.cpp (GGUF), or a merged Hugging Face directory
+    iris = Iris.load("iris-1-Q8_0.gguf")     # GGUF via llama-server (or llama-cpp-python), a merged Hugging Face
+                                             # directory, or the URL of a running llama-server
     out = iris.observe(now="2026-03-02T09:15", source="personal_chat", memories=[...], messages=[...])
     out["ops"]        # operations that passed the guard: hand these to the store / Brain
     out["rejected"]   # [(op, reason)]: never applied
@@ -70,6 +71,64 @@ class LlamaBackend:
         return r["choices"][0]["text"], {"prompt_tokens": u.get("prompt_tokens", 0), "new_tokens": u.get("completion_tokens", 0)}
 
 
+class ServerBackend:
+    """llama.cpp's `llama-server`, started and owned by this process (as Codeply's local runtime does) or reached
+    at `url`. The binary comes from $IRIS_LLAMA_SERVER or PATH. `constrain=True` sends the contract's JSON Schema."""
+
+    def __init__(self, gguf=None, url=None, threads=0, n_ctx=8192, constrain=False, port=0):
+        import atexit
+        import os
+        import shutil
+        import socket
+        import subprocess
+        import urllib.request
+        self.constrain = constrain
+        self.proc = None
+        if url:
+            self.url = url.rstrip("/")
+        else:
+            exe = os.environ.get("IRIS_LLAMA_SERVER") or shutil.which("llama-server")
+            if not exe:
+                raise RuntimeError("llama-server not found: set IRIS_LLAMA_SERVER or put it on PATH")
+            if not port:
+                with socket.socket() as sock:
+                    sock.bind(("127.0.0.1", 0))
+                    port = sock.getsockname()[1]
+            cmd = [exe, "-m", str(gguf), "--host", "127.0.0.1", "--port", str(port), "-c", str(n_ctx), "--parallel", "1",
+                   "--no-webui", "-t", str(threads or os.cpu_count() or 4)]
+            self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            atexit.register(self.close)
+            self.url = f"http://127.0.0.1:{port}"
+            t0 = time.time()
+            while True:
+                try:
+                    with urllib.request.urlopen(self.url + "/health", timeout=2) as r:
+                        if r.status == 200:
+                            break
+                except Exception:
+                    if self.proc.poll() is not None:
+                        raise RuntimeError(f"llama-server exited with code {self.proc.returncode}")
+                    if time.time() - t0 > 180:
+                        raise RuntimeError("llama-server did not become healthy in 180 s")
+                    time.sleep(0.5)
+        self.name = f"llama-server:{gguf or url}"
+
+    def close(self):
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+
+    def generate(self, text, max_new_tokens=900, schema=None):
+        import json
+        import urllib.request
+        body = {"prompt": text, "n_predict": max_new_tokens, "temperature": 0.0, "stop": ["<|im_end|>"], "cache_prompt": False}
+        if self.constrain and schema:
+            body["json_schema"] = schema
+        req = urllib.request.Request(self.url + "/completion", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=900) as r:
+            out = json.load(r)
+        return out.get("content", ""), {"prompt_tokens": out.get("tokens_evaluated", 0), "new_tokens": out.get("tokens_predicted", 0)}
+
+
 class Iris:
     def __init__(self, backend, system=prompt.SYSTEM, retrieve_system=None):
         self.backend = backend
@@ -78,8 +137,15 @@ class Iris:
 
     @classmethod
     def load(cls, path, adapter=None, threads=0, constrain=False, **kw):
-        backend = LlamaBackend(path, threads=threads, constrain=constrain) if str(path).endswith(".gguf") \
-            else HFBackend(path, adapter=adapter, threads=threads)
+        if str(path).startswith("http://") or str(path).startswith("https://"):
+            backend = ServerBackend(url=path, constrain=constrain)
+        elif str(path).endswith(".gguf"):
+            try:
+                backend = ServerBackend(path, threads=threads, constrain=constrain)
+            except RuntimeError:
+                backend = LlamaBackend(path, threads=threads, constrain=constrain)
+        else:
+            backend = HFBackend(path, adapter=adapter, threads=threads)
         return cls(backend, **kw)
 
     @staticmethod
