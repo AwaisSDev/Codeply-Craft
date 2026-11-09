@@ -31,6 +31,7 @@ for (const [from, to] of [
   ['phone-work.css', 'phone-work.css'],
   ['phone-specialists.js', 'phone-specialists.js'], // the team, made and run from the phone (works with the PC off)
   ['phone-specialists.css', 'phone-specialists.css'],
+  ['phone-sync.js', 'phone-sync.js'],     // chats synced through the account (supabase/chats.sql)
   ['phone-bots.js', 'phone-bots.js'],     // the bots, run from the phone while the PC is off
   ['phone-taste.js', 'phone-taste.js'],   // Codeply's taste skill for designs made on the phone
   ['wisp.js', 'wisp.js'],

@@ -358,7 +358,10 @@ function loadSynced() {
   return syncedLoading;
 }
 const isSyncedOnPhone = (pcModel) => !!pcModel && (pcModel.synced || state.synced.some((s) => s.clientId === pcModel.id));
-const saveChats = () => save(KEY.chats, state.chats);
+// phone-sync.js keeps chats the same on every device (this phone, mobile.codeply.app, codeply.app/chat):
+// these hooks tell it what changed.
+const syncHook = (what, id) => { try { if (window.CraftSync) window.CraftSync.changed(what, id); } catch {} };
+const saveChats = () => { const ok = save(KEY.chats, state.chats); syncHook('chats'); return ok; };
 const chatMeta = (id) => state.chats.find((c) => c.id === id) || null;
 function body(id) {
   if (!state.bodies.has(id)) state.bodies.set(id, { messages: [], pcItems: [], tasks: [], ...load(KEY.chat(id), {}) });
@@ -366,6 +369,7 @@ function body(id) {
 }
 function saveBody(id) {
   const b = body(id);
+  syncHook('body', id);
   if (save(KEY.chat(id), b)) return;
   // localStorage is full: drop the biggest step lists of finished cloud runs first.
   const slim = { ...b, tasks: (b.tasks || []).map((t, i, all) => (i < all.length - 2 && !isLive(t) ? { ...t, events: [] } : t)) };
@@ -2716,7 +2720,8 @@ function openPcSession(meta) {
   if (!c) c = createChat('code', { pcSessionId: meta.id, title: meta.title || 'Untitled', project: { key: `cwd:${normCwd(meta.cwd)}`, name: basename(meta.cwd), cwd: meta.cwd, repo: null }, updatedAt: meta.updatedAt || Date.now() });
   openChat(c.id);
 }
-function deleteChat(id, { silent = false } = {}) {
+function deleteChat(id, { silent = false, fromSync = false } = {}) {
+  if (!fromSync) syncHook('delete', id);
   state.chats = state.chats.filter((c) => c.id !== id);
   state.bodies.delete(id);
   try { localStorage.removeItem(KEY.chat(id)); } catch {}
@@ -3113,7 +3118,7 @@ window.CraftPhone = { state, relay, sb, sealSecret, CLOUD_WORKFLOW, md, linkText
   // phone-work.js (Schedules, Calendar, Checks) builds on these
   gh, ensureGithub, hasGithub, ensureRepoReady, readSessionJson, envFor, chatBody: body, accountConnections,
   // phone-app.js (tabs, Home, You, sign-up) builds on these
-  createChat, saveBody, saveChats, webSearch, setResearch,
+  createChat, saveBody, saveChats, webSearch, setResearch, deleteChat, renderFeed, KEY,
   // desktop.js (codeply.app/chat): files dropped on the window or pasted
   addAttFiles,
   SUPABASE_URL, answerApproval, setPermission, PERM, signinStep, openChat, openPcSession, newChat, openSettings, openSetup, openProjectPicker, openModelPicker, chatMeta, signOut, applyTheme, themeChoice, renderChatList, enterApp, friendlyAuthError, currentSession };
