@@ -423,15 +423,9 @@
       const when = sh.q('[data-when]').value.trim();
       const err = sh.q('[data-job-err]');
       if (!task || !when) { err.textContent = 'Write the job and when it runs.'; return; }
-      const now = Date.now();
-      const rule = parseWhen(when, now);
-      if (rule.error) { err.textContent = rule.error; return; }
-      const nextAt = nextRun(rule, now);
-      if (!nextAt) { err.textContent = 'That time has already passed.'; return; }
-      const id = 'j' + now.toString(36) + Math.random().toString(36).slice(2, 5);
-      const data = { id, specialist: s.id, task: task.slice(0, 2000), when: when.slice(0, 120), rule, tz: TZ, cwd: '', nextAt, createdAt: now, updatedAt: now, enabled: true, runs: 0 };
-      const { error } = await sb().from('specialist_jobs').insert({ user_id: await uid(), id, specialist: s.id, data, next_at: new Date(nextAt).toISOString(), updated_at: new Date(now).toISOString() });
-      if (error) { err.textContent = error.message; return; }
+      const saved = await saveJob(s.id, task, when);
+      if (saved.error) { err.textContent = saved.error; return; }
+      const rule = saved.rule;
       toast(`${s.name}: ${describeRule(rule)}${s.alwaysOn ? '' : '. Turn on Always on to run it with your PC off.'}`);
       sh.close(); await loadTeam(); render(); detailSheet(team.list.find((x) => x.id === s.id) || s);
     });
@@ -587,10 +581,25 @@
     const W = window.CodeplyWeb;
     const lastReply = strip(b.messages.filter((m) => m.role === 'assistant').slice(-1).map((m) => m.content)[0] || '');
     const ask = W ? users.slice(0, -1).reverse().find((u) => !W.goAhead(u)) : null;
+    // A standing order ("every hour, look for ..."): saved as a real job for this specialist, reports to this chat
+    if (!team.loaded) await loadTeam(); // its Always on setting and its jobs
+    const spec = (team.list.length ? team.list : cachedTeam()).find((x) => x.id === chat.specialist.id) || {};
+    let jobNote = '';
+    const order = standingOrder(text);
+    if (order) {
+      const dupe = team.jobs.find((j) => j.specialist === chat.specialist.id && j.chatId === chat.id && j.task === order.task);
+      const saved = dupe ? { rule: dupe.rule } : await saveJob(chat.specialist.id, order.task, order.when, { chatId: chat.id }).catch((e) => ({ error: e.message }));
+      jobNote = saved.error
+        ? `The app tried to save this as your standing job but could not (${saved.error}). Say so in one line.`
+        : `The app saved this as your standing job, ${describeRule(saved.rule)}: "${order.task.slice(0, 300)}". Confirm it in one or two lines (what you will look for and when you will message me), then do a first check right now from the web results below if there are any. Each run's report reaches me as a phone notification and in this chat.`;
+    }
     // The web, like the main chat: searched (or the links read) before the specialist answers
     const web = await webFor(text, prev, false, { ask, lastReply });
-    // Every message: do it now, short; the app does the searching (the specialist cannot see X or the web itself)
-    const ACT = `(App note: do what I ask now. Never reply with a plan or ask permission to search; the app searches the web for you when needed. Keep it short unless I ask for detail or Research is on. Today is ${new Date().toDateString()}.)`;
+    // Every message: what it can do, and do it now, short; the app does the searching and the link reading
+    const ALWAYS = spec.alwaysOn
+      ? 'You are Always on: standing jobs (like "every hour, check ...") run on schedule even with my PC off, and each report reaches me as a phone notification and in this chat.'
+      : 'Standing jobs (like "every hour, check ...") run on schedule while my PC is on; turning on Always on (in your settings) runs them with the PC off too. Each report reaches me as a notification and in this chat.';
+    const ACT = `(App note: ${jobNote ? `${jobNote} ` : ''}${ALWAYS} The app searches the web and reads links for you, so never say you cannot browse, open links, run in the background or message me. Do what I ask now: no plans, no asking permission. Keep it short unless I ask for detail or Research is on. Today is ${new Date().toDateString()}.)`;
     messages[messages.length - 1] = { role: 'user', content: `${text}\n\n${web.note ? `${web.note}\n\n` : ''}${ACT}` };
     let r;
     try { r = await fn({ action: 'chat', specialist: chat.specialist.id, messages }); } catch (err) { r = { ok: false, error: err.message }; }
@@ -610,6 +619,63 @@
     C.saveBody(chat.id); if (C.saveChats) C.saveChats();
     if (st.current === chat.id) C.openChat(chat.id, { keepMode: true });
   }
+
+  // ─── Standing jobs from a chat ────────────────────────────────────────────
+  /** Save a standing job. extra: more fields for its data (chatId: the chat its reports go to). Resolves { rule, id } or { error }. */
+  async function saveJob(specId, task, when, extra = {}) {
+    const now = Date.now();
+    const rule = parseWhen(when, now);
+    if (rule.error) return { error: rule.error };
+    const nextAt = nextRun(rule, now);
+    if (!nextAt) return { error: 'That time has already passed.' };
+    const id = 'j' + now.toString(36) + Math.random().toString(36).slice(2, 5);
+    const data = { id, specialist: specId, task: String(task).slice(0, 2000), when: String(when).slice(0, 120), rule, tz: TZ, cwd: '', nextAt, createdAt: now, updatedAt: now, enabled: true, runs: 0, ...extra };
+    const { error } = await sb().from('specialist_jobs').insert({ user_id: await uid(), id, specialist: specId, data, next_at: new Date(nextAt).toISOString(), updated_at: new Date(now).toISOString() });
+    if (error) return { error: error.message };
+    team.jobs.push({ ...data, nextAt });
+    return { rule, id };
+  }
+
+  // "every hour, look for ...", "check X every morning at 8": a standing order. The app saves it as a job,
+  // so the specialist really does it (with the PC off when it is Always on), instead of saying it can't.
+  const REPEAT = /\b(?:(?:every|each)\s+(?:\d+\s*|other\s+|an?\s+|one\s+)?(?:minutes?|mins?|hours?|hrs?|day|morning|evening|night|week(?:day|end)?|mon|tue|wed|thu|fri|sat|sun)[a-z]*(?:\s+(?:at|around)\s+\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm)?|\s+(?:morning|evening|night))?|hourly|daily(?:\s+at\s+\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm)?)?|nightly|weekly)\b/i;
+  const ORDER = /\b(need|want|keep|check|search|look|find|watch|scan|monitor|track|send|text|tell|ping|notify|message|remind|summari[sz]e|report|post|write|give|update|research|go\s+through)\b/i;
+  function standingOrder(text) {
+    const t = String(text || '');
+    const m = REPEAT.exec(t);
+    if (!m || !ORDER.test(t) || /^\s*(do|does|can|could|will|would|are|is)\b[^.!]*\?\s*$/i.test(t)) return null;
+    const rule = parseWhen(m[0]);
+    if (rule.error || rule.kind === 'once') return null;
+    return { when: m[0].trim(), rule, task: t.replace(/(^|\s)@[\w.-]+/g, ' ').replace(/\s+/g, ' ').trim() };
+  }
+
+  // A job saved from a chat sends its reports back to that chat (and the phone notification as before), so
+  // "cool, write the script" has the idea right above it.
+  async function syncJobRuns() {
+    const C = P(); const st = C && C.state;
+    if (!st || !st.user) return;
+    const chats = (st.chats || []).filter((c) => c.specialist);
+    if (!chats.length) return;
+    await loadTeam();
+    let changed = false;
+    for (const c of chats) {
+      const jobs = team.jobs.filter((j) => j.chatId === c.id);
+      if (!jobs.length) continue;
+      const ids = new Set(jobs.map((j) => j.id));
+      const since = c.runsSeenAt || Math.min(...jobs.map((j) => j.createdAt || 0));
+      const fresh = team.runs.filter((r) => ids.has(r.job_id) && Date.parse(r.at) > since && r.output).sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+      if (!fresh.length) continue;
+      const b = C.chatBody(c.id);
+      for (const r of fresh) b.messages.push({ role: 'assistant', content: `-# ${c.specialist.name} · ${r.task ? 'standing job' : 'job'}\n${r.ok ? r.output : `The job did not finish: ${r.output}`}`, at: Date.parse(r.at) });
+      c.runsSeenAt = Date.parse(fresh[fresh.length - 1].at);
+      C.saveBody(c.id); changed = true;
+      if (st.current === c.id) C.openChat(c.id, { keepMode: true });
+    }
+    if (changed && C.saveChats) { C.saveChats(); C.renderChatList(); }
+  }
+  setTimeout(() => syncJobRuns().catch(() => {}), 4000);
+  setInterval(() => { if (document.visibilityState === 'visible') syncJobRuns().catch(() => {}); }, 3 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncJobRuns().catch(() => {}); });
 
   // ─── Its own face on its answers ───────────────────────────────────────────
   // phone-wisp.js puts Wisp's face above every answer. An answer from a
