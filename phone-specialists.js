@@ -440,25 +440,29 @@
   // The same search as the main chat (web-search.js): a message that needs the web (asked outright, or about
   // news, prices, weather, "latest"...) is searched first, and links in it are read. The results go to the
   // specialist with the message. force: search even if the message did not look like it needed it.
-  async function webFor(text, prev, force = false) {
+  // opts.lastReply / opts.ask: "do it" after the specialist offered to look something up searches what was asked.
+  // Research (in +) always searches, several ways, for a full report.
+  async function webFor(text, prev, force = false, opts = {}) {
     const W = window.CodeplyWeb; const C = P();
+    const research = !!(W && C.state && C.state.ui && C.state.ui.research);
     const out = { note: '', sources: [], searched: false };
     if (!W) return out;
     const links = force ? [] : W.linksIn(text);
-    const query = force || W.needsSearch(text) ? W.queryFor(text, prev) : '';
+    let query = force || research || W.needsSearch(text) ? W.queryFor(text, prev) : '';
+    if (!query && opts.ask && W.goAhead(text) && W.offeredSearch(opts.lastReply)) query = W.queryFor(opts.ask);
     if (!links.length && !query) return out;
     const word = document.querySelector('#feed .working .think-word');
-    if (word) { word.textContent = query ? 'Searching the web' : 'Reading the link'; word.dataset.fixed = '1'; }
+    if (word) { word.textContent = !query ? 'Reading the link' : research ? 'Researching' : 'Searching the web'; word.dataset.fixed = '1'; }
     const token = await C.accessToken().catch(() => null);
     const [page, found] = await Promise.all([
       links.length ? W.read(links, { token }).catch((e) => ({ text: `(Could not read ${links.join(', ')}: ${e.message}.)`, sources: [] })) : null,
-      query ? C.webSearch(query, { full: true }).catch((e) => ({ text: `(${e.message}. Answer from what you know, and say the web search did not work just now.)`, sources: [] })) : null,
+      query ? (research ? W.research(query, { token }) : C.webSearch(query, { full: true })).catch((e) => ({ text: `(${e.message}. Say in one line that the web search did not work just now; do not answer from memory as if it were current.)`, sources: [] })) : null,
     ]);
     if (word) { delete word.dataset.fixed; }
     const parts = [];
     if (page) { parts.push(`PAGES I LINKED (read just now):\n\n${page.text.slice(0, 12000)}`); out.sources.push(...page.sources); }
     if (found) { parts.push(`WEB RESULTS for "${query}" (the app searched the web just now, ${new Date().toDateString()}):\n\n${found.text.slice(0, 12000)}`); out.sources.push(...found.sources); out.searched = true; }
-    out.note = `${parts.join('\n\n')}\n\nAnswer from these, the key facts first, and cite sources as markdown links.`;
+    out.note = `${parts.join('\n\n')}\n\n${W.style(research)}`;
     return out;
   }
 
@@ -576,17 +580,23 @@
     st.busy.add(chat.id);
     C.openChat(chat.id, { keepMode: true });
     const messages = b.messages.filter((m) => m.role === 'user' || m.role === 'assistant').slice(-20).map((m) => ({ role: m.role, content: strip(m.content).slice(0, 4000) }));
-    const prev = b.messages.filter((m) => m.role === 'user').slice(-2, -1).map((m) => m.content)[0];
+    const users = b.messages.filter((m) => m.role === 'user').map((m) => m.content);
+    const prev = users.slice(-2, -1)[0];
+    const W = window.CodeplyWeb;
+    const lastReply = strip(b.messages.filter((m) => m.role === 'assistant').slice(-1).map((m) => m.content)[0] || '');
+    const ask = W ? users.slice(0, -1).reverse().find((u) => !W.goAhead(u)) : null;
     // The web, like the main chat: searched (or the links read) before the specialist answers
-    const web = await webFor(text, prev);
-    if (web.note) messages[messages.length - 1] = { role: 'user', content: `${text}\n\n${web.note}` };
+    const web = await webFor(text, prev, false, { ask, lastReply });
+    // Every message: do it now, short; the app does the searching (the specialist cannot see X or the web itself)
+    const ACT = `(App note: do what I ask now. Never reply with a plan or ask permission to search; the app searches the web for you when needed. Keep it short unless I ask for detail or Research is on. Today is ${new Date().toDateString()}.)`;
+    messages[messages.length - 1] = { role: 'user', content: `${text}\n\n${web.note ? `${web.note}\n\n` : ''}${ACT}` };
     let r;
     try { r = await fn({ action: 'chat', specialist: chat.specialist.id, messages }); } catch (err) { r = { ok: false, error: err.message }; }
     // "I can't browse the web": search for it and ask once more
     if (r && r.ok && !web.searched && window.CodeplyWeb && window.CodeplyWeb.refused(r.reply)) {
       const again = await webFor(text, prev, true);
       if (again.note) {
-        messages[messages.length - 1] = { role: 'user', content: `${text}\n\n${again.note}` };
+        messages[messages.length - 1] = { role: 'user', content: `${text}\n\n${again.note}\n\n${ACT}` };
         web.sources.push(...again.sources);
         try { const r2 = await fn({ action: 'chat', specialist: chat.specialist.id, messages }); if (r2 && r2.ok) r = r2; } catch { /* keep the first reply */ }
       }

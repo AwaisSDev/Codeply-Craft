@@ -428,3 +428,8 @@ button { -webkit-tap-highlight-color: transparent; }
 /* The project is in + now: a small dot on + while one is on */
 #plusBtn { position: relative; }
 #plusBtn.has-project::after { content: ""; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--blue); box-shadow: 0 0 0 2px var(--float); }
+
+/* Research chip in the box (phone.js setResearch): blue while it is on */
+.box-row .research-chip { background: color-mix(in srgb, var(--blue, #2F6BFF) 14%, transparent); color: color-mix(in srgb, var(--blue, #2F6BFF) 85%, var(--text)); }
+.research-chip .ctx-main { color: inherit; font-weight: 600; }
+.research-chip .ctx-x { color: inherit; }

@@ -5,6 +5,8 @@
 //   - files dropped on the window or pasted into the box are attached
 //   - the tab title follows the open chat
 //   - clicking outside a dialog (Settings, Tasks...) closes it
+//   - every chat has its own link, /chat/<its random id>. Chats live only in this browser, under your
+//     account, so a link opens only for you; anyone else (or another browser) gets a new chat.
 (function () {
   const P = window.CraftPhone;
   if (!P) return;
@@ -60,15 +62,48 @@
   const focusBox = () => { if (!$('app').classList.contains('hidden')) input.focus({ preventScroll: true }); };
   setTimeout(focusBox, 300);
 
-  // ─── Tab title: the open chat ─────────────────────────────────────────────
+  // ─── Tab title and link: the open chat ─────────────────────────────────────
+  // /chat/<id>: phone.js reopens the chat saved as current, so the link's chat is put there before it signs in.
+  const ID_RE = /^\/chat\/([0-9a-z]{6,40})\/?$/;
+  const idInUrl = () => { const m = ID_RE.exec(location.pathname); return m ? m[1] : null; };
+  let wanted = idInUrl();
+  if (wanted) store.set('craft-phone-current', wanted);
   let lastTitle = '';
   function syncTitle() {
     const st = P.state;
     const c = st && st.current && P.chatMeta(st.current);
     const t = c && c.title ? `${c.title} · Codeply` : 'Codeply';
     if (t !== lastTitle) { lastTitle = t; document.title = t; }
+    syncUrl(c);
   }
+  function syncUrl(c) {
+    if ($('app').classList.contains('hidden')) return; // signed out: keep the link for after sign-in
+    const path = c ? `/chat/${c.id}` : '/chat';
+    if (wanted) {
+      // the link's chat: opened, or not on this browser / account
+      const id = wanted;
+      wanted = null;
+      if (c && c.id === id) return;
+      if (P.chatMeta(id)) { P.openChat(id); return; }
+      if (c) P.newChat();
+      history.replaceState(null, '', '/chat');
+      toast("That chat isn't on this browser or account");
+      return;
+    }
+    if (location.pathname !== path) history.pushState(null, '', path);
+  }
+  window.addEventListener('popstate', () => {
+    const id = idInUrl();
+    if (id && P.chatMeta(id)) P.openChat(id);
+    else if (!id) P.newChat();
+  });
+  // new chat (the chat list does not change for an empty one)
+  $('newChatTopBtn').addEventListener('click', () => setTimeout(syncTitle, 0));
+  $('drawerNewChat').addEventListener('click', () => setTimeout(syncTitle, 0));
   new MutationObserver(syncTitle).observe($('chatList'), { childList: true, subtree: true });
+  // sign-in can finish before this script runs: sync now, and whenever the app appears
+  new MutationObserver(syncTitle).observe($('app'), { attributes: true, attributeFilter: ['class'] });
+  setTimeout(syncTitle, 0);
   new MutationObserver(syncTitle).observe($('feed'), { childList: true });
 
   // ─── Files: drop on the window, or paste into the box ─────────────────────

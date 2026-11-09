@@ -125,12 +125,12 @@
 
   // ─── When to search ───────────────────────────────────────────────────────
   const ASKED = /\b(search|google|look\s*(it|this|that|them)?\s*up|look\s+online|check\s+(online|the\s+web|the\s+internet)|browse|find\s+(me\s+)?(online|on\s+the\s+web|sources?|links?|articles?|reviews?)|on\s+the\s+(web|internet)|web\s*search|sources?\s+for)\b/i;
-  const CURRENT = /\b(latest|newest|recent(ly)?|current(ly)?|today|tonight|tomorrow|yesterday|this\s+(week|month|year|season|weekend)|right\s+now|nowadays|up\s*-?\s*to\s*-?\s*date|news|headlines?|breaking|announced?|released?|launch(ed|es)?|price|prices|cost|costs|how\s+much|stock|share\s+price|exchange\s+rate|rate\s+of|weather|forecast|temperature|score|scores|result|results|won|winner|wins?|standings|fixtures?|schedule|when\s+(is|does|will)|open(ing)?\s+hours|still\s+(alive|open|available)|who\s+is\s+the\s+(current\s+)?(ceo|president|prime\s+minister|owner|head|leader|captain|coach)|20(2[5-9]|3\d))\b/i;
+  const CURRENT = /\b(trend(s|ing)?|rn|what'?s\s+(new|happening|going\s+on|hot|up\s+with)|whats\s+(new|happening|going\s+on|hot)|new\s+(ai|models?|startups?|releases?|features?|products?|phones?|games?|movies?|songs?|updates?|tools?|launch(es)?|laws?|rules?)|updates?|on\s+(x|twitter|reddit|tiktok|youtube|instagram|linkedin|hacker\s*news)|viral|buzz|latest|newest|recent(ly)?|current(ly)?|today|tonight|tomorrow|yesterday|this\s+(week|month|year|season|weekend)|right\s+now|nowadays|up\s*-?\s*to\s*-?\s*date|news|headlines?|breaking|announced?|released?|launch(ed|es)?|price|prices|cost|costs|how\s+much|stock|share\s+price|exchange\s+rate|rate\s+of|weather|forecast|temperature|score|scores|result|results|won|winner|wins?|standings|fixtures?|schedule|when\s+(is|does|will)|open(ing)?\s+hours|still\s+(alive|open|available)|who\s+is\s+the\s+(current\s+)?(ceo|president|prime\s+minister|owner|head|leader|captain|coach)|20(2[5-9]|3\d))\b/i;
   const NOT_WEB = /\b(write|rewrite|draft|compose|translate|summari[sz]e\s+(this|the\s+following)|fix\s+(my|this)|code|function|regex|debug|poem|story|essay|joke|calculate|solve)\b/i;
 
   /** Should the app search before asking the model? Asked outright, or the answer depends on something current. */
   function needsSearch(text) {
-    const t = String(text || '').trim();
+    const t = String(text || '').replace(/(^|\s)@[\w.-]+/g, ' ').trim();
     if (t.length < 4 || t.length > 1500) return false;
     if (ASKED.test(t)) return true;
     if (NOT_WEB.test(t) && !/\?\s*$/.test(t)) return false;
@@ -139,16 +139,22 @@
 
   /** The search query for a message: the question without "can you search for" and the like. */
   function queryFor(text, previous) {
-    let q = String(text || '').replace(/https?:\/\/\S+/g, ' ').replace(/\s+/g, ' ').trim();
+    let q = String(text || '').replace(/https?:\/\/\S+/g, ' ').replace(/(^|\s)@[\w.-]+/g, ' ').replace(/\s+/g, ' ').trim();
     q = q.replace(/^(hey|hi|ok(ay)?|so|please|pls|yo)[,!\s]+/i, '')
-      .replace(/^(can|could|would|will)\s+you\s+(please\s+)?/i, '')
+      .replace(/^(can|could|would|will)\s+(you\s+)?(please\s+)?/i, '')
+      .replace(/^(just\s+)?(see|tell\s+me|show\s+me|give\s+me|check|find\s+out)\s+/i, '')
+      .replace(/\brn\b/gi, 'right now').replace(/\bon\s+x\b/gi, 'on X (Twitter)').replace(/\bin\s+the\s+field\s+(of|on)\s+/gi, 'in ')
+      .replace(/^in\s+(the\s+)?/i, '')
       .replace(/^(please\s+)?(do\s+a\s+)?(quick\s+)?(web\s+)?(search|google|look\s+up|lookup|find|check|browse)(\s+(the\s+)?(web|internet|online))?(\s+(for|about|on|if|whether|what|to\s+see))?\s+/i, '')
       .replace(/\s+(on|from)\s+the\s+(web|internet)\b/i, '')
       .replace(/\b(for me|please|pls|asap)\b/gi, '')
       .replace(/[?!.\s]+$/, '').trim();
     // a short follow-up ("and the price?", "what about tomorrow") leans on the earlier question
     if (previous && q.split(' ').length <= 4 && /^(and|what about|how about|also|it|its|their|that|this)\b/i.test(q)) q = `${String(previous).slice(0, 160)} ${q}`;
-    return q.slice(0, 300) || String(text || '').slice(0, 300);
+    q = q.slice(0, 280) || String(text || '').slice(0, 280);
+    // About something current: say when, so the search finds this month's pages, not old ones
+    if (CURRENT.test(q) && !/\b(19|20)\d\d\b/.test(q)) q += ` ${new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}`;
+    return q;
   }
 
   /** Links in a message, to read before answering. */
@@ -160,5 +166,34 @@
   const REFUSED = /\b(I\s+(can(no|')t|am\s+(not\s+)?(un)?able\s+to|do(n'|\s+no)t\s+have\s+(the\s+ability\s+to|access\s+to))\s+(browse|search|access|look\s+up|check)\s+(the\s+)?(web|internet|online|real[- ]time|live|current)|(do(n'|\s+no)t|don't)\s+have\s+(real[- ]time|live|current|internet)\s+(access|data|information|info)|as\s+of\s+my\s+(last\s+)?(knowledge|training)|my\s+(knowledge|training)\s+(cut-?\s*off|only\s+goes)|knowledge\s+cut-?\s*off)/i;
   function refused(reply) { return REFUSED.test(String(reply || '')); }
 
-  window.CodeplyWeb = { search, read, needsSearch, queryFor, linksIn, refused, sourcesOf };
+  /** "do it", "yes go ahead": the user said yes to something the assistant offered. */
+  function goAhead(text) { return /^\s*(yes|yeah|yep|yup|sure|ok(ay)?|k|go(\s+ahead)?|do\s+it|go\s+for\s+it|proceed|please\s+do|pls\s+do|run\s+it|search|fetch\s+it|ya|haan|han|ji)\b[\s\w!.,]{0,24}$/i.test(String(text || '')); }
+  /** The assistant's last message offered to search, look up or fetch something. */
+  function offeredSearch(reply) { return /\b(search|look\s*(it\s*)?up|pull|fetch|grab|check|run\s+(a|the)?\s*(quick\s+)?search|find)\b/i.test(String(reply || '')); }
+
+  /**
+   * Research mode: several searches at once (the question, its news and its analysis), merged.
+   * Resolves { text, sources }.
+   */
+  async function research(query, opts = {}) {
+    const date = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    const base = query.replace(new RegExp(`\\s*${date}$`), '');
+    const queries = [query, `${base} latest news ${date}`, `${base} analysis and key players ${date}`];
+    const all = await Promise.all(queries.map((q) => search(q, { ...opts, num: 8 }).catch(() => null)));
+    const ok = all.filter(Boolean);
+    if (!ok.length) throw new Error('the search did not work');
+    const seen = new Set(); const sources = [];
+    for (const r of ok) for (const x of r.sources) if (!seen.has(x.url)) { seen.add(x.url); sources.push(x); }
+    return { text: ok.map((r, i) => `### Search ${i + 1}: "${queries[i]}"\n\n${r.text.slice(0, 9000)}`).join('\n\n'), sources: sources.slice(0, 16) };
+  }
+
+  /** How to answer from what was searched: short by default, a full report in Research mode. */
+  function style(researchMode) {
+    const today = new Date().toDateString();
+    const truth = `Use only facts from these results. Never invent names, numbers, posts, quotes or links, and never present a model, product or version you remember as new or latest: your training data is older than today (${today}). If the results do not cover part of the question, say so in one line.`;
+    if (researchMode) return `RESEARCH MODE: write a thorough, well-organised report: two lines of summary first, then ## sections with short bullets, a table only for a real comparison (every cell filled), and every fact linked to its source. ${truth}`;
+    return `Reply SHORT: say what you found in 2 to 5 plain bullets (one line each, each with its source as a markdown link) or a few sentences. No tables, no headings, no plans, no "next steps", no offers or questions at the end. ${truth} The user will ask if they want more detail.`;
+  }
+
+  window.CodeplyWeb = { search, read, research, needsSearch, queryFor, linksIn, refused, sourcesOf, goAhead, offeredSearch, style };
 })();

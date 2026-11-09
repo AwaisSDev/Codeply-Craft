@@ -73,7 +73,7 @@ function keepDeviceId(id) {
 })();
 const deviceHeader = () => ({ 'x-codeply-device': deviceIdValue });
 
-const CHAT_SYSTEM = 'You are Codeply, the assistant in the Codeply phone app. This is a normal chat: you cannot see, open or change files or run code here, but you can search the web (see WEB SEARCH). Answer clearly and keep it readable on a phone screen. The app draws rich markdown, so format answers well when it helps (never for a one-line reply): ## and ### headings, short paragraphs, lists, - [ ] / - [x] checklists, tables for comparisons, fenced code blocks with a language, **bold** for key words, ==highlight== for the one thing to remember, -# at the start of a line for small fine print, [[Label]] or [[Label|green]] for a coloured status tag (blue green red orange yellow purple pink teal gray), {{green: text}} for coloured text such as numbers going up or down, and > [!TIP] / > [!NOTE] / > [!WARNING] callouts for a tip or a caveat. Use colour and tags sparingly, where they carry meaning. No emoji as decoration. If someone wants changes made to one of their projects, tell them to switch to Code in the composer. When a GMAIL note appears in the conversation, it is the user’s own inbox read live just now: answer from it directly (who wrote, about what, what needs a reply) and never say you cannot see their email.\n\nLIVE STATUS\nYou cannot see the user’s GitHub checks, pull requests, Actions runs, Vercel deployments, Supabase projects, calendar or scheduled cloud tasks on your own. When a CHECKS note appears in the conversation, the app read those APIs just now: answer only from it, say what it covers and when it was read, and never add anything it does not say. When there is no CHECKS note, or it says something could not be read, never guess or invent a status (no passing, failing, deployed, healthy or similar tags): say plainly that you have not checked it, and that the Checks screen (menu, Checks) reads it live.\n\nWEB SEARCH\nYou can search the web whenever you want. To search, reply with ONLY this one line and nothing else: [[SEARCH: your search query]]. The app runs the search and sends you the results; then you answer (you may search once more if the first results miss). Search whenever the answer depends on anything current or checkable: news, prices, weather, scores, schedules, releases and versions, people and companies, places and opening hours, anything after your training data or that you are not sure of, and always when the user says search, look up, google, check online or find. Never say you cannot browse or search the web. Answering from results: the key facts first, short, and cite sources as markdown links like [The Verge](https://...).';
+const CHAT_SYSTEM = 'You are Codeply, the assistant in the Codeply phone app. This is a normal chat: you cannot see, open or change files or run code here, but you can search the web (see WEB SEARCH). Answer clearly and keep it readable on a phone screen. The app draws rich markdown, so format answers well when it helps (never for a one-line reply): ## and ### headings, short paragraphs, lists, - [ ] / - [x] checklists, tables for comparisons, fenced code blocks with a language, **bold** for key words, ==highlight== for the one thing to remember, -# at the start of a line for small fine print, [[Label]] or [[Label|green]] for a coloured status tag (blue green red orange yellow purple pink teal gray), {{green: text}} for coloured text such as numbers going up or down, and > [!TIP] / > [!NOTE] / > [!WARNING] callouts for a tip or a caveat. Use colour and tags sparingly, where they carry meaning. No emoji as decoration. Do what is asked right away: never reply with a plan of what you would do, and never ask permission to search or look something up (just write the [[SEARCH: ...]] line). Keep answers short by default, a few lines; give detail only when asked. If someone wants changes made to one of their projects, tell them to switch to Code in the composer. When a GMAIL note appears in the conversation, it is the user’s own inbox read live just now: answer from it directly (who wrote, about what, what needs a reply) and never say you cannot see their email.\n\nLIVE STATUS\nYou cannot see the user’s GitHub checks, pull requests, Actions runs, Vercel deployments, Supabase projects, calendar or scheduled cloud tasks on your own. When a CHECKS note appears in the conversation, the app read those APIs just now: answer only from it, say what it covers and when it was read, and never add anything it does not say. When there is no CHECKS note, or it says something could not be read, never guess or invent a status (no passing, failing, deployed, healthy or similar tags): say plainly that you have not checked it, and that the Checks screen (menu, Checks) reads it live.\n\nWEB SEARCH\nYou can search the web whenever you want. To search, reply with ONLY this one line and nothing else: [[SEARCH: your search query]]. The app runs the search and sends you the results; then you answer (you may search once more if the first results miss). Search whenever the answer depends on anything current or checkable: news, prices, weather, scores, schedules, releases and versions, people and companies, places and opening hours, anything after your training data or that you are not sure of, and always when the user says search, look up, google, check online or find. Never say you cannot browse or search the web. Answering from results: the key facts first, short, and cite sources as markdown links like [The Verge](https://...).';
 
 // ─── Small helpers ──────────────────────────────────────────────────────────
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[c]);
@@ -96,6 +96,7 @@ const b64ToBytes = (b64) => Uint8Array.from(atob(String(b64).replace(/\s/g, ''))
 const textToB64 = (text) => bytesToB64(new TextEncoder().encode(String(text)));
 
 const ICONS = {
+  research: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6M7.5 10.5h6M10.5 7.5v6"/></svg>',
   chev: '<svg class="chev" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>',
   folder: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>',
   cloud: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1 .5 7.97V18Z"/></svg>',
@@ -311,7 +312,7 @@ const state = {
   approvals: new Map(),           // requestId -> approval_request from ANY chat on the PC (Home's inbox)
   imagePick: null,
 };
-const saveUi = () => save(KEY.ui, { mode: state.ui.mode, projectKey: state.ui.projectKey, codeMode: state.ui.codeMode, chatModel: state.ui.chatModel, useProject: !!state.ui.useProject });
+const saveUi = () => save(KEY.ui, { mode: state.ui.mode, projectKey: state.ui.projectKey, codeMode: state.ui.codeMode, chatModel: state.ui.chatModel, useProject: !!state.ui.useProject, research: !!state.ui.research });
 // Chat and Code are one composer now: a project attached from + makes a new
 // message a task for the agent; without one it is a chat. An older "code" mode
 // carries over as an attached project.
@@ -1323,24 +1324,33 @@ async function chatSend(chat, text, images = []) {
     }
     // The web, at once: links in the message are read, and a question that needs the web (asked outright, or about
     // news, prices, weather, scores, "latest"...) is searched before the model is asked, never left to the model.
+    // Research (in +): always searched, several searches, and a full report instead of a short answer.
     const W = window.CodeplyWeb;
+    const research = !!(W && state.ui.research);
     let searched = false;
     if (W) {
       const links = W.linksIn(text);
-      const prevUser = b.messages.filter((m) => m.role === 'user').slice(-2, -1).map((m) => m.content)[0];
-      const query = W.needsSearch(text) ? W.queryFor(text, prevUser) : '';
+      const users = b.messages.filter((m) => m.role === 'user').map((m) => m.content);
+      const prevUser = users.slice(-2, -1)[0];
+      let query = W.needsSearch(text) || research ? W.queryFor(text, prevUser) : '';
+      // "do it" after the assistant offered to look something up: search what was asked before
+      if (!query && W.goAhead(text)) {
+        const lastReply = b.messages.filter((m) => m.role === 'assistant').slice(-1).map((m) => m.content)[0];
+        const ask = users.slice(0, -1).reverse().find((u) => !W.goAhead(u));
+        if (ask && W.offeredSearch(lastReply)) query = W.queryFor(ask);
+      }
       if (links.length || query) {
-        workingWord(chat.id, links.length && !query ? 'Reading the link' : 'Searching the web');
+        workingWord(chat.id, links.length && !query ? 'Reading the link' : research ? 'Researching' : 'Searching the web');
         const [page, found] = await Promise.all([
           links.length ? W.read(links, { signal: controller.signal, token }).catch((e) => { if (e.name === 'AbortError') throw e; return { text: `(Could not read ${links.join(', ')}: ${e.message}.)`, sources: [] }; }) : null,
-          query ? webSearch(query, { signal: controller.signal, full: true }).catch((e) => { if (e.name === 'AbortError') throw e; return { text: `(${e.message}. Answer from what you know, and say briefly that the web search did not work just now.)`, sources: [] }; }) : null,
+          query ? (research ? W.research(query, { signal: controller.signal, token }) : webSearch(query, { signal: controller.signal, full: true })).catch((e) => { if (e.name === 'AbortError') throw e; return { text: `(${e.message}. Say in one line that the web search did not work just now; do not answer from memory as if it were current.)`, sources: [] }; }) : null,
         ]);
         workingWord(chat.id, '');
         if (page) { sources.push(...page.sources); messages.push({ role: 'system', content: `PAGES THE USER LINKED (read just now):\n\n${page.text}` }); }
         if (found) {
           sources.push(...found.sources);
           searched = true;
-          messages.push({ role: 'system', content: `WEB RESULTS for "${query}" (the app searched the web just now, ${new Date().toDateString()}):\n\n${found.text}\n\nAnswer the user's last message from these results: the key facts first, and cite sources as markdown links. Write [[SEARCH: a better query]] only if these results really miss what they asked.` });
+          messages.push({ role: 'system', content: `WEB RESULTS for "${query}" (the app searched the web just now, ${new Date().toDateString()}):\n\n${found.text}\n\n${W.style(research)} Write [[SEARCH: a better query]] only if these results really miss what they asked.` });
         }
       }
     }
@@ -1373,7 +1383,7 @@ async function chatSend(chat, text, images = []) {
       }
       workingWord(chat.id, '');
       messages = [...messages, { role: 'assistant', content: `[[SEARCH: ${query}]]` },
-        { role: 'user', content: `WEB RESULTS for "${query}" (searched just now, ${new Date().toDateString()}):\n\n${found}\n\nNow answer my last message from these results. Cite sources as markdown links. Only write [[SEARCH: ...]] again if these results really miss what I asked.` }];
+        { role: 'user', content: `WEB RESULTS for "${query}" (searched just now, ${new Date().toDateString()}):\n\n${found}\n\nNow answer my last message from these results. ${W ? W.style(research) : 'Cite sources as markdown links.'} Only write [[SEARCH: ...]] again if these results really miss what I asked.` }];
       reply = '';
     }
     if (reply) reply = reply.replace(/\[\[\s*SEARCH\s*:[^\]]*\]\]/gi, '').trim() || 'I searched but could not put an answer together. Try asking again.';
@@ -2456,6 +2466,11 @@ function openCodeModePicker(anchor) {
     root.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { setCodeMode(b.dataset.mode); closePick(); }));
   }, anchor);
 }
+/** Research (in +): every message is searched several ways and answered with a full report, until turned off. */
+function setResearch(on) {
+  state.ui.research = !!on; saveUi(); renderComposer();
+  if (on) $('input').focus();
+}
 function setCodeMode(m) {
   if (!CODE_MODES.some(([x]) => x === m)) return;
   state.ui.codeMode = m; saveUi(); renderComposer();
@@ -2482,6 +2497,7 @@ function openPlus() {
     ${pickRow({ icon: ICONS.target, title: 'Set a goal', hint: 'Keep working until it is done and verified', attrs: 'data-act="goal"', kbd: '/goal' })}
     ${!cloudChat ? pickRow({ icon: state.perm === 'full' ? ICONS.bolt : ICONS.shield, title: PERM[state.perm].title + ' on your PC', hint: PERM[state.perm].hint, attrs: 'data-act="access"' }) : ''}
     ${cloudEnv ? pickRow({ icon: cperm === 'full' ? ICONS.bolt : ICONS.shield, title: cperm === 'full' ? 'Full access in the cloud' : 'Ask first in the cloud', hint: cperm === 'full' ? 'Everything runs without asking' : 'Deploys and risky steps wait for your OK', attrs: 'data-act="caccess"' }) : ''}` : ''}
+    ${!inCode ? pickRow({ icon: ICONS.research, title: 'Research', hint: state.ui.research ? 'On: searches deeper and writes a full report. Tap to turn off' : 'Searches deeper and writes a full report', attrs: 'data-act="research"', kbd: state.ui.research ? 'On' : '' }) : ''}
     <div class="pick-divider"></div>
     ${pickRow({ icon: ICONS.github, title: 'Connect a GitHub repo', hint: 'Work with your PC off', attrs: 'data-act="setup"' })}
     ${pickRow({ icon: ICONS.phone, title: 'Calls', hint: 'Talk to your bots', attrs: 'data-act="calls"' })}`, (root) => {
@@ -2497,6 +2513,7 @@ function openPlus() {
     act('caccess', () => openAccess('cloud', cloudEnv, cperm));
     act('setup', () => openSetup({ chatId: inCode ? c.id : null }));
     act('calls', () => $('drawerCalls').click());
+    act('research', () => setResearch(!state.ui.research));
     act('commands', () => startSlash());
   }, $('plusBtn'));
 }
@@ -2644,6 +2661,7 @@ function renderComposer() {
   }
   $('codeModeChip').classList.toggle('hidden', !p || state.ui.codeMode === 'Build');
   $('codeModeName').textContent = state.ui.codeMode;
+  $('researchChip').classList.toggle('hidden', !state.ui.research || code);
   $('input').placeholder = p ? `Ask or tell Codeply what to change` : 'Ask anything';
   const busy = !!(c && state.busy.has(c.id));
   $('sendIcon').classList.toggle('hidden', busy);
@@ -3052,6 +3070,8 @@ $('voiceBtn').addEventListener('click', () => $('drawerCalls').click());
 $('menuBtn').addEventListener('click', openDrawer);
 $('drawerBackdrop').addEventListener('click', closeDrawer);
 $('newChatTopBtn').addEventListener('click', newChat);
+$('researchChipX').addEventListener('click', () => setResearch(false));
+$('researchChipBtn').addEventListener('click', () => setResearch(false));
 $('drawerNewChat').addEventListener('click', () => { closeDrawer(); newChat(); });
 $('drawerProjects').addEventListener('click', () => { closeDrawer(); openProjectPicker(); });
 $('drawerCloud').addEventListener('click', () => { closeDrawer(); openSetup({}); });
@@ -3085,7 +3105,7 @@ window.CraftPhone = { state, relay, sb, sealSecret, CLOUD_WORKFLOW, md, linkText
   // phone-work.js (Schedules, Calendar, Checks) builds on these
   gh, ensureGithub, hasGithub, ensureRepoReady, readSessionJson, envFor, chatBody: body, accountConnections,
   // phone-app.js (tabs, Home, You, sign-up) builds on these
-  createChat, saveBody, saveChats, webSearch,
+  createChat, saveBody, saveChats, webSearch, setResearch,
   // desktop.js (codeply.app/chat): files dropped on the window or pasted
   addAttFiles,
   SUPABASE_URL, answerApproval, setPermission, PERM, signinStep, openChat, openPcSession, newChat, openSettings, openSetup, openProjectPicker, openModelPicker, chatMeta, signOut, applyTheme, themeChoice, renderChatList, enterApp, friendlyAuthError, currentSession };
