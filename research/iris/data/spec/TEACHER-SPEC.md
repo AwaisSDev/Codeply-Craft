@@ -242,3 +242,22 @@ It checks JSON, required fields, verbatim evidence, message indices, key consist
 `repeat` / `retract` logic, dates, and names outside your assigned pool. It cannot check meaning: that
 is your job. Then re-read five sessions at random as a sceptical reviewer: is there any memorable
 statement without a label, any label without support, any wrong date? Fix what you find.
+
+## 7. Clarifications (added 2026-11-09 after the first two shards; apply to every later shard)
+
+These answer questions raised by the authors of `tr01` and `te01`. They refine the rules above; they do not
+change them, and the first two shards were not relabelled.
+
+* `persist: "temp"` is for states that end on their own within days or a few weeks (a trip, an illness, a
+  temporary arrangement), with `until`. Anything open-ended is `long`.
+* A slot restated with the same value is `repeat`; if any part of it differs (value, `when` or `until`) it is
+  a `change`.
+* `refined` = the same thing, now more specific (vague → exact). `changed` = the world changed (moved,
+  rescheduled). `corrected` = the earlier value was wrong.
+* The evidence quote should support the value by itself as far as possible; when a value combines details
+  from two messages, quote the one that carries the most specific part.
+* A suggestion from the assistant that the user explicitly accepts is the user's decision (quote the user's
+  accepting line), not a skip.
+* Retract an event or task only when the text says it is cancelled, finished or no longer applies; a date that
+  has merely passed is not a retraction.
+* Family and relationship words ("baji", "bhabhi", "babe") support a relation as `implied`, `medium`.
