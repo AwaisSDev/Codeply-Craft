@@ -1,10 +1,11 @@
 // Builds the desktop web app (codeply.app/chat) into the website repo: the phone app (prepare-mobile.js)
-// laid out for a big screen with desktop.css and desktop.js. It is served only by the website, at /chat/,
-// never by mobile.codeply.app.
+// laid out for a big screen with desktop.css and desktop.js. It is served only by the website, never by
+// mobile.codeply.app: the page is chat.html (the site rewrites /chat to it, like its other pages) and its
+// files are in chat/.
 //
 //   node scripts/build-web.js [website folder]     (default: ../Codeply, next to this repo)
 //
-// Run it after changing the phone app or desktop.*, then commit the website's chat/ folder.
+// Run it after changing the phone app or desktop.*, then commit the website's chat.html and chat/ folder.
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -36,7 +37,7 @@ swap('<meta name="viewport" content="width=device-width, initial-scale=1, viewpo
 swap('<title>Codeply</title>', '<title>Codeply</title>\n  <meta name="description" content="Codeply in your browser: chat, search the web, and start work on your PC or in the cloud.">\n  <meta name="robots" content="noindex">');
 swap('<link rel="stylesheet" href="phone-specialists.css">', '<link rel="stylesheet" href="phone-specialists.css">\n  <link rel="stylesheet" href="desktop.css">');
 swap('<script src="phone-app.js"></script>', '<script src="phone-app.js"></script>\n  <script src="desktop.js"></script>');
-fs.writeFileSync(path.join(out, 'index.html'), `<!-- Built by codeply-craft scripts/build-web.js from phone.html: edit there, not here. -->\n${html}`);
+fs.writeFileSync(path.join(site, 'chat.html'), `<!-- Built by codeply-craft scripts/build-web.js from phone.html: edit there, not here. -->\n${html}`);
 
 // Installable as its own desktop app (Chrome and Edge: Install), opening on /chat/
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'phone.manifest.json'), 'utf8'));
