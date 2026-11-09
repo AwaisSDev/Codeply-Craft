@@ -79,6 +79,10 @@ self.addEventListener('push', (e) => {
     if (d.kind === 'call') {
       const visible = wins0.some((w) => w.visibilityState === 'visible');
       if (!visible) await ringCall(title, opts);
+      // Every push must show a notification: iOS cancels the push subscription of a web app that gets a few
+      // pushes without one, and then nothing arrives until the app is opened again. The app on screen rings
+      // itself, so this one is quiet.
+      else await self.registration.showNotification(title, { ...opts, silent: true, vibrate: [], requireInteraction: false, renotify: false });
       return;
     }
     await self.registration.showNotification(title, opts);

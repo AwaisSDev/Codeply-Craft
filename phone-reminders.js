@@ -382,6 +382,16 @@
   }
   fromUrl();
 
+  // Keep this device's push address fresh on the server: on launch and whenever the app comes back,
+  // not only from the Calls screen. iOS can drop or renew a subscription (a reinstall, a while unused),
+  // and the server then sends to an address that goes nowhere until the app subscribes again.
+  function keepPush() {
+    if (pushState() !== 'granted') return;
+    subscribe(false).catch((e) => console.debug('[reminders] push refresh:', e.message));
+  }
+  setTimeout(keepPush, 3000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(keepPush, 1500); });
+
   window.CraftReminders = {
     api, RULES, voiceRules, chatRules, nowContext, extract, fromTag, createFromTag, pushState, enablePush, subscribe,
     mount, refresh, openReminder, whenLabel, list: () => list, VAPID_PUBLIC_KEY,
