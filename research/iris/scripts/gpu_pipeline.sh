@@ -9,7 +9,9 @@ R2=runs/iris-$TAG-r2; R3=runs/iris-$TAG-r3
 ev() { $PY -m codeply_iris.evaluate --system iris --model $BASE --adapter $1 --split val --out results/gpu/val/iris-$TAG-$2 --label iris-$TAG-$2 "${@:3}" 2>&1 | tail -1 | cut -c1-1000; }
 $PY -m codeply_iris.train --config train/iris-0.6b.json --set base=$BASE --set out=$R2 --set lr=$LR --set epochs=3 --set warmup_steps=20 \
   --set eval_every=50 --set val_examples=120 --set save_every=100 2>&1 | grep -E "^train|val_loss|finished|Error|error" | tail -30
+[ -f $R2/DONE ] || echo "warning: $R2 has no DONE marker"
 A=$R2/best/adapter; [ -d $A ] || A=$R2/final/adapter
+[ -f $A/adapter_config.json ] || { echo "TRAINING FAILED: no adapter in $R2 (see the error above)"; exit 1; }
 ev $A r2; ev $A r2 --closed-loop
 $PY -m codeply_iris.selfplay --model $BASE --adapter $A --out data/built/train-selfplay-$TAG.jsonl 2>&1 | tail -1
 $PY - <<PYEOF
@@ -25,5 +27,6 @@ $PY -m codeply_iris.train --config train/iris-0.6b.json --set base=$BASE --set o
   --set train=data/built/train-selfplay-$TAG.jsonl,data/built/train-r3-replay.jsonl --set epochs=2 --set lr=1e-4 --set warmup_steps=5 \
   --set eval_every=25 --set val_examples=120 --set save_every=100 2>&1 | grep -E "^train|val_loss|finished|Error|error" | tail -20
 A3=$R3/best/adapter; [ -d $A3 ] || A3=$R3/final/adapter
+[ -f $A3/adapter_config.json ] || { echo "TRAINING FAILED: no adapter in $R3"; exit 1; }
 ev $A3 r3; ev $A3 r3 --closed-loop
 echo "PIPELINE_DONE $TAG"
