@@ -110,3 +110,45 @@ body { font-family: 'Geist', system-ui, sans-serif; -webkit-font-smoothing: anti
 .flo { position: absolute; left: 0; top: 0; width: 92px; height: 92px; border-radius: 24px; background: #fff; display: grid; place-items: center;
   box-shadow: 0 0 0 1px rgba(15, 30, 60, .06), 0 18px 40px -14px rgba(30, 60, 140, .35); }
 .flo img { width: 56px; height: 56px; object-fit: contain; border-radius: 10px; }
+
+/* ── v2: Apple-style type. Inter Display for headlines (the closest open font to SF Pro Display), Inter for text ── */
+body, .tx { font-family: 'Inter', system-ui, sans-serif; }
+.words { white-space: nowrap; text-align: center; }
+.words .w { display: inline-block; margin-right: .26em; will-change: auto; }
+.words .w:last-child { margin-right: 0; }
+.words.onsky { color: rgba(255, 255, 255, .72); text-shadow: 0 2px 30px rgba(10, 40, 120, .22); }
+.words.onsky .acc { color: #fff; }
+.words.big { font: 600 112px/1.05 'Inter Display', 'Inter', sans-serif; letter-spacing: -0.04em; }
+.words.huge { font: 600 150px/1.02 'Inter Display', 'Inter', sans-serif; letter-spacing: -0.045em; }
+.words.mid { font: 600 64px/1.1 'Inter Display', 'Inter', sans-serif; letter-spacing: -0.03em; }
+.words.line { font: 500 36px/1.35 'Inter', sans-serif; letter-spacing: -0.015em; white-space: normal; width: 1180px; }
+.words.paper { color: #0b0d12; }
+.words.paper .acc { color: #2F6BFF; }
+.words.paper.big { font: 650 76px/1.06 'Inter Display', 'Inter', sans-serif; font-weight: 600; letter-spacing: -0.04em; }
+.words.paper.small { font: 500 30px/1.35 'Inter', sans-serif; letter-spacing: -0.012em; color: #5b6474; white-space: normal; display: block; max-width: 1300px; margin: 0 auto; }
+.fh2 { display: flex; flex-direction: column; align-items: center; gap: 14px; width: 1500px; }
+.fh2 .fh-eye { font: 600 22px/1 'Inter', sans-serif; color: #2F6BFF; letter-spacing: -0.005em; }
+.fh2 .fh-ttl, .fh2 .fh-sub { text-align: center; width: 100%; }
+.lockup-name { font-family: 'Inter Display', 'Inter', sans-serif; letter-spacing: -0.04em; }
+.badge3, .cta-btn, .cta-sub, .note { font-family: 'Inter', sans-serif; }
+.note { font-size: 24px; height: 58px; }
+
+/* the Appearance settings card, drawn like the 3.0 menus (.ui3 colours) */
+.ap3 { width: 320px; padding: 14px 16px 18px; color: var(--tx); font: 14px/1.4 'Inter', sans-serif; }
+.ap3-h { font-weight: 600; font-size: 16px; padding: 2px 0 10px; border-bottom: 1px solid var(--ln); margin-bottom: 4px; }
+.ap3-l { display: flex; justify-content: space-between; color: var(--mu); font-size: 12.5px; margin: 14px 0 8px; }
+.ap3-l em { font-style: normal; color: var(--tx); }
+.ap3-wp { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.ap3-wp i { display: block; height: 44px; border-radius: 9px; background: center / cover no-repeat; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+.ap3-wp i.on { box-shadow: 0 0 0 2px var(--c), 0 0 0 4px #2f6bff; }
+.ap3-seg { display: flex; padding: 3px; border-radius: 10px; background: #1c1c1c; box-shadow: inset 0 0 0 1px var(--ln); }
+.ap3-seg span { flex: 1; text-align: center; padding: 7px 0; border-radius: 8px; color: var(--mu); font-weight: 500; }
+.ap3-seg span.on { background: #3a3a3a; color: #fff; }
+.ap3-seg.f span:nth-child(2) { font-family: 'Source Serif 4', Georgia, serif; }
+.ap3-seg.f span:nth-child(3) { font-family: 'Geist Mono', monospace; font-size: 13px; }
+.ap3-size { display: flex; align-items: center; gap: 12px; }
+.ap3-size small { font-size: 12px; color: var(--mu); }
+.ap3-size big { font-size: 20px; color: var(--mu); }
+.ap3-track { position: relative; flex: 1; height: 6px; border-radius: 3px; background: #3a3a3a; }
+.ap3-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 3px; background: #2f6bff; }
+.ap3-knob { position: absolute; top: -10px; left: -13px; width: 26px; height: 26px; border-radius: 50%; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
