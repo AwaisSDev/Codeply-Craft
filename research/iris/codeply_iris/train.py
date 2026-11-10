@@ -82,7 +82,9 @@ def main(argv=None):
     from peft import LoraConfig, PeftModel, get_peft_model
     from transformers import AutoModelForCausalLM, AutoTokenizer
     tok = AutoTokenizer.from_pretrained(cfg["base"])
-    base = AutoModelForCausalLM.from_pretrained(cfg["base"], torch_dtype=torch.bfloat16 if device == "cpu" else torch.float16)
+    # CPU: bf16 weights (AMX). GPU: fp32 weights + fp16 autocast + GradScaler (the standard AMP recipe; T4 has no bf16).
+    base = AutoModelForCausalLM.from_pretrained(cfg["base"], torch_dtype=torch.bfloat16 if device == "cpu" else torch.float32)
+    scaler = torch.amp.GradScaler("cuda", enabled=device == "cuda")
     ckpt = out / "ckpt"
     state = None
     if a.resume and (ckpt / "state.pt").exists():
@@ -164,18 +166,24 @@ def main(argv=None):
                 ids, start = train[i]
                 with ctx():
                     loss = answer_loss(lm, ids.to(device), start)
-                (loss / len(batch)).backward()
+                if not torch.isfinite(loss):
+                    print("non-finite loss, example skipped", flush=True)
+                    continue
+                scaler.scale(loss / len(batch)).backward()
                 run_loss += loss.item()
                 run_n += 1
                 tok_seen += len(ids)
+            scaler.unscale_(opt)
             torch.nn.utils.clip_grad_norm_(params, cfg["grad_clip"])
-            opt.step()
+            scaler.step(opt)
+            scaler.update()
             opt.zero_grad(set_to_none=True)
             step += 1
             pos += len(batch)
             if step % 5 == 0:
-                rec = {"step": step, "epoch": round(epoch + pos / len(order), 3), "loss": round(run_loss / run_n, 4),
+                rec = {"step": step, "epoch": round(epoch + pos / len(order), 3), "loss": round(run_loss / max(run_n, 1), 4),
                        "lr": round(lr_at(step), 7), "tok_s": round(tok_seen / (time.time() - t0)), "min": round((time.time() - t0) / 60, 1)}
+                rec["loss"] = rec["loss"] if run_n else None
                 log.write(json.dumps(rec) + "\n")
                 log.flush()
                 print(rec, flush=True)
