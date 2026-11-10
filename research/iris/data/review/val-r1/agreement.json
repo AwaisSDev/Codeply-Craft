@@ -1,0 +1,18 @@
+{
+ "reviewed": 40,
+ "agreement_f1": 0.9289099526066351,
+ "teacher_facts_found_by_annotator": 0.9074074074074074,
+ "annotator_facts_labelled_by_teacher": 0.9514563106796117,
+ "teacher_content_facts": 108,
+ "annotator_content_facts": 103,
+ "sessions_with_any_disagreement": 9,
+ "op_agreement_update": 1.0,
+ "date_agreement": 1.0,
+ "keep_agreement": 1.0,
+ "kind_agreement": 0.8979591836734694,
+ "sens_agreement": 0.9387755102040817,
+ "confirm_agreement_recall": 1.0,
+ "retract_agreement_f1": 0.888888888888889,
+ "skip_agreement_recall": 0.75,
+ "annotator_stored_a_teacher_skip": 0
+}
