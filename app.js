@@ -2120,11 +2120,14 @@ const SETTINGS_TABS = [
   ['general', 'settings', 'General'],
   ['appearance', 'sun', 'Appearance'],
   ['codeply', 'sparkle', 'Codeply'],
+  ['memory', 'database', 'Memory'],
   ['voice', 'mic', 'Top bar and voice'],
   ['account', 'user', 'Account'],
 ];
 let settingsTab = 'general';
 let settingsData = null;
+let irisData = null;      // Iris on this PC (iris:state), loaded when the Memory tab opens
+let irisProgress = null;  // { step, done, total } while it downloads
 
 // The home screen shows Codeply (the agent's face) or the Codeply logo.
 function getHomeLook() { try { return localStorage.getItem('craft-home-look') === 'logo' ? 'logo' : 'agent'; } catch { return 'agent'; } }
@@ -2179,6 +2182,7 @@ function settingsPane(tab) {
       setRow('Connected apps', 'Gmail, GitHub, Slack and more, for Codeply to use when you ask.', setButton('connect', 'Manage')),
     ].join('');
   }
+  if (tab === 'memory') return irisPane();
   if (tab === 'voice') {
     return [
       setRow('Show top bar', `The thin bar at the top of your screen. Click it, or press ${key}, to chat.`, setSwitch('topBar', d.topBar, 'Show top bar')),
@@ -2196,6 +2200,65 @@ function settingsPane(tab) {
   return '';
 }
 
+// ─── Memory: Iris, Codeply's own memory model on this PC ─────────────────────
+// It learns what matters from your chats here, so that work no longer goes to a
+// cloud model. Off until downloaded and switched on; nothing changes before that.
+
+function irisPane() {
+  const d = irisData;
+  if (!d) return setRow('Iris', 'Checking this PC…', '');
+  if (!d.supported) return setRow('Iris', 'Iris runs on Windows PCs for now.', '');
+  const size = d.sizeMB ? `About ${d.sizeMB} MB` : 'A one-time download';
+  if (!d.model) {
+    const p = irisProgress;
+    const busy = d.installing || p;
+    const what = p ? (p.step === 'runtime' ? 'Getting the runner' : p.step === 'model' ? 'Downloading Iris' : 'Checking Iris on this PC') : '';
+    const pct = p && p.total ? ` ${Math.round((p.done / p.total) * 100)}%` : '';
+    const ctl = busy ? `<span class="set-val">${esc(what || 'Installing')}${pct}</span>`
+      : d.released ? setButton('iris-download', 'Download') : '<span class="set-val">Coming soon</span>';
+    return [
+      setRow('Iris', `Codeply's own memory model. It learns your preferences and plans from your chats on this PC, so they are not sent to a cloud model to do it. ${size}, and it runs in the background.`, ctl),
+      d.error ? setRow('Could not install Iris', d.error, '') : '',
+    ].join('');
+  }
+  const recent = Array.isArray(d.recent) ? d.recent : [];
+  const saved = recent.reduce((n, e) => n + e.actions.filter((a) => a !== 'ignored').length, 0);
+  return [
+    setRow('Learn with Iris', 'Iris reads your chats on this PC after each turn and updates what Codeply remembers. Off, your chat model does it, as before.', setSwitch('iris-on', d.on, 'Learn with Iris')),
+    setRow('Learn from Life too', 'What you allowed in Life (heard, calls, Orbit, Gmail) becomes memory too. Iris handles it on this PC.', setSwitch('iris-life', d.life, 'Learn from Life too')),
+    setRow('Wait while on battery', 'On battery, Iris only works while you are away from the PC.', setSwitch('iris-battery', d.pauseOnBattery, 'Wait while on battery')),
+    setRow('Help improve Iris', 'Once a day, send counts like how many memories it saved and how fast it was. Never your words or memories.', setSwitch('iris-counts', d.shareCounts, 'Help improve Iris')),
+    recent.length ? setRow('Lately', `${recent.length} batch${recent.length === 1 ? '' : 'es'} read, ${saved} change${saved === 1 ? '' : 's'} to memory.`, '') : '',
+    setRow('Remove Iris', 'Deletes the model from this PC. Your memories stay.', setButton('iris-remove', 'Remove')),
+  ].join('');
+}
+
+async function irisToggle(key, on) {
+  const map = { on: 'on', life: 'life', battery: 'pauseOnBattery', counts: 'shareCounts' };
+  if (!map[key] || !api || !api.irisSet) return;
+  const r = await api.irisSet({ [map[key]]: on });
+  if (r && r.ok) irisData = r.state;
+  drawSettings();
+}
+
+let irisUnsub = null;
+async function irisAction(act) {
+  if (!api) return;
+  if (act === 'iris-remove') {
+    if (!confirm('Remove Iris from this PC? Your memories stay, and Codeply goes back to learning with your chat model.')) return;
+    irisData = await api.irisRemove();
+    drawSettings();
+    return;
+  }
+  if (!irisUnsub && api.onIrisProgress) irisUnsub = api.onIrisProgress((p) => { irisProgress = p; if (settingsTab === 'memory') drawSettings(); });
+  irisProgress = { step: 'runtime', done: 0, total: 0 };
+  drawSettings();
+  const r = await api.irisInstall();
+  irisProgress = null;
+  irisData = { ...(r.state || irisData || {}), error: r.ok ? '' : r.error };
+  drawSettings();
+}
+
 function drawSettings() {
   const el = $('settingsBackdrop');
   if (!el) return;
@@ -2208,6 +2271,7 @@ function drawSettings() {
   el.querySelector('.settings-heading').textContent = tab ? tab[2] : 'Settings';
   el.querySelector('.settings-pane').innerHTML = settingsPane(settingsTab);
   if (settingsTab === 'appearance' && window.CraftWallpaper) window.CraftWallpaper.hydrate(drawSettings);
+  if (settingsTab === 'memory' && !irisData && api && api.irisState) api.irisState().then((d) => { irisData = d || {}; if (settingsTab === 'memory') drawSettings(); }).catch(() => {});
 }
 
 function buildSettings() {
@@ -2244,6 +2308,7 @@ function buildSettings() {
       if (window.CraftWispUI) await window.CraftWispUI.refresh();
       return;
     }
+    if (k.startsWith('iris-')) { await irisToggle(k.slice(5), sw.checked); return; }
     if (k === 'keepAwake' && $('keepAwakeToggle')) $('keepAwakeToggle').checked = sw.checked;
     if (api && api.settingsSet) settingsData = await api.settingsSet(k, sw.checked);
   });
@@ -2267,6 +2332,7 @@ function buildSettings() {
     if (!b) return;
     const act = b.dataset.setAct;
     if (act === 'type-reset') { if (window.CraftRich) window.CraftRich.setType(null); drawSettings(); return; }
+    if (act === 'iris-download' || act === 'iris-remove') { irisAction(act); return; }
     CraftModal.close(el);
     if (act === 'phone') openRemoteModal();
     else if (act === 'team') { if (window.CraftWispUI) window.CraftWispUI.openTeam(); }
@@ -2280,6 +2346,7 @@ function buildSettings() {
 
 async function openSettings(tab) {
   if (tab) settingsTab = tab;
+  irisData = null; // read fresh each time Settings opens
   const el = $('settingsBackdrop') || buildSettings();
   try { settingsData = api && api.settingsGet ? await api.settingsGet() : null; } catch { settingsData = null; }
   if (window.CraftWallpaper) window.CraftWallpaper.forget();

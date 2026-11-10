@@ -4354,6 +4354,17 @@ brainDesktop.init({
   crewEvent: (ev) => { if (crewMod) crewMod.pushEvent(ev); },
   onBotsChange: () => botsWatch.poke(),
 });
+// Context intelligence (context-desktop.js): what the brain learns from chats and
+// Life, extracted by the backend the user picks (legacy, the chat route, or Iris,
+// Codeply's own model, on this PC). Legacy until the user turns Iris on in Settings.
+const contextDesktop = require('./context-desktop');
+app.whenReady().then(() => contextDesktop.init({
+  ipcMain, cliDir: CLI_DIR, modulePaths: [__dirname, CLI_DIR], aiLib: () => aiLib, currentRoute,
+  safeStorage: require('electron').safeStorage, powerMonitor: require('electron').powerMonitor, life: lifeDesktop,
+  authLib: () => authLib,
+  send: (channel, payload) => { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); },
+  onBrainChange: () => brainDesktop.push(),
+}));
 // Bots: named agents with a job, a tone, memory and an avatar (see bots-desktop.js).
 // Claude Code (claude-code-desktop.js): the user's own Claude plan as a background
 // coding agent that Wisp briefs and reviews. Its login card lives in Connect Apps.
@@ -4887,6 +4898,7 @@ app.on('before-quit', () => {
   jobsQuitting = true;
   if (jobsApi()) jobsApi().stopAll(); // background commands end with the app
   try { claudeDesktop.stopAll(); } catch {} // and Claude agents
+  try { contextDesktop.stop(); } catch {} // and the local model server with them
   drop.dispose();
   island.dispose();
   voiceMode.dispose();

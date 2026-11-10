@@ -203,7 +203,13 @@ function open() {
       CREATE INDEX IF NOT EXISTS handoffs_status ON handoffs (status, created_at);
     `);
     db.prepare('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)').run('schema', String(SCHEMA_VERSION));
+    // Added for Iris (context-iris.js): who a memory is about, and its privacy label
+    // (none / personal / sensitive). Old brains get the columns empty; nothing else changes.
+    const cols = db.prepare('PRAGMA table_info(memories)').all().map((c) => c.name);
+    if (!cols.includes('ent')) db.exec('ALTER TABLE memories ADD COLUMN ent TEXT');
+    if (!cols.includes('sens')) db.exec('ALTER TABLE memories ADD COLUMN sens TEXT');
     q = {
+      tag: db.prepare('UPDATE memories SET ent = COALESCE(?, ent), sens = COALESCE(?, sens) WHERE id = ?'),
       get: db.prepare('SELECT * FROM memories WHERE id = ?'),
       bySlot: db.prepare('SELECT * FROM memories WHERE scope = ? AND slot = ? AND status != ? ORDER BY updated_at DESC LIMIT 1'),
       byScopeKind: db.prepare('SELECT * FROM memories WHERE scope = ? AND kind = ? ORDER BY updated_at DESC LIMIT 400'),
@@ -270,6 +276,7 @@ function rowToMemory(r) {
     sources: json(r.sources, []), domain: r.domain || '', expiresAt: r.expires_at == null ? null : Number(r.expires_at),
     createdAt: Number(r.created_at), updatedAt: Number(r.updated_at), seenAt: Number(r.seen_at),
     project: String(r.scope).startsWith('project:') ? r.scope.slice(8) : '',
+    ent: r.ent || '', sens: r.sens || '',
   };
 }
 
@@ -434,9 +441,119 @@ function observe(raw, src) {
 
 function get(id) { return open() ? rowToMemory(q.get.get(String(id))) : null; }
 
+// ─── Operations (Iris) ──────────────────────────────────────────────────────
+//
+// Iris (context-iris.js) says what to do to memory instead of leaving the brain to
+// guess it from slot names: insert, replace, reinforce, forget, challenge, or
+// ignored (a skip, kept in the log so the decision can be checked). Every rule of
+// observe() still holds: secrets are refused, jokes and hypotheticals are not kept,
+// and anything the user set by hand is never changed (it is flagged for review).
+
+const SENS = ['none', 'personal', 'sensitive'];
+function tag(m, it) {
+  if (!m) return m;
+  const sens = SENS.includes(it.sens) ? it.sens : null;
+  const ent = it.ent ? clip(it.ent, 80) : null;
+  if (sens || ent) q.tag.run(ent, sens, m.id);
+  return get(m.id);
+}
+
+function applyOp(it, src) {
+  const from = sourceOf(src);
+  const t = now();
+  const ignored = (why) => ({ action: 'ignored', why });
+  if (it.action === 'ignored') { log(null, 'ignored', `${clip(it.evid, 120)} (${it.why || 'skipped'})`, from); return ignored(it.why || 'skipped'); }
+  const viaObserve = () => { const r = observe(it.observation, src); if (r.memory) r.memory = tag(r.memory, it); return r; };
+  if (it.action === 'insert') return it.observation ? viaObserve() : ignored('nothing to write');
+  const cur = it.target ? get(it.target) : null;
+  if (!cur) {
+    // The memory is gone (forgotten meanwhile): an update still says something new; the rest has nothing to act on.
+    if (it.action === 'replace' && it.observation) return viaObserve();
+    return ignored('that memory is gone');
+  }
+
+  if (it.action === 'reinforce') {
+    const evidence = cur.evidence + 1;
+    const confirmIt = cur.status === 'tentative' && evidence >= 2;
+    const m = write({ ...cur, evidence, confidence: Math.min(1, cur.confidence + 0.1), status: confirmIt ? 'confirmed' : cur.status, challenger: null, sources: addSource(cur.sources, from), seenAt: t });
+    log(cur.id, confirmIt ? 'confirmed' : 'reinforced', m.text, from);
+    return { action: 'reinforced', memory: m };
+  }
+
+  if (it.action === 'forget') {
+    if (cur.locked) {
+      const m = write({ ...cur, review: true, challenger: { value: '', text: `no longer true (${it.why || 'retracted'})`, count: 1, at: t, from: sourceLabel(from) }, seenAt: t });
+      log(cur.id, 'kept', `kept "${cur.text}" (you set it); heard it no longer holds`, from);
+      return { action: 'kept', memory: m, why: 'you set this one yourself' };
+    }
+    q.remove.run(cur.id);
+    log(cur.id, 'forgotten', `${cur.text} (${it.why || 'no longer true'})`, from);
+    return { action: 'forgotten', before: cur, why: it.why || '' };
+  }
+
+  const o = it.observation ? cleanObservation(it.observation) : null;
+  if (o && SECRET_RE.test(`${o.text} ${o.value} ${o.slot}`)) { log(null, 'ignored', 'something that looked like a secret', from); return ignored('looks like a secret'); }
+
+  if (it.action === 'challenge') {
+    const text = o ? o.text : clip(it.evid, 280);
+    const ch = cur.challenger && sameText(cur.challenger.text, text) ? cur.challenger : null;
+    const m = write({ ...cur, challenger: { value: o ? o.value : '', text, count: (ch ? ch.count : 0) + 1, at: t, from: sourceLabel(from) }, review: true, seenAt: t });
+    log(cur.id, 'challenged', `still "${cur.text}"; heard "${text}"`, from);
+    return { action: 'challenged', memory: m };
+  }
+
+  if (it.action === 'replace') {
+    if (!o) return ignored('nothing to write');
+    if (IGNORED.has(o.certainty)) { log(null, 'ignored', `${o.text} (${o.certainty})`, from); return ignored(o.certainty); }
+    // A temporary change ("this week I'm in Lahore") is live context beside the lasting memory, never over it.
+    if (o.kind === 'context' && cur.kind !== 'context') return viaObserve();
+    if (cur.locked) {
+      const m = write({ ...cur, challenger: { value: o.value, text: o.text, count: ((cur.challenger && sameText(cur.challenger.text, o.text)) ? cur.challenger.count : 0) + 1, at: t, from: sourceLabel(from) }, review: true, seenAt: t });
+      log(cur.id, 'kept', `kept "${cur.text}" (you set it), heard "${o.text}"`, from);
+      return { action: 'kept', memory: m, why: 'you set this one yourself' };
+    }
+    const stated = o.certainty === 'stated';
+    const entry = { value: cur.value, text: cur.text, status: cur.status, until: t };
+    const m = write({
+      ...cur, value: o.value, text: o.text, slot: cur.slot || o.slot,
+      status: cur.kind === 'context' ? 'temporary' : (stated ? 'confirmed' : 'tentative'), confidence: stated ? 0.8 : 0.55, evidence: 1,
+      challenger: null, review: !stated, history: [...cur.history, entry], sources: addSource(cur.sources, from), seenAt: t,
+      expiresAt: cur.kind === 'context' ? (o.until > t ? o.until : cur.expiresAt) : cur.expiresAt,
+    });
+    log(cur.id, 'replaced', `"${cur.text}" -> "${o.text}"`, from);
+    return { action: 'replaced', memory: tag(m, it) };
+  }
+  return ignored(`unknown action ${clip(it.action, 20)}`);
+}
+
+/**
+ * Apply operations someone else decided (Iris), one result per item, in order.
+ * @param {Array<{ action: string, target?: string, observation?: object, ent?: string, sens?: string, why?: string, evid?: string }>} items
+ * @param {object} [src] { product, botId, botName }
+ * @returns {Array<{ action: string, memory?: object, before?: object, why?: string }>}
+ */
+function applyOps(items, src) {
+  const list = Array.isArray(items) ? items.slice(0, 20) : [];
+  if (!available()) return list.map(() => ({ action: 'ignored', why: 'the brain is off' }));
+  return list.map((it) => { try { return applyOp(it || {}, src); } catch (e) { return { action: 'ignored', why: clip(e && e.message, 120) }; } });
+}
+
+/** Put back a memory exactly as it was (undoing a forget). False when one with that id exists. */
+function restore(m) {
+  if (!open() || !m || !m.id || get(m.id)) return false;
+  const t = now();
+  q.insert.run(String(m.id), m.kind, m.scope, m.slot || null, m.value || null, m.text, m.status, Number(m.confidence) || 0.5, Number(m.evidence) || 1,
+    m.locked ? 1 : 0, m.review ? 1 : 0, m.challenger ? JSON.stringify(m.challenger) : null, JSON.stringify(m.history || []), JSON.stringify(m.sources || []),
+    m.domain || null, m.expiresAt == null ? null : Math.round(m.expiresAt), Number(m.createdAt) || t, t, Number(m.seenAt) || t);
+  if (m.ent || m.sens) q.tag.run(m.ent || null, m.sens || null, String(m.id));
+  log(m.id, 'restored', m.text, { product: 'you' });
+  return true;
+}
+
 /**
  * Memories, for the panel and the prompt.
- * @param {{ scope?: string, scopes?: string[], kinds?: string[], status?: string, text?: string, includeExpired?: boolean, limit?: number }} [f]
+ * @param {{ scope?: string, scopes?: string[], kinds?: string[], status?: string, text?: string, includeExpired?: boolean, limit?: number, shareable?: boolean }} [f]
+ *   shareable: leave out what Iris marked sensitive
  */
 function list(f = {}) {
   if (!open()) return [];
@@ -445,6 +562,7 @@ function list(f = {}) {
   if (scopes && scopes.length) { where.push(`scope IN (${scopes.map(() => '?').join(',')})`); args.push(...scopes); }
   if (f.kinds && f.kinds.length) { where.push(`kind IN (${f.kinds.map(() => '?').join(',')})`); args.push(...f.kinds); }
   if (f.status) { where.push('status = ?'); args.push(f.status); }
+  if (f.shareable) where.push("(sens IS NULL OR sens != 'sensitive')");
   if (!f.includeExpired) { where.push('(expires_at IS NULL OR expires_at >= ?)'); args.push(now()); }
   if (f.text) {
     const like = `%${String(f.text).replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -583,9 +701,30 @@ function projectsNamed(text) {
 
 const ago = (ms) => { const m = Math.round(ms / 60000); if (m < 60) return `${Math.max(1, m)} min`; const h = Math.round(m / 60); if (h < 48) return `${h} h`; return `${Math.round(h / 24)} days`; };
 
-function rank(list, want, n) {
-  return list.map((m) => ({ m, s: (want.length ? overlap(want, `${m.slot} ${m.value} ${m.text}`) * 2 : 0) + m.confidence + Math.min(3, m.evidence) * 0.3 + (m.locked ? 1 : 0) + Math.max(0, 1 - (now() - m.seenAt) / (60 * DAY)) }))
+// semantic: memory id -> how far above the average this memory's meaning is to
+// the request, in standard deviations (context-retrieval.js), when the host
+// has a local embedding model. Words still count; meaning adds to them.
+const SEMANTIC_WEIGHT = 1.5;
+function rank(list, want, n, semantic) {
+  return list.map((m) => ({ m, s: (want.length ? overlap(want, `${m.slot} ${m.value} ${m.text}`) * 2 : 0) + m.confidence + Math.min(3, m.evidence) * 0.3 + (m.locked ? 1 : 0) + Math.max(0, 1 - (now() - m.seenAt) / (60 * DAY))
+    + (semantic ? SEMANTIC_WEIGHT * Math.max(0, semantic.get(m.id) || 0) : 0) }))
     .sort((a, b) => b.s - a.s).slice(0, n).map((x) => x.m);
+}
+
+// A host with a local embedding model (context-desktop.js) sets a retriever:
+// (query) => Promise<Map<memoryId, z-score>>. semanticScores() never waits
+// longer than timeoutMs: a slow or missing model leaves retrieval as it was.
+let retriever = null;
+function setRetriever(fn) { retriever = typeof fn === 'function' ? fn : null; }
+async function semanticScores(query, { timeoutMs = 400 } = {}) {
+  if (!retriever || !available() || !String(query || '').trim()) return null;
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve(retriever(String(query).slice(0, 2000))).catch(() => null),
+      new Promise((r) => { timer = setTimeout(() => r(null), timeoutMs); }),
+    ]);
+  } finally { clearTimeout(timer); }
 }
 
 /** Lessons teammates learned that fit this request (never the bot's own). */
@@ -612,33 +751,37 @@ const REMEMBER_FORMAT = `To save something, write:
 
 /**
  * The brain block for one run's prompt. Empty when there is nothing to say.
- * @param {{ cwd?: string, project?: string, request?: string, botId?: string, native?: boolean, domains?: string[] }} [o]
+ * @param {{ cwd?: string, project?: string, request?: string, botId?: string, native?: boolean, domains?: string[], learnsByItself?: boolean, semantic?: Map<string, number> }} [o]
+ *   semantic: from semanticScores(request), when the host has a local embedding model
  */
 function contextBlock(o = {}) {
   if (!available()) return '';
   try {
     const want = terms(o.request);
+    // Memories Iris marked sensitive stay out of the block (it goes to cloud models) unless the host asks for them.
+    const shareable = !o.includeSensitive;
+    const sem = o.semantic instanceof Map && o.semantic.size ? o.semantic : null;
     const keys = new Set();
     const here = knownKey(o.project || projectOfFolder(o.cwd));
     if (here && projectFor(here)) keys.add(here);
     for (const p of projectsNamed(o.request || '')) keys.add(p.key);
     // Standing rules count as personal too: "always CC hiring@" may come back as a requirement or decision.
-    const personal = list({ scope: 'me', kinds: ['preference', 'fact', 'routine', 'style', 'decision', 'requirement'], limit: 300 });
-    const sure = rank(personal.filter((m) => m.status === 'confirmed'), want, BLOCK_LIMITS.personal);
-    const unsure = rank(personal.filter((m) => m.status === 'tentative'), want, 20).filter((m) => !want.length || overlap(want, m.text) > 0 || m.evidence > 1).slice(0, BLOCK_LIMITS.unsure);
-    const live = list({ kinds: ['context'], limit: 20 }).slice(0, BLOCK_LIMITS.live);
+    const personal = list({ scope: 'me', kinds: ['preference', 'fact', 'routine', 'style', 'decision', 'requirement'], limit: 300, shareable });
+    const sure = rank(personal.filter((m) => m.status === 'confirmed'), want, BLOCK_LIMITS.personal, sem);
+    const unsure = rank(personal.filter((m) => m.status === 'tentative'), want, 20, sem).filter((m) => !want.length || overlap(want, m.text) > 0 || m.evidence > 1 || (sem && (sem.get(m.id) || 0) >= 1.5)).slice(0, BLOCK_LIMITS.unsure);
+    const live = list({ kinds: ['context'], limit: 20, shareable }).slice(0, BLOCK_LIMITS.live);
     const lines = [];
     const line = (m) => `- ${m.text}${m.review ? ' (recently changed; double check)' : ''}`;
     if (sure.length) lines.push('About them:', ...sure.map(line));
     if (unsure.length) lines.push('Not sure yet (heard once or in passing; never act on it without checking):', ...unsure.map((m) => `- ${m.text}`));
     // Open to-dos from the last three weeks always; ideas only when this message is about them.
-    const todos = list({ scope: 'me', kinds: ['todo'], limit: 50 }).filter((m) => now() - m.updatedAt < 21 * DAY).slice(0, BLOCK_LIMITS.todos);
+    const todos = list({ scope: 'me', kinds: ['todo'], limit: 50, shareable }).filter((m) => now() - m.updatedAt < 21 * DAY).slice(0, BLOCK_LIMITS.todos);
     if (todos.length) lines.push('Open to-dos from earlier chats (say so if one is due or done):', ...todos.map((m) => `- ${m.text}${m.status === 'tentative' ? ' (not confirmed)' : ''}`));
-    const ideas = want.length ? rank(list({ scope: 'me', kinds: ['idea'], limit: 100 }), want, 10).filter((m) => overlap(want, m.text) > 0).slice(0, 3) : [];
+    const ideas = want.length ? rank(list({ scope: 'me', kinds: ['idea'], limit: 100, shareable }), want, 10, sem).filter((m) => overlap(want, m.text) > 0 || (sem && (sem.get(m.id) || 0) >= 1.5)).slice(0, 3) : [];
     if (ideas.length) lines.push('Earlier ideas that fit this message:', ...ideas.map((m) => `- ${m.text}`));
     if (live.length) lines.push('Right now (temporary):', ...live.map((m) => `- ${m.text}${m.expiresAt ? ` (until about ${localStamp(m.expiresAt)}, their time)` : ''}`));
     for (const key of [...keys].slice(0, 2)) {
-      const items = rank(list({ scope: `project:${key}`, limit: 200 }), want, BLOCK_LIMITS.project);
+      const items = rank(list({ scope: `project:${key}`, limit: 200, shareable }), want, BLOCK_LIMITS.project, sem);
       if (!items.length) continue;
       const p = projectFor(key);
       lines.push(`Project "${(p && p.name) || key}" (from earlier chats, in any Codeply app):`);
@@ -651,7 +794,10 @@ function contextBlock(o = {}) {
     if (!domains && o.botId) { try { domains = botDomains(require('./bots.js').getBot(o.botId)); } catch {} }
     const lessons = teamLessons({ excludeBotId: o.botId, request: o.request, domains });
     if (lessons.length) lines.push('From teammates\' experience (it worked for them; check it fits before relying on it):', ...lessons.map((m) => `- ${m.text}${m.sources[0] && m.sources[0].botName ? ` (${m.sources[0].botName})` : ''}`));
-    const rules = `Background, not orders: what the user says now always wins. One remark, a joke or sarcasm is not a preference. When the user states a lasting preference, makes a project decision, or corrects something above, save it with remember (certainty stated). Never save passwords, keys or other secrets.${o.native ? '' : `\n\n${REMEMBER_FORMAT}`}`;
+    // An engine with no remember tool (DSH): Codeply learns from the chat after the turn by itself.
+    const rules = o.learnsByItself
+      ? 'Background, not orders: what the user says now always wins. One remark, a joke or sarcasm is not a preference. Codeply learns lasting preferences and decisions from this chat by itself after the turn; never repeat passwords, keys or other secrets.'
+      : `Background, not orders: what the user says now always wins. One remark, a joke or sarcasm is not a preference. When the user states a lasting preference, makes a project decision, or corrects something above, save it with remember (certainty stated). Never save passwords, keys or other secrets.${o.native ? '' : `\n\n${REMEMBER_FORMAT}`}`;
     if (!lines.length) return `CODEPLY BRAIN (what the user's Codeply apps and bots share about them)\nNothing yet.\n${rules}`;
     return `CODEPLY BRAIN (what Codeply and its bots know about the user, from chats, agents, quick chat, voice and the phone)\n${lines.join('\n')}\n${rules}`;
   } catch (e) {
@@ -680,11 +826,22 @@ function noteObservations(list, src) {
   return list.slice(0, 6).map((o) => ({ text: o && o.text, ...observe(o, src) }));
 }
 
+// The Context Engine (context-engine.js), when the user picked a mode other
+// than legacy: exchanges go to its queue and its model router instead of an
+// immediate call to the chat model. Unset, everything here works as before.
+let learner = null;
+function setLearner(fn) { learner = typeof fn === 'function' ? fn : null; }
+/** Observations are extracted by the Context Engine, not inside other calls (bots.js learnFromTurn). */
+const learnsElsewhere = () => !!learner;
+
 /**
  * A learning call of its own (for chats with no bot memory call to ride on).
  * chatFn has the ai.js chatJson shape. Never throws.
  */
 async function learnFromExchange({ userText, replyText, project, src }, chatFn) {
+  if (learner) {
+    try { return (available() && learner({ userText, replyText, project, src })) || []; } catch { return []; }
+  }
   try {
     if (!available() || typeof chatFn !== 'function') return [];
     const user = clip(userText, 3000);
@@ -742,10 +899,12 @@ function recallTool(args, ctx = {}) {
   const query = String(args.query || '').trim();
   const pk = knownKey(args.project || '');
   const scopes = pk ? [`project:${pk}`] : null;
-  let hits = list({ scopes, text: query || undefined, limit: 40 });
+  // Memories Iris marked sensitive are not read out to a model unless the host says it runs on this PC.
+  const shareable = !ctx.includeSensitive;
+  let hits = list({ scopes, text: query || undefined, limit: 40, shareable });
   if (!hits.length && query) {
     const want = terms(query);
-    hits = list({ scopes, limit: 400 }).filter((m) => overlap(want, `${m.slot} ${m.value} ${m.text}`) > 0).slice(0, 25);
+    hits = list({ scopes, limit: 400, shareable }).filter((m) => overlap(want, `${m.slot} ${m.value} ${m.text}`) > 0).slice(0, 25);
   }
   if (!hits.length) return { ok: true, output: `Nothing in the brain${query ? ` about "${query}"` : ''}${pk ? ` for ${pk}` : ''}.`, meta: { label: query || 'brain' } };
   const out = hits.slice(0, 25).map((m) => `- [${m.id}] ${KINDS[m.kind] ? KINDS[m.kind].label : m.kind}${m.project ? ` (${m.project})` : ''}: ${m.text} (${m.status}${m.locked ? ', set by the user' : ''}, seen ${m.evidence}x)`).join('\n');
@@ -906,7 +1065,8 @@ module.exports = {
   configure, usable, available, enabled, setEnabled, close, prune,
   observe, cleanObservation, get, list, correct, confirm, resolve, forget, clear, changes,
   touchProject, projects, projectFor, projectsNamed, projectKey, knownKey, projectOfFolder,
-  contextBlock, teamLessons, observationsAsk, noteObservations, learnFromExchange, shareLessons,
+  contextBlock, teamLessons, observationsAsk, noteObservations, learnFromExchange, shareLessons, setLearner, learnsElsewhere, setRetriever, semanticScores,
+  applyOps, restore,
   rememberTool, recallTool, REMEMBER_FORMAT,
   botDomains, routeHandoff, createHandoff, getHandoff, updateHandoff, handoffsByStatus, recentHandoffs, handoffForTask, handoffTask,
   setCoordinator, canHandOff, handOff, looksLikeScheduling,

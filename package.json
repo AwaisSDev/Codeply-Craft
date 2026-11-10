@@ -21,7 +21,9 @@
     "test:apps": "node scripts/apps-test.mjs",
     "test:wisp": "node scripts/wisp-test.mjs",
     "test:claude-code": "node scripts/claude-code-test.mjs",
-    "test:cache": "node scripts/cache-test.mjs"
+    "test:cache": "node scripts/cache-test.mjs",
+    "test:context": "node scripts/context-test.mjs",
+    "test:iris": "node scripts/iris-test.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.0",

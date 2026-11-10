@@ -102,6 +102,12 @@ contextBridge.exposeInMainWorld('craft', {
 
   // agent
   send: (payload) => ipcRenderer.invoke('chat:send', payload),
+  // Iris (context-desktop.js, iris-install.js): Codeply's own memory model on this PC.
+  irisState: () => ipcRenderer.invoke('iris:state'),
+  irisInstall: () => ipcRenderer.invoke('iris:install'),
+  irisSet: (patch) => ipcRenderer.invoke('iris:set', patch || {}),
+  irisRemove: () => ipcRenderer.invoke('iris:remove'),
+  onIrisProgress: (cb) => { const h = (e, p) => cb(p); ipcRenderer.on('iris:progress', h); return () => ipcRenderer.removeListener('iris:progress', h); },
   // Wisp (wisp-desktop.js): on or off, and its team of specialists.
   wispState: () => ipcRenderer.invoke('wisp:state'),
   wispSet: (on) => ipcRenderer.invoke('wisp:set', !!on),
