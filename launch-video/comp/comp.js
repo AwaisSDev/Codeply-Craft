@@ -163,13 +163,13 @@
     // visible spans: runs of keys closer than 1.6s apart
     let a = null, b = null;
     for (let i = 0; i < CUR.length; i++) { if (CUR[i].t <= t) a = CUR[i]; if (CUR[i].t > t && !b) b = CUR[i]; }
-    if (!a || (b && b.t - a.t > 2.4 && t - a.t > 0.4) || (!b && t - a.t > 0.45)) {
+    if (!a || (b && b.t - a.t > 1.2 && t - a.t > 0.45) || (!b && t - a.t > 0.45)) {
       cursor.style.display = 'none'; return;
     }
     let pa = val(a.x, t), x, y;
     if (typeof pa === 'object') { x = pa.x; y = pa.y; } else { x = pa; y = val(a.y, t); }
     let fadeOut = 1;
-    if (b && b.t - a.t <= 2.4) {
+    if (b && b.t - a.t <= 1.2) {
       let pb = val(b.x, t), bx, by;
       if (typeof pb === 'object') { bx = pb.x; by = pb.y; } else { bx = pb; by = val(b.y, t); }
       const k = E.inOutCubic(seg(t, a.t, b.t));
@@ -178,7 +178,7 @@
       x = lerp(x, bx, k) + arc * 0.3; y = lerp(y, by, k) - arc;
     } else fadeOut = 1 - seg(t, a.t + 0.1, a.t + 0.45);
     // first key: fade in
-    const first = CUR.filter((c) => c.t <= t).reverse().find((c, i, arr) => !arr[i + 1] || c.t - arr[i + 1].t > 2.4);
+    const first = CUR.filter((c) => c.t <= t).reverse().find((c, i, arr) => !arr[i + 1] || c.t - arr[i + 1].t > 1.2);
     const fadeIn = first ? seg(t, first.t - 0.001, first.t + 0.2) : 1;
     let s = 1;
     for (const p of PRESS) { const d = t - p; if (d >= -0.06 && d < 0.2) s = Math.min(s, d < 0 ? lerp(1, 0.82, (d + 0.06) / 0.06) : lerp(0.82, 1, E.outCubic(d / 0.2))); }
@@ -544,7 +544,7 @@
   [35.9, 36.15, 36.4].forEach((x, i) => at(x, () => F4.lis[i] && F4.lis[i].classList.add('on')));
   at(37.05, () => { F4.prTitle.textContent = 'Merged into main'; F4.merge.textContent = 'Merged'; });
   cue(34.75, 'send'); cue(36.0, 'notify');
-  curKey(36.3, 1720, 1020); curKey(36.85, center(F4.merge, 6, 4)); curKey(37.4, center(F4.merge, 6, 4));
+  curKey(36.3, 1720, 1020); curKey(36.85, center(F4.merge, 6, 4)); curKey(37.25, center(F4.merge, 6, 4));
   press(37.0, center(F4.merge));
   function sceneF4(t) {
     const vis = t > F4.a - 0.05 && t < F4.b + 0.05;
@@ -584,11 +584,11 @@
     F5.sizeLabel = F5.set.querySelector('.ap3-l em');
   })();
   // what gets picked, and when (on the beat)
-  F5.wpPicks = [[38.0, 0], [39.0, 1], [43.5, 3]];
+  F5.wpPicks = [[38.0, 0], [39.0, 3], [43.5, 1]];
   F5.fontAt = 40.0; F5.sizeA = 41.0; F5.sizeB = 42.0; F5.relaxAt = 42.75;
   const FONTS = ["'Inter', sans-serif", "'Source Serif 4', Georgia, serif", "'Geist Mono', monospace"];
-  curKey(38.55, 1700, 1060);
-  [[39.0, () => F5.wp[1]], [40.0, () => F5.fonts[1]], [42.75, () => F5.sp[1]], [43.5, () => F5.wp[3]]].forEach(([tt, g]) => {
+  curKey(38.6, 1700, 1060);
+  [[39.0, () => F5.wp[3]], [40.0, () => F5.fonts[1]], [42.75, () => F5.sp[1]], [43.5, () => F5.wp[1]]].forEach(([tt, g]) => {
     curKey(tt - 0.35, () => center(g())()); curKey(tt + 0.12, () => center(g())()); press(tt - 0.04, () => center(g())());
   });
   // the text-size drag

@@ -121,7 +121,8 @@ body, .tx { font-family: 'Inter', system-ui, sans-serif; }
 .words.big { font: 600 112px/1.05 'Inter Display', 'Inter', sans-serif; letter-spacing: -0.04em; }
 .words.huge { font: 600 150px/1.02 'Inter Display', 'Inter', sans-serif; letter-spacing: -0.045em; }
 .words.mid { font: 600 64px/1.1 'Inter Display', 'Inter', sans-serif; letter-spacing: -0.03em; }
-.words.line { font: 500 36px/1.35 'Inter', sans-serif; letter-spacing: -0.015em; white-space: normal; width: 1180px; }
+.words.line { font: 500 38px/1.35 'Inter', sans-serif; letter-spacing: -0.015em; white-space: normal; width: 1180px; }
+.words.onsky.line, .words.onsky.line .acc { color: #fff; text-shadow: 0 2px 18px rgba(10, 40, 120, .45), 0 0 2px rgba(10, 40, 120, .25); }
 .words.paper { color: #0b0d12; }
 .words.paper .acc { color: #2F6BFF; }
 .words.paper.big { font: 650 76px/1.06 'Inter Display', 'Inter', sans-serif; font-weight: 600; letter-spacing: -0.04em; }
