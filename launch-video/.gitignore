@@ -1,0 +1,6 @@
+out/part*
+out/*.log
+out/parts.txt
+out/review/
+out/test.mp4
+music/*.wav

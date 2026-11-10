@@ -1,0 +1,111 @@
+/* Codeply 3.0 launch film: the stage and the film's own layers. The app mockups use the site's CSS. */
+html, body { margin: 0; padding: 0; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+body { font-family: 'Geist', system-ui, sans-serif; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+* { scroll-behavior: auto !important; }
+#stage { position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: hidden; background: #eef3fb; }
+.L { position: absolute; left: 0; top: 0; transform-origin: 50% 50%; }
+.full { position: absolute; inset: 0; }
+/* a layer wraps one element; the layer takes its size so translate(-50%,-50%) centres it */
+.L > :only-child { position: relative !important; left: auto !important; top: auto !important; }
+.hide { display: none !important; }
+
+/* backgrounds */
+#sky { position: absolute; left: -10%; top: -10%; width: 120%; height: 120%; background: #5cbcf2 url(/assets/site/scene.webp) 62% 45% / cover no-repeat; }
+#paper { position: absolute; inset: 0; background: radial-gradient(120% 80% at 50% 0%, #ffffff 0%, #f6f8fc 46%, #eaf0f9 100%); }
+#paperSky { position: absolute; left: -5%; width: 110%; top: 52%; height: 70%; background: url(/assets/site/scene.webp) 50% 60% / cover no-repeat;
+  -webkit-mask-image: linear-gradient(to top, #000 0%, rgba(0,0,0,.85) 30%, transparent 92%); mask-image: linear-gradient(to top, #000 0%, rgba(0,0,0,.85) 30%, transparent 92%); filter: blur(46px) saturate(1.15); opacity: .75; }
+#flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+#burst { position: absolute; inset: 0; pointer-events: none; }
+#vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(140% 100% at 50% 50%, transparent 60%, rgba(10, 30, 80, .10) 100%); }
+
+/* type */
+.tx { position: absolute; left: 0; top: 0; white-space: pre; font-family: 'Geist', sans-serif; letter-spacing: -0.02em; color: #0b0d12; }
+.tx.white { color: #fff; text-shadow: 0 2px 24px rgba(12, 40, 110, .25); }
+.tx .acc { color: #2F6BFF; }
+.tx.white .acc { color: #fff; font-family: 'Instrument Serif', serif; font-style: italic; letter-spacing: 0; font-weight: 400; }
+.tx .serif { font-family: 'Instrument Serif', serif; font-style: italic; letter-spacing: 0; font-weight: 400; }
+.tx .dim { opacity: .62; }
+.tx .fresh { color: #2F6BFF; }
+.tx.white .fresh { color: #cfe6ff; }
+.tx .blk { display: inline-block; width: .5em; height: 1.02em; margin-left: .06em; vertical-align: -.16em; background: currentColor; border-radius: 2px; }
+.tx .blk.off { opacity: 0; }
+
+/* counter */
+.counter { position: absolute; display: flex; align-items: flex-end; font-family: 'Instrument Serif', serif; font-style: italic; color: #fff; line-height: 1; white-space: pre;
+  text-shadow: 0 4px 40px rgba(10, 40, 120, .3); }
+.counter .col { position: relative; overflow: hidden; height: 1em; display: inline-block; }
+.counter .col .strip { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; }
+.counter .col .strip span { height: 1em; display: block; text-align: center; }
+
+/* the composer in the hook, the real 3.0 one from the site */
+.cmp-wrap { position: absolute; left: 0; top: 0; width: 760px; }
+.cmp-wrap .ap { width: 760px !important; border: 0 !important; background: transparent !important; box-shadow: none !important; overflow: visible !important; }
+
+/* carousel */
+.car { position: absolute; left: 0; top: 0; width: 520px; height: 560px; }
+.car-item { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 18px; height: 80px; font: 500 34px/1 'Geist'; color: #0b0d12; white-space: nowrap; }
+.car-item img, .car-item .ic { width: 48px; height: 48px; border-radius: 10px; object-fit: contain; }
+.car-pill { position: absolute; left: 0; top: 0; height: 84px; border-radius: 999px; background: #fff;
+  box-shadow: 0 1px 0 rgba(255,255,255,.9) inset, 0 0 0 1px rgba(15, 30, 60, .06), 0 18px 50px -12px rgba(30, 60, 140, .28), 0 4px 14px rgba(30, 60, 140, .08); }
+.car-plug { position: absolute; display: flex; align-items: center; gap: 8px; color: #8a92a6; }
+.car-plug svg { width: 30px; height: 30px; }
+.car-glow { position: absolute; width: 900px; height: 520px; border-radius: 50%; background: radial-gradient(closest-side, rgba(162, 140, 255, .28), rgba(255, 140, 190, .16) 55%, transparent); filter: blur(30px); }
+
+/* the mascot, big: the site's Wisp */
+.bigwisp { position: absolute; left: 0; top: 0; width: 260px; height: 260px; }
+.bigwisp > i, .bigwisp > span { display: block; width: 100%; height: 100%; }
+.bigwisp svg { width: 100%; height: 100%; overflow: visible; }
+.shadow-blob { position: absolute; left: 0; top: 0; width: 240px; height: 40px; border-radius: 50%; background: radial-gradient(closest-side, rgba(10, 40, 120, .35), transparent); filter: blur(6px); }
+
+/* the logo pill */
+.lockup { position: absolute; left: 0; top: 0; height: 150px; border-radius: 999px; background: rgba(255, 255, 255, .92);
+  box-shadow: inset 0 1px 0 #fff, 0 0 0 1px rgba(255,255,255,.6), 0 30px 80px -20px rgba(10, 40, 120, .45), 0 6px 20px rgba(10, 40, 120, .12);
+  overflow: hidden; }
+.lockup-name { position: absolute; top: 50%; font: 600 78px/1 'Geist'; letter-spacing: -0.035em; color: #0b0d12; white-space: pre; }
+.badge3 { position: absolute; top: 50%; height: 64px; padding: 0 22px; border-radius: 999px; background: #2F6BFF; color: #fff; font: 600 40px/64px 'Geist'; letter-spacing: -0.02em;
+  box-shadow: 0 10px 30px -8px rgba(47, 107, 255, .7); transform-origin: 50% 50%; }
+.ring { position: absolute; left: 0; top: 0; border-radius: 50%; border: 3px solid #fff; pointer-events: none; }
+
+/* feature header */
+.fh { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 16px; white-space: nowrap; }
+.chipnew { display: inline-flex; align-items: center; height: 34px; padding: 0 14px; border-radius: 999px; background: #2F6BFF; color: #fff; font: 600 19px/1 'Geist'; letter-spacing: -0.01em;
+  box-shadow: 0 6px 18px -6px rgba(47, 107, 255, .8); }
+.fh .tx { position: relative; font: 500 46px/1.1 'Geist'; }
+
+/* side notes, like the reference's little annotation pills */
+.note { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 12px; height: 54px; padding: 0 22px 0 16px; border-radius: 999px; background: rgba(255,255,255,.92);
+  box-shadow: 0 0 0 1px rgba(15, 30, 60, .06), 0 14px 40px -12px rgba(30, 60, 140, .3); font: 500 22px/1 'Geist'; color: #0b0d12; white-space: nowrap; letter-spacing: -0.01em; }
+.note .dot { width: 12px; height: 12px; border-radius: 50%; background: #2F6BFF; box-shadow: 0 0 0 5px rgba(47, 107, 255, .18); }
+.note b { font-weight: 600; color: #2F6BFF; }
+.note img { width: 30px; height: 30px; border-radius: 7px; }
+
+/* the cursor (the site's own blue pointer) and its click ring */
+#cursor { position: absolute; left: 0; top: 0; width: 46px; height: 46px; transform-origin: 6px 4px; filter: drop-shadow(0 4px 8px rgba(10, 30, 80, .35)); z-index: 50; }
+#cursor svg { width: 46px; height: 46px; }
+.ping { position: absolute; left: 0; top: 0; width: 80px; height: 80px; margin: -40px 0 0 -40px; border-radius: 50%; border: 3px solid rgba(47, 107, 255, .9); background: rgba(47, 107, 255, .12); z-index: 49; }
+
+/* a host for each mockup, scaled as a whole */
+.host { position: absolute; left: 0; top: 0; transform-origin: 50% 50%; }
+.host .ui3 { display: block; }
+
+/* mind map */
+.mm-node { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 16px; padding: 16px 28px 16px 18px; border-radius: 22px; background: #fff;
+  box-shadow: 0 0 0 1px rgba(15, 30, 60, .06), 0 16px 40px -14px rgba(30, 60, 140, .3); white-space: nowrap; }
+.mm-node .ic { width: 54px; height: 54px; border-radius: 15px; display: grid; place-items: center; background: #eef3ff; color: #2F6BFF; }
+.mm-node .ic svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.mm-node .ic .fi { fill: currentColor; stroke: none; }
+.mm-node b { display: block; font: 600 27px/1.15 'Geist'; color: #0b0d12; letter-spacing: -0.01em; }
+.mm-node small { display: block; font: 400 20px/1.2 'Geist'; color: #6b7385; margin-top: 3px; }
+#mmLines { position: absolute; inset: 0; overflow: visible; }
+
+/* CTA */
+.cta-btn { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 14px; height: 86px; padding: 0 40px; border-radius: 999px; background: #fff; color: #0b1628;
+  font: 600 30px/1 'Geist'; letter-spacing: -0.015em; box-shadow: 0 18px 50px -14px rgba(8, 40, 110, .55), inset 0 1px 0 #fff; white-space: nowrap; }
+.cta-btn svg { width: 28px; height: 28px; fill: currentColor; }
+.cta-btn .free { opacity: .5; font-weight: 500; padding-left: 14px; border-left: 2px solid rgba(11, 22, 40, .15); }
+.cta-sub { position: absolute; left: 0; top: 0; font: 500 24px/1 'Geist'; color: rgba(255,255,255,.92); white-space: nowrap; text-shadow: 0 2px 16px rgba(10, 40, 110, .35); letter-spacing: -0.01em; }
+
+/* app logos that float in the apps beat */
+.flo { position: absolute; left: 0; top: 0; width: 92px; height: 92px; border-radius: 24px; background: #fff; display: grid; place-items: center;
+  box-shadow: 0 0 0 1px rgba(15, 30, 60, .06), 0 18px 40px -14px rgba(30, 60, 140, .35); }
+.flo img { width: 56px; height: 56px; object-fit: contain; border-radius: 10px; }
