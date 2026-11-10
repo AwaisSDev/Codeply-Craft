@@ -199,8 +199,8 @@ def summarise(c):
     upd_ok = c["op_ok_update"] + c["op_ok_conflict"]
     return {
         "extraction_precision": p, "extraction_recall": r, "extraction_f1": f,
-        "false_memory_share": _div(c["false_memory"] + c["misattributed"], c["pred_content"]),
-        "false_memories_per_100_sessions": 100 * _div(c["false_memory"] + c["misattributed"], c["sessions"]),
+        "false_memory_share": _div(c["false_memory"], c["pred_content"]),
+        "false_memories_per_100_sessions": 100 * _div(c["false_memory"], c["sessions"]),
         "hard_negative_stored": _div(c["skip_stored"], c["skip_gold"]),
         "update_accuracy": _div(upd_ok, upd_gold),                      # right op + right target, of all gold updates
         "update_accuracy_when_found": _div(upd_ok, c["gold_update_matched"] + c["gold_conflict_matched"]),

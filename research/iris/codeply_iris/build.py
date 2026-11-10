@@ -171,8 +171,8 @@ def build_split(episodes, split, seed, wrong_pool=None):
             out.append(observe_example(ep, s, rows, split, "gold"))
             if split != "train" or not gold_rows:
                 continue
-            if str(ep.get("shard", "")).startswith("syn") and rng.random() < 0.5:
-                continue                                  # drills: a noisy-store copy for half the sessions only
+            if rng.random() < 0.5:
+                continue                                  # a noisy-store copy for half the sessions (token budget)
             # noisy store: drop facts, sometimes corrupt a value that this session restates, new distractors
             keep, restated = [], {f["key"] for f in s.get("facts", []) or [] if "retract" not in f}
             for r in gold_rows:
@@ -197,7 +197,7 @@ def build_split(episodes, split, seed, wrong_pool=None):
             today = q["now"][:10]
             live = store.view(None)                 # expired temp items stay in as traps; they are never gold
             drill = str(ep.get("shard", "")).startswith("syn")
-            for variant in (("a", "b") if split == "train" and not drill else ("a",)):
+            for variant in ("a",):
                 n_d = rng.choice((2, 6, 12, 18))
                 rows = with_ids(live + pick_distractors(pool, ep, rng, n_d, today), rng)
                 gold = [r["id"] for r in rows if r.get("key") in set(q["relevant"])]
