@@ -234,7 +234,7 @@
   // the digits of 1,284 roll like a slot machine; "prompts" sits after them
   A.cols = [];
   ['d', ',', 'd', 'd', 'd'].forEach((k) => {
-    if (k === ',') { el('span', '', ',', A.counter); return; }
+    if (k === ',') { A.comma = el('span', '', ',', A.counter); return; }
     const c = el('span', 'col', '', A.counter);
     const strip = el('span', 'strip', '', c);
     for (let r = 0; r < 3; r++) for (let d = 0; d <= 9; d++) el('span', '', String(d), strip);
@@ -253,19 +253,20 @@
     // counter
     const ci = E.outCubic(seg(t, 0.62, 1.05));
     const v = 1284 * E.outQuart(seg(t, 0.62, 2.05));
-    const digits = [Math.floor(v / 1000) % 10, null, (v / 100) % 10, (v / 10) % 10, v % 10];
-    let k = 0;
-    digits.forEach((dv, i) => {
-      if (dv === null) return;
-      const col = A.cols[k++];
-      // whole digits move on: each column rolls continuously, then settles exactly
-      const settled = t >= 2.05;
-      const target = [1, 2, 8, 4][k - 1];
-      const pos = settled ? target + 10 : (i === 0 ? Math.floor(v / 1000) : dv) + 10;
-      col.strip.style.transform = 'translateY(' + (-pos).toFixed(4) + 'em)';
-      const speed = settled ? 0 : Math.abs(1284 * 4 * Math.pow(1 - seg(t, 0.62, 2.05), 3) / 1.43) / Math.pow(10, 3 - (k - 1));
-      col.c.style.filter = speed > 3 ? 'blur(' + Math.min(5, speed * 0.05).toFixed(2) + 'px)' : 'none';
+    // an odometer: a column only turns while the one to its right rolls over from 9 to 0
+    const vv = t >= 2.05 ? 1284 : v;
+    const speedAll = t >= 2.05 ? 0 : 1284 * 4 * Math.pow(1 - seg(t, 0.62, 2.05), 3) / 1.43;
+    [3, 2, 1, 0].forEach((p, k) => {
+      const col = A.cols[k], u = Math.pow(10, p);
+      const pos = Math.floor(vv / u) % 10 + clamp((vv % u) - (u - 1));
+      col.strip.style.transform = 'translateY(' + (-(pos + 10)).toFixed(4) + 'em)';
+      const sp = speedAll / u;
+      col.c.style.filter = sp > 4 ? 'blur(' + Math.min(4, sp * 0.06).toFixed(2) + 'px)' : 'none';
     });
+    // no leading "0,": the thousands digit and its comma arrive as the count passes 1,000
+    const th = clamp((vv - 960) / 40);
+    A.cols[0].c.style.width = (0.5 * th).toFixed(3) + 'em'; A.cols[0].c.style.opacity = th.toFixed(3);
+    A.comma.style.opacity = th.toFixed(3); A.comma.style.width = (0.24 * th).toFixed(3) + 'em'; A.comma.style.display = 'inline-block'; A.comma.style.overflow = 'hidden';
     put(A.cnt, { x: 960, y: 575 + (1 - ci) * 60 - out1 * 50, o: ci * (1 - out1), blur: (1 - ci) * 22 + out1 * 22, s: lerp(0.94, 1, ci) });
     // second line
     const out2 = E.inCubic(seg(t, 4.0, 4.28));
@@ -411,7 +412,7 @@
   window.Wisp.mount(D.wisp);
   D.W = D.wisp.querySelector('[data-wisp]').wisp;
   D.Tn = Typer('Codeply', 12.5, 20, { silent: false });
-  D.sub = S(''); D.sub.className = 'tx white'; D.sub.style.font = "500 48px/1.1 'Geist'";
+  D.sub = S(''); D.sub.className = 'tx white'; D.sub.style.font = "500 58px/1.1 'Geist'";
   D.Ts = Typer('The biggest release *yet.*', 13.1, 28);
   D.rings = [0, 1, 2].map(() => S('<div class="ring"></div>'));
   at(12.02, () => D.W.setMood('happy'));
@@ -477,10 +478,12 @@
     D.lockLeft = 960 - total / 2;
     const open = E.outExpo(seg(t, 12.32, 12.95));
     const pw = lerp(150, total, open);
-    const lockO = seg(t, 12.25, 12.36);
+    const lockO = seg(t, 12.2, 12.32);
     D.lock.firstChild.style.width = pw + 'px';
     const zoomOut = 1 + out * 0.35;
-    put(D.lock, { x: D.lockLeft + pw / 2, y: 540, o: lockO * (1 - out), blur: out * 22, s: zoomOut });
+    // the pill's left end stays under the mascot while it slides into place
+    const pillLeft = t < 12.68 ? P.x - lerp(75, 96, E.inOutQuint(seg(t, 12.18, 12.68))) : D.lockLeft;
+    put(D.lock, { x: pillLeft + pw / 2, y: 540, o: lockO * (1 - out), blur: out * 22, s: zoomOut, sy: lerp(0.85, 1, seg(t, 12.2, 12.4)) });
     typeInto(D.name.firstChild, D.Tn, t, { fresh: true });
     put(D.name, { x: D.lockLeft + 40 + 112 + 34 + nameW / 2, y: 540, o: (1 - out), blur: out * 22, s: zoomOut });
     D.name.firstChild.style.width = nameW + 'px';
@@ -496,14 +499,14 @@
     D.rings.forEach((r, i) => {
       const d = t - 12.0 - i * 0.07;
       if (d < 0 || d > 0.8) { r.style.display = 'none'; return; }
-      const k = E.outCubic(d / 0.8), size = 240 + 1300 * k;
+      const k = E.outCubic(d / 0.8), size = 240 + 820 * k;
       r.style.width = r.style.height = size + 'px';
       r.style.borderWidth = (5 * (1 - k) + 1) + 'px';
       put(r, { x: 960, y: 545, o: (1 - k) * 0.9 });
     });
     // subtitle
     typeInto(D.sub, D.Ts, t, { cursor: true, lead: 0.15 });
-    put(D.sub, { x: 960, y: 700, o: (t > 12.9 ? 1 : 0) * (1 - out), blur: out * 18 });
+    put(D.sub, { x: 960, y: 712, o: (t > 12.9 ? 1 : 0) * (1 - out), blur: out * 18 });
   }
 
   // ═══ FEATURE HEADER (shared) ═════════════════════════════════════════════
@@ -778,7 +781,7 @@
 
   // ═══ F7 — wallpapers and glass (37.7 – 41.35) ═══════════════════════════════
   OFF = -0.2;
-  const F7 = { a: 37.7, b: 41.35 };
+  const F7 = { a: 37.7, b: 41.68 };
   feature(F7.a, F7.b, 'Wallpapers and *glass*');
   (function () {
     const tmp = document.createElement('div'); tmp.innerHTML = SNIP.codeply_6;
@@ -803,7 +806,7 @@
     F7.sw.forEach(([tt, i], k) => { if (t >= tt) { prev = cur; cur = i; ts = tt; } });
     const k = E.outCubic(seg(t, ts, ts + 0.45));
     F7.layers.forEach((l, i) => {
-      const li = F7.walls.length - 1 - i; // inserted in reverse
+      const li = i;
       let o = 0, s = 1;
       if (li === cur) { o = ts === F7.sw[0][0] ? 1 : k; s = lerp(1.06, 1, k); }
       else if (li === prev) { o = 1; }
@@ -837,9 +840,9 @@
     F8.h.style.display = vis ? '' : 'none'; if (!vis) { F8.note.style.display = 'none'; F8.note2.style.display = 'none'; return; }
     let n = 0; while (n < F8.T.times.length && F8.T.times[n] <= t) n++;
     setText(F8.cap, F8.T.str.slice(0, n));
-    put(F8.h, cardMove(t, F8.a + 0.05, F8.b, 960, 640, 1.45, { dy: 240, rx: 12 }));
-    drawNote(F8.note, t, 42.6, F8.b, 1440, 470);
-    drawNote(F8.note2, t, 43.05, F8.b, 470, 760);
+    put(F8.h, cardMove(t, F8.a + 0.05, F8.b, 960, 650, 1.48, { dy: 240, rx: 12 }));
+    drawNote(F8.note, t, 42.6, F8.b, 1500, 470);
+    drawNote(F8.note2, t, 43.05, F8.b, 420, 780);
   }
 
   // ═══ M — everything, one app: the mind map (44.4 – 48.1) ═══════════════════
@@ -975,9 +978,24 @@
   cue(52.4, 'impact', 0.8); cue(53.05, 'pop', 0.7);
   curKey(53.85, 1700, 1040); curKey(54.62, center(Z.btn, 10, 12)); curKey(55.6, center(Z.btn, 10, 12));
   press(54.78, center(Z.btn));
+
+  // the finale: the 3.0 mockups gather around the logo, on the beat, at different depths
+  Z.cards = [
+    ['specialists_0', 255, 300, 0.92, -6, 56.4, 1.5],
+    ['codeply_4', 1665, 300, 0.85, 5, 56.65, 0.6],
+    ['gcard_pr', 300, 820, 1.25, 4, 56.9, 0.0],
+    ['apps_0', 1650, 830, 0.85, -4, 57.15, 2.2],
+  ].map(([key, x, y, sc, r, t0, blur]) => {
+    const h = key === 'gcard_pr' ? S('<div style="width:330px">' + SNIP.gcard_pr + '</div>') : host(key);
+    if (key === 'gcard_pr') h.querySelector('.gcard').classList.add('on');
+    cue(t0, 'pop', 0.35);
+    scenes.insertBefore(h, Z.lock);
+    return { h, x, y, sc, r, t0, blur };
+  });
+  cue(56.3, 'whoosh', 0.5);
   function sceneZ(t) {
     const vis = t > 51.95;
-    [Z.lock, Z.wisp, Z.name, Z.badge, Z.btn, Z.sub].concat(Z.rings).forEach((e) => (e.style.display = vis ? '' : 'none'));
+    [Z.lock, Z.wisp, Z.name, Z.badge, Z.btn, Z.sub].concat(Z.rings).concat(Z.cards.map((c) => c.h)).forEach((e) => (e.style.display = vis ? '' : 'none'));
     if (!vis) return;
     const total = 700, left = 960 - total / 2, Y = 430;
     // the mascot falls in, squashes, settles into the logo
@@ -995,8 +1013,9 @@
     const P = (px, py) => ({ x: 960 + (px - 960) * push, y: 540 + (py - 540) * push });
     const pw = lerp(150, total, E.outExpo(seg(t, 52.66, 53.25)));
     Z.lock.firstChild.style.width = pw + 'px';
-    const lp = P(left + pw / 2, Y);
-    put(Z.lock, { x: lp.x, y: lp.y, s: push, o: seg(t, 52.58, 52.68) });
+    const pillLeft = t < 53.05 ? x - lerp(75, 96, E.inOutQuint(seg(t, 52.6, 53.05))) : left;
+    const lp = P(pillLeft + pw / 2, Y);
+    put(Z.lock, { x: lp.x, y: lp.y, s: push, o: seg(t, 52.55, 52.66), sy: lerp(0.85, 1, seg(t, 52.55, 52.75)) });
     const np = P(left + 40 + 112 + 34 + 165, Y);
     const nk = seg(t, 52.85, 53.15);
     put(Z.name, { x: np.x, y: np.y, s: push, o: nk, blur: (1 - nk) * 10 });
@@ -1009,7 +1028,7 @@
     Z.rings.forEach((r, i) => {
       const d = t - 52.4 - i * 0.08;
       if (d < 0 || d > 0.7) { r.style.display = 'none'; return; }
-      const k = E.outCubic(d / 0.7), size = 200 + 1000 * k;
+      const k = E.outCubic(d / 0.7), size = 200 + 700 * k;
       r.style.width = r.style.height = size + 'px'; r.style.borderWidth = (4 * (1 - k) + 1) + 'px';
       put(r, { x: 960, y: Y + 10, o: (1 - k) * 0.8 });
     });
@@ -1025,6 +1044,13 @@
     const sb = spring(t - 53.55, 1.8, 0.6);
     const sp = P(960, 742);
     put(Z.sub, { x: sp.x, y: sp.y + (1 - sb) * 20, s: push, o: t < 53.55 ? 0 : clamp(sb * 1.4), blur: (1 - clamp(sb)) * 10 });
+    Z.cards.forEach((c, i) => {
+      const k = spring(t - c.t0, 1.4, 0.62);
+      if (t < c.t0) { c.h.style.display = 'none'; return; }
+      const drift = Math.sin((t - c.t0) * 0.9 + i) * 10;
+      const fromX = 960 + (c.x - 960) * 0.35, fromY = 440 + (c.y - 440) * 0.35;
+      put(c.h, { x: lerp(fromX, c.x, k) * 1 + (c.x - 960) * (t - c.t0) * 0.01, y: lerp(fromY, c.y, k) + drift, s: c.sc * lerp(0.5, 1, k), r: c.r * k, o: clamp(k * 1.6) * 0.96, blur: c.blur + (1 - clamp(k)) * 14 });
+    });
     // the very end: a soft fade
     const end = E.inCubic(seg(t, 59.35, 60.0));
     stage.style.filter = end > 0.001 ? 'brightness(' + (1 - end * 0.0) + ')' : '';
