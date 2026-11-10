@@ -3,27 +3,27 @@
  "seed": 1,
  "splits": {
   "train": {
-   "episodes": 174,
+   "episodes": 99,
    "rejected_episodes": [],
-   "sessions": 699,
-   "examples": 1365,
-   "observe": 986,
-   "retrieve": 379,
-   "empty_targets": 100,
+   "sessions": 430,
+   "examples": 795,
+   "observe": 575,
+   "retrieve": 220,
+   "empty_targets": 45,
    "ops": {
-    "add": 1446,
-    "skip": 537,
-    "confirm": 70,
-    "update": 182,
-    "retract": 38
+    "add": 1162,
+    "skip": 307,
+    "confirm": 43,
+    "update": 133,
+    "retract": 54
    },
    "langs": {
-    "en": 115,
-    "roman-ur": 56,
-    "mixed": 2,
-    "ur": 1
+    "en": 60,
+    "roman-ur": 30,
+    "mixed": 6,
+    "ur": 3
    },
-   "sha256": "57d28351d37e9682d2512e9a560691c9f2009b5335cae6440b302445577632c6"
+   "sha256": "5dc79130490d1b5156eaac9e4335c9f5c5492472fd38f5daaac8b15567a3f103"
   },
   "val": {
    "episodes": 12,
@@ -79,7 +79,9 @@
    "near_duplicate_sessions": []
   },
   "train-test": {
-   "shared_entities": [],
+   "shared_entities": [
+    "bathroom renovation"
+   ],
    "near_duplicate_sessions": []
   },
   "val-test": {
