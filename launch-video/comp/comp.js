@@ -499,9 +499,9 @@
     D.rings.forEach((r, i) => {
       const d = t - 12.0 - i * 0.07;
       if (d < 0 || d > 0.8) { r.style.display = 'none'; return; }
-      const k = E.outCubic(d / 0.8), size = 240 + 820 * k;
+      const k = E.outCubic(d / 0.8), size = 220 + 600 * k;
       r.style.width = r.style.height = size + 'px';
-      r.style.borderWidth = (5 * (1 - k) + 1) + 'px';
+      r.firstChild.style.borderWidth = (5 * (1 - k) + 1) + 'px';
       put(r, { x: 960, y: 545, o: (1 - k) * 0.9 });
     });
     // subtitle
@@ -1028,8 +1028,8 @@
     Z.rings.forEach((r, i) => {
       const d = t - 52.4 - i * 0.08;
       if (d < 0 || d > 0.7) { r.style.display = 'none'; return; }
-      const k = E.outCubic(d / 0.7), size = 200 + 700 * k;
-      r.style.width = r.style.height = size + 'px'; r.style.borderWidth = (4 * (1 - k) + 1) + 'px';
+      const k = E.outCubic(d / 0.7), size = 180 + 520 * k;
+      r.style.width = r.style.height = size + 'px'; r.firstChild.style.borderWidth = (4 * (1 - k) + 1) + 'px';
       put(r, { x: 960, y: Y + 10, o: (1 - k) * 0.8 });
     });
     // the button
