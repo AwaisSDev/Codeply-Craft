@@ -1,5 +1,5 @@
 {
- "id": "awaissdev/codeply-iris-train",
+ "id": "awaissididique/codeply-iris-train",
  "title": "codeply-iris-train",
  "code_file": "run.py",
  "language": "python",
@@ -7,9 +7,9 @@
  "is_private": true,
  "enable_gpu": true,
  "enable_internet": true,
+ "machine_shape": "NvidiaTeslaT4",
  "dataset_sources": [
-  "awaissdev/codeply-iris-src",
-  "awaissdev/qwen3-0-6b-base"
+  "awaissididique/codeply-iris-src"
  ],
  "competition_sources": [],
  "kernel_sources": []
