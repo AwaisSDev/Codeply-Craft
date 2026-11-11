@@ -117,6 +117,7 @@ def author(client, a, b, eid, lang, desc):
         except Exception as e:  # noqa: BLE001
             ep, errors, warns = None, [f"invalid JSON: {e}"], []
         rec["errors"], rec["warnings"] = len(errors), len(warns)
+        rec["error_text"] = [e[:200] for e in errors[:10]]
         log["attempts"].append(rec)
         if not errors:
             log["ok"] = True
