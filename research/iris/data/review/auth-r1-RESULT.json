@@ -1,0 +1,40 @@
+{
+ "design": "80 sessions (40 from Sonnet-5.5-authored shard tr04, 40 from Opus-authored train shards tr01-tr03), shuffled and anonymised, labelled blind by two independent annotator agents (40 each); disagreements adjudicated by one reader with the author hidden",
+ "agreement_f1": {
+  "sonnet": 0.934,
+  "opus": 0.805
+ },
+ "teacher_facts_found_by_annotator": {
+  "sonnet": 0.927,
+  "opus": 0.762
+ },
+ "annotator_facts_labelled_by_teacher": {
+  "sonnet": 0.942,
+  "opus": 0.853
+ },
+ "sessions_with_any_disagreement": {
+  "sonnet": "9/40",
+  "opus": "20/40"
+ },
+ "adjudicated_teacher_error_sessions": {
+  "sonnet": "1/40 (2.5%)",
+  "opus": "7/40 (17.5%)"
+ },
+ "opus_errors": [
+  "pump-house commitment left unlabelled",
+  "Adnan Khan labelled landlord (text: estate office)",
+  "user role not supported by its quote",
+  "Arjun 'at the bank' not in text",
+  "contractor role quoted with an unrelated line",
+  "API-approval status unlabelled",
+  "Imran 'PhD student' not in text"
+ ],
+ "sonnet_errors": [
+  "user employer inferred from 'Tallis Freight Dandenong depot audit'"
+ ],
+ "caveats": [
+  "single adjudicator, 40 sessions per author: error-rate intervals are wide (Sonnet 1/40 has a 95% interval of roughly 0.1% to 13%)",
+  "Opus shards were not individually blind-reviewed before; the earlier review covered validation labels only (5% error)",
+  "agreement F1 is agreement, not accuracy"
+ ]
+}
