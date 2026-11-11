@@ -3,83 +3,86 @@
  "seed": 1,
  "splits": {
   "train": {
-   "episodes": 99,
+   "episodes": 144,
    "rejected_episodes": [],
-   "sessions": 430,
-   "examples": 795,
-   "observe": 575,
-   "retrieve": 220,
-   "empty_targets": 45,
+   "sessions": 655,
+   "examples": 1258,
+   "observe": 904,
+   "retrieve": 354,
+   "empty_targets": 47,
    "ops": {
-    "add": 1162,
-    "skip": 307,
-    "confirm": 43,
-    "update": 133,
-    "retract": 54
+    "add": 1939,
+    "skip": 688,
+    "confirm": 91,
+    "update": 283,
+    "retract": 134
    },
    "langs": {
-    "en": 60,
-    "roman-ur": 30,
-    "mixed": 6,
-    "ur": 3
+    "en": 87,
+    "roman-ur": 39,
+    "mixed": 12,
+    "ur": 6
    },
-   "sha256": "5dc79130490d1b5156eaac9e4335c9f5c5492472fd38f5daaac8b15567a3f103"
+   "sha256": "2fdd84f7e94a6e90e7bb9245b3ad780861f8af52a7f89e57bae8248b06d09350"
   },
   "val": {
-   "episodes": 12,
+   "episodes": 24,
    "rejected_episodes": [],
-   "sessions": 60,
-   "examples": 88,
-   "observe": 60,
-   "retrieve": 28,
+   "sessions": 120,
+   "examples": 184,
+   "observe": 120,
+   "retrieve": 64,
    "empty_targets": 8,
    "ops": {
-    "add": 156,
-    "skip": 23,
-    "update": 26,
-    "retract": 8,
-    "confirm": 7
+    "add": 302,
+    "skip": 100,
+    "update": 57,
+    "retract": 17,
+    "confirm": 14
    },
    "langs": {
-    "en": 7,
-    "mixed": 1,
-    "roman-ur": 3,
-    "ur": 1
+    "en": 14,
+    "mixed": 2,
+    "roman-ur": 6,
+    "ur": 2
    },
-   "sha256": "cf92649d39dacf2efcc6a0cf7831ccce15cd8fcbcc727297151948a92d73342c"
+   "sha256": "0ae331732c7fcf609304b0069c61e0b0162e9617d5c3041fca820d8b7e38aee3"
   },
   "test": {
-   "episodes": 14,
+   "episodes": 28,
    "rejected_episodes": [],
-   "sessions": 70,
-   "examples": 99,
-   "observe": 70,
-   "retrieve": 29,
-   "empty_targets": 7,
+   "sessions": 140,
+   "examples": 203,
+   "observe": 140,
+   "retrieve": 63,
+   "empty_targets": 13,
    "ops": {
-    "add": 201,
-    "skip": 43,
-    "retract": 8,
-    "update": 24,
-    "confirm": 14,
-    "conflict": 1
+    "add": 370,
+    "skip": 80,
+    "retract": 23,
+    "update": 43,
+    "confirm": 21,
+    "conflict": 2
    },
    "langs": {
-    "roman-ur": 3,
-    "en": 8,
-    "ur": 1,
-    "mixed": 2
+    "roman-ur": 6,
+    "en": 16,
+    "ur": 2,
+    "mixed": 4
    },
-   "sha256": "4fbebeb617689d0bbc04a13b56de4df42da75e15cb95445e186c4ed276315c76"
+   "sha256": "4bdf4c716b4a96245306ba6d570756ab7cad9d470d2b0d87793812c7fc7fac07"
   }
  },
  "leakage": {
   "train-val": {
-   "shared_entities": [],
+   "shared_entities": [
+    "project kestrel"
+   ],
    "near_duplicate_sessions": []
   },
   "train-test": {
    "shared_entities": [
+    "ammi",
     "bathroom renovation"
    ],
    "near_duplicate_sessions": []

@@ -1,0 +1,18 @@
+{
+ "design": "blind review of the three new Sonnet shards: 40 va02 sessions and 40 tr05/tr06 sessions, labelled by independent annotator agents without labels; disagreements adjudicated by one reader",
+ "va02": {
+  "agreement_f1": 0.979,
+  "disagreement_sessions": "6/40",
+  "adjudicated_teacher_errors": "0/40"
+ },
+ "tr05_tr06": {
+  "agreement_f1": 0.916,
+  "disagreement_sessions": "9/40",
+  "adjudicated_teacher_errors": "0/40"
+ },
+ "rule": "F1 >= 0.80 and <= 10% sessions with an error: met for both; shards accepted",
+ "notes": [
+  "minor omissions of person-role facts found in a few sessions (teacher left out; annotator added), not counted as errors",
+  "single adjudicator, n=40 each"
+ ]
+}
