@@ -1,0 +1,1 @@
+{"id": "tr04-e01", "model": "claude-sonnet-5-5", "effort": "high", "attempts": [{"stop": "end_turn", "in": 8359, "out": 24503, "s": 181, "errors": 1, "warnings": 0}, {"stop": "end_turn", "in": 13265, "out": 5259, "s": 25, "errors": 0, "warnings": 0}], "ok": true, "first_try_ok": false}
