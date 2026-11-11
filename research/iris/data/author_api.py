@@ -52,6 +52,18 @@ def parse_brief(path):
     return {"shard": shard, "split": split, "first": first, "last": last, "focus": focus, "rows": rows}
 
 
+def shape(eid):
+    """Deterministic structural requirements per episode, so a shard covers the source types, long sessions and implied facts."""
+    n = int(eid[1:])
+    extra = ("calendar", "screen", "note", "email")[n % 4]
+    lines = ["## Required shape for this episode",
+             f"* At least one session with source `{extra}` (use the format the spec gives for it); also at least one `personal_chat` or `work_chat` session.",
+             "* At least two facts with `basis: implied` (one obvious inference step, as the spec defines), correctly marked `conf: medium` or lower."]
+    if n % 2 == 1:
+        lines.append("* One long session (14-24 messages or 450-700 words) in which one or two facts are buried in unrelated talk.")
+    return "\n".join(lines) + "\n"
+
+
 def user_prompt(b, eid, lang, desc, n_eps):
     return (
         f"Write episode `{b['shard']}-{eid}` of shard `{b['shard']}` ({b['split']} split).\n\n"
@@ -64,7 +76,25 @@ def user_prompt(b, eid, lang, desc, n_eps):
         f"## Focus for the shard this episode belongs to (cover what fits this one episode; the other episodes cover the rest)\n{b['focus']}\n\n"
         f"This is one of {n_eps} episodes in the shard, so give this one a distinct shape: choose its own mix of sources, "
         f"3-5 sessions, 2-3 queries. Include whatever of spec §3 this episode can naturally carry, with at least one skip "
-        f"and at least one session without facts. Reply with the episode JSON only.\n"
+        f"and at least one session without facts.\n\n"
+        + shape(eid) +
+        "\n## Label discipline (the two most common failures so far)\n"
+        "* Label only what the quoted text itself supports. Do not import details from the persona or from your own plan for the "
+        "episode (an employer, a job title, a relation such as landlord or colleague, a city) unless the text states it or one "
+        "obvious inference step gives it (then `basis: implied`, `conf: medium`). If the quote could be read two ways, do not label it.\n"
+        "* Every memorable statement you write must be labelled (or deliberately be a skip); re-read each session for deadlines, "
+        "commitments, plans and preferences dropped in passing.\n\n"
+        "## Validator rules that are easy to break (check them before replying)\n"
+        "* A key appears at most once per session (net effect). The same key must keep the same `ent` and `attr` in every session.\n"
+        "* A later session that restates a key: identical value ⇒ `repeat: true`; any difference in value, `when` or `until` ⇒ `change` "
+        "(`changed` / `corrected` / `refined`). `change`/`repeat`/`retract` are only allowed when the key was stated in an EARLIER session.\n"
+        "* `persist: temp` needs `until` (ISO date, not before the session date); `kind: context` must be `temp`; `until` only with `temp`.\n"
+        "* `evid` is a character-exact substring of the message `msg` (1-based), never from an assistant message; a skip's `evid` must "
+        "differ from every fact's `evid`, and a `secret` skip's `evid` must not contain the secret.\n"
+        "* `now` strictly increases across sessions; each query's `now` is later than the session it follows; `relevant` keys must be live "
+        "(not retracted, not expired `temp`) and must not also be in `trap`.\n"
+        "* `attr` is lowercase English; `val` is English; `ent: user` goes with `etype: user`.\n\n"
+        "Reply with the episode JSON only.\n"
     )
 
 
