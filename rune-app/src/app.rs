@@ -72,6 +72,8 @@ pub struct App {
     /// The last send that failed, shown under the composer.
     pub notice: Option<String>,
     pub office: OfficeArt,
+    /// Whether the system asks for reduced motion, as the view last saw it.
+    pub reduced: std::cell::Cell<bool>,
     pub warp: Warp,
 }
 
@@ -88,6 +90,7 @@ impl App {
             pr: 44,
             notice: None,
             office: OfficeArt::default(),
+            reduced: std::cell::Cell::new(false),
             warp: Warp::default(),
         }
     }
@@ -107,6 +110,20 @@ impl App {
     pub fn open_chat(&mut self, chat: &str) {
         self.chat = Some(chat.to_owned());
         self.store.open(chat);
+    }
+
+    /// Repaints a helper (the colour picker in Settings).
+    pub fn set_color(&mut self, id: &str, color: &str) {
+        if let Some(a) = self.data.team.iter_mut().find(|a| a.id == id) {
+            a.color = color.to_owned();
+        }
+    }
+
+    /// Reshapes a helper (the shape picker in Settings).
+    pub fn set_shape(&mut self, id: &str, shape: crate::model::Shape) {
+        if let Some(a) = self.data.team.iter_mut().find(|a| a.id == id) {
+            a.look.shape = shape;
+        }
     }
 
     pub fn open_drawer(&mut self, id: &str) {
@@ -149,6 +166,10 @@ impl App {
     /// must be rebuilt.
     pub fn poll(&mut self, now: f64, tx: &mut Tx) -> bool {
         let changed = self.store.poll(&mut self.data);
+        // Living eyes: glances and blinks move `Live` values, so they never rebuild the view.
+        if let Some(wait) = crate::bot::animate(now, self.reduced.get()) {
+            tx.wake_after(wait);
+        }
         if self.view == View::Office {
             self.office.step(&self.data, now, tx);
         }

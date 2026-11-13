@@ -6,11 +6,12 @@
 //!
 //! The Office draws its own pixel versions of the same bots (`views::office_art`).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::time::Duration;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
-use rune::{Beat, El, Icon, LoopSpec, Sequence, el, icon};
+use rune::{Beat, El, Icon, Live, LoopSpec, Sequence, Spring, el, icon};
 
 use crate::model::{Agent, AgentState, Face, Gear, Look, Shape};
 
@@ -22,14 +23,14 @@ pub enum Eyes {
     Half,
     /// Sleeping: shut.
     Closed,
-    /// Thinking: three dots where the eyes were.
-    Dots,
+    /// Thinking: eyes rolled up and a little to one side, as if mulling it over.
+    Up,
 }
 
 impl Eyes {
     pub fn for_state(state: AgentState) -> Eyes {
         match state {
-            AgentState::Thinking => Eyes::Dots,
+            AgentState::Thinking => Eyes::Up,
             AgentState::Waiting => Eyes::Half,
             AgentState::Sleeping => Eyes::Closed,
             _ => Eyes::Open,
@@ -37,72 +38,11 @@ impl Eyes {
     }
 }
 
-// ---------- colour (hexToHsl, hsl and ramp in codeply-icons.js) ----------
+// ---------- colour ----------
 
 pub fn rgb(hex: &str) -> [u8; 3] {
     let n = u32::from_str_radix(hex.trim_start_matches('#'), 16).unwrap_or(0x2f6bff);
     [(n >> 16) as u8, (n >> 8) as u8, n as u8]
-}
-
-fn hex_to_hsl(hex: &str) -> [f64; 3] {
-    let [r, g, b] = rgb(hex).map(|v| f64::from(v) / 255.0);
-    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
-    let l = (max + min) / 2.0;
-    if max == min {
-        return [0.0, 0.0, l];
-    }
-    let d = max - min;
-    let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
-    let h = if max == r { (g - b) / d + if g < b { 6.0 } else { 0.0 } } else if max == g { (b - r) / d + 2.0 } else { (r - g) / d + 4.0 };
-    [h / 6.0, s, l]
-}
-
-fn hsl(h: f64, s: f64, l: f64) -> String {
-    let h = h.rem_euclid(1.0);
-    let (s, l) = (s.clamp(0.0, 1.0), l.clamp(0.0, 1.0));
-    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
-    let p = 2.0 * l - q;
-    let f = |t: f64| {
-        let t = t.rem_euclid(1.0);
-        if t < 1.0 / 6.0 { p + (q - p) * 6.0 * t } else if t < 0.5 { q } else if t < 2.0 / 3.0 { p + (q - p) * (2.0 / 3.0 - t) * 6.0 } else { p }
-    };
-    let x = |v: f64| (v * 255.0).round() as u8;
-    format!("#{:02x}{:02x}{:02x}", x(f(h + 1.0 / 3.0)), x(f(h)), x(f(h - 1.0 / 3.0)))
-}
-
-struct Ramp {
-    top: String,
-    mid: String,
-    bottom: String,
-    edge: String,
-}
-
-#[derive(Clone, Copy)]
-struct PartOpts {
-    lift: f64,
-    drop: f64,
-    sheen: f64,
-    glass: f64,
-    base: f64,
-}
-
-const PART: PartOpts = PartOpts { lift: 0.28, drop: 0.82, sheen: 0.32, glass: 0.85, base: 0.35 };
-
-fn ramp(hex: &str, o: PartOpts) -> Ramp {
-    let [h, s, l] = hex_to_hsl(hex);
-    let warm = !(0.2..=0.85).contains(&h);
-    let toward = |t: f64, k: f64| {
-        let mut d = t - h;
-        if d > 0.5 { d -= 1.0 }
-        if d < -0.5 { d += 1.0 }
-        h + d * k
-    };
-    Ramp {
-        top: hsl(toward(if warm { 0.14 } else { 0.52 }, 0.08), (s * 1.02).min(1.0), l + (1.0 - l) * o.lift),
-        mid: hex.to_owned(),
-        bottom: hsl(toward(if warm { 0.98 } else { 0.66 }, 0.06), (s * 1.05 + 0.04).min(1.0), l * o.drop),
-        edge: hsl(toward(if warm { 0.98 } else { 0.66 }, 0.08), (s * 1.1).min(1.0), l * 0.62),
-    }
 }
 
 // ---------- shapes ----------
@@ -140,17 +80,6 @@ struct Svg {
 }
 
 impl Svg {
-    /// One filled shape: gradient body, soft sheen, thin light top edge, faint deep bottom edge.
-    fn part(&mut self, d: &str, color: &str, o: PartOpts) {
-        self.uid += 1;
-        let id = format!("p{}", self.uid);
-        let c = ramp(color, o);
-        let _ = write!(
-            self.body,
-            r##"<defs><linearGradient id="{id}f" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="{}"/><stop offset="0.5" stop-color="{}"/><stop offset="1" stop-color="{}"/></linearGradient><radialGradient id="{id}s" cx="0.3" cy="0.12" r="0.75"><stop offset="0" stop-color="#fff" stop-opacity="{}"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient><linearGradient id="{id}e" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="{}"/><stop offset="0.42" stop-color="#fff" stop-opacity="0"/></linearGradient><linearGradient id="{id}b" x1="0" y1="0" x2="0" y2="1"><stop offset="0.55" stop-color="{}" stop-opacity="0"/><stop offset="1" stop-color="{}" stop-opacity="{}"/></linearGradient><clipPath id="{id}c"><path d="{d}"/></clipPath></defs><path d="{d}" fill="url(#{id}f)"/><path d="{d}" fill="url(#{id}s)"/><path d="{d}" fill="none" stroke="url(#{id}b)" stroke-width="4" clip-path="url(#{id}c)"/><path d="{d}" fill="none" stroke="url(#{id}e)" stroke-width="3" clip-path="url(#{id}c)"/>"##,
-            c.top, c.mid, c.bottom, o.sheen, o.glass, c.edge, c.edge, o.base
-        );
-    }
     fn flat(&mut self, d: &str, fill: &str) {
         let _ = write!(self.body, r#"<path d="{d}" fill="{fill}"/>"#);
     }
@@ -164,19 +93,35 @@ impl Svg {
 fn frame(shape: Shape) -> (f64, f64) {
     match shape {
         Shape::Hex => (15.0, 53.0),
-        Shape::Round => (19.0, 56.0),
+        Shape::Round => (18.0, 55.0),
         Shape::Square => (20.0, 56.0),
+        Shape::Cloud => (22.0, 58.0),
+        Shape::Triangle => (16.0, 64.0),
+        Shape::Drop => (14.0, 64.0),
+        Shape::Pebble => (24.0, 58.0),
     }
 }
 
-fn body_path(shape: Shape) -> String {
+/// Each silhouette as one flat path (or a few overlapping ones, for the cloud), sitting on a
+/// shared baseline so a row of them lines up.
+fn body_paths(shape: Shape) -> Vec<String> {
     match shape {
-        Shape::Hex => rounded_polygon(&HEX, 10.0),
-        // A soft blob: a circle, a touch wider than tall, sitting on its base.
-        Shape::Round => "M50 19C73 19 89 33 89 54C89 76 72 91 50 91C28 91 11 76 11 54C11 33 27 19 50 19Z".to_owned(),
-        // A squircle: straight-ish sides that round off generously.
-        Shape::Square => "M50 20C76 20 86 24 87 44C88 52 88 60 87 68C86 87 76 91 50 91C24 91 14 87 13 68C12 60 12 52 13 44C14 24 24 20 50 20Z".to_owned(),
+        Shape::Hex => vec![rounded_polygon(&HEX, 10.0)],
+        Shape::Round => vec![circle(50.0, 55.0, 37.0)],
+        // A squircle, turned a little, like a dropped die.
+        Shape::Square => vec![rr(15.0, 20.0, 70.0, 70.0, 22.0)],
+        // Overlapping puffs; flat colour hides the seams.
+        Shape::Cloud => [(31.0, 66.0, 20.0), (50.0, 48.0, 24.0), (70.0, 64.0, 20.0), (50.0, 71.0, 21.0), (24.0, 78.0, 13.0), (76.0, 78.0, 13.0)]
+            .iter().map(|&(x, y, r)| circle(x, y, r)).collect(),
+        Shape::Triangle => vec![rounded_polygon(&[[50.0, 14.0], [92.0, 90.0], [8.0, 90.0]], 16.0)],
+        Shape::Drop => vec!["M50 14C58 32 80 48 80 64A30 30 0 0 1 20 64C20 48 42 32 50 14Z".to_owned()],
+        Shape::Pebble => vec!["M50 24C76 22 91 38 90 58C89 79 72 91 49 91C25 91 10 78 11 58C12 37 27 25 50 24Z".to_owned()],
     }
+}
+
+/// The squircle's turn, in degrees; the rest sit upright.
+fn tilt(shape: Shape) -> f64 {
+    if shape == Shape::Square { -9.0 } else { 0.0 }
 }
 
 impl Svg {
@@ -213,16 +158,20 @@ impl Svg {
 }
 
 /// The eyes, centred on the face line `fy`. `on_light` is false for Wisp's white pill eyes.
-fn eyes(svg: &mut Svg, face: Face, eyes: Eyes, fy: f64, body: &str) {
-    let ink = if face == Face::Pill { "#ffffff" } else { "#141416" };
+fn eyes(svg: &mut Svg, face: Face, eyes: Eyes, fy: f64, body: &str, gaze: (i8, i8)) {
+    // Thinking opens content eyes so they can look up; glossy ones read best for that.
+    let face = if eyes == Eyes::Up && face == Face::Content { Face::Glossy } else { face };
+    // Looking up: the eye (or pupil) rises and drifts toward the upper right.
+    let (lift, drift) = if eyes == Eyes::Up { (5.0, 1.6) } else { (0.0, 0.0) };
+    let ink = if matches!(face, Face::Pill | Face::Capsule) { "#ffffff" } else { "#141416" };
     let closed = |svg: &mut Svg, cx: f64| svg.line(&format!("M{} {}Q{cx} {} {} {}", cx - 5.0, fy - 1.0, fy + 4.6, cx + 5.0, fy - 1.0), ink, 3.2);
-    let xs = if face == Face::Googly { [39.0, 61.0] } else { [41.0, 59.0] };
+    let xs = match face {
+        Face::Googly => [39.0, 61.0],
+        Face::Capsule => [43.5 + f64::from(gaze.0) * 9.0, 56.5 + f64::from(gaze.0) * 9.0],
+        _ => [41.0, 59.0],
+    };
     match (eyes, face) {
-        (Eyes::Dots, _) => {
-            for cx in [38.0, 50.0, 62.0] {
-                svg.flat(&circle(cx, fy, 4.4), ink);
-            }
-        }
+        (Eyes::Open | Eyes::Half | Eyes::Up, Face::Capsule) => capsules(svg, eyes, fy, gaze),
         (Eyes::Closed, _) | (_, Face::Content) => {
             for cx in xs {
                 closed(svg, cx);
@@ -230,30 +179,64 @@ fn eyes(svg: &mut Svg, face: Face, eyes: Eyes, fy: f64, body: &str) {
         }
         (half, Face::Pill) => {
             let h = if half == Eyes::Half { 6.3 } else { 14.0 };
+            let h = if eyes == Eyes::Up { 11.0 } else { h };
             for cx in xs {
-                svg.flat(&rr(cx - 3.5, fy - 10.0 + (14.0 - h), 7.0, h, h.min(7.0) / 2.0), "#fff");
+                svg.flat(&rr(cx - 3.5 + drift, fy - 10.0 + (14.0 - h) - lift, 7.0, h, h.min(7.0) / 2.0), "#fff");
             }
         }
         (half, Face::Glossy) => {
             let id = svg.next_id();
             let _ = write!(svg.body, r##"<defs><radialGradient id="{id}" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#4a4a52"/><stop offset="0.55" stop-color="#121214"/><stop offset="1" stop-color="#000"/></radialGradient></defs>"##);
-            let (top, h) = if half == Eyes::Half { (fy - 1.5, 8.0) } else { (fy - 6.5, 13.0) };
-            for cx in xs {
-                let _ = write!(svg.body, r##"<path d="{}" fill="url(#{id})"/>"##, rr(cx - 4.5, top, 9.0, h, 4.0));
-                let _ = write!(svg.body, r##"<ellipse cx="{}" cy="{}" rx="1.7" ry="2.3" fill="#fff" fill-opacity="0.95"/><circle cx="{}" cy="{}" r="0.9" fill="#fff" fill-opacity="0.5"/>"##, cx - 1.5, top + 3.2, cx + 1.8, top + h - 2.6);
+            let (top, h) = match half {
+                Eyes::Half => (fy - 1.5, 8.0),
+                Eyes::Up => (fy - 6.5 - lift, 11.0),
+                _ => (fy - 6.5, 13.0),
+            };
+            // The Grok bot's eyes sit on a sphere: they lean like `\` and the far (right) eye is
+            // about 0.69 as wide as the near one. The lean is gentler than the measured 26 degrees
+            // so a helper still reads as facing you at 18 pt.
+            let lean = if half == Eyes::Up { -8.0 } else { -14.0 };
+            for (i, cx) in xs.map(|x| x + drift).into_iter().enumerate() {
+                let w = if i == 0 { 9.0 } else { 9.0 * 0.69 };
+                let cy = top + h / 2.0;
+                let _ = write!(svg.body, r##"<g transform="rotate({lean} {cx} {cy})"><path d="{}" fill="url(#{id})"/><ellipse cx="{}" cy="{}" rx="{}" ry="2.3" fill="#fff" fill-opacity="0.95"/><circle cx="{}" cy="{}" r="0.8" fill="#fff" fill-opacity="0.5"/></g>"##,
+                    rr(cx - w / 2.0, top, w, h, (w / 2.0).min(4.0)), cx - w * 0.17, top + 3.2, 1.7 * w / 9.0, cx + w * 0.2, top + h - 2.6);
             }
         }
         (half, Face::Googly) => {
             let (ball, pupil) = (svg.next_id(), svg.next_id());
             let _ = write!(svg.body, r##"<defs><radialGradient id="{ball}" cx="0.38" cy="0.32" r="0.75"><stop offset="0" stop-color="#ffffff"/><stop offset="0.7" stop-color="#f1f3f7"/><stop offset="1" stop-color="#c9cfda"/></radialGradient><radialGradient id="{pupil}" cx="0.4" cy="0.35" r="0.7"><stop offset="0" stop-color="#3a3a42"/><stop offset="1" stop-color="#050506"/></radialGradient></defs>"##);
             for cx in xs {
-                let _ = write!(svg.body, r##"<circle cx="{}" cy="{}" r="9.6" fill="#000" fill-opacity="0.15"/><circle cx="{cx}" cy="{fy}" r="9.2" fill="url(#{ball})"/><circle cx="{}" cy="{}" r="5.2" fill="url(#{pupil})"/><circle cx="{}" cy="{}" r="1.8" fill="#fff"/>"##, cx + 0.4, fy + 1.0, cx + 0.8, fy + 1.4, cx - 0.8, fy - 0.6);
+                let _ = write!(svg.body, r##"<circle cx="{}" cy="{}" r="9.6" fill="#000" fill-opacity="0.15"/><circle cx="{cx}" cy="{fy}" r="9.2" fill="url(#{ball})"/><circle cx="{}" cy="{}" r="5.2" fill="url(#{pupil})"/><circle cx="{}" cy="{}" r="1.8" fill="#fff"/>"##, cx + 0.4, fy + 1.0, cx + 0.8 + drift, fy + 1.4 - lift, cx - 0.8 + drift, fy - 0.6 - lift);
                 if half == Eyes::Half {
                     // A heavy lid: the body's colour over the eye's top half.
                     let _ = write!(svg.body, r##"<path d="M{} {}A9.6 9.6 0 0 1 {} {}Z" fill="{body}"/><path d="M{} {}H{}" stroke="#000" stroke-opacity="0.25" stroke-width="1.2" stroke-linecap="round"/>"##, cx - 9.6, fy + 0.5, cx + 9.6, fy + 0.5, cx - 9.0, fy + 0.5, cx + 9.0);
                 }
             }
         }
+    }
+}
+
+/// The Grok bot's eyes: two white capsules set toward where the bot looks. Seen on a sphere, they
+/// lean with the gaze and the eye nearer the edge is about 0.69 as wide (bloub's measurements of
+/// the Grok bot). Thinking rolls them up; waiting narrows them.
+fn capsules(svg: &mut Svg, state: Eyes, fy: f64, (gx, gy): (i8, i8)) {
+    let (gx, gy) = (f64::from(gx), f64::from(gy));
+    let up = if state == Eyes::Up { 9.0 } else { 0.0 };
+    let (h, drop) = match state {
+        Eyes::Half => (11.0, 5.0),
+        Eyes::Up => (17.0, 0.0),
+        _ => (22.0, 0.0),
+    };
+    let cx = 50.0 + gx * 9.0;
+    let cy = fy - 5.0 + gy * 7.0 - up + drop;
+    let gap = 16.0 - gx.abs() * 2.0;
+    let lean = gx * 12.0;
+    for (i, x) in [cx - gap / 2.0, cx + gap / 2.0].into_iter().enumerate() {
+        // The far eye (on the side it's looking toward) is the narrow one.
+        let far = (gx > 0.0 && i == 1) || (gx < 0.0 && i == 0);
+        let w = if far { 9.0 * 0.69 } else { 9.0 };
+        let _ = write!(svg.body, r##"<path d="{}" fill="#ffffff" transform="rotate({lean} {x} {cy})"/>"##, rr(x - w / 2.0, cy - h / 2.0, w, h, w / 2.0));
     }
 }
 
@@ -366,30 +349,57 @@ fn gear(svg: &mut Svg, kind: Gear, top: f64, face: f64) {
 }
 
 /// The SVG body of one bot in a 100 x 100 box: its silhouette, eyes and accessories.
-pub fn svg_body(color: &str, look: &Look, state_eyes: Eyes) -> String {
+/// Which layer of a bot to draw. Bots whose eyes move are drawn as a body and, over it, an eyes
+/// layer that a `Live` offset glances around and a `Live` opacity blinks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Layer {
+    Whole,
+    Body,
+    Eyes,
+}
+
+/// The SVG body of one bot (or one layer of it) in a 100 x 100 box.
+pub fn svg_body(color: &str, look: &Look, state_eyes: Eyes, layer: Layer) -> String {
     let mut svg = Svg { body: String::new(), uid: 0 };
     let (top, face) = frame(look.shape);
-    svg.part(&body_path(look.shape), color, PartOpts { lift: 0.14, drop: 0.92, sheen: 0.16, ..PART });
-    // Glasses and shades go over the eyes; everything else is drawn after them anyway.
-    eyes(&mut svg, look.face, state_eyes, face, &ramp(color, PART).mid);
-    for g in &look.gear {
-        gear(&mut svg, *g, top, face);
+    let _ = write!(svg.body, r#"<g transform="rotate({} 50 55)">"#, tilt(look.shape));
+    if layer != Layer::Eyes {
+        // Flat, solid colour: the face and the silhouette do the work.
+        for d in body_paths(look.shape) {
+            svg.flat(&d, color);
+        }
     }
+    if layer != Layer::Body {
+        eyes(&mut svg, look.face, state_eyes, face, color, look.gaze);
+    }
+    if layer != Layer::Eyes {
+        for g in &look.gear {
+            gear(&mut svg, *g, top, face);
+        }
+    }
+    svg.body.push_str("</g>");
     svg.body
 }
 
+type Made = HashMap<(String, Look, Eyes, Layer), &'static Icon>;
+
 thread_local! {
-    static MADE: RefCell<HashMap<(String, Look, Eyes), &'static Icon>> = RefCell::new(HashMap::new());
+    static MADE: RefCell<Made> = RefCell::new(HashMap::new());
 }
 
-/// The one `Icon` for this look. At most (agents x 4 states) are ever made, so leaking is bounded.
-pub fn icon_for(color: &str, look: &Look, eyes: Eyes) -> &'static Icon {
+/// The one `Icon` for this look and layer, made once. Bounded by the looks a person can pick
+/// (7 shapes x 12 colours x 4 states x 3 layers), a few hundred small SVGs at most.
+pub fn icon_layer(color: &str, look: &Look, eyes: Eyes, layer: Layer) -> &'static Icon {
     MADE.with_borrow_mut(|made| {
-        *made.entry((color.to_owned(), look.clone(), eyes)).or_insert_with(|| {
-            let body: &'static str = Box::leak(svg_body(color, look, eyes).into_boxed_str());
+        *made.entry((color.to_owned(), look.clone(), eyes, layer)).or_insert_with(|| {
+            let body: &'static str = Box::leak(svg_body(color, look, eyes, layer).into_boxed_str());
             Box::leak(Box::new(Icon { name: "wisp", view: 100.0, body }))
         })
     })
+}
+
+pub fn icon_for(color: &str, look: &Look, eyes: Eyes) -> &'static Icon {
+    icon_layer(color, look, eyes, Layer::Whole)
 }
 
 /// Plain Wisp, Codeply blue.
@@ -397,17 +407,102 @@ pub fn wisp(size: f32) -> El {
     icon(icon_for("#2f6bff", &Look::new(Shape::Hex, Face::Pill, &[]), Eyes::Open), size)
 }
 
+// ---------- living eyes ----------
+
+/// One bot's eyes at one size: where they're glancing (points) and whether they're open.
+struct EyeLife {
+    id: String,
+    size: u32,
+    gaze: Live<[f32; 2]>,
+    open: Live<f32>,
+    last_blink: Cell<i64>,
+}
+
+thread_local! {
+    static LIVES: RefCell<Vec<EyeLife>> = const { RefCell::new(Vec::new()) };
+}
+
+fn life(id: &str, size: f32) -> (Live<[f32; 2]>, Live<f32>) {
+    let size = size.round() as u32;
+    LIVES.with_borrow_mut(|lives| {
+        if let Some(l) = lives.iter().find(|l| l.id == id && l.size == size) {
+            return (l.gaze.clone(), l.open.clone());
+        }
+        let l = EyeLife { id: id.to_owned(), size, gaze: Live::new([0.0, 0.0]), open: Live::new(1.0), last_blink: Cell::new(-1) };
+        let out = (l.gaze.clone(), l.open.clone());
+        lives.push(l);
+        out
+    })
+}
+
+fn mix32(mut h: u32) -> u32 {
+    h = (h ^ (h >> 16)).wrapping_mul(0x7feb_352d);
+    h = (h ^ (h >> 15)).wrapping_mul(0x846c_a68b);
+    h ^ (h >> 16)
+}
+
+/// Where a bot's eyes are glancing (for tests).
+#[cfg(test)]
+pub fn gaze_of(id: &str, size: f32) -> [f32; 2] {
+    life(id, size).0.get()
+}
+
+/// Glances the bot settles into, as fractions of its size (the Grok bot's "gaze drift").
+const GLANCES: [[f32; 2]; 6] = [[0.0, 0.0], [-0.07, 0.0], [0.07, -0.015], [0.0, -0.055], [-0.05, -0.04], [0.055, 0.03]];
+
+/// Moves every bot's eyes for time `now`: a new glance every few seconds and a 0.18 s blink every
+/// four to six, each bot on its own rhythm. Only `Live` values change, so no view rebuilds; the
+/// returned wait is when the next change is due.
+pub fn animate(now: f64, reduced: bool) -> Option<Duration> {
+    if reduced {
+        LIVES.with_borrow(|lives| for l in lives { l.gaze.set([0.0, 0.0]); l.open.set(1.0); });
+        return None;
+    }
+    LIVES.with_borrow(|lives| {
+        for l in lives {
+            let seed = l.id.bytes().fold(7u32, |h, b| mix32(h ^ u32::from(b)));
+            let period = 2.4 + f64::from(seed % 13) * 0.11;
+            let k = ((now + f64::from(seed % 97) * 0.07) / period).floor() as u32;
+            let g = GLANCES[(mix32(seed ^ k) % GLANCES.len() as u32) as usize];
+            l.gaze.set([g[0] * l.size as f32, g[1] * l.size as f32]);
+            let every = 4.2 + f64::from(seed % 17) * 0.11;
+            let n = ((now + f64::from(seed % 31) * 0.1) / every).floor() as i64;
+            if n != l.last_blink.get() {
+                if l.last_blink.get() >= 0 {
+                    l.open.pulse(0.0, 1.0, Duration::from_millis(180));
+                }
+                l.last_blink.set(n);
+            }
+        }
+    });
+    Some(Duration::from_millis(250))
+}
+
 /// The working hop at list sizes: a small stretch up from the bot's base and back, 0.9 s a beat.
 /// (Rune's loops animate opacity and scale by keyframes; a there-and-back offset loop isn't one
 /// of them, so the hop is a stretch. The Office moves its pixel bots by whole pixels instead.)
 static HOP: [Beat; 3] = [Beat::new(0.0), Beat::new(0.45).scale(1.06), Beat::new(0.9)];
 
-/// A helper at `size`, showing its state by its eyes and, while working, a small hop.
+/// A helper at `size`, showing its state by its eyes and, while working, a small hop. Capsule and
+/// pill eyes that are open glance around and blink (`animate`).
 pub fn agent(a: &Agent, size: f32) -> El {
-    let body = icon(icon_for(&a.color, &a.look, Eyes::for_state(a.state)), size);
+    let eyes = Eyes::for_state(a.state);
+    let alive = matches!(a.look.face, Face::Capsule | Face::Pill) && matches!(eyes, Eyes::Open | Eyes::Up);
+    let mut bot = el().size(size, size);
+    if alive {
+        let (gaze, open) = life(&a.id, size);
+        bot = bot
+            .child(icon(icon_layer(&a.color, &a.look, eyes, Layer::Body), size))
+            .child(el().pin(Some(0.0), Some(0.0), None, None).size(size, size).inert()
+                .live_offset(gaze.smooth(Spring::new(0.35, 0.0)))
+                .live_opacity(&open)
+                .child(icon(icon_layer(&a.color, &a.look, eyes, Layer::Eyes), size)));
+    } else {
+        bot = bot.child(icon(icon_for(&a.color, &a.look, eyes), size));
+    }
     match a.state {
-        AgentState::Working => el().size(size, size).child(body.origin(0.5, 1.0).looping(LoopSpec::sequence(Sequence::new(&HOP)))),
-        _ => el().size(size, size).child(body),
+        AgentState::Working => el().size(size, size).child(bot.origin(0.5, 1.0).looping(LoopSpec::sequence(Sequence::new(&HOP)))),
+        _ => bot,
     }
 }
 
@@ -416,15 +511,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn colours_round_trip_through_hsl() {
-        let [h, s, l] = hex_to_hsl("#2f6bff");
-        assert_eq!(hsl(h, s, l), "#2f6bff");
-    }
-
-    #[test]
     fn a_body_is_wellformed_svg() {
         for g in [Gear::Beret, Gear::Bow, Gear::Headphones, Gear::Glasses, Gear::Shades, Gear::Sprout, Gear::Flower, Gear::Star, Gear::Cap, Gear::Antennae] {
-            let b = svg_body("#ff5c9d", &Look::new(Shape::Round, Face::Googly, &[g]), Eyes::Open);
+            let b = svg_body("#ff5c9d", &Look::new(Shape::Round, Face::Googly, &[g]), Eyes::Open, Layer::Whole);
             assert_eq!(b.matches("<g ").count(), b.matches("</g>").count(), "{g:?}");
             assert!(!b.contains("NaN") && !b.contains("inf"), "{g:?}: {b}");
         }

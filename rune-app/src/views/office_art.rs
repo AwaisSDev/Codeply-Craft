@@ -460,6 +460,44 @@ const ROUND_ROWS: [(i32, i32); 14] = [(5, 10), (3, 12), (2, 13), (1, 14), (1, 14
 /// The squircle.
 const SQUARE_ROWS: [(i32, i32); 14] = [(3, 12), (1, 14), (0, 15), (0, 15), (0, 15), (0, 15), (0, 15), (0, 15), (0, 15), (0, 15), (0, 15), (0, 15), (1, 14), (3, 12)];
 
+/// A silhouette as a 16 x 14 mask: the hexagon from its hand-drawn rows, the others sampled at
+/// pixel centres from the same geometry the vector bots use (bot.rs, 100 x 100 box).
+pub fn mask(shape: Shape) -> [[bool; 16]; 14] {
+    let mut m = [[false; 16]; 14];
+    for (r, row) in m.iter_mut().enumerate() {
+        for (x, cell) in row.iter_mut().enumerate() {
+            *cell = match shape {
+                Shape::Hex => (HEX_ROWS[r].0..=HEX_ROWS[r].1).contains(&(x as i32)),
+                Shape::Round => (ROUND_ROWS[r].0..=ROUND_ROWS[r].1).contains(&(x as i32)),
+                Shape::Square => (SQUARE_ROWS[r].0..=SQUARE_ROWS[r].1).contains(&(x as i32)),
+                _ => {
+                    // The 100-unit box's body area, 8 to 92 across and 14 to 92 down.
+                    let (u, v) = (8.0 + (x as f32 + 0.5) * 84.0 / 16.0, 14.0 + (r as f32 + 0.5) * 78.0 / 14.0);
+                    inside(shape, u, v)
+                }
+            };
+        }
+    }
+    m
+}
+
+fn inside(shape: Shape, u: f32, v: f32) -> bool {
+    let disc = |cx: f32, cy: f32, r: f32| (u - cx).powi(2) + (v - cy).powi(2) <= r * r;
+    match shape {
+        Shape::Cloud => [(31.0, 66.0, 20.0), (50.0, 48.0, 24.0), (70.0, 64.0, 20.0), (50.0, 71.0, 21.0), (24.0, 78.0, 13.0), (76.0, 78.0, 13.0)]
+            .iter().any(|&(x, y, r)| disc(x, y, r)),
+        // A triangle with its corners softened.
+        Shape::Triangle => (20.0..=90.0).contains(&v) && (u - 50.0).abs() <= (v - 16.0) * 0.55,
+        Shape::Drop => disc(50.0, 64.0, 30.0) || ((16.0..64.0).contains(&v) && (u - 50.0).abs() <= (v - 16.0) * 0.62),
+        Shape::Pebble => ((u - 50.0) / 40.0).powi(2) + ((v - 57.5) / 33.5).powi(2) <= 1.0,
+        Shape::Hex | Shape::Round | Shape::Square => false,
+    }
+}
+
+fn top_row(m: &[[bool; 16]; 14]) -> i32 {
+    m.iter().position(|r| r.iter().any(|c| *c)).unwrap_or(0) as i32
+}
+
 const INK: u32 = 0x141416;
 const INK_HI: u32 = 0x55555e;
 
@@ -487,33 +525,22 @@ pub fn render_actor(color: &str, look: &Look, pose: Pose) -> Canvas {
         AgentState::Sleeping => oy += 1,
         _ => {}
     }
-    let rows = match look.shape {
-        Shape::Hex => &HEX_ROWS,
-        Shape::Round => &ROUND_ROWS,
-        Shape::Square => &SQUARE_ROWS,
-    };
-    let edge = shade(base, 0.62);
-    let light = mix(base, [255, 255, 255], 0.28);
-    let dark = shade(base, 0.82);
-    for (row, (a, b)) in rows.iter().enumerate() {
-        let r = row as i32;
+    let mask = mask(look.shape);
+    let edge = shade(base, 0.66);
+    let breathe_out = pose.state == AgentState::Sleeping && (f / 12) % 2 == 1;
+    for r in 0..14i32 {
         let dx = if r < 7 { lean } else { 0 };
-        // Breathing while asleep: the body is a row shorter on the out-breath.
-        if pose.state == AgentState::Sleeping && (f / 12) % 2 == 1 && r == 0 {
-            continue;
-        }
-        for x in *a..=*b {
-            let mut p = if r <= 2 { light } else if r >= 11 { dark } else { base };
-            if x == *a || x == *b || r == 0 || r == 13 {
-                p = edge;
+        for x in 0..16i32 {
+            if !mask[r as usize][x as usize] || (breathe_out && r == top_row(&mask)) {
+                continue;
             }
-            if r == 1 && (5..=7).contains(&x) {
-                p = mix(base, [255, 255, 255], 0.5);
-            }
+            // Flat colour, with a darker pixel outline so the shape holds on any floor.
+            let at = |x: i32, y: i32| (0..16).contains(&x) && (0..14).contains(&y) && mask[y as usize][x as usize];
+            let p = if at(x - 1, r) && at(x + 1, r) && at(x, r - 1) && at(x, r + 1) { base } else { edge };
             cv.set(ox + x + dx, oy + r, p);
         }
     }
-    eyes_pixels(&mut cv, look.face, pose, ox + lean, oy, base);
+    eyes_pixels(&mut cv, look, pose, ox + lean, oy, base);
     for g in &look.gear {
         gear_pixels(&mut cv, *g, ox + lean, oy);
     }
@@ -522,17 +549,27 @@ pub fn render_actor(color: &str, look: &Look, pose: Pose) -> Canvas {
 }
 
 /// The eyes, a little left of centre. They say the state; the face says the character.
-fn eyes_pixels(cv: &mut Canvas, face: Face, pose: Pose, ox: i32, oy: i32, base: Rgb) {
+fn eyes_pixels(cv: &mut Canvas, look_: &Look, pose: Pose, ox: i32, oy: i32, base: Rgb) {
+    let face = look_.face;
+    let (gx, gy) = (i32::from(look_.gaze.0), i32::from(look_.gaze.1));
+    // Eyes sit lower on the shapes whose face is low (triangle, drop), as the vector bots' do.
+    let oy = oy + if matches!(look_.shape, Shape::Triangle | Shape::Drop) { 2 } else { 0 };
     let f = pose.frame;
     let (white, ink) = ([255, 255, 255], c(INK));
-    let tone = if face == Face::Pill { white } else { ink };
+    let tone = if matches!(face, Face::Pill | Face::Capsule) { white } else { ink };
     let look = match pose.state {
         AgentState::Working => [0, -1, 0, 1, 0, 0][((f / 4) % 6) as usize],
         AgentState::Walking => if pose.left { -1 } else { 1 },
         _ => 0,
     };
     let googly = face == Face::Googly;
-    let xs = if googly { [ox + 3, ox + 9] } else { [ox + 5, ox + 9] };
+    let xs = match face {
+        Face::Googly => [ox + 3, ox + 9],
+        // Capsules sit toward where the bot looks.
+        Face::Capsule => [ox + 5 + gx, ox + 9 + gx],
+        _ => [ox + 5, ox + 9],
+    };
+    let rest_y = if face == Face::Capsule { gy } else { 0 };
     let blink = pose.state == AgentState::Idle && f % 37 == 36;
     // A closed, content eye: a small U.
     let arc = |cv: &mut Canvas, x: i32, p: Rgb| {
@@ -542,14 +579,27 @@ fn eyes_pixels(cv: &mut Canvas, face: Face, pose: Pose, ox: i32, oy: i32, base: 
     };
     match pose.state {
         AgentState::Thinking => {
-            for (i, x) in [ox + 4, ox + 7, ox + 10].iter().enumerate() {
-                let up = (f + 3 - i as u32).is_multiple_of(4) as i32;
-                cv.rect(*x, oy + 6 - up, 2, 2, tone);
+            // Eyes up, drifting from the upper left to the upper right and back while it thinks.
+            let glance = [-1, -1, 0, 1, 1, 0][((f / 3) % 6) as usize];
+            for x in xs {
+                let x = x + glance;
+                match face {
+                    Face::Pill | Face::Capsule => cv.rect(x, oy + 2 + rest_y, 2, 3, white),
+                    Face::Googly => {
+                        cv.rect(x, oy + 4, 3, 3, white);
+                        // The pupil rolls to the top of the eyeball, on the side it's glancing.
+                        cv.rect(x + (1 + glance).clamp(0, 1), oy + 4, 2, 1, ink);
+                    }
+                    _ => {
+                        cv.rect(x, oy + 3, 2, 3, ink);
+                        cv.set(x, oy + 3, c(0xd8d8de));
+                    }
+                }
             }
         }
         AgentState::Sleeping => {
             for x in xs {
-                arc(cv, x + googly as i32, if face == Face::Pill { mix(base, white, 0.75) } else { ink });
+                arc(cv, x + googly as i32, if matches!(face, Face::Pill | Face::Capsule) { mix(base, white, 0.75) } else { ink });
             }
         }
         _ if face == Face::Content || blink => {
@@ -563,6 +613,12 @@ fn eyes_pixels(cv: &mut Canvas, face: Face, pose: Pose, ox: i32, oy: i32, base: 
                 let x = x + look;
                 match face {
                     Face::Pill => cv.rect(x, oy + 5 + 2 * half as i32, 2, 3 - half as i32, white),
+                    Face::Capsule => {
+                        // The far eye (toward the gaze) is a pixel narrower.
+                        let far = (gx > 0 && x == xs[1] + look) || (gx < 0 && x == xs[0] + look);
+                        let y = oy + 4 + rest_y + half as i32;
+                        cv.rect(x + (far && gx > 0) as i32, y, if far { 1 } else { 2 }, 4 - half as i32 * 2, white);
+                    }
                     Face::Glossy => {
                         cv.rect(x, oy + 5 + half as i32, 2, 3 - half as i32, ink);
                         cv.set(x, oy + 5 + half as i32, c(0xd8d8de));
@@ -741,7 +797,8 @@ pub struct Actor {
     pub pixels: Pixels,
     /// Device-pixel offset from the actor's resting place (walking).
     pub offset: Live<[f32; 2]>,
-    last: Cell<Option<(Pose, u32)>>,
+    /// The pose, scale and look (hashed) last drawn, so a new pick redraws the sprite.
+    last: Cell<Option<(Pose, u32, u64)>>,
 }
 
 pub struct OfficeArt {
@@ -835,8 +892,14 @@ impl OfficeArt {
                 (Pose { state: a.state, frame, left: false }, [0.0, 0.0])
             };
             self.actor(&a.id, |actor| {
-                if actor.last.get() != Some((pose, k)) {
-                    actor.last.set(Some((pose, k)));
+                let look = {
+                    use std::hash::{Hash, Hasher};
+                    let mut h = std::collections::hash_map::DefaultHasher::new();
+                    (&a.color, &a.look).hash(&mut h);
+                    h.finish()
+                };
+                if actor.last.get() != Some((pose, k, look)) {
+                    actor.last.set(Some((pose, k, look)));
                     let cv = render_actor(&a.color, &a.look, pose);
                     actor.pixels.set(ACTOR_W * k, ACTOR_H * k, upscale(&cv.px, ACTOR_W, ACTOR_H, k));
                 }

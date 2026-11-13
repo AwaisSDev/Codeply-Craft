@@ -93,3 +93,32 @@ fn the_walker_moves_and_the_office_asks_for_its_next_step() {
     let later = rt.state.office.actor("docs", |a| a.offset.get());
     assert_ne!(start, later, "Docs walks the corridor");
 }
+
+#[test]
+fn picking_a_shape_and_colour_restyles_a_helper() {
+    let mut s = App::with_mock();
+    s.go(View::Settings);
+    let mut rt = runtime(s);
+    settle(&mut rt);
+    click(&mut rt, "pick-shape/backend/Pebble");
+    click(&mut rt, "pick-color/backend/#12b5a5");
+    let backend = rt.state.data.agent("backend").map(|a| (a.look.shape, a.color.clone()));
+    assert_eq!(backend, Some((crate::model::Shape::Pebble, "#12b5a5".to_owned())));
+}
+
+#[test]
+fn eyes_glance_and_blink_on_their_own_clock() {
+    let mut rt = runtime(App::with_mock());
+    let a = rt.state.data.agent("frontend").cloned().unwrap_or_else(|| unreachable!());
+    // Building a bot gives its eyes a life; animating moves them without rebuilding the view.
+    let _ = crate::bot::agent(&a, 40.0);
+    let glances: std::collections::HashSet<String> = (0..40)
+        .map(|i| {
+            crate::bot::animate(f64::from(i) * 0.5, false);
+            format!("{:?}", crate::bot::gaze_of("frontend", 40.0))
+        })
+        .collect();
+    assert!(glances.len() > 1, "the eyes drift between glances");
+    assert!(crate::bot::animate(0.0, true).is_none(), "reduced motion holds them still");
+    rt.frame(1.0 / 60.0);
+}

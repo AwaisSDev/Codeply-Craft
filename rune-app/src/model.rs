@@ -27,24 +27,34 @@ impl AgentState {
 
 /// A helper's silhouette. Wisp is the hexagon; helpers are a hexagon, a soft round blob or a
 /// squircle, so the team reads as one family with Wisp at its head.
+/// Not every shape is worn by a sample agent; all are drawn and tested.
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Shape {
     Hex,
     Round,
     Square,
+    Cloud,
+    Triangle,
+    Drop,
+    Pebble,
 }
 
-/// The eyes a helper has at rest. Its state still changes them (dots while thinking, shut asleep).
+/// The eyes a helper has at rest. Its state still changes them (looking up while thinking, shut asleep).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Face {
     /// Wisp's white pill eyes.
     Pill,
-    /// Glossy black pills with a glint.
+    /// Glossy black capsules with a glint, drawn as if on a sphere (the Grok bot's eyes): they
+    /// lean like `\\` and the far one is narrower.
     Glossy,
     /// White eyeballs with a shaded pupil and a glint.
     Googly,
     /// Closed, content arcs.
     Content,
+    /// The Grok bot's eyes: two white capsules on a sphere. They sit where the bot is looking,
+    /// lean with its gaze, and the far one is narrower.
+    Capsule,
 }
 
 /// Accessories, drawn as finished objects: glossy black for the dark ones, with a soft shadow and
@@ -71,11 +81,18 @@ pub struct Look {
     pub shape: Shape,
     pub face: Face,
     pub gear: Vec<Gear>,
+    /// Where it looks at rest, each axis -2 to 2 (left or up is negative). Eyes sit toward it.
+    pub gaze: (i8, i8),
 }
 
 impl Look {
     pub fn new(shape: Shape, face: Face, gear: &[Gear]) -> Look {
-        Look { shape, face, gear: gear.to_vec() }
+        Look { shape, face, gear: gear.to_vec(), gaze: (0, 0) }
+    }
+    /// Looks toward `x`, `y` at rest.
+    pub fn looking(mut self, x: i8, y: i8) -> Look {
+        self.gaze = (x, y);
+        self
     }
 }
 

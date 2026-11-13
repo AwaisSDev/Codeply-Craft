@@ -17,6 +17,7 @@ pub const SIDE: f32 = 268.0;
 pub fn view(s: &App, cx: &mut Cx<App>) -> El {
     let t = theme::dark();
     cx.caption_color(t.dim);
+    s.reduced.set(cx.is_reduced_motion());
     let (side, main) = views::build(s, &t, cx);
     let body = row().w_full().grow(1.0).min_h(0.0)
         .child(rail(s, &t))

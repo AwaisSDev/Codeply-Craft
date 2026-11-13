@@ -95,9 +95,15 @@ src/
   its grid size (24, or 20 for the 20-grid OAI set) so edges land on whole pixels. Interface icons
   take the text colour; only agents have colour. App logos are 14 simple-icons (CC0), vendored in
   `tools/simple-icons/` instead of fetched from a CDN.
-- **Bots.** `bot.rs` ports the hexagon, gradient recipe and the six accessories to SVG, which
-  Rune rasterises once per look. The state shows in the eyes (narrowed waiting, shut asleep, three
-  dots thinking) and, while working, a small hop.
+- **Bots.** Flat, solid colour, one silhouette each: Wisp's hexagon (Codeply blue, upright white
+  pill eyes), and for helpers a circle, squircle, cloud, rounded triangle, drop or pebble. Helper
+  eyes follow the Grok bot (as measured by the open-source bloub recreation): two white capsules set
+  toward where the bot looks, leaning with its gaze, the far one narrower. Eyes are alive: they
+  drift between glances and blink (0.18 s), eased out with no overshoot, on `Live` values, so the
+  view never rebuilds for them. State shows in the eyes: rolled up while thinking, narrowed while
+  waiting, shut asleep, and a small hop while working. Settings > Your team picks each helper's
+  shape and colour; the Office's pixel sprites follow. Accessories (beret, bow tie, headphones,
+  glasses and more) are drawn and available, but the default team wears none.
 - **The Office** is pixel art drawn in code (`views/office_art.rs`), my own, not from a sprite
   sheet: wood floors, a checkered kitchen, a carpeted lounge, wallpapered walls with windows,
   posters and a clock, desks with monitors, bookshelves, plants, a coffee machine and fridge, a
@@ -107,7 +113,7 @@ src/
   pixels stay square. Each agent is a small canvas redrawn only when its frame changes, on an 8 fps
   clock that runs only while Office is showing:
   - working: at a desk, hopping, eyes glancing, its monitor glowing with code;
-  - thinking: at the coffee machine with a steaming mug, three dots for eyes;
+  - thinking: at the coffee machine with a steaming mug, eyes rolled up, glancing side to side;
   - waiting: at the Needs you counter, swaying, with a "Needs your OK" bubble;
   - sleeping: on the sofa, eyes shut, breathing, z's drifting up;
   - walking: Docs walks the corridor from the Studio to the kitchen and back (the prototype's
