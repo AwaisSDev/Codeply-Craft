@@ -49,8 +49,8 @@ fn menus(s: &App, t: &Theme) -> Option<El> {
                 .on_press(move |s: &mut App| s.set_approval(a))
         };
         return Some(menu(t, &format!("approval-chip/{key}"), Side::Top, 280.0, vec![
-            item(Approval::Ask, "shield-check", "Asks before every write, edit or command"),
-            item(Approval::Auto, "terminal", "Runs commands and edits files without asking"),
+            item(Approval::Ask, "approve-ask", "Asks before every write, edit or command"),
+            item(Approval::Auto, "approve-full", "Runs commands and edits files without asking"),
         ]));
     }
     if let Some(key) = id.strip_prefix("model:") {

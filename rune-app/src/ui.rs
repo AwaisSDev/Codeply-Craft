@@ -92,7 +92,7 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
     let chip = |id: String, icon: Option<&str>, label: &str, dim: Option<&str>, chevron: bool, menu: String| {
         row().key(id).h(30.0).px(10.0).gap(7.0).radius(9.0).center_y().hover(t.hover).role("button").label(label.to_owned())
             .fill(if s.menu.as_deref() == Some(menu.as_str()) { t.active } else { Color::TRANSPARENT })
-            .children(icon.map(|i| ico_s(i, 16.0, t.text)))
+            .children(icon.map(|i| ico_s(i, 19.0, t.text)))
             .child(text(label.to_owned()).font(ui(13.5, 500.0)).color(t.text))
             .children(dim.map(|d| text(d.to_owned()).font(ui(13.5, 400.0)).color(t.faint)))
             .children(chevron.then(|| ico_s("chevron-down", 16.0, t.text)))
@@ -118,7 +118,7 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
     let approval = s.prefs.approval;
     let bar = row().gap(6.0).pt(6.0).px(10.0).pb(10.0).center_y()
         .child(ibtn(t, "plus", "Attach"))
-        .children((!compact).then(|| chip(format!("approval-chip/{}", key.name()), Some(if approval == crate::prefs::Approval::Auto { "terminal" } else { "shield-check" }), approval.label(), None, false, format!("approval:{}", key.name()))))
+        .children((!compact).then(|| chip(format!("approval-chip/{}", key.name()), Some(if approval == crate::prefs::Approval::Auto { "approve-full" } else { "approve-ask" }), approval.label(), None, false, format!("approval:{}", key.name()))))
         .child(el().grow(1.0))
         .children((!compact).then(|| chip(format!("model-chip/{}", key.name()), None, "Haze 2", Some(&s.prefs.effort), true, format!("model:{}", key.name()))))
         .child(ibtn(t, "mic", "Voice"))

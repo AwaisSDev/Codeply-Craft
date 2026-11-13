@@ -16,9 +16,27 @@ static OAI_OFFICE: Icon = Icon {
     body: r#"<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20.5V6.5A3 3 0 0 1 9 3.5h6a3 3 0 0 1 3 3v14"/><path d="M3.5 20.5h17"/><path d="M10.5 20.5v-3a1.5 1.5 0 0 1 3 0v3"/></g><g fill="currentColor"><rect x="9" y="7" width="2.2" height="2.2" rx="0.6"/><rect x="12.8" y="7" width="2.2" height="2.2" rx="0.6"/><rect x="9" y="11" width="2.2" height="2.2" rx="0.6"/><rect x="12.8" y="11" width="2.2" height="2.2" rx="0.6"/></g>"#,
 };
 
+/// The composer's approval chip, drawn for Codeply: a shield that fills the 24 grid (the stock
+/// one sits small inside it) with a bold tick ("Approve manually") or a bold "!" ("Full access"),
+/// on a 2 unit stroke so it reads at chip size.
+static APPROVE_ASK: Icon = Icon {
+    name: "approve-ask",
+    view: 24.0,
+    body: r#"<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.4 19.6 5.3a1.2 1.2 0 0 1 .78 1.12V11.6c0 5.05-3.42 9.2-8.38 10.4C7.04 20.8 3.62 16.65 3.62 11.6V6.42a1.2 1.2 0 0 1 .78-1.12Z"/><path d="m8.1 12.3 2.75 2.75 5.15-5.4"/></g>"#,
+};
+
+static APPROVE_FULL: Icon = Icon {
+    name: "approve-full",
+    view: 24.0,
+    body: r#"<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.4 19.6 5.3a1.2 1.2 0 0 1 .78 1.12V11.6c0 5.05-3.42 9.2-8.38 10.4C7.04 20.8 3.62 16.65 3.62 11.6V6.42a1.2 1.2 0 0 1 .78-1.12Z"/><path d="M12 7.4v5.4" stroke-width="2.4"/></g><circle cx="12" cy="16.3" r="1.35" fill="currentColor"/>"#,
+};
+
 fn find(name: &str) -> &'static Icon {
-    if name == "oai-office" {
-        return &OAI_OFFICE;
+    match name {
+        "oai-office" => return &OAI_OFFICE,
+        "approve-ask" => return &APPROVE_ASK,
+        "approve-full" => return &APPROVE_FULL,
+        _ => {}
     }
     pack::get(name).unwrap_or(&pack::CIRCLE)
 }
