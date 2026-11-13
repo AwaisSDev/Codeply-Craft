@@ -5,7 +5,6 @@
 use rune::{Color, Cx, El, Side, Tx, col, el, row, text};
 
 use crate::app::{App, View};
-use crate::bot;
 use crate::icons::ico;
 use crate::prefs::Approval;
 use crate::theme::{self, Theme, ui};
@@ -87,7 +86,7 @@ fn titlebar(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
     // stand-ins (that still minimize, maximize and close).
     let own_caption = insets.trailing == 0.0 && rune::is_headless();
     let brand = row().w(300.0).gap(9.0).center_y().pl(14.0 + insets.leading)
-        .child(bot::wisp(22.0))
+        .child(crate::logo::mark(22.0))
         .child(text("Codeply").font(ui(14.5, 700.0)).color(t.text))
         .child(el().px(6.0).h(18.0).radius(5.0).center().fill(t.accent.alpha(0.16)).child(text("Beta").font(ui(10.5, 700.0)).color(t.accent)));
     let win = |label: &'static str, glyph: El, close: bool, act: fn(&mut App, &mut Tx)| {

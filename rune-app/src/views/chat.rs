@@ -129,7 +129,7 @@ fn home(s: &App, t: &Theme) -> El {
         )
     }));
     let column = col().key("chat-home").w_full().max_w(720.0).transition(fade_in()).motion(ENTER)
-        .child(row().center().pb(16.0).child(bot::wisp(40.0)))
+        .child(row().center().pb(16.0).child(crate::logo::mark(44.0)))
         .child(row().center().pb(28.0).child(text("What should we build?").font(ui(28.0, 500.0)).color(t.text)))
         .child(suggestions)
         .child(composer(s, t, EditKey::ChatHome, Target::New, "Ask Codeply anything. @ to use plugins", true, false))

@@ -312,7 +312,10 @@ mod native {
 
     pub fn set_window(handle: &rune::WindowHandle) {
         // Child windows (the web views) must not be painted over by the app's own frames.
-        let _ = handle.with_raw_handle(|h| clip_children(h.as_raw()));
+        let _ = handle.with_raw_handle(|h| {
+            clip_children(h.as_raw());
+            set_icon(h.as_raw());
+        });
         WINDOW.with_borrow_mut(|w| *w = Some(handle.clone()));
     }
 
@@ -328,6 +331,27 @@ mod native {
             unsafe {
                 let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
                 SetWindowLongPtrW(hwnd, GWL_STYLE, style | WS_CLIPCHILDREN as isize);
+            }
+        }
+    }
+
+    /// Gives the window the exe's icon (resource 1, the Codeply logo build.rs embeds), big and
+    /// small, so the taskbar and Alt Tab show it.
+    #[allow(unsafe_code)]
+    fn set_icon(raw: rune::raw_window_handle::RawWindowHandle) {
+        use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{ICON_BIG, ICON_SMALL, IMAGE_ICON, LR_DEFAULTSIZE, LoadImageW, SendMessageW, WM_SETICON};
+        let rune::raw_window_handle::RawWindowHandle::Win32(h) = raw else { return };
+        let hwnd = h.hwnd.get() as windows_sys::Win32::Foundation::HWND;
+        // SAFETY: plain Win32 calls on the app's own live window, on its UI thread; resource 1
+        // is a MAKEINTRESOURCE ordinal, and a null handle (no icon embedded) is simply skipped.
+        unsafe {
+            let module = GetModuleHandleW(std::ptr::null());
+            for (which, size) in [(ICON_BIG, 32), (ICON_SMALL, 16)] {
+                let icon = LoadImageW(module, 1usize as *const u16, IMAGE_ICON, size, size, LR_DEFAULTSIZE);
+                if !icon.is_null() {
+                    SendMessageW(hwnd, WM_SETICON, which as usize, icon as isize);
+                }
             }
         }
     }

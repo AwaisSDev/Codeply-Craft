@@ -13,6 +13,7 @@ mod browser;
 mod engine;
 mod favicon;
 mod icons;
+mod logo;
 mod markdown;
 mod model;
 mod prefs;
