@@ -82,7 +82,7 @@ pub fn pane(s: &App, t: &Theme) -> El {
         .child(ibtn(t, "phone", "Phone view").key("browser-mobile")
             .fill(if s.panes.mobile { t.active } else { Color::TRANSPARENT })
             .on_press(|s: &mut App| s.panes.mobile = !s.panes.mobile))
-        .child(row().grow(1.0).min_w(0.0).h(30.0).mx(6.0).gap(8.0).px(12.0).radius(9.0).center_y().fill(t.hover).border(1.0, t.border)
+        .child(row().grow(1.0).min_w(0.0).h(30.0).mx(6.0).gap(8.0).px(12.0).radius(9.0).clip_rounded(9.0).center_y().fill(t.hover).border(1.0, t.border)
             .child(ico_s(if url.starts_with("https://") { "lock" } else { "globe" }, 14.0, t.faint))
             .child(address))
         .child(el().key("browser-star").size(32.0, 32.0).radius(9.0).center().hover(t.hover).role("button").label(if bookmarked { "Remove bookmark" } else { "Bookmark" })

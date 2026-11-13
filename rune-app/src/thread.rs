@@ -49,10 +49,13 @@ pub fn transcript(s: &App, t: &Theme, chat: &str, who: &str, width: f32) -> El {
                 row().w_full().my(6.0).child(markdown::render(x, t, live).max_w(width - 48.0))
             }
             ThreadItem::Team { text: x, agents } => {
-                let mut r = row().gap(6.0).my(10.0).center_y().child(text(x.clone()).font(ui(13.0, 400.0)).color(t.dim));
+                // Wraps in a narrow column (the chat beside the workspace panes); each agent's
+                // mascot and name stay together.
+                let mut r = row().w_full().min_w(0.0).flex_wrap().gap(6.0).my(10.0).center_y().child(text(x.clone()).font(ui(13.0, 400.0)).color(t.dim));
                 for id in agents {
                     if let Some(a) = s.data.agent(id) {
-                        r = r.child(bot::agent(&crate::views::agents::awake(a), 26.0)).child(text(a.name.clone()).font(ui(13.5, 500.0)).color(t.dim));
+                        r = r.child(row().gap(6.0).center_y()
+                            .child(bot::agent(&crate::views::agents::awake(a), 26.0)).child(text(a.name.clone()).font(ui(13.5, 500.0)).color(t.dim)));
                     }
                 }
                 r
