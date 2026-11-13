@@ -34,68 +34,136 @@ fn every_scene_builds_and_lays_out() {
         scene(&mut s);
         let mut rt = runtime(s);
         settle(&mut rt);
-        assert!(rt.find("titlebar").is_some() && rt.find("rail").is_some(), "{name}: the shell is missing");
-        assert_eq!(rt.find("side").is_some(), rt.state.view != View::Office, "{name}: the sidebar shows on every view but Office");
+        assert!(rt.find("titlebar").is_some(), "{name}: the titlebar is missing");
+        let settings = rt.state.view == View::Settings;
+        assert_eq!(rt.find("rail").is_some(), !settings, "{name}: the rail shows on every view but Settings");
+        assert_eq!(rt.find("settings-page").is_some(), settings, "{name}: Settings is a page of its own");
     }
 }
 
 #[test]
 fn the_rail_switches_views() {
     let mut rt = runtime(App::with_mock());
-    assert_eq!(rt.state.view, View::Board, "Board (the agents list) is the default view");
-    for (key, view) in [("rail-Office", View::Office), ("rail-Chat", View::Chat), ("rail-Code", View::Code), ("rail-Pull requests", View::Prs), ("rail-Apps", View::Apps), ("rail-Agents", View::Board)] {
+    assert_eq!(rt.state.view, View::Agents, "Agents (Mission control) is the default view");
+    assert!(rt.find("rail-Office").is_none(), "the Office is gone");
+    for (key, view) in [
+        ("rail-Chat", View::Chat), ("rail-Code", View::Code), ("rail-Pull requests", View::Prs), ("rail-Browser", View::Browser),
+        ("rail-Integrations", View::Integrations), ("rail-Agents", View::Agents),
+    ] {
         click(&mut rt, key);
         assert_eq!(rt.state.view, view, "{key}");
     }
 }
 
 #[test]
-fn clicking_an_agent_opens_its_drawer_and_escape_closes_it() {
-    let mut s = App::with_mock();
-    s.go(View::Office);
-    let mut rt = runtime(s);
-    settle(&mut rt);
-    click(&mut rt, "agent/research");
-    assert_eq!(rt.state.drawer.as_deref(), Some("research"));
-    assert!(rt.find("drawer").is_some());
+fn settings_opens_full_window_and_goes_back() {
+    let mut rt = runtime(App::with_mock());
+    click(&mut rt, "rail-Chat");
+    click(&mut rt, "rail-Settings");
+    assert_eq!(rt.state.view, View::Settings);
+    assert!(rt.find("rail").is_none());
+    click(&mut rt, "settings/appearance");
+    assert_eq!(rt.state.settings, crate::app::SettingsPage::Appearance);
+    click(&mut rt, "settings-back");
+    assert_eq!(rt.state.view, View::Chat, "Back to app returns where you were");
+    rt.state.open_settings(crate::app::SettingsPage::General);
     rt.key(KeyEvent { key: Key::Escape, mods: Mods::default() });
     settle(&mut rt);
-    assert_eq!(rt.state.drawer, None);
+    assert_eq!(rt.state.view, View::Chat, "Escape leaves Settings too");
 }
 
 #[test]
-fn the_board_toggle_and_back() {
+fn an_agent_opens_with_its_conversation_and_panel() {
+    let mut rt = runtime(App::with_mock());
+    settle(&mut rt);
+    click(&mut rt, "agent-row/frontend");
+    assert_eq!(rt.state.agent.as_deref(), Some("frontend"));
+    assert!(rt.find("agent-panel").is_some(), "the right-hand panel shows");
+    click(&mut rt, "agent-row/mission");
+    assert_eq!(rt.state.agent, None, "Mission control is one click back");
+}
+
+#[test]
+fn a_message_to_an_agent_lands_in_its_conversation() {
     let mut s = App::with_mock();
-    s.go(View::Board);
+    s.open_agent(Some("research"));
+    s.edit_mut(EditKey::AgentThread).replace_text("Book it for 7pm");
+    s.submit(EditKey::AgentThread, &crate::store::Target::Agent("research".into()));
+    assert!(s.edit(EditKey::AgentThread).text.is_empty(), "the composer clears after sending");
+    assert!(s.data.thread("Research").iter().any(|i| matches!(i, crate::model::ThreadItem::You(t) if t == "Book it for 7pm")));
+}
+
+#[test]
+fn a_new_chat_opens_itself() {
+    let mut rt = runtime(App::with_mock());
+    click(&mut rt, "rail-Chat");
+    assert_eq!(rt.state.chat, None, "Chat opens on What should we build?");
+    rt.state.edit_mut(EditKey::ChatHome).replace_text("Make the hero section bigger");
+    rt.state.submit(EditKey::ChatHome, &crate::store::Target::New);
+    settle(&mut rt);
+    assert_eq!(rt.state.chat.as_deref(), Some("Make the hero section bigger"));
+    assert_eq!(rt.state.data.extra.chats.first().map(|c| c.title.as_str()), Some("Make the hero section bigger"));
+}
+
+#[test]
+fn the_approval_menu_switches_to_full_access() {
+    let mut rt = runtime(App::with_mock());
+    click(&mut rt, "rail-Chat");
+    click(&mut rt, "approval-chip/chat-home");
+    assert_eq!(rt.state.menu.as_deref(), Some("approval:chat-home"));
+    click(&mut rt, "approval/auto");
+    assert_eq!(rt.state.prefs.approval, crate::prefs::Approval::Auto);
+    assert_eq!(rt.state.menu, None, "picking closes the menu");
+}
+
+#[test]
+fn pinning_and_archiving_a_chat() {
+    let mut s = App::with_mock();
+    s.toggle_pin("Casual chat");
+    assert!(s.prefs.pinned.contains(&"Casual chat".to_owned()));
+    s.open_chat("Casual chat");
+    s.archive("Casual chat");
+    assert!(s.prefs.archived.contains(&"Casual chat".to_owned()) && !s.prefs.pinned.contains(&"Casual chat".to_owned()));
+    assert_eq!(s.chat, None, "archiving the open chat goes home");
+    s.unarchive("Casual chat");
+    assert!(s.prefs.archived.is_empty());
+}
+
+#[test]
+fn the_browser_has_tabs_and_an_address_bar() {
+    let mut rt = runtime(App::with_mock());
+    click(&mut rt, "rail-Browser");
+    assert!(rt.find("address").is_some() && rt.find("browser-page").is_some());
+    click(&mut rt, "browser-new-tab");
+    assert_eq!(rt.state.browser.tabs.len(), 2);
+    rt.state.browse("github.com");
+    assert_eq!(rt.state.browser.current().map(|t| t.url.as_str()), Some("https://github.com"));
+}
+
+#[test]
+fn integrations_tabs_and_connecting_an_app() {
+    let mut rt = runtime(App::with_mock());
+    click(&mut rt, "rail-Integrations");
+    click(&mut rt, "int-tab/Apps");
+    assert_eq!(rt.state.integrations, crate::app::IntegrationsTab::Apps);
+    let before = rt.state.data.extra.catalog.iter().find(|a| a.slug == "linear").map(|a| a.connected);
+    rt.state.toggle_app("linear");
+    let after = rt.state.data.extra.catalog.iter().find(|a| a.slug == "linear").map(|a| a.connected);
+    assert_ne!(before, after);
+}
+
+#[test]
+fn replies_render_markdown_with_link_names() {
+    let mut s = App::with_mock();
+    s.data.threads.push(("Links".into(), vec![crate::model::ThreadItem::Them("Open https://www.codeply.app and **check** it.
+
+- one
+- two".into())]));
+    s.data.extra.chats.insert(0, crate::model::ChatMeta { title: "Links".into(), project: String::new(), ago: "now".into(), preview: String::new(), running: true, unread: false });
+    s.open_chat("Links");
     let mut rt = runtime(s);
     settle(&mut rt);
-    assert!(rt.find("board").is_some());
-    assert!(rt.find("rail-Office").is_some() && rt.find("rail-Agents").is_some(), "Office and Agents are both rail icons");
-}
-
-#[test]
-fn a_message_from_the_drawer_lands_in_the_session() {
-    let mut s = App::with_mock();
-    s.open_drawer("research");
-    s.edit_mut(EditKey::Drawer).replace_text("Book it for 7pm");
-    s.submit(EditKey::Drawer, &crate::store::Target::Agent("research".into()));
-    assert!(s.edit(EditKey::Drawer).text.is_empty(), "the composer clears after sending");
-    let session = s.data.session("research");
-    assert!(session.iter().any(|b| matches!(b, crate::model::Block::Bubble(t) if t == "Book it for 7pm")));
-}
-
-#[test]
-fn the_walker_moves_and_the_office_asks_for_its_next_step() {
-    let mut s = App::with_mock();
-    s.go(View::Office);
-    let mut rt = runtime(s);
-    settle(&mut rt);
-    let start = rt.state.office.actor("docs", |a| a.offset.get());
-    for _ in 0..(60 * 4) {
-        rt.frame(1.0 / 60.0);
-    }
-    let later = rt.state.office.actor("docs", |a| a.offset.get());
-    assert_ne!(start, later, "Docs walks the corridor");
+    assert!(rt.find("thread/Links").is_some());
 }
 
 #[test]

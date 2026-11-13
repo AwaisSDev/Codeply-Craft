@@ -6,7 +6,7 @@ members = ["."]
 
 [package]
 name = "codeply-rune"
-version = "0.1.0"
+version = "4.0.0-beta.1"
 edition = "2024"
 license = "MIT"
 publish = false
@@ -26,7 +26,15 @@ live = ["dep:ureq"]
 # Rune is pre-release: pin a `dev` rev. `tooling` keeps --snap, --tree and --script in release builds.
 rune = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a", features = ["tooling"] }
 serde_json = "1"
-ureq = { version = "2", default-features = false, features = ["json"], optional = true }
+ureq = { version = "2", default-features = false, features = ["json", "tls"], optional = true }
+# Site icons for links in chats (favicon.rs).
+png = "0.18"
+
+# The built-in browser: WebView2 (the Edge engine) as a child window, and the one window style
+# it needs (browser.rs).
+[target.'cfg(windows)'.dependencies]
+wry = { version = "0.57", default-features = false }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 
 # Rune's own patches, from the same rev (see Rune's README, "Depending on Rune").
 [patch.crates-io]

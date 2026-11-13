@@ -59,7 +59,7 @@ const save = () => { if (!saveTimer) saveTimer = setTimeout(saveNow, 300); };
 const newId = (p) => p + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
 const meta = (s) => {
   const last = s.messages[s.messages.length - 1];
-  return { id: s.id, title: s.title, cwd: s.cwd, createdAt: s.createdAt, updatedAt: s.updatedAt, preview: (last && (last.text || last.label)) || '', messageCount: s.messages.length, engine: s.engine || 'dsh' };
+  return { id: s.id, title: s.title, cwd: s.cwd, createdAt: s.createdAt, updatedAt: s.updatedAt, preview: (last && (last.text || last.label)) || '', messageCount: s.messages.length, engine: s.engine || 'dsh', running: runs.has(s.id), queued: (queues.get(s.id) || []).length };
 };
 const find = (id) => store.sessions.find((s) => s.id === id) || null;
 
@@ -101,11 +101,16 @@ async function engineFor(cwd) {
 
 // ---------- runs and approvals ----------
 const runs = new Map();    // session id -> AbortController
+const queues = new Map();  // session id -> messages sent while a reply was running, in order
 const pending = new Map(); // request id -> { sessionId, request, resolve }
+// Set by the app (POST /config): 'ask' waits for an answer to every approval; 'auto' (the app's
+// "Full access") allows each one at once.
+const settings = { approval: 'ask', effort: 'High' };
 
 function makeApprove(session, signal) {
   return (req) => new Promise((resolve) => {
     if (signal.aborted) return resolve('reject');
+    if (settings.approval === 'auto') return resolve('once');
     const requestId = newId('p_');
     const request = { requestId, tool: req.tool || req.name || 'tool', title: req.title || 'Run a tool', detail: req.detail || '', danger: !!req.danger };
     pending.set(requestId, { sessionId: session.id, request, resolve: (v) => { pending.delete(requestId); emit(session.id, { type: 'approval_resolved', requestId, verdict: v }); resolve(v); } });
@@ -185,7 +190,12 @@ async function startRun(session, text) {
     runs.delete(session.id);
     saveNow();
     emit(session.id, { type: 'run_finished' });
+    // A message sent while this reply ran goes next, instead of being turned away.
+    const queue = queues.get(session.id) || [];
+    const next = queue.shift();
+    if (!queue.length) queues.delete(session.id);
     emit(session.id, { type: 'session_sync', session: meta(session) });
+    if (next !== undefined) setImmediate(() => startRun(session, next));
   }
 }
 
@@ -209,10 +219,20 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && p === '/health') return reply(200, { ok: true, name: 'codeply-sidecar', engine: dshProblem ? 'classic' : 'dsh' });
   if (!authed(req, url)) return reply(401, { error: 'Unauthorized.' });
   try {
+    if (req.method === 'POST' && p === '/config') {
+      const body = await readJson(req);
+      if (body.approval === 'ask' || body.approval === 'auto') settings.approval = body.approval;
+      if (typeof body.effort === 'string') settings.effort = body.effort;
+      // Answer anything already waiting, now that approvals don't need asking.
+      if (settings.approval === 'auto') for (const [, entry] of pending) entry.resolve('once');
+      return reply(200, { ok: true, settings });
+    }
     if (req.method === 'GET' && p === '/config') {
       let dsh = 'unknown';
       try { if (!acp) acp = await lib('dsh-acp.mjs'); const f = acp.findDsh(); dsh = f.error ? `unavailable: ${f.error}` : 'ready'; } catch (e) { dsh = `unavailable: ${e.message}`; }
-      return reply(200, { name: 'codeply-sidecar', engine: 'dsh', dsh, cwd: DEFAULT_CWD, cli: CLI });
+      let version = '';
+      try { version = JSON.parse(fs.readFileSync(path.join(CLI, 'package.json'), 'utf8')).version || ''; } catch {}
+      return reply(200, { name: 'codeply-sidecar', engine: dshProblem ? 'classic' : 'dsh', dsh, cwd: DEFAULT_CWD, cli: CLI, version, settings });
     }
     if (req.method === 'GET' && p === '/event') {
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
@@ -247,12 +267,21 @@ const server = http.createServer(async (req, res) => {
         const body = await readJson(req);
         const text = String(body.text || '').trim();
         if (!text) return reply(400, { error: 'Write a task before sending it.' });
-        if (runs.has(s.id)) return reply(409, { error: 'A run is already in progress for this chat.' });
+        if (runs.has(s.id)) {
+          // Busy: queue it, show it at once, and run it when this reply ends.
+          const q = queues.get(s.id) || [];
+          q.push(text);
+          queues.set(s.id, q);
+          emit(s.id, { type: 'queued', text, position: q.length });
+          return reply(202, { ok: true, sessionId: s.id, queued: q.length });
+        }
         startRun(s, text);
         return reply(202, { ok: true, sessionId: s.id });
       }
       if (m[2] === 'abort' && req.method === 'POST') {
         const r = runs.get(s.id);
+        // Stop means stop: drop what was queued behind this reply too.
+        queues.delete(s.id);
         if (r) r.abort();
         return reply(200, { ok: true, wasRunning: !!r });
       }

@@ -7,7 +7,7 @@ name: Codeply 4.0 on Rune (Windows)
 on:
   workflow_dispatch:
   push:
-    branches: [rune-v4]
+    branches: [rune-v4, rune-v5]
     paths:
       - 'rune-app/**'
       - '.github/workflows/rune-windows.yml'
@@ -16,7 +16,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: rune-windows
+  group: rune-windows-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -64,9 +64,12 @@ jobs:
           name: Codeply-Rune-windows-x64
           path: dist/Codeply-Rune-windows-x64.zip
 
-      - name: Publish to the rune-windows-latest release
+      # rune-v4 keeps its old link (rune-windows-latest); every other branch gets its own,
+      # rune-v5 -> rune-v5-windows-latest.
+      - name: Publish to the branch's latest release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view rune-windows-latest >/dev/null 2>&1 || gh release create rune-windows-latest --prerelease --target "${GITHUB_SHA}" --title "Codeply 4.0 on Rune, Windows (latest test build)" --notes "Test build of the native Rune app from the rune-v4 branch. Unzip and run Codeply.exe. See TRY-IT.txt inside."
-          gh release upload rune-windows-latest dist/Codeply-Rune-windows-x64.zip --clobber
+          if [ "${GITHUB_REF_NAME}" = "rune-v4" ]; then TAG=rune-windows-latest; else TAG="${GITHUB_REF_NAME}-windows-latest"; fi
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --target "${GITHUB_SHA}" --title "Codeply 4.0 beta on Rune, Windows (${GITHUB_REF_NAME})" --notes "Test build of the native Rune app from the ${GITHUB_REF_NAME} branch. Unzip and run Codeply.exe. See TRY-IT.txt inside."
+          gh release upload "$TAG" dist/Codeply-Rune-windows-x64.zip --clobber

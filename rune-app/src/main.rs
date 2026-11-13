@@ -4,39 +4,54 @@
 //!
 //!   codeply                         the window, with the sample data
 //!   codeply --store live            talk to `codeply serve` (build with `--features live`)
-//!   codeply --snap office.png --scene office --size 1440x900    a headless render (Rune tooling)
+//!   codeply --snap chat.png --scene chat --size 1440x900    a headless render (Rune tooling)
 
 mod app;
 mod bot;
+mod browser;
 #[cfg(feature = "live")]
 mod engine;
+mod favicon;
 mod icons;
+mod markdown;
 mod model;
+mod prefs;
 mod shell;
 mod store;
 mod theme;
+mod thread;
 mod ui;
 mod views;
 
 use rune::{App as RuneApp, AppSpec, Titlebar};
 
-use app::{App, View};
+use app::{App, IntegrationsTab, PrTab, SettingsPage, View};
 
 /// Named states for headless renders and tests (`--scene NAME`).
 type Scene = (&'static str, fn(&mut App));
 
 const SCENES: &[Scene] = &[
-    ("office", |s| s.go(View::Office)),
-    ("office-drawer", |s| { s.go(View::Office); s.open_drawer("frontend"); }),
-    ("office-inbox", |s| { s.go(View::Office); s.open_drawer("inbox"); }),
-    ("board", |s| s.go(View::Board)),
-    ("appearance", |s| { s.go(View::Board); s.toggle_appearance("backend"); }),
-    ("chat", |s| s.go(View::Chat)),
-    ("chat-thread", |s| { s.go(View::Chat); s.chat = Some("Casual chat".into()); }),
+    ("agents", |s| s.go(View::Agents)),
+    ("agent", |s| s.open_agent(Some("frontend"))),
+    ("agent-wisp", |s| s.open_agent(Some("wisp"))),
+    ("appearance", |s| { s.go(View::Agents); s.toggle_appearance("backend"); }),
+    ("chat", |s| s.new_chat()),
+    ("chat-thread", |s| s.open_chat("Casual chat")),
+    ("chat-menu", |s| { s.open_chat("Casual chat"); s.toggle_menu("chat:Casual chat"); }),
+    ("model-menu", |s| { s.new_chat(); s.toggle_menu("model:chat-home"); }),
     ("code", |s| s.go(View::Code)),
     ("prs", |s| s.go(View::Prs)),
-    ("apps", |s| s.go(View::Apps)),
-    ("settings", |s| s.go(View::Settings)),
+    ("pr-changes", |s| { s.go(View::Prs); s.pr_tab = PrTab::Changes; }),
+    ("browser", |s| s.go(View::Browser)),
+    ("integrations", |s| s.go(View::Integrations)),
+    ("integrations-apps", |s| { s.go(View::Integrations); s.integrations = IntegrationsTab::Apps; }),
+    ("integrations-mcp", |s| { s.go(View::Integrations); s.integrations = IntegrationsTab::Mcp; }),
+    ("settings", |s| s.open_settings(SettingsPage::General)),
+    ("settings-appearance", |s| s.open_settings(SettingsPage::Appearance)),
+    ("settings-configuration", |s| s.open_settings(SettingsPage::Configuration)),
+    ("settings-personalization", |s| s.open_settings(SettingsPage::Personalization)),
+    ("settings-browser", |s| s.open_settings(SettingsPage::Browser)),
+    ("settings-usage", |s| s.open_settings(SettingsPage::Usage)),
 ];
 
 /// The app's own flags (Rune takes its own first): `--store mock|live`, `--server URL`, `--token PW`.
@@ -70,6 +85,7 @@ fn init() -> App {
             Err(why) => {
                 let mut app = App::with_mock();
                 app.data.source = format!("Sample data. {why}");
+                app.data.extra.engine = "Sample data".into();
                 app
             }
         },
@@ -109,7 +125,11 @@ fn prefer_cpu_renderer() {
 fn main() {
     prefer_cpu_renderer();
     rune::prewarm_gpu();
-    RuneApp::new(spec()).titlebar(Titlebar::new(shell::TITLEBAR)).run();
+    RuneApp::new(spec())
+        .titlebar(Titlebar::new(shell::TITLEBAR))
+        // The built-in browser makes its web views inside this window.
+        .on_window(browser::set_window)
+        .run();
 }
 
 #[cfg(test)]

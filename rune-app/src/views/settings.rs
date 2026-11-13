@@ -1,116 +1,396 @@
-//! Settings. Phase 1 has the team sheet (every helper's look, its states and its Office sprite)
-//! and a placeholder for the browser surfaces (Wisp's browser, agent tabs, the Design tab), which
-//! need a Chromium view opened on demand; Rune has no webview of its own.
+//! Settings, Codex-style: a page over the whole window with a list of sections on the left and
+//! the chosen section's groups on the right. Each group is a rounded card of rows, a label and
+//! a description on the left and a control on the right.
 
-use std::cell::RefCell;
-use std::collections::HashMap;
+use rune::{Cx, El, ScrollSpec, col, el, row, text, text_input};
 
-use rune::{El, Pixels, ScrollSpec, col, el, row, text};
-
-use crate::app::App;
+use crate::app::{App, EditKey, SettingsPage};
 use crate::bot;
-use crate::icons::ico;
-use crate::model::{Agent, AgentState, Face, Gear, Shape};
-use crate::theme::{self, Theme, ui};
-use crate::ui::{card, enter, heading, me, side_head, side_row};
-use crate::views::office_art::{ACTOR_H, ACTOR_W, Pose, render_actor};
-use crate::views::warp::upscale;
+use crate::icons::{ico, ico_s};
+use crate::model::{ButtonKind, Pill};
+use crate::prefs::Approval;
+use crate::theme::{self, Theme, mono, ui};
+use crate::ui::{btn, btn_primary, ibtn, pill, sec, side_row, tabs, toggle};
 
-pub fn side(s: &App, t: &Theme) -> El {
-    col().h_full().min_h(0.0)
-        .child(side_head(t, "Settings", None))
-        .child(col().grow(1.0).px(8.0)
-            .child(side_row(t, true).child(ico("users", t.dim)).child(text("Your team").font(ui(14.0, 400.0)).color(t.text)))
-            .child(side_row(t, false).child(ico("oai-settings", t.dim)).child(text("General").font(ui(14.0, 400.0)).color(t.text)))
-            .child(side_row(t, false).child(ico("globe", t.dim)).child(text("Browser").font(ui(14.0, 400.0)).color(t.text))))
-        .child(me(s, t))
-}
-
-pub fn main(s: &App, t: &Theme) -> El {
-    let cards = s.data.team.chunks(3).enumerate().map(|(r, chunk)| {
-        enter(row().gap(16.0).items_stretch().children(chunk.iter().map(|a| member(t, a).grow(1.0).w(0.0))), r)
+pub fn page(s: &App, t: &Theme, _cx: &mut Cx<App>) -> El {
+    let q = s.edit(EditKey::SettingsSearch).text.trim().to_lowercase();
+    let pages = SettingsPage::ALL.iter().copied().filter(|p| q.is_empty() || p.label().to_lowercase().contains(&q)).map(|p| {
+        side_row(t, s.settings == p).key(format!("settings/{}", p.slug())).role("button").label(p.label())
+            .child(ico(p.icon(), t.dim))
+            .child(text(p.label()).font(ui(14.0, 400.0)).color(t.text).grow(1.0))
+            .on_press(move |s: &mut App| s.settings = p)
     });
-    let page = col().w_full().max_w(1040.0).px(32.0).pt(16.0).pb(48.0).gap(16.0)
-        .child(heading(t, "Your team", Some(format!("Wisp and {} helpers. Data: {}", s.data.team.len().saturating_sub(1), s.data.source))))
-        .children(cards)
-        .child(browser_placeholder(t, "Browser views", "Wisp's browser, agent tabs and the Design tab open a Chromium view here, only when you ask for one. Not in this build yet."));
-    col().key("settings-page").w_full().h_full().items_center().scroll(ScrollSpec { stick_bottom: false }).child(page)
+    let back = side_row(t, false).key("settings-back").role("button").label("Back to app")
+        .child(ico("arrow-left", t.dim))
+        .child(text("Back to app").font(ui(14.0, 400.0)).color(t.text))
+        .on_press(|s: &mut App| s.leave_settings());
+    let search = row().h(34.0).gap(8.0).px(10.0).radius(9.0).center_y().fill(theme::hex("#1b1b1b")).border(1.0, theme::hex("#2c2c2c"))
+        .child(ico_s("search", 16.0, t.faint))
+        .child(text_input(s.edit(EditKey::SettingsSearch), ui(13.5, 400.0)).key("settings-search").single_line().grow(1.0).color(t.text)
+            .placeholder("Search settings", t.faint).caret(t.accent, t.accent.alpha(0.3)).label("Search settings")
+            .on_edit(|s: &mut App| s.edit_mut(EditKey::SettingsSearch)));
+    let nav = col().key("settings-nav").w(260.0).h_full().min_h(0.0).fill(t.side).border_sides([0.0, 1.0, 0.0, 0.0], t.border)
+        .child(col().px(12.0).pt(14.0).gap(10.0).child(back).child(search))
+        .child(col().grow(1.0).min_h(0.0).px(12.0).scroll(ScrollSpec { stick_bottom: false })
+            .child(sec(t, None, "Personal", false))
+            .children(pages));
+    let title = s.settings.label();
+    let content = col().key("settings-page").w_full().max_w(720.0).pt(40.0).pb(64.0).gap(24.0)
+        .child(col().gap(4.0)
+            .child(text(title).font(ui(24.0, 650.0)).color(t.text))
+            .child(text(subtitle(s.settings)).font(ui(13.5, 400.0)).color(t.dim).wrap()))
+        .children(groups(s, t, s.settings));
+    let right = col().grow(1.0).min_w(0.0).h_full().px(32.0).items_center().scroll(ScrollSpec { stick_bottom: false }).child(content);
+    row().key("settings-root").w_full().h_full().fill(t.bg).child(nav).child(right)
 }
 
-fn describe(a: &Agent) -> String {
-    let shape = match a.look.shape {
-        Shape::Hex => "Hexagon",
-        Shape::Round => "Round",
-        Shape::Square => "Squircle",
-        Shape::Cloud => "Cloud",
-        Shape::Triangle => "Triangle",
-        Shape::Drop => "Drop",
-        Shape::Pebble => "Pebble",
-    };
-    let face = match a.look.face {
-        Face::Pill => "pill eyes",
-        Face::Glossy => "glossy eyes",
-        Face::Googly => "googly eyes",
-        Face::Content => "content eyes",
-        Face::Capsule => "capsule eyes",
-    };
-    let gear: Vec<&str> = a.look.gear.iter().map(|g| match g {
-        Gear::Beret => "beret",
-        Gear::Bow => "bow tie",
-        Gear::Headphones => "headphones",
-        Gear::Glasses => "glasses",
-        Gear::Shades => "shades",
-        Gear::Sprout => "sprout",
-        Gear::Flower => "flower",
-        Gear::Star => "star",
-        Gear::Cap => "cap",
-        Gear::Antennae => "antennae",
-    }).collect();
-    if gear.is_empty() { format!("{shape}, {face}") } else { format!("{shape}, {face}, {}", gear.join(" and ")) }
-}
-
-/// One helper: large, then in each state, then as the Office draws it.
-fn member(t: &Theme, a: &Agent) -> El {
-    let states = [(AgentState::Working, "Working"), (AgentState::Thinking, "Thinking"), (AgentState::Waiting, "Needs you"), (AgentState::Sleeping, "Asleep")];
-    let mut idle = a.clone();
-    idle.state = AgentState::Idle;
-    let variants = row().gap(6.0).justify_between().children(states.iter().map(|(st, label)| {
-        let mut v = a.clone();
-        v.state = *st;
-        col().gap(4.0).items_center()
-            .child(bot::agent(&v, 40.0))
-            .child(text(*label).font(ui(11.0, 400.0)).color(t.faint))
-    }));
-    card(t).padding(16.0).gap(12.0)
-        .child(row().gap(14.0).center_y()
-            .child(el().size(96.0, 96.0).radius(20.0).fill(theme::hex("#161616")).center().child(bot::agent(&idle, 84.0)))
-            .child(col().grow(1.0).min_w(0.0).gap(2.0)
-                .child(text(a.name.clone()).font(ui(16.0, 650.0)).color(t.text))
-                .child(text(a.role.clone()).font(ui(12.5, 400.0)).color(t.faint))
-                .child(text(describe(a)).font(ui(12.5, 400.0)).color(t.dim).wrap()))
-            .child(el().size(ACTOR_W as f32 * 2.0, ACTOR_H as f32 * 2.0).radius(10.0).fill(theme::hex("#1d1712")).pixels(&sprite(a))))
-        .child(el().h(1.0).w_full().fill(t.card_border))
-        .child(variants)
-}
-
-/// The helper's Office sprite at 2 device pixels per art pixel, made once per look.
-fn sprite(a: &Agent) -> Pixels {
-    thread_local! {
-        static MADE: RefCell<HashMap<String, Pixels>> = RefCell::new(HashMap::new());
+fn subtitle(page: SettingsPage) -> &'static str {
+    match page {
+        SettingsPage::General => "Permissions, notifications, chat behaviour and the workspace.",
+        SettingsPage::Profile => "Who you are in Codeply.",
+        SettingsPage::Appearance => "How Codeply and your team look.",
+        SettingsPage::Configuration => "How much the engine asks, how hard it thinks, and what it runs on.",
+        SettingsPage::Personalization => "Tell Wisp about yourself and how you like answers.",
+        SettingsPage::Shortcuts => "Keys that work anywhere in the app.",
+        SettingsPage::Mcp => "Servers that give the engine extra tools.",
+        SettingsPage::Hooks => "Commands that run at set moments in a task.",
+        SettingsPage::Connections => "Accounts your agents can reach.",
+        SettingsPage::Git => "How commits and branches are made.",
+        SettingsPage::Environments => "Where tasks run.",
+        SettingsPage::Worktrees => "Keep each task's changes in a folder of its own.",
+        SettingsPage::Browser => "The built-in browser's home page, bookmarks and data.",
+        SettingsPage::ComputerUse => "Let an agent look at and control your screen.",
+        SettingsPage::Archived => "Chats you hid from the sidebar.",
+        SettingsPage::Usage => "Your plan and what you have used.",
     }
-    MADE.with_borrow_mut(|made| {
-        made.entry(format!("{}{:?}", a.color, a.look)).or_insert_with(|| {
-            let cv = render_actor(&a.color, &a.look, Pose { state: AgentState::Idle, frame: 0, left: false });
-            let px = Pixels::new();
-            px.set(ACTOR_W * 2, ACTOR_H * 2, upscale(&cv.px, ACTOR_W, ACTOR_H, 2));
-            px
-        }).clone()
-    })
 }
 
-/// Where a browser surface will go: a calm card, not a fake page.
-pub fn browser_placeholder(t: &Theme, title: &str, note: &str) -> El {
-    card(t).padding(16.0).gap(8.0)
-        .child(row().gap(8.0).center_y().child(ico("globe", t.dim)).child(text(title.to_owned()).font(ui(14.0, 600.0)).color(t.text)))
-        .child(text(note.to_owned()).font(ui(13.0, 400.0).lh(19.0)).color(t.faint).wrap())
+// ---------- building blocks ----------
+
+/// A titled card; its rows are separated by 1 px lines.
+fn group(t: &Theme, title: &str, rows: Vec<El>) -> El {
+    col().gap(8.0)
+        .child(text(title.to_owned()).font(ui(13.0, 600.0)).color(t.dim).pl(4.0))
+        .child(col().w_full().fill(t.card).border(1.0, t.card_border).radius(12.0)
+            .children(rows.into_iter().enumerate().map(|(i, r)| r.border_sides([if i == 0 { 0.0 } else { 1.0 }, 0.0, 0.0, 0.0], t.card_border))))
+}
+
+/// A row: label and description on the left, `control` on the right.
+fn item(t: &Theme, label: &str, desc: Option<&str>, control: El) -> El {
+    row().w_full().min_h(56.0).px(16.0).py(12.0).gap(16.0).center_y()
+        .child(col().grow(1.0).min_w(0.0).gap(2.0)
+            .child(text(label.to_owned()).font(ui(14.0, 500.0)).color(t.text))
+            .children(desc.map(|d| text(d.to_owned()).font(ui(12.5, 400.0)).color(t.dim).wrap())))
+        .child(control)
+}
+
+/// A plain note under a group.
+fn note(t: &Theme, msg: &str) -> El {
+    text(msg.to_owned()).font(ui(12.5, 400.0)).color(t.faint).wrap().px(4.0)
+}
+
+/// A value shown as text on the right of a row.
+fn value(t: &Theme, v: &str) -> El {
+    text(v.to_owned()).font(ui(13.5, 400.0)).color(t.dim)
+}
+
+/// A toggle that does something.
+fn sw(t: &Theme, key: &str, on: bool, label: &str, f: impl Fn(&mut App) + 'static) -> El {
+    toggle(t, key.to_owned(), on, label).on_press(f)
+}
+
+/// A toggle in a sample page (it shows the control; nothing listens yet).
+fn sample(t: &Theme, key: &str, on: bool, label: &str) -> El {
+    toggle(t, key.to_owned(), on, label)
+}
+
+/// A key on the keyboard.
+fn keys(t: &Theme, combo: &str) -> El {
+    row().gap(4.0).children(combo.split(' ').map(|k| {
+        row().h(24.0).min_w(24.0).px(7.0).radius(6.0).center().fill(t.control).border(1.0, t.control_border)
+            .child(text(k.to_owned()).font(mono(12.0, 16.0)).color(t.dim))
+    }))
+}
+
+/// A text box for Personalization.
+fn editor(s: &App, t: &Theme, key: EditKey, placeholder: &str) -> El {
+    col().w_full().padding(12.0)
+        .child(col().w_full().min_h(90.0).padding(10.0).radius(9.0).fill(theme::hex("#1b1b1b")).border(1.0, theme::hex("#2c2c2c"))
+            .child(text_input(s.edit(key), ui(14.0, 400.0)).key(format!("{}-field", key.name())).w_full().min_h(70.0).color(t.text)
+                .placeholder(placeholder.to_owned(), t.faint).caret(t.accent, t.accent.alpha(0.3)).label(placeholder.to_owned())
+                .on_edit(move |s: &mut App| s.edit_mut(key))))
+}
+
+/// A usage meter: a thin bar, `frac` of it filled.
+fn meter(t: &Theme, frac: f32) -> El {
+    let w = 140.0;
+    el().w(w).h(4.0).radius(2.0).fill(t.border).child(el().w(w * frac.clamp(0.0, 1.0)).h(4.0).radius(2.0).fill(t.accent))
+}
+
+// ---------- pages ----------
+
+fn groups(s: &App, t: &Theme, page: SettingsPage) -> Vec<El> {
+    match page {
+        SettingsPage::General => general(s, t),
+        SettingsPage::Profile => profile(s, t),
+        SettingsPage::Appearance => appearance(s, t),
+        SettingsPage::Configuration => configuration(s, t),
+        SettingsPage::Personalization => personalization(s, t),
+        SettingsPage::Shortcuts => shortcuts(t),
+        SettingsPage::Mcp => mcp(s, t),
+        SettingsPage::Hooks => hooks(t),
+        SettingsPage::Connections => connections(t),
+        SettingsPage::Git => git(t),
+        SettingsPage::Environments => environments(t),
+        SettingsPage::Worktrees => worktrees(t),
+        SettingsPage::Browser => browser(s, t),
+        SettingsPage::ComputerUse => computer_use(t),
+        SettingsPage::Archived => archived(s, t),
+        SettingsPage::Usage => usage(s, t),
+    }
+}
+
+fn general(s: &App, t: &Theme) -> Vec<El> {
+    let p = &s.prefs;
+    vec![
+        group(t, "Permissions", vec![
+            item(t, "Full access", Some("Run commands and edit files without asking each time."),
+                sw(t, "set-full-access", p.approval == Approval::Auto, "Full access", |s: &mut App| {
+                    let next = if s.prefs.approval == Approval::Auto { Approval::Ask } else { Approval::Auto };
+                    s.set_approval(next);
+                })),
+        ]),
+        group(t, "Notifications", vec![
+            item(t, "Notifications", Some("Tell me when a task finishes or needs me."),
+                sw(t, "set-notifications", p.notifications, "Notifications", |s: &mut App| s.update_prefs(|p| p.notifications = !p.notifications))),
+        ]),
+        group(t, "Chat", vec![
+            item(t, "Enter sends", Some("Shift+Enter makes a new line. Off: Ctrl+Enter sends."),
+                sw(t, "set-enter-sends", p.enter_sends, "Enter sends", |s: &mut App| s.update_prefs(|p| p.enter_sends = !p.enter_sends))),
+            item(t, "Show each tool call", Some("Off folds them into \"Worked for ...\"."),
+                sw(t, "set-show-tools", p.show_tools, "Show each tool call", |s: &mut App| s.update_prefs(|p| p.show_tools = !p.show_tools))),
+            item(t, "Fade replies in as they stream", Some("Words arrive from grey to white."),
+                sw(t, "set-reveal", p.reveal, "Fade replies in as they stream", |s: &mut App| s.update_prefs(|p| p.reveal = !p.reveal))),
+        ]),
+        group(t, "Workspace", vec![
+            item(t, "Project folder", Some(&s.data.project),
+                btn(t, "Change", None, ButtonKind::Plain).key("set-change-project")),
+            item(t, "Engine", None, value(t, &s.data.source)),
+            item(t, "Version", None, value(t, &s.data.extra.version)),
+        ]),
+    ]
+}
+
+fn profile(s: &App, t: &Theme) -> Vec<El> {
+    let initial = s.data.user.chars().next().unwrap_or('S').to_string();
+    vec![group(t, "Account", vec![
+        row().w_full().px(16.0).py(20.0).gap(16.0).center_y()
+            .child(el().key("profile-avatar").size(64.0, 64.0).radius(32.0).fill(theme::hex("#2f8f5b")).center()
+                .child(text(initial).font(ui(26.0, 650.0)).color(rune::Color::WHITE)))
+            .child(col().grow(1.0).min_w(0.0).gap(2.0)
+                .child(text(s.data.user.clone()).font(ui(18.0, 650.0)).color(t.text))
+                .child(text(s.data.plan.clone()).font(ui(13.0, 400.0)).color(t.dim)))
+            .child(btn(t, "Manage account", None, ButtonKind::Plain).key("set-manage-account")),
+    ])]
+}
+
+fn appearance(s: &App, t: &Theme) -> Vec<El> {
+    let team = s.data.team.iter().map(|a| {
+        let right = if a.id == "wisp" {
+            text("Keeps its hexagon and Codeply blue").font(ui(12.5, 400.0)).color(t.faint)
+        } else {
+            crate::views::appearance::pickers(t, a)
+        };
+        row().key(format!("team/{}", a.id)).w_full().px(16.0).py(14.0).gap(14.0).center_y()
+            .child(bot::agent(a, 48.0))
+            .child(col().grow(1.0).min_w(0.0).gap(2.0)
+                .child(text(a.name.clone()).font(ui(14.0, 600.0)).color(t.text))
+                .child(text(a.role.clone()).font(ui(12.5, 400.0)).color(t.dim).wrap()))
+            .child(right)
+    }).collect::<Vec<_>>();
+    vec![
+        group(t, "Theme", vec![
+            row().key("set-theme/dark").w_full().min_h(56.0).px(16.0).py(12.0).gap(16.0).center_y().role("radio").checked(true).label("Dark")
+                .child(col().grow(1.0).gap(2.0).child(text("Dark").font(ui(14.0, 500.0)).color(t.text)))
+                .child(ico_s("check", 16.0, t.accent)),
+            row().key("set-theme/light").w_full().min_h(56.0).px(16.0).py(12.0).gap(16.0).center_y().role("radio").checked(false).label("Light")
+                .child(col().grow(1.0).gap(2.0).child(text("Light").font(ui(14.0, 500.0)).color(t.dim)))
+                .child(pill(t, "Coming soon", Pill::Gray)),
+        ]),
+        group(t, "Your team", team),
+        note(t, "Colour and shape picks are saved, and show wherever the helper appears."),
+    ]
+}
+
+fn configuration(s: &App, t: &Theme) -> Vec<El> {
+    let effort = match s.prefs.effort.as_str() {
+        "Low" => "Low",
+        "Medium" => "Medium",
+        _ => "High",
+    };
+    vec![
+        group(t, "Approval and effort", vec![
+            item(t, "Approval policy", Some("When the engine asks before it acts."),
+                tabs(t, "cfg-approval", &[(Approval::Ask, "On request"), (Approval::Auto, "Never ask")], s.prefs.approval,
+                    |s: &mut App, v: Approval| s.set_approval(v))),
+            item(t, "Model effort", Some("How hard the model thinks before it answers."),
+                tabs(t, "cfg-effort", &[("Low", "Low"), ("Medium", "Medium"), ("High", "High")], effort,
+                    |s: &mut App, v: &'static str| s.set_effort(v))),
+        ]),
+        group(t, "Workspace dependencies", vec![
+            item(t, "Current version", None, value(t, &s.data.extra.version)),
+            item(t, "Codeply dependencies", Some("Node and the DSH runtime, from the installed app."), value(t, &s.data.extra.engine)),
+            item(t, "Maintenance", Some("Check the install, or put it back as it shipped."),
+                row().gap(8.0)
+                    .child(btn(t, "Diagnose", None, ButtonKind::Plain).key("cfg-diagnose"))
+                    .child(btn(t, "Reinstall", None, ButtonKind::Plain).key("cfg-reinstall"))),
+        ]),
+    ]
+}
+
+fn personalization(s: &App, t: &Theme) -> Vec<El> {
+    vec![
+        group(t, "About you", vec![editor(s, t, EditKey::AboutMe, "What should Wisp know about you?")]),
+        group(t, "Custom instructions", vec![editor(s, t, EditKey::Instructions, "How should Wisp answer?")]),
+        row().justify_end().child(btn_primary(t, "Save", "check").key("set-save").on_press(|s: &mut App| {
+            let a = s.edit(EditKey::AboutMe).text.clone();
+            let b = s.edit(EditKey::Instructions).text.clone();
+            s.update_prefs(move |p| {
+                p.about_me = a;
+                p.instructions = b;
+            });
+        })),
+    ]
+}
+
+fn shortcuts(t: &Theme) -> Vec<El> {
+    let list = [
+        ("Ctrl K", "Search"),
+        ("Ctrl N", "New chat"),
+        ("Ctrl ,", "Open settings"),
+        ("Ctrl L", "Focus the address bar (browser)"),
+        ("Enter", "Send"),
+        ("Shift Enter", "New line"),
+        ("Esc", "Close the menu or settings"),
+    ];
+    vec![group(t, "Shortcuts", list.iter().map(|&(k, what)| {
+        item(t, what, None, keys(t, k)).key(format!("shortcut/{k}"))
+    }).collect())]
+}
+
+fn mcp(s: &App, t: &Theme) -> Vec<El> {
+    let servers: Vec<El> = if s.data.extra.mcp.is_empty() {
+        vec![item(t, "No servers yet", Some("Add one to give the engine more tools."), el())]
+    } else {
+        s.data.extra.mcp.iter().map(|m| {
+            let name = m.name.clone();
+            item(t, &m.name, Some(&m.note),
+                row().gap(12.0).center_y()
+                    .child(value(t, &format!("{} tools", m.tools)))
+                    .child(toggle(t, format!("set-mcp/{}", m.name), m.on, &m.name).on_press(move |s: &mut App| s.toggle_mcp(&name))))
+        }).collect()
+    };
+    vec![
+        group(t, "Servers", servers),
+        row().justify_end().child(btn_primary(t, "Add server", "plus").key("set-mcp-add")),
+    ]
+}
+
+fn hooks(t: &Theme) -> Vec<El> {
+    vec![
+        group(t, "Hooks", vec![
+            item(t, "Run tests before a commit", Some("Stops the commit if a test fails."), sample(t, "set-hook/tests", true, "Run tests before a commit")),
+            item(t, "Format files after an edit", Some("Runs your formatter on each file the engine writes."), sample(t, "set-hook/format", true, "Format files after an edit")),
+            item(t, "Tell me when a task ends", Some("Runs a command when an agent finishes."), sample(t, "set-hook/notify", false, "Tell me when a task ends")),
+        ]),
+        row().justify_end().child(btn(t, "Add hook", Some("plus"), ButtonKind::Plain).key("set-hook-add")),
+    ]
+}
+
+fn connections(t: &Theme) -> Vec<El> {
+    vec![group(t, "Accounts", vec![
+        item(t, "GitHub", Some("Pull requests and issues."), btn(t, "Manage", None, ButtonKind::Plain).key("set-conn/github")),
+        item(t, "Slack", Some("Post updates to a channel."), btn(t, "Connect", None, ButtonKind::Blue).key("set-conn/slack")),
+        item(t, "Google Drive", Some("Open files from your Drive."), btn(t, "Connect", None, ButtonKind::Blue).key("set-conn/drive")),
+    ])]
+}
+
+fn git(t: &Theme) -> Vec<El> {
+    vec![group(t, "Commits and branches", vec![
+        item(t, "Commit with co-author", Some("Adds Codeply to the commit message."), sample(t, "set-git/coauthor", true, "Commit with co-author")),
+        item(t, "Default branch prefix", Some("New task branches start with this."), value(t, "codeply/")),
+        item(t, "Open pull requests as drafts", None, sample(t, "set-git/drafts", false, "Open pull requests as drafts")),
+    ])]
+}
+
+fn environments(t: &Theme) -> Vec<El> {
+    vec![group(t, "Where tasks run", vec![
+        item(t, "This computer", Some("Tasks run in your project folder."), pill(t, "Active", Pill::Green)),
+        item(t, "Codeply Cloud", Some("Tasks keep running when your computer is off."), btn(t, "Set up", None, ButtonKind::Plain).key("set-env/cloud")),
+    ])]
+}
+
+fn worktrees(t: &Theme) -> Vec<El> {
+    vec![group(t, "Worktrees", vec![
+        item(t, "Use a worktree for each task", Some("Changes stay apart until you merge them."), sample(t, "set-wt/each", true, "Use a worktree for each task")),
+        item(t, "Worktree folder", None, value(t, "~/.codeply/worktrees")),
+        item(t, "Clean up after a merge", Some("Delete the worktree once its branch is merged."), sample(t, "set-wt/clean", false, "Clean up after a merge")),
+    ])]
+}
+
+fn computer_use(t: &Theme) -> Vec<El> {
+    vec![group(t, "Computer use", vec![
+        item(t, "Allow Wisp to use your screen", Some("Wisp can see the screen, click and type."), sample(t, "set-cu/allow", false, "Allow Wisp to use your screen")),
+        item(t, "Ask before each action", None, sample(t, "set-cu/ask", true, "Ask before each action")),
+        item(t, "Show an outline while Wisp works", None, sample(t, "set-cu/outline", true, "Show an outline while Wisp works")),
+    ])]
+}
+
+fn browser(s: &App, t: &Theme) -> Vec<El> {
+    let marks: Vec<El> = if s.prefs.bookmarks.is_empty() {
+        vec![item(t, "No bookmarks", Some("Bookmarks you add in the browser show here."), el())]
+    } else {
+        s.prefs.bookmarks.iter().map(|(title, url)| {
+            let u = url.clone();
+            item(t, title, Some(url),
+                ibtn(t, "close", "Remove bookmark").key(format!("bookmark-remove/{url}")).on_press(move |s: &mut App| {
+                    let u = u.clone();
+                    s.update_prefs(move |p| p.bookmarks.retain(|(_, x)| *x != u));
+                }))
+        }).collect()
+    };
+    vec![
+        group(t, "Home", vec![item(t, "Home page", None, value(t, &s.prefs.home))]),
+        group(t, "Bookmarks", marks),
+        group(t, "Privacy", vec![
+            item(t, "Browsing data", Some("History, cookies and cached files."), btn(t, "Clear browsing data", None, ButtonKind::Plain).key("set-clear-browsing")),
+        ]),
+    ]
+}
+
+fn archived(s: &App, t: &Theme) -> Vec<El> {
+    let rows: Vec<El> = if s.prefs.archived.is_empty() {
+        vec![item(t, "Nothing archived", Some("Chats you archive from the sidebar will show up here."), el())]
+    } else {
+        s.prefs.archived.iter().map(|title| {
+            let name = title.clone();
+            item(t, title, None, btn(t, "Unarchive", None, ButtonKind::Plain).key(format!("unarchive/{title}")).on_press(move |s: &mut App| s.unarchive(&name)))
+        }).collect()
+    };
+    vec![group(t, "Archived chats", rows)]
+}
+
+fn usage(s: &App, t: &Theme) -> Vec<El> {
+    let bar = |label: &str, shown: &str, frac: f32| {
+        item(t, label, None, row().gap(12.0).center_y().child(value(t, shown)).child(meter(t, frac)))
+    };
+    vec![
+        group(t, "Plan", vec![
+            item(t, &s.data.plan, Some("Your current plan."), btn_primary(t, "Upgrade", "sparkle").key("set-upgrade")),
+        ]),
+        group(t, "Usage", vec![
+            bar("Chats this month", "23 / 50", 23.0 / 50.0),
+            bar("Tokens", "77.8m", 0.78),
+        ]),
+    ]
 }

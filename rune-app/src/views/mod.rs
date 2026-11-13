@@ -1,16 +1,14 @@
-//! The five views (plus Board, the Office as a list). Each returns its sidebar, if it has one,
-//! and its main area.
+//! The views, one per rail icon. Each returns its sidebar, if it has one, and its main area.
+//! Settings is a page of its own (`settings::page`), drawn by the shell over the whole window.
 
+pub mod agents;
 pub mod appearance;
-pub mod apps;
-pub mod board;
+pub mod browser;
 pub mod chat;
 pub mod code;
-pub mod office;
-pub mod office_art;
+pub mod integrations;
 pub mod prs;
 pub mod settings;
-pub mod warp;
 
 use rune::{Cx, El};
 
@@ -19,12 +17,19 @@ use crate::theme::Theme;
 
 pub fn build(s: &App, t: &Theme, cx: &mut Cx<App>) -> (Option<El>, El) {
     match s.view {
-        View::Office => (None, office::main(s, t, cx)),
-        View::Board => (Some(board::side(s, t)), board::main(s, t)),
+        View::Agents => (Some(agents::side(s, t)), agents::main(s, t, cx)),
         View::Chat => (Some(chat::side(s, t)), chat::main(s, t, cx)),
         View::Code => (Some(code::side(s, t)), code::main(s, t)),
         View::Prs => (Some(prs::side(s, t)), prs::main(s, t)),
-        View::Apps => (Some(apps::side(s, t)), apps::main(s, t)),
-        View::Settings => (Some(settings::side(s, t)), settings::main(s, t)),
+        View::Browser => (Some(browser::side(s, t)), browser::main(s, t)),
+        View::Integrations => (Some(integrations::side(s, t)), integrations::main(s, t)),
+        // The shell draws Settings itself, over the whole window; this is never reached.
+        View::Settings => (None, rune::el()),
     }
+}
+
+/// A view's own dropdown menus, by the id `App::toggle_menu` was given ("agent:<id>", ...).
+/// The shell draws the composer's and chats' menus itself.
+pub fn menu(s: &App, t: &Theme, id: &str) -> Option<El> {
+    agents::menu(s, t, id).or_else(|| chat::menu(s, t, id)).or_else(|| integrations::menu(s, t, id))
 }

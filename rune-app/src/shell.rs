@@ -1,13 +1,15 @@
 //! The frame: a Windows-style titlebar with the Ctrl K search, the 60 pt activity rail, the
-//! contextual sidebar (none on Office) and the main area.
+//! contextual sidebar and the main area. Settings takes the whole window below the titlebar,
+//! Codex-style, with its own list of pages and "Back to app".
 
 use rune::{Color, Cx, El, Side, Tx, col, el, row, text, text_input};
 
 use crate::app::{App, EditKey, View};
 use crate::bot;
 use crate::icons::ico;
+use crate::prefs::Approval;
 use crate::theme::{self, Theme, ui};
-use crate::ui::ibtn;
+use crate::ui::{ibtn, menu, menu_item};
 use crate::views;
 
 pub const TITLEBAR: f32 = 44.0;
@@ -18,30 +20,85 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
     let t = theme::dark();
     cx.caption_color(t.dim);
     s.reduced.set(cx.is_reduced_motion());
-    let (side, main) = views::build(s, &t, cx);
-    let body = row().w_full().grow(1.0).min_h(0.0)
-        .child(rail(s, &t))
-        .children(side.map(|sd| {
-            col().key("side").w(SIDE).h_full().min_h(0.0).fill(t.side).border_sides([0.0, 1.0, 0.0, 0.0], t.border).child(sd)
-        }))
-        .child(col().key("main").grow(1.0).h_full().min_w(0.0).min_h(0.0).fill(t.bg).clip_rounded(0.0).child(main));
+    let body = if s.view == View::Settings {
+        row().key("settings-page").w_full().grow(1.0).min_h(0.0).child(views::settings::page(s, &t, cx))
+    } else {
+        let (side, main) = views::build(s, &t, cx);
+        row().w_full().grow(1.0).min_h(0.0)
+            .child(rail(s, &t))
+            .children(side.map(|sd| {
+                col().key("side").w(SIDE).h_full().min_h(0.0).fill(t.side).border_sides([0.0, 1.0, 0.0, 0.0], t.border).child(sd)
+            }))
+            .child(col().key("main").grow(1.0).h_full().min_w(0.0).min_h(0.0).fill(t.bg).clip_rounded(0.0).child(main))
+    };
     // Popovers attach at the root so they draw above everything and escape clipping.
-    let popover = s.appearance.as_ref().and_then(|id| s.data.agent(id)).map(|a| views::appearance::popover(s, &t, a));
-    col().key("root").w_full().h_full().fill(t.bg).child(titlebar(s, &t, cx)).child(body).children(popover)
+    let appearance = s.appearance.as_ref().and_then(|id| s.data.agent(id)).map(|a| views::appearance::popover(s, &t, a));
+    col().key("root").w_full().h_full().fill(t.bg)
+        .child(titlebar(s, &t, cx))
+        .child(body)
+        .children(appearance)
+        .children(menus(s, &t))
+}
+
+/// The open dropdown, if any: the composer's approval and model menus, and each chat's
+/// "more" menu (pin, archive). Views add their own through `views::menu`.
+fn menus(s: &App, t: &Theme) -> Option<El> {
+    let id = s.menu.as_deref()?;
+    if let Some(key) = id.strip_prefix("approval:") {
+        let item = |a: Approval, icon: &str, note: &str| {
+            menu_item(t, format!("approval/{}", a.name()), Some(icon), a.label(), Some(note), s.prefs.approval == a)
+                .on_press(move |s: &mut App| s.set_approval(a))
+        };
+        return Some(menu(t, &format!("approval-chip/{key}"), Side::Top, 280.0, vec![
+            item(Approval::Ask, "shield-check", "Asks before every write, edit or command"),
+            item(Approval::Auto, "terminal", "Runs commands and edits files without asking"),
+        ]));
+    }
+    if let Some(key) = id.strip_prefix("model:") {
+        let item = |effort: &'static str, note: &str| {
+            menu_item(t, format!("effort/{effort}"), None, &format!("Haze 2 · {effort}"), Some(note), s.prefs.effort == effort)
+                .on_press(move |s: &mut App| s.set_effort(effort))
+        };
+        return Some(menu(t, &format!("model-chip/{key}"), Side::Top, 260.0, vec![
+            item("Low", "Fastest replies"),
+            item("Medium", "Balanced"),
+            item("High", "Thinks longest, best for hard tasks"),
+        ]));
+    }
+    if let Some(chat) = id.strip_prefix("chat:") {
+        let pinned = s.prefs.pinned.iter().any(|c| c == chat);
+        let (a, b) = (chat.to_owned(), chat.to_owned());
+        return Some(menu(t, &format!("chat-more/{chat}"), Side::Right, 200.0, vec![
+            menu_item(t, "chat-menu/pin".into(), Some("pick"), if pinned { "Unpin" } else { "Pin" }, None, false).on_press(move |s: &mut App| s.toggle_pin(&a)),
+            menu_item(t, "chat-menu/archive".into(), Some("download"), "Archive", None, false).on_press(move |s: &mut App| s.archive(&b)),
+        ]));
+    }
+    views::menu(s, t, id)
 }
 
 fn titlebar(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
     let insets = cx.chrome_insets();
     // On Windows Rune draws the real caption buttons in `insets.trailing`; macOS keeps its traffic
     // lights and Linux its native frame. Headless renders have neither, so they get Windows-style
-    // stand-ins (that still minimize, maximize and close), to match the prototype's titlebar.
+    // stand-ins (that still minimize, maximize and close).
     let own_caption = insets.trailing == 0.0 && rune::is_headless();
     let brand = row().w(300.0).gap(9.0).center_y().pl(14.0 + insets.leading)
-        .child(bot::wisp(24.0))
-        .child(text("Codeply").font(ui(15.0, 700.0)).color(t.text));
+        .child(bot::wisp(22.0))
+        .child(text("Codeply").font(ui(14.5, 700.0)).color(t.text))
+        .child(el().px(6.0).h(18.0).radius(5.0).center().fill(t.accent.alpha(0.16)).child(text("Beta").font(ui(10.5, 700.0)).color(t.accent)));
     let search = text_input(s.edit(EditKey::Search), ui(13.0, 400.0)).key("cmdk").single_line().grow(1.0).color(t.text)
         .placeholder("Search chats, files, PRs and mail, or ask Wisp", t.faint).caret(t.accent, t.accent.alpha(0.3))
-        .label("Search").on_edit(|s: &mut App| s.edit_mut(EditKey::Search));
+        .label("Search").on_edit(|s: &mut App| s.edit_mut(EditKey::Search))
+        .on_submit(|s: &mut App, _| {
+            // Ctrl K: Enter asks Wisp in a new chat.
+            let q = s.edit(EditKey::Search).text.trim().to_owned();
+            if !q.is_empty() {
+                s.new_chat();
+                s.edit_mut(EditKey::ChatHome).replace_text(q);
+                s.edit_mut(EditKey::Search).clear();
+                s.submit(EditKey::ChatHome, &crate::store::Target::New);
+            }
+        });
     let cmdk = row().w_full().max_w(560.0).h(30.0).gap(8.0).px(12.0).radius(9.0).center_y().fill(t.hover).border(1.0, t.border).no_window_drag()
         .child(ico("oai-search", t.faint))
         .child(search)
@@ -58,7 +115,12 @@ fn titlebar(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
             .child(win("Maximize", el().size(10.0, 10.0).border(1.0, t.dim), false, |_, tx| tx.toggle_maximized()))
             .child(win("Close", crate::icons::ico_s("close", 14.0, t.dim), true, |_, tx| tx.close_window()))
     });
-    let right = row().w(300.0).center_y().justify_end().pr(insets.trailing)
+    // The engine's state, as a dot: green when chats run on DSH, grey on sample data.
+    let engine = row().gap(6.0).px(8.0).h(26.0).radius(7.0).center_y().no_window_drag().help(s.data.source.clone())
+        .child(el().size(7.0, 7.0).radius(3.5).fill(if s.data.extra.engine_ok { t.green } else { t.faint }))
+        .child(text(s.data.extra.engine.clone()).font(ui(12.0, 500.0)).color(t.faint));
+    let right = row().w(300.0).gap(4.0).center_y().justify_end().pr(insets.trailing)
+        .child(engine)
         .child(ibtn(t, "bell", "Notifications").no_window_drag().mr(if own_caption { 4.0 } else { 8.0 }))
         .children(caption);
     row().key("titlebar").w_full().h(TITLEBAR).center_y().gap(4.0).fill(t.rail).border_sides([0.0, 0.0, 1.0, 0.0], t.border).window_drag()
@@ -68,7 +130,9 @@ fn titlebar(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
 }
 
 fn rail(s: &App, t: &Theme) -> El {
-    let tab = |v: View, icon: &str, label: &'static str, badge: Option<&'static str>| {
+    let open_prs = s.data.prs.iter().filter(|p| p.state != crate::model::PrState::Merged).count();
+    let waiting = s.data.waiting().len();
+    let tab = |v: View, icon: &str, label: &'static str, badge: Option<String>| {
         let on = s.view == v;
         el().key(format!("rail-{label}")).size(44.0, 44.0).radius(12.0).center().role("tab").label(label).checked(on).help(label).help_side(Side::Right)
             .fill(if on { t.active } else { Color::TRANSPARENT }).hover(t.hover)
@@ -81,12 +145,12 @@ fn rail(s: &App, t: &Theme) -> El {
             .on_press(move |s: &mut App| s.go(v))
     };
     col().key("rail").w(RAIL).h_full().py(10.0).gap(4.0).items_center().fill(t.rail).border_sides([0.0, 1.0, 0.0, 0.0], t.border).role("tablist")
-        .child(tab(View::Board, "oai-users", "Agents", None))
-        .child(tab(View::Office, "oai-office", "Office", None))
+        .child(tab(View::Agents, "oai-users", "Agents", (waiting > 0).then(|| waiting.to_string())))
         .child(tab(View::Chat, "oai-chat", "Chat", None))
         .child(tab(View::Code, "code", "Code", None))
-        .child(tab(View::Prs, "branch", "Pull requests", Some("3")))
-        .child(tab(View::Apps, "link", "Apps", None))
+        .child(tab(View::Prs, "branch", "Pull requests", (open_prs > 0).then(|| open_prs.to_string())))
+        .child(tab(View::Browser, "globe", "Browser", None))
+        .child(tab(View::Integrations, "link", "Integrations", None))
         .child(el().grow(1.0))
         .child(tab(View::Settings, "oai-settings", "Settings", None))
 }

@@ -201,6 +201,9 @@ pub struct AppAction {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Task {
+    /// The approval this task waits on, from the engine: (chat title, request id). Its buttons
+    /// answer it ("Allow once", "Don't allow").
+    pub request: Option<(String, String)>,
     pub agent: String,
     pub title: String,
     pub sub: String,
@@ -251,6 +254,8 @@ pub struct Snapshot {
     pub activity: Vec<u8>,
     /// Where the data comes from, for the status line ("Sample data", "codeply serve at ...").
     pub source: String,
+    /// What the Codex-style views add (chats with their state, plugins, MCP, loops, ...).
+    pub extra: Extra,
 }
 
 impl Snapshot {
@@ -267,5 +272,128 @@ impl Snapshot {
     }
     pub fn count(&self, state: AgentState) -> usize {
         self.team.iter().filter(|a| a.state == state).count()
+    }
+}
+
+// ---------- 4.0 beta: Codex-style views ----------
+
+impl Shape {
+    pub const ALL: [Shape; 7] = [Shape::Hex, Shape::Round, Shape::Square, Shape::Cloud, Shape::Triangle, Shape::Drop, Shape::Pebble];
+    /// Its name in saved preferences.
+    pub fn name(self) -> &'static str {
+        match self {
+            Shape::Hex => "hex",
+            Shape::Round => "round",
+            Shape::Square => "square",
+            Shape::Cloud => "cloud",
+            Shape::Triangle => "triangle",
+            Shape::Drop => "drop",
+            Shape::Pebble => "pebble",
+        }
+    }
+    pub fn from_name(name: &str) -> Option<Shape> {
+        Shape::ALL.into_iter().find(|s| s.name() == name)
+    }
+}
+
+/// One chat as the Codex-style sidebar lists it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChatMeta {
+    pub title: String,
+    /// The project folder's name ("launch-site"), shown dim after the title.
+    pub project: String,
+    /// "4 min ago".
+    pub ago: String,
+    /// The last thing said, for the agent list's second line.
+    pub preview: String,
+    /// A reply is being written right now.
+    pub running: bool,
+    /// Unread: a reply finished since you last opened it (a blue dot).
+    pub unread: bool,
+}
+
+/// A plugin: a bundle of skills, commands and connectors you can install.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Plugin {
+    pub id: String,
+    pub name: String,
+    pub note: String,
+    pub by: String,
+    /// An icon name (interface icons) or `app-<slug>` for an app's logo.
+    pub icon: &'static str,
+    pub installed: bool,
+}
+
+/// An MCP server the engine can talk to.
+#[derive(Clone, Debug, PartialEq)]
+pub struct McpServer {
+    pub name: String,
+    pub note: String,
+    pub tools: u32,
+    pub on: bool,
+}
+
+/// A loop: a task an agent runs on a schedule (the Agents view's right panel).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Loop {
+    pub agent: String,
+    pub name: String,
+    /// Recent runs, oldest first: true passed, false failed.
+    pub runs: Vec<bool>,
+    /// "Succeeded 50m ago", "Running now", "Failed 3d ago".
+    pub last: String,
+    pub on: bool,
+}
+
+/// An app in the Integrations catalogue.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CatalogApp {
+    pub slug: &'static str,
+    pub name: String,
+    pub note: String,
+    pub category: &'static str,
+    pub connected: bool,
+}
+
+/// The part of a Snapshot the Codex-style views add. Kept in its own struct so the original
+/// fields (and the code that fills them) stay as they were.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Extra {
+    /// Every chat, newest first.
+    pub chats: Vec<ChatMeta>,
+    /// Project folders, for the sidebar's Projects section.
+    pub projects: Vec<String>,
+    /// Suggestions under "What should we build?": (icon or `app-<slug>`, text).
+    pub suggestions: Vec<(&'static str, String)>,
+    pub plugins: Vec<Plugin>,
+    pub mcp: Vec<McpServer>,
+    pub skills: Vec<(String, String)>,
+    pub loops: Vec<Loop>,
+    pub catalog: Vec<CatalogApp>,
+    /// Which engine replies come from ("DSH", "Classic") and whether it is up.
+    pub engine: String,
+    pub engine_ok: bool,
+    /// The engine's version, for Settings > General.
+    pub version: String,
+}
+
+impl Snapshot {
+    pub fn chat(&self, title: &str) -> Option<&ChatMeta> {
+        self.extra.chats.iter().find(|c| c.title == title)
+    }
+    pub fn is_running(&self, title: &str) -> bool {
+        self.chat(title).is_some_and(|c| c.running)
+    }
+    /// Approvals still waiting for an answer, across every chat: (chat, request id, title).
+    pub fn waiting(&self) -> Vec<(String, String, String)> {
+        let mut out = Vec::new();
+        for (chat, items) in &self.threads {
+            for it in items {
+                if let ThreadItem::Approval { id, title, answer: None, .. } = it {
+                    out.push((chat.clone(), id.clone(), title.clone()));
+                }
+            }
+        }
+        out
     }
 }

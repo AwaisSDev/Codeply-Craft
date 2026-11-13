@@ -5,7 +5,10 @@ use super::{Store, Target};
 use crate::model::*;
 
 #[derive(Default)]
-pub struct MockStore;
+pub struct MockStore {
+    /// A chat `send` just made, for the app to open.
+    focus: Option<String>,
+}
 
 fn s(v: &str) -> String {
     v.to_owned()
@@ -137,7 +140,7 @@ pub fn sample() -> Snapshot {
         act("slack", "Wisp posted the standup change in **#team**", "you approved", "7:53"),
     ];
 
-    let task = |agent: &str, title: &str, sub: &str, pill: Option<(&str, Pill)>, body| Task { agent: s(agent), title: s(title), sub: s(sub), pill: pill.map(|(t, p)| (s(t), p)), body };
+    let task = |agent: &str, title: &str, sub: &str, pill: Option<(&str, Pill)>, body| Task { request: None, agent: s(agent), title: s(title), sub: s(sub), pill: pill.map(|(t, p)| (s(t), p)), body };
     let done = |agent, title, proof: &str, checked| (Column::Done, task(agent, title, "", None, TaskBody::Done { proof: s(proof), checked }));
     let tasks = vec![
         (Column::Working, task("frontend", "Pricing page for launch-site", "Frontend · Claude Code · 14 min", Some(("Code", Pill::Blue)), TaskBody::Working { icon: "edit", now: s("Editing pricing.html, +42 lines"), progress: 0.64, screen: true })),
@@ -168,6 +171,91 @@ pub fn sample() -> Snapshot {
         routines: vec![("sun", s("Morning brief"), s("Every day at 6:00")), ("mail", s("Inbox cleanup"), s("Weekdays at 8:00")), ("history", s("Weekly review"), s("Fridays at 17:00"))],
         activity: activity(),
         source: s("Sample data"),
+        extra: extra(),
+    }
+}
+
+/// The Codex-style views' sample data.
+pub fn extra() -> Extra {
+    let chat = |title: &str, project: &str, ago: &str, preview: &str, running: bool, unread: bool| ChatMeta {
+        title: s(title), project: s(project), ago: s(ago), preview: s(preview), running, unread,
+    };
+    let chats = vec![
+        chat("Wisp", "Codeply", "now", "All on track. Inbox has a reply for you to approve.", false, false),
+        chat("Pricing page", "launch-site", "4 min", "Editing pricing.html, +42 lines", true, false),
+        chat("Fix the checkout crash", "launch-site", "1 h", "Merged PR #42. The checkout no longer crashes.", false, true),
+        chat("Frontend", "launch-site", "14 min", "Building the pricing page", true, false),
+        chat("Backend", "launch-site", "6 min", "Thinking about plan limits", true, false),
+        chat("Inbox", "Codeply", "18 min", "Needs your OK on 1 reply", false, true),
+        chat("Research", "Codeply", "1 h", "Found 4 venues for Friday", false, false),
+        chat("Docs", "launch-site", "2 h", "README after PR #44", false, false),
+        chat("Casual chat", "Codeply", "1 d", "Sure, here's a quick summary.", false, false),
+        chat("Local site mockup fixes", "launch-site", "2 d", "Fixed the corner radii on the cards.", false, false),
+        chat("Git push command explanation", "launch-site", "3 d", "git push sends your commits to the remote.", false, false),
+    ];
+    let plugin = |id: &str, name: &str, note: &str, by: &str, icon: &'static str, installed: bool| Plugin {
+        id: s(id), name: s(name), note: s(note), by: s(by), icon, installed,
+    };
+    let plugins = vec![
+        plugin("github", "GitHub", "Pull requests, reviews and checks, with a /review command.", "Codeply", "app-github", true),
+        plugin("vercel", "Vercel", "Deploy previews and read build logs.", "Vercel", "app-vercel", true),
+        plugin("figma", "Figma", "Read frames and turn designs into code.", "Figma", "app-figma", false),
+        plugin("linear", "Linear", "Create and update issues from a chat.", "Linear", "app-linear", false),
+        plugin("stripe", "Stripe", "Look up customers, payments and test webhooks.", "Stripe", "app-stripe", false),
+        plugin("notion", "Notion", "Read and write pages and databases.", "Notion", "app-notion", true),
+        plugin("frontend-design", "Frontend design", "Skills for clean, accessible interfaces.", "Codeply", "sparkle", false),
+        plugin("code-review", "Code review", "A /code-review command that checks a diff for bugs.", "Codeply", "check", true),
+    ];
+    let mcp = |name: &str, note: &str, tools, on| McpServer { name: s(name), note: s(note), tools, on };
+    let loop_ = |agent: &str, name: &str, runs: &[bool], last: &str, on| Loop { agent: s(agent), name: s(name), runs: runs.to_vec(), last: s(last), on };
+    let app = |slug: &'static str, name: &str, note: &str, category: &'static str, connected| CatalogApp { slug, name: s(name), note: s(note), category, connected };
+    Extra {
+        chats,
+        projects: vec![s("Codeply"), s("launch-site"), s("Superapp")],
+        suggestions: vec![
+            ("app-gmail", s("Your email to Mount Lemmon lodge bounced back")),
+            ("app-slack", s("Reply to Ty in #launch")),
+            ("app-googlecalendar", s("Prep for the review with Tibo at 3:00")),
+        ],
+        plugins,
+        mcp: vec![
+            mcp("filesystem", "Read and write files in your projects", 11, true),
+            mcp("github", "Repos, issues and pull requests", 26, true),
+            mcp("playwright", "Drive a browser to check pages", 21, false),
+        ],
+        skills: vec![
+            (s("frontend-design"), s("Distinctive, production-grade interfaces")),
+            (s("pdf"), s("Read, fill and make PDF files")),
+            (s("xlsx"), s("Spreadsheets with formulas and charts")),
+        ],
+        loops: vec![
+            loop_("wisp", "Morning brief", &[true, true, true], "Succeeded 3h ago", true),
+            loop_("wisp", "Weekly review", &[true, false], "Failed 3d ago", true),
+            loop_("inbox", "Inbox cleanup", &[true, true, true, true], "Succeeded 50m ago", true),
+            loop_("backend", "Review new pull requests", &[false, true, true], "Running now", true),
+            loop_("research", "Triage production errors", &[true], "Blocked 2d ago", false),
+            loop_("frontend", "Benchmark page speed", &[true, true, true], "Succeeded 6d ago", true),
+            loop_("docs", "Changelog from merged PRs", &[true, true], "Succeeded 1d ago", true),
+        ],
+        catalog: vec![
+            app("gmail", "Gmail", "Read, draft and send mail", "Communication", true),
+            app("slack", "Slack", "Read channels, post updates", "Communication", true),
+            app("discord", "Discord", "Read and post in servers", "Communication", false),
+            app("whatsapp", "WhatsApp", "Send and read messages", "Communication", false),
+            app("zoom", "Zoom", "Meetings and recordings", "Communication", false),
+            app("github", "GitHub", "Branches, pull requests and checks", "Developer", true),
+            app("vercel", "Vercel", "Preview and production deploys", "Developer", true),
+            app("linear", "Linear", "Issues and projects", "Developer", false),
+            app("figma", "Figma", "Design files and frames", "Developer", false),
+            app("googlecalendar", "Google Calendar", "Events and invites", "Productivity", true),
+            app("notion", "Notion", "Pages and databases", "Productivity", true),
+            app("googledrive", "Google Drive", "Files and folders", "Productivity", false),
+            app("stripe", "Stripe", "Payments and customers", "Finance", false),
+            app("hubspot", "HubSpot", "Contacts and deals", "CRM and sales", false),
+        ],
+        engine: s("Sample data"),
+        engine_ok: false,
+        version: s("4.0.0-beta.1"),
     }
 }
 
@@ -187,11 +275,26 @@ pub fn echo(snap: &mut Snapshot, to: &Target, text: &str, reply: &str) {
                 items.push(ThreadItem::Them(reply.to_owned()));
             }
         }
-        Target::Wisp => {
+        Target::Wisp | Target::New => {
             if let Some((_, blocks)) = snap.sessions.iter_mut().find(|(k, _)| k == "wisp") {
                 blocks.push(Block::Bubble(text.to_owned()));
                 blocks.push(Block::Reply(reply.to_owned()));
             }
+        }
+    }
+    // Agents and chats both show their conversation as a thread, by the chat's title.
+    let chat = match to {
+        Target::Agent(id) => snap.agent(id).map(|a| a.name.clone()),
+        Target::Wisp => Some("Wisp".to_owned()),
+        _ => None,
+    };
+    if let Some(chat) = chat {
+        match snap.threads.iter_mut().find(|(k, _)| *k == chat) {
+            Some((_, items)) => {
+                items.push(ThreadItem::You(text.to_owned()));
+                items.push(ThreadItem::Them(reply.to_owned()));
+            }
+            None => snap.threads.push((chat, vec![ThreadItem::You(text.to_owned()), ThreadItem::Them(reply.to_owned())])),
         }
     }
 }
@@ -204,8 +307,19 @@ impl Store for MockStore {
         false
     }
     fn send(&mut self, to: &Target, text: &str, snap: &mut Snapshot) -> Result<(), String> {
+        if *to == Target::New {
+            // A new chat, titled by what you asked, at the top of the list.
+            let title: String = if text.chars().count() > 46 { format!("{}...", text.chars().take(46).collect::<String>()) } else { text.to_owned() };
+            snap.extra.chats.insert(0, ChatMeta { title: title.clone(), project: snap.project.clone(), ago: s("now"), preview: s("On it."), running: false, unread: false });
+            snap.threads.push((title.clone(), vec![ThreadItem::You(text.to_owned()), ThreadItem::Them(s("On it. I'll post here when it's done."))]));
+            self.focus = Some(title);
+            return Ok(());
+        }
         echo(snap, to, text, "On it. I'll post here when it's done.");
         Ok(())
+    }
+    fn take_focus(&mut self) -> Option<String> {
+        self.focus.take()
     }
 }
 
@@ -230,7 +344,7 @@ mod tests {
     #[test]
     fn sending_to_an_agent_lands_in_its_drawer() {
         let mut snap = sample();
-        MockStore.send(&Target::Agent("research".into()), "Book it for 7pm", &mut snap).ok();
+        MockStore::default().send(&Target::Agent("research".into()), "Book it for 7pm", &mut snap).ok();
         assert!(matches!(snap.session("research").iter().rev().nth(1), Some(Block::Bubble(t)) if t == "Book it for 7pm"));
     }
 }

@@ -209,5 +209,5 @@ fn agent_pane(s: &App, t: &Theme) -> El {
             .child(enter(row().gap(8.0).child(btn(t, "Keep", None, ButtonKind::Green)).child(btn(t, "Undo", None, ButtonKind::Plain))
                 .child(btn(t, "Preview", Some("external"), ButtonKind::Plain)), 5)))
         .child(col().px(12.0).pt(10.0).pb(12.0).border_sides([1.0, 0.0, 0.0, 0.0], t.border)
-            .child(composer(s, t, EditKey::AgentPane, Target::Agent("frontend".into()), "Tell Frontend what to change", false, true)))
+            .child(composer(s, t, EditKey::AgentThread, Target::Agent("frontend".into()), "Tell Frontend what to change", false, true)))
 }

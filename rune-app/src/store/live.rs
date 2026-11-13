@@ -21,13 +21,15 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use super::{Store, Target, mock};
-use crate::model::{ChatGroup, Snapshot, ThreadItem};
+use crate::model::{AgentState, ButtonKind, ChatGroup, ChatMeta, Column, Pill, Snapshot, Task, TaskBody, ThreadItem};
 
 /// What the worker threads send back to the UI thread.
 enum Msg {
     Sessions(Vec<Session>),
-    /// The engine's project folder's name.
-    Project(String),
+    /// The engine's project folder's name, its version, and which engine replies ("dsh").
+    Project(String, String, String),
+    /// A chat `send` made for a new conversation, by engine id: open it once it has a title.
+    Created(String),
     Transcript { id: String, items: Vec<ThreadItem> },
     Event(Value),
     /// A chat made for Wisp or a helper: its name and engine id.
@@ -42,6 +44,8 @@ struct Session {
     cwd: String,
     /// Last activity, ms since the epoch.
     updated: u64,
+    preview: String,
+    running: bool,
 }
 
 #[derive(Clone)]
@@ -78,12 +82,24 @@ pub struct LiveStore {
     streaming: std::collections::HashSet<String>,
     /// What the store talks to, for the status line ("Codeply engine (DSH)").
     label: String,
+    /// Chats with a reply finished since you last looked, by engine id.
+    unread: std::collections::HashSet<String>,
+    /// Messages shown when sent to a busy chat, waiting their turn: their `run_started` mustn't
+    /// show them twice. By engine id.
+    queued: std::collections::HashMap<String, Vec<String>>,
+    /// A new chat to open once the engine has titled it, and the title to open now.
+    want_focus: Option<String>,
+    focus: Option<String>,
 }
 
 impl LiveStore {
     pub fn new(url: &str, token: &str) -> LiveStore {
         let (tx, rx) = channel();
-        LiveStore { conn: Conn { base: url.trim_end_matches('/').to_owned(), token: token.to_owned() }, tx, rx, waker: None, sessions: Vec::new(), named: Default::default(), open: None, streaming: Default::default(), label: format!("codeply serve at {url}") }
+        LiveStore {
+            conn: Conn { base: url.trim_end_matches('/').to_owned(), token: token.to_owned() },
+            tx, rx, waker: None, sessions: Vec::new(), named: Default::default(), open: None, streaming: Default::default(),
+            label: format!("codeply serve at {url}"), unread: Default::default(), queued: Default::default(), want_focus: None, focus: None,
+        }
     }
 
     /// Runs `work` on its own thread; its answer comes back through the channel.
@@ -112,6 +128,194 @@ impl LiveStore {
     fn title_of(&self, id: &str) -> Option<String> {
         self.sessions.iter().find(|s| s.id == id).map(|s| s.title.clone())
     }
+
+    /// Folds one live event into what's on screen.
+    fn fold(&mut self, e: &Value, snap: &mut Snapshot) {
+        let id = e["sessionId"].as_str().unwrap_or_default().to_owned();
+        let kind = e["type"].as_str().unwrap_or_default();
+        if kind == "server_connected" {
+            snap.extra.engine_ok = true;
+            return;
+        }
+        if let Some(m) = e.get("session").filter(|m| m.is_object()) {
+            let s = session_from(&id, m);
+            match self.sessions.iter_mut().find(|x| x.id == id) {
+                Some(x) => *x = s,
+                None => self.sessions.insert(0, s),
+            }
+            if self.want_focus.as_deref() == Some(id.as_str()) {
+                self.want_focus = None;
+                self.focus = self.title_of(&id);
+            }
+        }
+        match kind {
+            "run_started" => self.set_running(&id, true),
+            "run_finished" => {
+                self.set_running(&id, false);
+                self.streaming.remove(&id);
+                if self.open.as_deref() != self.title_of(&id).as_deref() {
+                    self.unread.insert(id.clone());
+                }
+            }
+            _ => {}
+        }
+        if kind == "session_sync" {
+            return;
+        }
+        let Some(title) = self.title_of(&id) else { return };
+        let items = match snap.threads.iter().position(|(k, _)| *k == title) {
+            Some(i) => &mut snap.threads[i].1,
+            None => {
+                snap.threads.push((title.clone(), Vec::new()));
+                let last = snap.threads.len() - 1;
+                &mut snap.threads[last].1
+            }
+        };
+        match kind {
+            // DSH streams its reply: grow the one it's writing.
+            "text_delta" => {
+                let piece = e["text"].as_str().unwrap_or_default();
+                match (self.streaming.contains(&id), items.last_mut()) {
+                    (true, Some(ThreadItem::Them(t))) => t.push_str(piece),
+                    _ => items.push(ThreadItem::Them(piece.to_owned())),
+                }
+                self.streaming.insert(id.clone());
+            }
+            // Sent while a reply was running: show it now; it runs next.
+            "queued" => {
+                let text = e["text"].as_str().unwrap_or_default().to_owned();
+                self.queued.entry(id.clone()).or_default().push(text.clone());
+                items.push(ThreadItem::You(text));
+                self.streaming.remove(&id);
+            }
+            "run_started" => {
+                self.streaming.remove(&id);
+                let text = e["message"]["text"].as_str().unwrap_or_default();
+                let shown = match self.queued.get_mut(&id) {
+                    Some(q) if q.first().map(String::as_str) == Some(text) => {
+                        q.remove(0);
+                        true
+                    }
+                    _ => false,
+                };
+                if !shown && let Some(item) = item_from_event(e) {
+                    items.push(item);
+                }
+            }
+            "approval_resolved" => {
+                self.streaming.remove(&id);
+                let rid = e["requestId"].as_str().unwrap_or_default();
+                for it in items.iter_mut() {
+                    if let ThreadItem::Approval { id: a, answer, .. } = it && a == rid {
+                        *answer = Some(e["verdict"].as_str().unwrap_or("reject").to_owned());
+                    }
+                }
+            }
+            _ => {
+                self.streaming.remove(&id);
+                if let Some(item) = item_from_event(e) {
+                    items.push(item);
+                }
+            }
+        }
+    }
+
+    fn set_running(&mut self, id: &str, running: bool) {
+        if let Some(s) = self.sessions.iter_mut().find(|s| s.id == id) {
+            s.running = running;
+            s.updated = now_ms();
+        }
+    }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+}
+
+fn ago(updated: u64) -> String {
+    let mins = now_ms().saturating_sub(updated) / 60_000;
+    match mins {
+        0 => "now".to_owned(),
+        1..=59 => format!("{mins} min"),
+        60..=1439 => format!("{} h", mins / 60),
+        _ => format!("{} d", mins / 1440),
+    }
+}
+
+/// Every chat as the sidebars list it, newest first.
+fn metas(sessions: &[Session], unread: &std::collections::HashSet<String>) -> Vec<ChatMeta> {
+    let mut list: Vec<&Session> = sessions.iter().collect();
+    list.sort_by_key(|s| std::cmp::Reverse(s.updated));
+    list.into_iter().map(|s| ChatMeta {
+        title: s.title.clone(),
+        project: std::path::Path::new(&s.cwd).file_name().and_then(|n| n.to_str()).unwrap_or_default().to_owned(),
+        ago: ago(s.updated),
+        preview: s.preview.chars().take(120).collect(),
+        running: s.running,
+        unread: unread.contains(&s.id),
+    }).collect()
+}
+
+/// The team's states and Mission control's lists, from the engine's chats: an agent works while
+/// its chat runs, needs you while one of its approvals waits, and each chat that ran today is
+/// done today.
+fn derive(snap: &mut Snapshot, sessions: &[Session]) {
+    let waiting = snap.waiting();
+    let agent_for = |title: &str, team: &[crate::model::Agent]| team.iter().find(|a| a.name == title).map_or_else(|| "wisp".to_owned(), |a| a.id.clone());
+    for a in &mut snap.team {
+        if a.state == AgentState::Walking {
+            continue;
+        }
+        let chat = sessions.iter().find(|s| s.title == a.name);
+        let asks = waiting.iter().any(|(c, _, _)| *c == a.name);
+        a.state = if asks {
+            AgentState::Waiting
+        } else if chat.is_some_and(|c| c.running) {
+            AgentState::Working
+        } else if chat.is_some() {
+            AgentState::Idle
+        } else {
+            AgentState::Sleeping
+        };
+        if let Some(c) = chat && !c.preview.is_empty() {
+            a.status = c.preview.chars().take(80).collect();
+        }
+    }
+    let mut tasks = Vec::new();
+    for (chat, request, title) in &waiting {
+        tasks.push((Column::NeedsYou, Task {
+            request: Some((chat.clone(), request.clone())),
+            agent: agent_for(chat, &snap.team),
+            title: title.clone(),
+            sub: format!("{chat} · waiting for your OK"),
+            pill: Some(("Approve".into(), Pill::Warn)),
+            body: TaskBody::Ask { text: String::new(), buttons: vec![("Allow once".into(), ButtonKind::Blue), ("Don't allow".into(), ButtonKind::Plain)] },
+        }));
+    }
+    let today = now_ms() - now_ms() % 86_400_000;
+    let mut list: Vec<&Session> = sessions.iter().collect();
+    list.sort_by_key(|s| std::cmp::Reverse(s.updated));
+    for s in list.iter().filter(|s| s.running) {
+        tasks.push((Column::Working, Task {
+            request: None,
+            agent: agent_for(&s.title, &snap.team),
+            title: s.title.clone(),
+            sub: format!("{} · {}", ago(s.updated), if s.preview.is_empty() { "working" } else { s.preview.as_str() }),
+            pill: Some(("Running".into(), Pill::Blue)),
+            body: TaskBody::Working { icon: "terminal", now: s.preview.chars().take(80).collect(), progress: 0.5, screen: false },
+        }));
+    }
+    for s in list.iter().filter(|s| !s.running && s.updated >= today).take(6) {
+        tasks.push((Column::Done, Task {
+            request: None,
+            agent: agent_for(&s.title, &snap.team),
+            title: s.title.clone(),
+            sub: String::new(),
+            pill: None,
+            body: TaskBody::Done { proof: s.preview.chars().take(80).collect(), checked: true },
+        }));
+    }
+    snap.tasks = tasks;
 }
 
 fn sessions_from(v: &Value) -> Vec<Session> {
@@ -121,8 +325,21 @@ fn sessions_from(v: &Value) -> Vec<Session> {
             title: s["title"].as_str().unwrap_or("New chat").to_owned(),
             cwd: s["cwd"].as_str().unwrap_or_default().to_owned(),
             updated: s["updatedAt"].as_u64().unwrap_or(0),
+            preview: s["preview"].as_str().unwrap_or_default().to_owned(),
+            running: s["running"].as_bool().unwrap_or(false),
         }).collect()
     })
+}
+
+fn session_from(id: &str, meta: &Value) -> Session {
+    Session {
+        id: id.to_owned(),
+        title: meta["title"].as_str().unwrap_or("New chat").to_owned(),
+        cwd: meta["cwd"].as_str().unwrap_or_default().to_owned(),
+        updated: meta["updatedAt"].as_u64().unwrap_or(0),
+        preview: meta["preview"].as_str().unwrap_or_default().to_owned(),
+        running: meta["running"].as_bool().unwrap_or(false),
+    }
 }
 
 /// A stored message as the transcript shows it.
@@ -190,7 +407,13 @@ impl Store for LiveStore {
         snap.chat_groups.clear();
         snap.threads.clear();
         snap.recent.clear();
+        snap.tasks.clear();
+        snap.extra.chats.clear();
+        snap.extra.projects.clear();
+        snap.extra.engine = "Starting".into();
+        snap.extra.engine_ok = false;
         snap.source = format!("{} (connecting)", self.label);
+        derive(&mut snap, &[]);
         snap
     }
 
@@ -202,7 +425,9 @@ impl Store for LiveStore {
             for _ in 0..120 {
                 if let Ok(cfg) = c.get("/config") {
                     let name = cfg["cwd"].as_str().and_then(|p| std::path::Path::new(p).file_name()).and_then(|n| n.to_str())?;
-                    return Some(Msg::Project(name.to_owned()));
+                    let version = cfg["version"].as_str().unwrap_or_default().to_owned();
+                    let engine = if cfg["dsh"].as_str().is_some_and(|d| d.starts_with("unavailable")) { "classic" } else { cfg["engine"].as_str().unwrap_or("dsh") };
+                    return Some(Msg::Project(name.to_owned(), version, engine.to_owned()));
                 }
                 thread::sleep(Duration::from_millis(250));
             }
@@ -248,69 +473,79 @@ impl Store for LiveStore {
                 Msg::Sessions(list) => {
                     self.sessions = list;
                     snap.source = self.label.clone();
-                    snap.chat_groups = group(&self.sessions);
-                    snap.recent = recent(&self.sessions);
+                    snap.extra.engine_ok = true;
+                    if snap.extra.engine == "Starting" {
+                        snap.extra.engine = "DSH".into();
+                    }
                 }
-                Msg::Project(name) => snap.project = name,
+                Msg::Project(name, version, engine) => {
+                    snap.project = name;
+                    if !version.is_empty() {
+                        snap.extra.version = format!("4.0.0-beta.1 · engine {version}");
+                    }
+                    snap.extra.engine = if engine == "classic" { "Classic".into() } else { "DSH".into() };
+                    snap.extra.engine_ok = true;
+                }
+                Msg::Created(id) => match self.title_of(&id) {
+                    Some(title) => self.focus = Some(title),
+                    None => self.want_focus = Some(id),
+                },
                 Msg::Transcript { id, items } => {
                     if let Some(title) = self.title_of(&id) {
                         snap.threads.retain(|(k, _)| *k != title);
                         snap.threads.push((title, items));
                     }
                 }
-                Msg::Event(e) => {
-                    let id = e["sessionId"].as_str().unwrap_or_default().to_owned();
-                    if e["type"] == "session_sync" {
-                        if let Some(meta) = e.get("session") {
-                            let s = Session { id: id.clone(), title: meta["title"].as_str().unwrap_or("New chat").to_owned(), cwd: meta["cwd"].as_str().unwrap_or_default().to_owned(), updated: meta["updatedAt"].as_u64().unwrap_or(0) };
-                            match self.sessions.iter_mut().find(|x| x.id == id) {
-                                Some(x) => *x = s,
-                                None => self.sessions.insert(0, s),
-                            }
-                            snap.chat_groups = group(&self.sessions);
-                            snap.recent = recent(&self.sessions);
-                        }
-                    } else if let Some(title) = self.title_of(&id) {
-                        let items = match snap.threads.iter_mut().position(|(k, _)| *k == title) {
-                            Some(i) => &mut snap.threads[i].1,
-                            None => {
-                                snap.threads.push((title.clone(), Vec::new()));
-                                &mut snap.threads.last_mut().unwrap_or_else(|| unreachable!()).1
-                            }
-                        };
-                        match e["type"].as_str().unwrap_or_default() {
-                            // DSH streams its reply: grow the one it's writing.
-                            "text_delta" => {
-                                let piece = e["text"].as_str().unwrap_or_default();
-                                match (self.streaming.contains(&id), items.last_mut()) {
-                                    (true, Some(ThreadItem::Them(t))) => t.push_str(piece),
-                                    _ => items.push(ThreadItem::Them(piece.to_owned())),
-                                }
-                                self.streaming.insert(id.clone());
-                            }
-                            "approval_resolved" => {
-                                self.streaming.remove(&id);
-                                let rid = e["requestId"].as_str().unwrap_or_default();
-                                for it in items.iter_mut() {
-                                    if let ThreadItem::Approval { id: a, answer, .. } = it && a == rid {
-                                        *answer = Some(e["verdict"].as_str().unwrap_or("reject").to_owned());
-                                    }
-                                }
-                            }
-                            _ => {
-                                self.streaming.remove(&id);
-                                if let Some(item) = item_from_event(&e) {
-                                    items.push(item);
-                                }
-                            }
-                        }
-                    }
+                Msg::Event(e) => self.fold(&e, snap),
+                Msg::Named(name, id) => {
+                    self.named.insert(name, id);
                 }
-                Msg::Named(name, id) => { self.named.insert(name, id); }
-                Msg::Status(s) => snap.source = s,
+                Msg::Status(s) => {
+                    if s.starts_with("can't reach") || s.starts_with("event stream") {
+                        snap.extra.engine_ok = false;
+                    }
+                    snap.source = s;
+                }
             }
         }
+        if changed {
+            snap.chat_groups = group(&self.sessions);
+            snap.recent = recent(&self.sessions);
+            snap.extra.chats = metas(&self.sessions, &self.unread);
+            let mut projects: Vec<String> = Vec::new();
+            for c in &snap.extra.chats {
+                if !c.project.is_empty() && !projects.contains(&c.project) {
+                    projects.push(c.project.clone());
+                }
+            }
+            snap.extra.projects = projects;
+            derive(snap, &self.sessions);
+        }
         changed
+    }
+
+    fn take_focus(&mut self) -> Option<String> {
+        self.focus.take()
+    }
+
+    fn abort(&mut self, chat: &str) {
+        let Some(id) = self.id_of(chat).or_else(|| self.named.get(chat).cloned()) else { return };
+        self.queued.remove(&id);
+        self.spawn(move |c| c.post(&format!("/session/{id}/abort"), json!({})).err().map(|e| Msg::Status(format!("stop failed: {e}"))));
+    }
+
+    fn configure(&mut self, prefs: &crate::prefs::Prefs) {
+        let body = json!({ "approval": prefs.approval.name(), "effort": prefs.effort });
+        // The engine may still be starting: keep trying for half a minute.
+        self.spawn(move |c| {
+            for _ in 0..120 {
+                if c.post("/config", body.clone()).is_ok() {
+                    return None;
+                }
+                thread::sleep(Duration::from_millis(250));
+            }
+            None
+        });
     }
 
     fn open(&mut self, chat: &str) {
@@ -340,12 +575,27 @@ impl Store for LiveStore {
     }
 
     fn send(&mut self, to: &Target, text: &str, snap: &mut Snapshot) -> Result<(), String> {
-        let shown = text.to_owned();
         let text = text.to_owned();
         match to {
             Target::Chat(title) => {
                 let id = self.id_of(title).ok_or("That chat isn't on the engine yet.")?;
                 self.spawn(move |c| c.post(&format!("/session/{id}/message"), json!({ "text": text })).err().map(|e| Msg::Status(format!("send failed: {e}"))));
+                Ok(())
+            }
+            // A new chat from "What should we build?": the engine titles it from the message,
+            // and it opens once it has its title.
+            Target::New => {
+                self.spawn(move |c| {
+                    let made = match c.post("/session", json!({ "title": "New chat" })) {
+                        Ok(v) => v,
+                        Err(e) => return Some(Msg::Status(format!("can't start a chat: {e}"))),
+                    };
+                    let id = made["session"]["id"].as_str()?.to_owned();
+                    match c.post(&format!("/session/{id}/message"), json!({ "text": text })) {
+                        Ok(_) => Some(Msg::Created(id)),
+                        Err(e) => Some(Msg::Status(format!("send failed: {e}"))),
+                    }
+                });
                 Ok(())
             }
             // Wisp and each helper talk in a chat of their own, named after them, made on first use.
@@ -366,7 +616,7 @@ impl Store for LiveStore {
                         Err(e) => Some(Msg::Status(format!("send failed: {e}"))),
                     }
                 });
-                mock::echo(snap, to, &shown, &format!("Sent. The reply shows in Chat, in the {name} chat."));
+                // The reply streams into the agent's own page (its chat), so nothing to fake here.
                 Ok(())
             }
         }

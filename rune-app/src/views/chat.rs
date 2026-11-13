@@ -1,178 +1,157 @@
-//! Chat, the app's home: the dithered warp art, Wisp, "What should we build in launch-site?",
-//! the composer and the bento cards. An open chat shows its transcript instead.
+//! Chat, Codex-style: a sidebar of New chat, Search, Pinned, Recents and Projects, and a home
+//! that asks "What should we build?". An open chat shows its transcript under a slim header.
 
-use rune::{Color, Cx, El, ScrollSpec, col, el, row, text};
+use rune::{Cx, El, ScrollSpec, col, el, row, text};
 
 use crate::app::{App, EditKey};
 use crate::bot;
-use crate::icons::ico_s;
-use crate::model::ThreadItem;
+use crate::icons::{ico, ico_s};
+use crate::model::ChatMeta;
 use crate::store::Target;
-use crate::theme::{self, Theme, tabular, ui};
-use crate::model::ButtonKind;
-use crate::ui::{btn, composer, enter, fade_in, me, rich_text, sec, side_head, side_row, ENTER};
+use crate::theme::{Theme, ui};
+use crate::ui::{composer, enter, fade_in, ibtn, me, name_and_line, sec, side_row, ENTER};
+
+/// How many recents show before "Show more".
+const RECENTS: usize = 8;
+
+/// One chat in the sidebar: title, project, then a status (unread dot or spinner) and the hover
+/// "more" button.
+fn chat_row(s: &App, t: &Theme, c: &ChatMeta) -> El {
+    let on = s.chat.as_deref() == Some(c.title.as_str());
+    let open_title = c.title.clone();
+    let menu_id = format!("chat:{}", c.title);
+    let menu_open = s.menu.as_deref() == Some(menu_id.as_str());
+    let status = if c.running {
+        Some(ico_s("refresh", 14.0, t.dim).looping(rune::LoopSpec::rotation(1.0)))
+    } else if c.unread {
+        Some(el().size(6.0, 6.0).radius(3.0).fill(t.accent))
+    } else {
+        None
+    };
+    let more = el().key(format!("chat-more/{}", c.title)).size(26.0, 26.0).radius(7.0).center().role("button")
+        .label(format!("More for {}", c.title)).help("More")
+        .fill(if menu_open { t.active } else { rune::Color::TRANSPARENT }).hover(t.hover)
+        .child(ico_s("more", 16.0, t.dim))
+        .group_opacity(if menu_open { 1.0 } else { 0.0 }, 1.0)
+        .on_press(move |s: &mut App| s.toggle_menu(&menu_id));
+    side_row(t, on).hover_group().key(format!("chat/{}", c.title)).role("button").label(c.title.clone())
+        .child(name_and_line(t, &c.title, Some(&c.project), 400.0))
+        .children(status)
+        .child(more)
+        .on_press(move |s: &mut App| s.open_chat(&open_title))
+}
 
 pub fn side(s: &App, t: &Theme) -> El {
+    let chats = &s.data.extra.chats;
+    let pinned: Vec<&ChatMeta> = chats.iter().filter(|c| s.prefs.pinned.contains(&c.title)).collect();
+    let recents: Vec<&ChatMeta> = chats
+        .iter()
+        .filter(|c| !s.prefs.archived.contains(&c.title) && !s.prefs.pinned.contains(&c.title))
+        .collect();
+    let all = s.expanded.contains("recents-more");
+
     let mut list = col().px(8.0).pb(10.0);
-    if s.data.chat_groups.is_empty() {
-        list = list.child(col().px(8.0).pt(14.0).gap(4.0)
-            .child(text("No chats yet").font(ui(13.5, 500.0)).color(t.dim))
-            .child(text("Ask Wisp something and your chat shows up here.").font(ui(12.5, 400.0)).color(t.faint).wrap()));
-    }
     let mut i = 0;
-    for g in &s.data.chat_groups {
-        list = list.child(sec(t, Some(g.icon), &g.title, true));
-        for c in &g.chats {
-            let on = s.chat.as_deref() == Some(c.as_str());
-            let name = c.clone();
-            list = list.child(enter(
-                side_row(t, on).key(format!("chat/{c}")).role("button").label(c.clone())
-                    .child(text(c.clone()).font(ui(14.0, 400.0)).color(t.text).truncate())
-                    .on_press(move |s: &mut App| s.open_chat(&name)),
-                i,
-            ));
+    if !pinned.is_empty() {
+        list = list.child(sec(t, None, "Pinned", false));
+        for c in &pinned {
+            list = list.child(enter(chat_row(s, t, c), i));
             i += 1;
         }
     }
+    list = list.child(sec(t, None, "Recents", false));
+    if recents.is_empty() {
+        list = list.child(col().px(10.0).py(6.0)
+            .child(text("No chats yet").font(ui(13.0, 400.0)).color(t.faint)));
+    }
+    let shown = if all { recents.len() } else { recents.len().min(RECENTS) };
+    for c in recents.iter().take(shown) {
+        list = list.child(enter(chat_row(s, t, c), i));
+        i += 1;
+    }
+    if recents.len() > RECENTS {
+        let label = if all { "Show less" } else { "Show more" };
+        list = list.child(side_row(t, false).key("recents-more").role("button").label(label)
+            .child(text(label).font(ui(13.5, 400.0)).color(t.faint))
+            .on_press(|s: &mut App| s.toggle_expanded("recents-more")));
+    }
+    if !s.data.extra.projects.is_empty() {
+        list = list.child(sec(t, None, "Projects", false));
+        for p in &s.data.extra.projects {
+            list = list.child(side_row(t, false).key(format!("project/{p}")).role("button").label(p.clone())
+                .child(ico("oai-folder", t.dim))
+                .child(text(p.clone()).font(ui(14.0, 400.0)).color(t.text).truncate().grow(1.0).min_w(0.0)));
+        }
+    }
+
+    let top = col().px(8.0).pt(10.0).pb(2.0)
+        .child(side_row(t, false).key("new-chat").role("button").label("New chat")
+            .child(ico("oai-compose", t.text))
+            .child(text("New chat").font(ui(14.0, 400.0)).color(t.text))
+            .on_press(|s: &mut App| s.new_chat()))
+        .child(side_row(t, false).key("search-row").role("button").label("Search")
+            .child(ico("oai-search", t.text))
+            .child(text("Search").font(ui(14.0, 400.0)).color(t.text)));
     col().h_full().min_h(0.0)
-        .child(side_head(t, "Chats", Some(("oai-compose", "New chat"))))
-        // Where chats run: the engine this app started, or the sample data and why.
-        .child(row().px(16.0).pb(4.0).child(text(s.data.source.clone()).font(ui(12.0, 400.0)).color(t.faint).wrap()))
+        .child(top)
         .child(col().grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(list))
         .child(me(s, t))
 }
 
-pub fn main(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
+pub fn main(s: &App, t: &Theme, _cx: &mut Cx<App>) -> El {
     match &s.chat {
-        None => home(s, t, cx),
-        Some(chat) => thread(s, t, chat),
+        None => home(s, t),
+        Some(chat) => open(s, t, chat),
     }
 }
 
-fn home(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
-    let art = s.warp.element(cx);
-    let title = row().center().child(rich_title(t, &s.data.project));
-    let column = col().key("chat-home").w_full().max_w(800.0).gap(0.0).transition(fade_in()).motion(ENTER)
-        .child(row().center().pb(18.0).child(bot::wisp(104.0)))
-        .child(title.pb(30.0))
-        .child(composer(s, t, EditKey::ChatHome, Target::Wisp, "Ask Codeply anything, or type / for commands", true, false))
-        .child(bento(s, t).mt(14.0));
-    el().w_full().h_full()
-        .child(art)
-        .child(col().w_full().h_full().center().px(24.0).py(40.0).scroll(ScrollSpec { stick_bottom: false }).child(column))
+/// Codex has no menu of its own here: the shell draws the chat "more" menu.
+pub fn menu(_s: &App, _t: &Theme, _id: &str) -> Option<El> {
+    None
 }
 
-/// "What should we build in launch-site?", the project underlined with dots.
-fn rich_title(t: &Theme, project: &str) -> El {
-    let big = ui(30.0, 500.0).tracking(-0.3);
-    row().items_end()
-        .child(text("What should we build in ").font(big).color(t.text))
-        .child(col().child(text(project.to_owned()).font(big).color(t.text))
-            .child(el().w_full().h(2.0).border_sides([2.0, 0.0, 0.0, 0.0], Color::WHITE.alpha(0.5)).border_dash(2.0, 2.0)))
-        .child(text("?").font(big).color(t.text))
-}
-
-fn bento(s: &App, t: &Theme) -> El {
-    // Solid, not frosted: a backdrop blur can need the GPU, and the app stays on the CPU on Windows.
-    let glass = theme::rgba(24, 24, 24, 0.94);
-    let card = |icon: &str, title: &str| {
-        col().padding(0.0).pt(12.0).pb(12.0).px(14.0).fill(glass).border(1.0, t.card_border).radius(theme::R_MD)
-            .child(row().gap(8.0).pb(8.0).center_y().child(ico_s(icon, 16.0, t.faint)).child(text(title.to_owned()).font(ui(13.0, 500.0)).color(t.dim)))
-    };
-    let list = |items: &[(String, String)]| {
-        col().gap(6.0).children(items.iter().map(|(a, b)| {
-            row().gap(8.0).center_y()
-                .child(text(a.clone()).font(ui(13.5, 400.0)).color(t.text).truncate().grow(1.0).min_w(0.0))
-                .child(text(b.clone()).font(tabular(12.0, 400.0)).color(t.faint))
-        }))
-    };
-    let big = |n: &str, unit: &str| {
-        row().gap(6.0).items_end()
-            .child(text(n.to_owned()).font(tabular(28.0, 600.0)).color(t.text))
-            .child(text(unit.to_owned()).font(ui(13.0, 400.0)).color(t.faint).pb(4.0))
-    };
-    // A year of activity: 52 weeks by 7 days of round cells, greener where busier.
-    let dot = |lvl: u8| match lvl {
-        3 => theme::hex("#4cc38a"),
-        2 => theme::hex("#2f8f5b"),
-        1 => theme::hex("#1f5c3d"),
-        _ => theme::hex("#2a2a2a"),
-    };
-    // Cells as the prototype's 52-column grid draws them at this width: about 6.6 pt with 3 pt gaps.
-    let grid = col().gap(3.0).w_full().children((0..7).map(|r| {
-        row().w_full().justify_between().children((0..52).map(|c| {
-            let lvl = s.data.activity.get(r * 52 + c).copied().unwrap_or(0);
-            el().size(6.6, 6.6).radius(3.3).fill(dot(lvl))
-        }))
+fn home(s: &App, t: &Theme) -> El {
+    let suggestions = col().w_full().pb(20.0).children(s.data.extra.suggestions.iter().enumerate().map(|(i, (icon, label))| {
+        let value = label.clone();
+        enter(
+            row().key(format!("suggestion/{i}")).w_full().min_h(40.0).px(12.0).py(8.0).gap(12.0).radius(10.0).center_y()
+                .hover(t.hover).role("button").label(label.clone())
+                .child(ico_s(icon, 16.0, t.dim))
+                .child(text(label.clone()).font(ui(14.0, 400.0)).color(t.dim).truncate().grow(1.0).min_w(0.0))
+                .on_press(move |s: &mut App| {
+                    s.edit_mut(EditKey::ChatHome).replace_text(value.clone());
+                }),
+            i,
+        )
     }));
-    let activity = card("chart", "Activity").child(grid)
-        .child(row().pt(8.0).justify_between()
-            .child(text("38 active days · 77.8m tokens").font(ui(12.0, 400.0)).color(t.faint))
-            .child(text("Last 12 months").font(ui(12.0, 400.0)).color(t.faint)));
-    let prs: Vec<(String, String)> = vec![("Pricing page for launch-site".into(), "2 h".into()), ("Admin dashboard: progress".into(), "7 d".into())];
-    let third = |e: El| e.grow(1.0).w(0.0);
-    col().gap(10.0).w_full()
-        .child(row().gap(10.0).items_stretch()
-            .child(activity.grow(2.0).w(0.0))
-            .child(third(card("history", "Recent chats").child(list(&s.data.recent)))))
-        .child(row().gap(10.0).items_stretch()
-            .child(third(card("gauge", "Total").child(big("77.8m", "tokens"))))
-            .child(third(card("branch", "Pull requests").child(list(&prs))))
-            .child(third(card("calendar", "This month").child(big("23", "chats")))))
+    let column = col().key("chat-home").w_full().max_w(720.0).transition(fade_in()).motion(ENTER)
+        .child(row().center().pb(16.0).child(bot::wisp(40.0)))
+        .child(row().center().pb(28.0).child(text("What should we build?").font(ui(28.0, 500.0)).color(t.text)))
+        .child(suggestions)
+        .child(composer(s, t, EditKey::ChatHome, Target::New, "Ask Codeply anything. @ to use plugins", true, false))
+        .child(row().center().pt(12.0)
+            .child(text(format!("Runs on {}", s.data.extra.engine)).font(ui(12.5, 400.0)).color(t.faint)));
+    col().w_full().h_full().center().px(24.0).py(40.0).scroll(ScrollSpec { stick_bottom: false }).child(column)
 }
 
-/// The engine asks before it acts: what it wants to do, and three answers.
-fn approval(t: &Theme, id: &str, title: &str, detail: &str, answer: Option<&str>) -> El {
-    let button = |label: &str, verdict: &'static str, kind: ButtonKind| {
-        let id = id.to_owned();
-        btn(t, label, None, kind).key(format!("approve/{id}/{verdict}")).on_press(move |s: &mut App| s.answer(&id, verdict))
-    };
-    let mut c = col().my(10.0).padding(14.0).gap(8.0).radius(theme::R_MD).fill(t.card).border(1.0, t.card_border)
-        .child(row().gap(8.0).center_y().child(ico_s("shield-check", 16.0, t.warn)).child(text(title.to_owned()).font(ui(14.0, 600.0)).color(t.text)))
-        .children((!detail.is_empty()).then(|| text(detail.to_owned()).font(theme::mono(12.5, 18.0)).color(t.dim).wrap()));
-    c = match answer {
-        None => c.child(row().gap(8.0)
-            .child(button("Allow once", "once", ButtonKind::Blue))
-            .child(button("Always allow", "always", ButtonKind::Plain))
-            .child(button("Don't allow", "reject", ButtonKind::Plain))),
-        Some(v) => c.child(text(match v { "once" => "Allowed once", "always" => "Always allowed", _ => "Not allowed" }).font(ui(12.5, 400.0)).color(t.faint)),
-    };
-    c
-}
-
-fn thread(s: &App, t: &Theme, chat: &str) -> El {
-    let items = s.data.thread(chat);
-    let mut body = col().w_full().max_w(820.0).px(24.0).pt(24.0).pb(160.0);
-    for (i, item) in items.iter().enumerate() {
-        let e = match item {
-            ThreadItem::Stamp(x) => row().center().mt(8.0).mb(16.0).child(text(x.clone()).font(ui(12.0, 400.0)).color(t.faint)),
-            // `.msg .b { max-width: 74% }`: bubbles shrink and wrap inside the thread's column.
-            ThreadItem::You(x) => row().w_full().justify_end().my(8.0)
-                .child(el().max_w(570.0).shrink().px(15.0).py(10.0).radius(20.0).fill(t.bubble).child(text(x.clone()).font(ui(14.0, 400.0).lh(21.0)).color(t.text).wrap().shrink().min_w(0.0))),
-            ThreadItem::Them(x) => row().w_full().my(8.0)
-                .child(text(x.clone()).font(ui(14.0, 400.0).lh(21.0)).color(t.text).wrap().max_w(570.0).shrink().min_w(0.0).pl(2.0).py(10.0)),
-            ThreadItem::Team { text: x, agents } => {
-                let mut r = row().center().gap(6.0).my(14.0).child(text(x.clone()).font(ui(13.0, 400.0)).color(t.dim));
-                for (k, id) in agents.iter().enumerate() {
-                    if let Some(a) = s.data.agent(id) {
-                        if k + 1 == agents.len() {
-                            r = r.child(text("and").font(ui(13.0, 400.0)).color(t.dim));
-                        }
-                        r = r.child(bot::agent(a, 18.0)).child(text(a.name.clone()).font(ui(13.0, 400.0)).color(t.dim));
-                    }
-                }
-                r
-            }
-            ThreadItem::Event { icon, text: x } => row().center().gap(6.0).my(14.0)
-                .child(ico_s(icon, 16.0, t.dim)).child(rich_text(x, 13.0, t.dim, t.text)),
-            ThreadItem::Approval { id, title, detail, answer } => approval(t, id, title, detail, answer.as_deref()),
-        };
-        body = body.child(enter(e, i));
-    }
-    let dock = col().pin(Some(0.0), None, Some(0.0), Some(0.0)).px(24.0).pt(12.0).pb(20.0).items_center()
-        .linear_gradient(std::f32::consts::PI, [(0.0, t.bg.alpha(0.0)), (0.3, t.bg), (1.0, t.bg)])
-        .child(el().w_full().max_w(820.0).child(composer(s, t, EditKey::ChatThread, Target::Chat(chat.to_owned()), "Message Wisp", false, false)));
-    el().w_full().h_full()
-        .child(col().key("thread").w_full().h_full().items_center().scroll(ScrollSpec { stick_bottom: true }).child(body))
-        .child(dock)
+fn open(s: &App, t: &Theme, chat: &str) -> El {
+    let project = s.data.chat(chat).map(|c| c.project.clone()).unwrap_or_default();
+    let menu_id = format!("chat:{chat}");
+    let menu_open = s.menu.as_deref() == Some(menu_id.as_str());
+    // The sidebar's row for this chat owns the key `chat-more/{title}` the shell anchors its menu
+    // to, so the header's button has its own key.
+    let more = ibtn(t, "more", "More").key(format!("chat-head-more/{chat}"))
+        .fill(if menu_open { t.active } else { rune::Color::TRANSPARENT })
+        .on_press(move |s: &mut App| s.toggle_menu(&menu_id));
+    let header = row().w_full().h(48.0).px(20.0).gap(10.0).center_y().border_sides([0.0, 0.0, 1.0, 0.0], t.border)
+        .child(text(chat.to_owned()).font(ui(14.5, 600.0)).color(t.text).truncate().shrink().min_w(0.0))
+        .children((!project.is_empty()).then(|| text(project).font(ui(13.0, 400.0)).color(t.faint).truncate().shrink().min_w(0.0)))
+        .child(el().grow(1.0))
+        .child(ibtn(t, "external", "Share").key("chat-share"))
+        .child(more);
+    col().w_full().h_full()
+        .child(header)
+        .child(el().w_full().grow(1.0).min_h(0.0).child(crate::thread::with_composer(
+            s, t, chat, "Wisp", EditKey::ChatThread, Target::Chat(String::new()), "Ask for follow-up changes", 780.0,
+        )))
 }

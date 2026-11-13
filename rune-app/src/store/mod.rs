@@ -17,8 +17,10 @@ pub enum Target {
     Wisp,
     /// One helper agent, from its drawer or the Code agent pane.
     Agent(String),
-    /// An open chat.
+    /// An open chat (empty: the one on screen).
     Chat(String),
+    /// A new chat, from "What should we build?". It opens once the engine has made it.
+    New,
 }
 
 pub trait Store {
@@ -39,4 +41,12 @@ pub trait Store {
     }
     /// Gives the store a way to wake the UI thread when data arrives off it.
     fn set_waker(&mut self, _waker: rune::Waker) {}
+    /// Stops the reply being written in a chat (by title).
+    fn abort(&mut self, _chat: &str) {}
+    /// Settings that change how the engine works (when it asks before acting, the effort).
+    fn configure(&mut self, _prefs: &crate::prefs::Prefs) {}
+    /// A chat the store made that should open now (a new chat's title, once it has one).
+    fn take_focus(&mut self) -> Option<String> {
+        None
+    }
 }
