@@ -85,18 +85,19 @@ pub fn domain_of(slug: &str) -> Option<&'static str> {
     })
 }
 
-/// An app's logo in its own colours, on the rounded tile, as the Electron app shows it: the
-/// app's icon URL, else its domain's icon (Google's favicon service, 128 px), loaded once and
-/// cached. Behind it sits the app's first letter, which shows until the logo lands, or for good
-/// when there is none.
+/// An app's logo in its own colours, as the Electron app shows it: the app's icon URL, else its
+/// domain's icon (Google's favicon service, 128 px), loaded once and cached. Once it lands the
+/// logo is the whole rounded tile; until then, or for good when there is none, the tile shows
+/// the app's first letter.
 pub fn app_logo(name: &str, domain: &str, icon_url: &str, tile: Color, border: Color, ink: Color) -> El {
-    let letter = name.trim().chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_else(|| "?".into());
-    let image = crate::favicon::app_logo(domain, icon_url).map(|px| {
-        el().absolute(7.0, 7.0).size(20.0, 20.0).radius(5.0).pixels_fit(&px, rune::SurfaceFit::Fit).inert()
-    });
-    el().size(34.0, 34.0).radius(9.0).fill(tile).border(1.0, border).center()
-        .child(rune::text(letter).font(crate::theme::ui(14.0, 650.0)).color(ink.alpha(0.55)))
-        .children(image)
+    match crate::favicon::app_logo(domain, icon_url) {
+        Some(px) if px.size().0 > 0 => el().size(34.0, 34.0).radius(9.0).clip_rounded(9.0).pixels_fit(&px, rune::SurfaceFit::Fill).inert(),
+        _ => {
+            let letter = name.trim().chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_else(|| "?".into());
+            el().size(34.0, 34.0).radius(9.0).fill(tile).border(1.0, border).center()
+                .child(rune::text(letter).font(crate::theme::ui(14.0, 650.0)).color(ink.alpha(0.55)))
+        }
+    }
 }
 
 #[cfg(test)]

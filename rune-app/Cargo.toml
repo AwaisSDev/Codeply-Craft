@@ -29,6 +29,10 @@ serde_json = "1"
 ureq = { version = "2", default-features = false, features = ["json", "tls"], optional = true }
 # Site icons for links in chats (favicon.rs).
 png = "0.18"
+# App and site icons in the formats catalogues serve (favicon.rs): the same image and resvg
+# builds Rune already links, so they add nothing to the exe.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
+resvg = { version = "0.45", default-features = false }
 
 # The exe's icon (build.rs): the logo SVG rendered to an .ico and embedded.
 [build-dependencies]

@@ -723,6 +723,7 @@ impl App {
     }
 
     pub fn set_waker(&mut self, waker: rune::Waker) {
+        crate::favicon::set_waker(waker.clone());
         self.browser.set_waker(waker.clone());
         self.store.set_waker(waker);
     }
@@ -741,6 +742,8 @@ impl App {
         if changed {
             apply_looks(&mut self.data, &self.prefs);
         }
+        // An app's logo landed: its tile swaps its letter for the logo.
+        changed |= crate::favicon::take_landed();
         // A chat the store made for you (a new chat from "What should we build?") opens itself.
         if let Some(title) = self.store.take_focus() {
             if self.view == View::Chat && self.chat.is_none() {
