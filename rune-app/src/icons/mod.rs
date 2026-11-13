@@ -28,7 +28,7 @@ static APPROVE_ASK: Icon = Icon {
 static APPROVE_FULL: Icon = Icon {
     name: "approve-full",
     view: 24.0,
-    body: r#"<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.4 19.6 5.3a1.2 1.2 0 0 1 .78 1.12V11.6c0 5.05-3.42 9.2-8.38 10.4C7.04 20.8 3.62 16.65 3.62 11.6V6.42a1.2 1.2 0 0 1 .78-1.12Z"/></g><path d="M12 7.4v5.4" fill="none" stroke="#F5A524" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="16.3" r="1.35" fill="#F5A524"/>"#,
+    body: r##"<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.4 19.6 5.3a1.2 1.2 0 0 1 .78 1.12V11.6c0 5.05-3.42 9.2-8.38 10.4C7.04 20.8 3.62 16.65 3.62 11.6V6.42a1.2 1.2 0 0 1 .78-1.12Z"/></g><path d="M12 7.4v5.4" fill="none" stroke="#F5A524" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="16.3" r="1.35" fill="#F5A524"/>"##,
 };
 
 fn find(name: &str) -> &'static Icon {
