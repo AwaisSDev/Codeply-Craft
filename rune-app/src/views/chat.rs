@@ -4,7 +4,6 @@
 use rune::{Cx, El, ScrollSpec, col, el, row, text};
 
 use crate::app::{App, EditKey, Pane};
-use crate::bot;
 use crate::icons::{ico, ico_s};
 use crate::model::ChatMeta;
 use crate::store::Target;
