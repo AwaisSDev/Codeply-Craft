@@ -13,7 +13,7 @@ use std::cell::{Cell, RefCell};
 use rune::{Live, Pixels, Tx};
 
 use crate::bot::rgb;
-use crate::model::{AgentState, Gear, Snapshot};
+use crate::model::{AgentState, Face, Gear, Look, Shape, Snapshot};
 use crate::views::warp::upscale;
 
 pub const W: u32 = 300;
@@ -452,8 +452,16 @@ pub fn label_at(r: &Room) -> (f32, f32) {
 
 // ---------- bots ----------
 
-/// The hexagon, one span per row (16 wide, 14 tall): flat top and bottom, points at the sides.
+/// Each silhouette, one span per row (16 wide, 14 tall).
+/// The hexagon: flat top and bottom, points at the sides.
 const HEX_ROWS: [(i32, i32); 14] = [(5, 10), (3, 12), (3, 12), (2, 13), (2, 13), (1, 14), (0, 15), (0, 15), (1, 14), (2, 13), (2, 13), (3, 12), (3, 12), (5, 10)];
+/// The soft round blob.
+const ROUND_ROWS: [(i32, i32); 14] = [(5, 10), (3, 12), (2, 13), (1, 14), (1, 14), (0, 15), (0, 15), (0, 15), (0, 15), (1, 14), (1, 14), (2, 13), (3, 12), (5, 10)];
+/// The squircle.
+const SQUARE_ROWS: [(i32, i32); 14] = [(3, 12), (1, 14), (0, 15), (0, 15), (0, 15), (0, 15), (0, 15), (0, 15), (0, 15), (0, 15), (0, 15), (0, 15), (1, 14), (3, 12)];
+
+const INK: u32 = 0x141416;
+const INK_HI: u32 = 0x55555e;
 
 /// One frame of an actor: what the bot does and which frame of its loop it is on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -464,8 +472,8 @@ pub struct Pose {
     pub left: bool,
 }
 
-/// Draws an actor: the bot at its pose, with its accessory and its state's effects.
-pub fn render_actor(color: &str, gear: Gear, pose: Pose) -> Canvas {
+/// Draws an actor: the bot at its pose, in its look, with its state's effects.
+pub fn render_actor(color: &str, look: &Look, pose: Pose) -> Canvas {
     let mut cv = Canvas::new(ACTOR_W, ACTOR_H);
     let base = rgb(color);
     let f = pose.frame;
@@ -479,10 +487,15 @@ pub fn render_actor(color: &str, gear: Gear, pose: Pose) -> Canvas {
         AgentState::Sleeping => oy += 1,
         _ => {}
     }
+    let rows = match look.shape {
+        Shape::Hex => &HEX_ROWS,
+        Shape::Round => &ROUND_ROWS,
+        Shape::Square => &SQUARE_ROWS,
+    };
     let edge = shade(base, 0.62);
     let light = mix(base, [255, 255, 255], 0.28);
     let dark = shade(base, 0.82);
-    for (row, (a, b)) in HEX_ROWS.iter().enumerate() {
+    for (row, (a, b)) in rows.iter().enumerate() {
         let r = row as i32;
         let dx = if r < 7 { lean } else { 0 };
         // Breathing while asleep: the body is a row shorter on the out-breath.
@@ -500,101 +513,158 @@ pub fn render_actor(color: &str, gear: Gear, pose: Pose) -> Canvas {
             cv.set(ox + x + dx, oy + r, p);
         }
     }
-    // Eyes: pill eyes, a little left of centre. They say the state.
-    let white = [255, 255, 255];
+    eyes_pixels(&mut cv, look.face, pose, ox + lean, oy, base);
+    for g in &look.gear {
+        gear_pixels(&mut cv, *g, ox + lean, oy);
+    }
+    effects(&mut cv, pose, ox, oy);
+    cv
+}
+
+/// The eyes, a little left of centre. They say the state; the face says the character.
+fn eyes_pixels(cv: &mut Canvas, face: Face, pose: Pose, ox: i32, oy: i32, base: Rgb) {
+    let f = pose.frame;
+    let (white, ink) = ([255, 255, 255], c(INK));
+    let tone = if face == Face::Pill { white } else { ink };
     let look = match pose.state {
         AgentState::Working => [0, -1, 0, 1, 0, 0][((f / 4) % 6) as usize],
         AgentState::Walking => if pose.left { -1 } else { 1 },
         _ => 0,
     };
-    let eye_x = [ox + 5 + look + lean, ox + 9 + look + lean];
+    let googly = face == Face::Googly;
+    let xs = if googly { [ox + 3, ox + 9] } else { [ox + 5, ox + 9] };
+    let blink = pose.state == AgentState::Idle && f % 37 == 36;
+    // A closed, content eye: a small U.
+    let arc = |cv: &mut Canvas, x: i32, p: Rgb| {
+        cv.set(x - 1, oy + 6, p);
+        cv.rect(x, oy + 7, 2, 1, p);
+        cv.set(x + 2, oy + 6, p);
+    };
     match pose.state {
         AgentState::Thinking => {
             for (i, x) in [ox + 4, ox + 7, ox + 10].iter().enumerate() {
                 let up = (f + 3 - i as u32).is_multiple_of(4) as i32;
-                cv.rect(*x, oy + 6 - up, 2, 2, white);
+                cv.rect(*x, oy + 6 - up, 2, 2, tone);
             }
         }
         AgentState::Sleeping => {
-            for x in eye_x {
-                cv.rect(x, oy + 7, 2, 1, mix(base, white, 0.75));
+            for x in xs {
+                arc(cv, x + googly as i32, if face == Face::Pill { mix(base, white, 0.75) } else { ink });
             }
         }
-        AgentState::Waiting => {
-            for x in eye_x {
-                cv.rect(x, oy + 6, 2, 2, white);
+        _ if face == Face::Content || blink => {
+            for x in xs {
+                arc(cv, x + googly as i32, tone);
             }
         }
-        AgentState::Idle if f % 37 == 36 => {
-            for x in eye_x {
-                cv.rect(x, oy + 7, 2, 1, white);
-            }
-        }
-        _ => {
-            for x in eye_x {
-                cv.rect(x, oy + 5, 2, 3, white);
+        state => {
+            let half = state == AgentState::Waiting;
+            for x in xs {
+                let x = x + look;
+                match face {
+                    Face::Pill => cv.rect(x, oy + 5 + 2 * half as i32, 2, 3 - half as i32, white),
+                    Face::Glossy => {
+                        cv.rect(x, oy + 5 + half as i32, 2, 3 - half as i32, ink);
+                        cv.set(x, oy + 5 + half as i32, c(0xd8d8de));
+                    }
+                    _ => {
+                        // Googly: a 3 x 3 white eyeball, its pupil low and toward where it looks.
+                        cv.rect(x, oy + 4 + half as i32, 3, 3 - half as i32, white);
+                        cv.rect(x + 1, oy + 5 + half as i32, 2, 2 - half as i32, ink);
+                    }
+                }
             }
         }
     }
-    gear_pixels(&mut cv, gear, ox + lean, oy);
-    effects(&mut cv, pose, ox, oy);
-    cv
 }
 
 fn gear_pixels(cv: &mut Canvas, gear: Gear, ox: i32, oy: i32) {
-    let dark = c(0x1b2238);
+    let (ink, hi) = (c(INK), c(INK_HI));
     match gear {
-        Gear::None => {}
         Gear::Beret => {
-            let (p, hi, lo) = (c(0xff3d6e), c(0xff7aa0), c(0xb8264d));
-            cv.rect(ox + 4, oy - 2, 9, 2, p);
-            cv.rect(ox + 3, oy - 1, 11, 1, p);
-            cv.rect(ox + 5, oy - 3, 6, 1, p);
-            cv.rect(ox + 5, oy - 3, 3, 1, hi);
-            cv.rect(ox + 3, oy, 11, 1, lo);
-            cv.set(ox + 8, oy - 4, p);
+            // A felt disc tipped to the left, with its stalk.
+            cv.set(ox + 9, oy - 5, ink);
+            cv.rect(ox + 4, oy - 4, 8, 1, ink);
+            cv.rect(ox + 2, oy - 3, 12, 1, ink);
+            cv.rect(ox + 1, oy - 2, 13, 1, ink);
+            cv.rect(ox + 2, oy - 1, 11, 1, ink);
+            cv.rect(ox + 5, oy - 3, 4, 1, hi);
+        }
+        Gear::Bow => {
+            // Two rounded lobes and a knot, under the chin.
+            for (x0, x1) in [(ox + 3, ox + 6), (ox + 9, ox + 12)] {
+                cv.rect(x0 + 1, oy + 10, 2, 1, ink);
+                cv.rect(x0, oy + 11, x1 - x0 + 1, 2, ink);
+                cv.rect(x0 + 1, oy + 13, 2, 1, ink);
+                cv.set(x0 + 1, oy + 11, hi);
+            }
+            cv.rect(ox + 7, oy + 11, 2, 2, ink);
         }
         Gear::Headphones => {
-            let (p, hi) = (c(0x2a3047), c(0x4a5373));
-            cv.rect(ox + 2, oy - 2, 12, 1, p);
-            cv.set(ox + 1, oy - 1, p);
-            cv.set(ox + 14, oy - 1, p);
-            cv.rect(ox, oy, 1, 4, p);
-            cv.rect(ox + 15, oy, 1, 4, p);
-            cv.rect(ox - 1, oy + 4, 3, 5, p);
-            cv.rect(ox + 14, oy + 4, 3, 5, p);
-            cv.set(ox - 1, oy + 4, hi);
-            cv.set(ox + 14, oy + 4, hi);
+            cv.rect(ox + 2, oy - 2, 12, 1, ink);
+            cv.set(ox + 1, oy - 1, ink);
+            cv.set(ox + 14, oy - 1, ink);
+            cv.rect(ox, oy, 1, 4, ink);
+            cv.rect(ox + 15, oy, 1, 4, ink);
+            cv.rect(ox - 1, oy + 4, 3, 5, ink);
+            cv.rect(ox + 14, oy + 4, 3, 5, ink);
+            cv.set(ox - 1, oy + 5, hi);
+            cv.set(ox + 14, oy + 5, hi);
+            cv.rect(ox + 4, oy - 2, 3, 1, hi);
         }
         Gear::Glasses => {
-            for x in [ox + 4, ox + 8] {
-                cv.frame(x, oy + 4, 4, 5, dark);
-            }
-            cv.set(ox + 12, oy + 6, dark);
-            cv.set(ox + 3, oy + 6, dark);
+            cv.frame(ox + 3, oy + 4, 5, 5, ink);
+            cv.frame(ox + 8, oy + 4, 5, 5, ink);
+            cv.set(ox + 2, oy + 5, ink);
+            cv.set(ox + 13, oy + 5, ink);
+        }
+        Gear::Shades => {
+            cv.rect(ox + 3, oy + 5, 4, 3, ink);
+            cv.rect(ox + 9, oy + 5, 4, 3, ink);
+            cv.rect(ox + 7, oy + 5, 2, 1, ink);
+            cv.set(ox + 4, oy + 5, hi);
+            cv.set(ox + 10, oy + 5, hi);
         }
         Gear::Sprout => {
-            let (stem, leaf, hi) = (c(0x1fa855), c(0x22c55e), c(0x6fe39a));
+            let (stem, leaf, lit) = (c(0x1f9d4f), c(0x22c55e), c(0x6fe39a));
             cv.rect(ox + 8, oy - 3, 1, 3, stem);
             cv.rect(ox + 5, oy - 4, 3, 1, leaf);
             cv.rect(ox + 6, oy - 3, 2, 1, leaf);
             cv.rect(ox + 9, oy - 5, 3, 1, leaf);
             cv.rect(ox + 9, oy - 4, 2, 1, leaf);
-            cv.set(ox + 10, oy - 5, hi);
+            cv.set(ox + 10, oy - 5, lit);
         }
-        Gear::Antennae => {
-            cv.set(ox + 5, oy - 1, dark);
-            cv.set(ox + 4, oy - 2, dark);
-            cv.set(ox + 10, oy - 1, dark);
-            cv.set(ox + 11, oy - 2, dark);
-            cv.rect(ox + 3, oy - 4, 2, 2, c(0xffcf2e));
-            cv.rect(ox + 11, oy - 4, 2, 2, c(0xffcf2e));
+        Gear::Flower => {
+            let (petal, heart) = (c(0xffffff), c(0xffc83d));
+            for (dx, dy) in [(0, -1), (-1, 0), (1, 0), (0, 1), (-1, -1), (1, 1)] {
+                cv.set(ox + 3 + dx, oy - 1 + dy, petal);
+            }
+            cv.set(ox + 3, oy - 1, heart);
+        }
+        Gear::Star => {
+            let (star, lit) = (c(0xffcf2e), c(0xfff0a0));
+            cv.set(ox + 3, oy - 4, star);
+            cv.rect(ox + 2, oy - 3, 3, 1, star);
+            cv.rect(ox + 1, oy - 2, 5, 1, star);
+            cv.rect(ox + 2, oy - 1, 3, 1, star);
+            cv.set(ox + 2, oy, star);
+            cv.set(ox + 4, oy, star);
+            cv.set(ox + 3, oy - 3, lit);
         }
         Gear::Cap => {
-            cv.rect(ox + 4, oy - 2, 8, 2, dark);
-            cv.rect(ox + 3, oy, 13, 1, dark);
-            cv.rect(ox + 5, oy - 3, 5, 1, dark);
-            cv.set(ox + 6, oy - 3, c(0x3a4466));
+            let (cap, brim) = (c(0x3d6ff0), c(0x2147c0));
+            cv.rect(ox + 5, oy - 3, 6, 1, cap);
+            cv.rect(ox + 4, oy - 2, 8, 2, cap);
+            cv.rect(ox + 10, oy, 6, 1, brim);
+            cv.set(ox + 7, oy - 4, brim);
+        }
+        Gear::Antennae => {
+            cv.set(ox + 5, oy - 1, ink);
+            cv.set(ox + 4, oy - 2, ink);
+            cv.set(ox + 10, oy - 1, ink);
+            cv.set(ox + 11, oy - 2, ink);
+            cv.rect(ox + 3, oy - 4, 2, 2, c(0xffcf2e));
+            cv.rect(ox + 11, oy - 4, 2, 2, c(0xffcf2e));
         }
     }
 }
@@ -767,7 +837,7 @@ impl OfficeArt {
             self.actor(&a.id, |actor| {
                 if actor.last.get() != Some((pose, k)) {
                     actor.last.set(Some((pose, k)));
-                    let cv = render_actor(&a.color, a.gear, pose);
+                    let cv = render_actor(&a.color, &a.look, pose);
                     actor.pixels.set(ACTOR_W * k, ACTOR_H * k, upscale(&cv.px, ACTOR_W, ACTOR_H, k));
                 }
                 actor.offset.set(offset);
@@ -814,11 +884,13 @@ mod tests {
     #[test]
     fn a_working_bot_hops_and_a_sleeping_one_breathes() {
         let pose = |state, frame| Pose { state, frame, left: false };
-        let a = render_actor("#ff5c9d", Gear::Beret, pose(AgentState::Working, 0)).px;
-        let b = render_actor("#ff5c9d", Gear::Beret, pose(AgentState::Working, 2)).px;
+        let beret = Look::new(Shape::Round, Face::Glossy, &[Gear::Beret]);
+        let a = render_actor("#ff5c9d", &beret, pose(AgentState::Working, 0)).px;
+        let b = render_actor("#ff5c9d", &beret, pose(AgentState::Working, 2)).px;
         assert_ne!(a, b);
-        let z0 = render_actor("#7b5cff", Gear::Sprout, pose(AgentState::Sleeping, 0)).px;
-        let z1 = render_actor("#7b5cff", Gear::Sprout, pose(AgentState::Sleeping, 5)).px;
+        let sprout = Look::new(Shape::Round, Face::Googly, &[Gear::Sprout]);
+        let z0 = render_actor("#7b5cff", &sprout, pose(AgentState::Sleeping, 0)).px;
+        let z1 = render_actor("#7b5cff", &sprout, pose(AgentState::Sleeping, 5)).px;
         assert_ne!(z0, z1, "the z's drift");
     }
 

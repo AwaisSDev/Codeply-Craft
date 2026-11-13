@@ -12,8 +12,8 @@ fn s(v: &str) -> String {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn agent(id: &str, name: &str, color: &str, gear: Gear, role: &str, state: AgentState, place: &str, action: &str, status: &str, pos: (f32, f32)) -> Agent {
-    Agent { id: s(id), name: s(name), color: s(color), gear, role: s(role), state, place: s(place), action: s(action), status: s(status), pos }
+fn agent(id: &str, name: &str, color: &str, look: Look, role: &str, state: AgentState, place: &str, action: &str, status: &str, pos: (f32, f32)) -> Agent {
+    Agent { id: s(id), name: s(name), color: s(color), look, role: s(role), state, place: s(place), action: s(action), status: s(status), pos }
 }
 
 fn step(t: &str) -> Block {
@@ -46,12 +46,12 @@ pub fn activity() -> Vec<u8> {
 pub fn sample() -> Snapshot {
     use AgentState::*;
     let team = vec![
-        agent("wisp", "Wisp", "#2f6bff", Gear::None, "Your agent", Idle, "At the lead desk", "Watching your day. Brief at 6:00", "Watching your day. Brief at 6:00", (760.0, 214.0)),
-        agent("frontend", "Frontend", "#ff5c9d", Gear::Beret, "Claude Code", Working, "Studio", "Editing pricing.html, +42 lines", "Building the pricing page", (170.0, 214.0)),
-        agent("backend", "Backend", "#ff8a1a", Gear::Headphones, "Claude Code", Thinking, "Kitchen", "Thinking about plan limits over coffee", "Thinking about plan limits", (1050.0, 124.0)),
-        agent("inbox", "Inbox", "#1fc75f", Gear::Glasses, "Mail", Waiting, "Needs you", "Waiting for your OK on 1 reply", "Needs your OK on 1 reply", (300.0, 588.0)),
-        agent("research", "Research", "#7b5cff", Gear::Sprout, "Web", Sleeping, "Lounge", "Asleep. Finished the venue search 1h ago", "4 venues for Friday", (780.0, 600.0)),
-        agent("docs", "Docs", "#4fb3ff", Gear::Antennae, "Claude Code", Walking, "Hallway", "Walking to the kitchen. Next: README after PR #44", "README after PR #44", (430.0, 340.0)),
+        agent("wisp", "Wisp", "#2f6bff", Look::new(Shape::Hex, Face::Pill, &[]), "Your agent", Idle, "At the lead desk", "Watching your day. Brief at 6:00", "Watching your day. Brief at 6:00", (760.0, 214.0)),
+        agent("frontend", "Frontend", "#ff5c9d", Look::new(Shape::Round, Face::Glossy, &[Gear::Beret]), "Claude Code", Working, "Studio", "Editing pricing.html, +42 lines", "Building the pricing page", (170.0, 214.0)),
+        agent("backend", "Backend", "#ff8a1a", Look::new(Shape::Square, Face::Glossy, &[Gear::Headphones]), "Claude Code", Thinking, "Kitchen", "Thinking about plan limits over coffee", "Thinking about plan limits", (1050.0, 124.0)),
+        agent("inbox", "Inbox", "#1fc75f", Look::new(Shape::Hex, Face::Content, &[Gear::Glasses, Gear::Bow]), "Mail", Waiting, "Needs you", "Waiting for your OK on 1 reply", "Needs your OK on 1 reply", (300.0, 588.0)),
+        agent("research", "Research", "#7b5cff", Look::new(Shape::Round, Face::Googly, &[Gear::Sprout]), "Web", Sleeping, "Lounge", "Asleep. Finished the venue search 1h ago", "4 venues for Friday", (780.0, 600.0)),
+        agent("docs", "Docs", "#4fb3ff", Look::new(Shape::Square, Face::Googly, &[Gear::Star]), "Claude Code", Walking, "Hallway", "Walking to the kitchen. Next: README after PR #44", "README after PR #44", (430.0, 340.0)),
     ];
 
     let sessions = vec![

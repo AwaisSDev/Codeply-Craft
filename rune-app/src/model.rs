@@ -25,18 +25,58 @@ impl AgentState {
     }
 }
 
-/// The one small accessory each helper wears, so it reads at sidebar size.
+/// A helper's silhouette. Wisp is the hexagon; helpers are a hexagon, a soft round blob or a
+/// squircle, so the team reads as one family with Wisp at its head.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Shape {
+    Hex,
+    Round,
+    Square,
+}
+
+/// The eyes a helper has at rest. Its state still changes them (dots while thinking, shut asleep).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Face {
+    /// Wisp's white pill eyes.
+    Pill,
+    /// Glossy black pills with a glint.
+    Glossy,
+    /// White eyeballs with a shaded pupil and a glint.
+    Googly,
+    /// Closed, content arcs.
+    Content,
+}
+
+/// Accessories, drawn as finished objects: glossy black for the dark ones, with a soft shadow and
+/// a sheen, so each helper is recognisable at sidebar size.
+/// Not every accessory is worn by a sample agent; all are drawn and tested.
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Gear {
-    None,
     Beret,
+    Bow,
     Headphones,
     Glasses,
+    Shades,
     Sprout,
-    Antennae,
-    /// Drawn like the others; no sample agent wears it yet.
-    #[allow(dead_code)]
+    Flower,
+    Star,
     Cap,
+    Antennae,
+}
+
+/// How a helper looks: its silhouette, eyes and accessories (up to two, like a bow with glasses).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Look {
+    pub shape: Shape,
+    pub face: Face,
+    pub gear: Vec<Gear>,
+}
+
+impl Look {
+    pub fn new(shape: Shape, face: Face, gear: &[Gear]) -> Look {
+        Look { shape, face, gear: gear.to_vec() }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -45,7 +85,7 @@ pub struct Agent {
     pub name: String,
     /// `#rrggbb`. Colour belongs to agents only; interface icons stay monochrome.
     pub color: String,
-    pub gear: Gear,
+    pub look: Look,
     pub role: String,
     pub state: AgentState,
     /// Where in the office: "Studio", "Kitchen", ...
