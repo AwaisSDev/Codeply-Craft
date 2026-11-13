@@ -9,7 +9,17 @@ pub mod pack;
 
 use rune::{Color, El, Icon, el, icon};
 
+/// The rail's Office icon, drawn for Codeply in the OAI set's weight (icons.js has no office).
+static OAI_OFFICE: Icon = Icon {
+    name: "oai-office",
+    view: 24.0,
+    body: r#"<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20.5V6.5A3 3 0 0 1 9 3.5h6a3 3 0 0 1 3 3v14"/><path d="M3.5 20.5h17"/><path d="M10.5 20.5v-3a1.5 1.5 0 0 1 3 0v3"/></g><g fill="currentColor"><rect x="9" y="7" width="2.2" height="2.2" rx="0.6"/><rect x="12.8" y="7" width="2.2" height="2.2" rx="0.6"/><rect x="9" y="11" width="2.2" height="2.2" rx="0.6"/><rect x="12.8" y="11" width="2.2" height="2.2" rx="0.6"/></g>"#,
+};
+
 fn find(name: &str) -> &'static Icon {
+    if name == "oai-office" {
+        return &OAI_OFFICE;
+    }
     pack::get(name).unwrap_or(&pack::CIRCLE)
 }
 

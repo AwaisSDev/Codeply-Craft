@@ -1,0 +1,72 @@
+name: Codeply 4.0 on Rune (Windows)
+
+# Builds the Rune desktop app (rune-app/) for Windows on a Windows runner, with the MSVC toolchain
+# Rust's Windows builds expect, and publishes it to one fixed pre-release so there is always a
+# download link to the newest build. Nothing to install on your PC: download, unzip, run.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [rune-v4]
+    paths:
+      - 'rune-app/**'
+      - '.github/workflows/rune-windows.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rune-windows
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml in rune-app pins the toolchain Rune builds with; rustup installs it.
+      - name: Toolchain
+        working-directory: rune-app
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rune-app/target
+          key: rune-windows-${{ hashFiles('rune-app/Cargo.lock', 'rune-app/rust-toolchain.toml') }}
+          restore-keys: rune-windows-
+
+      - name: Build
+        working-directory: rune-app
+        run: cargo build --release --features live
+
+      - name: Test
+        working-directory: rune-app
+        run: cargo test --release
+
+      - name: Package
+        run: |
+          mkdir -p dist/Codeply-Rune
+          cp rune-app/target/release/codeply.exe dist/Codeply-Rune/Codeply.exe
+          cp rune-app/licenses/* dist/Codeply-Rune/
+          cp rune-app/TRY-IT.txt dist/Codeply-Rune/
+          cd dist && 7z a -tzip Codeply-Rune-windows-x64.zip Codeply-Rune >/dev/null
+          ls -la
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Codeply-Rune-windows-x64
+          path: dist/Codeply-Rune-windows-x64.zip
+
+      - name: Publish to the rune-windows-latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view rune-windows-latest >/dev/null 2>&1 || gh release create rune-windows-latest --prerelease --target "${GITHUB_SHA}" --title "Codeply 4.0 on Rune, Windows (latest test build)" --notes "Test build of the native Rune app from the rune-v4 branch. Unzip and run Codeply.exe. See TRY-IT.txt inside."
+          gh release upload rune-windows-latest dist/Codeply-Rune-windows-x64.zip --clobber

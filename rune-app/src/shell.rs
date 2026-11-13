@@ -25,7 +25,9 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
             col().key("side").w(SIDE).h_full().min_h(0.0).fill(t.side).border_sides([0.0, 1.0, 0.0, 0.0], t.border).child(sd)
         }))
         .child(col().key("main").grow(1.0).h_full().min_w(0.0).min_h(0.0).fill(t.bg).clip_rounded(0.0).child(main));
-    col().key("root").w_full().h_full().fill(t.bg).child(titlebar(s, &t, cx)).child(body)
+    // Popovers attach at the root so they draw above everything and escape clipping.
+    let popover = s.appearance.as_ref().and_then(|id| s.data.agent(id)).map(|a| views::appearance::popover(s, &t, a));
+    col().key("root").w_full().h_full().fill(t.bg).child(titlebar(s, &t, cx)).child(body).children(popover)
 }
 
 fn titlebar(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
@@ -67,7 +69,7 @@ fn titlebar(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
 
 fn rail(s: &App, t: &Theme) -> El {
     let tab = |v: View, icon: &str, label: &'static str, badge: Option<&'static str>| {
-        let on = s.view.tab() == v;
+        let on = s.view == v;
         el().key(format!("rail-{label}")).size(44.0, 44.0).radius(12.0).center().role("tab").label(label).checked(on).help(label).help_side(Side::Right)
             .fill(if on { t.active } else { Color::TRANSPARENT }).hover(t.hover)
             .child(ico(icon, if on { t.text } else { t.faint }))
@@ -79,7 +81,8 @@ fn rail(s: &App, t: &Theme) -> El {
             .on_press(move |s: &mut App| s.go(v))
     };
     col().key("rail").w(RAIL).h_full().py(10.0).gap(4.0).items_center().fill(t.rail).border_sides([0.0, 1.0, 0.0, 0.0], t.border).role("tablist")
-        .child(tab(View::Office, "oai-users", "Office", None))
+        .child(tab(View::Board, "oai-users", "Agents", None))
+        .child(tab(View::Office, "oai-office", "Office", None))
         .child(tab(View::Chat, "oai-chat", "Chat", None))
         .child(tab(View::Code, "code", "Code", None))
         .child(tab(View::Prs, "branch", "Pull requests", Some("3")))

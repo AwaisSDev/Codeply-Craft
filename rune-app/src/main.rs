@@ -1,4 +1,6 @@
 //! Codeply 4.0's native desktop shell, on Rune. See README.md.
+// Windows release builds open as a window app, without a console behind them.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 //!
 //!   codeply                         the window, with the sample data
 //!   codeply --store live            talk to `codeply serve` (build with `--features live`)
@@ -26,6 +28,7 @@ const SCENES: &[Scene] = &[
     ("office-drawer", |s| { s.go(View::Office); s.open_drawer("frontend"); }),
     ("office-inbox", |s| { s.go(View::Office); s.open_drawer("inbox"); }),
     ("board", |s| s.go(View::Board)),
+    ("appearance", |s| { s.go(View::Board); s.toggle_appearance("backend"); }),
     ("chat", |s| s.go(View::Chat)),
     ("chat-thread", |s| { s.go(View::Chat); s.chat = Some("Casual chat".into()); }),
     ("code", |s| s.go(View::Code)),

@@ -42,8 +42,8 @@ fn every_scene_builds_and_lays_out() {
 #[test]
 fn the_rail_switches_views() {
     let mut rt = runtime(App::with_mock());
-    assert_eq!(rt.state.view, View::Office, "Office is the default view");
-    for (key, view) in [("rail-Chat", View::Chat), ("rail-Code", View::Code), ("rail-Pull requests", View::Prs), ("rail-Apps", View::Apps), ("rail-Office", View::Office)] {
+    assert_eq!(rt.state.view, View::Board, "Board (the agents list) is the default view");
+    for (key, view) in [("rail-Office", View::Office), ("rail-Chat", View::Chat), ("rail-Code", View::Code), ("rail-Pull requests", View::Prs), ("rail-Apps", View::Apps), ("rail-Agents", View::Board)] {
         click(&mut rt, key);
         assert_eq!(rt.state.view, view, "{key}");
     }
@@ -51,7 +51,9 @@ fn the_rail_switches_views() {
 
 #[test]
 fn clicking_an_agent_opens_its_drawer_and_escape_closes_it() {
-    let mut rt = runtime(App::with_mock());
+    let mut s = App::with_mock();
+    s.go(View::Office);
+    let mut rt = runtime(s);
     settle(&mut rt);
     click(&mut rt, "agent/research");
     assert_eq!(rt.state.drawer.as_deref(), Some("research"));
@@ -68,7 +70,7 @@ fn the_board_toggle_and_back() {
     let mut rt = runtime(s);
     settle(&mut rt);
     assert!(rt.find("board").is_some());
-    assert!(rt.find("rail-Office").is_some());
+    assert!(rt.find("rail-Office").is_some() && rt.find("rail-Agents").is_some(), "Office and Agents are both rail icons");
 }
 
 #[test]
@@ -84,7 +86,9 @@ fn a_message_from_the_drawer_lands_in_the_session() {
 
 #[test]
 fn the_walker_moves_and_the_office_asks_for_its_next_step() {
-    let mut rt = runtime(App::with_mock());
+    let mut s = App::with_mock();
+    s.go(View::Office);
+    let mut rt = runtime(s);
     settle(&mut rt);
     let start = rt.state.office.actor("docs", |a| a.offset.get());
     for _ in 0..(60 * 4) {
@@ -96,14 +100,18 @@ fn the_walker_moves_and_the_office_asks_for_its_next_step() {
 
 #[test]
 fn picking_a_shape_and_colour_restyles_a_helper() {
-    let mut s = App::with_mock();
-    s.go(View::Settings);
-    let mut rt = runtime(s);
+    let mut rt = runtime(App::with_mock());
     settle(&mut rt);
+    // The row's "more" button opens Appearance; Settings has no pickers.
+    click(&mut rt, "more/backend");
+    assert_eq!(rt.state.appearance.as_deref(), Some("backend"));
     click(&mut rt, "pick-shape/backend/Pebble");
     click(&mut rt, "pick-color/backend/#12b5a5");
     let backend = rt.state.data.agent("backend").map(|a| (a.look.shape, a.color.clone()));
     assert_eq!(backend, Some((crate::model::Shape::Pebble, "#12b5a5".to_owned())));
+    rt.key(KeyEvent { key: Key::Escape, mods: Mods::default() });
+    settle(&mut rt);
+    assert_eq!(rt.state.appearance, None, "Escape closes Appearance");
 }
 
 #[test]

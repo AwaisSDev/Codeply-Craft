@@ -10,21 +10,15 @@ use crate::views::{office_art::OfficeArt, warp::Warp};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum View {
+    /// The agents as a pixel-art office.
     Office,
-    /// The office as a list. The rail shows it as Office.
+    /// The agents as a list ("Mission control"), the default view.
     Board,
     Chat,
     Code,
     Prs,
     Apps,
     Settings,
-}
-
-impl View {
-    /// The rail tab that lights up for this view.
-    pub fn tab(self) -> View {
-        if self == View::Board { View::Office } else { self }
-    }
 }
 
 /// Each composer keeps its own draft.
@@ -64,6 +58,8 @@ pub struct App {
     pub data: Snapshot,
     store: Box<dyn Store>,
     edits: HashMap<EditKey, TextEdit>,
+    /// The agent whose Appearance popover is open (from its "more" button in the Agents list).
+    pub appearance: Option<String>,
     /// The agent whose drawer is open in the Office.
     pub drawer: Option<String>,
     /// The open chat, or the Chat home.
@@ -81,11 +77,12 @@ impl App {
     pub fn new(mut store: Box<dyn Store>) -> App {
         let data = store.load();
         App {
-            view: View::Office,
+            view: View::Board,
             data,
             store,
             edits: EditKey::ALL.iter().map(|&k| (k, TextEdit::new(""))).collect(),
             drawer: None,
+            appearance: None,
             chat: None,
             pr: 44,
             notice: None,
@@ -102,6 +99,7 @@ impl App {
     pub fn go(&mut self, view: View) {
         self.view = view;
         self.drawer = None;
+        self.appearance = None;
         if view == View::Chat {
             self.chat = None;
         }
@@ -124,6 +122,10 @@ impl App {
         if let Some(a) = self.data.team.iter_mut().find(|a| a.id == id) {
             a.look.shape = shape;
         }
+    }
+
+    pub fn toggle_appearance(&mut self, id: &str) {
+        self.appearance = if self.appearance.as_deref() == Some(id) { None } else { Some(id.to_owned()) };
     }
 
     pub fn open_drawer(&mut self, id: &str) {
@@ -177,8 +179,9 @@ impl App {
     }
 
     pub fn key(&mut self, e: &KeyEvent, tx: &mut Tx) -> bool {
-        if matches!(e.key, Key::Escape) && self.drawer.is_some() {
+        if matches!(e.key, Key::Escape) && (self.drawer.is_some() || self.appearance.is_some()) {
             self.drawer = None;
+            self.appearance = None;
             return true;
         }
         if Chord::parse("mod+k").is_ok_and(|c| c.matches_tx(e, tx)) {

@@ -8,7 +8,7 @@ use crate::icons::ico_s;
 use crate::model::{AgentState, Column, Task, TaskBody};
 use crate::store::Target;
 use crate::theme::{self, Theme, ui};
-use crate::ui::{btn, btn_primary, card, composer, enter, heading, me, name_and_line, pill, sec, seg, side_head, side_row};
+use crate::ui::{btn, btn_primary, card, composer, enter, heading, me, name_and_line, pill, sec, side_head, side_row};
 
 pub fn side(s: &App, t: &Theme) -> El {
     let mut list = col().px(8.0).pb(10.0);
@@ -19,8 +19,16 @@ pub fn side(s: &App, t: &Theme) -> El {
     list = list.child(sec(t, None, "Wisp's team", false));
     let helpers = s.data.team.iter().filter(|a| a.id != "wisp" && a.state != AgentState::Walking);
     for (i, a) in helpers.enumerate() {
-        let id = a.id.clone();
-        list = list.child(enter(side_row(t, false).role("button").label(a.name.clone()).child(bot::agent(a, 32.0)).child(name_and_line(t, &a.name, Some(&a.status), 400.0))
+        let (id, more_id) = (a.id.clone(), a.id.clone());
+        let open = s.appearance.as_deref() == Some(a.id.as_str());
+        // "More" opens the agent's Appearance (shape and colour). It shows on hover, or while open.
+        let more = el().key(format!("more/{}", a.id)).size(26.0, 26.0).radius(7.0).center().role("button").label(format!("More for {}", a.name))
+            .help("Appearance").fill(if open { t.active } else { rune::Color::TRANSPARENT }).hover(t.hover)
+            .child(crate::icons::ico_s("more", 16.0, t.dim))
+            .group_opacity(if open { 1.0 } else { 0.0 }, 1.0)
+            .on_press(move |s: &mut App| s.toggle_appearance(&more_id));
+        list = list.child(enter(side_row(t, open).hover_group().role("button").label(a.name.clone()).child(bot::agent(a, 32.0)).child(name_and_line(t, &a.name, Some(&a.status), 400.0))
+            .child(more)
             .on_press(move |s: &mut App| { s.go(View::Office); s.open_drawer(&id); }), i + 1));
     }
     list = list.child(sec(t, None, "Routines", false));
@@ -41,7 +49,6 @@ pub fn main(s: &App, t: &Theme) -> El {
     let head = row().gap(12.0).px(24.0).pt(16.0).pb(12.0).center_y()
         .child(heading(t, "Mission control", Some(format!("Wisp and {helpers} helpers. {working} working, {} needs you, {done} done today.", s.data.count(AgentState::Waiting)))))
         .child(el().grow(1.0))
-        .child(seg(t, &[("Office", false, |s: &mut App| s.go(View::Office)), ("Board", true, |_: &mut App| {})]))
         .child(btn_primary(t, "New task", "plus"));
     let column = |c: Column, icon: &str, title: &str, n: usize| {
         let tasks = s.data.tasks.iter().filter(|(k, _)| *k == c).enumerate().map(|(i, (_, task))| enter(task_card(s, t, task), i));

@@ -1,6 +1,7 @@
 //! The five views (plus Board, the Office as a list). Each returns its sidebar, if it has one,
 //! and its main area.
 
+pub mod appearance;
 pub mod apps;
 pub mod board;
 pub mod chat;

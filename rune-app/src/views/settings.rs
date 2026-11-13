@@ -91,35 +91,6 @@ fn member(t: &Theme, a: &Agent) -> El {
             .child(el().size(ACTOR_W as f32 * 2.0, ACTOR_H as f32 * 2.0).radius(10.0).fill(theme::hex("#1d1712")).pixels(&sprite(a))))
         .child(el().h(1.0).w_full().fill(t.card_border))
         .child(variants)
-        .children((a.id != "wisp").then(|| pickers(t, a)))
-}
-
-/// The colours to pick from: the twelve of the reference set.
-pub const COLORS: [&str; 12] = ["#111111", "#12b5a5", "#8b5cf6", "#1e88ff", "#ff6a13", "#ff9f1a", "#ff2d95", "#8b5a3c", "#7a7a7a", "#22c55e", "#ef4444", "#4fb3ff"];
-const SHAPES: [Shape; 7] = [Shape::Round, Shape::Square, Shape::Cloud, Shape::Triangle, Shape::Drop, Shape::Pebble, Shape::Hex];
-
-/// Shape and colour pickers. Wisp keeps its hexagon and Codeply blue, so only helpers get them.
-fn pickers(t: &Theme, a: &Agent) -> El {
-    let shapes = row().gap(3.0).children(SHAPES.iter().map(|&shape| {
-        let on = a.look.shape == shape;
-        let mut look = a.look.clone();
-        look.shape = shape;
-        let id = a.id.clone();
-        el().key(format!("pick-shape/{}/{shape:?}", a.id)).size(28.0, 28.0).radius(7.0).center().role("radio").checked(on).label(format!("{shape:?}"))
-            .fill(if on { t.active } else { rune::Color::TRANSPARENT }).hover(t.hover).border(1.0, if on { t.control_border } else { rune::Color::TRANSPARENT })
-            .child(rune::icon(bot::icon_for(&a.color, &look, bot::Eyes::Open), 21.0))
-            .on_press(move |s: &mut App| s.set_shape(&id, shape))
-    }));
-    let colors = row().gap(3.5).children(COLORS.iter().map(|&c| {
-        let on = a.color.eq_ignore_ascii_case(c);
-        let id = a.id.clone();
-        el().key(format!("pick-color/{}/{c}", a.id)).size(15.0, 15.0).radius(7.5).fill(theme::hex(c)).role("radio").checked(on).label(c)
-            .border(if on { 2.0 } else { 1.0 }, if on { t.text } else { rune::Color::WHITE.alpha(0.12) }).outline(if on { 1.5 } else { 0.0 }, 1.5, t.text.alpha(if on { 0.5 } else { 0.0 }))
-            .on_press(move |s: &mut App| s.set_color(&id, c))
-    }));
-    col().gap(8.0)
-        .child(row().gap(10.0).center_y().child(text("Shape").font(ui(12.0, 600.0)).color(t.faint).w(44.0)).child(shapes))
-        .child(row().gap(10.0).center_y().child(text("Colour").font(ui(12.0, 600.0)).color(t.faint).w(44.0)).child(colors))
 }
 
 /// The helper's Office sprite at 2 device pixels per art pixel, made once per look.

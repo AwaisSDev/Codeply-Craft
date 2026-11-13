@@ -5,8 +5,9 @@ framework written in Rust. It is a shell: the engine stays in Node (`codeply-cli
 and this app talks to it over the local HTTP and SSE server in `codeply-cli/lib/server.mjs`. The
 Electron app at the repo root is unchanged and keeps working.
 
-Phase 1 builds the five views of the 4.0 prototype (`design/workspace/`): Office (default), Chat,
-Code, Pull requests and Apps, plus Board (Office as a list) and a Settings placeholder.
+Phase 1 builds the views of the 4.0 prototype (`design/workspace/`): Agents (the board, and the
+default), Office (the same team as a pixel-art office), Chat, Code, Pull requests and Apps, plus
+Settings. Each has its own icon in the left rail.
 
 | | |
 |---|---|
@@ -33,8 +34,20 @@ The app's own flags come after Rune's:
 target/release/codeply --scene chat
 ```
 
-`--scene` opens on a view: `office`, `office-drawer`, `office-inbox`, `board`, `chat`,
-`chat-thread`, `code`, `prs`, `apps`, `settings`.
+`--scene` opens on a view: `board`, `appearance`, `office`, `office-drawer`, `office-inbox`,
+`chat`, `chat-thread`, `code`, `prs`, `apps`, `settings`.
+
+### Windows build
+
+`.github/workflows/rune-windows.yml` builds `codeply.exe` on a Windows runner (MSVC) for every push
+to `rune-v4` that touches `rune-app/`, and uploads `Codeply-Rune-windows-x64.zip` to the
+`rune-windows-latest` pre-release. To check that a change still builds for Windows from Linux:
+
+```bash
+sudo apt-get install mingw-w64
+rustup target add x86_64-pc-windows-gnu
+cargo build --release --target x86_64-pc-windows-gnu --features live
+```
 
 ### Talking to the engine (live store)
 
@@ -101,8 +114,9 @@ src/
   toward where the bot looks, leaning with its gaze, the far one narrower. Eyes are alive: they
   drift between glances and blink (0.18 s), eased out with no overshoot, on `Live` values, so the
   view never rebuilds for them. State shows in the eyes: rolled up while thinking, narrowed while
-  waiting, shut asleep, and a small hop while working. Settings > Your team picks each helper's
-  shape and colour; the Office's pixel sprites follow. Accessories (beret, bow tie, headphones,
+  waiting, shut asleep, and a small hop while working. The "more" button on an agent's row in
+  the Agents list opens its Appearance, where you pick its shape and colour; every view follows,
+  the Office's pixel sprites included. Settings > Your team shows the whole team read-only. Accessories (beret, bow tie, headphones,
   glasses and more) are drawn and available, but the default team wears none.
 - **The Office** is pixel art drawn in code (`views/office_art.rs`), my own, not from a sprite
   sheet: wood floors, a checkered kitchen, a carpeted lounge, wallpapered walls with windows,

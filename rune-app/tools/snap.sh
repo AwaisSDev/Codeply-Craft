@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 [ -e /usr/share/vulkan/icd.d/lvp_icd.json ] && export VK_ICD_FILENAMES="${VK_ICD_FILENAMES:-/usr/share/vulkan/icd.d/lvp_icd.json}"
 bin=target/release/codeply
 mkdir -p screenshots/rune
-for scene in ${SCENES:-office office-drawer board chat chat-thread code prs apps settings}; do
+for scene in ${SCENES:-board appearance office office-drawer chat chat-thread code prs apps settings}; do
   "$bin" --snap "screenshots/rune/$scene.png" --scene "$scene" --size 1440x900 --scale 1 --at "${AT:-2.0}" >/dev/null
   echo "screenshots/rune/$scene.png"
 done

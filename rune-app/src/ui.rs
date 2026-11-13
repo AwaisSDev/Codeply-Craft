@@ -82,22 +82,6 @@ pub fn card(t: &Theme) -> El {
     col().fill(t.card).border(1.0, t.card_border).radius(theme::R_MD)
 }
 
-/// `.seg`: the Office and Board switch.
-/// One segment: its label, whether it's on, and what pressing it does.
-pub type Segment<'a> = (&'a str, bool, fn(&mut App));
-
-pub fn seg(t: &Theme, options: &[Segment]) -> El {
-    let mut s = row().padding(3.0).radius(10.0).fill(t.hover).border(1.0, t.border).role("tablist");
-    for &(label, on, go) in options {
-        let b = row().h(26.0).px(12.0).radius(7.0).center_y().role("tab").checked(on).label(label.to_owned())
-            .fill(if on { t.surface2 } else { Color::TRANSPARENT })
-            .child(text(label.to_owned()).font(ui(13.0, 400.0)).color(if on { t.text } else { t.dim }))
-            .on_press(go);
-        s = s.child(if on { b.shadow(1.0, 2.0, theme::rgba(0, 0, 0, 0.3)) } else { b });
-    }
-    s
-}
-
 /// `.composer`: the app's composer, with the project tab, approvals, model, voice and send.
 /// `compact` drops the approvals and model chips (drawers and the agent pane).
 pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &str, project: bool, compact: bool) -> El {

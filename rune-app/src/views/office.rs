@@ -12,7 +12,7 @@ use crate::icons::ico_s;
 use crate::model::{Agent, AgentState, Block, ButtonKind};
 use crate::store::Target;
 use crate::theme::{self, Theme, ui};
-use crate::ui::{btn, btn_primary, composer, enter, fade_in, heading, ibtn, rich_text, seg, ENTER};
+use crate::ui::{btn, btn_primary, composer, enter, fade_in, heading, ibtn, rich_text, ENTER};
 use crate::views::board::screen_thumb;
 use crate::views::office_art::{ACTOR_H, ACTOR_W, BOT_CENTRE, H, ROOMS, UNIT, W, label_at, screens};
 
@@ -28,7 +28,6 @@ pub fn main(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
     let head = row().h(HEADER).gap(12.0).px(24.0).pt(8.0).center_y()
         .child(heading(t, "Office", Some(sub)))
         .child(el().grow(1.0))
-        .child(seg(t, &[("Office", true, |_: &mut App| {}), ("Board", false, |s: &mut App| s.go(View::Board))]))
         .child(btn_primary(t, "New task", "plus"));
 
     // The office scales by whole device pixels per art pixel, so the pixel art stays crisp.

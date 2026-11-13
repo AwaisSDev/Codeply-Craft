@@ -1,0 +1,29 @@
+Codeply 4.0 on Rune: test build
+===============================
+
+Run Codeply.exe. Nothing else to install.
+
+What you get
+- Agents (the board) opens first. The building icon in the left rail is the Office.
+- Hover an agent's row in the Agents list and press the "..." button to change its
+  shape and colour.
+- Chat, Code, Pull requests and Apps are the 4.0 screens.
+- This build shows sample data. Changes you make (shapes, colours, messages) are not
+  saved yet.
+
+Connecting to the engine (optional)
+This build can talk to the Codeply engine (codeply-cli 0.7 or newer, "Classic").
+It needs Node.js and a copy of this repository:
+
+  node codeply-cli/bin/codeply.js serve --password YOURPASSWORD
+
+then start the app from a terminal:
+
+  Codeply.exe --store live --token YOURPASSWORD
+
+The Chat sidebar and transcripts then come from the engine. The DSH engine
+(craft-dsh) is not connected in this build yet.
+
+If the window doesn't open
+Your PC needs a GPU driver with DirectX 12 or Vulkan (any PC from the last several years).
+Tell me what happened and which Windows version you're on.
