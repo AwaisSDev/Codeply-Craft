@@ -2,9 +2,9 @@
 //! contextual sidebar and the main area. Settings takes the whole window below the titlebar,
 //! Codex-style, with its own list of pages and "Back to app".
 
-use rune::{Color, Cx, El, Side, Tx, col, el, row, text, text_input};
+use rune::{Color, Cx, El, Side, Tx, col, el, row, text};
 
-use crate::app::{App, EditKey, View};
+use crate::app::{App, View};
 use crate::bot;
 use crate::icons::ico;
 use crate::prefs::Approval;
@@ -90,23 +90,6 @@ fn titlebar(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
         .child(bot::wisp(22.0))
         .child(text("Codeply").font(ui(14.5, 700.0)).color(t.text))
         .child(el().px(6.0).h(18.0).radius(5.0).center().fill(t.accent.alpha(0.16)).child(text("Beta").font(ui(10.5, 700.0)).color(t.accent)));
-    let search = text_input(s.edit(EditKey::Search), ui(13.0, 400.0)).key("cmdk").single_line().grow(1.0).color(t.text)
-        .placeholder("Search chats, files, PRs and mail, or ask Wisp", t.faint).caret(t.accent, t.accent.alpha(0.3))
-        .label("Search").on_edit(|s: &mut App| s.edit_mut(EditKey::Search))
-        .on_submit(|s: &mut App, _| {
-            // Ctrl K: Enter asks Wisp in a new chat.
-            let q = s.edit(EditKey::Search).text.trim().to_owned();
-            if !q.is_empty() {
-                s.new_chat();
-                s.edit_mut(EditKey::ChatHome).replace_text(q);
-                s.edit_mut(EditKey::Search).clear();
-                s.submit(EditKey::ChatHome, &crate::store::Target::New);
-            }
-        });
-    let cmdk = row().w_full().max_w(560.0).h(30.0).gap(8.0).px(12.0).radius(9.0).center_y().fill(t.hover).border(1.0, t.border).no_window_drag()
-        .child(ico("oai-search", t.faint))
-        .child(search)
-        .child(el().px(5.0).radius(5.0).border(1.0, t.border).child(text("Ctrl K").font(ui(12.0, 400.0)).color(t.faint)));
     let win = |label: &'static str, glyph: El, close: bool, act: fn(&mut App, &mut Tx)| {
         el().w(46.0).h(TITLEBAR).center().role("button").label(label).no_window_drag()
             .hover(if close { theme::hex("#e81123") } else { t.hover })
@@ -129,7 +112,7 @@ fn titlebar(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
         .children(caption);
     row().key("titlebar").w_full().h(TITLEBAR).center_y().gap(4.0).fill(t.rail).border_sides([0.0, 0.0, 1.0, 0.0], t.border).window_drag()
         .child(brand)
-        .child(row().grow(1.0).min_w(0.0).center().child(cmdk))
+        .child(el().grow(1.0))
         .child(right)
 }
 
@@ -150,10 +133,9 @@ fn rail(s: &App, t: &Theme) -> El {
     };
     col().key("rail").w(RAIL).h_full().py(10.0).gap(4.0).items_center().fill(t.rail).border_sides([0.0, 1.0, 0.0, 0.0], t.border).role("tablist")
         .child(tab(View::Agents, "oai-users", "Agents", (waiting > 0).then(|| waiting.to_string())))
-        .child(tab(View::Chat, "oai-chat", "Chat", None))
+        .child(tab(View::Chat, "chat", "Chat", None))
         .child(tab(View::Code, "code", "Code", None))
         .child(tab(View::Prs, "branch", "Pull requests", (open_prs > 0).then(|| open_prs.to_string())))
-        .child(tab(View::Browser, "globe", "Browser", None))
         .child(tab(View::Integrations, "link", "Integrations", None))
         .child(el().grow(1.0))
         .child(tab(View::Settings, "oai-settings", "Settings", None))

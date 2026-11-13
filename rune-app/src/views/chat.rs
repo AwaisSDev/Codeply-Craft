@@ -3,13 +3,14 @@
 
 use rune::{Cx, El, ScrollSpec, col, el, row, text};
 
-use crate::app::{App, EditKey};
+use crate::app::{App, EditKey, Pane};
 use crate::bot;
 use crate::icons::{ico, ico_s};
 use crate::model::ChatMeta;
 use crate::store::Target;
 use crate::theme::{Theme, ui};
-use crate::ui::{composer, enter, fade_in, ibtn, me, name_and_line, sec, side_row, ENTER};
+use crate::ui::{btn_primary, composer, enter, fade_in, ibtn, me, name_and_line, sec, side_row, wave, ENTER};
+use crate::views::{browser, tasks, terminal};
 
 /// How many recents show before "Show more".
 const RECENTS: usize = 8;
@@ -42,10 +43,13 @@ fn chat_row(s: &App, t: &Theme, c: &ChatMeta) -> El {
 }
 
 pub fn side(s: &App, t: &Theme) -> El {
-    let chats = &s.data.extra.chats;
-    let pinned: Vec<&ChatMeta> = chats.iter().filter(|c| s.prefs.pinned.contains(&c.title)).collect();
+    // Agents' own chats live on their pages in Agents; Chat lists the chats Wisp leads.
+    let is_agent = |c: &&ChatMeta| s.data.team.iter().any(|a| a.name == c.title);
+    let chats: Vec<&ChatMeta> = s.data.extra.chats.iter().filter(|c| !is_agent(c)).collect();
+    let pinned: Vec<&ChatMeta> = chats.iter().copied().filter(|c| s.prefs.pinned.contains(&c.title)).collect();
     let recents: Vec<&ChatMeta> = chats
         .iter()
+        .copied()
         .filter(|c| !s.prefs.archived.contains(&c.title) && !s.prefs.pinned.contains(&c.title))
         .collect();
     let all = s.expanded.contains("recents-more");
@@ -100,7 +104,7 @@ pub fn side(s: &App, t: &Theme) -> El {
 
 pub fn main(s: &App, t: &Theme, _cx: &mut Cx<App>) -> El {
     match &s.chat {
-        None => home(s, t),
+        None => workspace(s, t, home(s, t)),
         Some(chat) => open(s, t, chat),
     }
 }
@@ -144,14 +148,75 @@ fn open(s: &App, t: &Theme, chat: &str) -> El {
         .fill(if menu_open { t.active } else { rune::Color::TRANSPARENT })
         .on_press(move |s: &mut App| s.toggle_menu(&menu_id));
     let header = row().w_full().h(48.0).px(20.0).gap(10.0).center_y().border_sides([0.0, 0.0, 1.0, 0.0], t.border)
+        .child(crate::bot::wisp(24.0))
         .child(text(chat.to_owned()).font(ui(14.5, 600.0)).color(t.text).truncate().shrink().min_w(0.0))
         .children((!project.is_empty()).then(|| text(project).font(ui(13.0, 400.0)).color(t.faint).truncate().shrink().min_w(0.0)))
         .child(el().grow(1.0))
+        .children(publish_bits(s, t))
+        .child(pane_toggle(s, t, "globe", "Browser", "pane-browser", Pane::Browser, s.panes.browser))
+        .child(pane_toggle(s, t, "list", "Background tasks", "pane-tasks", Pane::Tasks, s.panes.tasks))
+        .child(pane_toggle(s, t, "terminal", "Terminal", "pane-terminal", Pane::Terminal, s.panes.terminal))
         .child(ibtn(t, "external", "Share").key("chat-share"))
         .child(more);
+    let thread = col().w_full().h_full().min_h(0.0).child(crate::thread::with_composer(
+        s, t, chat, "Wisp", EditKey::ChatThread, Target::Chat(String::new()), "Ask for follow-up changes", 780.0,
+    ));
     col().w_full().h_full()
         .child(header)
-        .child(el().w_full().grow(1.0).min_h(0.0).child(crate::thread::with_composer(
-            s, t, chat, "Wisp", EditKey::ChatThread, Target::Chat(String::new()), "Ask for follow-up changes", 780.0,
-        )))
+        .child(col().w_full().grow(1.0).min_h(0.0).child(workspace(s, t, thread)))
+}
+
+/// A header toggle for one pane, filled while the pane is open.
+fn pane_toggle(s: &App, t: &Theme, icon: &str, label: &str, key: &str, pane: Pane, on: bool) -> El {
+    let _ = s;
+    ibtn(t, icon, label).key(key.to_owned())
+        .fill(if on { t.active } else { rune::Color::TRANSPARENT })
+        .on_press(move |s: &mut App| s.toggle_pane(pane))
+}
+
+/// The Publish button, its progress, and a chip with the published link.
+fn publish_bits(s: &App, t: &Theme) -> Vec<El> {
+    let mut bits = Vec::new();
+    let state = s.data.extra.publish.as_ref();
+    if state.is_some_and(|p| p.running) {
+        bits.push(row().h(32.0).px(8.0).center_y().child(wave("Publishing", ui(12.5, 500.0), t.dim)));
+    }
+    if let Some(url) = state.and_then(|p| p.url.clone()) {
+        let u = url.clone();
+        bits.push(row().key("publish-link").h(28.0).max_w(200.0).px(10.0).gap(6.0).radius(14.0).center_y().fill(t.hover).hover(t.active)
+            .role("link").label(url.clone())
+            .child(ico_s("globe", 14.0, t.accent))
+            .child(text(url).font(ui(12.5, 400.0)).color(t.text).truncate().shrink().min_w(0.0))
+            .on_press(move |s: &mut App| s.browse(&u)));
+    }
+    bits.push(btn_primary(t, "Publish", "arrow-up-right").key("publish").on_press(|s: &mut App| s.publish()));
+    bits
+}
+
+/// The chat on the left (at least 45% of the width, 380 pt) and the open panes to its right: the
+/// browser over the terminal in one column, background tasks in a narrow column on the far right.
+/// With no pane open the chat fills the width.
+fn workspace(s: &App, t: &Theme, main: El) -> El {
+    let p = s.panes;
+    if !(p.browser || p.terminal || p.tasks) {
+        return main;
+    }
+    let both = p.browser && p.terminal;
+    let mut cols = row().w_full().h_full().min_h(0.0)
+        .child(col().grow(if p.browser || p.terminal { 9.0 } else { 1.0 }).min_w(380.0).h_full().min_h(0.0).child(main));
+    if p.browser || p.terminal {
+        let mut right = col().grow(11.0).min_w(0.0).h_full().min_h(0.0).border_sides([0.0, 0.0, 0.0, 1.0], t.border);
+        if p.browser {
+            right = right.child(col().w_full().grow(if both { 62.0 } else { 1.0 }).min_h(0.0).child(browser::pane(s, t)));
+        }
+        if p.terminal {
+            let wrap = col().w_full().grow(if both { 38.0 } else { 1.0 }).min_h(0.0);
+            right = right.child(if both { wrap.border_sides([1.0, 0.0, 0.0, 0.0], t.border) } else { wrap }.child(terminal::pane(s, t)));
+        }
+        cols = cols.child(right);
+    }
+    if p.tasks {
+        cols = cols.child(tasks::pane(s, t));
+    }
+    cols
 }

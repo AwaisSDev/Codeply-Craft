@@ -12,7 +12,7 @@ use crate::favicon;
 use crate::theme::{self, Theme, mono, ui};
 
 /// How long each arriving word takes to fade in, in seconds.
-pub const WORD_FADE: f32 = 0.45;
+pub const WORD_FADE: f32 = 0.6;
 
 /// One line of inline Markdown, flattened: the text, its styled runs, and its links
 /// (byte range, URL).
@@ -130,7 +130,11 @@ fn push_link(out: &mut Inline, label: &str, url: &str, t: &Theme) {
 /// One paragraph (or list item, heading, quote line) as a text element: styled runs, links
 /// that open in the browser, each link's site icon before it, and the streaming fade.
 pub fn paragraph(src: &str, t: &Theme, size: f32, weight: f32, color: Color, streaming: bool) -> El {
-    let p = inline(src, t);
+    let mut p = inline(src, t);
+    if streaming {
+        let tail = tail_spans(&p.text, t);
+        p.spans.extend(tail);
+    }
     let mut e = rich(p.text.clone(), p.spans).font(ui(size, weight).lh((size * 1.55).round())).color(color).wrap().selectable(true);
     for (range, url) in &p.links {
         if let Some(icon) = favicon::get(url) {
@@ -147,25 +151,53 @@ pub fn paragraph(src: &str, t: &Theme, size: f32, weight: f32, color: Color, str
     e
 }
 
+/// The streaming wave: the newest words of a reply that is still arriving are grey and
+/// brighten to white over the last `TAIL` words, so the colour flows along as text comes in.
+const TAIL: usize = 14;
+
+fn tail_spans(text: &str, t: &Theme) -> Vec<Span> {
+    let mut words: Vec<(usize, usize)> = Vec::new();
+    let mut start = None;
+    for (i, c) in text.char_indices() {
+        match (c.is_whitespace(), start) {
+            (false, None) => start = Some(i),
+            (true, Some(b)) => {
+                words.push((b, i));
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    if let Some(b) = start {
+        words.push((b, text.len()));
+    }
+    words.iter().rev().take(TAIL).enumerate().map(|(k, &(a, b))| {
+        let lit = (k as f32 + 1.0) / (TAIL as f32 + 1.0);
+        Span::new(a, b).color(t.faint.mix(t.text, lit))
+    }).collect()
+}
+
 /// A whole reply. `streaming`: it is still arriving, so new words fade in.
 pub fn render(src: &str, t: &Theme, streaming: bool) -> El {
     let size = 14.5;
     let mut out = col().w_full().min_w(0.0).gap(10.0);
     let mut para: Vec<&str> = Vec::new();
     let mut lines = src.lines().peekable();
-    let flush = |out: El, para: &mut Vec<&str>| -> El {
+    let flush = |out: El, para: &mut Vec<&str>, live: bool| -> El {
         if para.is_empty() {
             return out;
         }
         let joined = para.join("\n");
         para.clear();
-        out.child(paragraph(&joined, t, size, 400.0, t.text, streaming))
+        out.child(paragraph(&joined, t, size, 400.0, t.text, live))
     };
     while let Some(line) = lines.next() {
         let trimmed = line.trim_start();
+        // Only the block at the very end is still arriving.
+        let live = streaming && lines.peek().is_none();
         // ``` code blocks
         if let Some(lang) = trimmed.strip_prefix("```") {
-            out = flush(out, &mut para);
+            out = flush(out, &mut para, false);
             let mut code = Vec::new();
             for l in lines.by_ref() {
                 if l.trim_start().starts_with("```") {
@@ -177,38 +209,38 @@ pub fn render(src: &str, t: &Theme, streaming: bool) -> El {
             continue;
         }
         if trimmed.is_empty() {
-            out = flush(out, &mut para);
+            out = flush(out, &mut para, false);
             continue;
         }
         if trimmed == "---" || trimmed == "***" {
-            out = flush(out, &mut para);
+            out = flush(out, &mut para, false);
             out = out.child(el().w_full().h(1.0).my(4.0).fill(t.border));
             continue;
         }
         let heading = [("### ", 15.0, 600.0), ("## ", 17.0, 650.0), ("# ", 20.0, 650.0)].into_iter().find(|(m, _, _)| trimmed.starts_with(m));
         if let Some((mark, sz, w)) = heading {
-            out = flush(out, &mut para);
-            out = out.child(paragraph(&trimmed[mark.len()..], t, sz, w, t.text, streaming).mt(4.0));
+            out = flush(out, &mut para, false);
+            out = out.child(paragraph(&trimmed[mark.len()..], t, sz, w, t.text, live).mt(4.0));
             continue;
         }
         if let Some(q) = trimmed.strip_prefix("> ") {
-            out = flush(out, &mut para);
-            out = out.child(row().w_full().pl(12.0).border_sides([0.0, 0.0, 0.0, 3.0], t.control_border).child(paragraph(q, t, size, 400.0, t.dim, streaming).grow(1.0).min_w(0.0)));
+            out = flush(out, &mut para, false);
+            out = out.child(row().w_full().pl(12.0).border_sides([0.0, 0.0, 0.0, 3.0], t.control_border).child(paragraph(q, t, size, 400.0, t.dim, live).grow(1.0).min_w(0.0)));
             continue;
         }
         let bullet = ["- ", "* ", "• "].into_iter().find(|m| trimmed.starts_with(m)).map(|m| ("•".to_owned(), &trimmed[m.len()..]));
         let number = trimmed.split_once(". ").filter(|(n, _)| !n.is_empty() && n.len() <= 3 && n.chars().all(|c| c.is_ascii_digit())).map(|(n, rest)| (format!("{n}."), rest));
         if let Some((mark, rest)) = bullet.or(number) {
-            out = flush(out, &mut para);
+            out = flush(out, &mut para, false);
             let indent = (line.len() - trimmed.len()).min(8) as f32 * 6.0;
             out = out.child(row().w_full().gap(8.0).pl(4.0 + indent).items_start()
                 .child(text(mark).font(ui(size, 400.0).lh((size * 1.55).round())).color(t.faint).min_w(14.0))
-                .child(paragraph(rest, t, size, 400.0, t.text, streaming).grow(1.0).min_w(0.0)));
+                .child(paragraph(rest, t, size, 400.0, t.text, live).grow(1.0).min_w(0.0)));
             continue;
         }
         para.push(line);
     }
-    flush(out, &mut para)
+    flush(out, &mut para, streaming)
 }
 
 /// A fenced code block: the language, a copy button, and the code in monospace.

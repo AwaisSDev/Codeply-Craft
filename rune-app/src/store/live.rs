@@ -21,7 +21,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use super::{Store, Target, mock};
-use crate::model::{AgentState, ButtonKind, ChatGroup, ChatMeta, Column, Pill, Snapshot, Task, TaskBody, ThreadItem};
+use crate::model::{AgentState, BgTask, ButtonKind, CatalogApp, ChatGroup, ChatMeta, Column, Memory, Pill, Publish, ReviewNote, Snapshot, Task, TaskBody, TermKind, TermLine, ThreadItem};
 
 /// What the worker threads send back to the UI thread.
 enum Msg {
@@ -30,6 +30,17 @@ enum Msg {
     Project(String, String, String),
     /// A chat `send` made for a new conversation, by engine id: open it once it has a title.
     Created(String),
+    Account(Value),
+    Apps(Vec<CatalogApp>),
+    Memories(Vec<Memory>),
+    Files(Vec<String>),
+    Tasks(Vec<BgTask>),
+    /// A file's text: (path, text).
+    File(String, String),
+    /// A completion for (file, offset).
+    Suggestion(String, usize, String),
+    Review(Vec<ReviewNote>),
+    SignIn(Option<String>),
     Transcript { id: String, items: Vec<ThreadItem> },
     Event(Value),
     /// A chat made for Wisp or a helper: its name and engine id.
@@ -64,7 +75,165 @@ impl Conn {
     }
     fn post(&self, path: &str, body: Value) -> Result<Value, String> {
         Self::agent().post(&format!("{}{path}", self.base)).set("Authorization", &format!("Bearer {}", self.token))
-            .send_json(body).map_err(|e| e.to_string())?.into_json().map_err(|e| e.to_string())
+            .send_json(body).map_err(why)?.into_json().map_err(|e| e.to_string())
+    }
+    fn put(&self, path: &str, body: Value) -> Result<Value, String> {
+        Self::agent().put(&format!("{}{path}", self.base)).set("Authorization", &format!("Bearer {}", self.token))
+            .send_json(body).map_err(why)?.into_json().map_err(|e| e.to_string())
+    }
+    fn delete(&self, path: &str) -> Result<Value, String> {
+        Self::agent().delete(&format!("{}{path}", self.base)).set("Authorization", &format!("Bearer {}", self.token))
+            .call().map_err(why)?.into_json().map_err(|e| e.to_string())
+    }
+}
+
+/// An engine error as a person reads it: its `{"error": ...}` message when it sent one.
+fn why(e: ureq::Error) -> String {
+    match e {
+        ureq::Error::Status(code, resp) => resp.into_json::<Value>().ok().and_then(|v| v["error"].as_str().map(str::to_owned)).unwrap_or_else(|| format!("status {code}")),
+        other => other.to_string(),
+    }
+}
+
+/// `text` made safe for a URL's query.
+fn encode(text: &str) -> String {
+    text.bytes().map(|b| match b {
+        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => (b as char).to_string(),
+        _ => format!("%{b:02X}"),
+    }).collect()
+}
+
+// ---------- the engine's other features: account, apps, memory, files, terminal ----------
+
+/// App ids and categories as the views keep them (`&'static str`): each distinct one is kept
+/// once for the life of the app.
+fn intern(s: &str) -> &'static str {
+    use std::sync::{Mutex, OnceLock};
+    static SEEN: OnceLock<Mutex<std::collections::HashSet<&'static str>>> = OnceLock::new();
+    let mut seen = SEEN.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(k) = seen.get(s) {
+        return k;
+    }
+    let k: &'static str = Box::leak(s.to_owned().into_boxed_str());
+    seen.insert(k);
+    k
+}
+
+fn apps_from(v: &Value) -> Vec<CatalogApp> {
+    v["apps"].as_array().map_or_else(Vec::new, |list| {
+        list.iter().filter_map(|a| {
+            let id = a["id"].as_str()?;
+            Some(CatalogApp {
+                slug: intern(id),
+                name: a["name"].as_str().unwrap_or(id).to_owned(),
+                note: a["note"].as_str().or(a["description"].as_str()).unwrap_or_default().chars().take(140).collect(),
+                category: intern(a["category"].as_str().unwrap_or("Apps")),
+                connected: a["connected"].as_bool().unwrap_or(false),
+            })
+        }).collect()
+    })
+}
+
+fn memories_from(v: &Value) -> Vec<Memory> {
+    v["memories"].as_array().map_or_else(Vec::new, |list| {
+        list.iter().map(|m| Memory {
+            id: m["id"].as_str().map(str::to_owned).unwrap_or_else(|| m["id"].to_string()),
+            kind: m["kind"].as_str().unwrap_or("note").to_owned(),
+            text: m["text"].as_str().unwrap_or_default().to_owned(),
+            scope: m["scope"].as_str().unwrap_or("me").to_owned(),
+        }).collect()
+    })
+}
+
+fn task_from(t: &Value) -> Option<BgTask> {
+    Some(BgTask {
+        id: t["id"].as_str()?.to_owned(),
+        kind: if t["kind"] == "agent" { "agent" } else { "command" },
+        title: t["title"].as_str().unwrap_or("Task").to_owned(),
+        agent: t["agent"].as_str().map(str::to_owned),
+        detail: t["detail"].as_str().unwrap_or_default().to_owned(),
+        running: t["running"].as_bool().unwrap_or(false),
+    })
+}
+
+impl LiveStore {
+    /// Fetches the account, apps, memories and files (at launch, and after they change).
+    fn refresh(&self, what: &'static str) {
+        self.spawn(move |c| {
+            for _ in 0..120 {
+                let got = match what {
+                    "account" => c.get("/account").map(Msg::Account),
+                    "apps" => c.get("/apps").map(|v| Msg::Apps(apps_from(&v))),
+                    "memory" => c.get("/memory").map(|v| Msg::Memories(memories_from(&v))),
+                    "files" => c.get("/files").map(|v| Msg::Files(v["files"].as_array().map_or_else(Vec::new, |a| a.iter().filter_map(|f| f.as_str().map(str::to_owned)).collect()))),
+                    _ => c.get("/jobs").map(|v| Msg::Tasks(v["tasks"].as_array().map_or_else(Vec::new, |a| a.iter().filter_map(task_from).collect()))),
+                };
+                match got {
+                    Ok(m) => return Some(m),
+                    Err(_) => thread::sleep(Duration::from_millis(250)),
+                }
+            }
+            None
+        });
+    }
+
+    /// Folds the events of the engine's other features. True when it took the event.
+    fn fold_extra(&mut self, e: &Value, snap: &mut Snapshot) -> bool {
+        let x = &mut snap.extra;
+        match e["type"].as_str().unwrap_or_default() {
+            "term_agent" => x.terminal.push(TermLine { kind: TermKind::Agent, text: e["command"].as_str().unwrap_or_default().to_owned() }),
+            "term_output" => {
+                let kind = if e["stream"] == "err" { TermKind::Err } else { TermKind::Out };
+                for line in e["text"].as_str().unwrap_or_default().lines() {
+                    x.terminal.push(TermLine { kind, text: line.to_owned() });
+                }
+                // Keep the pane light: the last 2000 lines.
+                let over = x.terminal.len().saturating_sub(2000);
+                x.terminal.drain(..over);
+            }
+            "term_exit" => x.terminal.push(TermLine { kind: TermKind::Exit, text: format!("exited with {}", e["code"].as_i64().unwrap_or(0)) }),
+            "task_update" => {
+                if let Some(t) = task_from(&e["task"]) {
+                    match x.bg_tasks.iter_mut().find(|k| k.id == t.id) {
+                        Some(k) => *k = t,
+                        None => x.bg_tasks.insert(0, t),
+                    }
+                }
+            }
+            "publish" => {
+                x.publish = Some(Publish {
+                    running: e["running"].as_bool().unwrap_or(false),
+                    url: e["url"].as_str().filter(|u| !u.is_empty()).map(str::to_owned),
+                    message: e["message"].as_str().unwrap_or(if e["running"].as_bool().unwrap_or(false) { "Publishing" } else { "Published" }).to_owned(),
+                });
+            }
+            "open_url" => self.open_url = e["url"].as_str().map(str::to_owned),
+            "apps_changed" => self.refresh("apps"),
+            "memory_changed" => self.refresh("memory"),
+            "account_changed" => self.refresh("account"),
+            _ => return false,
+        }
+        true
+    }
+
+    /// Wisp handed work to an agent, or got it back: shown in Wisp's chat.
+    fn fold_delegation(&self, e: &Value, snap: &mut Snapshot) {
+        let Some(title) = self.title_of(e["sessionId"].as_str().unwrap_or_default()) else { return };
+        let name = e["agent"].as_str().unwrap_or("an agent").to_owned();
+        let id = snap.team.iter().find(|a| a.name.eq_ignore_ascii_case(&name) || a.id == name).map(|a| a.id.clone());
+        let item = match (e["type"].as_str(), id) {
+            (Some("delegated"), Some(id)) => ThreadItem::Team { text: "Wisp asked".into(), agents: vec![id] },
+            (Some("delegated"), None) => ThreadItem::Event { icon: "users", text: format!("Wisp asked **{name}**") },
+            _ => {
+                let summary = e["summary"].as_str().unwrap_or_default();
+                let short: String = summary.chars().take(160).collect();
+                ThreadItem::Event { icon: "check", text: if short.is_empty() { format!("**{name}** is done") } else { format!("**{name}**: {short}") } }
+            }
+        };
+        match snap.threads.iter_mut().find(|(k, _)| *k == title) {
+            Some((_, items)) => items.push(item),
+            None => snap.threads.push((title, vec![item])),
+        }
     }
 }
 
@@ -90,6 +259,10 @@ pub struct LiveStore {
     /// A new chat to open once the engine has titled it, and the title to open now.
     want_focus: Option<String>,
     focus: Option<String>,
+    /// A page the engine asked to open (an app's sign-in).
+    open_url: Option<String>,
+    /// The team, as the engine is told about it: (id, name, role).
+    team: Vec<(String, String, String)>,
 }
 
 impl LiveStore {
@@ -99,6 +272,7 @@ impl LiveStore {
             conn: Conn { base: url.trim_end_matches('/').to_owned(), token: token.to_owned() },
             tx, rx, waker: None, sessions: Vec::new(), named: Default::default(), open: None, streaming: Default::default(),
             label: format!("codeply serve at {url}"), unread: Default::default(), queued: Default::default(), want_focus: None, focus: None,
+            open_url: None, team: Vec::new(),
         }
     }
 
@@ -411,6 +585,12 @@ impl Store for LiveStore {
         snap.extra.chats.clear();
         snap.extra.projects.clear();
         snap.extra.engine = "Starting".into();
+        snap.extra.terminal.clear();
+        snap.extra.bg_tasks.clear();
+        snap.extra.memories.clear();
+        snap.extra.code = Default::default();
+        snap.extra.code.wisp = "idle".into();
+        self.team = snap.team.iter().filter(|a| a.id != "wisp").map(|a| (a.id.clone(), a.name.clone(), a.role.clone())).collect();
         snap.extra.engine_ok = false;
         snap.source = format!("{} (connecting)", self.label);
         derive(&mut snap, &[]);
@@ -445,6 +625,9 @@ impl Store for LiveStore {
             }
             Some(Msg::Status(format!("can't reach the engine: {last}")))
         });
+        for what in ["account", "apps", "memory", "files", "jobs"] {
+            self.refresh(what);
+        }
         // The event stream, for the life of the app, reconnecting with a growing pause.
         let (conn, tx) = (self.conn.clone(), self.tx.clone());
         thread::spawn(move || {
@@ -496,7 +679,50 @@ impl Store for LiveStore {
                         snap.threads.push((title, items));
                     }
                 }
-                Msg::Event(e) => self.fold(&e, snap),
+                Msg::Event(e) => {
+                    if matches!(e["type"].as_str(), Some("delegated" | "delegate_done")) {
+                        self.fold_delegation(&e, snap);
+                    } else if !self.fold_extra(&e, snap) {
+                        self.fold(&e, snap);
+                    }
+                }
+                Msg::Account(v) => {
+                    snap.extra.signed_in = v["signedIn"].as_bool().unwrap_or(false);
+                    snap.extra.email = v["email"].as_str().unwrap_or_default().to_owned();
+                    if let Some(name) = v["name"].as_str().filter(|n| !n.is_empty()) {
+                        snap.user = name.split_whitespace().next().unwrap_or(name).to_owned();
+                    }
+                    snap.plan = if snap.extra.signed_in { "Signed in".into() } else { "Not signed in".into() };
+                }
+                Msg::Apps(list) => {
+                    snap.connected.retain(|_| false);
+                    snap.extra.catalog = list;
+                }
+                Msg::Memories(list) => snap.extra.memories = list,
+                Msg::Files(list) => snap.extra.code.files = list,
+                Msg::Tasks(list) => snap.extra.bg_tasks = list,
+                Msg::File(path, text) => {
+                    snap.extra.code.open = Some(path);
+                    snap.extra.code.saved = text;
+                    snap.extra.code.review.clear();
+                    snap.extra.code.suggestion = None;
+                }
+                Msg::Suggestion(file, at, text) => {
+                    snap.extra.code.wisp = "idle".into();
+                    snap.extra.code.suggestion = (!text.is_empty()).then_some((file, at, text));
+                }
+                Msg::Review(notes) => {
+                    snap.extra.code.reviewing = false;
+                    snap.extra.code.wisp = if notes.iter().any(|n| n.fix.is_some()) { "fixing".into() } else { "idle".into() };
+                    snap.extra.code.review = notes;
+                }
+                Msg::SignIn(state) => {
+                    let done = state.is_none();
+                    snap.extra.sign_in = state;
+                    if done {
+                        self.refresh("account");
+                    }
+                }
                 Msg::Named(name, id) => {
                     self.named.insert(name, id);
                 }
@@ -528,6 +754,131 @@ impl Store for LiveStore {
         self.focus.take()
     }
 
+    fn take_open_url(&mut self) -> Option<String> {
+        self.open_url.take()
+    }
+
+    fn run_command(&mut self, cmd: &str, snap: &mut Snapshot) {
+        snap.extra.terminal.push(TermLine { kind: TermKind::Input, text: cmd.to_owned() });
+        let cmd = cmd.to_owned();
+        self.spawn(move |c| c.post("/exec", json!({ "cmd": cmd })).err().map(|e| Msg::Event(json!({ "type": "term_output", "stream": "err", "text": format!("couldn't run it: {e}") }))));
+    }
+
+    fn kill(&mut self, id: &str, snap: &mut Snapshot) {
+        if let Some(t) = snap.extra.bg_tasks.iter_mut().find(|t| t.id == id) {
+            t.running = false;
+        }
+        let id = encode(id);
+        self.spawn(move |c| c.delete(&format!("/jobs/{id}")).err().map(|e| Msg::Status(format!("stop failed: {e}"))));
+    }
+
+    fn publish(&mut self, chat: Option<&str>, snap: &mut Snapshot) {
+        let session = chat.and_then(|c| self.id_of(c));
+        snap.extra.publish = Some(Publish { running: true, url: None, message: "Publishing".into() });
+        self.spawn(move |c| c.post("/publish", json!({ "sessionId": session })).err().map(|e| Msg::Event(json!({ "type": "publish", "running": false, "message": format!("Publish failed: {e}") }))));
+    }
+
+    fn send_code(&mut self, email: &str, snap: &mut Snapshot) {
+        snap.extra.sign_in = Some("sending".into());
+        let email = email.to_owned();
+        self.spawn(move |c| Some(Msg::SignIn(Some(match c.post("/account/otp/send", json!({ "email": email })) {
+            Ok(v) if v["error"].is_string() => format!("error: {}", v["error"].as_str().unwrap_or_default()),
+            Ok(_) => "sent".to_owned(),
+            Err(e) => format!("error: {e}"),
+        }))));
+    }
+
+    fn verify_code(&mut self, email: &str, code: &str, snap: &mut Snapshot) {
+        snap.extra.sign_in = Some("verifying".into());
+        let (email, code) = (email.to_owned(), code.to_owned());
+        self.spawn(move |c| Some(Msg::SignIn(match c.post("/account/otp/verify", json!({ "email": email, "code": code })) {
+            Ok(v) if v["error"].is_string() => Some(format!("error: {}", v["error"].as_str().unwrap_or_default())),
+            Ok(_) => None,
+            Err(e) => Some(format!("error: {e}")),
+        })));
+    }
+
+    fn sign_out(&mut self, snap: &mut Snapshot) {
+        snap.extra.signed_in = false;
+        self.spawn(|c| {
+            let _ = c.post("/account/signout", json!({}));
+            c.get("/account").ok().map(Msg::Account)
+        });
+    }
+
+    fn search_apps(&mut self, query: &str, _snap: &mut Snapshot) {
+        let q = encode(query);
+        self.spawn(move |c| c.get(&format!("/apps?q={q}")).ok().map(|v| Msg::Apps(apps_from(&v))));
+    }
+
+    fn connect_app(&mut self, slug: &str, _snap: &mut Snapshot) {
+        let id = slug.to_owned();
+        self.spawn(move |c| c.post("/apps/connect", json!({ "id": id })).err().map(|e| Msg::Status(format!("connect failed: {e}"))));
+    }
+
+    fn disconnect_app(&mut self, slug: &str, snap: &mut Snapshot) {
+        if let Some(a) = snap.extra.catalog.iter_mut().find(|a| a.slug == slug) {
+            a.connected = false;
+        }
+        let id = encode(slug);
+        self.spawn(move |c| {
+            let _ = c.delete(&format!("/apps/{id}"));
+            c.get("/apps").ok().map(|v| Msg::Apps(apps_from(&v)))
+        });
+    }
+
+    fn remember(&mut self, text: &str, snap: &mut Snapshot) {
+        snap.extra.memories.insert(0, Memory { id: String::new(), kind: "note".into(), text: text.to_owned(), scope: "me".into() });
+        let text = text.to_owned();
+        self.spawn(move |c| {
+            let _ = c.post("/memory", json!({ "text": text }));
+            c.get("/memory").ok().map(|v| Msg::Memories(memories_from(&v)))
+        });
+    }
+
+    fn forget(&mut self, id: &str, snap: &mut Snapshot) {
+        snap.extra.memories.retain(|m| m.id != id);
+        let id = encode(id);
+        self.spawn(move |c| c.delete(&format!("/memory/{id}")).err().map(|e| Msg::Status(format!("forget failed: {e}"))));
+    }
+
+    fn open_file(&mut self, path: &str, _snap: &mut Snapshot) {
+        let path = path.to_owned();
+        self.spawn(move |c| match c.get(&format!("/file?path={}", encode(&path))) {
+            Ok(v) => Some(Msg::File(path, v["text"].as_str().unwrap_or_default().to_owned())),
+            Err(e) => Some(Msg::Status(format!("can't open {path}: {e}"))),
+        });
+    }
+
+    fn save_file(&mut self, path: &str, text: &str, _snap: &mut Snapshot) {
+        let (path, text) = (path.to_owned(), text.to_owned());
+        self.spawn(move |c| c.put("/file", json!({ "path": path, "text": text })).err().map(|e| Msg::Status(format!("save failed: {e}"))));
+    }
+
+    fn complete(&mut self, file: &str, prefix: &str, suffix: &str, _snap: &mut Snapshot) {
+        let (file, at) = (file.to_owned(), prefix.len());
+        // Enough context for the model, not the whole file.
+        let head: String = { let n = prefix.chars().count(); prefix.chars().skip(n.saturating_sub(3000)).collect() };
+        let tail: String = suffix.chars().take(1000).collect();
+        self.spawn(move |c| {
+            let v = c.post("/complete", json!({ "path": file, "prefix": head, "suffix": tail })).ok()?;
+            Some(Msg::Suggestion(file, at, v["text"].as_str().unwrap_or_default().to_owned()))
+        });
+    }
+
+    fn review(&mut self, file: &str, text: &str, _snap: &mut Snapshot) {
+        let (file, text) = (file.to_owned(), text.to_owned());
+        self.spawn(move |c| {
+            let notes = c.post("/review", json!({ "path": file, "text": text })).ok().and_then(|v| v["notes"].as_array().cloned()).unwrap_or_default();
+            Some(Msg::Review(notes.iter().filter_map(|n| Some(ReviewNote {
+                line: n["line"].as_u64()? as u32,
+                severity: n["severity"].as_str().unwrap_or("info").to_owned(),
+                message: n["message"].as_str().unwrap_or_default().to_owned(),
+                fix: n["fix"].as_str().map(str::to_owned),
+            })).collect()))
+        });
+    }
+
     fn abort(&mut self, chat: &str) {
         let Some(id) = self.id_of(chat).or_else(|| self.named.get(chat).cloned()) else { return };
         self.queued.remove(&id);
@@ -535,7 +886,8 @@ impl Store for LiveStore {
     }
 
     fn configure(&mut self, prefs: &crate::prefs::Prefs) {
-        let body = json!({ "approval": prefs.approval.name(), "effort": prefs.effort });
+        let team: Vec<Value> = self.team.iter().map(|(id, name, role)| json!({ "id": id, "name": name, "role": role })).collect();
+        let body = json!({ "approval": prefs.approval.name(), "effort": prefs.effort, "team": team });
         // The engine may still be starting: keep trying for half a minute.
         self.spawn(move |c| {
             for _ in 0..120 {

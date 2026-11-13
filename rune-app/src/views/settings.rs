@@ -189,8 +189,44 @@ fn profile(s: &App, t: &Theme) -> Vec<El> {
             .child(col().grow(1.0).min_w(0.0).gap(2.0)
                 .child(text(s.data.user.clone()).font(ui(18.0, 650.0)).color(t.text))
                 .child(text(s.data.plan.clone()).font(ui(13.0, 400.0)).color(t.dim)))
-            .child(btn(t, "Manage account", None, ButtonKind::Plain).key("set-manage-account")),
-    ])]
+            .children(s.data.extra.signed_in.then(|| btn(t, "Sign out", None, ButtonKind::Plain).key("set-sign-out").on_press(|s: &mut App| s.sign_out()))),
+    ]), sign_in(s, t)]
+}
+
+/// One line field for the sign-in card.
+fn line_field(s: &App, t: &Theme, key: EditKey, placeholder: &str, submit: fn(&mut App)) -> El {
+    row().grow(1.0).min_w(0.0).h(36.0).px(12.0).radius(9.0).center_y().fill(t.hover).border(1.0, t.border)
+        .child(text_input(s.edit(key), ui(14.0, 400.0)).key(format!("{}-field", key.name())).single_line().grow(1.0).color(t.text)
+            .placeholder(placeholder.to_owned(), t.faint).caret(t.accent, t.accent.alpha(0.3)).label(placeholder.to_owned())
+            .on_edit(move |s: &mut App| s.edit_mut(key))
+            .on_submit(move |s: &mut App, _| submit(s)))
+}
+
+/// Sign in with a code sent to your email (the Codeply account the engine uses).
+fn sign_in(s: &App, t: &Theme) -> El {
+    if s.data.extra.signed_in {
+        return group(t, "Codeply account", vec![item(t, "Signed in", Some(&s.data.extra.email), ico_s("check", 16.0, t.green))]);
+    }
+    let state = s.data.extra.sign_in.clone().unwrap_or_default();
+    let sent = state == "sent" || state == "verifying";
+    let mut rows = vec![
+        col().w_full().px(16.0).py(14.0).gap(10.0)
+            .child(text("Sign in with your email. Codeply sends you a code.").font(ui(13.5, 400.0)).color(t.dim))
+            .child(row().w_full().gap(8.0).center_y()
+                .child(line_field(s, t, EditKey::SignInEmail, "you@example.com", App::send_code))
+                .child(btn(t, if sent { "Resend" } else { "Send code" }, None, if sent { ButtonKind::Plain } else { ButtonKind::Blue }).key("sign-in-send").on_press(|s: &mut App| s.send_code())))
+    ];
+    if sent {
+        rows.push(col().w_full().px(16.0).py(14.0).gap(10.0)
+            .child(text("Enter the code from the email.").font(ui(13.5, 400.0)).color(t.dim))
+            .child(row().w_full().gap(8.0).center_y()
+                .child(line_field(s, t, EditKey::SignInCode, "123456", App::verify_code))
+                .child(btn(t, "Sign in", None, ButtonKind::Blue).key("sign-in-verify").on_press(|s: &mut App| s.verify_code()))));
+    }
+    if let Some(err) = state.strip_prefix("error: ") {
+        rows.push(row().w_full().px(16.0).py(10.0).child(text(err.to_owned()).font(ui(13.0, 400.0)).color(t.red).wrap()));
+    }
+    group(t, "Codeply account", rows)
 }
 
 fn appearance(s: &App, t: &Theme) -> Vec<El> {
@@ -259,7 +295,24 @@ fn personalization(s: &App, t: &Theme) -> Vec<El> {
                 p.instructions = b;
             });
         })),
+        memories(s, t),
     ]
+}
+
+/// What Wisp remembers (the engine's memory): add one, or forget one.
+fn memories(s: &App, t: &Theme) -> El {
+    let mut rows = vec![row().w_full().px(16.0).py(12.0).gap(8.0).center_y()
+        .child(line_field(s, t, EditKey::Memory, "Tell Wisp something to remember", App::remember))
+        .child(btn(t, "Remember", None, ButtonKind::Plain).key("memory-add").on_press(|s: &mut App| s.remember()))];
+    if s.data.extra.memories.is_empty() {
+        rows.push(item(t, "Nothing yet", Some("Wisp remembers what you tell it, and what it learns while working."), el()));
+    }
+    for m in &s.data.extra.memories {
+        let id = m.id.clone();
+        rows.push(item(t, &m.text, Some(&format!("{} · {}", m.kind, m.scope)),
+            ibtn(t, "close", "Forget").key(format!("memory-forget/{}", m.id)).on_press(move |s: &mut App| s.forget(&id))));
+    }
+    group(t, "Memories", rows)
 }
 
 fn shortcuts(t: &Theme) -> Vec<El> {

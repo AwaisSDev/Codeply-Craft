@@ -375,6 +375,100 @@ pub struct Extra {
     pub engine_ok: bool,
     /// The engine's version, for Settings > General.
     pub version: String,
+    /// The terminal beside a chat: what you or Wisp ran, and what it printed.
+    pub terminal: Vec<TermLine>,
+    /// Background tasks: agents working for Wisp, and commands still running.
+    pub bg_tasks: Vec<BgTask>,
+    /// The last Publish: where the project went live, or what went wrong.
+    pub publish: Option<Publish>,
+    /// Whether you're signed in to Codeply (the engine's account).
+    pub signed_in: bool,
+    /// The account's email, when signed in.
+    pub email: String,
+    /// Where an email sign-in is: None, "sent" (a code went to the email), "error: ...".
+    pub sign_in: Option<String>,
+    /// Memories Wisp keeps (the engine's brain): (id, kind, text, scope).
+    pub memories: Vec<Memory>,
+    /// The code editor: the project's files, the open one, and Wisp's help with it.
+    pub code: Code,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Memory {
+    pub id: String,
+    pub kind: String,
+    pub text: String,
+    pub scope: String,
+}
+
+/// The Code view's data: a real project folder on disk, through the engine.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Code {
+    /// The project's files, relative paths with `/`, folders ending in `/`, sorted.
+    pub files: Vec<String>,
+    /// The open file's path, and its text as last loaded or saved.
+    pub open: Option<String>,
+    pub saved: String,
+    /// The completion Wisp suggests at the caret: shown as ghost text, Tab takes it.
+    /// (file, byte offset it applies at, text to insert)
+    pub suggestion: Option<(String, usize, String)>,
+    /// Wisp's review of the open file, as notes on lines.
+    pub review: Vec<ReviewNote>,
+    /// Wisp is reviewing right now.
+    pub reviewing: bool,
+    /// What Wisp is doing in the editor, for its morphing mascot: "idle", "writing",
+    /// "reviewing", "fixing", "thinking".
+    pub wisp: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReviewNote {
+    /// 1-based line.
+    pub line: u32,
+    /// "error", "warning" or "info".
+    pub severity: String,
+    pub message: String,
+    /// A replacement for the whole line, if Wisp has one.
+    pub fix: Option<String>,
+}
+
+/// One line in the terminal pane.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TermLine {
+    pub kind: TermKind,
+    pub text: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TermKind {
+    /// A command you typed (shown after the prompt).
+    Input,
+    /// A command Wisp or an agent ran.
+    Agent,
+    Out,
+    Err,
+    /// "exited with 0".
+    Exit,
+}
+
+/// Something running in the background.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BgTask {
+    pub id: String,
+    /// "agent" (a helper Wisp handed work to) or "command".
+    pub kind: &'static str,
+    pub title: String,
+    /// The agent's id, for its mascot (agents only).
+    pub agent: Option<String>,
+    pub detail: String,
+    pub running: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Publish {
+    pub running: bool,
+    pub url: Option<String>,
+    pub message: String,
 }
 
 impl Snapshot {

@@ -220,3 +220,15 @@ pub fn heading(t: &Theme, title: &str, sub: Option<String>) -> El {
         .child(text(title.to_owned()).font(ui(20.0, 650.0).tracking(-0.2)).color(t.text))
         .children(sub.map(|s| text(s).font(ui(13.0, 400.0)).color(t.faint)))
 }
+
+/// Text with a light sweeping across it, word by word, grey to white and back: "Wisp is
+/// thinking", "Working · 3 steps". Each word loops its own opacity a little after the one before,
+/// so the brightness travels like a wave. Nothing rebuilds while it runs.
+pub fn wave(src: &str, style: rune::TextStyle, color: Color) -> El {
+    const PERIOD: f64 = 1.6;
+    const STEP: f64 = 0.12;
+    row().gap(0.0).center_y().children(src.split(' ').enumerate().map(|(i, w)| {
+        let word = if i == 0 { w.to_owned() } else { format!(" {w}") };
+        text(word).font(style).color(color).looping(rune::LoopSpec::opacity(PERIOD, i as f64 * STEP, 0.35, 1.0))
+    }))
+}

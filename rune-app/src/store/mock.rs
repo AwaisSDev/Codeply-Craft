@@ -256,6 +256,33 @@ pub fn extra() -> Extra {
         engine: s("Sample data"),
         engine_ok: false,
         version: s("4.0.0-beta.1"),
+        terminal: vec![
+            TermLine { kind: TermKind::Agent, text: s("npm test") },
+            TermLine { kind: TermKind::Out, text: s("PASS src/pricing/pricing.test.js") },
+            TermLine { kind: TermKind::Out, text: s("Tests: 212 passed, 212 total") },
+            TermLine { kind: TermKind::Exit, text: s("exited with 0") },
+        ],
+        bg_tasks: vec![
+            BgTask { id: s("t1"), kind: "agent", title: s("Frontend: pricing page"), agent: Some(s("frontend")), detail: s("Editing pricing.html"), running: true },
+            BgTask { id: s("t2"), kind: "command", title: s("npm run dev"), agent: None, detail: s("Listening on localhost:5173"), running: true },
+        ],
+        publish: None,
+        signed_in: true,
+        email: s("sam@example.com"),
+        sign_in: None,
+        memories: vec![
+            Memory { id: s("m1"), kind: s("preference"), text: s("Prefers short answers with the code first"), scope: s("me") },
+            Memory { id: s("m2"), kind: s("fact"), text: s("launch-site deploys to Vercel"), scope: s("project:launch-site") },
+        ],
+        code: Code {
+            files: ["README.md", "package.json", "src/", "src/main.js", "src/pricing/", "src/pricing/plans.json", "src/pricing/pricing.css", "src/pricing/pricing.js"].iter().map(|f| s(f)).collect(),
+            open: Some(s("src/pricing/pricing.js")),
+            saved: s("// Pricing: three plans, monthly or yearly, matching the homepage.\nimport { plans } from \"./plans.json\";\n\nexport function renderPricing(root, { yearly = false } = {}) {\n  const cards = plans.map((p) => {\n    const price = yearly ? p.yearly : p.monthly;\n    return `<article class=\"plan\">${p.name} ${price}</article>`;\n  });\n  root.innerHTML = cards.join(\"\");\n}\n"),
+            suggestion: None,
+            review: vec![ReviewNote { line: 7, severity: s("warning"), message: s("Prices aren't escaped before going into innerHTML."), fix: None }],
+            reviewing: false,
+            wisp: s("idle"),
+        },
     }
 }
 
@@ -320,6 +347,52 @@ impl Store for MockStore {
     }
     fn take_focus(&mut self) -> Option<String> {
         self.focus.take()
+    }
+    fn run_command(&mut self, cmd: &str, snap: &mut Snapshot) {
+        snap.extra.terminal.push(TermLine { kind: TermKind::Input, text: cmd.to_owned() });
+        snap.extra.terminal.push(TermLine { kind: TermKind::Out, text: s("(sample data: commands run once the engine is connected)") });
+    }
+    fn kill(&mut self, id: &str, snap: &mut Snapshot) {
+        if let Some(t) = snap.extra.bg_tasks.iter_mut().find(|t| t.id == id) {
+            t.running = false;
+        }
+    }
+    fn complete(&mut self, file: &str, prefix: &str, _suffix: &str, snap: &mut Snapshot) {
+        // Sample data: finish the word being typed from words already in the file.
+        let word: String = prefix.chars().rev().take_while(|c| c.is_alphanumeric() || *c == '_').collect::<Vec<_>>().into_iter().rev().collect();
+        if word.len() < 2 {
+            snap.extra.code.suggestion = None;
+            return;
+        }
+        let found = prefix.split(|c: char| !(c.is_alphanumeric() || c == '_')).find(|w| w.len() > word.len() && w.starts_with(&word));
+        snap.extra.code.suggestion = found.map(|w| (file.to_owned(), prefix.len(), w[word.len()..].to_owned()));
+    }
+    fn connect_app(&mut self, slug: &str, snap: &mut Snapshot) {
+        if let Some(a) = snap.extra.catalog.iter_mut().find(|a| a.slug == slug) {
+            a.connected = true;
+        }
+    }
+    fn disconnect_app(&mut self, slug: &str, snap: &mut Snapshot) {
+        if let Some(a) = snap.extra.catalog.iter_mut().find(|a| a.slug == slug) {
+            a.connected = false;
+        }
+    }
+    fn open_file(&mut self, path: &str, snap: &mut Snapshot) {
+        snap.extra.code.open = Some(path.to_owned());
+    }
+    fn review(&mut self, _file: &str, _text: &str, snap: &mut Snapshot) {
+        snap.extra.code.reviewing = false;
+        snap.extra.code.wisp = "idle".into();
+    }
+    fn remember(&mut self, text: &str, snap: &mut Snapshot) {
+        let id = format!("m{}", snap.extra.memories.len() + 1);
+        snap.extra.memories.insert(0, Memory { id, kind: s("note"), text: text.to_owned(), scope: s("me") });
+    }
+    fn forget(&mut self, id: &str, snap: &mut Snapshot) {
+        snap.extra.memories.retain(|m| m.id != id);
+    }
+    fn publish(&mut self, _chat: Option<&str>, snap: &mut Snapshot) {
+        snap.extra.publish = Some(Publish { running: false, url: Some(s("https://launch-site.codeply.app")), message: s("Published") });
     }
 }
 

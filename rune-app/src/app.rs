@@ -19,8 +19,6 @@ pub enum View {
     Chat,
     Code,
     Prs,
-    /// The built-in web browser.
-    Browser,
     /// Plugins, apps, MCP servers and skills.
     Integrations,
     Settings,
@@ -168,12 +166,22 @@ pub enum EditKey {
     /// Settings > Personalization.
     AboutMe,
     Instructions,
+    /// The terminal pane's command line.
+    Terminal,
+    /// The code editor (the open file).
+    Code,
+    /// Sign-in: the email, then the code that was emailed.
+    SignInEmail,
+    SignInCode,
+    /// Settings > Personalization's "add a memory".
+    Memory,
 }
 
 impl EditKey {
-    pub const ALL: [EditKey; 10] = [
+    pub const ALL: [EditKey; 15] = [
         EditKey::Search, EditKey::Mission, EditKey::AgentThread, EditKey::ChatHome, EditKey::ChatThread,
         EditKey::AppSearch, EditKey::Address, EditKey::SettingsSearch, EditKey::AboutMe, EditKey::Instructions,
+        EditKey::Terminal, EditKey::Code, EditKey::SignInEmail, EditKey::SignInCode, EditKey::Memory,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -187,12 +195,35 @@ impl EditKey {
             EditKey::SettingsSearch => "settings-search",
             EditKey::AboutMe => "about-me",
             EditKey::Instructions => "instructions",
+            EditKey::Terminal => "terminal",
+            EditKey::Code => "code",
+            EditKey::SignInEmail => "sign-in-email",
+            EditKey::SignInCode => "sign-in-code",
+            EditKey::Memory => "memory",
         }
     }
 }
 
 /// A small menu open over the composer or a row ("model", "approval", "chat/<title>", ...).
 pub type MenuId = String;
+
+/// The panes a chat can open beside it (Codeply's workspace): the browser, the terminal and
+/// background tasks. The chat keeps at least half the width; open panes share the rest.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Panes {
+    pub browser: bool,
+    pub terminal: bool,
+    pub tasks: bool,
+    /// The browser shows the page at phone width (390 pt), centred.
+    pub mobile: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pane {
+    Browser,
+    Terminal,
+    Tasks,
+}
 
 pub struct App {
     pub view: View,
@@ -222,10 +253,18 @@ pub struct App {
     pub notice: Option<String>,
     /// The built-in browser: its tabs, and the native web view on Windows.
     pub browser: Browser,
+    /// Which panes are open beside the chat.
+    pub panes: Panes,
     /// Whether the system asks for reduced motion, as the view last saw it.
     pub reduced: std::cell::Cell<bool>,
     /// Whether the first poll has run (the window's launch-time setup).
     launched: bool,
+    /// The code editor: which file its text was loaded from, the text the last completion was
+    /// asked for, and when the text last changed (completions wait for a pause in typing).
+    code_loaded: Option<String>,
+    code_asked: String,
+    code_changed_at: f64,
+    code_text_seen: String,
     /// The engine this app started, kept running while the app is.
     #[cfg(feature = "live")]
     pub sidecar: Option<crate::engine::Sidecar>,
@@ -260,8 +299,13 @@ impl App {
             expanded: HashSet::new(),
             notice: None,
             browser,
+            panes: Panes::default(),
             reduced: std::cell::Cell::new(false),
             launched: false,
+            code_loaded: None,
+            code_asked: String::new(),
+            code_changed_at: 0.0,
+            code_text_seen: String::new(),
             #[cfg(feature = "live")]
             sidecar: None,
         }
@@ -424,9 +468,13 @@ impl App {
         }
     }
 
+    /// Connects an app (its sign-in opens in your browser), or disconnects it.
     pub fn toggle_app(&mut self, slug: &str) {
-        if let Some(a) = self.data.extra.catalog.iter_mut().find(|a| a.slug == slug) {
-            a.connected = !a.connected;
+        let connected = self.data.extra.catalog.iter().any(|a| a.slug == slug && a.connected);
+        if connected {
+            self.store.disconnect_app(slug, &mut self.data);
+        } else {
+            self.store.connect_app(slug, &mut self.data);
         }
     }
 
@@ -481,10 +529,196 @@ impl App {
         }
     }
 
-    /// Opens the browser on `url` (from a link in a chat, a bookmark or the address bar).
+    /// Opens `url` in the browser pane beside the chat (from a link in a reply, a bookmark or
+    /// the address bar).
     pub fn browse(&mut self, url: &str) {
-        self.go(View::Browser);
+        self.view = View::Chat;
+        self.panes.browser = true;
         self.browser.navigate(url);
+    }
+
+    pub fn toggle_pane(&mut self, pane: Pane) {
+        match pane {
+            Pane::Browser => self.panes.browser = !self.panes.browser,
+            Pane::Terminal => self.panes.terminal = !self.panes.terminal,
+            Pane::Tasks => self.panes.tasks = !self.panes.tasks,
+        }
+    }
+
+    /// Runs what's in the terminal pane's command line ("clear" clears it).
+    pub fn run_command(&mut self) {
+        let cmd = self.edit(EditKey::Terminal).text.trim().to_owned();
+        if cmd.is_empty() {
+            return;
+        }
+        self.edit_mut(EditKey::Terminal).clear();
+        if cmd == "clear" || cmd == "cls" {
+            self.data.extra.terminal.clear();
+            return;
+        }
+        self.store.run_command(&cmd, &mut self.data);
+    }
+
+    pub fn clear_terminal(&mut self) {
+        self.data.extra.terminal.clear();
+    }
+
+    pub fn kill_task(&mut self, id: &str) {
+        self.store.kill(id, &mut self.data);
+    }
+
+    // ---------- code ----------
+
+    /// Opens a project file in the editor.
+    pub fn open_file(&mut self, path: &str) {
+        self.view = View::Code;
+        self.store.open_file(path, &mut self.data);
+    }
+
+    /// Saves the editor's text to its file.
+    pub fn save_file(&mut self) {
+        if let Some(path) = self.data.extra.code.open.clone() {
+            let text = self.edit(EditKey::Code).text.clone();
+            self.store.save_file(&path, &text, &mut self.data);
+            self.data.extra.code.saved = text;
+        }
+    }
+
+    /// Whether the editor has changes not yet saved.
+    pub fn code_dirty(&self) -> bool {
+        self.data.extra.code.open.is_some() && self.edit(EditKey::Code).text != self.data.extra.code.saved
+    }
+
+    /// Tab: takes Wisp's suggestion at the caret. False when there's none to take.
+    pub fn accept_suggestion(&mut self) -> bool {
+        let Some((file, at, text)) = self.data.extra.code.suggestion.take() else { return false };
+        if self.data.extra.code.open.as_deref() != Some(file.as_str()) {
+            return false;
+        }
+        let edit = self.edit_mut(EditKey::Code);
+        let (_, caret) = edit.range();
+        if caret != at || !edit.text.is_char_boundary(at) {
+            return false;
+        }
+        edit.insert(&text);
+        true
+    }
+
+    /// Asks Wisp to review the open file.
+    pub fn review_file(&mut self) {
+        if let Some(path) = self.data.extra.code.open.clone() {
+            let text = self.edit(EditKey::Code).text.clone();
+            self.data.extra.code.reviewing = true;
+            self.data.extra.code.wisp = "reviewing".into();
+            self.store.review(&path, &text, &mut self.data);
+        }
+    }
+
+    /// Applies a review note's fix to its line.
+    pub fn apply_fix(&mut self, line: u32) {
+        let Some(fix) = self.data.extra.code.review.iter().find(|n| n.line == line).and_then(|n| n.fix.clone()) else { return };
+        let text = self.edit(EditKey::Code).text.clone();
+        let mut lines: Vec<&str> = text.split('\n').collect();
+        let i = line.saturating_sub(1) as usize;
+        if i < lines.len() {
+            lines[i] = &fix;
+            let joined = lines.join("\n");
+            self.edit_mut(EditKey::Code).replace_text(joined);
+            self.data.extra.code.review.retain(|n| n.line != line);
+            self.data.extra.code.wisp = "fixing".into();
+        }
+    }
+
+    /// While typing in the editor: after a short pause, ask for a completion at the caret.
+    fn step_code(&mut self, now: f64, tx: &mut Tx) {
+        if self.view != View::Code {
+            return;
+        }
+        let Some(path) = self.data.extra.code.open.clone() else { return };
+        // A file arrived (or changed on disk): put its text in the editor.
+        if self.code_loaded.as_deref() != Some(path.as_str()) {
+            self.code_loaded = Some(path.clone());
+            let text = self.data.extra.code.saved.clone();
+            self.edit_mut(EditKey::Code).replace_text(text.clone());
+            self.code_text_seen = text.clone();
+            self.code_asked = text;
+            return;
+        }
+        let text = self.edit(EditKey::Code).text.clone();
+        if text != self.code_text_seen {
+            self.code_text_seen = text.clone();
+            self.code_changed_at = now;
+            self.data.extra.code.suggestion = None;
+            self.data.extra.code.wisp = "writing".into();
+        }
+        const PAUSE: f64 = 0.45;
+        if text != self.code_asked {
+            if now - self.code_changed_at >= PAUSE {
+                self.code_asked = text.clone();
+                let (_, caret) = self.edit(EditKey::Code).range();
+                let caret = caret.min(text.len());
+                if text.is_char_boundary(caret) {
+                    let (prefix, suffix) = text.split_at(caret);
+                    self.data.extra.code.wisp = "thinking".into();
+                    self.store.complete(&path, prefix, suffix, &mut self.data);
+                }
+            } else {
+                tx.wake_after(std::time::Duration::from_secs_f64(PAUSE));
+            }
+        }
+    }
+
+    // ---------- account, apps, memory ----------
+
+    pub fn send_code(&mut self) {
+        let email = self.edit(EditKey::SignInEmail).text.trim().to_owned();
+        if !email.is_empty() {
+            self.store.send_code(&email, &mut self.data);
+        }
+    }
+
+    pub fn verify_code(&mut self) {
+        let email = self.edit(EditKey::SignInEmail).text.trim().to_owned();
+        let code = self.edit(EditKey::SignInCode).text.trim().to_owned();
+        if !email.is_empty() && !code.is_empty() {
+            self.store.verify_code(&email, &code, &mut self.data);
+            self.edit_mut(EditKey::SignInCode).clear();
+        }
+    }
+
+    pub fn sign_out(&mut self) {
+        self.store.sign_out(&mut self.data);
+    }
+
+    pub fn search_apps(&mut self) {
+        let q = self.edit(EditKey::AppSearch).text.trim().to_owned();
+        self.store.search_apps(&q, &mut self.data);
+    }
+
+    pub fn connect_app(&mut self, slug: &str) {
+        self.store.connect_app(slug, &mut self.data);
+    }
+
+    pub fn disconnect_app(&mut self, slug: &str) {
+        self.store.disconnect_app(slug, &mut self.data);
+    }
+
+    pub fn remember(&mut self) {
+        let text = self.edit(EditKey::Memory).text.trim().to_owned();
+        if !text.is_empty() {
+            self.store.remember(&text, &mut self.data);
+            self.edit_mut(EditKey::Memory).clear();
+        }
+    }
+
+    pub fn forget(&mut self, id: &str) {
+        self.store.forget(id, &mut self.data);
+    }
+
+    /// The Publish button: puts the project live.
+    pub fn publish(&mut self) {
+        let chat = self.chat.clone();
+        self.store.publish(chat.as_deref(), &mut self.data);
     }
 
     pub fn set_waker(&mut self, waker: rune::Waker) {
@@ -514,7 +748,22 @@ impl App {
             }
             changed = true;
         }
-        changed |= self.browser.poll(self.view == View::Browser && self.menu.is_none() && self.appearance.is_none());
+        // The web view shows only while its pane is up and nothing covers it.
+        let browser_up = self.view == View::Chat && self.panes.browser && self.menu.is_none() && self.appearance.is_none();
+        changed |= self.browser.poll(browser_up);
+        if let Some(url) = self.store.take_open_url() {
+            let _ = tx.open_url(&url);
+        }
+        let had = self.data.extra.code.suggestion.is_some();
+        self.step_code(now, tx);
+        changed |= had != self.data.extra.code.suggestion.is_some();
+        if let Some(what) = self.browser.picked.take() {
+            let key = if self.chat.is_some() { EditKey::ChatThread } else { EditKey::ChatHome };
+            let before = self.edit(key).text.trim_end().to_owned();
+            let joined = if before.is_empty() { format!("{what} ") } else { format!("{before}\n{what} ") };
+            self.edit_mut(key).replace_text(joined);
+            changed = true;
+        }
         // Living eyes: glances and blinks move `Live` values, so they never rebuild the view.
         if let Some(wait) = crate::bot::animate(now, self.reduced.get()) {
             tx.wake_after(wait);
@@ -534,8 +783,19 @@ impl App {
                 return true;
             }
         }
-        if Chord::parse("mod+k").is_ok_and(|c| c.matches_tx(e, tx)) {
-            tx.focus("cmdk", true);
+        // The editor: Tab takes Wisp's suggestion, Ctrl S saves.
+        if self.view == View::Code {
+            if matches!(e.key, Key::Tab) && e.mods == rune::Mods::default() && self.accept_suggestion() {
+                return true;
+            }
+            if Chord::parse("mod+s").is_ok_and(|c| c.matches_tx(e, tx)) {
+                self.save_file();
+                return true;
+            }
+        }
+        if Chord::parse("mod+j").is_ok_and(|c| c.matches_tx(e, tx)) {
+            self.view = View::Chat;
+            self.panes.terminal = !self.panes.terminal;
             return true;
         }
         if Chord::parse("mod+n").is_ok_and(|c| c.matches_tx(e, tx)) {
@@ -546,7 +806,7 @@ impl App {
             self.open_settings(SettingsPage::General);
             return true;
         }
-        if self.view == View::Browser && Chord::parse("mod+l").is_ok_and(|c| c.matches_tx(e, tx)) {
+        if self.panes.browser && Chord::parse("mod+l").is_ok_and(|c| c.matches_tx(e, tx)) {
             tx.focus("address", true);
             return true;
         }

@@ -33,7 +33,7 @@ png = "0.18"
 # The built-in browser: WebView2 (the Edge engine) as a child window, and the one window style
 # it needs (browser.rs).
 [target.'cfg(windows)'.dependencies]
-wry = { version = "0.57", default-features = false }
+wry = { version = "0.57", default-features = false, features = ["devtools"] }
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 
 # Rune's own patches, from the same rev (see Rune's README, "Depending on Rune").

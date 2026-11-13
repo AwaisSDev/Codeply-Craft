@@ -9,6 +9,8 @@ pub mod code;
 pub mod integrations;
 pub mod prs;
 pub mod settings;
+pub mod tasks;
+pub mod terminal;
 
 use rune::{Cx, El};
 
@@ -21,7 +23,6 @@ pub fn build(s: &App, t: &Theme, cx: &mut Cx<App>) -> (Option<El>, El) {
         View::Chat => (Some(chat::side(s, t)), chat::main(s, t, cx)),
         View::Code => (Some(code::side(s, t)), code::main(s, t)),
         View::Prs => (Some(prs::side(s, t)), prs::main(s, t)),
-        View::Browser => (Some(browser::side(s, t)), browser::main(s, t)),
         View::Integrations => (Some(integrations::side(s, t)), integrations::main(s, t)),
         // The shell draws Settings itself, over the whole window; this is never reached.
         View::Settings => (None, rune::el()),
@@ -31,5 +32,5 @@ pub fn build(s: &App, t: &Theme, cx: &mut Cx<App>) -> (Option<El>, El) {
 /// A view's own dropdown menus, by the id `App::toggle_menu` was given ("agent:<id>", ...).
 /// The shell draws the composer's and chats' menus itself.
 pub fn menu(s: &App, t: &Theme, id: &str) -> Option<El> {
-    agents::menu(s, t, id).or_else(|| chat::menu(s, t, id)).or_else(|| integrations::menu(s, t, id))
+    agents::menu(s, t, id).or_else(|| browser::menu(s, t, id)).or_else(|| chat::menu(s, t, id)).or_else(|| integrations::menu(s, t, id))
 }

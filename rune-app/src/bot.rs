@@ -11,7 +11,7 @@ use std::time::Duration;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
-use rune::{Beat, El, Icon, Live, LoopSpec, Sequence, Spring, el, icon};
+use rune::{El, Icon, Live, Spring, el, icon};
 
 use crate::model::{Agent, AgentState, Face, Gear, Look, Shape};
 
@@ -478,10 +478,6 @@ pub fn animate(now: f64, reduced: bool) -> Option<Duration> {
     Some(Duration::from_millis(250))
 }
 
-/// The working hop at list sizes: a small stretch up from the bot's base and back, 0.9 s a beat.
-/// (Rune's loops animate opacity and scale by keyframes; a there-and-back offset loop isn't one
-/// of them, so the hop is a stretch. The Office moves its pixel bots by whole pixels instead.)
-static HOP: [Beat; 3] = [Beat::new(0.0), Beat::new(0.45).scale(1.06), Beat::new(0.9)];
 
 /// A helper at `size`, showing its state by its eyes and, while working, a small hop. Capsule and
 /// pill eyes that are open glance around and blink (`animate`).
@@ -500,10 +496,8 @@ pub fn agent(a: &Agent, size: f32) -> El {
     } else {
         bot = bot.child(icon(icon_for(&a.color, &a.look, eyes), size));
     }
-    match a.state {
-        AgentState::Working => el().size(size, size).child(bot.origin(0.5, 1.0).looping(LoopSpec::sequence(Sequence::new(&HOP)))),
-        _ => bot,
-    }
+    // No hop while working: the stretch read as the bot getting taller. Its eyes do the work.
+    bot
 }
 
 #[cfg(test)]

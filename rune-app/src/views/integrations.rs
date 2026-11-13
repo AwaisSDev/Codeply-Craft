@@ -118,7 +118,9 @@ pub fn main(s: &App, t: &Theme) -> El {
         .child(ico("search", t.faint))
         .child(text_input(s.edit(EditKey::AppSearch), ui(14.5, 400.0)).key("app-search").single_line().grow(1.0).color(t.text)
             .placeholder(placeholder, t.faint).caret(t.accent, t.accent.alpha(0.3)).label(placeholder)
-            .on_edit(|s: &mut App| s.edit_mut(EditKey::AppSearch)));
+            .on_edit(|s: &mut App| s.edit_mut(EditKey::AppSearch))
+            // Enter searches the engine's catalogue (thousands of apps), not just what's listed.
+            .on_submit(|s: &mut App, _| s.search_apps()));
     let body = match tab {
         IntegrationsTab::Plugins => plugins(s, t, &q),
         IntegrationsTab::Apps => apps(s, t, &q),

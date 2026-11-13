@@ -52,7 +52,7 @@ pub fn transcript(s: &App, t: &Theme, chat: &str, who: &str, width: f32) -> El {
                 let mut r = row().gap(6.0).my(10.0).center_y().child(text(x.clone()).font(ui(13.0, 400.0)).color(t.dim));
                 for id in agents {
                     if let Some(a) = s.data.agent(id) {
-                        r = r.child(bot::agent(a, 18.0)).child(text(a.name.clone()).font(ui(13.0, 400.0)).color(t.dim));
+                        r = r.child(bot::agent(&crate::views::agents::awake(a), 26.0)).child(text(a.name.clone()).font(ui(13.5, 500.0)).color(t.dim));
                     }
                 }
                 r
@@ -67,8 +67,9 @@ pub fn transcript(s: &App, t: &Theme, chat: &str, who: &str, width: f32) -> El {
     }
     // Thinking: the reply hasn't started yet.
     if running && !matches!(items.last(), Some(ThreadItem::Them(_))) {
-        body = body.child(row().gap(8.0).my(8.0).center_y()
-            .child(text(format!("{who} is thinking")).font(ui(14.0, 400.0)).color(t.faint).looping(rune::LoopSpec::opacity(1.4, 0.0, 0.45, 1.0))));
+        body = body.child(row().gap(10.0).my(8.0).center_y()
+            .child(crate::bot::wisp(22.0))
+            .child(crate::ui::wave(&format!("{who} is thinking"), ui(14.0, 400.0), t.text)));
     }
     col().key(format!("thread/{chat}")).w_full().h_full().items_center().scroll(ScrollSpec { stick_bottom: true }).child(body)
 }
@@ -83,8 +84,9 @@ fn steps(s: &App, t: &Theme, chat: &str, start: usize, items: &[ThreadItem], liv
         format!("Worked on {} step{}", items.len(), if items.len() == 1 { "" } else { "s" })
     };
     let toggle_key = key.clone();
+    let shown = if live { crate::ui::wave(&label, ui(13.0, 500.0), t.text) } else { text(label.clone()).font(ui(13.0, 500.0)).color(t.faint) };
     let head = row().key(key.clone()).gap(6.0).py(4.0).center_y().role("button").label(label.clone()).checked(open)
-        .child(text(label).font(ui(13.0, 500.0)).color(t.faint))
+        .child(shown)
         .child(ico_s(if open { "chevron-down" } else { "chevron-right" }, 14.0, t.faint))
         .on_press(move |s: &mut App| s.toggle_expanded(&toggle_key));
     let mut c = col().my(4.0).gap(2.0).child(head);

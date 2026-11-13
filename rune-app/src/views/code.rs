@@ -1,213 +1,235 @@
-//! Code: the project's file tree, editor tabs, the editor with Frontend's live caret, the
-//! terminal and the agent pane. Monospace only in the editor, terminal and the diff hunk.
+//! Code: the project's file tree, the open file in an editable editor with Wisp's ghost
+//! suggestion, the terminal pane, and "Wisp in the editor" (its morphing mascot, its review).
 
-use rune::{Color, El, LoopSpec, Span, col, el, rich, row, text};
+use rune::{Align, Color, El, ScrollSpec, col, el, row, text, text_input};
 
 use crate::app::{App, EditKey};
 use crate::bot;
 use crate::icons::ico_s;
-use crate::model::{ButtonKind, Pill};
+use crate::model::{ButtonKind, Shape};
 use crate::store::Target;
-use crate::theme::{self, Theme, mono, tabular, ui};
-use crate::ui::{btn, composer, enter, fade_in, me, pill, rich_text, side_head, ENTER};
+use crate::theme::{Theme, mono, ui};
+use crate::ui::{btn, card, composer, enter, fade_in, ibtn, me, wave, ENTER};
+use crate::views::agents::awake;
 
-/// The sample file, `«class|text»` marking highlighted runs (k keyword, s string, t function,
-/// c comment, a argument, p number).
-const SRC: &[(&str, &str)] = &[
-    ("c", "«c|// Pricing: three plans, monthly or yearly, matching the homepage.»"),
-    ("", "«k|import» { plans } «k|from» «s|\"./plans.json\"»;"),
-    ("", ""),
-    ("", "«k|export function» «t|renderPricing»(«a|root», { «a|yearly» = «k|false» } = {}) {"),
-    ("", "  «k|const» cards = plans.«t|map»((«a|p») => {"),
-    ("", "    «k|const» price = yearly ? p.yearly : p.monthly;"),
-    ("add", "    «k|const» save = yearly ? «t|Math».«t|round»((«p|1» - p.yearly / (p.monthly * «p|12»)) * «p|100») : «p|0»;"),
-    ("add", "    «k|return» «s|`<article class=\"plan${p.featured ? \" featured\" : \"\"}\">»"),
-    ("add", "«s|      <h3>${p.name}</h3>»"),
-    ("add", "«s|      <p class=\"price\">$${price}<small>/${yearly ? \"yr\" : \"mo\"}</small></p>»"),
-    ("cur", "«s|      ${save ? `<span class=\"save\">Save ${save}%</span>` : \"\"}»"),
-    ("", "«s|    </article>`»;"),
-    ("", "  });"),
-    ("", "  root.innerHTML = cards.«t|join»(«s|\"\"»);"),
-    ("", "}"),
-    ("", ""),
-    ("c", "«c|// The switch: one click flips every card, no reload.»"),
-    ("", "«k|export function» «t|bindToggle»(«a|root», «a|toggle») {"),
-    ("", "  toggle.«t|addEventListener»(«s|\"change\"», () => «t|renderPricing»(root, { yearly: toggle.checked }));"),
-    ("", "}"),
-];
+const LINE: f32 = 19.0;
 
-fn syntax(class: char) -> Color {
-    theme::hex(match class {
-        'k' => "#c792ea",
-        's' => "#a5d6a7",
-        't' => "#82aaff",
-        'c' => "#6a737d",
-        'a' => "#ffcb6b",
-        'p' => "#89ddff",
-        _ => "#ececec",
-    })
-}
-
-/// One highlighted line: the plain text and its coloured spans.
-pub fn highlight(src: &str) -> (String, Vec<Span>) {
-    let mut plain = String::new();
-    let mut spans = Vec::new();
-    let mut rest = src;
-    while let Some(open) = rest.find('«') {
-        plain.push_str(&rest[..open]);
-        let after = &rest[open + '«'.len_utf8()..];
-        let close = after.find('»').unwrap_or(after.len());
-        let (class, body) = after[..close].split_once('|').unwrap_or(("", &after[..close]));
-        let start = plain.len();
-        plain.push_str(body);
-        let mut s = Span::new(start, plain.len());
-        s.color = Some(syntax(class.chars().next().unwrap_or(' ')));
-        spans.push(s);
-        rest = after.get(close + '»'.len_utf8()..).unwrap_or("");
-    }
-    plain.push_str(rest);
-    (plain, spans)
-}
+// ---------- sidebar ----------
 
 pub fn side(s: &App, t: &Theme) -> El {
-    let r = |depth: f32, chev: Option<&str>, icon: &str, name: &str, mark: Option<(&str, Color)>, on: bool| {
-        row().min_h(28.0).py(3.0).pr(8.0).pl(8.0 + depth).gap(6.0).radius(10.0).center_y().hover(t.hover)
-            .fill(if on { t.active } else { Color::TRANSPARENT })
-            .children(chev.map(|c| ico_s(c, 16.0, t.faint)))
-            .child(ico_s(icon, 16.0, t.faint))
-            .child(text(name.to_owned()).font(ui(13.5, 400.0)).color(t.text).grow(1.0).truncate())
-            .children(mark.map(|(m, c)| text(m.to_owned()).font(ui(11.0, 700.0)).color(c)))
-    };
-    let rows = [
-        r(0.0, Some("chevron-down"), "folder-open", "src", None, false),
-        r(18.0, Some("chevron-down"), "folder-open", "pricing", None, false),
-        r(36.0, None, "file-text", "pricing.js", Some(("M", t.warn)), true),
-        r(36.0, None, "file-text", "pricing.css", Some(("M", t.warn)), false),
-        r(36.0, None, "file", "plans.json", Some(("A", t.green)), false),
-        r(18.0, Some("chevron-right"), "folder", "components", None, false),
-        r(18.0, None, "file-text", "main.js", None, false),
-        r(0.0, Some("chevron-right"), "folder", "public", None, false),
-        r(0.0, None, "file", "package.json", None, false),
-        r(0.0, None, "file", "README.md", None, false),
-    ];
+    let code = &s.data.extra.code;
+    let mut rows: Vec<El> = Vec::new();
+    for path in &code.files {
+        let is_dir = path.ends_with('/');
+        let parts: Vec<&str> = path.trim_end_matches('/').split('/').collect();
+        let depth = parts.len().saturating_sub(1);
+        // Hidden when any ancestor folder is collapsed (`s.expanded` holds the collapsed ones).
+        let hidden = (1..=depth).any(|i| s.expanded.contains(&format!("dir/{}/", parts[..i].join("/"))));
+        if hidden {
+            continue;
+        }
+        let name = parts.last().copied().unwrap_or("").to_owned();
+        let indent = 8.0 + depth as f32 * 16.0;
+        if is_dir {
+            let collapsed = s.expanded.contains(&format!("dir/{path}"));
+            let key = format!("dir/{path}");
+            let k = key.clone();
+            rows.push(
+                row().key(key).min_h(28.0).py(3.0).pr(8.0).pl(indent).gap(6.0).radius(10.0).center_y().hover(t.hover)
+                    .role("button").label(name.clone())
+                    .child(ico_s(if collapsed { "chevron-right" } else { "chevron-down" }, 16.0, t.faint))
+                    .child(ico_s(if collapsed { "folder" } else { "folder-open" }, 16.0, t.faint))
+                    .child(text(name).font(ui(13.5, 400.0)).color(t.text).grow(1.0).truncate())
+                    .on_press(move |s: &mut App| s.toggle_expanded(&k)),
+            );
+        } else {
+            let on = code.open.as_deref() == Some(path.as_str());
+            let p = path.clone();
+            rows.push(
+                row().key(format!("file/{path}")).min_h(28.0).py(3.0).pr(8.0).pl(indent + 22.0).gap(6.0).radius(10.0).center_y().hover(t.hover)
+                    .fill(if on { t.active } else { Color::TRANSPARENT })
+                    .role("button").label(name.clone())
+                    .child(ico_s("file", 16.0, if on { t.text } else { t.faint }))
+                    .child(text(name).font(ui(13.5, if on { 500.0 } else { 400.0 })).color(t.text).grow(1.0).truncate())
+                    .on_press(move |s: &mut App| s.open_file(&p)),
+            );
+        }
+    }
+    let reload = code.open.clone();
     col().h_full().min_h(0.0)
-        .child(side_head(t, &s.data.project, Some(("oai-folder", "Open folder"))))
-        .child(col().grow(1.0).min_h(0.0).px(8.0)
-            .child(row().gap(8.0).px(8.0).pt(14.0).pb(6.0).center_y().child(ico_s("branch", 16.0, t.faint))
-                .child(text("claude/pricing-page").font(ui(12.5, 600.0)).color(t.faint)))
-            .children(rows.into_iter().enumerate().map(|(i, e)| enter(e, i))))
+        .child(row().pt(14.0).pr(12.0).pb(8.0).pl(16.0).center_y().justify_between()
+            .child(text(s.data.project.clone()).font(ui(15.0, 650.0)).color(t.text).truncate().grow(1.0))
+            .child(ibtn(t, "refresh", "Refresh").key("code-refresh").on_press(move |s: &mut App| {
+                if let Some(p) = &reload {
+                    s.open_file(p);
+                }
+            })))
+        .child(col().grow(1.0).min_h(0.0).px(8.0).scroll(ScrollSpec { stick_bottom: false })
+            .children(rows.into_iter().enumerate().map(|(i, e)| enter(e, i.min(12)))))
         .child(me(s, t))
 }
 
+// ---------- main ----------
+
 pub fn main(s: &App, t: &Theme) -> El {
+    let mut left = col().grow(1.0).min_w(0.0).h_full().border_sides([0.0, 1.0, 0.0, 0.0], t.border)
+        .child(tab_bar(s, t))
+        .child(breadcrumb(s, t))
+        .child(editor(s, t));
+    if s.panes.terminal {
+        left = left.child(col().h(240.0).min_h(0.0).child(crate::views::terminal::pane(s, t)));
+    }
     row().key("ide").w_full().h_full().transition(fade_in()).motion(ENTER)
-        .child(col().grow(1.0).min_w(0.0).h_full().border_sides([0.0, 1.0, 0.0, 0.0], t.border)
-            .child(editor(t))
-            .child(terminal(t)))
-        .child(agent_pane(s, t))
+        .child(left)
+        .child(wisp_panel(s, t))
 }
 
-fn editor(t: &Theme) -> El {
-    // The prototype marks a modified tab with a dot; Codeply has no status dots in labels, and the
-    // file tree's "M" already says it.
-    let tab = |icon: &str, name: &str, on: bool| {
-        row().h(36.0).px(14.0).gap(8.0).center_y().border_sides([0.0, 1.0, 0.0, 0.0], t.border)
-            .fill(if on { t.bg } else { Color::TRANSPARENT })
-            .children(on.then(|| el().pin(Some(0.0), Some(0.0), Some(0.0), None).h(2.0).fill(t.accent)))
-            .child(ico_s(icon, 16.0, if on { t.text } else { t.faint }))
-            .child(text(name.to_owned()).font(ui(13.0, 400.0)).color(if on { t.text } else { t.faint }))
-    };
-    let tabs = row().fill(t.rail).border_sides([0.0, 0.0, 1.0, 0.0], t.border)
-        .child(tab("file-text", "pricing.js", true))
-        .child(tab("file-text", "pricing.css", false))
-        .child(tab("file", "plans.json", false));
-    let crumbs = row().h(30.0).px(16.0).gap(6.0).center_y().border_sides([0.0, 0.0, 1.0, 0.0], t.border)
-        .child(text("src").font(ui(12.5, 400.0)).color(t.faint)).child(ico_s("chevron-right", 12.0, t.faint))
-        .child(text("pricing").font(ui(12.5, 400.0)).color(t.faint)).child(ico_s("chevron-right", 12.0, t.faint))
-        .child(text("pricing.js").font(ui(12.5, 400.0)).color(t.faint));
-    let pink = theme::hex("#ff5c9d");
-    let lines = SRC.iter().enumerate().map(|(i, (kind, src))| {
-        let (plain, spans) = highlight(src);
-        let added = *kind == "add" || *kind == "cur";
-        // `.ln.add` and `.ln.cur` both tint; the current line is a touch lighter.
-        let fill = match *kind { "cur" => t.green.alpha(0.12), "add" => t.green.alpha(0.09), _ => Color::TRANSPARENT };
-        row().h(20.0).center_y().fill(fill)
-            .child(text((i + 1).to_string()).font(mono(13.0, 20.0)).color(if added { t.green } else { theme::hex("#5a5a5a") }).w(52.0).pr(16.0).align(rune::Align::End))
-            .child(rich(plain, spans).font(mono(13.0, 20.0)).color(t.text).single_line())
-            .children((*kind == "cur").then(|| {
-                row().gap(6.0).center_y()
-                    .child(el().size(2.0, 16.0).fill(pink).looping(LoopSpec::opacity(1.0, 0.0, 0.0, 1.0)))
-                    .child(el().px(6.0).radius(4.0).fill(pink).child(text("Frontend").font(ui(11.0, 600.0).lh(16.0)).color(Color::WHITE)))
-            }))
-    });
-    col().grow(1.0).min_h(0.0).child(tabs).child(crumbs).child(col().grow(1.0).min_h(0.0).py(8.0).clip_rounded(0.0).children(lines))
+fn tab_bar(s: &App, t: &Theme) -> El {
+    let code = &s.data.extra.code;
+    let name = code.open.as_deref().map(|p| p.rsplit('/').next().unwrap_or(p).to_owned());
+    let mut bar = row().h(38.0).px(14.0).gap(8.0).center_y().fill(t.rail).border_sides([0.0, 0.0, 1.0, 0.0], t.border);
+    if let Some(name) = name {
+        bar = bar
+            .child(ico_s("file", 16.0, t.text))
+            .child(text(name).font(ui(13.0, 500.0)).color(t.text))
+            .children(s.code_dirty().then(|| el().size(8.0, 8.0).radius(4.0).fill(t.warn)));
+    }
+    bar = bar.child(el().grow(1.0));
+    if code.open.is_some() {
+        bar = bar
+            .child(btn(t, "Save", None, ButtonKind::Plain).key("code-save").on_press(|s: &mut App| s.save_file()))
+            .child(if code.reviewing {
+                row().key("code-review").h(32.0).px(12.0).center_y().child(wave("Reviewing", ui(13.0, 500.0), t.dim))
+            } else {
+                btn(t, "Review", Some("check"), ButtonKind::Plain).key("code-review").on_press(|s: &mut App| s.review_file())
+            });
+    }
+    bar
 }
 
-fn terminal(t: &Theme) -> El {
-    let tab = |name: &str, on: bool| {
-        col().h(34.0).justify_center()
-            .child(text(name.to_owned()).font(ui(12.5, 400.0)).color(if on { t.text } else { t.faint }))
-            .children(on.then(|| el().pin(Some(0.0), None, Some(0.0), Some(0.0)).h(2.0).fill(t.text)))
-    };
-    let (ok, dim, ink) = (t.green, theme::hex("#6f6f6f"), theme::hex("#cfcfcf"));
-    let line = |parts: &[(&str, Color)]| {
-        let mut plain = String::new();
-        let mut spans = Vec::new();
-        for (p, c) in parts {
-            let start = plain.len();
-            plain.push_str(p);
-            let mut s = Span::new(start, plain.len());
-            s.color = Some(*c);
-            spans.push(s);
+fn breadcrumb(s: &App, t: &Theme) -> El {
+    let mut r = row().h(30.0).px(16.0).gap(6.0).center_y().border_sides([0.0, 0.0, 1.0, 0.0], t.border);
+    if let Some(path) = &s.data.extra.code.open {
+        let parts: Vec<&str> = path.split('/').collect();
+        let last = parts.len().saturating_sub(1);
+        for (i, part) in parts.iter().enumerate() {
+            if i > 0 {
+                r = r.child(ico_s("chevron-right", 12.0, t.faint));
+            }
+            r = r.child(text((*part).to_owned()).font(ui(12.5, if i == last { 500.0 } else { 400.0 })).color(if i == last { t.text } else { t.faint }));
         }
-        rich(plain, spans).font(mono(12.5, 19.0)).single_line()
-    };
-    col().h(200.0).fill(theme::hex("#0b0b0b")).border_sides([1.0, 0.0, 0.0, 0.0], t.border)
-        .child(row().h(34.0).px(14.0).gap(16.0).center_y().border_sides([0.0, 0.0, 1.0, 0.0], t.border)
-            .child(tab("Terminal", true)).child(tab("Problems", false)).child(tab("Output", false)))
-        .child(col().px(14.0).py(8.0).clip_rounded(0.0).grow(1.0)
-            .child(line(&[("~/launch-site", dim), (" npm test", ink)]))
-            .child(line(&[("PASS", ok), (" src/pricing/pricing.test.js", ink)]))
-            .child(line(&[("  pricing", ink)]))
-            .child(line(&[("    ", ink), ("✓", ok), (" renders three plans (4 ms)", ink)]))
-            .child(line(&[("    ", ink), ("✓", ok), (" yearly shows the saving (2 ms)", ink)]))
-            .child(line(&[("    ", ink), ("✓", ok), (" toggle re-renders without reload (3 ms)", ink)]))
-            .child(line(&[(" ", ink)]))
-            .child(line(&[("Tests: ", ink), ("212 passed", ok), (", 212 total", ink)]))
-            .child(line(&[("~/launch-site", dim), (" ", ink)])))
+    }
+    r
 }
 
-fn agent_pane(s: &App, t: &Theme) -> El {
-    let Some(frontend) = s.data.agent("frontend") else { return el() };
-    let step = |i: usize, done: bool, txt: &str, d: &str| {
-        enter(row().gap(8.0).items_start()
-            .child(ico_s(if done { "check" } else { "refresh" }, 16.0, if done { t.green } else { t.dim }).mt(1.0))
-            .child(rich_text(txt, 13.0, t.dim, t.text).wrap().grow(1.0).min_w(0.0))
-            .child(text(d.to_owned()).font(tabular(12.0, 400.0)).color(t.faint)), i)
+fn sev_color(t: &Theme, severity: &str) -> Color {
+    match severity {
+        "error" => t.red,
+        "warning" => t.warn,
+        _ => t.accent,
+    }
+}
+
+fn editor(s: &App, t: &Theme) -> El {
+    let code = &s.data.extra.code;
+    let Some(open) = code.open.clone() else {
+        return col().grow(1.0).min_h(0.0).center().gap(8.0)
+            .child(ico_s("file", 24.0, t.faint))
+            .child(text("Open a file from the left").font(ui(14.0, 400.0)).color(t.faint));
     };
-    let (plus, minus) = (theme::hex("#b9f0cf"), theme::hex("#ffc2b8"));
-    let hunk_line = |s: &str, ink: Color, bg: Color| row().px(10.0).h(18.0).center_y().fill(bg).child(text(s.to_owned()).font(mono(12.0, 18.0)).color(ink).single_line());
-    let hunk = col().border(1.0, t.card_border).radius(10.0).clip_rounded(10.0)
-        .child(row().gap(8.0).px(10.0).py(8.0).center_y().fill(t.card)
-            .child(ico_s("file-text", 16.0, t.text)).child(text("pricing.js").font(ui(12.5, 400.0)).color(t.text).grow(1.0))
-            .child(pill(t, "+5", Pill::Green)))
-        .child(col().py(6.0)
-            .child(hunk_line("+ const save = yearly ? Math.round(...) : 0;", plus, t.green.alpha(0.1)))
-            .child(hunk_line("+ return `<article class=\"plan...\">", plus, t.green.alpha(0.1)))
-            .child(hunk_line("- return `<div class=\"plan\">", minus, t.red.alpha(0.1))));
-    col().w(320.0).h_full().fill(t.side)
-        .child(row().gap(10.0).padding(14.0).center_y().border_sides([0.0, 0.0, 1.0, 0.0], t.border)
-            .child(bot::agent(frontend, 32.0))
-            .child(col().child(text("Frontend is editing").font(ui(14.0, 600.0)).color(t.text))
-                .child(text("Claude Code on your plan").font(ui(12.0, 400.0)).color(t.faint))))
-        .child(col().grow(1.0).min_h(0.0).px(14.0).py(12.0).gap(10.0)
-            .child(step(0, true, "Read **index.html** and the homepage styles", "0:12"))
-            .child(step(1, true, "Asked Backend for the plan data", "1:40"))
-            .child(step(2, true, "Created **plans.json**", "2:05"))
-            .child(step(3, false, "Editing **pricing.js**", "now"))
-            .child(enter(hunk, 4))
-            .child(enter(row().gap(8.0).child(btn(t, "Keep", None, ButtonKind::Green)).child(btn(t, "Undo", None, ButtonKind::Plain))
-                .child(btn(t, "Preview", Some("external"), ButtonKind::Plain)), 5)))
-        .child(col().px(12.0).pt(10.0).pb(12.0).border_sides([1.0, 0.0, 0.0, 0.0], t.border)
-            .child(composer(s, t, EditKey::AgentThread, Target::Agent("frontend".into()), "Tell Frontend what to change", false, true)))
+    let edit = s.edit(EditKey::Code);
+    let lines = edit.text.split('\n').count().max(1);
+    let gutter = col().w(44.0).children((1..=lines).map(|n| {
+        let dot = code.review.iter().find(|r| r.line as usize == n).map(|r| sev_color(t, &r.severity));
+        row().h(LINE).center_y()
+            .child(el().w(14.0).h(LINE).center().children(dot.map(|c| el().size(6.0, 6.0).radius(3.0).fill(c))))
+            .child(text(n.to_string()).font(mono(12.5, LINE)).color(t.faint).grow(1.0).pr(10.0).align(Align::End))
+    }));
+    let field = text_input(edit, mono(13.0, LINE)).key("code-editor").grow(1.0).min_w(0.0).color(t.text)
+        .caret(t.accent, t.accent.alpha(0.3)).label("Code editor")
+        .on_edit(|s: &mut App| s.edit_mut(EditKey::Code));
+    let body = col().grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false })
+        .child(row().py(10.0).items_start().child(gutter).child(field.pr(16.0)));
+
+    // Rune's text input has no inline ghost text, so the suggestion floats in a chip.
+    let ghost = code.suggestion.as_ref().filter(|(f, _, _)| *f == open).map(|(_, _, sug)| {
+        let first = sug.lines().next().unwrap_or("").trim();
+        let mut shown: String = first.chars().take(60).collect();
+        if first.chars().count() > 60 || sug.contains('\n') {
+            shown.push('…');
+        }
+        row().key("code-ghost").gap(8.0).px(10.0).h(30.0).center_y().radius(9.0).fill(t.composer).border(1.0, t.composer_border)
+            .shadow(6.0, 18.0, crate::theme::rgba(0, 0, 0, 0.4))
+            .pin(None, Some(10.0), Some(18.0), None)
+            .transition(fade_in()).motion(ENTER)
+            .child(ico_s("check", 14.0, t.purple))
+            .child(text("Wisp suggests:").font(ui(12.0, 500.0)).color(t.dim))
+            .child(text(shown).font(mono(12.0, 18.0)).color(t.faint).single_line())
+            .child(row().h(20.0).px(6.0).radius(5.0).center_y().fill(t.active).border(1.0, t.control_border)
+                .child(text("Tab").font(ui(11.0, 600.0)).color(t.text)))
+    });
+    col().grow(1.0).min_h(0.0).child(body).children(ghost)
+}
+
+// ---------- Wisp panel ----------
+
+fn wisp_panel(s: &App, t: &Theme) -> El {
+    let code = &s.data.extra.code;
+    let mut panel = col().w(320.0).h_full().fill(t.side).border_sides([0.0, 1.0, 0.0, 0.0], t.border);
+
+    let (shape, status, active) = match code.wisp.as_str() {
+        "writing" => (Shape::Round, "Writing with you".to_owned(), true),
+        "thinking" => (Shape::Cloud, "Thinking of a completion".to_owned(), true),
+        "reviewing" => {
+            let name = code.open.as_deref().map(|p| p.rsplit('/').next().unwrap_or(p)).unwrap_or("this file");
+            (Shape::Square, format!("Reviewing {name}"), true)
+        }
+        "fixing" => (Shape::Triangle, "Fixing that line".to_owned(), true),
+        _ => (Shape::Hex, "Watching your code".to_owned(), false),
+    };
+    let mascot = s.data.agent("wisp").map(|a| {
+        let mut a = awake(a);
+        a.look.shape = shape;
+        // One key per shape, so a change of shape mounts a new mascot that fades in.
+        el().key(format!("wisp-mascot/{shape:?}")).transition(fade_in()).motion(ENTER).child(bot::agent(&a, 64.0))
+    });
+    let status_line = if active {
+        wave(&status, ui(13.5, 500.0), t.text)
+    } else {
+        row().child(text(status).font(ui(13.5, 500.0)).color(t.dim))
+    };
+    panel = panel.child(
+        col().items_center().gap(10.0).pt(22.0).pb(16.0).border_sides([0.0, 0.0, 1.0, 0.0], t.border)
+            .children(mascot)
+            .child(status_line)
+            .child(text("Wisp in the editor").font(ui(12.0, 400.0)).color(t.faint)),
+    );
+
+    let mut list = col().grow(1.0).min_h(0.0).px(14.0).py(12.0).gap(10.0).scroll(ScrollSpec { stick_bottom: false })
+        .child(text("Review").font(ui(12.5, 600.0)).color(t.faint));
+    if code.review.is_empty() {
+        list = list.child(text("No issues. Press Review to have Wisp check this file.").font(ui(13.0, 400.0)).color(t.faint).wrap());
+    }
+    for (i, n) in code.review.iter().enumerate() {
+        let c = sev_color(t, &n.severity);
+        let line = n.line;
+        let mut c_card = card(t).gap(8.0).padding(12.0)
+            .child(row().gap(8.0).center_y()
+                .child(row().h(22.0).px(8.0).radius(11.0).center_y().fill(c.alpha(0.14))
+                    .child(text(n.severity.clone()).font(ui(12.0, 600.0)).color(c)))
+                .child(text(format!("Line {line}")).font(ui(12.5, 500.0)).color(t.dim)))
+            .child(text(n.message.clone()).font(ui(13.0, 400.0)).color(t.text).wrap());
+        if let Some(fix) = &n.fix {
+            c_card = c_card
+                .child(el().px(8.0).py(6.0).radius(8.0).fill(t.bg)
+                    .child(text(fix.clone()).font(mono(12.0, 18.0)).color(t.text).wrap()))
+                .child(row().child(btn(t, "Apply", Some("check"), ButtonKind::Green).key(format!("fix/{line}"))
+                    .on_press(move |s: &mut App| s.apply_fix(line))));
+        }
+        list = list.child(enter(c_card.key(format!("note/{line}")), i.min(8)));
+    }
+    panel = panel.child(list);
+
+    panel.child(col().px(12.0).pt(10.0).pb(12.0).border_sides([1.0, 0.0, 0.0, 0.0], t.border)
+        .child(composer(s, t, EditKey::AgentThread, Target::Wisp, "Ask Wisp about this file", false, true)))
 }

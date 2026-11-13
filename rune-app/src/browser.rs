@@ -18,6 +18,8 @@ enum Event {
     Loading(u64, bool),
     /// A page asked for a new window (a link with `target=_blank`): open it in a new tab.
     NewTab(String),
+    /// The element picker: what was clicked, ready for the chat ("`selector` on url: text").
+    Picked(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -41,6 +43,12 @@ pub struct Browser {
     synced: Option<(bool, [f32; 4], u64)>,
     /// Why there is no native view, if it failed (shown in the view).
     pub problem: Option<String>,
+    /// The page's zoom, 1.0 is 100%.
+    pub zoom: f64,
+    /// Whether the element picker is waiting for a click.
+    pub picking: bool,
+    /// Something the picker picked, for the app to put in the chat's composer.
+    pub picked: Option<String>,
 }
 
 /// A URL from what was typed: a URL as it is, `example.com` with https, anything else a search.
@@ -78,6 +86,37 @@ impl Browser {
             waker: None,
             synced: None,
             problem: None,
+            zoom: 1.0,
+            picking: false,
+            picked: None,
+        }
+    }
+
+    /// Codeply's element picker: the next click on the page picks that element for the chat.
+    pub fn pick(&mut self) {
+        if let Some(t) = self.current() {
+            native::script(t.id, "window.__codeplyPick && window.__codeplyPick()");
+            self.picking = true;
+        }
+    }
+
+    /// Zooms the page by `step` (0.1 is ten percent), between 30% and 300%; 0 resets it.
+    pub fn zoom_by(&mut self, step: f64) {
+        self.zoom = if step == 0.0 { 1.0 } else { (self.zoom + step).clamp(0.3, 3.0) };
+        if let Some(t) = self.current() {
+            native::zoom(t.id, self.zoom);
+        }
+    }
+
+    pub fn devtools(&self) {
+        if let Some(t) = self.current() {
+            native::devtools(t.id);
+        }
+    }
+
+    pub fn clear_data(&self) {
+        if let Some(t) = self.current() {
+            native::clear_data(t.id);
         }
     }
 
@@ -176,6 +215,10 @@ impl Browser {
                     }
                 }
                 Event::NewTab(url) => self.new_tab(&url),
+                Event::Picked(what) => {
+                    self.picking = false;
+                    self.picked = Some(what);
+                }
             }
         }
         if !Browser::is_native() {
@@ -213,6 +256,43 @@ pub fn set_window(handle: &rune::WindowHandle) {
     native::set_window(handle);
 }
 
+
+/// Injected into every page: Codeply's element picker. While picking, the element under the
+/// pointer gets an outline; a click sends its selector and text to the app (and is swallowed).
+#[cfg_attr(not(windows), allow(dead_code))]
+const PICKER_JS: &str = r#"(() => {
+  if (window.__codeplyPicker) return;
+  window.__codeplyPicker = true;
+  let on = false, box = null;
+  const sel = (el) => {
+    if (el.id) return '#' + el.id;
+    const parts = [];
+    while (el && el.nodeType === 1 && parts.length < 4) {
+      let p = el.tagName.toLowerCase();
+      if (el.classList.length) p += '.' + [...el.classList].slice(0, 2).join('.');
+      parts.unshift(p);
+      el = el.parentElement;
+    }
+    return parts.join(' > ');
+  };
+  const show = (e) => {
+    if (!on) return;
+    if (!box) { box = document.createElement('div'); box.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;border:2px solid #3d8bfd;background:rgba(61,139,253,.12);border-radius:4px;transition:all .06s'; document.documentElement.appendChild(box); }
+    const r = e.target.getBoundingClientRect();
+    Object.assign(box.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', display: 'block' });
+  };
+  const pick = (e) => {
+    if (!on) return;
+    e.preventDefault(); e.stopPropagation();
+    on = false; if (box) box.style.display = 'none';
+    const t = (e.target.innerText || e.target.alt || '').trim().slice(0, 160);
+    window.ipc.postMessage(JSON.stringify({ type: 'picked', selector: sel(e.target), text: t, url: location.href }));
+  };
+  document.addEventListener('mousemove', show, true);
+  document.addEventListener('click', pick, true);
+  window.__codeplyPick = () => { on = true; };
+})();"#;
+
 #[cfg(windows)]
 mod native {
     //! WebView2 through wry, as child windows of the app's window.
@@ -222,7 +302,7 @@ mod native {
     use wry::dpi::{LogicalPosition, LogicalSize};
     use wry::{NewWindowResponse, PageLoadEvent, Rect, WebContext, WebView, WebViewBuilder};
 
-    use super::Event;
+    use super::{Event, PICKER_JS};
 
     thread_local! {
         static WINDOW: RefCell<Option<rune::WindowHandle>> = const { RefCell::new(None) };
@@ -272,8 +352,8 @@ mod native {
                 w();
             }
         };
-        let (t1, t2, t3, t4) = (tx.clone(), tx.clone(), tx.clone(), tx);
-        let (w1, w2, w3, w4) = (wake.clone(), wake.clone(), wake.clone(), wake);
+        let (t1, t2, t3, t4, t5) = (tx.clone(), tx.clone(), tx.clone(), tx.clone(), tx);
+        let (w1, w2, w3, w4, w5) = (wake.clone(), wake.clone(), wake.clone(), wake.clone(), wake);
         CONTEXT.with_borrow_mut(|ctx| {
             let ctx = ctx.get_or_insert_with(|| WebContext::new(Some(data_dir())));
             window.with_raw_handle(|handle| {
@@ -282,6 +362,15 @@ mod native {
                     .with_bounds(bounds(rect))
                     .with_background_color((15, 15, 15, 255))
                     .with_devtools(true)
+                    .with_initialization_script(PICKER_JS)
+                    .with_ipc_handler(move |req| {
+                        let Ok(v) = serde_json::from_str::<serde_json::Value>(req.body()) else { return };
+                        if v["type"] == "picked" {
+                            let text = v["text"].as_str().unwrap_or_default();
+                            let what = format!("`{}` on {}{}", v["selector"].as_str().unwrap_or("element"), v["url"].as_str().unwrap_or_default(), if text.is_empty() { String::new() } else { format!(": \"{text}\"") });
+                            ping(&t5, Event::Picked(what), &w5);
+                        }
+                    })
                     .with_document_title_changed_handler(move |title| ping(&t1, Event::Title(id, title), &w1))
                     .with_on_page_load_handler(move |e, url| {
                         ping(&t2, Event::Loading(id, matches!(e, PageLoadEvent::Started)), &w2);
@@ -356,6 +445,30 @@ mod native {
     pub fn close(id: u64) {
         VIEWS.with_borrow_mut(|views| views.retain(|(k, _)| *k != id));
     }
+
+    fn with(id: u64, f: impl FnOnce(&WebView)) {
+        VIEWS.with_borrow(|views| {
+            if let Some((_, v)) = views.iter().find(|(k, _)| *k == id) {
+                f(v);
+            }
+        });
+    }
+
+    pub fn zoom(id: u64, scale: f64) {
+        with(id, |v| {
+            let _ = v.zoom(scale);
+        });
+    }
+
+    pub fn devtools(id: u64) {
+        with(id, |v| v.open_devtools());
+    }
+
+    pub fn clear_data(id: u64) {
+        with(id, |v| {
+            let _ = v.clear_all_browsing_data();
+        });
+    }
 }
 
 #[cfg(not(windows))]
@@ -374,6 +487,9 @@ mod native {
     pub fn script(_: u64, _: &str) {}
     pub fn reload(_: u64) {}
     pub fn close(_: u64) {}
+    pub fn zoom(_: u64, _: f64) {}
+    pub fn devtools(_: u64) {}
+    pub fn clear_data(_: u64) {}
 }
 
 #[cfg(test)]

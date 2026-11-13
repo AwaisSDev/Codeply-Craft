@@ -4,8 +4,9 @@
 //!
 //! Where the engine comes from, first match wins:
 //! 1. `CODEPLY_CLI_PATH` (a codeply-cli folder), as the Codeply app itself honours it;
-//! 2. the installed Codeply app's `resources/` (Windows: %LOCALAPPDATA%\Programs\Codeply Craft);
-//! 3. a source checkout above this binary (running from `rune-app/target/...`).
+//! 2. `resources/` beside this binary: the engine the release zip ships with;
+//! 3. the installed Codeply app's `resources/` (Windows: %LOCALAPPDATA%\Programs\Codeply Craft);
+//! 4. a source checkout above this binary (running from `rune-app/target/...`).
 //!
 //! The Node is the app's own `resources/dsh-runtime/node(.exe)` (Node 24, which DSH needs), else
 //! `CODEPLY_DSH_NODE`, else `node` on PATH. The sidecar listens on 127.0.0.1 only, on a port
@@ -107,6 +108,10 @@ fn resource_dirs() -> Vec<PathBuf> {
     let mut out = Vec::new();
     if let Some(r) = std::env::var_os("CODEPLY_APP_RESOURCES") {
         out.push(PathBuf::from(r));
+    }
+    // The engine this app ships with: `resources/` beside Codeply.exe (the release zip has it).
+    if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.join("resources"))) {
+        out.push(dir);
     }
     for name in ["Codeply Craft", "codeply-craft", "Codeply"] {
         if let Some(local) = std::env::var_os("LOCALAPPDATA") {

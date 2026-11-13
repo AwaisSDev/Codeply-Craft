@@ -10,6 +10,9 @@ on:
     branches: [rune-v4, rune-v5]
     paths:
       - 'rune-app/**'
+      - 'codeply-cli/**'
+      - 'craft-dsh/**'
+      - 'scripts/package-dsh.mjs'
       - '.github/workflows/rune-windows.yml'
 
 permissions:
@@ -50,10 +53,28 @@ jobs:
         working-directory: rune-app
         run: cargo test --release
 
+      # The engine ships inside the zip, so Codeply.exe needs nothing else installed:
+      # DSH and the Node 24 that runs it (scripts/package-dsh.mjs, as the Electron build does),
+      # and codeply-cli with its production dependencies.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Build the engine (DSH and codeply-cli)
+        run: |
+          npm install -g pnpm@11.28.5
+          (cd craft-dsh && pnpm install --frozen-lockfile && pnpm run build)
+          node scripts/package-dsh.mjs
+          (cd codeply-cli && npm ci --omit=dev --no-audit --no-fund)
+
       - name: Package
         run: |
-          mkdir -p dist/Codeply-Rune
+          mkdir -p dist/Codeply-Rune/resources
           cp rune-app/target/release/codeply.exe dist/Codeply-Rune/Codeply.exe
+          cp -r dsh-runtime dist/Codeply-Rune/resources/dsh-runtime
+          mkdir -p dist/Codeply-Rune/resources/codeply-cli
+          cp -r codeply-cli/bin codeply-cli/lib codeply-cli/skills codeply-cli/agents codeply-cli/node_modules codeply-cli/package.json dist/Codeply-Rune/resources/codeply-cli/
+          du -sh dist/Codeply-Rune/resources/*
           cp rune-app/licenses/* dist/Codeply-Rune/
           cp rune-app/TRY-IT.txt dist/Codeply-Rune/
           cd dist && 7z a -tzip Codeply-Rune-windows-x64.zip Codeply-Rune >/dev/null

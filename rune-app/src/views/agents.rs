@@ -13,6 +13,14 @@ use crate::ui::{btn, card, composer, enter, me, name_and_line, side_head, side_r
 
 // ---------- sidebar ----------
 
+/// The agent as the lists show it: always awake and looking around. Its mood (working,
+/// thinking, needs you, asleep) shows on its own page, in the Computer card.
+pub fn awake(a: &Agent) -> Agent {
+    let mut a = a.clone();
+    a.state = AgentState::Idle;
+    a
+}
+
 pub fn side(s: &App, t: &Theme) -> El {
     let mut list = col().px(8.0).pb(10.0);
 
@@ -32,10 +40,9 @@ pub fn side(s: &App, t: &Theme) -> El {
         list = list.child(
             side_row(t, s.agent.as_deref() == Some("wisp"))
                 .key("agent-row/wisp")
-                .mt(4.0)
                 .role("button")
                 .label(w.name.clone())
-                .child(bot::agent(w, 34.0))
+                .child(bot::agent(&awake(w), 32.0))
                 .child(name_and_line(t, &w.name, Some(&line), 500.0))
                 .children(running.then(|| el().size(6.0, 6.0).radius(3.0).fill(t.green)))
                 .on_press(|s: &mut App| s.open_agent(Some("wisp"))),
@@ -66,7 +73,7 @@ pub fn side(s: &App, t: &Theme) -> El {
             .hover_group()
             .role("button")
             .label(a.name.clone())
-            .child(bot::agent(a, 30.0))
+            .child(bot::agent(&awake(a), 32.0))
             .child(name_and_line(t, &a.name, Some(&a.status), 400.0))
             .children(running.then(|| el().size(6.0, 6.0).radius(3.0).fill(t.green)))
             .child(more)
@@ -118,45 +125,32 @@ fn greeting() -> &'static str {
     }
 }
 
-fn plural(n: usize, one: &str, many: &str) -> String {
-    format!("{n} {}", if n == 1 { one } else { many })
-}
-
 fn mission(s: &App, t: &Theme) -> El {
-    let count = |c: Column| s.data.tasks.iter().filter(|(k, _)| *k == c).count();
-    let (working, needs, done) = (count(Column::Working), count(Column::NeedsYou), count(Column::Done));
-    let helpers = s.data.team.iter().filter(|a| a.id != "wisp").count();
-    let summary = format!("Wisp and {} · {working} working · {needs} needs you · {done} done today", plural(helpers, "helper", "helpers"));
     let hello = if s.data.user.is_empty() { greeting().to_owned() } else { format!("{}, {}", greeting(), s.data.user) };
+    let head = col().w_full().items_center().gap(12.0).pb(28.0)
+        .child(bot::agent(&awake(s.data.agent("wisp").unwrap_or(&s.data.team[0])), 64.0))
+        .child(text(hello).font(ui(28.0, 600.0).tracking(-0.3)).color(t.text));
 
-    let head = col().w_full().items_center().gap(10.0).pb(26.0)
-        .child(bot::wisp(40.0))
-        .child(text(hello).font(ui(26.0, 650.0)).color(t.text))
-        .child(text(summary).font(ui(13.5, 400.0)).color(t.faint));
-
-    let body = col().w_full().max_w(760.0).px(24.0).pt(64.0).pb(64.0).gap(8.0)
+    let mut body = col().w_full().max_w(720.0).px(24.0).gap(0.0)
         .child(head)
-        .child(el().w_full().pb(12.0).child(composer(s, t, EditKey::Mission, Target::Wisp, "Give Wisp a task, or ask how things are going", false, false)))
-        .child(task_section(s, t, "needs", "Needs you", Column::NeedsYou, "Nothing is waiting on you."))
-        .child(task_section(s, t, "working", "Working", Column::Working, "No one is working right now."))
-        .child(task_section(s, t, "done", "Done today", Column::Done, "Nothing finished yet today."));
+        .child(composer(s, t, EditKey::Mission, Target::Wisp, "Give Wisp a task. It hands work to the right agent.", false, false));
 
-    col().key("mission").w_full().h_full().items_center().scroll(ScrollSpec { stick_bottom: false }).child(body)
-}
-
-fn task_section(s: &App, t: &Theme, id: &str, title: &str, c: Column, empty: &str) -> El {
-    let tasks: Vec<&Task> = s.data.tasks.iter().filter(|(k, _)| *k == c).map(|(_, task)| task).collect();
-    let mut sec = col().w_full().pt(14.0)
-        .child(row().gap(8.0).px(10.0).pb(6.0).center_y()
-            .child(text(title.to_owned()).font(ui(12.5, 600.0)).color(t.faint))
-            .child(text(tasks.len().to_string()).font(ui(12.5, 400.0)).color(t.faint)));
-    if tasks.is_empty() {
-        sec = sec.child(row().px(10.0).py(8.0).child(text(empty.to_owned()).font(ui(13.5, 400.0)).color(t.faint)));
+    // Only what needs you, then the last few things that happened: nothing else.
+    let needs: Vec<&Task> = s.data.tasks.iter().filter(|(k, _)| *k == Column::NeedsYou).map(|(_, x)| x).collect();
+    if !needs.is_empty() {
+        body = body.child(row().px(10.0).pt(26.0).pb(6.0).child(text("Needs you").font(ui(12.5, 600.0)).color(t.faint)));
+        for (i, task) in needs.into_iter().enumerate() {
+            body = body.child(enter(task_row(s, t, "needs", i, task), i));
+        }
     }
-    for (i, task) in tasks.into_iter().enumerate() {
-        sec = sec.child(enter(task_row(s, t, id, i, task), i));
+    let recent: Vec<&Task> = s.data.tasks.iter().filter(|(k, _)| *k != Column::NeedsYou).map(|(_, x)| x).take(3).collect();
+    if !recent.is_empty() {
+        body = body.child(row().px(10.0).pt(26.0).pb(6.0).child(text("Recent").font(ui(12.5, 600.0)).color(t.faint)));
+        for (i, task) in recent.into_iter().enumerate() {
+            body = body.child(enter(task_row(s, t, "recent", i, task), i));
+        }
     }
-    sec
+    col().key("mission").w_full().h_full().items_center().justify_center().scroll(ScrollSpec { stick_bottom: false }).child(body.py(48.0))
 }
 
 fn task_row(s: &App, t: &Theme, section: &str, i: usize, task: &Task) -> El {
@@ -191,7 +185,7 @@ fn task_row(s: &App, t: &Theme, section: &str, i: usize, task: &Task) -> El {
 
     row().key(base).w_full().min_h(48.0).px(10.0).py(8.0).gap(12.0).radius(10.0).center_y().hover(t.hover)
         .role("button").label(task.title.clone())
-        .children(s.data.agent(&task.agent).map(|a| bot::agent(a, 22.0)))
+        .children(s.data.agent(&task.agent).map(|a| bot::agent(&awake(a), 28.0)))
         .child(middle)
         .child(buttons)
         .on_press(move |s: &mut App| s.open_agent(Some(&agent)))
@@ -201,7 +195,7 @@ fn task_row(s: &App, t: &Theme, section: &str, i: usize, task: &Task) -> El {
 
 fn agent_page(s: &App, t: &Theme, a: &Agent) -> El {
     let head = row().gap(10.0).px(24.0).h(52.0).center_y().border_sides([0.0, 0.0, 1.0, 0.0], t.border)
-        .child(bot::agent(a, 22.0))
+        .child(bot::agent(&awake(a), 26.0))
         .child(text(a.name.clone()).font(ui(14.5, 600.0)).color(t.text))
         .child(text(a.role.clone()).font(ui(13.0, 400.0)).color(t.dim).truncate().min_w(0.0));
     let thread = crate::thread::with_composer(s, t, &a.name, &a.name, EditKey::AgentThread, Target::Agent(a.id.clone()), &format!("Message {}", a.name), 760.0);
@@ -235,7 +229,7 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
     };
     let computer = card(t).w_full().px(14.0).py(12.0).child(
         row().gap(12.0).center_y()
-            .child(el().size(34.0, 34.0).radius(9.0).fill(t.hover).center().child(ico_s("terminal", 16.0, t.dim)))
+            .child(el().size(44.0, 44.0).radius(11.0).fill(t.hover).center().child(bot::agent(a, 34.0)))
             .child(col().grow(1.0).min_w(0.0).gap(2.0)
                 .child(text(format!("{}'s computer", a.name)).font(ui(13.5, 500.0)).color(t.text).truncate())
                 .child(row().gap(6.0).center_y()
@@ -291,7 +285,7 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
         .child(text("Create a loop").font(ui(13.5, 400.0)).color(t.dim));
 
     let body = col().w_full().padding(20.0).gap(0.0).items_center()
-        .child(bot::agent(a, 72.0))
+        .child(bot::agent(&awake(a), 80.0))
         .child(text(a.name.clone()).font(ui(18.0, 650.0)).color(t.text).mt(12.0))
         .child(text(a.role.clone()).font(ui(13.0, 400.0)).color(t.dim).wrap().mt(2.0))
         .child(el().w_full().mt(20.0).child(computer))

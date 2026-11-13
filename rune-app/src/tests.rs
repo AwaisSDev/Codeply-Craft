@@ -47,7 +47,7 @@ fn the_rail_switches_views() {
     assert_eq!(rt.state.view, View::Agents, "Agents (Mission control) is the default view");
     assert!(rt.find("rail-Office").is_none(), "the Office is gone");
     for (key, view) in [
-        ("rail-Chat", View::Chat), ("rail-Code", View::Code), ("rail-Pull requests", View::Prs), ("rail-Browser", View::Browser),
+        ("rail-Chat", View::Chat), ("rail-Code", View::Code), ("rail-Pull requests", View::Prs),
         ("rail-Integrations", View::Integrations), ("rail-Agents", View::Agents),
     ] {
         click(&mut rt, key);
@@ -130,14 +130,28 @@ fn pinning_and_archiving_a_chat() {
 }
 
 #[test]
-fn the_browser_has_tabs_and_an_address_bar() {
-    let mut rt = runtime(App::with_mock());
-    click(&mut rt, "rail-Browser");
+fn a_link_opens_the_browser_beside_the_chat() {
+    let mut s = App::with_mock();
+    s.open_chat("Casual chat");
+    s.browse("github.com");
+    assert!(s.panes.browser && s.view == View::Chat, "the browser is a pane of the chat, not a page");
+    assert_eq!(s.browser.current().map(|t| t.url.as_str()), Some("https://github.com"));
+    let mut rt = runtime(s);
+    settle(&mut rt);
     assert!(rt.find("address").is_some() && rt.find("browser-page").is_some());
-    click(&mut rt, "browser-new-tab");
-    assert_eq!(rt.state.browser.tabs.len(), 2);
-    rt.state.browse("github.com");
-    assert_eq!(rt.state.browser.current().map(|t| t.url.as_str()), Some("https://github.com"));
+}
+
+#[test]
+fn the_terminal_runs_and_clears() {
+    let mut s = App::with_mock();
+    s.open_chat("Casual chat");
+    s.toggle_pane(crate::app::Pane::Terminal);
+    s.edit_mut(EditKey::Terminal).replace_text("echo hi");
+    s.run_command();
+    assert!(s.data.extra.terminal.iter().any(|l| l.text == "echo hi"));
+    s.edit_mut(EditKey::Terminal).replace_text("clear");
+    s.run_command();
+    assert!(s.data.extra.terminal.is_empty());
 }
 
 #[test]
