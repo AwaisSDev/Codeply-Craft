@@ -26,9 +26,12 @@ use crate::model::{ChatGroup, Snapshot, ThreadItem};
 /// What the worker threads send back to the UI thread.
 enum Msg {
     Sessions(Vec<Session>),
+    /// The engine's project folder's name.
+    Project(String),
     Transcript { id: String, items: Vec<ThreadItem> },
     Event(Value),
-    Wisp(String),
+    /// A chat made for Wisp or a helper: its name and engine id.
+    Named(String, String),
     Status(String),
 }
 
@@ -37,6 +40,8 @@ struct Session {
     id: String,
     title: String,
     cwd: String,
+    /// Last activity, ms since the epoch.
+    updated: u64,
 }
 
 #[derive(Clone)]
@@ -65,19 +70,29 @@ pub struct LiveStore {
     rx: Receiver<Msg>,
     waker: Option<rune::Waker>,
     sessions: Vec<Session>,
-    /// The engine chat the Office and Board composers talk to Wisp in.
-    wisp: Option<String>,
+    /// The engine chats Wisp and the helpers talk in, by name.
+    named: std::collections::HashMap<String, String>,
     /// The chat whose transcript is on screen, by its sidebar title.
     open: Option<String>,
+    /// Chats whose reply is streaming in (DSH `text_delta`s), by engine id.
+    streaming: std::collections::HashSet<String>,
+    /// What the store talks to, for the status line ("Codeply engine (DSH)").
+    label: String,
 }
 
 impl LiveStore {
     pub fn new(url: &str, token: &str) -> LiveStore {
         let (tx, rx) = channel();
-        LiveStore { conn: Conn { base: url.trim_end_matches('/').to_owned(), token: token.to_owned() }, tx, rx, waker: None, sessions: Vec::new(), wisp: None, open: None }
+        LiveStore { conn: Conn { base: url.trim_end_matches('/').to_owned(), token: token.to_owned() }, tx, rx, waker: None, sessions: Vec::new(), named: Default::default(), open: None, streaming: Default::default(), label: format!("codeply serve at {url}") }
     }
 
     /// Runs `work` on its own thread; its answer comes back through the channel.
+    /// Names what this store talks to, for the status line.
+    pub fn labelled(mut self, label: &str) -> LiveStore {
+        self.label = label.to_owned();
+        self
+    }
+
     fn spawn(&self, work: impl FnOnce(&Conn) -> Option<Msg> + Send + 'static) {
         let (conn, tx, waker) = (self.conn.clone(), self.tx.clone(), self.waker.clone());
         thread::spawn(move || {
@@ -105,6 +120,7 @@ fn sessions_from(v: &Value) -> Vec<Session> {
             id: s["id"].as_str().unwrap_or_default().to_owned(),
             title: s["title"].as_str().unwrap_or("New chat").to_owned(),
             cwd: s["cwd"].as_str().unwrap_or_default().to_owned(),
+            updated: s["updatedAt"].as_u64().unwrap_or(0),
         }).collect()
     })
 }
@@ -128,7 +144,12 @@ pub fn item_from_event(e: &Value) -> Option<ThreadItem> {
         "run_started" => e.get("message").and_then(item_from),
         "text" if !e["interim"].as_bool().unwrap_or(false) => Some(ThreadItem::Them(e["text"].as_str()?.to_owned())),
         "tool_end" => Some(ThreadItem::Event { icon: "check", text: e["summary"].as_str().or(e["name"].as_str()).unwrap_or("Tool").to_owned() }),
-        "approval_request" => Some(ThreadItem::Event { icon: "shield-check", text: format!("Needs your OK: {}", e["title"].as_str().unwrap_or("an action")) }),
+        "approval_request" => Some(ThreadItem::Approval {
+            id: e["requestId"].as_str()?.to_owned(),
+            title: e["title"].as_str().unwrap_or("Run a tool").to_owned(),
+            detail: e["detail"].as_str().unwrap_or_default().to_owned(),
+            answer: None,
+        }),
         "notice" => Some(ThreadItem::Event { icon: "help", text: e["text"].as_str()?.to_owned() }),
         "error" => Some(ThreadItem::Event { icon: "help", text: e["error"].as_str().unwrap_or("Something went wrong").to_owned() }),
         _ => None,
@@ -168,17 +189,37 @@ impl Store for LiveStore {
         let mut snap = mock::sample();
         snap.chat_groups.clear();
         snap.threads.clear();
-        snap.source = format!("codeply serve at {} (connecting)", self.conn.base);
+        snap.recent.clear();
+        snap.source = format!("{} (connecting)", self.label);
         snap
     }
 
     fn set_waker(&mut self, waker: rune::Waker) {
         self.waker = Some(waker.clone());
         // The chat list, once.
-        self.spawn(|c| Some(match c.get("/session") {
-            Ok(v) => Msg::Sessions(sessions_from(&v)),
-            Err(e) => Msg::Status(format!("can't reach codeply serve: {e}")),
-        }));
+        // The project folder the engine works in, for "What should we build in ...?".
+        self.spawn(|c| {
+            for _ in 0..120 {
+                if let Ok(cfg) = c.get("/config") {
+                    let name = cfg["cwd"].as_str().and_then(|p| std::path::Path::new(p).file_name()).and_then(|n| n.to_str())?;
+                    return Some(Msg::Project(name.to_owned()));
+                }
+                thread::sleep(Duration::from_millis(250));
+            }
+            None
+        });
+        // The chat list, once the engine answers (a sidecar the app just started takes a moment).
+        self.spawn(|c| {
+            let mut last = String::new();
+            for _ in 0..120 {
+                match c.get("/session") {
+                    Ok(v) => return Some(Msg::Sessions(sessions_from(&v))),
+                    Err(e) => last = e,
+                }
+                thread::sleep(Duration::from_millis(250));
+            }
+            Some(Msg::Status(format!("can't reach the engine: {last}")))
+        });
         // The event stream, for the life of the app, reconnecting with a growing pause.
         let (conn, tx) = (self.conn.clone(), self.tx.clone());
         thread::spawn(move || {
@@ -206,9 +247,11 @@ impl Store for LiveStore {
             match msg {
                 Msg::Sessions(list) => {
                     self.sessions = list;
-                    snap.source = format!("codeply serve at {}", self.conn.base);
+                    snap.source = self.label.clone();
                     snap.chat_groups = group(&self.sessions);
+                    snap.recent = recent(&self.sessions);
                 }
+                Msg::Project(name) => snap.project = name,
                 Msg::Transcript { id, items } => {
                     if let Some(title) = self.title_of(&id) {
                         snap.threads.retain(|(k, _)| *k != title);
@@ -219,21 +262,51 @@ impl Store for LiveStore {
                     let id = e["sessionId"].as_str().unwrap_or_default().to_owned();
                     if e["type"] == "session_sync" {
                         if let Some(meta) = e.get("session") {
-                            let s = Session { id: id.clone(), title: meta["title"].as_str().unwrap_or("New chat").to_owned(), cwd: meta["cwd"].as_str().unwrap_or_default().to_owned() };
+                            let s = Session { id: id.clone(), title: meta["title"].as_str().unwrap_or("New chat").to_owned(), cwd: meta["cwd"].as_str().unwrap_or_default().to_owned(), updated: meta["updatedAt"].as_u64().unwrap_or(0) };
                             match self.sessions.iter_mut().find(|x| x.id == id) {
                                 Some(x) => *x = s,
                                 None => self.sessions.insert(0, s),
                             }
                             snap.chat_groups = group(&self.sessions);
+                            snap.recent = recent(&self.sessions);
                         }
-                    } else if let (Some(title), Some(item)) = (self.title_of(&id), item_from_event(&e)) {
-                        match snap.threads.iter_mut().find(|(k, _)| *k == title) {
-                            Some((_, items)) => items.push(item),
-                            None => snap.threads.push((title, vec![item])),
+                    } else if let Some(title) = self.title_of(&id) {
+                        let items = match snap.threads.iter_mut().position(|(k, _)| *k == title) {
+                            Some(i) => &mut snap.threads[i].1,
+                            None => {
+                                snap.threads.push((title.clone(), Vec::new()));
+                                &mut snap.threads.last_mut().unwrap_or_else(|| unreachable!()).1
+                            }
+                        };
+                        match e["type"].as_str().unwrap_or_default() {
+                            // DSH streams its reply: grow the one it's writing.
+                            "text_delta" => {
+                                let piece = e["text"].as_str().unwrap_or_default();
+                                match (self.streaming.contains(&id), items.last_mut()) {
+                                    (true, Some(ThreadItem::Them(t))) => t.push_str(piece),
+                                    _ => items.push(ThreadItem::Them(piece.to_owned())),
+                                }
+                                self.streaming.insert(id.clone());
+                            }
+                            "approval_resolved" => {
+                                self.streaming.remove(&id);
+                                let rid = e["requestId"].as_str().unwrap_or_default();
+                                for it in items.iter_mut() {
+                                    if let ThreadItem::Approval { id: a, answer, .. } = it && a == rid {
+                                        *answer = Some(e["verdict"].as_str().unwrap_or("reject").to_owned());
+                                    }
+                                }
+                            }
+                            _ => {
+                                self.streaming.remove(&id);
+                                if let Some(item) = item_from_event(&e) {
+                                    items.push(item);
+                                }
+                            }
                         }
                     }
                 }
-                Msg::Wisp(id) => self.wisp = Some(id),
+                Msg::Named(name, id) => { self.named.insert(name, id); }
                 Msg::Status(s) => snap.source = s,
             }
         }
@@ -250,6 +323,22 @@ impl Store for LiveStore {
         });
     }
 
+    fn is_live(&self) -> bool {
+        true
+    }
+
+    fn answer(&mut self, request: &str, verdict: &str, snap: &mut Snapshot) {
+        for (_, items) in &mut snap.threads {
+            for it in items.iter_mut() {
+                if let ThreadItem::Approval { id, answer, .. } = it && id == request {
+                    *answer = Some(verdict.to_owned());
+                }
+            }
+        }
+        let (request, verdict) = (request.to_owned(), verdict.to_owned());
+        self.spawn(move |c| c.post(&format!("/permission/{request}"), json!({ "verdict": verdict })).err().map(|e| Msg::Status(format!("answer failed: {e}"))));
+    }
+
     fn send(&mut self, to: &Target, text: &str, snap: &mut Snapshot) -> Result<(), String> {
         let shown = text.to_owned();
         let text = text.to_owned();
@@ -259,24 +348,46 @@ impl Store for LiveStore {
                 self.spawn(move |c| c.post(&format!("/session/{id}/message"), json!({ "text": text })).err().map(|e| Msg::Status(format!("send failed: {e}"))));
                 Ok(())
             }
-            Target::Wisp => {
-                let known = self.wisp.clone();
+            // Wisp and each helper talk in a chat of their own, named after them, made on first use.
+            Target::Wisp | Target::Agent(_) => {
+                let name = match to {
+                    Target::Agent(id) => snap.agent(id).map_or_else(|| id.clone(), |a| a.name.clone()),
+                    _ => "Wisp".to_owned(),
+                };
+                let known = self.named.get(&name).cloned().or_else(|| self.id_of(&name));
+                let title = name.clone();
                 self.spawn(move |c| {
                     let id = match known {
                         Some(id) => id,
-                        None => c.post("/session", json!({ "title": "Wisp" })).ok()?["session"]["id"].as_str()?.to_owned(),
+                        None => c.post("/session", json!({ "title": title })).ok()?["session"]["id"].as_str()?.to_owned(),
                     };
                     match c.post(&format!("/session/{id}/message"), json!({ "text": text })) {
-                        Ok(_) => Some(Msg::Wisp(id)),
+                        Ok(_) => Some(Msg::Named(title, id)),
                         Err(e) => Some(Msg::Status(format!("send failed: {e}"))),
                     }
                 });
-                mock::echo(snap, to, &shown, "Sent to the engine. The reply shows in Chat, in the Wisp chat.");
+                mock::echo(snap, to, &shown, &format!("Sent. The reply shows in Chat, in the {name} chat."));
                 Ok(())
             }
-            Target::Agent(_) => Err("Helper agents aren't in the engine's API yet; message Wisp instead.".into()),
         }
     }
+}
+
+/// The three latest chats for the home screen, with how long ago each was active.
+fn recent(sessions: &[Session]) -> Vec<(String, String)> {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+    let mut list: Vec<&Session> = sessions.iter().collect();
+    list.sort_by_key(|s| std::cmp::Reverse(s.updated));
+    list.into_iter().take(3).map(|s| {
+        let mins = now.saturating_sub(s.updated) / 60_000;
+        let ago = match mins {
+            0 => "just now".to_owned(),
+            1..=59 => format!("{mins} min ago"),
+            60..=1439 => format!("{} h ago", mins / 60),
+            _ => format!("{} days ago", mins / 1440),
+        };
+        (s.title.clone(), ago)
+    }).collect()
 }
 
 /// Chats grouped by project folder, as the Chat sidebar shows them.
@@ -305,14 +416,14 @@ mod tests {
 
     #[test]
     fn events_become_transcript_items() {
-        let e = json!({ "type": "approval_request", "title": "Run npm install" });
-        assert!(matches!(item_from_event(&e), Some(ThreadItem::Event { text, .. }) if text == "Needs your OK: Run npm install"));
+        let e = json!({ "type": "approval_request", "requestId": "p_1", "title": "Run npm install", "detail": "npm install" });
+        assert!(matches!(item_from_event(&e), Some(ThreadItem::Approval { id, title, answer: None, .. }) if id == "p_1" && title == "Run npm install"));
         assert_eq!(item_from_event(&json!({ "type": "run_finished" })), None);
     }
 
     #[test]
     fn chats_group_by_folder() {
-        let s = |id: &str, title: &str, cwd: &str| Session { id: id.into(), title: title.into(), cwd: cwd.into() };
+        let s = |id: &str, title: &str, cwd: &str| Session { id: id.into(), title: title.into(), cwd: cwd.into(), updated: 0 };
         let g = group(&[s("a", "One", "/w/launch-site"), s("b", "Two", "/w/other"), s("c", "Three", "/w/launch-site")]);
         assert_eq!(g.len(), 2);
         assert_eq!(g[0].chats, ["One", "Three"]);

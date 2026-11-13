@@ -9,10 +9,16 @@ use crate::icons::ico_s;
 use crate::model::ThreadItem;
 use crate::store::Target;
 use crate::theme::{self, Theme, tabular, ui};
-use crate::ui::{composer, enter, fade_in, me, rich_text, sec, side_head, side_row, ENTER};
+use crate::model::ButtonKind;
+use crate::ui::{btn, composer, enter, fade_in, me, rich_text, sec, side_head, side_row, ENTER};
 
 pub fn side(s: &App, t: &Theme) -> El {
     let mut list = col().px(8.0).pb(10.0);
+    if s.data.chat_groups.is_empty() {
+        list = list.child(col().px(8.0).pt(14.0).gap(4.0)
+            .child(text("No chats yet").font(ui(13.5, 500.0)).color(t.dim))
+            .child(text("Ask Wisp something and your chat shows up here.").font(ui(12.5, 400.0)).color(t.faint).wrap()));
+    }
     let mut i = 0;
     for g in &s.data.chat_groups {
         list = list.child(sec(t, Some(g.icon), &g.title, true));
@@ -30,6 +36,8 @@ pub fn side(s: &App, t: &Theme) -> El {
     }
     col().h_full().min_h(0.0)
         .child(side_head(t, "Chats", Some(("oai-compose", "New chat"))))
+        // Where chats run: the engine this app started, or the sample data and why.
+        .child(row().px(16.0).pb(4.0).child(text(s.data.source.clone()).font(ui(12.0, 400.0)).color(t.faint).wrap()))
         .child(col().grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(list))
         .child(me(s, t))
 }
@@ -112,6 +120,25 @@ fn bento(s: &App, t: &Theme) -> El {
             .child(third(card("calendar", "This month").child(big("23", "chats")))))
 }
 
+/// The engine asks before it acts: what it wants to do, and three answers.
+fn approval(t: &Theme, id: &str, title: &str, detail: &str, answer: Option<&str>) -> El {
+    let button = |label: &str, verdict: &'static str, kind: ButtonKind| {
+        let id = id.to_owned();
+        btn(t, label, None, kind).key(format!("approve/{id}/{verdict}")).on_press(move |s: &mut App| s.answer(&id, verdict))
+    };
+    let mut c = col().my(10.0).padding(14.0).gap(8.0).radius(theme::R_MD).fill(t.card).border(1.0, t.card_border)
+        .child(row().gap(8.0).center_y().child(ico_s("shield-check", 16.0, t.warn)).child(text(title.to_owned()).font(ui(14.0, 600.0)).color(t.text)))
+        .children((!detail.is_empty()).then(|| text(detail.to_owned()).font(theme::mono(12.5, 18.0)).color(t.dim).wrap()));
+    c = match answer {
+        None => c.child(row().gap(8.0)
+            .child(button("Allow once", "once", ButtonKind::Blue))
+            .child(button("Always allow", "always", ButtonKind::Plain))
+            .child(button("Don't allow", "reject", ButtonKind::Plain))),
+        Some(v) => c.child(text(match v { "once" => "Allowed once", "always" => "Always allowed", _ => "Not allowed" }).font(ui(12.5, 400.0)).color(t.faint)),
+    };
+    c
+}
+
 fn thread(s: &App, t: &Theme, chat: &str) -> El {
     let items = s.data.thread(chat);
     let mut body = col().w_full().max_w(820.0).px(24.0).pt(24.0).pb(160.0);
@@ -137,6 +164,7 @@ fn thread(s: &App, t: &Theme, chat: &str) -> El {
             }
             ThreadItem::Event { icon, text: x } => row().center().gap(6.0).my(14.0)
                 .child(ico_s(icon, 16.0, t.dim)).child(rich_text(x, 13.0, t.dim, t.text)),
+            ThreadItem::Approval { id, title, detail, answer } => approval(t, id, title, detail, answer.as_deref()),
         };
         body = body.child(enter(e, i));
     }

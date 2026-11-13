@@ -17,8 +17,9 @@ name = "codeply"
 path = "src/main.rs"
 
 [features]
-default = []
-# The live store: talks to `codeply serve` (codeply-cli/lib/server.mjs). Off, the app only has the mock store.
+default = ["live"]
+# The live store: talks to the engine (the sidecar this app starts, or `codeply serve`). Off, the
+# app only has the sample data.
 live = ["dep:ureq"]
 
 [dependencies]

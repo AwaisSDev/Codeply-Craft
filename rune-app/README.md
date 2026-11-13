@@ -49,42 +49,35 @@ rustup target add x86_64-pc-windows-gnu
 cargo build --release --target x86_64-pc-windows-gnu --features live
 ```
 
-### Talking to the engine (live store)
+### The engine (DSH), started for you
 
-The mock store (the prototype's sample data) is the default. The live store is behind a Cargo
-feature and a flag:
+By default the app starts Codeply's engine itself and talks to it over local HTTP and SSE. The
+engine is `sidecar/engine.mjs`, built into the binary and written to `~/.codeply/rune/` at launch.
+It runs with the Node and the `codeply-cli` that the installed Codeply app ships
+(`resources/dsh-runtime/node.exe` and `resources/codeply-cli`), so nothing else is installed:
 
-```bash
-cargo build --release --features live
-```
+- chats run on DSH (craft-dsh) through `codeply-cli/lib/dsh-acp.mjs`: one engine per project
+  folder, one DSH session per chat, resumed after a restart; if DSH can't start, that reply runs
+  on Classic and says so;
+- the model is Haze 2 through dsh-acp's loopback bridge, signed in with the Codeply app's account
+  (`~/.codeply/auth.json`), so no token reaches the engine;
+- the API is `codeply serve`'s (`/session`, `/session/:id/message`, `/event` with Last-Event-ID,
+  `/permission/:id`), plus `text_delta` events for DSH's streamed replies;
+- it listens on 127.0.0.1 on a port picked per launch, every request needs a per-launch secret,
+  and it exits when the app does (the app holds its stdin).
 
-```bash
-node ../codeply-cli/bin/codeply.js serve --port 4096 --password "$CODEPLY_TOKEN"
-```
+`src/engine.rs` finds the engine: `CODEPLY_CLI_PATH`, else the installed app's `resources/`
+(`%LOCALAPPDATA%\Programs\Codeply Craft`, Program Files, the uninstall entry's InstallLocation,
+`/Applications`, `/opt`), else a source checkout above the binary. Without one the app shows the
+sample data and says why. `--store mock` forces the sample data; headless runs use it unless
+`--store engine` is given.
 
-```bash
-target/release/codeply --store live --server http://127.0.0.1:4096 --token "$CODEPLY_TOKEN"
-```
+What the engine covers: the Chat sidebar, transcripts (streaming), sending from every composer
+(Wisp and each helper get a chat of their own), and approvals. Agents, Board, Office, Pull requests
+and Apps still show sample data: the engine has no API for them yet. Shape and colour picks aren't
+saved yet.
 
-`CODEPLY_SERVER` and `CODEPLY_TOKEN` work instead of the flags. Never put a password in a
-script in this repo.
-
-What the live store does in phase 1:
-
-- Chat sidebar from `GET /session`, grouped by project folder.
-- A chat's transcript from `GET /session/:id` when you open it.
-- Live updates from `GET /event` (SSE): `run_started`, `text`, `tool_end`, `notice`,
-  `approval_request`, `error` and `session_sync`. It reconnects with `Last-Event-ID`, backing off
-  up to 30 s.
-- Sending with `POST /session/:id/message`. The Office and Board composers talk to Wisp in a chat
-  called "Wisp" that it creates with `POST /session`.
-- All requests run on worker threads and wake the window when they land; the UI thread never
-  waits on the network.
-
-What it doesn't do yet: the engine has no API for helper agents, pull requests or apps, so Office,
-Board, Pull requests and Apps keep the sample data, and messaging a helper from its drawer says
-so. Approvals arrive as transcript lines but can't be answered from here yet
-(`POST /permission/:id` is the next step).
+`--store live --server URL --token PW` talks to a `codeply serve` you run yourself instead.
 
 ## How it's put together
 

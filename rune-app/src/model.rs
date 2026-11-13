@@ -158,6 +158,8 @@ pub enum ThreadItem {
     /// "6 messages with Frontend, Backend and Inbox".
     Team { text: String, agents: Vec<String> },
     Event { icon: &'static str, text: String },
+    /// The engine asks before it acts. `answer` is set once you (or a timeout) answered.
+    Approval { id: String, title: String, detail: String, answer: Option<String> },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -8,6 +8,8 @@
 
 mod app;
 mod bot;
+#[cfg(feature = "live")]
+mod engine;
 mod icons;
 mod model;
 mod shell;
@@ -45,17 +47,33 @@ fn flag(name: &str) -> Option<String> {
 
 fn init() -> App {
     match flag("--store").as_deref() {
+        Some("mock") => App::with_mock(),
         #[cfg(feature = "live")]
         Some("live") => {
             let url = flag("--server").or_else(|| std::env::var("CODEPLY_SERVER").ok()).unwrap_or_else(|| "http://127.0.0.1:4096".into());
             let token = flag("--token").or_else(|| std::env::var("CODEPLY_TOKEN").ok()).unwrap_or_default();
             App::new(Box::new(store::live::LiveStore::new(&url, &token)))
         }
+        // Headless renders and tests keep the sample data, so screenshots are stable
+        // (`--store engine` starts the engine there too).
+        Some(s) if s != "engine" && rune::is_headless() => App::with_mock(),
+        None if rune::is_headless() => App::with_mock(),
+        // The default: start the installed Codeply app's engine (DSH) and talk to it.
+        #[cfg(feature = "live")]
+        _ => match engine::start() {
+            Ok(sidecar) => {
+                let live = store::live::LiveStore::new(&sidecar.url, &sidecar.token).labelled("Codeply engine (DSH)");
+                let mut app = App::new(Box::new(live));
+                app.sidecar = Some(sidecar);
+                app
+            }
+            Err(why) => {
+                let mut app = App::with_mock();
+                app.data.source = format!("Sample data. {why}");
+                app
+            }
+        },
         #[cfg(not(feature = "live"))]
-        Some("live") => {
-            eprintln!("codeply: this build has no live store; rebuild with `--features live`. Using the sample data.");
-            App::with_mock()
-        }
         _ => App::with_mock(),
     }
 }

@@ -31,6 +31,12 @@ pub trait Store {
     fn send(&mut self, to: &Target, text: &str, snap: &mut Snapshot) -> Result<(), String>;
     /// A chat was opened: fetch its transcript if the store doesn't have it.
     fn open(&mut self, _chat: &str) {}
+    /// Answers an approval: "once", "always" or "reject".
+    fn answer(&mut self, _request: &str, _verdict: &str, _snap: &mut Snapshot) {}
+    /// Whether messages go to a real engine (so a sent message opens its chat).
+    fn is_live(&self) -> bool {
+        false
+    }
     /// Gives the store a way to wake the UI thread when data arrives off it.
     fn set_waker(&mut self, _waker: rune::Waker) {}
 }

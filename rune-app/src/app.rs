@@ -71,6 +71,9 @@ pub struct App {
     /// Whether the system asks for reduced motion, as the view last saw it.
     pub reduced: std::cell::Cell<bool>,
     pub warp: Warp,
+    /// The engine this app started, kept running while the app is.
+    #[cfg(feature = "live")]
+    pub sidecar: Option<crate::engine::Sidecar>,
 }
 
 impl App {
@@ -89,6 +92,8 @@ impl App {
             office: OfficeArt::default(),
             reduced: std::cell::Cell::new(false),
             warp: Warp::default(),
+            #[cfg(feature = "live")]
+            sidecar: None,
         }
     }
 
@@ -108,6 +113,11 @@ impl App {
     pub fn open_chat(&mut self, chat: &str) {
         self.chat = Some(chat.to_owned());
         self.store.open(chat);
+    }
+
+    /// Answers an approval from a chat: "once", "always" or "reject".
+    pub fn answer(&mut self, request: &str, verdict: &str) {
+        self.store.answer(request, verdict, &mut self.data);
     }
 
     /// Repaints a helper (the colour picker in Settings).
@@ -155,6 +165,10 @@ impl App {
             Ok(()) => {
                 self.notice = None;
                 self.edit_mut(key).clear();
+                // On a real engine, a task from the Chat home opens Wisp's chat to follow the reply.
+                if key == EditKey::ChatHome && self.store.is_live() {
+                    self.open_chat("Wisp");
+                }
             }
             Err(e) => self.notice = Some(e),
         }
