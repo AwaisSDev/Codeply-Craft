@@ -70,6 +70,8 @@ pub struct App {
     pub office: OfficeArt,
     /// Whether the system asks for reduced motion, as the view last saw it.
     pub reduced: std::cell::Cell<bool>,
+    /// Whether the first poll has run (the window's launch-time setup).
+    launched: bool,
     pub warp: Warp,
     /// The engine this app started, kept running while the app is.
     #[cfg(feature = "live")]
@@ -91,6 +93,7 @@ impl App {
             notice: None,
             office: OfficeArt::default(),
             reduced: std::cell::Cell::new(false),
+            launched: false,
             warp: Warp::default(),
             #[cfg(feature = "live")]
             sidecar: None,
@@ -181,6 +184,13 @@ impl App {
     /// Before every frame: fold in the store's news and step the Office. True when the view
     /// must be rebuilt.
     pub fn poll(&mut self, now: f64, tx: &mut Tx) -> bool {
+        // Windows opens maximized, so the window fits any screen (Rune has no display-size API).
+        if !self.launched {
+            self.launched = true;
+            if cfg!(windows) && !rune::is_headless() {
+                tx.toggle_maximized();
+            }
+        }
         let changed = self.store.poll(&mut self.data);
         // Living eyes: glances and blinks move `Live` values, so they never rebuild the view.
         if let Some(wait) = crate::bot::animate(now, self.reduced.get()) {

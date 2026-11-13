@@ -90,7 +90,24 @@ fn spec() -> AppSpec<App> {
     }
 }
 
+/// Windows: keep windows on Rune's CPU renderer. Rune opens a window on the CPU and hands it to
+/// a GPU swap chain a moment later; on PCs without a working GPU (WARP, the basic display driver,
+/// some integrated chips) that hand-over draws a broken frame (text missing, wrong scale, clicks
+/// falling through). This UI is light enough for the CPU. `CODEPLY_GPU=1` keeps the GPU path.
+fn prefer_cpu_renderer() {
+    let wanted = cfg!(windows) && std::env::var_os("RUNE_CPU_FIRST").is_none() && std::env::var_os("CODEPLY_GPU").is_none_or(|v| v != "1");
+    if wanted {
+        // SAFETY: called first thing in main, before any other thread exists, so nothing can be
+        // reading the environment concurrently.
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("RUNE_CPU_FIRST", "only");
+        }
+    }
+}
+
 fn main() {
+    prefer_cpu_renderer();
     rune::prewarm_gpu();
     RuneApp::new(spec()).titlebar(Titlebar::new(shell::TITLEBAR)).run();
 }

@@ -189,6 +189,13 @@ vector triangle.
 - **Linux window frame.** Rune's custom titlebar removes the native title bar on Windows and draws
   real caption buttons; Linux keeps its native frame. The app draws Windows-style stand-ins only
   in headless renders, so screenshots match the prototype.
+- **Windows without a working GPU.** Rune opens each window on its CPU renderer and hands it to
+  a GPU swap chain a moment later. On a PC with no graphics card (WARP or the basic display
+  driver) that hand-over drew broken frames: text and icons gone, the content shrunk, clicks
+  falling through. On Windows the app now stays on Rune's CPU renderer (`RUNE_CPU_FIRST=only`, set
+  at the start of `main`); `CODEPLY_GPU=1` restores the GPU path. Nothing in the UI needs the GPU
+  (the Chat home's cards are solid instead of frosted for this), and the window opens maximized,
+  since Rune has no API for the display's size. The hand-over bug is Rune's to fix.
 - **Fonts.** The UI font is "Segoe UI Variable Text", then Segoe UI, SF Pro Text and Rune's
   bundled Inter. Monospace (editor, terminal, diffs only) follows the system's.
 

@@ -36,7 +36,8 @@ wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991
 accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a" }
 
 [lints.rust]
-unsafe_code = "forbid"
+# One audited exception: setting an environment variable at the start of main (see main.rs).
+unsafe_code = "deny"
 
 [lints.clippy]
 dbg_macro = "deny"

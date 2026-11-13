@@ -73,9 +73,10 @@ fn rich_title(t: &Theme, project: &str) -> El {
 }
 
 fn bento(s: &App, t: &Theme) -> El {
-    let glass = theme::rgba(24, 24, 24, 0.92);
+    // Solid, not frosted: a backdrop blur can need the GPU, and the app stays on the CPU on Windows.
+    let glass = theme::rgba(24, 24, 24, 0.94);
     let card = |icon: &str, title: &str| {
-        col().padding(0.0).pt(12.0).pb(12.0).px(14.0).fill(glass).border(1.0, t.card_border).radius(theme::R_MD).backdrop_blur(14.0)
+        col().padding(0.0).pt(12.0).pb(12.0).px(14.0).fill(glass).border(1.0, t.card_border).radius(theme::R_MD)
             .child(row().gap(8.0).pb(8.0).center_y().child(ico_s(icon, 16.0, t.faint)).child(text(title.to_owned()).font(ui(13.0, 500.0)).color(t.dim)))
     };
     let list = |items: &[(String, String)]| {
