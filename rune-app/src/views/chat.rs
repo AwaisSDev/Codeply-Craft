@@ -120,7 +120,7 @@ fn home(s: &App, t: &Theme) -> El {
         enter(
             row().key(format!("suggestion/{i}")).w_full().min_h(40.0).px(12.0).py(8.0).gap(12.0).radius(10.0).center_y()
                 .hover(t.hover).role("button").label(label.clone())
-                .child(ico_s(icon, 16.0, t.dim))
+                .child(crate::icons::ico_app(icon, 18.0, t.dim))
                 .child(text(label.clone()).font(ui(14.0, 400.0)).color(t.dim).truncate().grow(1.0).min_w(0.0))
                 .on_press(move |s: &mut App| {
                     s.edit_mut(EditKey::ChatHome).replace_text(value.clone());

@@ -52,6 +52,18 @@ pub fn ico_s(name: &str, size: f32, color: Color) -> El {
     icon(find(name), size).color(color)
 }
 
+/// An icon by name at `size`, in colour when it names an app (`app-gmail`): the app's logo,
+/// as Integrations shows it, with the plain glyph until it loads. Other names are interface
+/// icons in `color`.
+pub fn ico_app(name: &str, size: f32, color: Color) -> El {
+    let logo = name.strip_prefix("app-").and_then(domain_of).and_then(|d| crate::favicon::app_logo(d, ""));
+    match logo {
+        Some(px) => el().size(size, size).child(ico_s(name, size, color.alpha(0.35)))
+            .child(el().absolute(0.0, 0.0).size(size, size).radius(3.0).pixels_fit(&px, rune::SurfaceFit::Fit).inert()),
+        None => ico_s(name, size, color),
+    }
+}
+
 /// The sites of the apps the sample data and plugins name by slug.
 pub fn domain_of(slug: &str) -> Option<&'static str> {
     Some(match slug {
