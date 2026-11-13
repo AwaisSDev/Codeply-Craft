@@ -1,0 +1,49 @@
+# Codeply 4.0's native shell on Rune. Its own Cargo workspace (like ../motion), because an app that
+# builds Rune must carry Rune's [patch.crates-io] table, and patches only apply at a workspace root.
+[workspace]
+resolver = "3"
+members = ["."]
+
+[package]
+name = "codeply-rune"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "Codeply 4.0 desktop UI on Rune; talks to the Node engine (codeply-cli) over HTTP and SSE."
+
+[[bin]]
+name = "codeply"
+path = "src/main.rs"
+
+[features]
+default = []
+# The live store: talks to `codeply serve` (codeply-cli/lib/server.mjs). Off, the app only has the mock store.
+live = ["dep:ureq"]
+
+[dependencies]
+# Rune is pre-release: pin a `dev` rev. `tooling` keeps --snap, --tree and --script in release builds.
+rune = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a", features = ["tooling"] }
+serde_json = "1"
+ureq = { version = "2", default-features = false, features = ["json"], optional = true }
+
+# Rune's own patches, from the same rev (see Rune's README, "Depending on Rune").
+[patch.crates-io]
+winit = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a" }
+parley_engine = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a" }
+wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a" }
+accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+dbg_macro = "deny"
+todo = "warn"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 16

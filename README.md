@@ -145,3 +145,6 @@ custom model and Ollama backends.
 - `codeply-cli/lib/ai.js`: model backends (hosted, custom OpenAI-compatible,
   native Ollama).
 - `codeply-cli/lib/config.js`: provider config, user models, integrations.
+- `rune-app/`: Codeply 4.0's native desktop UI on Rune (Rust), in progress. It
+  talks to the engine through `codeply serve`; the Electron app above is
+  unchanged. See `rune-app/README.md`.

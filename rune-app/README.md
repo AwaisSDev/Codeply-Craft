@@ -1,0 +1,186 @@
+# Codeply 4.0 on Rune
+
+The native desktop UI for Codeply 4.0, built with [Rune](https://github.com/anomalyco/rune), a GPU UI
+framework written in Rust. It is a shell: the engine stays in Node (`codeply-cli/` and `craft-dsh/`),
+and this app talks to it over the local HTTP and SSE server in `codeply-cli/lib/server.mjs`. The
+Electron app at the repo root is unchanged and keeps working.
+
+Phase 1 builds the five views of the 4.0 prototype (`design/workspace/`): Office (default), Chat,
+Code, Pull requests and Apps, plus Board (Office as a list) and a Settings placeholder.
+
+| | |
+|---|---|
+| Rune | `anomalyco/rune` at `b9c8a78e50ef80991e6a565d89116bc09ddd8a3a` (`dev`, 13 Nov 2026) |
+| Rust | 1.99.1 (Rune's pinned toolchain; `rust-toolchain.toml` here pins the same) |
+| Binary | `codeply`, 41.8 MB release (33.3 MB stripped), Linux x86-64 |
+
+## Build and run
+
+```bash
+cd rune-app
+cargo build --release
+target/release/codeply
+```
+
+Linux needs `libxkbcommon-dev` and `libwayland-dev` to build, and `libxkbcommon-x11-0` to open a
+window. Without a GPU, install `mesa-vulkan-drivers` and run with
+`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json`. Windows needs only the MSVC build tools
+rustup asks for. See Rune's README ("Depending on Rune") for the rest.
+
+The app's own flags come after Rune's:
+
+```bash
+target/release/codeply --scene chat
+```
+
+`--scene` opens on a view: `office`, `office-drawer`, `office-inbox`, `board`, `chat`,
+`chat-thread`, `code`, `prs`, `apps`, `settings`.
+
+### Talking to the engine (live store)
+
+The mock store (the prototype's sample data) is the default. The live store is behind a Cargo
+feature and a flag:
+
+```bash
+cargo build --release --features live
+```
+
+```bash
+node ../codeply-cli/bin/codeply.js serve --port 4096 --password "$CODEPLY_TOKEN"
+```
+
+```bash
+target/release/codeply --store live --server http://127.0.0.1:4096 --token "$CODEPLY_TOKEN"
+```
+
+`CODEPLY_SERVER` and `CODEPLY_TOKEN` work instead of the flags. Never put a password in a
+script in this repo.
+
+What the live store does in phase 1:
+
+- Chat sidebar from `GET /session`, grouped by project folder.
+- A chat's transcript from `GET /session/:id` when you open it.
+- Live updates from `GET /event` (SSE): `run_started`, `text`, `tool_end`, `notice`,
+  `approval_request`, `error` and `session_sync`. It reconnects with `Last-Event-ID`, backing off
+  up to 30 s.
+- Sending with `POST /session/:id/message`. The Office and Board composers talk to Wisp in a chat
+  called "Wisp" that it creates with `POST /session`.
+- All requests run on worker threads and wake the window when they land; the UI thread never
+  waits on the network.
+
+What it doesn't do yet: the engine has no API for helper agents, pull requests or apps, so Office,
+Board, Pull requests and Apps keep the sample data, and messaging a helper from its drawer says
+so. Approvals arrive as transcript lines but can't be answered from here yet
+(`POST /permission/:id` is the next step).
+
+## How it's put together
+
+```
+src/
+  main.rs          AppSpec, scenes, flags
+  app.rs           state and handlers (views, drawer, composers, Escape, Ctrl K)
+  shell.rs         titlebar with the Ctrl K search, the 60 pt rail, sidebar, main area
+  theme.rs         tokens from styles.css (surfaces as the 4.0 prototype deepens them)
+  ui.rs            buttons, pills, segments, composer, sidebar rows, motion helpers
+  bot.rs           Wisp and helpers at interface sizes (port of design/icons/codeply-icons.js)
+  icons/pack.rs    icons.js ported to Rune icons (generated: node tools/gen-icons.mjs)
+  model.rs         what the views show (Snapshot)
+  store/           Store trait, MockStore, LiveStore (feature "live")
+  views/           office, office_art, board, chat, warp, code, prs, apps, settings
+  tests.rs         the app driven through Rune's headless runtime
+```
+
+- **Icons.** `tools/gen-icons.mjs` reads `icons.js` and writes Rust statics, resolving names the
+  way `icon()` does (`oai-*` and Codex icons filled, the rest 2-unit round strokes). Each draws at
+  its grid size (24, or 20 for the 20-grid OAI set) so edges land on whole pixels. Interface icons
+  take the text colour; only agents have colour. App logos are 14 simple-icons (CC0), vendored in
+  `tools/simple-icons/` instead of fetched from a CDN.
+- **Bots.** `bot.rs` ports the hexagon, gradient recipe and the six accessories to SVG, which
+  Rune rasterises once per look. The state shows in the eyes (narrowed waiting, shut asleep, three
+  dots thinking) and, while working, a small hop.
+- **The Office** is pixel art drawn in code (`views/office_art.rs`), my own, not from a sprite
+  sheet: wood floors, a checkered kitchen, a carpeted lounge, wallpapered walls with windows,
+  posters and a clock, desks with monitors, bookshelves, plants, a coffee machine and fridge, a
+  sofa on a rug, a beanbag, and the Needs you counter with a queue display. It is 300 x 180 art
+  pixels, one per 4 units of the prototype's 1200 x 720 office, so every room and agent sits where
+  `views.js` puts it. It scales by a whole number of device pixels with nearest-neighbour, so art
+  pixels stay square. Each agent is a small canvas redrawn only when its frame changes, on an 8 fps
+  clock that runs only while Office is showing:
+  - working: at a desk, hopping, eyes glancing, its monitor glowing with code;
+  - thinking: at the coffee machine with a steaming mug, three dots for eyes;
+  - waiting: at the Needs you counter, swaying, with a "Needs your OK" bubble;
+  - sleeping: on the sofa, eyes shut, breathing, z's drifting up;
+  - walking: Docs walks the corridor from the Studio to the kitchen and back (the prototype's
+    16 s path), on whole art pixels, looking where it goes.
+
+  Hover an agent for its current action; click it for its drawer (live session or latest chat,
+  and a compact composer). Escape, the close button or a click on the office closes it.
+- **Motion.** Views and list rows enter with ease-out (0.28 s, no bounce) and rows stagger by
+  35 ms. Rune springs are interruptible by design. Reduced motion holds the Office still and Rune
+  turns travel into fades.
+
+## Checking it headlessly
+
+```bash
+tools/snap.sh                        # every view at 1440 x 900 into screenshots/rune/
+python3 tools/side-by-side.py        # prototype | Rune into screenshots/side-by-side/
+```
+
+`screenshots/prototype/` holds the target: the HTML prototype at 1440 x 900, captured with
+`tools/prototype-shots.js` (Playwright) after `node design/serve.js 5197`. Fonts differ a little:
+the prototype on Linux falls back to the system UI font, Rune to its bundled Inter.
+
+`cargo test` drives the real view through Rune's runtime: every scene lays out, the rail switches
+views, clicking an agent opens its drawer and Escape closes it, the walker moves, and a drawer
+message lands in the session. The live store has an opt-in test against a running engine:
+
+```bash
+CODEPLY_SERVER=http://127.0.0.1:4777 CODEPLY_TOKEN=... cargo test --features live -- --ignored
+```
+
+## Memory
+
+Resident memory (VmRSS) of the release build with the mock store, 20 s after opening, sitting
+still, in a 1440 x 900 window. Measured on Linux under Xvfb with Mesa's software Vulkan
+(lavapipe), because this machine has no GPU. `tools/rss.sh` repeats it.
+
+| View | RSS | of which lavapipe's code (LLVM) | lavapipe's "GPU memory" (memfd) | the rest |
+|---|---|---|---|---|
+| Office | 175 MB | 64 MB | 33 MB | 78 MB |
+| Chat | 183 MB | 64 MB | 33 MB | 86 MB |
+| Code | 171 MB | 64 MB | 30 MB | 77 MB |
+| Rune's `hello` example, same setup | 135 MB | 64 MB | 6 MB | 66 MB |
+
+On a real GPU, lavapipe's 64 MB of LLVM goes and its "GPU memory" moves to the card, but the real
+driver's own user-space part comes in, so expect roughly 90 to 130 MB. That is inside the 100 to
+150 MB target and well under the Electron app's 370 MB, but it is an estimate until it is measured
+on Windows with a GPU (phase 2). Memory stays flat over two minutes of the Office animating.
+
+One finding from measuring: a single `.rotate()` on an 8 pt square (the bubble's tail) cost 33 MB
+of heap here, because Rune draws turned elements through an offscreen layer. The tail is now a
+vector triangle.
+
+## Known Rune gaps, and what phase 1 does about them
+
+- **No webview.** Wisp's browser, agent tabs and the Design tab need a Chromium view opened on
+  demand. Settings has a placeholder card for where they will go. Nothing is faked.
+- **Loops.** Rune's periodic motion is opacity, rotation, one-way slides (in fractions of the
+  element's size, wrapping) and opacity or scale keyframes. There is no there-and-back offset loop,
+  so a bob or sway can't be a loop. The Office draws those as pixel frames on its own clock and
+  moves the bubble with a `Live` value; list bots hop with a scale keyframe instead of a lift.
+- **Image filtering is bilinear only.** There is no nearest-neighbour (`image-rendering:
+  pixelated`), so pixel art is scaled up on the CPU by whole device pixels and redrawn when the
+  size or display scale changes.
+- **Text input exists.** Every composer and the Ctrl K search are real Rune text fields with IME,
+  undo and selection. The search field doesn't search yet.
+- **Linux window frame.** Rune's custom titlebar removes the native title bar on Windows and draws
+  real caption buttons; Linux keeps its native frame. The app draws Windows-style stand-ins only
+  in headless renders, so screenshots match the prototype.
+- **Fonts.** The UI font is "Segoe UI Variable Text", then Segoe UI, SF Pro Text and Rune's
+  bundled Inter. Monospace (editor, terminal, diffs only) follows the system's.
+
+## Licenses
+
+Rune is MIT (`licenses/rune-MIT.txt`). The binary includes Inter, which Rune bundles (SIL OFL 1.1,
+`licenses/Inter-OFL.txt`). The vendored app logos are simple-icons 13.0.0, CC0
+(`licenses/simple-icons-CC0.txt`). This crate is MIT like the rest of the repo.
