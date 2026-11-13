@@ -1,0 +1,33 @@
+Codeply 4.0 on Rune: test build
+===============================
+
+1. Install the main Codeply app if you haven't (Codeply-Craft-Setup.exe) and sign in to it once.
+2. Unzip this folder anywhere and run Codeply.exe.
+
+That's it. Codeply.exe finds your installed Codeply app and starts its engine by itself, the DSH
+engine, using the Node and engine files that app already ships. Nothing else to install. Your
+chats run on your account, the same as in the main app.
+
+What you get
+- Agents (the board) opens first. The building icon in the left rail is the Office.
+- Chat: ask Wisp anything from the Chat home; your chat opens and the reply streams in. When the
+  engine wants to run something on your PC, an approval card asks you first (Allow once,
+  Always allow, Don't allow).
+- The line under "Chats" says where chats run: "Codeply engine (DSH)" when connected.
+- Hover an agent's row in the Agents list and press "..." to change its shape and colour.
+- Code, Pull requests and Apps are the 4.0 screens, with sample data for now.
+
+Where things are
+- New chats work in the folder %USERPROFILE%\Codeply (made on first run).
+- Chats are kept in %USERPROFILE%\.codeply\rune\sessions.json; the engine's log is beside it in
+  engine.log.
+
+If it says "Sample data. Codeply isn't installed on this PC"
+Install the main Codeply app first. If you installed it somewhere unusual, set the environment
+variable CODEPLY_APP_RESOURCES to its "resources" folder.
+
+If a reply says you're not signed in
+Open the main Codeply app, sign in, then send again.
+
+If the window doesn't open
+Your PC needs a GPU driver with DirectX 12 or Vulkan (any PC from the last several years).
