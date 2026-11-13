@@ -673,7 +673,7 @@ mod tests {
 
     #[test]
     fn chats_group_by_folder() {
-        let s = |id: &str, title: &str, cwd: &str| Session { id: id.into(), title: title.into(), cwd: cwd.into(), updated: 0 };
+        let s = |id: &str, title: &str, cwd: &str| Session { id: id.into(), title: title.into(), cwd: cwd.into(), updated: 0, preview: String::new(), running: false };
         let g = group(&[s("a", "One", "/w/launch-site"), s("b", "Two", "/w/other"), s("c", "Three", "/w/launch-site")]);
         assert_eq!(g.len(), 2);
         assert_eq!(g[0].chats, ["One", "Three"]);

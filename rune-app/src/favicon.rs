@@ -55,7 +55,7 @@ pub fn get(url: &str) -> Option<Pixels> {
         }
         let px = Pixels::new();
         cache.insert(h.clone(), Some(px.clone()));
-        fetch(h, px);
+        fetch(h, px.clone());
         Some(px)
     })
 }

@@ -135,7 +135,7 @@ src/
 ## Checking it headlessly
 
 ```bash
-tools/snap.sh                        # every view at 1440 x 900 into screenshots/rune/
+tools/snap.sh                        # every scene at 1440 x 900 into screenshots/rune-v5/
 python3 tools/side-by-side.py        # prototype | Rune into screenshots/side-by-side/
 ```
 
