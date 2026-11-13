@@ -353,6 +353,10 @@ pub struct CatalogApp {
     pub note: String,
     pub category: &'static str,
     pub connected: bool,
+    /// The app's site ("notion.so"), for its logo.
+    pub domain: String,
+    /// Its own logo's URL, when the catalogue has one (used before the domain's icon).
+    pub icon: String,
 }
 
 /// The part of a Snapshot the Codex-style views add. Kept in its own struct so the original

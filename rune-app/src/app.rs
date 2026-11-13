@@ -13,9 +13,10 @@ use crate::store::{Store, Target, mock::MockStore};
 /// "Back to app" returning to the view it was opened from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum View {
-    /// Mission control and each agent's conversation. The default view.
+    /// Mission control and each agent's conversation.
     Agents,
-    /// Codex-style chats: "What should we build?", recents, projects, transcripts.
+    /// Codex-style chats led by Wisp: "What should we build?", recents, projects, transcripts.
+    /// The first rail icon and the view the app opens on.
     Chat,
     Code,
     Prs,
@@ -281,7 +282,7 @@ impl App {
         edits.insert(EditKey::AboutMe, TextEdit::new(prefs.about_me.clone()));
         edits.insert(EditKey::Instructions, TextEdit::new(prefs.instructions.clone()));
         App {
-            view: View::Agents,
+            view: View::Chat,
             data,
             store,
             edits,
@@ -292,7 +293,7 @@ impl App {
             pr: 44,
             pr_tab: PrTab::Summary,
             settings: SettingsPage::General,
-            back: View::Agents,
+            back: View::Chat,
             integrations: IntegrationsTab::Plugins,
             app_category: None,
             menu: None,
@@ -337,7 +338,7 @@ impl App {
 
     /// Settings' "Back to app".
     pub fn leave_settings(&mut self) {
-        let back = if self.back == View::Settings { View::Agents } else { self.back };
+        let back = if self.back == View::Settings { View::Chat } else { self.back };
         self.go(back);
     }
 

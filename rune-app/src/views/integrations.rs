@@ -65,13 +65,19 @@ pub fn side(s: &App, t: &Theme) -> El {
         .child(me(s, t))
 }
 
-/// The tab's logo tile: an app's logo for `app-<slug>`, otherwise an interface icon.
+/// A plugin's logo tile: its app's colour logo for `app-<slug>`, otherwise an interface icon.
 fn logo(icon: &str) -> El {
     let (tile, border, ink) = (theme::hex("#232323"), theme::hex("#2e2e2e"), theme::hex("#e0e0e0"));
     match icon.strip_prefix("app-") {
-        Some(slug) => app_logo(slug, tile, border, ink),
+        Some(slug) => app_logo(slug, crate::icons::domain_of(slug).unwrap_or_default(), "", tile, border, ink),
         None => el().size(34.0, 34.0).radius(9.0).fill(tile).border(1.0, border).center().child(ico_s(icon, 18.0, ink)),
     }
+}
+
+/// An app's colour logo tile, from its domain or icon URL.
+fn app_tile(a: &crate::model::CatalogApp) -> El {
+    let (tile, border, ink) = (theme::hex("#232323"), theme::hex("#2e2e2e"), theme::hex("#e0e0e0"));
+    app_logo(&a.name, &a.domain, &a.icon, tile, border, ink)
 }
 
 /// Cards in rows of `cols`, each row padded out so the last card keeps its column width.
@@ -162,7 +168,7 @@ fn apps(s: &App, t: &Theme, q: &str) -> El {
     let connected: Vec<El> = catalog.iter().filter(|a| a.connected && matches(q, &[a.name.as_str(), a.note.as_str(), a.category])).enumerate().map(|(i, a)| {
         enter(
             row().gap(12.0).px(12.0).py(10.0).radius(12.0).center_y().hover(t.hover)
-                .child(logo(&format!("app-{}", a.slug)))
+                .child(app_tile(a))
                 .child(col().grow(1.0).min_w(0.0)
                     .child(text(a.name.clone()).font(ui(14.0, 600.0)).color(t.text))
                     .child(text(a.note.clone()).font(ui(12.5, 400.0)).color(t.faint).truncate()))
@@ -181,7 +187,7 @@ fn apps(s: &App, t: &Theme, q: &str) -> El {
             };
             col().gap(10.0).padding(12.0).radius(12.0).fill(theme::hex("#181818")).border(1.0, t.border)
                 .child(row().gap(10.0).center_y()
-                    .child(logo(&format!("app-{}", a.slug)))
+                    .child(app_tile(a))
                     .child(col().grow(1.0).min_w(0.0)
                         .child(text(a.name.clone()).font(ui(13.5, 600.0)).color(t.text).truncate())
                         .child(text(a.category).font(ui(12.0, 400.0)).color(t.faint).truncate())))

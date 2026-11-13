@@ -44,11 +44,11 @@ fn every_scene_builds_and_lays_out() {
 #[test]
 fn the_rail_switches_views() {
     let mut rt = runtime(App::with_mock());
-    assert_eq!(rt.state.view, View::Agents, "Agents (Mission control) is the default view");
+    assert_eq!(rt.state.view, View::Chat, "Chat comes first and is the default view");
     assert!(rt.find("rail-Office").is_none(), "the Office is gone");
     for (key, view) in [
-        ("rail-Chat", View::Chat), ("rail-Code", View::Code), ("rail-Pull requests", View::Prs),
-        ("rail-Integrations", View::Integrations), ("rail-Agents", View::Agents),
+        ("rail-Agents", View::Agents), ("rail-Code", View::Code), ("rail-Pull requests", View::Prs),
+        ("rail-Integrations", View::Integrations), ("rail-Chat", View::Chat),
     ] {
         click(&mut rt, key);
         assert_eq!(rt.state.view, view, "{key}");
@@ -76,6 +76,7 @@ fn settings_opens_full_window_and_goes_back() {
 fn an_agent_opens_with_its_conversation_and_panel() {
     let mut rt = runtime(App::with_mock());
     settle(&mut rt);
+    click(&mut rt, "rail-Agents");
     click(&mut rt, "agent-row/frontend");
     assert_eq!(rt.state.agent.as_deref(), Some("frontend"));
     assert!(rt.find("agent-panel").is_some(), "the right-hand panel shows");
@@ -184,7 +185,8 @@ fn replies_render_markdown_with_link_names() {
 fn picking_a_shape_and_colour_restyles_a_helper() {
     let mut rt = runtime(App::with_mock());
     settle(&mut rt);
-    // The row's "more" button opens Appearance; Settings has no pickers.
+    // The row's "more" button opens Appearance (in Agents).
+    click(&mut rt, "rail-Agents");
     click(&mut rt, "more/backend");
     assert_eq!(rt.state.appearance.as_deref(), Some("backend"));
     click(&mut rt, "pick-shape/backend/Pebble");

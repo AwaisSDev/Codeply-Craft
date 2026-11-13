@@ -46,25 +46,43 @@ pub fn site_name(url: &str) -> String {
 /// when it lands (they wake the window themselves), and stay empty if it can't be had.
 pub fn get(url: &str) -> Option<Pixels> {
     let h = host(url)?;
+    load(format!("https://www.google.com/s2/favicons?domain={h}&sz=64"))
+}
+
+/// An app's logo, as the Electron app shows one: its own icon URL when it has one, else its
+/// domain's icon from Google's favicon service at 128 px. None when it has neither (the tile
+/// shows the app's first letter instead).
+pub fn app_logo(domain: &str, icon: &str) -> Option<Pixels> {
+    if icon.starts_with("https://") {
+        return load(icon.to_owned());
+    }
+    let d = domain.trim().trim_start_matches("https://").trim_start_matches("http://").trim_start_matches("www.").split('/').next().unwrap_or_default().to_ascii_lowercase();
+    if d.contains('.') && d.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-') {
+        return load(format!("https://www.google.com/s2/favicons?domain={d}&sz=128"));
+    }
+    None
+}
+
+/// Pixels for an image at `url`, fetched once and kept for the life of the app.
+fn load(url: String) -> Option<Pixels> {
     if rune::is_headless() {
         return None;
     }
     CACHE.with_borrow_mut(|cache| {
-        if let Some(p) = cache.get(&h) {
+        if let Some(p) = cache.get(&url) {
             return p.clone();
         }
         let px = Pixels::new();
-        cache.insert(h.clone(), Some(px.clone()));
-        fetch(h, px.clone());
+        cache.insert(url.clone(), Some(px.clone()));
+        fetch(url, px.clone());
         Some(px)
     })
 }
 
 #[cfg(feature = "live")]
-fn fetch(host: String, px: Pixels) {
+fn fetch(url: String, px: Pixels) {
     use std::io::Read as _;
     std::thread::spawn(move || {
-        let url = format!("https://www.google.com/s2/favicons?domain={host}&sz=64");
         let Ok(resp) = ureq::AgentBuilder::new().timeout(std::time::Duration::from_secs(8)).build().get(&url).call() else { return };
         let mut bytes = Vec::new();
         if resp.into_reader().take(512 * 1024).read_to_end(&mut bytes).is_err() {

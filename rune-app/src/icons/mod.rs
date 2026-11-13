@@ -28,7 +28,7 @@ static APPROVE_ASK: Icon = Icon {
 static APPROVE_FULL: Icon = Icon {
     name: "approve-full",
     view: 24.0,
-    body: r#"<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.4 19.6 5.3a1.2 1.2 0 0 1 .78 1.12V11.6c0 5.05-3.42 9.2-8.38 10.4C7.04 20.8 3.62 16.65 3.62 11.6V6.42a1.2 1.2 0 0 1 .78-1.12Z"/><path d="M12 7.4v5.4" stroke-width="2.4"/></g><circle cx="12" cy="16.3" r="1.35" fill="currentColor"/>"#,
+    body: r#"<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.4 19.6 5.3a1.2 1.2 0 0 1 .78 1.12V11.6c0 5.05-3.42 9.2-8.38 10.4C7.04 20.8 3.62 16.65 3.62 11.6V6.42a1.2 1.2 0 0 1 .78-1.12Z"/></g><path d="M12 7.4v5.4" fill="none" stroke="#F5A524" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="16.3" r="1.35" fill="#F5A524"/>"#,
 };
 
 fn find(name: &str) -> &'static Icon {
@@ -52,10 +52,39 @@ pub fn ico_s(name: &str, size: f32, color: Color) -> El {
     icon(find(name), size).color(color)
 }
 
-/// An app's logo (simple-icons), on the prototype's rounded tile.
-pub fn app_logo(slug: &str, tile: Color, border: Color, ink: Color) -> El {
-    let logo = pack::get(&format!("app-{slug}")).map(|i| icon(i, 18.0).color(ink));
-    el().size(34.0, 34.0).radius(9.0).fill(tile).border(1.0, border).center().children(logo)
+/// The sites of the apps the sample data and plugins name by slug.
+pub fn domain_of(slug: &str) -> Option<&'static str> {
+    Some(match slug {
+        "gmail" => "mail.google.com",
+        "googlecalendar" => "calendar.google.com",
+        "googledrive" => "drive.google.com",
+        "github" => "github.com",
+        "slack" => "slack.com",
+        "notion" => "notion.so",
+        "vercel" => "vercel.com",
+        "linear" => "linear.app",
+        "stripe" => "stripe.com",
+        "figma" => "figma.com",
+        "discord" => "discord.com",
+        "whatsapp" => "whatsapp.com",
+        "hubspot" => "hubspot.com",
+        "zoom" => "zoom.us",
+        _ => return None,
+    })
+}
+
+/// An app's logo in its own colours, on the rounded tile, as the Electron app shows it: the
+/// app's icon URL, else its domain's icon (Google's favicon service, 128 px), loaded once and
+/// cached. Behind it sits the app's first letter, which shows until the logo lands, or for good
+/// when there is none.
+pub fn app_logo(name: &str, domain: &str, icon_url: &str, tile: Color, border: Color, ink: Color) -> El {
+    let letter = name.trim().chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_else(|| "?".into());
+    let image = crate::favicon::app_logo(domain, icon_url).map(|px| {
+        el().absolute(7.0, 7.0).size(20.0, 20.0).radius(5.0).pixels_fit(&px, rune::SurfaceFit::Fit).inert()
+    });
+    el().size(34.0, 34.0).radius(9.0).fill(tile).border(1.0, border).center()
+        .child(rune::text(letter).font(crate::theme::ui(14.0, 650.0)).color(ink.alpha(0.55)))
+        .children(image)
 }
 
 #[cfg(test)]

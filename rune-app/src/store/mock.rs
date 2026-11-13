@@ -208,7 +208,9 @@ pub fn extra() -> Extra {
     ];
     let mcp = |name: &str, note: &str, tools, on| McpServer { name: s(name), note: s(note), tools, on };
     let loop_ = |agent: &str, name: &str, runs: &[bool], last: &str, on| Loop { agent: s(agent), name: s(name), runs: runs.to_vec(), last: s(last), on };
-    let app = |slug: &'static str, name: &str, note: &str, category: &'static str, connected| CatalogApp { slug, name: s(name), note: s(note), category, connected };
+    let app = |slug: &'static str, name: &str, note: &str, category: &'static str, connected| CatalogApp {
+        slug, name: s(name), note: s(note), category, connected, domain: crate::icons::domain_of(slug).unwrap_or_default().to_owned(), icon: String::new(),
+    };
     Extra {
         chats,
         projects: vec![s("Codeply"), s("launch-site"), s("Superapp")],

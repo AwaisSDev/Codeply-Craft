@@ -833,7 +833,7 @@ function appRows(q, search) {
   const add = (id, e, connected) => {
     if (!id) return;
     appCatalog.set(id, e);
-    if (!rows.has(id)) rows.set(id, { id, name: e.title || id, note: e.description || '', category: e.category || '', connected: !!connected });
+    if (!rows.has(id)) rows.set(id, { id, name: e.title || id, note: e.description || '', category: e.category || '', connected: !!connected, domain: e.domain || '', icon: e.icon || '' });
   };
   const ql = String(q || '').toLowerCase();
   for (const f of apps.featured()) {
@@ -841,7 +841,7 @@ function appRows(q, search) {
     add(f.connectedId || f.id, f, f.connectedId);
   }
   for (const s of search || []) add(s.connectedId || s.id || s.registry, s, s.connectedId);
-  for (const c of apps.listConnected()) { if (!rows.has(c.id)) { rows.set(c.id, { id: c.id, name: c.title || c.id, note: c.description || '', category: c.category || '', connected: true }); } else rows.get(c.id).connected = true; }
+  for (const c of apps.listConnected()) { if (!rows.has(c.id)) { rows.set(c.id, { id: c.id, name: c.title || c.id, note: c.description || '', category: c.category || '', connected: true, domain: c.domain || '', icon: c.icon || '' }); } else rows.get(c.id).connected = true; }
   return [...rows.values()];
 }
 

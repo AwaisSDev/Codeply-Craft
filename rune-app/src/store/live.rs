@@ -127,8 +127,10 @@ fn apps_from(v: &Value) -> Vec<CatalogApp> {
                 slug: intern(id),
                 name: a["name"].as_str().unwrap_or(id).to_owned(),
                 note: a["note"].as_str().or(a["description"].as_str()).unwrap_or_default().chars().take(140).collect(),
-                category: intern(a["category"].as_str().unwrap_or("Apps")),
+                category: intern(a["category"].as_str().filter(|c| !c.is_empty()).unwrap_or("Apps")),
                 connected: a["connected"].as_bool().unwrap_or(false),
+                domain: a["domain"].as_str().unwrap_or_default().to_owned(),
+                icon: a["icon"].as_str().unwrap_or_default().to_owned(),
             })
         }).collect()
     })

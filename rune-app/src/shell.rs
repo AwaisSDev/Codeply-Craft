@@ -131,8 +131,8 @@ fn rail(s: &App, t: &Theme) -> El {
             .on_press(move |s: &mut App| s.go(v))
     };
     col().key("rail").w(RAIL).h_full().py(10.0).gap(4.0).items_center().fill(t.rail).border_sides([0.0, 1.0, 0.0, 0.0], t.border).role("tablist")
-        .child(tab(View::Agents, "oai-users", "Agents", (waiting > 0).then(|| waiting.to_string())))
         .child(tab(View::Chat, "chat", "Chat", None))
+        .child(tab(View::Agents, "oai-users", "Agents", (waiting > 0).then(|| waiting.to_string())))
         .child(tab(View::Code, "code", "Code", None))
         .child(tab(View::Prs, "branch", "Pull requests", (open_prs > 0).then(|| open_prs.to_string())))
         .child(tab(View::Integrations, "link", "Integrations", None))
