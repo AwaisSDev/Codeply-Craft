@@ -37,7 +37,7 @@ const SCENES: &[Scene] = &[
     ("appearance", |s| { s.go(View::Agents); s.toggle_appearance("backend"); }),
     ("chat", |s| s.new_chat()),
     ("chat-thread", |s| s.open_chat("Casual chat")),
-    ("chat-menu", |s| { s.open_chat("Casual chat"); s.toggle_menu("chat:Casual chat"); }),
+    ("chat-menu", |s| { s.open_chat("Casual chat"); s.toggle_menu("chat-head:Casual chat"); }),
     ("model-menu", |s| { s.new_chat(); s.toggle_menu("model:chat-home"); }),
     ("code", |s| s.go(View::Code)),
     ("prs", |s| s.go(View::Prs)),

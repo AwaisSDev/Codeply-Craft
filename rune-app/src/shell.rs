@@ -65,13 +65,17 @@ fn menus(s: &App, t: &Theme) -> Option<El> {
             item("High", "Thinks longest, best for hard tasks"),
         ]));
     }
-    if let Some(chat) = id.strip_prefix("chat:") {
+    // `chat:` is opened from the chat's sidebar row, `chat-head:` from the open chat's header
+    // (the chat may not be in the sidebar's recents, so each opens under its own button).
+    let chat_menu = id.strip_prefix("chat:").map(|c| (c, format!("chat-more/{c}"), Side::Right, rune::Align::Start))
+        .or_else(|| id.strip_prefix("chat-head:").map(|c| (c, format!("chat-head-more/{c}"), Side::Bottom, rune::Align::End)));
+    if let Some((chat, anchor, side, align)) = chat_menu {
         let pinned = s.prefs.pinned.iter().any(|c| c == chat);
         let (a, b) = (chat.to_owned(), chat.to_owned());
-        return Some(menu(t, &format!("chat-more/{chat}"), Side::Right, 200.0, vec![
+        return Some(menu(t, &anchor, side, 200.0, vec![
             menu_item(t, "chat-menu/pin".into(), Some("pick"), if pinned { "Unpin" } else { "Pin" }, None, false).on_press(move |s: &mut App| s.toggle_pin(&a)),
             menu_item(t, "chat-menu/archive".into(), Some("download"), "Archive", None, false).on_press(move |s: &mut App| s.archive(&b)),
-        ]));
+        ]).anchored(anchor.clone(), side, align, 6.0));
     }
     views::menu(s, t, id)
 }

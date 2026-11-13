@@ -136,10 +136,10 @@ fn home(s: &App, t: &Theme) -> El {
 
 fn open(s: &App, t: &Theme, chat: &str) -> El {
     let project = s.data.chat(chat).map(|c| c.project.clone()).unwrap_or_default();
-    let menu_id = format!("chat:{chat}");
+    let menu_id = format!("chat-head:{chat}");
     let menu_open = s.menu.as_deref() == Some(menu_id.as_str());
-    // The sidebar's row for this chat owns the key `chat-more/{title}` the shell anchors its menu
-    // to, so the header's button has its own key.
+    // The sidebar's row for this chat owns the key `chat-more/{title}`, and the chat may not be
+    // in the sidebar at all, so the header's button has its own key and menu id (shell.rs).
     let more = ibtn(t, "more", "More").key(format!("chat-head-more/{chat}"))
         .fill(if menu_open { t.active } else { rune::Color::TRANSPARENT })
         .on_press(move |s: &mut App| s.toggle_menu(&menu_id));

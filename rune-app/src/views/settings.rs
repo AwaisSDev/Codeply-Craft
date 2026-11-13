@@ -112,13 +112,12 @@ fn keys(t: &Theme, combo: &str) -> El {
     }))
 }
 
-/// A text box for Personalization.
+/// A text box for Personalization: the group's card is the box.
 fn editor(s: &App, t: &Theme, key: EditKey, placeholder: &str) -> El {
-    col().w_full().padding(12.0)
-        .child(col().w_full().min_h(90.0).padding(10.0).radius(9.0).fill(theme::hex("#1b1b1b")).border(1.0, theme::hex("#2c2c2c"))
-            .child(text_input(s.edit(key), ui(14.0, 400.0)).key(format!("{}-field", key.name())).w_full().min_h(70.0).color(t.text)
-                .placeholder(placeholder.to_owned(), t.faint).caret(t.accent, t.accent.alpha(0.3)).label(placeholder.to_owned())
-                .on_edit(move |s: &mut App| s.edit_mut(key))))
+    col().w_full().min_h(110.0).px(16.0).py(14.0)
+        .child(text_input(s.edit(key), ui(14.0, 400.0)).key(format!("{}-field", key.name())).w_full().min_h(82.0).color(t.text)
+            .placeholder(placeholder.to_owned(), t.faint).caret(t.accent, t.accent.alpha(0.3)).label(placeholder.to_owned())
+            .on_edit(move |s: &mut App| s.edit_mut(key)))
 }
 
 /// A usage meter: a thin bar, `frac` of it filled.
