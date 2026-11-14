@@ -373,6 +373,9 @@ impl App {
         if view == View::Settings && self.view != View::Settings {
             self.back = self.view;
         }
+        if view == View::Prs && self.view != View::Prs {
+            self.prs_op(crate::model::PrOp::Refresh);
+        }
         self.view = view;
         self.appearance = None;
         self.menu = None;
@@ -718,6 +721,21 @@ impl App {
             } else {
                 tx.wake_after(std::time::Duration::from_secs_f64(PAUSE));
             }
+        }
+    }
+
+    /// A pull request operation through the store.
+    pub fn prs_op(&mut self, op: crate::model::PrOp) {
+        self.store.prs_op(op, &mut self.data);
+    }
+
+    /// Opens a PR (or this branch's changes) on a tab; Changes loads its diff.
+    pub fn open_pr(&mut self, n: u32, tab: PrTab) {
+        self.pr = n;
+        self.pr_tab = tab;
+        if tab == PrTab::Changes && self.data.extra.pr_files.as_ref().is_none_or(|(m, _)| *m != n) {
+            self.data.extra.pr_files = None;
+            self.prs_op(crate::model::PrOp::Diff(n));
         }
     }
 

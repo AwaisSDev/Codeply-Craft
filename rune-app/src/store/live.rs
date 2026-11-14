@@ -34,6 +34,9 @@ enum Msg {
     Usage(Value),
     /// The team and its loops (`/ext/team`).
     Team(Value),
+    /// Pull requests and this branch's changes (`/ext/prs`), and a PR's diff: (number, files).
+    Prs(Value),
+    PrFiles(u32, Value),
     /// A page of the catalogue: (request number, offset it starts at, the page). Only the newest request counts.
     Apps(u64, usize, Box<AppsPage>),
     /// A connected app's tools (app id, tools or why not).
@@ -214,6 +217,57 @@ fn task_from(t: &Value) -> Option<BgTask> {
     })
 }
 
+/// `/ext/prs` as pull requests: this branch's own changes first (number 0), then GitHub's.
+fn prs_from(v: &Value) -> Vec<crate::model::Pr> {
+    use crate::model::{Pr, PrState};
+    let s = |x: &Value, k: &str| x[k].as_str().unwrap_or_default().to_owned();
+    let n = |x: &Value, k: &str| x[k].as_u64().unwrap_or(0) as u32;
+    let mut out = Vec::new();
+    let mine = &v["local"];
+    let commits = mine["commits"].as_array().map(Vec::as_slice).unwrap_or_default();
+    if mine.is_object() && mine["pr"].as_u64().unwrap_or(0) == 0 && (n(mine, "files") > 0 || !commits.is_empty()) {
+        let list: Vec<String> = commits.iter().map(|c| format!("- {} `{}` {}", s(c, "subject"), s(c, "sha"), s(c, "when"))).collect();
+        out.push(Pr {
+            number: 0,
+            title: format!("Changes on {}", s(mine, "branch")),
+            by: s(mine, "author"),
+            state: PrState::Draft,
+            age: commits.first().map_or_else(|| "not committed".to_owned(), |c| s(c, "when")),
+            added: n(mine, "add"),
+            removed: n(mine, "del"),
+            branch: s(mine, "branch"),
+            summary: if list.is_empty() { format!("Not committed yet: {} changed files against {}.", n(mine, "files"), s(mine, "base")) } else { list.join("\n") },
+            points: Vec::new(),
+            url: String::new(),
+            checks: None,
+            reviewers: Vec::new(),
+            local: true,
+        });
+    }
+    for p in v["prs"].as_array().map(Vec::as_slice).unwrap_or_default() {
+        let c = &p["checks"];
+        out.push(Pr {
+            number: n(p, "number"),
+            title: s(p, "title"),
+            by: s(p, "by"),
+            state: match p["state"].as_str() { Some("MERGED") => PrState::Merged, Some("DRAFT") => PrState::Draft, _ => PrState::Open },
+            age: s(p, "age"),
+            added: n(p, "add"),
+            removed: n(p, "del"),
+            branch: s(p, "branch"),
+            summary: s(p, "body"),
+            points: Vec::new(),
+            url: s(p, "url"),
+            checks: (n(c, "total") > 0).then(|| (n(c, "passed"), n(c, "failed"), n(c, "pending"))),
+            reviewers: p["reviewers"].as_array().map(Vec::as_slice).unwrap_or_default().iter().filter_map(|r| r.as_str().map(str::to_owned)).collect(),
+            local: false,
+        });
+    }
+    // Closed (not merged) ones are left out, as on GitHub's default list.
+    out.retain(|p| p.local || v["prs"].as_array().is_some_and(|a| a.iter().any(|x| x["number"].as_u64() == Some(u64::from(p.number)) && x["state"].as_str() != Some("CLOSED"))));
+    out
+}
+
 /// my_usage() as the engine passes it on: totals, and per day `{d, t, n, m: {model: [t, n]}}`.
 fn usage_from(v: &Value) -> crate::model::Usage {
     let num = |x: &Value| x.as_u64().or_else(|| x.as_f64().map(|f| f.max(0.0) as u64)).or_else(|| x.as_str().and_then(|s| s.parse().ok())).unwrap_or(0);
@@ -243,6 +297,7 @@ impl LiveStore {
                     "memory" => c.get("/memory").map(|v| Msg::Memories(memories_from(&v))),
                     "models" => c.get("/ext/models").map(Msg::Models),
                     "team" => c.get("/ext/team").map(Msg::Team),
+                    "prs" => c.get("/ext/prs").map(Msg::Prs),
                     // At launch and after a sign-in: also catches the phone up with the account.
                     "models-sync" => c.get("/ext/models?sync=1").map(Msg::Models),
                     "files" => c.get("/files").map(|v| Msg::Files(v["files"].as_array().map_or_else(Vec::new, |a| a.iter().filter_map(|f| f.as_str().map(str::to_owned)).collect()))),
@@ -730,6 +785,8 @@ impl Store for LiveStore {
         snap.extra.terminal.clear();
         snap.extra.bg_tasks.clear();
         snap.extra.memories.clear();
+        // Pull requests come from the engine (ext-prs.mjs), and the team too (ext-team.mjs).
+        snap.prs.clear();
         snap.extra.code = Default::default();
         snap.extra.code.wisp = "idle".into();
         self.team = snap.team.iter().filter(|a| a.id != "wisp").map(|a| (a.id.clone(), a.name.clone(), a.role.clone())).collect();
@@ -767,7 +824,7 @@ impl Store for LiveStore {
             }
             Some(Msg::Status(format!("can't reach the engine: {last}")))
         });
-        for what in ["account", "apps", "memory", "files", "jobs", "models-sync", "team"] {
+        for what in ["account", "apps", "memory", "files", "jobs", "models-sync", "team", "prs"] {
             self.refresh(what);
         }
         // The event stream, for the life of the app, reconnecting with a growing pause.
@@ -842,6 +899,25 @@ impl Store for LiveStore {
                     }
                 }
                 Msg::Usage(v) => snap.extra.usage = Some(usage_from(&v)),
+                Msg::Prs(v) => {
+                    snap.prs = prs_from(&v);
+                    snap.extra.prs_note = v["gh"]["error"].as_str().unwrap_or_default().to_owned();
+                    if let Some(e) = v["error"].as_str().filter(|e| !e.is_empty()) {
+                        snap.extra.team_note = Some(e.to_owned());
+                    }
+                    if let Some(u) = v["url"].as_str().filter(|u| !u.is_empty()) {
+                        self.open_url = Some(u.to_owned());
+                    }
+                }
+                Msg::PrFiles(n, v) => {
+                    let files = v["files"].as_array().map(Vec::as_slice).unwrap_or_default().iter().map(|f| {
+                        let lines = f["lines"].as_array().map(Vec::as_slice).unwrap_or_default().iter().map(|l| {
+                            (l[0].as_str().and_then(|k| k.chars().next()).unwrap_or(' '), l[1].as_str().unwrap_or_default().to_owned())
+                        }).collect();
+                        (f["path"].as_str().unwrap_or_default().to_owned(), lines)
+                    }).collect();
+                    snap.extra.pr_files = Some((n, files));
+                }
                 Msg::Team(v) => {
                     self.team = crate::team::apply(snap, &v);
                     derive(snap, &self.sessions);
@@ -932,6 +1008,25 @@ impl Store for LiveStore {
             derive(snap, &self.sessions);
         }
         changed
+    }
+
+    fn prs_op(&mut self, op: crate::model::PrOp, _snap: &mut Snapshot) {
+        use crate::model::PrOp;
+        match op {
+            PrOp::Refresh => self.refresh("prs"),
+            // Retried while the engine starts (the Changes tab may open before it answers).
+            PrOp::Diff(n) => self.spawn(move |c| {
+                for _ in 0..120 {
+                    if let Ok(v) = c.get(&format!("/ext/prs/diff?n={n}")) {
+                        return Some(Msg::PrFiles(n, v));
+                    }
+                    thread::sleep(Duration::from_millis(250));
+                }
+                Some(Msg::PrFiles(n, json!({ "files": [] })))
+            }),
+            PrOp::Merge(n) => self.spawn(move |c| Some(Msg::Prs(c.post("/ext/prs/merge", json!({ "n": n })).unwrap_or_else(|e| json!({ "error": e }))))),
+            PrOp::Create => self.spawn(|c| Some(Msg::Prs(c.post("/ext/prs/create", json!({})).unwrap_or_else(|e| json!({ "error": e }))))),
+        }
     }
 
     fn team_op(&mut self, op: crate::team::TeamOp, _snap: &mut Snapshot) {
@@ -1312,6 +1407,28 @@ mod tests {
         let e = json!({ "type": "approval_request", "requestId": "p_1", "title": "Run npm install", "detail": "npm install" });
         assert!(matches!(item_from_event(&e), Some(ThreadItem::Approval { id, title, answer: None, .. }) if id == "p_1" && title == "Run npm install"));
         assert_eq!(item_from_event(&json!({ "type": "run_finished" })), None);
+    }
+
+    #[test]
+    fn pull_requests_and_this_branch_come_from_the_engine() {
+        let v = json!({
+            "repo": true, "gh": { "ok": true, "error": "" },
+            "local": { "branch": "feature", "base": "main", "files": 2, "add": 3, "del": 1, "author": "Sam", "pr": 0,
+                "commits": [{ "sha": "2ab41db", "subject": "change f", "when": "1 hour ago", "author": "Sam" }] },
+            "prs": [
+                { "number": 12, "title": "Fix login", "state": "OPEN", "by": "ana", "branch": "fix", "age": "2h", "add": 10, "del": 2,
+                  "url": "https://github.com/o/r/pull/12", "body": "Fixes it.", "checks": { "total": 3, "passed": 2, "failed": 1, "pending": 0 }, "reviewers": ["sam"] },
+                { "number": 11, "title": "Old", "state": "CLOSED", "by": "ana", "branch": "old", "age": "9d", "checks": { "total": 0 } },
+                { "number": 10, "title": "Shipped", "state": "MERGED", "by": "sam", "branch": "ship", "age": "3d", "checks": { "total": 0 } }
+            ]
+        });
+        let prs = prs_from(&v);
+        assert_eq!(prs.iter().map(|p| p.number).collect::<Vec<_>>(), [0, 12, 10]);
+        assert!(prs[0].local && prs[0].title == "Changes on feature" && prs[0].summary.contains("change f"));
+        assert_eq!(prs[1].checks, Some((2, 1, 0)));
+        assert_eq!(prs[1].url, "https://github.com/o/r/pull/12");
+        assert_eq!(prs[2].state, crate::model::PrState::Merged);
+        assert_eq!(prs[2].checks, None);
     }
 
     #[test]

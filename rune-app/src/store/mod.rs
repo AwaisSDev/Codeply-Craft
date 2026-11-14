@@ -61,6 +61,8 @@ pub trait Store {
     fn take_focus(&mut self) -> Option<String> {
         None
     }
+    /// Lists, diffs, merges or opens pull requests (`sidecar/ext-prs.mjs`).
+    fn prs_op(&mut self, _op: crate::model::PrOp, _snap: &mut Snapshot) {}
     /// Adds to or changes your team and its loops (the engine's specialists and standing jobs).
     fn team_op(&mut self, _op: crate::team::TeamOp, _snap: &mut Snapshot) {}
     /// Fetches your token use into `extra.usage` (the usage sheet).

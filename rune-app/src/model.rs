@@ -181,7 +181,28 @@ pub struct Pr {
     pub branch: String,
     pub summary: String,
     pub points: Vec<String>,
+    /// On GitHub (empty for this branch's own changes and the sample).
+    pub url: String,
+    /// Checks: (passed, failed, still running); None when there are none to show.
+    pub checks: Option<(u32, u32, u32)>,
+    pub reviewers: Vec<String>,
+    /// This branch's own changes, not (yet) a pull request: number 0.
+    pub local: bool,
 }
+
+/// A store operation on pull requests.
+#[derive(Clone, Debug, PartialEq)]
+pub enum PrOp {
+    Refresh,
+    /// Load the diff of PR n (0: this branch's changes) into `extra.pr_files`.
+    Diff(u32),
+    Merge(u32),
+    /// Open a PR from this branch.
+    Create,
+}
+
+/// A file of a diff: its path and its lines, each '+', '-', ' ' or '@' (a hunk's head).
+pub type DiffFile = (String, Vec<(char, String)>);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ConnectedApp {
@@ -462,6 +483,10 @@ pub struct Extra {
     pub publish: Option<Publish>,
     /// Whether you're signed in to Codeply (the engine's account).
     pub signed_in: bool,
+    /// The diff the Changes tab shows: (PR number, its files).
+    pub pr_files: Option<(u32, Vec<DiffFile>)>,
+    /// Why pull requests can't be listed (no GitHub CLI, not signed in, no remote), or empty.
+    pub prs_note: String,
     /// Why the last change to the team didn't go through, for a notice.
     pub team_note: Option<String>,
     /// Your token use, once asked for (the usage sheet); None while it loads.

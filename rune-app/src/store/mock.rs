@@ -115,6 +115,7 @@ pub fn sample() -> Snapshot {
 
     let pr = |number, title: &str, by: &str, state, age: &str, added, removed, branch: &str, summary: &str, points: [&str; 3]| Pr {
         number, title: s(title), by: s(by), state, age: s(age), added, removed, branch: s(branch), summary: s(summary), points: points.map(s).to_vec(),
+        url: String::new(), checks: Some((3, 0, 0)), reviewers: Vec::new(), local: false,
     };
     let prs = vec![
         pr(44, "Pricing page for launch-site", "frontend", PrState::Open, "2h", 186, 12, "claude/pricing-page", "A pricing page with three plans and a monthly or yearly switch, styled like the homepage.", ["New **plans.json** from Backend, one source for names and prices", "Yearly shows the saving per plan", "Checked at 375, 768 and 1440 px; no layout shift"]),
@@ -276,6 +277,8 @@ pub fn extra() -> Extra {
         signed_in: true,
         usage: None,
         team_note: None,
+        pr_files: None,
+        prs_note: String::new(),
         email: s("sam@example.com"),
         sign_in: None,
         memories: vec![
@@ -395,6 +398,14 @@ impl Store for MockStore {
         echo(snap, to, text, "On it. I'll post here when it's done.");
         Ok(())
     }
+    fn prs_op(&mut self, op: PrOp, snap: &mut Snapshot) {
+        if let PrOp::Diff(n) = op
+            && let Some(p) = snap.prs.iter().find(|p| p.number == n)
+        {
+            snap.extra.pr_files = Some((n, crate::views::prs::sample_diff(p)));
+        }
+    }
+
     fn team_op(&mut self, op: crate::team::TeamOp, snap: &mut Snapshot) {
         crate::team::apply_sample(&op, snap);
     }

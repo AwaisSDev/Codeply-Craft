@@ -47,7 +47,7 @@ const SCENES: &[Scene] = &[
     ("model-menu", |s| { s.new_chat(); s.toggle_menu("model:chat-home"); }),
     ("code", |s| s.go(View::Code)),
     ("prs", |s| s.go(View::Prs)),
-    ("pr-changes", |s| { s.go(View::Prs); s.pr_tab = PrTab::Changes; }),
+    ("pr-changes", |s| { s.go(View::Prs); let n = s.data.prs.first().map_or(0, |p| p.number); s.open_pr(n, PrTab::Changes); }),
     ("chat-browser", |s| { s.open_chat("Casual chat"); s.panes.browser = true; }),
     ("chat-workspace", |s| { s.open_chat("Casual chat"); s.panes.browser = true; s.panes.terminal = true; s.panes.tasks = true; }),
     ("chat-terminal", |s| { s.open_chat("Casual chat"); s.panes.terminal = true; }),
