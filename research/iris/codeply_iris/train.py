@@ -83,7 +83,13 @@ def main(argv=None):
     from transformers import AutoModelForCausalLM, AutoTokenizer
     tok = AutoTokenizer.from_pretrained(cfg["base"])
     # CPU: bf16 weights (AMX). GPU: fp32 weights + fp16 autocast + GradScaler (the standard AMP recipe; T4 has no bf16).
-    base = AutoModelForCausalLM.from_pretrained(cfg["base"], torch_dtype=torch.bfloat16 if device == "cpu" else torch.float32)
+    base = AutoModelForCausalLM.from_pretrained(cfg["base"], torch_dtype=torch.bfloat16 if device == "cpu" else torch.float16)
+    if device == "cuda":
+        # fp16 frozen weights halve the model memory; activations are recomputed in the backward pass instead of stored
+        # (a 15 GB T4 ran out of memory at 2,048 tokens with fp32 weights and no checkpointing)
+        base.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+        base.enable_input_require_grads()
+        base.config.use_cache = False
     scaler = torch.amp.GradScaler("cuda", enabled=device == "cuda")
     ckpt = out / "ckpt"
     state = None
@@ -143,6 +149,8 @@ def main(argv=None):
                 tot += answer_loss(lm, ids.to(device), start).item() * (len(ids) - start)
                 n += len(ids) - start
         model.train()
+        if device == "cuda":
+            torch.cuda.empty_cache()
         return tot / max(n, 1)
 
     def save(tag="ckpt"):
@@ -152,7 +160,7 @@ def main(argv=None):
             torch.save({"opt": opt.state_dict(), "step": step, "epoch": epoch, "pos": pos, "best": best}, d / "state.tmp")
             os.replace(d / "state.tmp", d / "state.pt")
 
-    t0, tok_seen, run_loss, run_n = time.time(), 0, 0.0, 0
+    t0, tok_seen, run_loss, run_n, oom_skipped = time.time(), 0, 0.0, 0, 0
     model.train()
     stop = False
     while epoch < cfg["epochs"] and not stop:
@@ -164,12 +172,19 @@ def main(argv=None):
                 g["lr"] = lr_at(step)
             for i in batch:
                 ids, start = train[i]
-                with ctx():
-                    loss = answer_loss(lm, ids.to(device), start)
-                if not torch.isfinite(loss):
-                    print("non-finite loss, example skipped", flush=True)
+                try:
+                    with ctx():
+                        loss = answer_loss(lm, ids.to(device), start)
+                    if not torch.isfinite(loss):
+                        print("non-finite loss, example skipped", flush=True)
+                        continue
+                    scaler.scale(loss / len(batch)).backward()
+                except torch.cuda.OutOfMemoryError:
+                    oom_skipped += 1
+                    print(f"out of memory on a {len(ids)}-token example, skipped ({oom_skipped} so far)", flush=True)
+                    loss = None
+                    torch.cuda.empty_cache()
                     continue
-                scaler.scale(loss / len(batch)).backward()
                 run_loss += loss.item()
                 run_n += 1
                 tok_seen += len(ids)
@@ -215,7 +230,7 @@ def main(argv=None):
                 best = vl
                 save("best")
         save("final")
-        (out / "DONE").write_text(json.dumps({"steps": step, "best_val_loss": best, "minutes": round((time.time() - t0) / 60, 1)}))
+        (out / "DONE").write_text(json.dumps({"steps": step, "best_val_loss": best, "minutes": round((time.time() - t0) / 60, 1), "oom_skipped": oom_skipped}))
     print("stopped" if stop else "finished", "at step", step, flush=True)
 
 
