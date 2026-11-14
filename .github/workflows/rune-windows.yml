@@ -80,10 +80,30 @@ jobs:
           cd dist && 7z a -tzip Codeply-Rune-windows-x64.zip Codeply-Rune >/dev/null
           ls -la
 
+      # The installer: the same folder as the zip, as Codeply-Setup.exe (installer/codeply.iss).
+      - name: Installer
+        shell: pwsh
+        run: |
+          $ver = (Select-String -Path rune-app/Cargo.toml -Pattern '^version = "(.*)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          $num = ($ver -split '-')[0]
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          $icon = Get-ChildItem rune-app/target/release/build -Recurse -Filter codeply.ico -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          $isccArgs = @("/DAppVersion=$num", "/DSourceDir=$PWD\dist\Codeply-Rune", "/DOutputDir=$PWD\dist")
+          if ($icon) { $isccArgs += "/DIconFile=$($icon.FullName)" }
+          & $iscc @isccArgs rune-app\installer\codeply.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Get-ChildItem dist -File | Select-Object Name, Length | Format-Table -AutoSize
+
       - uses: actions/upload-artifact@v4
         with:
           name: Codeply-Rune-windows-x64
           path: dist/Codeply-Rune-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Codeply-Setup
+          path: dist/Codeply-Setup.exe
 
       # rune-v4 keeps its old link (rune-windows-latest); every other branch gets its own,
       # rune-v5 -> rune-v5-windows-latest.
@@ -92,5 +112,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "${GITHUB_REF_NAME}" = "rune-v4" ]; then TAG=rune-windows-latest; else TAG="${GITHUB_REF_NAME}-windows-latest"; fi
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --target "${GITHUB_SHA}" --title "Codeply 4.0 beta on Rune, Windows (${GITHUB_REF_NAME})" --notes "Test build of the native Rune app from the ${GITHUB_REF_NAME} branch. Unzip and run Codeply.exe. See TRY-IT.txt inside."
-          gh release upload "$TAG" dist/Codeply-Rune-windows-x64.zip --clobber
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --target "${GITHUB_SHA}" --title "Codeply 4.0 beta on Rune, Windows (${GITHUB_REF_NAME})" --notes "Test build of the native Rune app from the ${GITHUB_REF_NAME} branch. Run Codeply-Setup.exe to install it, or unzip Codeply-Rune-windows-x64.zip and run Codeply.exe. See TRY-IT.txt inside."
+          gh release upload "$TAG" dist/Codeply-Rune-windows-x64.zip dist/Codeply-Setup.exe --clobber
