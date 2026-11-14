@@ -98,13 +98,13 @@ function syncPhoneModels(ctx, L) {
           if (!r.ok) left.push(d);
         }
         L.config.setPhoneDeletes(left);
+        ctx.emit(null, { type: 'models_changed' });
       }
       for (const m of L.config.getModels()) {
         if (m.phone !== true || L.sync.phoneBlocker(m)) continue;
         if (m.phoneSyncedAt && !m.phoneError && m.phoneUser === phoneUserId) continue;
-        await pushToPhone(ctx, L, m.id);
+        await pushToPhone(ctx, L, m.id); // emits models_changed itself
       }
-      ctx.emit(null, { type: 'models_changed' });
     })().catch(() => {}).finally(() => { syncing = null; });
   }
   return syncing;

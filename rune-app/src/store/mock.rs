@@ -285,6 +285,7 @@ pub fn extra() -> Extra {
             reviewing: false,
             wisp: s("idle"),
         },
+        models: crate::models::sample(),
     }
 }
 
@@ -349,6 +350,83 @@ impl Store for MockStore {
     }
     fn take_focus(&mut self) -> Option<String> {
         self.focus.take()
+    }
+    fn models(&mut self, op: crate::models::ModelOp, snap: &mut Snapshot) {
+        use crate::models::{AUTO, ModelInfo, ModelOp, Phone, Scan};
+        let m = &mut snap.extra.models;
+        m.busy = false;
+        match op {
+            ModelOp::Select(id) => m.selected = if m.list.iter().any(|x| x.id == id) { id } else { AUTO.into() },
+            ModelOp::Save(d) => {
+                if let Some(why) = d.problem() {
+                    m.error = Some(why.into());
+                    m.test_failed = false;
+                    return;
+                }
+                // Sample data has no provider to test with: a base URL with "fail" in it plays one that refuses.
+                if !d.skip_test && d.base_url.contains("fail") {
+                    m.error = Some(format!("{} answered HTTP 401 Unauthorized.", crate::models::host_of(&d.base_url)));
+                    m.test_failed = true;
+                    return;
+                }
+                let id = d.id.clone().unwrap_or_else(|| format!("m{}", m.list.len() + 100));
+                let old = m.list.iter().find(|x| x.id == id).cloned();
+                let has_key = d.api_key.as_deref().map_or(old.as_ref().is_some_and(|o| o.has_key), |k| !k.is_empty());
+                let entry = ModelInfo {
+                    id: id.clone(),
+                    name: if d.name.is_empty() { d.model.clone() } else { d.name.clone() },
+                    kind: d.kind.clone(),
+                    base_url: d.base_url.trim_end_matches('/').to_owned(),
+                    model: d.model.clone(),
+                    effort: old.as_ref().map(|o| o.effort.clone()).unwrap_or_default(),
+                    effort_levels: old.as_ref().and_then(|o| o.effort_levels.clone()),
+                    has_key,
+                    key_preview: if has_key { "sk-s…1234".into() } else { String::new() },
+                    phone: Phone { eligible: has_key && d.base_url.starts_with("https://"), on: d.phone && has_key, synced: false, reason: String::new() },
+                };
+                match m.list.iter_mut().find(|x| x.id == id) {
+                    Some(x) => *x = entry,
+                    None => m.list.push(entry),
+                }
+                m.selected = id;
+                m.error = None;
+                m.test_failed = false;
+                m.saved += 1;
+            }
+            ModelOp::Delete(id) => {
+                m.list.retain(|x| x.id != id);
+                if m.selected == id {
+                    m.selected = AUTO.into();
+                }
+            }
+            ModelOp::Effort(id, effort) => {
+                if let Some(x) = m.list.iter_mut().find(|x| x.id == id) {
+                    x.effort = effort;
+                }
+            }
+            ModelOp::Levels(id) => {
+                if let Some(x) = m.list.iter_mut().find(|x| x.id == id && x.effort_levels.is_none()) {
+                    x.effort_levels = Some(vec!["low".into(), "medium".into(), "high".into()]);
+                }
+            }
+            ModelOp::Phone(id, on) => {
+                if let Some(x) = m.list.iter_mut().find(|x| x.id == id && x.phone.eligible) {
+                    x.phone.on = on;
+                    x.phone.synced = on;
+                }
+            }
+            ModelOp::ScanOllama => {
+                m.scan = Scan {
+                    busy: false,
+                    error: None,
+                    found: vec![
+                        ("qwen2.5-coder:7b".into(), "7.6B · qwen2 · 4.4 GB".into()),
+                        ("llama3.2:3b".into(), "3.2B · llama · 1.9 GB".into()),
+                        ("gemma3:12b".into(), "12.2B · gemma3 · 7.6 GB".into()),
+                    ],
+                };
+            }
+        }
     }
     fn run_command(&mut self, cmd: &str, snap: &mut Snapshot) {
         snap.extra.terminal.push(TermLine { kind: TermKind::Input, text: cmd.to_owned() });

@@ -33,6 +33,10 @@ enum Msg {
     Account(Value),
     Apps(Vec<CatalogApp>),
     Memories(Vec<Memory>),
+    /// The model list, or the answer to a change (`models::Models::apply`).
+    Models(Value),
+    /// What the Ollama scan found.
+    Ollama(Value),
     Files(Vec<String>),
     Tasks(Vec<BgTask>),
     /// A file's text: (path, text).
@@ -75,6 +79,12 @@ impl Conn {
     }
     fn post(&self, path: &str, body: Value) -> Result<Value, String> {
         Self::agent().post(&format!("{}{path}", self.base)).set("Authorization", &format!("Bearer {}", self.token))
+            .send_json(body).map_err(why)?.into_json().map_err(|e| e.to_string())
+    }
+    /// A POST that may take a while: adding a model tests it with a real request first.
+    fn post_slow(&self, path: &str, body: Value) -> Result<Value, String> {
+        ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(2)).timeout_read(Duration::from_secs(150)).build()
+            .post(&format!("{}{path}", self.base)).set("Authorization", &format!("Bearer {}", self.token))
             .send_json(body).map_err(why)?.into_json().map_err(|e| e.to_string())
     }
     fn put(&self, path: &str, body: Value) -> Result<Value, String> {
@@ -167,6 +177,9 @@ impl LiveStore {
                     "account" => c.get("/account").map(Msg::Account),
                     "apps" => c.get("/apps").map(|v| Msg::Apps(apps_from(&v))),
                     "memory" => c.get("/memory").map(|v| Msg::Memories(memories_from(&v))),
+                    "models" => c.get("/ext/models").map(Msg::Models),
+                    // At launch and after a sign-in: also catches the phone up with the account.
+                    "models-sync" => c.get("/ext/models?sync=1").map(Msg::Models),
                     "files" => c.get("/files").map(|v| Msg::Files(v["files"].as_array().map_or_else(Vec::new, |a| a.iter().filter_map(|f| f.as_str().map(str::to_owned)).collect()))),
                     _ => c.get("/jobs").map(|v| Msg::Tasks(v["tasks"].as_array().map_or_else(Vec::new, |a| a.iter().filter_map(task_from).collect()))),
                 };
@@ -213,6 +226,7 @@ impl LiveStore {
             "apps_changed" => self.refresh("apps"),
             "memory_changed" => self.refresh("memory"),
             "account_changed" => self.refresh("account"),
+            "models_changed" => self.refresh("models"),
             _ => return false,
         }
         true
@@ -627,7 +641,7 @@ impl Store for LiveStore {
             }
             Some(Msg::Status(format!("can't reach the engine: {last}")))
         });
-        for what in ["account", "apps", "memory", "files", "jobs"] {
+        for what in ["account", "apps", "memory", "files", "jobs", "models-sync"] {
             self.refresh(what);
         }
         // The event stream, for the life of the app, reconnecting with a growing pause.
@@ -701,6 +715,8 @@ impl Store for LiveStore {
                     snap.extra.catalog = list;
                 }
                 Msg::Memories(list) => snap.extra.memories = list,
+                Msg::Models(v) => snap.extra.models.apply(&v),
+                Msg::Ollama(v) => snap.extra.models.apply_scan(&v),
                 Msg::Files(list) => snap.extra.code.files = list,
                 Msg::Tasks(list) => snap.extra.bg_tasks = list,
                 Msg::File(path, text) => {
@@ -723,6 +739,7 @@ impl Store for LiveStore {
                     snap.extra.sign_in = state;
                     if done {
                         self.refresh("account");
+                        self.refresh("models-sync");
                     }
                 }
                 Msg::Named(name, id) => {
@@ -827,6 +844,51 @@ impl Store for LiveStore {
             let _ = c.delete(&format!("/apps/{id}"));
             c.get("/apps").ok().map(|v| Msg::Apps(apps_from(&v)))
         });
+    }
+
+    fn models(&mut self, op: crate::models::ModelOp, snap: &mut Snapshot) {
+        use crate::models::ModelOp;
+        let m = &mut snap.extra.models;
+        // An answer: the engine's, or why it couldn't be had.
+        let answer = |r: Result<Value, String>| Msg::Models(r.unwrap_or_else(|e| json!({ "ok": false, "error": e })));
+        match op {
+            ModelOp::Select(id) => {
+                if id == crate::models::AUTO || m.list.iter().any(|x| x.id == id) {
+                    m.selected = id.clone();
+                }
+                self.spawn(move |c| Some(answer(c.post("/ext/models/select", json!({ "id": id })))));
+            }
+            ModelOp::Save(d) => {
+                m.busy = true;
+                m.error = None;
+                m.test_failed = false;
+                let body = d.to_json();
+                self.spawn(move |c| Some(answer(c.post_slow("/ext/models/save", body))));
+            }
+            ModelOp::Delete(id) => {
+                m.list.retain(|x| x.id != id);
+                if m.selected == id {
+                    m.selected = crate::models::AUTO.into();
+                }
+                self.spawn(move |c| Some(answer(c.delete(&format!("/ext/models/{}", encode(&id))))));
+            }
+            ModelOp::Effort(id, effort) => {
+                if let Some(x) = m.list.iter_mut().find(|x| x.id == id) {
+                    x.effort = effort.clone();
+                }
+                self.spawn(move |c| Some(answer(c.post("/ext/models/effort", json!({ "id": id, "effort": effort })))));
+            }
+            ModelOp::Levels(id) => self.spawn(move |c| Some(answer(c.post_slow("/ext/models/effort-levels", json!({ "id": id }))))),
+            ModelOp::Phone(id, on) => {
+                m.busy = true;
+                self.spawn(move |c| Some(answer(c.post_slow("/ext/models/phone", json!({ "id": id, "on": on })))));
+            }
+            ModelOp::ScanOllama => {
+                m.scan.busy = true;
+                m.scan.error = None;
+                self.spawn(|c| Some(Msg::Ollama(c.get("/ext/models/ollama").unwrap_or_else(|e| json!({ "ok": false, "error": e })))));
+            }
+        }
     }
 
     fn remember(&mut self, text: &str, snap: &mut Snapshot) {
@@ -1072,6 +1134,44 @@ mod tests {
         // With no model signed in, the engine says so as a notice; with one, a reply comes. Either
         // way something past the message itself arrives.
         assert!(wait(&mut store, &mut snap, &|s| s.thread(name.as_str()).len() >= 2), "{:?}", snap.thread(name.as_str()));
+    }
+
+    /// Against a sidecar with a fake OpenAI-compatible server at CODEPLY_FAKE_MODEL (a base URL):
+    /// adds a model through the engine, picks it, sets its effort, and removes it.
+    #[test]
+    #[ignore = "needs a running sidecar and a fake model server"]
+    fn models_round_trip_through_the_engine() {
+        use crate::models::{ModelDraft, ModelOp};
+        let url = std::env::var("CODEPLY_SERVER").unwrap_or_else(|_| "http://127.0.0.1:47811".into());
+        let token = std::env::var("CODEPLY_TOKEN").unwrap_or_else(|_| "t".into());
+        let fake = std::env::var("CODEPLY_FAKE_MODEL").unwrap_or_else(|_| "http://127.0.0.1:47899/v1".into());
+        let mut store = LiveStore::new(&url, &token);
+        let mut snap = store.load();
+        store.set_waker(std::sync::Arc::new(|| {}));
+        let wait = |store: &mut LiveStore, snap: &mut Snapshot, done: &dyn Fn(&Snapshot) -> bool| {
+            for _ in 0..200 {
+                store.poll(snap);
+                if done(snap) {
+                    return true;
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            false
+        };
+        assert!(wait(&mut store, &mut snap, &|s| s.extra.models.loaded), "the list arrives");
+        let draft = ModelDraft { kind: "openai".into(), name: "Live test".into(), base_url: fake, model: "fake-1".into(), api_key: Some("sk-live-test-1234".into()), phone: false, ..ModelDraft::default() };
+        store.models(ModelOp::Save(draft), &mut snap);
+        assert!(snap.extra.models.busy);
+        assert!(wait(&mut store, &mut snap, &|s| s.extra.models.saved == 1), "saved: {:?}", snap.extra.models.error);
+        let m = snap.extra.models.current().cloned().expect("the new model is picked");
+        assert_eq!((m.name.as_str(), m.has_key), ("Live test", true));
+        assert!(!m.key_preview.contains("live-test"), "the key is never shown in full: {}", m.key_preview);
+        store.models(ModelOp::Levels(m.id.clone()), &mut snap);
+        assert!(wait(&mut store, &mut snap, &|s| s.extra.models.current().is_some_and(|m| m.effort_levels.is_some())), "levels arrive");
+        store.models(ModelOp::Effort(m.id.clone(), "high".into()), &mut snap);
+        assert!(wait(&mut store, &mut snap, &|s| s.extra.models.current().is_some_and(|m| m.effort == "high")));
+        store.models(ModelOp::Delete(m.id.clone()), &mut snap);
+        assert!(wait(&mut store, &mut snap, &|s| s.extra.models.selected == "auto" && !s.extra.models.list.iter().any(|x| x.id == m.id)));
     }
 }
 

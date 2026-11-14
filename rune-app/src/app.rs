@@ -32,6 +32,7 @@ pub enum SettingsPage {
     Profile,
     Appearance,
     Configuration,
+    Models,
     Personalization,
     Shortcuts,
     Mcp,
@@ -47,9 +48,9 @@ pub enum SettingsPage {
 }
 
 impl SettingsPage {
-    pub const ALL: [SettingsPage; 16] = [
+    pub const ALL: [SettingsPage; 17] = [
         SettingsPage::General, SettingsPage::Profile, SettingsPage::Appearance, SettingsPage::Configuration,
-        SettingsPage::Personalization, SettingsPage::Shortcuts, SettingsPage::Mcp, SettingsPage::Hooks,
+        SettingsPage::Models, SettingsPage::Personalization, SettingsPage::Shortcuts, SettingsPage::Mcp, SettingsPage::Hooks,
         SettingsPage::Connections, SettingsPage::Git, SettingsPage::Environments, SettingsPage::Worktrees,
         SettingsPage::Browser, SettingsPage::ComputerUse, SettingsPage::Archived, SettingsPage::Usage,
     ];
@@ -59,6 +60,7 @@ impl SettingsPage {
             SettingsPage::Profile => "Profile",
             SettingsPage::Appearance => "Appearance",
             SettingsPage::Configuration => "Configuration",
+            SettingsPage::Models => "Models",
             SettingsPage::Personalization => "Personalization",
             SettingsPage::Shortcuts => "Keyboard shortcuts",
             SettingsPage::Mcp => "MCP servers",
@@ -80,6 +82,7 @@ impl SettingsPage {
             SettingsPage::Profile => "users",
             SettingsPage::Appearance => "sun",
             SettingsPage::Configuration => "shield-check",
+            SettingsPage::Models => "chip",
             SettingsPage::Personalization => "sparkle",
             SettingsPage::Shortcuts => "terminal",
             SettingsPage::Mcp => "link",
@@ -101,6 +104,7 @@ impl SettingsPage {
             SettingsPage::Profile => "profile",
             SettingsPage::Appearance => "appearance",
             SettingsPage::Configuration => "configuration",
+            SettingsPage::Models => "models",
             SettingsPage::Personalization => "personalization",
             SettingsPage::Shortcuts => "shortcuts",
             SettingsPage::Mcp => "mcp",
@@ -252,6 +256,8 @@ pub struct App {
     pub expanded: HashSet<String>,
     /// The last thing that failed, shown under the composer until the next send.
     pub notice: Option<String>,
+    /// Settings > Models: the add/edit form.
+    pub models_ui: crate::models::ModelsUi,
     /// The built-in browser: its tabs, and the native web view on Windows.
     pub browser: Browser,
     /// Which panes are open beside the chat.
@@ -299,6 +305,7 @@ impl App {
             menu: None,
             expanded: HashSet::new(),
             notice: None,
+            models_ui: Default::default(),
             browser,
             panes: Panes::default(),
             reduced: std::cell::Cell::new(false),
@@ -406,6 +413,9 @@ impl App {
     /// Opens a menu, or closes it when it's the one open.
     pub fn toggle_menu(&mut self, id: &str) {
         self.menu = if self.menu.as_deref() == Some(id) { None } else { Some(id.to_owned()) };
+        if id.starts_with("model:") && self.menu.is_some() {
+            self.model_menu_opened();
+        }
     }
 
     /// Opens or folds a group ("Worked for ...", a tool call's detail).
@@ -489,6 +499,11 @@ impl App {
         if let Some(l) = self.data.extra.loops.iter_mut().find(|l| l.agent == agent && l.name == name) {
             l.on = !l.on;
         }
+    }
+
+    /// Runs `f` with the store and the data it fills (for modules that add their own handlers).
+    pub fn with_store<R>(&mut self, f: impl FnOnce(&mut dyn Store, &mut Snapshot) -> R) -> R {
+        f(self.store.as_mut(), &mut self.data)
     }
 
     pub fn edit(&self, key: EditKey) -> &TextEdit {
@@ -742,6 +757,7 @@ impl App {
         if changed {
             apply_looks(&mut self.data, &self.prefs);
         }
+        self.models_ui.tick(&self.data.extra.models);
         // An app's logo landed: its tile swaps its letter for the logo.
         changed |= crate::favicon::take_landed();
         // A chat the store made for you (a new chat from "What should we build?") opens itself.

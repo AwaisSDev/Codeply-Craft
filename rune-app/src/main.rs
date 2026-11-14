@@ -16,6 +16,8 @@ mod icons;
 mod logo;
 mod markdown;
 mod model;
+mod model_actions;
+mod models;
 mod prefs;
 mod shell;
 mod store;
@@ -55,6 +57,18 @@ const SCENES: &[Scene] = &[
     ("settings-personalization", |s| s.open_settings(SettingsPage::Personalization)),
     ("settings-browser", |s| s.open_settings(SettingsPage::Browser)),
     ("settings-usage", |s| s.open_settings(SettingsPage::Usage)),
+    ("settings-models", |s| s.open_settings(SettingsPage::Models)),
+    ("settings-models-add", |s| { s.open_settings(SettingsPage::Models); s.model_open_form(None); }),
+    ("settings-models-edit", |s| { s.open_settings(SettingsPage::Models); s.model_open_form(Some("m1")); }),
+    ("settings-models-error", |s| {
+        s.open_settings(SettingsPage::Models);
+        s.model_open_form(None);
+        s.models_ui.preset(0);
+        s.data.extra.models.error = Some("api.openai.com answered HTTP 401 Unauthorized.".into());
+        s.data.extra.models.test_failed = true;
+    }),
+    ("settings-models-ollama", |s| { s.open_settings(SettingsPage::Models); s.model_scan(); }),
+    ("model-menu-custom", |s| { s.model_pick("m1"); s.new_chat(); s.toggle_menu("model:chat-home"); }),
 ];
 
 /// The app's own flags (Rune takes its own first): `--store mock|live`, `--server URL`, `--token PW`.
@@ -135,5 +149,7 @@ fn main() {
         .run();
 }
 
+#[cfg(test)]
+mod model_tests;
 #[cfg(test)]
 mod tests;
