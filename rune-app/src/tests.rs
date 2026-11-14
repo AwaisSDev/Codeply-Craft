@@ -314,3 +314,21 @@ fn a_generated_theme_previews_and_applies_only_on_apply() {
     assert!(rt.state.look.candidate.is_none());
     crate::theme::set_text(1.0, 0);
 }
+
+#[test]
+fn tabs_keep_their_unsaved_text_and_close() {
+    let mut app = App::with_mock();
+    app.go(View::Code);
+    app.poll_code();
+    let first = app.data.extra.code.open.clone().expect("a file is open");
+    app.edit_mut(EditKey::Code).replace_text("// my change\n".to_owned());
+    app.open_file("src/main.js");
+    app.poll_code();
+    assert_eq!(app.tabs(), [first.clone(), "src/main.js".to_owned()]);
+    assert!(app.code_drafts.contains_key(&first), "the tab left keeps what was typed");
+    app.open_file(&first);
+    app.poll_code();
+    assert_eq!(app.edit(EditKey::Code).text, "// my change\n");
+    app.close_tab("src/main.js");
+    assert_eq!(app.tabs(), [first]);
+}

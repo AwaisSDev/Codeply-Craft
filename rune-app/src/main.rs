@@ -46,6 +46,17 @@ const SCENES: &[Scene] = &[
     ("chat-menu", |s| { s.open_chat("Casual chat"); s.toggle_menu("chat-head:Casual chat"); }),
     ("model-menu", |s| { s.new_chat(); s.toggle_menu("model:chat-home"); }),
     ("code", |s| s.go(View::Code)),
+    ("code-tabs", |s| { s.go(View::Code); s.poll_code(); s.open_file("src/pricing/plans.json"); s.open_file("src/main.js"); s.open_file("src/pricing/pricing.js"); }),
+    ("code-file-menu", |s| { s.go(View::Code); s.poll_code(); s.toggle_menu("code-file"); }),
+    ("code-new-file", |s| { s.go(View::Code); s.poll_code(); s.open_code_dialog(crate::app::CodeDialog::New); s.edit_mut(EditKey::FilePath).replace_text("src/pricing/escape.js"); }),
+    ("code-delete", |s| { s.go(View::Code); s.poll_code(); s.open_code_dialog(crate::app::CodeDialog::Delete("src/pricing/pricing.css".into())); }),
+    ("chat-code", |s| {
+        s.open_chat("Casual chat");
+        let mut items = s.data.thread("Casual chat").to_vec();
+        items.push(crate::model::ThreadItem::You("How do I escape the plan names?".into()));
+        items.push(crate::model::ThreadItem::Them("Add a small helper and use it where the card is built:\n\n```js\nconst escape = (s) => String(s).replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`);\n\nreturn `<article class=\"plan\">${escape(p.name)} ${escape(price)}</article>`;\n```\n\nPress **Apply** to put it in pricing.js.".into()));
+        s.data.threads.push(("Casual chat".into(), items));
+    }),
     ("code-ask", |s| { s.go(View::Code); s.poll_code(); s.code_ask = true; s.edit_mut(EditKey::CodeAsk).replace_text("Escape names and prices before they go into innerHTML"); }),
     ("code-edit", |s| { s.go(View::Code); s.poll_code(); s.edit_mut(EditKey::CodeAsk).replace_text("Escape names and prices before they go into innerHTML"); s.submit_code_ask(); }),
     ("code-ghost", |s| {

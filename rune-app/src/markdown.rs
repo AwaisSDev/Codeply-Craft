@@ -246,14 +246,26 @@ pub fn render(src: &str, t: &Theme, streaming: bool) -> El {
 /// A fenced code block: the language, a copy button, and the code in monospace.
 pub fn code_block(t: &Theme, lang: &str, code: &str) -> El {
     let copy = code.to_owned();
+    let apply = code.to_owned();
+    let spans = {
+        let known = (!lang.is_empty()).then_some(lang);
+        let found = rune_kit::syntax::highlight(known, code);
+        rune_kit::syntax::SyntaxTheme::neutral(t.dark).spans(&found, 0)
+    };
     col().w_full().radius(10.0).fill(t.well).border(1.0, t.card_border).clip_rounded(10.0)
         .child(row().h(32.0).px(12.0).center_y().justify_between().border_sides([0.0, 0.0, 1.0, 0.0], t.card_border)
             .child(text(if lang.is_empty() { "code".to_owned() } else { lang.to_owned() }).font(ui(12.0, 500.0)).color(t.faint))
-            .child(row().gap(5.0).px(6.0).h(24.0).radius(6.0).center_y().hover(t.hover).role("button").label("Copy code")
-                .child(crate::icons::ico_s("file", 14.0, t.faint))
-                .child(text("Copy").font(ui(12.0, 500.0)).color(t.faint))
-                .on_press_tx(move |_: &mut App, tx| tx.copy(copy.clone()))))
-        .child(el().w_full().padding(12.0).scroll_x().child(text(code.to_owned()).font(mono(12.5, 19.0)).color(t.code_ink).selectable(true)))
+            .child(row().gap(2.0)
+                .child(row().gap(5.0).px(6.0).h(24.0).radius(6.0).center_y().hover(t.hover).role("button").label("Copy code")
+                    .child(crate::icons::ico_s("file", 14.0, t.faint))
+                    .child(text("Copy").font(ui(12.0, 500.0)).color(t.faint))
+                    .on_press_tx(move |_: &mut App, tx| tx.copy(copy.clone())))
+                // Wisp works it into the file open in Code, as a diff to accept or reject.
+                .child(row().gap(5.0).px(6.0).h(24.0).radius(6.0).center_y().hover(t.hover).role("button").label("Apply to the open file")
+                    .child(crate::icons::ico_s("arrow-right", 14.0, t.faint))
+                    .child(text("Apply").font(ui(12.0, 500.0)).color(t.faint))
+                    .on_press(move |s: &mut App| s.apply_snippet(&apply)))))
+        .child(el().w_full().padding(12.0).scroll_x().child(text(code.to_owned()).font(mono(12.5, 19.0)).color(t.code_ink).spans(spans).selectable(true)))
 }
 
 #[cfg(test)]

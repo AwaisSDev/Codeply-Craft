@@ -672,6 +672,10 @@ impl App {
     /// Opens a project file in the editor.
     pub fn open_file(&mut self, path: &str) {
         self.view = View::Code;
+        // The file you leave stays a tab (the one open at launch too).
+        if let Some(cur) = self.data.extra.code.open.clone() {
+            self.add_tab(&cur);
+        }
         // The tab you leave keeps its unsaved text, so coming back finds it.
         if let Some(cur) = self.data.extra.code.open.clone()
             && cur != path
@@ -891,8 +895,8 @@ impl App {
     /// Puts the open file's text in the editor now (scenes; `step_code` does it on a poll).
     pub fn poll_code(&mut self) {
         if let Some(path) = self.data.extra.code.open.clone() {
+            let text = self.code_drafts.remove(&path).unwrap_or_else(|| self.data.extra.code.saved.clone());
             self.code_loaded = Some(path);
-            let text = self.data.extra.code.saved.clone();
             self.edit_mut(EditKey::Code).replace_text(text.clone());
             self.code_text_seen = text.clone();
             self.code_asked = text;

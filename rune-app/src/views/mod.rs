@@ -37,5 +37,5 @@ pub fn build(s: &App, t: &Theme, cx: &mut Cx<App>) -> (Option<El>, El) {
 /// A view's own dropdown menus, by the id `App::toggle_menu` was given ("agent:<id>", ...).
 /// The shell draws the composer's and chats' menus itself.
 pub fn menu(s: &App, t: &Theme, id: &str) -> Option<El> {
-    agents::menu(s, t, id).or_else(|| browser::menu(s, t, id)).or_else(|| chat::menu(s, t, id)).or_else(|| integrations::menu(s, t, id)).or_else(|| themes::menu(s, t, id))
+    agents::menu(s, t, id).or_else(|| browser::menu(s, t, id)).or_else(|| chat::menu(s, t, id)).or_else(|| integrations::menu(s, t, id)).or_else(|| themes::menu(s, t, id)).or_else(|| code::menu(s, t, id))
 }

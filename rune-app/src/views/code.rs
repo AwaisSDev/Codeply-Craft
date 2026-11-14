@@ -59,6 +59,7 @@ pub fn side(s: &App, t: &Theme) -> El {
     col().h_full().min_h(0.0)
         .child(row().pt(14.0).pr(12.0).pb(8.0).pl(16.0).center_y().justify_between()
             .child(text(s.data.project.clone()).font(ui(15.0, 650.0)).color(t.text).truncate().grow(1.0))
+            .child(ibtn(t, "plus", "New file").key("code-new-file").on_press(|s: &mut App| s.open_code_dialog(crate::app::CodeDialog::New)))
             .child(ibtn(t, "refresh", "Refresh").key("code-refresh").on_press(move |s: &mut App| {
                 if let Some(p) = &reload {
                     s.open_file(p);
@@ -86,16 +87,32 @@ pub fn main(s: &App, t: &Theme) -> El {
 
 fn tab_bar(s: &App, t: &Theme) -> El {
     let code = &s.data.extra.code;
-    let name = code.open.as_deref().map(|p| p.rsplit('/').next().unwrap_or(p).to_owned());
-    let mut bar = row().h(38.0).px(14.0).gap(8.0).center_y().fill(t.rail).border_sides([0.0, 0.0, 1.0, 0.0], t.border);
-    if let Some(name) = name {
+    // One tab per open file: its name, a dot while it has unsaved changes, and a close button.
+    let tabs = row().grow(1.0).min_w(0.0).h_full().scroll_x().children(s.tabs().into_iter().map(|path| {
+        let on = code.open.as_deref() == Some(path.as_str());
+        let dirty = if on { s.code_dirty() } else { s.code_drafts.contains_key(&path) };
+        let name = path.rsplit('/').next().unwrap_or(&path).to_owned();
+        let (open, close) = (path.clone(), path.clone());
+        row().key(format!("code-tab/{path}")).h_full().pl(12.0).pr(6.0).gap(7.0).center_y()
+            .fill(if on { t.bg } else { Color::TRANSPARENT }).hover(t.hover)
+            .border_sides([0.0, 1.0, if on { 0.0 } else { 1.0 }, 0.0], t.border)
+            .role("tab").checked(on).label(name.clone()).help(path.clone())
+            .child(ico_s("file", 14.0, if on { t.text } else { t.faint }))
+            .child(text(name).font(ui(13.0, if on { 500.0 } else { 400.0 })).color(if on { t.text } else { t.dim }).single_line())
+            .children(dirty.then(|| el().size(7.0, 7.0).radius(3.5).fill(t.warn)))
+            .child(el().key(format!("code-tab-close/{path}")).size(20.0, 20.0).radius(5.0).center().hover(t.active).role("button").label("Close tab")
+                .child(ico_s("close", 12.0, t.faint))
+                .on_press(move |s: &mut App| s.close_tab(&close)))
+            .on_press(move |s: &mut App| s.open_file(&open))
+    }));
+    let mut bar = row().h(38.0).pr(14.0).gap(8.0).center_y().fill(t.rail).border_sides([0.0, 0.0, 1.0, 0.0], t.border)
+        .child(tabs);
+    if let Some(open) = code.open.clone() {
+        let more_open = s.menu.as_deref() == Some("code-file");
         bar = bar
-            .child(ico_s("file", 16.0, t.text))
-            .child(text(name).font(ui(13.0, 500.0)).color(t.text))
-            .children(s.code_dirty().then(|| el().size(8.0, 8.0).radius(4.0).fill(t.warn)));
-    }
-    bar = bar.child(el().grow(1.0));
-    if code.open.is_some() {
+            .child(ibtn(t, "more", "File").key("code-file-more").fill(if more_open { t.active } else { Color::TRANSPARENT })
+                .on_press(|s: &mut App| s.toggle_menu("code-file")))
+            .child(el().key("code-file-anchor").w(0.0).h(0.0).help(open));
         bar = bar
             .child(btn(t, "Edit with Wisp", Some("sparkle"), ButtonKind::Plain).key("code-edit-with-wisp").help("Ctrl K")
                 .on_press_tx(|s: &mut App, tx| s.toggle_code_ask(tx)))
@@ -370,4 +387,52 @@ fn wisp_panel(s: &App, t: &Theme) -> El {
 
     panel.child(col().px(12.0).pt(10.0).pb(12.0).border_sides([1.0, 0.0, 0.0, 0.0], t.border)
         .child(composer(s, t, EditKey::AgentThread, Target::Wisp, "Ask Wisp about this file", false, true)))
+}
+
+/// The open file's menu (the "..." beside the tabs): Rename and Delete.
+pub fn menu(s: &App, t: &Theme, id: &str) -> Option<El> {
+    if id != "code-file" {
+        return None;
+    }
+    let open = s.data.extra.code.open.clone()?;
+    let (a, b) = (open.clone(), open);
+    Some(crate::ui::menu(t, "code-file-more", rune::Side::Bottom, 200.0, vec![
+        crate::ui::menu_item(t, "code-file/rename".into(), Some("edit"), "Rename", None, false)
+            .on_press(move |s: &mut App| s.open_code_dialog(crate::app::CodeDialog::Rename(a.clone()))),
+        crate::ui::menu_item(t, "code-file/delete".into(), Some("close"), "Delete", None, false)
+            .on_press(move |s: &mut App| s.open_code_dialog(crate::app::CodeDialog::Delete(b.clone()))),
+    ]).anchored("code-file-more".to_owned(), rune::Side::Bottom, rune::Align::End, 6.0))
+}
+
+/// New file, Rename or Delete, over the window.
+pub fn dialog(s: &App, t: &Theme) -> Option<El> {
+    use crate::app::CodeDialog;
+    let d = s.code_dialog.as_ref()?;
+    let (title, sub, ok) = match d {
+        CodeDialog::New => ("New file".to_owned(), "A path in the project, like src/pricing/plans.ts.".to_owned(), "Create"),
+        CodeDialog::Rename(p) => (format!("Rename {}", p.rsplit('/').next().unwrap_or(p)), "Its new path in the project.".to_owned(), "Rename"),
+        CodeDialog::Delete(p) => (format!("Delete {}?", p.rsplit('/').next().unwrap_or(p)), format!("{p} goes for good, unless git has it."), "Delete"),
+    };
+    let field = (!matches!(d, CodeDialog::Delete(_))).then(|| {
+        row().w_full().h(38.0).px(12.0).radius(10.0).clip_rounded(10.0).center_y().fill(t.field).border(1.0, t.field_border)
+            .child(text_input(s.edit(EditKey::FilePath), mono(13.0, 18.0)).key("file-path").single_line().grow(1.0).min_w(0.0).color(t.text)
+                .placeholder("src/new-file.ts", t.faint).caret(t.accent, t.accent.alpha(0.3)).label("Path")
+                .on_edit(|s: &mut App| s.edit_mut(EditKey::FilePath))
+                .on_submit(|s: &mut App, _| s.submit_code_dialog()))
+    });
+    let danger = matches!(d, CodeDialog::Delete(_));
+    let card = rune::col().key("code-dialog").w(440.0).padding(22.0).gap(14.0).radius(16.0)
+        .fill(t.card).border(1.0, t.card_border).shadow(16.0, 48.0, crate::theme::rgba(0, 0, 0, 0.45))
+        .transition(fade_in()).motion(ENTER).role("dialog").label(title.clone())
+        .modal(true, |s: &mut App| s.code_dialog = None)
+        .child(col().gap(3.0)
+            .child(text(title).font(ui(16.0, 600.0)).color(t.text))
+            .child(text(sub).font(ui(12.5, 400.0)).color(t.faint).wrap()))
+        .children(field)
+        .child(row().w_full().gap(8.0).justify_end()
+            .child(btn(t, "Cancel", None, ButtonKind::Plain).key("code-dialog-cancel").on_press(|s: &mut App| s.code_dialog = None))
+            .child(row().key("code-dialog-ok").h(32.0).px(14.0).radius(9.0).center_y().fill(if danger { t.red } else { t.accent }).role("button").label(ok)
+                .child(text(ok).font(ui(13.0, 600.0)).color(Color::WHITE))
+                .on_press(|s: &mut App| s.submit_code_dialog())));
+    Some(col().key("code-scrim").pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)).center().fill(crate::theme::rgba(0, 0, 0, 0.4)).child(card))
 }
