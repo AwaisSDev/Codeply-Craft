@@ -37,6 +37,7 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
         .child(body)
         .children(appearance)
         .children(views::usage::sheet(s, &t))
+        .children(views::apps::dialog(s, &t))
         .children(menus(s, &t))
 }
 

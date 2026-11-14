@@ -346,7 +346,7 @@ pub struct Loop {
 }
 
 /// An app in the Integrations catalogue.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct CatalogApp {
     pub slug: &'static str,
     pub name: String,
@@ -357,6 +357,55 @@ pub struct CatalogApp {
     pub domain: String,
     /// Its own logo's URL, when the catalogue has one (used before the domain's icon).
     pub icon: String,
+    /// A vendor's own server that Codeply checked (Featured), rather than an unreviewed listing.
+    pub verified: bool,
+    /// It signs in with an API key (the header it goes in), not the browser.
+    pub key_header: String,
+    /// Connected, but its sign-in ran out.
+    pub needs_reconnect: bool,
+    /// How many tools a connected app offered when last asked, and who it is signed in as.
+    pub tools: u32,
+    pub account: String,
+}
+
+/// What Integrations > Apps shows beyond the page of apps in `extra.catalog`: the whole
+/// catalogue's size, its categories, the connected apps, and a connect in progress.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AppsView {
+    /// Apps matching the search and category (the page in `extra.catalog` is the first of them).
+    pub matched: usize,
+    /// Every app in the catalogue.
+    pub total: usize,
+    /// Categories with their app counts, for the sidebar.
+    pub categories: Vec<(String, usize)>,
+    /// Connected apps, all of them.
+    pub connected: Vec<CatalogApp>,
+    /// The engine is still reading the registry: how many it has so far.
+    pub indexing: Option<usize>,
+    /// A page is on its way.
+    pub loading: bool,
+    /// What went wrong reaching the catalogue.
+    pub error: String,
+    /// The connect (or disconnect) the engine last reported.
+    pub progress: Option<AppProgress>,
+    /// A connected app's tools, as the engine listed them: (app id, [(name, description, read-only)]).
+    pub tools: Option<(String, Result<Vec<(String, String, bool)>, String>)>,
+}
+
+/// Where a connect is: "start", "waiting" (for the browser), "done", "warn", "error", "cancelled".
+#[derive(Clone, Debug, PartialEq)]
+pub struct AppProgress {
+    pub id: String,
+    pub name: String,
+    pub state: String,
+    pub message: String,
+}
+
+impl AppProgress {
+    /// Still going: the Connect buttons wait, and Cancel shows.
+    pub fn busy(&self) -> bool {
+        matches!(self.state.as_str(), "start" | "waiting")
+    }
 }
 
 /// The part of a Snapshot the Codex-style views add. Kept in its own struct so the original
@@ -397,6 +446,7 @@ pub struct Extra {
     pub skills: Vec<(String, String)>,
     pub loops: Vec<Loop>,
     pub catalog: Vec<CatalogApp>,
+    pub apps: AppsView,
     /// Which engine replies come from ("DSH", "Classic") and whether it is up.
     pub engine: String,
     pub engine_ok: bool,

@@ -23,6 +23,18 @@ pub enum Target {
     New,
 }
 
+/// What Integrations > Apps asks the catalogue for: a page of apps matching `text` in `category`,
+/// starting at `offset` (a page after the first is added to the ones shown).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AppsQuery {
+    pub text: String,
+    pub category: Option<String>,
+    pub offset: usize,
+}
+
+/// How many apps one page of the catalogue holds.
+pub const APPS_PAGE: usize = 60;
+
 pub trait Store {
     /// Everything the views show, read once at launch.
     fn load(&mut self) -> Snapshot;
@@ -76,6 +88,19 @@ pub trait Store {
     /// Connects an app: the engine opens its sign-in page in the browser, then it shows as connected.
     fn connect_app(&mut self, _slug: &str, _snap: &mut Snapshot) {}
     fn disconnect_app(&mut self, _slug: &str, _snap: &mut Snapshot) {}
+    /// A page of the whole catalogue (the engine reads all of the MCP Registry): lands in
+    /// `extra.catalog` and `extra.apps`.
+    fn browse_apps(&mut self, q: &AppsQuery, snap: &mut Snapshot) {
+        self.search_apps(&q.text, snap);
+    }
+    /// Connects an app that takes an API key.
+    fn connect_app_key(&mut self, _slug: &str, _key: &str, _snap: &mut Snapshot) {}
+    /// Adds an app by its MCP server URL: with a key (`header` names where it goes) or by browser sign-in.
+    fn add_app(&mut self, _url: &str, _title: &str, _header: &str, _key: &str, _snap: &mut Snapshot) {}
+    /// Stops the browser sign-in in progress.
+    fn cancel_app(&mut self, _snap: &mut Snapshot) {}
+    /// Asks a connected app for its tools; they land in `extra.apps.tools`.
+    fn app_tools(&mut self, _slug: &str, _snap: &mut Snapshot) {}
 
     // ---------- memory ----------
     fn remember(&mut self, _text: &str, _snap: &mut Snapshot) {}
