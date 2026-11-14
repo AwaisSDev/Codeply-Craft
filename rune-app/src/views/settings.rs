@@ -63,6 +63,7 @@ fn subtitle(page: SettingsPage) -> &'static str {
         SettingsPage::ComputerUse => "Let an agent look at and control your screen.",
         SettingsPage::Archived => "Chats you hid from the sidebar.",
         SettingsPage::Usage => "Your plan and what you have used.",
+        SettingsPage::Cloud => "Your phone, the web and the cloud, on the same account as this PC.",
     }
 }
 
@@ -100,9 +101,10 @@ fn sw(t: &Theme, key: &str, on: bool, label: &str, f: impl Fn(&mut App) + 'stati
     toggle(t, key.to_owned(), on, label).on_press(f)
 }
 
-/// A toggle in a sample page (it shows the control; nothing listens yet).
-fn sample(t: &Theme, key: &str, on: bool, label: &str) -> El {
-    toggle(t, key.to_owned(), on, label)
+/// A setting the engine doesn't have yet: a quiet "Soon" in place of a switch that would do nothing.
+fn sample(t: &Theme, key: &str, _on: bool, label: &str) -> El {
+    row().key(key.to_owned()).h(22.0).px(8.0).radius(11.0).center().fill(t.hover).label(format!("{label}: coming soon"))
+        .child(text("Soon").font(ui(11.5, 600.0)).color(t.faint))
 }
 
 /// A key on the keyboard.
@@ -121,11 +123,6 @@ fn editor(s: &App, t: &Theme, key: EditKey, placeholder: &str) -> El {
             .on_edit(move |s: &mut App| s.edit_mut(key)))
 }
 
-/// A usage meter: a thin bar, `frac` of it filled.
-fn meter(t: &Theme, frac: f32) -> El {
-    let w = 140.0;
-    el().w(w).h(4.0).radius(2.0).fill(t.border).child(el().w(w * frac.clamp(0.0, 1.0)).h(4.0).radius(2.0).fill(t.accent))
-}
 
 // ---------- pages ----------
 
@@ -141,13 +138,14 @@ fn groups(s: &App, t: &Theme, page: SettingsPage) -> Vec<El> {
         SettingsPage::Mcp => mcp(s, t),
         SettingsPage::Hooks => hooks(t),
         SettingsPage::Connections => connections(t),
-        SettingsPage::Git => git(t),
+        SettingsPage::Git => git(s, t),
         SettingsPage::Environments => environments(t),
         SettingsPage::Worktrees => worktrees(t),
         SettingsPage::Browser => browser(s, t),
         SettingsPage::ComputerUse => computer_use(t),
         SettingsPage::Archived => archived(s, t),
         SettingsPage::Usage => usage(s, t),
+        SettingsPage::Cloud => crate::views::cloud::groups(s, t),
     }
 }
 
@@ -363,9 +361,12 @@ fn connections(t: &Theme) -> Vec<El> {
     ])]
 }
 
-fn git(t: &Theme) -> Vec<El> {
+fn git(s: &App, t: &Theme) -> Vec<El> {
     vec![group(t, "Commits and branches", vec![
-        item(t, "Commit with co-author", Some("Adds Codeply to the commit message."), sample(t, "set-git/coauthor", true, "Commit with co-author")),
+        item(t, "Commit with co-author", Some("Adds Codeply to the commit message."), sw(t, "set-git/coauthor", s.prefs.coauthor, "Commit with co-author", |s: &mut App| {
+            s.update_prefs(|p| p.coauthor = !p.coauthor);
+            s.configure_engine();
+        })),
         item(t, "Default branch prefix", Some("New task branches start with this."), value(t, "codeply/")),
         item(t, "Open pull requests as drafts", None, sample(t, "set-git/drafts", false, "Open pull requests as drafts")),
     ])]
@@ -429,16 +430,25 @@ fn archived(s: &App, t: &Theme) -> Vec<El> {
 }
 
 fn usage(s: &App, t: &Theme) -> Vec<El> {
-    let bar = |label: &str, shown: &str, frac: f32| {
-        item(t, label, None, row().gap(12.0).center_y().child(value(t, shown)).child(meter(t, frac)))
+    use crate::views::usage::short;
+    let plan = group(t, "Plan", vec![
+        item(t, &s.data.plan, Some("Your current plan."), btn_primary(t, "Upgrade", "sparkle").key("set-upgrade")
+            .on_press_tx(|_: &mut App, tx| { let _ = tx.open_url("https://codeply.app/pricing"); })),
+    ]);
+    // Your real use, from the account (the same numbers as the usage sheet).
+    let used = match s.data.extra.usage.as_ref() {
+        None => vec![item(t, "Loading your usage", None, crate::ui::wave("Asking your account", ui(13.0, 400.0), t.dim))],
+        Some(u) if !u.error.is_empty() => vec![item(t, "Usage", Some(&u.error), el())],
+        Some(u) => {
+            let month = u.today.get(..7).unwrap_or_default();
+            let (m_tokens, m_calls) = u.days.iter().filter(|d| d.date.starts_with(month)).fold((0, 0), |(a, b), d| (a + d.tokens, b + d.calls));
+            vec![
+                item(t, "This month", Some(&format!("{} model calls", short(m_calls))), value(t, &format!("{} tokens", short(m_tokens)))),
+                item(t, "All time", Some(&format!("{} model calls across the app, your agents, the CLI, cloud runs and your phone", short(u.calls))), value(t, &format!("{} tokens", short(u.tokens)))),
+                item(t, "Token activity", Some("A year of it, day by day, and which models it went to."),
+                    btn(t, "Open", Some("chart"), ButtonKind::Plain).key("set-usage-open").on_press(|s: &mut App| s.toggle_usage())),
+            ]
+        }
     };
-    vec![
-        group(t, "Plan", vec![
-            item(t, &s.data.plan, Some("Your current plan."), btn_primary(t, "Upgrade", "sparkle").key("set-upgrade")),
-        ]),
-        group(t, "Usage", vec![
-            bar("Chats this month", "23 / 50", 23.0 / 50.0),
-            bar("Tokens", "77.8m", 0.78),
-        ]),
-    ]
+    vec![plan, group(t, "Usage", used)]
 }

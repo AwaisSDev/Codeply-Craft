@@ -61,6 +61,8 @@ pub trait Store {
     fn take_focus(&mut self) -> Option<String> {
         None
     }
+    /// Loads or changes Cloud & devices (sync, the phone, Craft Cloud per project).
+    fn cloud_op(&mut self, _op: crate::model::CloudOp, _snap: &mut Snapshot) {}
     /// Lists, diffs, merges or opens pull requests (`sidecar/ext-prs.mjs`).
     fn prs_op(&mut self, _op: crate::model::PrOp, _snap: &mut Snapshot) {}
     /// Adds to or changes your team and its loops (the engine's specialists and standing jobs).

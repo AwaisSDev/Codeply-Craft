@@ -190,6 +190,18 @@ pub struct Pr {
     pub local: bool,
 }
 
+/// A store operation for Settings > Cloud & devices (`sidecar/ext-cloud.mjs`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum CloudOp {
+    Load,
+    /// Sync the team and its jobs with the account now.
+    Sync,
+    /// Set up Craft Cloud for a project folder.
+    Setup(String),
+    /// A project's switch: (folder, "cloudOn" | "handoff" | "autoBackup", on).
+    Options(String, &'static str, bool),
+}
+
 /// A store operation on pull requests.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PrOp {
@@ -483,6 +495,8 @@ pub struct Extra {
     pub publish: Option<Publish>,
     /// Whether you're signed in to Codeply (the engine's account).
     pub signed_in: bool,
+    /// Settings > Cloud & devices, as the engine reports it (`GET /ext/cloud`); Null until loaded.
+    pub cloud: serde_json::Value,
     /// The diff the Changes tab shows: (PR number, its files).
     pub pr_files: Option<(u32, Vec<DiffFile>)>,
     /// Why pull requests can't be listed (no GitHub CLI, not signed in, no remote), or empty.

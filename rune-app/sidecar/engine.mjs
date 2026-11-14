@@ -968,6 +968,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/config') {
       const body = await readJson(req);
       if (body.approval === 'ask' || body.approval === 'auto') settings.approval = body.approval;
+      // Settings > Git: tools.mjs skips its Co-authored-by trailer when this is set.
+      if (typeof body.coauthor === 'boolean') { if (body.coauthor) delete process.env.CODEPLY_NO_COAUTHOR; else process.env.CODEPLY_NO_COAUTHOR = '1'; }
       if (typeof body.effort === 'string') { settings.effort = body.effort; applyEffortAll().catch(() => {}); }
       if (Array.isArray(body.team)) {
         settings.team = body.team.filter((m) => m && String(m.name || '').trim())

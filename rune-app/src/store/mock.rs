@@ -278,6 +278,7 @@ pub fn extra() -> Extra {
         usage: None,
         team_note: None,
         pr_files: None,
+        cloud: serde_json::Value::Null,
         prs_note: String::new(),
         email: s("sam@example.com"),
         sign_in: None,
@@ -399,6 +400,35 @@ impl Store for MockStore {
         echo(snap, to, text, "On it. I'll post here when it's done.");
         Ok(())
     }
+    fn cloud_op(&mut self, op: CloudOp, snap: &mut Snapshot) {
+        if snap.extra.cloud.is_null() {
+            snap.extra.cloud = serde_json::json!({
+                "signedIn": true, "email": "sam@example.com", "device": "SAM-PC", "available": true,
+                "github": { "connected": true, "userName": "sam" },
+                "sync": { "state": "on", "at": 0 },
+                "phone": { "relay": true, "relayStatus": "SUBSCRIBED", "lan": true, "urls": ["http://192.168.1.20:45671"], "phones": 1, "mobileUrl": "https://mobile.codeply.app" },
+                "projects": [
+                    { "cwd": "C:/Users/sam/Codeply/launch-site", "name": "launch-site", "ready": true, "repo": "sam/craft-workspace-launch-site", "kind": "mirror", "cloudOn": true, "handoff": true, "autoBackup": true, "tasks": [] },
+                    { "cwd": "C:/Users/sam/Codeply/Superapp", "name": "Superapp", "ready": false, "repo": "", "cloudOn": false, "handoff": true, "autoBackup": true, "tasks": [] }
+                ]
+            });
+        }
+        match op {
+            CloudOp::Options(cwd, key, on) => {
+                if let Some(p) = snap.extra.cloud["projects"].as_array_mut().and_then(|a| a.iter_mut().find(|p| p["cwd"] == cwd.as_str())) {
+                    p[key] = serde_json::json!(on);
+                }
+            }
+            CloudOp::Setup(cwd) => {
+                if let Some(p) = snap.extra.cloud["projects"].as_array_mut().and_then(|a| a.iter_mut().find(|p| p["cwd"] == cwd.as_str())) {
+                    p["ready"] = serde_json::json!(true);
+                    p["cloudOn"] = serde_json::json!(true);
+                }
+            }
+            CloudOp::Load | CloudOp::Sync => {}
+        }
+    }
+
     fn prs_op(&mut self, op: PrOp, snap: &mut Snapshot) {
         if let PrOp::Diff(n) = op
             && let Some(p) = snap.prs.iter().find(|p| p.number == n)

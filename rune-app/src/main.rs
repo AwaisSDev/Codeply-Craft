@@ -90,6 +90,8 @@ const SCENES: &[Scene] = &[
     ("settings-personalization", |s| s.open_settings(SettingsPage::Personalization)),
     ("settings-browser", |s| s.open_settings(SettingsPage::Browser)),
     ("settings-usage", |s| s.open_settings(SettingsPage::Usage)),
+    ("settings-cloud", |s| s.open_settings(SettingsPage::Cloud)),
+    ("settings-git", |s| s.open_settings(SettingsPage::Git)),
     ("chat-thinking", |s| {
         s.open_chat("Casual chat");
         if let Some(c) = s.data.extra.chats.iter_mut().find(|c| c.title == "Casual chat") {

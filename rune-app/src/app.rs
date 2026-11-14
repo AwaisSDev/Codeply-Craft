@@ -45,14 +45,15 @@ pub enum SettingsPage {
     ComputerUse,
     Archived,
     Usage,
+    Cloud,
 }
 
 impl SettingsPage {
-    pub const ALL: [SettingsPage; 17] = [
+    pub const ALL: [SettingsPage; 18] = [
         SettingsPage::General, SettingsPage::Profile, SettingsPage::Appearance, SettingsPage::Configuration,
         SettingsPage::Models, SettingsPage::Personalization, SettingsPage::Shortcuts, SettingsPage::Mcp, SettingsPage::Hooks,
         SettingsPage::Connections, SettingsPage::Git, SettingsPage::Environments, SettingsPage::Worktrees,
-        SettingsPage::Browser, SettingsPage::ComputerUse, SettingsPage::Archived, SettingsPage::Usage,
+        SettingsPage::Browser, SettingsPage::ComputerUse, SettingsPage::Archived, SettingsPage::Usage, SettingsPage::Cloud,
     ];
     pub fn label(self) -> &'static str {
         match self {
@@ -73,6 +74,7 @@ impl SettingsPage {
             SettingsPage::ComputerUse => "Computer use",
             SettingsPage::Archived => "Archived chats",
             SettingsPage::Usage => "Usage & billing",
+            SettingsPage::Cloud => "Cloud & devices",
         }
     }
     /// The icon beside it in Settings' list (names from `icons::pack`).
@@ -95,6 +97,7 @@ impl SettingsPage {
             SettingsPage::ComputerUse => "oai-desktop",
             SettingsPage::Archived => "history",
             SettingsPage::Usage => "gauge",
+            SettingsPage::Cloud => "oai-cloud",
         }
     }
     /// Its name for `--scene settings-<name>`.
@@ -117,6 +120,7 @@ impl SettingsPage {
             SettingsPage::ComputerUse => "computer-use",
             SettingsPage::Archived => "archived",
             SettingsPage::Usage => "usage",
+            SettingsPage::Cloud => "cloud",
         }
     }
 }
@@ -391,6 +395,16 @@ impl App {
     pub fn open_settings(&mut self, page: SettingsPage) {
         self.go(View::Settings);
         self.settings = page;
+        match page {
+            SettingsPage::Cloud => self.cloud_op(crate::model::CloudOp::Load),
+            SettingsPage::Usage => self.store.load_usage(&mut self.data),
+            _ => {}
+        }
+    }
+
+    /// A Cloud & devices operation through the store.
+    pub fn cloud_op(&mut self, op: crate::model::CloudOp) {
+        self.store.cloud_op(op, &mut self.data);
     }
 
     /// Settings' "Back to app".
@@ -476,6 +490,11 @@ impl App {
     }
 
     /// When the engine asks before it acts, and tells the engine.
+    /// Tells the engine the settings it follows (approval, effort, the team, co-author).
+    pub fn configure_engine(&mut self) {
+        self.store.configure(&self.prefs);
+    }
+
     pub fn set_approval(&mut self, a: Approval) {
         self.prefs.approval = a;
         self.menu = None;

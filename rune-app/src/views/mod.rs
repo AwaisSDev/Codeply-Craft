@@ -6,6 +6,7 @@ pub mod appearance;
 pub mod apps;
 pub mod browser;
 pub mod chat;
+pub mod cloud;
 pub mod code;
 pub mod integrations;
 pub mod models;

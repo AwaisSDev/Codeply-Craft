@@ -1677,6 +1677,7 @@ function checkGitTrailerSupport() {
  * risk breaking every single commit over a flag an old git doesn't recognize.
  */
 async function withCodeplyTrailer(command) {
+  if (process.env.CODEPLY_NO_COAUTHOR === '1') return command; // turned off in the Rune app's Settings > Git
   if (!GIT_COMMIT_RE.test(command) || /co-authored-by/i.test(command) || !(await checkGitTrailerSupport())) return command;
   return command.replace(GIT_COMMIT_RE, `git commit --trailer "Co-authored-by=Codeply <${CODEPLY_COMMIT_EMAIL}>"`);
 }

@@ -36,6 +36,8 @@ enum Msg {
     Team(Value),
     /// An inline edit's answer: (file, the instruction, `{ text }` or `{ error }`).
     Proposal(String, String, Value),
+    /// Cloud & devices (`/ext/cloud`), or an error to show.
+    Cloud(Value),
     /// Pull requests and this branch's changes (`/ext/prs`), and a PR's diff: (number, files).
     Prs(Value),
     PrFiles(u32, Value),
@@ -901,6 +903,14 @@ impl Store for LiveStore {
                     }
                 }
                 Msg::Usage(v) => snap.extra.usage = Some(usage_from(&v)),
+                Msg::Cloud(v) => {
+                    if let Some(e) = v["error"].as_str().filter(|e| !e.is_empty()) {
+                        snap.extra.team_note = Some(e.to_owned());
+                    }
+                    if v.get("projects").is_some() {
+                        snap.extra.cloud = v;
+                    }
+                }
                 Msg::Prs(v) => {
                     snap.prs = prs_from(&v);
                     snap.extra.prs_note = v["gh"]["error"].as_str().unwrap_or_default().to_owned();
@@ -1019,6 +1029,33 @@ impl Store for LiveStore {
             derive(snap, &self.sessions);
         }
         changed
+    }
+
+    fn cloud_op(&mut self, op: crate::model::CloudOp, _snap: &mut Snapshot) {
+        use crate::model::CloudOp;
+        let post = match op {
+            CloudOp::Load => None,
+            CloudOp::Sync => Some(("/ext/cloud/sync", json!({}))),
+            CloudOp::Setup(cwd) => Some(("/ext/cloud/setup", json!({ "cwd": cwd }))),
+            CloudOp::Options(cwd, key, on) => Some(("/ext/cloud/options", json!({ "cwd": cwd, key: on }))),
+        };
+        self.spawn(move |c| {
+            // A change first (its error shows as a notice), then the page as it now stands.
+            if let Some((path, body)) = post {
+                match c.post(path, body) {
+                    Ok(v) if v["error"].as_str().is_some_and(|e| !e.is_empty()) => return Some(Msg::Cloud(json!({ "error": v["error"] }))),
+                    Err(e) => return Some(Msg::Cloud(json!({ "error": format!("The engine didn't answer: {e}") }))),
+                    _ => {}
+                }
+            }
+            for _ in 0..40 {
+                if let Ok(v) = c.get("/ext/cloud") {
+                    return Some(Msg::Cloud(v));
+                }
+                thread::sleep(Duration::from_millis(250));
+            }
+            None
+        });
     }
 
     fn prs_op(&mut self, op: crate::model::PrOp, _snap: &mut Snapshot) {
@@ -1293,7 +1330,7 @@ impl Store for LiveStore {
 
     fn configure(&mut self, prefs: &crate::prefs::Prefs) {
         let team: Vec<Value> = self.team.iter().map(|(id, name, role)| json!({ "id": id, "name": name, "role": role })).collect();
-        let body = json!({ "approval": prefs.approval.name(), "effort": prefs.effort, "team": team });
+        let body = json!({ "approval": prefs.approval.name(), "effort": prefs.effort, "team": team, "coauthor": prefs.coauthor });
         // The engine may still be starting: keep trying for half a minute.
         self.spawn(move |c| {
             for _ in 0..120 {
