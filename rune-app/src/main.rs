@@ -31,7 +31,7 @@ mod views;
 
 use rune::{App as RuneApp, AppSpec, Titlebar};
 
-use app::{App, IntegrationsTab, PrTab, SettingsPage, View};
+use app::{App, EditKey, IntegrationsTab, PrTab, SettingsPage, View};
 
 /// Named states for headless renders and tests (`--scene NAME`).
 type Scene = (&'static str, fn(&mut App));
@@ -46,6 +46,19 @@ const SCENES: &[Scene] = &[
     ("chat-menu", |s| { s.open_chat("Casual chat"); s.toggle_menu("chat-head:Casual chat"); }),
     ("model-menu", |s| { s.new_chat(); s.toggle_menu("model:chat-home"); }),
     ("code", |s| s.go(View::Code)),
+    ("code-ask", |s| { s.go(View::Code); s.poll_code(); s.code_ask = true; s.edit_mut(EditKey::CodeAsk).replace_text("Escape names and prices before they go into innerHTML"); }),
+    ("code-edit", |s| { s.go(View::Code); s.poll_code(); s.edit_mut(EditKey::CodeAsk).replace_text("Escape names and prices before they go into innerHTML"); s.submit_code_ask(); }),
+    ("code-ghost", |s| {
+        s.go(View::Code);
+        s.poll_code();
+        let text = s.edit(EditKey::Code).text.clone();
+        // The caret at the end of the line that starts "  const cards", and Wisp's suggestion there.
+        if let Some(at) = text.find("const cards = plans.map((p) => {").map(|i| i + "const cards = plans.map((p) => {".len()) {
+            s.edit_mut(EditKey::Code).set_caret(at);
+            let file = s.data.extra.code.open.clone().unwrap_or_default();
+            s.data.extra.code.suggestion = Some((file, at, " // one card per plan".into()));
+        }
+    }),
     ("prs", |s| s.go(View::Prs)),
     ("pr-changes", |s| { s.go(View::Prs); let n = s.data.prs.first().map_or(0, |p| p.number); s.open_pr(n, PrTab::Changes); }),
     ("chat-browser", |s| { s.open_chat("Casual chat"); s.panes.browser = true; }),

@@ -34,6 +34,8 @@ enum Msg {
     Usage(Value),
     /// The team and its loops (`/ext/team`).
     Team(Value),
+    /// An inline edit's answer: (file, the instruction, `{ text }` or `{ error }`).
+    Proposal(String, String, Value),
     /// Pull requests and this branch's changes (`/ext/prs`), and a PR's diff: (number, files).
     Prs(Value),
     PrFiles(u32, Value),
@@ -918,6 +920,15 @@ impl Store for LiveStore {
                     }).collect();
                     snap.extra.pr_files = Some((n, files));
                 }
+                Msg::Proposal(file, instruction, v) => {
+                    if let Some(p) = snap.extra.code.proposal.as_mut().filter(|p| p.file == file && p.instruction == instruction) {
+                        match v["text"].as_str() {
+                            Some(t) => p.after = Some(t.to_owned()),
+                            None => p.error = v["error"].as_str().unwrap_or("The edit failed.").to_owned(),
+                        }
+                        snap.extra.code.wisp = "idle".into();
+                    }
+                }
                 Msg::Team(v) => {
                     self.team = crate::team::apply(snap, &v);
                     derive(snap, &self.sessions);
@@ -1239,6 +1250,15 @@ impl Store for LiveStore {
     fn save_file(&mut self, path: &str, text: &str, _snap: &mut Snapshot) {
         let (path, text) = (path.to_owned(), text.to_owned());
         self.spawn(move |c| c.put("/file", json!({ "path": path, "text": text })).err().map(|e| Msg::Status(format!("save failed: {e}"))));
+    }
+
+    fn edit_code(&mut self, file: &str, text: &str, instruction: &str, _snap: &mut Snapshot) {
+        let (file, text, instruction) = (file.to_owned(), text.to_owned(), instruction.to_owned());
+        self.spawn(move |c| {
+            let v = c.post("/ext/code/edit", json!({ "path": file, "text": text, "instruction": instruction }))
+                .unwrap_or_else(|e| json!({ "error": format!("The engine didn't answer: {e}") }));
+            Some(Msg::Proposal(file, instruction, v))
+        });
     }
 
     fn complete(&mut self, file: &str, prefix: &str, suffix: &str, _snap: &mut Snapshot) {

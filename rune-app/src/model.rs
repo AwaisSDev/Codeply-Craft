@@ -529,6 +529,19 @@ pub struct Code {
     /// What Wisp is doing in the editor, for its morphing mascot: "idle", "writing",
     /// "reviewing", "fixing", "thinking".
     pub wisp: String,
+    /// An inline edit (Ctrl K): what you asked, and the file as Wisp would change it.
+    pub proposal: Option<Proposal>,
+}
+
+/// An inline edit of the open file, waiting for Accept or Reject.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Proposal {
+    pub file: String,
+    pub instruction: String,
+    /// The text it was asked about, and the changed text once it arrives (None while Wisp works).
+    pub before: String,
+    pub after: Option<String>,
+    pub error: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]

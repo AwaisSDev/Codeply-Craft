@@ -186,14 +186,16 @@ pub enum EditKey {
     /// The New loop dialog: what it does, and when.
     LoopTask,
     LoopWhen,
+    /// The code view's inline edit: what to change (Ctrl K).
+    CodeAsk,
 }
 
 impl EditKey {
-    pub const ALL: [EditKey; 19] = [
+    pub const ALL: [EditKey; 20] = [
         EditKey::Search, EditKey::Mission, EditKey::AgentThread, EditKey::ChatHome, EditKey::ChatThread,
         EditKey::AppSearch, EditKey::Address, EditKey::SettingsSearch, EditKey::AboutMe, EditKey::Instructions,
         EditKey::Terminal, EditKey::Code, EditKey::SignInEmail, EditKey::SignInCode, EditKey::Memory,
-        EditKey::AgentName, EditKey::AgentFocus, EditKey::LoopTask, EditKey::LoopWhen,
+        EditKey::AgentName, EditKey::AgentFocus, EditKey::LoopTask, EditKey::LoopWhen, EditKey::CodeAsk,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -216,6 +218,7 @@ impl EditKey {
             EditKey::AgentFocus => "agent-focus",
             EditKey::LoopTask => "loop-task",
             EditKey::LoopWhen => "loop-when",
+            EditKey::CodeAsk => "code-ask",
         }
     }
 }
@@ -286,6 +289,8 @@ pub struct App {
     /// line's word and seconds follow `think_now` (the last poll's clock).
     pub think_started: std::collections::HashMap<String, f64>,
     pub think_now: f64,
+    /// The code view's "Edit with Wisp" bar (Ctrl K), while it's open.
+    pub code_ask: bool,
     /// The New agent / New loop dialog, while it's open (team.rs).
     pub team_dialog: Option<crate::team::TeamDialog>,
     /// Whether the usage sheet is open (the button beside you at the sidebar's foot).
@@ -348,6 +353,7 @@ impl App {
             think_now: 0.0,
             usage_open: false,
             team_dialog: None,
+            code_ask: false,
             usage_daily: false,
             usage_pick: None,
             launched: false,
@@ -660,6 +666,51 @@ impl App {
         true
     }
 
+    /// Opens (or closes) the "Edit with Wisp" bar over the editor.
+    pub fn toggle_code_ask(&mut self, tx: &mut Tx) {
+        self.code_ask = !self.code_ask;
+        if self.code_ask {
+            self.edit_mut(EditKey::CodeAsk).clear();
+            tx.focus("code-ask", true);
+        }
+    }
+
+    /// Sends the bar's instruction: Wisp rewrites the open file, and the change shows as a diff.
+    pub fn submit_code_ask(&mut self) {
+        let instruction = self.edit(EditKey::CodeAsk).text.trim().to_owned();
+        let Some(file) = self.data.extra.code.open.clone() else { return };
+        if instruction.is_empty() {
+            return;
+        }
+        let before = self.edit(EditKey::Code).text.clone();
+        self.code_ask = false;
+        self.data.extra.code.suggestion = None;
+        self.data.extra.code.wisp = "thinking".into();
+        self.data.extra.code.proposal = Some(crate::model::Proposal { file: file.clone(), instruction: instruction.clone(), before: before.clone(), after: None, error: String::new() });
+        self.store.edit_code(&file, &before, &instruction, &mut self.data);
+    }
+
+    /// Takes Wisp's change into the editor (not saved until Ctrl S).
+    pub fn accept_proposal(&mut self) -> bool {
+        let Some(p) = self.data.extra.code.proposal.take() else { return false };
+        match p.after {
+            Some(after) if self.data.extra.code.open.as_deref() == Some(p.file.as_str()) => {
+                self.edit_mut(EditKey::Code).replace_text(after);
+                true
+            }
+            _ => {
+                self.data.extra.code.proposal = Some(p);
+                false
+            }
+        }
+    }
+
+    /// Drops Wisp's change (or stops waiting for it).
+    pub fn reject_proposal(&mut self) -> bool {
+        self.data.extra.code.wisp = "idle".into();
+        self.data.extra.code.proposal.take().is_some()
+    }
+
     /// Asks Wisp to review the open file.
     pub fn review_file(&mut self) {
         if let Some(path) = self.data.extra.code.open.clone() {
@@ -686,6 +737,17 @@ impl App {
     }
 
     /// While typing in the editor: after a short pause, ask for a completion at the caret.
+    /// Puts the open file's text in the editor now (scenes; `step_code` does it on a poll).
+    pub fn poll_code(&mut self) {
+        if let Some(path) = self.data.extra.code.open.clone() {
+            self.code_loaded = Some(path);
+            let text = self.data.extra.code.saved.clone();
+            self.edit_mut(EditKey::Code).replace_text(text.clone());
+            self.code_text_seen = text.clone();
+            self.code_asked = text;
+        }
+    }
+
     fn step_code(&mut self, now: f64, tx: &mut Tx) {
         if self.view != View::Code {
             return;
@@ -951,8 +1013,19 @@ impl App {
                 return true;
             }
         }
-        // The editor: Tab takes Wisp's suggestion, Ctrl S saves.
+        // The editor: Tab takes Wisp's suggestion, Ctrl S saves, Ctrl K asks Wisp for a change,
+        // Ctrl Enter accepts it and Escape rejects it.
         if self.view == View::Code {
+            if Chord::parse("mod+k").is_ok_and(|c| c.matches_tx(e, tx)) {
+                self.toggle_code_ask(tx);
+                return true;
+            }
+            if Chord::parse("mod+enter").is_ok_and(|c| c.matches_tx(e, tx)) && self.accept_proposal() {
+                return true;
+            }
+            if matches!(e.key, Key::Escape) && (std::mem::take(&mut self.code_ask) || self.reject_proposal()) {
+                return true;
+            }
             if matches!(e.key, Key::Tab) && e.mods == rune::Mods::default() && self.accept_suggestion() {
                 return true;
             }

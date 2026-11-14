@@ -116,6 +116,9 @@ pub trait Store {
     fn save_file(&mut self, _path: &str, _text: &str, _snap: &mut Snapshot) {}
     /// Asks for a completion at the caret; it lands in `extra.code.suggestion`.
     fn complete(&mut self, _file: &str, _prefix: &str, _suffix: &str, _snap: &mut Snapshot) {}
+    /// Asks Wisp to change the file as `instruction` says; the result lands in
+    /// `extra.code.proposal.after` (or its `error`).
+    fn edit_code(&mut self, _file: &str, _text: &str, _instruction: &str, _snap: &mut Snapshot) {}
     /// Asks Wisp to review the file; notes land in `extra.code.review`.
     fn review(&mut self, _file: &str, _text: &str, _snap: &mut Snapshot) {}
     // ---------- models ----------

@@ -293,6 +293,7 @@ pub fn extra() -> Extra {
             review: vec![ReviewNote { line: 7, severity: s("warning"), message: s("Prices aren't escaped before going into innerHTML."), fix: None }],
             reviewing: false,
             wisp: s("idle"),
+            proposal: None,
         },
         models: crate::models::sample(),
     }
@@ -503,6 +504,16 @@ impl Store for MockStore {
             t.running = false;
         }
     }
+    fn edit_code(&mut self, file: &str, text: &str, instruction: &str, snap: &mut Snapshot) {
+        // Sample data: a change you can see in the diff (escape what goes into innerHTML).
+        let after = text.replace("${p.name} ${price}", "${escape(p.name)} ${escape(price)}")
+            .replacen("export function", "const escape = (s) => String(s).replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`);\n\nexport function", 1);
+        if let Some(p) = snap.extra.code.proposal.as_mut().filter(|p| p.file == file && p.instruction == instruction) {
+            p.after = Some(after);
+            snap.extra.code.wisp = "idle".into();
+        }
+    }
+
     fn complete(&mut self, file: &str, prefix: &str, _suffix: &str, snap: &mut Snapshot) {
         // Sample data: finish the word being typed from words already in the file.
         let word: String = prefix.chars().rev().take_while(|c| c.is_alphanumeric() || *c == '_').collect::<Vec<_>>().into_iter().rev().collect();

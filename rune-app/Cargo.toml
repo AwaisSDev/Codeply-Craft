@@ -25,6 +25,8 @@ live = ["dep:ureq"]
 [dependencies]
 # Rune is pre-release: pin a `dev` rev. `tooling` keeps --snap, --tree and --script in release builds.
 rune = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a", features = ["tooling"] }
+# The code view's syntax colours (rune_kit::syntax: Pierre's Highlights, 80 languages).
+rune-kit = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a", default-features = false }
 serde_json = "1"
 ureq = { version = "2", default-features = false, features = ["json", "tls"], optional = true }
 # Site icons for links in chats (favicon.rs).

@@ -592,6 +592,7 @@ dependencies = [
  "png 0.18.1",
  "resvg",
  "rune",
+ "rune-kit",
  "serde_json",
  "ureq",
  "windows-sys 0.59.0",
@@ -2467,7 +2468,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
@@ -3047,6 +3048,27 @@ dependencies = [
  "xkbcommon",
  "zbus 6.2.1",
  "zeroize",
+]
+
+[[package]]
+name = "rune-highlights"
+version = "0.0.1"
+source = "git+https://github.com/anomalyco/rune?rev=b9c8a78e50ef80991e6a565d89116bc09ddd8a3a#b9c8a78e50ef80991e6a565d89116bc09ddd8a3a"
+dependencies = [
+ "unicode-ident",
+ "wasmparser",
+]
+
+[[package]]
+name = "rune-kit"
+version = "0.0.1"
+source = "git+https://github.com/anomalyco/rune?rev=b9c8a78e50ef80991e6a565d89116bc09ddd8a3a#b9c8a78e50ef80991e6a565d89116bc09ddd8a3a"
+dependencies = [
+ "icu_normalizer",
+ "rune",
+ "rune-highlights",
+ "rune-motion",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -4135,6 +4157,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b1f9c3798725016c6ee5f2f57869ec0831e8bbc0ab0310a86e787e97f41389e"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.245.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f08c9adee0428b7bddf3890fc27e015ac4b761cc608c822667102b8bfd6995e"
+dependencies = [
+ "bitflags 2.13.2",
+ "indexmap",
 ]
 
 [[package]]
