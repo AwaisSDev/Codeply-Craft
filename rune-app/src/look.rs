@@ -1005,8 +1005,25 @@ mod net_tests {
         let url = format!("http://{}", listener.local_addr().expect("addr"));
         std::thread::spawn(move || {
             for mut stream in listener.incoming().flatten() {
+                // Read the whole request (headers, then Content-Length bytes of body) before
+                // answering: closing with unread bytes resets the connection on Windows.
+                let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+                let mut got = Vec::new();
                 let mut buf = [0u8; 4096];
-                let _ = stream.read(&mut buf);
+                loop {
+                    let Ok(n) = stream.read(&mut buf) else { break };
+                    if n == 0 {
+                        break;
+                    }
+                    got.extend_from_slice(&buf[..n]);
+                    let text = String::from_utf8_lossy(&got).to_ascii_lowercase();
+                    if let Some(end) = text.find("\r\n\r\n") {
+                        let len = text[..end].lines().find_map(|l| l.strip_prefix("content-length:").and_then(|v| v.trim().parse::<usize>().ok())).unwrap_or(0);
+                        if got.len() >= end + 4 + len {
+                            break;
+                        }
+                    }
+                }
                 let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
             }
         });
@@ -1014,7 +1031,7 @@ mod net_tests {
     }
 
     fn wait_for(app: &mut App, done: impl Fn(&App) -> bool) {
-        for _ in 0..200 {
+        for _ in 0..600 {
             app.fold_events();
             if done(app) {
                 return;
