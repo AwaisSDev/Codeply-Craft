@@ -23,6 +23,7 @@ mod models;
 mod prefs;
 mod shell;
 mod store;
+mod team;
 mod theme;
 mod thread;
 mod ui;
@@ -86,6 +87,8 @@ const SCENES: &[Scene] = &[
         s.data.threads.push(("Casual chat".into(), items));
     }),
     ("usage", |s| { s.new_chat(); s.toggle_usage(); }),
+    ("agent-new", |s| { s.go(View::Agents); s.open_team_dialog(crate::team::TeamDialog::NewAgent); }),
+    ("loop-new", |s| { s.open_agent(Some("frontend")); s.open_team_dialog(crate::team::TeamDialog::NewLoop("frontend".into())); }),
     ("usage-daily", |s| { s.new_chat(); s.toggle_usage(); s.usage_daily = true; s.usage_pick = Some("d2026-11-12".into()); }),
     ("settings-models", |s| s.open_settings(SettingsPage::Models)),
     ("settings-models-add", |s| { s.open_settings(SettingsPage::Models); s.model_open_form(None); }),

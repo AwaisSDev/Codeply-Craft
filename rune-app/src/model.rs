@@ -336,6 +336,8 @@ pub struct McpServer {
 /// A loop: a task an agent runs on a schedule (the Agents view's right panel).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Loop {
+    /// The engine's job id (empty in the sample data).
+    pub id: String,
     pub agent: String,
     pub name: String,
     /// Recent runs, oldest first: true passed, false failed.
@@ -460,6 +462,8 @@ pub struct Extra {
     pub publish: Option<Publish>,
     /// Whether you're signed in to Codeply (the engine's account).
     pub signed_in: bool,
+    /// Why the last change to the team didn't go through, for a notice.
+    pub team_note: Option<String>,
     /// Your token use, once asked for (the usage sheet); None while it loads.
     pub usage: Option<Usage>,
     /// The account's email, when signed in.

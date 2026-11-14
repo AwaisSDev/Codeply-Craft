@@ -180,13 +180,20 @@ pub enum EditKey {
     SignInCode,
     /// Settings > Personalization's "add a memory".
     Memory,
+    /// The New agent dialog: its name and what it's good at.
+    AgentName,
+    AgentFocus,
+    /// The New loop dialog: what it does, and when.
+    LoopTask,
+    LoopWhen,
 }
 
 impl EditKey {
-    pub const ALL: [EditKey; 15] = [
+    pub const ALL: [EditKey; 19] = [
         EditKey::Search, EditKey::Mission, EditKey::AgentThread, EditKey::ChatHome, EditKey::ChatThread,
         EditKey::AppSearch, EditKey::Address, EditKey::SettingsSearch, EditKey::AboutMe, EditKey::Instructions,
         EditKey::Terminal, EditKey::Code, EditKey::SignInEmail, EditKey::SignInCode, EditKey::Memory,
+        EditKey::AgentName, EditKey::AgentFocus, EditKey::LoopTask, EditKey::LoopWhen,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -205,6 +212,10 @@ impl EditKey {
             EditKey::SignInEmail => "sign-in-email",
             EditKey::SignInCode => "sign-in-code",
             EditKey::Memory => "memory",
+            EditKey::AgentName => "agent-name",
+            EditKey::AgentFocus => "agent-focus",
+            EditKey::LoopTask => "loop-task",
+            EditKey::LoopWhen => "loop-when",
         }
     }
 }
@@ -275,6 +286,8 @@ pub struct App {
     /// line's word and seconds follow `think_now` (the last poll's clock).
     pub think_started: std::collections::HashMap<String, f64>,
     pub think_now: f64,
+    /// The New agent / New loop dialog, while it's open (team.rs).
+    pub team_dialog: Option<crate::team::TeamDialog>,
     /// Whether the usage sheet is open (the button beside you at the sidebar's foot).
     pub usage_open: bool,
     /// The usage sheet's grouping (weekly or daily) and the week ("w12") or day ("d2026-10-11")
@@ -334,6 +347,7 @@ impl App {
             think_started: std::collections::HashMap::new(),
             think_now: 0.0,
             usage_open: false,
+            team_dialog: None,
             usage_daily: false,
             usage_pick: None,
             launched: false,
@@ -523,11 +537,6 @@ impl App {
         }
     }
 
-    pub fn toggle_loop(&mut self, agent: &str, name: &str) {
-        if let Some(l) = self.data.extra.loops.iter_mut().find(|l| l.agent == agent && l.name == name) {
-            l.on = !l.on;
-        }
-    }
 
     /// Runs `f` with the store and the data it fills (for modules that add their own handlers).
     pub fn with_store<R>(&mut self, f: impl FnOnce(&mut dyn Store, &mut Snapshot) -> R) -> R {
@@ -840,6 +849,11 @@ impl App {
         }
         self.models_ui.tick(&self.data.extra.models);
         changed |= self.look_poll(tx);
+        // A change to the team the engine turned down.
+        if let Some(note) = self.data.extra.team_note.take() {
+            self.notice = Some(note);
+            changed = true;
+        }
         // An app's logo landed: its tile swaps its letter for the logo.
         changed |= crate::favicon::take_landed();
         // A chat the engine renamed (a new chat takes its first message as its title) stays open.

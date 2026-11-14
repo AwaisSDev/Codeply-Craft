@@ -9,7 +9,7 @@ use rune::{Color, El, InlineIcon, Link, LinkPaint, Span, col, el, rich, row, tex
 
 use crate::app::App;
 use crate::favicon;
-use crate::theme::{self, Theme, mono, ui};
+use crate::theme::{Theme, mono, ui};
 
 /// How long each arriving word takes to fade in, in seconds.
 pub const WORD_FADE: f32 = 0.6;
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn links_show_the_site_name() {
-        let t = theme::dark();
+        let t = crate::theme::dark();
         let p = inline("open https://www.codeply.app on your phone", &t);
         assert_eq!(p.text, "open Codeply on your phone");
         assert_eq!(p.links, vec![(5..12, "https://www.codeply.app".to_owned())]);
@@ -273,7 +273,7 @@ mod tests {
 
     #[test]
     fn code_and_snake_case() {
-        let t = theme::dark();
+        let t = crate::theme::dark();
         assert_eq!(inline("run `npm test` in my_project_dir", &t).text, "run npm test in my_project_dir");
     }
 }

@@ -61,6 +61,8 @@ pub trait Store {
     fn take_focus(&mut self) -> Option<String> {
         None
     }
+    /// Adds to or changes your team and its loops (the engine's specialists and standing jobs).
+    fn team_op(&mut self, _op: crate::team::TeamOp, _snap: &mut Snapshot) {}
     /// Fetches your token use into `extra.usage` (the usage sheet).
     fn load_usage(&mut self, _snap: &mut Snapshot) {}
     /// Chats renamed since the last call, as (old title, new title): the engine titles a new

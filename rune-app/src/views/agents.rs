@@ -97,7 +97,8 @@ pub fn side(s: &App, t: &Theme) -> El {
     }
 
     col().h_full().min_h(0.0)
-        .child(side_head(t, "Agents", Some(("plus", "New agent"))))
+        .child(side_head(t, "Agents", None).child(crate::ui::ibtn(t, "plus", "New agent").key("agent-new")
+            .on_press(|s: &mut App| s.open_team_dialog(crate::team::TeamDialog::NewAgent))))
         .child(col().grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(list))
         .child(me(s, t))
 }
@@ -275,6 +276,10 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
                     .child(row().gap(8.0).center_y()
                         .child(dots)
                         .child(text(l.last.clone()).font(ui(12.0, 400.0)).color(t.faint).truncate().min_w(0.0))))
+                .child({
+                    let id = l.id.clone();
+                    crate::ui::ibtn(t, "close", "Delete loop").key(format!("loop-delete/{}", l.id)).on_press(move |s: &mut App| s.cancel_loop(&id))
+                })
                 .child(toggle(t, format!("loop/{}/{}", a.id, l.name), l.on, &l.name)
                     .on_press(move |s: &mut App| s.toggle_loop(&agent, &name))),
         );
@@ -282,7 +287,11 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
     let create = row().key(format!("loop-new/{}", a.id)).w_full().min_h(34.0).px(8.0).gap(10.0).radius(8.0).center_y().hover(t.hover)
         .role("button").label("Create a loop")
         .child(ico_s("plus", 16.0, t.faint))
-        .child(text("Create a loop").font(ui(13.5, 400.0)).color(t.dim));
+        .child(text("Create a loop").font(ui(13.5, 400.0)).color(t.dim))
+        .on_press({
+            let id = a.id.clone();
+            move |s: &mut App| s.open_team_dialog(crate::team::TeamDialog::NewLoop(id.clone()))
+        });
 
     let body = col().w_full().padding(20.0).gap(0.0).items_center()
         .child(bot::agent(&awake(a), 80.0))

@@ -32,6 +32,8 @@ enum Msg {
     Created(String),
     Account(Value),
     Usage(Value),
+    /// The team and its loops (`/ext/team`).
+    Team(Value),
     /// A page of the catalogue: (request number, offset it starts at, the page). Only the newest request counts.
     Apps(u64, usize, Box<AppsPage>),
     /// A connected app's tools (app id, tools or why not).
@@ -240,6 +242,7 @@ impl LiveStore {
                     "apps" => c.get("/ext/apps?limit=60").map(|v| Msg::Apps(0, 0, Box::new(apps_page(&v)))),
                     "memory" => c.get("/memory").map(|v| Msg::Memories(memories_from(&v))),
                     "models" => c.get("/ext/models").map(Msg::Models),
+                    "team" => c.get("/ext/team").map(Msg::Team),
                     // At launch and after a sign-in: also catches the phone up with the account.
                     "models-sync" => c.get("/ext/models?sync=1").map(Msg::Models),
                     "files" => c.get("/files").map(|v| Msg::Files(v["files"].as_array().map_or_else(Vec::new, |a| a.iter().filter_map(|f| f.as_str().map(str::to_owned)).collect()))),
@@ -325,6 +328,7 @@ impl LiveStore {
             "memory_changed" => self.refresh("memory"),
             "account_changed" => self.refresh("account"),
             "models_changed" => self.refresh("models"),
+            "team_changed" | "wisp_team" => self.refresh("team"),
             _ => return false,
         }
         true
@@ -763,7 +767,7 @@ impl Store for LiveStore {
             }
             Some(Msg::Status(format!("can't reach the engine: {last}")))
         });
-        for what in ["account", "apps", "memory", "files", "jobs", "models-sync"] {
+        for what in ["account", "apps", "memory", "files", "jobs", "models-sync", "team"] {
             self.refresh(what);
         }
         // The event stream, for the life of the app, reconnecting with a growing pause.
@@ -838,6 +842,10 @@ impl Store for LiveStore {
                     }
                 }
                 Msg::Usage(v) => snap.extra.usage = Some(usage_from(&v)),
+                Msg::Team(v) => {
+                    self.team = crate::team::apply(snap, &v);
+                    derive(snap, &self.sessions);
+                }
                 Msg::Account(v) => {
                     snap.extra.signed_in = v["signedIn"].as_bool().unwrap_or(false);
                     snap.extra.email = v["email"].as_str().unwrap_or_default().to_owned();
@@ -924,6 +932,30 @@ impl Store for LiveStore {
             derive(snap, &self.sessions);
         }
         changed
+    }
+
+    fn team_op(&mut self, op: crate::team::TeamOp, _snap: &mut Snapshot) {
+        use crate::team::TeamOp;
+        let (path, body) = match op {
+            TeamOp::Create { name, focus } => ("/ext/team/create", json!({ "name": name, "focus": focus })),
+            TeamOp::Remove(id) => ("/ext/team/remove", json!({ "id": id })),
+            TeamOp::AddJob { agent, task, when } => ("/ext/team/jobs", json!({ "specialist": agent, "task": task, "when": when })),
+            TeamOp::ToggleJob(id, on) => ("/ext/team/jobs/toggle", json!({ "id": id, "enabled": on })),
+            TeamOp::CancelJob(id) => ("/ext/team/jobs/cancel", json!({ "id": id })),
+        };
+        self.spawn(move |c| Some(match c.post(path, body) {
+            Ok(mut v) => {
+                // What the engine said no to comes back as a notice; the lists come back either way.
+                if v["ok"].as_bool() == Some(false) {
+                    let why = v["error"].as_str().unwrap_or("That didn't work.").to_owned();
+                    v["error"] = json!(why);
+                } else {
+                    v["error"] = json!("");
+                }
+                Msg::Team(v)
+            }
+            Err(e) => Msg::Team(json!({ "error": format!("The engine didn't answer: {e}") })),
+        }));
     }
 
     fn load_usage(&mut self, snap: &mut Snapshot) {

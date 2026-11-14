@@ -6,8 +6,8 @@ use rune::{El, ScrollSpec, col, el, row, text, text_input};
 use crate::app::{App, EditKey, IntegrationsTab};
 use crate::icons::{app_logo, ico, ico_s};
 use crate::model::ButtonKind;
-use crate::theme::{self, Theme, mono, tabular, ui};
-use crate::ui::{btn, btn_primary, enter, heading, me, sec, side_head, side_row, toggle};
+use crate::theme::{Theme, mono, tabular, ui};
+use crate::ui::{btn, btn_primary, enter, heading, me, side_head, side_row, toggle};
 
 /// The tab's sidebar icon.
 fn tab_icon(tab: IntegrationsTab) -> &'static str {

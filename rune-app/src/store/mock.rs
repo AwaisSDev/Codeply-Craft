@@ -209,7 +209,7 @@ pub fn extra() -> Extra {
         plugin("code-review", "Code review", "A /code-review command that checks a diff for bugs.", "Codeply", "check", true),
     ];
     let mcp = |name: &str, note: &str, tools, on| McpServer { name: s(name), note: s(note), tools, on };
-    let loop_ = |agent: &str, name: &str, runs: &[bool], last: &str, on| Loop { agent: s(agent), name: s(name), runs: runs.to_vec(), last: s(last), on };
+    let loop_ = |agent: &str, name: &str, runs: &[bool], last: &str, on| Loop { id: format!("sample-{name}"), agent: s(agent), name: s(name), runs: runs.to_vec(), last: s(last), on };
     let app = |slug: &'static str, name: &str, note: &str, category: &'static str, connected| CatalogApp {
         slug, name: s(name), note: s(note), category, connected, domain: crate::icons::domain_of(slug).unwrap_or_default().to_owned(), icon: String::new(),
         verified: true, ..Default::default()
@@ -275,6 +275,7 @@ pub fn extra() -> Extra {
         publish: None,
         signed_in: true,
         usage: None,
+        team_note: None,
         email: s("sam@example.com"),
         sign_in: None,
         memories: vec![
@@ -394,6 +395,10 @@ impl Store for MockStore {
         echo(snap, to, text, "On it. I'll post here when it's done.");
         Ok(())
     }
+    fn team_op(&mut self, op: crate::team::TeamOp, snap: &mut Snapshot) {
+        crate::team::apply_sample(&op, snap);
+    }
+
     fn load_usage(&mut self, snap: &mut Snapshot) {
         snap.extra.usage = Some(sample_usage());
     }
