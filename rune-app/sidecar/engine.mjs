@@ -93,10 +93,12 @@ let seq = 0;
 const ring = [];
 const clients = new Set();
 const frame = (e) => `id: ${e.seq}\ndata: ${JSON.stringify(e)}\n\n`;
+const eventListeners = []; // extensions that mirror every event (ext-cloud: the phone)
 function emit(sessionId, event) {
   const e = { seq: ++seq, sessionId, ...event };
   ring.push(e);
   if (ring.length > RING) ring.shift();
+  for (const f of eventListeners) { try { f(e); } catch {} }
   for (const c of clients) {
     if (c.session && c.session !== e.sessionId) continue;
     try { c.res.write(frame(e)); } catch { clients.delete(c); }
@@ -604,6 +606,23 @@ async function* runClassic(session, text, approve, signal) {
   yield* runAgent({ userMessage: text, history, mode: 'Build', cwd: session.cwd, approve, signal, route: routeFor(session), haze: { product: 'cli', chatId: session.id } });
 }
 
+/** A message for a chat: an extension may take it (the project's Cloud switch), a busy chat queues it, else it runs. */
+async function sendMessage(s, text) {
+  for (const h of extCtx.hooks.beforeMessage) {
+    try { if (await h(s, text)) return { ok: true, sessionId: s.id, cloud: true }; } catch (e) { console.error('beforeMessage:', e && e.message); }
+  }
+  if (runs.has(s.id)) {
+    // Busy: queue it, show it at once, and run it when this reply ends.
+    const q = queues.get(s.id) || [];
+    q.push(text);
+    queues.set(s.id, q);
+    emit(s.id, { type: 'queued', text, position: q.length });
+    return { ok: true, sessionId: s.id, queued: q.length };
+  }
+  startRun(s, text);
+  return { ok: true, sessionId: s.id };
+}
+
 /**
  * Run one message in a chat. Resolves when the reply is over, with { ok, text, error }.
  * opts: approvalSession (who the approval cards go to), signal (stops this run),
@@ -613,14 +632,16 @@ async function startRun(session, text, opts = {}) {
   const ctl = new AbortController();
   runs.set(session.id, ctl);
   if (opts.signal) { if (opts.signal.aborted) ctl.abort(); else opts.signal.addEventListener('abort', () => ctl.abort(), { once: true }); }
-  session.messages.push({ kind: 'user', text, at: Date.now() });
+  // opts.resume: a run carried on after a handoff; its prompt is not a message of the user's.
+  if (!opts.resume) session.messages.push({ kind: 'user', text, at: Date.now() });
   const from = session.messages.length;
-  if (session.messages.filter((m) => m.kind === 'user').length === 1 && (!session.title || session.title === 'New chat')) {
+  if (!opts.resume && session.messages.filter((m) => m.kind === 'user').length === 1 && (!session.title || session.title === 'New chat')) {
     session.title = text.length > 46 ? `${text.slice(0, 46)}...` : text;
   }
   session.updatedAt = Date.now();
   saveNow();
-  emit(session.id, { type: 'run_started', session: meta(session), message: session.messages[session.messages.length - 1] });
+  emit(session.id, { type: 'run_started', session: meta(session), ...(opts.resume ? {} : { message: session.messages[session.messages.length - 1] }) });
+  for (const h of extCtx.hooks.runStart) { try { h(session, { text, opts }); } catch (e) { console.error('runStart:', e && e.message); } }
   const approve = makeApprove(opts.approvalSession || session, ctl.signal);
   let reply = null; // the assistant message the current DSH chunks grow
   let kind = 'dsh';
@@ -650,6 +671,7 @@ async function startRun(session, text, opts = {}) {
     }
     for await (let ev of run) {
       if (opts.onEvent) { try { opts.onEvent(ev); } catch {} }
+      for (const h of extCtx.hooks.runEvent) { try { h(session, ev); } catch {} }
       // Wisp's own commands show in the app's terminal too.
       if (ev.type === 'tool_start' && SHELL_TOOLS.test(String(ev.name || '')) && commandOf(ev.args)) {
         shells.push(commandOf(ev.args));
@@ -686,6 +708,8 @@ async function startRun(session, text, opts = {}) {
   } finally {
     result.text = session.messages.slice(from).filter((m) => m.kind === 'assistant' && !m.interim && m.text).map((m) => m.text).join('\n\n');
     runs.delete(session.id);
+    // The handoff closes its lease before the chat takes its next message.
+    for (const h of extCtx.hooks.runEnd) { try { await h(session, { aborted: ctl.signal.aborted, ok: result.ok }); } catch {} }
     saveNow();
     emit(session.id, { type: 'run_finished' });
     for (const w of idleWaiters.get(session.id) || []) w();
@@ -905,6 +929,17 @@ const extCtx = {
   need, lib, emit, readJson, readBody,
   // Anything an extension shares with the others (a cache, a handle) goes here by name.
   shared: {},
+  // The chats, for an extension that works on them (ext-cloud: cloud runs, handoff, the phone).
+  api: {
+    sessions: () => store.sessions, find, meta, save, saveNow, newId, runs, queues, pending,
+    onEvent: (f) => eventListeners.push(f),
+    startRun: (...a) => startRun(...a),
+    sendMessage: (...a) => sendMessage(...a),
+    stopRun: (id) => { queues.delete(id); const r = runs.get(id); if (r) r.abort(); return !!r; },
+  },
+  // Called by the run path: beforeMessage(session, text) -> true when it took the message (a cloud run);
+  // runStart(session, info), runEvent(session, ev), runEnd(session, { aborted }).
+  hooks: { beforeMessage: [], runStart: [], runEvent: [], runEnd: [] },
 };
 const extensions = [];
 {
@@ -1148,16 +1183,7 @@ const server = http.createServer(async (req, res) => {
         const body = await readJson(req);
         const text = String(body.text || '').trim();
         if (!text) return reply(400, { error: 'Write a task before sending it.' });
-        if (runs.has(s.id)) {
-          // Busy: queue it, show it at once, and run it when this reply ends.
-          const q = queues.get(s.id) || [];
-          q.push(text);
-          queues.set(s.id, q);
-          emit(s.id, { type: 'queued', text, position: q.length });
-          return reply(202, { ok: true, sessionId: s.id, queued: q.length });
-        }
-        startRun(s, text);
-        return reply(202, { ok: true, sessionId: s.id });
+        return reply(202, await sendMessage(s, text));
       }
       if (m[2] === 'abort' && req.method === 'POST') {
         const r = runs.get(s.id);
@@ -1187,6 +1213,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
+  extCtx.shared.self = { port: server.address().port };
   console.log(`codeply-sidecar listening http://127.0.0.1:${server.address().port}`);
 });
 
