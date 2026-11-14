@@ -30,7 +30,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -877,6 +877,32 @@ const rootFor = (url) => {
   return c && fs.existsSync(c) ? path.resolve(c) : DEFAULT_CWD;
 };
 
+// ---------- extensions ----------
+// Each area of the app keeps its routes in its own module beside this file (sidecar/ext-*.mjs,
+// built into the app and written out with this one; see EXTENSIONS in src/engine.rs). A module
+// may export `start(ctx)` (called once at launch) and `route(ctx, req, res, url, p, reply)`, which
+// returns true when it answered the request. Routes run after authentication, before the
+// built-in ones. A module that fails to load is listed in GET /config's `missing`.
+const extCtx = {
+  CLI, DATA, DEFAULT_CWD, settings, missing,
+  need, lib, emit, readJson, readBody,
+  // Anything an extension shares with the others (a cache, a handle) goes here by name.
+  shared: {},
+};
+const extensions = [];
+{
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  let names = [];
+  try { names = fs.readdirSync(here).filter((n) => /^ext-[a-z0-9-]+\.mjs$/.test(n)).sort(); } catch {}
+  for (const name of names) {
+    try {
+      const m = await import(pathToFileURL(path.join(here, name)).href);
+      if (typeof m.start === 'function') await m.start(extCtx);
+      extensions.push({ name, route: typeof m.route === 'function' ? m.route : null });
+    } catch (e) { missing[name] = e.message; }
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   const p = url.pathname.replace(/\/+$/, '') || '/';
@@ -884,6 +910,9 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && p === '/health') return reply(200, { ok: true, name: 'codeply-sidecar', engine: dshProblem ? 'classic' : 'dsh' });
   if (!authed(req, url)) return reply(401, { error: 'Unauthorized.' });
   try {
+    for (const ext of extensions) {
+      if (ext.route && await ext.route(extCtx, req, res, url, p, reply)) return;
+    }
     if (req.method === 'POST' && p === '/config') {
       const body = await readJson(req);
       if (body.approval === 'ask' || body.approval === 'auto') settings.approval = body.approval;

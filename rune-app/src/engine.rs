@@ -20,6 +20,12 @@ use std::process::{Child, Command, Stdio};
 
 const SCRIPT: &str = include_str!("../sidecar/engine.mjs");
 
+/// The sidecar's extension modules (`sidecar/ext-*.mjs`), written out beside `engine.mjs`,
+/// which loads every `ext-*.mjs` it finds there. Each area of the app adds its own line.
+const EXTENSIONS: &[(&str, &str)] = &[
+    ("ext-hello.mjs", include_str!("../sidecar/ext-hello.mjs")),
+];
+
 /// The engine a launch found.
 #[derive(Debug, Clone)]
 pub struct Install {
@@ -194,6 +200,21 @@ pub fn start() -> Result<Sidecar, String> {
     let script = data.join("engine.mjs");
     if std::fs::read_to_string(&script).ok().as_deref() != Some(SCRIPT) {
         std::fs::write(&script, SCRIPT).map_err(|e| format!("can't write the engine script: {e}"))?;
+    }
+    // Extensions: exactly the ones this build carries (a removed one must not linger).
+    if let Ok(dir) = std::fs::read_dir(&data) {
+        for entry in dir.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with("ext-") && name.ends_with(".mjs") && !EXTENSIONS.iter().any(|(n, _)| *n == name) {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+    for (name, body) in EXTENSIONS {
+        let file = data.join(name);
+        if std::fs::read_to_string(&file).ok().as_deref() != Some(*body) {
+            std::fs::write(&file, body).map_err(|e| format!("can't write {name}: {e}"))?;
+        }
     }
     let (port, token) = (free_port()?, secret());
     let log = std::fs::File::create(data.join("engine.log")).map_err(|e| e.to_string())?;
