@@ -214,3 +214,103 @@ fn eyes_glance_and_blink_on_their_own_clock() {
     assert!(crate::bot::animate(0.0, true).is_none(), "reduced motion holds them still");
     rt.frame(1.0 / 60.0);
 }
+
+#[test]
+fn every_scene_lays_out_in_light_at_the_largest_size_and_over_a_background() {
+    for look in ["light", "light,4,geist", "dots", "light,ascii,3", "picture,bold"] {
+        for (name, scene) in SCENES {
+            let mut s = App::with_mock();
+            s.look_flags(look);
+            scene(&mut s);
+            let mut rt = runtime(s);
+            settle(&mut rt);
+            assert!(rt.find("titlebar").is_some(), "{name} ({look}): the titlebar is missing");
+            let background = look.contains("dots") || look.contains("ascii") || look.contains("picture");
+            assert_eq!(rt.find("backdrop").is_some(), background, "{name} ({look}): the background layer");
+        }
+    }
+    crate::theme::set_text(1.0, 0);
+}
+
+#[test]
+fn appearance_settings_change_the_look_at_once_and_are_saved() {
+    let mut app = App::with_mock();
+    app.open_settings(crate::app::SettingsPage::Appearance);
+    let mut rt = runtime(app);
+    settle(&mut rt);
+    let before = rt.state.prefs.look.clone();
+    click(&mut rt, "set-theme/Light");
+    assert_eq!(rt.state.prefs.look.mode, crate::look::Mode::Light);
+    click(&mut rt, "sw/accent/#f97316");
+    assert_eq!(rt.state.prefs.look.accent.as_deref(), Some("#f97316"));
+    click(&mut rt, "sw/bg/#0b1220");
+    assert_eq!(rt.state.prefs.look.bg.as_deref(), Some("#0b1220"));
+    click(&mut rt, "set-size/Large");
+    // The weight row sits below the fold of a 900 pt window, so this one is set directly.
+    rt.state.set_text_weight(3);
+    rt.state.set_text_size(4);
+    rt.invalidate();
+    settle(&mut rt);
+    assert_eq!((rt.state.prefs.look.size, rt.state.prefs.look.weight), (4, 3));
+    // The font menu lists the bundled fonts, and picking one sets the stack Rune uses.
+    click(&mut rt, "font-pick");
+    click(&mut rt, "font-opt/Geist");
+    assert_eq!(rt.state.prefs.look.font, "Geist");
+    assert!(rt.state.prefs.look.families().0.starts_with("Geist, "));
+    // A background: ASCII needs art, which a picture provides.
+    rt.state.set_bg_kind(crate::look::BgKind::Picture);
+    rt.invalidate();
+    settle(&mut rt);
+    assert!(rt.find("backdrop").is_none(), "no picture yet, so nothing to draw");
+    rt.state.use_picture_sample();
+    rt.invalidate();
+    settle(&mut rt);
+    assert!(rt.find("backdrop").is_some());
+    // The background group is below the fold, so its controls are driven through the app.
+    rt.state.set_bg_kind(crate::look::BgKind::Ascii);
+    rt.invalidate();
+    settle(&mut rt);
+    for _ in 0..100 {
+        if !rt.state.prefs.look.art.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        rt.frame(1.0 / 60.0);
+    }
+    assert!(!rt.state.prefs.look.art.is_empty(), "the picture was converted to art");
+    rt.state.set_dim(3);
+    rt.state.set_blur(1);
+    // Everything round-trips through the saved preferences.
+    let saved = crate::prefs::Prefs::from_json(&rt.state.prefs.to_json());
+    assert_eq!(saved.look, rt.state.prefs.look);
+    assert_ne!(saved.look, before);
+    // Reset puts the stock dark look back.
+    click(&mut rt, "theme-reset");
+    assert_eq!(rt.state.prefs.look.mode, crate::look::Mode::Dark);
+    assert_eq!(rt.state.prefs.look.bg_kind, crate::look::BgKind::None);
+    assert!(rt.state.prefs.look.accent.is_none() && rt.state.prefs.look.font.is_empty());
+    crate::theme::set_text(1.0, 0);
+}
+
+#[test]
+fn a_generated_theme_previews_and_applies_only_on_apply() {
+    let mut app = App::with_mock();
+    app.open_settings(crate::app::SettingsPage::Appearance);
+    app.theme_demo();
+    let mut rt = runtime(app);
+    settle(&mut rt);
+    assert!(rt.find("theme-preview").is_some(), "the candidate is shown");
+    assert_eq!(rt.state.prefs.look.name, "", "nothing is applied yet");
+    click(&mut rt, "theme-apply");
+    assert_eq!(rt.state.prefs.look.name, "Rainy Tokyo");
+    assert_eq!(rt.state.prefs.look.bg.as_deref(), Some("#0b1220"));
+    assert_eq!(rt.state.prefs.look.bg_kind, crate::look::BgKind::Dots);
+    assert!(rt.find("theme-preview").is_none());
+    // Discard leaves things alone.
+    rt.state.theme_demo();
+    rt.invalidate();
+    settle(&mut rt);
+    click(&mut rt, "theme-discard");
+    assert!(rt.state.look.candidate.is_none());
+    crate::theme::set_text(1.0, 0);
+}

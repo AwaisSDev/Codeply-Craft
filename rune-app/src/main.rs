@@ -7,6 +7,7 @@
 //!   codeply --snap chat.png --scene chat --size 1440x900    a headless render (Rune tooling)
 
 mod app;
+mod art;
 mod bot;
 mod browser;
 #[cfg(feature = "live")]
@@ -14,6 +15,7 @@ mod engine;
 mod favicon;
 mod icons;
 mod logo;
+mod look;
 mod markdown;
 mod model;
 mod model_actions;
@@ -65,6 +67,11 @@ const SCENES: &[Scene] = &[
     ("integrations-mcp", |s| { s.go(View::Integrations); s.integrations = IntegrationsTab::Mcp; }),
     ("settings", |s| s.open_settings(SettingsPage::General)),
     ("settings-appearance", |s| s.open_settings(SettingsPage::Appearance)),
+    ("settings-theme-preview", |s| { s.open_settings(SettingsPage::Appearance); s.theme_demo(); }),
+    ("light-chat", |s| { s.prefs.look.mode = crate::look::Mode::Light; s.open_chat("Casual chat"); }),
+    ("light-apps", |s| { s.prefs.look.mode = crate::look::Mode::Light; s.go(View::Integrations); s.integrations = IntegrationsTab::Apps; }),
+    ("light-settings", |s| { s.prefs.look.mode = crate::look::Mode::Light; s.open_settings(SettingsPage::Appearance); }),
+    ("settings-font-menu", |s| { s.open_settings(SettingsPage::Appearance); s.toggle_menu("font:ui"); }),
     ("settings-configuration", |s| s.open_settings(SettingsPage::Configuration)),
     ("settings-personalization", |s| s.open_settings(SettingsPage::Personalization)),
     ("settings-browser", |s| s.open_settings(SettingsPage::Browser)),
@@ -101,13 +108,23 @@ fn flag(name: &str) -> Option<String> {
 }
 
 fn init() -> App {
+    let mut app = init_store();
+    if let Some(spec) = flag("--look") {
+        app.look_flags(&spec);
+    }
+    app
+}
+
+fn init_store() -> App {
     match flag("--store").as_deref() {
         Some("mock") => App::with_mock(),
         #[cfg(feature = "live")]
         Some("live") => {
             let url = flag("--server").or_else(|| std::env::var("CODEPLY_SERVER").ok()).unwrap_or_else(|| "http://127.0.0.1:4096".into());
             let token = flag("--token").or_else(|| std::env::var("CODEPLY_TOKEN").ok()).unwrap_or_default();
-            App::new(Box::new(store::live::LiveStore::new(&url, &token)))
+            let mut app = App::new(Box::new(store::live::LiveStore::new(&url, &token)));
+            app.look.set_remote(&url, &token);
+            app
         }
         // Headless renders and tests keep the sample data, so screenshots are stable
         // (`--store engine` starts the engine there too).
@@ -119,6 +136,7 @@ fn init() -> App {
             Ok(sidecar) => {
                 let live = store::live::LiveStore::new(&sidecar.url, &sidecar.token).labelled("Codeply engine (DSH)");
                 let mut app = App::new(Box::new(live));
+                app.look.set_remote(&sidecar.url, &sidecar.token);
                 app.sidecar = Some(sidecar);
                 app
             }
@@ -139,6 +157,7 @@ fn spec() -> AppSpec<App> {
         min_size: Some((960.0, 640.0)),
         scenes: SCENES,
         families: (theme::UI_FAMILIES, theme::MONO_FAMILIES),
+        fonts: theme::BUNDLED_FONTS,
         setup: Some(|s, waker| s.set_waker(waker)),
         poll: Some(|s, now, tx| s.poll(now, tx)),
         on_key: Some(|s, e, tx| s.key(e, tx)),

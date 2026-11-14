@@ -8,7 +8,7 @@ use crate::app::{App, EditKey, Pane};
 use crate::browser::Browser;
 use crate::favicon;
 use crate::icons::{ico, ico_s};
-use crate::theme::{self, Theme, ui};
+use crate::theme::{Theme, ui};
 use crate::ui::{ibtn, menu as popup_menu, menu_item};
 
 /// A site's icon at `size`, or a globe until it arrives.
@@ -121,12 +121,12 @@ pub fn pane(s: &App, t: &Theme) -> El {
                 .on_press_tx(move |_: &mut App, tx| { let _ = tx.open_url(&u); }))
             .child(text("Pages open inside Codeply on Windows.").font(ui(12.5, 400.0)).color(t.faint))
     };
-    let page_fill = theme::hex("#0f0f0f");
+    let page_fill = t.solid;
     let page = if s.panes.mobile {
         let phone = col().key("browser-page").w(390.0).h_full().fill(page_fill)
             .on_layout(|s: &mut App, r| s.browser.rect = Some(r))
             .child(content);
-        row().w_full().grow(1.0).min_h(0.0).center().fill(theme::hex("#080808")).child(phone)
+        row().w_full().grow(1.0).min_h(0.0).center().fill(t.stage).child(phone)
     } else {
         col().key("browser-page").w_full().grow(1.0).min_h(0.0).fill(page_fill)
             .on_layout(|s: &mut App, r| s.browser.rect = Some(r))

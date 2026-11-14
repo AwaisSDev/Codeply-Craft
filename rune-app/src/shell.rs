@@ -16,7 +16,17 @@ pub const RAIL: f32 = 60.0;
 pub const SIDE: f32 = 268.0;
 
 pub fn view(s: &App, cx: &mut Cx<App>) -> El {
-    let t = theme::dark();
+    let look = &s.prefs.look;
+    theme::set_text(look.scale(), look.bold());
+    let mut t = theme::resolve(look, cx.system_dark());
+    // A background shows through the frame: the plain fills turn see-through (cards, menus and the
+    // composer stay solid, so text on them reads as before) and a dimming layer sits behind.
+    let backdrop = views::themes::backdrop(s, &t);
+    if backdrop.is_some() {
+        t.bg = Color::TRANSPARENT;
+        t.side = t.side.alpha(0.78);
+        t.rail = t.rail.alpha(0.78);
+    }
     cx.caption_color(t.dim);
     s.reduced.set(cx.is_reduced_motion());
     let body = if s.view == View::Settings {
@@ -32,7 +42,8 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
     };
     // Popovers attach at the root so they draw above everything and escape clipping.
     let appearance = s.appearance.as_ref().and_then(|id| s.data.agent(id)).map(|a| views::appearance::popover(s, &t, a));
-    col().key("root").w_full().h_full().fill(t.bg)
+    col().key("root").w_full().h_full().fill(t.solid)
+        .children(backdrop)
         .child(titlebar(s, &t, cx))
         .child(body)
         .children(appearance)
@@ -115,7 +126,7 @@ fn rail(s: &App, t: &Theme) -> El {
             .children(on.then(|| el().absolute(-8.0, 12.0).size(3.0, 20.0).corners([0.0, 3.0, 3.0, 0.0]).fill(t.text)))
             .children(badge.map(|n| {
                 el().absolute(26.0, 5.0).min_w(16.0).h(16.0).px(4.0).radius(8.0).fill(t.accent).center()
-                    .child(text(n).font(theme::tabular(10.5, 700.0)).color(Color::WHITE))
+                    .child(text(n).font(theme::tabular(10.5, 700.0)).color(t.on_accent))
             }))
             .on_press(move |s: &mut App| s.go(v))
     };

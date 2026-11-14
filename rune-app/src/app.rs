@@ -236,6 +236,8 @@ pub struct App {
     store: Box<dyn Store>,
     edits: HashMap<EditKey, TextEdit>,
     pub prefs: Prefs,
+    /// Themes, fonts and backgrounds at work (see `look.rs`).
+    pub look: crate::look::Look,
     /// The agent whose conversation is open in Agents, or None for Mission control.
     pub agent: Option<String>,
     /// The agent whose Appearance popover is open (from its "more" button in the Agents list).
@@ -308,6 +310,7 @@ impl App {
             store,
             edits,
             prefs,
+            look: Default::default(),
             agent: None,
             appearance: None,
             chat: None,
@@ -817,6 +820,7 @@ impl App {
     pub fn set_waker(&mut self, waker: rune::Waker) {
         crate::favicon::set_waker(waker.clone());
         self.browser.set_waker(waker.clone());
+        self.look.set_waker(waker.clone());
         self.store.set_waker(waker);
     }
 
@@ -835,6 +839,7 @@ impl App {
             apply_looks(&mut self.data, &self.prefs);
         }
         self.models_ui.tick(&self.data.extra.models);
+        changed |= self.look_poll(tx);
         // An app's logo landed: its tile swaps its letter for the logo.
         changed |= crate::favicon::take_landed();
         // A chat the engine renamed (a new chat takes its first message as its title) stays open.

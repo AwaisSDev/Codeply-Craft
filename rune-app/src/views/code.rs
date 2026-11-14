@@ -221,7 +221,7 @@ fn wisp_panel(s: &App, t: &Theme) -> El {
             .child(text(n.message.clone()).font(ui(13.0, 400.0)).color(t.text).wrap());
         if let Some(fix) = &n.fix {
             c_card = c_card
-                .child(el().px(8.0).py(6.0).radius(8.0).fill(t.bg)
+                .child(el().px(8.0).py(6.0).radius(8.0).fill(t.solid)
                     .child(text(fix.clone()).font(mono(12.0, 18.0)).color(t.text).wrap()))
                 .child(row().child(btn(t, "Apply", Some("check"), ButtonKind::Green).key(format!("fix/{line}"))
                     .on_press(move |s: &mut App| s.apply_fix(line))));

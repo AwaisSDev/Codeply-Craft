@@ -15,12 +15,12 @@ pub fn popover(s: &App, t: &Theme, a: &Agent) -> El {
     let mut idle = a.clone();
     idle.state = crate::model::AgentState::Idle;
     col().key("appearance").w(300.0).padding(14.0).gap(12.0).radius(14.0)
-        .fill(theme::hex("#1f1f1f")).border(1.0, t.control_border).shadow(12.0, 32.0, theme::rgba(0, 0, 0, 0.45))
+        .fill(t.popup).border(1.0, t.control_border).shadow(12.0, 32.0, t.shadow)
         .anchored(format!("more/{}", a.id), Side::Right, Align::Start, 8.0)
         .role("dialog").label(format!("{}'s appearance", a.name))
         .modal(true, |s: &mut App| s.appearance = None)
         .child(row().gap(12.0).center_y()
-            .child(el().size(56.0, 56.0).radius(14.0).fill(theme::hex("#161616")).center().child(bot::agent(&idle, 46.0)))
+            .child(el().size(56.0, 56.0).radius(14.0).fill(t.well).center().child(bot::agent(&idle, 46.0)))
             .child(col().grow(1.0)
                 .child(text("Appearance").font(ui(14.0, 650.0)).color(t.text))
                 .child(text(a.name.clone()).font(ui(12.5, 400.0)).color(t.faint))))
@@ -48,7 +48,7 @@ pub fn pickers(t: &Theme, a: &Agent) -> El {
         let on = a.color.eq_ignore_ascii_case(c);
         let id = a.id.clone();
         el().key(format!("pick-color/{}/{c}", a.id)).size(15.0, 15.0).radius(7.5).fill(theme::hex(c)).role("radio").checked(on).label(c)
-            .border(if on { 2.0 } else { 1.0 }, if on { t.text } else { rune::Color::WHITE.alpha(0.12) }).outline(if on { 1.5 } else { 0.0 }, 1.5, t.text.alpha(if on { 0.5 } else { 0.0 }))
+            .border(if on { 2.0 } else { 1.0 }, if on { t.text } else { t.text.alpha(0.18) }).outline(if on { 1.5 } else { 0.0 }, 1.5, t.text.alpha(if on { 0.5 } else { 0.0 }))
             .on_press(move |s: &mut App| s.set_color(&id, c))
     }));
     col().gap(8.0)
