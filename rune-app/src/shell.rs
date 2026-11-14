@@ -55,15 +55,7 @@ fn menus(s: &App, t: &Theme) -> Option<El> {
         ]));
     }
     if let Some(key) = id.strip_prefix("model:") {
-        let item = |effort: &'static str, note: &str| {
-            menu_item(t, format!("effort/{effort}"), None, &format!("Haze 2 · {effort}"), Some(note), s.prefs.effort == effort)
-                .on_press(move |s: &mut App| s.set_effort(effort))
-        };
-        return Some(menu(t, &format!("model-chip/{key}"), Side::Top, 260.0, vec![
-            item("Low", "Fastest replies"),
-            item("Medium", "Balanced"),
-            item("High", "Thinks longest, best for hard tasks"),
-        ]));
+        return Some(views::models::composer_menu(s, t, key));
     }
     // `chat:` is opened from the chat's sidebar row, `chat-head:` from the open chat's header
     // (the chat may not be in the sidebar's recents, so each opens under its own button).

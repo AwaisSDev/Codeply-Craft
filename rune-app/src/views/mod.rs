@@ -7,6 +7,7 @@ pub mod browser;
 pub mod chat;
 pub mod code;
 pub mod integrations;
+pub mod models;
 pub mod prs;
 pub mod settings;
 pub mod tasks;

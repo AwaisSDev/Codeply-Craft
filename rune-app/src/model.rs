@@ -420,6 +420,8 @@ pub struct Extra {
     pub memories: Vec<Memory>,
     /// The code editor: the project's files, the open one, and Wisp's help with it.
     pub code: Code,
+    /// The models the composer picks from (Haze 2, and the ones you added).
+    pub models: crate::models::Models,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -25,6 +25,7 @@ const SCRIPT: &str = include_str!("../sidecar/engine.mjs");
 const EXTENSIONS: &[(&str, &str)] = &[
     ("ext-hello.mjs", include_str!("../sidecar/ext-hello.mjs")),
     ("ext-usage.mjs", include_str!("../sidecar/ext-usage.mjs")),
+    ("ext-models.mjs", include_str!("../sidecar/ext-models.mjs")),
 ];
 
 /// The engine a launch found.

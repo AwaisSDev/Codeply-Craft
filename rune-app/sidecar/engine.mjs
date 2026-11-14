@@ -190,7 +190,7 @@ function execCommand(cmd, cwd) {
 // ---------- host pieces the DSH bridge needs ----------
 const appLists = new Map(); // folder -> the apps listing in flight, so steps don't connect twice
 const teams = new Map();    // DSH session id -> a Wisp turn's { prompt, askBot, handOff }
-const turns = new Map();    // DSH session id -> the turn's { cwd, approve, request }, for the user's apps
+const turns = new Map();    // DSH session id -> the turn's { cwd, approve, request, route }, for the user's apps and the model
 
 const APPS_HOW = 'Call one with the use_app tool (app, tool, and args as a JSON object).';
 const APPS_WAIT_MS = 12_000;      // the prompt goes without an app still connecting
@@ -394,8 +394,10 @@ function startBridge() {
       const ai = need('ai.js');
       const chatId = String(body.chatId || '');
       const h = body.haze || {};
+      // The model this turn runs on, decided when the turn started (routeFor); Haze 2 for anything else.
+      const turn = turns.get(chatId);
       const r = await ai.chat(Array.isArray(body.messages) ? body.messages : [], {
-        route: { auto: true },
+        route: (turn && turn.route) || { auto: true },
         ...(Array.isArray(body.tools) && body.tools.length ? { tools: body.tools } : {}),
         ...(Number.isFinite(body.maxTokens) ? { maxTokens: body.maxTokens } : {}),
         ...(Number.isFinite(body.temperature) ? { temperature: body.temperature } : {}),
@@ -556,12 +558,27 @@ function dshApproveFor(approve) {
   };
 }
 
+/**
+ * The model a turn runs on, as the Electron app decides it (main.js currentRoute): the one picked
+ * in the composer (config.js selectedModel, shared with Electron), else Haze 2. A chat may carry
+ * its own `modelId`, which wins. Read when the turn starts, so a change applies from the next one.
+ */
+function routeFor(session) {
+  try {
+    const config = need('config.js');
+    const own = session && session.modelId ? config.getModel(session.modelId) : null;
+    const m = own || config.getSelectedModel();
+    if (m) return { custom: m };
+  } catch { /* no config: Haze 2 */ }
+  return { auto: true };
+}
+
 /** One turn on DSH: its text arrives in chunks, sent as `text_delta` and kept as one message. */
 async function* runDsh(session, text, approve, signal) {
   const engine = await engineFor(session.cwd);
   const sessionId = await engine.openSession(session.dshSession);
   if (sessionId !== session.dshSession) { session.dshSession = sessionId; save(); await applyEffort(engine, sessionId); }
-  turns.set(sessionId, { cwd: path.resolve(session.cwd), approve, request: String(text || '') });
+  turns.set(sessionId, { cwd: path.resolve(session.cwd), approve, request: String(text || ''), route: routeFor(session) });
   // Wisp leads every chat that is not a team member's own: it gets the team tools.
   if (!memberOf(session) && settings.team.length) {
     const ctx = { session, approve };
@@ -584,7 +601,7 @@ async function* runClassic(session, text, approve, signal) {
   const { runAgent } = await lib('agent.mjs');
   const { buildHistory } = require('./history.js');
   const history = buildHistory({ ...session, messages: session.messages.slice(0, -1) });
-  yield* runAgent({ userMessage: text, history, mode: 'Build', cwd: session.cwd, approve, signal, haze: { product: 'cli', chatId: session.id } });
+  yield* runAgent({ userMessage: text, history, mode: 'Build', cwd: session.cwd, approve, signal, route: routeFor(session), haze: { product: 'cli', chatId: session.id } });
 }
 
 /**

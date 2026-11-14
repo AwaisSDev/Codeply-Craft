@@ -72,6 +72,15 @@ It runs with the Node and the `codeply-cli` that the installed Codeply app ships
 sample data and says why. `--store mock` forces the sample data; headless runs use it unless
 `--store engine` is given.
 
+Models: the composer's model chip opens a menu of Haze 2 (the default) and the models you added,
+with the picked model's effort; Settings > Models lists them, adds your own (any OpenAI-compatible
+base URL, model id and key, tested with a real request first, "Use on my phone" sync as in the
+Electron app), and finds what Ollama has pulled. The list is `~/.codeply/config.json`, the Electron
+app's file, served by `sidecar/ext-models.mjs`; `routeFor` in `engine.mjs` runs each turn on the
+picked model, on DSH (through the bridge's `/haze`, as `dsh-chat.js` does) and on Classic. Keys
+never come back to the app: it gets `hasKey` and a short preview. Not carried over: the ChatGPT
+plan sign-in (Electron's menu dropped it too) and Claude Code (an agent tool, not a model).
+
 What the engine covers: the Chat sidebar, transcripts (streaming), sending from every composer
 (Wisp and each helper get a chat of their own), and approvals. Agents, Board, Office, Pull requests
 and Apps still show sample data: the engine has no API for them yet. Shape and colour picks aren't

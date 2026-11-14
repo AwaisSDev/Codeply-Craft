@@ -89,6 +89,9 @@ pub trait Store {
     fn complete(&mut self, _file: &str, _prefix: &str, _suffix: &str, _snap: &mut Snapshot) {}
     /// Asks Wisp to review the file; notes land in `extra.code.review`.
     fn review(&mut self, _file: &str, _text: &str, _snap: &mut Snapshot) {}
+    // ---------- models ----------
+    /// Reads or changes the model list (see `models::ModelOp`); the answer lands in `extra.models`.
+    fn models(&mut self, _op: crate::models::ModelOp, _snap: &mut Snapshot) {}
     /// A page the engine wants opened in the system browser (an app's sign-in), if any.
     fn take_open_url(&mut self) -> Option<String> {
         None

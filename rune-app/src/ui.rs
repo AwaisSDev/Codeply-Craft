@@ -134,7 +134,10 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
             approval_chip(approval.label()).shrink().min_w(0.0)
         }))
         .child(el().grow(1.0))
-        .children((!compact).then(|| chip(format!("model-chip/{}", key.name()), None, "Haze 2", Some(&s.prefs.effort), true, format!("model:{}", key.name()))))
+        .children((!compact).then(|| {
+            let (name, effort) = s.data.extra.models.chip(&s.prefs.effort);
+            chip(format!("model-chip/{}", key.name()), None, &name, effort.as_deref(), true, format!("model:{}", key.name()))
+        }))
         .child(ibtn(t, "mic", "Voice"))
         .child(action);
     let notice = s.notice.clone().map(|n| row().px(16.0).pt(8.0).gap(6.0).center_y()
