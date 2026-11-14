@@ -20,8 +20,8 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use super::{Store, Target, mock};
-use crate::model::{AgentState, BgTask, ButtonKind, CatalogApp, ChatGroup, ChatMeta, Column, Memory, Pill, Publish, ReviewNote, Snapshot, Task, TaskBody, TermKind, TermLine, ThreadItem};
+use super::{APPS_PAGE, AppsQuery, Store, Target, mock};
+use crate::model::{AgentState, AppProgress, BgTask, ButtonKind, CatalogApp, ChatGroup, ChatMeta, Column, Memory, Pill, Publish, ReviewNote, Snapshot, Task, TaskBody, TermKind, TermLine, ThreadItem};
 
 /// What the worker threads send back to the UI thread.
 enum Msg {
@@ -31,7 +31,10 @@ enum Msg {
     /// A chat `send` made for a new conversation, by engine id: open it once it has a title.
     Created(String),
     Account(Value),
-    Apps(Vec<CatalogApp>),
+    /// A page of the catalogue: (request number, offset it starts at, the page). Only the newest request counts.
+    Apps(u64, usize, Box<AppsPage>),
+    /// A connected app's tools (app id, tools or why not).
+    AppTools(String, Result<Vec<(String, String, bool)>, String>),
     Memories(Vec<Memory>),
     Files(Vec<String>),
     Tasks(Vec<BgTask>),
@@ -119,21 +122,61 @@ fn intern(s: &str) -> &'static str {
     k
 }
 
-fn apps_from(v: &Value) -> Vec<CatalogApp> {
-    v["apps"].as_array().map_or_else(Vec::new, |list| {
-        list.iter().filter_map(|a| {
-            let id = a["id"].as_str()?;
-            Some(CatalogApp {
-                slug: intern(id),
-                name: a["name"].as_str().unwrap_or(id).to_owned(),
-                note: a["note"].as_str().or(a["description"].as_str()).unwrap_or_default().chars().take(140).collect(),
-                category: intern(a["category"].as_str().filter(|c| !c.is_empty()).unwrap_or("Apps")),
-                connected: a["connected"].as_bool().unwrap_or(false),
-                domain: a["domain"].as_str().unwrap_or_default().to_owned(),
-                icon: a["icon"].as_str().unwrap_or_default().to_owned(),
-            })
-        }).collect()
+fn app_from(a: &Value) -> Option<CatalogApp> {
+    let id = a["id"].as_str()?;
+    Some(CatalogApp {
+        slug: intern(id),
+        name: a["name"].as_str().unwrap_or(id).to_owned(),
+        note: a["note"].as_str().or(a["description"].as_str()).unwrap_or_default().chars().take(140).collect(),
+        category: intern(a["category"].as_str().filter(|c| !c.is_empty()).unwrap_or("Apps")),
+        connected: a["connected"].as_bool().unwrap_or(false),
+        domain: a["domain"].as_str().unwrap_or_default().to_owned(),
+        icon: a["icon"].as_str().unwrap_or_default().to_owned(),
+        verified: a["verified"].as_bool().unwrap_or(false),
+        key_header: a["keyHeader"].as_str().unwrap_or_default().to_owned(),
+        needs_reconnect: a["needsReconnect"].as_bool().unwrap_or(false),
+        tools: a["tools"].as_u64().unwrap_or(0) as u32,
+        account: a["account"].as_str().unwrap_or_default().to_owned(),
     })
+}
+
+fn apps_from(v: &Value) -> Vec<CatalogApp> {
+    v["apps"].as_array().map_or_else(Vec::new, |list| list.iter().filter_map(app_from).collect())
+}
+
+/// One answer from the engine's catalogue (`GET /ext/apps`).
+struct AppsPage {
+    apps: Vec<CatalogApp>,
+    matched: usize,
+    total: usize,
+    categories: Vec<(String, usize)>,
+    connected: Vec<CatalogApp>,
+    indexing: Option<usize>,
+    error: String,
+}
+
+fn apps_page(v: &Value) -> AppsPage {
+    AppsPage {
+        apps: apps_from(v),
+        matched: v["total"].as_u64().unwrap_or(0) as usize,
+        total: v["catalog"].as_u64().unwrap_or(0) as usize,
+        categories: v["categories"].as_array().map_or_else(Vec::new, |l| l.iter().filter_map(|c| Some((c["name"].as_str()?.to_owned(), c["count"].as_u64()? as usize))).collect()),
+        connected: v["connected"].as_array().map_or_else(Vec::new, |l| l.iter().filter_map(app_from).collect()),
+        indexing: (v["indexing"]["phase"] == "crawling").then(|| v["indexing"]["loaded"].as_u64().unwrap_or(0) as usize),
+        error: v["error"].as_str().unwrap_or_default().to_owned(),
+    }
+}
+
+/// The list of tools from `GET /ext/apps/tools`.
+fn tools_from(v: &Value) -> Result<Vec<(String, String, bool)>, String> {
+    if let Some(e) = v["error"].as_str().filter(|e| !e.is_empty()) {
+        return Err(e.to_owned());
+    }
+    Ok(v["tools"].as_array().map_or_else(Vec::new, |l| l.iter().map(|t| {
+        let name = t["name"].as_str().unwrap_or_default();
+        let title = t["title"].as_str().filter(|x| !x.is_empty()).unwrap_or(name);
+        (title.to_owned(), t["description"].as_str().unwrap_or_default().to_owned(), t["readOnly"].as_bool().unwrap_or(false))
+    }).collect()))
 }
 
 fn memories_from(v: &Value) -> Vec<Memory> {
@@ -165,7 +208,7 @@ impl LiveStore {
             for _ in 0..120 {
                 let got = match what {
                     "account" => c.get("/account").map(Msg::Account),
-                    "apps" => c.get("/apps").map(|v| Msg::Apps(apps_from(&v))),
+                    "apps" => c.get("/ext/apps?limit=60").map(|v| Msg::Apps(0, 0, Box::new(apps_page(&v)))),
                     "memory" => c.get("/memory").map(|v| Msg::Memories(memories_from(&v))),
                     "files" => c.get("/files").map(|v| Msg::Files(v["files"].as_array().map_or_else(Vec::new, |a| a.iter().filter_map(|f| f.as_str().map(str::to_owned)).collect()))),
                     _ => c.get("/jobs").map(|v| Msg::Tasks(v["tasks"].as_array().map_or_else(Vec::new, |a| a.iter().filter_map(task_from).collect()))),
@@ -177,6 +220,38 @@ impl LiveStore {
             }
             None
         });
+    }
+
+    /// One page of the catalogue for `q`, `limit` apps from its offset. Answers carry the request's
+    /// number, and only the newest one is used, so typing fast never shows an old search.
+    fn fetch_apps(&self, q: AppsQuery, limit: usize) {
+        let seq = self.apps_seq.fetch_add(1, std::sync::atomic::Ordering::AcqRel) + 1;
+        self.spawn(move |c| {
+            let cat = q.category.as_deref().map(encode).unwrap_or_default();
+            let path = format!("/ext/apps?q={}&cat={cat}&offset={}&limit={limit}", encode(&q.text), q.offset);
+            for _ in 0..120 {
+                match c.get(&path) {
+                    Ok(v) => return Some(Msg::Apps(seq, q.offset, Box::new(apps_page(&v)))),
+                    Err(_) => thread::sleep(Duration::from_millis(250)),
+                }
+            }
+            None
+        });
+    }
+
+    /// Something changed (an app connected, the catalogue grew): read what's on screen again.
+    fn reload_apps(&mut self) {
+        let q = AppsQuery { offset: 0, ..self.apps_q.clone() };
+        self.fetch_apps(q, self.apps_shown.clamp(APPS_PAGE, 600));
+    }
+
+    fn connect(&mut self, slug: &str, key: &str, snap: &mut Snapshot) {
+        let id = slug.to_owned();
+        let name = snap.extra.catalog.iter().chain(&snap.extra.apps.connected).find(|a| a.slug == slug).map(|a| a.name.clone()).unwrap_or_else(|| id.clone());
+        snap.extra.apps.progress = Some(AppProgress { id: id.clone(), name: name.clone(), state: "start".into(), message: format!("Connecting {name}...") });
+        let key = key.to_owned();
+        self.spawn(move |c| c.post("/ext/apps/connect", json!({ "id": id, "apiKey": key })).err()
+            .map(|e| Msg::Event(json!({ "type": "apps_progress", "id": id, "name": name, "state": "error", "message": e }))));
     }
 
     /// Folds the events of the engine's other features. True when it took the event.
@@ -210,7 +285,11 @@ impl LiveStore {
                 });
             }
             "open_url" => self.open_url = e["url"].as_str().map(str::to_owned),
-            "apps_changed" => self.refresh("apps"),
+            "apps_changed" | "apps_catalog" => self.reload_apps(),
+            "apps_progress" => {
+                let g = |k: &str| e[k].as_str().unwrap_or_default().to_owned();
+                x.apps.progress = Some(AppProgress { id: g("id"), name: g("name"), state: g("state"), message: g("message") });
+            }
             "memory_changed" => self.refresh("memory"),
             "account_changed" => self.refresh("account"),
             _ => return false,
@@ -265,6 +344,10 @@ pub struct LiveStore {
     open_url: Option<String>,
     /// The team, as the engine is told about it: (id, name, role).
     team: Vec<(String, String, String)>,
+    /// The Apps page's last query, how many apps it shows, and the number of the newest request.
+    apps_q: AppsQuery,
+    apps_shown: usize,
+    apps_seq: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl LiveStore {
@@ -274,7 +357,7 @@ impl LiveStore {
             conn: Conn { base: url.trim_end_matches('/').to_owned(), token: token.to_owned() },
             tx, rx, waker: None, sessions: Vec::new(), named: Default::default(), open: None, streaming: Default::default(),
             label: format!("codeply serve at {url}"), unread: Default::default(), queued: Default::default(), want_focus: None, focus: None,
-            open_url: None, team: Vec::new(),
+            open_url: None, team: Vec::new(), apps_q: AppsQuery::default(), apps_shown: 0, apps_seq: Default::default(),
         }
     }
 
@@ -696,10 +779,31 @@ impl Store for LiveStore {
                     }
                     snap.plan = if snap.extra.signed_in { "Signed in".into() } else { "Not signed in".into() };
                 }
-                Msg::Apps(list) => {
+                Msg::Apps(seq, offset, page) => {
+                    if seq != 0 && seq != self.apps_seq.load(std::sync::atomic::Ordering::Acquire) {
+                        continue; // an older request, answered after a newer one went out
+                    }
                     snap.connected.retain(|_| false);
-                    snap.extra.catalog = list;
+                    let a = &mut snap.extra.apps;
+                    a.loading = false;
+                    a.matched = page.matched;
+                    a.total = page.total;
+                    a.categories = page.categories;
+                    a.connected = page.connected;
+                    a.indexing = page.indexing;
+                    a.error = page.error;
+                    if offset == 0 {
+                        snap.extra.catalog = page.apps;
+                    } else {
+                        for app in page.apps {
+                            if !snap.extra.catalog.iter().any(|k| k.slug == app.slug) {
+                                snap.extra.catalog.push(app);
+                            }
+                        }
+                    }
+                    self.apps_shown = snap.extra.catalog.len();
                 }
+                Msg::AppTools(id, tools) => snap.extra.apps.tools = Some((id, tools)),
                 Msg::Memories(list) => snap.extra.memories = list,
                 Msg::Files(list) => snap.extra.code.files = list,
                 Msg::Tasks(list) => snap.extra.bg_tasks = list,
@@ -808,25 +912,51 @@ impl Store for LiveStore {
         });
     }
 
-    fn search_apps(&mut self, query: &str, _snap: &mut Snapshot) {
-        let q = encode(query);
-        self.spawn(move |c| c.get(&format!("/apps?q={q}")).ok().map(|v| Msg::Apps(apps_from(&v))));
+    fn search_apps(&mut self, query: &str, snap: &mut Snapshot) {
+        self.browse_apps(&AppsQuery { text: query.to_owned(), ..Default::default() }, snap);
     }
 
-    fn connect_app(&mut self, slug: &str, _snap: &mut Snapshot) {
+    fn browse_apps(&mut self, q: &AppsQuery, snap: &mut Snapshot) {
+        self.apps_q = q.clone();
+        snap.extra.apps.loading = true;
+        self.fetch_apps(q.clone(), APPS_PAGE);
+    }
+
+    fn connect_app(&mut self, slug: &str, snap: &mut Snapshot) {
+        self.connect(slug, "", snap);
+    }
+
+    fn connect_app_key(&mut self, slug: &str, key: &str, snap: &mut Snapshot) {
+        self.connect(slug, key, snap);
+    }
+
+    fn add_app(&mut self, url: &str, title: &str, header: &str, key: &str, snap: &mut Snapshot) {
+        let (url, title, header, key) = (url.to_owned(), title.to_owned(), header.to_owned(), key.to_owned());
+        snap.extra.apps.progress = Some(AppProgress { id: url.clone(), name: title.clone(), state: "start".into(), message: "Connecting...".into() });
+        self.spawn(move |c| c.post("/ext/apps/add", json!({ "url": url, "title": title, "headerName": header, "apiKey": key })).err()
+            .map(|e| Msg::Event(json!({ "type": "apps_progress", "id": url, "name": title, "state": "error", "message": e }))));
+    }
+
+    fn cancel_app(&mut self, _snap: &mut Snapshot) {
+        self.spawn(|c| c.post("/ext/apps/cancel", json!({})).err().map(|e| Msg::Status(format!("cancel failed: {e}"))));
+    }
+
+    fn app_tools(&mut self, slug: &str, snap: &mut Snapshot) {
+        snap.extra.apps.tools = None;
         let id = slug.to_owned();
-        self.spawn(move |c| c.post("/apps/connect", json!({ "id": id })).err().map(|e| Msg::Status(format!("connect failed: {e}"))));
+        self.spawn(move |c| Some(Msg::AppTools(id.clone(), c.get(&format!("/ext/apps/tools?id={}", encode(&id))).map_err(|e| e.to_string()).and_then(|v| tools_from(&v)))));
     }
 
     fn disconnect_app(&mut self, slug: &str, snap: &mut Snapshot) {
-        if let Some(a) = snap.extra.catalog.iter_mut().find(|a| a.slug == slug) {
-            a.connected = false;
+        for list in [&mut snap.extra.catalog, &mut snap.extra.apps.connected] {
+            if let Some(a) = list.iter_mut().find(|a| a.slug == slug) {
+                a.connected = false;
+            }
         }
-        let id = encode(slug);
-        self.spawn(move |c| {
-            let _ = c.delete(&format!("/apps/{id}"));
-            c.get("/apps").ok().map(|v| Msg::Apps(apps_from(&v)))
-        });
+        snap.extra.apps.connected.retain(|a| a.slug != slug);
+        snap.extra.apps.progress = None;
+        let id = slug.to_owned();
+        self.spawn(move |c| c.post("/ext/apps/disconnect", json!({ "id": id })).err().map(|e| Msg::Status(format!("disconnect failed: {e}"))));
     }
 
     fn remember(&mut self, text: &str, snap: &mut Snapshot) {
@@ -1073,5 +1203,47 @@ mod tests {
         // way something past the message itself arrives.
         assert!(wait(&mut store, &mut snap, &|s| s.thread(name.as_str()).len() >= 2), "{:?}", snap.thread(name.as_str()));
     }
-}
 
+    /// The Apps page against a running sidecar (`sidecar/engine.mjs --port 47823` with
+    /// `CODEPLY_SIDECAR_TOKEN=t`, HOME pointing somewhere disposable): the whole catalogue is
+    /// searched, an open app really connects, lists its tools and disconnects.
+    #[test]
+    #[ignore = "needs a running sidecar and the network"]
+    fn drives_the_apps_catalogue() {
+        let url = std::env::var("CODEPLY_SERVER").unwrap_or_else(|_| "http://127.0.0.1:47823".into());
+        let token = std::env::var("CODEPLY_TOKEN").unwrap_or_else(|_| "t".into());
+        let mut store = LiveStore::new(&url, &token);
+        let mut snap = store.load();
+        store.set_waker(std::sync::Arc::new(|| {}));
+        let wait = |store: &mut LiveStore, snap: &mut Snapshot, done: &dyn Fn(&Snapshot) -> bool| {
+            for _ in 0..400 {
+                store.poll(snap);
+                if done(snap) {
+                    return true;
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            false
+        };
+        let q = |text: &str, offset| AppsQuery { text: text.into(), category: None, offset };
+        // The whole catalogue, not just the featured few.
+        store.browse_apps(&q("", 0), &mut snap);
+        assert!(wait(&mut store, &mut snap, &|s| s.extra.apps.total > 10_000 && s.extra.apps.indexing.is_none()), "total {}", snap.extra.apps.total);
+        assert_eq!(snap.extra.catalog.len(), APPS_PAGE);
+        assert!(snap.extra.apps.categories.len() > 8);
+        // The next page adds to the first.
+        store.browse_apps(&q("", APPS_PAGE), &mut snap);
+        assert!(wait(&mut store, &mut snap, &|s| s.extra.catalog.len() == 2 * APPS_PAGE), "{}", snap.extra.catalog.len());
+        // A search reaches apps that are nowhere near the first page.
+        store.browse_apps(&q("cloudflare", 0), &mut snap);
+        assert!(wait(&mut store, &mut snap, &|s| s.extra.apps.matched > 50 && s.extra.catalog.iter().any(|a| a.slug == "cloudflare")), "{}", snap.extra.apps.matched);
+        // Connecting an app that needs no sign-in really connects.
+        store.connect_app("cloudflare", &mut snap);
+        assert!(wait(&mut store, &mut snap, &|s| s.extra.apps.progress.as_ref().is_some_and(|p| p.state == "done")), "{:?}", snap.extra.apps.progress);
+        assert!(wait(&mut store, &mut snap, &|s| s.extra.apps.connected.iter().any(|a| a.slug == "cloudflare" && a.tools > 0)), "{:?}", snap.extra.apps.connected);
+        store.app_tools("cloudflare", &mut snap);
+        assert!(wait(&mut store, &mut snap, &|s| matches!(&s.extra.apps.tools, Some((id, Ok(t))) if id == "cloudflare" && !t.is_empty())), "{:?}", snap.extra.apps.tools);
+        store.disconnect_app("cloudflare", &mut snap);
+        assert!(wait(&mut store, &mut snap, &|s| s.extra.apps.connected.is_empty() && s.extra.catalog.iter().any(|a| a.slug == "cloudflare" && !a.connected)), "{:?}", snap.extra.apps.connected);
+    }
+}

@@ -245,7 +245,12 @@ pub struct App {
     pub back: View,
     pub integrations: IntegrationsTab,
     /// Integrations > Apps' category filter (None: all).
-    pub app_category: Option<&'static str>,
+    pub app_category: Option<String>,
+    /// Integrations > Apps: the open dialog and its fields, and the search last sent to the catalogue.
+    pub apps_ui: crate::views::apps::AppsUi,
+    apps_sent: String,
+    apps_seen: String,
+    apps_seen_at: f64,
     /// The open menu, if any. Escape or a click outside closes it.
     pub menu: Option<MenuId>,
     /// Folded groups the user opened ("Worked for 2m 30s", tool calls), by key.
@@ -296,6 +301,10 @@ impl App {
             back: View::Chat,
             integrations: IntegrationsTab::Plugins,
             app_category: None,
+            apps_ui: Default::default(),
+            apps_sent: String::new(),
+            apps_seen: String::new(),
+            apps_seen_at: 0.0,
             menu: None,
             expanded: HashSet::new(),
             notice: None,
@@ -470,6 +479,7 @@ impl App {
     }
 
     /// Connects an app (its sign-in opens in your browser), or disconnects it.
+    #[allow(dead_code)]
     pub fn toggle_app(&mut self, slug: &str) {
         let connected = self.data.extra.catalog.iter().any(|a| a.slug == slug && a.connected);
         if connected {
@@ -692,8 +702,51 @@ impl App {
     }
 
     pub fn search_apps(&mut self) {
-        let q = self.edit(EditKey::AppSearch).text.trim().to_owned();
-        self.store.search_apps(&q, &mut self.data);
+        self.browse_apps(false);
+    }
+
+    /// Asks the catalogue for the apps matching the search and category: the first page, or (`more`)
+    /// the page after the ones shown.
+    pub fn browse_apps(&mut self, more: bool) {
+        let text = self.edit(EditKey::AppSearch).text.trim().to_owned();
+        let offset = if more { self.data.extra.catalog.len() } else { 0 };
+        self.apps_sent = text.clone();
+        let q = crate::store::AppsQuery { text, category: self.app_category.clone(), offset };
+        self.store.browse_apps(&q, &mut self.data);
+    }
+
+    /// Search as you type: once the box has rested for 200 ms, the catalogue is asked.
+    fn step_apps_search(&mut self, now: f64, tx: &mut Tx) {
+        let text = self.edit(EditKey::AppSearch).text.trim().to_owned();
+        if text == self.apps_sent {
+            return;
+        }
+        if text != self.apps_seen {
+            self.apps_seen = text;
+            self.apps_seen_at = now;
+        }
+        let wait = 0.2 - (now - self.apps_seen_at);
+        if wait <= 0.0 {
+            self.browse_apps(false);
+        } else {
+            tx.wake_after(std::time::Duration::from_secs_f64(wait));
+        }
+    }
+
+    pub fn connect_app_key(&mut self, slug: &str, key: &str) {
+        self.store.connect_app_key(slug, key, &mut self.data);
+    }
+
+    pub fn add_app(&mut self, url: &str, title: &str, header: &str, key: &str) {
+        self.store.add_app(url, title, header, key, &mut self.data);
+    }
+
+    pub fn cancel_app(&mut self) {
+        self.store.cancel_app(&mut self.data);
+    }
+
+    pub fn app_tools(&mut self, slug: &str) {
+        self.store.app_tools(slug, &mut self.data);
     }
 
     pub fn connect_app(&mut self, slug: &str) {
@@ -757,6 +810,11 @@ impl App {
         changed |= self.browser.poll(browser_up);
         if let Some(url) = self.store.take_open_url() {
             let _ = tx.open_url(&url);
+        }
+        if self.view == View::Integrations && self.integrations == IntegrationsTab::Apps {
+            let before = self.data.extra.apps.loading;
+            self.step_apps_search(now, tx);
+            changed |= before != self.data.extra.apps.loading;
         }
         let had = self.data.extra.code.suggestion.is_some();
         self.step_code(now, tx);

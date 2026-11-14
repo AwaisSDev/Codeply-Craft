@@ -7,7 +7,7 @@ use crate::app::{App, EditKey, IntegrationsTab};
 use crate::icons::{app_logo, ico, ico_s};
 use crate::model::ButtonKind;
 use crate::theme::{self, Theme, mono, tabular, ui};
-use crate::ui::{btn, btn_primary, enter, heading, me, sec, side_head, side_row, toggle};
+use crate::ui::{btn, btn_primary, enter, heading, me, side_head, side_row, toggle};
 
 /// The tab's sidebar icon.
 fn tab_icon(tab: IntegrationsTab) -> &'static str {
@@ -22,7 +22,7 @@ fn tab_icon(tab: IntegrationsTab) -> &'static str {
 fn tab_count(s: &App, tab: IntegrationsTab) -> usize {
     match tab {
         IntegrationsTab::Plugins => s.data.extra.plugins.len(),
-        IntegrationsTab::Apps => s.data.extra.catalog.len(),
+        IntegrationsTab::Apps => s.data.extra.apps.total.max(s.data.extra.catalog.len()),
         IntegrationsTab::Mcp => s.data.extra.mcp.len(),
         IntegrationsTab::Skills => s.data.extra.skills.len(),
     }
@@ -34,34 +34,21 @@ pub fn side(s: &App, t: &Theme) -> El {
             side_row(t, s.integrations == tab).key(format!("int-tab/{}", tab.label())).role("button").label(tab.label())
                 .child(ico(tab_icon(tab), t.dim))
                 .child(text(tab.label()).font(ui(14.0, 400.0)).color(t.text).grow(1.0))
-                .child(text(tab_count(s, tab).to_string()).font(tabular(12.0, 400.0)).color(t.faint))
+                .child(text(super::apps::thousands(tab_count(s, tab))).font(tabular(12.0, 400.0)).color(t.faint))
                 .on_press(move |s: &mut App| {
                     s.integrations = tab;
                     s.app_category = None;
+                    if tab == IntegrationsTab::Apps {
+                        s.browse_apps(false);
+                    }
                 }),
             i,
         )
     });
-    let mut cats: Vec<&'static str> = Vec::new();
-    for a in &s.data.extra.catalog {
-        if !cats.contains(&a.category) {
-            cats.push(a.category);
-        }
-    }
-    let categories = (s.integrations == IntegrationsTab::Apps).then(|| {
-        let mut items: Vec<(String, Option<&'static str>)> = vec![("All".to_owned(), None)];
-        items.extend(cats.iter().map(|&c| (c.to_owned(), Some(c))));
-        col()
-            .child(sec(t, None, "Categories", false))
-            .children(items.into_iter().map(|(name, cat)| {
-                side_row(t, s.app_category == cat).key(format!("int-cat/{name}")).role("button").label(name.clone())
-                    .child(text(name).font(ui(14.0, 400.0)).color(t.text).grow(1.0))
-                    .on_press(move |s: &mut App| s.app_category = cat)
-            }))
-    });
+    let categories = (s.integrations == IntegrationsTab::Apps).then(|| super::apps::categories(s, t));
     col().h_full().min_h(0.0)
         .child(side_head(t, "Integrations", None))
-        .child(col().grow(1.0).min_h(0.0).px(8.0).children(tabs).children(categories))
+        .child(col().grow(1.0).min_h(0.0).px(8.0).scroll(ScrollSpec { stick_bottom: false }).children(tabs).children(categories))
         .child(me(s, t))
 }
 
@@ -72,12 +59,6 @@ fn logo(icon: &str) -> El {
         Some(slug) => app_logo(slug, crate::icons::domain_of(slug).unwrap_or_default(), "", tile, border, ink),
         None => el().size(34.0, 34.0).radius(9.0).fill(tile).border(1.0, border).center().child(ico_s(icon, 18.0, ink)),
     }
-}
-
-/// An app's colour logo tile, from its domain or icon URL.
-fn app_tile(a: &crate::model::CatalogApp) -> El {
-    let (tile, border, ink) = (theme::hex("#232323"), theme::hex("#2e2e2e"), theme::hex("#e0e0e0"));
-    app_logo(&a.name, &a.domain, &a.icon, tile, border, ink)
 }
 
 /// Cards in rows of `cols`, each row padded out so the last card keeps its column width.
@@ -104,10 +85,6 @@ fn empty(t: &Theme, what: &str) -> El {
     text(what.to_owned()).font(ui(13.5, 400.0)).color(t.faint).py(12.0)
 }
 
-fn h3(t: &Theme, label: &str) -> El {
-    text(label.to_owned()).font(ui(13.0, 600.0)).color(t.dim).mt(8.0)
-}
-
 pub fn main(s: &App, t: &Theme) -> El {
     let tab = s.integrations;
     let (title, sub, action, placeholder) = match tab {
@@ -119,13 +96,16 @@ pub fn main(s: &App, t: &Theme) -> El {
     let q = s.edit(EditKey::AppSearch).text.trim().to_lowercase();
     let head = row().gap(16.0).center_y()
         .child(heading(t, title, Some(sub.to_owned())).grow(1.0).min_w(0.0))
-        .child(btn_primary(t, action, "plus").key("int-primary"));
+        .child(match tab {
+            IntegrationsTab::Apps => btn_primary(t, action, "plus").key("int-primary").on_press(|s: &mut App| s.apps_ui.dialog = Some(super::apps::Dialog::Add)),
+            _ => btn_primary(t, action, "plus").key("int-primary"),
+        });
     let search = row().h(44.0).gap(10.0).px(14.0).radius(12.0).center_y().fill(theme::hex("#1b1b1b")).border(1.0, theme::hex("#2c2c2c"))
         .child(ico("search", t.faint))
         .child(text_input(s.edit(EditKey::AppSearch), ui(14.5, 400.0)).key("app-search").single_line().grow(1.0).color(t.text)
             .placeholder(placeholder, t.faint).caret(t.accent, t.accent.alpha(0.3)).label(placeholder)
             .on_edit(|s: &mut App| s.edit_mut(EditKey::AppSearch))
-            // Enter searches the engine's catalogue (thousands of apps), not just what's listed.
+            // The engine searches its whole catalogue (tens of thousands of apps) as you type.
             .on_submit(|s: &mut App, _| s.search_apps()));
     let body = match tab {
         IntegrationsTab::Plugins => plugins(s, t, &q),
@@ -164,42 +144,7 @@ fn plugins(s: &App, t: &Theme, q: &str) -> El {
 }
 
 fn apps(s: &App, t: &Theme, q: &str) -> El {
-    let catalog = &s.data.extra.catalog;
-    let connected: Vec<El> = catalog.iter().filter(|a| a.connected && matches(q, &[a.name.as_str(), a.note.as_str(), a.category])).enumerate().map(|(i, a)| {
-        enter(
-            row().gap(12.0).px(12.0).py(10.0).radius(12.0).center_y().hover(t.hover)
-                .child(app_tile(a))
-                .child(col().grow(1.0).min_w(0.0)
-                    .child(text(a.name.clone()).font(ui(14.0, 600.0)).color(t.text))
-                    .child(text(a.note.clone()).font(ui(12.5, 400.0)).color(t.faint).truncate()))
-                .child(btn(t, "Manage", None, ButtonKind::Plain).key(format!("app-manage/{}", a.slug))),
-            i,
-        )
-    }).collect();
-    let tiles: Vec<El> = catalog.iter()
-        .filter(|a| s.app_category.map_or(true, |c| c == a.category) && matches(q, &[a.name.as_str(), a.note.as_str(), a.category]))
-        .map(|a| {
-            let slug = a.slug;
-            let button = if a.connected {
-                btn(t, "Connected", None, ButtonKind::Plain)
-            } else {
-                btn(t, "Connect", None, ButtonKind::Blue)
-            };
-            col().gap(10.0).padding(12.0).radius(12.0).fill(theme::hex("#181818")).border(1.0, t.border)
-                .child(row().gap(10.0).center_y()
-                    .child(app_tile(a))
-                    .child(col().grow(1.0).min_w(0.0)
-                        .child(text(a.name.clone()).font(ui(13.5, 600.0)).color(t.text).truncate())
-                        .child(text(a.category).font(ui(12.0, 400.0)).color(t.faint).truncate())))
-                .child(text(a.note.clone()).font(ui(12.5, 400.0)).color(t.dim).wrap().grow(1.0))
-                .child(row().justify_end().child(button.key(format!("app/{slug}")).on_press(move |s: &mut App| s.toggle_app(slug))))
-        }).collect();
-    let all_title = s.app_category.map_or_else(|| "All apps".to_owned(), str::to_owned);
-    col().gap(12.0)
-        .child(h3(t, "Connected"))
-        .child(if connected.is_empty() { empty(t, "Nothing connected yet.") } else { col().gap(2.0).children(connected) })
-        .child(h3(t, &all_title))
-        .child(if tiles.is_empty() { empty(t, "No apps match.") } else { grid(tiles, 3) })
+    super::apps::body(s, t, q)
 }
 
 fn mcp(s: &App, t: &Theme, q: &str) -> El {

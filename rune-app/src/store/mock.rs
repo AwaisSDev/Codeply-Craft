@@ -8,6 +8,8 @@ use crate::model::*;
 pub struct MockStore {
     /// A chat `send` just made, for the app to open.
     focus: Option<String>,
+    /// The whole sample catalogue, which `extra.catalog` shows a filtered page of.
+    apps_all: Vec<CatalogApp>,
 }
 
 fn s(v: &str) -> String {
@@ -210,6 +212,7 @@ pub fn extra() -> Extra {
     let loop_ = |agent: &str, name: &str, runs: &[bool], last: &str, on| Loop { agent: s(agent), name: s(name), runs: runs.to_vec(), last: s(last), on };
     let app = |slug: &'static str, name: &str, note: &str, category: &'static str, connected| CatalogApp {
         slug, name: s(name), note: s(note), category, connected, domain: crate::icons::domain_of(slug).unwrap_or_default().to_owned(), icon: String::new(),
+        verified: true, ..Default::default()
     };
     Extra {
         chats,
@@ -239,6 +242,7 @@ pub fn extra() -> Extra {
             loop_("frontend", "Benchmark page speed", &[true, true, true], "Succeeded 6d ago", true),
             loop_("docs", "Changelog from merged PRs", &[true, true], "Succeeded 1d ago", true),
         ],
+        apps: Default::default(),
         catalog: vec![
             app("gmail", "Gmail", "Read, draft and send mail", "Communication", true),
             app("slack", "Slack", "Read channels, post updates", "Communication", true),
@@ -328,9 +332,50 @@ pub fn echo(snap: &mut Snapshot, to: &Target, text: &str, reply: &str) {
     }
 }
 
+impl MockStore {
+    /// Keeps the whole sample catalogue (taken from the snapshot the first time).
+    fn sync_all(&mut self, snap: &Snapshot) {
+        if self.apps_all.is_empty() {
+            self.apps_all = snap.extra.catalog.clone();
+        }
+    }
+
+    fn set_connected(&mut self, slug: &str, on: bool, snap: &mut Snapshot) {
+        self.sync_all(snap);
+        let mut name = String::new();
+        for list in [&mut self.apps_all, &mut snap.extra.catalog] {
+            if let Some(a) = list.iter_mut().find(|a| a.slug == slug) {
+                a.connected = on;
+                name = a.name.clone();
+            }
+        }
+        snap.extra.apps.progress = on.then(|| AppProgress { id: slug.to_owned(), name: name.clone(), state: "done".into(), message: format!("{name} is connected with 4 tools.") });
+        self.publish_apps(snap);
+    }
+
+    /// The counts, categories and connected list the Apps page shows next to its page of apps.
+    fn publish_apps(&self, snap: &mut Snapshot) {
+        let mut cats: Vec<(String, usize)> = Vec::new();
+        for a in &self.apps_all {
+            match cats.iter_mut().find(|(c, _)| c == a.category) {
+                Some((_, n)) => *n += 1,
+                None => cats.push((a.category.to_owned(), 1)),
+            }
+        }
+        cats.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        snap.extra.apps.total = self.apps_all.len();
+        snap.extra.apps.categories = cats;
+        snap.extra.apps.connected = self.apps_all.iter().filter(|a| a.connected).cloned().collect();
+    }
+}
+
 impl Store for MockStore {
     fn load(&mut self) -> Snapshot {
-        sample()
+        let mut snap = sample();
+        self.apps_all = snap.extra.catalog.clone();
+        snap.extra.apps.matched = self.apps_all.len();
+        self.publish_apps(&mut snap);
+        snap
     }
     fn poll(&mut self, _: &mut Snapshot) -> bool {
         false
@@ -370,14 +415,49 @@ impl Store for MockStore {
         snap.extra.code.suggestion = found.map(|w| (file.to_owned(), prefix.len(), w[word.len()..].to_owned()));
     }
     fn connect_app(&mut self, slug: &str, snap: &mut Snapshot) {
-        if let Some(a) = snap.extra.catalog.iter_mut().find(|a| a.slug == slug) {
-            a.connected = true;
-        }
+        self.set_connected(slug, true, snap);
     }
     fn disconnect_app(&mut self, slug: &str, snap: &mut Snapshot) {
-        if let Some(a) = snap.extra.catalog.iter_mut().find(|a| a.slug == slug) {
-            a.connected = false;
+        self.set_connected(slug, false, snap);
+    }
+    fn connect_app_key(&mut self, slug: &str, _key: &str, snap: &mut Snapshot) {
+        self.set_connected(slug, true, snap);
+    }
+    fn add_app(&mut self, url: &str, title: &str, _header: &str, _key: &str, snap: &mut Snapshot) {
+        let host = url.trim_start_matches("https://").split('/').next().unwrap_or(url).to_owned();
+        let name = if title.is_empty() { host.clone() } else { title.to_owned() };
+        let slug: &'static str = Box::leak(host.clone().into_boxed_str());
+        self.sync_all(snap);
+        self.apps_all.push(CatalogApp { slug, name, category: "Other", connected: false, domain: host, ..Default::default() });
+        self.set_connected(slug, true, snap);
+    }
+    fn cancel_app(&mut self, snap: &mut Snapshot) {
+        snap.extra.apps.progress = None;
+    }
+    fn app_tools(&mut self, slug: &str, snap: &mut Snapshot) {
+        let tools = vec![
+            (s("search"), s("Find things by name or text"), true),
+            (s("read"), s("Open one item and read it"), true),
+            (s("create"), s("Make a new item"), false),
+            (s("update"), s("Change an item"), false),
+        ];
+        snap.extra.apps.tools = Some((slug.to_owned(), Ok(tools)));
+    }
+    fn browse_apps(&mut self, q: &crate::store::AppsQuery, snap: &mut Snapshot) {
+        self.sync_all(snap);
+        let ql = q.text.trim().to_lowercase();
+        let hits: Vec<&CatalogApp> = self.apps_all.iter()
+            .filter(|a| q.category.as_deref().map_or(true, |c| a.category == c))
+            .filter(|a| ql.is_empty() || [a.name.as_str(), a.note.as_str(), a.category].iter().any(|p| p.to_lowercase().contains(&ql)))
+            .collect();
+        let page: Vec<CatalogApp> = hits.iter().skip(q.offset).take(crate::store::APPS_PAGE).map(|a| (*a).clone()).collect();
+        snap.extra.apps.matched = hits.len();
+        if q.offset == 0 {
+            snap.extra.catalog = page;
+        } else {
+            snap.extra.catalog.extend(page);
         }
+        self.publish_apps(snap);
     }
     fn open_file(&mut self, path: &str, snap: &mut Snapshot) {
         snap.extra.code.open = Some(path.to_owned());

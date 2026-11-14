@@ -48,6 +48,18 @@ const SCENES: &[Scene] = &[
     ("chat-terminal", |s| { s.open_chat("Casual chat"); s.panes.terminal = true; }),
     ("integrations", |s| s.go(View::Integrations)),
     ("integrations-apps", |s| { s.go(View::Integrations); s.integrations = IntegrationsTab::Apps; }),
+    ("apps-connecting", |s| {
+        s.go(View::Integrations);
+        s.integrations = IntegrationsTab::Apps;
+        s.data.extra.apps.progress = Some(model::AppProgress { id: "discord".into(), name: "Discord".into(), state: "waiting".into(), message: "Finish signing in to Discord in your browser...".into() });
+    }),
+    ("apps-add", |s| { s.go(View::Integrations); s.integrations = IntegrationsTab::Apps; s.apps_ui.dialog = Some(views::apps::Dialog::Add); }),
+    ("apps-manage", |s| {
+        s.go(View::Integrations);
+        s.integrations = IntegrationsTab::Apps;
+        s.apps_ui.dialog = Some(views::apps::Dialog::Manage("slack".into()));
+        s.app_tools("slack");
+    }),
     ("integrations-mcp", |s| { s.go(View::Integrations); s.integrations = IntegrationsTab::Mcp; }),
     ("settings", |s| s.open_settings(SettingsPage::General)),
     ("settings-appearance", |s| s.open_settings(SettingsPage::Appearance)),

@@ -3,6 +3,7 @@
 
 pub mod agents;
 pub mod appearance;
+pub mod apps;
 pub mod browser;
 pub mod chat;
 pub mod code;
