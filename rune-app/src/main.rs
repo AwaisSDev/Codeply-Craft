@@ -55,6 +55,17 @@ const SCENES: &[Scene] = &[
     ("settings-personalization", |s| s.open_settings(SettingsPage::Personalization)),
     ("settings-browser", |s| s.open_settings(SettingsPage::Browser)),
     ("settings-usage", |s| s.open_settings(SettingsPage::Usage)),
+    ("chat-thinking", |s| {
+        s.open_chat("Casual chat");
+        if let Some(c) = s.data.extra.chats.iter_mut().find(|c| c.title == "Casual chat") {
+            c.running = true;
+        }
+        let mut items = s.data.thread("Casual chat").to_vec();
+        items.push(crate::model::ThreadItem::You("Can you check the build before I ship?".into()));
+        s.data.threads.push(("Casual chat".into(), items));
+    }),
+    ("usage", |s| { s.new_chat(); s.toggle_usage(); }),
+    ("usage-daily", |s| { s.new_chat(); s.toggle_usage(); s.usage_daily = true; s.usage_pick = Some("d2026-11-12".into()); }),
 ];
 
 /// The app's own flags (Rune takes its own first): `--store mock|live`, `--server URL`, `--token PW`.

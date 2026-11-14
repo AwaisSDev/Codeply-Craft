@@ -11,6 +11,7 @@ pub mod prs;
 pub mod settings;
 pub mod tasks;
 pub mod terminal;
+pub mod usage;
 
 use rune::{Cx, El};
 

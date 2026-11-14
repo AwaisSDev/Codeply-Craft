@@ -131,9 +131,7 @@ fn home(s: &App, t: &Theme) -> El {
         .child(row().center().pb(16.0).child(crate::logo::mark(44.0)))
         .child(row().center().pb(28.0).child(text("What should we build?").font(ui(28.0, 500.0)).color(t.text)))
         .child(suggestions)
-        .child(composer(s, t, EditKey::ChatHome, Target::New, "Ask Codeply anything. @ to use plugins", true, false))
-        .child(row().center().pt(12.0)
-            .child(text(format!("Runs on {}", s.data.extra.engine)).font(ui(12.5, 400.0)).color(t.faint)));
+        .child(composer(s, t, EditKey::ChatHome, Target::New, "Ask Codeply anything. @ to use plugins", true, false));
     col().w_full().h_full().center().px(24.0).py(40.0).scroll(ScrollSpec { stick_bottom: false }).child(column)
 }
 
@@ -155,7 +153,6 @@ fn open(s: &App, t: &Theme, chat: &str) -> El {
         .child(pane_toggle(s, t, "globe", "Browser", "pane-browser", Pane::Browser, s.panes.browser))
         .child(pane_toggle(s, t, "list", "Background tasks", "pane-tasks", Pane::Tasks, s.panes.tasks))
         .child(pane_toggle(s, t, "terminal", "Terminal", "pane-terminal", Pane::Terminal, s.panes.terminal))
-        .child(ibtn(t, "external", "Share").key("chat-share"))
         .child(more);
     let thread = col().w_full().h_full().min_h(0.0).child(crate::thread::with_composer(
         s, t, chat, "Wisp", EditKey::ChatThread, Target::Chat(String::new()), "Ask for follow-up changes", 780.0,

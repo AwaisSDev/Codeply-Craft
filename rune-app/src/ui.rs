@@ -13,9 +13,14 @@ pub const ENTER: Spring = Spring::new(0.28, 0.0);
 /// List stagger, inside the 30 to 40 ms the motion rules ask for.
 pub const STAGGER: f32 = 0.035;
 
-/// `.fade`: views and rows rise 6 pt and fade in, on the ease-out spring.
+/// `.fade`: views and rows rise 6 pt and fade in, on the ease-out spring. On the way out they're
+/// gone the frame they leave: a view never fades out over the one replacing it (that cross-fade
+/// drew the window twice a frame on the CPU renderer, and read as lag).
 pub fn fade_in() -> Transition {
-    Transition::offset(0.0, 6.0).combined(Transition::opacity())
+    let mut t = Transition::offset(0.0, 6.0).combined(Transition::opacity());
+    t.removal = rune::Effect::opacity(0.0);
+    t.springs = rune::SpringPair::new(ENTER, Spring::NONE);
+    t
 }
 
 /// A row entering a list, `i` rows down: staggered so the list cascades top to bottom.
@@ -220,7 +225,10 @@ pub fn me(s: &App, t: &Theme) -> El {
         .child(col().grow(1.0)
             .child(text(s.data.user.clone()).font(ui(13.5, 400.0)).color(t.text))
             .child(text(s.data.plan.clone()).font(ui(12.0, 400.0)).color(t.faint)))
-        .child(ibtn(t, "oai-settings", "Settings").key("me-settings").on_press(|s: &mut App| s.open_settings(crate::app::SettingsPage::General)))
+        // Your usage (Settings has its own place in the rail).
+        .child(ibtn(t, "chart", "Usage").key("me-usage")
+            .fill(if s.usage_open { t.active } else { Color::TRANSPARENT })
+            .on_press(|s: &mut App| s.toggle_usage()))
 }
 
 /// A view's heading: `.head h1` and its `.sub`.

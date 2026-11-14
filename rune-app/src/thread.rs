@@ -68,11 +68,11 @@ pub fn transcript(s: &App, t: &Theme, chat: &str, who: &str, width: f32) -> El {
         n += 1;
         i += 1;
     }
-    // Thinking: the reply hasn't started yet.
+    // Thinking: the reply hasn't started yet. As the Electron app shows it: a shimmering word
+    // that changes every few seconds, three dots, and the seconds so far.
     if running && !matches!(items.last(), Some(ThreadItem::Them(_))) {
-        body = body.child(row().gap(10.0).my(8.0).center_y()
-            .child(crate::bot::wisp(22.0))
-            .child(crate::ui::wave(&format!("{who} is thinking"), ui(14.0, 400.0), t.text)));
+        let _ = who;
+        body = body.child(thinking(s, t, chat));
     }
     col().key(format!("thread/{chat}")).w_full().h_full().items_center().scroll(ScrollSpec { stick_bottom: true }).child(body)
 }
@@ -132,4 +132,25 @@ pub fn with_composer(s: &App, t: &Theme, chat: &str, who: &str, key: EditKey, ta
     el().w_full().h_full()
         .child(transcript(s, t, chat, who, width))
         .child(dock)
+}
+
+/// The words the thinking line cycles through, as the Electron app's (app.js THINK_WORDS).
+pub const THINK_WORDS: &[&str] = &["Thinking", "Pondering", "Noodling", "Mulling it over", "Connecting the dots", "Brewing an answer", "Untangling it", "Almost there"];
+/// How long each word shows (app.js THINK_EVERY_MS).
+pub const THINK_EVERY: f64 = 2.3;
+
+/// "Noodling ··· 4s": the line under a message while its reply hasn't started.
+fn thinking(s: &App, t: &Theme, chat: &str) -> El {
+    let since = s.think_started.get(chat).copied().unwrap_or(s.think_now);
+    let elapsed = (s.think_now - since).max(0.0);
+    let turn = if s.reduced.get() { 0 } else { (elapsed / THINK_EVERY) as usize };
+    let word = THINK_WORDS[turn % THINK_WORDS.len()];
+    let dot = |i: usize| el().size(4.0, 4.0).radius(2.0).fill(t.dim)
+        .looping(rune::LoopSpec::opacity(1.0, i as f64 * 0.16, 0.2, 1.0));
+    row().key(format!("thinking/{chat}")).gap(8.0).my(8.0).center_y().transition(crate::ui::fade_in()).motion(crate::ui::ENTER)
+        // A new key per word, so each word fades in as it arrives.
+        .child(el().key(format!("think-word/{turn}")).transition(crate::ui::fade_in()).motion(crate::ui::ENTER)
+            .child(crate::ui::wave(word, ui(14.0, 450.0), t.text)))
+        .child(row().gap(3.0).center_y().child(dot(0)).child(dot(1)).child(dot(2)))
+        .child(text(format!("{}s", elapsed as u64)).font(ui(12.5, 400.0)).color(t.faint))
 }

@@ -270,6 +270,7 @@ pub fn extra() -> Extra {
         ],
         publish: None,
         signed_in: true,
+        usage: None,
         email: s("sam@example.com"),
         sign_in: None,
         memories: vec![
@@ -347,6 +348,10 @@ impl Store for MockStore {
         echo(snap, to, text, "On it. I'll post here when it's done.");
         Ok(())
     }
+    fn load_usage(&mut self, snap: &mut Snapshot) {
+        snap.extra.usage = Some(sample_usage());
+    }
+
     fn take_focus(&mut self) -> Option<String> {
         self.focus.take()
     }
@@ -422,4 +427,32 @@ mod tests {
         MockStore::default().send(&Target::Agent("research".into()), "Book it for 7pm", &mut snap).ok();
         assert!(matches!(snap.session("research").iter().rev().nth(1), Some(Block::Bubble(t)) if t == "Book it for 7pm"));
     }
+}
+
+/// A season of sample use for the usage sheet: weekdays busier than weekends, a quiet spell in
+/// the summer, and three models. Deterministic, so renders don't change.
+pub fn sample_usage() -> Usage {
+    let today = crate::views::usage::day_number("2026-11-14").unwrap_or(0);
+    let mut days = Vec::new();
+    let (mut tokens, mut calls) = (0, 0);
+    for back in 0..230i64 {
+        let n = today - back;
+        let weekday = (n + 4).rem_euclid(7);
+        let wave = ((back as f64) / 9.0).sin().abs();
+        if (95..120).contains(&back) || (weekday == 0 && back % 3 != 0) {
+            continue;
+        }
+        let base = if weekday == 6 { 40_000.0 } else { 180_000.0 };
+        let t = (base * (0.35 + wave) + (back % 7) as f64 * 9_000.0) as u64;
+        let c = t / 2_600 + 3;
+        let models = vec![
+            ("haze-2".to_owned(), t * 6 / 10, c * 6 / 10),
+            ("openai/gpt-oss-120b".to_owned(), t * 3 / 10, c * 3 / 10),
+            ("qwen3-coder".to_owned(), t / 10, c / 10),
+        ];
+        tokens += t;
+        calls += c;
+        days.push(UsageDay { date: crate::views::usage::date_of(n), tokens: t, calls: c, models });
+    }
+    Usage { error: String::new(), tokens: tokens + 2_400_000, calls, favorite: "Haze 2".into(), today: "2026-11-14".into(), days }
 }

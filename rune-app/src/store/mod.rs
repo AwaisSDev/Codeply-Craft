@@ -49,6 +49,13 @@ pub trait Store {
     fn take_focus(&mut self) -> Option<String> {
         None
     }
+    /// Fetches your token use into `extra.usage` (the usage sheet).
+    fn load_usage(&mut self, _snap: &mut Snapshot) {}
+    /// Chats renamed since the last call, as (old title, new title): the engine titles a new
+    /// chat from its first message, so the app follows a chat it has open.
+    fn take_renames(&mut self) -> Vec<(String, String)> {
+        Vec::new()
+    }
     /// Runs a shell command in the project folder; its output streams into `extra.terminal`.
     fn run_command(&mut self, _cmd: &str, _snap: &mut Snapshot) {}
     /// Stops a background task (an agent's run or a command), by id.

@@ -24,6 +24,7 @@ const SCRIPT: &str = include_str!("../sidecar/engine.mjs");
 /// which loads every `ext-*.mjs` it finds there. Each area of the app adds its own line.
 const EXTENSIONS: &[(&str, &str)] = &[
     ("ext-hello.mjs", include_str!("../sidecar/ext-hello.mjs")),
+    ("ext-usage.mjs", include_str!("../sidecar/ext-usage.mjs")),
 ];
 
 /// The engine a launch found.

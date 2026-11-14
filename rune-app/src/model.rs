@@ -361,6 +361,29 @@ pub struct CatalogApp {
 
 /// The part of a Snapshot the Codex-style views add. Kept in its own struct so the original
 /// fields (and the code that fills them) stay as they were.
+/// Your token use, as the usage sheet shows it (the Electron app's Usage page).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Usage {
+    /// Why there's nothing to show ("Sign in to see your usage."), or empty.
+    pub error: String,
+    pub tokens: u64,
+    pub calls: u64,
+    /// The model you've used most.
+    pub favorite: String,
+    /// Today, "YYYY-MM-DD" in your time zone.
+    pub today: String,
+    pub days: Vec<UsageDay>,
+}
+
+/// One day of use: its date ("YYYY-MM-DD"), tokens and calls, and both per model.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct UsageDay {
+    pub date: String,
+    pub tokens: u64,
+    pub calls: u64,
+    pub models: Vec<(String, u64, u64)>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Extra {
     /// Every chat, newest first.
@@ -387,6 +410,8 @@ pub struct Extra {
     pub publish: Option<Publish>,
     /// Whether you're signed in to Codeply (the engine's account).
     pub signed_in: bool,
+    /// Your token use, once asked for (the usage sheet); None while it loads.
+    pub usage: Option<Usage>,
     /// The account's email, when signed in.
     pub email: String,
     /// Where an email sign-in is: None, "sent" (a code went to the email), "error: ...".

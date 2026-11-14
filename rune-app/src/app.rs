@@ -258,6 +258,16 @@ pub struct App {
     pub panes: Panes,
     /// Whether the system asks for reduced motion, as the view last saw it.
     pub reduced: std::cell::Cell<bool>,
+    /// Chats waiting for their reply's first words, and when each started waiting: the thinking
+    /// line's word and seconds follow `think_now` (the last poll's clock).
+    pub think_started: std::collections::HashMap<String, f64>,
+    pub think_now: f64,
+    /// Whether the usage sheet is open (the button beside you at the sidebar's foot).
+    pub usage_open: bool,
+    /// The usage sheet's grouping (weekly or daily) and the week ("w12") or day ("d2026-10-11")
+    /// picked for its tokens per model.
+    pub usage_daily: bool,
+    pub usage_pick: Option<String>,
     /// Whether the first poll has run (the window's launch-time setup).
     launched: bool,
     /// The code editor: which file its text was loaded from, the text the last completion was
@@ -302,6 +312,11 @@ impl App {
             browser,
             panes: Panes::default(),
             reduced: std::cell::Cell::new(false),
+            think_started: std::collections::HashMap::new(),
+            think_now: 0.0,
+            usage_open: false,
+            usage_daily: false,
+            usage_pick: None,
             launched: false,
             code_loaded: None,
             code_asked: String::new(),
@@ -669,6 +684,15 @@ impl App {
         }
     }
 
+    /// Opens the usage sheet (fetching your use afresh), or closes it.
+    pub fn toggle_usage(&mut self) {
+        self.usage_open = !self.usage_open;
+        self.usage_pick = None;
+        if self.usage_open {
+            self.store.load_usage(&mut self.data);
+        }
+    }
+
     // ---------- account, apps, memory ----------
 
     pub fn send_code(&mut self) {
@@ -744,6 +768,35 @@ impl App {
         }
         // An app's logo landed: its tile swaps its letter for the logo.
         changed |= crate::favicon::take_landed();
+        // A chat the engine renamed (a new chat takes its first message as its title) stays open.
+        for (old, new) in self.store.take_renames() {
+            if self.chat.as_deref() == Some(old.as_str()) {
+                self.chat = Some(new.clone());
+            }
+            if let Some(t0) = self.think_started.remove(&old) {
+                self.think_started.insert(new, t0);
+            }
+            changed = true;
+        }
+        // Thinking lines: each chat waiting on its reply keeps the time it started; while any
+        // waits, the view rebuilds each second (its counter) and so picks up each new word.
+        let waiting: Vec<String> = self.data.threads.iter()
+            .filter(|(c, items)| self.data.is_running(c) && !matches!(items.last(), Some(crate::model::ThreadItem::Them(_))))
+            .map(|(c, _)| c.clone())
+            .collect();
+        let before = self.think_started.len();
+        self.think_started.retain(|c, _| waiting.contains(c));
+        for c in waiting {
+            self.think_started.entry(c).or_insert(now);
+        }
+        changed |= before != self.think_started.len();
+        if !self.think_started.is_empty() {
+            if now.floor() != self.think_now.floor() {
+                changed = true;
+            }
+            tx.wake_after(std::time::Duration::from_secs_f64(1.0 - now.fract().min(0.99)));
+        }
+        self.think_now = now;
         // A chat the store made for you (a new chat from "What should we build?") opens itself.
         if let Some(title) = self.store.take_focus() {
             if self.view == View::Chat && self.chat.is_none() {

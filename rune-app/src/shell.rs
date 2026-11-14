@@ -36,6 +36,7 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
         .child(titlebar(s, &t, cx))
         .child(body)
         .children(appearance)
+        .children(views::usage::sheet(s, &t))
         .children(menus(s, &t))
 }
 
@@ -79,7 +80,7 @@ fn menus(s: &App, t: &Theme) -> Option<El> {
     views::menu(s, t, id)
 }
 
-fn titlebar(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
+fn titlebar(_s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
     let insets = cx.chrome_insets();
     // On Windows Rune draws the real caption buttons in `insets.trailing`; macOS keeps its traffic
     // lights and Linux its native frame. Headless renders have neither, so they get Windows-style
@@ -101,12 +102,7 @@ fn titlebar(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
             .child(win("Maximize", el().size(10.0, 10.0).border(1.0, t.dim), false, |_, tx| tx.toggle_maximized()))
             .child(win("Close", crate::icons::ico_s("close", 14.0, t.dim), true, |_, tx| tx.close_window()))
     });
-    // The engine's state, as a dot: green when chats run on DSH, grey on sample data.
-    let engine = row().gap(6.0).px(8.0).h(26.0).radius(7.0).center_y().no_window_drag().help(s.data.source.clone())
-        .child(el().size(7.0, 7.0).radius(3.5).fill(if s.data.extra.engine_ok { t.green } else { t.faint }))
-        .child(text(s.data.extra.engine.clone()).font(ui(12.0, 500.0)).color(t.faint));
     let right = row().w(300.0).gap(4.0).center_y().justify_end().pr(insets.trailing)
-        .child(engine)
         .child(ibtn(t, "bell", "Notifications").no_window_drag().mr(if own_caption { 4.0 } else { 8.0 }))
         .children(caption);
     row().key("titlebar").w_full().h(TITLEBAR).center_y().gap(4.0).fill(t.rail).border_sides([0.0, 0.0, 1.0, 0.0], t.border).window_drag()

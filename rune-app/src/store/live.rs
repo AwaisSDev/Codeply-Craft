@@ -31,6 +31,7 @@ enum Msg {
     /// A chat `send` made for a new conversation, by engine id: open it once it has a title.
     Created(String),
     Account(Value),
+    Usage(Value),
     Apps(Vec<CatalogApp>),
     Memories(Vec<Memory>),
     Files(Vec<String>),
@@ -158,6 +159,24 @@ fn task_from(t: &Value) -> Option<BgTask> {
     })
 }
 
+/// my_usage() as the engine passes it on: totals, and per day `{d, t, n, m: {model: [t, n]}}`.
+fn usage_from(v: &Value) -> crate::model::Usage {
+    let num = |x: &Value| x.as_u64().or_else(|| x.as_f64().map(|f| f.max(0.0) as u64)).or_else(|| x.as_str().and_then(|s| s.parse().ok())).unwrap_or(0);
+    let days = v["days"].as_array().map_or_else(Vec::new, |a| a.iter().filter_map(|d| {
+        let date = d["d"].as_str()?.to_owned();
+        let models = d["m"].as_object().map_or_else(Vec::new, |m| m.iter().map(|(k, tn)| (k.clone(), num(&tn[0]), num(&tn[1]))).collect());
+        Some(crate::model::UsageDay { date, tokens: num(&d["t"]), calls: num(&d["n"]), models })
+    }).collect());
+    crate::model::Usage {
+        error: v["error"].as_str().unwrap_or_default().to_owned(),
+        tokens: num(&v["tokens"]),
+        calls: num(&v["calls"]),
+        favorite: v["favorite"].as_str().unwrap_or_default().to_owned(),
+        today: v["today"].as_str().unwrap_or_default().to_owned(),
+        days,
+    }
+}
+
 impl LiveStore {
     /// Fetches the account, apps, memories and files (at launch, and after they change).
     fn refresh(&self, what: &'static str) {
@@ -265,6 +284,8 @@ pub struct LiveStore {
     open_url: Option<String>,
     /// The team, as the engine is told about it: (id, name, role).
     team: Vec<(String, String, String)>,
+    /// Chats renamed since the app last asked: (old title, new title).
+    renames: Vec<(String, String)>,
 }
 
 impl LiveStore {
@@ -274,8 +295,21 @@ impl LiveStore {
             conn: Conn { base: url.trim_end_matches('/').to_owned(), token: token.to_owned() },
             tx, rx, waker: None, sessions: Vec::new(), named: Default::default(), open: None, streaming: Default::default(),
             label: format!("codeply serve at {url}"), unread: Default::default(), queued: Default::default(), want_focus: None, focus: None,
-            open_url: None, team: Vec::new(),
+            open_url: None, team: Vec::new(), renames: Vec::new(),
         }
+    }
+
+    /// Notes a chat's new title: the app follows it, and so do the title-keyed bits here.
+    fn renamed(&mut self, old: &str, new: &str) {
+        if old == new {
+            return;
+        }
+        for t in [&mut self.focus, &mut self.open] {
+            if t.as_deref() == Some(old) {
+                *t = Some(new.to_owned());
+            }
+        }
+        self.renames.push((old.to_owned(), new.to_owned()));
     }
 
     /// Runs `work` on its own thread; its answer comes back through the channel.
@@ -315,8 +349,12 @@ impl LiveStore {
         }
         if let Some(m) = e.get("session").filter(|m| m.is_object()) {
             let s = session_from(&id, m);
+            let new_title = s.title.clone();
             match self.sessions.iter_mut().find(|x| x.id == id) {
-                Some(x) => *x = s,
+                Some(x) => {
+                    let old = std::mem::replace(x, s).title;
+                    self.renamed(&old, &new_title);
+                }
                 None => self.sessions.insert(0, s),
             }
             if self.want_focus.as_deref() == Some(id.as_str()) {
@@ -656,7 +694,20 @@ impl Store for LiveStore {
             changed = true;
             match msg {
                 Msg::Sessions(list) => {
+                    let moved: Vec<(String, String)> = list.iter()
+                        .filter_map(|n| self.sessions.iter().find(|o| o.id == n.id && o.title != n.title).map(|o| (o.title.clone(), n.title.clone())))
+                        .collect();
                     self.sessions = list;
+                    for (old, new) in moved {
+                        self.renamed(&old, &new);
+                    }
+                    // A new chat that showed up in the list rather than through an event.
+                    if let Some(id) = self.want_focus.clone()
+                        && let Some(title) = self.title_of(&id)
+                    {
+                        self.want_focus = None;
+                        self.focus = Some(title);
+                    }
                     snap.source = self.label.clone();
                     snap.extra.engine_ok = true;
                     if snap.extra.engine == "Starting" {
@@ -688,6 +739,7 @@ impl Store for LiveStore {
                         self.fold(&e, snap);
                     }
                 }
+                Msg::Usage(v) => snap.extra.usage = Some(usage_from(&v)),
                 Msg::Account(v) => {
                     snap.extra.signed_in = v["signedIn"].as_bool().unwrap_or(false);
                     snap.extra.email = v["email"].as_str().unwrap_or_default().to_owned();
@@ -750,6 +802,18 @@ impl Store for LiveStore {
             derive(snap, &self.sessions);
         }
         changed
+    }
+
+    fn load_usage(&mut self, snap: &mut Snapshot) {
+        snap.extra.usage = None;
+        self.spawn(|c| Some(match c.get("/usage") {
+            Ok(v) => Msg::Usage(v),
+            Err(e) => Msg::Usage(json!({ "error": format!("Couldn't load your usage: {e}") })),
+        }));
+    }
+
+    fn take_renames(&mut self) -> Vec<(String, String)> {
+        std::mem::take(&mut self.renames)
     }
 
     fn take_focus(&mut self) -> Option<String> {
@@ -1023,6 +1087,20 @@ mod tests {
         let e = json!({ "type": "approval_request", "requestId": "p_1", "title": "Run npm install", "detail": "npm install" });
         assert!(matches!(item_from_event(&e), Some(ThreadItem::Approval { id, title, answer: None, .. }) if id == "p_1" && title == "Run npm install"));
         assert_eq!(item_from_event(&json!({ "type": "run_finished" })), None);
+    }
+
+    #[test]
+    fn a_new_chat_stays_open_when_the_engine_renames_it() {
+        let mut store = LiveStore::new("http://127.0.0.1:1", "t");
+        let mut snap = Snapshot::default();
+        let meta = |title: &str| json!({ "sessionId": "c_1", "type": "session_updated", "session": { "id": "c_1", "title": title, "cwd": "/w" } });
+        store.fold(&meta("New chat"), &mut snap);
+        // The app asked for it to open, and its first message then becomes its title.
+        store.focus = Some("New chat".into());
+        store.fold(&meta("Fix the checkout crash"), &mut snap);
+        assert_eq!(store.take_focus().as_deref(), Some("Fix the checkout crash"));
+        assert_eq!(store.take_renames(), [("New chat".to_owned(), "Fix the checkout crash".to_owned())]);
+        assert!(store.take_renames().is_empty());
     }
 
     #[test]
