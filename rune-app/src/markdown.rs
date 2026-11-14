@@ -54,7 +54,7 @@ pub fn inline(src: &str, t: &Theme) -> Inline {
             if let Some(end) = find(i + 1, "`").filter(|&e| e > i + 1) {
                 let start = out.text.len();
                 out.text.push_str(&collect(i + 1, end));
-                out.spans.push(Span::new(start, out.text.len()).mono().bg(theme::hex("#2a2a2a"), 3.0).color(theme::hex("#e6e6e6")));
+                out.spans.push(Span::new(start, out.text.len()).mono().bg(t.code_bg, 3.0).color(t.code_ink));
                 i = end + 1;
                 continue;
             }
@@ -123,7 +123,7 @@ fn push_link(out: &mut Inline, label: &str, url: &str, t: &Theme) {
     out.text.push_str(label);
     let end = out.text.len();
     // A soft chip around the name, as the Electron app draws a link.
-    out.spans.push(Span::new(start, end).weight(500.0).color(t.text).bg(theme::hex("#2a2a2a"), 4.0));
+    out.spans.push(Span::new(start, end).weight(500.0).color(t.text).bg(t.code_bg, 4.0));
     out.links.push((start..end, url.to_owned()));
 }
 
@@ -246,14 +246,14 @@ pub fn render(src: &str, t: &Theme, streaming: bool) -> El {
 /// A fenced code block: the language, a copy button, and the code in monospace.
 pub fn code_block(t: &Theme, lang: &str, code: &str) -> El {
     let copy = code.to_owned();
-    col().w_full().radius(10.0).fill(theme::hex("#161616")).border(1.0, t.card_border).clip_rounded(10.0)
+    col().w_full().radius(10.0).fill(t.well).border(1.0, t.card_border).clip_rounded(10.0)
         .child(row().h(32.0).px(12.0).center_y().justify_between().border_sides([0.0, 0.0, 1.0, 0.0], t.card_border)
             .child(text(if lang.is_empty() { "code".to_owned() } else { lang.to_owned() }).font(ui(12.0, 500.0)).color(t.faint))
             .child(row().gap(5.0).px(6.0).h(24.0).radius(6.0).center_y().hover(t.hover).role("button").label("Copy code")
                 .child(crate::icons::ico_s("file", 14.0, t.faint))
                 .child(text("Copy").font(ui(12.0, 500.0)).color(t.faint))
                 .on_press_tx(move |_: &mut App, tx| tx.copy(copy.clone()))))
-        .child(el().w_full().padding(12.0).scroll_x().child(text(code.to_owned()).font(mono(12.5, 19.0)).color(theme::hex("#d4d4d4")).selectable(true)))
+        .child(el().w_full().padding(12.0).scroll_x().child(text(code.to_owned()).font(mono(12.5, 19.0)).color(t.code_ink).selectable(true)))
 }
 
 #[cfg(test)]

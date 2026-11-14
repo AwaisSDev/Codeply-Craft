@@ -24,7 +24,7 @@ pub fn page(s: &App, t: &Theme, _cx: &mut Cx<App>) -> El {
         .child(ico("arrow-left", t.dim))
         .child(text("Back to app").font(ui(14.0, 400.0)).color(t.text))
         .on_press(|s: &mut App| s.leave_settings());
-    let search = row().h(34.0).gap(8.0).px(10.0).radius(9.0).center_y().fill(theme::hex("#1b1b1b")).border(1.0, theme::hex("#2c2c2c"))
+    let search = row().h(34.0).gap(8.0).px(10.0).radius(9.0).center_y().fill(t.field).border(1.0, t.field_border)
         .child(ico_s("search", 16.0, t.faint))
         .child(text_input(s.edit(EditKey::SettingsSearch), ui(13.5, 400.0)).key("settings-search").single_line().grow(1.0).color(t.text)
             .placeholder("Search settings", t.faint).caret(t.accent, t.accent.alpha(0.3)).label("Search settings")
@@ -68,7 +68,7 @@ fn subtitle(page: SettingsPage) -> &'static str {
 // ---------- building blocks ----------
 
 /// A titled card; its rows are separated by 1 px lines.
-fn group(t: &Theme, title: &str, rows: Vec<El>) -> El {
+pub fn group(t: &Theme, title: &str, rows: Vec<El>) -> El {
     col().gap(8.0)
         .child(text(title.to_owned()).font(ui(13.0, 600.0)).color(t.dim).pl(4.0))
         .child(col().w_full().fill(t.card).border(1.0, t.card_border).radius(12.0)
@@ -76,7 +76,7 @@ fn group(t: &Theme, title: &str, rows: Vec<El>) -> El {
 }
 
 /// A row: label and description on the left, `control` on the right.
-fn item(t: &Theme, label: &str, desc: Option<&str>, control: El) -> El {
+pub fn item(t: &Theme, label: &str, desc: Option<&str>, control: El) -> El {
     row().w_full().min_h(56.0).px(16.0).py(12.0).gap(16.0).center_y()
         .child(col().grow(1.0).min_w(0.0).gap(2.0)
             .child(text(label.to_owned()).font(ui(14.0, 500.0)).color(t.text))
@@ -85,7 +85,7 @@ fn item(t: &Theme, label: &str, desc: Option<&str>, control: El) -> El {
 }
 
 /// A plain note under a group.
-fn note(t: &Theme, msg: &str) -> El {
+pub fn note(t: &Theme, msg: &str) -> El {
     text(msg.to_owned()).font(ui(12.5, 400.0)).color(t.faint).wrap().px(4.0)
 }
 
@@ -243,18 +243,12 @@ fn appearance(s: &App, t: &Theme) -> Vec<El> {
                 .child(text(a.role.clone()).font(ui(12.5, 400.0)).color(t.dim).wrap()))
             .child(right)
     }).collect::<Vec<_>>();
-    vec![
-        group(t, "Theme", vec![
-            row().key("set-theme/dark").w_full().min_h(56.0).px(16.0).py(12.0).gap(16.0).center_y().role("radio").checked(true).label("Dark")
-                .child(col().grow(1.0).gap(2.0).child(text("Dark").font(ui(14.0, 500.0)).color(t.text)))
-                .child(ico_s("check", 16.0, t.accent)),
-            row().key("set-theme/light").w_full().min_h(56.0).px(16.0).py(12.0).gap(16.0).center_y().role("radio").checked(false).label("Light")
-                .child(col().grow(1.0).gap(2.0).child(text("Light").font(ui(14.0, 500.0)).color(t.dim)))
-                .child(pill(t, "Coming soon", Pill::Gray)),
-        ]),
+    let mut page = crate::views::themes::groups(s, t);
+    page.extend(vec![
         group(t, "Your team", team),
         note(t, "Colour and shape picks are saved, and show wherever the helper appears."),
-    ]
+    ]);
+    page
 }
 
 fn configuration(s: &App, t: &Theme) -> Vec<El> {

@@ -43,10 +43,10 @@ pub fn rich_text(src: &str, size: f32, color: Color, strong: Color) -> El {
 pub fn btn(t: &Theme, label: &str, icon: Option<&str>, kind: ButtonKind) -> El {
     let (fill, ink, border, weight) = match kind {
         ButtonKind::Plain => (t.control, t.text, t.control_border, 400.0),
-        ButtonKind::Blue => (t.accent, Color::WHITE, Color::TRANSPARENT, 500.0),
+        ButtonKind::Blue => (t.accent, t.on_accent, Color::TRANSPARENT, 500.0),
         ButtonKind::Green => (t.merge, Color::WHITE, Color::TRANSPARENT, 600.0),
     };
-    row().h(32.0).px(12.0).gap(7.0).radius(9.0).center_y().fill(fill).border(1.0, border).hover(theme::rgba(255, 255, 255, 0.06))
+    row().h(32.0).px(12.0).gap(7.0).radius(9.0).center_y().fill(fill).border(1.0, border).hover(t.press)
         .role("button").label(label.to_owned())
         .children(icon.map(|i| ico_s(i, 16.0, ink)))
         .child(text(label.to_owned()).font(ui(13.0, weight)).color(ink))
@@ -54,7 +54,7 @@ pub fn btn(t: &Theme, label: &str, icon: Option<&str>, kind: ButtonKind) -> El {
 
 /// `.btn.primary`: the light button ("New task").
 pub fn btn_primary(t: &Theme, label: &str, icon: &str) -> El {
-    row().h(32.0).px(12.0).gap(7.0).radius(9.0).center_y().fill(t.invert).hover(Color::WHITE).role("button").label(label.to_owned())
+    row().h(32.0).px(12.0).gap(7.0).radius(9.0).center_y().fill(t.invert).hover(if t.dark { Color::WHITE } else { Color::BLACK }).role("button").label(label.to_owned())
         .child(ico_s(icon, 16.0, t.invert_text))
         .child(text(label.to_owned()).font(ui(13.0, 600.0)).color(t.invert_text))
 }
@@ -111,8 +111,8 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
     } else {
         let empty = s.edit(key).text.trim().is_empty();
         el().key(format!("send-{}", key.name())).size(34.0, 34.0).radius(17.0).fill(if empty { t.control } else { t.accent }).center().role("button").label("Send")
-            .hover(theme::rgba(255, 255, 255, 0.12))
-            .child(ico_s("arrow-up", 16.0, if empty { t.faint } else { Color::WHITE }))
+            .hover(t.press)
+            .child(ico_s("arrow-up", 16.0, if empty { t.faint } else { t.on_accent }))
             .on_press(move |s: &mut App| s.submit(key, &send_target))
     };
     let approval = s.prefs.approval;
@@ -135,9 +135,9 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
     let notice = s.notice.clone().map(|n| row().px(16.0).pt(8.0).gap(6.0).center_y()
         .child(ico_s("help", 14.0, t.red)).child(text(n).font(ui(12.5, 400.0)).color(t.red).wrap().grow(1.0).min_w(0.0)));
     col().w_full().fill(t.composer).border(1.0, t.composer_border).radius(theme::R_LG)
-        .shadow(8.0, 24.0, theme::rgba(0, 0, 0, 0.4))
+        .shadow(8.0, 24.0, t.shadow)
         .children(project.then(|| {
-            row().gap(8.0).px(14.0).py(9.0).center_y().border_sides([0.0, 0.0, 1.0, 0.0], theme::hex("#2c2c2c"))
+            row().gap(8.0).px(14.0).py(9.0).center_y().border_sides([0.0, 0.0, 1.0, 0.0], t.menu_line)
                 .child(ico("oai-folder", t.text)).child(text(s.data.project.clone()).font(ui(13.0, 600.0)).color(t.text))
                 .child(ico_s("chevron-down", 14.0, t.faint))
         }))
@@ -160,7 +160,7 @@ pub fn menu_item(t: &Theme, key: String, icon: Option<&str>, label: &str, note: 
 /// A dropdown menu anchored to the element keyed `anchor`, closed by Escape or a click outside.
 pub fn menu(t: &Theme, anchor: &str, side: rune::Side, width: f32, items: Vec<El>) -> El {
     col().key(format!("menu/{anchor}")).w(width).padding(6.0).gap(2.0).radius(12.0)
-        .fill(theme::hex("#1f1f1f")).border(1.0, t.control_border).shadow(12.0, 32.0, theme::rgba(0, 0, 0, 0.45))
+        .fill(t.popup).border(1.0, t.control_border).shadow(12.0, 32.0, t.shadow)
         .anchored(anchor.to_owned(), side, rune::Align::Start, 6.0)
         .role("menu")
         .modal(true, |s: &mut App| s.menu = None)
@@ -169,13 +169,13 @@ pub fn menu(t: &Theme, anchor: &str, side: rune::Side, width: f32, items: Vec<El
 
 /// An on/off switch (Settings, loops, plugins).
 pub fn toggle(t: &Theme, key: String, on: bool, label: &str) -> El {
-    el().key(key).w(36.0).h(20.0).radius(10.0).fill(if on { t.accent } else { theme::hex("#3a3a3a") }).role("switch").checked(on).label(label.to_owned())
+    el().key(key).w(36.0).h(20.0).radius(10.0).fill(if on { t.accent } else { t.switch_off }).role("switch").checked(on).label(label.to_owned())
         .child(el().size(16.0, 16.0).radius(8.0).fill(Color::WHITE).absolute(if on { 18.0 } else { 2.0 }, 2.0).animate_layout().motion(ENTER))
 }
 
 /// A row of tabs as a segmented control ("Summary | Changes", Integrations' tabs).
 pub fn tabs<T: Copy + PartialEq + 'static>(t: &Theme, key: &str, items: &[(T, &str)], current: T, pick: fn(&mut App, T)) -> El {
-    row().key(key.to_owned()).gap(2.0).padding(3.0).radius(10.0).fill(theme::hex("#1a1a1a")).border(1.0, t.border).role("tablist")
+    row().key(key.to_owned()).gap(2.0).padding(3.0).radius(10.0).fill(t.tabs).border(1.0, t.border).role("tablist")
         .children(items.iter().map(|&(v, label)| {
             let on = v == current;
             row().key(format!("{key}/{label}")).h(28.0).px(12.0).radius(7.0).center_y().role("tab").checked(on).label(label.to_owned())

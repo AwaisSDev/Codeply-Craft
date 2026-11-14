@@ -6,7 +6,7 @@ use crate::app::{App, EditKey, Pane};
 use crate::bot;
 use crate::icons::ico_s;
 use crate::model::TermKind;
-use crate::theme::{self, Theme, mono, ui};
+use crate::theme::{Theme, mono, ui};
 use crate::ui::ibtn;
 
 pub fn pane(s: &App, t: &Theme) -> El {
@@ -45,7 +45,7 @@ pub fn pane(s: &App, t: &Theme) -> El {
         .child(text(prompt).font(mono(12.5, 19.0)).color(t.faint))
         .child(input);
 
-    col().key("terminal-pane").w_full().h_full().min_h(0.0).min_w(0.0).fill(theme::hex("#0c0c0c"))
+    col().key("terminal-pane").w_full().h_full().min_h(0.0).min_w(0.0).fill(t.pane)
         .child(header)
         .child(output)
         .child(prompt_row)

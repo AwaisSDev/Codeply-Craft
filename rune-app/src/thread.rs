@@ -112,7 +112,7 @@ pub fn approval(t: &Theme, id: &str, title: &str, detail: &str, answer: Option<&
     let mut c = col().w_full().my(10.0).padding(14.0).gap(10.0).radius(theme::R_MD).fill(t.card).border(1.0, if answer.is_none() { t.warn.alpha(0.5) } else { t.card_border })
         .child(row().gap(8.0).center_y().child(ico_s("shield-check", 16.0, t.warn)).child(text(title.to_owned()).font(ui(14.0, 600.0)).color(t.text).wrap().grow(1.0).min_w(0.0)))
         .children((!detail.is_empty()).then(|| {
-            el().w_full().padding(10.0).radius(8.0).fill(theme::hex("#161616")).child(text(detail.to_owned()).font(theme::mono(12.5, 18.0)).color(t.dim).wrap())
+            el().w_full().padding(10.0).radius(8.0).fill(t.well).child(text(detail.to_owned()).font(theme::mono(12.5, 18.0)).color(t.dim).wrap())
         }));
     c = match answer {
         None => c.child(row().gap(8.0)

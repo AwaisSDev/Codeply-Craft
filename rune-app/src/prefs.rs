@@ -55,6 +55,8 @@ pub struct Prefs {
     /// Personalization: what Wisp should know about you, and how it should answer.
     pub about_me: String,
     pub instructions: String,
+    /// Light or dark, colours, font and background (see `look.rs`).
+    pub look: crate::look::LookPrefs,
 }
 
 impl Default for Prefs {
@@ -77,6 +79,7 @@ impl Default for Prefs {
             reveal: true,
             about_me: String::new(),
             instructions: String::new(),
+            look: Default::default(),
         }
     }
 }
@@ -121,6 +124,7 @@ impl Prefs {
             reveal: flag("reveal", d.reveal),
             about_me: text("about_me", ""),
             instructions: text("instructions", ""),
+            look: crate::look::LookPrefs::from_json(&v["look"]),
         }
     }
 
@@ -139,6 +143,7 @@ impl Prefs {
             "reveal": self.reveal,
             "about_me": self.about_me,
             "instructions": self.instructions,
+            "look": self.look.to_json(),
         })
     }
 

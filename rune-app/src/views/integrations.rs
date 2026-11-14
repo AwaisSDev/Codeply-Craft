@@ -6,7 +6,7 @@ use rune::{El, ScrollSpec, col, el, row, text, text_input};
 use crate::app::{App, EditKey, IntegrationsTab};
 use crate::icons::{app_logo, ico, ico_s};
 use crate::model::ButtonKind;
-use crate::theme::{self, Theme, mono, tabular, ui};
+use crate::theme::{Theme, mono, tabular, ui};
 use crate::ui::{btn, btn_primary, enter, heading, me, sec, side_head, side_row, toggle};
 
 /// The tab's sidebar icon.
@@ -66,8 +66,8 @@ pub fn side(s: &App, t: &Theme) -> El {
 }
 
 /// A plugin's logo tile: its app's colour logo for `app-<slug>`, otherwise an interface icon.
-fn logo(icon: &str) -> El {
-    let (tile, border, ink) = (theme::hex("#232323"), theme::hex("#2e2e2e"), theme::hex("#e0e0e0"));
+fn logo(t: &Theme, icon: &str) -> El {
+    let (tile, border, ink) = (t.tile, t.tile_border, t.tile_ink);
     match icon.strip_prefix("app-") {
         Some(slug) => app_logo(slug, crate::icons::domain_of(slug).unwrap_or_default(), "", tile, border, ink),
         None => el().size(34.0, 34.0).radius(9.0).fill(tile).border(1.0, border).center().child(ico_s(icon, 18.0, ink)),
@@ -75,8 +75,8 @@ fn logo(icon: &str) -> El {
 }
 
 /// An app's colour logo tile, from its domain or icon URL.
-fn app_tile(a: &crate::model::CatalogApp) -> El {
-    let (tile, border, ink) = (theme::hex("#232323"), theme::hex("#2e2e2e"), theme::hex("#e0e0e0"));
+fn app_tile(t: &Theme, a: &crate::model::CatalogApp) -> El {
+    let (tile, border, ink) = (t.tile, t.tile_border, t.tile_ink);
     app_logo(&a.name, &a.domain, &a.icon, tile, border, ink)
 }
 
@@ -120,7 +120,7 @@ pub fn main(s: &App, t: &Theme) -> El {
     let head = row().gap(16.0).center_y()
         .child(heading(t, title, Some(sub.to_owned())).grow(1.0).min_w(0.0))
         .child(btn_primary(t, action, "plus").key("int-primary"));
-    let search = row().h(44.0).gap(10.0).px(14.0).radius(12.0).center_y().fill(theme::hex("#1b1b1b")).border(1.0, theme::hex("#2c2c2c"))
+    let search = row().h(44.0).gap(10.0).px(14.0).radius(12.0).center_y().fill(t.field).border(1.0, t.field_border)
         .child(ico("search", t.faint))
         .child(text_input(s.edit(EditKey::AppSearch), ui(14.5, 400.0)).key("app-search").single_line().grow(1.0).color(t.text)
             .placeholder(placeholder, t.faint).caret(t.accent, t.accent.alpha(0.3)).label(placeholder)
@@ -148,9 +148,9 @@ fn plugins(s: &App, t: &Theme, q: &str) -> El {
         } else {
             btn(t, "Install", None, ButtonKind::Blue)
         };
-        col().gap(12.0).padding(16.0).radius(12.0).fill(theme::hex("#181818")).border(1.0, t.border)
+        col().gap(12.0).padding(16.0).radius(12.0).fill(t.panel).border(1.0, t.border)
             .child(row().gap(12.0).center_y()
-                .child(logo(p.icon))
+                .child(logo(t, p.icon))
                 .child(col().grow(1.0).min_w(0.0)
                     .child(text(p.name.clone()).font(ui(14.0, 600.0)).color(t.text).truncate())
                     .child(text(format!("by {}", p.by)).font(ui(12.0, 400.0)).color(t.faint).truncate())))
@@ -168,7 +168,7 @@ fn apps(s: &App, t: &Theme, q: &str) -> El {
     let connected: Vec<El> = catalog.iter().filter(|a| a.connected && matches(q, &[a.name.as_str(), a.note.as_str(), a.category])).enumerate().map(|(i, a)| {
         enter(
             row().gap(12.0).px(12.0).py(10.0).radius(12.0).center_y().hover(t.hover)
-                .child(app_tile(a))
+                .child(app_tile(t, a))
                 .child(col().grow(1.0).min_w(0.0)
                     .child(text(a.name.clone()).font(ui(14.0, 600.0)).color(t.text))
                     .child(text(a.note.clone()).font(ui(12.5, 400.0)).color(t.faint).truncate()))
@@ -185,9 +185,9 @@ fn apps(s: &App, t: &Theme, q: &str) -> El {
             } else {
                 btn(t, "Connect", None, ButtonKind::Blue)
             };
-            col().gap(10.0).padding(12.0).radius(12.0).fill(theme::hex("#181818")).border(1.0, t.border)
+            col().gap(10.0).padding(12.0).radius(12.0).fill(t.panel).border(1.0, t.border)
                 .child(row().gap(10.0).center_y()
-                    .child(app_tile(a))
+                    .child(app_tile(t, a))
                     .child(col().grow(1.0).min_w(0.0)
                         .child(text(a.name.clone()).font(ui(13.5, 600.0)).color(t.text).truncate())
                         .child(text(a.category).font(ui(12.0, 400.0)).color(t.faint).truncate())))
@@ -206,7 +206,7 @@ fn mcp(s: &App, t: &Theme, q: &str) -> El {
     let rows: Vec<El> = s.data.extra.mcp.iter().filter(|m| matches(q, &[m.name.as_str(), m.note.as_str()])).enumerate().map(|(i, m)| {
         let name = m.name.clone();
         enter(
-            row().gap(12.0).px(14.0).py(12.0).radius(12.0).center_y().fill(theme::hex("#181818")).border(1.0, t.border)
+            row().gap(12.0).px(14.0).py(12.0).radius(12.0).center_y().fill(t.panel).border(1.0, t.border)
                 .child(ico("chip", t.dim))
                 .child(col().grow(1.0).min_w(0.0)
                     .child(text(m.name.clone()).font(ui(14.0, 600.0)).color(t.text))
@@ -225,7 +225,7 @@ fn mcp(s: &App, t: &Theme, q: &str) -> El {
 fn skills(s: &App, t: &Theme, q: &str) -> El {
     let rows: Vec<El> = s.data.extra.skills.iter().filter(|(n, d)| matches(q, &[n.as_str(), d.as_str()])).enumerate().map(|(i, (name, desc))| {
         enter(
-            row().gap(12.0).px(14.0).py(12.0).radius(12.0).center_y().fill(theme::hex("#181818")).border(1.0, t.border)
+            row().gap(12.0).px(14.0).py(12.0).radius(12.0).center_y().fill(t.panel).border(1.0, t.border)
                 .child(ico("book", t.dim))
                 .child(col().grow(1.0).min_w(0.0).gap(2.0)
                     .child(text(name.clone()).font(mono(13.0, 18.0)).color(t.text))
