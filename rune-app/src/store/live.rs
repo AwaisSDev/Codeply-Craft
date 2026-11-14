@@ -36,6 +36,8 @@ enum Msg {
     Team(Value),
     /// An inline edit's answer: (file, the instruction, `{ text }` or `{ error }`).
     Proposal(String, String, Value),
+    /// After a file change: the file list, the file to open (path, text), or why it failed.
+    FileOp(Vec<String>, Option<(String, String)>, String),
     /// Cloud & devices (`/ext/cloud`), or an error to show.
     Cloud(Value),
     /// Pull requests and this branch's changes (`/ext/prs`), and a PR's diff: (number, files).
@@ -903,6 +905,20 @@ impl Store for LiveStore {
                     }
                 }
                 Msg::Usage(v) => snap.extra.usage = Some(usage_from(&v)),
+                Msg::FileOp(files, open, error) => {
+                    if !error.is_empty() {
+                        snap.extra.team_note = Some(error);
+                    }
+                    if !files.is_empty() {
+                        snap.extra.code.files = files;
+                    }
+                    if let Some((path, text)) = open {
+                        snap.extra.code.open = Some(path);
+                        snap.extra.code.saved = text;
+                        snap.extra.code.review.clear();
+                        snap.extra.code.suggestion = None;
+                    }
+                }
                 Msg::Cloud(v) => {
                     if let Some(e) = v["error"].as_str().filter(|e| !e.is_empty()) {
                         snap.extra.team_note = Some(e.to_owned());
@@ -1029,6 +1045,32 @@ impl Store for LiveStore {
             derive(snap, &self.sessions);
         }
         changed
+    }
+
+    fn file_op(&mut self, op: crate::model::FileOp, snap: &mut Snapshot) {
+        use crate::model::FileOp;
+        let open = snap.extra.code.open.clone();
+        self.spawn(move |c| {
+            let list = |c: &Conn| c.get("/files").map(|v| v["files"].as_array().map_or_else(Vec::new, |a| a.iter().filter_map(|f| f.as_str().map(str::to_owned)).collect())).unwrap_or_default();
+            let (res, then_open) = match &op {
+                FileOp::New(p) => (c.put("/file", json!({ "path": p, "text": "" })), Some(p.clone())),
+                FileOp::Rename(from, to) => (c.post("/ext/code/rename", json!({ "from": from, "to": to })), (open.as_deref() == Some(from.as_str())).then(|| to.clone())),
+                FileOp::Delete(p) => (c.post("/ext/code/delete", json!({ "path": p })), None),
+            };
+            let error = match res {
+                Ok(v) => v["error"].as_str().unwrap_or_default().to_owned(),
+                Err(e) => e.to_string(),
+            };
+            let opened = if error.is_empty() {
+                then_open.map(|p| {
+                    let text = c.get(&format!("/file?path={}", encode(&p))).ok().and_then(|v| v["text"].as_str().map(str::to_owned)).unwrap_or_default();
+                    (p, text)
+                })
+            } else {
+                None
+            };
+            Some(Msg::FileOp(list(c), opened, error))
+        });
     }
 
     fn cloud_op(&mut self, op: crate::model::CloudOp, _snap: &mut Snapshot) {

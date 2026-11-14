@@ -190,6 +190,14 @@ pub struct Pr {
     pub local: bool,
 }
 
+/// A change to the project's files from the code view.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FileOp {
+    New(String),
+    Rename(String, String),
+    Delete(String),
+}
+
 /// A store operation for Settings > Cloud & devices (`sidecar/ext-cloud.mjs`).
 #[derive(Clone, Debug, PartialEq)]
 pub enum CloudOp {

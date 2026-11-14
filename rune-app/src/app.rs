@@ -192,14 +192,24 @@ pub enum EditKey {
     LoopWhen,
     /// The code view's inline edit: what to change (Ctrl K).
     CodeAsk,
+    /// New file / Rename: the path.
+    FilePath,
+}
+
+/// The code view's file dialogs.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CodeDialog {
+    New,
+    Rename(String),
+    Delete(String),
 }
 
 impl EditKey {
-    pub const ALL: [EditKey; 20] = [
+    pub const ALL: [EditKey; 21] = [
         EditKey::Search, EditKey::Mission, EditKey::AgentThread, EditKey::ChatHome, EditKey::ChatThread,
         EditKey::AppSearch, EditKey::Address, EditKey::SettingsSearch, EditKey::AboutMe, EditKey::Instructions,
         EditKey::Terminal, EditKey::Code, EditKey::SignInEmail, EditKey::SignInCode, EditKey::Memory,
-        EditKey::AgentName, EditKey::AgentFocus, EditKey::LoopTask, EditKey::LoopWhen, EditKey::CodeAsk,
+        EditKey::AgentName, EditKey::AgentFocus, EditKey::LoopTask, EditKey::LoopWhen, EditKey::CodeAsk, EditKey::FilePath,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -223,6 +233,7 @@ impl EditKey {
             EditKey::LoopTask => "loop-task",
             EditKey::LoopWhen => "loop-when",
             EditKey::CodeAsk => "code-ask",
+            EditKey::FilePath => "file-path",
         }
     }
 }
@@ -295,6 +306,11 @@ pub struct App {
     pub think_now: f64,
     /// The code view's "Edit with Wisp" bar (Ctrl K), while it's open.
     pub code_ask: bool,
+    /// The files open as tabs in the code view, and each one's unsaved text when it isn't showing.
+    pub code_tabs: Vec<String>,
+    pub code_drafts: std::collections::HashMap<String, String>,
+    /// New file, Rename or Delete, while its dialog is open.
+    pub code_dialog: Option<CodeDialog>,
     /// The New agent / New loop dialog, while it's open (team.rs).
     pub team_dialog: Option<crate::team::TeamDialog>,
     /// Whether the usage sheet is open (the button beside you at the sidebar's foot).
@@ -358,6 +374,9 @@ impl App {
             usage_open: false,
             team_dialog: None,
             code_ask: false,
+            code_tabs: Vec::new(),
+            code_drafts: std::collections::HashMap::new(),
+            code_dialog: None,
             usage_daily: false,
             usage_pick: None,
             launched: false,
@@ -653,7 +672,120 @@ impl App {
     /// Opens a project file in the editor.
     pub fn open_file(&mut self, path: &str) {
         self.view = View::Code;
+        // The tab you leave keeps its unsaved text, so coming back finds it.
+        if let Some(cur) = self.data.extra.code.open.clone()
+            && cur != path
+            && self.code_dirty()
+        {
+            let text = self.edit(EditKey::Code).text.clone();
+            self.code_drafts.insert(cur, text);
+        }
+        self.add_tab(path);
         self.store.open_file(path, &mut self.data);
+    }
+
+    fn add_tab(&mut self, path: &str) {
+        if !self.code_tabs.iter().any(|p| p == path) {
+            self.code_tabs.push(path.to_owned());
+        }
+    }
+
+    /// The tabs to show: the open files, the one showing among them.
+    pub fn tabs(&self) -> Vec<String> {
+        let mut tabs = self.code_tabs.clone();
+        if let Some(open) = &self.data.extra.code.open
+            && !tabs.contains(open)
+        {
+            tabs.push(open.clone());
+        }
+        tabs
+    }
+
+    /// Closes a tab (its unsaved text goes with it); the next one shows.
+    pub fn close_tab(&mut self, path: &str) {
+        let tabs = self.tabs();
+        let at = tabs.iter().position(|p| p == path).unwrap_or(0);
+        self.code_tabs.retain(|p| p != path);
+        self.code_drafts.remove(path);
+        if self.data.extra.code.open.as_deref() == Some(path) {
+            let rest: Vec<String> = tabs.into_iter().filter(|p| p != path).collect();
+            match rest.get(at.min(rest.len().saturating_sub(1))).cloned() {
+                Some(next) => {
+                    // Leaving a closed tab: nothing of it to keep.
+                    self.data.extra.code.saved = self.edit(EditKey::Code).text.clone();
+                    self.open_file(&next);
+                }
+                None => {
+                    self.data.extra.code.open = None;
+                    self.code_loaded = None;
+                    self.data.extra.code.proposal = None;
+                    self.edit_mut(EditKey::Code).clear();
+                }
+            }
+        }
+    }
+
+    /// Opens the New file, Rename or Delete dialog.
+    pub fn open_code_dialog(&mut self, d: CodeDialog) {
+        let start = match &d {
+            CodeDialog::Rename(p) => p.clone(),
+            CodeDialog::New => self.data.extra.code.open.as_deref().and_then(|p| p.rsplit_once('/')).map_or_else(String::new, |(dir, _)| format!("{dir}/")),
+            CodeDialog::Delete(_) => String::new(),
+        };
+        self.edit_mut(EditKey::FilePath).replace_text(start);
+        self.menu = None;
+        self.code_dialog = Some(d);
+    }
+
+    /// Does what the file dialog says.
+    pub fn submit_code_dialog(&mut self) {
+        let path = self.edit(EditKey::FilePath).text.trim().trim_start_matches('/').replace('\\', "/");
+        let op = match self.code_dialog.clone() {
+            Some(CodeDialog::New) if !path.is_empty() && !path.ends_with('/') => {
+                self.add_tab(&path);
+                crate::model::FileOp::New(path)
+            }
+            Some(CodeDialog::Rename(from)) if !path.is_empty() && path != from => {
+                for p in self.code_tabs.iter_mut().filter(|p| **p == from) {
+                    *p = path.clone();
+                }
+                if let Some(d) = self.code_drafts.remove(&from) {
+                    self.code_drafts.insert(path.clone(), d);
+                }
+                if self.data.extra.code.open.as_deref() == Some(from.as_str()) {
+                    // The file reopens under its new name; keep what's in the editor.
+                    let text = self.edit(EditKey::Code).text.clone();
+                    if self.code_dirty() {
+                        self.code_drafts.insert(path.clone(), text);
+                    }
+                }
+                crate::model::FileOp::Rename(from, path)
+            }
+            Some(CodeDialog::Delete(p)) => {
+                self.close_tab(&p);
+                crate::model::FileOp::Delete(p)
+            }
+            _ => return,
+        };
+        self.code_dialog = None;
+        self.store.file_op(op, &mut self.data);
+    }
+
+    /// "Apply" on code in a reply: Wisp works it into the open file, and the change shows as a
+    /// diff in the editor to accept or reject.
+    pub fn apply_snippet(&mut self, code: &str) {
+        let Some(file) = self.data.extra.code.open.clone() else {
+            self.notice = Some("Open the file to apply it to in Code first.".into());
+            self.view = View::Code;
+            return;
+        };
+        let instruction = format!("Apply this change from the chat to the file:\n```\n{}\n```", code.trim_end());
+        let before = self.edit(EditKey::Code).text.clone();
+        self.view = View::Code;
+        self.data.extra.code.suggestion = None;
+        self.data.extra.code.wisp = "thinking".into();
+        self.data.extra.code.proposal = Some(crate::model::Proposal { file: file.clone(), instruction: instruction.clone(), before: before.clone(), after: None, error: String::new() });
+        self.store.edit_code(&file, &before, &instruction, &mut self.data);
     }
 
     /// Saves the editor's text to its file.
@@ -775,7 +907,8 @@ impl App {
         // A file arrived (or changed on disk): put its text in the editor.
         if self.code_loaded.as_deref() != Some(path.as_str()) {
             self.code_loaded = Some(path.clone());
-            let text = self.data.extra.code.saved.clone();
+            // A tab you come back to shows what you'd typed in it.
+            let text = self.code_drafts.remove(&path).unwrap_or_else(|| self.data.extra.code.saved.clone());
             self.edit_mut(EditKey::Code).replace_text(text.clone());
             self.code_text_seen = text.clone();
             self.code_asked = text;

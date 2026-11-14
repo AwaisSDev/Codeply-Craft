@@ -3,6 +3,7 @@
 // reject it there; nothing is written to disk until you save.
 //
 //   POST /ext/code/edit { path, text, instruction }  ->  { text } | { error }
+//   POST /ext/code/rename { from, to }  /  POST /ext/code/delete { path }   (inside the project only)
 const MAX = 60000;
 const fenced = (s) => {
   const t = String(s || '');
@@ -10,7 +11,42 @@ const fenced = (s) => {
   return m ? m[1] : t.replace(/^```[\w.+-]*\r?\n?/, '').replace(/\r?\n?```\s*$/, '');
 };
 
+import fs from 'node:fs';
+import path from 'node:path';
+
+/** `rel` resolved inside `root` (the project), or null when it would leave it. */
+function inside(root, rel) {
+  if (typeof rel !== 'string' || !rel.trim() || rel.includes('\0')) return null;
+  const abs = path.resolve(root, rel);
+  const r = path.relative(root, abs);
+  return r && !r.startsWith('..') && !path.isAbsolute(r) ? abs : null;
+}
+
+async function fileOp(ctx, url, p, b) {
+  const q = url.searchParams.get('cwd');
+  const root = q && fs.existsSync(q) ? path.resolve(q) : ctx.DEFAULT_CWD;
+  if (p === '/ext/code/rename') {
+    const from = inside(root, b.from); const to = inside(root, b.to);
+    if (!from || !to) return { error: 'That path is outside the project.' };
+    if (!fs.existsSync(from)) return { error: `${b.from} isn't there any more.` };
+    if (fs.existsSync(to)) return { error: `${b.to} already exists.` };
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.renameSync(from, to);
+    return { ok: true };
+  }
+  const abs = inside(root, b.path);
+  if (!abs) return { error: 'That path is outside the project.' };
+  if (!fs.existsSync(abs)) return { ok: true };
+  fs.rmSync(abs, { recursive: true, force: true });
+  return { ok: true };
+}
+
 export async function route(ctx, req, res, url, p, reply) {
+  if (req.method === 'POST' && (p === '/ext/code/rename' || p === '/ext/code/delete')) {
+    const b = await ctx.readJson(req).catch(() => ({}));
+    try { reply(200, await fileOp(ctx, url, p, b)); } catch (e) { reply(200, { error: e.message }); }
+    return true;
+  }
   if (req.method !== 'POST' || p !== '/ext/code/edit') return false;
   const b = await ctx.readJson(req).catch(() => ({}));
   const text = String(b.text || '');

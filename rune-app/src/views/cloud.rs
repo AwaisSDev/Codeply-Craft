@@ -16,11 +16,9 @@ fn dim(t: &Theme, v: impl Into<String>) -> El {
     text(v.into()).font(ui(13.5, 400.0)).color(t.dim)
 }
 
-/// A dot and a word: green when it's on, grey when it isn't.
+/// Where something stands, in a word (brighter when it's on).
 fn state(t: &Theme, on: bool, word: &str) -> El {
-    row().gap(7.0).center_y()
-        .child(rune::el().size(7.0, 7.0).radius(3.5).fill(if on { t.green } else { t.faint }))
-        .child(dim(t, word))
+    text(word.to_owned()).font(ui(13.5, if on { 500.0 } else { 400.0 })).color(if on { t.text } else { t.faint })
 }
 
 pub fn groups(s: &App, t: &Theme) -> Vec<El> {

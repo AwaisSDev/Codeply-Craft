@@ -61,6 +61,8 @@ pub trait Store {
     fn take_focus(&mut self) -> Option<String> {
         None
     }
+    /// Makes, renames or deletes a file in the project; the file list (and an opened file) follow.
+    fn file_op(&mut self, _op: crate::model::FileOp, _snap: &mut Snapshot) {}
     /// Loads or changes Cloud & devices (sync, the phone, Craft Cloud per project).
     fn cloud_op(&mut self, _op: crate::model::CloudOp, _snap: &mut Snapshot) {}
     /// Lists, diffs, merges or opens pull requests (`sidecar/ext-prs.mjs`).

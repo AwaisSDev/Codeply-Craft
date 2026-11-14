@@ -400,6 +400,35 @@ impl Store for MockStore {
         echo(snap, to, text, "On it. I'll post here when it's done.");
         Ok(())
     }
+    fn file_op(&mut self, op: FileOp, snap: &mut Snapshot) {
+        let files = &mut snap.extra.code.files;
+        match op {
+            FileOp::New(p) => {
+                if !files.contains(&p) {
+                    files.push(p.clone());
+                    files.sort();
+                }
+                snap.extra.code.open = Some(p);
+                snap.extra.code.saved = String::new();
+            }
+            FileOp::Rename(from, to) => {
+                if let Some(f) = files.iter_mut().find(|f| **f == from) {
+                    *f = to.clone();
+                }
+                files.sort();
+                if snap.extra.code.open.as_deref() == Some(from.as_str()) {
+                    snap.extra.code.open = Some(to);
+                }
+            }
+            FileOp::Delete(p) => {
+                files.retain(|f| *f != p);
+                if snap.extra.code.open.as_deref() == Some(p.as_str()) {
+                    snap.extra.code.open = None;
+                }
+            }
+        }
+    }
+
     fn cloud_op(&mut self, op: CloudOp, snap: &mut Snapshot) {
         if snap.extra.cloud.is_null() {
             snap.extra.cloud = serde_json::json!({

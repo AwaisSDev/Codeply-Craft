@@ -36,7 +36,6 @@ pub fn side(s: &App, t: &Theme) -> El {
 
     if let Some(w) = s.data.agent("wisp") {
         let line = s.data.chat(&w.name).map(|c| c.preview.clone()).filter(|p| !p.is_empty()).unwrap_or_else(|| w.status.clone());
-        let running = s.data.is_running(&w.name);
         list = list.child(
             side_row(t, s.agent.as_deref() == Some("wisp"))
                 .key("agent-row/wisp")
@@ -44,7 +43,6 @@ pub fn side(s: &App, t: &Theme) -> El {
                 .label(w.name.clone())
                 .child(bot::agent(&awake(w), 32.0))
                 .child(name_and_line(t, &w.name, Some(&line), 500.0))
-                .children(running.then(|| el().size(6.0, 6.0).radius(3.0).fill(t.green)))
                 .on_press(|s: &mut App| s.open_agent(Some("wisp"))),
         );
     }
@@ -54,7 +52,6 @@ pub fn side(s: &App, t: &Theme) -> El {
     for (i, a) in helpers.enumerate() {
         let (id, more_id) = (a.id.clone(), a.id.clone());
         let open = s.appearance.as_deref() == Some(a.id.as_str());
-        let running = s.data.is_running(&a.name);
         let more = el()
             .key(format!("more/{}", a.id))
             .size(26.0, 26.0)
@@ -75,7 +72,6 @@ pub fn side(s: &App, t: &Theme) -> El {
             .label(a.name.clone())
             .child(bot::agent(&awake(a), 32.0))
             .child(name_and_line(t, &a.name, Some(&a.status), 400.0))
-            .children(running.then(|| el().size(6.0, 6.0).radius(3.0).fill(t.green)))
             .child(more)
             .on_press(move |s: &mut App| s.open_agent(Some(&id)));
         list = list.child(enter(r, i));
@@ -222,20 +218,12 @@ fn label(t: &Theme, title: &str) -> El {
 }
 
 fn panel(s: &App, t: &Theme, a: &Agent) -> El {
-    let chip = match a.state {
-        AgentState::Working => t.green,
-        AgentState::Thinking => t.accent,
-        AgentState::Waiting => t.warn,
-        _ => t.faint,
-    };
     let computer = card(t).w_full().px(14.0).py(12.0).child(
         row().gap(12.0).center_y()
             .child(el().size(44.0, 44.0).radius(11.0).fill(t.hover).center().child(bot::agent(a, 34.0)))
             .child(col().grow(1.0).min_w(0.0).gap(2.0)
                 .child(text(format!("{}'s computer", a.name)).font(ui(13.5, 500.0)).color(t.text).truncate())
-                .child(row().gap(6.0).center_y()
-                    .child(el().size(8.0, 8.0).radius(2.0).fill(chip))
-                    .child(text(state_word(a.state).to_owned()).font(ui(12.5, 400.0)).color(t.dim)))),
+                .child(text(state_word(a.state).to_owned()).font(ui(12.5, 400.0)).color(t.dim))),
     );
 
     // Sessions: the agent's own chat, then up to three others in the same project.
@@ -268,14 +256,11 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
     }
     for l in mine {
         let (agent, name) = (a.id.clone(), l.name.clone());
-        let dots = row().gap(3.0).center_y().children(l.runs.iter().map(|&ok| el().size(6.0, 6.0).radius(3.0).fill(if ok { t.green } else { t.red })));
         loops = loops.child(
             row().w_full().px(8.0).py(8.0).gap(10.0).radius(8.0).center_y().hover(t.hover)
                 .child(col().grow(1.0).min_w(0.0).gap(4.0)
                     .child(text(l.name.clone()).font(ui(13.5, 400.0)).color(t.text).truncate())
-                    .child(row().gap(8.0).center_y()
-                        .child(dots)
-                        .child(text(l.last.clone()).font(ui(12.0, 400.0)).color(t.faint).truncate().min_w(0.0))))
+                    .child(text(l.last.clone()).font(ui(12.0, 400.0)).color(t.faint).truncate().min_w(0.0)))
                 .child({
                     let id = l.id.clone();
                     crate::ui::ibtn(t, "close", "Delete loop").key(format!("loop-delete/{}", l.id)).on_press(move |s: &mut App| s.cancel_loop(&id))
