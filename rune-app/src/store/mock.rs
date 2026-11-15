@@ -262,7 +262,7 @@ pub fn extra() -> Extra {
         ],
         engine: s("Sample data"),
         engine_ok: false,
-        version: s("4.0.0-beta.1"),
+        version: s(crate::update::VERSION),
         terminal: vec![
             TermLine { kind: TermKind::Agent, text: s("npm test") },
             TermLine { kind: TermKind::Out, text: s("PASS src/pricing/pricing.test.js") },

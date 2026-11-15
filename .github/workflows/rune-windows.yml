@@ -45,6 +45,21 @@ jobs:
           key: rune-windows-${{ hashFiles('rune-app/Cargo.lock', 'rune-app/rust-toolchain.toml') }}
           restore-keys: rune-windows-
 
+      # The version (4.0.<run>), the engine id (a hash of codeply-cli, craft-dsh and how DSH is
+      # packaged: when it changes, an update needs the installer) and the update feed's URL are
+      # baked into Codeply.exe (src/update.rs) and written to latest.json below.
+      - name: Version
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "rune-v4" ]; then TAG=rune-windows-latest; else TAG="${GITHUB_REF_NAME}-windows-latest"; fi
+          ENGINE_ID=$(git rev-parse HEAD:codeply-cli HEAD:craft-dsh HEAD:scripts/package-dsh.mjs | sha256sum | cut -c1-16)
+          {
+            echo "TAG=$TAG"
+            echo "CODEPLY_VERSION=4.0.${GITHUB_RUN_NUMBER}"
+            echo "CODEPLY_ENGINE_ID=$ENGINE_ID"
+            echo "CODEPLY_UPDATE_FEED=https://github.com/${GITHUB_REPOSITORY}/releases/download/$TAG/latest.json"
+          } >> "$GITHUB_ENV"
+          echo "4.0.${GITHUB_RUN_NUMBER}, engine $ENGINE_ID, tag $TAG"
+
       - name: Build
         working-directory: rune-app
         run: cargo build --release --features live
@@ -84,8 +99,7 @@ jobs:
       - name: Installer
         shell: pwsh
         run: |
-          $ver = (Select-String -Path rune-app/Cargo.toml -Pattern '^version = "(.*)"' | Select-Object -First 1).Matches[0].Groups[1].Value
-          $num = ($ver -split '-')[0]
+          $num = $env:CODEPLY_VERSION
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
           $icon = Get-ChildItem rune-app/target/release/build -Recurse -Filter codeply.ico -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -105,12 +119,36 @@ jobs:
           name: Codeply-Setup
           path: dist/Codeply-Setup.exe
 
+      # The update feed the app reads (src/update.rs): this version, its engine id, Codeply.exe on
+      # its own (a small update swaps just that) and the installer (a bigger one), with checksums,
+      # and the commit's message as the notes.
+      - name: Update feed
+        run: |
+          cp dist/Codeply-Rune/Codeply.exe dist/Codeply.exe
+          git log -1 --format=%B | grep -v -E '^(Co-Authored-By|Claude-Session):' > dist/notes.txt
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          EXE_SHA=$(sha256sum dist/Codeply.exe | cut -d' ' -f1)
+          SETUP_SHA=$(sha256sum dist/Codeply-Setup.exe | cut -d' ' -f1)
+          BASE="$BASE" EXE_SHA="$EXE_SHA" SETUP_SHA="$SETUP_SHA" node -e '
+            const fs = require("fs"); const e = process.env;
+            const feed = {
+              version: e.CODEPLY_VERSION, engine: e.CODEPLY_ENGINE_ID, commit: e.GITHUB_SHA,
+              published: new Date().toISOString(),
+              notes: fs.readFileSync("dist/notes.txt", "utf8").trim().slice(0, 4000),
+              exe: { url: `${e.BASE}/Codeply.exe`, sha256: e.EXE_SHA },
+              setup: { url: `${e.BASE}/Codeply-Setup.exe`, sha256: e.SETUP_SHA },
+            };
+            fs.writeFileSync("dist/latest.json", JSON.stringify(feed, null, 2));
+          '
+          cat dist/latest.json
+
       # rune-v4 keeps its old link (rune-windows-latest); every other branch gets its own,
-      # rune-v5 -> rune-v5-windows-latest.
+      # rune-v5 -> rune-v5-windows-latest. latest.json goes up last, so the app never reads a
+      # feed whose files aren't there yet.
       - name: Publish to the branch's latest release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ "${GITHUB_REF_NAME}" = "rune-v4" ]; then TAG=rune-windows-latest; else TAG="${GITHUB_REF_NAME}-windows-latest"; fi
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --target "${GITHUB_SHA}" --title "Codeply 4.0 beta on Rune, Windows (${GITHUB_REF_NAME})" --notes "Test build of the native Rune app from the ${GITHUB_REF_NAME} branch. Run Codeply-Setup.exe to install it, or unzip Codeply-Rune-windows-x64.zip and run Codeply.exe. See TRY-IT.txt inside."
-          gh release upload "$TAG" dist/Codeply-Rune-windows-x64.zip dist/Codeply-Setup.exe --clobber
+          gh release upload "$TAG" dist/Codeply-Rune-windows-x64.zip dist/Codeply-Setup.exe dist/Codeply.exe --clobber
+          gh release upload "$TAG" dist/latest.json --clobber

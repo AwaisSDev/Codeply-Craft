@@ -5,6 +5,10 @@
 fn main() {
     println!("cargo:rerun-if-changed=assets/codeply-app-icon.svg");
     println!("cargo:rerun-if-changed=build.rs");
+    // Baked into the exe (update.rs): CI sets them per run.
+    for var in ["CODEPLY_VERSION", "CODEPLY_ENGINE_ID", "CODEPLY_UPDATE_FEED"] {
+        println!("cargo:rerun-if-env-changed={var}");
+    }
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }

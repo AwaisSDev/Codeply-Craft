@@ -69,6 +69,8 @@ Name: "{autodesktop}\Codeply"; Filename: "{app}\Codeply.exe"; WorkingDir: "{app}
 
 [Run]
 Filename: "{app}\Codeply.exe"; Description: "{cm:LaunchProgram,Codeply}"; Flags: nowait postinstall skipifsilent
+; An update the app started (Codeply-Setup.exe /SILENT, update.rs): open Codeply again after.
+Filename: "{app}\Codeply.exe"; Flags: nowait; Check: WizardSilent
 
 [UninstallDelete]
 ; What the app wrote beside itself (the installed files go on their own; your data in

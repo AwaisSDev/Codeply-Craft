@@ -172,10 +172,14 @@ fn general(s: &App, t: &Theme) -> Vec<El> {
                 sw(t, "set-reveal", p.reveal, "Fade replies in as they stream", |s: &mut App| s.update_prefs(|p| p.reveal = !p.reveal))),
         ]),
         group(t, "Workspace", vec![
-            item(t, "Project folder", Some(&s.data.project),
-                btn(t, "Change", None, ButtonKind::Plain).key("set-change-project")),
+            item(t, "Project folder", Some(if s.data.extra.project_path.is_empty() { &s.data.project } else { &s.data.extra.project_path }),
+                btn(t, "Change", None, ButtonKind::Plain).key("set-change-project").on_press_tx(|s: &mut App, tx| s.open_project(tx))),
             item(t, "Engine", None, value(t, &s.data.source)),
-            item(t, "Version", None, value(t, &s.data.extra.version)),
+        ]),
+        group(t, "About", vec![
+            // The engine's own version, once it answers ("4.0.140 · engine 4.2.0").
+            item(t, "Version", (s.data.extra.version != crate::update::VERSION).then_some(s.data.extra.version.as_str()), value(t, &format!("Codeply {}", crate::update::VERSION))),
+            crate::views::update::status(s, t),
         ]),
     ]
 }

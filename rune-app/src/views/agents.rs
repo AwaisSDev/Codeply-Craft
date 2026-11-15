@@ -43,7 +43,7 @@ pub fn side(s: &App, t: &Theme) -> El {
                 .label(w.name.clone())
                 .child(bot::agent(&awake(w), 32.0))
                 .child(name_and_line(t, &w.name, Some(&line), 500.0))
-                .on_press(|s: &mut App| s.open_agent(Some("wisp"))),
+                .on_press_tx(|s: &mut App, tx| { tx.settle(); s.open_agent(Some("wisp")) }),
         );
     }
 
@@ -73,7 +73,7 @@ pub fn side(s: &App, t: &Theme) -> El {
             .child(bot::agent(&awake(a), 32.0))
             .child(name_and_line(t, &a.name, Some(&a.status), 400.0))
             .child(more)
-            .on_press(move |s: &mut App| s.open_agent(Some(&id)));
+            .on_press_tx(move |s: &mut App, tx| { tx.settle(); s.open_agent(Some(&id)) });
         list = list.child(enter(r, i));
     }
 
@@ -88,7 +88,7 @@ pub fn side(s: &App, t: &Theme) -> El {
                 .label(l.name.clone())
                 .child(ico("clock", t.dim))
                 .child(name_and_line(t, &l.name, Some(&who), 400.0))
-                .on_press(move |s: &mut App| s.open_agent(Some(&agent))),
+                .on_press_tx(move |s: &mut App, tx| { tx.settle(); s.open_agent(Some(&agent)) }),
         );
     }
 
@@ -185,7 +185,7 @@ fn task_row(s: &App, t: &Theme, section: &str, i: usize, task: &Task) -> El {
         .children(s.data.agent(&task.agent).map(|a| bot::agent(&awake(a), 28.0)))
         .child(middle)
         .child(buttons)
-        .on_press(move |s: &mut App| s.open_agent(Some(&agent)))
+        .on_press_tx(move |s: &mut App, tx| { tx.settle(); s.open_agent(Some(&agent)) })
 }
 
 // ---------- an agent ----------

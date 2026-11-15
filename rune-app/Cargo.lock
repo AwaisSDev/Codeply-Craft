@@ -595,6 +595,7 @@ dependencies = [
  "rune",
  "rune-kit",
  "serde_json",
+ "sha2",
  "ureq",
  "wgpu",
  "windows-sys 0.59.0",

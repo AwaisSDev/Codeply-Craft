@@ -40,7 +40,8 @@ fn chat_row(s: &App, t: &Theme, c: &ChatMeta) -> El {
         .child(name_and_line(t, &c.title, Some(&c.project), 400.0))
         .children(status)
         .child(more)
-        .on_press(move |s: &mut App| s.open_chat(&open_title))
+        // Opening a chat lands it whole: a reply that's still streaming doesn't replay its reveal.
+        .on_press_tx(move |s: &mut App, tx| { tx.settle(); s.open_chat(&open_title) })
 }
 
 pub fn side(s: &App, t: &Theme) -> El {

@@ -386,3 +386,17 @@ fn an_empty_pull_requests_page_says_what_to_do() {
     settle(&mut rt);
     assert!(rt.find("prs-create").is_some(), "a branch with nothing open can open a pull request");
 }
+
+#[test]
+fn a_bigger_update_shows_its_screen_and_later_puts_it_in_the_titlebar() {
+    let mut s = App::with_mock();
+    s.updater.show(crate::update::Phase::Offer(crate::update::Release { version: "4.0.140".into(), notes: "New engine".into(), setup_url: "https://x/Codeply-Setup.exe".into(), ..Default::default() }));
+    let mut rt = runtime(s);
+    settle(&mut rt);
+    assert!(rt.find("update-sheet").is_some() && rt.find("update-now").is_some(), "the update screen offers Update now");
+    click(&mut rt, "update-later");
+    assert!(rt.find("update-sheet").is_none(), "Later closes it");
+    assert!(rt.find("update-pill").is_some(), "and leaves a note in the titlebar");
+    click(&mut rt, "update-pill");
+    assert!(rt.find("update-sheet").is_some(), "which opens it again");
+}

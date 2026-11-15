@@ -28,6 +28,7 @@ mod team;
 mod theme;
 mod thread;
 mod ui;
+mod update;
 mod views;
 
 use rune::{App as RuneApp, AppSpec, Titlebar};
@@ -141,7 +142,22 @@ const SCENES: &[Scene] = &[
         s.attachments.insert(EditKey::ChatHome, vec!["C:\\Users\\sam\\Desktop\\brief.pdf".into(), "C:\\Users\\sam\\Pictures\\pricing-mock.png".into()]);
         s.edit_mut(EditKey::ChatHome).replace_text("Build the pricing page from these");
     }),
+    ("update-offer", |s| { s.new_chat(); s.updater.show(update::Phase::Offer(sample_release())); }),
+    ("update-downloading", |s| { s.new_chat(); s.updater.show(update::Phase::Fetching { version: "4.0.140".into(), done: 31_000_000, total: 74_000_000, setup: true }); }),
+    ("update-ready", |s| { s.new_chat(); s.updater.show(update::Phase::Ready(sample_release())); }),
+    ("settings-update", |s| { s.open_settings(SettingsPage::General); s.updater.show(update::Phase::Ready(sample_release())); }),
 ];
+
+/// A release for the update scenes.
+fn sample_release() -> update::Release {
+    update::Release {
+        version: "4.0.140".into(),
+        engine: "8f3a2c1d9e7b6a50".into(),
+        notes: "- Open any folder as your project, from Code or Pull requests\n- Pull requests says what's missing and fixes it: git, the GitHub CLI, signing in\n- New file works in folders that don't exist yet\n- A newer engine (codeply-cli 4.2)".into(),
+        setup_url: "https://example.invalid/Codeply-Setup.exe".into(),
+        ..Default::default()
+    }
+}
 
 /// The Pull requests page with nothing to list, as the engine would describe the project.
 fn prs_empty(s: &mut App, repo: model::RepoState) {
@@ -266,6 +282,9 @@ fn has_real_gpu() -> bool {
 
 fn main() {
     prefer_cpu_renderer();
+    if !rune::is_headless() {
+        update::clean_up();
+    }
     rune::prewarm_gpu();
     RuneApp::new(spec())
         .titlebar(Titlebar::new(shell::TITLEBAR))

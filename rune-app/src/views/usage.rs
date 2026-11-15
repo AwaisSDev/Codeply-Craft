@@ -187,7 +187,7 @@ fn content(s: &App, t: &Theme, u: &Usage) -> El {
                     let dim = pick.as_deref().is_some_and(|p| p != key);
                     cell.key(format!("usage-day/{key}"))
                         .fill(if level == 0 { t.hover } else { t.accent.alpha([0.0, 0.3, 0.5, 0.75, 1.0][level as usize]) })
-                        .opacity(if dim { 0.35 } else { 1.0 })
+                        .opacity(if dim { 0.28 } else { 1.0 })
                         .help(format!("{} tokens on {}", short(v), nice(n)))
                         .role("button").label(format!("{} tokens on {}", short(v), nice(n)))
                         .on_press(move |s: &mut App| s.usage_pick = if s.usage_pick.as_deref() == Some(key.as_str()) { None } else { Some(key.clone()) })
@@ -202,7 +202,7 @@ fn content(s: &App, t: &Theme, u: &Usage) -> El {
                 column = column.child(el().size(CELL, CELL).radius(2.0).fill(if 6 - r < lit { t.accent } else { t.hover }));
             }
             column = column.key(format!("usage-week/{i}")).radius(3.0)
-                .opacity(if dim { 0.35 } else { 1.0 })
+                .opacity(if dim { 0.28 } else { 1.0 })
                 .help(format!("{} tokens on week of {}", short(total), nice(start)))
                 .role("button").label(format!("{} tokens on week of {}", short(total), nice(start)))
                 .on_press(move |s: &mut App| s.usage_pick = if s.usage_pick.as_deref() == Some(key.as_str()) { None } else { Some(key.clone()) });

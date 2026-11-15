@@ -893,7 +893,7 @@ impl Store for LiveStore {
                     snap.project = crate::project::folder_name(&cwd);
                     snap.extra.project_path = cwd;
                     if !version.is_empty() {
-                        snap.extra.version = format!("4.0.0-beta.1 · engine {version}");
+                        snap.extra.version = format!("{} · engine {version}", crate::update::VERSION);
                     }
                     snap.extra.engine = if engine == "classic" { "Classic".into() } else { "DSH".into() };
                     snap.extra.engine_ok = true;

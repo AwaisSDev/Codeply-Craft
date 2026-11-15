@@ -336,6 +336,8 @@ pub struct App {
     /// The engine this app started, kept running while the app is.
     #[cfg(feature = "live")]
     pub sidecar: Option<crate::engine::Sidecar>,
+    /// Updates: checking, downloading, waiting for a restart or for "Update now" (update.rs).
+    pub updater: crate::update::Updater,
 }
 
 impl App {
@@ -393,6 +395,7 @@ impl App {
             code_text_seen: String::new(),
             #[cfg(feature = "live")]
             sidecar: None,
+            updater: Default::default(),
         }
     }
 
@@ -1099,6 +1102,7 @@ impl App {
 
     pub fn set_waker(&mut self, waker: rune::Waker) {
         crate::favicon::set_waker(waker.clone());
+        self.updater.set_waker(waker.clone());
         self.browser.set_waker(waker.clone());
         self.look.set_waker(waker.clone());
         self.store.set_waker(waker);
@@ -1171,6 +1175,7 @@ impl App {
             let _ = tx.open_url(&url);
         }
         changed |= self.step_project();
+        changed |= self.step_updates(now, tx);
         if self.view == View::Integrations && self.integrations == IntegrationsTab::Apps {
             let before = self.data.extra.apps.loading;
             self.step_apps_search(now, tx);
