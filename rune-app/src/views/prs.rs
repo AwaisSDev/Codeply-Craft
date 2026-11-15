@@ -284,11 +284,16 @@ fn empty(s: &App, t: &Theme) -> El {
     let shown_note = (!note.is_empty() && !about.contains(&note) && repo.as_ref().is_some_and(|r| r.gh.is_empty())).then(|| {
         text(note.clone()).font(ui(12.5, 400.0)).color(t.faint).wrap()
     });
+    // gh's own words, small, for when the explanation above isn't the whole story.
+    let said = repo.as_ref().map(|r| r.detail.clone()).filter(|d| !d.is_empty()).map(|d| {
+        text(format!("GitHub CLI: {d}")).font(crate::theme::mono(11.5, 16.0)).color(t.faint).wrap().selectable(true)
+    });
     let card = col().key("prs-empty").w_full().max_w(480.0).gap(10.0)
         .child(ico_s("branch", 22.0, t.faint))
         .child(text(title).font(ui(17.0, 600.0)).color(t.text).wrap())
         .child(text(about).font(ui(13.5, 400.0)).color(t.dim).wrap())
         .children(shown_note)
+        .children(said)
         .child(row().pt(6.0).gap(8.0).flex_wrap().children(buttons))
         .children(busy)
         .children(clone_row);

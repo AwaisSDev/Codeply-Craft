@@ -47,16 +47,25 @@ function ghPath() {
 function savedToken() {
   try { const g = C.need('config.js').getIntegration('github'); return g && g.accessToken ? g.accessToken : ''; } catch { return ''; }
 }
-const gh = (args, cwd, timeout = 15000) => {
-  const token = !process.env.GH_TOKEN && !process.env.GITHUB_TOKEN ? savedToken() : '';
-  return run(ghPath(), args, cwd, timeout, token ? { ...process.env, GH_TOKEN: token } : undefined);
+/** gh with your own sign-in (`gh auth login`) first; only when that has none does it try the
+ *  GitHub login the Electron app saved (a saved token must never override a working sign-in). */
+const gh = async (args, cwd, timeout = 15000) => {
+  const r = await run(ghPath(), args, cwd, timeout);
+  if (r.ok || process.env.GH_TOKEN || process.env.GITHUB_TOKEN || ghProblem(r.err).code !== 'auth') return r;
+  const token = savedToken();
+  if (!token) return r;
+  const again = await run(ghPath(), args, cwd, timeout, { ...process.env, GH_TOKEN: token });
+  return again.ok ? again : r;
 };
-/** What a failed gh call means, as a code and a sentence. */
+/** What a failed gh call means, as a code, a sentence and gh's own words. The remote checks come
+ *  first: gh's "none of the git remotes point to a known GitHub host ... use `gh auth login`"
+ *  is about the remote, not about being signed in. */
 function ghProblem(e) {
-  if (/ENOENT|not found|not recognized/i.test(e)) return { code: 'missing', error: 'The GitHub CLI (gh) isn\'t installed.' };
-  if (/auth|login|token|credentials/i.test(e)) return { code: 'auth', error: 'Sign in to GitHub to see pull requests.' };
-  if (/no git remote|could not determine|none of the git remotes|not a git repository/i.test(e)) return { code: 'remote', error: 'This project has no GitHub remote yet.' };
-  return { code: 'other', error: e.split('\n')[0].slice(0, 200) };
+  const detail = String(e || '').split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 2).join(' ').slice(0, 240);
+  if (/ENOENT|is not recognized|command not found|no such file/i.test(e)) return { code: 'missing', error: 'The GitHub CLI (gh) isn\'t installed.', detail };
+  if (/no git remote|none of the git remotes|could not determine (the )?(base )?repo|not a git repository|known GitHub host/i.test(e)) return { code: 'remote', error: 'This project has no GitHub remote yet.', detail };
+  if (/not logged in|gh auth login|authentication|bad credentials|HTTP 401|requires authentication|token .*(expired|invalid)/i.test(e)) return { code: 'auth', error: 'Sign in to GitHub to see pull requests.', detail };
+  return { code: 'other', error: detail || 'GitHub didn\'t answer.', detail };
 }
 
 /** The project the app works in: the chat's folder the engine was started in. */
@@ -123,7 +132,10 @@ async function state(cwd) {
   const mine = await local(cwd);
   const where = { cwd, name: path.basename(cwd) || cwd };
   if (!mine) return { ...where, repo: false, gh: { ok: false, error: '', code: '' }, local: null, prs: [] };
-  const remote = (await git(['remote'], cwd)).out.trim() !== '';
+  const remotes = (await git(['remote', '-v'], cwd)).out;
+  const remote = remotes.trim() !== '';
+  // A remote that isn't on GitHub (GitLab, a local path): pull requests here are GitHub's.
+  if (remote && !/github\.com[:/]/i.test(remotes)) return { ...where, repo: true, remote, branch: mine.branch, base: mine.base, gh: { ok: false, code: 'remote', error: 'This project\'s remote isn\'t on GitHub.', detail: remotes.split('\n')[0].trim() }, local: { ...mine, pr: 0 }, prs: [] };
   if (!remote) return { ...where, repo: true, remote, branch: mine.branch, base: mine.base, gh: { ok: false, ...ghProblem('no git remote') }, local: { ...mine, pr: 0 }, prs: [] };
   const list = await gh(['pr', 'list', '--state', 'all', '--limit', '40', '--json',
     'number,title,state,isDraft,author,headRefName,baseRefName,createdAt,mergedAt,url,additions,deletions,changedFiles,body,statusCheckRollup,reviewRequests,latestReviews'], cwd);

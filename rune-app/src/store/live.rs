@@ -301,6 +301,18 @@ fn usage_from(v: &Value) -> crate::model::Usage {
 }
 
 impl LiveStore {
+    /// A file's text for the editor: CRLF line endings become plain newlines (an editor line
+    /// is one line, not a line and a blank one), remembered so a save writes them back.
+    fn lf(&mut self, path: &str, text: String) -> String {
+        if text.contains("\r\n") {
+            self.crlf.insert(path.to_owned());
+            text.replace("\r\n", "\n")
+        } else {
+            self.crlf.remove(path);
+            text
+        }
+    }
+
     /// Fetches the account, apps, memories and files (at launch, and after they change).
     fn refresh(&self, what: &'static str) {
         self.spawn(move |c| {
@@ -450,6 +462,9 @@ pub struct LiveStore {
     open_url: Option<String>,
     /// A folder to open as the project (a clone that finished).
     open_project: Option<String>,
+    /// Files that use Windows line endings (CRLF): the editor shows them with plain newlines and
+    /// saving puts the CRLFs back.
+    crlf: std::collections::HashSet<String>,
     /// The team, as the engine is told about it: (id, name, role).
     team: Vec<(String, String, String)>,
     /// Chats renamed since the app last asked: (old title, new title).
@@ -467,7 +482,7 @@ impl LiveStore {
             conn: Conn { base: url.trim_end_matches('/').to_owned(), token: token.to_owned() },
             tx, rx, waker: None, sessions: Vec::new(), named: Default::default(), open: None, streaming: Default::default(),
             label: format!("codeply serve at {url}"), unread: Default::default(), queued: Default::default(), want_focus: None, focus: None,
-            open_url: None, open_project: None, team: Vec::new(), renames: Vec::new(),
+            open_url: None, open_project: None, crlf: Default::default(), team: Vec::new(), renames: Vec::new(),
             apps_q: AppsQuery::default(), apps_shown: 0, apps_seq: Default::default(),
         }
     }
@@ -637,7 +652,7 @@ fn metas(sessions: &[Session], unread: &std::collections::HashSet<String>) -> Ve
         title: s.title.clone(),
         project: std::path::Path::new(&s.cwd).file_name().and_then(|n| n.to_str()).unwrap_or_default().to_owned(),
         ago: ago(s.updated),
-        preview: s.preview.chars().take(120).collect(),
+        preview: one_line(&s.preview, 120),
         running: s.running,
         unread: unread.contains(&s.id),
     }).collect()
@@ -646,9 +661,49 @@ fn metas(sessions: &[Session], unread: &std::collections::HashSet<String>) -> Ve
 /// The team's states and Mission control's lists, from the engine's chats: an agent works while
 /// its chat runs, needs you while one of its approvals waits, and each chat that ran today is
 /// done today.
+/// Whose chat this is: the agent it's named after ("Emma"), a loop of theirs ("Emma: Check my
+/// LinkedIn"), or the start of their name ("Inbox" for "Inbox Watch"); Wisp otherwise. The
+/// longest name that fits wins.
+fn agent_of(title: &str, team: &[crate::model::Agent]) -> String {
+    let t = title.trim().to_lowercase();
+    let head = t.split(':').next().unwrap_or("").trim().to_owned();
+    // (exact name, name length): a whole name beats the start of a longer one.
+    team.iter()
+        .filter(|a| a.id != "wisp")
+        .filter_map(|a| {
+            let n = a.name.trim().to_lowercase();
+            let exact = !n.is_empty() && (t == n || head == n);
+            let start = head.len() >= 3 && n.starts_with(&head) && n[head.len()..].starts_with(' ');
+            (exact || start).then_some(((exact, n.len()), a))
+        })
+        .max_by_key(|(rank, _)| *rank)
+        .map_or_else(|| "wisp".to_owned(), |(_, a)| a.id.clone())
+}
+
+/// A message's start as one plain line: no Markdown marks, no line breaks, at most `max` chars.
+fn one_line(text: &str, max: usize) -> String {
+    let mut out = String::new();
+    for line in text.lines() {
+        let l = line.trim().trim_start_matches(['#', '>', '-', '*', '+']).trim();
+        if l.is_empty() {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.push_str(l);
+        if out.len() >= max {
+            break;
+        }
+    }
+    let out = out.replace("**", "").replace("__", "").replace('`', "");
+    let out: String = out.split_whitespace().collect::<Vec<_>>().join(" ");
+    if out.chars().count() > max { format!("{}…", out.chars().take(max).collect::<String>().trim_end()) } else { out }
+}
+
 fn derive(snap: &mut Snapshot, sessions: &[Session]) {
     let waiting = snap.waiting();
-    let agent_for = |title: &str, team: &[crate::model::Agent]| team.iter().find(|a| a.name == title).map_or_else(|| "wisp".to_owned(), |a| a.id.clone());
+    let agent_for = |title: &str, team: &[crate::model::Agent]| agent_of(title, team);
     for a in &mut snap.team {
         if a.state == AgentState::Walking {
             continue;
@@ -689,7 +744,7 @@ fn derive(snap: &mut Snapshot, sessions: &[Session]) {
             title: s.title.clone(),
             sub: format!("{} · {}", ago(s.updated), if s.preview.is_empty() { "working" } else { s.preview.as_str() }),
             pill: Some(("Running".into(), Pill::Blue)),
-            body: TaskBody::Working { icon: "terminal", now: s.preview.chars().take(80).collect(), progress: 0.5, screen: false },
+            body: TaskBody::Working { icon: "terminal", now: one_line(&s.preview, 90), progress: 0.5, screen: false },
         }));
     }
     for s in list.iter().filter(|s| !s.running && s.updated >= today).take(6) {
@@ -699,7 +754,7 @@ fn derive(snap: &mut Snapshot, sessions: &[Session]) {
             title: s.title.clone(),
             sub: String::new(),
             pill: None,
-            body: TaskBody::Done { proof: s.preview.chars().take(80).collect(), checked: true },
+            body: TaskBody::Done { proof: one_line(&s.preview, 90), checked: true },
         }));
     }
     snap.tasks = tasks;
@@ -924,6 +979,7 @@ impl Store for LiveStore {
                         snap.extra.code.files = files;
                     }
                     if let Some((path, text)) = open {
+                        let text = self.lf(&path, text);
                         snap.extra.code.open = Some(path);
                         snap.extra.code.saved = text;
                         snap.extra.code.review.clear();
@@ -963,6 +1019,7 @@ impl Store for LiveStore {
                             branch: v["branch"].as_str().unwrap_or_default().to_owned(),
                             base: v["base"].as_str().unwrap_or_default().to_owned(),
                             gh: v["gh"]["code"].as_str().unwrap_or_default().to_owned(),
+                            detail: v["gh"]["detail"].as_str().unwrap_or_default().to_owned(),
                         });
                     }
                     snap.prs = prs_from(&v);
@@ -1035,6 +1092,7 @@ impl Store for LiveStore {
                 Msg::Files(list) => snap.extra.code.files = list,
                 Msg::Tasks(list) => snap.extra.bg_tasks = list,
                 Msg::File(path, text) => {
+                    let text = self.lf(&path, text);
                     snap.extra.code.open = Some(path);
                     snap.extra.code.saved = text;
                     snap.extra.code.review.clear();
@@ -1393,7 +1451,8 @@ impl Store for LiveStore {
     }
 
     fn save_file(&mut self, path: &str, text: &str, _snap: &mut Snapshot) {
-        let (path, text) = (path.to_owned(), text.to_owned());
+        let text = if self.crlf.contains(path) { text.replace("\r\n", "\n").replace('\n', "\r\n") } else { text.to_owned() };
+        let path = path.to_owned();
         self.spawn(move |c| c.put("/file", json!({ "path": path, "text": text })).err().map(|e| Msg::Status(format!("save failed: {e}"))));
     }
 
@@ -1501,18 +1560,27 @@ impl Store for LiveStore {
                 });
                 Ok(())
             }
-            // Wisp and each helper talk in a chat of their own, named after them, made on first use.
-            Target::Wisp | Target::Agent(_) => {
+            // Wisp and each helper talk in a chat of their own, named after them, made on first use;
+            // the code view's agent in one named after the project, made in its folder.
+            Target::Wisp | Target::Agent(_) | Target::Project(_) => {
                 let name = match to {
                     Target::Agent(id) => snap.agent(id).map_or_else(|| id.clone(), |a| a.name.clone()),
+                    Target::Project(title) => title.clone(),
                     _ => "Wisp".to_owned(),
                 };
+                let cwd = matches!(to, Target::Project(_)).then(|| snap.extra.project_path.clone()).filter(|p| !p.is_empty());
                 let known = self.named.get(&name).cloned().or_else(|| self.id_of(&name));
                 let title = name.clone();
                 self.spawn(move |c| {
                     let id = match known {
                         Some(id) => id,
-                        None => c.post("/session", json!({ "title": title })).ok()?["session"]["id"].as_str()?.to_owned(),
+                        None => {
+                            let mut body = json!({ "title": title });
+                            if let Some(cwd) = &cwd {
+                                body["cwd"] = json!(cwd);
+                            }
+                            c.post("/session", body).ok()?["session"]["id"].as_str()?.to_owned()
+                        }
                     };
                     match c.post(&format!("/session/{id}/message"), json!({ "text": text })) {
                         Ok(_) => Some(Msg::Named(title, id)),
@@ -1554,6 +1622,30 @@ fn group(sessions: &[Session]) -> Vec<ChatGroup> {
         }
     }
     groups
+}
+
+#[cfg(test)]
+mod mission_tests {
+    use super::{agent_of, one_line};
+
+    #[test]
+    fn chats_belong_to_the_agent_they_name() {
+        let team = crate::store::mock::sample().team;
+        let mut t = team.clone();
+        t.push(crate::model::Agent { id: "emma".into(), name: "Emma".into(), ..team[1].clone() });
+        t.push(crate::model::Agent { id: "inbox-watch".into(), name: "Inbox Watch".into(), ..team[1].clone() });
+        assert_eq!(agent_of("Emma: Check my LinkedIn (messages, connection requests", &t), "emma");
+        assert_eq!(agent_of("Emma", &t), "emma");
+        // "Inbox" is a whole agent of its own in the sample team, so it wins over "Inbox Watch".
+        assert_eq!(agent_of("Inbox", &t), "inbox");
+        assert_eq!(agent_of("Inbox Watch: morning check", &t), "inbox-watch");
+        assert_eq!(agent_of("Fix the checkout crash", &t), "wisp");
+    }
+
+    #[test]
+    fn previews_are_one_plain_line() {
+        assert_eq!(one_line("I couldn't run today's check.\n\n- **Not connected:** Gmail", 90), "I couldn't run today's check. Not connected: Gmail");
+    }
 }
 
 #[cfg(test)]

@@ -239,6 +239,8 @@ pub struct RepoState {
     /// What GitHub lacks: "missing" (no GitHub CLI), "auth" (not signed in), "remote", "other",
     /// or empty when GitHub answered.
     pub gh: String,
+    /// What gh itself said when it failed, to show under the explanation.
+    pub detail: String,
 }
 
 /// A file of a diff: its path and its lines, each '+', '-', ' ' or '@' (a hunk's head).

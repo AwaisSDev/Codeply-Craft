@@ -21,6 +21,9 @@ pub enum Target {
     Chat(String),
     /// A new chat, from "What should we build?". It opens once the engine has made it.
     New,
+    /// The code view's agent: a chat of its own in the project folder, by title (made on first
+    /// use), on the same engine and model as every chat.
+    Project(String),
 }
 
 /// What Integrations > Apps asks the catalogue for: a page of apps matching `text` in `category`,

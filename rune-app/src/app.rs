@@ -196,6 +196,8 @@ pub enum EditKey {
     FilePath,
     /// The Pull requests page's "Clone a repository" field.
     CloneUrl,
+    /// The code view's agent panel.
+    CodeAgent,
 }
 
 /// The code view's file dialogs.
@@ -207,12 +209,12 @@ pub enum CodeDialog {
 }
 
 impl EditKey {
-    pub const ALL: [EditKey; 22] = [
+    pub const ALL: [EditKey; 23] = [
         EditKey::Search, EditKey::Mission, EditKey::AgentThread, EditKey::ChatHome, EditKey::ChatThread,
         EditKey::AppSearch, EditKey::Address, EditKey::SettingsSearch, EditKey::AboutMe, EditKey::Instructions,
         EditKey::Terminal, EditKey::Code, EditKey::SignInEmail, EditKey::SignInCode, EditKey::Memory,
         EditKey::AgentName, EditKey::AgentFocus, EditKey::LoopTask, EditKey::LoopWhen, EditKey::CodeAsk, EditKey::FilePath,
-        EditKey::CloneUrl,
+        EditKey::CloneUrl, EditKey::CodeAgent,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -238,6 +240,7 @@ impl EditKey {
             EditKey::CodeAsk => "code-ask",
             EditKey::FilePath => "file-path",
             EditKey::CloneUrl => "clone-url",
+            EditKey::CodeAgent => "code-agent",
         }
     }
 }
@@ -330,6 +333,11 @@ pub struct App {
     /// The code editor: which file its text was loaded from, the text the last completion was
     /// asked for, and when the text last changed (completions wait for a pause in typing).
     pub(crate) code_loaded: Option<String>,
+    /// The open file's text on disk as the editor last took it: when it changes (the agent
+    /// edited the file) and you haven't typed since, the editor follows.
+    code_saved_seen: String,
+    /// The code view's agent was working at the last poll.
+    code_agent_busy: bool,
     code_asked: String,
     code_changed_at: f64,
     code_text_seen: String,
@@ -390,6 +398,8 @@ impl App {
             usage_pick: None,
             launched: false,
             code_loaded: None,
+            code_saved_seen: String::new(),
+            code_agent_busy: false,
             code_asked: String::new(),
             code_changed_at: 0.0,
             code_text_seen: String::new(),
@@ -414,6 +424,11 @@ impl App {
         }
         if view == View::Prs && self.view != View::Prs {
             self.prs_op(crate::model::PrOp::Refresh);
+        }
+        // The code view's agent conversation, from the engine.
+        if view == View::Code && self.view != View::Code {
+            let chat = crate::views::code::agent_chat(self);
+            self.store.open(&chat);
         }
         self.view = view;
         self.appearance = None;
@@ -617,6 +632,7 @@ impl App {
             Target::Wisp => Some("Wisp".to_owned()),
             Target::Agent(id) => self.data.agent(id).map(|a| a.name.clone()),
             Target::New => None,
+            Target::Project(title) => Some(title.clone()),
         }
     }
 
@@ -626,6 +642,12 @@ impl App {
         let files = self.attachments.get(&key).cloned().unwrap_or_default();
         if text.is_empty() && files.is_empty() {
             return;
+        }
+        // The code view's agent knows which file you're looking at.
+        if key == EditKey::CodeAgent
+            && let Some(open) = &self.data.extra.code.open
+        {
+            text.push_str(&format!("\n\n(Open in the editor: {open})"));
         }
         // Attached files go with the message as their paths: Wisp reads them with its tools.
         if !files.is_empty() {
@@ -951,10 +973,22 @@ impl App {
             self.code_loaded = Some(path.clone());
             // A tab you come back to shows what you'd typed in it.
             let text = self.code_drafts.remove(&path).unwrap_or_else(|| self.data.extra.code.saved.clone());
+            self.code_saved_seen = self.data.extra.code.saved.clone();
             self.edit_mut(EditKey::Code).replace_text(text.clone());
             self.code_text_seen = text.clone();
             self.code_asked = text;
             return;
+        }
+        // The file changed on disk (the agent edited it): show the new text, unless you've typed.
+        if self.data.extra.code.saved != self.code_saved_seen {
+            let before = std::mem::replace(&mut self.code_saved_seen, self.data.extra.code.saved.clone());
+            if self.edit(EditKey::Code).text == before {
+                let text = self.data.extra.code.saved.clone();
+                self.edit_mut(EditKey::Code).replace_text(text.clone());
+                self.code_text_seen = text.clone();
+                self.code_asked = text;
+                return;
+            }
         }
         let text = self.edit(EditKey::Code).text.clone();
         if text != self.code_text_seen {
@@ -1175,6 +1209,14 @@ impl App {
             let _ = tx.open_url(&url);
         }
         changed |= self.step_project();
+        // When the code view's agent finishes, the file tree and the open file catch up with what
+        // it changed.
+        let agent_busy = self.data.is_running(&crate::views::code::agent_chat(self));
+        if self.code_agent_busy && !agent_busy {
+            self.refresh_code();
+            changed = true;
+        }
+        self.code_agent_busy = agent_busy;
         changed |= self.step_updates(now, tx);
         if self.view == View::Integrations && self.integrations == IntegrationsTab::Apps {
             let before = self.data.extra.apps.loading;

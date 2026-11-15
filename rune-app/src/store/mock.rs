@@ -312,6 +312,16 @@ pub fn echo(snap: &mut Snapshot, to: &Target, text: &str, reply: &str) {
                 blocks.push(Block::Reply(reply.to_owned()));
             }
         }
+        Target::Project(chat) => {
+            match snap.threads.iter_mut().find(|(k, _)| k == chat) {
+                Some((_, items)) => {
+                    items.push(ThreadItem::You(text.to_owned()));
+                    items.push(ThreadItem::Them(reply.to_owned()));
+                }
+                None => snap.threads.push((chat.clone(), vec![ThreadItem::You(text.to_owned()), ThreadItem::Them(reply.to_owned())])),
+            }
+            return;
+        }
         Target::Chat(chat) => {
             let key = if snap.threads.iter().any(|(k, _)| k == chat) { chat.clone() } else { "*".to_owned() };
             if let Some((_, items)) = snap.threads.iter_mut().find(|(k, _)| *k == key) {

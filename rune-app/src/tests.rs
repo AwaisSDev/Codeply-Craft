@@ -382,7 +382,7 @@ fn an_empty_pull_requests_page_says_what_to_do() {
     rt.update(|s, _| s.data.extra.repo = Some(crate::model::RepoState { repo: true, remote: true, gh: "missing".into(), ..Default::default() }));
     settle(&mut rt);
     assert!(rt.find("prs-install-gh").is_some());
-    rt.update(|s, _| s.data.extra.repo = Some(crate::model::RepoState { repo: true, remote: true, branch: "fix".into(), base: "main".into(), gh: String::new() }));
+    rt.update(|s, _| s.data.extra.repo = Some(crate::model::RepoState { repo: true, remote: true, branch: "fix".into(), base: "main".into(), gh: String::new(), detail: String::new() }));
     settle(&mut rt);
     assert!(rt.find("prs-create").is_some(), "a branch with nothing open can open a pull request");
 }
@@ -399,4 +399,22 @@ fn a_bigger_update_shows_its_screen_and_later_puts_it_in_the_titlebar() {
     assert!(rt.find("update-pill").is_some(), "and leaves a note in the titlebar");
     click(&mut rt, "update-pill");
     assert!(rt.find("update-sheet").is_some(), "which opens it again");
+}
+
+#[test]
+fn the_code_view_agent_talks_in_the_projects_own_chat() {
+    let mut s = App::with_mock();
+    s.go(View::Code);
+    s.poll_code();
+    let mut rt = runtime(s);
+    settle(&mut rt);
+    assert!(rt.find("code-agent").is_some(), "the agent panel sits beside the editor");
+    assert!(rt.find("code-edit-with-wisp").is_none(), "no Edit with Wisp button");
+    rt.update(|s, _| s.edit_mut(EditKey::CodeAgent).replace_text("Make the cards stack on phones"));
+    settle(&mut rt);
+    click(&mut rt, "send-code-agent");
+    let chat = crate::views::code::agent_chat(&rt.state);
+    let thread = rt.state.data.thread(&chat).to_vec();
+    assert!(thread.iter().any(|i| matches!(i, crate::model::ThreadItem::You(t) if t.starts_with("Make the cards stack on phones") && t.contains("Open in the editor"))),
+        "the message lands in {chat}, with the open file named: {thread:?}");
 }

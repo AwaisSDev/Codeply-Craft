@@ -123,7 +123,7 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
     // The chat at its narrowest (background tasks open beside the browser or terminal): the
     // approval chip shows its icon only, so voice and send keep their room. Elsewhere the chip
     // still gives way (its label truncates) before they do.
-    let narrow = key == EditKey::ChatThread && s.panes.tasks && (s.panes.browser || s.panes.terminal);
+    let narrow = (key == EditKey::ChatThread && s.panes.tasks && (s.panes.browser || s.panes.terminal)) || key == EditKey::CodeAgent;
     let approval_chip = |label: &str| chip(format!("approval-chip/{}", key.name()), Some(if approval == crate::prefs::Approval::Auto { "approve-full" } else { "approve-ask" }), label, None, false, format!("approval:{}", key.name()));
     let bar = row().gap(6.0).pt(6.0).px(10.0).pb(10.0).center_y()
         .child(ibtn(t, "plus", "Attach files").key(format!("attach-{}", key.name())).on_press_tx(move |s: &mut App, tx| s.pick_attachments(key, tx)))

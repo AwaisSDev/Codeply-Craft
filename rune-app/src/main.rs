@@ -131,16 +131,27 @@ const SCENES: &[Scene] = &[
     ("settings-models-ollama", |s| { s.open_settings(SettingsPage::Models); s.model_scan(); }),
     ("model-menu-custom", |s| { s.model_pick("m1"); s.new_chat(); s.toggle_menu("model:chat-home"); }),
     ("prs-empty-norepo", |s| prs_empty(s, model::RepoState::default())),
-    ("prs-empty-gh", |s| prs_empty(s, model::RepoState { repo: true, remote: true, branch: "main".into(), base: "main".into(), gh: "missing".into() })),
-    ("prs-empty-auth", |s| { prs_empty(s, model::RepoState { repo: true, remote: true, branch: "main".into(), base: "main".into(), gh: "auth".into() }); s.panes.terminal = true; }),
-    ("prs-empty-remote", |s| prs_empty(s, model::RepoState { repo: true, remote: false, branch: "main".into(), base: String::new(), gh: "remote".into() })),
-    ("prs-empty-branch", |s| prs_empty(s, model::RepoState { repo: true, remote: true, branch: "pricing-page".into(), base: "main".into(), gh: String::new() })),
+    ("prs-empty-gh", |s| prs_empty(s, model::RepoState { repo: true, remote: true, branch: "main".into(), base: "main".into(), gh: "missing".into(), detail: String::new() })),
+    ("prs-empty-auth", |s| { prs_empty(s, model::RepoState { repo: true, remote: true, branch: "main".into(), base: "main".into(), gh: "auth".into(), detail: String::new() }); s.panes.terminal = true; }),
+    ("prs-empty-remote", |s| prs_empty(s, model::RepoState { repo: true, remote: false, branch: "main".into(), base: String::new(), gh: "remote".into(), detail: "origin  https://gitlab.com/sam/my-app.git (fetch)".into() })),
+    ("prs-empty-branch", |s| prs_empty(s, model::RepoState { repo: true, remote: true, branch: "pricing-page".into(), base: "main".into(), gh: String::new(), detail: String::new() })),
     ("code-empty", |s| { s.go(View::Code); s.data.project = "my-app".into(); s.data.extra.code.files.clear(); s.data.extra.code.open = None; }),
     ("usage-week", |s| { s.new_chat(); s.toggle_usage(); s.usage_pick = Some("w20".into()); }),
     ("composer-attached", |s| {
         s.new_chat();
         s.attachments.insert(EditKey::ChatHome, vec!["C:\\Users\\sam\\Desktop\\brief.pdf".into(), "C:\\Users\\sam\\Pictures\\pricing-mock.png".into()]);
         s.edit_mut(EditKey::ChatHome).replace_text("Build the pricing page from these");
+    }),
+    ("code-agent", |s| {
+        s.go(View::Code);
+        s.poll_code();
+        let chat = views::code::agent_chat(s);
+        s.data.threads.push((chat, vec![
+            model::ThreadItem::You("Make the pricing cards stack on phones, and give the featured one a blue border.".into()),
+            model::ThreadItem::Event { icon: "file-text", text: "Read src/pricing/pricing.css".into() },
+            model::ThreadItem::Event { icon: "edit", text: "Edited src/pricing/pricing.css, +14 lines".into() },
+            model::ThreadItem::Them("Done. Under 640 px the cards now stack in one column, and `.plan.featured` has a 2 px blue border.\n\nSay **undo that** if you'd rather keep the old layout.".into()),
+        ]));
     }),
     ("update-offer", |s| { s.new_chat(); s.updater.show(update::Phase::Offer(sample_release())); }),
     ("update-downloading", |s| { s.new_chat(); s.updater.show(update::Phase::Fetching { version: "4.0.140".into(), done: 31_000_000, total: 74_000_000, setup: true }); }),
