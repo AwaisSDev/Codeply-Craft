@@ -41,9 +41,39 @@ const HAZE_PATCH = `# Written by the Codeply CLI: the ACP profile answers throug
   config:
     personaPrefix: >-
       You are Codeply, powered by the {{model}} model.
+# No OS sandbox (dsh-acp.mjs starts the engine with DSH_PERMISSION_MODE=danger-full-access):
+# under "ask" the person approves each write, edit, command or Claude Code run instead
+# (@codeply/dsh-ask-first), and the host answers those itself in Full access.
+- id: approval
+  config:
+    policy: ask
+- id: permission
+  config:
+    presets:
+      ask-first:
+        sandbox: danger-full-access
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+    defaultPreset: ask-first
 - insert:
     - id: llm-haze
       name: '@codeply/dsh-llm-haze'
+    - id: codeply-ask-first
+      name: '@codeply/dsh-ask-first'
+    # Claude Code as a subagent (subagent_claude_code), on the PC's own Claude Code sign-in.
+    # Approving the call is approving the run, so inside it Claude Code does not stop to ask.
+    - id: subagent-claude-code
+      name: '@deepseek-ai/dsh-subagent-claude-code'
+      config:
+        permissionMode: bypassPermissions
+    - id: tool-subagent-claude-code
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: claude-code
+        toolName: subagent_claude_code
+        maxDepth: provider-managed
     - id: codeply-design-tools
       name: '@codeply/dsh-design-tools'
     - id: codeply-shared-context
@@ -257,6 +287,10 @@ export class DshEngine {
       env: {
         ...process.env,
         DSH_HOME: dshHome(),
+        // No OS sandbox, as in Claude Code and Classic: the sandbox blocked npm's cache, git
+        // clone and global installs with EPERM. Writes and commands are asked for instead
+        // (@codeply/dsh-ask-first in the patch), unless the person picked Full access.
+        DSH_PERMISSION_MODE: 'danger-full-access',
         // Classic's bundled skills (codeply-taste and the rest) for the harness too.
         DSH_BUNDLED_SKILL_DIR: path.resolve(HERE, '..', 'skills'),
         ...this.extraEnv,

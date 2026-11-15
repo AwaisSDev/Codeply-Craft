@@ -45,9 +45,39 @@ const PATCH = `# Written by Codeply: Classic's chats on the DSH harness.
   config:
     personaPrefix: >-
       You are Codeply, powered by the {{model}} model. Codeply is made by Codeply Labs. If someone asks who made you or what you are, say you are Codeply, made by Codeply Labs. Never say OpenAI, Anthropic, Google or any other company made you, even though a model from one of them may run underneath.
+# No OS sandbox (dsh-acp.mjs starts the engine with DSH_PERMISSION_MODE=danger-full-access):
+# under "ask" the person approves each write, edit, command or Claude Code run instead
+# (@codeply/dsh-ask-first), and the host answers those itself in Full access.
+- id: approval
+  config:
+    policy: ask
+- id: permission
+  config:
+    presets:
+      ask-first:
+        sandbox: danger-full-access
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+    defaultPreset: ask-first
 - insert:
     - id: llm-haze
       name: '@codeply/dsh-llm-haze'
+    - id: codeply-ask-first
+      name: '@codeply/dsh-ask-first'
+    # Claude Code as a subagent (subagent_claude_code), on the PC's own Claude Code sign-in.
+    # Approving the call is approving the run, so inside it Claude Code does not stop to ask.
+    - id: subagent-claude-code
+      name: '@deepseek-ai/dsh-subagent-claude-code'
+      config:
+        permissionMode: bypassPermissions
+    - id: tool-subagent-claude-code
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: claude-code
+        toolName: subagent_claude_code
+        maxDepth: provider-managed
     - id: codeply-edit-checks
       name: '@codeply/dsh-edit-checks'
     - id: codeply-edit-near-miss

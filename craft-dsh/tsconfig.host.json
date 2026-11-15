@@ -455,6 +455,7 @@
     { "path": "./packages/codeply/edit-checks" },
     { "path": "./packages/codeply/edit-near-miss" },
     { "path": "./packages/codeply/shell-hints" },
+    { "path": "./packages/codeply/ask-first" },
     { "path": "./packages/codeply/claim-check" },
     { "path": "./packages/codeply/undo" },
     { "path": "./packages/codeply/web-search" },

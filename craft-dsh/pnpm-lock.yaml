@@ -2760,6 +2760,9 @@ importers:
       '@codeply/dsh-apps':
         specifier: workspace:*
         version: link:../../codeply/apps
+      '@codeply/dsh-ask-first':
+        specifier: workspace:*
+        version: link:../../codeply/ask-first
       '@codeply/dsh-browser-check':
         specifier: workspace:*
         version: link:../../codeply/browser-check
@@ -3126,6 +3129,9 @@ importers:
       '@deepseek-ai/dsh-skill-filesystem':
         specifier: workspace:*
         version: link:../../skill/skill-filesystem
+      '@deepseek-ai/dsh-subagent-claude-code':
+        specifier: workspace:*
+        version: link:../../subagent/subagent-claude-code
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:*
         version: link:../../subprocess/subprocess
@@ -6921,6 +6927,31 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: workspace:*
         version: link:../../core/tools
+
+  packages/codeply/ask-first:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:*
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-sandbox-policy':
+        specifier: workspace:*
+        version: link:../../sandbox/sandbox-policy
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:*
+        version: link:../../core/session
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../../core/tools
+      '@deepseek-ai/dsh-user-approval':
+        specifier: workspace:*
+        version: link:../../interaction/user-approval
 
   packages/codeply/browser-check:
     devDependencies:
