@@ -1,0 +1,80 @@
+{
+ "contract": "iris.ops/1",
+ "seed": 1,
+ "splits": {
+  "train": {
+   "episodes": 144,
+   "rejected_episodes": [],
+   "sessions": 655,
+   "examples": 1258,
+   "observe": 904,
+   "retrieve": 354,
+   "empty_targets": 47,
+   "ops": {
+    "add": 1939,
+    "skip": 688,
+    "confirm": 91,
+    "update": 283,
+    "retract": 134
+   },
+   "langs": {
+    "en": 87,
+    "roman-ur": 39,
+    "mixed": 12,
+    "ur": 6
+   },
+   "sha256": "2fdd84f7e94a6e90e7bb9245b3ad780861f8af52a7f89e57bae8248b06d09350"
+  },
+  "val": {
+   "episodes": 24,
+   "rejected_episodes": [],
+   "sessions": 120,
+   "examples": 184,
+   "observe": 120,
+   "retrieve": 64,
+   "empty_targets": 8,
+   "ops": {
+    "add": 302,
+    "skip": 100,
+    "update": 57,
+    "retract": 17,
+    "confirm": 14
+   },
+   "langs": {
+    "en": 14,
+    "mixed": 2,
+    "roman-ur": 6,
+    "ur": 2
+   },
+   "sha256": "0ae331732c7fcf609304b0069c61e0b0162e9617d5c3041fca820d8b7e38aee3"
+  },
+  "test": {
+   "episodes": 0,
+   "rejected_episodes": [],
+   "sessions": 0,
+   "examples": 0,
+   "observe": 0,
+   "retrieve": 0,
+   "empty_targets": 0,
+   "ops": {},
+   "langs": {},
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+ },
+ "leakage": {
+  "train-val": {
+   "shared_entities": [
+    "project kestrel"
+   ],
+   "near_duplicate_sessions": []
+  },
+  "train-test": {
+   "shared_entities": [],
+   "near_duplicate_sessions": []
+  },
+  "val-test": {
+   "shared_entities": [],
+   "near_duplicate_sessions": []
+  }
+ }
+}

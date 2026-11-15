@@ -1,0 +1,130 @@
+{
+ "iris-1.7b-r2": {
+  "open": {
+   "extraction_f1": 0.404,
+   "extraction_precision": 0.433,
+   "extraction_recall": 0.379
+  },
+  "closed_strict": {
+   "extraction_precision": 0.348,
+   "extraction_recall": 0.282,
+   "extraction_f1": 0.311,
+   "false_memory_share": 0.625,
+   "update_accuracy": 0.5,
+   "contradiction_resolution": 0.421,
+   "n_gold": 369,
+   "n_pred": 299,
+   "by_session_index_f1": {
+    "1": 0.318,
+    "2": 0.295,
+    "3": 0.315,
+    "4": 0.324,
+    "5": 0.298
+   },
+   "gold_op_mix": {
+    "add": 353,
+    "confirm": 4,
+    "retract": 3,
+    "skip": 100,
+    "update": 16
+   },
+   "mean_unlinked_rows_before_later_sessions": 4.47,
+   "mean_rows_before_later_sessions": 7.1
+  },
+  "closed_evidence_linked": {
+   "extraction_precision": 0.395,
+   "extraction_recall": 0.322,
+   "extraction_f1": 0.355,
+   "false_memory_share": 0.579,
+   "update_accuracy": 0.419,
+   "contradiction_resolution": 0.37,
+   "n_gold": 366,
+   "n_pred": 299,
+   "by_session_index_f1": {
+    "1": 0.318,
+    "2": 0.348,
+    "3": 0.384,
+    "4": 0.408,
+    "5": 0.34
+   },
+   "gold_op_mix": {
+    "add": 323,
+    "confirm": 7,
+    "retract": 11,
+    "skip": 100,
+    "update": 43
+   },
+   "mean_unlinked_rows_before_later_sessions": 1.56,
+   "mean_rows_before_later_sessions": 7.1
+  },
+  "gap_open_minus_closed": {
+   "strict": 0.093,
+   "evidence_linked": 0.049,
+   "share_of_gap_explained_by_linking": 0.47
+  }
+ },
+ "iris-1.7b-r3": {
+  "open": {
+   "extraction_f1": 0.42,
+   "extraction_precision": 0.433,
+   "extraction_recall": 0.407
+  },
+  "closed_strict": {
+   "extraction_precision": 0.342,
+   "extraction_recall": 0.325,
+   "extraction_f1": 0.333,
+   "false_memory_share": 0.627,
+   "update_accuracy": 0.6,
+   "contradiction_resolution": 0.56,
+   "n_gold": 369,
+   "n_pred": 351,
+   "by_session_index_f1": {
+    "1": 0.402,
+    "2": 0.328,
+    "3": 0.297,
+    "4": 0.252,
+    "5": 0.333
+   },
+   "gold_op_mix": {
+    "add": 349,
+    "confirm": 4,
+    "retract": 5,
+    "skip": 100,
+    "update": 20
+   },
+   "mean_unlinked_rows_before_later_sessions": 5.18,
+   "mean_rows_before_later_sessions": 8.28
+  },
+  "closed_evidence_linked": {
+   "extraction_precision": 0.379,
+   "extraction_recall": 0.363,
+   "extraction_f1": 0.371,
+   "false_memory_share": 0.59,
+   "update_accuracy": 0.5,
+   "contradiction_resolution": 0.463,
+   "n_gold": 366,
+   "n_pred": 351,
+   "by_session_index_f1": {
+    "1": 0.402,
+    "2": 0.354,
+    "3": 0.351,
+    "4": 0.36,
+    "5": 0.375
+   },
+   "gold_op_mix": {
+    "add": 324,
+    "confirm": 7,
+    "retract": 12,
+    "skip": 100,
+    "update": 42
+   },
+   "mean_unlinked_rows_before_later_sessions": 2.66,
+   "mean_rows_before_later_sessions": 8.28
+  },
+  "gap_open_minus_closed": {
+   "strict": 0.087,
+   "evidence_linked": 0.049,
+   "share_of_gap_explained_by_linking": 0.44
+  }
+ }
+}
