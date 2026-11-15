@@ -8,24 +8,25 @@ use crate::model::{ButtonKind, Pill};
 use crate::store::Target;
 use crate::theme::{self, Theme, ui};
 
-/// The prototype's `ease-out` for things entering: 0.28 s, no bounce.
-pub const ENTER: Spring = Spring::new(0.28, 0.0);
-/// List stagger, inside the 30 to 40 ms the motion rules ask for.
-pub const STAGGER: f32 = 0.035;
+/// Entering things settle fast: 0.14 s, no bounce. Codeply draws on the CPU, where every frame
+/// of motion costs the whole window, so motion stays short and small.
+pub const ENTER: Spring = Spring::new(0.14, 0.0);
+/// Kept for callers; rows no longer cascade (a cascade kept the window animating for seconds).
+#[allow(dead_code)]
+pub const STAGGER: f32 = 0.0;
 
-/// `.fade`: views and rows rise 6 pt and fade in, on the ease-out spring. On the way out they're
-/// gone the frame they leave: a view never fades out over the one replacing it (that cross-fade
-/// drew the window twice a frame on the CPU renderer, and read as lag).
+/// `.fade`: views and rows fade in, briefly, without moving. On the way out they're gone the
+/// frame they leave: a view never fades out over the one replacing it.
 pub fn fade_in() -> Transition {
-    let mut t = Transition::offset(0.0, 6.0).combined(Transition::opacity());
+    let mut t = Transition::opacity();
     t.removal = rune::Effect::opacity(0.0);
     t.springs = rune::SpringPair::new(ENTER, Spring::NONE);
     t
 }
 
-/// A row entering a list, `i` rows down: staggered so the list cascades top to bottom.
-pub fn enter(e: El, i: usize) -> El {
-    e.transition(fade_in()).motion(ENTER).enter_delay(i as f32 * STAGGER)
+/// A row entering a list. Every row fades in together (`_i` was its place in a cascade).
+pub fn enter(e: El, _i: usize) -> El {
+    e.transition(fade_in()).motion(ENTER)
 }
 
 /// Text with `**bold**` runs. Bold takes `strong` (the prototype's `b { color: var(--text) }`).
@@ -127,7 +128,7 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
     let narrow = key == EditKey::ChatThread && s.panes.tasks && (s.panes.browser || s.panes.terminal);
     let approval_chip = |label: &str| chip(format!("approval-chip/{}", key.name()), Some(if approval == crate::prefs::Approval::Auto { "approve-full" } else { "approve-ask" }), label, None, false, format!("approval:{}", key.name()));
     let bar = row().gap(6.0).pt(6.0).px(10.0).pb(10.0).center_y()
-        .child(ibtn(t, "plus", "Attach"))
+        .child(ibtn(t, "plus", "Attach files").key(format!("attach-{}", key.name())).on_press_tx(move |s: &mut App, tx| s.pick_attachments(key, tx)))
         .children((!compact).then(|| if narrow {
             approval_chip("").label(approval.label().to_owned()).help(approval.label())
         } else {
@@ -150,6 +151,7 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
                 .child(ico_s("chevron-down", 14.0, t.faint))
         }))
         .children(notice)
+        .children(attached(s, t, key))
         .child(field)
         .child(bar)
 }
@@ -251,4 +253,23 @@ pub fn wave(src: &str, style: rune::TextStyle, color: Color) -> El {
         let word = if i == 0 { w.to_owned() } else { format!(" {w}") };
         text(word).font(style).color(color).looping(rune::LoopSpec::opacity(PERIOD, i as f64 * STEP, 0.35, 1.0))
     }))
+}
+
+/// The files attached to a composer's next message, as chips with a remove button.
+fn attached(s: &App, t: &Theme, key: EditKey) -> Option<El> {
+    let files = s.attachments.get(&key).filter(|f| !f.is_empty())?;
+    Some(row().px(14.0).pt(10.0).gap(6.0).flex_wrap().children(files.iter().map(|f| {
+        let name = f.rsplit(['/', '\\']).next().unwrap_or(f).to_owned();
+        let gone = f.clone();
+        row().key(format!("attached/{f}")).h(26.0).pl(8.0).pr(4.0).gap(6.0).radius(7.0).center_y().fill(t.hover).help(f.clone())
+            .child(ico_s("file", 13.0, t.dim))
+            .child(text(name).font(ui(12.5, 500.0)).color(t.text).single_line())
+            .child(el().size(18.0, 18.0).radius(5.0).center().hover(t.active).role("button").label("Remove")
+                .child(ico_s("close", 11.0, t.faint))
+                .on_press(move |s: &mut App| {
+                    if let Some(l) = s.attachments.get_mut(&key) {
+                        l.retain(|x| *x != gone);
+                    }
+                }))
+    })))
 }

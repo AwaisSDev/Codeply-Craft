@@ -22,7 +22,9 @@ fn chat_row(s: &App, t: &Theme, c: &ChatMeta) -> El {
     let menu_id = format!("chat:{}", c.title);
     let menu_open = s.menu.as_deref() == Some(menu_id.as_str());
     let status = if c.running {
-        Some(ico_s("refresh", 14.0, t.dim).looping(rune::LoopSpec::rotation(1.0)))
+        // A still icon: a spinner would redraw the whole window every frame for as long as the
+        // chat runs, on the CPU renderer.
+        Some(ico_s("history", 14.0, t.dim).help("Working"))
     } else if c.unread {
         Some(el().size(6.0, 6.0).radius(3.0).fill(t.accent))
     } else {

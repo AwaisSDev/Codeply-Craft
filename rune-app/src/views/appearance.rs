@@ -25,7 +25,17 @@ pub fn popover(s: &App, t: &Theme, a: &Agent) -> El {
                 .child(text("Appearance").font(ui(14.0, 650.0)).color(t.text))
                 .child(text(a.name.clone()).font(ui(12.5, 400.0)).color(t.faint))))
         .child(pickers(t, a))
-        .child(row().justify_end().child(btn(t, "Done", None, ButtonKind::Plain).key("appearance-done").on_press(|s: &mut App| s.appearance = None)))
+        .child(row().gap(8.0).justify_end()
+            // Delete takes an agent you made off the team (the engine keeps the built-in ones and
+            // says so); Wisp leads and stays.
+            .children((a.id != "wisp").then(|| {
+                let id = a.id.clone();
+                btn(t, "Delete agent", None, ButtonKind::Plain).key("appearance-delete").on_press(move |s: &mut App| {
+                    s.appearance = None;
+                    s.remove_agent(&id);
+                })
+            }))
+            .child(btn(t, "Done", None, ButtonKind::Plain).key("appearance-done").on_press(|s: &mut App| s.appearance = None)))
 }
 
 /// The colours to pick from: the twelve of the reference set.

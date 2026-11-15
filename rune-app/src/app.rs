@@ -306,6 +306,8 @@ pub struct App {
     pub think_now: f64,
     /// The code view's "Edit with Wisp" bar (Ctrl K), while it's open.
     pub code_ask: bool,
+    /// Files attached to each composer's next message (the "+" picks them).
+    pub attachments: std::collections::HashMap<EditKey, Vec<String>>,
     /// The files open as tabs in the code view, and each one's unsaved text when it isn't showing.
     pub code_tabs: Vec<String>,
     pub code_drafts: std::collections::HashMap<String, String>,
@@ -374,6 +376,7 @@ impl App {
             usage_open: false,
             team_dialog: None,
             code_ask: false,
+            attachments: std::collections::HashMap::new(),
             code_tabs: Vec::new(),
             code_drafts: std::collections::HashMap::new(),
             code_dialog: None,
@@ -612,9 +615,20 @@ impl App {
 
     /// Sends a composer's text to whoever it talks to, then clears it.
     pub fn submit(&mut self, key: EditKey, to: &Target) {
-        let text = self.edit(key).text.trim().to_owned();
-        if text.is_empty() {
+        let mut text = self.edit(key).text.trim().to_owned();
+        let files = self.attachments.get(&key).cloned().unwrap_or_default();
+        if text.is_empty() && files.is_empty() {
             return;
+        }
+        // Attached files go with the message as their paths: Wisp reads them with its tools.
+        if !files.is_empty() {
+            if text.is_empty() {
+                text = "Have a look at the attached files.".into();
+            }
+            text.push_str("\n\nAttached files:\n");
+            for f in &files {
+                text.push_str(&format!("- {f}\n"));
+            }
         }
         let to = match to {
             Target::Chat(c) if c.is_empty() => Target::Chat(self.chat.clone().unwrap_or_default()),
@@ -624,9 +638,26 @@ impl App {
             Ok(()) => {
                 self.notice = None;
                 self.edit_mut(key).clear();
+                self.attachments.remove(&key);
             }
             Err(e) => self.notice = Some(e),
         }
+    }
+
+    /// The composer's "+": pick files to attach to the next message.
+    pub fn pick_attachments(&mut self, key: EditKey, tx: &mut Tx) {
+        let options = rune::FileDialogOptions { title: "Attach files".into(), ..Default::default() };
+        tx.open_file(options, move |s: &mut App, result, _| match result {
+            Ok(Some(path)) => {
+                let p = path.to_string_lossy().into_owned();
+                let list = s.attachments.entry(key).or_default();
+                if !list.contains(&p) {
+                    list.push(p);
+                }
+            }
+            Ok(None) => {}
+            Err(e) => s.notice = Some(format!("Couldn't open the file picker: {e}")),
+        });
     }
 
     /// Opens `url` in the browser pane beside the chat (from a link in a reply, a bookmark or

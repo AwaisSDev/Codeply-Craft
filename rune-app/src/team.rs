@@ -47,7 +47,8 @@ fn shape_of(name: &str) -> Shape {
 pub fn apply(snap: &mut Snapshot, v: &Value) -> Vec<(String, String, String)> {
     let str_of = |x: &Value, k: &str| x[k].as_str().unwrap_or_default().to_owned();
     let mut agents: Vec<Agent> = snap.team.iter().filter(|a| a.id == "wisp").cloned().collect();
-    let faces = [Face::Glossy, Face::Content, Face::Capsule, Face::Googly];
+    // Codeply 4: every helper has Wisp's pill eyes.
+    let faces = [Face::Pill];
     for (i, m) in v["team"].as_array().map(Vec::as_slice).unwrap_or_default().iter().enumerate() {
         let id = str_of(m, "id");
         if id.is_empty() || id == "wisp" {
@@ -94,7 +95,7 @@ pub fn apply_sample(op: &TeamOp, snap: &mut Snapshot) {
             let id = name.to_lowercase().replace(' ', "-");
             if !snap.team.iter().any(|a| a.id == id) {
                 snap.team.push(Agent {
-                    id, name: name.clone(), color: "#4a78e0".into(), look: Look::new(Shape::Pebble, Face::Content, &[]),
+                    id, name: name.clone(), color: "#4a78e0".into(), look: Look::new(Shape::Pebble, Face::Pill, &[]),
                     role: focus.clone(), state: AgentState::Idle, place: "Studio".into(), action: String::new(), status: focus.clone(), pos: (600.0, 300.0),
                 });
             }
@@ -161,7 +162,6 @@ impl App {
     }
 
     /// Takes an agent you made off the team (built-in ones stay).
-    #[allow(dead_code)]
     pub fn remove_agent(&mut self, id: &str) {
         if self.agent.as_deref() == Some(id) {
             self.agent = None;

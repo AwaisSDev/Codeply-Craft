@@ -24,7 +24,7 @@ live = ["dep:ureq"]
 
 [dependencies]
 # Rune is pre-release: pin a `dev` rev. `tooling` keeps --snap, --tree and --script in release builds.
-rune = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a", features = ["tooling"] }
+rune = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a", features = ["tooling", "native-file-dialog"] }
 # The code view's syntax colours (rune_kit::syntax: Pierre's Highlights, 80 languages).
 rune-kit = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a", default-features = false }
 serde_json = "1"
@@ -45,6 +45,9 @@ winresource = "0.1"
 # The built-in browser: WebView2 (the Edge engine) as a child window, and the one window style
 # it needs (browser.rs).
 [target.'cfg(windows)'.dependencies]
+# Whether this PC has a real GPU (main.rs prefer_cpu_renderer): the wgpu and pollster Rune links.
+wgpu = { version = "30", default-features = false, features = ["dx12"] }
+pollster = "1"
 wry = { version = "0.57", default-features = false, features = ["devtools"] }
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader"] }
 

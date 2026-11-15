@@ -194,13 +194,20 @@ fn spec() -> AppSpec<App> {
     }
 }
 
-/// Windows: keep windows on Rune's CPU renderer. Rune opens a window on the CPU and hands it to
-/// a GPU swap chain a moment later; on PCs without a working GPU (WARP, the basic display driver,
-/// some integrated chips) that hand-over draws a broken frame (text missing, wrong scale, clicks
-/// falling through). This UI is light enough for the CPU. `CODEPLY_GPU=1` keeps the GPU path.
+/// Windows: draw on the GPU when this PC has a real one, else on Rune's CPU renderer. Rune opens
+/// a window on the CPU and hands it to a GPU swap chain a moment later; on PCs without a working
+/// GPU (WARP, the basic display driver) that hand-over draws a broken frame (text missing, wrong
+/// scale, clicks falling through), so those stay on the CPU. `CODEPLY_GPU=1` or `=0` forces it.
 fn prefer_cpu_renderer() {
-    let wanted = cfg!(windows) && std::env::var_os("RUNE_CPU_FIRST").is_none() && std::env::var_os("CODEPLY_GPU").is_none_or(|v| v != "1");
-    if wanted {
+    if !cfg!(windows) || std::env::var_os("RUNE_CPU_FIRST").is_some() {
+        return;
+    }
+    let cpu = match std::env::var("CODEPLY_GPU").as_deref() {
+        Ok("1") => false,
+        Ok("0") => true,
+        _ => !has_real_gpu(),
+    };
+    if cpu {
         // SAFETY: called first thing in main, before any other thread exists, so nothing can be
         // reading the environment concurrently.
         #[allow(unsafe_code)]
@@ -208,6 +215,26 @@ fn prefer_cpu_renderer() {
             std::env::set_var("RUNE_CPU_FIRST", "only");
         }
     }
+}
+
+/// A Direct3D 12 adapter that's a real graphics chip (integrated or discrete), not Microsoft's
+/// software one (vendor 0x1414: WARP, the Basic Render Driver).
+#[cfg(windows)]
+fn has_real_gpu() -> bool {
+    let mut d = wgpu::InstanceDescriptor::new_without_display_handle();
+    d.backends = wgpu::Backends::DX12;
+    let instance = wgpu::Instance::new(d);
+    pollster::block_on(instance.enumerate_adapters(wgpu::Backends::DX12)).iter().any(|a| {
+        let info = a.get_info();
+        matches!(info.device_type, wgpu::DeviceType::DiscreteGpu | wgpu::DeviceType::IntegratedGpu)
+            && info.vendor != 0x1414
+            && !info.name.contains("Basic Render")
+    })
+}
+
+#[cfg(not(windows))]
+fn has_real_gpu() -> bool {
+    true
 }
 
 fn main() {
