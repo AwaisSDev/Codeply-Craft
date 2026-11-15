@@ -175,6 +175,11 @@ const SCENES: &[Scene] = &[
     ("bg-picture", |s| { bg(s, look::BgKind::Picture); s.new_chat(); }),
     ("bg-picture-chat", |s| { bg(s, look::BgKind::Picture); s.open_chat("Casual chat"); }),
     ("settings-background", |s| { bg(s, look::BgKind::Dots); s.open_settings(SettingsPage::Appearance); }),
+    ("settings-memories", |s| {
+        s.open_settings(SettingsPage::Personalization);
+        s.data.extra.memories.insert(0, model::Memory { id: "m-long".into(), kind: "decision".into(), scope: "project:codeply-copy".into(),
+            text: "All non-app pages of Codeply - Copy get light backgrounds, dark text, a light nav and footer, and pastel mockup panels, while the chat and admin screens stay unchanged.".into() });
+    }),
     ("update-offer", |s| { s.new_chat(); s.updater.show(update::Phase::Offer(sample_release())); }),
     ("update-downloading", |s| { s.new_chat(); s.updater.show(update::Phase::Fetching { version: "4.0.140".into(), done: 31_000_000, total: 74_000_000, setup: true }); }),
     ("update-ready", |s| { s.new_chat(); s.updater.show(update::Phase::Ready(sample_release())); }),

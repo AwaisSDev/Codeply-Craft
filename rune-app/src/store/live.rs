@@ -868,10 +868,31 @@ fn step_icon(name: &str) -> &'static str {
     }
 }
 
-/// A step the engine sent without words (an older chat): its tool's name as words.
+/// A step saved without words (by an older version, which kept only the tool's name): what
+/// that kind of tool does, in words.
 fn tool_words(name: &str) -> String {
-    let n = name.trim_start_matches("dsh:").replace(['_', '-'], " ");
-    if n.trim().is_empty() { "Used a tool".to_owned() } else { format!("Used {}", n.trim()) }
+    let n = name.trim_start_matches("dsh:");
+    let known = match n {
+        "read" | "read_file" => "Read a file",
+        "read_image" | "view_images" => "Looked at an image",
+        "write" | "write_file" | "create" => "Wrote a file",
+        "edit" | "edit_file" | "multi_edit" | "str_replace_editor" => "Edited a file",
+        "grep" | "search" => "Searched the code",
+        "glob" | "ls" | "list_dir" => "Looked through the files",
+        "web_search" => "Searched the web",
+        "web_fetch" | "fetch" => "Opened a page",
+        "browser_check" => "Checked the page in a browser",
+        "ask_bot" => "Asked a teammate",
+        "hand_off" => "Handed work to a teammate",
+        "use_app" | "mcp" => "Used an app",
+        "todo_write" => "Updated the plan",
+        "remember" => "Remembered something",
+        "recall" => "Looked through memories",
+        n if n.is_empty() => "Used a tool",
+        n if n.contains("pwsh") || n.contains("bash") || n.contains("shell") || n == "run" || n == "run_command" || n == "exec" || n == "cmd" || n == "powershell" => "Ran a command",
+        _ => "",
+    };
+    if known.is_empty() { format!("Used {}", n.replace(['_', '-'], " ").trim()) } else { known.to_owned() }
 }
 
 /// A stored message as the transcript shows it.
@@ -1740,7 +1761,16 @@ fn group(sessions: &[Session]) -> Vec<ChatGroup> {
 
 #[cfg(test)]
 mod mission_tests {
-    use super::{agent_of, one_line};
+    use super::{agent_of, one_line, tool_words, item_from};
+
+    #[test]
+    fn old_steps_without_words_still_say_what_they_did() {
+        assert_eq!(tool_words("edit"), "Edited a file");
+        assert_eq!(tool_words("pwsh"), "Ran a command");
+        assert_eq!(tool_words("dsh:read"), "Read a file");
+        let old = serde_json::json!({ "kind": "tool", "name": "edit", "label": "", "ok": true });
+        assert_eq!(item_from(&old), Some(crate::model::ThreadItem::Event { icon: "edit", text: "Edited a file".into() }));
+    }
 
     #[test]
     fn chats_belong_to_the_agent_they_name() {

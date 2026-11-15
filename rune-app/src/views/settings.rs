@@ -81,7 +81,8 @@ pub fn group(t: &Theme, title: &str, rows: Vec<El>) -> El {
 pub fn item(t: &Theme, label: &str, desc: Option<&str>, control: El) -> El {
     row().w_full().min_h(56.0).px(16.0).py(12.0).gap(16.0).center_y()
         .child(col().grow(1.0).min_w(0.0).gap(2.0)
-            .child(text(label.to_owned()).font(ui(14.0, 500.0)).color(t.text))
+            // Long labels (a memory) wrap inside the row instead of running past it.
+            .child(text(label.to_owned()).font(ui(14.0, 500.0)).color(t.text).wrap())
             .children(desc.map(|d| text(d.to_owned()).font(ui(12.5, 400.0)).color(t.dim).wrap())))
         .child(control)
 }
