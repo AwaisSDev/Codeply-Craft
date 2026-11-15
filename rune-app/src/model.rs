@@ -363,6 +363,8 @@ impl Shape {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChatMeta {
     pub title: String,
+    /// Whose it is: one of your chats, an agent's session, or the code view's.
+    pub kind: ChatKind,
     /// The project folder's name ("launch-site"), shown dim after the title.
     pub project: String,
     /// "4 min ago".
@@ -373,6 +375,17 @@ pub struct ChatMeta {
     pub running: bool,
     /// Unread: a reply finished since you last opened it (a blue dot).
     pub unread: bool,
+}
+
+/// Where a chat belongs. Each lives in its own place: your chats in Chat, an agent's sessions
+/// on its page in Agents (and Mission control), the code view's chat beside the editor.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum ChatKind {
+    #[default]
+    Chat,
+    /// An agent's session, by the agent's id.
+    Agent(String),
+    Code,
 }
 
 /// A plugin: a bundle of skills, commands and connectors you can install.
@@ -531,6 +544,8 @@ pub struct Extra {
     pub pr_files: Option<(u32, Vec<DiffFile>)>,
     /// Why pull requests can't be listed (no GitHub CLI, not signed in, no remote), or empty.
     pub prs_note: String,
+    /// What each running chat is doing right now ("Editing index.html"), by title.
+    pub step_now: Vec<(String, String)>,
     /// The project's git and GitHub state; None until the engine answers.
     pub repo: Option<RepoState>,
     /// The project folder's full path (the engine's), empty until known.

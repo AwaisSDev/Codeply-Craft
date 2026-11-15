@@ -273,6 +273,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn local_servers_read_as_their_address() {
+        use crate::favicon::{get, site_name};
+        assert_eq!(site_name("http://127.0.0.1:8080/"), "127.0.0.1:8080");
+        assert_eq!(site_name("http://localhost:3000/app"), "localhost:3000");
+        assert_eq!(site_name("http://192.168.1.20"), "192.168.1.20");
+        assert!(get("http://127.0.0.1:8080/").is_none(), "no favicon lookup for a local server");
+    }
+
+    #[test]
     fn links_show_the_site_name() {
         let t = crate::theme::dark();
         let p = inline("open https://www.codeply.app on your phone", &t);

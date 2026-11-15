@@ -82,10 +82,11 @@ fn menus(s: &App, t: &Theme) -> Option<El> {
         .or_else(|| id.strip_prefix("chat-head:").map(|c| (c, format!("chat-head-more/{c}"), Side::Bottom, rune::Align::End)));
     if let Some((chat, anchor, side, align)) = chat_menu {
         let pinned = s.prefs.pinned.iter().any(|c| c == chat);
-        let (a, b) = (chat.to_owned(), chat.to_owned());
+        let (a, b, c) = (chat.to_owned(), chat.to_owned(), chat.to_owned());
         return Some(menu(t, &anchor, side, 200.0, vec![
             menu_item(t, "chat-menu/pin".into(), Some("pick"), if pinned { "Unpin" } else { "Pin" }, None, false).on_press(move |s: &mut App| s.toggle_pin(&a)),
             menu_item(t, "chat-menu/archive".into(), Some("download"), "Archive", None, false).on_press(move |s: &mut App| s.archive(&b)),
+            menu_item(t, "chat-menu/delete".into(), Some("trash"), "Delete", None, false).on_press(move |s: &mut App| s.delete_chat(&c)),
         ]).anchored(anchor.clone(), side, align, 6.0));
     }
     views::menu(s, t, id)

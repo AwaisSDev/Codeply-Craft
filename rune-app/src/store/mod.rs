@@ -24,6 +24,8 @@ pub enum Target {
     /// The code view's agent: a chat of its own in the project folder, by title (made on first
     /// use), on the same engine and model as every chat.
     Project(String),
+    /// One of an agent's sessions, by title (made when missing), on the agent's page.
+    AgentSession { agent: String, title: String },
 }
 
 /// What Integrations > Apps asks the catalogue for: a page of apps matching `text` in `category`,
@@ -78,6 +80,11 @@ pub trait Store {
     }
     /// Reloads the project's file list.
     fn refresh_files(&mut self) {}
+    /// Deletes a chat (or an agent's session) for good, by title.
+    fn delete_chat(&mut self, title: &str, snap: &mut Snapshot) {
+        snap.threads.retain(|(k, _)| k != title);
+        snap.extra.chats.retain(|c| c.title != title);
+    }
     /// A folder the app should open as the project (a repository that finished cloning).
     fn take_project(&mut self) -> Option<String> {
         None

@@ -86,7 +86,7 @@ const save = () => { if (!saveTimer) saveTimer = setTimeout(saveNow, 300); };
 const newId = (p) => p + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
 const meta = (s) => {
   const last = s.messages[s.messages.length - 1];
-  return { id: s.id, title: s.title, cwd: s.cwd, createdAt: s.createdAt, updatedAt: s.updatedAt, preview: (last && (last.text || last.label)) || '', messageCount: s.messages.length, engine: s.engine || 'dsh', running: runs.has(s.id), queued: (queues.get(s.id) || []).length };
+  return { id: s.id, title: s.title, cwd: s.cwd, createdAt: s.createdAt, updatedAt: s.updatedAt, preview: (last && (last.text || last.label)) || '', messageCount: s.messages.length, engine: s.engine || 'dsh', running: runs.has(s.id), queued: (queues.get(s.id) || []).length, kind: s.kind || '', agent: s.agent || '' };
 };
 const find = (id) => store.sessions.find((s) => s.id === id) || null;
 
@@ -122,12 +122,18 @@ function findMember(name) {
   return t.find((m) => norm(m.id) === q) || t.find((m) => norm(m.name) === q)
     || t.find((m) => q.split(/[^a-z0-9]+/).includes(norm(m.name))) || t.find((m) => norm(m.role).includes(q) && q.length > 3) || null;
 }
-/** The member whose chat this is (a chat titled with the member's name), else null: Wisp leads it. */
-const memberOf = (s) => settings.team.find((m) => norm(m.name) === norm(s.title)) || null;
+/** The member whose chat this is (an agent session, or a chat titled with the member's name),
+ *  else null: Wisp leads it. */
+const memberOf = (s) => (s.kind === 'agent' && s.agent ? findMember(s.agent) : null)
+  || (s.kind === 'code' ? null : settings.team.find((m) => norm(m.name) === norm(s.title))) || null;
 const rosterLines = () => settings.team.map((m) => `- ${m.name}: ${m.role || 'general help'}`);
 
 /** Short instruction put in front of what Wisp-led chats send to the engine (never stored in the chat). */
 function promptPrefix(session) {
+  // The code view's agent: it does the work in this project itself.
+  if (session.kind === 'code') {
+    return '[You are Wisp, the coding agent beside the user\'s editor in this project. Do what they ask directly with your tools: read the files you need, make the change, and keep it focused. Say briefly what you changed and in which files. If they ask you to undo something, put the files back as they were before your change.]\n\n';
+  }
   const member = memberOf(session);
   if (member) {
     return `[You are ${member.name}${member.role ? `, the ${member.role} agent` : ''} on the user's Codeply team. Work in your own area, do the task fully with your tools, and report briefly what you did and what is left.]\n\n`;
@@ -520,6 +526,37 @@ async function applyEffortAll() {
   }
 }
 
+// ---------- steps, in words ----------
+const STEP = {
+  read: ['Reading', 'Read', 'file-text'], read_file: ['Reading', 'Read', 'file-text'], read_image: ['Looking at', 'Looked at', 'image'],
+  view_images: ['Looking at', 'Looked at', 'image'],
+  write: ['Writing', 'Wrote', 'edit'], write_file: ['Writing', 'Wrote', 'edit'], create: ['Creating', 'Created', 'edit'],
+  edit: ['Editing', 'Edited', 'edit'], edit_file: ['Editing', 'Edited', 'edit'], multi_edit: ['Editing', 'Edited', 'edit'], str_replace_editor: ['Editing', 'Edited', 'edit'],
+  grep: ['Searching for', 'Searched for', 'search'], search: ['Searching for', 'Searched for', 'search'], glob: ['Finding', 'Found', 'search'],
+  ls: ['Listing', 'Listed', 'folder'], list_dir: ['Listing', 'Listed', 'folder'],
+  web_search: ['Searching the web for', 'Searched the web for', 'globe'], web_fetch: ['Opening', 'Opened', 'globe'], fetch: ['Opening', 'Opened', 'globe'],
+  browser_check: ['Checking', 'Checked', 'globe'],
+  ask_bot: ['Asking', 'Asked', 'users'], hand_off: ['Handing it to', 'Handed it to', 'users'],
+  use_app: ['Using', 'Used', 'link'], mcp: ['Using', 'Used', 'link'],
+  remember: ['Remembering', 'Remembered', 'bulb'], recall: ['Recalling', 'Recalled', 'bulb'],
+  use_skill: ['Loading skill', 'Loaded skill', 'sparkle'], job: ['Checking background job', 'Checked background job', 'terminal'],
+};
+const short = (t, n = 70) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x; };
+/** A step as words: what it's doing, what it did, and an icon name the app knows. */
+function stepOf(rawName, args, cwd) {
+  const name = String(rawName || '').replace(/^dsh:/, '');
+  const a = args && typeof args === 'object' ? args : {};
+  const file = a.file_path || a.path || a.filePath || a.target_file || '';
+  const rel = file ? (() => { try { const r = path.relative(cwd || '', path.resolve(cwd || '', file)); return r && !r.startsWith('..') ? r.replace(/\\/g, '/') : file; } catch { return file; } })() : '';
+  if (SHELL_TOOLS.test(name)) { const c = short(commandOf(a), 80); return { doing: c ? `Running \`${c}\`` : 'Running a command', done: c ? `Ran \`${c}\`` : 'Ran a command', icon: 'terminal' }; }
+  if (name === 'todo_write') return { doing: 'Updating the plan', done: 'Updated the plan', icon: 'list' };
+  const [doing, done, icon] = STEP[name] || [null, null, 'sparkle'];
+  const what = rel || a.pattern || a.query || a.url || (name === 'ask_bot' ? a.name || a.bot : '') || (name === 'hand_off' ? a.to : '') || (a.app ? `${a.app}${a.tool ? ` ${a.tool}` : ''}` : '') || a.name || '';
+  const quoted = (name === 'grep' || name === 'search' || name === 'web_search') && what ? `"${short(what, 60)}"` : short(what, 70);
+  if (!doing) { const n = name.replace(/[_-]+/g, ' ').trim() || 'a tool'; return { doing: `Using ${n}${quoted ? `: ${quoted}` : ''}`, done: `Used ${n}${quoted ? `: ${quoted}` : ''}`, icon }; }
+  return { doing: quoted ? `${doing} ${quoted}` : doing, done: quoted ? `${done} ${quoted}` : done, icon };
+}
+
 // ---------- runs and approvals ----------
 const runs = new Map();    // session id -> AbortController
 const queues = new Map();  // session id -> messages sent while a reply was running, in order
@@ -584,7 +621,7 @@ async function* runDsh(session, text, approve, signal) {
   if (sessionId !== session.dshSession) { session.dshSession = sessionId; save(); await applyEffort(engine, sessionId); }
   turns.set(sessionId, { cwd: path.resolve(session.cwd), approve, request: String(text || ''), route: routeFor(session) });
   // Wisp leads every chat that is not a team member's own: it gets the team tools.
-  if (!memberOf(session) && settings.team.length) {
+  if (!memberOf(session) && session.kind !== 'code' && settings.team.length) {
     const ctx = { session, approve };
     teams.set(sessionId, {
       prompt: `YOUR TEAM\nYou lead these agents. Hand each task to the matching one with ask_bot and wait for its result (check it before you build on it); hand_off passes work on without waiting.\n${rosterLines().join('\n')}`,
@@ -673,6 +710,15 @@ async function startRun(session, text, opts = {}) {
     }
     for await (let ev of run) {
       if (opts.onEvent) { try { opts.onEvent(ev); } catch {} }
+      // What each step does, in words, as the Electron app shows it: "Editing index.html" while it
+      // runs, "Edited index.html" after.
+      if (ev.type === 'tool_start' && ev.name !== 'todo_write') {
+        const st = stepOf(ev.name, ev.args, session.cwd);
+        emit(session.id, { type: 'step', label: st.doing, icon: st.icon });
+      } else if (ev.type === 'tool_end') {
+        const st = stepOf(ev.name, ev.args, session.cwd);
+        ev = { ...ev, summary: ev.summary || (ev.ok === false ? `${st.done} (failed)` : st.done), icon: st.icon };
+      }
       for (const h of extCtx.hooks.runEvent) { try { h(session, ev); } catch {} }
       // Wisp's own commands show in the app's terminal too.
       if (ev.type === 'tool_start' && SHELL_TOOLS.test(String(ev.name || '')) && commandOf(ev.args)) {
@@ -692,7 +738,7 @@ async function startRun(session, text, opts = {}) {
       }
       reply = null;
       if (ev.type === 'text') push({ kind: 'assistant', text: ev.text, interim: !!ev.interim, at: Date.now() });
-      else if (ev.type === 'tool_end') push({ kind: 'tool', name: ev.name, label: ev.summary || '', ok: ev.ok, at: Date.now() });
+      else if (ev.type === 'tool_end') push({ kind: 'tool', name: ev.name, label: ev.summary || '', icon: ev.icon || '', ok: ev.ok, at: Date.now() });
       else if (ev.type === 'notice') push({ kind: 'notice', level: ev.level || 'info', text: ev.text, at: Date.now() });
       else if (ev.type === 'error') {
         // The engine speaks of "Craft"; here the fix is to sign in in the Codeply app.
@@ -727,19 +773,6 @@ async function startRun(session, text, opts = {}) {
 }
 
 // ---------- team: Wisp hands work to the agents ----------
-/** The agent's own chat (title = its name), made when missing. */
-function agentSession(member, cwd) {
-  const want = norm(member.name);
-  const c = folderKey(cwd);
-  let s = store.sessions.find((x) => norm(x.title) === want && folderKey(x.cwd) === c) || store.sessions.find((x) => norm(x.title) === want);
-  if (!s) {
-    s = { id: newId('c'), title: member.name, cwd: path.resolve(cwd), createdAt: Date.now(), updatedAt: Date.now(), messages: [], engine: 'dsh' };
-    store.sessions.unshift(s);
-    saveNow();
-    emit(s.id, { type: 'session_sync', session: meta(s) });
-  }
-  return s;
-}
 const whenIdle = (id) => (runs.has(id) ? new Promise((r) => { idleWaiters.set(id, [...(idleWaiters.get(id) || []), r]); }) : Promise.resolve());
 const summaryOf = (text) => {
   const t = String(text || '').trim();
@@ -747,13 +780,27 @@ const summaryOf = (text) => {
   return (m ? m[1] : t.split('\n').find((l) => l.trim()) || '').replace(/\s+/g, ' ').slice(0, 300);
 };
 
-/** One delegated run in the agent's chat, on DSH. wait: false lets Wisp carry on. */
+/** A session of its own for one task handed to an agent ("Frontend: Restyle the app"), so each
+ *  piece of work reads on its own in the agent's Sessions, never in your chats. */
+function taskSession(member, cwd, task) {
+  const first = String(task || '').split('\n').map((l) => l.trim()).find(Boolean) || 'A task';
+  const short = first.length > 60 ? `${first.slice(0, 57).trimEnd()}...` : first;
+  let title = `${member.name}: ${short}`;
+  for (let i = 2; store.sessions.some((x) => x.title === title); i++) title = `${member.name}: ${short} (${i})`;
+  const s = { id: newId('c'), title, cwd: path.resolve(cwd), createdAt: Date.now(), updatedAt: Date.now(), messages: [], engine: 'dsh', kind: 'agent', agent: member.name };
+  store.sessions.unshift(s);
+  saveNow();
+  emit(s.id, { type: 'session_sync', session: meta(s) });
+  return s;
+}
+
+/** One delegated run, in a new session of the agent's, on DSH. wait: false lets Wisp carry on. */
 async function delegate({ session, approve }, member, task, signal) {
-  const target = agentSession(member, session.cwd);
+  const target = taskSession(member, session.cwd, task);
   const ac = new AbortController();
   if (signal) { if (signal.aborted) ac.abort(); else signal.addEventListener('abort', () => ac.abort(), { once: true }); }
   const job = addJob({ id: newId('a_'), kind: 'agent', title: `${member.name}: ${task.split('\n')[0].slice(0, 70)}`, agent: member.name, detail: task.slice(0, 300), kill: () => ac.abort() }, session.id);
-  emit(session.id, { type: 'delegated', sessionId: session.id, agent: member.name, task: task.slice(0, 500) });
+  emit(session.id, { type: 'delegated', sessionId: session.id, agent: member.name, task: task.slice(0, 500), target: target.title });
   let r;
   try {
     await whenIdle(target.id); // the user may be talking to this agent right now
@@ -1217,6 +1264,9 @@ const server = http.createServer(async (req, res) => {
       const cwd = path.resolve(String(body.cwd || DEFAULT_CWD));
       if (!fs.existsSync(cwd)) return reply(400, { error: `Folder not found: ${cwd}` });
       const s = { id: newId('c'), title: String(body.title || 'New chat').slice(0, 80), cwd, createdAt: Date.now(), updatedAt: Date.now(), messages: [], engine: 'dsh' };
+      // An agent's session or the code view's chat (the app keeps them out of your chats).
+      if (body.kind === 'agent' || body.kind === 'code') s.kind = body.kind;
+      if (s.kind === 'agent' && body.agent) s.agent = String(body.agent).slice(0, 60);
       store.sessions.unshift(s);
       saveNow();
       emit(s.id, { type: 'session_sync', session: meta(s) });
@@ -1227,6 +1277,16 @@ const server = http.createServer(async (req, res) => {
       const s = find(decodeURIComponent(m[1]));
       if (!s) return reply(404, { error: 'No such chat.' });
       if (!m[2] && req.method === 'GET') return reply(200, { session: s, running: runs.has(s.id) });
+      if (!m[2] && req.method === 'DELETE') {
+        queues.delete(s.id);
+        const r = runs.get(s.id);
+        if (r) r.abort();
+        for (const [id, x] of pending) if (x.sessionId === s.id) x.resolve('reject');
+        store.sessions = store.sessions.filter((x) => x.id !== s.id);
+        saveNow();
+        emit(s.id, { type: 'session_deleted', sessionId: s.id });
+        return reply(200, { ok: true });
+      }
       if (m[2] === 'message' && req.method === 'POST') {
         const body = await readJson(req);
         const text = String(body.text || '').trim();

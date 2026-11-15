@@ -1,7 +1,7 @@
 //! Chat, Codex-style: a sidebar of New chat, Search, Pinned, Recents and Projects, and a home
 //! that asks "What should we build?". An open chat shows its transcript under a slim header.
 
-use rune::{Cx, El, ScrollSpec, col, el, row, text};
+use rune::{Cx, El, ScrollSpec, col, el, row, text, text_input};
 
 use crate::app::{App, EditKey, Pane};
 use crate::icons::{ico, ico_s};
@@ -45,9 +45,11 @@ fn chat_row(s: &App, t: &Theme, c: &ChatMeta) -> El {
 }
 
 pub fn side(s: &App, t: &Theme) -> El {
-    // Agents' own chats live on their pages in Agents; Chat lists the chats Wisp leads.
-    let is_agent = |c: &&ChatMeta| s.data.team.iter().any(|a| a.name == c.title);
-    let chats: Vec<&ChatMeta> = s.data.extra.chats.iter().filter(|c| !is_agent(c)).collect();
+    // Only your chats: agents' sessions live on their pages in Agents, and the code view's chat
+    // beside the editor. Search narrows them by title and last message.
+    let query = if s.chat_search { s.edit(EditKey::Search).text.trim().to_lowercase() } else { String::new() };
+    let found = |c: &&ChatMeta| query.is_empty() || c.title.to_lowercase().contains(&query) || c.preview.to_lowercase().contains(&query);
+    let chats: Vec<&ChatMeta> = s.data.extra.chats.iter().filter(|c| c.kind == crate::model::ChatKind::Chat).filter(found).collect();
     let pinned: Vec<&ChatMeta> = chats.iter().copied().filter(|c| s.prefs.pinned.contains(&c.title)).collect();
     let recents: Vec<&ChatMeta> = chats
         .iter()
@@ -65,23 +67,23 @@ pub fn side(s: &App, t: &Theme) -> El {
             i += 1;
         }
     }
-    list = list.child(sec(t, None, "Recents", false));
+    list = list.child(sec(t, None, if query.is_empty() { "Recents" } else { "Results" }, false));
     if recents.is_empty() {
         list = list.child(col().px(10.0).py(6.0)
-            .child(text("No chats yet").font(ui(13.0, 400.0)).color(t.faint)));
+            .child(text(if query.is_empty() { "No chats yet" } else { "No chats match" }).font(ui(13.0, 400.0)).color(t.faint)));
     }
-    let shown = if all { recents.len() } else { recents.len().min(RECENTS) };
+    let shown = if all || !query.is_empty() { recents.len() } else { recents.len().min(RECENTS) };
     for c in recents.iter().take(shown) {
         list = list.child(enter(chat_row(s, t, c), i));
         i += 1;
     }
-    if recents.len() > RECENTS {
+    if recents.len() > RECENTS && query.is_empty() {
         let label = if all { "Show less" } else { "Show more" };
         list = list.child(side_row(t, false).key("recents-more").role("button").label(label)
             .child(text(label).font(ui(13.5, 400.0)).color(t.faint))
             .on_press(|s: &mut App| s.toggle_expanded("recents-more")));
     }
-    if !s.data.extra.projects.is_empty() {
+    if !s.data.extra.projects.is_empty() && query.is_empty() {
         list = list.child(sec(t, None, "Projects", false));
         for p in &s.data.extra.projects {
             list = list.child(side_row(t, false).key(format!("project/{p}")).role("button").label(p.clone())
@@ -95,9 +97,21 @@ pub fn side(s: &App, t: &Theme) -> El {
             .child(ico("oai-compose", t.text))
             .child(text("New chat").font(ui(14.0, 400.0)).color(t.text))
             .on_press(|s: &mut App| s.new_chat()))
-        .child(side_row(t, false).key("search-row").role("button").label("Search")
-            .child(ico("oai-search", t.text))
-            .child(text("Search").font(ui(14.0, 400.0)).color(t.text)));
+        .child(if s.chat_search {
+            side_row(t, true).key("search-row")
+                .child(ico("oai-search", t.text))
+                .child(text_input(s.edit(EditKey::Search), ui(14.0, 400.0)).key("chat-search").single_line().grow(1.0).min_w(0.0)
+                    .color(t.text).placeholder("Search chats", t.faint).caret(t.accent, t.accent.alpha(0.3)).label("Search chats")
+                    .on_edit(|s: &mut App| s.edit_mut(EditKey::Search)))
+                .child(el().key("chat-search-close").size(22.0, 22.0).radius(6.0).center().hover(t.hover).role("button").label("Close search")
+                    .child(ico_s("close", 13.0, t.dim))
+                    .on_press(|s: &mut App| { s.chat_search = false; s.edit_mut(EditKey::Search).clear(); }))
+        } else {
+            side_row(t, false).key("search-row").role("button").label("Search")
+                .child(ico("oai-search", t.text))
+                .child(text("Search").font(ui(14.0, 400.0)).color(t.text))
+                .on_press_tx(|s: &mut App, tx| { s.chat_search = true; tx.focus("chat-search", false); })
+        });
     col().h_full().min_h(0.0)
         .child(top)
         .child(col().grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(list))

@@ -153,6 +153,23 @@ const SCENES: &[Scene] = &[
             model::ThreadItem::Them("Done. Under 640 px the cards now stack in one column, and `.plan.featured` has a 2 px blue border.\n\nSay **undo that** if you'd rather keep the old layout.".into()),
         ]));
     }),
+    ("chat-search", |s| { s.new_chat(); s.chat_search = true; s.edit_mut(EditKey::Search).replace_text("pricing"); }),
+    ("chat-steps", |s| {
+        s.open_chat("Casual chat");
+        if let Some(c) = s.data.extra.chats.iter_mut().find(|c| c.title == "Casual chat") {
+            c.running = true;
+        }
+        let mut items = s.data.thread("Casual chat").to_vec();
+        items.push(model::ThreadItem::You("Can you start a server to run this?".into()));
+        items.push(model::ThreadItem::Event { icon: "file-text", text: "Read index.html".into() });
+        items.push(model::ThreadItem::Event { icon: "terminal", text: "Ran `python -m http.server 8080`".into() });
+        items.push(model::ThreadItem::Them("It's running at http://127.0.0.1:8080/ and http://localhost:8080/.".into()));
+        items.push(model::ThreadItem::You("ok can u make it like iMessage?".into()));
+        items.push(model::ThreadItem::Event { icon: "file-text", text: "Read style.css".into() });
+        s.data.threads.push(("Casual chat".into(), items));
+        s.data.extra.step_now.push(("Casual chat".into(), "Editing style.css".into()));
+    }),
+    ("agent-sessions", |s| s.open_agent(Some("frontend"))),
     ("update-offer", |s| { s.new_chat(); s.updater.show(update::Phase::Offer(sample_release())); }),
     ("update-downloading", |s| { s.new_chat(); s.updater.show(update::Phase::Fetching { version: "4.0.140".into(), done: 31_000_000, total: 74_000_000, setup: true }); }),
     ("update-ready", |s| { s.new_chat(); s.updater.show(update::Phase::Ready(sample_release())); }),

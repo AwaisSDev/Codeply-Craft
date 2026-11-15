@@ -190,12 +190,36 @@ fn task_row(s: &App, t: &Theme, section: &str, i: usize, task: &Task) -> El {
 
 // ---------- an agent ----------
 
+/// An agent's sessions, newest first: its own chat, the tasks Wisp handed it, its loops' runs.
+pub fn sessions_of<'a>(s: &'a App, a: &Agent) -> Vec<&'a crate::model::ChatMeta> {
+    s.data.extra.chats.iter().filter(|c| c.kind == crate::model::ChatKind::Agent(a.id.clone())).collect()
+}
+
+/// The session the agent's page shows: the one you picked, else its newest, else its own chat
+/// (made by your first message). Empty: a new session, named by your next message.
+pub fn open_session(s: &App, a: &Agent) -> String {
+    match s.agent_session.get(&a.id) {
+        Some(t) => t.clone(),
+        None => sessions_of(s, a).first().map_or_else(|| a.name.clone(), |c| c.title.clone()),
+    }
+}
+
+/// A session's name without the agent's in front ("Frontend: Restyle the app" reads "Restyle the app").
+fn session_label(a: &Agent, title: &str) -> String {
+    title.strip_prefix(&format!("{}: ", a.name)).map_or_else(|| title.to_owned(), str::to_owned)
+}
+
 fn agent_page(s: &App, t: &Theme, a: &Agent) -> El {
+    let open = open_session(s, a);
+    let shown = if open.is_empty() { "New session".to_owned() } else if open == a.name { String::new() } else { session_label(a, &open) };
     let head = row().gap(10.0).px(24.0).h(52.0).center_y().border_sides([0.0, 0.0, 1.0, 0.0], t.border)
         .child(bot::agent(&awake(a), 26.0))
         .child(text(a.name.clone()).font(ui(14.5, 600.0)).color(t.text))
-        .child(text(a.role.clone()).font(ui(13.0, 400.0)).color(t.dim).truncate().min_w(0.0));
-    let thread = crate::thread::with_composer(s, t, &a.name, &a.name, EditKey::AgentThread, Target::Agent(a.id.clone()), &format!("Message {}", a.name), 760.0);
+        .child(text(if shown.is_empty() { a.role.clone() } else { shown }).font(ui(13.0, 400.0)).color(t.dim).truncate().min_w(0.0));
+    // A new session's transcript is empty until you send; its title comes from what you send.
+    let chat = if open.is_empty() { format!("\u{0}new/{}", a.id) } else { open.clone() };
+    let target = Target::AgentSession { agent: a.id.clone(), title: open };
+    let thread = crate::thread::with_composer(s, t, &chat, &a.name, EditKey::AgentThread, target, &format!("Message {}", a.name), 760.0);
     let centre = col().grow(1.0).min_w(0.0).h_full()
         .child(head)
         .child(el().w_full().grow(1.0).min_h(0.0).child(thread));
@@ -226,28 +250,48 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
                 .child(text(state_word(a.state).to_owned()).font(ui(12.5, 400.0)).color(t.dim))),
     );
 
-    // Sessions: the agent's own chat, then up to three others in the same project.
-    let own = s.data.chat(&a.name);
-    let mut sessions: Vec<(String, String)> = Vec::new();
-    if let Some(c) = own {
-        sessions.push((c.title.clone(), c.ago.clone()));
-        sessions.extend(s.data.extra.chats.iter().filter(|o| o.project == c.project && o.title != c.title).take(3).map(|o| (o.title.clone(), o.ago.clone())));
-    }
+    // Sessions: this agent's own, newest first. Five show; the rest scroll.
+    let open = open_session(s, a);
+    let mine = sessions_of(s, a);
     let mut session_list = col().w_full().gap(2.0);
-    if sessions.is_empty() {
-        session_list = session_list.child(text("No sessions yet.").font(ui(13.0, 400.0)).color(t.faint).px(8.0).py(6.0));
+    if mine.is_empty() {
+        session_list = session_list.child(text("No sessions yet. Send a message to start one.").font(ui(13.0, 400.0)).color(t.faint).wrap().px(8.0).py(6.0));
     }
-    for (title, ago) in sessions {
-        let open = title.clone();
+    for c in mine {
+        let (pick, gone, agent, agent2) = (c.title.clone(), c.title.clone(), a.id.clone(), a.id.clone());
+        let on = c.title == open;
+        let status = if c.running {
+            Some(ico_s("history", 14.0, t.dim).help("Working"))
+        } else if c.unread {
+            Some(el().size(6.0, 6.0).radius(3.0).fill(t.accent))
+        } else {
+            None
+        };
         session_list = session_list.child(
-            row().key(format!("session/{title}")).w_full().min_h(34.0).px(8.0).py(6.0).gap(10.0).radius(8.0).center_y().hover(t.hover)
-                .role("button").label(title.clone())
+            row().key(format!("session/{}", c.title)).hover_group().w_full().h(36.0).px(8.0).gap(10.0).radius(8.0).center_y()
+                .fill(if on { t.active } else { rune::Color::TRANSPARENT }).hover(t.hover)
+                .role("button").label(c.title.clone()).help(c.title.clone())
                 .child(ico_s("chat", 16.0, t.dim))
-                .child(text(title).font(ui(13.5, 400.0)).color(t.text).truncate().grow(1.0).min_w(0.0))
-                .child(text(ago).font(ui(12.0, 400.0)).color(t.faint))
-                .on_press(move |s: &mut App| s.open_chat(&open)),
+                .child(text(session_label(a, &c.title)).font(ui(13.5, if on { 500.0 } else { 400.0 })).color(t.text).truncate().grow(1.0).min_w(0.0))
+                .children(status)
+                .child(text(c.ago.clone()).font(ui(12.0, 400.0)).color(t.faint))
+                .child(el().key(format!("session-delete/{}", c.title)).size(22.0, 22.0).radius(6.0).center().hover(t.active).role("button").label("Delete session").help("Delete")
+                    .group_opacity(0.0, 1.0)
+                    .child(ico_s("trash", 13.0, t.dim))
+                    .on_press(move |s: &mut App| {
+                        s.delete_chat(&gone);
+                        s.agent_session.remove(&agent2);
+                    }))
+                .on_press_tx(move |s: &mut App, tx| { tx.settle(); s.open_agent_session(&agent, &pick) }),
         );
     }
+    let new_session = {
+        let id = a.id.clone();
+        crate::ui::ibtn(t, "plus", "New session").key(format!("session-new/{}", a.id))
+            .on_press_tx(move |s: &mut App, tx| { tx.settle(); s.open_agent_session(&id, ""); tx.focus("composer-agent-thread", false); })
+    };
+    // Five rows high; more scroll.
+    let sessions = col().key(format!("sessions/{}", a.id)).w_full().max_h(5.0 * 38.0).scroll(ScrollSpec { stick_bottom: false }).child(session_list);
 
     let mut loops = col().w_full().gap(4.0);
     let mine: Vec<_> = s.data.extra.loops.iter().filter(|l| l.agent == a.id).collect();
@@ -283,8 +327,8 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
         .child(text(a.name.clone()).font(ui(18.0, 650.0)).color(t.text).mt(12.0))
         .child(text(a.role.clone()).font(ui(13.0, 400.0)).color(t.dim).wrap().mt(2.0))
         .child(el().w_full().mt(20.0).child(computer))
-        .child(col().w_full().pt(22.0).pb(8.0).child(label(t, "Sessions")))
-        .child(session_list)
+        .child(row().w_full().pt(16.0).pb(4.0).center_y().child(label(t, "Sessions")).child(el().grow(1.0)).child(new_session))
+        .child(sessions)
         .child(col().w_full().pt(22.0).pb(8.0).child(label(t, "Loops")))
         .child(loops)
         .child(el().w_full().mt(4.0).child(create));

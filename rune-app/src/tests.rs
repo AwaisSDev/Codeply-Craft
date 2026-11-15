@@ -174,7 +174,7 @@ fn replies_render_markdown_with_link_names() {
 
 - one
 - two".into())]));
-    s.data.extra.chats.insert(0, crate::model::ChatMeta { title: "Links".into(), project: String::new(), ago: "now".into(), preview: String::new(), running: true, unread: false });
+    s.data.extra.chats.insert(0, crate::model::ChatMeta { title: "Links".into(), kind: crate::model::ChatKind::Chat, project: String::new(), ago: "now".into(), preview: String::new(), running: true, unread: false });
     s.open_chat("Links");
     let mut rt = runtime(s);
     settle(&mut rt);
@@ -417,4 +417,51 @@ fn the_code_view_agent_talks_in_the_projects_own_chat() {
     let thread = rt.state.data.thread(&chat).to_vec();
     assert!(thread.iter().any(|i| matches!(i, crate::model::ThreadItem::You(t) if t.starts_with("Make the cards stack on phones") && t.contains("Open in the editor"))),
         "the message lands in {chat}, with the open file named: {thread:?}");
+}
+
+#[test]
+fn chats_agents_and_the_code_view_keep_their_own_conversations() {
+    let mut rt = runtime(App::with_mock());
+    settle(&mut rt);
+    // Chat lists your chats only: no agent sessions.
+    assert!(rt.find("chat/Casual chat").is_some());
+    assert!(rt.find("chat/Frontend").is_none() && rt.find("chat/Frontend: Make the pricing cards responsive").is_none(), "agents' sessions stay out of Chat");
+    // The agent's page lists its sessions, newest first, and opens one.
+    click(&mut rt, "rail-Agents");
+    click(&mut rt, "agent-row/frontend");
+    assert!(rt.find("session/Frontend: Make the pricing cards responsive").is_some(), "the agent's sessions are on its page");
+    click(&mut rt, "session/Frontend: Make the pricing cards responsive");
+    assert_eq!(rt.state.agent_session.get("frontend").map(String::as_str), Some("Frontend: Make the pricing cards responsive"));
+    // A new session is named by its first message, and only the agent's page shows it.
+    click(&mut rt, "session-new/frontend");
+    rt.update(|s, _| s.edit_mut(EditKey::AgentThread).replace_text("Add a dark mode toggle"));
+    settle(&mut rt);
+    click(&mut rt, "send-agent-thread");
+    assert_eq!(rt.state.agent_session.get("frontend").map(String::as_str), Some("Frontend: Add a dark mode toggle"));
+    assert!(rt.find("session/Frontend: Add a dark mode toggle").is_some());
+    click(&mut rt, "rail-Chat");
+    assert!(rt.find("chat/Frontend: Add a dark mode toggle").is_none(), "and Chat doesn't");
+}
+
+#[test]
+fn search_filters_chats_and_delete_removes_one() {
+    let mut rt = runtime(App::with_mock());
+    settle(&mut rt);
+    click(&mut rt, "search-row");
+    assert!(rt.find("chat-search").is_some(), "Search opens a field");
+    rt.update(|s, _| s.edit_mut(EditKey::Search).replace_text("checkout"));
+    settle(&mut rt);
+    assert!(rt.find("chat/Fix the checkout crash").is_some() && rt.find("chat/Casual chat").is_none(), "only matching chats show");
+    click(&mut rt, "chat-search-close");
+    assert!(rt.find("chat/Casual chat").is_some());
+    rt.update(|s, _| s.toggle_menu("chat:Casual chat"));
+    settle(&mut rt);
+    click(&mut rt, "chat-menu/delete");
+    assert!(rt.find("chat/Casual chat").is_none(), "Delete removes the chat");
+}
+
+#[test]
+fn the_editor_note_is_not_shown_in_your_message() {
+    assert_eq!(crate::thread::shown_message("what link?\n\n(Open in the editor: index.html)"), "what link?");
+    assert_eq!(crate::thread::shown_message("plain"), "plain");
 }

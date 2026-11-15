@@ -21,7 +21,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use super::{APPS_PAGE, AppsQuery, Store, Target, mock};
-use crate::model::{AgentState, AppProgress, BgTask, ButtonKind, CatalogApp, ChatGroup, ChatMeta, Column, Memory, Pill, Publish, ReviewNote, Snapshot, Task, TaskBody, TermKind, TermLine, ThreadItem};
+use crate::model::{AgentState, AppProgress, BgTask, ButtonKind, CatalogApp, ChatGroup, ChatKind, ChatMeta, Column, Memory, Pill, Publish, ReviewNote, Snapshot, Task, TaskBody, TermKind, TermLine, ThreadItem};
 
 /// What the worker threads send back to the UI thread.
 enum Msg {
@@ -80,6 +80,9 @@ struct Session {
     updated: u64,
     preview: String,
     running: bool,
+    /// "agent" or "code" when the engine knows (older chats leave it empty), and the agent's name.
+    kind: String,
+    agent: String,
 }
 
 #[derive(Clone)]
@@ -564,7 +567,31 @@ impl LiveStore {
         if kind == "session_sync" {
             return;
         }
+        if kind == "session_deleted" {
+            if let Some(title) = self.title_of(&id) {
+                snap.threads.retain(|(k, _)| *k != title);
+                snap.extra.step_now.retain(|(k, _)| *k != title);
+            }
+            self.sessions.retain(|s| s.id != id);
+            self.named.retain(|_, v| *v != id);
+            return;
+        }
         let Some(title) = self.title_of(&id) else { return };
+        // What it's doing right now: set by a step starting, cleared by what comes after.
+        match kind {
+            "step" => {
+                let label = e["label"].as_str().unwrap_or_default().to_owned();
+                snap.extra.step_now.retain(|(k, _)| *k != title);
+                if !label.is_empty() {
+                    snap.extra.step_now.push((title.clone(), label));
+                }
+                return;
+            }
+            "tool_end" | "text_delta" | "text" | "run_finished" | "approval_request" | "error" | "aborted" | "done" => {
+                snap.extra.step_now.retain(|(k, _)| *k != title);
+            }
+            _ => {}
+        }
         let items = match snap.threads.iter().position(|(k, _)| *k == title) {
             Some(i) => &mut snap.threads[i].1,
             None => {
@@ -645,11 +672,12 @@ fn ago(updated: u64) -> String {
 }
 
 /// Every chat as the sidebars list it, newest first.
-fn metas(sessions: &[Session], unread: &std::collections::HashSet<String>) -> Vec<ChatMeta> {
+fn metas(sessions: &[Session], unread: &std::collections::HashSet<String>, team: &[crate::model::Agent]) -> Vec<ChatMeta> {
     let mut list: Vec<&Session> = sessions.iter().collect();
     list.sort_by_key(|s| std::cmp::Reverse(s.updated));
     list.into_iter().map(|s| ChatMeta {
         title: s.title.clone(),
+        kind: kind_of(s, team),
         project: std::path::Path::new(&s.cwd).file_name().and_then(|n| n.to_str()).unwrap_or_default().to_owned(),
         ago: ago(s.updated),
         preview: one_line(&s.preview, 120),
@@ -661,10 +689,31 @@ fn metas(sessions: &[Session], unread: &std::collections::HashSet<String>) -> Ve
 /// The team's states and Mission control's lists, from the engine's chats: an agent works while
 /// its chat runs, needs you while one of its approvals waits, and each chat that ran today is
 /// done today.
+/// Where a chat belongs: what the engine says (an agent's session, the code view's chat), else
+/// what its title says (the agent's own chat or a loop of theirs; "Code · project"), else yours.
+fn kind_of(s: &Session, team: &[crate::model::Agent]) -> ChatKind {
+    if s.kind == "code" || s.title.starts_with("Code · ") {
+        return ChatKind::Code;
+    }
+    let by_name = |name: &str| team.iter().find(|a| a.name.eq_ignore_ascii_case(name.trim()) || a.id == name).map(|a| a.id.clone());
+    if s.kind == "agent" {
+        return ChatKind::Agent(by_name(&s.agent).or_else(|| agent_match(&s.title, team)).unwrap_or_else(|| "wisp".to_owned()));
+    }
+    if s.title.eq_ignore_ascii_case("wisp") {
+        return ChatKind::Agent("wisp".into());
+    }
+    agent_match(&s.title, team).map_or(ChatKind::Chat, ChatKind::Agent)
+}
+
 /// Whose chat this is: the agent it's named after ("Emma"), a loop of theirs ("Emma: Check my
 /// LinkedIn"), or the start of their name ("Inbox" for "Inbox Watch"); Wisp otherwise. The
 /// longest name that fits wins.
 fn agent_of(title: &str, team: &[crate::model::Agent]) -> String {
+    agent_match(title, team).unwrap_or_else(|| "wisp".to_owned())
+}
+
+/// `agent_of` without the fallback: None when no agent's name fits.
+fn agent_match(title: &str, team: &[crate::model::Agent]) -> Option<String> {
     let t = title.trim().to_lowercase();
     let head = t.split(':').next().unwrap_or("").trim().to_owned();
     // (exact name, name length): a whole name beats the start of a longer one.
@@ -677,11 +726,12 @@ fn agent_of(title: &str, team: &[crate::model::Agent]) -> String {
             (exact || start).then_some(((exact, n.len()), a))
         })
         .max_by_key(|(rank, _)| *rank)
-        .map_or_else(|| "wisp".to_owned(), |(_, a)| a.id.clone())
+        .map(|(_, a)| a.id.clone())
 }
 
 /// A message's start as one plain line: no Markdown marks, no line breaks, at most `max` chars.
 fn one_line(text: &str, max: usize) -> String {
+    let text = crate::thread::shown_message(text);
     let mut out = String::new();
     for line in text.lines() {
         let l = line.trim().trim_start_matches(['#', '>', '-', '*', '+']).trim();
@@ -702,14 +752,25 @@ fn one_line(text: &str, max: usize) -> String {
 }
 
 fn derive(snap: &mut Snapshot, sessions: &[Session]) {
-    let waiting = snap.waiting();
-    let agent_for = |title: &str, team: &[crate::model::Agent]| agent_of(title, team);
+    // Mission control and the team's states come from the agents' sessions only: never your
+    // chats or the code view's.
+    let team = snap.team.clone();
+    let sessions: Vec<Session> = sessions.iter().filter(|s| matches!(kind_of(s, &team), ChatKind::Agent(_))).cloned().collect();
+    let sessions = &sessions[..];
+    let agent_of_session = |title: &str| sessions.iter().find(|s| s.title == title).map(|s| kind_of(s, &team));
+    let waiting: Vec<_> = snap.waiting().into_iter().filter(|(c, _, _)| matches!(agent_of_session(c), Some(ChatKind::Agent(_)))).collect();
+    let agent_for = |title: &str, team: &[crate::model::Agent]| match sessions.iter().find(|s| s.title == title).map(|s| kind_of(s, team)) {
+        Some(ChatKind::Agent(id)) => id,
+        _ => agent_of(title, team),
+    };
     for a in &mut snap.team {
         if a.state == AgentState::Walking {
             continue;
         }
-        let chat = sessions.iter().find(|s| s.title == a.name);
-        let asks = waiting.iter().any(|(c, _, _)| *c == a.name);
+        // The agent's latest session, and whether any of them is running or asking.
+        let mine: Vec<&Session> = sessions.iter().filter(|s| kind_of(s, &team) == ChatKind::Agent(a.id.clone())).collect();
+        let chat = mine.iter().find(|s| s.running).or_else(|| mine.iter().max_by_key(|s| s.updated)).copied();
+        let asks = waiting.iter().any(|(c, _, _)| mine.iter().any(|s| s.title == *c));
         a.state = if asks {
             AgentState::Waiting
         } else if chat.is_some_and(|c| c.running) {
@@ -720,7 +781,7 @@ fn derive(snap: &mut Snapshot, sessions: &[Session]) {
             AgentState::Sleeping
         };
         if let Some(c) = chat && !c.preview.is_empty() {
-            a.status = c.preview.chars().take(80).collect();
+            a.status = one_line(&c.preview, 80);
         }
     }
     let mut tasks = Vec::new();
@@ -742,7 +803,7 @@ fn derive(snap: &mut Snapshot, sessions: &[Session]) {
             request: None,
             agent: agent_for(&s.title, &snap.team),
             title: s.title.clone(),
-            sub: format!("{} · {}", ago(s.updated), if s.preview.is_empty() { "working" } else { s.preview.as_str() }),
+            sub: format!("{} · {}", ago(s.updated), if s.preview.is_empty() { "working".to_owned() } else { one_line(&s.preview, 90) }),
             pill: Some(("Running".into(), Pill::Blue)),
             body: TaskBody::Working { icon: "terminal", now: one_line(&s.preview, 90), progress: 0.5, screen: false },
         }));
@@ -769,6 +830,8 @@ fn sessions_from(v: &Value) -> Vec<Session> {
             updated: s["updatedAt"].as_u64().unwrap_or(0),
             preview: s["preview"].as_str().unwrap_or_default().to_owned(),
             running: s["running"].as_bool().unwrap_or(false),
+            kind: s["kind"].as_str().unwrap_or_default().to_owned(),
+            agent: s["agent"].as_str().unwrap_or_default().to_owned(),
         }).collect()
     })
 }
@@ -781,7 +844,34 @@ fn session_from(id: &str, meta: &Value) -> Session {
         updated: meta["updatedAt"].as_u64().unwrap_or(0),
         preview: meta["preview"].as_str().unwrap_or_default().to_owned(),
         running: meta["running"].as_bool().unwrap_or(false),
+        kind: meta["kind"].as_str().unwrap_or_default().to_owned(),
+        agent: meta["agent"].as_str().unwrap_or_default().to_owned(),
     }
+}
+
+/// The app's icon for a step's icon name (the engine's stepOf in engine.mjs).
+fn step_icon(name: &str) -> &'static str {
+    match name {
+        "file-text" => "file-text",
+        "edit" => "edit",
+        "terminal" => "terminal",
+        "search" => "search",
+        "folder" => "folder",
+        "globe" => "globe",
+        "users" => "users",
+        "link" => "link",
+        "bulb" => "bulb",
+        "list" => "list",
+        "image" => "image",
+        "check" => "check",
+        _ => "sparkle",
+    }
+}
+
+/// A step the engine sent without words (an older chat): its tool's name as words.
+fn tool_words(name: &str) -> String {
+    let n = name.trim_start_matches("dsh:").replace(['_', '-'], " ");
+    if n.trim().is_empty() { "Used a tool".to_owned() } else { format!("Used {}", n.trim()) }
 }
 
 /// A stored message as the transcript shows it.
@@ -790,7 +880,10 @@ pub fn item_from(m: &Value) -> Option<ThreadItem> {
     match m["kind"].as_str()? {
         "user" => Some(ThreadItem::You(text)),
         "assistant" if !m["interim"].as_bool().unwrap_or(false) => Some(ThreadItem::Them(text)),
-        "tool" => Some(ThreadItem::Event { icon: if m["name"] == "run" { "terminal" } else { "edit" }, text: m["label"].as_str().unwrap_or("Used a tool").to_owned() }),
+        "tool" => Some(ThreadItem::Event {
+            icon: step_icon(m["icon"].as_str().unwrap_or(if m["name"] == "run" { "terminal" } else { "edit" })),
+            text: m["label"].as_str().filter(|l| !l.is_empty()).map_or_else(|| tool_words(m["name"].as_str().unwrap_or_default()), str::to_owned),
+        }),
         "notice" => Some(ThreadItem::Event { icon: "help", text }),
         "checkpoint" => Some(ThreadItem::Event { icon: "history", text: format!("Changed {} files", m["total"].as_u64().unwrap_or(0)) }),
         _ => None,
@@ -802,7 +895,10 @@ pub fn item_from_event(e: &Value) -> Option<ThreadItem> {
     match e["type"].as_str()? {
         "run_started" => e.get("message").and_then(item_from),
         "text" if !e["interim"].as_bool().unwrap_or(false) => Some(ThreadItem::Them(e["text"].as_str()?.to_owned())),
-        "tool_end" => Some(ThreadItem::Event { icon: "check", text: e["summary"].as_str().or(e["name"].as_str()).unwrap_or("Tool").to_owned() }),
+        "tool_end" => Some(ThreadItem::Event {
+            icon: step_icon(e["icon"].as_str().unwrap_or("check")),
+            text: e["summary"].as_str().filter(|l| !l.is_empty()).map_or_else(|| tool_words(e["name"].as_str().unwrap_or_default()), str::to_owned),
+        }),
         "approval_request" => Some(ThreadItem::Approval {
             id: e["requestId"].as_str()?.to_owned(),
             title: e["title"].as_str().unwrap_or("Run a tool").to_owned(),
@@ -1127,11 +1223,13 @@ impl Store for LiveStore {
             }
         }
         if changed {
-            snap.chat_groups = group(&self.sessions);
-            snap.recent = recent(&self.sessions);
-            snap.extra.chats = metas(&self.sessions, &self.unread);
+            // Chat's sidebar, its groups and the home screen's recents hold only your chats.
+            let mine: Vec<Session> = self.sessions.iter().filter(|s| kind_of(s, &snap.team) == ChatKind::Chat).cloned().collect();
+            snap.chat_groups = group(&mine);
+            snap.recent = recent(&mine);
+            snap.extra.chats = metas(&self.sessions, &self.unread, &snap.team);
             let mut projects: Vec<String> = Vec::new();
-            for c in &snap.extra.chats {
+            for c in snap.extra.chats.iter().filter(|c| c.kind == ChatKind::Chat) {
                 if !c.project.is_empty() && !projects.contains(&c.project) {
                     projects.push(c.project.clone());
                 }
@@ -1237,6 +1335,16 @@ impl Store for LiveStore {
 
     fn refresh_files(&mut self) {
         self.refresh("files");
+    }
+
+    fn delete_chat(&mut self, title: &str, snap: &mut Snapshot) {
+        snap.threads.retain(|(k, _)| k != title);
+        snap.extra.chats.retain(|c| c.title != title);
+        if let Some(id) = self.id_of(title) {
+            self.sessions.retain(|s| s.id != id);
+            self.named.retain(|_, v| *v != id);
+            self.spawn(move |c| c.delete(&format!("/session/{id}")).err().map(|e| Msg::Status(format!("delete failed: {e}"))));
+        }
     }
 
     fn take_project(&mut self) -> Option<String> {
@@ -1562,20 +1670,26 @@ impl Store for LiveStore {
             }
             // Wisp and each helper talk in a chat of their own, named after them, made on first use;
             // the code view's agent in one named after the project, made in its folder.
-            Target::Wisp | Target::Agent(_) | Target::Project(_) => {
+            Target::Wisp | Target::Agent(_) | Target::Project(_) | Target::AgentSession { .. } => {
                 let name = match to {
                     Target::Agent(id) => snap.agent(id).map_or_else(|| id.clone(), |a| a.name.clone()),
-                    Target::Project(title) => title.clone(),
+                    Target::Project(title) | Target::AgentSession { title, .. } => title.clone(),
                     _ => "Wisp".to_owned(),
                 };
+                // Made in the project folder; the engine knows whose it is.
                 let cwd = matches!(to, Target::Project(_)).then(|| snap.extra.project_path.clone()).filter(|p| !p.is_empty());
+                let (kind, agent) = match to {
+                    Target::Project(_) => ("code", String::new()),
+                    Target::AgentSession { agent, .. } | Target::Agent(agent) => ("agent", snap.agent(agent).map_or_else(|| agent.clone(), |a| a.name.clone())),
+                    _ => ("agent", "Wisp".to_owned()),
+                };
                 let known = self.named.get(&name).cloned().or_else(|| self.id_of(&name));
                 let title = name.clone();
                 self.spawn(move |c| {
                     let id = match known {
                         Some(id) => id,
                         None => {
-                            let mut body = json!({ "title": title });
+                            let mut body = json!({ "title": title, "kind": kind, "agent": agent });
                             if let Some(cwd) = &cwd {
                                 body["cwd"] = json!(cwd);
                             }
@@ -1704,7 +1818,7 @@ mod tests {
 
     #[test]
     fn chats_group_by_folder() {
-        let s = |id: &str, title: &str, cwd: &str| Session { id: id.into(), title: title.into(), cwd: cwd.into(), updated: 0, preview: String::new(), running: false };
+        let s = |id: &str, title: &str, cwd: &str| Session { id: id.into(), title: title.into(), cwd: cwd.into(), updated: 0, preview: String::new(), running: false, kind: String::new(), agent: String::new() };
         let g = group(&[s("a", "One", "/w/launch-site"), s("b", "Two", "/w/other"), s("c", "Three", "/w/launch-site")]);
         assert_eq!(g.len(), 2);
         assert_eq!(g[0].chats, ["One", "Three"]);

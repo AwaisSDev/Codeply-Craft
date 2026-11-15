@@ -313,6 +313,11 @@ pub struct App {
     pub think_now: f64,
     /// The code view's "Edit with Wisp" bar (Ctrl K), while it's open.
     pub code_ask: bool,
+    /// The session open on each agent's page, by agent id (empty: a new one, made by the next
+    /// message). None: the agent's latest.
+    pub agent_session: std::collections::HashMap<String, String>,
+    /// Chat's search: the field shows and filters the sidebar.
+    pub chat_search: bool,
     /// Files attached to each composer's next message (the "+" picks them).
     pub attachments: std::collections::HashMap<EditKey, Vec<String>>,
     /// The files open as tabs in the code view, and each one's unsaved text when it isn't showing.
@@ -391,6 +396,8 @@ impl App {
             team_dialog: None,
             code_ask: false,
             attachments: std::collections::HashMap::new(),
+            agent_session: std::collections::HashMap::new(),
+            chat_search: false,
             code_tabs: Vec::new(),
             code_drafts: std::collections::HashMap::new(),
             code_dialog: None,
@@ -462,8 +469,22 @@ impl App {
         self.view = View::Agents;
         self.agent = id.map(str::to_owned);
         self.menu = None;
-        if let Some(name) = id.and_then(|i| self.data.agent(i)).map(|a| a.name.clone()) {
-            self.store.open(&name);
+        if let Some(a) = id.and_then(|i| self.data.agent(i)).cloned() {
+            let title = crate::views::agents::open_session(self, &a);
+            if !title.is_empty() {
+                self.store.open(&title);
+            }
+        }
+    }
+
+    /// Shows one of an agent's sessions on its page ("" starts a new one with the next message).
+    pub fn open_agent_session(&mut self, agent: &str, title: &str) {
+        self.agent_session.insert(agent.to_owned(), title.to_owned());
+        if !title.is_empty() {
+            self.store.open(title);
+            if let Some(c) = self.data.extra.chats.iter_mut().find(|c| c.title == title) {
+                c.unread = false;
+            }
         }
     }
 
@@ -579,6 +600,19 @@ impl App {
         self.prefs.save();
     }
 
+    /// Deletes a chat (or an agent's session) for good.
+    pub fn delete_chat(&mut self, chat: &str) {
+        self.store.delete_chat(chat, &mut self.data);
+        self.prefs.pinned.retain(|c| c != chat);
+        self.prefs.archived.retain(|c| c != chat);
+        if self.chat.as_deref() == Some(chat) {
+            self.chat = None;
+        }
+        self.agent_session.retain(|_, t| t != chat);
+        self.menu = None;
+        self.prefs.save();
+    }
+
     pub fn unarchive(&mut self, chat: &str) {
         self.prefs.archived.retain(|c| c != chat);
         self.prefs.save();
@@ -633,6 +667,7 @@ impl App {
             Target::Agent(id) => self.data.agent(id).map(|a| a.name.clone()),
             Target::New => None,
             Target::Project(title) => Some(title.clone()),
+            Target::AgentSession { title, .. } => (!title.is_empty()).then(|| title.clone()),
         }
     }
 
@@ -661,6 +696,21 @@ impl App {
         }
         let to = match to {
             Target::Chat(c) if c.is_empty() => Target::Chat(self.chat.clone().unwrap_or_default()),
+            // A new session with an agent: named after the agent and what you asked, and it
+            // shows on the agent's page from now on.
+            Target::AgentSession { agent, title } if title.is_empty() => {
+                let name = self.data.agent(agent).map_or_else(|| agent.clone(), |a| a.name.clone());
+                let first = text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("New chat");
+                let short: String = if first.chars().count() > 50 { format!("{}...", first.chars().take(47).collect::<String>().trim_end()) } else { first.to_owned() };
+                let mut title = format!("{name}: {short}");
+                let mut n = 2;
+                while self.data.extra.chats.iter().any(|c| c.title == title) {
+                    title = format!("{name}: {short} ({n})");
+                    n += 1;
+                }
+                self.agent_session.insert(agent.clone(), title.clone());
+                Target::AgentSession { agent: agent.clone(), title }
+            }
             other => other.clone(),
         };
         match self.store.send(&to, &text, &mut self.data) {

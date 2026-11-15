@@ -43,7 +43,7 @@ pub fn transcript(s: &App, t: &Theme, chat: &str, who: &str, width: f32) -> El {
             ThreadItem::Stamp(x) => row().center().mt(8.0).mb(12.0).child(text(x.clone()).font(ui(12.0, 400.0)).color(t.faint)),
             ThreadItem::You(x) => row().w_full().justify_end().my(10.0)
                 .child(el().max_w(560.0).shrink().px(16.0).py(10.0).radius(20.0).fill(t.bubble)
-                    .child(text(x.clone()).font(ui(14.5, 400.0).lh(22.0)).color(t.text).wrap().shrink().min_w(0.0).selectable(true))),
+                    .child(text(shown_message(x)).font(ui(14.5, 400.0).lh(22.0)).color(t.text).wrap().shrink().min_w(0.0).selectable(true))),
             ThreadItem::Them(x) => {
                 let live = streaming_at == Some(i) && s.prefs.reveal;
                 row().w_full().my(6.0).child(markdown::render(x, t, live).max_w(width - 48.0))
@@ -134,6 +134,15 @@ pub fn with_composer(s: &App, t: &Theme, chat: &str, who: &str, key: EditKey, ta
         .child(dock)
 }
 
+/// A message as its bubble shows it: without the note the code view adds for the agent
+/// ("(Open in the editor: index.html)").
+pub fn shown_message(text: &str) -> String {
+    match text.rfind("\n\n(Open in the editor: ") {
+        Some(i) if text.trim_end().ends_with(')') => text[..i].to_owned(),
+        _ => text.to_owned(),
+    }
+}
+
 /// The words the thinking line cycles through, as the Electron app's (app.js THINK_WORDS).
 pub const THINK_WORDS: &[&str] = &["Thinking", "Pondering", "Noodling", "Mulling it over", "Connecting the dots", "Brewing an answer", "Untangling it", "Almost there"];
 /// How long each word shows (app.js THINK_EVERY_MS).
@@ -144,13 +153,17 @@ fn thinking(s: &App, t: &Theme, chat: &str) -> El {
     let since = s.think_started.get(chat).copied().unwrap_or(s.think_now);
     let elapsed = (s.think_now - since).max(0.0);
     let turn = if s.reduced.get() { 0 } else { (elapsed / THINK_EVERY) as usize };
-    let word = THINK_WORDS[turn % THINK_WORDS.len()];
+    // What it's doing right now ("Editing index.html"), as the Electron app shows it; the
+    // thinking words only while it's between steps.
+    let step = s.data.extra.step_now.iter().find(|(c, _)| c == chat).map(|(_, l)| l.clone());
+    let turn = if step.is_some() { usize::MAX - 1 } else { turn };
+    let word = step.unwrap_or_else(|| THINK_WORDS[turn % THINK_WORDS.len()].to_owned());
     let dot = |i: usize| el().size(4.0, 4.0).radius(2.0).fill(t.dim)
         .looping(rune::LoopSpec::opacity(1.0, i as f64 * 0.16, 0.2, 1.0));
     row().key(format!("thinking/{chat}")).gap(8.0).my(8.0).center_y().transition(crate::ui::fade_in()).motion(crate::ui::ENTER)
         // A new key per word, so each word fades in as it arrives.
         .child(el().key(format!("think-word/{turn}")).transition(crate::ui::fade_in()).motion(crate::ui::ENTER)
-            .child(crate::ui::wave(word, ui(14.0, 450.0), t.text)))
+            .child(crate::ui::wave(&word, ui(14.0, 450.0), t.text)))
         .child(row().gap(3.0).center_y().child(dot(0)).child(dot(1)).child(dot(2)))
         .child(text(format!("{}s", elapsed as u64)).font(ui(12.5, 400.0)).color(t.faint))
 }

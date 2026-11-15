@@ -30,13 +30,24 @@ pub fn host(url: &str) -> Option<String> {
     let rest = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
     let host = rest.split(['/', '?', '#']).next()?.split('@').next_back()?.split(':').next()?;
     let host = host.trim_start_matches("www.").to_ascii_lowercase();
-    (host.contains('.') && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')).then_some(host)
+    ((host.contains('.') || host == "localhost") && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')).then_some(host)
+}
+
+/// A server on this computer or the local network: localhost, an IP address, a `.local` name.
+pub fn is_local(host: &str) -> bool {
+    host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local") || host.split('.').all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
 }
 
 /// A link's name: the site's name for a bare URL ("github.com/x/y" reads "GitHub"), else the
 /// host with its first letter raised ("Codeply" for codeply.app).
 pub fn site_name(url: &str) -> String {
     let Some(h) = host(url) else { return url.to_owned() };
+    // A local server reads as its address and port ("127.0.0.1:8080", "localhost:3000").
+    if is_local(&h) {
+        let rest = url.split_once("://").map_or(url, |(_, r)| r);
+        let hostport = rest.split(['/', '?', '#']).next().unwrap_or(&h);
+        return hostport.split('@').next_back().unwrap_or(hostport).to_owned();
+    }
     let known = [
         ("github.com", "GitHub"), ("gitlab.com", "GitLab"), ("google.com", "Google"), ("youtube.com", "YouTube"),
         ("vercel.com", "Vercel"), ("vercel.app", "Vercel"), ("stackoverflow.com", "Stack Overflow"), ("npmjs.com", "npm"),
@@ -59,7 +70,7 @@ pub fn site_name(url: &str) -> String {
 /// The icon for `url`'s site. The first call for a site starts fetching it; the pixels fill in
 /// when it lands (they wake the window themselves), and stay empty if it can't be had.
 pub fn get(url: &str) -> Option<Pixels> {
-    let h = host(url)?;
+    let h = host(url).filter(|h| !is_local(h))?;
     load(vec![format!("https://www.google.com/s2/favicons?domain={h}&sz=64")])
 }
 

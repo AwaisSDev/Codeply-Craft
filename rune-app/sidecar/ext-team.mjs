@@ -66,7 +66,7 @@ async function fire(job) {
   const api = C.api;
   let session = job.sessionId ? api.find(job.sessionId) : null;
   if (!session) {
-    session = { id: api.newId('c'), title: `${spec.name}: ${String(job.task).split('\n')[0].slice(0, 50)}`, cwd, createdAt: Date.now(), updatedAt: Date.now(), messages: [], engine: 'dsh' };
+    session = { id: api.newId('c'), title: `${spec.name}: ${String(job.task).split('\n')[0].slice(0, 50)}`, cwd, createdAt: Date.now(), updatedAt: Date.now(), messages: [], engine: 'dsh', kind: 'agent', agent: spec.name };
     api.sessions().unshift(session);
     api.saveNow();
     C.emit(session.id, { type: 'session_sync', session: api.meta(session) });

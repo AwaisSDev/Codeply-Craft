@@ -180,14 +180,20 @@ pub fn sample() -> Snapshot {
 
 /// The Codex-style views' sample data.
 pub fn extra() -> Extra {
-    let chat = |title: &str, project: &str, ago: &str, preview: &str, running: bool, unread: bool| ChatMeta {
-        title: s(title), project: s(project), ago: s(ago), preview: s(preview), running, unread,
+    // The sample's agents' own chats and sessions are theirs; the rest are yours.
+    let chat = |title: &str, project: &str, ago: &str, preview: &str, running: bool, unread: bool| {
+        let agent = ["Wisp", "Frontend", "Backend", "Inbox", "Research", "Docs"].iter().find(|n| title == **n || title.starts_with(&format!("{n}: ")));
+        ChatMeta {
+            title: s(title), kind: agent.map_or(ChatKind::Chat, |n| ChatKind::Agent(n.to_lowercase())), project: s(project), ago: s(ago), preview: s(preview), running, unread,
+        }
     };
     let chats = vec![
         chat("Wisp", "Codeply", "now", "All on track. Inbox has a reply for you to approve.", false, false),
         chat("Pricing page", "launch-site", "4 min", "Editing pricing.html, +42 lines", true, false),
         chat("Fix the checkout crash", "launch-site", "1 h", "Merged PR #42. The checkout no longer crashes.", false, true),
         chat("Frontend", "launch-site", "14 min", "Building the pricing page", true, false),
+        chat("Frontend: Make the pricing cards responsive", "launch-site", "1 h", "Cards stack under 640 px now.", false, false),
+        chat("Frontend: Dark mode for the docs site", "launch-site", "1 d", "Added a theme toggle and dark tokens.", false, false),
         chat("Backend", "launch-site", "6 min", "Thinking about plan limits", true, false),
         chat("Inbox", "Codeply", "18 min", "Needs your OK on 1 reply", false, true),
         chat("Research", "Codeply", "1 h", "Found 4 venues for Friday", false, false),
@@ -283,6 +289,7 @@ pub fn extra() -> Extra {
         repo: None,
         project_path: String::new(),
         prs_busy: false,
+        step_now: Vec::new(),
         email: s("sam@example.com"),
         sign_in: None,
         memories: vec![
@@ -312,7 +319,12 @@ pub fn echo(snap: &mut Snapshot, to: &Target, text: &str, reply: &str) {
                 blocks.push(Block::Reply(reply.to_owned()));
             }
         }
-        Target::Project(chat) => {
+        Target::Project(chat) | Target::AgentSession { title: chat, .. } => {
+            if let Target::AgentSession { agent, .. } = to
+                && !snap.extra.chats.iter().any(|c| c.title == *chat)
+            {
+                snap.extra.chats.insert(0, ChatMeta { title: chat.clone(), kind: ChatKind::Agent(agent.clone()), project: snap.project.clone(), ago: s("now"), preview: s(reply), running: false, unread: false });
+            }
             match snap.threads.iter_mut().find(|(k, _)| k == chat) {
                 Some((_, items)) => {
                     items.push(ThreadItem::You(text.to_owned()));
@@ -405,7 +417,7 @@ impl Store for MockStore {
         if *to == Target::New {
             // A new chat, titled by what you asked, at the top of the list.
             let title: String = if text.chars().count() > 46 { format!("{}...", text.chars().take(46).collect::<String>()) } else { text.to_owned() };
-            snap.extra.chats.insert(0, ChatMeta { title: title.clone(), project: snap.project.clone(), ago: s("now"), preview: s("On it."), running: false, unread: false });
+            snap.extra.chats.insert(0, ChatMeta { title: title.clone(), kind: ChatKind::Chat, project: snap.project.clone(), ago: s("now"), preview: s("On it."), running: false, unread: false });
             snap.threads.push((title.clone(), vec![ThreadItem::You(text.to_owned()), ThreadItem::Them(s("On it. I'll post here when it's done."))]));
             self.focus = Some(title);
             return Ok(());
