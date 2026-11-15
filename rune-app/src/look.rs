@@ -160,6 +160,10 @@ pub struct LookPrefs {
     /// Indexes into `DIMS` and `BLURS`.
     pub dim: usize,
     pub blur: usize,
+    /// ASCII and dots made from the picture take its colours (else the theme's one ink).
+    pub art_colour: bool,
+    /// The picture blurs behind an open chat, so what's said stays easy to read.
+    pub chat_blur: bool,
 }
 
 impl Default for LookPrefs {
@@ -180,6 +184,8 @@ impl Default for LookPrefs {
             art: Vec::new(),
             dim: 2,
             blur: 0,
+            art_colour: true,
+            chat_blur: true,
         }
     }
 }
@@ -208,6 +214,8 @@ impl LookPrefs {
             art: v["art"].as_array().map_or_else(Vec::new, |a| a.iter().filter_map(|l| l.as_str().map(str::to_owned)).take(200).collect()),
             dim: idx("dim", d.dim, DIMS.len()),
             blur: idx("blur", d.blur, BLURS.len()),
+            art_colour: v["art_colour"].as_bool().unwrap_or(d.art_colour),
+            chat_blur: v["chat_blur"].as_bool().unwrap_or(d.chat_blur),
         }
     }
 
@@ -216,6 +224,7 @@ impl LookPrefs {
             "mode": self.mode.name(), "accent": self.accent, "bg": self.bg, "side": self.side, "text": self.text,
             "name": self.name, "font": self.font, "mono": self.mono, "size": self.size, "weight": self.weight,
             "bg_kind": self.bg_kind.name(), "picture": self.picture, "art": self.art, "dim": self.dim, "blur": self.blur,
+            "art_colour": self.art_colour, "chat_blur": self.chat_blur,
         })
     }
 
@@ -249,7 +258,8 @@ impl LookPrefs {
         match self.bg_kind {
             BgKind::None => false,
             BgKind::Picture => !self.picture.is_empty(),
-            BgKind::Ascii | BgKind::Dots => !self.art.is_empty(),
+            // ASCII and dots draw from the picture in its colours, or from the saved art.
+            BgKind::Ascii | BgKind::Dots => !self.art.is_empty() || (self.art_colour && !self.picture.is_empty()),
         }
     }
 
@@ -535,6 +545,38 @@ impl Look {
         px
     }
 
+    /// ASCII or dotted art made from the picture at `path`, each glyph or dot in the picture's own
+    /// colour there. Drawn on a thread the first time; empty until it lands.
+    pub fn art_from_picture(&self, kind: BgKind, path: &str, t: &theme::Theme) -> Pixels {
+        let key = format!("art|{}|{path}|{}|{:?}", kind.name(), t.dark, t.art);
+        if let Some(p) = self.pics.borrow().get(&key) {
+            return p.clone();
+        }
+        let px = Pixels::new();
+        let mut pics = self.pics.borrow_mut();
+        if pics.len() > 24 {
+            pics.clear();
+        }
+        pics.insert(key, px.clone());
+        let (out, path, ink, dark) = (px.clone(), path.to_owned(), t.art, t.dark);
+        let draw = move || {
+            let decoded = if path == SAMPLE { Some(art::sample_picture()) } else { std::fs::read(&path).ok().and_then(|b| crate::favicon::decode_image(&b)) };
+            let Some((w, h, rgba)) = decoded else { return };
+            let (Some(grid), Some(colours)) = (Grid::from_rgba(&rgba, w, h), art::cell_colours(&rgba, w, h, dark)) else { return };
+            let (w, h, rgba) = match kind {
+                BgKind::Ascii => art::ascii_image_in(&grid, ink, Some(&colours), 0.85, !dark),
+                _ => art::dots_image_in(&grid, ink, Some(&colours), 0.85, !dark),
+            };
+            out.set(w, h, rgba);
+        };
+        if rune::is_headless() {
+            draw();
+        } else {
+            std::thread::spawn(draw);
+        }
+        px
+    }
+
     /// The pixels of ASCII or dotted art for `lines`, drawn in the theme's ink.
     pub fn art(&self, kind: BgKind, lines: &[String], t: &theme::Theme) -> Option<Pixels> {
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -644,6 +686,16 @@ impl App {
 
     pub fn set_dim(&mut self, i: usize) {
         self.prefs.look.dim = i.min(DIMS.len() - 1);
+        self.save_look();
+    }
+
+    pub fn toggle_art_colour(&mut self) {
+        self.prefs.look.art_colour = !self.prefs.look.art_colour;
+        self.save_look();
+    }
+
+    pub fn toggle_chat_blur(&mut self) {
+        self.prefs.look.chat_blur = !self.prefs.look.chat_blur;
         self.save_look();
     }
 

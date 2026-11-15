@@ -23,9 +23,25 @@ pub fn backdrop(s: &App, t: &Theme) -> Option<El> {
         return None;
     }
     let dim = DIMS[look.dim].1;
+    // An open conversation (a chat, an agent's session): the picture softens behind it.
+    let in_chat = look.chat_blur && ((s.view == crate::app::View::Chat && s.chat.is_some()) || (s.view == crate::app::View::Agents && s.agent.is_some()));
     let (px, layer_opacity, scrim) = match look.bg_kind {
-        BgKind::Picture => (s.look.picture(&look.picture, BLURS[look.blur].1, 1600), 1.0, dim),
-        kind => (s.look.art(kind, &look.art, t)?, 1.0 - dim * 0.8, 0.0),
+        BgKind::Picture => {
+            let base = BLURS[look.blur].1;
+            let chat = base.max(BLURS[2].1);
+            let (want, other) = if in_chat { (chat, base) } else { (base, chat) };
+            let px = s.look.picture(&look.picture, want, 1600);
+            // Both kept ready, so going in and out of a chat never shows a gap while one decodes.
+            let alt = if look.chat_blur { s.look.picture(&look.picture, other, 1600) } else { px.clone() };
+            (if px.size().0 == 0 && alt.size().0 > 0 { alt } else { px }, 1.0, dim)
+        }
+        // ASCII and dots from the picture, in its colours; else the saved art in the theme's ink.
+        kind if look.art_colour && !look.picture.is_empty() => {
+            let px = s.look.art_from_picture(kind, &look.picture, t);
+            let px = if px.size().0 == 0 { s.look.art(kind, &look.art, t).unwrap_or(px) } else { px };
+            (px, 1.0 - dim * 0.8, if in_chat { 0.25 } else { 0.0 })
+        }
+        kind => (s.look.art(kind, &look.art, t)?, 1.0 - dim * 0.8, if in_chat { 0.25 } else { 0.0 }),
     };
     let image = el().absolute(0.0, 0.0).w_full().h_full().opacity(layer_opacity).pixels_fit(&px, SurfaceFit::Fill);
     let mut layer = el().key("backdrop").absolute(0.0, 0.0).w_full().h_full().child(image);
@@ -236,6 +252,12 @@ fn background(s: &App, t: &Theme) -> El {
     rows.push(search);
     rows.push(item(t, "Dim", Some("How much the background steps back so text stays readable."), steps(t, "set-dim", &dims, l.dim, |s, i| s.set_dim(i))));
     rows.push(item(t, "Blur", Some("Softens a picture."), steps(t, "set-blur", &blurs, l.blur, |s, i| s.set_blur(i))));
+    if matches!(l.bg_kind, BgKind::Ascii | BgKind::Dots) {
+        rows.push(item(t, "Colours", Some("ASCII and dots made from your picture, in its colours or in the theme's."),
+            tabs(t, "set-art-colour", &[(true, "Picture"), (false, "Theme")], l.art_colour, |s: &mut App, v: bool| if s.prefs.look.art_colour != v { s.toggle_art_colour() })));
+    }
+    rows.push(item(t, "Blur behind chats", Some("The background softens while a conversation is open, so it stays easy to read."),
+        crate::ui::toggle(t, "set-chat-blur".into(), l.chat_blur, "Blur behind chats").on_press(|s: &mut App| s.toggle_chat_blur())));
     group(t, "Background", rows)
 }
 

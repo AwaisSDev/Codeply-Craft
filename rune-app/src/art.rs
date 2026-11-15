@@ -136,6 +136,12 @@ const GLYPHS: [[u8; 7]; 9] = [
 /// glyph colour; `gain` (0..1) its strongest opacity. `invert` swaps dense and empty, for art on
 /// paper.
 pub fn ascii_image(grid: &Grid, ink: [u8; 3], gain: f32, invert: bool) -> (u32, u32, Vec<u8>) {
+    ascii_image_in(grid, ink, None, gain, invert)
+}
+
+/// `ascii_image`, each glyph in its own cell's colour when `colours` gives one per grid cell
+/// (a picture's own colours, from `cell_colours`).
+pub fn ascii_image_in(grid: &Grid, ink: [u8; 3], colours: Option<&[[u8; 3]]>, gain: f32, invert: bool) -> (u32, u32, Vec<u8>) {
     let mut px = vec![0u8; (W * H * 4) as usize];
     for p in px.chunks_exact_mut(4) {
         p[..3].copy_from_slice(&ink);
@@ -158,6 +164,7 @@ pub fn ascii_image(grid: &Grid, ink: [u8; 3], gain: f32, invert: bool) -> (u32, 
                 continue;
             }
             let glyph = &GLYPHS[level.min(9) - 1];
+            let colour = colours.and_then(|c| c.get(y0.min(ROWS - 1) * COLS + (rx * COLS / cols).min(COLS - 1)).copied());
             for (gy, bits) in glyph.iter().enumerate() {
                 for gx in 0..5 {
                     if bits >> (4 - gx) & 1 == 0 {
@@ -169,6 +176,9 @@ pub fn ascii_image(grid: &Grid, ink: [u8; 3], gain: f32, invert: bool) -> (u32, 
                         for dx in 0..2 {
                             let i = ((py0 + dy) * W as usize + px0 + dx) * 4 + 3;
                             px[i] = (255.0 * gain) as u8;
+                            if let Some(c) = colour {
+                                px[i - 3..i].copy_from_slice(&c);
+                            }
                         }
                     }
                 }
@@ -180,6 +190,11 @@ pub fn ascii_image(grid: &Grid, ink: [u8; 3], gain: f32, invert: bool) -> (u32, 
 
 /// Dotted (halftone) art as an image: one round dot per cell, bigger where brighter.
 pub fn dots_image(grid: &Grid, ink: [u8; 3], gain: f32, invert: bool) -> (u32, u32, Vec<u8>) {
+    dots_image_in(grid, ink, None, gain, invert)
+}
+
+/// `dots_image`, each dot in its own cell's colour when `colours` gives one per grid cell.
+pub fn dots_image_in(grid: &Grid, ink: [u8; 3], colours: Option<&[[u8; 3]]>, gain: f32, invert: bool) -> (u32, u32, Vec<u8>) {
     let mut px = vec![0u8; (W * H * 4) as usize];
     for p in px.chunks_exact_mut(4) {
         p[..3].copy_from_slice(&ink);
@@ -195,6 +210,7 @@ pub fn dots_image(grid: &Grid, ink: [u8; 3], gain: f32, invert: bool) -> (u32, u
                 continue;
             }
             let r = 0.9 + f32::from(level) / 9.0 * (cell * 0.5 - 0.6);
+            let colour = colours.and_then(|c| c.get(cy * COLS + cx).copied());
             let (mx, my) = ((cx as f32 + 0.5) * cell, (cy as f32 + 0.5) * cell);
             let (x0, x1) = ((mx - r - 1.0).floor().max(0.0) as usize, ((mx + r + 1.0).ceil() as usize).min(W as usize));
             let (y0, y1) = ((my - r - 1.0).floor().max(0.0) as usize, ((my + r + 1.0).ceil() as usize).min(H as usize));
@@ -203,13 +219,55 @@ pub fn dots_image(grid: &Grid, ink: [u8; 3], gain: f32, invert: bool) -> (u32, u
                     let d = ((x as f32 + 0.5 - mx).powi(2) + (y as f32 + 0.5 - my).powi(2)).sqrt();
                     let cov = (r - d + 0.5).clamp(0.0, 1.0);
                     if cov > 0.0 {
-                        px[(y * W as usize + x) * 4 + 3] = (255.0 * cov * gain) as u8;
+                        let i = (y * W as usize + x) * 4;
+                        px[i + 3] = (255.0 * cov * gain) as u8;
+                        if let Some(c) = colour {
+                            px[i..i + 3].copy_from_slice(&c);
+                        }
                     }
                 }
             }
         }
     }
     (W, H, px)
+}
+
+/// Each grid cell's colour in a picture (the same centred 16:9 crop as `Grid::from_rgba`), made
+/// to read on the canvas: lifted on a dark one, deepened on a light one, a little more vivid.
+pub fn cell_colours(rgba: &[u8], w: u32, h: u32, dark: bool) -> Option<Vec<[u8; 3]>> {
+    let (w, h) = (w as usize, h as usize);
+    if w < 2 || h < 2 || rgba.len() < w * h * 4 {
+        return None;
+    }
+    let (cw, ch) = if w * 9 > h * 16 { (h * 16 / 9, h) } else { (w, w * 9 / 16) };
+    let (ox, oy) = ((w - cw) / 2, (h - ch) / 2);
+    let mut out = Vec::with_capacity(COLS * ROWS);
+    for y in 0..ROWS {
+        for x in 0..COLS {
+            let (x0, x1) = (ox + x * cw / COLS, ox + ((x + 1) * cw / COLS).max(x * cw / COLS + 1));
+            let (y0, y1) = (oy + y * ch / ROWS, oy + ((y + 1) * ch / ROWS).max(y * ch / ROWS + 1));
+            let (mut sum, mut n) = ([0f32; 3], 0f32);
+            for yy in y0..y1.min(h) {
+                for xx in x0..x1.min(w) {
+                    let p = &rgba[(yy * w + xx) * 4..];
+                    for k in 0..3 {
+                        sum[k] += f32::from(p[k]);
+                    }
+                    n += 1.0;
+                }
+            }
+            let c = sum.map(|v| v / n.max(1.0));
+            // More vivid: push each channel away from the grey.
+            let grey = (c[0] + c[1] + c[2]) / 3.0;
+            let mut c = c.map(|v| grey + (v - grey) * 1.35);
+            let top = c.iter().copied().fold(1.0f32, f32::max);
+            // On dark, the brightest channel reaches at least 170; on light, at most 150.
+            let scale = if dark { (170.0 / top).max(1.0) } else { (150.0 / top).min(1.0) };
+            c = c.map(|v| (v * scale).clamp(0.0, 255.0));
+            out.push(c.map(|v| v as u8));
+        }
+    }
+    Some(out)
 }
 
 /// A picture ready to draw: shrunk to at most `max_w` wide and, for `blur` above 0, softened

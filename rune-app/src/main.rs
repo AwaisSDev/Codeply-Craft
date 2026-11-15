@@ -170,11 +170,24 @@ const SCENES: &[Scene] = &[
         s.data.extra.step_now.push(("Casual chat".into(), "Editing style.css".into()));
     }),
     ("agent-sessions", |s| s.open_agent(Some("frontend"))),
+    ("bg-ascii-colour", |s| { bg(s, look::BgKind::Ascii); s.new_chat(); }),
+    ("bg-dots-colour", |s| { bg(s, look::BgKind::Dots); s.new_chat(); }),
+    ("bg-picture", |s| { bg(s, look::BgKind::Picture); s.new_chat(); }),
+    ("bg-picture-chat", |s| { bg(s, look::BgKind::Picture); s.open_chat("Casual chat"); }),
+    ("settings-background", |s| { bg(s, look::BgKind::Dots); s.open_settings(SettingsPage::Appearance); }),
     ("update-offer", |s| { s.new_chat(); s.updater.show(update::Phase::Offer(sample_release())); }),
     ("update-downloading", |s| { s.new_chat(); s.updater.show(update::Phase::Fetching { version: "4.0.140".into(), done: 31_000_000, total: 74_000_000, setup: true }); }),
     ("update-ready", |s| { s.new_chat(); s.updater.show(update::Phase::Ready(sample_release())); }),
     ("settings-update", |s| { s.open_settings(SettingsPage::General); s.updater.show(update::Phase::Ready(sample_release())); }),
 ];
+
+/// The sample picture as the background, drawn as `kind`.
+fn bg(s: &mut App, kind: look::BgKind) {
+    s.prefs.look.picture = look::SAMPLE.into();
+    s.prefs.look.bg_kind = kind;
+    s.prefs.look.dim = 1;
+    s.convert_picture();
+}
 
 /// A release for the update scenes.
 fn sample_release() -> update::Release {

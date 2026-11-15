@@ -208,7 +208,8 @@ fn every_scene_lays_out_in_light_at_the_largest_size_and_over_a_background() {
             let mut rt = runtime(s);
             settle(&mut rt);
             assert!(rt.find("titlebar").is_some(), "{name} ({look}): the titlebar is missing");
-            let background = look.contains("dots") || look.contains("ascii") || look.contains("picture");
+            // The background scenes choose one of their own.
+            let background = look.contains("dots") || look.contains("ascii") || look.contains("picture") || name.starts_with("bg-") || *name == "settings-background";
             assert_eq!(rt.find("backdrop").is_some(), background, "{name} ({look}): the background layer");
         }
     }
