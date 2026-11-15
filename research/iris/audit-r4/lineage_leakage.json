@@ -1,0 +1,210 @@
+{
+ "manifest_history": [
+  {
+   "commit": "3a6a7420",
+   "when": "11-09 23:07",
+   "subject": "Iris: contract iris.ops/1, guard, reference store, gold derivation, IrisBench scoring, tra",
+   "episodes": {
+    "train": 174,
+    "val": 0,
+    "test": 0
+   },
+   "examples": {
+    "train": 1365,
+    "val": 0,
+    "test": 0
+   }
+  },
+  {
+   "commit": "60129998",
+   "when": "11-10 06:07",
+   "subject": "Iris: rebuilt dataset with va01 and te01; validation results in progress",
+   "episodes": {
+    "train": 174,
+    "val": 12,
+    "test": 14
+   },
+   "examples": {
+    "train": 1365,
+    "val": 88,
+    "test": 99
+   }
+  },
+  {
+   "commit": "2b443de9",
+   "when": "11-10 06:25",
+   "subject": "Iris: dataset rebuilt for run r2 (teacher-heavy mix)",
+   "episodes": {
+    "train": 99,
+    "val": 12,
+    "test": 14
+   },
+   "examples": {
+    "train": 795,
+    "val": 88,
+    "test": 99
+   }
+  },
+  {
+   "commit": "c8193777",
+   "when": "11-11 20:00",
+   "subject": "Iris data: merge reviewed Sonnet shards (train +tr04 tr05 tr06, val +va02), rebuild, revie",
+   "episodes": {
+    "train": 144,
+    "val": 24,
+    "test": 28
+   },
+   "examples": {
+    "train": 1258,
+    "val": 184,
+    "test": 203
+   }
+  }
+ ],
+ "current_manifest": {
+  "train": {
+   "episodes": 144,
+   "examples": 1258,
+   "sha256": "2fdd84f7e94a6e90"
+  },
+  "val": {
+   "episodes": 24,
+   "examples": 184,
+   "sha256": "0ae331732c7fcf60"
+  },
+  "test": {
+   "episodes": 28,
+   "examples": 203,
+   "sha256": "4bdf4c716b4a9624"
+  }
+ },
+ "kaggle_run_manifest": {
+  "train": {
+   "episodes": 144,
+   "examples": 1258,
+   "sha256": "2fdd84f7e94a6e90",
+   "same_as_repo": true
+  },
+  "val": {
+   "episodes": 24,
+   "examples": 184,
+   "sha256": "0ae331732c7fcf60",
+   "same_as_repo": true
+  },
+  "test": {
+   "episodes": 0,
+   "examples": 0,
+   "sha256": "e3b0c44298fc1c14",
+   "same_as_repo": false
+  }
+ },
+ "raw_shards": {
+  "train": {
+   "syn01": 60,
+   "tr01": 14,
+   "tr02": 14,
+   "tr03": 14,
+   "tr04": 14,
+   "tr05": 14,
+   "tr06": 14
+  },
+  "val": {
+   "va01": 12,
+   "va02": 12
+  },
+  "test": {
+   "te01": 14,
+   "te02": 14
+  }
+ },
+ "entity_check_from_build": {},
+ "val_6gram_overlap_with_train": {
+  "sessions": 120,
+  "mean": 0.0091,
+  "max": 0.229,
+  "sessions_ge_10pct": 3,
+  "top": [
+   [
+    0.229,
+    "va02-e12",
+    5
+   ],
+   [
+    0.134,
+    "va02-e05",
+    4
+   ],
+   [
+    0.127,
+    "va02-e10",
+    4
+   ]
+  ]
+ },
+ "test_6gram_overlap_with_train": {
+  "sessions": 140,
+  "mean": 0.0018,
+  "max": 0.069,
+  "sessions_ge_10pct": 0,
+  "top": [
+   [
+    0.069,
+    "te01-e14",
+    1
+   ],
+   [
+    0.038,
+    "te02-e01",
+    5
+   ],
+   [
+    0.02,
+    "te01-e07",
+    5
+   ]
+  ]
+ },
+ "exact_duplicate_messages_with_train": {
+  "val": 0,
+  "test": 0
+ },
+ "shared_org_project_event_entities": {
+  "train-val": [
+   "['ielts', 'exam']",
+   "['project', 'kestrel']",
+   "['thesis', 'committee', 'meeting']",
+   "['umrah', 'trip']"
+  ],
+  "train-test": [
+   "['bathroom', 'renovation']",
+   "['farewell', 'dinner']",
+   "['umrah', 'trip']"
+  ],
+  "val-test": [
+   "['reunion', 'trip']",
+   "['umrah', 'trip']"
+  ]
+ },
+ "token_shared_across_splits": {
+  "ledgerline": {
+   "train": 3,
+   "val": 2,
+   "test": 0
+  },
+  "project kestrel": {
+   "train": 0,
+   "val": 1,
+   "test": 0
+  },
+  "bikemarkt": {
+   "train": 0,
+   "val": 3,
+   "test": 0
+  }
+ },
+ "injection_template_messages": {
+  "train": 30,
+  "val": 9,
+  "test": 1
+ }
+}
