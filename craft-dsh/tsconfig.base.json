@@ -457,6 +457,7 @@
       "@codeply/dsh-edit-near-miss": ["./packages/codeply/edit-near-miss/src"],
       "@codeply/dsh-shell-hints": ["./packages/codeply/shell-hints/src"],
       "@codeply/dsh-ask-first": ["./packages/codeply/ask-first/src"],
+      "@codeply/dsh-agents": ["./packages/codeply/agents/src"],
       "@codeply/dsh-claim-check": ["./packages/codeply/claim-check/src"],
       "@codeply/dsh-undo": ["./packages/codeply/undo/src"],
       "@codeply/dsh-web-search": ["./packages/codeply/web-search/src"],

@@ -28,11 +28,15 @@ fn tab_el(s: &App, t: &Theme, i: usize) -> El {
         .group_opacity(if on { 1.0 } else { 0.0 }, 1.0)
         .child(ico_s("close", 14.0, t.dim))
         .on_press(move |s: &mut App| s.browser.close_tab(i));
-    row().key(format!("tab/{}", tab.id)).h(30.0).max_w(180.0).px(10.0).gap(8.0).radius(8.0).center_y().hover_group().hover(t.hover)
+    row().key(format!("tab/{}", tab.id)).h(30.0).max_w(if tab.agent.is_some() { 240.0 } else { 180.0 }).px(10.0).gap(8.0).radius(8.0).center_y().hover_group().hover(t.hover)
         .fill(if on { t.active } else { Color::TRANSPARENT })
         .role("tab").checked(on).label(tab.title.clone())
-        .child(site_icon(t, &tab.url, 16.0))
-        .child(text(title).font(ui(13.0, 400.0)).color(if on { t.text } else { t.dim }).truncate().shrink().min_w(0.0))
+        .child(match &tab.agent {
+            Some(a) => crate::bot::mascot(&a.color, &a.look, crate::model::AgentState::Working, 18.0),
+            None => site_icon(t, &tab.url, 16.0),
+        })
+        .children(tab.agent.as_ref().map(|a| text(a.name.clone()).font(ui(12.5, 600.0)).color(crate::theme::hex(&a.color))))
+        .children((tab.agent.as_ref().is_none_or(|a| a.name != tab.title)).then(|| text(title).font(ui(13.0, 400.0)).color(if on { t.text } else { t.dim }).truncate().shrink().min_w(0.0)))
         .child(close)
         .on_press(move |s: &mut App| s.browser.select(i))
 }

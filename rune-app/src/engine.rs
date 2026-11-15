@@ -32,6 +32,9 @@ const EXTENSIONS: &[(&str, &str)] = &[
     ("ext-team.mjs", include_str!("../sidecar/ext-team.mjs")),
     ("ext-prs.mjs", include_str!("../sidecar/ext-prs.mjs")),
     ("ext-code.mjs", include_str!("../sidecar/ext-code.mjs")),
+    ("ext-agents.mjs", include_str!("../sidecar/ext-agents.mjs")),
+    // The tools ext-agents gives each background agent (its team channel, its browser tab).
+    ("agents-mcp.mjs", include_str!("../sidecar/agents-mcp.mjs")),
 ];
 
 /// The engine a launch found.

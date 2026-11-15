@@ -24,6 +24,7 @@ mod prefs;
 mod project;
 mod shell;
 mod store;
+mod subagents;
 mod team;
 mod theme;
 mod thread;
@@ -45,6 +46,18 @@ const SCENES: &[Scene] = &[
     ("appearance", |s| { s.go(View::Agents); s.toggle_appearance("backend"); }),
     ("chat", |s| s.new_chat()),
     ("chat-thread", |s| s.open_chat("Casual chat")),
+    ("subagents", |s| { s.open_chat("Casual chat"); s.panes.tasks = true; }),
+    ("subagent-open", |s| { s.open_chat("Casual chat"); s.panes.tasks = true; s.toggle_subagent("ag1"); }),
+    ("team-open", |s| { s.open_chat("Casual chat"); s.panes.tasks = true; s.toggle_team("sw1"); }),
+    ("agent-tabs", |s| {
+        s.open_chat("Casual chat");
+        s.panes.browser = true;
+        s.panes.tasks = true;
+        for a in s.data.extra.subagents.agents.clone().iter().take(2) {
+            let id = s.browser.tabs.len() as u64 + 10;
+            s.browser.tabs.push(crate::browser::Tab { id, url: "http://localhost:5173/pricing".into(), title: a.name.clone(), loading: false, agent: Some(crate::browser::TabAgent { id: a.id.clone(), name: a.name.clone(), color: a.color.clone(), look: a.look.clone() }) });
+        }
+    }),
     ("chat-menu", |s| { s.open_chat("Casual chat"); s.toggle_menu("chat-head:Casual chat"); }),
     ("model-menu", |s| { s.new_chat(); s.toggle_menu("model:chat-home"); }),
     ("code", |s| s.go(View::Code)),

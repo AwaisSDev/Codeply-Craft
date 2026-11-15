@@ -42,7 +42,7 @@ const HAZE_PATCH = `# Written by the Codeply CLI: the ACP profile answers throug
     personaPrefix: >-
       You are Codeply, powered by the {{model}} model.
 # No OS sandbox (dsh-acp.mjs starts the engine with DSH_PERMISSION_MODE=danger-full-access):
-# under "ask" the person approves each write, edit, command or Claude Code run instead
+# under "ask" the person approves each write, edit, command or agent start instead
 # (@codeply/dsh-ask-first), and the host answers those itself in Full access.
 - id: approval
   config:
@@ -62,18 +62,6 @@ const HAZE_PATCH = `# Written by the Codeply CLI: the ACP profile answers throug
       name: '@codeply/dsh-llm-haze'
     - id: codeply-ask-first
       name: '@codeply/dsh-ask-first'
-    # Claude Code as a subagent (subagent_claude_code), on the PC's own Claude Code sign-in.
-    # Approving the call is approving the run, so inside it Claude Code does not stop to ask.
-    - id: subagent-claude-code
-      name: '@deepseek-ai/dsh-subagent-claude-code'
-      config:
-        permissionMode: bypassPermissions
-    - id: tool-subagent-claude-code
-      name: '@deepseek-ai/dsh-tool-subagent'
-      config:
-        provider: claude-code
-        toolName: subagent_claude_code
-        maxDepth: provider-managed
     - id: codeply-design-tools
       name: '@codeply/dsh-design-tools'
     - id: codeply-shared-context

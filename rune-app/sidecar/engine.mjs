@@ -396,6 +396,8 @@ function startBridge() {
         return reply(200, { ok: false, output: `${design[1]} failed: ${e && e.message ? e.message : e}` });
       }
     }
+    // Routes extensions add (ext-agents: the main agent's background agents).
+    for (const h of extCtx.bridgeRoutes) { if (await h(req, res, reply)) return; }
     if (req.url !== '/haze') return reply(404, { success: false, error: 'Not found.' });
     const ac = new AbortController();
     res.on('close', () => { if (!res.writableEnded) ac.abort(); });
@@ -448,7 +450,7 @@ const PATCH = `# Written by Codeply: the Rune app's chats on the DSH harness.
     personaPrefix: >-
       You are Codeply, powered by the {{model}} model. Codeply is made by Codeply Labs. If someone asks who made you or what you are, say you are Codeply, made by Codeply Labs. Never say OpenAI, Anthropic, Google or any other company made you, even though a model from one of them may run underneath.
 # No OS sandbox (dsh-acp.mjs starts the engine with DSH_PERMISSION_MODE=danger-full-access):
-# under "ask" the person approves each write, edit, command or Claude Code run instead
+# under "ask" the person approves each write, edit, command or agent start instead
 # (@codeply/dsh-ask-first), and the host answers those itself in Full access.
 - id: approval
   config:
@@ -468,18 +470,9 @@ const PATCH = `# Written by Codeply: the Rune app's chats on the DSH harness.
       name: '@codeply/dsh-llm-haze'
     - id: codeply-ask-first
       name: '@codeply/dsh-ask-first'
-    # Claude Code as a subagent (subagent_claude_code), on the PC's own Claude Code sign-in.
-    # Approving the call is approving the run, so inside it Claude Code does not stop to ask.
-    - id: subagent-claude-code
-      name: '@deepseek-ai/dsh-subagent-claude-code'
-      config:
-        permissionMode: bypassPermissions
-    - id: tool-subagent-claude-code
-      name: '@deepseek-ai/dsh-tool-subagent'
-      config:
-        provider: claude-code
-        toolName: subagent_claude_code
-        maxDepth: provider-managed
+    # Background agents (start_agents, message_agent, stop_agent), run by ext-agents.mjs.
+    - id: codeply-agents
+      name: '@codeply/dsh-agents'
     - id: codeply-edit-checks
       name: '@codeply/dsh-edit-checks'
     - id: codeply-edit-near-miss
@@ -566,6 +559,7 @@ const STEP = {
   ls: ['Listing', 'Listed', 'folder'], list_dir: ['Listing', 'Listed', 'folder'],
   web_search: ['Searching the web for', 'Searched the web for', 'globe'], web_fetch: ['Opening', 'Opened', 'globe'], fetch: ['Opening', 'Opened', 'globe'],
   browser_check: ['Checking', 'Checked', 'globe'],
+  start_agents: ['Starting agents for', 'Started agents for', 'users'], message_agent: ['Messaging', 'Messaged', 'users'], stop_agent: ['Stopping', 'Stopped', 'users'],
   ask_bot: ['Asking', 'Asked', 'users'], hand_off: ['Handing it to', 'Handed it to', 'users'],
   use_app: ['Using', 'Used', 'link'], mcp: ['Using', 'Used', 'link'],
   remember: ['Remembering', 'Remembered', 'bulb'], recall: ['Recalling', 'Recalled', 'bulb'],
@@ -580,6 +574,10 @@ function stepOf(rawName, args, cwd) {
   const rel = file ? (() => { try { const r = path.relative(cwd || '', path.resolve(cwd || '', file)); return r && !r.startsWith('..') ? r.replace(/\\/g, '/') : file; } catch { return file; } })() : '';
   if (SHELL_TOOLS.test(name)) { const c = short(commandOf(a), 80); return { doing: c ? `Running \`${c}\`` : 'Running a command', done: c ? `Ran \`${c}\`` : 'Ran a command', icon: 'terminal' }; }
   if (name === 'todo_write') return { doing: 'Updating the plan', done: 'Updated the plan', icon: 'list' };
+  // The background agents' tools arrive under their cards' titles.
+  if (/^Background agents\b/.test(name)) return { doing: 'Starting background agents', done: 'Started background agents', icon: 'users' };
+  { const m = /^Message to (.+)$/.exec(name); if (m) return { doing: `Messaging ${m[1]}`, done: `Messaged ${m[1]}`, icon: 'users' }; }
+  { const m = /^Stop (.+)$/.exec(name); if (m && !a.command) return { doing: `Stopping ${m[1]}`, done: `Stopped ${m[1]}`, icon: 'users' }; }
   const [doing, done, icon] = STEP[name] || [null, null, 'sparkle'];
   const what = rel || a.pattern || a.query || a.url || (name === 'ask_bot' ? a.name || a.bot : '') || (name === 'hand_off' ? a.to : '') || (a.app ? `${a.app}${a.tool ? ` ${a.tool}` : ''}` : '') || a.name || '';
   const quoted = (name === 'grep' || name === 'search' || name === 'web_search') && what ? `"${short(what, 60)}"` : short(what, 70);
@@ -614,12 +612,19 @@ const commandOf = (args) => String((args && (args.command || args.cmd)) || '');
 function dshApproveFor(approve) {
   return async (req) => {
     const raw = String(req.tool || '').replace(/^dsh:/, '');
-    if (READ_ONLY.has(raw)) return 'once';
+    if (READ_ONLY.has(raw) || /^(Message to|Stop) /.test(raw)) return 'once';
     const a = req.args && typeof req.args === 'object' ? req.args : {};
     const file = a.file_path || a.path || a.filePath || '';
     if (SHELL_TOOLS.test(raw)) {
       const command = commandOf(a);
       return approve({ tool: 'run', title: 'Run a command', detail: command, danger: /\brm\s+-rf\b|\bRemove-Item\b.*-Recurse|\bformat\b|\bdel\s+\/s\b/i.test(command) });
+    }
+    // start_agents (its card's title): one yes starts the whole group.
+    if (/^Background agents\b/.test(raw)) {
+      const parts = Array.isArray(a.agents) ? a.agents.map((x) => String((x && (x.part || x.task)) || x || '').trim()).filter(Boolean) : [];
+      const n = Math.max(1, parts.length || Number(a.count) || 1);
+      const detail = `${String(a.task || '').slice(0, 600)}${parts.length ? `\n\n${parts.map((x, i) => `${i + 1}. ${x.slice(0, 160)}`).join('\n')}` : ''}${a.browser ? '\n\nEach gets its own tab in the browser.' : ''}`;
+      return approve({ tool: 'agents', title: n === 1 ? 'Start a background agent' : `Start ${n} background agents`, detail, danger: false });
     }
     if (raw === 'write' || raw === 'edit' || raw === 'str_replace_editor') {
       const create = raw === 'write' || a.command === 'create';
@@ -649,7 +654,7 @@ async function* runDsh(session, text, approve, signal) {
   const engine = await engineFor(session.cwd);
   const sessionId = await engine.openSession(session.dshSession);
   if (sessionId !== session.dshSession) { session.dshSession = sessionId; save(); await applyEffort(engine, sessionId); }
-  turns.set(sessionId, { cwd: path.resolve(session.cwd), approve, request: String(text || ''), route: routeFor(session) });
+  turns.set(sessionId, { session, cwd: path.resolve(session.cwd), approve, request: String(text || ''), route: routeFor(session) });
   // Wisp leads every chat that is not a team member's own: it gets the team tools.
   if (!memberOf(session) && session.kind !== 'code' && settings.team.length) {
     const ctx = { session, approve };
@@ -1041,11 +1046,15 @@ const extCtx = {
     onEvent: (f) => eventListeners.push(f),
     startRun: (...a) => startRun(...a),
     sendMessage: (...a) => sendMessage(...a),
+    // The chat a DSH session's turn belongs to, while it runs: { session, cwd, approve }.
+    turnOf: (dshSessionId) => turns.get(dshSessionId) || null,
     stopRun: (id) => { queues.delete(id); const r = runs.get(id); if (r) r.abort(); return !!r; },
   },
   // Called by the run path: beforeMessage(session, text) -> true when it took the message (a cloud run);
   // runStart(session, info), runEvent(session, ev), runEnd(session, { aborted }).
   hooks: { beforeMessage: [], runStart: [], runEvent: [], runEnd: [] },
+  // The engine's bridge: handler(req, res, reply) -> true when it answered (ext-agents: /agents/*).
+  bridgeRoutes: [],
 };
 const extensions = [];
 {

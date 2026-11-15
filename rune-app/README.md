@@ -141,6 +141,19 @@ src/
   35 ms. Rune springs are interruptible by design. Reduced motion holds the Office still and Rune
   turns travel into fades.
 
+## Subagents
+
+The main agent of a chat can start background agents (`start_agents`, from `@codeply/dsh-agents`):
+one, or a swarm of 2 to 6 on one goal that share a team channel. `sidecar/ext-agents.mjs` runs
+them; each has a name and a mascot of its own and belongs to that chat only. Background tasks >
+Subagents lists them with their mascots; one opens into its live log with a typing bar (a message
+reaches it while it works, or starts its next round), and a swarm's team channel opens the same
+way. The main agent can redirect or stop one too (`message_agent`, `stop_agent`). With
+`browser: true` each gets its own tab in the browser, labelled with its name and mascot, driven by
+`src/agent_browser.js` (Windows; elsewhere the agent is told to use its web tools). When the group
+is done, one report comes back to the chat. Scenes: `subagents`, `subagent-open`, `team-open`,
+`agent-tabs`.
+
 ## Checking it headlessly
 
 ```bash

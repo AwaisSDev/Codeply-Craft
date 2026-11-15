@@ -20,7 +20,29 @@ enum Event {
     NewTab(String),
     /// The element picker: what was clicked, ready for the chat ("`selector` on url: text").
     Picked(String),
+    /// What an agent's action in its tab returned: (request, the page as text or "ERROR ...").
+    Did(String, String),
 }
+
+/// A background agent's tab: whose it is, so the strip shows its mascot and name.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TabAgent {
+    pub id: String,
+    pub name: String,
+    pub color: String,
+    pub look: crate::model::Look,
+}
+
+/// An agent's action that runs a little later (after a page loads, or a wait).
+struct Later {
+    at: std::time::Instant,
+    req: String,
+    tab: u64,
+    who: (String, String),
+}
+
+/// The agents' hands in their tabs (`agent_browser.js`).
+const AGENT_JS: &str = include_str!("agent_browser.js");
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Tab {
@@ -28,6 +50,8 @@ pub struct Tab {
     pub url: String,
     pub title: String,
     pub loading: bool,
+    /// The background agent working in this tab, if it's one's.
+    pub agent: Option<TabAgent>,
 }
 
 pub struct Browser {
@@ -49,6 +73,9 @@ pub struct Browser {
     pub picking: bool,
     /// Something the picker picked, for the app to put in the chat's composer.
     pub picked: Option<String>,
+    /// Answers to agents' browser actions, for the app to send to the engine: (request, ok, text).
+    pub answers: Vec<(String, bool, String)>,
+    later: Vec<Later>,
 }
 
 /// A URL from what was typed: a URL as it is, `example.com` with https, anything else a search.
@@ -77,7 +104,7 @@ impl Browser {
     pub fn new(home: &str) -> Browser {
         let (tx, rx) = channel();
         Browser {
-            tabs: vec![Tab { id: 1, url: home.to_owned(), title: crate::favicon::site_name(home), loading: false }],
+            tabs: vec![Tab { id: 1, url: home.to_owned(), title: crate::favicon::site_name(home), loading: false, agent: None }],
             active: 0,
             rect: None,
             next: 2,
@@ -89,6 +116,8 @@ impl Browser {
             zoom: 1.0,
             picking: false,
             picked: None,
+            answers: Vec::new(),
+            later: Vec::new(),
         }
     }
 
@@ -144,7 +173,7 @@ impl Browser {
 
     pub fn new_tab(&mut self, url: &str) {
         let url = resolve(url);
-        self.tabs.push(Tab { id: self.next, url: url.clone(), title: crate::favicon::site_name(&url), loading: true });
+        self.tabs.push(Tab { id: self.next, url: url.clone(), title: crate::favicon::site_name(&url), loading: true, agent: None });
         self.next += 1;
         self.active = self.tabs.len() - 1;
         self.synced = None;
@@ -187,6 +216,70 @@ impl Browser {
         }
     }
 
+    /// A background agent's action in its own tab (made the first time, beside yours, without
+    /// switching to it). Its answer lands in `answers`: at once, or once the page has loaded.
+    pub fn agent_ask(&mut self, ask: &crate::subagents::BrowserAsk) {
+        if !Browser::is_native() {
+            self.answers.push((ask.req.clone(), false, "Codeply's browser shows pages only in the Windows app. Use your web tools to read pages instead.".into()));
+            return;
+        }
+        let i = match self.tabs.iter().position(|t| t.agent.as_ref().is_some_and(|a| a.id == ask.agent)) {
+            Some(i) => i,
+            None => {
+                self.tabs.push(Tab {
+                    id: self.next, url: "about:blank".into(), title: ask.name.clone(), loading: false,
+                    agent: Some(TabAgent { id: ask.agent.clone(), name: ask.name.clone(), color: ask.color.clone(), look: ask.look.clone() }),
+                });
+                self.next += 1;
+                self.tabs.len() - 1
+            }
+        };
+        let (id, url) = (self.tabs[i].id, self.tabs[i].url.clone());
+        if let Err(e) = native::ensure(id, &url, self.rect.unwrap_or([0.0, 0.0, 1280.0, 800.0]), self.tx.clone(), self.waker.clone()) {
+            self.answers.push((ask.req.clone(), false, format!("Codeply's browser could not open a tab: {e}")));
+            return;
+        }
+        let who = (ask.name.clone(), ask.color.clone());
+        let later = |ms: u64| Later { at: std::time::Instant::now() + std::time::Duration::from_millis(ms), req: ask.req.clone(), tab: id, who: who.clone() };
+        match ask.action.as_str() {
+            "open" => {
+                let to = resolve(ask.args["url"].as_str().unwrap_or_default());
+                let t = &mut self.tabs[i];
+                t.url = to.clone();
+                t.loading = true;
+                native::load(id, &to);
+                self.wait(later(1800));
+            }
+            "back" => {
+                native::script(id, "history.back()");
+                self.wait(later(1200));
+            }
+            "wait" => {
+                let ms = ask.args["ms"].as_u64().unwrap_or(1500).clamp(200, 10_000);
+                self.wait(later(ms));
+            }
+            action => self.run_in_tab(ask.req.clone(), id, action, &ask.args, &who),
+        }
+    }
+
+    fn wait(&mut self, l: Later) {
+        // Wake the app when it is due, so it runs even while nothing else happens.
+        if let Some(w) = self.waker.clone() {
+            let dur = l.at.saturating_duration_since(std::time::Instant::now());
+            std::thread::spawn(move || { std::thread::sleep(dur + std::time::Duration::from_millis(20)); w(); });
+        }
+        self.later.push(l);
+    }
+
+    fn run_in_tab(&mut self, req: String, tab: u64, action: &str, args: &serde_json::Value, who: &(String, String)) {
+        let js = format!(
+            "(function(){{\n{AGENT_JS}\nreturn window.__codeplyAgent.run({}, {}, {});\n}})()",
+            serde_json::Value::from(action), if args.is_null() { "{}".to_owned() } else { args.to_string() },
+            serde_json::json!({ "name": who.0, "color": who.1 }),
+        );
+        native::eval(tab, &js, req, self.tx.clone(), self.waker.clone());
+    }
+
     /// Whether this build shows pages in the app (Windows) or hands them to the system browser.
     pub fn is_native() -> bool {
         cfg!(windows) && !rune::is_headless()
@@ -219,7 +312,18 @@ impl Browser {
                     self.picking = false;
                     self.picked = Some(what);
                 }
+                Event::Did(req, out) => {
+                    let ok = !out.starts_with("ERROR ");
+                    self.answers.push((req, ok, out.trim_start_matches("ERROR ").to_owned()));
+                }
             }
+        }
+        // Agents' actions whose time has come (a page that had a moment to load).
+        let now = std::time::Instant::now();
+        let due: Vec<Later> = { let (due, wait) = std::mem::take(&mut self.later).into_iter().partition(|l| l.at <= now); self.later = wait; due };
+        for l in due {
+            self.run_in_tab(l.req, l.tab, "look", &serde_json::Value::Null, &l.who);
+            changed = true;
         }
         if !Browser::is_native() {
             return changed;
@@ -434,6 +538,41 @@ mod native {
         Ok(())
     }
 
+    /// Makes tab `id`'s web view if it has none yet, hidden (an agent's tab, until you look at it).
+    pub fn ensure(id: u64, url: &str, rect: [f32; 4], tx: Sender<Event>, wake: Option<rune::Waker>) -> Result<(), String> {
+        if VIEWS.with_borrow(|v| v.iter().any(|(k, _)| *k == id)) {
+            return Ok(());
+        }
+        let view = create(id, url, rect, tx, wake)?;
+        let _ = view.set_visible(false);
+        VIEWS.with_borrow_mut(|v| v.push((id, view)));
+        Ok(())
+    }
+
+    /// Runs `js` in tab `id` and sends what it returns (a string) as `Event::Did(req, ...)`.
+    pub fn eval(id: u64, js: &str, req: String, tx: Sender<Event>, wake: Option<rune::Waker>) {
+        let mut ran = false;
+        VIEWS.with_borrow(|views| {
+            if let Some((_, v)) = views.iter().find(|(k, _)| *k == id) {
+                let (tx2, req2, wake2) = (tx.clone(), req.clone(), wake.clone());
+                ran = v.evaluate_script_with_callback(js, move |out| {
+                    // The page's answer comes back as JSON: a string, or null when it navigated away.
+                    let text = serde_json::from_str::<String>(&out).unwrap_or_else(|_| "The page changed while acting. Look again.".into());
+                    let _ = tx2.send(Event::Did(req2.clone(), text));
+                    if let Some(w) = &wake2 {
+                        w();
+                    }
+                }).is_ok();
+            }
+        });
+        if !ran {
+            let _ = tx.send(Event::Did(req, "ERROR The tab is not open any more.".into()));
+            if let Some(w) = &wake {
+                w();
+            }
+        }
+    }
+
     pub fn hide_all() {
         VIEWS.with_borrow(|views| {
             for (_, v) in views {
@@ -507,6 +646,12 @@ mod native {
         Ok(())
     }
     pub fn hide_all() {}
+    pub fn ensure(_: u64, _: &str, _: [f32; 4], _: Sender<Event>, _: Option<rune::Waker>) -> Result<(), String> {
+        Ok(())
+    }
+    pub fn eval(_: u64, _: &str, req: String, tx: Sender<Event>, _: Option<rune::Waker>) {
+        let _ = tx.send(Event::Did(req, "ERROR Codeply's browser shows pages only in the Windows app.".into()));
+    }
     pub fn load(_: u64, _: &str) {}
     pub fn script(_: u64, _: &str) {}
     pub fn reload(_: u64) {}

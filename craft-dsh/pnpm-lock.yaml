@@ -2754,6 +2754,9 @@ importers:
 
   packages/bundle/web-app:
     dependencies:
+      '@codeply/dsh-agents':
+        specifier: workspace:*
+        version: link:../../codeply/agents
       '@codeply/dsh-approval-memory':
         specifier: workspace:*
         version: link:../../codeply/approval-memory
@@ -3129,9 +3132,6 @@ importers:
       '@deepseek-ai/dsh-skill-filesystem':
         specifier: workspace:*
         version: link:../../skill/skill-filesystem
-      '@deepseek-ai/dsh-subagent-claude-code':
-        specifier: workspace:*
-        version: link:../../subagent/subagent-claude-code
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:*
         version: link:../../subprocess/subprocess
@@ -6887,6 +6887,24 @@ importers:
       zod:
         specifier: 4.4.3
         version: 4.4.3
+
+  packages/codeply/agents:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:*
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-launch-environment':
+        specifier: workspace:*
+        version: link:../../util/launch-environment
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:*
+        version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../../core/tools
 
   packages/codeply/approval-memory:
     dependencies:

@@ -38,6 +38,8 @@ enum Msg {
     Usage(Value),
     /// The team and its loops (`/ext/team`).
     Team(Value),
+    /// The background agents (`/ext/agents`).
+    Agents(Value),
     /// An inline edit's answer: (file, the instruction, `{ text }` or `{ error }`).
     Proposal(String, String, Value),
     /// After a file change: the file list, the file to open (path, text), or why it failed.
@@ -326,6 +328,7 @@ impl LiveStore {
                     "memory" => c.get("/memory").map(|v| Msg::Memories(memories_from(&v))),
                     "models" => c.get("/ext/models").map(Msg::Models),
                     "team" => c.get("/ext/team").map(Msg::Team),
+                    "agents" => c.get("/ext/agents").map(Msg::Agents),
                     "prs" => c.get("/ext/prs").map(Msg::Prs),
                     // At launch and after a sign-in: also catches the phone up with the account.
                     "models-sync" => c.get("/ext/models?sync=1").map(Msg::Models),
@@ -375,6 +378,11 @@ impl LiveStore {
 
     /// Folds the events of the engine's other features. True when it took the event.
     fn fold_extra(&mut self, e: &Value, snap: &mut Snapshot) -> bool {
+        let sessions = &self.sessions;
+        let title = |id: &str| sessions.iter().find(|s| s.id == id).map(|s| s.title.clone());
+        if crate::subagents::fold(&mut snap.extra.subagents, e, &title) {
+            return true;
+        }
         let x = &mut snap.extra;
         match e["type"].as_str().unwrap_or_default() {
             "term_agent" => x.terminal.push(TermLine { kind: TermKind::Agent, text: e["command"].as_str().unwrap_or_default().to_owned() }),
@@ -973,6 +981,7 @@ impl Store for LiveStore {
         snap.extra.terminal.clear();
         snap.extra.bg_tasks.clear();
         snap.extra.memories.clear();
+        snap.extra.subagents = Default::default();
         // Pull requests come from the engine (ext-prs.mjs), and the team too (ext-team.mjs).
         snap.prs.clear();
         snap.extra.code = Default::default();
@@ -1012,7 +1021,7 @@ impl Store for LiveStore {
             }
             Some(Msg::Status(format!("can't reach the engine: {last}")))
         });
-        for what in ["account", "apps", "memory", "files", "jobs", "models-sync", "team", "prs"] {
+        for what in ["account", "apps", "memory", "files", "jobs", "models-sync", "team", "prs", "agents"] {
             self.refresh(what);
         }
         // The event stream, for the life of the app, reconnecting with a growing pause.
@@ -1045,6 +1054,12 @@ impl Store for LiveStore {
                         .filter_map(|n| self.sessions.iter().find(|o| o.id == n.id && o.title != n.title).map(|o| (o.title.clone(), n.title.clone())))
                         .collect();
                     self.sessions = list;
+                    // Agents listed before their chat was known find it now.
+                    for a in snap.extra.subagents.agents.iter_mut().filter(|a| a.chat.is_empty()) {
+                        if let Some(s) = self.sessions.iter().find(|s| s.id == a.chat_id) {
+                            a.chat = s.title.clone();
+                        }
+                    }
                     for (old, new) in moved {
                         self.renamed(&old, &new);
                     }
@@ -1165,6 +1180,11 @@ impl Store for LiveStore {
                         }
                         snap.extra.code.wisp = "idle".into();
                     }
+                }
+                Msg::Agents(v) => {
+                    let sessions = &self.sessions;
+                    let title = |id: &str| sessions.iter().find(|s| s.id == id).map(|s| s.title.clone());
+                    crate::subagents::apply(&mut snap.extra.subagents, &v, &title);
                 }
                 Msg::Team(v) => {
                     self.team = crate::team::apply(snap, &v);
@@ -1370,6 +1390,27 @@ impl Store for LiveStore {
 
     fn take_project(&mut self) -> Option<String> {
         self.open_project.take()
+    }
+
+    fn agents_op(&mut self, op: crate::subagents::Op, _snap: &mut Snapshot) {
+        use crate::subagents::Op;
+        let agent = match &op { Op::Send(id, _) | Op::Stop(id) | Op::Remove(id) => id.clone(), _ => String::new() };
+        let (path, body) = match op {
+            Op::Send(id, text) => ("/ext/agents/send", json!({ "id": id, "text": text })),
+            Op::Stop(id) => ("/ext/agents/stop", json!({ "id": id })),
+            Op::Remove(id) => ("/ext/agents/remove", json!({ "id": id })),
+            Op::Team(team, text) => ("/ext/agents/team", json!({ "swarmId": team, "text": text })),
+            Op::Browser(req, ok, text) => ("/ext/agents/browser", json!({ "reqId": req, "ok": ok, "text": text })),
+        };
+        // What the engine turned down shows in that agent's log; the rest comes back as events.
+        self.spawn(move |c| {
+            let why = match c.post(path, body) {
+                Ok(v) if v["ok"].as_bool() == Some(false) => v["error"].as_str().unwrap_or("It didn't go through.").to_owned(),
+                Ok(_) => return None,
+                Err(e) => e,
+            };
+            (!agent.is_empty()).then(|| Msg::Event(json!({ "type": "subagent_log", "agentId": agent, "entry": { "t": "sys", "text": why } })))
+        });
     }
 
     fn team_op(&mut self, op: crate::team::TeamOp, _snap: &mut Snapshot) {

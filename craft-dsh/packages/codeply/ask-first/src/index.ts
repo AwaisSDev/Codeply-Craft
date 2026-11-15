@@ -7,7 +7,7 @@
  * global installs) with EPERM. Codeply runs the engine like Claude Code and
  * Classic Craft instead: no sandbox (`DSH_PERMISSION_MODE=danger-full-access`,
  * set by the host), and under the `ask` approval policy the person approves
- * each write, edit, shell command or Claude Code delegation before it runs.
+ * each write, edit, shell command or background agents before it runs.
  * The host answers those asks itself when the person picked "Full access".
  *
  * Two jobs:
@@ -36,7 +36,7 @@ export interface Config {
   migrateSandbox: boolean
 }
 export const Config: z<Config> = z.object({
-  tools: z.array(z.string()).default(['write', 'edit', 'str_replace_editor', 'bash', 'pwsh', 'subagent_claude_code']),
+  tools: z.array(z.string()).default(['write', 'edit', 'str_replace_editor', 'bash', 'pwsh', 'start_agents']),
   readOnlyEditorCommands: z.array(z.string()).default(['view']),
   migrateSandbox: z.boolean().default(true),
 })

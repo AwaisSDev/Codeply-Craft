@@ -94,7 +94,7 @@ fn frame(shape: Shape) -> (f64, f64) {
         Shape::Hex => (15.0, 53.0),
         Shape::Round => (18.0, 55.0),
         Shape::Square => (20.0, 56.0),
-        Shape::Cloud => (22.0, 58.0),
+        Shape::Cloud => (31.0, 70.0),
         Shape::Triangle => (16.0, 64.0),
         Shape::Drop => (14.0, 64.0),
         Shape::Pebble => (24.0, 58.0),
@@ -109,9 +109,14 @@ fn body_paths(shape: Shape) -> Vec<String> {
         Shape::Round => vec![circle(50.0, 55.0, 37.0)],
         // A squircle, turned a little, like a dropped die.
         Shape::Square => vec![rr(15.0, 20.0, 70.0, 70.0, 22.0)],
-        // Overlapping puffs; flat colour hides the seams.
-        Shape::Cloud => [(31.0, 66.0, 20.0), (50.0, 48.0, 24.0), (70.0, 64.0, 20.0), (50.0, 71.0, 21.0), (24.0, 78.0, 13.0), (76.0, 78.0, 13.0)]
-            .iter().map(|&(x, y, r)| circle(x, y, r)).collect(),
+        // A classic cloud: a wide, flat-bottomed base under puffs that rise to a big one left of
+        // centre and step down to the right. Flat colour hides the seams.
+        Shape::Cloud => {
+            let mut puffs: Vec<String> = [(27.0, 64.0, 14.0), (47.0, 50.0, 19.0), (68.0, 52.0, 16.0), (80.0, 66.0, 11.0)]
+                .iter().map(|&(x, y, r)| circle(x, y, r)).collect();
+            puffs.push(rr(10.0, 62.0, 80.0, 26.0, 13.0));
+            puffs
+        }
         Shape::Triangle => vec![rounded_polygon(&[[50.0, 14.0], [92.0, 90.0], [8.0, 90.0]], 16.0)],
         Shape::Drop => vec!["M50 14C58 32 80 48 80 64A30 30 0 0 1 20 64C20 48 42 32 50 14Z".to_owned()],
         Shape::Pebble => vec!["M50 24C76 22 91 38 90 58C89 79 72 91 49 91C25 91 10 78 11 58C12 37 27 25 50 24Z".to_owned()],
@@ -408,6 +413,11 @@ pub fn wisp(size: f32) -> El {
 
 /// A helper at `size`, showing its state by its eyes. Bots hold still: no glances, blinks or
 /// hops, so a screen full of them draws once and then rests.
+/// A mascot from its colour, look and state, for agents that are not on the team (subagents).
+pub fn mascot(color: &str, look: &Look, state: AgentState, size: f32) -> El {
+    el().size(size, size).child(icon(icon_for(color, look, Eyes::for_state(state)), size))
+}
+
 pub fn agent(a: &Agent, size: f32) -> El {
     el().size(size, size).child(icon(icon_for(&a.color, &a.look, Eyes::for_state(a.state)), size))
 }

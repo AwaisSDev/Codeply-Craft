@@ -198,6 +198,9 @@ pub enum EditKey {
     CloneUrl,
     /// The code view's agent panel.
     CodeAgent,
+    /// Background tasks: a message to the open subagent, or to its team.
+    Subagent,
+    TeamPost,
 }
 
 /// The code view's file dialogs.
@@ -209,12 +212,12 @@ pub enum CodeDialog {
 }
 
 impl EditKey {
-    pub const ALL: [EditKey; 23] = [
+    pub const ALL: [EditKey; 25] = [
         EditKey::Search, EditKey::Mission, EditKey::AgentThread, EditKey::ChatHome, EditKey::ChatThread,
         EditKey::AppSearch, EditKey::Address, EditKey::SettingsSearch, EditKey::AboutMe, EditKey::Instructions,
         EditKey::Terminal, EditKey::Code, EditKey::SignInEmail, EditKey::SignInCode, EditKey::Memory,
         EditKey::AgentName, EditKey::AgentFocus, EditKey::LoopTask, EditKey::LoopWhen, EditKey::CodeAsk, EditKey::FilePath,
-        EditKey::CloneUrl, EditKey::CodeAgent,
+        EditKey::CloneUrl, EditKey::CodeAgent, EditKey::Subagent, EditKey::TeamPost,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -241,6 +244,8 @@ impl EditKey {
             EditKey::FilePath => "file-path",
             EditKey::CloneUrl => "clone-url",
             EditKey::CodeAgent => "code-agent",
+            EditKey::Subagent => "subagent",
+            EditKey::TeamPost => "team-post",
         }
     }
 }
@@ -305,6 +310,11 @@ pub struct App {
     pub browser: Browser,
     /// Which panes are open beside the chat.
     pub panes: Panes,
+    /// Background tasks: the subagent whose log is open, whether the Subagents list is folded,
+    /// and the team whose channel is open.
+    pub sub_open: Option<String>,
+    pub sub_folded: bool,
+    pub team_open: Option<String>,
     /// Whether the system asks for reduced motion, as the view last saw it.
     pub reduced: std::cell::Cell<bool>,
     /// Chats waiting for their reply's first words, and when each started waiting: the thinking
@@ -389,6 +399,9 @@ impl App {
             models_ui: Default::default(),
             browser,
             panes: Panes::default(),
+            sub_open: None,
+            sub_folded: false,
+            team_open: None,
             reduced: std::cell::Cell::new(false),
             think_started: std::collections::HashMap::new(),
             think_now: 0.0,
@@ -745,6 +758,48 @@ impl App {
         self.view = View::Chat;
         self.panes.browser = true;
         self.browser.navigate(url);
+    }
+
+    /// Opens or closes a subagent's log in Background tasks (one at a time).
+    pub fn toggle_subagent(&mut self, id: &str) {
+        self.sub_open = if self.sub_open.as_deref() == Some(id) { None } else { Some(id.to_owned()) };
+        self.team_open = None;
+        self.edit_mut(EditKey::Subagent).clear();
+    }
+
+    /// Opens or closes a team's channel in Background tasks.
+    pub fn toggle_team(&mut self, id: &str) {
+        self.team_open = if self.team_open.as_deref() == Some(id) { None } else { Some(id.to_owned()) };
+        self.sub_open = None;
+    }
+
+    /// Sends what's in the open subagent's typing bar: into its run while it works, else its next round.
+    pub fn send_subagent(&mut self) {
+        let Some(id) = self.sub_open.clone() else { return };
+        let text = self.edit(EditKey::Subagent).text.trim().to_owned();
+        if text.is_empty() {
+            return;
+        }
+        self.edit_mut(EditKey::Subagent).clear();
+        self.agents_op(crate::subagents::Op::Send(id, text));
+    }
+
+    /// Posts what's in the team bar on the open team's channel.
+    pub fn post_team(&mut self) {
+        let Some(id) = self.team_open.clone() else { return };
+        let text = self.edit(EditKey::TeamPost).text.trim().to_owned();
+        if text.is_empty() {
+            return;
+        }
+        self.edit_mut(EditKey::TeamPost).clear();
+        self.agents_op(crate::subagents::Op::Team(id, text));
+    }
+
+    pub fn agents_op(&mut self, op: crate::subagents::Op) {
+        if let crate::subagents::Op::Remove(id) = &op && self.sub_open.as_deref() == Some(id.as_str()) {
+            self.sub_open = None;
+        }
+        self.store.agents_op(op, &mut self.data);
     }
 
     pub fn toggle_pane(&mut self, pane: Pane) {
@@ -1213,12 +1268,21 @@ impl App {
             self.notice = Some(note);
             changed = true;
         }
+        // Agents that just started in the open chat: Background tasks opens on them.
+        let started = std::mem::take(&mut self.data.extra.subagents.started);
+        if self.chat.as_ref().is_some_and(|c| started.contains(c)) && !self.panes.tasks {
+            self.panes.tasks = true;
+            changed = true;
+        }
         // An app's logo landed: its tile swaps its letter for the logo.
         changed |= crate::favicon::take_landed();
         // A chat the engine renamed (a new chat takes its first message as its title) stays open.
         for (old, new) in self.store.take_renames() {
             if self.chat.as_deref() == Some(old.as_str()) {
                 self.chat = Some(new.clone());
+            }
+            for a in self.data.extra.subagents.agents.iter_mut().filter(|a| a.chat == old) {
+                a.chat = new.clone();
             }
             if let Some(t0) = self.think_started.remove(&old) {
                 self.think_started.insert(new, t0);
@@ -1254,7 +1318,15 @@ impl App {
         }
         // The web view shows only while its pane is up and nothing covers it.
         let browser_up = self.view == View::Chat && self.panes.browser && self.menu.is_none() && self.appearance.is_none();
+        // Background agents' actions in their own tabs, and what came of them.
+        for ask in std::mem::take(&mut self.data.extra.subagents.asks) {
+            self.browser.agent_ask(&ask);
+            changed = true;
+        }
         changed |= self.browser.poll(browser_up);
+        for (req, ok, text) in std::mem::take(&mut self.browser.answers) {
+            self.store.agents_op(crate::subagents::Op::Browser(req, ok, text), &mut self.data);
+        }
         if let Some(url) = self.store.take_open_url() {
             let _ = tx.open_url(&url);
         }

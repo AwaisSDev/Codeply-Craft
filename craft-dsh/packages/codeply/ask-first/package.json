@@ -1,6 +1,6 @@
 {
   "name": "@codeply/dsh-ask-first",
-  "description": "No OS sandbox; under the ask approval policy, asks before every write, edit, shell command or Claude Code delegation",
+  "description": "No OS sandbox; under the ask approval policy, asks before every write, edit, shell command or background agents",
   "version": "0.2.1-rc.3",
   "private": true,
   "type": "module",

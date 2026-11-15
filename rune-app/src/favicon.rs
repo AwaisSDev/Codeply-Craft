@@ -119,7 +119,8 @@ fn fetch(urls: Vec<String>, px: Pixels) {
             if resp.into_reader().take(512 * 1024).read_to_end(&mut bytes).is_err() {
                 continue;
             }
-            if let Some((w, h, rgba)) = decode_image(&bytes) {
+            if let Some((w, h, mut rgba)) = decode_image(&bytes) {
+                clear_backdrop(w, h, &mut rgba);
                 px.set(w, h, rgba);
                 LANDED.store(true, std::sync::atomic::Ordering::Release);
                 if let Some(wake) = WAKER.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
@@ -133,6 +134,55 @@ fn fetch(urls: Vec<String>, px: Pixels) {
 
 #[cfg(not(feature = "live"))]
 fn fetch(_: Vec<String>, _: Pixels) {}
+
+/// A logo drawn as a rounded square sitting on a flat backdrop (white or gray corners around it):
+/// the backdrop becomes transparent, so the logo's own shape is the tile and no pale slivers show
+/// at its corners when the app clips it to its own radius. Only that shape is touched: opaque,
+/// matching corners, with the logo reaching the middle of every edge. A glyph on a plain square
+/// (the corners and edges all backdrop) is left as it is.
+pub fn clear_backdrop(w: u32, h: u32, rgba: &mut [u8]) {
+    let (w, h) = (w as usize, h as usize);
+    if w < 8 || h < 8 || rgba.len() != w * h * 4 {
+        return;
+    }
+    let px = |rgba: &[u8], x: usize, y: usize| { let i = (y * w + x) * 4; [rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]] };
+    let at = |x: usize, y: usize| px(rgba, x, y);
+    let bg = at(0, 0);
+    let near = |p: [u8; 4], tol: i32| (0..3).all(|k| (i32::from(p[k]) - i32::from(bg[k])).abs() <= tol) && p[3] > 200;
+    if bg[3] < 250 || ![at(w - 1, 0), at(0, h - 1), at(w - 1, h - 1)].into_iter().all(|p| near(p, 12)) {
+        return;
+    }
+    // The logo must reach the middle of each edge (8% in): a rounded square, not a glyph on a field.
+    let (ix, iy) = ((w * 8 / 100).max(1), (h * 8 / 100).max(1));
+    if [at(w / 2, iy), at(w / 2, h - 1 - iy), at(ix, h / 2), at(w - 1 - ix, h / 2)].into_iter().any(|p| near(p, 40)) {
+        return;
+    }
+    // Flood the backdrop from the four corners; its anti-aliased rim fades by how close it is.
+    let bg = px(rgba, 0, 0);
+    let mut seen = vec![false; w * h];
+    let mut stack = vec![(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)];
+    while let Some((x, y)) = stack.pop() {
+        let i = y * w + x;
+        if seen[i] {
+            continue;
+        }
+        seen[i] = true;
+        let p = px(rgba, x, y);
+        let d = (0..3).map(|k| (i32::from(p[k]) - i32::from(bg[k])).abs()).max().unwrap_or(0);
+        if d > 96 {
+            continue;
+        }
+        // Fully backdrop: gone. Part backdrop (the rim): keep that much of the logo's own colour.
+        let keep = ((d - 24).max(0) * 255 / 72).min(255) as u8;
+        rgba[i * 4 + 3] = rgba[i * 4 + 3].min(keep);
+        if d <= 24 {
+            if x > 0 { stack.push((x - 1, y)); }
+            if x + 1 < w { stack.push((x + 1, y)); }
+            if y > 0 { stack.push((x, y - 1)); }
+            if y + 1 < h { stack.push((x, y + 1)); }
+        }
+    }
+}
 
 /// An icon as straight RGBA: PNG, JPEG, GIF, WebP, BMP or ICO (the codecs Rune builds in), or
 /// SVG rasterized at 128 px. Sites and app catalogues serve all of these.
@@ -199,6 +249,44 @@ mod tests {
         assert_eq!(site_name("https://codeply.app"), "Codeply");
         assert_eq!(site_name("https://github.com/AwaisSDev/Codeply-Craft"), "GitHub");
         assert_eq!(site_name("https://blog.example.com/post"), "Example");
+    }
+
+    /// A white page with a black rounded square on it (a logo tile saved on white), and a black
+    /// glyph on a plain white square.
+    fn tile_on_white(glyph_only: bool) -> (u32, u32, Vec<u8>) {
+        let n = 64usize;
+        let mut v = vec![255u8; n * n * 4];
+        for y in 0..n {
+            for x in 0..n {
+                let (dx, dy) = ((x as f32 - 31.5).abs(), (y as f32 - 31.5).abs());
+                let inside = if glyph_only { dx < 10.0 && dy < 10.0 } else {
+                    // A rounded square 2 px in from the edge, corner radius 14.
+                    let (qx, qy) = ((dx - 15.5).max(0.0), (dy - 15.5).max(0.0));
+                    dx <= 29.5 && dy <= 29.5 && (qx * qx + qy * qy).sqrt() <= 14.0
+                };
+                if inside {
+                    v[(y * n + x) * 4..(y * n + x) * 4 + 3].copy_from_slice(&[0, 0, 0]);
+                }
+            }
+        }
+        (n as u32, n as u32, v)
+    }
+
+    #[test]
+    fn a_tile_saved_on_white_loses_its_white_corners() {
+        let (w, h, mut v) = tile_on_white(false);
+        clear_backdrop(w, h, &mut v);
+        let a = |x: usize, y: usize| v[(y * 64 + x) * 4 + 3];
+        assert_eq!((a(0, 0), a(63, 63), a(3, 3)), (0, 0, 0), "corners clear");
+        assert_eq!((a(32, 32), a(32, 3), a(3, 32)), (255, 255, 255), "the logo stays");
+    }
+
+    #[test]
+    fn a_glyph_on_a_plain_square_is_left_alone() {
+        let (w, h, mut v) = tile_on_white(true);
+        let before = v.clone();
+        clear_backdrop(w, h, &mut v);
+        assert_eq!(v, before);
     }
 
     #[test]

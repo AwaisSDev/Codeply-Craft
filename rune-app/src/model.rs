@@ -566,6 +566,8 @@ pub struct Extra {
     pub code: Code,
     /// The models the composer picks from (Haze 2, and the ones you added).
     pub models: crate::models::Models,
+    /// The background agents chats started, with their logs and team channels.
+    pub subagents: crate::subagents::Subagents,
 }
 
 #[derive(Clone, Debug, PartialEq)]

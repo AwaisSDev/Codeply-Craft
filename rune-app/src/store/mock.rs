@@ -307,6 +307,7 @@ pub fn extra() -> Extra {
             proposal: None,
         },
         models: crate::models::sample(),
+        subagents: crate::subagents::sample(),
     }
 }
 
@@ -488,6 +489,32 @@ impl Store for MockStore {
             && let Some(p) = snap.prs.iter().find(|p| p.number == n)
         {
             snap.extra.pr_files = Some((n, crate::views::prs::sample_diff(p)));
+        }
+    }
+
+    fn agents_op(&mut self, op: crate::subagents::Op, snap: &mut Snapshot) {
+        use crate::subagents::{Line, Message, Op};
+        let x = &mut snap.extra.subagents;
+        match op {
+            Op::Send(id, text) => {
+                if let Some(a) = x.agents.iter_mut().find(|a| a.id == id) {
+                    let live = a.working();
+                    a.log.push(Line { kind: "user".into(), by: "you".into(), text, live, ..Default::default() });
+                    a.status = "working".into();
+                }
+            }
+            Op::Stop(id) => {
+                if let Some(a) = x.agents.iter_mut().find(|a| a.id == id) {
+                    a.status = "stopped".into();
+                }
+            }
+            Op::Remove(id) => x.agents.retain(|a| a.id != id),
+            Op::Team(id, text) => {
+                if let Some(t) = x.teams.iter_mut().find(|t| t.id == id) {
+                    t.messages.push(Message { from: "You".into(), to: String::new(), text });
+                }
+            }
+            Op::Browser(..) => {}
         }
     }
 
