@@ -245,6 +245,24 @@
     "bad_when": 2,
     "bad_basis": 2
    }
+  },
+  "topic_boundary": {
+   "open": {
+    "sessions": 120,
+    "sessions_with_unrelated_memories_shown": 85,
+    "update_total": 32,
+    "retract_total": 12,
+    "pred_entity_ambiguous_firstname_not_in_store": 10,
+    "confirm_total": 6
+   },
+   "closed": {
+    "sessions": 120,
+    "sessions_with_unrelated_memories_shown": 0,
+    "update_total": 27,
+    "retract_total": 7,
+    "pred_entity_ambiguous_firstname_not_in_store": 8,
+    "confirm_total": 4
+   }
   }
  },
  "iris-1.7b-r3": {
@@ -494,6 +512,26 @@
     "unparseable": 1,
     "missing_why": 1,
     "temp_without_until": 1
+   }
+  },
+  "topic_boundary": {
+   "open": {
+    "sessions": 120,
+    "sessions_with_unrelated_memories_shown": 85,
+    "update_total": 46,
+    "retract_total": 25,
+    "confirm_total": 5,
+    "pred_entity_ambiguous_firstname_not_in_store": 9,
+    "retract_on_unrelated_memory": 2,
+    "update_on_unrelated_memory": 1
+   },
+   "closed": {
+    "sessions": 120,
+    "sessions_with_unrelated_memories_shown": 0,
+    "update_total": 34,
+    "pred_entity_ambiguous_firstname_not_in_store": 12,
+    "retract_total": 18,
+    "confirm_total": 3
    }
   }
  },
@@ -746,6 +784,23 @@
     "user_type_mismatch": 3,
     "bad_until": 1,
     "missing_kind": 1
+   }
+  },
+  "topic_boundary": {
+   "open": {
+    "sessions": 120,
+    "sessions_with_unrelated_memories_shown": 85,
+    "pred_entity_ambiguous_firstname_not_in_store": 12,
+    "update_total": 24,
+    "retract_total": 9,
+    "update_on_unrelated_memory": 2
+   },
+   "closed": {
+    "sessions": 120,
+    "sessions_with_unrelated_memories_shown": 0,
+    "retract_total": 9,
+    "update_total": 16,
+    "pred_entity_ambiguous_firstname_not_in_store": 10
    }
   }
  }
