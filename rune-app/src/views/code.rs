@@ -55,17 +55,23 @@ pub fn side(s: &App, t: &Theme) -> El {
             );
         }
     }
-    let reload = code.open.clone();
+    // An empty folder (or one still loading) says so, with what to do next.
+    let empty = rows.is_empty().then(|| {
+        col().key("code-empty").px(12.0).pt(18.0).gap(10.0)
+            .child(text(format!("{} has no files yet.", s.data.project)).font(ui(13.0, 400.0)).color(t.faint).wrap())
+            .child(row().gap(8.0)
+                .child(btn(t, "New file", Some("plus"), ButtonKind::Plain).key("code-empty-new").on_press(|s: &mut App| s.open_code_dialog(crate::app::CodeDialog::New)))
+                .child(btn(t, "Open folder", Some("folder-open"), ButtonKind::Plain).key("code-empty-open").on_press_tx(|s: &mut App, tx| s.open_project(tx))))
+    });
+    let path = s.data.extra.project_path.clone();
     col().h_full().min_h(0.0)
-        .child(row().pt(14.0).pr(12.0).pb(8.0).pl(16.0).center_y().justify_between()
-            .child(text(s.data.project.clone()).font(ui(15.0, 650.0)).color(t.text).truncate().grow(1.0))
+        .child(row().pt(14.0).pr(8.0).pb(8.0).pl(16.0).gap(2.0).center_y()
+            .child(text(s.data.project.clone()).font(ui(15.0, 650.0)).color(t.text).truncate().grow(1.0).min_w(0.0).help(if path.is_empty() { s.data.project.clone() } else { path }))
+            .child(ibtn(t, "folder-open", "Open folder").key("code-open-folder").on_press_tx(|s: &mut App, tx| s.open_project(tx)))
             .child(ibtn(t, "plus", "New file").key("code-new-file").on_press(|s: &mut App| s.open_code_dialog(crate::app::CodeDialog::New)))
-            .child(ibtn(t, "refresh", "Refresh").key("code-refresh").on_press(move |s: &mut App| {
-                if let Some(p) = &reload {
-                    s.open_file(p);
-                }
-            })))
+            .child(ibtn(t, "refresh", "Refresh").key("code-refresh").on_press(|s: &mut App| s.refresh_code())))
         .child(col().grow(1.0).min_h(0.0).px(8.0).scroll(ScrollSpec { stick_bottom: false })
+            .children(empty)
             .children(rows.into_iter().enumerate().map(|(i, e)| enter(e, i.min(12)))))
         .child(me(s, t))
 }
@@ -80,7 +86,7 @@ pub fn main(s: &App, t: &Theme) -> El {
     if s.panes.terminal {
         left = left.child(col().h(240.0).min_h(0.0).child(crate::views::terminal::pane(s, t)));
     }
-    row().key("ide").w_full().h_full().transition(fade_in()).motion(ENTER)
+    row().key("ide").w_full().h_full()
         .child(left)
         .child(wisp_panel(s, t))
 }
@@ -211,7 +217,6 @@ fn ask_bar(s: &App, t: &Theme) -> El {
         .on_submit(|s: &mut App, _| s.submit_code_ask());
     row().key("code-ask-bar").mx(16.0).mt(10.0).px(12.0).h(40.0).gap(10.0).radius(10.0).center_y().clip_rounded(10.0)
         .fill(t.composer).border(1.0, t.accent.alpha(0.5)).shadow(6.0, 18.0, crate::theme::rgba(0, 0, 0, 0.3))
-        .transition(fade_in()).motion(ENTER)
         .child(ico_s("sparkle", 15.0, t.accent))
         .child(field)
         .child(row().h(20.0).px(6.0).radius(5.0).center_y().fill(t.active).child(text("Ctrl K").font(ui(11.0, 600.0)).color(t.dim)))
@@ -221,7 +226,7 @@ fn ask_bar(s: &App, t: &Theme) -> El {
 fn proposal_bar(t: &Theme, p: &crate::model::Proposal) -> El {
     let keycap = |k: &str| row().h(18.0).px(5.0).radius(4.0).center_y().fill(crate::theme::rgba(255, 255, 255, 0.16)).child(text(k.to_owned()).font(ui(10.5, 600.0)).color(Color::WHITE));
     let mut bar = row().key("code-proposal").mx(16.0).mt(10.0).px(14.0).py(10.0).gap(10.0).radius(10.0).center_y()
-        .fill(t.composer).border(1.0, t.composer_border).transition(fade_in()).motion(ENTER)
+        .fill(t.composer).border(1.0, t.composer_border)
         .child(col().grow(1.0).min_w(0.0).gap(3.0)
             .child(text(p.instruction.clone()).font(ui(13.5, 500.0)).color(t.text).wrap())
             .children((!p.error.is_empty()).then(|| text(p.error.clone()).font(ui(12.5, 400.0)).color(t.red).wrap())));
@@ -345,8 +350,7 @@ fn wisp_panel(s: &App, t: &Theme) -> El {
     let mascot = s.data.agent("wisp").map(|a| {
         let mut a = awake(a);
         a.look.shape = shape;
-        // One key per shape, so a change of shape mounts a new mascot that fades in.
-        el().key(format!("wisp-mascot/{shape:?}")).transition(fade_in()).motion(ENTER).child(bot::agent(&a, 64.0))
+        el().key(format!("wisp-mascot/{shape:?}")).child(bot::agent(&a, 64.0))
     });
     let status_line = if active {
         wave(&status, ui(13.5, 500.0), t.text)

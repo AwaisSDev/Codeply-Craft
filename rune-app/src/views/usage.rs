@@ -183,10 +183,11 @@ fn content(s: &App, t: &Theme, u: &Usage) -> El {
                     let v = tokens(n);
                     let level = if v == 0 { 0 } else { (1 + (v as f64 / max_day as f64 * 4.0) as u32).min(4) };
                     let key = format!("d{}", date_of(n));
-                    let on = pick.as_deref() == Some(key.as_str());
+                    // A pick shows by the rest of the grid stepping back, not by an outline.
+                    let dim = pick.as_deref().is_some_and(|p| p != key);
                     cell.key(format!("usage-day/{key}"))
                         .fill(if level == 0 { t.hover } else { t.accent.alpha([0.0, 0.3, 0.5, 0.75, 1.0][level as usize]) })
-                        .border(if on { 1.5 } else { 0.0 }, t.text)
+                        .opacity(if dim { 0.35 } else { 1.0 })
                         .help(format!("{} tokens on {}", short(v), nice(n)))
                         .role("button").label(format!("{} tokens on {}", short(v), nice(n)))
                         .on_press(move |s: &mut App| s.usage_pick = if s.usage_pick.as_deref() == Some(key.as_str()) { None } else { Some(key.clone()) })
@@ -196,12 +197,12 @@ fn content(s: &App, t: &Theme, u: &Usage) -> El {
             let total = week_total(start);
             let lit = if total == 0 { 0 } else { ((total as f64 / max_week as f64) * 7.0).round().max(1.0) as usize };
             let key = format!("w{i}");
-            let on = pick.as_deref() == Some(key.as_str());
+            let dim = pick.as_deref().is_some_and(|p| p != key);
             for r in 0..7 {
                 column = column.child(el().size(CELL, CELL).radius(2.0).fill(if 6 - r < lit { t.accent } else { t.hover }));
             }
             column = column.key(format!("usage-week/{i}")).radius(3.0)
-                .border(if on { 1.5 } else { 0.0 }, t.text)
+                .opacity(if dim { 0.35 } else { 1.0 })
                 .help(format!("{} tokens on week of {}", short(total), nice(start)))
                 .role("button").label(format!("{} tokens on week of {}", short(total), nice(start)))
                 .on_press(move |s: &mut App| s.usage_pick = if s.usage_pick.as_deref() == Some(key.as_str()) { None } else { Some(key.clone()) });
@@ -271,7 +272,6 @@ fn breakdown(t: &Theme, weeks: &[i64], by_day: &HashMap<i64, &UsageDay>, pick: O
         }).collect()
     };
     Some(col().key("usage-breakdown").w_full().gap(10.0).padding(14.0).radius(12.0).border(1.0, t.card_border)
-        .transition(crate::ui::fade_in()).motion(crate::ui::ENTER)
         .child(row().w_full().center_y().gap(8.0)
             .child(text(title).font(ui(13.5, 600.0)).color(t.text))
             .child(text(format!("{} tokens · {}", short(total), plural(calls, "call"))).font(ui(12.0, 400.0)).color(t.faint))

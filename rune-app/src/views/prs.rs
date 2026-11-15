@@ -1,15 +1,15 @@
 //! Pull requests, Codex-style: a sidebar of open and merged PRs, and a page with Summary and
 //! Changes tabs.
 
-use rune::{Color, El, ScrollSpec, col, el, row, text};
+use rune::{Color, El, ScrollSpec, col, el, row, text, text_input};
 
-use crate::app::{App, PrTab};
+use crate::app::{App, EditKey, PrTab};
 use crate::bot;
 use crate::icons::ico_s;
 use crate::markdown;
 use crate::model::{ButtonKind, Pr, PrState};
 use crate::theme::{self, Theme, mono, tabular, ui};
-use crate::ui::{btn, card, enter, fade_in, me, side_head, side_row, ENTER};
+use crate::ui::{btn, card, enter, ibtn, me, side_row};
 
 fn pr_row(s: &App, t: &Theme, p: &Pr) -> El {
     let n = p.number;
@@ -36,7 +36,8 @@ pub fn side(s: &App, t: &Theme) -> El {
     let merged: Vec<&Pr> = s.data.prs.iter().filter(|p| p.state == PrState::Merged).collect();
     let mut list = col().px(8.0).pb(10.0);
     let mut i = 0;
-    if !s.data.extra.prs_note.is_empty() {
+    // With nothing listed, the page itself says what's missing.
+    if !s.data.extra.prs_note.is_empty() && !s.data.prs.is_empty() {
         list = list.child(row().px(8.0).pt(10.0).gap(8.0).items_start()
             .child(ico_s("help", 15.0, t.faint))
             .child(text(s.data.extra.prs_note.clone()).font(ui(12.5, 400.0)).color(t.faint).wrap().grow(1.0).min_w(0.0)));
@@ -62,8 +63,12 @@ pub fn side(s: &App, t: &Theme) -> El {
             i += 1;
         }
     }
+    let head = row().pt(14.0).pr(8.0).pb(8.0).pl(16.0).gap(2.0).center_y()
+        .child(text("Pull requests").font(ui(15.0, 650.0)).color(t.text).grow(1.0))
+        .child(ibtn(t, "folder-open", "Open folder").key("prs-open-folder").on_press_tx(|s: &mut App, tx| s.open_project(tx)))
+        .child(ibtn(t, "refresh", "Refresh").key("prs-refresh").on_press(|s: &mut App| s.prs_op(crate::model::PrOp::Refresh)));
     col().h_full().min_h(0.0)
-        .child(side_head(t, "Pull requests", None))
+        .child(head)
         .child(col().grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(list))
         .child(me(s, t))
 }
@@ -188,12 +193,111 @@ fn meta_block(t: &Theme, title: &str, body: El) -> El {
         .child(body)
 }
 
+/// The page, with the terminal pane under it while a command you started from here runs
+/// (signing in to GitHub, installing its CLI).
 pub fn main(s: &App, t: &Theme) -> El {
+    let body = col().w_full().grow(1.0).min_h(0.0).child(page(s, t));
+    if !s.panes.terminal {
+        return body;
+    }
+    col().w_full().h_full()
+        .child(body)
+        .child(col().w_full().h(260.0).min_h(0.0).border_sides([1.0, 0.0, 0.0, 0.0], t.border).child(crate::views::terminal::pane(s, t)))
+}
+
+/// No pull requests to show: what's missing, and the buttons that fix it.
+fn empty(s: &App, t: &Theme) -> El {
+    use crate::model::PrOp;
+    let name = s.data.project.clone();
+    let repo = s.data.extra.repo.clone();
+    let note = s.data.extra.prs_note.clone();
+    let open_folder = || btn(t, "Open folder", Some("folder-open"), ButtonKind::Plain).key("prs-empty-open").on_press_tx(|s: &mut App, tx| s.open_project(tx));
+    let refresh = || btn(t, "Refresh", Some("refresh"), ButtonKind::Plain).key("prs-empty-refresh").on_press(|s: &mut App| s.prs_op(PrOp::Refresh));
+    let sign_in = |kind| btn(t, "Sign in to GitHub", Some("app-github"), kind).key("prs-sign-in").on_press_tx(|s: &mut App, tx| s.github_sign_in(tx));
+    let mut clone = false;
+    let (title, about, buttons): (String, String, Vec<El>) = match &repo {
+        None => (format!("Looking at {name}"), "Checking for git and GitHub.".into(), vec![refresh(), open_folder()]),
+        Some(r) if !r.repo => {
+            clone = true;
+            (
+                format!("{name} isn't a git repository"),
+                "Pull requests need git. Start a repository here, clone one, or open another folder.".into(),
+                vec![
+                    btn(t, "Initialize git", Some("branch"), ButtonKind::Blue).key("prs-init").on_press(|s: &mut App| s.prs_op(PrOp::Init)),
+                    open_folder(),
+                ],
+            )
+        }
+        Some(r) if r.gh == "missing" => (
+            "Install the GitHub CLI".into(),
+            "Codeply opens and merges pull requests with GitHub's command-line tool, gh.".into(),
+            vec![
+                btn(t, "Install GitHub CLI", Some("download"), ButtonKind::Blue).key("prs-install-gh").on_press_tx(|s: &mut App, tx| s.install_gh(tx)),
+                btn(t, "Download page", Some("external"), ButtonKind::Plain).key("prs-gh-page").on_press_tx(|_: &mut App, tx| { let _ = tx.open_url("https://cli.github.com"); }),
+                refresh(),
+            ],
+        ),
+        Some(r) if r.gh == "auth" => (
+            "Sign in to GitHub".into(),
+            "The terminal shows a one-time code; type it on the GitHub page that opens. Then refresh.".into(),
+            vec![sign_in(ButtonKind::Blue), refresh()],
+        ),
+        Some(r) if r.gh == "remote" || !r.remote => (
+            format!("{name} isn't on GitHub yet"),
+            "Publish it as a private repository, and pull requests can start.".into(),
+            vec![
+                btn(t, "Publish to GitHub", Some("app-github"), ButtonKind::Blue).key("prs-publish").on_press(|s: &mut App| s.prs_op(PrOp::Publish)),
+                sign_in(ButtonKind::Plain),
+                refresh(),
+            ],
+        ),
+        Some(r) if r.gh == "other" => ("GitHub didn't answer".into(), note.clone(), vec![refresh(), sign_in(ButtonKind::Plain)]),
+        Some(r) => {
+            let on_base = r.base.is_empty() || r.branch == r.base;
+            let about = if on_base {
+                format!("You're on {}. Make a branch, commit your changes, then open a pull request.", r.branch)
+            } else {
+                format!("Nothing open from {} yet.", r.branch)
+            };
+            let mut b = Vec::new();
+            if !on_base {
+                b.push(btn(t, "Create pull request", Some("branch"), ButtonKind::Blue).key("prs-create").on_press(|s: &mut App| s.prs_op(PrOp::Create)));
+            }
+            b.push(refresh());
+            b.push(open_folder());
+            ("No pull requests yet".into(), about, b)
+        }
+    };
+    let clone_row = clone.then(|| {
+        let field = text_input(s.edit(EditKey::CloneUrl), ui(13.5, 400.0)).key("clone-url").single_line().grow(1.0).min_w(0.0)
+            .color(t.text).placeholder("https://github.com/you/app", t.faint).caret(t.accent, t.accent.alpha(0.3)).label("Repository to clone")
+            .on_edit(|s: &mut App| s.edit_mut(EditKey::CloneUrl))
+            .on_submit(|s: &mut App, _| s.clone_repo());
+        col().w_full().gap(8.0).pt(10.0)
+            .child(text("Clone a repository").font(ui(12.5, 600.0)).color(t.faint))
+            .child(row().w_full().gap(8.0).center_y()
+                .child(row().h(32.0).px(10.0).grow(1.0).min_w(0.0).radius(9.0).center_y().fill(t.control).border(1.0, t.control_border).child(field))
+                .child(btn(t, "Clone", None, ButtonKind::Plain).key("prs-clone").on_press(|s: &mut App| s.clone_repo())))
+    });
+    let busy = s.data.extra.prs_busy.then(|| row().pt(4.0).child(crate::ui::wave("Working on it", ui(13.0, 500.0), t.dim)));
+    // The engine's note only adds something when the state above doesn't already say it.
+    let shown_note = (!note.is_empty() && !about.contains(&note) && repo.as_ref().is_some_and(|r| r.gh.is_empty())).then(|| {
+        text(note.clone()).font(ui(12.5, 400.0)).color(t.faint).wrap()
+    });
+    let card = col().key("prs-empty").w_full().max_w(480.0).gap(10.0)
+        .child(ico_s("branch", 22.0, t.faint))
+        .child(text(title).font(ui(17.0, 600.0)).color(t.text).wrap())
+        .child(text(about).font(ui(13.5, 400.0)).color(t.dim).wrap())
+        .children(shown_note)
+        .child(row().pt(6.0).gap(8.0).flex_wrap().children(buttons))
+        .children(busy)
+        .children(clone_row);
+    col().w_full().h_full().center().px(32.0).child(card)
+}
+
+fn page(s: &App, t: &Theme) -> El {
     let Some(p) = s.data.prs.iter().find(|p| p.number == s.pr).or(s.data.prs.first()) else {
-        let why = if s.data.extra.prs_note.is_empty() { "No pull requests or changes in this project yet.".to_owned() } else { s.data.extra.prs_note.clone() };
-        return col().w_full().h_full().center().gap(8.0)
-            .child(ico_s("branch", 22.0, t.faint))
-            .child(text(why).font(ui(14.0, 400.0)).color(t.faint).wrap());
+        return empty(s, t);
     };
     // The sample data's PRs show their sample summary; real ones show what GitHub or git says.
     let sample = p.url.is_empty() && !p.local;
@@ -304,7 +408,7 @@ pub fn main(s: &App, t: &Theme) -> El {
         },
     };
 
-    let page = col().key(format!("pr-page-{}", p.number)).w_full().max_w(860.0).padding(32.0).transition(fade_in()).motion(ENTER)
+    let page = col().key(format!("pr-page-{}", p.number)).w_full().max_w(860.0).padding(32.0)
         .child(top)
         .child(head)
         .child(content);

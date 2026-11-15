@@ -194,6 +194,8 @@ pub enum EditKey {
     CodeAsk,
     /// New file / Rename: the path.
     FilePath,
+    /// The Pull requests page's "Clone a repository" field.
+    CloneUrl,
 }
 
 /// The code view's file dialogs.
@@ -205,11 +207,12 @@ pub enum CodeDialog {
 }
 
 impl EditKey {
-    pub const ALL: [EditKey; 21] = [
+    pub const ALL: [EditKey; 22] = [
         EditKey::Search, EditKey::Mission, EditKey::AgentThread, EditKey::ChatHome, EditKey::ChatThread,
         EditKey::AppSearch, EditKey::Address, EditKey::SettingsSearch, EditKey::AboutMe, EditKey::Instructions,
         EditKey::Terminal, EditKey::Code, EditKey::SignInEmail, EditKey::SignInCode, EditKey::Memory,
         EditKey::AgentName, EditKey::AgentFocus, EditKey::LoopTask, EditKey::LoopWhen, EditKey::CodeAsk, EditKey::FilePath,
+        EditKey::CloneUrl,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -234,6 +237,7 @@ impl EditKey {
             EditKey::LoopWhen => "loop-when",
             EditKey::CodeAsk => "code-ask",
             EditKey::FilePath => "file-path",
+            EditKey::CloneUrl => "clone-url",
         }
     }
 }
@@ -262,7 +266,7 @@ pub enum Pane {
 pub struct App {
     pub view: View,
     pub data: Snapshot,
-    store: Box<dyn Store>,
+    pub(crate) store: Box<dyn Store>,
     edits: HashMap<EditKey, TextEdit>,
     pub prefs: Prefs,
     /// Themes, fonts and backgrounds at work (see `look.rs`).
@@ -325,7 +329,7 @@ pub struct App {
     launched: bool,
     /// The code editor: which file its text was loaded from, the text the last completion was
     /// asked for, and when the text last changed (completions wait for a pause in typing).
-    code_loaded: Option<String>,
+    pub(crate) code_loaded: Option<String>,
     code_asked: String,
     code_changed_at: f64,
     code_text_seen: String,
@@ -1166,6 +1170,7 @@ impl App {
         if let Some(url) = self.store.take_open_url() {
             let _ = tx.open_url(&url);
         }
+        changed |= self.step_project();
         if self.view == View::Integrations && self.integrations == IntegrationsTab::Apps {
             let before = self.data.extra.apps.loading;
             self.step_apps_search(now, tx);
@@ -1180,10 +1185,6 @@ impl App {
             let joined = if before.is_empty() { format!("{what} ") } else { format!("{before}\n{what} ") };
             self.edit_mut(key).replace_text(joined);
             changed = true;
-        }
-        // Living eyes: glances and blinks move `Live` values, so they never rebuild the view.
-        if let Some(wait) = crate::bot::animate(now, self.reduced.get()) {
-            tx.wake_after(wait);
         }
         changed
     }

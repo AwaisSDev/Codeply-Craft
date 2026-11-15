@@ -59,6 +59,8 @@ pub struct Prefs {
     pub instructions: String,
     /// Light or dark, colours, font and background (see `look.rs`).
     pub look: crate::look::LookPrefs,
+    /// The project folder you last opened (empty: ~/Codeply). The engine starts there.
+    pub project: String,
 }
 
 impl Default for Prefs {
@@ -83,6 +85,7 @@ impl Default for Prefs {
             about_me: String::new(),
             instructions: String::new(),
             look: Default::default(),
+            project: String::new(),
         }
     }
 }
@@ -129,6 +132,7 @@ impl Prefs {
             about_me: text("about_me", ""),
             instructions: text("instructions", ""),
             look: crate::look::LookPrefs::from_json(&v["look"]),
+            project: text("project", ""),
         }
     }
 
@@ -149,6 +153,7 @@ impl Prefs {
             "about_me": self.about_me,
             "instructions": self.instructions,
             "look": self.look.to_json(),
+            "project": self.project,
         })
     }
 

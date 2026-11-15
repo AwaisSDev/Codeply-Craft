@@ -192,9 +192,17 @@ pub fn data_dir() -> PathBuf {
     home().join(".codeply").join("rune")
 }
 
-/// The folder new chats work in.
+/// The project folder the engine starts in: `CODEPLY_PROJECT`, else the one you last opened
+/// (if it's still there), else ~/Codeply.
 pub fn project_dir() -> PathBuf {
-    std::env::var_os("CODEPLY_PROJECT").map_or_else(|| home().join("Codeply"), PathBuf::from)
+    if let Some(p) = std::env::var_os("CODEPLY_PROJECT") {
+        return PathBuf::from(p);
+    }
+    let saved = crate::prefs::Prefs::load().project;
+    if !saved.is_empty() && std::path::Path::new(&saved).is_dir() {
+        return PathBuf::from(saved);
+    }
+    home().join("Codeply")
 }
 
 /// Starts the sidecar and returns once it is spawned (it is listening a moment later; the live

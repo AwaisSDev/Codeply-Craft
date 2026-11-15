@@ -42,7 +42,11 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
     };
     // Popovers attach at the root so they draw above everything and escape clipping.
     let appearance = s.appearance.as_ref().and_then(|id| s.data.agent(id)).map(|a| views::appearance::popover(s, &t, a));
-    col().key("root").w_full().h_full().fill(t.solid)
+    // Every change lands in the frame it's made: switching views, tabs and chats, rows coming and
+    // going, hover colours. Nothing springs or fades behind it, so the window draws once and rests
+    // (on the CPU renderer each frame of motion costs the whole window). Busy indicators keep
+    // their own loops while something is running.
+    col().key("root").w_full().h_full().fill(t.solid).instant_changes().motion(rune::Spring::NONE)
         .children(backdrop)
         .child(titlebar(s, &t, cx))
         .child(body)

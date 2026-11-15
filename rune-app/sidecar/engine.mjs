@@ -40,7 +40,9 @@ const CLI = path.resolve(arg('cli', ''));
 const PORT = Number(arg('port', '0'));
 const TOKEN = process.env.CODEPLY_SIDECAR_TOKEN || arg('token', '');
 const DATA = path.resolve(arg('data', path.join(os.homedir(), '.codeply', 'rune')));
-const DEFAULT_CWD = path.resolve(arg('cwd', os.homedir()));
+// The project folder: where new chats, the file tree, the terminal and pull requests work. The app
+// passes the one it remembers at launch (--cwd) and switches it with POST /project.
+let DEFAULT_CWD = path.resolve(arg('cwd', os.homedir()));
 const RING = 1000;
 const MAX_ENGINES = 2;
 
@@ -816,18 +818,36 @@ function listFiles(root) {
   return out;
 }
 
-/** A path inside the root, or null (outside it, or through a link that leaves it). */
+/** The real path of `p`, or of its nearest folder that exists (a new file's folders may not yet).
+ *  Windows: the native call, so drive-letter case, 8.3 short names and junctions come out the
+ *  same way for the root and for the path. */
+function realish(p) {
+  const real = process.platform === 'win32' && fs.realpathSync.native ? fs.realpathSync.native : fs.realpathSync;
+  let at = p;
+  const rest = [];
+  for (;;) {
+    try { return path.join(real(at), ...rest.reverse()); } catch {}
+    const up = path.dirname(at);
+    if (up === at) return p;
+    rest.push(path.basename(at));
+    at = up;
+  }
+}
+const within = (base, p) => { const r = path.relative(base, p); return r === '' || (!r.startsWith('..') && !path.isAbsolute(r)); };
+
+/** `rel` (a path in the project, or an absolute path inside it) resolved inside `root`, or null
+ *  when it would leave it (by `..`, or through a link that points out). */
 function inside(root, rel) {
-  if (typeof rel !== 'string' || !rel || rel.includes('\0')) return null;
-  const abs = path.resolve(root, rel);
-  const within = (b, p) => { const r = path.relative(b, p); return r === '' || (!r.startsWith('..') && !path.isAbsolute(r)); };
+  if (typeof rel !== 'string' || rel.includes('\0')) return null;
+  let r = rel.trim().replace(/\\/g, '/');
+  if (!r) return null;
+  const abs = path.isAbsolute(r) && within(root, path.resolve(r)) ? path.resolve(r) : path.resolve(root, r.replace(/^\/+/, ''));
   if (!within(root, abs)) return null;
-  try {
-    const real = fs.realpathSync(fs.existsSync(abs) ? abs : path.dirname(abs));
-    if (!within(fs.realpathSync(root), real)) return null;
-  } catch { /* parent folders may not exist yet: PUT makes them */ }
+  if (!within(realish(root), realish(abs))) return null;
   return abs;
 }
+/** Why `rel` was refused, for the message the app shows. */
+const outsideWhy = (root, rel) => (!String(rel || '').trim() ? 'Write a file name first.' : `${rel} is outside the project folder (${root}).`);
 
 // ---------- model helpers: /complete, /review ----------
 const stripFences = (t) => String(t || '').replace(/^\s*```[a-z0-9_-]*\n?/i, '').replace(/\n?```\s*$/i, '');
@@ -913,6 +933,12 @@ const authed = (req, url) => {
   const a = Buffer.from(given), b = Buffer.from(TOKEN);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 };
+/** The project folder, its name, and whether it is a git repository. */
+function projectView() {
+  let git = false;
+  try { for (let d = DEFAULT_CWD; ; d = path.dirname(d)) { if (fs.existsSync(path.join(d, '.git'))) { git = true; break; } if (path.dirname(d) === d) break; } } catch {}
+  return { cwd: DEFAULT_CWD, name: path.basename(DEFAULT_CWD) || DEFAULT_CWD, git };
+}
 const rootFor = (url) => {
   const c = url.searchParams.get('cwd');
   return c && fs.existsSync(c) ? path.resolve(c) : DEFAULT_CWD;
@@ -925,7 +951,10 @@ const rootFor = (url) => {
 // returns true when it answered the request. Routes run after authentication, before the
 // built-in ones. A module that fails to load is listed in GET /config's `missing`.
 const extCtx = {
-  CLI, DATA, DEFAULT_CWD, settings, missing,
+  CLI, DATA, settings, missing,
+  // The project folder now (it changes when you open another one).
+  get DEFAULT_CWD() { return DEFAULT_CWD; },
+  inside, outsideWhy,
   need, lib, emit, readJson, readBody,
   // Anything an extension shares with the others (a cache, a handle) goes here by name.
   shared: {},
@@ -978,6 +1007,22 @@ const server = http.createServer(async (req, res) => {
       // Answer anything already waiting, now that approvals don't need asking.
       if (settings.approval === 'auto') for (const [, entry] of pending) entry.resolve('once');
       return reply(200, { ok: true, settings });
+    }
+    // ----- the project folder -----
+    if (p === '/project' && req.method === 'GET') return reply(200, projectView());
+    if (p === '/project' && req.method === 'POST') {
+      const body = await readJson(req);
+      const want = String(body.path || '').trim();
+      if (!want) return reply(400, { error: 'Pick a folder.' });
+      const dir = path.resolve(want);
+      let st = null;
+      try { st = fs.statSync(dir); } catch {}
+      if (!st && body.create) { try { fs.mkdirSync(dir, { recursive: true }); st = fs.statSync(dir); } catch (e) { return reply(400, { error: `Couldn't make ${dir}: ${e.message}` }); } }
+      if (!st) return reply(400, { error: `Folder not found: ${dir}` });
+      if (!st.isDirectory()) return reply(400, { error: `${dir} is a file, not a folder.` });
+      DEFAULT_CWD = dir;
+      emit(null, { type: 'project', ...projectView() });
+      return reply(200, projectView());
     }
     if (req.method === 'GET' && p === '/config') {
       let dsh = 'unknown';
@@ -1114,7 +1159,7 @@ const server = http.createServer(async (req, res) => {
       const root = rootFor(url);
       const rel = url.searchParams.get('path') || '';
       const abs = inside(root, rel);
-      if (!abs) return reply(400, { error: 'That path is outside the project.' });
+      if (!abs) return reply(400, { error: outsideWhy(root, rel) });
       let st;
       try { st = fs.statSync(abs); } catch { return reply(404, { error: 'No such file.' }); }
       if (!st.isFile()) return reply(400, { error: 'That is not a file.' });
@@ -1127,7 +1172,8 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const root = rootFor(url);
       const abs = inside(root, String(body.path || ''));
-      if (!abs || abs === root) return reply(400, { error: 'That path is outside the project.' });
+      if (!abs || path.resolve(abs) === path.resolve(root)) return reply(400, { error: outsideWhy(root, String(body.path || '')) });
+      try { if (fs.statSync(abs).isDirectory()) return reply(400, { error: `${body.path} is a folder.` }); } catch {}
       const text = String(body.text ?? '');
       if (Buffer.byteLength(text) > MAX_FILE) return reply(413, { error: 'That is over 1 MB.' });
       fs.mkdirSync(path.dirname(abs), { recursive: true });

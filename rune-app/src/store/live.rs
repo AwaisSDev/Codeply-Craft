@@ -26,8 +26,12 @@ use crate::model::{AgentState, AppProgress, BgTask, ButtonKind, CatalogApp, Chat
 /// What the worker threads send back to the UI thread.
 enum Msg {
     Sessions(Vec<Session>),
-    /// The engine's project folder's name, its version, and which engine replies ("dsh").
+    /// The engine's project folder (its full path), its version, and which engine replies ("dsh").
     Project(String, String, String),
+    /// The answer to opening another project folder (`POST /project`).
+    ProjectSet(Value),
+    /// A clone finished: the folder to open, or why it failed.
+    Cloned(Result<String, String>),
     /// A chat `send` made for a new conversation, by engine id: open it once it has a title.
     Created(String),
     Account(Value),
@@ -98,7 +102,11 @@ impl Conn {
     }
     /// A POST that may take a while: adding a model tests it with a real request first.
     fn post_slow(&self, path: &str, body: Value) -> Result<Value, String> {
-        ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(2)).timeout_read(Duration::from_secs(150)).build()
+        self.post_for(path, body, 150)
+    }
+    /// A POST the engine may take up to `secs` to answer (a clone, a push).
+    fn post_for(&self, path: &str, body: Value, secs: u64) -> Result<Value, String> {
+        ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(2)).timeout_read(Duration::from_secs(secs)).build()
             .post(&format!("{}{path}", self.base)).set("Authorization", &format!("Bearer {}", self.token))
             .send_json(body).map_err(why)?.into_json().map_err(|e| e.to_string())
     }
@@ -440,6 +448,8 @@ pub struct LiveStore {
     focus: Option<String>,
     /// A page the engine asked to open (an app's sign-in).
     open_url: Option<String>,
+    /// A folder to open as the project (a clone that finished).
+    open_project: Option<String>,
     /// The team, as the engine is told about it: (id, name, role).
     team: Vec<(String, String, String)>,
     /// Chats renamed since the app last asked: (old title, new title).
@@ -457,7 +467,7 @@ impl LiveStore {
             conn: Conn { base: url.trim_end_matches('/').to_owned(), token: token.to_owned() },
             tx, rx, waker: None, sessions: Vec::new(), named: Default::default(), open: None, streaming: Default::default(),
             label: format!("codeply serve at {url}"), unread: Default::default(), queued: Default::default(), want_focus: None, focus: None,
-            open_url: None, team: Vec::new(), renames: Vec::new(),
+            open_url: None, open_project: None, team: Vec::new(), renames: Vec::new(),
             apps_q: AppsQuery::default(), apps_shown: 0, apps_seq: Default::default(),
         }
     }
@@ -809,10 +819,10 @@ impl Store for LiveStore {
         self.spawn(|c| {
             for _ in 0..120 {
                 if let Ok(cfg) = c.get("/config") {
-                    let name = cfg["cwd"].as_str().and_then(|p| std::path::Path::new(p).file_name()).and_then(|n| n.to_str())?;
+                    let cwd = cfg["cwd"].as_str()?.to_owned();
                     let version = cfg["version"].as_str().unwrap_or_default().to_owned();
                     let engine = if cfg["dsh"].as_str().is_some_and(|d| d.starts_with("unavailable")) { "classic" } else { cfg["engine"].as_str().unwrap_or("dsh") };
-                    return Some(Msg::Project(name.to_owned(), version, engine.to_owned()));
+                    return Some(Msg::Project(cwd, version, engine.to_owned()));
                 }
                 thread::sleep(Duration::from_millis(250));
             }
@@ -879,8 +889,9 @@ impl Store for LiveStore {
                         snap.extra.engine = "DSH".into();
                     }
                 }
-                Msg::Project(name, version, engine) => {
-                    snap.project = name;
+                Msg::Project(cwd, version, engine) => {
+                    snap.project = crate::project::folder_name(&cwd);
+                    snap.extra.project_path = cwd;
                     if !version.is_empty() {
                         snap.extra.version = format!("4.0.0-beta.1 · engine {version}");
                     }
@@ -927,7 +938,33 @@ impl Store for LiveStore {
                         snap.extra.cloud = v;
                     }
                 }
+                Msg::ProjectSet(v) => match v["cwd"].as_str() {
+                    Some(cwd) => {
+                        snap.project = crate::project::folder_name(cwd);
+                        snap.extra.project_path = cwd.to_owned();
+                        self.refresh("files");
+                        self.refresh("prs");
+                    }
+                    None => snap.extra.team_note = Some(v["error"].as_str().unwrap_or("Couldn't open that folder.").to_owned()),
+                },
+                Msg::Cloned(r) => {
+                    snap.extra.prs_busy = false;
+                    match r {
+                        Ok(path) => self.open_project = Some(path),
+                        Err(e) => snap.extra.team_note = Some(e),
+                    }
+                }
                 Msg::Prs(v) => {
+                    snap.extra.prs_busy = false;
+                    if v.get("repo").is_some() {
+                        snap.extra.repo = Some(crate::model::RepoState {
+                            repo: v["repo"].as_bool().unwrap_or(false),
+                            remote: v["remote"].as_bool().unwrap_or(false),
+                            branch: v["branch"].as_str().unwrap_or_default().to_owned(),
+                            base: v["base"].as_str().unwrap_or_default().to_owned(),
+                            gh: v["gh"]["code"].as_str().unwrap_or_default().to_owned(),
+                        });
+                    }
                     snap.prs = prs_from(&v);
                     snap.extra.prs_note = v["gh"]["error"].as_str().unwrap_or_default().to_owned();
                     if let Some(e) = v["error"].as_str().filter(|e| !e.is_empty()) {
@@ -1100,8 +1137,10 @@ impl Store for LiveStore {
         });
     }
 
-    fn prs_op(&mut self, op: crate::model::PrOp, _snap: &mut Snapshot) {
+    fn prs_op(&mut self, op: crate::model::PrOp, snap: &mut Snapshot) {
         use crate::model::PrOp;
+        // Init, clone, publish, create and merge take a while: the page shows it's working.
+        let busy = !matches!(op, PrOp::Refresh | PrOp::Diff(_));
         match op {
             PrOp::Refresh => self.refresh("prs"),
             // Retried while the engine starts (the Changes tab may open before it answers).
@@ -1114,9 +1153,36 @@ impl Store for LiveStore {
                 }
                 Some(Msg::PrFiles(n, json!({ "files": [] })))
             }),
-            PrOp::Merge(n) => self.spawn(move |c| Some(Msg::Prs(c.post("/ext/prs/merge", json!({ "n": n })).unwrap_or_else(|e| json!({ "error": e }))))),
-            PrOp::Create => self.spawn(|c| Some(Msg::Prs(c.post("/ext/prs/create", json!({})).unwrap_or_else(|e| json!({ "error": e }))))),
+            PrOp::Merge(n) => self.spawn(move |c| Some(Msg::Prs(c.post_for("/ext/prs/merge", json!({ "n": n }), 90).unwrap_or_else(|e| json!({ "error": e }))))),
+            PrOp::Create => self.spawn(|c| Some(Msg::Prs(c.post_for("/ext/prs/create", json!({}), 90).unwrap_or_else(|e| json!({ "error": e }))))),
+            PrOp::Init => self.spawn(|c| Some(Msg::Prs(c.post_for("/ext/prs/init", json!({}), 90).unwrap_or_else(|e| json!({ "error": e }))))),
+            PrOp::Publish => self.spawn(|c| Some(Msg::Prs(c.post_for("/ext/prs/publish", json!({}), 150).unwrap_or_else(|e| json!({ "error": e }))))),
+            PrOp::Clone(url) => self.spawn(move |c| Some(Msg::Cloned(match c.post_for("/ext/prs/clone", json!({ "url": url }), 320) {
+                Ok(v) => v["path"].as_str().map(str::to_owned).ok_or_else(|| v["error"].as_str().unwrap_or("The clone failed.").to_owned()),
+                Err(e) => Err(e),
+            }))),
         }
+        if busy {
+            snap.extra.prs_busy = true;
+        }
+    }
+
+    fn set_project(&mut self, path: &str, snap: &mut Snapshot) {
+        snap.project = crate::project::folder_name(path);
+        snap.extra.project_path = path.to_owned();
+        snap.extra.code.files.clear();
+        snap.extra.repo = None;
+        snap.prs.clear();
+        let path = path.to_owned();
+        self.spawn(move |c| Some(Msg::ProjectSet(c.post("/project", json!({ "path": path })).unwrap_or_else(|e| json!({ "error": e })))));
+    }
+
+    fn refresh_files(&mut self) {
+        self.refresh("files");
+    }
+
+    fn take_project(&mut self) -> Option<String> {
+        self.open_project.take()
     }
 
     fn team_op(&mut self, op: crate::team::TeamOp, _snap: &mut Snapshot) {

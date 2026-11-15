@@ -219,6 +219,26 @@ pub enum PrOp {
     Merge(u32),
     /// Open a PR from this branch.
     Create,
+    /// `git init` in the project (and a first commit).
+    Init,
+    /// Clone a repository (a URL, or `owner/name`) beside the project, then open it.
+    Clone(String),
+    /// Make a private GitHub repository for the project and push it.
+    Publish,
+}
+
+/// Where the project stands with git and GitHub, for the Pull requests page's buttons.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RepoState {
+    /// The project folder is a git repository.
+    pub repo: bool,
+    /// It has a remote.
+    pub remote: bool,
+    pub branch: String,
+    pub base: String,
+    /// What GitHub lacks: "missing" (no GitHub CLI), "auth" (not signed in), "remote", "other",
+    /// or empty when GitHub answered.
+    pub gh: String,
 }
 
 /// A file of a diff: its path and its lines, each '+', '-', ' ' or '@' (a hunk's head).
@@ -509,6 +529,12 @@ pub struct Extra {
     pub pr_files: Option<(u32, Vec<DiffFile>)>,
     /// Why pull requests can't be listed (no GitHub CLI, not signed in, no remote), or empty.
     pub prs_note: String,
+    /// The project's git and GitHub state; None until the engine answers.
+    pub repo: Option<RepoState>,
+    /// The project folder's full path (the engine's), empty until known.
+    pub project_path: String,
+    /// A pull request action is running (init, clone, publish, create).
+    pub prs_busy: bool,
     /// Why the last change to the team didn't go through, for a notice.
     pub team_note: Option<String>,
     /// Your token use, once asked for (the usage sheet); None while it loads.

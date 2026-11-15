@@ -8,15 +8,13 @@ use crate::model::{ButtonKind, Pill};
 use crate::store::Target;
 use crate::theme::{self, Theme, ui};
 
-/// Entering things settle fast: 0.14 s, no bounce. Codeply draws on the CPU, where every frame
-/// of motion costs the whole window, so motion stays short and small.
+/// Dialogs and sheets settle fast: 0.14 s, no bounce. Views, tabs and rows don't animate at all:
+/// a switch is drawn in one frame, and the window rests the frame after (on the CPU renderer
+/// every frame of motion costs the whole window).
 pub const ENTER: Spring = Spring::new(0.14, 0.0);
-/// Kept for callers; rows no longer cascade (a cascade kept the window animating for seconds).
-#[allow(dead_code)]
-pub const STAGGER: f32 = 0.0;
 
-/// `.fade`: views and rows fade in, briefly, without moving. On the way out they're gone the
-/// frame they leave: a view never fades out over the one replacing it.
+/// `.fade`, for dialogs and sheets only: a brief fade in, without moving. On the way out they're
+/// gone the frame they leave.
 pub fn fade_in() -> Transition {
     let mut t = Transition::opacity();
     t.removal = rune::Effect::opacity(0.0);
@@ -24,9 +22,9 @@ pub fn fade_in() -> Transition {
     t
 }
 
-/// A row entering a list. Every row fades in together (`_i` was its place in a cascade).
+/// A row in a list: it's simply there (no fade, no cascade), so switching views is instant.
 pub fn enter(e: El, _i: usize) -> El {
-    e.transition(fade_in()).motion(ENTER)
+    e
 }
 
 /// Text with `**bold**` runs. Bold takes `strong` (the prototype's `b { color: var(--text) }`).
@@ -115,7 +113,7 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
             .child(el().size(11.0, 11.0).radius(2.5).fill(t.invert_text))
             .on_press(move |s: &mut App| s.stop(&chat))
     } else {
-        let empty = s.edit(key).text.trim().is_empty();
+        let empty = s.edit(key).text.trim().is_empty() && s.attachments.get(&key).is_none_or(Vec::is_empty);
         el().key(format!("send-{}", key.name())).size(34.0, 34.0).radius(17.0).fill(if empty { t.control } else { t.accent }).center().role("button").label("Send")
             .hover(t.press)
             .child(ico_s("arrow-up", 16.0, if empty { t.faint } else { t.on_accent }))

@@ -6,12 +6,11 @@
 //!
 //! The Office draws its own pixel versions of the same bots (`views::office_art`).
 
-use std::cell::{Cell, RefCell};
-use std::time::Duration;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
-use rune::{El, Icon, Live, Spring, el, icon};
+use rune::{El, Icon, el, icon};
 
 use crate::model::{Agent, AgentState, Face, Gear, Look, Shape};
 
@@ -407,97 +406,10 @@ pub fn wisp(size: f32) -> El {
     icon(icon_for("#2f6bff", &Look::new(Shape::Hex, Face::Pill, &[]), Eyes::Open), size)
 }
 
-// ---------- living eyes ----------
-
-/// One bot's eyes at one size: where they're glancing (points) and whether they're open.
-struct EyeLife {
-    id: String,
-    size: u32,
-    gaze: Live<[f32; 2]>,
-    open: Live<f32>,
-    last_blink: Cell<i64>,
-}
-
-thread_local! {
-    static LIVES: RefCell<Vec<EyeLife>> = const { RefCell::new(Vec::new()) };
-}
-
-fn life(id: &str, size: f32) -> (Live<[f32; 2]>, Live<f32>) {
-    let size = size.round() as u32;
-    LIVES.with_borrow_mut(|lives| {
-        if let Some(l) = lives.iter().find(|l| l.id == id && l.size == size) {
-            return (l.gaze.clone(), l.open.clone());
-        }
-        let l = EyeLife { id: id.to_owned(), size, gaze: Live::new([0.0, 0.0]), open: Live::new(1.0), last_blink: Cell::new(-1) };
-        let out = (l.gaze.clone(), l.open.clone());
-        lives.push(l);
-        out
-    })
-}
-
-fn mix32(mut h: u32) -> u32 {
-    h = (h ^ (h >> 16)).wrapping_mul(0x7feb_352d);
-    h = (h ^ (h >> 15)).wrapping_mul(0x846c_a68b);
-    h ^ (h >> 16)
-}
-
-/// Where a bot's eyes are glancing (for tests).
-#[cfg(test)]
-pub fn gaze_of(id: &str, size: f32) -> [f32; 2] {
-    life(id, size).0.get()
-}
-
-/// Glances the bot settles into, as fractions of its size (the Grok bot's "gaze drift").
-const GLANCES: [[f32; 2]; 6] = [[0.0, 0.0], [-0.07, 0.0], [0.07, -0.015], [0.0, -0.055], [-0.05, -0.04], [0.055, 0.03]];
-
-/// Moves every bot's eyes for time `now`: a new glance every few seconds and a 0.18 s blink every
-/// four to six, each bot on its own rhythm. Only `Live` values change, so no view rebuilds; the
-/// returned wait is when the next change is due.
-pub fn animate(now: f64, reduced: bool) -> Option<Duration> {
-    if reduced {
-        LIVES.with_borrow(|lives| for l in lives { l.gaze.set([0.0, 0.0]); l.open.set(1.0); });
-        return None;
-    }
-    LIVES.with_borrow(|lives| {
-        for l in lives {
-            let seed = l.id.bytes().fold(7u32, |h, b| mix32(h ^ u32::from(b)));
-            let period = 2.4 + f64::from(seed % 13) * 0.11;
-            let k = ((now + f64::from(seed % 97) * 0.07) / period).floor() as u32;
-            let g = GLANCES[(mix32(seed ^ k) % GLANCES.len() as u32) as usize];
-            l.gaze.set([g[0] * l.size as f32, g[1] * l.size as f32]);
-            let every = 4.2 + f64::from(seed % 17) * 0.11;
-            let n = ((now + f64::from(seed % 31) * 0.1) / every).floor() as i64;
-            if n != l.last_blink.get() {
-                if l.last_blink.get() >= 0 {
-                    l.open.pulse(0.0, 1.0, Duration::from_millis(180));
-                }
-                l.last_blink.set(n);
-            }
-        }
-    });
-    Some(Duration::from_millis(250))
-}
-
-
-/// A helper at `size`, showing its state by its eyes and, while working, a small hop. Capsule and
-/// pill eyes that are open glance around and blink (`animate`).
+/// A helper at `size`, showing its state by its eyes. Bots hold still: no glances, blinks or
+/// hops, so a screen full of them draws once and then rests.
 pub fn agent(a: &Agent, size: f32) -> El {
-    let eyes = Eyes::for_state(a.state);
-    let alive = matches!(a.look.face, Face::Capsule | Face::Pill) && matches!(eyes, Eyes::Open | Eyes::Up);
-    let mut bot = el().size(size, size);
-    if alive {
-        let (gaze, open) = life(&a.id, size);
-        bot = bot
-            .child(icon(icon_layer(&a.color, &a.look, eyes, Layer::Body), size))
-            .child(el().pin(Some(0.0), Some(0.0), None, None).size(size, size).inert()
-                .live_offset(gaze.smooth(Spring::new(0.35, 0.0)))
-                .live_opacity(&open)
-                .child(icon(icon_layer(&a.color, &a.look, eyes, Layer::Eyes), size)));
-    } else {
-        bot = bot.child(icon(icon_for(&a.color, &a.look, eyes), size));
-    }
-    // No hop while working: the stretch read as the bot getting taller. Its eyes do the work.
-    bot
+    el().size(size, size).child(icon(icon_for(&a.color, &a.look, Eyes::for_state(a.state)), size))
 }
 
 #[cfg(test)]

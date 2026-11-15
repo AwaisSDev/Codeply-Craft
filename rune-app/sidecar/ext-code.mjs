@@ -14,20 +14,15 @@ const fenced = (s) => {
 import fs from 'node:fs';
 import path from 'node:path';
 
-/** `rel` resolved inside `root` (the project), or null when it would leave it. */
-function inside(root, rel) {
-  if (typeof rel !== 'string' || !rel.trim() || rel.includes('\0')) return null;
-  const abs = path.resolve(root, rel);
-  const r = path.relative(root, abs);
-  return r && !r.startsWith('..') && !path.isAbsolute(r) ? abs : null;
-}
-
 async function fileOp(ctx, url, p, b) {
   const q = url.searchParams.get('cwd');
   const root = q && fs.existsSync(q) ? path.resolve(q) : ctx.DEFAULT_CWD;
+  // The engine's own check (engine.mjs inside()): links that point out of the project count too.
+  const inside = ctx.inside;
   if (p === '/ext/code/rename') {
     const from = inside(root, b.from); const to = inside(root, b.to);
-    if (!from || !to) return { error: 'That path is outside the project.' };
+    if (!from) return { error: ctx.outsideWhy(root, b.from) };
+    if (!to) return { error: ctx.outsideWhy(root, b.to) };
     if (!fs.existsSync(from)) return { error: `${b.from} isn't there any more.` };
     if (fs.existsSync(to)) return { error: `${b.to} already exists.` };
     fs.mkdirSync(path.dirname(to), { recursive: true });
@@ -35,7 +30,7 @@ async function fileOp(ctx, url, p, b) {
     return { ok: true };
   }
   const abs = inside(root, b.path);
-  if (!abs) return { error: 'That path is outside the project.' };
+  if (!abs || path.resolve(abs) === path.resolve(root)) return { error: ctx.outsideWhy(root, b.path) };
   if (!fs.existsSync(abs)) return { ok: true };
   fs.rmSync(abs, { recursive: true, force: true });
   return { ok: true };

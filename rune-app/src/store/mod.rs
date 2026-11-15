@@ -67,6 +67,18 @@ pub trait Store {
     fn cloud_op(&mut self, _op: crate::model::CloudOp, _snap: &mut Snapshot) {}
     /// Lists, diffs, merges or opens pull requests (`sidecar/ext-prs.mjs`).
     fn prs_op(&mut self, _op: crate::model::PrOp, _snap: &mut Snapshot) {}
+    /// Makes `path` the project folder: new chats, the file tree, the terminal and pull requests
+    /// work there. The file tree and pull requests reload.
+    fn set_project(&mut self, path: &str, snap: &mut Snapshot) {
+        snap.project = crate::project::folder_name(path);
+        snap.extra.project_path = path.to_owned();
+    }
+    /// Reloads the project's file list.
+    fn refresh_files(&mut self) {}
+    /// A folder the app should open as the project (a repository that finished cloning).
+    fn take_project(&mut self) -> Option<String> {
+        None
+    }
     /// Adds to or changes your team and its loops (the engine's specialists and standing jobs).
     fn team_op(&mut self, _op: crate::team::TeamOp, _snap: &mut Snapshot) {}
     /// Fetches your token use into `extra.usage` (the usage sheet).

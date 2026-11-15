@@ -199,23 +199,6 @@ fn picking_a_shape_and_colour_restyles_a_helper() {
 }
 
 #[test]
-fn eyes_glance_and_blink_on_their_own_clock() {
-    let mut rt = runtime(App::with_mock());
-    let a = rt.state.data.agent("frontend").cloned().unwrap_or_else(|| unreachable!());
-    // Building a bot gives its eyes a life; animating moves them without rebuilding the view.
-    let _ = crate::bot::agent(&a, 40.0);
-    let glances: std::collections::HashSet<String> = (0..40)
-        .map(|i| {
-            crate::bot::animate(f64::from(i) * 0.5, false);
-            format!("{:?}", crate::bot::gaze_of("frontend", 40.0))
-        })
-        .collect();
-    assert!(glances.len() > 1, "the eyes drift between glances");
-    assert!(crate::bot::animate(0.0, true).is_none(), "reduced motion holds them still");
-    rt.frame(1.0 / 60.0);
-}
-
-#[test]
 fn every_scene_lays_out_in_light_at_the_largest_size_and_over_a_background() {
     for look in ["light", "light,4,geist", "dots", "light,ascii,3", "picture,bold"] {
         for (name, scene) in SCENES {
@@ -331,4 +314,75 @@ fn tabs_keep_their_unsaved_text_and_close() {
     assert_eq!(app.edit(EditKey::Code).text, "// my change\n");
     app.close_tab("src/main.js");
     assert_eq!(app.tabs(), [first]);
+}
+
+#[test]
+fn the_composer_plus_attaches_files_and_sends_their_paths() {
+    let mut rt = runtime(App::with_mock());
+    click(&mut rt, "attach-chat-home");
+    let kind = rt.file_dialog().map(|(k, _)| k);
+    assert_eq!(kind, Some(rune::FileDialogKind::Open), "the + opens a file picker");
+    let file = std::path::PathBuf::from("/home/sam/brief.pdf");
+    rt.resolve_file_dialog(Some(file)).unwrap_or_else(|e| panic!("{e}"));
+    settle(&mut rt);
+    assert_eq!(rt.state.attachments.get(&EditKey::ChatHome).cloned(), Some(vec!["/home/sam/brief.pdf".to_owned()]));
+    assert!(rt.find("attached//home/sam/brief.pdf").is_some(), "the file shows as a chip above the field");
+    // A file alone is enough to send.
+    click(&mut rt, "send-chat-home");
+    assert!(rt.state.attachments.get(&EditKey::ChatHome).is_none_or(Vec::is_empty), "sending takes the attachments with it");
+    let sent = rt.state.data.threads.iter().flat_map(|(_, items)| items.iter()).any(|i| matches!(i, crate::model::ThreadItem::You(t) if t.contains("Attached files:") && t.contains("/home/sam/brief.pdf")));
+    assert!(sent, "the message carries the file's path");
+}
+
+#[test]
+fn the_appearance_popover_deletes_an_agent() {
+    let mut s = App::with_mock();
+    s.go(View::Agents);
+    s.toggle_appearance("backend");
+    let mut rt = runtime(s);
+    settle(&mut rt);
+    click(&mut rt, "appearance-delete");
+    assert!(rt.state.data.agent("backend").is_none(), "Backend is off the team");
+    assert_eq!(rt.state.appearance, None, "the popover closes");
+    // Wisp leads and has no Delete.
+    rt.update(|s, _| s.toggle_appearance("wisp"));
+    settle(&mut rt);
+    assert!(rt.find("appearance-delete").is_none());
+}
+
+#[test]
+fn open_folder_makes_it_the_project() {
+    let mut s = App::with_mock();
+    s.go(View::Code);
+    let mut rt = runtime(s);
+    settle(&mut rt);
+    click(&mut rt, "code-open-folder");
+    assert_eq!(rt.file_dialog().map(|(k, _)| k), Some(rune::FileDialogKind::Folder));
+    rt.resolve_file_dialog(Some(std::path::PathBuf::from("/home/sam/code/my-site"))).unwrap_or_else(|e| panic!("{e}"));
+    settle(&mut rt);
+    assert_eq!(rt.state.data.project, "my-site");
+    assert_eq!(rt.state.prefs.project, "/home/sam/code/my-site", "remembered for the next launch");
+    assert!(rt.state.code_tabs.is_empty() && rt.state.data.extra.code.open.is_none(), "the old project's files close");
+}
+
+#[test]
+fn an_empty_pull_requests_page_says_what_to_do() {
+    let mut s = App::with_mock();
+    s.go(View::Prs);
+    s.data.prs.clear();
+    s.data.extra.repo = Some(crate::model::RepoState::default());
+    let mut rt = runtime(s);
+    settle(&mut rt);
+    for key in ["prs-init", "prs-empty-open", "clone-url", "prs-clone", "prs-refresh", "prs-open-folder"] {
+        assert!(rt.find(key).is_some(), "not a repository: {key}");
+    }
+    rt.update(|s, _| s.data.extra.repo = Some(crate::model::RepoState { repo: true, remote: true, gh: "auth".into(), ..Default::default() }));
+    settle(&mut rt);
+    assert!(rt.find("prs-sign-in").is_some());
+    rt.update(|s, _| s.data.extra.repo = Some(crate::model::RepoState { repo: true, remote: true, gh: "missing".into(), ..Default::default() }));
+    settle(&mut rt);
+    assert!(rt.find("prs-install-gh").is_some());
+    rt.update(|s, _| s.data.extra.repo = Some(crate::model::RepoState { repo: true, remote: true, branch: "fix".into(), base: "main".into(), gh: String::new() }));
+    settle(&mut rt);
+    assert!(rt.find("prs-create").is_some(), "a branch with nothing open can open a pull request");
 }

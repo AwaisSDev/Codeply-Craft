@@ -280,6 +280,9 @@ pub fn extra() -> Extra {
         pr_files: None,
         cloud: serde_json::Value::Null,
         prs_note: String::new(),
+        repo: None,
+        project_path: String::new(),
+        prs_busy: false,
         email: s("sam@example.com"),
         sign_in: None,
         memories: vec![

@@ -21,6 +21,7 @@ mod model;
 mod model_actions;
 mod models;
 mod prefs;
+mod project;
 mod shell;
 mod store;
 mod team;
@@ -128,7 +129,33 @@ const SCENES: &[Scene] = &[
     }),
     ("settings-models-ollama", |s| { s.open_settings(SettingsPage::Models); s.model_scan(); }),
     ("model-menu-custom", |s| { s.model_pick("m1"); s.new_chat(); s.toggle_menu("model:chat-home"); }),
+    ("prs-empty-norepo", |s| prs_empty(s, model::RepoState::default())),
+    ("prs-empty-gh", |s| prs_empty(s, model::RepoState { repo: true, remote: true, branch: "main".into(), base: "main".into(), gh: "missing".into() })),
+    ("prs-empty-auth", |s| { prs_empty(s, model::RepoState { repo: true, remote: true, branch: "main".into(), base: "main".into(), gh: "auth".into() }); s.panes.terminal = true; }),
+    ("prs-empty-remote", |s| prs_empty(s, model::RepoState { repo: true, remote: false, branch: "main".into(), base: String::new(), gh: "remote".into() })),
+    ("prs-empty-branch", |s| prs_empty(s, model::RepoState { repo: true, remote: true, branch: "pricing-page".into(), base: "main".into(), gh: String::new() })),
+    ("code-empty", |s| { s.go(View::Code); s.data.project = "my-app".into(); s.data.extra.code.files.clear(); s.data.extra.code.open = None; }),
+    ("usage-week", |s| { s.new_chat(); s.toggle_usage(); s.usage_pick = Some("w20".into()); }),
+    ("composer-attached", |s| {
+        s.new_chat();
+        s.attachments.insert(EditKey::ChatHome, vec!["C:\\Users\\sam\\Desktop\\brief.pdf".into(), "C:\\Users\\sam\\Pictures\\pricing-mock.png".into()]);
+        s.edit_mut(EditKey::ChatHome).replace_text("Build the pricing page from these");
+    }),
 ];
+
+/// The Pull requests page with nothing to list, as the engine would describe the project.
+fn prs_empty(s: &mut App, repo: model::RepoState) {
+    s.go(View::Prs);
+    s.data.project = "my-app".into();
+    s.data.prs.clear();
+    s.data.extra.prs_note = match repo.gh.as_str() {
+        "missing" => "The GitHub CLI (gh) isn't installed.".into(),
+        "auth" => "Sign in to GitHub to see pull requests.".into(),
+        "remote" => "This project has no GitHub remote yet.".into(),
+        _ => String::new(),
+    };
+    s.data.extra.repo = Some(repo);
+}
 
 /// The app's own flags (Rune takes its own first): `--store mock|live`, `--server URL`, `--token PW`.
 fn flag(name: &str) -> Option<String> {

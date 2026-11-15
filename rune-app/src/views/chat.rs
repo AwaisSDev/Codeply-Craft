@@ -8,7 +8,7 @@ use crate::icons::{ico, ico_s};
 use crate::model::ChatMeta;
 use crate::store::Target;
 use crate::theme::{Theme, ui};
-use crate::ui::{btn_primary, composer, enter, fade_in, ibtn, me, name_and_line, sec, side_row, wave, ENTER};
+use crate::ui::{btn_primary, composer, enter, ibtn, me, name_and_line, sec, side_row, wave};
 use crate::views::{browser, tasks, terminal};
 
 /// How many recents show before "Show more".
@@ -129,7 +129,7 @@ fn home(s: &App, t: &Theme) -> El {
             i,
         )
     }));
-    let column = col().key("chat-home").w_full().max_w(720.0).transition(fade_in()).motion(ENTER)
+    let column = col().key("chat-home").w_full().max_w(720.0)
         .child(row().center().pb(16.0).child(crate::logo::mark(44.0)))
         .child(row().center().pb(28.0).child(text("What should we build?").font(ui(28.0, 500.0)).color(t.text)))
         .child(suggestions)
