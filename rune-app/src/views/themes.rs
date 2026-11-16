@@ -19,6 +19,9 @@ use super::settings::{group, item};
 /// background is chosen. The shell makes its own fills see-through when this is Some.
 pub fn backdrop(s: &App, t: &Theme) -> Option<El> {
     let look = &s.prefs.look;
+    if look.bg_kind != BgKind::Flow {
+        s.look.stop_flow();
+    }
     if !look.has_background() {
         return None;
     }
@@ -26,6 +29,8 @@ pub fn backdrop(s: &App, t: &Theme) -> Option<El> {
     // An open conversation (a chat, an agent's session): the picture softens behind it.
     let in_chat = look.chat_blur && ((s.view == crate::app::View::Chat && s.chat.is_some()) || (s.view == crate::app::View::Agents && s.agent.is_some()));
     let (px, layer_opacity, scrim) = match look.bg_kind {
+        // Live dots; in a chat the scrim keeps text easy to read over them.
+        BgKind::Flow => (s.look.flow(t, s.reduced.get()), 1.0 - dim * 0.8, if in_chat { 0.2 } else { 0.0 }),
         BgKind::Picture => {
             let base = BLURS[look.blur].1;
             let chat = base.max(BLURS[2].1);
@@ -44,7 +49,8 @@ pub fn backdrop(s: &App, t: &Theme) -> Option<El> {
         kind => (s.look.art(kind, &look.art, t)?, 1.0 - dim * 0.8, if in_chat { 0.25 } else { 0.0 }),
     };
     let image = el().absolute(0.0, 0.0).w_full().h_full().opacity(layer_opacity).pixels_fit(&px, SurfaceFit::Fill);
-    let mut layer = el().key("backdrop").absolute(0.0, 0.0).w_full().h_full().child(image);
+    let mut layer = el().key("backdrop").absolute(0.0, 0.0).w_full().h_full().child(image)
+        .on_window_focus(|s: &mut App, focused, _| s.look.flow_focus(focused));
     if scrim > 0.0 {
         layer = layer.child(el().absolute(0.0, 0.0).w_full().h_full().fill(t.solid.alpha(scrim)));
     }
@@ -208,7 +214,7 @@ fn background(s: &App, t: &Theme) -> El {
     let dims: Vec<&str> = DIMS.iter().map(|x| x.0).collect();
     let blurs: Vec<&str> = BLURS.iter().map(|x| x.0).collect();
     let mut rows = vec![
-        item(t, "Background", Some("Behind the app's content. A picture, ASCII art, or dots."),
+        item(t, "Background", Some("Behind the app's content. A picture, ASCII art, dots, or flowing dots that ripple where you click."),
             tabs(t, "set-bg", &kinds, l.bg_kind, |s: &mut App, k: BgKind| s.set_bg_kind(k))),
     ];
     // Where the picture comes from: a file, or an online search (ASCII and dots draw from it too).
@@ -222,6 +228,9 @@ fn background(s: &App, t: &Theme) -> El {
             }
         });
     });
+    // Flowing dots are drawn live: no picture, search or blur to pick.
+    let live = l.bg_kind == BgKind::Flow;
+    if !live {
     rows.push(item(t, "Picture", Some(&picture), choose));
     let search_btn = btn(t, if s.look.searching { "Searching..." } else { "Search" }, Some("search"), ButtonKind::Plain).key("bg-search-go").on_press(|s: &mut App| s.search_images());
     let mut search = col().w_full().px(16.0).py(12.0).gap(10.0)
@@ -250,8 +259,11 @@ fn background(s: &App, t: &Theme) -> El {
         search = search.child(text("Getting the picture...".to_owned()).font(ui(12.5, 400.0)).color(t.dim));
     }
     rows.push(search);
+    }
     rows.push(item(t, "Dim", Some("How much the background steps back so text stays readable."), steps(t, "set-dim", &dims, l.dim, |s, i| s.set_dim(i))));
-    rows.push(item(t, "Blur", Some("Softens a picture."), steps(t, "set-blur", &blurs, l.blur, |s, i| s.set_blur(i))));
+    if !live {
+        rows.push(item(t, "Blur", Some("Softens a picture."), steps(t, "set-blur", &blurs, l.blur, |s, i| s.set_blur(i))));
+    }
     if matches!(l.bg_kind, BgKind::Ascii | BgKind::Dots) {
         rows.push(item(t, "Colours", Some("ASCII and dots made from your picture, in its colours or in the theme's."),
             tabs(t, "set-art-colour", &[(true, "Picture"), (false, "Theme")], l.art_colour, |s: &mut App, v: bool| if s.prefs.look.art_colour != v { s.toggle_art_colour() })));

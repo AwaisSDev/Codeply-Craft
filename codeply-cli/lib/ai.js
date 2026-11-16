@@ -30,6 +30,7 @@
  */
 const { SUPABASE_URL, SUPABASE_ANON_KEY, getAccessToken } = require('./auth');
 const { getConfig, byokHint, PROVIDERS } = require('./config');
+const crypto = require('crypto');
 
 const AI_PROXY_URL = `${SUPABASE_URL}/functions/v1/ai-proxy`;
 
@@ -221,7 +222,7 @@ function toAnthropicTools(tools) {
  * blocks on the assistant turn; consecutive tool results merge into one user
  * turn of tool_result blocks, which is what the Messages API requires.
  */
-function toAnthropicTurns(messages) {
+function toAnthropicTurns(messages, replies = null) {
   const turns = [];
   const push = (role, blocks) => {
     const last = turns[turns.length - 1];
@@ -237,6 +238,9 @@ function toAnthropicTurns(messages) {
     if (m.role === 'tool') {
       push('user', [{ type: 'tool_result', tool_use_id: m.tool_call_id, content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }]);
     } else if (m.role === 'assistant') {
+      // A newer Claude model's own reply, thinking and all, exactly as it sent it.
+      const saved = replies && replies.get(claudeReplyKey(m));
+      if (saved) { push('assistant', saved.map((b) => ({ ...b }))); continue; }
       const blocks = asBlocks(m.content || '');
       for (const c of m.tool_calls || []) blocks.push({ type: 'tool_use', id: c.id, name: c.function.name, input: parseArgs(c.function.arguments) });
       if (blocks.length) push('assistant', blocks);
@@ -845,27 +849,74 @@ function toAnthropicContent(content) {
     .filter(Boolean);
 }
 
+// ─── Claude's own replies, kept for the next step ───────────────────────────
+// Newer Claude models think before every step of a tool run, and their thinking
+// is tied to the conversation: sent back unchanged, the next step carries on
+// from it; left out, every step starts over (re-reading the same files, weighing
+// the same plan again). The agent's history is OpenAI-shaped and can't hold
+// those blocks, so each reply's full content is kept here, keyed by its first
+// tool call (or its text), and put back when the history is sent again.
+const claudeReplies = new Map();
+const CLAUDE_REPLIES_MAX = 400;
+function claudeReplyKey(message) {
+  const call = message && Array.isArray(message.tool_calls) && message.tool_calls[0];
+  if (call && call.id) return `tu:${call.id}`;
+  const text = typeof message?.content === 'string' ? message.content : '';
+  return text ? `tx:${crypto.createHash('sha256').update(text).digest('hex').slice(0, 32)}` : '';
+}
+function keepClaudeReply(message, content) {
+  const key = claudeReplyKey(message);
+  if (!key || !content.some((b) => b && (b.type === 'thinking' || b.type === 'redacted_thinking'))) return;
+  claudeReplies.delete(key);
+  claudeReplies.set(key, content);
+  while (claudeReplies.size > CLAUDE_REPLIES_MAX) claudeReplies.delete(claudeReplies.keys().next().value);
+}
+
+// The Claude models whose thinking is always on and comes back in blocks that
+// carry progress updates (thinking.display "updates") and must be passed back.
+const CLAUDE_THINKS_IN_BLOCKS = /^claude-(opus-5-5|sonnet-5-5|haiku-5-5|fable-5-[12]|mythos-5-[12])\b/i;
+// Models that may decline (stop_reason "refusal") and can be retried server side on another model.
+const CLAUDE_HAS_FALLBACKS = /^claude-(opus-5-5|opus-5|sonnet-5-5|fable-5-[12])\b/i;
+// A stream that sends nothing at all for this long has stalled (pings arrive every few seconds).
+const ANTHROPIC_IDLE_MS = 120_000;
+
 async function chatViaAnthropic(messages, opts, cfg) {
   const { apiKey, model } = cfg.anthropic;
   if (!apiKey) {
     return { success: false, error: 'No Anthropic API key set. Run `codeply provider anthropic --key <key>`.' };
   }
+  const blocksModel = CLAUDE_THINKS_IN_BLOCKS.test(String(model || ''));
 
   const systemTexts = messages.filter((m) => m.role === 'system').map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)));
   const plain = opts.tools
-    ? toAnthropicTurns(messages)
+    ? toAnthropicTurns(messages, blocksModel ? claudeReplies : null)
     : textOnlyMessages(messages)
       .filter((m) => m.role !== 'system')
       .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: toAnthropicContent(m.content) }));
   // Anthropic has no json_object response mode - asked for in plain English instead (anthropicCacheLayout).
   const { system, turns } = anthropicCacheLayout(systemTexts, plain, { json: !!opts.json });
 
+  const betas = [];
+  const extra = {};
+  if (blocksModel) {
+    // Progress updates between tool calls come back as text; reasoning stays hidden.
+    // A replayed block that no longer matches its conversation is dropped, never a 400.
+    extra.thinking = { type: 'adaptive', display: 'updates', block_binding: { prefix_mismatch_behavior: 'drop_block' } };
+    betas.push('thinking-display-updates-2026-08-18', 'thinking-binding-controls-2026-08-01');
+  }
+  if (CLAUDE_HAS_FALLBACKS.test(String(model || ''))) {
+    // A safety decline is retried on the model Anthropic recommends, inside the same call.
+    extra.fallbacks = 'default';
+    betas.push('server-side-fallback-2026-07-01');
+  }
+  // Thinking counts toward max_tokens: a tool step gets room for it as well as the reply.
+  const maxTokens = opts.maxTokens || (opts.tools ? 64000 : 16000);
+
   return withRetries(async () => {
-    let res, body;
-    // This call is not streamed, so nothing arrives until the whole answer is
-    // ready: a longer ceiling than the others, but a ceiling. Without one a
-    // stalled connection here waited forever with no events at all.
-    const { signal, isTimeout, cleanup } = withTimeout(opts.signal, ANTHROPIC_TIMEOUT_MS);
+    let res;
+    // Streamed: bytes flow from the first moment (pings while it thinks), so a long
+    // turn is never cut off by a ceiling on the whole request; only a real stall is.
+    const { signal, isTimeout, poke, cleanup } = withIdleTimeout(opts.signal, ANTHROPIC_IDLE_MS);
     try {
       res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -873,59 +924,161 @@ async function chatViaAnthropic(messages, opts, cfg) {
           'Content-Type': 'application/json',
           'x-api-key': apiKey,
           'anthropic-version': '2023-06-01',
+          ...(betas.length ? { 'anthropic-beta': betas.join(',') } : {}),
         },
         body: JSON.stringify({
           model,
           ...(system ? { system } : {}),
           messages: turns,
-          max_tokens: opts.maxTokens || 8192,
+          max_tokens: maxTokens,
           ...temperatureParam(model, opts),
           ...(opts.tools ? { tools: toAnthropicTools(opts.tools) } : {}),
           // /effort on the user's own Anthropic model: Claude reads it from output_config.
           ...(opts.effort ? { output_config: { effort: opts.effort } } : {}),
+          ...extra,
+          stream: true,
         }),
         signal,
       });
-      body = await res.json().catch(() => ({}));
-      if (isTimeout()) return { retryable: true, error: 'Anthropic stopped sending its answer partway - retrying.' };
     } catch (e) {
+      cleanup();
       if (isTimeout()) return { retryable: true, error: 'Anthropic timed out with no response - retrying.' };
       if (isAbortError(e)) return { aborted: true };
       return { retryable: true, error: e.message };
-    } finally {
+    }
+
+    // Errors come back as one JSON body, not a stream.
+    if (!(res.headers.get('content-type') || '').includes('text/event-stream')) {
+      const body = await res.json().catch(() => ({}));
       cleanup();
+      return anthropicFailure(res, body);
     }
 
-    if (res.ok && Array.isArray(body.content)) {
-      const text = body.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
-      const message = { role: 'assistant', content: text };
-      const uses = body.content.filter((b) => b.type === 'tool_use');
-      if (uses.length) message.tool_calls = uses.map((b) => ({ id: b.id, type: 'function', function: { name: b.name, arguments: JSON.stringify(b.input || {}) } }));
-      const data = {
-        choices: [{ message, finish_reason: body.stop_reason === 'max_tokens' ? 'length' : body.stop_reason === 'tool_use' ? 'tool_calls' : 'stop' }],
-        usage: {
-          prompt_tokens: body.usage?.input_tokens || 0,
-          completion_tokens: body.usage?.output_tokens || 0,
-          total_tokens: (body.usage?.input_tokens || 0) + (body.usage?.output_tokens || 0),
-          // Cache use, in Anthropic's terms and in OpenAI's (telemetry.js reads the latter for every provider).
-          cache_read_tokens: body.usage?.cache_read_input_tokens || 0,
-          cache_write_tokens: body.usage?.cache_creation_input_tokens || 0,
-          prompt_tokens_details: { cached_tokens: body.usage?.cache_read_input_tokens || 0 },
-        },
-      };
-      return { done: true, value: { success: true, data, modelUsed: model } };
+    let reply;
+    try {
+      reply = await readAnthropicStream(res, poke);
+    } catch (e) {
+      cleanup();
+      if (isTimeout()) return { retryable: true, error: 'Anthropic stopped sending its answer partway - retrying.' };
+      if (isAbortError(e)) return { aborted: true };
+      return { retryable: true, error: e.message };
+    }
+    cleanup();
+    if (reply.error) {
+      const type = String(reply.error.type || '');
+      const retry = /overloaded|api_error|rate_limit/.test(type);
+      return retry ? { retryable: true, error: `Anthropic: ${reply.error.message || type}` } : { done: true, value: { success: false, error: `Anthropic: ${reply.error.message || type}` } };
     }
 
-    const apiError = body?.error?.message || body?.error;
-    if (apiError) {
-      const msg = typeof apiError === 'string' ? apiError : JSON.stringify(apiError);
-      const fatal = /not_found_error|authentication_error|permission_error|invalid.*key/i.test(JSON.stringify(body.error || {})) || res.status === 401 || res.status === 403 || res.status === 404;
-      if (fatal) return { done: true, value: { success: false, error: `Anthropic: ${msg}` } };
-      return { retryable: isTransientStatus(res.status), retryAfterMs: retryAfterMs(res), error: `Anthropic: ${msg}` };
+    const content = reply.content.filter(Boolean);
+    const said = content.filter((b) => b.type === 'text').map((b) => b.text).join('');
+    // Progress updates (non-empty thinking under display "updates") are what the
+    // model tells the person between steps: they lead the step's text.
+    const updates = blocksModel ? content.filter((b) => b.type === 'thinking' && b.thinking && b.thinking.trim()).map((b) => b.thinking.trim()) : [];
+    const text = [...updates, said].filter((t) => t && t.trim()).join('\n\n');
+    const message = { role: 'assistant', content: text };
+    const uses = content.filter((b) => b.type === 'tool_use');
+    if (uses.length) message.tool_calls = uses.map((b) => ({ id: b.id, type: 'function', function: { name: b.name, arguments: JSON.stringify(b.input || {}) } }));
+    if (blocksModel) keepClaudeReply(message, content);
+    if (reply.stopReason === 'refusal' && !uses.length && !said) {
+      return { done: true, value: { success: false, error: `${model} declined this request.` } };
     }
-
-    return { retryable: isTransientStatus(res.status), retryAfterMs: retryAfterMs(res), error: describeStatus(res.status) };
+    const u = reply.usage;
+    const data = {
+      choices: [{ message, finish_reason: reply.stopReason === 'max_tokens' ? 'length' : reply.stopReason === 'tool_use' ? 'tool_calls' : 'stop' }],
+      usage: {
+        prompt_tokens: u.input_tokens || 0,
+        completion_tokens: u.output_tokens || 0,
+        total_tokens: (u.input_tokens || 0) + (u.output_tokens || 0),
+        // Cache use, in Anthropic's terms and in OpenAI's (telemetry.js reads the latter for every provider).
+        cache_read_tokens: u.cache_read_input_tokens || 0,
+        cache_write_tokens: u.cache_creation_input_tokens || 0,
+        prompt_tokens_details: { cached_tokens: u.cache_read_input_tokens || 0 },
+      },
+    };
+    return { done: true, value: { success: true, data, modelUsed: reply.model || model } };
   }, opts.signal);
+}
+
+function anthropicFailure(res, body) {
+  const apiError = body?.error?.message || body?.error;
+  if (apiError) {
+    const msg = typeof apiError === 'string' ? apiError : JSON.stringify(apiError);
+    const fatal = /not_found_error|authentication_error|permission_error|invalid.*key/i.test(JSON.stringify(body.error || {})) || res.status === 401 || res.status === 403 || res.status === 404;
+    if (fatal) return { done: true, value: { success: false, error: `Anthropic: ${msg}` } };
+    return { retryable: isTransientStatus(res.status), retryAfterMs: retryAfterMs(res), error: `Anthropic: ${msg}` };
+  }
+  return { retryable: isTransientStatus(res.status), retryAfterMs: retryAfterMs(res), error: describeStatus(res.status) };
+}
+
+/**
+ * Reads an Anthropic Messages stream into the reply it adds up to: every block
+ * in order (thinking with its signature, text, tool calls with their input,
+ * anything newer kept as sent), the stop reason and usage. poke() runs on
+ * every chunk, so the idle timer only fires when the stream truly stalls.
+ */
+async function readAnthropicStream(res, poke) {
+  const content = [];
+  const json = []; // partial tool input per block index
+  const usage = {};
+  let stopReason = null;
+  let model = '';
+  let error = null;
+  const decoder = new TextDecoder();
+  let buf = '';
+  const handle = (evt) => {
+    switch (evt.type) {
+      case 'message_start':
+        model = evt.message?.model || '';
+        Object.assign(usage, evt.message?.usage || {});
+        break;
+      case 'content_block_start': {
+        const b = { ...(evt.content_block || {}) };
+        if (b.type === 'tool_use') { json[evt.index] = ''; b.input = {}; }
+        content[evt.index] = b;
+        break;
+      }
+      case 'content_block_delta': {
+        const b = content[evt.index];
+        const d = evt.delta || {};
+        if (!b) break;
+        if (d.type === 'text_delta') b.text = (b.text || '') + (d.text || '');
+        else if (d.type === 'thinking_delta') b.thinking = (b.thinking || '') + (d.thinking || '');
+        else if (d.type === 'signature_delta') b.signature = (b.signature || '') + (d.signature || '');
+        else if (d.type === 'input_json_delta') json[evt.index] = (json[evt.index] || '') + (d.partial_json || '');
+        break;
+      }
+      case 'content_block_stop': {
+        const b = content[evt.index];
+        if (b && b.type === 'tool_use') {
+          try { b.input = json[evt.index] ? JSON.parse(json[evt.index]) : {}; } catch { b.input = {}; }
+        }
+        break;
+      }
+      case 'message_delta':
+        if (evt.delta?.stop_reason) stopReason = evt.delta.stop_reason;
+        Object.assign(usage, evt.usage || {});
+        break;
+      case 'error':
+        error = evt.error || { type: 'api_error', message: 'The stream ended with an error.' };
+        break;
+      default:
+        break;
+    }
+  };
+  for await (const chunk of res.body) {
+    poke();
+    buf += decoder.decode(chunk, { stream: true });
+    let cut;
+    while ((cut = buf.indexOf('\n\n')) >= 0) {
+      const frame = buf.slice(0, cut);
+      buf = buf.slice(cut + 2);
+      const data = frame.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trimStart()).join('\n');
+      if (!data) continue;
+      try { handle(JSON.parse(data)); } catch { /* a partial or non-JSON frame: skip it */ }
+    }
+  }
+  return { content, stopReason, usage, model, error };
 }
 
 /**
@@ -1673,4 +1826,4 @@ async function chatVision(messages, opts = {}) {
   return r;
 }
 
-module.exports = { probeEffortLevels, anthropicCacheLayout, cacheShapedMessages, chatResearch, chat, chatJson, chatVision, isRateLimitError, listOllamaModels, testModel, chatCompletionsUrl, hazeNotice };
+module.exports = { probeEffortLevels, anthropicCacheLayout, readAnthropicStream, toAnthropicTurns, cacheShapedMessages, chatResearch, chat, chatJson, chatVision, isRateLimitError, listOllamaModels, testModel, chatCompletionsUrl, hazeNotice };

@@ -453,6 +453,17 @@ const PATCH = `# Written by Codeply: the Rune app's chats on the DSH harness.
   config:
     personaPrefix: >-
       You are Codeply, powered by the {{model}} model. Codeply is made by Codeply Labs. If someone asks who made you or what you are, say you are Codeply, made by Codeply Labs. Never say OpenAI, Anthropic, Google or any other company made you, even though a model from one of them may run underneath.
+    personaSuffix: >-
+      HOW TO WORK. Get the job done in as few steps as you can. Read each file once: it stays in this
+      conversation, so use what you already read instead of reading it again, and re-read a file only
+      after you or a command changed it. Make independent reads, searches and commands in the same step.
+      Don't check again what a tool result already confirmed. Once the work is done and checked once,
+      stop and reply.
+
+      TALKING WHILE YOU WORK. Before your first tool call, say in one short sentence what you are about
+      to do. While you work, when you learn something worth knowing (what you found, a decision, a
+      problem and how you will get around it), say it in a sentence or two before your next step, the
+      way a colleague would. Finish with a short recap of what changed and anything the person should check.
 # No OS sandbox (dsh-acp.mjs starts the engine with DSH_PERMISSION_MODE=danger-full-access):
 # under "ask" the person approves each write, edit, command or agent start instead
 # (@codeply/dsh-ask-first), and the host answers those itself in Full access.
@@ -611,6 +622,15 @@ function makeApprove(session, signal) {
 const SHELL_TOOLS = /^(pwsh|powershell|bash|sh|shell|run|run_command|exec|cmd)$/i;
 const READ_ONLY = new Set(['read', 'read_image', 'grep', 'glob', 'web_search', 'web_fetch', 'todo_write', 'browser_check', 'use_app', 'ask_bot', 'hand_off', 'design_direction', 'design_lint', 'remember', 'recall', 'life_context']);
 const commandOf = (args) => String((args && (args.command || args.cmd)) || '');
+/** A command step's details for the transcript: the command, and the end of what it printed. */
+function commandDetail(ev) {
+  if (!SHELL_TOOLS.test(String(ev.name || '')) || !commandOf(ev.args)) return {};
+  let out = String(ev.output || ev.error || '').replace(/\r\n/g, '\n').trimEnd();
+  const lines = out.split('\n');
+  if (lines.length > 40) out = [`… ${lines.length - 40} earlier lines`, ...lines.slice(-40)].join('\n');
+  if (out.length > 6000) out = `…${out.slice(-6000)}`;
+  return { command: commandOf(ev.args), output: out };
+}
 
 /** DSH asks before a write, an edit or a command; reads (and tools that ask on their own) just run. */
 function dshApproveFor(approve) {
@@ -783,7 +803,7 @@ async function startRun(session, text, opts = {}) {
         emit(session.id, { type: 'step', label: st.doing, icon: st.icon });
       } else if (ev.type === 'tool_end') {
         const st = stepOf(ev.name, ev.args, session.cwd);
-        ev = { ...ev, summary: ev.summary || (ev.ok === false ? `${st.done} (failed)` : st.done), icon: st.icon };
+        ev = { ...ev, summary: ev.summary || (ev.ok === false ? `${st.done} (failed)` : st.done), icon: st.icon, ...commandDetail(ev) };
       }
       for (const h of extCtx.hooks.runEvent) { try { h(session, ev); } catch {} }
       // Wisp's own commands show in the app's terminal too.
@@ -804,7 +824,7 @@ async function startRun(session, text, opts = {}) {
       }
       reply = null;
       if (ev.type === 'text') push({ kind: 'assistant', text: ev.text, interim: !!ev.interim, at: Date.now() });
-      else if (ev.type === 'tool_end') push({ kind: 'tool', name: ev.name, label: ev.summary || '', icon: ev.icon || '', ok: ev.ok, at: Date.now() });
+      else if (ev.type === 'tool_end') push({ kind: 'tool', name: ev.name, label: ev.summary || '', icon: ev.icon || '', ok: ev.ok, ...(ev.command ? { command: ev.command, output: ev.output } : {}), at: Date.now() });
       else if (ev.type === 'notice') push({ kind: 'notice', level: ev.level || 'info', text: ev.text, at: Date.now() });
       else if (ev.type === 'error') {
         // The engine speaks of "Craft"; here the fix is to sign in in the Codeply app.

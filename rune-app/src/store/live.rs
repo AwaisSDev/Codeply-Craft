@@ -436,11 +436,11 @@ impl LiveStore {
         let id = snap.team.iter().find(|a| a.name.eq_ignore_ascii_case(&name) || a.id == name).map(|a| a.id.clone());
         let item = match (e["type"].as_str(), id) {
             (Some("delegated"), Some(id)) => ThreadItem::Team { text: "Wisp asked".into(), agents: vec![id] },
-            (Some("delegated"), None) => ThreadItem::Event { icon: "users", text: format!("Wisp asked **{name}**") },
+            (Some("delegated"), None) => ThreadItem::Event { icon: "users", text: format!("Wisp asked **{name}**"), detail: None },
             _ => {
                 let summary = e["summary"].as_str().unwrap_or_default();
                 let short: String = summary.chars().take(160).collect();
-                ThreadItem::Event { icon: "check", text: if short.is_empty() { format!("**{name}** is done") } else { format!("**{name}**: {short}") } }
+                ThreadItem::Event { icon: "check", text: if short.is_empty() { format!("**{name}** is done") } else { format!("**{name}**: {short}") }, detail: None }
             }
         };
         match snap.threads.iter_mut().find(|(k, _)| *k == title) {
@@ -918,6 +918,12 @@ pub fn items_from(m: &Value) -> Vec<ThreadItem> {
     out
 }
 
+/// A command step's command and output, when the engine sent them (engine.mjs commandDetail).
+fn step_detail(v: &Value) -> Option<Box<crate::model::StepDetail>> {
+    let command = v["command"].as_str().filter(|c| !c.trim().is_empty())?;
+    Some(Box::new(crate::model::StepDetail { command: command.to_owned(), output: v["output"].as_str().unwrap_or_default().to_owned() }))
+}
+
 pub fn item_from(m: &Value) -> Option<ThreadItem> {
     let text = m["text"].as_str().unwrap_or_default().to_owned();
     match m["kind"].as_str()? {
@@ -926,9 +932,10 @@ pub fn item_from(m: &Value) -> Option<ThreadItem> {
         "tool" => Some(ThreadItem::Event {
             icon: step_icon(m["icon"].as_str().unwrap_or(if m["name"] == "run" { "terminal" } else { "edit" })),
             text: m["label"].as_str().filter(|l| !l.is_empty()).map_or_else(|| tool_words(m["name"].as_str().unwrap_or_default()), str::to_owned),
+            detail: step_detail(m),
         }),
-        "notice" => Some(ThreadItem::Event { icon: "help", text }),
-        "checkpoint" => Some(ThreadItem::Event { icon: "history", text: format!("Changed {} files", m["total"].as_u64().unwrap_or(0)) }),
+        "notice" => Some(ThreadItem::Event { icon: "help", text, detail: None }),
+        "checkpoint" => Some(ThreadItem::Event { icon: "history", text: format!("Changed {} files", m["total"].as_u64().unwrap_or(0)), detail: None }),
         _ => None,
     }
 }
@@ -941,6 +948,7 @@ pub fn item_from_event(e: &Value) -> Option<ThreadItem> {
         "tool_end" => Some(ThreadItem::Event {
             icon: step_icon(e["icon"].as_str().unwrap_or("check")),
             text: e["summary"].as_str().filter(|l| !l.is_empty()).map_or_else(|| tool_words(e["name"].as_str().unwrap_or_default()), str::to_owned),
+            detail: step_detail(e),
         }),
         "approval_request" => Some(ThreadItem::Approval {
             id: e["requestId"].as_str()?.to_owned(),
@@ -948,8 +956,8 @@ pub fn item_from_event(e: &Value) -> Option<ThreadItem> {
             detail: e["detail"].as_str().unwrap_or_default().to_owned(),
             answer: None,
         }),
-        "notice" => Some(ThreadItem::Event { icon: "help", text: e["text"].as_str()?.to_owned() }),
-        "error" => Some(ThreadItem::Event { icon: "help", text: e["error"].as_str().unwrap_or("Something went wrong").to_owned() }),
+        "notice" => Some(ThreadItem::Event { icon: "help", text: e["text"].as_str()?.to_owned(), detail: None }),
+        "error" => Some(ThreadItem::Event { icon: "help", text: e["error"].as_str().unwrap_or("Something went wrong").to_owned(), detail: None }),
         _ => None,
     }
 }
@@ -1829,7 +1837,7 @@ mod mission_tests {
         assert_eq!(tool_words("pwsh"), "Ran a command");
         assert_eq!(tool_words("dsh:read"), "Read a file");
         let old = serde_json::json!({ "kind": "tool", "name": "edit", "label": "", "ok": true });
-        assert_eq!(item_from(&old), Some(crate::model::ThreadItem::Event { icon: "edit", text: "Edited a file".into() }));
+        assert_eq!(item_from(&old), Some(crate::model::ThreadItem::Event { icon: "edit", text: "Edited a file".into(), detail: None }));
     }
 
     #[test]

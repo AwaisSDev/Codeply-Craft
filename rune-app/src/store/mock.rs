@@ -109,7 +109,7 @@ pub fn sample() -> Snapshot {
         ThreadItem::Team { text: s("6 messages with"), agents: vec![s("frontend"), s("backend"), s("inbox")] },
         ThreadItem::Them(s("All on track. Frontend is checking the pricing page at three sizes, Backend is running the tests, and Inbox drafted a reply to your landlord that needs your OK.")),
         ThreadItem::You(s("Love it, do this every morning.")),
-        ThreadItem::Event { icon: "history", text: s("Created routine: Morning check-in, every day at 9:00") },
+        ThreadItem::Event { icon: "history", text: s("Created routine: Morning check-in, every day at 9:00"), detail: None },
         ThreadItem::Them(s("Done. It'll be here at 9:00 every day.")),
     ];
 

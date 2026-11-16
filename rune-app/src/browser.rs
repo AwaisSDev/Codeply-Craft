@@ -22,6 +22,8 @@ enum Event {
     Picked(String),
     /// What an agent's action in its tab returned: (request, the page as text or "ERROR ...").
     Did(String, String),
+    /// The page was clicked: it takes the keyboard (Windows doesn't always hand it over).
+    Focus(u64),
 }
 
 /// A background agent's tab: whose it is, so the strip shows its mascot and name.
@@ -312,6 +314,7 @@ impl Browser {
                     self.picking = false;
                     self.picked = Some(what);
                 }
+                Event::Focus(id) => native::focus(id),
                 Event::Did(req, out) => {
                     let ok = !out.starts_with("ERROR ");
                     self.answers.push((req, ok, out.trim_start_matches("ERROR ").to_owned()));
@@ -394,6 +397,8 @@ const PICKER_JS: &str = r#"(() => {
   };
   document.addEventListener('mousemove', show, true);
   document.addEventListener('click', pick, true);
+  // A press in the page: the app gives this web view the keyboard.
+  document.addEventListener('pointerdown', () => { try { window.ipc.postMessage('{"type":"focus"}'); } catch (_) {} }, true);
   window.__codeplyPick = () => { on = true; };
 })();"#;
 
@@ -419,6 +424,7 @@ mod native {
         let _ = handle.with_raw_handle(|h| {
             clip_children(h.as_raw());
             set_icon(h.as_raw());
+            keyboard_follows_clicks(h.as_raw());
         });
         WINDOW.with_borrow_mut(|w| *w = Some(handle.clone()));
     }
@@ -435,6 +441,43 @@ mod native {
             unsafe {
                 let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
                 SetWindowLongPtrW(hwnd, GWL_STYLE, style | WS_CLIPCHILDREN as isize);
+            }
+        }
+    }
+
+    /// A click on the app's own UI (the address bar, the chat) takes the keyboard back from a
+    /// web view that had it. Clicks in a page go to the page's own window, never here; without
+    /// this, keys kept going to the page after you clicked back into the app, and nothing else
+    /// could be typed in.
+    #[allow(unsafe_code)]
+    fn keyboard_follows_clicks(raw: rune::raw_window_handle::RawWindowHandle) {
+        use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetFocus, SetFocus};
+        use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetClientRect, WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_RBUTTONDOWN};
+        unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, _id: usize, _data: usize) -> LRESULT {
+            // SAFETY: called by Windows on the window's own thread with the window's own handle.
+            unsafe {
+                if matches!(msg, WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN) && GetFocus() != hwnd {
+                    SetFocus(hwnd);
+                }
+                // The flowing dots ripple where you click (as fractions of the window).
+                if msg == WM_LBUTTONDOWN {
+                    let mut r: RECT = std::mem::zeroed();
+                    if GetClientRect(hwnd, &mut r) != 0 && r.right > 0 && r.bottom > 0 {
+                        let (x, y) = ((lparam & 0xffff) as i16 as f32, ((lparam >> 16) & 0xffff) as i16 as f32);
+                        crate::flow::click(x / r.right as f32, y / r.bottom as f32);
+                    }
+                }
+                DefSubclassProc(hwnd, msg, wparam, lparam)
+            }
+        }
+        if let rune::raw_window_handle::RawWindowHandle::Win32(h) = raw {
+            let hwnd = h.hwnd.get() as HWND;
+            // SAFETY: `hwnd` is the app's live top-level window on the UI thread that owns it;
+            // the subclass only watches mouse presses and passes every message on.
+            unsafe {
+                SetWindowSubclass(hwnd, Some(proc), 0x434f_4450, 0);
             }
         }
     }
@@ -489,10 +532,17 @@ mod native {
                     .with_url(url)
                     .with_bounds(bounds(rect))
                     .with_background_color((15, 15, 15, 255))
+                    // Opening a tab leaves the keyboard where it was (the address bar, the chat);
+                    // a click in the page gives it to the page (Event::Focus).
+                    .with_focused(false)
                     .with_devtools(true)
                     .with_initialization_script(PICKER_JS)
                     .with_ipc_handler(move |req| {
                         let Ok(v) = serde_json::from_str::<serde_json::Value>(req.body()) else { return };
+                        if v["type"] == "focus" {
+                            ping(&t5, Event::Focus(id), &w5);
+                            return;
+                        }
                         if v["type"] == "picked" {
                             let text = v["text"].as_str().unwrap_or_default();
                             let what = format!("`{}` on {}{}", v["selector"].as_str().unwrap_or("element"), v["url"].as_str().unwrap_or_default(), if text.is_empty() { String::new() } else { format!(": \"{text}\"") });
@@ -632,6 +682,13 @@ mod native {
             let _ = v.clear_all_browsing_data();
         });
     }
+
+    /// Gives tab `id`'s page the keyboard.
+    pub fn focus(id: u64) {
+        with(id, |v| {
+            let _ = v.focus();
+        });
+    }
 }
 
 #[cfg(not(windows))]
@@ -659,6 +716,7 @@ mod native {
     pub fn zoom(_: u64, _: f64) {}
     pub fn devtools(_: u64) {}
     pub fn clear_data(_: u64) {}
+    pub fn focus(_: u64) {}
 }
 
 #[cfg(test)]

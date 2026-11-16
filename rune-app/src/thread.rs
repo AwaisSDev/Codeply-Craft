@@ -65,9 +65,9 @@ pub fn transcript(s: &App, t: &Theme, chat: &str, who: &str, width: f32) -> El {
             }
             // One step shown on its own ("Show each tool call"), or a notice: inside the column,
             // a step on one line, a notice wrapped.
-            ThreadItem::Event { icon, text: x } if *icon == "help" => row().w_full().min_w(0.0).gap(8.0).my(4.0).items_start()
+            ThreadItem::Event { icon, text: x, .. } if *icon == "help" => row().w_full().min_w(0.0).gap(8.0).my(4.0).items_start()
                 .child(ico_s(icon, 15.0, t.faint)).child(rich_text(x, 13.0, t.faint, t.dim).wrap().grow(1.0).min_w(0.0)),
-            ThreadItem::Event { icon, text: x } => el().w_full().min_w(0.0).my(2.0).child(step_row(t, icon, x, false)),
+            ThreadItem::Event { icon, text: x, .. } => el().w_full().min_w(0.0).my(2.0).child(step_row(t, icon, x, false)),
             ThreadItem::Approval { id, title, detail, answer } => approval(t, id, title, detail, answer.as_deref()),
         };
         body = body.child(enter(e, n));
@@ -138,6 +138,28 @@ fn step_row(t: &Theme, icon: &'static str, x: &str, live: bool) -> El {
         .child(text(plain).font(ui(12.5, 400.0)).color(if live { t.text } else { t.dim }).single_line().truncate().grow(1.0).min_w(0.0))
 }
 
+/// A command inside an open group: its line, which opens on a click to show what it ran
+/// ("$ npm test") and the end of what it printed, as Claude's transcript shows a command.
+fn command_step(s: &App, t: &Theme, key: &str, icon: &'static str, x: &str, d: &crate::model::StepDetail) -> El {
+    let open = s.expanded.contains(key);
+    let toggle_key = key.to_owned();
+    let plain = x.replace('`', "");
+    let head = row().key(key.to_owned()).w_full().min_w(0.0).gap(8.0).h(22.0).center_y().role("button").label(plain.clone()).checked(open).help(plain.clone())
+        .child(ico_s(icon, 14.0, t.faint))
+        .child(text(plain).font(ui(12.5, 400.0)).color(t.dim).single_line().truncate().shrink().min_w(0.0))
+        .child(ico_s(if open { "chevron-down" } else { "chevron-right" }, 12.0, t.faint))
+        .on_press(move |s: &mut App| s.toggle_expanded(&toggle_key));
+    let mut c = col().w_full().min_w(0.0).child(head);
+    if open {
+        c = c.child(col().w_full().min_w(0.0).mt(4.0).mb(6.0).padding(12.0).gap(8.0).radius(10.0).fill(t.well).border(1.0, t.border)
+            .child(text(format!("$ {}", d.command)).font(theme::mono(12.5, 18.0)).color(t.text).wrap().min_w(0.0).selectable(true))
+            .children((!d.output.trim().is_empty()).then(|| {
+                text(d.output.clone()).font(theme::mono(12.0, 17.0)).color(t.dim).wrap().min_w(0.0).selectable(true)
+            })));
+    }
+    c
+}
+
 /// Steps, as the Electron app shows them: while it works, the step running now heads the
 /// group and the steps so far are listed under it; once done, they fold into one line that
 /// says what they did, and open on a click.
@@ -160,8 +182,9 @@ fn steps(s: &App, t: &Theme, chat: &str, start: usize, items: &[ThreadItem], liv
         let skip = if live { items.len().saturating_sub(8) } else { 0 };
         c = c.child(col().w_full().min_w(0.0).gap(2.0).border_sides([0.0, 0.0, 0.0, 1.0], t.border).ml(6.0).pl(12.0)
             .children((skip > 0).then(|| text(format!("{skip} earlier steps")).font(ui(12.0, 400.0)).color(t.faint)))
-            .children(items[skip..].iter().map(|it| match it {
-                ThreadItem::Event { icon, text: x } => step_row(t, icon, x, false),
+            .children(items[skip..].iter().enumerate().map(|(k, it)| match it {
+                ThreadItem::Event { icon, text: x, detail: Some(d) } => command_step(s, t, &format!("{key}/{}", skip + k), icon, x, d),
+                ThreadItem::Event { icon, text: x, .. } => step_row(t, icon, x, false),
                 _ => el(),
             })));
     }

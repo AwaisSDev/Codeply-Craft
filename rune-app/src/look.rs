@@ -55,16 +55,19 @@ pub enum BgKind {
     Picture,
     Ascii,
     Dots,
+    /// Live dots that drift, and ripple where you click (flow.rs).
+    Flow,
 }
 
 impl BgKind {
-    pub const ALL: [BgKind; 4] = [BgKind::None, BgKind::Picture, BgKind::Ascii, BgKind::Dots];
+    pub const ALL: [BgKind; 5] = [BgKind::None, BgKind::Picture, BgKind::Ascii, BgKind::Dots, BgKind::Flow];
     pub fn name(self) -> &'static str {
         match self {
             BgKind::None => "none",
             BgKind::Picture => "picture",
             BgKind::Ascii => "ascii",
             BgKind::Dots => "dots",
+            BgKind::Flow => "flow",
         }
     }
     pub fn label(self) -> &'static str {
@@ -73,6 +76,7 @@ impl BgKind {
             BgKind::Picture => "Picture",
             BgKind::Ascii => "ASCII",
             BgKind::Dots => "Dots",
+            BgKind::Flow => "Flowing dots",
         }
     }
     pub fn from_name(s: &str) -> Option<BgKind> {
@@ -260,6 +264,8 @@ impl LookPrefs {
             BgKind::Picture => !self.picture.is_empty(),
             // ASCII and dots draw from the picture in its colours, or from the saved art.
             BgKind::Ascii | BgKind::Dots => !self.art.is_empty() || (self.art_colour && !self.picture.is_empty()),
+            // Drawn live: nothing to choose first.
+            BgKind::Flow => true,
         }
     }
 
@@ -333,6 +339,10 @@ impl Candidate {
                         look.art = lines;
                         background = true;
                     }
+                }
+                BgKind::Flow => {
+                    look.bg_kind = BgKind::Flow;
+                    background = true;
                 }
                 BgKind::Picture => {
                     if let Some(q) = b["query"].as_str().map(str::trim).filter(|q| !q.is_empty()) {
@@ -413,6 +423,9 @@ pub struct Look {
     pending_pick: bool,
     pics: RefCell<HashMap<String, Pixels>>,
     art_px: RefCell<HashMap<u64, Pixels>>,
+    /// Flowing dots, while that background shows (its thread stops when dropped).
+    flow: RefCell<Option<crate::flow::Flow>>,
+    flow_still: std::cell::Cell<bool>,
     families: (String, String),
 }
 
@@ -435,6 +448,8 @@ impl Default for Look {
             pending_pick: false,
             pics: RefCell::default(),
             art_px: RefCell::default(),
+            flow: RefCell::default(),
+            flow_still: std::cell::Cell::new(false),
             families: (theme::UI_FAMILIES.to_owned(), theme::MONO_FAMILIES.to_owned()),
         }
     }
@@ -578,6 +593,41 @@ impl Look {
     }
 
     /// The pixels of ASCII or dotted art for `lines`, drawn in the theme's ink.
+    /// The flowing dots' image in the theme's colours, starting their thread (again, when the
+    /// colours or reduce motion changed). `still`: one frame, no motion.
+    pub fn flow(&self, t: &theme::Theme, still: bool) -> Pixels {
+        let rgb = |c: rune::Color| {
+            let h = c.hex();
+            let n = u32::from_str_radix(h.trim_start_matches('#').get(..6).unwrap_or("000000"), 16).unwrap_or(0);
+            [(n >> 16) as u8, (n >> 8) as u8, n as u8]
+        };
+        // The dots a little lighter than the page in dark themes, darker in light ones.
+        let bg = rgb(t.bg);
+        let ink = if t.dark { [92, 92, 96] } else { [150, 150, 158] };
+        let palette = crate::flow::Palette { bg, ink, accent: rgb(t.accent) };
+        let mut flow = self.flow.borrow_mut();
+        let fresh = flow.as_ref().is_none_or(|f| f.palette() != palette) || self.flow_still.get() != still;
+        if fresh {
+            self.flow_still.set(still);
+            *flow = Some(crate::flow::Flow::start(palette, still));
+        }
+        flow.as_ref().map(|f| f.px.clone()).unwrap_or_default()
+    }
+
+    /// Stops the flowing dots (another background, or none).
+    pub fn stop_flow(&self) {
+        if self.flow.borrow().is_some() {
+            *self.flow.borrow_mut() = None;
+        }
+    }
+
+    /// The window came to the front or went behind: full speed, or a slow drift.
+    pub fn flow_focus(&self, focused: bool) {
+        if let Some(f) = self.flow.borrow().as_ref() {
+            f.set_focused(focused);
+        }
+    }
+
     pub fn art(&self, kind: BgKind, lines: &[String], t: &theme::Theme) -> Option<Pixels> {
         let mut h = std::collections::hash_map::DefaultHasher::new();
         (kind.name(), lines, t.art, t.dark).hash(&mut h);

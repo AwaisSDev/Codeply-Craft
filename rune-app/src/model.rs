@@ -150,6 +150,13 @@ pub struct ChatGroup {
     pub chats: Vec<String>,
 }
 
+/// What a command step ran, and the end of what it printed (sidecar engine.mjs commandDetail).
+#[derive(Clone, Debug, PartialEq)]
+pub struct StepDetail {
+    pub command: String,
+    pub output: String,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum ThreadItem {
     Stamp(String),
@@ -159,7 +166,8 @@ pub enum ThreadItem {
     Them(String),
     /// "6 messages with Frontend, Backend and Inbox".
     Team { text: String, agents: Vec<String> },
-    Event { icon: &'static str, text: String },
+    /// A step (or a notice, icon "help"). A command keeps what it ran and the end of its output.
+    Event { icon: &'static str, text: String, detail: Option<Box<StepDetail>> },
     /// The engine asks before it acts. `answer` is set once you (or a timeout) answered.
     Approval { id: String, title: String, detail: String, answer: Option<String> },
 }

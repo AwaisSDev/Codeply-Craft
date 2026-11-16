@@ -13,6 +13,7 @@ mod browser;
 #[cfg(feature = "live")]
 mod engine;
 mod favicon;
+mod flow;
 mod icons;
 mod logo;
 mod look;
@@ -161,8 +162,8 @@ const SCENES: &[Scene] = &[
         let chat = views::code::agent_chat(s);
         s.data.threads.push((chat, vec![
             model::ThreadItem::You("Make the pricing cards stack on phones, and give the featured one a blue border.".into()),
-            model::ThreadItem::Event { icon: "file-text", text: "Read src/pricing/pricing.css".into() },
-            model::ThreadItem::Event { icon: "edit", text: "Edited src/pricing/pricing.css, +14 lines".into() },
+            model::ThreadItem::Event { icon: "file-text", text: "Read src/pricing/pricing.css".into(), detail: None },
+            model::ThreadItem::Event { icon: "edit", text: "Edited src/pricing/pricing.css, +14 lines".into(), detail: None },
             model::ThreadItem::Them("Done. Under 640 px the cards now stack in one column, and `.plan.featured` has a 2 px blue border.\n\nSay **undo that** if you'd rather keep the old layout.".into()),
         ]));
     }),
@@ -174,18 +175,44 @@ const SCENES: &[Scene] = &[
         }
         let mut items = s.data.thread("Casual chat").to_vec();
         items.push(model::ThreadItem::You("Can you start a server to run this?".into()));
-        items.push(model::ThreadItem::Event { icon: "file-text", text: "Read index.html".into() });
-        items.push(model::ThreadItem::Event { icon: "terminal", text: "Ran `python -m http.server 8080`".into() });
+        items.push(model::ThreadItem::Event { icon: "file-text", text: "Read index.html".into(), detail: None });
+        items.push(model::ThreadItem::Event { icon: "terminal", text: "Ran `python -m http.server 8080`".into(), detail: None });
         items.push(model::ThreadItem::Them("It's running at http://127.0.0.1:8080/ and http://localhost:8080/.".into()));
         items.push(model::ThreadItem::You("ok can u make it like iMessage?".into()));
-        items.push(model::ThreadItem::Event { icon: "file-text", text: "Read style.css".into() });
+        items.push(model::ThreadItem::Event { icon: "file-text", text: "Read style.css".into(), detail: None });
         s.data.threads.push(("Casual chat".into(), items));
         s.data.extra.step_now.push(("Casual chat".into(), "Editing style.css".into()));
+    }),
+    // The agent talking while it works, Claude-style: a line before each group of steps, and
+    // a command opened to show what it ran and what it printed.
+    ("chat-work", |s| {
+        s.open_chat("Casual chat");
+        let mut items = vec![model::ThreadItem::You("Make me a bookstore like this website".into())];
+        items.push(model::ThreadItem::Them("I'll look at your picture and the project first, then build the page.".into()));
+        items.push(model::ThreadItem::Event { icon: "image", text: "Looked at bookstore.png".into(), detail: None });
+        items.push(model::ThreadItem::Event { icon: "file-text", text: "Read index.html".into(), detail: None });
+        items.push(model::ThreadItem::Them("It's a warm, paper-toned store with a serif headline and a grid of covers. The project is empty, so I'm starting from a clean page and checking the tools I'll need.".into()));
+        let start = items.len();
+        items.push(model::ThreadItem::Event { icon: "terminal", text: "Ran `python3 --version && node --version`".into(),
+            detail: Some(Box::new(model::StepDetail { command: "python3 --version && node --version".into(), output: "Python 3.12.4\nv24.9.0".into() })) });
+        items.push(model::ThreadItem::Event { icon: "edit", text: "Wrote index.html".into(), detail: None });
+        items.push(model::ThreadItem::Event { icon: "edit", text: "Wrote assets/base.css".into(), detail: None });
+        items.push(model::ThreadItem::Them("The page is written. Starting a local server to check it in the browser.".into()));
+        items.push(model::ThreadItem::Event { icon: "terminal", text: "Ran `python -m http.server 8770`".into(),
+            detail: Some(Box::new(model::StepDetail { command: "python -m http.server 8770".into(), output: "Serving HTTP on 0.0.0.0 port 8770 (http://0.0.0.0:8770/) ...".into() })) });
+        items.push(model::ThreadItem::Event { icon: "globe", text: "Checked http://localhost:8770".into(), detail: None });
+        items.push(model::ThreadItem::Them("Done. The bookstore is at http://localhost:8770: hero, a grid of 12 covers and a footer, in your picture's colours.".into()));
+        s.data.threads.push(("Casual chat".into(), items));
+        s.expanded.insert(format!("steps/Casual chat/{start}"));
+        s.expanded.insert(format!("steps/Casual chat/{start}/0"));
     }),
     ("agent-sessions", |s| s.open_agent(Some("frontend"))),
     ("bg-ascii-colour", |s| { bg(s, look::BgKind::Ascii); s.new_chat(); }),
     ("bg-dots-colour", |s| { bg(s, look::BgKind::Dots); s.new_chat(); }),
     ("bg-picture", |s| { bg(s, look::BgKind::Picture); s.new_chat(); }),
+    // Flowing dots, with a click's ripple on its way out from the composer.
+    ("bg-flow", |s| { bg(s, look::BgKind::Flow); s.new_chat(); flow::click(0.62, 0.62); }),
+    ("settings-flow", |s| { bg(s, look::BgKind::Flow); s.open_settings(SettingsPage::Appearance); }),
     ("bg-picture-chat", |s| { bg(s, look::BgKind::Picture); s.open_chat("Casual chat"); }),
     ("settings-background", |s| { bg(s, look::BgKind::Dots); s.open_settings(SettingsPage::Appearance); }),
     ("settings-memories", |s| {
@@ -199,11 +226,11 @@ const SCENES: &[Scene] = &[
         let mut items = s.data.thread("Casual chat").to_vec();
         items.push(model::ThreadItem::Files(vec![pic.clone(), "C:\\Users\\sam\\Desktop\\brief.pdf".into()]));
         items.push(model::ThreadItem::You("Make me a bookstore website and use this image as the reference".into()));
-        items.push(model::ThreadItem::Event { icon: "image", text: "Looked at bookstore.png".into() });
-        items.push(model::ThreadItem::Event { icon: "file-text", text: "Read index.html".into() });
-        items.push(model::ThreadItem::Event { icon: "edit", text: "Edited index.html".into() });
-        items.push(model::ThreadItem::Event { icon: "edit", text: "Edited style.css".into() });
-        items.push(model::ThreadItem::Event { icon: "terminal", text: "Ran `npx --yes http-server . -p 8080 -c-1 --cors --silent --gzip --brotli --log-ip --proxy http://localhost:8080?`".into() });
+        items.push(model::ThreadItem::Event { icon: "image", text: "Looked at bookstore.png".into(), detail: None });
+        items.push(model::ThreadItem::Event { icon: "file-text", text: "Read index.html".into(), detail: None });
+        items.push(model::ThreadItem::Event { icon: "edit", text: "Edited index.html".into(), detail: None });
+        items.push(model::ThreadItem::Event { icon: "edit", text: "Edited style.css".into(), detail: None });
+        items.push(model::ThreadItem::Event { icon: "terminal", text: "Ran `npx --yes http-server . -p 8080 -c-1 --cors --silent --gzip --brotli --log-ip --proxy http://localhost:8080?`".into(), detail: None });
         items.push(model::ThreadItem::Them("Done: warm paper tones and a serif headline, from your picture. It's at http://127.0.0.1:8080/.".into()));
         s.data.threads.push(("Casual chat".into(), items));
         s.attachments.insert(EditKey::ChatThread, vec![pic]);
