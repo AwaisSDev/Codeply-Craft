@@ -126,6 +126,8 @@ function findMember(name) {
  *  else null: Wisp leads it. */
 const memberOf = (s) => (s.kind === 'agent' && s.agent ? findMember(s.agent) : null)
   || (s.kind === 'code' ? null : settings.team.find((m) => norm(m.name) === norm(s.title))) || null;
+/** Wisp's own chat: the one Mission control talks in (the only chat that leads the team). */
+const isWispChat = (s) => (s.kind === 'agent' && norm(s.agent) === 'wisp') || (s.kind !== 'code' && norm(s.title) === 'wisp');
 const rosterLines = () => settings.team.map((m) => `- ${m.name}: ${m.role || 'general help'}`);
 
 /** Short instruction put in front of what Wisp-led chats send to the engine (never stored in the chat). */
@@ -138,6 +140,8 @@ function promptPrefix(session) {
   if (member) {
     return `[You are ${member.name}${member.role ? `, the ${member.role} agent` : ''} on the user's Codeply team. Work in your own area, do the task fully with your tools, and report briefly what you did and what is left.]\n\n`;
   }
+  // Your own chats: the DSH engine as it is, with Codeply's features, doing the work itself.
+  if (!isWispChat(session)) return '';
   if (!settings.team.length) {
     return '[You are Wisp, who leads the user\'s agents. If the task needs a specialist agent (for example mail with no Inbox agent), do what you can and suggest creating an agent for it.]\n\n';
   }
@@ -650,13 +654,16 @@ function routeFor(session) {
 }
 
 /** One turn on DSH: its text arrives in chunks, sent as `text_delta` and kept as one message. */
-async function* runDsh(session, text, approve, signal) {
+async function* runDsh(session, text, approve, signal, images = []) {
   const engine = await engineFor(session.cwd);
+  // A model that can't take pictures with a prompt: this turn runs on Classic, which can.
+  if (images.length && !engine.imagePrompts) throw Object.assign(new Error('This model takes no images on DSH.'), { images: true });
   const sessionId = await engine.openSession(session.dshSession);
   if (sessionId !== session.dshSession) { session.dshSession = sessionId; save(); await applyEffort(engine, sessionId); }
   turns.set(sessionId, { session, cwd: path.resolve(session.cwd), approve, request: String(text || ''), route: routeFor(session) });
-  // Wisp leads every chat that is not a team member's own: it gets the team tools.
-  if (!memberOf(session) && session.kind !== 'code' && settings.team.length) {
+  // Only Wisp's own chat (Mission control) hands work to the team, as the Electron app keeps it:
+  // your chats and the code view's run on DSH and do the work themselves.
+  if (isWispChat(session) && settings.team.length) {
     const ctx = { session, approve };
     teams.set(sessionId, {
       prompt: `YOUR TEAM\nYou lead these agents. Hand each task to the matching one with ask_bot and wait for its result (check it before you build on it); hand_off passes work on without waiting.\n${rosterLines().join('\n')}`,
@@ -665,7 +672,7 @@ async function* runDsh(session, text, approve, signal) {
     });
   }
   try {
-    yield* engine.prompt(promptPrefix(session) + text, { approve: dshApproveFor(approve), signal, sessionId });
+    yield* engine.prompt(promptPrefix(session) + text, { approve: dshApproveFor(approve), signal, sessionId, images });
   } finally {
     teams.delete(sessionId);
     turns.delete(sessionId);
@@ -673,27 +680,41 @@ async function* runDsh(session, text, approve, signal) {
 }
 
 /** One turn on Classic, when DSH can't run (or for a publish). */
-async function* runClassic(session, text, approve, signal) {
+async function* runClassic(session, text, approve, signal, images = []) {
   const { runAgent } = await lib('agent.mjs');
   const { buildHistory } = require('./history.js');
   const history = buildHistory({ ...session, messages: session.messages.slice(0, -1) });
-  yield* runAgent({ userMessage: text, history, mode: 'Build', cwd: session.cwd, approve, signal, route: routeFor(session), haze: { product: 'cli', chatId: session.id } });
+  const urls = images.map((i) => `data:${i.mimeType};base64,${i.data}`);
+  yield* runAgent({ userMessage: text, history, mode: 'Build', cwd: session.cwd, approve, signal, route: routeFor(session), images: urls.length ? urls : undefined, haze: { product: 'cli', chatId: session.id } });
 }
 
 /** A message for a chat: an extension may take it (the project's Cloud switch), a busy chat queues it, else it runs. */
-async function sendMessage(s, text) {
+/** Pictures among attached files, for the model: { path, mimeType, data } (base64), at most six
+ *  of 8 MB each. */
+const IMAGE_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
+function loadImages(files) {
+  const out = [];
+  for (const f of files) {
+    const mimeType = IMAGE_TYPES[path.extname(f).slice(1).toLowerCase()];
+    if (!mimeType || out.length >= 6) continue;
+    try { const st = fs.statSync(f); if (st.size > 8 * 1024 * 1024) continue; out.push({ path: f, mimeType, data: fs.readFileSync(f).toString('base64') }); } catch {}
+  }
+  return out;
+}
+
+async function sendMessage(s, text, files = []) {
   for (const h of extCtx.hooks.beforeMessage) {
     try { if (await h(s, text)) return { ok: true, sessionId: s.id, cloud: true }; } catch (e) { console.error('beforeMessage:', e && e.message); }
   }
   if (runs.has(s.id)) {
     // Busy: queue it, show it at once, and run it when this reply ends.
     const q = queues.get(s.id) || [];
-    q.push(text);
+    q.push(files.length ? { text, files } : text);
     queues.set(s.id, q);
-    emit(s.id, { type: 'queued', text, position: q.length });
+    emit(s.id, { type: 'queued', text, files, position: q.length });
     return { ok: true, sessionId: s.id, queued: q.length };
   }
-  startRun(s, text);
+  startRun(s, text, { files });
   return { ok: true, sessionId: s.id };
 }
 
@@ -707,7 +728,12 @@ async function startRun(session, text, opts = {}) {
   runs.set(session.id, ctl);
   if (opts.signal) { if (opts.signal.aborted) ctl.abort(); else opts.signal.addEventListener('abort', () => ctl.abort(), { once: true }); }
   // opts.resume: a run carried on after a handoff; its prompt is not a message of the user's.
-  if (!opts.resume) session.messages.push({ kind: 'user', text, at: Date.now() });
+  // Attached files: kept on your message (the app shows pictures as thumbnails); the model gets
+  // their paths, and pictures themselves.
+  const files = Array.isArray(opts.files) ? opts.files.filter((f) => typeof f === 'string' && f) : [];
+  const images = loadImages(files);
+  const prompt = files.length ? `${text}\n\nAttached files:\n${files.map((f) => `- ${f}`).join('\n')}` : text;
+  if (!opts.resume) session.messages.push({ kind: 'user', text, ...(files.length ? { files } : {}), at: Date.now() });
   const from = session.messages.length;
   if (!opts.resume && session.messages.filter((m) => m.kind === 'user').length === 1 && (!session.title || session.title === 'New chat')) {
     session.title = text.length > 46 ? `${text.slice(0, 46)}...` : text;
@@ -726,21 +752,26 @@ async function startRun(session, text, opts = {}) {
     let run;
     if (opts.classic) {
       kind = 'classic';
-      run = runClassic(session, text, approve, ctl.signal);
+      run = runClassic(session, prompt, approve, ctl.signal, images);
     } else {
       try {
-        const dsh = runDsh(session, text, approve, ctl.signal);
+        const dsh = runDsh(session, prompt, approve, ctl.signal, images);
         session.engine = 'dsh';
         // Pull the first event here so a DSH that can't start falls back before anything shows.
         const first = await dsh.next();
         run = (async function* () { if (!first.done) { yield first.value; yield* dsh; } })();
       } catch (e) {
-        dshProblem = e.message;
         kind = 'classic';
-        session.engine = 'classic';
-        push({ kind: 'notice', level: 'info', text: `The DSH engine couldn't start (${e.message}). This reply runs on Classic.`, at: Date.now() });
-        emit(session.id, { type: 'notice', level: 'info', text: `DSH unavailable, using Classic: ${e.message}` });
-        run = runClassic(session, text, approve, ctl.signal);
+        if (e && e.images) {
+          // Only this turn, for its pictures; the chat stays on DSH.
+          run = runClassic(session, prompt, approve, ctl.signal, images);
+        } else {
+          dshProblem = e.message;
+          session.engine = 'classic';
+          push({ kind: 'notice', level: 'info', text: `The DSH engine couldn't start (${e.message}). This reply runs on Classic.`, at: Date.now() });
+          emit(session.id, { type: 'notice', level: 'info', text: `DSH unavailable, using Classic: ${e.message}` });
+          run = runClassic(session, prompt, approve, ctl.signal);
+        }
       }
     }
     for await (let ev of run) {
@@ -802,7 +833,7 @@ async function startRun(session, text, opts = {}) {
     const next = queue.shift();
     if (!queue.length) queues.delete(session.id);
     emit(session.id, { type: 'session_sync', session: meta(session) });
-    if (next !== undefined) setImmediate(() => startRun(session, next));
+    if (next !== undefined) setImmediate(() => (typeof next === 'string' ? startRun(session, next) : startRun(session, next.text, { files: next.files })));
   }
   return result;
 }
@@ -834,13 +865,20 @@ async function delegate({ session, approve }, member, task, signal) {
   const target = taskSession(member, session.cwd, task);
   const ac = new AbortController();
   if (signal) { if (signal.aborted) ac.abort(); else signal.addEventListener('abort', () => ac.abort(), { once: true }); }
-  const job = addJob({ id: newId('a_'), kind: 'agent', title: `${member.name}: ${task.split('\n')[0].slice(0, 70)}`, agent: member.name, detail: task.slice(0, 300), kill: () => ac.abort() }, session.id);
+  const job = addJob({ id: newId('a_'), kind: 'agent', title: target.title, agent: member.name, detail: task.slice(0, 300), kill: () => ac.abort() }, session.id);
   emit(session.id, { type: 'delegated', sessionId: session.id, agent: member.name, task: task.slice(0, 500), target: target.title });
   let r;
   try {
     await whenIdle(target.id); // the user may be talking to this agent right now
     if (ac.signal.aborted) throw new Error('Stopped.');
-    r = await startRun(target, task, { approvalSession: session, signal: ac.signal });
+    // The asking chat sees what the agent is doing as it works ("Frontend: Editing index.html").
+    const onEvent = (ev) => {
+      if (ev.type === 'tool_start' && ev.name !== 'todo_write') {
+        const st = stepOf(ev.name, ev.args, target.cwd);
+        emit(session.id, { type: 'step', label: `${member.name}: ${st.doing}`, icon: st.icon });
+      }
+    };
+    r = await startRun(target, task, { approvalSession: session, signal: ac.signal, onEvent });
   } catch (e) {
     r = { ok: false, text: '', error: e.message };
   }
@@ -1328,9 +1366,10 @@ const server = http.createServer(async (req, res) => {
       }
       if (m[2] === 'message' && req.method === 'POST') {
         const body = await readJson(req);
-        const text = String(body.text || '').trim();
+        const files = Array.isArray(body.files) ? body.files.map(String).filter(Boolean).slice(0, 20) : [];
+        const text = String(body.text || '').trim() || (files.length ? 'Have a look at the attached files.' : '');
         if (!text) return reply(400, { error: 'Write a task before sending it.' });
-        return reply(202, await sendMessage(s, text));
+        return reply(202, await sendMessage(s, text, files));
       }
       if (m[2] === 'abort' && req.method === 'POST') {
         const r = runs.get(s.id);

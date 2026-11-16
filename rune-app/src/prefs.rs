@@ -90,9 +90,14 @@ impl Default for Prefs {
     }
 }
 
-fn file() -> PathBuf {
+/// The app's own folder: ~/.codeply/rune (prefs, pasted pictures, the engine's data).
+pub fn data_dir() -> PathBuf {
     let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map_or_else(|| PathBuf::from("."), PathBuf::from);
-    home.join(".codeply").join("rune").join("prefs.json")
+    home.join(".codeply").join("rune")
+}
+
+fn file() -> PathBuf {
+    data_dir().join("prefs.json")
 }
 
 fn strings(v: &Value) -> Vec<String> {

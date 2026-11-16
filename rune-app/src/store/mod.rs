@@ -48,6 +48,28 @@ pub trait Store {
     fn poll(&mut self, snap: &mut Snapshot) -> bool;
     /// Sends a message. The reply arrives later through `poll`.
     fn send(&mut self, to: &Target, text: &str, snap: &mut Snapshot) -> Result<(), String>;
+    /// Sends a message with files (attached or pasted): the engine gives the model the pictures
+    /// themselves and the other files' paths.
+    fn send_files(&mut self, to: &Target, text: &str, files: &[String], snap: &mut Snapshot) -> Result<(), String> {
+        if files.is_empty() {
+            return self.send(to, text, snap);
+        }
+        let chat = match to {
+            Target::Chat(c) | Target::Project(c) | Target::AgentSession { title: c, .. } => Some(c.clone()),
+            _ => None,
+        };
+        self.send(to, text, snap)?;
+        // The sample store shows the files above the message it just added.
+        // (A chat with no thread of its own shows the sample's shared one, "*".)
+        let key = chat.map(|c| if snap.threads.iter().any(|(k, _)| *k == c) { c } else { "*".to_owned() });
+        if let Some(c) = key
+            && let Some((_, items)) = snap.threads.iter_mut().find(|(k, _)| *k == c)
+            && let Some(at) = items.iter().rposition(|i| matches!(i, crate::model::ThreadItem::You(_)))
+        {
+            items.insert(at, crate::model::ThreadItem::Files(files.to_vec()));
+        }
+        Ok(())
+    }
     /// A chat was opened: fetch its transcript if the store doesn't have it.
     fn open(&mut self, _chat: &str) {}
     /// Answers an approval: "once", "always" or "reject".

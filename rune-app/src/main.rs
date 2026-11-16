@@ -193,6 +193,21 @@ const SCENES: &[Scene] = &[
         s.data.extra.memories.insert(0, model::Memory { id: "m-long".into(), kind: "decision".into(), scope: "project:codeply-copy".into(),
             text: "All non-app pages of Codeply - Copy get light backgrounds, dark text, a light nav and footer, and pastel mockup panels, while the chat and admin screens stay unchanged.".into() });
     }),
+    ("chat-pictures", |s| {
+        let pic = sample_png();
+        s.open_chat("Casual chat");
+        let mut items = s.data.thread("Casual chat").to_vec();
+        items.push(model::ThreadItem::Files(vec![pic.clone(), "C:\\Users\\sam\\Desktop\\brief.pdf".into()]));
+        items.push(model::ThreadItem::You("Make me a bookstore website and use this image as the reference".into()));
+        items.push(model::ThreadItem::Event { icon: "image", text: "Looked at bookstore.png".into() });
+        items.push(model::ThreadItem::Event { icon: "file-text", text: "Read index.html".into() });
+        items.push(model::ThreadItem::Event { icon: "edit", text: "Edited index.html".into() });
+        items.push(model::ThreadItem::Event { icon: "edit", text: "Edited style.css".into() });
+        items.push(model::ThreadItem::Event { icon: "terminal", text: "Ran `npx --yes http-server . -p 8080 -c-1 --cors --silent --gzip --brotli --log-ip --proxy http://localhost:8080?`".into() });
+        items.push(model::ThreadItem::Them("Done: warm paper tones and a serif headline, from your picture. It's at http://127.0.0.1:8080/.".into()));
+        s.data.threads.push(("Casual chat".into(), items));
+        s.attachments.insert(EditKey::ChatThread, vec![pic]);
+    }),
     ("update-offer", |s| { s.new_chat(); s.updater.show(update::Phase::Offer(sample_release())); }),
     ("update-downloading", |s| { s.new_chat(); s.updater.show(update::Phase::Fetching { version: "4.0.140".into(), done: 31_000_000, total: 74_000_000, setup: true }); }),
     ("update-ready", |s| { s.new_chat(); s.updater.show(update::Phase::Ready(sample_release())); }),
@@ -205,6 +220,16 @@ fn bg(s: &mut App, kind: look::BgKind) {
     s.prefs.look.bg_kind = kind;
     s.prefs.look.dim = 1;
     s.convert_picture();
+}
+
+/// The sample picture as a PNG file, for scenes that attach one.
+fn sample_png() -> String {
+    let path = std::env::temp_dir().join("codeply-sample-bookstore.png");
+    if !path.exists() {
+        let (w, h, rgba) = art::sample_picture();
+        let _ = image::save_buffer(&path, &rgba, w, h, image::ColorType::Rgba8);
+    }
+    path.to_string_lossy().into_owned()
 }
 
 /// A release for the update scenes.

@@ -318,21 +318,51 @@ fn tabs_keep_their_unsaved_text_and_close() {
 }
 
 #[test]
-fn the_composer_plus_attaches_files_and_sends_their_paths() {
-    let mut rt = runtime(App::with_mock());
-    click(&mut rt, "attach-chat-home");
+fn the_composer_plus_attaches_files_and_sends_them_beside_the_message() {
+    let mut s = App::with_mock();
+    s.open_chat("Casual chat");
+    let mut rt = runtime(s);
+    settle(&mut rt);
+    click(&mut rt, "attach-chat-thread");
     let kind = rt.file_dialog().map(|(k, _)| k);
     assert_eq!(kind, Some(rune::FileDialogKind::Open), "the + opens a file picker");
     let file = std::path::PathBuf::from("/home/sam/brief.pdf");
     rt.resolve_file_dialog(Some(file)).unwrap_or_else(|e| panic!("{e}"));
     settle(&mut rt);
-    assert_eq!(rt.state.attachments.get(&EditKey::ChatHome).cloned(), Some(vec!["/home/sam/brief.pdf".to_owned()]));
-    assert!(rt.find("attached//home/sam/brief.pdf").is_some(), "the file shows as a chip above the field");
-    // A file alone is enough to send.
-    click(&mut rt, "send-chat-home");
-    assert!(rt.state.attachments.get(&EditKey::ChatHome).is_none_or(Vec::is_empty), "sending takes the attachments with it");
-    let sent = rt.state.data.threads.iter().flat_map(|(_, items)| items.iter()).any(|i| matches!(i, crate::model::ThreadItem::You(t) if t.contains("Attached files:") && t.contains("/home/sam/brief.pdf")));
-    assert!(sent, "the message carries the file's path");
+    assert_eq!(rt.state.attachments.get(&EditKey::ChatThread).cloned(), Some(vec!["/home/sam/brief.pdf".to_owned()]));
+    assert!(rt.find("attached//home/sam/brief.pdf").is_some(), "the file shows above the field");
+    // A file alone is enough to send; it goes beside the message and shows above it.
+    click(&mut rt, "send-chat-thread");
+    assert!(rt.state.attachments.get(&EditKey::ChatThread).is_none_or(Vec::is_empty), "sending takes the attachments with it");
+    let items = rt.state.data.thread("Casual chat").to_vec();
+    let at = items.iter().rposition(|i| matches!(i, crate::model::ThreadItem::Files(f) if f == &vec!["/home/sam/brief.pdf".to_owned()]));
+    assert!(at.is_some(), "the file shows with the message: {items:?}");
+    assert!(matches!(items.get(at.unwrap_or(0) + 1), Some(crate::model::ThreadItem::You(t)) if !t.contains("brief.pdf")), "and the message itself stays as you wrote it");
+}
+
+#[test]
+fn pasting_a_picture_attaches_it() {
+    let mut s = App::with_mock();
+    s.open_chat("Casual chat");
+    let mut rt = runtime(s);
+    settle(&mut rt);
+    click(&mut rt, "composer-chat-thread");
+    // A 1x1 PNG, as a browser's "Copy image" puts on the clipboard.
+    let png: Vec<u8> = {
+        let mut out = Vec::new();
+        let mut enc = png::Encoder::new(&mut out, 1, 1);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        if let Ok(mut w) = enc.write_header() { let _ = w.write_image_data(&[200, 120, 40, 255]); }
+        out
+    };
+    let image = rune::ClipboardImage::from_png(png).unwrap_or_else(|| panic!("a valid png"));
+    rt.paste_content(rune::ClipboardContent::new("").with_image(image));
+    settle(&mut rt);
+    let files = rt.state.attachments.get(&EditKey::ChatThread).cloned().unwrap_or_default();
+    assert_eq!(files.len(), 1, "the pasted picture is attached");
+    assert!(files[0].ends_with(".png") && std::path::Path::new(&files[0]).exists(), "kept as a file the engine can send: {files:?}");
+    let _ = std::fs::remove_file(&files[0]);
 }
 
 #[test]

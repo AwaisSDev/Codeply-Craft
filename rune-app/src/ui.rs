@@ -106,6 +106,8 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
     let field = text_input(s.edit(key), ui(15.0, 400.0)).key(format!("composer-{}", key.name())).w_full().px(16.0).pt(14.0).pb(4.0).min_h(50.0).max_h(240.0)
         .color(t.text).placeholder(placeholder.to_owned(), t.faint).caret(t.accent, t.accent.alpha(0.3)).label(placeholder.to_owned())
         .on_edit(move |s: &mut App| s.edit_mut(key))
+        // Pasting a picture (from a web page, a screenshot) or files attaches them.
+        .on_input_paste(move |s: &mut App, content, _| s.paste_into(key, content))
         .on_submit(move |s: &mut App, _| s.submit(key, &target));
     let action = if running {
         let chat = chat.clone().unwrap_or_default();
@@ -253,21 +255,50 @@ pub fn wave(src: &str, style: rune::TextStyle, color: Color) -> El {
     }))
 }
 
-/// The files attached to a composer's next message, as chips with a remove button.
+/// Whether a path is a picture the app can show.
+pub fn is_picture(path: &str) -> bool {
+    let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp")
+}
+
+/// A file as the chat shows one: a picture as a rounded thumbnail `size` tall, anything else
+/// as a chip with its name.
+pub fn file_tile(s: &App, t: &Theme, f: &str, size: f32) -> El {
+    let name = f.rsplit(['/', '\\']).next().unwrap_or(f).to_owned();
+    if is_picture(f) {
+        let px = s.look.picture(f, 0.0, 480);
+        let (w, h) = px.size();
+        // The picture's own shape, within reason, at the given height.
+        let width = if w > 0 && h > 0 { (size * w as f32 / h as f32).clamp(size * 0.6, size * 1.8) } else { size };
+        return el().w(width).h(size).radius(12.0).clip_rounded(12.0).fill(t.well).border(1.0, t.border).help(f.to_owned())
+            .pixels_fit(&px, rune::SurfaceFit::Fill);
+    }
+    row().h(32.0).px(10.0).gap(7.0).radius(9.0).center_y().fill(t.hover).help(f.to_owned())
+        .child(ico_s("file", 14.0, t.dim))
+        .child(text(name).font(ui(12.5, 500.0)).color(t.text).single_line())
+}
+
+/// The files attached to a composer's next message: pictures as thumbnails, other files as
+/// chips, each with a remove button.
 fn attached(s: &App, t: &Theme, key: EditKey) -> Option<El> {
     let files = s.attachments.get(&key).filter(|f| !f.is_empty())?;
-    Some(row().px(14.0).pt(10.0).gap(6.0).flex_wrap().children(files.iter().map(|f| {
-        let name = f.rsplit(['/', '\\']).next().unwrap_or(f).to_owned();
+    Some(row().px(14.0).pt(12.0).gap(8.0).flex_wrap().items_end().children(files.iter().map(|f| {
         let gone = f.clone();
-        row().key(format!("attached/{f}")).h(26.0).pl(8.0).pr(4.0).gap(6.0).radius(7.0).center_y().fill(t.hover).help(f.clone())
-            .child(ico_s("file", 13.0, t.dim))
-            .child(text(name).font(ui(12.5, 500.0)).color(t.text).single_line())
-            .child(el().size(18.0, 18.0).radius(5.0).center().hover(t.active).role("button").label("Remove")
-                .child(ico_s("close", 11.0, t.faint))
-                .on_press(move |s: &mut App| {
-                    if let Some(l) = s.attachments.get_mut(&key) {
-                        l.retain(|x| *x != gone);
-                    }
-                }))
+        let remove = el().size(20.0, 20.0).radius(10.0).center().fill(t.solid).border(1.0, t.border).hover(t.active).role("button").label("Remove").help("Remove")
+            .child(ico_s("close", 11.0, t.dim))
+            .on_press(move |s: &mut App| {
+                if let Some(l) = s.attachments.get_mut(&key) {
+                    l.retain(|x| *x != gone);
+                }
+            });
+        if is_picture(f) {
+            el().key(format!("attached/{f}")).child(file_tile(s, t, f, 64.0)).child(remove.pin(None, Some(-6.0), Some(-6.0), None))
+        } else {
+            let name = f.rsplit(['/', '\\']).next().unwrap_or(f).to_owned();
+            row().key(format!("attached/{f}")).h(28.0).pl(8.0).pr(4.0).gap(6.0).radius(8.0).center_y().fill(t.hover).help(f.clone())
+                .child(ico_s("file", 13.0, t.dim))
+                .child(text(name).font(ui(12.5, 500.0)).color(t.text).single_line())
+                .child(remove)
+        }
     })))
 }

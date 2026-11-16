@@ -429,6 +429,9 @@ impl LiveStore {
     /// Wisp handed work to an agent, or got it back: shown in Wisp's chat.
     fn fold_delegation(&self, e: &Value, snap: &mut Snapshot) {
         let Some(title) = self.title_of(e["sessionId"].as_str().unwrap_or_default()) else { return };
+        if e["type"] == "delegate_done" {
+            snap.extra.step_now.retain(|(k, _)| *k != title);
+        }
         let name = e["agent"].as_str().unwrap_or("an agent").to_owned();
         let id = snap.team.iter().find(|a| a.name.eq_ignore_ascii_case(&name) || a.id == name).map(|a| a.id.clone());
         let item = match (e["type"].as_str(), id) {
@@ -595,7 +598,7 @@ impl LiveStore {
                 }
                 return;
             }
-            "tool_end" | "text_delta" | "text" | "run_finished" | "approval_request" | "error" | "aborted" | "done" => {
+            "tool_end" | "text_delta" | "text" | "run_finished" | "approval_request" | "error" | "aborted" | "done" | "delegate_done" => {
                 snap.extra.step_now.retain(|(k, _)| *k != title);
             }
             _ => {}
@@ -635,8 +638,8 @@ impl LiveStore {
                     }
                     _ => false,
                 };
-                if !shown && let Some(item) = item_from_event(e) {
-                    items.push(item);
+                if !shown && let Some(m) = e.get("message") {
+                    items.extend(items_from(m));
                 }
             }
             "approval_resolved" => {
@@ -904,6 +907,17 @@ fn tool_words(name: &str) -> String {
 }
 
 /// A stored message as the transcript shows it.
+/// A stored message as transcript items: a message sent with files shows them above it.
+pub fn items_from(m: &Value) -> Vec<ThreadItem> {
+    let files: Vec<String> = m["files"].as_array().map_or_else(Vec::new, |a| a.iter().filter_map(|f| f.as_str().map(str::to_owned)).collect());
+    let mut out = Vec::new();
+    if m["kind"] == "user" && !files.is_empty() {
+        out.push(ThreadItem::Files(files));
+    }
+    out.extend(item_from(m));
+    out
+}
+
 pub fn item_from(m: &Value) -> Option<ThreadItem> {
     let text = m["text"].as_str().unwrap_or_default().to_owned();
     match m["kind"].as_str()? {
@@ -1685,7 +1699,7 @@ impl Store for LiveStore {
         let Some(id) = self.id_of(chat) else { return };
         self.spawn(move |c| {
             let v = c.get(&format!("/session/{id}")).ok()?;
-            let items = v["session"]["messages"].as_array()?.iter().filter_map(item_from).collect();
+            let items = v["session"]["messages"].as_array()?.iter().flat_map(items_from).collect();
             Some(Msg::Transcript { id, items })
         });
     }
@@ -1707,11 +1721,16 @@ impl Store for LiveStore {
     }
 
     fn send(&mut self, to: &Target, text: &str, snap: &mut Snapshot) -> Result<(), String> {
+        self.send_files(to, text, &[], snap)
+    }
+
+    fn send_files(&mut self, to: &Target, text: &str, files: &[String], snap: &mut Snapshot) -> Result<(), String> {
         let text = text.to_owned();
+        let files: Vec<String> = files.to_vec();
         match to {
             Target::Chat(title) => {
                 let id = self.id_of(title).ok_or("That chat isn't on the engine yet.")?;
-                self.spawn(move |c| c.post(&format!("/session/{id}/message"), json!({ "text": text })).err().map(|e| Msg::Status(format!("send failed: {e}"))));
+                self.spawn(move |c| c.post(&format!("/session/{id}/message"), json!({ "text": text, "files": files })).err().map(|e| Msg::Status(format!("send failed: {e}"))));
                 Ok(())
             }
             // A new chat from "What should we build?": the engine titles it from the message,
@@ -1723,7 +1742,7 @@ impl Store for LiveStore {
                         Err(e) => return Some(Msg::Status(format!("can't start a chat: {e}"))),
                     };
                     let id = made["session"]["id"].as_str()?.to_owned();
-                    match c.post(&format!("/session/{id}/message"), json!({ "text": text })) {
+                    match c.post(&format!("/session/{id}/message"), json!({ "text": text, "files": files })) {
                         Ok(_) => Some(Msg::Created(id)),
                         Err(e) => Some(Msg::Status(format!("send failed: {e}"))),
                     }
@@ -1758,7 +1777,7 @@ impl Store for LiveStore {
                             c.post("/session", body).ok()?["session"]["id"].as_str()?.to_owned()
                         }
                     };
-                    match c.post(&format!("/session/{id}/message"), json!({ "text": text })) {
+                    match c.post(&format!("/session/{id}/message"), json!({ "text": text, "files": files })) {
                         Ok(_) => Some(Msg::Named(title, id)),
                         Err(e) => Some(Msg::Status(format!("send failed: {e}"))),
                     }

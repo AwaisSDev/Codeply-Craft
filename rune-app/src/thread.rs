@@ -40,6 +40,9 @@ pub fn transcript(s: &App, t: &Theme, chat: &str, who: &str, width: f32) -> El {
             continue;
         }
         let e = match &items[i] {
+            // Pictures as thumbnails, other files as chips, above the message they came with.
+            ThreadItem::Files(files) => row().w_full().justify_end().mt(10.0).mb(-4.0).gap(8.0).flex_wrap()
+                .children(files.iter().map(|f| crate::ui::file_tile(s, t, f, 132.0))),
             ThreadItem::Stamp(x) => row().center().mt(8.0).mb(12.0).child(text(x.clone()).font(ui(12.0, 400.0)).color(t.faint)),
             ThreadItem::You(x) => row().w_full().justify_end().my(10.0)
                 .child(el().max_w(560.0).shrink().px(16.0).py(10.0).radius(20.0).fill(t.bubble)
@@ -60,8 +63,11 @@ pub fn transcript(s: &App, t: &Theme, chat: &str, who: &str, width: f32) -> El {
                 }
                 r
             }
-            ThreadItem::Event { icon, text: x } => row().gap(8.0).my(4.0).center_y()
-                .child(ico_s(icon, 15.0, t.faint)).child(rich_text(x, 13.0, t.faint, t.dim)),
+            // One step shown on its own ("Show each tool call"), or a notice: inside the column,
+            // a step on one line, a notice wrapped.
+            ThreadItem::Event { icon, text: x } if *icon == "help" => row().w_full().min_w(0.0).gap(8.0).my(4.0).items_start()
+                .child(ico_s(icon, 15.0, t.faint)).child(rich_text(x, 13.0, t.faint, t.dim).wrap().grow(1.0).min_w(0.0)),
+            ThreadItem::Event { icon, text: x } => el().w_full().min_w(0.0).my(2.0).child(step_row(t, icon, x, false)),
             ThreadItem::Approval { id, title, detail, answer } => approval(t, id, title, detail, answer.as_deref()),
         };
         body = body.child(enter(e, n));
@@ -70,7 +76,8 @@ pub fn transcript(s: &App, t: &Theme, chat: &str, who: &str, width: f32) -> El {
     }
     // Thinking: the reply hasn't started yet. As the Electron app shows it: a shimmering word
     // that changes every few seconds, three dots, and the seconds so far.
-    if running && !matches!(items.last(), Some(ThreadItem::Them(_))) {
+    let stepping = s.data.extra.step_now.iter().any(|(c, _)| c == chat) && matches!(items.last(), Some(ThreadItem::Event { .. }));
+    if running && !matches!(items.last(), Some(ThreadItem::Them(_))) && !stepping {
         let _ = who;
         body = body.child(thinking(s, t, chat));
     }
@@ -78,25 +85,83 @@ pub fn transcript(s: &App, t: &Theme, chat: &str, who: &str, width: f32) -> El {
 }
 
 /// Tool calls folded into one line ("Worked on 4 steps"), opened with a click.
+/// What a run of steps did, in one line, as the Electron app sums it up: "Read 4 files, edited
+/// index.html, ran 2 commands".
+pub fn steps_summary(items: &[ThreadItem]) -> String {
+    // (verb, one, many, count, the first one's name)
+    let mut kinds: Vec<(&str, &str, &str, usize, String)> = Vec::new();
+    let mut other = 0;
+    for it in items {
+        let ThreadItem::Event { text: x, .. } = it else { continue };
+        let x = x.replace('`', "");
+        let kind = [("Read ", "read", "file", "files"), ("Edited ", "edited", "file", "files"), ("Wrote ", "wrote", "file", "files"),
+            ("Created ", "created", "file", "files"), ("Ran ", "ran", "command", "commands"), ("Searched the web for ", "searched the web", "time", "times"),
+            ("Searched for ", "searched", "time", "times"), ("Found ", "looked for", "file", "files"), ("Listed ", "listed", "folder", "folders"),
+            ("Opened ", "opened", "page", "pages"), ("Looked at ", "looked at", "image", "images"), ("Checked ", "checked", "page", "pages")]
+            .into_iter().find(|(p, ..)| x.starts_with(p));
+        match kind {
+            Some((p, verb, one, many)) => {
+                let name = x[p.len()..].trim().trim_end_matches(" (failed)").to_owned();
+                match kinds.iter_mut().find(|k| k.0 == verb) {
+                    Some(k) => k.3 += 1,
+                    None => kinds.push((verb, one, many, 1, name)),
+                }
+            }
+            None => other += 1,
+        }
+    }
+    let mut parts: Vec<String> = kinds.iter().map(|(verb, one, many, n, name)| {
+        let short = name.rsplit(['/', '\\']).next().unwrap_or(name);
+        if *n == 1 && !short.is_empty() && short.len() <= 32 && *one == "file" {
+            format!("{verb} {short}")
+        } else if *n == 1 {
+            format!("{verb} {} {one}", if one.starts_with(['a', 'e', 'i', 'o', 'u']) { "an" } else { "a" })
+        } else if *one == "time" {
+            format!("{verb} {n} {many}")
+        } else {
+            format!("{verb} {n} {many}")
+        }
+    }).collect();
+    if other > 0 {
+        parts.push(if other == 1 { "used a tool".to_owned() } else { format!("used {other} tools") });
+    }
+    let line = parts.join(", ");
+    let mut c = line.chars();
+    c.next().map_or_else(|| "Worked on it".to_owned(), |f| f.to_uppercase().collect::<String>() + c.as_str())
+}
+
+/// One step: its icon and its words on one line (a long command is cut, whole on hover).
+fn step_row(t: &Theme, icon: &'static str, x: &str, live: bool) -> El {
+    let plain = x.replace('`', "");
+    row().w_full().min_w(0.0).gap(8.0).h(22.0).center_y().help(plain.clone())
+        .child(ico_s(icon, 14.0, if live { t.dim } else { t.faint }))
+        .child(text(plain).font(ui(12.5, 400.0)).color(if live { t.text } else { t.dim }).single_line().truncate().grow(1.0).min_w(0.0))
+}
+
+/// Steps, as the Electron app shows them: while it works, the step running now heads the
+/// group and the steps so far are listed under it; once done, they fold into one line that
+/// says what they did, and open on a click.
 fn steps(s: &App, t: &Theme, chat: &str, start: usize, items: &[ThreadItem], live: bool) -> El {
     let key = format!("steps/{chat}/{start}");
-    let open = s.expanded.contains(&key);
-    let label = if live {
-        format!("Working · {} step{}", items.len(), if items.len() == 1 { "" } else { "s" })
-    } else {
-        format!("Worked on {} step{}", items.len(), if items.len() == 1 { "" } else { "s" })
-    };
+    // Open while it works (unless you closed it); folded after (unless you opened it).
+    let toggled = s.expanded.contains(&key);
+    let open = if live { !toggled } else { toggled };
+    let now = s.data.extra.step_now.iter().find(|(c, _)| c == chat).map(|(_, l)| l.replace('`', ""));
+    let label = if live { now.clone().unwrap_or_else(|| "Working".to_owned()) } else { steps_summary(items) };
     let toggle_key = key.clone();
-    let shown = if live { crate::ui::wave(&label, ui(13.0, 500.0), t.text) } else { text(label.clone()).font(ui(13.0, 500.0)).color(t.faint) };
-    let head = row().key(key.clone()).gap(6.0).py(4.0).center_y().role("button").label(label.clone()).checked(open)
+    let shown = if live { crate::ui::wave(&label, ui(13.0, 500.0), t.text) } else { text(label.clone()).font(ui(13.0, 500.0)).color(t.faint).single_line().truncate().min_w(0.0) };
+    let head = row().key(key.clone()).w_full().min_w(0.0).gap(6.0).py(4.0).center_y().role("button").label(label.clone()).checked(open).help(label)
         .child(shown)
         .child(ico_s(if open { "chevron-down" } else { "chevron-right" }, 14.0, t.faint))
         .on_press(move |s: &mut App| s.toggle_expanded(&toggle_key));
-    let mut c = col().my(4.0).gap(2.0).child(head);
+    let mut c = col().w_full().min_w(0.0).my(4.0).gap(2.0).child(head);
     if open {
-        c = c.child(col().pl(4.0).gap(4.0).border_sides([0.0, 0.0, 0.0, 1.0], t.border).ml(4.0).pl(12.0)
-            .children(items.iter().map(|it| match it {
-                ThreadItem::Event { icon, text: x } => row().gap(8.0).center_y().child(ico_s(icon, 14.0, t.faint)).child(rich_text(x, 12.5, t.faint, t.dim)),
+        // The newest few while it works, so the list never pushes the reply off screen.
+        let skip = if live { items.len().saturating_sub(8) } else { 0 };
+        c = c.child(col().w_full().min_w(0.0).gap(2.0).border_sides([0.0, 0.0, 0.0, 1.0], t.border).ml(6.0).pl(12.0)
+            .children((skip > 0).then(|| text(format!("{skip} earlier steps")).font(ui(12.0, 400.0)).color(t.faint)))
+            .children(items[skip..].iter().map(|it| match it {
+                ThreadItem::Event { icon, text: x } => step_row(t, icon, x, false),
                 _ => el(),
             })));
     }

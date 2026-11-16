@@ -6,7 +6,7 @@ use rune::{El, ScrollSpec, col, el, row, text, text_input};
 
 use crate::app::{App, EditKey, Pane};
 use crate::bot;
-use crate::icons::{ico, ico_s};
+use crate::icons::ico_s;
 use crate::subagents::{Line, Subagent, Team};
 use crate::theme::{Theme, mono, ui};
 use crate::ui::{ibtn, wave};
@@ -30,24 +30,41 @@ pub fn pane(s: &App, t: &Theme) -> El {
         body = body.child(subagents(s, t, &mine));
     }
 
-    let mut list = col().w_full().gap(2.0);
+    let mut list = col().w_full().gap(4.0);
     for task in &s.data.extra.bg_tasks {
-        let icon = match task.agent.as_deref().and_then(|id| s.data.agent(id)) {
-            Some(a) if task.kind == "agent" => bot::agent(&awake(a), 24.0),
-            _ => el().size(24.0, 24.0).center().child(ico("terminal", t.dim)),
+        // The engine names the agent ("Frontend"); the team knows it by id too.
+        let agent = task.agent.as_deref().and_then(|n| s.data.agent(n).or_else(|| s.data.team.iter().find(|a| a.name.eq_ignore_ascii_case(n))));
+        let icon = match agent {
+            Some(a) if task.kind == "agent" => bot::agent(&awake(a), 26.0),
+            _ => el().size(26.0, 26.0).radius(7.0).fill(t.hover).center().child(ico_s("terminal", 14.0, t.dim)),
         };
+        let status = if task.running {
+            text("Working").font(ui(12.0, 500.0)).color(t.accent)
+        } else {
+            text("Done").font(ui(12.0, 400.0)).color(t.faint)
+        };
+        let info = col().grow(1.0).min_w(0.0).gap(2.0)
+            .child(text(task.title.clone()).font(ui(13.5, 500.0)).color(t.text).single_line().truncate())
+            .children((!task.detail.is_empty()).then(|| text(task.detail.clone()).font(ui(12.0, 400.0)).color(t.dim).single_line().truncate()))
+            .child(status);
         let id = task.id.clone();
-        let mut info = col().grow(1.0).min_w(0.0)
-            .child(text(task.title.clone()).font(ui(13.5, 500.0)).color(t.text).truncate())
-            .child(text(task.detail.clone()).font(ui(12.0, 400.0)).color(t.dim).truncate());
-        if task.running {
-            info = info.child(wave("Running", ui(12.0, 500.0), t.accent));
-        }
-        list = list.child(row().key(format!("task/{}", task.id)).w_full().min_h(48.0).px(8.0).py(6.0).gap(10.0).radius(10.0).center_y().hover(t.hover)
+        let stop = task.running.then(|| el().key(format!("task-stop/{}", task.id)).size(26.0, 26.0).radius(7.0).center().hover(t.active)
+            .role("button").label("Stop").help("Stop")
+            .child(el().size(9.0, 9.0).radius(2.0).fill(t.dim))
+            .on_press(move |s: &mut App| s.kill_task(&id)));
+        // An agent's task opens its session on the agent's page.
+        let open = agent.map(|a| (a.id.clone(), task.title.clone()));
+        list = list.child(row().key(format!("task/{}", task.id)).w_full().px(8.0).py(8.0).gap(10.0).radius(10.0).items_start().hover(t.hover)
+            .role("button").label(task.title.clone()).help(task.title.clone())
             .child(icon)
             .child(info)
-            .children(task.running.then(|| ibtn(t, "stop", "Stop").key(format!("task-stop/{}", task.id))
-                .on_press(move |s: &mut App| s.kill_task(&id)))));
+            .children(stop)
+            .on_press(move |s: &mut App| if let Some((id, title)) = &open {
+                s.open_agent(Some(id));
+                if s.data.extra.chats.iter().any(|c| c.title == *title) {
+                    s.open_agent_session(id, title);
+                }
+            }));
     }
     if !s.data.extra.bg_tasks.is_empty() {
         if !mine.is_empty() {

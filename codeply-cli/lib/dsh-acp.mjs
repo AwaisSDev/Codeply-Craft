@@ -317,13 +317,16 @@ export class DshEngine {
     });
 
     const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error(`The DSH engine took too long to start. ${this.lastLines()}`.trim())), START_TIMEOUT_MS));
-    await Promise.race([
+    const init = await Promise.race([
       this.request('initialize', {
         protocolVersion: 1,
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
       }),
       timeout,
     ]);
+    // Whether this model takes pictures with a prompt (ACP image blocks): pasted or attached
+    // images go to it as they are, not as file paths it can't see.
+    this.imagePrompts = !!(init && init.agentCapabilities && init.agentCapabilities.promptCapabilities && init.agentCapabilities.promptCapabilities.image);
     this.ready = true;
     if (!this.defaultSession) return;
     const session = await Promise.race([this.request('session/new', { cwd: this.cwd, mcpServers: [] }), timeout]);
@@ -392,7 +395,7 @@ export class DshEngine {
    * `approve(request)` resolves to 'once' | 'always' | 'reject', like the
    * Classic engine's approval bridge.
    */
-  async *prompt(text, { approve, signal, sessionId } = {}) {
+  async *prompt(text, { approve, signal, sessionId, images } = {}) {
     await this.start();
     const sid = sessionId || this.sessionId;
     const queue = [];
@@ -462,7 +465,10 @@ export class DshEngine {
     let finished = false;
     let failure = null;
     let stopReason = null;
-    this.request('session/prompt', { sessionId: sid, prompt: [{ type: 'text', text }] })
+    // Images as ACP image blocks ({ mimeType, data } base64), after the text, when the model takes them.
+    const pictures = this.imagePrompts && Array.isArray(images) ? images.filter((i) => i && i.data && i.mimeType) : [];
+    const content = [{ type: 'text', text }, ...pictures.map((i) => ({ type: 'image', mimeType: i.mimeType, data: i.data }))];
+    this.request('session/prompt', { sessionId: sid, prompt: content })
       .then((r) => { stopReason = r && r.stopReason; })
       .catch((e) => { failure = e; })
       .finally(() => { finished = true; if (wake) { wake(); wake = null; } });

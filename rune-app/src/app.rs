@@ -697,15 +697,10 @@ impl App {
         {
             text.push_str(&format!("\n\n(Open in the editor: {open})"));
         }
-        // Attached files go with the message as their paths: Wisp reads them with its tools.
-        if !files.is_empty() {
-            if text.is_empty() {
-                text = "Have a look at the attached files.".into();
-            }
-            text.push_str("\n\nAttached files:\n");
-            for f in &files {
-                text.push_str(&format!("- {f}\n"));
-            }
+        // Attached and pasted files go beside the message: the engine hands the model the
+        // pictures themselves and the other files' paths, and the chat shows them above it.
+        if !files.is_empty() && text.is_empty() {
+            text = "Have a look at the attached files.".into();
         }
         let to = match to {
             Target::Chat(c) if c.is_empty() => Target::Chat(self.chat.clone().unwrap_or_default()),
@@ -726,7 +721,7 @@ impl App {
             }
             other => other.clone(),
         };
-        match self.store.send(&to, &text, &mut self.data) {
+        match self.store.send_files(&to, &text, &files, &mut self.data) {
             Ok(()) => {
                 self.notice = None;
                 self.edit_mut(key).clear();
@@ -734,6 +729,36 @@ impl App {
             }
             Err(e) => self.notice = Some(e),
         }
+    }
+
+    /// A paste into a composer: a picture (copied from a web page, a screenshot) is saved and
+    /// attached, copied files are attached; plain text pastes as usual (false).
+    pub fn paste_into(&mut self, key: EditKey, content: &rune::ClipboardContent) -> bool {
+        let mut took = false;
+        if let Some(img) = content.image() {
+            let dir = crate::prefs::data_dir().join("pasted");
+            let _ = std::fs::create_dir_all(&dir);
+            let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
+            let file = dir.join(format!("pasted-{stamp}.png"));
+            match std::fs::write(&file, img.png()) {
+                Ok(()) => {
+                    self.attachments.entry(key).or_default().push(file.to_string_lossy().into_owned());
+                    took = true;
+                }
+                Err(e) => self.notice = Some(format!("Couldn't keep the pasted picture: {e}")),
+            }
+        }
+        for f in content.files() {
+            let p = f.to_string_lossy().into_owned();
+            let list = self.attachments.entry(key).or_default();
+            if !list.contains(&p) {
+                list.push(p);
+            }
+            took = true;
+        }
+        // A picture with a caption (a browser copies both): the picture is attached, the text
+        // pastes too.
+        took && content.text().trim().is_empty()
     }
 
     /// The composer's "+": pick files to attach to the next message.

@@ -153,6 +153,8 @@ pub struct ChatGroup {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ThreadItem {
     Stamp(String),
+    /// Files sent with your next message: pictures as thumbnails, the rest as chips.
+    Files(Vec<String>),
     You(String),
     Them(String),
     /// "6 messages with Frontend, Backend and Inbox".
