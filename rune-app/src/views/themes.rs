@@ -19,9 +19,16 @@ use super::settings::{group, item};
 /// background is chosen. The shell makes its own fills see-through when this is Some.
 pub fn backdrop(s: &App, t: &Theme) -> Option<El> {
     let look = &s.prefs.look;
-    if look.bg_kind != BgKind::Flow {
-        s.look.stop_flow();
+    // Flowing dots aren't a backdrop for the whole window: the chat home draws them in its own
+    // area (flow_home), and everywhere else the app keeps its solid fills. Their thread runs only
+    // while that page shows.
+    if look.bg_kind == BgKind::Flow {
+        if !flow_home(s) {
+            s.look.stop_flow();
+        }
+        return None;
     }
+    s.look.stop_flow();
     if !look.has_background() {
         return None;
     }
@@ -29,8 +36,6 @@ pub fn backdrop(s: &App, t: &Theme) -> Option<El> {
     // An open conversation (a chat, an agent's session): the picture softens behind it.
     let in_chat = look.chat_blur && ((s.view == crate::app::View::Chat && s.chat.is_some()) || (s.view == crate::app::View::Agents && s.agent.is_some()));
     let (px, layer_opacity, scrim) = match look.bg_kind {
-        // Live dots; in a chat the scrim keeps text easy to read over them.
-        BgKind::Flow => (s.look.flow(t, s.reduced.get()), 1.0 - dim * 0.8, if in_chat { 0.2 } else { 0.0 }),
         BgKind::Picture => {
             let base = BLURS[look.blur].1;
             let chat = base.max(BLURS[2].1);
@@ -49,12 +54,27 @@ pub fn backdrop(s: &App, t: &Theme) -> Option<El> {
         kind => (s.look.art(kind, &look.art, t)?, 1.0 - dim * 0.8, if in_chat { 0.25 } else { 0.0 }),
     };
     let image = el().absolute(0.0, 0.0).w_full().h_full().opacity(layer_opacity).pixels_fit(&px, SurfaceFit::Fill);
-    let mut layer = el().key("backdrop").absolute(0.0, 0.0).w_full().h_full().child(image)
-        .on_window_focus(|s: &mut App, focused, _| s.look.flow_focus(focused));
+    let mut layer = el().key("backdrop").absolute(0.0, 0.0).w_full().h_full().child(image);
     if scrim > 0.0 {
         layer = layer.child(el().absolute(0.0, 0.0).w_full().h_full().fill(t.solid.alpha(scrim)));
     }
     Some(layer)
+}
+
+/// Whether the flowing dots show: on the chat home ("What should we build?"), before a chat opens.
+pub fn flow_home(s: &App) -> bool {
+    s.prefs.look.bg_kind == BgKind::Flow && s.view == crate::app::View::Chat && s.chat.is_none()
+}
+
+/// The flowing dots behind the chat home, filling its area (not the sidebar or the title bar).
+pub fn flow_layer(s: &App, t: &Theme) -> Option<El> {
+    if !flow_home(s) {
+        return None;
+    }
+    let px = s.look.flow(t, s.reduced.get());
+    let dim = DIMS[s.prefs.look.dim].1;
+    Some(el().key("flow-dots").absolute(0.0, 0.0).w_full().h_full().opacity(1.0 - dim * 0.6).pixels_fit(&px, SurfaceFit::Fill)
+        .on_window_focus(|s: &mut App, focused, _| s.look.flow_focus(focused)))
 }
 
 // ---------- the page ----------

@@ -33,6 +33,8 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
         row().key("settings-page").w_full().grow(1.0).min_h(0.0).child(views::settings::page(s, &t, cx))
     } else {
         let (side, main) = views::build(s, &t, cx);
+        // Where the main area starts, for the flowing dots' ripples (flow.rs).
+        crate::flow::set_area(RAIL + if side.is_some() { SIDE } else { 0.0 }, TITLEBAR);
         row().w_full().grow(1.0).min_h(0.0)
             .child(rail(s, &t))
             .children(side.map(|sd| {

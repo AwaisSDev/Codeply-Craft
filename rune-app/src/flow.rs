@@ -21,16 +21,39 @@ const ROWS: usize = H / PITCH;
 /// How long a ripple lasts, in seconds.
 const LIFE: f32 = 2.4;
 
-/// Clicks waiting to become ripples: (x, y) as fractions of the window.
+/// Clicks waiting to become ripples: (x, y) as fractions of the frame.
 static CLICKS: Mutex<Vec<(f32, f32)>> = Mutex::new(Vec::new());
+/// Where the dots' area starts in the window, in points (left, top): set by the shell each build.
+static AREA: Mutex<(f32, f32)> = Mutex::new((0.0, 0.0));
 
-/// A press on the app at (x, y), as fractions of its window: starts a ripple there.
+/// A press on the dots at (x, y), as fractions of the frame: starts a ripple there.
 pub fn click(x: f32, y: f32) {
     if let Ok(mut c) = CLICKS.lock() {
         if c.len() < 16 {
             c.push((x.clamp(0.0, 1.0), y.clamp(0.0, 1.0)));
         }
     }
+}
+
+/// The dots' area begins `left` and `top` points into the window (past the rail, sidebar and
+/// title bar).
+pub fn set_area(left: f32, top: f32) {
+    if let Ok(mut a) = AREA.lock() {
+        *a = (left, top);
+    }
+}
+
+/// A press at (x, y) points in a window `w` by `h` points: a ripple where it lands on the dots,
+/// which fill their area like a cover image (scaled to fill, centred, the overflow cut off).
+pub fn click_in_window(x: f32, y: f32, w: f32, h: f32) {
+    let (left, top) = AREA.lock().map_or((0.0, 0.0), |a| *a);
+    let (ax, ay, aw, ah) = (x - left, y - top, w - left, h - top);
+    if ax < 0.0 || ay < 0.0 || aw <= 0.0 || ah <= 0.0 {
+        return;
+    }
+    let scale = (aw / W as f32).max(ah / H as f32);
+    let (ox, oy) = ((aw - W as f32 * scale) / 2.0, (ah - H as f32 * scale) / 2.0);
+    click((ax - ox) / scale / W as f32, (ay - oy) / scale / H as f32);
 }
 
 /// The colours a frame is drawn in.
@@ -348,6 +371,18 @@ mod tests {
             std::hint::black_box(f.blank.clone());
         }
         println!("blank copy {:.2} ms", start.elapsed().as_secs_f64() * 1000.0 / 30.0);
+    }
+
+    #[test]
+    fn a_click_lands_where_it_was_made_on_the_dots() {
+        // A 1928 x 1044 window: the dots fill 1600 x 1000 points from (328, 44), one to one.
+        set_area(328.0, 44.0);
+        click_in_window(328.0 + 800.0, 44.0 + 500.0, 1928.0, 1044.0);
+        let c = CLICKS.lock().unwrap().pop().unwrap();
+        assert!((c.0 - 0.5).abs() < 1e-4 && (c.1 - 0.5).abs() < 1e-4, "{c:?}");
+        // On the sidebar: no ripple.
+        click_in_window(100.0, 300.0, 1928.0, 1044.0);
+        assert!(CLICKS.lock().unwrap().is_empty());
     }
 
     #[test]

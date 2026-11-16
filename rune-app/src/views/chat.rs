@@ -149,7 +149,12 @@ fn home(s: &App, t: &Theme) -> El {
         .child(row().center().pb(28.0).child(text("What should we build?").font(ui(28.0, 500.0)).color(t.text)))
         .child(suggestions)
         .child(composer(s, t, EditKey::ChatHome, Target::New, "Ask Codeply anything. @ to use plugins", true, false));
-    col().w_full().h_full().center().px(24.0).py(40.0).scroll(ScrollSpec { stick_bottom: false }).child(column)
+    let page = col().w_full().h_full().center().px(24.0).py(40.0).scroll(ScrollSpec { stick_bottom: false }).child(column);
+    // Flowing dots, when chosen, live here only: behind the home page, not the sidebar or a chat.
+    match crate::views::themes::flow_layer(s, t) {
+        Some(dots) => el().w_full().h_full().clip_rounded(0.0).child(dots).child(page),
+        None => page,
+    }
 }
 
 fn open(s: &App, t: &Theme, chat: &str) -> El {
