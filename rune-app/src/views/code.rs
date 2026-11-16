@@ -389,7 +389,7 @@ fn wisp_panel(s: &App, t: &Theme) -> El {
         list
     });
 
-    let convo = crate::thread::with_composer(s, t, &chat, "Wisp", EditKey::CodeAgent, Target::Project(chat.clone()), "Tell Wisp what to change", 420.0);
+    let convo = crate::views::upgrade::with_composer(s, t, &chat, "Wisp", EditKey::CodeAgent, Target::Project(chat.clone()), "Tell Wisp what to change", 420.0);
     col().key("code-agent").w(420.0).h_full().min_h(0.0).fill(t.bg).border_sides([0.0, 1.0, 0.0, 0.0], t.border)
         .child(head)
         .children(notes)

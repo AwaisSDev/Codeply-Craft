@@ -117,6 +117,9 @@ pub trait Store {
     fn agents_op(&mut self, _op: crate::subagents::Op, _snap: &mut Snapshot) {}
     /// Fetches your token use into `extra.usage` (the usage sheet).
     fn load_usage(&mut self, _snap: &mut Snapshot) {}
+    /// Reads your plan, or makes, reopens or stops an upgrade's checkout (`sidecar/ext-billing.mjs`);
+    /// the answer lands in `extra.billing`. A checkout page opens through `take_open_url`.
+    fn billing(&mut self, _op: crate::model::BillingOp, _snap: &mut Snapshot) {}
     /// Chats renamed since the last call, as (old title, new title): the engine titles a new
     /// chat from its first message, so the app follows a chat it has open.
     fn take_renames(&mut self) -> Vec<(String, String)> {

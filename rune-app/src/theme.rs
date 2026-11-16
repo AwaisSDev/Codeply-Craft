@@ -185,8 +185,9 @@ pub fn light() -> Theme {
 pub const R_LG: f32 = 18.0;
 pub const R_MD: f32 = 12.0;
 
-/// The UI font: Segoe UI Variable, then the system sans, then Rune's bundled Inter.
-pub const UI_FAMILIES: &str = "Segoe UI Variable Text, Segoe UI Variable, Segoe UI, SF Pro Text, Inter";
+/// The UI font: Inter (Rune carries it, so every PC gets the same open, even letters), then the
+/// system sans.
+pub const UI_FAMILIES: &str = "Inter, Segoe UI Variable Text, Segoe UI Variable, Segoe UI, SF Pro Text";
 /// Monospace, used only in the editor, the terminal and diffs.
 pub const MONO_FAMILIES: &str = "ui-monospace, Cascadia Code, Cascadia Mono, SF Mono, Consolas, JetBrains Mono, DejaVu Sans Mono";
 
@@ -215,12 +216,16 @@ fn shifted(weight: f32) -> f32 {
     (weight + BOLD.load(Ordering::Relaxed) as f32).clamp(100.0, 900.0)
 }
 
-/// UI text, at the prototype's `line-height: 1.45` (Rune's default is 1.25), on whole points.
-/// Size and weight follow the user's font settings.
+/// UI text at `line-height: 1.5` (Rune's default is 1.25), on whole points. Size and weight
+/// follow the user's font settings, and the line height follows the size, so larger text keeps
+/// the same room between lines.
 pub fn ui(size: f32, weight: f32) -> TextStyle {
     let size = (size * text_scale() * 2.0).round() / 2.0;
-    TextStyle::new(size, shifted(weight)).lh((size * 1.45).round())
+    TextStyle::new(size, shifted(weight)).lh((size * 1.5).round())
 }
+
+/// Reading text (replies, your messages): a little larger room between lines, as chat apps set it.
+pub const READ_LH: f32 = 1.65;
 
 /// Monospace text. Only the code editor, terminal and diff views call this.
 pub fn mono(size: f32, line_height: f32) -> TextStyle {

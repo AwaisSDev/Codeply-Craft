@@ -219,7 +219,7 @@ fn agent_page(s: &App, t: &Theme, a: &Agent) -> El {
     // A new session's transcript is empty until you send; its title comes from what you send.
     let chat = if open.is_empty() { format!("\u{0}new/{}", a.id) } else { open.clone() };
     let target = Target::AgentSession { agent: a.id.clone(), title: open };
-    let thread = crate::thread::with_composer(s, t, &chat, &a.name, EditKey::AgentThread, target, &format!("Message {}", a.name), 760.0);
+    let thread = crate::views::upgrade::with_composer(s, t, &chat, &a.name, EditKey::AgentThread, target, &format!("Message {}", a.name), 760.0);
     let centre = col().grow(1.0).min_w(0.0).h_full()
         .child(head)
         .child(el().w_full().grow(1.0).min_h(0.0).child(thread));

@@ -46,7 +46,7 @@ pub fn transcript(s: &App, t: &Theme, chat: &str, who: &str, width: f32) -> El {
             ThreadItem::Stamp(x) => row().center().mt(8.0).mb(12.0).child(text(x.clone()).font(ui(12.0, 400.0)).color(t.faint)),
             ThreadItem::You(x) => row().w_full().justify_end().my(10.0)
                 .child(el().max_w(560.0).shrink().px(16.0).py(10.0).radius(20.0).fill(t.bubble)
-                    .child(text(shown_message(x)).font(ui(14.5, 400.0).lh(22.0)).color(t.text).wrap().shrink().min_w(0.0).selectable(true))),
+                    .child(text(shown_message(x)).font(ui(15.0, 400.0).lh((15.0 * theme::text_scale() * theme::READ_LH).round())).color(t.text).wrap().shrink().min_w(0.0).selectable(true))),
             ThreadItem::Them(x) => {
                 let live = streaming_at == Some(i) && s.prefs.reveal;
                 row().w_full().my(6.0).child(markdown::render(x, t, live).max_w(width - 48.0))

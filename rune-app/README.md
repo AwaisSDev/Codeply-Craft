@@ -154,6 +154,21 @@ way. The main agent can redirect or stop one too (`message_agent`, `stop_agent`)
 is done, one report comes back to the chat. Scenes: `subagents`, `subagent-open`, `team-open`,
 `agent-tabs`.
 
+## Upgrading
+
+Free users upgrade from inside the app; only the payment is on Whop. When Haze 2's free 5-hour
+limit ends a reply, the router answers `limited` with `resetsAt`; the engine's bridge notes it and
+`startRun` keeps the chat's notice with `limited`, `resetsAt` and `resets` (local time), so the
+chat shows a card above its composer ("Your model" opens the model menu, "Upgrade" the sheet)
+until its next reply starts. The sheet offers Pro (`starter`) and Max (`pro`);
+`sidecar/ext-billing.mjs` makes a checkout for the signed-in account (`POST <site>/api/create-checkout`
+with the account's token; `CODEPLY_SITE_URL` overrides `https://codeply.app`), the app opens it in
+the browser, and the engine asks `/api/account` every 5 s (up to 15 min) until the plan changes.
+Settings > Usage & billing shows the plan and the free amount. Scenes: `limit-card`,
+`limit-card-pane`, `limit-card-code`, `upgrade`, `upgrade-max`, `upgrade-waiting`,
+`upgrade-sign-in`, `upgrade-error`, `settings-billing`, `settings-billing-pro`. The sidecar's
+own test: `node sidecar/ext-billing.test.mjs` (network stubbed).
+
 ## Checking it headlessly
 
 ```bash

@@ -140,8 +140,11 @@ function promptPrefix(session) {
   if (member) {
     return `[You are ${member.name}${member.role ? `, the ${member.role} agent` : ''} on the user's Codeply team. Work in your own area, do the task fully with your tools, and report briefly what you did and what is left.]\n\n`;
   }
-  // Your own chats: the DSH engine as it is, with Codeply's features, doing the work itself.
-  if (!isWispChat(session)) return '';
+  // Your own chats: they do the work themselves, and can ask your agents when you want them to.
+  if (!isWispChat(session)) {
+    if (!settings.team.length) return '';
+    return `[The user's agents: ${settings.team.map((m) => `${m.name} (${m.role || 'general'})`).join(', ')}. When the user asks one of them something (for example "ask Inbox for updates"), or a task clearly belongs to one, ask it with ask_bot (bot = its name, task = exactly what to find or do, with the context it needs) and pass on what it says; otherwise do the work yourself.]\n\n`;
+  }
   if (!settings.team.length) {
     return '[You are Wisp, who leads the user\'s agents. If the task needs a specialist agent (for example mail with no Inbox agent), do what you can and suggest creating an agent for it.]\n\n';
   }
@@ -205,6 +208,10 @@ function execCommand(cmd, cwd) {
 const appLists = new Map(); // folder -> the apps listing in flight, so steps don't connect twice
 const teams = new Map();    // DSH session id -> a Wisp turn's { prompt, askBot, handOff }
 const turns = new Map();    // DSH session id -> the turn's { cwd, approve, request, route }, for the user's apps and the model
+// Haze 2's free 5-hour limit, hit during a chat's turn: chat id -> { resetsAt, error }. The bridge
+// notes it; startRun turns the turn's end into the app's upgrade card (`limited` on the notice).
+const limitHits = new Map();
+const clockOf = (iso) => { try { return iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''; } catch { return ''; } };
 
 const APPS_HOW = 'Call one with the use_app tool (app, tool, and args as a JSON object).';
 const APPS_WAIT_MS = 12_000;      // the prompt goes without an app still connecting
@@ -428,6 +435,9 @@ function startBridge() {
         signal: ac.signal,
       });
       if (ac.signal.aborted) return;
+      // The free amount for Settings > Usage & billing (ext-billing.mjs), and a limit hit.
+      if (r && r.route && r.route.free) extCtx.shared.hazeFree = r.route.free;
+      if (r && r.limited && turn && turn.session) limitHits.set(turn.session.id, { resetsAt: r.resetsAt || null, error: r.error || '' });
       reply(200, r && typeof r === 'object' ? r : { success: false, error: 'The model returned nothing.' });
     } catch (e) {
       if (!ac.signal.aborted) reply(500, { success: false, error: e && e.message ? e.message : String(e) });
@@ -681,12 +691,14 @@ async function* runDsh(session, text, approve, signal, images = []) {
   const sessionId = await engine.openSession(session.dshSession);
   if (sessionId !== session.dshSession) { session.dshSession = sessionId; save(); await applyEffort(engine, sessionId); }
   turns.set(sessionId, { session, cwd: path.resolve(session.cwd), approve, request: String(text || ''), route: routeFor(session) });
-  // Only Wisp's own chat (Mission control) hands work to the team, as the Electron app keeps it:
-  // your chats and the code view's run on DSH and do the work themselves.
-  if (isWispChat(session) && settings.team.length) {
+  // Wisp's chat leads the team; your own chats can ask an agent too (promptPrefix says when).
+  // The code view's agent and an agent's own sessions do their work themselves.
+  if (session.kind !== 'code' && !memberOf(session) && settings.team.length) {
     const ctx = { session, approve };
     teams.set(sessionId, {
-      prompt: `YOUR TEAM\nYou lead these agents. Hand each task to the matching one with ask_bot and wait for its result (check it before you build on it); hand_off passes work on without waiting.\n${rosterLines().join('\n')}`,
+      prompt: isWispChat(session)
+        ? `YOUR TEAM\nYou lead these agents. Hand each task to the matching one with ask_bot and wait for its result (check it before you build on it); hand_off passes work on without waiting.\n${rosterLines().join('\n')}`
+        : `THE USER'S AGENTS\nAsk one with ask_bot when the user wants it or the task is its job, and wait for its answer; hand_off passes work on without waiting.\n${rosterLines().join('\n')}`,
       askBot: (o) => askBot(ctx, o),
       handOff: (o) => handOff(ctx, o),
     });
@@ -763,6 +775,7 @@ async function startRun(session, text, opts = {}) {
   emit(session.id, { type: 'run_started', session: meta(session), ...(opts.resume ? {} : { message: session.messages[session.messages.length - 1] }) });
   for (const h of extCtx.hooks.runStart) { try { h(session, { text, opts }); } catch (e) { console.error('runStart:', e && e.message); } }
   const approve = makeApprove(opts.approvalSession || session, ctl.signal);
+  limitHits.delete(session.id);
   let reply = null; // the assistant message the current DSH chunks grow
   let kind = 'dsh';
   const result = { ok: true, text: '', error: '' };
@@ -827,9 +840,14 @@ async function startRun(session, text, opts = {}) {
       else if (ev.type === 'tool_end') push({ kind: 'tool', name: ev.name, label: ev.summary || '', icon: ev.icon || '', ok: ev.ok, ...(ev.command ? { command: ev.command, output: ev.output } : {}), at: Date.now() });
       else if (ev.type === 'notice') push({ kind: 'notice', level: ev.level || 'info', text: ev.text, at: Date.now() });
       else if (ev.type === 'error') {
+        // Haze 2's free limit (DSH: noted by the bridge; Classic: on the event): the app shows a card.
+        const hit = limitHits.get(session.id);
+        if (hit) { limitHits.delete(session.id); ev = { ...ev, limited: true, resetsAt: hit.resetsAt, error: hit.error || ev.error }; }
+        const limit = ev.limited ? { limited: true, resetsAt: ev.resetsAt || null, resets: clockOf(ev.resetsAt) } : null;
+        if (limit) ev = { ...ev, ...limit };
         // The engine speaks of "Craft"; here the fix is to sign in in the Codeply app.
-        if (/sign in/i.test(String(ev.error))) ev = { ...ev, error: "You're not signed in. Open the Codeply app, sign in, then send this again." };
-        push({ kind: 'notice', level: 'error', text: ev.error, at: Date.now() });
+        else if (/sign in/i.test(String(ev.error))) ev = { ...ev, error: "You're not signed in. Open the Codeply app, sign in, then send this again." };
+        push({ kind: 'notice', level: 'error', text: ev.error, ...limit, at: Date.now() });
         result.ok = false; result.error = String(ev.error);
       } else if (ev.type === 'aborted') { result.ok = false; result.error = 'Stopped.'; }
       if (ev.type !== 'reasoning' && ev.type !== 'tool_start') emit(session.id, ev);
@@ -840,6 +858,14 @@ async function startRun(session, text, opts = {}) {
     emit(session.id, { type: 'error', error: e.message });
     result.ok = false; result.error = e.message;
   } finally {
+    // A limit hit that didn't end the turn with an error still gets its card.
+    const hit = limitHits.get(session.id);
+    if (hit) {
+      limitHits.delete(session.id);
+      const n = { kind: 'notice', level: 'error', text: hit.error || "You've used Codeply's free limit for now.", limited: true, resetsAt: hit.resetsAt, resets: clockOf(hit.resetsAt), at: Date.now() };
+      push(n);
+      emit(session.id, { type: 'notice', ...n });
+    }
     result.text = session.messages.slice(from).filter((m) => m.kind === 'assistant' && !m.interim && m.text).map((m) => m.text).join('\n\n');
     runs.delete(session.id);
     // The handoff closes its lease before the chat takes its next message.

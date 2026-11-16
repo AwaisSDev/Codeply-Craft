@@ -135,7 +135,7 @@ pub fn paragraph(src: &str, t: &Theme, size: f32, weight: f32, color: Color, str
         let tail = tail_spans(&p.text, t);
         p.spans.extend(tail);
     }
-    let mut e = rich(p.text.clone(), p.spans).font(ui(size, weight).lh((size * 1.55).round())).color(color).wrap().selectable(true);
+    let mut e = rich(p.text.clone(), p.spans).font(ui(size, weight).lh((size * crate::theme::text_scale() * crate::theme::READ_LH).round())).color(color).wrap().selectable(true);
     for (range, url) in &p.links {
         if let Some(icon) = favicon::get(url) {
             e = e.inline_icon(range.start, InlineIcon::image(icon).size(size).gap(5.0).radius(3.0));
@@ -179,8 +179,9 @@ fn tail_spans(text: &str, t: &Theme) -> Vec<Span> {
 
 /// A whole reply. `streaming`: it is still arriving, so new words fade in.
 pub fn render(src: &str, t: &Theme, streaming: bool) -> El {
-    let size = 14.5;
-    let mut out = col().w_full().min_w(0.0).gap(10.0);
+    let size = 15.0;
+    // Room between paragraphs grows with the text size.
+    let mut out = col().w_full().min_w(0.0).gap((12.0 * crate::theme::text_scale()).round());
     let mut para: Vec<&str> = Vec::new();
     let mut lines = src.lines().peekable();
     let flush = |out: El, para: &mut Vec<&str>, live: bool| -> El {
@@ -234,7 +235,7 @@ pub fn render(src: &str, t: &Theme, streaming: bool) -> El {
             out = flush(out, &mut para, false);
             let indent = (line.len() - trimmed.len()).min(8) as f32 * 6.0;
             out = out.child(row().w_full().gap(8.0).pl(4.0 + indent).items_start()
-                .child(text(mark).font(ui(size, 400.0).lh((size * 1.55).round())).color(t.faint).min_w(14.0))
+                .child(text(mark).font(ui(size, 400.0).lh((size * crate::theme::text_scale() * crate::theme::READ_LH).round())).color(t.faint).min_w(14.0))
                 .child(paragraph(rest, t, size, 400.0, t.text, live).grow(1.0).min_w(0.0)));
             continue;
         }

@@ -361,6 +361,8 @@ pub struct App {
     pub sidecar: Option<crate::engine::Sidecar>,
     /// Updates: checking, downloading, waiting for a restart or for "Update now" (update.rs).
     pub updater: crate::update::Updater,
+    /// The upgrade sheet: open, and the plan picked (views/upgrade.rs).
+    pub upgrade: crate::views::upgrade::Upgrade,
 }
 
 impl App {
@@ -426,6 +428,7 @@ impl App {
             #[cfg(feature = "live")]
             sidecar: None,
             updater: Default::default(),
+            upgrade: Default::default(),
         }
     }
 
@@ -1365,6 +1368,7 @@ impl App {
         }
         self.code_agent_busy = agent_busy;
         changed |= self.step_updates(now, tx);
+        changed |= self.step_billing();
         if self.view == View::Integrations && self.integrations == IntegrationsTab::Apps {
             let before = self.data.extra.apps.loading;
             self.step_apps_search(now, tx);

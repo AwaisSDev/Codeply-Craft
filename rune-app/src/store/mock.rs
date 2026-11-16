@@ -308,6 +308,8 @@ pub fn extra() -> Extra {
         },
         models: crate::models::sample(),
         subagents: crate::subagents::sample(),
+        billing: Default::default(),
+        limits: Vec::new(),
     }
 }
 
@@ -524,6 +526,24 @@ impl Store for MockStore {
 
     fn load_usage(&mut self, snap: &mut Snapshot) {
         snap.extra.usage = Some(sample_usage());
+    }
+
+    /// A free plan most of the way through its 5 hours; a checkout waits on a sample page
+    /// (nothing opens: the sample store never hands the app a URL).
+    fn billing(&mut self, op: BillingOp, snap: &mut Snapshot) {
+        let b = &mut snap.extra.billing;
+        match op {
+            BillingOp::Load => {
+                b.plan = Some(Plan { key: s("free"), name: s("Free"), models: Vec::new() });
+                b.free = Some(FreeLimit { used: 82, limit: 100, resets: s("4:30 PM") });
+                b.error.clear();
+            }
+            BillingOp::Checkout(plan) => {
+                b.checkout = Some(Checkout { plan, url: s("https://whop.com/checkout/plan_sample"), state: CheckoutState::Waiting });
+            }
+            BillingOp::Reopen => {}
+            BillingOp::Cancel => b.checkout = None,
+        }
     }
 
     fn take_focus(&mut self) -> Option<String> {

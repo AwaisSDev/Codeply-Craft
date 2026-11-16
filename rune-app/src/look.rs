@@ -1091,7 +1091,7 @@ mod tests {
     #[test]
     fn the_font_stack_leads_with_the_choice() {
         let l = LookPrefs { font: "Geist".into(), ..LookPrefs::default() };
-        assert!(l.families().0.starts_with("Geist, Segoe UI Variable"));
+        assert!(l.families().0.starts_with("Geist, Inter, Segoe UI Variable"));
         assert_eq!(LookPrefs::default().families().0, theme::UI_FAMILIES);
     }
 }
