@@ -436,10 +436,7 @@ fn archived(s: &App, t: &Theme) -> Vec<El> {
 
 fn usage(s: &App, t: &Theme) -> Vec<El> {
     use crate::views::usage::short;
-    let plan = group(t, "Plan", vec![
-        item(t, &s.data.plan, Some("Your current plan."), btn_primary(t, "Upgrade", "sparkle").key("set-upgrade")
-            .on_press_tx(|_: &mut App, tx| { let _ = tx.open_url("https://codeply.app/pricing"); })),
-    ]);
+    let plan = group(t, "Plan", plan_rows(s, t));
     // Your real use, from the account (the same numbers as the usage sheet).
     let used = match s.data.extra.usage.as_ref() {
         None => vec![item(t, "Loading your usage", None, crate::ui::wave("Asking your account", ui(13.0, 400.0), t.dim))],
@@ -456,4 +453,29 @@ fn usage(s: &App, t: &Theme) -> Vec<El> {
         }
     };
     vec![plan, group(t, "Usage", used)]
+}
+
+/// Your plan as the account says (`extra.billing`), or what the app knew before it answered.
+/// On Free: Upgrade opens the upgrade sheet, and the free amount shows as a bar.
+fn plan_rows(s: &App, t: &Theme) -> Vec<El> {
+    let b = &s.data.extra.billing;
+    let upgrade = || btn_primary(t, "Upgrade", "sparkle").key("set-upgrade").on_press(|s: &mut App| s.open_upgrade());
+    let mut rows = match b.plan.as_ref() {
+        Some(p) if p.paid() => {
+            let desc = if p.models.is_empty() { "The agent on Codeply's models.".to_owned() } else { format!("The agent on Codeply's models: {}.", p.models.join(", ")) };
+            vec![item(t, &format!("{} plan", p.name), Some(&desc), ico_s("check", 16.0, t.green))]
+        }
+        Some(_) => vec![item(t, "Free plan", Some("Chat for free, and use the agent with your own models."), upgrade())],
+        None => vec![item(t, &s.data.plan, Some(if b.error.is_empty() { "Your current plan." } else { &b.error }), upgrade())],
+    };
+    if let Some(f) = b.free.as_ref().filter(|_| !b.plan.as_ref().is_some_and(|p| p.paid())) {
+        let frac = (f.used as f32 / f.limit.max(1) as f32).clamp(0.0, 1.0);
+        let when = if f.resets.is_empty() { "Resets every 5 hours".to_owned() } else { format!("Resets at {}", f.resets) };
+        let ink = if frac >= 0.95 { t.red } else if frac >= 0.6 { t.warn } else { t.accent };
+        rows.push(item(t, "Free limit", Some(&when), col().key("set-free-limit").w(220.0).gap(6.0)
+            .child(el().w_full().h(6.0).radius(3.0).fill(t.switch_off).clip_rounded(3.0)
+                .child(el().h_full().w_frac(frac).radius(3.0).fill(ink)))
+            .child(row().w_full().justify_end().child(text(format!("{}% used", (frac * 100.0).round() as u32)).font(ui(12.5, 400.0)).color(t.dim)))));
+    }
+    rows
 }

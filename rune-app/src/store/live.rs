@@ -36,6 +36,9 @@ enum Msg {
     Created(String),
     Account(Value),
     Usage(Value),
+    /// Your plan (`/ext/billing`), and the answer to making a checkout for a plan key.
+    Billing(Value),
+    Checkout(String, Value),
     /// The team and its loops (`/ext/team`).
     Team(Value),
     /// The background agents (`/ext/agents`).
@@ -66,7 +69,8 @@ enum Msg {
     Suggestion(String, usize, String),
     Review(Vec<ReviewNote>),
     SignIn(Option<String>),
-    Transcript { id: String, items: Vec<ThreadItem> },
+    /// A chat's messages, and the free limit its last reply ended on (see `limit_of`).
+    Transcript { id: String, items: Vec<ThreadItem>, limit: Option<String> },
     Event(Value),
     /// A chat made for Wisp or a helper: its name and engine id.
     Named(String, String),
@@ -305,6 +309,52 @@ fn usage_from(v: &Value) -> crate::model::Usage {
     }
 }
 
+/// `/ext/billing`, or its `billing` event, into `extra.billing` (see sidecar/ext-billing.mjs).
+pub fn billing_from(b: &mut crate::model::Billing, v: &Value) {
+    use crate::model::{Checkout, CheckoutState, FreeLimit, Plan};
+    let text = |x: &Value| x.as_str().unwrap_or_default().to_owned();
+    b.error = if v["ok"].as_bool() == Some(false) { text(&v["error"]) } else { String::new() };
+    match v["signedIn"].as_bool() {
+        Some(false) => {
+            b.signed_out = true;
+            b.plan = None;
+        }
+        Some(true) => b.signed_out = false,
+        None => {}
+    }
+    if let Some(p) = v["plan"].as_object() {
+        let models = p.get("models").and_then(Value::as_array).map_or_else(Vec::new, |a| a.iter().filter_map(|m| m.as_str().map(str::to_owned)).collect());
+        b.plan = Some(Plan { key: text(&v["plan"]["key"]), name: text(&v["plan"]["name"]), models });
+    }
+    if let Some(f) = v.get("free") {
+        let n = |x: &Value| x.as_u64().or_else(|| x.as_f64().map(|f| f.max(0.0).round() as u64)).unwrap_or(0);
+        b.free = f.is_object().then(|| FreeLimit { used: n(&f["used"]), limit: n(&f["limit"]), resets: text(&f["resets"]) }).filter(|f| f.limit > 0);
+    }
+    match v.get("checkout") {
+        Some(c) if c.is_object() => {
+            let state = match c["state"].as_str().unwrap_or_default() {
+                "waiting" => Some(CheckoutState::Waiting),
+                "done" => Some(CheckoutState::Done),
+                "expired" => Some(CheckoutState::Failed(text(&c["error"]))),
+                _ => None,
+            };
+            b.checkout = state.map(|state| Checkout { plan: text(&c["plan"]), url: text(&c["url"]), state });
+        }
+        // The engine has none: one it was watching is gone (it restarted); one being made stays.
+        Some(_) if matches!(&b.checkout, Some(c) if c.state == CheckoutState::Waiting) => b.checkout = None,
+        _ => {}
+    }
+}
+
+/// What the sidebar and Settings call your plan: "Pro plan", once the account said.
+fn plan_label(snap: &mut Snapshot) {
+    if let Some(p) = &snap.extra.billing.plan
+        && !p.name.is_empty()
+    {
+        snap.plan = format!("{} plan", p.name);
+    }
+}
+
 impl LiveStore {
     /// A file's text for the editor: CRLF line endings become plain newlines (an editor line
     /// is one line, not a line and a blank one), remembered so a save writes them back.
@@ -327,6 +377,7 @@ impl LiveStore {
                     "apps" => c.get("/ext/apps?limit=60").map(|v| Msg::Apps(0, 0, Box::new(apps_page(&v)))),
                     "memory" => c.get("/memory").map(|v| Msg::Memories(memories_from(&v))),
                     "models" => c.get("/ext/models").map(Msg::Models),
+                    "billing" => c.get("/ext/billing").map(Msg::Billing),
                     "team" => c.get("/ext/team").map(Msg::Team),
                     "agents" => c.get("/ext/agents").map(Msg::Agents),
                     "prs" => c.get("/ext/prs").map(Msg::Prs),
@@ -419,6 +470,11 @@ impl LiveStore {
             }
             "memory_changed" => self.refresh("memory"),
             "account_changed" => self.refresh("account"),
+            // A checkout finished (or ran out of time) while the engine watched it.
+            "billing" => {
+                billing_from(&mut x.billing, e);
+                plan_label(snap);
+            }
             "models_changed" => self.refresh("models"),
             "team_changed" | "wisp_team" => self.refresh("team"),
             _ => return false,
@@ -588,6 +644,14 @@ impl LiveStore {
             return;
         }
         let Some(title) = self.title_of(&id) else { return };
+        // Haze 2's free limit ended this reply: the card shows until the chat's next reply starts.
+        if kind == "run_started" || kind == "queued" {
+            snap.extra.limits.retain(|(k, _)| *k != title);
+        }
+        if let Some(resets) = limit_of(e) {
+            snap.extra.limits.retain(|(k, _)| *k != title);
+            snap.extra.limits.push((title.clone(), resets));
+        }
         // What it's doing right now: set by a step starting, cleared by what comes after.
         match kind {
             "step" => {
@@ -918,8 +982,19 @@ pub fn items_from(m: &Value) -> Vec<ThreadItem> {
     out
 }
 
+/// Haze 2's free limit ended a reply: a stored notice, or a live `notice` or `error`, that
+/// carries `limited` (engine.mjs startRun). Its local reset time ("4:30 PM", or empty). The chat
+/// shows the upgrade card for it instead of the notice.
+pub fn limit_of(v: &Value) -> Option<String> {
+    let notice = v["kind"] == "notice" || v["type"] == "notice" || v["type"] == "error";
+    (notice && v["limited"].as_bool() == Some(true)).then(|| v["resets"].as_str().unwrap_or_default().to_owned())
+}
+
 pub fn item_from(m: &Value) -> Option<ThreadItem> {
     let text = m["text"].as_str().unwrap_or_default().to_owned();
+    if limit_of(m).is_some() {
+        return None;
+    }
     match m["kind"].as_str()? {
         "user" => Some(ThreadItem::You(text)),
         "assistant" if !m["interim"].as_bool().unwrap_or(false) => Some(ThreadItem::Them(text)),
@@ -935,6 +1010,9 @@ pub fn item_from(m: &Value) -> Option<ThreadItem> {
 
 /// A live event as the transcript shows it. `None` for events that only change state.
 pub fn item_from_event(e: &Value) -> Option<ThreadItem> {
+    if limit_of(e).is_some() {
+        return None;
+    }
     match e["type"].as_str()? {
         "run_started" => e.get("message").and_then(item_from),
         "text" if !e["interim"].as_bool().unwrap_or(false) => Some(ThreadItem::Them(e["text"].as_str()?.to_owned())),
@@ -1103,8 +1181,12 @@ impl Store for LiveStore {
                     Some(title) => self.focus = Some(title),
                     None => self.want_focus = Some(id),
                 },
-                Msg::Transcript { id, items } => {
+                Msg::Transcript { id, items, limit } => {
                     if let Some(title) = self.title_of(&id) {
+                        snap.extra.limits.retain(|(k, _)| *k != title);
+                        if let Some(resets) = limit {
+                            snap.extra.limits.push((title.clone(), resets));
+                        }
                         snap.threads.retain(|(k, _)| *k != title);
                         snap.threads.push((title, items));
                     }
@@ -1211,6 +1293,34 @@ impl Store for LiveStore {
                         snap.user = name.split_whitespace().next().unwrap_or(name).to_owned();
                     }
                     snap.plan = if snap.extra.signed_in { "Signed in".into() } else { "Not signed in".into() };
+                    // The plan itself, from the account (signing in or out changes it).
+                    plan_label(snap);
+                    self.refresh("billing");
+                }
+                Msg::Billing(v) => {
+                    billing_from(&mut snap.extra.billing, &v);
+                    plan_label(snap);
+                }
+                Msg::Checkout(plan, v) => {
+                    let b = &mut snap.extra.billing;
+                    // Cancelled while the checkout was being made: let it go.
+                    if !matches!(&b.checkout, Some(c) if c.plan == plan && c.state == crate::model::CheckoutState::Opening) {
+                        if v["ok"].as_bool() == Some(true) {
+                            self.spawn(|c| c.post("/ext/billing/cancel", json!({})).err().map(Msg::Status));
+                        }
+                        continue;
+                    }
+                    let url = v["checkout"]["url"].as_str().unwrap_or_default().to_owned();
+                    let state = if v["ok"].as_bool() == Some(true) && !url.is_empty() {
+                        self.open_url = Some(url.clone());
+                        crate::model::CheckoutState::Waiting
+                    } else if v["signedIn"].as_bool() == Some(false) {
+                        b.signed_out = true;
+                        crate::model::CheckoutState::SignIn
+                    } else {
+                        crate::model::CheckoutState::Failed(v["error"].as_str().unwrap_or("Checkout didn't open. Try again.").to_owned())
+                    };
+                    b.checkout = Some(crate::model::Checkout { plan, url, state });
                 }
                 Msg::Apps(seq, offset, page) => {
                     if seq != 0 && seq != self.apps_seq.load(std::sync::atomic::Ordering::Acquire) {
@@ -1459,6 +1569,29 @@ impl Store for LiveStore {
         }));
     }
 
+    fn billing(&mut self, op: crate::model::BillingOp, snap: &mut Snapshot) {
+        use crate::model::{BillingOp, Checkout, CheckoutState};
+        match op {
+            BillingOp::Load => self.refresh("billing"),
+            BillingOp::Checkout(plan) => {
+                snap.extra.billing.checkout = Some(Checkout { plan: plan.clone(), url: String::new(), state: CheckoutState::Opening });
+                self.spawn(move |c| {
+                    let v = c.post_for("/ext/billing/checkout", json!({ "plan": plan }), 45).unwrap_or_else(|e| json!({ "ok": false, "error": format!("The engine didn't answer: {e}") }));
+                    Some(Msg::Checkout(plan, v))
+                });
+            }
+            BillingOp::Reopen => {
+                if let Some(c) = snap.extra.billing.checkout.as_ref().filter(|c| !c.url.is_empty()) {
+                    self.open_url = Some(c.url.clone());
+                }
+            }
+            BillingOp::Cancel => {
+                snap.extra.billing.checkout = None;
+                self.spawn(|c| c.post("/ext/billing/cancel", json!({})).err().map(|e| Msg::Status(format!("cancel failed: {e}"))));
+            }
+        }
+    }
+
     fn take_renames(&mut self) -> Vec<(String, String)> {
         std::mem::take(&mut self.renames)
     }
@@ -1699,8 +1832,10 @@ impl Store for LiveStore {
         let Some(id) = self.id_of(chat) else { return };
         self.spawn(move |c| {
             let v = c.get(&format!("/session/{id}")).ok()?;
-            let items = v["session"]["messages"].as_array()?.iter().flat_map(items_from).collect();
-            Some(Msg::Transcript { id, items })
+            let messages = v["session"]["messages"].as_array()?;
+            let items = messages.iter().flat_map(items_from).collect();
+            let limit = messages.last().and_then(limit_of);
+            Some(Msg::Transcript { id, items, limit })
         });
     }
 
@@ -1868,6 +2003,54 @@ mod tests {
         let e = json!({ "type": "approval_request", "requestId": "p_1", "title": "Run npm install", "detail": "npm install" });
         assert!(matches!(item_from_event(&e), Some(ThreadItem::Approval { id, title, answer: None, .. }) if id == "p_1" && title == "Run npm install"));
         assert_eq!(item_from_event(&json!({ "type": "run_finished" })), None);
+    }
+
+    #[test]
+    fn the_free_limit_becomes_a_card_live_and_after_a_reload() {
+        // As engine.mjs emits it (DSH turn, or Classic), and as it keeps it in the chat: a card
+        // (extra.limits), not a notice in the transcript.
+        let live = json!({ "type": "error", "error": "You've used...", "limited": true, "resetsAt": "2026-11-16T16:30:00Z", "resets": "4:30 PM" });
+        assert_eq!(limit_of(&live).as_deref(), Some("4:30 PM"));
+        assert_eq!(item_from_event(&live), None);
+        let late = json!({ "type": "notice", "kind": "notice", "text": "x", "limited": true, "resets": "" });
+        assert_eq!(limit_of(&late).as_deref(), Some(""));
+        let stored = json!({ "kind": "notice", "level": "error", "text": "x", "limited": true, "resets": "4:30 PM" });
+        assert_eq!(limit_of(&stored).as_deref(), Some("4:30 PM"));
+        assert_eq!(item_from(&stored), None);
+        assert_eq!(limit_of(&json!({ "kind": "assistant", "text": "hi", "limited": true })), None);
+        // Any other error stays a plain notice.
+        assert!(matches!(item_from_event(&json!({ "type": "error", "error": "Haze 2 took too long to answer." })), Some(ThreadItem::Event { icon: "help", .. })));
+        assert!(matches!(item_from(&json!({ "kind": "notice", "text": "Stopped" })), Some(ThreadItem::Event { icon: "help", .. })));
+    }
+
+    #[test]
+    fn billing_follows_the_account_and_the_checkout() {
+        use crate::model::{Billing, CheckoutState};
+        let mut b = Billing::default();
+        billing_from(&mut b, &json!({ "ok": true, "signedIn": true, "plan": { "key": "free", "name": "Free", "models": [] },
+            "free": { "used": 82, "limit": 100, "resets": "4:30 PM" }, "checkout": null }));
+        assert_eq!(b.plan.as_ref().map(|p| (p.key.as_str(), p.paid())), Some(("free", false)));
+        assert_eq!(b.free.as_ref().map(|f| (f.used, f.limit, f.resets.as_str())), Some((82, 100, "4:30 PM")));
+        // A checkout being made isn't wiped by a load that doesn't know it yet.
+        b.checkout = Some(crate::model::Checkout { plan: "starter".into(), url: String::new(), state: CheckoutState::Opening });
+        billing_from(&mut b, &json!({ "ok": true, "signedIn": true, "checkout": null }));
+        assert!(b.checkout.is_some());
+        // The engine's event when it's paid.
+        billing_from(&mut b, &json!({ "type": "billing", "ok": true, "signedIn": true, "plan": { "key": "starter", "name": "Pro", "models": ["Claude Opus 5.5"] },
+            "checkout": { "plan": "starter", "url": "https://whop.com/checkout/x", "state": "done", "error": "" } }));
+        assert_eq!(b.checkout.as_ref().map(|c| c.state.clone()), Some(CheckoutState::Done));
+        assert!(b.plan.as_ref().is_some_and(|p| p.paid() && p.name == "Pro"));
+        let mut snap = Snapshot::default();
+        snap.extra.billing = b.clone();
+        plan_label(&mut snap);
+        assert_eq!(snap.plan, "Pro plan");
+        // Ran out of time, and signed out.
+        billing_from(&mut b, &json!({ "ok": true, "checkout": { "plan": "pro", "url": "u", "state": "expired", "error": "We didn't hear back" } }));
+        assert!(matches!(&b.checkout, Some(c) if matches!(&c.state, CheckoutState::Failed(e) if e.starts_with("We didn't"))));
+        billing_from(&mut b, &json!({ "ok": true, "signedIn": false, "plan": null }));
+        assert!(b.signed_out && b.plan.is_none());
+        billing_from(&mut b, &json!({ "ok": false, "error": "Couldn't reach Codeply" }));
+        assert_eq!(b.error, "Couldn't reach Codeply");
     }
 
     #[test]

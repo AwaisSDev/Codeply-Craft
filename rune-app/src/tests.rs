@@ -496,3 +496,89 @@ fn the_editor_note_is_not_shown_in_your_message() {
     assert_eq!(crate::thread::shown_message("what link?\n\n(Open in the editor: index.html)"), "what link?");
     assert_eq!(crate::thread::shown_message("plain"), "plain");
 }
+
+#[test]
+fn the_free_limit_card_leads_to_the_upgrade_sheet_and_back() {
+    let mut app = App::with_mock();
+    app.open_chat("Casual chat");
+    app.data.extra.limits.push(("Casual chat".into(), "4:30 PM".into()));
+    let mut rt = runtime(app);
+    settle(&mut rt);
+    assert!(rt.find("limit-card").is_some(), "the chat shows the card");
+    // "Your model" opens the composer's model menu.
+    click(&mut rt, "limit-model");
+    assert_eq!(rt.state.menu.as_deref(), Some("model:chat-thread"));
+    rt.key(KeyEvent { key: Key::Escape, mods: Mods::default() });
+    settle(&mut rt);
+    // Upgrade: the sheet, on Pro; Max changes what the button says.
+    click(&mut rt, "limit-upgrade");
+    assert!(rt.state.upgrade.open && rt.find("upgrade-sheet").is_some());
+    assert_eq!(rt.state.upgrade.pick, "starter");
+    click(&mut rt, "upgrade-plan/pro");
+    assert_eq!(rt.state.upgrade.pick, "pro");
+    // Payment: the store makes the checkout (the sample one opens nothing) and the sheet waits.
+    click(&mut rt, "upgrade-go");
+    assert!(rt.find("upgrade-waiting").is_some(), "Finish on Whop");
+    assert_eq!(rt.state.data.extra.billing.checkout.as_ref().map(|c| c.plan.as_str()), Some("pro"));
+    click(&mut rt, "upgrade-cancel");
+    assert!(!rt.state.upgrade.open && rt.state.data.extra.billing.checkout.is_none(), "Cancel stops waiting");
+    // Paid while waiting: the sheet closes by itself and the plan shows.
+    rt.update(|s, _| { s.open_upgrade(); s.start_checkout(); });
+    settle(&mut rt);
+    rt.update(|s, _| {
+        s.data.extra.billing.plan = Some(crate::model::Plan { key: "starter".into(), name: "Pro".into(), models: Vec::new() });
+        if let Some(c) = s.data.extra.billing.checkout.as_mut() {
+            c.state = crate::model::CheckoutState::Done;
+        }
+    });
+    settle(&mut rt);
+    assert!(!rt.state.upgrade.open && rt.find("upgrade-scrim").is_none());
+    assert_eq!(rt.state.data.plan, "Pro plan");
+    assert!(rt.find("limit-upgrade").is_none(), "on a paid plan the card has no Upgrade");
+    // Escape closes the sheet.
+    rt.update(|s, _| s.open_upgrade());
+    settle(&mut rt);
+    rt.key(KeyEvent { key: Key::Escape, mods: Mods::default() });
+    settle(&mut rt);
+    assert!(!rt.state.upgrade.open);
+}
+
+#[test]
+fn escape_closes_the_sheet_and_nothing_under_it() {
+    let mut app = App::with_mock();
+    app.open_settings(crate::app::SettingsPage::Usage);
+    let mut rt = runtime(app);
+    settle(&mut rt);
+    click(&mut rt, "set-upgrade");
+    rt.key(KeyEvent { key: Key::Escape, mods: Mods::default() });
+    settle(&mut rt);
+    assert!(!rt.state.upgrade.open, "Escape closes the sheet");
+    assert_eq!(rt.state.view, View::Settings, "and leaves Settings open under it");
+    // While it waits on Whop, a click outside does nothing; Escape cancels.
+    click(&mut rt, "set-upgrade");
+    click(&mut rt, "upgrade-go");
+    rt.pointer_down(20.0, 880.0);
+    rt.pointer_up(20.0, 880.0);
+    settle(&mut rt);
+    assert!(rt.state.upgrade.open && rt.state.data.extra.billing.checkout.is_some());
+    rt.key(KeyEvent { key: Key::Escape, mods: Mods::default() });
+    settle(&mut rt);
+    assert!(!rt.state.upgrade.open && rt.state.data.extra.billing.checkout.is_none());
+}
+
+#[test]
+fn settings_upgrade_opens_the_sheet_and_paid_plans_have_none() {
+    let mut app = App::with_mock();
+    app.open_settings(crate::app::SettingsPage::Usage);
+    let mut rt = runtime(app);
+    settle(&mut rt);
+    click(&mut rt, "set-upgrade");
+    assert!(rt.state.upgrade.open, "Upgrade opens the sheet, not the website");
+    assert!(rt.find("set-free-limit").is_some(), "the free amount shows once the account answered");
+    rt.update(|s, _| {
+        s.close_upgrade();
+        s.data.extra.billing.plan = Some(crate::model::Plan { key: "pro".into(), name: "Max".into(), models: Vec::new() });
+    });
+    settle(&mut rt);
+    assert!(rt.find("set-upgrade").is_none() && rt.find("set-free-limit").is_none());
+}

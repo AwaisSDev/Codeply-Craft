@@ -205,6 +205,10 @@ function execCommand(cmd, cwd) {
 const appLists = new Map(); // folder -> the apps listing in flight, so steps don't connect twice
 const teams = new Map();    // DSH session id -> a Wisp turn's { prompt, askBot, handOff }
 const turns = new Map();    // DSH session id -> the turn's { cwd, approve, request, route }, for the user's apps and the model
+// Haze 2's free 5-hour limit, hit during a chat's turn: chat id -> { resetsAt, error }. The bridge
+// notes it; startRun turns the turn's end into the app's upgrade card (`limited` on the notice).
+const limitHits = new Map();
+const clockOf = (iso) => { try { return iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''; } catch { return ''; } };
 
 const APPS_HOW = 'Call one with the use_app tool (app, tool, and args as a JSON object).';
 const APPS_WAIT_MS = 12_000;      // the prompt goes without an app still connecting
@@ -428,6 +432,9 @@ function startBridge() {
         signal: ac.signal,
       });
       if (ac.signal.aborted) return;
+      // The free amount for Settings > Usage & billing (ext-billing.mjs), and a limit hit.
+      if (r && r.route && r.route.free) extCtx.shared.hazeFree = r.route.free;
+      if (r && r.limited && turn && turn.session) limitHits.set(turn.session.id, { resetsAt: r.resetsAt || null, error: r.error || '' });
       reply(200, r && typeof r === 'object' ? r : { success: false, error: 'The model returned nothing.' });
     } catch (e) {
       if (!ac.signal.aborted) reply(500, { success: false, error: e && e.message ? e.message : String(e) });
@@ -743,6 +750,7 @@ async function startRun(session, text, opts = {}) {
   emit(session.id, { type: 'run_started', session: meta(session), ...(opts.resume ? {} : { message: session.messages[session.messages.length - 1] }) });
   for (const h of extCtx.hooks.runStart) { try { h(session, { text, opts }); } catch (e) { console.error('runStart:', e && e.message); } }
   const approve = makeApprove(opts.approvalSession || session, ctl.signal);
+  limitHits.delete(session.id);
   let reply = null; // the assistant message the current DSH chunks grow
   let kind = 'dsh';
   const result = { ok: true, text: '', error: '' };
@@ -807,9 +815,14 @@ async function startRun(session, text, opts = {}) {
       else if (ev.type === 'tool_end') push({ kind: 'tool', name: ev.name, label: ev.summary || '', icon: ev.icon || '', ok: ev.ok, at: Date.now() });
       else if (ev.type === 'notice') push({ kind: 'notice', level: ev.level || 'info', text: ev.text, at: Date.now() });
       else if (ev.type === 'error') {
+        // Haze 2's free limit (DSH: noted by the bridge; Classic: on the event): the app shows a card.
+        const hit = limitHits.get(session.id);
+        if (hit) { limitHits.delete(session.id); ev = { ...ev, limited: true, resetsAt: hit.resetsAt, error: hit.error || ev.error }; }
+        const limit = ev.limited ? { limited: true, resetsAt: ev.resetsAt || null, resets: clockOf(ev.resetsAt) } : null;
+        if (limit) ev = { ...ev, ...limit };
         // The engine speaks of "Craft"; here the fix is to sign in in the Codeply app.
-        if (/sign in/i.test(String(ev.error))) ev = { ...ev, error: "You're not signed in. Open the Codeply app, sign in, then send this again." };
-        push({ kind: 'notice', level: 'error', text: ev.error, at: Date.now() });
+        else if (/sign in/i.test(String(ev.error))) ev = { ...ev, error: "You're not signed in. Open the Codeply app, sign in, then send this again." };
+        push({ kind: 'notice', level: 'error', text: ev.error, ...limit, at: Date.now() });
         result.ok = false; result.error = String(ev.error);
       } else if (ev.type === 'aborted') { result.ok = false; result.error = 'Stopped.'; }
       if (ev.type !== 'reasoning' && ev.type !== 'tool_start') emit(session.id, ev);
@@ -820,6 +833,14 @@ async function startRun(session, text, opts = {}) {
     emit(session.id, { type: 'error', error: e.message });
     result.ok = false; result.error = e.message;
   } finally {
+    // A limit hit that didn't end the turn with an error still gets its card.
+    const hit = limitHits.get(session.id);
+    if (hit) {
+      limitHits.delete(session.id);
+      const n = { kind: 'notice', level: 'error', text: hit.error || "You've used Codeply's free limit for now.", limited: true, resetsAt: hit.resetsAt, resets: clockOf(hit.resetsAt), at: Date.now() };
+      push(n);
+      emit(session.id, { type: 'notice', ...n });
+    }
     result.text = session.messages.slice(from).filter((m) => m.kind === 'assistant' && !m.interim && m.text).map((m) => m.text).join('\n\n');
     runs.delete(session.id);
     // The handoff closes its lease before the chat takes its next message.

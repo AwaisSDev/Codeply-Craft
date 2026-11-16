@@ -16,6 +16,7 @@ pub mod tasks;
 pub mod terminal;
 pub mod usage;
 pub mod update;
+pub mod upgrade;
 pub mod themes;
 
 use rune::{Cx, El};

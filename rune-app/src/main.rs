@@ -116,6 +116,25 @@ const SCENES: &[Scene] = &[
     ("settings-personalization", |s| s.open_settings(SettingsPage::Personalization)),
     ("settings-browser", |s| s.open_settings(SettingsPage::Browser)),
     ("settings-usage", |s| s.open_settings(SettingsPage::Usage)),
+    // Upgrading: the free-limit card, the sheet, paying on Whop, and Settings' plan.
+    ("limit-card", |s| { s.open_chat("Casual chat"); s.data.extra.limits.push(("Casual chat".into(), "4:30 PM".into())); }),
+    ("limit-card-pane", |s| { s.open_chat("Casual chat"); s.panes.browser = true; s.data.extra.limits.push(("Casual chat".into(), "4:30 PM".into())); }),
+    ("limit-card-code", |s| { s.go(View::Code); s.poll_code(); let c = views::code::agent_chat(s); s.data.extra.limits.push((c, "4:30 PM".into())); }),
+    ("upgrade", |s| { s.open_chat("Casual chat"); s.open_upgrade(); }),
+    ("upgrade-max", |s| { s.open_chat("Casual chat"); s.open_upgrade(); s.pick_plan("pro"); }),
+    ("upgrade-waiting", |s| { s.open_chat("Casual chat"); s.open_upgrade(); s.start_checkout(); }),
+    ("upgrade-sign-in", |s| { s.open_chat("Casual chat"); s.open_upgrade(); s.data.extra.billing.signed_out = true; }),
+    ("upgrade-error", |s| {
+        s.open_chat("Casual chat");
+        s.open_upgrade();
+        s.data.extra.billing.checkout = Some(model::Checkout { plan: "starter".into(), url: String::new(), state: model::CheckoutState::Failed("Couldn't reach Codeply (getaddrinfo ENOTFOUND codeply.app). Check your connection and try again.".into()) });
+    }),
+    ("settings-billing", |s| { s.open_settings(SettingsPage::Usage); s.store.billing(model::BillingOp::Load, &mut s.data); }),
+    ("settings-billing-pro", |s| {
+        s.open_settings(SettingsPage::Usage);
+        s.data.extra.billing.plan = Some(model::Plan { key: "starter".into(), name: "Pro".into(), models: vec!["Claude Opus 5.5".into(), "Claude Sonnet".into(), "Claude Haiku".into()] });
+        s.data.plan = "Pro plan".into();
+    }),
     ("settings-cloud", |s| s.open_settings(SettingsPage::Cloud)),
     ("settings-git", |s| s.open_settings(SettingsPage::Git)),
     ("chat-thinking", |s| {

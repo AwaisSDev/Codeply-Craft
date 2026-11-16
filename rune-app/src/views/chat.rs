@@ -171,7 +171,7 @@ fn open(s: &App, t: &Theme, chat: &str) -> El {
         .child(pane_toggle(s, t, "list", "Background tasks", "pane-tasks", Pane::Tasks, s.panes.tasks))
         .child(pane_toggle(s, t, "terminal", "Terminal", "pane-terminal", Pane::Terminal, s.panes.terminal))
         .child(more);
-    let thread = col().w_full().h_full().min_h(0.0).child(crate::thread::with_composer(
+    let thread = col().w_full().h_full().min_h(0.0).child(crate::views::upgrade::with_composer(
         s, t, chat, "Wisp", EditKey::ChatThread, Target::Chat(String::new()), "Ask for follow-up changes", 780.0,
     ));
     col().w_full().h_full()

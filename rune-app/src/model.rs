@@ -570,6 +570,88 @@ pub struct Extra {
     pub models: crate::models::Models,
     /// The background agents chats started, with their logs and team channels.
     pub subagents: crate::subagents::Subagents,
+    /// Your Codeply plan, Haze 2's free amount and an upgrade in progress (`sidecar/ext-billing.mjs`).
+    pub billing: Billing,
+    /// Chats whose last reply Haze 2's free limit ended, and when it resets in local time
+    /// ("4:30 PM", or empty): (title, resets). The chat shows the upgrade card above its composer
+    /// until its next reply starts.
+    pub limits: Vec<(String, String)>,
+}
+
+/// Your plan, as the account says (`GET /ext/billing`, from the site's `/api/account`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Billing {
+    /// None until the account answered (Settings then shows what it knew before).
+    pub plan: Option<Plan>,
+    /// False once the engine said nobody is signed in.
+    pub signed_out: bool,
+    /// Haze 2's free 5-hour amount, as the router last reported it.
+    pub free: Option<FreeLimit>,
+    /// Why the plan couldn't be read, or empty.
+    pub error: String,
+    /// An upgrade under way (the upgrade sheet follows it).
+    pub checkout: Option<Checkout>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Plan {
+    /// "free", "starter" (shown as Pro), "pro" (shown as Max).
+    pub key: String,
+    /// The name the app shows: "Free", "Pro", "Max".
+    pub name: String,
+    /// The models it includes, by label.
+    pub models: Vec<String>,
+}
+
+impl Plan {
+    pub fn paid(&self) -> bool {
+        self.key != "free"
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FreeLimit {
+    pub used: u64,
+    pub limit: u64,
+    /// When it resets, in local time ("4:30 PM"); empty when it isn't counting down.
+    pub resets: String,
+}
+
+/// An upgrade: the checkout made for this account, and where it is.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Checkout {
+    /// "starter" (Pro) or "pro" (Max).
+    pub plan: String,
+    /// The checkout page on Whop, once made.
+    pub url: String,
+    pub state: CheckoutState,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum CheckoutState {
+    /// Asking the site for a checkout.
+    Opening,
+    /// Checkout is open in the browser; the engine watches for the plan to change.
+    Waiting,
+    /// The plan changed: you're on it.
+    Done,
+    /// Nobody is signed in, so there's no account to put a plan on.
+    SignIn,
+    /// It didn't work (or checkout ran out of time): why, for the sheet.
+    Failed(String),
+}
+
+/// A store operation on billing.
+#[derive(Clone, Debug, PartialEq)]
+pub enum BillingOp {
+    /// Read the plan (and the free amount).
+    Load,
+    /// Make a checkout for a plan key ("starter" or "pro") and open it in the browser.
+    Checkout(String),
+    /// Open the checkout page again.
+    Reopen,
+    /// Stop waiting for the checkout.
+    Cancel,
 }
 
 #[derive(Clone, Debug, PartialEq)]
