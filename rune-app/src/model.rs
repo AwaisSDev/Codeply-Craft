@@ -581,6 +581,8 @@ pub struct Extra {
     pub subagents: crate::subagents::Subagents,
     /// Your Codeply plan, Haze 2's free amount and an upgrade in progress (`sidecar/ext-billing.mjs`).
     pub billing: Billing,
+    /// Your own Claude and ChatGPT plans, signed in for subagents and past your Codeply limits.
+    pub linked: Linked,
     /// Chats whose last reply Haze 2's free limit ended, and when it resets in local time
     /// ("4:30 PM", or empty): (title, resets). The chat shows the upgrade card above its composer
     /// until its next reply starts.
@@ -588,6 +590,23 @@ pub struct Extra {
 }
 
 /// Your plan, as the account says (`GET /ext/billing`, from the site's `/api/account`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Linked {
+    pub claude: LinkedPlan,
+    pub chatgpt: LinkedPlan,
+}
+
+/// One outside plan: signed in or not, and which plan the account has ("Max", "Plus").
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LinkedPlan {
+    pub connected: bool,
+    pub plan: String,
+    pub email: String,
+    /// Signing in: the browser is open.
+    pub busy: bool,
+    pub error: String,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Billing {
     /// None until the account answered (Settings then shows what it knew before).
@@ -661,6 +680,10 @@ pub enum BillingOp {
     Reopen,
     /// Stop waiting for the checkout.
     Cancel,
+    /// Your own Claude or ChatGPT plan ("claude", "chatgpt"): read both, sign one in, sign one out.
+    LoadLinked,
+    Link(String),
+    Unlink(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -38,6 +38,8 @@ enum Msg {
     Usage(Value),
     /// Your plan (`/ext/billing`), and the answer to making a checkout for a plan key.
     Billing(Value),
+    /// `/ext/linked`: your Claude and ChatGPT plans.
+    Linked(Value),
     Checkout(String, Value),
     /// The team and its loops (`/ext/team`).
     Team(Value),
@@ -309,6 +311,23 @@ fn usage_from(v: &Value) -> crate::model::Usage {
     }
 }
 
+/// `/ext/linked` into `extra.linked`: { claude: { connected, plan, email, error }, chatgpt: {...} }.
+pub fn linked_from(l: &mut crate::model::Linked, v: &Value) {
+    for (key, slot) in [("claude", &mut l.claude), ("chatgpt", &mut l.chatgpt)] {
+        let x = &v[key];
+        if x.is_object() {
+            let s = |k: &str| x[k].as_str().unwrap_or_default().to_owned();
+            *slot = crate::model::LinkedPlan { connected: x["connected"].as_bool().unwrap_or(false), plan: s("plan"), email: s("email"), busy: false, error: s("error") };
+        }
+    }
+    // A failed sign-in: the engine names which.
+    if let Some(e) = v["error"].as_str().filter(|e| !e.is_empty()) {
+        let slot = if v["which"] == "chatgpt" { &mut l.chatgpt } else { &mut l.claude };
+        slot.busy = false;
+        slot.error = e.to_owned();
+    }
+}
+
 /// `/ext/billing`, or its `billing` event, into `extra.billing` (see sidecar/ext-billing.mjs).
 pub fn billing_from(b: &mut crate::model::Billing, v: &Value) {
     use crate::model::{Checkout, CheckoutState, FreeLimit, Plan};
@@ -378,6 +397,7 @@ impl LiveStore {
                     "memory" => c.get("/memory").map(|v| Msg::Memories(memories_from(&v))),
                     "models" => c.get("/ext/models").map(Msg::Models),
                     "billing" => c.get("/ext/billing").map(Msg::Billing),
+                    "linked" => c.get("/ext/linked").map(Msg::Linked),
                     "team" => c.get("/ext/team").map(Msg::Team),
                     "agents" => c.get("/ext/agents").map(Msg::Agents),
                     "prs" => c.get("/ext/prs").map(Msg::Prs),
@@ -476,6 +496,7 @@ impl LiveStore {
                 plan_label(snap);
             }
             "models_changed" => self.refresh("models"),
+            "linked_changed" => self.refresh("linked"),
             "team_changed" | "wisp_team" => self.refresh("team"),
             _ => return false,
         }
@@ -1370,6 +1391,7 @@ impl Store for LiveStore {
                     billing_from(&mut snap.extra.billing, &v);
                     plan_label(snap);
                 }
+                Msg::Linked(v) => linked_from(&mut snap.extra.linked, &v),
                 Msg::Checkout(plan, v) => {
                     let b = &mut snap.extra.billing;
                     // Cancelled while the checkout was being made: let it go.
@@ -1653,6 +1675,20 @@ impl Store for LiveStore {
                 if let Some(c) = snap.extra.billing.checkout.as_ref().filter(|c| !c.url.is_empty()) {
                     self.open_url = Some(c.url.clone());
                 }
+            }
+            BillingOp::LoadLinked => self.refresh("linked"),
+            BillingOp::Link(which) => {
+                let l = if which == "claude" { &mut snap.extra.linked.claude } else { &mut snap.extra.linked.chatgpt };
+                l.busy = true;
+                l.error.clear();
+                // The sign-in finishes in the browser; the engine answers when it's done (up to 10 minutes).
+                self.spawn(move |c| {
+                    let v = c.post_for("/ext/linked/connect", json!({ "which": which }), 600).unwrap_or_else(|e| json!({ "error": format!("The engine didn't answer: {e}") }));
+                    Some(Msg::Linked(v))
+                });
+            }
+            BillingOp::Unlink(which) => {
+                self.spawn(move |c| c.post("/ext/linked/disconnect", json!({ "which": which })).ok().map(Msg::Linked));
             }
             BillingOp::Cancel => {
                 snap.extra.billing.checkout = None;
@@ -2059,6 +2095,15 @@ mod mission_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn your_plans_follow_the_engine_and_a_failed_sign_in_says_why() {
+        let mut l = crate::model::Linked::default();
+        l.chatgpt.busy = true;
+        linked_from(&mut l, &json!({ "claude": { "connected": true, "plan": "Claude Max", "email": "a@b.c" }, "chatgpt": { "connected": false }, "which": "chatgpt", "error": "The sign-in stopped." }));
+        assert!(l.claude.connected && l.claude.plan == "Claude Max");
+        assert!(!l.chatgpt.busy && l.chatgpt.error == "The sign-in stopped.");
+    }
 
     #[test]
     fn asking_agents_is_kept_as_one_messages_with_row() {

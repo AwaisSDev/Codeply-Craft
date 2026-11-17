@@ -97,6 +97,7 @@ pub fn groups(s: &App, t: &Theme) -> Vec<El> {
         if scanning {
             out.push(scan_group(s, t));
         }
+        out.push(linked_group(s, t));
         out.push(add_group(s, t));
     }
     if s.models_ui.open(models) && scanning {
@@ -195,6 +196,46 @@ fn model_row(s: &App, t: &Theme, m: &ModelInfo) -> El {
         .child(tools)
         .children(selected.then(|| ico_s("check", 18.0, t.text)))
         .on_press(move |s: &mut App| s.model_pick(&id))
+}
+
+/// Your Claude and ChatGPT plans: on Pro and Max, subagents run on them, and the agent keeps
+/// going on them once your Codeply limit is used up.
+fn linked_group(s: &App, t: &Theme) -> El {
+    let paid = s.data.extra.billing.plan.as_ref().is_some_and(|p| plan_rank(&p.key) > 0);
+    let linked = &s.data.extra.linked;
+    let item = |which: &'static str, name: &str, tile: rune::Color, glyph: &str, l: &crate::model::LinkedPlan| {
+        let desc = if l.connected {
+            [l.plan.as_str(), l.email.as_str()].iter().filter(|x| !x.is_empty()).copied().collect::<Vec<_>>().join(" · ")
+        } else if !l.error.is_empty() {
+            l.error.clone()
+        } else {
+            format!("Sign in with your {name} plan")
+        };
+        let action = if !paid {
+            btn(t, "Upgrade", None, ButtonKind::Plain).key(format!("linked-{which}-upgrade")).on_press(|s: &mut App| s.open_upgrade_for("starter"))
+        } else if l.busy {
+            btn(t, "Waiting…", None, ButtonKind::Plain).key(format!("linked-{which}-busy"))
+        } else if l.connected {
+            btn(t, "Sign out", None, ButtonKind::Plain).key(format!("linked-{which}-out")).on_press(move |s: &mut App| s.linked_sign_out(which))
+        } else {
+            btn(t, "Connect", None, ButtonKind::Plain).key(format!("linked-{which}-in")).on_press(move |s: &mut App| s.linked_sign_in(which))
+        };
+        row().w_full().min_h(60.0).px(16.0).py(12.0).gap(14.0).center_y()
+            .child(el().size(30.0, 30.0).radius(8.0).center().fill(tile).child(ico_s(glyph, 16.0, rune::Color::WHITE)))
+            .child(col().grow(1.0).min_w(0.0).gap(2.0)
+                .child(row().gap(8.0).center_y()
+                    .child(text(name.to_owned()).font(ui(14.0, 500.0)).color(t.text))
+                    .children(l.connected.then(|| pill(t, "Connected", Pill::Green)))
+                    .children((!paid).then(|| pill(t, "Pro", Pill::Blue))))
+                .child(text(desc).font(ui(12.5, 400.0)).color(if l.error.is_empty() || l.connected { t.dim } else { t.red }).wrap()))
+            .child(action)
+    };
+    col().gap(8.0)
+        .child(group(t, "Your plans", vec![
+            item("claude", "Claude", rune::color::hex("#D97757").unwrap_or(t.accent), "sparkle", &linked.claude),
+            item("chatgpt", "ChatGPT", rune::color::hex("#10A37F").unwrap_or(t.accent), "chat", &linked.chatgpt),
+        ]))
+        .child(note(t, "Subagents run on a plan you connect, and Codeply keeps working on it after your own limit runs out."))
 }
 
 fn add_group(s: &App, t: &Theme) -> El {

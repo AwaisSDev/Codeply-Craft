@@ -152,6 +152,11 @@ const SCENES: &[Scene] = &[
     ("loop-new", |s| { s.open_agent(Some("frontend")); s.open_team_dialog(crate::team::TeamDialog::NewLoop("frontend".into())); }),
     ("usage-daily", |s| { s.new_chat(); s.toggle_usage(); s.usage_daily = true; s.usage_pick = Some("d2026-11-12".into()); }),
     ("settings-models", |s| s.open_settings(SettingsPage::Models)),
+    ("settings-models-plans", |s| {
+        s.open_settings(SettingsPage::Models);
+        s.data.extra.billing.plan = Some(model::Plan { key: "starter".into(), name: "Pro".into(), models: Vec::new() });
+        s.data.extra.linked.claude = model::LinkedPlan { connected: true, plan: "Claude Max".into(), email: "sam@example.com".into(), ..Default::default() };
+    }),
     ("settings-models-add", |s| { s.open_settings(SettingsPage::Models); s.model_open_form(None); }),
     ("settings-models-edit", |s| { s.open_settings(SettingsPage::Models); s.model_open_form(Some("m1")); }),
     ("settings-models-error", |s| {

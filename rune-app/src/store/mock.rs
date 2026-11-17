@@ -309,6 +309,7 @@ pub fn extra() -> Extra {
         models: crate::models::sample(),
         subagents: crate::subagents::sample(),
         billing: Default::default(),
+        linked: Default::default(),
         limits: Vec::new(),
     }
 }
@@ -541,8 +542,16 @@ impl Store for MockStore {
             BillingOp::Checkout(plan) => {
                 b.checkout = Some(Checkout { plan, url: s("https://whop.com/checkout/plan_sample"), state: CheckoutState::Waiting });
             }
-            BillingOp::Reopen => {}
+            BillingOp::Reopen | BillingOp::LoadLinked => {}
             BillingOp::Cancel => b.checkout = None,
+            BillingOp::Link(which) => {
+                let l = if which == "claude" { &mut snap.extra.linked.claude } else { &mut snap.extra.linked.chatgpt };
+                *l = crate::model::LinkedPlan { connected: true, plan: s(if which == "claude" { "Claude Pro" } else { "ChatGPT Plus" }), email: s("sam@example.com"), ..Default::default() };
+            }
+            BillingOp::Unlink(which) => {
+                let l = if which == "claude" { &mut snap.extra.linked.claude } else { &mut snap.extra.linked.chatgpt };
+                *l = Default::default();
+            }
         }
     }
 

@@ -465,8 +465,18 @@ impl App {
         match page {
             SettingsPage::Cloud => self.cloud_op(crate::model::CloudOp::Load),
             SettingsPage::Usage => self.store.load_usage(&mut self.data),
+            SettingsPage::Models => self.store.billing(crate::model::BillingOp::LoadLinked, &mut self.data),
             _ => {}
         }
+    }
+
+    /// Settings > Models > Your plans: sign in to your Claude or ChatGPT plan ("claude", "chatgpt").
+    pub fn linked_sign_in(&mut self, which: &str) {
+        self.store.billing(crate::model::BillingOp::Link(which.to_owned()), &mut self.data);
+    }
+
+    pub fn linked_sign_out(&mut self, which: &str) {
+        self.store.billing(crate::model::BillingOp::Unlink(which.to_owned()), &mut self.data);
     }
 
     /// A Cloud & devices operation through the store.
