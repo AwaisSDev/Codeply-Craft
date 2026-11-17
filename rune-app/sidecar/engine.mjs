@@ -115,20 +115,39 @@ const folderKey = (cwd) => path.resolve(String(cwd || '')).toLowerCase();
 const norm = (s) => String(s || '').trim().toLowerCase().replace(/^@/, '');
 
 /** A team member from what the model wrote: an id, a name, "the research agent", "@Docs". */
+/** Everyone Wisp leads, now: the team the app sent, and every specialist on disk (one made a
+ *  minute ago, a built-in one like Testing) even before the app sends its list again. Not Wisp. */
+function team() {
+  const out = [];
+  const seen = new Set();
+  const add = (m) => {
+    const k = norm(m.name);
+    if (!k || k === 'wisp' || norm(m.id) === 'wisp' || seen.has(k)) return;
+    seen.add(k);
+    out.push(m);
+  };
+  for (const m of settings.team) add(m);
+  try {
+    for (const s of cliLib('wisp.js')?.listSpecialists?.() || []) add({ id: String(s.id || s.name), name: String(s.name || '').trim(), role: String(s.focus || '').trim() });
+  } catch {}
+  return out.slice(0, 40);
+}
+
 function findMember(name) {
   const q = norm(name).replace(/^the\s+/, '').replace(/\s+(specialist|agent|bot)$/, '');
   if (!q) return null;
-  const t = settings.team;
+  const t = team();
   return t.find((m) => norm(m.id) === q) || t.find((m) => norm(m.name) === q)
     || t.find((m) => q.split(/[^a-z0-9]+/).includes(norm(m.name))) || t.find((m) => norm(m.role).includes(q) && q.length > 3) || null;
 }
 /** The member whose chat this is (an agent session, or a chat titled with the member's name),
  *  else null: Wisp leads it. */
+const isWispTitle = (s) => norm(s.title) === 'wisp' || (s.kind === 'agent' && norm(s.agent) === 'wisp');
 const memberOf = (s) => (s.kind === 'agent' && s.agent ? findMember(s.agent) : null)
-  || (s.kind === 'code' ? null : settings.team.find((m) => norm(m.name) === norm(s.title))) || null;
+  || (s.kind === 'code' || isWispTitle(s) ? null : team().find((m) => norm(m.name) === norm(s.title))) || null;
 /** Wisp's own chat: the one Mission control talks in (the only chat that leads the team). */
 const isWispChat = (s) => (s.kind === 'agent' && norm(s.agent) === 'wisp') || (s.kind !== 'code' && norm(s.title) === 'wisp');
-const rosterLines = () => settings.team.map((m) => `- ${m.name}: ${m.role || 'general help'}`);
+const rosterLines = () => team().map((m) => `- ${m.name}: ${m.role || 'general help'}`);
 
 /** Short instruction put in front of what Wisp-led chats send to the engine (never stored in the chat). */
 function promptPrefix(session) {
@@ -142,13 +161,13 @@ function promptPrefix(session) {
   }
   // Your own chats: they do the work themselves, and can ask your agents when you want them to.
   if (!isWispChat(session)) {
-    if (!settings.team.length) return '';
-    return `[The user's agents: ${settings.team.map((m) => `${m.name} (${m.role || 'general'})`).join(', ')}. When the user asks one of them something (for example "ask Inbox for updates"), or a task clearly belongs to one, ask it with ask_bot (bot = its name, task = exactly what to find or do, with the context it needs) and pass on what it says; otherwise do the work yourself.]\n\n`;
+    if (!team().length) return '';
+    return `[The user's agents: ${team().map((m) => `${m.name} (${m.role || 'general'})`).join(', ')}. When the user asks one of them something (for example "ask Inbox for updates"), or a task clearly belongs to one, ask it with ask_bot (bot = its name, task = exactly what to find or do, with the context it needs) and pass on what it says; otherwise do the work yourself.]\n\n`;
   }
-  if (!settings.team.length) {
+  if (!team().length) {
     return '[You are Wisp, who leads the user\'s agents. If the task needs a specialist agent (for example mail with no Inbox agent), do what you can and suggest creating an agent for it.]\n\n';
   }
-  return `[You are Wisp, who leads the user's team: ${settings.team.map((m) => `${m.name} (${m.role || 'general'})`).join(', ')}. Hand tasks to the matching teammate with ask_bot (bot = their name, task = exactly what to do, with the context they need); do small things yourself. If no teammate fits and the task needs a specialist (for example mail with no Inbox agent), do what you can and suggest creating an agent for it.]\n\n`;
+  return `[You are Wisp, who leads the user's team: ${team().map((m) => `${m.name} (${m.role || 'general'})`).join(', ')}. Hand tasks to the matching teammate with ask_bot (bot = their name, task = exactly what to do, with the context they need); do small things yourself. If no teammate fits and the task needs a specialist (for example mail with no Inbox agent), do what you can and suggest creating an agent for it.]\n\n`;
 }
 
 // ---------- jobs: commands and delegated agent runs ----------
@@ -698,7 +717,7 @@ async function* runDsh(session, text, approve, signal, images = []) {
   turns.set(sessionId, { session, cwd: path.resolve(session.cwd), approve, request: String(text || ''), route: routeFor(session) });
   // Wisp's chat leads the team; your own chats can ask an agent too (promptPrefix says when).
   // The code view's agent and an agent's own sessions do their work themselves.
-  if (session.kind !== 'code' && !memberOf(session) && settings.team.length) {
+  if (session.kind !== 'code' && !memberOf(session) && team().length) {
     const ctx = { session, approve };
     teams.set(sessionId, {
       prompt: isWispChat(session)
@@ -842,6 +861,8 @@ async function startRun(session, text, opts = {}) {
       }
       reply = null;
       if (ev.type === 'text') push({ kind: 'assistant', text: ev.text, interim: !!ev.interim, at: Date.now() });
+      // Asking an agent is kept as the delegation's own rows (delegate), not as a step.
+      else if (ev.type === 'tool_end' && /(^|[:._])(ask_bot|hand_off)$/.test(String(ev.name || ''))) continue;
       else if (ev.type === 'tool_end') push({ kind: 'tool', name: ev.name, label: ev.summary || '', icon: ev.icon || '', ok: ev.ok, ...(ev.command ? { command: ev.command, output: ev.output } : {}), at: Date.now() });
       else if (ev.type === 'notice') push({ kind: 'notice', level: ev.level || 'info', text: ev.text, at: Date.now() });
       else if (ev.type === 'error') {
@@ -917,6 +938,9 @@ async function delegate({ session, approve }, member, task, signal) {
   const ac = new AbortController();
   if (signal) { if (signal.aborted) ac.abort(); else signal.addEventListener('abort', () => ac.abort(), { once: true }); }
   const job = addJob({ id: newId('a_'), kind: 'agent', title: target.title, agent: member.name, detail: task.slice(0, 300), kill: () => ac.abort() }, session.id);
+  // Kept in the asking chat, so its "messages with" row and the agents' mascots stay after a reload.
+  const note = (dir) => { session.messages.push({ kind: 'team', agent: member.name, dir, at: Date.now() }); session.updatedAt = Date.now(); save(); };
+  note('with');
   emit(session.id, { type: 'delegated', sessionId: session.id, agent: member.name, task: task.slice(0, 500), target: target.title });
   let r;
   try {
@@ -935,13 +959,14 @@ async function delegate({ session, approve }, member, task, signal) {
   }
   const summary = r.ok ? summaryOf(r.text) : `Failed: ${r.error}`;
   endJob(job, session.id, { detail: summary });
+  note('from');
   emit(session.id, { type: 'delegate_done', sessionId: session.id, agent: member.name, summary });
   return r;
 }
 
 const noMember = (name, specialty) => ({
   ok: false,
-  output: `There is no agent called "${name}" on the team. The team: ${settings.team.map((m) => m.name).join(', ') || 'none yet'}. Do what you can yourself, and tell the user ${specialty ? `a "${specialty}" agent` : 'an agent for this'} could be created for it.`,
+  output: `There is no agent called "${name}" on the team. The team: ${team().map((m) => m.name).join(', ') || 'none yet'}. Do what you can yourself, and tell the user ${specialty ? `a "${specialty}" agent` : 'an agent for this'} could be created for it.`,
 });
 
 /** ask_bot: give one task to a team member and wait for its result. */

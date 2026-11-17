@@ -333,7 +333,8 @@ pub struct Snapshot {
 
 impl Snapshot {
     pub fn agent(&self, id: &str) -> Option<&Agent> {
-        self.team.iter().find(|a| a.id == id)
+        // A stored chat names the agent it asked; a live one has its id.
+        self.team.iter().find(|a| a.id == id).or_else(|| self.team.iter().find(|a| a.name.eq_ignore_ascii_case(id)))
     }
     pub fn session(&self, id: &str) -> &[Block] {
         self.sessions.iter().find(|(k, _)| k == id).map_or(&[], |(_, v)| v)

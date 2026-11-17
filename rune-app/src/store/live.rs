@@ -1031,10 +1031,44 @@ pub fn item_from(m: &Value) -> Option<ThreadItem> {
             text: m["label"].as_str().filter(|l| !l.is_empty()).map_or_else(|| tool_words(m["name"].as_str().unwrap_or_default()), str::to_owned),
             detail: step_detail(m),
         }),
+        // A chat asked one of your agents (delegated), or got its answer: merge_team joins a run of these.
+        "team" => {
+            let agent = m["agent"].as_str().filter(|a| !a.is_empty())?.to_owned();
+            let text = if m["dir"] == "from" { "1 message from" } else { "1 message with" };
+            Some(ThreadItem::Team { text: text.into(), agents: vec![agent] })
+        }
         "notice" => Some(ThreadItem::Event { icon: "help", text, detail: None }),
         "checkpoint" => Some(ThreadItem::Event { icon: "history", text: format!("Changed {} files", m["total"].as_u64().unwrap_or(0)), detail: None }),
         _ => None,
     }
+}
+
+/// ask_bot and hand_off, under whatever prefix the engine gives them.
+fn is_team_tool(name: &str) -> bool {
+    let n = name.rsplit([':', '.']).next().unwrap_or(name);
+    let n = n.rsplit("__").next().unwrap_or(n);
+    n == "ask_bot" || n == "hand_off"
+}
+
+/// Joins each run of agent rows into one, as the chat showed it live: "4 messages with Inbox, Emma".
+pub fn merge_team(items: Vec<ThreadItem>) -> Vec<ThreadItem> {
+    let mut out: Vec<ThreadItem> = Vec::with_capacity(items.len());
+    for it in items {
+        if let ThreadItem::Team { agents: add, .. } = &it {
+            if let Some(ThreadItem::Team { text, agents }) = out.last_mut() {
+                let n = text.split_whitespace().next().and_then(|w| w.parse::<usize>().ok()).unwrap_or(1) + 1;
+                *text = format!("{n} messages with");
+                for a in add {
+                    if !agents.iter().any(|x| x.eq_ignore_ascii_case(a)) {
+                        agents.push(a.clone());
+                    }
+                }
+                continue;
+            }
+        }
+        out.push(it);
+    }
+    out
 }
 
 /// A live event as the transcript shows it. `None` for events that only change state.
@@ -1045,6 +1079,8 @@ pub fn item_from_event(e: &Value) -> Option<ThreadItem> {
     match e["type"].as_str()? {
         "run_started" => e.get("message").and_then(item_from),
         "text" if !e["interim"].as_bool().unwrap_or(false) => Some(ThreadItem::Them(e["text"].as_str()?.to_owned())),
+        // Asking an agent shows as the "messages with" row (fold_delegation), not as a step.
+        "tool_end" if is_team_tool(e["name"].as_str().unwrap_or_default()) => None,
         "tool_end" => Some(ThreadItem::Event {
             icon: step_icon(e["icon"].as_str().unwrap_or("check")),
             text: e["summary"].as_str().filter(|l| !l.is_empty()).map_or_else(|| tool_words(e["name"].as_str().unwrap_or_default()), str::to_owned),
@@ -1314,6 +1350,9 @@ impl Store for LiveStore {
                 }
                 Msg::Team(v) => {
                     self.team = crate::team::apply(snap, &v);
+                    // The chats lead and ask the team as it is now (a new agent, one removed).
+                    let team: Vec<Value> = self.team.iter().map(|(id, name, role)| json!({ "id": id, "name": name, "role": role })).collect();
+                    self.spawn(move |c| c.post("/config", json!({ "team": team })).err().map(|e| Msg::Status(format!("team update failed: {e}"))));
                     derive(snap, &self.sessions);
                 }
                 Msg::Account(v) => {
@@ -1863,7 +1902,7 @@ impl Store for LiveStore {
         self.spawn(move |c| {
             let v = c.get(&format!("/session/{id}")).ok()?;
             let messages = v["session"]["messages"].as_array()?;
-            let items = messages.iter().flat_map(items_from).collect();
+            let items = merge_team(messages.iter().flat_map(items_from).collect());
             let limit = messages.last().and_then(limit_of);
             Some(Msg::Transcript { id, items, limit })
         });
@@ -2020,6 +2059,22 @@ mod mission_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn asking_agents_is_kept_as_one_messages_with_row() {
+        let msgs = [
+            json!({ "kind": "user", "text": "ask Joseph and Testing" }),
+            json!({ "kind": "team", "agent": "Joseph", "dir": "with" }),
+            json!({ "kind": "team", "agent": "Joseph", "dir": "from" }),
+            json!({ "kind": "team", "agent": "Testing", "dir": "with" }),
+            json!({ "kind": "assistant", "text": "Both are fine." }),
+        ];
+        let items = merge_team(msgs.iter().flat_map(items_from).collect());
+        assert_eq!(items.len(), 3);
+        assert!(matches!(&items[1], ThreadItem::Team { text, agents } if text == "3 messages with" && agents == &["Joseph".to_owned(), "Testing".to_owned()]));
+        // The step for the ask itself isn't shown twice.
+        assert!(item_from_event(&json!({ "type": "tool_end", "name": "dsh:ask_bot", "summary": "Asked Joseph" })).is_none());
+    }
 
     #[test]
     fn stored_messages_become_transcript_items() {
