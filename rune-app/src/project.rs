@@ -36,6 +36,8 @@ impl App {
     /// files and pull requests start over there.
     pub fn set_project(&mut self, path: &str) {
         self.prefs.project = path.to_owned();
+        self.prefs.note_project(path);
+        self.menu = None;
         self.prefs.save();
         self.data.extra.code.open = None;
         self.data.extra.code.saved.clear();
@@ -49,6 +51,36 @@ impl App {
         self.edit_mut(EditKey::Code).clear();
         self.pr = 0;
         self.store.set_project(path, &mut self.data);
+    }
+
+    /// The folder menu (the composer's project row, a project in Chat's sidebar): switches to a
+    /// folder opened before. One that's gone is dropped from the list, with a note.
+    pub fn switch_project(&mut self, path: &str) {
+        self.menu = None;
+        if !std::path::Path::new(path).is_dir() && self.is_live() {
+            self.prefs.recent_projects.retain(|p| p != path);
+            self.prefs.save();
+            self.notice = Some(format!("{path} isn't there any more, so it's off the list."));
+            return;
+        }
+        if path != self.data.extra.project_path {
+            self.set_project(path);
+        }
+    }
+
+    /// The folders the folder menu offers: the open one first, then the others opened before.
+    pub fn recent_projects(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        let here = &self.data.extra.project_path;
+        if !here.is_empty() {
+            out.push(here.clone());
+        }
+        for p in &self.prefs.recent_projects {
+            if !out.iter().any(|o| o.trim_end_matches(['/', '\\']) == p.trim_end_matches(['/', '\\'])) {
+                out.push(p.clone());
+            }
+        }
+        out
     }
 
     /// The code view's Refresh: the file list again, and the open file from disk.

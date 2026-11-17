@@ -61,6 +61,10 @@ pub struct Prefs {
     pub look: crate::look::LookPrefs,
     /// The project folder you last opened (empty: ~/Codeply). The engine starts there.
     pub project: String,
+    /// Project folders opened before, newest first (the composer's folder menu).
+    pub recent_projects: Vec<String>,
+    /// Voice dictation: the Groq API key Whisper runs with (empty: `GROQ_API_KEY`).
+    pub groq_key: String,
 }
 
 impl Default for Prefs {
@@ -86,6 +90,8 @@ impl Default for Prefs {
             instructions: String::new(),
             look: Default::default(),
             project: String::new(),
+            recent_projects: Vec::new(),
+            groq_key: String::new(),
         }
     }
 }
@@ -138,6 +144,12 @@ impl Prefs {
             instructions: text("instructions", ""),
             look: crate::look::LookPrefs::from_json(&v["look"]),
             project: text("project", ""),
+            // Before the list existed, the last folder opened is the one recent folder.
+            recent_projects: match strings(&v["recent_projects"]) {
+                r if r.is_empty() && !text("project", "").is_empty() => vec![text("project", "")],
+                r => r,
+            },
+            groq_key: text("groq_key", ""),
         }
     }
 
@@ -159,6 +171,8 @@ impl Prefs {
             "instructions": self.instructions,
             "look": self.look.to_json(),
             "project": self.project,
+            "recent_projects": self.recent_projects,
+            "groq_key": self.groq_key,
         })
     }
 
@@ -183,6 +197,24 @@ impl Prefs {
         self.looks.push((id.to_owned(), color.to_owned(), shape.to_owned()));
     }
 
+    /// How many folders the composer's folder menu remembers.
+    pub const RECENT_PROJECTS: usize = 20;
+
+    /// Puts a project folder at the top of the recent ones.
+    pub fn note_project(&mut self, path: &str) {
+        if path.is_empty() {
+            return;
+        }
+        let key = |p: &str| {
+            let p = p.trim_end_matches(['/', '\\']);
+            if cfg!(windows) { p.to_lowercase().replace('\\', "/") } else { p.to_owned() }
+        };
+        let same = |p: &String| key(p) == key(path);
+        self.recent_projects.retain(|p| !same(p));
+        self.recent_projects.insert(0, path.to_owned());
+        self.recent_projects.truncate(Self::RECENT_PROJECTS);
+    }
+
     pub fn toggle_pin(&mut self, chat: &str) {
         if let Some(i) = self.pinned.iter().position(|c| c == chat) {
             self.pinned.remove(i);
@@ -201,7 +233,28 @@ mod tests {
         let mut p = Prefs { approval: Approval::Auto, effort: "Medium".into(), ..Prefs::default() };
         p.set_look("backend", "#ff8a1a", "cloud");
         p.toggle_pin("Pricing page");
+        p.note_project("/home/sam/app");
+        p.groq_key = "gsk_test".into();
         assert_eq!(Prefs::from_json(&p.to_json()), p);
+    }
+
+    #[test]
+    fn recent_projects_dedupe_newest_first() {
+        let mut p = Prefs::default();
+        for f in ["/a", "/b", "/c", "/a/"] {
+            p.note_project(f);
+        }
+        assert_eq!(p.recent_projects, ["/a/", "/c", "/b"]);
+        for i in 0..30 {
+            p.note_project(&format!("/p{i}"));
+        }
+        assert_eq!(p.recent_projects.len(), Prefs::RECENT_PROJECTS);
+        assert_eq!(p.recent_projects[0], "/p29");
+    }
+
+    #[test]
+    fn an_old_file_seeds_the_recent_folders() {
+        assert_eq!(Prefs::from_json(&json!({ "project": "/home/sam/site" })).recent_projects, ["/home/sam/site"]);
     }
 
     #[test]

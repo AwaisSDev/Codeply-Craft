@@ -35,6 +35,7 @@ mod theme;
 mod thread;
 mod ui;
 mod update;
+mod voice;
 mod views;
 
 use rune::{App as RuneApp, AppSpec, Titlebar};
@@ -50,6 +51,16 @@ const SCENES: &[Scene] = &[
     ("agent-wisp", |s| s.open_agent(Some("wisp"))),
     ("appearance", |s| { s.go(View::Agents); s.toggle_appearance("backend"); }),
     ("chat", |s| s.new_chat()),
+    // The composer's folder menu: eight folders opened before, five showing.
+    ("chat-folders", |s| {
+        s.new_chat();
+        for name in ["old-blog", "dotfiles", "api-server", "mobile-app", "landing-page", "docs-site", "design-system", "Codeply"] {
+            s.prefs.note_project(&format!("/home/sam/code/{name}"));
+        }
+        s.toggle_menu("project:chat-home");
+    }),
+    // Dictation: the mic recording into the home composer.
+    ("chat-recording", |s| { s.new_chat(); s.voice.phase = crate::voice::Phase::Recording(EditKey::ChatHome); }),
     ("chat-thread", |s| s.open_chat("Casual chat")),
     ("subagents", |s| { s.open_chat("Casual chat"); s.panes.tasks = true; }),
     ("subagent-open", |s| { s.open_chat("Casual chat"); s.panes.tasks = true; s.toggle_subagent("ag1"); }),

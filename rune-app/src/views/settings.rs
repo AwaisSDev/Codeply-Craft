@@ -174,6 +174,16 @@ fn general(s: &App, t: &Theme) -> Vec<El> {
             item(t, "Fade replies in as they stream", Some("Words arrive from grey to white."),
                 sw(t, "set-reveal", p.reveal, "Fade replies in as they stream", |s: &mut App| s.update_prefs(|p| p.reveal = !p.reveal))),
         ]),
+        group(t, "Voice", vec![
+            item(t, "Groq API key", Some("The composer's mic turns speech into text with Whisper on Groq. Get a key at console.groq.com/keys."),
+                row().gap(8.0).center_y()
+                    .child(row().w(240.0).h(34.0).px(10.0).radius(9.0).center_y().fill(t.hover).border(1.0, t.border)
+                        .child(text_input(s.edit(EditKey::GroqKey), ui(13.5, 400.0)).key("groq-key").single_line().secure().grow(1.0).color(t.text)
+                            .placeholder("gsk_...", t.faint).caret(t.accent, t.accent.alpha(0.3)).label("Groq API key")
+                            .on_edit(|s: &mut App| s.edit_mut(EditKey::GroqKey))
+                            .on_submit(|s: &mut App, _| save_groq_key(s))))
+                    .child(btn(t, if p.groq_key.is_empty() { "Save" } else { "Update" }, None, ButtonKind::Plain).key("groq-key-save").on_press(save_groq_key))),
+        ]),
         group(t, "Workspace", vec![
             item(t, "Project folder", Some(if s.data.extra.project_path.is_empty() { &s.data.project } else { &s.data.extra.project_path }),
                 btn(t, "Change", None, ButtonKind::Plain).key("set-change-project").on_press_tx(|s: &mut App, tx| s.open_project(tx))),
@@ -185,6 +195,12 @@ fn general(s: &App, t: &Theme) -> Vec<El> {
             crate::views::update::status(s, t),
         ]),
     ]
+}
+
+/// Saves Settings > General > Voice's key (empty clears it).
+fn save_groq_key(s: &mut App) {
+    let key = s.edit(EditKey::GroqKey).text.trim().to_owned();
+    s.update_prefs(move |p| p.groq_key = key);
 }
 
 fn profile(s: &App, t: &Theme) -> Vec<El> {
@@ -362,9 +378,12 @@ fn hooks(t: &Theme) -> Vec<El> {
 
 fn connections(t: &Theme) -> Vec<El> {
     vec![group(t, "Accounts", vec![
-        item(t, "GitHub", Some("Pull requests and issues."), btn(t, "Manage", None, ButtonKind::Plain).key("set-conn/github")),
-        item(t, "Slack", Some("Post updates to a channel."), btn(t, "Connect", None, ButtonKind::Blue).key("set-conn/slack")),
-        item(t, "Google Drive", Some("Open files from your Drive."), btn(t, "Connect", None, ButtonKind::Blue).key("set-conn/drive")),
+        item(t, "GitHub", Some("Pull requests and issues."), btn(t, "Manage", None, ButtonKind::Plain).key("set-conn/github")
+            .on_press(|s: &mut App| s.go(crate::app::View::Prs))),
+        item(t, "Slack", Some("Post updates to a channel."), btn(t, "Connect", None, ButtonKind::Blue).key("set-conn/slack")
+            .on_press(|s: &mut App| find_app(s, "Slack"))),
+        item(t, "Google Drive", Some("Open files from your Drive."), btn(t, "Connect", None, ButtonKind::Blue).key("set-conn/drive")
+            .on_press(|s: &mut App| find_app(s, "Google Drive"))),
     ])]
 }
 
@@ -379,10 +398,19 @@ fn git(s: &App, t: &Theme) -> Vec<El> {
     ])]
 }
 
+/// Integrations > Apps, searched for one app (where it connects).
+fn find_app(s: &mut App, name: &str) {
+    s.go(crate::app::View::Integrations);
+    s.integrations = crate::app::IntegrationsTab::Apps;
+    s.edit_mut(EditKey::AppSearch).replace_text(name.to_owned());
+    s.search_apps();
+}
+
 fn environments(t: &Theme) -> Vec<El> {
     vec![group(t, "Where tasks run", vec![
         item(t, "This computer", Some("Tasks run in your project folder."), pill(t, "Active", Pill::Green)),
-        item(t, "Codeply Cloud", Some("Tasks keep running when your computer is off."), btn(t, "Set up", None, ButtonKind::Plain).key("set-env/cloud")),
+        item(t, "Codeply Cloud", Some("Tasks keep running when your computer is off."), btn(t, "Set up", None, ButtonKind::Plain).key("set-env/cloud")
+            .on_press(|s: &mut App| s.open_settings(SettingsPage::Cloud))),
     ])]
 }
 
@@ -419,7 +447,8 @@ fn browser(s: &App, t: &Theme) -> Vec<El> {
         group(t, "Home", vec![item(t, "Home page", None, value(t, &s.prefs.home))]),
         group(t, "Bookmarks", marks),
         group(t, "Privacy", vec![
-            item(t, "Browsing data", Some("History, cookies and cached files."), btn(t, "Clear browsing data", None, ButtonKind::Plain).key("set-clear-browsing")),
+            item(t, "Browsing data", Some("History, cookies and cached files."), btn(t, "Clear browsing data", None, ButtonKind::Plain).key("set-clear-browsing")
+                .on_press(|s: &mut App| s.browser.clear_data())),
         ]),
     ]
 }

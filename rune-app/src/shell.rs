@@ -77,6 +77,12 @@ fn menus(s: &App, t: &Theme) -> Option<El> {
             item(Approval::Auto, "approve-full", "Runs commands and edits files without asking"),
         ]));
     }
+    if let Some(key) = id.strip_prefix("project:") {
+        return Some(project_menu(s, t, key));
+    }
+    if id == "notifications" {
+        return Some(notifications_menu(s, t));
+    }
     if let Some(key) = id.strip_prefix("model:") {
         return Some(views::models::composer_menu(s, t, key));
     }
@@ -108,6 +114,60 @@ fn menus(s: &App, t: &Theme) -> Option<El> {
     views::menu(s, t, id)
 }
 
+/// How tall one folder is in the folder menu; five show, the rest scroll (no scroll bar).
+const FOLDER_ROW: f32 = 46.0;
+const FOLDERS_SHOWN: usize = 5;
+
+/// The composer's folder menu: the folders opened before (the open one checked), five at a
+/// time with the rest a scroll away, then "Open folder...".
+fn project_menu(s: &App, t: &Theme, key: &str) -> El {
+    let here = s.data.extra.project_path.clone();
+    let folders = s.recent_projects();
+    let rows: Vec<El> = folders.iter().map(|path| {
+        let on = path.trim_end_matches(['/', '\\']) == here.trim_end_matches(['/', '\\']);
+        let p = path.clone();
+        rune::row().key(format!("project-menu/{path}")).w_full().h(FOLDER_ROW).px(10.0).gap(10.0).radius(8.0).center_y().hover(t.hover)
+            .role("menuitem").label(crate::project::folder_name(path)).help(path.clone())
+            .child(crate::icons::ico_s("oai-folder", 16.0, t.dim))
+            .child(col().grow(1.0).min_w(0.0)
+                .child(text(crate::project::folder_name(path)).font(ui(13.5, 500.0)).color(t.text).truncate())
+                .child(text(path.clone()).font(ui(11.5, 400.0)).color(t.faint).truncate()))
+            .children(on.then(|| crate::icons::ico_s("check", 16.0, t.text)))
+            .on_press(move |s: &mut App| s.switch_project(&p))
+    }).collect();
+    let mut items = Vec::new();
+    if rows.is_empty() {
+        items.push(text("No folders yet").font(ui(12.5, 400.0)).color(t.faint).px(10.0).py(8.0));
+    } else {
+        let height = FOLDER_ROW * rows.len().min(FOLDERS_SHOWN) as f32 + 2.0 * (rows.len().min(FOLDERS_SHOWN).saturating_sub(1)) as f32;
+        items.push(text("Recent folders").font(ui(12.0, 600.0)).color(t.faint).px(10.0).pt(4.0).pb(2.0));
+        items.push(col().key(format!("project-menu-list/{key}")).w_full().h(height).gap(2.0).scroll(rune::ScrollSpec { stick_bottom: false }).children(rows));
+    }
+    items.push(el().w_full().py(4.0).child(el().w_full().h(1.0).fill(t.border)));
+    items.push(menu_item(t, "project-menu/open".into(), Some("folder-open"), "Open folder...", None, false)
+        .on_press_tx(|s: &mut App, tx| { s.menu = None; s.open_project(tx); }));
+    menu(t, &format!("project-chip/{key}"), Side::Bottom, 320.0, items)
+}
+
+/// The bell: what needs you (approvals waiting) and chats with something new.
+fn notifications_menu(s: &App, t: &Theme) -> El {
+    let mut items: Vec<El> = Vec::new();
+    for (chat, id, title) in s.data.waiting().into_iter().take(8) {
+        let c = chat.clone();
+        items.push(menu_item(t, format!("note/ask/{id}"), Some("approve-ask"), &title, Some(&format!("Waiting for you in {chat}")), false)
+            .on_press(move |s: &mut App| s.open_chat(&c)));
+    }
+    for c in s.data.extra.chats.iter().filter(|c| c.unread).take(8) {
+        let title = c.title.clone();
+        items.push(menu_item(t, format!("note/unread/{}", c.title), Some("chat"), &c.title, Some("New reply"), false)
+            .on_press(move |s: &mut App| s.open_chat(&title)));
+    }
+    if items.is_empty() {
+        items.push(menu_item(t, "note/none".into(), Some("check"), "You're all caught up", Some("Approvals and new replies show here."), false));
+    }
+    menu(t, "titlebar-bell", Side::Bottom, 300.0, items).anchored("titlebar-bell".to_owned(), Side::Bottom, rune::Align::End, 6.0)
+}
+
 fn titlebar(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
     let insets = cx.chrome_insets();
     // On Windows Rune draws the real caption buttons in `insets.trailing`; macOS keeps its traffic
@@ -132,12 +192,22 @@ fn titlebar(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
     });
     let right = row().w(300.0).gap(4.0).center_y().justify_end().pr(insets.trailing)
         .children(views::update::pill(s, t))
-        .child(ibtn(t, "bell", "Notifications").no_window_drag().mr(if own_caption { 4.0 } else { 8.0 }))
+        .child(bell(s, t).no_window_drag().mr(if own_caption { 4.0 } else { 8.0 }))
         .children(caption);
     row().key("titlebar").w_full().h(TITLEBAR).center_y().gap(4.0).fill(t.rail).border_sides([0.0, 0.0, 1.0, 0.0], t.border).window_drag()
         .child(brand)
         .child(el().grow(1.0))
         .child(right)
+}
+
+/// The titlebar's bell, with a dot while something needs you or a chat has news.
+fn bell(s: &App, t: &Theme) -> El {
+    let news = !s.data.waiting().is_empty() || s.data.extra.chats.iter().any(|c| c.unread);
+    let open = s.menu.as_deref() == Some("notifications");
+    ibtn(t, "bell", "Notifications").key("titlebar-bell")
+        .fill(if open { t.active } else { Color::TRANSPARENT })
+        .children(news.then(|| el().absolute(19.0, 6.0).size(7.0, 7.0).radius(3.5).fill(t.accent)))
+        .on_press(|s: &mut App| s.toggle_menu("notifications"))
 }
 
 fn rail(s: &App, t: &Theme) -> El {

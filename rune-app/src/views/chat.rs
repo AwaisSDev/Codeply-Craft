@@ -86,9 +86,22 @@ pub fn side(s: &App, t: &Theme) -> El {
     if !s.data.extra.projects.is_empty() && query.is_empty() {
         list = list.child(sec(t, None, "Projects", false));
         for p in &s.data.extra.projects {
+            // Opens that folder as the project (when it was opened here before) and starts a
+            // new chat in it.
+            let path = s.prefs.recent_projects.iter().find(|r| crate::project::folder_name(r) == *p).cloned();
+            let on = s.data.project == *p;
             list = list.child(side_row(t, false).key(format!("project/{p}")).role("button").label(p.clone())
-                .child(ico("oai-folder", t.dim))
-                .child(text(p.clone()).font(ui(14.0, 400.0)).color(t.text).truncate().grow(1.0).min_w(0.0)));
+                .help(path.clone().unwrap_or_else(|| p.clone()))
+                .child(ico("oai-folder", if on { t.text } else { t.dim }))
+                .child(text(p.clone()).font(ui(14.0, if on { 600.0 } else { 400.0 })).color(t.text).truncate().grow(1.0).min_w(0.0))
+                .on_press_tx(move |s: &mut App, tx| {
+                    if let Some(path) = &path {
+                        s.switch_project(path);
+                    }
+                    s.new_chat();
+                    tx.settle();
+                    tx.focus("composer-chat-home", false);
+                }));
         }
     }
 

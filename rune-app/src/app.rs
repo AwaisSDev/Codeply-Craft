@@ -211,6 +211,8 @@ pub enum EditKey {
     PortAdd,
     /// Settings > Skills' search.
     SkillSearch,
+    /// Settings > General > Voice: the Groq API key.
+    GroqKey,
 }
 
 /// The code view's file dialogs.
@@ -222,12 +224,12 @@ pub enum CodeDialog {
 }
 
 impl EditKey {
-    pub const ALL: [EditKey; 28] = [
+    pub const ALL: [EditKey; 29] = [
         EditKey::Search, EditKey::Mission, EditKey::AgentThread, EditKey::ChatHome, EditKey::ChatThread,
         EditKey::AppSearch, EditKey::Address, EditKey::SettingsSearch, EditKey::AboutMe, EditKey::Instructions,
         EditKey::Terminal, EditKey::Code, EditKey::SignInEmail, EditKey::SignInCode, EditKey::Memory,
         EditKey::AgentName, EditKey::AgentFocus, EditKey::LoopTask, EditKey::LoopWhen, EditKey::CodeAsk, EditKey::FilePath, EditKey::ChatTitle,
-        EditKey::CloneUrl, EditKey::CodeAgent, EditKey::Subagent, EditKey::TeamPost, EditKey::PortAdd, EditKey::SkillSearch,
+        EditKey::CloneUrl, EditKey::CodeAgent, EditKey::Subagent, EditKey::TeamPost, EditKey::PortAdd, EditKey::SkillSearch, EditKey::GroqKey,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -259,6 +261,7 @@ impl EditKey {
             EditKey::TeamPost => "team-post",
             EditKey::PortAdd => "port-add",
             EditKey::SkillSearch => "skill-search",
+            EditKey::GroqKey => "groq-key",
         }
     }
 }
@@ -401,6 +404,8 @@ pub struct App {
     pub updater: crate::update::Updater,
     /// The upgrade sheet: open, and the plan picked (views/upgrade.rs).
     pub upgrade: crate::views::upgrade::Upgrade,
+    /// The composer's mic: recording, or waiting on Whisper (voice.rs).
+    pub voice: crate::voice::Voice,
 }
 
 impl App {
@@ -413,6 +418,7 @@ impl App {
         let mut edits: HashMap<EditKey, TextEdit> = EditKey::ALL.iter().map(|&k| (k, TextEdit::new(""))).collect();
         edits.insert(EditKey::AboutMe, TextEdit::new(prefs.about_me.clone()));
         edits.insert(EditKey::Instructions, TextEdit::new(prefs.instructions.clone()));
+        edits.insert(EditKey::GroqKey, TextEdit::new(prefs.groq_key.clone()));
         App {
             view: View::Chat,
             data,
@@ -480,6 +486,7 @@ impl App {
             sidecar: None,
             updater: Default::default(),
             upgrade: Default::default(),
+            voice: Default::default(),
         }
     }
 
@@ -1363,6 +1370,7 @@ impl App {
         self.updater.set_waker(waker.clone());
         self.browser.set_waker(waker.clone());
         self.look.set_waker(waker.clone());
+        self.voice.set_waker(waker.clone());
         self.store.set_waker(waker);
     }
 
@@ -1461,6 +1469,7 @@ impl App {
             let _ = tx.open_url(&url);
         }
         changed |= self.step_project();
+        changed |= self.step_voice();
         changed |= self.step_dev();
         // When the code view's agent finishes, the file tree and the open file catch up with what
         // it changed.

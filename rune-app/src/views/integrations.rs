@@ -91,14 +91,19 @@ pub fn main(s: &App, t: &Theme) -> El {
         IntegrationsTab::Plugins => ("Plugins", "Bundles of skills, commands and connectors you can install.", "Browse plugins", "Search plugins"),
         IntegrationsTab::Apps => ("Apps", "Connect the apps your agents work through. They ask before anything goes out.", "Add app", "Search apps"),
         IntegrationsTab::Mcp => ("MCP servers", "Servers that give the engine extra tools.", "Add server", "Search MCP servers"),
-        IntegrationsTab::Skills => ("Skills", "Reusable instructions the engine can pick up when a task needs them.", "New skill", "Search skills"),
+        IntegrationsTab::Skills => ("Skills", "Reusable instructions the engine can pick up when a task needs them.", "Manage skills", "Search skills"),
     };
     let q = s.edit(EditKey::AppSearch).text.trim().to_lowercase();
     let head = row().gap(16.0).center_y()
         .child(heading(t, title, Some(sub.to_owned())).grow(1.0).min_w(0.0))
         .child(match tab {
             IntegrationsTab::Apps => btn_primary(t, action, "plus").key("int-primary").on_press(|s: &mut App| s.apps_ui.dialog = Some(super::apps::Dialog::Add)),
-            _ => btn_primary(t, action, "plus").key("int-primary"),
+            // Plugins live in the list below: the search finds them.
+            IntegrationsTab::Plugins => btn_primary(t, action, "search").key("int-primary").on_press_tx(|_: &mut App, tx| tx.focus("app-search", true)),
+            // Adding a server needs the engine's MCP API (not there yet).
+            IntegrationsTab::Mcp => btn_primary(t, action, "plus").key("int-primary"),
+            // Skills: Settings > Skills lists every skill the engine has, and uses one.
+            IntegrationsTab::Skills => btn_primary(t, action, "book").key("int-primary").on_press(|s: &mut App| s.open_settings(crate::app::SettingsPage::Skills)),
         });
     let search = row().h(44.0).gap(10.0).px(14.0).radius(12.0).center_y().fill(t.field).border(1.0, t.field_border)
         .child(ico("search", t.faint))

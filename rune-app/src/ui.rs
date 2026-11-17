@@ -143,21 +143,45 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
             let (name, effort) = s.data.extra.models.chip(&s.prefs.effort);
             chip(format!("model-chip/{}", key.name()), None, &name, effort.as_deref(), true, format!("model:{}", key.name()))
         }))
-        .child(ibtn(t, "mic", "Voice"))
+        .child(mic(s, t, key))
         .child(action);
     let notice = s.notice.clone().map(|n| row().px(16.0).pt(8.0).gap(6.0).center_y()
         .child(ico_s("help", 14.0, t.red)).child(text(n).font(ui(12.5, 400.0)).color(t.red).wrap().grow(1.0).min_w(0.0)));
     col().key(format!("composer-box/{}", key.name())).w_full().fill(t.composer).border(1.0, t.composer_border).radius(theme::R_LG)
         .shadow(8.0, 24.0, t.shadow)
         .children(project.then(|| {
-            row().gap(8.0).px(14.0).py(9.0).center_y().border_sides([0.0, 0.0, 1.0, 0.0], t.menu_line)
-                .child(ico("oai-folder", t.text)).child(text(s.data.project.clone()).font(ui(13.0, 600.0)).color(t.text))
-                .child(ico_s("chevron-down", 14.0, t.faint))
+            // The project folder: a menu of the folders opened before, and "Open folder...".
+            let menu_id = format!("project:{}", key.name());
+            let open = s.menu.as_deref() == Some(menu_id.as_str());
+            row().px(8.0).py(5.0).border_sides([0.0, 0.0, 1.0, 0.0], t.menu_line)
+                .child(row().key(format!("project-chip/{}", key.name())).gap(8.0).px(6.0).h(30.0).radius(8.0).center_y().shrink().min_w(0.0)
+                    .hover(t.hover).fill(if open { t.active } else { Color::TRANSPARENT })
+                    .role("button").label(format!("Project folder: {}", s.data.project)).help(if s.data.extra.project_path.is_empty() { s.data.project.clone() } else { s.data.extra.project_path.clone() })
+                    .child(ico("oai-folder", t.text)).child(text(s.data.project.clone()).font(ui(13.0, 600.0)).color(t.text).truncate())
+                    .child(ico_s("chevron-down", 14.0, t.faint))
+                    .on_press(move |s: &mut App| s.toggle_menu(&menu_id)))
         }))
         .children(notice)
         .children(attached(s, t, key))
         .child(field)
         .child(bar)
+}
+
+/// The composer's mic: dictation through Whisper on Groq (voice.rs). Red while it records
+/// (press again to stop and transcribe), pulsing while Whisper works.
+fn mic(s: &App, t: &Theme, key: EditKey) -> El {
+    let recording = s.voice.recording(key);
+    let transcribing = s.voice.transcribing(key);
+    let label = if recording { "Stop and transcribe" } else if transcribing { "Transcribing..." } else { "Voice" };
+    let b = el().key(format!("mic-{}", key.name())).size(32.0, 32.0).radius(16.0).center().role("button").label(label).help(label)
+        .on_press(move |s: &mut App| s.toggle_voice(key));
+    if recording {
+        b.fill(t.red).hover(t.red.alpha(0.85)).child(ico("mic", Color::WHITE).looping(rune::LoopSpec::opacity(1.2, 0.0, 0.55, 1.0)))
+    } else if transcribing {
+        b.fill(t.active).child(ico("mic", t.text).looping(rune::LoopSpec::opacity(0.9, 0.0, 0.3, 1.0)))
+    } else {
+        b.hover(t.hover).child(ico("mic", t.dim))
+    }
 }
 
 /// One row of a dropdown menu: an icon, a label, an optional note under it, and a check when

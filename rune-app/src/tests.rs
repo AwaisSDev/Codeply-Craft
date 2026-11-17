@@ -807,3 +807,64 @@ fn settings_skills_lists_searches_and_uses_them() {
     assert_eq!(rt.state.view, View::Chat);
     assert_eq!(rt.state.edit(EditKey::ChatHome).text, "/pricing-copy ");
 }
+
+#[test]
+fn the_composers_folder_menu_switches_between_recent_folders() {
+    let mut s = App::with_mock();
+    for i in 0..8 {
+        s.prefs.note_project(&format!("/home/sam/code/site-{i}"));
+    }
+    let mut rt = runtime(s);
+    click(&mut rt, "rail-Chat");
+    click(&mut rt, "project-chip/chat-home");
+    assert_eq!(rt.state.menu.as_deref(), Some("project:chat-home"));
+    assert!(rt.find("project-menu/open").is_some(), "Open folder... is always there");
+    // Five folders show; the rest are a scroll away, inside the menu.
+    let list = rt.presented("project-menu-list/chat-home").map(|(r, _)| r).expect("the folder list");
+    assert!((list[3] - 5.0 * 46.0 - 8.0).abs() < 1.0, "five rows tall, not {}", list[3]);
+    // The oldest folder is below the fold: scroll the list to it, then pick it.
+    let hidden = "project-menu//home/sam/code/site-0";
+    let below = rt.presented(hidden).map(|(r, _)| r[1]).expect("the eighth folder");
+    assert!(below > list[1] + list[3], "the eighth folder starts out of view");
+    rt.wheel(list[0] + 20.0, list[1] + 20.0, -10_000.0);
+    settle(&mut rt);
+    let after = rt.presented(hidden).map(|(r, _)| r[1]).expect("the eighth folder");
+    assert!(after < list[1] + list[3], "scrolling the menu brings it into view");
+    click(&mut rt, hidden);
+    assert_eq!(rt.state.data.project, "site-0");
+    assert_eq!(rt.state.prefs.recent_projects.first().map(String::as_str), Some("/home/sam/code/site-0"), "the folder picked moves to the top");
+    assert_eq!(rt.state.menu, None, "picking closes the menu");
+}
+
+#[test]
+fn the_folder_menu_opens_the_folder_picker() {
+    let mut rt = runtime(App::with_mock());
+    click(&mut rt, "rail-Chat");
+    click(&mut rt, "project-chip/chat-home");
+    click(&mut rt, "project-menu/open");
+    assert_eq!(rt.file_dialog().map(|(k, _)| k), Some(rune::FileDialogKind::Folder));
+    rt.resolve_file_dialog(Some(std::path::PathBuf::from("/home/sam/code/new-app"))).unwrap_or_else(|e| panic!("{e}"));
+    settle(&mut rt);
+    assert_eq!(rt.state.data.project, "new-app");
+    assert_eq!(rt.state.prefs.recent_projects.first().map(String::as_str), Some("/home/sam/code/new-app"));
+}
+
+#[test]
+fn the_mic_without_a_key_says_where_to_add_one() {
+    if std::env::var("GROQ_API_KEY").is_ok() {
+        return;
+    }
+    let mut rt = runtime(App::with_mock());
+    click(&mut rt, "rail-Chat");
+    click(&mut rt, "mic-chat-home");
+    assert_eq!(rt.state.voice.phase, crate::voice::Phase::Idle);
+    assert!(rt.state.notice.as_deref().is_some_and(|n| n.contains("Settings > General > Voice")));
+}
+
+#[test]
+fn the_bell_opens_whats_new() {
+    let mut rt = runtime(App::with_mock());
+    click(&mut rt, "titlebar-bell");
+    assert_eq!(rt.state.menu.as_deref(), Some("notifications"));
+    assert!(rt.find("menu/titlebar-bell").is_some());
+}

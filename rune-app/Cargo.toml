@@ -51,7 +51,7 @@ winresource = "0.1"
 wgpu = { version = "30", default-features = false, features = ["dx12"] }
 pollster = "1"
 wry = { version = "0.57", default-features = false, features = ["devtools"] }
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader", "Win32_UI_Shell", "Win32_UI_Input_KeyboardAndMouse"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader", "Win32_UI_Shell", "Win32_UI_Input_KeyboardAndMouse", "Win32_Media_Multimedia"] }
 
 # Rune's own patches, from the same rev (see Rune's README, "Depending on Rune").
 [patch.crates-io]
