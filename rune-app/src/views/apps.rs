@@ -8,7 +8,7 @@
 use rune::{Align, El, Side, TextEdit, col, el, row, text, text_input};
 
 use crate::app::App;
-use crate::icons::{app_logo, ico_s};
+use crate::icons::{app_tile, ico_s};
 use crate::model::{ButtonKind, CatalogApp};
 use crate::theme::{self, Theme, tabular, ui};
 use crate::ui::{btn, enter, side_row, wave};
@@ -136,9 +136,15 @@ fn tile_ink() -> (rune::Color, rune::Color, rune::Color) {
     (theme::hex("#232323"), theme::hex("#2e2e2e"), theme::hex("#e0e0e0"))
 }
 
+/// Which vendored logo stands in for an app while its own loads: a built-in's id ("gmail"), else
+/// its name squeezed ("Google Calendar" -> "googlecalendar").
+fn glyph(a: &CatalogApp) -> String {
+    a.slug.strip_prefix("builtin:").map_or_else(|| a.name.to_lowercase().chars().filter(char::is_ascii_alphanumeric).collect(), str::to_owned)
+}
+
 fn tile(a: &CatalogApp) -> El {
     let (tile, border, ink) = tile_ink();
-    app_logo(&a.name, &a.domain, &a.icon, tile, border, ink)
+    app_tile(&glyph(a), &a.name, &a.domain, &a.icon, tile, border, ink)
 }
 
 /// The connect in progress, or how the last one ended.
@@ -190,9 +196,18 @@ fn grid_tile(s: &App, t: &Theme, a: &CatalogApp) -> El {
         btn(t, "Connect", None, ButtonKind::Blue)
     };
     let app = a.clone();
-    let meta = row().gap(5.0).center_y()
-        .children(a.verified.then(|| ico_s("shield-check", 13.0, t.green)))
-        .child(text(if a.verified { a.category.to_owned() } else { format!("{} · not reviewed", a.category) }).font(ui(12.0, 400.0)).color(t.faint).truncate());
+    let meta = if a.connected {
+        // "Connected · ada@example.com": who it is signed in as, at a glance.
+        let who = if a.needs_reconnect { "Sign in again".to_owned() } else if a.account.is_empty() { "Connected".to_owned() } else { format!("Connected · {}", a.account) };
+        row().gap(5.0).center_y()
+            .child(ico_s(if a.needs_reconnect { "alert" } else { "check" }, 13.0, if a.needs_reconnect { t.warn } else { t.green }))
+            .child(text(who).font(ui(12.0, 500.0)).color(if a.needs_reconnect { t.warn } else { t.green }).truncate())
+    } else {
+        let what = if a.builtin { format!("{} · Codeply sign-in", a.category) } else if a.verified { a.category.to_owned() } else { format!("{} · not reviewed", a.category) };
+        row().gap(5.0).center_y()
+            .children(a.verified.then(|| ico_s("shield-check", 13.0, t.green)))
+            .child(text(what).font(ui(12.0, 400.0)).color(t.faint).truncate())
+    };
     col().gap(10.0).padding(12.0).radius(12.0).fill(theme::hex("#181818")).border(1.0, t.border)
         .child(row().gap(10.0).center_y()
             .child(tile(a))
@@ -229,8 +244,13 @@ pub fn body(s: &App, t: &Theme, q: &str) -> El {
         )
     }).collect();
 
-    let tiles: Vec<El> = s.data.extra.catalog.iter().map(|c| grid_tile(s, t, c)).collect();
-    let shown = tiles.len();
+    // With no search or category, the page opens on Featured: Codeply's own sign-ins, then the
+    // vendors' own servers Codeply checked (the catalogue lists them first).
+    let browsing = q.is_empty() && s.app_category.is_none();
+    let featured = if browsing { s.data.extra.catalog.iter().take_while(|c| c.verified).count() } else { 0 };
+    let featured_tiles: Vec<El> = s.data.extra.catalog.iter().take(featured).map(|c| grid_tile(s, t, c)).collect();
+    let tiles: Vec<El> = s.data.extra.catalog.iter().skip(featured).map(|c| grid_tile(s, t, c)).collect();
+    let shown = featured + tiles.len();
     let title = match (&s.app_category, q.is_empty()) {
         (Some(c), true) => c.clone(),
         (Some(c), false) => format!("{c} matching \"{q}\""),
@@ -254,11 +274,13 @@ pub fn body(s: &App, t: &Theme, q: &str) -> El {
         .children(banner(s, t))
         .child(h3("Connected".to_owned()))
         .child(if connected.is_empty() { empty("Nothing connected yet.") } else { col().gap(2.0).children(connected) })
+        .children((!featured_tiles.is_empty()).then(|| h3("Featured".to_owned())))
+        .children((!featured_tiles.is_empty()).then(|| cards(featured_tiles, 3)))
         .child(row().gap(10.0).center_y().items_end()
             .child(h3(title).grow(1.0).min_w(0.0))
             .child(text(counts).font(ui(12.0, 400.0)).color(t.faint).mt(8.0)))
         .children(note)
-        .child(if tiles.is_empty() {
+        .child(if tiles.is_empty() && featured == 0 {
             empty(if a.loading || a.indexing.is_some() { "Loading apps..." } else { "No apps match. Try another name, or add it by its URL." })
         } else {
             cards(tiles, 3)
@@ -389,7 +411,41 @@ mod tests {
         s.edit_mut(crate::app::EditKey::AppSearch).replace_text("linear");
         s.browse_apps(false);
         assert_eq!(s.data.extra.catalog.len(), 1);
-        assert_eq!(s.data.extra.apps.total, 14);
+        assert_eq!(s.data.extra.apps.total, 30);
+    }
+
+    #[test]
+    fn featured_starts_with_codeplys_own_sign_ins_then_twenty_vendors() {
+        let mut s = App::with_mock();
+        s.browse_apps(false);
+        let featured: Vec<&CatalogApp> = s.data.extra.catalog.iter().take_while(|a| a.verified).collect();
+        let names: Vec<&str> = featured.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names[..5], ["Gmail", "Slack", "Vercel", "Supabase", "GitHub"]);
+        assert!(featured[..5].iter().all(|a| a.builtin && a.slug.starts_with("builtin:")));
+        assert_eq!(featured.len(), 25);
+        assert!(featured[5..].iter().all(|a| !a.builtin));
+        // Vercel and Supabase show once, as the built-ins.
+        assert_eq!(s.data.extra.catalog.iter().filter(|a| a.name == "Vercel" || a.name == "Supabase").count(), 2);
+        assert_eq!(glyph(featured[3]), "supabase");
+        assert_eq!(glyph(featured.iter().find(|a| a.name == "Hugging Face").unwrap()), "huggingface");
+    }
+
+    #[test]
+    fn a_built_in_connects_shows_who_and_disconnects_from_manage() {
+        let mut s = App::with_mock();
+        s.browse_apps(false);
+        let supabase = s.data.extra.catalog.iter().find(|a| a.slug == "builtin:supabase").cloned().unwrap();
+        assert!(!supabase.connected);
+        press(&mut s, &supabase);
+        assert!(s.data.extra.apps.connected.iter().any(|a| a.slug == "builtin:supabase"));
+        assert_eq!(s.data.extra.apps.progress.as_ref().map(|p| p.message.as_str()), Some("Supabase is connected."));
+        let github = s.data.extra.catalog.iter().find(|a| a.slug == "builtin:github").cloned().unwrap();
+        assert_eq!(github.account, "codeply-dev");
+        press(&mut s, &github);
+        assert_eq!(s.apps_ui.dialog, Some(Dialog::Manage("builtin:github".into())));
+        s.disconnect_app("builtin:github");
+        let github = s.data.extra.catalog.iter().find(|a| a.slug == "builtin:github").unwrap();
+        assert!(!github.connected && github.account.is_empty());
     }
 
     #[test]

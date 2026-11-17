@@ -82,6 +82,33 @@ jobs:
           node scripts/package-dsh.mjs
           (cd codeply-cli && npm ci --omit=dev --no-audit --no-fund)
 
+      # Connect Apps' own sign-ins (Gmail, Slack, Vercel, Supabase, GitHub): the OAuth apps' ids and
+      # secrets, from the same repository secrets the Electron release uses, beside codeply-cli where
+      # sidecar/ext-connections.mjs reads them. Missing ones leave that sign-in off in this build.
+      - name: Embed the sign-in keys
+        shell: bash
+        env:
+          VERCEL_CLIENT_ID: ${{ secrets.VERCEL_CLIENT_ID }}
+          VERCEL_CLIENT_SECRET: ${{ secrets.VERCEL_CLIENT_SECRET }}
+          VERCEL_SLUG: ${{ secrets.VERCEL_SLUG }}
+          SUPABASE_CLIENT_ID: ${{ secrets.SUPABASE_CLIENT_ID }}
+          SUPABASE_CLIENT_SECRET: ${{ secrets.SUPABASE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.OAUTH_GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          SLACK_CLIENT_ID: ${{ secrets.SLACK_CLIENT_ID }}
+          SLACK_CLIENT_SECRET: ${{ secrets.SLACK_CLIENT_SECRET }}
+        run: |
+          mkdir -p dist/Codeply-Rune/resources
+          node -e "
+            const keys = ['VERCEL_CLIENT_ID','VERCEL_CLIENT_SECRET','VERCEL_SLUG','SUPABASE_CLIENT_ID','SUPABASE_CLIENT_SECRET','GITHUB_CLIENT_ID','GITHUB_CLIENT_SECRET','GMAIL_CLIENT_ID','GMAIL_CLIENT_SECRET','SLACK_CLIENT_ID','SLACK_CLIENT_SECRET'];
+            const out = {}; for (const k of keys) if (process.env[k]) out[k] = process.env[k];
+            require('fs').writeFileSync('dist/Codeply-Rune/resources/build-secrets.json', JSON.stringify(out));
+            const missing = keys.filter((k) => k !== 'VERCEL_SLUG' && !out[k]);
+            console.log('sign-in keys embedded: ' + Object.keys(out).length + (missing.length ? '; missing: ' + missing.join(', ') : ''));
+          "
+
       - name: Package
         run: |
           mkdir -p dist/Codeply-Rune/resources

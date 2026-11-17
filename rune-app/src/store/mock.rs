@@ -217,9 +217,18 @@ pub fn extra() -> Extra {
     ];
     let mcp = |name: &str, note: &str, tools, on| McpServer { name: s(name), note: s(note), tools, on };
     let loop_ = |agent: &str, name: &str, runs: &[bool], last: &str, on| Loop { id: format!("sample-{name}"), agent: s(agent), name: s(name), runs: runs.to_vec(), last: s(last), on };
-    let app = |slug: &'static str, name: &str, note: &str, category: &'static str, connected| CatalogApp {
-        slug, name: s(name), note: s(note), category, connected, domain: crate::icons::domain_of(slug).unwrap_or_default().to_owned(), icon: String::new(),
-        verified: true, ..Default::default()
+    // Featured as the engine lists it: Codeply's own sign-ins, then vendors' own servers; then
+    // a few of the registry's other, unreviewed listings.
+    let builtin = |id: &'static str, name: &str, note: &str, category: &'static str, account: &str| CatalogApp {
+        slug: Box::leak(format!("builtin:{id}").into_boxed_str()), name: s(name), note: s(note), category, connected: !account.is_empty(),
+        domain: crate::icons::domain_of(id).unwrap_or_default().to_owned(), verified: true, builtin: true, account: s(account),
+        tools: if account.is_empty() { 0 } else { 2 }, ..Default::default()
+    };
+    let vendor = |slug: &'static str, name: &str, note: &str, category: &'static str, domain: &str| CatalogApp {
+        slug, name: s(name), note: s(note), category, domain: s(domain), verified: true, ..Default::default()
+    };
+    let listed = |slug: &'static str, name: &str, note: &str, category: &'static str| CatalogApp {
+        slug, name: s(name), note: s(note), category, domain: crate::icons::domain_of(slug).unwrap_or_default().to_owned(), ..Default::default()
     };
     Extra {
         chats,
@@ -247,20 +256,36 @@ pub fn extra() -> Extra {
         ],
         apps: Default::default(),
         catalog: vec![
-            app("gmail", "Gmail", "Read, draft and send mail", "Communication", true),
-            app("slack", "Slack", "Read channels, post updates", "Communication", true),
-            app("discord", "Discord", "Read and post in servers", "Communication", false),
-            app("whatsapp", "WhatsApp", "Send and read messages", "Communication", false),
-            app("zoom", "Zoom", "Meetings and recordings", "Communication", false),
-            app("github", "GitHub", "Branches, pull requests and checks", "Developer", true),
-            app("vercel", "Vercel", "Preview and production deploys", "Developer", true),
-            app("linear", "Linear", "Issues and projects", "Developer", false),
-            app("figma", "Figma", "Design files and frames", "Developer", false),
-            app("googlecalendar", "Google Calendar", "Events and invites", "Productivity", true),
-            app("notion", "Notion", "Pages and databases", "Productivity", true),
-            app("googledrive", "Google Drive", "Files and folders", "Productivity", false),
-            app("stripe", "Stripe", "Payments and customers", "Finance", false),
-            app("hubspot", "HubSpot", "Contacts and deals", "CRM and sales", false),
+            builtin("gmail", "Gmail", "Read, search, draft and send email, and keep your Google Calendar", "Communication", "you@example.com"),
+            builtin("slack", "Slack", "Post to channels and hear from your team in Slack", "Communication", "Launch team"),
+            builtin("vercel", "Vercel", "Deploy your projects and manage them on Vercel", "Developer", ""),
+            builtin("supabase", "Supabase", "Create databases, run SQL and manage your Supabase projects", "Developer", ""),
+            builtin("github", "GitHub", "Create repositories and work with your GitHub pull requests", "Developer", "codeply-dev"),
+            vendor("notion", "Notion", "Search, read and write pages and databases in your Notion workspace", "Productivity", "notion.so"),
+            vendor("linear", "Linear", "Find, create and update issues, projects and comments", "Productivity", "linear.app"),
+            vendor("figma", "Figma", "Read your Figma files and frames and turn designs into code", "Design & Media", "figma.com"),
+            vendor("atlassian", "Atlassian", "Jira issues and Confluence pages: search, create and update", "Productivity", "atlassian.com"),
+            vendor("stripe", "Stripe", "Customers, payments, invoices and products in Stripe", "Business", "stripe.com"),
+            vendor("sentry", "Sentry", "Look into errors, issues and releases", "Developer", "sentry.io"),
+            vendor("gitlab", "GitLab", "Issues, merge requests and pipelines on GitLab.com", "Developer", "gitlab.com"),
+            vendor("neon", "Neon", "Postgres projects, branches and queries on Neon", "Developer", "neon.tech"),
+            vendor("zapier", "Zapier", "Reach 8,000+ apps through the actions you set up in Zapier", "Automation", "zapier.com"),
+            vendor("canva", "Canva", "Find, create and export your Canva designs", "Design & Media", "canva.com"),
+            vendor("airtable", "Airtable", "Read and update records in your Airtable bases", "Productivity", "airtable.com"),
+            vendor("monday", "monday.com", "Boards, items and updates in your monday.com account", "Productivity", "monday.com"),
+            vendor("huggingface", "Hugging Face", "Search models, datasets, Spaces and papers", "Developer", "huggingface.co"),
+            vendor("cloudflare", "Cloudflare Docs", "Search the Cloudflare developer documentation", "Developer", "cloudflare.com"),
+            vendor("paypal", "PayPal", "Invoices, orders, payments and disputes in your PayPal account", "Business", "paypal.com"),
+            vendor("webflow", "Webflow", "Manage Webflow sites, pages and CMS collections", "Design & Media", "webflow.com"),
+            vendor("make", "Make", "Run your Make scenarios as tools", "Automation", "make.com"),
+            vendor("wix", "Wix", "Build and manage Wix sites and their business apps", "Design & Media", "wix.com"),
+            vendor("exa", "Exa", "Web search and page reading built for AI", "Research", "exa.ai"),
+            vendor("mslearn", "Microsoft Learn", "Search Microsoft's official documentation and code samples", "Research", "learn.microsoft.com"),
+            listed("discord", "Discord", "Read and post in servers", "Communication"),
+            listed("whatsapp", "WhatsApp", "Send and read messages", "Communication"),
+            listed("zoom", "Zoom", "Meetings and recordings", "Communication"),
+            listed("googledrive", "Google Drive", "Files and folders", "Productivity"),
+            listed("hubspot", "HubSpot", "Contacts and deals", "Business"),
         ],
         engine: s("Sample data"),
         engine_ok: false,
@@ -381,10 +406,15 @@ impl MockStore {
         for list in [&mut self.apps_all, &mut snap.extra.catalog] {
             if let Some(a) = list.iter_mut().find(|a| a.slug == slug) {
                 a.connected = on;
+                if !on {
+                    a.account.clear();
+                }
                 name = a.name.clone();
             }
         }
-        snap.extra.apps.progress = on.then(|| AppProgress { id: slug.to_owned(), name: name.clone(), state: "done".into(), message: format!("{name} is connected with 4 tools.") });
+        let builtin = slug.starts_with("builtin:");
+        let message = if builtin { format!("{name} is connected.") } else { format!("{name} is connected with 4 tools.") };
+        snap.extra.apps.progress = on.then(|| AppProgress { id: slug.to_owned(), name: name.clone(), state: "done".into(), message });
         self.publish_apps(snap);
     }
 
@@ -683,12 +713,23 @@ impl Store for MockStore {
         snap.extra.apps.progress = None;
     }
     fn app_tools(&mut self, slug: &str, snap: &mut Snapshot) {
-        let tools = vec![
-            (s("search"), s("Find things by name or text"), true),
-            (s("read"), s("Open one item and read it"), true),
-            (s("create"), s("Make a new item"), false),
-            (s("update"), s("Change an item"), false),
-        ];
+        // Codeply's own sign-ins list the agent's tools that use them, as ext-connections does.
+        let tools = match slug {
+            "builtin:github" => vec![(s("Create a repository"), s("github_create_repo"), false)],
+            "builtin:slack" => vec![(s("Post a message to a channel"), s("slack_post_message"), false)],
+            "builtin:gmail" => vec![
+                (s("Search your mail"), s("gmail_search"), true),
+                (s("Read one message"), s("gmail_read"), true),
+                (s("Save a draft"), s("gmail_draft"), false),
+                (s("Send an email"), s("gmail_send"), false),
+            ],
+            _ => vec![
+                (s("search"), s("Find things by name or text"), true),
+                (s("read"), s("Open one item and read it"), true),
+                (s("create"), s("Make a new item"), false),
+                (s("update"), s("Change an item"), false),
+            ],
+        };
         snap.extra.apps.tools = Some((slug.to_owned(), Ok(tools)));
     }
     fn browse_apps(&mut self, q: &crate::store::AppsQuery, snap: &mut Snapshot) {

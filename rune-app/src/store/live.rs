@@ -180,6 +180,7 @@ fn app_from(a: &Value) -> Option<CatalogApp> {
         domain: a["domain"].as_str().unwrap_or_default().to_owned(),
         icon: a["icon"].as_str().unwrap_or_default().to_owned(),
         verified: a["verified"].as_bool().unwrap_or(false),
+        builtin: a["builtin"].as_bool().unwrap_or(false),
         key_header: a["keyHeader"].as_str().unwrap_or_default().to_owned(),
         needs_reconnect: a["needsReconnect"].as_bool().unwrap_or(false),
         tools: a["tools"].as_u64().unwrap_or(0) as u32,

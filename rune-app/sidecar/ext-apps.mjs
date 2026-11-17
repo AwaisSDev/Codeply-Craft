@@ -18,15 +18,24 @@
 //
 // A connected app is one more MCP server for lib/mcp.js, which reads ~/.codeply/apps.json on
 // every call, so agents see it (use_app) on the next step without a restart.
+//
+// Featured starts with Codeply's own sign-ins (Gmail, Slack, Vercel, Supabase, GitHub; see
+// ext-connections.mjs), as `builtin:<name>` apps that connect, show and disconnect like the
+// others, then the vendors' own servers in apps.js FEATURED (FEATURED_MAX of them).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import * as conn from './ext-connections.mjs';
 
 const REGISTRY = (process.env.CODEPLY_MCP_REGISTRY || 'https://registry.modelcontextprotocol.io').replace(/\/+$/, '');
 const UA = 'Codeply (+https://codeply.app)';
 const MAX_AGE_MS = 12 * 3600_000;
 const PAGE_MAX = 120;
+const FEATURED_MAX = 20;
+// The vendors' MCP servers for apps Codeply signs in to itself: the built-in stands for them, so
+// each shows once (an older apps.js still lists Vercel's and Supabase's in FEATURED).
+const BUILT_IN_SERVERS = new Set(['https://mcp.vercel.com', 'https://mcp.vercel.com/', 'https://mcp.supabase.com/mcp']);
 
 // ---------- categories ----------
 // The registry carries none, so each app is sorted by what its name and description say. The
@@ -140,15 +149,21 @@ function finish(e) {
 }
 
 function featuredEntries(apps) {
-  return apps.FEATURED.map((f, i) => finish({
+  const builtIns = conn.BUILT_INS.map((b, i) => finish({
+    id: conn.PREFIX + b.id, title: b.title, desc: b.description, url: conn.PREFIX + b.id, domain: b.domain, icon: '',
+    cat: FEATURED_CATEGORY[b.category] || b.category, rank: 2000 - i, header: '', tmpl: '', feat: true, builtin: b.id,
+  }));
+  const taken = new Set(conn.BUILT_INS.map((b) => b.id));
+  const vendors = (apps.FEATURED || []).filter((f) => !taken.has(f.id) && !BUILT_IN_SERVERS.has(f.url)).slice(0, FEATURED_MAX);
+  return [...builtIns, ...vendors.map((f, i) => finish({
     id: f.id, title: f.title, desc: f.description, url: f.url, domain: f.domain, icon: '',
     cat: FEATURED_CATEGORY[f.category] || f.category || OTHER, rank: 1000 - i, header: '', tmpl: '', feat: true, registry: f.registry,
-  }));
+  }))];
 }
 
 /** Featured first, then by rank; one entry per server URL. */
 function build(feat, found) {
-  const seen = new Set(feat.map((f) => f.url));
+  const seen = new Set([...feat.map((f) => f.url), ...BUILT_IN_SERVERS]);
   const rest = [];
   for (const e of found) {
     if (seen.has(e.url)) continue;
@@ -237,12 +252,23 @@ function crawl(ctx) {
 }
 
 // ---------- query ----------
-function connectedMap(apps) {
+function connectedMap(ctx, apps) {
   const list = apps.listConnected();
-  return { list, byUrl: new Map(list.map((a) => [a.url, a])) };
+  const builtIn = new Map(conn.status(ctx).map((s) => [s.id, s]));
+  return { list, byUrl: new Map(list.map((a) => [a.url, a])), builtIn };
+}
+
+/** A built-in as the page shows it, connected or not. */
+function builtInRow(e, st) {
+  const b = conn.BUILT_INS.find((x) => x.id === e.builtin);
+  return {
+    id: e.id, name: e.title, note: e.desc, category: e.cat, connected: !!st?.connected, domain: e.domain, icon: '', verified: true, builtin: true,
+    needsKey: false, keyHeader: '', ...(st?.connected ? { needsReconnect: false, tools: (conn.TOOLS[b.id] || []).length, account: st.account || '', auth: 'oauth' } : {}),
+  };
 }
 
 function row(e, c) {
+  if (e.builtin) return builtInRow(e, c.builtIn.get(e.builtin));
   const k = c.byUrl.get(e.url);
   return {
     id: k ? k.id : e.id, name: e.title, note: e.desc, category: e.cat, connected: !!k, domain: e.domain, icon: e.icon,
@@ -286,6 +312,12 @@ let active = null; // { id, name, ctl }
 function view(a) { return a ? { id: a.id, name: a.title, note: a.description || '', category: a.category || '', connected: true, domain: a.domain || '', icon: a.icon || '', needsReconnect: !!a.needsReconnect, tools: a.toolCount || 0, account: a.account || '', auth: a.auth || '' } : null; }
 
 async function toolsOf(ctx, id) {
+  const b = conn.builtInOf(id);
+  if (b) {
+    if (!conn.status(ctx).find((s) => s.id === b.id)?.connected) return { error: 'That app is not connected.' };
+    // What it does reads first; the tool's own name goes underneath.
+    return { tools: (conn.TOOLS[b.id] || []).map(([name, what, readOnly]) => ({ name, title: what, description: name, readOnly })), error: '' };
+  }
   const mcp = ctx.need('mcp.js');
   const list = await mcp.listServers(os.homedir());
   const mine = list.find((s) => s.name === id);
@@ -315,6 +347,10 @@ async function run(ctx, id, name, job) {
   (async () => {
     try {
       const app = await job(ctl.signal);
+      if (app && app.builtin) { // Codeply's own sign-in: nothing to ask for tools
+        progress(ctx, id, name, 'done', `${name} is connected${app.account ? ` as ${app.account}` : ''}.`);
+        return;
+      }
       const r = await verify(ctx, ctx.need('apps.js'), app.id);
       if (r.error) progress(ctx, id, name, 'warn', `Connected, but ${name} did not answer: ${r.error}`);
       else progress(ctx, id, name, 'done', `${name} is connected${r.tools.length ? ` with ${r.tools.length} tools` : ''}.`);
@@ -381,7 +417,7 @@ export async function route(ctx, req, res, url, p, reply) {
     const cat = (q.get('cat') || '').trim();
     const offset = Math.max(0, Number(q.get('offset')) || 0);
     const limit = Math.min(PAGE_MAX, Math.max(1, Number(q.get('limit')) || 60));
-    const c = connectedMap(apps);
+    const c = connectedMap(ctx, apps);
     const { hits, counts } = search(query, cat);
     let error = state.phase === 'error' && !index.some((e) => !e.feat) ? state.error : '';
     let page = hits.slice(offset, offset + limit).map((e) => row(e, c));
@@ -398,7 +434,7 @@ export async function route(ctx, req, res, url, p, reply) {
     }
     return reply(200, {
       apps: page, total, offset, catalog: index.length, categories: categoriesOf(counts),
-      connected: c.list.map(view), indexing: { phase: state.phase, loaded: state.loaded, at: state.at, error: state.error }, ...(error ? { error } : {}),
+      connected: [...index.filter((e) => e.builtin && c.builtIn.get(e.builtin)?.connected).map((e) => row(e, c)), ...c.list.map(view)], indexing: { phase: state.phase, loaded: state.loaded, at: state.at, error: state.error }, ...(error ? { error } : {}),
     }), true;
   }
 
@@ -419,6 +455,11 @@ export async function route(ctx, req, res, url, p, reply) {
   if (req.method === 'POST' && p === '/ext/apps/connect') {
     const body = await ctx.readJson(req);
     const id = String(body.id || '');
+    const b = conn.builtInOf(id);
+    if (b) {
+      const r = await run(ctx, id, b.title, async (signal) => ({ builtin: true, ...await conn.connect(ctx, b.id, { openBrowser: openBrowser(ctx, id, b.title), signal }) }));
+      return reply(r.error ? 409 : 202, r), true;
+    }
     const stored = apps.getApp(id);
     // A connected app signs in again in place; otherwise the catalogue entry has what to connect to.
     const entry = stored
@@ -459,6 +500,12 @@ export async function route(ctx, req, res, url, p, reply) {
   if (req.method === 'POST' && p === '/ext/apps/disconnect') {
     const body = await ctx.readJson(req);
     const id = String(body.id || '');
+    const b = conn.builtInOf(id);
+    if (b) {
+      try { conn.disconnect(ctx, b.id); } catch (e) { return reply(500, { error: e.message }), true; }
+      ctx.emit(null, { type: 'apps_changed' });
+      return reply(200, { ok: true }), true;
+    }
     const ok = apps.removeApp(id);
     ctx.need('mcp.js').forget(id);
     ctx.emit(null, { type: 'apps_changed' });
@@ -467,11 +514,11 @@ export async function route(ctx, req, res, url, p, reply) {
 
   if (req.method === 'GET' && p === '/ext/apps/tools') {
     const r = await toolsOf(ctx, String(q.get('id') || '')).catch((e) => ({ error: e.message }));
-    if (r.tools && !r.error) apps.noteStatus(String(q.get('id')), { toolCount: r.tools.length });
+    if (r.tools && !r.error && !conn.builtInOf(String(q.get('id')))) apps.noteStatus(String(q.get('id')), { toolCount: r.tools.length });
     return reply(200, r), true;
   }
 
   return false;
 }
 
-export const _test = { categorize, brandDomain, entryFromServer, search: (q, cat) => search(q, cat), install, build, finish };
+export const _test = { categorize, brandDomain, entryFromServer, search: (q, cat) => search(q, cat), install, build, finish, featuredEntries, index: () => index };

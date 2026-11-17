@@ -74,6 +74,7 @@ pub fn domain_of(slug: &str) -> Option<&'static str> {
         "slack" => "slack.com",
         "notion" => "notion.so",
         "vercel" => "vercel.com",
+        "supabase" => "supabase.com",
         "linear" => "linear.app",
         "stripe" => "stripe.com",
         "figma" => "figma.com",
@@ -87,17 +88,45 @@ pub fn domain_of(slug: &str) -> Option<&'static str> {
 
 /// An app's logo in its own colours, as the Electron app shows it: the app's icon URL, else its
 /// domain's icon (Google's favicon service, 128 px), loaded once and cached. Once it lands the
-/// logo is the whole rounded tile; until then, or for good when there is none, the tile shows
-/// the app's first letter.
+/// image fills the tile; until then (or offline) the tile shows the app's first letter.
 pub fn app_logo(name: &str, domain: &str, icon_url: &str, tile: Color, border: Color, ink: Color) -> El {
-    match crate::favicon::app_logo(domain, icon_url) {
-        Some(px) if px.size().0 > 0 => el().size(34.0, 34.0).radius(9.0).clip_rounded(9.0).pixels_fit(&px, rune::SurfaceFit::Fill).inert(),
-        _ => {
+    app_tile("", name, domain, icon_url, tile, border, ink)
+}
+
+/// [`app_logo`], with the vendored simple-icons logo (`app-<glyph>`, "gmail" for app-gmail) in
+/// the app's brand colour as the stand-in when there is one, so a known app never shows a bare
+/// letter while its own icon loads (or offline, or in headless renders).
+pub fn app_tile(glyph: &str, name: &str, domain: &str, icon_url: &str, tile: Color, border: Color, ink: Color) -> El {
+    if let Some(px) = crate::favicon::app_logo(domain, icon_url).filter(|px| px.size().0 > 0) {
+        return el().size(34.0, 34.0).radius(9.0).clip_rounded(9.0).pixels_fit(&px, rune::SurfaceFit::Fill).inert();
+    }
+    let base = el().size(34.0, 34.0).radius(9.0).fill(tile).border(1.0, border).center();
+    match (!glyph.is_empty()).then(|| pack::get(&format!("app-{glyph}"))).flatten() {
+        Some(logo) => base.child(icon(logo, 19.0).color(brand(glyph).map_or(ink, crate::theme::hex))),
+        None => {
             let letter = name.trim().chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_else(|| "?".into());
-            el().size(34.0, 34.0).radius(9.0).fill(tile).border(1.0, border).center()
-                .child(rune::text(letter).font(crate::theme::ui(14.0, 650.0)).color(ink.alpha(0.55)))
+            base.child(rune::text(letter).font(crate::theme::ui(14.0, 650.0)).color(ink.alpha(0.55)))
         }
     }
+}
+
+/// A vendored logo's brand colour where it reads on the dark app tile (black and near-black
+/// brands, GitHub, Vercel and Notion, take the tile's ink instead).
+fn brand(glyph: &str) -> Option<&'static str> {
+    Some(match glyph {
+        "gmail" => "#EA4335",
+        "slack" => "#E01E5A",
+        "supabase" => "#3ECF8E",
+        "figma" => "#F24E1E",
+        "stripe" => "#7A73FF",
+        "linear" => "#7C85E0",
+        "hubspot" => "#FF7A59",
+        "discord" => "#5865F2",
+        "whatsapp" => "#25D366",
+        "zoom" => "#4A8CFF",
+        "googlecalendar" | "googledrive" => "#4285F4",
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
@@ -114,7 +143,7 @@ mod tests {
         ] {
             assert!(pack::get(n).is_some(), "missing icon {n}");
         }
-        for slug in ["gmail", "googlecalendar", "github", "slack", "notion", "vercel", "linear", "stripe", "figma", "googledrive", "discord", "whatsapp", "hubspot", "zoom"] {
+        for slug in ["gmail", "googlecalendar", "github", "slack", "notion", "vercel", "supabase", "linear", "stripe", "figma", "googledrive", "discord", "whatsapp", "hubspot", "zoom"] {
             assert!(pack::get(&format!("app-{slug}")).is_some(), "missing logo {slug}");
         }
     }
