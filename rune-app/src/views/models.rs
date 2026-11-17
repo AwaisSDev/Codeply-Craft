@@ -222,10 +222,10 @@ fn model_row(s: &App, t: &Theme, m: &ModelInfo) -> El {
         .on_press(move |s: &mut App| s.model_pick(&id))
 }
 
-/// Your Claude and ChatGPT plans: on Pro and Max, subagents run on them, and the agent keeps
+/// Your Claude and ChatGPT plans (any Codeply plan, Free too): subagents run on them, and the agent keeps
 /// going on them once your Codeply limit is used up.
 fn linked_group(s: &App, t: &Theme) -> El {
-    let paid = s.data.extra.billing.plan.as_ref().is_some_and(|p| plan_rank(&p.key) > 0);
+    // On every plan, Free included.
     let linked = &s.data.extra.linked;
     let item = |which: &'static str, name: &str, tile: rune::Color, ink: rune::Color, glyph: &str, l: &crate::model::LinkedPlan| {
         let desc = if l.connected {
@@ -235,9 +235,7 @@ fn linked_group(s: &App, t: &Theme) -> El {
         } else {
             format!("Sign in with your {name} plan")
         };
-        let action = if !paid {
-            btn(t, "Upgrade", None, ButtonKind::Plain).key(format!("linked-{which}-upgrade")).on_press(|s: &mut App| s.open_upgrade_for("starter"))
-        } else if l.busy {
+        let action = if l.busy {
             btn(t, "Waiting…", None, ButtonKind::Plain).key(format!("linked-{which}-busy"))
         } else if l.connected {
             btn(t, "Sign out", None, ButtonKind::Plain).key(format!("linked-{which}-out")).on_press(move |s: &mut App| s.linked_sign_out(which))
@@ -249,8 +247,7 @@ fn linked_group(s: &App, t: &Theme) -> El {
             .child(col().grow(1.0).min_w(0.0).gap(2.0)
                 .child(row().gap(8.0).center_y()
                     .child(text(name.to_owned()).font(ui(14.0, 500.0)).color(t.text))
-                    .children(l.connected.then(|| pill(t, "Connected", Pill::Green)))
-                    .children((!paid).then(|| pill(t, "Pro", Pill::Blue))))
+                    .children(l.connected.then(|| pill(t, "Connected", Pill::Green))))
                 .child(text(desc).font(ui(12.5, 400.0)).color(if l.error.is_empty() || l.connected { t.dim } else { t.red }).wrap()))
             .child(action)
     };

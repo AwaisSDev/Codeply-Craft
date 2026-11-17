@@ -235,7 +235,7 @@ fn picker(s: &App, t: &Theme) -> El {
     let plans = row().w_full().gap(12.0).items_stretch().mt(20.0)
         .child(plan_card(t, "starter", pick == "starter", Some("3 days free"), "$20", &[
             ("Opus 5.5, Sonnet 5.5 and Haiku 5.5", false),
-            ("Bring your ChatGPT or Claude plan", false),
+            ("Usage that resets every 5 hours", false),
             ("ChatGPT Tera and Luna", true),
         ]))
         .child(plan_card(t, "pro", pick == "pro", None, "$100", &[
