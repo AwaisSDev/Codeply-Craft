@@ -120,6 +120,7 @@ fn tab_bar(s: &App, t: &Theme) -> El {
                 .on_press(|s: &mut App| s.toggle_menu("code-file")))
             .child(el().key("code-file-anchor").w(0.0).h(0.0).help(open));
         bar = bar
+            .child(run_button(s, t))
             .child(btn(t, "Save", None, ButtonKind::Plain).key("code-save").on_press(|s: &mut App| s.save_file()))
             .child(if code.reviewing {
                 row().key("code-review").h(32.0).px(12.0).center_y().child(wave("Reviewing", ui(13.0, 500.0), t.dim))
@@ -128,6 +129,27 @@ fn tab_bar(s: &App, t: &Theme) -> El {
             });
     }
     bar
+}
+
+/// Run (Ctrl F5) and its menu of other ways to run; Stop while what it started still runs.
+fn run_button(s: &App, t: &Theme) -> El {
+    if s.running_run().is_some() {
+        return btn(t, "Stop", Some("stop"), ButtonKind::Plain).key("code-stop").help("Stop what Run started".to_owned())
+            .on_press(|s: &mut App| s.stop_run());
+    }
+    let tip = s.run_plans().first().map_or_else(|| "Nothing to run here".to_owned(), |p| format!("{} (Ctrl F5)\n{}", p.title, p.note()));
+    let more_open = s.menu.as_deref() == Some("code-run");
+    row().key("code-run-group").h(32.0).radius(9.0).clip_rounded(9.0).center_y().fill(t.control).border(1.0, t.control_border)
+        .child(row().key("code-run").h_full().px(10.0).gap(6.0).center_y().hover(t.press).role("button").label("Run").help(tip)
+            // The triangle icon turned to point right: a play button.
+            .child(ico_s("triangle", 13.0, t.green).icon_rotation(std::f32::consts::FRAC_PI_2))
+            .child(text("Run").font(ui(13.0, 500.0)).color(t.text))
+            .on_press(|s: &mut App| s.run_plan(0)))
+        .child(el().w(1.0).h(18.0).fill(t.control_border))
+        .child(el().key("code-run-more").w(26.0).h_full().center().hover(t.press).fill(if more_open { t.active } else { Color::TRANSPARENT })
+            .role("button").label("More ways to run").help("More ways to run".to_owned())
+            .child(ico_s("chevron-down", 14.0, t.dim))
+            .on_press(|s: &mut App| s.toggle_menu("code-run")))
 }
 
 fn breadcrumb(s: &App, t: &Theme) -> El {
@@ -291,11 +313,23 @@ fn editor(s: &App, t: &Theme) -> El {
     let field = text_input(edit, style).key("code-editor").grow(1.0).min_w(0.0).color(t.text)
         .spans(syntax(t, &open, &edit.text, 0))
         .caret(t.accent, t.accent.alpha(0.3)).label("Code editor")
-        .on_edit(|s: &mut App| s.edit_mut(EditKey::Code));
+        .on_edit(|s: &mut App| s.edit_mut(EditKey::Code))
+        // Suggestions, closing brackets, the indent on Enter (editor.rs).
+        .on_input_key(|s: &mut App, e, tx| s.code_key(e, tx))
+        .on_input_change(|s: &mut App, _| s.code_typed());
+
+    // Where the suggestions popup hangs: under the start of the word being typed.
+    let popup = s.completion_shown();
+    let anchor = popup.filter(|p| edit.text.is_char_boundary(p.start)).map(|p| {
+        let line_start = edit.text[..p.start].rfind('\n').map_or(0, |i| i + 1);
+        let row_i = edit.text[..line_start].matches('\n').count();
+        let x = rune::text::advance(&edit.text[line_start..p.start], style);
+        el().key("code-caret").absolute(x, row_i as f32 * LINE).size(1.0, LINE).inert()
+    });
 
     // Wisp's suggestion, in grey right after the caret when the caret ends its line (Tab takes it).
     let (_, caret) = edit.range();
-    let ghost = code.suggestion.as_ref().filter(|(f, at, _)| *f == open && *at == caret && edit.text.is_char_boundary(caret)).and_then(|(_, _, sug)| {
+    let ghost = code.suggestion.as_ref().filter(|(f, at, _)| popup.is_none() && *f == open && *at == caret && edit.text.is_char_boundary(caret)).and_then(|(_, _, sug)| {
         let line_start = edit.text[..caret].rfind('\n').map_or(0, |i| i + 1);
         let rest = edit.text[caret..].split('\n').next().unwrap_or("");
         if !rest.trim().is_empty() {
@@ -313,8 +347,57 @@ fn editor(s: &App, t: &Theme) -> El {
     });
     let body = col().grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false })
         .child(row().py(10.0).items_start().child(gutter)
-            .child(el().grow(1.0).min_w(0.0).pr(16.0).child(field.w_full()).children(ghost)));
+            .child(el().grow(1.0).min_w(0.0).pr(16.0).child(field.w_full()).children(ghost).children(anchor)));
     col().grow(1.0).min_h(0.0).child(bars).child(body)
+}
+
+/// The suggestions popup under the editor's caret, over the window: up to eight at a time
+/// around the one picked, a note on where each comes from, and the picked snippet's text.
+pub fn completion(s: &App, t: &Theme) -> Option<El> {
+    use crate::complete::Kind;
+    const ROWS: usize = 8;
+    let p = s.completion_shown()?;
+    let text_now = &s.edit(EditKey::Code).text;
+    let typed = text_now.get(p.start..p.caret).unwrap_or("").to_lowercase();
+    let n = p.items.len();
+    let first = p.pick.saturating_sub(ROWS - 1).min(n.saturating_sub(ROWS));
+    let rows = p.items.iter().enumerate().skip(first).take(ROWS).map(|(i, it)| {
+        let on = i == p.pick;
+        let (icon, note) = match it.kind {
+            Kind::Word => ("hash", String::new()),
+            Kind::Keyword => ("code", "keyword".to_owned()),
+            Kind::Snippet => ("prompt", "snippet".to_owned()),
+            Kind::Other => ("file", it.from.clone()),
+        };
+        // What you typed, in bold, when the word starts with it.
+        let lead = if it.label.to_lowercase().starts_with(&typed) { typed.len().min(it.label.len()) } else { 0 };
+        let lead = if it.label.is_char_boundary(lead) { lead } else { 0 };
+        row().key(format!("code-complete/{i}")).w_full().h(24.0).px(8.0).gap(8.0).radius(6.0).center_y()
+            .fill(if on { t.active } else { Color::TRANSPARENT }).hover(t.hover)
+            .role("option").checked(on).label(it.label.clone())
+            .child(ico_s(icon, 14.0, if matches!(it.kind, Kind::Keyword | Kind::Snippet) { t.accent } else { t.faint }))
+            .child(row().grow(1.0).min_w(0.0)
+                .child(text(it.label[..lead].to_owned()).font(rune::TextStyle { weight: 700.0, ..mono(13.0, 18.0) }).color(t.text).single_line())
+                .child(text(it.label[lead..].to_owned()).font(mono(13.0, 18.0)).color(if on { t.text } else { t.dim }).single_line().truncate().min_w(0.0)))
+            .child(text(note).font(ui(11.5, 400.0)).color(t.faint).single_line())
+            .on_press_tx(move |s: &mut App, tx| {
+                s.accept_completion(i);
+                tx.focus("code-editor", false);
+            })
+    });
+    // The picked snippet, as it would go in.
+    let preview = p.items.get(p.pick).and_then(|it| it.body.as_ref()).map(|b| {
+        let shown: Vec<&str> = b.split('\n').take(5).collect();
+        let body = shown.join("\n").replace("$0", "").replace('\t', "  ");
+        col().w_full().mt(3.0).px(8.0).py(6.0).border_sides([1.0, 0.0, 0.0, 0.0], t.border)
+            .child(text(body).font(mono(12.0, 17.0)).color(t.dim).wrap())
+    });
+    Some(col().key("code-complete").w(340.0).padding(4.0).gap(1.0).radius(9.0)
+        .fill(t.popup).border(1.0, t.control_border).shadow(8.0, 24.0, t.shadow)
+        .anchored("code-caret".to_owned(), rune::Side::Bottom, rune::Align::Start, 2.0)
+        .role("listbox").label("Suggestions")
+        .children(rows)
+        .children(preview))
 }
 
 #[cfg(test)]
@@ -396,19 +479,59 @@ fn wisp_panel(s: &App, t: &Theme) -> El {
         .child(col().w_full().grow(1.0).min_h(0.0).child(convo))
 }
 
-/// The open file's menu (the "..." beside the tabs): Rename and Delete.
+/// The open file's menu (the "..." beside the tabs): Open with Live Server for a page, Rename
+/// and Delete; and Run's menu.
 pub fn menu(s: &App, t: &Theme, id: &str) -> Option<El> {
+    use crate::ui::menu_item;
+    if id == "code-run" {
+        return Some(run_menu(s, t));
+    }
     if id != "code-file" {
         return None;
     }
     let open = s.data.extra.code.open.clone()?;
-    let (a, b) = (open.clone(), open);
-    Some(crate::ui::menu(t, "code-file-more", rune::Side::Bottom, 200.0, vec![
-        crate::ui::menu_item(t, "code-file/rename".into(), Some("edit"), "Rename", None, false)
-            .on_press(move |s: &mut App| s.open_code_dialog(crate::app::CodeDialog::Rename(a.clone()))),
-        crate::ui::menu_item(t, "code-file/delete".into(), Some("close"), "Delete", None, false)
-            .on_press(move |s: &mut App| s.open_code_dialog(crate::app::CodeDialog::Delete(b.clone()))),
-    ]).anchored("code-file-more".to_owned(), rune::Side::Bottom, rune::Align::End, 6.0))
+    let (a, b, c) = (open.clone(), open.clone(), open.clone());
+    let page = matches!(open.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).as_deref(), Some("html" | "htm"));
+    let mut items = Vec::new();
+    if page {
+        items.push(menu_item(t, "code-file/live".into(), Some("globe"), "Open with Live Server", None, false)
+            .on_press(move |s: &mut App| s.open_live(&c)));
+    }
+    items.push(menu_item(t, "code-file/rename".into(), Some("edit"), "Rename", None, false)
+        .on_press(move |s: &mut App| s.open_code_dialog(crate::app::CodeDialog::Rename(a.clone()))));
+    items.push(menu_item(t, "code-file/delete".into(), Some("close"), "Delete", None, false)
+        .on_press(move |s: &mut App| s.open_code_dialog(crate::app::CodeDialog::Delete(b.clone()))));
+    Some(crate::ui::menu(t, "code-file-more", rune::Side::Bottom, if page { 240.0 } else { 200.0 }, items)
+        .anchored("code-file-more".to_owned(), rune::Side::Bottom, rune::Align::End, 6.0))
+}
+
+/// Run's menu: every way to run what's open (the first is what Run does), Live Server's stop
+/// while it runs, and the Ports panel.
+fn run_menu(s: &App, t: &Theme) -> El {
+    use crate::ui::menu_item;
+    let mut items: Vec<El> = s.run_plans().into_iter().enumerate().map(|(i, p)| {
+        let icon = if matches!(p.action, crate::run::Action::Live(_)) { "globe" } else { "terminal" };
+        let note = if i == 0 { format!("{}  ·  Ctrl F5", p.note()) } else { p.note() };
+        menu_item(t, format!("code-run/{i}"), Some(icon), &p.title, Some(&note), false).on_press(move |s: &mut App| s.run_plan(i))
+    }).collect();
+    if items.is_empty() {
+        items.push(menu_item(t, "code-run/none".into(), Some("warning"), "Nothing to run here", Some("Open a script, or add a dev or start script to package.json."), false)
+            .on_press(|s: &mut App| s.menu = None));
+    }
+    if let Some(port) = s.data.extra.ports.live {
+        items.push(menu_item(t, "code-run/stop-live".into(), Some("stop"), "Stop Live Server", Some(&format!("Port {port}")), false)
+            .on_press(|s: &mut App| {
+                s.menu = None;
+                s.stop_live();
+            }));
+    }
+    items.push(menu_item(t, "code-run/ports".into(), Some("link"), "Ports", Some("Open, copy or share the ports your servers use"), false)
+        .on_press(|s: &mut App| {
+            s.menu = None;
+            s.show_ports(true);
+        }));
+    crate::ui::menu(t, "code-run-more", rune::Side::Bottom, 340.0, items)
+        .anchored("code-run-more".to_owned(), rune::Side::Bottom, rune::Align::End, 6.0)
 }
 
 /// New file, Rename or Delete, over the window.

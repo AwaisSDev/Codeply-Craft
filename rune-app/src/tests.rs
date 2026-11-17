@@ -590,3 +590,105 @@ fn settings_upgrade_opens_the_sheet_and_paid_plans_have_none() {
     settle(&mut rt);
     assert!(rt.find("set-upgrade").is_none() && rt.find("set-free-limit").is_none());
 }
+
+fn press(rt: &mut Runtime<App>, key: Key) {
+    rt.key(KeyEvent { key, mods: Mods::default() });
+    rt.frame(1.0 / 60.0);
+}
+
+fn type_text(rt: &mut Runtime<App>, s: &str) {
+    for c in s.chars() {
+        press(rt, Key::Text(c.to_string()));
+    }
+}
+
+#[test]
+fn the_editor_suggests_as_you_type_closes_brackets_and_keeps_the_indent() {
+    let mut s = App::with_mock();
+    s.go(View::Code);
+    s.poll_code();
+    let mut rt = runtime(s);
+    settle(&mut rt);
+    click(&mut rt, "code-editor");
+    // The caret at the end of `  root.innerHTML = cards.join("");`.
+    let end = "root.innerHTML = cards.join(\"\");";
+    let at = rt.state.edit(EditKey::Code).text.find(end).expect("the sample line") + end.len();
+    rt.state.edit_mut(EditKey::Code).set_caret(at);
+    press(&mut rt, Key::Enter);
+    assert!(rt.state.edit(EditKey::Code).text[at..].starts_with("\n  \n}"), "Enter keeps the line's indent");
+
+    type_text(&mut rt, "re");
+    settle(&mut rt);
+    let first = rt.state.completion_shown().map(|p| p.items[0].label.clone());
+    assert_eq!(first.as_deref(), Some("renderPricing"), "the file's own words come first");
+    assert!(rt.find("code-complete").is_some(), "the popup shows under the caret");
+    press(&mut rt, Key::Down);
+    assert_eq!(rt.state.completion_shown().map(|p| p.pick), Some(1), "Down picks the next one");
+    press(&mut rt, Key::Up);
+    press(&mut rt, Key::Tab);
+    assert!(rt.state.completion_shown().is_none(), "taking one closes the list");
+    type_text(&mut rt, "(");
+    let text = rt.state.edit(EditKey::Code).text.clone();
+    assert!(text.contains("\n  renderPricing()\n}"), "Tab took it and ( closed itself: {text}");
+    // The caret sits inside the brackets; typing the closer steps over it.
+    type_text(&mut rt, ")");
+    assert!(rt.state.edit(EditKey::Code).text.contains("\n  renderPricing()\n}"));
+
+    // Esc closes the list and leaves the text alone.
+    type_text(&mut rt, ";");
+    press(&mut rt, Key::Enter);
+    type_text(&mut rt, "pl");
+    assert!(rt.state.completion_shown().is_some());
+    press(&mut rt, Key::Escape);
+    assert!(rt.state.completion_shown().is_none());
+    assert!(rt.state.edit(EditKey::Code).text.contains("renderPricing();\n  pl\n}"));
+}
+
+#[test]
+fn run_starts_the_projects_dev_script_in_the_terminal() {
+    let mut s = App::with_mock();
+    s.go(View::Code);
+    s.poll_code();
+    let mut rt = runtime(s);
+    settle(&mut rt);
+    // The sample project is a Vite site (its package.json has a dev script).
+    let plans = rt.state.run_plans();
+    assert_eq!(plans.first().map(|p| p.note()).as_deref(), Some("npm run dev"));
+    rt.key(KeyEvent { key: Key::Function(5), mods: Mods { ctrl: true, cmd: !cfg!(target_os = "macos"), ..Mods::default() } });
+    settle(&mut rt);
+    assert!(rt.state.panes.terminal, "the terminal opens to show the run");
+    assert!(rt.state.data.extra.terminal.iter().any(|l| l.text == "npm run dev"));
+    assert!(rt.find("terminal-pane").is_some());
+    // While it runs (the sample's `npm run dev` task), Run reads Stop.
+    click(&mut rt, "code-stop");
+    assert!(rt.state.running_run().is_none());
+    // Run's menu lists the other ways, and the Ports panel.
+    click(&mut rt, "code-run-more");
+    assert!(rt.find("code-run/0").is_some() && rt.find("code-run/ports").is_some());
+}
+
+#[test]
+fn ports_lists_dev_servers_and_shares_them() {
+    let mut s = App::with_mock();
+    s.go(View::Code);
+    s.poll_code();
+    s.data.extra.terminal.push(crate::model::TermLine { kind: crate::model::TermKind::Out, text: "Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ...".into() });
+    s.show_ports(true);
+    let mut rt = runtime(s);
+    settle(&mut rt);
+    assert!(rt.find("ports-pane").is_some());
+    // From the sample's running `npm run dev`, and the terminal.
+    assert!(rt.find("port/5173").is_some() && rt.find("port/8000").is_some());
+    rt.state.edit_mut(EditKey::PortAdd).replace_text("3000");
+    click(&mut rt, "port-add-button");
+    assert!(rt.find("port/3000").is_some(), "a port added by hand");
+    click(&mut rt, "port-share/3000");
+    assert_eq!(rt.state.data.extra.ports.forwards.first().map(|f| f.state.as_str()), Some("open"));
+    assert!(rt.find("port-unshare/3000").is_some());
+    click(&mut rt, "port-remove/8000");
+    assert!(rt.find("port/8000").is_none());
+    // Live Server opens the page in the browser once it's up.
+    rt.state.open_live("index.html");
+    settle(&mut rt);
+    assert_eq!(rt.state.browser.current().map(|t| t.url.clone()).as_deref(), Some("http://127.0.0.1:5500/index.html"));
+}

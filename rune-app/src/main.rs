@@ -10,6 +10,8 @@ mod app;
 mod art;
 mod bot;
 mod browser;
+mod complete;
+mod editor;
 #[cfg(feature = "live")]
 mod engine;
 mod favicon;
@@ -23,6 +25,7 @@ mod model_actions;
 mod models;
 mod prefs;
 mod project;
+mod run;
 mod shell;
 mod store;
 mod subagents;
@@ -85,6 +88,33 @@ const SCENES: &[Scene] = &[
             let file = s.data.extra.code.open.clone().unwrap_or_default();
             s.data.extra.code.suggestion = Some((file, at, " // one card per plan".into()));
         }
+    }),
+    // Suggestions as you type: "re" on a new line in pricing.js.
+    ("code-complete", |s| {
+        s.go(View::Code);
+        s.poll_code();
+        let mut text = s.edit(EditKey::Code).text.clone();
+        if let Some(at) = text.find("  root.innerHTML") {
+            text.insert_str(at, "  re\n");
+            s.edit_mut(EditKey::Code).replace_text(text);
+            s.edit_mut(EditKey::Code).set_caret(at + 4);
+            s.update_completion();
+        }
+    }),
+    ("code-run-menu", |s| { s.go(View::Code); s.poll_code(); s.toggle_menu("code-run"); }),
+    // The Ports panel: Vite's port from the terminal, Live Server's, one you added, one shared.
+    ("code-ports", |s| {
+        s.go(View::Code);
+        s.poll_code();
+        s.data.extra.terminal.extend([
+            model::TermLine { kind: model::TermKind::Input, text: "npm run dev".into() },
+            model::TermLine { kind: model::TermKind::Out, text: "  VITE v5.4.2  ready in 312 ms".into() },
+            model::TermLine { kind: model::TermKind::Out, text: "  ➜  Local:   http://localhost:5173/".into() },
+        ]);
+        s.data.extra.ports.live = Some(5500);
+        s.ports_added.push(3000);
+        s.show_ports(true);
+        s.share_port(5173);
     }),
     ("prs", |s| s.go(View::Prs)),
     ("pr-changes", |s| { s.go(View::Prs); let n = s.data.prs.first().map_or(0, |p| p.number); s.open_pr(n, PrTab::Changes); }),

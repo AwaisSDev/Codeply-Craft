@@ -174,6 +174,11 @@ pub trait Store {
     fn edit_code(&mut self, _file: &str, _text: &str, _instruction: &str, _snap: &mut Snapshot) {}
     /// Asks Wisp to review the file; notes land in `extra.code.review`.
     fn review(&mut self, _file: &str, _text: &str, _snap: &mut Snapshot) {}
+    /// Reads the project's package.json files (for Run's scripts) into `extra.code.manifests`.
+    fn read_manifests(&mut self, _paths: Vec<String>, _snap: &mut Snapshot) {}
+    /// Starts or stops Live Server, or shares a port outside this computer
+    /// (`sidecar/ext-live.mjs`); the answer lands in `extra.ports`.
+    fn live_op(&mut self, _op: crate::model::LiveOp, _snap: &mut Snapshot) {}
     // ---------- models ----------
     /// Reads or changes the model list (see `models::ModelOp`); the answer lands in `extra.models`.
     fn models(&mut self, _op: crate::models::ModelOp, _snap: &mut Snapshot) {}

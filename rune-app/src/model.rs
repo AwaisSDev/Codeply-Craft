@@ -585,6 +585,8 @@ pub struct Extra {
     /// ("4:30 PM", or empty): (title, resets). The chat shows the upgrade card above its composer
     /// until its next reply starts.
     pub limits: Vec<(String, String)>,
+    /// Live Server and the ports shared outside this computer (the Ports panel).
+    pub ports: Ports,
 }
 
 /// Your plan, as the account says (`GET /ext/billing`, from the site's `/api/account`).
@@ -691,6 +693,44 @@ pub struct Code {
     pub wisp: String,
     /// An inline edit (Ctrl K): what you asked, and the file as Wisp would change it.
     pub proposal: Option<Proposal>,
+    /// The project's package.json files as last read (path, text), for Run's npm scripts.
+    pub manifests: Vec<(String, String)>,
+}
+
+/// Live Server and shared ports (`sidecar/ext-live.mjs`), as the engine reports them.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Ports {
+    /// Live Server's port while it runs.
+    pub live: Option<u16>,
+    /// Ports shared outside this computer through a tunnel.
+    pub forwards: Vec<Forward>,
+    /// Which tunnel tools this computer has (cloudflared, ssh); None until asked.
+    pub tools: Option<(bool, bool)>,
+    /// What went wrong last, for the Ports panel.
+    pub error: String,
+}
+
+/// What the code view asks of Live Server and port sharing (`Store::live_op`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum LiveOp {
+    /// Serve the project folder (for this page), reloading on changes.
+    Start(String),
+    Stop,
+    /// Share a port outside this computer, or stop sharing it.
+    Forward(u16),
+    Unforward(u16),
+    /// What's running, and which tunnel tools there are.
+    Status,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Forward {
+    pub port: u16,
+    /// "starting", "open" or "error".
+    pub state: String,
+    /// The public address, once the tunnel is up.
+    pub url: String,
+    pub message: String,
 }
 
 /// An inline edit of the open file, waiting for Accept or Reject.

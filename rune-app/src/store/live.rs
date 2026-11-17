@@ -67,6 +67,10 @@ enum Msg {
     File(String, String),
     /// A completion for (file, offset).
     Suggestion(String, usize, String),
+    /// The project's package.json files: (path, text).
+    Manifests(Vec<(String, String)>),
+    /// Live Server and shared ports (`/ext/live`), as `run::fold_live` reads them.
+    Live(Value),
     Review(Vec<ReviewNote>),
     SignIn(Option<String>),
     /// A chat's messages, and the free limit its last reply ended on (see `limit_of`).
@@ -476,6 +480,8 @@ impl LiveStore {
                 plan_label(snap);
             }
             "models_changed" => self.refresh("models"),
+            // Live Server started or stopped, a shared port's tunnel came up or went down.
+            "live" | "port_forward" => crate::run::fold_live(&mut x.ports, e),
             "team_changed" | "wisp_team" => self.refresh("team"),
             _ => return false,
         }
@@ -1428,6 +1434,8 @@ impl Store for LiveStore {
                     snap.extra.code.review.clear();
                     snap.extra.code.suggestion = None;
                 }
+                Msg::Manifests(list) => snap.extra.code.manifests = list,
+                Msg::Live(v) => crate::run::fold_live(&mut snap.extra.ports, &v),
                 Msg::Suggestion(file, at, text) => {
                     snap.extra.code.wisp = "idle".into();
                     snap.extra.code.suggestion = (!text.is_empty()).then_some((file, at, text));
@@ -1860,6 +1868,37 @@ impl Store for LiveStore {
             let v = c.post("/complete", json!({ "path": file, "prefix": head, "suffix": tail })).ok()?;
             Some(Msg::Suggestion(file, at, v["text"].as_str().unwrap_or_default().to_owned()))
         });
+    }
+
+    fn read_manifests(&mut self, paths: Vec<String>, _snap: &mut Snapshot) {
+        self.spawn(move |c| {
+            let list = paths.into_iter().filter_map(|p| {
+                let text = c.get(&format!("/file?path={}", encode(&p))).ok()?["text"].as_str()?.to_owned();
+                Some((p, text))
+            }).collect();
+            Some(Msg::Manifests(list))
+        });
+    }
+
+    fn live_op(&mut self, op: crate::model::LiveOp, snap: &mut Snapshot) {
+        use crate::model::{Forward, LiveOp};
+        let (path, body) = match op {
+            LiveOp::Start(file) => ("/ext/live/start", json!({ "file": file })),
+            LiveOp::Stop => ("/ext/live/stop", json!({})),
+            LiveOp::Forward(port) => {
+                // Shows as starting at once; the tunnel's address follows as an event.
+                snap.extra.ports.forwards.retain(|f| f.port != port);
+                snap.extra.ports.forwards.push(Forward { port, state: "starting".into(), ..Default::default() });
+                ("/ext/live/forward", json!({ "port": port }))
+            }
+            LiveOp::Unforward(port) => {
+                snap.extra.ports.forwards.retain(|f| f.port != port);
+                ("/ext/live/unforward", json!({ "port": port }))
+            }
+            LiveOp::Status => ("/ext/live/status", json!({})),
+        };
+        // Starting a tunnel looks for cloudflared and ssh first, which can take a few seconds.
+        self.spawn(move |c| Some(Msg::Live(c.post_for(path, body, 20).unwrap_or_else(|e| json!({ "error": format!("The engine didn't answer: {e}") })))));
     }
 
     fn review(&mut self, file: &str, text: &str, _snap: &mut Snapshot) {
