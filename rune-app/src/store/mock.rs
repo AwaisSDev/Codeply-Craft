@@ -235,11 +235,7 @@ pub fn extra() -> Extra {
             mcp("github", "Repos, issues and pull requests", 26, true),
             mcp("playwright", "Drive a browser to check pages", 21, false),
         ],
-        skills: vec![
-            (s("frontend-design"), s("Distinctive, production-grade interfaces")),
-            (s("pdf"), s("Read, fill and make PDF files")),
-            (s("xlsx"), s("Spreadsheets with formulas and charts")),
-        ],
+        skills: sample_skills(),
         loops: vec![
             loop_("wisp", "Morning brief", &[true, true, true], "Succeeded 3h ago", true),
             loop_("wisp", "Weekly review", &[true, false], "Failed 3d ago", true),
@@ -801,4 +797,32 @@ pub fn sample_usage() -> Usage {
         days.push(UsageDay { date: crate::views::usage::date_of(n), tokens: t, calls: c, models });
     }
     Usage { error: String::new(), tokens: tokens + 2_400_000, calls, favorite: "Haze 2".into(), today: "2026-11-14".into(), days }
+}
+
+/// A slice of the real library (codeply-cli/skills), with a plugin's and one of yours.
+fn sample_skills() -> Vec<crate::model::Skill> {
+    let skill = |name: &str, description: &str, source: &str, plugin: &str| crate::model::Skill {
+        name: s(name), description: s(description), source: s(source), plugin: s(plugin),
+        path: format!("C:\\Program Files\\Codeply\\resources\\codeply-cli\\skills\\{name}\\SKILL.md"),
+    };
+    vec![
+        skill("api-design", "REST API design patterns including resource naming, status codes, pagination, filtering, error responses, versioning, and rate limiting for production APIs.", "built-in", ""),
+        skill("article-writing", "Write articles, guides, blog posts, tutorials, newsletter issues, and other long-form content in a distinctive voice derived from supplied examples or brand guidance.", "built-in", ""),
+        skill("backend-patterns", "Backend architecture patterns, API design, database optimization, and server-side best practices for Node.js, Express, and Next.js API routes.", "built-in", ""),
+        skill("codeply-taste", "Codeply's design layer. Use for any design a person will look at - a website or landing page, app screens, a slide deck, a poster - when it has to look designed, not generated.", "built-in", ""),
+        skill("deep-research", "Multi-source deep research. Searches the web, synthesizes findings, and delivers cited reports with source attribution.", "built-in", ""),
+        skill("docker-patterns", "Docker and Docker Compose patterns for local development, container security, networking, volume strategies, and multi-service orchestration.", "built-in", ""),
+        skill("e2e-testing", "Playwright E2E testing patterns, Page Object Model, configuration, CI/CD integration, artifact management, and flaky test strategies.", "built-in", ""),
+        skill("frontend-a11y", "Accessibility patterns for React and Next.js: semantic HTML, ARIA attributes, form labeling, keyboard navigation, focus management, and screen reader support.", "built-in", ""),
+        skill("frontend-patterns", "Frontend development patterns for React, Next.js, state management, performance optimization, and UI best practices.", "built-in", ""),
+        skill("market-research", "Conduct market research, competitive analysis, investor due diligence, and industry intelligence with source attribution and decision-oriented summaries.", "built-in", ""),
+        skill("motion-ui", "Production-ready UI motion system for React/Next.js. Use when implementing animations, transitions, or motion patterns.", "built-in", ""),
+        skill("postgres-patterns", "PostgreSQL database patterns for query optimization, schema design, indexing, and security. Based on Supabase best practices.", "built-in", ""),
+        skill("publish-website", "Publish the user's website or app end to end when they ask to publish, deploy or put it live.", "built-in", ""),
+        skill("security-review", "Use when adding authentication, handling user input, working with secrets, creating API endpoints, or implementing payment or sensitive features.", "built-in", ""),
+        skill("stripe-billing", "Set up Stripe checkout, subscriptions and webhooks, and test them with the Stripe CLI.", "plugin", "stripe"),
+        skill("tdd-workflow", "Use when writing new features, fixing bugs, or refactoring code. Enforces test-driven development with unit, integration, and E2E tests.", "built-in", ""),
+        skill("pricing-copy", "How we write pricing pages: plain words, one price per card, no fine print.", "user", ""),
+        skill("verification-loop", "A comprehensive verification system: build, types, lint, tests and a diff review before you call it done.", "built-in", ""),
+    ]
 }

@@ -20,6 +20,7 @@ mod icons;
 mod logo;
 mod look;
 mod markdown;
+mod mentions;
 mod model;
 mod model_actions;
 mod models;
@@ -170,6 +171,18 @@ const SCENES: &[Scene] = &[
     }),
     ("settings-cloud", |s| s.open_settings(SettingsPage::Cloud)),
     ("settings-git", |s| s.open_settings(SettingsPage::Git)),
+    // The composer's menus: "/" for commands and skills, "@" for agents, apps and files.
+    ("composer-slash", |s| {
+        s.open_chat("Casual chat");
+        s.edit_mut(EditKey::ChatThread).replace_text("/s");
+        s.mention_typed(EditKey::ChatThread, &store::Target::Chat(String::new()));
+    }),
+    ("composer-mention", |s| {
+        s.new_chat();
+        s.edit_mut(EditKey::ChatHome).replace_text("Ask @");
+        s.mention_typed(EditKey::ChatHome, &store::Target::New);
+    }),
+    ("settings-skills", |s| s.open_settings(SettingsPage::Skills)),
     ("chat-thinking", |s| {
         s.open_chat("Casual chat");
         if let Some(c) = s.data.extra.chats.iter_mut().find(|c| c.title == "Casual chat") {

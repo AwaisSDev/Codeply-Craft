@@ -45,6 +45,8 @@ enum Msg {
     Team(Value),
     /// The background agents (`/ext/agents`).
     Agents(Value),
+    /// Every skill (`/ext/skills`).
+    Skills(Value),
     /// An inline edit's answer: (file, the instruction, `{ text }` or `{ error }`).
     Proposal(String, String, Value),
     /// After a file change: the file list, the file to open (path, text), or why it failed.
@@ -404,6 +406,7 @@ impl LiveStore {
                     "linked" => c.get("/ext/linked").map(Msg::Linked),
                     "team" => c.get("/ext/team").map(Msg::Team),
                     "agents" => c.get("/ext/agents").map(Msg::Agents),
+                    "skills" => c.get("/ext/skills").map(Msg::Skills),
                     "prs" => c.get("/ext/prs").map(Msg::Prs),
                     // At launch and after a sign-in: also catches the phone up with the account.
                     "models-sync" => c.get("/ext/models?sync=1").map(Msg::Models),
@@ -1171,6 +1174,8 @@ impl Store for LiveStore {
         snap.prs.clear();
         snap.extra.code = Default::default();
         snap.extra.code.wisp = "idle".into();
+        // Skills come from the engine (ext-skills.mjs).
+        snap.extra.skills.clear();
         self.team = snap.team.iter().filter(|a| a.id != "wisp").map(|a| (a.id.clone(), a.name.clone(), a.role.clone())).collect();
         snap.extra.engine_ok = false;
         snap.source = format!("{} (connecting)", self.label);
@@ -1206,7 +1211,7 @@ impl Store for LiveStore {
             }
             Some(Msg::Status(format!("can't reach the engine: {last}")))
         });
-        for what in ["account", "apps", "memory", "files", "jobs", "models-sync", "team", "prs", "agents"] {
+        for what in ["account", "apps", "memory", "files", "jobs", "models-sync", "team", "prs", "agents", "skills"] {
             self.refresh(what);
         }
         // The event stream, for the life of the app, reconnecting with a growing pause.
@@ -1321,6 +1326,8 @@ impl Store for LiveStore {
                         snap.extra.project_path = cwd.to_owned();
                         self.refresh("files");
                         self.refresh("prs");
+                        // A project's plugins can bring skills of their own.
+                        self.refresh("skills");
                     }
                     None => snap.extra.team_note = Some(v["error"].as_str().unwrap_or("Couldn't open that folder.").to_owned()),
                 },
@@ -1448,6 +1455,7 @@ impl Store for LiveStore {
                 Msg::Models(v) => snap.extra.models.apply(&v),
                 Msg::Ollama(v) => snap.extra.models.apply_scan(&v),
                 Msg::Files(list) => snap.extra.code.files = list,
+                Msg::Skills(v) => snap.extra.skills = crate::mentions::skills_from(&v),
                 Msg::Tasks(list) => snap.extra.bg_tasks = list,
                 Msg::File(path, text) => {
                     let text = self.lf(&path, text);
@@ -2011,12 +2019,16 @@ impl Store for LiveStore {
     }
 
     fn send_files(&mut self, to: &Target, text: &str, files: &[String], snap: &mut Snapshot) -> Result<(), String> {
-        let text = text.to_owned();
-        let files: Vec<String> = files.to_vec();
+        self.send_refs(to, text, files, &[], snap)
+    }
+
+    fn send_refs(&mut self, to: &Target, text: &str, files: &[String], refs: &[crate::mentions::Ref], snap: &mut Snapshot) -> Result<(), String> {
+        // { text, files, refs }: the text as written, and what its /skill and @mention tokens name.
+        let body = crate::mentions::body(text, files, refs);
         match to {
             Target::Chat(title) => {
                 let id = self.id_of(title).ok_or("That chat isn't on the engine yet.")?;
-                self.spawn(move |c| c.post(&format!("/session/{id}/message"), json!({ "text": text, "files": files })).err().map(|e| Msg::Status(format!("send failed: {e}"))));
+                self.spawn(move |c| c.post(&format!("/session/{id}/message"), body).err().map(|e| Msg::Status(format!("send failed: {e}"))));
                 Ok(())
             }
             // A new chat from "What should we build?": the engine titles it from the message,
@@ -2028,7 +2040,7 @@ impl Store for LiveStore {
                         Err(e) => return Some(Msg::Status(format!("can't start a chat: {e}"))),
                     };
                     let id = made["session"]["id"].as_str()?.to_owned();
-                    match c.post(&format!("/session/{id}/message"), json!({ "text": text, "files": files })) {
+                    match c.post(&format!("/session/{id}/message"), body) {
                         Ok(_) => Some(Msg::Created(id)),
                         Err(e) => Some(Msg::Status(format!("send failed: {e}"))),
                     }
@@ -2063,7 +2075,7 @@ impl Store for LiveStore {
                             c.post("/session", body).ok()?["session"]["id"].as_str()?.to_owned()
                         }
                     };
-                    match c.post(&format!("/session/{id}/message"), json!({ "text": text, "files": files })) {
+                    match c.post(&format!("/session/{id}/message"), body) {
                         Ok(_) => Some(Msg::Named(title, id)),
                         Err(e) => Some(Msg::Status(format!("send failed: {e}"))),
                     }

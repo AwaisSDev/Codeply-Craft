@@ -46,20 +46,31 @@ pub fn composer_menu(s: &App, t: &Theme, key: &str) -> El {
             .on_press(move |s: &mut App| s.model_pick(&id)));
     }
     // How hard it thinks. Haze 2 keeps the app's own setting; a model you added has what its provider offers.
+    let efforts = effort_items(s, t);
+    if !efforts.is_empty() {
+        items.push(divider());
+        items.push(label(t, "Effort"));
+        items.extend(efforts);
+    }
+    items.push(divider());
+    items.push(menu_item(t, "model/add".into(), Some("plus"), "Add a model", None, false).on_press(|s: &mut App| s.model_add_from_menu()));
+    menu(t, &format!("model-chip/{key}"), Side::Top, 300.0, items)
+}
+
+/// The picked model's effort levels as menu rows (none when the model sets its own).
+fn effort_items(s: &App, t: &Theme) -> Vec<El> {
+    let models = &s.data.extra.models;
+    let mut items = Vec::new();
     match models.current() {
         // A Codeply model: the router sets how hard it thinks.
         None if pick_name(&models.selected).is_some() => {}
         None => {
-            items.push(divider());
-            items.push(label(t, "Effort"));
             for (effort, note) in [("Low", "Fastest replies"), ("Medium", "Balanced"), ("High", "Thinks longest, best for hard tasks")] {
                 items.push(menu_item(t, format!("effort/{effort}"), None, effort, Some(note), s.prefs.effort == effort)
                     .on_press(move |s: &mut App| s.set_effort(effort)));
             }
         }
         Some(m) if m.has_effort() => {
-            items.push(divider());
-            items.push(label(t, "Effort"));
             if m.effort_levels.is_none() {
                 items.push(text("Checking which levels this model takes").font(ui(12.5, 400.0)).color(t.faint).px(10.0).py(6.0));
             }
@@ -72,9 +83,22 @@ pub fn composer_menu(s: &App, t: &Theme, key: &str) -> El {
         }
         Some(_) => {}
     }
-    items.push(divider());
-    items.push(menu_item(t, "model/add".into(), Some("plus"), "Add a model", None, false).on_press(|s: &mut App| s.model_add_from_menu()));
-    menu(t, &format!("model-chip/{key}"), Side::Top, 300.0, items)
+    items
+}
+
+/// `/effort`: how hard the picked model thinks, on its own, over the model chip.
+pub fn effort_menu(s: &App, t: &Theme, key: &str) -> El {
+    let mut items = vec![label(t, "Effort")];
+    let levels = effort_items(s, t);
+    if levels.is_empty() {
+        items.push(text("This model sets its own effort.").font(ui(12.5, 400.0)).color(t.faint).px(10.0).py(6.0));
+    }
+    items.extend(levels);
+    items.push(el().w_full().py(3.0).child(el().w_full().h(1.0).fill(t.border)));
+    let models = format!("model:{key}");
+    items.push(menu_item(t, "effort/models".into(), Some("sparkle"), "Pick another model", None, false)
+        .on_press(move |s: &mut App| { s.menu = None; s.toggle_menu(&models); }));
+    menu(t, &format!("model-chip/{key}"), Side::Top, 280.0, items)
 }
 
 fn label(t: &Theme, name: &str) -> El {

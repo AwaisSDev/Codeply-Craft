@@ -708,7 +708,7 @@ function routeFor(session) {
 }
 
 /** One turn on DSH: its text arrives in chunks, sent as `text_delta` and kept as one message. */
-async function* runDsh(session, text, approve, signal, images = []) {
+async function* runDsh(session, text, approve, signal, images = [], askAgents = false) {
   const engine = await engineFor(session.cwd);
   // A model that can't take pictures with a prompt: this turn runs on Classic, which can.
   if (images.length && !engine.imagePrompts) throw Object.assign(new Error('This model takes no images on DSH.'), { images: true });
@@ -716,8 +716,9 @@ async function* runDsh(session, text, approve, signal, images = []) {
   if (sessionId !== session.dshSession) { session.dshSession = sessionId; save(); await applyEffort(engine, sessionId); }
   turns.set(sessionId, { session, cwd: path.resolve(session.cwd), approve, request: String(text || ''), route: routeFor(session) });
   // Wisp's chat leads the team; your own chats can ask an agent too (promptPrefix says when).
-  // The code view's agent and an agent's own sessions do their work themselves.
-  if (session.kind !== 'code' && !memberOf(session) && team().length) {
+  // The code view's agent and an agent's own sessions do their work themselves, unless the
+  // message mentions an agent ("@Joseph check the logs"): then ask_bot is there for that turn.
+  if ((askAgents || (session.kind !== 'code' && !memberOf(session))) && team().length) {
     const ctx = { session, approve };
     teams.set(sessionId, {
       prompt: isWispChat(session)
@@ -788,19 +789,19 @@ function loadImages(files) {
   return out;
 }
 
-async function sendMessage(s, text, files = []) {
+async function sendMessage(s, text, files = [], refs = []) {
   for (const h of extCtx.hooks.beforeMessage) {
     try { if (await h(s, text)) return { ok: true, sessionId: s.id, cloud: true }; } catch (e) { console.error('beforeMessage:', e && e.message); }
   }
   if (runs.has(s.id)) {
     // Busy: queue it, show it at once, and run it when this reply ends.
     const q = queues.get(s.id) || [];
-    q.push(files.length ? { text, files } : text);
+    q.push(files.length || refs.length ? { text, files, refs } : text);
     queues.set(s.id, q);
     emit(s.id, { type: 'queued', text, files, position: q.length });
     return { ok: true, sessionId: s.id, queued: q.length };
   }
-  startRun(s, text, { files });
+  startRun(s, text, { files, refs });
   return { ok: true, sessionId: s.id };
 }
 
@@ -818,7 +819,15 @@ async function startRun(session, text, opts = {}) {
   // their paths, and pictures themselves.
   const files = Array.isArray(opts.files) ? opts.files.filter((f) => typeof f === 'string' && f) : [];
   const images = loadImages(files);
-  const prompt = files.length ? `${text}\n\nAttached files:\n${files.map((f) => `- ${f}`).join('\n')}` : text;
+  // What the composer's menus picked ("/skill", "@file", "@agent", "@app"): extensions (ext-skills)
+  // turn them into a note in front of the prompt, for the model only.
+  const refs = Array.isArray(opts.refs) ? opts.refs : [];
+  let note = '';
+  for (const h of refs.length ? extCtx.hooks.prompt : []) {
+    try { note += (await h(session, refs)) || ''; } catch (e) { console.error('prompt:', e && e.message); }
+  }
+  const askAgents = refs.some((r) => r && r.kind === 'agent');
+  const prompt = note + (files.length ? `${text}\n\nAttached files:\n${files.map((f) => `- ${f}`).join('\n')}` : text);
   if (!opts.resume) session.messages.push({ kind: 'user', text, ...(files.length ? { files } : {}), at: Date.now() });
   const from = session.messages.length;
   if (!opts.resume && session.messages.filter((m) => m.kind === 'user').length === 1 && (!session.title || session.title === 'New chat')) {
@@ -844,7 +853,7 @@ async function startRun(session, text, opts = {}) {
       run = runClassic(session, prompt, approve, ctl.signal, images);
     } else {
       try {
-        const dsh = runDsh(session, prompt, approve, ctl.signal, images);
+        const dsh = runDsh(session, prompt, approve, ctl.signal, images, askAgents);
         session.engine = 'dsh';
         // Pull the first event here so a DSH that can't start falls back before anything shows.
         const first = await dsh.next();
@@ -937,7 +946,7 @@ async function startRun(session, text, opts = {}) {
     const next = queue.shift();
     if (!queue.length) queues.delete(session.id);
     emit(session.id, { type: 'session_sync', session: meta(session) });
-    if (next !== undefined) setImmediate(() => (typeof next === 'string' ? startRun(session, next) : startRun(session, next.text, { files: next.files })));
+    if (next !== undefined) setImmediate(() => (typeof next === 'string' ? startRun(session, next) : startRun(session, next.text, { files: next.files, refs: next.refs })));
   }
   return result;
 }
@@ -1184,6 +1193,8 @@ const extCtx = {
   get DEFAULT_CWD() { return DEFAULT_CWD; },
   inside, outsideWhy,
   need, lib, emit, readJson, readBody,
+  // A team member from a name ("Joseph", "@docs"), or null (ext-skills: an @mention).
+  findMember,
   // Anything an extension shares with the others (a cache, a handle) goes here by name.
   shared: {},
   // The chats, for an extension that works on them (ext-cloud: cloud runs, handoff, the phone).
@@ -1198,7 +1209,8 @@ const extCtx = {
   },
   // Called by the run path: beforeMessage(session, text) -> true when it took the message (a cloud run);
   // runStart(session, info), runEvent(session, ev), runEnd(session, { aborted }).
-  hooks: { beforeMessage: [], runStart: [], runEvent: [], runEnd: [] },
+  // prompt(session, refs) -> a note put in front of the turn's prompt (ext-skills: /skill, @mention).
+  hooks: { beforeMessage: [], runStart: [], runEvent: [], runEnd: [], prompt: [] },
   // The engine's bridge: handler(req, res, reply) -> true when it answered (ext-agents: /agents/*).
   bridgeRoutes: [],
 };
@@ -1484,9 +1496,11 @@ const server = http.createServer(async (req, res) => {
       if (m[2] === 'message' && req.method === 'POST') {
         const body = await readJson(req);
         const files = Array.isArray(body.files) ? body.files.map(String).filter(Boolean).slice(0, 20) : [];
+        // What the composer's / and @ menus picked: [{ kind: 'skill' | 'file' | 'agent' | 'app', ... }].
+        const refs = Array.isArray(body.refs) ? body.refs.filter((r) => r && typeof r === 'object').slice(0, 12) : [];
         const text = String(body.text || '').trim() || (files.length ? 'Have a look at the attached files.' : '');
         if (!text) return reply(400, { error: 'Write a task before sending it.' });
-        return reply(202, await sendMessage(s, text, files));
+        return reply(202, await sendMessage(s, text, files, refs));
       }
       if (m[2] === 'abort' && req.method === 'POST') {
         const r = runs.get(s.id);

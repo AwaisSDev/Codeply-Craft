@@ -101,6 +101,7 @@ src/
   icons/pack.rs    icons.js ported to Rune icons (generated: node tools/gen-icons.mjs)
   model.rs         what the views show (Snapshot)
   complete.rs      the editor's local suggestions, auto-closing brackets, indent on Enter
+  mentions.rs      the composer's / and @ menus, and what a sent message's tokens name
   editor.rs        the editor's keys (the suggestions popup, Tab, Enter)
   run.rs           Run (Ctrl F5), Live Server and the Ports panel (sidecar/ext-live.mjs)
   store/           Store trait, MockStore, LiveStore (feature "live")
@@ -156,6 +157,31 @@ way. The main agent can redirect or stop one too (`message_agent`, `stop_agent`)
 `src/agent_browser.js` (Windows; elsewhere the agent is told to use its web tools). When the group
 is done, one report comes back to the chat. Scenes: `subagents`, `subagent-open`, `team-open`,
 `agent-tabs`.
+
+## Skills, `/` and `@`
+
+Every composer (a new chat, an open chat, Wisp's and each agent's, the code view's agent) has the
+Electron app's two menus, worked out in `src/mentions.rs` and drawn above the composer by
+`views/mention.rs`. Both filter as you type; Up and Down pick, Enter or Tab take it, Esc closes it,
+and a click works too.
+
+- `/` (at the start or after a space): the app's commands (New chat, also `/clear`, Model, Effort,
+  Approval, Review, Security, Skills, Usage, Settings), which run at once, and every skill by name
+  with its one-line description, which goes in the message as `/name`.
+- `@`: your agents, connected apps and the project's files (`/files`), which go in as `@name`.
+
+On send the text stays as you wrote it, and `refs` says what its tokens name
+(`{ kind: 'skill' | 'agent' | 'app' | 'file', ... }`, `mentions::body`). `sidecar/ext-skills.mjs`
+turns them into a note in front of the turn's prompt (never stored in the chat): the skill's
+SKILL.md to follow, a file's path and its text when small, an agent to ask with `ask_bot` (on for
+that turn even in the code view's chat), an app to use with `use_app`. `/review` and `/security`
+become the Electron app's review prompts.
+
+Skills are `codeply-cli/lib/skills.js`'s (284 built in, plugins' and yours in
+`~/.codeply/skills`), served by `GET /ext/skills`. Settings > Skills lists them with search and
+where each came from, a page of 40 rows at a time; "Use" starts a chat with `/name`. Scenes:
+`composer-slash`, `composer-mention`, `settings-skills`. The sidecar's own test:
+`node sidecar/ext-skills.test.mjs` (the route on the real library, refs with lookups stubbed).
 
 ## Upgrading
 

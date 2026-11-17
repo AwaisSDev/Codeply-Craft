@@ -692,3 +692,118 @@ fn ports_lists_dev_servers_and_shares_them() {
     settle(&mut rt);
     assert_eq!(rt.state.browser.current().map(|t| t.url.clone()).as_deref(), Some("http://127.0.0.1:5500/index.html"));
 }
+
+#[test]
+fn slash_picks_a_skill_and_at_an_agent_with_the_keys_and_both_reach_the_engine() {
+    let mut s = App::with_mock();
+    s.open_chat("Casual chat");
+    let mut rt = runtime(s);
+    settle(&mut rt);
+    click(&mut rt, "composer-chat-thread");
+    type_text(&mut rt, "/");
+    settle(&mut rt);
+    assert!(rt.find("mention-menu").is_some(), "/ opens the menu over the composer");
+    let n = rt.state.mention_shown(EditKey::ChatThread).map_or(0, |p| p.items.len());
+    assert_eq!(n, crate::mentions::COMMANDS.len() + rt.state.data.extra.skills.len(), "every command and every skill");
+    type_text(&mut rt, "tdd");
+    settle(&mut rt);
+    let first = rt.state.mention_shown(EditKey::ChatThread).map(|p| p.items[0].label.clone());
+    assert_eq!(first.as_deref(), Some("tdd-workflow"), "it filters as you type");
+    press(&mut rt, Key::Enter);
+    assert_eq!(rt.state.edit(EditKey::ChatThread).text, "/tdd-workflow ", "Enter takes it, not sends it");
+    assert!(rt.state.mention_shown(EditKey::ChatThread).is_none());
+
+    type_text(&mut rt, "and ask @fr");
+    settle(&mut rt);
+    assert!(rt.find("mention/0").is_some());
+    press(&mut rt, Key::Down);
+    press(&mut rt, Key::Up);
+    press(&mut rt, Key::Tab);
+    assert_eq!(rt.state.edit(EditKey::ChatThread).text, "/tdd-workflow and ask @Frontend ");
+    type_text(&mut rt, "to look at @plans");
+    settle(&mut rt);
+    // A click takes one too.
+    click(&mut rt, "mention/0");
+    assert_eq!(rt.state.edit(EditKey::ChatThread).text, "/tdd-workflow and ask @Frontend to look at @src/pricing/plans.json ");
+
+    // Esc closes the menu and leaves the text.
+    type_text(&mut rt, "@");
+    assert!(rt.state.mention_shown(EditKey::ChatThread).is_some());
+    press(&mut rt, Key::Escape);
+    assert!(rt.state.mention_shown(EditKey::ChatThread).is_none());
+    press(&mut rt, Key::Backspace);
+    settle(&mut rt);
+
+    press(&mut rt, Key::Enter);
+    settle(&mut rt);
+    let sent = rt.state.last_sent.clone().expect("Enter sends once the menu is closed");
+    assert_eq!(sent["text"], "/tdd-workflow and ask @Frontend to look at @src/pricing/plans.json");
+    assert_eq!(sent["refs"], serde_json::json!([
+        { "kind": "skill", "name": "tdd-workflow" },
+        { "kind": "agent", "name": "Frontend" },
+        { "kind": "file", "path": "src/pricing/plans.json" },
+    ]));
+    assert!(rt.state.edit(EditKey::ChatThread).text.is_empty());
+}
+
+#[test]
+fn slash_commands_run_at_once() {
+    let mut s = App::with_mock();
+    s.open_chat("Casual chat");
+    let mut rt = runtime(s);
+    settle(&mut rt);
+    click(&mut rt, "composer-chat-thread");
+    type_text(&mut rt, "/effort");
+    settle(&mut rt);
+    press(&mut rt, Key::Enter);
+    settle(&mut rt);
+    assert_eq!(rt.state.menu.as_deref(), Some("effort:chat-thread"), "/effort opens the effort menu");
+    assert!(rt.find("effort/High").is_some());
+    assert!(rt.state.edit(EditKey::ChatThread).text.is_empty(), "the command's word goes");
+    press(&mut rt, Key::Escape);
+    rt.state.menu = None;
+    click(&mut rt, "composer-chat-thread");
+    type_text(&mut rt, "/clear");
+    settle(&mut rt);
+    press(&mut rt, Key::Enter);
+    settle(&mut rt);
+    assert_eq!(rt.state.chat, None, "/new (or /clear) starts a new chat");
+    click(&mut rt, "composer-chat-home");
+    type_text(&mut rt, "/skills");
+    settle(&mut rt);
+    press(&mut rt, Key::Tab);
+    settle(&mut rt);
+    assert_eq!(rt.state.view, View::Settings);
+    assert_eq!(rt.state.settings, crate::app::SettingsPage::Skills);
+}
+
+#[test]
+fn settings_skills_lists_searches_and_uses_them() {
+    let mut s = App::with_mock();
+    // As many as the real library, so only a page draws.
+    for i in 0..300 {
+        s.data.extra.skills.push(crate::model::Skill { name: format!("extra-skill-{i:03}"), description: "Filler".into(), source: "built-in".into(), ..Default::default() });
+    }
+    s.open_settings(crate::app::SettingsPage::Skills);
+    let mut rt = runtime(s);
+    settle(&mut rt);
+    assert!(rt.find("skill/api-design").is_some());
+    assert!(rt.find("skill/extra-skill-299").is_none(), "only a page of rows is drawn");
+    // "Show more" is at the foot of the list: scroll down to it.
+    rt.wheel(900.0, 500.0, -100_000.0);
+    settle(&mut rt);
+    click(&mut rt, "skills-more");
+    assert!(rt.state.skills_limit > crate::views::skills::PAGE, "Show more draws the next page");
+    rt.wheel(900.0, 500.0, 100_000.0);
+    settle(&mut rt);
+    click(&mut rt, "skill-search");
+    type_text(&mut rt, "pricing");
+    settle(&mut rt);
+    assert_eq!(rt.state.skills_limit, crate::views::skills::PAGE, "a new search starts from its first page");
+    assert!(rt.find("skill/pricing-copy").is_some() && rt.find("skill/api-design").is_none());
+    click(&mut rt, "skills-from/Yours 1");
+    assert_eq!(rt.state.skills_from, "user");
+    click(&mut rt, "skill-use/pricing-copy");
+    assert_eq!(rt.state.view, View::Chat);
+    assert_eq!(rt.state.edit(EditKey::ChatHome).text, "/pricing-copy ");
+}

@@ -168,19 +168,30 @@ fn mcp(s: &App, t: &Theme, q: &str) -> El {
 }
 
 fn skills(s: &App, t: &Theme, q: &str) -> El {
-    let rows: Vec<El> = s.data.extra.skills.iter().filter(|(n, d)| matches(q, &[n.as_str(), d.as_str()])).enumerate().map(|(i, (name, desc))| {
+    // 285 and more: only the first ones draw; Settings > Skills pages through the rest.
+    const SHOWN: usize = 60;
+    let found: Vec<&crate::model::Skill> = s.data.extra.skills.iter().filter(|k| matches(q, &[k.name.as_str(), k.description.as_str()])).collect();
+    let mut rows: Vec<El> = found.iter().take(SHOWN).enumerate().map(|(i, k)| {
+        let name = k.name.clone();
         enter(
             row().gap(12.0).px(14.0).py(12.0).radius(12.0).center_y().fill(t.panel).border(1.0, t.border)
                 .child(ico("book", t.dim))
                 .child(col().grow(1.0).min_w(0.0).gap(2.0)
-                    .child(text(name.clone()).font(mono(13.0, 18.0)).color(t.text))
-                    .child(text(desc.clone()).font(ui(12.5, 400.0)).color(t.faint).wrap()))
-                .key(format!("skill/{name}")),
+                    .child(text(k.name.clone()).font(mono(13.0, 18.0)).color(t.text))
+                    .child(text(k.description.clone()).font(ui(12.5, 400.0)).color(t.faint).wrap()))
+                .child(text(k.from_label()).font(ui(12.0, 500.0)).color(t.faint))
+                .child(btn(t, "Use", None, ButtonKind::Plain).key(format!("int-skill-use/{name}")).on_press(move |s: &mut App| s.use_skill(&name)))
+                .key(format!("skill/{}", k.name)),
             i,
         )
     }).collect();
     if rows.is_empty() {
         return empty(t, "No skills match.");
+    }
+    if found.len() > SHOWN {
+        rows.push(row().key("int-skills-all").px(14.0).py(10.0).radius(12.0).center_y().hover(t.hover).role("button").label("See all skills")
+            .child(text(format!("{} more in Settings > Skills", found.len() - SHOWN)).font(ui(13.0, 500.0)).color(t.accent))
+            .on_press(|s: &mut App| s.open_settings(crate::app::SettingsPage::Skills)));
     }
     col().gap(8.0).children(rows)
 }

@@ -34,6 +34,7 @@ pub enum SettingsPage {
     Configuration,
     Models,
     Personalization,
+    Skills,
     Shortcuts,
     Mcp,
     Hooks,
@@ -49,9 +50,9 @@ pub enum SettingsPage {
 }
 
 impl SettingsPage {
-    pub const ALL: [SettingsPage; 18] = [
+    pub const ALL: [SettingsPage; 19] = [
         SettingsPage::General, SettingsPage::Profile, SettingsPage::Appearance, SettingsPage::Configuration,
-        SettingsPage::Models, SettingsPage::Personalization, SettingsPage::Shortcuts, SettingsPage::Mcp, SettingsPage::Hooks,
+        SettingsPage::Models, SettingsPage::Personalization, SettingsPage::Skills, SettingsPage::Shortcuts, SettingsPage::Mcp, SettingsPage::Hooks,
         SettingsPage::Connections, SettingsPage::Git, SettingsPage::Environments, SettingsPage::Worktrees,
         SettingsPage::Browser, SettingsPage::ComputerUse, SettingsPage::Archived, SettingsPage::Usage, SettingsPage::Cloud,
     ];
@@ -63,6 +64,7 @@ impl SettingsPage {
             SettingsPage::Configuration => "Configuration",
             SettingsPage::Models => "Models",
             SettingsPage::Personalization => "Personalization",
+            SettingsPage::Skills => "Skills",
             SettingsPage::Shortcuts => "Keyboard shortcuts",
             SettingsPage::Mcp => "MCP servers",
             SettingsPage::Hooks => "Hooks",
@@ -86,6 +88,7 @@ impl SettingsPage {
             SettingsPage::Configuration => "shield-check",
             SettingsPage::Models => "chip",
             SettingsPage::Personalization => "sparkle",
+            SettingsPage::Skills => "book",
             SettingsPage::Shortcuts => "terminal",
             SettingsPage::Mcp => "link",
             SettingsPage::Hooks => "refresh",
@@ -109,6 +112,7 @@ impl SettingsPage {
             SettingsPage::Configuration => "configuration",
             SettingsPage::Models => "models",
             SettingsPage::Personalization => "personalization",
+            SettingsPage::Skills => "skills",
             SettingsPage::Shortcuts => "shortcuts",
             SettingsPage::Mcp => "mcp",
             SettingsPage::Hooks => "hooks",
@@ -205,6 +209,8 @@ pub enum EditKey {
     TeamPost,
     /// The Ports panel's "Add a port".
     PortAdd,
+    /// Settings > Skills' search.
+    SkillSearch,
 }
 
 /// The code view's file dialogs.
@@ -216,12 +222,12 @@ pub enum CodeDialog {
 }
 
 impl EditKey {
-    pub const ALL: [EditKey; 27] = [
+    pub const ALL: [EditKey; 28] = [
         EditKey::Search, EditKey::Mission, EditKey::AgentThread, EditKey::ChatHome, EditKey::ChatThread,
         EditKey::AppSearch, EditKey::Address, EditKey::SettingsSearch, EditKey::AboutMe, EditKey::Instructions,
         EditKey::Terminal, EditKey::Code, EditKey::SignInEmail, EditKey::SignInCode, EditKey::Memory,
         EditKey::AgentName, EditKey::AgentFocus, EditKey::LoopTask, EditKey::LoopWhen, EditKey::CodeAsk, EditKey::FilePath, EditKey::ChatTitle,
-        EditKey::CloneUrl, EditKey::CodeAgent, EditKey::Subagent, EditKey::TeamPost, EditKey::PortAdd,
+        EditKey::CloneUrl, EditKey::CodeAgent, EditKey::Subagent, EditKey::TeamPost, EditKey::PortAdd, EditKey::SkillSearch,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -252,6 +258,7 @@ impl EditKey {
             EditKey::Subagent => "subagent",
             EditKey::TeamPost => "team-post",
             EditKey::PortAdd => "port-add",
+            EditKey::SkillSearch => "skill-search",
         }
     }
 }
@@ -367,6 +374,14 @@ pub struct App {
     /// The suggestions popup under the editor's caret (editor.rs), and the other open tabs'
     /// text as they were loaded, for their words.
     pub completion: Option<crate::complete::Popup>,
+    /// A composer's "/" or "@" menu, while it's open (mentions.rs).
+    pub mention: Option<crate::mentions::Popup>,
+    /// What the last message sent gave the engine: its text, files and refs (mentions::body).
+    pub last_sent: Option<serde_json::Value>,
+    /// Settings > Skills: where they came from ("" all, "built-in", "plugin", "user"), and how
+    /// many show before "Show more".
+    pub skills_from: &'static str,
+    pub skills_limit: usize,
     pub code_others: std::collections::HashMap<String, String>,
     /// The command the code view's Run last started (Stop ends it while it runs).
     pub run_cmd: Option<String>,
@@ -450,6 +465,10 @@ impl App {
             code_changed_at: 0.0,
             code_text_seen: String::new(),
             completion: None,
+            mention: None,
+            last_sent: None,
+            skills_from: "",
+            skills_limit: crate::views::skills::PAGE,
             code_others: std::collections::HashMap::new(),
             run_cmd: None,
             live_open: None,
@@ -489,6 +508,7 @@ impl App {
         self.appearance = None;
         self.menu = None;
         self.completion = None;
+        self.mention = None;
     }
 
     /// Opens Settings on one page.
@@ -747,7 +767,8 @@ impl App {
 
     /// Sends a composer's text to whoever it talks to, then clears it.
     pub fn submit(&mut self, key: EditKey, to: &Target) {
-        let mut text = self.edit(key).text.trim().to_owned();
+        // `/review` becomes its prompt; `/skill` and `@mention` tokens go to the engine as refs.
+        let (mut text, refs) = self.outgoing(self.edit(key).text.trim());
         let files = self.attachments.get(&key).cloned().unwrap_or_default();
         if text.is_empty() && files.is_empty() {
             return;
@@ -782,8 +803,12 @@ impl App {
             }
             other => other.clone(),
         };
-        match self.store.send_files(&to, &text, &files, &mut self.data) {
+        match self.store.send_refs(&to, &text, &files, &refs, &mut self.data) {
             Ok(()) => {
+                self.last_sent = Some(crate::mentions::body(&text, &files, &refs));
+                if self.mention.as_ref().is_some_and(|p| p.key == key) {
+                    self.mention = None;
+                }
                 self.notice = None;
                 self.edit_mut(key).clear();
                 self.attachments.remove(&key);
@@ -1357,6 +1382,7 @@ impl App {
         }
         self.models_ui.tick(&self.data.extra.models);
         changed |= self.look_poll(tx);
+        changed |= self.mention_focus(tx.focused());
         // A change to the team the engine turned down.
         if let Some(note) = self.data.extra.team_note.take() {
             self.notice = Some(note);
@@ -1466,6 +1492,9 @@ impl App {
 
     pub fn key(&mut self, e: &KeyEvent, tx: &mut Tx) -> bool {
         if matches!(e.key, Key::Escape) {
+            if self.mention.take().is_some() {
+                return true;
+            }
             if self.menu.is_some() || self.appearance.is_some() {
                 self.menu = None;
                 self.appearance = None;

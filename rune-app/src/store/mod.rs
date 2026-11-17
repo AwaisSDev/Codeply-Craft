@@ -70,6 +70,12 @@ pub trait Store {
         }
         Ok(())
     }
+    /// Sends a message with what its `/skill` and `@mention` tokens name (mentions.rs): the
+    /// engine puts each skill, file, agent and app in front of the prompt. The sample store
+    /// shows the message as usual.
+    fn send_refs(&mut self, to: &Target, text: &str, files: &[String], _refs: &[crate::mentions::Ref], snap: &mut Snapshot) -> Result<(), String> {
+        self.send_files(to, text, files, snap)
+    }
     /// A chat was opened: fetch its transcript if the store doesn't have it.
     fn open(&mut self, _chat: &str) {}
     /// Answers an approval: "once", "always" or "reject".

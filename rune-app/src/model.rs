@@ -420,6 +420,33 @@ pub struct McpServer {
     pub on: bool,
 }
 
+/// A skill: instructions the engine follows when a task needs them (a SKILL.md, from
+/// codeply-cli/skills, a plugin, or yours in ~/.codeply/skills). `/name` in a composer uses one.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Skill {
+    pub name: String,
+    /// What it is for, on one line.
+    pub description: String,
+    /// "built-in", "plugin" or "user".
+    pub source: String,
+    /// The plugin it came with.
+    pub plugin: String,
+    /// Its SKILL.md.
+    pub path: String,
+}
+
+impl Skill {
+    /// Where it came from, in words.
+    pub fn from_label(&self) -> String {
+        match self.source.as_str() {
+            "user" => "Yours".to_owned(),
+            "plugin" if !self.plugin.is_empty() => format!("Plugin: {}", self.plugin),
+            "plugin" => "Plugin".to_owned(),
+            _ => "Built in".to_owned(),
+        }
+    }
+}
+
 /// A loop: a task an agent runs on a schedule (the Agents view's right panel).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Loop {
@@ -532,7 +559,8 @@ pub struct Extra {
     pub suggestions: Vec<(&'static str, String)>,
     pub plugins: Vec<Plugin>,
     pub mcp: Vec<McpServer>,
-    pub skills: Vec<(String, String)>,
+    /// Every skill the engine has (`/ext/skills`), by name.
+    pub skills: Vec<Skill>,
     pub loops: Vec<Loop>,
     pub catalog: Vec<CatalogApp>,
     pub apps: AppsView,

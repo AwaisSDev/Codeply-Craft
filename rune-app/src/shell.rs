@@ -58,6 +58,7 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
         .children(views::code::dialog(s, &t))
         .children(views::chat::rename_dialog(s, &t))
         .children(views::code::completion(s, &t))
+        .children(views::mention::popup(s, &t))
         .children(views::apps::dialog(s, &t))
         .children(menus(s, &t))
 }
@@ -78,6 +79,9 @@ fn menus(s: &App, t: &Theme) -> Option<El> {
     }
     if let Some(key) = id.strip_prefix("model:") {
         return Some(views::models::composer_menu(s, t, key));
+    }
+    if let Some(key) = id.strip_prefix("effort:") {
+        return Some(views::models::effort_menu(s, t, key));
     }
     // `chat:` is opened from the chat's sidebar row, `chat-head:` from the open chat's header
     // (the chat may not be in the sidebar's recents, so each opens under its own button).

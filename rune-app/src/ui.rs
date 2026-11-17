@@ -103,11 +103,15 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
             .on_press(move |s: &mut App| s.toggle_menu(&menu))
     };
     let send_target = target.clone();
+    let menu_target = target.clone();
     let field = text_input(s.edit(key), ui(15.0, 400.0)).key(format!("composer-{}", key.name())).w_full().px(16.0).pt(14.0).pb(4.0).min_h(50.0).max_h(240.0)
         .color(t.text).placeholder(placeholder.to_owned(), t.faint).caret(t.accent, t.accent.alpha(0.3)).label(placeholder.to_owned())
         .on_edit(move |s: &mut App| s.edit_mut(key))
         // Pasting a picture (from a web page, a screenshot) or files attaches them.
         .on_input_paste(move |s: &mut App, content, _| s.paste_into(key, content))
+        // "/" for commands and skills, "@" for agents, apps and files (mentions.rs).
+        .on_input_key(move |s: &mut App, e, tx| s.mention_key(key, e, tx))
+        .on_input_change(move |s: &mut App, _| s.mention_typed(key, &menu_target))
         .on_submit(move |s: &mut App, _| s.submit(key, &target));
     let action = if running {
         let chat = chat.clone().unwrap_or_default();
@@ -143,7 +147,7 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
         .child(action);
     let notice = s.notice.clone().map(|n| row().px(16.0).pt(8.0).gap(6.0).center_y()
         .child(ico_s("help", 14.0, t.red)).child(text(n).font(ui(12.5, 400.0)).color(t.red).wrap().grow(1.0).min_w(0.0)));
-    col().w_full().fill(t.composer).border(1.0, t.composer_border).radius(theme::R_LG)
+    col().key(format!("composer-box/{}", key.name())).w_full().fill(t.composer).border(1.0, t.composer_border).radius(theme::R_LG)
         .shadow(8.0, 24.0, t.shadow)
         .children(project.then(|| {
             row().gap(8.0).px(14.0).py(9.0).center_y().border_sides([0.0, 0.0, 1.0, 0.0], t.menu_line)
