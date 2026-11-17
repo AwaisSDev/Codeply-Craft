@@ -45,34 +45,37 @@ const UA = 'Codeply (+https://codeply.app)';
 // ─── Featured ───────────────────────────────────────────────────────────────
 // Every entry is the vendor's own server as the vendor published it in the
 // official MCP Registry (`registry` is its registry name, under the vendor's
-// own domain), and each was checked live to answer at `url`. Order is the
-// order the directory shows them in.
+// own domain), and each was checked live to answer at `url` (a 401 that names
+// its OAuth metadata, with dynamic client registration, or an open server).
+// Order is the order the directory shows them in, after Codeply's own
+// sign-ins (Gmail, Slack, Vercel, Supabase, GitHub), which the apps list
+// before these. Vercel's and Supabase's servers are left out: Codeply signs
+// in to both itself. Last checked 16 Nov 2026.
 const FEATURED = [
   { id: 'notion', title: 'Notion', domain: 'notion.so', registry: 'com.notion/mcp', url: 'https://mcp.notion.com/mcp', category: 'Productivity', description: 'Search, read and write pages and databases in your Notion workspace' },
   { id: 'linear', title: 'Linear', domain: 'linear.app', registry: 'app.linear/linear', url: 'https://mcp.linear.app/mcp', category: 'Productivity', description: 'Find, create and update issues, projects and comments' },
+  { id: 'figma', title: 'Figma', domain: 'figma.com', registry: 'com.figma.mcp/mcp', url: 'https://mcp.figma.com/mcp', category: 'Design', description: 'Read your Figma files and frames and turn designs into code' },
   { id: 'atlassian', title: 'Atlassian', domain: 'atlassian.com', registry: 'com.atlassian/atlassian-mcp-server', url: 'https://mcp.atlassian.com/v1/mcp/authv2', category: 'Productivity', description: 'Jira issues and Confluence pages: search, create and update' },
-  { id: 'monday', title: 'monday.com', domain: 'monday.com', registry: 'com.monday/monday.com', url: 'https://mcp.monday.com/mcp', category: 'Productivity', description: 'Boards, items and updates in your monday.com account' },
-  { id: 'airtable', title: 'Airtable', domain: 'airtable.com', registry: 'com.airtable/mcp', url: 'https://mcp.airtable.com/mcp', category: 'Productivity', description: 'Read and update records in your Airtable bases' },
-  { id: 'zapier', title: 'Zapier', domain: 'zapier.com', registry: 'com.zapier/mcp', url: 'https://mcp.zapier.com/api/v1/connect', category: 'Automation', description: 'Reach 8,000+ apps through the actions you set up in Zapier' },
-  { id: 'make', title: 'Make', domain: 'make.com', registry: 'com.make/mcp-server', url: 'https://mcp.make.com/v2', category: 'Automation', description: 'Run your Make scenarios as tools' },
-  { id: 'canva', title: 'Canva', domain: 'canva.com', registry: 'com.canva.mcp/mcp', url: 'https://mcp.canva.com/mcp', category: 'Design', description: 'Find, create and export your Canva designs' },
-  { id: 'webflow', title: 'Webflow', domain: 'webflow.com', registry: 'com.webflow/mcp', url: 'https://mcp.webflow.com/mcp', category: 'Design', description: 'Manage Webflow sites, pages and CMS collections' },
-  { id: 'wix', title: 'Wix', domain: 'wix.com', registry: 'com.wix/mcp', url: 'https://mcp.wix.com/mcp', category: 'Design', description: 'Build and manage Wix sites and their business apps' },
   { id: 'stripe', title: 'Stripe', domain: 'stripe.com', registry: 'com.stripe/mcp', url: 'https://mcp.stripe.com', category: 'Business', description: 'Customers, payments, invoices and products in Stripe' },
-  { id: 'close', title: 'Close', domain: 'close.com', registry: 'com.close/close-mcp', url: 'https://mcp.close.com/mcp', category: 'Business', description: 'Leads, contacts and deals in your Close CRM' },
-  { id: 'amplitude', title: 'Amplitude', domain: 'amplitude.com', registry: 'com.amplitude/mcp-server', url: 'https://mcp.amplitude.com/mcp', category: 'Business', description: 'Ask questions about your product analytics' },
   { id: 'sentry', title: 'Sentry', domain: 'sentry.io', registry: 'io.github.getsentry/sentry-mcp', url: 'https://mcp.sentry.dev/mcp', category: 'Developer', description: 'Look into errors, issues and releases' },
-  { id: 'vercel', title: 'Vercel', domain: 'vercel.com', registry: 'com.vercel/vercel-mcp', url: 'https://mcp.vercel.com', category: 'Developer', description: 'Projects, deployments and logs on Vercel' },
-  { id: 'supabase', title: 'Supabase', domain: 'supabase.com', registry: 'com.supabase/mcp', url: 'https://mcp.supabase.com/mcp', category: 'Developer', description: 'Projects, tables, SQL and edge functions on Supabase' },
-  { id: 'neon', title: 'Neon', domain: 'neon.tech', registry: 'com.neon/mcp', url: 'https://mcp.neon.tech/mcp', category: 'Developer', description: 'Postgres projects, branches and queries on Neon' },
   { id: 'gitlab', title: 'GitLab', domain: 'gitlab.com', registry: 'com.gitlab/mcp', url: 'https://gitlab.com/api/v4/mcp', category: 'Developer', description: 'Issues, merge requests and pipelines on GitLab.com' },
-  { id: 'cloudflare', title: 'Cloudflare Docs', domain: 'cloudflare.com', registry: 'com.cloudflare.mcp/mcp', url: 'https://docs.mcp.cloudflare.com/mcp', category: 'Developer', description: 'Search the Cloudflare developer documentation' },
+  { id: 'neon', title: 'Neon', domain: 'neon.tech', registry: 'com.neon/mcp', url: 'https://mcp.neon.tech/mcp', category: 'Developer', description: 'Postgres projects, branches and queries on Neon' },
+  { id: 'zapier', title: 'Zapier', domain: 'zapier.com', registry: 'com.zapier/mcp', url: 'https://mcp.zapier.com/api/v1/connect', category: 'Automation', description: 'Reach 8,000+ apps through the actions you set up in Zapier' },
+  { id: 'canva', title: 'Canva', domain: 'canva.com', registry: 'com.canva.mcp/mcp', url: 'https://mcp.canva.com/mcp', category: 'Design', description: 'Find, create and export your Canva designs' },
+  { id: 'airtable', title: 'Airtable', domain: 'airtable.com', registry: 'com.airtable/mcp', url: 'https://mcp.airtable.com/mcp', category: 'Productivity', description: 'Read and update records in your Airtable bases' },
+  { id: 'monday', title: 'monday.com', domain: 'monday.com', registry: 'com.monday/monday.com', url: 'https://mcp.monday.com/mcp', category: 'Productivity', description: 'Boards, items and updates in your monday.com account' },
   { id: 'huggingface', title: 'Hugging Face', domain: 'huggingface.co', registry: 'co.huggingface/hf-mcp-server', url: 'https://huggingface.co/mcp?login', category: 'Developer', description: 'Search models, datasets, Spaces and papers' },
+  { id: 'cloudflare', title: 'Cloudflare Docs', domain: 'cloudflare.com', registry: 'com.cloudflare.mcp/mcp', url: 'https://docs.mcp.cloudflare.com/mcp', category: 'Developer', description: 'Search the Cloudflare developer documentation' },
+  { id: 'paypal', title: 'PayPal', domain: 'paypal.com', registry: 'com.paypal.mcp/mcp', url: 'https://mcp.paypal.com/mcp', category: 'Business', description: 'Invoices, orders, payments and disputes in your PayPal account' },
+  { id: 'webflow', title: 'Webflow', domain: 'webflow.com', registry: 'com.webflow/mcp', url: 'https://mcp.webflow.com/mcp', category: 'Design', description: 'Manage Webflow sites, pages and CMS collections' },
+  { id: 'make', title: 'Make', domain: 'make.com', registry: 'com.make/mcp-server', url: 'https://mcp.make.com/v2', category: 'Automation', description: 'Run your Make scenarios as tools' },
+  { id: 'wix', title: 'Wix', domain: 'wix.com', registry: 'com.wix/mcp', url: 'https://mcp.wix.com/mcp', category: 'Design', description: 'Build and manage Wix sites and their business apps' },
   { id: 'exa', title: 'Exa', domain: 'exa.ai', registry: 'ai.exa/exa', url: 'https://mcp.exa.ai/mcp', category: 'Research', description: 'Web search and page reading built for AI' },
   { id: 'mslearn', title: 'Microsoft Learn', domain: 'learn.microsoft.com', registry: 'com.microsoft/microsoft-learn-mcp', url: 'https://learn.microsoft.com/api/mcp', category: 'Research', description: 'Search Microsoft\'s official documentation and code samples' },
 ];
 
-const BUILT_IN_IDS = new Set(['gmail', 'slack', 'github', 'codeply']); // names the app's own connections use
+// Names the app's own connections use (config.js INTEGRATIONS, and Codeply itself).
+const BUILT_IN_IDS = new Set(['gmail', 'slack', 'github', 'vercel', 'supabase', 'codeply']);
 
 // ─── Store ──────────────────────────────────────────────────────────────────
 

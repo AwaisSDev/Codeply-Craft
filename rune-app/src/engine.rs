@@ -28,6 +28,8 @@ const EXTENSIONS: &[(&str, &str)] = &[
     ("ext-billing.mjs", include_str!("../sidecar/ext-billing.mjs")),
     ("ext-models.mjs", include_str!("../sidecar/ext-models.mjs")),
     ("ext-apps.mjs", include_str!("../sidecar/ext-apps.mjs")),
+    // Codeply's own sign-ins (Gmail, Slack, Vercel, Supabase, GitHub); ext-apps lists them first.
+    ("ext-connections.mjs", include_str!("../sidecar/ext-connections.mjs")),
     ("ext-theme.mjs", include_str!("../sidecar/ext-theme.mjs")),
     ("ext-cloud.mjs", include_str!("../sidecar/ext-cloud.mjs")),
     ("ext-team.mjs", include_str!("../sidecar/ext-team.mjs")),
@@ -179,6 +181,20 @@ pub fn find() -> Result<Install, String> {
     Ok(Install { cli, node })
 }
 
+/// The installed Codeply apps' `resources` folders that hold the OAuth apps' credentials (in
+/// `app.asar`, as `scripts/embed-secrets.js` builds them), for the sidecar's own sign-ins
+/// (`sidecar/ext-connections.mjs`). None when `CODEPLY_SECRETS_DIRS` is set already.
+fn secrets_dirs() -> Option<std::ffi::OsString> {
+    if std::env::var_os("CODEPLY_SECRETS_DIRS").is_some() {
+        return None;
+    }
+    let dirs: Vec<PathBuf> = resource_dirs().into_iter().filter(|d| d.join("app.asar").is_file() || d.join("build-secrets.json").is_file()).collect();
+    if dirs.is_empty() {
+        return None;
+    }
+    std::env::join_paths(dirs).ok()
+}
+
 fn secret() -> String {
     // RandomState is seeded from the OS's randomness; two of them make 128 bits.
     let mut out = String::new();
@@ -249,6 +265,7 @@ pub fn start() -> Result<Sidecar, String> {
         .arg("--data").arg(&data)
         .arg("--cwd").arg(&project)
         .env("CODEPLY_SIDECAR_TOKEN", &token)
+        .envs(secrets_dirs().map(|d| ("CODEPLY_SECRETS_DIRS", d)))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(log);

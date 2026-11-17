@@ -475,6 +475,8 @@ pub struct CatalogApp {
     pub icon: String,
     /// A vendor's own server that Codeply checked (Featured), rather than an unreviewed listing.
     pub verified: bool,
+    /// One of Codeply's own sign-ins (Gmail, Slack, Vercel, Supabase, GitHub), not an MCP server.
+    pub builtin: bool,
     /// It signs in with an API key (the header it goes in), not the browser.
     pub key_header: String,
     /// Connected, but its sign-in ran out.

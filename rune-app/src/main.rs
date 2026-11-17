@@ -135,8 +135,23 @@ const SCENES: &[Scene] = &[
     ("apps-manage", |s| {
         s.go(View::Integrations);
         s.integrations = IntegrationsTab::Apps;
-        s.apps_ui.dialog = Some(views::apps::Dialog::Manage("slack".into()));
-        s.app_tools("slack");
+        s.apps_ui.dialog = Some(views::apps::Dialog::Manage("builtin:slack".into()));
+        s.app_tools("builtin:slack");
+    }),
+    ("apps-featured", |s| { s.go(View::Integrations); s.integrations = IntegrationsTab::Apps; s.browse_apps(false); }),
+    ("apps-builtin-connected", |s| {
+        s.go(View::Integrations);
+        s.integrations = IntegrationsTab::Apps;
+        s.browse_apps(false);
+        s.data.extra.apps.progress = Some(model::AppProgress { id: "builtin:github".into(), name: "GitHub".into(), state: "done".into(), message: "GitHub is connected as codeply-dev.".into() });
+        s.apps_ui.dialog = Some(views::apps::Dialog::Manage("builtin:github".into()));
+        s.app_tools("builtin:github");
+    }),
+    ("apps-builtin-waiting", |s| {
+        s.go(View::Integrations);
+        s.integrations = IntegrationsTab::Apps;
+        s.browse_apps(false);
+        s.data.extra.apps.progress = Some(model::AppProgress { id: "builtin:supabase".into(), name: "Supabase".into(), state: "waiting".into(), message: "Finish signing in to Supabase in your browser...".into() });
     }),
     ("integrations-mcp", |s| { s.go(View::Integrations); s.integrations = IntegrationsTab::Mcp; }),
     ("settings", |s| s.open_settings(SettingsPage::General)),
