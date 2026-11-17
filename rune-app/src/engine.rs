@@ -33,6 +33,8 @@ const EXTENSIONS: &[(&str, &str)] = &[
     ("ext-team.mjs", include_str!("../sidecar/ext-team.mjs")),
     ("ext-prs.mjs", include_str!("../sidecar/ext-prs.mjs")),
     ("ext-code.mjs", include_str!("../sidecar/ext-code.mjs")),
+    // Live Server and sharing ports (the code view's Run menu and Ports panel).
+    ("ext-live.mjs", include_str!("../sidecar/ext-live.mjs")),
     ("ext-agents.mjs", include_str!("../sidecar/ext-agents.mjs")),
     // The tools ext-agents gives each background agent (its team channel, its browser tab).
     ("agents-mcp.mjs", include_str!("../sidecar/agents-mcp.mjs")),

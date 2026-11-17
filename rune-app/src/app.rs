@@ -201,6 +201,8 @@ pub enum EditKey {
     /// Background tasks: a message to the open subagent, or to its team.
     Subagent,
     TeamPost,
+    /// The Ports panel's "Add a port".
+    PortAdd,
 }
 
 /// The code view's file dialogs.
@@ -212,12 +214,12 @@ pub enum CodeDialog {
 }
 
 impl EditKey {
-    pub const ALL: [EditKey; 25] = [
+    pub const ALL: [EditKey; 26] = [
         EditKey::Search, EditKey::Mission, EditKey::AgentThread, EditKey::ChatHome, EditKey::ChatThread,
         EditKey::AppSearch, EditKey::Address, EditKey::SettingsSearch, EditKey::AboutMe, EditKey::Instructions,
         EditKey::Terminal, EditKey::Code, EditKey::SignInEmail, EditKey::SignInCode, EditKey::Memory,
         EditKey::AgentName, EditKey::AgentFocus, EditKey::LoopTask, EditKey::LoopWhen, EditKey::CodeAsk, EditKey::FilePath,
-        EditKey::CloneUrl, EditKey::CodeAgent, EditKey::Subagent, EditKey::TeamPost,
+        EditKey::CloneUrl, EditKey::CodeAgent, EditKey::Subagent, EditKey::TeamPost, EditKey::PortAdd,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -246,6 +248,7 @@ impl EditKey {
             EditKey::CodeAgent => "code-agent",
             EditKey::Subagent => "subagent",
             EditKey::TeamPost => "team-post",
+            EditKey::PortAdd => "port-add",
         }
     }
 }
@@ -355,7 +358,22 @@ pub struct App {
     code_agent_busy: bool,
     code_asked: String,
     code_changed_at: f64,
-    code_text_seen: String,
+    pub(crate) code_text_seen: String,
+    /// The suggestions popup under the editor's caret (editor.rs), and the other open tabs'
+    /// text as they were loaded, for their words.
+    pub completion: Option<crate::complete::Popup>,
+    pub code_others: std::collections::HashMap<String, String>,
+    /// The command the code view's Run last started (Stop ends it while it runs).
+    pub run_cmd: Option<String>,
+    /// The page to open once Live Server is up.
+    pub live_open: Option<String>,
+    /// The terminal pane shows Ports instead of the terminal; the ports you added, and the
+    /// ones you took off the list.
+    pub ports_tab: bool,
+    pub ports_added: Vec<u16>,
+    pub ports_hidden: Vec<u16>,
+    /// The package.json files last asked for (run.rs), so they're read once per change.
+    pub(crate) manifests_key: String,
     /// The engine this app started, kept running while the app is.
     #[cfg(feature = "live")]
     pub sidecar: Option<crate::engine::Sidecar>,
@@ -425,6 +443,14 @@ impl App {
             code_asked: String::new(),
             code_changed_at: 0.0,
             code_text_seen: String::new(),
+            completion: None,
+            code_others: std::collections::HashMap::new(),
+            run_cmd: None,
+            live_open: None,
+            ports_tab: false,
+            ports_added: Vec::new(),
+            ports_hidden: Vec::new(),
+            manifests_key: String::new(),
             #[cfg(feature = "live")]
             sidecar: None,
             updater: Default::default(),
@@ -456,6 +482,7 @@ impl App {
         self.view = view;
         self.appearance = None;
         self.menu = None;
+        self.completion = None;
     }
 
     /// Opens Settings on one page.
@@ -887,6 +914,7 @@ impl App {
             let text = self.edit(EditKey::Code).text.clone();
             self.code_drafts.insert(cur, text);
         }
+        self.completion = None;
         self.add_tab(path);
         self.store.open_file(path, &mut self.data);
     }
@@ -914,6 +942,7 @@ impl App {
         let at = tabs.iter().position(|p| p == path).unwrap_or(0);
         self.code_tabs.retain(|p| p != path);
         self.code_drafts.remove(path);
+        self.code_others.remove(path);
         if self.data.extra.code.open.as_deref() == Some(path) {
             let rest: Vec<String> = tabs.into_iter().filter(|p| p != path).collect();
             match rest.get(at.min(rest.len().saturating_sub(1))).cloned() {
@@ -1001,6 +1030,10 @@ impl App {
             let text = self.edit(EditKey::Code).text.clone();
             self.store.save_file(&path, &text, &mut self.data);
             self.data.extra.code.saved = text;
+            // Run reads the scripts again.
+            if path.ends_with("package.json") {
+                self.manifests_key.clear();
+            }
         }
     }
 
@@ -1117,6 +1150,8 @@ impl App {
             // A tab you come back to shows what you'd typed in it.
             let text = self.code_drafts.remove(&path).unwrap_or_else(|| self.data.extra.code.saved.clone());
             self.code_saved_seen = self.data.extra.code.saved.clone();
+            // Its words, for suggestions in the other tabs.
+            self.code_others.insert(path.clone(), self.data.extra.code.saved.clone());
             self.edit_mut(EditKey::Code).replace_text(text.clone());
             self.code_text_seen = text.clone();
             self.code_asked = text;
@@ -1369,6 +1404,7 @@ impl App {
             let _ = tx.open_url(&url);
         }
         changed |= self.step_project();
+        changed |= self.step_dev();
         // When the code view's agent finishes, the file tree and the open file catch up with what
         // it changed.
         let agent_busy = self.data.is_running(&crate::views::code::agent_chat(self));
@@ -1427,6 +1463,11 @@ impl App {
             }
             if Chord::parse("mod+s").is_ok_and(|c| c.matches_tx(e, tx)) {
                 self.save_file();
+                return true;
+            }
+            // Ctrl F5, as in VS Code: run the open file or the project.
+            if matches!(e.key, Key::Function(5)) && e.mods.ctrl && !e.mods.alt && !e.mods.shift {
+                self.run_plan(0);
                 return true;
             }
         }

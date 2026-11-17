@@ -305,12 +305,14 @@ pub fn extra() -> Extra {
             reviewing: false,
             wisp: s("idle"),
             proposal: None,
+            manifests: Vec::new(),
         },
         models: crate::models::sample(),
         subagents: crate::subagents::sample(),
         billing: Default::default(),
         linked: Default::default(),
         limits: Vec::new(),
+        ports: Default::default(),
     }
 }
 
@@ -711,6 +713,25 @@ impl Store for MockStore {
     }
     fn open_file(&mut self, path: &str, snap: &mut Snapshot) {
         snap.extra.code.open = Some(path.to_owned());
+    }
+    fn read_manifests(&mut self, paths: Vec<String>, snap: &mut Snapshot) {
+        // Sample data: the project is a Vite site.
+        snap.extra.code.manifests = paths.into_iter().filter(|p| p == "package.json")
+            .map(|p| (p, s("{\n  \"name\": \"launch-site\",\n  \"scripts\": { \"dev\": \"vite\", \"build\": \"vite build\" }\n}\n"))).collect();
+    }
+    fn live_op(&mut self, op: crate::model::LiveOp, snap: &mut Snapshot) {
+        use crate::model::{Forward, LiveOp};
+        let ports = &mut snap.extra.ports;
+        match op {
+            LiveOp::Start(_) => ports.live = Some(5500),
+            LiveOp::Stop => ports.live = None,
+            LiveOp::Forward(port) => {
+                ports.forwards.retain(|f| f.port != port);
+                ports.forwards.push(Forward { port, state: s("open"), url: format!("https://sample-{port}.trycloudflare.com"), message: String::new() });
+            }
+            LiveOp::Unforward(port) => ports.forwards.retain(|f| f.port != port),
+            LiveOp::Status => ports.tools = Some((true, true)),
+        }
     }
     fn review(&mut self, _file: &str, _text: &str, snap: &mut Snapshot) {
         snap.extra.code.reviewing = false;

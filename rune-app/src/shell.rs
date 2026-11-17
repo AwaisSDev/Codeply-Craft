@@ -56,6 +56,7 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
         .children(views::upgrade::sheet(s, &t))
         .children(crate::team::dialog(s, &t))
         .children(views::code::dialog(s, &t))
+        .children(views::code::completion(s, &t))
         .children(views::apps::dialog(s, &t))
         .children(menus(s, &t))
 }

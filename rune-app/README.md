@@ -100,6 +100,9 @@ src/
   bot.rs           Wisp and helpers at interface sizes (port of design/icons/codeply-icons.js)
   icons/pack.rs    icons.js ported to Rune icons (generated: node tools/gen-icons.mjs)
   model.rs         what the views show (Snapshot)
+  complete.rs      the editor's local suggestions, auto-closing brackets, indent on Enter
+  editor.rs        the editor's keys (the suggestions popup, Tab, Enter)
+  run.rs           Run (Ctrl F5), Live Server and the Ports panel (sidecar/ext-live.mjs)
   store/           Store trait, MockStore, LiveStore (feature "live")
   views/           office, office_art, board, chat, warp, code, prs, apps, settings
   tests.rs         the app driven through Rune's headless runtime
