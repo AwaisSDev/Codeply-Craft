@@ -634,8 +634,10 @@ pub struct LinkedPlan {
     pub connected: bool,
     pub plan: String,
     pub email: String,
-    /// Signing in: the browser is open.
+    /// Signing in: installing Claude Code, or the browser is open.
     pub busy: bool,
+    /// What the sign-in is doing while busy ("Downloading and installing Claude Code...").
+    pub stage: String,
     pub error: String,
 }
 

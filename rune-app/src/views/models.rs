@@ -228,7 +228,9 @@ fn linked_group(s: &App, t: &Theme) -> El {
     // On every plan, Free included.
     let linked = &s.data.extra.linked;
     let item = |which: &'static str, name: &str, tile: rune::Color, ink: rune::Color, glyph: &str, l: &crate::model::LinkedPlan| {
-        let desc = if l.connected {
+        let desc = if l.busy {
+            if l.stage.is_empty() { "Starting...".to_owned() } else { l.stage.clone() }
+        } else if l.connected {
             [l.plan.as_str(), l.email.as_str()].iter().filter(|x| !x.is_empty()).copied().collect::<Vec<_>>().join(" · ")
         } else if !l.error.is_empty() {
             l.error.clone()
@@ -236,7 +238,7 @@ fn linked_group(s: &App, t: &Theme) -> El {
             format!("Sign in with your {name} plan")
         };
         let action = if l.busy {
-            btn(t, "Waiting…", None, ButtonKind::Plain).key(format!("linked-{which}-busy"))
+            btn(t, if l.stage.starts_with("Downloading") { "Installing…" } else { "Waiting…" }, None, ButtonKind::Plain).key(format!("linked-{which}-busy"))
         } else if l.connected {
             btn(t, "Sign out", None, ButtonKind::Plain).key(format!("linked-{which}-out")).on_press(move |s: &mut App| s.linked_sign_out(which))
         } else {
@@ -248,7 +250,7 @@ fn linked_group(s: &App, t: &Theme) -> El {
                 .child(row().gap(8.0).center_y()
                     .child(text(name.to_owned()).font(ui(14.0, 500.0)).color(t.text))
                     .children(l.connected.then(|| pill(t, "Connected", Pill::Green))))
-                .child(text(desc).font(ui(12.5, 400.0)).color(if l.error.is_empty() || l.connected { t.dim } else { t.red }).wrap()))
+                .child(text(desc).font(ui(12.5, 400.0)).color(if l.error.is_empty() || l.connected || l.busy { t.dim } else { t.red }).wrap()))
             .child(action)
     };
     col().gap(8.0)

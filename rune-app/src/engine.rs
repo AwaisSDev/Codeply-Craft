@@ -26,6 +26,8 @@ const EXTENSIONS: &[(&str, &str)] = &[
     ("ext-hello.mjs", include_str!("../sidecar/ext-hello.mjs")),
     ("ext-usage.mjs", include_str!("../sidecar/ext-usage.mjs")),
     ("ext-billing.mjs", include_str!("../sidecar/ext-billing.mjs")),
+    // Settings > Models > Your plans: sign in to Claude (installing Claude Code if need be) or ChatGPT.
+    ("ext-linked.mjs", include_str!("../sidecar/ext-linked.mjs")),
     ("ext-models.mjs", include_str!("../sidecar/ext-models.mjs")),
     ("ext-apps.mjs", include_str!("../sidecar/ext-apps.mjs")),
     // Codeply's own sign-ins (Gmail, Slack, Vercel, Supabase, GitHub); ext-apps lists them first.

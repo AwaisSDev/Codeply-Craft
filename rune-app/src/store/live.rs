@@ -324,7 +324,8 @@ pub fn linked_from(l: &mut crate::model::Linked, v: &Value) {
         let x = &v[key];
         if x.is_object() {
             let s = |k: &str| x[k].as_str().unwrap_or_default().to_owned();
-            *slot = crate::model::LinkedPlan { connected: x["connected"].as_bool().unwrap_or(false), plan: s("plan"), email: s("email"), busy: false, error: s("error") };
+            // A sign-in the engine is still running (a refresh mid-way) stays busy, with its step.
+            *slot = crate::model::LinkedPlan { connected: x["connected"].as_bool().unwrap_or(false), plan: s("plan"), email: s("email"), busy: x["busy"].as_bool().unwrap_or(false), stage: s("stage"), error: s("error") };
         }
     }
     // A failed sign-in: the engine names which.
@@ -2162,6 +2163,14 @@ mod tests {
         linked_from(&mut l, &json!({ "claude": { "connected": true, "plan": "Claude Max", "email": "a@b.c" }, "chatgpt": { "connected": false }, "which": "chatgpt", "error": "The sign-in stopped." }));
         assert!(l.claude.connected && l.claude.plan == "Claude Max");
         assert!(!l.chatgpt.busy && l.chatgpt.error == "The sign-in stopped.");
+    }
+
+    #[test]
+    fn a_sign_in_in_progress_keeps_its_step() {
+        let mut l = crate::model::Linked::default();
+        linked_from(&mut l, &json!({ "claude": { "connected": false, "busy": true, "stage": "Downloading and installing Claude Code..." }, "chatgpt": { "connected": false } }));
+        assert!(l.claude.busy && l.claude.stage.starts_with("Downloading"));
+        assert!(!l.chatgpt.busy);
     }
 
     #[test]
