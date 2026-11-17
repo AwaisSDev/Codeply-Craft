@@ -231,19 +231,17 @@ fn picker(s: &App, t: &Theme) -> El {
         .child(crate::logo::mark(40.0))
         .child(col().grow(1.0).min_w(0.0).gap(6.0)
             .child(text("Upgrade Codeply").font(ui(19.0, 700.0).tracking(-0.2)).color(t.text))
-            .child(text("Put the Codeply agent to work on our models, with no API key. Cancel any time.").font(ui(14.0, 400.0).lh(20.0)).color(t.dim).wrap()));
+            .child(text("Our best models, no API key needed. Cancel any time.").font(ui(14.0, 400.0).lh(20.0)).color(t.dim).wrap()));
     let plans = row().w_full().gap(12.0).items_stretch().mt(20.0)
         .child(plan_card(t, "starter", pick == "starter", Some("3 days free"), "$20", &[
-            ("The model picker: Opus 5.5, Sonnet, Haiku", false),
-            ("The agent on our models, no API key", false),
+            ("Opus 5.5, Sonnet 5.5 and Haiku 5.5", false),
+            ("Bring your ChatGPT or Claude plan", false),
             ("ChatGPT Tera and Luna", true),
-            ("Resets every 5 hours, monthly cap", false),
         ]))
         .child(plan_card(t, "pro", pick == "pro", None, "$100", &[
-            ("Everything in Pro", false),
+            ("Everything in Pro, 5x the usage", false),
             ("Claude Fable 5.2", false),
             ("ChatGPT Sol and Astra", true),
-            ("5x the usage of Pro", false),
         ]));
     let sign_in = b.signed_out || state == Some(&CheckoutState::SignIn);
     let opening = state == Some(&CheckoutState::Opening);
