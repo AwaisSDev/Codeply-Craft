@@ -230,6 +230,11 @@ function disconnectIntegration(name) {
 //              phone?, phoneSyncedAt?, phoneUser?, phoneError? }]   (phone sync: model-sync.js)
 
 const AUTO_MODEL_ID = 'auto';
+// Codeply's own models, picked by plan (Pro: Opus, Sonnet, Haiku; Max adds Fable). They run on
+// Haze 2's servers like Auto, with the pick sent along (ai.js chatViaRouter), so they are valid
+// selections without being entries in models[]; the router checks the plan.
+const CODEPLY_PICKS = ['codeply:opus', 'codeply:sonnet', 'codeply:haiku', 'codeply:fable'];
+const isCodeplyPick = (id) => CODEPLY_PICKS.includes(String(id || ''));
 
 // Base URLs for importing the CLI's older per-provider keys (`codeply provider
 // <name> --key`) as regular models the first time the models list is read.
@@ -305,14 +310,20 @@ function getModels() {
 function getSelectedModelId() {
   const file = readModelsState();
   const id = file.selectedModel || AUTO_MODEL_ID;
-  if (id !== AUTO_MODEL_ID && !file.models.some((m) => m.id === id)) return AUTO_MODEL_ID;
+  if (id !== AUTO_MODEL_ID && !isCodeplyPick(id) && !file.models.some((m) => m.id === id)) return AUTO_MODEL_ID;
   return id;
+}
+
+/** The Codeply model picked ("opus", "fable", ...), or '' for Auto or one of your own models. */
+function getSelectedPick() {
+  const id = getSelectedModelId();
+  return isCodeplyPick(id) ? id.slice('codeply:'.length) : '';
 }
 
 /** The model entry a turn should use, or null for Auto (the hosted Codeply model). */
 function getSelectedModel() {
   const id = getSelectedModelId();
-  if (id === AUTO_MODEL_ID) return null;
+  if (id === AUTO_MODEL_ID || isCodeplyPick(id)) return null;
   return getModels().find((m) => m.id === id) || null;
 }
 
@@ -439,7 +450,7 @@ function deleteModel(id) {
 
 function selectModel(id) {
   const file = readModelsState();
-  if (id !== AUTO_MODEL_ID && !file.models.some((m) => m.id === id)) return { ok: false, error: 'Unknown model.' };
+  if (id !== AUTO_MODEL_ID && !isCodeplyPick(id) && !file.models.some((m) => m.id === id)) return { ok: false, error: 'Unknown model.' };
   file.selectedModel = id;
   return writeFile(file);
 }
@@ -513,6 +524,6 @@ module.exports = { disconnectedApps,
   getConfig, saveConfig, maskKey, describeProvider, describeProviderShort, byokHint,
   configPath, PROVIDERS, BYOK_PROVIDERS,
   getIntegration, saveIntegration, disconnectIntegration, isIntegrationConnected, INTEGRATIONS,
-  AUTO_MODEL_ID, getModels, getModel, getSelectedModel, getSelectedModelId, saveModel, deleteModel, selectModel, syncChatGPTModels,
+  AUTO_MODEL_ID, CODEPLY_PICKS, getSelectedPick, getModels, getModel, getSelectedModel, getSelectedModelId, saveModel, deleteModel, selectModel, syncChatGPTModels,
   setModelPhone, getPhoneDeletes, setPhoneDeletes, setModelEffort, setModelEffortLevels, EFFORTS,
 };

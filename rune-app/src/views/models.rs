@@ -7,7 +7,7 @@ use rune::{El, Side, col, el, row, text, text_input};
 use crate::app::App;
 use crate::icons::{ico, ico_s};
 use crate::model::{ButtonKind, Pill};
-use crate::models::{AUTO, KEY, MODEL, ModelInfo, NAME, PRESETS, URL};
+use crate::models::{AUTO, COMING, KEY, MODEL, ModelInfo, NAME, PICKS, PRESETS, URL, pick_name, plan_rank};
 use crate::theme::{Theme, ui};
 use crate::ui::{btn, menu, menu_item, pill, toggle};
 
@@ -22,6 +22,24 @@ pub fn composer_menu(s: &App, t: &Theme, key: &str) -> El {
         menu_item(t, "model/auto".into(), None, "Haze 2", Some("Picks the best model for each task"), models.selected == AUTO)
             .on_press(|s: &mut App| s.model_pick(AUTO)),
     ];
+    // Codeply's own models, by plan: one above your plan names it and opens the upgrade on it.
+    let have = s.data.extra.billing.plan.as_ref().map_or(0, |p| plan_rank(&p.key));
+    items.push(divider());
+    items.push(label(t, "Codeply models"));
+    for (id, name, needs) in PICKS {
+        let open = plan_rank(needs) <= have;
+        let note = if open { None } else { Some(if needs == "pro" { "Max" } else { "Pro" }) };
+        items.push(menu_item(t, format!("model/{id}"), Some("sparkle"), name, note, models.selected == id)
+            .on_press(move |s: &mut App| if open { s.model_pick(id) } else { s.open_upgrade_for(needs) }));
+    }
+    items.push(label(t, "ChatGPT"));
+    for (name, needs) in COMING {
+        let plan = if needs == "pro" { "Max" } else { "Pro" };
+        items.push(menu_item(t, format!("model/chatgpt-{}", name.to_lowercase()), Some("chip"), name, Some(&format!("Coming soon on {plan}")), false)
+            .on_press(|s: &mut App| s.menu = None));
+    }
+    items.push(divider());
+    items.push(label(t, "Your models"));
     for m in &models.list {
         let id = m.id.clone();
         items.push(menu_item(t, format!("model/{}", m.id), Some(if m.is_local() { "laptop" } else { "chip" }), &m.name, Some(&m.place()), models.selected == m.id)
@@ -29,6 +47,8 @@ pub fn composer_menu(s: &App, t: &Theme, key: &str) -> El {
     }
     // How hard it thinks. Haze 2 keeps the app's own setting; a model you added has what its provider offers.
     match models.current() {
+        // A Codeply model: the router sets how hard it thinks.
+        None if pick_name(&models.selected).is_some() => {}
         None => {
             items.push(divider());
             items.push(label(t, "Effort"));

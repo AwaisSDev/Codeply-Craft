@@ -229,8 +229,8 @@ const SCENES: &[Scene] = &[
     ("bg-ascii-colour", |s| { bg(s, look::BgKind::Ascii); s.new_chat(); }),
     ("bg-dots-colour", |s| { bg(s, look::BgKind::Dots); s.new_chat(); }),
     ("bg-picture", |s| { bg(s, look::BgKind::Picture); s.new_chat(); }),
-    // Flowing dots, with a click's ripple on its way out from the composer.
-    ("bg-flow", |s| { bg(s, look::BgKind::Flow); s.new_chat(); flow::click(0.62, 0.62); }),
+    // Flowing dots behind the chat home.
+    ("bg-flow", |s| { bg(s, look::BgKind::Flow); s.new_chat(); }),
     ("settings-flow", |s| { bg(s, look::BgKind::Flow); s.open_settings(SettingsPage::Appearance); }),
     ("bg-picture-chat", |s| { bg(s, look::BgKind::Picture); s.open_chat("Casual chat"); }),
     ("settings-background", |s| { bg(s, look::BgKind::Dots); s.open_settings(SettingsPage::Appearance); }),

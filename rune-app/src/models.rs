@@ -11,6 +11,31 @@ use serde_json::Value;
 /// The id of Haze 2 in the engine's list.
 pub const AUTO: &str = "auto";
 
+/// Codeply's own models, picked in the composer on a paid plan: (selection id, name, the plan
+/// that includes it). They run on Haze 2's servers with the pick sent along (config.js).
+pub const PICKS: [(&str, &str, &str); 4] = [
+    ("codeply:opus", "Opus 5.5", "starter"),
+    ("codeply:sonnet", "Sonnet 5.5", "starter"),
+    ("codeply:haiku", "Haiku 5.5", "starter"),
+    ("codeply:fable", "Fable 5.2", "pro"),
+];
+/// ChatGPT models on the way: (name, the plan that will include it).
+pub const COMING: [(&str, &str); 4] = [("Tera", "starter"), ("Luna", "starter"), ("Sol", "pro"), ("Astra", "pro")];
+
+/// How far up a plan is: Free 0, Pro ("starter") 1, Max ("pro") 2.
+pub fn plan_rank(key: &str) -> u8 {
+    match key {
+        "starter" => 1,
+        "pro" => 2,
+        _ => 0,
+    }
+}
+
+/// The name of a Codeply pick ("Opus 5.5"), if `id` is one.
+pub fn pick_name(id: &str) -> Option<&'static str> {
+    PICKS.iter().find(|p| p.0 == id).map(|p| p.1)
+}
+
 /// "Use on my phone": whether a model can sync to the account, and where it stands.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Phone {
@@ -163,6 +188,9 @@ impl Models {
 
     /// The composer chip: the model's name, and its effort in grey when it has one.
     pub fn chip(&self, haze_effort: &str) -> (String, Option<String>) {
+        if let Some(name) = pick_name(&self.selected) {
+            return (name.to_owned(), None);
+        }
         match self.current() {
             None => ("Haze 2".into(), Some(haze_effort.to_owned())),
             Some(m) => (m.name.clone(), (m.has_effort() && !m.effort.is_empty()).then(|| effort_label(&m.effort))),

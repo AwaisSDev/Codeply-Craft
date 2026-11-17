@@ -676,9 +676,14 @@ function dshApproveFor(approve) {
 function routeFor(session) {
   try {
     const config = need('config.js');
+    // A Codeply model (codeply:opus, ...): Haze 2's servers, answering on the picked model.
+    const pickOf = (id) => (String(id || '').startsWith('codeply:') ? String(id).slice('codeply:'.length) : '');
+    if (pickOf(session && session.modelId)) return { auto: true, pick: pickOf(session.modelId) };
     const own = session && session.modelId ? config.getModel(session.modelId) : null;
     const m = own || config.getSelectedModel();
     if (m) return { custom: m };
+    const pick = typeof config.getSelectedPick === 'function' ? config.getSelectedPick() : '';
+    if (pick) return { auto: true, pick };
   } catch { /* no config: Haze 2 */ }
   return { auto: true };
 }

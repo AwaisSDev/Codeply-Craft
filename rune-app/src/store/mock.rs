@@ -554,7 +554,7 @@ impl Store for MockStore {
         let m = &mut snap.extra.models;
         m.busy = false;
         match op {
-            ModelOp::Select(id) => m.selected = if m.list.iter().any(|x| x.id == id) { id } else { AUTO.into() },
+            ModelOp::Select(id) => m.selected = if m.list.iter().any(|x| x.id == id) || crate::models::pick_name(&id).is_some() { id } else { AUTO.into() },
             ModelOp::Save(d) => {
                 if let Some(why) = d.problem() {
                     m.error = Some(why.into());

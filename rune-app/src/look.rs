@@ -55,7 +55,7 @@ pub enum BgKind {
     Picture,
     Ascii,
     Dots,
-    /// Live dots that drift, and ripple where you click (flow.rs).
+    /// Live dots that drift behind the chat home (flow.rs).
     Flow,
 }
 
@@ -604,7 +604,7 @@ impl Look {
         // The dots a little lighter than the page in dark themes, darker in light ones.
         let bg = rgb(t.bg);
         let ink = if t.dark { [92, 92, 96] } else { [150, 150, 158] };
-        let palette = crate::flow::Palette { bg, ink, accent: rgb(t.accent) };
+        let palette = crate::flow::Palette { bg, ink };
         let mut flow = self.flow.borrow_mut();
         let fresh = flow.as_ref().is_none_or(|f| f.palette() != palette) || self.flow_still.get() != still;
         if fresh {

@@ -1,12 +1,11 @@
-//! "Flowing dots": the background as a live halftone. Clouds of dots drift behind the app, and a
-//! click sends a ring of accent-coloured dots out from where it landed. A thread draws each
-//! frame into one `Pixels`, which redraws only the backdrop, never the app's layout.
+//! "Flowing dots": the chat home's background as a live halftone. Clouds of dots drift slowly
+//! behind it. A thread draws each frame into one `Pixels`, which redraws only that layer, never
+//! the app's layout.
 //!
 //! The field is domain-warped value noise sampled once per dot; each dot's radius follows it.
-//! Clicks come from the window (browser.rs watches presses on Windows) as fractions of its size.
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use rune::Pixels;
@@ -18,50 +17,11 @@ const H: usize = 1000;
 const PITCH: usize = 8;
 const COLS: usize = W / PITCH;
 const ROWS: usize = H / PITCH;
-/// How long a ripple lasts, in seconds.
-const LIFE: f32 = 2.4;
-
-/// Clicks waiting to become ripples: (x, y) as fractions of the frame.
-static CLICKS: Mutex<Vec<(f32, f32)>> = Mutex::new(Vec::new());
-/// Where the dots' area starts in the window, in points (left, top): set by the shell each build.
-static AREA: Mutex<(f32, f32)> = Mutex::new((0.0, 0.0));
-
-/// A press on the dots at (x, y), as fractions of the frame: starts a ripple there.
-pub fn click(x: f32, y: f32) {
-    if let Ok(mut c) = CLICKS.lock() {
-        if c.len() < 16 {
-            c.push((x.clamp(0.0, 1.0), y.clamp(0.0, 1.0)));
-        }
-    }
-}
-
-/// The dots' area begins `left` and `top` points into the window (past the rail, sidebar and
-/// title bar).
-pub fn set_area(left: f32, top: f32) {
-    if let Ok(mut a) = AREA.lock() {
-        *a = (left, top);
-    }
-}
-
-/// A press at (x, y) points in a window `w` by `h` points: a ripple where it lands on the dots,
-/// which fill their area like a cover image (scaled to fill, centred, the overflow cut off).
-pub fn click_in_window(x: f32, y: f32, w: f32, h: f32) {
-    let (left, top) = AREA.lock().map_or((0.0, 0.0), |a| *a);
-    let (ax, ay, aw, ah) = (x - left, y - top, w - left, h - top);
-    if ax < 0.0 || ay < 0.0 || aw <= 0.0 || ah <= 0.0 {
-        return;
-    }
-    let scale = (aw / W as f32).max(ah / H as f32);
-    let (ox, oy) = ((aw - W as f32 * scale) / 2.0, (ah - H as f32 * scale) / 2.0);
-    click((ax - ox) / scale / W as f32, (ay - oy) / scale / H as f32);
-}
-
-/// The colours a frame is drawn in.
+/// The colours a frame is drawn in: the page behind, and the dots.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Palette {
     pub bg: [u8; 3],
     pub ink: [u8; 3],
-    pub accent: [u8; 3],
 }
 
 /// A running animation: its image, and the switches its thread reads.
@@ -69,7 +29,7 @@ pub struct Flow {
     pub px: Pixels,
     palette: Palette,
     stop: Arc<AtomicBool>,
-    /// Frames per second the thread aims for (60, fewer while the window isn't in front).
+    /// Frames per second the thread aims for (30, fewer while the window isn't in front).
     fps: Arc<AtomicU32>,
 }
 
@@ -78,10 +38,10 @@ impl Flow {
     pub fn start(palette: Palette, still: bool) -> Flow {
         let px = Pixels::new();
         let stop = Arc::new(AtomicBool::new(false));
-        let fps = Arc::new(AtomicU32::new(60));
+        let fps = Arc::new(AtomicU32::new(30));
         let field = Field::new(palette);
         // The first frame now, so the backdrop never shows empty.
-        px.set(W as u32, H as u32, field.frame(0.0, &[]));
+        px.set(W as u32, H as u32, field.frame(0.0));
         if !still {
             let (px2, stop2, fps2) = (px.clone(), stop.clone(), fps.clone());
             let _ = std::thread::Builder::new().name("flowing-dots".into()).spawn(move || run(field, px2, stop2, fps2));
@@ -93,9 +53,9 @@ impl Flow {
         self.palette
     }
 
-    /// 60 frames a second while the window is in front, 12 behind other windows.
+    /// 30 frames a second while the window is in front (the clouds drift slowly), 12 behind others.
     pub fn set_focused(&self, focused: bool) {
-        self.fps.store(if focused { 60 } else { 12 }, Ordering::Relaxed);
+        self.fps.store(if focused { 30 } else { 12 }, Ordering::Relaxed);
     }
 }
 
@@ -105,31 +65,12 @@ impl Drop for Flow {
     }
 }
 
-/// One frame at `t` seconds with the given ripples, for a still picture (a snapshot, a preview).
-pub fn still(palette: Palette, t: f32, ripples: &[(f32, f32, f32)]) -> Pixels {
-    let px = Pixels::new();
-    px.set(W as u32, H as u32, Field::new(palette).frame(t, ripples));
-    px
-}
-
 fn run(field: Field, px: Pixels, stop: Arc<AtomicBool>, fps: Arc<AtomicU32>) {
     let start = Instant::now();
-    // (x, y in frame pixels, when it started)
-    let mut ripples: Vec<(f32, f32, f32)> = Vec::new();
     while !stop.load(Ordering::Relaxed) {
         let began = Instant::now();
-        let t = start.elapsed().as_secs_f32();
-        if let Ok(mut c) = CLICKS.lock() {
-            for (x, y) in c.drain(..) {
-                ripples.push((x * W as f32, y * H as f32, t));
-            }
-        }
-        ripples.retain(|r| t - r.2 < LIFE);
-        px.set(W as u32, H as u32, field.frame(t, &ripples));
-        // The clouds drift slowly: 30 frames a second is smooth for them; a ripple gets the full rate.
-        let want = fps.load(Ordering::Relaxed).max(1);
-        let want = if ripples.is_empty() { want.min(30) } else { want };
-        let every = Duration::from_secs_f64(1.0 / f64::from(want));
+        px.set(W as u32, H as u32, field.frame(start.elapsed().as_secs_f32()));
+        let every = Duration::from_secs_f64(1.0 / f64::from(fps.load(Ordering::Relaxed).max(1)));
         if let Some(rest) = every.checked_sub(began.elapsed()) {
             std::thread::sleep(rest);
         }
@@ -218,11 +159,10 @@ impl Field {
         sum / norm
     }
 
-    /// The frame at `t` seconds, RGBA, with ripples (x, y in frame pixels, started at).
-    fn frame(&self, t: f32, ripples: &[(f32, f32, f32)]) -> Vec<u8> {
-        let Palette { ink, accent, .. } = self.palette;
+    /// The frame at `t` seconds, RGBA.
+    fn frame(&self, t: f32) -> Vec<u8> {
+        let Palette { ink, .. } = self.palette;
         let mut out = self.blank.clone();
-        let mix = |a: u8, b: u8, k: f32| (f32::from(a) + (f32::from(b) - f32::from(a)) * k).clamp(0.0, 255.0);
         // The cloud field on every other dot, smoothed in between: a quarter of the noise.
         let (gw, gh) = (COLS / 2 + 2, ROWS / 2 + 2);
         let mut grid = vec![0f32; gw * gh];
@@ -251,32 +191,6 @@ impl Field {
                 if dens == 0.0 && f > 0.44 && self.noise(cx * 0.37 / PITCH as f32 * 8.0 + t * 0.6, cy * 0.41 / PITCH as f32 * 8.0) > 0.86 {
                     r = 0.22; // a speck just outside a cloud
                 }
-                // Ripples: a wobbly ring that grows and fades.
-                let mut band: f32 = 0.0;
-                for &(mx, my, t0) in ripples {
-                    let age = t - t0;
-                    if !(0.0..LIFE).contains(&age) {
-                        continue;
-                    }
-                    let radius = 1250.0 * (1.0 - (-age * 1.5).exp());
-                    let (dx, dy) = (cx - mx, cy - my);
-                    let d = (dx * dx + dy * dy).sqrt();
-                    let width = 22.0 + 22.0 * age;
-                    // Far from the ring (beyond its width and wobble): nothing to add.
-                    if (d - radius).abs() > 3.0 * width + 0.1 * radius {
-                        continue;
-                    }
-                    let th = dy.atan2(dx);
-                    let wob = 1.0 + 0.2 * (self.noise(th.cos() * 2.2 + 3.0 + t0, th.sin() * 2.2 + 5.0 + age * 0.8) - 0.5);
-                    let fade = (1.0 - age / LIFE).powf(1.1);
-                    band = band.max((-((d - radius * wob) / width).powi(2)).exp() * fade);
-                }
-                if band > 0.0 {
-                    band *= 0.7 + 0.3 * self.noise(cx / 18.0 + t * 2.0, cy / 18.0);
-                    if band > 0.08 {
-                        r = r.max((band * 1.6).min(1.0));
-                    }
-                }
                 if r <= 0.01 {
                     continue;
                 }
@@ -285,8 +199,7 @@ impl Field {
                     continue;
                 }
                 let shade = 0.5 + 0.5 * dens;
-                let k = (band * 2.0).min(1.0);
-                let colour = [0, 1, 2].map(|i| mix((f32::from(ink[i]) * shade) as u8, accent[i], k));
+                let colour = [0, 1, 2].map(|i| (f32::from(ink[i]) * shade) as u8);
                 let disc = &self.discs[step];
                 for y in 0..PITCH {
                     let base = ((row * PITCH + y) * W + colm * PITCH) * 4;
@@ -311,26 +224,16 @@ impl Field {
 mod tests {
     use super::*;
 
-    const DARK: Palette = Palette { bg: [15, 15, 15], ink: [92, 92, 96], accent: [61, 139, 253] };
+    const DARK: Palette = Palette { bg: [15, 15, 15], ink: [92, 92, 96] };
 
     #[test]
     fn a_frame_fills_the_image_and_has_dots() {
         let f = Field::new(DARK);
-        let px = f.frame(1.0, &[]);
+        let px = f.frame(1.0);
         assert_eq!(px.len(), W * H * 4);
         let lit = px.chunks_exact(4).filter(|p| p[0] > 30).count();
         assert!(lit > W * H / 50, "some dots are drawn ({lit})");
         assert!(lit < W * H / 2, "and most of it is background ({lit})");
-    }
-
-    #[test]
-    fn a_click_draws_a_ring_in_the_accent_colour() {
-        let f = Field::new(DARK);
-        let blue = |px: &[u8]| px.chunks_exact(4).filter(|p| p[2] > 150 && p[2] > p[0] + 60).count();
-        let before = blue(&f.frame(1.0, &[]));
-        let after = blue(&f.frame(1.6, &[(800.0, 500.0, 1.0)]));
-        assert_eq!(before, 0);
-        assert!(after > 2000, "the ring shows ({after})");
     }
 
     /// Writes a few frames to PNG for looking at: `cargo test --release flow -- --ignored`.
@@ -338,8 +241,8 @@ mod tests {
     #[ignore]
     fn write_frames() {
         let f = Field::new(DARK);
-        for (name, t, rip) in [("a", 2.0, vec![]), ("b", 3.2, vec![(900.0, 450.0, 2.6)]), ("c", 4.0, vec![(900.0, 450.0, 2.6), (400.0, 800.0, 3.4)])] {
-            let px = f.frame(t, &rip);
+        for (name, t) in [("a", 2.0), ("b", 3.2), ("c", 4.0)] {
+            let px = f.frame(t);
             let path = std::env::temp_dir().join(format!("flow-{name}.png"));
             let file = std::io::BufWriter::new(std::fs::File::create(&path).unwrap());
             let mut enc = png::Encoder::new(file, W as u32, H as u32);
@@ -358,14 +261,9 @@ mod tests {
         let f = Field::new(DARK);
         let start = std::time::Instant::now();
         for i in 0..30 {
-            std::hint::black_box(f.frame(i as f32 / 60.0, &[(800.0, 500.0, 0.0)]));
+            std::hint::black_box(f.frame(i as f32 / 30.0));
         }
         println!("frame {:.2} ms", start.elapsed().as_secs_f64() * 1000.0 / 30.0);
-        let start = std::time::Instant::now();
-        for i in 0..30 {
-            std::hint::black_box(f.frame(i as f32 / 60.0, &[]));
-        }
-        println!("frame without a ripple {:.2} ms", start.elapsed().as_secs_f64() * 1000.0 / 30.0);
         let start = std::time::Instant::now();
         for _ in 0..30 {
             std::hint::black_box(f.blank.clone());
@@ -373,22 +271,4 @@ mod tests {
         println!("blank copy {:.2} ms", start.elapsed().as_secs_f64() * 1000.0 / 30.0);
     }
 
-    #[test]
-    fn a_click_lands_where_it_was_made_on_the_dots() {
-        // A 1928 x 1044 window: the dots fill 1600 x 1000 points from (328, 44), one to one.
-        set_area(328.0, 44.0);
-        click_in_window(328.0 + 800.0, 44.0 + 500.0, 1928.0, 1044.0);
-        let c = CLICKS.lock().unwrap().pop().unwrap();
-        assert!((c.0 - 0.5).abs() < 1e-4 && (c.1 - 0.5).abs() < 1e-4, "{c:?}");
-        // On the sidebar: no ripple.
-        click_in_window(100.0, 300.0, 1928.0, 1044.0);
-        assert!(CLICKS.lock().unwrap().is_empty());
-    }
-
-    #[test]
-    fn clicks_are_kept_within_the_window() {
-        click(-1.0, 2.0);
-        let c = CLICKS.lock().unwrap().pop().unwrap();
-        assert_eq!(c, (0.0, 1.0));
-    }
 }

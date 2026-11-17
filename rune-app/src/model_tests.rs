@@ -129,3 +129,23 @@ fn editing_keeps_the_saved_key() {
     let m = rt.state.data.extra.models.list.iter().find(|m| m.id == "m1").unwrap();
     assert_eq!((m.name.as_str(), m.has_key), ("Renamed", true));
 }
+
+#[test]
+fn codeply_models_follow_the_plan_and_locked_ones_open_the_upgrade() {
+    let mut rt = runtime(App::with_mock());
+    settle(&mut rt);
+    // Free: Opus is on Pro, so it opens the upgrade on Pro; nothing is picked.
+    click(&mut rt, "model-chip/chat-home");
+    click(&mut rt, "model/codeply:opus");
+    assert!(rt.state.upgrade.open && rt.state.upgrade.pick == "starter", "a locked model offers its plan");
+    assert_eq!(rt.state.data.extra.models.selected, crate::models::AUTO);
+    rt.state.upgrade.open = false;
+    // Max: Fable can be picked, and the chip shows it.
+    rt.state.data.extra.billing.plan = Some(crate::model::Plan { key: "pro".into(), name: "Max".into(), models: Vec::new() });
+    rt.invalidate();
+    settle(&mut rt);
+    click(&mut rt, "model-chip/chat-home");
+    click(&mut rt, "model/codeply:fable");
+    assert_eq!(rt.state.data.extra.models.selected, "codeply:fable");
+    assert_eq!(rt.state.data.extra.models.chip("High").0, "Fable 5.2");
+}

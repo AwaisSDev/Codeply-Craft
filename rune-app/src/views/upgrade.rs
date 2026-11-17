@@ -31,6 +31,12 @@ pub fn plan_name(key: &str) -> &'static str {
 
 impl App {
     /// Opens the upgrade sheet on Pro, and reads the plan afresh (are you signed in?).
+    /// The upgrade sheet with `plan` ("starter" or "pro") already chosen (a locked model in the menu).
+    pub fn open_upgrade_for(&mut self, plan: &'static str) {
+        self.open_upgrade();
+        self.upgrade.pick = if plan == "pro" { "pro" } else { "starter" };
+    }
+
     pub fn open_upgrade(&mut self) {
         self.menu = None;
         self.upgrade = Upgrade { open: true, pick: "starter" };
@@ -228,15 +234,16 @@ fn picker(s: &App, t: &Theme) -> El {
             .child(text("Put the Codeply agent to work on our models, with no API key. Cancel any time.").font(ui(14.0, 400.0).lh(20.0)).color(t.dim).wrap()));
     let plans = row().w_full().gap(12.0).items_stretch().mt(20.0)
         .child(plan_card(t, "starter", pick == "starter", Some("3 days free"), "$20", &[
-            ("The agent on our models", false),
-            ("Claude Opus 5.5, Sonnet and Haiku", false),
+            ("The model picker: Opus 5.5, Sonnet, Haiku", false),
+            ("The agent on our models, no API key", false),
+            ("ChatGPT Tera and Luna", true),
             ("Resets every 5 hours, monthly cap", false),
         ]))
         .child(plan_card(t, "pro", pick == "pro", None, "$100", &[
             ("Everything in Pro", false),
             ("Claude Fable 5.2", false),
+            ("ChatGPT Sol and Astra", true),
             ("5x the usage of Pro", false),
-            ("ChatGPT models", true),
         ]));
     let sign_in = b.signed_out || state == Some(&CheckoutState::SignIn);
     let opening = state == Some(&CheckoutState::Opening);

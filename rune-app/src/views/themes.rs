@@ -234,7 +234,7 @@ fn background(s: &App, t: &Theme) -> El {
     let dims: Vec<&str> = DIMS.iter().map(|x| x.0).collect();
     let blurs: Vec<&str> = BLURS.iter().map(|x| x.0).collect();
     let mut rows = vec![
-        item(t, "Background", Some("Behind the app's content. A picture, ASCII art, dots, or flowing dots that ripple where you click."),
+        item(t, "Background", Some("Behind the app's content. A picture, ASCII art, dots, or flowing dots on the chat home."),
             tabs(t, "set-bg", &kinds, l.bg_kind, |s: &mut App, k: BgKind| s.set_bg_kind(k))),
     ];
     // Where the picture comes from: a file, or an online search (ASCII and dots draw from it too).

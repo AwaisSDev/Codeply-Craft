@@ -1625,6 +1625,8 @@ async function chatViaRouter(messages, opts) {
           ...(opts.tools ? { tools: opts.tools } : {}),
           opts: { json: !!opts.json, maxTokens: opts.maxTokens, temperature: opts.temperature },
           ...hazeField(opts.haze),
+          // A Codeply model the person picked (Pro/Max): the router answers on it.
+          ...(opts.route && opts.route.pick ? { pick: String(opts.route.pick) } : {}),
         }),
         signal,
       });

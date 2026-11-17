@@ -451,25 +451,15 @@ mod native {
     /// could be typed in.
     #[allow(unsafe_code)]
     fn keyboard_follows_clicks(raw: rune::raw_window_handle::RawWindowHandle) {
-        use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+        use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
         use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetFocus, SetFocus};
-        use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
         use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
-        use windows_sys::Win32::UI::WindowsAndMessaging::{GetClientRect, WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_RBUTTONDOWN};
+        use windows_sys::Win32::UI::WindowsAndMessaging::{WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_RBUTTONDOWN};
         unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, _id: usize, _data: usize) -> LRESULT {
             // SAFETY: called by Windows on the window's own thread with the window's own handle.
             unsafe {
                 if matches!(msg, WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN) && GetFocus() != hwnd {
                     SetFocus(hwnd);
-                }
-                // The flowing dots ripple where you click (in points, like the layout).
-                if msg == WM_LBUTTONDOWN {
-                    let mut r: RECT = std::mem::zeroed();
-                    if GetClientRect(hwnd, &mut r) != 0 && r.right > 0 && r.bottom > 0 {
-                        let scale = GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
-                        let (x, y) = ((lparam & 0xffff) as i16 as f32, ((lparam >> 16) & 0xffff) as i16 as f32);
-                        crate::flow::click_in_window(x / scale, y / scale, r.right as f32 / scale, r.bottom as f32 / scale);
-                    }
                 }
                 DefSubclassProc(hwnd, msg, wparam, lparam)
             }
