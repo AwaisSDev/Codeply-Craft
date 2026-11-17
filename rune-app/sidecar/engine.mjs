@@ -744,6 +744,36 @@ async function* runClassic(session, text, approve, signal, images = []) {
   yield* runAgent({ userMessage: text, history, mode: 'Build', cwd: session.cwd, approve, signal, route: routeFor(session), images: urls.length ? urls : undefined, haze: { product: 'cli', chatId: session.id } });
 }
 
+/** A title no other chat has (the app finds chats by title): "Fix the login (2)". */
+function uniqueTitle(want, self) {
+  const base = String(want || '').replace(/\s+/g, ' ').trim().slice(0, 60) || 'New chat';
+  let t = base;
+  for (let i = 2; store.sessions.some((x) => x !== self && x.title === t); i++) t = `${base} (${i})`;
+  return t;
+}
+
+/** Sets a chat's title and tells the app. */
+function retitle(session, title) {
+  session.title = uniqueTitle(title, session);
+  session.updatedAt = Date.now();
+  saveNow();
+  emit(session.id, { type: 'session_sync', session: meta(session) });
+}
+
+/** Names a new chat from its first message, as ChatGPT does: a few words, on the chat's own
+ *  model. Leaves the title alone if you renamed the chat meanwhile. */
+async function nameChat(session, text, provisional) {
+  const ai = need('ai.js');
+  const r = await ai.chat([
+    { role: 'system', content: 'Name this chat from the user\'s first message: 2 to 5 words, Title Case, no quotes, no emoji, no ending punctuation. Reply with the name only.' },
+    { role: 'user', content: String(text).slice(0, 2000) },
+  ], { route: routeFor(session), maxTokens: 24, temperature: 0.3, haze: { product: 'craft', surface: 'title', chatId: session.id } });
+  const raw = r && r.success ? String(r.data?.choices?.[0]?.message?.content || '') : '';
+  const name = raw.split('\n').map((l) => l.trim()).find(Boolean)?.replace(/^["'`*#\s]+|["'`*.!?\s]+$/g, '').replace(/^(title|name)\s*:\s*/i, '').slice(0, 60) || '';
+  if (!name || session.renamed || session.title !== provisional || !store.sessions.includes(session)) return;
+  retitle(session, name);
+}
+
 /** A message for a chat: an extension may take it (the project's Cloud switch), a busy chat queues it, else it runs. */
 /** Pictures among attached files, for the model: { path, mimeType, data } (base64), at most six
  *  of 8 MB each. */
@@ -792,7 +822,9 @@ async function startRun(session, text, opts = {}) {
   if (!opts.resume) session.messages.push({ kind: 'user', text, ...(files.length ? { files } : {}), at: Date.now() });
   const from = session.messages.length;
   if (!opts.resume && session.messages.filter((m) => m.kind === 'user').length === 1 && (!session.title || session.title === 'New chat')) {
-    session.title = text.length > 46 ? `${text.slice(0, 46)}...` : text;
+    session.title = uniqueTitle(text.length > 46 ? `${text.slice(0, 46)}...` : text, session);
+    // A short name the model writes replaces it in a moment (your own chats, not agents' or code's).
+    if (session.kind !== 'agent' && session.kind !== 'code') nameChat(session, text, session.title).catch(() => {});
   }
   session.updatedAt = Date.now();
   saveNow();
@@ -1439,6 +1471,15 @@ const server = http.createServer(async (req, res) => {
         saveNow();
         emit(s.id, { type: 'session_deleted', sessionId: s.id });
         return reply(200, { ok: true });
+      }
+      // Rename: yours from now on (the model's name won't replace it).
+      if (m[2] === 'title' && req.method === 'POST') {
+        const body = await readJson(req);
+        const title = String(body.title || '').replace(/\s+/g, ' ').trim();
+        if (!title) return reply(400, { error: 'Give the chat a name.' });
+        s.renamed = true;
+        retitle(s, title);
+        return reply(200, { session: meta(s) });
       }
       if (m[2] === 'message' && req.method === 'POST') {
         const body = await readJson(req);

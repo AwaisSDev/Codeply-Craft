@@ -1611,6 +1611,13 @@ impl Store for LiveStore {
         }
     }
 
+    fn rename_chat(&mut self, old: &str, new: &str, _snap: &mut Snapshot) {
+        // The engine makes the name unique and sends the chat back (session_sync), which renames it here.
+        let Some(id) = self.id_of(old) else { return };
+        let title = new.to_owned();
+        self.spawn(move |c| c.post(&format!("/session/{id}/title"), json!({ "title": title })).err().map(|e| Msg::Status(format!("rename failed: {e}"))));
+    }
+
     fn take_project(&mut self) -> Option<String> {
         self.open_project.take()
     }

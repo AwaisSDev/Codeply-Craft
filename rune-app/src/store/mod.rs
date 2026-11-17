@@ -122,6 +122,15 @@ pub trait Store {
     fn billing(&mut self, _op: crate::model::BillingOp, _snap: &mut Snapshot) {}
     /// Chats renamed since the last call, as (old title, new title): the engine titles a new
     /// chat from its first message, so the app follows a chat it has open.
+    /// Renames a chat (its menu's Rename); the new title comes back through take_renames.
+    fn rename_chat(&mut self, old: &str, new: &str, snap: &mut Snapshot) {
+        for c in snap.extra.chats.iter_mut().filter(|c| c.title == old) {
+            c.title = new.to_owned();
+        }
+        for (k, _) in snap.threads.iter_mut().filter(|(k, _)| k == old) {
+            *k = new.to_owned();
+        }
+    }
     fn take_renames(&mut self) -> Vec<(String, String)> {
         Vec::new()
     }

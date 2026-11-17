@@ -194,6 +194,8 @@ pub enum EditKey {
     CodeAsk,
     /// New file / Rename: the path.
     FilePath,
+    /// A chat's new name (its menu's Rename).
+    ChatTitle,
     /// The Pull requests page's "Clone a repository" field.
     CloneUrl,
     /// The code view's agent panel.
@@ -214,11 +216,11 @@ pub enum CodeDialog {
 }
 
 impl EditKey {
-    pub const ALL: [EditKey; 26] = [
+    pub const ALL: [EditKey; 27] = [
         EditKey::Search, EditKey::Mission, EditKey::AgentThread, EditKey::ChatHome, EditKey::ChatThread,
         EditKey::AppSearch, EditKey::Address, EditKey::SettingsSearch, EditKey::AboutMe, EditKey::Instructions,
         EditKey::Terminal, EditKey::Code, EditKey::SignInEmail, EditKey::SignInCode, EditKey::Memory,
-        EditKey::AgentName, EditKey::AgentFocus, EditKey::LoopTask, EditKey::LoopWhen, EditKey::CodeAsk, EditKey::FilePath,
+        EditKey::AgentName, EditKey::AgentFocus, EditKey::LoopTask, EditKey::LoopWhen, EditKey::CodeAsk, EditKey::FilePath, EditKey::ChatTitle,
         EditKey::CloneUrl, EditKey::CodeAgent, EditKey::Subagent, EditKey::TeamPost, EditKey::PortAdd,
     ];
     pub fn name(self) -> &'static str {
@@ -244,6 +246,7 @@ impl EditKey {
             EditKey::LoopWhen => "loop-when",
             EditKey::CodeAsk => "code-ask",
             EditKey::FilePath => "file-path",
+            EditKey::ChatTitle => "chat-title",
             EditKey::CloneUrl => "clone-url",
             EditKey::CodeAgent => "code-agent",
             EditKey::Subagent => "subagent",
@@ -338,6 +341,8 @@ pub struct App {
     pub code_drafts: std::collections::HashMap<String, String>,
     /// New file, Rename or Delete, while its dialog is open.
     pub code_dialog: Option<CodeDialog>,
+    /// The chat being renamed, while its dialog is open.
+    pub chat_rename: Option<String>,
     /// The New agent / New loop dialog, while it's open (team.rs).
     pub team_dialog: Option<crate::team::TeamDialog>,
     /// Whether the usage sheet is open (the button beside you at the sidebar's foot).
@@ -434,6 +439,7 @@ impl App {
             code_tabs: Vec::new(),
             code_drafts: std::collections::HashMap::new(),
             code_dialog: None,
+            chat_rename: None,
             usage_daily: false,
             usage_pick: None,
             launched: false,
@@ -632,6 +638,21 @@ impl App {
         f(&mut self.prefs);
         self.prefs.save();
         self.store.configure(&self.prefs);
+    }
+
+    /// A chat's menu > Rename: the dialog, with its name ready to change.
+    pub fn open_chat_rename(&mut self, chat: &str) {
+        self.edit_mut(EditKey::ChatTitle).replace_text(chat.to_owned());
+        self.menu = None;
+        self.chat_rename = Some(chat.to_owned());
+    }
+
+    pub fn submit_chat_rename(&mut self) {
+        let Some(old) = self.chat_rename.take() else { return };
+        let new = self.edit(EditKey::ChatTitle).text.split_whitespace().collect::<Vec<_>>().join(" ");
+        if !new.is_empty() && new != old {
+            self.store.rename_chat(&old, &new, &mut self.data);
+        }
     }
 
     pub fn toggle_pin(&mut self, chat: &str) {
@@ -1357,9 +1378,19 @@ impl App {
             for a in self.data.extra.subagents.agents.iter_mut().filter(|a| a.chat == old) {
                 a.chat = new.clone();
             }
+            // Pins, archive and the open thread are kept by title: they follow it.
+            for c in self.prefs.pinned.iter_mut().chain(self.prefs.archived.iter_mut()).filter(|c| **c == old) {
+                *c = new.clone();
+            }
+            if !self.data.threads.iter().any(|(k, _)| *k == new) {
+                for (k, _) in self.data.threads.iter_mut().filter(|(k, _)| *k == old) {
+                    *k = new.clone();
+                }
+            }
             if let Some(t0) = self.think_started.remove(&old) {
                 self.think_started.insert(new, t0);
             }
+            self.prefs.save();
             changed = true;
         }
         // Thinking lines: each chat waiting on its reply keeps the time it started; while any

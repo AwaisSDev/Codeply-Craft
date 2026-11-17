@@ -63,6 +63,8 @@ const SCENES: &[Scene] = &[
         }
     }),
     ("chat-menu", |s| { s.open_chat("Casual chat"); s.toggle_menu("chat-head:Casual chat"); }),
+    ("chat-row-menu", |s| { s.open_chat("Casual chat"); s.toggle_menu("chat:Pricing page"); }),
+    ("chat-rename", |s| { s.open_chat("Casual chat"); s.open_chat_rename("Pricing page"); }),
     ("model-menu", |s| { s.new_chat(); s.toggle_menu("model:chat-home"); }),
     ("code", |s| s.go(View::Code)),
     ("code-tabs", |s| { s.go(View::Code); s.poll_code(); s.open_file("src/pricing/plans.json"); s.open_file("src/main.js"); s.open_file("src/pricing/pricing.js"); }),

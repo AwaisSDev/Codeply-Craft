@@ -56,6 +56,7 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
         .children(views::upgrade::sheet(s, &t))
         .children(crate::team::dialog(s, &t))
         .children(views::code::dialog(s, &t))
+        .children(views::chat::rename_dialog(s, &t))
         .children(views::code::completion(s, &t))
         .children(views::apps::dialog(s, &t))
         .children(menus(s, &t))
@@ -84,11 +85,20 @@ fn menus(s: &App, t: &Theme) -> Option<El> {
         .or_else(|| id.strip_prefix("chat-head:").map(|c| (c, format!("chat-head-more/{c}"), Side::Bottom, rune::Align::End)));
     if let Some((chat, anchor, side, align)) = chat_menu {
         let pinned = s.prefs.pinned.iter().any(|c| c == chat);
-        let (a, b, c) = (chat.to_owned(), chat.to_owned(), chat.to_owned());
+        let (r, a, b, c) = (chat.to_owned(), chat.to_owned(), chat.to_owned(), chat.to_owned());
+        let divider = || rune::el().w_full().py(4.0).child(rune::el().w_full().h(1.0).fill(t.border));
+        // Delete in red, as the destructive one.
+        let delete = rune::row().key("chat-menu/delete").w_full().min_h(34.0).px(10.0).py(6.0).gap(10.0).radius(8.0).center_y().hover(t.red.alpha(0.1))
+            .role("menuitem").label("Delete")
+            .child(crate::icons::ico_s("trash", 16.0, t.red))
+            .child(rune::text("Delete").font(crate::theme::ui(13.5, 500.0)).color(t.red))
+            .on_press(move |s: &mut App| s.delete_chat(&c));
         return Some(menu(t, &anchor, side, 200.0, vec![
+            menu_item(t, "chat-menu/rename".into(), Some("edit"), "Rename", None, false).on_press_tx(move |s: &mut App, tx| { s.open_chat_rename(&r); tx.settle(); tx.focus("chat-title", true); }),
             menu_item(t, "chat-menu/pin".into(), Some("pick"), if pinned { "Unpin" } else { "Pin" }, None, false).on_press(move |s: &mut App| s.toggle_pin(&a)),
+            divider(),
             menu_item(t, "chat-menu/archive".into(), Some("download"), "Archive", None, false).on_press(move |s: &mut App| s.archive(&b)),
-            menu_item(t, "chat-menu/delete".into(), Some("trash"), "Delete", None, false).on_press(move |s: &mut App| s.delete_chat(&c)),
+            delete,
         ]).anchored(anchor.clone(), side, align, 6.0));
     }
     views::menu(s, t, id)
