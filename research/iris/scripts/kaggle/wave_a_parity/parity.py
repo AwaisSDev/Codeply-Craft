@@ -39,6 +39,29 @@ assert not os.path.exists(f"{SRC}/data/raw/test") and not os.path.exists(f"{SRC}
 B = f"{W}/llama-bin"
 shutil.copytree(os.path.dirname(find("/kaggle/input/**/llama-bin/llama-server")), B, dirs_exist_ok=True)
 subprocess.run(f"chmod +x {B}/llama-server {B}/llama-bench", shell=True, check=True)
+
+
+def repair_sonames(bindir):
+    """Kaggle's output store keeps regular files only, so versioned shared-library names (symlinks such as
+    libllama.so.0) can be missing: recreate each name ldd cannot find from the real file of the same library."""
+    for _ in range(3):
+        out = subprocess.run(f"LD_LIBRARY_PATH={bindir} ldd {bindir}/llama-server", shell=True, capture_output=True, text=True).stdout
+        missing = [l.split()[0] for l in out.splitlines() if "not found" in l]
+        if not missing:
+            break
+        for name in missing:
+            stem = name.split(".so")[0]
+            cands = sorted(f for f in os.listdir(bindir) if f.startswith(stem + ".so") and f != name)
+            if cands:
+                os.symlink(cands[-1], os.path.join(bindir, name))
+                print("repaired", name, "->", cands[-1], flush=True)
+            else:
+                print("cannot repair", name, flush=True)
+    print(subprocess.run(f"LD_LIBRARY_PATH={bindir} ldd {bindir}/llama-server | grep -E 'llama|ggml|cuda|not found'; "
+                         f"LD_LIBRARY_PATH={bindir} {bindir}/llama-server --version", shell=True, capture_output=True, text=True).stdout, flush=True)
+
+
+repair_sonames(B)
 M = os.path.dirname(find("/kaggle/input/**/models/Qwen3-0.6B-Q4_K_M.gguf"))
 smi = subprocess.run("nvidia-smi -L", shell=True, capture_output=True, text=True).stdout
 print(smi, B, M, flush=True)
