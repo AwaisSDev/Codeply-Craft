@@ -1,0 +1,14 @@
+{
+ "id": "awaissididique/codeply-iris-wave-a-parity",
+ "title": "codeply-iris-wave-a-parity",
+ "code_file": "parity.py",
+ "language": "python",
+ "kernel_type": "script",
+ "is_private": true,
+ "enable_gpu": true,
+ "enable_internet": false,
+ "machine_shape": "NvidiaTeslaT4",
+ "dataset_sources": ["awaissididique/codeply-iris-wave-a-src"],
+ "competition_sources": [],
+ "kernel_sources": ["awaissididique/codeply-iris-wave-a-check"]
+}
