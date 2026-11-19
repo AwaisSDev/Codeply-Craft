@@ -1,0 +1,34 @@
+{
+ "args": {
+  "system": "zeroshot",
+  "model": "/tmp/claude-0/-home-user/9364d44a-0589-5199-9e77-7cd952185c50/scratchpad/models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+  "adapter": "",
+  "split": "val",
+  "data": "data/built",
+  "raw": "data/raw",
+  "out": "foundation-2026-11/stage1-kaggle/parity-cpu/qwen3-4b-2507",
+  "closed_loop": false,
+  "constrain": true,
+  "limit": 2,
+  "threads": 4,
+  "keyword_k": 3,
+  "final": false,
+  "label": "",
+  "chat": true,
+  "template_kwargs": "",
+  "prompt_version": "v1.1",
+  "no_logprobs": false,
+  "server_arg": [],
+  "max_new_tokens": 900
+ },
+ "code_commit": "170b7ac52560cb499e2e3c9e3d66ce4d902f1a32+dirty",
+ "python": "3.13.18",
+ "data": {
+  "val.jsonl": "0ae331732c7fcf609304b0069c61e0b0162e9617d5c3041fca820d8b7e38aee3"
+ },
+ "backend": "llama-server-chat:/tmp/claude-0/-home-user/9364d44a-0589-5199-9e77-7cd952185c50/scratchpad/models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+ "system_prompt_sha256": "615db6f06996d98fbe08af868a24cd04d0894a0e2950ddb4d2e2117e07bb387e",
+ "prompt_version": "v1.1",
+ "gguf_sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+ "llama_server_version": "version: 1.0.0-dev (build 1, commit 7a4117e)\nbuilt with GNU 13.3.0 for Linux x86_64"
+}
