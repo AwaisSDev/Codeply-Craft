@@ -1,0 +1,3057 @@
+{
+ "checked_at": "2026-11-19T03:36:09+00:00",
+ "sources": {
+  "hf_api": "https://huggingface.co/api/models/<id>",
+  "llama_cpp": "convert_hf_to_gguf.py on master",
+  "transformers": "configuration_auto.py on main"
+ },
+ "llama_cpp_converter_classes": 344,
+ "llama_cpp_runtime_archs": [
+  "afmoe",
+  "apertus",
+  "arcee",
+  "arctic",
+  "arwkv7",
+  "baichuan",
+  "bailingmoe",
+  "bailingmoe2",
+  "bailingmoe3",
+  "beam",
+  "bert",
+  "bitnet",
+  "bloom",
+  "chameleon",
+  "chatglm",
+  "clef",
+  "clip",
+  "clover_moe",
+  "codeshell",
+  "cogvlm",
+  "cohere2",
+  "cohere2moe",
+  "command-r",
+  "dbrx",
+  "deci",
+  "deepseek",
+  "deepseek2",
+  "deepseek2-ocr",
+  "deepseek32",
+  "deepseek4",
+  "deepseek41",
+  "dflash",
+  "dots1",
+  "dots3note",
+  "dream",
+  "eagle3",
+  "ernie4_5",
+  "ernie4_5-moe",
+  "eurobert",
+  "exaone",
+  "exaone-moe",
+  "exaone4",
+  "falcon",
+  "falcon-h1",
+  "flint",
+  "gemma",
+  "gemma-embedding",
+  "gemma-embedding2",
+  "gemma2",
+  "gemma3",
+  "gemma3n",
+  "gemma4",
+  "gemma4-assistant",
+  "glm-dsa",
+  "glm4",
+  "glm4moe",
+  "glm5-next",
+  "gpt-oss",
+  "gpt2",
+  "gptj",
+  "gptneox",
+  "granite",
+  "granite_swa",
+  "granitehybrid",
+  "granitemoe",
+  "graniteswitch",
+  "grok",
+  "grovemoe",
+  "hrm_text",
+  "hunyuan-dense",
+  "hunyuan-moe",
+  "hunyuan_vl",
+  "hy_v3",
+  "hy_v4",
+  "inkling2",
+  "internlm2",
+  "jais",
+  "jais2",
+  "jamba",
+  "jina-bert-v2",
+  "jina-bert-v3",
+  "k2-horizon",
+  "kimi-k3",
+  "kimi-k31",
+  "kimi-linear",
+  "kokoro",
+  "kolibri1",
+  "laguna",
+  "lfm2",
+  "lfm2moe",
+  "lfm3",
+  "limite",
+  "llada",
+  "llada-moe",
+  "llama",
+  "llama-embed",
+  "llama4",
+  "maincoder",
+  "maion-coder",
+  "mamba",
+  "mamba2",
+  "maple",
+  "mellum",
+  "metis16",
+  "mimo2",
+  "minicpm",
+  "minicpm3",
+  "minimax-01",
+  "minimax-m2",
+  "minimax-m3",
+  "mistral-large4",
+  "mistral3",
+  "mistral4",
+  "modern-bert",
+  "mpt",
+  "muse-glimmer",
+  "muse-spark",
+  "nanbeige",
+  "nemotron",
+  "nemotron_h",
+  "nemotron_h_moe",
+  "neo-bert",
+  "nomic-bert",
+  "nomic-bert-moe",
+  "olmo",
+  "olmo2",
+  "olmoe",
+  "openelm",
+  "orion",
+  "paddleocr",
+  "pangu-embedded",
+  "phi2",
+  "phi3",
+  "phimoe",
+  "plamo",
+  "plamo2",
+  "plamo3",
+  "plm",
+  "pockettts",
+  "qwen",
+  "qwen2",
+  "qwen2moe",
+  "qwen2vl",
+  "qwen3",
+  "qwen35",
+  "qwen35moe",
+  "qwen3moe",
+  "qwen3next",
+  "qwen3tts",
+  "qwen3vl",
+  "qwen3vlmoe",
+  "qwen4exp",
+  "refact",
+  "ricursive",
+  "rnd1",
+  "rwkv6",
+  "rwkv6qwen2",
+  "rwkv7",
+  "seed_oss",
+  "sensenova_u1",
+  "smallthinker",
+  "smollm3",
+  "spark2_5",
+  "stablelm",
+  "starcoder",
+  "starcoder2",
+  "step35",
+  "t5",
+  "t5encoder",
+  "talkie",
+  "tiny-voca",
+  "vllm-decision2",
+  "wavtokenizer-dec",
+  "xing4_0",
+  "xverse",
+  "zaya1",
+  "zonos3"
+ ],
+ "models": {
+  "Qwen/Qwen3.5-2B": {
+   "id": "Qwen/Qwen3.5-2B",
+   "exists": true,
+   "created_at": "2026-02-28T23:56:16.000Z",
+   "last_modified": "2026-03-02T11:26:29.000Z",
+   "gated": false,
+   "licence_tag": "apache-2.0",
+   "licence_name": null,
+   "card_languages": null,
+   "pipeline_tag": "image-text-to-text",
+   "library": "transformers",
+   "params_total_safetensors": 2274069824,
+   "params_by_dtype": {
+    "F32": 2592,
+    "BF16": 2274067232
+   },
+   "config": {
+    "architectures": [
+     "Qwen3_5ForConditionalGeneration"
+    ],
+    "model_type": "qwen3_5",
+    "text_model_type": "qwen3_5_text",
+    "layers": 24,
+    "hidden": 2048,
+    "vocab": 248320,
+    "max_position_embeddings": 262144,
+    "layer_types": [
+     "full_attention",
+     "linear_attention"
+    ],
+    "has_vision": true,
+    "tie_word_embeddings": true
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "qwen3vl",
+   "llama_cpp_runtime_arch_known": true,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "- **Global Linguistic Coverage**: Expanded support to 201 languages and dialects, enabling inclusive, worldwide deployment with nuanced cultural and regional understanding.",
+     "<tr><td colspan=\"5\" style=\"padding:8px 12px;font-weight:600;color:#7c3aed;border-bottom:1px solid rgba(124, 58, 237, 0.2);background:rgba(124, 58, 237, 0.1)\">Multilingualism (Thinking）</td></tr>",
+     "* MAXIFE: we report the accuracy on English + multilingual original prompts (totally 23 settings).<br>"
+    ],
+    "thinking_lines": [
+     "<tr><td colspan=\"5\" style=\"padding:8px 12px;font-weight:600;color:#7c3aed;border-bottom:1px solid rgba(124, 58, 237, 0.2);background:rgba(124, 58, 237, 0.1)\">Instruct (Non-Thinking) Mode</td></tr>",
+     "*  Scores of Qwen3.5 models are reported as Thinking / Non-thinking.<br>",
+     "* Experimental settings: For the Video benchmarks, we used top_p=0.95, top_k=20, presence_penalty=1.5, and temperature=1.0. All other benchmarks adopted the same hyperparameter configuration but with temperature=0.6 under the thinking mode. Under the no-thinking mode, the inference hyperparameters w"
+    ],
+    "licence_lines": [
+     "license: apache-2.0",
+     "license_link: https://huggingface.co/Qwen/Qwen3.5-2B/blob/main/LICENSE"
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [],
+    "trust_remote_code": false
+   },
+   "gguf": {
+    "official": [],
+    "top_third_party": [
+     "unsloth/Qwen3.5-2B-GGUF",
+     "turintech/Qwen3.5-2B-Artemis-GGUF",
+     "HauhauCS/Qwen3.5-2B-Uncensored-HauhauCS-Aggressive",
+     "lmstudio-community/Qwen3.5-2B-GGUF",
+     "bartowski/Qwen_Qwen3.5-2B-GGUF"
+    ],
+    "n_repos_found": 50
+   },
+   "downloads_30d": 5503788,
+   "group": "shortlist",
+   "tokenizer": {
+    "vocab_size": 248070,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1227,
+      "p95": 1572,
+      "max": 1832,
+      "n": 120
+     },
+     "en": {
+      "mean": 1217,
+      "p95": 1572,
+      "max": 1832,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1168,
+      "p95": 1269,
+      "max": 1318,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1266,
+      "p95": 1517,
+      "max": 1771,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1235,
+      "p95": 1327,
+      "max": 1618,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.9,
+     "mixed": 2.0,
+     "roman-ur": 1.92,
+     "ur": 2.27
+    }
+   }
+  },
+  "Qwen/Qwen3.5-4B": {
+   "id": "Qwen/Qwen3.5-4B",
+   "exists": true,
+   "created_at": "2026-02-27T14:45:03.000Z",
+   "last_modified": "2026-03-02T00:52:52.000Z",
+   "gated": false,
+   "licence_tag": "apache-2.0",
+   "licence_name": null,
+   "card_languages": null,
+   "pipeline_tag": "image-text-to-text",
+   "library": "transformers",
+   "params_total_safetensors": 4659865088,
+   "params_by_dtype": {
+    "BF16": 4659861248,
+    "F32": 3840
+   },
+   "config": {
+    "architectures": [
+     "Qwen3_5ForConditionalGeneration"
+    ],
+    "model_type": "qwen3_5",
+    "text_model_type": "qwen3_5_text",
+    "layers": 32,
+    "hidden": 2560,
+    "vocab": 248320,
+    "max_position_embeddings": 262144,
+    "layer_types": [
+     "full_attention",
+     "linear_attention"
+    ],
+    "has_vision": true,
+    "tie_word_embeddings": true
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "qwen3vl",
+   "llama_cpp_runtime_arch_known": true,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "- **Global Linguistic Coverage**: Expanded support to 201 languages and dialects, enabling inclusive, worldwide deployment with nuanced cultural and regional understanding.",
+     "<tr><td colspan=\"7\" style=\"padding:8px 12px;font-weight:600;color:#7c3aed;border-bottom:1px solid rgba(124, 58, 237, 0.2);background:rgba(124, 58, 237, 0.1)\">Multilingualism</td></tr>",
+     "* MAXIFE: we report the accuracy on English + multilingual original prompts (totally 23 settings).<br>"
+    ],
+    "thinking_lines": [
+     "> Qwen3.5 models operate in thinking mode by default, generating thinking content signified by `<think>\\n...</think>\\n\\n` before producing the final responses.",
+     "> To disable thinking content and obtain direct response, refer to the examples [here](#instruct-or-non-thinking-mode).",
+     "> - Thinking mode for general tasks: `temperature=1.0, top_p=0.95, top_k=20, min_p=0.0, presence_penalty=1.5, repetition_penalty=1.0`"
+    ],
+    "licence_lines": [
+     "license: apache-2.0",
+     "license_link: https://huggingface.co/Qwen/Qwen3.5-4B/blob/main/LICENSE"
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [],
+    "trust_remote_code": false
+   },
+   "gguf": {
+    "official": [],
+    "top_third_party": [
+     "unsloth/Qwen3.5-4B-GGUF",
+     "turintech/Qwen3.5-4B-Artemis-GGUF",
+     "ccore/Qwen3.5-4B-3D-Coder",
+     "HauhauCS/Qwen3.5-4B-Uncensored-HauhauCS-Aggressive",
+     "lmstudio-community/Qwen3.5-4B-GGUF"
+    ],
+    "n_repos_found": 50
+   },
+   "downloads_30d": 4674064,
+   "group": "shortlist",
+   "tokenizer": {
+    "vocab_size": 248070,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1227,
+      "p95": 1572,
+      "max": 1832,
+      "n": 120
+     },
+     "en": {
+      "mean": 1217,
+      "p95": 1572,
+      "max": 1832,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1168,
+      "p95": 1269,
+      "max": 1318,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1266,
+      "p95": 1517,
+      "max": 1771,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1235,
+      "p95": 1327,
+      "max": 1618,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.9,
+     "mixed": 2.0,
+     "roman-ur": 1.92,
+     "ur": 2.27
+    }
+   }
+  },
+  "Qwen/Qwen3-4B-Instruct-2507": {
+   "id": "Qwen/Qwen3-4B-Instruct-2507",
+   "exists": true,
+   "created_at": "2025-08-05T10:58:03.000Z",
+   "last_modified": "2025-09-17T06:56:53.000Z",
+   "gated": false,
+   "licence_tag": "apache-2.0",
+   "licence_name": null,
+   "card_languages": null,
+   "pipeline_tag": "text-generation",
+   "library": "transformers",
+   "params_total_safetensors": 4022468096,
+   "params_by_dtype": {
+    "BF16": 4022468096
+   },
+   "config": {
+    "architectures": [
+     "Qwen3ForCausalLM"
+    ],
+    "model_type": "qwen3",
+    "text_model_type": "qwen3",
+    "layers": 36,
+    "hidden": 2560,
+    "vocab": 151936,
+    "max_position_embeddings": 262144,
+    "layer_types": null,
+    "has_vision": false,
+    "tie_word_embeddings": true
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "qwen",
+   "llama_cpp_runtime_arch_known": true,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "| **Multilingualism** | | | |"
+    ],
+    "thinking_lines": [
+     "We introduce the updated version of the **Qwen3-4B non-thinking mode**, named **Qwen3-4B-Instruct-2507**, featuring the following key enhancements:",
+     "**NOTE: This model supports only non-thinking mode and does not generate ``<think></think>`` blocks in its output. Meanwhile, specifying `enable_thinking=False` is no longer required.**",
+     "|  | GPT-4.1-nano-2025-04-14 | Qwen3-30B-A3B Non-Thinking | Qwen3-4B Non-Thinking | Qwen3-4B-Instruct-2507 |"
+    ],
+    "licence_lines": [
+     "license: apache-2.0",
+     "license_link: https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507/blob/main/LICENSE"
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [
+     "For local use, applications such as Ollama, LMStudio, MLX-LM, llama.cpp, and KTransformers have also supported Qwen3."
+    ],
+    "trust_remote_code": false
+   },
+   "gguf": {
+    "official": [],
+    "top_third_party": [
+     "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+     "lmstudio-community/Qwen3-4B-Instruct-2507-GGUF",
+     "bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF",
+     "MaziyarPanahi/Qwen3-4B-Instruct-2507-GGUF",
+     "mradermacher/Huihui-Qwen3-4B-Instruct-2507-abliterated-GGUF"
+    ],
+    "n_repos_found": 67
+   },
+   "downloads_30d": 2773401,
+   "group": "shortlist",
+   "tokenizer": {
+    "vocab_size": 151669,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1225,
+      "p95": 1553,
+      "max": 1826,
+      "n": 120
+     },
+     "en": {
+      "mean": 1207,
+      "p95": 1553,
+      "max": 1813,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1161,
+      "p95": 1267,
+      "max": 1305,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1262,
+      "p95": 1521,
+      "max": 1777,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1307,
+      "p95": 1374,
+      "max": 1826,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.91,
+     "mixed": 2.05,
+     "roman-ur": 1.95,
+     "ur": 3.1
+    }
+   }
+  },
+  "google/gemma-4-E2B-it": {
+   "id": "google/gemma-4-E2B-it",
+   "exists": true,
+   "created_at": "2026-03-02T19:58:09.000Z",
+   "last_modified": "2026-11-03T16:10:29.000Z",
+   "gated": false,
+   "licence_tag": "apache-2.0",
+   "licence_name": null,
+   "card_languages": null,
+   "pipeline_tag": "any-to-any",
+   "library": "transformers",
+   "params_total_safetensors": 5123178051,
+   "params_by_dtype": {
+    "BF16": 5123178051
+   },
+   "config": {
+    "architectures": [
+     "Gemma4ForConditionalGeneration"
+    ],
+    "model_type": "gemma4",
+    "text_model_type": "gemma4_text",
+    "layers": 35,
+    "hidden": 1536,
+    "vocab": 262144,
+    "max_position_embeddings": 131072,
+    "layer_types": [
+     "full_attention",
+     "sliding_attention"
+    ],
+    "has_vision": true,
+    "tie_word_embeddings": true
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "gemma",
+   "llama_cpp_runtime_arch_known": true,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "Gemma is a family of open models built by Google DeepMind. Gemma 4 models are multimodal, handling text and image input (with audio supported on E2B, E4B, and 12B) and generating text output. This release includes open-weights models in both pre-trained and instruction-tuned variants. Gemma 4 featur",
+     "* **Image Understanding** – Object detection, Document/PDF parsing, screen and UI understanding, chart comprehension, OCR (including multilingual), handwriting recognition, and pointing. Images can be processed at variable aspect ratios and resolutions.",
+     "* **Multilingual** – Out-of-the-box support for 35+ languages, pre-trained on 140+ languages."
+    ],
+    "thinking_lines": [
+     "* **Reasoning** – All models in the family are designed as highly capable reasoners, with configurable thinking modes.",
+     "* **Thinking** – Built-in reasoning mode that lets the model think step-by-step before answering.",
+     "enable_thinking=False"
+    ],
+    "licence_lines": [
+     "license: apache-2.0",
+     "license_link: https://ai.google.dev/gemma/docs/gemma_4_license",
+     "<b>License</b>: <a href=\"https://ai.google.dev/gemma/docs/gemma_4_license\" target=\"_blank\">Apache 2.0</a> | <b>Authors</b>: <a href=\"https://deepmind.google/models/gemma/\" target=\"_blank\">Google DeepMind</a>"
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [
+     "> Note that many libraries like Transformers and llama.cpp handle the complexities of the chat template for you."
+    ],
+    "trust_remote_code": false
+   },
+   "gguf": {
+    "official": [
+     "google/gemma-4-E2B-it-qat-q4_0-gguf"
+    ],
+    "top_third_party": [
+     "turintech/gemma-4-E2B-it-Artemis-GGUF",
+     "unsloth/gemma-4-E2B-it-GGUF",
+     "ggml-org/gemma-4-E2B-it-GGUF",
+     "unsloth/gemma-4-E2B-it-qat-mobile-GGUF",
+     "lmstudio-community/gemma-4-E2B-it-GGUF"
+    ],
+    "n_repos_found": 56
+   },
+   "downloads_30d": 2820414,
+   "group": "shortlist",
+   "tokenizer": {
+    "vocab_size": 262144,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1212,
+      "p95": 1539,
+      "max": 1822,
+      "n": 120
+     },
+     "en": {
+      "mean": 1210,
+      "p95": 1566,
+      "max": 1822,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1156,
+      "p95": 1260,
+      "max": 1313,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1240,
+      "p95": 1465,
+      "max": 1654,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1195,
+      "p95": 1324,
+      "max": 1538,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.89,
+     "mixed": 1.91,
+     "roman-ur": 1.79,
+     "ur": 1.88
+    }
+   }
+  },
+  "LiquidAI/LFM3-1.7B": {
+   "id": "LiquidAI/LFM3-1.7B",
+   "exists": true,
+   "created_at": "2026-10-23T21:35:42.000Z",
+   "last_modified": "2026-11-09T17:57:55.000Z",
+   "gated": false,
+   "licence_tag": "other",
+   "licence_name": "lfm1.0",
+   "card_languages": [
+    "en",
+    "ar",
+    "zh",
+    "fr",
+    "de",
+    "it",
+    "ja",
+    "ko",
+    "pt",
+    "es",
+    "vi",
+    "th",
+    "id",
+    "hi",
+    "ru",
+    "pl"
+   ],
+   "pipeline_tag": "text-generation",
+   "library": "transformers",
+   "params_total_safetensors": 1728801536,
+   "params_by_dtype": {
+    "BF16": 1728801536
+   },
+   "config": {
+    "architectures": [
+     "Lfm3ForCausalLM"
+    ],
+    "model_type": "lfm3",
+    "text_model_type": "lfm3",
+    "layers": 24,
+    "hidden": 2048,
+    "vocab": 128000,
+    "max_position_embeddings": 262144,
+    "layer_types": [
+     "conv",
+     "full_attention",
+     "sliding_attention"
+    ],
+    "has_vision": false,
+    "tie_word_embeddings": true
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "lfm3",
+   "llama_cpp_runtime_arch_known": true,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "language:",
+     "<td style=\"border: 0; padding: 0.55em 0.75em;\">SWE-bench Multilingual (OpenCode)</td>"
+    ],
+    "thinking_lines": [
+     "Reasoning is enabled by default. You can set `enable_thinking=False` to disable thinking traces, but this behavior can be inconsistent, especially for reasoning-heavy tasks."
+    ],
+    "licence_lines": [
+     "license: other",
+     "license_name: lfm1.0",
+     "license_link: LICENSE",
+     "<td style=\"border: 0; padding: 0.55em 0.75em;\"><strong>License</strong></td>"
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [
+     "<td style=\"border: 0; padding: 0.55em 0.75em;\"><a href=\"https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF\">GGUF</a></td>",
+     "<td style=\"border: 0; padding: 0.55em 0.75em;\"><a href=\"https://docs.liquid.ai/deployment/on-device/llama-cpp\">llama.cpp</a>, <a href=\"https://docs.liquid.ai/deployment/on-device/ollama\">Ollama</a>, <a href=\"https://docs.liquid.ai/deployment/on-device/lm-studio\">LM Studio</a></td>",
+     "Works with vLLM, SGLang, and LFM3-compatible llama.cpp builds. For llama.cpp, use a GGUF with the current chat template or load it with `--chat-template-file`.",
+     "<p><small>All models run as Q4_0 GGUF files in llama.cpp with 32,768 tokens of context, batch size 1, 100 output tokens, and GPU offload. Prefill is the prompt processing speed and decode is the generation speed, both in tokens per second. LFM3-1.7B uses a llama.cpp build with LFM3 support, and the "
+    ],
+    "trust_remote_code": true
+   },
+   "gguf": {
+    "official": [
+     "LiquidAI/LFM3-1.7B-GGUF"
+    ],
+    "top_third_party": [
+     "AtomicChat/LFM3-1.7B-Uncensored-GGUF",
+     "turintech/LFM3-1.7B-Artemis-GGUF",
+     "Vortecks/LFM3-1.7B-Heretic-Abliterated-GGUF",
+     "weareapexcreators/LFM3-1.7B-Uncensored-LocalAI",
+     "Vortecks/LFM3-1.7B-Heretic-Abliterated-i1-GGUF"
+    ],
+    "n_repos_found": 50
+   },
+   "downloads_30d": 113798,
+   "group": "shortlist",
+   "tokenizer": {
+    "vocab_size": 125033,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1178,
+      "p95": 1545,
+      "max": 1783,
+      "n": 120
+     },
+     "en": {
+      "mean": 1167,
+      "p95": 1545,
+      "max": 1783,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1121,
+      "p95": 1198,
+      "max": 1257,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1217,
+      "p95": 1449,
+      "max": 1719,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1189,
+      "p95": 1240,
+      "max": 1554,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.84,
+     "mixed": 1.99,
+     "roman-ur": 1.91,
+     "ur": 2.27
+    }
+   }
+  },
+  "ibm-granite/granite-4.2-3b": {
+   "id": "ibm-granite/granite-4.2-3b",
+   "exists": true,
+   "created_at": "2026-08-07T16:26:43.000Z",
+   "last_modified": "2026-10-20T20:44:28.000Z",
+   "gated": false,
+   "licence_tag": "apache-2.0",
+   "licence_name": null,
+   "card_languages": [
+    "en",
+    "de",
+    "es",
+    "fr",
+    "ja",
+    "pt",
+    "ar",
+    "cs",
+    "it",
+    "ko",
+    "nl",
+    "zh"
+   ],
+   "pipeline_tag": "text-generation",
+   "library": "transformers",
+   "params_total_safetensors": 3659737600,
+   "params_by_dtype": {
+    "BF16": 3659737600
+   },
+   "config": {
+    "architectures": [
+     "GraniteForCausalLM"
+    ],
+    "model_type": "granite",
+    "text_model_type": "granite",
+    "layers": 40,
+    "hidden": 2560,
+    "vocab": 100352,
+    "max_position_embeddings": 131072,
+    "layer_types": null,
+    "has_vision": false,
+    "tie_word_embeddings": false
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "granite",
+   "llama_cpp_runtime_arch_known": true,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "language: [en, de, es, fr, ja, pt, ar, cs, it, ko, nl, zh]",
+     "| **Best For** | Reasoning, Code Generation, Tool Calling, Agentic Workflows, Multilingual Dialog |",
+     "Granite-4.2-3B builds on [Granite-4.1-3B-Base](https://huggingface.co/ibm-granite/granite-4.1-3b-base), which was pre-trained on a large-scale English as well as multilingual corpus. For full pre-training details (data composition, training recipe, and infrastructure), refer to our [Granite 4.1 Tech"
+    ],
+    "thinking_lines": [
+     "| **Reasoning Mode** | Built-in `<think>...</think>` chain-of-thought |",
+     "**Granite-4.2-3B** is the compact reasoning model in the Granite 4.2 family. Despite its small parameter count, it delivers strong performance on reasoning-intensive tasks by leveraging built-in `<think>...</think>` chain-of-thought. It supports flexible thinking modes — full thinking (default), non",
+     "- **Flexible Thinking Modes:** Seamlessly switch between full thinking, non-thinking, and low-effort modes within a single model."
+    ],
+    "licence_lines": [
+     "license: apache-2.0",
+     "[![License](https://img.shields.io/badge/License-Apache_2.0-EAB308?style=flat-square)](https://www.apache.org/licenses/LICENSE-2.0)",
+     "| **License** | [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) |",
+     "Granite is a family of open-source large language models developed by IBM, designed for enterprise and research use. Granite models are built to be versatile, safe, and efficient — covering a range of sizes and capabilities from compact edge-deployable models to large-scale reasoning systems. All Gr"
+    ],
+    "revenue_cap_lines": [
+     "* **Position Embedding:** Rotary Position Embedding (RoPE) with θ = 10,000,000"
+    ],
+    "gguf_lines": [],
+    "trust_remote_code": false
+   },
+   "gguf": {
+    "official": [
+     "ibm-granite/granite-4.2-3b-GGUF"
+    ],
+    "top_third_party": [
+     "taronaeo/Granite-4.2-3B-BE-GGUF",
+     "bartowski/granite-4.2-3b-GGUF",
+     "saidutta69/granite-4.2-3b-heretic",
+     "mradermacher/Granite-4.2-3B-Surgical-Abliterated-i1-GGUF",
+     "NANI-Nithin/granite-4.2-3b-GGUF"
+    ],
+    "n_repos_found": 44
+   },
+   "downloads_30d": 40756,
+   "group": "shortlist",
+   "tokenizer": {
+    "vocab_size": 100352,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1184,
+      "p95": 1546,
+      "max": 1928,
+      "n": 120
+     },
+     "en": {
+      "mean": 1159,
+      "p95": 1546,
+      "max": 1772,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1113,
+      "p95": 1186,
+      "max": 1244,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1215,
+      "p95": 1446,
+      "max": 1715,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1334,
+      "p95": 1469,
+      "max": 1928,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.83,
+     "mixed": 2.01,
+     "roman-ur": 1.92,
+     "ur": 3.83
+    }
+   }
+  },
+  "LiquidAI/LFM2.5-2.6B": {
+   "id": "LiquidAI/LFM2.5-2.6B",
+   "exists": true,
+   "created_at": "2026-07-28T22:14:32.000Z",
+   "last_modified": "2026-11-03T06:56:42.000Z",
+   "gated": false,
+   "licence_tag": "other",
+   "licence_name": "lfm1.0",
+   "card_languages": [
+    "ar",
+    "zh",
+    "en",
+    "fr",
+    "de",
+    "hi",
+    "id",
+    "it",
+    "ja",
+    "ko",
+    "pl",
+    "pt",
+    "ru",
+    "es",
+    "th",
+    "vi"
+   ],
+   "pipeline_tag": "text-generation",
+   "library": "transformers",
+   "params_total_safetensors": 2697198592,
+   "params_by_dtype": {
+    "BF16": 2697198592
+   },
+   "config": {
+    "architectures": [
+     "Lfm2ForCausalLM"
+    ],
+    "model_type": "lfm2",
+    "text_model_type": "lfm2",
+    "layers": 30,
+    "hidden": 2048,
+    "vocab": 128000,
+    "max_position_embeddings": 131072,
+    "layer_types": [
+     "conv",
+     "full_attention"
+    ],
+    "has_vision": false,
+    "tie_word_embeddings": true
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "lfm2",
+   "llama_cpp_runtime_arch_known": true,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "language:"
+    ],
+    "thinking_lines": [
+     "> 💡 **Note**: LFM2.5-2.6B is a pure reasoning model that always thinks before it answers. It adds a `<think>` tag directly in the [chat template](https://huggingface.co/LiquidAI/LFM2.5-2.6B/blob/main/chat_template.jinja#L124) when starting an assistant answer."
+    ],
+    "licence_lines": [
+     "license: other",
+     "license_name: lfm1.0",
+     "license_link: LICENSE"
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [
+     "| **[LFM2.5-2.6B-GGUF](https://huggingface.co/LiquidAI/LFM2.5-2.6B-GGUF)** | Quantized format for llama.cpp and compatible tools. Optimized for CPU inference and local deployment with reduced memory usage.             |",
+     "| [llama.cpp](https://github.com/ggml-org/llama.cpp) | Cross-platform inference with CPU offloading. | <a href=\"https://docs.liquid.ai/lfm/inference/llama-cpp\">Link</a> | <a href=\"https://colab.research.google.com/drive/1ohLl3w47OQZA4ELo46i5E4Z6oGWBAyo8?usp=sharing\"><img src=\"https://cdn-uploads.hug",
+     "*Note: The port depends on your serving backend — llama.cpp and MLX use `8080`, vLLM uses `8000`, SGLang uses `30000`, and LM Studio uses `1234`. Adjust the URLs below accordingly.*"
+    ],
+    "trust_remote_code": false
+   },
+   "gguf": {
+    "official": [
+     "LiquidAI/LFM2.5-2.6B-DSpark-GGUF",
+     "LiquidAI/LFM2.5-2.6B-GGUF"
+    ],
+    "top_third_party": [
+     "Arki05/LFM2.5-2.6B-GGUF-shards",
+     "Arki05/LFM2.5-2.6B-GGUF",
+     "DavidAU/LFM2.5-2.6B-Qwen3.8-Turbo-Brilliance-Power-X12-NEO-MAX-GGUF",
+     "saidutta69/lfm2.5-2.6b-fable5-coding-agent-heretic",
+     "Abiray/LFM2.5-2.6B-Heretic-Abliterated-GGUF"
+    ],
+    "n_repos_found": 50
+   },
+   "downloads_30d": 34270,
+   "group": "shortlist",
+   "tokenizer": {
+    "vocab_size": 125017,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1178,
+      "p95": 1545,
+      "max": 1783,
+      "n": 120
+     },
+     "en": {
+      "mean": 1167,
+      "p95": 1545,
+      "max": 1783,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1121,
+      "p95": 1198,
+      "max": 1257,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1217,
+      "p95": 1449,
+      "max": 1719,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1189,
+      "p95": 1240,
+      "max": 1554,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.84,
+     "mixed": 1.99,
+     "roman-ur": 1.91,
+     "ur": 2.27
+    }
+   }
+  },
+  "Qwen/Qwen3.5-0.8B": {
+   "id": "Qwen/Qwen3.5-0.8B",
+   "exists": true,
+   "created_at": "2026-02-28T23:57:01.000Z",
+   "last_modified": "2026-03-02T11:26:58.000Z",
+   "gated": false,
+   "licence_tag": "apache-2.0",
+   "licence_name": null,
+   "card_languages": null,
+   "pipeline_tag": "image-text-to-text",
+   "library": "transformers",
+   "params_total_safetensors": 873438784,
+   "params_by_dtype": {
+    "F32": 2592,
+    "BF16": 873436192
+   },
+   "config": {
+    "architectures": [
+     "Qwen3_5ForConditionalGeneration"
+    ],
+    "model_type": "qwen3_5",
+    "text_model_type": "qwen3_5_text",
+    "layers": 24,
+    "hidden": 1024,
+    "vocab": 248320,
+    "max_position_embeddings": 262144,
+    "layer_types": [
+     "full_attention",
+     "linear_attention"
+    ],
+    "has_vision": true,
+    "tie_word_embeddings": true
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "qwen3vl",
+   "llama_cpp_runtime_arch_known": true,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "- **Global Linguistic Coverage**: Expanded support to 201 languages and dialects, enabling inclusive, worldwide deployment with nuanced cultural and regional understanding.",
+     "<tr><td colspan=\"5\" style=\"padding:8px 12px;font-weight:600;color:#7c3aed;border-bottom:1px solid rgba(124, 58, 237, 0.2);background:rgba(124, 58, 237, 0.1)\">Multilingualism (Thinking）</td></tr>",
+     "* MAXIFE: we report the accuracy on English + multilingual original prompts (totally 23 settings).<br>"
+    ],
+    "thinking_lines": [
+     "<tr><td colspan=\"5\" style=\"padding:8px 12px;font-weight:600;color:#7c3aed;border-bottom:1px solid rgba(124, 58, 237, 0.2);background:rgba(124, 58, 237, 0.1)\">Non-Thinking Mode</td></tr>",
+     "* Scores of Qwen3.5 models are reported as Thinking / Non-thinking.<br>",
+     "* Experimental settings: For the Video benchmarks, we used top_p=0.95, top_k=20, presence_penalty=1.5, and temperature=1.0. All other benchmarks adopted the same sampling configuration but with temperature=0.6 under the thinking mode. Under the non-thinking mode, the sampling parameters were set to "
+    ],
+    "licence_lines": [
+     "license: apache-2.0",
+     "license_link: https://huggingface.co/Qwen/Qwen3.5-0.8B/blob/main/LICENSE"
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [],
+    "trust_remote_code": false
+   },
+   "gguf": {
+    "official": [],
+    "top_third_party": [
+     "turintech/Qwen3.5-0.8B-Artemis-GGUF",
+     "unsloth/Qwen3.5-0.8B-GGUF",
+     "ggml-org/Qwen3.5-0.8B-GGUF",
+     "bartowski/Qwen_Qwen3.5-0.8B-GGUF",
+     "lmstudio-community/Qwen3.5-0.8B-GGUF"
+    ],
+    "n_repos_found": 50
+   },
+   "downloads_30d": 2772664,
+   "group": "shortlist",
+   "tokenizer": {
+    "vocab_size": 248070,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1227,
+      "p95": 1572,
+      "max": 1832,
+      "n": 120
+     },
+     "en": {
+      "mean": 1217,
+      "p95": 1572,
+      "max": 1832,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1168,
+      "p95": 1269,
+      "max": 1318,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1266,
+      "p95": 1517,
+      "max": 1771,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1235,
+      "p95": 1327,
+      "max": 1618,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.9,
+     "mixed": 2.0,
+     "roman-ur": 1.92,
+     "ur": 2.27
+    }
+   }
+  },
+  "Qwen/Qwen3-1.7B": {
+   "id": "Qwen/Qwen3-1.7B",
+   "exists": true,
+   "created_at": "2025-04-27T03:41:05.000Z",
+   "last_modified": "2025-07-26T03:46:32.000Z",
+   "gated": false,
+   "licence_tag": "apache-2.0",
+   "licence_name": null,
+   "card_languages": null,
+   "pipeline_tag": "text-generation",
+   "library": "transformers",
+   "params_total_safetensors": 2031739904,
+   "params_by_dtype": {
+    "BF16": 2031739904
+   },
+   "config": {
+    "architectures": [
+     "Qwen3ForCausalLM"
+    ],
+    "model_type": "qwen3",
+    "text_model_type": "qwen3",
+    "layers": 28,
+    "hidden": 2048,
+    "vocab": 151936,
+    "max_position_embeddings": 40960,
+    "layer_types": null,
+    "has_vision": false,
+    "tie_word_embeddings": true
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "qwen",
+   "llama_cpp_runtime_arch_known": true,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "Qwen3 is the latest generation of large language models in Qwen series, offering a comprehensive suite of dense and mixture-of-experts (MoE) models. Built upon extensive training, Qwen3 delivers groundbreaking advancements in reasoning, instruction-following, agent capabilities, and multilingual sup",
+     "- **Support of 100+ languages and dialects** with strong capabilities for **multilingual instruction following** and **translation**."
+    ],
+    "thinking_lines": [
+     "- **Uniquely support of seamless switching between thinking mode** (for complex logical reasoning, math, and coding) and **non-thinking mode** (for efficient, general-purpose dialogue) **within single model**, ensuring optimal performance across various scenarios.",
+     "- **Significantly enhancement in its reasoning capabilities**, surpassing previous QwQ (in thinking mode) and Qwen2.5 instruct models (in non-thinking mode) on mathematics, code generation, and commonsense logical reasoning.",
+     "- **Expertise in agent capabilities**, enabling precise integration with external tools in both thinking and unthinking modes and achieving leading performance among open-source models in complex agent-based tasks."
+    ],
+    "licence_lines": [
+     "license: apache-2.0",
+     "license_link: https://huggingface.co/Qwen/Qwen3-1.7B/blob/main/LICENSE"
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [
+     "For local use, applications such as Ollama, LMStudio, MLX-LM, llama.cpp, and KTransformers have also supported Qwen3."
+    ],
+    "trust_remote_code": false
+   },
+   "gguf": {
+    "official": [
+     "Qwen/Qwen3-1.7B-GGUF"
+    ],
+    "top_third_party": [
+     "handy-computer/Qwen3-ASR-1.7B-gguf",
+     "unsloth/Qwen3-1.7B-GGUF",
+     "ggml-org/Qwen3-1.7B-GGUF",
+     "bartowski/Qwen_Qwen3-1.7B-GGUF",
+     "MaziyarPanahi/Qwen3-1.7B-GGUF"
+    ],
+    "n_repos_found": 50
+   },
+   "downloads_30d": 2708669,
+   "group": "shortlist",
+   "tokenizer": {
+    "vocab_size": 151669,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1225,
+      "p95": 1553,
+      "max": 1826,
+      "n": 120
+     },
+     "en": {
+      "mean": 1207,
+      "p95": 1553,
+      "max": 1813,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1161,
+      "p95": 1267,
+      "max": 1305,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1262,
+      "p95": 1521,
+      "max": 1777,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1307,
+      "p95": 1374,
+      "max": 1826,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.91,
+     "mixed": 2.05,
+     "roman-ur": 1.95,
+     "ur": 3.1
+    }
+   }
+  },
+  "microsoft/Aion-1.0-Instruct-2.3B": {
+   "id": "microsoft/Aion-1.0-Instruct-2.3B",
+   "exists": true,
+   "created_at": "2026-11-18T17:05:50.000Z",
+   "last_modified": "2026-11-18T22:31:44.000Z",
+   "gated": false,
+   "licence_tag": "mit",
+   "licence_name": null,
+   "card_languages": [
+    "en",
+    "de",
+    "es",
+    "pt",
+    "it",
+    "fr",
+    "zh",
+    "ja"
+   ],
+   "pipeline_tag": "text-generation",
+   "library": "transformers",
+   "params_total_safetensors": 2288831488,
+   "params_by_dtype": {
+    "BF16": 2288831488
+   },
+   "config": {
+    "architectures": [
+     "AionInstructForCausalLM"
+    ],
+    "model_type": "aion_instruct",
+    "text_model_type": "aion_instruct",
+    "layers": 28,
+    "hidden": 2048,
+    "vocab": 200029,
+    "max_position_embeddings": 32768,
+    "layer_types": [
+     "full_attention",
+     "sliding_attention"
+    ],
+    "has_vision": false,
+    "tie_word_embeddings": true
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": null,
+   "llama_cpp_runtime_arch_known": false,
+   "transformers_native_model_type": false,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "language:",
+     "- **Languages:** English, German, Spanish, Portuguese, Italian, French, Chinese, Japanese",
+     "Multilingual data constitutes about 6% of our overall data. We are focusing on the quality of data that could potentially improve the reasoning ability for the model, and we filter the publicly available documents to contain the correct level of knowledge."
+    ],
+    "thinking_lines": [],
+    "licence_lines": [
+     "license: mit",
+     "license_link: https://huggingface.co/microsoft/Aion-1.0-Instruct-2.3B/blob/main/LICENSE",
+     "- **License:** MIT",
+     "4. Nothing contained in this Model Card should be interpreted as or deemed a restriction or modification to the license the model is released under."
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [
+     "- **Library names:** PyTorch, ONNX, GGUF"
+    ],
+    "trust_remote_code": true
+   },
+   "gguf": {
+    "official": [],
+    "top_third_party": [
+     "Xylolabs/Aion-1.0-Instruct-2.3B-GGUF",
+     "AtomicChat/Aion-1.0-Instruct-2.3B-Uncensored-GGUF",
+     "AtomicChat/Aion-1.0-Instruct-2.3B-GGUF"
+    ],
+    "n_repos_found": 3
+   },
+   "downloads_30d": 0,
+   "group": "shortlist",
+   "tokenizer": {
+    "vocab_size": 200029,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1124,
+      "p95": 1433,
+      "max": 1712,
+      "n": 120
+     },
+     "en": {
+      "mean": 1118,
+      "p95": 1488,
+      "max": 1712,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1070,
+      "p95": 1136,
+      "max": 1200,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1162,
+      "p95": 1386,
+      "max": 1615,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1113,
+      "p95": 1194,
+      "max": 1433,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.75,
+     "mixed": 1.86,
+     "roman-ur": 1.78,
+     "ur": 1.91
+    }
+   }
+  },
+  "Qwen/Qwen3-0.6B": {
+   "id": "Qwen/Qwen3-0.6B",
+   "exists": true,
+   "created_at": "2025-04-27T03:40:08.000Z",
+   "last_modified": "2025-07-26T03:46:27.000Z",
+   "gated": false,
+   "licence_tag": "apache-2.0",
+   "licence_name": null,
+   "card_languages": null,
+   "pipeline_tag": "text-generation",
+   "library": "transformers",
+   "params_total_safetensors": 751632384,
+   "params_by_dtype": {
+    "BF16": 751632384
+   },
+   "config": {
+    "architectures": [
+     "Qwen3ForCausalLM"
+    ],
+    "model_type": "qwen3",
+    "text_model_type": "qwen3",
+    "layers": 28,
+    "hidden": 1024,
+    "vocab": 151936,
+    "max_position_embeddings": 40960,
+    "layer_types": null,
+    "has_vision": false,
+    "tie_word_embeddings": true
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "qwen",
+   "llama_cpp_runtime_arch_known": true,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "Qwen3 is the latest generation of large language models in Qwen series, offering a comprehensive suite of dense and mixture-of-experts (MoE) models. Built upon extensive training, Qwen3 delivers groundbreaking advancements in reasoning, instruction-following, agent capabilities, and multilingual sup",
+     "- **Support of 100+ languages and dialects** with strong capabilities for **multilingual instruction following** and **translation**."
+    ],
+    "thinking_lines": [
+     "- **Uniquely support of seamless switching between thinking mode** (for complex logical reasoning, math, and coding) and **non-thinking mode** (for efficient, general-purpose dialogue) **within single model**, ensuring optimal performance across various scenarios.",
+     "- **Significantly enhancement in its reasoning capabilities**, surpassing previous QwQ (in thinking mode) and Qwen2.5 instruct models (in non-thinking mode) on mathematics, code generation, and commonsense logical reasoning.",
+     "- **Expertise in agent capabilities**, enabling precise integration with external tools in both thinking and unthinking modes and achieving leading performance among open-source models in complex agent-based tasks."
+    ],
+    "licence_lines": [
+     "license: apache-2.0",
+     "license_link: https://huggingface.co/Qwen/Qwen3-0.6B/blob/main/LICENSE"
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [
+     "For local use, applications such as Ollama, LMStudio, MLX-LM, llama.cpp, and KTransformers have also supported Qwen3."
+    ],
+    "trust_remote_code": false
+   },
+   "gguf": {
+    "official": [
+     "Qwen/Qwen3-0.6B-GGUF",
+     "Qwen/Qwen3-Embedding-0.6B-GGUF"
+    ],
+    "top_third_party": [
+     "handy-computer/Qwen3-ASR-0.6B-gguf",
+     "bartowski/Qwen_Qwen3-0.6B-GGUF",
+     "unsloth/Qwen3-0.6B-GGUF",
+     "ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF",
+     "ggml-org/Qwen3-0.6B-GGUF"
+    ],
+    "n_repos_found": 50
+   },
+   "downloads_30d": 16044059,
+   "group": "baseline",
+   "tokenizer": {
+    "vocab_size": 151669,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1225,
+      "p95": 1553,
+      "max": 1826,
+      "n": 120
+     },
+     "en": {
+      "mean": 1207,
+      "p95": 1553,
+      "max": 1813,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1161,
+      "p95": 1267,
+      "max": 1305,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1262,
+      "p95": 1521,
+      "max": 1777,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1307,
+      "p95": 1374,
+      "max": 1826,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.91,
+     "mixed": 2.05,
+     "roman-ur": 1.95,
+     "ur": 3.1
+    }
+   }
+  },
+  "mistralai/Ministral-3-3B-Instruct-2512": {
+   "id": "mistralai/Ministral-3-3B-Instruct-2512",
+   "exists": true,
+   "created_at": "2025-10-31T08:43:46.000Z",
+   "last_modified": "2026-07-15T12:21:35.000Z",
+   "gated": false,
+   "licence_tag": "apache-2.0",
+   "licence_name": null,
+   "card_languages": [
+    "en",
+    "fr",
+    "es",
+    "de",
+    "it",
+    "pt",
+    "nl",
+    "zh",
+    "ja",
+    "ko",
+    "ar"
+   ],
+   "pipeline_tag": null,
+   "library": "vllm",
+   "params_total_safetensors": 3849090048,
+   "params_by_dtype": {
+    "BF16": 822899712,
+    "F8_E4M3": 3026190336
+   },
+   "config": {
+    "architectures": [
+     "Mistral3ForConditionalGeneration"
+    ],
+    "model_type": "mistral3",
+    "text_model_type": "ministral3",
+    "layers": 26,
+    "hidden": 3072,
+    "vocab": 131072,
+    "max_position_embeddings": 262144,
+    "layer_types": null,
+    "has_vision": true,
+    "tie_word_embeddings": true
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "llava",
+   "llama_cpp_runtime_arch_known": false,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "language:",
+     "- **Multilingual**: Supports dozens of languages, including English, French, Spanish, German, Italian, Portuguese, Dutch, Chinese, Japanese, Korean, Arabic.",
+     "| Model               | Multilingual MMLU | MATH CoT 2-Shot | AGIEval 5-shot | MMLU Redux 5-shot | MMLU 5-shot | TriviaQA 5-shot |"
+    ],
+    "thinking_lines": [
+     "| Qwen3 14B (Non-Thinking)  | 0.427       | 65.1       | 0.870       | NOT MULTIMODAL   |"
+    ],
+    "licence_lines": [
+     "license: apache-2.0",
+     "- **Apache 2.0 License**: Open-source license allowing usage and modification for both commercial and non-commercial purposes.",
+     "## License",
+     "This model is licensed under the [Apache 2.0 License](https://www.apache.org/licenses/LICENSE-2.0.txt)."
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [],
+    "trust_remote_code": false
+   },
+   "gguf": {
+    "official": [
+     "mistralai/Ministral-3-3B-Instruct-2512-GGUF",
+     "mistralai/Ministral-3-3B-Reasoning-2512-GGUF"
+    ],
+    "top_third_party": [
+     "MaziyarPanahi/Ministral-3-3B-Reasoning-2512-GGUF",
+     "bartowski/mistralai_Ministral-3-3B-Instruct-2512-GGUF",
+     "lmstudio-community/Ministral-3-3B-Instruct-2512-GGUF",
+     "unsloth/Ministral-3-3B-Instruct-2512-GGUF",
+     "unsloth/Ministral-3-3B-Reasoning-2512-GGUF"
+    ],
+    "n_repos_found": 73
+   },
+   "downloads_30d": 72548,
+   "group": "reconsider",
+   "tokenizer": {
+    "vocab_size": 131072,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1240,
+      "p95": 1578,
+      "max": 1856,
+      "n": 120
+     },
+     "en": {
+      "mean": 1231,
+      "p95": 1578,
+      "max": 1856,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1185,
+      "p95": 1286,
+      "max": 1341,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1280,
+      "p95": 1529,
+      "max": 1793,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1238,
+      "p95": 1341,
+      "max": 1614,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.93,
+     "mixed": 2.05,
+     "roman-ur": 1.95,
+     "ur": 2.17
+    }
+   }
+  },
+  "CohereLabs/tiny-aya-global": {
+   "id": "CohereLabs/tiny-aya-global",
+   "exists": true,
+   "created_at": "2026-02-13T09:13:01.000Z",
+   "last_modified": "2026-09-30T13:24:36.000Z",
+   "gated": "auto",
+   "licence_tag": "cc-by-nc-4.0",
+   "licence_name": null,
+   "card_languages": [
+    "en",
+    "nl",
+    "fr",
+    "it",
+    "pt",
+    "ro",
+    "es",
+    "cs",
+    "pl",
+    "uk",
+    "ru",
+    "el",
+    "de",
+    "da",
+    "sv",
+    "no",
+    "ca",
+    "gl",
+    "cy",
+    "ga",
+    "eu",
+    "hr",
+    "lv",
+    "lt",
+    "sk",
+    "sl",
+    "et",
+    "fi",
+    "hu",
+    "sr",
+    "bg",
+    "ar",
+    "fa",
+    "ur",
+    "tr",
+    "mt",
+    "he",
+    "hi",
+    "mr",
+    "bn",
+    "gu",
+    "pa",
+    "ta",
+    "te",
+    "ne",
+    "tl",
+    "ms",
+    "id",
+    "vi",
+    "jv",
+    "km",
+    "th",
+    "lo",
+    "zh",
+    "my",
+    "ja",
+    "ko",
+    "am",
+    "ha",
+    "ig",
+    "mg",
+    "sn",
+    "sw",
+    "wo",
+    "xh",
+    "yo",
+    "zu"
+   ],
+   "pipeline_tag": "text-generation",
+   "library": "transformers",
+   "params_total_safetensors": 3349227520,
+   "params_by_dtype": {
+    "BF16": 3349227520
+   },
+   "config": {},
+   "config_readable": false,
+   "llama_cpp_converter_module": null,
+   "llama_cpp_runtime_arch_known": null,
+   "transformers_native_model_type": null,
+   "card": {},
+   "gguf": {
+    "official": [
+     "CohereLabs/tiny-aya-global-GGUF"
+    ],
+    "top_third_party": [
+     "itssaharsh/tiny-aya-global-unlearn-bio-circuitkit-layers",
+     "itssaharsh/tiny-aya-global-unlearn-bio-default-layers",
+     "itssaharsh/tiny-aya-global-unlearn-bio-deeper-layers-file-trained",
+     "itssaharsh/tiny-aya-global-unlearn-bio-deeper-layers",
+     "MOREN808/tiny-aya-global-pocket-gguf"
+    ],
+    "n_repos_found": 24
+   },
+   "downloads_30d": 32388,
+   "group": "reconsider",
+   "tokenizer": null
+  },
+  "microsoft/Phi-4-mini-instruct": {
+   "id": "microsoft/Phi-4-mini-instruct",
+   "exists": true,
+   "created_at": "2025-02-19T01:00:58.000Z",
+   "last_modified": "2025-12-10T20:24:40.000Z",
+   "gated": false,
+   "licence_tag": "mit",
+   "licence_name": null,
+   "card_languages": [
+    "multilingual",
+    "ar",
+    "zh",
+    "cs",
+    "da",
+    "nl",
+    "en",
+    "fi",
+    "fr",
+    "de",
+    "he",
+    "hu",
+    "it",
+    "ja",
+    "ko",
+    "no",
+    "pl",
+    "pt",
+    "ru",
+    "es",
+    "sv",
+    "th",
+    "tr",
+    "uk"
+   ],
+   "pipeline_tag": "text-generation",
+   "library": "transformers",
+   "params_total_safetensors": 3836021760,
+   "params_by_dtype": {
+    "BF16": 3836021760
+   },
+   "config": {
+    "architectures": [
+     "Phi3ForCausalLM"
+    ],
+    "model_type": "phi3",
+    "text_model_type": "phi3",
+    "layers": 32,
+    "hidden": 3072,
+    "vocab": 200064,
+    "max_position_embeddings": 131072,
+    "layer_types": null,
+    "has_vision": false,
+    "tie_word_embeddings": true
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "phi",
+   "llama_cpp_runtime_arch_known": true,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "language:",
+     "- multilingual",
+     "The model is intended for broad multilingual commercial and research use. The model provides uses for general purpose AI systems and applications which require:"
+    ],
+    "thinking_lines": [],
+    "licence_lines": [
+     "license: mit",
+     "license_link: https://huggingface.co/microsoft/Phi-4-mini-instruct/resolve/main/LICENSE",
+     "***Nothing contained in this Model Card should be interpreted as or deemed a restriction or modification to the license the model is released under.***",
+     "## License"
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [],
+    "trust_remote_code": true
+   },
+   "gguf": {
+    "official": [
+     "microsoft/Phi-3-mini-4k-instruct-gguf"
+    ],
+    "top_third_party": [
+     "unsloth/Phi-4-mini-instruct-GGUF",
+     "bartowski/microsoft_Phi-4-mini-instruct-GGUF",
+     "MaziyarPanahi/Phi-4-mini-instruct-GGUF",
+     "lmstudio-community/Phi-4-mini-instruct-GGUF",
+     "bartowski/Phi-3-mini-4k-instruct-GGUF"
+    ],
+    "n_repos_found": 50
+   },
+   "downloads_30d": 301098,
+   "group": "reconsider",
+   "tokenizer": {
+    "vocab_size": 200029,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1124,
+      "p95": 1433,
+      "max": 1712,
+      "n": 120
+     },
+     "en": {
+      "mean": 1118,
+      "p95": 1488,
+      "max": 1712,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1070,
+      "p95": 1136,
+      "max": 1200,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1162,
+      "p95": 1386,
+      "max": 1615,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1113,
+      "p95": 1194,
+      "max": 1433,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.75,
+     "mixed": 1.86,
+     "roman-ur": 1.78,
+     "ur": 1.91
+    }
+   }
+  },
+  "google/gemma-4-E4B-it": {
+   "id": "google/gemma-4-E4B-it",
+   "exists": true,
+   "created_at": "2026-03-02T19:57:40.000Z",
+   "last_modified": "2026-11-03T16:13:15.000Z",
+   "gated": false,
+   "licence_tag": "apache-2.0",
+   "licence_name": null,
+   "card_languages": null,
+   "pipeline_tag": "any-to-any",
+   "library": "transformers",
+   "params_total_safetensors": 7996156490,
+   "params_by_dtype": {
+    "BF16": 7996156490
+   },
+   "config": {
+    "architectures": [
+     "Gemma4ForConditionalGeneration"
+    ],
+    "model_type": "gemma4",
+    "text_model_type": "gemma4_text",
+    "layers": 42,
+    "hidden": 2560,
+    "vocab": 262144,
+    "max_position_embeddings": 131072,
+    "layer_types": [
+     "full_attention",
+     "sliding_attention"
+    ],
+    "has_vision": true,
+    "tie_word_embeddings": true
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "gemma",
+   "llama_cpp_runtime_arch_known": true,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "Gemma is a family of open models built by Google DeepMind. Gemma 4 models are multimodal, handling text and image input (with audio supported on E2B, E4B, and 12B) and generating text output. This release includes open-weights models in both pre-trained and instruction-tuned variants. Gemma 4 featur",
+     "* **Image Understanding** – Object detection, Document/PDF parsing, screen and UI understanding, chart comprehension, OCR (including multilingual), handwriting recognition, and pointing. Images can be processed at variable aspect ratios and resolutions.",
+     "* **Multilingual** – Out-of-the-box support for 35+ languages, pre-trained on 140+ languages."
+    ],
+    "thinking_lines": [
+     "* **Reasoning** – All models in the family are designed as highly capable reasoners, with configurable thinking modes.",
+     "* **Thinking** – Built-in reasoning mode that lets the model think step-by-step before answering.",
+     "enable_thinking=False"
+    ],
+    "licence_lines": [
+     "license: apache-2.0",
+     "license_link: https://ai.google.dev/gemma/docs/gemma_4_license",
+     "<b>License</b>: <a href=\"https://ai.google.dev/gemma/docs/gemma_4_license\" target=\"_blank\">Apache 2.0</a> | <b>Authors</b>: <a href=\"https://deepmind.google/models/gemma/\" target=\"_blank\">Google DeepMind</a>"
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [
+     "> Note that many libraries like Transformers and llama.cpp handle the complexities of the chat template for you."
+    ],
+    "trust_remote_code": false
+   },
+   "gguf": {
+    "official": [
+     "google/gemma-4-E4B-it-qat-q4_0-gguf"
+    ],
+    "top_third_party": [
+     "unsloth/gemma-4-E4B-it-GGUF",
+     "turintech/gemma-4-E4B-it-Artemis-GGUF",
+     "HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive",
+     "lmstudio-community/gemma-4-E4B-it-GGUF",
+     "ggml-org/gemma-4-E4B-it-GGUF"
+    ],
+    "n_repos_found": 56
+   },
+   "downloads_30d": 4354817,
+   "group": "reconsider",
+   "tokenizer": {
+    "vocab_size": 262144,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1212,
+      "p95": 1539,
+      "max": 1822,
+      "n": 120
+     },
+     "en": {
+      "mean": 1210,
+      "p95": 1566,
+      "max": 1822,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1156,
+      "p95": 1260,
+      "max": 1313,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1240,
+      "p95": 1465,
+      "max": 1654,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1195,
+      "p95": 1324,
+      "max": 1538,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.89,
+     "mixed": 1.91,
+     "roman-ur": 1.79,
+     "ur": 1.88
+    }
+   }
+  },
+  "HuggingFaceTB/SmolLM3-3B": {
+   "id": "HuggingFaceTB/SmolLM3-3B",
+   "exists": true,
+   "created_at": "2025-07-08T10:11:45.000Z",
+   "last_modified": "2025-09-10T12:28:11.000Z",
+   "gated": false,
+   "licence_tag": "apache-2.0",
+   "licence_name": null,
+   "card_languages": [
+    "en",
+    "fr",
+    "es",
+    "it",
+    "pt",
+    "zh",
+    "ar",
+    "ru"
+   ],
+   "pipeline_tag": "text-generation",
+   "library": "transformers",
+   "params_total_safetensors": 3075098624,
+   "params_by_dtype": {
+    "BF16": 3075098624
+   },
+   "config": {
+    "architectures": [
+     "SmolLM3ForCausalLM"
+    ],
+    "model_type": "smollm3",
+    "text_model_type": "smollm3",
+    "layers": 36,
+    "hidden": 2048,
+    "vocab": 128256,
+    "max_position_embeddings": 65536,
+    "layer_types": [
+     "full_attention"
+    ],
+    "has_vision": false,
+    "tie_word_embeddings": true
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "llama",
+   "llama_cpp_runtime_arch_known": true,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "language:",
+     "- **Multilingual**: 6 natively supported (English, French, Spanish, German, Italian, and Portuguese)",
+     "| Multilingual Q&A | Global MMLU | <u>53.5</u> | 50.54 | 46.8 | 49.5 | **65.1** |"
+    ],
+    "thinking_lines": [
+     "### Enabling and Disabling Extended Thinking Mode",
+     "We enable extended thinking by default, so the example above generates the output with a reasoning trace. For choosing between enabling, you can provide the `/think` and `/no_think` flags through the system prompt as shown in the snippet below for extended thinking disabled. The code for generating ",
+     "{\"role\": \"system\", \"content\": \"/no_think\"},"
+    ],
+    "licence_lines": [
+     "license: apache-2.0",
+     "6. [License](#license)",
+     "## License",
+     "[Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0)"
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [
+     "For local inference, you can use `llama.cpp`, `ONNX`, `MLX`, `MLC` and `ExecuTorch`. You can find quantized checkpoints in this collection (https://huggingface.co/collections/HuggingFaceTB/smollm3-686d33c1fdffe8e635317e23)"
+    ],
+    "trust_remote_code": false
+   },
+   "gguf": {
+    "official": [],
+    "top_third_party": [
+     "bartowski/HuggingFaceTB_SmolLM3-3B-GGUF",
+     "ggml-org/SmolLM3-3B-GGUF",
+     "unsloth/SmolLM3-3B-GGUF",
+     "unsloth/SmolLM3-3B-128K-GGUF",
+     "lmstudio-community/SmolLM3-3B-GGUF"
+    ],
+    "n_repos_found": 50
+   },
+   "downloads_30d": 185277,
+   "group": "reconsider",
+   "tokenizer": {
+    "vocab_size": 128256,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1150,
+      "p95": 1508,
+      "max": 1735,
+      "n": 120
+     },
+     "en": {
+      "mean": 1132,
+      "p95": 1508,
+      "max": 1735,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1085,
+      "p95": 1158,
+      "max": 1216,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1187,
+      "p95": 1411,
+      "max": 1687,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1226,
+      "p95": 1294,
+      "max": 1684,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.81,
+     "mixed": 1.95,
+     "roman-ur": 1.89,
+     "ur": 2.96
+    }
+   }
+  },
+  "LiquidAI/LFM2-1.2B-Extract": {
+   "id": "LiquidAI/LFM2-1.2B-Extract",
+   "exists": true,
+   "created_at": "2025-08-22T23:09:11.000Z",
+   "last_modified": "2026-03-30T13:50:07.000Z",
+   "gated": false,
+   "licence_tag": "other",
+   "licence_name": "lfm1.0",
+   "card_languages": [
+    "en",
+    "ar",
+    "zh",
+    "fr",
+    "de",
+    "ja",
+    "ko",
+    "es"
+   ],
+   "pipeline_tag": "text-generation",
+   "library": "transformers",
+   "params_total_safetensors": 1170340608,
+   "params_by_dtype": {
+    "BF16": 1170340608
+   },
+   "config": {
+    "architectures": [
+     "Lfm2ForCausalLM"
+    ],
+    "model_type": "lfm2",
+    "text_model_type": "lfm2",
+    "layers": 16,
+    "hidden": 2048,
+    "vocab": 65536,
+    "max_position_embeddings": 128000,
+    "layer_types": [
+     "conv",
+     "full_attention"
+    ],
+    "has_vision": false,
+    "tie_word_embeddings": null
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "lfm2",
+   "llama_cpp_runtime_arch_known": true,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "language:",
+     "**Supported languages**: English, Arabic, Chinese, French, German, Japanese, Korean, Portuguese, and Spanish."
+    ],
+    "thinking_lines": [],
+    "licence_lines": [
+     "license: other",
+     "license_name: lfm1.0",
+     "license_link: LICENSE"
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [
+     "- llama.cpp: [LFM2-1.2B-Extract-GGUF](https://huggingface.co/LiquidAI/LFM2-1.2B-Extract-GGUF)"
+    ],
+    "trust_remote_code": false
+   },
+   "gguf": {
+    "official": [
+     "LiquidAI/LFM2-1.2B-Extract-GGUF"
+    ],
+    "top_third_party": [
+     "bartowski/LiquidAI_LFM2-1.2B-Extract-GGUF",
+     "Mungert/LFM2-1.2B-Extract-GGUF",
+     "mradermacher/LFM2-1.2B-Extract-i1-GGUF",
+     "QuantFactory/LFM2-1.2B-Extract-GGUF",
+     "DevQuasar/LiquidAI.LFM2-1.2B-Extract-GGUF"
+    ],
+    "n_repos_found": 8
+   },
+   "downloads_30d": 913,
+   "group": "reconsider",
+   "tokenizer": {
+    "vocab_size": 64400,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1224,
+      "p95": 1574,
+      "max": 2031,
+      "n": 120
+     },
+     "en": {
+      "mean": 1196,
+      "p95": 1574,
+      "max": 1813,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1157,
+      "p95": 1237,
+      "max": 1297,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1254,
+      "p95": 1495,
+      "max": 1784,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1390,
+      "p95": 1539,
+      "max": 2031,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.86,
+     "mixed": 2.08,
+     "roman-ur": 1.99,
+     "ur": 4.05
+    }
+   }
+  },
+  "tiiuae/Falcon-H1-1.5B-Deep-Instruct": {
+   "id": "tiiuae/Falcon-H1-1.5B-Deep-Instruct",
+   "exists": true,
+   "created_at": "2025-05-01T15:43:57.000Z",
+   "last_modified": "2025-07-31T03:57:31.000Z",
+   "gated": false,
+   "licence_tag": "other",
+   "licence_name": "falcon-llm-license",
+   "card_languages": null,
+   "pipeline_tag": "text-generation",
+   "library": "transformers",
+   "params_total_safetensors": 1554874768,
+   "params_by_dtype": {
+    "BF16": 1554874768
+   },
+   "config": {
+    "architectures": [
+     "FalconH1ForCausalLM"
+    ],
+    "model_type": "falcon_h1",
+    "text_model_type": "falcon_h1",
+    "layers": 66,
+    "hidden": 1280,
+    "vocab": 65537,
+    "max_position_embeddings": 131072,
+    "layer_types": null,
+    "has_vision": false,
+    "tie_word_embeddings": false
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "falcon_h1",
+   "llama_cpp_runtime_arch_known": false,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "- **Language(s) (NLP):** English, Multilingual"
+    ],
+    "thinking_lines": [],
+    "licence_lines": [
+     "license: other",
+     "license_name: falcon-llm-license",
+     "license_link: https://falconllm.tii.ae/falcon-terms-and-conditions.html",
+     "- **License:** Falcon-LLM License"
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [
+     "Currently to use this model you can either rely on Hugging Face `transformers`, `vLLM` or `llama.cpp` library.",
+     "### `llama.cpp`",
+     "You can find all GGUF files compatible with `llama.cpp` under [our official collection](https://huggingface.co/collections/tiiuae/falcon-h1-6819f2795bc406da60fab8df)"
+    ],
+    "trust_remote_code": false
+   },
+   "gguf": {
+    "official": [
+     "tiiuae/Falcon-H1-1.5B-Deep-Instruct-GGUF"
+    ],
+    "top_third_party": [
+     "unsloth/Falcon-H1-1.5B-Deep-Instruct-GGUF",
+     "mradermacher/Falcon-H1-1.5B-Deep-Base-i1-GGUF",
+     "mradermacher/Falcon-H1-1.5B-Deep-Base-GGUF",
+     "mradermacher/Falcon-H1-1.5B-Deep-Instruct-i1-GGUF",
+     "awakara/Falcon-H1-1.5B-Deep-Instruct-mydatatune1-GGUF"
+    ],
+    "n_repos_found": 17
+   },
+   "downloads_30d": 4828,
+   "group": "reconsider",
+   "tokenizer": {
+    "vocab_size": 65537,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1411,
+      "p95": 1767,
+      "max": 2071,
+      "n": 120
+     },
+     "en": {
+      "mean": 1401,
+      "p95": 1767,
+      "max": 2071,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1349,
+      "p95": 1461,
+      "max": 1518,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1458,
+      "p95": 1710,
+      "max": 2015,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1406,
+      "p95": 1547,
+      "max": 1813,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 2.11,
+     "mixed": 2.25,
+     "roman-ur": 2.12,
+     "ur": 2.3
+    }
+   }
+  },
+  "LiquidAI/LFM2.5-1.2B-Instruct": {
+   "id": "LiquidAI/LFM2.5-1.2B-Instruct",
+   "exists": true,
+   "created_at": "2026-01-06T00:28:46.000Z",
+   "last_modified": "2026-11-03T18:09:29.000Z",
+   "gated": false,
+   "licence_tag": "other",
+   "licence_name": "lfm1.0",
+   "card_languages": [
+    "en",
+    "ar",
+    "zh",
+    "fr",
+    "de",
+    "ja",
+    "ko",
+    "es"
+   ],
+   "pipeline_tag": "text-generation",
+   "library": "transformers",
+   "params_total_safetensors": 1170340608,
+   "params_by_dtype": {
+    "BF16": 1170340608
+   },
+   "config": {
+    "architectures": [
+     "Lfm2ForCausalLM"
+    ],
+    "model_type": "lfm2",
+    "text_model_type": "lfm2",
+    "layers": 16,
+    "hidden": 2048,
+    "vocab": 65536,
+    "max_position_embeddings": 128000,
+    "layer_types": [
+     "conv",
+     "full_attention"
+    ],
+    "has_vision": false,
+    "tie_word_embeddings": null
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "lfm2",
+   "llama_cpp_runtime_arch_known": true,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "language:"
+    ],
+    "thinking_lines": [
+     "| [LFM2.5-1.2B-Thinking](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Thinking) | 1.2B | General-purpose reasoning model |"
+    ],
+    "licence_lines": [
+     "license: other",
+     "license_name: lfm1.0",
+     "license_link: LICENSE"
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [
+     "- **Fast edge inference**: 239 tok/s decode on AMD CPU, 82 tok/s on mobile NPU. Runs under 1GB of memory with day-one support for llama.cpp, MLX, and vLLM.",
+     "| [LFM2.5-1.2B-Instruct-GGUF](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF) | Quantized format for llama.cpp and compatible tools. Optimized for CPU inference and local deployment with reduced memory usage. |",
+     "| [llama.cpp](https://github.com/ggml-org/llama.cpp) | Cross-platform inference with CPU offloading. | <a href=\"https://docs.liquid.ai/lfm/inference/llama-cpp\">Link</a> | <a href=\"https://colab.research.google.com/drive/1ohLl3w47OQZA4ELo46i5E4Z6oGWBAyo8?usp=sharing\"><img src=\"https://cdn-uploads.hug",
+     "| Qualcomm Snapdragon® Gen4 (Samsung Galaxy S25 Ultra) | CPU       | llama.cpp (Q4_0) | LFM2.5-1.2B-Instruct | 335             | 70             | 719MB       |"
+    ],
+    "trust_remote_code": false
+   },
+   "gguf": {
+    "official": [
+     "LiquidAI/LFM2.5-1.2B-Base-GGUF",
+     "LiquidAI/LFM2.5-1.2B-Instruct-DSpark-GGUF",
+     "LiquidAI/LFM2.5-1.2B-Instruct-GGUF",
+     "LiquidAI/LFM2.5-1.2B-JP-202606-GGUF",
+     "LiquidAI/LFM2.5-1.2B-JP-GGUF",
+     "LiquidAI/LFM2.5-1.2B-Thinking-GGUF"
+    ],
+    "top_third_party": [
+     "bartowski/LiquidAI_LFM2.5-1.2B-Instruct-GGUF",
+     "unsloth/LFM2.5-1.2B-Instruct-GGUF",
+     "weareapexcreators/LFM2.5-1.2B-Instruct-LocalAI",
+     "lmstudio-community/LFM2.5-1.2B-Instruct-GGUF",
+     "NovachronoAI/LFM2.5-1.2B-Nova-Function-Calling-GGUF"
+    ],
+    "n_repos_found": 83
+   },
+   "downloads_30d": 104449,
+   "group": "reconsider",
+   "tokenizer": {
+    "vocab_size": 64402,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1224,
+      "p95": 1574,
+      "max": 2031,
+      "n": 120
+     },
+     "en": {
+      "mean": 1196,
+      "p95": 1574,
+      "max": 1813,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1157,
+      "p95": 1237,
+      "max": 1297,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1254,
+      "p95": 1495,
+      "max": 1784,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1390,
+      "p95": 1539,
+      "max": 2031,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.86,
+     "mixed": 2.08,
+     "roman-ur": 1.99,
+     "ur": 4.05
+    }
+   }
+  },
+  "Qwen/Qwen3-4B": {
+   "id": "Qwen/Qwen3-4B",
+   "exists": true,
+   "created_at": "2025-04-27T03:41:29.000Z",
+   "last_modified": "2025-07-26T03:46:39.000Z",
+   "gated": false,
+   "licence_tag": "apache-2.0",
+   "licence_name": null,
+   "card_languages": null,
+   "pipeline_tag": "text-generation",
+   "library": "transformers",
+   "params_total_safetensors": 4022468096,
+   "params_by_dtype": {
+    "BF16": 4022468096
+   },
+   "config": {
+    "architectures": [
+     "Qwen3ForCausalLM"
+    ],
+    "model_type": "qwen3",
+    "text_model_type": "qwen3",
+    "layers": 36,
+    "hidden": 2560,
+    "vocab": 151936,
+    "max_position_embeddings": 40960,
+    "layer_types": null,
+    "has_vision": false,
+    "tie_word_embeddings": true
+   },
+   "config_readable": true,
+   "llama_cpp_converter_module": "qwen",
+   "llama_cpp_runtime_arch_known": true,
+   "transformers_native_model_type": true,
+   "card": {
+    "mentions_urdu": false,
+    "urdu_lines": [],
+    "language_lines": [
+     "Qwen3 is the latest generation of large language models in Qwen series, offering a comprehensive suite of dense and mixture-of-experts (MoE) models. Built upon extensive training, Qwen3 delivers groundbreaking advancements in reasoning, instruction-following, agent capabilities, and multilingual sup",
+     "- **Support of 100+ languages and dialects** with strong capabilities for **multilingual instruction following** and **translation**."
+    ],
+    "thinking_lines": [
+     "- **Uniquely support of seamless switching between thinking mode** (for complex logical reasoning, math, and coding) and **non-thinking mode** (for efficient, general-purpose dialogue) **within single model**, ensuring optimal performance across various scenarios.",
+     "- **Significantly enhancement in its reasoning capabilities**, surpassing previous QwQ (in thinking mode) and Qwen2.5 instruct models (in non-thinking mode) on mathematics, code generation, and commonsense logical reasoning.",
+     "- **Expertise in agent capabilities**, enabling precise integration with external tools in both thinking and unthinking modes and achieving leading performance among open-source models in complex agent-based tasks."
+    ],
+    "licence_lines": [
+     "license: apache-2.0",
+     "license_link: https://huggingface.co/Qwen/Qwen3-4B/blob/main/LICENSE"
+    ],
+    "revenue_cap_lines": [],
+    "gguf_lines": [
+     "For local use, applications such as Ollama, LMStudio, MLX-LM, llama.cpp, and KTransformers have also supported Qwen3.",
+     "YaRN is currently supported by several inference frameworks, e.g., `transformers` and `llama.cpp` for local use, `vllm` and `sglang` for deployment. In general, there are two approaches to enabling YaRN for supported frameworks:",
+     "For `llama.cpp`, you need to regenerate the GGUF file after the modification.",
+     "For `llama-server` from `llama.cpp`, you can use"
+    ],
+    "trust_remote_code": false
+   },
+   "gguf": {
+    "official": [
+     "Qwen/Qwen3-4B-GGUF",
+     "Qwen/Qwen3-Embedding-4B-GGUF",
+     "Qwen/Qwen3-VL-4B-Instruct-GGUF"
+    ],
+    "top_third_party": [
+     "unsloth/Qwen3.5-4B-GGUF",
+     "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+     "turintech/Qwen3.5-4B-Artemis-GGUF",
+     "unsloth/Qwen3-4B-GGUF",
+     "empero-ai/Qwen3.8-4B-Distill-GGUF"
+    ],
+    "n_repos_found": 50
+   },
+   "downloads_30d": 3076428,
+   "group": "reconsider",
+   "tokenizer": {
+    "vocab_size": 151669,
+    "zero_shot_prompt_tokens": {
+     "all": {
+      "mean": 1225,
+      "p95": 1553,
+      "max": 1826,
+      "n": 120
+     },
+     "en": {
+      "mean": 1207,
+      "p95": 1553,
+      "max": 1813,
+      "n": 70
+     },
+     "mixed": {
+      "mean": 1161,
+      "p95": 1267,
+      "max": 1305,
+      "n": 10
+     },
+     "roman-ur": {
+      "mean": 1262,
+      "p95": 1521,
+      "max": 1777,
+      "n": 30
+     },
+     "ur": {
+      "mean": 1307,
+      "p95": 1374,
+      "max": 1826,
+      "n": 10
+     }
+    },
+    "input_tokens_per_word": {
+     "en": 1.91,
+     "mixed": 2.05,
+     "roman-ur": 1.95,
+     "ur": 3.1
+    }
+   }
+  }
+ },
+ "deployment": {
+  "Qwen/Qwen3-0.6B": {
+   "gguf": {
+    "repo": "Qwen/Qwen3-0.6B-GGUF",
+    "n_gguf_files": 1,
+    "selected": {
+     "Q8_0": {
+      "file": "Qwen3-0.6B-Q8_0.gguf",
+      "GiB": 0.6
+     }
+    },
+    "mmproj_files": [],
+    "declared_arch": "qwen3"
+   },
+   "kv_cache": {
+    "layers": 28,
+    "full_attention_layers": 28,
+    "sliding_layers": 0,
+    "sliding_window": 0,
+    "other_layers": 0,
+    "kv_heads": 8,
+    "head_dim": 128,
+    "kv_mib_2k": 224.0,
+    "kv_mib_8k": 896.0
+   }
+  },
+  "Qwen/Qwen3-1.7B": {
+   "gguf": {
+    "repo": "Qwen/Qwen3-1.7B-GGUF",
+    "n_gguf_files": 1,
+    "selected": {
+     "Q8_0": {
+      "file": "Qwen3-1.7B-Q8_0.gguf",
+      "GiB": 1.71
+     }
+    },
+    "mmproj_files": [],
+    "declared_arch": "qwen3"
+   },
+   "kv_cache": {
+    "layers": 28,
+    "full_attention_layers": 28,
+    "sliding_layers": 0,
+    "sliding_window": 0,
+    "other_layers": 0,
+    "kv_heads": 8,
+    "head_dim": 128,
+    "kv_mib_2k": 224.0,
+    "kv_mib_8k": 896.0
+   }
+  },
+  "Qwen/Qwen3-4B-Instruct-2507": {
+   "gguf": {
+    "repo": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+    "n_gguf_files": 26,
+    "selected": {
+     "Q4_K_M": {
+      "file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "GiB": 2.33
+     },
+     "Q4_0": {
+      "file": "Qwen3-4B-Instruct-2507-Q4_0.gguf",
+      "GiB": 2.21
+     },
+     "Q8_0": {
+      "file": "Qwen3-4B-Instruct-2507-Q8_0.gguf",
+      "GiB": 3.99
+     }
+    },
+    "mmproj_files": [],
+    "declared_arch": "qwen3"
+   },
+   "kv_cache": {
+    "layers": 36,
+    "full_attention_layers": 36,
+    "sliding_layers": 0,
+    "sliding_window": 0,
+    "other_layers": 0,
+    "kv_heads": 8,
+    "head_dim": 128,
+    "kv_mib_2k": 288.0,
+    "kv_mib_8k": 1152.0
+   }
+  },
+  "Qwen/Qwen3.5-0.8B": {
+   "gguf": {
+    "repo": "unsloth/Qwen3.5-0.8B-GGUF",
+    "n_gguf_files": 25,
+    "selected": {
+     "Q4_K_M": {
+      "file": "Qwen3.5-0.8B-Q4_K_M.gguf",
+      "GiB": 0.5
+     },
+     "Q4_0": {
+      "file": "Qwen3.5-0.8B-Q4_0.gguf",
+      "GiB": 0.47
+     },
+     "Q8_0": {
+      "file": "Qwen3.5-0.8B-Q8_0.gguf",
+      "GiB": 0.76
+     },
+     "BF16": {
+      "file": "Qwen3.5-0.8B-BF16.gguf",
+      "GiB": 1.41
+     }
+    },
+    "mmproj_files": [
+     "mmproj-BF16.gguf",
+     "mmproj-F16.gguf",
+     "mmproj-F32.gguf"
+    ],
+    "declared_arch": "qwen35"
+   },
+   "kv_cache": {
+    "layers": 24,
+    "full_attention_layers": 6,
+    "sliding_layers": 0,
+    "sliding_window": 0,
+    "other_layers": 18,
+    "kv_heads": 2,
+    "head_dim": 256,
+    "kv_mib_2k": 24.0,
+    "kv_mib_8k": 96.0
+   }
+  },
+  "Qwen/Qwen3.5-2B": {
+   "gguf": {
+    "repo": "unsloth/Qwen3.5-2B-GGUF",
+    "n_gguf_files": 25,
+    "selected": {
+     "Q4_K_M": {
+      "file": "Qwen3.5-2B-Q4_K_M.gguf",
+      "GiB": 1.19
+     },
+     "Q4_0": {
+      "file": "Qwen3.5-2B-Q4_0.gguf",
+      "GiB": 1.13
+     },
+     "Q8_0": {
+      "file": "Qwen3.5-2B-Q8_0.gguf",
+      "GiB": 1.87
+     },
+     "BF16": {
+      "file": "Qwen3.5-2B-BF16.gguf",
+      "GiB": 3.52
+     }
+    },
+    "mmproj_files": [
+     "mmproj-BF16.gguf",
+     "mmproj-F16.gguf",
+     "mmproj-F32.gguf"
+    ],
+    "declared_arch": "qwen35"
+   },
+   "kv_cache": {
+    "layers": 24,
+    "full_attention_layers": 6,
+    "sliding_layers": 0,
+    "sliding_window": 0,
+    "other_layers": 18,
+    "kv_heads": 2,
+    "head_dim": 256,
+    "kv_mib_2k": 24.0,
+    "kv_mib_8k": 96.0
+   }
+  },
+  "Qwen/Qwen3.5-4B": {
+   "gguf": {
+    "repo": "unsloth/Qwen3.5-4B-GGUF",
+    "n_gguf_files": 25,
+    "selected": {
+     "Q4_K_M": {
+      "file": "Qwen3.5-4B-Q4_K_M.gguf",
+      "GiB": 2.55
+     },
+     "Q4_0": {
+      "file": "Qwen3.5-4B-Q4_0.gguf",
+      "GiB": 2.41
+     },
+     "Q8_0": {
+      "file": "Qwen3.5-4B-Q8_0.gguf",
+      "GiB": 4.17
+     },
+     "BF16": {
+      "file": "Qwen3.5-4B-BF16.gguf",
+      "GiB": 7.85
+     }
+    },
+    "mmproj_files": [
+     "mmproj-BF16.gguf",
+     "mmproj-F16.gguf",
+     "mmproj-F32.gguf"
+    ],
+    "declared_arch": "qwen35"
+   },
+   "kv_cache": {
+    "layers": 32,
+    "full_attention_layers": 8,
+    "sliding_layers": 0,
+    "sliding_window": 0,
+    "other_layers": 24,
+    "kv_heads": 4,
+    "head_dim": 256,
+    "kv_mib_2k": 64.0,
+    "kv_mib_8k": 256.0
+   }
+  },
+  "google/gemma-4-E2B-it": {
+   "gguf": {
+    "repo": "google/gemma-4-E2B-it-qat-q4_0-gguf",
+    "n_gguf_files": 2,
+    "selected": {
+     "Q4_0": {
+      "file": "gemma-4-E2B_q4_0-it.gguf",
+      "GiB": 3.12
+     }
+    },
+    "mmproj_files": [
+     "gemma-4-E2B-it-mmproj.gguf"
+    ],
+    "declared_arch": "gemma4"
+   },
+   "kv_cache": {
+    "layers": 35,
+    "full_attention_layers": 7,
+    "sliding_layers": 28,
+    "sliding_window": 512,
+    "other_layers": 0,
+    "kv_heads": 1,
+    "head_dim": 256,
+    "kv_mib_2k": 28.0,
+    "kv_mib_8k": 70.0
+   }
+  },
+  "LiquidAI/LFM3-1.7B": {
+   "gguf": {
+    "repo": "LiquidAI/LFM3-1.7B-GGUF",
+    "n_gguf_files": 8,
+    "selected": {
+     "Q4_K_M": {
+      "file": "LFM3-1.7B-Q4_K_M.gguf",
+      "GiB": 1.02
+     },
+     "Q4_0": {
+      "file": "LFM3-1.7B-QAD-Q4_0.gguf",
+      "GiB": 0.98
+     },
+     "Q8_0": {
+      "file": "LFM3-1.7B-Q8_0.gguf",
+      "GiB": 1.72
+     },
+     "BF16": {
+      "file": "LFM3-1.7B-BF16.gguf",
+      "GiB": 3.23
+     }
+    },
+    "mmproj_files": [],
+    "declared_arch": "lfm3"
+   },
+   "kv_cache": {
+    "layers": 24,
+    "full_attention_layers": 6,
+    "sliding_layers": 5,
+    "sliding_window": 256,
+    "other_layers": 13,
+    "kv_heads": 4,
+    "head_dim": 128,
+    "kv_mib_2k": 26.5,
+    "kv_mib_8k": 98.5
+   }
+  },
+  "LiquidAI/LFM2.5-2.6B": {
+   "gguf": {
+    "repo": "LiquidAI/LFM2.5-2.6B-GGUF",
+    "n_gguf_files": 8,
+    "selected": {
+     "Q4_K_M": {
+      "file": "LFM2.5-2.6B-Q4_K_M.gguf",
+      "GiB": 1.56
+     },
+     "Q4_0": {
+      "file": "LFM2.5-2.6B-Q4_0.gguf",
+      "GiB": 1.48
+     },
+     "Q8_0": {
+      "file": "LFM2.5-2.6B-Q8_0.gguf",
+      "GiB": 2.68
+     },
+     "BF16": {
+      "file": "LFM2.5-2.6B-BF16.gguf",
+      "GiB": 5.03
+     }
+    },
+    "mmproj_files": [],
+    "declared_arch": "lfm2"
+   },
+   "kv_cache": {
+    "layers": 30,
+    "full_attention_layers": 8,
+    "sliding_layers": 0,
+    "sliding_window": 0,
+    "other_layers": 22,
+    "kv_heads": 8,
+    "head_dim": 64,
+    "kv_mib_2k": 32.0,
+    "kv_mib_8k": 128.0
+   }
+  },
+  "ibm-granite/granite-4.2-3b": {
+   "gguf": {
+    "repo": "ibm-granite/granite-4.2-3b-GGUF",
+    "n_gguf_files": 15,
+    "selected": {
+     "Q4_K_M": {
+      "file": "granite-4.2-3b-Q4_K_M.gguf",
+      "GiB": 2.09
+     },
+     "Q4_0": {
+      "file": "granite-4.2-3b-Q4_0.gguf",
+      "GiB": 1.98
+     },
+     "Q8_0": {
+      "file": "granite-4.2-3b-Q8_0.gguf",
+      "GiB": 3.63
+     },
+     "BF16": {
+      "file": "granite-4.2-3b-bf16.gguf",
+      "GiB": 6.82
+     }
+    },
+    "mmproj_files": [],
+    "declared_arch": "granite"
+   },
+   "kv_cache": {
+    "layers": 40,
+    "full_attention_layers": 40,
+    "sliding_layers": 0,
+    "sliding_window": 0,
+    "other_layers": 0,
+    "kv_heads": 8,
+    "head_dim": 64,
+    "kv_mib_2k": 160.0,
+    "kv_mib_8k": 640.0
+   }
+  },
+  "microsoft/Aion-1.0-Instruct-2.3B": {
+   "gguf": {
+    "repo": "Xylolabs/Aion-1.0-Instruct-2.3B-GGUF",
+    "n_gguf_files": 1,
+    "selected": {
+     "Q8_0": {
+      "file": "Aion-1.0-Instruct-2.3B-Q8_0.gguf",
+      "GiB": 2.27
+     }
+    },
+    "mmproj_files": [],
+    "declared_arch": "aion"
+   },
+   "kv_cache": {
+    "layers": 28,
+    "full_attention_layers": 7,
+    "sliding_layers": 21,
+    "sliding_window": 2048,
+    "other_layers": 0,
+    "kv_heads": 8,
+    "head_dim": 128,
+    "kv_mib_2k": 224.0,
+    "kv_mib_8k": 392.0
+   }
+  },
+  "mistralai/Ministral-3-3B-Instruct-2512": {
+   "gguf": {
+    "repo": "mistralai/Ministral-3-3B-Instruct-2512-GGUF",
+    "n_gguf_files": 5,
+    "selected": {
+     "Q4_K_M": {
+      "file": "Ministral-3-3B-Instruct-2512-Q4_K_M.gguf",
+      "GiB": 2.0
+     },
+     "Q8_0": {
+      "file": "Ministral-3-3B-Instruct-2512-Q8_0.gguf",
+      "GiB": 3.4
+     },
+     "BF16": {
+      "file": "Ministral-3-3B-Instruct-2512-BF16.gguf",
+      "GiB": 6.4
+     }
+    },
+    "mmproj_files": [
+     "Ministral-3-3B-Instruct-2512-BF16-mmproj.gguf"
+    ],
+    "declared_arch": "mistral3"
+   },
+   "kv_cache": {
+    "layers": 26,
+    "full_attention_layers": 26,
+    "sliding_layers": 0,
+    "sliding_window": 0,
+    "other_layers": 0,
+    "kv_heads": 8,
+    "head_dim": 128,
+    "kv_mib_2k": 208.0,
+    "kv_mib_8k": 832.0
+   }
+  },
+  "microsoft/Phi-4-mini-instruct": {
+   "gguf": {
+    "repo": "unsloth/Phi-4-mini-instruct-GGUF",
+    "n_gguf_files": 8,
+    "selected": {
+     "Q4_K_M": {
+      "file": "Phi-4-mini-instruct-Q4_K_M.gguf",
+      "GiB": 2.32
+     },
+     "Q8_0": {
+      "file": "Phi-4-mini-instruct.Q8_0.gguf",
+      "GiB": 3.8
+     },
+     "BF16": {
+      "file": "Phi-4-mini-instruct.BF16.gguf",
+      "GiB": 7.15
+     }
+    },
+    "mmproj_files": [],
+    "declared_arch": "phi3"
+   },
+   "kv_cache": {
+    "layers": 32,
+    "full_attention_layers": 32,
+    "sliding_layers": 0,
+    "sliding_window": 262144,
+    "other_layers": 0,
+    "kv_heads": 8,
+    "head_dim": 128,
+    "kv_mib_2k": 256.0,
+    "kv_mib_8k": 1024.0
+   }
+  },
+  "LiquidAI/LFM2.5-1.2B-Instruct": {
+   "gguf": {
+    "repo": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF",
+    "n_gguf_files": 8,
+    "selected": {
+     "Q4_K_M": {
+      "file": "LFM2.5-1.2B-Instruct-Q4_K_M.gguf",
+      "GiB": 0.68
+     },
+     "Q4_0": {
+      "file": "LFM2.5-1.2B-Instruct-Q4_0.gguf",
+      "GiB": 0.65
+     },
+     "Q8_0": {
+      "file": "LFM2.5-1.2B-Instruct-Q8_0.gguf",
+      "GiB": 1.16
+     },
+     "BF16": {
+      "file": "LFM2.5-1.2B-Instruct-BF16.gguf",
+      "GiB": 2.18
+     }
+    },
+    "mmproj_files": [],
+    "declared_arch": "lfm2"
+   },
+   "kv_cache": {
+    "layers": 16,
+    "full_attention_layers": 6,
+    "sliding_layers": 0,
+    "sliding_window": 0,
+    "other_layers": 10,
+    "kv_heads": 8,
+    "head_dim": 64,
+    "kv_mib_2k": 24.0,
+    "kv_mib_8k": 96.0
+   }
+  }
+ }
+}

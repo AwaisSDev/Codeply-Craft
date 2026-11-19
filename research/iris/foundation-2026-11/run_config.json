@@ -1,0 +1,60 @@
+{
+ "study": "Iris foundation zero-shot screen, pre-registered 2026-11-19 (EVAL-PLAN.md)",
+ "data": {
+  "val_built": "data/built/val.jsonl",
+  "val_built_sha256": "0ae331732c7f",
+  "val_raw": ["data/raw/val/va01.jsonl", "data/raw/val/va02.jsonl"],
+  "rebuild": "python -m codeply_iris.build --raw data/raw --out data/built --seed 1 (byte-identical, verified 2026-11-19)",
+  "test": "not used",
+  "sensitivity_exclude_episodes": ["va01-e01"]
+ },
+ "global": {
+  "system_prompt": "prompt.ZERO_SHOT_SYSTEM_V11 (v1 + one sentence on quotes, EVAL-PLAN §4)",
+  "retrieve_system_prompt": "prompt.ZERO_SHOT_RETRIEVE_SYSTEM (unchanged)",
+  "endpoint": "llama-server /v1/chat/completions, --jinja (GGUF-embedded chat template)",
+  "decoding": {"temperature": 0.0, "top_k": 1, "seed": 0, "max_tokens_observe": 900, "max_tokens_retrieve": 160,
+               "repeat_penalty": 1.0, "presence_penalty": 0.0},
+  "structured_output": {"primary": "response_format json_schema = contract.OUTPUT_SCHEMA / USE_SCHEMA",
+                        "secondary": "unconstrained, open loop, first 6 val episodes"},
+  "logprobs": true,
+  "think_handling": "strip <think>...</think> before parsing for every model; count leaks; thinking tokens count in latency",
+  "llama_server_flags": "-t 4 -c 8192 --parallel 1 --jinja; cache_prompt false",
+  "llama_cpp": "one pinned master commit, recorded at stage 0 (must include qwen35, gemma4, lfm3, granite, mistral3)",
+  "machine": "this container: 4 vCPU Intel Xeon (AVX-512, AMX), 15 GB RAM"
+ },
+ "systems": {
+  "qwen3-0.6b": {"wave": "A-baseline", "hf": "Qwen/Qwen3-0.6B", "gguf_repo": "unsloth/Qwen3-0.6B-GGUF", "gguf_file": "Qwen3-0.6B-Q4_K_M.gguf",
+                  "thinking": {"chat_template_kwargs": {"enable_thinking": false}}, "also_run": "prompt v1 for continuity"},
+  "qwen3-1.7b": {"wave": "A-baseline", "hf": "Qwen/Qwen3-1.7B", "gguf_repo": "unsloth/Qwen3-1.7B-GGUF", "gguf_file": "Qwen3-1.7B-Q4_K_M.gguf",
+                  "thinking": {"chat_template_kwargs": {"enable_thinking": false}}, "also_run": "prompt v1 for continuity"},
+  "qwen3.5-2b": {"wave": "A", "hf": "Qwen/Qwen3.5-2B", "gguf_repo": "unsloth/Qwen3.5-2B-GGUF", "gguf_file": "Qwen3.5-2B-Q4_K_M.gguf",
+                  "thinking": {"chat_template_kwargs": {"enable_thinking": false}, "card": "non-thinking by default"},
+                  "notes": "text GGUF only; mmproj not loaded"},
+  "gemma-4-e2b": {"wave": "A", "hf": "google/gemma-4-E2B-it", "gguf_repo": "google/gemma-4-E2B-it-qat-q4_0-gguf", "gguf_file": "gemma-4-E2B_q4_0-it.gguf",
+                  "thinking": {"chat_template_kwargs": {"enable_thinking": false}, "card": "thinking only when enabled"},
+                  "notes": "QAT Q4_0 (Google's recommended low-bit file; 3.12 GiB incl. per-layer embeddings); system prompt is folded into the first user turn by the template"},
+  "qwen3-4b-2507": {"wave": "A", "hf": "Qwen/Qwen3-4B-Instruct-2507", "gguf_repo": "unsloth/Qwen3-4B-Instruct-2507-GGUF", "gguf_file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+                  "thinking": {"card": "non-thinking only"}},
+  "qwen3.5-4b": {"wave": "B", "hf": "Qwen/Qwen3.5-4B", "gguf_repo": "unsloth/Qwen3.5-4B-GGUF", "gguf_file": "Qwen3.5-4B-Q4_K_M.gguf",
+                  "thinking": {"chat_template_kwargs": {"enable_thinking": false}, "card": "thinking by default"}},
+  "qwen3.5-0.8b": {"wave": "B", "hf": "Qwen/Qwen3.5-0.8B", "gguf_repo": "unsloth/Qwen3.5-0.8B-GGUF", "gguf_file": "Qwen3.5-0.8B-Q4_K_M.gguf",
+                  "thinking": {"chat_template_kwargs": {"enable_thinking": false}, "card": "non-thinking by default"}},
+  "granite-4.2-3b": {"wave": "B", "hf": "ibm-granite/granite-4.2-3b", "gguf_repo": "ibm-granite/granite-4.2-3b-GGUF", "gguf_file": "granite-4.2-3b-Q4_K_M.gguf",
+                  "thinking": {"chat_template_kwargs": {"enable_thinking": false}, "card": "thinking by default"}},
+  "ministral-3-3b": {"wave": "B", "hf": "mistralai/Ministral-3-3B-Instruct-2512", "gguf_repo": "mistralai/Ministral-3-3B-Instruct-2512-GGUF",
+                  "gguf_file": "Ministral-3-3B-Instruct-2512-Q4_K_M.gguf", "thinking": {"card": "instruct model, no thinking"},
+                  "notes": "replaces Aion-1.0 (not runnable on stock llama.cpp); text GGUF only"},
+  "lfm3-1.7b": {"wave": "B-reference", "hf": "LiquidAI/LFM3-1.7B", "gguf_repo": "LiquidAI/LFM3-1.7B-GGUF", "gguf_file": "LFM3-1.7B-Q4_K_M.gguf",
+                  "thinking": {"chat_template_kwargs": {"enable_thinking": false}, "card": "on by default; switch 'can be inconsistent'"},
+                  "notes": "licence: LFM Open v1.0, commercial use only below USD 10M annual revenue; reference, not a foundation candidate"},
+  "lfm2.5-2.6b": {"wave": "C-diagnostic", "hf": "LiquidAI/LFM2.5-2.6B", "gguf_repo": "LiquidAI/LFM2.5-2.6B-GGUF", "gguf_file": "LFM2.5-2.6B-Q4_K_M.gguf",
+                  "thinking": {"card": "always thinks", "reasoning_budget_tokens": 1024}, "loops": ["open"],
+                  "notes": "max tokens raised to 900 + 1024 for this system only; reported separately"}
+ },
+ "excluded": {
+  "microsoft/Aion-1.0-Instruct-2.3B": "architecture AionInstructForCausalLM not in llama.cpp converter; third-party GGUF declares 'aion', unknown to llama.cpp runtime; not in transformers (trust_remote_code)"
+ },
+ "optional_reference": {
+  "CohereLabs/tiny-aya-global": "CC-BY-NC-4.0 and gated: research-only Urdu reference, never a foundation"
+ }
+}
