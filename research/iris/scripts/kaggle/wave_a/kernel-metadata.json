@@ -1,0 +1,16 @@
+{
+ "id": "awaissididique/codeply-iris-wave-a-check",
+ "title": "codeply-iris-wave-a-check",
+ "code_file": "check.py",
+ "language": "python",
+ "kernel_type": "script",
+ "is_private": true,
+ "enable_gpu": true,
+ "enable_internet": true,
+ "machine_shape": "NvidiaTeslaT4",
+ "dataset_sources": [
+  "awaissididique/codeply-iris-wave-a-src"
+ ],
+ "competition_sources": [],
+ "kernel_sources": []
+}
