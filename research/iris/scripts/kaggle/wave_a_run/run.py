@@ -20,14 +20,14 @@ T0 = time.time()
 W = "/kaggle/working"
 OFF = '{"enable_thinking": false}'
 # (system, gguf, template kwargs, prompt version, mode); mode "full" = open + closed + unconstrained screen, "v1" = open only
-GPU_QUEUES = {
+GPU_QUEUES = {   # balanced from the measured parity timings (Kaggle check, 2026-11-19): about 50 min per GPU
     0: [("qwen3-4b-2507", "Qwen3-4B-Instruct-2507-Q4_K_M.gguf", "", "v1.1", "full"),
-        ("qwen3-1.7b", "Qwen3-1.7B-Q4_K_M.gguf", OFF, "v1.1", "full"),
-        ("qwen3-0.6b-v1", "Qwen3-0.6B-Q4_K_M.gguf", OFF, "v1", "v1")],
+        ("gemma-4-e2b", "gemma-4-E2B_q4_0-it.gguf", OFF, "v1.1", "full")],
     1: [("qwen3.5-2b", "Qwen3.5-2B-Q4_K_M.gguf", OFF, "v1.1", "full"),
-        ("gemma-4-e2b", "gemma-4-E2B_q4_0-it.gguf", OFF, "v1.1", "full"),
+        ("qwen3-1.7b", "Qwen3-1.7B-Q4_K_M.gguf", OFF, "v1.1", "full"),
         ("qwen3-0.6b", "Qwen3-0.6B-Q4_K_M.gguf", OFF, "v1.1", "full"),
-        ("qwen3-1.7b-v1", "Qwen3-1.7B-Q4_K_M.gguf", OFF, "v1", "v1")],
+        ("qwen3-1.7b-v1", "Qwen3-1.7B-Q4_K_M.gguf", OFF, "v1", "v1"),
+        ("qwen3-0.6b-v1", "Qwen3-0.6B-Q4_K_M.gguf", OFF, "v1", "v1")],
 }
 
 

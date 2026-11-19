@@ -1,0 +1,14 @@
+{
+ "gpus": [
+  "0, Tesla T4, 15360 MiB, 580.178.04, 7.5",
+  "1, Tesla T4, 15360 MiB, 580.178.04, 7.5"
+ ],
+ "nvidia_smi_rc": 0,
+ "cuda_runtime": "CUDA Version: 13.0",
+ "nvcc": "Cuda compilation tools, release 13.0, V13.0.88\nBuild cuda_13.0.r13.0/compiler.36424714_0",
+ "nproc": 4,
+ "mem": "Mem:              31           1          25           0           5          30",
+ "disk_working": "/dev/loop2       20G  148K   20G   1% /kaggle/working",
+ "python": "3.13.16",
+ "cmake": "cmake version 3.31.10"
+}

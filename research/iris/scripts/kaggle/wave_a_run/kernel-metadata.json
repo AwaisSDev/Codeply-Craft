@@ -1,0 +1,14 @@
+{
+ "id": "awaissididique/codeply-iris-wave-a-run",
+ "title": "codeply-iris-wave-a-run",
+ "code_file": "run.py",
+ "language": "python",
+ "kernel_type": "script",
+ "is_private": true,
+ "enable_gpu": true,
+ "enable_internet": false,
+ "machine_shape": "NvidiaTeslaT4",
+ "dataset_sources": ["awaissididique/codeply-iris-wave-a-src"],
+ "competition_sources": [],
+ "kernel_sources": ["awaissididique/codeply-iris-wave-a-check"]
+}

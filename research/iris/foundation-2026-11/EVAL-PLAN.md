@@ -178,3 +178,19 @@ Primary metrics, data, prompt v1.1, systems and the selection rule are unchanged
    keeps its pre-registered definition and is known to miss a trap quote that continues the labelled one.
 7. **Smoke runs** (one val episode, scratch output, not results) passed through the full evaluator; see
    `stage0/CHANGES.md` §4.
+
+### A2 (2026-11-19, Kaggle check; before any wave-A result)
+
+Owner decision: wave A runs on Kaggle T4 instead of the reference CPU. Data, prompts, decoding, schema, metrics,
+systems and the selection rule are unchanged. Evidence: `stage1-kaggle/KAGGLE-CHECK.md`.
+
+1. **Hardware of record for quality metrics: Kaggle 2 x Tesla T4** (sm_75, driver 580, CUDA 13.0), llama.cpp 7a4117e
+   built with CUDA, all layers on the GPU (`--server-arg=-ngl --server-arg=99`). Every wave-A system runs on this
+   hardware; CPU and GPU results are never mixed in a comparison (they differ at near-tie tokens; GPU runs are
+   deterministic across the two T4s).
+2. **Latency of record stays the reference CPU** (stage-0 llama-bench); GPU timings are planning figures only.
+3. **Exact commands: `scripts/kaggle/wave_a_run/run.py`** (the `run_wave_a.sh` commands plus `-ngl 99`, split over the
+   two GPUs; it re-verifies GGUF sha256 and refuses to run without a T4 or with any test file present).
+4. **Reported in addition, per system:** the share of observe sessions stopped at the 900-token cap.
+5. **Optional hardware noise floor** (no quota): Qwen3-1.7B, full val, open loop, on the reference CPU, compared with its
+   GPU run.

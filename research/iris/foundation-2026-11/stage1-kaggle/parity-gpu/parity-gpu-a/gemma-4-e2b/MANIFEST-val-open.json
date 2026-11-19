@@ -1,0 +1,37 @@
+{
+ "args": {
+  "system": "zeroshot",
+  "model": "/kaggle/input/notebooks/awaissididique/codeply-iris-wave-a-check/models/gemma-4-E2B_q4_0-it.gguf",
+  "adapter": "",
+  "split": "val",
+  "data": "data/built",
+  "raw": "data/raw",
+  "out": "/kaggle/working/parity-gpu-a/gemma-4-e2b",
+  "closed_loop": false,
+  "constrain": true,
+  "limit": 2,
+  "threads": 4,
+  "keyword_k": 3,
+  "final": false,
+  "label": "",
+  "chat": true,
+  "template_kwargs": "{\"enable_thinking\": false}",
+  "prompt_version": "v1.1",
+  "no_logprobs": false,
+  "server_arg": [
+   "-ngl",
+   "99"
+  ],
+  "max_new_tokens": 900
+ },
+ "code_commit": "",
+ "python": "3.13.16",
+ "data": {
+  "val.jsonl": "0ae331732c7fcf609304b0069c61e0b0162e9617d5c3041fca820d8b7e38aee3"
+ },
+ "backend": "llama-server-chat:/kaggle/input/notebooks/awaissididique/codeply-iris-wave-a-check/models/gemma-4-E2B_q4_0-it.gguf",
+ "system_prompt_sha256": "615db6f06996d98fbe08af868a24cd04d0894a0e2950ddb4d2e2117e07bb387e",
+ "prompt_version": "v1.1",
+ "gguf_sha256": "fa401b55b07ee70a54c6dae3903c783a6e65064312529ea57175cb5f8dec6634",
+ "llama_server_version": "version: 1.0.0-dev (build 1, commit 7a4117e)\nbuilt with GNU 13.3.0 for Linux x86_64"
+}

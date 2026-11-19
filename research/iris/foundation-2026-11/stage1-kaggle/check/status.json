@@ -1,0 +1,110 @@
+{
+ "steps": {
+  "hardware": {
+   "start_s": 0,
+   "end_s": 1,
+   "gpus": [
+    "0, Tesla T4, 15360 MiB, 580.178.04, 7.5",
+    "1, Tesla T4, 15360 MiB, 580.178.04, 7.5"
+   ],
+   "nvidia_smi_rc": 0,
+   "cuda_runtime": "CUDA Version: 13.0",
+   "nvcc": "Cuda compilation tools, release 13.0, V13.0.88\nBuild cuda_13.0.r13.0/compiler.36424714_0",
+   "nproc": 4,
+   "mem": "Mem:              31           1          25           0           5          30",
+   "disk_working": "/dev/loop2       20G  148K   20G   1% /kaggle/working",
+   "python": "3.13.16",
+   "cmake": "cmake version 3.31.10"
+  },
+  "build": {
+   "start_s": 9,
+   "end_s": 2127,
+   "version": "version: 1.0.0-dev (build 1, commit 7a4117e)\nbuilt with GNU 13.3.0 for Linux x86_64"
+  },
+  "models": {
+   "start_s": 2127,
+   "end_s": 2228,
+   "sha256": {
+    "Qwen3-0.6B-Q4_K_M.gguf": "ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a",
+    "Qwen3-1.7B-Q4_K_M.gguf": "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897",
+    "Qwen3.5-2B-Q4_K_M.gguf": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+    "gemma-4-E2B_q4_0-it.gguf": "fa401b55b07ee70a54c6dae3903c783a6e65064312529ea57175cb5f8dec6634",
+    "Qwen3-4B-Instruct-2507-Q4_K_M.gguf": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597"
+   }
+  },
+  "bench": {
+   "start_s": 2228,
+   "end_s": 2256,
+   "qwen3-0.6b": {
+    "pp512": 7200.1,
+    "pp2048": 9786.0,
+    "tg128": 268.5
+   },
+   "qwen3-1.7b": {
+    "pp512": 4908.4,
+    "pp2048": 4657.6,
+    "tg128": 139.0
+   },
+   "qwen3.5-2b": {
+    "pp512": 4231.6,
+    "pp2048": 4318.4,
+    "tg128": 120.0
+   },
+   "gemma-4-e2b": {
+    "pp512": 7779.8,
+    "pp2048": 8845.5,
+    "tg128": 105.0
+   },
+   "qwen3-4b-2507": {
+    "pp512": 2131.6,
+    "pp2048": 2002.8,
+    "tg128": 66.5
+   }
+  },
+  "vram": {
+   "start_s": 2256,
+   "end_s": 2303,
+   "qwen3-0.6b": 1435,
+   "qwen3-1.7b": 2139,
+   "qwen3.5-2b": 1517,
+   "gemma-4-e2b": 1643,
+   "qwen3-4b-2507": 3743
+  },
+  "parity": {
+   "start_s": 2303,
+   "end_s": 2304,
+   "qwen3-0.6b": {
+    "examples": 0,
+    "identical_between_gpus": 0,
+    "p50_s": null,
+    "mean_s": null
+   },
+   "qwen3-1.7b": {
+    "examples": 0,
+    "identical_between_gpus": 0,
+    "p50_s": null,
+    "mean_s": null
+   },
+   "qwen3.5-2b": {
+    "examples": 0,
+    "identical_between_gpus": 0,
+    "p50_s": null,
+    "mean_s": null
+   },
+   "gemma-4-e2b": {
+    "examples": 0,
+    "identical_between_gpus": 0,
+    "p50_s": null,
+    "mean_s": null
+   },
+   "qwen3-4b-2507": {
+    "examples": 0,
+    "identical_between_gpus": 0,
+    "p50_s": null,
+    "mean_s": null
+   }
+  }
+ },
+ "elapsed_s": 2304,
+ "source_commit": "170b7ac52560cb499e2e3c9e3d66ce4d902f1a32"
+}

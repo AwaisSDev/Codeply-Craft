@@ -1,0 +1,67 @@
+{
+ "qwen3-0.6b": {
+  "healthy": true,
+  "gpu_mib_before": 0,
+  "gpu_mib_loaded": 1431,
+  "gpu_mib_after_request": 1435,
+  "model_used_mib": 1435,
+  "one_session": {
+   "seconds": 4.4,
+   "new_tokens": 657,
+   "prompt_tokens": 1254
+  },
+  "server_log": []
+ },
+ "qwen3-1.7b": {
+  "healthy": true,
+  "gpu_mib_before": 0,
+  "gpu_mib_loaded": 2135,
+  "gpu_mib_after_request": 2139,
+  "model_used_mib": 2139,
+  "one_session": {
+   "seconds": 5.55,
+   "new_tokens": 542,
+   "prompt_tokens": 1254
+  },
+  "server_log": []
+ },
+ "qwen3.5-2b": {
+  "healthy": true,
+  "gpu_mib_before": 0,
+  "gpu_mib_loaded": 1513,
+  "gpu_mib_after_request": 1517,
+  "model_used_mib": 1517,
+  "one_session": {
+   "seconds": 10.38,
+   "new_tokens": 900,
+   "prompt_tokens": 1267
+  },
+  "server_log": []
+ },
+ "gemma-4-e2b": {
+  "healthy": true,
+  "gpu_mib_before": 0,
+  "gpu_mib_loaded": 1617,
+  "gpu_mib_after_request": 1643,
+  "model_used_mib": 1643,
+  "one_session": {
+   "seconds": 12.01,
+   "new_tokens": 900,
+   "prompt_tokens": 1263
+  },
+  "server_log": []
+ },
+ "qwen3-4b-2507": {
+  "healthy": true,
+  "gpu_mib_before": 0,
+  "gpu_mib_loaded": 3739,
+  "gpu_mib_after_request": 3743,
+  "model_used_mib": 3743,
+  "one_session": {
+   "seconds": 5.1,
+   "new_tokens": 243,
+   "prompt_tokens": 1250
+  },
+  "server_log": []
+ }
+}
