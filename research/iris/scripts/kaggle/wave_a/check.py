@@ -104,12 +104,20 @@ B = f"{W}/llama-bin"
 if not os.path.exists(f"{B}/llama-server"):
     sh(f"rm -rf /tmp/llama && mkdir /tmp/llama && cd /tmp/llama && git init -q && git remote add origin https://github.com/ggml-org/llama.cpp.git "
        f"&& git fetch -q --depth 1 origin {LLAMA_COMMIT} && git checkout -q FETCH_HEAD", check=True)
-    sh("cd /tmp/llama && cmake -S . -B build -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75 -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF "
-       "-DLLAMA_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release > /tmp/llama/cmake.log 2>&1", check=True)
-    r = sh(f"cd /tmp/llama && cmake --build build -j{os.cpu_count()} --target llama-server llama-bench > /tmp/llama/build.log 2>&1")
-    shutil.copy("/tmp/llama/build.log", f"{OUT}/llama-build.log")
-    if r.returncode:
-        raise SystemExit("llama.cpp build failed (see check/llama-build.log)")
+    sh(f"ls -d /usr/local/cuda* 2>&1; which nvcc; echo CUDA_HOME=$CUDA_HOME > {OUT}/cuda-env.log; ls -d /usr/local/cuda*/ >> {OUT}/cuda-env.log 2>&1")
+    nvcc = sh("which nvcc").stdout.strip()
+    cuda_root = os.path.dirname(os.path.dirname(nvcc)) if nvcc else "/usr/local/cuda"
+    cfg = (f"-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75 -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF "
+           f"-DCMAKE_BUILD_TYPE=Release -DCUDAToolkit_ROOT={cuda_root} -DCMAKE_CUDA_COMPILER={nvcc or cuda_root + '/bin/nvcc'}")
+    for what, cmd in (("cmake", f"cd /tmp/llama && cmake -S . -B build {cfg}"),
+                      ("build", f"cd /tmp/llama && cmake --build build -j{os.cpu_count()} --target llama-server llama-bench")):
+        r = sh(cmd)
+        open(f"{OUT}/llama-{what}.log", "w").write((r.stdout or "") + (r.stderr or ""))
+        if r.returncode:
+            print(((r.stdout or "") + (r.stderr or ""))[-4000:], flush=True)
+            sh(f"tail -120 /tmp/llama/build/CMakeFiles/CMakeConfigureLog.yaml > {OUT}/cmake-configure-tail.log 2>&1")
+            done("build", failed=what)
+            raise SystemExit(f"llama.cpp {what} failed (see check/llama-{what}.log)")
     os.makedirs(B, exist_ok=True)
     sh(f"cp -a /tmp/llama/build/bin/. {B}/", check=True)
 ver = sh(f"{B}/llama-server --version 2>&1 | tail -3").stdout.strip()
