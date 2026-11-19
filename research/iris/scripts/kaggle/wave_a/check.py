@@ -84,6 +84,10 @@ if not gpus:
 
 # source dataset ----------------------------------------------------------------------------------------------------
 hits = glob.glob("/kaggle/input/**/codeply_iris/__init__.py", recursive=True)
+if not hits:                                                     # the dataset arrived as an archive: unpack it
+    for z in glob.glob("/kaggle/input/**/*.zip", recursive=True):
+        shutil.unpack_archive(z, f"{W}/src")
+    hits = glob.glob(f"{W}/src/**/codeply_iris/__init__.py", recursive=True)
 if not hits:
     sh("find /kaggle/input -maxdepth 5 | head -60")
     raise SystemExit("codeply_iris not found under /kaggle/input")
