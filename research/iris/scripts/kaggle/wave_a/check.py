@@ -104,6 +104,13 @@ B = f"{W}/llama-bin"
 if not os.path.exists(f"{B}/llama-server"):
     sh(f"rm -rf /tmp/llama && mkdir /tmp/llama && cd /tmp/llama && git init -q && git remote add origin https://github.com/ggml-org/llama.cpp.git "
        f"&& git fetch -q --depth 1 origin {LLAMA_COMMIT} && git checkout -q FETCH_HEAD", check=True)
+    # llama-server embeds a web UI (never used: --no-webui). The 'latest' prebuilt UI on Hugging Face no longer matches
+    # this commit (kernel v3 failure), so the archive the reference CPU build used (sha256 pinned) is unpacked into the
+    # source tree, which the build prefers over any download.
+    ui = f"{SRC}/vendor/llama-ui-dist.tar.gz"
+    if sh(f"sha256sum {ui}").stdout.split()[0] != open(ui + ".sha256").read().strip():
+        raise SystemExit("UI archive sha256 mismatch")
+    sh(f"mkdir -p /tmp/llama/ui/apps/chat/dist && tar xzf {ui} -C /tmp/llama/ui/apps/chat/dist", check=True)
     sh(f"ls -d /usr/local/cuda* 2>&1; which nvcc; echo CUDA_HOME=$CUDA_HOME > {OUT}/cuda-env.log; ls -d /usr/local/cuda*/ >> {OUT}/cuda-env.log 2>&1")
     nvcc = sh("which nvcc").stdout.strip()
     cuda_root = os.path.dirname(os.path.dirname(nvcc)) if nvcc else "/usr/local/cuda"
