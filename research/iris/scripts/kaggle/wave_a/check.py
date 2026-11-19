@@ -28,6 +28,7 @@ W = "/kaggle/working"
 OUT = f"{W}/check"
 os.makedirs(OUT, exist_ok=True)
 LLAMA_COMMIT = "7a4117eef97ed6419241da2384b2b1c011ecd763"
+UI_TREE_SHA256 = "6541f0d813a7c43e38f823443d5c40e4fad717c5cebdb7f92f4026a479bec34a"   # vendor UI archive sha256 628152d7...
 MODELS = [  # name, hf repo, file, thinking switch
     ("qwen3-0.6b", "unsloth/Qwen3-0.6B-GGUF", "Qwen3-0.6B-Q4_K_M.gguf", True),
     ("qwen3-1.7b", "unsloth/Qwen3-1.7B-GGUF", "Qwen3-1.7B-Q4_K_M.gguf", True),
@@ -107,10 +108,24 @@ if not os.path.exists(f"{B}/llama-server"):
     # llama-server embeds a web UI (never used: --no-webui). The 'latest' prebuilt UI on Hugging Face no longer matches
     # this commit (kernel v3 failure), so the archive the reference CPU build used (sha256 pinned) is unpacked into the
     # source tree, which the build prefers over any download.
-    ui = f"{SRC}/vendor/llama-ui-dist.tar.gz"
-    if sh(f"sha256sum {ui}").stdout.split()[0] != open(ui + ".sha256").read().strip():
-        raise SystemExit("UI archive sha256 mismatch")
-    sh(f"mkdir -p /tmp/llama/ui/apps/chat/dist && tar xzf {ui} -C /tmp/llama/ui/apps/chat/dist", check=True)
+    # Kaggle unpacks archives inside datasets, so the archive arrives as the folder vendor/llama-ui-dist; its content is
+    # checked with a tree hash (sha256 over sorted "path:sha256" lines; 72 files) computed from the archive locally.
+    ui_tar, ui_dir = f"{SRC}/vendor/llama-ui-dist.tar.gz", f"{SRC}/vendor/llama-ui-dist"
+    dist = "/tmp/llama/ui/apps/chat/dist"
+    os.makedirs(dist, exist_ok=True)
+    if os.path.exists(ui_tar):
+        sh(f"tar xzf {ui_tar} -C {dist}", check=True)
+    else:
+        shutil.copytree(ui_dir, dist, dirs_exist_ok=True)
+    import hashlib
+    lines = []
+    for d, _, fs in os.walk(dist):
+        for f in fs:
+            p = os.path.join(d, f)
+            lines.append(os.path.relpath(p, dist) + ":" + hashlib.sha256(open(p, "rb").read()).hexdigest())
+    th = hashlib.sha256("\n".join(sorted(lines)).encode()).hexdigest()
+    if th != UI_TREE_SHA256:
+        raise SystemExit(f"UI assets tree hash mismatch: {th} ({len(lines)} files)")
     sh(f"ls -d /usr/local/cuda* 2>&1; which nvcc; echo CUDA_HOME=$CUDA_HOME > {OUT}/cuda-env.log; ls -d /usr/local/cuda*/ >> {OUT}/cuda-env.log 2>&1")
     nvcc = sh("which nvcc").stdout.strip()
     cuda_root = os.path.dirname(os.path.dirname(nvcc)) if nvcc else "/usr/local/cuda"
