@@ -107,8 +107,15 @@ if not os.path.exists(f"{B}/llama-server"):
     sh(f"ls -d /usr/local/cuda* 2>&1; which nvcc; echo CUDA_HOME=$CUDA_HOME > {OUT}/cuda-env.log; ls -d /usr/local/cuda*/ >> {OUT}/cuda-env.log 2>&1")
     nvcc = sh("which nvcc").stdout.strip()
     cuda_root = os.path.dirname(os.path.dirname(nvcc)) if nvcc else "/usr/local/cuda"
+    # the image has the driver's libcuda.so.1 but no stub / unversioned libcuda.so, so FindCUDAToolkit cannot define
+    # CUDA::cuda_driver (kernel v2 failure); point it at the library explicitly
+    cands = sorted(glob.glob(f"{cuda_root}/lib64/stubs/libcuda.so") + glob.glob(f"{cuda_root}/targets/*/lib/stubs/libcuda.so")
+                   + glob.glob("/usr/lib/x86_64-linux-gnu/libcuda.so*") + glob.glob("/usr/local/nvidia/lib64/libcuda.so*")
+                   + glob.glob("/usr/lib64/libcuda.so*"))
+    open(f"{OUT}/cuda-env.log", "a").write("libcuda candidates: " + json.dumps(cands) + "\n")
+    drv = f" -DCUDA_cuda_driver_LIBRARY={cands[0]}" if cands else ""
     cfg = (f"-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75 -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF "
-           f"-DCMAKE_BUILD_TYPE=Release -DCUDAToolkit_ROOT={cuda_root} -DCMAKE_CUDA_COMPILER={nvcc or cuda_root + '/bin/nvcc'}")
+           f"-DCMAKE_BUILD_TYPE=Release -DCUDAToolkit_ROOT={cuda_root} -DCMAKE_CUDA_COMPILER={nvcc or cuda_root + '/bin/nvcc'}{drv}")
     for what, cmd in (("cmake", f"cd /tmp/llama && cmake -S . -B build {cfg}"),
                       ("build", f"cd /tmp/llama && cmake --build build -j{os.cpu_count()} --target llama-server llama-bench")):
         r = sh(cmd)
