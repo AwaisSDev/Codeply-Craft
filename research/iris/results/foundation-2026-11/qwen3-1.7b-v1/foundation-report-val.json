@@ -1,0 +1,444 @@
+{
+ "run": "results/foundation-2026-11/qwen3-1.7b-v1",
+ "k": 60,
+ "excluded_episodes": [],
+ "open": {
+  "sessions": 120,
+  "primary": {
+   "false_memories_per_100_sessions": 60.8,
+   "precision_at_60": 0.217,
+   "under_covering": false,
+   "content_ops": 107,
+   "f0_5": 0.14,
+   "risk_coverage_area": 0.207
+  },
+  "strict": {
+   "extraction_precision": 0.206,
+   "extraction_recall": 0.061,
+   "extraction_f1": 0.094,
+   "false_memory_share": 0.682,
+   "hard_negative_stored": 0.11,
+   "update_accuracy": 0.123,
+   "contradiction_resolution": 0.095,
+   "temporal_date_accuracy": 0.0,
+   "entity_linking_accuracy": 0.647,
+   "empty_session_accuracy": 0.88,
+   "duplicate_detection_recall": 0.0,
+   "duplicates_created_rate": 1.0,
+   "retraction_precision": 0.0,
+   "retraction_recall": 0.0,
+   "ungrounded_evidence_rate": 0.23,
+   "guard_rejection_rate": 0.383,
+   "output_validity": 0.908,
+   "skip_recall": 0.0
+  },
+  "by_operation": {
+   "add (gold, matched, recall)": [
+    10,
+    302,
+    0.033
+   ],
+   "update: right op+ref (of gold updates)": [
+    7,
+    57,
+    0.123
+   ],
+   "update: gold found at all": [
+    12,
+    57,
+    0.211
+   ],
+   "conflict: right op+ref": [
+    0,
+    0,
+    null
+   ],
+   "confirm: found by ref": [
+    0,
+    14,
+    0.0
+   ],
+   "confirm: answered with a duplicate add": [
+    2,
+    14
+   ],
+   "confirm: answered with an update": [
+    0,
+    14
+   ],
+   "retract: found by ref": [
+    0,
+    17,
+    0.0
+   ],
+   "retract: predicted (precision)": [
+    0,
+    2,
+    0.0
+   ],
+   "skip: recorded as skip": [
+    0,
+    100,
+    0.0
+   ],
+   "skip: stored instead (hard negative stored)": [
+    11,
+    100,
+    0.11
+   ],
+   "skip: why correct (of recorded)": [
+    0,
+    0,
+    null
+   ],
+   "skip ops predicted (precision of skip)": [
+    0,
+    1,
+    0.0
+   ]
+  },
+  "skip_traps": {
+   "joke": {
+    "gold": 16,
+    "stored_as_memory": 1,
+    "stored_share": 0.062
+   },
+   "hypothetical": {
+    "gold": 13,
+    "stored_as_memory": 0,
+    "stored_share": 0.0
+   },
+   "hearsay": {
+    "gold": 21,
+    "stored_as_memory": 4,
+    "stored_share": 0.19
+   },
+   "suggestion": {
+    "gold": 12,
+    "stored_as_memory": 0,
+    "stored_share": 0.0
+   },
+   "secret": {
+    "gold": 19,
+    "stored_as_memory": 2,
+    "stored_share": 0.105
+   },
+   "injection": {
+    "gold": 13,
+    "stored_as_memory": 4,
+    "stored_share": 0.308
+   },
+   "other": {
+    "gold": 6,
+    "stored_as_memory": 0,
+    "stored_share": 0.0
+   }
+  },
+  "false_memory_taxonomy": {
+   "same statement, different value / slot": 19,
+   "same statement, date wrong or missing": 17,
+   "same value, different entity": 10,
+   "statement the teacher did not label": 10,
+   "stored a skip trap": 7,
+   "should have acted on a stored memory": 6,
+   "other speaker's statement attributed to the user": 4
+  },
+  "ungrounded_quote_patterns": {
+   "paraphrased / other": 23,
+   "speaker label in quote": 19
+  },
+  "think": {
+   "sessions_with_reasoning": 0,
+   "sessions_stopped_while_reasoning": 0,
+   "mean_reasoning_chars": 0
+  },
+  "latency_s": {
+   "p50": 2.0,
+   "p95": 4.2
+  },
+  "tokens": {
+   "prompt_mean": 1242,
+   "generated_mean": 137
+  },
+  "slices": {
+   "language": {
+    "en": {
+     "extraction_precision": 0.203,
+     "extraction_recall": 0.057,
+     "extraction_f1": 0.09,
+     "false_memory_share": 0.661,
+     "update_accuracy": 0.062,
+     "contradiction_resolution": 0.048,
+     "hard_negative_stored": 0.103,
+     "empty_session_accuracy": 0.929,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.929,
+     "n_sessions": 70,
+     "n_gold": 209,
+     "n_pred": 59
+    },
+    "mixed": {
+     "extraction_precision": 0.357,
+     "extraction_recall": 0.192,
+     "extraction_f1": 0.25,
+     "false_memory_share": 0.571,
+     "update_accuracy": 0.5,
+     "contradiction_resolution": 0.375,
+     "hard_negative_stored": 0.091,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": null,
+     "output_validity": 0.9,
+     "n_sessions": 10,
+     "n_gold": 26,
+     "n_pred": 14
+    },
+    "roman-ur": {
+     "extraction_precision": 0.167,
+     "extraction_recall": 0.046,
+     "extraction_f1": 0.072,
+     "false_memory_share": 0.75,
+     "update_accuracy": 0.154,
+     "contradiction_resolution": 0.111,
+     "hard_negative_stored": 0.083,
+     "empty_session_accuracy": 0.714,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.9,
+     "n_sessions": 30,
+     "n_gold": 87,
+     "n_pred": 24
+    },
+    "ur": {
+     "extraction_precision": 0.1,
+     "extraction_recall": 0.027,
+     "extraction_f1": 0.043,
+     "false_memory_share": 0.8,
+     "update_accuracy": 0.0,
+     "contradiction_resolution": 0.0,
+     "hard_negative_stored": 0.286,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": null,
+     "output_validity": 0.8,
+     "n_sessions": 10,
+     "n_gold": 37,
+     "n_pred": 10
+    }
+   },
+   "source": {
+    "assistant_chat": {
+     "extraction_precision": 0.667,
+     "extraction_recall": 0.026,
+     "extraction_f1": 0.051,
+     "false_memory_share": 0.333,
+     "update_accuracy": 0.0,
+     "contradiction_resolution": 0.0,
+     "hard_negative_stored": 0.0,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": null,
+     "output_validity": 1.0,
+     "n_sessions": 33,
+     "n_gold": 76,
+     "n_pred": 3
+    },
+    "calendar": {
+     "extraction_precision": 0.111,
+     "extraction_recall": 0.053,
+     "extraction_f1": 0.071,
+     "false_memory_share": 0.667,
+     "update_accuracy": 0.077,
+     "contradiction_resolution": 0.077,
+     "hard_negative_stored": null,
+     "empty_session_accuracy": null,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.667,
+     "n_sessions": 9,
+     "n_gold": 19,
+     "n_pred": 9
+    },
+    "email": {
+     "extraction_precision": 0.286,
+     "extraction_recall": 0.105,
+     "extraction_f1": 0.154,
+     "false_memory_share": 0.619,
+     "update_accuracy": 0.25,
+     "contradiction_resolution": 0.222,
+     "hard_negative_stored": 0.3,
+     "empty_session_accuracy": 0.667,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.941,
+     "n_sessions": 17,
+     "n_gold": 57,
+     "n_pred": 21
+    },
+    "note": {
+     "extraction_precision": 0.0,
+     "extraction_recall": 0.0,
+     "extraction_f1": 0.0,
+     "false_memory_share": 0.75,
+     "update_accuracy": 0.0,
+     "contradiction_resolution": 0.0,
+     "hard_negative_stored": 0.0,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.667,
+     "n_sessions": 6,
+     "n_gold": 22,
+     "n_pred": 4
+    },
+    "personal_chat": {
+     "extraction_precision": 0.238,
+     "extraction_recall": 0.108,
+     "extraction_f1": 0.148,
+     "false_memory_share": 0.643,
+     "update_accuracy": 0.154,
+     "contradiction_resolution": 0.08,
+     "hard_negative_stored": 0.174,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.92,
+     "n_sessions": 25,
+     "n_gold": 93,
+     "n_pred": 42
+    },
+    "screen": {
+     "extraction_precision": 0.118,
+     "extraction_recall": 0.154,
+     "extraction_f1": 0.133,
+     "false_memory_share": 0.824,
+     "update_accuracy": 0.0,
+     "contradiction_resolution": 0.0,
+     "hard_negative_stored": 0.6,
+     "empty_session_accuracy": 0.5,
+     "duplicate_detection_recall": null,
+     "output_validity": 1.0,
+     "n_sessions": 10,
+     "n_gold": 13,
+     "n_pred": 17
+    },
+    "work_chat": {
+     "extraction_precision": 0.091,
+     "extraction_recall": 0.013,
+     "extraction_f1": 0.022,
+     "false_memory_share": 0.818,
+     "update_accuracy": 0.0,
+     "contradiction_resolution": 0.0,
+     "hard_negative_stored": 0.053,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.85,
+     "n_sessions": 20,
+     "n_gold": 79,
+     "n_pred": 11
+    }
+   },
+   "label_source": {
+    "Opus (va01)": {
+     "extraction_precision": 0.182,
+     "extraction_recall": 0.055,
+     "extraction_f1": 0.084,
+     "false_memory_share": 0.727,
+     "update_accuracy": 0.115,
+     "contradiction_resolution": 0.088,
+     "hard_negative_stored": 0.174,
+     "empty_session_accuracy": 0.846,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.917,
+     "n_sessions": 60,
+     "n_gold": 182,
+     "n_pred": 55
+    },
+    "Sonnet (va02)": {
+     "extraction_precision": 0.231,
+     "extraction_recall": 0.068,
+     "extraction_f1": 0.105,
+     "false_memory_share": 0.635,
+     "update_accuracy": 0.129,
+     "contradiction_resolution": 0.1,
+     "hard_negative_stored": 0.091,
+     "empty_session_accuracy": 0.917,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.9,
+     "n_sessions": 60,
+     "n_gold": 177,
+     "n_pred": 52
+    }
+   },
+   "session_index": {
+    "1": {
+     "extraction_precision": 0.333,
+     "extraction_recall": 0.032,
+     "extraction_f1": 0.059,
+     "false_memory_share": 0.667,
+     "update_accuracy": null,
+     "contradiction_resolution": null,
+     "hard_negative_stored": 0.0,
+     "empty_session_accuracy": null,
+     "duplicate_detection_recall": null,
+     "output_validity": 0.917,
+     "n_sessions": 24,
+     "n_gold": 124,
+     "n_pred": 12
+    },
+    "2": {
+     "extraction_precision": 0.042,
+     "extraction_recall": 0.011,
+     "extraction_f1": 0.018,
+     "false_memory_share": 0.917,
+     "update_accuracy": 0.0,
+     "contradiction_resolution": 0.0,
+     "hard_negative_stored": 0.083,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.917,
+     "n_sessions": 24,
+     "n_gold": 88,
+     "n_pred": 24
+    },
+    "3": {
+     "extraction_precision": 0.31,
+     "extraction_recall": 0.12,
+     "extraction_f1": 0.173,
+     "false_memory_share": 0.586,
+     "update_accuracy": 0.188,
+     "contradiction_resolution": 0.15,
+     "hard_negative_stored": 0.25,
+     "empty_session_accuracy": 0.5,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.833,
+     "n_sessions": 24,
+     "n_gold": 75,
+     "n_pred": 29
+    },
+    "4": {
+     "extraction_precision": 0.111,
+     "extraction_recall": 0.061,
+     "extraction_f1": 0.079,
+     "false_memory_share": 0.593,
+     "update_accuracy": 0.08,
+     "contradiction_resolution": 0.062,
+     "hard_negative_stored": 0.211,
+     "empty_session_accuracy": 0.857,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.917,
+     "n_sessions": 24,
+     "n_gold": 49,
+     "n_pred": 27
+    },
+    "5": {
+     "extraction_precision": 0.333,
+     "extraction_recall": 0.217,
+     "extraction_f1": 0.263,
+     "false_memory_share": 0.667,
+     "update_accuracy": 0.222,
+     "contradiction_resolution": 0.154,
+     "hard_negative_stored": 0.045,
+     "empty_session_accuracy": 0.933,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.958,
+     "n_sessions": 24,
+     "n_gold": 23,
+     "n_pred": 15
+    }
+   }
+  }
+ }
+}

@@ -1,0 +1,629 @@
+{
+ "base": "qwen3-1.7b",
+ "k": 60,
+ "bootstrap": {
+  "resamples": 2000,
+  "seed": 0,
+  "unit": "episode"
+ },
+ "systems": {
+  "qwen3.5-2b": {
+   "open": {
+    "primary": {
+     "false_memories_per_100_sessions": 43.3,
+     "precision_at_60": 0.3,
+     "under_covering": false,
+     "content_ops": 73,
+     "f0_5": 0.146,
+     "risk_coverage_area": 0.165
+    },
+    "strict": {
+     "extraction_precision": 0.26,
+     "extraction_recall": 0.053,
+     "extraction_f1": 0.088,
+     "false_memory_share": 0.712,
+     "output_validity": 0.142,
+     "update_accuracy": 0.175,
+     "skip_recall": 0.11,
+     "hard_negative_stored": 0.04,
+     "ungrounded_evidence_rate": 0.094
+    },
+    "taxonomy": {
+     "same statement, different value / slot": 20,
+     "same value, different entity": 10,
+     "statement the teacher did not label": 10,
+     "same statement, date wrong or missing": 5,
+     "stored a skip trap": 4,
+     "should have acted on a stored memory": 2,
+     "other speaker's statement attributed to the user": 1
+    },
+    "think": {
+     "sessions_with_reasoning": 0,
+     "sessions_stopped_while_reasoning": 0,
+     "mean_reasoning_chars": 0
+    },
+    "language": {
+     "en": 0.074,
+     "mixed": 0.108,
+     "roman-ur": 0.096,
+     "ur": 0.128
+    }
+   },
+   "closed": {
+    "primary": {
+     "false_memories_per_100_sessions": 59.2,
+     "precision_at_60": 0.1,
+     "under_covering": false,
+     "content_ops": 80,
+     "f0_5": 0.043,
+     "risk_coverage_area": 0.066
+    },
+    "strict": {
+     "extraction_precision": 0.075,
+     "extraction_recall": 0.016,
+     "extraction_f1": 0.026,
+     "false_memory_share": 0.887,
+     "output_validity": 0.075,
+     "update_accuracy": 0.333,
+     "skip_recall": 0.03,
+     "hard_negative_stored": 0.06,
+     "ungrounded_evidence_rate": 0.071
+    },
+    "taxonomy": {
+     "statement the teacher did not label": 26,
+     "same statement, different value / slot": 23,
+     "same value, different entity": 15,
+     "stored a skip trap": 6,
+     "same statement, date wrong or missing": 1
+    },
+    "think": {
+     "sessions_with_reasoning": 0,
+     "sessions_stopped_while_reasoning": 0,
+     "mean_reasoning_chars": 0
+    },
+    "language": {
+     "en": 0.0,
+     "mixed": 0.27,
+     "roman-ur": 0.0,
+     "ur": 0.049
+    }
+   },
+   "closed_end_state": {
+    "state_precision": 0.0625,
+    "state_recall": 0.015503875968992248,
+    "state_f1": 0.024844720496894408,
+    "state_stale_share": 0.0,
+    "state_duplicate_share": 0.0,
+    "state_false_share": 0.9375,
+    "n_state_gold": 258,
+    "n_state_rows": 64
+   },
+   "cap_hit_rate_closed": 0.283,
+   "vs_base_closed_ci95": {
+    "false_per_100": [
+     23.333,
+     75.0
+    ],
+    "f0_5": [
+     0.0,
+     0.113
+    ]
+   },
+   "qualifies": false
+  },
+  "gemma-4-e2b": {
+   "open": {
+    "primary": {
+     "false_memories_per_100_sessions": 89.2,
+     "precision_at_60": 0.317,
+     "under_covering": false,
+     "content_ops": 145,
+     "f0_5": 0.186,
+     "risk_coverage_area": 0.314
+    },
+    "strict": {
+     "extraction_precision": 0.241,
+     "extraction_recall": 0.097,
+     "extraction_f1": 0.139,
+     "false_memory_share": 0.738,
+     "output_validity": 0.575,
+     "update_accuracy": 0.175,
+     "skip_recall": 0.01,
+     "hard_negative_stored": 0.15,
+     "ungrounded_evidence_rate": 0.224
+    },
+    "taxonomy": {
+     "same statement, different value / slot": 28,
+     "same value, different entity": 21,
+     "statement the teacher did not label": 21,
+     "same statement, date wrong or missing": 16,
+     "stored a skip trap": 15,
+     "should have acted on a stored memory": 5,
+     "other speaker's statement attributed to the user": 1
+    },
+    "think": {
+     "sessions_with_reasoning": 0,
+     "sessions_stopped_while_reasoning": 0,
+     "mean_reasoning_chars": 0
+    },
+    "language": {
+     "en": 0.144,
+     "mixed": 0.213,
+     "roman-ur": 0.141,
+     "ur": 0.038
+    }
+   },
+   "closed": {
+    "primary": {
+     "false_memories_per_100_sessions": 85.0,
+     "precision_at_60": 0.183,
+     "under_covering": false,
+     "content_ops": 133,
+     "f0_5": 0.127,
+     "risk_coverage_area": 0.217
+    },
+    "strict": {
+     "extraction_precision": 0.173,
+     "extraction_recall": 0.062,
+     "extraction_f1": 0.091,
+     "false_memory_share": 0.767,
+     "output_validity": 0.475,
+     "update_accuracy": 0.4,
+     "skip_recall": 0.0,
+     "hard_negative_stored": 0.16,
+     "ungrounded_evidence_rate": 0.195
+    },
+    "taxonomy": {
+     "same statement, different value / slot": 35,
+     "statement the teacher did not label": 24,
+     "same value, different entity": 19,
+     "stored a skip trap": 15,
+     "same statement, date wrong or missing": 7,
+     "other speaker's statement attributed to the user": 2
+    },
+    "think": {
+     "sessions_with_reasoning": 0,
+     "sessions_stopped_while_reasoning": 0,
+     "mean_reasoning_chars": 0
+    },
+    "language": {
+     "en": 0.099,
+     "mixed": 0.146,
+     "roman-ur": 0.062,
+     "ur": 0.074
+    }
+   },
+   "closed_end_state": {
+    "state_precision": 0.11764705882352941,
+    "state_recall": 0.046511627906976744,
+    "state_f1": 0.06666666666666667,
+    "state_stale_share": 0.0784313725490196,
+    "state_duplicate_share": 0.00980392156862745,
+    "state_false_share": 0.7941176470588235,
+    "n_state_gold": 258,
+    "n_state_rows": 102
+   },
+   "cap_hit_rate_closed": 0.067,
+   "vs_base_closed_ci95": {
+    "false_per_100": [
+     51.667,
+     92.5
+    ],
+    "f0_5": [
+     0.052,
+     0.219
+    ]
+   },
+   "qualifies": false
+  },
+  "qwen3-4b-2507": {
+   "open": {
+    "primary": {
+     "false_memories_per_100_sessions": 114.2,
+     "precision_at_60": 0.417,
+     "under_covering": false,
+     "content_ops": 243,
+     "f0_5": 0.349,
+     "risk_coverage_area": 0.426
+    },
+    "strict": {
+     "extraction_precision": 0.383,
+     "extraction_recall": 0.259,
+     "extraction_f1": 0.309,
+     "false_memory_share": 0.564,
+     "output_validity": 0.867,
+     "update_accuracy": 0.561,
+     "skip_recall": 0.04,
+     "hard_negative_stored": 0.26,
+     "ungrounded_evidence_rate": 0.042
+    },
+    "taxonomy": {
+     "same statement, different value / slot": 52,
+     "same value, different entity": 23,
+     "same statement, date wrong or missing": 20,
+     "stored a skip trap": 20,
+     "statement the teacher did not label": 15,
+     "other speaker's statement attributed to the user": 5,
+     "should have acted on a stored memory": 2
+    },
+    "think": {
+     "sessions_with_reasoning": 0,
+     "sessions_stopped_while_reasoning": 0,
+     "mean_reasoning_chars": 0
+    },
+    "language": {
+     "en": 0.345,
+     "mixed": 0.255,
+     "roman-ur": 0.242,
+     "ur": 0.31
+    }
+   },
+   "closed": {
+    "primary": {
+     "false_memories_per_100_sessions": 150.8,
+     "precision_at_60": 0.35,
+     "under_covering": false,
+     "content_ops": 263,
+     "f0_5": 0.214,
+     "risk_coverage_area": 0.303
+    },
+    "strict": {
+     "extraction_precision": 0.232,
+     "extraction_recall": 0.164,
+     "extraction_f1": 0.192,
+     "false_memory_share": 0.688,
+     "output_validity": 0.783,
+     "update_accuracy": 0.7,
+     "skip_recall": 0.07,
+     "hard_negative_stored": 0.31,
+     "ungrounded_evidence_rate": 0.039
+    },
+    "taxonomy": {
+     "same statement, different value / slot": 54,
+     "same value, different entity": 36,
+     "statement the teacher did not label": 31,
+     "stored a skip trap": 28,
+     "same statement, date wrong or missing": 27,
+     "other speaker's statement attributed to the user": 4,
+     "should have acted on a stored memory": 1
+    },
+    "think": {
+     "sessions_with_reasoning": 0,
+     "sessions_stopped_while_reasoning": 0,
+     "mean_reasoning_chars": 0
+    },
+    "language": {
+     "en": 0.239,
+     "mixed": 0.113,
+     "roman-ur": 0.16,
+     "ur": 0.035
+    }
+   },
+   "closed_end_state": {
+    "state_precision": 0.16666666666666666,
+    "state_recall": 0.1124031007751938,
+    "state_f1": 0.13425925925925927,
+    "state_stale_share": 0.05747126436781609,
+    "state_duplicate_share": 0.005747126436781609,
+    "state_false_share": 0.7701149425287356,
+    "n_state_gold": 258,
+    "n_state_rows": 174
+   },
+   "cap_hit_rate_closed": 0.008,
+   "vs_base_closed_ci95": {
+    "false_per_100": [
+     117.5,
+     161.667
+    ],
+    "f0_5": [
+     0.156,
+     0.277
+    ]
+   },
+   "qualifies": false
+  },
+  "qwen3-1.7b": {
+   "open": {
+    "primary": {
+     "false_memories_per_100_sessions": 61.7,
+     "precision_at_60": 0.283,
+     "under_covering": false,
+     "content_ops": 109,
+     "f0_5": 0.17,
+     "risk_coverage_area": 0.272
+    },
+    "strict": {
+     "extraction_precision": 0.248,
+     "extraction_recall": 0.075,
+     "extraction_f1": 0.115,
+     "false_memory_share": 0.679,
+     "output_validity": 0.85,
+     "update_accuracy": 0.14,
+     "skip_recall": 0.0,
+     "hard_negative_stored": 0.07,
+     "ungrounded_evidence_rate": 0.206
+    },
+    "taxonomy": {
+     "same statement, different value / slot": 24,
+     "same statement, date wrong or missing": 11,
+     "statement the teacher did not label": 11,
+     "same value, different entity": 10,
+     "should have acted on a stored memory": 10,
+     "other speaker's statement attributed to the user": 4,
+     "stored a skip trap": 4
+    },
+    "think": {
+     "sessions_with_reasoning": 0,
+     "sessions_stopped_while_reasoning": 0,
+     "mean_reasoning_chars": 0
+    },
+    "language": {
+     "en": 0.112,
+     "mixed": 0.244,
+     "roman-ur": 0.103,
+     "ur": 0.048
+    }
+   },
+   "closed": {
+    "primary": {
+     "false_memories_per_100_sessions": 11.7,
+     "precision_at_60": null,
+     "under_covering": true,
+     "content_ops": 14,
+     "f0_5": 0.0,
+     "risk_coverage_area": 0.0
+    },
+    "strict": {
+     "extraction_precision": 0.0,
+     "extraction_recall": 0.0,
+     "extraction_f1": 0.0,
+     "false_memory_share": 1.0,
+     "output_validity": 0.967,
+     "update_accuracy": NaN,
+     "skip_recall": 0.0,
+     "hard_negative_stored": 0.0,
+     "ungrounded_evidence_rate": 0.125
+    },
+    "taxonomy": {
+     "same statement, different value / slot": 9,
+     "statement the teacher did not label": 2,
+     "other speaker's statement attributed to the user": 1,
+     "same statement, date wrong or missing": 1,
+     "same value, different entity": 1
+    },
+    "think": {
+     "sessions_with_reasoning": 0,
+     "sessions_stopped_while_reasoning": 0,
+     "mean_reasoning_chars": 0
+    },
+    "language": {
+     "en": 0.0,
+     "mixed": 0.0,
+     "roman-ur": 0.0,
+     "ur": 0.0
+    }
+   },
+   "closed_end_state": {
+    "state_precision": 0.0,
+    "state_recall": 0.0,
+    "state_f1": 0.0,
+    "state_stale_share": 0.0,
+    "state_duplicate_share": 0.0,
+    "state_false_share": 1.0,
+    "n_state_gold": 258,
+    "n_state_rows": 14
+   },
+   "cap_hit_rate_closed": 0.008
+  },
+  "qwen3-0.6b": {
+   "open": {
+    "primary": {
+     "false_memories_per_100_sessions": 30.0,
+     "precision_at_60": null,
+     "under_covering": true,
+     "content_ops": 45,
+     "f0_5": 0.056,
+     "risk_coverage_area": 0.134
+    },
+    "strict": {
+     "extraction_precision": 0.133,
+     "extraction_recall": 0.017,
+     "extraction_f1": 0.03,
+     "false_memory_share": 0.8,
+     "output_validity": 0.817,
+     "update_accuracy": 0.035,
+     "skip_recall": 0.0,
+     "hard_negative_stored": 0.08,
+     "ungrounded_evidence_rate": 0.722
+    },
+    "taxonomy": {
+     "same statement, different value / slot": 13,
+     "stored a skip trap": 6,
+     "statement the teacher did not label": 6,
+     "other speaker's statement attributed to the user": 5,
+     "same statement, date wrong or missing": 3,
+     "same value, different entity": 3
+    },
+    "think": {
+     "sessions_with_reasoning": 0,
+     "sessions_stopped_while_reasoning": 0,
+     "mean_reasoning_chars": 0
+    },
+    "language": {
+     "en": 0.035,
+     "mixed": 0.056,
+     "roman-ur": 0.02,
+     "ur": 0.0
+    }
+   },
+   "closed": {
+    "primary": {
+     "false_memories_per_100_sessions": 31.7,
+     "precision_at_60": null,
+     "under_covering": true,
+     "content_ops": 48,
+     "f0_5": 0.044,
+     "risk_coverage_area": 0.081
+    },
+    "strict": {
+     "extraction_precision": 0.104,
+     "extraction_recall": 0.013,
+     "extraction_f1": 0.024,
+     "false_memory_share": 0.792,
+     "output_validity": 0.842,
+     "update_accuracy": NaN,
+     "skip_recall": 0.0,
+     "hard_negative_stored": 0.1,
+     "ungrounded_evidence_rate": 0.655
+    },
+    "taxonomy": {
+     "statement the teacher did not label": 11,
+     "same statement, different value / slot": 8,
+     "stored a skip trap": 8,
+     "same value, different entity": 6,
+     "same statement, date wrong or missing": 3,
+     "other speaker's statement attributed to the user": 2
+    },
+    "think": {
+     "sessions_with_reasoning": 0,
+     "sessions_stopped_while_reasoning": 0,
+     "mean_reasoning_chars": 0
+    },
+    "language": {
+     "en": 0.024,
+     "mixed": 0.0,
+     "roman-ur": 0.021,
+     "ur": 0.048
+    }
+   },
+   "closed_end_state": {
+    "state_precision": 0.1282051282051282,
+    "state_recall": 0.01937984496124031,
+    "state_f1": 0.03367003367003366,
+    "state_stale_share": 0.0,
+    "state_duplicate_share": 0.0,
+    "state_false_share": 0.8717948717948718,
+    "n_state_gold": 258,
+    "n_state_rows": 39
+   },
+   "cap_hit_rate_closed": 0.033,
+   "vs_base_closed_ci95": {
+    "false_per_100": [
+     0.833,
+     36.667
+    ],
+    "f0_5": [
+     0.009,
+     0.082
+    ]
+   },
+   "qualifies": false
+  },
+  "qwen3-1.7b-v1": {
+   "open": {
+    "primary": {
+     "false_memories_per_100_sessions": 60.8,
+     "precision_at_60": 0.217,
+     "under_covering": false,
+     "content_ops": 107,
+     "f0_5": 0.14,
+     "risk_coverage_area": 0.207
+    },
+    "strict": {
+     "extraction_precision": 0.206,
+     "extraction_recall": 0.061,
+     "extraction_f1": 0.094,
+     "false_memory_share": 0.682,
+     "output_validity": 0.908,
+     "update_accuracy": 0.123,
+     "skip_recall": 0.0,
+     "hard_negative_stored": 0.11,
+     "ungrounded_evidence_rate": 0.23
+    },
+    "taxonomy": {
+     "same statement, different value / slot": 19,
+     "same statement, date wrong or missing": 17,
+     "same value, different entity": 10,
+     "statement the teacher did not label": 10,
+     "stored a skip trap": 7,
+     "should have acted on a stored memory": 6,
+     "other speaker's statement attributed to the user": 4
+    },
+    "think": {
+     "sessions_with_reasoning": 0,
+     "sessions_stopped_while_reasoning": 0,
+     "mean_reasoning_chars": 0
+    },
+    "language": {
+     "en": 0.09,
+     "mixed": 0.25,
+     "roman-ur": 0.072,
+     "ur": 0.043
+    }
+   },
+   "cap_hit_rate_closed": null
+  },
+  "qwen3-0.6b-v1": {
+   "open": {
+    "primary": {
+     "false_memories_per_100_sessions": 20.8,
+     "precision_at_60": null,
+     "under_covering": true,
+     "content_ops": 37,
+     "f0_5": 0.069,
+     "risk_coverage_area": 0.117
+    },
+    "strict": {
+     "extraction_precision": 0.189,
+     "extraction_recall": 0.019,
+     "extraction_f1": 0.035,
+     "false_memory_share": 0.676,
+     "output_validity": 0.8,
+     "update_accuracy": 0.035,
+     "skip_recall": 0.0,
+     "hard_negative_stored": 0.04,
+     "ungrounded_evidence_rate": 0.768
+    },
+    "taxonomy": {
+     "same statement, different value / slot": 12,
+     "same value, different entity": 4,
+     "same statement, date wrong or missing": 4,
+     "statement the teacher did not label": 4,
+     "stored a skip trap": 1
+    },
+    "think": {
+     "sessions_with_reasoning": 0,
+     "sessions_stopped_while_reasoning": 0,
+     "mean_reasoning_chars": 0
+    },
+    "language": {
+     "en": 0.035,
+     "mixed": 0.105,
+     "roman-ur": 0.022,
+     "ur": 0.0
+    }
+   },
+   "cap_hit_rate_closed": null
+  }
+ },
+ "hardware_noise_open_qwen3_1.7b": {
+  "cpu": {
+   "false_memories_per_100_sessions": 66.7,
+   "precision_at_60": 0.233,
+   "under_covering": false,
+   "content_ops": 123,
+   "f0_5": 0.153,
+   "risk_coverage_area": 0.249,
+   "f1": 0.108
+  },
+  "gpu": {
+   "false_memories_per_100_sessions": 61.7,
+   "precision_at_60": 0.283,
+   "under_covering": false,
+   "content_ops": 109,
+   "f0_5": 0.17,
+   "risk_coverage_area": 0.272,
+   "f1": 0.115
+  }
+ }
+}

@@ -1,0 +1,41 @@
+{
+ "args": {
+  "system": "zeroshot",
+  "model": "/kaggle/input/notebooks/awaissididique/codeply-iris-wave-a-check/models/Qwen3.5-2B-Q4_K_M.gguf",
+  "adapter": "",
+  "split": "val",
+  "data": "data/built",
+  "raw": "data/raw",
+  "out": "results/foundation-2026-11/qwen3.5-2b",
+  "closed_loop": true,
+  "constrain": true,
+  "limit": 0,
+  "threads": 4,
+  "keyword_k": 3,
+  "final": false,
+  "label": "",
+  "chat": true,
+  "template_kwargs": "{\"enable_thinking\": false}",
+  "prompt_version": "v1.1",
+  "no_logprobs": false,
+  "server_arg": [
+   "-ngl",
+   "99"
+  ],
+  "max_new_tokens": 900
+ },
+ "code_commit": "",
+ "python": "3.13.16",
+ "data": {
+  "val.jsonl": "0ae331732c7fcf609304b0069c61e0b0162e9617d5c3041fca820d8b7e38aee3",
+  "raw": {
+   "va01.jsonl": "141f48ee5f879e484945a2e62f09ec53102bf9513072ef9907bdad5ab127dbf3",
+   "va02.jsonl": "417a2aabe4adf9571514a1ace30f93735c93445286fd75f23d8f229f3dff415d"
+  }
+ },
+ "backend": "llama-server-chat:/kaggle/input/notebooks/awaissididique/codeply-iris-wave-a-check/models/Qwen3.5-2B-Q4_K_M.gguf",
+ "system_prompt_sha256": "615db6f06996d98fbe08af868a24cd04d0894a0e2950ddb4d2e2117e07bb387e",
+ "prompt_version": "v1.1",
+ "gguf_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+ "llama_server_version": "version: 1.0.0-dev (build 1, commit 7a4117e)\nbuilt with GNU 13.3.0 for Linux x86_64"
+}
