@@ -16,6 +16,14 @@ about Iris. All model numbers are on **validation** (24 episodes, 120 sessions, 
 | `MODEL-SHORTLIST-2026-11.md` | the shortlist as first committed (to `AwaisSDev/codeply-iris`), unchanged; corrections are in §3 here |
 | `../results/foundation-2026-11/val24-{rules,nothing}` | rules and nothing re-run on the current val, open and closed loop (no model, seconds) |
 
+> **Stage-0 update (2026-11-19, `stage0/CHANGES.md`).** A manual reading of 78 of 1.7B r3's 177 false memories
+> refines §1.2-1.3. About **45 %** are genuinely wrong (invented, misread, misattributed). About **23 %** are correct
+> facts the strict matcher penalises, mostly entity naming. **19 %** are true but trivial, and only **~4 %** are label
+> omissions. The "statement the teacher did not label" category is therefore mostly model error and trivia, not
+> missing labels. The conclusion of §1 stands: the dominant causes are what is taught and how it is scored, plus
+> genuine comprehension errors that capacity did not reduce. Measured CPU speeds now replace the estimates in §4
+> (EVAL-PLAN amendment A1). Gemma 4 E2B is faster than Qwen3-1.7B despite its 3.1 GiB file.
+
 ---
 
 ## 1. Where Iris fails, and who is to blame

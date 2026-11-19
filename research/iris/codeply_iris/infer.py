@@ -94,8 +94,7 @@ class ServerBackend:
                 with socket.socket() as sock:
                     sock.bind(("127.0.0.1", 0))
                     port = sock.getsockname()[1]
-            cmd = [exe, "-m", str(gguf), "--host", "127.0.0.1", "--port", str(port), "-c", str(n_ctx), "--parallel", "1",
-                   "--no-webui", "-t", str(threads or os.cpu_count() or 4)]
+            cmd = self._server_cmd(exe, gguf, port, threads or os.cpu_count() or 4, n_ctx)
             self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             atexit.register(self.close)
             self.url = f"http://127.0.0.1:{port}"
@@ -113,6 +112,10 @@ class ServerBackend:
                     time.sleep(0.5)
         self.name = f"llama-server:{gguf or url}"
 
+    def _server_cmd(self, exe, gguf, port, threads, n_ctx):
+        return [exe, "-m", str(gguf), "--host", "127.0.0.1", "--port", str(port), "-c", str(n_ctx), "--parallel", "1",
+                "--no-webui", "-t", str(threads)]
+
     def close(self):
         if self.proc and self.proc.poll() is None:
             self.proc.terminate()
@@ -129,6 +132,97 @@ class ServerBackend:
         return out.get("content", ""), {"prompt_tokens": out.get("tokens_evaluated", 0), "new_tokens": out.get("tokens_predicted", 0)}
 
 
+def split_think(raw):
+    """Separate a leading reasoning block from the answer: (answer, think_text, closed).
+
+    Applied identically to every model on the chat path. `<think>...</think>` at the start (after whitespace) is
+    removed; an unclosed `<think>` (generation stopped while reasoning) leaves an empty answer, i.e. nothing stored.
+    Text without a think block is returned unchanged, so non-reasoning outputs are untouched.
+    """
+    s = raw or ""
+    stripped = s.lstrip()
+    if not stripped.startswith("<think>"):
+        return s, "", True
+    end = stripped.find("</think>")
+    if end < 0:
+        return "", stripped[len("<think>"):], False
+    return stripped[end + len("</think>"):].lstrip(), stripped[len("<think>"):end], True
+
+
+class ChatServerBackend(ServerBackend):
+    """llama-server's OpenAI-style chat endpoint with the model's **own** chat template (`--jinja`, the template
+    embedded in the GGUF). Same process handling as ServerBackend; what differs is that the prompt is sent as
+    messages, so Gemma, Granite, Mistral or LFM formatting is the model's, not Qwen's ChatML.
+
+    template_kwargs: passed as `chat_template_kwargs` (e.g. {"enable_thinking": false}).
+    llama-server's default reasoning parser (`--reasoning-format auto`) returns reasoning text separately
+    (`reasoning_content`); it is kept and measured (think leaks), never parsed as the answer. `none` is not used: on
+    llama.cpp 7a4117e it makes grammar initialisation fail whenever thinking is off and a JSON Schema is set
+    (stage-0 finding). Any `<think>` block left in the content is stripped too, the same way for every model.
+    Greedy decoding (temperature 0, top-k 1, seed 0), no prompt cache, optional JSON-Schema constraint and
+    per-token log-probabilities.
+    """
+    chat = True
+
+    def __init__(self, gguf=None, url=None, threads=0, n_ctx=8192, constrain=False, port=0, template_kwargs=None,
+                 logprobs=True, extra_args=()):
+        self.template_kwargs = dict(template_kwargs or {})
+        self.logprobs = logprobs
+        self.extra_args = list(extra_args)
+        super().__init__(gguf=gguf, url=url, threads=threads, n_ctx=n_ctx, constrain=constrain, port=port)
+        self.name = f"llama-server-chat:{gguf or url}"
+
+    def _server_cmd(self, exe, gguf, port, threads, n_ctx):
+        return super()._server_cmd(exe, gguf, port, threads, n_ctx) + ["--jinja", "--reasoning-format", "auto"] + self.extra_args
+
+    def request_body(self, system, user, max_new_tokens=900, schema=None):
+        body = {"messages": prompt.chat_messages(user, system), "max_tokens": max_new_tokens, "temperature": 0.0,
+                "top_k": 1, "top_p": 1.0, "min_p": 0.0, "seed": 0, "repeat_penalty": 1.0, "presence_penalty": 0.0,
+                "frequency_penalty": 0.0, "cache_prompt": False}
+        if self.template_kwargs:
+            body["chat_template_kwargs"] = self.template_kwargs
+        if self.constrain and schema:
+            body["json_schema"] = schema
+        if self.logprobs:
+            body["logprobs"] = True
+        return body
+
+    def apply_template(self, system, user):
+        """The exact prompt string the server builds for these messages (llama-server /apply-template)."""
+        import json
+        import urllib.request
+        body = {"messages": prompt.chat_messages(user, system)}
+        if self.template_kwargs:
+            body["chat_template_kwargs"] = self.template_kwargs
+        req = urllib.request.Request(self.url + "/apply-template", data=json.dumps(body).encode(),
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=120) as r:
+            return json.load(r).get("prompt", "")
+
+    def generate_chat(self, system, user, max_new_tokens=900, schema=None):
+        import json
+        import urllib.request
+        body = self.request_body(system, user, max_new_tokens, schema)
+        req = urllib.request.Request(self.url + "/v1/chat/completions", data=json.dumps(body).encode(),
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=1800) as r:
+            out = json.load(r)
+        ch = out["choices"][0]
+        msg = ch.get("message") or {}
+        raw = msg.get("content") or ""
+        reasoning = msg.get("reasoning_content") or ""
+        u = out.get("usage", {})
+        lp = None
+        if ch.get("logprobs") and ch["logprobs"].get("content") is not None:
+            lp = [[t.get("token", ""), round(float(t.get("logprob", 0.0)), 5)] for t in ch["logprobs"]["content"]]
+        answer, think, closed = split_think(raw)
+        if reasoning and not raw.strip() and ch.get("finish_reason") == "length":
+            closed = False                              # stopped while reasoning: nothing to store
+        return raw, {"prompt_tokens": u.get("prompt_tokens", 0), "new_tokens": u.get("completion_tokens", 0),
+                     "finish_reason": ch.get("finish_reason"), "answer": answer, "reasoning": reasoning,
+                     "think_chars": len(think) + len(reasoning), "think_closed": closed, "logprobs": lp}
+
+
 class Iris:
     def __init__(self, backend, system=prompt.SYSTEM, retrieve_system=None, answer_prefix=""):
         self.backend = backend
@@ -137,7 +231,13 @@ class Iris:
         self.answer_prefix = answer_prefix          # baselines only: e.g. an empty think block for untrained Qwen3
 
     @classmethod
-    def load(cls, path, adapter=None, threads=0, constrain=False, **kw):
+    def load(cls, path, adapter=None, threads=0, constrain=False, chat=False, template_kwargs=None, logprobs=True,
+             server_args=(), **kw):
+        if chat:                                       # model's own chat template through llama-server
+            url = path if str(path).startswith(("http://", "https://")) else None
+            backend = ChatServerBackend(gguf=None if url else path, url=url, threads=threads, constrain=constrain,
+                                        template_kwargs=template_kwargs, logprobs=logprobs, extra_args=server_args)
+            return cls(backend, **kw)
         if str(path).startswith("http://") or str(path).startswith("https://"):
             backend = ServerBackend(url=path, constrain=constrain)
         elif str(path).endswith(".gguf"):
@@ -161,16 +261,20 @@ class Iris:
         return out, back
 
     def observe_raw(self, now, source, memories, messages, max_new_tokens=900):
-        text = prompt.chatml(prompt.observe_prompt(now, source, memories, messages), self.system) + self.answer_prefix
+        user = prompt.observe_prompt(now, source, memories, messages)
         t = time.time()
-        raw, usage = self.backend.generate(text, max_new_tokens, contract.OUTPUT_SCHEMA)
+        if getattr(self.backend, "chat", False):       # model's own chat template; answer_prefix is not used
+            raw, usage = self.backend.generate_chat(self.system, user, max_new_tokens, contract.OUTPUT_SCHEMA)
+        else:
+            text = prompt.chatml(user, self.system) + self.answer_prefix
+            raw, usage = self.backend.generate(text, max_new_tokens, contract.OUTPUT_SCHEMA)
         return raw, {**usage, "ms": round((time.time() - t) * 1000)}
 
     def observe(self, now, source, memories, messages, max_new_tokens=900):
         """Propose operations for one observation batch. Invalid or ungrounded output is rejected, never applied."""
         mems, back = self._alias(memories)
         raw, stats = self.observe_raw(now, source, mems, messages, max_new_tokens)
-        parsed = contract.parse(raw)
+        parsed = contract.parse(stats.get("answer", raw))
         ops, rejected = contract.guard(parsed["ops"], messages, mems, source)
         rejected = [(o, f"schema:{why}") for o, why in parsed["dropped"]] + rejected
         for o in ops:
@@ -179,14 +283,18 @@ class Iris:
         return {"ops": ops, "rejected": rejected, "valid": parsed["ok"], "raw": raw, **stats}
 
     def retrieve_raw(self, now, memories, query, max_new_tokens=160):
-        text = prompt.chatml(prompt.retrieve_prompt(now, memories, query), self.retrieve_system) + self.answer_prefix
+        user = prompt.retrieve_prompt(now, memories, query)
         t = time.time()
-        raw, usage = self.backend.generate(text, max_new_tokens, contract.USE_SCHEMA)
+        if getattr(self.backend, "chat", False):
+            raw, usage = self.backend.generate_chat(self.retrieve_system, user, max_new_tokens, contract.USE_SCHEMA)
+        else:
+            text = prompt.chatml(user, self.retrieve_system) + self.answer_prefix
+            raw, usage = self.backend.generate(text, max_new_tokens, contract.USE_SCHEMA)
         return raw, {**usage, "ms": round((time.time() - t) * 1000)}
 
     def retrieve(self, now, memories, query):
         """Ids of the memories an agent needs for `query` (a subset of `memories`, still valid at `now`)."""
         mems, back = self._alias(memories)
         raw, stats = self.retrieve_raw(now, mems, query)
-        parsed = contract.parse_use(raw, set(back))
+        parsed = contract.parse_use(stats.get("answer", raw), set(back))
         return {"use": [back[i] for i in parsed["use"]], "valid": parsed["ok"], "raw": raw, **stats}

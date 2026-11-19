@@ -1,0 +1,234 @@
+{
+ "sample": {
+  "run": "iris-1.7b-r3",
+  "loop": "open",
+  "n": 78
+ },
+ "verdicts_by_category": {
+  "unlabelled": {
+   "sampled": 25,
+   "population": 70,
+   "WRONG": 13,
+   "TRIVIAL": 8,
+   "DUPLICATE_SHOULD_CONFIRM": 1,
+   "OMISSION": 1,
+   "TRAP_STORED": 1,
+   "CORRECT_OTHER_SLOT": 1
+  },
+  "entity": {
+   "sampled": 20,
+   "population": 32,
+   "NAMING": 16,
+   "WRONG_ENTITY": 3,
+   "WRONG_VALUE": 1
+  },
+  "near_value": {
+   "sampled": 20,
+   "population": 59,
+   "WRONG": 10,
+   "EQUIVALENT": 5,
+   "DIFFERENT_TRUE": 3,
+   "PARTIAL": 2
+  },
+  "attribution": {
+   "sampled": 9,
+   "population": 9,
+   "WRONG": 4,
+   "OMISSION": 2,
+   "TRIVIAL": 2,
+   "PARTIAL": 1
+  },
+  "trap": {
+   "sampled": 4,
+   "population": 7,
+   "TRAP_STORED": 2,
+   "WRONG": 2
+  }
+ },
+ "population_estimate": {
+  "wrong: invented, misread, misattributed": {
+   "false_memories": 79.8,
+   "share": 0.451
+  },
+  "correct fact, same as a gold fact (metric penalty)": {
+   "false_memories": 40.4,
+   "share": 0.228
+  },
+  "true but not worth storing": {
+   "false_memories": 33.2,
+   "share": 0.188
+  },
+  "correct, memory-worthy, not labelled (label omission)": {
+   "false_memories": 7.6,
+   "share": 0.043
+  },
+  "partly right": {
+   "false_memories": 6.9,
+   "share": 0.039
+  },
+  "stored a skip trap": {
+   "false_memories": 6.3,
+   "share": 0.036
+  },
+  "should have confirmed a stored memory": {
+   "false_memories": 2.8,
+   "share": 0.016
+  },
+  "total_false_memories": 177
+ },
+ "relaxed_matchers_vs_manual": {
+  "entity_relaxed": {
+   "accepted": 26,
+   "accepted_and_same_fact": 17,
+   "same_fact_in_sample": 21,
+   "precision_as_judge": 0.654,
+   "recall_as_judge": 0.81,
+   "accepted_but_not_same_fact": [
+    "unlabelled-08: WRONG",
+    "unlabelled-14: TRIVIAL",
+    "entity-06: WRONG_ENTITY",
+    "entity-09: WRONG_ENTITY",
+    "entity-12: WRONG_VALUE",
+    "entity-15: WRONG_ENTITY",
+    "near_value-12: WRONG",
+    "near_value-14: WRONG",
+    "attribution-03: WRONG"
+   ]
+  },
+  "evidence_anchored": {
+   "accepted": 41,
+   "accepted_and_same_fact": 21,
+   "same_fact_in_sample": 21,
+   "precision_as_judge": 0.512,
+   "recall_as_judge": 1.0,
+   "accepted_but_not_same_fact": [
+    "entity-06: WRONG_ENTITY",
+    "entity-09: WRONG_ENTITY",
+    "entity-12: WRONG_VALUE",
+    "entity-15: WRONG_ENTITY",
+    "near_value-01: PARTIAL",
+    "near_value-02: WRONG",
+    "near_value-06: WRONG",
+    "near_value-08: WRONG",
+    "near_value-09: DIFFERENT_TRUE",
+    "near_value-10: DIFFERENT_TRUE",
+    "near_value-11: WRONG",
+    "near_value-12: WRONG",
+    "near_value-14: WRONG",
+    "near_value-17: PARTIAL",
+    "near_value-19: WRONG",
+    "near_value-20: WRONG",
+    "attribution-03: WRONG",
+    "attribution-04: WRONG",
+    "attribution-06: PARTIAL",
+    "attribution-09: WRONG"
+   ]
+  }
+ },
+ "rescored_open": {
+  "iris-0.6b-r2": {
+   "strict": {
+    "precision": 0.368,
+    "recall": 0.273,
+    "f1": 0.314,
+    "tp": 98,
+    "pred": 266,
+    "gold": 359
+   },
+   "entity_relaxed": {
+    "precision": 0.549,
+    "recall": 0.407,
+    "f1": 0.467,
+    "tp": 146,
+    "pred": 266,
+    "gold": 359
+   },
+   "evidence_anchored": {
+    "precision": 0.744,
+    "recall": 0.552,
+    "f1": 0.634,
+    "tp": 198,
+    "pred": 266,
+    "gold": 359
+   }
+  },
+  "iris-1.7b-r2": {
+   "strict": {
+    "precision": 0.433,
+    "recall": 0.379,
+    "f1": 0.404,
+    "tp": 136,
+    "pred": 314,
+    "gold": 359
+   },
+   "entity_relaxed": {
+    "precision": 0.602,
+    "recall": 0.526,
+    "f1": 0.562,
+    "tp": 189,
+    "pred": 314,
+    "gold": 359
+   },
+   "evidence_anchored": {
+    "precision": 0.732,
+    "recall": 0.641,
+    "f1": 0.684,
+    "tp": 230,
+    "pred": 314,
+    "gold": 359
+   }
+  },
+  "iris-0.6b-r3": {
+   "strict": {
+    "precision": 0.36,
+    "recall": 0.279,
+    "f1": 0.314,
+    "tp": 100,
+    "pred": 278,
+    "gold": 359
+   },
+   "entity_relaxed": {
+    "precision": 0.518,
+    "recall": 0.401,
+    "f1": 0.452,
+    "tp": 144,
+    "pred": 278,
+    "gold": 359
+   },
+   "evidence_anchored": {
+    "precision": 0.701,
+    "recall": 0.543,
+    "f1": 0.612,
+    "tp": 195,
+    "pred": 278,
+    "gold": 359
+   }
+  },
+  "iris-1.7b-r3": {
+   "strict": {
+    "precision": 0.433,
+    "recall": 0.407,
+    "f1": 0.42,
+    "tp": 146,
+    "pred": 337,
+    "gold": 359
+   },
+   "entity_relaxed": {
+    "precision": 0.552,
+    "recall": 0.518,
+    "f1": 0.534,
+    "tp": 186,
+    "pred": 337,
+    "gold": 359
+   },
+   "evidence_anchored": {
+    "precision": 0.682,
+    "recall": 0.641,
+    "f1": 0.661,
+    "tp": 230,
+    "pred": 337,
+    "gold": 359
+   }
+  }
+ }
+}

@@ -62,10 +62,15 @@ class Cache:
 def make_system(a):
     if a.system in ("iris", "zeroshot"):
         from .infer import Iris
-        # untrained Qwen3 thinks by default: the baseline gets an empty think block, i.e. thinking switched off
-        kw = {} if a.system == "iris" else {"system": prompt.ZERO_SHOT_SYSTEM, "retrieve_system": prompt.ZERO_SHOT_RETRIEVE_SYSTEM,
+        # untrained Qwen3 thinks by default: on the raw ChatML path the baseline gets an empty think block, i.e.
+        # thinking switched off. On the chat path (--chat) the model's own template does this through
+        # --template-kwargs (e.g. {"enable_thinking": false}); answer_prefix is not used there.
+        kw = {} if a.system == "iris" else {"system": prompt.ZERO_SHOT_PROMPTS[a.prompt_version],
+                                            "retrieve_system": prompt.ZERO_SHOT_RETRIEVE_SYSTEM,
                                             "answer_prefix": "<think>\n\n</think>\n\n"}
-        return Iris.load(a.model, adapter=a.adapter, threads=a.threads, constrain=a.constrain, **kw)
+        return Iris.load(a.model, adapter=a.adapter, threads=a.threads, constrain=a.constrain, chat=a.chat,
+                         template_kwargs=json.loads(a.template_kwargs) if a.template_kwargs else None,
+                         logprobs=not a.no_logprobs, server_args=a.server_arg, **kw)
     if a.system == "rules":
         return baselines.Rules()
     if a.system == "production":
@@ -86,9 +91,9 @@ def run_observe(system, kind, session, memories, names, cache, key):
         ops = [o for o in hit["ops"] if not (o["op"] in contract.REF_OPS and o["ref"] not in {m["id"] for m in memories})]
         return ops, [], hit["valid"], hit["ms"], ""
     if hit is None:
-        raw, st = system.observe_raw(session["now"], session["source"], shown, session["messages"])
+        raw, st = system.observe_raw(session["now"], session["source"], shown, session["messages"], OBS_MAX_TOKENS[0])
         hit = cache.put(key, {"raw": raw, **st})
-    parsed = contract.parse(hit["raw"])
+    parsed = contract.parse(hit.get("answer", hit["raw"]))     # chat path: reasoning block removed; old caches: raw
     ops, rejected = contract.guard(parsed["ops"], session["messages"], shown, session["source"])
     rejected = [(o, f"schema_{why}") for o, why in parsed["dropped"]] + rejected
     return ops, rejected, parsed["ok"], hit["ms"], hit["raw"]
@@ -124,7 +129,7 @@ def open_loop(a, system, out):
                     shown = [{k: v for k, v in m.items() if k != "key"} for m in ex["memories"]]
                     raw, st = system.retrieve_raw(ex["now"], shown, ex["query"])
                     hit = cache.put(ex["id"], {"raw": raw, **st})
-                parsed = contract.parse_use(hit["raw"], ids)
+                parsed = contract.parse_use(hit.get("answer", hit["raw"]), ids)
                 use, valid, ms = parsed["use"], parsed["ok"], hit["ms"]
             elif a.system == "nothing":
                 use, valid, ms = [], True, 0
@@ -180,6 +185,50 @@ def closed_loop(a, system, out):
     return per_ep, state, lat
 
 
+OBS_MAX_TOKENS = [900]
+
+
+def git_commit():
+    import subprocess
+    try:
+        r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parent, capture_output=True, text=True)
+        dirty = subprocess.run(["git", "status", "--porcelain", "--", "."], cwd=Path(__file__).resolve().parent.parent,
+                               capture_output=True, text=True).stdout.strip()
+        return r.stdout.strip() + ("+dirty" if dirty else "")
+    except OSError:
+        return "unknown"
+
+
+def sha256(path, limit=None):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def write_manifest(a, out, system):
+    """Everything needed to reproduce a run (foundation study, EVAL-PLAN §4). Existing result files are unchanged."""
+    import platform
+    import subprocess
+    m = {"args": vars(a), "code_commit": git_commit(), "python": platform.python_version(),
+         "data": {f"{a.split}.jsonl": sha256(Path(a.data, f"{a.split}.jsonl"))},
+         "backend": getattr(getattr(system, "backend", None), "name", None)}
+    if a.closed_loop:
+        m["data"]["raw"] = {p.name: sha256(p) for p in sorted(Path(a.raw, a.split).glob("*.jsonl"))}
+    if a.system in ("iris", "zeroshot"):
+        m["system_prompt_sha256"] = __import__("hashlib").sha256(system.system.encode()).hexdigest()
+        m["prompt_version"] = a.prompt_version
+        if str(a.model).endswith(".gguf") and Path(a.model).exists():
+            m["gguf_sha256"] = sha256(a.model)
+        exe = __import__("os").environ.get("IRIS_LLAMA_SERVER") or __import__("shutil").which("llama-server")
+        if exe:
+            v = subprocess.run([exe, "--version"], capture_output=True, text=True)
+            m["llama_server_version"] = (v.stdout + v.stderr).strip()[-300:]
+    (out / f"MANIFEST-{a.split}-{'closed' if a.closed_loop else 'open'}.json").write_text(json.dumps(m, indent=1, default=str) + "\n")
+
+
 def pct(v, p):
     v = sorted(v)
     return v[min(int(p * len(v)), len(v) - 1)] if v else 0
@@ -201,12 +250,21 @@ def main(argv=None):
     ap.add_argument("--keyword-k", type=int, default=3)
     ap.add_argument("--final", action="store_true", help="required for the test split")
     ap.add_argument("--label", default="")
+    # foundation study (2026-11-19): additive options; defaults reproduce the earlier behaviour exactly
+    ap.add_argument("--chat", action="store_true", help="llama-server chat endpoint with the model's own chat template")
+    ap.add_argument("--template-kwargs", default="", help='JSON for chat_template_kwargs, e.g. {"enable_thinking": false}')
+    ap.add_argument("--prompt-version", default="v1", choices=sorted(prompt.ZERO_SHOT_PROMPTS), help="zero-shot system prompt")
+    ap.add_argument("--no-logprobs", action="store_true")
+    ap.add_argument("--server-arg", action="append", default=[], help="extra llama-server argument (repeatable)")
+    ap.add_argument("--max-new-tokens", type=int, default=900, help="observe generation cap")
     a = ap.parse_args(argv)
+    OBS_MAX_TOKENS[0] = a.max_new_tokens
     if a.split == "test" and not a.final:
         raise SystemExit("The test split is evaluated once per frozen system: pass --final (and record it in EXPERIMENTS.md).")
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     system = make_system(a)
+    write_manifest(a, out, system)
     mode = "closed" if a.closed_loop else "open"
     t0 = time.time()
     if a.closed_loop:

@@ -1,0 +1,70 @@
+{
+ "qwen3-0.6b": {
+  "gguf": "Qwen3-0.6B-Q4_K_M.gguf",
+  "template_kwargs": {
+   "enable_thinking": false
+  },
+  "prompt_chars": 4625,
+  "system_verbatim": true,
+  "user_verbatim": true,
+  "head": "<|im_start|>system\nYou are a context engine. You read what a user's devices observed (INPUT) and the user's existing MEMORIES, and output the operations that should change the user's long-term context. Output JSON only, ",
+  "tail": "user: nah the aunties will never fill a form lol. we'll keep it in the whatsapp group and I'll tally by hand<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+  "first_64_tokens_unconstrained": "{\"ops\":[\n  {\"src\":1,\"evid\":\"user: quick sanity check. our payments API at Ledgerline (Go + Postgres) is getting retry storms from a partner bank and we're seeing duplicate transfers. I'm the backend eng who owns the transfers service so this one's on me. is",
+  "think_block_at_start": false,
+  "finish_reason": "length"
+ },
+ "qwen3-1.7b": {
+  "gguf": "Qwen3-1.7B-Q4_K_M.gguf",
+  "template_kwargs": {
+   "enable_thinking": false
+  },
+  "prompt_chars": 4625,
+  "system_verbatim": true,
+  "user_verbatim": true,
+  "head": "<|im_start|>system\nYou are a context engine. You read what a user's devices observed (INPUT) and the user's existing MEMORIES, and output the operations that should change the user's long-term context. Output JSON only, ",
+  "tail": "user: nah the aunties will never fill a form lol. we'll keep it in the whatsapp group and I'll tally by hand<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+  "first_64_tokens_unconstrained": "{\"ops\":[{\"src\":1,\"evid\":\"our payments API at Ledgerline (Go + Postgres) is getting retry storms from a partner bank and we're seeing duplicate transfers.\",\"op\":\"add\",\"ent\":\"user\",\"type\":\"user\",\"attr\":\"payments_api\",\"val\":\"Ledgerline (Go + Post",
+  "think_block_at_start": false,
+  "finish_reason": "length"
+ },
+ "qwen3.5-2b": {
+  "gguf": "Qwen3.5-2B-Q4_K_M.gguf",
+  "template_kwargs": {
+   "enable_thinking": false
+  },
+  "prompt_chars": 4625,
+  "system_verbatim": true,
+  "user_verbatim": true,
+  "head": "<|im_start|>system\nYou are a context engine. You read what a user's devices observed (INPUT) and the user's existing MEMORIES, and output the operations that should change the user's long-term context. Output JSON only, ",
+  "tail": "user: nah the aunties will never fill a form lol. we'll keep it in the whatsapp group and I'll tally by hand<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+  "first_64_tokens_unconstrained": "{\"ops\":[{\"src\":5,\"evid\":\"I'm organising a Ramadan food drive for Masjid Al-Noor in Bay Ridge this year, aiming for 300 grocery boxes.\",\"op\":\"add\",\"ent\":\"user\",\"type\":\"event\",\"attr\":\"cause\",\"val\":\"Ramadan food drive\",\"kind\":\"task\",\"",
+  "think_block_at_start": false,
+  "finish_reason": "length"
+ },
+ "gemma-4-e2b": {
+  "gguf": "gemma-4-E2B_q4_0-it.gguf",
+  "template_kwargs": {
+   "enable_thinking": false
+  },
+  "prompt_chars": 4581,
+  "system_verbatim": true,
+  "user_verbatim": true,
+  "head": "<|turn>system\nYou are a context engine. You read what a user's devices observed (INPUT) and the user's existing MEMORIES, and output the operations that should change the user's long-term context. Output JSON only, no pr",
+  "tail": " chat helps keep momentum.\n[7] user: nah the aunties will never fill a form lol. we'll keep it in the whatsapp group and I'll tally by hand<turn|>\n<|turn>model\n",
+  "first_64_tokens_unconstrained": "{\"ops\":[{\"src\":1,\"evid\":\"our payments API at Ledgerline (Go + Postgres) is getting retry storms from a partner bank and we're seeing duplicate transfers. I'm the backend eng who owns the transfers service so this one's on me. is an idempotency key table enough or",
+  "think_block_at_start": false,
+  "finish_reason": "length"
+ },
+ "qwen3-4b-2507": {
+  "gguf": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+  "template_kwargs": {},
+  "prompt_chars": 4606,
+  "system_verbatim": true,
+  "user_verbatim": true,
+  "head": "<|im_start|>system\nYou are a context engine. You read what a user's devices observed (INPUT) and the user's existing MEMORIES, and output the operations that should change the user's long-term context. Output JSON only, ",
+  "tail": "keep momentum.\n[7] user: nah the aunties will never fill a form lol. we'll keep it in the whatsapp group and I'll tally by hand<|im_end|>\n<|im_start|>assistant\n",
+  "first_64_tokens_unconstrained": "{\"ops\":[{\"src\":5,\"evid\":\"I'm organising a Ramadan food drive for Masjid Al-Noor in Bay Ridge this year, aiming for 300 grocery boxes\",\"op\":\"add\",\"ent\":\"user\",\"type\":\"user\",\"attr\":\"activity\",\"val\":\"Ramadan food drive for Masjid Al",
+  "think_block_at_start": false,
+  "finish_reason": "length"
+ }
+}

@@ -142,4 +142,39 @@ python3 -m codeply_iris.evaluate --system nothing --split val --out results/foun
 
 ## Amendments
 
-(none)
+### A1 (2026-11-19, after stage 0; before any candidate result)
+
+Stage 0 is done (`stage0/CHANGES.md`). These amendments change **how** settings are sent, not what is measured.
+Primary metrics, data, prompt v1.1, systems and the selection rule are unchanged.
+
+1. **Structured output on the chat path** is sent as llama-server's top-level `json_schema` field, not
+   `response_format`; `response_format` fails on the pinned build. Same schema (`contract.OUTPUT_SCHEMA` /
+   `USE_SCHEMA`).
+2. **Reasoning format `auto`, not `none`.** With `none`, thinking off and a schema, llama.cpp 7a4117e fails to
+   initialise the grammar sampler (HTTP 400). With `auto` the server returns reasoning separately; it is stored in
+   the cache (`reasoning`), counted in `think_chars` and in latency, and never parsed. Any `<think>` block left in the
+   content is stripped by `split_think`, identically for every model.
+3. **Pinned runtime:** llama.cpp `7a4117eef97ed6419241da2384b2b1c011ecd763` (2026-11-19), CPU build, `GGML_NATIVE`.
+   Wave-A GGUF sha256: `stage0/bench/GGUF-SHA256SUMS` (checked by `run_wave_a.sh` before running).
+4. **Exact commands:** `run_wave_a.sh`. The prompt-v1 continuity runs for the two baselines are open loop only.
+5. **Compute, from llama-bench on the reference CPU** (`stage0/bench.json`; estimates for full sessions assume
+   350 generated tokens):
+
+   | System | File | pp2048 tok/s | tg tok/s | Est. s / zero-shot session | Est. CPU-h (296 session-equiv.) | Est. s / fine-tuned batch |
+   |---|---|---|---|---|---|---|
+   | Qwen3-0.6B | 0.36 GiB | 399 | 49.7 | 10 | 0.8 | 4.9 |
+   | Qwen3-1.7B | 1.03 GiB | 218 | 17.2 | 26 | 2.1 | 13.8 |
+   | Qwen3.5-2B | 1.18 GiB | 226 | 14.5 | 30 | 2.4 | 16.8 |
+   | Gemma 4 E2B (QAT Q4_0) | 3.10 GiB | 450 | 18.9 | 21 | 1.7 | 11.8 |
+   | Qwen3-4B-Instruct-2507 | 2.32 GiB | 79 | 7.8 | 60 | 5.0 | 31.5 |
+
+   Wave A: **~12.1 CPU-hours** for the five systems, **+~1.5 h** for the two v1 continuity runs: **~13.5 h**
+   sequential on this container. Gemma 4 E2B is the fastest candidate despite the largest file (per-layer
+   embeddings are lookups); Qwen3.5-2B runs at about Qwen3-1.7B's speed on CPU (its DeltaNet layers have native
+   llama.cpp kernels; only the earlier *training* benchmark used slow reference kernels).
+6. **Secondary diagnostics added** (not decision metrics): entity-relaxed F1, reported with its measured agreement
+   with manual judgement (precision 0.65, recall 0.81; `stage0/metric_audit.json`); the stage-0 taxonomy in
+   `report_run.py` (span-overlap trap rule, "should have acted on a stored memory"). The strict `hard_negative_stored`
+   keeps its pre-registered definition and is known to miss a trap quote that continues the labelled one.
+7. **Smoke runs** (one val episode, scratch output, not results) passed through the full evaluator; see
+   `stage0/CHANGES.md` §4.

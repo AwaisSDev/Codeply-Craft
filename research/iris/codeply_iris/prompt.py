@@ -82,4 +82,15 @@ INPUT:
 Answer:
 {"ops":[{"src":2,"evid":"it got postponed to 20 March","op":"update","ref":"m4","ent":"Dubai design meetup","attr":"date","val":"20 March 2026","kind":"event","when":"2026-03-20","keep":"long","why":"changed","basis":"stated","conf":"high","sens":"none"},{"src":2,"evid":"I started at Finlo last week","op":"add","ent":"user","type":"user","attr":"employer","val":"Finlo","kind":"fact","keep":"long","basis":"stated","conf":"high","sens":"none"}]}"""
 
+# v1.1 (2026-11-19, foundation study, EVAL-PLAN §4): one added sentence after the "evid" line. In the only v1 zero-shot
+# run, 84 of 91 rejected quotes began with the speaker label copied from the "[n] speaker: text" rendering. Decided
+# from validation before any candidate model ran; identical for every model. v1 above is kept unchanged.
+ZERO_SHOT_SYSTEM_V11 = ZERO_SHOT_SYSTEM.replace(
+    '- "evid": an exact quote copied from that message (never paraphrase)\n',
+    '- "evid": an exact quote copied from that message (never paraphrase)\n'
+    'Copy the quote from the message text only: never include the [n] number or the speaker name.\n')
+assert ZERO_SHOT_SYSTEM_V11 != ZERO_SHOT_SYSTEM
+
+ZERO_SHOT_PROMPTS = {"v1": ZERO_SHOT_SYSTEM, "v1.1": ZERO_SHOT_SYSTEM_V11}
+
 ZERO_SHOT_RETRIEVE_SYSTEM = """You select which stored memories an assistant needs for a request. Output JSON only: {"use":["m3","m7"]} with the ids of the memories that are needed to do the QUERY well and are still valid at NOW. Use the smallest sufficient set; an empty list is allowed."""
