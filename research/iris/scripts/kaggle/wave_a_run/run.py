@@ -49,7 +49,10 @@ if not init:
 SRC = f"{W}/iris"
 shutil.copytree(os.path.dirname(os.path.dirname(init)), SRC, dirs_exist_ok=True)
 assert not os.path.exists(f"{SRC}/data/raw/test") and not os.path.exists(f"{SRC}/data/built/test.jsonl"), "test split present"
-B = os.path.dirname(find("/kaggle/input/**/llama-bin/llama-server"))
+# inputs are mounted read-only without the execute bit: copy the binaries + shared libraries and mark them executable
+B = f"{W}/llama-bin"
+shutil.copytree(os.path.dirname(find("/kaggle/input/**/llama-bin/llama-server")), B, dirs_exist_ok=True)
+subprocess.run(f"chmod +x {B}/llama-server {B}/llama-bench", shell=True, check=True)
 M = os.path.dirname(find("/kaggle/input/**/models/Qwen3-0.6B-Q4_K_M.gguf"))
 smi = subprocess.run("nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader", shell=True, capture_output=True, text=True)
 log("gpus:", smi.stdout.strip().replace("\n", " | "), "bin:", B, "models:", M)
