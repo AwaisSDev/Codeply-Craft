@@ -194,3 +194,43 @@ systems and the selection rule are unchanged. Evidence: `stage1-kaggle/KAGGLE-CH
 4. **Reported in addition, per system:** the share of observe sessions stopped at the 900-token cap.
 5. **Optional hardware noise floor** (no quota): Qwen3-1.7B, full val, open loop, on the reference CPU, compared with its
    GPU run.
+
+### A3 (approved by the owner 2026-11-20; written after the wave-A results were known)
+
+The wave-A selection rule (§7) and its outcome (no qualifier, `WAVE-A-RESULTS.md` §3) stay on record unchanged.
+*Why it was unsuitable:* it required fewer closed-loop false memories than zero-shot Qwen3-1.7B, which emitted no
+operation in 113 of 120 closed-loop sessions (14 content ops, none correct). Only storing almost nothing could meet
+it, and the baseline's P@60 was undefined. It rewarded silence, contrary to §5. *Replacement for pilot entry:* rank by
+closed-loop P@60 among systems that are not under-covering; gaps below the measured hardware noise (0.05) do not
+separate systems. Entrants: Qwen3-4B-Instruct-2507 (0.35), Gemma 4 E2B (0.18); Qwen3-1.7B as the control by design.
+This is an owner decision made after seeing results, and is reported as such.
+
+### A4 (approved 2026-11-20, before any pilot training): the matched LoRA pilot
+
+Protocol: `pilot/PILOT-PROPOSAL.md` §3-§6 as approved, with these clarifications.
+
+1. **Manual audits are exploratory.** The 78-case (stage 0) and 42-case (pilot) readings are single-annotator, non-blind
+   estimates. They inform design only; no decision uses them. Strict IrisBench metrics stay primary.
+2. **Guard rules R1-R4 are secondary**, reported separately; every primary pilot metric uses the unchanged guard.
+3. **Equal-volume precision (criterion 3), exact definition** (`codeply_iris/confidence.py: equal_volume`):
+   * Universe: every content op (add / update / conflict) that passed `contract.guard` in the closed loop, over all
+     evaluated sessions, per system.
+   * Score: the op's confidence = mean token log-probability over the tokens spelling its value
+     (`confidence.op_scores`). An op without a score (its value cannot be located in the generated tokens, or no
+     log-probabilities) gets score −∞: it can never be promoted above a scored op. The share of unscored ops is
+     reported per system.
+   * Order: descending score; ties (including all −∞) broken by (episode id, session index, position of the op in the
+     answer), ascending. The order is total, so the result is deterministic.
+   * Volume: V = min(n_candidate, n_control), where n is the number of content ops in the universe. Each system's
+     equal-volume precision is the share of strict matches among its own top V. When the candidate stores fewer ops
+     than the control (V = n_candidate), both are compared at the candidate's volume: storing less cannot raise the
+     candidate's precision unless its most confident ops really are more precise than the control's, and criterion 2
+     (recall non-inferiority) still applies. A candidate with V < 0.5 n_control is flagged "volume shortfall" in the
+     report.
+   * Bootstrap: within each of the 2,000 episode resamples (seed 0), V, the orders and both precisions are recomputed
+     on the resampled episodes (duplicated episodes count twice; ties broken by the same keys plus the resample draw
+     index).
+4. **Seeds:** seed 1 only, then seeds 2-3 only if all five criteria hold; **no model is adopted on seed 1 alone.**
+5. **No changes to the success criteria after results.** All results are reported, including failures.
+6. **Gemma gate:** if Gemma 4 E2B fails the P0 smoke test (non-finite loss, out of memory, template mismatch), the run
+   stops and the failure is reported before choosing QLoRA or dropping it.

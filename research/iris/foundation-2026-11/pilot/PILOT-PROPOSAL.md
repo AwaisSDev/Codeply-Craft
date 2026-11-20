@@ -1,6 +1,6 @@
 # Matched LoRA pilot: Qwen3-4B-Instruct-2507 vs Gemma 4 E2B vs Qwen3-1.7B (proposal, 2026-11-20)
 
-**Status: for approval. Nothing here has been run.** No training, no dataset change, no change to any existing
+**Status: approved 2026-11-20 by the owner, with two clarifications (amendment A4 in EVAL-PLAN.md): the manual readings are exploratory, and equal-volume precision is specified exactly.** No training, no dataset change, no change to any existing
 result, no test access. The owner chose the three systems after wave A: Qwen3-4B-Instruct-2507 (primary candidate),
 Gemma 4 E2B (challenger), Qwen3-1.7B (incumbent control). Goal: higher memory precision and fewer false memories for
 Qwen3-4B **without giving up useful recall**.
@@ -24,10 +24,11 @@ False-memory taxonomy (`report_run.py`, closed): same statement with different v
 different entity 36, statement not labelled 31, skip trap stored 28, date wrong or missing 27, other speaker's
 statement 4.
 
-**Manual reading** of a seeded, stratified sample of 42 of its 180 closed-loop false memories (single annotator, not
-blind), scaled to all 180:
+**Manual reading (exploratory evidence, not ground truth)** of a seeded, stratified sample of 42 of its 180 closed-loop
+false memories (one annotator, not blind to the model output). The shares below are **estimates** from that sample,
+scaled to all 180; they guide the design and are never used as a metric. Strict IrisBench metrics stay primary:
 
-| What they really are | Est. share | Typical cases | Fixable by |
+| What they really are (exploratory) | Estimated share | Typical cases | Fixable by |
 |---|---|---|---|
 | Correct facts penalised by naming / granularity | **30 %** | generic entity `project`; snake_case attributes (`ielts_target_band`); fact stored on the user instead of the event or person; terse values ("7", "15000") | fine-tuning on label conventions |
 | Wrong | **30 %** | **year rollover** (3 of 6 date items: "13 January" resolved to 2026 in a late-2026 conversation); wrong person; inverted direction (who covers whose shift); another speaker's question stored as the user's task; Urdu weekday misread; an update written into an unrelated stored memory; a self-written caption stored | fine-tuning; a few by guard rules |

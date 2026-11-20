@@ -45,7 +45,7 @@ Sample: 78 of the 177 false memories of Iris 1.7B r3 (open loop), stratified by 
 read with the cited message and all gold ops on it. Single annotator (Claude, this session), not blind to the model
 output: treat the shares as estimates with wide intervals.
 
-| What the "false memories" really are (scaled to all 177) | Est. | Share |
+| What the "false memories" really are (exploratory estimate from 78 sampled, scaled to all 177) | Est. | Share |
 |---|---|---|
 | Wrong: invented, misread (study topics as personal facts, questions as facts, ignored self-corrections, inverted relations, wrong dates), misattributed | 80 | **45 %** |
 | Correct, the same fact as a gold op, penalised by the matcher (entity naming 16 of 20 sampled "wrong-entity" items; paraphrases below token-F1 0.5; number words) | 40 | **23 %** |
