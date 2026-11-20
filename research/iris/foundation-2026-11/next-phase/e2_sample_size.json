@@ -1,0 +1,197 @@
+{
+ "per_episode_sd_of_paired_difference_seed1_closed": {
+  "qwen3-4b-2507": {
+   "false_per_100": 91.648,
+   "recall": 0.143
+  },
+  "gemma-4-e2b": {
+   "false_per_100": 86.44,
+   "recall": 0.119
+  }
+ },
+ "mde_false_per_100_between_systems": {
+  "sd_ep_used": 91.6,
+  "by_scenario_and_episodes": {
+   "sigma_seed=0,k=1": {
+    "24": 52.4,
+    "52": 35.6,
+    "76": 29.4,
+    "100": 25.7,
+    "150": 21.0,
+    "200": 18.1
+   },
+   "sigma_seed=0,k=3": {
+    "24": 52.4,
+    "52": 35.6,
+    "76": 29.4,
+    "100": 25.7,
+    "150": 21.0,
+    "200": 18.1
+   },
+   "sigma_seed=0,k=5": {
+    "24": 52.4,
+    "52": 35.6,
+    "76": 29.4,
+    "100": 25.7,
+    "150": 21.0,
+    "200": 18.1
+   },
+   "sigma_seed=5,k=1": {
+    "24": 56.0,
+    "52": 40.7,
+    "76": 35.5,
+    "100": 32.4,
+    "150": 28.8,
+    "200": 26.9
+   },
+   "sigma_seed=5,k=3": {
+    "24": 53.6,
+    "52": 37.4,
+    "76": 31.6,
+    "100": 28.1,
+    "150": 23.9,
+    "200": 21.4
+   },
+   "sigma_seed=5,k=5": {
+    "24": 53.1,
+    "52": 36.7,
+    "76": 30.7,
+    "100": 27.1,
+    "150": 22.7,
+    "200": 20.2
+   },
+   "sigma_seed=10,k=1": {
+    "24": 65.7,
+    "52": 53.2,
+    "76": 49.3,
+    "100": 47.2,
+    "150": 44.8,
+    "200": 43.6
+   },
+   "sigma_seed=10,k=3": {
+    "24": 57.2,
+    "52": 42.3,
+    "76": 37.3,
+    "100": 34.4,
+    "150": 31.0,
+    "200": 29.2
+   },
+   "sigma_seed=10,k=5": {
+    "24": 55.3,
+    "52": 39.7,
+    "76": 34.4,
+    "100": 31.2,
+    "150": 27.4,
+    "200": 25.4
+   },
+   "sigma_seed=15,k=1": {
+    "24": 79.2,
+    "52": 69.2,
+    "76": 66.3,
+    "100": 64.7,
+    "150": 63.0,
+    "200": 62.1
+   },
+   "sigma_seed=15,k=3": {
+    "24": 62.6,
+    "52": 49.4,
+    "76": 45.2,
+    "100": 42.8,
+    "150": 40.2,
+    "200": 38.8
+   },
+   "sigma_seed=15,k=5": {
+    "24": 58.7,
+    "52": 44.4,
+    "76": 39.6,
+    "100": 36.9,
+    "150": 33.8,
+    "200": 32.2
+   }
+  }
+ },
+ "episodes_needed_false_per_100": {
+  "note": "None = not reachable at any n (seed noise floor)",
+  "delta=20,sigma_seed=0,k=3": 165,
+  "delta=20,sigma_seed=0,k=5": 165,
+  "delta=20,sigma_seed=5,k=3": 245,
+  "delta=20,sigma_seed=5,k=5": 205,
+  "delta=20,sigma_seed=10,k=3": null,
+  "delta=20,sigma_seed=10,k=5": 763,
+  "delta=30,sigma_seed=0,k=3": 74,
+  "delta=30,sigma_seed=0,k=5": 74,
+  "delta=30,sigma_seed=5,k=3": 86,
+  "delta=30,sigma_seed=5,k=5": 81,
+  "delta=30,sigma_seed=10,k=3": 175,
+  "delta=30,sigma_seed=10,k=5": 113,
+  "delta=40,sigma_seed=0,k=3": 42,
+  "delta=40,sigma_seed=0,k=5": 42,
+  "delta=40,sigma_seed=5,k=3": 45,
+  "delta=40,sigma_seed=5,k=5": 44,
+  "delta=40,sigma_seed=10,k=3": 62,
+  "delta=40,sigma_seed=10,k=5": 52
+ },
+ "episodes_needed_recall_delta_0.03": {
+  "sigma_seed=0,k=3": 178,
+  "sigma_seed=0,k=5": 178,
+  "sigma_seed=0.01,k=3": 424,
+  "sigma_seed=0.01,k=5": 273,
+  "sigma_seed=0.02,k=3": null,
+  "sigma_seed=0.02,k=5": null
+ },
+ "calibration_size_proxy": {
+  "note": "4B seed-1 val outputs as a stand-in calibration pool; m > 24 reuses the same 24 episodes",
+  "by_calibration_episodes": {
+   "8": {
+    "tau_modal_share": 0.44,
+    "tau_distinct": 9,
+    "false_per_100_p5_p50_p95": [
+     75.0,
+     88.3,
+     106.7
+    ],
+    "no_threshold_chosen_share": 0.0
+   },
+   "12": {
+    "tau_modal_share": 0.47,
+    "tau_distinct": 9,
+    "false_per_100_p5_p50_p95": [
+     75.0,
+     88.3,
+     106.7
+    ],
+    "no_threshold_chosen_share": 0.0
+   },
+   "17": {
+    "tau_modal_share": 0.55,
+    "tau_distinct": 7,
+    "false_per_100_p5_p50_p95": [
+     75.0,
+     88.3,
+     97.5
+    ],
+    "no_threshold_chosen_share": 0.0
+   },
+   "24": {
+    "tau_modal_share": 0.6,
+    "tau_distinct": 5,
+    "false_per_100_p5_p50_p95": [
+     75.0,
+     88.3,
+     97.5
+    ],
+    "no_threshold_chosen_share": 0.0
+   },
+   "36": {
+    "tau_modal_share": 0.68,
+    "tau_distinct": 4,
+    "false_per_100_p5_p50_p95": [
+     75.0,
+     88.3,
+     97.5
+    ],
+    "no_threshold_chosen_share": 0.0
+   }
+  }
+ }
+}
