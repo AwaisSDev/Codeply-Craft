@@ -1,0 +1,205 @@
+{
+ "status": "descriptive proxy on development data; not a selection; optimistic (calibration and read-out share episodes)",
+ "rules": {
+  "R": "strictest tau with calibration recall loss <= 0.02",
+  "V": "strictest tau keeping >= 85 % of content ops"
+ },
+ "models": {
+  "qwen3-4b (seed 1)": {
+   "no_threshold": {
+    "recall": 0.365,
+    "precision": 0.447,
+    "ops": 293,
+    "false_per_100": 130.833
+   },
+   "R": {
+    "tau_chosen": {
+     "-0.4": 0.738,
+     "-0.3": 0.15,
+     "-0.5": 0.073,
+     "-0.75": 0.039
+    },
+    "delta_false_per_100_p5_p50_p95": [
+     -42.5,
+     -33.333,
+     -24.167
+    ],
+    "delta_recall_p5_p50_p95": [
+     -0.031,
+     -0.014,
+     -0.011
+    ],
+    "delta_precision_p5_p50_p95": [
+     0.041,
+     0.061,
+     0.075
+    ],
+    "ops_kept_share_p5_p50_p95": [
+     0.785,
+     0.846,
+     0.887
+    ],
+    "share_of_draws_recall_loss_over_0.03": 0.15
+   },
+   "V": {
+    "tau_chosen": {
+     "-0.5": 0.501,
+     "-0.4": 0.445,
+     "-0.75": 0.034,
+     "-0.3": 0.02
+    },
+    "delta_false_per_100_p5_p50_p95": [
+     -33.333,
+     -24.167,
+     -24.167
+    ],
+    "delta_recall_p5_p50_p95": [
+     -0.014,
+     -0.011,
+     -0.011
+    ],
+    "delta_precision_p5_p50_p95": [
+     0.041,
+     0.041,
+     0.061
+    ],
+    "ops_kept_share_p5_p50_p95": [
+     0.846,
+     0.887,
+     0.887
+    ],
+    "share_of_draws_recall_loss_over_0.03": 0.02
+   }
+  },
+  "gemma-4-e2b (seed 1)": {
+   "no_threshold": {
+    "recall": 0.284,
+    "precision": 0.44,
+    "ops": 232,
+    "false_per_100": 104.167
+   },
+   "R": {
+    "tau_chosen": {
+     "-0.3": 0.52,
+     "-0.4": 0.416,
+     "-0.2": 0.06,
+     "-0.15": 0.003,
+     "-0.5": 0.001
+    },
+    "delta_false_per_100_p5_p50_p95": [
+     -37.5,
+     -15.833,
+     -10.833
+    ],
+    "delta_recall_p5_p50_p95": [
+     -0.036,
+     -0.019,
+     -0.006
+    ],
+    "delta_precision_p5_p50_p95": [
+     0.023,
+     0.024,
+     0.078
+    ],
+    "ops_kept_share_p5_p50_p95": [
+     0.741,
+     0.884,
+     0.931
+    ],
+    "share_of_draws_recall_loss_over_0.03": 0.063
+   },
+   "V": {
+    "tau_chosen": {
+     "-0.3": 0.899,
+     "-0.4": 0.101
+    },
+    "delta_false_per_100_p5_p50_p95": [
+     -15.833,
+     -15.833,
+     -10.833
+    ],
+    "delta_recall_p5_p50_p95": [
+     -0.019,
+     -0.019,
+     -0.006
+    ],
+    "delta_precision_p5_p50_p95": [
+     0.023,
+     0.024,
+     0.024
+    ],
+    "ops_kept_share_p5_p50_p95": [
+     0.884,
+     0.884,
+     0.931
+    ],
+    "share_of_draws_recall_loss_over_0.03": 0.0
+   }
+  },
+  "qwen3-1.7b control (seed 1)": {
+   "no_threshold": {
+    "recall": 0.245,
+    "precision": 0.362,
+    "ops": 243,
+    "false_per_100": 124.167
+   },
+   "R": {
+    "tau_chosen": {
+     "-0.4": 0.831,
+     "-0.5": 0.128,
+     "-0.3": 0.039,
+     "-1.0": 0.002
+    },
+    "delta_false_per_100_p5_p50_p95": [
+     -30.833,
+     -30.833,
+     -25.833
+    ],
+    "delta_recall_p5_p50_p95": [
+     -0.014,
+     -0.014,
+     -0.006
+    ],
+    "delta_precision_p5_p50_p95": [
+     0.047,
+     0.053,
+     0.053
+    ],
+    "ops_kept_share_p5_p50_p95": [
+     0.823,
+     0.823,
+     0.864
+    ],
+    "share_of_draws_recall_loss_over_0.03": 0.039
+   },
+   "V": {
+    "tau_chosen": {
+     "-0.5": 0.531,
+     "-0.75": 0.283,
+     "-0.4": 0.186
+    },
+    "delta_false_per_100_p5_p50_p95": [
+     -30.833,
+     -25.833,
+     -10.833
+    ],
+    "delta_recall_p5_p50_p95": [
+     -0.014,
+     -0.006,
+     -0.006
+    ],
+    "delta_precision_p5_p50_p95": [
+     0.015,
+     0.047,
+     0.053
+    ],
+    "ops_kept_share_p5_p50_p95": [
+     0.823,
+     0.864,
+     0.938
+    ],
+    "share_of_draws_recall_loss_over_0.03": 0.0
+   }
+  }
+ }
+}

@@ -1,0 +1,490 @@
+<title>Iris Memory Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Naskh+Arabic:wght@400;600&display=swap">
+<style>
+/* Layout: an annotation workbench. A narrow item rail on the left, the conversation in the middle column,
+   the proposed operation and the reviewer's decision stacked on the right; one column on phones. */
+:root {
+  --bg: #f4f6f8; --panel: #ffffff; --ink: #1b2430; --muted: #5d6b7a; --line: #d8dfe6; --soft: #eaf0f5;
+  --accent: #2b5b84; --accent-ink: #ffffff; --mark: #fff0b8; --mark-ink: #3b3000;
+  --remember: #2f7d4f; --update: #a86412; --retract: #a23b5c; --skip: #6b7684; --unsure: #4d5bb0;
+  --focus: #2b5b84;
+  --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-text: "IBM Plex Sans", "Noto Naskh Arabic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11161c; --panel: #18202a; --ink: #e3e9ef; --muted: #98a6b5; --line: #2c3845; --soft: #1f2a36;
+  --accent: #7fb0dc; --accent-ink: #0d1620; --mark: #5a4a10; --mark-ink: #fff3c4;
+  --remember: #6cc493; --update: #e3a453; --retract: #e07a9a; --skip: #9aa6b4; --unsure: #9aa7f0; --focus: #7fb0dc;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #11161c; --panel: #18202a; --ink: #e3e9ef; --muted: #98a6b5; --line: #2c3845; --soft: #1f2a36;
+  --accent: #7fb0dc; --accent-ink: #0d1620; --mark: #5a4a10; --mark-ink: #fff3c4;
+  --remember: #6cc493; --update: #e3a453; --retract: #e07a9a; --skip: #9aa6b4; --unsure: #9aa7f0; --focus: #7fb0dc;
+  color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 14px; line-height: 1.5 }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 12px 32px; max-width: 1500px; margin: 0 auto; display: grid; gap: 12px }
+header.top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding-block: 6px }
+header.top h1 { font-size: 18px; margin: 0; font-weight: 600; letter-spacing: .01em; text-wrap: balance }
+.sub { color: var(--muted); font-size: 12.5px }
+.grow { flex: 1 1 auto }
+.progress { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; font-size: 13px }
+.bar { width: 140px; height: 6px; background: var(--soft); border-radius: 3px; overflow: hidden }
+.bar > i { display: block; height: 100%; background: var(--accent) }
+button, select, input, textarea { font: inherit; color: inherit }
+button { cursor: pointer; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 6px 12px }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent) }
+button:disabled { opacity: .5; cursor: default }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px }
+.status { font-size: 12.5px; padding: 4px 10px; border-radius: 999px; background: var(--soft); color: var(--muted) }
+.status.warn { color: var(--update) }
+.notice { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 10px 14px; font-size: 13px; color: var(--muted) }
+.notice strong { color: var(--ink) }
+.main { display: grid; grid-template-columns: 220px minmax(0, 1.15fr) minmax(0, 1fr); gap: 12px; align-items: start }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; min-width: 0 }
+.panel > h2 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--line); font-weight: 600 }
+.rail { position: sticky; top: env(safe-area-inset-top, 0px); max-height: calc(100vh - 24px); display: flex; flex-direction: column }
+.rail .filters { display: grid; gap: 6px; padding: 10px; border-bottom: 1px solid var(--line) }
+.rail .filters select { width: 100%; padding: 5px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel) }
+.list { overflow-y: auto; padding: 4px }
+.list button { display: flex; width: 100%; align-items: center; gap: 8px; border: 0; background: transparent; padding: 5px 8px; border-radius: 5px; text-align: left; font-family: var(--font-mono); font-size: 12px }
+.list button[aria-current="true"] { background: var(--soft); font-weight: 500 }
+.dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--line); flex: none }
+.dot.d-remember { background: var(--remember); border-color: var(--remember) }
+.dot.d-update { background: var(--update); border-color: var(--update) }
+.dot.d-retract { background: var(--retract); border-color: var(--retract) }
+.dot.d-skip { background: var(--skip); border-color: var(--skip) }
+.dot.d-unsure { background: var(--unsure); border-color: var(--unsure) }
+.ov { margin-left: auto; font-size: 10px; color: var(--muted); font-family: var(--font-ui) }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--muted) }
+.meta b { color: var(--ink); font-weight: 500 }
+details.mem { border-bottom: 1px solid var(--line) }
+details.mem summary { cursor: pointer; padding: 9px 14px; font-size: 12.5px; color: var(--muted) }
+.tablewrap { overflow-x: auto; padding: 0 14px 10px }
+table { border-collapse: collapse; width: 100%; font-size: 12.5px }
+th, td { text-align: left; padding: 4px 8px 4px 0; border-top: 1px solid var(--line); vertical-align: top }
+th { color: var(--muted); font-weight: 500 }
+td.id { font-family: var(--font-mono); color: var(--muted); white-space: nowrap }
+.msgs { display: grid; gap: 0 }
+.msg { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line) }
+.msg:first-child { border-top: 0 }
+.msg.hit { background: var(--soft) }
+.msg .n { font-family: var(--font-mono); font-size: 12px; color: var(--muted); padding-top: 2px; font-variant-numeric: tabular-nums }
+.who { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 2px }
+.text { font-family: var(--font-text); white-space: pre-wrap; overflow-wrap: anywhere; max-width: 72ch }
+mark { background: var(--mark); color: var(--mark-ink); padding: 0 2px; border-radius: 2px }
+.side { display: grid; gap: 12px; min-width: 0 }
+.op { padding: 12px 14px; display: grid; gap: 10px }
+.opbadge { display: inline-block; font-family: var(--font-mono); font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 4px; border: 1.5px solid currentColor; letter-spacing: .04em }
+.k-add { color: var(--remember) } .k-update { color: var(--update) } .k-retract { color: var(--retract) }
+.k-skip { color: var(--skip) } .k-confirm, .k-conflict { color: var(--unsure) }
+dl.fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0; font-size: 13px }
+dl.fields dt { color: var(--muted) }
+dl.fields dd { margin: 0; font-family: var(--font-text); overflow-wrap: anywhere }
+dl.fields dd.empty { color: var(--muted) }
+.quote { font-family: var(--font-text); border-left: 3px solid var(--mark); padding: 4px 10px; background: var(--soft); border-radius: 0 4px 4px 0; overflow-wrap: anywhere }
+form.decide { padding: 12px 14px; display: grid; gap: 14px }
+fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; min-width: 0 }
+legend { font-weight: 600; font-size: 13px; padding: 0; margin-bottom: 6px }
+.choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px }
+.choice { position: relative }
+.choice input { position: absolute; opacity: 0; inset: 0; cursor: pointer }
+.choice span { display: grid; gap: 1px; border: 1.5px solid var(--line); border-radius: 6px; padding: 7px 10px; font-size: 13px }
+.choice span small { color: var(--muted); font-size: 11.5px }
+.choice input:checked + span { border-color: currentColor; box-shadow: inset 0 0 0 1px currentColor; font-weight: 600 }
+.choice input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px }
+.c-remember { color: var(--remember) } .c-update { color: var(--update) } .c-retract { color: var(--retract) }
+.c-skip { color: var(--skip) } .c-unsure { color: var(--unsure) } .c-neutral { color: var(--accent) }
+.choice span b { color: var(--ink); font-weight: inherit }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px }
+label.f { display: grid; gap: 3px; font-size: 12.5px; color: var(--muted) }
+label.f input, label.f select, textarea { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: var(--panel); color: var(--ink); width: 100%; min-width: 0 }
+textarea { min-height: 76px; resize: vertical; font-family: var(--font-text) }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center }
+.saved { font-size: 12px; color: var(--muted) }
+.keys { font-size: 11.5px; color: var(--muted) }
+kbd { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px }
+.empty-state { padding: 28px 14px; color: var(--muted) }
+@media (max-width: 1100px) { .main { grid-template-columns: 200px minmax(0, 1fr) } .side { grid-column: 2 } }
+@media (max-width: 760px) { .main { grid-template-columns: minmax(0, 1fr) } .side { grid-column: auto } .rail { position: static; max-height: 260px } }
+@media (prefers-reduced-motion: no-preference) { .bar > i { transition: width .25s ease } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Iris memory review · Phase A</h1>
+      <div class="sub">Blind review of stored-memory decisions. Read the conversation, then decide what should happen to the quoted statement.</div>
+    </div>
+    <div class="grow"></div>
+    <div class="progress" aria-live="polite"><span id="progText">0 / 0 decided</span><span class="bar"><i id="progBar" style="width:0%"></i></span></div>
+    <label class="f" style="min-width:150px">Reviewer label
+      <input id="reviewer" placeholder="initials, e.g. AS" maxlength="24" autocomplete="off">
+    </label>
+    <span class="status" id="store">Connecting…</span>
+    <button class="primary" id="export" type="button">Export review file</button>
+  </header>
+
+  <div class="notice" id="notice">
+    <strong>How to review.</strong> Each item shows one conversation and one proposed memory operation. Where the proposal came from is hidden.
+    Choose what <em>should</em> happen to the quoted statement, judge the proposal's details, correct anything that is wrong, and explain when it helps.
+    Decisions save automatically. Items marked <em>overlap</em> are also reviewed by a second person; do not discuss them.
+  </div>
+
+  <div class="main">
+    <nav class="panel rail" aria-label="Items">
+      <h2>Items</h2>
+      <div class="filters">
+        <label class="f">Show
+          <select id="filter">
+            <option value="all">All items</option>
+            <option value="todo">Not decided yet</option>
+            <option value="done">Decided</option>
+            <option value="unsure">Marked unsure</option>
+            <option value="overlap">Overlap set (second reviewer)</option>
+          </select>
+        </label>
+      </div>
+      <div class="list" id="list"><div class="empty-state">Loading 280 review items…</div></div>
+    </nav>
+
+    <section class="panel" aria-label="Conversation">
+      <h2>Conversation</h2>
+      <div id="conv"><div class="empty-state">The conversation for the selected item appears here: date, source, the memories already stored, and every message, with the quoted statement highlighted.</div></div>
+    </section>
+
+    <div class="side">
+      <section class="panel" aria-label="Proposed operation">
+        <h2>Proposed operation (AI-generated)</h2>
+        <div class="op" id="op"><div class="empty-state">The proposed operation appears here.</div></div>
+      </section>
+      <section class="panel" aria-label="Your decision">
+        <h2>Your decision</h2>
+        <form class="decide" id="form" autocomplete="off">
+          <fieldset>
+            <legend>What should happen to this statement?</legend>
+            <div class="choices" role="radiogroup">
+              <label class="choice c-remember"><input type="radio" name="decision" id="d-remember" value="remember"><span><b>Remember</b><small>store as a new memory</small></span></label>
+              <label class="choice c-update"><input type="radio" name="decision" id="d-update" value="update"><span><b>Update</b><small>change a stored memory</small></span></label>
+              <label class="choice c-retract"><input type="radio" name="decision" id="d-retract" value="retract"><span><b>Retract</b><small>a stored memory is no longer true</small></span></label>
+              <label class="choice c-skip"><input type="radio" name="decision" id="d-skip" value="skip"><span><b>Skip</b><small>not worth keeping</small></span></label>
+              <label class="choice c-unsure"><input type="radio" name="decision" id="d-unsure" value="unsure"><span><b>Unsure</b><small>cannot decide</small></span></label>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>The proposal's details (entity, attribute, value, target) are</legend>
+            <div class="choices" role="radiogroup">
+              <label class="choice c-neutral"><input type="radio" name="details" id="x-correct" value="correct"><span><b>Correct</b></span></label>
+              <label class="choice c-neutral"><input type="radio" name="details" id="x-partly" value="partly"><span><b>Partly right</b></span></label>
+              <label class="choice c-neutral"><input type="radio" name="details" id="x-wrong" value="wrong"><span><b>Wrong</b></span></label>
+              <label class="choice c-neutral"><input type="radio" name="details" id="x-na" value="not_applicable"><span><b>Not applicable</b></span></label>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Corrections (optional)</legend>
+            <div class="grid2">
+              <label class="f">Entity<input id="c-ent" placeholder="e.g. user, Tariq Mirza"></label>
+              <label class="f">Attribute<input id="c-attr" placeholder="e.g. role, monthly rent"></label>
+              <label class="f" style="grid-column:1/-1">Value<input id="c-val" placeholder="what should be stored"></label>
+              <label class="f" style="grid-column:1/-1">Target memory (for update or retract)<select id="c-ref"><option value="">none</option></select></label>
+            </div>
+          </fieldset>
+          <label class="f">Explanation
+            <textarea id="c-why" placeholder="Why this decision? Mention anything ambiguous in the conversation."></textarea>
+          </label>
+          <div class="row">
+            <button type="button" id="prev">Previous</button>
+            <button type="button" class="primary" id="next">Next undecided</button>
+            <span class="saved" id="saved"></span>
+          </div>
+          <div class="keys"><kbd>1</kbd>–<kbd>5</kbd> decision · <kbd>J</kbd>/<kbd>K</kbd> next/previous (outside text fields)</div>
+        </form>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const SCHEMA = "r4-phaseA-review/1";
+  const DECISIONS = ["remember", "update", "retract", "skip", "unsure"];
+  const $ = (id) => document.getElementById(id);
+  const state = { meta: null, items: [], idx: 0, dec: {}, uid: null, db: null, mode: "loading", label: "", timers: {}, pending: new Set() };
+  const LS = "iris-r4a-review";
+
+  function lsGet() { try { return JSON.parse(localStorage.getItem(LS) || "{}"); } catch (e) { return {}; } }
+  function lsPut() { try { localStorage.setItem(LS, JSON.stringify({ label: state.label, dec: state.mode === "local" ? state.dec : undefined, idx: state.idx })); } catch (e) {} }
+
+  function el(tag, attrs, ...kids) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (k === "class") n.className = v; else if (k === "text") n.textContent = v; else if (v !== undefined && v !== null) n.setAttribute(k, v);
+    }
+    for (const c of kids) if (c != null) n.append(c);
+    return n;
+  }
+
+  function setStore(text, warn) { const s = $("store"); s.textContent = text; s.classList.toggle("warn", !!warn); }
+
+  function decidedCount() { return state.items.filter((it) => state.dec[it.item] && state.dec[it.item].decision).length; }
+
+  function renderProgress() {
+    const n = decidedCount(), t = state.items.length || 1;
+    $("progText").textContent = `${n} / ${state.items.length} decided`;
+    $("progBar").style.width = `${Math.round(100 * n / t)}%`;
+  }
+
+  function visible() {
+    const f = $("filter").value;
+    return state.items.map((it, i) => [it, i]).filter(([it]) => {
+      const d = state.dec[it.item];
+      if (f === "todo") return !(d && d.decision);
+      if (f === "done") return !!(d && d.decision);
+      if (f === "unsure") return d && d.decision === "unsure";
+      if (f === "overlap") return it.overlap;
+      return true;
+    });
+  }
+
+  function renderList() {
+    const list = $("list");
+    list.replaceChildren();
+    const vis = visible();
+    if (!vis.length) { list.append(el("div", { class: "empty-state", text: "No items match this filter." })); return; }
+    for (const [it, i] of vis) {
+      const d = state.dec[it.item];
+      const b = el("button", { type: "button", "aria-current": i === state.idx ? "true" : "false", title: d && d.decision ? `decided: ${d.decision}` : "not decided" },
+        el("span", { class: "dot" + (d && d.decision ? " d-" + d.decision : "") }),
+        el("span", { text: `${String(i + 1).padStart(3, "0")} · ${it.item}` }),
+        it.overlap ? el("span", { class: "ov", text: "overlap" }) : null);
+      b.addEventListener("click", () => go(i));
+      list.append(b);
+    }
+  }
+
+  function highlight(text, quote) {
+    const frag = document.createDocumentFragment();
+    const q = (quote || "").trim();
+    const at = q ? text.indexOf(q) : -1;
+    if (at < 0) { frag.append(text); return [frag, false]; }
+    frag.append(text.slice(0, at), el("mark", { text: text.slice(at, at + q.length) }), text.slice(at + q.length));
+    return [frag, true];
+  }
+
+  function renderConv(it) {
+    const box = $("conv");
+    box.replaceChildren();
+    box.append(el("div", { class: "meta" },
+      el("span", {}, "Date ", el("b", { text: it.now })),
+      el("span", {}, "Source ", el("b", { text: it.source.replace(/_/g, " ") })),
+      el("span", {}, "Language ", el("b", { text: it.lang })),
+      el("span", {}, "Item ", el("b", { text: it.item }))));
+    const det = el("details", { class: "mem" }, el("summary", { text: `Memories already stored before this conversation (${it.memories.length})` }));
+    if (it.memories.length) {
+      const tb = el("tbody");
+      for (const m of it.memories) {
+        tb.append(el("tr", {}, el("td", { class: "id", text: m.id }), el("td", { text: m.ent }), el("td", { text: m.attr }),
+          el("td", { text: m.val, dir: "auto" }), el("td", { text: [m.when, m.until ? "until " + m.until : ""].filter(Boolean).join(" ") })));
+      }
+      det.append(el("div", { class: "tablewrap" }, el("table", {}, el("thead", {}, el("tr", {}, ...["id", "entity", "attribute", "value", "date"].map((h) => el("th", { text: h })))), tb)));
+    } else det.append(el("div", { class: "tablewrap", text: "None stored yet." }));
+    if (it.proposed.ref) det.open = true;
+    box.append(det);
+    const msgs = el("div", { class: "msgs" });
+    let found = false;
+    it.messages.forEach((m, i) => {
+      const isSrc = (i + 1) === it.proposed.src;
+      const [frag, ok] = isSrc ? highlight(m.text, it.proposed.evid) : [document.createTextNode(m.text), false];
+      found = found || ok;
+      msgs.append(el("div", { class: "msg" + (isSrc ? " hit" : "") }, el("div", { class: "n", text: `#${i + 1}` }),
+        el("div", {}, el("div", { class: "who", text: m.who }), el("div", { class: "text", dir: "auto" }, frag))));
+    });
+    box.append(msgs);
+    return found;
+  }
+
+  const OPNAME = { add: "ADD (remember)", update: "UPDATE", retract: "RETRACT", skip: "SKIP", confirm: "CONFIRM", conflict: "CONFLICT" };
+  function renderOp(it, quoteFound) {
+    const p = it.proposed, box = $("op");
+    box.replaceChildren();
+    box.append(el("div", {}, el("span", { class: "opbadge k-" + p.op, text: OPNAME[p.op] || p.op.toUpperCase() })));
+    const dl = el("dl", { class: "fields" });
+    const tgt = p.ref ? (p.ref_memory ? `${p.ref}: ${p.ref_memory.ent} · ${p.ref_memory.attr} = ${p.ref_memory.val}` : `${p.ref} (not in the store shown)`) : "";
+    const rows = [["Entity", p.ent], ["Attribute", p.attr], ["Value", p.val], ["Target memory", tgt], ["Date", [p.when, p.until ? "until " + p.until : ""].filter(Boolean).join(" ")],
+      ["Kind / keep", [p.kind, p.keep].filter(Boolean).join(" / ")], ["Reason given", p.why], ["Related", (p.rel || []).join(", ")], ["From message", p.src ? "#" + p.src : ""]];
+    for (const [k, v] of rows) { dl.append(el("dt", { text: k }), el("dd", { class: v ? "" : "empty", text: v || "—", dir: "auto" })); }
+    box.append(dl);
+    box.append(el("div", {}, el("div", { class: "who", text: quoteFound ? "Quoted evidence (highlighted in the conversation)" : "Quoted evidence (not found verbatim in the message)" }),
+      el("div", { class: "quote", dir: "auto", text: p.evid || "—" })));
+  }
+
+  function fillForm(it) {
+    const d = state.dec[it.item] || {};
+    for (const v of DECISIONS) $("d-" + v).checked = d.decision === v;
+    for (const v of ["correct", "partly", "wrong", "na"]) $("x-" + v).checked = d.details === (v === "na" ? "not_applicable" : v);
+    const c = d.correction || {};
+    $("c-ent").value = c.entity || ""; $("c-attr").value = c.attribute || ""; $("c-val").value = c.value || ""; $("c-why").value = d.explanation || "";
+    const sel = $("c-ref");
+    sel.replaceChildren(el("option", { value: "", text: "none" }), ...it.memories.map((m) => el("option", { value: m.id, text: `${m.id}: ${m.ent} · ${m.attr}` })));
+    sel.value = c.target_memory || "";
+    $("saved").textContent = d.updated_at ? `Saved ${new Date(d.updated_at).toLocaleString()} · revision ${d.revision}` : "Not decided yet";
+  }
+
+  function go(i) {
+    if (!state.items.length) return;
+    state.idx = Math.max(0, Math.min(state.items.length - 1, i));
+    const it = state.items[state.idx];
+    const found = renderConv(it);
+    renderOp(it, found);
+    fillForm(it);
+    renderList();
+    lsPut();
+  }
+
+  function readForm() {
+    const pick = (name) => (document.querySelector(`input[name="${name}"]:checked`) || {}).value || null;
+    return { decision: pick("decision"), details: pick("details"),
+      correction: { entity: $("c-ent").value.trim(), attribute: $("c-attr").value.trim(), value: $("c-val").value.trim(), target_memory: $("c-ref").value },
+      explanation: $("c-why").value.trim() };
+  }
+
+  function onChange(immediate) {
+    const it = state.items[state.idx];
+    if (!it) return;
+    const prev = state.dec[it.item] || {};
+    const f = readForm();
+    const same = JSON.stringify([prev.decision || null, prev.details || null, prev.correction || {}, prev.explanation || ""]) ===
+      JSON.stringify([f.decision, f.details, f.correction, f.explanation]);
+    if (same) return;
+    const now = new Date().toISOString();
+    state.dec[it.item] = { item: it.item, ...f, first_decided_at: prev.first_decided_at || (f.decision ? now : null), updated_at: now,
+      revision: (prev.revision || 0) + 1, packets_version: state.meta.version, packets_sha256: state.meta.sha256 };
+    renderProgress(); renderList();
+    $("saved").textContent = "Saving…";
+    clearTimeout(state.timers[it.item]);
+    state.timers[it.item] = setTimeout(() => persist(it.item), immediate ? 0 : 700);
+  }
+
+  async function persist(item) {
+    const d = state.dec[item];
+    if (state.mode === "db" && state.db && state.uid) {
+      if (state.pending.has(item)) { state.timers[item] = setTimeout(() => persist(item), 400); return; }
+      state.pending.add(item);
+      try {
+        await state.db.collection(`reviews/${state.uid}/items`).doc(item).set(d);
+        if (state.items[state.idx] && state.items[state.idx].item === item) $("saved").textContent = `Saved · revision ${d.revision}`;
+      } catch (e) {
+        $("saved").textContent = `Not saved to the shared store (${e && e.code || "error"}). It is kept in this browser; export before closing.`;
+        state.mode = "local"; setStore("Saving in this browser only", true); lsPut();
+      } finally { state.pending.delete(item); }
+    } else {
+      lsPut();
+      if (state.items[state.idx] && state.items[state.idx].item === item) $("saved").textContent = `Saved in this browser · revision ${d.revision}`;
+    }
+  }
+
+  async function saveLabel() {
+    state.label = $("reviewer").value.trim();
+    lsPut();
+    if (state.mode === "db" && state.db && state.uid) {
+      try { await state.db.doc(`reviews/${state.uid}`).set({ label: state.label, updated_at: new Date().toISOString() }); } catch (e) {}
+    }
+  }
+
+  async function exportFile() {
+    const out = { schema: SCHEMA, exported_at: new Date().toISOString(), reviewer_label: state.label || null,
+      reviewer_id: state.uid || null, storage: state.mode, packets: { version: state.meta.version, sha256: state.meta.sha256, items: state.items.length },
+      choices: { decision: DECISIONS, details: ["correct", "partly", "wrong", "not_applicable"] },
+      decided: decidedCount(),
+      decisions: state.items.map((it) => state.dec[it.item]).filter(Boolean) };
+    const name = `iris-r4a-review-${state.meta.version}-${(state.label || "reviewer").replace(/[^A-Za-z0-9_-]/g, "") || "reviewer"}-${out.exported_at.replace(/[:.]/g, "-")}.json`;
+    const btn = $("export");
+    try {
+      const dl = await window.claude?.use?.("downloads");
+      if (!dl) throw { code: "unavailable" };
+      btn.disabled = true;
+      await dl.save({ filename: name, data: JSON.stringify(out, null, 1) });
+      $("saved").textContent = `Exported ${out.decided} decisions`;
+    } catch (e) {
+      if (e && e.code === "declined") { $("saved").textContent = "Export cancelled."; }
+      else {
+        const ta = el("textarea", { readonly: "readonly", "aria-label": "Review file contents" });
+        ta.value = JSON.stringify(out, null, 1);
+        const n = $("notice"); n.replaceChildren(el("strong", { text: "File download is not available here. Copy the review file below and save it as " + name }), ta);
+        ta.focus(); ta.select();
+      }
+    } finally { btn.disabled = false; }
+  }
+
+  function nextUndecided() {
+    const n = state.items.length;
+    for (let k = 1; k <= n; k++) { const i = (state.idx + k) % n; const d = state.dec[state.items[i].item]; if (!(d && d.decision)) return go(i); }
+    go(Math.min(n - 1, state.idx + 1));
+  }
+
+  // wiring ------------------------------------------------------------------------------------------------------------
+  $("form").addEventListener("change", (e) => onChange(e.target.type === "radio" || e.target.tagName === "SELECT"));
+  $("form").addEventListener("input", (e) => { if (e.target.tagName !== "SELECT" && e.target.type !== "radio") onChange(false); });
+  $("form").addEventListener("submit", (e) => e.preventDefault());
+  $("next").addEventListener("click", nextUndecided);
+  $("prev").addEventListener("click", () => go(state.idx - 1));
+  $("filter").addEventListener("change", renderList);
+  $("reviewer").addEventListener("change", saveLabel);
+  $("export").addEventListener("click", exportFile);
+  document.addEventListener("keydown", (e) => {
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) && e.target.type !== "radio") return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k >= "1" && k <= "5") { const r = $("d-" + DECISIONS[+k - 1]); r.checked = true; onChange(true); e.preventDefault(); }
+    else if (k === "j") { go(state.idx + 1); e.preventDefault(); }
+    else if (k === "k") { go(state.idx - 1); e.preventDefault(); }
+  });
+
+  // load --------------------------------------------------------------------------------------------------------------
+  async function connect() {
+    const timer = setTimeout(() => { if (state.mode === "loading") { state.mode = "local"; setStore("Saving in this browser only", true); } }, 10000);
+    try {
+      const [db, user] = await Promise.all([window.claude?.use?.("db"), window.claude?.use?.("user")]);
+      if (!db || !user) throw new Error("no store");
+      state.uid = await user.id();
+      if (!state.uid) throw new Error("no id");
+      state.db = db;
+      const snap = await db.collection(`reviews/${state.uid}/items`).get();
+      snap.docs.forEach((d) => { const v = d.data(); if (v && v.item) state.dec[v.item] = v; });
+      try { const me = await db.doc(`reviews/${state.uid}`).get(); const v = me.exists && me.data(); if (v && v.label && !$("reviewer").value) { $("reviewer").value = v.label; state.label = v.label; } } catch (e) {}
+      clearTimeout(timer);
+      state.mode = "db";
+      setStore("Saving to the review store");
+    } catch (e) {
+      clearTimeout(timer);
+      state.mode = "local";
+      const saved = lsGet();
+      if (saved.dec) state.dec = saved.dec;
+      setStore("Saving in this browser only", true);
+    }
+    renderProgress();
+    if (state.items.length) go(state.idx);
+  }
+
+  async function start() {
+    const saved = lsGet();
+    if (saved.label) { $("reviewer").value = saved.label; state.label = saved.label; }
+    try {
+      const r = await fetch("packets-v1.json");
+      const j = await r.json();
+      state.meta = j.meta; state.items = j.items;
+      state.idx = Math.min(saved.idx || 0, state.items.length - 1);
+      document.querySelector(".sub").textContent = `Blind review of stored-memory decisions · packet set ${j.meta.version} (${j.items.length} items, ${j.meta.overlap_items} in the overlap set).`;
+      renderProgress(); go(state.idx);
+    } catch (e) {
+      $("list").replaceChildren(el("div", { class: "empty-state", text: "The review items could not be loaded. Reload the page; if it persists, tell the study owner." }));
+    }
+    connect();
+  }
+  start();
+})();
+</script>

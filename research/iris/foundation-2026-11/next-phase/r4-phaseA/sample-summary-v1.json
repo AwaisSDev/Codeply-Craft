@@ -1,0 +1,45 @@
+{
+ "counts": {
+  "S6_urdu": 30,
+  "S1_false_memory": 80,
+  "S2_update": 40,
+  "S3_retract": 30,
+  "S4_skip": 60,
+  "S5_gold_add_control": 40
+ },
+ "sub_sources": {
+  "S2_teacher_update": 20,
+  "S2_model_update_wrong": 16,
+  "S2_topup_teacher_update": 4,
+  "S4_model_stored_labelled_skip": 5,
+  "S4_model_skipped_labelled_fact": 15,
+  "S4_teacher_skip_train": 30,
+  "S4_topup_teacher_skip_val": 10
+ },
+ "available": {
+  "model_update_wrong": 17,
+  "model_stored_labelled_skip": 6,
+  "model_skipped_labelled_fact": 24
+ },
+ "total": 280,
+ "overlap": 71,
+ "by_origin": {
+  "teacher_label": 134,
+  "model_output": 146
+ },
+ "by_author": {
+  "opus": 142,
+  "sonnet": 138
+ },
+ "by_lang": {
+  "en": 134,
+  "roman-ur": 89,
+  "ur": 24,
+  "mixed": 33
+ },
+ "by_split": {
+  "train": 105,
+  "val": 175
+ },
+ "packets_sha256": "7ff84a85ef97303e4594f2d142aa7169e974926379a7bed9ed2b52dc62f6931c"
+}
