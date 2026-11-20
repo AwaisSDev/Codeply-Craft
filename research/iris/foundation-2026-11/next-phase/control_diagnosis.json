@@ -1,0 +1,285 @@
+{
+ "checkpoint_val_subset_identical": true,
+ "training": {
+  "r2": {
+   "epochs": 3,
+   "train_examples": 1255,
+   "total_steps": 471,
+   "train_tokens_per_epoch": 885551,
+   "val_loss": [
+    [
+     50,
+     0.3403
+    ],
+    [
+     100,
+     0.2559
+    ],
+    [
+     150,
+     0.2319
+    ],
+    [
+     200,
+     0.2219
+    ],
+    [
+     250,
+     0.218
+    ],
+    [
+     300,
+     0.2152
+    ],
+    [
+     350,
+     0.2162
+    ],
+    [
+     400,
+     0.2135
+    ],
+    [
+     450,
+     0.2136
+    ],
+    [
+     471,
+     0.214
+    ]
+   ]
+  },
+  "pilot-1.7b": {
+   "epochs": 2,
+   "train_examples": 826,
+   "total_steps": 208,
+   "train_tokens_per_epoch": 683464,
+   "val_loss": [
+    [
+     50,
+     0.343
+    ],
+    [
+     100,
+     0.2464
+    ],
+    [
+     150,
+     0.2234
+    ],
+    [
+     200,
+     0.2185
+    ],
+    [
+     208,
+     0.2181
+    ]
+   ],
+   "val_loss_source": "Kaggle kernel codeply-iris-pilot-train output runs/pilot-qwen3-1.7b-s1/train-log.jsonl (PILOT-S1-RESULTS.md \u00a75)"
+  },
+  "targets_drills": {
+   "observe": 320,
+   "no_store_op_share": 0.256,
+   "store_ops_per_target": 1.56,
+   "op_mix": {
+    "add": 0.616,
+    "skip": 0.257,
+    "update": 0.069,
+    "confirm": 0.034,
+    "retract": 0.024
+   }
+  },
+  "targets_teacher": {
+   "observe": 584,
+   "no_store_op_share": 0.226,
+   "store_ops_per_target": 3.34,
+   "op_mix": {
+    "add": 0.619,
+    "skip": 0.209,
+    "update": 0.096,
+    "retract": 0.048,
+    "confirm": 0.028
+   }
+  }
+ },
+ "open_loop_behaviour": {
+  "r2": {
+   "sessions": 120,
+   "no_store_op": 24,
+   "op_add": 282,
+   "op_skip": 113,
+   "skip_on_labelled_fact": 5,
+   "skip_on_labelled_skip": 73,
+   "op_update": 32,
+   "op_retract": 12,
+   "op_confirm": 6,
+   "strict": {
+    "extraction_precision": 0.433,
+    "extraction_recall": 0.379,
+    "extraction_f1": 0.404
+   },
+   "wrong_skip_confidence": []
+  },
+  "r3": {
+   "sessions": 120,
+   "no_store_op": 24,
+   "op_add": 291,
+   "op_skip": 103,
+   "skip_on_labelled_fact": 2,
+   "skip_on_labelled_skip": 72,
+   "op_update": 46,
+   "op_retract": 25,
+   "op_confirm": 5,
+   "strict": {
+    "extraction_precision": 0.433,
+    "extraction_recall": 0.407,
+    "extraction_f1": 0.42
+   },
+   "wrong_skip_confidence": []
+  },
+  "pilot-1.7b": {
+   "sessions": 120,
+   "no_store_op": 45,
+   "op_skip": 117,
+   "skip_on_labelled_fact": 13,
+   "skip_on_labelled_skip": 47,
+   "op_add": 221,
+   "op_retract": 17,
+   "op_update": 22,
+   "strict": {
+    "extraction_precision": 0.362,
+    "extraction_recall": 0.245,
+    "extraction_f1": 0.292
+   },
+   "wrong_skip_confidence": [
+    0.77,
+    0.776,
+    0.777,
+    0.782,
+    0.824,
+    0.851,
+    0.855,
+    0.923,
+    0.94,
+    0.953,
+    0.967,
+    0.969,
+    0.99
+   ]
+  },
+  "pilot-4b": {
+   "sessions": 120,
+   "no_store_op": 29,
+   "op_skip": 118,
+   "op_add": 250,
+   "skip_on_labelled_fact": 6,
+   "skip_on_labelled_skip": 73,
+   "op_update": 43,
+   "op_retract": 15,
+   "op_confirm": 14,
+   "strict": {
+    "extraction_precision": 0.447,
+    "extraction_recall": 0.365,
+    "extraction_f1": 0.402
+   },
+   "wrong_skip_confidence": [
+    0.862,
+    0.882,
+    0.905,
+    0.977,
+    0.982,
+    1.0
+   ]
+  },
+  "pilot-gemma": {
+   "sessions": 120,
+   "no_store_op": 40,
+   "op_add": 203,
+   "op_skip": 63,
+   "skip_on_labelled_fact": 7,
+   "skip_on_labelled_skip": 41,
+   "op_update": 29,
+   "op_retract": 10,
+   "op_confirm": 14,
+   "strict": {
+    "extraction_precision": 0.44,
+    "extraction_recall": 0.284,
+    "extraction_f1": 0.345
+   },
+   "wrong_skip_confidence": [
+    0.816,
+    0.9,
+    0.91,
+    0.953,
+    0.958,
+    0.96,
+    0.989
+   ]
+  }
+ },
+ "constrained_vs_unconstrained_30_sessions": {
+  "episodes": [
+   "va01-e01",
+   "va01-e02",
+   "va01-e03",
+   "va01-e04",
+   "va01-e05",
+   "va01-e06"
+  ],
+  "qwen3-1.7b": {
+   "constrained": {
+    "extraction_precision": 0.358,
+    "extraction_recall": 0.229,
+    "extraction_f1": 0.279,
+    "output_validity": 0.933
+   },
+   "unconstrained": {
+    "extraction_precision": 0.333,
+    "extraction_recall": 0.205,
+    "extraction_f1": 0.254,
+    "output_validity": 0.733
+   }
+  },
+  "qwen3-4b-2507": {
+   "constrained": {
+    "extraction_precision": 0.387,
+    "extraction_recall": 0.289,
+    "extraction_f1": 0.331,
+    "output_validity": 0.833
+   },
+   "unconstrained": {
+    "extraction_precision": 0.453,
+    "extraction_recall": 0.349,
+    "extraction_f1": 0.395,
+    "output_validity": 0.933
+   }
+  },
+  "gemma-4-e2b": {
+   "constrained": {
+    "extraction_precision": 0.441,
+    "extraction_recall": 0.313,
+    "extraction_f1": 0.366,
+    "output_validity": 0.833
+   },
+   "unconstrained": {
+    "extraction_precision": 0.457,
+    "extraction_recall": 0.386,
+    "extraction_f1": 0.418,
+    "output_validity": 0.867
+   }
+  },
+  "iris-1.7b-r2 (hf fp16, unconstrained)": {
+   "extraction_precision": 0.418,
+   "extraction_recall": 0.337,
+   "extraction_f1": 0.373,
+   "output_validity": 0.9
+  },
+  "iris-1.7b-r3 (hf fp16, unconstrained)": {
+   "extraction_precision": 0.402,
+   "extraction_recall": 0.398,
+   "extraction_f1": 0.4,
+   "output_validity": 0.967
+  }
+ }
+}

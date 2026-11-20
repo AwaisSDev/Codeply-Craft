@@ -1,0 +1,228 @@
+{
+ "note": "validation labels: descriptive opportunity only, never a threshold choice",
+ "loop": "open",
+ "systems": {
+  "qwen3-4b-2507": [
+   {
+    "tau_mean_logprob": null,
+    "tau_prob": null,
+    "content_ops": 293,
+    "precision": 0.447,
+    "recall": 0.365,
+    "f1": 0.402,
+    "false_per_100": 130.8
+   },
+   {
+    "tau_mean_logprob": -0.01,
+    "tau_prob": 0.99,
+    "content_ops": 63,
+    "precision": 0.603,
+    "recall": 0.106,
+    "f1": 0.18,
+    "false_per_100": 20.0
+   },
+   {
+    "tau_mean_logprob": -0.02,
+    "tau_prob": 0.98,
+    "content_ops": 69,
+    "precision": 0.565,
+    "recall": 0.109,
+    "f1": 0.182,
+    "false_per_100": 24.2
+   },
+   {
+    "tau_mean_logprob": -0.05,
+    "tau_prob": 0.951,
+    "content_ops": 104,
+    "precision": 0.587,
+    "recall": 0.17,
+    "f1": 0.263,
+    "false_per_100": 34.2
+   },
+   {
+    "tau_mean_logprob": -0.1,
+    "tau_prob": 0.905,
+    "content_ops": 156,
+    "precision": 0.538,
+    "recall": 0.234,
+    "f1": 0.326,
+    "false_per_100": 56.7
+   },
+   {
+    "tau_mean_logprob": -0.2,
+    "tau_prob": 0.819,
+    "content_ops": 199,
+    "precision": 0.528,
+    "recall": 0.292,
+    "f1": 0.376,
+    "false_per_100": 75.0
+   },
+   {
+    "tau_mean_logprob": -0.3,
+    "tau_prob": 0.741,
+    "content_ops": 230,
+    "precision": 0.522,
+    "recall": 0.334,
+    "f1": 0.407,
+    "false_per_100": 88.3
+   },
+   {
+    "tau_mean_logprob": -0.5,
+    "tau_prob": 0.607,
+    "content_ops": 260,
+    "precision": 0.488,
+    "recall": 0.354,
+    "f1": 0.41,
+    "false_per_100": 106.7
+   }
+  ],
+  "gemma-4-e2b": [
+   {
+    "tau_mean_logprob": null,
+    "tau_prob": null,
+    "content_ops": 232,
+    "precision": 0.44,
+    "recall": 0.284,
+    "f1": 0.345,
+    "false_per_100": 104.2
+   },
+   {
+    "tau_mean_logprob": -0.01,
+    "tau_prob": 0.99,
+    "content_ops": 57,
+    "precision": 0.526,
+    "recall": 0.084,
+    "f1": 0.144,
+    "false_per_100": 21.7
+   },
+   {
+    "tau_mean_logprob": -0.02,
+    "tau_prob": 0.98,
+    "content_ops": 72,
+    "precision": 0.556,
+    "recall": 0.111,
+    "f1": 0.186,
+    "false_per_100": 25.8
+   },
+   {
+    "tau_mean_logprob": -0.05,
+    "tau_prob": 0.951,
+    "content_ops": 96,
+    "precision": 0.552,
+    "recall": 0.148,
+    "f1": 0.233,
+    "false_per_100": 34.2
+   },
+   {
+    "tau_mean_logprob": -0.1,
+    "tau_prob": 0.905,
+    "content_ops": 136,
+    "precision": 0.551,
+    "recall": 0.209,
+    "f1": 0.303,
+    "false_per_100": 49.2
+   },
+   {
+    "tau_mean_logprob": -0.2,
+    "tau_prob": 0.819,
+    "content_ops": 172,
+    "precision": 0.517,
+    "recall": 0.248,
+    "f1": 0.335,
+    "false_per_100": 66.7
+   },
+   {
+    "tau_mean_logprob": -0.3,
+    "tau_prob": 0.741,
+    "content_ops": 205,
+    "precision": 0.463,
+    "recall": 0.265,
+    "f1": 0.337,
+    "false_per_100": 88.3
+   },
+   {
+    "tau_mean_logprob": -0.5,
+    "tau_prob": 0.607,
+    "content_ops": 222,
+    "precision": 0.455,
+    "recall": 0.281,
+    "f1": 0.348,
+    "false_per_100": 96.7
+   }
+  ],
+  "qwen3-1.7b": [
+   {
+    "tau_mean_logprob": null,
+    "tau_prob": null,
+    "content_ops": 243,
+    "precision": 0.362,
+    "recall": 0.245,
+    "f1": 0.292,
+    "false_per_100": 124.2
+   },
+   {
+    "tau_mean_logprob": -0.01,
+    "tau_prob": 0.99,
+    "content_ops": 44,
+    "precision": 0.432,
+    "recall": 0.053,
+    "f1": 0.094,
+    "false_per_100": 20.8
+   },
+   {
+    "tau_mean_logprob": -0.02,
+    "tau_prob": 0.98,
+    "content_ops": 52,
+    "precision": 0.442,
+    "recall": 0.064,
+    "f1": 0.112,
+    "false_per_100": 23.3
+   },
+   {
+    "tau_mean_logprob": -0.05,
+    "tau_prob": 0.951,
+    "content_ops": 73,
+    "precision": 0.521,
+    "recall": 0.106,
+    "f1": 0.176,
+    "false_per_100": 28.3
+   },
+   {
+    "tau_mean_logprob": -0.1,
+    "tau_prob": 0.905,
+    "content_ops": 102,
+    "precision": 0.5,
+    "recall": 0.142,
+    "f1": 0.221,
+    "false_per_100": 40.8
+   },
+   {
+    "tau_mean_logprob": -0.2,
+    "tau_prob": 0.819,
+    "content_ops": 148,
+    "precision": 0.453,
+    "recall": 0.187,
+    "f1": 0.264,
+    "false_per_100": 64.2
+   },
+   {
+    "tau_mean_logprob": -0.3,
+    "tau_prob": 0.741,
+    "content_ops": 173,
+    "precision": 0.434,
+    "recall": 0.209,
+    "f1": 0.282,
+    "false_per_100": 78.3
+   },
+   {
+    "tau_mean_logprob": -0.5,
+    "tau_prob": 0.607,
+    "content_ops": 210,
+    "precision": 0.41,
+    "recall": 0.24,
+    "f1": 0.302,
+    "false_per_100": 98.3
+   }
+  ]
+ }
+}
