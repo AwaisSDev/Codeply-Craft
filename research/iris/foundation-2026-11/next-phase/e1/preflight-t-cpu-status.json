@@ -1,0 +1,69 @@
+{
+ "checks": {
+  "G0_adapters": {
+   "pass": true
+  },
+  "G0_val": {
+   "pass": true
+  },
+  "env": {
+   "pass": true,
+   "torch": "2.11.0+cpu",
+   "transformers": "5.23.0",
+   "peft": "0.21.3",
+   "accelerate": "1.16.0",
+   "torchao_after": "absent"
+  },
+  "G0_base": {
+   "pass": true,
+   "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
+  },
+  "preflight_adapters": {
+   "torchao_present": false,
+   "versions": {
+    "torch": "2.11.0+cpu",
+    "transformers": "5.23.0",
+    "peft": "0.21.3"
+   },
+   "adapters": {
+    "r2": {
+     "ok": true,
+     "lora_modules": 196,
+     "seconds": 15.1
+    },
+    "r3": {
+     "ok": true,
+     "lora_modules": 196,
+     "seconds": 15.4
+    },
+    "pilot": {
+     "ok": true,
+     "lora_modules": 196,
+     "seconds": 15.1
+    }
+   },
+   "pass": true
+  },
+  "preflight_TG2": {
+   "pass": true,
+   "TG2_T_path_matches": 15,
+   "n": 15
+  }
+ },
+ "cells": {},
+ "deviations": [],
+ "stopped": {},
+ "source_commit": "09c9aafc3a11016e9f010723eb603ba5f3f1f4bb",
+ "elapsed_s": 156,
+ "mode": "preflight-only (cpu)",
+ "gpus": "",
+ "torchao_before": "0.10.0",
+ "env": {
+  "torch": "2.11.0+cpu",
+  "transformers": "5.23.0",
+  "peft": "0.21.3",
+  "accelerate": "1.16.0",
+  "torchao_after": "absent"
+ },
+ "result": "PREFLIGHT PASSED (cpu mode): no cell run"
+}
