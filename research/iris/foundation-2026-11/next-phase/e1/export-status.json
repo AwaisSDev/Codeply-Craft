@@ -1,0 +1,92 @@
+{
+ "checks": {
+  "G0_no_test": {
+   "pass": true
+  },
+  "G0_adapter_r2": {
+   "pass": true,
+   "path": "/kaggle/input/datasets/awaissididique/codeply-iris-adapters-v1/iris-1.7b-r2/adapter_model.safetensors",
+   "sha256": "c590bfae5d598f3f6c45acabbab126635d39ab0fa89bbadb4df206b9c24b4fba"
+  },
+  "G0_adapter_r3": {
+   "pass": true,
+   "path": "/kaggle/input/datasets/awaissididique/codeply-iris-adapters-v1/iris-1.7b-r3/adapter_model.safetensors",
+   "sha256": "f80b023e303c9b2c6612211b7155d76df723dc1f36acf33b7ef628c63899e555"
+  },
+  "G0_adapter_pilot": {
+   "pass": true,
+   "path": "/kaggle/input/notebooks/awaissididique/codeply-iris-pilot-train/runs/pilot-qwen3-1.7b-s1/best/adapter/adapter_model.safetensors",
+   "sha256": "d1b25b1b2ec92b98885cecd7dde3ac8c3c7bcc4f5de6b39ef9cce78d758742a6"
+  },
+  "G0_pilot_q4": {
+   "pass": true,
+   "path": "/kaggle/input/notebooks/awaissididique/codeply-iris-pilot-export/gguf/qwen3-1.7b-pilot-s1-Q4_K_M.gguf",
+   "sha256": "b9a5e56c69afb0989fcda2047770a5de761f2fc3c77154000784f3c2fdac51c2"
+  },
+  "G0_val": {
+   "pass": true
+  },
+  "G0_template": {
+   "pass": true
+  },
+  "G0_base": {
+   "pass": true,
+   "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+   "files": 12
+  },
+  "G0_llama_commit": {
+   "pass": true,
+   "commit": "7a4117eef97ed6419241da2384b2b1c011ecd763"
+  }
+ },
+ "artifacts": {
+  "r2": {
+   "merge": "merged 196 modules",
+   "minutes": 3.9,
+   "F16": {
+    "file": "e1-r2-F16.gguf",
+    "sha256": "9a831036f268914502e4da950861f308951c5a94489246db04dfacc9bef9c88d"
+   },
+   "Q4_K_M": {
+    "file": "e1-r2-Q4_K_M.gguf",
+    "sha256": "1c2d0b508e009beb0c0f16010e43f32d0a241edc5caac7953c2e1e7b9969f84a"
+   }
+  },
+  "r3": {
+   "merge": "merged 196 modules",
+   "minutes": 3.5,
+   "Q4_K_M": {
+    "file": "e1-r3-Q4_K_M.gguf",
+    "sha256": "3ad5440cf6d70c4f5763ffa62c305febcc9ad78876d1e8be58142d9c22fdd896"
+   }
+  },
+  "pilot": {
+   "merge": "merged 196 modules",
+   "minutes": 3.6,
+   "F16": {
+    "file": "e1-pilot-F16.gguf",
+    "sha256": "feb44ae57604cb217bd200f6f9cd0b29da15cd04ef4808e46eabf20e16a2370f"
+   },
+   "Q4_K_M_reexport_check": {
+    "sha256": "c6bd2115ca61d24ef3786eeaad5a12f8051f3608bcc275e8c9cb085a89f5918e",
+    "matches_original": false
+   }
+  },
+  "pilot_q4_original": {
+   "file": "qwen3-1.7b-pilot-s1-Q4_K_M.gguf",
+   "sha256": "b9a5e56c69afb0989fcda2047770a5de761f2fc3c77154000784f3c2fdac51c2"
+  }
+ },
+ "deviations": [
+  "pilot Q4 re-export sha256 differs from the seed-1 GGUF; the Q4 cells use the original (G-p-Q4)"
+ ],
+ "source_commit": "0efd6b19c797b10b2d8201822dac05c249e56b17",
+ "elapsed_s": 1104,
+ "env": {
+  "torch": "2.11.0+cpu",
+  "transformers": "5.23.0",
+  "huggingface_hub": "1.33.0",
+  "python": "3.13.18"
+ },
+ "all_checks_pass": true
+}

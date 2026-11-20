@@ -119,3 +119,32 @@ The kernel then failed while building llama.cpp, because the `llama-server` targ
 * The export builds `llama-quantize` only, as the seed-1 export did.
 * The template gates (TG1 / TG2 / token ids) run **locally** (CPU llama-server at `7a4117e`) on the actually exported
   GGUFs before the GPU kernel is launched, and again inside the GPU kernel before any cell (protocol G1).
+
+**Version 2 (passed; `all_checks_pass: true`).** Kernel source commit `0efd6b19` (scripts at `394af4b6`), 18 min, CPU.
+Every G0 check passed again: no test split, the three adapters, the pilot Q4, val, the template, all 12 base files
+at `70d244cc`, and llama.cpp at `7a4117e` (quantize only). Merges: 196 / 196 LoRA modules matched for r2, r3 and pilot.
+
+| File | sha256 |
+|---|---|
+| `e1-r2-F16.gguf` | `9a831036f268914502e4da950861f308951c5a94489246db04dfacc9bef9c88d` |
+| `e1-r2-Q4_K_M.gguf` | `1c2d0b508e009beb0c0f16010e43f32d0a241edc5caac7953c2e1e7b9969f84a` |
+| `e1-r3-Q4_K_M.gguf` | `3ad5440cf6d70c4f5763ffa62c305febcc9ad78876d1e8be58142d9c22fdd896` |
+| `e1-pilot-F16.gguf` | `feb44ae57604cb217bd200f6f9cd0b29da15cd04ef4808e46eabf20e16a2370f` |
+| `qwen3-1.7b-pilot-s1-Q4_K_M.gguf` (original, carried) | `b9a5e56c69afb0989fcda2047770a5de761f2fc3c77154000784f3c2fdac51c2` |
+
+**Deviation (reported by the kernel, diagnosed):** the pilot Q4 re-export has sha256 `c6bd2115…918e`, not the seed-1
+`b9a5e56c…`. Diagnosis (local, llama.cpp `7a4117e`, gguf-py):
+* re-quantising the exported `e1-pilot-F16.gguf` reproduces `c6bd2115…` exactly (quantisation is deterministic);
+* all **311 tensors are byte-identical** (type and data) to the seed-1 Q4;
+* only descriptive metadata differs: `general.name` / `basename` (taken from the temporary merge directory name), the
+  `general.base_model.*`, `license` and `tags` fields, and `size_label`. The chat template and tokenizer fields are
+  identical.
+
+Consequence: the E1 pilot F16 and the seed-1 pilot Q4 come from **the same merged weights**, so the pilot
+quantisation comparison (F16 vs Q4) is valid. As pre-registered, the Q4 cells use the original seed-1 file.
+
+## 7. Template gates on the exported files (local, before the GPU launch)
+
+CPU llama-server `7a4117e`, tokenizer `70d244cc`, gates on `e1-r2-Q4_K_M.gguf` (TG1) and the seed-1 pilot Q4 (TG2):
+TG1 15 / 15, TG2 15 / 15 (HF) and 15 / 15 (server), token ids 15 / 15 for both formats
+(`e1/gates-exported.json`). **All preflight checks pass; the GPU evaluation is launched.**
