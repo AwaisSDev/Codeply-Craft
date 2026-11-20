@@ -1,0 +1,26 @@
+{
+ "SC1_pass": true,
+ "identical": 10,
+ "n": 10,
+ "sessions": [
+  "va01-e01-s1-gold",
+  "va01-e01-s2-gold",
+  "va01-e01-s3-gold",
+  "va01-e01-s4-gold",
+  "va01-e01-s5-gold",
+  "va01-e02-s1-gold",
+  "va01-e02-s2-gold",
+  "va01-e02-s3-gold",
+  "va01-e02-s4-gold",
+  "va01-e02-s5-gold"
+ ],
+ "align_fail": 0,
+ "seconds": 256,
+ "versions": {
+  "torch": "2.11.0+cu130",
+  "transformers": "5.23.0",
+  "peft": "0.21.3",
+  "accelerate": "1.16.0",
+  "gpu": "Tesla T4"
+ }
+}

@@ -1,0 +1,17 @@
+{
+ "setup": "T (transformers fp16, unconstrained)",
+ "prefix": "none",
+ "answer_prefix": "",
+ "logprob_capture": true,
+ "logprob_align_fail_sessions": 0,
+ "adapter_sha256": "c590bfae5d598f3f6c45acabbab126635d39ab0fa89bbadb4df206b9c24b4fba",
+ "base_dir": "/tmp/hf/hub/models--Qwen--Qwen3-1.7B/snapshots/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+ "versions": {
+  "torch": "2.11.0+cu130",
+  "transformers": "5.23.0",
+  "peft": "0.21.3",
+  "accelerate": "1.16.0",
+  "gpu": "Tesla T4"
+ },
+ "minutes": 27.2
+}

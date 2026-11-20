@@ -1,0 +1,32 @@
+{
+ "args": {
+  "system": "iris",
+  "model": "/tmp/hf/hub/models--Qwen--Qwen3-1.7B/snapshots/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "adapter": "/tmp/adapter-r2",
+  "split": "val",
+  "data": "data/built",
+  "raw": "data/raw",
+  "out": "/kaggle/working/results/foundation-2026-11/e1/r2-T",
+  "closed_loop": false,
+  "constrain": false,
+  "limit": 0,
+  "threads": 0,
+  "keyword_k": 3,
+  "final": false,
+  "label": "r2-T",
+  "chat": false,
+  "template_kwargs": "",
+  "prompt_version": "v1",
+  "no_logprobs": false,
+  "server_arg": [],
+  "max_new_tokens": 900
+ },
+ "code_commit": "",
+ "python": "3.13.16",
+ "data": {
+  "val.jsonl": "0ae331732c7fcf609304b0069c61e0b0162e9617d5c3041fca820d8b7e38aee3"
+ },
+ "backend": "hf:/tmp/adapter-r2+logprobs",
+ "system_prompt_sha256": "9e7a10736e3579f0c455b6619bf35b12122aa668893b155885e02bf82d88b3cf",
+ "prompt_version": "v1"
+}

@@ -1,4 +1,7 @@
-# E1 control diagnosis: results (2026-11-20). **Incomplete: all Transformers cells failed**
+# E1 control diagnosis: results (2026-11-20). **Complete after the approved Transformers re-run (§7)**
+
+§1-§6 describe the first run as it happened (Transformers cells crashed). §7 adds the re-run and the pre-registered
+decomposition, which supersedes the exploratory substitute in §5 wherever both exist.
 
 Protocol: `E1-PROTOCOL.md` (pre-registered), preflight `E1-PREFLIGHT.md`. Analysis: `e1/e1_decompose.py` (committed
 before any result) → `E1-DECOMPOSITION.json`; `e1/e1_exploratory.py` (written **after** seeing results, labelled
@@ -119,3 +122,55 @@ Exploratory format swaps (adapter evaluated in a format it was not trained on; Q
    * SC1 run on r2 only;
    * export v1 infrastructure failure;
    * the pilot Q4 re-export metadata-only hash difference.
+
+## 7. Transformers re-run (owner-approved; deviations in `E1-RERUN.md`)
+
+Kernel `codeply-iris-e1-eval-t`, 5,787 s (hard limit 6,100 s, not reached). E1 total: 6,197 + 5,787 s = **3.33 of
+the 3.5 approved GPU-hours**. Environment: torch 2.11.0+cu130, transformers 5.23.0, peft 0.21.3; torchao 0.10.0
+removed.
+
+| Check | Result |
+|---|---|
+| G0, env (torchao absent, pins exact), preflight_adapters (r2 / r3 / pilot load, merge, generate), preflight_TG2 15 / 15 | pass |
+| SC1 (log-probability capture leaves text unchanged) | pass: 10 / 10 identical, 0 alignment failures |
+| **G2** (r2 Transformers reproduction, ±0.02 F1 / ±0.03 validity) | **pass: F1 0.4042, validity 0.942, false / 100 140.0, identical to the historical r2 result.** A reproduction of the historical number with the same base content; the revision was not recorded |
+
+| Cell | Loop | P | R | F1 | False / 100 | P@60 | F0.5 | Valid | Ops | No-store sessions | End-state F1 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| r2 T | open | 0.433 | 0.379 | 0.404 | 140.0 | 0.500 | 0.421 | 0.942 | 314 | 24 | |
+| pilot T | open | 0.427 | 0.326 | 0.370 | 125.0 | 0.600 | 0.402 | 0.842 | 274 | 34 | |
+| r3 T | open | 0.433 | 0.407 | 0.420 | 147.5 | 0.533 | 0.428 | 0.925 | 337 | 24 | |
+| r2 T | closed | 0.348 | 0.282 | 0.311 | 155.8 | 0.400 | 0.332 | 0.942 | 299 | 27 | 0.304 |
+| pilot T | closed | 0.327 | 0.243 | **0.279** | 150.0 | 0.400 | 0.306 | 0.850 | 275 | 38 | 0.246 |
+
+(r3 T open F1 0.420 also equals its historical value.)
+
+### Pre-registered decomposition (`E1-DECOMPOSITION.json`): reading **stack-dominated** (open and closed)
+
+| Quantity | Open Δ F1 | Open Δ false / 100 | Closed Δ F1 |
+|---|---|---|---|
+| G = r2 T − pilot Q4-C | +0.112 [+0.054, +0.171] | +15.8 [−12.5, +41.7] | +0.148 [+0.094, +0.207] |
+| S = pilot T − pilot Q4-C (stack) | **+0.077 [+0.030, +0.129]**, S / G **0.69 [0.36, 1.13]** | +0.8 [−26.7, +26.7] | **+0.115 [+0.068, +0.165]**, S / G **0.78 [0.49, 1.22]** |
+| · backend (T − F16-U) | −0.002 [−0.015, +0.012] | 0.0 [−3.3, +3.3] | — |
+| · quantisation (F16-U − Q4-U) | +0.059 [+0.014, +0.112] | +23.3 [−1.7, +47.5] | — |
+| · constraint (Q4-U − Q4-C) | +0.021 [−0.010, +0.053] | −22.5 [−40.8, −3.3] | — |
+| Tr = r2 T − pilot T (recipe bundle) | +0.035 [−0.010, +0.074], Tr / G 0.31 [−0.13, 0.64] | +15.0 [0.0, +31.7] | +0.033 [−0.026, +0.094] |
+| r2 stack (r2 T − r2 Q4-C) | +0.062 [+0.022, +0.098] | +10.8 [−9.2, +31.7] | +0.048 [+0.009, +0.083] |
+| r2 backend | +0.007 [−0.001, +0.017] | +0.8 [−2.5, +5.0] | — |
+| Stack x adapter interaction (DiD) | −0.016 [−0.072, +0.039] | +10.0 [−19.2, +39.2] | **−0.067 [−0.133, −0.009]** |
+
+Readings (as pre-registered):
+* **Stack-dominated** in both loops: S / G ≥ 0.5 and S's lower bound > 0.
+* Material components:
+  * pilot quantisation;
+  * pilot constraint (on false memories);
+  * r2 quantisation;
+  * the closed-loop interaction: the pilot stack costs the pilot adapter 0.115 closed-loop F1, but costs r2 0.048.
+* Not material:
+  * the backend for either adapter;
+  * the recipe bundle (its interval includes 0 in both loops).
+
+**Correction of the interim reading** (`E1-DECISION-REPORT.md` §1, based on the exploratory Q4-C comparison). The large
+closed-loop gap at Q4-C (r2 − pilot 0.100) is not mainly a recipe effect. With both adapters on Transformers, the
+closed-loop recipe gap is +0.033 (n.s.). The rest is the Q4 / constrained stack hurting the pilot adapter more than r2
+when it reads its own store.

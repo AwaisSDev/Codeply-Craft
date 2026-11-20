@@ -6,7 +6,25 @@
  },
  "cells": {
   "open": {
-   "r2-T": "missing / failed / incomplete",
+   "r2-T": {
+    "precision": 0.43312101910828027,
+    "recall": 0.3788300835654596,
+    "f1": 0.4041604754829124,
+    "false_per_100": 140.0,
+    "valid_output": 0.9416666666666667,
+    "content_ops": 314,
+    "cap_hits": 0,
+    "p_at_60": 0.5,
+    "f0_5": 0.421,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 24,
+     "skips": 113,
+     "skip_on_labelled_fact": 5,
+     "skip_on_labelled_skip": 73
+    },
+    "retrieval_f1": 0.6601307189542484
+   },
    "r2-F16U": {
     "precision": 0.42765273311897106,
     "recall": 0.37047353760445684,
@@ -83,7 +101,25 @@
     },
     "retrieval_f1": 0.6232876712328768
    },
-   "p-T": "missing / failed / incomplete",
+   "p-T": {
+    "precision": 0.42700729927007297,
+    "recall": 0.32590529247910865,
+    "f1": 0.3696682464454976,
+    "false_per_100": 125.0,
+    "valid_output": 0.8416666666666667,
+    "content_ops": 274,
+    "cap_hits": 3,
+    "p_at_60": 0.6,
+    "f0_5": 0.402,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 34,
+     "skips": 128,
+     "skip_on_labelled_fact": 9,
+     "skip_on_labelled_skip": 59
+    },
+    "retrieval_f1": 0.5897435897435898
+   },
    "p-F16U": {
     "precision": 0.427536231884058,
     "recall": 0.3286908077994429,
@@ -160,7 +196,25 @@
     },
     "retrieval_f1": 0.589041095890411
    },
-   "r3-T": "missing / failed / incomplete",
+   "r3-T": {
+    "precision": 0.4332344213649852,
+    "recall": 0.40668523676880225,
+    "f1": 0.4195402298850575,
+    "false_per_100": 147.5,
+    "valid_output": 0.925,
+    "content_ops": 337,
+    "cap_hits": 1,
+    "p_at_60": 0.533,
+    "f0_5": 0.428,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 24,
+     "skips": 103,
+     "skip_on_labelled_fact": 2,
+     "skip_on_labelled_skip": 72
+    },
+    "retrieval_f1": 0.5882352941176471
+   },
    "r3-Q4C": {
     "precision": 0.3556231003039514,
     "recall": 0.32590529247910865,
@@ -182,7 +236,25 @@
    }
   },
   "closed": {
-   "r2-T": "missing / failed / incomplete",
+   "r2-T": {
+    "precision": 0.34782608695652173,
+    "recall": 0.28184281842818426,
+    "f1": 0.311377245508982,
+    "false_per_100": 155.83333333333334,
+    "valid_output": 0.9416666666666667,
+    "content_ops": 299,
+    "cap_hits": 0,
+    "p_at_60": 0.4,
+    "f0_5": 0.332,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 27,
+     "skips": 119,
+     "skip_on_labelled_fact": 7,
+     "skip_on_labelled_skip": 74
+    },
+    "end_state_f1": 0.3035019455252918
+   },
    "r2-Q4C": {
     "precision": 0.30685920577617326,
     "recall": 0.23035230352303523,
@@ -202,7 +274,25 @@
     },
     "end_state_f1": 0.24063116370808676
    },
-   "p-T": "missing / failed / incomplete",
+   "p-T": {
+    "precision": 0.32727272727272727,
+    "recall": 0.24258760107816713,
+    "f1": 0.2786377708978328,
+    "false_per_100": 150.0,
+    "valid_output": 0.85,
+    "content_ops": 275,
+    "cap_hits": 2,
+    "p_at_60": 0.4,
+    "f0_5": 0.306,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 38,
+     "skips": 115,
+     "skip_on_labelled_fact": 12,
+     "skip_on_labelled_skip": 57
+    },
+    "end_state_f1": 0.24603174603174602
+   },
    "p-Q4C": {
     "precision": 0.22119815668202766,
     "recall": 0.12972972972972974,
@@ -267,22 +357,75 @@
  "decomposition_open": {
   "episodes": 24,
   "G": {
-   "status": "not computable",
-   "missing": [
-    "r2-T"
-   ]
+   "f1": {
+    "point": 0.1118,
+    "ci95": [
+     0.0537,
+     0.1706
+    ]
+   },
+   "false_per_100": {
+    "point": 15.8333,
+    "ci95": [
+     -12.5,
+     41.6667
+    ]
+   },
+   "recall": {
+    "point": 0.1337,
+    "ci95": [
+     0.0737,
+     0.1906
+    ]
+   }
   },
   "S_pilot": {
-   "status": "not computable",
-   "missing": [
-    "p-T"
-   ]
+   "f1": {
+    "point": 0.0773,
+    "ci95": [
+     0.0295,
+     0.1294
+    ]
+   },
+   "false_per_100": {
+    "point": 0.8333,
+    "ci95": [
+     -26.6667,
+     26.6667
+    ]
+   },
+   "recall": {
+    "point": 0.0808,
+    "ci95": [
+     0.0326,
+     0.1332
+    ]
+   },
+   "material": true
   },
   "pilot_backend": {
-   "status": "not computable",
-   "missing": [
-    "p-T"
-   ]
+   "f1": {
+    "point": -0.002,
+    "ci95": [
+     -0.0153,
+     0.0123
+    ]
+   },
+   "false_per_100": {
+    "point": 0.0,
+    "ci95": [
+     -3.3333,
+     3.3333
+    ]
+   },
+   "recall": {
+    "point": -0.0028,
+    "ci95": [
+     -0.0145,
+     0.0088
+    ]
+   },
+   "material": false
   },
   "pilot_quantisation": {
    "f1": {
@@ -333,23 +476,76 @@
    "material": true
   },
   "Tr_recipe": {
-   "status": "not computable",
-   "missing": [
-    "r2-T",
-    "p-T"
-   ]
+   "f1": {
+    "point": 0.0345,
+    "ci95": [
+     -0.01,
+     0.0737
+    ]
+   },
+   "false_per_100": {
+    "point": 15.0,
+    "ci95": [
+     0.0,
+     31.6667
+    ]
+   },
+   "recall": {
+    "point": 0.0529,
+    "ci95": [
+     0.0054,
+     0.0955
+    ]
+   },
+   "material": false
   },
   "S_r2": {
-   "status": "not computable",
-   "missing": [
-    "r2-T"
-   ]
+   "f1": {
+    "point": 0.0618,
+    "ci95": [
+     0.0221,
+     0.0979
+    ]
+   },
+   "false_per_100": {
+    "point": 10.8333,
+    "ci95": [
+     -9.1667,
+     31.6667
+    ]
+   },
+   "recall": {
+    "point": 0.078,
+    "ci95": [
+     0.0393,
+     0.1171
+    ]
+   },
+   "material": true
   },
   "r2_backend": {
-   "status": "not computable",
-   "missing": [
-    "r2-T"
-   ]
+   "f1": {
+    "point": 0.0071,
+    "ci95": [
+     -0.0013,
+     0.017
+    ]
+   },
+   "false_per_100": {
+    "point": 0.8333,
+    "ci95": [
+     -2.5,
+     5.0
+    ]
+   },
+   "recall": {
+    "point": 0.0084,
+    "ci95": [
+     0.0,
+     0.0178
+    ]
+   },
+   "material": false
   },
   "r2_quantisation": {
    "f1": {
@@ -448,51 +644,187 @@
    "material": false
   },
   "DiD_stack_x_adapter": {
-   "status": "not computable",
-   "missing": [
-    "r2-T",
-    "p-T"
-   ]
+   "f1": {
+    "point": -0.0155,
+    "ci95": [
+     -0.0717,
+     0.0385
+    ]
+   },
+   "false_per_100": {
+    "point": 10.0,
+    "ci95": [
+     -19.1667,
+     39.1667
+    ]
+   },
+   "recall": {
+    "point": -0.0028,
+    "ci95": [
+     -0.0609,
+     0.0522
+    ]
+   },
+   "material": false
+  },
+  "S_over_G": {
+   "point": 0.691,
+   "ci95": [
+    0.3594,
+    1.1339
+   ],
+   "note": "ratio per resample; unstable if G's interval approaches 0"
+  },
+  "Tr_over_G": {
+   "point": 0.309,
+   "ci95": [
+    -0.1339,
+    0.6406
+   ],
+   "note": "ratio per resample; unstable if G's interval approaches 0"
   }
  },
  "decomposition_closed": {
   "episodes": 24,
   "G": {
-   "status": "not computable",
-   "missing": [
-    "r2-T"
-   ]
+   "f1": {
+    "point": 0.1478,
+    "ci95": [
+     0.0939,
+     0.207
+    ]
+   },
+   "false_per_100": {
+    "point": 15.0,
+    "ci95": [
+     -9.1667,
+     40.0
+    ]
+   },
+   "recall": {
+    "point": 0.1521,
+    "ci95": [
+     0.1018,
+     0.2078
+    ]
+   }
   },
   "S_pilot": {
-   "status": "not computable",
-   "missing": [
-    "p-T"
-   ]
+   "f1": {
+    "point": 0.1151,
+    "ci95": [
+     0.0679,
+     0.1647
+    ]
+   },
+   "false_per_100": {
+    "point": 9.1667,
+    "ci95": [
+     -12.5,
+     30.0
+    ]
+   },
+   "recall": {
+    "point": 0.1129,
+    "ci95": [
+     0.072,
+     0.1566
+    ]
+   },
+   "material": true
   },
   "Tr_recipe": {
-   "status": "not computable",
-   "missing": [
-    "r2-T",
-    "p-T"
-   ]
+   "f1": {
+    "point": 0.0327,
+    "ci95": [
+     -0.0261,
+     0.0937
+    ]
+   },
+   "false_per_100": {
+    "point": 5.8333,
+    "ci95": [
+     -18.3333,
+     30.0
+    ]
+   },
+   "recall": {
+    "point": 0.0393,
+    "ci95": [
+     -0.0136,
+     0.0945
+    ]
+   },
+   "material": false
   },
   "S_r2": {
-   "status": "not computable",
-   "missing": [
-    "r2-T"
-   ]
+   "f1": {
+    "point": 0.0482,
+    "ci95": [
+     0.0092,
+     0.0829
+    ]
+   },
+   "false_per_100": {
+    "point": 0.8333,
+    "ci95": [
+     -15.8333,
+     16.6667
+    ]
+   },
+   "recall": {
+    "point": 0.0515,
+    "ci95": [
+     0.0139,
+     0.086
+    ]
+   },
+   "material": true
   },
   "DiD_stack_x_adapter": {
-   "status": "not computable",
-   "missing": [
-    "r2-T",
-    "p-T"
-   ]
+   "f1": {
+    "point": -0.0669,
+    "ci95": [
+     -0.1325,
+     -0.0089
+    ]
+   },
+   "false_per_100": {
+    "point": -8.3333,
+    "ci95": [
+     -30.8333,
+     16.6667
+    ]
+   },
+   "recall": {
+    "point": -0.0614,
+    "ci95": [
+     -0.1176,
+     -0.0088
+    ]
+   },
+   "material": true
+  },
+  "S_over_G": {
+   "point": 0.779,
+   "ci95": [
+    0.4861,
+    1.2185
+   ],
+   "note": "ratio per resample; unstable if G's interval approaches 0"
+  },
+  "Tr_over_G": {
+   "point": 0.221,
+   "ci95": [
+    -0.2185,
+    0.5139
+   ],
+   "note": "ratio per resample; unstable if G's interval approaches 0"
   }
  },
  "reading": {
-  "open": "not computable",
-  "closed": "not computable",
-  "label": "not computable"
+  "open": "stack-dominated",
+  "closed": "stack-dominated",
+  "label": "stack-dominated"
  }
 }

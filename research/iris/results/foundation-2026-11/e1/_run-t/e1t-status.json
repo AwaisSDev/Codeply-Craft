@@ -1,0 +1,165 @@
+{
+ "checks": {
+  "G0_adapters": {
+   "pass": true
+  },
+  "G0_val": {
+   "pass": true
+  },
+  "env": {
+   "pass": true,
+   "torch": "2.11.0+cu130",
+   "transformers": "5.23.0",
+   "peft": "0.21.3",
+   "accelerate": "1.16.0",
+   "torchao_after": "absent"
+  },
+  "G0_base": {
+   "pass": true,
+   "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
+  },
+  "preflight_adapters": {
+   "torchao_present": false,
+   "versions": {
+    "torch": "2.11.0+cu130",
+    "transformers": "5.23.0",
+    "peft": "0.21.3"
+   },
+   "adapters": {
+    "r2": {
+     "ok": true,
+     "lora_modules": 196,
+     "seconds": 14.2
+    },
+    "r3": {
+     "ok": true,
+     "lora_modules": 196,
+     "seconds": 11.2
+    },
+    "pilot": {
+     "ok": true,
+     "lora_modules": 196,
+     "seconds": 11.0
+    }
+   },
+   "pass": true
+  },
+  "preflight_TG2": {
+   "pass": true,
+   "TG2_T_path_matches": 15,
+   "n": 15
+  },
+  "SC1": {
+   "pass": true,
+   "identical": 10,
+   "n": 10,
+   "align_fail": 0,
+   "seconds": 256,
+   "versions": {
+    "torch": "2.11.0+cu130",
+    "transformers": "5.23.0",
+    "peft": "0.21.3",
+    "accelerate": "1.16.0",
+    "gpu": "Tesla T4"
+   },
+   "error": null
+  },
+  "G2": {
+   "pass": true,
+   "observed": {
+    "complete": true,
+    "f1": 0.4041604754829124,
+    "validity": 0.9416666666666667,
+    "false_per_100": 140.0
+   },
+   "reference": {
+    "f1": 0.4042,
+    "validity": 0.9417
+   },
+   "classification": "reproduction of the historical number with the same base content (revision not recorded)"
+  }
+ },
+ "cells": {
+  "1:r2-T:open": {
+   "status": "ok",
+   "exit": 0,
+   "gpu": 0,
+   "minutes": 28.8,
+   "result": {
+    "complete": true,
+    "f1": 0.4041604754829124,
+    "validity": 0.9416666666666667,
+    "false_per_100": 140.0
+   },
+   "cmd": "/usr/bin/python3 <src>/foundation-2026-11/next-phase/e1/e1_run.py --base /tmp/hf/hub/models--Qwen--Qwen3-1.7B/snapshots/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e --adapter /tmp/adapter-r2 --prefix none --out /kaggle/working/results/foundation-2026-11/e1/r2-T --label r2-T"
+  },
+  "6:p-T:open": {
+   "status": "ok",
+   "exit": 0,
+   "gpu": 1,
+   "minutes": 29.5,
+   "result": {
+    "complete": true,
+    "f1": 0.3696682464454976,
+    "validity": 0.8416666666666667,
+    "false_per_100": 125.0
+   },
+   "cmd": "/usr/bin/python3 <src>/foundation-2026-11/next-phase/e1/e1_run.py --base /tmp/hf/hub/models--Qwen--Qwen3-1.7B/snapshots/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e --adapter /tmp/adapter-pilot --prefix think --out /kaggle/working/results/foundation-2026-11/e1/p-T --label p-T"
+  },
+  "13:r2-T:closed": {
+   "status": "ok",
+   "exit": 0,
+   "gpu": 0,
+   "minutes": 27.3,
+   "result": {
+    "complete": true,
+    "f1": 0.311377245508982,
+    "validity": 0.9416666666666667,
+    "false_per_100": 155.83333333333334
+   },
+   "cmd": "/usr/bin/python3 <src>/foundation-2026-11/next-phase/e1/e1_run.py --base /tmp/hf/hub/models--Qwen--Qwen3-1.7B/snapshots/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e --adapter /tmp/adapter-r2 --prefix none --out /kaggle/working/results/foundation-2026-11/e1/r2-T --label r2-T --closed-loop"
+  },
+  "15:p-T:closed": {
+   "status": "ok",
+   "exit": 0,
+   "gpu": 1,
+   "minutes": 28.2,
+   "result": {
+    "complete": true,
+    "f1": 0.2786377708978328,
+    "validity": 0.85,
+    "false_per_100": 150.0
+   },
+   "cmd": "/usr/bin/python3 <src>/foundation-2026-11/next-phase/e1/e1_run.py --base /tmp/hf/hub/models--Qwen--Qwen3-1.7B/snapshots/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e --adapter /tmp/adapter-pilot --prefix think --out /kaggle/working/results/foundation-2026-11/e1/p-T --label p-T --closed-loop"
+  },
+  "11:r3-T:open": {
+   "status": "ok",
+   "exit": 0,
+   "gpu": 0,
+   "minutes": 31.7,
+   "result": {
+    "complete": true,
+    "f1": 0.4195402298850575,
+    "validity": 0.925,
+    "false_per_100": 147.5
+   },
+   "cmd": "/usr/bin/python3 <src>/foundation-2026-11/next-phase/e1/e1_run.py --base /tmp/hf/hub/models--Qwen--Qwen3-1.7B/snapshots/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e --adapter /tmp/adapter-r3 --prefix none --out /kaggle/working/results/foundation-2026-11/e1/r3-T --label r3-T"
+  }
+ },
+ "deviations": [],
+ "stopped": {},
+ "source_commit": "09c9aafc3a11016e9f010723eb603ba5f3f1f4bb",
+ "elapsed_s": 5787,
+ "mode": "gpu",
+ "gpus": "0, Tesla T4, 15360 MiB\n1, Tesla T4, 15360 MiB",
+ "torchao_before": "0.10.0",
+ "env": {
+  "torch": "2.11.0+cu130",
+  "transformers": "5.23.0",
+  "peft": "0.21.3",
+  "accelerate": "1.16.0",
+  "torchao_after": "absent"
+ },
+ "hard_cap_reached": false,
+ "result": "cells finished"
+}
