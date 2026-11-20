@@ -1,0 +1,498 @@
+{
+ "bootstrap": {
+  "resamples": 2000,
+  "seed": 0,
+  "unit": "episode"
+ },
+ "cells": {
+  "open": {
+   "r2-T": "missing / failed / incomplete",
+   "r2-F16U": {
+    "precision": 0.42765273311897106,
+    "recall": 0.37047353760445684,
+    "f1": 0.3970149253731344,
+    "false_per_100": 139.16666666666666,
+    "valid_output": 0.9416666666666667,
+    "content_ops": 311,
+    "cap_hits": 0,
+    "p_at_60": 0.517,
+    "f0_5": 0.415,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 24,
+     "skips": 112,
+     "skip_on_labelled_fact": 5,
+     "skip_on_labelled_skip": 74
+    },
+    "retrieval_f1": 0.6557377049180328
+   },
+   "r2-F16C": {
+    "precision": 0.42443729903536975,
+    "recall": 0.36768802228412256,
+    "f1": 0.3940298507462687,
+    "false_per_100": 140.0,
+    "valid_output": 0.9333333333333333,
+    "content_ops": 311,
+    "cap_hits": 0,
+    "p_at_60": 0.517,
+    "f0_5": 0.412,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 24,
+     "skips": 109,
+     "skip_on_labelled_fact": 5,
+     "skip_on_labelled_skip": 73
+    },
+    "retrieval_f1": 0.6557377049180328
+   },
+   "r2-Q4U": {
+    "precision": 0.4059040590405904,
+    "recall": 0.3064066852367688,
+    "f1": 0.3492063492063492,
+    "false_per_100": 126.66666666666666,
+    "valid_output": 0.9583333333333334,
+    "content_ops": 271,
+    "cap_hits": 0,
+    "p_at_60": 0.5,
+    "f0_5": 0.381,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 25,
+     "skips": 81,
+     "skip_on_labelled_fact": 4,
+     "skip_on_labelled_skip": 49
+    },
+    "retrieval_f1": 0.6232876712328768
+   },
+   "r2-Q4C": {
+    "precision": 0.39705882352941174,
+    "recall": 0.3008356545961003,
+    "f1": 0.34231378763866877,
+    "false_per_100": 129.16666666666669,
+    "valid_output": 0.8833333333333333,
+    "content_ops": 272,
+    "cap_hits": 0,
+    "p_at_60": 0.55,
+    "f0_5": 0.373,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 27,
+     "skips": 75,
+     "skip_on_labelled_fact": 3,
+     "skip_on_labelled_skip": 48
+    },
+    "retrieval_f1": 0.6232876712328768
+   },
+   "p-T": "missing / failed / incomplete",
+   "p-F16U": {
+    "precision": 0.427536231884058,
+    "recall": 0.3286908077994429,
+    "f1": 0.3716535433070866,
+    "false_per_100": 125.0,
+    "valid_output": 0.8416666666666667,
+    "content_ops": 276,
+    "cap_hits": 3,
+    "p_at_60": 0.6,
+    "f0_5": 0.403,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 34,
+     "skips": 124,
+     "skip_on_labelled_fact": 8,
+     "skip_on_labelled_skip": 59
+    },
+    "retrieval_f1": 0.5878594249201279
+   },
+   "p-F16C": {
+    "precision": 0.3872053872053872,
+    "recall": 0.3203342618384401,
+    "f1": 0.350609756097561,
+    "false_per_100": 142.5,
+    "valid_output": 0.9083333333333333,
+    "content_ops": 297,
+    "cap_hits": 2,
+    "p_at_60": 0.517,
+    "f0_5": 0.372,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 32,
+     "skips": 121,
+     "skip_on_labelled_fact": 9,
+     "skip_on_labelled_skip": 57
+    },
+    "retrieval_f1": 0.5878594249201279
+   },
+   "p-Q4U": {
+    "precision": 0.4166666666666667,
+    "recall": 0.25069637883008355,
+    "f1": 0.31304347826086953,
+    "false_per_100": 101.66666666666666,
+    "valid_output": 0.7583333333333333,
+    "content_ops": 216,
+    "cap_hits": 2,
+    "p_at_60": 0.483,
+    "f0_5": 0.368,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 47,
+     "skips": 99,
+     "skip_on_labelled_fact": 11,
+     "skip_on_labelled_skip": 42
+    },
+    "retrieval_f1": 0.589041095890411
+   },
+   "p-Q4C": {
+    "precision": 0.36213991769547327,
+    "recall": 0.24512534818941503,
+    "f1": 0.292358803986711,
+    "false_per_100": 124.16666666666667,
+    "valid_output": 0.9166666666666666,
+    "content_ops": 243,
+    "cap_hits": 3,
+    "p_at_60": 0.483,
+    "f0_5": 0.331,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 45,
+     "skips": 117,
+     "skip_on_labelled_fact": 13,
+     "skip_on_labelled_skip": 47
+    },
+    "retrieval_f1": 0.589041095890411
+   },
+   "r3-T": "missing / failed / incomplete",
+   "r3-Q4C": {
+    "precision": 0.3556231003039514,
+    "recall": 0.32590529247910865,
+    "f1": 0.3401162790697675,
+    "false_per_100": 162.5,
+    "valid_output": 0.8666666666666667,
+    "content_ops": 329,
+    "cap_hits": 1,
+    "p_at_60": 0.45,
+    "f0_5": 0.349,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 21,
+     "skips": 96,
+     "skip_on_labelled_fact": 3,
+     "skip_on_labelled_skip": 60
+    },
+    "retrieval_f1": 0.5660377358490566
+   }
+  },
+  "closed": {
+   "r2-T": "missing / failed / incomplete",
+   "r2-Q4C": {
+    "precision": 0.30685920577617326,
+    "recall": 0.23035230352303523,
+    "f1": 0.2631578947368421,
+    "false_per_100": 155.0,
+    "valid_output": 0.8666666666666667,
+    "content_ops": 277,
+    "cap_hits": 1,
+    "p_at_60": 0.45,
+    "f0_5": 0.288,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 25,
+     "skips": 82,
+     "skip_on_labelled_fact": 1,
+     "skip_on_labelled_skip": 56
+    },
+    "end_state_f1": 0.24063116370808676
+   },
+   "p-T": "missing / failed / incomplete",
+   "p-Q4C": {
+    "precision": 0.22119815668202766,
+    "recall": 0.12972972972972974,
+    "f1": 0.1635434412265758,
+    "false_per_100": 140.83333333333334,
+    "valid_output": 0.9083333333333333,
+    "content_ops": 217,
+    "cap_hits": 6,
+    "p_at_60": 0.283,
+    "f0_5": 0.194,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 49,
+     "skips": 105,
+     "skip_on_labelled_fact": 15,
+     "skip_on_labelled_skip": 45
+    },
+    "end_state_f1": 0.13392857142857145
+   }
+  },
+  "exploratory": {
+   "X1-p-Q4C-nothink": {
+    "precision": 0.3444976076555024,
+    "recall": 0.20055710306406685,
+    "f1": 0.2535211267605634,
+    "false_per_100": 109.16666666666666,
+    "valid_output": 0.925,
+    "content_ops": 209,
+    "cap_hits": 3,
+    "p_at_60": 0.5,
+    "f0_5": 0.301,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 51,
+     "skips": 88,
+     "skip_on_labelled_fact": 15,
+     "skip_on_labelled_skip": 34
+    },
+    "retrieval_f1": 0.5592105263157895
+   },
+   "X2-r2-Q4C-think": {
+    "precision": 0.41832669322709165,
+    "recall": 0.2924791086350975,
+    "f1": 0.3442622950819672,
+    "false_per_100": 113.33333333333333,
+    "valid_output": 0.9,
+    "content_ops": 251,
+    "cap_hits": 0,
+    "p_at_60": 0.433,
+    "f0_5": 0.385,
+    "logprobs_available": true,
+    "behaviour": {
+     "no_store_op": 26,
+     "skips": 115,
+     "skip_on_labelled_fact": 11,
+     "skip_on_labelled_skip": 60
+    },
+    "retrieval_f1": 0.5732484076433122
+   }
+  }
+ },
+ "decomposition_open": {
+  "episodes": 24,
+  "G": {
+   "status": "not computable",
+   "missing": [
+    "r2-T"
+   ]
+  },
+  "S_pilot": {
+   "status": "not computable",
+   "missing": [
+    "p-T"
+   ]
+  },
+  "pilot_backend": {
+   "status": "not computable",
+   "missing": [
+    "p-T"
+   ]
+  },
+  "pilot_quantisation": {
+   "f1": {
+    "point": 0.0586,
+    "ci95": [
+     0.0135,
+     0.1121
+    ]
+   },
+   "false_per_100": {
+    "point": 23.3333,
+    "ci95": [
+     -1.6667,
+     47.5
+    ]
+   },
+   "recall": {
+    "point": 0.078,
+    "ci95": [
+     0.031,
+     0.1282
+    ]
+   },
+   "material": true
+  },
+  "pilot_constraint": {
+   "f1": {
+    "point": 0.0207,
+    "ci95": [
+     -0.0103,
+     0.0525
+    ]
+   },
+   "false_per_100": {
+    "point": -22.5,
+    "ci95": [
+     -40.8333,
+     -3.3333
+    ]
+   },
+   "recall": {
+    "point": 0.0056,
+    "ci95": [
+     -0.0195,
+     0.0317
+    ]
+   },
+   "material": true
+  },
+  "Tr_recipe": {
+   "status": "not computable",
+   "missing": [
+    "r2-T",
+    "p-T"
+   ]
+  },
+  "S_r2": {
+   "status": "not computable",
+   "missing": [
+    "r2-T"
+   ]
+  },
+  "r2_backend": {
+   "status": "not computable",
+   "missing": [
+    "r2-T"
+   ]
+  },
+  "r2_quantisation": {
+   "f1": {
+    "point": 0.0478,
+    "ci95": [
+     0.0147,
+     0.085
+    ]
+   },
+   "false_per_100": {
+    "point": 12.5,
+    "ci95": [
+     -9.1667,
+     34.1667
+    ]
+   },
+   "recall": {
+    "point": 0.0641,
+    "ci95": [
+     0.0305,
+     0.1005
+    ]
+   },
+   "material": true
+  },
+  "r2_constraint": {
+   "f1": {
+    "point": 0.0069,
+    "ci95": [
+     -0.0173,
+     0.031
+    ]
+   },
+   "false_per_100": {
+    "point": -2.5,
+    "ci95": [
+     -10.8333,
+     6.6667
+    ]
+   },
+   "recall": {
+    "point": 0.0056,
+    "ci95": [
+     -0.0165,
+     0.0277
+    ]
+   },
+   "material": false
+  },
+  "constraint_at_F16_pilot": {
+   "f1": {
+    "point": 0.021,
+    "ci95": [
+     -0.0099,
+     0.0508
+    ]
+   },
+   "false_per_100": {
+    "point": -17.5,
+    "ci95": [
+     -31.6667,
+     -4.1667
+    ]
+   },
+   "recall": {
+    "point": 0.0084,
+    "ci95": [
+     -0.0183,
+     0.0366
+    ]
+   },
+   "material": true
+  },
+  "constraint_at_F16_r2": {
+   "f1": {
+    "point": 0.003,
+    "ci95": [
+     -0.0165,
+     0.0219
+    ]
+   },
+   "false_per_100": {
+    "point": -0.8333,
+    "ci95": [
+     -11.6667,
+     8.3333
+    ]
+   },
+   "recall": {
+    "point": 0.0028,
+    "ci95": [
+     -0.0163,
+     0.02
+    ]
+   },
+   "material": false
+  },
+  "DiD_stack_x_adapter": {
+   "status": "not computable",
+   "missing": [
+    "r2-T",
+    "p-T"
+   ]
+  }
+ },
+ "decomposition_closed": {
+  "episodes": 24,
+  "G": {
+   "status": "not computable",
+   "missing": [
+    "r2-T"
+   ]
+  },
+  "S_pilot": {
+   "status": "not computable",
+   "missing": [
+    "p-T"
+   ]
+  },
+  "Tr_recipe": {
+   "status": "not computable",
+   "missing": [
+    "r2-T",
+    "p-T"
+   ]
+  },
+  "S_r2": {
+   "status": "not computable",
+   "missing": [
+    "r2-T"
+   ]
+  },
+  "DiD_stack_x_adapter": {
+   "status": "not computable",
+   "missing": [
+    "r2-T",
+    "p-T"
+   ]
+  }
+ },
+ "reading": {
+  "open": "not computable",
+  "closed": "not computable",
+  "label": "not computable"
+ }
+}

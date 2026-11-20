@@ -1,0 +1,267 @@
+{
+ "checks": {
+  "export_status": {
+   "pass": true
+  },
+  "G0_adapters": {
+   "pass": true
+  },
+  "G0_gguf": {
+   "pass": true,
+   "files": {
+    "e1-r2-F16.gguf": "9a831036f268914502e4da950861f308951c5a94489246db04dfacc9bef9c88d",
+    "e1-r2-Q4_K_M.gguf": "1c2d0b508e009beb0c0f16010e43f32d0a241edc5caac7953c2e1e7b9969f84a",
+    "e1-r3-Q4_K_M.gguf": "3ad5440cf6d70c4f5763ffa62c305febcc9ad78876d1e8be58142d9c22fdd896",
+    "e1-pilot-F16.gguf": "feb44ae57604cb217bd200f6f9cd0b29da15cd04ef4808e46eabf20e16a2370f",
+    "qwen3-1.7b-pilot-s1-Q4_K_M.gguf": "b9a5e56c69afb0989fcda2047770a5de761f2fc3c77154000784f3c2fdac51c2"
+   }
+  },
+  "G0_val": {
+   "pass": true
+  },
+  "G0_llama_commit": {
+   "pass": true,
+   "version": "version: 1.0.0-dev (build 1, commit 7a4117e)\nbuilt with GNU 13.3.0 for Linux x86_64"
+  },
+  "G0_gpus": {
+   "pass": true,
+   "gpus": "0, Tesla T4, 15360 MiB\n1, Tesla T4, 15360 MiB"
+  },
+  "G0_base": {
+   "pass": true,
+   "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
+  },
+  "G1_TG1": {
+   "pass": true,
+   "matches": 15,
+   "n": 15,
+   "stderr": ""
+  },
+  "G1_TG2": {
+   "pass": true,
+   "hf": 15,
+   "server": 15,
+   "n": 15
+  },
+  "TOK": {
+   "r2": 15,
+   "pilot": 15
+  },
+  "SC1": {
+   "pass": false,
+   "identical": null,
+   "n": null,
+   "align_fail": null,
+   "seconds": null,
+   "versions": null,
+   "error": "/lora/model.py\", line 389, in _create_and_replace\n    new_module = self._create_new_module(lora_config, adapter_name, target, device_map=device_map, **kwargs)\n  File \"/usr/local/lib/python3.13/dist-packages/peft/tuners/lora/model.py\", line 552, in _create_new_module\n    new_module = dispatcher(target, adapter_name, config=lora_config, **kwargs)\n  File \"/usr/local/lib/python3.13/dist-packages/peft/tuners/lora/torchao.py\", line 160, in dispatch_torchao\n    if not is_torchao_available():\n           ~~~~~~~~~~~~~~~~~~~~^^\n  File \"/usr/local/lib/python3.13/dist-packages/peft/import_utils.py\", line 162, in is_torchao_available\n    raise ImportError(\n    ...<2 lines>...\n    )\nImportError: Found an incompatible version of torchao. Found version 0.10.0, but only versions above 0.16.0 are supported\n"
+  },
+  "G2": {
+   "pass": false,
+   "observed": null,
+   "reference": {
+    "f1": 0.4042,
+    "validity": 0.9417
+   }
+  },
+  "G3": {
+   "pass": true,
+   "observed": {
+    "complete": true,
+    "f1": 0.292358803986711,
+    "validity": 0.9166666666666666,
+    "false_per_100": 124.16666666666667
+   },
+   "reference": {
+    "f1": 0.2918
+   },
+   "action": "report only"
+  }
+ },
+ "cells": {
+  "1:r2-T:open": {
+   "status": "failed",
+   "exit": 1,
+   "minutes": 0.3,
+   "result": null,
+   "cmd": "/usr/bin/python3 <src>/foundation-2026-11/next-phase/e1/e1_run.py --base /tmp/hf/hub/models--Qwen--Qwen3-1.7B/snapshots/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e --adapter /tmp/adapter-r2 --prefix none --out /kaggle/working/results/foundation-2026-11/e1/r2-T --label r2-T --no-capture"
+  },
+  "10:p-Q4C:open": {
+   "status": "ok",
+   "exit": 0,
+   "minutes": 5.8,
+   "result": {
+    "complete": true,
+    "f1": 0.292358803986711,
+    "validity": 0.9166666666666666,
+    "false_per_100": 124.16666666666667
+   },
+   "cmd": "/usr/bin/python3 -m codeply_iris.evaluate --system iris --split val --out /kaggle/working/results/foundation-2026-11/e1/p-Q4C --label p-Q4C --threads 4 --model /kaggle/input/notebooks/awaissididique/codeply-iris-e1-export/gguf/qwen3-1.7b-pilot-s1-Q4_K_M.gguf --chat --server-arg=-ngl --server-arg=99 --template-kwargs '{\"enable_thinking\": false}' --constrain"
+  },
+  "2:r2-F16U:open": {
+   "status": "ok",
+   "exit": 0,
+   "minutes": 11.3,
+   "result": {
+    "complete": true,
+    "f1": 0.3970149253731344,
+    "validity": 0.9416666666666667,
+    "false_per_100": 139.16666666666666
+   },
+   "cmd": "/usr/bin/python3 -m codeply_iris.evaluate --system iris --split val --out /kaggle/working/results/foundation-2026-11/e1/r2-F16U --label r2-F16U --threads 4 --model /kaggle/input/notebooks/awaissididique/codeply-iris-e1-export/gguf/e1-r2-F16.gguf --chat --server-arg=-ngl --server-arg=99 --server-arg=--chat-template-file --server-arg=<src>/foundation-2026-11/next-phase/e1/chatml_raw.jinja"
+  },
+  "3:r2-F16C:open": {
+   "status": "ok",
+   "exit": 0,
+   "minutes": 10.7,
+   "result": {
+    "complete": true,
+    "f1": 0.3940298507462687,
+    "validity": 0.9333333333333333,
+    "false_per_100": 140.0
+   },
+   "cmd": "/usr/bin/python3 -m codeply_iris.evaluate --system iris --split val --out /kaggle/working/results/foundation-2026-11/e1/r2-F16C --label r2-F16C --threads 4 --model /kaggle/input/notebooks/awaissididique/codeply-iris-e1-export/gguf/e1-r2-F16.gguf --chat --server-arg=-ngl --server-arg=99 --server-arg=--chat-template-file --server-arg=<src>/foundation-2026-11/next-phase/e1/chatml_raw.jinja --constrain"
+  },
+  "4:r2-Q4U:open": {
+   "status": "ok",
+   "exit": 0,
+   "minutes": 5.8,
+   "result": {
+    "complete": true,
+    "f1": 0.3492063492063492,
+    "validity": 0.9583333333333334,
+    "false_per_100": 126.66666666666666
+   },
+   "cmd": "/usr/bin/python3 -m codeply_iris.evaluate --system iris --split val --out /kaggle/working/results/foundation-2026-11/e1/r2-Q4U --label r2-Q4U --threads 4 --model /kaggle/input/notebooks/awaissididique/codeply-iris-e1-export/gguf/e1-r2-Q4_K_M.gguf --chat --server-arg=-ngl --server-arg=99 --server-arg=--chat-template-file --server-arg=<src>/foundation-2026-11/next-phase/e1/chatml_raw.jinja"
+  },
+  "5:r2-Q4C:open": {
+   "status": "ok",
+   "exit": 0,
+   "minutes": 5.6,
+   "result": {
+    "complete": true,
+    "f1": 0.34231378763866877,
+    "validity": 0.8833333333333333,
+    "false_per_100": 129.16666666666669
+   },
+   "cmd": "/usr/bin/python3 -m codeply_iris.evaluate --system iris --split val --out /kaggle/working/results/foundation-2026-11/e1/r2-Q4C --label r2-Q4C --threads 4 --model /kaggle/input/notebooks/awaissididique/codeply-iris-e1-export/gguf/e1-r2-Q4_K_M.gguf --chat --server-arg=-ngl --server-arg=99 --server-arg=--chat-template-file --server-arg=<src>/foundation-2026-11/next-phase/e1/chatml_raw.jinja --constrain"
+  },
+  "7:p-F16U:open": {
+   "status": "ok",
+   "exit": 0,
+   "minutes": 11.5,
+   "result": {
+    "complete": true,
+    "f1": 0.3716535433070866,
+    "validity": 0.8416666666666667,
+    "false_per_100": 125.0
+   },
+   "cmd": "/usr/bin/python3 -m codeply_iris.evaluate --system iris --split val --out /kaggle/working/results/foundation-2026-11/e1/p-F16U --label p-F16U --threads 4 --model /kaggle/input/notebooks/awaissididique/codeply-iris-e1-export/gguf/e1-pilot-F16.gguf --chat --server-arg=-ngl --server-arg=99 --template-kwargs '{\"enable_thinking\": false}'"
+  },
+  "8:p-F16C:open": {
+   "status": "ok",
+   "exit": 0,
+   "minutes": 10.8,
+   "result": {
+    "complete": true,
+    "f1": 0.350609756097561,
+    "validity": 0.9083333333333333,
+    "false_per_100": 142.5
+   },
+   "cmd": "/usr/bin/python3 -m codeply_iris.evaluate --system iris --split val --out /kaggle/working/results/foundation-2026-11/e1/p-F16C --label p-F16C --threads 4 --model /kaggle/input/notebooks/awaissididique/codeply-iris-e1-export/gguf/e1-pilot-F16.gguf --chat --server-arg=-ngl --server-arg=99 --template-kwargs '{\"enable_thinking\": false}' --constrain"
+  },
+  "9:p-Q4U:open": {
+   "status": "ok",
+   "exit": 0,
+   "minutes": 5.8,
+   "result": {
+    "complete": true,
+    "f1": 0.31304347826086953,
+    "validity": 0.7583333333333333,
+    "false_per_100": 101.66666666666666
+   },
+   "cmd": "/usr/bin/python3 -m codeply_iris.evaluate --system iris --split val --out /kaggle/working/results/foundation-2026-11/e1/p-Q4U --label p-Q4U --threads 4 --model /kaggle/input/notebooks/awaissididique/codeply-iris-e1-export/gguf/qwen3-1.7b-pilot-s1-Q4_K_M.gguf --chat --server-arg=-ngl --server-arg=99 --template-kwargs '{\"enable_thinking\": false}'"
+  },
+  "12:r3-Q4C:open": {
+   "status": "ok",
+   "exit": 0,
+   "minutes": 6.7,
+   "result": {
+    "complete": true,
+    "f1": 0.3401162790697675,
+    "validity": 0.8666666666666667,
+    "false_per_100": 162.5
+   },
+   "cmd": "/usr/bin/python3 -m codeply_iris.evaluate --system iris --split val --out /kaggle/working/results/foundation-2026-11/e1/r3-Q4C --label r3-Q4C --threads 4 --model /kaggle/input/notebooks/awaissididique/codeply-iris-e1-export/gguf/e1-r3-Q4_K_M.gguf --chat --server-arg=-ngl --server-arg=99 --server-arg=--chat-template-file --server-arg=<src>/foundation-2026-11/next-phase/e1/chatml_raw.jinja --constrain"
+  },
+  "14:r2-Q4C:closed": {
+   "status": "ok",
+   "exit": 0,
+   "minutes": 5.2,
+   "result": {
+    "complete": true,
+    "f1": 0.2631578947368421,
+    "validity": 0.8666666666666667,
+    "false_per_100": 155.0
+   },
+   "cmd": "/usr/bin/python3 -m codeply_iris.evaluate --system iris --split val --out /kaggle/working/results/foundation-2026-11/e1/r2-Q4C --label r2-Q4C --threads 4 --model /kaggle/input/notebooks/awaissididique/codeply-iris-e1-export/gguf/e1-r2-Q4_K_M.gguf --chat --server-arg=-ngl --server-arg=99 --server-arg=--chat-template-file --server-arg=<src>/foundation-2026-11/next-phase/e1/chatml_raw.jinja --constrain --closed-loop"
+  },
+  "16:p-Q4C:closed": {
+   "status": "ok",
+   "exit": 0,
+   "minutes": 5.3,
+   "result": {
+    "complete": true,
+    "f1": 0.1635434412265758,
+    "validity": 0.9083333333333333,
+    "false_per_100": 140.83333333333334
+   },
+   "cmd": "/usr/bin/python3 -m codeply_iris.evaluate --system iris --split val --out /kaggle/working/results/foundation-2026-11/e1/p-Q4C --label p-Q4C --threads 4 --model /kaggle/input/notebooks/awaissididique/codeply-iris-e1-export/gguf/qwen3-1.7b-pilot-s1-Q4_K_M.gguf --chat --server-arg=-ngl --server-arg=99 --template-kwargs '{\"enable_thinking\": false}' --constrain --closed-loop"
+  },
+  "X1:X1-p-Q4C-nothink:open": {
+   "status": "ok",
+   "exit": 0,
+   "minutes": 5.4,
+   "result": {
+    "complete": true,
+    "f1": 0.2535211267605634,
+    "validity": 0.925,
+    "false_per_100": 109.16666666666666
+   },
+   "cmd": "/usr/bin/python3 -m codeply_iris.evaluate --system iris --split val --out /kaggle/working/results/foundation-2026-11/e1/X1-p-Q4C-nothink --label X1-p-Q4C-nothink --threads 4 --model /kaggle/input/notebooks/awaissididique/codeply-iris-e1-export/gguf/qwen3-1.7b-pilot-s1-Q4_K_M.gguf --chat --server-arg=-ngl --server-arg=99 --server-arg=--chat-template-file --server-arg=<src>/foundation-2026-11/next-phase/e1/chatml_raw.jinja --constrain"
+  },
+  "X2:X2-r2-Q4C-think:open": {
+   "status": "ok",
+   "exit": 0,
+   "minutes": 7.5,
+   "result": {
+    "complete": true,
+    "f1": 0.3442622950819672,
+    "validity": 0.9,
+    "false_per_100": 113.33333333333333
+   },
+   "cmd": "/usr/bin/python3 -m codeply_iris.evaluate --system iris --split val --out /kaggle/working/results/foundation-2026-11/e1/X2-r2-Q4C-think --label X2-r2-Q4C-think --threads 4 --model /kaggle/input/notebooks/awaissididique/codeply-iris-e1-export/gguf/e1-r2-Q4_K_M.gguf --chat --server-arg=-ngl --server-arg=99 --template-kwargs '{\"enable_thinking\": false}' --constrain"
+  }
+ },
+ "deviations": [
+  "SC1 failed: Transformers cells run without log-probability capture (P@60 N/A there)"
+ ],
+ "stopped": {
+  "gpu0": "G2 failed: all Transformers cells stopped after cell 1"
+ },
+ "source_commit": "0efd6b19c797b10b2d8201822dac05c249e56b17",
+ "export": {
+  "source_commit": "0efd6b19c797b10b2d8201822dac05c249e56b17",
+  "deviations": [
+   "pilot Q4 re-export sha256 differs from the seed-1 GGUF; the Q4 cells use the original (G-p-Q4)"
+  ]
+ },
+ "elapsed_s": 6197,
+ "env": {
+  "torch": "2.11.0+cu130",
+  "transformers": "5.23.0",
+  "peft": "0.21.3",
+  "accelerate": "1.16.0"
+ },
+ "hard_cap_reached": false
+}

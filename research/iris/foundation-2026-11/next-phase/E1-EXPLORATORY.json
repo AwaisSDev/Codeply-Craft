@@ -1,0 +1,345 @@
+{
+ "status": "EXPLORATORY, written after the results; not pre-registered; does not replace E1-DECOMPOSITION.json",
+ "substitution": "GGUF F16 unconstrained stands in for the missing Transformers anchor; backend effect unmeasured",
+ "cross_run_note": "hist-* are the committed historical Transformers results (different run, environment and date); differences mix backend, run and environment",
+ "bootstrap": {
+  "resamples": 2000,
+  "seed": 0,
+  "unit": "episode"
+ },
+ "open": {
+  "episodes": 24,
+  "Gprime_r2F16U_minus_pQ4C": {
+   "f1": {
+    "point": 0.1047,
+    "ci95": [
+     0.0442,
+     0.1665
+    ]
+   },
+   "false_per_100": {
+    "point": 15.0,
+    "ci95": [
+     -14.1667,
+     42.5
+    ]
+   },
+   "recall": {
+    "point": 0.1253,
+    "ci95": [
+     0.0632,
+     0.1846
+    ]
+   }
+  },
+  "Sprime_pilot_F16U_to_Q4C": {
+   "f1": {
+    "point": 0.0793,
+    "ci95": [
+     0.0343,
+     0.1289
+    ]
+   },
+   "false_per_100": {
+    "point": 0.8333,
+    "ci95": [
+     -25.8333,
+     26.6667
+    ]
+   },
+   "recall": {
+    "point": 0.0836,
+    "ci95": [
+     0.0338,
+     0.1375
+    ]
+   }
+  },
+  "recipe_at_F16U": {
+   "f1": {
+    "point": 0.0254,
+    "ci95": [
+     -0.0162,
+     0.0671
+    ]
+   },
+   "false_per_100": {
+    "point": 14.1667,
+    "ci95": [
+     -3.3333,
+     31.6667
+    ]
+   },
+   "recall": {
+    "point": 0.0418,
+    "ci95": [
+     -0.0055,
+     0.0854
+    ]
+   }
+  },
+  "recipe_at_F16C": {
+   "f1": {
+    "point": 0.0434,
+    "ci95": [
+     -0.0084,
+     0.0909
+    ]
+   },
+   "false_per_100": {
+    "point": -2.5,
+    "ci95": [
+     -29.1667,
+     25.0
+    ]
+   },
+   "recall": {
+    "point": 0.0474,
+    "ci95": [
+     0.0,
+     0.0909
+    ]
+   }
+  },
+  "recipe_at_Q4U": {
+   "f1": {
+    "point": 0.0362,
+    "ci95": [
+     -0.0164,
+     0.0923
+    ]
+   },
+   "false_per_100": {
+    "point": 25.0,
+    "ci95": [
+     0.0,
+     48.3333
+    ]
+   },
+   "recall": {
+    "point": 0.0557,
+    "ci95": [
+     0.0054,
+     0.1096
+    ]
+   }
+  },
+  "recipe_at_Q4C": {
+   "f1": {
+    "point": 0.05,
+    "ci95": [
+     0.0045,
+     0.0981
+    ]
+   },
+   "false_per_100": {
+    "point": 5.0,
+    "ci95": [
+     -21.6667,
+     31.6667
+    ]
+   },
+   "recall": {
+    "point": 0.0557,
+    "ci95": [
+     0.0056,
+     0.1073
+    ]
+   }
+  },
+  "DiD_quantisation_r2_minus_pilot": {
+   "f1": {
+    "point": -0.0108,
+    "ci95": [
+     -0.0706,
+     0.0426
+    ]
+   },
+   "false_per_100": {
+    "point": -10.8333,
+    "ci95": [
+     -39.1667,
+     18.3333
+    ]
+   },
+   "recall": {
+    "point": -0.0139,
+    "ci95": [
+     -0.0729,
+     0.0417
+    ]
+   }
+  },
+  "cross_run_histT_minus_r2F16U": {
+   "f1": {
+    "point": 0.0071,
+    "ci95": [
+     -0.0013,
+     0.017
+    ]
+   },
+   "false_per_100": {
+    "point": 0.8333,
+    "ci95": [
+     -2.5,
+     5.0
+    ]
+   },
+   "recall": {
+    "point": 0.0084,
+    "ci95": [
+     0.0,
+     0.0178
+    ]
+   }
+  },
+  "cross_run_histT_minus_r2Q4C": {
+   "f1": {
+    "point": 0.0618,
+    "ci95": [
+     0.0221,
+     0.0979
+    ]
+   },
+   "false_per_100": {
+    "point": 10.8333,
+    "ci95": [
+     -9.1667,
+     31.6667
+    ]
+   },
+   "recall": {
+    "point": 0.078,
+    "ci95": [
+     0.0393,
+     0.1171
+    ]
+   }
+  },
+  "cross_run_hist_r3T_minus_r3Q4C": {
+   "f1": {
+    "point": 0.0794,
+    "ci95": [
+     0.0435,
+     0.1175
+    ]
+   },
+   "false_per_100": {
+    "point": -15.0,
+    "ci95": [
+     -42.5,
+     8.3333
+    ]
+   },
+   "recall": {
+    "point": 0.0808,
+    "ci95": [
+     0.0437,
+     0.1215
+    ]
+   }
+  },
+  "cross_run_histG_r2T_minus_pQ4C": {
+   "f1": {
+    "point": 0.1118,
+    "ci95": [
+     0.0537,
+     0.1706
+    ]
+   },
+   "false_per_100": {
+    "point": 15.8333,
+    "ci95": [
+     -12.5,
+     41.6667
+    ]
+   },
+   "recall": {
+    "point": 0.1337,
+    "ci95": [
+     0.0737,
+     0.1906
+    ]
+   }
+  },
+  "Sprime_over_Gprime": {
+   "point": 0.757,
+   "ci95": [
+    0.4299,
+    1.253
+   ]
+  }
+ },
+ "closed": {
+  "episodes": 24,
+  "recipe_at_Q4C": {
+   "f1": {
+    "point": 0.0996,
+    "ci95": [
+     0.0515,
+     0.1525
+    ]
+   },
+   "false_per_100": {
+    "point": 14.1667,
+    "ci95": [
+     -6.6667,
+     35.0
+    ]
+   },
+   "recall": {
+    "point": 0.1006,
+    "ci95": [
+     0.0581,
+     0.1498
+    ]
+   }
+  },
+  "cross_run_histT_minus_r2Q4C": {
+   "f1": {
+    "point": 0.0482,
+    "ci95": [
+     0.0092,
+     0.0829
+    ]
+   },
+   "false_per_100": {
+    "point": 0.8333,
+    "ci95": [
+     -15.8333,
+     16.6667
+    ]
+   },
+   "recall": {
+    "point": 0.0515,
+    "ci95": [
+     0.0139,
+     0.086
+    ]
+   }
+  },
+  "cross_run_histG_r2T_minus_pQ4C": {
+   "f1": {
+    "point": 0.1478,
+    "ci95": [
+     0.0939,
+     0.207
+    ]
+   },
+   "false_per_100": {
+    "point": 15.0,
+    "ci95": [
+     -9.1667,
+     40.0
+    ]
+   },
+   "recall": {
+    "point": 0.1521,
+    "ci95": [
+     0.1018,
+     0.2078
+    ]
+   }
+  }
+ }
+}

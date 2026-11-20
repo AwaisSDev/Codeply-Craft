@@ -1,0 +1,28 @@
+{
+ "sessions": [
+  "va01-e01-s1-gold",
+  "va01-e01-s2-gold",
+  "va01-e01-s3-gold",
+  "va01-e01-s4-gold",
+  "va01-e01-s5-gold",
+  "va01-e02-s1-gold",
+  "va01-e02-s2-gold",
+  "va01-e02-s3-gold",
+  "va01-e02-s4-gold",
+  "va01-e02-s5-gold",
+  "va01-e01-q1-a",
+  "va01-e01-q2-a",
+  "va01-e02-q1-a",
+  "va01-e02-q2-a",
+  "va01-e02-q3-a"
+ ],
+ "template_sha256": "109ba71e2ba6d925cf85b75b185098add94502488820848187eaf8c894a02138",
+ "TG1_pass": true,
+ "TG1_matches": 15,
+ "TG2_pass": true,
+ "TG2_hf_matches": 15,
+ "TG2_server_matches": 15,
+ "TOK_r2_matches": 15,
+ "TOK_pilot_matches": 15,
+ "n": 15
+}

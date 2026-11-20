@@ -148,3 +148,10 @@ quantisation comparison (F16 vs Q4) is valid. As pre-registered, the Q4 cells us
 CPU llama-server `7a4117e`, tokenizer `70d244cc`, gates on `e1-r2-Q4_K_M.gguf` (TG1) and the seed-1 pilot Q4 (TG2):
 TG1 15 / 15, TG2 15 / 15 (HF) and 15 / 15 (server), token ids 15 / 15 for both formats
 (`e1/gates-exported.json`). **All preflight checks pass; the GPU evaluation is launched.**
+
+## 8. Post-run note: a preflight miss
+
+The GPU run showed that the environment check was incomplete. The Kaggle image ships `torchao` 0.10.0, and peft 0.21.3
+refuses to build LoRA layers with it. The historical kernel (`scripts/kaggle/run.py`) uninstalled torchao for this
+reason. §3 compared package versions but did not carry over that setup step, and the CPU smoke test ran in a clean
+venv without torchao. Every Transformers cell crashed (`E1-RESULTS.md` §2); they were not re-run.
