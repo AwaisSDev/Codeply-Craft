@@ -1,0 +1,183 @@
+{
+ "base": {
+  "repo": "Qwen/Qwen3-1.7B",
+  "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "files": {
+   ".gitattributes": {
+    "git_blob_sha1": "52373fe24473b1aa44333d318f578ae6bf04b49b"
+   },
+   "LICENSE": {
+    "git_blob_sha1": "6634c8cc3133b3848ec74b9f275acaaa1ea618ab"
+   },
+   "README.md": {
+    "git_blob_sha1": "88aaef81cfe31bcdfe47203649a69ff12042826a"
+   },
+   "config.json": {
+    "git_blob_sha1": "044a86ecf7cb32238f3fae4184e55d354787edec"
+   },
+   "generation_config.json": {
+    "git_blob_sha1": "20a8a9156fc8c3f25295ca067f61fdf120d517c5"
+   },
+   "merges.txt": {
+    "git_blob_sha1": "31349551d90c7606f325fe0f11bbb8bd5fa0d7c7"
+   },
+   "model-00001-of-00002.safetensors": {
+    "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5"
+   },
+   "model-00002-of-00002.safetensors": {
+    "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9"
+   },
+   "model.safetensors.index.json": {
+    "git_blob_sha1": "986d7db875b47d21f68530f6baac038f1b297b39"
+   },
+   "tokenizer.json": {
+    "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+   },
+   "tokenizer_config.json": {
+    "git_blob_sha1": "417d038a63fa3de29cfde265caedae14d1a58d92"
+   },
+   "vocab.json": {
+    "git_blob_sha1": "4783fe10ac3adce15ac8f358ef5462739852c569"
+   }
+  }
+ },
+ "adapters": {
+  "r2": {
+   "source": "dataset awaissididique/codeply-iris-adapters-v1: iris-1.7b-r2/",
+   "sha256": "c590bfae5d598f3f6c45acabbab126635d39ab0fa89bbadb4df206b9c24b4fba"
+  },
+  "r3": {
+   "source": "dataset awaissididique/codeply-iris-adapters-v1: iris-1.7b-r3/",
+   "sha256": "f80b023e303c9b2c6612211b7155d76df723dc1f36acf33b7ef628c63899e555"
+  },
+  "pilot": {
+   "source": "kernel output awaissididique/codeply-iris-pilot-train: runs/pilot-qwen3-1.7b-s1/best/adapter/",
+   "sha256": "d1b25b1b2ec92b98885cecd7dde3ac8c3c7bcc4f5de6b39ef9cce78d758742a6"
+  }
+ },
+ "gguf": {
+  "pilot_q4_original": {
+   "source": "kernel output awaissididique/codeply-iris-pilot-export: gguf/qwen3-1.7b-pilot-s1-Q4_K_M.gguf",
+   "sha256": "b9a5e56c69afb0989fcda2047770a5de761f2fc3c77154000784f3c2fdac51c2"
+  }
+ },
+ "llama_cpp_commit": "7a4117eef97ed6419241da2384b2b1c011ecd763",
+ "val": {
+  "data/built/val.jsonl": "0ae331732c7fcf609304b0069c61e0b0162e9617d5c3041fca820d8b7e38aee3",
+  "data/raw/val/va01.jsonl": "141f48ee5f879e484945a2e62f09ec53102bf9513072ef9907bdad5ab127dbf3",
+  "data/raw/val/va02.jsonl": "417a2aabe4adf9571514a1ace30f93735c93445286fd75f23d8f229f3dff415d"
+ },
+ "chat_template_raw_sha256": "109ba71e2ba6d925cf85b75b185098add94502488820848187eaf8c894a02138",
+ "env_pins": {
+  "transformers": "5.23.0",
+  "peft": "0.21.3",
+  "accelerate": "1.16.0",
+  "historical_r2_r3": {
+   "torch": "2.11.0+cu130",
+   "transformers": "5.23.0",
+   "peft": "0.21.3"
+  }
+ },
+ "hf_history_note": "main = 70d244cc since 2025-07-26 (fetched 2026-11-19 and 2026-11-20); weights, config, generation_config, tokenizer.json, vocab, merges identical in every revision since upload (8d4744f9, 2025-04-28); tokenizer_config.json (chat template) changed once, 2025-05-19",
+ "hf_commits": [
+  [
+   "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+   "2025-07-26T03:46:32.000Z",
+   "Create LICENSE"
+  ],
+  [
+   "0060bc56d46589041c1048efd1a397421b1142b5",
+   "2025-05-21T06:23:18.000Z",
+   "Update README.md"
+  ],
+  [
+   "0ecc654158dd093daab47fd37c5f122925d93983",
+   "2025-05-19T07:40:08.000Z",
+   "update tokenizer_config.json"
+  ],
+  [
+   "d3e258980a49b060055ea9038dad99d75923f7c4",
+   "2025-04-29T08:55:53.000Z",
+   "Update README.md"
+  ],
+  [
+   "bf6c947bcec6629e4c0d4b0e82d7a19e686c19a1",
+   "2025-04-28T19:11:32.000Z",
+   "Update README.md"
+  ],
+  [
+   "44c895567ee7eca2993a98be9664adf7245aa1ee",
+   "2025-04-28T18:55:23.000Z",
+   "Update README.md"
+  ],
+  [
+   "33c22367980803f9f97d0f81ecc446b64cc02dfc",
+   "2025-04-28T17:58:40.000Z",
+   "Update README.md"
+  ],
+  [
+   "d725c74310cdd265b5bc7208124d0b0be61261bc",
+   "2025-04-28T17:58:10.000Z",
+   "Update README.md"
+  ],
+  [
+   "b9352fbb8ce704292730cf54b3b1dceb2a808738",
+   "2025-04-28T17:48:04.000Z",
+   "Delete special_tokens_map.json"
+  ],
+  [
+   "7794bc70d4bae176d4792c6cbce61a7fedd43c3e",
+   "2025-04-28T17:47:52.000Z",
+   "Delete added_tokens.json"
+  ],
+  [
+   "9cbdf162e240a9d503f3f4168dad04a80e8e6c9e",
+   "2025-04-28T17:47:31.000Z",
+   "Update README.md"
+  ],
+  [
+   "026ef898ee93472ecf27df9ea89c651fba82ad6a",
+   "2025-04-28T15:38:56.000Z",
+   "Update README.md"
+  ],
+  [
+   "0fa42c2d7d84b04fafae145d7c0263b77225bbc8",
+   "2025-04-28T15:35:14.000Z",
+   "Update README.md"
+  ],
+  [
+   "2fe16eaf483fcfb9a8364d357c1f80709a7962cd",
+   "2025-04-28T13:05:46.000Z",
+   "Update README.md"
+  ],
+  [
+   "442b4a6d6b660ceced0ebf94db6d058e9f5dbca9",
+   "2025-04-28T12:32:19.000Z",
+   "Update README.md"
+  ],
+  [
+   "3f1b00af457d7003d437d3e65dbd0e2c0afb1415",
+   "2025-04-28T08:24:08.000Z",
+   "Update README.md"
+  ],
+  [
+   "8d4744f9e13072f4920c326350fa81eedb74eae9",
+   "2025-04-28T05:44:48.000Z",
+   "Upload folder using huggingface_hub"
+  ],
+  [
+   "c52c071034e311bc8721ab37965e500f3f4b4ed0",
+   "2025-04-27T03:41:05.000Z",
+   "initial commit"
+  ]
+ ],
+ "reference_results": {
+  "r2_open": {
+   "f1": 0.4042,
+   "validity": 0.9417
+  },
+  "pilot_q4c_open": {
+   "f1": 0.2918
+  }
+ }
+}

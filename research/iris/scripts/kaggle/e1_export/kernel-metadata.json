@@ -1,0 +1,13 @@
+{
+ "id": "awaissididique/codeply-iris-e1-export",
+ "title": "codeply-iris-e1-export",
+ "code_file": "export_e1.py",
+ "language": "python",
+ "kernel_type": "script",
+ "is_private": true,
+ "enable_gpu": false,
+ "enable_internet": true,
+ "dataset_sources": ["awaissididique/codeply-iris-e1-src", "awaissididique/codeply-iris-adapters-v1"],
+ "competition_sources": [],
+ "kernel_sources": ["awaissididique/codeply-iris-pilot-train", "awaissididique/codeply-iris-pilot-export"]
+}
