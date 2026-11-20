@@ -1,0 +1,41 @@
+{
+ "base": "google/gemma-4-E2B-it",
+ "train": "data/built/train.jsonl",
+ "val": "data/built/val.jsonl",
+ "out": "/kaggle/working/smoke/train-gemma-4-e2b",
+ "epochs": 2,
+ "lr": 0.0001,
+ "warmup_steps": 30,
+ "accum": 8,
+ "max_tokens": 2048,
+ "seed": 1,
+ "lora_r": 32,
+ "lora_alpha": 64,
+ "lora_dropout": 0.05,
+ "target_modules": ".*language_model.*\\.(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj)$",
+ "weight_decay": 0.0,
+ "grad_clip": 1.0,
+ "save_every": 50,
+ "eval_every": 50,
+ "val_examples": 120,
+ "threads": 0,
+ "init_adapter": "",
+ "chat_template": true,
+ "template_kwargs": {
+  "enable_thinking": false
+ },
+ "exclude_shards": [
+  "syn01"
+ ],
+ "example_ids": "foundation-2026-11/pilot/example-ids.json",
+ "model_class": "auto",
+ "train_examples": 826,
+ "dropped_too_long": 0,
+ "steps_per_epoch": 104,
+ "total_steps": 208,
+ "trainable_params": 48316416,
+ "train_tokens_per_epoch": 661004,
+ "train_ids_sha256": "29ab65a9d75762ebb755327ca43fc59a4ef49b307909dad30c7df2bfb52bbd7a",
+ "torch": "2.11.0+cu130",
+ "device": "cuda"
+}

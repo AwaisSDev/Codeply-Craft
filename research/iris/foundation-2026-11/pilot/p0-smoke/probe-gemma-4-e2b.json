@@ -1,0 +1,17 @@
+{
+ "versions": {
+  "torch": "2.11.0+cu130",
+  "transformers": "5.23.0",
+  "peft": "0.22.0"
+ },
+ "template_parity": true,
+ "decoder_layers_hooked": 35,
+ "max_abs_activation_fp16": 151.75,
+ "zero_shot_answer_loss": [
+  2.444283962249756,
+  1.4981565475463867,
+  1.7485569715499878
+ ],
+ "softcap": 30.0,
+ "finite": true
+}

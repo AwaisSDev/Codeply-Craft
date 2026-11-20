@@ -1,0 +1,145 @@
+{
+ "elapsed_s": 940,
+ "source_commit": "b76130c451c412be498e77a17efed198584cb22a",
+ "models": {
+  "qwen3-1.7b": {
+   "probe_exit": 0,
+   "probe_seconds": 113,
+   "train_exit": 0,
+   "train_seconds": 331,
+   "probe": {
+    "versions": {
+     "torch": "2.11.0+cu130",
+     "transformers": "5.23.0",
+     "peft": "0.22.0"
+    },
+    "template_parity": true,
+    "decoder_layers_hooked": 28,
+    "max_abs_activation_fp16": 14872.0,
+    "zero_shot_answer_loss": [
+     2.609527349472046,
+     1.5668822526931763,
+     1.8658419847488403
+    ],
+    "softcap": null,
+    "finite": true
+   },
+   "train_steps_logged": 7,
+   "losses": [
+    2.9343,
+    2.1968,
+    1.4047,
+    1.0551,
+    0.78,
+    0.6266,
+    0.5043
+   ],
+   "peak_mem_gib": 5.19,
+   "tok_s": 751,
+   "nonfinite": 0,
+   "oom_in_log": false,
+   "trainable_params": 34865152,
+   "train_examples": 826,
+   "train_ids_sha256": "29ab65a9d75762ebb755327ca43fc59a4ef49b307909dad30c7df2bfb52bbd7a",
+   "gate": {
+    "template_parity": true,
+    "finite": true,
+    "activation_headroom": true,
+    "no_skips": true,
+    "memory": true
+   },
+   "passed": true
+  },
+  "qwen3-4b-2507": {
+   "probe_exit": 0,
+   "probe_seconds": 116,
+   "train_exit": 0,
+   "train_seconds": 334,
+   "probe": {
+    "versions": {
+     "torch": "2.11.0+cu130",
+     "transformers": "5.23.0",
+     "peft": "0.22.0"
+    },
+    "template_parity": true,
+    "decoder_layers_hooked": 36,
+    "max_abs_activation_fp16": 7416.0,
+    "zero_shot_answer_loss": [
+     1.6071926355361938,
+     1.2068012952804565,
+     1.3199177980422974
+    ],
+    "softcap": null,
+    "finite": true
+   },
+   "train_steps_logged": 3,
+   "losses": [
+    2.2041,
+    2.0422,
+    1.1955
+   ],
+   "peak_mem_gib": 10.18,
+   "tok_s": 341,
+   "nonfinite": 0,
+   "oom_in_log": false,
+   "trainable_params": 66060288,
+   "train_examples": 826,
+   "train_ids_sha256": "29ab65a9d75762ebb755327ca43fc59a4ef49b307909dad30c7df2bfb52bbd7a",
+   "gate": {
+    "template_parity": true,
+    "finite": true,
+    "activation_headroom": true,
+    "no_skips": true,
+    "memory": true
+   },
+   "passed": true
+  },
+  "gemma-4-e2b": {
+   "probe_exit": 0,
+   "probe_seconds": 112,
+   "train_exit": 0,
+   "train_seconds": 349,
+   "probe": {
+    "versions": {
+     "torch": "2.11.0+cu130",
+     "transformers": "5.23.0",
+     "peft": "0.22.0"
+    },
+    "template_parity": true,
+    "decoder_layers_hooked": 35,
+    "max_abs_activation_fp16": 151.75,
+    "zero_shot_answer_loss": [
+     2.444283962249756,
+     1.4981565475463867,
+     1.7485569715499878
+    ],
+    "softcap": 30.0,
+    "finite": true
+   },
+   "train_steps_logged": 6,
+   "losses": [
+    2.9848,
+    2.5437,
+    1.6482,
+    1.0046,
+    0.8148,
+    0.6024
+   ],
+   "peak_mem_gib": 13.25,
+   "tok_s": 612,
+   "nonfinite": 0,
+   "oom_in_log": false,
+   "trainable_params": 48316416,
+   "train_examples": 826,
+   "train_ids_sha256": "29ab65a9d75762ebb755327ca43fc59a4ef49b307909dad30c7df2bfb52bbd7a",
+   "gate": {
+    "template_parity": true,
+    "finite": true,
+    "activation_headroom": true,
+    "no_skips": true,
+    "memory": true
+   },
+   "passed": true
+  }
+ }
+}

@@ -1,0 +1,13 @@
+{
+ "id": "awaissididique/codeply-iris-pilot-export",
+ "title": "codeply-iris-pilot-export",
+ "code_file": "export_pilot.py",
+ "language": "python",
+ "kernel_type": "script",
+ "is_private": true,
+ "enable_gpu": false,
+ "enable_internet": true,
+ "dataset_sources": ["awaissididique/codeply-iris-pilot-src"],
+ "competition_sources": [],
+ "kernel_sources": ["awaissididique/codeply-iris-pilot-train"]
+}

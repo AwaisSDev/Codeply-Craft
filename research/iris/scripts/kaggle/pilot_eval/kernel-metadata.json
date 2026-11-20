@@ -1,0 +1,14 @@
+{
+ "id": "awaissididique/codeply-iris-pilot-eval",
+ "title": "codeply-iris-pilot-eval",
+ "code_file": "eval_pilot.py",
+ "language": "python",
+ "kernel_type": "script",
+ "is_private": true,
+ "enable_gpu": true,
+ "enable_internet": false,
+ "machine_shape": "NvidiaTeslaT4",
+ "dataset_sources": ["awaissididique/codeply-iris-pilot-src"],
+ "competition_sources": [],
+ "kernel_sources": ["awaissididique/codeply-iris-wave-a-check", "awaissididique/codeply-iris-pilot-export"]
+}

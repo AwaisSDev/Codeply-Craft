@@ -1,0 +1,133 @@
+"""P3: evaluation of the seed-1 pilot models (EVAL-PLAN A4): the wave-A protocol with `--system iris` (the system line the
+models were trained on) and the exported Q4_K_M GGUFs. Validation split only; nothing is trained.
+
+Inputs:  dataset `codeply-iris-wave-a-src` (code + val only); kernel output of `codeply-iris-wave-a-check` (the CUDA
+         llama.cpp build at the pinned commit and the five GGUFs, sha256-verified again here); optionally the output of
+         an earlier version of this kernel (generation caches: every evaluate.py run resumes from preds-*.jsonl).
+Work:    the same commands as foundation-2026-11/run_wave_a.sh, plus `--server-arg=-ngl --server-arg=99`, split over the
+         two T4s (one process per GPU, systems in a fixed order).
+Outputs: /kaggle/working/results/foundation-2026-11/<system>/ (preds, results, manifests, foundation reports) and one log
+         per GPU; written as they are produced, so a session that ends early still leaves every finished system.
+"""
+import glob
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+
+T0 = time.time()
+W = "/kaggle/working"
+OFF = '{"enable_thinking": false}'
+# (system, gguf, template kwargs, prompt version, mode); mode "full" = open + closed + unconstrained screen, "v1" = open only
+GPU_QUEUES = {   # (system, gguf, template kwargs, unused, mode)
+    0: [("qwen3-4b-2507", "qwen3-4b-2507-pilot-s1-Q4_K_M.gguf", "", "", "full")],
+    1: [("qwen3-1.7b", "qwen3-1.7b-pilot-s1-Q4_K_M.gguf", OFF, "", "full"),
+        ("gemma-4-e2b", "gemma-4-e2b-pilot-s1-Q4_K_M.gguf", OFF, "", "full")],
+}
+
+
+def log(*a):
+    print(f"[{time.time() - T0:7.0f}s]", *a, flush=True)
+
+
+def find(pattern):
+    hits = sorted(glob.glob(pattern, recursive=True))
+    return hits[0] if hits else None
+
+
+# code, binaries, models -------------------------------------------------------------------------------------------
+init = find("/kaggle/input/**/codeply_iris/__init__.py")
+if not init:
+    for z in glob.glob("/kaggle/input/**/*.zip", recursive=True):
+        shutil.unpack_archive(z, f"{W}/src")
+    init = find(f"{W}/src/**/codeply_iris/__init__.py")
+SRC = f"{W}/iris"
+shutil.copytree(os.path.dirname(os.path.dirname(init)), SRC, dirs_exist_ok=True)
+assert not os.path.exists(f"{SRC}/data/raw/test") and not os.path.exists(f"{SRC}/data/built/test.jsonl"), "test split present"
+# inputs are mounted read-only without the execute bit: copy the binaries + shared libraries and mark them executable
+B = f"{W}/llama-bin"
+shutil.copytree(os.path.dirname(find("/kaggle/input/**/llama-bin/llama-server")), B, dirs_exist_ok=True)
+subprocess.run(f"chmod +x {B}/llama-server {B}/llama-bench", shell=True, check=True)
+
+
+def repair_sonames(bindir):
+    """Kaggle's output store keeps regular files only, so versioned shared-library names (symlinks such as
+    libllama.so.0) can be missing: recreate each name ldd cannot find from the real file of the same library."""
+    for _ in range(3):
+        out = subprocess.run(f"LD_LIBRARY_PATH={bindir} ldd {bindir}/llama-server", shell=True, capture_output=True, text=True).stdout
+        missing = [l.split()[0] for l in out.splitlines() if "not found" in l]
+        if not missing:
+            break
+        for name in missing:
+            stem = name.split(".so")[0]
+            cands = sorted(f for f in os.listdir(bindir) if f.startswith(stem + ".so") and f != name)
+            if cands:
+                os.symlink(cands[-1], os.path.join(bindir, name))
+                print("repaired", name, "->", cands[-1], flush=True)
+            else:
+                print("cannot repair", name, flush=True)
+    print(subprocess.run(f"LD_LIBRARY_PATH={bindir} ldd {bindir}/llama-server | grep -E 'llama|ggml|cuda|not found'; "
+                         f"LD_LIBRARY_PATH={bindir} {bindir}/llama-server --version", shell=True, capture_output=True, text=True).stdout, flush=True)
+
+
+repair_sonames(B)
+M = os.path.dirname(find("/kaggle/input/**/gguf/qwen3-1.7b-pilot-s1-Q4_K_M.gguf"))
+smi = subprocess.run("nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader", shell=True, capture_output=True, text=True)
+log("gpus:", smi.stdout.strip().replace("\n", " | "), "bin:", B, "models:", M)
+if smi.returncode or "T4" not in smi.stdout:
+    raise SystemExit("no T4 attached: stopping before any work")
+want = dict(reversed(l.split()) for l in open(f"{M}/SHA256SUMS"))
+for f, h in want.items():
+    got = subprocess.run(f"sha256sum {M}/{f}", shell=True, capture_output=True, text=True).stdout.split()[0]
+    if got != h:
+        raise SystemExit(f"sha256 mismatch {f}")
+log("GGUF sha256 verified")
+
+# resume: copy caches from an earlier version of this kernel, if attached -------------------------------------------
+RES = f"{SRC}/results/foundation-2026-11/pilot-s1"
+os.makedirs(RES, exist_ok=True)
+for prev in glob.glob("/kaggle/input/**/results/foundation-2026-11/pilot-s1/*/preds-val-*.jsonl", recursive=True):
+    dst = os.path.join(RES, os.path.basename(os.path.dirname(prev)))
+    os.makedirs(dst, exist_ok=True)
+    shutil.copy(prev, dst)
+    log("resume cache:", prev)
+
+
+def script(queue):
+    lines = ["set -e", f"cd {SRC}"]
+    for name, gguf, kw, pv, mode in queue:
+        out = f"results/foundation-2026-11/pilot-s1/{name}"
+        base = (f"{sys.executable} -m codeply_iris.evaluate --system iris --model {M}/{gguf} --chat "
+                f"--threads 4 --split val --server-arg=-ngl --server-arg=99" + (f" --template-kwargs '{kw}'" if kw else ""))
+        lines.append(f"echo '=== {name} start' $(date -u +%T)")
+        lines.append(f"{base} --constrain --out {out}")
+        if mode == "full":
+            lines.append(f"{base} --constrain --closed-loop --out {out}")
+            lines.append(f"{base} --limit 6 --out {out}-unconstrained")
+        lines.append(f"{sys.executable} foundation-2026-11/report_run.py {out}")
+        if mode == "full":
+            lines.append(f"{sys.executable} foundation-2026-11/report_run.py {out} --exclude-episode va01-e01")
+            lines.append(f"{sys.executable} foundation-2026-11/report_run.py {out}-unconstrained")
+        lines.append(f"echo '=== {name} done' $(date -u +%T)")
+    return "\n".join(lines)
+
+
+env = dict(os.environ, IRIS_LLAMA_SERVER=f"{B}/llama-server", LD_LIBRARY_PATH=B + ":" + os.environ.get("LD_LIBRARY_PATH", ""),
+           PYTHONUNBUFFERED="1")
+procs = {}
+for gpu, queue in GPU_QUEUES.items():
+    open(f"{W}/gpu{gpu}.sh", "w").write(script(queue))
+    procs[gpu] = subprocess.Popen(["bash", f"{W}/gpu{gpu}.sh"], env=dict(env, CUDA_VISIBLE_DEVICES=str(gpu)),
+                                  stdout=open(f"{W}/gpu{gpu}.log", "w"), stderr=subprocess.STDOUT)
+while any(p.poll() is None for p in procs.values()):
+    time.sleep(300)
+    for gpu in procs:
+        tail = open(f"{W}/gpu{gpu}.log", errors="replace").read().splitlines()[-1:]
+        log(f"gpu{gpu}:", tail[0][:200] if tail else "")
+codes = {g: p.returncode for g, p in procs.items()}
+shutil.copytree(f"{SRC}/results", f"{W}/results", dirs_exist_ok=True)
+json.dump({"exit_codes": codes, "elapsed_s": round(time.time() - T0), "source_commit": open(f"{SRC}/COMMIT.txt").read().strip()},
+          open(f"{W}/run-status.json", "w"), indent=1)
+log("done", codes)
