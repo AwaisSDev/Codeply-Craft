@@ -1,0 +1,56 @@
+{
+ "split": {
+  "teacher_episodes": 84,
+  "teacher_gold_sessions": 420,
+  "gold_content_ops": 1312,
+  "calibration_20pct": {
+   "episodes": 17,
+   "sessions_approx": 84,
+   "gold_content_ops_approx": 262
+  }
+ },
+ "threshold_stability_proxy": {
+  "note": "validation outputs of seed-1 Qwen3-4B used only to estimate variability of a calibration-sized choice; no selection",
+  "calibration_episodes_per_draw": 17,
+  "draws": 2000,
+  "tau_chosen_distribution": {
+   "-0.3": 0.552,
+   "-0.4": 0.299,
+   "-0.2": 0.116,
+   "-0.5": 0.017,
+   "-0.75": 0.008,
+   "-0.1": 0.004,
+   "-0.15": 0.004
+  },
+  "false_per_100_on_all_24_at_chosen_tau": {
+   "p5": 75.0,
+   "median": 88.3,
+   "p95": 97.5
+  }
+ },
+ "power_between_systems": {
+  "se_delta_false_per_100_24_episodes": {
+   "qwen3-4b-2507": 18.7,
+   "gemma-4-e2b": 17.6
+  },
+  "mde_80pct_power_24_episodes": {
+   "qwen3-4b-2507": 52.4,
+   "gemma-4-e2b": 49.4
+  },
+  "mde_80pct_power_52_episodes_expected": {
+   "qwen3-4b-2507": 35.6,
+   "gemma-4-e2b": 33.6
+  }
+ },
+ "within_model_threshold_effect_example": {
+  "note": "descriptive, tau=-0.3 fixed for illustration (not a selection); open loop; 4B seed 1",
+  "delta_false_per_100_ci95": [
+   -64.2,
+   -26.7
+  ],
+  "delta_recall_ci95": [
+   -0.052,
+   -0.012
+  ]
+ }
+}
