@@ -29,6 +29,12 @@ DEFAULTS = {
     "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
     "weight_decay": 0.0, "grad_clip": 1.0, "save_every": 25, "eval_every": 100, "val_examples": 120, "threads": 0,
     "init_adapter": "",
+    # foundation pilot (2026-11-20, EVAL-PLAN A4); defaults keep the earlier behaviour (raw Qwen ChatML)
+    "chat_template": False,        # True: encode with the model's own chat template (as llama-server --jinja does)
+    "template_kwargs": {},         # e.g. {"enable_thinking": false}; the same switches as in evaluation
+    "exclude_shards": [],          # e.g. ["syn01"]: dropped at load time, the dataset file is not modified
+    "example_ids": "",             # JSON file {"train": [...], "val": [...]}: the exact shared example list
+    "model_class": "auto",         # "auto" = AutoModelForCausalLM
 }
 
 
@@ -38,8 +44,13 @@ def load_examples(path):
     return [json.loads(l) for p in paths if p.strip() for l in Path(p.strip()).read_text(encoding="utf-8").splitlines() if l.strip()]
 
 
-def encode(tok, ex, max_tokens):
+def encode(tok, ex, max_tokens, chat_template=False, template_kwargs=None):
     """(input_ids, first_answer_position) for one example, or None when it does not fit."""
+    if chat_template:
+        ids, start = template_ids(tok, ex["prompt"], ex["target"], template_kwargs or {})
+        if len(ids) > max_tokens:
+            return None
+        return torch.tensor(ids, dtype=torch.long), start
     p = tok(prompt.chatml(ex["prompt"]), add_special_tokens=False)["input_ids"]
     a = tok(ex["target"] + "<|im_end|>", add_special_tokens=False)["input_ids"]
     if len(p) + len(a) > max_tokens:
@@ -47,10 +58,57 @@ def encode(tok, ex, max_tokens):
     return torch.tensor(p + a, dtype=torch.long), len(p)
 
 
+def template_text(tok, user, target, template_kwargs, system=prompt.SYSTEM):
+    """(prompt_text, answer_text) through the model's own chat template.
+
+    prompt_text is what the server renders for generation (add_generation_prompt=True); answer_text is what follows it
+    in the rendering of the full conversation, up to and including the template's end-of-turn marker (trailing
+    whitespace after it is not trained). Raises when the full rendering does not start with the generation prompt,
+    because then training and inference would see different text.
+    """
+    msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    p = tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False, **template_kwargs)
+    full = tok.apply_chat_template(msgs + [{"role": "assistant", "content": target}], tokenize=False, **template_kwargs)
+    if not full.startswith(p):
+        raise ValueError("chat template: the full conversation does not extend the generation prompt")
+    answer = full[len(p):].rstrip()
+    if not answer.startswith(target):
+        raise ValueError("chat template: the assistant turn does not start with the target text")
+    return p, answer
+
+
+def template_ids(tok, user, target, template_kwargs, system=prompt.SYSTEM):
+    p, a = template_text(tok, user, target, template_kwargs, system)
+    pi = tok(p, add_special_tokens=False)["input_ids"]
+    fi = tok(p + a, add_special_tokens=False)["input_ids"]
+    if fi[:len(pi)] != pi:
+        raise ValueError("chat template: prompt tokens are not a prefix of the full tokens")
+    return fi, len(pi)
+
+
+def keep_example(ex, cfg, allowed=None):
+    if str(ex.get("shard", "")) in set(cfg.get("exclude_shards") or []):
+        return False
+    return allowed is None or ex["id"] in allowed
+
+
+def logit_softcap(lm):
+    """Final-logit soft-capping value of the model (Gemma: 30.0), or None. The model's own forward applies it; this
+    loss bypasses that forward, so it must apply it too or training and inference would see different logits."""
+    c = getattr(lm, "config", None)
+    v = getattr(c, "final_logit_softcapping", None)
+    if v is None and getattr(c, "text_config", None) is not None:
+        v = getattr(c.text_config, "final_logit_softcapping", None)
+    return v
+
+
 def answer_loss(lm, ids, start):
     """Cross-entropy on the answer tokens only; the LM head runs on those positions alone."""
     h = lm.model(input_ids=ids.unsqueeze(0)).last_hidden_state[0]
     logits = lm.lm_head(h[start - 1:-1]).float()
+    cap = logit_softcap(lm)
+    if cap:
+        logits = torch.tanh(logits / cap) * cap
     return torch.nn.functional.cross_entropy(logits, ids[start:])
 
 
@@ -83,7 +141,12 @@ def main(argv=None):
     from transformers import AutoModelForCausalLM, AutoTokenizer
     tok = AutoTokenizer.from_pretrained(cfg["base"])
     # CPU: bf16 weights (AMX). GPU: fp32 weights + fp16 autocast + GradScaler (the standard AMP recipe; T4 has no bf16).
-    base = AutoModelForCausalLM.from_pretrained(cfg["base"], torch_dtype=torch.bfloat16 if device == "cpu" else torch.float16)
+    if cfg["model_class"] == "auto":
+        model_cls = AutoModelForCausalLM
+    else:
+        import transformers
+        model_cls = getattr(transformers, cfg["model_class"])
+    base = model_cls.from_pretrained(cfg["base"], torch_dtype=torch.bfloat16 if device == "cpu" else torch.float16)
     if device == "cuda":
         # fp16 frozen weights halve the model memory; activations are recomputed in the backward pass instead of stored
         # (a 15 GB T4 ran out of memory at 2,048 tokens with fp32 weights and no checkpointing)
@@ -108,13 +171,28 @@ def main(argv=None):
     lm = get_lm(model)
     params = [p for p in model.parameters() if p.requires_grad]
 
-    train = [e for e in (encode(tok, ex, cfg["max_tokens"]) for ex in load_examples(cfg["train"])) if e]
-    n_all = len(load_examples(cfg["train"]))
+    ids_spec = json.loads(Path(cfg["example_ids"]).read_text()) if cfg["example_ids"] else None
+    allowed_train = set(ids_spec["train"]) if ids_spec else None
+    raw_train = [ex for ex in load_examples(cfg["train"]) if keep_example(ex, cfg, allowed_train)]
+    if allowed_train is not None and len(raw_train) != len(allowed_train):
+        raise SystemExit(f"example list mismatch: {len(allowed_train)} listed, {len(raw_train)} found")
+    enc = lambda ex: encode(tok, ex, cfg["max_tokens"], cfg["chat_template"], cfg["template_kwargs"])
+    train = [e for e in (enc(ex) for ex in raw_train) if e]
+    n_all = len(raw_train)
+    if allowed_train is not None and len(train) != n_all:
+        raise SystemExit(f"{n_all - len(train)} listed examples exceed max_tokens for this tokenizer")
     val = []
     if cfg["val"] and Path(cfg["val"]).exists() and Path(cfg["val"]).stat().st_size:
         vex = load_examples(cfg["val"])
-        random.Random(0).shuffle(vex)
-        val = [e for e in (encode(tok, ex, cfg["max_tokens"]) for ex in vex[:cfg["val_examples"]]) if e]
+        if ids_spec:
+            order = {i: n for n, i in enumerate(ids_spec["val"])}
+            vex = sorted((ex for ex in vex if ex["id"] in order), key=lambda ex: order[ex["id"]])
+            val = [e for e in (enc(ex) for ex in vex) if e]
+            if len(val) != len(ids_spec["val"]):
+                raise SystemExit("listed val examples missing or too long")
+        else:
+            random.Random(0).shuffle(vex)
+            val = [e for e in (enc(ex) for ex in vex[:cfg["val_examples"]]) if e]
     steps_per_epoch = math.ceil(len(train) / cfg["accum"])
     total_steps = steps_per_epoch * cfg["epochs"]
     opt = torch.optim.AdamW(params, lr=cfg["lr"], weight_decay=cfg["weight_decay"], betas=(0.9, 0.99))
@@ -134,6 +212,7 @@ def main(argv=None):
                                                  "steps_per_epoch": steps_per_epoch, "total_steps": total_steps,
                                                  "trainable_params": sum(p.numel() for p in params),
                                                  "train_tokens_per_epoch": int(sum(len(i) for i, _ in train)),
+                                                 "train_ids_sha256": __import__("hashlib").sha256("\n".join(ex["id"] for ex in raw_train).encode()).hexdigest(),
                                                  "torch": torch.__version__, "device": device}, indent=1))
     print(f"train {len(train)}/{n_all} examples, {sum(len(i) for i, _ in train)} tokens/epoch, val {len(val)}, "
           f"{total_steps} steps, resume at step {step} (epoch {epoch}, pos {pos})", flush=True)
@@ -160,7 +239,7 @@ def main(argv=None):
             torch.save({"opt": opt.state_dict(), "step": step, "epoch": epoch, "pos": pos, "best": best}, d / "state.tmp")
             os.replace(d / "state.tmp", d / "state.pt")
 
-    t0, tok_seen, run_loss, run_n, oom_skipped = time.time(), 0, 0.0, 0, 0
+    t0, tok_seen, run_loss, run_n, oom_skipped, nonfinite = time.time(), 0, 0.0, 0, 0, 0
     model.train()
     stop = False
     while epoch < cfg["epochs"] and not stop:
@@ -176,7 +255,8 @@ def main(argv=None):
                     with ctx():
                         loss = answer_loss(lm, ids.to(device), start)
                     if not torch.isfinite(loss):
-                        print("non-finite loss, example skipped", flush=True)
+                        nonfinite += 1
+                        print(f"non-finite loss, example skipped ({nonfinite} so far)", flush=True)
                         continue
                     scaler.scale(loss / len(batch)).backward()
                 except torch.cuda.OutOfMemoryError:
@@ -199,6 +279,9 @@ def main(argv=None):
                 rec = {"step": step, "epoch": round(epoch + pos / len(order), 3), "loss": round(run_loss / max(run_n, 1), 4),
                        "lr": round(lr_at(step), 7), "tok_s": round(tok_seen / (time.time() - t0)), "min": round((time.time() - t0) / 60, 1)}
                 rec["loss"] = rec["loss"] if run_n else None
+                if device == "cuda":
+                    rec["max_mem_gb"] = round(torch.cuda.max_memory_allocated() / 2**30, 2)
+                rec["nonfinite"] = nonfinite
                 log.write(json.dumps(rec) + "\n")
                 log.flush()
                 print(rec, flush=True)
@@ -230,7 +313,8 @@ def main(argv=None):
                 best = vl
                 save("best")
         save("final")
-        (out / "DONE").write_text(json.dumps({"steps": step, "best_val_loss": best, "minutes": round((time.time() - t0) / 60, 1), "oom_skipped": oom_skipped}))
+        (out / "DONE").write_text(json.dumps({"steps": step, "best_val_loss": best, "minutes": round((time.time() - t0) / 60, 1), "oom_skipped": oom_skipped,
+                                               "nonfinite_skipped": nonfinite}))
     print("stopped" if stop else "finished", "at step", step, flush=True)
 
 

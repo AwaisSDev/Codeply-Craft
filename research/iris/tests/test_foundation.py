@@ -166,3 +166,30 @@ def test_modified_evaluator_reproduces_committed_results(tmp_path, run, system, 
     before = json.loads(committed.read_text())["metrics"]
     diff = {k: (before[k], now.get(k)) for k in before if not _same(before[k], now.get(k))}
     assert not diff
+
+
+# ---------------------------------------------------------------- equal-volume precision (A4)
+def _op(score, correct, key):
+    return {"score": score, "correct": correct, "key": key}
+
+
+def test_equal_volume_ties_missing_scores_and_fewer_ops():
+    cand = [_op(-0.1, True, ("e1", 1, 0)), _op(-0.1, False, ("e1", 1, 1)), _op(None, True, ("e1", 2, 0))]
+    ctrl = [_op(-0.5, True, ("e1", 1, 0)), _op(-0.2, False, ("e1", 1, 1)), _op(-0.3, True, ("e2", 1, 0)), _op(-0.9, False, ("e2", 2, 0))]
+    r = confidence.equal_volume(cand, ctrl)
+    assert r["volume"] == 3 and r["n_candidate"] == 3 and r["n_control"] == 4      # fewer ops: compared at the smaller volume
+    # candidate order: two tied -0.1 ops by key (e1,1,0) then (e1,1,1), then the unscored op last
+    assert confidence.top_precision(cand, 2) == 0.5
+    assert r["precision_candidate"] == pytest.approx(2 / 3)
+    # control order: -0.2 (wrong), -0.3 (right), -0.5 (right)
+    assert r["precision_control"] == pytest.approx(2 / 3) and r["difference"] == pytest.approx(0.0)
+    assert r["unscored_candidate"] == pytest.approx(1 / 3) and r["volume_shortfall"] is False
+    assert confidence.equal_volume(cand[:1], ctrl)["volume_shortfall"] is True
+    assert confidence.equal_volume([], ctrl)["difference"] is None
+    # deterministic: input order does not matter
+    assert confidence.equal_volume(list(reversed(cand)), list(reversed(ctrl))) == r
+
+
+def test_unscored_ops_never_outrank_scored_ones():
+    ops = [_op(None, True, ("a", 1, 0)), _op(-50.0, False, ("b", 1, 0))]
+    assert confidence.top_precision(ops, 1) == 0.0

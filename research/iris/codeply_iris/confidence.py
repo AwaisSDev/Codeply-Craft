@@ -78,3 +78,37 @@ def f_beta(tp, pred, gold, beta=0.5):
     p, r = tp / pred, tp / gold
     b2 = beta * beta
     return (1 + b2) * p * r / (b2 * p + r)
+
+
+# ---- equal-volume precision (EVAL-PLAN amendment A4, criterion 3) -------------------------------------------------
+NEG_INF = float("-inf")
+
+
+def rank_key(op):
+    """Total order: higher score first; an op without a score (None) ranks after every scored op; ties broken by the
+    op's deterministic position key (episode id, session index, position in the answer[, resample draw])."""
+    s = op["score"]
+    return (-(s if s is not None else NEG_INF), op["key"])
+
+
+def top_precision(ops, v):
+    """Share of strict matches among the v highest-ranked ops (v >= 1)."""
+    ranked = sorted(ops, key=rank_key)[:v]
+    return sum(1 for o in ranked if o["correct"]) / v
+
+
+def equal_volume(candidate, control, shortfall=0.5):
+    """Precision of the two systems at the same storage volume V = min(n_candidate, n_control), each ranked by its own
+    confidence. ops: [{"score": float|None, "correct": bool, "key": tuple}]. Deterministic for a given input."""
+    nc, nk = len(candidate), len(control)
+    v = min(nc, nk)
+    out = {"n_candidate": nc, "n_control": nk, "volume": v,
+           "unscored_candidate": sum(o["score"] is None for o in candidate) / nc if nc else None,
+           "unscored_control": sum(o["score"] is None for o in control) / nk if nk else None,
+           "volume_shortfall": bool(nk and nc < shortfall * nk)}
+    if v == 0:
+        out.update(precision_candidate=None, precision_control=None, difference=None)
+        return out
+    pc, pk = top_precision(candidate, v), top_precision(control, v)
+    out.update(precision_candidate=pc, precision_control=pk, difference=pc - pk)
+    return out

@@ -1,0 +1,173 @@
+{
+ "qwen3-1.7b": [
+  {
+   "id": "tr01-e01-s1-gold",
+   "prompt_text_identical": true,
+   "first_text_diff": null,
+   "trainer_prompt_tokens": 483,
+   "server_prompt_tokens": 483,
+   "server_tokenize_with_special": 483,
+   "token_ids_identical": true,
+   "token_ids_identical_exact": true,
+   "answer_tail": "ens\":\"none\"}]}<|im_end|>"
+  },
+  {
+   "id": "tr01-e01-s2-gold",
+   "prompt_text_identical": true,
+   "first_text_diff": null,
+   "trainer_prompt_tokens": 900,
+   "server_prompt_tokens": 900,
+   "server_tokenize_with_special": 900,
+   "token_ids_identical": true,
+   "token_ids_identical_exact": true,
+   "answer_tail": "\"sensitive\"}]}<|im_end|>"
+  },
+  {
+   "id": "tr01-e01-s2-noisy",
+   "prompt_text_identical": true,
+   "first_text_diff": null,
+   "trainer_prompt_tokens": 877,
+   "server_prompt_tokens": 877,
+   "server_tokenize_with_special": 877,
+   "token_ids_identical": true,
+   "token_ids_identical_exact": true,
+   "answer_tail": "\"sensitive\"}]}<|im_end|>"
+  },
+  {
+   "id": "va02-e03-q1-a",
+   "prompt_text_identical": true,
+   "first_text_diff": null,
+   "trainer_prompt_tokens": 877,
+   "server_prompt_tokens": 877,
+   "server_tokenize_with_special": 877,
+   "token_ids_identical": true,
+   "token_ids_identical_exact": true,
+   "answer_tail": "m122\",\"m220\"]}<|im_end|>"
+  },
+  {
+   "id": "va02-e09-q3-a",
+   "prompt_text_identical": true,
+   "first_text_diff": null,
+   "trainer_prompt_tokens": 697,
+   "server_prompt_tokens": 697,
+   "server_tokenize_with_special": 697,
+   "token_ids_identical": true,
+   "token_ids_identical_exact": true,
+   "answer_tail": "use\":[\"m240\"]}<|im_end|>"
+  }
+ ],
+ "qwen3-4b-2507": [
+  {
+   "id": "tr01-e01-s1-gold",
+   "prompt_text_identical": true,
+   "first_text_diff": null,
+   "trainer_prompt_tokens": 479,
+   "server_prompt_tokens": 479,
+   "server_tokenize_with_special": 479,
+   "token_ids_identical": true,
+   "token_ids_identical_exact": true,
+   "answer_tail": "ens\":\"none\"}]}<|im_end|>"
+  },
+  {
+   "id": "tr01-e01-s2-gold",
+   "prompt_text_identical": true,
+   "first_text_diff": null,
+   "trainer_prompt_tokens": 896,
+   "server_prompt_tokens": 896,
+   "server_tokenize_with_special": 896,
+   "token_ids_identical": true,
+   "token_ids_identical_exact": true,
+   "answer_tail": "\"sensitive\"}]}<|im_end|>"
+  },
+  {
+   "id": "tr01-e01-s2-noisy",
+   "prompt_text_identical": true,
+   "first_text_diff": null,
+   "trainer_prompt_tokens": 873,
+   "server_prompt_tokens": 873,
+   "server_tokenize_with_special": 873,
+   "token_ids_identical": true,
+   "token_ids_identical_exact": true,
+   "answer_tail": "\"sensitive\"}]}<|im_end|>"
+  },
+  {
+   "id": "va02-e03-q1-a",
+   "prompt_text_identical": true,
+   "first_text_diff": null,
+   "trainer_prompt_tokens": 873,
+   "server_prompt_tokens": 873,
+   "server_tokenize_with_special": 873,
+   "token_ids_identical": true,
+   "token_ids_identical_exact": true,
+   "answer_tail": "m122\",\"m220\"]}<|im_end|>"
+  },
+  {
+   "id": "va02-e09-q3-a",
+   "prompt_text_identical": true,
+   "first_text_diff": null,
+   "trainer_prompt_tokens": 693,
+   "server_prompt_tokens": 693,
+   "server_tokenize_with_special": 693,
+   "token_ids_identical": true,
+   "token_ids_identical_exact": true,
+   "answer_tail": "use\":[\"m240\"]}<|im_end|>"
+  }
+ ],
+ "gemma-4-e2b": [
+  {
+   "id": "tr01-e01-s1-gold",
+   "prompt_text_identical": false,
+   "first_text_diff": 1,
+   "trainer_prompt_tokens": 476,
+   "server_prompt_tokens": 476,
+   "server_tokenize_with_special": 476,
+   "token_ids_identical": true,
+   "token_ids_identical_exact": true,
+   "answer_tail": ",\"sens\":\"none\"}]}<turn|>"
+  },
+  {
+   "id": "tr01-e01-s2-gold",
+   "prompt_text_identical": false,
+   "first_text_diff": 1,
+   "trainer_prompt_tokens": 870,
+   "server_prompt_tokens": 870,
+   "server_tokenize_with_special": 870,
+   "token_ids_identical": true,
+   "token_ids_identical_exact": true,
+   "answer_tail": "s\":\"sensitive\"}]}<turn|>"
+  },
+  {
+   "id": "tr01-e01-s2-noisy",
+   "prompt_text_identical": false,
+   "first_text_diff": 1,
+   "trainer_prompt_tokens": 845,
+   "server_prompt_tokens": 845,
+   "server_tokenize_with_special": 845,
+   "token_ids_identical": true,
+   "token_ids_identical_exact": true,
+   "answer_tail": "s\":\"sensitive\"}]}<turn|>"
+  },
+  {
+   "id": "va02-e03-q1-a",
+   "prompt_text_identical": false,
+   "first_text_diff": 1,
+   "trainer_prompt_tokens": 846,
+   "server_prompt_tokens": 846,
+   "server_tokenize_with_special": 846,
+   "token_ids_identical": true,
+   "token_ids_identical_exact": true,
+   "answer_tail": ":[\"m122\",\"m220\"]}<turn|>"
+  },
+  {
+   "id": "va02-e09-q3-a",
+   "prompt_text_identical": false,
+   "first_text_diff": 1,
+   "trainer_prompt_tokens": 669,
+   "server_prompt_tokens": 669,
+   "server_tokenize_with_special": 669,
+   "token_ids_identical": true,
+   "token_ids_identical_exact": true,
+   "answer_tail": "{\"use\":[\"m240\"]}<turn|>"
+  }
+ ]
+}

@@ -1,0 +1,38 @@
+{
+ "train": "data/built/train.jsonl",
+ "val": "data/built/val.jsonl",
+ "epochs": 2,
+ "lr": 0.0001,
+ "warmup_steps": 30,
+ "accum": 8,
+ "max_tokens": 2048,
+ "seed": 1,
+ "lora_r": 32,
+ "lora_alpha": 64,
+ "lora_dropout": 0.05,
+ "weight_decay": 0.0,
+ "grad_clip": 1.0,
+ "save_every": 50,
+ "eval_every": 50,
+ "val_examples": 120,
+ "chat_template": true,
+ "exclude_shards": [
+  "syn01"
+ ],
+ "example_ids": "foundation-2026-11/pilot/example-ids.json",
+ "model_class": "auto",
+ "base": "Qwen/Qwen3-1.7B",
+ "template_kwargs": {
+  "enable_thinking": false
+ },
+ "target_modules": [
+  "q_proj",
+  "k_proj",
+  "v_proj",
+  "o_proj",
+  "gate_proj",
+  "up_proj",
+  "down_proj"
+ ],
+ "out": "runs/pilot-qwen3-1.7b-s1"
+}
