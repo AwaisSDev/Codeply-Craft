@@ -122,6 +122,9 @@ def main():
     systems = {"qwen3-4b-2507 (zero-shot)": ROOT / "results/foundation-2026-11/qwen3-4b-2507",
                "gemma-4-e2b (zero-shot)": ROOT / "results/foundation-2026-11/gemma-4-e2b",
                "iris-1.7b-r3 (fine-tuned)": ROOT / "results/gpu-r2/val/iris-1.7b-r3"}
+    if len(sys.argv) > 1:      # name=dir pairs (e.g. the pilot); output goes to the file given by --out
+        args = [a for a in sys.argv[1:] if "=" in a and not a.startswith("--")]
+        systems = {k: Path(v) for k, v in (a.split("=", 1) for a in args)}
     out = {}
     for name, d in systems.items():
         out[name] = {}
@@ -135,7 +138,8 @@ def main():
             print(name, loop)
             for k, v in row.items():
                 print(f"   {k:18s} P {v['precision']} R {v['recall']} F1 {v['f1']} false/100 {v['false_per_100']} removed {v['ops_removed']} (correct {v['correct_ops_removed']})")
-    (HERE / "infra_rules.json").write_text(json.dumps(out, indent=1) + "\n")
+    dest = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--out=")), str(HERE / "infra_rules.json"))
+    Path(dest).write_text(json.dumps(out, indent=1) + "\n")
 
 
 if __name__ == "__main__":
