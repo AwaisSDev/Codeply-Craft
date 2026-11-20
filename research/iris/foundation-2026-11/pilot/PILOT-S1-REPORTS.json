@@ -1,0 +1,1328 @@
+{
+ "qwen3-1.7b": {
+  "open": {
+   "sessions": 120,
+   "primary": {
+    "false_memories_per_100_sessions": 124.2,
+    "precision_at_60": 0.483,
+    "under_covering": false,
+    "content_ops": 243,
+    "f0_5": 0.331,
+    "risk_coverage_area": 0.434
+   },
+   "strict": {
+    "extraction_precision": 0.362,
+    "extraction_recall": 0.245,
+    "extraction_f1": 0.292,
+    "false_memory_share": 0.613,
+    "hard_negative_stored": 0.02,
+    "update_accuracy": 0.298,
+    "contradiction_resolution": 0.311,
+    "temporal_date_accuracy": 0.0,
+    "entity_linking_accuracy": 0.677,
+    "empty_session_accuracy": 0.96,
+    "duplicate_detection_recall": 0.0,
+    "duplicates_created_rate": 0.714,
+    "retraction_precision": 0.353,
+    "retraction_recall": 0.353,
+    "ungrounded_evidence_rate": 0.045,
+    "guard_rejection_rate": 0.107,
+    "output_validity": 0.917,
+    "skip_recall": 0.47
+   },
+   "by_operation": {
+    "add (gold, matched, recall)": [
+     58,
+     302,
+     0.192
+    ],
+    "update: right op+ref (of gold updates)": [
+     17,
+     57,
+     0.298
+    ],
+    "update: gold found at all": [
+     30,
+     57,
+     0.526
+    ],
+    "conflict: right op+ref": [
+     0,
+     0,
+     null
+    ],
+    "confirm: found by ref": [
+     0,
+     14,
+     0.0
+    ],
+    "confirm: answered with a duplicate add": [
+     4,
+     14
+    ],
+    "confirm: answered with an update": [
+     0,
+     14
+    ],
+    "retract: found by ref": [
+     6,
+     17,
+     0.353
+    ],
+    "retract: predicted (precision)": [
+     6,
+     17,
+     0.353
+    ],
+    "skip: recorded as skip": [
+     47,
+     100,
+     0.47
+    ],
+    "skip: stored instead (hard negative stored)": [
+     2,
+     100,
+     0.02
+    ],
+    "skip: why correct (of recorded)": [
+     46,
+     47,
+     0.979
+    ],
+    "skip ops predicted (precision of skip)": [
+     47,
+     117,
+     0.402
+    ]
+   },
+   "skip_traps": {
+    "joke": {
+     "gold": 16,
+     "stored_as_memory": 1,
+     "stored_share": 0.062
+    },
+    "hypothetical": {
+     "gold": 13,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "hearsay": {
+     "gold": 21,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "suggestion": {
+     "gold": 12,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "secret": {
+     "gold": 19,
+     "stored_as_memory": 1,
+     "stored_share": 0.053
+    },
+    "injection": {
+     "gold": 13,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "other": {
+     "gold": 6,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    }
+   },
+   "false_memory_taxonomy": {
+    "statement the teacher did not label": 48,
+    "same statement, different value / slot": 46,
+    "same value, different entity": 33,
+    "same statement, date wrong or missing": 12,
+    "other speaker's statement attributed to the user": 5,
+    "should have acted on a stored memory": 3,
+    "stored a skip trap": 2
+   },
+   "ungrounded_quote_patterns": {
+    "paraphrased / other": 18,
+    "speaker label in quote": 1
+   },
+   "think": {
+    "sessions_with_reasoning": 0,
+    "sessions_stopped_while_reasoning": 0,
+    "mean_reasoning_chars": 0
+   },
+   "latency_s": {
+    "p50": 2.6,
+    "p95": 6.1
+   },
+   "tokens": {
+    "prompt_mean": 558,
+    "generated_mean": 238
+   },
+   "language": {
+    "en": {
+     "extraction_precision": 0.364,
+     "extraction_recall": 0.225,
+     "extraction_f1": 0.278,
+     "false_memory_share": 0.589,
+     "update_accuracy": 0.219,
+     "contradiction_resolution": 0.238,
+     "hard_negative_stored": 0.0,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.871,
+     "n_sessions": 70,
+     "n_gold": 209,
+     "n_pred": 129
+    },
+    "mixed": {
+     "extraction_precision": 0.382,
+     "extraction_recall": 0.5,
+     "extraction_f1": 0.433,
+     "false_memory_share": 0.618,
+     "update_accuracy": 0.5,
+     "contradiction_resolution": 0.5,
+     "hard_negative_stored": 0.091,
+     "empty_session_accuracy": 0.5,
+     "duplicate_detection_recall": null,
+     "output_validity": 1.0,
+     "n_sessions": 10,
+     "n_gold": 26,
+     "n_pred": 34
+    },
+    "roman-ur": {
+     "extraction_precision": 0.333,
+     "extraction_recall": 0.218,
+     "extraction_f1": 0.264,
+     "false_memory_share": 0.667,
+     "update_accuracy": 0.308,
+     "contradiction_resolution": 0.333,
+     "hard_negative_stored": 0.042,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.967,
+     "n_sessions": 30,
+     "n_gold": 87,
+     "n_pred": 57
+    },
+    "ur": {
+     "extraction_precision": 0.391,
+     "extraction_recall": 0.243,
+     "extraction_f1": 0.3,
+     "false_memory_share": 0.609,
+     "update_accuracy": 0.5,
+     "contradiction_resolution": 0.5,
+     "hard_negative_stored": 0.0,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": null,
+     "output_validity": 1.0,
+     "n_sessions": 10,
+     "n_gold": 37,
+     "n_pred": 23
+    }
+   }
+  },
+  "closed": {
+   "sessions": 120,
+   "primary": {
+    "false_memories_per_100_sessions": 140.8,
+    "precision_at_60": 0.283,
+    "under_covering": false,
+    "content_ops": 217,
+    "f0_5": 0.194,
+    "risk_coverage_area": 0.247
+   },
+   "strict": {
+    "extraction_precision": 0.221,
+    "extraction_recall": 0.13,
+    "extraction_f1": 0.164,
+    "false_memory_share": 0.779,
+    "hard_negative_stored": 0.04,
+    "update_accuracy": 0.2,
+    "contradiction_resolution": 0.286,
+    "temporal_date_accuracy": 0.0,
+    "entity_linking_accuracy": 0.453,
+    "empty_session_accuracy": 0.96,
+    "duplicate_detection_recall": 0.0,
+    "duplicates_created_rate": 0.0,
+    "retraction_precision": 0.125,
+    "retraction_recall": 0.5,
+    "ungrounded_evidence_rate": 0.037,
+    "guard_rejection_rate": 0.113,
+    "output_validity": 0.908,
+    "skip_recall": 0.45
+   },
+   "by_operation": {
+    "add (gold, matched, recall)": [
+     43,
+     360,
+     0.119
+    ],
+    "update: right op+ref (of gold updates)": [
+     2,
+     10,
+     0.2
+    ],
+    "update: gold found at all": [
+     5,
+     10,
+     0.5
+    ],
+    "conflict: right op+ref": [
+     0,
+     0,
+     null
+    ],
+    "confirm: found by ref": [
+     0,
+     3,
+     0.0
+    ],
+    "confirm: answered with a duplicate add": [
+     0,
+     3
+    ],
+    "confirm: answered with an update": [
+     0,
+     3
+    ],
+    "retract: found by ref": [
+     2,
+     4,
+     0.5
+    ],
+    "retract: predicted (precision)": [
+     2,
+     16,
+     0.125
+    ],
+    "skip: recorded as skip": [
+     45,
+     100,
+     0.45
+    ],
+    "skip: stored instead (hard negative stored)": [
+     4,
+     100,
+     0.04
+    ],
+    "skip: why correct (of recorded)": [
+     44,
+     45,
+     0.978
+    ],
+    "skip ops predicted (precision of skip)": [
+     45,
+     105,
+     0.429
+    ]
+   },
+   "skip_traps": {
+    "joke": {
+     "gold": 16,
+     "stored_as_memory": 1,
+     "stored_share": 0.062
+    },
+    "hypothetical": {
+     "gold": 13,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "hearsay": {
+     "gold": 21,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "suggestion": {
+     "gold": 12,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "secret": {
+     "gold": 19,
+     "stored_as_memory": 3,
+     "stored_share": 0.158
+    },
+    "injection": {
+     "gold": 13,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "other": {
+     "gold": 6,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    }
+   },
+   "false_memory_taxonomy": {
+    "same value, different entity": 52,
+    "same statement, different value / slot": 51,
+    "statement the teacher did not label": 41,
+    "same statement, date wrong or missing": 16,
+    "stored a skip trap": 4,
+    "other speaker's statement attributed to the user": 4,
+    "should have acted on a stored memory": 1
+   },
+   "ungrounded_quote_patterns": {
+    "paraphrased / other": 14
+   },
+   "think": {
+    "sessions_with_reasoning": 0,
+    "sessions_stopped_while_reasoning": 0,
+    "mean_reasoning_chars": 0
+   },
+   "latency_s": {
+    "p50": 2.1,
+    "p95": 6.9
+   },
+   "tokens": {
+    "prompt_mean": 365,
+    "generated_mean": 235
+   },
+   "language": {
+    "en": {
+     "extraction_precision": 0.236,
+     "extraction_recall": 0.12,
+     "extraction_f1": 0.16,
+     "false_memory_share": 0.764,
+     "update_accuracy": 0.167,
+     "contradiction_resolution": 0.25,
+     "hard_negative_stored": 0.017,
+     "empty_session_accuracy": 0.929,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.886,
+     "n_sessions": 70,
+     "n_gold": 216,
+     "n_pred": 110
+    },
+    "mixed": {
+     "extraction_precision": 0.154,
+     "extraction_recall": 0.154,
+     "extraction_f1": 0.154,
+     "false_memory_share": 0.846,
+     "update_accuracy": 0.0,
+     "contradiction_resolution": 0.0,
+     "hard_negative_stored": 0.091,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": null,
+     "output_validity": 1.0,
+     "n_sessions": 10,
+     "n_gold": 26,
+     "n_pred": 26
+    },
+    "roman-ur": {
+     "extraction_precision": 0.215,
+     "extraction_recall": 0.154,
+     "extraction_f1": 0.179,
+     "false_memory_share": 0.785,
+     "update_accuracy": 0.333,
+     "contradiction_resolution": 0.4,
+     "hard_negative_stored": 0.083,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.933,
+     "n_sessions": 30,
+     "n_gold": 91,
+     "n_pred": 65
+    },
+    "ur": {
+     "extraction_precision": 0.25,
+     "extraction_recall": 0.108,
+     "extraction_f1": 0.151,
+     "false_memory_share": 0.75,
+     "update_accuracy": null,
+     "contradiction_resolution": null,
+     "hard_negative_stored": 0.0,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": null,
+     "output_validity": 0.9,
+     "n_sessions": 10,
+     "n_gold": 37,
+     "n_pred": 16
+    }
+   }
+  }
+ },
+ "qwen3-4b-2507": {
+  "open": {
+   "sessions": 120,
+   "primary": {
+    "false_memories_per_100_sessions": 130.8,
+    "precision_at_60": 0.617,
+    "under_covering": false,
+    "content_ops": 293,
+    "f0_5": 0.428,
+    "risk_coverage_area": 0.545
+   },
+   "strict": {
+    "extraction_precision": 0.447,
+    "extraction_recall": 0.365,
+    "extraction_f1": 0.402,
+    "false_memory_share": 0.536,
+    "hard_negative_stored": 0.02,
+    "update_accuracy": 0.561,
+    "contradiction_resolution": 0.554,
+    "temporal_date_accuracy": 0.0,
+    "entity_linking_accuracy": 0.744,
+    "empty_session_accuracy": 0.96,
+    "duplicate_detection_recall": 0.286,
+    "duplicates_created_rate": 0.429,
+    "retraction_precision": 0.6,
+    "retraction_recall": 0.529,
+    "ungrounded_evidence_rate": 0.029,
+    "guard_rejection_rate": 0.081,
+    "output_validity": 0.892,
+    "skip_recall": 0.73
+   },
+   "by_operation": {
+    "add (gold, matched, recall)": [
+     93,
+     302,
+     0.308
+    ],
+    "update: right op+ref (of gold updates)": [
+     32,
+     57,
+     0.561
+    ],
+    "update: gold found at all": [
+     38,
+     57,
+     0.667
+    ],
+    "conflict: right op+ref": [
+     0,
+     0,
+     null
+    ],
+    "confirm: found by ref": [
+     4,
+     14,
+     0.286
+    ],
+    "confirm: answered with a duplicate add": [
+     1,
+     14
+    ],
+    "confirm: answered with an update": [
+     4,
+     14
+    ],
+    "retract: found by ref": [
+     9,
+     17,
+     0.529
+    ],
+    "retract: predicted (precision)": [
+     9,
+     15,
+     0.6
+    ],
+    "skip: recorded as skip": [
+     73,
+     100,
+     0.73
+    ],
+    "skip: stored instead (hard negative stored)": [
+     2,
+     100,
+     0.02
+    ],
+    "skip: why correct (of recorded)": [
+     69,
+     73,
+     0.945
+    ],
+    "skip ops predicted (precision of skip)": [
+     73,
+     118,
+     0.619
+    ]
+   },
+   "skip_traps": {
+    "joke": {
+     "gold": 16,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "hypothetical": {
+     "gold": 13,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "hearsay": {
+     "gold": 21,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "suggestion": {
+     "gold": 12,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "secret": {
+     "gold": 19,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "injection": {
+     "gold": 13,
+     "stored_as_memory": 1,
+     "stored_share": 0.077
+    },
+    "other": {
+     "gold": 6,
+     "stored_as_memory": 1,
+     "stored_share": 0.167
+    }
+   },
+   "false_memory_taxonomy": {
+    "same statement, different value / slot": 50,
+    "statement the teacher did not label": 41,
+    "same value, different entity": 37,
+    "same statement, date wrong or missing": 22,
+    "should have acted on a stored memory": 3,
+    "stored a skip trap": 2,
+    "other speaker's statement attributed to the user": 2
+   },
+   "ungrounded_quote_patterns": {
+    "paraphrased / other": 14
+   },
+   "think": {
+    "sessions_with_reasoning": 0,
+    "sessions_stopped_while_reasoning": 0,
+    "mean_reasoning_chars": 0
+   },
+   "latency_s": {
+    "p50": 5.8,
+    "p95": 12.2
+   },
+   "tokens": {
+    "prompt_mean": 554,
+    "generated_mean": 272
+   },
+   "language": {
+    "en": {
+     "extraction_precision": 0.493,
+     "extraction_recall": 0.349,
+     "extraction_f1": 0.409,
+     "false_memory_share": 0.493,
+     "update_accuracy": 0.5,
+     "contradiction_resolution": 0.524,
+     "hard_negative_stored": 0.0,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": 0.222,
+     "output_validity": 0.857,
+     "n_sessions": 70,
+     "n_gold": 209,
+     "n_pred": 148
+    },
+    "mixed": {
+     "extraction_precision": 0.269,
+     "extraction_recall": 0.269,
+     "extraction_f1": 0.269,
+     "false_memory_share": 0.731,
+     "update_accuracy": 0.5,
+     "contradiction_resolution": 0.625,
+     "hard_negative_stored": 0.091,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": null,
+     "output_validity": 0.9,
+     "n_sessions": 10,
+     "n_gold": 26,
+     "n_pred": 26
+    },
+    "roman-ur": {
+     "extraction_precision": 0.379,
+     "extraction_recall": 0.379,
+     "extraction_f1": 0.379,
+     "false_memory_share": 0.598,
+     "update_accuracy": 0.615,
+     "contradiction_resolution": 0.5,
+     "hard_negative_stored": 0.042,
+     "empty_session_accuracy": 0.857,
+     "duplicate_detection_recall": 0.4,
+     "output_validity": 0.933,
+     "n_sessions": 30,
+     "n_gold": 87,
+     "n_pred": 87
+    },
+    "ur": {
+     "extraction_precision": 0.562,
+     "extraction_recall": 0.486,
+     "extraction_f1": 0.522,
+     "false_memory_share": 0.406,
+     "update_accuracy": 0.833,
+     "contradiction_resolution": 0.833,
+     "hard_negative_stored": 0.0,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": null,
+     "output_validity": 1.0,
+     "n_sessions": 10,
+     "n_gold": 37,
+     "n_pred": 32
+    }
+   }
+  },
+  "closed": {
+   "sessions": 120,
+   "primary": {
+    "false_memories_per_100_sessions": 155.0,
+    "precision_at_60": 0.45,
+    "under_covering": false,
+    "content_ops": 307,
+    "f0_5": 0.35,
+    "risk_coverage_area": 0.416
+   },
+   "strict": {
+    "extraction_precision": 0.365,
+    "extraction_recall": 0.303,
+    "extraction_f1": 0.331,
+    "false_memory_share": 0.606,
+    "hard_negative_stored": 0.0,
+    "update_accuracy": 0.667,
+    "contradiction_resolution": 0.621,
+    "temporal_date_accuracy": 0.0,
+    "entity_linking_accuracy": 0.629,
+    "empty_session_accuracy": 0.88,
+    "duplicate_detection_recall": 0.333,
+    "duplicates_created_rate": 3.667,
+    "retraction_precision": 0.4,
+    "retraction_recall": 0.5,
+    "ungrounded_evidence_rate": 0.029,
+    "guard_rejection_rate": 0.086,
+    "output_validity": 0.9,
+    "skip_recall": 0.74
+   },
+   "by_operation": {
+    "add (gold, matched, recall)": [
+     95,
+     349,
+     0.272
+    ],
+    "update: right op+ref (of gold updates)": [
+     14,
+     21,
+     0.667
+    ],
+    "update: gold found at all": [
+     17,
+     21,
+     0.81
+    ],
+    "conflict: right op+ref": [
+     0,
+     0,
+     null
+    ],
+    "confirm: found by ref": [
+     1,
+     3,
+     0.333
+    ],
+    "confirm: answered with a duplicate add": [
+     2,
+     3
+    ],
+    "confirm: answered with an update": [
+     0,
+     3
+    ],
+    "retract: found by ref": [
+     4,
+     8,
+     0.5
+    ],
+    "retract: predicted (precision)": [
+     4,
+     10,
+     0.4
+    ],
+    "skip: recorded as skip": [
+     74,
+     100,
+     0.74
+    ],
+    "skip: stored instead (hard negative stored)": [
+     0,
+     100,
+     0.0
+    ],
+    "skip: why correct (of recorded)": [
+     70,
+     74,
+     0.946
+    ],
+    "skip ops predicted (precision of skip)": [
+     74,
+     119,
+     0.622
+    ]
+   },
+   "skip_traps": {
+    "joke": {
+     "gold": 16,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "hypothetical": {
+     "gold": 13,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "hearsay": {
+     "gold": 21,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "suggestion": {
+     "gold": 12,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "secret": {
+     "gold": 19,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "injection": {
+     "gold": 13,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "other": {
+     "gold": 6,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    }
+   },
+   "false_memory_taxonomy": {
+    "statement the teacher did not label": 59,
+    "same value, different entity": 55,
+    "same statement, different value / slot": 54,
+    "same statement, date wrong or missing": 16,
+    "stored a skip trap": 1,
+    "other speaker's statement attributed to the user": 1
+   },
+   "ungrounded_quote_patterns": {
+    "paraphrased / other": 14
+   },
+   "think": {
+    "sessions_with_reasoning": 0,
+    "sessions_stopped_while_reasoning": 0,
+    "mean_reasoning_chars": 0
+   },
+   "latency_s": {
+    "p50": 6.1,
+    "p95": 12.1
+   },
+   "tokens": {
+    "prompt_mean": 401,
+    "generated_mean": 278
+   },
+   "language": {
+    "en": {
+     "extraction_precision": 0.348,
+     "extraction_recall": 0.263,
+     "extraction_f1": 0.299,
+     "false_memory_share": 0.634,
+     "update_accuracy": 0.444,
+     "contradiction_resolution": 0.462,
+     "hard_negative_stored": 0.0,
+     "empty_session_accuracy": 0.929,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.9,
+     "n_sessions": 70,
+     "n_gold": 217,
+     "n_pred": 164
+    },
+    "mixed": {
+     "extraction_precision": 0.538,
+     "extraction_recall": 0.538,
+     "extraction_f1": 0.538,
+     "false_memory_share": 0.462,
+     "update_accuracy": 1.0,
+     "contradiction_resolution": 1.0,
+     "hard_negative_stored": 0.0,
+     "empty_session_accuracy": 0.5,
+     "duplicate_detection_recall": null,
+     "output_validity": 0.9,
+     "n_sessions": 10,
+     "n_gold": 26,
+     "n_pred": 26
+    },
+    "roman-ur": {
+     "extraction_precision": 0.337,
+     "extraction_recall": 0.322,
+     "extraction_f1": 0.33,
+     "false_memory_share": 0.593,
+     "update_accuracy": 0.8,
+     "contradiction_resolution": 0.625,
+     "hard_negative_stored": 0.0,
+     "empty_session_accuracy": 0.857,
+     "duplicate_detection_recall": 0.5,
+     "output_validity": 0.9,
+     "n_sessions": 30,
+     "n_gold": 90,
+     "n_pred": 86
+    },
+    "ur": {
+     "extraction_precision": 0.387,
+     "extraction_recall": 0.324,
+     "extraction_f1": 0.353,
+     "false_memory_share": 0.613,
+     "update_accuracy": 0.5,
+     "contradiction_resolution": 0.5,
+     "hard_negative_stored": 0.0,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": null,
+     "output_validity": 0.9,
+     "n_sessions": 10,
+     "n_gold": 37,
+     "n_pred": 31
+    }
+   }
+  }
+ },
+ "gemma-4-e2b": {
+  "open": {
+   "sessions": 120,
+   "primary": {
+    "false_memories_per_100_sessions": 104.2,
+    "precision_at_60": 0.5,
+    "under_covering": false,
+    "content_ops": 232,
+    "f0_5": 0.396,
+    "risk_coverage_area": 0.486
+   },
+   "strict": {
+    "extraction_precision": 0.44,
+    "extraction_recall": 0.284,
+    "extraction_f1": 0.345,
+    "false_memory_share": 0.539,
+    "hard_negative_stored": 0.05,
+    "update_accuracy": 0.404,
+    "contradiction_resolution": 0.392,
+    "temporal_date_accuracy": 0.0,
+    "entity_linking_accuracy": 0.713,
+    "empty_session_accuracy": 0.88,
+    "duplicate_detection_recall": 0.357,
+    "duplicates_created_rate": 0.357,
+    "retraction_precision": 0.6,
+    "retraction_recall": 0.353,
+    "ungrounded_evidence_rate": 0.019,
+    "guard_rejection_rate": 0.142,
+    "output_validity": 0.75,
+    "skip_recall": 0.4
+   },
+   "by_operation": {
+    "add (gold, matched, recall)": [
+     71,
+     302,
+     0.235
+    ],
+    "update: right op+ref (of gold updates)": [
+     23,
+     57,
+     0.404
+    ],
+    "update: gold found at all": [
+     31,
+     57,
+     0.544
+    ],
+    "conflict: right op+ref": [
+     0,
+     0,
+     null
+    ],
+    "confirm: found by ref": [
+     5,
+     14,
+     0.357
+    ],
+    "confirm: answered with a duplicate add": [
+     0,
+     14
+    ],
+    "confirm: answered with an update": [
+     1,
+     14
+    ],
+    "retract: found by ref": [
+     6,
+     17,
+     0.353
+    ],
+    "retract: predicted (precision)": [
+     6,
+     10,
+     0.6
+    ],
+    "skip: recorded as skip": [
+     40,
+     100,
+     0.4
+    ],
+    "skip: stored instead (hard negative stored)": [
+     5,
+     100,
+     0.05
+    ],
+    "skip: why correct (of recorded)": [
+     38,
+     40,
+     0.95
+    ],
+    "skip ops predicted (precision of skip)": [
+     40,
+     63,
+     0.635
+    ]
+   },
+   "skip_traps": {
+    "joke": {
+     "gold": 16,
+     "stored_as_memory": 1,
+     "stored_share": 0.062
+    },
+    "hypothetical": {
+     "gold": 13,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "hearsay": {
+     "gold": 21,
+     "stored_as_memory": 2,
+     "stored_share": 0.095
+    },
+    "suggestion": {
+     "gold": 12,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "secret": {
+     "gold": 19,
+     "stored_as_memory": 1,
+     "stored_share": 0.053
+    },
+    "injection": {
+     "gold": 13,
+     "stored_as_memory": 1,
+     "stored_share": 0.077
+    },
+    "other": {
+     "gold": 6,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    }
+   },
+   "false_memory_taxonomy": {
+    "same value, different entity": 36,
+    "same statement, different value / slot": 28,
+    "statement the teacher did not label": 27,
+    "same statement, date wrong or missing": 20,
+    "stored a skip trap": 5,
+    "should have acted on a stored memory": 5,
+    "other speaker's statement attributed to the user": 4
+   },
+   "ungrounded_quote_patterns": {
+    "paraphrased / other": 7
+   },
+   "think": {
+    "sessions_with_reasoning": 120,
+    "sessions_stopped_while_reasoning": 0,
+    "mean_reasoning_chars": 1460.3
+   },
+   "latency_s": {
+    "p50": 10.1,
+    "p95": 13.3
+   },
+   "tokens": {
+    "prompt_mean": 537,
+    "generated_mean": 648
+   },
+   "language": {
+    "en": {
+     "extraction_precision": 0.45,
+     "extraction_recall": 0.301,
+     "extraction_f1": 0.361,
+     "false_memory_share": 0.543,
+     "update_accuracy": 0.406,
+     "contradiction_resolution": 0.381,
+     "hard_negative_stored": 0.052,
+     "empty_session_accuracy": 0.857,
+     "duplicate_detection_recall": 0.333,
+     "output_validity": 0.757,
+     "n_sessions": 70,
+     "n_gold": 209,
+     "n_pred": 140
+    },
+    "mixed": {
+     "extraction_precision": 0.444,
+     "extraction_recall": 0.308,
+     "extraction_f1": 0.364,
+     "false_memory_share": 0.5,
+     "update_accuracy": 0.5,
+     "contradiction_resolution": 0.5,
+     "hard_negative_stored": 0.182,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": null,
+     "output_validity": 0.8,
+     "n_sessions": 10,
+     "n_gold": 26,
+     "n_pred": 18
+    },
+    "roman-ur": {
+     "extraction_precision": 0.39,
+     "extraction_recall": 0.264,
+     "extraction_f1": 0.315,
+     "false_memory_share": 0.559,
+     "update_accuracy": 0.462,
+     "contradiction_resolution": 0.444,
+     "hard_negative_stored": 0.0,
+     "empty_session_accuracy": 0.857,
+     "duplicate_detection_recall": 0.4,
+     "output_validity": 0.767,
+     "n_sessions": 30,
+     "n_gold": 87,
+     "n_pred": 59
+    },
+    "ur": {
+     "extraction_precision": 0.533,
+     "extraction_recall": 0.216,
+     "extraction_f1": 0.308,
+     "false_memory_share": 0.467,
+     "update_accuracy": 0.167,
+     "contradiction_resolution": 0.167,
+     "hard_negative_stored": 0.0,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": null,
+     "output_validity": 0.6,
+     "n_sessions": 10,
+     "n_gold": 37,
+     "n_pred": 15
+    }
+   }
+  },
+  "closed": {
+   "sessions": 120,
+   "primary": {
+    "false_memories_per_100_sessions": 130.0,
+    "precision_at_60": 0.383,
+    "under_covering": false,
+    "content_ops": 245,
+    "f0_5": 0.326,
+    "risk_coverage_area": 0.402
+   },
+   "strict": {
+    "extraction_precision": 0.359,
+    "extraction_recall": 0.239,
+    "extraction_f1": 0.287,
+    "false_memory_share": 0.637,
+    "hard_negative_stored": 0.04,
+    "update_accuracy": 0.579,
+    "contradiction_resolution": 0.464,
+    "temporal_date_accuracy": 0.021,
+    "entity_linking_accuracy": 0.587,
+    "empty_session_accuracy": 0.84,
+    "duplicate_detection_recall": 0.4,
+    "duplicates_created_rate": 0.2,
+    "retraction_precision": 0.4,
+    "retraction_recall": 0.222,
+    "ungrounded_evidence_rate": 0.031,
+    "guard_rejection_rate": 0.145,
+    "output_validity": 0.733,
+    "skip_recall": 0.39
+   },
+   "by_operation": {
+    "add (gold, matched, recall)": [
+     74,
+     349,
+     0.212
+    ],
+    "update: right op+ref (of gold updates)": [
+     11,
+     19,
+     0.579
+    ],
+    "update: gold found at all": [
+     14,
+     19,
+     0.737
+    ],
+    "conflict: right op+ref": [
+     0,
+     0,
+     null
+    ],
+    "confirm: found by ref": [
+     2,
+     5,
+     0.4
+    ],
+    "confirm: answered with a duplicate add": [
+     0,
+     5
+    ],
+    "confirm: answered with an update": [
+     0,
+     5
+    ],
+    "retract: found by ref": [
+     2,
+     9,
+     0.222
+    ],
+    "retract: predicted (precision)": [
+     2,
+     5,
+     0.4
+    ],
+    "skip: recorded as skip": [
+     39,
+     100,
+     0.39
+    ],
+    "skip: stored instead (hard negative stored)": [
+     4,
+     100,
+     0.04
+    ],
+    "skip: why correct (of recorded)": [
+     37,
+     39,
+     0.949
+    ],
+    "skip ops predicted (precision of skip)": [
+     39,
+     74,
+     0.527
+    ]
+   },
+   "skip_traps": {
+    "joke": {
+     "gold": 16,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "hypothetical": {
+     "gold": 13,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "hearsay": {
+     "gold": 21,
+     "stored_as_memory": 1,
+     "stored_share": 0.048
+    },
+    "suggestion": {
+     "gold": 12,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    },
+    "secret": {
+     "gold": 19,
+     "stored_as_memory": 2,
+     "stored_share": 0.105
+    },
+    "injection": {
+     "gold": 13,
+     "stored_as_memory": 1,
+     "stored_share": 0.077
+    },
+    "other": {
+     "gold": 6,
+     "stored_as_memory": 0,
+     "stored_share": 0.0
+    }
+   },
+   "false_memory_taxonomy": {
+    "same value, different entity": 57,
+    "statement the teacher did not label": 42,
+    "same statement, different value / slot": 36,
+    "same statement, date wrong or missing": 13,
+    "stored a skip trap": 4,
+    "other speaker's statement attributed to the user": 3,
+    "should have acted on a stored memory": 1
+   },
+   "ungrounded_quote_patterns": {
+    "paraphrased / other": 12
+   },
+   "think": {
+    "sessions_with_reasoning": 120,
+    "sessions_stopped_while_reasoning": 1,
+    "mean_reasoning_chars": 1555.1
+   },
+   "latency_s": {
+    "p50": 10.8,
+    "p95": 13.3
+   },
+   "tokens": {
+    "prompt_mean": 367,
+    "generated_mean": 680
+   },
+   "language": {
+    "en": {
+     "extraction_precision": 0.341,
+     "extraction_recall": 0.21,
+     "extraction_f1": 0.26,
+     "false_memory_share": 0.652,
+     "update_accuracy": 0.5,
+     "contradiction_resolution": 0.353,
+     "hard_negative_stored": 0.034,
+     "empty_session_accuracy": 0.786,
+     "duplicate_detection_recall": 0.5,
+     "output_validity": 0.7,
+     "n_sessions": 70,
+     "n_gold": 214,
+     "n_pred": 132
+    },
+    "mixed": {
+     "extraction_precision": 0.381,
+     "extraction_recall": 0.308,
+     "extraction_f1": 0.34,
+     "false_memory_share": 0.619,
+     "update_accuracy": 0.0,
+     "contradiction_resolution": 0.0,
+     "hard_negative_stored": 0.0,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": null,
+     "output_validity": 0.7,
+     "n_sessions": 10,
+     "n_gold": 26,
+     "n_pred": 21
+    },
+    "roman-ur": {
+     "extraction_precision": 0.385,
+     "extraction_recall": 0.275,
+     "extraction_f1": 0.321,
+     "false_memory_share": 0.615,
+     "update_accuracy": 1.0,
+     "contradiction_resolution": 1.0,
+     "hard_negative_stored": 0.083,
+     "empty_session_accuracy": 0.857,
+     "duplicate_detection_recall": 0.0,
+     "output_validity": 0.8,
+     "n_sessions": 30,
+     "n_gold": 91,
+     "n_pred": 65
+    },
+    "ur": {
+     "extraction_precision": 0.37,
+     "extraction_recall": 0.27,
+     "extraction_f1": 0.312,
+     "false_memory_share": 0.63,
+     "update_accuracy": 0.5,
+     "contradiction_resolution": 0.5,
+     "hard_negative_stored": 0.0,
+     "empty_session_accuracy": 1.0,
+     "duplicate_detection_recall": null,
+     "output_validity": 0.8,
+     "n_sessions": 10,
+     "n_gold": 37,
+     "n_pred": 27
+    }
+   }
+  }
+ }
+}

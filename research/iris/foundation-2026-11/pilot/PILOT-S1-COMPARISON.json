@@ -1,0 +1,108 @@
+{
+ "control": "qwen3-1.7b",
+ "bootstrap": {
+  "resamples": 2000,
+  "seed": 0,
+  "unit": "episode"
+ },
+ "thresholds": {
+  "recall_margin": -0.03,
+  "end_state_margin": -0.02,
+  "noise_false_per_100": 5.0,
+  "noise_precision": 0.05
+ },
+ "comparisons": {
+  "qwen3-4b-2507": {
+   "episodes": 24,
+   "point": {
+    "false_per_100": 14.1667,
+    "recall": 0.173,
+    "end_state_f1": 0.1634,
+    "equal_volume_precision": 0.2074
+   },
+   "ci95": {
+    "false_per_100": [
+     -20.0,
+     53.3333
+    ],
+    "recall": [
+     0.1191,
+     0.2333
+    ],
+    "end_state_f1": [
+     0.1012,
+     0.2277
+    ],
+    "equal_volume_precision": [
+     0.1036,
+     0.2818
+    ]
+   },
+   "equal_volume": {
+    "n_candidate": 307,
+    "n_control": 217,
+    "volume": 217,
+    "unscored_candidate": 0.0,
+    "unscored_control": 0.0,
+    "volume_shortfall": false,
+    "precision_candidate": 0.4286,
+    "precision_control": 0.2212,
+    "difference": 0.2074
+   },
+   "criteria": {
+    "1_fewer_false_memories": false,
+    "2_recall_non_inferior": true,
+    "3_equal_volume_precision": true,
+    "4_end_state_not_worse": true,
+    "5_beyond_hardware_noise": false
+   },
+   "beats_control": false
+  },
+  "gemma-4-e2b": {
+   "episodes": 24,
+   "point": {
+    "false_per_100": -10.8333,
+    "recall": 0.1094,
+    "end_state_f1": 0.1192,
+    "equal_volume_precision": 0.1613
+   },
+   "ci95": {
+    "false_per_100": [
+     -45.0,
+     24.1667
+    ],
+    "recall": [
+     0.0598,
+     0.1548
+    ],
+    "end_state_f1": [
+     0.0572,
+     0.1744
+    ],
+    "equal_volume_precision": [
+     0.088,
+     0.2333
+    ]
+   },
+   "equal_volume": {
+    "n_candidate": 245,
+    "n_control": 217,
+    "volume": 217,
+    "unscored_candidate": 0.0,
+    "unscored_control": 0.0,
+    "volume_shortfall": false,
+    "precision_candidate": 0.3825,
+    "precision_control": 0.2212,
+    "difference": 0.1613
+   },
+   "criteria": {
+    "1_fewer_false_memories": false,
+    "2_recall_non_inferior": true,
+    "3_equal_volume_precision": true,
+    "4_end_state_not_worse": true,
+    "5_beyond_hardware_noise": true
+   },
+   "beats_control": false
+  }
+ }
+}
