@@ -8,7 +8,7 @@ Steps:   G0 verify every adapter and the pilot Q4 sha256, the val data, the raw 
          llama.cpp at the pinned commit (quantize + server, CPU); for r2, r3, pilot: streaming fp32 merge saved fp16 (same
          procedure as the pilot export) -> convert_hf_to_gguf f16 -> llama-quantize Q4_K_M. Keep F16 for r2 and pilot,
          Q4 for r2 and r3; the pilot re-export Q4 is hashed and compared with the original, then deleted (check only).
-         G1: e1_gates.py (TG1 / TG2 / token ids) on the exported r2 Q4 and the original pilot Q4.
+         Template gates: not here (llama-server needs the web-UI archive to build); run locally on the exported files and in the GPU kernel.
 Output:  /kaggle/working/gguf/*.gguf, SHA256SUMS, export-status.json (every check, pass / fail, with reasons).
 A failed G0 check stops the kernel before any export; nothing is substituted.
 """
@@ -147,10 +147,14 @@ head = sh(f"cd {L} && git rev-parse HEAD").stdout.strip()
 if head != EXP["llama_cpp_commit"]:
     fail("G0_llama_commit", head)
 sh(f"{sys.executable} -m pip install -q {L}/gguf-py")
-sh(f"cd {L} && cmake -S . -B build -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release > /tmp/cmake.log 2>&1 && "
-   f"cmake --build build -j{os.cpu_count()} --target llama-quantize llama-server > /tmp/build.log 2>&1")
-ver = sh(f"{L}/build/bin/llama-server --version", check=False)
-ok("G0_llama_commit", commit=head, server_version=(ver.stdout + ver.stderr).strip()[-200:])
+# llama-quantize only (as the seed-1 export): llama-server needs the pinned web-UI archive to build (wave-A finding);
+# the template gates run locally on these exported files and again in the GPU kernel (E1-PREFLIGHT §6)
+r = subprocess.run(f"cd {L} && cmake -S . -B build -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Release > /tmp/cmake.log 2>&1 && "
+                   f"cmake --build build -j{os.cpu_count()} --target llama-quantize > /tmp/build.log 2>&1", shell=True)
+if r.returncode:
+    print(open("/tmp/cmake.log", errors="replace").read()[-3000:], open("/tmp/build.log", errors="replace").read()[-3000:] if os.path.exists("/tmp/build.log") else "", flush=True)
+    fail("build", "llama-quantize build failed")
+ok("G0_llama_commit", commit=head)
 
 # export ----------------------------------------------------------------------------------------------------------
 MERGE = r'''
@@ -233,15 +237,6 @@ with open(f"{G}/SHA256SUMS", "w") as f:
         if "file" in r:
             f.write(f"{r['sha256']}  {r['file']}\n")
 
-# G1: template gates on the exported files ---------------------------------------------------------------------------
-r = subprocess.run(f"cd {SRC} && LD_LIBRARY_PATH={L}/build/bin IRIS_LLAMA_SERVER={L}/build/bin/llama-server {sys.executable} {E1}/e1_gates.py --tokenizer {BASE} "
-                   f"--gguf-r2 {G}/e1-r2-Q4_K_M.gguf --gguf-pilot {G}/qwen3-1.7b-pilot-s1-Q4_K_M.gguf --out {W}/gates.json",
-                   shell=True, capture_output=True, text=True)
-print(r.stdout[-2000:], r.stderr[-2000:], flush=True)
-g = json.load(open(f"{W}/gates.json")) if os.path.exists(f"{W}/gates.json") else {}
-STATUS["checks"]["G1_TG1"] = {"pass": bool(g.get("TG1_pass")), "matches": g.get("TG1_matches"), "n": g.get("n")}
-STATUS["checks"]["G1_TG2"] = {"pass": bool(g.get("TG2_pass")), "hf": g.get("TG2_hf_matches"), "server": g.get("TG2_server_matches"), "n": g.get("n")}
-STATUS["checks"]["TOK"] = {"r2": g.get("TOK_r2_matches"), "pilot": g.get("TOK_pilot_matches"), "n": g.get("n")}
 STATUS["all_checks_pass"] = all(c.get("pass", True) for c in STATUS["checks"].values())
 save()
 log("done; all checks pass:", STATUS["all_checks_pass"], "deviations:", STATUS["deviations"])
