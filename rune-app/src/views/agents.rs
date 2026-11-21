@@ -89,6 +89,10 @@ pub fn side(s: &App, t: &Theme) -> El {
                     .child(text(h.line()).font(ui(12.0, 400.0)).color(health_ink(t, h)).truncate()),
                 None => name_and_line(t, &a.name, Some(&a.status), 400.0),
             })
+            // Always on, as the phone marks it: its jobs run with the PC off.
+            .children(s.data.extra.agents.spec(&a.id).filter(|x| x.always_on).map(|_| {
+                el().key(format!("always-dot/{}", a.id)).size(7.0, 7.0).radius(3.5).fill(t.green).help("Always on: its jobs run even with your PC off")
+            }))
             .child(more)
             .on_press_tx(move |s: &mut App, tx| { tx.settle(); s.open_agent(Some(&id)) });
         list = list.child(enter(r, i));
