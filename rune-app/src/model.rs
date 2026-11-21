@@ -332,6 +332,13 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
+    /// Your name as the app shows it: the account's first name, or "You" before one is known.
+    pub fn who(&self) -> String {
+        if self.user.is_empty() { "You".to_owned() } else { self.user.clone() }
+    }
+}
+
+impl Snapshot {
     pub fn agent(&self, id: &str) -> Option<&Agent> {
         // A stored chat names the agent it asked; a live one has its id.
         self.team.iter().find(|a| a.id == id).or_else(|| self.team.iter().find(|a| a.name.eq_ignore_ascii_case(id)))

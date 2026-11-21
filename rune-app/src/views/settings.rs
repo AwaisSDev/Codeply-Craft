@@ -204,13 +204,13 @@ fn save_groq_key(s: &mut App) {
 }
 
 fn profile(s: &App, t: &Theme) -> Vec<El> {
-    let initial = s.data.user.chars().next().unwrap_or('S').to_string();
+    let initial = s.data.who().chars().next().unwrap_or('Y').to_string();
     vec![group(t, "Account", vec![
         row().w_full().px(16.0).py(20.0).gap(16.0).center_y()
             .child(el().key("profile-avatar").size(64.0, 64.0).radius(32.0).fill(theme::hex("#2f8f5b")).center()
                 .child(text(initial).font(ui(26.0, 650.0)).color(rune::Color::WHITE)))
             .child(col().grow(1.0).min_w(0.0).gap(2.0)
-                .child(text(s.data.user.clone()).font(ui(18.0, 650.0)).color(t.text))
+                .child(text(s.data.who()).font(ui(18.0, 650.0)).color(t.text))
                 .child(text(s.data.plan.clone()).font(ui(13.0, 400.0)).color(t.dim)))
             .children(s.data.extra.signed_in.then(|| btn(t, "Sign out", None, ButtonKind::Plain).key("set-sign-out").on_press(|s: &mut App| s.sign_out()))),
     ]), sign_in(s, t)]

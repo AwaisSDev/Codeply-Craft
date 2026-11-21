@@ -395,8 +395,8 @@ fn page(s: &App, t: &Theme) -> El {
                 .child(activity);
             let you = row().gap(8.0).center_y()
                 .child(el().size(20.0, 20.0).radius(10.0).fill(theme::hex("#2f8f5b")).center()
-                    .child(text(s.data.user.chars().next().unwrap_or('S').to_string()).font(ui(10.0, 700.0)).color(Color::WHITE)))
-                .child(text(s.data.user.clone()).font(ui(13.5, 400.0)).color(t.text));
+                    .child(text(s.data.who().chars().next().unwrap_or('Y').to_string()).font(ui(10.0, 700.0)).color(Color::WHITE)))
+                .child(text(s.data.who()).font(ui(13.5, 400.0)).color(t.text));
             let checks = row().gap(8.0).center_y()
                 .child(ico_s("check", 16.0, t.green))
                 .child(text("3 passed").font(ui(13.5, 400.0)).color(t.text));

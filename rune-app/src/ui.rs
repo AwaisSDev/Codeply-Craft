@@ -254,9 +254,9 @@ pub fn name_and_line(t: &Theme, name: &str, line: Option<&str>, weight: f32) -> 
 pub fn me(s: &App, t: &Theme) -> El {
     row().gap(10.0).px(14.0).py(12.0).center_y().border_sides([1.0, 0.0, 0.0, 0.0], t.border)
         .child(el().size(30.0, 30.0).radius(15.0).fill(theme::hex("#2f8f5b")).center()
-            .child(text(s.data.user.chars().next().unwrap_or('S').to_string()).font(ui(12.0, 700.0)).color(Color::WHITE)))
+            .child(text(s.data.who().chars().next().unwrap_or('Y').to_string()).font(ui(12.0, 700.0)).color(Color::WHITE)))
         .child(col().grow(1.0)
-            .child(text(s.data.user.clone()).font(ui(13.5, 400.0)).color(t.text))
+            .child(text(s.data.who()).font(ui(13.5, 400.0)).color(t.text))
             .child(text(s.data.plan.clone()).font(ui(12.0, 400.0)).color(t.faint)))
         // Your usage (Settings has its own place in the rail).
         .child(ibtn(t, "chart", "Usage").key("me-usage")

@@ -1235,6 +1235,8 @@ impl Store for LiveStore {
         // really does something.
         snap.extra.agents = Default::default();
         snap.extra.loops.clear();
+        // Your name comes from the account (signed out: "You").
+        snap.user.clear();
         for a in &mut snap.team {
             a.state = AgentState::Idle;
             a.action.clear();
@@ -1479,6 +1481,9 @@ impl Store for LiveStore {
                     snap.extra.email = v["email"].as_str().unwrap_or_default().to_owned();
                     if let Some(name) = v["name"].as_str().filter(|n| !n.is_empty()) {
                         snap.user = name.split_whitespace().next().unwrap_or(name).to_owned();
+                    }
+                    if !snap.extra.signed_in {
+                        snap.user.clear();
                     }
                     snap.plan = if snap.extra.signed_in { "Signed in".into() } else { "Not signed in".into() };
                     // The plan itself, from the account (signing in or out changes it).
