@@ -13,6 +13,7 @@ pub mod mention;
 pub mod models;
 pub mod ports;
 pub mod prs;
+pub mod reminders;
 pub mod settings;
 pub mod skills;
 pub mod tasks;

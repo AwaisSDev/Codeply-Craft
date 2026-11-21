@@ -162,8 +162,41 @@ fn notifications_menu(s: &App, t: &Theme) -> El {
         items.push(menu_item(t, format!("note/unread/{}", c.title), Some("chat"), &c.title, Some("New reply"), false)
             .on_press(move |s: &mut App| s.open_chat(&title)));
     }
+    // Background runs that stopped to ask you something, then the latest reports and reminders.
+    let x = &s.data.extra.agents;
+    for (i, h) in x.health.iter().filter(|h| h.needs_you()).take(4).enumerate() {
+        let agent = h.agent.clone();
+        let name = s.data.agent(&h.agent).map_or_else(|| h.agent.clone(), |a| a.name.clone());
+        items.push(menu_item(t, format!("note/health/{i}"), Some("approve-ask"), &format!("{name} needs you"), Some(&h.reason), false)
+            .on_press(move |s: &mut App| s.open_agent(Some(&agent))));
+    }
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    for (i, r) in x.reports.iter().take(5).enumerate() {
+        let when = crate::agentsync::ago(r.at, now);
+        let (icon, title) = if r.reminder {
+            ("bell", format!("Reminder from {}", r.who))
+        } else if r.ok {
+            ("check", format!("{}: standing job done", r.who))
+        } else {
+            ("alert", format!("{}: the job did not finish", r.who))
+        };
+        let line = r.text.lines().find(|l| !l.trim().is_empty() && !l.starts_with("-# ")).unwrap_or_default();
+        let (chat, reminder) = (r.chat.clone(), r.reminder);
+        items.push(menu_item(t, format!("note/report/{i}"), Some(icon), &title, Some(&format!("{line} · {when}")), false)
+            .on_press(move |s: &mut App| {
+                s.menu = None;
+                if reminder {
+                    s.open_reminders();
+                } else if !chat.is_empty() {
+                    s.open_chat(&chat);
+                }
+            }));
+    }
     if items.is_empty() {
-        items.push(menu_item(t, "note/none".into(), Some("check"), "You're all caught up", Some("Approvals and new replies show here."), false));
+        items.push(menu_item(t, "note/none".into(), Some("check"), "You're all caught up", Some("Approvals, new replies, job reports and reminders show here."), false));
+    }
+    if !s.prefs.notifications {
+        items.push(menu_item(t, "note/off".into(), Some("bell"), "Notifications are off", Some("Turn them on in Settings > General to see these outside the app."), false));
     }
     menu(t, "titlebar-bell", Side::Bottom, 300.0, items).anchored("titlebar-bell".to_owned(), Side::Bottom, rune::Align::End, 6.0)
 }
@@ -202,7 +235,7 @@ fn titlebar(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
 
 /// The titlebar's bell, with a dot while something needs you or a chat has news.
 fn bell(s: &App, t: &Theme) -> El {
-    let news = !s.data.waiting().is_empty() || s.data.extra.chats.iter().any(|c| c.unread);
+    let news = !s.data.waiting().is_empty() || s.data.extra.chats.iter().any(|c| c.unread) || s.data.extra.agents.health.iter().any(|h| h.needs_you());
     let open = s.menu.as_deref() == Some("notifications");
     ibtn(t, "bell", "Notifications").key("titlebar-bell")
         .fill(if open { t.active } else { Color::TRANSPARENT })

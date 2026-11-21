@@ -868,3 +868,93 @@ fn the_bell_opens_whats_new() {
     assert_eq!(rt.state.menu.as_deref(), Some("notifications"));
     assert!(rt.find("menu/titlebar-bell").is_some());
 }
+
+// ---------- the phone's agent features on the PC (agentsync.rs) ----------
+
+#[test]
+fn reminders_open_from_the_agents_list_and_add_snooze_and_delete() {
+    let mut rt = runtime(App::with_mock());
+    click(&mut rt, "rail-Agents");
+    click(&mut rt, "agent-row/reminders");
+    assert!(rt.state.reminders_open);
+    assert!(rt.find("reminders").is_some());
+    let before = rt.state.data.extra.agents.upcoming().count();
+    // Nothing to add yet: it says what it needs.
+    click(&mut rt, "reminder-add");
+    assert_eq!(rt.state.notice.as_deref(), Some("Write what to remember and when."));
+    *rt.state.edit_mut(EditKey::ReminderText) = rune::TextEdit::new("Call the bank");
+    *rt.state.edit_mut(EditKey::ReminderWhen) = rune::TextEdit::new("in 10 minutes");
+    click(&mut rt, "reminder-add");
+    assert_eq!(rt.state.data.extra.agents.upcoming().count(), before + 1);
+    assert!(rt.state.edit(EditKey::ReminderText).text.is_empty());
+    let id = rt.state.data.extra.agents.upcoming().next().unwrap().id.clone();
+    click(&mut rt, &format!("reminder-delete/{id}"));
+    assert_eq!(rt.state.data.extra.agents.upcoming().count(), before);
+    // Mission control closes it.
+    click(&mut rt, "agent-row/mission");
+    assert!(!rt.state.reminders_open);
+}
+
+#[test]
+fn a_specialists_editor_saves_and_always_on_switches() {
+    let mut rt = runtime(App::with_mock());
+    rt.state.open_agent(Some("inbox"));
+    rt.invalidate();
+    settle(&mut rt);
+    click(&mut rt, "spec-edit/inbox");
+    assert!(rt.find("team-dialog").is_some());
+    assert_eq!(rt.state.edit(EditKey::SpecName).text, "Inbox");
+    *rt.state.edit_mut(EditKey::SpecFocus) = rune::TextEdit::new("Answers and sorts my email");
+    rt.invalidate();
+    click(&mut rt, "team-dialog-ok");
+    assert!(rt.state.team_dialog.is_none());
+    assert_eq!(rt.state.data.extra.agents.spec("inbox").unwrap().focus, "Answers and sorts my email");
+    assert_eq!(rt.state.data.agent("inbox").unwrap().role, "Answers and sorts my email");
+    let on = rt.state.data.extra.agents.spec("inbox").unwrap().always_on;
+    click(&mut rt, "always-on/inbox");
+    assert_eq!(rt.state.data.extra.agents.spec("inbox").unwrap().always_on, !on);
+}
+
+#[test]
+fn a_name_already_on_the_team_is_turned_down() {
+    let mut rt = runtime(App::with_mock());
+    rt.state.open_agent(Some("inbox"));
+    rt.state.open_team_dialog(crate::team::TeamDialog::Edit("inbox".into()));
+    rt.invalidate();
+    settle(&mut rt);
+    *rt.state.edit_mut(EditKey::SpecName) = rune::TextEdit::new("backend");
+    rt.invalidate();
+    click(&mut rt, "team-dialog-ok");
+    assert!(rt.state.team_dialog.is_some());
+    assert_eq!(rt.state.notice.as_deref(), Some("backend is already on your team."));
+}
+
+#[test]
+fn at_name_in_mission_control_hands_the_chat_to_that_agent() {
+    let mut rt = runtime(App::with_mock());
+    click(&mut rt, "rail-Agents");
+    *rt.state.edit_mut(EditKey::Mission) = rune::TextEdit::new("@Inbox archive the newsletters");
+    rt.state.submit(EditKey::Mission, &crate::store::Target::Wisp);
+    settle(&mut rt);
+    assert_eq!(rt.state.agent.as_deref(), Some("inbox"), "Inbox's page opens");
+    let title = rt.state.agent_session.get("inbox").cloned().unwrap_or_default();
+    assert_eq!(title, "Inbox: archive the newsletters");
+    assert!(rt.state.edit(EditKey::Mission).text.is_empty());
+}
+
+#[test]
+fn health_shows_on_the_agent_and_its_loop() {
+    let mut rt = runtime(App::with_mock());
+    rt.state.open_agent(Some("backend"));
+    rt.invalidate();
+    settle(&mut rt);
+    let h = rt.state.data.extra.agents.health_of("backend").expect("the sample has a retrying run");
+    assert!(h.line().starts_with("Retrying"));
+    // A needs-you run shows on Mission control and lights the bell.
+    rt.state.open_agent(None);
+    rt.invalidate();
+    settle(&mut rt);
+    assert!(rt.find("health/0").is_some());
+    click(&mut rt, "titlebar-bell");
+    assert!(rt.find("note/health/0").is_some());
+}

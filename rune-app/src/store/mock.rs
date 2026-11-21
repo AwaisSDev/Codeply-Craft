@@ -334,6 +334,7 @@ pub fn extra() -> Extra {
         linked: Default::default(),
         limits: Vec::new(),
         ports: Default::default(),
+        agents: crate::agentsync::sample(),
     }
 }
 

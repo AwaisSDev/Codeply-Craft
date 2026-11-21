@@ -39,6 +39,8 @@ const EXTENSIONS: &[(&str, &str)] = &[
     ("ext-reminders.mjs", include_str!("../sidecar/ext-reminders.mjs")),
     // Chats, specialists' faces and standing-job reports synced with the phone.
     ("ext-agentsync.mjs", include_str!("../sidecar/ext-agentsync.mjs")),
+    // The PC's time zone, for reminder and health times.
+    ("ext-clock.mjs", include_str!("../sidecar/ext-clock.mjs")),
     ("ext-prs.mjs", include_str!("../sidecar/ext-prs.mjs")),
     ("ext-code.mjs", include_str!("../sidecar/ext-code.mjs")),
     // Live Server and sharing ports (the code view's Run menu and Ports panel).

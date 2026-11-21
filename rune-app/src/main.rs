@@ -6,6 +6,7 @@
 //!   codeply --store live            talk to `codeply serve` (build with `--features live`)
 //!   codeply --snap chat.png --scene chat --size 1440x900    a headless render (Rune tooling)
 
+mod agentsync;
 mod app;
 mod art;
 mod bot;
@@ -23,6 +24,7 @@ mod markdown;
 mod mentions;
 mod model;
 mod model_actions;
+mod notify;
 mod models;
 mod prefs;
 mod project;
@@ -50,6 +52,15 @@ const SCENES: &[Scene] = &[
     ("agent", |s| s.open_agent(Some("frontend"))),
     ("agent-wisp", |s| s.open_agent(Some("wisp"))),
     ("appearance", |s| { s.go(View::Agents); s.toggle_appearance("backend"); }),
+    // The phone's agent features on the PC: reminders, a specialist's editor, Always on and
+    // runs' health (retrying, needs you), job reports.
+    ("reminders", |s| s.open_reminders()),
+    ("bell-reports", |s| { s.go(View::Agents); s.toggle_menu("notifications"); }),
+    ("reminders-notifications-off", |s| { s.prefs.notifications = false; s.open_reminders(); }),
+    ("agent-inbox", |s| s.open_agent(Some("inbox"))),
+    ("agent-health", |s| s.open_agent(Some("backend"))),
+    ("spec-edit", |s| { s.open_agent(Some("inbox")); s.open_team_dialog(crate::team::TeamDialog::Edit("inbox".into())); }),
+    ("spec-edit-builtin", |s| { s.open_agent(Some("frontend")); s.open_team_dialog(crate::team::TeamDialog::Edit("frontend".into())); }),
     ("chat", |s| s.new_chat()),
     // The composer's folder menu: eight folders opened before, five showing.
     ("chat-folders", |s| {

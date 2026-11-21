@@ -619,6 +619,9 @@ pub struct Extra {
     pub limits: Vec<(String, String)>,
     /// Live Server and the ports shared outside this computer (the Ports panel).
     pub ports: Ports,
+    /// The phone's agent features on the PC: specialists' full records, reminders, job reports
+    /// and each run's health (agentsync.rs).
+    pub agents: crate::agentsync::AgentsData,
 }
 
 /// Your plan, as the account says (`GET /ext/billing`, from the site's `/api/account`).

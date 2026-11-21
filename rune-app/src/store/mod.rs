@@ -119,6 +119,11 @@ pub trait Store {
     }
     /// Adds to or changes your team and its loops (the engine's specialists and standing jobs).
     fn team_op(&mut self, _op: crate::team::TeamOp, _snap: &mut Snapshot) {}
+    /// Reminders and specialists' records, shared with the phone through the account
+    /// (`sidecar/ext-reminders.mjs`, `sidecar/ext-agentsync.mjs`).
+    fn sync_op(&mut self, op: crate::agentsync::SyncOp, snap: &mut Snapshot) {
+        crate::agentsync::apply_sample(&op, snap);
+    }
     /// Messages, stops or removes a background agent, or posts on its team channel.
     fn agents_op(&mut self, _op: crate::subagents::Op, _snap: &mut Snapshot) {}
     /// Fetches your token use into `extra.usage` (the usage sheet).

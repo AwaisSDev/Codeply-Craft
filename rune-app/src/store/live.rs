@@ -45,6 +45,14 @@ enum Msg {
     Team(Value),
     /// The background agents (`/ext/agents`).
     Agents(Value),
+    /// Each specialist's full record (`/ext/agentsync/specialists`).
+    Specs(Value),
+    /// The reminders (`/ext/reminders`), or the answer to a change to them.
+    Reminders(Value),
+    /// The PC's time zone (`/ext/clock`).
+    Clock(Value),
+    /// Chat sync with the phone (`/ext/agentsync`).
+    AgentSync(Value),
     /// Every skill (`/ext/skills`).
     Skills(Value),
     /// An inline edit's answer: (file, the instruction, `{ text }` or `{ error }`).
@@ -83,6 +91,8 @@ enum Msg {
     /// A chat made for Wisp or a helper: its name and engine id.
     Named(String, String),
     Status(String),
+    /// Something to tell you (a change that didn't save), shown as a notice.
+    Note(String),
 }
 
 #[derive(Clone, Debug)]
@@ -408,6 +418,10 @@ impl LiveStore {
                     "linked" => c.get("/ext/linked").map(Msg::Linked),
                     "team" => c.get("/ext/team").map(Msg::Team),
                     "agents" => c.get("/ext/agents").map(Msg::Agents),
+                    "specs" => c.get("/ext/agentsync/specialists").map(Msg::Specs),
+                    "reminders" => c.get("/ext/reminders").map(Msg::Reminders),
+                    "clock" => c.get("/ext/clock").map(Msg::Clock),
+                    "agentsync" => c.get("/ext/agentsync").map(Msg::AgentSync),
                     "skills" => c.get("/ext/skills").map(Msg::Skills),
                     "prs" => c.get("/ext/prs").map(Msg::Prs),
                     // At launch and after a sign-in: also catches the phone up with the account.
@@ -463,6 +477,11 @@ impl LiveStore {
         if crate::subagents::fold(&mut snap.extra.subagents, e, &title) {
             return true;
         }
+        // Job reports, reminders coming due and runs' health (the report itself lands in its chat
+        // through the usual `session_sync`).
+        if crate::agentsync::fold(&mut snap.extra.agents, e, &title) {
+            return true;
+        }
         let x = &mut snap.extra;
         match e["type"].as_str().unwrap_or_default() {
             "term_agent" => x.terminal.push(TermLine { kind: TermKind::Agent, text: e["command"].as_str().unwrap_or_default().to_owned() }),
@@ -508,7 +527,12 @@ impl LiveStore {
             "linked_changed" => self.refresh("linked"),
             // Live Server started or stopped, a shared port's tunnel came up or went down.
             "live" | "port_forward" => crate::run::fold_live(&mut x.ports, e),
-            "team_changed" | "wisp_team" => self.refresh("team"),
+            "team_changed" | "wisp_team" => {
+                self.refresh("team");
+                self.refresh("specs");
+            }
+            "agentsync_changed" => self.refresh("agentsync"),
+            "reminders_changed" => self.refresh("reminders"),
             _ => return false,
         }
         true
@@ -688,7 +712,8 @@ impl LiveStore {
         if kind == "session_sync" {
             return;
         }
-        if kind == "session_deleted" {
+        // Deleted here, or on the phone (ext-agentsync's `session_removed`).
+        if kind == "session_deleted" || kind == "session_removed" {
             if let Some(title) = self.title_of(&id) {
                 snap.threads.retain(|(k, _)| *k != title);
                 snap.extra.step_now.retain(|(k, _)| *k != title);
@@ -1213,7 +1238,7 @@ impl Store for LiveStore {
             }
             Some(Msg::Status(format!("can't reach the engine: {last}")))
         });
-        for what in ["account", "apps", "memory", "files", "jobs", "models-sync", "team", "prs", "agents", "skills"] {
+        for what in ["account", "apps", "memory", "files", "jobs", "models-sync", "team", "prs", "agents", "skills", "specs", "reminders", "clock", "agentsync"] {
             self.refresh(what);
         }
         // The event stream, for the life of the app, reconnecting with a growing pause.
@@ -1384,8 +1409,25 @@ impl Store for LiveStore {
                     let title = |id: &str| sessions.iter().find(|s| s.id == id).map(|s| s.title.clone());
                     crate::subagents::apply(&mut snap.extra.subagents, &v, &title);
                 }
+                Msg::Specs(v) => crate::agentsync::apply_specs(snap, &v),
+                Msg::Reminders(v) => {
+                    crate::agentsync::apply_reminders(snap, &v);
+                    if v["ok"] == false
+                        && let Some(e) = v["error"].as_str().filter(|e| !e.is_empty())
+                    {
+                        snap.extra.agents.reminders_note = e.to_owned();
+                    }
+                }
+                Msg::Clock(v) => {
+                    if let Some(m) = v["offsetMin"].as_i64() {
+                        crate::agentsync::set_utc_offset(m);
+                    }
+                }
+                Msg::AgentSync(v) => snap.extra.agents.sync_state = v["chats"]["state"].as_str().unwrap_or_default().to_owned(),
                 Msg::Team(v) => {
                     self.team = crate::team::apply(snap, &v);
+                    crate::agentsync::apply_jobs(snap, &v);
+                    crate::agentsync::dress(snap);
                     // The chats lead and ask the team as it is now (a new agent, one removed).
                     let team: Vec<Value> = self.team.iter().map(|(id, name, role)| json!({ "id": id, "name": name, "role": role })).collect();
                     self.spawn(move |c| c.post("/config", json!({ "team": team })).err().map(|e| Msg::Status(format!("team update failed: {e}"))));
@@ -1488,6 +1530,7 @@ impl Store for LiveStore {
                 Msg::Named(name, id) => {
                     self.named.insert(name, id);
                 }
+                Msg::Note(n) => snap.extra.team_note = Some(n),
                 Msg::Status(s) => {
                     if s.starts_with("can't reach") || s.starts_with("event stream") {
                         snap.extra.engine_ok = false;
@@ -1630,6 +1673,42 @@ impl Store for LiveStore {
 
     fn take_project(&mut self) -> Option<String> {
         self.open_project.take()
+    }
+
+    fn sync_op(&mut self, op: crate::agentsync::SyncOp, snap: &mut Snapshot) {
+        use crate::agentsync::SyncOp;
+        let (path, body) = match &op {
+            SyncOp::Refresh => {
+                for what in ["reminders", "specs", "agentsync"] {
+                    self.refresh(what);
+                }
+                return;
+            }
+            SyncOp::AddReminder { text, when } => ("/ext/reminders", json!({ "text": text, "when": when })),
+            SyncOp::CancelReminder(id) => ("/ext/reminders/cancel", json!({ "id": id })),
+            SyncOp::Snooze(id, minutes) => ("/ext/reminders/snooze", json!({ "id": id, "minutes": minutes })),
+            SyncOp::UpdateSpec(id, patch) => {
+                let mut body = patch.clone();
+                body["id"] = json!(id);
+                ("/ext/agentsync/specialists/update", body)
+            }
+        };
+        // Shown at once (a cancelled reminder goes, an edit shows); the engine's answer follows.
+        if !matches!(op, SyncOp::AddReminder { .. }) {
+            crate::agentsync::apply_sample(&op, snap);
+        }
+        let spec = matches!(op, SyncOp::UpdateSpec(..));
+        snap.extra.agents.reminders_note.clear();
+        self.spawn(move |c| {
+            let v = c.post_for(path, body, 40).unwrap_or_else(|e| json!({ "ok": false, "error": format!("The engine didn't answer: {e}") }));
+            if spec {
+                return match v["ok"].as_bool() {
+                    Some(true) => c.get("/ext/agentsync/specialists").ok().map(Msg::Specs),
+                    _ => Some(Msg::Note(format!("Couldn't save it: {}", v["error"].as_str().unwrap_or("the engine said no")))),
+                };
+            }
+            Some(Msg::Reminders(v))
+        });
     }
 
     fn agents_op(&mut self, op: crate::subagents::Op, _snap: &mut Snapshot) {

@@ -213,6 +213,13 @@ pub enum EditKey {
     SkillSearch,
     /// Settings > General > Voice: the Groq API key.
     GroqKey,
+    /// A specialist's editor: its name, what it's for, and its instructions (or house rules).
+    SpecName,
+    SpecFocus,
+    SpecInstructions,
+    /// Reminders: what to remember, and when.
+    ReminderText,
+    ReminderWhen,
 }
 
 /// The code view's file dialogs.
@@ -224,12 +231,13 @@ pub enum CodeDialog {
 }
 
 impl EditKey {
-    pub const ALL: [EditKey; 29] = [
+    pub const ALL: [EditKey; 34] = [
         EditKey::Search, EditKey::Mission, EditKey::AgentThread, EditKey::ChatHome, EditKey::ChatThread,
         EditKey::AppSearch, EditKey::Address, EditKey::SettingsSearch, EditKey::AboutMe, EditKey::Instructions,
         EditKey::Terminal, EditKey::Code, EditKey::SignInEmail, EditKey::SignInCode, EditKey::Memory,
         EditKey::AgentName, EditKey::AgentFocus, EditKey::LoopTask, EditKey::LoopWhen, EditKey::CodeAsk, EditKey::FilePath, EditKey::ChatTitle,
         EditKey::CloneUrl, EditKey::CodeAgent, EditKey::Subagent, EditKey::TeamPost, EditKey::PortAdd, EditKey::SkillSearch, EditKey::GroqKey,
+        EditKey::SpecName, EditKey::SpecFocus, EditKey::SpecInstructions, EditKey::ReminderText, EditKey::ReminderWhen,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -262,6 +270,11 @@ impl EditKey {
             EditKey::PortAdd => "port-add",
             EditKey::SkillSearch => "skill-search",
             EditKey::GroqKey => "groq-key",
+            EditKey::SpecName => "spec-name",
+            EditKey::SpecFocus => "spec-focus",
+            EditKey::SpecInstructions => "spec-instructions",
+            EditKey::ReminderText => "reminder-text",
+            EditKey::ReminderWhen => "reminder-when",
         }
     }
 }
@@ -355,6 +368,8 @@ pub struct App {
     pub chat_rename: Option<String>,
     /// The New agent / New loop dialog, while it's open (team.rs).
     pub team_dialog: Option<crate::team::TeamDialog>,
+    /// Agents shows Reminders (the sidebar's row) instead of Mission control or an agent.
+    pub reminders_open: bool,
     /// Whether the usage sheet is open (the button beside you at the sidebar's foot).
     pub usage_open: bool,
     /// The usage sheet's grouping (weekly or daily) and the week ("w12") or day ("d2026-10-11")
@@ -453,6 +468,7 @@ impl App {
             think_now: 0.0,
             usage_open: false,
             team_dialog: None,
+            reminders_open: false,
             code_ask: false,
             attachments: std::collections::HashMap::new(),
             agent_session: std::collections::HashMap::new(),
@@ -553,6 +569,7 @@ impl App {
     /// Opens an agent's conversation in Agents (None: Mission control).
     pub fn open_agent(&mut self, id: Option<&str>) {
         self.view = View::Agents;
+        self.reminders_open = false;
         self.agent = id.map(str::to_owned);
         self.menu = None;
         if let Some(a) = id.and_then(|i| self.data.agent(i)).cloned() {
@@ -608,6 +625,7 @@ impl App {
             let shape = a.look.shape.name();
             self.prefs.set_look(id, color, shape);
             self.prefs.save();
+            self.sync_face(id);
         }
     }
 
@@ -618,7 +636,19 @@ impl App {
             let color = a.color.clone();
             self.prefs.set_look(id, &color, shape.name());
             self.prefs.save();
+            self.sync_face(id);
         }
+    }
+
+    /// Saves a helper's face to the account, so the phone shows the same one.
+    fn sync_face(&mut self, id: &str) {
+        if id == "wisp" {
+            return;
+        }
+        let Some(a) = self.data.agent(id) else { return };
+        let patch = serde_json::json!({ "shape": crate::agentsync::account_shape(a.look.shape), "color": a.color });
+        let op = crate::agentsync::SyncOp::UpdateSpec(id.to_owned(), patch);
+        self.with_store(|st, d| st.sync_op(op, d));
     }
 
     pub fn toggle_appearance(&mut self, id: &str) {
@@ -774,6 +804,26 @@ impl App {
 
     /// Sends a composer's text to whoever it talks to, then clears it.
     pub fn submit(&mut self, key: EditKey, to: &Target) {
+        // "@Inbox clear the newsletters" hands the chat to Inbox, as on the phone: the message
+        // starts a session on Inbox's page, which opens, and the next ones go there without "@".
+        if matches!(key, EditKey::Mission | EditKey::ChatHome | EditKey::ChatThread | EditKey::AgentThread)
+            && let Some((agent, rest)) = crate::agentsync::lead_mention(&self.data.team, self.edit(key).text.trim())
+            && !matches!(to, Target::AgentSession { agent: a, .. } if *a == agent)
+        {
+            let files = self.attachments.get(&key).cloned().unwrap_or_default();
+            if rest.is_empty() && files.is_empty() {
+                self.edit_mut(key).clear();
+                self.open_agent(Some(&agent));
+                return;
+            }
+            *self.edit_mut(key) = rune::TextEdit::new(rest);
+            self.agent_session.remove(&agent);
+            self.submit(key, &Target::AgentSession { agent: agent.clone(), title: String::new() });
+            if self.edit(key).text.is_empty() {
+                self.open_agent(Some(&agent));
+            }
+            return;
+        }
         // `/review` becomes its prompt; `/skill` and `@mention` tokens go to the engine as refs.
         let (mut text, refs) = self.outgoing(self.edit(key).text.trim());
         let files = self.attachments.get(&key).cloned().unwrap_or_default();
@@ -1391,6 +1441,14 @@ impl App {
         self.models_ui.tick(&self.data.extra.models);
         changed |= self.look_poll(tx);
         changed |= self.mention_focus(tx.focused());
+        // Job reports, reminders coming due and agents that need you: a desktop notification each,
+        // unless notifications are off (the bell lists them either way).
+        for (title, body) in std::mem::take(&mut self.data.extra.agents.notify) {
+            if self.prefs.notifications {
+                crate::notify::show(&title, &body);
+            }
+            changed = true;
+        }
         // A change to the team the engine turned down.
         if let Some(note) = self.data.extra.team_note.take() {
             self.notice = Some(note);
@@ -1564,6 +1622,10 @@ impl App {
 /// Puts each helper's saved look on the team.
 fn apply_looks(data: &mut Snapshot, prefs: &Prefs) {
     for (id, color, shape) in &prefs.looks {
+        // The account's face wins once it has one: a change made on the phone shows here too.
+        if data.extra.agents.spec(id).is_some_and(|s| !s.shape.is_empty() || !s.color.is_empty()) {
+            continue;
+        }
         if let Some(a) = data.team.iter_mut().find(|a| &a.id == id) {
             a.color = color.clone();
             if let Some(s) = Shape::from_name(shape) {

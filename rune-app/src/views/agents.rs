@@ -25,13 +25,25 @@ pub fn side(s: &App, t: &Theme) -> El {
     let mut list = col().px(8.0).pb(10.0);
 
     list = list.child(
-        side_row(t, s.agent.is_none())
+        side_row(t, s.agent.is_none() && !s.reminders_open)
             .key("agent-row/mission")
             .role("button")
             .label("Mission control")
             .child(ico("target", t.dim))
             .child(name_and_line(t, "Mission control", None, 400.0))
             .on_press(|s: &mut App| s.open_agent(None)),
+    );
+    // Reminders, the same list the phone has, with how many are coming up.
+    let coming = s.data.extra.agents.upcoming().count();
+    list = list.child(
+        side_row(t, s.reminders_open)
+            .key("agent-row/reminders")
+            .role("button")
+            .label("Reminders")
+            .child(ico("bell", t.dim))
+            .child(name_and_line(t, "Reminders", None, 400.0))
+            .children((coming > 0).then(|| text(coming.to_string()).font(crate::theme::tabular(12.0, 500.0)).color(t.faint).pr(4.0)))
+            .on_press(|s: &mut App| s.open_reminders()),
     );
 
     if let Some(w) = s.data.agent("wisp") {
@@ -71,7 +83,12 @@ pub fn side(s: &App, t: &Theme) -> El {
             .role("button")
             .label(a.name.clone())
             .child(bot::agent(&awake(a), 32.0))
-            .child(name_and_line(t, &a.name, Some(&a.status), 400.0))
+            .child(match s.data.extra.agents.health_of(&a.id) {
+                Some(h) => col().grow(1.0).min_w(0.0)
+                    .child(text(a.name.clone()).font(ui(14.0, 400.0)).color(t.text).truncate())
+                    .child(text(h.line()).font(ui(12.0, 400.0)).color(health_ink(t, h)).truncate()),
+                None => name_and_line(t, &a.name, Some(&a.status), 400.0),
+            })
             .child(more)
             .on_press_tx(move |s: &mut App, tx| { tx.settle(); s.open_agent(Some(&id)) });
         list = list.child(enter(r, i));
@@ -87,7 +104,12 @@ pub fn side(s: &App, t: &Theme) -> El {
                 .role("button")
                 .label(l.name.clone())
                 .child(ico("clock", t.dim))
-                .child(name_and_line(t, &l.name, Some(&who), 400.0))
+                .child(match s.data.extra.agents.job_health(&l.id) {
+                    Some(h) => col().grow(1.0).min_w(0.0)
+                        .child(text(l.name.clone()).font(ui(14.0, 400.0)).color(t.text).truncate())
+                        .child(text(format!("{who} · {}", h.line())).font(ui(12.0, 400.0)).color(health_ink(t, h)).truncate()),
+                    None => name_and_line(t, &l.name, Some(&who), 400.0),
+                })
                 .on_press_tx(move |s: &mut App, tx| { tx.settle(); s.open_agent(Some(&agent)) }),
         );
     }
@@ -107,6 +129,9 @@ pub fn menu(_s: &App, _t: &Theme, _id: &str) -> Option<El> {
 // ---------- main ----------
 
 pub fn main(s: &App, t: &Theme, _cx: &mut Cx<App>) -> El {
+    if s.reminders_open {
+        return crate::views::reminders::page(s, t);
+    }
     match s.agent.as_deref().and_then(|id| s.data.agent(id)) {
         Some(a) => agent_page(s, t, a),
         None => mission(s, t),
@@ -136,8 +161,18 @@ fn mission(s: &App, t: &Theme) -> El {
     let needs: Vec<&Task> = s.data.tasks.iter().filter(|(k, _)| *k == Column::NeedsYou).map(|(_, x)| x).collect();
     if !needs.is_empty() {
         body = body.child(row().px(10.0).pt(26.0).pb(6.0).child(text("Needs you").font(ui(12.5, 600.0)).color(t.faint)));
-        for (i, task) in needs.into_iter().enumerate() {
+        for (i, task) in needs.iter().enumerate() {
             body = body.child(enter(task_row(s, t, "needs", i, task), i));
+        }
+    }
+    // Background runs that stopped to ask you something (a job's sign-in, a yes it waited for).
+    let stuck: Vec<&crate::agentsync::Health> = s.data.extra.agents.health.iter().filter(|h| h.needs_you()).take(4).collect();
+    if !stuck.is_empty() {
+        if needs.is_empty() {
+            body = body.child(row().px(10.0).pt(26.0).pb(6.0).child(text("Needs you").font(ui(12.5, 600.0)).color(t.faint)));
+        }
+        for (i, h) in stuck.into_iter().enumerate() {
+            body = body.child(enter(health_row(s, t, i, h), i));
         }
     }
     let recent: Vec<&Task> = s.data.tasks.iter().filter(|(k, _)| *k != Column::NeedsYou).map(|(_, x)| x).take(3).collect();
@@ -148,6 +183,29 @@ fn mission(s: &App, t: &Theme) -> El {
         }
     }
     col().key("mission").w_full().h_full().items_center().justify_center().scroll(ScrollSpec { stick_bottom: false }).child(body.py(48.0))
+}
+
+/// The colour of a health line: amber while it needs you or didn't finish, else quiet.
+pub fn health_ink(t: &Theme, h: &crate::agentsync::Health) -> Color {
+    match h.state.as_str() {
+        "needs_you" | "failed" => t.warn,
+        _ => t.faint,
+    }
+}
+
+/// A run that needs you, on Mission control: whose, what it says, and its chat.
+fn health_row(s: &App, t: &Theme, i: usize, h: &crate::agentsync::Health) -> El {
+    let agent = h.agent.clone();
+    let name = s.data.agent(&h.agent).map_or_else(|| h.agent.clone(), |a| a.name.clone());
+    let job = h.run.strip_prefix("job:").and_then(|id| s.data.extra.loops.iter().find(|l| l.id == id)).map(|l| l.name.clone());
+    row().key(format!("health/{i}")).w_full().min_h(48.0).px(10.0).py(8.0).gap(12.0).radius(10.0).center_y().hover(t.hover)
+        .role("button").label(format!("{name} needs you"))
+        .children(s.data.agent(&h.agent).map(|a| bot::agent(&awake(a), 28.0)))
+        .child(col().grow(1.0).min_w(0.0).gap(2.0)
+            .child(text(job.unwrap_or_else(|| format!("{name} needs you"))).font(ui(14.0, 500.0)).color(t.text).truncate())
+            .child(text(h.line()).font(ui(12.5, 400.0)).color(t.warn).truncate()))
+        .child(ico_s(h.icon(), 16.0, t.warn))
+        .on_press_tx(move |s: &mut App, tx| { tx.settle(); s.open_agent(Some(&agent)) })
 }
 
 fn task_row(s: &App, t: &Theme, section: &str, i: usize, task: &Task) -> El {
@@ -226,6 +284,21 @@ fn agent_page(s: &App, t: &Theme, a: &Agent) -> El {
     row().key(format!("agent-page/{}", a.id)).w_full().h_full().child(centre).child(panel(s, t, a))
 }
 
+/// Where a loop runs: on this PC while Codeply is open, or (Always on) in the cloud too.
+fn runs_where(s: &App, a: &Agent, job: &str) -> String {
+    let running = s.data.extra.agents.jobs.iter().any(|(id, on, _)| id == job && *on);
+    if running {
+        return "Running now on this PC".into();
+    }
+    if a.id == "wisp" {
+        return "Only while Codeply is open".into();
+    }
+    match s.data.extra.agents.spec(&a.id) {
+        Some(sp) if sp.always_on => "On your PC, or in the cloud".into(),
+        _ => "Only while Codeply is open".into(),
+    }
+}
+
 fn state_word(state: AgentState) -> &'static str {
     match state {
         AgentState::Working => "Working",
@@ -247,7 +320,12 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
             .child(el().size(44.0, 44.0).radius(11.0).fill(t.hover).center().child(bot::agent(a, 34.0)))
             .child(col().grow(1.0).min_w(0.0).gap(2.0)
                 .child(text(format!("{}'s computer", a.name)).font(ui(13.5, 500.0)).color(t.text).truncate())
-                .child(text(state_word(a.state).to_owned()).font(ui(12.5, 400.0)).color(t.dim))),
+                .child(match s.data.extra.agents.health_of(&a.id) {
+                    Some(h) => row().gap(5.0).center_y().min_w(0.0)
+                        .child(ico_s(h.icon(), 13.0, health_ink(t, h)))
+                        .child(text(h.line()).font(ui(12.5, 400.0)).color(if h.needs_you() { t.warn } else { t.dim }).truncate().min_w(0.0)),
+                    None => row().child(text(state_word(a.state).to_owned()).font(ui(12.5, 400.0)).color(t.dim)),
+                })),
     );
 
     // Sessions: this agent's own, newest first. Five show; the rest scroll.
@@ -304,7 +382,11 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
             row().w_full().px(8.0).py(8.0).gap(10.0).radius(8.0).center_y().hover(t.hover)
                 .child(col().grow(1.0).min_w(0.0).gap(4.0)
                     .child(text(l.name.clone()).font(ui(13.5, 400.0)).color(t.text).truncate())
-                    .child(text(l.last.clone()).font(ui(12.0, 400.0)).color(t.faint).truncate().min_w(0.0)))
+                    .child(match s.data.extra.agents.job_health(&l.id) {
+                        Some(h) => text(h.line()).font(ui(12.0, 400.0)).color(health_ink(t, h)).truncate().min_w(0.0),
+                        None => text(l.last.clone()).font(ui(12.0, 400.0)).color(t.faint).truncate().min_w(0.0),
+                    })
+                    .child(text(runs_where(s, a, &l.id)).font(ui(11.5, 400.0)).color(t.faint).truncate().min_w(0.0)))
                 .child({
                     let id = l.id.clone();
                     crate::ui::ibtn(t, "close", "Delete loop").key(format!("loop-delete/{}", l.id)).on_press(move |s: &mut App| s.cancel_loop(&id))
@@ -322,16 +404,57 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
             move |s: &mut App| s.open_team_dialog(crate::team::TeamDialog::NewLoop(id.clone()))
         });
 
+    // Always on (the phone's switch): its jobs run on time with the PC off, in the cloud.
+    let spec = s.data.extra.agents.spec(&a.id);
+    let always = (a.id != "wisp").then(|| {
+        let on = spec.is_some_and(|x| x.always_on);
+        let id = a.id.clone();
+        let copy = if on { "On duty around the clock: its jobs run on time even with your PC off." } else { "Off: its jobs wait until Codeply is open on your PC." };
+        card(t).w_full().px(14.0).py(12.0).mt(10.0).child(row().gap(12.0).center_y()
+            .child(col().grow(1.0).min_w(0.0).gap(2.0)
+                .child(text("Always on").font(ui(13.5, 500.0)).color(t.text))
+                .child(text(copy).font(ui(12.0, 400.0)).color(t.faint).wrap()))
+            .child(toggle(t, format!("always-on/{}", a.id), on, "Always on")
+                .on_press(move |s: &mut App| s.set_always_on(&id, !on))))
+    });
+    let edit = (a.id != "wisp").then(|| {
+        let id = a.id.clone();
+        btn(t, "Edit", Some("edit"), ButtonKind::Plain).key(format!("spec-edit/{}", a.id)).mt(12.0)
+            .on_press(move |s: &mut App| s.open_team_dialog(crate::team::TeamDialog::Edit(id.clone())))
+    });
+
+    // Its standing jobs' reports, newest first (they land in the job's chat too).
+    let mine: Vec<&crate::agentsync::Report> = s.data.extra.agents.reports.iter().filter(|r| !r.reminder && (r.who.eq_ignore_ascii_case(&a.name) || r.who == a.id)).take(5).collect();
+    let reports = (!mine.is_empty()).then(|| {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        col().w_full().gap(2.0).children(mine.into_iter().enumerate().map(|(i, r)| {
+            let chat = r.chat.clone();
+            let place = if r.origin.is_empty() { String::new() } else { format!(" · {}", r.origin) };
+            row().key(format!("report/{}/{i}", a.id)).w_full().px(8.0).py(7.0).gap(10.0).radius(8.0).center_y().hover(t.hover)
+                .role("button").label(r.text.clone())
+                .child(ico_s(if r.ok { "check" } else { "alert" }, 15.0, if r.ok { t.green } else { t.warn }))
+                .child(col().grow(1.0).min_w(0.0).gap(1.0)
+                    .child(text(r.text.lines().find(|l| !l.trim().is_empty() && !l.starts_with("-# ")).unwrap_or_default().to_owned()).font(ui(13.0, 400.0)).color(t.text).truncate())
+                    .child(text(format!("{}{place}", crate::agentsync::ago(r.at, now))).font(ui(11.5, 400.0)).color(t.faint)))
+                .on_press(move |s: &mut App| if !chat.is_empty() { s.open_chat(&chat) })
+        }))
+    });
+
+    let has_loops = s.data.extra.loops.iter().any(|l| l.agent == a.id);
     let body = col().w_full().padding(20.0).gap(0.0).items_center()
         .child(bot::agent(&awake(a), 80.0))
         .child(text(a.name.clone()).font(ui(18.0, 650.0)).color(t.text).mt(12.0))
         .child(text(a.role.clone()).font(ui(13.0, 400.0)).color(t.dim).wrap().mt(2.0))
+        .children(edit)
         .child(el().w_full().mt(20.0).child(computer))
+        .children(always)
         .child(row().w_full().pt(16.0).pb(4.0).center_y().child(label(t, "Sessions")).child(el().grow(1.0)).child(new_session))
         .child(sessions)
         .child(col().w_full().pt(22.0).pb(8.0).child(label(t, "Loops")))
         .child(loops)
-        .child(el().w_full().mt(4.0).child(create));
+        .child(el().w_full().mt(4.0).child(create))
+        .children(reports.map(|r| col().w_full().child(col().w_full().pt(22.0).pb(8.0).child(label(t, "Recent reports"))).child(r)))
+        .children(if has_loops { crate::views::reminders::notifications_off(s, t, "job reports") } else { None }.map(|n| el().w_full().mt(14.0).child(n)));
 
     col().key("agent-panel").w(320.0).h_full().border_sides([0.0, 0.0, 0.0, 1.0], t.border)
         .scroll(ScrollSpec { stick_bottom: false }).child(body)
