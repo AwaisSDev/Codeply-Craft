@@ -152,6 +152,8 @@ function begin(session, { mode, userMessage, history, roleId, route, resume = nu
         if (/cloud holds/i.test(e.message)) { session.handoff = { ...session.handoff, epoch: null }; fenced(run, 'taken'); return; }
         throw e;
       }
+      // So the cloud can start this run from the base branch even if the PC dies before its first save.
+      db().rpc('handoff_set_prompt', { p_session_id: session.id, p_epoch: epoch, p_prompt: String(run.state.userMessage || userMessage || '').slice(0, 4000) }).then(() => {}, () => {}); // older server: no such function, harmless
       // A short run (an automatic review turn) can finish before its lease is up: close
       // that lease now, or it keeps renewing for a run that is over and later reads the
       // next run's lease as the cloud taking over.
@@ -285,9 +287,13 @@ async function recover(session) {
     return resumeHere(session, h.state, false);
   }
   if (row.state === 'no_credentials' || row.state === 'cloud_failed') {
-    note(session, `${row.note || 'The cloud could not take over.'} Carrying on here.`, 'warn');
+    // The server's notice is in plain words (what went wrong, how many times it tried).
+    note(session, `${row.notice || row.note || 'The cloud could not take over.'} Carrying on here.`, 'warn');
+    if (deps.notify) deps.notify(session);
     return resumeHere(session, h.state, true);
   }
+  // The server is still trying to start the cloud run (backing off between tries): wait, do not race it.
+  if (row.state === 'dispatch_retry') { emit(session, 'cloud'); return; }
   if (row.holder === 'cloud') return handBack(session, row);
   // A newer run (here or on another of this account's PCs) has the chat now.
   session.handoff = null; deps.persist(session); emit(session, 'off');

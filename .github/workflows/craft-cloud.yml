@@ -27,10 +27,26 @@ on:
         required: false
         default: ''
         type: string
+      attempt:
+        description: Which try this is (1 = the first; a run that died is started again, twice at most)
+        required: false
+        default: '1'
+        type: string
+      wip:
+        description: A branch with the saved work of a run that died (craft/wip-task-<id>)
+        required: false
+        default: ''
+        type: string
+      lease:
+        description: Lets the run renew its handoff lease (set by the Codeply watchdog)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
   checks: write
+  actions: write
 
 concurrency:
   group: craft-${{ inputs.handoff }}${{ inputs.session_id || inputs.task_id }}
@@ -43,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.handoff == 'resume' && format('craft/wip-{0}', inputs.session_id) || '' }}
+          ref: ${{ inputs.wip || (inputs.handoff == 'resume' && format('craft/wip-{0}', inputs.session_id)) || '' }}
           fetch-depth: 1
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -68,3 +84,46 @@ jobs:
           CRAFT_TASK_ID: ${{ inputs.task_id }}
           CRAFT_SESSION_ID: ${{ inputs.session_id }}
           CRAFT_HANDOFF: ${{ inputs.handoff }}
+          CRAFT_ATTEMPT: ${{ inputs.attempt }}
+          CRAFT_WIP: ${{ inputs.wip }}
+          CRAFT_LEASE: ${{ inputs.lease }}
+      # The runner stops its agent about 8 minutes before the 60 minute limit and starts the
+      # task again from its last save. This covers what it cannot: a crash, a killed machine
+      # or the hard timeout. It reads the task's status file, so a run that already reported
+      # (done, failed for good, or already restarted) or that you cancelled is left alone.
+      - name: Start again if the run died
+        if: failure() || cancelled()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TASK_ID: ${{ inputs.task_id }}
+          SESSION_ID: ${{ inputs.session_id }}
+          ATTEMPT: ${{ inputs.attempt }}
+          PROMPT: ${{ inputs.prompt }}
+          MODE: ${{ inputs.mode }}
+          HANDOFF: ${{ inputs.handoff }}
+          LEASE: ${{ inputs.lease }}
+          BASE: ${{ github.ref_name }}
+        run: |
+          attempt="${ATTEMPT:-1}"
+          case "$attempt" in ''|*[!0-9]*) attempt=1 ;; esac
+          raw() { gh api -H "Accept: application/vnd.github.raw" "repos/$GITHUB_REPOSITORY/contents/$1?ref=craft-sessions" 2>/dev/null || echo '{}'; }
+          doc="$(raw "tasks/$TASK_ID.json")"
+          status="$(echo "$doc" | jq -r '.status // "none"' 2>/dev/null || echo none)"
+          if [ -n "$(raw "cancel/$TASK_ID.json" | jq -r '.at // empty' 2>/dev/null)" ]; then echo "Cancelled on purpose, not starting again."; exit 0; fi
+          case "$status" in done|failed|retrying) echo "The run already reported ($status)."; exit 0 ;; esac
+          now_ms="$(( $(date +%s) * 1000 ))"
+          next="$((attempt + 1))"
+          sha="$(gh api "repos/$GITHUB_REPOSITORY/contents/tasks/$TASK_ID.json?ref=craft-sessions" --jq .sha 2>/dev/null || true)"
+          save() {
+            body="$(echo "$doc" | jq -c --arg id "$TASK_ID" --argjson at "$now_ms" --argjson next "$next" "$1" | base64 -w0)"
+            if [ -n "$sha" ]; then gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/tasks/$TASK_ID.json" -f message="Craft task $TASK_ID: $2" -f branch=craft-sessions -f content="$body" -f sha="$sha" >/dev/null || true
+            else gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/tasks/$TASK_ID.json" -f message="Craft task $TASK_ID: $2" -f branch=craft-sessions -f content="$body" >/dev/null || true; fi
+          }
+          wip="craft/wip-task-$TASK_ID"
+          if ! gh api "repos/$GITHUB_REPOSITORY/branches/$wip" >/dev/null 2>&1; then wip=""; fi
+          if [ "$attempt" -ge 3 ]; then
+            save '. + {id:$id, status:"failed", error:"The cloud run stopped before it finished, and starting it again twice did not help.", updatedAt:$at, notify:{kind:"failed", title:"Your cloud task did not finish", body:"It stopped before it finished, and starting it again twice did not help. Your work so far is saved on a craft/wip- branch.", at:$at}}' "failed"
+            exit 0
+          fi
+          save '. + {id:$id, status:"retrying", attempt:$next, retry:{attempt:$next, of:3, reason:"The run stopped before it finished.", at:$at}, updatedAt:$at}' "retrying"
+          gh workflow run craft-cloud.yml --ref "$BASE" -f prompt="$PROMPT" -f mode="$MODE" -f task_id="$TASK_ID" -f session_id="$SESSION_ID" -f handoff="$HANDOFF" -f attempt="$next" -f wip="$wip" -f lease="$LEASE"
