@@ -1,0 +1,869 @@
+//! The 4.0 prototype's sample data (design/workspace/index.html and views.js), so every view can
+//! be built, tested and screenshotted without the engine running.
+
+use super::{Store, Target};
+use crate::model::*;
+
+#[derive(Default)]
+pub struct MockStore {
+    /// A chat `send` just made, for the app to open.
+    focus: Option<String>,
+    /// The whole sample catalogue, which `extra.catalog` shows a filtered page of.
+    apps_all: Vec<CatalogApp>,
+}
+
+fn s(v: &str) -> String {
+    v.to_owned()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn agent(id: &str, name: &str, color: &str, look: Look, role: &str, state: AgentState, place: &str, action: &str, status: &str, pos: (f32, f32)) -> Agent {
+    Agent { id: s(id), name: s(name), color: s(color), look, role: s(role), state, place: s(place), action: s(action), status: s(status), pos }
+}
+
+fn step(t: &str) -> Block {
+    Block::Step { text: s(t), now: false }
+}
+fn now(t: &str) -> Block {
+    Block::Step { text: s(t), now: true }
+}
+fn btn(t: &str, k: ButtonKind) -> (String, ButtonKind, Option<&'static str>) {
+    (s(t), k, None)
+}
+
+/// A year of activity that is quiet early on and busy over the last three months, the shape the
+/// prototype's random fill has, from a fixed seed so screenshots are stable.
+pub fn activity() -> Vec<u8> {
+    let mut seed: u64 = 11;
+    let mut rnd = || {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((seed >> 33) as f64) / f64::from(1u32 << 31)
+    };
+    (0..52 * 7)
+        .map(|i| {
+            let r = rnd();
+            let late = i % 52 > 40;
+            if late && r > 0.45 { if r > 0.8 { 3 } else if r > 0.62 { 2 } else { 1 } } else if r > 0.97 { 1 } else { 0 }
+        })
+        .collect()
+}
+
+pub fn sample() -> Snapshot {
+    use AgentState::*;
+    let team = vec![
+        agent("wisp", "Wisp", "#2f6bff", Look::new(Shape::Hex, Face::Pill, &[]), "Your agent", Idle, "At the lead desk", "Watching your day. Brief at 6:00", "Watching your day. Brief at 6:00", (760.0, 214.0)),
+        agent("frontend", "Frontend", "#ff5c9d", Look::new(Shape::Triangle, Face::Pill, &[]).looking(0, -1), "Claude Code", Working, "Studio", "Editing pricing.html, +42 lines", "Building the pricing page", (170.0, 214.0)),
+        agent("backend", "Backend", "#ff8a1a", Look::new(Shape::Cloud, Face::Pill, &[]).looking(-1, 0), "Claude Code", Thinking, "Kitchen", "Thinking about plan limits over coffee", "Thinking about plan limits", (1050.0, 124.0)),
+        agent("inbox", "Inbox", "#1fc75f", Look::new(Shape::Round, Face::Pill, &[]).looking(1, -1), "Mail", Waiting, "Needs you", "Waiting for your OK on 1 reply", "Needs your OK on 1 reply", (300.0, 588.0)),
+        agent("research", "Research", "#7b5cff", Look::new(Shape::Square, Face::Pill, &[]).looking(1, 0), "Web", Sleeping, "Lounge", "Asleep. Finished the venue search 1h ago", "4 venues for Friday", (780.0, 600.0)),
+        agent("docs", "Docs", "#4fb3ff", Look::new(Shape::Drop, Face::Pill, &[]).looking(-1, 1), "Claude Code", Walking, "Hallway", "Walking to the kitchen. Next: README after PR #44", "README after PR #44", (430.0, 340.0)),
+    ];
+
+    let sessions = vec![
+        (s("frontend"), vec![
+            Block::Label(s("Live session · 14 min")),
+            Block::LiveScreen,
+            step("Read **index.html** and the homepage styles"),
+            step("Asked Backend for the plan data"),
+            step("Created **plans.json**"),
+            now("Editing **pricing.html**, +42 lines"),
+            Block::Buttons(vec![(s("Open in Code"), ButtonKind::Plain, Some("code")), (s("PR #44"), ButtonKind::Plain, Some("branch"))]),
+        ]),
+        (s("backend"), vec![
+            Block::Label(s("Live session · thinking")),
+            step("Read the pricing brief from Frontend"),
+            step("Wrote **plans.json** with Free, Plus and Team"),
+            now("Deciding how strict the Team limits should be"),
+            Block::Quote(s("\"Free: 3 projects. Plus: 20. Team: unlimited, with per-seat billing. Checking the API enforces it, not just the page.\"")),
+        ]),
+        (s("inbox"), vec![
+            Block::Label(s("Needs your OK")),
+            Block::Draft { title: s("Re: lease renewal"), to: s("to landlord@example.com"), via: Some(s("gmail")), body: s("Hi Ana, thanks for the renewal. The 1st works for me, and I'll send the deposit by Friday.\n\nBest,\nSam") },
+            Block::Buttons(vec![(s("Send"), ButtonKind::Blue, Some("arrow-up")), btn("Edit", ButtonKind::Plain), btn("Discard", ButtonKind::Plain)]),
+        ]),
+        (s("research"), vec![
+            Block::Label(s("Latest chat · 1h ago")),
+            Block::Bubble(s("Find a place for Friday drinks, 20 people, near the office.")),
+            Block::Reply(s("Found 4. The top pick holds 20, is 10 minutes away and costs $240 for the evening. Want me to book it?")),
+            Block::Buttons(vec![btn("Book it", ButtonKind::Blue), btn("See all 4", ButtonKind::Plain)]),
+        ]),
+        (s("wisp"), vec![
+            Block::Label(s("Latest chat · 9:41")),
+            Block::Bubble(s("Morning! Can you check in with the team for me?")),
+            Block::Reply(s("All on track. Frontend is checking the pricing page, Backend is on the plan limits, and Inbox has a reply for you to approve.")),
+            Block::Via { icon: "history", text: s("Created routine: Morning check-in, every day at 9:00") },
+        ]),
+        (s("docs"), vec![Block::Label(s("On a short break")), step("Updated the changelog for 4.0"), now("Next: the README, once PR #44 merges")]),
+    ];
+
+    let chat_groups = vec![
+        ChatGroup { icon: "oai-desktop", title: s("This Computer"), chats: vec![s("Casual chat"), s("Parallel greeting agents test"), s("Getting acquainted with Codeply")] },
+        ChatGroup { icon: "oai-cloud", title: s("Cloud"), chats: vec![s("Nightly test run"), s("Docs refresh")] },
+        ChatGroup { icon: "oai-folder", title: s("launch-site"), chats: vec![s("Pricing page"), s("Local site mockup fixes"), s("Git push command explanation")] },
+    ];
+
+    let thread = vec![
+        ThreadItem::Stamp(s("9:41 AM")),
+        ThreadItem::You(s("Morning! Can you check in with the team for me?")),
+        ThreadItem::Them(s("On it. Pinging everyone for status now.")),
+        ThreadItem::Team { text: s("6 messages with"), agents: vec![s("frontend"), s("backend"), s("inbox")] },
+        ThreadItem::Them(s("All on track. Frontend is checking the pricing page at three sizes, Backend is running the tests, and Inbox drafted a reply to your landlord that needs your OK.")),
+        ThreadItem::You(s("Love it, do this every morning.")),
+        ThreadItem::Event { icon: "history", text: s("Created routine: Morning check-in, every day at 9:00"), detail: None },
+        ThreadItem::Them(s("Done. It'll be here at 9:00 every day.")),
+    ];
+
+    let pr = |number, title: &str, by: &str, state, age: &str, added, removed, branch: &str, summary: &str, points: [&str; 3]| Pr {
+        number, title: s(title), by: s(by), state, age: s(age), added, removed, branch: s(branch), summary: s(summary), points: points.map(s).to_vec(),
+        url: String::new(), checks: Some((3, 0, 0)), reviewers: Vec::new(), local: false,
+    };
+    let prs = vec![
+        pr(44, "Pricing page for launch-site", "frontend", PrState::Open, "2h", 186, 12, "claude/pricing-page", "A pricing page with three plans and a monthly or yearly switch, styled like the homepage.", ["New **plans.json** from Backend, one source for names and prices", "Yearly shows the saving per plan", "Checked at 375, 768 and 1440 px; no layout shift"]),
+        pr(43, "Plan data and limits", "backend", PrState::Draft, "6m", 48, 3, "claude/plan-data", "Plan names, prices and usage limits in one file the page and the API both read.", ["**plans.json** with Free, Plus and Team", "Limits enforced in the API, not just shown", "Still running the test suite"]),
+        pr(42, "Fix the checkout crash", "backend", PrState::Open, "1d", 9, 4, "claude/checkout-nan", "Checkout crashed when a coupon made the total NaN. Totals are now clamped and the coupon is checked first.", ["Reproduced the crash with an empty coupon", "Clamp NaN to 0 in **math.ts**", "New test covers the empty coupon case"]),
+        pr(41, "Admin dashboard: progress", "frontend", PrState::Merged, "7d", 402, 120, "claude/admin-progress", "A progress section on the admin dashboard with weekly charts.", ["Charts render from the existing stats API", "Empty state for new accounts", "Merged by you"]),
+    ];
+
+    let conn = |slug, name: &str, note: &str, who: &[&str]| ConnectedApp { slug, name: s(name), note: s(note), agents: who.iter().map(|w| s(w)).collect() };
+    let connected = vec![
+        conn("gmail", "Gmail", "Read, draft and send. Sends only after you OK it.", &["inbox", "wisp"]),
+        conn("googlecalendar", "Google Calendar", "Read and change events. Every change is read back.", &["wisp"]),
+        conn("github", "GitHub", "Branches, pull requests and checks.", &["frontend", "backend"]),
+        conn("slack", "Slack", "Read channels, post updates you approve.", &["wisp"]),
+        conn("notion", "Notion", "Read and write pages.", &["docs"]),
+        conn("vercel", "Vercel", "Preview and production deploys.", &["frontend"]),
+    ];
+    let popular = [("linear", "Linear", "Issues"), ("stripe", "Stripe", "Payments"), ("figma", "Figma", "Design"), ("googledrive", "Google Drive", "Files"), ("discord", "Discord", "Chat"), ("whatsapp", "WhatsApp", "Messages"), ("hubspot", "HubSpot", "CRM"), ("zoom", "Zoom", "Meetings")]
+        .into_iter().map(|(a, b, c)| (a, s(b), s(c))).collect();
+    let act = |slug, text: &str, note: &str, time: &str| AppAction { slug, text: s(text), note: s(note), time: s(time) };
+    let actions = vec![
+        act("gmail", "Inbox drafted **Re: lease renewal**", "waiting for your OK", "8:14"),
+        act("googlecalendar", "Wisp moved **Standup** to 9:30", "read back, matches", "7:52"),
+        act("github", "Frontend opened **PR #44**", "3 checks passed", "7:12"),
+        act("slack", "Wisp posted the standup change in **#team**", "you approved", "7:53"),
+    ];
+
+    let task = |agent: &str, title: &str, sub: &str, pill: Option<(&str, Pill)>, body| Task { request: None, agent: s(agent), title: s(title), sub: s(sub), pill: pill.map(|(t, p)| (s(t), p)), body };
+    let done = |agent, title, proof: &str, checked| (Column::Done, task(agent, title, "", None, TaskBody::Done { proof: s(proof), checked }));
+    let tasks = vec![
+        (Column::Working, task("frontend", "Pricing page for launch-site", "Frontend · Claude Code · 14 min", Some(("Code", Pill::Blue)), TaskBody::Working { icon: "edit", now: s("Editing pricing.html, +42 lines"), progress: 0.64, screen: true })),
+        (Column::Working, task("backend", "Plan data and limits", "Backend · Claude Code · 6 min", Some(("Code", Pill::Blue)), TaskBody::Working { icon: "terminal", now: s("Running npm test"), progress: 0.30, screen: false })),
+        (Column::NeedsYou, task("inbox", "Reply to the landlord", "Inbox · drafted 18 min ago", Some(("Approve", Pill::Warn)), TaskBody::Ask { text: s("\"Thanks for the renewal. The 1st works, and I'll send the deposit by Friday.\""), buttons: vec![(s("Send"), ButtonKind::Blue), (s("Edit"), ButtonKind::Plain), (s("Discard"), ButtonKind::Plain)] })),
+        (Column::NeedsYou, task("research", "Book the Friday venue?", "Research · 4 options", Some(("Decide", Pill::Warn)), TaskBody::Ask { text: s("Top pick holds 20 people, 10 minutes from the office, $240 for the evening."), buttons: vec![(s("Book it"), ButtonKind::Blue), (s("See all 4"), ButtonKind::Plain)] })),
+        done("wisp", "Moved standup to 9:30", "Checked on Google Calendar", true),
+        done("frontend", "Hero section shipped to preview", "Tests passed, 212 of 212", true),
+        done("inbox", "Archived 41 newsletters", "Kept everyone you know", true),
+        done("backend", "Fixed the checkout crash", "PR #42 opened", true),
+        done("wisp", "Internet bill reminder", "Not checked: no bill found", false),
+    ];
+
+    Snapshot {
+        user: s("Sam"),
+        plan: s("Free plan"),
+        project: s("launch-site"),
+        team,
+        sessions,
+        chat_groups,
+        recent: vec![(s("Casual chat"), s("24 h ago")), (s("Local site mockup fixes"), s("2 days ago")), (s("iMessage clone build"), s("3 days ago"))],
+        threads: vec![(s("*"), thread)],
+        prs,
+        connected,
+        popular,
+        actions,
+        tasks,
+        routines: vec![("sun", s("Morning brief"), s("Every day at 6:00")), ("mail", s("Inbox cleanup"), s("Weekdays at 8:00")), ("history", s("Weekly review"), s("Fridays at 17:00"))],
+        activity: activity(),
+        source: s("Sample data"),
+        extra: extra(),
+    }
+}
+
+/// The Codex-style views' sample data.
+pub fn extra() -> Extra {
+    // The sample's agents' own chats and sessions are theirs; the rest are yours.
+    let chat = |title: &str, project: &str, ago: &str, preview: &str, running: bool, unread: bool| {
+        let agent = ["Wisp", "Frontend", "Backend", "Inbox", "Research", "Docs"].iter().find(|n| title == **n || title.starts_with(&format!("{n}: ")));
+        ChatMeta {
+            title: s(title), kind: agent.map_or(ChatKind::Chat, |n| ChatKind::Agent(n.to_lowercase())), project: s(project), ago: s(ago), preview: s(preview), running, unread,
+        }
+    };
+    let chats = vec![
+        chat("Wisp", "Codeply", "now", "All on track. Inbox has a reply for you to approve.", false, false),
+        chat("Pricing page", "launch-site", "4 min", "Editing pricing.html, +42 lines", true, false),
+        chat("Fix the checkout crash", "launch-site", "1 h", "Merged PR #42. The checkout no longer crashes.", false, true),
+        chat("Frontend", "launch-site", "14 min", "Building the pricing page", true, false),
+        chat("Frontend: Make the pricing cards responsive", "launch-site", "1 h", "Cards stack under 640 px now.", false, false),
+        chat("Frontend: Dark mode for the docs site", "launch-site", "1 d", "Added a theme toggle and dark tokens.", false, false),
+        chat("Backend", "launch-site", "6 min", "Thinking about plan limits", true, false),
+        chat("Inbox", "Codeply", "18 min", "Needs your OK on 1 reply", false, true),
+        chat("Research", "Codeply", "1 h", "Found 4 venues for Friday", false, false),
+        chat("Docs", "launch-site", "2 h", "README after PR #44", false, false),
+        chat("Casual chat", "Codeply", "1 d", "Sure, here's a quick summary.", false, false),
+        chat("Local site mockup fixes", "launch-site", "2 d", "Fixed the corner radii on the cards.", false, false),
+        chat("Git push command explanation", "launch-site", "3 d", "git push sends your commits to the remote.", false, false),
+    ];
+    let plugin = |id: &str, name: &str, note: &str, by: &str, icon: &'static str, installed: bool| Plugin {
+        id: s(id), name: s(name), note: s(note), by: s(by), icon, installed,
+    };
+    let plugins = vec![
+        plugin("github", "GitHub", "Pull requests, reviews and checks, with a /review command.", "Codeply", "app-github", true),
+        plugin("vercel", "Vercel", "Deploy previews and read build logs.", "Vercel", "app-vercel", true),
+        plugin("figma", "Figma", "Read frames and turn designs into code.", "Figma", "app-figma", false),
+        plugin("linear", "Linear", "Create and update issues from a chat.", "Linear", "app-linear", false),
+        plugin("stripe", "Stripe", "Look up customers, payments and test webhooks.", "Stripe", "app-stripe", false),
+        plugin("notion", "Notion", "Read and write pages and databases.", "Notion", "app-notion", true),
+        plugin("frontend-design", "Frontend design", "Skills for clean, accessible interfaces.", "Codeply", "sparkle", false),
+        plugin("code-review", "Code review", "A /code-review command that checks a diff for bugs.", "Codeply", "check", true),
+    ];
+    let mcp = |name: &str, note: &str, tools, on| McpServer { name: s(name), note: s(note), tools, on };
+    let loop_ = |agent: &str, name: &str, runs: &[bool], last: &str, on| Loop { id: format!("sample-{name}"), agent: s(agent), name: s(name), runs: runs.to_vec(), last: s(last), on };
+    // Featured as the engine lists it: Codeply's own sign-ins, then vendors' own servers; then
+    // a few of the registry's other, unreviewed listings.
+    let builtin = |id: &'static str, name: &str, note: &str, category: &'static str, account: &str| CatalogApp {
+        slug: Box::leak(format!("builtin:{id}").into_boxed_str()), name: s(name), note: s(note), category, connected: !account.is_empty(),
+        domain: crate::icons::domain_of(id).unwrap_or_default().to_owned(), verified: true, builtin: true, account: s(account),
+        tools: if account.is_empty() { 0 } else { 2 }, ..Default::default()
+    };
+    let vendor = |slug: &'static str, name: &str, note: &str, category: &'static str, domain: &str| CatalogApp {
+        slug, name: s(name), note: s(note), category, domain: s(domain), verified: true, ..Default::default()
+    };
+    let listed = |slug: &'static str, name: &str, note: &str, category: &'static str| CatalogApp {
+        slug, name: s(name), note: s(note), category, domain: crate::icons::domain_of(slug).unwrap_or_default().to_owned(), ..Default::default()
+    };
+    Extra {
+        chats,
+        projects: vec![s("Codeply"), s("launch-site"), s("Superapp")],
+        suggestions: vec![
+            ("app-gmail", s("Your email to Mount Lemmon lodge bounced back")),
+            ("app-slack", s("Reply to Ty in #launch")),
+            ("app-googlecalendar", s("Prep for the review with Tibo at 3:00")),
+        ],
+        plugins,
+        mcp: vec![
+            mcp("filesystem", "Read and write files in your projects", 11, true),
+            mcp("github", "Repos, issues and pull requests", 26, true),
+            mcp("playwright", "Drive a browser to check pages", 21, false),
+        ],
+        skills: sample_skills(),
+        loops: vec![
+            loop_("wisp", "Morning brief", &[true, true, true], "Succeeded 3h ago", true),
+            loop_("wisp", "Weekly review", &[true, false], "Failed 3d ago", true),
+            loop_("inbox", "Inbox cleanup", &[true, true, true, true], "Succeeded 50m ago", true),
+            loop_("backend", "Review new pull requests", &[false, true, true], "Running now", true),
+            loop_("research", "Triage production errors", &[true], "Blocked 2d ago", false),
+            loop_("frontend", "Benchmark page speed", &[true, true, true], "Succeeded 6d ago", true),
+            loop_("docs", "Changelog from merged PRs", &[true, true], "Succeeded 1d ago", true),
+        ],
+        apps: Default::default(),
+        catalog: vec![
+            builtin("gmail", "Gmail", "Read, search, draft and send email, and keep your Google Calendar", "Communication", "you@example.com"),
+            builtin("slack", "Slack", "Post to channels and hear from your team in Slack", "Communication", "Launch team"),
+            builtin("vercel", "Vercel", "Deploy your projects and manage them on Vercel", "Developer", ""),
+            builtin("supabase", "Supabase", "Create databases, run SQL and manage your Supabase projects", "Developer", ""),
+            builtin("github", "GitHub", "Create repositories and work with your GitHub pull requests", "Developer", "codeply-dev"),
+            vendor("notion", "Notion", "Search, read and write pages and databases in your Notion workspace", "Productivity", "notion.so"),
+            vendor("linear", "Linear", "Find, create and update issues, projects and comments", "Productivity", "linear.app"),
+            vendor("figma", "Figma", "Read your Figma files and frames and turn designs into code", "Design & Media", "figma.com"),
+            vendor("atlassian", "Atlassian", "Jira issues and Confluence pages: search, create and update", "Productivity", "atlassian.com"),
+            vendor("stripe", "Stripe", "Customers, payments, invoices and products in Stripe", "Business", "stripe.com"),
+            vendor("sentry", "Sentry", "Look into errors, issues and releases", "Developer", "sentry.io"),
+            vendor("gitlab", "GitLab", "Issues, merge requests and pipelines on GitLab.com", "Developer", "gitlab.com"),
+            vendor("neon", "Neon", "Postgres projects, branches and queries on Neon", "Developer", "neon.tech"),
+            vendor("zapier", "Zapier", "Reach 8,000+ apps through the actions you set up in Zapier", "Automation", "zapier.com"),
+            vendor("canva", "Canva", "Find, create and export your Canva designs", "Design & Media", "canva.com"),
+            vendor("airtable", "Airtable", "Read and update records in your Airtable bases", "Productivity", "airtable.com"),
+            vendor("monday", "monday.com", "Boards, items and updates in your monday.com account", "Productivity", "monday.com"),
+            vendor("huggingface", "Hugging Face", "Search models, datasets, Spaces and papers", "Developer", "huggingface.co"),
+            vendor("cloudflare", "Cloudflare Docs", "Search the Cloudflare developer documentation", "Developer", "cloudflare.com"),
+            vendor("paypal", "PayPal", "Invoices, orders, payments and disputes in your PayPal account", "Business", "paypal.com"),
+            vendor("webflow", "Webflow", "Manage Webflow sites, pages and CMS collections", "Design & Media", "webflow.com"),
+            vendor("make", "Make", "Run your Make scenarios as tools", "Automation", "make.com"),
+            vendor("wix", "Wix", "Build and manage Wix sites and their business apps", "Design & Media", "wix.com"),
+            vendor("exa", "Exa", "Web search and page reading built for AI", "Research", "exa.ai"),
+            vendor("mslearn", "Microsoft Learn", "Search Microsoft's official documentation and code samples", "Research", "learn.microsoft.com"),
+            listed("discord", "Discord", "Read and post in servers", "Communication"),
+            listed("whatsapp", "WhatsApp", "Send and read messages", "Communication"),
+            listed("zoom", "Zoom", "Meetings and recordings", "Communication"),
+            listed("googledrive", "Google Drive", "Files and folders", "Productivity"),
+            listed("hubspot", "HubSpot", "Contacts and deals", "Business"),
+        ],
+        engine: s("Sample data"),
+        engine_ok: false,
+        version: s(crate::update::VERSION),
+        terminal: vec![
+            TermLine { kind: TermKind::Agent, text: s("npm test") },
+            TermLine { kind: TermKind::Out, text: s("PASS src/pricing/pricing.test.js") },
+            TermLine { kind: TermKind::Out, text: s("Tests: 212 passed, 212 total") },
+            TermLine { kind: TermKind::Exit, text: s("exited with 0") },
+        ],
+        bg_tasks: vec![
+            BgTask { id: s("t1"), kind: "agent", title: s("Frontend: pricing page"), agent: Some(s("frontend")), detail: s("Editing pricing.html"), running: true },
+            BgTask { id: s("t2"), kind: "command", title: s("npm run dev"), agent: None, detail: s("Listening on localhost:5173"), running: true },
+        ],
+        publish: None,
+        signed_in: true,
+        usage: None,
+        team_note: None,
+        pr_files: None,
+        cloud: serde_json::Value::Null,
+        prs_note: String::new(),
+        repo: None,
+        project_path: String::new(),
+        prs_busy: false,
+        step_now: Vec::new(),
+        email: s("sam@example.com"),
+        sign_in: None,
+        memories: vec![
+            Memory { id: s("m1"), kind: s("preference"), text: s("Prefers short answers with the code first"), scope: s("me") },
+            Memory { id: s("m2"), kind: s("fact"), text: s("launch-site deploys to Vercel"), scope: s("project:launch-site") },
+        ],
+        code: Code {
+            files: ["README.md", "package.json", "src/", "src/main.js", "src/pricing/", "src/pricing/plans.json", "src/pricing/pricing.css", "src/pricing/pricing.js"].iter().map(|f| s(f)).collect(),
+            open: Some(s("src/pricing/pricing.js")),
+            saved: s("// Pricing: three plans, monthly or yearly, matching the homepage.\nimport { plans } from \"./plans.json\";\n\nexport function renderPricing(root, { yearly = false } = {}) {\n  const cards = plans.map((p) => {\n    const price = yearly ? p.yearly : p.monthly;\n    return `<article class=\"plan\">${p.name} ${price}</article>`;\n  });\n  root.innerHTML = cards.join(\"\");\n}\n"),
+            suggestion: None,
+            review: vec![ReviewNote { line: 7, severity: s("warning"), message: s("Prices aren't escaped before going into innerHTML."), fix: None }],
+            reviewing: false,
+            wisp: s("idle"),
+            proposal: None,
+            manifests: Vec::new(),
+        },
+        models: crate::models::sample(),
+        subagents: crate::subagents::sample(),
+        billing: Default::default(),
+        linked: Default::default(),
+        limits: Vec::new(),
+        ports: Default::default(),
+    }
+}
+
+/// Appends what you sent, and the agent's acknowledgement, where you'll see it.
+pub fn echo(snap: &mut Snapshot, to: &Target, text: &str, reply: &str) {
+    match to {
+        Target::Agent(id) => {
+            if let Some((_, blocks)) = snap.sessions.iter_mut().find(|(k, _)| k == id) {
+                blocks.push(Block::Bubble(text.to_owned()));
+                blocks.push(Block::Reply(reply.to_owned()));
+            }
+        }
+        Target::Project(chat) | Target::AgentSession { title: chat, .. } => {
+            if let Target::AgentSession { agent, .. } = to
+                && !snap.extra.chats.iter().any(|c| c.title == *chat)
+            {
+                snap.extra.chats.insert(0, ChatMeta { title: chat.clone(), kind: ChatKind::Agent(agent.clone()), project: snap.project.clone(), ago: s("now"), preview: s(reply), running: false, unread: false });
+            }
+            match snap.threads.iter_mut().find(|(k, _)| k == chat) {
+                Some((_, items)) => {
+                    items.push(ThreadItem::You(text.to_owned()));
+                    items.push(ThreadItem::Them(reply.to_owned()));
+                }
+                None => snap.threads.push((chat.clone(), vec![ThreadItem::You(text.to_owned()), ThreadItem::Them(reply.to_owned())])),
+            }
+            return;
+        }
+        Target::Chat(chat) => {
+            let key = if snap.threads.iter().any(|(k, _)| k == chat) { chat.clone() } else { "*".to_owned() };
+            if let Some((_, items)) = snap.threads.iter_mut().find(|(k, _)| *k == key) {
+                items.push(ThreadItem::You(text.to_owned()));
+                items.push(ThreadItem::Them(reply.to_owned()));
+            }
+        }
+        Target::Wisp | Target::New => {
+            if let Some((_, blocks)) = snap.sessions.iter_mut().find(|(k, _)| k == "wisp") {
+                blocks.push(Block::Bubble(text.to_owned()));
+                blocks.push(Block::Reply(reply.to_owned()));
+            }
+        }
+    }
+    // Agents and chats both show their conversation as a thread, by the chat's title.
+    let chat = match to {
+        Target::Agent(id) => snap.agent(id).map(|a| a.name.clone()),
+        Target::Wisp => Some("Wisp".to_owned()),
+        _ => None,
+    };
+    if let Some(chat) = chat {
+        match snap.threads.iter_mut().find(|(k, _)| *k == chat) {
+            Some((_, items)) => {
+                items.push(ThreadItem::You(text.to_owned()));
+                items.push(ThreadItem::Them(reply.to_owned()));
+            }
+            None => snap.threads.push((chat, vec![ThreadItem::You(text.to_owned()), ThreadItem::Them(reply.to_owned())])),
+        }
+    }
+}
+
+impl MockStore {
+    /// Keeps the whole sample catalogue (taken from the snapshot the first time).
+    fn sync_all(&mut self, snap: &Snapshot) {
+        if self.apps_all.is_empty() {
+            self.apps_all = snap.extra.catalog.clone();
+        }
+    }
+
+    fn set_connected(&mut self, slug: &str, on: bool, snap: &mut Snapshot) {
+        self.sync_all(snap);
+        let mut name = String::new();
+        for list in [&mut self.apps_all, &mut snap.extra.catalog] {
+            if let Some(a) = list.iter_mut().find(|a| a.slug == slug) {
+                a.connected = on;
+                if !on {
+                    a.account.clear();
+                }
+                name = a.name.clone();
+            }
+        }
+        let builtin = slug.starts_with("builtin:");
+        let message = if builtin { format!("{name} is connected.") } else { format!("{name} is connected with 4 tools.") };
+        snap.extra.apps.progress = on.then(|| AppProgress { id: slug.to_owned(), name: name.clone(), state: "done".into(), message });
+        self.publish_apps(snap);
+    }
+
+    /// The counts, categories and connected list the Apps page shows next to its page of apps.
+    fn publish_apps(&self, snap: &mut Snapshot) {
+        let mut cats: Vec<(String, usize)> = Vec::new();
+        for a in &self.apps_all {
+            match cats.iter_mut().find(|(c, _)| c == a.category) {
+                Some((_, n)) => *n += 1,
+                None => cats.push((a.category.to_owned(), 1)),
+            }
+        }
+        cats.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        snap.extra.apps.total = self.apps_all.len();
+        snap.extra.apps.categories = cats;
+        snap.extra.apps.connected = self.apps_all.iter().filter(|a| a.connected).cloned().collect();
+    }
+}
+
+impl Store for MockStore {
+    fn load(&mut self) -> Snapshot {
+        let mut snap = sample();
+        self.apps_all = snap.extra.catalog.clone();
+        snap.extra.apps.matched = self.apps_all.len();
+        self.publish_apps(&mut snap);
+        snap
+    }
+    fn poll(&mut self, _: &mut Snapshot) -> bool {
+        false
+    }
+    fn send(&mut self, to: &Target, text: &str, snap: &mut Snapshot) -> Result<(), String> {
+        if *to == Target::New {
+            // A new chat, titled by what you asked, at the top of the list.
+            let title: String = if text.chars().count() > 46 { format!("{}...", text.chars().take(46).collect::<String>()) } else { text.to_owned() };
+            snap.extra.chats.insert(0, ChatMeta { title: title.clone(), kind: ChatKind::Chat, project: snap.project.clone(), ago: s("now"), preview: s("On it."), running: false, unread: false });
+            snap.threads.push((title.clone(), vec![ThreadItem::You(text.to_owned()), ThreadItem::Them(s("On it. I'll post here when it's done."))]));
+            self.focus = Some(title);
+            return Ok(());
+        }
+        echo(snap, to, text, "On it. I'll post here when it's done.");
+        Ok(())
+    }
+    fn file_op(&mut self, op: FileOp, snap: &mut Snapshot) {
+        let files = &mut snap.extra.code.files;
+        match op {
+            FileOp::New(p) => {
+                if !files.contains(&p) {
+                    files.push(p.clone());
+                    files.sort();
+                }
+                snap.extra.code.open = Some(p);
+                snap.extra.code.saved = String::new();
+            }
+            FileOp::Rename(from, to) => {
+                if let Some(f) = files.iter_mut().find(|f| **f == from) {
+                    *f = to.clone();
+                }
+                files.sort();
+                if snap.extra.code.open.as_deref() == Some(from.as_str()) {
+                    snap.extra.code.open = Some(to);
+                }
+            }
+            FileOp::Delete(p) => {
+                files.retain(|f| *f != p);
+                if snap.extra.code.open.as_deref() == Some(p.as_str()) {
+                    snap.extra.code.open = None;
+                }
+            }
+        }
+    }
+
+    fn cloud_op(&mut self, op: CloudOp, snap: &mut Snapshot) {
+        if snap.extra.cloud.is_null() {
+            snap.extra.cloud = serde_json::json!({
+                "signedIn": true, "email": "sam@example.com", "device": "SAM-PC", "available": true,
+                "github": { "connected": true, "userName": "sam" },
+                "sync": { "state": "on", "at": 0 },
+                "phone": { "relay": true, "relayStatus": "SUBSCRIBED", "lan": true, "urls": ["http://192.168.1.20:45671"], "phones": 1, "mobileUrl": "https://mobile.codeply.app" },
+                "projects": [
+                    { "cwd": "C:/Users/sam/Codeply/launch-site", "name": "launch-site", "ready": true, "repo": "sam/craft-workspace-launch-site", "kind": "mirror", "cloudOn": true, "handoff": true, "autoBackup": true, "tasks": [] },
+                    { "cwd": "C:/Users/sam/Codeply/Superapp", "name": "Superapp", "ready": false, "repo": "", "cloudOn": false, "handoff": true, "autoBackup": true, "tasks": [] }
+                ]
+            });
+        }
+        match op {
+            CloudOp::Options(cwd, key, on) => {
+                if let Some(p) = snap.extra.cloud["projects"].as_array_mut().and_then(|a| a.iter_mut().find(|p| p["cwd"] == cwd.as_str())) {
+                    p[key] = serde_json::json!(on);
+                }
+            }
+            CloudOp::Setup(cwd) => {
+                if let Some(p) = snap.extra.cloud["projects"].as_array_mut().and_then(|a| a.iter_mut().find(|p| p["cwd"] == cwd.as_str())) {
+                    p["ready"] = serde_json::json!(true);
+                    p["cloudOn"] = serde_json::json!(true);
+                }
+            }
+            CloudOp::Load | CloudOp::Sync => {}
+        }
+    }
+
+    fn prs_op(&mut self, op: PrOp, snap: &mut Snapshot) {
+        if let PrOp::Diff(n) = op
+            && let Some(p) = snap.prs.iter().find(|p| p.number == n)
+        {
+            snap.extra.pr_files = Some((n, crate::views::prs::sample_diff(p)));
+        }
+    }
+
+    fn agents_op(&mut self, op: crate::subagents::Op, snap: &mut Snapshot) {
+        use crate::subagents::{Line, Message, Op};
+        let x = &mut snap.extra.subagents;
+        match op {
+            Op::Send(id, text) => {
+                if let Some(a) = x.agents.iter_mut().find(|a| a.id == id) {
+                    let live = a.working();
+                    a.log.push(Line { kind: "user".into(), by: "you".into(), text, live, ..Default::default() });
+                    a.status = "working".into();
+                }
+            }
+            Op::Stop(id) => {
+                if let Some(a) = x.agents.iter_mut().find(|a| a.id == id) {
+                    a.status = "stopped".into();
+                }
+            }
+            Op::Remove(id) => x.agents.retain(|a| a.id != id),
+            Op::Team(id, text) => {
+                if let Some(t) = x.teams.iter_mut().find(|t| t.id == id) {
+                    t.messages.push(Message { from: "You".into(), to: String::new(), text });
+                }
+            }
+            Op::Browser(..) => {}
+        }
+    }
+
+    fn team_op(&mut self, op: crate::team::TeamOp, snap: &mut Snapshot) {
+        crate::team::apply_sample(&op, snap);
+    }
+
+    fn load_usage(&mut self, snap: &mut Snapshot) {
+        snap.extra.usage = Some(sample_usage());
+    }
+
+    /// A free plan most of the way through its 5 hours; a checkout waits on a sample page
+    /// (nothing opens: the sample store never hands the app a URL).
+    fn billing(&mut self, op: BillingOp, snap: &mut Snapshot) {
+        let b = &mut snap.extra.billing;
+        match op {
+            BillingOp::Load => {
+                b.plan = Some(Plan { key: s("free"), name: s("Free"), models: Vec::new() });
+                b.free = Some(FreeLimit { used: 82, limit: 100, resets: s("4:30 PM") });
+                b.error.clear();
+            }
+            BillingOp::Checkout(plan) => {
+                b.checkout = Some(Checkout { plan, url: s("https://whop.com/checkout/plan_sample"), state: CheckoutState::Waiting });
+            }
+            BillingOp::Reopen | BillingOp::LoadLinked => {}
+            BillingOp::Cancel => b.checkout = None,
+            BillingOp::Link(which) => {
+                let l = if which == "claude" { &mut snap.extra.linked.claude } else { &mut snap.extra.linked.chatgpt };
+                *l = crate::model::LinkedPlan { connected: true, plan: s(if which == "claude" { "Claude Pro" } else { "ChatGPT Plus" }), email: s("sam@example.com"), ..Default::default() };
+            }
+            BillingOp::Unlink(which) => {
+                let l = if which == "claude" { &mut snap.extra.linked.claude } else { &mut snap.extra.linked.chatgpt };
+                *l = Default::default();
+            }
+        }
+    }
+
+    fn take_focus(&mut self) -> Option<String> {
+        self.focus.take()
+    }
+    fn models(&mut self, op: crate::models::ModelOp, snap: &mut Snapshot) {
+        use crate::models::{AUTO, ModelInfo, ModelOp, Phone, Scan};
+        let m = &mut snap.extra.models;
+        m.busy = false;
+        match op {
+            ModelOp::Select(id) => m.selected = if m.list.iter().any(|x| x.id == id) || crate::models::pick_name(&id).is_some() { id } else { AUTO.into() },
+            ModelOp::Save(d) => {
+                if let Some(why) = d.problem() {
+                    m.error = Some(why.into());
+                    m.test_failed = false;
+                    return;
+                }
+                // Sample data has no provider to test with: a base URL with "fail" in it plays one that refuses.
+                if !d.skip_test && d.base_url.contains("fail") {
+                    m.error = Some(format!("{} answered HTTP 401 Unauthorized.", crate::models::host_of(&d.base_url)));
+                    m.test_failed = true;
+                    return;
+                }
+                let id = d.id.clone().unwrap_or_else(|| format!("m{}", m.list.len() + 100));
+                let old = m.list.iter().find(|x| x.id == id).cloned();
+                let has_key = d.api_key.as_deref().map_or(old.as_ref().is_some_and(|o| o.has_key), |k| !k.is_empty());
+                let entry = ModelInfo {
+                    id: id.clone(),
+                    name: if d.name.is_empty() { d.model.clone() } else { d.name.clone() },
+                    kind: d.kind.clone(),
+                    base_url: d.base_url.trim_end_matches('/').to_owned(),
+                    model: d.model.clone(),
+                    effort: old.as_ref().map(|o| o.effort.clone()).unwrap_or_default(),
+                    effort_levels: old.as_ref().and_then(|o| o.effort_levels.clone()),
+                    has_key,
+                    key_preview: if has_key { "sk-s…1234".into() } else { String::new() },
+                    phone: Phone { eligible: has_key && d.base_url.starts_with("https://"), on: d.phone && has_key, synced: false, reason: String::new() },
+                };
+                match m.list.iter_mut().find(|x| x.id == id) {
+                    Some(x) => *x = entry,
+                    None => m.list.push(entry),
+                }
+                m.selected = id;
+                m.error = None;
+                m.test_failed = false;
+                m.saved += 1;
+            }
+            ModelOp::Delete(id) => {
+                m.list.retain(|x| x.id != id);
+                if m.selected == id {
+                    m.selected = AUTO.into();
+                }
+            }
+            ModelOp::Effort(id, effort) => {
+                if let Some(x) = m.list.iter_mut().find(|x| x.id == id) {
+                    x.effort = effort;
+                }
+            }
+            ModelOp::Levels(id) => {
+                if let Some(x) = m.list.iter_mut().find(|x| x.id == id && x.effort_levels.is_none()) {
+                    x.effort_levels = Some(vec!["low".into(), "medium".into(), "high".into()]);
+                }
+            }
+            ModelOp::Phone(id, on) => {
+                if let Some(x) = m.list.iter_mut().find(|x| x.id == id && x.phone.eligible) {
+                    x.phone.on = on;
+                    x.phone.synced = on;
+                }
+            }
+            ModelOp::ScanOllama => {
+                m.scan = Scan {
+                    busy: false,
+                    error: None,
+                    found: vec![
+                        ("qwen2.5-coder:7b".into(), "7.6B · qwen2 · 4.4 GB".into()),
+                        ("llama3.2:3b".into(), "3.2B · llama · 1.9 GB".into()),
+                        ("gemma3:12b".into(), "12.2B · gemma3 · 7.6 GB".into()),
+                    ],
+                };
+            }
+        }
+    }
+    fn run_command(&mut self, cmd: &str, snap: &mut Snapshot) {
+        snap.extra.terminal.push(TermLine { kind: TermKind::Input, text: cmd.to_owned() });
+        snap.extra.terminal.push(TermLine { kind: TermKind::Out, text: s("(sample data: commands run once the engine is connected)") });
+    }
+    fn kill(&mut self, id: &str, snap: &mut Snapshot) {
+        if let Some(t) = snap.extra.bg_tasks.iter_mut().find(|t| t.id == id) {
+            t.running = false;
+        }
+    }
+    fn edit_code(&mut self, file: &str, text: &str, instruction: &str, snap: &mut Snapshot) {
+        // Sample data: a change you can see in the diff (escape what goes into innerHTML).
+        let after = text.replace("${p.name} ${price}", "${escape(p.name)} ${escape(price)}")
+            .replacen("export function", "const escape = (s) => String(s).replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`);\n\nexport function", 1);
+        if let Some(p) = snap.extra.code.proposal.as_mut().filter(|p| p.file == file && p.instruction == instruction) {
+            p.after = Some(after);
+            snap.extra.code.wisp = "idle".into();
+        }
+    }
+
+    fn complete(&mut self, file: &str, prefix: &str, _suffix: &str, snap: &mut Snapshot) {
+        // Sample data: finish the word being typed from words already in the file.
+        let word: String = prefix.chars().rev().take_while(|c| c.is_alphanumeric() || *c == '_').collect::<Vec<_>>().into_iter().rev().collect();
+        if word.len() < 2 {
+            snap.extra.code.suggestion = None;
+            return;
+        }
+        let found = prefix.split(|c: char| !(c.is_alphanumeric() || c == '_')).find(|w| w.len() > word.len() && w.starts_with(&word));
+        snap.extra.code.suggestion = found.map(|w| (file.to_owned(), prefix.len(), w[word.len()..].to_owned()));
+    }
+    fn connect_app(&mut self, slug: &str, snap: &mut Snapshot) {
+        self.set_connected(slug, true, snap);
+    }
+    fn disconnect_app(&mut self, slug: &str, snap: &mut Snapshot) {
+        self.set_connected(slug, false, snap);
+    }
+    fn connect_app_key(&mut self, slug: &str, _key: &str, snap: &mut Snapshot) {
+        self.set_connected(slug, true, snap);
+    }
+    fn add_app(&mut self, url: &str, title: &str, _header: &str, _key: &str, snap: &mut Snapshot) {
+        let host = url.trim_start_matches("https://").split('/').next().unwrap_or(url).to_owned();
+        let name = if title.is_empty() { host.clone() } else { title.to_owned() };
+        let slug: &'static str = Box::leak(host.clone().into_boxed_str());
+        self.sync_all(snap);
+        self.apps_all.push(CatalogApp { slug, name, category: "Other", connected: false, domain: host, ..Default::default() });
+        self.set_connected(slug, true, snap);
+    }
+    fn cancel_app(&mut self, snap: &mut Snapshot) {
+        snap.extra.apps.progress = None;
+    }
+    fn app_tools(&mut self, slug: &str, snap: &mut Snapshot) {
+        // Codeply's own sign-ins list the agent's tools that use them, as ext-connections does.
+        let tools = match slug {
+            "builtin:github" => vec![(s("Create a repository"), s("github_create_repo"), false)],
+            "builtin:slack" => vec![(s("Post a message to a channel"), s("slack_post_message"), false)],
+            "builtin:gmail" => vec![
+                (s("Search your mail"), s("gmail_search"), true),
+                (s("Read one message"), s("gmail_read"), true),
+                (s("Save a draft"), s("gmail_draft"), false),
+                (s("Send an email"), s("gmail_send"), false),
+            ],
+            _ => vec![
+                (s("search"), s("Find things by name or text"), true),
+                (s("read"), s("Open one item and read it"), true),
+                (s("create"), s("Make a new item"), false),
+                (s("update"), s("Change an item"), false),
+            ],
+        };
+        snap.extra.apps.tools = Some((slug.to_owned(), Ok(tools)));
+    }
+    fn browse_apps(&mut self, q: &crate::store::AppsQuery, snap: &mut Snapshot) {
+        self.sync_all(snap);
+        let ql = q.text.trim().to_lowercase();
+        let hits: Vec<&CatalogApp> = self.apps_all.iter()
+            .filter(|a| q.category.as_deref().map_or(true, |c| a.category == c))
+            .filter(|a| ql.is_empty() || [a.name.as_str(), a.note.as_str(), a.category].iter().any(|p| p.to_lowercase().contains(&ql)))
+            .collect();
+        let page: Vec<CatalogApp> = hits.iter().skip(q.offset).take(crate::store::APPS_PAGE).map(|a| (*a).clone()).collect();
+        snap.extra.apps.matched = hits.len();
+        if q.offset == 0 {
+            snap.extra.catalog = page;
+        } else {
+            snap.extra.catalog.extend(page);
+        }
+        self.publish_apps(snap);
+    }
+    fn open_file(&mut self, path: &str, snap: &mut Snapshot) {
+        snap.extra.code.open = Some(path.to_owned());
+    }
+    fn read_manifests(&mut self, paths: Vec<String>, snap: &mut Snapshot) {
+        // Sample data: the project is a Vite site.
+        snap.extra.code.manifests = paths.into_iter().filter(|p| p == "package.json")
+            .map(|p| (p, s("{\n  \"name\": \"launch-site\",\n  \"scripts\": { \"dev\": \"vite\", \"build\": \"vite build\" }\n}\n"))).collect();
+    }
+    fn live_op(&mut self, op: crate::model::LiveOp, snap: &mut Snapshot) {
+        use crate::model::{Forward, LiveOp};
+        let ports = &mut snap.extra.ports;
+        match op {
+            LiveOp::Start(_) => ports.live = Some(5500),
+            LiveOp::Stop => ports.live = None,
+            LiveOp::Forward(port) => {
+                ports.forwards.retain(|f| f.port != port);
+                ports.forwards.push(Forward { port, state: s("open"), url: format!("https://sample-{port}.trycloudflare.com"), message: String::new() });
+            }
+            LiveOp::Unforward(port) => ports.forwards.retain(|f| f.port != port),
+            LiveOp::Status => ports.tools = Some((true, true)),
+        }
+    }
+    fn review(&mut self, _file: &str, _text: &str, snap: &mut Snapshot) {
+        snap.extra.code.reviewing = false;
+        snap.extra.code.wisp = "idle".into();
+    }
+    fn remember(&mut self, text: &str, snap: &mut Snapshot) {
+        let id = format!("m{}", snap.extra.memories.len() + 1);
+        snap.extra.memories.insert(0, Memory { id, kind: s("note"), text: text.to_owned(), scope: s("me") });
+    }
+    fn forget(&mut self, id: &str, snap: &mut Snapshot) {
+        snap.extra.memories.retain(|m| m.id != id);
+    }
+    fn publish(&mut self, _chat: Option<&str>, snap: &mut Snapshot) {
+        snap.extra.publish = Some(Publish { running: false, url: Some(s("https://launch-site.codeply.app")), message: s("Published") });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_sample_matches_the_prototype() {
+        let snap = sample();
+        assert_eq!(snap.team.len(), 6);
+        assert_eq!(snap.count(AgentState::Working), 1);
+        assert_eq!(snap.count(AgentState::Waiting), 1);
+        assert_eq!(snap.prs.iter().map(|p| p.number).collect::<Vec<_>>(), [44, 43, 42, 41]);
+        assert_eq!(snap.activity.len(), 52 * 7);
+        for (id, _) in &snap.sessions {
+            assert!(snap.agent(id).is_some(), "session for unknown agent {id}");
+        }
+        assert!(!snap.thread("Docs refresh").is_empty(), "every chat falls back to the sample thread");
+    }
+
+    #[test]
+    fn sending_to_an_agent_lands_in_its_drawer() {
+        let mut snap = sample();
+        MockStore::default().send(&Target::Agent("research".into()), "Book it for 7pm", &mut snap).ok();
+        assert!(matches!(snap.session("research").iter().rev().nth(1), Some(Block::Bubble(t)) if t == "Book it for 7pm"));
+    }
+}
+
+/// A season of sample use for the usage sheet: weekdays busier than weekends, a quiet spell in
+/// the summer, and three models. Deterministic, so renders don't change.
+pub fn sample_usage() -> Usage {
+    let today = crate::views::usage::day_number("2026-11-14").unwrap_or(0);
+    let mut days = Vec::new();
+    let (mut tokens, mut calls) = (0, 0);
+    for back in 0..230i64 {
+        let n = today - back;
+        let weekday = (n + 4).rem_euclid(7);
+        let wave = ((back as f64) / 9.0).sin().abs();
+        if (95..120).contains(&back) || (weekday == 0 && back % 3 != 0) {
+            continue;
+        }
+        let base = if weekday == 6 { 40_000.0 } else { 180_000.0 };
+        let t = (base * (0.35 + wave) + (back % 7) as f64 * 9_000.0) as u64;
+        let c = t / 2_600 + 3;
+        let models = vec![
+            ("haze-2".to_owned(), t * 6 / 10, c * 6 / 10),
+            ("openai/gpt-oss-120b".to_owned(), t * 3 / 10, c * 3 / 10),
+            ("qwen3-coder".to_owned(), t / 10, c / 10),
+        ];
+        tokens += t;
+        calls += c;
+        days.push(UsageDay { date: crate::views::usage::date_of(n), tokens: t, calls: c, models });
+    }
+    Usage { error: String::new(), tokens: tokens + 2_400_000, calls, favorite: "Haze 2".into(), today: "2026-11-14".into(), days }
+}
+
+/// A slice of the real library (codeply-cli/skills), with a plugin's and one of yours.
+fn sample_skills() -> Vec<crate::model::Skill> {
+    let skill = |name: &str, description: &str, source: &str, plugin: &str| crate::model::Skill {
+        name: s(name), description: s(description), source: s(source), plugin: s(plugin),
+        path: format!("C:\\Program Files\\Codeply\\resources\\codeply-cli\\skills\\{name}\\SKILL.md"),
+    };
+    vec![
+        skill("api-design", "REST API design patterns including resource naming, status codes, pagination, filtering, error responses, versioning, and rate limiting for production APIs.", "built-in", ""),
+        skill("article-writing", "Write articles, guides, blog posts, tutorials, newsletter issues, and other long-form content in a distinctive voice derived from supplied examples or brand guidance.", "built-in", ""),
+        skill("backend-patterns", "Backend architecture patterns, API design, database optimization, and server-side best practices for Node.js, Express, and Next.js API routes.", "built-in", ""),
+        skill("codeply-taste", "Codeply's design layer. Use for any design a person will look at - a website or landing page, app screens, a slide deck, a poster - when it has to look designed, not generated.", "built-in", ""),
+        skill("deep-research", "Multi-source deep research. Searches the web, synthesizes findings, and delivers cited reports with source attribution.", "built-in", ""),
+        skill("docker-patterns", "Docker and Docker Compose patterns for local development, container security, networking, volume strategies, and multi-service orchestration.", "built-in", ""),
+        skill("e2e-testing", "Playwright E2E testing patterns, Page Object Model, configuration, CI/CD integration, artifact management, and flaky test strategies.", "built-in", ""),
+        skill("frontend-a11y", "Accessibility patterns for React and Next.js: semantic HTML, ARIA attributes, form labeling, keyboard navigation, focus management, and screen reader support.", "built-in", ""),
+        skill("frontend-patterns", "Frontend development patterns for React, Next.js, state management, performance optimization, and UI best practices.", "built-in", ""),
+        skill("market-research", "Conduct market research, competitive analysis, investor due diligence, and industry intelligence with source attribution and decision-oriented summaries.", "built-in", ""),
+        skill("motion-ui", "Production-ready UI motion system for React/Next.js. Use when implementing animations, transitions, or motion patterns.", "built-in", ""),
+        skill("postgres-patterns", "PostgreSQL database patterns for query optimization, schema design, indexing, and security. Based on Supabase best practices.", "built-in", ""),
+        skill("publish-website", "Publish the user's website or app end to end when they ask to publish, deploy or put it live.", "built-in", ""),
+        skill("security-review", "Use when adding authentication, handling user input, working with secrets, creating API endpoints, or implementing payment or sensitive features.", "built-in", ""),
+        skill("stripe-billing", "Set up Stripe checkout, subscriptions and webhooks, and test them with the Stripe CLI.", "plugin", "stripe"),
+        skill("tdd-workflow", "Use when writing new features, fixing bugs, or refactoring code. Enforces test-driven development with unit, integration, and E2E tests.", "built-in", ""),
+        skill("pricing-copy", "How we write pricing pages: plain words, one price per card, no fine print.", "user", ""),
+        skill("verification-loop", "A comprehensive verification system: build, types, lint, tests and a diff review before you call it done.", "built-in", ""),
+    ]
+}

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="1024" height="1024" role="img" aria-label="streak">
+<defs>
+  <linearGradient id="ci67f" x1="0.2" y1="0" x2="0.8" y2="1">
+    <stop offset="0" stop-color="#ffb25f"/><stop offset="0.5" stop-color="#ff8a1a"/><stop offset="1" stop-color="#e66800"/>
+  </linearGradient>
+  <radialGradient id="ci67s" cx="0.3" cy="0.12" r="0.75"><stop offset="0" stop-color="#fff" stop-opacity="0.32"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  <linearGradient id="ci67e" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.85"/><stop offset="0.42" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  <linearGradient id="ci67b" x1="0" y1="0" x2="0" y2="1"><stop offset="0.55" stop-color="#ae4d00" stop-opacity="0"/><stop offset="1" stop-color="#ae4d00" stop-opacity="0.35"/></linearGradient>
+  <clipPath id="ci67c"><path d="M50 10 C58 26 76 34 76 58 A26 26 0 0 1 24 58 C24 44 32 38 36 28 C40 36 44 40 46 40 C46 28 46 20 50 10 Z"/></clipPath>
+</defs>
+<path d="M50 10 C58 26 76 34 76 58 A26 26 0 0 1 24 58 C24 44 32 38 36 28 C40 36 44 40 46 40 C46 28 46 20 50 10 Z" fill="url(#ci67f)"/>
+<path d="M50 10 C58 26 76 34 76 58 A26 26 0 0 1 24 58 C24 44 32 38 36 28 C40 36 44 40 46 40 C46 28 46 20 50 10 Z" fill="url(#ci67s)"/>
+<path d="M50 10 C58 26 76 34 76 58 A26 26 0 0 1 24 58 C24 44 32 38 36 28 C40 36 44 40 46 40 C46 28 46 20 50 10 Z" fill="none" stroke="url(#ci67b)" stroke-width="4" clip-path="url(#ci67c)"/>
+<path d="M50 10 C58 26 76 34 76 58 A26 26 0 0 1 24 58 C24 44 32 38 36 28 C40 36 44 40 46 40 C46 28 46 20 50 10 Z" fill="none" stroke="url(#ci67e)" stroke-width="3" clip-path="url(#ci67c)"/>
+<defs>
+  <linearGradient id="ci68f" x1="0.2" y1="0" x2="0.8" y2="1">
+    <stop offset="0" stop-color="#ffe897"/><stop offset="0.5" stop-color="#ffcf2e"/><stop offset="1" stop-color="#f7b100"/>
+  </linearGradient>
+  <radialGradient id="ci68s" cx="0.3" cy="0.12" r="0.75"><stop offset="0" stop-color="#fff" stop-opacity="0.32"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  <linearGradient id="ci68e" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.6"/><stop offset="0.42" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  <linearGradient id="ci68b" x1="0" y1="0" x2="0" y2="1"><stop offset="0.55" stop-color="#bb8200" stop-opacity="0"/><stop offset="1" stop-color="#bb8200" stop-opacity="0.35"/></linearGradient>
+  <clipPath id="ci68c"><path d="M50 46 C55 54 63 58 63 68 A13 13 0 0 1 37 68 C37 60 44 56 50 46 Z"/></clipPath>
+</defs>
+<path d="M50 46 C55 54 63 58 63 68 A13 13 0 0 1 37 68 C37 60 44 56 50 46 Z" fill="url(#ci68f)"/>
+<path d="M50 46 C55 54 63 58 63 68 A13 13 0 0 1 37 68 C37 60 44 56 50 46 Z" fill="url(#ci68s)"/>
+<path d="M50 46 C55 54 63 58 63 68 A13 13 0 0 1 37 68 C37 60 44 56 50 46 Z" fill="none" stroke="url(#ci68b)" stroke-width="4" clip-path="url(#ci68c)"/>
+<path d="M50 46 C55 54 63 58 63 68 A13 13 0 0 1 37 68 C37 60 44 56 50 46 Z" fill="none" stroke="url(#ci68e)" stroke-width="3" clip-path="url(#ci68c)"/></svg>

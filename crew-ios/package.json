@@ -2,7 +2,7 @@
   "name": "codeply-crew-ios",
   "version": "0.1.0",
   "private": true,
-  "description": "Codeply Crew for iPhone: chats, calls and context for your Codeply agents",
+  "description": "Codeply for iPhone: chats, calls and context for your Codeply agents",
   "license": "MIT",
   "scripts": {
     "prepare-web": "node ../scripts/prepare-crew-ios.js",

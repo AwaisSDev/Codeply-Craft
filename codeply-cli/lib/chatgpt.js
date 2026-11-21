@@ -28,7 +28,7 @@ const MODELS_URL = `${RESOURCE}/models`;
 const SCOPE = 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct';
 const PLAN_SCOPE = 'chatgpt.tokens.use.direct';
 const DYNAMIC_CLIENT = 'dynamic_agent_client';
-const APP_NAME = 'Codeply Craft';
+const APP_NAME = 'Codeply';
 const SIGN_IN_TIMEOUT_MS = 5 * 60_000;
 const USAGE_URL = 'https://chatgpt.com/settings/usage';
 
@@ -131,8 +131,8 @@ function listenForCallback(expectedState) {
     const failed = q.error || !q.code || q.state !== expectedState;
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(failed
-      ? PAGE('Sign-in did not finish', 'Go back to Codeply Craft and try again.')
-      : PAGE('You are signed in', 'You can close this tab and go back to Codeply Craft.'));
+      ? PAGE('Sign-in did not finish', 'Go back to Codeply and try again.')
+      : PAGE('You are signed in', 'You can close this tab and go back to Codeply.'));
     if (q.error) finish.reject(new Error(q.error_description || `ChatGPT sign-in was cancelled (${q.error}).`));
     else if (q.state !== expectedState) finish.reject(new Error('ChatGPT sign-in did not match this attempt. Try again.'));
     else if (!q.code) finish.reject(new Error('ChatGPT sign-in returned no authorization code.'));

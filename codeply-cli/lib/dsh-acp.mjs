@@ -40,24 +40,55 @@ const HAZE_PATCH = `# Written by the Codeply CLI: the ACP profile answers throug
 - id: system-prompt
   config:
     personaPrefix: >-
-      You are Craft, Codeply's coding agent, powered by the {{model}} model.
+      You are Codeply, powered by the {{model}} model.
+# No OS sandbox (dsh-acp.mjs starts the engine with DSH_PERMISSION_MODE=danger-full-access):
+# under "ask" the person approves each write, edit, command or agent start instead
+# (@codeply/dsh-ask-first), and the host answers those itself in Full access.
+- id: approval
+  config:
+    policy: ask
+- id: permission
+  config:
+    presets:
+      ask-first:
+        sandbox: danger-full-access
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+    defaultPreset: ask-first
 - insert:
     - id: llm-haze
       name: '@codeply/dsh-llm-haze'
+    - id: codeply-ask-first
+      name: '@codeply/dsh-ask-first'
+    - id: codeply-design-tools
+      name: '@codeply/dsh-design-tools'
+    - id: codeply-shared-context
+      name: '@codeply/dsh-shared-context'
 `;
 
 /** Where the engine lives and which Node runs it, or a readable reason it cannot start. */
 export function findDsh() {
-  const dir = process.env.CODEPLY_DSH_DIR || path.resolve(HERE, '..', '..', 'craft-dsh');
-  const bin = path.join(dir, 'apps', 'cli', 'lib', 'bin.js');
-  if (!fs.existsSync(bin)) {
-    return { error: `The DSH engine is not built at ${dir}. In craft-dsh run: pnpm install, then pnpm run build. Or set CODEPLY_DSH_DIR.` };
+  // A built craft-dsh checkout (development), else the engine the installer
+  // ships in resources/dsh-runtime (scripts/package-dsh.mjs), with its own Node.
+  const layout = (d) => {
+    const own = path.join(d, process.platform === 'win32' ? 'node.exe' : 'node');
+    if (fs.existsSync(path.join(d, 'apps', 'cli', 'lib', 'bin.js'))) return { dir: d, bin: path.join(d, 'apps', 'cli', 'lib', 'bin.js'), ownNode: '' };
+    if (fs.existsSync(path.join(d, 'engine', 'lib', 'bin.js'))) return { dir: d, bin: path.join(d, 'engine', 'lib', 'bin.js'), ownNode: fs.existsSync(own) ? own : '' };
+    return null;
+  };
+  const dev = process.env.CODEPLY_DSH_DIR || path.resolve(HERE, '..', '..', 'craft-dsh');
+  const found = layout(dev) || (process.env.CODEPLY_DSH_DIR ? null : layout(path.resolve(HERE, '..', '..', 'dsh-runtime')));
+  const { dir, bin, ownNode } = found || { dir: dev, bin: path.join(dev, 'apps', 'cli', 'lib', 'bin.js'), ownNode: '' };
+  if (!found) {
+    return { error: `The DSH engine is not built at ${dev}. In craft-dsh run: pnpm install, then pnpm run build. Or set CODEPLY_DSH_DIR.` };
   }
   const okVersion = (v) => {
     const [maj, min] = String(v).replace(/^v/, '').split('.').map(Number);
     return maj > MIN_NODE[0] || (maj === MIN_NODE[0] && min >= MIN_NODE[1]);
   };
-  let node = process.env.CODEPLY_DSH_NODE;
+  let node = process.env.CODEPLY_DSH_NODE || ownNode;
   if (!node && okVersion(process.version)) node = process.execPath;
   if (!node) node = 'node';
   if (node !== process.execPath) {
@@ -91,10 +122,38 @@ function startBridge() {
   const token = crypto.randomBytes(32).toString('hex');
   const server = http.createServer(async (req, res) => {
     const reply = (status, body) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
-    if (req.method !== 'POST' || req.url !== '/haze') return reply(404, { success: false, error: 'Not found.' });
+    const design = /^\/design\/(design_direction|design_lint)$/.exec(req.url || '');
+    const shared = req.url === '/context' || /^\/brain\/(remember|recall|life_context)$/.test(req.url || '');
+    if (req.method !== 'POST' || (req.url !== '/haze' && !design && !shared)) return reply(404, { success: false, error: 'Not found.' });
     const got = Buffer.from(String(req.headers.authorization || ''));
     const want = Buffer.from(`Bearer ${token}`);
     if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return reply(401, { success: false, error: 'Unauthorized.' });
+    // The shared context (brain, the user's day, what Codeply did lately), the same as the desktop app's chats get.
+    if (shared) {
+      try {
+        const body = JSON.parse(await readBody(req));
+        const sc = require('./shared-context.js');
+        const o = { cwd: String(body.cwd || ''), chatId: String(body.chatId || ''), request: String(body.request || '') };
+        if (req.url === '/context') return reply(200, { ok: true, text: sc.blockFor({ ...o, native: true }) });
+        const r = await sc.runTool(req.url.slice('/brain/'.length), body.args && typeof body.args === 'object' ? body.args : {}, o);
+        return reply(200, { ok: !!(r && r.ok), output: String((r && r.output) || '') });
+      } catch (e) {
+        return reply(200, { ok: false, output: `Codeply's shared context failed: ${e && e.message ? e.message : e}`, text: '' });
+      }
+    }
+    // codeply-taste's tools: Classic's design-tools.mjs (no browser here, so design_lint scans without a render).
+    if (design) {
+      try {
+        const body = JSON.parse(await readBody(req));
+        const cwd = String(body.cwd || '');
+        if (!cwd || !fs.existsSync(cwd)) return reply(200, { ok: false, output: `${design[1]}: no project folder.` });
+        const tools = await import('./design-tools.mjs');
+        const r = await tools[design[1]](body.args && typeof body.args === 'object' ? body.args : {}, { cwd });
+        return reply(200, { ok: !!(r && r.ok), output: String((r && r.output) || '') });
+      } catch (e) {
+        return reply(200, { ok: false, output: `${design[1]} failed: ${e && e.message ? e.message : e}` });
+      }
+    }
     const ac = new AbortController();
     res.on('close', () => { if (!res.writableEnded) ac.abort(); });
     try {
@@ -216,6 +275,12 @@ export class DshEngine {
       env: {
         ...process.env,
         DSH_HOME: dshHome(),
+        // No OS sandbox, as in Claude Code and Classic: the sandbox blocked npm's cache, git
+        // clone and global installs with EPERM. Writes and commands are asked for instead
+        // (@codeply/dsh-ask-first in the patch), unless the person picked Full access.
+        DSH_PERMISSION_MODE: 'danger-full-access',
+        // Classic's bundled skills (codeply-taste and the rest) for the harness too.
+        DSH_BUNDLED_SKILL_DIR: path.resolve(HERE, '..', 'skills'),
         ...this.extraEnv,
         CODEPLY_HAZE_BRIDGE_URL: this.bridge.url,
         CODEPLY_HAZE_BRIDGE_TOKEN: this.bridge.token,
@@ -252,13 +317,16 @@ export class DshEngine {
     });
 
     const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error(`The DSH engine took too long to start. ${this.lastLines()}`.trim())), START_TIMEOUT_MS));
-    await Promise.race([
+    const init = await Promise.race([
       this.request('initialize', {
         protocolVersion: 1,
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
       }),
       timeout,
     ]);
+    // Whether this model takes pictures with a prompt (ACP image blocks): pasted or attached
+    // images go to it as they are, not as file paths it can't see.
+    this.imagePrompts = !!(init && init.agentCapabilities && init.agentCapabilities.promptCapabilities && init.agentCapabilities.promptCapabilities.image);
     this.ready = true;
     if (!this.defaultSession) return;
     const session = await Promise.race([this.request('session/new', { cwd: this.cwd, mcpServers: [] }), timeout]);
@@ -327,7 +395,7 @@ export class DshEngine {
    * `approve(request)` resolves to 'once' | 'always' | 'reject', like the
    * Classic engine's approval bridge.
    */
-  async *prompt(text, { approve, signal, sessionId } = {}) {
+  async *prompt(text, { approve, signal, sessionId, images } = {}) {
     await this.start();
     const sid = sessionId || this.sessionId;
     const queue = [];
@@ -397,7 +465,10 @@ export class DshEngine {
     let finished = false;
     let failure = null;
     let stopReason = null;
-    this.request('session/prompt', { sessionId: sid, prompt: [{ type: 'text', text }] })
+    // Images as ACP image blocks ({ mimeType, data } base64), after the text, when the model takes them.
+    const pictures = this.imagePrompts && Array.isArray(images) ? images.filter((i) => i && i.data && i.mimeType) : [];
+    const content = [{ type: 'text', text }, ...pictures.map((i) => ({ type: 'image', mimeType: i.mimeType, data: i.data }))];
+    this.request('session/prompt', { sessionId: sid, prompt: content })
       .then((r) => { stopReason = r && r.stopReason; })
       .catch((e) => { failure = e; })
       .finally(() => { finished = true; if (wake) { wake(); wake = null; } });

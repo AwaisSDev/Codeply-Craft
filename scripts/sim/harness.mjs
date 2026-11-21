@@ -170,7 +170,7 @@ function makeWorld(persona, life) {
     life.store.upsertItem({ id: `calendar:${ev.id}`, source: 'calendar', kind: 'event', at, end, title: ev.summary, place: ev.location || '', people: (ev.attendees || []).map((a) => a.email), data: { allDay: !!ev.start.date } });
   };
   w.addEvent = (ev, by = 'world') => {
-    const e = { id: `ev${++seq}`, status: 'confirmed', ...ev, by };
+    const e = { status: 'confirmed', ...ev, id: ev.id || `ev${++seq}`, by };
     w.calendar.push(e); mirror(e);
     return e;
   };
@@ -201,7 +201,20 @@ function installGoogle(world, oauth, webTools, persona) {
     const a = timeMin ? Date.parse(timeMin) : 0; const b = timeMax ? Date.parse(timeMax) : Infinity;
     return world.eventsBetween(a, b).sort((x, y) => Date.parse(x.start.dateTime || x.start.date) - Date.parse(y.start.dateTime || y.start.date)).slice(0, maxResults);
   };
-  oauth.calendarInsertEvent = async (tok, ev) => { const e = world.addEvent(ev, 'codeply'); return { id: e.id, htmlLink: '' }; };
+  // Like Google: a client-chosen id that already exists is a 409, and an event can be read back by id.
+  oauth.calendarInsertEvent = async (tok, ev) => {
+    if (ev.id && (world.calendar.some((x) => x.id === ev.id) || (world.cancelled || []).some((x) => x.id === ev.id))) {
+      throw Object.assign(new Error('The requested identifier already exists.'), { status: 409, duplicate: true });
+    }
+    const e = world.addEvent(ev, 'codeply');
+    return { id: e.id, htmlLink: '' };
+  };
+  oauth.calendarGetEvent = async (tok, id) => {
+    const e = world.calendar.find((x) => x.id === id);
+    if (e) return e;
+    const gone = (world.cancelled || []).find((x) => x.id === id);
+    return gone ? { ...gone, status: 'cancelled' } : null;
+  };
   oauth.calendarPatchEvent = async (tok, id, patch) => {
     const e = world.patchEvent(id, patch);
     if (!e) throw Object.assign(new Error('Not Found'), { status: 404 });
@@ -214,6 +227,8 @@ function installGoogle(world, oauth, webTools, persona) {
   // cc stays on the sent record, so a check can see who was copied.
   oauth.gmailSend = async (tok, m) => { world.sent.push({ ...m, cc: m.cc || '', at: Date.now() }); return { id: `sent${world.sent.length}` }; };
   oauth.gmailGetMessage = async (tok, id) => {
+    const out = /^sent(\d+)$/.exec(id) ? world.sent[Number(id.slice(4)) - 1] : /^dm(\d+)$/.exec(id) ? world.drafts[Number(id.slice(2)) - 1] : null;
+    if (out) return { id, threadId: '', labels: [id.startsWith('sent') ? 'SENT' : 'DRAFT'], from: persona.email, to: out.to || '', cc: out.cc || '', date: new Date(out.at).toUTCString(), subject: out.subject || '', body: out.body || '' };
     const m = world.inbox.find((x) => x.id === id);
     if (!m) throw Object.assign(new Error('Not Found'), { status: 404 });
     return { id: m.id, threadId: `t${m.id}`, from: m.from, to: persona.email, cc: m.cc || '', date: new Date(m.at).toUTCString(), subject: m.subject, body: m.body };

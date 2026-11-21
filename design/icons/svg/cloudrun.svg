@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="1024" height="1024" role="img" aria-label="cloudrun">
+<defs>
+  <linearGradient id="ci66f" x1="0.2" y1="0" x2="0.8" y2="1">
+    <stop offset="0" stop-color="#9ed8ff"/><stop offset="0.5" stop-color="#4fb3ff"/><stop offset="1" stop-color="#1392ff"/>
+  </linearGradient>
+  <radialGradient id="ci66s" cx="0.3" cy="0.12" r="0.75"><stop offset="0" stop-color="#fff" stop-opacity="0.32"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  <linearGradient id="ci66e" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.85"/><stop offset="0.42" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  <linearGradient id="ci66b" x1="0" y1="0" x2="0" y2="1"><stop offset="0.55" stop-color="#006dcf" stop-opacity="0"/><stop offset="1" stop-color="#006dcf" stop-opacity="0.35"/></linearGradient>
+  <clipPath id="ci66c"><path d="M20.8 70.5A16.20 16.20 0 0 1 23.5 39.45A22.95 22.95 0 0 1 66.7 35.4A17.55 17.55 0 0 1 80.2 70.5Z"/></clipPath>
+</defs>
+<path d="M20.8 70.5A16.20 16.20 0 0 1 23.5 39.45A22.95 22.95 0 0 1 66.7 35.4A17.55 17.55 0 0 1 80.2 70.5Z" fill="url(#ci66f)"/>
+<path d="M20.8 70.5A16.20 16.20 0 0 1 23.5 39.45A22.95 22.95 0 0 1 66.7 35.4A17.55 17.55 0 0 1 80.2 70.5Z" fill="url(#ci66s)"/>
+<path d="M20.8 70.5A16.20 16.20 0 0 1 23.5 39.45A22.95 22.95 0 0 1 66.7 35.4A17.55 17.55 0 0 1 80.2 70.5Z" fill="none" stroke="url(#ci66b)" stroke-width="4" clip-path="url(#ci66c)"/>
+<path d="M20.8 70.5A16.20 16.20 0 0 1 23.5 39.45A22.95 22.95 0 0 1 66.7 35.4A17.55 17.55 0 0 1 80.2 70.5Z" fill="none" stroke="url(#ci66e)" stroke-width="3" clip-path="url(#ci66c)"/><path d="M50 70 V44" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" /><path d="M39 54 L50 43 L61 54" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" /></svg>

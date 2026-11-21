@@ -17,21 +17,20 @@
   };
   const STEPS = [['database', 'Database'], ['vercel', 'Vercel'], ['github', 'GitHub'], ['live', 'Live']];
   const STATUS_WORD = { pending: 'Waiting', active: 'Working', waiting: 'Needs you', done: 'Done', skipped: 'Skipped', error: 'Problem' };
-  const svg = (d) => `<svg viewBox="0 0 24 24">${d}</svg>`;
-  const ICON_GLOBE = svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/>');
-  const ICON_ALERT = svg('<circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16.5v.01"/>');
-  const ICON_COPY = svg('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/>');
-  const ICON_CHECK = svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>');
-  const ICON_REFRESH = svg('<path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/>');
-  const ICON_ARROW = svg('<path d="M7 17L17 7"/><path d="M9 7h8v8"/>');
+  const ICON_GLOBE = icon('globe');
+  const ICON_ALERT = icon('alert');
+  const ICON_COPY = icon('copy');
+  const ICON_CHECK = icon('check');
+  const ICON_REFRESH = icon('refresh');
+  const ICON_ARROW = icon('arrow-up-right');
   const SITE = { database: 'Supabase', vercel: 'Vercel', github: 'GitHub' };
   const STEP_ICON = {
-    done: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
+    done: icon('check'),
     active: '<span class="pub-spin sm"></span>',
     waiting: '<i class="pub-wait"></i>',
-    pending: svg('<circle cx="12" cy="12" r="7"/>'),
-    skipped: svg('<path d="M7 12h10"/>'),
-    error: svg('<path d="M7 7l10 10M17 7L7 17"/>'),
+    pending: icon('circle'),
+    skipped: icon('minus'),
+    error: icon('close'),
   };
 
   // OAuth not set up in this build: the connect call says so, and the token form is the way in.

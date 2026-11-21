@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="1024" height="1024" role="img" aria-label="voice"><path d="M28 50 A22 22 0 0 0 72 50" fill="none" stroke="#a8b3c7" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" /><path d="M50 72 V82" fill="none" stroke="#a8b3c7" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" /><path d="M38 84 H62" fill="none" stroke="#a8b3c7" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+<defs>
+  <linearGradient id="ci64f" x1="0.2" y1="0" x2="0.8" y2="1">
+    <stop offset="0" stop-color="#7eb2ff"/><stop offset="0.5" stop-color="#2f7bff"/><stop offset="1" stop-color="#0056f8"/>
+  </linearGradient>
+  <radialGradient id="ci64s" cx="0.3" cy="0.12" r="0.75"><stop offset="0" stop-color="#fff" stop-opacity="0.32"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  <linearGradient id="ci64e" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.85"/><stop offset="0.42" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  <linearGradient id="ci64b" x1="0" y1="0" x2="0" y2="1"><stop offset="0.55" stop-color="#0040bb" stop-opacity="0"/><stop offset="1" stop-color="#0040bb" stop-opacity="0.35"/></linearGradient>
+  <clipPath id="ci64c"><path d="M50 12H50A14 14 0 0 1 64 26V48A14 14 0 0 1 50 62H50A14 14 0 0 1 36 48V26A14 14 0 0 1 50 12Z"/></clipPath>
+</defs>
+<path d="M50 12H50A14 14 0 0 1 64 26V48A14 14 0 0 1 50 62H50A14 14 0 0 1 36 48V26A14 14 0 0 1 50 12Z" fill="url(#ci64f)"/>
+<path d="M50 12H50A14 14 0 0 1 64 26V48A14 14 0 0 1 50 62H50A14 14 0 0 1 36 48V26A14 14 0 0 1 50 12Z" fill="url(#ci64s)"/>
+<path d="M50 12H50A14 14 0 0 1 64 26V48A14 14 0 0 1 50 62H50A14 14 0 0 1 36 48V26A14 14 0 0 1 50 12Z" fill="none" stroke="url(#ci64b)" stroke-width="4" clip-path="url(#ci64c)"/>
+<path d="M50 12H50A14 14 0 0 1 64 26V48A14 14 0 0 1 50 62H50A14 14 0 0 1 36 48V26A14 14 0 0 1 50 12Z" fill="none" stroke="url(#ci64e)" stroke-width="3" clip-path="url(#ci64c)"/><path d="M42 30 H58" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/><path d="M42 38 H58" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/></svg>

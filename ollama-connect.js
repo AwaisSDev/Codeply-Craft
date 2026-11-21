@@ -111,7 +111,7 @@
       <div class="ocx-steps">
         <ol class="ocx-list">${STEPS.map((s) => `
           <li class="ocx-step${step === s.n ? ' on' : ''}${step > s.n ? ' done' : ''}" data-step="${s.n}">
-            <span class="ocx-num">${step > s.n ? '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' : s.n}</span>
+            <span class="ocx-num">${step > s.n ? icon('check', 'ico-sm') : s.n}</span>
             <span class="ocx-step-text"><strong>${s.title}</strong><span>${s.text}</span></span>
           </li>`).join('')}
         </ol>
@@ -143,7 +143,7 @@
   }
 
   function modelsShell() {
-    return `<div class="ocx-done"><span class="ocx-badge"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Connected${connected.via === 'app' ? ' through the Ollama app' : ' with your key'}</span>
+    return `<div class="ocx-done"><span class="ocx-badge">${icon('check', 'ico-sm')}Connected${connected.via === 'app' ? ' through the Ollama app' : ' with your key'}</span>
       <p>Pick a model to add. It shows up in your model menu right away.</p></div>
       <div class="ocx-grid" id="ocxGrid"><div class="ocx-loading"><span class="ocx-spin"></span>Loading Ollama's models…</div></div>`;
   }
@@ -287,7 +287,7 @@
     root.className = 'ocx-backdrop';
     root.innerHTML = `
       <div class="ocx-page" role="dialog" aria-label="Connect Ollama">
-        <button class="ocx-close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+        <button class="ocx-close" aria-label="Close">${icon('close')}</button>
         <div class="ocx-head">
           <h2>Connect Ollama</h2>
           <p>Big open models like Kimi, GLM, DeepSeek and gpt-oss, on your own Ollama account.</p>

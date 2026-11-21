@@ -50,7 +50,7 @@
   const AO_DEFAULT = { on: false, watch: ['gmail'], reach: 'push', draft: true, quiet: { on: true, from: '22:00', to: '07:00' }, cloud: false };
   function alwaysOnHtml(d, c) {
     const ao = d.alwaysOn = { ...AO_DEFAULT, ...(d.alwaysOn || {}), quiet: { ...AO_DEFAULT.quiet, ...((d.alwaysOn && d.alwaysOn.quiet) || {}) } };
-    const reach = state.catalog.reach || { message: 'Message me in Craft', push: 'Notify my phone', call: 'Call me when it is very important' };
+    const reach = state.catalog.reach || { message: 'Message me in Codeply', push: 'Notify my phone', call: 'Call me when it is very important' };
     return `<div class="${c.field}" data-ao-box><div class="${c.label}">Always on</div>
       <label class="${c.check}"><input type="checkbox" data-ao="on" ${ao.on ? 'checked' : ''}><span>Watch my Gmail inbox in the background</span></label>
       <div class="ao-more"${ao.on ? '' : ' hidden'}>
@@ -246,7 +246,7 @@
     m.innerHTML = `
       <div class="ap-head">
         <span class="ap-av">${esc(initials)}</span>
-        <span class="ap-head-text"><b>${esc(u ? u.email : 'Not signed in')}</b><span>${u ? 'Codeply account' : 'Same account as Craft'} · ${esc(modelName())}</span></span>
+        <span class="ap-head-text"><b>${esc(u ? u.email : 'Not signed in')}</b><span>${u ? 'Codeply account' : 'Same account as Codeply'} · ${esc(modelName())}</span></span>
       </div>
       <div class="ap-section">
         <div class="ap-label"><span>Connected apps</span><span class="ap-count">${on} of ${conns.length}</span></div>
@@ -587,7 +587,7 @@
       { label: 'Haze 2', on: state.models.selected === 'auto' || !state.models.selected, run: () => pickModel('auto') },
       ...state.models.models.map((m) => ({ label: m.name, on: state.models.selected === m.id, run: () => pickModel(m.id) })),
       '-',
-      { note: 'Add your own models in Craft. They show up here too.' },
+      { note: 'Add your own models in Codeply. They show up here too.' },
     ]));
   }
 
@@ -1102,11 +1102,11 @@
     const m = modal(`
       <div class="modal-head"><div class="modal-title">Sign in to Codeply</div><button class="icon-btn" data-act="close" aria-label="Close">${ICON.x}</button></div>
       <div class="modal-body signin">
-        <p>Use your Codeply account. If you're signed in to Craft on this PC, Crew already uses it.</p>
+        <p>Use your Codeply account. If you're signed in to Codeply on this PC, your agents already use it.</p>
         <input class="input" id="siEmail" type="email" placeholder="Email" autocomplete="email">
         <input class="input" id="siPass" type="password" placeholder="Password" autocomplete="current-password">
         <span class="err-text" id="siErr"></span>
-        <p class="dim">Signed up with Google? Sign in to Craft once and Crew picks it up. You can also pick your own model from the model menu and skip signing in.</p>
+        <p class="dim">Signed up with Google? Sign in to Codeply once and your agents pick it up. You can also pick your own model from the model menu and skip signing in.</p>
       </div>
       <div class="modal-foot"><span class="grow"></span><button class="btn" data-act="close">Not now</button><button class="btn primary" id="siGo">Sign in</button></div>`, true);
     m.querySelectorAll('[data-act="close"]').forEach((b) => b.addEventListener('click', closeModal));
@@ -1126,7 +1126,7 @@
   async function boot() {
     const r = await api.init();
     if (r.error) {
-      $('#view').innerHTML = `<div class="empty"><div class="empty-name">Crew could not start</div><p class="empty-sub">${esc(r.error)}</p></div>`;
+      $('#view').innerHTML = `<div class="empty"><div class="empty-name">Agents could not start</div><p class="empty-sub">${esc(r.error)}</p></div>`;
       return;
     }
     Object.assign(state, { user: r.user, models: r.models, catalog: r.catalog, threads: r.threads || {}, groups: r.groups || [], settings: r.settings || {}, workspace: r.workspace });

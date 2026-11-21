@@ -24,4 +24,23 @@ module.exports = async function afterPack(context) {
   }
   fs.cpSync(src, dest, { recursive: true });
   console.log(`[after-pack] copied codeply-cli/node_modules -> ${dest}`);
+
+  // The DSH engine and the Node 24 that runs it (scripts/package-dsh.mjs), copied
+  // the same way so its node_modules survive. Without it, chats run on Classic.
+  const dsh = path.join(context.packager.projectDir, 'dsh-runtime');
+  let staged = null;
+  try { staged = JSON.parse(fs.readFileSync(path.join(dsh, 'runtime.json'), 'utf8')); } catch {}
+  const { Arch } = require('electron-builder');
+  const want = { platform: context.electronPlatformName, arch: Arch[context.arch] };
+  // Node and its native modules only run on the platform and CPU they were staged on.
+  if (staged && (staged.platform !== want.platform || staged.arch !== want.arch)) {
+    console.warn(`[after-pack] dsh-runtime is for ${staged.platform}-${staged.arch}, this build is ${want.platform}-${want.arch}: left out, chats run on Classic.`);
+  } else if (fs.existsSync(path.join(dsh, 'engine', 'lib', 'bin.js'))) {
+    fs.cpSync(dsh, path.join(resourcesDir, 'dsh-runtime'), { recursive: true });
+    console.log(`[after-pack] copied dsh-runtime -> ${path.join(resourcesDir, 'dsh-runtime')}`);
+  } else if (process.env.CODEPLY_REQUIRE_DSH === '1') {
+    throw new Error('dsh-runtime is missing: run "node scripts/package-dsh.mjs" first (needs craft-dsh built and Node 24).');
+  } else {
+    console.warn('[after-pack] no dsh-runtime: this build runs every chat on Classic.');
+  }
 };

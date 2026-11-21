@@ -5,7 +5,6 @@
 .us-backdrop.open .us-page { transform: none; }
 .us-close { position: absolute; top: 14px; right: 14px; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--text-dim); }
 .us-close:hover { background: var(--hover); color: var(--text); }
-.us-close svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .us-avatar { width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; background: #8e5bbd; color: #fff; font-size: 26px; font-weight: 500; letter-spacing: .5px; }
 .us-name { margin: 16px 0 0; font-size: 22px; font-weight: 500; letter-spacing: -.2px; }
 .us-handle { margin-top: 6px; font-size: 13px; color: var(--text-faint); display: flex; align-items: center; gap: 6px; }
@@ -57,7 +56,7 @@
 .us-detail-head span { display: block; margin-top: 3px; font-size: 12px; color: var(--text-faint); }
 .us-detail-x { width: 26px; height: 26px; margin: -4px -6px 0 0; border-radius: 7px; display: grid; place-items: center; color: var(--text-faint); }
 .us-detail-x:hover { background: var(--hover); color: var(--text); }
-.us-detail-x svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.us-detail-x svg { width: 14px; height: 14px; }
 .us-model { display: grid; grid-template-columns: minmax(110px, 1.3fr) 2fr 56px 38px 64px; align-items: center; gap: 12px; padding: 7px 0; font-size: 12.5px; border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
 .us-model:first-of-type { border-top: 0; }
 .us-model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }

@@ -94,5 +94,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view crew-android-latest >/dev/null 2>&1 || gh release create crew-android-latest --prerelease --title "Codeply Crew for Android (latest)" --notes "Test build. Open the APK on your phone to install it."
+          gh release view crew-android-latest >/dev/null 2>&1 || gh release create crew-android-latest --prerelease --title "Codeply for Android (latest)" --notes "Test build. Open the APK on your phone to install it."
           gh release upload crew-android-latest CodeplyCrew.apk --clobber

@@ -171,6 +171,14 @@ function init(d) {
     BRAIN().configure({ modulePaths: d.modulePaths, scratch: d.scratchFolders ? d.scratchFolders() : [] });
     BRAIN().setCoordinator(queueHandoff);
   } catch (e) { console.warn('[brain] not available:', e.message); }
+  // The spine's ledger lives beside the brain; settle anything a crash left half done.
+  try { lib('spine.js').configure({ modulePaths: d.modulePaths }); } catch (e) { console.warn('[spine] not available:', e.message); }
+  setTimeout(() => {
+    import(require('url').pathToFileURL(path.join(d.cliDir, 'lib', 'tools.mjs')).href)
+      .then((t) => t.recoverInterrupted())
+      .then((r) => { if (r && r.length) console.log(`[spine] settled ${r.length} interrupted action(s)`); })
+      .catch((e) => console.warn('[spine] recover:', e.message));
+  }, 20000).unref?.();
   registerIpc(d.ipcMain);
 }
 

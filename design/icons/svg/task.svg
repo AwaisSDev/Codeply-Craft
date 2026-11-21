@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="1024" height="1024" role="img" aria-label="task">
+<defs>
+  <linearGradient id="ci61f" x1="0.2" y1="0" x2="0.8" y2="1">
+    <stop offset="0" stop-color="#59e797"/><stop offset="0.5" stop-color="#1fc75f"/><stop offset="1" stop-color="#12aa5b"/>
+  </linearGradient>
+  <radialGradient id="ci61s" cx="0.3" cy="0.12" r="0.75"><stop offset="0" stop-color="#fff" stop-opacity="0.32"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  <linearGradient id="ci61e" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.85"/><stop offset="0.42" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  <linearGradient id="ci61b" x1="0" y1="0" x2="0" y2="1"><stop offset="0.55" stop-color="#0e8148" stop-opacity="0"/><stop offset="1" stop-color="#0e8148" stop-opacity="0.35"/></linearGradient>
+  <clipPath id="ci61c"><path d="M12 50A38 38 0 1 0 88 50A38 38 0 1 0 12 50Z"/></clipPath>
+</defs>
+<path d="M12 50A38 38 0 1 0 88 50A38 38 0 1 0 12 50Z" fill="url(#ci61f)"/>
+<path d="M12 50A38 38 0 1 0 88 50A38 38 0 1 0 12 50Z" fill="url(#ci61s)"/>
+<path d="M12 50A38 38 0 1 0 88 50A38 38 0 1 0 12 50Z" fill="none" stroke="url(#ci61b)" stroke-width="4" clip-path="url(#ci61c)"/>
+<path d="M12 50A38 38 0 1 0 88 50A38 38 0 1 0 12 50Z" fill="none" stroke="url(#ci61e)" stroke-width="3" clip-path="url(#ci61c)"/><path d="M33 51 L45 63 L68 38" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" /></svg>

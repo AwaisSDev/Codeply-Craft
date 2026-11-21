@@ -54,6 +54,8 @@ contextBridge.exposeInMainWorld('craft', {
   // a masked preview.
   listModels: () => ipcRenderer.invoke('models:list'),
   selectModel: (id) => ipcRenderer.invoke('models:select', id),
+  setModelEffort: (id, effort) => ipcRenderer.invoke('models:effort', { id, effort }),
+  probeEffortLevels: (id, force) => ipcRenderer.invoke('models:effortLevels', { id, force }),
   saveModel: (input) => ipcRenderer.invoke('models:save', input),
   deleteModel: (id) => ipcRenderer.invoke('models:delete', id),
   setModelPhone: (id, on) => ipcRenderer.invoke('models:setPhone', { id, on }),
@@ -107,6 +109,10 @@ contextBridge.exposeInMainWorld('craft', {
   wispUpdateSpecialist: (id, patch) => ipcRenderer.invoke('wisp:updateSpecialist', id, patch),
   wispCancelSchedule: (id) => ipcRenderer.invoke('wisp:cancelSchedule', id),
   wispRunSchedule: (id) => ipcRenderer.invoke('wisp:runSchedule', id),
+  wispDraftSpecialist: (o) => ipcRenderer.invoke('wisp:draftSpecialist', o || {}),
+  wispCreateSpecialist: (o) => ipcRenderer.invoke('wisp:createSpecialist', o || {}),
+  wispAddSchedule: (o) => ipcRenderer.invoke('wisp:addSchedule', o || {}),
+  wispSync: () => ipcRenderer.invoke('wisp:sync'),
   // Bots (bots-desktop.js)
   botsList: () => ipcRenderer.invoke('bots:list'),
   botsCreate: (data) => ipcRenderer.invoke('bots:create', data),
@@ -142,6 +148,14 @@ contextBridge.exposeInMainWorld('craft', {
   retryUpdate: () => ipcRenderer.invoke('update:retry'),
   onUpdateState: (cb) => ipcRenderer.on('update:state', (e, data) => cb(data)),
   setKeepAwake: (on) => ipcRenderer.invoke('remote:setKeepAwake', !!on),
+  settingsGet: () => ipcRenderer.invoke('settings:get'),
+  settingsSet: (key, on) => ipcRenderer.invoke('settings:set', { key, on: !!on }),
+  // Appearance > Background: the user's own images, copied into this PC's app data
+  wallpaperList: () => ipcRenderer.invoke('wallpaper:list'),
+  wallpaperAdd: () => ipcRenderer.invoke('wallpaper:add'),
+  wallpaperRead: (id) => ipcRenderer.invoke('wallpaper:read', id),
+  wallpaperRemove: (id) => ipcRenderer.invoke('wallpaper:remove', id),
+  homePrs: () => ipcRenderer.invoke('home:prs'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   onRemoteServerError: (cb) => ipcRenderer.on('remote:server-error', (e, data) => cb(data)),
   stop: (sessionId) => ipcRenderer.send('chat:stop', sessionId),
@@ -187,6 +201,9 @@ contextBridge.exposeInMainWorld('craft', {
   browserPanelReload: () => ipcRenderer.send('browserpanel:reload'),
   browserPanelNavigate: (url) => ipcRenderer.send('browserpanel:navigate', url),
   browserPanelViewport: (name) => ipcRenderer.send('browserpanel:viewport', name),
+  // Responsive mode: any size, dragged or typed; main says where the device frame sits.
+  browserPanelViewSize: (d) => ipcRenderer.send('browserpanel:viewsize', d || {}),
+  onBrowserPanelFrame: (cb) => ipcRenderer.on('browserpanel:frame', (e, data) => cb(data)),
   onBrowserPanelViewport: (cb) => ipcRenderer.on('browserpanel:viewport', (e, data) => cb(data)),
   onBrowserPanelState: (cb) => ipcRenderer.on('browserpanel:state', (e, data) => cb(data)),
   onBrowserPanelUrl: (cb) => ipcRenderer.on('browserpanel:url', (e, data) => cb(data)),
@@ -226,5 +243,36 @@ contextBridge.exposeInMainWorld('craft', {
   // Token fallback (publish-ui.js): the token goes to the main process and is never read back.
   connectToken: (name, token) => ipcRenderer.invoke('integrations:connectToken', { name, token }),
   disconnectIntegration: (name) => ipcRenderer.invoke('integrations:disconnect', name),
+  // Apps (any remote MCP server, codeply-cli/lib/apps.js): directory, registry search, OAuth sign-in in the browser.
+  // Only public views come back; tokens stay in the main process.
+  appsDirectory: () => ipcRenderer.invoke('apps:directory'),
+  appsSearch: (query, cursor) => ipcRenderer.invoke('apps:search', { query, cursor }),
+  appsConnect: (entry) => ipcRenderer.invoke('apps:connect', entry || {}),
+  appsCancel: () => ipcRenderer.invoke('apps:cancel'),
+  appsAddWithKey: (opts) => ipcRenderer.invoke('apps:addWithKey', opts || {}),
+  appsTools: (id) => ipcRenderer.invoke('apps:tools', id),
+  appsDisconnect: (id) => ipcRenderer.invoke('apps:disconnect', id),
   publishState: (cwd) => ipcRenderer.invoke('publish:state', cwd),
+
+  // Claude Code (claude-code-desktop.js): the user's Claude plan as Wisp's background coding agent.
+  // The login is Claude Code's own (`claude auth login` in the browser); Codeply never sees the token.
+  claudeCodeState: (opts) => ipcRenderer.invoke('claudeCode:state', opts || {}),
+  claudeCodeLogin: (opts) => ipcRenderer.invoke('claudeCode:login', opts || {}),
+  claudeCodeSubmitCode: (code) => ipcRenderer.invoke('claudeCode:code', String(code || '')),
+  claudeCodeCancelLogin: () => ipcRenderer.invoke('claudeCode:cancelLogin'),
+  claudeCodeOpenLogin: () => ipcRenderer.invoke('claudeCode:openLogin'),
+  claudeCodeLogout: () => ipcRenderer.invoke('claudeCode:logout'),
+  claudeCodeSettings: (patch) => ipcRenderer.invoke('claudeCode:settings', patch || {}),
+  onClaudeCodeLogin: (cb) => ipcRenderer.on('claudeCode:login', (e, data) => cb(data)),
+  // The Review area: the branch's changes and its pull request (review-desktop.js).
+  reviewState: (cwd) => ipcRenderer.invoke('review:state', { cwd: String(cwd || '') }),
+  reviewDiff: (cwd, path) => ipcRenderer.invoke('review:diff', { cwd: String(cwd || ''), path: String(path || '') }),
+  // The Claude panel: Claude agents working in the background, several at once.
+  claudeCodeAgents: () => ipcRenderer.invoke('claudeCode:agents'),
+  claudeCodeStartAgent: (o) => ipcRenderer.invoke('claudeCode:startAgent', o || {}),
+  claudeCodeSend: (o) => ipcRenderer.invoke('claudeCode:send', o || {}),
+  claudeCodeStop: (id) => ipcRenderer.invoke('claudeCode:stop', String(id || '')),
+  claudeCodeClose: (id) => ipcRenderer.invoke('claudeCode:close', String(id || '')),
+  claudeCodeSetAgent: (o) => ipcRenderer.invoke('claudeCode:setAgent', o || {}),
+  onClaudeCodeAgent: (cb) => ipcRenderer.on('claudeCode:agent', (e, data) => cb(data)),
 });

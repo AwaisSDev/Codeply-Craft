@@ -1,0 +1,76 @@
+# Codeply 4.0's native shell on Rune. Its own Cargo workspace (like ../motion), because an app that
+# builds Rune must carry Rune's [patch.crates-io] table, and patches only apply at a workspace root.
+[workspace]
+resolver = "3"
+members = ["."]
+
+[package]
+name = "codeply-rune"
+version = "4.0.0-beta.1"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "Codeply 4.0 desktop UI on Rune; talks to the Node engine (codeply-cli) over HTTP and SSE."
+
+[[bin]]
+name = "codeply"
+path = "src/main.rs"
+
+[features]
+default = ["live"]
+# The live store: talks to the engine (the sidecar this app starts, or `codeply serve`). Off, the
+# app only has the sample data.
+live = ["dep:ureq", "dep:sha2"]
+
+[dependencies]
+# Rune is pre-release: pin a `dev` rev. `tooling` keeps --snap, --tree and --script in release builds.
+rune = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a", features = ["tooling", "native-file-dialog"] }
+# The code view's syntax colours (rune_kit::syntax: Pierre's Highlights, 80 languages).
+rune-kit = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a", default-features = false }
+serde_json = "1"
+ureq = { version = "2", default-features = false, features = ["json", "tls"], optional = true }
+# Checking a downloaded update against the checksum in latest.json (update.rs).
+sha2 = { version = "0.10", optional = true }
+# Site icons for links in chats (favicon.rs).
+png = "0.18"
+# App and site icons in the formats catalogues serve (favicon.rs): the same image and resvg
+# builds Rune already links, so they add nothing to the exe.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
+resvg = { version = "0.45", default-features = false }
+
+# The exe's icon (build.rs): the logo SVG rendered to an .ico and embedded.
+[build-dependencies]
+resvg = { version = "0.45", default-features = false }
+ico = "0.4"
+winresource = "0.1"
+
+# The built-in browser: WebView2 (the Edge engine) as a child window, and the one window style
+# it needs (browser.rs).
+[target.'cfg(windows)'.dependencies]
+# Whether this PC has a real GPU (main.rs prefer_cpu_renderer): the wgpu and pollster Rune links.
+wgpu = { version = "30", default-features = false, features = ["dx12"] }
+pollster = "1"
+wry = { version = "0.57", default-features = false, features = ["devtools"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader", "Win32_UI_Shell", "Win32_UI_Input_KeyboardAndMouse", "Win32_Media_Multimedia"] }
+
+# Rune's own patches, from the same rev (see Rune's README, "Depending on Rune").
+[patch.crates-io]
+winit = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a" }
+parley_engine = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a" }
+wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a" }
+accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "b9c8a78e50ef80991e6a565d89116bc09ddd8a3a" }
+
+[lints.rust]
+# One audited exception: setting an environment variable at the start of main (see main.rs).
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "deny"
+todo = "warn"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 16

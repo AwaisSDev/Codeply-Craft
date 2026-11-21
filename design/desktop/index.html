@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codeply desktop</title>
+<style>
+  :root {
+    --bg: #0b0d13; --side: #0e1118; --panel: rgba(20, 24, 34, .86); --panel-solid: #161a25; --hover: rgba(255, 255, 255, .045); --active: rgba(255, 255, 255, .075);
+    --ink: #eef1f8; --sub: #8b93a7; --faint: #5b6377; --line: rgba(255, 255, 255, .07); --glass-edge: rgba(255, 255, 255, .08);
+    --blue: #2f6bff; --green: #22c55e; --amber: #ffb21a; --shadow: 0 10px 40px rgba(0, 0, 0, .45);
+  }
+  :root[data-theme="light"] {
+    --bg: #f5f7fb; --side: #eff2f8; --panel: rgba(255, 255, 255, .86); --panel-solid: #ffffff; --hover: rgba(20, 30, 60, .045); --active: rgba(20, 30, 60, .07);
+    --ink: #141925; --sub: #626b80; --faint: #9aa2b4; --line: rgba(20, 30, 60, .08); --glass-edge: rgba(255, 255, 255, .9);
+    --shadow: 0 10px 40px rgba(30, 50, 100, .14);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: #05070b; color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; display: grid; place-items: center; padding: 18px; }
+  :root[data-theme="light"] body { background: #cdd8ee; }
+  button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+
+  /* ---------- window ---------- */
+  .win { width: min(1440px, 100%); height: min(900px, calc(100vh - 36px)); border-radius: 14px; overflow: clip; background: var(--bg); display: grid; grid-template-columns: 284px 1fr; grid-template-rows: 38px 1fr; box-shadow: 0 0 0 1px rgba(255, 255, 255, .06), 0 40px 120px rgba(0, 0, 0, .6); }
+  .titlebar { grid-column: 1 / -1; display: flex; align-items: center; gap: 4px; padding-left: 12px; background: var(--side); border-bottom: 1px solid var(--line); user-select: none; }
+  .titlebar .tab { height: 26px; padding: 0 12px; border-radius: 7px; display: flex; align-items: center; color: var(--ink); background: var(--active); font-size: 12.5px; margin-left: 8px; }
+  .titlebar .grow { flex: 1; }
+  .ctl { width: 46px; height: 38px; display: grid; place-items: center; color: var(--sub); }
+  .ctl:hover { background: var(--hover); }
+  .ctl.x:hover { background: #e81123; color: #fff; }
+  .iconbtn { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--sub); flex: none; transition: background .15s ease-out, color .15s ease-out; }
+  .iconbtn:hover, .iconbtn.on { background: var(--hover); color: var(--ink); }
+  .iconbtn [data-icon], .iconbtn [data-ui] { display: grid; place-items: center; }
+  .tile { width: 32px; height: 32px; flex: none; border-radius: 9px; background: var(--hover); border: 1px solid var(--line); display: grid; place-items: center; color: var(--ink); }
+  .newchat [data-ui], .chip svg, .ok svg { display: block; }
+  .step .ok { display: inline-grid; place-items: center; }
+
+  /* ---------- sidebar: agents first ---------- */
+  .side { background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .side-top { display: flex; align-items: center; gap: 2px; padding: 10px 10px 6px 14px; }
+  .side-top b { flex: 1; font-size: 14.5px; display: flex; align-items: center; gap: 9px; }
+  .newchat { margin: 4px 10px 10px; display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 10px; border-radius: 9px; color: var(--ink); background: var(--hover); border: 1px solid var(--line); }
+  .newchat:hover { background: var(--active); }
+  .newchat kbd { margin-left: auto; font: inherit; font-size: 11.5px; color: var(--faint); }
+  .scroll { overflow: auto; flex: 1; padding: 0 8px 8px; scrollbar-width: none; }
+  .label { display: flex; align-items: center; justify-content: space-between; padding: 10px 8px 6px; font-size: 12px; color: var(--faint); font-weight: 600; }
+  .label button { color: var(--faint); font-size: 16px; line-height: 1; width: 20px; }
+  .lead { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 11px; cursor: pointer; transition: background .15s ease-out; position: relative; }
+  .lead:hover { background: var(--hover); } .lead.on { background: var(--active); }
+  .lead .nm { flex: 1; } .lead b { display: block; font-size: 14px; } .lead small { color: var(--sub); font-size: 12px; }
+  .lead-threads .thread-row { margin-left: 30px; }
+  .team { position: relative; margin-left: 18px; padding-left: 10px; }
+  .team::before { content: ""; position: absolute; left: 0; top: -2px; bottom: 24px; width: 1px; background: var(--line); }
+  .team .label { padding-left: 0; }
+  .team .agent { position: relative; }
+  .team .agent::before { content: ""; position: absolute; left: -10px; top: 50%; width: 8px; height: 1px; background: var(--line); }
+  .team .agent .nm { font-weight: 600; color: var(--sub); }
+  .team .agent:hover .nm, .team .agent.open .nm { color: var(--ink); }
+  .team .thread-row { margin-left: 30px; }
+  .agent { display: flex; align-items: center; gap: 10px; min-height: 46px; padding-top: 4px !important; padding-bottom: 4px !important; padding: 0 8px; border-radius: 9px; color: var(--ink); cursor: pointer; transition: background .15s ease-out; }
+  .agent:hover { background: var(--hover); }
+  .agent.on { background: var(--active); }
+  .agent .nm { flex: 1; min-width: 0; font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .agent .nm small { display: block; font-weight: 400; font-size: 12px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .agent .av { flex: none; width: 32px; height: 32px; }
+  .agent time { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .agent .caret { color: var(--faint); width: 14px; transition: transform .2s ease-out; }
+  .agent.open .caret { transform: rotate(90deg); }
+  .agent .busy { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--ink); animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .threads { overflow: hidden; display: grid; grid-template-rows: 0fr; transition: grid-template-rows .25s cubic-bezier(.2, .8, .2, 1); }
+  .threads.open { grid-template-rows: 1fr; }
+  .threads > div { min-height: 0; }
+  .thread-row { display: block; margin-left: 20px; padding: 6px 10px; border-radius: 8px; color: var(--sub); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; border-left: 1px solid var(--line); border-radius: 0 8px 8px 0; }
+  .thread-row:hover { color: var(--ink); background: var(--hover); }
+  .thread-row.on { color: var(--ink); background: var(--active); }
+  .thread-row.live { color: var(--ink); }
+  .me { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--line); }
+  .me .pic { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #ff9a5c, #ff5c9d); display: grid; place-items: center; font-weight: 700; color: #fff; font-size: 12px; }
+  .me .grow { flex: 1; font-size: 13px; } .me small { display: block; color: var(--faint); font-size: 11.5px; }
+
+  /* ---------- main ---------- */
+  .main { position: relative; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 1fr auto; }
+  .art { position: absolute; inset: 0 0 auto 0; height: 70%; width: 100%; image-rendering: pixelated; -webkit-mask-image: linear-gradient(#000 40%, transparent); mask-image: linear-gradient(#000 40%, transparent); pointer-events: none; transition: opacity .4s ease-out; }
+  .main.quiet .art { opacity: .22; }
+  .view { position: relative; overflow: auto; min-height: 0; scrollbar-width: thin; }
+
+  .home { min-height: 100%; display: grid; place-content: center; grid-template-columns: min(880px, 100%); padding: 0 32px 80px; }
+  .home .stack { width: 100%; }
+  .hello { text-align: center; margin-bottom: 26px; }
+  .hello .face { width: 56px; height: 56px; margin: 0 auto 16px; animation: bob 3.4s ease-in-out infinite; position: relative; }
+  .sat { position: absolute; width: 26px; height: 26px; animation: bob 2.8s ease-in-out infinite; opacity: .95; }
+  .sat.a { left: -36px; top: 24px; animation-delay: -.8s; } .sat.b { right: -36px; top: 20px; animation-delay: -1.6s; }
+  .hello .team-note { margin-top: 8px; font-size: 13px; color: rgba(255, 255, 255, .62); }
+  :root[data-theme="light"] .hello .team-note { color: rgba(255, 255, 255, .85); }
+  .handoff { display: inline-flex; align-items: center; gap: 6px; color: var(--sub); font-size: 12.5px; }
+  .handoff svg.arr { width: 12px; height: 12px; }
+  @keyframes bob { 50% { transform: translateY(-4px); } }
+  .hello h1 { margin: 0; font-size: 28px; letter-spacing: -.02em; font-weight: 650; color: #fff; text-shadow: 0 2px 20px rgba(0, 10, 40, .4); }
+
+  .composer { background: var(--panel); -webkit-backdrop-filter: blur(22px) saturate(1.3); backdrop-filter: blur(22px) saturate(1.3); border-radius: 16px; box-shadow: var(--shadow), inset 0 1px 0 var(--glass-edge); border: 1px solid var(--line); }
+  textarea { width: 100%; border: 0; outline: 0; resize: none; background: none; color: var(--ink); font: inherit; font-size: 15px; padding: 16px 18px 2px; height: 50px; }
+  textarea::placeholder { color: var(--faint); }
+  .bar { display: flex; align-items: center; gap: 4px; padding: 6px 10px 10px; }
+  .bar .grow { flex: 1; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border-radius: 8px; color: var(--sub); font-size: 12.5px; transition: background .15s ease-out, color .15s ease-out; }
+  .chip:hover { color: var(--ink); background: var(--hover); }
+  .chip > svg { width: 16px; height: 16px; }
+  .auto { display: inline-flex; align-items: flex-end; gap: 2px; height: 11px; }
+  .auto i { width: 3px; border-radius: 2px; background: var(--faint); }
+  .auto i:nth-child(1) { height: 5px; } .auto i:nth-child(2) { height: 8px; } .auto i:nth-child(3) { height: 11px; }
+  .auto[data-level="1"] i:nth-child(1), .auto[data-level="2"] i:nth-child(-n+2), .auto[data-level="3"] i { background: var(--amber); }
+  .send { width: 30px; height: 30px; border-radius: 9px; background: var(--blue); color: #fff; display: grid; place-items: center; margin-left: 4px; transition: transform .15s ease-out, opacity .15s ease-out; }
+  .send:active { transform: scale(.94); }
+  .under { display: flex; justify-content: center; gap: 6px; margin-top: 12px; }
+  .under .chip { color: rgba(255, 255, 255, .62); }
+  :root[data-theme="light"] .under .chip { color: var(--sub); }
+  .under .chip:hover { color: var(--ink); }
+  .pill { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px 0 6px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); color: var(--ink); font-size: 13px; margin: 18px auto 0; transition: transform .15s ease-out; }
+  .pill:hover { transform: translateY(-1px); }
+  .pill small { color: var(--sub); }
+
+  .menu { position: fixed; z-index: 9; min-width: 230px; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; animation: pop .16s cubic-bezier(.2, .8, .2, 1); transform-origin: 0 var(--oy, 0); }
+  @keyframes pop { from { opacity: 0; transform: scale(.96); } }
+  .menu .it { padding: 7px 10px; border-radius: 8px; cursor: pointer; display: flex; gap: 10px; align-items: center; }
+  .menu .it:hover { background: var(--hover); }
+  .menu .it small { display: block; color: var(--sub); }
+  .menu .it .tick { margin-left: auto; color: var(--blue); visibility: hidden; }
+  .menu .it.on .tick { visibility: visible; }
+  .menu hr { border: 0; border-top: 1px solid var(--line); margin: 6px 4px; }
+  .menu .seg { display: flex; gap: 2px; padding: 2px; margin: 2px 4px 4px; border-radius: 8px; background: var(--hover); }
+  .menu .seg span { flex: 1; text-align: center; padding: 4px 0; border-radius: 6px; font-size: 12.5px; color: var(--sub); cursor: pointer; }
+  .menu .seg span.on { background: var(--panel-solid); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .2); }
+  .menu .cap { font-size: 11.5px; color: var(--faint); padding: 4px 10px 2px; }
+
+  /* ---------- thread ---------- */
+  .thread { max-width: 900px; margin: 0 auto; padding: 22px 32px 150px; }
+  .thead { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+  .thead b { font-size: 15px; } .thead small { color: var(--sub); display: block; font-size: 12.5px; }
+  .thead .grow { flex: 1; }
+  .msg { margin: 8px 0; display: flex; }
+  .msg.you { justify-content: flex-end; }
+  .msg .b { max-width: 72%; padding: 10px 15px; border-radius: 20px; line-height: 1.5; }
+  .msg.you .b { background: #3a3f4b; color: #fff; }
+  .msg.them .b { background: #23262e; }
+  :root[data-theme="light"] .msg.you .b { background: #2f6bff; }
+  :root[data-theme="light"] .msg.them .b { background: #e9edf5; }
+  .stamp { text-align: center; color: var(--faint); font-size: 12px; margin: 6px 0 14px; }
+  .ev { display: flex; justify-content: center; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--sub); font-size: 13px; margin: 14px 0; }
+  .whoq { display: inline-flex; align-items: center; gap: 4px; color: var(--sub); }
+  .whoq svg { flex: none; }
+  .steps { margin-top: 8px; display: grid; gap: 4px; }
+  .step { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--sub); }
+  .step .ok { color: var(--green); width: 14px; text-align: center; }
+  .shimmer { background: linear-gradient(90deg, var(--sub) 0%, var(--ink) 50%, var(--sub) 100%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent !important; animation: shimmer 2.2s linear infinite; }
+  @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+  .file { display: inline-flex; align-items: center; gap: 10px; margin-top: 10px; padding: 8px 12px 8px 8px; border-radius: 12px; background: var(--hover); border: 1px solid var(--line); }
+  .file .ext { width: 30px; height: 34px; border-radius: 7px; background: linear-gradient(160deg, #ff7a7a, #ff4646); color: #fff; font-size: 9px; font-weight: 800; display: grid; place-items: end center; padding-bottom: 4px; }
+  .file small { display: block; color: var(--sub); font-size: 12px; }
+  .note { font-size: 13px; color: var(--sub); display: flex; align-items: center; gap: 8px; margin: 14px 0 0 38px; }
+  .dock { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 32px 20px; background: linear-gradient(transparent, var(--bg) 35%); }
+  .dock .composer { max-width: 900px; margin: 0 auto; }
+  .dock textarea { height: 44px; }
+
+  /* ---------- right panel ---------- */
+  .rail { width: 0; overflow: hidden; border-left: 1px solid transparent; background: var(--side); transition: width .35s cubic-bezier(.2, .8, .2, 1); z-index: 2; }
+  .rail.open { width: 340px; border-left-color: var(--line); }
+  .rail .in { width: 340px; padding: 16px; display: grid; gap: 18px; align-content: start; }
+  .rail h4 { margin: 0 0 8px; font-size: 12px; color: var(--faint); font-weight: 600; display: flex; justify-content: space-between; }
+  .li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .li:first-of-type { border-top: 0; }
+  .li .tx { flex: 1; min-width: 0; font-size: 13px; }
+  .li .tx small { display: block; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+  .proof { font-size: 11px; color: var(--green); white-space: nowrap; }
+  .proof.no { color: var(--amber); }
+  .mini { height: 24px; padding: 0 9px; border-radius: 7px; background: var(--hover); border: 1px solid var(--line); font-size: 12px; }
+  .mini.primary { background: var(--blue); border-color: transparent; color: #fff; }
+  .screen { border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: #fff; aspect-ratio: 16 / 10; position: relative; }
+  .screen .url { height: 20px; background: #eef1f7; display: flex; align-items: center; padding: 0 8px; font-size: 10px; color: #6a7286; }
+  .screen .pg { padding: 10px; display: grid; gap: 6px; }
+  .screen .pg i { display: block; height: 8px; border-radius: 4px; background: #e6eaf2; }
+  .screen .pg .hero { height: 34px; border-radius: 8px; background: linear-gradient(135deg, #4fb3ff, #2f6bff); }
+  .screen .pg .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .screen .pg .cols i { height: 42px; border-radius: 6px; }
+  .cursor { position: absolute; width: 14px; height: 14px; left: 60%; top: 58%; animation: roam 6s ease-in-out infinite; }
+  @keyframes roam { 25% { left: 30%; top: 48%; } 50% { left: 72%; top: 78%; } 75% { left: 50%; top: 40%; } }
+  .switch { width: 28px; height: 16px; border-radius: 999px; background: var(--active); position: relative; transition: background .2s ease-out; cursor: pointer; flex: none; }
+  .switch::after { content: ""; position: absolute; width: 12px; height: 12px; border-radius: 50%; background: #fff; top: 2px; left: 2px; transition: transform .25s cubic-bezier(.3, 1.4, .5, 1); }
+  .switch.on { background: var(--blue); } .switch.on::after { transform: translateX(12px); }
+
+
+  /* ---------- bots: identity by shape, state by motion ---------- */
+  .bot { position: relative; display: inline-grid; place-items: center; flex: none; }
+  .bot svg { overflow: visible; }
+  .bot .w-eyes, .bot .w-eye { transform-box: fill-box; transform-origin: center; }
+  .bot .dots { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; gap: 9%; padding-top: 4%; }
+  .bot .dots b { width: 12%; aspect-ratio: 1; border-radius: 50%; background: #fff; animation: dot 1s ease-in-out infinite; }
+  .bot .dots b:nth-child(2) { animation-delay: .15s; } .bot .dots b:nth-child(3) { animation-delay: .3s; }
+  @keyframes dot { 50% { transform: translateY(-35%); opacity: .5; } }
+  .bot[data-state="idle"] svg { animation: breathe 4s ease-in-out infinite; }
+  .bot[data-state="idle"] .w-eye { animation: blink 4.6s infinite; }
+  @keyframes breathe { 50% { transform: scale(1.035); } }
+  @keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+  .bot[data-state="working"] svg { animation: hop .9s cubic-bezier(.3, 0, .3, 1) infinite; }
+  .bot[data-state="working"] .w-eyes { animation: glance 1.8s ease-in-out infinite; }
+  @keyframes hop { 50% { transform: translateY(-7%); } }
+  @keyframes glance { 0%, 100% { transform: translateX(0); } 30% { transform: translateX(-9%); } 65% { transform: translateX(9%); } }
+  .bot[data-state="thinking"] .w-eyes { opacity: 0; }
+  .bot[data-state="thinking"] .dots { display: flex; }
+  .bot[data-state="waiting"] svg { animation: sway 2.4s ease-in-out infinite; transform-origin: 50% 90%; }
+  .bot[data-state="waiting"] .w-eye { transform: scaleY(.45); }
+  @keyframes sway { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg); } }
+  .bot[data-state="done"] svg { animation: proud 3.2s ease-in-out infinite; }
+  .bot[data-state="done"]::after { content: ""; position: absolute; inset: -18%; border-radius: 50%; background: conic-gradient(from 0deg, #ff5c9d, #ffcf2e, #22c55e, #4fb3ff, #7b5cff, #ff5c9d); -webkit-mask: radial-gradient(closest-side, transparent 78%, #000 80%, #000 88%, transparent 90%); mask: radial-gradient(closest-side, transparent 78%, #000 80%, #000 88%, transparent 90%); animation: ring 3.2s ease-out infinite; opacity: 0; pointer-events: none; }
+  @keyframes proud { 0%, 70%, 100% { transform: none; } 78% { transform: translateY(-10%) scale(1.05); } 86% { transform: none; } }
+  @keyframes ring { 0%, 70% { opacity: 0; transform: scale(.7) rotate(0); } 80% { opacity: 1; } 100% { opacity: 0; transform: scale(1.15) rotate(90deg); } }
+  .tip { position: fixed; z-index: 20; pointer-events: none; background: var(--panel-solid); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 10px; padding: 7px 10px; font-size: 12.5px; max-width: 260px; opacity: 0; transform: translateX(-4px); transition: opacity .15s ease-out, transform .15s ease-out; }
+  .tip.show { opacity: 1; transform: none; }
+  .tip small { display: block; color: var(--faint); font-size: 11px; text-transform: capitalize; }
+
+  /* ---------- inline cards in a chat ---------- */
+  .event { display: flex; align-items: center; gap: 10px; margin: 14px 0 14px 38px; padding: 8px 12px; border-radius: 12px; background: var(--hover); border: 1px solid var(--line); font-size: 13px; color: var(--sub); width: fit-content; }
+  .event b { color: var(--ink); font-weight: 600; }
+  .mail { margin-top: 10px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel-solid); overflow: hidden; max-width: 520px; }
+  .mail .hd { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--sub); }
+  .mail .rowx { padding: 6px 14px; font-size: 13px; border-bottom: 1px solid var(--line); }
+  .mail .rowx span { color: var(--faint); display: inline-block; width: 64px; }
+  .mail .body { padding: 12px 14px; font-size: 13.5px; line-height: 1.55; }
+  .mail .act { display: flex; gap: 8px; padding: 0 14px 12px; }
+
+  .in-up { opacity: 0; transform: translateY(8px); animation: rise .45s cubic-bezier(.2, .8, .2, 1) forwards; animation-delay: calc(var(--i, 0) * 40ms); }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .in-up { opacity: 1; transform: none; } }
+</style>
+</head>
+<body>
+<div class="win">
+  <div class="titlebar">
+    <span data-icon="wisp" data-size="16"></span>
+    <div class="tab" id="tab-name">Home</div>
+    <div class="grow"></div>
+    <button class="iconbtn" id="theme" title="Light or dark"><span data-ui="MoonSunSystem" data-size="18"></span></button>
+    <button class="iconbtn" id="rail-btn" title="Side panel"><span data-ui="SidebarRight" data-size="18"></span></button>
+    <div class="ctl"><svg width="10" height="10"><path d="M0 5h10" stroke="currentColor"/></svg></div>
+    <div class="ctl"><svg width="10" height="10"><rect x=".5" y=".5" width="9" height="9" fill="none" stroke="currentColor"/></svg></div>
+    <div class="ctl x"><svg width="10" height="10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor"/></svg></div>
+  </div>
+
+  <aside class="side">
+    <div class="side-top">
+      <b><span data-icon="wisp" data-size="22"></span>Codeply</b>
+      <button class="iconbtn" data-panel="brief" title="Inbox"><span data-ui="Mail" data-size="18"></span></button>
+      <button class="iconbtn" data-panel="routines" title="Routines"><span data-ui="Clock" data-size="18"></span></button>
+      <button class="iconbtn" title="Search"><span data-ui="Search" data-size="18"></span></button>
+    </div>
+    <button class="newchat" id="newchat"><span data-ui="ComposeEditSquare" data-size="18"></span>New chat<kbd>Ctrl N</kbd></button>
+    <div class="scroll">
+      <div id="agents" style="padding-top:2px"></div>
+    </div>
+    <div class="me"><div class="pic">S</div><div class="grow">Sam<small>Free plan</small></div>
+      <button class="iconbtn" title="Settings"><span data-ui="Settings" data-size="18"></span></button>
+    </div>
+  </aside>
+
+  <div class="main" id="main">
+    <canvas class="art" id="art"></canvas>
+    <div class="view" id="view"></div>
+    <aside class="rail" id="rail"><div class="in" id="rail-in"></div></aside>
+  </div>
+</div>
+
+<script src="../icons/codeply-icons.js"></script>
+<script type="module">
+// Interface icons: OpenAI's Apps SDK UI set (@openai/apps-sdk-ui, MIT), rendered to SVG strings.
+import React from 'https://esm.sh/react@18.3.1';
+import { renderToStaticMarkup } from 'https://esm.sh/react-dom@18.3.1/server?deps=react@18.3.1';
+import * as Icons from 'https://esm.sh/@openai/apps-sdk-ui@0.2.2/components/Icon?deps=react@18.3.1,react-dom@18.3.1';
+const cache = new Map();
+window.UIcon = (name, size = 18) => {
+  const key = name + size;
+  if (!cache.has(key)) cache.set(key, Icons[name] ? renderToStaticMarkup(React.createElement(Icons[name], { width: size, height: size, 'aria-hidden': true })) : '');
+  return cache.get(key);
+};
+window.__start();
+</script>
+<script>
+window.__start = function () {
+  const I = window.CodeplyIcons;
+  const ic = (name, size, o = {}) => I.svg(name, { size, ...o });
+  const ui = (name, size = 18) => window.UIcon(name, size);
+  // A monochrome icon on a soft tile, for list rows (no colour: colour belongs to the bots).
+  const tile = (name) => `<span class="tile">${ui(name, 18)}</span>`;
+  const $ = (s) => document.querySelector(s);
+  // A bot's face: the shape says who it is, the motion says what it is doing (idle, working, thinking, waiting, done).
+  const bot = (a, size) => `<span class="bot" data-state="${a.state || 'idle'}" data-name="${a.name}" data-action="${a.action || ''}" style="width:${size}px;height:${size}px">${ic('wisp', size, { color: a.color, gear: a.gear })}<i class="dots"><b></b><b></b><b></b></i></span>`;
+
+  // Agents first: each one owns its chats.
+  const AGENTS = [
+    { id: 'wisp', name: 'Wisp', color: '#2f6bff', state: 'idle', action: 'Watching your day. Brief at 6:00', time: 'now', open: true, threads: ['Move standup to 9:30', 'Reply to the landlord', 'Trip to Lahore'] },
+    { id: 'frontend', name: 'Frontend', color: '#ff5c9d', gear: 'beret', state: 'working', action: 'Editing pricing.html, +42 lines', st: 'Building the pricing page', time: '2m', busy: true, open: true, threads: ['Pricing page for launch-site'] },
+    { id: 'backend', name: 'Backend', color: '#ff8a1a', gear: 'headphones', state: 'thinking', action: 'Thinking about the plan limits', st: 'Writing the plan data', time: '6m', busy: true, threads: ['Plan data for pricing'] },
+    { id: 'inbox', name: 'Inbox', color: '#1fc75f', gear: 'glasses', state: 'waiting', action: 'Waiting for your OK on 1 reply', st: 'Needs your OK on 1 reply', time: '18m', threads: ['Daily inbox cleanup'] },
+    { id: 'research', name: 'Research', color: '#7b5cff', gear: 'sprout', state: 'done', action: 'Done: 4 venues, top pick holds 20', st: '4 venues for Friday', time: '1h', threads: ['Venues for Friday'] },
+  ];
+
+  function sidebar(activeThread) {
+    const row = (a, t, k) => `<div class="thread-row${a.busy && k === 0 ? ' live' : ''}${activeThread === t ? ' on' : ''}" data-thread="${t}" data-owner="${a.id}">${t}</div>`;
+    const w = AGENTS[0];
+    const lead = `<div class="lead in-up" data-agent="wisp">${bot(w, 38)}<div class="nm"><b>Wisp</b><small>Your agent</small></div><time style="color:var(--faint);font-size:12px">now</time></div>
+      <div class="threads lead-threads${w.open ? ' open' : ''}"><div>${w.threads.map((t, k) => row(w, t, k)).join('')}</div></div>`;
+    const team = AGENTS.slice(1).map((a, i) => `
+      <div class="agent in-up${a.open ? ' open' : ''}" style="--i:${i + 1}" data-agent="${a.id}">
+        <span class="caret">${ui('ChevronRight', 14)}</span>
+        <span class="av">${bot(a, 32)}</span><span class="nm">${a.name}<small>${a.st}</small></span><time>${a.time}</time>
+      </div>
+      <div class="threads${a.open ? ' open' : ''}"><div>${a.threads.map((t, k) => row(a, t, k)).join('')}</div></div>`).join('');
+    $('#agents').innerHTML = lead + `<div class="team"><div class="label">Wisp's team<button title="Add a helper">+</button></div>${team}</div>`;
+  }
+
+  // The composer: words first, then only what you need.
+  const LEVELS = { 1: 'Ask first', 2: 'Auto edits', 3: 'Full auto' };
+  const state = { where: 'This PC', project: 'launch-site', model: 'Haze 2', effort: 'Medium', level: 1 };
+  const composer = (placeholder) => `<div class="composer">
+      <textarea placeholder="${placeholder}"></textarea>
+      <div class="bar">
+        <button class="iconbtn" title="Attach">${ui('PlusComposer', 20)}</button>
+        <button class="chip" data-menu="where">${ui('Folder', 16)}<span class="v-project">${state.project}</span><span style="color:var(--faint)">·</span><span class="v-where">${state.where}</span></button>
+        <span class="grow"></span>
+        <button class="chip" data-menu="auto"><span class="auto" data-level="${state.level}"><i></i><i></i><i></i></span><span class="v-level">${LEVELS[state.level]}</span></button>
+        <button class="chip" data-menu="model">${ic('wisp', 14)}<span class="v-model">${state.model}</span></button>
+        <button class="iconbtn" title="Voice">${ui('Mic', 18)}</button>
+        <button class="send" title="Send">${ui('ArrowUp', 16)}</button>
+      </div></div>`;
+
+  // ---------- home: just Wisp and the box ----------
+  function home() {
+    $('#tab-name').textContent = 'Home';
+    $('#main').classList.remove('quiet');
+    sidebar(null);
+    $('#view').innerHTML = `<div class="home"><div class="stack">
+      <div class="hello in-up" style="--i:0"><div class="face">${ic('wisp', 56)}${AGENTS.filter((a) => a.busy).slice(0, 2).map((a, k) => `<span class="sat ${k ? 'b' : 'a'}" title="${a.name} is working">${bot(a, 26)}</span>`).join('')}</div><h1>What should Wisp take on?</h1>
+        <div class="team-note">${AGENTS.filter((a) => a.busy).map((a) => a.name).join(' and ')} are working for Wisp</div></div>
+      <div class="in-up" style="--i:2">${composer('Ask Wisp anything')}</div>
+      <div class="in-up" style="text-align:center;--i:4"><button class="pill" data-panel="brief">${ui('LightMode', 16)}Morning brief is ready <small>3 things need you</small></button></div>
+    </div></div>`;
+  }
+
+  // ---------- a chat ----------
+  function chat(title, ownerId) {
+    const a = AGENTS.find((x) => x.id === ownerId) || AGENTS[0];
+    $('#tab-name').textContent = title;
+    $('#main').classList.add('quiet');
+    sidebar(title);
+    const coding = a.id === 'frontend' || a.id === 'backend';
+    // Grok-style transcript: your bubbles on the right, the bot's on the left, quiet centred events between.
+    let n = 0;
+    const you = (t) => `<div class="msg you in-up" style="--i:${++n}"><div class="b">${t}</div></div>`;
+    const them = (t) => `<div class="msg them in-up" style="--i:${++n}"><div class="b">${t}</div></div>`;
+    const ev = (t) => `<div class="ev in-up" style="--i:${++n}">${t}</div>`;
+    const who = (id) => { const x = AGENTS.find((q) => q.id === id); return `<span class="whoq">${ic('wisp', 16, { color: x.color, gear: x.gear })}${x.name}</span>`; };
+    const time = (t) => `<div class="stamp in-up">${t}</div>`;
+    let body;
+    if (coding) {
+      body = time('10:12 AM')
+        + you('Make the pricing page. Three plans, monthly and yearly, keep it like the homepage.')
+        + them(`On it. I'll build the page and ask Backend for the plan data.`)
+        + ev(`3 messages with ${who('backend')}`)
+        + them(`Plans are Free, Plus and Team. The page is built:
+            <div class="steps">
+              <div class="step"><span class="ok">${ui('Check', 14)}</span>Read the homepage styles</div>
+              <div class="step"><span class="ok">${ui('Check', 14)}</span>Built pricing.html with a monthly and yearly switch</div>
+              <div class="step"><span class="ok"></span><span class="shimmer">Checking it in the browser at three sizes</span></div>
+            </div>
+            <div class="file"><span class="ext">HTML</span><div>pricing.html<small>218 lines</small></div></div>`);
+    } else if (/landlord/i.test(title)) {
+      body = time('8:02 AM')
+        + you('Reply to the landlord. The 1st works, deposit by Friday.')
+        + them(`Here's the reply. It goes out when you send it.
+            <div class="mail"><div class="hd">${ui('Mail', 16)}New email<span style="margin-left:auto;color:var(--green)">Ready to send</span></div>
+              <div class="rowx"><span>To</span>landlord@example.com</div>
+              <div class="rowx"><span>Subject</span>Re: lease renewal</div>
+              <div class="body">Hi, thanks for the renewal. The 1st works for me, and I'll send the deposit by Friday.<br><br>Best,<br>Sam</div>
+              <div class="act"><button class="mini primary">Send email</button><button class="mini">Discard</button></div></div>`);
+    } else {
+      body = time('9:41 AM')
+        + you('Morning! Can you check in with everyone for me?')
+        + them('On it. Pinging the team for status now.')
+        + ev(`6 messages with ${who('frontend')} ${who('backend')} and ${who('inbox')}`)
+        + them('All on track: Frontend is checking the pricing page, Backend has the plan data, and Inbox drafted 2 replies. One needs your OK.')
+        + you('Love it, can you do this every morning?')
+        + ev(`Created Routine <span class="whoq">${ui('Clock', 14)}Morning check-in</span>`)
+        + them('Done. Your morning check-in will be here at 9:00 every day.');
+    }
+    $('#view').innerHTML = `<div class="thread">
+      <div class="thead in-up">${bot(a, 34)}<div class="grow"><b>${title}</b>${a.id === 'wisp' ? '<small>Wisp</small>' : `<small class="handoff">${ic('wisp', 14)}Wisp handed this to${ui('ArrowRight', 12)}${ic('wisp', 14, { color: a.color, gear: a.gear })}${a.name}${coding ? ' · Claude Code on your plan' : ''}</small>`}</div>
+        ${coding ? `<button class="iconbtn" data-panel="screen" title="${a.name}'s screen">${ui('Desktop', 18)}</button>` : ''}</div>
+      ${body}
+    </div>
+    <div class="dock">${composer(`Message ${a.name}`)}</div>`;
+    if (coding) panel('screen', a); else $('#rail').classList.remove('open');
+  }
+
+  // ---------- the side panel: brief, routines, or an agent's screen ----------
+  function panel(kind, a) {
+    const r = $('#rail');
+    if (kind === 'brief') {
+      $('#rail-in').innerHTML = `<div class="in-up"><h4>Morning brief<span>6:00</span></h4>
+        <div class="li">${tile('Mail')}<div class="tx">2 replies waiting<small>Sara and the landlord</small></div><button class="mini">Open</button></div>
+        <div class="li">${tile('Calendar')}<div class="tx">Standup moved to 9:30<small>Asked by Omar</small></div><span class="proof">Checked</span></div>
+        <div class="li">${tile('CheckCircle')}<div class="tx">Pricing page on preview<small>Frontend and Backend</small></div><span class="proof">Tests passed</span></div></div>
+        <div class="in-up" style="--i:2"><h4>Waiting on you<span>2</span></h4>
+        <div class="li">${tile('EditPencil')}<div class="tx">Re: the lease renewal<small>"Thanks, the 1st works..."</small></div><button class="mini primary">Send</button></div>
+        <div class="li">${tile('Chat')}<div class="tx">Book the Friday venue?<small>Top pick holds 20</small></div><button class="mini">Review</button></div></div>
+        <div class="in-up" style="--i:4"><h4>Done overnight</h4>
+        <div class="li"><div class="tx">Archived 41 newsletters<small>Kept people you know</small></div><span class="proof">Checked</span></div>
+        <div class="li"><div class="tx">Internet bill reminder<small>Friday 10:00</small></div><span class="proof no">Not checked</span></div></div>`;
+    } else if (kind === 'routines') {
+      $('#rail-in').innerHTML = `<div class="in-up"><h4>Routines</h4>
+        ${[['LightMode', 'Morning brief', 'Every day at 6:00', 1], ['Mail', 'Inbox cleanup', 'Weekdays at 8:00', 1], ['Chat', 'Weekly review', 'Fridays at 17:00', 0], ['Moon', 'Quiet hours', '22:00 to 7:00', 1]]
+          .map(([i, t, s, on]) => `<div class="li">${tile(i)}<div class="tx">${t}<small>${s}</small></div><span class="switch${on ? ' on' : ''}"></span></div>`).join('')}</div>`;
+    } else {
+      $('#rail-in').innerHTML = `<div class="in-up"><h4>${a.name}'s screen<span>live</span></h4>
+        <div class="screen"><div class="url">localhost:5173/pricing</div>
+          <div class="pg"><i class="hero"></i><i style="width:60%"></i><div class="cols"><i></i><i></i><i></i></div><i style="width:40%"></i></div>
+          <svg class="cursor" viewBox="0 0 24 24"><path d="M4 2l16 9-7 2-3 7z" fill="${a.color}" stroke="#fff" stroke-width="1.5"/></svg></div></div>`;
+    }
+    r.dataset.kind = kind;
+    r.classList.add('open');
+    document.querySelectorAll('.side-top [data-panel]').forEach((b) => b.classList.toggle('on', b.dataset.panel === kind));
+  }
+
+  // ---------- menus ----------
+  let open = null;
+  const closeMenu = () => { if (open) { open.remove(); open = null; } };
+  function menu(chip) {
+    const kind = chip.dataset.menu; const m = document.createElement('div'); m.className = 'menu';
+    const item = (k, v, sub, on) => `<div class="it${on ? ' on' : ''}" data-k="${k}" data-v="${v}"><div>${v}${sub ? `<small>${sub}</small>` : ''}</div><span class="tick">${ui('Check', 16)}</span></div>`;
+    if (kind === 'model') m.innerHTML = item('model', 'Haze 2', 'Picks the right model for each request', state.model === 'Haze 2')
+      + item('model', 'Your Claude plan', 'Claude Code on your subscription', state.model === 'Your Claude plan')
+      + item('model', 'Your ChatGPT plan', 'Codex on your subscription', state.model === 'Your ChatGPT plan')
+      + `<hr><div class="cap">Effort</div><div class="seg">${['Low', 'Medium', 'High'].map((e) => `<span class="${state.effort === e ? 'on' : ''}" data-effort="${e}">${e}</span>`).join('')}</div>`;
+    if (kind === 'auto') m.innerHTML = item('level', 'Ask first', 'Asks before anything that changes something', state.level === 1)
+      + item('level', 'Auto edits', 'Edits on its own, asks before sending', state.level === 2) + item('level', 'Full auto', 'Stops only for money and sends', state.level === 3);
+    if (kind === 'where') m.innerHTML = `<div class="cap">Runs on</div><div class="seg">${['This PC', 'Cloud'].map((w) => `<span class="${state.where === w ? 'on' : ''}" data-where="${w}">${w}</span>`).join('')}</div><hr><div class="cap">Project</div>`
+      + ['launch-site', 'codeply-craft', 'No project'].map((p) => item('project', p, '', state.project === p)).join('');
+    document.body.appendChild(m);
+    const r = chip.getBoundingClientRect(); const below = r.bottom + 8 + m.offsetHeight < innerHeight;
+    m.style.left = `${Math.min(r.left, innerWidth - m.offsetWidth - 10)}px`;
+    m.style.top = `${below ? r.bottom + 6 : r.top - m.offsetHeight - 6}px`;
+    m.style.setProperty('--oy', below ? '0' : '100%');
+    m._chip = chip; open = m;
+  }
+  const refresh = (chip) => {
+    const c = chip.closest('.composer'); if (!c) return;
+    c.querySelector('.v-project').textContent = state.project; c.querySelector('.v-where').textContent = state.where;
+    c.querySelector('.v-model').textContent = state.model; c.querySelector('.v-level').textContent = LEVELS[state.level];
+    c.querySelector('.auto').dataset.level = state.level;
+  };
+
+  document.addEventListener('click', (e) => {
+    const t = e.target;
+    if (open && t.closest('.menu')) {
+      const it = t.closest('.it'), ef = t.closest('[data-effort]'), wh = t.closest('[data-where]');
+      if (ef) { state.effort = ef.dataset.effort; open.querySelectorAll('[data-effort]').forEach((s) => s.classList.toggle('on', s === ef)); return; }
+      if (wh) { state.where = wh.dataset.where; open.querySelectorAll('[data-where]').forEach((s) => s.classList.toggle('on', s === wh)); refresh(open._chip); return; }
+      if (it) {
+        if (it.dataset.k === 'model') state.model = it.dataset.v;
+        if (it.dataset.k === 'project') state.project = it.dataset.v;
+        if (it.dataset.k === 'level') state.level = { 'Ask first': 1, 'Auto edits': 2, 'Full auto': 3 }[it.dataset.v];
+        refresh(open._chip); closeMenu();
+      }
+      return;
+    }
+    const chip = t.closest('[data-menu]'); closeMenu(); if (chip) { menu(chip); return; }
+    const sw = t.closest('.switch'); if (sw) { sw.classList.toggle('on'); return; }
+    const p = t.closest('[data-panel]');
+    if (p) { const r = $('#rail'); if (r.classList.contains('open') && r.dataset.kind === p.dataset.panel) { r.classList.remove('open'); p.classList.remove('on'); } else panel(p.dataset.panel, AGENTS.find((a) => a.id === 'frontend')); return; }
+    const row = t.closest('[data-thread]'); if (row) { chat(row.dataset.thread, row.dataset.owner); return; }
+    const ag = t.closest('[data-agent]');
+    if (ag) { const a = AGENTS.find((x) => x.id === ag.dataset.agent); a.open = !a.open; ag.classList.toggle('open', a.open); ag.nextElementSibling.classList.toggle('open', a.open); return; }
+    if (t.closest('#newchat')) { $('#rail').classList.remove('open'); home(); }
+  });
+  $('#rail-btn').onclick = () => { const r = $('#rail'); if (r.classList.contains('open')) r.classList.remove('open'); else panel('brief'); };
+  $('#theme').onclick = () => { const d = document.documentElement; d.dataset.theme = d.dataset.theme === 'dark' ? 'light' : 'dark'; drawArt(); };
+
+  // ---------- dithered sky ----------
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
+  function drawArt() {
+    const c = $('#art'), px = 4;
+    const W = Math.ceil(c.clientWidth / px), H = Math.ceil(c.clientHeight / px);
+    if (!W || !H) return;
+    c.width = W; c.height = H;
+    const x = c.getContext('2d'), img = x.createImageData(W, H);
+    const dark = document.documentElement.dataset.theme === 'dark';
+    const PAL = dark
+      ? [[11, 13, 19], [14, 24, 58], [22, 46, 128], [47, 107, 255], [110, 170, 255], [210, 230, 255]]
+      : [[245, 247, 251], [214, 228, 255], [160, 196, 255], [104, 156, 255], [70, 125, 255], [47, 107, 255]];
+    const blobs = [[0.18, 0.62, 0.22], [0.42, 0.72, 0.18], [0.78, 0.6, 0.26], [0.95, 0.74, 0.16], [0.62, 0.82, 0.2]];
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const stars = dark ? Array.from({ length: 60 }, () => [rnd() * W | 0, rnd() * H * 0.5 | 0]) : [];
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+      const u = i / W, v = j / H;
+      let val = dark ? 0.05 + v * 0.42 : 0.9 - v * 0.5;
+      for (const [bx, by, br] of blobs) { const d = ((u - bx) ** 2) / (br * br * 2.2) + ((v - by) ** 2) / (br * br * 0.5); val += (dark ? 0.34 : -0.4) * Math.exp(-d * 2.4); }
+      val += Math.sin(u * 31 + v * 7) * 0.02 + Math.sin(u * 7 - v * 19) * 0.025;
+      val = Math.max(0, Math.min(0.999, val));
+      const level = Math.min(PAL.length - 1, Math.floor(val * (PAL.length - 1) + BAYER[(j % 4) * 4 + (i % 4)]));
+      const pc = PAL[level], o = (j * W + i) * 4;
+      img.data[o] = pc[0]; img.data[o + 1] = pc[1]; img.data[o + 2] = pc[2]; img.data[o + 3] = 255;
+    }
+    for (const [sx, sy] of stars) { const o = (sy * W + sx) * 4; img.data[o] = 220; img.data[o + 1] = 232; img.data[o + 2] = 255; }
+    x.putImageData(img, 0, 0);
+  }
+  addEventListener('resize', drawArt);
+  new ResizeObserver(drawArt).observe($('#art'));
+
+  // Hover a bot to see what it is doing right now (the face already says that it is busy).
+  const tip = document.createElement('div'); tip.className = 'tip'; document.body.appendChild(tip);
+  document.addEventListener('mouseover', (e) => {
+    const b = e.target.closest('.bot');
+    if (!b || !b.dataset.action) { tip.classList.remove('show'); return; }
+    const r = b.getBoundingClientRect();
+    tip.innerHTML = `<small>${b.dataset.name}, ${b.dataset.state}</small>${b.dataset.action}`;
+    tip.style.left = `${r.right + 10}px`; tip.style.top = `${r.top + r.height / 2 - 18}px`;
+    tip.classList.add('show');
+  });
+
+  document.querySelectorAll('[data-icon]').forEach((el) => { el.innerHTML = ic(el.dataset.icon, Number(el.dataset.size || 20)); });
+  document.querySelectorAll('[data-ui]').forEach((el) => { el.innerHTML = ui(el.dataset.ui, Number(el.dataset.size || 18)); });
+  home();
+  requestAnimationFrame(drawArt);
+};
+</script>
+</body>
+</html>

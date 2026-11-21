@@ -27,11 +27,11 @@ const SOURCES = {
   calendar: { label: 'Google Calendar', note: 'Your events, who is in them and where.' },
   gmail: { label: 'Gmail, sent and received', note: 'Who wrote, what about, and who is still waiting on your reply. Headers and the preview line only.' },
   calls: { label: 'Calls', note: 'Calls with your bots and calls the call helper heard on this PC, with a short summary.', sensitive: true },
-  projects: { label: 'Craft projects', note: 'What you are building, and when you last pushed.' },
+  projects: { label: 'Projects', note: 'What you are building, and when you last pushed.' },
   activity: { label: 'What is on your screen', note: 'Which app and window you have in front, every 30 seconds. Private windows and password managers are skipped.' },
   screen: { label: 'Text on your screen', note: 'The words in the window in front, read on this PC by the OCR built into Windows. No images are kept. Private windows and password managers are skipped.' },
   heard: { label: 'Heard around you', note: 'Listens in the background and keeps only the important bits: to-dos, plans, names, decisions. No audio is kept.' },
-  orbit: { label: 'Orbit and the drop', note: 'What you asked them.' },
+  orbit: { label: 'Voice and quick chat', note: 'What you asked them.' },
   plans: { label: 'Plans', note: 'Plans your bots heard about in chats, calls and email.' },
   botmail: { label: "Your bots' email", note: 'Mail to and from your bots\' own addresses.' },
   slack: { label: 'Slack', note: 'Direct messages and mentions.' },
@@ -256,10 +256,10 @@ function itemLine(x, now, tz) {
 }
 
 async function contextTool(args, ctx = {}) {
-  if (!store) return { ok: false, output: 'The life context is only available in the Craft app.' };
+  if (!store) return { ok: false, output: 'The life context is only available in the Codeply app.' };
   const bot = ctx.bot || null;
   const allowed = ctx.allowed || allowedFor(bot);
-  if (!allowed.size) return { ok: false, output: 'This bot is not allowed to read the user\'s life context. The user can turn it on in Crew, Life.' };
+  if (!allowed.size) return { ok: false, output: 'This bot is not allowed to read the user\'s life context. The user can turn it on in Agents, Life.' };
   const about = ABOUT[String(args.about || 'now').trim().toLowerCase()] || 'search';
   const query = String(args.query || args.about || '').trim();
   const now = ctx.now || Date.now();

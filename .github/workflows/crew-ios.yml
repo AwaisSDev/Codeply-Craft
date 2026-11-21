@@ -59,10 +59,10 @@ jobs:
           JSON
           P=Info.plist
           set_key() { /usr/libexec/PlistBuddy -c "Delete :$1" $P 2>/dev/null || true; /usr/libexec/PlistBuddy -c "Add :$1 $2 $3" $P; }
-          set_key CFBundleDisplayName string "Codeply Crew"
-          set_key NSMicrophoneUsageDescription string "Codeply Crew uses the microphone so you can talk to your agents on calls."
-          set_key NSCameraUsageDescription string "Codeply Crew uses the camera when you show something to an agent."
-          set_key NSPhotoLibraryUsageDescription string "Codeply Crew opens your photos when you share a screenshot with an agent."
+          set_key CFBundleDisplayName string "Codeply"
+          set_key NSMicrophoneUsageDescription string "Codeply uses the microphone so you can talk to your agents on calls."
+          set_key NSCameraUsageDescription string "Codeply uses the camera when you show something to an agent."
+          set_key NSPhotoLibraryUsageDescription string "Codeply opens your photos when you share a screenshot with an agent."
           set_key ITSAppUsesNonExemptEncryption bool false
           /usr/libexec/PlistBuddy -c "Delete :UIBackgroundModes" $P 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" $P
@@ -98,5 +98,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view crew-ios-latest >/dev/null 2>&1 || gh release create crew-ios-latest --prerelease --title "Codeply Crew for iPhone (latest)" --notes "Unsigned test build. Install with Sideloadly and your Apple ID."
+          gh release view crew-ios-latest >/dev/null 2>&1 || gh release create crew-ios-latest --prerelease --title "Codeply for iPhone (latest)" --notes "Unsigned test build. Install with Sideloadly and your Apple ID."
           gh release upload crew-ios-latest CodeplyCrew.ipa --clobber

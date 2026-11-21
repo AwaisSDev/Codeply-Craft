@@ -1,0 +1,181 @@
+name: Codeply 4.0 on Rune (Windows)
+
+# Builds the Rune desktop app (rune-app/) for Windows on a Windows runner, with the MSVC toolchain
+# Rust's Windows builds expect, and publishes it to one fixed pre-release so there is always a
+# download link to the newest build. Nothing to install on your PC: download, unzip, run.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [rune-v4, rune-v5]
+    paths:
+      - 'rune-app/**'
+      - 'codeply-cli/**'
+      - 'craft-dsh/**'
+      - 'scripts/package-dsh.mjs'
+      - '.github/workflows/rune-windows.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rune-windows-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml in rune-app pins the toolchain Rune builds with; rustup installs it.
+      - name: Toolchain
+        working-directory: rune-app
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rune-app/target
+          key: rune-windows-${{ hashFiles('rune-app/Cargo.lock', 'rune-app/rust-toolchain.toml') }}
+          restore-keys: rune-windows-
+
+      # The version (4.0.<run>), the engine id (a hash of codeply-cli, craft-dsh and how DSH is
+      # packaged: when it changes, an update needs the installer) and the update feed's URL are
+      # baked into Codeply.exe (src/update.rs) and written to latest.json below.
+      - name: Version
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "rune-v4" ]; then TAG=rune-windows-latest; else TAG="${GITHUB_REF_NAME}-windows-latest"; fi
+          ENGINE_ID=$(git rev-parse HEAD:codeply-cli HEAD:craft-dsh HEAD:scripts/package-dsh.mjs | sha256sum | cut -c1-16)
+          {
+            echo "TAG=$TAG"
+            echo "CODEPLY_VERSION=4.0.${GITHUB_RUN_NUMBER}"
+            echo "CODEPLY_ENGINE_ID=$ENGINE_ID"
+            echo "CODEPLY_UPDATE_FEED=https://github.com/${GITHUB_REPOSITORY}/releases/download/$TAG/latest.json"
+          } >> "$GITHUB_ENV"
+          echo "4.0.${GITHUB_RUN_NUMBER}, engine $ENGINE_ID, tag $TAG"
+
+      - name: Build
+        working-directory: rune-app
+        run: cargo build --release --features live
+
+      - name: Test
+        working-directory: rune-app
+        run: cargo test --release
+
+      # The engine ships inside the zip, so Codeply.exe needs nothing else installed:
+      # DSH and the Node 24 that runs it (scripts/package-dsh.mjs, as the Electron build does),
+      # and codeply-cli with its production dependencies.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Build the engine (DSH and codeply-cli)
+        run: |
+          npm install -g pnpm@11.28.5
+          (cd craft-dsh && pnpm install --frozen-lockfile && pnpm run build)
+          node scripts/package-dsh.mjs
+          (cd codeply-cli && npm ci --omit=dev --no-audit --no-fund)
+
+      # Connect Apps' own sign-ins (Gmail, Slack, Vercel, Supabase, GitHub): the OAuth apps' ids and
+      # secrets, from the same repository secrets the Electron release uses, beside codeply-cli where
+      # sidecar/ext-connections.mjs reads them. Missing ones leave that sign-in off in this build.
+      - name: Embed the sign-in keys
+        shell: bash
+        env:
+          VERCEL_CLIENT_ID: ${{ secrets.VERCEL_CLIENT_ID }}
+          VERCEL_CLIENT_SECRET: ${{ secrets.VERCEL_CLIENT_SECRET }}
+          VERCEL_SLUG: ${{ secrets.VERCEL_SLUG }}
+          SUPABASE_CLIENT_ID: ${{ secrets.SUPABASE_CLIENT_ID }}
+          SUPABASE_CLIENT_SECRET: ${{ secrets.SUPABASE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.OAUTH_GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          SLACK_CLIENT_ID: ${{ secrets.SLACK_CLIENT_ID }}
+          SLACK_CLIENT_SECRET: ${{ secrets.SLACK_CLIENT_SECRET }}
+        run: |
+          mkdir -p dist/Codeply-Rune/resources
+          node -e "
+            const keys = ['VERCEL_CLIENT_ID','VERCEL_CLIENT_SECRET','VERCEL_SLUG','SUPABASE_CLIENT_ID','SUPABASE_CLIENT_SECRET','GITHUB_CLIENT_ID','GITHUB_CLIENT_SECRET','GMAIL_CLIENT_ID','GMAIL_CLIENT_SECRET','SLACK_CLIENT_ID','SLACK_CLIENT_SECRET'];
+            const out = {}; for (const k of keys) if (process.env[k]) out[k] = process.env[k];
+            require('fs').writeFileSync('dist/Codeply-Rune/resources/build-secrets.json', JSON.stringify(out));
+            const missing = keys.filter((k) => k !== 'VERCEL_SLUG' && !out[k]);
+            console.log('sign-in keys embedded: ' + Object.keys(out).length + (missing.length ? '; missing: ' + missing.join(', ') : ''));
+          "
+
+      - name: Package
+        run: |
+          mkdir -p dist/Codeply-Rune/resources
+          cp rune-app/target/release/codeply.exe dist/Codeply-Rune/Codeply.exe
+          cp -r dsh-runtime dist/Codeply-Rune/resources/dsh-runtime
+          mkdir -p dist/Codeply-Rune/resources/codeply-cli
+          cp -r codeply-cli/bin codeply-cli/lib codeply-cli/skills codeply-cli/agents codeply-cli/node_modules codeply-cli/package.json dist/Codeply-Rune/resources/codeply-cli/
+          du -sh dist/Codeply-Rune/resources/*
+          cp rune-app/licenses/* dist/Codeply-Rune/
+          cp rune-app/TRY-IT.txt dist/Codeply-Rune/
+          cd dist && 7z a -tzip Codeply-Rune-windows-x64.zip Codeply-Rune >/dev/null
+          ls -la
+
+      # The installer: the same folder as the zip, as Codeply-Setup.exe (installer/codeply.iss).
+      - name: Installer
+        shell: pwsh
+        run: |
+          $num = $env:CODEPLY_VERSION
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          $icon = Get-ChildItem rune-app/target/release/build -Recurse -Filter codeply.ico -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          $isccArgs = @("/DAppVersion=$num", "/DSourceDir=$PWD\dist\Codeply-Rune", "/DOutputDir=$PWD\dist")
+          if ($icon) { $isccArgs += "/DIconFile=$($icon.FullName)" }
+          & $iscc @isccArgs rune-app\installer\codeply.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Get-ChildItem dist -File | Select-Object Name, Length | Format-Table -AutoSize
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Codeply-Rune-windows-x64
+          path: dist/Codeply-Rune-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Codeply-Setup
+          path: dist/Codeply-Setup.exe
+
+      # The update feed the app reads (src/update.rs): this version, its engine id, Codeply.exe on
+      # its own (a small update swaps just that) and the installer (a bigger one), with checksums,
+      # and the commit's message as the notes.
+      - name: Update feed
+        run: |
+          cp dist/Codeply-Rune/Codeply.exe dist/Codeply.exe
+          git log -1 --format=%B | grep -v -E '^(Co-Authored-By|Claude-Session):' > dist/notes.txt
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          EXE_SHA=$(sha256sum dist/Codeply.exe | cut -d' ' -f1)
+          SETUP_SHA=$(sha256sum dist/Codeply-Setup.exe | cut -d' ' -f1)
+          BASE="$BASE" EXE_SHA="$EXE_SHA" SETUP_SHA="$SETUP_SHA" node -e '
+            const fs = require("fs"); const e = process.env;
+            const feed = {
+              version: e.CODEPLY_VERSION, engine: e.CODEPLY_ENGINE_ID, commit: e.GITHUB_SHA,
+              published: new Date().toISOString(),
+              notes: fs.readFileSync("dist/notes.txt", "utf8").trim().slice(0, 4000),
+              exe: { url: `${e.BASE}/Codeply.exe`, sha256: e.EXE_SHA },
+              setup: { url: `${e.BASE}/Codeply-Setup.exe`, sha256: e.SETUP_SHA },
+            };
+            fs.writeFileSync("dist/latest.json", JSON.stringify(feed, null, 2));
+          '
+          cat dist/latest.json
+
+      # rune-v4 keeps its old link (rune-windows-latest); every other branch gets its own,
+      # rune-v5 -> rune-v5-windows-latest. latest.json goes up last, so the app never reads a
+      # feed whose files aren't there yet.
+      - name: Publish to the branch's latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --target "${GITHUB_SHA}" --title "Codeply 4.0 beta on Rune, Windows (${GITHUB_REF_NAME})" --notes "Test build of the native Rune app from the ${GITHUB_REF_NAME} branch. Run Codeply-Setup.exe to install it, or unzip Codeply-Rune-windows-x64.zip and run Codeply.exe. See TRY-IT.txt inside."
+          gh release upload "$TAG" dist/Codeply-Rune-windows-x64.zip dist/Codeply-Setup.exe dist/Codeply.exe --clobber
+          gh release upload "$TAG" dist/latest.json --clobber

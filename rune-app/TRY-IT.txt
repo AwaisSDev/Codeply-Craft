@@ -1,0 +1,32 @@
+Codeply 4.0 on Rune: beta
+=========================
+
+Install
+- Run Codeply-Setup.exe. It installs Codeply for you (no admin needed) with its own engine (DSH,
+  Node and codeply-cli), adds Start menu and desktop shortcuts, and opens Codeply.
+- Or unzip Codeply-Rune-windows-x64.zip anywhere and run Codeply.exe: the same app, with the
+  engine in the "resources" folder beside it.
+- Nothing else to install. Sign in from Settings > Account with your Codeply email.
+
+Updating
+Codeply looks for updates when it opens (Settings > General > About shows the version).
+- Small updates (the app only) download by themselves; "Restart to update" in the title bar
+  switches to the new version, or the next launch does.
+- Bigger ones (a new engine) show an update screen with the version and what's new; "Update now"
+  downloads Codeply-Setup.exe, installs it and opens Codeply again.
+You can also run a newer Codeply-Setup.exe yourself. Chats and settings are kept either way.
+
+Where things are
+- Codeply works in a project folder: %USERPROFILE%\Codeply at first. "Open folder" (in Code,
+  Pull requests or Settings > General) picks another, and Codeply remembers it.
+- Chats and settings are kept in %USERPROFILE%\.codeply\rune; the engine's log is there too
+  (engine.log).
+- Uninstall from Windows Settings > Apps > Codeply. Your data in %USERPROFILE%\.codeply stays.
+
+If a reply says you're not signed in
+Open Settings > Account and sign in, then send again.
+
+If the window doesn't open
+Codeply draws on the graphics card when the PC has one, and on the CPU otherwise, so any Windows
+10 or 11 PC works. To force one, set CODEPLY_GPU=1 (graphics card) or CODEPLY_GPU=0 (CPU). Check engine.log (above) and send it
+to us.

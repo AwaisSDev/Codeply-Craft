@@ -12,6 +12,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'codeply-brain-'));
 process.env.CODEPLY_BOTS_DIR = path.join(tmp, 'bots');
+// Its own folder: the test deletes tmp at the end, and Windows won't while the ledger is open.
+process.env.CODEPLY_SPINE_DB = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'codeply-brain-ledger-')), 'ledger.db');
 
 const BR = require(path.join(ROOT, 'codeply-cli/lib/brain.js'));
 const B = require(path.join(ROOT, 'codeply-cli/lib/bots.js'));
@@ -41,9 +43,20 @@ function fakeGoogle() {
   oauth.gmailSend = async (tok, m) => { google.sent.push(m); return { id: `s${google.sent.length}` }; };
   oauth.gmailCreateDraft = async (tok, d) => { google.drafts.push(d); return { id: `d${google.drafts.length}`, message: { id: 'dm', threadId: '' } }; };
   oauth.gmailSearch = async () => google.inbox.map((m) => ({ id: m.id, subject: m.subject, from: m.from, date: m.date, snippet: m.body.slice(0, 40) }));
-  oauth.gmailGetMessage = async (tok, id) => { const m = google.inbox.find((x) => x.id === id); if (!m) throw Object.assign(new Error('Not Found'), { status: 404 }); return { threadId: `t${id}`, to: 'me@example.com', ...m }; };
+  oauth.gmailGetMessage = async (tok, id) => {
+    const sent = /^s(\d+)$/.exec(id) ? google.sent[Number(id.slice(1)) - 1] : id === 'dm' ? google.drafts[google.drafts.length - 1] : null;
+    if (sent) return { id, threadId: '', labels: [id === 'dm' ? 'DRAFT' : 'SENT'], to: sent.to || '', subject: sent.subject || '', body: sent.body || '' };
+    const m = google.inbox.find((x) => x.id === id); if (!m) throw Object.assign(new Error('Not Found'), { status: 404 }); return { threadId: `t${id}`, to: 'me@example.com', ...m };
+  };
   oauth.calendarListEvents = async () => google.events;
-  oauth.calendarInsertEvent = async (tok, ev) => { google.inserted.push(ev); return { id: `ev${google.inserted.length}`, htmlLink: '' }; };
+  oauth.calendarInsertEvent = async (tok, ev) => { google.inserted.push(ev); return { id: ev.id || `ev${google.inserted.length}`, htmlLink: '' }; };
+  oauth.calendarGetEvent = async (tok, id) => {
+    const i = google.inserted.findIndex((e, n) => (e.id || `ev${n + 1}`) === id);
+    if (i >= 0) return { ...google.inserted[i], id };
+    const p = google.patched.filter((x) => x.id === id).pop();
+    if (google.deleted.includes(id)) return null;
+    return p ? { id, summary: p.patch.summary || 'Futsal', start: p.patch.start || {} } : null;
+  };
   oauth.calendarPatchEvent = async (tok, id, patch) => { google.patched.push({ id, patch }); return { id, summary: patch.summary || 'Futsal' }; };
   oauth.calendarDeleteEvent = async (tok, id) => { google.deleted.push(id); return { ok: true }; };
 }
@@ -399,7 +412,7 @@ if (section('Gmail and Calendar')) {
   check('gmail_read on a missing id fails cleanly', !(await T.executeTool('gmail_read', { id: 'nope' }, ctx)).ok);
 
   const add = await T.executeTool('calendar_add', { title: 'Team sync', start: '2030-11-03T16:00', attendees: 'sana@example.com, not-an-address, hamza@example.com' }, ctx);
-  check('calendar_add invites the guests (valid addresses only) and gives the event id', add.ok && JSON.stringify(google.inserted[0].attendees) === '[{"email":"sana@example.com"},{"email":"hamza@example.com"}]' && /invites sent/.test(add.output) && /Event id ev1/.test(add.output), add.output);
+  check('calendar_add invites the guests (valid addresses only) and gives the event id', add.ok && JSON.stringify(google.inserted[0].attendees) === '[{"email":"sana@example.com"},{"email":"hamza@example.com"}]' && /invites sent/.test(add.output) && add.output.includes(`Event id ${google.inserted[0].id || 'ev1'}.`), add.output);
   google.events = [{ id: 'evF', summary: 'Futsal', start: { dateTime: '2030-11-05T20:00:00+05:00' }, end: { dateTime: '2030-11-05T21:00:00+05:00' }, attendees: [{ email: 'me@example.com', self: true }, { email: 'hamza@example.com' }] }];
   const ls = await T.executeTool('calendar_list', { from: '2030-11-05' }, ctx);
   check('calendar_list shows the id and the guests', ls.ok && /\[evF\] Futsal/.test(ls.output) && /with hamza@example\.com/.test(ls.output) && !/me@example/.test(ls.output), ls.output);

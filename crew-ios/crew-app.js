@@ -121,7 +121,7 @@
     const list = bots().slice().sort((a, b) => ((lastMsg(b.id) || {}).at || 0) - ((lastMsg(a.id) || {}).at || 0));
     const q = query.toLowerCase();
     const shown = q ? list.filter((b) => `${b.name} ${b.specialty || ''}`.toLowerCase().includes(q)) : list;
-    let html = `<header class="big-head"><div class="head-row"><h1>Crew</h1>
+    let html = `<header class="big-head"><div class="head-row"><h1>Agents</h1>
       <button class="round-btn" id="newAgentBtn" aria-label="New agent">${ICON.plus}</button></div>${pcChip()}</header>`;
     if (list.length > 4) html += `<label class="search">${ICON.search}<input id="chatSearch" placeholder="Search" value="${esc(query)}"></label>`;
     if (!list.length) {
@@ -217,7 +217,7 @@
       <div class="label">Appearance</div>
       <div class="seg" id="themeSeg">${['system', 'light', 'dark'].map((t) => `<button data-theme="${t}" class="${theme === t ? 'on' : ''}">${t[0].toUpperCase()}${t.slice(1)}</button>`).join('')}</div>
       <div class="label">About</div>
-      <div class="card"><div class="row"><span class="row-main"><strong>Codeply Crew</strong><small>Version 0.1.0. Chats, calls and context for your Codeply agents.</small></span></div></div>
+      <div class="card"><div class="row"><span class="row-main"><strong>Codeply</strong><small>Version 0.1.0. Chats, calls and context for your Codeply agents.</small></span></div></div>
       <button class="btn btn-danger wide" id="signOutBtn">Sign out</button>`;
   }
   $('viewYou').addEventListener('click', async (e) => {
@@ -376,7 +376,7 @@
 
   // ─── Sending ────────────────────────────────────────────────────────────────
   const TEXT_RULES_OFFLINE = `PHONE MESSAGES
-The user is texting you from Codeply Crew on their phone.
+The user is texting you from Codeply on their phone.
 - Reply like a good text message: short and easy to read on a phone. Light markdown is fine; no headings, no long dash.
 - Right now you cannot use your tools (email, files, the web), because the user's PC is offline. If they ask for that kind of work, say so in one sentence and offer to do it once their PC is on.`;
 

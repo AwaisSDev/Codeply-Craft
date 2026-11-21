@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="1024" height="1024" role="img" aria-label="wisp-happy">
+<defs>
+  <linearGradient id="ci56f" x1="0.2" y1="0" x2="0.8" y2="1">
+    <stop offset="0" stop-color="#4c88ff"/><stop offset="0.5" stop-color="#2f6bff"/><stop offset="1" stop-color="#1756ff"/>
+  </linearGradient>
+  <radialGradient id="ci56s" cx="0.3" cy="0.12" r="0.75"><stop offset="0" stop-color="#fff" stop-opacity="0.16"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  <linearGradient id="ci56e" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.85"/><stop offset="0.42" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  <linearGradient id="ci56b" x1="0" y1="0" x2="0" y2="1"><stop offset="0.55" stop-color="#0032bb" stop-opacity="0"/><stop offset="1" stop-color="#0032bb" stop-opacity="0.35"/></linearGradient>
+  <clipPath id="ci56c"><path d="M25.16 23.75Q30.00 15.00 40.00 15.00L60.00 15.00Q70.00 15.00 74.84 23.75L86.16 44.25Q91.00 53.00 86.16 61.75L74.84 82.25Q70.00 91.00 60.00 91.00L40.00 91.00Q30.00 91.00 25.16 82.25L13.84 61.75Q9.00 53.00 13.84 44.25Z"/></clipPath>
+</defs>
+<path d="M25.16 23.75Q30.00 15.00 40.00 15.00L60.00 15.00Q70.00 15.00 74.84 23.75L86.16 44.25Q91.00 53.00 86.16 61.75L74.84 82.25Q70.00 91.00 60.00 91.00L40.00 91.00Q30.00 91.00 25.16 82.25L13.84 61.75Q9.00 53.00 13.84 44.25Z" fill="url(#ci56f)"/>
+<path d="M25.16 23.75Q30.00 15.00 40.00 15.00L60.00 15.00Q70.00 15.00 74.84 23.75L86.16 44.25Q91.00 53.00 86.16 61.75L74.84 82.25Q70.00 91.00 60.00 91.00L40.00 91.00Q30.00 91.00 25.16 82.25L13.84 61.75Q9.00 53.00 13.84 44.25Z" fill="url(#ci56s)"/>
+<path d="M25.16 23.75Q30.00 15.00 40.00 15.00L60.00 15.00Q70.00 15.00 74.84 23.75L86.16 44.25Q91.00 53.00 86.16 61.75L74.84 82.25Q70.00 91.00 60.00 91.00L40.00 91.00Q30.00 91.00 25.16 82.25L13.84 61.75Q9.00 53.00 13.84 44.25Z" fill="none" stroke="url(#ci56b)" stroke-width="4" clip-path="url(#ci56c)"/>
+<path d="M25.16 23.75Q30.00 15.00 40.00 15.00L60.00 15.00Q70.00 15.00 74.84 23.75L86.16 44.25Q91.00 53.00 86.16 61.75L74.84 82.25Q70.00 91.00 60.00 91.00L40.00 91.00Q30.00 91.00 25.16 82.25L13.84 61.75Q9.00 53.00 13.84 44.25Z" fill="none" stroke="url(#ci56e)" stroke-width="3" clip-path="url(#ci56c)"/><path d="M33.2 53.2Q38 45.8 42.8 53.2" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" /><path d="M51.2 53.2Q56 45.8 60.8 53.2" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" /></svg>

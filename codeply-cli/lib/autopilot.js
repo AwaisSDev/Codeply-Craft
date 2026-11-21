@@ -49,7 +49,7 @@ function decide(req, bot, o = {}) {
   return 'ask';
 }
 
-const SOURCE_NAME = { handoff: 'another bot handing work on', crew: 'a chat in Crew', call: 'a phone call', email: 'an email from the user', slack: 'Slack', phone: 'the phone app', nudge: 'a nudge' };
+const SOURCE_NAME = { handoff: 'another bot handing work on', crew: 'a chat in Agents', call: 'a phone call', email: 'an email from the user', slack: 'Slack', phone: 'the phone app', nudge: 'a nudge' };
 
 /** The first turn: the task, how it came in, and how to work without the user there. */
 function taskMessage(task, { holdMinutes } = {}) {

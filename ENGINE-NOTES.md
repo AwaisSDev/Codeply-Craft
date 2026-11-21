@@ -123,6 +123,103 @@ Tests: `npm run test:brain` (90 checks, including a real agent run against a fak
 
 Not done yet: the brain lives on one PC (no sync to the phone or Craft Cloud machines), the mobile app has no Brain screen, and only the email to calendar handoff is spotted automatically.
 
+### Claude Code as Wisp's background coding agent (2026-11-05)
+
+The user's own Claude plan (Pro, Max, Team) can do Codeply's big coding jobs,
+with Wisp as the lead that briefs it, reviews it and publishes the result.
+
+- `codeply-cli/lib/claude-code.js` (host-agnostic): finds the `claude` binary
+  (PATH plus the installers' usual folders; `CODEPLY_CLAUDE_BIN` overrides),
+  `status()` from `claude auth status --json`, `login()` drives
+  `claude auth login` with piped stdio (the CLI opens the browser; when the
+  page shows a code instead, `submitCode()` passes the pasted code on stdin),
+  `run()` runs `claude -p --output-format stream-json --verbose` with the
+  prompt on stdin and yields normalized events (init, text, tool_start,
+  tool_end, denied, exactly one result). `--resume <session id>` continues a
+  chat's Claude session. Codeply never sees the Claude token: the login is
+  Claude Code's own, in `~/.claude`.
+- Permissions: one approval per chat and folder, then Claude Code runs with
+  `acceptEdits` and an allowlist of file tools plus everyday dev commands
+  (level `dev`, the default), file tools only (`edits`), or
+  `bypassPermissions` (`full`). At every level a deny list keeps it from
+  pushing, deploying or touching Vercel, Supabase, Netlify, Firebase and
+  `gh`: Codeply publishes, with the user's connected apps.
+- Taste and skills: for visual work the whole `codeply-taste` SKILL.md goes
+  in through `--append-system-prompt-file` (with a note that Codeply already
+  ran `design_direction` and will run `design_lint`, and how to run the
+  static `scripts/lint.mjs` itself), plus up to four matching skills by file
+  path. Their folders are passed with `--add-dir` so Claude can read the
+  references.
+- `claude_code` tool (tools.mjs, native-tools.mjs, agent.mjs): only offered
+  when the host passes `claudeCode` (Wisp, Build mode, not read-only, not
+  verify-only, Claude Code logged in). Its result's `meta.specialist` makes
+  Claude's edits count as the turn's own, like `bring_in`, and marks them
+  unverified so Wisp checks them.
+- `claude-code-desktop.js`: the Connect Apps card's IPC (state, login, code,
+  cancel, logout, settings: model, level, on/off), and `runForChat`, which
+  streams Claude's steps into the chat as Codeply rows tagged
+  `agent: 'claude-code'`, adds start/report notes (`wisp_agent`,
+  `agent.kind = 'claude'`), mirrors the run into the terminal panel, and keeps
+  `session.claudeCode = { sessionId, cwd, round, approved }`.
+- `wisp-desktop.js` `runClaude`: builds Wisp's tool result (the report, WHAT
+  CLAUDE CODE ACTUALLY DID, what it was not allowed to run, and "now review
+  it"). `wisp.js claudeCodeSection`: when to use it, how to brief it (deal a
+  direction first for visual work), the review loop (browser_check,
+  design_lint, build/tests, specialists for a second look, send it back with
+  exact fixes, three rounds at most), and that publishing is Wisp's.
+- UI: `claude-code-ui.js` / `.css` (the card; Install runs the official
+  installer in the terminal), `wisp-ui.js` notes for Claude's rounds.
+- Tests: `npm run test:claude-code` (a fake `claude` binary; the real host and
+  runAgent loop against a scripted model). Checked once against the real CLI
+  (2.1.x): a two-round bakery site, taste references read, lint run, round 2
+  resumed the same session.
+
+### Prompt cache on every route (2026-11-05)
+
+Every request should resend the previous one byte for byte plus what is new,
+so a prefix cache (Anthropic, OpenAI, OpenRouter, DeepSeek, a local model's
+KV cache, Haze's router) serves almost all of it. `npm run test:cache`
+measures it on the user's own key: within a turn 100% of what was already
+sent comes back as a cached prefix (91.6% before), a turn that outgrows the
+context budget keeps 91% (83%, 2 breaks), and in a 50-turn chat 87% of the
+history is reused from one turn to the next (0.9% before).
+
+What breaks a cache, and what changed:
+- The layout from `buildSystemSections` (core, then project, then the turn's
+  context on the user message) was only used for Haze 2. On the user's own
+  keys `buildSystemPrompt` put the bot/Wisp prompt in front of the 30 KB tool
+  reference and the per-message skills and git status inside the system
+  prompt, so every new turn re-billed all of it. Every route uses the
+  sections now; `ai.js cacheShapedMessages` folds the two system blocks into
+  one (core first) for providers that want a single system message.
+- The transcript is append-only on every route. A stale `read_file` result
+  is no longer rewritten when the file is edited (the edit's result says so).
+- `trimTranscript` keeps a sticky cut (`trimState.cut`) and trims down to 60%
+  of the budget at once. Trimming just enough each step changed an earlier
+  message on every step after the budget was reached.
+- `history.js`: the window is the last 20 to 39 messages and its start moves
+  20 at a time. `slice(-20)` moved the first message of the history on every
+  turn once a chat was long.
+- Wisp: the team list in the prompt has no job counts, and a specialist's
+  last jobs go with its task (`wisp.trackRecord`), not its system prompt.
+- Anthropic (`ai.js anthropicCacheLayout`): one text block per system
+  message with a 1-hour breakpoint on the core and on the project block (the
+  next user message is often 5 to 60 minutes away), and a 5-minute breakpoint
+  on the newest message on every request. It used to mark the
+  second-to-last message only when that message alone was 4000+ characters,
+  so most steps had no message breakpoint at all. A fourth breakpoint sits 16
+  messages back in long runs (20-position lookback). Never more than four.
+- OpenRouter, Claude models: explicit markers on the system blocks and the
+  newest message (OpenRouter only caches those with markers).
+- Claude Code: the appended system prompt is the same for every job (house
+  rules and Codeply taste; the matching skills go in the task), written once
+  per content, and `--exclude-dynamic-system-prompt-sections` is passed when
+  the CLI lists it, so the system prompt is the same in every project. The
+  run's cache share is shown in the terminal line. Real runs: 83 to 90% of
+  input from cache, the rest the new task and tool output.
+- `CODEPLY_CACHE_LOG=1` prints, per model call, how much input came from the
+  cache wherever the provider reports it.
+
 ## Worth doing next (from the study, not built yet)
 
 1. UX: group consecutive reads into one "Gathered context" row, docked approvals,

@@ -1,0 +1,207 @@
+//! Integrations: plugins, apps, MCP servers and skills, one tab each. The sidebar lists the tabs
+//! (with counts) and, on Apps, the categories; the search field filters whichever list is open.
+
+use rune::{El, ScrollSpec, col, el, row, text, text_input};
+
+use crate::app::{App, EditKey, IntegrationsTab};
+use crate::icons::{app_logo, ico, ico_s};
+use crate::model::ButtonKind;
+use crate::theme::{Theme, mono, tabular, ui};
+use crate::ui::{btn, btn_primary, enter, heading, me, side_head, side_row, toggle};
+
+/// The tab's sidebar icon.
+fn tab_icon(tab: IntegrationsTab) -> &'static str {
+    match tab {
+        IntegrationsTab::Plugins => "sparkle",
+        IntegrationsTab::Apps => "link",
+        IntegrationsTab::Mcp => "chip",
+        IntegrationsTab::Skills => "book",
+    }
+}
+
+fn tab_count(s: &App, tab: IntegrationsTab) -> usize {
+    match tab {
+        IntegrationsTab::Plugins => s.data.extra.plugins.len(),
+        IntegrationsTab::Apps => s.data.extra.apps.total.max(s.data.extra.catalog.len()),
+        IntegrationsTab::Mcp => s.data.extra.mcp.len(),
+        IntegrationsTab::Skills => s.data.extra.skills.len(),
+    }
+}
+
+pub fn side(s: &App, t: &Theme) -> El {
+    let tabs = IntegrationsTab::ALL.iter().enumerate().map(|(i, &tab)| {
+        enter(
+            side_row(t, s.integrations == tab).key(format!("int-tab/{}", tab.label())).role("button").label(tab.label())
+                .child(ico(tab_icon(tab), t.dim))
+                .child(text(tab.label()).font(ui(14.0, 400.0)).color(t.text).grow(1.0))
+                .child(text(super::apps::thousands(tab_count(s, tab))).font(tabular(12.0, 400.0)).color(t.faint))
+                .on_press(move |s: &mut App| {
+                    s.integrations = tab;
+                    s.app_category = None;
+                    if tab == IntegrationsTab::Apps {
+                        s.browse_apps(false);
+                    }
+                }),
+            i,
+        )
+    });
+    let categories = (s.integrations == IntegrationsTab::Apps).then(|| super::apps::categories(s, t));
+    col().h_full().min_h(0.0)
+        .child(side_head(t, "Integrations", None))
+        .child(col().grow(1.0).min_h(0.0).px(8.0).scroll(ScrollSpec { stick_bottom: false }).children(tabs).children(categories))
+        .child(me(s, t))
+}
+
+/// A plugin's logo tile: its app's colour logo for `app-<slug>`, otherwise an interface icon.
+fn logo(t: &Theme, icon: &str) -> El {
+    let (tile, border, ink) = (t.tile, t.tile_border, t.tile_ink);
+    match icon.strip_prefix("app-") {
+        Some(slug) => app_logo(slug, crate::icons::domain_of(slug).unwrap_or_default(), "", tile, border, ink),
+        None => el().size(34.0, 34.0).radius(9.0).fill(tile).border(1.0, border).center().child(ico_s(icon, 18.0, ink)),
+    }
+}
+
+/// Cards in rows of `cols`, each row padded out so the last card keeps its column width.
+fn grid(cards: Vec<El>, cols: usize) -> El {
+    let mut rows: Vec<El> = Vec::new();
+    let mut it = cards.into_iter().peekable();
+    let mut r = 0;
+    while it.peek().is_some() {
+        let mut cells: Vec<El> = it.by_ref().take(cols).map(|c| c.grow(1.0).w(0.0)).collect();
+        while cells.len() < cols {
+            cells.push(el().grow(1.0).w(0.0));
+        }
+        rows.push(enter(row().gap(12.0).items_stretch().children(cells), r));
+        r += 1;
+    }
+    col().gap(12.0).children(rows)
+}
+
+fn matches(q: &str, parts: &[&str]) -> bool {
+    q.is_empty() || parts.iter().any(|p| p.to_lowercase().contains(q))
+}
+
+fn empty(t: &Theme, what: &str) -> El {
+    text(what.to_owned()).font(ui(13.5, 400.0)).color(t.faint).py(12.0)
+}
+
+pub fn main(s: &App, t: &Theme) -> El {
+    let tab = s.integrations;
+    let (title, sub, action, placeholder) = match tab {
+        IntegrationsTab::Plugins => ("Plugins", "Bundles of skills, commands and connectors you can install.", "Browse plugins", "Search plugins"),
+        IntegrationsTab::Apps => ("Apps", "Connect the apps your agents work through. They ask before anything goes out.", "Add app", "Search apps"),
+        IntegrationsTab::Mcp => ("MCP servers", "Servers that give the engine extra tools.", "Add server", "Search MCP servers"),
+        IntegrationsTab::Skills => ("Skills", "Reusable instructions the engine can pick up when a task needs them.", "Manage skills", "Search skills"),
+    };
+    let q = s.edit(EditKey::AppSearch).text.trim().to_lowercase();
+    let head = row().gap(16.0).center_y()
+        .child(heading(t, title, Some(sub.to_owned())).grow(1.0).min_w(0.0))
+        .child(match tab {
+            IntegrationsTab::Apps => btn_primary(t, action, "plus").key("int-primary").on_press(|s: &mut App| s.apps_ui.dialog = Some(super::apps::Dialog::Add)),
+            // Plugins live in the list below: the search finds them.
+            IntegrationsTab::Plugins => btn_primary(t, action, "search").key("int-primary").on_press_tx(|_: &mut App, tx| tx.focus("app-search", true)),
+            // Adding a server needs the engine's MCP API (not there yet).
+            IntegrationsTab::Mcp => btn_primary(t, action, "plus").key("int-primary"),
+            // Skills: Settings > Skills lists every skill the engine has, and uses one.
+            IntegrationsTab::Skills => btn_primary(t, action, "book").key("int-primary").on_press(|s: &mut App| s.open_settings(crate::app::SettingsPage::Skills)),
+        });
+    let search = row().h(44.0).gap(10.0).px(14.0).radius(12.0).center_y().fill(t.field).border(1.0, t.field_border)
+        .child(ico("search", t.faint))
+        .child(text_input(s.edit(EditKey::AppSearch), ui(14.5, 400.0)).key("app-search").single_line().grow(1.0).color(t.text)
+            .placeholder(placeholder, t.faint).caret(t.accent, t.accent.alpha(0.3)).label(placeholder)
+            .on_edit(|s: &mut App| s.edit_mut(EditKey::AppSearch))
+            // The engine searches its whole catalogue (tens of thousands of apps) as you type.
+            .on_submit(|s: &mut App, _| s.search_apps()));
+    let body = match tab {
+        IntegrationsTab::Plugins => plugins(s, t, &q),
+        IntegrationsTab::Apps => apps(s, t, &q),
+        IntegrationsTab::Mcp => mcp(s, t, &q),
+        IntegrationsTab::Skills => skills(s, t, &q),
+    };
+    let page = col().key("integrations-page").w_full().max_w(900.0).padding(28.0).gap(18.0)
+        .child(head)
+        .child(search)
+        .child(body);
+    col().w_full().h_full().items_center().scroll(ScrollSpec { stick_bottom: false }).child(page)
+}
+
+fn plugins(s: &App, t: &Theme, q: &str) -> El {
+    let cards: Vec<El> = s.data.extra.plugins.iter().filter(|p| matches(q, &[p.name.as_str(), p.note.as_str(), p.by.as_str()])).map(|p| {
+        let id = p.id.clone();
+        let action = if p.installed {
+            btn(t, "Installed ✓", None, ButtonKind::Plain)
+        } else {
+            btn(t, "Install", None, ButtonKind::Blue)
+        };
+        col().gap(12.0).padding(16.0).radius(12.0).fill(t.panel).border(1.0, t.border)
+            .child(row().gap(12.0).center_y()
+                .child(logo(t, p.icon))
+                .child(col().grow(1.0).min_w(0.0)
+                    .child(text(p.name.clone()).font(ui(14.0, 600.0)).color(t.text).truncate())
+                    .child(text(format!("by {}", p.by)).font(ui(12.0, 400.0)).color(t.faint).truncate())))
+            .child(text(p.note.clone()).font(ui(13.0, 400.0)).color(t.dim).wrap().grow(1.0))
+            .child(row().justify_end().child(action.key(format!("plugin/{}", p.id)).on_press(move |s: &mut App| s.toggle_plugin(&id))))
+    }).collect();
+    if cards.is_empty() {
+        return empty(t, "No plugins match your search.");
+    }
+    grid(cards, 2)
+}
+
+fn apps(s: &App, t: &Theme, q: &str) -> El {
+    super::apps::body(s, t, q)
+}
+
+fn mcp(s: &App, t: &Theme, q: &str) -> El {
+    let rows: Vec<El> = s.data.extra.mcp.iter().filter(|m| matches(q, &[m.name.as_str(), m.note.as_str()])).enumerate().map(|(i, m)| {
+        let name = m.name.clone();
+        enter(
+            row().gap(12.0).px(14.0).py(12.0).radius(12.0).center_y().fill(t.panel).border(1.0, t.border)
+                .child(ico("chip", t.dim))
+                .child(col().grow(1.0).min_w(0.0)
+                    .child(text(m.name.clone()).font(ui(14.0, 600.0)).color(t.text))
+                    .child(text(m.note.clone()).font(ui(12.5, 400.0)).color(t.faint).truncate()))
+                .child(text(format!("{} tools", m.tools)).font(tabular(12.5, 400.0)).color(t.faint))
+                .child(toggle(t, format!("mcp/{}", m.name), m.on, &m.name).on_press(move |s: &mut App| s.toggle_mcp(&name))),
+            i,
+        )
+    }).collect();
+    if rows.is_empty() {
+        return empty(t, "No MCP servers match.");
+    }
+    col().gap(8.0).children(rows)
+}
+
+fn skills(s: &App, t: &Theme, q: &str) -> El {
+    // 285 and more: only the first ones draw; Settings > Skills pages through the rest.
+    const SHOWN: usize = 60;
+    let found: Vec<&crate::model::Skill> = s.data.extra.skills.iter().filter(|k| matches(q, &[k.name.as_str(), k.description.as_str()])).collect();
+    let mut rows: Vec<El> = found.iter().take(SHOWN).enumerate().map(|(i, k)| {
+        let name = k.name.clone();
+        enter(
+            row().gap(12.0).px(14.0).py(12.0).radius(12.0).center_y().fill(t.panel).border(1.0, t.border)
+                .child(ico("book", t.dim))
+                .child(col().grow(1.0).min_w(0.0).gap(2.0)
+                    .child(text(k.name.clone()).font(mono(13.0, 18.0)).color(t.text))
+                    .child(text(k.description.clone()).font(ui(12.5, 400.0)).color(t.faint).wrap()))
+                .child(text(k.from_label()).font(ui(12.0, 500.0)).color(t.faint))
+                .child(btn(t, "Use", None, ButtonKind::Plain).key(format!("int-skill-use/{name}")).on_press(move |s: &mut App| s.use_skill(&name)))
+                .key(format!("skill/{}", k.name)),
+            i,
+        )
+    }).collect();
+    if rows.is_empty() {
+        return empty(t, "No skills match.");
+    }
+    if found.len() > SHOWN {
+        rows.push(row().key("int-skills-all").px(14.0).py(10.0).radius(12.0).center_y().hover(t.hover).role("button").label("See all skills")
+            .child(text(format!("{} more in Settings > Skills", found.len() - SHOWN)).font(ui(13.0, 500.0)).color(t.accent))
+            .on_press(|s: &mut App| s.open_settings(crate::app::SettingsPage::Skills)));
+    }
+    col().gap(8.0).children(rows)
+}
+
+/// This view has no dropdown menus of its own.
+pub fn menu(_s: &App, _t: &Theme, _id: &str) -> Option<El> {
+    None
+}

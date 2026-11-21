@@ -26,7 +26,7 @@
     lock: '<svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg>',
   };
   const NAV = [
-    { group: 'Crew' },
+    { group: 'Agents' },
     { id: 'general', label: 'General', icon: ICON.gear },
     { id: 'permissions', label: 'Permissions', icon: ICON.shield },
     { id: 'voice', label: 'Voice', icon: ICON.mic },
@@ -89,9 +89,9 @@
     general: { title: 'General', async html() {
       const st = S();
       return section('', [
-        row('Model', 'Every bot in Crew answers with this model. Add your own models in Craft.', pill('data-act="model"', UI.modelName())),
+        row('Model', 'Every bot in Agents answers with this model. Add your own models in Codeply.', pill('data-act="model"', UI.modelName())),
         row('Saved work', `Where your bots save what they make.<br><span class="set-path">${esc(st.workspace || 'Not set yet')}</span>`, button('data-act="folder"', 'Open folder')),
-        row('Craft', 'Your bots, models and connections are shared with Codeply Craft.', button('data-act="craft"', `Open Craft${ICON.out}`)),
+        row('Code', 'Your bots, models and connections are the same everywhere in Codeply.', button('data-act="craft"', `Open Code${ICON.out}`)),
       ]);
     } },
 
@@ -134,7 +134,7 @@
       ]);
     } },
 
-    connections: { title: 'Connections', sub: 'The apps your bots can use. They are the same connections as in Craft.', async html() {
+    connections: { title: 'Connections', sub: 'The apps your bots can use. They are the same connections as in Codeply.', async html() {
       let conns = [];
       try { conns = (api.connections && await api.connections()) || []; } catch {}
       const LOGO = { gmail: '../Gmail.webp', slack: '../Slack.webp', github: '../Github.webp', vercel: '../Vercel.png', supabase: '../Supabase.jpg' };
@@ -143,7 +143,7 @@
         `<span class="set-status${c.connected ? ' on' : ''}">${c.connected ? 'Connected' : 'Off'}</span>`));
       return section('', [
         ...rows,
-        row('Manage connections', 'Connect or disconnect apps in Craft\'s Connect Apps.', button('data-act="connect"', `Open${ICON.out}`)),
+        row('Manage connections', 'Connect or disconnect apps in Codeply\'s Connect Apps.', button('data-act="connect"', `Open${ICON.out}`)),
       ]) + (gmail && api.gmailPhone ? section('Phone calls', [
         row('Gmail on calls', 'Bots read your inbox on phone calls, even with this PC off. Your sign-in is kept on Codeply\'s server, encrypted. Sending still asks.', toggle('data-act="gmail-phone" disabled', false)),
       ]) : '');
@@ -166,7 +166,7 @@
     account: { title: 'Account', async html() {
       const u = S().user;
       return section('', [
-        row(u ? esc(u.email) : 'Not signed in', u ? 'Your Codeply account, the same one as in Craft.' : 'Sign in with the same account as Craft to use Haze 2 and voice.',
+        row(u ? esc(u.email) : 'Not signed in', u ? 'Your Codeply account, the one you use everywhere in Codeply.' : 'Sign in to your Codeply account to use Haze 2 and voice.',
           u ? button('data-act="sign-out"', 'Sign out', 'danger') : button('data-act="sign-in"', 'Sign in', 'primary')),
       ]);
     } },
@@ -175,7 +175,7 @@
   // ─── The sidebar menu ───────────────────────────────────────────────────
   function paintNav() {
     const el = $('#sideSettings');
-    el.innerHTML = `<button class="set-back" data-nav="back">${ICON.back}<span>Back to Crew</span></button>
+    el.innerHTML = `<button class="set-back" data-nav="back">${ICON.back}<span>Back to Agents</span></button>
       <div class="set-side-title">Settings</div>
       <nav class="set-nav">${NAV.map((n) => (n.group
     ? `<div class="set-nav-group">${esc(n.group)}</div>`

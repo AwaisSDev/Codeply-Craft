@@ -52,7 +52,9 @@
     }
   },
   "dependencies": {
+    "@codeply/dsh-agents": "workspace:*",
     "@codeply/dsh-approval-memory": "workspace:*",
+    "@codeply/dsh-ask-first": "workspace:*",
     "@codeply/dsh-claim-check": "workspace:*",
     "@codeply/dsh-client-ui-brand-craft": "workspace:*",
     "@codeply/dsh-client-ui-craft-host": "workspace:*",
@@ -64,6 +66,10 @@
     "@codeply/dsh-undo": "workspace:*",
     "@codeply/dsh-web-search": "workspace:*",
     "@codeply/dsh-browser-check": "workspace:*",
+    "@codeply/dsh-design-tools": "workspace:*",
+    "@codeply/dsh-shared-context": "workspace:*",
+    "@codeply/dsh-team": "workspace:*",
+    "@codeply/dsh-apps": "workspace:*",
     "@deepseek-ai/dsh-agent-instructions": "workspace:*",
     "@deepseek-ai/dsh-agent-preset": "workspace:*",
     "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",

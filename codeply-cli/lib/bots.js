@@ -16,6 +16,11 @@
  * caller waits while the helper works, then gets a structured result back.
  * No self-calls, no cycles, at most 2 levels deep.
  *
+ * In a plain chat (no bot chosen) the user talks to Codeply, their one
+ * personal agent, and the bots are its private specialists (teamPrompt):
+ * Codeply hands them work, speaks as itself, and can make a new specialist
+ * with ask_bot when a recurring area needs its own memory.
+ *
  * Nothing here talks to a model directly: the host passes a chat function in
  * (ai.js chatJson in the app, a fake in the tests).
  */
@@ -26,6 +31,7 @@ const path = require('path');
 const MAX_MEMORY = 60;
 const MAX_FACTS_PER_TURN = 3;
 const MAX_DEPTH = 2;
+const MAX_SPECIALISTS = 12; // how many specialists Codeply may have; it makes no more past this
 // Experience memory (MUSE style: learned from the bot's own work, not about the user).
 const MAX_LESSONS = 12;
 const MAX_PLAYBOOKS = 40;
@@ -72,7 +78,7 @@ const FIRST_APPROVALS = ['edit_files', 'run_commands', 'send', 'publish', 'datab
 // reaches the user when it finds something.
 const WATCH_SOURCES = { gmail: 'Gmail inbox' };
 const REACH = {
-  message: 'Message me in Craft',
+  message: 'Message me in Codeply',
   push: 'Notify my phone',
   call: 'Call me when it is very important',
 };
@@ -744,11 +750,11 @@ async function reflectOnRun(bot, run, chatFn) {
 
 function approvalLine(bot) {
   if (normalizeAutonomy(bot.autonomy).level === 'none') {
-    return 'You are set to suggest only (the user chose this). Never edit files, run commands, send, post, publish, book or change anything, even when asked in this chat: Craft refuses those actions for you. Read, look things up, think, then give your suggestion or a ready-to-use draft and say what you would do.';
+    return 'You are set to suggest only (the user chose this). Never edit files, run commands, send, post, publish, book or change anything, even when asked in this chat: Codeply refuses those actions for you. Read, look things up, think, then give your suggestion or a ready-to-use draft and say what you would do.';
   }
   const must = (bot.approval || []).map((k) => APPROVALS[k] && APPROVALS[k].label.toLowerCase()).filter(Boolean);
   if (!must.length) return 'You may act without asking first. Still never do anything irreversible the user did not ask for.';
-  return `Always get the user's approval before: ${must.join('; ')}. Craft enforces this too. Do reversible, read-only work (reading, searching, thinking) without asking.`;
+  return `Always get the user's approval before: ${must.join('; ')}. Codeply enforces this too. Do reversible, read-only work (reading, searching, thinking) without asking.`;
 }
 
 function rosterLines(team, selfId) {
@@ -762,6 +768,16 @@ const ASK_BOT_FORMAT = `To ask a teammate, write:
 <task>
 The one task, with every bit of context they need. Spell out the concrete details: email addresses, names, subjects, dates, file paths. Never write "the email from earlier" or "what they told you".
 </task>
+</codeply:ask_bot>`;
+
+// Codeply's own version: the same, plus a specialty to make a new specialist.
+const ASK_SPECIALIST_FORMAT = `To hand work to a specialist, write:
+<codeply:ask_bot>
+<bot>Name</bot>
+<task>
+The one task, with every bit of context it needs. Spell out the concrete details: email addresses, names, subjects, dates, file paths. Never write "the email from earlier" or "what they told you".
+</task>
+<specialty>(only to make a new specialist: its area in one line, like "Calendar: keeps the user's schedule and plans the day")</specialty>
 </codeply:ask_bot>`;
 
 const PHONE_RULES = `YOUR LINE TO THE USER'S PHONE
@@ -844,7 +860,7 @@ function buildBotPrompt(bot, o = {}) {
   if (!bot) return '';
   const parts = [];
   const role = bot.role === 'orchestrator' ? 'the orchestrator of a small team of bots' : 'a specialist bot';
-  parts.push(`BOT IDENTITY\nYou are ${bot.name}, ${role} inside Codeply Craft. Speak as ${bot.name}. You are still the same careful agent with the same tools and rules; this is who you are for this chat.`);
+  parts.push(`BOT IDENTITY\nYou are ${bot.name}, ${role} inside Codeply. Speak as ${bot.name}. You are still the same careful agent with the same tools and rules; this is who you are for this chat.`);
   if (bot.specialty) parts.push(`SPECIALTY\n${bot.specialty}. Stay in this lane; if a request is clearly outside it, say so briefly and do the best you can.`);
   if (bot.instructions) parts.push(`HOW YOU WORK\n${bot.instructions}`);
   const tone = TONES[bot.tone && bot.tone.preset] || TONES.friendly;
@@ -867,7 +883,7 @@ function buildBotPrompt(bot, o = {}) {
       try { block = L.nowBlock(L.snapshot({ allowed }), { skipEmpty: true }); } catch {}
       // Said up front, so the bot never promises "I'll list your calls" and then finds out it may not.
       const shut = L.SOURCE_KEYS.filter((k) => !allowed.has(k)).map((k) => L.SOURCES[k].label.toLowerCase());
-      const limits = shut.length ? `You cannot read: ${shut.join('; ')}. Never offer to check those; if the user wants it, they can allow it in your Life settings in Crew.` : '';
+      const limits = shut.length ? `You cannot read: ${shut.join('; ')}. Never offer to check those; if the user wants it, they can allow it in your Life settings in Agents.` : '';
       parts.push([block, o.native ? LIFE_RULES : `${LIFE_RULES}\n\n${LIFE_FORMAT}`, limits].filter(Boolean).join('\n\n'));
     }
   }
@@ -904,15 +920,27 @@ Gmail thread: 18c2f0a1b2
 </codeply:hand_off>`}`;
 }
 
-/** The short roster note when the plain Craft agent (no bot chosen) can still ask bots. */
+/**
+ * The plain agent (no bot chosen): Codeply, the user's one personal agent,
+ * with the bots as its private specialists. Also with no bots at all, so it
+ * can make its first one.
+ */
 function teamPrompt(team, o = {}) {
-  const roster = rosterLines(team, null);
-  if (!roster.length) return '';
-  const phone = require('./reach.js').available()
-    ? `\n\nWhen the user asks a bot to call or text them ("tell Shella to call me"), do it yourself with reach_me and bot set to that bot's name, so it comes from that bot. ${o.native ? '' : PHONE_FORMAT}`
+  const list = team || [];
+  const roster = list.map((b) => `- ${b.name}: ${b.specialty || 'general help'}`);
+  const phone = roster.length && o.reach !== false && require('./reach.js').available()
+    ? `\n\nWhen the user asks one of your specialists by name to call or text them ("tell Shella to call me"), do it yourself with reach_me and bot set to that name, so it comes from them. ${o.native ? '' : PHONE_FORMAT}`
     : '';
-  const handOff = o.canHandOff ? `\n\n${handOffRules(team, null, !!o.native)}` : '';
-  return `BOTS\nThe user has these bots. When they ask for one by name, or a part of the work is clearly a bot's specialty, you can hand it that part with ask_bot. Only one bot runs at a time, and you wait for its answer.\n${roster.join('\n')}${o.native ? '' : `\n\n${ASK_BOT_FORMAT}`}${phone}${handOff}`;
+  const handOff = o.canHandOff && roster.length ? `\n\n${handOffRules(list, null, !!o.native)}` : '';
+  return `CODEPLY
+You are Codeply, the user's one personal agent and assistant. Speak as yourself, in the first person.
+
+SPECIALISTS
+You have private specialists: helpers that each own one area and keep their own memory of it. Hand one a part of the work in its area with ask_bot and wait for its answer (only one runs at a time). Do small and one-off things yourself.
+- The work is yours: say "I drafted the reply", "I checked your calendar". Never name a specialist or say you asked one, unless the user asks who did something, what specialists you have, or how you work; then answer honestly. When the user names one ("ask Remy"), use that one.
+- Never claim something was done that nobody did. Read a specialist's result critically before you build on it or pass it on.
+- To make a new specialist, call ask_bot with a new name, the task, and its specialty in one line. Only make one for a recurring area that needs its own memory (the inbox, the calendar, a long project), never for one-off work you can do yourself. You can have at most ${MAX_SPECIALISTS}.
+${roster.length ? `Your specialists:\n${roster.join('\n')}` : 'You have no specialists yet.'}${o.native ? '' : `\n\n${ASK_SPECIALIST_FORMAT}`}${phone}${handOff}`;
 }
 
 /** Level 1 (suggest only): this bot may not take this action at all, watched or not. */
@@ -997,7 +1025,8 @@ function parseResult(text) {
  * @param {object|null} o.caller   the bot asking (null = plain Craft)
  * @param {string} o.name          who to ask
  * @param {string} o.task          the task, with its context
- * @param {number} o.depth         depth of the CALLER (top-level run = 0)
+ * @param {string} [o.specialty]   Codeply only: no such bot yet, so make this specialist first
+ * @param {number} o.depth        depth of the CALLER (top-level run = 0)
  * @param {string[]} [o.chain]     bot ids already in this delegation chain
  * @param {string} o.token         lock owner token for this chain
  * @param {AbortSignal} [o.signal]
@@ -1007,13 +1036,25 @@ function parseResult(text) {
  * @returns {Promise<{ok:boolean, output:string, meta:object}>}
  */
 async function delegate(o) {
-  const team = o.team || listBots();
+  let team = o.team || listBots();
   const task = clip(o.task, 8000);
-  const target = findBot(o.name, team);
-  const callerName = o.caller ? o.caller.name : 'Craft';
+  let target = findBot(o.name, team);
+  const callerName = o.caller ? o.caller.name : 'Codeply';
   const fail = (output) => ({ ok: false, output, meta: { label: `ask ${o.name || '?'}: refused`, delegation: { bot: target ? botCard(target) : { name: String(o.name || '?') }, task, ok: false, error: output } } });
-  if (!target) return fail(`There is no bot called "${o.name}". Teammates: ${team.map((b) => b.name).join(', ') || 'none'}.`);
   if (!task) return fail('ask_bot needs a task: say exactly what you want done, with the context.');
+  // Codeply itself (not a bot asking a teammate) may make the specialist it needs.
+  let created = false;
+  if (!target && !o.caller && clip(o.specialty, 200)) {
+    const made = makeSpecialist(o.name, o.specialty, team);
+    if (made.error) return fail(made.error);
+    target = made.bot; created = true;
+    team = [...team, target];
+  }
+  if (!target) {
+    return o.caller
+      ? fail(`There is no bot called "${o.name}". Teammates: ${team.map((b) => b.name).join(', ') || 'none'}.`)
+      : fail(`There is no specialist called "${o.name}". Your specialists: ${team.map((b) => b.name).join(', ') || 'none yet'}. To make a new one, call ask_bot again with its specialty in one line; for one-off work, do it yourself.`);
+  }
   if (o.caller && target.id === o.caller.id) return fail(`You are ${target.name}; do it yourself instead of asking yourself.`);
   const chain = Array.isArray(o.chain) ? o.chain : [];
   if (chain.includes(target.id)) return fail(`${target.name} is already working on this chain of requests; asking it again would loop. Do it yourself or ask someone else.`);
@@ -1034,8 +1075,31 @@ async function delegate(o) {
   const { summary, details } = parseResult(reply);
   return {
     ok: true,
-    output: `RESULT FROM ${target.name.toUpperCase()}\nSummary: ${summary}\n\n${details || '(no details)'}\n\nCheck this against the goal before you build on it.`,
-    meta: { label: `${target.name}: ${summary}`.slice(0, 160), delegation: { bot: botCard(target), task, ok: true, summary, details: clip(details, 6000), ms: Date.now() - started } },
+    output: `${created ? `NEW SPECIALIST: you made ${target.name} (${target.specialty}). It keeps its own memory from now on.\n\n` : ''}RESULT FROM ${target.name.toUpperCase()}\nSummary: ${summary}\n\n${details || '(no details)'}\n\nCheck this against the goal before you build on it.`,
+    meta: { label: `${target.name}: ${summary}`.slice(0, 160), delegation: { bot: botCard(target), task, ok: true, summary, details: clip(details, 6000), ms: Date.now() - started, ...(created ? { created: true } : {}) } },
+  };
+}
+
+/** A new specialist Codeply made for itself (delegate), or { error } when it may not. */
+function makeSpecialist(name, specialty, team) {
+  const n = clip(name, 40).replace(/^@/, '');
+  if (!/[a-z]/i.test(n)) return { error: 'A new specialist needs a short name, like "Cal" or "Inbox".' };
+  const count = (team || []).filter((b) => b.role === 'specialist').length;
+  if (count >= MAX_SPECIALISTS) {
+    return { error: `You already have ${count} specialists, the most you can have. Use one of them (${team.map((b) => b.name).join(', ')}) or do it yourself; the user can remove one in Agents.` };
+  }
+  // The same look every time for the same name, so it never jumps around.
+  let h = 0;
+  for (const ch of n.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const pick = (list, k) => list[(h >>> k) % list.length];
+  return {
+    bot: createBot({
+      name: n, role: 'specialist', specialty: clip(specialty, 200),
+      instructions: 'Do the task you are given fully with your tools, then report what you did and what is left. Read the real source before concluding anything. Never claim something you did not check, and never send, post or book anything without the user saying yes.',
+      tone: { preset: 'concise', custom: '' },
+      approval: ['edit_files', 'run_commands', 'send', 'publish', 'databases', 'calendar'],
+      avatar: { shape: pick(AVATAR_KEYS.shape, 0), eyes: pick(AVATAR_KEYS.eyes, 4), color: pick(AVATAR_KEYS.color, 8) },
+    }),
   };
 }
 
@@ -1047,7 +1111,7 @@ function botCard(b) {
 // ─── "Describe your bot" ────────────────────────────────────────────────────
 
 function describePrompt(description) {
-  return `Design a helpful AI bot from this description. The bot lives inside Codeply Craft, a desktop coding agent app, and has the same tools (read and edit project files, run commands, search the web).
+  return `Design a helpful AI bot from this description. The bot lives inside Codeply, a desktop AI agent app, and has the same tools (read and edit project files, run commands, search the web).
 
 Description: ${clip(description, 2000)}
 
@@ -1098,7 +1162,7 @@ You are on a live voice call with the user, talking out loud. Your final reply i
 
 // The same turn as a text message from Codeply Crew on the phone: read, not spoken.
 const TEXT_RULES = `PHONE MESSAGES
-The user is texting you from Codeply Crew on their phone.
+The user is texting you from Codeply on their phone.
 - You still have all your tools. When the user asks for real work (check their email, look something up, read or change a file), do it now with your tools, then tell them the result.
 - Reply like a good text message: short and easy to read on a phone. A few sentences, or a short list when it really helps. Light markdown is fine; no headings, no long dash.
 - When an image comes with the message, it is something the user is showing you (a screenshot of their phone, a photo): look at it and answer about it.
@@ -1158,7 +1222,7 @@ function callTurns(turns) {
 async function voiceTurn({ bot, team, turns, recentChat, runAgent, route, cwd, signal, approve, onStep, maxSteps = 16, mode, images }) {
   const { history, userMessage } = callTurns(turns);
   if (!userMessage) return { text: '' };
-  const text = mode === 'text'; // a message from Codeply Crew: read on screen, not spoken
+  const text = mode === 'text'; // a message from Codeply: read on screen, not spoken
   const extra = recentChat ? `\n\nRECENT CHAT BEFORE THIS CALL\n${recentChat}` : '';
   const run = runAgent({
     userMessage, history, mode: 'Build', cwd, signal, route, maxSteps, approve, botId: bot.id,
@@ -1200,7 +1264,7 @@ const callStepLabel = (name) => CALL_STEP[name] || 'Working on it';
 
 module.exports = {
   VOICE_RULES, VOICE_RULES_NO_TOOLS, TEXT_RULES, spoken, written, callTurns, voiceTurn, callStepLabel,
-  MAX_MEMORY, MAX_DEPTH, ROLES, TONES, APPROVALS, AVATAR_KEYS, TEMPLATES, WATCH_SOURCES, REACH,
+  MAX_MEMORY, MAX_DEPTH, MAX_SPECIALISTS, ROLES, TONES, APPROVALS, AVATAR_KEYS, TEMPLATES, WATCH_SOURCES, REACH,
   botsDir, setBotsDir, normalizeBot, normalizeAvatar, normalizeAlwaysOn, normalizeAutonomy, normalizeCallStyle, normalizeEmail, AUTONOMY, EXCUSE_STYLES,
   listBots, getBot, findBot, createBot, createFromTemplate, updateBot, removeBot,
   mergeMemory, addMemory, forget, clearMemory, learnFromTurn,

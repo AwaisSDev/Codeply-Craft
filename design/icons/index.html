@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codeply icons</title>
+<style>
+  :root {
+    --bg: #f3f5fa; --card: #ffffff; --ink: #161b28; --sub: #6a7286; --line: #e7ebf3; --chip: #ffffff;
+    --shadow: 0 1px 2px rgba(22, 32, 60, .05), 0 8px 24px rgba(22, 32, 60, .06);
+    --hero1: #4fb3ff; --hero2: #2f6bff;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1017; --card: #171b25; --ink: #f2f4f9; --sub: #8d95a8; --line: #232836; --chip: #1f2431;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .35);
+    --hero1: #2a6fe8; --hero2: #1b3fb0;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; transition: background .3s ease-out, color .3s ease-out; }
+  header { display: flex; align-items: center; gap: 12px; padding: 20px 28px 8px; }
+  header h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
+  header p { margin: 0; color: var(--sub); }
+  header .grow { flex: 1; }
+  .toggle { border: 0; background: var(--card); color: var(--ink); font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 999px; box-shadow: var(--shadow); cursor: pointer; }
+  main { display: grid; grid-template-columns: 400px 1fr; gap: 28px; padding: 16px 28px 40px; align-items: start; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+  /* ---------- phone ---------- */
+  .phone { width: 390px; height: 820px; border-radius: 52px; background: var(--bg); box-shadow: 0 0 0 10px #10131b, 0 30px 60px rgba(10, 20, 50, .25); position: relative; overflow: clip; margin: 10px auto; }
+  .status { display: flex; justify-content: space-between; padding: 16px 30px 0; font-weight: 600; font-size: 15px; }
+  .island { position: absolute; top: 11px; left: 50%; transform: translateX(-50%); width: 120px; height: 34px; border-radius: 20px; background: #000; }
+  .screen { padding: 22px 18px 120px; height: 100%; overflow: auto; scrollbar-width: none; }
+  .top { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .top .who { flex: 1; }
+  .top .hello { font-size: 26px; font-weight: 750; letter-spacing: -.02em; }
+  .top .date { color: var(--sub); font-size: 14px; }
+  .roundbtn { width: 42px; height: 42px; border-radius: 50%; background: var(--card); box-shadow: var(--shadow); display: grid; place-items: center; }
+  .week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 16px; text-align: center; }
+  .week span { display: block; font-size: 12px; color: var(--sub); }
+  .week svg { display: block; }
+  .ring { width: 34px; height: 34px; margin: 4px auto 0; }
+  .ring b { display: block; font-size: 12px; margin-top: 2px; font-weight: 600; }
+  .hero { border-radius: 26px; padding: 18px; color: #fff; background: radial-gradient(120% 90% at 20% 0%, var(--hero1), var(--hero2)); position: relative; overflow: hidden; box-shadow: var(--shadow); }
+  .hero .row { display: flex; align-items: center; gap: 14px; }
+  .hero h2 { margin: 0; font-size: 19px; letter-spacing: -.01em; }
+  .hero p { margin: 2px 0 0; opacity: .85; font-size: 14px; }
+  .hero .bar { margin-top: 14px; height: 8px; border-radius: 8px; background: rgba(255, 255, 255, .25); overflow: hidden; }
+  .hero .bar i { display: block; height: 100%; width: 40%; border-radius: 8px; background: #fff; transition: width .5s cubic-bezier(.2, .8, .2, 1); }
+  .hero .meta { display: flex; justify-content: space-between; font-size: 13px; margin-top: 8px; opacity: .9; font-variant-numeric: tabular-nums; }
+  .section { display: flex; justify-content: space-between; align-items: baseline; margin: 20px 4px 10px; }
+  .section h3 { margin: 0; font-size: 17px; }
+  .section a { color: var(--sub); font-size: 14px; text-decoration: none; }
+  .list { display: grid; gap: 10px; }
+  .item { display: flex; align-items: center; gap: 12px; background: var(--card); border-radius: 20px; padding: 12px 14px; box-shadow: var(--shadow); cursor: pointer; transition: transform .15s ease-out, opacity .3s ease-out, background .3s ease-out; }
+  .item:active { transform: scale(.98); }
+  .item .ico { width: 44px; height: 44px; border-radius: 14px; background: var(--bg); display: grid; place-items: center; flex: none; }
+  .item .txt { flex: 1; min-width: 0; }
+  .item .t { font-weight: 650; }
+  .item .s { color: var(--sub); font-size: 13px; }
+  .check { width: 26px; height: 26px; border-radius: 50%; border: 2px dashed #c4cbd8; flex: none; position: relative; display: grid; place-items: center; transition: border-color .2s ease-out; }
+  .check svg { position: absolute; inset: -4px; width: 34px; height: 34px; transform: scale(0); transition: transform .35s cubic-bezier(.3, 1.6, .5, 1); }
+  .item.done { background: color-mix(in oklch, var(--card), #1fc75f 9%); }
+  .item.done .check { border-color: transparent; }
+  .item.done .check svg { transform: scale(1); }
+  .item.done .t { color: var(--sub); }
+  .spark { position: absolute; width: 6px; height: 6px; border-radius: 2px; pointer-events: none; animation: spark .6s cubic-bezier(.2, .8, .2, 1) forwards; }
+  @keyframes spark { to { transform: translate(var(--dx), var(--dy)) rotate(var(--r)); opacity: 0; } }
+  .ask { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 8px 16px 8px 8px; border-radius: 999px; background: var(--chip); box-shadow: 0 6px 20px rgba(20, 40, 90, .18); font-weight: 650; animation: float 3.2s ease-in-out infinite; white-space: nowrap; }
+  @keyframes float { 50% { transform: translateX(-50%) translateY(-4px); } }
+  .tabs { position: absolute; left: 14px; right: 14px; bottom: 22px; height: 64px; border-radius: 32px; background: var(--card); box-shadow: var(--shadow); display: flex; justify-content: space-around; align-items: center; }
+  .tabs div { display: grid; justify-items: center; font-size: 11px; color: var(--sub); gap: 2px; }
+  .tabs div.on { color: var(--ink); font-weight: 650; }
+
+  /* ---------- the set ---------- */
+  .panel { background: var(--card); border-radius: 26px; padding: 20px; box-shadow: var(--shadow); }
+  .panel h2 { margin: 0 0 4px; font-size: 17px; }
+  .panel p { margin: 0 0 16px; color: var(--sub); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+  .tile { background: var(--bg); border-radius: 20px; padding: 16px 8px 10px; text-align: center; transition: transform .2s ease-out; }
+  .tile:hover { transform: translateY(-3px); }
+  .tile .n { color: var(--sub); font-size: 12px; margin-top: 6px; }
+  .sizes { display: flex; align-items: end; gap: 18px; flex-wrap: wrap; margin-top: 18px; }
+  .sizes figure { margin: 0; text-align: center; color: var(--sub); font-size: 11px; }
+  .stack { display: grid; gap: 20px; }
+
+  /* entrance: ease-out, staggered */
+  .in { opacity: 0; transform: translateY(10px); animation: rise .5s cubic-bezier(.2, .8, .2, 1) forwards; animation-delay: calc(var(--i, 0) * 35ms); }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .in, .ask { animation: none; opacity: 1; transform: none; } }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Codeply icons</h1><p>Flat, bright and clean, with a thin glassy light on the top edge.</p></div>
+  <div class="grow"></div>
+  <button class="toggle" id="theme">Dark</button>
+</header>
+<main>
+  <div class="phone">
+    <div class="island"></div>
+    <div class="status"><span>9:41</span><span>100%</span></div>
+    <div class="screen" id="screen">
+      <div class="top in" style="--i:0">
+        <div class="who"><div class="hello">Good morning</div><div class="date">Thursday, 13 November</div></div>
+        <div class="roundbtn" data-icon="wisp" data-size="30"></div>
+      </div>
+      <div class="week in" style="--i:1" id="week"></div>
+      <div class="hero in" style="--i:2">
+        <div class="row"><span data-icon="briefing" data-size="58"></span><div><h2>Your morning brief</h2><p>3 things need you. 2 got done overnight.</p></div></div>
+        <div class="bar"><i id="bar"></i></div>
+        <div class="meta"><span id="done-count">2 of 5 done</span><span>Ready at 6:00</span></div>
+      </div>
+      <div class="section in" style="--i:3"><h3>Today</h3><a href="#">See all</a></div>
+      <div class="list" id="list"></div>
+    </div>
+    <div class="ask"><span data-icon="wisp" data-size="30"></span>Ask Wisp</div>
+    <nav class="tabs">
+      <div class="on"><span data-icon="briefing" data-size="26"></span>Home</div>
+      <div><span data-icon="chat" data-size="26"></span>Chats</div>
+      <div><span data-icon="calendar" data-size="26"></span>Plan</div>
+      <div><span data-icon="privacy" data-size="26"></span>Memory</div>
+    </nav>
+  </div>
+
+  <div class="stack">
+    <section class="panel in" style="--i:2">
+      <h2>The set</h2>
+      <p>Each icon is one SVG: sharp at any size, one recipe for every shape.</p>
+      <div class="grid" id="grid"></div>
+    </section>
+    <section class="panel in" style="--i:4">
+      <h2>Sizes</h2>
+      <p>From a tab bar to an empty state.</p>
+      <div class="sizes" id="sizes"></div>
+    </section>
+  </div>
+</main>
+
+<script src="codeply-icons.js"></script>
+<script>
+(function () {
+  const I = window.CodeplyIcons;
+  const put = (el) => { el.innerHTML = I.svg(el.dataset.icon, { size: Number(el.dataset.size || 40) }); };
+
+  // Week strip: rings fill by how much got done that day.
+  const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'], fill = [1, 0.8, 1, 0.4, 0, 0, 0];
+  document.getElementById('week').innerHTML = days.map((d, i) => {
+    const p = fill[i], c = 2 * Math.PI * 14, today = i === 3;
+    return `<div><span>${d}</span><svg class="ring" viewBox="0 0 34 34"><circle cx="17" cy="17" r="14" fill="none" stroke="var(--line)" stroke-width="4"/>`
+      + `<circle cx="17" cy="17" r="14" fill="none" stroke="${p >= 1 ? '#1fc75f' : '#2f7bff'}" stroke-width="4" stroke-linecap="round" stroke-dasharray="${c * p} ${c}" transform="rotate(-90 17 17)"/></svg>`
+      + `<b style="${today ? 'color:var(--ink)' : 'color:var(--sub)'}">${10 + i}</b></div>`;
+  }).join('');
+
+  // Today's list.
+  const items = [
+    { icon: 'mail', t: '2 replies waiting', s: 'Sara and the design team', done: false },
+    { icon: 'calendar', t: 'Standup at 9:30', s: 'Wisp moved it from 9:00', done: true },
+    { icon: 'draft', t: 'Draft ready to send', s: 'Reply to the landlord', done: false },
+    { icon: 'task', t: 'Finish the report', s: 'Due today', done: true },
+    { icon: 'streak', t: '4 day streak', s: 'Keep it going', done: false },
+    { icon: 'quiet', t: 'Quiet hours from 22:00', s: 'Only alerts get through', done: false },
+  ];
+  const tick = `<svg viewBox="0 0 100 100">${I.svg('task').replace(/^<svg[^>]*>|<\/svg>$/g, '')}</svg>`;
+  const list = document.getElementById('list');
+  list.innerHTML = items.map((it, i) => `<div class="item in${it.done ? ' done' : ''}" style="--i:${4 + i}" data-i="${i}">
+      <div class="ico" data-icon="${it.icon}" data-size="34"></div>
+      <div class="txt"><div class="t">${it.t}</div><div class="s">${it.s}</div></div>
+      <div class="check">${tick}</div></div>`).join('');
+
+  const updateCount = () => {
+    const n = items.filter((x) => x.done).length;
+    document.getElementById('done-count').textContent = `${n} of ${items.length} done`;
+    document.getElementById('bar').style.width = `${(n / items.length) * 100}%`;
+  };
+  // Checking a task: the circle fills, a small burst flies out, the row tints green.
+  list.addEventListener('click', (e) => {
+    const row = e.target.closest('.item'); if (!row) return;
+    const it = items[Number(row.dataset.i)];
+    it.done = !it.done; row.classList.toggle('done', it.done); updateCount();
+    if (!it.done) return;
+    const check = row.querySelector('.check');
+    const colors = ['#1fc75f', '#2f7bff', '#ffcf2e', '#4fb3ff'];
+    for (let k = 0; k < 12; k++) {
+      const s = document.createElement('i'); s.className = 'spark';
+      const a = (k / 12) * Math.PI * 2 + Math.random() * 0.4, dist = 22 + Math.random() * 18;
+      s.style.cssText = `left:10px;top:10px;background:${colors[k % 4]};--dx:${Math.cos(a) * dist}px;--dy:${Math.sin(a) * dist}px;--r:${Math.random() * 180}deg;${k % 3 ? 'border-radius:50%' : ''}`;
+      check.appendChild(s); setTimeout(() => s.remove(), 650);
+    }
+  });
+
+  // The set and the sizes.
+  document.getElementById('grid').innerHTML = I.names.map((n, i) => `<div class="tile in" style="--i:${3 + i}"><span data-icon="${n}" data-size="72"></span><div class="n">${n}</div></div>`).join('');
+  document.getElementById('sizes').innerHTML = [16, 20, 24, 32, 48, 64, 96].map((s) => `<figure><span data-icon="task" data-size="${s}"></span><figcaption>${s}</figcaption></figure>`).join('')
+    + [16, 24, 48, 96].map((s) => `<figure><span data-icon="wisp" data-size="${s}"></span><figcaption>${s}</figcaption></figure>`).join('');
+
+  document.querySelectorAll('[data-icon]').forEach(put);
+  updateCount();
+
+  const btn = document.getElementById('theme');
+  btn.onclick = () => {
+    const dark = document.documentElement.dataset.theme !== 'dark';
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    btn.textContent = dark ? 'Light' : 'Dark';
+  };
+
+  // ?save=1 (served by serve.js): write every icon as SVG and as a 1024 px PNG.
+  if (new URLSearchParams(location.search).get('save') === '1') {
+    (async () => {
+      for (const n of I.names) {
+        const svg = I.svg(n, { size: 1024 });
+        await fetch(`/save/svg/${n}.svg`, { method: 'POST', body: svg });
+        const img = new Image(); img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+        await img.decode();
+        const c = document.createElement('canvas'); c.width = c.height = 1024;
+        c.getContext('2d').drawImage(img, 0, 0, 1024, 1024);
+        const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+        await fetch(`/save/png/${n}.png`, { method: 'POST', body: blob });
+      }
+      window.__saved = I.names.length;
+    })();
+  }
+})();
+</script>
+</body>
+</html>

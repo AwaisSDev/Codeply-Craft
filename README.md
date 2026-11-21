@@ -1,6 +1,6 @@
-# Codeply Craft
+# Codeply
 
-The Codeply AI coding agent as a desktop app, with Codeply Away, a phone app you can
+Codeply, your AI agent as a desktop app, with a phone app you can
 use from anywhere. The agent engine lives in `codeply-cli/` and is bundled
 into the app.
 
@@ -68,7 +68,7 @@ npm start
 - **Modes.** Build, Plan, Ask. Plan and Ask are read-only, enforced in the
   engine.
 
-## Codeply Away (use Craft from your phone, anywhere)
+## Use Codeply from your phone, anywhere
 
 The phone signs in with the same Codeply account. There's no QR code and no
 pairing code, and it works on any network as long as the PC is on and signed
@@ -145,3 +145,6 @@ custom model and Ollama backends.
 - `codeply-cli/lib/ai.js`: model backends (hosted, custom OpenAI-compatible,
   native Ollama).
 - `codeply-cli/lib/config.js`: provider config, user models, integrations.
+- `rune-app/`: Codeply 4.0's native desktop UI on Rune (Rust), in progress. It
+  talks to the engine through `codeply serve`; the Electron app above is
+  unchanged. See `rune-app/README.md`.

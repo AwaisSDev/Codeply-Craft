@@ -28,6 +28,10 @@ let ho = null;   // handoff.mjs
 let cl = null;   // cloud.mjs
 const runs = new Map();        // sessionId -> live protected run
 const recovering = new Set();  // sessionIds being brought back
+// A run's lease still closing on the server. The next run in the same chat (an
+// automatic one, like a subagent's report) waits for it: a late "end" landing
+// after the new "begin" made the new run look taken over by the cloud.
+const ending = new Map();      // sessionId -> Promise
 let savedTokenHash = null;
 let recoverTimer = null;
 
@@ -133,6 +137,8 @@ function begin(session, { mode, userMessage, history, roleId, route, resume = nu
       await cl.ensureHandoffReady({ cwd, token: deps.githubToken() });
       await ensureAccess(p.repo).catch(() => {});
       if (run.ended) return;
+      if (ending.has(session.id)) await ending.get(session.id).catch(() => {});
+      if (run.ended) return;
       // The lease first: if the cloud claimed this chat a moment ago, this side must not edit.
       run.lease = ho.makeLease({
         store, sessionId: session.id, keepGoingOffline: run.local,
@@ -146,12 +152,20 @@ function begin(session, { mode, userMessage, history, roleId, route, resume = nu
         if (/cloud holds/i.test(e.message)) { session.handoff = { ...session.handoff, epoch: null }; fenced(run, 'taken'); return; }
         throw e;
       }
+      // A short run (an automatic review turn) can finish before its lease is up: close
+      // that lease now, or it keeps renewing for a run that is over and later reads the
+      // next run's lease as the cloud taking over.
+      if (run.ended || runs.get(session.id) !== run) { run.lease.stop(); await run.lease.end('done'); return; }
       // The first push of a run starts the chain again, so it may replace an older one.
       const w = await ho.pushWip({ cwd, token: deps.githubToken(), repo: p.repo, sessionId: session.id, state: run.state, parent: run.wipSha, force: true });
       run.wipSha = w.sha;
       run.lease.saved(w.sha);
       await run.lease.beat();
-      if (run.ended) return;
+      if (run.ended || runs.get(session.id) !== run) {
+        // Finished while the first save was going up: close the lease, keep nothing running.
+        if (!run.fenced) { run.lease.stop(); await run.lease.end('done'); }
+        return;
+      }
       run.savedAt = Date.now();
       session.handoff = { status: 'running', epoch, wipSha: w.sha, at: Date.now(), state: run.state, since: run.startedAt };
       deps.persist(session);
@@ -159,6 +173,8 @@ function begin(session, { mode, userMessage, history, roleId, route, resume = nu
       emit(session, 'protected', { savedAt: run.savedAt });
     } catch (e) {
       console.warn('[handoff] could not protect this run:', e.message);
+      if (run.lease) run.lease.stop();
+      if (runs.get(session.id) !== run) return; // a newer run owns the chat now
       runs.delete(session.id);
       session.handoff = null;
       emit(session, 'off');
@@ -204,11 +220,14 @@ async function push(run) {
 function fenced(run, why) {
   const { session } = run;
   if (run.fenced) return;
+  // Only the chat's current run speaks for it: a finished run's lease going stale
+  // must not post a note or stop the run that came after it.
+  if (run.ended || runs.get(session.id) !== run) { run.fenced = why; if (run.lease) run.lease.stop(); return; }
   run.fenced = why;
   session.handoff = { ...session.handoff, status: why === 'taken' ? 'cloud' : 'paused', state: run.state, pausedAt: Date.now() };
   note(session, why === 'taken'
-    ? 'This PC was offline, so Craft Cloud took over this task. It comes back here when you are online.'
-    : 'Lost connection, so this task is paused here. If you stay offline, Craft Cloud carries it on from the last save, and it comes back here when you are online.', 'warn');
+    ? 'This PC was offline, so the cloud took over this task. It comes back here when you are online.'
+    : 'Lost connection, so this task is paused here. If you stay offline, the cloud carries it on from the last save, and it comes back here when you are online.', 'warn');
   deps.persist(session);
   emit(session, why === 'taken' ? 'cloud' : 'paused');
   deps.stopRun(session.id);
@@ -223,7 +242,13 @@ async function end(session, { aborted = false } = {}) {
   clearTimeout(run.debounce);
   clearInterval(run.every);
   if (run.fenced) return; // the chat is paused or in the cloud: recovery brings it back
-  if (run.lease) { run.lease.stop(); await run.lease.end(aborted ? 'stopped' : 'done'); }
+  if (run.lease) {
+    run.lease.stop();
+    const closing = Promise.resolve(run.lease.end(aborted ? 'stopped' : 'done')).catch(() => {});
+    ending.set(session.id, closing);
+    await closing;
+    if (ending.get(session.id) === closing) ending.delete(session.id);
+  }
   session.handoff = null;
   deps.persist(session);
   emit(session, 'off');
@@ -256,11 +281,11 @@ async function recover(session) {
   }
   if (row.holder === 'pc' && row.state === 'running' && row.epoch === h.epoch) {
     // Nobody took over: carry on here from where this PC stopped.
-    note(session, h.status === 'paused' ? 'Back online. Carrying on.' : 'Craft closed in the middle of this task. Carrying on from the last save.');
+    note(session, h.status === 'paused' ? 'Back online. Carrying on.' : 'Codeply closed in the middle of this task. Carrying on from the last save.');
     return resumeHere(session, h.state, false);
   }
   if (row.state === 'no_credentials' || row.state === 'cloud_failed') {
-    note(session, `${row.note || 'Craft Cloud could not take over.'} Carrying on here.`, 'warn');
+    note(session, `${row.note || 'The cloud could not take over.'} Carrying on here.`, 'warn');
     return resumeHere(session, h.state, true);
   }
   if (row.holder === 'cloud') return handBack(session, row);
@@ -284,7 +309,7 @@ function resumeHere(session, state, takeover) {
 /** Ask the cloud for the chat back, bring its steps and changes here, carry on. */
 async function handBack(session, row) {
   const token = deps.githubToken();
-  if (!token) { note(session, 'Craft Cloud has this task, but GitHub is not connected here any more. Reconnect it in Connect Apps to bring it back.', 'warn'); return; }
+  if (!token) { note(session, 'The cloud has this task, but GitHub is not connected here any more. Reconnect it in Connect Apps to bring it back.', 'warn'); return; }
   const api = cl.githubApi({ token });
   const files = cl.branchFiles(api, row.repo);
   const sid = session.id;
@@ -307,7 +332,7 @@ async function handBack(session, row) {
   const events = (doc && doc.events) || [];
   const steps = events.filter((e) => e.t === 'tool').length;
   const wentAt = session.handoff.pausedAt || session.handoff.at || Date.now();
-  note(session, `Your PC went offline at ${clock(wentAt)}. Craft Cloud carried on: ${steps} step${steps === 1 ? '' : 's'}.`);
+  note(session, `Your PC went offline at ${clock(wentAt)}. The cloud carried on: ${steps} step${steps === 1 ? '' : 's'}.`);
   try { await deps.replay(session, { id: row.cloud_task_id, repo: row.repo }, events); } catch (e) { console.warn('[handoff] replay failed:', e.message); }
 
   let state = session.handoff.state;
@@ -334,7 +359,7 @@ async function handBack(session, row) {
     }
     await files.remove(ho.HANDBACK.done(sid), done.fileSha).catch(() => {});
   } else {
-    note(session, 'Craft Cloud did not answer, so this PC carries on from its own last save.', 'warn');
+    note(session, 'The cloud did not answer, so this PC carries on from its own last save.', 'warn');
     await files.remove(ho.HANDBACK.want(sid)).catch(() => {});
   }
 

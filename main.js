@@ -123,7 +123,7 @@ const JOBS_KEEP_OUT = 8000;  // characters of output kept per task
 const JOBS_KEEP = 40;        // finished tasks kept
 const RUN_STAMP = Date.now().toString(36);
 const stoppedJobs = new Set(); // live ids the person stopped
-let pastJobs = [];             // tasks from earlier runs of Craft
+let pastJobs = [];             // tasks from earlier runs of Codeply
 let jobsQuitting = false;
 try {
   const saved = JSON.parse(fs.readFileSync(JOBS_FILE(), 'utf8'));
@@ -353,26 +353,35 @@ function renameSessionInDb(id, title) {
   }).catch(() => {});
 }
 
-// Fired once, right after a brand-new session's first turn finishes - swaps
-// the raw truncated-first-message title for a short AI-written one, the same
-// way ChatGPT/Claude retitle a chat once there's enough to summarize. Never
-// awaited by the caller: a slow or failed title call should never hold up
-// `run_finished`, so any failure here just leaves the truncated title in place.
+// A chat is "Casual chat" until it has TITLE_AFTER messages from the user; when
+// the turn of the third one finishes, it gets a short AI-written name from those
+// messages and the answers to them. A name the user gave it (session.named) is
+// never replaced. Never awaited by the caller: a slow or failed title call never
+// holds up `run_finished`, it just leaves "Casual chat" in place.
+const CASUAL_TITLE = 'Casual chat';
+const TITLE_AFTER = 3;
 async function generateSessionTitle(session) {
   try {
-    const firstUser = session.messages.find((m) => m.kind === 'user');
-    const firstAssistant = session.messages.find((m) => m.kind === 'assistant');
-    if (!firstUser) return;
-    const transcript = `User: ${(firstUser.text || '').slice(0, 500)}` +
-      (firstAssistant ? `\nAssistant: ${(firstAssistant.text || '').slice(0, 500)}` : '');
+    if (session.named) return;
+    const said = session.messages.filter((m) => (m.kind === 'user' || (m.kind === 'assistant' && !m.interim)) && m.text);
+    const firstUsers = [];
+    for (const m of said) {
+      if (m.kind !== 'user') continue;
+      if (firstUsers.length === TITLE_AFTER) break;
+      firstUsers.push(m);
+    }
+    if (!firstUsers.length) return;
+    const upto = said.indexOf(firstUsers[firstUsers.length - 1]);
+    const transcript = said.slice(0, upto + 2)
+      .map((m) => `${m.kind === 'user' ? 'User' : 'Assistant'}: ${String(m.text).replace(/\s+/g, ' ').slice(0, 300)}`).join('\n');
     const r = await aiLib.chat([{
       role: 'user',
-      content: `Write a short title (3-6 words, title case, no quotes, no trailing punctuation) that names what this chat is about. Reply with only the title, nothing else.\n\n${transcript}`,
+      content: `Write a short title (2-5 words, title case, no quotes, no trailing punctuation) that names what this chat is about, from its first messages. Reply with only the title, nothing else.\n\n${transcript}`,
     }], { maxTokens: 20, route: currentRoute() });
     if (!r.success) return;
     const raw = r.data.choices?.[0]?.message?.content || '';
     const title = raw.trim().replace(/^["'“”]+|["'“”]+$/g, '').split('\n')[0].slice(0, 60);
-    if (!title || !store.sessions.includes(session)) return;
+    if (!title || !store.sessions.includes(session) || session.named) return;
     session.title = title;
     saveStore();
     renameSessionInDb(session.id, title);
@@ -385,7 +394,7 @@ function sessionMeta(s) {
   return {
     id: s.id, title: s.title, cwd: s.cwd, updatedAt: s.updatedAt,
     preview: last?.text || last?.label || '', messageCount: s.messages?.length || 0,
-    ...(s.messages?.some((m) => m.kind === 'cloud_task') ? { cloud: true } : {}), // Craft Cloud chat (cloud-desktop.js)
+    ...(s.messages?.some((m) => m.kind === 'cloud_task') ? { cloud: true } : {}), // the cloud chat (cloud-desktop.js)
   };
 }
 
@@ -444,6 +453,10 @@ let tray = null;
 // 'before-quit' could set this flag, 'close' has already had to decide.
 let isQuitting = false;
 const APP_ICON_PATH = path.join(__dirname, 'assets', 'icon.ico');
+// Windows groups taskbar buttons and toasts by this id. A dev run (electron.exe
+// from node_modules) gets its own: under the installed app's id, whose only
+// registered icon is the PNG for toasts below, Windows drew a blank button.
+const APP_USER_MODEL_ID = app.isPackaged ? 'app.codeply.craft' : 'app.codeply.craft.dev';
 
 function createWindow() {
   win = new BrowserWindow({
@@ -461,6 +474,11 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
+  // A dev run names its own taskbar icon file (see APP_USER_MODEL_ID). An
+  // installed build has the icon inside its own exe and needs none of this.
+  if (process.platform === 'win32' && !app.isPackaged) {
+    try { win.setAppDetails({ appId: APP_USER_MODEL_ID, appIconPath: APP_ICON_PATH, appIconIndex: 0, relaunchDisplayName: 'Codeply (dev)' }); } catch {}
+  }
   // Launch maximized; the width/height above become the restore size when
   // the user later unmaximizes, and the window stays freely resizable.
   win.once('ready-to-show', () => {
@@ -513,15 +531,16 @@ function buildTrayMenu() {
   if (!tray) return;
   const key = drop.hotkeyLabel();
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Open Codeply Craft', click: showWindow },
-    { label: key ? `Open the drop (${key})` : 'Open the drop', click: () => drop.show() },
-    ...(voiceMode.available() ? [{ label: key ? `Orbit speaks its answers (hold ${key} to talk)` : 'Orbit speaks its answers', type: 'checkbox', checked: !voiceMode.isMuted(), click: (item) => voiceMode.setMuted(!item.checked) }] : []),
-    ...(voiceMode.available() && voiceMode.canAct() ? [{ label: 'Orbit can click and type for me', type: 'checkbox', checked: voiceMode.actionsOn(), click: (item) => voiceMode.setActions(item.checked) }] : []),
+    { label: 'Open Codeply', click: showWindow },
+    { label: key ? `Open quick chat (${key})` : 'Open quick chat', click: () => drop.show() },
+    ...(voiceMode.available() ? [{ label: key ? `Voice mode speaks its answers (hold ${key} to talk)` : 'Voice mode speaks its answers', type: 'checkbox', checked: !voiceMode.isMuted(), click: (item) => voiceMode.setMuted(!item.checked) }] : []),
+    ...(voiceMode.available() && voiceMode.canAct() ? [{ label: 'Voice mode can click and type for me', type: 'checkbox', checked: voiceMode.actionsOn(), click: (item) => voiceMode.setActions(item.checked) }] : []),
     ...convertWheel.trayItems(),
+    { label: 'Show top bar', type: 'checkbox', checked: !island.isHidden(), click: (item) => island.setHidden(!item.checked) },
     { type: 'separator' },
     ...(app.isPackaged ? [{ label: process.platform === 'darwin' ? 'Open at login' : 'Start with Windows', type: 'checkbox', checked: startsWithSystem(), click: (item) => setStartWithSystem(item.checked) }] : []),
     {
-      label: 'Quit Codeply Craft',
+      label: 'Quit Codeply',
       click: () => { isQuitting = true; app.quit(); },
     },
   ]));
@@ -530,7 +549,7 @@ function buildTrayMenu() {
 function createTray() {
   if (tray) return;
   tray = new Tray(nativeImage.createFromPath(APP_ICON_PATH));
-  tray.setToolTip('Codeply Craft');
+  tray.setToolTip('Codeply');
   buildTrayMenu();
   // Windows/Linux convention: a left-click on the tray icon itself opens the
   // app (the menu above is reserved for right-click, which Electron already
@@ -593,17 +612,18 @@ async function handleAuthCallback(url) {
 // installer gives the Start menu shortcut (build.appId), the toast says
 // "Codeply Craft" with the app icon.
 if (process.platform === 'win32') {
-  app.setAppUserModelId('app.codeply.craft');
+  app.setAppUserModelId(APP_USER_MODEL_ID);
   // The name and icon Windows puts over every toast: "Codeply", not the raw id (it shows that when
   // nothing names the id, as in a dev build). The icon has to be a real file, not one inside app.asar.
   app.whenReady().then(() => {
     try {
       const icon = path.join(app.getPath('userData'), 'notify-icon.png');
       if (!fs.existsSync(icon)) fs.writeFileSync(icon, fs.readFileSync(path.join(__dirname, 'logo.png')));
-      const key = 'HKCU\\Software\\Classes\\AppUserModelId\\app.codeply.craft';
+      const key = `HKCU\\Software\\Classes\\AppUserModelId\\${APP_USER_MODEL_ID}`;
       const { execFile } = require('child_process');
-      execFile('reg', ['add', key, '/v', 'DisplayName', '/t', 'REG_SZ', '/d', 'Codeply', '/f'], { windowsHide: true }, () => {});
-      execFile('reg', ['add', key, '/v', 'IconUri', '/t', 'REG_SZ', '/d', icon, '/f'], { windowsHide: true }, () => {});
+      execFile('reg', ['add', key, '/v', 'DisplayName', '/t', 'REG_SZ', '/d', app.isPackaged ? 'Codeply' : 'Codeply (dev)', '/f'], { windowsHide: true }, () => {});
+      // The toast icon only for the installed app: a dev run's taskbar button takes its icon from the window.
+      if (app.isPackaged) execFile('reg', ['add', key, '/v', 'IconUri', '/t', 'REG_SZ', '/d', icon, '/f'], { windowsHide: true }, () => {});
     } catch (e) { console.warn('[notify] app name:', e.message); }
   });
 }
@@ -691,8 +711,20 @@ ipcMain.handle('app:init', async () => {
     projects: store.projects,
     lastProject: store.lastProject,
     lastProjectBranch: store.lastProject ? gitBranch(store.lastProject) : null,
+    defaultFolders: defaultFolders(),
   };
 });
+
+// Where a chat works when no project folder is picked: "This Computer" (the
+// same folder the top bar's chat uses, drop.js), and "Cloud" for chats sent
+// to the cloud from no folder. Both live in the user's home, made on first use.
+function defaultFolders() {
+  const make = (dir) => { try { fs.mkdirSync(dir, { recursive: true }); return dir; } catch { return null; } };
+  return {
+    computer: make(path.join(app.getPath('home'), 'Codeply')),
+    cloud: make(path.join(app.getPath('home'), 'Codeply Cloud')),
+  };
+}
 
 // ─── Auth (same Supabase project + ~/.codeply session as the CLI/desktop app,
 // same account, same sign-in/sign-up/onboarding flow as the Codeply desktop
@@ -910,7 +942,8 @@ function currentRoute() {
 function publicModel(m) {
   const phone = modelSyncLib.phoneStatus(m, phoneUserId);
   return {
-    id: m.id, name: m.name, kind: m.kind, baseUrl: m.baseUrl, model: m.model,
+    id: m.id, name: m.name, kind: m.kind, baseUrl: m.baseUrl, model: m.model, effort: m.effort || '',
+    effortLevels: Array.isArray(m.effortLevels) && m.effortFor === `${m.baseUrl}|${m.model}` ? m.effortLevels : null, effortNote: m.effortNote || '',
     hasKey: !!m.apiKey, keyPreview: m.apiKey ? configLib.maskKey(m.apiKey) : '',
     // phone: { eligible, on, synced, reason } - "synced" also tells the phone
     // it can use this model while the PC is off.
@@ -1009,6 +1042,26 @@ ipcMain.handle('models:select', async (e, id) => {
   if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
   const r = configLib.selectModel(id || configLib.AUTO_MODEL_ID);
   return r.ok ? { ok: true, state: modelsState() } : r;
+});
+
+// /effort: how hard one of the user's own models thinks. Haze 2 picks its own; it's never set from here.
+ipcMain.handle('models:effort', async (e, { id, effort } = {}) => {
+  if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
+  const r = configLib.setModelEffort(String(id || ''), String(effort || ''));
+  return r.ok ? { ok: true, state: modelsState() } : r;
+});
+
+// Which effort levels one of the user's models takes, asked from its provider
+// once (ai.js probeEffortLevels) and saved with the model until it changes.
+ipcMain.handle('models:effortLevels', async (e, { id, force } = {}) => {
+  if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
+  const m = configLib.getModel(String(id || ''));
+  if (!m) return { ok: false, error: 'Effort can only be set on your own models.' };
+  if (!force && Array.isArray(m.effortLevels) && m.effortFor === `${m.baseUrl}|${m.model}`) return { ok: true, state: modelsState() };
+  const r = await aiLib.probeEffortLevels(m);
+  if (!r.ok) return r;
+  const w = configLib.setModelEffortLevels(m.id, r);
+  return w.ok ? { ok: true, state: modelsState() } : w;
 });
 
 // Saves (and selects) a model, testing it with a tiny real request first so a
@@ -1288,7 +1341,7 @@ ipcMain.handle('chatgpt:signIn', async () => {
       configLib.syncChatGPTModels([]);
       return {
         ok: true, status, state: modelsState(),
-        warning: 'You signed in, but Craft wasn’t allowed to use your ChatGPT plan. Sign in again and allow plan usage to get your ChatGPT models.',
+        warning: 'You signed in, but Codeply wasn’t allowed to use your ChatGPT plan. Sign in again and allow plan usage to get your ChatGPT models.',
       };
     }
     const state = await refreshChatGPTModels();
@@ -1574,6 +1627,109 @@ ipcMain.handle('integrations:disconnect', async (e, name) => {
   return { ok: true };
 });
 
+// ─── Apps (any app with a remote MCP server, like ChatGPT apps) ─────────────
+// codeply-cli/lib/apps.js does the directory, the OAuth sign-in and the
+// tokens; lib/mcp.js hands every connected app's tools to the agent. These
+// handlers only open the user's browser and pass public views to the window:
+// a token or client secret never reaches the renderer.
+let appsLib = null;
+let mcpLib = null;
+let appsSignIn = null; // AbortController of the sign-in in progress
+function appsLibs() {
+  if (!appsLib) {
+    appsLib = require(path.join(CLI_DIR, 'lib', 'apps.js'));
+    mcpLib = require(path.join(CLI_DIR, 'lib', 'mcp.js'));
+  }
+  return appsLib;
+}
+// The sign-in page is the app's own authorization server, any https host.
+const openSignInPage = (url) => {
+  if (!/^https:\/\//i.test(String(url))) throw new Error('That app\'s sign-in page isn\'t https, so Codeply won\'t open it.');
+  return shell.openExternal(String(url));
+};
+
+ipcMain.handle('apps:directory', () => {
+  try {
+    const lib = appsLibs();
+    return { ok: true, featured: lib.featured(), connected: lib.listConnected() };
+  } catch (e) { return { ok: false, error: e.message, featured: [], connected: [] }; }
+});
+
+ipcMain.handle('apps:search', async (e, { query, cursor } = {}) => {
+  try { return { ok: true, ...(await appsLibs().searchRegistry(String(query || ''), String(cursor || ''))) }; }
+  catch (err) { return { ok: false, error: err.message, apps: [], next: '' }; }
+});
+
+ipcMain.handle('apps:connect', async (e, entry = {}) => {
+  const lib = appsLibs();
+  if (appsSignIn) return { ok: false, error: 'Another app is signing in right now. Finish or cancel that one first.' };
+  appsSignIn = new AbortController();
+  try {
+    const app = await lib.connect({
+      url: String(entry.url || ''), title: entry.title, description: entry.description, icon: entry.icon,
+      domain: entry.domain, category: entry.category, registry: entry.registry, id: entry.id,
+    }, {
+      openBrowser: openSignInPage,
+      signal: appsSignIn.signal,
+      clientId: entry.clientId, clientSecret: entry.clientSecret,
+    });
+    mcpLib.forget(app.id); // the next chat turn connects with the new sign-in
+    // Back from the browser: bring Codeply to the front so the person sees it connected.
+    try { if (win && !win.isDestroyed()) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } } catch {}
+    // Ask for its tools now, so the card can say how many and a broken server shows up here, not mid-chat.
+    let tools = [];
+    let toolError = '';
+    try {
+      const list = await mcpLib.listServers(os.homedir());
+      const mine = list.find((s) => s.name === app.id);
+      tools = (mine?.tools || []).map((t) => ({ name: t.name, title: t.title || t.annotations?.title || '', description: String(t.description || '').slice(0, 240), readOnly: !!t.annotations?.readOnlyHint }));
+      toolError = mine?.error || '';
+    } catch (err) { toolError = err.message; }
+    return { ok: true, app: lib.listConnected().find((a) => a.id === app.id) || app, tools, toolError };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  } finally {
+    appsSignIn = null;
+  }
+});
+
+ipcMain.handle('apps:cancel', () => {
+  if (appsSignIn) appsSignIn.abort();
+  return { ok: true };
+});
+
+ipcMain.handle('apps:addWithKey', async (e, { url, title, headerName, headerValue } = {}) => {
+  try {
+    const lib = appsLibs();
+    const app = lib.addWithHeader({ url, title }, headerName, headerValue);
+    mcpLib.forget(app.id);
+    const list = await mcpLib.listServers(os.homedir());
+    const mine = list.find((s) => s.name === app.id);
+    if (mine?.error) { lib.removeApp(app.id); mcpLib.forget(app.id); return { ok: false, error: `Couldn't connect with that key: ${mine.error}` }; }
+    return { ok: true, app: lib.listConnected().find((a) => a.id === app.id) || app };
+  } catch (err) { return { ok: false, error: err.message }; }
+});
+
+ipcMain.handle('apps:tools', async (e, id) => {
+  try {
+    appsLibs();
+    const list = await mcpLib.listServers(os.homedir());
+    const mine = list.find((s) => s.name === String(id));
+    if (!mine) return { ok: false, error: 'That app isn\'t connected.' };
+    if (mine.error) return { ok: false, error: mine.error };
+    return { ok: true, tools: mine.tools.map((t) => ({ name: t.name, title: t.title || t.annotations?.title || '', description: String(t.description || '').slice(0, 240), readOnly: !!t.annotations?.readOnlyHint })) };
+  } catch (err) { return { ok: false, error: err.message }; }
+});
+
+ipcMain.handle('apps:disconnect', (e, id) => {
+  try {
+    const lib = appsLibs();
+    const ok = lib.removeApp(String(id));
+    mcpLib.forget(String(id));
+    return { ok };
+  } catch (err) { return { ok: false, error: err.message }; }
+});
+
 // ─── Browser check - the agent's own "open it and look" tool ───────────────
 // This is what makes browser_check (agent.mjs/tools.mjs) real instead of
 // theoretical: a genuine embedded Chromium view (a BrowserView docked into
@@ -1698,12 +1854,31 @@ function positionCheckerView() {
   const top = panelTop;
   // Tablet/mobile: a centered frame of the real width, so the page lays out
   // exactly as it would on that device.
-  const viewWidth = panelSize ? Math.min(panelSize.width, panelWidth) : panelWidth;
+  // A device size is a frame with room around it for the drag handles (app.js responsive mode).
+  const panelX = width - panelInsets.right - panelWidth;
+  const availH = Math.max(1, height - top - panelInsets.bottom);
+  let rect = { x: panelX, y: top, width: panelWidth, height: availH };
+  if (panelSize) {
+    const w = Math.max(120, Math.min(panelSize.width, panelWidth - 2 * FRAME_GUTTER));
+    const hh = Math.max(120, Math.min(panelSize.height || availH, availH - FRAME_TOP - FRAME_GUTTER));
+    rect = { x: panelX + Math.floor((panelWidth - w) / 2), y: top + FRAME_TOP, width: w, height: hh };
+  }
+  sendPanelFrame(rect, { x: panelX, y: top, width: panelWidth, height: availH });
   if (panelCovered) { view.setBounds({ x: width + 100, y: top, width: 1, height: 1 }); return; }
-  view.setBounds({
-    x: width - panelInsets.right - panelWidth + Math.floor((panelWidth - viewWidth) / 2), y: top,
-    width: viewWidth, height: Math.max(1, height - top - panelInsets.bottom),
-  });
+  view.setBounds(rect);
+}
+
+// Where the page sits, for the renderer's device frame and handles (window pixels).
+const FRAME_GUTTER = 22;
+const FRAME_TOP = 10;
+let lastFrame = '';
+function sendPanelFrame(frame, panel) {
+  if (!win || win.isDestroyed()) return;
+  const data = { frame, panel, size: panelSize ? { width: panelSize.width, height: panelSize.height } : null, gutter: FRAME_GUTTER, top: FRAME_TOP };
+  const key = JSON.stringify(data);
+  if (key === lastFrame) return;
+  lastFrame = key;
+  win.webContents.send('browserpanel:frame', data);
 }
 
 function showCheckerPanel() {
@@ -1962,7 +2137,10 @@ function parseViewport(v) {
 
 function applyViewport(wc, size) {
   if (!defaultCheckerUA) defaultCheckerUA = wc.getUserAgent();
-  wc.setUserAgent(size && size.mobile ? MOBILE_UA : defaultCheckerUA);
+  const ua = size && size.mobile ? MOBILE_UA : defaultCheckerUA;
+  const changed = wc.getUserAgent() !== ua;
+  if (changed) wc.setUserAgent(ua);
+  return changed;
 }
 
 let panelSize = null; // null = fill the panel (desktop)
@@ -1970,19 +2148,32 @@ function setPanelViewport(name) {
   const vp = parseViewport(name);
   panelSize = vp.size;
   const view = activeView() || checkerView;
+  let uaChanged = false;
   if (view) {
-    applyViewport(view.webContents, vp.size);
+    uaChanged = applyViewport(view.webContents, vp.size);
     positionCheckerView();
   }
-  if (win && !win.isDestroyed()) win.webContents.send('browserpanel:viewport', { name: vp.name });
-  return vp;
+  if (win && !win.isDestroyed()) win.webContents.send('browserpanel:viewport', { name: vp.name, size: vp.size });
+  return { ...vp, uaChanged };
 }
 
+// A size switch reloads the page only when it changes between phone and desktop
+// (the user agent); a resize alone just lays the page out again, live.
 ipcMain.on('browserpanel:viewport', (e, name) => {
   getCheckerView();
-  setPanelViewport(name);
+  const vp = setPanelViewport(name);
   const view = activeView();
-  if (view && view.webContents.getURL()) view.webContents.reload();
+  if (vp.uaChanged && view && view.webContents.getURL()) view.webContents.reload();
+});
+// Responsive mode: the device frame dragged or typed to any size (app.js).
+ipcMain.on('browserpanel:viewsize', (e, d) => {
+  const w = Math.round(Number(d && d.width));
+  const hgt = Math.round(Number(d && d.height));
+  if (!(w >= 200 && w <= 4000 && hgt >= 200 && hgt <= 4000)) return;
+  getCheckerView();
+  const vp = setPanelViewport(`${w}x${hgt}`);
+  const view = activeView();
+  if (vp.uaChanged && view && view.webContents.getURL()) view.webContents.reload();
 });
 
 /** Loads a page in an invisible off-screen window and captures it (works while Craft is hidden). */
@@ -2206,6 +2397,7 @@ ipcMain.handle('session:rename', (e, { id, title }) => {
   const session = store.sessions.find((s) => s.id === id);
   if (!session) return { ok: false };
   session.title = title;
+  session.named = true; // the user's own name: the automatic one never replaces it
   saveStore();
   renameSessionInDb(id, title);
   return { ok: true };
@@ -2223,7 +2415,7 @@ ipcMain.handle('session:share', async (e, { id, kind, thinking }) => {
       if (!(await loadEngine())) return { ok: false, error: 'Engine not available.' };
       const gh = configLib.getIntegration('github');
       if (!gh.accessToken) return { ok: false, error: 'Connect GitHub first (Connect Apps), then share again.' };
-      if (typeof gh.scope === 'string' && !/\bgist\b/.test(gh.scope)) return { ok: false, error: 'Reconnect GitHub in Connect Apps so Craft is allowed to create gists.' };
+      if (typeof gh.scope === 'string' && !/\bgist\b/.test(gh.scope)) return { ok: false, error: 'Reconnect GitHub in Connect Apps so Codeply is allowed to create gists.' };
       return await share.createGist(session, gh.accessToken, opts);
     }
     const html = kind === 'html';
@@ -2272,7 +2464,7 @@ async function registerOpenverseClient() {
     signal: AbortSignal.timeout(IMAGE_SEARCH_TIMEOUT_MS),
     body: JSON.stringify({
       name: 'CodeplyCraft-' + Math.random().toString(36).slice(2, 10),
-      description: 'Codeply Craft desktop app - in-app image picker',
+      description: 'Codeply desktop app - in-app image picker',
       email: 'hello@codeply.online',
     }),
   });
@@ -2421,13 +2613,18 @@ const clip = (t, n) => { t = plainText(t); if (t.length <= n) return t; const cu
 const firstSentence = (t) => { const s = plainText(t); const m = /^(.{20,}?[.!?])(\s|$)/.exec(s); return m ? m[1] : s; };
 
 function notifyTaskComplete(session) {
-  if (!Notification.isSupported() || !win || win.isDestroyed() || win.isFocused()) return;
+  if (!win || win.isDestroyed() || win.isFocused()) return;
   // The drop is open on this chat: the answer is already in front of the person.
   if (drop.isShowing && drop.isShowing(session.id)) return;
   const last = session.messages?.filter((m) => m.kind === 'assistant').at(-1);
+  const title = clip(session.title || 'Done', 40);
+  const body = last?.text ? clip(firstSentence(last.text), 90) : 'Your task is done.';
+  // The top bar shows it too (a small card for a few seconds); clicking that opens this chat in the drop.
+  island.ping({ title, text: body, onClick: () => island.openChat(session.id) });
+  if (!Notification.isSupported()) return;
   const notification = new Notification({
-    title: clip(session.title || 'Done', 40),
-    body: last?.text ? clip(firstSentence(last.text), 90) : 'Your task is done.',
+    title,
+    body,
     icon: notifyIcon(),
     silent: false,
   });
@@ -2670,7 +2867,7 @@ async function handleBridgeApi(method, pathname, query, body) {
     if (method === 'POST' && act === 'create') { const r = await designTab.createDesign(body && body.text, body && body.kind, 'phone'); return { status: r.error ? 400 : 200, body: r.error ? r : { id: r.design.id, sessionId: r.sessionId } }; }
     if (method === 'POST' && act === 'send') { const r = await designTab.sendTo(body && body.id, body && body.text); return { status: r.error ? 400 : 200, body: r.error ? r : { id: r.design.id, sessionId: r.sessionId } }; }
     if (method === 'POST' && act === 'stop') { designTab.stopDesign(body && body.id); return { status: 200, body: { ok: true } }; }
-    if (method === 'POST' && act === 'build') { const r = await designTab.buildFromPhone(body && body.id, body || {}); return { status: r && r.error ? 400 : 200, body: r || { error: 'Craft could not start that.' } }; }
+    if (method === 'POST' && act === 'build') { const r = await designTab.buildFromPhone(body && body.id, body || {}); return { status: r && r.error ? 400 : 200, body: r || { error: 'Codeply could not start that.' } }; }
     if (method === 'GET' && act === 'html') { const r = designTab.inlineHtml(query.get('id')); return r ? { status: 200, body: r } : { status: 404, body: { error: 'That design is not on this PC.' } }; }
     if (method === 'GET' && act === 'state') { const st = designTab.designState(query.get('id')); return st ? { status: 200, body: st } : { status: 404, body: { error: 'That design is not on this PC yet.' } }; }
     return { status: 404, body: { error: 'Unknown design request.' } };
@@ -2741,6 +2938,7 @@ async function handleBridgeApi(method, pathname, query, body) {
     const title = String(body.title || '').trim().slice(0, 120);
     if (!title) return { status: 400, body: { error: 'Title cannot be empty.' } };
     session.title = title;
+    session.named = true;
     saveStore();
     renameSessionInDb(session.id, title);
     sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session) });
@@ -2942,13 +3140,13 @@ function startRemoteServer() {
         const body = await readRemoteBody(req);
         const accessToken = String(body.accessToken || '');
         if (!accessToken) return remoteJson(res, 400, { error: 'Missing sign-in token.' });
-        if (!(await loadEngine())) return remoteJson(res, 503, { error: 'Craft is still starting. Try again in a moment.' });
+        if (!(await loadEngine())) return remoteJson(res, 503, { error: 'Codeply is still starting. Try again in a moment.' });
         const desktop = await remoteAccount();
-        if (!desktop.signedIn) return remoteJson(res, 403, { error: 'Craft on your PC is signed out. Sign in there with the same account first.' });
+        if (!desktop.signedIn) return remoteJson(res, 403, { error: 'Codeply on your PC is signed out. Sign in there with the same account first.' });
         const { data, error } = await authLib.getClient().auth.getUser(accessToken);
         if (error || !data?.user) return remoteJson(res, 401, { error: 'Your sign-in expired. Sign in again.' });
         if (data.user.id !== desktop.id) {
-          return remoteJson(res, 403, { error: `This PC is signed in to Craft as ${desktop.email}. Sign in on your phone with that account.` });
+          return remoteJson(res, 403, { error: `This PC is signed in to Codeply as ${desktop.email}. Sign in on your phone with that account.` });
         }
         const token = crypto.randomBytes(32).toString('base64url');
         remoteTokens.set(token, { userId: data.user.id, email: data.user.email, createdAt: Date.now() });
@@ -2984,7 +3182,7 @@ function startRemoteServer() {
     remoteServer = null;
     if (err.code === 'EADDRINUSE' && win && !win.isDestroyed()) {
       win.webContents.send('remote:server-error', {
-        message: `Port ${REMOTE_PORT} is already in use. Close any other running copy of Craft and reopen this dialog.`,
+        message: `Port ${REMOTE_PORT} is already in use. Close any other running copy of Codeply and reopen this dialog.`,
       });
     }
   });
@@ -3026,6 +3224,7 @@ function broadcastRunStatus() {
   if (win && !win.isDestroyed()) win.webContents.send('runs:status', active);
   broadcastRemote(null, { type: 'runs_status', active });
   drop.runs(active);
+  island.runs(active);
   designTab.runs(active);
 }
 
@@ -3135,11 +3334,13 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
   let replyText = '';
   let error = '';
   // Wisp (wisp-desktop.js): the main agent of this chat, with its team. null = plain Craft.
-  const wisp = wispDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly });
+  const wisp = wispDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly, request: userMessage });
   if (wisp) {
     // Wisp brings in Frontend, Testing... as specialists; it doesn't wear their role itself,
     // and an old role pin from before Wisp no longer applies.
     roleId = verifyOnly ? roleId : null;
+    // A specialist the user is talking to (talk_to) answers with its own face.
+    if (wisp.speaker) sendEvent(session.id, { type: 'wisp_speaker', agent: wisp.speaker, turn: true });
   } else {
     // No role detected for this particular text (a vague follow-up like "it
     // still doesn't work"): keep the role the chat is already working in.
@@ -3148,19 +3349,20 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
     if (session.pinnedRole && !verifyOnly) roleId = session.pinnedRole;
     emitRoleBadge(session, roleId);
   }
-  // The chat's bot (bots-desktop.js): its prompt, approval boundary and ask_bot. null = no bots.
-  const bot = await botsDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly, request: userMessage });
-  // Wisp's own section first, then the user's bots (they can still be asked by name).
-  const botPrompt = wisp
-    ? (native) => [wisp.prompt(native), bot && bot.botPrompt ? bot.botPrompt(native) : ''].filter(Boolean).join('\n\n')
-    : bot?.botPrompt;
+  // A chat with one of the user's Crew bots runs as that bot (bots-desktop.js): its prompt,
+  // approval boundary and ask_bot. A plain chat is Wisp and its team only, no bots.
+  const bot = session.botId ? await botsDesktop.forTurn({ session, approve, signal, route, cwd, mode: mode || 'Build', verifyOnly, request: userMessage }) : null;
+  const handOff = bot && !verifyOnly ? brainDesktop.handOffFor({ botId: bot.botId || null, requester: 'user' }) : undefined;
+  const botPrompt = wisp ? (native) => wisp.prompt(native) : bot?.botPrompt;
   try {
     const classicRun = () => agentMod.runAgent({
-      userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route,
+      userMessage, history, mode: mode || 'Build', cwd, approve: bot ? bot.approve : approve, browser: browserCheck, images, signal, route: wisp?.route || route,
       roleId, goal, maxSteps, verifyOnly, botPrompt, askBot: bot?.askBot, botId: bot?.botId,
-      bringIn: wisp?.bringIn, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, agentRole: wisp ? wisp.agentRole : undefined,
+      bringIn: wisp?.bringIn, claudeCode: wisp?.claudeCode, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, talkTo: wisp?.talkTo, agentRole: wisp ? wisp.agentRole : undefined,
+      // A Claude agent's report: what it did counts as this review turn's record (claude-code-desktop.js wake).
+      credit: wisp ? takeClaudeCredit(session) : undefined,
       // Pass work to the bot whose job it is (brain-desktop.js); the user asked for this chat.
-      handOff: bot && !verifyOnly ? brainDesktop.handOffFor({ botId: bot.botId || null, requester: 'user' }) : undefined,
+      handOff,
       haze: { product: 'craft', chatId: session.id }, todos,
     });
     // Build turns run on the DSH harness (dsh-chat.js); the rest on Classic's agent.
@@ -3171,14 +3373,17 @@ async function runOneTurn({ session, userMessage, images, history, mode, cwd, ap
     for await (const raw of run) {
       // Wisp's reply starts with a [mood: x] tag: it sets the face, and never shows.
       const ev = wisp ? wisp.mood(raw) : raw;
-      if (wisp && ev.type === 'tool_start' && ev.name === 'bring_in') continue; // the specialist's own steps show instead
-      if (wisp && ev.type === 'tool_end' && ev.name === 'bring_in') {
+      // bring_in and claude_code show as the specialist's (or Claude Code's) own steps instead of a row of their own.
+      const delegated = wisp && (ev.name === 'bring_in' || ev.name === 'claude_code' || ev.name === 'claude_swarm');
+      if (delegated && ev.type === 'tool_start') continue;
+      // A claude_code call that never started (not connected, said no) keeps its row, so the chat shows why.
+      if (delegated && ev.type === 'tool_end' && (ev.name === 'bring_in' || ev.meta?.specialist)) {
         if (bot) bot.see(ev);
         handoffDesktop.see(session, ev);
         continue;
       }
       if (bot) bot.see(ev); // the bot's trajectory, for its reflection after the reply
-      handoffDesktop.see(session, ev); // steps and todos for Craft Cloud, should this PC drop
+      handoffDesktop.see(session, ev); // steps and todos for the cloud, should this PC drop
       if (ev.type === 'text') {
         session.messages.push({ kind: 'assistant', text: ev.text, interim: !!ev.interim, ...(ev.wisp ? { wisp: true } : {}), ...(ev.mood ? { mood: ev.mood } : {}), at: Date.now() });
         replyText += (replyText ? '\n\n' : '') + ev.text;
@@ -3450,7 +3655,7 @@ async function runGoal({ session, goal, history, mode, cwd, approve, signal, rou
   else syncGoal({ status: 'incomplete', note: `Not finished after ${MAX_GOAL_ITERATIONS} iterations. Still missing: ${remaining.slice(0, 200)}` });
 }
 
-async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, text, images, clientId = null, botId, design = null, resume = null, screen = null }) {
+async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, text, images, clientId = null, botId, design = null, resume = null, screen = null, auto = null, crew = null }) {
   // resume: carry on a run that was cut off here or came back from Craft Cloud
   // (handoff-desktop.js). Its prompt says what is done; no new user message.
   if (resume) { text = String(resume.prompt || ''); mode = resume.mode; images = undefined; }
@@ -3460,8 +3665,9 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
   const ok = await loadEngine();
   if (!ok) return { error: 'Engine not available.' };
   if (!cwd || !fs.existsSync(cwd)) return { error: 'Pick a project folder first.' };
-  // Design mode only for the Design tab's own chats (design is the design's id).
-  mode = design ? 'Design' : ['Build', 'Plan', 'Ask'].includes(mode) ? mode : 'Build';
+  // Design: the phone's Design tab (design is the design's id), or the + menu's Design mode in an
+  // ordinary chat, which designs in a folder of its own (see designDir below).
+  mode = design ? 'Design' : ['Build', 'Plan', 'Ask', 'Design'].includes(mode) ? mode : 'Build';
 
   // A custom slash command (.codeply/commands/<name>.md) becomes its prompt.
   // The chat shows what the user typed; the model gets the expanded text.
@@ -3490,17 +3696,18 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
   if (goal && mode !== 'Build') return { error: '/goal needs Build mode, since it changes files. Switch the mode chip to Build.' };
 
   // Cloud chip on: the message runs on GitHub Actions (cloud-desktop.js), not here.
-  const toCloud = !resume && cloudDesktop.wants(cwd);
+  const toCloud = !resume && mode !== 'Design' && cloudDesktop.wants(cwd);
   if (toCloud && images?.length) return { error: 'Cloud runs take text only for now. Turn the Cloud chip off to send images.' };
   if (toCloud && goal) return { error: '/goal runs on this PC. Turn the Cloud chip off to use it.' };
 
   let session = sessionId ? store.sessions.find((s) => s.id === sessionId) : null;
   if (!session && resume) return { error: 'That chat is no longer available.' };
   if (!session) {
-    const titleSource = goal || typedText;
+    // "Casual chat" until it has TITLE_AFTER messages (generateSessionTitle); a goal or a design names itself.
+    const titleSource = goal || (design ? typedText : '');
     session = {
       id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      title: titleSource.length > 46 ? titleSource.slice(0, 46) + '…' : titleSource,
+      title: !titleSource ? CASUAL_TITLE : titleSource.length > 46 ? titleSource.slice(0, 46) + '…' : titleSource,
       cwd,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -3511,13 +3718,22 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
     store.sessions.unshift(session);
   }
   if (design) { session.design = design; markDesignSession(session.id); }
-  if (activeRuns.has(session.id)) return { error: 'A run is already in progress for this chat.' };
+  // A run that is being stopped gets a moment to end: the user's next message then just goes.
+  if (activeRuns.has(session.id) && activeRuns.get(session.id).signal.aborted) await waitForRunEnd(session.id, 10000);
+  if (activeRuns.has(session.id)) return { error: 'A run is already in progress for this chat.', busy: true };
   if (!resume && session.handoff && ['cloud', 'returning', 'resuming'].includes(session.handoff.status)) {
-    return { error: 'This task is coming back from Craft Cloud. Give it a moment.' };
+    return { error: 'This task is coming back from the cloud. Give it a moment.' };
   }
   if (!resume && session.handoff) session.handoff = null; // a new message replaces a paused run
 
   if (!design) rememberProject(cwd); // a design's folder is not a project
+  // A Design chat stays under its folder in the sidebar, but the agent works in Documents/Codeply
+  // Designs/<name>, so its index.html never lands in a project.
+  let designDir = null;
+  if (mode === 'Design' && !design) {
+    if (!session.designDir || !fs.existsSync(session.designDir)) session.designDir = designTab.newFolder(typedText);
+    designDir = session.designDir;
+  }
   const detectedRole = resume ? (resume.state && resume.state.roleId) || null : rolesLib.detectRole(goal || text);
   if (detectedRole) session.stickyRole = detectedRole;
   session.lastRole = null; // every reply opens with a "Working as ..." badge
@@ -3533,9 +3749,11 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
   // them; buildHistory() only re-sends the last few to the model.
   // The screen's text sent with this message (the drop): the agent sees it, and the chat remembers it.
   if (screen && (screen.text || (screen.earlier || []).length)) { try { require(path.join(CLI_DIR, 'lib', 'screen.js')).remember(session.id, screen); } catch {} }
-  if (!resume) session.messages.push({ kind: 'user', text: typedText, ...(expandedText ? { expanded: expandedText } : {}), images: images?.length ? images : undefined, at: Date.now() });
+  // auto: a message Codeply wrote for the agent (a Claude agent's report); the chat shows it as a note.
+  if (!resume) session.messages.push({ kind: 'user', text: typedText, ...(expandedText ? { expanded: expandedText } : {}), ...(auto ? { auto, ...(Array.isArray(crew) && crew.length ? { crew: crew.slice(0, 8) } : {}) } : {}), images: images?.length ? images : undefined, at: Date.now() });
   session.updatedAt = Date.now();
   session.cwd = cwd;
+  if (designDir) cwd = designDir;
   saveStore();
   syncSessionToDb(session);
   sendEvent(session.id, { type: 'session_sync', session: sessionMeta(session), ...(resume ? {} : { message: session.messages.at(-1) }), origin: clientId });
@@ -3635,6 +3853,8 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
       // An email (gmail_send / gmail_draft): the card shows it as editable fields.
       draft: req.draft || null,
       draftOnly: !!req.draftOnly,
+      // Pickers on the card (Claude Code: model and effort); the user's picks ride back as edits.
+      choices: req.choices && typeof req.choices === 'object' ? req.choices : null,
     });
     return new Promise((resolve) => {
       pendingApprovals.set(id, { sessionId: session.id, resolve: (verdict) => {
@@ -3734,9 +3954,14 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
       // Paused or handed to the cloud: not finished, so no "done" notification.
       if (!session.handoff) notifyTaskComplete(session);
       cloudDesktop.afterLocalRun(cwd);
-      if (session.messages.filter((m) => m.kind === 'user').length === 1) {
-        generateSessionTitle(session);
+      // The design on screen: its index.html in the chat's browser panel.
+      const designFile = designDir && path.join(designDir, 'index.html');
+      if (designFile && fs.existsSync(designFile) && !signal.aborted) {
+        try { const t = tabs.find((x) => x.kind === 'user' && x.designFor === session.id); if (t) { selectTab(t.id); if (!panelVisible) showCheckerPanel(); t.view.webContents.reload(); } else openTab(pathToFileURL(designFile).href).designFor = session.id; } catch (e) { console.warn('[design] preview:', e.message); }
       }
+      // Named once it has TITLE_AFTER messages from the user (a goal or a design is named already).
+      const sent = session.messages.filter((m) => m.kind === 'user').length;
+      if (sent === TITLE_AFTER && session.title === CASUAL_TITLE) generateSessionTitle(session);
     }
   })();
 
@@ -3794,14 +4019,14 @@ async function rewindChat({ sessionId, userIndex, expectText, restoreFiles, clie
 }
 
 /** Rewind to a user message, then run the (possibly edited) text there. */
-async function editAndRerun({ sessionId, userIndex, expectText, text, images, restoreFiles, cwd, mode, bypass, clientId = null, botId }) {
+async function editAndRerun({ sessionId, userIndex, expectText, text, images, restoreFiles, cwd, mode, bypass, autoEdits = false, clientId = null, botId }) {
   if (!String(text || '').trim()) return { error: 'Write a message before sending it.' };
   const rw = await rewindChat({ sessionId, userIndex, expectText, restoreFiles, clientId });
   if (rw.error) return rw;
   // The images stay with the message unless the edit says otherwise.
   const keepImages = images === undefined ? rw.original.images : images;
   const run = await startChatRun({
-    sessionId, cwd: cwd || rw.session.cwd, mode, bypass, text, images: keepImages, clientId, botId,
+    sessionId, cwd: cwd || rw.session.cwd, mode, bypass, autoEdits, text, images: keepImages, clientId, botId,
   });
   return { ...run, restored: rw.restored };
 }
@@ -3930,7 +4155,7 @@ function respondApproval(requestId, verdict) {
   const v = verdict && typeof verdict === 'object' ? verdict.verdict : verdict;
   const clean = ['once', 'always', 'reject', 'draft'].includes(v) ? v : 'reject';
   const e = verdict && typeof verdict === 'object' && verdict.edits && typeof verdict.edits === 'object' ? verdict.edits : null;
-  const edits = e && Object.fromEntries(['to', 'subject', 'body'].filter((k) => typeof e[k] === 'string').map((k) => [k, e[k].slice(0, 100000)]));
+  const edits = e && Object.fromEntries(['to', 'subject', 'body', 'model', 'effort'].filter((k) => typeof e[k] === 'string').map((k) => [k, e[k].slice(0, 100000)]));
   p.resolve(edits && clean !== 'reject' ? { verdict: clean, edits } : clean);
 }
 function respondImagePick(requestId, chosenUrl) {
@@ -3940,8 +4165,10 @@ function respondImagePick(requestId, chosenUrl) {
 
 ipcMain.handle('chat:send', (e, payload) => startChatRun(payload));
 
-// The drop: Alt+C anywhere opens Craft's agent in a small chat in the corner (see drop.js).
+// The drop: Alt+C anywhere opens Codeply's agent in a small chat under the top bar (see drop.js).
 const drop = require('./drop');
+// The top bar: a thin line at the top center of the screen that grows into the drop when clicked (see island.js).
+const island = require('./island');
 // The Design tab (design/design-main.js): Codeply Design laid over the main area, like Crew.
 const designTab = require('./design/design-main');
 function initDesignTab() {
@@ -3969,7 +4196,7 @@ ipcMain.on('design:bounds', (e, bounds) => designTab.setBounds(bounds));
 ipcMain.handle('design:unembed', () => { designTab.unembed(); return { ok: true }; });
 // Classic's chats on the DSH harness (dsh-chat.js): DSH's loop and native tool
 // calling, Craft's UI, models, approvals and browser. Classic's own agent stays
-// for what DSH doesn't do yet (images, Plan and Ask, bots, goals, checks) and
+// for what DSH doesn't do yet (images, Plan and Ask, a chosen bot, goals, checks) and
 // when the harness can't start. CODEPLY_CHAT_ENGINE=classic turns it off.
 const dshChat = require('./dsh-chat');
 let toolsMod = null; // codeply-cli/lib/tools.mjs, for browser_check's report
@@ -3979,6 +4206,13 @@ dshChat.init({
     if (!toolsMod) toolsMod = await import(pathToFileURL(path.join(CLI_DIR, 'lib', 'tools.mjs')).href);
     const r = await toolsMod.TOOLS.browser_check({ url, viewport, wait }, { browser: browserCheck, cwd: process.cwd() });
     return { ok: !!r.ok, output: String(r.output || '') };
+  },
+  // codeply-taste's tools for the harness: Classic's design-tools.mjs, with the real render in Craft's browser.
+  designTool: async (name, args, cwd) => {
+    if (!cwd || !fs.existsSync(cwd)) return { ok: false, output: `${name}: no project folder.` };
+    const design = await import(pathToFileURL(path.join(CLI_DIR, 'lib', 'design-tools.mjs')).href);
+    const r = await design[name](args, { cwd, browser: browserCheck });
+    return { ok: !!(r && r.ok), output: String((r && r.output) || '') };
   },
 });
 let dshChatReady = null; // whether the harness can run on this PC, checked once
@@ -4063,6 +4297,12 @@ function initDrop() {
     onAsk: (text, answer) => lifeDesktop.noteAsk(text, answer, 'orbit'),
   });
   drop.setPressHandler(voiceMode.press);
+  // The top bar (island.js): Orbit, running tasks and pings show on it; hidden from the tray menu.
+  island.init({
+    getSetting: (k) => store[k], setSetting: (k, v) => { store[k] = v; saveStore(); },
+    titleOf: (id) => { const s = store.sessions.find((x) => x.id === id); return s ? s.title : ''; },
+    activeRunIds: () => [...activeRuns.keys()],
+  });
   // Drag + Shift: a wheel of formats to convert a dragged file to (see convert-wheel.js).
   convertWheel.init({
     getSetting: (k) => store[k], setSetting: (k, v) => { store[k] = v; saveStore(); },
@@ -4115,13 +4355,81 @@ brainDesktop.init({
   onBotsChange: () => botsWatch.poke(),
 });
 // Bots: named agents with a job, a tone, memory and an avatar (see bots-desktop.js).
+// Claude Code (claude-code-desktop.js): the user's own Claude plan as a background
+// coding agent that Wisp briefs and reviews. Its login card lives in Connect Apps.
+const claudeDesktop = require('./claude-code-desktop');
+// The Review area (review-desktop.js): what the branch changes, like a pull request.
+require('./review-desktop').init({ ipcMain });
+// Settings > Appearance > Background: the user's own images, kept in this PC's app data (wallpapers-desktop.js).
+require('./wallpapers-desktop').init({ ipcMain, app, dialog, nativeImage, getWindow: () => win });
+// The home screen's Pull requests card: the user's own recent PRs, read with the GitHub CLI
+// when it is installed and signed in. Read-only, and kept for two minutes.
+let homePrsCache = null;
+ipcMain.handle('home:prs', () => {
+  if (homePrsCache && Date.now() - homePrsCache.at < 120000) return homePrsCache.data;
+  return new Promise((resolve) => {
+    require('child_process').execFile('gh', ['search', 'prs', '--author=@me', '--sort=updated', '--limit', '4', '--json', 'title,url,updatedAt,state,repository'],
+      { timeout: 10000, windowsHide: true }, (err, out) => {
+        let data;
+        try { data = err ? { error: 'gh' } : { prs: JSON.parse(String(out || '[]')) }; } catch { data = { error: 'gh' }; }
+        homePrsCache = { at: Date.now(), data };
+        resolve(data);
+      });
+  });
+});
+// Codeply's browser as hands for Claude agents (swarm-browser-desktop.js): each with its own cursor.
+const swarmBrowser = require('./swarm-browser-desktop');
+swarmBrowser.init({
+  openTab: (url) => openTab(url), selectTab: (id) => selectTab(id),
+  getTab: (id) => tabs.find((t) => t.id === id) || null, activeTabId: () => activeTabId,
+  showPanel: () => { if (!panelVisible) showCheckerPanel(); },
+});
+claudeDesktop.init({
+  browser: swarmBrowser,
+  ipcMain, cliDir: CLI_DIR, sendEvent, recordToolEnd,
+  sendWindow: (channel, data) => { if (win && !win.isDestroyed()) win.webContents.send(channel, data); },
+  store: { get: () => store.claudeCode || {}, set: (next) => { store.claudeCode = { ...(store.claudeCode || {}), ...next }; saveStore(); } },
+  findSession: (id) => store.sessions.find((s) => s.id === id),
+  saveSession: (session) => { saveStore(); syncSessionToDb(session); },
+  wake: (sessionId, text, credit, crew) => wakeForClaude(sessionId, text, credit, crew),
+  dataDir: app.getPath('userData'),
+});
+
+// A Claude agent Wisp started in the background finished: its report goes to
+// the chat as an automatic message, and Wisp reviews it in a turn of its own.
+// While the chat is busy (the user is talking with Wisp) it waits its turn.
+const claudeCredit = new Map(); // sessionId -> { actions, files, succeeded }
+function takeClaudeCredit(session) {
+  const c = claudeCredit.get(session.id);
+  claudeCredit.delete(session.id);
+  return c || undefined;
+}
+function wakeForClaude(sessionId, text, credit, crew, tries = 0) {
+  const session = store.sessions.find((s) => s.id === sessionId);
+  if (!session || !text) return;
+  if (activeRuns.has(sessionId)) {
+    if (tries < 1200) setTimeout(() => wakeForClaude(sessionId, text, credit, crew, tries + 1), 1500); // up to half an hour
+    return;
+  }
+  if (credit) claudeCredit.set(sessionId, credit);
+  startChatRun({ sessionId, cwd: session.cwd, mode: 'Build', text, auto: 'claude_code', crew }).then((r) => {
+    if (r && r.error) { claudeCredit.delete(sessionId); console.warn('[claude] wake:', r.error); }
+  }).catch((e) => console.warn('[claude] wake:', e.message));
+}
 // Wisp (wisp-desktop.js): the main agent of every Craft chat, and its team of specialists.
 const wispDesktop = require('./wisp-desktop');
 wispDesktop.init({
   ipcMain, cliDir: CLI_DIR, sendEvent, agentMod: () => agentMod, browser: browserCheck, recordToolEnd,
   settings: { get: () => store.wisp !== false, set: (on) => { store.wisp = !!on; saveStore(); } },
+  // Making a specialist from the user's description (wisp:draftSpecialist): one JSON call on the current model.
+  draftJson: async (prompt) => { if (!(await loadEngine())) throw new Error('Engine not available.'); return aiLib.chatJson([{ role: 'user', content: prompt }], { route: currentRoute() }); },
   // A specialist's scheduled job: a message from Wisp to itself in the job's own chat, through the usual approvals.
   startRun: ({ sessionId, cwd, text }) => startChatRun({ sessionId, cwd, text, mode: 'Build', bypass: false, clientId: 'wisp-schedule' }),
+  // The team in the user's account (specialists-sync.js, supabase/specialists.sql).
+  supabase: () => (authLib ? authLib.getClient() : null), userId: getLoggedInUserId, deviceId, dataDir: app.getPath('userData'),
+  // Always-on specialists: their jobs also run with the window closed, and Codeply starts with the PC.
+  windowShown: () => !!(win && !win.isDestroyed() && win.isVisible()),
+  keepRunning: () => { try { if (app.isPackaged && !startsWithSystem()) setStartWithSystem(true); } catch {} },
 });
 // Voice mode on the phone: you talk to Codeply itself, out loud. A turn that
 // needs real work comes here (bots-desktop.js /api/bots/voice, botId "codeply")
@@ -4147,7 +4455,7 @@ async function codeplyVoice({ turns, signal, approve, onStep, mode }) {
   const run = agentMod.runAgent({
     userMessage, history, mode: 'Build', cwd, approve, browser: browserCheck, signal, route, maxSteps: 24,
     botPrompt: (native) => [wisp ? wisp.prompt(native) : '', rules].filter(Boolean).join('\n\n'),
-    bringIn: wisp?.bringIn, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, agentRole: wisp ? wisp.agentRole : undefined,
+    bringIn: wisp?.bringIn, claudeCode: wisp?.claudeCode, createSpecialist: wisp?.createSpecialist, schedule: wisp?.schedule, agentRole: wisp ? wisp.agentRole : undefined,
     haze: { product: 'mobile', chatId: 'voice:codeply' },
   });
   let reply = ''; let mood = '';
@@ -4155,7 +4463,7 @@ async function codeplyVoice({ turns, signal, approve, onStep, mode }) {
     const ev = wisp ? wisp.mood(raw) : raw;
     if (ev.type === 'text' && !ev.interim) { reply += (reply ? ' ' : '') + ev.text; if (ev.mood) mood = ev.mood; }
     else if (ev.type === 'tool_start' && onStep) {
-      const who = ev.name === 'bring_in' && ev.args && ev.args.specialist ? `Bringing in ${ev.args.specialist}` : '';
+      const who = ev.name === 'bring_in' && ev.args && ev.args.specialist ? `Bringing in ${ev.args.specialist}` : ev.name === 'claude_code' ? 'Asking Claude Code' : '';
       onStep({ name: ev.name, args: ev.args || {}, label: who });
     } else if (ev.type === 'error') throw new Error(ev.error || 'The run failed.');
     else if (ev.type === 'aborted') throw new Error('Stopped.');
@@ -4287,11 +4595,40 @@ ipcMain.handle('remote:setKeepAwake', (e, on) => {
   updateSleepBlocker();
   return { ok: true };
 });
+// The Settings page (app.js openSettings): the tray menu's switches and keep-awake, in one place.
+// null means this PC doesn't have that one (voice without its model, a dev build's login item).
+function appSettings() {
+  const voice = voiceMode.available();
+  return {
+    hotkey: drop.hotkeyLabel(),
+    topBar: !island.isHidden(),
+    voiceSpeaks: voice ? !voiceMode.isMuted() : null,
+    voiceActions: voice && voiceMode.canAct() ? voiceMode.actionsOn() : null,
+    convert: convertWheel.trayItems().length ? convertWheel.isEnabled() : null,
+    startWithSystem: app.isPackaged ? startsWithSystem() : null,
+    keepAwake: !!store.keepAwake,
+  };
+}
+const SETTERS = {
+  topBar: (on) => island.setHidden(!on),
+  voiceSpeaks: (on) => voiceMode.setMuted(!on),
+  voiceActions: (on) => voiceMode.setActions(on),
+  convert: (on) => convertWheel.setEnabled(on),
+  startWithSystem: (on) => setStartWithSystem(on),
+  keepAwake: (on) => { store.keepAwake = on; saveStore(); updateSleepBlocker(); },
+};
+ipcMain.handle('settings:get', () => appSettings());
+ipcMain.handle('settings:set', (e, { key, on } = {}) => {
+  if (!Object.hasOwn(SETTERS, key)) return appSettings();
+  SETTERS[key](!!on);
+  buildTrayMenu();
+  return appSettings();
+});
 // Only our own phone-app address and ChatGPT's usage settings are ever opened this way.
 ipcMain.handle('shell:openExternal', (e, url) => {
   if (url === MOBILE_APP_URL || url === 'https://chatgpt.com/settings/usage') shell.openExternal(url);
   else if (url === 'https://codeply.app' || url === 'https://github.com/AwaisSDev/Codeply-Craft/issues') shell.openExternal(url); // Help menu
-  else if (/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(\/actions\/runs\/\d+)?$/.test(String(url))) shell.openExternal(url); // cloud: View run, repo links
+  else if (/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(\/actions\/runs\/\d+|\/pull\/\d+)?$/.test(String(url))) shell.openExternal(url); // cloud: View run, repo links; Review: the pull request
   else if (publishedUrls.has(url) || /^https:\/\/[a-z0-9-]+\.vercel\.app\/?$/.test(String(url))) shell.openExternal(url); // a publish's live link
   else if (PUBLISH_HELP_URLS.has(url)) shell.openExternal(url); // where to create a token
   else if (/^https:\/\/supabase\.com\/dashboard\/project\/[a-z0-9]+$/.test(String(url))) shell.openExternal(url); // publish card: Database
@@ -4549,7 +4886,9 @@ app.on('before-quit', () => {
   saveTasks();
   jobsQuitting = true;
   if (jobsApi()) jobsApi().stopAll(); // background commands end with the app
+  try { claudeDesktop.stopAll(); } catch {} // and Claude agents
   drop.dispose();
+  island.dispose();
   voiceMode.dispose();
   convertWheel.dispose();
   dshEngine.dispose(); // the DSH engine and its Haze bridge end with the app

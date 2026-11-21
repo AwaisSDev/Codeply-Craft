@@ -117,7 +117,7 @@
       return;
     }
     const scroll = view.querySelector('.lf') ? view.querySelector('.lf').scrollTop : 0;
-    const head = `<div class="lf-head"><div><h1>Brain</h1><p>What Craft, Crew, the drop, Orbit and your phone know about you. Fix anything that's wrong.</p></div>
+    const head = `<div class="lf-head"><div><h1>Brain</h1><p>What Codeply knows about you, from your chats, agents, voice and phone. Fix anything that's wrong.</p></div>
       <label class="lf-onoff"><span>${b.on ? 'On' : 'Off'}</span>${sw('data-brain-on', b.on)}</label></div>`;
     if (!b.on) {
       view.innerHTML = `<div class="lf">${head}<div class="lf-tip">${G('<circle cx="12" cy="12" r="8.5"/><path d="M12 8v5M12 16h.01"/>')}<span>${b.usable ? 'Off: nothing is learned, and no app or bot sees what was learned before.' : 'This PC has no SQLite driver, so the brain cannot be kept here.'}</span></div></div>`;

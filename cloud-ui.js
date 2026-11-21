@@ -6,7 +6,7 @@
 (() => {
   if (!window.craft || !window.craft.cloudState) return;
 
-  const ICON = '<svg viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1 .5 7.97V18Z"/></svg>';
+  const ICON = icon('cloud');
   const STATUS = { starting: 'Starting', queued: 'Working', running: 'Working', done: 'Done', failed: 'Failed', cancelled: 'Cancelled' };
   const LIVE = new Set(['starting', 'queued', 'running']);
   let current = null;       // last cloud state for state.project
@@ -28,7 +28,7 @@
       more.type = 'button';
       more.title = 'Cloud settings';
       more.setAttribute('aria-label', 'Cloud settings');
-      more.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
+      more.innerHTML = icon('more');
       more.addEventListener('click', openSheet);
       // Cloud sits before the Research chip, whichever script adds its chip first.
       const after = row.querySelector('.rm-chip');
@@ -112,7 +112,7 @@
     const box = sheet().querySelector('.cloud-modal');
     const s = current;
     const head = `<div class="cloud-head"><div class="cloud-title">${ICON}<span>Cloud runs</span></div>
-      <button class="icon-btn icon-btn-sm modal-close" data-act="close" title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button></div>`;
+      <button class="icon-btn icon-btn-sm modal-close" data-act="close" title="Close" aria-label="Close">${icon('close')}</button></div>`;
     if (loading || !s) { box.innerHTML = `${head}<div class="cloud-body"><p class="cloud-dim">${loading ? 'Checking...' : 'Cloud runs are not available.'}</p></div>`; wire(box); return; }
     const err = error ? `<div class="cloud-error">${esc(error)}</div>` : '';
     // Keep what was typed in the environment box when the sheet redraws.
@@ -124,7 +124,7 @@
       const target = setupTarget || (o ? 'repo' : 'mirror');
       let action;
       if (!s.github.connected) action = '<button class="btn btn-primary cloud-primary" data-act="github">Connect GitHub</button>';
-      else if (!s.github.scopesOk) action = '<button class="btn btn-primary cloud-primary" data-act="github">Reconnect GitHub</button><p class="cloud-dim">Craft needs permission to work in your repos.</p>';
+      else if (!s.github.scopesOk) action = '<button class="btn btn-primary cloud-primary" data-act="github">Reconnect GitHub</button><p class="cloud-dim">Codeply needs permission to work in your repos.</p>';
       else if (!s.model.ok) action = `<button class="btn btn-primary cloud-primary" disabled>Set up</button><p class="cloud-dim">${esc(s.model.error)} Choose one from the model menu, then come back.</p>`;
       else action = `<button class="btn btn-primary cloud-primary" data-act="setup" ${busy ? 'disabled' : ''}>${busy ? 'Setting up...' : 'Set up'}</button>`;
       const mirrorName = `craft-workspace-${projectName().toLowerCase().replace(/[^a-z0-9._-]+/g, '-')}`;
@@ -135,12 +135,12 @@
             <span>Use a private copy instead <span class="cloud-dim">(<code>${esc(mirrorName)}</code>, your repo is never touched)</span></span></label>
         </div>` : '';
       const points = target === 'repo'
-        ? `<li>Each task gets its own branch, merged into <code>${esc(o.base)}</code> when it is done. Craft offers to pull the changes here.</li>
+        ? `<li>Each task gets its own branch, merged into <code>${esc(o.base)}</code> when it is done. Codeply offers to pull the changes here.</li>
            <li>Adds one file to the repo: <code>.github/workflows/craft-cloud.yml</code>.</li>`
         : `<li>Creates a <b>private</b> repo, <code>${esc(mirrorName)}</code>, on ${s.github.userName ? `<b>${esc(s.github.userName)}</b>'s` : 'your'} GitHub, and backs this folder up there after every run. <code>.env</code> files, keys, and anything in <code>.gitignore</code> stay on this PC.</li>
            <li>Changes come back when you click Apply in the chat.</li>`;
       box.innerHTML = `${head}<div class="cloud-body">
-        <p class="cloud-lead">Craft keeps working on <b>${esc(projectName())}</b> when this PC is off, on GitHub in your own account. Nothing runs on Codeply's servers.</p>
+        <p class="cloud-lead">Codeply keeps working on <b>${esc(projectName())}</b> when this PC is off, on GitHub in your own account. Nothing runs on Codeply's servers.</p>
         ${choice}
         <ul class="cloud-points">${points}
           <li>Runs on <b>${esc(s.model.name)}</b>, the model you picked${s.model.name === 'Haze 2' ? ' (it counts in your daily allowance)' : ', its key kept as an encrypted GitHub secret'}. Change it any time in the model menu.</li>
@@ -172,8 +172,8 @@
         <span class="cloud-dim">${p.lastPush ? `backed up ${ago(p.lastPush.at)}` : 'not backed up yet'}</span>
         <button class="btn btn-secondary btn-sm cp-action" data-act="backup" ${busy ? 'disabled' : ''}>${busy === 'backup' ? 'Backing up...' : 'Back up now'}</button></div>`;
     // Keep going in the cloud if this PC drops (handoff-desktop.js): on by default.
-    const handoffRow = `<label class="cloud-switch"><input type="checkbox" data-act="handoff" ${p.handoff ? 'checked' : ''}><span><b>Keep going in the cloud if this PC turns off</b><br><span class="cloud-dim">If this PC loses power or connection in the middle of a task, Craft Cloud carries it on from the last step and hands it back when the PC returns. GitHub Actions minutes are only used while the PC is off.</span></span></label>
-        ${p.handoff ? `<div class="cloud-row"><span class="cloud-dim" data-handoff-app>Uses your GitHub connection. <a href="#" data-url="https://github.com/apps/codeply-craft">Safer: install the Codeply GitHub app</a> so Craft only touches the repos you pick.</span></div>` : ''}`;
+    const handoffRow = `<label class="cloud-switch"><input type="checkbox" data-act="handoff" ${p.handoff ? 'checked' : ''}><span><b>Keep going in the cloud if this PC turns off</b><br><span class="cloud-dim">If this PC loses power or connection in the middle of a task, the cloud carries it on from the last step and hands it back when the PC returns. GitHub Actions minutes are only used while the PC is off.</span></span></label>
+        ${p.handoff ? `<div class="cloud-row"><span class="cloud-dim" data-handoff-app>Uses your GitHub connection. <a href="#" data-url="https://github.com/apps/codeply-craft">Safer: install the Codeply GitHub app</a> so Codeply only touches the repos you pick.</span></div>` : ''}`;
     const keys = (p.env && p.env.keys) || [];
     const envRow = envEditing
       ? `<div class="cloud-env"><span class="cloud-env-label">Environment variables for testing <span class="cloud-dim">(KEY=value per line)</span></span>
@@ -279,7 +279,7 @@
   const cloudChats = new Set(); // chats with a cloud line, beyond what the sidebar list already knows
 
   // Cloud chats look like any chat, marked by a hollow blue cloud in the sidebar.
-  const HOLLOW = '<svg class="cloud-mark" viewBox="0 0 24 24" aria-label="Cloud chat"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1 .5 7.97V18Z"/></svg>';
+  const HOLLOW = icon('cloud', 'cloud-mark', 'aria-label="Cloud chat"');
   const isCloudChat = (id) => !!id && (cloudChats.has(id) || (state.sessions || []).some((s) => s.id === id && s.cloud));
   function markCloudChats() {
     document.querySelectorAll('.sb-chat-row').forEach((row) => {

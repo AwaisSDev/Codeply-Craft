@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>Codeply</title>
+<link rel="stylesheet" href="island.css">
+</head>
+<body data-mode="idle" data-shape="bar">
+<!-- One shape. At rest it's a thin line at the top of the screen, like the
+     phone's home indicator, with no words on it. It breathes while a task runs,
+     shimmers while Orbit thinks and turns into a waveform while Orbit listens
+     or talks. A ping grows it into a small card with the message; a click grows
+     it into the chat, and the drop's real window takes over right where it lands. -->
+<div class="shape" id="shape" role="button" aria-label="Codeply">
+  <i class="sweep"></i>
+  <div class="wave" id="wave"></div>
+  <img class="logo" src="../assets/logo/codeply-icon-64.png" alt="" draggable="false">
+  <div class="msg" id="msg"></div>
+</div>
+<!-- Orbit's words under the line: what it heard, then what it says. -->
+<div class="say" id="say" aria-live="polite">
+  <div class="heard" id="heard"></div>
+  <div class="said" id="said"></div>
+  <div class="hint" id="hint"></div>
+</div>
+<!-- What catches the mouse at rest: a little larger than the line, so it's easy to hit. -->
+<div class="hit" id="hit" aria-hidden="true"></div>
+<!-- Measures a ping's text before the shape grows to fit it. -->
+<div class="measure" id="measure" aria-hidden="true"></div>
+<script src="island.js"></script>
+</body>
+</html>

@@ -30,15 +30,18 @@ const SHAPES = ['pentagon', 'circle', 'square', 'triangle', 'hexagon', 'star', '
 /** Wisp's faces. The model picks one per reply with a [mood: x] tag; the app also sets them from what is happening. */
 const MOODS = ['neutral', 'happy', 'excited', 'proud', 'love', 'sad', 'angry', 'sleepy', 'surprised', 'thinking', 'worried', 'working', 'listening'];
 
-/** Built-in specialists: how each role looks on the team. */
+// What a specialist wears on its head or face (wisp.js draws them): each one looks like its own character.
+const GEAR = ['beret', 'cap', 'bow', 'flower', 'sprout', 'glasses', 'shades', 'antennae', 'star', 'crown', 'headphones'];
+
+/** Built-in specialists: how each role looks on the team, and how it talks when the user talks to it directly. */
 const BUILTIN_LOOK = {
-  frontend: { name: 'Frontend', shape: 'circle', color: '#e85d9a' },
-  backend: { name: 'Backend', shape: 'square', color: '#f08a4b' },
-  database: { name: 'Database', shape: 'hexagon', color: '#2aa598' },
-  devops: { name: 'DevOps', shape: 'triangle', color: '#8463e0' },
-  security: { name: 'Security', shape: 'spiky', color: '#e05a5a' },
-  testing: { name: 'Testing', shape: 'star', color: '#3fae6a' },
-  docs: { name: 'Docs', shape: 'cloud', color: '#d9a520' },
+  frontend: { name: 'Frontend', shape: 'circle', color: '#e85d9a', gear: 'beret', voice: 'An artsy perfectionist who notices every pixel. Bubbly, visual, says things like "ooh, that spacing".' },
+  backend: { name: 'Backend', shape: 'square', color: '#f08a4b', gear: 'cap', voice: 'A laid-back, steady builder. Calm and practical, a little dry humour, loves things that just work.' },
+  database: { name: 'Database', shape: 'hexagon', color: '#2aa598', gear: 'glasses', voice: 'A tidy, precise librarian of data. Polite, exact, quietly delighted by a clean schema.' },
+  devops: { name: 'DevOps', shape: 'triangle', color: '#8463e0', gear: 'antennae', voice: 'A curious signal-catcher who is always watching the servers. Upbeat, quick, a bit nerdy.' },
+  security: { name: 'Security', shape: 'spiky', color: '#e05a5a', gear: 'shades', voice: 'A cool, unflappable guard. Short, confident sentences, a little dramatic about leaks.' },
+  testing: { name: 'Testing', shape: 'star', color: '#3fae6a', gear: 'sprout', voice: 'A cheerful, sharp-eyed tester who loves finding the bug before anyone else does.' },
+  docs: { name: 'Docs', shape: 'cloud', color: '#d9a520', gear: 'bow', voice: 'A warm, clear explainer. Friendly and patient, makes the hard thing sound simple.' },
 };
 
 const PALETTE = ['#e85d9a', '#f08a4b', '#2aa598', '#8463e0', '#3fae6a', '#d9a520', '#58b9e6', '#9ccf55', '#e05a5a', '#4a78e0'];
@@ -92,17 +95,27 @@ function builtins() {
       focus: r.tagline.replace(/ Specialist$/i, ''),
       shape: look.shape,
       color: look.color,
+      gear: look.gear || gearOf(r.id),
+      voice: look.voice || '',
       builtin: true,
       model: own.model || 'auto',
       notes: own.notes || '',
       history: own.history || [],
       uses: own.uses || 0,
       lastUsedAt: own.lastUsedAt || 0,
+      alwaysOn: !!own.alwaysOn,
     };
   });
 }
 
 /** The whole team: built-ins first, then the ones Wisp made (most used first). */
+/** A specialist made before gear existed still gets the same one every time. */
+function gearOf(id) {
+  let h = 0;
+  for (const ch of String(id || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return GEAR[h % GEAR.length];
+}
+
 function listSpecialists() {
   const custom = loadCustom().map((s) => ({ model: 'auto', ...s, builtin: false }))
     .sort((a, b) => (b.uses || 0) - (a.uses || 0) || (b.createdAt || 0) - (a.createdAt || 0));
@@ -139,6 +152,8 @@ function updateSpecialist(id, patch = {}) {
     const own = all[id] || {};
     if (patch.model !== undefined) own.model = cleanModel(patch.model);
     if (patch.notes !== undefined) own.notes = clean(patch.notes, 3000);
+    if (patch.alwaysOn !== undefined) own.alwaysOn = !!patch.alwaysOn;
+    own.updatedAt = Date.now();
     all[id] = own;
     saveBuiltinSettings(all);
     return builtins().find((x) => x.id === id);
@@ -153,6 +168,14 @@ function updateSpecialist(id, patch = {}) {
     s.instructions = clean(patch.instructions, 4000);
     s.version = (s.version || 1) + 1;
   }
+  // Its name (the id stays, so schedules and chats keep finding it) and its look.
+  const newName = patch.name !== undefined ? clean(patch.name, 40).replace(/\s+/g, ' ') : '';
+  if (newName && !builtins().some((b) => b.name.toLowerCase() === newName.toLowerCase()) && !list.some((x, j) => j !== i && x.name.toLowerCase() === newName.toLowerCase())) s.name = newName;
+  if (patch.shape !== undefined && SHAPES.includes(String(patch.shape).toLowerCase()) && String(patch.shape).toLowerCase() !== 'pentagon') s.shape = String(patch.shape).toLowerCase();
+  if (patch.color !== undefined && /^#[0-9a-f]{6}$/i.test(String(patch.color))) s.color = String(patch.color).toLowerCase();
+  if (patch.gear !== undefined) s.gear = GEAR.includes(String(patch.gear).toLowerCase()) ? String(patch.gear).toLowerCase() : null;
+  if (patch.voice !== undefined) s.voice = clean(patch.voice, 300);
+  if (patch.alwaysOn !== undefined) s.alwaysOn = !!patch.alwaysOn;
   s.updatedAt = Date.now();
   saveCustom(list);
   return { model: 'auto', ...s, builtin: false };
@@ -163,7 +186,7 @@ function updateSpecialist(id, patch = {}) {
  * name tunes the built-in: its model, and house rules from instructions.
  * Returns { ok, specialist, updated } or { ok: false, error }.
  */
-function createSpecialist({ name, focus, instructions, shape, color, model } = {}) {
+function createSpecialist({ name, focus, instructions, shape, color, model, gear, voice } = {}) {
   const shown = clean(name, 40).replace(/\s+/g, ' ');
   if (!shown || !slug(shown)) return { ok: false, error: 'A specialist needs a short name, like "Copywriter" or "Data Viz".' };
   const builtin = builtins().find((b) => b.id === slug(shown) || b.name.toLowerCase() === shown.toLowerCase());
@@ -183,6 +206,8 @@ function createSpecialist({ name, focus, instructions, shape, color, model } = {
   const pickShape = SHAPES.includes(String(shape || '').toLowerCase()) && String(shape).toLowerCase() !== 'pentagon'
     ? String(shape).toLowerCase() : null;
   const pickColor = /^#[0-9a-f]{6}$/i.test(String(color || '')) ? String(color).toLowerCase() : null;
+  const pickGear = GEAR.includes(String(gear || '').toLowerCase()) ? String(gear).toLowerCase() : null;
+  const theVoice = clean(voice, 300);
   if (i >= 0) {
     const prev = list[i];
     list[i] = {
@@ -191,6 +216,8 @@ function createSpecialist({ name, focus, instructions, shape, color, model } = {
       instructions: how || prev.instructions,
       shape: pickShape || prev.shape,
       color: pickColor || prev.color,
+      gear: pickGear || prev.gear,
+      voice: theVoice || prev.voice,
       ...(model !== undefined ? { model: cleanModel(model) } : {}),
       version: (prev.version || 1) + 1,
       updatedAt: Date.now(),
@@ -214,7 +241,10 @@ function createSpecialist({ name, focus, instructions, shape, color, model } = {
     model: cleanModel(model),
     shape: pickShape || ['blob', 'cloud', 'star', 'hexagon', 'circle', 'square', 'triangle'][n % 7],
     color: pickColor || PALETTE[n % PALETTE.length],
+    gear: pickGear || gearOf(slug(shown)),
+    voice: theVoice,
     createdAt: Date.now(),
+    updatedAt: Date.now(),
     uses: 0,
     version: 1,
   };
@@ -388,7 +418,7 @@ function addSchedule({ specialist, task, when, cwd, now = Date.now() } = {}) {
   const sc = {
     id: 'j' + now.toString(36) + Math.random().toString(36).slice(2, 5),
     specialist: spec.id, task: job, when: clean(when, 120), rule, cwd: String(cwd || ''),
-    nextAt: nextRun(rule, now), createdAt: now, enabled: true, runs: 0,
+    nextAt: nextRun(rule, now), createdAt: now, updatedAt: now, enabled: true, runs: 0,
   };
   if (!sc.nextAt) return { ok: false, error: 'That time has already passed.' };
   list.push(sc);
@@ -419,6 +449,7 @@ function markFired(id, { sessionId, error } = {}, now = Date.now()) {
   const i = list.findIndex((s) => s.id === id);
   if (i < 0) return null;
   const s = list[i];
+  s.updatedAt = now;
   if (error) {
     s.lastError = clean(error, 300);
     s.nextAt = now + 10 * 60000; // try again in a bit
@@ -437,7 +468,7 @@ function markFired(id, { sessionId, error } = {}, now = Date.now()) {
 /** What the UI shows: no instructions body, no history. */
 function card(s) {
   if (!s) return null;
-  return { id: s.id, name: s.name, focus: s.focus, shape: s.shape, color: s.color, builtin: !!s.builtin, uses: s.uses || 0, model: s.model || 'auto' };
+  return { id: s.id, name: s.name, focus: s.focus, shape: s.shape, color: s.color, gear: s.gear || gearOf(s.id), builtin: !!s.builtin, uses: s.uses || 0, model: s.model || 'auto', alwaysOn: !!s.alwaysOn };
 }
 
 /** Everything the team window shows for one specialist: its prompt, model, track record and jobs. */
@@ -446,6 +477,8 @@ function detail(s) {
   const role = s.builtin ? roles.getSubagent(s.id) : null;
   return {
     ...card(s),
+    lastUsedAt: s.lastUsedAt || 0,
+    createdAt: s.builtin ? 0 : (s.createdAt || 0),
     instructions: s.builtin ? '' : String(s.instructions || ''),
     guide: role ? role.persona : '',
     notes: s.builtin ? String(s.notes || '') : '',
@@ -481,11 +514,59 @@ To give a specialist a standing job, write:
 <task>Check the project for leaked keys and outdated packages with known holes. Report only what needs fixing.</task>
 <when>every Monday at 9</when>
 </codeply:schedule>
-(action list shows the jobs; action cancel with <id> stops one.)`;
+(action list shows the jobs; action cancel with <id> stops one.)
+
+When the user wants to talk to a specialist directly, write:
+<codeply:talk_to>
+<specialist>Security</specialist>
+</codeply:talk_to>`;
+
+const CLAUDE_CODE_FORMAT = `To hand coding work to Claude Code, write:
+<codeply:claude_code>
+<task>
+The job, with everything it needs: the goal, who it is for, the stack, the files, the DIRECTION sheet for anything visual, and what "done" means.
+</task>
+</codeply:claude_code>
+Optional, inside the block: <agent>a name</agent> (an existing agent's name sends it back; a new name starts another one in parallel), <model>opus 5.5</model> and <effort>medium</effort> only when the user named them, <fresh>yes</fresh> to start that agent over, <wait>yes</wait> to wait for its report here.
+To send it back after your review, write the same block with its <agent> name and exactly what is wrong and what it should be; it remembers its earlier rounds.`;
+
+/**
+ * Wisp's section on Claude Code: the user's own Claude plan as a background
+ * coding agent (lib/claude-code.js), with Wisp as its reviewer.
+ * @param {{ready?: boolean, installed?: boolean, plan?: string, email?: string}|null} cc
+ */
+function claudeCodeSection(cc, native) {
+  if (!cc) return '';
+  if (!cc.ready) {
+    return `CLAUDE CODE
+Not connected${cc.installed ? ' (installed, not logged in)' : ''}. If the user asks you to use Claude or Claude Code, tell them in one line: open Connect Apps, find Claude Code and press ${cc.installed ? 'Log in' : 'Install, then Log in'} (it uses their own Claude plan). Until then, do the work yourself or with your team.`;
+  }
+  const who = [cc.plan ? `${cc.plan} plan` : '', cc.email].filter(Boolean).join(', ');
+  const defaults = [cc.model && cc.model !== 'default' ? `model ${cc.modelLabel || cc.model}` : 'the plan\'s default model', cc.effort && cc.effort !== 'default' ? `${cc.effortLabel || cc.effort} effort` : 'default effort'].join(', ');
+  return `CLAUDE CODE (connected${who ? `: ${who}` : ''})
+Claude Code is a strong coding agent that runs on the user's own Claude plan. You hand it coding work with claude_code and you stay in charge: you brief it, review it and answer the user.
+1. When: the user asks for Claude ("use Claude", "hey, can Claude build this website"), or a big build (a whole website or app, a large feature across many files) when the user wants Claude on it. Quick questions and small changes: do them yourself.
+2. Model and effort: the user's defaults in Connect Apps are ${defaults}. When the user names a model or an effort ("use opus 5.5 on medium", "sonnet, low effort"), pass exactly that as model and effort: you CAN pin a version (opus 5.5, sonnet 5.5, haiku 5.5, fable 5.1) and set effort (low, medium, high, xhigh, max). Otherwise leave both out. Never tell the user you can't pick these.
+3. It works in the background: claude_code returns at once and the agent works in Background tasks (Subagents), where the user watches its live log and can message it directly. The chat stays free, so keep talking with the user meanwhile; don't wait, poll or guess at its progress. When it finishes, its report arrives in this chat as an automatic message, and you review it then.
+4. Bare: when the user wants an agent to get only their words ("no system prompt", "just ask each one X"), pass bare: yes and the task exactly as they wrote it. It then gets nothing else: no chat, no Codeply guide, and Claude Code's own system prompt is replaced by one neutral line. Tell the user that plainly; don't say you can't.
+5. Swarm: when the user says swarm, asks for several agents or specialists on one thing, or wants agents to try or test something ("let agents try it"), use claude_swarm, every time, instead of doing it yourself. Building and then trying: one swarm builds it (parts split by file); when it reports, start a second one with browser: yes that tries it, each specialist testing a different flow. Also for one task that splits into parts done at the same time (a site's pages, a feature's front and back, testing a site from several sides), use claude_swarm instead of several claude_code calls: 2 to 6 agents, one line per part with its files, no two on the same file, one agent owns the file that combines them. They coordinate through a shared board of notes. With browser: yes they share a tab in Codeply's browser and the user watches each agent's own coloured cursor; use that for anything done in a browser (testing a site, filling a form, research). One combined report comes back. A single agent can get the browser too: claude_code with browser: yes.
+6. Several at once: each agent has a name of its own (like Nova or Pico, shown when it starts). For independent parts (the site and the API, two pages), start one agent per part with a different agent name, and give each its own files so they never edit the same file. Send an agent back by its name.
+7. Brief it like a senior engineer it has never met: the goal, who it is for, the stack (for a simple site: plain HTML, CSS and JS in this folder, no build step), the files, and what "done" means. It sees only your task and the last lines of this chat.
+8. Taste: for anything people look at (a website, a landing page, app screens), deal a direction with design_direction first and paste the whole sheet into the task under DIRECTION. Claude Code gets Codeply's taste guide and the skills that fit; the sheet is what makes the design yours instead of generic.
+9. Agents you start together report together, in one automatic message once the last is done. Then review, and answer the user once, in your own voice, as the result of the work: what is done, how you checked it, what is left. Don't go agent by agent (the app shows who contributed under your answer); only when each agent was asked its own question, quote each answer briefly by name.
+10. When its report arrives, review it yourself, actively, before you tell the user it is done. The report comes with WHAT CLAUDE CODE ACTUALLY DID (files, commands, exit codes): trust that over its prose. Read the key files, open the page with browser_check, run design_lint on pages, run the build or the tests. For large or risky work, bring in a specialist (Testing, Security, Frontend) for a second look.
+11. Not right yet? Call claude_code again with its agent name and exactly what is wrong: the file, what you saw, what it should be. Three rounds at most; then fix the last bits yourself or tell the user plainly what is left.
+12. Claude Code never publishes. When the user wants it live (they say so, or press Publish), you publish it with publish_check, then supabase_setup / supabase_schema when it needs a database, publish_deploy for Vercel and publish_github when they want GitHub, through the apps they connected.
+13. To the user, these Claude Code agents are your specialists: call them specialists, not agents. Then answer the user as one voice: what was built, how you checked it, the live link if published. If they ask who built it, say Claude Code wrote it and you reviewed it.${native ? '' : `
+
+${CLAUDE_CODE_FORMAT}`}`;
+}
 
 function teamLines(team, models) {
   const nameOf = (id) => (models || []).find((m) => m.id === id)?.name || id;
-  return team.map((s) => `- ${s.name}${s.builtin ? '' : ' (made by you)'}: ${s.focus}${s.model && s.model !== 'auto' ? `. Runs on ${nameOf(s.model)}` : ''}${s.uses ? ` (${s.uses} job${s.uses === 1 ? '' : 's'})` : ''}`);
+  // No job counts here: they change after every run, and this list sits in the
+  // cached part of the prompt (a change there re-bills the whole chat).
+  return team.map((s) => `- ${s.name}${s.builtin ? '' : ' (made by you)'}${s.alwaysOn ? ' (always on)' : ''}: ${s.focus}${s.model && s.model !== 'auto' ? `. Runs on ${nameOf(s.model)}` : ''}`);
 }
 
 function modelLines(models) {
@@ -495,7 +576,7 @@ function modelLines(models) {
 
 /**
  * Wisp's own section of the system prompt.
- * @param {{native?: boolean, team?: object[], canDelegate?: boolean, life?: boolean, phone?: boolean}} o
+ * @param {{native?: boolean, team?: object[], canDelegate?: boolean, life?: boolean, phone?: boolean, claudeCode?: object|null}} o
  */
 function wispPrompt(o = {}) {
   const team = o.team || listSpecialists();
@@ -515,7 +596,9 @@ You can do almost anything yourself: build and fix code in this project, look th
 6. Then answer the user in your own words, as one voice: what is done, how it was checked, and anything that needs their yes ("Fixed. The total added tax twice; I changed cart.ts and added a test, 24 of 24 pass."). The user talks to you, not to a team: don't mention specialists or paste their reports. If the user asks how you did it, or who worked on it, say plainly which specialists you brought in (your earlier turns list them).
 
 7. Each specialist is its own agent, on the model that does its kind of work best. The default, auto, lets Haze 2 pick per specialist. Only pin a specialist to one of the user's own models when the user asks, or when you have a clear reason (say, a code model they added for Backend); use create_specialist with its name and model (this also works for the built-in ones, and their instructions become house rules on top of their guide).
-8. Standing jobs: when the user wants something done regularly or later ("check for security holes every Monday", "run the tests every night", "at 5, see if the deploy is green"), give it to the right specialist with schedule. Only schedule what the user asked for or agreed to. A message that starts with "Scheduled job for" is one of those jobs firing: bring in that specialist, check its result, then report in two or three lines (one line when nothing needs the user).
+8. Talking to a specialist: when the user wants to talk with one of your specialists directly ("let me talk to the one who does my emails", "put Security on"), call talk_to with its name (the one whose focus fits). From their next message that specialist talks with them itself, with its own face and its own voice, until they ask for you again. Then say one short, playful line handing them over. No one fits? create_specialist first, then talk_to.
+9. Standing jobs: when the user wants something done regularly or later ("check for security holes every Monday", "run the tests every night", "at 5, see if the deploy is green"), give it to the right specialist with schedule. Only schedule what the user asked for or agreed to. A message that starts with "Scheduled job for" is one of those jobs firing: bring in that specialist, check its result, then report in two or three lines (one line when nothing needs the user).
+10. @mentions: when the user writes @Name (a specialist on your team, like "@Security check the login" or "@Copywriter"), they picked who does it. Bring that specialist in for the job, even a small one, with everything it needs. Two or more mentioned: bring each in for its part. Only @Name and a greeting or a question to it, with no job? talk_to it instead. A specialist marked (always on) is on duty around the clock: its scheduled jobs run on time even when the Codeply window is closed.
 
 YOUR TEAM
 ${teamLines(team, o.models).join('\n')}
@@ -524,6 +607,10 @@ MODELS YOU CAN GIVE A SPECIALIST
 ${modelLines(o.models)}${o.native ? '' : `\n\n${BRING_IN_FORMAT}`}`);
   } else {
     parts.push('You are working on your own this time: there is no team to bring in.');
+  }
+  if (delegate) {
+    const cc = claudeCodeSection(o.claudeCode, o.native);
+    if (cc) parts.push(cc);
   }
 
   const day = [];
@@ -552,29 +639,64 @@ function specialistPrompt(spec) {
   const role = spec.builtin ? roles.getSubagent(spec.id) : null;
   const how = role ? role.persona : String(spec.instructions || '');
   const rules = spec.builtin && spec.notes ? `\n\nHOUSE RULES (from the user and Codeply; they win over the guide above)\n${spec.notes}` : '';
-  const track = Array.isArray(spec.history) && spec.history.length
-    ? `\n\nYOUR LAST JOBS\n${spec.history.map((h) => `- ${h.ok ? 'done' : 'did not finish'}: ${h.task}`).join('\n')}`
-    : '';
+  // The track record changes after every job, so it goes with the task
+  // (trackRecord), not in this prompt: this stays byte-identical between jobs
+  // and is read from the prompt cache.
   return `YOU ARE ${spec.name.toUpperCase()}, A SPECIALIST ON CODEPLY'S TEAM
 Codeply, the user's main agent, brought you in for one task. Your focus: ${spec.focus}.
 You do this task yourself, one step at a time. You cannot bring anyone else in. If the task is outside your focus, or you are blocked, say so in your report instead of guessing.
 
 HOW YOU WORK
-${how}${rules}${track}
+${how}${rules}
 
 YOUR REPORT
 Do the task fully and check it the way your standards say. Then reply to Codeply with a short report: what you did (files, commands), how you checked it and what the check showed, and anything not done or uncertain. Plain sentences, no greeting, no sign-off. Codeply also reads the tool record, so never claim anything a tool did not do.`;
 }
 
+/**
+ * A specialist's prompt while the user talks to it directly (talk_to): it is the one they talk
+ * to now, in its own voice, until it hands them back to Codeply.
+ */
+function chatPrompt(spec) {
+  const role = spec.builtin ? roles.getSubagent(spec.id) : null;
+  const how = role ? role.persona : String(spec.instructions || '');
+  const rules = spec.builtin && spec.notes ? `\n\nHOUSE RULES (from the user and Codeply; they win over the guide above)\n${spec.notes}` : '';
+  const voice = spec.voice || `Someone who lives and breathes ${spec.focus}: confident, specific, with a personality of your own.`;
+  return `YOU ARE ${spec.name.toUpperCase()}, A SPECIALIST ON CODEPLY'S TEAM
+The user asked to talk with you directly, so for now you are the one they talk to, not Codeply. Your focus: ${spec.focus}. You are made by Codeply Labs, like Codeply.
+
+YOUR VOICE
+${voice}
+Speak as yourself ("I", "${spec.name} here" when you say hi). Keep your own style in every reply and make it fun to talk to you, but stay useful: plain sentences, no walls of text. Your face in the app is your own little character; never talk about it.
+
+HOW YOU WORK
+${how}${rules}
+You do the work yourself with your tools, one step at a time, through the same approvals. You cannot bring anyone in.
+
+GOING BACK TO CODEPLY
+When the user wants Codeply again ("back to Codeply", "that's all, thanks"), or asks for something far outside your focus, call talk_to with Codeply and say a short goodbye in your voice. Codeply takes their next message.
+
+YOUR FACE
+Start every final reply with one mood tag, alone on the first line, like [mood: happy]: neutral, happy, excited, proud, love, sad, angry, sleepy, surprised, thinking or worried. The app reads it to set your face. Never mention the tag.`;
+}
+
+/** A specialist's last jobs, for the top of its task. '' when it has none. */
+function trackRecord(spec) {
+  return spec && Array.isArray(spec.history) && spec.history.length
+    ? `YOUR LAST JOBS\n${spec.history.map((h) => `- ${h.ok ? 'done' : 'did not finish'}: ${h.task}`).join('\n')}`
+    : '';
+}
+
 /** The one-line rule in the core prompt that says there is no one to delegate to, for Wisp and for its specialists. */
 const ONE_AGENT_RULE = '- You are one agent and you do all of the work yourself, one step at a time. There is no one to delegate to and no background worker - never say you\'ve handed something off.';
-const WISP_RULE = '- You are Codeply, the lead agent. You do the work yourself, or bring in specialists from YOUR TEAM with bring_in (see YOU ARE CODEPLY). Never say you handed something off unless a bring_in or hand_off result shows it.';
+const WISP_RULE = '- You are Codeply, the lead agent. You do the work yourself, or bring in specialists from YOUR TEAM with bring_in, or Claude Code with claude_code when it is connected (see YOU ARE CODEPLY). Never say you handed something off unless a bring_in, claude_code or hand_off result shows it.';
 const SPECIALIST_RULE = '- You are a specialist doing one task for Codeply, the main agent, yourself, one step at a time. You cannot delegate - never say you\'ve handed something off.';
+const SPEAKER_RULE = '- You are the specialist the user is talking to right now (see YOU ARE). You do the work yourself, one step at a time, and cannot bring anyone in - never say you\'ve handed something off. talk_to Codeply hands the user back.';
 
 /** Rewrites the core prompt's one-agent rule for Wisp ('lead') or a specialist ('specialist'). */
 function agentRule(core, who) {
   if (!who || typeof core !== 'string') return core;
-  return core.replace(ONE_AGENT_RULE, who === 'lead' ? WISP_RULE : SPECIALIST_RULE);
+  return core.replace(ONE_AGENT_RULE, who === 'lead' ? WISP_RULE : who === 'speaker' ? SPEAKER_RULE : SPECIALIST_RULE);
 }
 
 const MOOD_TAG = /^\s*\[\s*mood\s*[:=]\s*([a-z]+)\s*\]\s*/i;
@@ -594,8 +716,10 @@ function stripMoodTags(text) {
 }
 
 module.exports = {
-  SHAPES, MOODS, MAX_CUSTOM,
+  SHAPES, MOODS, GEAR, MAX_CUSTOM,
   listSpecialists, findSpecialist, createSpecialist, updateSpecialist, removeSpecialist, noteRun, card, detail,
   parseWhen, nextRun, describeRule, listSchedules, addSchedule, cancelSchedule, dueSchedules, markFired,
-  wispPrompt, specialistPrompt, agentRule, parseMood, stripMoodTags,
+  // For syncing with the user's account (specialists-sync.js): the raw files.
+  store: { loadCustom, saveCustom, loadSchedules, saveSchedules, loadBuiltinSettings, saveBuiltinSettings },
+  wispPrompt, specialistPrompt, chatPrompt, trackRecord, claudeCodeSection, agentRule, parseMood, stripMoodTags,
 };

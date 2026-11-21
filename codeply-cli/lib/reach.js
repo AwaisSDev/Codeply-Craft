@@ -38,7 +38,7 @@ function parseWhen(v, now = new Date()) {
 }
 
 async function reachMe(args, ctx) {
-  if (!handler) return { ok: false, output: 'Reaching the phone is only available in the Craft app.' };
+  if (!handler) return { ok: false, output: 'Reaching the phone is only available in the Codeply app.' };
   const how = HOW[String(args.how || 'text').trim().toLowerCase()];
   if (!how) return { ok: false, output: 'reach_me needs <how> set to call or text.' };
   const message = String(args.message || '').trim().slice(0, 480);
@@ -54,7 +54,7 @@ async function reachMe(args, ctx) {
 }
 
 async function watchEmail(args, ctx) {
-  if (!handler || typeof handler.watchEmail !== 'function') return { ok: false, output: 'Email alerts are only available in the Craft app.' };
+  if (!handler || typeof handler.watchEmail !== 'function') return { ok: false, output: 'Email alerts are only available in the Codeply app.' };
   const from = String(args.from || '').trim().toLowerCase().replace(/^mailto:/, '');
   if (!/^[^\s@]*@?[^\s@]+\.[^\s@]+$/.test(from)) return { ok: false, output: 'watch_email needs <from>: an email address or a domain like example.com.' };
   const how = HOW[String(args.how || 'text').trim().toLowerCase()] || 'text';

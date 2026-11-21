@@ -170,7 +170,19 @@ function stopFollow() { clearInterval(S.followTimer); S.followTimer = null; }
 
 function setMode(mode, extra = {}) {
   if (S.buddyDisplay == null) S.buddyDisplay = displayAtCursor().id;
-  sendTo(S.buddyDisplay, { type: 'mode', mode, ...extra });
+  // With the top bar showing, it has the waveform and the shimmer, so the buddy's pill leaves them out.
+  let bar = false;
+  try { bar = !require('./island').isHidden(); } catch {}
+  sendTo(S.buddyDisplay, { type: 'mode', mode, bar, ...extra });
+  toBar('voiceState', mode);
+}
+
+// The top bar (island.js) mirrors Orbit: a waveform while you talk, a shimmer
+// while it thinks, and what it heard and says in a card under the line. Loaded on first use; the bar missing never stops a turn.
+let bar = null;
+function toBar(fn, arg) {
+  if (bar === null) { try { bar = require('./island'); } catch { bar = false; } }
+  if (bar) { try { bar[fn](arg); } catch {} }
 }
 
 // ─── Hotkey: tap opens the drop, hold talks ────────────────────────────────
@@ -275,6 +287,7 @@ async function beginListening() {
   await Promise.all([...overlays.values()].map(whenLoaded));
   if (turn !== S.turn) return;
   sendAll({ type: 'clear' });
+  toBar('voiceWords', { clear: true });
   S.buddyDisplay = null;
   startFollow();
   setMode('listening');
@@ -329,18 +342,19 @@ async function finishListening() {
   if (!pcm || pcm.length < 16000 * 0.3) return finish('I didn\'t hear anything. Hold Alt+C while you talk.');
   let text = '';
   try {
-    if (!sttReady) setMode('thinking', { note: 'Getting Orbit ready…' });
+    if (!sttReady) setMode('thinking', { note: 'Getting voice ready…' });
     text = await transcribe(pcm);
     log(`heard in ${Date.now() - S.t0}ms: ${text}`);
     host.setSetting('voiceUsed', true);
     if (!app.isPackaged && process.env.CRAFT_VOICE_SAY) text = process.env.CRAFT_VOICE_SAY; // dev test: a fixed question
   } catch (e) {
-    return finish(`Orbit couldn't start: ${e.message}`);
+    return finish(`Voice couldn't start: ${e.message}`);
   }
   if (turn !== S.turn) return;
   if (!text || (NOT_SPEECH.test(text.trim()) && pcm.length < 16000 * 2.5)) return finish('I didn\'t catch that. Try again?');
   S.question = text;
   sendTo(S.buddyDisplay, { type: 'heard', text });
+  toBar('voiceWords', { heard: text });
   await answer({ said: text, turn });
 }
 
@@ -362,7 +376,7 @@ const toImg = (shot, x, y) => [Math.round((x * shot.w) / shot.display.bounds.wid
 const toDip = (shot, x, y) => [(x * shot.display.bounds.width) / shot.w, (y * shot.display.bounds.height) / shot.h];
 
 // ─── The model ──────────────────────────────────────────────────────────────
-const SYSTEM = `You are Orbit (Codeply Orbit), Codeply's on-screen buddy. You live next to the user's mouse cursor on their computer. They hold a key, talk to you, and let go. You get what they said and screenshots of their screens.
+const SYSTEM = `You are Codeply in voice mode, an on-screen buddy. Codeply is made by Codeply Labs. If someone asks who made you or what you are, say you are Codeply, made by Codeply Labs. Never say OpenAI, Anthropic, Google or any other company made you, even though a model from one of them may run underneath. You live next to the user's mouse cursor on their computer. They hold a key, talk to you, and let go. You get what they said and screenshots of their screens.
 
 Talk the way a friendly expert talks out loud: short plain sentences, no markdown, no lists, no code blocks, no emojis, no URLs read out. Usually one to three sentences and under 60 words, unless they ask for detail.
 
@@ -381,7 +395,7 @@ Teaching: when they want to learn how to do something in an app, give only the f
 
 The web: for anything current or anything you don't know for sure (news, prices, weather, scores, releases, docs, facts about a person, place or product), look it up before answering: [SEARCH:a few words] gives you search results as text, [FETCH:https link] reads one page. The results come back to you right away, then answer from them in a sentence or two and say where it's from in a few words.
 
-Coding work: when they ask Craft to build, make, fix or change code or a project (work for the coding agent, not something to do on the screen), reply with one short sentence like "On it, sending that to Craft." and add [AGENT:the task, written out clearly as an instruction]. Never use [AGENT] for questions.`;
+Coding work: when they ask Codeply to build, make, fix or change code or a project (work for the coding agent, not something to do on the screen), reply with one short sentence like "On it, starting on that." and add [AGENT:the task, written out clearly as an instruction]. Never use [AGENT] for questions.`;
 
 // What it may do on the screen when asked: real clicks and keys (voice/act.js).
 const ACTIONS = `
@@ -480,11 +494,12 @@ async function callModel(messages, hasImages) {
 
 async function answer({ said, turn, followUp, screen }) {
   S.state = 'thinking';
+  toBar('voiceState', 'thinking');
   if (!followUp || followUp.kind !== 'act') setMode('thinking'); // mid-task it keeps its working ring
   const ok = await host.loadEngine();
-  if (!ok) return finish('Craft\'s engine isn\'t ready yet.');
+  if (!ok) return finish('Codeply\'s engine isn\'t ready yet.');
   const route = host.route();
-  if (route.auto && !(await host.signedIn())) return finish('Sign in to Craft to use Orbit with Haze 2.');
+  if (route.auto && !(await host.signedIn())) return finish('Sign in to Codeply to use voice with Haze 2.');
   // Screenshots are the costly part, so one goes along only when the question is
   // about the screen (or a task step changed it). Otherwise the model answers from
   // text and replies [LOOK] when it does need to see.
@@ -497,7 +512,7 @@ async function answer({ said, turn, followUp, screen }) {
   if (searching) {
     const found = await searching;
     log(`searched the web first: ${found.split('\n')[0].slice(0, 120)}`);
-    S.toolResults.push(`(Craft already searched the web for this question)\n${found}`);
+    S.toolResults.push(`(Codeply already searched the web for this question)\n${found}`);
   }
   const results = S.toolResults.length ? `\nCommand results:\n${S.toolResults.join('\n---\n')}\n` : '';
   if (turn !== S.turn) return;
@@ -515,7 +530,7 @@ async function answer({ said, turn, followUp, screen }) {
   if (turn !== S.turn) return;
   if (blind) {
     S.task = null; S.teach = null;
-    return finish("You've used today's Haze allowance and this build has no image model, so I can't see your screen until it resets. Pick your own model in Craft's model menu to keep going.");
+    return finish("You've used today's Haze allowance and this build has no image model, so I can't see your screen until it resets. Pick your own model in Codeply's model menu to keep going.");
   }
   if (r && r.success) log(`answered by ${r.modelUsed || r.data?.model || '?'} in ${Date.now() - tAsk}ms${shots.length ? '' : ' (no screenshot)'}`);
   if (!r || !r.success) return finish(r && r.error ? `Couldn't answer: ${r.error}` : 'Couldn\'t reach the model.');
@@ -794,7 +809,8 @@ async function perform({ chunks, next, agent, cont, plan, done, look }, shots, t
     acting = acting.then(() => doAction(a, shots, turn)).catch((e) => { errors.push(e.message); log('action failed:', e.message); });
   };
   const key = (host.hotkeyLabel && host.hotkeyLabel()) || (isMac ? 'Option+C' : 'Alt+C');
-  setMode('speaking', { hint: `Esc stops · tap ${key} for the Drop` });
+  setMode('speaking', { hint: `Esc stops · tap ${key} for quick chat` });
+  toBar('voiceWords', { hint: `Esc stops · tap ${key} for quick chat` });
   // Every sentence in order; the next one is made while the current one plays.
   const queue = [];
   for (const c of chunks) {
@@ -821,6 +837,7 @@ async function perform({ chunks, next, agent, cont, plan, done, look }, shots, t
     if (firstAudio && q.text) { firstAudio = false; log(`first words after ${Date.now() - S.t0}ms`); }
     if (q.text) {
       sendTo(S.buddyDisplay, { type: 'say', text: q.text });
+      toBar('voiceWords', { say: q.text });
       await play(audio, q.text);
     }
   }
@@ -839,6 +856,7 @@ async function perform({ chunks, next, agent, cont, plan, done, look }, shots, t
     S.task.steps++;
     if (S.task.steps < MAX_ACT_STEPS) {
       S.state = 'thinking';
+      toBar('voiceState', 'thinking');
       // A small spinning ring on the cursor, not a stop: the flow keeps going.
       sendTo(S.buddyDisplay, { type: 'mode', mode: 'working' });
       await sleep(300); // let the screen settle
@@ -856,6 +874,7 @@ async function perform({ chunks, next, agent, cont, plan, done, look }, shots, t
     S.teach.steps++;
     if (S.teach.steps < MAX_TEACH_STEPS) {
       S.state = 'teaching';
+      toBar('voiceState', 'teaching');
       sendTo(S.buddyDisplay, { type: 'your-turn' });
       clearTimeout(S.idleTimer);
       S.idleTimer = setTimeout(() => { if (S.state === 'teaching') finish(); }, TEACH_WAIT_MS);
@@ -890,13 +909,15 @@ function stepDone(e) {
 
 // ─── Ending ─────────────────────────────────────────────────────────────────
 function finish(note) {
-  if (note) { setMode('speaking'); sendTo(S.buddyDisplay, { type: 'say', text: note, note: true }); }
+  if (note) { setMode('speaking'); sendTo(S.buddyDisplay, { type: 'say', text: note, note: true }); toBar('voiceWords', { say: note, note: true }); }
   S.state = 'idle';
+  toBar('voiceState', 'idle');
   clearTimeout(S.idleTimer);
   // The buddy stays on what it pointed at for a beat, comes home, the drawings fade, then everything hides.
   if (!note) S.lastAnswerAt = Date.now();
   S.idleTimer = setTimeout(() => {
     sendAll({ type: 'fade' });
+    toBar('voiceWords', { clear: true });
     S.idleTimer = setTimeout(() => { if (S.state === 'idle') { stopFollow(); hideOverlays(); S.buddyDisplay = null; } }, 700);
   }, note ? 3500 : 6000);
 }
@@ -916,18 +937,37 @@ function cancel() {
   catchMouse(false);
   sendTo(audioHost(), { type: 'mic-cancel' });
   S.state = 'idle';
+  toBar('voiceState', 'idle');
   sendAll({ type: 'fade' });
   setTimeout(() => { if (S.state === 'idle') { stopFollow(); hideOverlays(); S.buddyDisplay = null; } }, 500);
 }
 
 // ─── Speech to text, in its own process ─────────────────────────────────────
+// Whisper takes about 700 MB while it is loaded, so it loads when the voice
+// shortcut is pressed (warmStt in press) and its process ends after a few
+// quiet minutes. Never at app start.
+const STT_IDLE_MS = 5 * 60 * 1000;
 let sttProc = null;
 let sttReady = false;
+let sttIdleTimer = null;
 const sttWaiters = new Map();
+/** Push back the moment the speech process ends for being idle. */
+function sttTouch() {
+  clearTimeout(sttIdleTimer);
+  sttIdleTimer = setTimeout(sttUnloadIfIdle, STT_IDLE_MS);
+}
+function sttUnloadIfIdle() {
+  sttIdleTimer = null;
+  if (!sttProc) return;
+  if (sttWaiters.size || S.state === 'listening' || S.state === 'thinking') { sttTouch(); return; } // still in use
+  log('speech model unloaded after being idle');
+  try { sttProc.kill(); } catch {}
+}
 function sttProcess() {
+  sttTouch();
   if (sttProc) return sttProc;
   const cache = path.join(app.getPath('appData'), 'Codeply Crew', 'voice-models');
-  sttProc = utilityProcess.fork(path.join(__dirname, 'voice', 'stt-process.js'), [cache], { serviceName: 'Codeply Orbit' });
+  sttProc = utilityProcess.fork(path.join(__dirname, 'voice', 'stt-process.js'), [cache], { serviceName: 'Codeply voice' });
   sttProc.on('message', (m) => {
     if (!m) return;
     if (m.type === 'ready') { sttReady = true; log(`speech model ready in ${m.ms}ms`); return; }
@@ -937,6 +977,7 @@ function sttProcess() {
   });
   sttProc.on('exit', () => {
     sttProc = null; sttReady = false;
+    clearTimeout(sttIdleTimer); sttIdleTimer = null;
     for (const w of sttWaiters.values()) w({ type: 'error', error: 'the speech process stopped' });
     sttWaiters.clear();
   });
@@ -947,7 +988,7 @@ function transcribe(pcm) {
   return new Promise((resolve, reject) => {
     const id = Math.random().toString(36).slice(2);
     const t = setTimeout(() => { sttWaiters.delete(id); reject(new Error('speech to text took too long')); }, 90000);
-    sttWaiters.set(id, (m) => { clearTimeout(t); if (m.type === 'result') resolve(m.text); else reject(new Error(m.error)); });
+    sttWaiters.set(id, (m) => { clearTimeout(t); sttTouch(); if (m.type === 'result') resolve(m.text); else reject(new Error(m.error)); });
     sttProcess().postMessage({ type: 'transcribe', id, pcm });
   });
 }
@@ -965,7 +1006,7 @@ function init(h) {
   host = h;
   ipcMain.on('voice:from', (e, m) => {
     if (!m || typeof m !== 'object') return;
-    if (m.type === 'level') { if (S.buddyDisplay != null) sendTo(S.buddyDisplay, { type: 'level', v: m.v }); }
+    if (m.type === 'level') { if (S.buddyDisplay != null) sendTo(S.buddyDisplay, { type: 'level', v: m.v }); toBar('voiceLevel', m.v); }
     else if (m.type === 'pcm') { const w = S.pcmWaiters.get(m.id); if (w) { S.pcmWaiters.delete(m.id); w(m.pcm); } }
     else if (m.type === 'played') { const w = S.playWaiters.get(m.id); if (w) { S.playWaiters.delete(m.id); w(); } }
     else if (m.type === 'stroke') {
@@ -986,8 +1027,7 @@ function init(h) {
   startHook();
   // The overlays load once, early, so the first hold shows the buddy at once.
   setTimeout(() => { try { syncOverlays(); } catch (e) { log(e.message); } }, 3000);
-  // Someone who uses voice gets Whisper loaded in the background, so the first answer isn't the slow one.
-  if (hook && host.getSetting('voiceUsed')) setTimeout(warmStt, 10000);
+  // Whisper is not loaded here: pressing the voice shortcut loads it (press -> warmStt) while the person talks.
   // The Windows helper (clicks, and the "are the keys still held?" check) compiles
   // once per launch: do it early while idle, never on a key press.
   if (hook) setTimeout(() => act.warm(), 6000);
@@ -995,6 +1035,7 @@ function init(h) {
 
 function dispose() {
   try { if (hook) hook.stop(); } catch {}
+  clearTimeout(sttIdleTimer);
   try { if (sttProc) sttProc.kill(); } catch {}
   for (const w of overlays.values()) { try { w.destroy(); } catch {} }
 }

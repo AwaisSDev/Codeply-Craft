@@ -285,7 +285,7 @@ async function buildInCraft(id) {
       : 'Pick a sensible stack for a real app, say which and why, and build the screens in the design first.',
   ].join('\n');
   const r = await host.startChatRun({ cwd: made.cwd, mode: 'Build', text, clientId: 'design' });
-  if (!r || r.error) return r || { error: 'Craft could not start that.' };
+  if (!r || r.error) return r || { error: 'Codeply could not start that.' };
   host.toCraft();
   host.openInCraft(r.sessionId);
   return { ok: true, sessionId: r.sessionId, cwd: made.cwd };
@@ -668,4 +668,4 @@ function stopDesign(id) { const d = byId(id); if (d && d.sessionId) host.stopCha
 /** The session ids of every design chat (main.js keeps them out of Craft's lists). */
 function sessionIds() { return new Set(records().map((d) => d.sessionId).filter(Boolean)); }
 
-module.exports = { init, embed, setBounds, unembed, event, runs, sessionIds, KINDS, createDesign, sendTo, designState, buildFromPhone, stopDesign, pull, exportDesign, renderForLint, inlineHtml, isDesignFolder };
+module.exports = { init, embed, setBounds, unembed, event, runs, sessionIds, KINDS, newFolder, createDesign, sendTo, designState, buildFromPhone, stopDesign, pull, exportDesign, renderForLint, inlineHtml, isDesignFolder };

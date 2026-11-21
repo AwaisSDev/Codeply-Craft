@@ -2754,9 +2754,18 @@ importers:
 
   packages/bundle/web-app:
     dependencies:
+      '@codeply/dsh-agents':
+        specifier: workspace:*
+        version: link:../../codeply/agents
       '@codeply/dsh-approval-memory':
         specifier: workspace:*
         version: link:../../codeply/approval-memory
+      '@codeply/dsh-apps':
+        specifier: workspace:*
+        version: link:../../codeply/apps
+      '@codeply/dsh-ask-first':
+        specifier: workspace:*
+        version: link:../../codeply/ask-first
       '@codeply/dsh-browser-check':
         specifier: workspace:*
         version: link:../../codeply/browser-check
@@ -2772,6 +2781,9 @@ importers:
       '@codeply/dsh-craft-cloud':
         specifier: workspace:*
         version: link:../../codeply/craft-cloud
+      '@codeply/dsh-design-tools':
+        specifier: workspace:*
+        version: link:../../codeply/design-tools
       '@codeply/dsh-edit-checks':
         specifier: workspace:*
         version: link:../../codeply/edit-checks
@@ -2781,9 +2793,15 @@ importers:
       '@codeply/dsh-llm-haze':
         specifier: workspace:*
         version: link:../../llm/llm-haze
+      '@codeply/dsh-shared-context':
+        specifier: workspace:*
+        version: link:../../codeply/shared-context
       '@codeply/dsh-shell-hints':
         specifier: workspace:*
         version: link:../../codeply/shell-hints
+      '@codeply/dsh-team':
+        specifier: workspace:*
+        version: link:../../codeply/team
       '@codeply/dsh-undo':
         specifier: workspace:*
         version: link:../../codeply/undo
@@ -6870,6 +6888,24 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
+  packages/codeply/agents:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:*
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-launch-environment':
+        specifier: workspace:*
+        version: link:../../util/launch-environment
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:*
+        version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../../core/tools
+
   packages/codeply/approval-memory:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -6888,6 +6924,49 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:*
         version: link:../../core/session
+      '@deepseek-ai/dsh-user-approval':
+        specifier: workspace:*
+        version: link:../../interaction/user-approval
+
+  packages/codeply/apps:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:*
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-launch-environment':
+        specifier: workspace:*
+        version: link:../../util/launch-environment
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:*
+        version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../../core/tools
+
+  packages/codeply/ask-first:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:*
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-sandbox-policy':
+        specifier: workspace:*
+        version: link:../../sandbox/sandbox-policy
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:*
+        version: link:../../core/session
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../../core/tools
       '@deepseek-ai/dsh-user-approval':
         specifier: workspace:*
         version: link:../../interaction/user-approval
@@ -7008,6 +7087,18 @@ importers:
         specifier: workspace:*
         version: link:../../session/working-directory
 
+  packages/codeply/design-tools:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-launch-environment':
+        specifier: workspace:*
+        version: link:../../util/launch-environment
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../../core/tools
+
   packages/codeply/edit-checks:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -7049,6 +7140,24 @@ importers:
         specifier: workspace:*
         version: link:../../session/working-directory
 
+  packages/codeply/shared-context:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:*
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-launch-environment':
+        specifier: workspace:*
+        version: link:../../util/launch-environment
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:*
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../../core/tools
+
   packages/codeply/shell-hints:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -7061,6 +7170,24 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:*
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../../core/tools
+
+  packages/codeply/team:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:*
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-launch-environment':
+        specifier: workspace:*
+        version: link:../../util/launch-environment
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:*
+        version: link:../../core/system-prompt
       '@deepseek-ai/dsh-tools':
         specifier: workspace:*
         version: link:../../core/tools

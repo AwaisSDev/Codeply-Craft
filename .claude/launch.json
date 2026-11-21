@@ -2,6 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "ui-preview",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["http-server", "-p", "8131", "-c-1", "."],
+      "port": 8131,
+      "autoPort": false
+    },
+    {
       "name": "codex-app",
       "runtimeExecutable": "npx",
       "runtimeArgs": [
@@ -14,12 +21,28 @@
       "port": 8123
     },
     {
+      "name": "bar-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "sim-out/island-preview/serve.mjs"
+      ],
+      "port": 5190
+    },
+    {
       "name": "crew-preview",
       "runtimeExecutable": "node",
       "runtimeArgs": [
         "sim-out/crew-preview/serve.mjs"
       ],
       "port": 5179
+    },
+    {
+      "name": "codeply-site",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/Administrator/AppData/Local/Temp/claude/C--Users-Administrator-Downloads-Codeply-Codeply-Craft--claude-worktrees-codeply-brain/08c65697-e568-4605-9bf2-abdffbf9fb10/scratchpad/site-serve.mjs"
+      ],
+      "port": 8133
     },
     {
       "name": "tui-shots",

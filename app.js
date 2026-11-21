@@ -312,9 +312,40 @@ function setZoom(z) {
   z = Math.min(1.6, Math.max(0.7, Math.round(z * 10) / 10));
   document.documentElement.style.zoom = z === 1 ? '' : String(z);
   try { localStorage.setItem(ZOOM_KEY, String(z)); } catch {}
+  // The docks and the browser fit to the new size.
+  requestAnimationFrame(() => { if (typeof layoutDock === 'function') layoutDock(); });
 }
 try { const z = Number(localStorage.getItem(ZOOM_KEY)); if (z && z !== 1) setZoom(z); } catch {}
 const currentZoom = () => Number(document.documentElement.style.zoom) || 1;
+// The zoom above scales the page, but the window's own size (innerWidth / innerHeight) doesn't
+// scale with it, so a menu placed from the window's edges lands off by the zoom (an account
+// menu floating far above its button). After placing one, this measures where it really is
+// and moves it the rest of the way, in whatever units this Chromium measures in.
+function settleAt(el, { bottom, right } = {}) {
+  const m = el.getBoundingClientRect();
+  const k = m.height ? el.offsetHeight / m.height : 1; // measured px -> the element's own CSS px
+  if (bottom !== undefined) el.style.bottom = (parseFloat(el.style.bottom) + (m.bottom - bottom) * k) + 'px';
+  if (right !== undefined) el.style.right = (parseFloat(el.style.right) + (m.right - right) * k) + 'px';
+}
+// A menu placed above its button that runs off the top of the window (the home box
+// sits higher when Home has cards): open it below the button when it fits there,
+// else keep it above and let it scroll.
+function keepMenuOnScreen(el, rect) {
+  const TOP = 48; // under the title bar
+  const m = el.getBoundingClientRect();
+  if (m.top >= TOP) return;
+  const k = m.height ? el.offsetHeight / m.height : 1;
+  const below = window.innerHeight - rect.bottom - 16;
+  if (m.height <= below) {
+    el.style.bottom = 'auto';
+    el.style.top = (rect.bottom + 8) * k + 'px';
+    const n = el.getBoundingClientRect();
+    el.style.top = (parseFloat(el.style.top) + (rect.bottom + 8 - n.top) * k) + 'px';
+  } else {
+    el.style.maxHeight = Math.max(160, m.bottom - TOP) * k + 'px';
+    el.style.overflowY = 'auto';
+  }
+}
 const editCmd = (cmd) => () => document.execCommand(cmd);
 function tbMenuItems(name) {
   const signedIn = !!state.user;
@@ -322,8 +353,8 @@ function tbMenuItems(name) {
     ['New chat', 'Ctrl+N', () => $('newChatBtn').click(), !signedIn],
     ['Open folder…', 'Ctrl+O', () => $('openProjectBtn').click(), !signedIn],
     null,
-    ['Connect apps', '', () => openConnectApps(), !signedIn],
-    ['Codeply Away', '', () => openRemoteModal(), !signedIn],
+    ['Apps', '', () => openConnectApps(), !signedIn],
+    ['Use from your phone', '', () => openRemoteModal(), !signedIn],
     null,
     ['Close window', 'Alt+F4', () => api && api.close()],
   ];
@@ -388,7 +419,7 @@ function openTbMenu(btn) {
     for (const [name, label] of TB_SUBS) {
       const b = document.createElement('button');
       b.className = 'menu-item';
-      b.innerHTML = `<span>${esc(label)}</span><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>`;
+      b.innerHTML = `<span>${esc(label)}</span>${icon('chevron-right', 'ico-sm')}`;
       b.addEventListener('mousedown', (e) => e.preventDefault());
       b.addEventListener('mouseenter', () => openTbSub(b, name));
       b.addEventListener('click', (e) => { e.stopPropagation(); openTbSub(b, name); });
@@ -434,7 +465,7 @@ const VIEWS = ['viewLogin', 'viewReferral', 'viewCountry', 'viewHome', 'viewChat
 function showView(name) {
   if ((name === 'viewHome' || name === 'viewChat') && !state.user) name = 'viewLogin';
   for (const v of VIEWS) $(v).classList.toggle('hidden', v !== name);
-  if (name === 'viewHome') navRecord('home');
+  if (name === 'viewHome') { navRecord('home'); if (window.CraftHomeCards) window.CraftHomeCards.render(); }
 }
 
 // ─── Tiny markdown renderer (safe: every piece is escaped as it's placed) ───
@@ -442,78 +473,11 @@ function esc(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function mdToHtml(text) {
-  const parts = String(text).split(/```/);
-  let html = '';
-  for (let i = 0; i < parts.length; i++) {
-    if (i % 2 === 1) {
-      // fenced code block; first line may be a language tag
-      const nl = parts[i].indexOf('\n');
-      const lang = nl > -1 ? parts[i].slice(0, nl).trim() : '';
-      const code = nl > -1 ? parts[i].slice(nl + 1) : parts[i];
-      html += `<div class="code-card"><div class="code-card-head"><span>${esc(lang) || 'code'}</span></div><pre><code>${esc(code)}</code></pre></div>`;
-    } else {
-      html += inlineMd(parts[i]);
-    }
-  }
-  return html;
-}
-
-function inlineMd(src) {
-  const lines = src.split('\n');
-  let out = '';
-  let inList = false;
-  let para = [];
-  const flush = () => {
-    if (para.length) {
-      out += `<p>${para.join('<br>')}</p>`;
-      para = [];
-    }
-  };
-  for (const raw of lines) {
-    const line = raw.trimEnd();
-    const m = line.match(/^\s*[-*•]\s+(.*)/);
-    if (m) {
-      flush();
-      if (!inList) { out += '<ul>'; inList = true; }
-      out += `<li>${spans(m[1])}</li>`;
-      continue;
-    }
-    if (inList) { out += '</ul>'; inList = false; }
-    if (!line.trim()) { flush(); continue; }
-    const h = line.match(/^(#{1,4})\s+(.*)/);
-    if (h) { flush(); out += `<p class="md-h">${spans(h[2])}</p>`; continue; }
-    para.push(spans(line));
-  }
-  if (inList) out += '</ul>';
-  flush();
-  return out;
-}
-
-// Models occasionally slip into LaTeX-style math tokens in plain prose
-// (e.g. "Homepage $\rightarrow$ Login") even though this is a plain-text
-// chat, not a math renderer. Swap the common ones for their Unicode glyph
-// so they read normally instead of showing the raw markup.
-const LATEX_TOKEN = /\$?\\(rightarrow|Rightarrow|leftrightarrow|Leftrightarrow|leftarrow|Leftarrow|to|times|cdot|approx|neq|leq|geq|pm|infty)\$?/g;
-const LATEX_MAP = {
-  rightarrow: '→', to: '→', Rightarrow: '⇒',
-  leftarrow: '←', Leftarrow: '⇐',
-  leftrightarrow: '↔', Leftrightarrow: '⇔',
-  times: '×', cdot: '·', approx: '≈', neq: '≠', leq: '≤', geq: '≥', pm: '±', infty: '∞',
-};
-
-// One line of raw text as HTML. `code` is left exactly as written; outside it,
-// links become link chips or [text](url) links (link-chips.js), then the rest
-// is escaped and formatted.
-function spans(s) {
-  return s.split(/(`[^`]+`)/).map((part, i) => {
-    if (i % 2) return `<code>${esc(part.slice(1, -1))}</code>`;
-    const links = window.CodeplyLinks ? window.CodeplyLinks.protect(part) : null;
-    const html = esc(links ? links.text : part)
-      .replace(LATEX_TOKEN, (_, name) => LATEX_MAP[name] || '')
-      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    return links ? links.restore(html) : html;
-  }).join('');
+// The renderer lives in rich-ui.js: headings, tables, pills, callouts,
+// document cards and sandboxed interactive widgets. `live` is set while a
+// reply is still arriving, so a half-written widget waits instead of loading.
+function mdToHtml(text, opts) {
+  return window.CraftRich.render(text, opts);
 }
 
 // Links in the chat (link chips, [text](url) links) open in a new tab of the
@@ -558,12 +522,12 @@ function renderJobs() {
     ? `${running.length} command${running.length === 1 ? '' : 's'} running in the background`
     : `${current.length} background command${current.length === 1 ? '' : 's'} finished`;
   jobsBar.innerHTML =
-    `<div class="jobs-head-row"><button class="jobs-head" type="button" title="Show background tasks"><span class="jobs-title">${esc(title)}</span><svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button></div>`;
+    `<div class="jobs-head-row"><button class="jobs-head" type="button" title="Show background tasks"><span class="jobs-title">${esc(title)}</span>${icon('chevron-right', 'tool-chevron ico-sm')}</button></div>`;
   jobsBar.querySelector('.jobs-head').addEventListener('click', () => openBgTasks());
   renderBgTasks();
 }
 
-const BGT_CHEV = '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>';
+const BGT_CHEV = icon('chevron-right', 'ico-xs');
 function bgTaskRow(j) {
   const open = jobsOpenRows.has(j.id);
   // How it ended: done, failed (its exit code), stopped by you, or interrupted
@@ -583,10 +547,16 @@ function renderBgTasks() {
   if (!body || $('bgTasksPanel').classList.contains('hidden')) { clearInterval(jobsTimer); jobsTimer = null; return; }
   const running = jobsList.filter((j) => j.running);
   const finished = jobsList.filter((j) => !j.running).sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0));
-  body.innerHTML = (!jobsList.length ? '<div class="bgt-empty">Nothing running in the background.</div>' : '') +
+  // Claude agents keep a section of their own at the top (claude-code-ui.js); it survives the redraw.
+  const subagents = $('bgtSubagents');
+  if (subagents) subagents.remove();
+  const agentCount = window.CraftClaudePanel ? window.CraftClaudePanel.count() : 0;
+  body.innerHTML = (!jobsList.length && !agentCount ? '<div class="bgt-empty">Nothing running in the background.</div>' : '') +
+    (agentCount && jobsList.length ? '<div class="bgt-label">Commands</div>' : '') +
     (running.length ? `<div class="bgt-label">Running ${running.length}</div>${running.map(bgTaskRow).join('')}` : '') +
     (finished.length ? `<button class="bgt-label${jobsFinishedOpen ? ' open' : ''}" type="button" data-fold="1" aria-expanded="${jobsFinishedOpen}">Finished ${finished.length} ${BGT_CHEV}</button>` +
       (jobsFinishedOpen ? finished.map(bgTaskRow).join('') : '') : '');
+  if (subagents) body.prepend(subagents);
   $('bgTasksClearBtn').disabled = !finished.length;
   clearInterval(jobsTimer);
   jobsTimer = running.length ? setInterval(() => { tickBgTasks(); fillJobOutputs(); }, 1000) : null;
@@ -673,21 +643,21 @@ const TOOL_NAME = {
 const toolName = (name) => TOOL_NAME[name] || name.replace(/_/g, ' ');
 
 const TOOL_ICON = {
-  read: '<svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6"/></svg>',
-  write: '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
-  run: '<svg viewBox="0 0 24 24"><path d="M4 17l6-5-6-5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>',
-  search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>',
-  skill: '<svg viewBox="0 0 24 24"><path d="M12 3l2.2 5.6L20 10.8l-5.8 2.2L12 19l-2.2-6L4 10.8l5.8-2.2Z"/></svg>',
-  image: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M3 15l5-4 4 3 4-4 5 5"/></svg>',
-  browser: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg>',
-  mail: '<svg viewBox="0 0 24 24"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg>',
-  slack: '<svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="14" rx="3"/><rect x="9" y="8" width="14" height="6" rx="3" transform="rotate(90 16 11)"/></svg>',
-  library: '<svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="7" y1="6" x2="17" y2="6"/><line x1="7" y1="17" x2="17" y2="17"/></svg>',
-  vercel: '<svg viewBox="0 0 24 24"><path d="M12 3l9 16H3Z"/></svg>',
-  database: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>',
+  read: icon('file'),
+  write: icon('edit'),
+  run: icon('prompt'),
+  search: icon('search'),
+  skill: icon('sparkle'),
+  image: icon('image'),
+  browser: icon('globe'),
+  mail: icon('mail'),
+  slack: icon('hash'),
+  library: icon('book'),
+  vercel: icon('triangle'),
+  database: icon('database'),
   github: '<svg viewBox="0 0 24 24"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1.16-.02-2.11-3.2.7-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.69 1.25 3.34.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.58.24 2.75.12 3.04.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.39-5.25 5.67.41.36.78 1.07.78 2.15 0 1.55-.01 2.8-.01 3.18 0 .3.2.66.79.55A10.52 10.52 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5Z"/></svg>',
-  agent: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>',
-  stop: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+  agent: icon('user'),
+  stop: icon('stop'),
 };
 
 function toolIcon(name) {
@@ -726,7 +696,27 @@ function nearBottom() {
 // resend this" judgment call.
 let lastUserMessage = null; // { text, imageCount, at }
 
+/**
+ * A message Codeply wrote for itself (its agents reported). Nothing shows for it: Codeply
+ * answers as one voice, and the agents who did the work show as a row of faces under
+ * that answer ("3 agents contributed"), once it is written (flushCrew).
+ */
+let pendingCrew = null;
+function addAutoNote(m) {
+  pendingCrew = Array.isArray(m.crew) && m.crew.length && window.CraftClaudePanel && window.CraftClaudePanel.contributed ? m.crew : null;
+}
+function flushCrew() {
+  // The crew's running row goes to the bottom of the prompt's work, once that turn is written.
+  chatColumn.querySelectorAll('.crew-sum.working:not(.placed)').forEach((el) => { el.classList.add('placed'); chatColumn.appendChild(el); });
+  if (!pendingCrew) return;
+  const el = window.CraftClaudePanel.contributed(pendingCrew);
+  pendingCrew = null;
+  chatColumn.appendChild(el);
+  if (nearBottom()) scrollToBottom();
+}
+
 function addUserMessage(text, images) {
+  flushCrew(); // the crew of the answer before this message
   closeActivity();
   activityRole = null;
   const imageCount = images ? images.length : 0;
@@ -779,10 +769,10 @@ function addUserMessage(text, images) {
   scrollToBottom();
 }
 
-const ICON_COPY = '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>';
-const ICON_EDIT = '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
-const ICON_RETRY = '<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>';
-const ICON_CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>';
+const ICON_COPY = icon('copy');
+const ICON_EDIT = icon('edit');
+const ICON_RETRY = icon('refresh');
+const ICON_CHECK = icon('check');
 
 async function copyWithFeedback(text, btn) {
   try { await navigator.clipboard.writeText(text); } catch { showToast('Could not copy.', 'error'); return; }
@@ -876,7 +866,7 @@ async function retryLastMessage() {
   if (changed) {
     const r = await CraftModal.confirm({
       title: 'Retry this message?',
-      body: 'Craft runs it again and replaces the last reply.',
+      body: 'Codeply runs it again and replaces the last reply.',
       confirmLabel: 'Retry',
       checkbox: { label: `Restore ${plural(changed, 'file')} first`, note: 'Puts the files the last reply changed back the way they were before it ran.', checked: true },
     });
@@ -911,7 +901,7 @@ async function rerunFrom(msg, text, restoreFiles) {
 
   const r = await api.editMessage({
     sessionId, userIndex, expectText, text, images, restoreFiles,
-    cwd: state.project, mode: state.mode, bypass: state.bypass, clientId: desktopClientId,
+    cwd: state.project, mode: state.mode, bypass: state.bypass, autoEdits: !!state.autoEdits, clientId: desktopClientId,
     botId: window.CraftBots ? window.CraftBots.selectedId() : undefined,
   });
   if (r && r.restored) {
@@ -1003,7 +993,7 @@ function runFastTypewriter(msg, text, done) {
   let i = 0;
   activeTypewriterTimer = setInterval(() => {
     i = Math.min(words.length, i + wordsPerTick);
-    msg.innerHTML = mdToHtml(words.slice(0, i).join(''));
+    msg.innerHTML = mdToHtml(words.slice(0, i).join(''), { live: i < words.length });
     if (nearBottom()) scrollToBottom();
     if (i >= words.length) {
       clearInterval(activeTypewriterTimer);
@@ -1037,10 +1027,10 @@ function activityHead(el) { return el.querySelector('.activity-summary'); }
 // Puts the working agent's mascot where the plain dot sits on a work line.
 function setActivityAgent(el) {
   if (!el || !activityRole) return;
-  const icon = el.querySelector('.activity-icon');
-  if (icon.dataset.mascot === activityRole.mascot) return;
-  icon.dataset.mascot = activityRole.mascot;
-  icon.innerHTML = mascotHtml(activityRole.mascot, 'mascot-xs', activityRole.name);
+  const holder = el.querySelector('.activity-icon');
+  if (holder.dataset.mascot === activityRole.mascot) return;
+  holder.dataset.mascot = activityRole.mascot;
+  holder.innerHTML = mascotHtml(activityRole.mascot, 'mascot-xs', activityRole.name);
   el.classList.add('has-agent');
   el.querySelector('.activity-head').title = 'Worked as ' + activityRole.name;
 }
@@ -1086,13 +1076,15 @@ function updateActivitySummary(el) {
 
 function activityBody() {
   if (!activityEl || !activityEl.isConnected) {
+    // The working row says what is happening now: no "Pondering" line next to it.
+    if (thinkingEl) hideThinking();
     activityEl = document.createElement('div');
     activityEl.className = 'activity running';
     activityEl.innerHTML =
       '<button class="activity-head" type="button" aria-expanded="false">' +
       '<span class="activity-icon" aria-hidden="true"></span>' +
       '<span class="activity-summary">Working</span>' +
-      '<svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>' +
+      icon('chevron-right', 'tool-chevron ico-sm') + '</button>' +
       '<div class="activity-body"></div>';
     const el = activityEl;
     el.querySelector('.activity-head').addEventListener('click', () => {
@@ -1192,7 +1184,7 @@ function addToolRow({ name, label, ok, running: isRunning, auto, bypass, args, s
   const hasDetail = !isRunning && args && Object.keys(args).length > 0;
   row.innerHTML =
     `<div class="tool-row-head">${toolIcon(name)}<span class="tool-verb">${isRunning ? verb.replace(/ed$|^Ran$/, (m) => m === 'Ran' ? 'Running' : 'ing').replace('Listeding', 'Listing') : verb}</span>` +
-    `<span class="tool-label">${esc(label || '')}</span>${badge}${hasDetail ? '<svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>' : ''}</div>`;
+    `<span class="tool-label">${esc(label || '')}</span>${badge}${hasDetail ? icon('chevron-right', 'tool-chevron ico-sm') : ''}</div>`;
   if (isRunning) row.querySelector('.tool-row-head').innerHTML += '<span class="spinner"></span>';
 
   if (hasDetail) {
@@ -1353,52 +1345,20 @@ function closeTasksModal() {
 }
 
 $('tasksBtn').addEventListener('click', openTasksModal);
-// ─── Crew tab ───────────────────────────────────────────────────────────────
-// Crew opens inside this window, over the main area, instead of in a window of
-// its own. The sidebar button then reads "Craft" and switches back.
-// Design (design/) works the same way: its page laid over the main area.
-let crewMode = false;
-let designMode = false;
-// Crew and Design take the whole window under the title bar (their own sidebars have the switch back).
+// ─── One view ───────────────────────────────────────────────────────────────
+// The window has one view, Codeply's chat. The old Agents and Design tabs are gone (Wisp and
+// its specialists do the agents' work, and Design is a mode in the + menu).
 function crewArea() {
   const top = Math.round(document.querySelector('.titlebar').getBoundingClientRect().bottom);
   return { x: 0, y: top, width: window.innerWidth, height: window.innerHeight - top };
 }
-function paintCrewBtn() {
-  const cur = designMode ? 'design' : crewMode ? 'crew' : 'craft';
-  document.querySelectorAll('.app-switch-btn').forEach((b) => {
-    const on = b.dataset.app === cur;
-    b.classList.toggle('on', on);
-    b.setAttribute('aria-selected', String(on));
-  });
-}
-function setCrewMode(on) {
-  if (!api || !api.crewEmbed || crewMode === on) return;
-  if (on && designMode) setDesignMode(false);
-  crewMode = on;
-  document.body.classList.toggle('crew-mode', on);
-  paintCrewBtn();
-  if (on) api.crewEmbed(crewArea()); else api.crewUnembed();
-}
-function setDesignMode(on) {
-  if (!api || !api.designEmbed || designMode === on) return;
-  if (on && crewMode) setCrewMode(false);
-  designMode = on;
-  document.body.classList.toggle('design-mode', on);
-  paintCrewBtn();
-  if (on) api.designEmbed(crewArea()); else api.designUnembed();
-}
-function setAppView(name) {
-  if (name === 'crew') { setDshShown(false); setCrewMode(true); }
-  else if (name === 'design') { setDshShown(false); setDesignMode(true); }
-  else { setCrewMode(false); setDesignMode(false); setDshShown(engine === 'dsh'); }
-}
+function setAppView() { setDshShown(engine === 'dsh'); }
 // ─── Engine switch: Classic (codeply-cli) or DSH (craft-dsh, see dsh-engine.js) ───
-// DSH is laid over the main area like Crew and Design, only while Craft itself is showing.
+// DSH is laid over the main area.
 let engine = 'classic';
 let dshShown = false;
 let dshSeq = 0;
-let dshBrowserWidth = 0; // Craft's browser panel on the right, 0 while closed
+let dshBrowserWidth = 0; // Codeply's browser panel on the right, 0 while closed
 // The new Craft's view: under the title bar, leaving room for Craft's browser when it's open.
 function dshArea() {
   const a = crewArea();
@@ -1417,7 +1377,7 @@ function dshOverlay(state, text) {
   el.hidden = state === 'off';
   // While it starts the area stays plain (no message); only a failure says something.
   el.classList.toggle('quiet', state === 'starting');
-  $('dshOverlayTitle').textContent = state === 'error' ? "The new Craft couldn't start" : 'Starting the new Craft';
+  $('dshOverlayTitle').textContent = state === 'error' ? "Codeply couldn't start" : 'Starting Codeply';
   $('dshOverlayText').textContent = text || 'This takes a few seconds the first time.';
   $('dshRetry').hidden = state !== 'error';
   $('dshBackClassic').hidden = state !== 'error';
@@ -1450,18 +1410,12 @@ if (api && api.dshStatus) {
     if (!s || s.engine !== 'dsh') return;
     engine = 'dsh';
     paintEngineBtn();
-    if (!crewMode && !designMode) setDshShown(true);
+    setDshShown(true);
   }).catch(() => {});
 }
-window.CraftCrew = { show: () => setAppView('crew'), hide: () => setAppView('craft'), isOpen: () => crewMode };
-window.CraftDesign = { show: () => setAppView('design'), hide: () => setAppView('craft'), isOpen: () => designMode };
-document.querySelectorAll('.app-switch-btn').forEach((b) => b.addEventListener('click', () => setAppView(b.dataset.app)));
-if (api && api.onCrewShow) api.onCrewShow(() => setAppView('crew'));
-if (api && api.onCrewHide) api.onCrewHide(() => setAppView('craft'));
-if (api && api.onDesignShow) api.onDesignShow(() => setAppView('design'));
-if (api && api.onDesignHide) api.onDesignHide(() => setAppView('craft'));
+if (api && api.onCrewShow) api.onCrewShow(() => { if (window.CraftWispUI) window.CraftWispUI.openTeam(); });
 if (api && api.onOpenConnect) api.onOpenConnect(() => openConnectApps());
-window.addEventListener('resize', () => { if (crewMode) api.crewBounds(crewArea()); if (designMode) api.designBounds(crewArea()); if (dshShown) api.dshBounds(dshArea()); });
+window.addEventListener('resize', () => { if (dshShown) api.dshBounds(dshArea()); });
 $('tasksCloseBtn').addEventListener('click', closeTasksModal);
 $('tasksBackdrop').addEventListener('click', (e) => { if (e.target === $('tasksBackdrop')) closeTasksModal(); });
 
@@ -1472,7 +1426,7 @@ function addLimitCard(text) {
   const where = /limit for now (on this (?:computer|network))/i.exec(text || '');
   const el = document.createElement('div');
   el.className = 'limit-card';
-  el.innerHTML = '<div class="limit-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></div>' +
+  el.innerHTML = '<div class="limit-icon">' + icon('clock', 'ico-md') + '</div>' +
     '<div class="limit-text"><b></b><span></span></div><button class="limit-btn" type="button">Choose a model</button>';
   el.querySelector('b').textContent = `You've hit Haze 2's limit for now${where ? ` ${where[1]}` : ''}`;
   el.querySelector('span').textContent = at ? `It resets at ${at[1].trim()}. Your own model works in the meantime.` : String(text || '');
@@ -1525,6 +1479,13 @@ function mascotHtml(mascotFile, sizeClass, altText) {
 // seen only when the line is opened.
 let pendingWispMood = null; // the [mood: x] of the reply on its way (wisp_mood arrives just before its text)
 function renderWispAgent(data) {
+  // A Claude agent: one live line in the chat itself ("Nova edited styles.css"), not a note in the work log.
+  if (data && data.agent && data.agent.kind === 'claude' && data.agentId && window.CraftClaudePanel && window.CraftClaudePanel.crewLine) {
+    const atEnd = nearBottom();
+    window.CraftClaudePanel.crewLine(data, chatColumn);
+    if (atEnd) scrollToBottom();
+    return;
+  }
   const ui = window.CraftWispUI;
   const note = ui && ui.agentNote(data);
   if (!note) return;
@@ -1532,6 +1493,17 @@ function renderWispAgent(data) {
   activityBody().appendChild(note);
   updateActivitySummary(activityEl);
   if (live) showThinking();
+  if (nearBottom()) scrollToBottom();
+}
+
+/** Where the chat switched to a specialist (or back): a small line with its face. */
+function renderWispSpeaker(data) {
+  const note = window.CraftWispUI && window.CraftWispUI.speakerNote(data);
+  if (!note) return;
+  // An @mention switches before the answer starts: the line goes above the answer's face, not between it and the reply.
+  const last = chatColumn.lastElementChild;
+  if (last && last.classList.contains('wisp-turn')) chatColumn.insertBefore(note, last);
+  else chatColumn.appendChild(note);
   if (nearBottom()) scrollToBottom();
 }
 
@@ -1560,7 +1532,7 @@ function addRoleBadge(data) {
 // written and the checks really run (with exit codes). If the model's
 // summary and this line ever disagree, this line is the truth. It reads like
 // the activity line above it: one quiet sentence that opens into the list.
-const QL_CHEV = '<svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>';
+const QL_CHEV = icon('chevron-right', 'tool-chevron ico-sm');
 const qlCount = (n, one) => `${n === 1 ? (/^[aeiou]/.test(one) ? 'an' : 'a') : n} ${n === 1 ? one : one + 's'}`;
 const qlBase = (p) => String(p).split(/[\\/]/).pop();
 
@@ -1597,7 +1569,7 @@ function addTurnSummary(data) {
     const label = c.tool === 'browser_check' ? `Opened ${c.label}` : c.label;
     const exit = !passed && typeof c.exitCode === 'number' ? `<span class="ql-exit">exit ${c.exitCode}</span>` : '';
     return `<div class="ql-row ${passed ? 'pass' : 'fail'}">
-      <span class="ql-ic">${passed ? '<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'}</span>
+      <span class="ql-ic">${passed ? icon('check', 'ico-sm') : icon('close', 'ico-sm')}</span>
       <span class="ql-label" title="${esc(label || '')}">${esc(label || '')}</span>${exit}</div>`;
   };
   // "Ran 5 checks, all passed" / "Ran 5 checks, 1 failed" / "Changed app.js, not checked by a run"
@@ -1612,9 +1584,9 @@ function addTurnSummary(data) {
     </button>
     <div class="ql-body">
       ${checks.map(checkRow).join('')}
-      ${files.length ? `<div class="ql-row files"><span class="ql-ic"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg></span><span class="ql-label">${files.map((f) => esc(qlBase(f))).join(', ')}</span></div>` : ''}
+      ${files.length ? `<div class="ql-row files"><span class="ql-ic">${icon('file', 'ico-sm')}</span><span class="ql-label">${files.map((f) => esc(qlBase(f))).join(', ')}</span></div>` : ''}
     </div>
-    ${unverified.length ? `<div class="ql-warn"><svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>Not checked by a passing run: ${unverified.map((f) => esc(qlBase(f))).join(', ')}</div>` : ''}`;
+    ${unverified.length ? `<div class="ql-warn">${icon('warning', 'ico-sm')}Not checked by a passing run: ${unverified.map((f) => esc(qlBase(f))).join(', ')}</div>` : ''}`;
   wireQuietLine(card);
   card.classList.add('reveal-pending');
   chatColumn.appendChild(card);
@@ -1661,8 +1633,8 @@ function renderCheckpoint(cp) {
     <div class="ql-head" role="button" tabindex="0" aria-expanded="${open}">
       <span class="ql-dot"></span><span class="ql-text">${cp.undone ? `Undone: ${what.charAt(0).toLowerCase() + what.slice(1)}` : what}</span>${QL_CHEV}
       <button class="cp-action ql-action" type="button">${cp.undone
-        ? '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>Redo'
-        : '<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>Undo'}</button>
+        ? icon('redo', 'ico-sm') + 'Redo'
+        : icon('undo', 'ico-sm') + 'Undo'}</button>
     </div>
     <div class="ql-body">${list}${n > 40 ? `<div class="ql-row more">and ${n - 40} more</div>` : ''}</div>`;
   row.querySelector('.cp-action').addEventListener('click', async (e) => {
@@ -1696,7 +1668,7 @@ function renderGoalCard(data) {
     el.className = 'goal-card';
     el.innerHTML = `
       <div class="goal-head">
-        <span class="goal-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/></svg></span>
+        <span class="goal-icon">${icon('target')}</span>
         <span class="goal-kicker">Goal</span>
         <span class="goal-pill" data-role="pill"></span>
       </div>
@@ -1756,7 +1728,7 @@ function panelAdd(kind, label) {
   if (empty) empty.remove();
   const row = document.createElement('button');
   row.className = 'sp-row';
-  row.innerHTML = `<svg class="sp-ico" viewBox="0 0 24 24"><path d="M9 18l-5-6 5-6"/><path d="M15 6l5 6-5 6"/></svg><span>${esc(label)}</span>`;
+  row.innerHTML = `${icon('code', 'sp-ico')}<span>${esc(label)}</span>`;
   holder.appendChild(row);
 }
 
@@ -1818,10 +1790,255 @@ wireIntegrationRow('caVercel', 'vercel', () => api.connectVercel(), 'Vercel');
 wireIntegrationRow('caSupabase', 'supabase', () => api.connectSupabase(), 'Supabase');
 wireIntegrationRow('caGithub', 'github', () => api.connectGithub(), 'GitHub');
 
+// ─── Apps directory (any app with a remote MCP server, like ChatGPT apps) ───
+// codeply-cli/lib/apps.js does the work; this draws Connected, Featured and
+// registry search results, and runs Connect / Disconnect. The built-in cards
+// above (Gmail, Slack, Vercel, Supabase, GitHub, Claude Code) stay as they are.
+const appsUi = { featured: [], connected: [], results: [], next: '', query: '', searchSeq: 0, busyKey: '', confirmKey: '', tools: {} };
+const attr = (s) => esc(String(s ?? '')).replace(/"/g, '&quot;');
+const appKey = (a) => a.connectedId || a.id || a.url;
+
+// One line under the search box: what just happened (works with no chat open).
+let appsNoteTimer = null;
+function appsNote(text, kind = 'info') {
+  const el = $('appsStatus');
+  el.textContent = text;
+  el.className = `apps-status ${kind}`;
+  clearTimeout(appsNoteTimer);
+  appsNoteTimer = setTimeout(() => el.classList.add('hidden'), kind === 'error' ? 12000 : 6000);
+}
+
+function appLogo(a) {
+  const letter = esc((String(a.title || a.domain || '?').trim()[0] || '?').toUpperCase());
+  const src = a.icon || (a.domain ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(a.domain)}&sz=128` : '');
+  return `<div class="app-card-logo apps-logo" data-letter="${letter}">${src ? `<img src="${attr(src)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span>${letter}</span>`}</div>`;
+}
+
+// A logo that fails to load becomes the app's first letter.
+function wireAppLogos(root) {
+  root.querySelectorAll('.apps-logo img').forEach((img) => {
+    img.addEventListener('error', () => {
+      const box = img.parentElement;
+      if (box) box.innerHTML = `<span>${box.dataset.letter || '?'}</span>`;
+    }, { once: true });
+  });
+}
+
+// "create_page" -> "Create page" when the server gives no title of its own.
+const toolLabel = (t) => t.title || (String(t.name || '').replace(/[_-]+/g, ' ').trim().replace(/^\w/, (c) => c.toUpperCase()));
+
+function connectedRow(a) {
+  const tools = appsUi.tools[a.id];
+  const bits = [a.needsReconnect ? 'Needs you to sign in again' : 'Connected'];
+  if (a.account) bits.push(a.account);
+  if (a.toolCount) bits.push(`${a.toolCount} ${a.toolCount === 1 ? 'tool' : 'tools'}`);
+  const busy = appsUi.busyKey === a.id;
+  return `<div class="app-card apps-row${a.needsReconnect ? ' needs' : ' connected'}" data-id="${attr(a.id)}">
+    ${appLogo(a)}
+    <div class="app-card-body">
+      <div class="app-card-top"><span class="app-card-name">${esc(a.title)}</span>${a.verified ? '' : '<span class="app-card-badge apps-unreviewed">Not reviewed</span>'}</div>
+      <div class="app-card-desc">${esc(bits.join(' · '))}</div>
+      ${tools ? `<div class="apps-tools">${tools.length ? tools.slice(0, 40).map((t) => `<span class="apps-tool${t.readOnly ? '' : ' writes'}" title="${attr(t.description)}">${esc(toolLabel(t))}</span>`).join('') : '<span class="apps-tool-none">No tools</span>'}</div>` : ''}
+    </div>
+    <div class="apps-row-actions">
+      ${a.toolCount && !tools ? '<button class="btn btn-ghost btn-sm" data-act="tools">Tools</button>' : ''}
+      ${busy ? '<button class="btn btn-secondary btn-sm" data-act="cancel">Cancel</button>'
+        : a.needsReconnect ? '<button class="btn btn-primary btn-sm" data-act="reconnect">Reconnect</button>' : ''}
+      <button class="btn btn-secondary btn-sm btn-danger-hover" data-act="disconnect"${busy ? ' disabled' : ''}>Disconnect</button>
+    </div>
+  </div>`;
+}
+
+function appTile(a) {
+  const key = appKey(a);
+  const busy = appsUi.busyKey === key;
+  const confirming = appsUi.confirmKey === key;
+  const action = a.connectedId
+    ? '<span class="apps-tile-on">Connected</span>'
+    : busy ? '<button class="btn btn-secondary btn-sm" data-act="cancel">Cancel</button>'
+      : `<button class="btn ${confirming ? 'btn-danger' : 'btn-primary'} btn-sm" data-act="connect">${confirming ? 'Connect anyway' : 'Connect'}</button>`;
+  return `<div class="apps-tile${a.connectedId ? ' connected' : ''}" data-key="${attr(key)}">
+    <div class="apps-tile-head">
+      ${appLogo(a)}
+      <div class="apps-tile-name">
+        <span class="app-card-name">${esc(a.title)}</span>
+        <span class="apps-tile-domain">${esc(a.domain || '')}${a.verified ? ' <span class="apps-verified" title="This is the vendor\'s own server">✓</span>' : ''}</span>
+      </div>
+      ${action}
+    </div>
+    <div class="app-card-desc apps-tile-desc">${esc(a.description || 'No description.')}</div>
+    ${busy ? '<div class="apps-tile-note">Finish signing in in your browser…</div>' : ''}
+    ${confirming ? '<div class="apps-tile-warn">Codeply hasn\'t reviewed this app. It will see what Codeply sends it, and can see your account there. Only connect apps you trust.</div>' : ''}
+  </div>`;
+}
+
+function renderApps() {
+  const connected = appsUi.connected;
+  $('appsConnectedSection').classList.toggle('hidden', !connected.length);
+  $('appsConnected').innerHTML = connected.map(connectedRow).join('');
+  const connectedByUrl = new Map(connected.map((a) => [a.url, a.id]));
+  const mark = (a) => ({ ...a, connectedId: connectedByUrl.get(a.url) || '' });
+  const q = appsUi.query.toLowerCase();
+  const searching = !!q;
+  // While searching, the built-in cards that match stay, the rest hide.
+  document.querySelectorAll('#appsBuiltInSection .connect-apps-list > .app-card').forEach((card) => {
+    const name = (card.querySelector('.app-card-name, .cc-name')?.textContent || '').toLowerCase();
+    card.classList.toggle('hidden', searching && !name.includes(q));
+  });
+  const anyBuiltIn = [...document.querySelectorAll('#appsBuiltInSection .connect-apps-list > .app-card')].some((c) => !c.classList.contains('hidden'));
+  $('appsBuiltInSection').classList.toggle('hidden', searching && !anyBuiltIn);
+  $('appsFeaturedSection').classList.toggle('hidden', searching);
+  $('appsFeatured').innerHTML = appsUi.featured.map(mark).map(appTile).join('');
+  $('appsResultsSection').classList.toggle('hidden', !searching);
+  if (searching) {
+    const results = appsUi.results.map(mark);
+    // While the registry answers: a few shimmering cards after whatever already matched.
+    const firstPage = appsUi.loading && !appsUi.next;
+    const skeletons = firstPage ? Array.from({ length: Math.max(2, 6 - results.length) }, (_, i) => `<div class="apps-tile apps-skeleton" style="animation-delay:${i * 60}ms" aria-hidden="true"><div class="apps-tile-head"><div class="apps-sk apps-sk-logo"></div><div class="apps-tile-name"><div class="apps-sk apps-sk-line" style="width:${52 + ((i * 17) % 30)}%"></div><div class="apps-sk apps-sk-line apps-sk-thin" style="width:${34 + ((i * 11) % 20)}%"></div></div></div><div class="apps-sk apps-sk-line apps-sk-thin"></div><div class="apps-sk apps-sk-line apps-sk-thin" style="width:70%"></div></div>`).join('') : '';
+    $('appsResultsTitle').innerHTML = firstPage
+      ? `<span class="apps-searching"><span class="apps-searching-dot"></span>Searching the MCP Registry</span>`
+      : results.length ? 'Results' : 'No apps found';
+    $('appsResults').innerHTML = results.map(appTile).join('') + skeletons;
+    $('appsResultsFoot').innerHTML = appsUi.error
+      ? `<span class="apps-error">${esc(appsUi.error)}</span>`
+      : appsUi.next ? `<button class="btn btn-secondary btn-sm" id="appsMoreBtn"${appsUi.loading ? ' disabled' : ''}>${appsUi.loading ? 'Loading…' : 'Show more'}</button>`
+        : results.length || appsUi.loading ? '' : '<span class="apps-empty">Try another name, or add the app by its URL.</span>';
+  }
+  wireAppLogos($('appsBody'));
+}
+
+async function loadAppsDirectory() {
+  if (!api || !api.appsDirectory) return;
+  const r = await api.appsDirectory();
+  appsUi.featured = r.featured || [];
+  appsUi.connected = r.connected || [];
+  renderApps();
+}
+
+async function searchApps(query, more = false) {
+  const seq = ++appsUi.searchSeq;
+  appsUi.loading = true;
+  appsUi.error = '';
+  if (!more) {
+    // Featured apps that match show at once; the registry's answer joins them.
+    const q = String(query).toLowerCase();
+    appsUi.results = appsUi.featured.filter((a) => `${a.title} ${a.domain} ${a.category}`.toLowerCase().includes(q));
+    appsUi.next = '';
+  }
+  renderApps();
+  const r = await api.appsSearch(query, more ? appsUi.next : '');
+  if (seq !== appsUi.searchSeq) return; // a newer search started
+  appsUi.loading = false;
+  if (!r.ok || r.error) appsUi.error = r.error || 'Search failed.';
+  const seen = new Set(appsUi.results.map((a) => a.url));
+  appsUi.results = appsUi.results.concat((r.apps || []).filter((a) => !seen.has(a.url)));
+  appsUi.next = r.next || '';
+  renderApps();
+}
+
+let appsSearchTimer = null;
+$('appsSearch').addEventListener('input', (e) => {
+  appsUi.query = e.target.value.trim();
+  appsUi.confirmKey = '';
+  clearTimeout(appsSearchTimer);
+  if (!appsUi.query) { appsUi.searchSeq++; appsUi.loading = false; renderApps(); return; }
+  appsSearchTimer = setTimeout(() => searchApps(appsUi.query), 300);
+});
+
+async function connectApp(entry, key) {
+  appsUi.busyKey = key;
+  appsUi.confirmKey = '';
+  renderApps();
+  const r = await api.appsConnect(entry);
+  appsUi.busyKey = '';
+  if (r.ok) {
+    if (r.tools) appsUi.tools[r.app.id] = r.tools;
+    appsNote(r.toolError ? `${r.app.title} is connected, but Codeply couldn't load its tools yet: ${r.toolError}` : `${r.app.title} is connected. Ask for it in any chat.`, r.toolError ? 'error' : 'info');
+  } else if (!/cancelled/i.test(r.error || '')) {
+    appsNote(`Couldn't connect ${entry.title || 'that app'}: ${r.error}`, 'error');
+  }
+  await loadAppsDirectory();
+  return r;
+}
+
+$('appsBody').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-act], #appsMoreBtn');
+  if (!btn) return;
+  if (btn.id === 'appsMoreBtn') { searchApps(appsUi.query, true); return; }
+  const act = btn.dataset.act;
+  if (act === 'cancel') { api.appsCancel(); return; }
+  const row = btn.closest('.apps-row');
+  if (row) {
+    const a = appsUi.connected.find((x) => x.id === row.dataset.id);
+    if (!a) return;
+    if (act === 'disconnect') {
+      await api.appsDisconnect(a.id);
+      delete appsUi.tools[a.id];
+      await loadAppsDirectory();
+    } else if (act === 'reconnect') {
+      connectApp({ url: a.url, title: a.title, id: a.id }, a.id);
+    } else if (act === 'tools') {
+      btn.disabled = true;
+      const r = await api.appsTools(a.id);
+      if (r.ok) appsUi.tools[a.id] = r.tools; else appsNote(`Couldn't load ${a.title}'s tools: ${r.error}`, 'error');
+      renderApps();
+    }
+    return;
+  }
+  const tile = btn.closest('.apps-tile');
+  if (!tile || act !== 'connect') return;
+  const key = tile.dataset.key;
+  const a = [...appsUi.featured, ...appsUi.results].find((x) => appKey(x) === key);
+  if (!a) return;
+  if (appsUi.busyKey) { appsNote('Another app is signing in right now. Finish or cancel that one first.', 'error'); return; }
+  // An app Codeply hasn't checked asks once more, right on its card.
+  if (!a.verified && appsUi.confirmKey !== key) { appsUi.confirmKey = key; renderApps(); return; }
+  connectApp(a, key);
+});
+
+// Add by URL: any remote MCP server, with a sign-in or a pasted key.
+$('appsAddUrlBtn').addEventListener('click', () => {
+  const box = $('appsAdd');
+  box.classList.toggle('hidden');
+  if (!box.classList.contains('hidden')) $('appsAddUrl').focus();
+});
+$('appsAddMoreBtn').addEventListener('click', () => {
+  $('appsAddKeyRow').classList.toggle('hidden');
+  if (!$('appsAddKeyRow').classList.contains('hidden')) $('appsAddKey').focus();
+});
+async function addAppByUrl() {
+  const url = $('appsAddUrl').value.trim();
+  const title = $('appsAddName').value.trim();
+  if (!url) { $('appsAddUrl').focus(); return; }
+  const go = $('appsAddGo');
+  go.disabled = true;
+  const useKey = !$('appsAddKeyRow').classList.contains('hidden') && $('appsAddKey').value.trim();
+  let r;
+  if (useKey) {
+    go.textContent = 'Connecting…';
+    r = await api.appsAddWithKey({ url, title, headerName: $('appsAddHeader').value.trim(), headerValue: $('appsAddKey').value });
+    if (r.ok) { appsNote(`${r.app.title} is connected. Ask for it in any chat.`, 'info'); await loadAppsDirectory(); }
+    else appsNote(`Couldn't connect that app: ${r.error}`, 'error');
+  } else {
+    go.textContent = 'Waiting for sign-in…';
+    r = await connectApp({ url, title }, url);
+  }
+  go.disabled = false;
+  go.textContent = 'Connect';
+  if (r.ok) {
+    $('appsAddUrl').value = ''; $('appsAddName').value = ''; $('appsAddKey').value = '';
+    $('appsAdd').classList.add('hidden');
+  }
+}
+$('appsAddGo').addEventListener('click', addAppByUrl);
+['appsAddUrl', 'appsAddName', 'appsAddKey'].forEach((id) => $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') addAppByUrl(); }));
+
 function openConnectApps() {
   closeAccountMenu();
   refreshIntegrations();
+  loadAppsDirectory();
   CraftModal.open('connectAppsBackdrop', { onClose: closeConnectApps });
+  setTimeout(() => $('appsSearch').focus(), 50);
 }
 function closeConnectApps() {
   CraftModal.close('connectAppsBackdrop');
@@ -1838,6 +2055,13 @@ function closeAccountMenu() {
   if (accountMenuEl) { accountMenuEl.remove(); accountMenuEl = null; }
 }
 
+async function signOut() {
+  await api.logout();
+  state.user = null;
+  renderUser();
+  showView('viewLogin');
+}
+
 function openAccountMenu() {
   closeAccountMenu();
   if (!state.user) return;
@@ -1849,62 +2073,225 @@ function openAccountMenu() {
       <div class="account-menu-email">${esc(state.user.email)}</div>
     </div>
     <div class="menu-sep"></div>
+    <button class="menu-item" data-action="settings">
+      ${icon('settings')}
+      Settings
+    </button>
     <button class="menu-item" data-action="usage">
-      <svg viewBox="0 0 24 24"><path d="M4.6 18.5a9 9 0 1 1 14.8 0"/><path d="M12 14.2l4.2-4.6"/><circle cx="12" cy="14.6" r="1.5"/><path d="M7.3 10.2l.9.6M12 6.4v1M16.7 10.2l-.9.6"/></svg>
+      ${icon('gauge')}
       Usage
     </button>
     <button class="menu-item" data-action="connect">
-      <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
-      Connect Apps
+      ${icon('link')}
+      Apps
     </button>
     <button class="menu-item" data-action="wisp">
-      <svg viewBox="0 0 24 24"><path d="M12 3.5l8.2 6-3.1 9.7H6.9L3.8 9.5z"/><circle cx="9.8" cy="11.6" r=".6"/><circle cx="14.2" cy="11.6" r=".6"/></svg>
+      ${icon('users')}
       Specialists
     </button>
     <div class="menu-sep"></div>
-    <div class="account-menu-theme-row">
-      <span>Theme</span>
-      <div class="theme-toggle segmented segmented-sm" id="themeToggle" role="group" aria-label="Theme">
-        <button type="button" class="theme-opt segmented-item" data-theme-choice="system" title="Match system">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-        </button>
-        <button type="button" class="theme-opt segmented-item" data-theme-choice="light" title="Light">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
-        </button>
-        <button type="button" class="theme-opt segmented-item" data-theme-choice="dark" title="Dark">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.5a8.5 8.5 0 1 1-9-11 6.8 6.8 0 0 0 9 11Z"/></svg>
-        </button>
-      </div>
-    </div>
-    <div class="menu-sep"></div>
     <button class="menu-item" data-action="logout">
-      <svg viewBox="0 0 24 24"><path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3"/><path d="M16 17l5-5-5-5"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      ${icon('logout')}
       Sign out
     </button>
   `;
   document.body.appendChild(menu);
-  const rect = $('sbUserBtn').getBoundingClientRect();
+  // Span the whole footer row (account button plus the settings button).
+  const bar = $('sbUserBtn').parentElement;
+  const rect = bar.getBoundingClientRect();
   menu.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
   menu.style.left = rect.left + 'px';
-  menu.style.width = rect.width + 'px';
+  menu.style.width = bar.offsetWidth + 'px';
+  settleAt(menu, { bottom: rect.top - 6 });
 
   menu.querySelector('[data-action="connect"]').addEventListener('click', openConnectApps);
   menu.querySelector('[data-action="wisp"]').addEventListener('click', () => { closeAccountMenu(); if (window.CraftWispUI) window.CraftWispUI.openTeam(); });
   menu.querySelector('[data-action="usage"]').addEventListener('click', () => { closeAccountMenu(); window.CraftUsage && window.CraftUsage.open({ name: $('userName').textContent, email: state.user.email }); });
-  menu.querySelector('[data-action="logout"]').addEventListener('click', async () => {
-    closeAccountMenu();
-    await api.logout();
-    state.user = null;
-    renderUser();
-    showView('viewLogin');
-  });
-  menu.querySelectorAll('.theme-opt').forEach((btn) => {
-    btn.addEventListener('click', () => applyTheme(btn.dataset.themeChoice));
-  });
-  syncThemeToggleUI();
+  menu.querySelector('[data-action="settings"]').addEventListener('click', () => { closeAccountMenu(); openSettings(); });
+  menu.querySelector('[data-action="logout"]').addEventListener('click', () => { closeAccountMenu(); signOut(); });
   accountMenuEl = menu;
 }
 
+// ─── Settings ────────────────────────────────────────────────────────────────
+// One page for every setting, like ChatGPT's: the theme and reading text, Codeply and
+// its specialists, the top bar and voice (the tray menu's switches), and the account.
+// Each change applies at once; there is nothing to save.
+const SETTINGS_TABS = [
+  ['general', 'settings', 'General'],
+  ['appearance', 'sun', 'Appearance'],
+  ['codeply', 'sparkle', 'Codeply'],
+  ['voice', 'mic', 'Top bar and voice'],
+  ['account', 'user', 'Account'],
+];
+let settingsTab = 'general';
+let settingsData = null;
+
+// The home screen shows Codeply (the agent's face) or the Codeply logo.
+function getHomeLook() { try { return localStorage.getItem('craft-home-look') === 'logo' ? 'logo' : 'agent'; } catch { return 'agent'; } }
+function setHomeLook(v) {
+  try { if (v === 'logo') localStorage.setItem('craft-home-look', 'logo'); else localStorage.removeItem('craft-home-look'); } catch {}
+  document.body.classList.toggle('home-look-logo', v === 'logo');
+}
+setHomeLook(getHomeLook());
+
+function setRow(title, desc, control) {
+  return `<div class="set-row"><div class="set-text"><div class="set-title">${esc(title)}</div>${desc ? `<div class="set-desc">${esc(desc)}</div>` : ''}</div><div class="set-ctl">${control}</div></div>`;
+}
+const setSwitch = (key, on, label) => `<input type="checkbox" class="switch" role="switch" data-set="${key}" aria-label="${esc(label)}"${on ? ' checked' : ''}>`;
+const setButton = (act, label) => `<button type="button" class="btn btn-secondary btn-sm" data-set-act="${act}">${esc(label)}</button>`;
+const has = (v) => v !== null && v !== undefined;
+function setSeg(key, options, current) {
+  return `<div class="segmented segmented-sm set-seg" role="radiogroup" data-seg="${key}">${options.map(([v, label, ic]) =>
+    `<button type="button" role="radio" class="segmented-item${v === current ? ' active' : ''}" data-val="${v}" aria-checked="${v === current}">${ic ? icon(ic, 'ico-sm') : ''}${esc(label)}</button>`).join('')}</div>`;
+}
+
+function settingsPane(tab) {
+  const d = settingsData || {};
+  const key = d.hotkey || 'Alt+C';
+  if (tab === 'general') {
+    return [
+      has(d.startWithSystem) ? setRow('Start with Windows', `Codeply waits quietly in the tray, so ${key} works right away.`, setSwitch('startWithSystem', d.startWithSystem, 'Start with Windows')) : '',
+      setRow('Keep this PC awake', 'While Codeply is open, so your phone can always reach it.', setSwitch('keepAwake', d.keepAwake, 'Keep this PC awake')),
+      has(d.convert) ? setRow('Convert files with drag + Shift', 'Hold Shift while dragging a file to turn it into another format.', setSwitch('convert', d.convert, 'Convert files')) : '',
+      setRow('Use on your phone', 'Drive this PC from mobile.codeply.app with the same account.', setButton('phone', 'Set up')),
+    ].join('');
+  }
+  if (tab === 'appearance') {
+    const t = window.CraftRich ? window.CraftRich.getType() : { size: 14, font: 'system', spacing: 'normal', width: 'normal' };
+    return [
+      setRow('Theme', '', setSeg('theme', [['system', 'System', 'monitor'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']], getThemeChoice())),
+      window.CraftWallpaper ? window.CraftWallpaper.settingsHtml() : '',
+      window.CraftHomeCards ? setRow('Home cards', 'Activity, recent chats, usage and pull requests under the box on Home.', setSwitch('homeCards', window.CraftHomeCards.enabled(), 'Home cards')) : '',
+      setRow('Home screen', 'What greets you above the box: Codeply itself, or the Codeply logo.', setSeg('home', [['agent', 'Codeply'], ['logo', 'Logo']], getHomeLook())),
+      setRow('Text size', 'How big the chat reads.', `<div class="set-range"><span class="rx-a-sm">A</span><input type="range" min="12" max="22" step="1" value="${t.size}" data-type-size aria-label="Text size"><span class="rx-a-lg">A</span><span class="set-val">${t.size}px</span></div>`),
+      setRow('Font', '', setSeg('font', [['system', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono']], t.font)),
+      setRow('Line spacing', '', setSeg('spacing', [['compact', 'Compact'], ['normal', 'Normal'], ['relaxed', 'Relaxed']], t.spacing)),
+      setRow('Chat width', '', setSeg('width', [['normal', 'Normal'], ['wide', 'Wide'], ['full', 'Full']], t.width)),
+      setRow('Reset text', 'Back to the default size, font and spacing.', setButton('type-reset', 'Reset')),
+    ].join('');
+  }
+  if (tab === 'codeply') {
+    const wisp = window.CraftWispUI;
+    return [
+      wisp ? setRow('Specialists', 'Codeply brings in specialists for the parts they know best, and keeps the ones that help.', setSwitch('wisp', wisp.enabled, 'Specialists')) : '',
+      wisp ? setRow('Your team', 'See, edit or remove the specialists Codeply works with.', setButton('team', 'Manage')) : '',
+      setRow('Models', 'Haze 2 picks the model for you, or use your own keys and local models.', setButton('models', 'Manage')),
+      setRow('Connected apps', 'Gmail, GitHub, Slack and more, for Codeply to use when you ask.', setButton('connect', 'Manage')),
+    ].join('');
+  }
+  if (tab === 'voice') {
+    return [
+      setRow('Show top bar', `The thin bar at the top of your screen. Click it, or press ${key}, to chat.`, setSwitch('topBar', d.topBar, 'Show top bar')),
+      has(d.voiceSpeaks) ? setRow('Voice speaks its answers', `Hold ${key} to talk, and Codeply answers out loud.`, setSwitch('voiceSpeaks', d.voiceSpeaks, 'Voice speaks its answers')) : '',
+      has(d.voiceActions) ? setRow('Voice can click and type for you', 'Lets voice mode open apps and fill things in on this PC.', setSwitch('voiceActions', d.voiceActions, 'Voice can click and type')) : '',
+    ].join('');
+  }
+  if (tab === 'account') {
+    return [
+      setRow('Signed in as', state.user ? state.user.email : '', ''),
+      setRow('Usage', 'What you have used today and this month.', setButton('usage', 'Open')),
+      setRow('Sign out', 'Signs this PC out of Codeply.', setButton('logout', 'Sign out')),
+    ].join('');
+  }
+  return '';
+}
+
+function drawSettings() {
+  const el = $('settingsBackdrop');
+  if (!el) return;
+  el.querySelectorAll('.settings-tab').forEach((b) => {
+    const on = b.dataset.tab === settingsTab;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+  });
+  const tab = SETTINGS_TABS.find((t) => t[0] === settingsTab);
+  el.querySelector('.settings-heading').textContent = tab ? tab[2] : 'Settings';
+  el.querySelector('.settings-pane').innerHTML = settingsPane(settingsTab);
+  if (settingsTab === 'appearance' && window.CraftWallpaper) window.CraftWallpaper.hydrate(drawSettings);
+}
+
+function buildSettings() {
+  const el = document.createElement('div');
+  el.className = 'modal-backdrop hidden';
+  el.id = 'settingsBackdrop';
+  el.innerHTML = `
+    <div class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <nav class="settings-nav" role="tablist" aria-label="Settings">
+        <div class="settings-nav-title" id="settingsTitle">Settings</div>
+        ${SETTINGS_TABS.map(([id, ic, label]) => `<button type="button" class="settings-tab" role="tab" data-tab="${id}">${icon(ic)}<span>${esc(label)}</span></button>`).join('')}
+      </nav>
+      <div class="settings-main">
+        <div class="settings-top">
+          <div class="settings-heading"></div>
+          <button class="icon-btn icon-btn-sm modal-close" title="Close" aria-label="Close">${icon('close')}</button>
+        </div>
+        <div class="settings-pane"></div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('mousedown', (e) => { if (e.target === el) CraftModal.close(el); });
+  el.querySelector('.modal-close').addEventListener('click', () => CraftModal.close(el));
+  el.querySelectorAll('.settings-tab').forEach((b) => b.addEventListener('click', () => { settingsTab = b.dataset.tab; drawSettings(); }));
+  const pane = el.querySelector('.settings-pane');
+  if (window.CraftWallpaper) window.CraftWallpaper.bind(pane, drawSettings);
+  pane.addEventListener('change', async (e) => {
+    const sw = e.target.closest('[data-set]');
+    if (!sw) return;
+    const k = sw.dataset.set;
+    if (k === 'homeCards') { if (window.CraftHomeCards) window.CraftHomeCards.setEnabled(sw.checked); return; }
+    if (k === 'wisp') {
+      if (api && api.wispSet) await api.wispSet(sw.checked);
+      if (window.CraftWispUI) await window.CraftWispUI.refresh();
+      return;
+    }
+    if (k === 'keepAwake' && $('keepAwakeToggle')) $('keepAwakeToggle').checked = sw.checked;
+    if (api && api.settingsSet) settingsData = await api.settingsSet(k, sw.checked);
+  });
+  pane.addEventListener('input', (e) => {
+    const r = e.target.closest('[data-type-size]');
+    if (!r || !window.CraftRich) return;
+    window.CraftRich.setType({ size: Number(r.value) });
+    r.parentElement.querySelector('.set-val').textContent = r.value + 'px';
+  });
+  pane.addEventListener('click', (e) => {
+    const opt = e.target.closest('.set-seg [data-val]');
+    if (opt) {
+      const k = opt.parentElement.dataset.seg;
+      if (k === 'theme') applyTheme(opt.dataset.val);
+      else if (k === 'home') setHomeLook(opt.dataset.val);
+      else if (window.CraftRich) window.CraftRich.setType({ [k]: opt.dataset.val });
+      drawSettings();
+      return;
+    }
+    const b = e.target.closest('[data-set-act]');
+    if (!b) return;
+    const act = b.dataset.setAct;
+    if (act === 'type-reset') { if (window.CraftRich) window.CraftRich.setType(null); drawSettings(); return; }
+    CraftModal.close(el);
+    if (act === 'phone') openRemoteModal();
+    else if (act === 'team') { if (window.CraftWispUI) window.CraftWispUI.openTeam(); }
+    else if (act === 'models') openModelsModal();
+    else if (act === 'connect') openConnectApps();
+    else if (act === 'usage') { if (window.CraftUsage) window.CraftUsage.open({ name: $('userName').textContent, email: state.user ? state.user.email : '' }); }
+    else if (act === 'logout') signOut();
+  });
+  return el;
+}
+
+async function openSettings(tab) {
+  if (tab) settingsTab = tab;
+  const el = $('settingsBackdrop') || buildSettings();
+  try { settingsData = api && api.settingsGet ? await api.settingsGet() : null; } catch { settingsData = null; }
+  if (window.CraftWallpaper) window.CraftWallpaper.forget();
+  drawSettings();
+  CraftModal.open(el);
+}
+// Ctrl+, opens Settings, like most apps.
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === ',' && state.user) { e.preventDefault(); openSettings(); }
+});
+
+$('sbSettingsBtn').addEventListener('click', () => { if (accountMenuEl) closeAccountMenu(); openSettings(); });
 $('sbUserBtn').addEventListener('click', (e) => {
   e.stopPropagation();
   if (accountMenuEl) closeAccountMenu();
@@ -1920,7 +2307,10 @@ document.addEventListener('keydown', (e) => {
   if (chatCtxMenuEl) { const a = chatCtxAnchorBtn; closeChatMenu(); if (a) a.focus(); }
 });
 
-$('togglePanelBtn').addEventListener('click', () => $('sidePanel').classList.toggle('hidden'));
+$('togglePanelBtn').addEventListener('click', () => {
+  const opening = $('sidePanel').classList.toggle('hidden') === false;
+  if (opening && window.CraftReview) window.CraftReview.show(false); // one popover at a time
+});
 
 // ─── Embedded browser panel (docked BrowserViews the agent's browser_check drives) ─
 // Tabs, back / forward / reload, the point-at tool, the address bar and a ...
@@ -1965,18 +2355,18 @@ function reportBrowserLayout() {
 }
 window.addEventListener('resize', () => requestAnimationFrame(reportBrowserLayout));
 
-const BC_GLOBE = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg>';
+const BC_GLOBE = icon('globe');
 function renderBrowserTabs() {
   const host = $('bcTabs');
   host.innerHTML = bc.tabs.map((t) => {
     const on = t.id === bc.activeTabId;
-    const icon = t.loading ? '<span class="bc-tab-spin"></span>'
+    const tabIc = t.loading ? '<span class="bc-tab-spin"></span>'
       : t.kind === 'agent' ? '<span class="bc-tab-agent" title="Codeply checks pages here"></span>'
       : t.favicon ? `<img src="${esc(t.favicon)}" alt="">` : BC_GLOBE;
     const title = t.title || (t.url ? t.url.replace(/^https?:\/\//, '') : 'New tab');
     return `<div class="bc-tab${on ? ' on' : ''}" role="tab" aria-selected="${on}" tabindex="${on ? 0 : -1}" data-id="${t.id}" title="${esc(title)}">
-      <span class="bc-tab-ic">${icon}</span><span class="bc-tab-title">${esc(title)}</span>
-      ${t.kind === 'agent' ? '' : `<button class="bc-tab-x" type="button" data-close="${t.id}" aria-label="Close ${esc(title)}"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>`}
+      <span class="bc-tab-ic">${tabIc}</span><span class="bc-tab-title">${esc(title)}</span>
+      ${t.kind === 'agent' ? '' : `<button class="bc-tab-x" type="button" data-close="${t.id}" aria-label="Close ${esc(title)}">${icon('close', 'ico-xs')}</button>`}
     </div>`;
   }).join('');
 }
@@ -2040,7 +2430,7 @@ if (api) {
     bc.activeTabId = data.activeTabId;
     bc.zoom = data.zoom || 100;
     document.querySelectorAll('.browser-toggle-btn').forEach((btn) => btn.classList.toggle('active', data.visible));
-    if (!dragState) document.documentElement.style.setProperty('--browser-panel-width', data.width + 'px');
+    if (!dragState) document.documentElement.style.setProperty('--browser-panel-width', (data.width / currentZoom()) + 'px');
     document.querySelector('.app').classList.toggle('browser-panel-open', data.visible);
     $('browserChrome').classList.toggle('hidden', !data.visible);
     $('bcResize').classList.toggle('hidden', !data.visible);
@@ -2095,7 +2485,7 @@ function closeBrowserMenu() {
   $('bcMenuBtn').setAttribute('aria-expanded', 'false');
   freezeBrowser(false);
 }
-const BC_SIZES = [['desktop', 'Desktop'], ['tablet', 'Tablet'], ['mobile', 'Phone']];
+const BC_SIZES = [['desktop', 'Desktop'], ['tablet', 'Tablet'], ['mobile', 'Phone'], ['responsive', 'Any size']];
 async function openBrowserMenu() {
   if (bc.menu) { closeBrowserMenu(); return; }
   await freezeBrowser(true);
@@ -2104,8 +2494,8 @@ async function openBrowserMenu() {
   m.setAttribute('role', 'menu');
   const item = (act, label, keys = '') => `<button class="menu-item" role="menuitem" data-act="${act}"><span>${label}</span>${keys ? `<kbd>${keys}</kbd>` : ''}</button>`;
   m.innerHTML = item('find', 'Find in page', 'Ctrl+F') + item('print', 'Print')
-    + `<div class="bc-menu-row"><span>Zoom</span><span class="bc-zoom"><button class="bc-btn" data-act="zoom-out" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button><span data-zoom-label>${bc.zoom}%</span><button class="bc-btn" data-act="zoom-in" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button><button class="bc-btn" data-act="zoom-reset" aria-label="Actual size" title="Actual size"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button></span></div>`
-    + `<div class="bc-menu-row"><span>Device</span><span class="bc-devices">${BC_SIZES.map(([k, l]) => `<button class="${bc.viewport === k ? 'on' : ''}" data-act="size:${k}">${l}</button>`).join('')}</span></div>`
+    + `<div class="bc-menu-row"><span>Zoom</span><span class="bc-zoom"><button class="bc-btn" data-act="zoom-out" aria-label="Zoom out">${icon('minus', 'ico-sm')}</button><span data-zoom-label>${bc.zoom}%</span><button class="bc-btn" data-act="zoom-in" aria-label="Zoom in">${icon('plus', 'ico-sm')}</button><button class="bc-btn" data-act="zoom-reset" aria-label="Actual size" title="Actual size">${icon('refresh', 'ico-sm')}</button></span></div>`
+    + `<div class="bc-menu-row"><span>Device</span><span class="bc-devices">${BC_SIZES.map(([k, l]) => `<button class="${bc.viewport === k || (k === 'responsive' && /^\d+x\d+$/.test(String(bc.viewport))) ? 'on' : ''}" data-act="size:${k}">${l}</button>`).join('')}</span></div>`
     + item('shot', 'Take a screenshot')
     + '<div class="menu-sep"></div>'
     + item('external', 'Open in your browser') + item('downloads', 'Downloads') + item('clear', 'Clear browsing data')
@@ -2127,6 +2517,11 @@ async function openBrowserMenu() {
     if (act === 'zoom-in') return api.browserPanelZoom(1);
     if (act === 'zoom-out') return api.browserPanelZoom(-1);
     if (act === 'zoom-reset') return api.browserPanelZoom(0);
+    if (act === 'size:responsive' && window.CraftResponsive) {
+      closeBrowserMenu();
+      window.CraftResponsive.enter();
+      return;
+    }
     if (act.startsWith('size:')) {
       bc.viewport = act.slice(5);
       m.querySelectorAll('.bc-devices button').forEach((x) => x.classList.toggle('on', x === b));
@@ -2142,7 +2537,7 @@ async function openBrowserMenu() {
     } else if (act === 'external') api.browserPanelExternal();
     else if (act === 'downloads') api.browserPanelDownloads();
     else if (act === 'clear') {
-      if (!confirm('Clear cookies, sign-ins and saved data in Craft\'s browser?')) return;
+      if (!confirm('Clear cookies, sign-ins and saved data in Codeply\'s browser?')) return;
       const res = await api.browserPanelClearData();
       if (res && res.ok) showToast('Browsing data cleared.');
     } else if (act === 'close') api.toggleBrowserPanel();
@@ -2215,7 +2610,7 @@ let dragState = null;
 const bcResize = $('bcResize');
 function setPanelRatio(ratio, live) {
   const r = Math.min(0.75, Math.max(0.25, ratio));
-  document.documentElement.style.setProperty('--browser-panel-width', Math.round(r * window.innerWidth) + 'px');
+  document.documentElement.style.setProperty('--browser-panel-width', Math.round(r * window.innerWidth / currentZoom()) + 'px');
   if (live) api.browserPanelResize(r);
   return r;
 }
@@ -2370,6 +2765,8 @@ function closeBgTasks() {
 // the page stepping aside under it.
 const CHAT_MIN = 420;
 let dockTasksW = 0;   // the tasks column's width, 0 while closed
+let tasksWidthPx = 0; // the width the user dragged the tasks column to (0 = automatic)
+try { tasksWidthPx = Number(localStorage.getItem('craft.tasksWidth')) || 0; } catch {}
 let termHeightPx = 0; // the terminal's height under the browser, once dragged
 const clampPx = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 function layoutDock() {
@@ -2378,8 +2775,9 @@ function layoutDock() {
   if (!term || !tasks) return;
   const app = document.querySelector('.app');
   const root = document.documentElement.style;
-  const W = window.innerWidth;
-  const H = window.innerHeight;
+  // In CSS pixels: the Aa zoom draws everything bigger than the window's own pixels.
+  const W = window.innerWidth / currentZoom();
+  const H = window.innerHeight / currentZoom();
   const sidebarW = document.querySelector('.sidebar')?.getBoundingClientRect().width || 0;
   const termOpen = !term.classList.contains('hidden');
   const tasksOpen = !tasks.classList.contains('hidden');
@@ -2387,7 +2785,8 @@ function layoutDock() {
   const termExpanded = termOpen && term.classList.contains('expanded');
   const tasksExpanded = tasksOpen && tasks.classList.contains('expanded');
   // The tasks column: about a fifth of the window, wider when expanded.
-  dockTasksW = !tasksOpen ? 0 : Math.round(tasksExpanded ? clampPx(W * 0.32, 320, 560) : clampPx(W * 0.2, 240, 340));
+  // Its width: what the user dragged it to (kept), else a fifth of the window; Expand makes it wide.
+  dockTasksW = !tasksOpen ? 0 : Math.round(tasksExpanded ? clampPx(W * 0.32, 320, 560) : tasksWidthPx ? clampPx(tasksWidthPx, 240, Math.max(260, W * 0.5)) : clampPx(W * 0.2, 240, 340));
   // The browser/terminal column, never squeezing the chat under CHAT_MIN.
   const room = Math.max(280, W - sidebarW - dockTasksW - CHAT_MIN);
   // With the browser open the column is the browser's own width (its edge drags it live).
@@ -2408,7 +2807,9 @@ function layoutDock() {
   const ghost = $('bcGhost');
   if (ghost) { ghost.style.right = dockTasksW + 'px'; ghost.style.bottom = (browserOpen && termOpen && !termExpanded ? termH : 0) + 'px'; }
   // The chat keeps CHAT_MIN: the browser gets narrower while the tasks column needs the room.
-  if (api && api.browserPanelInsets) api.browserPanelInsets({ right: dockTasksW, bottom: browserOpen && termOpen && !termExpanded ? termH : 0, maxWidth: Math.round(room) });
+  // main places the native page in window pixels: with the Aa zoom on, the columns here are drawn that much bigger.
+  const zk = currentZoom();
+  if (api && api.browserPanelInsets) api.browserPanelInsets({ right: Math.round(dockTasksW * zk), bottom: Math.round((browserOpen && termOpen && !termExpanded ? termH : 0) * zk), maxWidth: Math.round(room * zk) });
   if (browserOpen) requestAnimationFrame(() => { reportBrowserLayout(); syncBrowserCover(); });
   document.querySelectorAll('[data-dock-expand]').forEach((b) => {
     const on = $(b.dataset.dockExpand).classList.contains('expanded');
@@ -2443,6 +2844,58 @@ window.addEventListener('resize', () => layoutDock());
   const end = () => { dragging = false; };
   grip.addEventListener('pointerup', end);
   grip.addEventListener('pointercancel', end);
+})();
+
+// Drag the tasks column's left edge to make it wider or narrower; the browser and the chat
+// fit around it as it moves. The page steps aside for a still while dragging (like the
+// browser's own edge), since a native page would swallow the mouse.
+(() => {
+  const panel = $('bgTasksPanel');
+  if (!panel) return;
+  const grip = document.createElement('div');
+  grip.className = 'tasks-resize';
+  grip.setAttribute('role', 'separator');
+  grip.setAttribute('aria-orientation', 'vertical');
+  grip.setAttribute('aria-label', 'Resize Background tasks');
+  grip.tabIndex = 0;
+  panel.prepend(grip);
+  let drag = null;
+  const apply = (w) => {
+    tasksWidthPx = Math.round(clampPx(w, 240, Math.max(260, window.innerWidth * 0.5)));
+    panel.classList.remove('expanded');
+    layoutDock();
+  };
+  grip.addEventListener('pointerdown', async (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    drag = { raf: 0, w: dockTasksW };
+    document.body.classList.add('tasks-dragging');
+    if (typeof freezeBrowser === 'function') await freezeBrowser(true);
+  });
+  grip.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    drag.w = window.innerWidth - e.clientX;
+    if (drag.raf) return;
+    drag.raf = requestAnimationFrame(() => { if (drag) { drag.raf = 0; apply(drag.w); } });
+  });
+  const end = async () => {
+    if (!drag) return;
+    drag = null;
+    document.body.classList.remove('tasks-dragging');
+    try { localStorage.setItem('craft.tasksWidth', String(tasksWidthPx)); } catch {}
+    if (typeof freezeBrowser === 'function') await freezeBrowser(false);
+    layoutDock();
+  };
+  grip.addEventListener('pointerup', end);
+  grip.addEventListener('pointercancel', end);
+  grip.addEventListener('dblclick', () => { tasksWidthPx = 0; try { localStorage.removeItem('craft.tasksWidth'); } catch {} layoutDock(); });
+  grip.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    apply(dockTasksW + (e.key === 'ArrowLeft' ? 24 : -24));
+    try { localStorage.setItem('craft.tasksWidth', String(tasksWidthPx)); } catch {}
+  });
 })();
 
 $('terminalToggleBtn').addEventListener('click', () => {
@@ -2481,19 +2934,31 @@ const sb = {
   renaming: false,                  // a rename field is open; the list waits for it to close
 };
 const SB_ICON = {
-  chev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
-  caret: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-7 9z"/></svg>',
-  plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
-  more: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>',
+  chev: icon('oai-chevron-down', 'ico-sm'),
+  caret: icon('oai-chevron-down', 'ico-sm'),
+  plus: icon('oai-plus'),
+  more: icon('oai-more'),
   // A project's folder: closed while its chats are folded away, open otherwise.
-  folder: '<svg class="sb-ic-folder" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h3.6l2 2.2h7.4a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>',
-  folderOpen: '<svg class="sb-ic-folder-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 17.5V7.5a2 2 0 0 1 2-2h3.6l2 2.2h6.4a2 2 0 0 1 2 2v1.3"/><path d="M3.5 17.5l2.3-6a1.6 1.6 0 0 1 1.5-1h13.2a1 1 0 0 1 .9 1.4l-2.4 5.9a1.6 1.6 0 0 1-1.5 1H5a1.5 1.5 0 0 1-1.5-1.3z"/></svg>',
-  chats: '<svg class="sb-ic-chats" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a7.5 7.5 0 0 1-11.2 6.5L4 19.5l1-4.4A7.5 7.5 0 1 1 20 12z"/></svg>',
+  folder: icon('oai-folder', 'sb-ic-folder'),
+  folderOpen: icon('oai-folder-open', 'sb-ic-folder-open'),
+  chats: icon('oai-chat', 'sb-ic-chats'),
+  computer: icon('oai-desktop', 'sb-ic-pinned'),
+  cloud: icon('oai-cloud', 'sb-ic-pinned'),
 };
 const sbAttr = (s) => esc(String(s == null ? '' : s)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 // Windows paths: one folder however its slashes or letter case were written.
 const sbPathKey = (p) => String(p || '').replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
-const sbFolderName = (p) => String(p).split(/[\\/]/).filter(Boolean).pop() || String(p);
+// The two folders a chat falls back to (main.js defaultFolders): "This Computer"
+// when no project is picked, "Cloud" for cloud chats from no project. They sit
+// on top of the sidebar, always there, never dragged.
+const isComputerHome = (p) => !!p && !!(state.defaultFolders && state.defaultFolders.computer) && sbPathKey(p) === sbPathKey(state.defaultFolders.computer);
+const isCloudHome = (p) => !!p && !!(state.defaultFolders && state.defaultFolders.cloud) && sbPathKey(p) === sbPathKey(state.defaultFolders.cloud);
+const sbFolderName = (p) => (isComputerHome(p) ? 'This Computer' : isCloudHome(p) ? 'Cloud' : String(p).split(/[\\/]/).filter(Boolean).pop() || String(p));
+
+// Folders sort A to Z until one is dragged; then the dragged order is kept
+// (craft.sb.order) and folders added later follow it, A to Z.
+const SB_ORDER_KEY = 'craft.sb.order';
+function sbLoadOrder() { try { const v = JSON.parse(localStorage.getItem(SB_ORDER_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } }
 
 function sbSections() {
   const byKey = new Map();
@@ -2502,13 +2967,56 @@ function sbSections() {
     if (!byKey.has(key)) byKey.set(key, { key, path: p, name: sbFolderName(p), chats: [] });
     return byKey.get(key);
   };
+  const df = state.defaultFolders || {};
+  const pinned = [df.computer, df.cloud].filter(Boolean).map(add);
+  pinned.forEach((sec) => { sec.pinned = true; });
   for (const p of state.projects) add(p);
   const loose = [];
-  for (const s of state.sessions) (s.cwd ? add(s.cwd).chats : loose).push(s);
-  const list = [...byKey.values()];
+  // A chat that never had a folder belongs to This Computer.
+  for (const s of state.sessions) (s.cwd ? add(s.cwd).chats : pinned[0] ? pinned[0].chats : loose).push(s);
+  const order = sbLoadOrder();
+  const rank = (sec) => { const i = order.indexOf(sec.key); return i < 0 ? Infinity : i; };
+  const rest = [...byKey.values()].filter((sec) => !sec.pinned)
+    .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+  const list = [...pinned, ...rest];
   if (loose.length) list.push({ key: 'none', path: null, name: 'No project', chats: loose });
   return list;
 }
+
+// Dragging a folder by its title moves it; the drop line shows where it lands.
+let sbDragKey = null;
+$('sbSections').addEventListener('dragstart', (e) => {
+  const head = e.target.closest && e.target.closest('.sb-sec-head[draggable="true"]');
+  const sec = head && head.closest('.sb-sec');
+  if (!sec) return;
+  sbDragKey = sec.dataset.sec;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', sbDragKey);
+  sec.classList.add('dragging');
+});
+$('sbSections').addEventListener('dragover', (e) => {
+  if (!sbDragKey) return;
+  const sec = e.target.closest('.sb-sec[data-drag]');
+  document.querySelectorAll('.sb-sec.drop-above, .sb-sec.drop-below').forEach((x) => x.classList.remove('drop-above', 'drop-below'));
+  if (!sec || sec.dataset.sec === sbDragKey) return;
+  e.preventDefault();
+  const r = sec.getBoundingClientRect();
+  sec.classList.add(e.clientY < r.top + r.height / 2 ? 'drop-above' : 'drop-below');
+});
+$('sbSections').addEventListener('drop', (e) => {
+  const sec = e.target.closest('.sb-sec[data-drag]');
+  if (!sbDragKey || !sec || sec.dataset.sec === sbDragKey) return;
+  e.preventDefault();
+  const keys = [...document.querySelectorAll('#sbSections .sb-sec[data-drag]')].map((x) => x.dataset.sec).filter((k) => k !== sbDragKey);
+  const at = keys.indexOf(sec.dataset.sec) + (sec.classList.contains('drop-below') ? 1 : 0);
+  keys.splice(at, 0, sbDragKey);
+  try { localStorage.setItem(SB_ORDER_KEY, JSON.stringify(keys)); } catch {}
+  renderSidebar();
+});
+$('sbSections').addEventListener('dragend', () => {
+  sbDragKey = null;
+  document.querySelectorAll('.sb-sec.dragging, .sb-sec.drop-above, .sb-sec.drop-below').forEach((x) => x.classList.remove('dragging', 'drop-above', 'drop-below'));
+});
 
 function sbMarkHtml(id) {
   if ((state.runningSessions || []).includes(id)) return '<span class="sb-mark busy" role="img" aria-label="Running" title="Running"></span>';
@@ -2520,7 +3028,7 @@ function sbChatHtml(s) {
   const title = s.title || 'New chat';
   const cur = s.id === state.currentSessionId;
   return `<div class="sb-chat-row" data-id="${sbAttr(s.id)}">`
-    + `<button class="sb-chat" type="button" data-key="c:${sbAttr(s.id)}" title="${sbAttr(title)}"${cur ? ' aria-current="true"' : ''}><span class="sb-chat-label">${esc(title)}</span>${sbMarkHtml(s.id)}</button>`
+    + `<button class="sb-chat" type="button" data-key="c:${sbAttr(s.id)}"${cur ? ' aria-current="true"' : ''}><span class="sb-chat-label">${esc(title)}</span>${sbMarkHtml(s.id)}</button>`
     + `<button class="sb-chat-menu-btn" type="button" data-act="chat-menu" data-key="m:${sbAttr(s.id)}" title="More" aria-label="More for ${sbAttr(title)}">${SB_ICON.more}</button>`
     + '</div>';
 }
@@ -2537,11 +3045,13 @@ function sbSectionHtml(sec, chats, n) {
   const isCurrent = sec.path && state.project && sbPathKey(sec.path) === sbPathKey(state.project);
   const addLabel = sec.path ? `New chat in ${sec.name}` : 'New chat without a project';
   const k = sbAttr(sec.key);
-  return `<section class="sb-sec${closed ? ' closed' : ''}${isCurrent ? ' current' : ''}" data-sec="${k}">`
-    + '<div class="sb-sec-head">'
-    + `<button class="sb-sec-toggle" type="button" data-key="t:${k}" aria-expanded="${!closed}" aria-controls="sbSec${n}"${sec.path ? ` title="${sbAttr(sec.path)}"` : ''}>${sec.path ? SB_ICON.folder + SB_ICON.folderOpen : SB_ICON.chats}<span>${esc(sec.name)}</span>${SB_ICON.caret}</button>`
+  const glyph = isComputerHome(sec.path) ? SB_ICON.computer : isCloudHome(sec.path) ? SB_ICON.cloud : sec.path ? SB_ICON.folder + SB_ICON.folderOpen : SB_ICON.chats;
+  const drag = sec.path && !sec.pinned;
+  return `<section class="sb-sec${closed ? ' closed' : ''}${isCurrent ? ' current' : ''}${sec.pinned ? ' pinned' : ''}" data-sec="${k}"${drag ? ' data-drag="1"' : ''}>`
+    + `<div class="sb-sec-head"${drag ? ' draggable="true"' : ''}>`
+    + `<button class="sb-sec-toggle" type="button" data-key="t:${k}" aria-expanded="${!closed}" aria-controls="sbSec${n}"${sec.path ? ` title="${sbAttr(drag ? `${sec.path}\nDrag to move` : sec.path)}"` : ''}>${glyph}<span>${esc(sec.name)}</span>${SB_ICON.caret}</button>`
     + `<button class="sb-sec-tool" type="button" data-act="add" data-key="a:${k}" title="${sbAttr(addLabel)}" aria-label="${sbAttr(addLabel)}">${SB_ICON.plus}</button>`
-    + (sec.path ? `<button class="sb-sec-tool" type="button" data-act="project-menu" data-key="p:${k}" title="More" aria-label="More for ${sbAttr(sec.name)}">${SB_ICON.more}</button>` : '')
+    + (drag ? `<button class="sb-sec-tool" type="button" data-act="project-menu" data-key="p:${k}" title="More" aria-label="More for ${sbAttr(sec.name)}">${SB_ICON.more}</button>` : '')
     + '</div>'
     + `<div class="sb-sec-body" id="sbSec${n}"${closed ? ' inert' : ''}><div>`
     + (rows.length ? rows.map(sbChatHtml).join('') : '<div class="sb-empty">No chats yet</div>')
@@ -2717,6 +3227,17 @@ document.addEventListener('click', (e) => {
   if (chatCtxMenuEl && !chatCtxMenuEl.contains(e.target)) closeChatMenu();
 });
 
+/** Puts a sidebar "..." menu by its button: below it, or above it when the window has no room below. */
+function placeCtxMenu(menu, anchorBtn) {
+  const rect = anchorBtn.getBoundingClientRect();
+  const h = menu.offsetHeight;
+  const below = rect.bottom + 4;
+  const top = below + h > window.innerHeight - 8 && rect.top - 4 - h >= 8 ? rect.top - 4 - h
+    : Math.max(8, Math.min(below, window.innerHeight - h - 8));
+  menu.style.top = top + 'px';
+  menu.style.left = Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8) + 'px';
+}
+
 function openChatMenu(session, anchorBtn) {
   closeChatMenu();
   anchorBtn.classList.add('active');
@@ -2724,15 +3245,13 @@ function openChatMenu(session, anchorBtn) {
   const menu = document.createElement('div');
   menu.className = 'menu chat-ctx-menu';
   menu.innerHTML = `
-    <button class="menu-item" data-action="rename"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Rename</button>
-    <button class="menu-item" data-action="md"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Save as Markdown</button>
-    <button class="menu-item" data-action="html"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Save as web page</button>
-    <button class="menu-item" data-action="gist"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>Share as secret gist</button>
-    <button class="menu-item danger" data-action="delete"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg>Delete</button>`;
+    <button class="menu-item" data-action="rename">${icon('edit')}Rename</button>
+    <button class="menu-item" data-action="md">${icon('download')}Save as Markdown</button>
+    <button class="menu-item" data-action="html">${icon('download')}Save as web page</button>
+    <button class="menu-item" data-action="gist">${icon('link')}Share as secret gist</button>
+    <button class="menu-item danger" data-action="delete">${icon('trash')}Delete</button>`;
   document.body.appendChild(menu);
-  const rect = anchorBtn.getBoundingClientRect();
-  menu.style.top = rect.bottom + 4 + 'px';
-  menu.style.left = Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8) + 'px';
+  placeCtxMenu(menu, anchorBtn);
 
   menu.querySelector('[data-action="rename"]').addEventListener('click', () => {
     closeChatMenu();
@@ -2831,12 +3350,10 @@ function openProjectMenu(projectPath, anchorBtn) {
   const menu = document.createElement('div');
   menu.className = 'menu chat-ctx-menu';
   menu.innerHTML = `
-    <button class="menu-item" data-action="reveal"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>Show in Explorer</button>
-    <button class="menu-item danger" data-action="remove"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg>Remove from list</button>`;
+    <button class="menu-item" data-action="reveal">${icon('folder')}Show in Explorer</button>
+    <button class="menu-item danger" data-action="remove">${icon('trash')}Remove from list</button>`;
   document.body.appendChild(menu);
-  const rect = anchorBtn.getBoundingClientRect();
-  menu.style.top = rect.bottom + 4 + 'px';
-  menu.style.left = Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8) + 'px';
+  placeCtxMenu(menu, anchorBtn);
 
   menu.querySelector('[data-action="reveal"]').addEventListener('click', () => {
     closeChatMenu();
@@ -2875,7 +3392,7 @@ async function removeProjectByPath(p) {
 function setProject(p, branch) {
   state.project = p;
   state.branch = branch || null;
-  const name = p ? p.split(/[\\/]/).filter(Boolean).pop() : 'Choose folder';
+  const name = p ? sbFolderName(p) : 'Choose folder';
   $('homeProjectName').textContent = name;
   document.querySelectorAll('[data-role="project-name"]').forEach((el) => (el.textContent = name));
   document.querySelectorAll('[data-role="branch-chip"]').forEach((el) => el.classList.toggle('hidden', !branch));
@@ -2894,13 +3411,109 @@ async function chooseProject() {
 
 $('openProjectBtn').addEventListener('click', chooseProject);
 $('homeProjectName').addEventListener('click', chooseProject);
-document.querySelectorAll('[data-role="project-chip"]').forEach((el) => el.addEventListener('click', chooseProject));
+document.querySelectorAll('[data-role="project-chip"]').forEach((el) => el.addEventListener('click', (e) => { e.stopPropagation(); openFolderMenu(el); }));
+
+// The folder chip above the box: every folder already connected, in the
+// sidebar's order (This Computer and Cloud first), about three and a half
+// rows tall so it's plain the list scrolls; "Open a folder..." adds another.
+function openFolderMenu(anchor) {
+  const open = document.querySelector('.folder-menu');
+  if (open) { open.remove(); if (open.anchorEl === anchor) return; } // a second click on the chip closes it
+  const secs = sbSections().filter((s) => s.path);
+  const cur = state.project ? sbPathKey(state.project) : '';
+  const menu = document.createElement('div');
+  menu.className = 'menu folder-menu';
+  menu.anchorEl = anchor;
+  menu.innerHTML = `<div class="plus-label">Work in</div><div class="folder-menu-list">${secs.map((s) => {
+    const glyph = isComputerHome(s.path) ? icon('laptop') : isCloudHome(s.path) ? icon('cloud') : icon('folder');
+    return `<button class="menu-item" data-path="${sbAttr(s.path)}" title="${sbAttr(s.path)}">${glyph}<span class="plus-t">${esc(s.name)}</span>${sbPathKey(s.path) === cur ? icon('check', 'plus-tick') : ''}</button>`;
+  }).join('')}</div><div class="menu-sep"></div><button class="menu-item" data-act="open">${icon('folder-open')}<span class="plus-t">Open a folder...</span></button>`;
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.left = `${Math.max(8, Math.min(r.left - 6, innerWidth - menu.offsetWidth - 8))}px`;
+  menu.style.top = `${Math.max(8, r.top - menu.offsetHeight - 6)}px`;
+  const close = () => { menu.remove(); document.removeEventListener('mousedown', outside, true); };
+  const outside = (e) => { if (!menu.contains(e.target) && !anchor.contains(e.target)) close(); };
+  setTimeout(() => document.addEventListener('mousedown', outside, true), 0);
+  menu.addEventListener('click', async (e) => {
+    const b = e.target.closest('.menu-item');
+    if (!b) return;
+    close();
+    if (b.dataset.act === 'open') { chooseProject(); return; }
+    const res = await api.useProject(b.dataset.path);
+    if (res) setProject(res.path, res.branch);
+  });
+}
 
 // ─── Mode + bypass toggles (synced across both composers) ───────────────────
-const MODES = ['Build', 'Plan', 'Ask'];
+const MODES = ['Build', 'Plan', 'Ask', 'Design'];
 
 function syncMode() {
   document.querySelectorAll('[data-role="mode-name"]').forEach((el) => (el.textContent = state.mode));
+  // Build is the default and needs no pill; Plan or Ask shows one on the row (styles.css), with its own icon.
+  document.querySelectorAll('[data-role="mode-chip"]').forEach((el) => {
+    el.classList.toggle('set', state.mode !== 'Build');
+    const ic = el.querySelector('svg');
+    if (ic && ic.dataset.mode !== state.mode) ic.outerHTML = icon(MODE_INFO[state.mode][0]).replace('<svg', `<svg data-mode="${state.mode}"`);
+  });
+  try { syncBypass(); } catch {} // the permission label shows Plan while the mode is Plan
+}
+const MODE_INFO = { Build: ['hammer', 'Makes the changes'], Plan: ['list', 'Plans first, changes nothing'], Ask: ['chat', 'Answers, changes nothing'], Design: ['palette', 'Designs a page, app screen or slides'] };
+
+// ─── The + menu: files, the mode, research, cloud and a goal ────────────────
+// Like ChatGPT's: the row under the box keeps only what's on (the permission
+// chip, a mode other than Build, Research or Cloud while on); everything else
+// lives here. Research and Cloud keep their own chips (hidden while off), so
+// their setup flows stay theirs: the menu just clicks them.
+function openPlusMenu(composer, anchor, attachInput) {
+  const open = document.querySelector('.plus-menu');
+  if (open) { const same = open.dataset.for === composer.dataset.composer; open.remove(); if (same) return; }
+  const input = composer.querySelector('.composer-input');
+  const rm = composer.querySelector('.rm-chip');
+  const cloud = composer.querySelector('.cloud-chip');
+  const tick = (on) => (on ? icon('check', 'plus-tick') : '');
+  const menu = document.createElement('div');
+  menu.className = 'menu plus-menu';
+  menu.dataset.for = composer.dataset.composer;
+  menu.innerHTML = `
+    <div class="plus-label">Add</div>
+    <button class="menu-item" data-act="files">${icon('paperclip')}<span class="plus-t">Files and photos</span></button>
+    <button class="menu-item" data-act="goal">${icon('target')}<span class="plus-t">Goal</span><span class="plus-d">Keep going until it's done and verified</span></button>
+    <div class="plus-label">Mode</div>
+    ${MODES.map((m) => `<button class="menu-item" data-mode="${m}">${icon(MODE_INFO[m][0])}<span class="plus-t">${m}</span><span class="plus-d">${MODE_INFO[m][1]}</span>${tick(state.mode === m)}</button>`).join('')}
+    ${rm || cloud ? '<div class="plus-label">Tools</div>' : ''}
+    ${rm ? `<button class="menu-item" data-act="research">${icon('flask')}<span class="plus-t">Research</span><span class="plus-d">Your research context with every message</span>${tick(rm.classList.contains('on'))}</button>` : ''}
+    ${cloud ? `<button class="menu-item" data-act="cloud">${icon('cloud')}<span class="plus-t">Cloud</span><span class="plus-d">Keep working while this PC is off</span>${tick(cloud.classList.contains('on'))}</button>` : ''}`;
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.left = `${Math.max(8, Math.min(r.left - 6, innerWidth - menu.offsetWidth - 8))}px`;
+  menu.style.top = `${Math.max(8, r.top - menu.offsetHeight - 8)}px`;
+  const close = () => { menu.remove(); document.removeEventListener('mousedown', outside, true); document.removeEventListener('keydown', esc, true); };
+  const outside = (e) => { if (!menu.contains(e.target) && !anchor.contains(e.target)) close(); };
+  const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  setTimeout(() => { document.addEventListener('mousedown', outside, true); document.addEventListener('keydown', esc, true); }, 0);
+  menu.addEventListener('click', (e) => {
+    const b = e.target.closest('.menu-item');
+    if (!b) return;
+    close();
+    if (b.dataset.mode) { state.mode = b.dataset.mode; syncMode(); input.focus(); return; }
+    const act = b.dataset.act;
+    if (act === 'files') attachInput.click();
+    else if (act === 'goal') fillCommand(input, '/goal ');
+    else if (act === 'research' && rm) rm.click();
+    else if (act === 'cloud' && cloud) {
+      // Turning cloud on from This Computer (no project picked): the chat moves to the Cloud folder first.
+      const home = state.defaultFolders || {};
+      if (!cloud.classList.contains('on') && home.cloud && (!state.project || isComputerHome(state.project))) {
+        api.useProject(home.cloud).then((res) => {
+          if (res) setProject(res.path, res.branch);
+          setTimeout(() => { const c = composer.querySelector('.cloud-chip'); if (c) c.click(); }, 300);
+        });
+      } else cloud.click();
+    }
+  });
 }
 document.querySelectorAll('[data-role="mode-chip"]').forEach((el) =>
   el.addEventListener('click', () => {
@@ -2909,15 +3522,54 @@ document.querySelectorAll('[data-role="mode-chip"]').forEach((el) =>
   })
 );
 
+// The permission mode the row shows: Plan (the chat mode) wins, then Full
+// access, then Accept edits, else Approve manually.
+function permMode() { return state.mode === 'Plan' ? 'plan' : state.bypass ? 'full' : state.autoEdits ? 'edits' : 'manual'; }
 function syncBypass() {
-  document.querySelectorAll('[data-role="bypass"]').forEach((el) => el.classList.toggle('on', state.bypass));
-  document.querySelectorAll('[data-role="bypass-label"]').forEach((el) =>
-    (el.textContent = state.bypass ? 'Full access' : 'Approve manually'));
+  const id = permMode();
+  document.querySelectorAll('[data-role="bypass"]').forEach((el) => el.classList.toggle('on', id === 'full'));
+  document.querySelectorAll('[data-role="bypass-label"]').forEach((el) => (el.textContent = PERMS.find((p) => p.id === id).label));
+}
+// The permissions menu, like the model list: plain rows, a gray line under
+// each, the one in use set in bold. Accept edits is the engine's autoEdits
+// (file changes run, commands still ask); Plan is the Plan chat mode.
+const PERMS = [
+  { id: 'manual', label: 'Approve manually', name: 'Approve manually', sub: 'Asks before every edit or command' },
+  { id: 'edits', label: 'Accept edits', name: 'Accept edits', sub: 'File edits run on their own, commands still ask' },
+  { id: 'plan', label: 'Plan', name: 'Plan', sub: 'Makes a plan first and changes nothing' },
+  { id: 'full', label: 'Full access', name: 'Full access', sub: 'Edits and commands run without asking' },
+];
+function openPermMenu(anchor) {
+  if (modelMenuEl) { const was = modelMenuEl.classList.contains('perm-menu'); closeModelMenu(); if (was) return; }
+  const now = permMode();
+  const menu = document.createElement('div');
+  menu.className = 'menu model-menu perm-menu';
+  menu.innerHTML = `<div class="model-menu-title">Permissions</div>${PERMS.map((p) => `
+    <button class="model-item${now === p.id ? ' active' : ''}" data-perm="${p.id}">
+      <span class="model-item-text"><strong>${p.name}</strong><span>${p.sub}</span></span>
+    </button>`).join('')}`;
+  document.body.appendChild(menu);
+  modelMenuEl = menu;
+  const r = anchor.getBoundingClientRect();
+  menu.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+  menu.style.left = Math.max(8, r.left) + 'px';
+  keepMenuOnScreen(menu, r);
+  menu.querySelectorAll('[data-perm]').forEach((b) => b.addEventListener('click', () => {
+    const id = b.dataset.perm;
+    closeModelMenu();
+    state.bypass = id === 'full';
+    state.autoEdits = id === 'edits';
+    if (id === 'plan') state.mode = 'Plan';
+    else if (state.mode === 'Plan') state.mode = 'Build';
+    syncMode();
+    syncBypass();
+    anchor.blur();
+  }));
 }
 document.querySelectorAll('[data-role="bypass"]').forEach((el) =>
-  el.addEventListener('click', () => {
-    state.bypass = !state.bypass;
-    syncBypass();
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openPermMenu(el);
   })
 );
 
@@ -2934,13 +3586,13 @@ const MODEL_PRESETS = [
   { label: 'DeepSeek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
 ];
 
-const SPARK_SVG = '<svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9Z"/><path d="M19 15l.7 1.8L21.5 17.5l-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7Z"/></svg>';
-const CHIP_SVG = '<svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M9 1.5v3M15 1.5v3M9 19.5v3M15 19.5v3M1.5 9h3M1.5 15h3M19.5 9h3M19.5 15h3"/></svg>';
+const SPARK_SVG = icon('sparkle');
+const CHIP_SVG = icon('chip');
 // OpenAI's own Blossom mark, unmodified, from openai.com/brand (assets/brand/).
 // styles.css swaps the white and black files with the theme; OpenAI's rules
 // forbid recoloring it, so it's never tinted with currentColor.
 const CHATGPT_SVG = '<span class="chatgpt-mark" role="img" aria-label="ChatGPT"></span>';
-const LLAMA_SVG = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2.5"/><path d="M8 20h8M12 16v4"/><path d="M7.5 9.5l2 1.5-2 1.5M12 12.5h4"/></svg>';
+const LLAMA_SVG = icon('laptop');
 
 function selectedModel() {
   if (state.models.selected === 'auto') return null;
@@ -2967,12 +3619,23 @@ function applyModelsState(models) {
     // OpenAI asks for "Using ChatGPT plan" next to the model picker while a plan model is in use.
     el.toggleAttribute('data-plan', kind === 'chatgpt');
   });
+  // The chosen effort sits beside the name in gray ("Sonnet 5.5 Medium"), like Codex.
+  const eff = m && canSetEffort(m) && m.effort ? (EFFORT_LABELS[m.effort] || m.effort) : '';
+  document.querySelectorAll('[data-role="model-effort"]').forEach((el) => { el.textContent = eff; el.hidden = !eff; });
   document.querySelectorAll('[data-role="model-chip"]').forEach((el) => {
     el.dataset.kind = kind;
     el.title = !m ? 'Haze 2: the routing brain, run by Codeply'
       : kind === 'chatgpt' ? `${m.name} - using your ChatGPT plan`
       : `${m.name} - ${m.model} on ${hostOf(m.baseUrl)}`;
   });
+}
+
+/** " · On phone" (usable there with this PC off), or that syncing failed, for the model list's second line. */
+function phoneNote(m) {
+  const p = m.phone;
+  if (!p || !p.on) return '';
+  if (p.synced) return ' · On phone';
+  return p.reason ? ' · <em class="warn">Not synced</em>' : ' · Syncing';
 }
 
 /** "Synced" (usable on the phone with this PC off) or why syncing failed. */
@@ -2988,12 +3651,13 @@ function closeModelMenu() {
   if (modelMenuEl) { modelMenuEl.remove(); modelMenuEl = null; }
 }
 document.addEventListener('click', (e) => {
-  if (modelMenuEl && !modelMenuEl.contains(e.target) && !e.target.closest('[data-role="model-chip"]')) closeModelMenu();
+  if (modelMenuEl && !modelMenuEl.contains(e.target) && !e.target.closest('[data-role="model-chip"], [data-role="bypass"]')) closeModelMenu();
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModelMenu(); });
 
 async function pickModel(id) {
   closeModelMenu();
+  if (document.activeElement && document.activeElement.closest && document.activeElement.closest('[data-role="model-chip"]')) document.activeElement.blur();
   if (id === state.models.selected) return;
   const r = await api.selectModel(id);
   if (!r.ok) { showToast(r.error || 'Could not switch model.', 'error'); return; }
@@ -3007,43 +3671,44 @@ function openModelMenu(anchorBtn) {
   const menu = document.createElement('div');
   menu.className = 'menu model-menu';
   const sel = state.models.selected;
-  const check = '<svg class="model-item-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>';
+  const check = icon('check', 'model-item-check');
   const custom = state.models.models.filter((m) => m.kind !== 'chatgpt');
-  const LOCK = '<svg class="model-item-lock" viewBox="0 0 16 16" aria-hidden="true"><path class="lock-shackle" d="M5.25 7.25V5.5a2.75 2.75 0 0 1 5.5 0v1.75"/><path class="lock-body" fill-rule="evenodd" d="M4.6 7h6.8A1.6 1.6 0 0 1 13 8.6v4.3a1.6 1.6 0 0 1-1.6 1.6H4.6A1.6 1.6 0 0 1 3 12.9V8.6A1.6 1.6 0 0 1 4.6 7Zm3.4 2.2a1 1 0 0 0-.55 1.84v.96a.55.55 0 0 0 1.1 0v-.96A1 1 0 0 0 8 9.2Z"/></svg>';
+  // The models Haze 2 routes to: shown grayed, never picked by hand.
+  const LOCK = icon('lock', 'model-item-lock ico-sm');
   const autoModels = [['Sonnet 5.5', 'Code and hard tasks'], ['Haiku 5.5', 'Quick answers'], ['Non-disclosed models', 'Casual chat']].map(([name, why]) => `
-    <div class="model-item locked" aria-disabled="true" title="Haze 2 picks these for you">
-      <span class="model-item-icon custom">${CHIP_SVG}</span>
-      <span class="model-item-text"><strong>${name}</strong><span>${why}</span></span>
+    <div class="model-item locked" aria-disabled="true" aria-label="${name}: used by Haze 2" data-tip="${why}. Haze 2 picks it for you">
+      <span class="model-item-text"><strong>${name}</strong></span>
       ${LOCK}
     </div>`).join('');
   menu.innerHTML = `
     <div class="model-menu-title">Select model</div>
     <button class="model-item${sel === 'auto' ? ' active' : ''}" data-id="auto">
-      <span class="model-item-icon auto">${SPARK_SVG}</span>
       <span class="model-item-text"><strong>Haze 2</strong><span>The routing brain</span></span>
       ${sel === 'auto' ? check : ''}
     </button>
     ${autoModels}
-    ${custom.length ? '<div class="model-menu-label">Your models</div>' : ''}
+    ${custom.length ? '<div class="model-menu-divider"></div>' : ''}
     ${custom.map((m) => `
       <div class="model-item-row">
         <button class="model-item${sel === m.id ? ' active' : ''}" data-id="${esc(m.id)}">
           <span class="model-item-icon ${m.kind === 'ollama' ? 'local' : 'custom'}">${m.kind === 'ollama' ? LLAMA_SVG : CHIP_SVG}</span>
-          <span class="model-item-text"><strong>${esc(m.name)}${phoneBadge(m)}</strong><span>${esc(m.model)} · ${esc(m.kind === 'ollama' ? 'on this computer' : hostOf(m.baseUrl))}</span></span>
+          <span class="model-item-text" data-tip="${esc(m.model)} · ${esc(m.kind === 'ollama' ? 'On this computer' : hostOf(m.baseUrl))}${phoneNote(m).replace(/<[^>]+>/g, '')}"><strong>${esc(m.name)}</strong></span>
           ${sel === m.id ? check : ''}
         </button>
-        ${m.phone && m.phone.eligible ? `<button class="model-item-tool icon-btn icon-btn-xs${m.phone.on ? ' on' : ''}" data-phone="${esc(m.id)}" title="${esc(m.phone.on ? (m.phone.synced ? 'On your phone. Click to stop syncing it' : m.phone.reason || 'Syncing to your phone') : 'Sync to phone: use it there even when this PC is off')}"><svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 17.5h2"/></svg></button>` : ''}
-        <button class="model-item-tool icon-btn icon-btn-xs" data-edit="${esc(m.id)}" title="Edit"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-        <button class="model-item-tool icon-btn icon-btn-xs danger" data-delete="${esc(m.id)}" title="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/><path d="M9 7V4h6v3"/></svg></button>
+        ${m.phone && m.phone.eligible ? `<button class="model-item-tool icon-btn icon-btn-xs${m.phone.on ? ' on' : ''}" data-phone="${esc(m.id)}" title="${esc(m.phone.on ? (m.phone.synced ? 'On your phone. Click to stop syncing it' : m.phone.reason || 'Syncing to your phone') : 'Sync to phone: use it there even when this PC is off')}">${icon('phone')}</button>` : ''}
+        <button class="model-item-tool icon-btn icon-btn-xs" data-edit="${esc(m.id)}" title="Edit">${icon('edit')}</button>
+        <button class="model-item-tool icon-btn icon-btn-xs danger" data-delete="${esc(m.id)}" title="Remove">${icon('trash')}</button>
       </div>`).join('')}
     <div class="model-menu-divider"></div>
-    <button class="model-menu-action" data-action="add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add a model</button>
-    <button class="model-menu-ollama" data-action="ollama">Connect Ollama</button>`;
+    <button class="model-item model-menu-row" data-action="add"><span class="model-item-text"><strong>Add a model</strong></span></button>
+    <button class="model-item model-menu-row" data-action="ollama"><span class="model-item-text"><strong>Connect Ollama</strong></span></button>`;
   document.body.appendChild(menu);
 
   const rect = anchorBtn.getBoundingClientRect();
   menu.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
   menu.style.right = Math.max(8, window.innerWidth - rect.right) + 'px';
+  settleAt(menu, { bottom: rect.top - 8, right: rect.right });
+  keepMenuOnScreen(menu, rect);
 
   menu.querySelectorAll('.model-item[data-id]').forEach((btn) => btn.addEventListener('click', () => pickModel(btn.dataset.id)));
   menu.querySelectorAll('[data-edit]').forEach((btn) => btn.addEventListener('click', (e) => {
@@ -3080,7 +3745,7 @@ function openModelMenu(anchorBtn) {
   menu.querySelector('[data-action="chatgpt-usage"]')?.addEventListener('click', () => { closeModelMenu(); api.openExternal(CHATGPT_USAGE_URL); });
   menu.querySelector('[data-action="chatgpt-signout"]')?.addEventListener('click', async () => {
     closeModelMenu();
-    if (!(await CraftModal.confirm({ title: 'Disconnect ChatGPT?', body: 'Craft stops using your ChatGPT plan until you sign in again.', confirmLabel: 'Disconnect', danger: true })).ok) return;
+    if (!(await CraftModal.confirm({ title: 'Disconnect ChatGPT?', body: 'Codeply stops using your ChatGPT plan until you sign in again.', confirmLabel: 'Disconnect', danger: true })).ok) return;
     const r = await api.chatgptSignOut();
     if (!r.ok) { showToast(r.error || 'Could not disconnect.', 'error'); return; }
     state.chatgpt = r.status;
@@ -3120,7 +3785,7 @@ document.querySelectorAll('[data-role="model-chip"]').forEach((btn) =>
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
     if (modelMenuEl) { closeModelMenu(); return; }
-    openModelMenu(btn);
+    openEffortMenu(btn);
   })
 );
 
@@ -3443,13 +4108,23 @@ function stopRunNow(sessionId) {
   setRunning(false);
 }
 
+/** The send button: Stop while a run goes and the box is empty; with something typed it sends (queues). */
+function paintSendButtons() {
+  const on = state.running;
+  document.querySelectorAll('[data-role="send"]').forEach((btn) => {
+    const box = btn.closest('.composer');
+    const input = box && box.querySelector('.composer-input');
+    const typed = !!(input && input.value.trim()) || !!(box && box.pendingImages && box.pendingImages.length);
+    const stop = on && !typed;
+    btn.querySelector('.ic-send').classList.toggle('hidden', stop);
+    btn.querySelector('.ic-stop').classList.toggle('hidden', !stop);
+    btn.title = stop ? 'Stop' : on ? 'Queue: sends when this finishes' : 'Send';
+  });
+}
+
 function setRunning(on) {
   state.running = on;
-  document.querySelectorAll('[data-role="send"]').forEach((btn) => {
-    btn.querySelector('.ic-send').classList.toggle('hidden', on);
-    btn.querySelector('.ic-stop').classList.toggle('hidden', !on);
-    btn.title = on ? 'Stop' : 'Send';
-  });
+  paintSendButtons();
   document.querySelectorAll('.chat-composer .composer-input').forEach((el) => { el.placeholder = on ? COMPOSER_BUSY_HINT : COMPOSER_HINT; });
   // A message queued during the run goes out once this chat is free again
   // (after Stop, once the engine says the stopped run has really ended).
@@ -3473,24 +4148,49 @@ let thinkingEl = null;
 let thinkingTimer = null;
 let thinkingStart = 0;
 
+// The thinking line, like the phone app's (phone-wisp.js): a shimmering word
+// that changes now and then, three hopping dots, and Wisp hopping beside it,
+// so a wait feels like something is happening. Never the same word twice in a row.
+const THINK_WORDS = ['Thinking', 'Pondering', 'Noodling', 'Mulling it over', 'Connecting the dots', 'Brewing an answer', 'Untangling it', 'Almost there'];
+const THINK_EVERY_MS = 2300;
+let thinkTurn = 0;
+let thinkWordTimer = null;
+function nextThinkWord() {
+  const w = thinkingEl && thinkingEl.querySelector('.think-word');
+  if (!w) return;
+  thinkTurn++;
+  let word = THINK_WORDS[thinkTurn % THINK_WORDS.length];
+  if (word === w.textContent) word = THINK_WORDS[(thinkTurn + 1) % THINK_WORDS.length];
+  w.textContent = word;
+  w.classList.remove('in'); void w.offsetWidth; w.classList.add('in');
+}
+const lastWispFace = () => { const all = chatColumn.querySelectorAll('.wisp-turn'); return all[all.length - 1] || null; };
+
 function showThinking() {
   if (activityEl && activityEl.isConnected) { activityEl.classList.add('running'); updateActivitySummary(activityEl); return; }
   if (thinkingEl) return;
   thinkingEl = document.createElement('div');
   thinkingEl.className = 'thinking-row';
-  thinkingEl.innerHTML = '<span class="spark">✦</span><span class="thinking-label">Thinking</span><span class="thinking-time">0s</span>';
+  thinkingEl.innerHTML = '<span class="think-word">Thinking</span><span class="think-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="thinking-time">0s</span>';
   chatColumn.appendChild(thinkingEl);
   thinkingStart = Date.now();
+  thinkTurn = 0;
+  const face = lastWispFace();
+  if (face) face.classList.add('live'); // Wisp hops while it thinks (styles.css)
   thinkingTimer = setInterval(() => {
     if (!thinkingEl) return;
     thinkingEl.querySelector('.thinking-time').textContent = Math.floor((Date.now() - thinkingStart) / 1000) + 's';
   }, 1000);
+  const still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!still) thinkWordTimer = setInterval(nextThinkWord, THINK_EVERY_MS);
   if (nearBottom()) scrollToBottom();
 }
 
 function hideThinking() {
   if (thinkingTimer) { clearInterval(thinkingTimer); thinkingTimer = null; }
+  if (thinkWordTimer) { clearInterval(thinkWordTimer); thinkWordTimer = null; }
   if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
+  chatColumn.querySelectorAll('.wisp-turn.live').forEach((f) => f.classList.remove('live'));
 }
 
 // A reasoning-capable model (Laguna, gpt-oss) hands back its chain-of-thought
@@ -3506,9 +4206,9 @@ function addReasoningRow(text, ms) {
   row.className = 'reasoning-row expandable';
   row.innerHTML =
     '<div class="reasoning-row-head">' +
-    '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
+    icon('clock', 'ico-sm') +
     `<span class="reasoning-label">Thought for ${seconds}s</span>` +
-    '<svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>' +
+    icon('chevron-right', 'tool-chevron ico-sm') +
     '</div>';
   const detail = document.createElement('pre');
   detail.className = 'reasoning-detail hidden';
@@ -3532,9 +4232,9 @@ function addThinkingRow(text) {
   row.className = 'reasoning-row thinking-step expandable';
   row.innerHTML =
     '<div class="reasoning-row-head">' +
-    '<svg viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2Z"/></svg>' +
+    icon('bulb', 'ico-sm') +
     '<span class="reasoning-label"></span>' +
-    '<svg class="tool-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>' +
+    icon('chevron-right', 'tool-chevron ico-sm') +
     '</div>';
   // The row reads as what the agent said it was doing (its first line), like
   // the steps around it; the whole note opens below.
@@ -3564,14 +4264,9 @@ function addThinkingRow(text) {
 async function sendMessage(text, fromHome, images) {
   if (!api) return;
   if (!state.user) { showView('viewLogin'); return; }
-  if (!state.project) {
-    const name = api.newProject ? newProjectName(text) : null;
-    if (name) {
-      const r = await api.newProject(name);
-      if (r && r.path) { setProject(r.path, r.branch); if (!state.projects.includes(r.path)) state.projects.unshift(r.path); renderProjects(); }
-    }
-    if (!state.project) { await chooseProject(); if (!state.project) return; }
-  }
+  // No folder picked: the chat works on This Computer instead of making a new project folder for it.
+  if (!state.project && state.defaultFolders && state.defaultFolders.computer) setProject(state.defaultFolders.computer, null);
+  if (!state.project) { await chooseProject(); if (!state.project) return; }
 
   if (fromHome || !state.currentSessionId) {
     hideThinking();
@@ -3589,7 +4284,8 @@ async function sendMessage(text, fromHome, images) {
   if (window.CraftWispUI) {
     window.CraftWispUI.onSend(fromHome);
     // The answer starts with the agent's face, on the left, thinking.
-    const face = window.CraftWispUI.turnStart('thinking');
+    // Reacts to what you wrote while it thinks; a specialist you're talking to (talk_to) answers with its own face.
+    const face = window.CraftWispUI.turnStart('thinking', text, window.CraftWispUI.speakerOf(state.currentSessionId));
     if (face) chatColumn.appendChild(face);
   }
   if (window.CraftCloud && window.CraftCloud.beforeSend) window.CraftCloud.beforeSend(); // pull check, never blocks
@@ -3602,10 +4298,11 @@ async function sendMessage(text, fromHome, images) {
     cwd: state.project,
     mode: state.mode,
     bypass: state.bypass,
+    autoEdits: !!state.autoEdits,
     text,
     images,
     clientId: desktopClientId,
-    botId: window.CraftBots ? window.CraftBots.selectedId() : undefined, // who answers (bots-ui.js)
+    botId: window.CraftBots ? window.CraftBots.selectedId() : undefined, // "" in Craft: Codeply's main agent (bots live in Crew)
   });
 
   if (r.error) {
@@ -3679,7 +4376,7 @@ document.querySelectorAll('.composer').forEach((composer) => {
     composer.pendingImages.forEach((src, i) => {
       const chip = document.createElement('div');
       chip.className = 'composer-image-preview';
-      chip.innerHTML = `<img src="${src}" alt=""><button class="remove-img-btn" title="Remove image"><svg viewBox="0 0 24 24"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg></button>`;
+      chip.innerHTML = `<img src="${src}" alt=""><button class="remove-img-btn" title="Remove image">${icon('close', 'ico-xs')}</button>`;
       chip.querySelector('.remove-img-btn').addEventListener('click', () => {
         composer.pendingImages.splice(i, 1);
         renderImagePreviews();
@@ -3712,14 +4409,15 @@ document.querySelectorAll('.composer').forEach((composer) => {
   if (attachInput && window.CodeplyAttach) attachInput.accept = 'image/*,' + window.CodeplyAttach.ACCEPT;
   const attachBtn = composer.querySelector('[data-role="attach"]');
   if (attachBtn && attachInput) {
-    attachBtn.addEventListener('click', () => attachInput.click());
+    attachBtn.addEventListener('click', () => openPlusMenu(composer, attachBtn, attachInput));
+    attachBtn.title = 'Add files, switch mode, research and more';
     attachInput.addEventListener('change', () => { const list = [...attachInput.files]; attachInput.value = ''; addFiles(list); input.focus(); });
   }
   // The chat box is one slim row: + and send inside it, the mode and model
   // controls in a quiet row under it.
   if (!fromHome && attachBtn) {
     composer.classList.add('composer-slim');
-    attachBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
+    attachBtn.innerHTML = icon('plus', 'ico-md');
     composer.insertBefore(attachBtn, input);
     input.after(sendBtn);
   }
@@ -3743,6 +4441,7 @@ document.querySelectorAll('.composer').forEach((composer) => {
   input.addEventListener('input', () => {
     input.style.height = 'auto';
     input.style.height = Math.min(input.scrollHeight, 180) + 'px';
+    paintSendButtons();
   });
 
   // A message typed while a run is going waits above the box and goes out
@@ -3756,7 +4455,7 @@ document.querySelectorAll('.composer').forEach((composer) => {
     queuedEl.classList.toggle('hidden', !q);
     if (!q) { queuedEl.innerHTML = ''; return; }
     const shown = window.CodeplyAttach ? window.CodeplyAttach.split(q.text).text || q.text : q.text;
-    queuedEl.innerHTML = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="cq-label">Queued</span><span class="cq-text"></span><button type="button" class="cq-now" title="Stop the current run and send this now">Send now</button><button type="button" class="cq-x" title="Take it back" aria-label="Take the queued message back"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+    queuedEl.innerHTML = `${icon('clock', 'ico-sm')}<span class="cq-label">Queued</span><span class="cq-text"></span><button type="button" class="cq-now" title="Stop the current run and send this now">Send now</button><button type="button" class="cq-x" title="Take it back" aria-label="Take the queued message back">${icon('close', 'ico-sm')}</button>`;
     queuedEl.querySelector('.cq-text').textContent = shown;
     // Send now: stop this run; the queued message goes out as soon as it has ended.
     queuedEl.querySelector('.cq-now').addEventListener('click', () => {
@@ -3784,9 +4483,14 @@ document.querySelectorAll('.composer').forEach((composer) => {
   let dispatching = false;
   const submit = (viaButton) => {
     if (dispatching) return;
-    // While a run goes, the button stops it; Enter queues what was typed.
-    if (state.running && (viaButton === true || fromHome)) { stopRunNow(state.currentSessionId); return; }
-    if (state.running) {
+    // A run that is still stopping counts as running: what is typed waits for it to end.
+    const busy = state.running || (!!state.currentSessionId && stoppedRuns.has(state.currentSessionId));
+    // While a run goes, the button stops it only when nothing is typed; anything typed is queued.
+    if (busy && (viaButton === true || fromHome) && !input.value.trim() && !composer.pendingImages.length) {
+      if (state.running) stopRunNow(state.currentSessionId);
+      return;
+    }
+    if (busy) {
       const typed = input.value.trim();
       if (!typed || composer.pendingFiles.some((f) => f.reading)) return;
       const prev = composer.queued;
@@ -3800,9 +4504,14 @@ ${text}` : text, images: composer.pendingImages.length ? composer.pendingImages 
       composer.pendingFiles = [];
       renderImagePreviews();
       composer.renderQueued();
+      paintSendButtons();
       return;
     }
-    const typed = input.value.trim();
+    let typed = input.value.trim();
+    // /review, /security, /judge, /loop, /schedule (see typedCommand): a prompt to send instead, or handled here.
+    const cmd = typedCommand(typed);
+    if (cmd === true) { input.value = ''; input.style.height = 'auto'; return; }
+    if (cmd && cmd.text) typed = cmd.text;
     const images = composer.pendingImages;
     if (composer.pendingFiles.some((f) => f.reading)) { showToast('Still reading a file. One moment.'); return; }
     const files = composer.pendingFiles;
@@ -3819,11 +4528,12 @@ ${text}` : text, images: composer.pendingImages.length ? composer.pendingImages 
   };
 
   sendBtn.addEventListener('click', () => submit(true));
+  composer.submitNow = () => submit(); // slash commands that run at once (/review, /security)
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       // The slash-command menu (wired up further below, same input) owns
       // Enter while it's open - picking a command, not sending "/" as text.
-      if (composer.slashMenuOpen && composer.slashMenuOpen()) return;
+      if ((composer.slashMenuOpen && composer.slashMenuOpen()) || (composer.mentionMenuOpen && composer.mentionMenuOpen())) return;
       e.preventDefault();
       submit();
     }
@@ -3853,32 +4563,71 @@ function addApprovalCard(ev) {
   // Shell commands are allowed by name ("npm test", "git checkout"), never
   // wholesale. No names (a subshell, a redirect, a risky command) = no offer.
   const scope = Array.isArray(ev.alwaysScope) ? ev.alwaysScope : null;
-  const alwaysWhat = scope ? scope.map((p) => `"${p}"`).join(' and ') : toolName(ev.tool);
+  // A long command (a full path to a script) is named by its program and file, not its whole path.
+  const shortCmd = (p) => {
+    const s = String(p);
+    if (s.length <= 40) return s;
+    const base = (w) => `…/${w.replace(/["']/g, '').split(/[\\/]/).filter(Boolean).pop()}`;
+    const tidy = s.replace(/(["'])([^"']*[\\/][^"']*)\1/g, (m, q, w) => base(w))
+      .split(/\s+/).map((w) => (/[\\/]/.test(w) && !w.startsWith('…/') ? base(w) : w)).join(' ');
+    return tidy.length <= 48 ? tidy : `${tidy.slice(0, 46)}…`;
+  };
+  const alwaysWhat = scope ? scope.map((p) => `"${shortCmd(p)}"`).join(' and ') : toolName(ev.tool);
   const alwaysLabel = scope && !scope.length ? '' : scope
     ? `Always allow ${alwaysWhat} commands in this chat`
     : `Always allow ${toolName(ev.tool)} in this chat`;
+  // Pickers the tool offers (Claude Code: model and effort); the picks ride back with Accept.
+  const choices = ev.choices && typeof ev.choices === 'object' ? Object.entries(ev.choices).filter(([, c]) => c && Array.isArray(c.options)) : [];
+  const choicesHtml = choices.length ? `<div class="approval-choices">${choices.map(([key, c]) => {
+    const pinned = c.options.filter(([v]) => /^claude-/.test(String(v)));
+    const rest = c.options.filter(([v]) => !/^claude-/.test(String(v)));
+    const opt = (l) => l.map(([v, t]) => `<option value="${esc(v)}"${String(v) === String(c.value) ? ' selected' : ''}>${esc(t)}</option>`).join('');
+    return `<label>${esc(c.label || key)}<select data-choice="${esc(key)}">${opt(rest)}${pinned.length ? `<optgroup label="Pin a version">${opt(pinned)}</optgroup>` : ''}</select></label>`;
+  }).join('')}</div>` : '';
   card.innerHTML = `
     <div class="approval-head">
-      <svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5Z"/></svg>
+      ${icon('shield')}
       <span class="approval-title">${esc(ev.title)}</span>
       ${ev.danger ? '<span class="approval-danger">outside project / risky</span>' : ''}
     </div>
     ${ev.detail ? `<div class="approval-detail">${esc(ev.detail)}</div>` : ''}
     ${diffHtml}
+    ${choicesHtml}
     <div class="approval-actions">
       <button class="btn btn-primary btn-sm appr-btn" data-v="once">Accept</button>
-      ${alwaysLabel ? `<button class="btn btn-secondary btn-sm appr-btn" data-v="always">${esc(alwaysLabel)}</button>` : ''}
+      ${alwaysLabel ? `<button class="btn btn-secondary btn-sm appr-btn appr-always" data-v="always" title="${esc(scope ? scope.join(' and ') : alwaysLabel)}">${esc(alwaysLabel)}</button>` : ''}
       <button class="btn btn-ghost btn-sm btn-danger-hover appr-btn" data-v="reject">Reject</button>
     </div>`;
   card.querySelectorAll('.appr-btn').forEach((btn) =>
     btn.addEventListener('click', () => {
-      api.respondApproval(ev.requestId, btn.dataset.v);
-      const verdictText = btn.dataset.v === 'reject' ? 'Rejected' : btn.dataset.v === 'always' ? `Accepted, always allowing ${alwaysWhat} for the rest of this chat` : 'Accepted';
-      card.outerHTML = `<div class="chat-note ${btn.dataset.v === 'reject' ? 'error' : 'ok'}">${esc(ev.title)}: ${verdictText}</div>`;
+      const picks = {};
+      card.querySelectorAll('[data-choice]').forEach((s) => { picks[s.dataset.choice] = s.value; });
+      api.respondApproval(ev.requestId, choices.length && btn.dataset.v !== 'reject' ? { verdict: btn.dataset.v, edits: picks } : btn.dataset.v);
+      const picked = choices.length && btn.dataset.v !== 'reject' ? ` (${[...card.querySelectorAll('[data-choice]')].map((s) => s.selectedOptions[0]?.textContent || s.value).join(', ')})` : '';
+      const v = btn.dataset.v;
+      settleApproval(card, verdictLine(v !== 'reject', ev.title, v === 'always' ? `always, for ${alwaysWhat} in this chat` : picked.replace(/^ \(|\)$/g, ''), v === 'always' ? 'Always allowed' : ''));
     })
   );
   chatColumn.appendChild(card);
   scrollToBottom();
+}
+
+/**
+ * An answered approval leaves the chat: the card goes, and what was said to it joins
+ * the run's steps in the dropdown (where reopening the chat shows the steps too).
+ */
+function settleApproval(card, html) {
+  const open = activityEl && activityEl.isConnected;
+  card.remove();
+  if (!open) return;
+  const holder = document.createElement('div');
+  holder.innerHTML = html;
+  if (holder.firstElementChild) { activityBody().appendChild(holder.firstElementChild); updateActivitySummary(activityEl); }
+}
+
+/** What the user said to an approval, as one quiet line: "✓ Allowed  Create hello.html". */
+function verdictLine(ok, title, detail, word) {
+  return `<div class="chat-note verdict ${ok ? 'ok' : 'error'}">${icon(ok ? 'check' : 'close', 'ico-xs')}<span class="v-word">${esc(word || (ok ? 'Allowed' : 'Declined'))}</span><span class="v-title">${esc(title || '')}</span>${detail ? `<span class="v-detail">${esc(detail)}</span>` : ''}</div>`;
 }
 
 // An email the agent wants to send or save as a draft: To, Subject and Body
@@ -3892,7 +4641,7 @@ function addEmailApprovalCard(ev) {
   card.dataset.requestId = ev.requestId;
   card.innerHTML = `
     <div class="approval-head">
-      <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+      ${icon('mail')}
       <span class="approval-title">${esc(ev.title)}</span>
     </div>
     <label class="email-field"><span>To</span><input data-f="to" type="text" spellcheck="false"></label>
@@ -3917,7 +4666,7 @@ function addEmailApprovalCard(ev) {
       card.querySelectorAll('[data-f]').forEach((f) => { edits[f.dataset.f] = f.value; });
       api.respondApproval(ev.requestId, v === 'reject' ? 'reject' : { verdict: v, edits });
       const text = v === 'reject' ? 'Not sent' : v === 'draft' || draftOnly ? 'Saving as a draft' : `Sending to ${edits.to || 'nobody'}`;
-      card.outerHTML = `<div class="chat-note ${v === 'reject' ? 'error' : 'ok'}">${esc(edits.subject || ev.title)}: ${esc(text)}</div>`;
+      settleApproval(card, verdictLine(v !== 'reject', edits.subject || ev.title, '', text));
     })
   );
   chatColumn.appendChild(card);
@@ -3936,25 +4685,37 @@ function renderQuestionCard(q, existing) {
   card.dataset.q = JSON.stringify({ requestId: q.requestId, question: q.question, options: q.options || [] });
   const answered = q.answered || q.answer !== undefined;
   if (answered) {
-    card.innerHTML = `
-      <div class="q-head"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/></svg><span class="q-text"></span></div>
-      <div class="q-answer">${q.answer == null ? '<em>Dismissed, the agent decided on its own</em>' : `Answered: <b>${esc(q.answer)}</b>`}</div>`;
+    // Answered: one quiet line, the question small above what was chosen.
+    card.classList.add('done');
+    card.innerHTML = `<div class="q-text q-text-sm"></div><div class="q-answer">${icon(q.answer == null ? 'sparkle' : 'check', 'ico-xs')}<span></span></div>`;
     card.querySelector('.q-text').textContent = q.question;
+    card.querySelector('.q-answer span').textContent = q.answer == null ? 'Left it to Codeply' : q.answer;
     if (!existing) chatColumn.appendChild(card);
     return;
   }
+  const opts = q.options || [];
   card.innerHTML = `
-    <div class="q-head"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/></svg><span class="q-text"></span></div>
-    <div class="q-options">${(q.options || []).map((o, i) => `<button class="btn btn-secondary btn-sm q-opt${i === 0 ? ' first' : ''}" type="button" data-i="${i}">${esc(o)}</button>`).join('')}</div>
-    <form class="q-custom"><input class="input input-sm" type="text" placeholder="${(q.options || []).length ? 'Or type your own answer' : 'Type your answer'}" maxlength="2000"><button class="btn btn-secondary btn-sm" type="submit">Send</button></form>
-    <button class="btn btn-ghost btn-sm q-skip" type="button">Let the agent decide</button>`;
+    <div class="q-text"></div>
+    ${opts.length ? `<div class="q-list" role="listbox">${opts.map((o, i) => `<button class="q-row" type="button" role="option" data-i="${i}"><span class="q-num">${i + 1}</span><span class="q-label"></span><span class="q-go">${icon('arrow-right', 'ico-xs')}</span></button>`).join('')}</div>` : ''}
+    <form class="q-custom"><span class="q-num q-num-pen">${icon('edit', 'ico-xs')}</span><input type="text" placeholder="${opts.length ? 'Something else…' : 'Type your answer…'}" maxlength="2000"><button class="q-send" type="submit" aria-label="Send">${icon('arrow-up', 'ico-xs')}</button></form>
+    <div class="q-foot"><button class="q-skip" type="button">Let Codeply decide</button>${opts.length > 1 ? `<span class="q-keys">Press 1 to ${Math.min(opts.length, 9)}</span>` : ''}</div>`;
   card.querySelector('.q-text').textContent = q.question;
+  card.querySelectorAll('.q-row').forEach((b) => { b.querySelector('.q-label').textContent = opts[Number(b.dataset.i)]; });
+  // Number keys pick a choice while this is the open question and nothing else has the keyboard.
+  const onKey = (e) => {
+    if (!card.isConnected || card.classList.contains('done')) { document.removeEventListener('keydown', onKey); return; }
+    const t = e.target;
+    if (e.ctrlKey || e.metaKey || e.altKey || (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable))) return;
+    const n = Number(e.key);
+    if (n >= 1 && n <= Math.min(opts.length, 9)) { e.preventDefault(); send(opts[n - 1]); }
+  };
+  document.addEventListener('keydown', onKey);
   const send = (answer) => {
     if (!api) return;
     api.respondQuestion(q.requestId, answer);
     renderQuestionCard({ ...q, answer, answered: true }, card);
   };
-  card.querySelectorAll('.q-opt').forEach((b) => b.addEventListener('click', () => send(q.options[Number(b.dataset.i)])));
+  card.querySelectorAll('.q-row').forEach((b) => b.addEventListener('click', () => send(opts[Number(b.dataset.i)])));
   card.querySelector('.q-custom').addEventListener('submit', (e) => {
     e.preventDefault();
     const v = e.currentTarget.querySelector('input').value.trim();
@@ -3977,7 +4738,7 @@ function addImagePickerCard(ev) {
   card.dataset.requestId = ev.requestId;
   card.innerHTML = `
     <div class="approval-head">
-      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M3 15l5-4 4 3 4-4 5 5"/></svg>
+      ${icon('image')}
       <span class="approval-title">Choose an image</span>
       ${ev.danger ? '<span class="approval-danger">outside project / risky</span>' : ''}
     </div>
@@ -4087,7 +4848,9 @@ if (api) api.onAgentEvent((data) => {
       state.currentSessionId = data.sessionId;
       navRecord('s:' + data.sessionId);
     }
-    if (mine && data.message?.kind === 'user' && data.origin && data.origin !== desktopClientId) {
+    if (mine && data.message?.kind === 'user' && data.message.auto) {
+      addAutoNote(data.message);
+    } else if (mine && data.message?.kind === 'user' && data.origin && data.origin !== desktopClientId) {
       addUserMessage(data.message.text, data.message.images);
     }
     // Covers the AI-generated retitle that lands shortly after a brand-new
@@ -4133,6 +4896,12 @@ if (api) api.onAgentEvent((data) => {
       break;
     case 'wisp_agent':
       renderWispAgent(data);
+      break;
+    case 'wisp_speaker':
+      if (window.CraftWispUI) {
+        window.CraftWispUI.onSpeaker(state.currentSessionId, data);
+        if (!data.turn) renderWispSpeaker(data);
+      }
       break;
     case 'role_active':
       addRoleBadge(data);
@@ -4237,8 +5006,8 @@ if (api) api.onAgentEvent((data) => {
       // answer, which otherwise had nothing to ever remove it.
       const card = chatColumn.querySelector(`.approval-card[data-request-id="${data.requestId}"]`);
       if (card) {
-        const verdictText = data.verdict === 'reject' ? 'Rejected' : data.verdict === 'always' ? 'Accepted, always allowed' : data.verdict === 'draft' ? 'Saved as a draft' : 'Accepted';
-        card.outerHTML = `<div class="chat-note ${data.verdict === 'reject' ? 'error' : 'ok'}">${verdictText} on another device</div>`;
+        const title = (card.querySelector('.approval-title') || {}).textContent || '';
+        settleApproval(card, verdictLine(data.verdict !== 'reject', title, 'on another device', data.verdict === 'always' ? 'Always allowed' : data.verdict === 'draft' ? 'Saved as a draft' : ''));
       }
       break;
     }
@@ -4266,6 +5035,7 @@ if (api) api.onAgentEvent((data) => {
       addNote('Stopped.', 'stopped');
       break;
     case 'run_finished':
+      flushCrew();
       hideThinking();
       if (runningToolRow) { runningToolRow.remove(); runningToolRow = null; }
       closeActivity();
@@ -4293,6 +5063,7 @@ async function openSession(id) {
   $('chatTitle').textContent = s.title;
   hideThinking();
   stopRevealQueue();
+  pendingCrew = null;
   chatColumn.innerHTML = '';
   activityEl = null;
   activityRole = null;
@@ -4300,21 +5071,26 @@ async function openSession(id) {
   currentTasks = [];
   activeGoalCard = null;
   revealInstant = true;
+  let speaker = null; // the specialist the user was talking to (talk_to), as the chat went
   s.messages.forEach((m, i) => {
+    if (m.kind === 'user' && m.auto) { addAutoNote(m); return; }
     if (m.kind === 'user') {
       addUserMessage(m.text, m.images);
       // The answer's face, in the mood its reply ended on (only for the main agent's answers).
       if (window.CraftWispUI) {
-        let mood = null;
+        let mood = null; let reply = '';
         for (let j = i + 1; j < s.messages.length && s.messages[j].kind !== 'user'; j++) {
           const n = s.messages[j];
-          if (n.kind === 'assistant' && n.wisp && !n.interim) mood = n.mood || 'neutral';
+          if (n.kind === 'assistant' && n.wisp && !n.interim) { mood = n.mood || 'neutral'; reply = n.text || ''; }
+          if (n.kind === 'wisp_speaker') speaker = n.agent || null; // the answer after a switch is the new speaker's hello
         }
-        const face = mood ? window.CraftWispUI.turnStart(mood) : null;
+        // Like the phone: the agent's own mood, else how it felt about this message, else its answer's feeling.
+        const face = mood ? window.CraftWispUI.turnStart(window.CraftWispUI.moodFor(mood, m.text, reply), m.text, speaker) : null;
         if (face) chatColumn.appendChild(face);
       }
       return;
     }
+    else if (m.kind === 'wisp_speaker') renderWispSpeaker(m);
     else if (m.kind === 'assistant') (m.interim ? addThinkingRow(m.text) : addAssistantMessage(m.text, m.wisp ? (m.mood || 'neutral') : undefined));
     else if (m.kind === 'wisp_agent') renderWispAgent(m);
     else if (m.kind === 'reasoning') addReasoningRow(m.text, m.ms);
@@ -4346,7 +5122,9 @@ async function openSession(id) {
       window.CraftBots.renderBadge(m.bot, true);
     }
   });
+  if (window.CraftWispUI) window.CraftWispUI.setSpeaker(id, speaker);
   closeActivity();
+  flushCrew();
   revealInstant = false;
   activeTaskList = null; // reopening a past chat is read-only history, not a live run - no further task_start/task_end will arrive for it
   refreshTasksUI();
@@ -4820,14 +5598,249 @@ $('pluginsCloseBtn').addEventListener('click', closePluginsModal);
 $('pluginsBackdrop').addEventListener('click', (e) => { if (e.target === $('pluginsBackdrop')) closePluginsModal(); });
 
 // ─── Slash commands ("/" in the composer) ────────────────────────────────────
+// icon (optional) names one from icons.js; without it a row shows SLASH_ICON.
+const SLASH_ICON = 'prompt';
 const SLASH_COMMANDS = [
   {
-    name: '/goal', aliases: ['/g'], desc: 'Keep working until the goal is fully done and verified',
+    name: '/goal', aliases: ['/g'], icon: 'target', desc: 'Keep working until the goal is fully done and verified',
     run: (input) => { input.value = '/goal '; input.focus(); input.dispatchEvent(new Event('input')); },
   },
-  { name: '/skills', aliases: ['/skill-list', '/skill'], desc: 'Browse and search the skill library', run: (input) => openSkillsModal(input) },
-  { name: '/plugins', aliases: ['/plugin'], desc: 'Install and manage plugins (commands, skills, MCP servers)', run: () => openPluginsModal() },
+  { name: '/skills', aliases: ['/skill-list', '/skill'], icon: 'book', desc: 'Browse and search the skill library', run: (input) => openSkillsModal(input) },
+  { name: '/plugins', aliases: ['/plugin'], icon: 'chip', desc: 'Install and manage plugins (commands, skills, MCP servers)', run: () => openPluginsModal() },
+  { name: '/new', aliases: ['/clear'], icon: 'new-chat', desc: 'Start a new chat', run: () => $('newChatBtn').click() },
+  { name: '/model', aliases: ['/models'], icon: 'sparkle', desc: 'Pick the model', run: (input) => openModelMenu(modelChipOf(input)) },
+  { name: '/effort', aliases: ['/think'], icon: 'bulb', desc: 'How hard your own model thinks (Haze 2 sets its own)', run: (input) => openEffortMenu(modelChipOf(input)) },
+  { name: '/usage', aliases: ['/limits'], icon: 'gauge', desc: 'See how much you have used', run: () => window.CraftUsage && window.CraftUsage.open({ name: $('userName').textContent, email: state.user ? state.user.email : '' }) },
+  { name: '/specialists', aliases: ['/agents', '/team'], icon: 'users', desc: 'The specialists Wisp works with', run: () => { if (window.CraftWispUI) window.CraftWispUI.openTeam(); } },
+  { name: '/settings', aliases: ['/preferences', '/theme'], icon: 'settings', desc: 'Theme, text, voice and every other setting', run: () => openSettings() },
+  { name: '/loop', aliases: [], icon: 'refresh', desc: 'Run a prompt again every few minutes: /loop 10m check the build', run: (input) => fillCommand(input, '/loop ') },
+  { name: '/schedule', aliases: ['/at'], icon: 'clock', desc: 'Run a task later: /schedule 5pm send me the summary', run: (input) => fillCommand(input, '/schedule ') },
+  { name: '/review', aliases: [], icon: 'code', desc: 'Review the uncommitted changes like a strict senior reviewer', run: (input) => { input.value = '/review'; submitTyped(input); } },
+  { name: '/security', aliases: ['/sec'], icon: 'shield-alert', desc: 'Find the loopholes in this project before someone else does', run: (input) => { input.value = '/security'; submitTyped(input); } },
+  { name: '/judge', aliases: [], icon: 'target', desc: 'Judge an idea hard, guess what you mean, no yes man', run: (input) => fillCommand(input, '/judge ') },
 ];
+
+// ─── Commands that act on what's typed after them ───────────────────────────
+// Caught on send (see submit in the composer): some become a prompt for the
+// agent, /loop and /schedule set timers here. Returns { text } to send instead,
+// true when handled here, or null for an ordinary message.
+const REVIEW_PROMPT = 'Review the uncommitted changes in this project like a strict senior reviewer. Read the real diff (git diff and git status) and the code around it. Find real bugs first: wrong logic, missed edge cases, broken error handling, race conditions, security problems, things that break other callers. Then simpler or clearer ways to do the same. For each finding: file:line, what goes wrong and when, and the fix. Skip style nits. Do not change any code unless I ask. If the changes look right, say so plainly.';
+const SECURITY_PROMPT = (focus) => `Do a security review of this project. Think like an attacker looking for loopholes, not like a checklist, and read the real code. Look for: auth and permission gaps, injection (SQL, shell, path, prompt), secrets or keys in code, config or logs, unsafe defaults, missing input checks, insecure storage, SSRF and open redirects, risky dependencies, and anything a user could abuse to reach data or access they should not have. For each finding give the severity (critical, high, medium, low), where it is (file:line), how someone would exploit it, and the fix. Rank them, worst first. Do not change any code unless I ask. If something looks risky but you cannot confirm it, say so.${focus ? `\n\nFocus on: ${focus}` : ''}`;
+const JUDGE_PROMPT = (idea) => `Judge this idea hard. Do not be a yes man and do not be nice for the sake of it.
+1. First guess what I am really going for: the goal behind the idea, who it is for, and what I am probably assuming without saying it.
+2. Make the strongest honest case for it in a few lines.
+3. Then attack it: the fatal flaws, the assumptions most likely wrong, who would say no and why, what already exists that beats it, and what it would really cost in time, money and effort.
+4. Verdict: a score out of 10 and one line: do it, change it or drop it.
+5. What evidence would change your mind, and the cheapest test to get it this week.
+
+Idea: ${idea}`;
+
+function typedCommand(typed) {
+  const m = /^\/(\w+)\b\s*([\s\S]*)$/.exec(typed || '');
+  if (!m) return null;
+  const [, name, rest] = m;
+  const arg = rest.trim();
+  switch (name.toLowerCase()) {
+    case 'review': return { text: REVIEW_PROMPT + (arg ? `\n\nFocus on: ${arg}` : '') };
+    case 'security': case 'sec': return { text: SECURITY_PROMPT(arg) };
+    case 'judge':
+      if (!arg) { showToast('Add your idea after /judge, like: /judge an app that books barbers by voice'); return true; }
+      return { text: JUDGE_PROMPT(arg) };
+    case 'loop': return loopCommand(arg);
+    case 'schedule': case 'at': return scheduleCommand(arg);
+    default: return null;
+  }
+}
+
+function fillCommand(input, text) { input.value = text; input.focus(); input.dispatchEvent(new Event('input')); }
+// Sends what's in this input as if Enter was pressed (for commands that run at once from the menu).
+function submitTyped(input) { const c = input.closest('.composer'); if (c && c.submitNow) c.submitNow(); }
+function modelChipOf(input) {
+  const c = input && input.closest('.composer');
+  return (c && c.querySelector('[data-role="model-chip"]')) || document.querySelector('[data-role="model-chip"]');
+}
+
+// Effort for the user's own models (Haze 2 picks its own, and that stays ours).
+// Ollama models have none.
+function canSetEffort(m) { return !!m && m.kind !== 'ollama' && m.kind !== 'chatgpt' && !(Array.isArray(m.effortLevels) && !m.effortLevels.length); }
+
+// The levels come from the provider itself (main.js models:effortLevels asks
+// it once): OpenAI-style APIs answer with their own list, and a provider that
+// ignores effort gets none. Default always comes first.
+const EFFORT_LABELS = { none: 'None', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' };
+const effortsFor = (m) => [['', 'Default'], ...((m && m.effortLevels) || ['low', 'medium', 'high']).map((id) => [id, EFFORT_LABELS[id] || id])];
+
+function openEffortMenu(anchor) {
+  // Haze 2 sets its own effort (strictly ours), and Ollama models have none:
+  // the card still opens for them, with the slider grayed out.
+  const m = selectedModel();
+  anchor = anchor || document.querySelector('[data-role="model-chip"]');
+  // First time for this model: ask its provider which levels it takes, then draw.
+  const checking = !!m && m.kind !== 'ollama' && m.kind !== 'chatgpt' && !Array.isArray(m.effortLevels) && api && api.probeEffortLevels;
+  if (checking) {
+    api.probeEffortLevels(m.id).then((r) => {
+      if (r && r.state) applyModelsState(r.state);
+      if (r && !r.ok) showToast(r.error || 'Could not check the effort levels.', 'error');
+      if (modelMenuEl && modelMenuEl.classList.contains('effort-card')) openEffortMenu(anchor);
+    }).catch(() => {});
+  }
+  const EFFORTS = effortsFor(m);
+  const locked = checking || !canSetEffort(m);
+  closeModelMenu();
+  const menu = document.createElement('div');
+  const none = !!m && !checking && !canSetEffort(m);
+  menu.className = 'menu effort-card' + (locked ? ' locked' : '') + (none ? ' no-effort' : '');
+  let at = locked ? 0 : Math.max(0, EFFORTS.findIndex(([id]) => id === (m.effort || '')));
+  const why = checking ? 'Checking which levels this model takes' : !m ? 'Haze 2 sets its own effort' : 'Reasoning not available';
+  menu.innerHTML = `
+    <button class="effort-head" type="button" data-act="models" title="Choose another model">
+      <strong>${esc(m ? m.name : 'Haze 2')}</strong><span data-role="effort-label"></span>${icon('chevron-right', 'ico-sm')}
+    </button>
+    <div class="effort-track" role="slider" ${locked ? `aria-disabled="true" data-tip="${why}"` : 'tabindex="0"'} aria-label="Effort" aria-valuemin="0" aria-valuemax="${EFFORTS.length - 1}">
+      <div class="effort-fill"></div>
+      ${EFFORTS.map((e, i) => `<span class="effort-stop" style="--f:${EFFORTS.length > 1 ? i / (EFFORTS.length - 1) : 0}"></span>`).join('')}
+      <div class="effort-knob"></div>
+    </div>${locked ? `<div class="effort-note">${esc(why)}</div>` : ''}`;
+  document.body.appendChild(menu);
+  modelMenuEl = menu;
+  const track = menu.querySelector('.effort-track');
+  const draw = (i) => {
+    track.style.setProperty('--f', String(EFFORTS.length > 1 ? i / (EFFORTS.length - 1) : 0));
+    track.setAttribute('aria-valuenow', String(i));
+    track.setAttribute('aria-valuetext', EFFORTS[i][1]);
+    menu.querySelector('[data-role="effort-label"]').textContent = checking ? 'Checking…' : locked ? (m ? '' : 'Auto') : EFFORTS[i][1];
+    menu.querySelectorAll('.effort-stop').forEach((s, j) => s.classList.toggle('passed', j <= i));
+  };
+  draw(at);
+
+  const rect = anchor.getBoundingClientRect();
+  menu.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
+  menu.style.right = Math.max(8, window.innerWidth - rect.right) + 'px';
+  keepMenuOnScreen(menu, rect);
+
+  let saved = at;
+  const save = async (i) => {
+    if (i === saved) return;
+    saved = i;
+    const id = EFFORTS[i][0];
+    const res = api && api.setModelEffort ? await api.setModelEffort(m.id, id) : { ok: false, error: 'Not available here.' };
+    if (!res.ok) { showToast(res.error || 'Could not set the effort.', 'error'); return; }
+    applyModelsState(res.state);
+  };
+  const stopAt = (x) => {
+    const r = track.getBoundingClientRect();
+    const f = Math.min(1, Math.max(0, (x - r.left - 17) / (r.width - 34)));
+    return Math.round(f * (EFFORTS.length - 1));
+  };
+  if (locked) { menu.querySelector('[data-act="models"]').addEventListener('click', (e) => { e.stopPropagation(); openModelMenu(anchor); }); return; }
+  track.addEventListener('pointerdown', (e) => {
+    track.setPointerCapture(e.pointerId);
+    track.classList.add('dragging');
+    at = stopAt(e.clientX); draw(at);
+    const move = (ev) => { const i = stopAt(ev.clientX); if (i !== at) { at = i; draw(at); } };
+    const up = () => { track.classList.remove('dragging'); track.removeEventListener('pointermove', move); track.removeEventListener('pointerup', up); save(at); };
+    track.addEventListener('pointermove', move);
+    track.addEventListener('pointerup', up);
+  });
+  track.addEventListener('keydown', (e) => {
+    const d = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 0;
+    if (!d) return;
+    e.preventDefault();
+    at = Math.min(EFFORTS.length - 1, Math.max(0, at + d)); draw(at); save(at);
+  });
+  menu.querySelector('[data-act="models"]').addEventListener('click', (e) => { e.stopPropagation(); openModelMenu(anchor); });
+}
+
+// ─── /loop and /schedule: prompts that run later in the chat they were set in ──
+// Kept in this window's storage and armed again on the next start; they only
+// run while Codeply is open. A run that comes due mid-task waits for it to end.
+const TIMERS_KEY = 'codeply-timers';
+function readTimers() { try { return JSON.parse(localStorage.getItem(TIMERS_KEY) || '[]').filter((t) => t && t.prompt); } catch { return []; } }
+function writeTimers(list) { try { localStorage.setItem(TIMERS_KEY, JSON.stringify(list)); } catch {} }
+const clipPrompt = (t) => (t.length > 40 ? `${t.slice(0, 39)}…` : t);
+
+function parseEvery(s) {
+  const m = /^(\d+(?:\.\d+)?)\s*(s|sec|secs|m|min|mins|h|hr|hrs|hour|hours)$/i.exec(s || '');
+  if (!m) return 0;
+  const n = parseFloat(m[1]); const u = m[2][0].toLowerCase();
+  return Math.round(n * (u === 'h' ? 3600000 : u === 'm' ? 60000 : 1000));
+}
+
+function loopCommand(arg) {
+  const list = readTimers();
+  if (!arg || /^(list|status)$/i.test(arg)) {
+    const loops = list.filter((t) => t.kind === 'loop');
+    showToast(loops.length ? `Looping: ${loops.map((t) => `every ${Math.round(t.every / 60000)}m "${clipPrompt(t.prompt)}"`).join('; ')}. /loop stop ends them.` : 'No loops running. Try: /loop 10m check the build');
+    return true;
+  }
+  if (/^(stop|off|cancel|end)$/i.test(arg)) {
+    writeTimers(list.filter((t) => t.kind !== 'loop'));
+    showToast('Stopped every loop.');
+    return true;
+  }
+  const [first, ...more] = arg.split(/\s+/);
+  const every = parseEvery(first);
+  const prompt = more.join(' ').trim();
+  if (!every || !prompt) { showToast('Like this: /loop 10m check the build and tell me if it broke'); return true; }
+  if (every < 60000) { showToast('A loop runs at most once a minute.'); return true; }
+  list.push({ id: Date.now().toString(36), kind: 'loop', every, next: Date.now() + every, prompt, sessionId: state.currentSessionId || null });
+  writeTimers(list);
+  showToast(`Every ${Math.round(every / 60000)} min: "${clipPrompt(prompt)}". Running it now. /loop stop ends it.`);
+  return { text: prompt };
+}
+
+// "in 20m", "in 2h", "5pm", "17:30", "tomorrow 9am" at the start of the text: { at, rest }.
+function parseWhen(s) {
+  let m = /^in\s+(\d+(?:\.\d+)?\s*(?:s|sec|secs|m|min|mins|h|hr|hrs|hour|hours))\b\s*([\s\S]*)$/i.exec(s);
+  if (m) { const ms = parseEvery(m[1].replace(/\s+/g, '')); return ms ? { at: Date.now() + ms, rest: m[2].trim() } : null; }
+  m = /^(tomorrow\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b\s*([\s\S]*)$/i.exec(s);
+  if (!m) return null;
+  let h = Number(m[2]); const min = Number(m[3] || 0); const ap = (m[4] || '').toLowerCase();
+  if (!ap && !m[3]) return null; // a bare number isn't a time
+  if (ap === 'pm' && h < 12) h += 12;
+  if (ap === 'am' && h === 12) h = 0;
+  if (h > 23 || min > 59) return null;
+  const d = new Date(); d.setSeconds(0, 0); d.setHours(h, min);
+  if (m[1]) d.setDate(d.getDate() + 1);
+  else if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1); // that time already passed today: tomorrow
+  return { at: d.getTime(), rest: m[5].trim() };
+}
+
+function scheduleCommand(arg) {
+  const list = readTimers();
+  if (!arg || /^(list|status)$/i.test(arg)) {
+    const once = list.filter((t) => t.kind === 'once');
+    showToast(once.length ? `Scheduled: ${once.map((t) => `${new Date(t.next).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })} "${clipPrompt(t.prompt)}"`).join('; ')}. /schedule cancel clears them.` : 'Nothing scheduled. Try: /schedule 5pm send me a summary of today');
+    return true;
+  }
+  if (/^(cancel|clear|stop|off)$/i.test(arg)) {
+    writeTimers(list.filter((t) => t.kind !== 'once'));
+    showToast('Cleared everything scheduled.');
+    return true;
+  }
+  const when = parseWhen(arg);
+  if (!when || !when.rest) { showToast('Like this: /schedule 5pm send me a summary of today (or: in 30m, 17:30, tomorrow 9am)'); return true; }
+  list.push({ id: Date.now().toString(36), kind: 'once', next: when.at, prompt: when.rest, sessionId: state.currentSessionId || null });
+  writeTimers(list);
+  showToast(`Scheduled for ${new Date(when.at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}: "${clipPrompt(when.rest)}". Codeply needs to be open then.`);
+  return true;
+}
+
+// Every half minute: anything due runs in its chat (or a new one), one at a time, never over a running task.
+async function runDueTimers() {
+  if (!state.user || state.running) return;
+  const list = readTimers();
+  const due = list.find((t) => t.next <= Date.now());
+  if (!due) return;
+  if (due.kind === 'loop') due.next = Date.now() + due.every;
+  writeTimers(due.kind === 'loop' ? list : list.filter((t) => t.id !== due.id));
+  try {
+    if (due.sessionId && due.sessionId !== state.currentSessionId) await openSession(due.sessionId);
+    else if (!due.sessionId) $('newChatBtn').click();
+  } catch {}
+  setTimeout(() => { if (!state.running) sendMessage(due.prompt, !state.currentSessionId); }, 400);
+}
+setInterval(runDueTimers, 30000);
 
 document.querySelectorAll('.composer').forEach((composer) => {
   const input = composer.querySelector('.composer-input');
@@ -4847,7 +5860,7 @@ document.querySelectorAll('.composer').forEach((composer) => {
     customAt = Date.now();
     try {
       customCommands = (await api.listCommands(state.project || null)).map((c) => ({
-        name: `/${c.name}`, aliases: [], desc: c.description + (c.mode ? ` (${c.mode})` : ''),
+        name: `/${c.name}`, aliases: [], icon: 'file-text', desc: c.description + (c.mode ? ` (${c.mode})` : ''),
         run: (inp) => { inp.value = `/${c.name} `; inp.focus(); inp.dispatchEvent(new Event('input')); },
       }));
     } catch { customCommands = []; }
@@ -4873,7 +5886,10 @@ document.querySelectorAll('.composer').forEach((composer) => {
     list.forEach((cmd, i) => {
       const item = document.createElement('button');
       item.className = 'menu-item slash-item' + (i === 0 ? ' active' : '');
-      item.innerHTML = `<svg viewBox="0 0 24 24"><path d="M12 3l2.2 5.6L20 10.8l-5.8 2.2L12 19l-2.2-6L4 10.8l5.8-2.2Z"/></svg><strong>${esc(cmd.name)}</strong><span class="slash-desc">${esc(cmd.desc)}</span>`;
+      // Shown like Codex's: icon, the name without its slash ("Goal"), the description in gray.
+      const label = cmd.name.replace(/^\//, '').replace(/-/g, ' ');
+      item.title = cmd.name;
+      item.innerHTML = `${icon(cmd.icon || SLASH_ICON)}<strong>${esc(label.charAt(0).toUpperCase() + label.slice(1))}</strong><span class="slash-desc">${esc(cmd.desc)}</span>`;
       item.addEventListener('click', () => { closeMenu(); input.value = ''; cmd.run(input); });
       menu.appendChild(item);
     });
@@ -4936,7 +5952,7 @@ function renderUpdate(u) {
     gate.classList.remove('hidden');
     pill.classList.add('hidden');
     $('updateGateTitle').textContent = 'Installing update';
-    $('updateGateText').textContent = `Craft is closing to install ${u.version || 'the update'}. A small installer window shows the progress, and Craft reopens by itself when it is done, usually in 2 to 5 minutes. You do not need to open it.`;
+    $('updateGateText').textContent = `Codeply is closing to install ${u.version || 'the update'}. A small installer window shows the progress, and Codeply reopens by itself when it is done, usually in 2 to 5 minutes. You do not need to open it.`;
     $('updateGateNotes').classList.add('hidden');
     $('updateGateTrack').classList.remove('hidden');
     $('updateGateTrack').classList.add('indeterminate');
@@ -4954,7 +5970,7 @@ function renderUpdate(u) {
     gate.classList.add('installing');
     pill.classList.add('hidden');
     $('updateGateTitle').textContent = `Updating to ${u.version}`;
-    $('updateGateText').textContent = 'Craft downloads the update, closes, installs it and reopens by itself. It takes a few minutes. You do not need to open it again.';
+    $('updateGateText').textContent = 'Codeply downloads the update, closes, installs it and reopens by itself. It takes a few minutes. You do not need to open it again.';
     $('updateGateNotes').classList.add('hidden');
     $('updateGateTrack').classList.remove('hidden');
     $('updateGateBar').style.width = Math.max(3, u.status === 'ready' ? 100 : (u.percent || 0)) + '%';
@@ -4966,7 +5982,7 @@ function renderUpdate(u) {
   if (u.required && active) {
     gate.classList.remove('hidden');
     pill.classList.add('hidden');
-    $('updateGateText').textContent = `Version ${u.version} is required to keep using Codeply Craft. You're on ${u.current}.`;
+    $('updateGateText').textContent = `Version ${u.version} is required to keep using Codeply. You're on ${u.current}.`;
     $('updateGateNotes').textContent = u.notes || '';
     $('updateGateNotes').classList.toggle('hidden', !u.notes);
     const showBar = u.status === 'downloading';
@@ -5003,7 +6019,7 @@ function renderUpdate(u) {
   $('updatePillCta').classList.toggle('hidden', waiting);
   if (waiting) {
     $('updatePillText').textContent = `Updating · ${u.percent || 0}%`;
-    pill.title = 'Downloading the update. Craft restarts on the new version when it is done.';
+    pill.title = 'Downloading the update. Codeply restarts on the new version when it is done.';
   } else if (showPill) {
     $('updatePillText').textContent = `Version ${u.version} available`;
     $('updatePillCta').textContent = u.manual ? 'Download' : 'Update now';
@@ -5029,7 +6045,7 @@ $('updateGateBtn').addEventListener('click', () => {
 // ─── Boot ───────────────────────────────────────────────────────────────────
 (async function boot() {
   if (!api){
-    $('engineErrorText').textContent = 'Codeply Craft must run inside Electron: npm install && npm start';
+    $('engineErrorText').textContent = 'Codeply must run inside Electron: npm install && npm start';
     showView('viewEngineError');
     return;
   }
@@ -5051,8 +6067,9 @@ $('updateGateBtn').addEventListener('click', () => {
   state.chatgpt = init.chatgpt || { signedIn: false };
   // Refresh the plan's model list in the background (models:changed repaints the picker).
   if (state.chatgpt.sharing) api.chatgptStatus({ refresh: true }).then((st) => { state.chatgpt = st; });
+  state.defaultFolders = init.defaultFolders || {};
   if (init.lastProject) setProject(init.lastProject, init.lastProjectBranch);
-  else setProject(null, null);
+  else setProject(state.defaultFolders.computer || null, null); // no project yet: This Computer
 
   if (init.needsLogin) { showView('viewLogin'); return; }
   if (init.needsOnboarding) {
@@ -5070,7 +6087,7 @@ $('updateGateBtn').addEventListener('click', () => {
   let rm = { enabled: false, mode: 'cloud', model: '', context: '', hasKey: false, keyPreview: '' };
 
   let statusOk = null;
-  const RM_ICON = '<svg viewBox="0 0 24 24"><path d="M9 3h6"/><path d="M10 3v6L4.5 18.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3"/><path d="M7 15h10"/></svg>';
+  const RM_ICON = icon('flask');
 
   // The chip lives in each composer, right after Cloud. Click turns it on or off;
   // the dots (or a right click) open the settings popover above it.
@@ -5092,7 +6109,7 @@ $('updateGateBtn').addEventListener('click', () => {
     more.type = 'button';
     more.title = 'Research settings';
     more.setAttribute('aria-label', 'Research settings');
-    more.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
+    more.innerHTML = icon('more');
     more.addEventListener('click', () => ($('rmPanel').classList.contains('hidden') ? openPop(b) : closePop()));
     row.appendChild(b);
     row.appendChild(more);
@@ -5106,6 +6123,8 @@ $('updateGateBtn').addEventListener('click', () => {
     const w = pop.offsetWidth;
     pop.style.left = Math.max(12, Math.min(r.left, window.innerWidth - w - 12)) + 'px';
     pop.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+    settleAt(pop, { bottom: r.top - 8 });
+    keepMenuOnScreen(pop, r);
   }
   function closePop() { $('rmPanel').classList.add('hidden'); }
   document.addEventListener('mousedown', (e) => {

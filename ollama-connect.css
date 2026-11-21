@@ -13,7 +13,6 @@
 .ocx-backdrop.open .ocx-page { transform: none; }
 .ocx-close { position: absolute; top: 16px; right: 16px; width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; color: var(--text-dim); }
 .ocx-close:hover { background: var(--hover); color: var(--text); }
-.ocx-close svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 
 .ocx-head h2 { margin: 0; font-size: 24px; font-weight: 500; letter-spacing: -.3px; }
 .ocx-head p { margin: 6px 0 18px; font-size: 14px; color: var(--ocx-sub); }
@@ -31,7 +30,6 @@
 .ocx-num { width: 26px; height: 26px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 12.5px; font-weight: 600; color: var(--ocx-sub); border: 1.5px solid var(--ocx-line); transition: all .2s ease; }
 .ocx-step.on .ocx-num { background: var(--ocx-ink); color: var(--ocx-bg); border-color: var(--ocx-ink); }
 .ocx-step.done .ocx-num { background: color-mix(in srgb, var(--ocx-hot) 18%, transparent); border-color: transparent; color: var(--ocx-hot); }
-.ocx-num svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .ocx-step-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .ocx-step-text strong { font-size: 14.5px; font-weight: 500; }
 .ocx-step-text span { font-size: 13px; color: var(--ocx-sub); line-height: 1.45; }
@@ -114,7 +112,6 @@
 /* connected: models */
 .ocx-done p { margin: 10px 0 16px; font-size: 13.5px; color: var(--ocx-sub); }
 .ocx-badge { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border-radius: 999px; font-size: 13px; color: var(--green, #3fb950); background: color-mix(in srgb, var(--green, #3fb950) 14%, transparent); }
-.ocx-badge svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .ocx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
 .ocx-model { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px 14px 12px; border-radius: 14px; border: 1px solid var(--border); background: var(--ocx-card); text-align: left; transition: border-color .15s ease, transform .12s ease, background .15s ease; }
 .ocx-model:hover { border-color: color-mix(in srgb, var(--ocx-hot) 60%, transparent); transform: translateY(-1px); }

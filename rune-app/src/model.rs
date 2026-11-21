@@ -1,0 +1,871 @@
+//! What the views show. A `Store` fills a `Snapshot`; views only read it.
+//!
+//! Inline emphasis uses `**bold**` markers in plain strings, which `ui::rich_text` draws.
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum AgentState {
+    Idle,
+    Working,
+    Thinking,
+    Waiting,
+    Sleeping,
+    Walking,
+}
+
+impl AgentState {
+    pub fn word(self) -> &'static str {
+        match self {
+            AgentState::Idle => "idle",
+            AgentState::Working => "working",
+            AgentState::Thinking => "thinking",
+            AgentState::Waiting => "needs you",
+            AgentState::Sleeping => "asleep",
+            AgentState::Walking => "walking",
+        }
+    }
+}
+
+/// A helper's silhouette. Wisp is the hexagon; helpers are a hexagon, a soft round blob or a
+/// squircle, so the team reads as one family with Wisp at its head.
+/// Not every shape is worn by a sample agent; all are drawn and tested.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Shape {
+    Hex,
+    Round,
+    Square,
+    Cloud,
+    Triangle,
+    Drop,
+    Pebble,
+}
+
+/// The eyes a helper has at rest. Its state still changes them (looking up while thinking, shut asleep).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Face {
+    /// Wisp's white pill eyes.
+    Pill,
+    /// Glossy black capsules with a glint, drawn as if on a sphere (the Grok bot's eyes): they
+    /// lean like `\\` and the far one is narrower.
+    Glossy,
+    /// White eyeballs with a shaded pupil and a glint.
+    Googly,
+    /// Closed, content arcs.
+    Content,
+    /// The Grok bot's eyes: two white capsules on a sphere. They sit where the bot is looking,
+    /// lean with its gaze, and the far one is narrower.
+    Capsule,
+}
+
+/// Accessories, drawn as finished objects: glossy black for the dark ones, with a soft shadow and
+/// a sheen, so each helper is recognisable at sidebar size.
+/// Not every accessory is worn by a sample agent; all are drawn and tested.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Gear {
+    Beret,
+    Bow,
+    Headphones,
+    Glasses,
+    Shades,
+    Sprout,
+    Flower,
+    Star,
+    Cap,
+    Antennae,
+}
+
+/// How a helper looks: its silhouette, eyes and accessories (up to two, like a bow with glasses).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Look {
+    pub shape: Shape,
+    pub face: Face,
+    pub gear: Vec<Gear>,
+    /// Where it looks at rest, each axis -2 to 2 (left or up is negative). Eyes sit toward it.
+    pub gaze: (i8, i8),
+}
+
+impl Look {
+    pub fn new(shape: Shape, face: Face, gear: &[Gear]) -> Look {
+        Look { shape, face, gear: gear.to_vec(), gaze: (0, 0) }
+    }
+    /// Looks toward `x`, `y` at rest.
+    pub fn looking(mut self, x: i8, y: i8) -> Look {
+        self.gaze = (x, y);
+        self
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Agent {
+    pub id: String,
+    pub name: String,
+    /// `#rrggbb`. Colour belongs to agents only; interface icons stay monochrome.
+    pub color: String,
+    pub look: Look,
+    pub role: String,
+    pub state: AgentState,
+    /// Where in the office: "Studio", "Kitchen", ...
+    pub place: String,
+    /// What it is doing now, shown on hover.
+    pub action: String,
+    /// One line for lists (Board sidebar).
+    pub status: String,
+    /// Position in the 1200 x 720 office, as in the prototype's PLACES.
+    pub pos: (f32, f32),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ButtonKind {
+    Plain,
+    Blue,
+    Green,
+}
+
+/// One piece of an agent's latest chat or live session, for the Office drawer.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Block {
+    Label(String),
+    /// A finished step, or the one in progress (`now`).
+    Step { text: String, now: bool },
+    /// A live view of the agent's screen. Phase 1 draws a placeholder page.
+    LiveScreen,
+    /// Something you said.
+    Bubble(String),
+    /// What the agent said back.
+    Reply(String),
+    /// A draft waiting for your OK.
+    Draft { title: String, to: String, via: Option<String>, body: String },
+    /// A quoted note.
+    Quote(String),
+    /// A quiet line with an icon, such as a routine that was created.
+    Via { icon: &'static str, text: String },
+    Buttons(Vec<(String, ButtonKind, Option<&'static str>)>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChatGroup {
+    pub icon: &'static str,
+    pub title: String,
+    pub chats: Vec<String>,
+}
+
+/// What a command step ran, and the end of what it printed (sidecar engine.mjs commandDetail).
+#[derive(Clone, Debug, PartialEq)]
+pub struct StepDetail {
+    pub command: String,
+    pub output: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ThreadItem {
+    Stamp(String),
+    /// Files sent with your next message: pictures as thumbnails, the rest as chips.
+    Files(Vec<String>),
+    You(String),
+    Them(String),
+    /// "6 messages with Frontend, Backend and Inbox".
+    Team { text: String, agents: Vec<String> },
+    /// A step (or a notice, icon "help"). A command keeps what it ran and the end of its output.
+    Event { icon: &'static str, text: String, detail: Option<Box<StepDetail>> },
+    /// The engine asks before it acts. `answer` is set once you (or a timeout) answered.
+    Approval { id: String, title: String, detail: String, answer: Option<String> },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrState {
+    Open,
+    Draft,
+    Merged,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Pr {
+    pub number: u32,
+    pub title: String,
+    pub by: String,
+    pub state: PrState,
+    pub age: String,
+    pub added: u32,
+    pub removed: u32,
+    pub branch: String,
+    pub summary: String,
+    pub points: Vec<String>,
+    /// On GitHub (empty for this branch's own changes and the sample).
+    pub url: String,
+    /// Checks: (passed, failed, still running); None when there are none to show.
+    pub checks: Option<(u32, u32, u32)>,
+    pub reviewers: Vec<String>,
+    /// This branch's own changes, not (yet) a pull request: number 0.
+    pub local: bool,
+}
+
+/// A change to the project's files from the code view.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FileOp {
+    New(String),
+    Rename(String, String),
+    Delete(String),
+}
+
+/// A store operation for Settings > Cloud & devices (`sidecar/ext-cloud.mjs`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum CloudOp {
+    Load,
+    /// Sync the team and its jobs with the account now.
+    Sync,
+    /// Set up Craft Cloud for a project folder.
+    Setup(String),
+    /// A project's switch: (folder, "cloudOn" | "handoff" | "autoBackup", on).
+    Options(String, &'static str, bool),
+}
+
+/// A store operation on pull requests.
+#[derive(Clone, Debug, PartialEq)]
+pub enum PrOp {
+    Refresh,
+    /// Load the diff of PR n (0: this branch's changes) into `extra.pr_files`.
+    Diff(u32),
+    Merge(u32),
+    /// Open a PR from this branch.
+    Create,
+    /// `git init` in the project (and a first commit).
+    Init,
+    /// Clone a repository (a URL, or `owner/name`) beside the project, then open it.
+    Clone(String),
+    /// Make a private GitHub repository for the project and push it.
+    Publish,
+}
+
+/// Where the project stands with git and GitHub, for the Pull requests page's buttons.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RepoState {
+    /// The project folder is a git repository.
+    pub repo: bool,
+    /// It has a remote.
+    pub remote: bool,
+    pub branch: String,
+    pub base: String,
+    /// What GitHub lacks: "missing" (no GitHub CLI), "auth" (not signed in), "remote", "other",
+    /// or empty when GitHub answered.
+    pub gh: String,
+    /// What gh itself said when it failed, to show under the explanation.
+    pub detail: String,
+}
+
+/// A file of a diff: its path and its lines, each '+', '-', ' ' or '@' (a hunk's head).
+pub type DiffFile = (String, Vec<(char, String)>);
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ConnectedApp {
+    pub slug: &'static str,
+    pub name: String,
+    pub note: String,
+    pub agents: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AppAction {
+    pub slug: &'static str,
+    pub text: String,
+    pub note: String,
+    pub time: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Task {
+    /// The approval this task waits on, from the engine: (chat title, request id). Its buttons
+    /// answer it ("Allow once", "Don't allow").
+    pub request: Option<(String, String)>,
+    pub agent: String,
+    pub title: String,
+    pub sub: String,
+    pub pill: Option<(String, Pill)>,
+    pub body: TaskBody,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pill {
+    Green,
+    Warn,
+    Blue,
+    Gray,
+    Purple,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum TaskBody {
+    Working { icon: &'static str, now: String, progress: f32, screen: bool },
+    Ask { text: String, buttons: Vec<(String, ButtonKind)> },
+    Done { proof: String, checked: bool },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Column {
+    Working,
+    NeedsYou,
+    Done,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Snapshot {
+    pub user: String,
+    pub plan: String,
+    pub project: String,
+    pub team: Vec<Agent>,
+    pub sessions: Vec<(String, Vec<Block>)>,
+    pub chat_groups: Vec<ChatGroup>,
+    pub recent: Vec<(String, String)>,
+    pub threads: Vec<(String, Vec<ThreadItem>)>,
+    pub prs: Vec<Pr>,
+    pub connected: Vec<ConnectedApp>,
+    pub popular: Vec<(&'static str, String, String)>,
+    pub actions: Vec<AppAction>,
+    pub tasks: Vec<(Column, Task)>,
+    pub routines: Vec<(&'static str, String, String)>,
+    /// 52 x 7 activity levels, 0 to 3, column-major by week.
+    pub activity: Vec<u8>,
+    /// Where the data comes from, for the status line ("Sample data", "codeply serve at ...").
+    pub source: String,
+    /// What the Codex-style views add (chats with their state, plugins, MCP, loops, ...).
+    pub extra: Extra,
+}
+
+impl Snapshot {
+    pub fn agent(&self, id: &str) -> Option<&Agent> {
+        // A stored chat names the agent it asked; a live one has its id.
+        self.team.iter().find(|a| a.id == id).or_else(|| self.team.iter().find(|a| a.name.eq_ignore_ascii_case(id)))
+    }
+    pub fn session(&self, id: &str) -> &[Block] {
+        self.sessions.iter().find(|(k, _)| k == id).map_or(&[], |(_, v)| v)
+    }
+    pub fn thread(&self, chat: &str) -> &[ThreadItem] {
+        // "*" is the thread shown for a chat with none of its own (the sample data has one).
+        let find = |key: &str| self.threads.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_slice());
+        find(chat).or_else(|| find("*")).unwrap_or(&[])
+    }
+    pub fn count(&self, state: AgentState) -> usize {
+        self.team.iter().filter(|a| a.state == state).count()
+    }
+}
+
+// ---------- 4.0 beta: Codex-style views ----------
+
+impl Shape {
+    pub const ALL: [Shape; 7] = [Shape::Hex, Shape::Round, Shape::Square, Shape::Cloud, Shape::Triangle, Shape::Drop, Shape::Pebble];
+    /// Its name in saved preferences.
+    pub fn name(self) -> &'static str {
+        match self {
+            Shape::Hex => "hex",
+            Shape::Round => "round",
+            Shape::Square => "square",
+            Shape::Cloud => "cloud",
+            Shape::Triangle => "triangle",
+            Shape::Drop => "drop",
+            Shape::Pebble => "pebble",
+        }
+    }
+    pub fn from_name(name: &str) -> Option<Shape> {
+        Shape::ALL.into_iter().find(|s| s.name() == name)
+    }
+}
+
+/// One chat as the Codex-style sidebar lists it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChatMeta {
+    pub title: String,
+    /// Whose it is: one of your chats, an agent's session, or the code view's.
+    pub kind: ChatKind,
+    /// The project folder's name ("launch-site"), shown dim after the title.
+    pub project: String,
+    /// "4 min ago".
+    pub ago: String,
+    /// The last thing said, for the agent list's second line.
+    pub preview: String,
+    /// A reply is being written right now.
+    pub running: bool,
+    /// Unread: a reply finished since you last opened it (a blue dot).
+    pub unread: bool,
+}
+
+/// Where a chat belongs. Each lives in its own place: your chats in Chat, an agent's sessions
+/// on its page in Agents (and Mission control), the code view's chat beside the editor.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum ChatKind {
+    #[default]
+    Chat,
+    /// An agent's session, by the agent's id.
+    Agent(String),
+    Code,
+}
+
+/// A plugin: a bundle of skills, commands and connectors you can install.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Plugin {
+    pub id: String,
+    pub name: String,
+    pub note: String,
+    pub by: String,
+    /// An icon name (interface icons) or `app-<slug>` for an app's logo.
+    pub icon: &'static str,
+    pub installed: bool,
+}
+
+/// An MCP server the engine can talk to.
+#[derive(Clone, Debug, PartialEq)]
+pub struct McpServer {
+    pub name: String,
+    pub note: String,
+    pub tools: u32,
+    pub on: bool,
+}
+
+/// A skill: instructions the engine follows when a task needs them (a SKILL.md, from
+/// codeply-cli/skills, a plugin, or yours in ~/.codeply/skills). `/name` in a composer uses one.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Skill {
+    pub name: String,
+    /// What it is for, on one line.
+    pub description: String,
+    /// "built-in", "plugin" or "user".
+    pub source: String,
+    /// The plugin it came with.
+    pub plugin: String,
+    /// Its SKILL.md.
+    pub path: String,
+}
+
+impl Skill {
+    /// Where it came from, in words.
+    pub fn from_label(&self) -> String {
+        match self.source.as_str() {
+            "user" => "Yours".to_owned(),
+            "plugin" if !self.plugin.is_empty() => format!("Plugin: {}", self.plugin),
+            "plugin" => "Plugin".to_owned(),
+            _ => "Built in".to_owned(),
+        }
+    }
+}
+
+/// A loop: a task an agent runs on a schedule (the Agents view's right panel).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Loop {
+    /// The engine's job id (empty in the sample data).
+    pub id: String,
+    pub agent: String,
+    pub name: String,
+    /// Recent runs, oldest first: true passed, false failed.
+    pub runs: Vec<bool>,
+    /// "Succeeded 50m ago", "Running now", "Failed 3d ago".
+    pub last: String,
+    pub on: bool,
+}
+
+/// An app in the Integrations catalogue.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CatalogApp {
+    pub slug: &'static str,
+    pub name: String,
+    pub note: String,
+    pub category: &'static str,
+    pub connected: bool,
+    /// The app's site ("notion.so"), for its logo.
+    pub domain: String,
+    /// Its own logo's URL, when the catalogue has one (used before the domain's icon).
+    pub icon: String,
+    /// A vendor's own server that Codeply checked (Featured), rather than an unreviewed listing.
+    pub verified: bool,
+    /// One of Codeply's own sign-ins (Gmail, Slack, Vercel, Supabase, GitHub), not an MCP server.
+    pub builtin: bool,
+    /// It signs in with an API key (the header it goes in), not the browser.
+    pub key_header: String,
+    /// Connected, but its sign-in ran out.
+    pub needs_reconnect: bool,
+    /// How many tools a connected app offered when last asked, and who it is signed in as.
+    pub tools: u32,
+    pub account: String,
+}
+
+/// What Integrations > Apps shows beyond the page of apps in `extra.catalog`: the whole
+/// catalogue's size, its categories, the connected apps, and a connect in progress.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AppsView {
+    /// Apps matching the search and category (the page in `extra.catalog` is the first of them).
+    pub matched: usize,
+    /// Every app in the catalogue.
+    pub total: usize,
+    /// Categories with their app counts, for the sidebar.
+    pub categories: Vec<(String, usize)>,
+    /// Connected apps, all of them.
+    pub connected: Vec<CatalogApp>,
+    /// The engine is still reading the registry: how many it has so far.
+    pub indexing: Option<usize>,
+    /// A page is on its way.
+    pub loading: bool,
+    /// What went wrong reaching the catalogue.
+    pub error: String,
+    /// The connect (or disconnect) the engine last reported.
+    pub progress: Option<AppProgress>,
+    /// A connected app's tools, as the engine listed them: (app id, [(name, description, read-only)]).
+    pub tools: Option<(String, Result<Vec<(String, String, bool)>, String>)>,
+}
+
+/// Where a connect is: "start", "waiting" (for the browser), "done", "warn", "error", "cancelled".
+#[derive(Clone, Debug, PartialEq)]
+pub struct AppProgress {
+    pub id: String,
+    pub name: String,
+    pub state: String,
+    pub message: String,
+}
+
+impl AppProgress {
+    /// Still going: the Connect buttons wait, and Cancel shows.
+    pub fn busy(&self) -> bool {
+        matches!(self.state.as_str(), "start" | "waiting")
+    }
+}
+
+/// The part of a Snapshot the Codex-style views add. Kept in its own struct so the original
+/// fields (and the code that fills them) stay as they were.
+/// Your token use, as the usage sheet shows it (the Electron app's Usage page).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Usage {
+    /// Why there's nothing to show ("Sign in to see your usage."), or empty.
+    pub error: String,
+    pub tokens: u64,
+    pub calls: u64,
+    /// The model you've used most.
+    pub favorite: String,
+    /// Today, "YYYY-MM-DD" in your time zone.
+    pub today: String,
+    pub days: Vec<UsageDay>,
+}
+
+/// One day of use: its date ("YYYY-MM-DD"), tokens and calls, and both per model.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct UsageDay {
+    pub date: String,
+    pub tokens: u64,
+    pub calls: u64,
+    pub models: Vec<(String, u64, u64)>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Extra {
+    /// Every chat, newest first.
+    pub chats: Vec<ChatMeta>,
+    /// Project folders, for the sidebar's Projects section.
+    pub projects: Vec<String>,
+    /// Suggestions under "What should we build?": (icon or `app-<slug>`, text).
+    pub suggestions: Vec<(&'static str, String)>,
+    pub plugins: Vec<Plugin>,
+    pub mcp: Vec<McpServer>,
+    /// Every skill the engine has (`/ext/skills`), by name.
+    pub skills: Vec<Skill>,
+    pub loops: Vec<Loop>,
+    pub catalog: Vec<CatalogApp>,
+    pub apps: AppsView,
+    /// Which engine replies come from ("DSH", "Classic") and whether it is up.
+    pub engine: String,
+    pub engine_ok: bool,
+    /// The engine's version, for Settings > General.
+    pub version: String,
+    /// The terminal beside a chat: what you or Wisp ran, and what it printed.
+    pub terminal: Vec<TermLine>,
+    /// Background tasks: agents working for Wisp, and commands still running.
+    pub bg_tasks: Vec<BgTask>,
+    /// The last Publish: where the project went live, or what went wrong.
+    pub publish: Option<Publish>,
+    /// Whether you're signed in to Codeply (the engine's account).
+    pub signed_in: bool,
+    /// Settings > Cloud & devices, as the engine reports it (`GET /ext/cloud`); Null until loaded.
+    pub cloud: serde_json::Value,
+    /// The diff the Changes tab shows: (PR number, its files).
+    pub pr_files: Option<(u32, Vec<DiffFile>)>,
+    /// Why pull requests can't be listed (no GitHub CLI, not signed in, no remote), or empty.
+    pub prs_note: String,
+    /// What each running chat is doing right now ("Editing index.html"), by title.
+    pub step_now: Vec<(String, String)>,
+    /// The project's git and GitHub state; None until the engine answers.
+    pub repo: Option<RepoState>,
+    /// The project folder's full path (the engine's), empty until known.
+    pub project_path: String,
+    /// A pull request action is running (init, clone, publish, create).
+    pub prs_busy: bool,
+    /// Why the last change to the team didn't go through, for a notice.
+    pub team_note: Option<String>,
+    /// Your token use, once asked for (the usage sheet); None while it loads.
+    pub usage: Option<Usage>,
+    /// The account's email, when signed in.
+    pub email: String,
+    /// Where an email sign-in is: None, "sent" (a code went to the email), "error: ...".
+    pub sign_in: Option<String>,
+    /// Memories Wisp keeps (the engine's brain): (id, kind, text, scope).
+    pub memories: Vec<Memory>,
+    /// The code editor: the project's files, the open one, and Wisp's help with it.
+    pub code: Code,
+    /// The models the composer picks from (Haze 2, and the ones you added).
+    pub models: crate::models::Models,
+    /// The background agents chats started, with their logs and team channels.
+    pub subagents: crate::subagents::Subagents,
+    /// Your Codeply plan, Haze 2's free amount and an upgrade in progress (`sidecar/ext-billing.mjs`).
+    pub billing: Billing,
+    /// Your own Claude and ChatGPT plans, signed in for subagents and past your Codeply limits.
+    pub linked: Linked,
+    /// Chats whose last reply Haze 2's free limit ended, and when it resets in local time
+    /// ("4:30 PM", or empty): (title, resets). The chat shows the upgrade card above its composer
+    /// until its next reply starts.
+    pub limits: Vec<(String, String)>,
+    /// Live Server and the ports shared outside this computer (the Ports panel).
+    pub ports: Ports,
+}
+
+/// Your plan, as the account says (`GET /ext/billing`, from the site's `/api/account`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Linked {
+    pub claude: LinkedPlan,
+    pub chatgpt: LinkedPlan,
+}
+
+/// One outside plan: signed in or not, and which plan the account has ("Max", "Plus").
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LinkedPlan {
+    pub connected: bool,
+    pub plan: String,
+    pub email: String,
+    /// Signing in: installing Claude Code, or the browser is open.
+    pub busy: bool,
+    /// What the sign-in is doing while busy ("Downloading and installing Claude Code...").
+    pub stage: String,
+    pub error: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Billing {
+    /// None until the account answered (Settings then shows what it knew before).
+    pub plan: Option<Plan>,
+    /// False once the engine said nobody is signed in.
+    pub signed_out: bool,
+    /// Haze 2's free 5-hour amount, as the router last reported it.
+    pub free: Option<FreeLimit>,
+    /// Why the plan couldn't be read, or empty.
+    pub error: String,
+    /// An upgrade under way (the upgrade sheet follows it).
+    pub checkout: Option<Checkout>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Plan {
+    /// "free", "starter" (shown as Pro), "pro" (shown as Max).
+    pub key: String,
+    /// The name the app shows: "Free", "Pro", "Max".
+    pub name: String,
+    /// The models it includes, by label.
+    pub models: Vec<String>,
+}
+
+impl Plan {
+    pub fn paid(&self) -> bool {
+        self.key != "free"
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FreeLimit {
+    pub used: u64,
+    pub limit: u64,
+    /// When it resets, in local time ("4:30 PM"); empty when it isn't counting down.
+    pub resets: String,
+}
+
+/// An upgrade: the checkout made for this account, and where it is.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Checkout {
+    /// "starter" (Pro) or "pro" (Max).
+    pub plan: String,
+    /// The checkout page on Whop, once made.
+    pub url: String,
+    pub state: CheckoutState,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum CheckoutState {
+    /// Asking the site for a checkout.
+    Opening,
+    /// Checkout is open in the browser; the engine watches for the plan to change.
+    Waiting,
+    /// The plan changed: you're on it.
+    Done,
+    /// Nobody is signed in, so there's no account to put a plan on.
+    SignIn,
+    /// It didn't work (or checkout ran out of time): why, for the sheet.
+    Failed(String),
+}
+
+/// A store operation on billing.
+#[derive(Clone, Debug, PartialEq)]
+pub enum BillingOp {
+    /// Read the plan (and the free amount).
+    Load,
+    /// Make a checkout for a plan key ("starter" or "pro") and open it in the browser.
+    Checkout(String),
+    /// Open the checkout page again.
+    Reopen,
+    /// Stop waiting for the checkout.
+    Cancel,
+    /// Your own Claude or ChatGPT plan ("claude", "chatgpt"): read both, sign one in, sign one out.
+    LoadLinked,
+    Link(String),
+    Unlink(String),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Memory {
+    pub id: String,
+    pub kind: String,
+    pub text: String,
+    pub scope: String,
+}
+
+/// The Code view's data: a real project folder on disk, through the engine.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Code {
+    /// The project's files, relative paths with `/`, folders ending in `/`, sorted.
+    pub files: Vec<String>,
+    /// The open file's path, and its text as last loaded or saved.
+    pub open: Option<String>,
+    pub saved: String,
+    /// The completion Wisp suggests at the caret: shown as ghost text, Tab takes it.
+    /// (file, byte offset it applies at, text to insert)
+    pub suggestion: Option<(String, usize, String)>,
+    /// Wisp's review of the open file, as notes on lines.
+    pub review: Vec<ReviewNote>,
+    /// Wisp is reviewing right now.
+    pub reviewing: bool,
+    /// What Wisp is doing in the editor, for its morphing mascot: "idle", "writing",
+    /// "reviewing", "fixing", "thinking".
+    pub wisp: String,
+    /// An inline edit (Ctrl K): what you asked, and the file as Wisp would change it.
+    pub proposal: Option<Proposal>,
+    /// The project's package.json files as last read (path, text), for Run's npm scripts.
+    pub manifests: Vec<(String, String)>,
+}
+
+/// Live Server and shared ports (`sidecar/ext-live.mjs`), as the engine reports them.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Ports {
+    /// Live Server's port while it runs.
+    pub live: Option<u16>,
+    /// Ports shared outside this computer through a tunnel.
+    pub forwards: Vec<Forward>,
+    /// Which tunnel tools this computer has (cloudflared, ssh); None until asked.
+    pub tools: Option<(bool, bool)>,
+    /// What went wrong last, for the Ports panel.
+    pub error: String,
+}
+
+/// What the code view asks of Live Server and port sharing (`Store::live_op`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum LiveOp {
+    /// Serve the project folder (for this page), reloading on changes.
+    Start(String),
+    Stop,
+    /// Share a port outside this computer, or stop sharing it.
+    Forward(u16),
+    Unforward(u16),
+    /// What's running, and which tunnel tools there are.
+    Status,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Forward {
+    pub port: u16,
+    /// "starting", "open" or "error".
+    pub state: String,
+    /// The public address, once the tunnel is up.
+    pub url: String,
+    pub message: String,
+}
+
+/// An inline edit of the open file, waiting for Accept or Reject.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Proposal {
+    pub file: String,
+    pub instruction: String,
+    /// The text it was asked about, and the changed text once it arrives (None while Wisp works).
+    pub before: String,
+    pub after: Option<String>,
+    pub error: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReviewNote {
+    /// 1-based line.
+    pub line: u32,
+    /// "error", "warning" or "info".
+    pub severity: String,
+    pub message: String,
+    /// A replacement for the whole line, if Wisp has one.
+    pub fix: Option<String>,
+}
+
+/// One line in the terminal pane.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TermLine {
+    pub kind: TermKind,
+    pub text: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TermKind {
+    /// A command you typed (shown after the prompt).
+    Input,
+    /// A command Wisp or an agent ran.
+    Agent,
+    Out,
+    Err,
+    /// "exited with 0".
+    Exit,
+}
+
+/// Something running in the background.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BgTask {
+    pub id: String,
+    /// "agent" (a helper Wisp handed work to) or "command".
+    pub kind: &'static str,
+    pub title: String,
+    /// The agent's id, for its mascot (agents only).
+    pub agent: Option<String>,
+    pub detail: String,
+    pub running: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Publish {
+    pub running: bool,
+    pub url: Option<String>,
+    pub message: String,
+}
+
+impl Snapshot {
+    pub fn chat(&self, title: &str) -> Option<&ChatMeta> {
+        self.extra.chats.iter().find(|c| c.title == title)
+    }
+    pub fn is_running(&self, title: &str) -> bool {
+        self.chat(title).is_some_and(|c| c.running)
+    }
+    /// Approvals still waiting for an answer, across every chat: (chat, request id, title).
+    pub fn waiting(&self) -> Vec<(String, String, String)> {
+        let mut out = Vec::new();
+        for (chat, items) in &self.threads {
+            for it in items {
+                if let ThreadItem::Approval { id, title, answer: None, .. } = it {
+                    out.push((chat.clone(), id.clone(), title.clone()));
+                }
+            }
+        }
+        out
+    }
+}

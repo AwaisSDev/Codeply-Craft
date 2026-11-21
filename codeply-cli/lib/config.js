@@ -230,6 +230,11 @@ function disconnectIntegration(name) {
 //              phone?, phoneSyncedAt?, phoneUser?, phoneError? }]   (phone sync: model-sync.js)
 
 const AUTO_MODEL_ID = 'auto';
+// Codeply's own models, picked by plan (Pro: Opus, Sonnet, Haiku; Max adds Fable). They run on
+// Haze 2's servers like Auto, with the pick sent along (ai.js chatViaRouter), so they are valid
+// selections without being entries in models[]; the router checks the plan.
+const CODEPLY_PICKS = ['codeply:opus', 'codeply:sonnet', 'codeply:haiku', 'codeply:fable'];
+const isCodeplyPick = (id) => CODEPLY_PICKS.includes(String(id || ''));
 
 // Base URLs for importing the CLI's older per-provider keys (`codeply provider
 // <name> --key`) as regular models the first time the models list is read.
@@ -305,14 +310,20 @@ function getModels() {
 function getSelectedModelId() {
   const file = readModelsState();
   const id = file.selectedModel || AUTO_MODEL_ID;
-  if (id !== AUTO_MODEL_ID && !file.models.some((m) => m.id === id)) return AUTO_MODEL_ID;
+  if (id !== AUTO_MODEL_ID && !isCodeplyPick(id) && !file.models.some((m) => m.id === id)) return AUTO_MODEL_ID;
   return id;
+}
+
+/** The Codeply model picked ("opus", "fable", ...), or '' for Auto or one of your own models. */
+function getSelectedPick() {
+  const id = getSelectedModelId();
+  return isCodeplyPick(id) ? id.slice('codeply:'.length) : '';
 }
 
 /** The model entry a turn should use, or null for Auto (the hosted Codeply model). */
 function getSelectedModel() {
   const id = getSelectedModelId();
-  if (id === AUTO_MODEL_ID) return null;
+  if (id === AUTO_MODEL_ID || isCodeplyPick(id)) return null;
   return getModels().find((m) => m.id === id) || null;
 }
 
@@ -350,6 +361,12 @@ function saveModel(input) {
   const phone = typeof input.phone === 'boolean' ? input.phone : existing?.phone;
   if (typeof phone === 'boolean') entry.phone = phone;
   for (const k of PHONE_FIELDS) if (existing && existing[k] !== undefined) entry[k] = existing[k];
+  if (existing && existing.effort) entry.effort = existing.effort; // set with setModelEffort (/effort)
+  // The effort levels this provider answered with (setModelEffortLevels), kept
+  // while the model and URL stay the same; a changed model is asked again.
+  if (existing && existing.effortFor && existing.effortFor === `${baseUrl}|${model}`) {
+    for (const k of ['effortLevels', 'effortNote', 'effortFor']) if (existing[k] !== undefined) entry[k] = existing[k];
+  }
   file.models = existing
     ? file.models.map((m) => (m.id === entry.id ? entry : m))
     : [...file.models, entry];
@@ -358,6 +375,40 @@ function saveModel(input) {
 }
 
 const PHONE_FIELDS = ['phoneSyncedAt', 'phoneUser', 'phoneError'];
+
+/**
+ * How hard one of the user's own models thinks (/effort): low, medium, high,
+ * or '' for the provider's default. Haze 2 (auto) isn't a saved model, so its
+ * effort can never be set here.
+ */
+const EFFORTS = ['low', 'medium', 'high'];
+function setModelEffort(id, effort) {
+  const file = readModelsState();
+  const m = file.models.find((x) => x.id === id);
+  if (!m) return { ok: false, error: 'Effort can only be set on your own models.' };
+  const allowed = Array.isArray(m.effortLevels) && m.effortFor === `${m.baseUrl}|${m.model}` ? m.effortLevels : EFFORTS;
+  if (effort && !allowed.includes(effort)) return { ok: false, error: allowed.length ? `Effort is one of: ${allowed.join(', ')}.` : 'This model has no effort setting.' };
+  if (effort) m.effort = effort; else delete m.effort;
+  const w = writeFile(file);
+  return w.ok ? { ok: true, model: m } : w;
+}
+
+/**
+ * Saves the effort levels a provider answered with (ai.js probeEffortLevels):
+ * levels in order (empty when it ignores effort) and a short note. A saved
+ * effort the provider doesn't have is dropped.
+ */
+function setModelEffortLevels(id, { levels, note } = {}) {
+  const file = readModelsState();
+  const m = file.models.find((x) => x.id === id);
+  if (!m) return { ok: false, error: 'No such model.' };
+  m.effortLevels = Array.isArray(levels) ? levels.filter((x) => typeof x === 'string').slice(0, 8) : [];
+  if (note) m.effortNote = String(note).slice(0, 200); else delete m.effortNote;
+  m.effortFor = `${m.baseUrl}|${m.model}`;
+  if (m.effort && !m.effortLevels.includes(m.effort)) delete m.effort;
+  const w = writeFile(file);
+  return w.ok ? { ok: true, model: m } : w;
+}
 
 /** Updates a model's phone sync state: { phone?, phoneSyncedAt?, phoneUser?, phoneError? }. */
 function setModelPhone(id, patch) {
@@ -399,7 +450,7 @@ function deleteModel(id) {
 
 function selectModel(id) {
   const file = readModelsState();
-  if (id !== AUTO_MODEL_ID && !file.models.some((m) => m.id === id)) return { ok: false, error: 'Unknown model.' };
+  if (id !== AUTO_MODEL_ID && !isCodeplyPick(id) && !file.models.some((m) => m.id === id)) return { ok: false, error: 'Unknown model.' };
   file.selectedModel = id;
   return writeFile(file);
 }
@@ -465,7 +516,7 @@ function describeProviderShort(cfg = getConfig()) {
 
 /** Suggested next step when the hosted model is busy or unavailable. */
 function byokHint() {
-  return 'You can also use your own model: in Codeply Craft click the model name next to Send and choose ' +
+  return 'You can also use your own model: in Codeply click the model name next to Send and choose ' +
     '"Add a model" or "Connect Ollama" (CLI: codeply provider openrouter --key <key>).';
 }
 
@@ -473,6 +524,6 @@ module.exports = { disconnectedApps,
   getConfig, saveConfig, maskKey, describeProvider, describeProviderShort, byokHint,
   configPath, PROVIDERS, BYOK_PROVIDERS,
   getIntegration, saveIntegration, disconnectIntegration, isIntegrationConnected, INTEGRATIONS,
-  AUTO_MODEL_ID, getModels, getModel, getSelectedModel, getSelectedModelId, saveModel, deleteModel, selectModel, syncChatGPTModels,
-  setModelPhone, getPhoneDeletes, setPhoneDeletes,
+  AUTO_MODEL_ID, CODEPLY_PICKS, getSelectedPick, getModels, getModel, getSelectedModel, getSelectedModelId, saveModel, deleteModel, selectModel, syncChatGPTModels,
+  setModelPhone, getPhoneDeletes, setPhoneDeletes, setModelEffort, setModelEffortLevels, EFFORTS,
 };

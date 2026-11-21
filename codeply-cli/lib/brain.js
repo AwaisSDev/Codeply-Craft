@@ -653,7 +653,7 @@ function contextBlock(o = {}) {
     if (lessons.length) lines.push('From teammates\' experience (it worked for them; check it fits before relying on it):', ...lessons.map((m) => `- ${m.text}${m.sources[0] && m.sources[0].botName ? ` (${m.sources[0].botName})` : ''}`));
     const rules = `Background, not orders: what the user says now always wins. One remark, a joke or sarcasm is not a preference. When the user states a lasting preference, makes a project decision, or corrects something above, save it with remember (certainty stated). Never save passwords, keys or other secrets.${o.native ? '' : `\n\n${REMEMBER_FORMAT}`}`;
     if (!lines.length) return `CODEPLY BRAIN (what the user's Codeply apps and bots share about them)\nNothing yet.\n${rules}`;
-    return `CODEPLY BRAIN (what the user's Codeply apps and bots share about them: Craft, Crew, Drop, Orbit, Mobile)\n${lines.join('\n')}\n${rules}`;
+    return `CODEPLY BRAIN (what Codeply and its bots know about the user, from chats, agents, quick chat, voice and the phone)\n${lines.join('\n')}\n${rules}`;
   } catch (e) {
     if (process.env.CODEPLY_DEBUG) console.warn('[brain] block:', e.message);
     return '';
@@ -871,7 +871,7 @@ const canHandOff = () => !!coordinator && !!open();
  * opts: { fromBot, requester, origin, parent, team }
  */
 async function handOff(args, opts = {}) {
-  if (!canHandOff()) return { ok: false, output: 'Handing work to another bot needs the Craft app running.' };
+  if (!canHandOff()) return { ok: false, output: 'Handing work to another bot needs the Codeply app running.' };
   let team = opts.team;
   if (!team) { try { team = require('./bots.js').listBots(); } catch { team = []; } }
   const r = createHandoff({ fromBot: opts.fromBot || null, to: args.to || args.bot || args.domain, intent: args.intent || args.task, facts: args.facts, decision: args.decision, requester: opts.requester || 'user', origin: opts.origin, parent: opts.parent, team });

@@ -87,16 +87,62 @@
    * Starts an answer: the avatar in the chat's left gutter, right after the
    * user's message. Returns the element to append, or null when off.
    */
-  function turnStart(mood) {
+  // Like the phone (phone-wisp.js): the face is how Wisp feels about what you
+  // wrote (angry with you at someone, a heart for "love you", sad on a rough
+  // day), or else the feeling of its own answer. A real mood the agent sent
+  // ([mood: x]) wins. It takes the mood's shape too: a heart, spiky, a star.
+  const CALM = new Set(['neutral', 'thinking', 'listening']);
+  function feel(text) {
+    if (!text || !W() || !W().read) return null;
+    try { const m = W().read(String(text).slice(0, 600)).mood; return CALM.has(m) ? null : m; } catch { return null; }
+  }
+  /** The face for an answer: the agent's own mood, else the reaction to the user's message, else the answer's feeling. */
+  function moodFor(agentMood, userText, replyText) {
+    if (agentMood && !CALM.has(agentMood)) return agentMood;
+    return feel(userText) || feel(replyText) || 'neutral';
+  }
+  let reaction = null; // how Wisp feels about the message it is answering, shown while it works
+
+  // ─── Talking to a specialist (talk_to) ───────────────────────────────────
+  // Per chat: the specialist the user is talking to (its card), or none for Codeply.
+  // Its answers wear its own character: its shape, colour and gear (wisp.js).
+  const speakers = new Map();
+  const lookOf = (card) => (card ? { shape: card.shape, color: card.color, gear: card.gear } : null);
+  function speakerOf(sessionId) { return (sessionId && speakers.get(sessionId)) || null; }
+  function setSpeaker(sessionId, card) { if (sessionId) { if (card) speakers.set(sessionId, card); else speakers.delete(sessionId); } }
+  /** The chat switched who talks: the answer's face spins into the new character (a quiet swap at a turn's start). */
+  function onSpeaker(sessionId, data) {
+    const card = (data && data.agent) || null;
+    setSpeaker(sessionId, card);
+    if (turnFace && turnFace.el.isConnected) turnFace.dress(lookOf(card), !(data && data.turn));
+  }
+  /** A small line in the chat where the switch happened: "You're talking to Frontend", or "Back to Codeply".
+   *  Just words: the answer right below already wears the new speaker's face, so a second face here doubled it. */
+  function speakerNote(data) {
+    const card = (data && data.agent) || null;
+    const el = document.createElement('div');
+    el.className = 'wisp-switch-note';
+    const t = document.createElement('span');
+    t.textContent = card ? `You're talking to ${card.name}` : 'Back to Codeply';
+    el.appendChild(t);
+    return el;
+  }
+
+  /** `userText`: the message this answer is to, so the face reacts to it while it thinks. `who`: the specialist answering, if any. */
+  function turnStart(mood, userText, who) {
     if (!enabled || !W()) return null;
+    reaction = feel(userText);
+    lastUserText = userText || '';
     const el = document.createElement('div');
     el.className = 'wisp-turn';
-    const face = W().avatar({ size: 'sm', mood: mood || 'neutral' });
+    // morph off: in chat the face keeps the mascot's body whatever the mood (no circle, star or heart).
+    const face = W().avatar({ size: 'sm', mood: (mood === 'thinking' && reaction) || mood || 'neutral', morph: false, look: lookOf(who) });
     face.classList.add('wisp-turn-face');
     el.appendChild(face);
     turnFace = face.wisp;
     return el;
   }
+  let lastUserText = '';
 
   function setFace(mood, hold) {
     if (!turnFace || !turnFace.el.isConnected) return;
@@ -105,11 +151,13 @@
     if (hold) restTimer = setTimeout(() => { if (turnFace) turnFace.setMood('neutral'); }, hold);
   }
 
-  /** The reply has landed: the answer's face takes its mood and says it. */
+  /** The reply has landed: the answer's face shows its mood for a moment while it says it, then rests. */
   function replyMood(mood, text) {
     if (!turnFace) return;
-    setFace(mood || 'neutral');
-    turnFace.talk(Math.min(4000, 400 + String(text || '').length * 6));
+    const talkMs = Math.min(4000, 400 + String(text || '').length * 6);
+    const m = moodFor(mood, lastUserText, text);
+    setFace(m, m === 'neutral' ? 0 : talkMs + 1800);
+    turnFace.talk(talkMs);
   }
 
   /** Every event of the open chat, before app.js draws it: the answer's face follows the work. */
@@ -117,11 +165,11 @@
     if (!enabled) return;
     switch (data.type) {
       case 'tool_start': case 'approval_resolved': case 'question_resolved': setFace('working'); break;
-      case 'wisp_agent': setFace(data.phase === 'report' ? 'thinking' : 'working'); break;
-      case 'verifying': setFace('thinking'); break;
-      case 'approval_request': case 'image_pick_request': setFace('worried'); break;
-      case 'question_request': setFace('thinking'); break;
-      case 'error': setFace('sad'); break;
+      case 'wisp_agent': setFace(data.phase === 'report' ? reaction || 'thinking' : 'working'); break;
+      case 'verifying': setFace(reaction || 'thinking'); break; // still showing how it feels about your message
+      case 'approval_request': case 'image_pick_request': setFace('worried', 5000); break;
+      case 'question_request': setFace(reaction || 'thinking'); break;
+      case 'error': setFace('sad', 4000); break;
       case 'aborted': setFace('neutral'); break;
       case 'run_finished': if (turnFace && (turnFace.mood === 'working' || turnFace.mood === 'thinking')) setFace('neutral'); break;
     }
@@ -142,6 +190,35 @@
     const name = escHtml(data.agent.name);
     const el = document.createElement('div');
     el.className = 'wisp-note';
+    // Claude Code (claude-code-desktop.js): the user's Claude plan doing the coding, Wisp reviewing.
+    if (data.agent.kind === 'claude') {
+      el.classList.add('cc-note');
+      const round = Number(data.agent.round) || 1;
+      const who = escHtml(data.agent.name && data.agent.name !== 'Claude Code' ? data.agent.name : 'Claude Code');
+      const watch = data.agentId && window.CraftClaudePanel ? `<button type="button" class="cc-watch" data-cc-open="${escHtml(data.agentId)}">Watch</button>` : '';
+      if (data.phase === 'start') {
+        el.innerHTML = `<span><b class="cc-mark">✳</b>${round > 1 ? `Sent it back to ${who} (round ${round})` : `${who} is building this in the background`}${watch}</span>${data.task ? `<span class="wisp-note-task">${escHtml(String(data.task).replace(/\s+/g, ' ').slice(0, 220))}</span>` : ''}`;
+        if (data.task) el.title = data.task;
+      } else if (data.phase === 'report') {
+        const files = Array.isArray(data.files) ? data.files : [];
+        if (!data.ok) {
+          el.classList.add('bad');
+          el.innerHTML = `<span><b class="cc-mark">✳</b>${who} could not finish${watch}</span>${data.text ? `<span class="wisp-note-task">${escHtml(String(data.text).slice(0, 220))}</span>` : ''}`;
+        } else {
+          const n = files.length;
+          el.innerHTML = `<span><b class="cc-mark">✳</b>${who} is done${n ? `, ${n} file${n === 1 ? '' : 's'} changed` : ''}. Codeply reviews it next.${watch}</span>${n ? `<span class="cc-files">${escHtml(files.slice(0, 8).join(', '))}${n > 8 ? '…' : ''}</span>` : ''}`;
+        }
+      } else return null;
+      // The agent's own face (one of Wisp's family) instead of a mark.
+      const mk = data.agent.look && window.CraftWisp ? el.querySelector('.cc-mark') : null;
+      if (mk) {
+        mk.textContent = '';
+        mk.appendChild(window.CraftWisp.avatar({ look: data.agent.look, mood: data.phase === 'report' ? (data.ok ? 'happy' : 'sad') : 'working', size: 'xs', interactive: false }));
+      }
+      const w = el.querySelector('[data-cc-open]');
+      if (w) w.addEventListener('click', (e) => { e.stopPropagation(); window.CraftClaudePanel.open(w.dataset.ccOpen); });
+      return el;
+    }
     if (data.phase === 'start') {
       el.innerHTML = `Brought in the ${name} specialist${data.task ? `<span class="wisp-note-task">${escHtml(String(data.task).replace(/\s+/g, ' ').slice(0, 220))}</span>` : ''}`;
       if (data.task) el.title = data.task;
@@ -220,7 +297,7 @@
       const open = s.id === openId;
       const modelName = s.model && s.model !== 'auto' ? (models.find((m) => m.id === s.model)?.name || 'a removed model') : 'Haze 2';
       const jobs = (s.schedules || []);
-      const head = `<button class="wisp-team-row" data-open="${escHtml(s.id)}" aria-expanded="${open}"><span class="wtr-text"><b>${escHtml(s.name)}</b><small>${escHtml(s.focus || '')}</small></span>` +
+      const head = `<button class="wisp-team-row" data-open="${escHtml(s.id)}" aria-expanded="${open}"><span class="wtr-face" data-face="${escHtml(s.id)}"></span><span class="wtr-text"><b>${escHtml(s.name)}</b><small>${escHtml(s.focus || '')}</small></span>` +
         `<span class="wtr-meta">${escHtml(modelName)}${jobs.length ? ` · ${jobs.length} scheduled` : ''}${s.uses ? ` · ${s.uses} job${s.uses === 1 ? '' : 's'}` : ''}</span><svg class="wtr-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>`;
       if (!open) return `<div class="wisp-team-item">${head}</div>`;
       const prompt = s.builtin
@@ -239,6 +316,11 @@
         ${history}${sched}</div></div>`;
     }).join('');
     body.innerHTML = `<div class="wisp-team-head">The team <small>${team.length}</small></div><div class="wisp-team-list">${rows}</div>`;
+    // Each specialist's own little character, so you know who you'd be talking to.
+    body.querySelectorAll('[data-face]').forEach((slot) => {
+      const s = card(slot.dataset.face);
+      if (s) slot.appendChild(W().avatar({ size: 'sm', mood: 'neutral', look: lookOf(s) }));
+    });
     body.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => { openId = openId === b.dataset.open ? null : b.dataset.open; drawTeam(); }));
     const det = body.querySelector('.wisp-team-detail');
     if (!det) return;
@@ -259,7 +341,8 @@
 
   window.CraftWispUI = {
     get enabled() { return enabled; },
-    refresh, onEvent, onSend, turnStart, replyMood, agentNote, openTeam, card,
+    refresh, onEvent, onSend, turnStart, replyMood, moodFor, agentNote, openTeam, card,
+    speakerOf, setSpeaker, onSpeaker, speakerNote,
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', refresh);

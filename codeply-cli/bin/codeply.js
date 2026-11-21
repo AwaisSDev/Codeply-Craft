@@ -473,7 +473,7 @@ pluginCmd
 
 const githubCmd = program
   .command('github')
-  .description('The GitHub agent: comment /codeply on an issue or pull request and Craft does the work in your own Actions runner.');
+  .description('The GitHub agent: comment /codeply on an issue or pull request and Codeply does the work in your own Actions runner.');
 
 githubCmd
   .command('install')
@@ -529,7 +529,7 @@ function cloudToken() {
   } catch {}
   const gh = config.getIntegration ? config.getIntegration('github') : {};
   if (gh && gh.accessToken) return gh.accessToken;
-  throw new Error('No GitHub login. Connect GitHub in Craft, run "gh auth login", or set GITHUB_TOKEN.');
+  throw new Error('No GitHub login. Connect GitHub in Codeply, run "gh auth login", or set GITHUB_TOKEN.');
 }
 
 function cloudModel(id) {
@@ -540,7 +540,7 @@ function cloudModel(id) {
 
 const cloudCmd = program
   .command('cloud')
-  .description('Craft Cloud: run the agent on GitHub\'s machines (your account, your key) while this PC is off.');
+  .description('Cloud runs: run the agent on GitHub\'s machines (your account, your key) while this PC is off.');
 
 cloudCmd
   .command('setup')

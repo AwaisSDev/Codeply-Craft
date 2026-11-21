@@ -77,6 +77,12 @@ async function syncCalendar({ store, list, now = Date.now(), life }) {
 
 const SKIP_LABELS = ['SPAM', 'TRASH', 'DRAFT', 'CHAT'];
 const NOISE_LABELS = ['CATEGORY_PROMOTIONS', 'CATEGORY_SOCIAL', 'CATEGORY_FORUMS'];
+/** Mail nobody expects an answer to: a no-reply sender anywhere in the address, or a sign-in, code or receipt. */
+function automated(fromEmail, subject) {
+  const local = String(fromEmail || '').toLowerCase().split('@')[0];
+  if (/(^|[._+-])(no-?reply|do-?not-?reply|notifications?|mailer-daemon|postmaster)([._+-]|$)|^noreply|^donotreply/.test(local)) return true;
+  return /\b(sign[- ]?in (link|code)|log[- ]?in (link|code)|verification code|verify your (email|account)|one[- ]time (code|password)|security code|password reset|reset your password|your (receipt|invoice) from)\b/i.test(String(subject || ''));
+}
 const MAX_WAITING = 30;
 
 function gmailUrl(account, threadId) {
@@ -119,7 +125,7 @@ async function syncGmail({ store, api, now = Date.now(), maxNew = 40 }) {
   }
   // Oldest first, so a reply after a message clears the wait it started.
   msgs.sort((a, b) => a.internalDate - b.internalDate);
-  let waiting = (store.getState('gmail.waiting', []) || []).filter((w) => now - w.at < 7 * DAY);
+  let waiting = (store.getState('gmail.waiting', []) || []).filter((w) => now - w.at < 7 * DAY && !automated(w.from, w.subject));
   const counts = { in: 0, out: 0 };
   for (const m of msgs) {
     if (m.labels.some((l) => SKIP_LABELS.includes(l))) continue;
@@ -146,7 +152,7 @@ async function syncGmail({ store, api, now = Date.now(), maxNew = 40 }) {
     const direct = (m.to || []).includes(account) || (m.cc || []).includes(account);
     // Already answered: the user wrote to them after this came in (seen through gmail_send before this sync).
     const answered = !!(known && known.lastTo && known.lastTo >= at);
-    if (s.level !== 'low' && direct && !answered && !/^(no-?reply|do-?not-?reply|notifications?)@/i.test(m.fromEmail)) {
+    if (s.level !== 'low' && direct && !answered && !automated(m.fromEmail, m.subject)) {
       waiting = waiting.filter((w) => w.threadId !== m.threadId);
       waiting.push({ threadId: m.threadId, id: m.id, from: m.fromEmail, fromName: m.fromName, subject: short(m.subject, 200), at, important: s.level === 'very' || knownSender, url: gmailUrl(account, m.threadId) });
     }

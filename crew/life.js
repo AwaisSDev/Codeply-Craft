@@ -129,7 +129,7 @@
       : ls.error ? esc(ls.error)
       : ls.mic ? `${live(ls.thinking ? 'Saving what matters' : 'Listening')}${saved.length ? ` · ${saved.length} saved today` : ''}`
       : 'Starting the mic';
-    let body = row({ icon: ROWICON.mic, title: 'Listen in the background', sub: heardSub, attr: 'title="Your mic stays on while Craft runs. Speech becomes text on this PC (Whisper), the important bits are kept, and the rest is thrown away."', right: sw('data-src="heard"', heard.on) });
+    let body = row({ icon: ROWICON.mic, title: 'Listen in the background', sub: heardSub, attr: 'title="Your mic stays on while Codeply runs. Speech becomes text on this PC (Whisper), the important bits are kept, and the rest is thrown away."', right: sw('data-src="heard"', heard.on) });
     if (askConsent && !(l.calls || {}).consentAck) {
       body += `<label class="lf-consent"><input type="checkbox" data-consent-heard><span><b>I'll tell people an assistant is listening</b><em>Tick to turn the mic on. Many places require everyone's consent.</em></span></label>`;
     }

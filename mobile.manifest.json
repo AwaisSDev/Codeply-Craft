@@ -1,6 +1,6 @@
 {
-  "name": "Codeply Away",
-  "short_name": "Away",
+  "name": "Codeply",
+  "short_name": "Codeply",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#101012",

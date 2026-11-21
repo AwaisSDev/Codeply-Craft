@@ -13,7 +13,7 @@ function init({ cliDir, act, ocr }) {
   const host = {
     front: () => act.frontWindow(),
     focus: (want) => act.focusWindow(want),
-    isOwn: (win) => !!win && (String(win.app || '').toLowerCase() === own || /^codeply (craft|crew)$/i.test(String(win.title || '').trim())),
+    isOwn: (win) => !!win && (String(win.app || '').toLowerCase() === own || /^codeply( craft| crew| voice)?$/i.test(String(win.title || '').trim())),
     async capture(win) {
       const b = win && win.bounds && win.bounds.width > 0 ? win.bounds : null;
       const at = b ? { x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2) } : screen.getCursorScreenPoint();

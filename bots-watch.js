@@ -99,12 +99,26 @@ async function notify(ev) {
   try { deps.crewThread(bot.id, { ...ev, text: line }); } catch (e) { console.warn('[always on] thread:', e.message); }
   // Work for another bot in it (a meeting request goes to the calendar bot; brain-desktop.js).
   if (deps.onImportant) { try { deps.onImportant(ev); } catch {} }
+  // A reply drafted overnight goes in the morning message's "Waiting on you".
+  if (ev.draftId) {
+    try {
+      const store = lib('life.js').getStore();
+      if (store) {
+        const day = Date.now() - 24 * 3600 * 1000;
+        const kept = (store.getState('morning.drafts', []) || []).filter((d) => d.at > day && d.id !== ev.draftId);
+        store.setState('morning.drafts', [...kept, { id: ev.draftId, at: Date.now(), from: ev.fromName || ev.fromEmail || '', subject: ev.subject || '' }].slice(-10));
+      }
+    } catch {}
+  }
+  // It comes from Codeply, the user's one agent; the bot that did it stays behind the scenes.
   const { Notification } = deps;
   if (Notification && Notification.isSupported()) {
-    const n = new Notification({ title: bot.name, body: `${line}${ev.summary ? `\n${ev.summary}` : ''}`.slice(0, 240), icon: deps.notifyIcon, silent: quiet });
+    const n = new Notification({ title: 'Codeply', body: `${line}${ev.summary ? `\n${ev.summary}` : ''}`.slice(0, 240), icon: deps.notifyIcon, silent: quiet });
     n.on('click', () => deps.openBot(bot.id));
     n.show();
   }
+  const islandText = ev.draftId ? `Drafted a reply to ${ev.fromName || ev.fromEmail || 'someone'}: ${ev.subject || '(no subject)'}` : line;
+  try { require('./island').ping({ title: 'Codeply', text: islandText.slice(0, 240) }); } catch {}
   if (ev.alert) {
     try { await tellPhone(ev, bot, ev.alert.how === 'call' ? 'call' : 'remind'); } catch (e) { if (!e.signedOut) console.warn('[always on] phone:', e.message); }
     if (!ev.alert.repeat) dropAlert(bot.id, ev.alert.from);
@@ -150,7 +164,7 @@ async function reachPhone({ botId, botName, how, message, at }) {
 async function addAlert({ botId, from, how, note, repeat }) {
   const B = lib('bots.js');
   const bot = botId ? B.getBot(botId) : null;
-  if (!bot) return { ok: false, output: 'Only a bot can watch the inbox. Ask the user to pick one of their bots (or to make one in Crew) for this.' };
+  if (!bot) return { ok: false, output: 'Only a bot can watch the inbox. Ask the user to pick one of their bots (or to make one in Agents) for this.' };
   if (!deps.configLib().getIntegration('gmail').accessToken) return { ok: false, output: 'Gmail is not connected. Ask the user to connect Gmail in Connect Apps first.' };
   const alerts = (bot.alwaysOn.alerts || []).filter((a) => a.from !== from);
   alerts.push({ from, how, note, repeat, at: Date.now() });
@@ -160,7 +174,7 @@ async function addAlert({ botId, from, how, note, repeat }) {
   return {
     ok: true,
     output: `Watching the inbox for email from ${from}. When one arrives, the user gets a ${how === 'call' ? 'call' : 'text'} on their phone${repeat ? ' every time' : ' (once)'}. ` +
-      'This runs while Craft is open or in the tray.' + (signedIn ? '' : ' The user is not signed in to Codeply on this PC, so only a desktop notification will show until they sign in.'),
+      'This runs while Codeply is open or in the tray.' + (signedIn ? '' : ' The user is not signed in to Codeply on this PC, so only a desktop notification will show until they sign in.'),
   };
 }
 
