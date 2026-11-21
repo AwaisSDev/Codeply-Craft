@@ -75,6 +75,8 @@ pub struct Health {
     pub run: String,
     pub agent: String,
     pub chat_id: String,
+    /// The chat's title, when the store knows it (the chat shows the line above its composer).
+    pub chat: String,
     /// running, retrying, parked, continued, cloud, needs_you, done, failed.
     pub state: String,
     pub attempt: u32,
@@ -158,6 +160,10 @@ impl AgentsData {
     /// The newest health of an agent's runs that says something.
     pub fn health_of(&self, agent: &str) -> Option<&Health> {
         self.health.iter().find(|h| h.agent == agent && h.notable())
+    }
+    /// The health of the run in a chat (by title) that says something.
+    pub fn chat_health(&self, chat: &str) -> Option<&Health> {
+        self.health.iter().find(|h| !h.chat.is_empty() && h.chat == chat && h.notable())
     }
     /// A job's health, by job id.
     pub fn job_health(&self, job: &str) -> Option<&Health> {
@@ -364,6 +370,7 @@ pub fn fold(x: &mut AgentsData, e: &Value, title: &dyn Fn(&str) -> Option<String
                 run: s(e, "runId"),
                 agent: s(e, "agent"),
                 chat_id: s(e, "chatId"),
+                chat: title(&s(e, "chatId")).unwrap_or_default(),
                 state: s(e, "state"),
                 attempt: e["attempt"].as_u64().unwrap_or(0) as u32,
                 part: e["part"].as_u64().unwrap_or(0) as u32,
@@ -564,7 +571,7 @@ pub fn sample() -> AgentsData {
             Report { chat: "Inbox cleanup".into(), who: "Inbox".into(), ok: true, text: "Archived 41 newsletters, 2 drafts wait for your yes.".into(), origin: "Cloud".into(), at: now - 50 * 60_000, ..Default::default() },
         ],
         health: vec![
-            Health { run: "job:sample-Review new pull requests".into(), agent: "backend".into(), state: "retrying".into(), attempt: 2, until: iso(now + 20 * 60_000), reason: "The model was busy.".into(), place: "pc".into(), at: now, ..Default::default() },
+            Health { run: "job:sample-Review new pull requests".into(), agent: "backend".into(), chat: "Backend".into(), state: "retrying".into(), attempt: 2, until: iso(now + 20 * 60_000), reason: "The model was busy.".into(), place: "pc".into(), at: now, ..Default::default() },
             Health { run: "job:sample-Triage production errors".into(), agent: "research".into(), state: "needs_you".into(), reason: "Sentry asks you to sign in again".into(), place: "pc".into(), at: now, ..Default::default() },
         ],
         reminders_loaded: true,

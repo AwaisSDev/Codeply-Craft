@@ -214,11 +214,21 @@ pub fn approval(t: &Theme, id: &str, title: &str, detail: &str, answer: Option<&
 
 /// A transcript with its composer docked at the bottom, as a chat or an agent's page shows it.
 pub fn with_composer(s: &App, t: &Theme, chat: &str, who: &str, key: EditKey, target: Target, placeholder: &str, width: f32) -> El {
+    // A background run in this chat that is retrying, paused, kept going, moved to the cloud or
+    // needs you says so in one quiet line above the composer (agentsync.rs, run_health).
+    let health = s.data.extra.agents.chat_health(chat).map(|h| {
+        let ink = if matches!(h.state.as_str(), "needs_you" | "failed") { t.warn } else { t.dim };
+        row().key(format!("chat-health/{chat}")).w_full().px(12.0).py(7.0).gap(8.0).radius(10.0).center_y().fill(t.hover)
+            .child(crate::icons::ico_s(h.icon(), 14.0, ink))
+            .child(text(h.line()).font(crate::theme::ui(12.5, 400.0)).color(ink).truncate().grow(1.0).min_w(0.0))
+    });
+    let room = if health.is_some() { 44.0 } else { 0.0 };
     let dock = col().pin(Some(0.0), None, Some(0.0), Some(0.0)).px(24.0).pt(14.0).pb(18.0).items_center()
         .linear_gradient(std::f32::consts::PI, [(0.0, t.bg.alpha(0.0)), (0.35, t.bg), (1.0, t.bg)])
-        .child(el().w_full().max_w(width).child(composer(s, t, key, target, placeholder, false, false)));
+        .child(col().w_full().max_w(width).gap(8.0).children(health).child(composer(s, t, key, target, placeholder, false, false)));
+    let body = transcript(s, t, chat, who, width);
     el().w_full().h_full()
-        .child(transcript(s, t, chat, who, width))
+        .child(if room > 0.0 { col().w_full().h_full().pb(room).child(body) } else { body })
         .child(dock)
 }
 

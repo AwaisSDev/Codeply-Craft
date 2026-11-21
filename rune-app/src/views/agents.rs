@@ -284,6 +284,13 @@ fn agent_page(s: &App, t: &Theme, a: &Agent) -> El {
     row().key(format!("agent-page/{}", a.id)).w_full().h_full().child(centre).child(panel(s, t, a))
 }
 
+/// A loop's small action (Run now, Delete): quiet until the row is hovered.
+fn small_btn(t: &Theme, icon: &str, label: &str) -> El {
+    el().size(24.0, 24.0).radius(6.0).center().hover(t.active).role("button").label(label.to_owned()).help(label.to_owned())
+        .group_opacity(0.35, 1.0)
+        .child(ico_s(icon, 14.0, t.dim))
+}
+
 /// Where a loop runs: on this PC while Codeply is open, or (Always on) in the cloud too.
 fn runs_where(s: &App, a: &Agent, job: &str) -> String {
     let running = s.data.extra.agents.jobs.iter().any(|(id, on, _)| id == job && *on);
@@ -379,8 +386,8 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
     for l in mine {
         let (agent, name) = (a.id.clone(), l.name.clone());
         loops = loops.child(
-            row().w_full().px(8.0).py(8.0).gap(10.0).radius(8.0).center_y().hover(t.hover)
-                .child(col().grow(1.0).min_w(0.0).gap(4.0)
+            row().w_full().hover_group().px(8.0).py(8.0).gap(4.0).radius(8.0).center_y().hover(t.hover)
+                .child(col().grow(1.0).min_w(0.0).gap(4.0).mr(4.0)
                     .child(text(l.name.clone()).font(ui(13.5, 400.0)).color(t.text).truncate())
                     .child(match s.data.extra.agents.job_health(&l.id) {
                         Some(h) => text(h.line()).font(ui(12.0, 400.0)).color(health_ink(t, h)).truncate().min_w(0.0),
@@ -389,11 +396,11 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
                     .child(text(runs_where(s, a, &l.id)).font(ui(11.5, 400.0)).color(t.faint).truncate().min_w(0.0)))
                 .child({
                     let id = l.id.clone();
-                    crate::ui::ibtn(t, "arrow-right", "Run now").key(format!("loop-run/{}", l.id)).on_press_tx(move |s: &mut App, tx| { tx.settle(); s.run_loop(&id) })
+                    small_btn(t, "arrow-right", "Run now").key(format!("loop-run/{}", l.id)).on_press_tx(move |s: &mut App, tx| { tx.settle(); s.run_loop(&id) })
                 })
                 .child({
                     let id = l.id.clone();
-                    crate::ui::ibtn(t, "close", "Delete loop").key(format!("loop-delete/{}", l.id)).on_press(move |s: &mut App| s.cancel_loop(&id))
+                    small_btn(t, "trash", "Delete loop").key(format!("loop-delete/{}", l.id)).on_press(move |s: &mut App| s.cancel_loop(&id))
                 })
                 .child(toggle(t, format!("loop/{}/{}", a.id, l.name), l.on, &l.name)
                     .on_press(move |s: &mut App| s.toggle_loop(&agent, &name))),
