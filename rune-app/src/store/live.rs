@@ -51,6 +51,8 @@ enum Msg {
     Reminders(Value),
     /// The PC's time zone (`/ext/clock`).
     Clock(Value),
+    /// Installed plugins and the MCP servers the agent can reach (`/ext/plugins`).
+    Plugins(Value),
     /// Chat sync with the phone (`/ext/agentsync`).
     AgentSync(Value),
     /// Every skill (`/ext/skills`).
@@ -93,6 +95,8 @@ enum Msg {
     Status(String),
     /// Something to tell you (a change that didn't save), shown as a notice.
     Note(String),
+    /// A plugin change that didn't go through: why, and the lists as they are.
+    PluginsNote(String, Value),
     /// A change to a specialist that didn't save: why, and the specialists as the engine has them.
     SpecFailed(String, Option<Value>),
 }
@@ -423,6 +427,7 @@ impl LiveStore {
                     "specs" => c.get("/ext/agentsync/specialists").map(Msg::Specs),
                     "reminders" => c.get("/ext/reminders").map(Msg::Reminders),
                     "clock" => c.get("/ext/clock").map(Msg::Clock),
+                    "plugins" => c.get("/ext/plugins").map(Msg::Plugins),
                     "agentsync" => c.get("/ext/agentsync").map(Msg::AgentSync),
                     "skills" => c.get("/ext/skills").map(Msg::Skills),
                     "prs" => c.get("/ext/prs").map(Msg::Prs),
@@ -534,6 +539,11 @@ impl LiveStore {
                 self.refresh("specs");
             }
             "agentsync_changed" => self.refresh("agentsync"),
+            // A plugin on or off brings its skills and servers with it.
+            "plugins_changed" => {
+                self.refresh("plugins");
+                self.refresh("skills");
+            }
             "reminders_changed" => {
                 self.refresh("reminders");
                 // The time zone may have changed (travel, summer time).
@@ -1057,6 +1067,35 @@ fn tool_words(name: &str) -> String {
 
 /// A stored message as the transcript shows it.
 /// A stored message as transcript items: a message sent with files shows them above it.
+/// Integrations > Plugins and MCP servers from `/ext/plugins` (sidecar/ext-plugins.mjs).
+fn plugins_from(snap: &mut Snapshot, v: &Value) {
+    let st = |x: &Value, k: &str| x[k].as_str().unwrap_or_default().to_owned();
+    if let Some(list) = v["plugins"].as_array() {
+        snap.extra.plugins = list.iter().map(|p| {
+            let (skills, commands) = (p["skills"].as_u64().unwrap_or(0), p["commands"].as_u64().unwrap_or(0));
+            let mut note = st(p, "description");
+            if note.is_empty() {
+                let mut has = Vec::new();
+                if skills > 0 { has.push(format!("{skills} skill{}", if skills == 1 { "" } else { "s" })); }
+                if commands > 0 { has.push(format!("{commands} command{}", if commands == 1 { "" } else { "s" })); }
+                note = if has.is_empty() { "A plugin".into() } else { has.join(", ") };
+            }
+            let by = st(p, "author");
+            crate::model::Plugin {
+                id: st(p, "name"), name: st(p, "name"), note,
+                by: if by.is_empty() { if p["scope"] == "project" { "this project".into() } else { "you".into() } } else { by },
+                icon: "sparkle", installed: p["enabled"].as_bool().unwrap_or(true), local: true,
+            }
+        }).filter(|p| !p.id.is_empty()).collect();
+    }
+    if let Some(list) = v["mcp"].as_array() {
+        snap.extra.mcp = list.iter().map(|m| crate::model::McpServer {
+            name: st(m, "name"), note: st(m, "runs"), tools: 0, on: m["on"].as_bool().unwrap_or(true),
+            from: st(m, "from"), switchable: m["canToggle"].as_bool().unwrap_or(false),
+        }).filter(|m| !m.name.is_empty()).collect();
+    }
+}
+
 pub fn items_from(m: &Value) -> Vec<ThreadItem> {
     let files: Vec<String> = m["files"].as_array().map_or_else(Vec::new, |a| a.iter().filter_map(|f| f.as_str().map(str::to_owned)).collect());
     let mut out = Vec::new();
@@ -1235,8 +1274,12 @@ impl Store for LiveStore {
         // really does something.
         snap.extra.agents = Default::default();
         snap.extra.loops.clear();
-        // Your name comes from the account (signed out: "You").
+        // Your name comes from the account (signed out: "You"). Plugins, MCP servers and the
+        // home screen's suggestions are the engine's too: none of the sample's.
         snap.user.clear();
+        snap.extra.plugins.clear();
+        snap.extra.mcp.clear();
+        snap.extra.suggestions.clear();
         for a in &mut snap.team {
             a.state = AgentState::Idle;
             a.action.clear();
@@ -1277,7 +1320,7 @@ impl Store for LiveStore {
             }
             Some(Msg::Status(format!("can't reach the engine: {last}")))
         });
-        for what in ["account", "apps", "memory", "files", "jobs", "models-sync", "team", "prs", "agents", "skills", "specs", "reminders", "clock", "agentsync"] {
+        for what in ["account", "apps", "memory", "files", "jobs", "models-sync", "team", "prs", "agents", "skills", "specs", "reminders", "clock", "agentsync", "plugins"] {
             self.refresh(what);
         }
         // The event stream, for the life of the app, reconnecting with a growing pause.
@@ -1394,6 +1437,7 @@ impl Store for LiveStore {
                         self.refresh("prs");
                         // A project's plugins can bring skills of their own.
                         self.refresh("skills");
+                        self.refresh("plugins");
                     }
                     None => snap.extra.team_note = Some(v["error"].as_str().unwrap_or("Couldn't open that folder.").to_owned()),
                 },
@@ -1457,6 +1501,7 @@ impl Store for LiveStore {
                         snap.extra.agents.reminders_note = e.to_owned();
                     }
                 }
+                Msg::Plugins(v) => plugins_from(snap, &v),
                 Msg::Clock(v) => {
                     if let Some(m) = v["offsetMin"].as_i64() {
                         crate::agentsync::set_utc_offset(m);
@@ -1577,6 +1622,10 @@ impl Store for LiveStore {
                     self.named.insert(name, id);
                 }
                 Msg::Note(n) => snap.extra.team_note = Some(n),
+                Msg::PluginsNote(n, v) => {
+                    snap.extra.team_note = Some(n);
+                    plugins_from(snap, &v);
+                }
                 Msg::SpecFailed(n, v) => {
                     snap.extra.team_note = Some(n);
                     if let Some(v) = v {
@@ -1784,6 +1833,37 @@ impl Store for LiveStore {
             }
             Some(Msg::Reminders(v))
         });
+    }
+
+    fn plugin_op(&mut self, op: super::PluginOp, snap: &mut Snapshot) {
+        use super::PluginOp;
+        let (path, body) = match &op {
+            PluginOp::Plugin(name, on) => ("/ext/plugins/toggle", json!({ "name": name, "enabled": on })),
+            PluginOp::Mcp(name, on) => ("/ext/plugins/mcp-toggle", json!({ "name": name, "enabled": on })),
+        };
+        // Shown at once; the engine's answer carries both lists as they are now.
+        match op {
+            PluginOp::Plugin(id, on) => {
+                if let Some(p) = snap.extra.plugins.iter_mut().find(|p| p.id == id) {
+                    p.installed = on;
+                }
+            }
+            PluginOp::Mcp(name, on) => {
+                if let Some(m) = snap.extra.mcp.iter_mut().find(|m| m.name == name) {
+                    m.on = on;
+                }
+            }
+        }
+        self.spawn(move |c| Some(match c.post(path, body) {
+            Ok(v) => {
+                if v["ok"] == false {
+                    let why = v["error"].as_str().unwrap_or("That didn't work.").to_owned();
+                    return Some(Msg::PluginsNote(why, v));
+                }
+                Msg::Plugins(v)
+            }
+            Err(e) => Msg::Note(format!("The engine didn't answer: {e}")),
+        }));
     }
 
     fn agents_op(&mut self, op: crate::subagents::Op, _snap: &mut Snapshot) {
@@ -2343,6 +2423,25 @@ mod tests {
         assert!(matches!(&items[1], ThreadItem::Team { text, agents } if text == "3 messages with" && agents == &["Joseph".to_owned(), "Testing".to_owned()]));
         // The step for the ask itself isn't shown twice.
         assert!(item_from_event(&json!({ "type": "tool_end", "name": "dsh:ask_bot", "summary": "Asked Joseph" })).is_none());
+    }
+
+    #[test]
+    fn plugins_and_mcp_servers_come_from_the_engine() {
+        let mut snap = mock::sample();
+        plugins_from(&mut snap, &json!({
+            "plugins": [
+                { "name": "release-notes", "description": "", "author": "", "enabled": false, "scope": "user", "skills": 1, "commands": 2 }
+            ],
+            "mcp": [
+                { "name": "filesystem", "runs": "npx server-filesystem .", "from": "yours", "on": true, "canToggle": true },
+                { "name": "github-api", "runs": "https://api.example/mcp", "from": "a plugin", "on": true, "canToggle": false }
+            ]
+        }));
+        let p = &snap.extra.plugins[0];
+        assert_eq!((p.note.as_str(), p.by.as_str(), p.installed, p.local), ("1 skill, 2 commands", "you", false, true));
+        assert_eq!(snap.extra.mcp.len(), 2);
+        assert!(snap.extra.mcp[0].switchable && !snap.extra.mcp[1].switchable);
+        assert_eq!(snap.extra.mcp[1].from, "a plugin");
     }
 
     #[test]

@@ -28,6 +28,13 @@ pub enum Target {
     AgentSession { agent: String, title: String },
 }
 
+/// A plugin or an MCP server switched on or off: (name, on).
+#[derive(Clone, Debug, PartialEq)]
+pub enum PluginOp {
+    Plugin(String, bool),
+    Mcp(String, bool),
+}
+
 /// What Integrations > Apps asks the catalogue for: a page of apps matching `text` in `category`,
 /// starting at `offset` (a page after the first is added to the ones shown).
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -123,6 +130,21 @@ pub trait Store {
     /// (`sidecar/ext-reminders.mjs`, `sidecar/ext-agentsync.mjs`).
     fn sync_op(&mut self, op: crate::agentsync::SyncOp, snap: &mut Snapshot) {
         crate::agentsync::apply_sample(&op, snap);
+    }
+    /// Turns a plugin, or one of your MCP servers, on or off (`sidecar/ext-plugins.mjs`).
+    fn plugin_op(&mut self, op: PluginOp, snap: &mut Snapshot) {
+        match op {
+            PluginOp::Plugin(id, on) => {
+                if let Some(p) = snap.extra.plugins.iter_mut().find(|p| p.id == id) {
+                    p.installed = on;
+                }
+            }
+            PluginOp::Mcp(name, on) => {
+                if let Some(m) = snap.extra.mcp.iter_mut().find(|m| m.name == name) {
+                    m.on = on;
+                }
+            }
+        }
     }
     /// Messages, stops or removes a background agent, or posts on its team channel.
     fn agents_op(&mut self, _op: crate::subagents::Op, _snap: &mut Snapshot) {}

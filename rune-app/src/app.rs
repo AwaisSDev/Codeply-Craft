@@ -759,9 +759,9 @@ impl App {
     /// Whether a plugin, an app or an MCP server is on; flips it (sample data until the engine
     /// has an API for them).
     pub fn toggle_plugin(&mut self, id: &str) {
-        if let Some(p) = self.data.extra.plugins.iter_mut().find(|p| p.id == id) {
-            p.installed = !p.installed;
-        }
+        let Some(on) = self.data.extra.plugins.iter().find(|p| p.id == id).map(|p| !p.installed) else { return };
+        let op = crate::store::PluginOp::Plugin(id.to_owned(), on);
+        self.with_store(|st, d| st.plugin_op(op, d));
     }
 
     /// Connects an app (its sign-in opens in your browser), or disconnects it.
@@ -776,9 +776,13 @@ impl App {
     }
 
     pub fn toggle_mcp(&mut self, name: &str) {
-        if let Some(m) = self.data.extra.mcp.iter_mut().find(|m| m.name == name) {
-            m.on = !m.on;
+        let Some(m) = self.data.extra.mcp.iter().find(|m| m.name == name) else { return };
+        if !m.switchable {
+            self.notice = Some(format!("{} comes from {}: switch that off instead.", m.name, m.from));
+            return;
         }
+        let op = crate::store::PluginOp::Mcp(name.to_owned(), !m.on);
+        self.with_store(|st, d| st.plugin_op(op, d));
     }
 
 

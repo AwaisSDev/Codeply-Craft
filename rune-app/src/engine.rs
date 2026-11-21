@@ -41,6 +41,8 @@ const EXTENSIONS: &[(&str, &str)] = &[
     ("ext-agentsync.mjs", include_str!("../sidecar/ext-agentsync.mjs")),
     // Saving a specialist from the editor, on a path ext-agents can't swallow.
     ("ext-specs.mjs", include_str!("../sidecar/ext-specs.mjs")),
+    // Integrations > Plugins and MCP servers, from the engine's own lists.
+    ("ext-plugins.mjs", include_str!("../sidecar/ext-plugins.mjs")),
     // The PC's time zone, for reminder and health times.
     ("ext-clock.mjs", include_str!("../sidecar/ext-clock.mjs")),
     ("ext-prs.mjs", include_str!("../sidecar/ext-prs.mjs")),

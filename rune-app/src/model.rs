@@ -416,6 +416,9 @@ pub struct Plugin {
     /// An icon name (interface icons) or `app-<slug>` for an app's logo.
     pub icon: &'static str,
     pub installed: bool,
+    /// Installed on this PC (the engine's list): a switch turns it on or off, instead of the
+    /// catalogue's Install.
+    pub local: bool,
 }
 
 /// An MCP server the engine can talk to.
@@ -423,8 +426,13 @@ pub struct Plugin {
 pub struct McpServer {
     pub name: String,
     pub note: String,
+    /// How many tools it has, when known (0: not asked yet).
     pub tools: u32,
     pub on: bool,
+    /// Where it comes from ("yours", "a plugin", ...), when the engine says; and whether its
+    /// switch works here (only your own servers can be switched).
+    pub from: String,
+    pub switchable: bool,
 }
 
 /// A skill: instructions the engine follows when a task needs them (a SKILL.md, from
