@@ -33,6 +33,9 @@ const section = (name) => { console.log(`\n${name}`); return !only || name.toLow
 const TZ = 'Asia/Karachi';
 // Friday 16 Oct 2026, 18:00 in Karachi (UTC+5).
 const NOW = Date.UTC(2026, 9, 16, 13, 0, 0);
+// The fixtures use fixed October dates; code that falls back to Date.now() would see them as the
+// past once the real date moves on, so the clock in this file starts at NOW and keeps ticking.
+{ const real = Date.now.bind(Date); const off = NOW - real(); Date.now = () => real() + off; }
 const MIN = 60000; const HOUR = 3600000; const DAY = 86400000;
 const key = crypto.randomBytes(32);
 const open = (name, k = key) => LS.openLifeStore({ file: path.join(tmp, `${name}.db`), key: k, now: () => NOW });
@@ -257,7 +260,9 @@ if (section('Triggers')) {
   s.nudgeFeedback(n.id, 'later');
   const later = T.due({ store: s, snap: L.snapshot({ now: now + 61 * MIN, tz: TZ }), settings, now: now + 61 * MIN });
   check('Not now comes back once, an hour later (if it still applies)', !later.some((c) => c.key === first.key));
-  const quietSettings = { ...settings, quiet: { on: true, from: '12:00', to: '14:00' } };
+  const quietSettings = { ...settings, quiet: { on: true, from: hhmm(now - HOUR), to: hhmm(now + HOUR) } };
+  // inQuietHours reads the machine's local clock, so build the window around `now` there.
+  function hhmm(t) { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
   check('quiet hours keep everything but leaving', T.due({ store: open('trig2'), snap, settings: quietSettings, now }).length === 0 || T.due({ store: s, snap, settings: quietSettings, now: now + 30 * MIN }).every((c) => c.trigger === 'leaving'));
   check('a zero budget sends nothing', T.due({ store: s, snap, settings: { ...settings, perDay: 0 }, now: now + 2 * HOUR }).length === 0);
   check('Stop these turns a trigger off', T.due({ store: s, snap, settings: { ...settings, triggers: { email: false, deadline: false, watched: false, meeting: false, leaving: false } }, now: now + 2 * HOUR }).length === 0);

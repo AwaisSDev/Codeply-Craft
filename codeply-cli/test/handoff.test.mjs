@@ -163,7 +163,7 @@ async function cloudRun(ws, gh, claimed, sid, { steps, onStep = async () => {} }
   return { out, seen, dir };
 }
 
-test('the PC is killed mid-task and Craft Cloud carries on from the same step', async () => {
+test('the PC is killed mid-task and the cloud carries on from the same step', async () => {
   const lease = await leaseServer();
   const ws = workspace('kill');
   const gh = fakeGithub();
@@ -271,7 +271,8 @@ test('the PC comes back: the cloud stops between steps and everything lands on t
     assert.equal(r.state.side, 'cloud');
     assert.deepEqual(r.state.steps, ['wrote step1.txt', 'wrote step2.txt', 'wrote step3.txt', 'edited step1.txt']);
     const prompt = continuationPrompt(r.state, 'pc');
-    assert.match(prompt, /carried on in Craft Cloud while the PC was offline/);
+    // The product is one name now (Codeply); the cloud is just "the cloud" in what the model reads.
+    assert.match(prompt, /carried on in the cloud while the PC was offline/);
     assert.match(prompt, /4\. edited step1\.txt/);
 
     // And the PC takes the lease back: one writer again.
@@ -295,7 +296,7 @@ test('an ordinary cloud run is unchanged (no handoff state, no WIP branch)', asy
   assert.equal(out.status, 'done');
   assert.equal(out.result.answer, 'It is a one-file project.');
   assert.equal(out.handoff, undefined);
-  assert.match(seen.userMessage, /^What is in here\?\n\n\(You are running unattended in Craft Cloud/);
+  assert.match(seen.userMessage, /^What is in here\?\n\n\(You are running unattended in the cloud/);
   assert.equal(seen.todos, undefined);
   assert.equal(gh.read(HANDBACK.done('chatplain')), null);
 });

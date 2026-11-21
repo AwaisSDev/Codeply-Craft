@@ -121,6 +121,10 @@ function taskView(t, p) {
     progress: t.progress || '', error: t.error || null, startedAt: t.startedAt, finishedAt: t.finishedAt || null,
     files: r.files || [], stats: r.stats || [], branch: r.branch || null, answer: r.answer || '', pulledAt: t.pulledAt || null, conflicts: t.conflicts || [],
     remote: !!t.remote, queued: !!t.queued, ask: t.ask || null,
+    // Crash recovery: which try this is, "Retrying (attempt 2)" while a run starts again, what was skipped and waits for the
+    // person ("Needs you"), a struggling model, and the notice for a finished task ({ kind: done | needs_you | failed, title, body }).
+    attempt: t.attempt || 1, retry: t.retry || null, needsYou: t.needsYou || [], health: t.health || null, parked: t.parked || null,
+    wip: t.wip || (r.wip || null), notify: t.notify || null,
     kind: t.kind || (p && p.kind === 'repo' ? 'repo' : 'mirror'),
     base: (r.merged && r.merged.base) || (p && p.base) || 'main',
     merged: r.merged || null,

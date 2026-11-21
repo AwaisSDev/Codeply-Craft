@@ -25,6 +25,9 @@ import os from 'os';
 import { git } from './github-agent.mjs';
 import { stageWorkingTree, initMirrorGit, WORKFLOW_PATH, BOT, authFor } from './cloud.mjs';
 
+// Cloud runs that are not handoffs keep their own WIP too: craft/wip-task-<id>.
+export const RUNNER_WIP_EVERY_MS = 60000;
+
 export const STATE_FILE = '.craft-handoff.json';
 export const wipBranch = (sid) => `craft/wip-${String(sid).replace(/[^A-Za-z0-9_-]/g, '')}`;
 export const HANDBACK = {
@@ -89,15 +92,18 @@ const TODO_MARK = { done: '[x]', in_progress: '[~]', dropped: '[-]', pending: '[
 /**
  * The message the side that carries on is given: the original request, what is
  * already done, and the todo list. `to`: 'cloud' (the PC went away), 'pc'
- * (back from the cloud) or 'self' (the PC carries on after its own pause or crash).
+ * (back from the cloud) or 'self' (the PC carries on after its own pause or crash) or 'retry' (a cloud
+ * run that died and was started again from its last save).
  */
 export function continuationPrompt(state, to = 'cloud') {
   const why = to === 'cloud'
     ? "This task was already running on the user's PC, which went offline (power cut, crash or lost connection). You are carrying on from where it stopped."
+    : to === 'retry'
+      ? 'This task was already running in the cloud and was cut off (the run crashed, ran out of time or hit an error). You are carrying on from the last save.'
     : to === 'pc'
       ? 'This task carried on in the cloud while the PC was offline. The PC is back and you are carrying on from where the cloud stopped.'
       : 'This task was cut off on this PC (lost connection, or Codeply closed). You are carrying on from the last save.';
-  const lines = [state.userMessage, '', '---', `[Handoff] ${why}`, 'The files on disk already include every change from the steps below.'];
+  const lines = [state.userMessage, '', '---', `[${to === 'retry' ? 'Resume' : 'Handoff'}] ${why}`, 'The files on disk already include every change from the steps below.'];
   if (state.steps.length) lines.push('', 'Steps already done (do not redo them):', ...state.steps.map((s, i) => `${i + 1}. ${s}`));
   else lines.push('', 'No steps had finished yet.');
   if (state.todos.length) lines.push('', 'Todo list (keep it up to date with the todo tool):', ...state.todos.map((t) => `${TODO_MARK[t.status] || '[ ]'} ${t.text}`));
@@ -129,6 +135,40 @@ export async function pushWip({ cwd, home, token, repo, sessionId, state, parent
   const url = remoteUrl || `${serverUrl.replace(/\/$/, '')}/${repo}.git`;
   await git(cwd, ['--git-dir', s.gitDir, 'push', '-q', ...(force ? ['--force'] : []), url, `${sha}:refs/heads/${wipBranch(sessionId)}`], { auth: token ? authFor(token, serverUrl) : undefined });
   return { sha, pushed: true };
+}
+
+/**
+ * A WIP checkpoint of a cloud runner's checkout, for runs that are not
+ * handoffs (those commit on HEAD, see commitWip in cloud.mjs). It goes through
+ * a throwaway index, so the checkout's HEAD, index and the final commit are
+ * untouched, and is pushed to craft/wip-<key> with the state next to it.
+ * Returns { sha, pushed, key }: pass `key` back as `last` and nothing is pushed
+ * until the files or the steps change. `force` only for the first push of a
+ * run (the branch is private to the task).
+ */
+export async function pushRunnerWip({ cwd, token, repo, key, state, parent = null, last = null, force = false, serverUrl = 'https://github.com', remoteUrl }) {
+  const idx = path.join(os.tmpdir(), `craft-wip-${process.pid}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`);
+  const env = { GIT_INDEX_FILE: idx };
+  const G = (args, opts = {}) => git(cwd, args, { ...opts, env });
+  try {
+    const head = await git(cwd, ['rev-parse', '--verify', '-q', 'HEAD']).catch(() => null);
+    if (head) await G(['read-tree', head]);
+    // Never the agent's secrets or its dependency folders; the workflow file stays as it is on HEAD.
+    await G(['add', '-A', '--', '.', ':(exclude).codeply', `:(exclude)${WORKFLOW_PATH}`, ':(exclude,glob)**/.env', ':(exclude,glob)**/node_modules/**']);
+    const filesTree = await G(['write-tree']);
+    const marker = `${filesTree}:${state.steps.length}:${state.steps[state.steps.length - 1] || ''}:${state.todos.length}`;
+    if (last && last === marker && parent) return { sha: parent, pushed: false, key: marker };
+    const blob = await G(['hash-object', '-w', '--stdin'], { input: JSON.stringify({ ...state, savedAt: Date.now() }) });
+    await G(['update-index', '--add', '--cacheinfo', `100644,${blob},${STATE_FILE}`]);
+    const tree = await G(['write-tree']);
+    const base = parent || head;
+    const sha = await git(cwd, [...BOT, 'commit-tree', tree, ...(base ? ['-p', base] : []), '-m', `Craft WIP ${key} (cloud, ${state.steps.length} steps)`], { env });
+    const url = remoteUrl || `${serverUrl.replace(/\/$/, '')}/${repo}.git`;
+    await git(cwd, ['push', '-q', ...(force ? ['--force'] : []), url, `${sha}:refs/heads/${wipBranch(key)}`], { auth: token ? authFor(token, serverUrl) : undefined });
+    return { sha, pushed: true, key: marker };
+  } finally {
+    try { fs.unlinkSync(idx); } catch {}
+  }
 }
 
 /** True when `tree` matches `parent`'s tree apart from the state file's savedAt. */

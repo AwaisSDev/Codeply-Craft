@@ -49,7 +49,9 @@ function localTime(base, d, hhmm) {
   const [h, m] = hhmm.split(':').map(Number);
   return new RealDate(base.y, base.m - 1, base.d + d, h, m, 0).getTime();
 }
-function setClock(t) { const want = t - RealDate.now(); if (want > offset) offset = want; }
+// The first call may move the clock backwards: persona calendars are fixed dates, and once the
+// real date passes them every event would be "in the past" (no dinner in the prompt, no leaving nudge).
+function setClock(t, first = false) { const want = t - RealDate.now(); if (first || want > offset) offset = want; }
 const DAYNAME = (t) => new RealDate(t).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
 // ─── The model: a bridge to an AI agent, or a real endpoint ─────────────────
@@ -69,7 +71,8 @@ function modelServer({ bridgeDir, real, log }) {
       const endMark = sys.indexOf('\nCONNECTED SERVICES', start);
       const end = endMark > start ? endMark : sys.indexOf('\nPROJECT CONTEXT', start);
       if (end > start) {
-        if (!toolRefWritten) { fs.writeFileSync(path.join(bridgeDir, 'tools.md'), sys.slice(start, end)); toolRefWritten = true; }
+        // Only the file bridge needs it; with a real model this render is just for the log (no stray file in the repo).
+        if (!toolRefWritten && bridgeDir) { fs.writeFileSync(path.join(bridgeDir, 'tools.md'), sys.slice(start, end)); toolRefWritten = true; }
         body = `${sys.slice(0, start)}[TOOL REFERENCE: exactly the text in tools.md, which you have read]\n${sys.slice(end)}`;
       }
     }
@@ -289,7 +292,7 @@ export async function runPersona(persona, { out, bridgeDir, real }) {
   const transcript = [];
   const log = (e) => { transcript.push({ at: Date.now(), ...e }); fs.appendFileSync(path.join(out, 'events.jsonl'), `${JSON.stringify({ at: Date.now(), ...e })}\n`); };
   const base = persona.start;
-  setClock(localTime(base, 0, '06:00'));
+  setClock(localTime(base, 0, '06:00'), true);
 
   // A stand-in for Electron: just enough for crew-main.js.
   const handlers = new Map(); const listeners = new Map();
@@ -437,7 +440,12 @@ export async function runPersona(persona, { out, bridgeDir, real }) {
   // ─── What a step can do ───────────────────────────────────────────────────
 
   const botByName = (name) => B.listBots().find((b) => b.name.toLowerCase() === String(name).toLowerCase());
-  const thread = (name) => { const b = botByName(name); return b ? (JSON.parse(fs.readFileSync(path.join(home, 'appdata', 'Codeply Crew', 'crew-store.json'), 'utf8')).threads[b.id] || { messages: [] }).messages : []; };
+  // Crew keys threads by chat id (`botId~suffix`, the first chat may be the bare botId), so read every chat of the bot.
+  const thread = (name) => {
+    const b = botByName(name); if (!b) return [];
+    const th = JSON.parse(fs.readFileSync(path.join(home, 'appdata', 'Codeply Crew', 'crew-store.json'), 'utf8')).threads;
+    return Object.keys(th).filter((id) => id === b.id || id.startsWith(`${b.id}~`) || th[id].botId === b.id).flatMap((id) => th[id].messages || []);
+  };
   const modelCalls = () => transcript.filter((e) => e.kind === 'model');
 
   async function settle(label) {
@@ -491,6 +499,10 @@ export async function runPersona(persona, { out, bridgeDir, real }) {
   async function email(m) {
     gm.g.deliver(m);
     log({ kind: 'email_in', from: m.from, subject: m.subject, body: short(m.body, 300) });
+    // The Life Gmail poller runs every few minutes in the app; without this the sender has no contact
+    // card (and no address for a bot to reply to) until the next tick step.
+    lifeDesktop.poke('gmail');
+    await sleep(1500);
     await pollMail();
     await settle(`email ${m.subject}`);
   }

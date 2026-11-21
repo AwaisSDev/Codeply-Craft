@@ -26,7 +26,7 @@ import crypto from 'crypto';
 import { createRequire } from 'module';
 import { runAgent } from './agent.mjs';
 import { git, ciApprove, routeFromEnv } from './github-agent.mjs';
-import { takeStateFile, continuationPrompt, recordEvent as recordHandoff, wipBranch, HANDBACK, STATE_FILE } from './handoff.mjs';
+import { takeStateFile, continuationPrompt, recordEvent as recordHandoff, wipBranch, newRunState, pushRunnerWip, RUNNER_WIP_EVERY_MS, HANDBACK, STATE_FILE } from './handoff.mjs';
 
 const require = createRequire(import.meta.url);
 const nacl = require('tweetnacl');
@@ -79,10 +79,26 @@ on:
         required: false
         default: ''
         type: string
+      attempt:
+        description: Which try this is (1 = the first; a run that died is started again, twice at most)
+        required: false
+        default: '1'
+        type: string
+      wip:
+        description: A branch with the saved work of a run that died (craft/wip-task-<id>)
+        required: false
+        default: ''
+        type: string
+      lease:
+        description: Lets the run renew its handoff lease (set by the Codeply watchdog)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
   checks: write
+  actions: write
 
 concurrency:
   group: craft-\${{ inputs.handoff }}\${{ inputs.session_id || inputs.task_id }}
@@ -95,7 +111,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: \${{ inputs.handoff == 'resume' && format('craft/wip-{0}', inputs.session_id) || '' }}
+          ref: \${{ inputs.wip || (inputs.handoff == 'resume' && format('craft/wip-{0}', inputs.session_id)) || '' }}
           fetch-depth: 1
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -120,6 +136,49 @@ jobs:
           CRAFT_TASK_ID: \${{ inputs.task_id }}
           CRAFT_SESSION_ID: \${{ inputs.session_id }}
           CRAFT_HANDOFF: \${{ inputs.handoff }}
+          CRAFT_ATTEMPT: \${{ inputs.attempt }}
+          CRAFT_WIP: \${{ inputs.wip }}
+          CRAFT_LEASE: \${{ inputs.lease }}
+      # The runner stops its agent about 8 minutes before the 60 minute limit and starts the
+      # task again from its last save. This covers what it cannot: a crash, a killed machine
+      # or the hard timeout. It reads the task's status file, so a run that already reported
+      # (done, failed for good, or already restarted) or that you cancelled is left alone.
+      - name: Start again if the run died
+        if: failure() || cancelled()
+        env:
+          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          TASK_ID: \${{ inputs.task_id }}
+          SESSION_ID: \${{ inputs.session_id }}
+          ATTEMPT: \${{ inputs.attempt }}
+          PROMPT: \${{ inputs.prompt }}
+          MODE: \${{ inputs.mode }}
+          HANDOFF: \${{ inputs.handoff }}
+          LEASE: \${{ inputs.lease }}
+          BASE: \${{ github.ref_name }}
+        run: |
+          attempt="\${ATTEMPT:-1}"
+          case "$attempt" in ''|*[!0-9]*) attempt=1 ;; esac
+          raw() { gh api -H "Accept: application/vnd.github.raw" "repos/$GITHUB_REPOSITORY/contents/$1?ref=craft-sessions" 2>/dev/null || echo '{}'; }
+          doc="$(raw "tasks/$TASK_ID.json")"
+          status="$(echo "$doc" | jq -r '.status // "none"' 2>/dev/null || echo none)"
+          if [ -n "$(raw "cancel/$TASK_ID.json" | jq -r '.at // empty' 2>/dev/null)" ]; then echo "Cancelled on purpose, not starting again."; exit 0; fi
+          case "$status" in done|failed|retrying) echo "The run already reported ($status)."; exit 0 ;; esac
+          now_ms="$(( $(date +%s) * 1000 ))"
+          next="$((attempt + 1))"
+          sha="$(gh api "repos/$GITHUB_REPOSITORY/contents/tasks/$TASK_ID.json?ref=craft-sessions" --jq .sha 2>/dev/null || true)"
+          save() {
+            body="$(echo "$doc" | jq -c --arg id "$TASK_ID" --argjson at "$now_ms" --argjson next "$next" "$1" | base64 -w0)"
+            if [ -n "$sha" ]; then gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/tasks/$TASK_ID.json" -f message="Craft task $TASK_ID: $2" -f branch=craft-sessions -f content="$body" -f sha="$sha" >/dev/null || true
+            else gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/tasks/$TASK_ID.json" -f message="Craft task $TASK_ID: $2" -f branch=craft-sessions -f content="$body" >/dev/null || true; fi
+          }
+          wip="craft/wip-task-$TASK_ID"
+          if ! gh api "repos/$GITHUB_REPOSITORY/branches/$wip" >/dev/null 2>&1; then wip=""; fi
+          if [ "$attempt" -ge 3 ]; then
+            save '. + {id:$id, status:"failed", error:"The cloud run stopped before it finished, and starting it again twice did not help.", updatedAt:$at, notify:{kind:"failed", title:"Your cloud task did not finish", body:"It stopped before it finished, and starting it again twice did not help. Your work so far is saved on a craft/wip- branch.", at:$at}}' "failed"
+            exit 0
+          fi
+          save '. + {id:$id, status:"retrying", attempt:$next, retry:{attempt:$next, of:3, reason:"The run stopped before it finished.", at:$at}, updatedAt:$at}' "retrying"
+          gh workflow run craft-cloud.yml --ref "$BASE" -f prompt="$PROMPT" -f mode="$MODE" -f task_id="$TASK_ID" -f session_id="$SESSION_ID" -f handoff="$HANDOFF" -f attempt="$next" -f wip="$wip" -f lease="$LEASE"
 `;
 
 // Never mirrored, whatever .gitignore says.
@@ -580,7 +639,7 @@ export async function loadCloudConnections({ env = process.env, fetchImpl = fetc
 }
 
 // Bumped when CLOUD_WORKFLOW changes, so repos set up earlier get the new file once.
-export const WORKFLOW_REV = 4;
+export const WORKFLOW_REV = 5;
 
 /**
  * One-click setup. With `target: 'repo'` (default when the project has a GitHub
@@ -693,7 +752,7 @@ export async function startCloudRun({ cwd, token, prompt, mode = 'Build', sessio
   } else {
     baseSha = (await pushSnapshot({ cwd, token, home, serverUrl, remoteUrl })).sha;
   }
-  const task = { id: newTaskId(), prompt, mode, sessionId: String(sessionId || ''), baseSha, repo: p.repo, status: 'starting', startedAt: startedAt || Date.now() };
+  const task = { id: newTaskId(), prompt, mode, sessionId: String(sessionId || ''), baseSha, repo: p.repo, status: 'starting', attempt: 1, startedAt: startedAt || Date.now() };
   const b = cleanBot(bot);
   const extra = { ...(b ? { bot: b } : {}), ...(cleanKind(kind) === 'task' ? { kind: 'task' } : {}) };
   if (b) task.bot = { name: b.name };
@@ -745,22 +804,82 @@ export async function setCloudPermission({ cwd, token, permission, home = defaul
   return value;
 }
 
-export async function cloudRunStatus({ cwd, taskId, token, home = defaultHome(), apiUrl, fetchImpl, retryMs = 3000 }) {
+/** A running task's status file untouched this long, with its workflow run over: the runner died. */
+const STALE_DOC_MS = 4 * 60 * 1000;
+/** A task marked "retrying" that the new run never picked up. */
+const STALE_RETRY_MS = 15 * 60 * 1000;
+
+/** Start a task's workflow again (a poller's fallback for a runner that died without leaving a verdict). */
+async function redispatch(api, task, base, attempt, wip) {
+  await api('POST', `/repos/${task.repo}/actions/workflows/${WORKFLOW_FILE}/dispatches`, { ref: base || 'main', inputs: {
+    prompt: task.prompt, mode: task.mode, task_id: task.id, session_id: task.sessionId || '', attempt: String(attempt), handoff: '', wip: wip || '', lease: '',
+  } });
+}
+
+const retryText = (attempt) => `Retrying (attempt ${attempt})`;
+
+export async function cloudRunStatus({ cwd, taskId, token, home = defaultHome(), apiUrl, fetchImpl, retryMs = 3000, notifyImpl }) {
   const task = getTask(cwd, taskId, home);
   if (!task) throw new Error('Unknown cloud task.');
   if (task.status === 'done' || task.status === 'failed' || task.status === 'cancelled') return task;
   const api = githubApi({ token, apiUrl, fetchImpl });
   const next = { ...task };
+  const base = (getProject(cwd, home) || {}).base || 'main';
   const doc = await readTaskDoc(api, task.repo, task.id);
   if (doc) {
     const { events = [], status, ...rest } = doc;
     if (doc.runId) { next.runId = doc.runId; next.runUrl = `https://github.com/${task.repo}/actions/runs/${doc.runId}`; }
+    if (doc.attempt) next.attempt = doc.attempt;
+    next.needsYou = Array.isArray(doc.needsYou) ? doc.needsYou : [];
+    next.health = doc.health || null;
+    next.parked = doc.parked || null;
+    next.wip = doc.wip || null;
+    let dead = null;
     if (status === 'done' || status === 'failed') {
-      const { id: _i, startedAt: _s, updatedAt: _u, runId: _r, ...result } = rest;
-      Object.assign(next, { status, result, error: result.error || null, finishedAt: Date.now(), queued: false });
-    } else next.status = 'running';
-    // a risky action waiting for the person's OK (answerCloudAsk)
+      const { id: _i, startedAt: _s, updatedAt: _u, runId: _r, attempt: _a, maxAttempts: _m, needsYou: _n, health: _h, parked: _p, wip: _w, notify: _y, retry: _t, ...result } = rest;
+      Object.assign(next, { status, result, error: result.error || null, finishedAt: Date.now(), queued: false, retry: null, progress: '' });
+      // The runner's push may not have gone out (no usage key): this PC raises it, once.
+      if (doc.notify) {
+        next.notify = doc.notify;
+        if (!doc.notify.pushed && !task.notifiedAt) {
+          next.notifiedAt = Date.now();
+          const sent = await (notifyImpl || ((n) => deliverNotice({ notice: n, fetchImpl })))(doc.notify).catch(() => false);
+          if (!sent) next.notifiedAt = null; // signed out: nothing was sent, and a finished task is not polled again
+        } else if (doc.notify.pushed) next.notifiedAt = task.notifiedAt || Date.now();
+      }
+    } else if (status === 'retrying') {
+      // Not failed: a new run is taking over from the saved work.
+      const n = (doc.retry && doc.retry.attempt) || doc.attempt || 2;
+      next.status = 'running';
+      next.retry = { attempt: n, of: (doc.retry && doc.retry.of) || MAX_RETRIES + 1, reason: (doc.retry && doc.retry.reason) || '' };
+      next.progress = retryText(n);
+      if (Date.now() - (doc.updatedAt || Date.now()) > STALE_RETRY_MS) {
+        Object.assign(next, { status: 'failed', retry: null, progress: '', error: 'The task stopped and could not be started again. Open the run on GitHub to see why.', finishedAt: Date.now() });
+      }
+    } else {
+      next.status = 'running';
+      next.retry = null;
+      next.progress = next.health ? 'Waiting for the model' : '';
+      // A runner that died leaves a "running" file that nobody touches. The workflow run tells dead from slow.
+      if (Date.now() - (doc.updatedAt || Date.now()) > STALE_DOC_MS && doc.runId) {
+        const run = (await api('GET', `/repos/${task.repo}/actions/runs/${doc.runId}`, null, { allow: [404] }).catch(() => ({ json: null }))).json;
+        if (run && run.status === 'completed') dead = doc;
+      }
+    }
+    // A next.ask is a risky action waiting for the person's OK (answerCloudAsk)
     next.ask = next.status === 'running' && doc.ask && doc.ask.id ? doc.ask : null;
+    if (dead && !(await branchFiles(api, task.repo).read(SESSION_PATHS.cancel(task.id)).catch(() => null))) {
+      const n = doc.attempt || 1;
+      if (n <= MAX_RETRIES) {
+        const wip = (await api('GET', `/repos/${task.repo}/branches/${encodeURIComponent(wipBranch(`task-${task.id}`))}`, null, { allow: [404] }).catch(() => ({ status: 404 }))).status === 200 ? wipBranch(`task-${task.id}`) : '';
+        await redispatch(api, task, base, n + 1, wip);
+        const retry = { attempt: n + 1, of: MAX_RETRIES + 1, reason: 'The run stopped before it finished.', at: Date.now() };
+        await branchFiles(api, task.repo).write(SESSION_PATHS.task(task.id), { ...doc, status: 'retrying', attempt: n + 1, retry, updatedAt: Date.now() }, `Craft task ${task.id}: retrying`);
+        Object.assign(next, { status: 'running', retry, attempt: n + 1, progress: retryText(n + 1) });
+      } else {
+        Object.assign(next, { status: 'failed', retry: null, progress: '', error: 'The cloud run stopped before it finished, and starting it again twice did not help.', finishedAt: Date.now() });
+      }
+    }
     saveTask(cwd, home, next);
     return { ...next, events };
   }
@@ -771,6 +890,12 @@ export async function cloudRunStatus({ cwd, taskId, token, home = defaultHome(),
       await dispatch(api, task.repo, p.base || 'main', task, retryMs);
       Object.assign(next, { queued: false, status: 'starting', redispatchedAt: Date.now() });
     } else next.status = 'queued';
+    saveTask(cwd, home, next);
+    return { ...next, events: [] };
+  }
+  // Started again a moment ago: the old run is over, the new one may not be listed yet.
+  if (task.retriedAt && Date.now() - task.retriedAt < 90000) {
+    Object.assign(next, { status: 'running', progress: retryText(task.attempt || 2) });
     saveTask(cwd, home, next);
     return { ...next, events: [] };
   }
@@ -800,8 +925,18 @@ export async function cloudRunStatus({ cwd, taskId, token, home = defaultHome(),
       saveTask(cwd, home, next);
       return { ...next, events };
     }
-    const why = run.conclusion === 'cancelled' ? 'The run was cancelled.' : (await diagnoseRun(api, task.repo, run.id)) || `The run ended (${run.conclusion}) before Codeply could report back. The run log has details.`;
-    Object.assign(next, { status: run.conclusion === 'cancelled' ? 'cancelled' : 'failed', error: why, finishedAt: Date.now() });
+    const cancelled = run.conclusion === 'cancelled';
+    const n = task.attempt || 1;
+    const onPurpose = cancelled && (await branchFiles(api, task.repo).read(SESSION_PATHS.cancel(task.id)).catch(() => null));
+    // It never said how it ended and nobody stopped it: start it again, twice at most.
+    if (!onPurpose && !(run.conclusion === 'success') && n <= MAX_RETRIES) {
+      await redispatch(api, task, base, n + 1, '');
+      Object.assign(next, { status: 'running', attempt: n + 1, retriedAt: Date.now(), runId: null, runUrl: null, retry: { attempt: n + 1, of: MAX_RETRIES + 1, reason: 'The run stopped before it finished.' }, progress: retryText(n + 1) });
+      saveTask(cwd, home, next);
+      return { ...next, events: [] };
+    }
+    const why = cancelled ? 'The run was cancelled.' : (await diagnoseRun(api, task.repo, run.id)) || `The run ended (${run.conclusion}) before Codeply could report back. The run log has details.`;
+    Object.assign(next, { status: cancelled ? 'cancelled' : 'failed', error: why, finishedAt: Date.now(), retry: null, progress: '' });
   } else {
     next.status = run.status === 'queued' || run.status === 'waiting' || run.status === 'pending' ? 'queued' : 'running';
   }
@@ -903,6 +1038,8 @@ export async function cancelCloudRun({ cwd, taskId, token, home = defaultHome(),
   const task = await cloudRunStatus({ cwd, taskId, token, home, apiUrl, fetchImpl });
   if (!task.runId || ['done', 'failed', 'cancelled'].includes(task.status)) return task;
   const api = githubApi({ token, apiUrl, fetchImpl });
+  // First say it is on purpose: a run that dies is started again, a cancelled one must not be.
+  await branchFiles(api, task.repo).write(SESSION_PATHS.cancel(task.id), { at: Date.now() }, `Craft cancel ${task.id}`).catch(() => {});
   await api('POST', `/repos/${task.repo}/actions/runs/${task.runId}/cancel`, null, { allow: [409] });
   return task;
 }
@@ -1028,6 +1165,8 @@ export const SESSION_PATHS = {
   answer: (askId) => `answers/${askId}.json`,
   // What does not fit in the workflow's inputs (a bot's prompt), written before the dispatch.
   request: (id) => `requests/${id}.json`,
+  // Written when the person stops a task: a run that dies afterwards is not started again.
+  cancel: (id) => `cancel/${id}.json`,
 };
 
 /**
@@ -1108,6 +1247,110 @@ async function saveHistory(files, sessionId, messages) {
 const branchSlug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').split('-').slice(0, 6).join('-').slice(0, 40) || 'change';
 export const cloudBranchName = (prompt, id) => `craft/${branchSlug(prompt)}-${String(id).slice(-6)}`;
 
+// ─── Surviving crashes: retries, the lease, the notice ────────────────────
+
+/** A run that dies is started again from its last save, twice at most (3 tries in all). */
+export const MAX_RETRIES = 2;
+/** The agent is stopped this long into the run, 8 minutes before Actions' 60 minute limit, so there is time to save and start again. */
+export const RUN_BUDGET_MS = 52 * 60 * 1000;
+export const LEASE_BEAT_MS = 15000;
+/** The task's status file is touched this often while the agent works, so a reader can tell "slow" from "dead". */
+export const TOUCH_MS = 45000;
+/** Failures that starting again cannot fix (keys, sign-in, billing). */
+const NO_RETRY = /api key|usage key|unauthori[sz]ed|\b40[13]\b|not signed in|invalid key|billing|quota exceeded/i;
+
+/** An error that says whether a new run could do better. */
+class RunError extends Error {
+  constructor(message, { retryable = true, reason = '' } = {}) { super(message); this.retryable = retryable; this.reason = reason; }
+}
+
+/**
+ * The runner's side of the handoff lease (the watchdog's "cloud_beat" action,
+ * checked with the token it put in the dispatch). beat(finish) resolves to
+ * 'running', 'finished', 'lost' (a replacement took over, or the PC took the
+ * chat back: stop at once) or 'error' (offline: carry on, the next beat may work).
+ * Null without a token: a run that is not under a lease.
+ */
+export function cloudLeaseClient({ env, sessionId, taskId, fetchImpl = fetch }) {
+  const token = String(env.CRAFT_LEASE || '').trim();
+  if (!token || !sessionId) return null;
+  let auth = null;
+  try { auth = require('./auth.js'); } catch { return null; }
+  const url = env.CRAFT_LEASE_URL || `${auth.SUPABASE_URL}/functions/v1/handoff-watchdog`;
+  return {
+    async beat(finish = false) {
+      try {
+        const r = await fetchImpl(url, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', apikey: auth.SUPABASE_ANON_KEY },
+          body: JSON.stringify({ action: 'cloud_beat', session_id: sessionId, task_id: taskId, token, finish: !!finish }),
+          signal: AbortSignal.timeout(15_000),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (j && j.lost) return 'lost';
+        return r.ok && j && j.ok ? (finish ? 'finished' : 'running') : 'error';
+      } catch { return 'error'; }
+    },
+  };
+}
+
+/**
+ * Tell the person the result as a phone/desktop push, with the plumbing the
+ * run already has: the usage key (CODEPLY_TRACK_KEY) it sends to Codeply's
+ * functions, calling the same `reminders` function the apps use to schedule a
+ * reminder for "now". Best effort and never fatal: true only when Codeply
+ * accepted it. When it is not accepted the notice stays in the task's status
+ * file (`notify`), and the app that polls the task raises it (see deliverNotice).
+ */
+export async function pushNotice({ env, notice, fetchImpl = fetch }) {
+  const key = String(env.CODEPLY_TRACK_KEY || '').trim();
+  if (!key || String(env.CRAFT_NOTIFY || '') === 'off') return false;
+  try {
+    const auth = require('./auth.js');
+    const r = await fetchImpl(`${auth.SUPABASE_URL}/functions/v1/reminders`, {
+      method: 'POST',
+      headers: { 'x-codeply-track-key': key, apikey: auth.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create', reminder: { text: noticeText(notice), due_at: new Date().toISOString(), kind: 'remind', tz: 'UTC', bot_id: null, bot_name: 'Codeply', bot_voice: null } }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const j = await r.json().catch(() => ({}));
+    return !!(r.ok && j && j.success);
+  } catch { return false; }
+}
+
+const noticeText = (n) => `${n.title}. ${n.body}`.slice(0, 480);
+
+/**
+ * The PC's half: a finished task whose notice the runner could not push (no usage
+ * key, or Codeply refused it) is sent now with the person's own sign-in, once.
+ */
+export async function deliverNotice({ notice, fetchImpl = fetch }) {
+  try {
+    const auth = require('./auth.js');
+    const token = await auth.getAccessToken().catch(() => null);
+    if (!token) return false;
+    const r = await fetchImpl(`${auth.SUPABASE_URL}/functions/v1/reminders`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, apikey: auth.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create', reminder: { text: noticeText(notice), due_at: new Date().toISOString(), kind: 'remind', tz: 'UTC', bot_id: null, bot_name: 'Codeply', bot_voice: null } }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const j = await r.json().catch(() => ({}));
+    return !!(r.ok && j && j.success);
+  } catch { return false; }
+}
+
+/** What to tell the person when a task ends: done, done but something waits for them, or failed for good. */
+export function buildNotice({ ok, taskId, answer = '', error = '', needsYou = [] }) {
+  const at = Date.now();
+  const clip = (t, n) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, n);
+  if (!ok) return { id: `${taskId}:failed`, kind: 'failed', title: 'Your cloud task did not finish', body: clip(error, 180) || 'It stopped before it finished.', at };
+  if (needsYou.length) {
+    const what = needsYou.slice(0, 3).map((n) => n.title).join('; ');
+    return { id: `${taskId}:needs_you`, kind: 'needs_you', title: 'Your cloud task needs you', body: `It finished, but ${needsYou.length === 1 ? 'one action was' : `${needsYou.length} actions were`} skipped because nobody could approve ${needsYou.length === 1 ? 'it' : 'them'}: ${clip(what, 150)}.`, at };
+  }
+  return { id: `${taskId}:done`, kind: 'done', title: 'Your cloud task is done', body: clip(answer, 180) || 'It finished.', at };
+}
+
 /**
  * `codeply cloud runner`, inside GitHub Actions. Runs the dispatched task, then
  * (for a chat) stays up to CRAFT_IDLE_MS (2 minutes) waiting for the next
@@ -1115,11 +1358,17 @@ export const cloudBranchName = (prompt, id) => `craft/${branchSlug(prompt)}-${St
  * for a new runner. Each task:
  *   - runs like a local run, with a real browser (screenshots) when Chrome is there
  *   - publishes its steps live to tasks/<id>.json (and the first one's check run)
+ *   - saves its work to craft/wip-task-<id> about every minute and when it fails
  *   - commits Build work to craft/<what-it-did>-<id>, pushes it, and merges it
  *     into the base branch (CRAFT_MERGE=false keeps it as a branch only)
- * @returns {Promise<{status:'done'|'failed', result:object, results:object[]}>}
+ *   - if it crashes, fails or runs out of time (RUN_BUDGET_MS), starts the workflow
+ *     again from the saved work (status 'retrying', twice at most)
+ *   - tells the person when it is done, needs them, or failed for good
+ * Under a handoff lease (CRAFT_LEASE) it renews the lease every 15 s, and stops
+ * at once when the lease is lost.
+ * @returns {Promise<{status:'done'|'failed'|'retrying'|'stopped', result:object, results:object[]}>}
  */
-export async function runCloudRunner({ env = process.env, cwd = process.cwd(), token, route, setupError = null, fetchImpl = fetch, runAgentImpl = runAgent, log = () => {}, maxSteps = 80, updateMs = 4000, idleMs, pollMs = 3000, browserImpl }) {
+export async function runCloudRunner({ env = process.env, cwd = process.cwd(), token, route, setupError = null, fetchImpl = fetch, runAgentImpl = runAgent, log = () => {}, maxSteps = 80, updateMs = 4000, idleMs, pollMs = 3000, browserImpl, leaseImpl, notifyImpl, wipEveryMs = RUNNER_WIP_EVERY_MS, beatMs = LEASE_BEAT_MS, touchMs = TOUCH_MS, deadlineAt }) {
   const repo = env.GITHUB_REPOSITORY;
   const firstId = String(env.CRAFT_TASK_ID || '').replace(/[^A-Za-z0-9_-]/g, '');
   const sessionId = String(env.CRAFT_SESSION_ID || '').replace(/[^A-Za-z0-9_-]/g, '');
@@ -1132,7 +1381,23 @@ export async function runCloudRunner({ env = process.env, cwd = process.cwd(), t
   const idle = idleMs != null ? idleMs : Number(env.CRAFT_IDLE_MS || 120000);
   const base = env.CRAFT_BASE || env.GITHUB_REF_NAME || 'main';
   const merge = String(env.CRAFT_MERGE || 'true') !== 'false';
+  const attempt = Math.max(1, Math.floor(Number(env.CRAFT_ATTEMPT) || 1));
+  const deadline = deadlineAt != null ? deadlineAt : Date.now() + (Number(env.CRAFT_BUDGET_MS) || RUN_BUDGET_MS);
   await files.ensure(headSha).catch((e) => log(`Could not create ${SESSIONS_BRANCH}: ${e.message}`));
+
+  // A retry that was dispatched just before the person pressed Stop must not run.
+  if (attempt > 1 && await files.read(SESSION_PATHS.cancel(firstId)).catch(() => null)) {
+    return { status: 'stopped', result: { error: 'This task was cancelled.' }, results: [] };
+  }
+  // Under a handoff lease: this run must still own it (a replacement may have been dispatched while this one queued).
+  const lease = leaseImpl !== undefined ? leaseImpl : cloudLeaseClient({ env, sessionId, taskId: firstId, fetchImpl });
+  const fence = { lost: false, abort: null };
+  if (lease && (await lease.beat(false)) === 'lost') return { status: 'stopped', result: { error: 'A newer cloud run took over this task.' }, results: [] };
+  const beatTimer = lease ? setInterval(async () => {
+    if ((await lease.beat(false).catch(() => 'error')) === 'lost' && !fence.lost) { fence.lost = true; if (fence.abort) fence.abort(); }
+  }, beatMs) : null;
+  if (beatTimer && beatTimer.unref) beatTimer.unref();
+
   await loadCloudConnections({ env, log });
 
   // The project's environment for running and testing: never committed.
@@ -1150,6 +1415,11 @@ export async function runCloudRunner({ env = process.env, cwd = process.cwd(), t
     const state = takeStateFile(cwd);
     if (state) task = { ...task, prompt: state.userMessage || task.prompt, mode: state.mode || task.mode, handoff: state };
     else setupError = setupError || 'The run from the PC left no saved state on its WIP branch.';
+  } else if (env.CRAFT_WIP) {
+    // A cloud run that died and was started again: its own WIP branch holds the work and the state.
+    const state = takeStateFile(cwd);
+    if (state) task = { ...task, prompt: state.userMessage || task.prompt, mode: state.mode || task.mode, resume: state, resumeSha: await git(cwd, ['rev-parse', 'HEAD']).catch(() => null) };
+    else log('The saved work had no state file, so this run starts from the task as it was asked.');
   }
   // A bot (and the task kind) comes next to the dispatch, on craft-sessions.
   const req = await files.read(SESSION_PATHS.request(firstId)).catch(() => null);
@@ -1157,6 +1427,8 @@ export async function runCloudRunner({ env = process.env, cwd = process.cwd(), t
     task = { ...task, bot: req.json.bot, kind: req.json.kind };
     await files.remove(SESSION_PATHS.request(firstId), req.sha).catch(() => {});
   }
+  const notify = notifyImpl || ((notice) => pushNotice({ env, notice, fetchImpl }));
+  const ctl = { attempt, deadline, wipEveryMs, touchMs, fence, notify, lease };
   const results = [];
   const isHandoff = !!task.handoff;
   try {
@@ -1164,13 +1436,20 @@ export async function runCloudRunner({ env = process.env, cwd = process.cwd(), t
       // A handoff run is not a chat runner: new messages for this chat get their own run.
       const live = sessionId && !task.handoff;
       if (live) await heartbeat(true, Date.now() + 60 * 60 * 1000);
-      results.push(await runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, headSha, route, setupError, runAgentImpl, log, maxSteps, updateMs, browser, base, merge, heartbeat: live ? () => heartbeat(true, Date.now() + 60 * 60 * 1000) : null, handbackPollMs: pollMs }));
+      const r = await runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, headSha, route, setupError, runAgentImpl, log, maxSteps, updateMs, browser, base, merge, heartbeat: live ? () => heartbeat(true, Date.now() + 60 * 60 * 1000) : null, handbackPollMs: pollMs, ctl });
+      results.push(r);
+      // Retrying: a new runner takes the task over, so this one must not wait for the chat's next message.
+      if (r.status === 'retrying' || r.status === 'stopped' || fence.lost) break;
       if (!live || idle <= 0 || setupError) break;
       task = await waitForNext({ files, sessionId, idle, pollMs, heartbeat });
     }
   } finally {
+    if (beatTimer) clearInterval(beatTimer);
     if (sessionId && !isHandoff) await files.remove(SESSION_PATHS.live(sessionId)).catch(() => {});
     if (browser && browser.close) await browser.close().catch(() => {});
+    // Done with the lease (the PC picks the work up from here), unless a retry carries it on.
+    const end = results[results.length - 1];
+    if (lease && !fence.lost && end && (end.status === 'done' || end.status === 'failed')) await lease.beat(true).catch(() => {});
   }
   const last = results[results.length - 1] || { status: 'failed', result: { error: 'Nothing ran.' } };
   return { ...last, results };
@@ -1197,16 +1476,26 @@ async function waitForNext({ files, sessionId, idle, pollMs, heartbeat }) {
   return null;
 }
 
-async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, headSha, route, setupError, runAgentImpl, log, maxSteps, updateMs, browser, base, merge, heartbeat, handbackPollMs = 3000 }) {
+// What every unattended run is told. The skip rule is here because the declined-action note the
+// agent adds itself says "stop and explain"; nobody is there to read an explanation mid-run.
+const UNATTENDED = "Nobody can answer questions mid-run, so make sensible choices and say what you assumed. If an action is skipped because it needs an approval nobody can give (a deploy, deleting data), take a safe alternative and keep going: prepare the change but leave the risky step undone, and say in your final reply what still needs the user's OK.";
+
+async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, headSha, route, setupError, runAgentImpl, log, maxSteps, updateMs, browser, base, merge, heartbeat, handbackPollMs = 3000, ctl }) {
   const taskId = String(task.id).replace(/[^A-Za-z0-9_-]/g, '');
   const mode = ['Build', 'Plan', 'Ask'].includes(task.mode) ? task.mode : 'Build';
   const prompt = String(task.prompt || '').slice(0, MAX_PROMPT);
   const sessionId = task.sessionId || '';
   const bot = cleanBot(task.bot);
   const kind = cleanKind(task.kind);
-  const startedAt = Date.now();
-  const events = [];
+  const attempt = task.dispatched ? ctl.attempt : 1; // a follow-up taken from the queue is always a first try
+  const resume = task.resume || null;                // a plain run started again from its own WIP
+  // A new try carries on the same task: same id, same steps so far.
+  const prevDoc = attempt > 1 ? ((await files.read(SESSION_PATHS.task(taskId)).catch(() => null)) || {}).json || null : null;
+  const startedAt = (prevDoc && prevDoc.startedAt) || Date.now();
+  const events = prevDoc && Array.isArray(prevDoc.events) ? [...prevDoc.events] : [];
+  const needsYou = prevDoc && Array.isArray(prevDoc.needsYou) ? [...prevDoc.needsYou] : [];
   const lines = [];
+  let healthInfo = null; let parkedInfo = null; let wipInfo = null;
 
   // The dispatched task also gets a check run: it is how a failed start is diagnosed.
   const check = task.dispatched ? (await api('POST', `/repos/${repo}/check-runs`, {
@@ -1215,19 +1504,31 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
   }).catch(() => ({ json: null }))).json : null;
 
   let pendingAsk = null; let asks = 0;
-  const statusDoc = (status, extra = {}) => ({ ...(pendingAsk && status === 'running' ? { ask: pendingAsk } : {}), id: taskId, status, mode, prompt: prompt.slice(0, 4000), sessionId, ...(kind === 'task' ? { kind } : {}), ...(bot ? { bot: { name: bot.name } } : {}), startedAt, updatedAt: Date.now(), runId: env.GITHUB_RUN_ID || null, ...extra });
+  const statusDoc = (status, extra = {}) => ({
+    ...(pendingAsk && status === 'running' ? { ask: pendingAsk } : {}), id: taskId, status, mode, prompt: prompt.slice(0, 4000), sessionId,
+    ...(kind === 'task' ? { kind } : {}), ...(bot ? { bot: { name: bot.name } } : {}),
+    attempt, maxAttempts: MAX_RETRIES + 1,
+    ...(needsYou.length ? { needsYou } : {}), ...(healthInfo ? { health: healthInfo } : {}), ...(parkedInfo ? { parked: parkedInfo } : {}), ...(wipInfo ? { wip: wipInfo } : {}),
+    startedAt, updatedAt: Date.now(), runId: env.GITHUB_RUN_ID || null, ...extra,
+  });
   const state = task.handoff || null; // a run carried on from the PC
-  const finish = async (ok, title, summary, result) => {
+  const finish = async (ok, title, summary, result, { retry = null } = {}) => {
     const baseLen = JSON.stringify(result).length;
     const packed = packEvents(events, Math.max(4000, MAX_OUTPUT - baseLen - 200));
-    await files.write(SESSION_PATHS.task(taskId), statusDoc(ok ? 'done' : 'failed', { ...result, events: packEvents(events, 400000) }), `Craft task ${taskId}: ${title}`).catch(() => {});
+    // The notice goes in the status file whether or not the push worked: an app that polls can still raise it.
+    let notice = retry ? null : buildNotice({ ok, taskId, answer: result.answer, error: result.error, needsYou });
+    if (notice) notice = { ...notice, pushed: await ctl.notify(notice).catch(() => false) };
+    const doc = statusDoc(retry ? 'retrying' : ok ? 'done' : 'failed', {
+      ...result, ...(retry ? { retry, attempt: retry.attempt } : {}), ...(notice ? { notify: notice } : {}), events: packEvents(events, 400000),
+    });
+    await files.write(SESSION_PATHS.task(taskId), doc, `Craft task ${taskId}: ${retry ? 'retrying' : title}`).catch(() => {});
     if (check) {
       await api('PATCH', `/repos/${repo}/check-runs/${check.id}`, {
-        status: 'completed', conclusion: ok ? 'success' : 'failure', completed_at: new Date().toISOString(),
-        output: { title, summary: String(summary || title).slice(0, MAX_OUTPUT), text: JSON.stringify({ ...result, events: packed }).slice(0, MAX_OUTPUT) },
+        status: 'completed', conclusion: retry ? 'neutral' : ok ? 'success' : 'failure', completed_at: new Date().toISOString(),
+        output: { title: retry ? 'Starting again' : title, summary: String(summary || title).slice(0, MAX_OUTPUT), text: JSON.stringify({ ...result, events: packed }).slice(0, MAX_OUTPUT) },
       }).catch((e) => log(`Could not finish the check run: ${e.message}`));
     }
-    return { status: ok ? 'done' : 'failed', result: { ...result, events: packed }, ...(state ? { handoff: true } : {}) };
+    return { status: retry ? 'retrying' : ok ? 'done' : 'failed', result: { ...result, events: packed }, ...(retry ? { retry } : {}), ...(state ? { handoff: true } : {}) };
   };
 
   // Handoff: the work goes on craft/wip-<chat> with the state next to it, never merged.
@@ -1253,6 +1554,26 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
 
   if (setupError) return finish(false, 'Could not start', setupError, { error: setupError, mode });
   if (!prompt) return finish(false, 'Could not start', 'The task was empty.', { error: 'The task was empty.', mode });
+
+  // Every run that is not a handoff keeps its own WIP, through a throwaway index so HEAD and the
+  // final commit stay as they are: the files plus the steps so far, pushed to craft/wip-task-<id>.
+  const wipKey = `task-${taskId}`;
+  let wipState = null; let wipSha = null; let wipMark = null; let wipBusy = false;
+  let originUrl;
+  const checkpoint = async (final = false) => {
+    if (state || !wipState) return wipSha;
+    if (wipBusy && !final) return wipSha;
+    while (wipBusy) await sleep(50); // the final save waits for one already on its way
+    wipBusy = true;
+    try {
+      if (originUrl === undefined) originUrl = (await git(cwd, ['remote', 'get-url', 'origin']).catch(() => '')) || null;
+      const r = await pushRunnerWip({ cwd, token, repo, key: wipKey, state: wipState, parent: wipSha, last: wipMark, force: !wipSha, serverUrl, remoteUrl: originUrl || undefined });
+      wipMark = r.key;
+      if (r.pushed) { wipSha = r.sha; wipInfo = { branch: wipBranch(wipKey), sha: r.sha.slice(0, 12), at: Date.now() }; }
+    } catch (e) { log(`WIP save failed: ${e.message}`); }
+    finally { wipBusy = false; }
+    return wipSha;
+  };
 
   let lastPush = 0; let pending = null;
   const pushProgress = async (note, force = false) => {
@@ -1280,19 +1601,38 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
     return r;
   } : undefined;
 
+  const timers = [];
   try {
     // Where this task starts (a later message in the same runner starts after the earlier merge).
-    const taskBase = await git(cwd, ['rev-parse', 'HEAD']).catch(() => headSha);
-    const hist = state ? { messages: Array.isArray(state.history) ? state.history : [] } : await loadHistory(files, sessionId);
+    const headNow = await git(cwd, ['rev-parse', 'HEAD']).catch(() => headSha);
+    // A restarted run's own WIP commit is HEAD: what it changed is measured from where the task first began.
+    const taskBase = resume && resume.baseSha ? resume.baseSha : headNow;
+    if (!state) {
+      wipState = resume ? { ...resume, side: 'cloud' } : newRunState({ sessionId: wipKey, mode, userMessage: prompt, history: [] });
+      wipState.baseSha = taskBase;
+      if (resume && task.resumeSha) wipSha = task.resumeSha;
+    }
+    const hist = state ? { messages: Array.isArray(state.history) ? state.history : [] }
+      : resume ? { messages: Array.isArray(resume.history) ? resume.history : [] } : await loadHistory(files, sessionId);
+    if (!state && !resume) wipState.history = hist.messages.slice(-HISTORY_TURNS);
     if (state) events.push({ t: 'notice', level: 'info', text: `Your PC went offline, so the cloud is carrying on from step ${state.steps.length + 1}.` });
-    await pushProgress(state ? 'Carrying on from your PC.' : hist.messages.length ? `Continuing the chat (${hist.messages.length / 2} earlier turns).` : 'Working on it.', true);
+    else if (attempt > 1) events.push({ t: 'notice', level: 'info', text: `The run stopped before it finished, so it started again (attempt ${attempt} of ${MAX_RETRIES + 1})${resume ? ` from its last save, after ${resume.steps.length} step${resume.steps.length === 1 ? '' : 's'}` : ''}.` });
+    await pushProgress(state ? 'Carrying on from your PC.' : attempt > 1 ? `Starting again (attempt ${attempt}).` : hist.messages.length ? `Continuing the chat (${hist.messages.length / 2} earlier turns).` : 'Working on it.', true);
     // Risky actions (deploys...) ask the person unless the repo's Cloud permission is "full".
     const ASK_WAIT_MS = 15 * 60 * 1000;
+    // The agent may push its own work to these branches and no others (never the base branch, never forced).
+    const ownBranch = cloudBranchName(prompt, taskId);
+    const pushBranches = [ownBranch, wipBranch(wipKey)];
     // Only a repo with the current workflow passes CRAFT_PERMISSIONS (empty when unset): its
     // Craft and phone can show the question. An older setup keeps the old rule (no) until updated.
-    const rules = ciApprove(cwd, { permission: env.CRAFT_PERMISSIONS, canAsk: env.CRAFT_PERMISSIONS !== undefined });
+    const rules = ciApprove(cwd, { permission: env.CRAFT_PERMISSIONS, canAsk: env.CRAFT_PERMISSIONS !== undefined, pushBranches });
+    const wait = (req, why) => {
+      // "Needs you": what was skipped, for the person to look at when they are back.
+      needsYou.push({ id: `${taskId}-n${needsYou.length + 1}`, at: Date.now(), tool: req.tool, title: String(req.title || req.tool).slice(0, 300), detail: String(req.detail || '').slice(0, 2000), why });
+    };
     const approve = async (req) => {
       const v = await rules(req);
+      if (v === 'reject' && req.danger) wait(req, 'not_allowed'); // nobody can be asked on this setup
       if (v !== 'ask') return v;
       const askId = `${taskId}-${++asks}`;
       pendingAsk = { id: askId, tool: req.tool, title: String(req.title || req.tool).slice(0, 300), detail: String(req.detail || '').slice(0, 2000), at: Date.now() };
@@ -1306,20 +1646,64 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
         if (f && f.json) { verdict = f.json.verdict === 'approve' ? 'once' : 'reject'; files.remove(SESSION_PATHS.answer(askId), f.sha).catch(() => {}); }
         else if (heartbeat) heartbeat(true).catch(() => {});
       }
+      if (!verdict) wait(req, 'no_answer');
+      events.push({ t: 'notice', level: 'info', text: verdict === 'once' ? 'Approved.' : verdict === 'reject' ? 'You said no, so it was skipped.' : `No answer in 15 minutes, so it was skipped and the task carried on without it. It is listed under "Needs you": ${pendingAsk.title}` });
       pendingAsk = null;
-      events.push({ t: 'notice', level: 'info', text: verdict === 'once' ? 'Approved.' : verdict === 'reject' ? 'You said no, so it was skipped.' : 'No answer in 15 minutes, so it was skipped.' });
       await pushProgress('Working.', true);
       return verdict || 'reject';
     };
+    // The agent may push to its own branch, so git needs a login. A credential helper (a file outside the
+    // checkout, answering only for this GitHub host) keeps the token out of the environment, where a
+    // stray `env` would print it into the chat's steps.
+    if (mode === 'Build' && process.platform !== 'win32') {
+      try {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-git-'));
+        const helper = path.join(dir, 'helper.sh');
+        const host = new URL(serverUrl).host;
+        fs.writeFileSync(helper, `#!/bin/sh\n[ "$1" = get ] || exit 0\nif grep -qx 'host=${host}'; then echo username=x-access-token; echo password=${token}; fi\n`, { mode: 0o700 });
+        // Added after whatever git settings the machine already passes this way, and taken out again after.
+        const n = Math.max(0, Math.floor(Number(process.env.GIT_CONFIG_COUNT) || 0));
+        const before = process.env.GIT_CONFIG_COUNT;
+        Object.assign(process.env, { GIT_CONFIG_COUNT: String(n + 2), [`GIT_CONFIG_KEY_${n}`]: 'credential.helper', [`GIT_CONFIG_VALUE_${n}`]: '', [`GIT_CONFIG_KEY_${n + 1}`]: 'credential.helper', [`GIT_CONFIG_VALUE_${n + 1}`]: `!sh ${helper}` });
+        timers.push({ stop: () => {
+          for (const k of [`GIT_CONFIG_KEY_${n}`, `GIT_CONFIG_VALUE_${n}`, `GIT_CONFIG_KEY_${n + 1}`, `GIT_CONFIG_VALUE_${n + 1}`]) delete process.env[k];
+          if (before === undefined) delete process.env.GIT_CONFIG_COUNT; else process.env.GIT_CONFIG_COUNT = before;
+          fs.rmSync(dir, { recursive: true, force: true });
+        } });
+      } catch (e) { log(`Could not set up git login for the agent: ${e.message}`); }
+    }
     let answer = ''; let steps = 0; let failure = '';
+    const where = kind === 'task'
+      ? "in the cloud on a Linux machine, not on the user's PC: you cannot reach their local files or desktop apps. Use the shell, the web and this repository."
+      : 'in the cloud, in a fresh copy of the repository on a Linux machine. You can install dependencies, run the app and tests, and check pages with browser_check.';
+    const closing = kind === 'task'
+      ? "Your final reply is read out to the user: say plainly what you did or found, in a few short sentences, no markdown. Do not commit or push; Codeply does that when you finish."
+      : mode === 'Build'
+        ? `Codeply saves your work as you go and commits when you finish, so you do not need to commit or push. If you want to save it yourself, you may push to \`${ownBranch}\` only (git push origin HEAD:${ownBranch}); every other push is blocked.`
+        : 'Do not commit or push; Codeply does that when you finish.';
     const userMessage = state
-      ? `${continuationPrompt(state, 'cloud')}\n\n(You are now in the cloud, on a Linux machine with a copy of the project as the PC left it. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. Do not commit or push; Codeply does that.)`
-      : kind === 'task'
-      ? `${prompt}\n\n(You are running unattended in the cloud on a Linux machine, not on the user's PC: you cannot reach their local files or desktop apps. Use the shell, the web and this repository. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. Your final reply is read out to the user: say plainly what you did or found, in a few short sentences, no markdown. Do not commit or push; Codeply does that when you finish.)`
-      : `${prompt}\n\n(You are running unattended in the cloud, in a fresh copy of the repository on a Linux machine. Nobody can answer questions mid-run, so make sensible choices and say what you assumed. You can install dependencies, run the app and tests, and check pages with browser_check. Do not commit or push; Codeply does that when you finish.)`;
+      ? `${continuationPrompt(state, 'cloud')}\n\n(You are now in the cloud, on a Linux machine with a copy of the project as the PC left it. ${UNATTENDED} Do not commit or push; Codeply does that.)`
+      : resume
+        ? `${continuationPrompt(resume, 'retry')}\n\n(You are running unattended in the cloud, in a fresh copy of the repository on a Linux machine with the saved work in it. ${UNATTENDED} ${closing})`
+        : `${prompt}\n\n(You are running unattended ${where} ${UNATTENDED} ${closing})`;
     const ac = new AbortController();
+    ctl.fence.abort = () => ac.abort();
     let handedBack = false; let lastWant = Date.now(); let lastWip = Date.now();
-    for await (const ev of runAgentImpl({ userMessage, history: hist.messages.slice(-HISTORY_TURNS), mode, cwd, approve, browser: agentBrowser, signal: ac.signal, route, maxSteps, ...(bot ? { botPrompt: bot.prompt } : {}), ...(state ? { todos: state.todos } : {}) })) {
+    let timedOut = false; let completed = false; let ledger = (resume || state || {}).ledger || null;
+    // The agent stops with time to spare: a run that is cut off by Actions' own limit can only be started again from the last save.
+    const stopTimer = setTimeout(() => { timedOut = true; ac.abort(); }, Math.max(0, ctl.deadline - Date.now()));
+    timers.push({ stop: () => clearTimeout(stopTimer) });
+    if (!state) {
+      const wipTimer = setInterval(() => { checkpoint(); }, ctl.wipEveryMs);
+      timers.push({ stop: () => clearInterval(wipTimer) });
+      if (wipTimer.unref) wipTimer.unref();
+    }
+    // Writing the status file now and then lets a reader tell a slow run from a dead one.
+    const touchTimer = setInterval(() => { pushProgress(`Working: ${steps} step${steps === 1 ? '' : 's'} so far.`, true).catch(() => {}); }, ctl.touchMs);
+    timers.push({ stop: () => clearInterval(touchTimer) });
+    if (touchTimer.unref) touchTimer.unref();
+
+    for await (const ev of runAgentImpl({ userMessage, history: hist.messages.slice(-HISTORY_TURNS), mode, cwd, approve, browser: agentBrowser, signal: ac.signal, route, maxSteps, background: true, ...(ledger ? { resume: ledger } : {}), ...(bot ? { botPrompt: bot.prompt } : {}), ...(state ? { todos: state.todos } : resume ? { todos: resume.todos } : {}) })) {
       if (state) {
         recordHandoff(state, ev);
         // Between steps: has the PC asked for the chat back? Then stop here, never mid-tool.
@@ -1329,6 +1713,20 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
         }
         // A WIP every minute, so a runner that dies still leaves its work.
         if (!handedBack && ev.type === 'tool_end' && Date.now() - lastWip > 60000) { lastWip = Date.now(); await commitWip(null).catch((e) => log(`WIP push failed: ${e.message}`)); }
+      } else if (wipState) recordHandoff(wipState, ev);
+      // The model is struggling or unavailable (the agent keeps retrying in the background): say so, in plain words.
+      if (ev.type === 'health') {
+        const was = healthInfo && healthInfo.state;
+        healthInfo = ev.state === 'ok' || ev.state === 'healthy' ? null : { state: ev.state, attempt: ev.attempt || 0, until: ev.until || null, reason: String(ev.reason || '').slice(0, 300) };
+        if (healthInfo && was !== healthInfo.state) events.push({ t: 'notice', level: 'warn', text: `The model is not answering well right now${healthInfo.reason ? ` (${healthInfo.reason})` : ''}. Codeply keeps trying${healthInfo.until ? ` until ${new Date(healthInfo.until).toISOString().slice(11, 16)} UTC` : ''}.` });
+        await pushProgress('Waiting for the model.', true);
+        continue;
+      }
+      if (ev.type === 'parked') {
+        parkedInfo = { until: ev.until || null, reason: String(ev.reason || 'The model was not available.').slice(0, 300) };
+        ledger = ev.ledger || ledger;
+        if (ledger) (wipState || state).ledger = ledger;
+        break;
       }
       const rec = recordEvent(ev);
       if (rec && rec.t === 'tool' && ev.name === 'browser_check' && pendingShot) { rec.screenshot = pendingShot; pendingShot = null; }
@@ -1338,15 +1736,21 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
       else if (ev.type === 'tool_end') { steps++; lines.push(describeTool(ev)); }
       else if (ev.type === 'error') failure = ev.error;
       if (rec) await pushProgress(`Working: ${steps} step${steps === 1 ? '' : 's'} so far.`);
+      if (ev.type === 'done') completed = true;
       if (ev.type === 'done' || ev.type === 'error' || ev.type === 'aborted') break;
       if (handedBack && ev.type === 'tool_end') break;
     }
+    for (const t of timers.splice(0)) t.stop();
     if (pending) await pending;
+    // Another runner owns the task now: leave everything to it.
+    if (ctl.fence.lost) return { status: 'stopped', result: { error: 'A newer cloud run took over this task.' } };
+    if (timedOut && !completed && !handedBack) throw new RunError(`The run used up its time (about ${Math.round(RUN_BUDGET_MS / 60000)} minutes) before it finished.`, { reason: 'timeout' });
+    if (parkedInfo && !answer) throw new RunError(`The model was not available${parkedInfo.until ? ` until about ${new Date(parkedInfo.until).toISOString().slice(11, 16)} UTC` : ''}.`, { reason: 'parked' });
     if (state) {
       if (failure && !answer && !handedBack) throw new Error(failure);
-      const wipSha = await commitWip(handedBack ? 'paused' : 'done');
+      const wipSha2 = await commitWip(handedBack ? 'paused' : 'done');
       const changed = (await git(cwd, ['diff', '--name-only', headSha, 'HEAD', '--', '.', `:(exclude)${STATE_FILE}`, `:(exclude)${WORKFLOW_PATH}`]).catch(() => '')).split('\n').filter(Boolean);
-      const result = { mode, prompt: prompt.slice(0, 4000), sessionId, answer: handedBack ? '' : answer.slice(0, 20000), branch: null, sha: wipSha, files: changed, stats: [], merged: null, steps, baseSha: headSha, handoff: { wipSha, handedBack } };
+      const result = { mode, prompt: prompt.slice(0, 4000), sessionId, answer: handedBack ? '' : answer.slice(0, 20000), branch: null, sha: wipSha2, files: changed, stats: [], merged: null, steps, baseSha: headSha, handoff: { wipSha: wipSha2, handedBack } };
       return finish(true, handedBack ? 'Handed back to the PC' : changed.length ? `Changed ${changed.length} file${changed.length === 1 ? '' : 's'}` : 'Done', answer || 'Handed back to the PC.', result);
     }
     if (failure && !answer) throw new Error(failure);
@@ -1361,18 +1765,27 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
 
     let branch = null; let sha = null; let changed = []; let stats = []; let merged = null;
     if (mode === 'Build') {
+      // A restarted run sits on its WIP commit: put HEAD back on where the task began, so the branch is one clean commit on it.
+      if (resume && resume.baseSha && resume.baseSha !== headNow) {
+        try {
+          await git(cwd, ['fetch', '-q', '--depth=1', 'origin', resume.baseSha], { auth: authFor(token, serverUrl) });
+          await git(cwd, ['reset', '-q', '--soft', resume.baseSha]);
+        } catch (e) { log(`Could not go back to the start of the task, so the branch keeps the saved work as a commit: ${e.message}`); }
+      }
+      const from = await git(cwd, ['cat-file', '-e', `${taskBase}^{commit}`]).then(() => taskBase, () => 'HEAD');
       await git(cwd, ['add', '-A', '--', '.', ':(exclude).codeply', `:(exclude)${WORKFLOW_PATH}`, ':(exclude).env']);
-      const staged = await git(cwd, ['diff', '--cached', '--name-only']);
+      // Measured from where the task began, so work the agent committed itself still counts.
+      const staged = await git(cwd, ['diff', '--cached', '--name-only', from]);
       if (staged) {
         changed = staged.split('\n').filter(Boolean);
         // Per-file + and - lines, for the chat's record of what was pushed.
-        stats = (await git(cwd, ['diff', '--cached', '--numstat'])).split('\n').filter(Boolean).map((l) => {
+        stats = (await git(cwd, ['diff', '--cached', '--numstat', from])).split('\n').filter(Boolean).map((l) => {
           const [add, del, ...name] = l.split('\t');
           return { file: name.join('\t'), added: add === '-' ? null : Number(add), removed: del === '-' ? null : Number(del) };
         });
-        branch = cloudBranchName(prompt, taskId);
+        branch = ownBranch;
         const subject = prompt.split('\n')[0].slice(0, 60);
-        await git(cwd, [...BOT, 'commit', '-q', '-m', `${subject}\n\nCraft cloud task ${taskId}.`]);
+        if (await git(cwd, ['diff', '--cached', '--name-only'])) await git(cwd, [...BOT, 'commit', '-q', '-m', `${subject}\n\nCraft cloud task ${taskId}.`]);
         sha = await git(cwd, ['rev-parse', 'HEAD']);
         await git(cwd, ['push', '-q', 'origin', `HEAD:refs/heads/${branch}`], { auth: authFor(token, serverUrl) });
         // Into the base branch too, so the next run (and the PC's pull) starts from it.
@@ -1395,14 +1808,40 @@ async function runOneTask({ task, env, cwd, api, files, repo, token, serverUrl, 
 
     await saveHistory(files, sessionId, [...hist.messages, { role: 'user', content: prompt }, { role: 'assistant', content: answer || '(no reply)' }].slice(-HISTORY_TURNS * 2))
       .catch((e) => log(`Could not save the chat: ${e.message}`));
+    // The work is on its real branch now: the saved copy has done its job.
+    if (wipInfo || resume) await api('DELETE', `/repos/${repo}/git/refs/heads/${wipBranch(wipKey)}`, null, { allow: [404, 422] }).catch(() => {});
     const result = { mode, prompt: prompt.slice(0, 4000), sessionId, answer: answer.slice(0, 20000), branch, sha, files: changed, stats: stats.slice(0, 100), merged, steps, baseSha: taskBase,
       ...(bot || kind === 'task' ? { reply: reply.slice(0, 20000) } : {}) };
     const title = changed.length ? `Changed ${changed.length} file${changed.length === 1 ? '' : 's'}` : mode === 'Build' ? 'No files changed' : 'Answered';
     return finish(true, title, answer || title, result);
   } catch (e) {
-    // A handoff still leaves its work for the PC.
-    const wipSha = state ? await commitWip('failed').catch(() => null) : null;
-    return finish(false, 'Failed', `Something went wrong: ${e.message}`, { error: e.message, mode, steps: lines.length, ...(state ? { handoff: { wipSha, handedBack: false } } : {}) });
+    for (const t of timers.splice(0)) t.stop();
+    if (ctl.fence.lost) return { status: 'stopped', result: { error: 'A newer cloud run took over this task.' } };
+    const message = String((e && e.message) || e);
+    // Keep the work first: a handoff run leaves it for the PC, any other run on its own WIP branch.
+    if (state) await commitWip(null).catch((err) => log(`WIP push failed: ${err.message}`));
+    else await checkpoint(true);
+    // Then start again from it, unless this cannot get better (a key problem) or the tries are used up.
+    let retry = null;
+    const canRetry = (e && e.retryable === false ? false : !NO_RETRY.test(message)) && attempt <= MAX_RETRIES;
+    if (canRetry) {
+      try {
+        const next = attempt + 1;
+        const extra = { ...(bot ? { bot } : {}), ...(kind === 'task' ? { kind } : {}) };
+        if (Object.keys(extra).length) await files.write(SESSION_PATHS.request(taskId), extra, `Craft request ${taskId}`);
+        await api('POST', `/repos/${repo}/actions/workflows/${WORKFLOW_FILE}/dispatches`, { ref: base, inputs: {
+          prompt, mode, task_id: taskId, session_id: sessionId, attempt: String(next),
+          handoff: state ? 'resume' : '', wip: !state && wipSha ? wipBranch(wipKey) : '', lease: env.CRAFT_LEASE || '',
+        } });
+        retry = { attempt: next, of: MAX_RETRIES + 1, reason: message.slice(0, 300), at: Date.now() };
+      } catch (err) { log(`Could not start the task again: ${err.message}`); }
+    }
+    const steps = state ? state.steps.length : lines.length;
+    if (retry) return finish(false, 'Starting again', `Something went wrong, so it is starting again (attempt ${retry.attempt} of ${retry.of}): ${message}`, { error: message, mode, steps, ...(wipInfo ? { wip: wipInfo } : {}) }, { retry });
+    // Out of tries: a handoff run says so to the PC, which carries on from the saved work.
+    const wipFinal = state ? await commitWip('failed').catch(() => null) : null;
+    const tried = attempt > 1 ? ` It was tried ${attempt} times.` : '';
+    return finish(false, 'Failed', `Something went wrong: ${message}${tried}`, { error: `${message}${tried}`, mode, steps, ...(wipInfo ? { wip: wipInfo } : {}), ...(state ? { handoff: { wipSha: wipFinal, handedBack: false } } : {}) });
   }
 }
 

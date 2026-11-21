@@ -112,11 +112,11 @@ export function makeApi({ token, apiUrl, fetchImpl }) {
   };
 }
 
-export function git(cwd, args, { auth, input } = {}) {
+export function git(cwd, args, { auth, input, env } = {}) {
   const full = auth ? ['-c', `http.${auth.server}/.extraheader=AUTHORIZATION: basic ${Buffer.from(`x-access-token:${auth.token}`).toString('base64')}`, ...args] : args;
   const verb = args.find((a, i) => !a.startsWith('-') && !(i > 0 && /^--(git-dir|work-tree)$/.test(args[i - 1])) && !(i > 0 && args[i - 1] === '-c')) || args[0];
   return new Promise((resolve, reject) => {
-    const child = execFile('git', full, { cwd, timeout: 300000, windowsHide: true, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' } }, (err, stdout, stderr) => {
+    const child = execFile('git', full, { cwd, timeout: 300000, windowsHide: true, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', ...(env || {}) } }, (err, stdout, stderr) => {
       if (err) reject(new Error(`git ${verb} failed: ${String(stderr || err.message).trim().split('\n').slice(-2).join(' ')}`));
       else resolve(String(stdout).trim());
     });
@@ -127,20 +127,73 @@ export function git(cwd, args, { auth, input } = {}) {
 const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'change';
 export const clip = (s) => (s.length > MAX_COMMENT ? `${s.slice(0, MAX_COMMENT)}\n\n[... cut, the run log has the rest]` : s);
 
+// Quotes count as a word start too: `bash -c "git push ..."` is a push.
+const PUSH_OR_GH = /(^|[\s;&|("'`])(git\b[^;&|\n]*\spush|gh)(\s|$|["'])/;
+// Flags a push may carry: nothing that forces, deletes, mirrors or pushes more than named.
+const SAFE_PUSH_FLAGS = new Set(['-u', '--set-upstream', '-q', '--quiet', '-v', '--verbose', '--no-verify']);
+
+/** Split a command line into words, honouring simple quotes. */
+function words(seg) {
+  const out = [];
+  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let m;
+  while ((m = re.exec(seg))) out.push(m[1] ?? m[2] ?? m[3]);
+  return out;
+}
+
 /**
- * The approver for a run nobody is watching live: the rules file first, never a
- * git push (Craft pushes when the run ends), then the risky actions (deploys,
+ * Is this `git push` allowed? Only `git push [-u] origin <refspec>...` where
+ * every refspec names one of `allowed` (the run's own craft/* branches) as its
+ * destination: never force (no flag, no +refspec), never a deletion, never the
+ * default branch, never "push everything".
+ */
+export function safePush(tokens, allowed) {
+  if (tokens[0] !== 'git' || tokens[1] !== 'push') return false;
+  const pos = [];
+  for (const t of tokens.slice(2)) {
+    if (t.startsWith('-')) { if (!SAFE_PUSH_FLAGS.has(t)) return false; } else pos.push(t);
+  }
+  if (pos[0] !== 'origin' || pos.length < 2) return false; // a bare push goes wherever the current branch tracks
+  const ok = new Set(allowed || []);
+  return pos.slice(1).every((spec) => {
+    if (spec.startsWith('+') || spec.startsWith(':')) return false;
+    const [src, dst, ...extra] = spec.split(':');
+    if (extra.length) return false;
+    const to = String(dst === undefined ? src : dst).replace(/^refs\/heads\//, '');
+    // "HEAD" alone would push to a branch of the same name: say where.
+    return !!to && to !== 'HEAD' && ok.has(to) && (dst === undefined || !!src);
+  });
+}
+
+/** 'none' (no push or gh in the command), 'ok' (only pushes to the run's own branches) or 'bad'. */
+export function pushVerdict(command, allowed = []) {
+  const text = String(command || '');
+  if (!PUSH_OR_GH.test(text)) return 'none';
+  if (/[|`]|\$\(|\|\||>\s*&/.test(text)) return 'bad';
+  let pushes = 0;
+  for (const seg of text.split(/&&|;|\n/).map((x) => x.trim()).filter(Boolean)) {
+    if (!PUSH_OR_GH.test(seg)) continue;
+    if (!safePush(words(seg), allowed)) return 'bad';
+    pushes++;
+  }
+  return pushes ? 'ok' : 'bad';
+}
+
+/**
+ * The approver for a run nobody is watching live: the rules file first, then
+ * git push only to the run's own branches (`pushBranches`, never the default
+ * branch, never forced; gh stays blocked), then the risky actions (deploys,
  * deleting a database, risky commands). Those depend on the repo's Cloud
  * permission (CRAFT_PERMISSIONS): "full" runs them, anything else answers
  * 'ask' so the cloud runner can ask the person in Craft or on the phone. With
  * no way to ask (the /codeply comment agent), 'ask' means no.
  */
-export function ciApprove(cwd, { permission = '', canAsk = false } = {}) {
+export function ciApprove(cwd, { permission = '', canAsk = false, pushBranches = [] } = {}) {
   const full = String(permission || '').toLowerCase() === 'full';
   return async (req) => {
     const d = permissions.decide(req, cwd);
     if (d.decision === 'deny' || req.tool === 'fetch_image') return 'reject';
-    if (req.tool === 'run' && /(^|[\s;&|(])(git\b[^;&|\n]*\spush|gh)(\s|$)/.test(`${req.detail || ''}\n${req.title || ''}`)) return 'reject';
+    if (req.tool === 'run' && pushVerdict(`${req.detail || ''}\n${req.title || ''}`, pushBranches) === 'bad') return 'reject';
     if (req.danger) return full ? 'once' : canAsk ? 'ask' : 'reject';
     return 'once';
   };
