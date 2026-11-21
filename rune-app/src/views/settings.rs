@@ -165,6 +165,8 @@ fn general(s: &App, t: &Theme) -> Vec<El> {
         group(t, "Notifications", vec![
             item(t, "Notifications", Some("Tell me when a task finishes or needs me."),
                 sw(t, "set-notifications", p.notifications, "Notifications", |s: &mut App| s.update_prefs(|p| p.notifications = !p.notifications))),
+            item(t, crate::autostart::label(), Some("Codeply opens minimized when you sign in, so your loops and reminders run on time on this PC."),
+                sw(t, "set-autostart", s.autostart, crate::autostart::label(), |s: &mut App| s.toggle_autostart())),
         ]),
         group(t, "Chat", vec![
             item(t, "Enter sends", Some("Shift+Enter makes a new line. Off: Ctrl+Enter sends."),

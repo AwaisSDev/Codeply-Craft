@@ -8,6 +8,7 @@
 
 mod agentsync;
 mod app;
+mod autostart;
 mod art;
 mod bot;
 mod browser;

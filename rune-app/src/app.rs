@@ -377,6 +377,8 @@ pub struct App {
     pub delete_armed: Option<String>,
     /// The specialist editor's model pick: "auto" (Haze 2 picks) or one of your models' ids.
     pub spec_model: String,
+    /// Whether Codeply opens when you sign in to the computer (autostart.rs), as last read.
+    pub autostart: bool,
     /// Whether the usage sheet is open (the button beside you at the sidebar's foot).
     pub usage_open: bool,
     /// The usage sheet's grouping (weekly or daily) and the week ("w12") or day ("d2026-10-11")
@@ -479,6 +481,7 @@ impl App {
             opened_session: String::new(),
             delete_armed: None,
             spec_model: crate::models::AUTO.into(),
+            autostart: crate::autostart::is_on(),
             code_ask: false,
             attachments: std::collections::HashMap::new(),
             agent_session: std::collections::HashMap::new(),
@@ -765,6 +768,15 @@ impl App {
 
     /// Whether a plugin, an app or an MCP server is on; flips it (sample data until the engine
     /// has an API for them).
+    /// Turns "Start with Windows" (or its macOS and Linux twin) on or off.
+    pub fn toggle_autostart(&mut self) {
+        let on = !self.autostart;
+        match crate::autostart::set(on) {
+            Ok(()) => self.autostart = on,
+            Err(e) => self.notice = Some(e),
+        }
+    }
+
     pub fn toggle_plugin(&mut self, id: &str) {
         let Some(on) = self.data.extra.plugins.iter().find(|p| p.id == id).map(|p| !p.installed) else { return };
         let op = crate::store::PluginOp::Plugin(id.to_owned(), on);
@@ -1454,7 +1466,10 @@ impl App {
         // Windows opens maximized, so the window fits any screen (Rune has no display-size API).
         if !self.launched {
             self.launched = true;
-            if cfg!(windows) && !rune::is_headless() {
+            if crate::autostart::launched_hidden() && !rune::is_headless() {
+                // Started when you signed in: out of the way, working in the background.
+                tx.minimize();
+            } else if cfg!(windows) && !rune::is_headless() {
                 tx.toggle_maximized();
             }
         }
