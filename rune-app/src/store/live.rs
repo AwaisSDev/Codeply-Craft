@@ -93,6 +93,8 @@ enum Msg {
     Status(String),
     /// Something to tell you (a change that didn't save), shown as a notice.
     Note(String),
+    /// A change to a specialist that didn't save: why, and the specialists as the engine has them.
+    SpecFailed(String, Option<Value>),
 }
 
 #[derive(Clone, Debug)]
@@ -532,7 +534,11 @@ impl LiveStore {
                 self.refresh("specs");
             }
             "agentsync_changed" => self.refresh("agentsync"),
-            "reminders_changed" => self.refresh("reminders"),
+            "reminders_changed" => {
+                self.refresh("reminders");
+                // The time zone may have changed (travel, summer time).
+                self.refresh("clock");
+            }
             _ => return false,
         }
         true
@@ -1059,7 +1065,7 @@ pub fn items_from(m: &Value) -> Vec<ThreadItem> {
     }
     // A standing job's report (ext-agentsync), or a phone message with its small-print speaker
     // line ("-# Inbox · standing job"): a quiet line above it says so, as the phone does.
-    if m["kind"] == "assistant" && !m["interim"].as_bool().unwrap_or(false) {
+    if m["kind"] == "assistant" && !m["interim"].as_bool().unwrap_or(false) && limit_of(m).is_none() {
         let text = m["text"].as_str().unwrap_or_default();
         let (head, body) = match text.strip_prefix("-# ") {
             Some(rest) => rest.split_once('\n').map_or((rest, ""), |(h, b)| (h, b)),
@@ -1566,12 +1572,30 @@ impl Store for LiveStore {
                     self.named.insert(name, id);
                 }
                 Msg::Note(n) => snap.extra.team_note = Some(n),
+                Msg::SpecFailed(n, v) => {
+                    snap.extra.team_note = Some(n);
+                    if let Some(v) = v {
+                        crate::agentsync::apply_specs(snap, &v);
+                    }
+                }
                 Msg::Status(s) => {
                     if s.starts_with("can't reach") || s.starts_with("event stream") {
                         snap.extra.engine_ok = false;
                     }
                     snap.source = s;
                 }
+            }
+        }
+        // A report or a run's health whose chat wasn't known when it came (a chat made on the
+        // phone arrives a moment later): it finds its chat by id now.
+        for r in snap.extra.agents.reports.iter_mut().filter(|r| r.chat.is_empty() && !r.chat_id.is_empty()) {
+            if let Some(t) = self.sessions.iter().find(|s| s.id == r.chat_id) {
+                r.chat = t.title.clone();
+            }
+        }
+        for h in snap.extra.agents.health.iter_mut().filter(|h| h.chat.is_empty() && !h.chat_id.is_empty()) {
+            if let Some(t) = self.sessions.iter().find(|s| s.id == h.chat_id) {
+                h.chat = t.title.clone();
             }
         }
         if changed {
@@ -1714,7 +1738,7 @@ impl Store for LiveStore {
         use crate::agentsync::SyncOp;
         let (path, body) = match &op {
             SyncOp::Refresh => {
-                for what in ["reminders", "specs", "agentsync"] {
+                for what in ["reminders", "specs", "agentsync", "clock"] {
                     self.refresh(what);
                 }
                 return;
@@ -1733,14 +1757,23 @@ impl Store for LiveStore {
             crate::agentsync::apply_sample(&op, snap);
         }
         let spec = matches!(op, SyncOp::UpdateSpec(..));
+        let retry = match &op { SyncOp::AddReminder { text, when } => json!({ "text": text, "when": when }), _ => Value::Null };
         snap.extra.agents.reminders_note.clear();
         self.spawn(move |c| {
-            let v = c.post_for(path, body, 40).unwrap_or_else(|e| json!({ "ok": false, "error": format!("The engine didn't answer: {e}") }));
+            let mut v = c.post_for(path, body, 40).unwrap_or_else(|e| json!({ "ok": false, "error": format!("The engine didn't answer: {e}") }));
             if spec {
                 return match v["ok"].as_bool() {
                     Some(true) => c.get("/ext/agentsync/specialists").ok().map(Msg::Specs),
-                    _ => Some(Msg::Note(format!("Couldn't save it: {}", v["error"].as_str().unwrap_or("the engine said no")))),
+                    // Shown ahead of the engine: what it really kept comes back with the note.
+                    _ => Some(Msg::SpecFailed(format!("Couldn't save it: {}", v["error"].as_str().unwrap_or("the engine said no")), c.get("/ext/agentsync/specialists").ok())),
                 };
+            }
+            if v["ok"] == false {
+                v["retry"] = retry;
+                // A cancel or snooze that didn't go through: the list as the account has it.
+                if let Ok(list) = c.get("/ext/reminders") {
+                    v["reminders"] = list["reminders"].clone();
+                }
             }
             Some(Msg::Reminders(v))
         });

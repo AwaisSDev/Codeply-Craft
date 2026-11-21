@@ -147,7 +147,10 @@ impl App {
     /// Saves the editor: the fields that changed go to the account.
     fn save_spec(&mut self, id: &str) {
         let get = |s: &App, k: EditKey| s.edit(k).text.trim().to_owned();
-        let spec = self.data.extra.agents.spec(id).cloned().unwrap_or_default();
+        let Some(spec) = self.data.extra.agents.spec(id).cloned() else {
+            self.notice = Some("Your team is still loading. Try again in a moment.".into());
+            return;
+        };
         let (name, focus, prompt) = (get(self, EditKey::SpecName), get(self, EditKey::SpecFocus), get(self, EditKey::SpecInstructions));
         if name.is_empty() && !spec.builtin {
             self.notice = Some("Give it a name.".into());
@@ -257,6 +260,12 @@ fn field(s: &App, t: &Theme, key: EditKey, label: &str, placeholder: &str) -> El
         .child(row().w_full().h(38.0).px(12.0).radius(10.0).clip_rounded(10.0).center_y().fill(t.field).border(1.0, t.field_border).child(input))
 }
 
+/// Closes the dialog and what it said ("Give it a name.") with it.
+fn close_dialog(s: &mut App) {
+    s.team_dialog = None;
+    s.notice = None;
+}
+
 /// A taller field for instructions: several lines, Enter makes a new one.
 fn area(s: &App, t: &Theme, key: EditKey, label: &str, placeholder: &str) -> El {
     let input = text_input(s.edit(key), ui(13.0, 400.0)).key(format!("team-field/{}", key.name())).grow(1.0).w_full().color(t.text)
@@ -321,16 +330,16 @@ pub fn dialog(s: &App, t: &Theme) -> Option<El> {
         .fill(t.card).border(1.0, t.card_border).shadow(16.0, 48.0, theme::rgba(0, 0, 0, 0.45))
         .transition(crate::ui::fade_in()).motion(crate::ui::ENTER)
         .role("dialog").label(title.clone())
-        .modal(true, |s: &mut App| s.team_dialog = None)
+        .modal(true, close_dialog)
         .child(row().w_full().center_y()
             .child(col().grow(1.0).min_w(0.0).gap(3.0)
                 .child(text(title).font(ui(16.0, 600.0)).color(t.text))
                 .child(text(sub).font(ui(12.5, 400.0)).color(t.faint).wrap()))
-            .child(ibtn(t, "close", "Close").key("team-dialog-close").on_press(|s: &mut App| s.team_dialog = None)))
+            .child(ibtn(t, "close", "Close").key("team-dialog-close").on_press(close_dialog)))
         .children(fields)
         .children(notice)
         .child(row().w_full().gap(8.0).justify_end()
-            .child(btn(t, "Cancel", None, ButtonKind::Plain).key("team-dialog-cancel").on_press(|s: &mut App| s.team_dialog = None))
+            .child(btn(t, "Cancel", None, ButtonKind::Plain).key("team-dialog-cancel").on_press(close_dialog))
             .child(btn(t, match d { TeamDialog::NewAgent => "Add to team", TeamDialog::NewLoop(_) => "Create loop", TeamDialog::Edit(_) => "Save" }, None, ButtonKind::Blue)
                 .key("team-dialog-ok").on_press(|s: &mut App| s.submit_team_dialog())));
     Some(col().key("team-scrim").pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)).center()

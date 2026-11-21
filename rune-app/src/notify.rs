@@ -60,7 +60,9 @@ fn command(title: &str, body: &str) -> Command {
 
 #[cfg(all(unix, not(target_os = "macos")))]
 fn command(title: &str, body: &str) -> Command {
+    // notify-send reads the text as markup: "&" or "<b>" in a reminder would vanish or break it.
+    let plain = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     let mut c = Command::new("notify-send");
-    c.args(["--app-name=Codeply", "--", title, body]);
+    c.args(["--app-name=Codeply", "--", &plain(title), &plain(body)]);
     c
 }

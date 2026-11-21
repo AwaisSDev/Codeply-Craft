@@ -22,6 +22,7 @@ impl App {
         self.view = crate::app::View::Agents;
         self.agent = None;
         self.reminders_open = true;
+        self.notice = None;
         self.with_store(|st, d| st.sync_op(SyncOp::Refresh, d));
     }
 

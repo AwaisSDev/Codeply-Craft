@@ -570,6 +570,7 @@ impl App {
     pub fn open_agent(&mut self, id: Option<&str>) {
         self.view = View::Agents;
         self.reminders_open = false;
+        self.notice = None;
         self.agent = id.map(str::to_owned);
         self.menu = None;
         if let Some(a) = id.and_then(|i| self.data.agent(i)).cloned() {
@@ -643,7 +644,8 @@ impl App {
     /// Saves a helper's face to the account, so the phone shows the same one (built-in ones keep
     /// theirs there, so only one you made is sent).
     fn sync_face(&mut self, id: &str) {
-        if id == "wisp" || self.data.extra.agents.spec(id).is_some_and(|s| s.builtin) {
+        // Only one the account knows and you made (before the team loads, it isn't sent).
+        if id == "wisp" || self.data.extra.agents.spec(id).is_none_or(|s| s.builtin) {
             return;
         }
         let Some(a) = self.data.agent(id) else { return };
@@ -817,11 +819,17 @@ impl App {
                 self.open_agent(Some(&agent));
                 return;
             }
+            let typed = self.edit(key).text.clone();
             *self.edit_mut(key) = rune::TextEdit::new(rest);
             self.agent_session.remove(&agent);
             self.submit(key, &Target::AgentSession { agent: agent.clone(), title: String::new() });
             if self.edit(key).text.is_empty() {
+                let notice = self.notice.take();
                 self.open_agent(Some(&agent));
+                self.notice = notice;
+            } else {
+                // It didn't go: the message comes back as you typed it, "@Name" included.
+                *self.edit_mut(key) = rune::TextEdit::new(typed);
             }
             return;
         }
@@ -1447,6 +1455,14 @@ impl App {
         for (title, body) in std::mem::take(&mut self.data.extra.agents.notify) {
             if self.prefs.notifications {
                 crate::notify::show(&title, &body);
+            }
+            changed = true;
+        }
+        // A reminder the engine turned down: the form gets it back, so you can fix the time.
+        if let Some((text, when)) = self.data.extra.agents.add_failed.take() {
+            if self.edit(EditKey::ReminderText).text.is_empty() && self.edit(EditKey::ReminderWhen).text.is_empty() {
+                *self.edit_mut(EditKey::ReminderText) = rune::TextEdit::new(text);
+                *self.edit_mut(EditKey::ReminderWhen) = rune::TextEdit::new(when);
             }
             changed = true;
         }

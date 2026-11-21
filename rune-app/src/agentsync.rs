@@ -34,6 +34,14 @@ pub struct Spec {
     pub gear: Vec<String>,
 }
 
+impl Spec {
+    /// Whether the account gave it a face: the engine sends blob and Codeply blue when none was set.
+    pub fn has_face(&self) -> bool {
+        let unset = (self.shape.is_empty() || self.shape == "blob") && (self.color.is_empty() || self.color.eq_ignore_ascii_case("#4a78e0"));
+        !unset || !self.gear.is_empty()
+    }
+}
+
 /// A reminder, the same ones the phone sets.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Reminder {
@@ -153,6 +161,8 @@ pub struct AgentsData {
     pub sync_state: String,
     /// A specialist just made, whose editor should open for a look at what Codeply wrote.
     pub created: Option<String>,
+    /// A reminder the engine turned down (what, when): the form gets it back to fix.
+    pub add_failed: Option<(String, String)>,
 }
 
 impl AgentsData {
@@ -289,6 +299,9 @@ pub fn dress(snap: &mut Snapshot) {
         if a.id == "wisp" {
             continue;
         }
+        if !spec.has_face() {
+            continue;
+        }
         if !spec.shape.is_empty() {
             a.look.shape = shape_of(&spec.shape);
         }
@@ -309,6 +322,13 @@ pub fn apply_jobs(snap: &mut Snapshot, v: &Value) {
         .filter(|(id, ..)| !id.is_empty()).collect();
     snap.extra.agents.tasks = v["jobs"].as_array().map(Vec::as_slice).unwrap_or_default().iter()
         .map(|j| (s(j, "id"), s(j, "task"))).filter(|(id, _)| !id.is_empty()).collect();
+    // A job that was cancelled, or an agent taken off the team, no longer needs you.
+    if v["jobs"].is_array() {
+        let x = &mut snap.extra.agents;
+        let jobs: Vec<String> = x.tasks.iter().map(|(id, _)| format!("job:{id}")).collect();
+        let team: Vec<&str> = snap.team.iter().map(|a| a.id.as_str()).collect();
+        x.health.retain(|h| (!h.run.starts_with("job:") || jobs.contains(&h.run)) && (h.agent.is_empty() || team.contains(&h.agent.as_str())));
+    }
 }
 
 /// Reads `GET /ext/reminders`.
@@ -316,6 +336,9 @@ pub fn apply_reminders(snap: &mut Snapshot, v: &Value) {
     let x = &mut snap.extra.agents;
     x.reminders_loaded = true;
     x.reminders_note = s(v, "error");
+    if v["ok"] == false && v["retry"].is_object() {
+        x.add_failed = Some((s(&v["retry"], "text"), s(&v["retry"], "when")));
+    }
     if x.reminders_note.is_empty() && v["signedIn"] == false {
         x.reminders_note = "Sign in to Codeply to see your reminders. They are the same ones your phone has.".into();
     }
@@ -458,13 +481,19 @@ pub fn parse_iso(t: &str) -> Option<u64> {
     }
     let n = |a: usize, b: usize| t.get(a..b).and_then(|x| x.parse::<i64>().ok());
     let (y, mo, d, h, mi) = (n(0, 4)?, n(5, 7)?, n(8, 10)?, n(11, 13)?, n(14, 16)?);
-    let sec = n(17, 19).unwrap_or(0);
-    let rest = t.get(19..).unwrap_or("");
-    let rest = rest.trim_start_matches(|c: char| c == '.' || c.is_ascii_digit());
+    // Seconds and a fraction are optional ("T23:05Z", "T23:05:09.123+05:30").
+    let mut rest = t.get(16..).unwrap_or("");
+    let mut sec = 0;
+    if let Some(r) = rest.strip_prefix(':') {
+        sec = r.get(..2).and_then(|x| x.parse::<i64>().ok()).unwrap_or(0);
+        rest = r.get(2..).unwrap_or("").trim_start_matches(|c: char| c == '.' || c.is_ascii_digit());
+    }
+    // The offset: "+05", "+0530" or "+05:30" (or Z, or none: UTC).
     let offset = match rest.chars().next() {
         Some(c @ ('+' | '-')) => {
-            let hh = rest.get(1..3).and_then(|x| x.parse::<i64>().ok()).unwrap_or(0);
-            let mm = rest.get(rest.len().saturating_sub(2)..).and_then(|x| x.parse::<i64>().ok()).unwrap_or(0);
+            let digits: String = rest[1..].chars().filter(char::is_ascii_digit).take(4).collect();
+            let hh = digits.get(..2).and_then(|x| x.parse::<i64>().ok()).unwrap_or(0);
+            let mm = digits.get(2..4).and_then(|x| x.parse::<i64>().ok()).unwrap_or(0);
             (hh * 60 + mm) * if c == '-' { -1 } else { 1 }
         }
         _ => 0,
@@ -580,6 +609,9 @@ pub fn sample() -> AgentsData {
         specs: vec![
             Spec { id: "inbox".into(), name: "Inbox".into(), focus: "Keeps your inbox at zero".into(), instructions: "You look after the user's email. Sort, archive and draft replies; never send without a yes.".into(), always_on: true, ..Default::default() },
             Spec { id: "frontend".into(), name: "Frontend".into(), focus: "Frontend".into(), builtin: true, notes: "Keep it short. Never touch the payments folder.".into(), ..Default::default() },
+            Spec { id: "backend".into(), name: "Backend".into(), focus: "Backend & API".into(), builtin: true, ..Default::default() },
+            Spec { id: "docs".into(), name: "Docs".into(), focus: "Docs".into(), builtin: true, ..Default::default() },
+            Spec { id: "research".into(), name: "Research".into(), focus: "Finds places, prices and facts".into(), instructions: "You research what the user asks: venues, prices, facts. Cite where each fact came from.".into(), ..Default::default() },
         ],
         reminders: vec![
             rem("r1", "Call mom", now + 95 * 60_000, "call", "", "Wisp", "pending"),
@@ -610,6 +642,10 @@ mod tests {
         let ms = parse_iso("2026-11-21T23:05:00Z").unwrap();
         assert_eq!(ms, parse_iso("2026-11-22T04:05:00+05:00").unwrap());
         assert_eq!(parse_iso("2026-11-21T23:05:00.123Z").unwrap(), ms);
+        assert_eq!(parse_iso("2026-11-21T23:05Z").unwrap(), ms);
+        assert_eq!(parse_iso("2026-11-22T04:05+05").unwrap(), ms);
+        assert_eq!(parse_iso("2026-11-22T04:35:00+0530").unwrap(), ms);
+        assert_eq!(parse_iso("2026-11-21T20:05:00-03:00").unwrap(), ms);
         set_utc_offset(0);
         assert_eq!(when_label(ms, ms - 3_600_000), "11:05 PM");
         assert_eq!(when_label(ms + 86_400_000, ms), "Tomorrow 11:05 PM");

@@ -185,10 +185,13 @@ fn notifications_menu(s: &App, t: &Theme) -> El {
         items.push(menu_item(t, format!("note/report/{i}"), Some(icon), &title, Some(&format!("{line} · {when}")), false)
             .on_press(move |s: &mut App| {
                 s.menu = None;
+                // A chat that isn't on this PC (yet) opens the agents' list instead.
                 if reminder {
                     s.open_reminders();
                 } else if !chat.is_empty() {
                     s.open_chat(&chat);
+                } else {
+                    s.open_agent(None);
                 }
             }));
     }

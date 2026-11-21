@@ -417,7 +417,7 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
 
     // Always on (the phone's switch): its jobs run on time with the PC off, in the cloud.
     let spec = s.data.extra.agents.spec(&a.id);
-    let always = (a.id != "wisp").then(|| {
+    let always = (a.id != "wisp" && spec.is_some()).then(|| {
         let on = spec.is_some_and(|x| x.always_on);
         let id = a.id.clone();
         let copy = if on { "On duty around the clock: its jobs run on time even with your PC off." } else { "Off: its jobs wait until Codeply is open on your PC." };
@@ -428,7 +428,8 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
             .child(toggle(t, format!("always-on/{}", a.id), on, "Always on")
                 .on_press(move |s: &mut App| s.set_always_on(&id, !on))))
     });
-    let edit = (a.id != "wisp").then(|| {
+    // Edit once the account's record is here (before, a built-in one would look like yours).
+    let edit = (a.id != "wisp" && spec.is_some()).then(|| {
         let id = a.id.clone();
         btn(t, "Edit", Some("edit"), ButtonKind::Plain).key(format!("spec-edit/{}", a.id)).mt(12.0)
             .on_press(move |s: &mut App| s.open_team_dialog(crate::team::TeamDialog::Edit(id.clone())))

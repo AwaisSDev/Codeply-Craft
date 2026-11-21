@@ -986,3 +986,17 @@ fn a_new_specialist_opens_its_editor_on_what_codeply_wrote() {
     assert_eq!(rt.state.team_dialog, Some(crate::team::TeamDialog::Edit("copywriter".into())), "and its editor, for a look");
     assert!(rt.state.edit(EditKey::SpecInstructions).text.contains("Copywriter"));
 }
+
+#[test]
+fn a_failed_reminder_comes_back_to_the_form_and_notices_clear_on_leaving() {
+    let mut rt = runtime(App::with_mock());
+    rt.state.open_reminders();
+    rt.state.notice = Some("Write what to remember and when.".into());
+    rt.state.data.extra.agents.add_failed = Some(("Call mom".into(), "soonish".into()));
+    rt.invalidate();
+    settle(&mut rt);
+    assert_eq!(rt.state.edit(EditKey::ReminderText).text, "Call mom");
+    assert_eq!(rt.state.edit(EditKey::ReminderWhen).text, "soonish");
+    click(&mut rt, "agent-row/mission");
+    assert!(rt.state.notice.is_none(), "a page's notice doesn't follow you");
+}
