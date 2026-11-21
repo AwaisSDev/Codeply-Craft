@@ -207,6 +207,28 @@ impl App {
         self.with_store(|st, d| st.team_op(op, d));
     }
 
+    /// Runs a loop's job now, as the phone's Run does: its task goes to its agent in a session of
+    /// its own, which opens, so you watch it work and get the answer there.
+    pub fn run_loop(&mut self, id: &str) {
+        let Some(l) = self.data.extra.loops.iter().find(|l| l.id == id).cloned() else { return };
+        let task = self.data.extra.agents.jobs_task(id).unwrap_or_else(|| l.name.clone());
+        let name = self.data.agent(&l.agent).map_or_else(|| l.agent.clone(), |a| a.name.clone());
+        let mut title = format!("{name}: {} (run now)", l.name);
+        let mut n = 2;
+        while self.data.extra.chats.iter().any(|c| c.title == title) {
+            title = format!("{name}: {} (run now {n})", l.name);
+            n += 1;
+        }
+        let to = crate::store::Target::AgentSession { agent: l.agent.clone(), title: title.clone() };
+        match self.with_store(|st, d| st.send(&to, &task, d)) {
+            Ok(()) => {
+                self.open_agent(Some(&l.agent));
+                self.open_agent_session(&l.agent, &title);
+            }
+            Err(e) => self.notice = Some(e),
+        }
+    }
+
     /// Removes a loop for good.
     pub fn cancel_loop(&mut self, id: &str) {
         self.with_store(|st, d| st.team_op(TeamOp::CancelJob(id.to_owned()), d));

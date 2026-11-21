@@ -389,6 +389,10 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
                     .child(text(runs_where(s, a, &l.id)).font(ui(11.5, 400.0)).color(t.faint).truncate().min_w(0.0)))
                 .child({
                     let id = l.id.clone();
+                    crate::ui::ibtn(t, "arrow-right", "Run now").key(format!("loop-run/{}", l.id)).on_press_tx(move |s: &mut App, tx| { tx.settle(); s.run_loop(&id) })
+                })
+                .child({
+                    let id = l.id.clone();
                     crate::ui::ibtn(t, "close", "Delete loop").key(format!("loop-delete/{}", l.id)).on_press(move |s: &mut App| s.cancel_loop(&id))
                 })
                 .child(toggle(t, format!("loop/{}/{}", a.id, l.name), l.on, &l.name)

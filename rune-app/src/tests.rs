@@ -958,3 +958,17 @@ fn health_shows_on_the_agent_and_its_loop() {
     click(&mut rt, "titlebar-bell");
     assert!(rt.find("note/health/0").is_some());
 }
+
+#[test]
+fn run_now_sends_a_loops_task_to_its_agent_at_once() {
+    let mut rt = runtime(App::with_mock());
+    rt.state.open_agent(Some("frontend"));
+    rt.invalidate();
+    settle(&mut rt);
+    let id = rt.state.data.extra.loops.iter().find(|l| l.agent == "frontend").unwrap().id.clone();
+    click(&mut rt, &format!("loop-run/{id}"));
+    assert_eq!(rt.state.agent.as_deref(), Some("frontend"));
+    let title = rt.state.agent_session.get("frontend").cloned().unwrap_or_default();
+    assert_eq!(title, "Frontend: Benchmark page speed (run now)");
+    assert!(rt.state.data.thread(&title).iter().any(|i| matches!(i, crate::model::ThreadItem::You(t) if t == "Benchmark page speed")));
+}

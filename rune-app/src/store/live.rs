@@ -1057,6 +1057,27 @@ pub fn items_from(m: &Value) -> Vec<ThreadItem> {
     if m["kind"] == "user" && !files.is_empty() {
         out.push(ThreadItem::Files(files));
     }
+    // A standing job's report (ext-agentsync), or a phone message with its small-print speaker
+    // line ("-# Inbox · standing job"): a quiet line above it says so, as the phone does.
+    if m["kind"] == "assistant" && !m["interim"].as_bool().unwrap_or(false) {
+        let text = m["text"].as_str().unwrap_or_default();
+        let (head, body) = match text.strip_prefix("-# ") {
+            Some(rest) => rest.split_once('\n').map_or((rest, ""), |(h, b)| (h, b)),
+            None => ("", text),
+        };
+        let label = if !head.trim().is_empty() {
+            head.trim().to_owned()
+        } else if m["report"].as_bool() == Some(true) {
+            "Standing job report".to_owned()
+        } else {
+            String::new()
+        };
+        if !label.is_empty() {
+            out.push(ThreadItem::Event { icon: "clock", text: label, detail: None });
+            out.push(ThreadItem::Them(body.trim().to_owned()));
+            return out;
+        }
+    }
     out.extend(item_from(m));
     out
 }
@@ -2282,6 +2303,12 @@ mod tests {
     fn stored_messages_become_transcript_items() {
         assert_eq!(item_from(&json!({ "kind": "user", "text": "hi" })), Some(ThreadItem::You("hi".into())));
         assert_eq!(item_from(&json!({ "kind": "assistant", "text": "hello", "interim": true })), None);
+        // A standing job's report, and a phone message with its speaker line, say so above them.
+        let report = items_from(&json!({ "kind": "assistant", "text": "Archived 41.", "report": true }));
+        assert_eq!(report, [ThreadItem::Event { icon: "clock", text: "Standing job report".into(), detail: None }, ThreadItem::Them("Archived 41.".into())]);
+        let phone = items_from(&json!({ "kind": "assistant", "text": "-# Inbox · standing job\nArchived 41." }));
+        assert_eq!(phone[0], ThreadItem::Event { icon: "clock", text: "Inbox · standing job".into(), detail: None });
+        assert_eq!(phone[1], ThreadItem::Them("Archived 41.".into()));
         assert!(matches!(item_from(&json!({ "kind": "tool", "name": "run", "label": "npm test" })), Some(ThreadItem::Event { icon: "terminal", .. })));
     }
 

@@ -145,6 +145,8 @@ pub struct AgentsData {
     pub notify: Vec<(String, String)>,
     /// Each job's live state from `/ext/team`: (job id, running, needs you).
     pub jobs: Vec<(String, bool, String)>,
+    /// Each job's whole task (the loop's name is its first line): (job id, task).
+    pub tasks: Vec<(String, String)>,
     /// Chat sync with the phone: on, off, setup, error, waiting (empty until known).
     pub sync_state: String,
 }
@@ -161,6 +163,10 @@ impl AgentsData {
     pub fn job_health(&self, job: &str) -> Option<&Health> {
         let run = format!("job:{job}");
         self.health.iter().find(|h| h.run == run && h.notable())
+    }
+    /// A job's whole task.
+    pub fn jobs_task(&self, job: &str) -> Option<String> {
+        self.tasks.iter().find(|(id, _)| id == job).map(|(_, t)| t.clone()).filter(|t| !t.trim().is_empty())
     }
     /// Upcoming reminders, soonest first.
     pub fn upcoming(&self) -> impl Iterator<Item = &Reminder> {
@@ -275,6 +281,8 @@ pub fn apply_jobs(snap: &mut Snapshot, v: &Value) {
     snap.extra.agents.jobs = v["jobs"].as_array().map(Vec::as_slice).unwrap_or_default().iter()
         .map(|j| (s(j, "id"), j["running"].as_bool().unwrap_or(false), s(j, "needsYou")))
         .filter(|(id, ..)| !id.is_empty()).collect();
+    snap.extra.agents.tasks = v["jobs"].as_array().map(Vec::as_slice).unwrap_or_default().iter()
+        .map(|j| (s(j, "id"), s(j, "task"))).filter(|(id, _)| !id.is_empty()).collect();
 }
 
 /// Reads `GET /ext/reminders`.
