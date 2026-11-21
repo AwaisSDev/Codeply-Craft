@@ -2667,6 +2667,26 @@ mod tests {
             "adding a reminder answers");
         // The PC's time zone arrived (any offset; the test only checks the call worked).
         let _ = crate::agentsync::clock("2026-11-21T23:00:00Z");
+        // A message to a specialist (what "@Backend ..." and Run now send) opens its own session
+        // as that agent's, and a reply comes back (needs a model the engine can reach: set
+        // CODEPLY_LIVE_REPLY=1 when one is selected, e.g. the scripted fake model).
+        if std::env::var_os("CODEPLY_LIVE_REPLY").is_some() {
+            let title = format!("Backend: live test {}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis()));
+            let to = Target::AgentSession { agent: "backend".into(), title: title.clone() };
+            store.send(&to, "Say hello", &mut snap).expect("sent");
+            let mut got = false;
+            for _ in 0..600 {
+                store.poll(&mut snap);
+                let agent_chat = snap.extra.chats.iter().any(|c| c.title == title && c.kind == crate::model::ChatKind::Agent("backend".into()));
+                let replied = snap.threads.iter().any(|(k, items)| *k == title && items.iter().any(|i| matches!(i, ThreadItem::Them(t) if !t.is_empty())));
+                if agent_chat && replied {
+                    got = true;
+                    break;
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+            assert!(got, "the session is Backend's and it replied: {:?}", snap.extra.chats.iter().find(|c| c.title == title));
+        }
     }
 
     #[test]
