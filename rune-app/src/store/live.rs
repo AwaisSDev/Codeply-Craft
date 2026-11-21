@@ -1120,11 +1120,26 @@ pub fn items_from(m: &Value) -> Vec<ThreadItem> {
         if !label.is_empty() {
             out.push(ThreadItem::Event { icon: "clock", text: label, detail: None });
             out.push(ThreadItem::Them(body.trim().to_owned()));
+            out.extend(sources_of(m));
             return out;
         }
     }
     out.extend(item_from(m));
+    if m["kind"] == "assistant" {
+        out.extend(sources_of(m));
+    }
     out
+}
+
+/// The pages a reply searched or opened (ext-sources.mjs, the phone's `sources`), as chips.
+fn sources_of(m: &Value) -> Option<ThreadItem> {
+    let list: Vec<(String, String)> = m["sources"].as_array()?.iter()
+        .filter_map(|s| {
+            let url = s["url"].as_str().filter(|u| u.starts_with("http"))?.to_owned();
+            Some((url, s["title"].as_str().unwrap_or_default().to_owned()))
+        })
+        .take(8).collect();
+    (!list.is_empty()).then_some(ThreadItem::Sources(list))
 }
 
 /// A command step's command and output, when the engine sent them (engine.mjs commandDetail).
@@ -2423,6 +2438,16 @@ mod tests {
         assert!(matches!(&items[1], ThreadItem::Team { text, agents } if text == "3 messages with" && agents == &["Joseph".to_owned(), "Testing".to_owned()]));
         // The step for the ask itself isn't shown twice.
         assert!(item_from_event(&json!({ "type": "tool_end", "name": "dsh:ask_bot", "summary": "Asked Joseph" })).is_none());
+    }
+
+    #[test]
+    fn a_replys_sources_become_chips() {
+        let items = items_from(&json!({ "kind": "assistant", "text": "Rust 1.99 is out.", "sources": [
+            { "url": "https://blog.rust-lang.org/x", "title": "Announcing Rust 1.99", "host": "blog.rust-lang.org" },
+            { "url": "javascript:alert(1)", "title": "no" }
+        ] }));
+        assert_eq!(items, [ThreadItem::Them("Rust 1.99 is out.".into()), ThreadItem::Sources(vec![("https://blog.rust-lang.org/x".into(), "Announcing Rust 1.99".into())])]);
+        assert_eq!(items_from(&json!({ "kind": "assistant", "text": "hi" })).len(), 1);
     }
 
     #[test]

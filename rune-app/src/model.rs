@@ -168,6 +168,8 @@ pub enum ThreadItem {
     Team { text: String, agents: Vec<String> },
     /// A step (or a notice, icon "help"). A command keeps what it ran and the end of its output.
     Event { icon: &'static str, text: String, detail: Option<Box<StepDetail>> },
+    /// The pages a reply searched or opened: (url, title), shown as "Searched the web" chips.
+    Sources(Vec<(String, String)>),
     /// The engine asks before it acts. `answer` is set once you (or a timeout) answered.
     Approval { id: String, title: String, detail: String, answer: Option<String> },
 }

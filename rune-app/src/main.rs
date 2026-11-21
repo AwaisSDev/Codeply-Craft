@@ -341,6 +341,21 @@ const SCENES: &[Scene] = &[
         s.data.threads.push(("Casual chat".into(), items));
         s.attachments.insert(EditKey::ChatThread, vec![pic]);
     }),
+    // A specialist chat that searched the web: the pages it used as chips under the reply.
+    ("chat-sources", |s| {
+        s.open_chat("Casual chat");
+        let mut items = s.data.thread("Casual chat").to_vec();
+        items.push(model::ThreadItem::You("What changed in Rust 1.99?".into()));
+        items.push(model::ThreadItem::Event { icon: "globe", text: "Searched the web for \"Rust 1.99 release notes\"".into(), detail: None });
+        items.push(model::ThreadItem::Event { icon: "globe", text: "Opened blog.rust-lang.org".into(), detail: None });
+        items.push(model::ThreadItem::Them("Rust 1.99 stabilises async closures in traits and speeds up incremental builds. The full list is in the release notes.".into()));
+        items.push(model::ThreadItem::Sources(vec![
+            ("https://blog.rust-lang.org/2026/11/20/Rust-1.99.html".into(), "Announcing Rust 1.99".into()),
+            ("https://github.com/rust-lang/rust/releases".into(), "Releases".into()),
+            ("https://doc.rust-lang.org/stable/releases.html".into(), String::new()),
+        ]));
+        s.data.threads.push(("Casual chat".into(), items));
+    }),
     ("update-offer", |s| { s.new_chat(); s.updater.show(update::Phase::Offer(sample_release())); }),
     ("update-downloading", |s| { s.new_chat(); s.updater.show(update::Phase::Fetching { version: "4.0.140".into(), done: 31_000_000, total: 74_000_000, setup: true }); }),
     ("update-ready", |s| { s.new_chat(); s.updater.show(update::Phase::Ready(sample_release())); }),
