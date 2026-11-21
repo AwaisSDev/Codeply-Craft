@@ -381,6 +381,9 @@ fn the_appearance_popover_deletes_an_agent() {
     let mut rt = runtime(s);
     settle(&mut rt);
     click(&mut rt, "appearance-delete");
+    assert!(rt.state.data.agent("backend").is_some(), "the first press only asks");
+    assert_eq!(rt.state.delete_armed.as_deref(), Some("backend"));
+    click(&mut rt, "appearance-delete");
     assert!(rt.state.data.agent("backend").is_none(), "Backend is off the team");
     assert_eq!(rt.state.appearance, None, "the popover closes");
     // Wisp leads and has no Delete.

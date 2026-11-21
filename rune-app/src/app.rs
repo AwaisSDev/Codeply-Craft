@@ -373,6 +373,8 @@ pub struct App {
     /// The agent session whose transcript was last asked for, so one that only becomes known
     /// later (the chat list arrives after the page opened) is fetched once it does.
     opened_session: String,
+    /// The agent whose Delete was pressed once: the button asks "Delete Inbox?" before it does.
+    pub delete_armed: Option<String>,
     /// Whether the usage sheet is open (the button beside you at the sidebar's foot).
     pub usage_open: bool,
     /// The usage sheet's grouping (weekly or daily) and the week ("w12") or day ("d2026-10-11")
@@ -473,6 +475,7 @@ impl App {
             team_dialog: None,
             reminders_open: false,
             opened_session: String::new(),
+            delete_armed: None,
             code_ask: false,
             attachments: std::collections::HashMap::new(),
             agent_session: std::collections::HashMap::new(),
@@ -659,6 +662,7 @@ impl App {
     }
 
     pub fn toggle_appearance(&mut self, id: &str) {
+        self.delete_armed = None;
         self.appearance = if self.appearance.as_deref() == Some(id) { None } else { Some(id.to_owned()) };
     }
 

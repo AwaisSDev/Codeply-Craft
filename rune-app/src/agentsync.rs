@@ -335,7 +335,7 @@ pub fn apply_jobs(snap: &mut Snapshot, v: &Value) {
             }
             x.health.retain(|h| h.run != run);
             let (needs, failures, error) = (s(j, "needsYou"), j["failures"].as_u64().unwrap_or(0), s(j, "lastError"));
-            let until = j["nextAt"].as_u64().filter(|_| failures > 0).map(|ms| iso_of(ms)).unwrap_or_default();
+            let until = j["nextAt"].as_u64().filter(|_| failures > 0).map(iso_of).unwrap_or_default();
             let state = if !needs.is_empty() { "needs_you" } else if failures > 0 && !error.is_empty() { "retrying" } else { continue };
             x.health.push(Health {
                 run, agent: s(j, "specialist"), chat_id: s(j, "sessionId"), state: state.into(), attempt: failures as u32, until,
