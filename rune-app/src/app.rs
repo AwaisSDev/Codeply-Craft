@@ -375,6 +375,8 @@ pub struct App {
     opened_session: String,
     /// The agent whose Delete was pressed once: the button asks "Delete Inbox?" before it does.
     pub delete_armed: Option<String>,
+    /// The specialist editor's model pick: "auto" (Haze 2 picks) or one of your models' ids.
+    pub spec_model: String,
     /// Whether the usage sheet is open (the button beside you at the sidebar's foot).
     pub usage_open: bool,
     /// The usage sheet's grouping (weekly or daily) and the week ("w12") or day ("d2026-10-11")
@@ -476,6 +478,7 @@ impl App {
             reminders_open: false,
             opened_session: String::new(),
             delete_armed: None,
+            spec_model: crate::models::AUTO.into(),
             code_ask: false,
             attachments: std::collections::HashMap::new(),
             agent_session: std::collections::HashMap::new(),

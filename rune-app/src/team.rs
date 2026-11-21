@@ -133,6 +133,7 @@ impl App {
             *self.edit_mut(EditKey::SpecName) = rune::TextEdit::new(name);
             *self.edit_mut(EditKey::SpecFocus) = rune::TextEdit::new(focus);
             *self.edit_mut(EditKey::SpecInstructions) = rune::TextEdit::new(prompt);
+            self.spec_model = if spec.model.is_empty() { crate::models::AUTO.into() } else { spec.model.clone() };
         }
         self.notice = None;
         self.team_dialog = Some(d);
@@ -171,6 +172,9 @@ impl App {
             }
         } else {
             patch.insert("notes".into(), prompt.into());
+        }
+        if self.spec_model != spec.model && !(spec.model.is_empty() && self.spec_model == crate::models::AUTO) {
+            patch.insert("model".into(), self.spec_model.clone().into());
         }
         self.notice = None;
         self.team_dialog = None;
@@ -266,6 +270,24 @@ fn close_dialog(s: &mut App) {
     s.notice = None;
 }
 
+/// The specialist's own model: Haze 2 picks (auto), or one of your models.
+fn model_pick(s: &App, t: &Theme) -> El {
+    let mut options = vec![(crate::models::AUTO.to_owned(), "Haze 2 picks".to_owned())];
+    options.extend(s.data.extra.models.list.iter().map(|m| (m.id.clone(), m.name.clone())));
+    let chips = options.into_iter().map(|(id, name)| {
+        let on = s.spec_model == id;
+        let pick = id.clone();
+        rune::row().key(format!("spec-model/{id}")).h(28.0).px(10.0).radius(14.0).center_y()
+            .fill(if on { t.active } else { rune::Color::TRANSPARENT }).border(1.0, if on { t.control_border } else { t.border }).hover(t.hover)
+            .role("radio").checked(on).label(name.clone())
+            .child(text(name).font(ui(12.5, if on { 600.0 } else { 400.0 })).color(if on { t.text } else { t.dim }))
+            .on_press(move |s: &mut App| s.spec_model = pick.clone())
+    });
+    col().w_full().gap(5.0)
+        .child(text("Model").font(ui(12.0, 600.0)).color(t.faint))
+        .child(rune::row().w_full().gap(6.0).flex_wrap().children(chips))
+}
+
 /// A taller field for instructions: several lines, Enter makes a new one.
 fn area(s: &App, t: &Theme, key: EditKey, label: &str, placeholder: &str) -> El {
     let input = text_input(s.edit(key), ui(13.0, 400.0)).key(format!("team-field/{}", key.name())).grow(1.0).w_full().color(t.text)
@@ -303,6 +325,7 @@ pub fn dialog(s: &App, t: &Theme) -> Option<El> {
                 ("Instructions, its system prompt", "What it does, how, and what it must never do")
             };
             fields.push(area(s, t, EditKey::SpecInstructions, label, placeholder));
+            fields.push(model_pick(s, t));
             (
                 format!("Edit {name}"),
                 if spec.builtin { "A built-in specialist. Add house rules it follows on top of its guide.".into() } else { "Changes reach your phone too. Its jobs and chats stay with it when you rename it.".into() },

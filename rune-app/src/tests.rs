@@ -1004,3 +1004,18 @@ fn a_failed_reminder_comes_back_to_the_form_and_notices_clear_on_leaving() {
     click(&mut rt, "agent-row/mission");
     assert!(rt.state.notice.is_none(), "a page's notice doesn't follow you");
 }
+
+#[test]
+fn a_specialist_can_have_its_own_model() {
+    let mut rt = runtime(App::with_mock());
+    rt.state.open_agent(Some("inbox"));
+    rt.state.open_team_dialog(crate::team::TeamDialog::Edit("inbox".into()));
+    rt.invalidate();
+    settle(&mut rt);
+    assert_eq!(rt.state.spec_model, "auto");
+    let id = rt.state.data.extra.models.list.first().map(|m| m.id.clone()).expect("the sample has a model of yours");
+    click(&mut rt, &format!("spec-model/{id}"));
+    click(&mut rt, "team-dialog-ok");
+    assert!(rt.state.team_dialog.is_none());
+    assert_eq!(rt.state.data.extra.agents.spec("inbox").unwrap().model, id);
+}

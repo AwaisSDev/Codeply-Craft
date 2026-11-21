@@ -828,6 +828,7 @@ pub fn patch_spec(spec: &mut Spec, patch: &Value) {
     if let Some(v) = str_of("instructions") { spec.instructions = v; }
     if let Some(v) = str_of("notes") { spec.notes = v; }
     if let Some(v) = str_of("voice") { spec.voice = v; }
+    if let Some(v) = str_of("model") { spec.model = v; }
     if let Some(v) = str_of("shape") { spec.shape = v; }
     if let Some(v) = str_of("color") { spec.color = v; }
     if let Some(v) = patch["alwaysOn"].as_bool() { spec.always_on = v; }
