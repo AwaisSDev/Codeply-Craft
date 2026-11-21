@@ -82,9 +82,10 @@ never come back to the app: it gets `hasKey` and a short preview. Not carried ov
 plan sign-in (Electron's menu dropped it too) and Claude Code (an agent tool, not a model).
 
 What the engine covers: the Chat sidebar, transcripts (streaming), sending from every composer
-(Wisp and each helper get a chat of their own), and approvals. Agents, Board, Office, Pull requests
-and Apps still show sample data: the engine has no API for them yet. Shape and colour picks aren't
-saved yet.
+(Wisp and each helper get a chat of their own), approvals, your team and its loops
+(`sidecar/ext-team.mjs`), pull requests (`ext-prs.mjs`), apps (`ext-apps.mjs`), reminders and the
+agent features shared with the phone (below). In live mode nothing from the sample data shows:
+each list stays empty until the engine answers.
 
 `--store live --server URL --token PW` talks to a `codeply serve` you run yourself instead.
 
@@ -144,6 +145,41 @@ src/
 - **Motion.** Views and list rows enter with ease-out (0.28 s, no bounce) and rows stagger by
   35 ms. Rune springs are interruptible by design. Reduced motion holds the Office still and Rune
   turns travel into fades.
+
+## Agents, the same on the phone and the PC
+
+The phone's specialist and always-on features are here too, reading the same account data, so a
+change on one device shows on the other (`src/agentsync.rs`, `src/views/reminders.rs`,
+`src/notify.rs`; the engine side is `sidecar/ext-agentsync.mjs` and `ext-reminders.mjs`):
+
+- **Faces.** Each specialist's shape, colour and gear come from the account
+  (`GET /ext/agentsync/specialists`). Picking a shape or colour in Appearance saves it there for a
+  specialist you made; built-in ones keep the account's face fixed (as the phone does), so a pick
+  here stays on this PC.
+- **@Name.** A message that starts with `@Inbox` goes to Inbox: its page opens with a new session,
+  and the next messages go there without the `@`. `@Codeply` or `@Wisp` goes back to Wisp.
+  `@Name` later in a message still just asks that agent (`ask_bot`).
+- **Editing a specialist.** Edit on its page: name, what it is for and its instructions (for a
+  built-in one, house rules on top of its guide). Always on: its jobs run on time with the PC
+  off (the server's timer takes them); off, they wait until Codeply is open.
+- **Loops.** Create, switch off, delete and Run now. Each says where it runs ("Only while Codeply
+  is open", "On your PC, or in the cloud", "Running now on this PC").
+- **Health.** Every run's `run_health` event shows where you look: the agent's row and computer
+  card, its loop, the chat (a line above the composer), Mission control's Needs you and the bell:
+  running, "Retrying, try 2 at 10:07 PM", "Paused until 11:00 PM", "Kept going (part 2)",
+  "Resumed in the cloud", "Needs you: ...".
+- **Reports.** A standing job's report lands in its chat (marked "Standing job report"), in the
+  bell, in the agent's Recent reports, and as a desktop notification.
+- **Reminders.** Agents > Reminders: the account's reminders, the phone's list. Add one in plain
+  words ("in 10 minutes", "at 5pm", "tomorrow at 9"), snooze or delete it; "remind me at 5: call
+  mom" or "cancel my reminder" works in any chat. One coming due is a desktop notification.
+- **Notifications.** Desktop notifications use the OS's own tool (`notify-send`, `osascript`, a
+  PowerShell toast on Windows). With Settings > General > Notifications off, Reminders, an agent
+  with loops and the bell say so, with a Turn on button.
+- **Times** are in the PC's time zone, which `sidecar/ext-clock.mjs` reports.
+
+Scenes: `reminders`, `reminders-notifications-off`, `agent-inbox`, `agent-health`, `spec-edit`,
+`spec-edit-builtin`, `bell-reports`.
 
 ## Subagents
 
