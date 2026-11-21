@@ -81,4 +81,55 @@ function reportText(task, { reply, verdict, status }) {
   return `${head}${why}: ${body.slice(0, 600) || String(task.text || '').slice(0, 120)}`;
 }
 
-module.exports = { OUTWARD, NEVER_ALONE, BUDGET_OF, decide, taskMessage, verifyMessage, parseVerdict, reportText };
+/** The fix pass: one more go when the check says the task is not really done. */
+function fixMessage(task, verdict, checkText = '') {
+  const found = (verdict && verdict.why) || String(checkText || '').replace(/VERIFIED:.*$/im, '').trim().slice(0, 600) || 'the result did not match the task';
+  return `The check of this task found a problem: ${found}
+The task was: "${String(task.text || '').slice(0, 400)}"
+Fix exactly what the check found, using the real files and tools, then check it again yourself. Do not start over, and do not redo what already works.
+End with ONE line, exactly: VERIFIED: yes|partly|no - <how you checked, or what is missing>`;
+}
+
+/**
+ * Run a background agent to its end and keep what it said. Unlike a bare
+ * "throw on error", an unfinished run (step limit after every continuation)
+ * still returns its summary, and a parked run (allowance used up) returns
+ * where to pick it up. Throws only for a real error or a stop.
+ * Returns { reply, parked: {until, ledger} | null, needsYou: string, unfinished: bool }.
+ */
+async function collectRun(gen, onEvent) {
+  let reply = '';
+  let parked = null;
+  let needsYou = '';
+  let unfinished = false;
+  for await (const ev of gen) {
+    if (ev.type === 'text' && !ev.interim) reply += (reply ? '\n\n' : '') + ev.text;
+    else if (ev.type === 'parked') parked = { until: ev.until, ledger: ev.ledger };
+    else if (ev.type === 'health' && ev.state === 'needs_you') needsYou = ev.reason || 'It needs you to finish.';
+    else if (ev.type === 'error') throw new Error(ev.error || 'the run failed');
+    else if (ev.type === 'aborted') throw new Error('Stopped.');
+    else if (ev.type === 'done') { unfinished = !!ev.unfinished; if (onEvent) onEvent(ev); break; }
+    if (onEvent) onEvent(ev);
+  }
+  return { reply, parked, needsYou, unfinished };
+}
+
+/** What a parked run stores on its task so the queue picks it up again at `until`. */
+function parkFields(parked) {
+  return { status: 'queued', notBefore: parked.until, resume: parked.ledger };
+}
+
+/** True when a queued task may start: no notBefore, or that time has passed. */
+function isDue(task, now = Date.now()) {
+  const at = Date.parse((task && (task.notBefore || (task.data && task.data.notBefore))) || '');
+  return !Number.isFinite(at) || at <= now;
+}
+
+/** A short line for the user when a task is waiting on an allowance. */
+function parkedText(parked) {
+  const at = new Date(parked.until);
+  const clock = Number.isNaN(at.getTime()) ? 'later' : at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `Paused until ${clock}: the AI allowance is used up for now. It carries on by itself from where it stopped.`;
+}
+
+module.exports = { OUTWARD, NEVER_ALONE, BUDGET_OF, decide, taskMessage, verifyMessage, parseVerdict, reportText, fixMessage, collectRun, parkFields, isDue, parkedText };

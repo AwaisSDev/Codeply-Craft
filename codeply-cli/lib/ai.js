@@ -76,9 +76,12 @@ function retryAfterMs(res) {
 
 /** Backoff with +-25% jitter so several clients don't retry in lockstep. */
 function backoffMs(attempt, hinted) {
-  if (hinted !== undefined) return Math.min(RETRY_AFTER_CAP_MS, hinted);
+  // CODEPLY_RETRY_SCALE shrinks every wait (tests set it tiny); unset = real time.
+  const scale = Number(process.env.CODEPLY_RETRY_SCALE);
+  const k = Number.isFinite(scale) && scale >= 0 && process.env.CODEPLY_RETRY_SCALE !== undefined && process.env.CODEPLY_RETRY_SCALE !== '' ? scale : 1;
+  if (hinted !== undefined) return Math.round(Math.min(RETRY_AFTER_CAP_MS, hinted) * k);
   const base = RETRY_BACKOFF_MS[attempt - 1] ?? RETRY_BACKOFF_MS[RETRY_BACKOFF_MS.length - 1];
-  return Math.round(base * (0.75 + Math.random() * 0.5));
+  return Math.round(base * (0.75 + Math.random() * 0.5) * k);
 }
 
 /**
@@ -124,9 +127,11 @@ async function withRetries(send, signal) {
     // the one Stop just cancelled.
     if (step.aborted) return { success: false, error: 'aborted', aborted: true };
     lastError = step.error;
+    // `transient` tells a background run that waiting longer can help (the
+    // service was down or busy), as opposed to a bad request or a bad key.
     if (!step.retryable) return { success: false, error: lastError };
   }
-  return { success: false, error: lastError };
+  return { success: false, error: lastError, transient: true };
 }
 
 // ─── Native tool calling ────────────────────────────────────────────────────

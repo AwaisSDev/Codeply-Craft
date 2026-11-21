@@ -1866,6 +1866,139 @@ function withoutEmDashes(text) {
     : part.replace(/ \u2014 /g, ', ').replace(/\u2014/g, '-'))).join('');
 }
 
+// ─── Background resilience ──────────────────────────────────────────────────
+// A background run (scheduled job, loop, autopilot task, cloud or handoff run)
+// has nobody watching, so a bad minute at the model must not end it. These
+// helpers are only used when runAgent gets `background: true`.
+
+// Waits between loop-level retries: about ten minutes in total.
+const BACKGROUND_RETRY_MS = [15000, 30000, 60000, 120000, 180000, 180000];
+
+function retryScheduleFor(custom) {
+  if (Array.isArray(custom) && custom.length) return custom.map((n) => Math.max(0, Number(n) || 0));
+  const env = String(process.env.CODEPLY_RETRY_SCHEDULE_MS || '').trim();
+  if (env) {
+    const list = env.split(',').map((n) => Number(n.trim())).filter((n) => Number.isFinite(n) && n >= 0);
+    if (list.length) return list;
+  }
+  return BACKGROUND_RETRY_MS;
+}
+
+/** Waiting longer can help: network trouble, 429, 5xx, 546, timeouts. */
+function isTransientFailure(result) {
+  if (!result || result.success || result.limited || result.aborted) return false;
+  if (result.transient) return true;
+  return /\b(429|5\d\d|546)\b|timed out|timeout|temporarily unavailable|fetch failed|ECONN|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|socket hang up|network|unreachable|stream interrupted|stopped sending|overloaded/i.test(String(result.error || ''));
+}
+
+/** A bad key or a missing sign-in: another try or another tier will not fix it. */
+function isAuthFailure(result) {
+  if (!result || result.success) return false;
+  return /\b(401|403)\b|unauthori[sz]ed|invalid (api )?key|incorrect api key|not signed in|sign in|authentication|forbidden|permission denied/i.test(String(result.error || ''));
+}
+
+function plainReason(result) {
+  const e = String(result?.error || 'the model did not answer').replace(/\s+/g, ' ').trim();
+  return e.length > 160 ? `${e.slice(0, 157)}...` : e;
+}
+
+/**
+ * Other models this run could finish on, cheapest sensible first, from what
+ * already exists: a picked Codeply model falls back to Auto (Haze picks the
+ * tier), then the user's own models. A custom or stored model falls back to
+ * Auto (the hosted model), then the user's other models. Nothing here asks
+ * for a key the user has not already saved.
+ */
+function defaultFallbackRoutes(route) {
+  const out = [];
+  const seen = new Set();
+  const add = (r, label) => {
+    const key = r.auto ? `auto${r.pick ? ':' + r.pick : ''}` : `custom:${r.custom.id || r.custom.model}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ route: r, label });
+  };
+  if (route?.auto) seen.add(`auto${route.pick ? ':' + route.pick : ''}`);
+  else if (route?.custom) seen.add(`custom:${route.custom.id || route.custom.model}`);
+  if (route?.auto && route.pick) add({ auto: true }, 'Haze 2 (Auto)');
+  let models = [];
+  try { models = config.getModels() || []; } catch {}
+  const usable = models.filter((m) => m && m.baseUrl && m.model && (m.apiKey || m.kind === 'ollama' || /^https?:\/\/(localhost|127\.)/i.test(m.baseUrl)));
+  // Local models last: they are the most likely to be slow, and the surest to be there.
+  const rank = (m) => (/^https?:\/\/(localhost|127\.)/i.test(m.baseUrl) ? 1 : 0);
+  if (!route?.auto && !route?.pick) {
+    let signedIn = true;
+    try { signedIn = !!config.getConfig(); } catch {}
+    if (signedIn) add({ auto: true }, 'Haze 2 (Auto)');
+  }
+  for (const m of [...usable].sort((a, b) => rank(a) - rank(b))) add({ custom: m }, m.name || m.model);
+  return out;
+}
+
+/**
+ * One model call that survives a bad moment, for background runs. `call(route)`
+ * makes the request. Yields health events, returns the final attempt (which may
+ * still be a failure). `st` is { route, signal, fallbacks, fallbackOk, schedule, used }.
+ */
+async function* resilientCall(call, st) {
+  let attempt = await call(st.route);
+  const failed = () => !attempt.result.success;
+  if (!failed() || st.signal.aborted) return attempt;
+  // Retry window. The ai layer already tried a few times quickly; this is the long wait.
+  for (let n = 0; n < st.schedule.length && failed(); n++) {
+    const r = attempt.result;
+    if (st.signal.aborted || r.aborted || !isTransientFailure(r)) break;
+    const wait = st.schedule[n];
+    yield { type: 'health', state: 'retrying', attempt: n + 1, reason: `The AI service is not answering (${plainReason(r)}). Trying again.`, until: new Date(Date.now() + wait).toISOString() };
+    await new Promise((resolve) => {
+      if (st.signal.aborted) return resolve();
+      const onAbort = () => { clearTimeout(t); resolve(); };
+      const t = setTimeout(() => { st.signal.removeEventListener('abort', onAbort); resolve(); }, wait);
+      st.signal.addEventListener('abort', onAbort, { once: true });
+    });
+    if (st.signal.aborted) return attempt;
+    attempt = await call(st.route);
+    if (st.signal.aborted) return attempt;
+  }
+  // Fallback chain: a different model, unless it is an abort, a limit, or a key problem.
+  while (failed() && !st.signal.aborted && !attempt.result.limited && !attempt.result.aborted && !isAuthFailure(attempt.result)) {
+    const next = st.fallbacks.find((f) => !st.used.has(f) && st.fallbackOk(f.route));
+    if (!next) break;
+    st.used.add(next);
+    yield { type: 'health', state: 'fallback', model: next.label, reason: `The usual model is not answering (${plainReason(attempt.result)}). Carrying on with ${next.label}.` };
+    attempt = await call(next.route);
+    if (attempt.result.success) st.route = next.route;
+  }
+  return attempt;
+}
+
+/** The compact record of a run: enough for a later call to carry on without redoing work. */
+function buildLedger({ goal, userMessage, steps, actions, files, todos, lastText, part }) {
+  return {
+    v: 1,
+    goal: String(goal || (typeof userMessage === 'string' ? userMessage : '')).slice(0, 2000),
+    userMessage: typeof userMessage === 'string' ? userMessage : '',
+    steps,
+    part: part || 0,
+    files: [...files].slice(-60),
+    actions: actions.slice(-40).map((a) => ({ tool: a.tool, label: String(a.label || '').slice(0, 160), ok: !!a.ok, ...(a.exitCode !== undefined ? { exitCode: a.exitCode } : {}) })),
+    todos: Array.isArray(todos) ? todos : [],
+    lastText: String(lastText || '').slice(0, 1500),
+    at: new Date().toISOString(),
+  };
+}
+
+function ledgerNote(ledger, lead) {
+  const rows = (ledger.actions || []).map((a, i) => `${i + 1}. ${a.tool} ${a.label}${a.ok ? '' : ' (FAILED)'}${a.exitCode !== undefined ? ` exit ${a.exitCode}` : ''}`);
+  const open = ledger.todos && ledger.todos.length ? formatTodos(ledger.todos, { openOnly: true }) : '';
+  return `[system] ${lead}\nThe goal: ${ledger.goal}\n` +
+    (ledger.files && ledger.files.length ? `Files changed so far: ${ledger.files.join(', ')}\n` : 'No files have been changed yet.\n') +
+    (rows.length ? `What already ran (the ground truth):\n${rows.join('\n')}\n` : '') +
+    (open ? `Still open on your task list:\n${open}\n` : '') +
+    (ledger.lastText ? `Your last note was: ${ledger.lastText}\n` : '') +
+    'Do not redo what is listed as done. Finish what is left, check it, then give your final answer.';
+}
+
 // ─── Loop ───────────────────────────────────────────────────────────────────
 
 // Thinking models (DeepSeek V4 and later) refuse the next step of a tool run
@@ -1908,9 +2041,19 @@ function withReasoning(msg, reasoning) {
  * @param {boolean}  [o.verifyOnly] a checking turn (task verification pass, /goal check): its
  *                                  replies describe work done in EARLIER turns, so the
  *                                  "claims an edit it didn't make this turn" check is skipped.
+ * @param {boolean}  [o.background] nobody is watching (scheduled job, loop, autopilot, cloud, handoff):
+ *                                  model outages are waited out (~10 min), a fallback model is tried,
+ *                                  a limit parks the run, and the step limit continues instead of failing.
+ *                                  Interactive chat leaves it off and behaves exactly as before.
+ * @param {number}   [o.maxContinuations] background only: extra step budgets after the first (default 3).
+ * @param {object}   [o.resume]     a ledger from a `parked` event: carries on without redoing its work.
+ * @param {Array}    [o.fallbacks]  background only: routes to try after the retry window, in order
+ *                                  ([{auto:true}] or [{custom:<model>}]). Default: derived from the user's models.
+ * @param {number[]} [o.retryScheduleMs] background only: waits between loop-level retries (tests use tiny ones).
  * @yields {{type:string, ...}} text | reasoning | tool_start | tool_end | done | error | aborted
+ *          | health {state:'retrying'|'fallback'|'parked'|'continued'|'needs_you'} | parked {until, ledger}
  */
-export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly, botPrompt, askBot, handOff, botId, haze: hazeOpts, todos, bringIn, claudeCode, createSpecialist, schedule, talkTo, agentRole, credit }) {
+export async function* runAgent({ userMessage, history, mode, cwd, approve, browser, images, signal, route, roleId, goal, maxSteps, verifyOnly, botPrompt, askBot, handOff, botId, haze: hazeOpts, todos, bringIn, claudeCode, createSpecialist, schedule, talkTo, agentRole, credit, background, maxContinuations, resume, fallbacks, retryScheduleMs }) {
   let readOnly = READ_ONLY_MODES.has(mode);
   const stepBudget = Math.max(1, maxSteps || MAX_STEPS);
   // OpenAI-shaped content array only when there's actually an image to carry -
@@ -2039,6 +2182,36 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     }
   }
 
+  // A parked run picking up again: its record counts as done work, and one new
+  // message (appended, so the cached prefix is untouched) says to carry on.
+  let resumeSteps = 0;
+  let lastText = '';
+  if (resume && typeof resume === 'object') {
+    for (const a of Array.isArray(resume.actions) ? resume.actions : []) actions.push({ ...a });
+    const files = Array.isArray(resume.files) ? resume.files : [];
+    if (files.length) {
+      madeAnyEdit = true;
+      for (const f of files) { writtenBasenames.add(path.basename(String(f)).toLowerCase()); unverifiedEdits.add(String(f).replace(/\\/g, '/')); }
+    }
+    if (Array.isArray(resume.todos) && resume.todos.length && !ctx.todos) ctx.todos = resume.todos;
+    resumeSteps = Number(resume.steps) || 0;
+    lastText = String(resume.lastText || '');
+    messages.push({ role: 'user', content: ledgerNote(resume, 'This task was paused part way (the AI service was out of allowance or unreachable) and is starting again.') });
+  }
+  const bg = !!background;
+  const resil = bg ? {
+    route,
+    signal,
+    schedule: retryScheduleFor(retryScheduleMs),
+    fallbacks: Array.isArray(fallbacks) ? fallbacks.map((r, i) => ({ route: r, label: r.custom ? (r.custom.name || r.custom.model || `model ${i + 1}`) : 'Haze 2 (Auto)' })) : defaultFallbackRoutes(route),
+    // A model that can't do native tool calls can't share a run whose prompt is built for them.
+    fallbackOk: (r) => !native || wantsNativeTools(r),
+    used: new Set(),
+  } : null;
+  const maxParts = bg ? Math.max(0, Number.isFinite(Number(maxContinuations)) ? Number(maxContinuations) : 3) : 0;
+  let part = 0;
+  let totalSteps = resumeSteps;
+
   // A prompt instruction alone ("call view_images before designing") was not
   // reliable enough - real runs showed the model calling
   // design_reference_search, getting real hits back, and then
@@ -2110,6 +2283,9 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
 
   const callKey = (name, args) => `${name}:${JSON.stringify(args)}`;
 
+  // One segment is one step budget. Interactive runs have exactly one; a
+  // background run that hits the limit starts another (see the end of the loop).
+  segments: for (;;) {
   for (let step = 0; step < stepBudget; step++) {
     if (signal.aborted) { yield { type: 'aborted' }; return; }
 
@@ -2130,7 +2306,9 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     if (signal.aborted) { yield { type: 'aborted' }; return; }
 
     const stepStarted = Date.now();
-    let attempt = await callModel(outgoing, userMessage, signal, route, native ? toolSchemas : null, mcpNames.toNative, hazeStep(step));
+    let attempt;
+    if (bg) attempt = yield* resilientCall((rt) => callModel(outgoing, userMessage, signal, rt, native ? toolSchemas : null, mcpNames.toNative, hazeStep(step)), resil);
+    else attempt = await callModel(outgoing, userMessage, signal, route, native ? toolSchemas : null, mcpNames.toNative, hazeStep(step));
     // The model or its endpoint turned out not to do function calling: drop
     // to text actions for the rest of this turn (and remember it for later
     // turns), with the text-format system prompt.
@@ -2142,7 +2320,7 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       messages[1] = { role: 'system', content: textSections.project };
       outgoing = [messages[0], messages[1], ...outgoing.slice(2)];
       yield { type: 'notice', level: 'info', text: 'This model does not support native tool calls, so Codeply switched to text actions.' };
-      attempt = await callModel(outgoing, userMessage, signal, route);
+      attempt = await callModel(outgoing, userMessage, signal, bg ? resil.route : route);
     }
     const stepMs = Date.now() - stepStarted;
     // A real fetch abort (see the signal wiring in ai.js) lands here as a
@@ -2151,6 +2329,17 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     // stop mid-generation would flash "AbortError" instead of just stopping.
     if (signal.aborted) { yield { type: 'aborted' }; return; }
     const result = attempt.result;
+    if (!result.success && bg && result.limited) {
+      // An allowance that comes back at a known time is a pause, not a failure:
+      // hand back a record the caller can resume from at that time.
+      const reset = Date.parse(result.resetsAt || '');
+      const until = new Date(Number.isFinite(reset) && reset > Date.now() ? reset : Date.now() + 30 * 60 * 1000).toISOString();
+      const reason = result.error || 'The AI allowance is used up for now.';
+      const ledger = buildLedger({ goal, userMessage, steps: totalSteps + step, actions, files: [...writtenBasenames], todos: ctx.todos, lastText, part });
+      yield { type: 'health', state: 'parked', until, reason };
+      yield { type: 'parked', until, ledger };
+      return { transcript };
+    }
     if (!result.success) {
       yield {
         type: 'error',
@@ -2367,13 +2556,14 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       // otherwise it's the final answer, shown as a normal message.
       yield { type: 'text', text: shown, interim: calls.length > 0 };
       transcript.push({ role: 'assistant', content: shown });
+      lastText = shown;
     }
 
     if (calls.length === 0) {
       // No action block, and every check above passed: the turn is finished.
       yield {
         type: 'done',
-        steps: step + 1,
+        steps: totalSteps + step + 1,
         madeAnyEdit,
         writtenFiles: [...writtenBasenames],
         actions,
@@ -2691,11 +2881,33 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
     }
   }
 
+  totalSteps += stepBudget;
+  // Background: out of steps is not the end. Start the next segment with a fresh
+  // budget and a short record of what is done, appended as a new message.
+  if (bg && !signal.aborted && actions.length && part < maxParts) {
+    part++;
+    messages.push({ role: 'user', content: ledgerNote(
+      buildLedger({ goal, userMessage, steps: totalSteps, actions, files: [...writtenBasenames], todos: ctx.todos, lastText, part }),
+      `Part ${part} of this task used its ${stepBudget} steps. This is part ${part + 1} of ${maxParts + 1}, with a fresh step budget.`) });
+    budgetWarned = false;
+    readOnlyStreak = 0;
+    failuresByTool.clear();
+    recentCallKeys.length = 0;
+    yield { type: 'health', state: 'continued', part: part + 1 };
+    continue segments;
+  }
+  break;
+  }
+
+  let summarized = false;
   // Out of steps. One last call with actions switched off, so the user gets a
   // real account of where things stand instead of a bare "stopped". Its
   // answer is checked the same way: no action blocks, no invented results.
   if (!signal.aborted && actions.length) {
-    const closing = await callModel([...trimTranscript(messages, contextBudgetFor(route), trimState), { role: 'user', content: FINAL_SUMMARY_PROMPT }], userMessage, signal, route, null, null, hazeStep(stepBudget));
+    const closingMessages = [...trimTranscript(messages, contextBudgetFor(route), trimState), { role: 'user', content: FINAL_SUMMARY_PROMPT }];
+    let closing;
+    if (bg) closing = yield* resilientCall((rt) => callModel(closingMessages, userMessage, signal, rt, null, null, hazeStep(stepBudget)), resil);
+    else closing = await callModel(closingMessages, userMessage, signal, route, null, null, hazeStep(stepBudget));
     const text = closing.result?.success ? String(closing.result.data?.choices?.[0]?.message?.content || '') : '';
     const { prose, calls: stray } = parseReply(text);
     // Keep only what comes before any action block it wrote anyway.
@@ -2704,7 +2916,23 @@ export async function* runAgent({ userMessage, history, mode, cwd, approve, brow
       const shown = withoutEmDashes(cleaned);
       yield { type: 'text', text: shown, interim: false };
       transcript.push({ role: 'assistant', content: shown });
+      lastText = shown;
+      summarized = true;
     }
+  }
+
+  if (bg) {
+    // Still unfinished after every continuation: a normal reply plus a plain
+    // flag, so the caller can ask the user instead of calling it a failure.
+    const left = `Not finished after ${totalSteps} steps.` + (madeAnyEdit ? ` Changed so far: ${[...writtenBasenames].join(', ')}.` : ' No files were changed.');
+    if (!summarized) {
+      const shown = withoutEmDashes(lastText || left);
+      yield { type: 'text', text: shown, interim: false };
+      transcript.push({ role: 'assistant', content: shown });
+    }
+    yield { type: 'health', state: 'needs_you', reason: `${left} It needs a look from you to finish.` };
+    yield { type: 'done', steps: totalSteps, madeAnyEdit, writtenFiles: [...writtenBasenames], actions, unverifiedFiles: [...unverifiedEdits], unfinished: true };
+    return { transcript };
   }
 
   yield {

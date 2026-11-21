@@ -35,7 +35,8 @@ const when = (t) => {
 };
 /** One line for the loop's row: how it went last, or when it runs first. */
 const status = (j) => j.enabled === false ? `Off · ${j.whenText}`
-  : j.lastError ? `Failed ${ago(j.updatedAt || Date.now())}: ${j.lastError}`
+  : j.needsYou ? `Needs you: ${j.needsYou}`
+  : j.lastError ? `${j.failures ? `Failed ${ago(j.updatedAt || Date.now())}, trying again` : `Waiting`} ${j.nextAt ? when(j.nextAt) : ''}: ${j.lastError}`
   : j.lastAt ? `Succeeded ${ago(j.lastAt)} · next ${j.nextAt ? when(j.nextAt) : 'not set'}`
   : `${j.whenText} · first run ${j.nextAt ? when(j.nextAt) : 'not set'}`;
 
@@ -50,17 +51,29 @@ function teamView() {
     id: j.id, specialist: j.specialist, name: (w.findSpecialist(j.specialist) || {}).name || j.specialist,
     task: j.task || '', when: j.whenText || '', enabled: j.enabled !== false,
     nextAt: j.nextAt || 0, lastAt: j.lastAt || 0, lastError: j.lastError || '', sessionId: j.sessionId || '',
-    runs: j.runs || 0, status: status(j),
+    runs: j.runs || 0, status: status(j), failures: j.failures || 0, needsYou: j.needsYou || '', running: inFlight.has(j.id),
   }));
   return { team, jobs };
 }
 
-/** Runs one due job: a message in the job's own chat (made on its first run), as wisp-desktop.js fire(). */
+const inFlight = new Set(); // job ids whose run has not ended yet
+// The app's run health line for a job's chat (CONTRACTS.md "run health").
+const health = (session, job, state, extra = {}) => {
+  try { C.emit(session ? session.id : null, { type: 'run_health', runId: `job:${job.id}`, chatId: session ? session.id : '', agent: job.specialist, jobId: job.id, where: 'pc', state, ...extra }); } catch {}
+};
+
+/**
+ * Runs one due job in the job's own chat (made on its first run), as wisp-desktop.js fire().
+ * It counts as run only when the run ends with a reply; that reply is the report the phone and
+ * the account see. Nobody may be at the PC, so approval cards answer themselves after a while.
+ */
 async function fire(job) {
   const w = W();
   const spec = w.findSpecialist(job.specialist);
   if (!spec) { w.cancelSchedule(job.id); return; }
-  const text = `Scheduled job for ${spec.name} (${w.describeRule(job.rule)}): ${job.task}`;
+  const text = `Scheduled job for ${spec.name} (${w.describeRule(job.rule)}): ${job.task}
+
+(Nobody may be at the PC right now. Get the whole job done on your own: if one way fails, try another way before giving up. If an action is declined, no one was there to approve it: do everything else, and end your report with what is waiting for the user's yes. Never claim anything a tool result does not show.)`;
   // A job made on another PC (or the phone) may name a folder this PC does not have.
   const cwd = job.cwd && fs.existsSync(job.cwd) ? job.cwd : (C.DEFAULT_CWD || os.homedir());
   const api = C.api;
@@ -71,11 +84,39 @@ async function fire(job) {
     api.saveNow();
     C.emit(session.id, { type: 'session_sync', session: api.meta(session) });
   }
-  let r;
-  try { r = await api.sendMessage(session, text); } catch (e) { r = { error: e.message }; }
-  w.markFired(job.id, r && r.error ? { error: r.error } : { sessionId: session.id });
   const sync = C.shared.sync;
-  if (sync && !(r && r.error)) { try { await sync.recordRun(job, { ok: true, output: 'Ran on your PC. The report is in its chat in Codeply.' }); } catch {} }
+  const record = async (ok, output) => { if (sync) { try { await sync.recordRun(job, { ok, output }); } catch {} } };
+  if (api.runs.has(session.id)) {
+    // Its chat is busy with something else: try again soon, without counting it as a run.
+    w.markFired(job.id, { error: 'its chat was busy', started: false, sessionId: session.id });
+    health(session, job, 'retrying', { reason: 'Its chat was busy, so it will try again in a few minutes.' });
+    changed();
+    return;
+  }
+  health(session, job, 'running');
+  const keep = sync && sync.renew ? setInterval(() => { sync.renew(job).catch(() => {}); }, 10 * 60000) : null;
+  keep?.unref?.();
+  let r;
+  try { r = await api.startRun(session, text, { unattended: true }); } catch (e) { r = { ok: false, error: e.message }; } finally { if (keep) clearInterval(keep); }
+  const needsYou = (r && r.needsYou) || [];
+  if (r && r.limited) {
+    // Out of model allowance: wait for it to come back instead of failing.
+    const until = r.resetsAt && r.resetsAt > Date.now() ? r.resetsAt : Date.now() + 30 * 60000;
+    w.markFired(job.id, { error: 'model limit reached', started: false, sessionId: session.id });
+    if (w.setNextAt) w.setNextAt(job.id, until);
+    health(session, job, 'parked', { until: new Date(until).toISOString(), reason: 'Codeply hit its model limit, so this job waits and carries on when it resets.' });
+  } else if (r && r.ok && r.text) {
+    w.markFired(job.id, { sessionId: session.id, needsYou });
+    const extra = needsYou.length ? `\n\nWaiting for your yes: ${needsYou.join('; ')}` : '';
+    await record(true, `${w.stripMoodTags ? w.stripMoodTags(r.text).trim() : r.text}${extra}`);
+    health(session, job, needsYou.length ? 'needs_you' : 'done', needsYou.length ? { reason: `Waiting for your yes: ${needsYou.join('; ')}` } : {});
+  } else {
+    const error = (r && r.error) || 'it ended without a report';
+    const after = w.markFired(job.id, { sessionId: session.id, error, started: true });
+    await record(false, `It did not finish: ${error}. It will try again on its own.`);
+    if (after && after.needsYou) health(session, job, 'needs_you', { reason: after.needsYou });
+    else health(session, job, 'retrying', { attempt: (after && after.failures) || 1, until: after && after.nextAt ? new Date(after.nextAt).toISOString() : undefined, reason: `It did not finish (${error}), so it will try again on its own.` });
+  }
   changed();
 }
 
@@ -135,10 +176,12 @@ async function tick() {
     if (!w) return;
     let due = [];
     try { due = w.dueSchedules(); } catch { return; }
-    for (const job of due) { // one at a time
+    for (const job of due) { // each in its own chat, side by side
+      if (inFlight.has(job.id)) continue; // still running from an earlier tick
       const sync = C.shared.sync;
       if (sync) { try { if (!(await sync.claim(job))) continue; } catch {} } // another PC or the cloud runs it
-      try { await fire(job); } catch (e) { console.warn('[team] job failed:', e && e.message); }
+      inFlight.add(job.id);
+      fire(job).catch((e) => console.warn('[team] job failed:', e && e.message)).finally(() => inFlight.delete(job.id));
     }
   } finally { ticking = false; }
 }
@@ -201,3 +244,6 @@ export async function route(ctx, req, res, url, p, reply) {
   }
   return true;
 }
+
+// For scripts/jobs-test.mjs: one pass of the job timer, without waiting 30 seconds.
+export const __tick = () => tick();

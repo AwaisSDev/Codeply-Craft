@@ -635,13 +635,25 @@ const queues = new Map();  // session id -> messages sent while a reply was runn
 const pending = new Map(); // request id -> { sessionId, request, resolve }
 const idleWaiters = new Map(); // session id -> [resolve], for a delegated run that waits for a busy chat
 
-function makeApprove(session, signal) {
+// A scheduled job's approval card (opts.unattended on startRun) waits this long for someone, then
+// answers itself with no: the run is told nobody was there and carries on with the rest.
+const UNATTENDED_APPROVAL_MS = Number(process.env.CODEPLY_UNATTENDED_APPROVAL_MS) || 20 * 60 * 1000;
+
+function makeApprove(session, signal, unattended = null) {
   return (req) => new Promise((resolve) => {
     if (signal.aborted) return resolve('reject');
     if (settings.approval === 'auto') return resolve('once');
     const requestId = newId('p_');
     const request = { requestId, tool: req.tool || req.name || 'tool', title: req.title || 'Run a tool', detail: req.detail || '', danger: !!req.danger };
-    pending.set(requestId, { sessionId: session.id, request, resolve: (v) => { pending.delete(requestId); emit(session.id, { type: 'approval_resolved', requestId, verdict: v }); resolve(v); } });
+    const timer = unattended ? setTimeout(() => {
+      const p = pending.get(requestId);
+      if (!p) return;
+      unattended.skipped.push(request.title);
+      emit(session.id, { type: 'notice', level: 'warn', text: `No one answered "${request.title}" in ${Math.round(UNATTENDED_APPROVAL_MS / 60000)} minutes, so it was skipped. It waits for your yes; the rest of the job carried on.` });
+      p.resolve('reject');
+    }, UNATTENDED_APPROVAL_MS) : null;
+    timer?.unref?.();
+    pending.set(requestId, { sessionId: session.id, request, resolve: (v) => { if (timer) clearTimeout(timer); pending.delete(requestId); emit(session.id, { type: 'approval_resolved', requestId, verdict: v }); resolve(v); } });
     emit(session.id, { type: 'approval_request', ...request });
     signal.addEventListener('abort', () => { const p = pending.get(requestId); if (p) p.resolve('reject'); }, { once: true });
   });
@@ -839,7 +851,8 @@ async function startRun(session, text, opts = {}) {
   saveNow();
   emit(session.id, { type: 'run_started', session: meta(session), ...(opts.resume ? {} : { message: session.messages[session.messages.length - 1] }) });
   for (const h of extCtx.hooks.runStart) { try { h(session, { text, opts }); } catch (e) { console.error('runStart:', e && e.message); } }
-  const approve = makeApprove(opts.approvalSession || session, ctl.signal);
+  const unattended = opts.unattended ? { skipped: [] } : null;
+  const approve = makeApprove(opts.approvalSession || session, ctl.signal, unattended);
   limitHits.delete(session.id);
   let reply = null; // the assistant message the current DSH chunks grow
   let kind = 'dsh';
@@ -928,12 +941,14 @@ async function startRun(session, text, opts = {}) {
     // A limit hit that didn't end the turn with an error still gets its card.
     const hit = limitHits.get(session.id);
     if (hit) {
+      result.limited = true; result.resetsAt = hit.resetsAt || 0;
       limitHits.delete(session.id);
       const n = { kind: 'notice', level: 'error', text: hit.error || "You've used Codeply's free limit for now.", limited: true, resetsAt: hit.resetsAt, resets: clockOf(hit.resetsAt), at: Date.now() };
       push(n);
       emit(session.id, { type: 'notice', ...n });
     }
     result.text = session.messages.slice(from).filter((m) => m.kind === 'assistant' && !m.interim && m.text).map((m) => m.text).join('\n\n');
+    if (unattended) result.needsYou = unattended.skipped;
     runs.delete(session.id);
     // The handoff closes its lease before the chat takes its next message.
     for (const h of extCtx.hooks.runEnd) { try { await h(session, { aborted: ctl.signal.aborted, ok: result.ok }); } catch {} }

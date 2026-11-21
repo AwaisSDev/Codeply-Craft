@@ -155,7 +155,9 @@ async function pump() {
   try {
     const s = store();
     if (!s) return;
-    const next = s.tasksByStatus('queued', 1)[0];
+    // A task parked until a model allowance resets waits its turn; the others go first.
+    const R0 = RULES();
+    const next = s.tasksByStatus('queued', 50).find((t) => (R0.isDue ? R0.isDue(t) : true));
     if (!next) return;
     if (!(await deps.ensureEngine())) return;
     if (!next) return;
@@ -215,18 +217,37 @@ async function run(task, bot) {
     if (ev.type === 'tool_end') audit({ kind: 'action', botId: bot.id, taskId: task.id, tool: ev.name, title: short(ev.summary || (ev.meta && ev.meta.label) || ev.name, 200), ok: !!ev.ok, result: ev.ok ? '' : short(ev.summary || ev.error, 200) });
   };
   let reply = ''; let verdict = { verified: 'unknown', why: '' }; let status = 'done';
+  let parked = null; // { until, ledger } when the model allowance ran out
   try {
     await BOTS().globalLock.run(`autopilot:${task.id}`, async () => {
       const userMessage = R.taskMessage(task, { holdMinutes: a.level === 'hold' ? a.holdMinutes : 0 });
       // A bot can pass part of the task on (brain.js); the receiver inherits who asked in the end.
       const handOff = deps.handOffFor ? deps.handOffFor({ botId: bot.id, requester: task.requester, taskId: task.id }) : undefined;
       const common = { mode: 'Build', cwd, signal, route, approve, botId: bot.id, handOff, haze: { product: 'crew', chatId: `task:${task.id}` }, botPrompt: (native) => BOTS().buildBotPrompt(bot, { team, native, request: task.text, canHandOff: !!handOff }) };
-      reply = await collect(agent.runAgent({ ...common, userMessage, history: [], maxSteps: 40 }), onEvent);
+      // background: a model outage is waited out, a used-up allowance parks the task, and the step
+      // limit continues in a new part instead of failing (codeply-cli/lib/agent.mjs).
+      const resume = task.data && task.data.resume ? task.data.resume : undefined;
+      const first = await R.collectRun(agent.runAgent({ ...common, userMessage, history: [], maxSteps: 40, background: true, resume }), onEvent);
       if (signal.aborted) throw new Error('Stopped.');
-      t = s.saveTask({ id: task.id, status: 'verifying' });
-      card(t);
-      const check = await collect(agent.runAgent({ ...common, userMessage: R.verifyMessage(task), history: [{ role: 'user', content: userMessage }, { role: 'assistant', content: reply || '(no reply)' }], maxSteps: 16, verifyOnly: true }), onEvent);
+      if (first.parked) { parked = first.parked; reply = first.reply; return; }
+      reply = first.reply;
+      if (first.needsYou) needsYou = true;
+      const verify = async (msg, before) => {
+        t = s.saveTask({ id: task.id, status: 'verifying' });
+        card(t);
+        const c = await R.collectRun(agent.runAgent({ ...common, userMessage: msg, history: [{ role: 'user', content: userMessage }, { role: 'assistant', content: before || '(no reply)' }], maxSteps: 16, verifyOnly: true, background: true }), onEvent);
+        return c.reply;
+      };
+      let check = await verify(R.verifyMessage(task), reply);
       verdict = R.parseVerdict(check);
+      if (verdict.verified === 'no' && !signal.aborted) {
+        // One fix pass with what the check found, then check again, before calling it failed.
+        const fix = await R.collectRun(agent.runAgent({ ...common, userMessage: R.fixMessage(task, verdict, check), history: [{ role: 'user', content: userMessage }, { role: 'assistant', content: reply || '(no reply)' }], maxSteps: 30, background: true }), onEvent);
+        if (fix.parked) { parked = fix.parked; return; }
+        reply = [reply, fix.reply].filter(Boolean).join('\n\n');
+        check = await verify(R.verifyMessage(task), reply);
+        verdict = R.parseVerdict(check);
+      }
       reply = [reply, check.replace(/VERIFIED:.*$/im, '').trim()].filter(Boolean).join('\n\n');
       if (verdict.verified === 'no') status = 'failed';
     }, signal);
@@ -234,6 +255,13 @@ async function run(task, bot) {
     status = signal.aborted ? 'cancelled' : 'failed';
     reply = reply || e.message;
   } finally { running = null; }
+  if (parked) {
+    // Not failed: it goes back in the queue and starts again from where it stopped once the allowance resets.
+    t = s.saveTask({ id: task.id, ...R.parkFields(parked), data: { notBefore: parked.until, resume: parked.ledger, report: R.parkedText(parked) } });
+    card(t);
+    audit({ kind: 'task_parked', botId: bot.id, taskId: task.id, title: short(task.text, 160), verdict: 'parked', ok: true, result: R.parkedText(parked) });
+    return;
+  }
   if (status === 'done' && needsYou) status = 'needs_you';
   const report = R.reportText(task, { reply, verdict, status });
   t = s.saveTask({ id: task.id, status, data: { report: short(report, 1200), checked: verdict.why || verdict.verified, verified: verdict.verified } });

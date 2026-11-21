@@ -492,6 +492,17 @@ function markFired(id, { sessionId, error, started, needsYou } = {}, now = Date.
   return s;
 }
 
+/** Moves a job's next run (a run parked until a model limit resets). */
+function setNextAt(id, at, now = Date.now()) {
+  const list = loadSchedules();
+  const s = list.find((x) => x.id === id);
+  if (!s || !(at > now)) return null;
+  s.nextAt = at;
+  s.updatedAt = now;
+  saveSchedules(list);
+  return s;
+}
+
 /** What the UI shows: no instructions body, no history. */
 function card(s) {
   if (!s) return null;
@@ -749,6 +760,7 @@ function stripMoodTags(text) {
 }
 
 module.exports = {
+  setNextAt,
   SHAPES, MOODS, GEAR, MAX_CUSTOM,
   listSpecialists, findSpecialist, createSpecialist, updateSpecialist, removeSpecialist, noteRun, card, detail,
   parseWhen, nextRun, describeRule, listSchedules, addSchedule, cancelSchedule, dueSchedules, markFired,
