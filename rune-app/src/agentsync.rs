@@ -151,6 +151,8 @@ pub struct AgentsData {
     pub tasks: Vec<(String, String)>,
     /// Chat sync with the phone: on, off, setup, error, waiting (empty until known).
     pub sync_state: String,
+    /// A specialist just made, whose editor should open for a look at what Codeply wrote.
+    pub created: Option<String>,
 }
 
 impl AgentsData {
@@ -244,7 +246,26 @@ fn gear_list(v: &Value) -> Vec<String> {
 /// Reads `GET /ext/agentsync/specialists`, and gives each agent on screen its account face.
 pub fn apply_specs(snap: &mut Snapshot, v: &Value) {
     let Some(list) = v["specialists"].as_array() else { return };
-    snap.extra.agents.specs = list.iter().map(|m| Spec {
+    snap.extra.agents.specs = list.iter().map(spec_from).filter(|x| !x.id.is_empty()).collect();
+    dress(snap);
+}
+
+/// A specialist just made (`/ext/team/create`'s `specialist`): kept at once, so its editor opens
+/// with what Codeply wrote for it, and marked to open.
+pub fn created(snap: &mut Snapshot, m: &Value) {
+    let spec = spec_from(m);
+    if spec.id.is_empty() {
+        return;
+    }
+    let x = &mut snap.extra.agents;
+    x.specs.retain(|o| o.id != spec.id);
+    x.created = Some(spec.id.clone());
+    x.specs.push(spec);
+    dress(snap);
+}
+
+fn spec_from(m: &Value) -> Spec {
+    Spec {
         id: s(m, "id"),
         name: s(m, "name"),
         focus: s(m, "focus"),
@@ -257,8 +278,7 @@ pub fn apply_specs(snap: &mut Snapshot, v: &Value) {
         shape: s(m, "shape"),
         color: s(m, "color"),
         gear: gear_list(&m["gear"]),
-    }).filter(|x| !x.id.is_empty()).collect();
-    dress(snap);
+    }
 }
 
 /// Puts each specialist's account face (shape, colour, gear) on its agent, so the PC shows the

@@ -95,6 +95,10 @@ pub fn apply_sample(op: &TeamOp, snap: &mut Snapshot) {
     match op {
         TeamOp::Create { name, focus } => {
             let id = name.to_lowercase().replace(' ', "-");
+            let made = crate::agentsync::Spec { id: id.clone(), name: name.clone(), focus: focus.clone(), instructions: format!("You are {name}. {focus}."), ..Default::default() };
+            snap.extra.agents.specs.retain(|s| s.id != id);
+            snap.extra.agents.specs.push(made);
+            snap.extra.agents.created = Some(id.clone());
             if !snap.team.iter().any(|a| a.id == id) {
                 snap.team.push(Agent {
                     id, name: name.clone(), color: "#4a78e0".into(), look: Look::new(Shape::Pebble, Face::Pill, &[]),
@@ -308,7 +312,11 @@ pub fn dialog(s: &App, t: &Theme) -> Option<El> {
             )
         }
     };
-    let notice = s.notice.clone().map(|n| text(n).font(ui(12.5, 400.0)).color(t.red).wrap());
+    // A problem in red; the note after making a specialist ("Codeply wrote its instructions") quiet.
+    let notice = s.notice.clone().map(|n| {
+        let ink = if n.starts_with("Codeply wrote") { t.dim } else { t.red };
+        text(n).font(ui(12.5, 400.0)).color(ink).wrap()
+    });
     let card = col().key("team-dialog").w(460.0).padding(22.0).gap(14.0).radius(16.0)
         .fill(t.card).border(1.0, t.card_border).shadow(16.0, 48.0, theme::rgba(0, 0, 0, 0.45))
         .transition(crate::ui::fade_in()).motion(crate::ui::ENTER)

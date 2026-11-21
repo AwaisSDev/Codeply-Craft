@@ -1450,6 +1450,16 @@ impl App {
             }
             changed = true;
         }
+        // A specialist you just made: its page and editor open on what Codeply wrote for it, as
+        // the phone shows its draft before you keep it.
+        if let Some(id) = self.data.extra.agents.created.take()
+            && self.data.agent(&id).is_some()
+        {
+            self.open_agent(Some(&id));
+            self.open_team_dialog(crate::team::TeamDialog::Edit(id));
+            self.notice = Some("Codeply wrote its instructions. Change anything you like, then Save.".into());
+            changed = true;
+        }
         // A change to the team the engine turned down.
         if let Some(note) = self.data.extra.team_note.take() {
             self.notice = Some(note);

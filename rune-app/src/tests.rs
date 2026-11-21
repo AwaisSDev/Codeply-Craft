@@ -972,3 +972,17 @@ fn run_now_sends_a_loops_task_to_its_agent_at_once() {
     assert_eq!(title, "Frontend: Benchmark page speed (run now)");
     assert!(rt.state.data.thread(&title).iter().any(|i| matches!(i, crate::model::ThreadItem::You(t) if t == "Benchmark page speed")));
 }
+
+#[test]
+fn a_new_specialist_opens_its_editor_on_what_codeply_wrote() {
+    let mut rt = runtime(App::with_mock());
+    click(&mut rt, "rail-Agents");
+    click(&mut rt, "agent-new");
+    *rt.state.edit_mut(EditKey::AgentFocus) = rune::TextEdit::new("Writes our launch emails");
+    *rt.state.edit_mut(EditKey::AgentName) = rune::TextEdit::new("Copywriter");
+    rt.invalidate();
+    click(&mut rt, "team-dialog-ok");
+    assert_eq!(rt.state.agent.as_deref(), Some("copywriter"), "its page opens");
+    assert_eq!(rt.state.team_dialog, Some(crate::team::TeamDialog::Edit("copywriter".into())), "and its editor, for a look");
+    assert!(rt.state.edit(EditKey::SpecInstructions).text.contains("Copywriter"));
+}

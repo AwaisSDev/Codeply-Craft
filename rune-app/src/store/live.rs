@@ -1457,6 +1457,10 @@ impl Store for LiveStore {
                 Msg::AgentSync(v) => snap.extra.agents.sync_state = v["chats"]["state"].as_str().unwrap_or_default().to_owned(),
                 Msg::Team(v) => {
                     self.team = crate::team::apply(snap, &v);
+                    // A new specialist (not a built-in one tuned): its editor opens for a look.
+                    if v["ok"] != false && v["specialist"].is_object() && v["updated"] != true {
+                        crate::agentsync::created(snap, &v["specialist"]);
+                    }
                     crate::agentsync::apply_jobs(snap, &v);
                     crate::agentsync::dress(snap);
                     // The chats lead and ask the team as it is now (a new agent, one removed).
@@ -1772,7 +1776,9 @@ impl Store for LiveStore {
             TeamOp::ToggleJob(id, on) => ("/ext/team/jobs/toggle", json!({ "id": id, "enabled": on })),
             TeamOp::CancelJob(id) => ("/ext/team/jobs/cancel", json!({ "id": id })),
         };
-        self.spawn(move |c| Some(match c.post(path, body) {
+        // Making one has the model write its instructions: that can take a while.
+        let secs = if path == "/ext/team/create" { 150 } else { 30 };
+        self.spawn(move |c| Some(match c.post_for(path, body, secs) {
             Ok(mut v) => {
                 // What the engine said no to comes back as a notice; the lists come back either way.
                 if v["ok"].as_bool() == Some(false) {
