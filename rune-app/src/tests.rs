@@ -503,6 +503,7 @@ fn search_filters_chats_and_delete_removes_one() {
 fn the_editor_note_is_not_shown_in_your_message() {
     assert_eq!(crate::thread::shown_message("what link?\n\n(Open in the editor: index.html)"), "what link?");
     assert_eq!(crate::thread::shown_message("plain"), "plain");
+    assert_eq!(crate::thread::shown_message("Scheduled job for Backend (every hour): Check PRs\n\n(Nobody may be at the PC right now. Get it done.)"), "Scheduled job for Backend (every hour): Check PRs");
 }
 
 #[test]

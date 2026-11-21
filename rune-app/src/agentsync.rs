@@ -94,7 +94,7 @@ pub struct Health {
     pub reason: String,
     /// "pc" or "cloud".
     pub place: String,
-    /// When it arrived (ms since the epoch).
+    /// When it arrived (ms since the epoch); 0 when it was read from a job's record.
     pub at: u64,
 }
 
@@ -322,6 +322,27 @@ pub fn apply_jobs(snap: &mut Snapshot, v: &Value) {
         .filter(|(id, ..)| !id.is_empty()).collect();
     snap.extra.agents.tasks = v["jobs"].as_array().map(Vec::as_slice).unwrap_or_default().iter()
         .map(|j| (s(j, "id"), s(j, "task"))).filter(|(id, _)| !id.is_empty()).collect();
+    // Health survives a restart: a job that failed or waits for you says so from its own record
+    // (failures, needsYou, nextAt), until a live run_health event says more. A record that is fine
+    // again drops what was read from it before.
+    if let Some(jobs) = v["jobs"].as_array() {
+        let x = &mut snap.extra.agents;
+        for j in jobs {
+            let run = format!("job:{}", s(j, "id"));
+            let live = x.health.iter().any(|h| h.run == run && h.at > 0);
+            if live {
+                continue;
+            }
+            x.health.retain(|h| h.run != run);
+            let (needs, failures, error) = (s(j, "needsYou"), j["failures"].as_u64().unwrap_or(0), s(j, "lastError"));
+            let until = j["nextAt"].as_u64().filter(|_| failures > 0).map(|ms| iso_of(ms)).unwrap_or_default();
+            let state = if !needs.is_empty() { "needs_you" } else if failures > 0 && !error.is_empty() { "retrying" } else { continue };
+            x.health.push(Health {
+                run, agent: s(j, "specialist"), chat_id: s(j, "sessionId"), state: state.into(), attempt: failures as u32, until,
+                reason: if needs.is_empty() { error } else { needs }, place: "pc".into(), at: 0, ..Default::default()
+            });
+        }
+    }
     // A job that was cancelled, or an agent taken off the team, no longer needs you.
     if v["jobs"].is_array() {
         let x = &mut snap.extra.agents;
@@ -592,15 +613,18 @@ pub fn done_word(r: &Reminder) -> &'static str {
     }
 }
 
+/// ms since the epoch as an ISO time (UTC).
+pub fn iso_of(ms: u64) -> String {
+    let secs = (ms / 1000) as i64;
+    let (y, m, d) = civil_from_days(secs.div_euclid(86_400));
+    let r = secs.rem_euclid(86_400);
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", r / 3600, (r % 3600) / 60, r % 60)
+}
+
 /// The sample data: a few reminders and reports, so the sample store and the snapshots show them.
 pub fn sample() -> AgentsData {
     let now = now_ms();
-    let iso = |ms: u64| {
-        let secs = (ms / 1000) as i64;
-        let (y, m, d) = civil_from_days(secs.div_euclid(86_400));
-        let r = secs.rem_euclid(86_400);
-        format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", r / 3600, (r % 3600) / 60, r % 60)
-    };
+    let iso = iso_of;
     let rem = |id: &str, text: &str, due: u64, kind: &str, repeat: &str, bot: &str, status: &str| Reminder {
         id: id.into(), text: text.into(), due_at: iso(due), kind: kind.into(), repeat: repeat.into(), status: status.into(), bot: bot.into(),
         upcoming: status == "pending" || status == "snoozed", sent_at: String::new(),
@@ -666,6 +690,27 @@ mod tests {
         assert_eq!(x.notify.len(), 1);
         fold(&mut x, &json!({ "type": "run_health", "runId": "job:j1", "agent": "inbox", "state": "done" }), &none);
         assert!(x.health_of("inbox").is_none());
+    }
+
+    #[test]
+    fn a_jobs_record_gives_its_health_after_a_restart() {
+        let mut snap = crate::store::mock::sample();
+        snap.extra.agents = AgentsData::default();
+        let v = json!({ "jobs": [
+            { "id": "j1", "specialist": "backend", "task": "Check PRs", "failures": 2, "lastError": "The model is overloaded.", "nextAt": 1_795_298_057_000u64, "needsYou": "" },
+            { "id": "j2", "specialist": "inbox", "task": "Sort mail", "failures": 5, "lastError": "x", "needsYou": "Gmail wants a new sign-in" },
+            { "id": "j3", "specialist": "docs", "task": "Changelog", "failures": 0, "lastError": "", "needsYou": "" }
+        ] });
+        apply_jobs(&mut snap, &v);
+        let x = &snap.extra.agents;
+        assert_eq!(x.job_health("j1").unwrap().state, "retrying");
+        assert_eq!(x.job_health("j1").unwrap().attempt, 2);
+        assert!(x.job_health("j1").unwrap().until.starts_with("2026-11-21T"));
+        assert_eq!(x.job_health("j2").unwrap().line(), "Needs you: Gmail wants a new sign-in");
+        assert!(x.job_health("j3").is_none());
+        // Fine again: what was read before goes.
+        apply_jobs(&mut snap, &json!({ "jobs": [{ "id": "j1", "specialist": "backend", "task": "Check PRs", "failures": 0 }] }));
+        assert!(snap.extra.agents.job_health("j1").is_none());
     }
 
     #[test]

@@ -235,7 +235,13 @@ pub fn with_composer(s: &App, t: &Theme, chat: &str, who: &str, key: EditKey, ta
 /// A message as its bubble shows it: without the note the code view adds for the agent
 /// ("(Open in the editor: index.html)").
 pub fn shown_message(text: &str) -> String {
-    match text.rfind("\n\n(Open in the editor: ") {
+    let text = match text.rfind("\n\n(Open in the editor: ") {
+        Some(i) if text.trim_end().ends_with(')') => &text[..i],
+        _ => text,
+    };
+    // A scheduled job's message carries the engine's note for running with nobody at the PC
+    // (ext-team.mjs fire): the agent reads it, the chat shows the job.
+    match text.find("\n\n(Nobody may be at the PC") {
         Some(i) if text.trim_end().ends_with(')') => text[..i].to_owned(),
         _ => text.to_owned(),
     }

@@ -370,6 +370,9 @@ pub struct App {
     pub team_dialog: Option<crate::team::TeamDialog>,
     /// Agents shows Reminders (the sidebar's row) instead of Mission control or an agent.
     pub reminders_open: bool,
+    /// The agent session whose transcript was last asked for, so one that only becomes known
+    /// later (the chat list arrives after the page opened) is fetched once it does.
+    opened_session: String,
     /// Whether the usage sheet is open (the button beside you at the sidebar's foot).
     pub usage_open: bool,
     /// The usage sheet's grouping (weekly or daily) and the week ("w12") or day ("d2026-10-11")
@@ -469,6 +472,7 @@ impl App {
             usage_open: false,
             team_dialog: None,
             reminders_open: false,
+            opened_session: String::new(),
             code_ask: false,
             attachments: std::collections::HashMap::new(),
             agent_session: std::collections::HashMap::new(),
@@ -1457,6 +1461,18 @@ impl App {
                 crate::notify::show(&title, &body);
             }
             changed = true;
+        }
+        // An agent's page opened before its chats were known: its session's transcript is
+        // fetched once the chat shows up.
+        if self.view == View::Agents
+            && !self.reminders_open
+            && let Some(a) = self.agent.as_deref().and_then(|id| self.data.agent(id)).cloned()
+        {
+            let title = crate::views::agents::open_session(self, &a);
+            if !title.is_empty() && title != self.opened_session && self.data.extra.chats.iter().any(|c| c.title == title) {
+                self.opened_session = title.clone();
+                self.store.open(&title);
+            }
         }
         // A reminder the engine turned down: the form gets it back, so you can fix the time.
         if let Some((text, when)) = self.data.extra.agents.add_failed.take() {
