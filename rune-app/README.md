@@ -176,10 +176,18 @@ change on one device shows on the other (`src/agentsync.rs`, `src/views/reminder
 - **Notifications.** Desktop notifications use the OS's own tool (`notify-send`, `osascript`, a
   PowerShell toast on Windows). With Settings > General > Notifications off, Reminders, an agent
   with loops and the bell say so, with a Turn on button.
+- **Web search.** A reply that searched the web or opened pages shows them under it as
+  "Searched the web" chips that open in the browser (`sidecar/ext-sources.mjs` keeps them on the
+  reply as `sources`, the phone's field).
 - **Times** are in the PC's time zone, which `sidecar/ext-clock.mjs` reports.
 
+UI-only extensions this app adds to the engine: `ext-clock.mjs` (time zone), `ext-specs.mjs`
+(saving a specialist, on a path no other extension reads), `ext-plugins.mjs` (Integrations >
+Plugins and MCP servers from the engine's own lists, with their switches) and `ext-sources.mjs`.
+`cargo test --features live -- --ignored agent_features` checks these against a running sidecar.
+
 Scenes: `reminders`, `reminders-notifications-off`, `agent-inbox`, `agent-health`, `spec-edit`,
-`spec-edit-builtin`, `bell-reports`.
+`spec-edit-builtin`, `bell-reports`, `chat-sources`.
 
 ## Subagents
 
