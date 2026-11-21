@@ -282,6 +282,9 @@ pub fn apply_reminders(snap: &mut Snapshot, v: &Value) {
     let x = &mut snap.extra.agents;
     x.reminders_loaded = true;
     x.reminders_note = s(v, "error");
+    if x.reminders_note.is_empty() && v["signedIn"] == false {
+        x.reminders_note = "Sign in to Codeply to see your reminders. They are the same ones your phone has.".into();
+    }
     if let Some(list) = v["reminders"].as_array() {
         x.reminders = list.iter().map(reminder_from).filter(|r| !r.id.is_empty()).collect();
     }

@@ -640,9 +640,10 @@ impl App {
         }
     }
 
-    /// Saves a helper's face to the account, so the phone shows the same one.
+    /// Saves a helper's face to the account, so the phone shows the same one (built-in ones keep
+    /// theirs there, so only one you made is sent).
     fn sync_face(&mut self, id: &str) {
-        if id == "wisp" {
+        if id == "wisp" || self.data.extra.agents.spec(id).is_some_and(|s| s.builtin) {
             return;
         }
         let Some(a) = self.data.agent(id) else { return };
@@ -1622,8 +1623,10 @@ impl App {
 /// Puts each helper's saved look on the team.
 fn apply_looks(data: &mut Snapshot, prefs: &Prefs) {
     for (id, color, shape) in &prefs.looks {
-        // The account's face wins once it has one: a change made on the phone shows here too.
-        if data.extra.agents.spec(id).is_some_and(|s| !s.shape.is_empty() || !s.color.is_empty()) {
+        // A specialist you made wears the account's face once it has one, so a change made on
+        // the phone shows here too. Built-in ones keep the face picked here (the account keeps
+        // theirs fixed, as the phone does).
+        if data.extra.agents.spec(id).is_some_and(|s| !s.builtin && (!s.shape.is_empty() || !s.color.is_empty())) {
             continue;
         }
         if let Some(a) = data.team.iter_mut().find(|a| &a.id == id) {

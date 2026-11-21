@@ -1203,6 +1203,16 @@ impl Store for LiveStore {
         snap.extra.code.wisp = "idle".into();
         // Skills come from the engine (ext-skills.mjs).
         snap.extra.skills.clear();
+        // Reminders, reports and runs' health come from the engine too (agentsync.rs), and no
+        // agent is busy with the sample's work: each one's line is what it is for until it
+        // really does something.
+        snap.extra.agents = Default::default();
+        snap.extra.loops.clear();
+        for a in &mut snap.team {
+            a.state = AgentState::Idle;
+            a.action.clear();
+            a.status = if a.id == "wisp" { "Your main agent".into() } else { String::new() };
+        }
         self.team = snap.team.iter().filter(|a| a.id != "wisp").map(|a| (a.id.clone(), a.name.clone(), a.role.clone())).collect();
         snap.extra.engine_ok = false;
         snap.source = format!("{} (connecting)", self.label);
