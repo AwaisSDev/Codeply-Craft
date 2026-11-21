@@ -203,6 +203,14 @@ async function claim(job) {
   return false;
 }
 
+/** Keep holding a job while its run is still going (a claim lasts 15 minutes), so no other device starts it too. */
+async function renew(job) {
+  const a = await account();
+  if (!a) return;
+  await a.c.from('specialist_jobs').update({ claimed_by: host.deviceId(), claimed_until: iso(Date.now() + 15 * 60000) })
+    .eq('id', job.id).eq('claimed_by', host.deviceId()).then(() => {}, () => {});
+}
+
 /** A run this PC finished: in the account's history, so the phone sees it too. */
 async function recordRun(job, { ok = true, output = '' } = {}) {
   const a = await account();
@@ -219,4 +227,4 @@ function status() {
 
 function init(h) { host = h; }
 
-module.exports = { init, syncNow, syncSoon, claim, recordRun, status, runs: () => cloudRuns, TZ };
+module.exports = { init, syncNow, syncSoon, claim, renew, recordRun, status, runs: () => cloudRuns, TZ };

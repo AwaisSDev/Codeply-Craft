@@ -2658,6 +2658,12 @@ function notifyProviderExhausted(session, message) {
 }
 
 const pendingApprovals = new Map();  // requestId -> { sessionId, resolve(verdict) }
+// sessionId -> Promise of { ok, reply, error } when that chat's current run ends. Only for callers
+// inside this process (scheduled jobs in wisp-desktop.js wait on it to record the real report).
+const runFinished = new Map();
+// A scheduled job's approval card waits this long for someone at the PC, then the step is skipped
+// and the agent carries on with the rest (an unattended run must never hang on a card forever).
+const UNATTENDED_APPROVAL_MS = Number(process.env.CODEPLY_UNATTENDED_APPROVAL_MS) || 20 * 60 * 1000;
 const pendingImagePicks = new Map(); // requestId -> { sessionId, resolve(chosenUrl) }
 const pendingQuestions = new Map();  // requestId -> { sessionId, resolve(answer), connect? } for ask_user
 
@@ -3857,7 +3863,19 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
       choices: req.choices && typeof req.choices === 'object' ? req.choices : null,
     });
     return new Promise((resolve) => {
+      // Nobody may be at the PC for a scheduled job: after a while the card answers itself with no,
+      // the run is told why, and the step is listed as needing the user.
+      const unattended = clientId === 'wisp-schedule';
+      const timer = unattended ? setTimeout(() => {
+        const p = pendingApprovals.get(id);
+        if (!p) return;
+        session.needsYou = [...(session.needsYou || []), { title: req.title, at: Date.now() }].slice(-10);
+        sendEvent(session.id, { type: 'notice', level: 'warn', text: `No one answered "${req.title}" in ${Math.round(UNATTENDED_APPROVAL_MS / 60000)} minutes, so it was skipped. It is waiting for your yes, and the rest of the job carried on.` });
+        p.resolve('reject');
+      }, UNATTENDED_APPROVAL_MS) : null;
+      if (timer && timer.unref) timer.unref();
       pendingApprovals.set(id, { sessionId: session.id, resolve: (verdict) => {
+        if (timer) clearTimeout(timer);
         pendingApprovals.delete(id);
         if (verdict === 'always' && req.tool === 'run') {
           if (!req.danger && Array.isArray(req.patterns)) for (const p of req.patterns) alwaysAllowed.add(`run:${p}`);
@@ -3900,6 +3918,10 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
     };
   }
 
+  let settleRun = () => {};
+  const startedAt = session.messages.length;
+  const startedMs = Date.now();
+  runFinished.set(session.id, new Promise((r) => { settleRun = r; }));
   (async () => {
     // Snapshot the project before anything runs, so everything this message
     // changes (edits, and whatever its commands wrote) can be undone as one.
@@ -3944,6 +3966,7 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
         } catch {}
       }
       activeRuns.delete(session.id);
+      try { settleRun(runOutcome(session, startedAt, signal.aborted, startedMs)); } catch { settleRun({ ok: false, reply: '', error: 'unknown' }); }
       updateSleepBlocker();
       broadcastRunStatus();
       saveStore();
@@ -3976,6 +3999,20 @@ async function startChatRun({ sessionId, cwd, mode, bypass, autoEdits = false, t
 // the cut and, when later turns changed files, which files to restore and to
 // which snapshot (the project as it was right before the message first ran).
 const { planRewind } = require('./chat-rewind');
+
+/**
+ * How a run ended, from what it added to the chat: its last reply, and whether it failed.
+ * A run counts as ok when it wrote a final reply and was not stopped; errors with a reply
+ * still count (the reply says what happened).
+ */
+function runOutcome(session, from, aborted, sinceMs = 0) {
+  const added = session.messages.slice(from);
+  const replies = added.filter((m) => m.kind === 'assistant' && !m.interim && m.text);
+  const errors = added.filter((m) => m.kind === 'notice' && m.level === 'error');
+  const reply = replies.length ? String(replies[replies.length - 1].text) : '';
+  const error = aborted ? 'stopped' : !reply && errors.length ? String(errors[errors.length - 1].text || 'failed') : '';
+  return { ok: !aborted && !!reply, reply, error, needsYou: (session.needsYou || []).filter((n) => n.at >= sinceMs).map((n) => n.title) };
+}
 
 function waitForRunEnd(sessionId, ms = 10000) {
   return new Promise((resolve) => {
@@ -4424,7 +4461,10 @@ wispDesktop.init({
   // Making a specialist from the user's description (wisp:draftSpecialist): one JSON call on the current model.
   draftJson: async (prompt) => { if (!(await loadEngine())) throw new Error('Engine not available.'); return aiLib.chatJson([{ role: 'user', content: prompt }], { route: currentRoute() }); },
   // A specialist's scheduled job: a message from Wisp to itself in the job's own chat, through the usual approvals.
-  startRun: ({ sessionId, cwd, text }) => startChatRun({ sessionId, cwd, text, mode: 'Build', bypass: false, clientId: 'wisp-schedule' }),
+  startRun: async ({ sessionId, cwd, text }) => {
+    const r = await startChatRun({ sessionId, cwd, text, mode: 'Build', bypass: false, clientId: 'wisp-schedule' });
+    return r && r.sessionId ? { ...r, finished: runFinished.get(r.sessionId) } : r;
+  },
   // The team in the user's account (specialists-sync.js, supabase/specialists.sql).
   supabase: () => (authLib ? authLib.getClient() : null), userId: getLoggedInUserId, deviceId, dataDir: app.getPath('userData'),
   // Always-on specialists: their jobs also run with the window closed, and Codeply starts with the PC.

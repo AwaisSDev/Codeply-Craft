@@ -443,21 +443,48 @@ function dueSchedules(now = Date.now()) {
  * A job was fired (or could not be): the next run is counted from now, so a
  * PC that slept through three runs does the job once, not three times.
  * A one-off is removed once it has run.
+ *
+ * What went wrong decides when it tries again:
+ *   - it could not start (the chat was busy, not signed in, no folder): soon, then less often
+ *     (2, 4, 8, 16, 30 minutes), and it never counts as a run;
+ *   - it ran and failed: 10, 20, 40, 80 minutes, never later than its next normal time; after
+ *     MAX_JOB_FAILURES in a row it waits for its next normal time and says it needs the user.
+ * A run that worked clears all of that.
  */
-function markFired(id, { sessionId, error } = {}, now = Date.now()) {
+const MAX_JOB_FAILURES = 4;
+function markFired(id, { sessionId, error, started, needsYou } = {}, now = Date.now()) {
   const list = loadSchedules();
   const i = list.findIndex((s) => s.id === id);
   if (i < 0) return null;
   const s = list[i];
   s.updatedAt = now;
-  if (error) {
+  if (sessionId) s.sessionId = sessionId;
+  if (error && !started) {
+    s.waits = (s.waits || 0) + 1;
     s.lastError = clean(error, 300);
-    s.nextAt = now + 10 * 60000; // try again in a bit
+    s.nextAt = now + Math.min(2 * 2 ** (s.waits - 1), 30) * 60000;
+  } else if (error) {
+    s.waits = 0;
+    s.failures = (s.failures || 0) + 1;
+    s.lastError = clean(error, 300);
+    s.lastAt = now;
+    const normal = nextRun(s.rule, now);
+    if (s.failures >= MAX_JOB_FAILURES) {
+      s.needsYou = clean(`It failed ${s.failures} times in a row. Last time: ${error}`, 300);
+      s.failures = 0;
+      s.nextAt = normal;
+    } else {
+      const retry = now + 10 * 2 ** (s.failures - 1) * 60000;
+      s.nextAt = normal ? Math.min(retry, normal) : retry;
+    }
+    // A one-off that keeps failing is kept until it has had its tries, then reported and dropped.
   } else {
     s.lastAt = now;
     s.lastError = '';
+    s.waits = 0;
+    s.failures = 0;
+    s.needsYou = needsYou && needsYou.length ? clean(`Waiting for your yes: ${needsYou.join('; ')}`, 300) : '';
     s.runs = (s.runs || 0) + 1;
-    if (sessionId) s.sessionId = sessionId;
     s.nextAt = nextRun(s.rule, now);
   }
   if (!s.nextAt) list.splice(i, 1);
@@ -626,6 +653,9 @@ ${modelLines(o.models)}${o.native ? '' : `\n\n${BRING_IN_FORMAT}`}`);
 - Kind words: take them warmly and briefly, then get on with it.
 - Going to bed or signing off: keep it short. If work is still running, say you'll carry on.
 
+GETTING IT DONE
+You finish what you start. When something fails, read why, then take a different route: another tool, another source, a specialist, installing what is missing, or a smaller version of the goal that still helps. Don't stop after one failure, and don't hand back a job that is half done when you can still move it forward. Only after three genuinely different routes have failed is something blocked; then report what is done, what is left, and the one thing you need from the user. Before you answer, check the result against what they asked.
+
 LIMITS
 You decide alone only what the user's approvals allow. Everything else waits for their yes on an approval card. Never claim work that no tool result shows, yours or a specialist's.
 
@@ -644,7 +674,10 @@ function specialistPrompt(spec) {
   // and is read from the prompt cache.
   return `YOU ARE ${spec.name.toUpperCase()}, A SPECIALIST ON CODEPLY'S TEAM
 Codeply, the user's main agent, brought you in for one task. Your focus: ${spec.focus}.
-You do this task yourself, one step at a time. You cannot bring anyone else in. If the task is outside your focus, or you are blocked, say so in your report instead of guessing.
+You do this task yourself, one step at a time. You cannot bring anyone else in. If the task is far outside your focus, do the part you can and say what is left.
+
+GETTING IT DONE
+You finish the job. When a step fails, find out why from the error, then try a genuinely different route: another tool, another source, another command, installing what is missing, or a smaller version of the goal that still helps. Only after at least three different routes have failed is something blocked. Even then, deliver everything you did get done, and say exactly what is still needed and from whom. Never guess at facts or invent results: a route you did not take did not happen. Before you report, check your work against the task, point by point.
 
 HOW YOU WORK
 ${how}${rules}
@@ -671,7 +704,7 @@ Speak as yourself ("I", "${spec.name} here" when you say hi). Keep your own styl
 
 HOW YOU WORK
 ${how}${rules}
-You do the work yourself with your tools, one step at a time, through the same approvals. You cannot bring anyone in.
+You do the work yourself with your tools, one step at a time, through the same approvals. You cannot bring anyone in. When a step fails, try another way before giving up, and never make up a result.
 
 GOING BACK TO CODEPLY
 When the user wants Codeply again ("back to Codeply", "that's all, thanks"), or asks for something far outside your focus, call talk_to with Codeply and say a short goodbye in your voice. Codeply takes their next message.

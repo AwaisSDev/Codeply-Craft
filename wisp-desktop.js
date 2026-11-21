@@ -446,18 +446,56 @@ function scheduleTool({ action, specialist, task, when, id }, { cwd }) {
   };
 }
 
-/** Fires one job: a message from Wisp to itself in the job's own chat. */
+// How long a scheduled job may run before this PC stops waiting on it (the run itself goes on).
+const JOB_WAIT_MS = 3 * 60 * 60 * 1000;
+const inFlight = new Set(); // job ids whose run has not ended yet
+
+/**
+ * Fires one job: a message from Wisp to itself in the job's own chat. The job counts as run only
+ * once the run has ended with a reply; that reply is the report the phone and the account see.
+ */
 async function fire(job) {
   const W = wisp();
   const spec = W.findSpecialist(job.specialist);
   if (!spec) { W.cancelSchedule(job.id); return; }
-  const text = `Scheduled job for ${spec.name} (${W.describeRule(job.rule)}): ${job.task}`;
+  const text = `Scheduled job for ${spec.name} (${W.describeRule(job.rule)}): ${job.task}
+
+(Nobody may be at the PC right now. Get the whole job done on your own: if one way fails, try another way before giving up. If an action is declined, no one was there to approve it: do everything else, and end your report with what is waiting for the user's yes. Never claim anything a tool result does not show.)`;
   // A job made on another PC (or the phone) may name a folder this PC does not have.
   const cwd = job.cwd && fs.existsSync(job.cwd) ? job.cwd : os.homedir();
   let r;
   try { r = await deps.startRun({ sessionId: job.sessionId || null, cwd, text }); } catch (e) { r = { error: e.message }; }
-  W.markFired(job.id, r && r.error ? { error: r.error } : { sessionId: r && r.sessionId });
-  if (!(r && r.error)) sync.recordRun(job, { ok: true, output: 'Ran on your PC. The report is in its chat in Codeply.' });
+  if (!r || r.error) {
+    W.markFired(job.id, { error: (r && r.error) || 'could not start', started: false });
+    sync.syncSoon(500);
+    deps.sendEvent(null, { type: 'wisp_team' });
+    return;
+  }
+  // Mark it as started so the window shows it running; the outcome decides the rest.
+  deps.sendEvent(null, { type: 'wisp_team', running: job.id });
+  let out = null;
+  if (r.finished) {
+    const keep = setInterval(() => { sync.renew(job).catch(() => {}); }, 10 * 60000);
+    if (keep.unref) keep.unref();
+    try {
+      out = await Promise.race([r.finished, new Promise((res) => { const t = setTimeout(() => res(null), JOB_WAIT_MS); if (t.unref) t.unref(); })]);
+    } finally { clearInterval(keep); }
+  }
+  if (!r.finished) {
+    // An older host: the run started, and that is all we know.
+    W.markFired(job.id, { sessionId: r.sessionId });
+    sync.recordRun(job, { ok: true, output: 'Ran on your PC. The report is in its chat in Codeply.' });
+  } else if (!out) {
+    W.markFired(job.id, { sessionId: r.sessionId });
+    sync.recordRun(job, { ok: true, output: 'Still running on your PC after 3 hours. The report will be in its chat in Codeply.' });
+  } else if (out.ok) {
+    W.markFired(job.id, { sessionId: r.sessionId, needsYou: out.needsYou });
+    const extra = out.needsYou && out.needsYou.length ? `\n\nWaiting for your yes: ${out.needsYou.join('; ')}` : '';
+    sync.recordRun(job, { ok: true, output: `${W.stripMoodTags(out.reply).trim()}${extra}` });
+  } else {
+    W.markFired(job.id, { sessionId: r.sessionId, error: out.error || 'it ended without a report', started: true });
+    sync.recordRun(job, { ok: false, output: `It did not finish: ${out.error || 'it ended without a report'}. It will try again on its own.` });
+  }
   sync.syncSoon(500);
   deps.sendEvent(null, { type: 'wisp_team' });
 }
@@ -477,10 +515,12 @@ async function tick() {
   await sync.syncNow();
   try { due = wisp().dueSchedules(); } catch { return; }
   const shown = deps.windowShown ? deps.windowShown() : true;
-  for (const job of due) { // one at a time; a busy chat retries in a few minutes
+  for (const job of due) { // each in its own chat; a busy chat retries in a few minutes
+    if (inFlight.has(job.id)) continue; // still running from an earlier tick
     if (!shown && !alwaysOn(job.specialist)) continue; // waits until Codeply is open
     if (!(await sync.claim(job))) continue; // another PC or the cloud runs this one
-    await fire(job);
+    inFlight.add(job.id);
+    fire(job).catch(() => {}).finally(() => inFlight.delete(job.id));
   }
 }
 
@@ -574,7 +614,7 @@ Respond with ONLY a JSON object: {"name": "${wanted ? wanted : 'a short name, on
   d.ipcMain.handle('wisp:cancelSchedule', (e, id) => { try { wisp().cancelSchedule(String(id || '')); } catch {} sync.syncSoon(); return teamState(); });
   d.ipcMain.handle('wisp:runSchedule', async (e, id) => {
     const job = wisp().listSchedules().find((j) => j.id === id);
-    if (job) await fire(job);
+    if (job && !inFlight.has(job.id)) { inFlight.add(job.id); fire(job).catch(() => {}).finally(() => inFlight.delete(job.id)); }
     return teamState();
   });
   if (!ticker && d.startRun) {
