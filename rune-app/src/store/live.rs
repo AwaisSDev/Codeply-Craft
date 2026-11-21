@@ -1749,7 +1749,9 @@ impl Store for LiveStore {
             SyncOp::UpdateSpec(id, patch) => {
                 let mut body = patch.clone();
                 body["id"] = json!(id);
-                ("/ext/agentsync/specialists/update", body)
+                // ext-specs.mjs: the same change as /ext/agentsync/specialists/update, on a path
+                // ext-agents.mjs doesn't read first.
+                ("/ext/specs/update", body)
             }
         };
         // Shown at once (a cancelled reminder goes, an edit shows); the engine's answer follows.
