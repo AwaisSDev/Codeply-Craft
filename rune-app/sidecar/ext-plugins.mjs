@@ -33,8 +33,9 @@ function view(ctx) {
     seen.add(name);
     mcp.push({ name, runs: runsOf(spec), from, on: !spec.disabled, canToggle });
   };
-  for (const [n, s] of Object.entries(readMcp(userMcp()))) add(n, s, 'yours', true);
+  // The engine's order (mcp.js loadServers): the project's file wins over yours.
   if (cwd) for (const [n, s] of Object.entries(readMcp(path.join(cwd, '.codeply', 'mcp.json')))) add(n, s, 'this project', false);
+  for (const [n, s] of Object.entries(readMcp(userMcp()))) add(n, s, 'yours', true);
   try { for (const [n, s] of Object.entries(P.mcpServers(cwd))) add(n, s, 'a plugin', false); } catch { /* none */ }
   try { const apps = ctx.need('apps.js'); for (const [n, s] of Object.entries(apps.mcpServers())) add(n, s, 'a connected app', false); } catch { /* none */ }
   return { plugins, mcp };
@@ -44,11 +45,18 @@ export async function route(ctx, req, res, url, p, reply) {
   if (!(p === '/ext/plugins' || p.startsWith('/ext/plugins/'))) return false;
   try {
     if (req.method === 'GET' && p === '/ext/plugins') { reply(200, view(ctx)); return true; }
-    if (req.method !== 'POST') return false;
+    // Only our own paths read the body, so nothing after this extension loses it.
+    if (req.method !== 'POST' || !['/ext/plugins/toggle', '/ext/plugins/mcp-toggle'].includes(p)) return false;
     const b = await ctx.readJson(req).catch(() => ({}));
     let r;
     if (p === '/ext/plugins/toggle') {
-      r = ctx.need('plugins.js').setEnabled(String(b.name || ''), !!b.enabled, ctx.DEFAULT_CWD);
+      const P = ctx.need('plugins.js');
+      const name = String(b.name || '');
+      const servers = () => { try { return Object.keys(P.mcpServers(ctx.DEFAULT_CWD)).filter((k) => k.startsWith(`${name}-`)); } catch { return []; } };
+      const before = servers();
+      r = P.setEnabled(name, !!b.enabled, ctx.DEFAULT_CWD);
+      // Its servers connect fresh next time (or stop being offered when it is off).
+      try { const M = ctx.need('mcp.js'); for (const k of new Set([...before, ...servers()])) M.forget(k); } catch { /* reconnects next time */ }
     } else if (p === '/ext/plugins/mcp-toggle') {
       const file = userMcp();
       let j = {};
@@ -62,11 +70,12 @@ export async function route(ctx, req, res, url, p, reply) {
         try { ctx.need('mcp.js').forget(String(b.name)); } catch { /* reconnects next time */ }
         r = { ok: true };
       }
-    } else return false;
+    }
     if (r && r.ok) { try { ctx.emit(null, { type: 'plugins_changed' }); } catch { /* nobody listening */ } }
     reply(200, { ...(r || {}), ...view(ctx) });
   } catch (e) {
-    reply(200, { ok: false, error: e.message, plugins: [], mcp: [] });
+    // No lists here: the app keeps what it shows and reads them again.
+    reply(200, { ok: false, error: e.message });
   }
   return true;
 }

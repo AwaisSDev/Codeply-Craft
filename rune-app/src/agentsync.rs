@@ -334,9 +334,16 @@ pub fn apply_jobs(snap: &mut Snapshot, v: &Value) {
                 continue;
             }
             x.health.retain(|h| h.run != run);
+            // A job switched off says nothing (ext-team's status leads with "Off").
+            if j["enabled"] == false {
+                continue;
+            }
             let (needs, failures, error) = (s(j, "needsYou"), j["failures"].as_u64().unwrap_or(0), s(j, "lastError"));
-            let until = j["nextAt"].as_u64().filter(|_| failures > 0).map(iso_of).unwrap_or_default();
-            let state = if !needs.is_empty() { "needs_you" } else if failures > 0 && !error.is_empty() { "retrying" } else { continue };
+            let next = j["nextAt"].as_u64().unwrap_or(0);
+            // Failed, or didn't start (busy chat, model limit) and waits for its next try.
+            let waiting = !error.is_empty() && (failures > 0 || next > now_ms());
+            let until = if waiting && next > 0 { iso_of(next) } else { String::new() };
+            let state = if !needs.is_empty() { "needs_you" } else if waiting { "retrying" } else { continue };
             x.health.push(Health {
                 run, agent: s(j, "specialist"), chat_id: s(j, "sessionId"), state: state.into(), attempt: failures as u32, until,
                 reason: if needs.is_empty() { error } else { needs }, place: "pc".into(), at: 0, ..Default::default()
@@ -708,6 +715,13 @@ mod tests {
         assert!(x.job_health("j1").unwrap().until.starts_with("2026-11-21T"));
         assert_eq!(x.job_health("j2").unwrap().line(), "Needs you: Gmail wants a new sign-in");
         assert!(x.job_health("j3").is_none());
+        // Switched off: nothing; didn't start (no failure counted) but waits: retrying.
+        apply_jobs(&mut snap, &json!({ "jobs": [
+            { "id": "j1", "specialist": "backend", "task": "Check PRs", "failures": 3, "lastError": "x", "enabled": false },
+            { "id": "j4", "specialist": "backend", "task": "Busy", "failures": 0, "lastError": "its chat was busy", "nextAt": now_ms() + 600_000 }
+        ] }));
+        assert!(snap.extra.agents.job_health("j1").is_none());
+        assert_eq!(snap.extra.agents.job_health("j4").unwrap().state, "retrying");
         // Fine again: what was read before goes.
         apply_jobs(&mut snap, &json!({ "jobs": [{ "id": "j1", "specialist": "backend", "task": "Check PRs", "failures": 0 }] }));
         assert!(snap.extra.agents.job_health("j1").is_none());

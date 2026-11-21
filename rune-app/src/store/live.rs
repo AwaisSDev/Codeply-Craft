@@ -1882,14 +1882,10 @@ impl Store for LiveStore {
             }
         }
         self.spawn(move |c| Some(match c.post(path, body) {
-            Ok(v) => {
-                if v["ok"] == false {
-                    let why = v["error"].as_str().unwrap_or("That didn't work.").to_owned();
-                    return Some(Msg::PluginsNote(why, v));
-                }
-                Msg::Plugins(v)
-            }
-            Err(e) => Msg::Note(format!("The engine didn't answer: {e}")),
+            Ok(v) if v["ok"] != false => Msg::Plugins(v),
+            // Not kept: the switch goes back to what the engine really has.
+            Ok(v) => Msg::PluginsNote(v["error"].as_str().unwrap_or("That didn't work.").to_owned(), c.get("/ext/plugins").unwrap_or(Value::Null)),
+            Err(e) => Msg::PluginsNote(format!("The engine didn't answer: {e}"), c.get("/ext/plugins").unwrap_or(Value::Null)),
         }));
     }
 
