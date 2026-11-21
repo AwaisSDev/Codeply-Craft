@@ -127,7 +127,7 @@ impl Conn {
     }
     fn get(&self, path: &str) -> Result<Value, String> {
         Self::agent().get(&format!("{}{path}", self.base)).set("Authorization", &format!("Bearer {}", self.token))
-            .call().map_err(|e| e.to_string())?.into_json().map_err(|e| e.to_string())
+            .call().map_err(why)?.into_json().map_err(|e| e.to_string())
     }
     fn post(&self, path: &str, body: Value) -> Result<Value, String> {
         Self::agent().post(&format!("{}{path}", self.base)).set("Authorization", &format!("Bearer {}", self.token))
@@ -157,7 +157,19 @@ impl Conn {
 fn why(e: ureq::Error) -> String {
     match e {
         ureq::Error::Status(code, resp) => resp.into_json::<Value>().ok().and_then(|v| v["error"].as_str().map(str::to_owned)).unwrap_or_else(|| format!("status {code}")),
-        other => other.to_string(),
+        ureq::Error::Transport(t) => plain_transport(&t),
+    }
+}
+
+/// A connection problem in plain words ("Connection refused (os error 111)" says nothing to
+/// most people): the engine isn't running, or it took too long.
+fn plain_transport(t: &ureq::Transport) -> String {
+    use ureq::ErrorKind;
+    let raw = t.to_string();
+    match t.kind() {
+        ErrorKind::ConnectionFailed | ErrorKind::Dns => "it isn't running right now. It starts with the app: try again in a moment.".into(),
+        ErrorKind::Io if raw.contains("timed out") || raw.contains("WouldBlock") => "it took too long to answer. Try again in a moment.".into(),
+        _ => raw,
     }
 }
 
