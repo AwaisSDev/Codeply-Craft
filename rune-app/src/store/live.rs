@@ -2496,6 +2496,43 @@ mod tests {
     /// Against a sidecar with a fake OpenAI-compatible server at CODEPLY_FAKE_MODEL (a base URL):
     /// adds a model through the engine, picks it, sets its effort, and removes it.
     #[test]
+    #[ignore = "needs a running sidecar (this build's sidecar/ files)"]
+    fn agent_features_round_trip_through_the_engine() {
+        use crate::agentsync::SyncOp;
+        let url = std::env::var("CODEPLY_SERVER").unwrap_or_else(|_| "http://127.0.0.1:47711".into());
+        let token = std::env::var("CODEPLY_TOKEN").unwrap_or_else(|_| "tok".into());
+        let mut store = LiveStore::new(&url, &token);
+        let mut snap = store.load();
+        assert!(snap.extra.agents.reminders.is_empty() && snap.extra.loops.is_empty(), "nothing from the sample shows in live mode");
+        store.set_waker(std::sync::Arc::new(|| {}));
+        let wait = |store: &mut LiveStore, snap: &mut Snapshot, done: &dyn Fn(&Snapshot) -> bool| {
+            for _ in 0..200 {
+                store.poll(snap);
+                if done(snap) {
+                    return true;
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            false
+        };
+        // The team's records arrive, with the account's faces.
+        assert!(wait(&mut store, &mut snap, &|s| s.extra.agents.spec("docs").is_some()), "specialists arrive");
+        assert!(snap.extra.agents.specs.iter().all(|x| !x.name.is_empty()));
+        // Saving a specialist (the editor's path) answers and the change comes back.
+        let on = !snap.extra.agents.spec("docs").unwrap().always_on;
+        store.sync_op(SyncOp::UpdateSpec("docs".into(), json!({ "alwaysOn": on, "notes": "Live test rules." })), &mut snap);
+        assert!(wait(&mut store, &mut snap, &|s| s.extra.agents.spec("docs").is_some_and(|x| x.always_on == on && x.notes == "Live test rules.") && s.extra.team_note.is_none()),
+            "the edit is kept: {:?}", snap.extra.team_note);
+        // Reminders answer (signed out here: a note says to sign in, nothing hangs).
+        assert!(wait(&mut store, &mut snap, &|s| s.extra.agents.reminders_loaded), "reminders answer");
+        store.sync_op(SyncOp::AddReminder { text: "Live test".into(), when: "in 10 minutes".into() }, &mut snap);
+        assert!(wait(&mut store, &mut snap, &|s| !s.extra.agents.reminders_note.is_empty() || s.extra.agents.reminders.iter().any(|r| r.text == "Live test")),
+            "adding a reminder answers");
+        // The PC's time zone arrived (any offset; the test only checks the call worked).
+        let _ = crate::agentsync::clock("2026-11-21T23:00:00Z");
+    }
+
+    #[test]
     #[ignore = "needs a running sidecar and a fake model server"]
     fn models_round_trip_through_the_engine() {
         use crate::models::{ModelDraft, ModelOp};
