@@ -454,9 +454,16 @@ pub fn fold(x: &mut AgentsData, e: &Value, title: &dyn Fn(&str) -> Option<String
                 return true;
             }
             let key = if h.run.is_empty() { format!("agent:{}", h.agent) } else { h.run.clone() };
-            x.health.retain(|o| (if o.run.is_empty() { format!("agent:{}", o.agent) } else { o.run.clone() }) != key);
-            if h.needs_you() {
-                let who = if h.agent.is_empty() { "An agent".to_owned() } else { h.agent.clone() };
+            let key_of = |o: &Health| if o.run.is_empty() { format!("agent:{}", o.agent) } else { o.run.clone() };
+            // Only a change to "needs you" is news: the same ask again doesn't notify twice.
+            let already = x.health.iter().any(|o| key_of(o) == key && o.needs_you() && o.reason == h.reason);
+            x.health.retain(|o| key_of(o) != key);
+            if h.needs_you() && !already {
+                // The engine sends the agent's id ("inbox"): shown as a name.
+                let who = match h.agent.chars().next() {
+                    None => "An agent".to_owned(),
+                    Some(c) => c.to_uppercase().chain(h.agent.chars().skip(1)).collect::<String>().replace('-', " "),
+                };
                 x.notify.push((format!("{who} needs you"), h.reason.clone()));
             }
             x.health.insert(0, h);
@@ -695,6 +702,8 @@ mod tests {
         assert_eq!(x.health.len(), 1);
         assert_eq!(x.health_of("inbox").unwrap().line(), "Needs you: Gmail wants a new sign-in");
         assert_eq!(x.notify.len(), 1);
+        fold(&mut x, &json!({ "type": "run_health", "runId": "job:j1", "agent": "inbox", "state": "needs_you", "reason": "Gmail wants a new sign-in" }), &none);
+        assert_eq!(x.notify.len(), 1, "the same ask again doesn't notify twice");
         fold(&mut x, &json!({ "type": "run_health", "runId": "job:j1", "agent": "inbox", "state": "done" }), &none);
         assert!(x.health_of("inbox").is_none());
     }
