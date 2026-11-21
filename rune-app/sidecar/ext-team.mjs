@@ -45,7 +45,7 @@ function teamView() {
   if (!w) return { team: [], jobs: [], error: 'The team is not available in this engine.' };
   const team = w.listSpecialists().map((s) => ({
     id: s.id, name: s.name, focus: s.focus || '', shape: s.shape || 'blob', color: s.color || '#4a78e0',
-    builtin: !!s.builtin, alwaysOn: !!s.alwaysOn, uses: s.uses || 0, lastUsedAt: s.lastUsedAt || 0,
+    builtin: !!s.builtin, alwaysOn: !!s.alwaysOn, uses: s.uses || 0, lastUsedAt: s.lastUsedAt || 0, gear: s.gear || null, voice: s.voice || '',
   }));
   const jobs = w.listSchedules().map((j) => ({
     id: j.id, specialist: j.specialist, name: (w.findSpecialist(j.specialist) || {}).name || j.specialist,

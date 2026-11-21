@@ -35,6 +35,10 @@ const EXTENSIONS: &[(&str, &str)] = &[
     ("ext-theme.mjs", include_str!("../sidecar/ext-theme.mjs")),
     ("ext-cloud.mjs", include_str!("../sidecar/ext-cloud.mjs")),
     ("ext-team.mjs", include_str!("../sidecar/ext-team.mjs")),
+    // Reminders the phone and the PC share (the account's reminders function), and cancelling them from chat.
+    ("ext-reminders.mjs", include_str!("../sidecar/ext-reminders.mjs")),
+    // Chats, specialists' faces and standing-job reports synced with the phone.
+    ("ext-agentsync.mjs", include_str!("../sidecar/ext-agentsync.mjs")),
     ("ext-prs.mjs", include_str!("../sidecar/ext-prs.mjs")),
     ("ext-code.mjs", include_str!("../sidecar/ext-code.mjs")),
     // Live Server and sharing ports (the code view's Run menu and Ports panel).
