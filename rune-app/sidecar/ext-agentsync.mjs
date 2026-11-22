@@ -57,7 +57,7 @@ function saveState() { try { fs.writeFileSync(stateFile(), JSON.stringify(state)
 // { role: 'user' | 'assistant', content, at } with a "-# Name" line on a specialist's answers.
 const HEADER = /^-# [^\n]*\n/;
 export const bare = (text) => String(text || '').replace(HEADER, '').trim();
-const keyOf = (role, at, text) => `${role}|${Math.round((Number(at) || 0) / 1000)}|${bare(text).slice(0, 60)}`;
+const keyOf = (role, at, text) => `${role}|${Math.round((Number(at) || 0) / 1000)}|${phoneText(bare(text)).slice(0, 60)}`; // the same message with or without the job note
 
 const specOf = (session) => {
   if (!(session.kind === 'agent' && session.agent)) return null;
@@ -69,14 +69,20 @@ export function toPhoneMessages(session, spec) {
   const out = [];
   for (const m of session.messages || []) {
     if (!m || !String(m.text || '').trim()) continue;
-    if (m.kind === 'user') out.push({ role: 'user', content: m.text, at: m.at || 0 });
+    if (m.kind === 'user') out.push({ role: 'user', content: phoneText(m.text), at: m.at || 0 });
     else if (m.kind === 'assistant' && !m.interim) {
       const head = spec ? `-# ${spec.name}${m.report ? ' · standing job' : ''}\n` : '';
-      out.push({ role: 'assistant', content: `${head}${m.text}`, at: m.at || 0 });
+      // Web sources (ext-sources.mjs) go along: the phone already draws them as chips.
+      out.push({ role: 'assistant', content: `${head}${m.text}`, at: m.at || 0, ...(Array.isArray(m.sources) && m.sources.length ? { sources: m.sources.slice(0, 8) } : {}) });
     }
   }
   return out;
 }
+
+// A scheduled job's message carries a note for the model ("Nobody may be at the PC right now ...",
+// ext-team.mjs); the phone shows what the job is, not the note.
+const UNATTENDED_NOTE = /\n*\(Nobody may be at the PC right now\.[\s\S]*?\)\s*$/;
+export function phoneText(text) { return String(text || '').replace(UNATTENDED_NOTE, '').trim(); }
 
 /** Remote messages this chat does not have yet, as PC messages; and the chat's messages in time order after adding them. */
 export function mergeIn(session, remoteMessages) {

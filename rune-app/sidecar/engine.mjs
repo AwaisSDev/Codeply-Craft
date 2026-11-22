@@ -851,6 +851,13 @@ async function startRun(session, text, opts = {}) {
   saveNow();
   emit(session.id, { type: 'run_started', session: meta(session), ...(opts.resume ? {} : { message: session.messages[session.messages.length - 1] }) });
   for (const h of extCtx.hooks.runStart) { try { h(session, { text, opts }); } catch (e) { console.error('runStart:', e && e.message); } }
+  // Every chat run reports its health like a scheduled job does (CONTRACTS.md "run health"); a job's
+  // own runner (ext-team) sends richer states for its runs, so its runs are left to it.
+  const runHealth = (state, extra = {}) => {
+    if (opts.unattended) return;
+    emit(session.id, { type: 'run_health', runId: `chat:${session.id}`, chatId: session.id, agent: session.agent || 'wisp', where: 'pc', state, ...extra });
+  };
+  runHealth('running');
   const unattended = opts.unattended ? { skipped: [] } : null;
   const approve = makeApprove(opts.approvalSession || session, ctl.signal, unattended);
   limitHits.delete(session.id);
@@ -897,6 +904,8 @@ async function startRun(session, text, opts = {}) {
         ev = { ...ev, summary: ev.summary || (ev.ok === false ? `${st.done} (failed)` : st.done), icon: st.icon, ...commandDetail(ev) };
       }
       for (const h of extCtx.hooks.runEvent) { try { h(session, ev); } catch {} }
+      // The engine's own health events (runAgent background retries, fallbacks, parts) reach the app.
+      if (ev.type === 'health' && ev.state) runHealth(ev.state, { attempt: ev.attempt, until: ev.until, reason: ev.reason, part: ev.part, model: ev.model });
       // Wisp's own commands show in the app's terminal too.
       if (ev.type === 'tool_start' && SHELL_TOOLS.test(String(ev.name || '')) && commandOf(ev.args)) {
         shells.push(commandOf(ev.args));
@@ -953,6 +962,7 @@ async function startRun(session, text, opts = {}) {
     // The handoff closes its lease before the chat takes its next message.
     for (const h of extCtx.hooks.runEnd) { try { await h(session, { aborted: ctl.signal.aborted, ok: result.ok }); } catch {} }
     saveNow();
+    runHealth(ctl.signal.aborted ? 'done' : result.limited ? 'parked' : result.ok ? 'done' : 'failed', result.limited ? { until: result.resetsAt ? new Date(result.resetsAt).toISOString() : undefined, reason: 'Codeply hit its model limit. Send again after it resets.' } : !result.ok && !ctl.signal.aborted ? { reason: result.error || 'The reply did not finish.' } : {});
     emit(session.id, { type: 'run_finished' });
     for (const w of idleWaiters.get(session.id) || []) w();
     idleWaiters.delete(session.id);
@@ -1174,7 +1184,14 @@ try {
 try { const sp = cliLib('spine.js'); if (sp) sp.configure({}); } catch (e) { missing.spine = e.message; }
 
 // ---------- HTTP ----------
-const readJson = (req) => new Promise((resolve, reject) => {
+// A request's body can be read once from the socket, but several extensions may look at the same
+// request before one answers it: the first read is kept on the request, so a later reader gets it too
+// instead of waiting forever for data that already went by.
+const readJson = (req) => {
+  if (!req.__json) req.__json = readJsonOnce(req);
+  return req.__json;
+};
+const readJsonOnce = (req) => new Promise((resolve, reject) => {
   let body = '';
   req.on('data', (c) => { body += c; if (body.length > 4e6) { reject(Object.assign(new Error('Too large.'), { status: 413 })); req.destroy(); } });
   req.on('end', () => { try { resolve(body ? JSON.parse(body) : {}); } catch { reject(Object.assign(new Error('Bad JSON.'), { status: 400 })); } });

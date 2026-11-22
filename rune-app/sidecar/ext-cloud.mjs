@@ -264,7 +264,24 @@ const pollers = new Map(); // taskId -> timeout
 const backupTimers = new Map();
 const backingUp = new Set();
 const cardOf = (session, taskId) => session.messages.find((m) => m.kind === 'cloud_task' && m.task && m.task.id === taskId);
-const emitCard = (session, card) => C.emit(session.id, { type: 'cloud_task', task: card.task });
+// A cloud run's state as the app's run health line (CONTRACTS.md "run health", where: "cloud"), next to its card.
+function cloudHealth(session, task) {
+  const t = task || {};
+  const retry = t.retry || null;
+  const needs = Array.isArray(t.needsYou) && t.needsYou.length ? t.needsYou : null;
+  const state = t.status === 'done' ? (needs ? 'needs_you' : 'done')
+    : t.status === 'failed' ? 'failed'
+    : t.status === 'stopped' || t.status === 'cancelled' ? 'done'
+    : retry ? 'retrying'
+    : t.health && t.health.state ? t.health.state
+    : 'running';
+  const reason = needs ? `Waiting for your yes: ${needs.map((n) => n.title).filter(Boolean).join('; ')}`
+    : retry ? `Restarted in the cloud (attempt ${retry.attempt} of ${retry.of}): ${retry.reason || 'the last try stopped'}`
+    : t.status === 'failed' ? (t.error || (t.result && t.result.error) || 'The cloud run failed.')
+    : (t.health && t.health.reason) || undefined;
+  try { C.emit(session.id, { type: 'run_health', runId: `cloud:${t.id}`, chatId: session.id, agent: session.agent || 'wisp', where: 'cloud', state, ...(retry ? { attempt: retry.attempt } : {}), ...(t.health && t.health.until ? { until: t.health.until } : {}), ...(reason ? { reason } : {}) }); } catch { /* nobody listening */ }
+}
+const emitCard = (session, card) => { C.emit(session.id, { type: 'cloud_task', task: card.task }); cloudHealth(session, card.task); };
 const persist = () => C.api.save();
 const isRunning = (id) => C.api.runs.has(id);
 
@@ -278,6 +295,8 @@ function taskView(t, p) {
     kind: t.kind || (p && p.kind === 'repo' ? 'repo' : 'mirror'),
     base: (r.merged && r.merged.base) || (p && p.base) || 'main',
     merged: r.merged || null,
+    // Restarts, approvals nobody answered and the run's health (codeply-cli/lib/cloud.mjs).
+    retry: t.retry || null, attempt: t.attempt || 1, needsYou: Array.isArray(t.needsYou) ? t.needsYou : [], health: t.health || null,
   };
 }
 

@@ -519,7 +519,8 @@ export async function start(ctx) {
 }
 
 export async function route(ctx, req, res, url, p, reply) {
-  if (!p.startsWith('/ext/agents')) return false;
+  // Exactly /ext/agents or below it: a bare prefix also matched /ext/agentsync and ate its request body.
+  if (p !== '/ext/agents' && !p.startsWith('/ext/agents/')) return false;
   if (req.method === 'GET' && p === '/ext/agents') {
     const st = await runtimeStatus().catch(() => null);
     reply(200, {
