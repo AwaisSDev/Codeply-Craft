@@ -551,6 +551,12 @@ fn offset_min() -> i64 {
     }
 }
 
+/// The hour of the day on this PC (0 to 23), in its time zone once the engine said which.
+pub fn local_hour() -> u32 {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    (local(now).1 / 60) as u32
+}
+
 /// (days since epoch, minutes into the day) in local time.
 fn local(ms: u64) -> (i64, i64) {
     let mins = (ms / 60_000) as i64 + offset_min();

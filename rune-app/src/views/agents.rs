@@ -143,8 +143,8 @@ pub fn main(s: &App, t: &Theme, _cx: &mut Cx<App>) -> El {
 }
 
 fn greeting() -> &'static str {
-    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-    match (secs / 3600) % 24 {
+    // The PC's own hour (UTC until the engine reports the time zone).
+    match crate::agentsync::local_hour() {
         5..=11 => "Good morning",
         12..=17 => "Good afternoon",
         _ => "Good evening",
