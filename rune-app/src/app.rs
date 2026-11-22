@@ -424,6 +424,11 @@ pub struct App {
     /// The engine this app started, kept running while the app is.
     #[cfg(feature = "live")]
     pub sidecar: Option<crate::engine::Sidecar>,
+    /// The engine watchdog: when it last looked, and when it restarted the engine (the last hour's).
+    #[cfg(feature = "live")]
+    engine_checked: f64,
+    #[cfg(feature = "live")]
+    engine_restarts: Vec<f64>,
     /// Updates: checking, downloading, waiting for a restart or for "Update now" (update.rs).
     pub updater: crate::update::Updater,
     /// The upgrade sheet: open, and the plan picked (views/upgrade.rs).
@@ -512,6 +517,10 @@ impl App {
             ports_hidden: Vec::new(),
             manifests_key: String::new(),
             #[cfg(feature = "live")]
+            #[cfg(feature = "live")]
+            engine_checked: 0.0,
+            #[cfg(feature = "live")]
+            engine_restarts: Vec::new(),
             sidecar: None,
             updater: Default::default(),
             upgrade: Default::default(),
@@ -768,6 +777,35 @@ impl App {
 
     /// Whether a plugin, an app or an MCP server is on; flips it (sample data until the engine
     /// has an API for them).
+    /// The engine watchdog: every few seconds, if the engine this app started has stopped, start
+    /// it again on the same port, so loops and reminders keep running through the night. Up to 5
+    /// times an hour; after that it says so and leaves it (something is wrong with the install).
+    #[cfg(feature = "live")]
+    fn watch_engine(&mut self, now: f64) -> bool {
+        if now - self.engine_checked < 5.0 {
+            return false;
+        }
+        self.engine_checked = now;
+        let Some(sidecar) = self.sidecar.as_mut() else { return false };
+        if sidecar.alive() {
+            return false;
+        }
+        self.engine_restarts.retain(|t| now - t < 3600.0);
+        if self.engine_restarts.len() >= 5 {
+            if !self.data.extra.engine_ok && self.notice.is_none() {
+                self.notice = Some("Codeply's engine keeps stopping, so it wasn't started again. Restart Codeply; if it happens again, reinstall it.".into());
+                return true;
+            }
+            return false;
+        }
+        self.engine_restarts.push(now);
+        self.notice = Some(match sidecar.restart() {
+            Ok(()) => "Codeply's engine stopped and was started again. Your loops and reminders carry on.".into(),
+            Err(e) => format!("Codeply's engine stopped and couldn't start again: {e}"),
+        });
+        true
+    }
+
     /// Turns "Start with Windows" (or its macOS and Linux twin) on or off.
     pub fn toggle_autostart(&mut self) {
         let on = !self.autostart;
@@ -1480,6 +1518,10 @@ impl App {
         self.models_ui.tick(&self.data.extra.models);
         changed |= self.look_poll(tx);
         changed |= self.mention_focus(tx.focused());
+        #[cfg(feature = "live")]
+        {
+            changed |= self.watch_engine(now);
+        }
         // Job reports, reminders coming due and agents that need you: a desktop notification each,
         // unless notifications are off (the bell lists them either way).
         for (title, body) in std::mem::take(&mut self.data.extra.agents.notify) {

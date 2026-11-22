@@ -70,6 +70,8 @@ pub struct Sidecar {
     child: Child,
     pub url: String,
     pub token: String,
+    /// The port it listens on, kept so a restart comes back where the app already looks.
+    port: u16,
     /// Which engine was found (for diagnostics and tests).
     #[allow(dead_code)]
     pub install: Install,
@@ -246,6 +248,30 @@ pub fn project_dir() -> PathBuf {
 /// Starts the sidecar and returns once it is spawned (it is listening a moment later; the live
 /// store retries until it answers).
 pub fn start() -> Result<Sidecar, String> {
+    start_on(free_port()?, secret())
+}
+
+impl Sidecar {
+    /// Whether the engine process is still running.
+    pub fn alive(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(None))
+    }
+
+    /// Starts the engine again after it stopped, on the same port and secret, so the app's
+    /// connection (and its event stream) just reconnects.
+    pub fn restart(&mut self) -> Result<(), String> {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        // Keep what the stopped engine wrote, for finding out why (the new one starts a fresh log).
+        let data = data_dir();
+        let _ = std::fs::rename(data.join("engine.log"), data.join("engine-stopped.log"));
+        // The old process is already reaped, so dropping it here kills nothing.
+        *self = start_on(self.port, self.token.clone())?;
+        Ok(())
+    }
+}
+
+fn start_on(port: u16, token: String) -> Result<Sidecar, String> {
     let install = find()?;
     let data = data_dir();
     std::fs::create_dir_all(&data).map_err(|e| format!("can't make {}: {e}", data.display()))?;
@@ -270,7 +296,6 @@ pub fn start() -> Result<Sidecar, String> {
             std::fs::write(&file, body).map_err(|e| format!("can't write {name}: {e}"))?;
         }
     }
-    let (port, token) = (free_port()?, secret());
     let log = std::fs::File::create(data.join("engine.log")).map_err(|e| e.to_string())?;
     let mut cmd = Command::new(&install.node);
     cmd.arg(&script)
@@ -294,7 +319,7 @@ pub fn start() -> Result<Sidecar, String> {
     if let Some(out) = child.stdout.take() {
         std::thread::spawn(move || for _ in BufReader::new(out).lines() {});
     }
-    Ok(Sidecar { child, url: format!("http://127.0.0.1:{port}"), token, install })
+    Ok(Sidecar { child, url: format!("http://127.0.0.1:{port}"), token, port, install })
 }
 
 #[cfg(test)]

@@ -423,6 +423,14 @@ impl LiveStore {
         }
     }
 
+    /// Reads the chat list and every list again (after the engine came back).
+    fn reload_all(&self) {
+        self.spawn(|c| c.get("/session").ok().map(|v| Msg::Sessions(sessions_from(&v))));
+        for what in ["jobs", "team", "agents", "specs", "reminders", "agentsync", "plugins", "models"] {
+            self.refresh(what);
+        }
+    }
+
     /// Fetches the account, apps, memories and files (at launch, and after they change).
     fn refresh(&self, what: &'static str) {
         self.spawn(move |c| {
@@ -613,6 +621,8 @@ impl LiveStore {
 }
 
 pub struct LiveStore {
+    /// The event stream connected at least once (a later `server_connected` is a reconnect).
+    connected_once: bool,
     conn: Conn,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
@@ -655,6 +665,7 @@ impl LiveStore {
     pub fn new(url: &str, token: &str) -> LiveStore {
         let (tx, rx) = channel();
         LiveStore {
+            connected_once: false,
             conn: Conn { base: url.trim_end_matches('/').to_owned(), token: token.to_owned() },
             tx, rx, waker: None, sessions: Vec::new(), named: Default::default(), open: None, streaming: Default::default(),
             label: format!("codeply serve at {url}"), unread: Default::default(), queued: Default::default(), want_focus: None, focus: None,
@@ -708,6 +719,12 @@ impl LiveStore {
         let id = e["sessionId"].as_str().unwrap_or_default().to_owned();
         let kind = e["type"].as_str().unwrap_or_default();
         if kind == "server_connected" {
+            // Back after the stream dropped (the engine restarted): what it has may have moved on
+            // (a reply cut short is no longer running), so the lists are read again.
+            if self.connected_once && !snap.extra.engine_ok {
+                self.reload_all();
+            }
+            self.connected_once = true;
             snap.extra.engine_ok = true;
             return;
         }
