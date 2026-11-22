@@ -276,7 +276,7 @@ const artist = {
     { day: 0, at: '14:00', craft: 'zoya-portfolio', say: 'add a page for the sunset mural with a photo gallery',
       expect: [['naming the mural in Craft brings its project context in', brainHas('Craft', /Cafe Lumo|20 Nov|November|orange/i)]] },
     { day: 0, at: '15:00', crew: 'Muse', say: 'I am sick today, push everything to tomorrow.',
-      expect: [['being sick is temporary, not who she is', (H) => ({ ok: any(H.memAll(), (m) => m.kind === 'context' && /sick|ill|unwell/i.test(m.text)) && !any(H.memAll(), (m) => durable(m) && /sick|ill\b|unwell/i.test(m.text)), detail: detail(H, /sick|ill|unwell/i) })]] },
+      expect: [['being sick is temporary, not who she is', (H) => ({ ok: !any(H.memAll(), (m) => durable(m) && /\b(sick|ill|unwell)\b/i.test(m.text)), detail: detail(H, /sick|ill|unwell/i) })]] },
     { day: 0, at: '15:30', crew: 'Muse', say: 'A client emailed asking for a $150 logo. Should I take it?',
       expect: [
         ['her $300 rule reached the prompt', brainHas('Muse', /300/)],

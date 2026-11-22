@@ -206,6 +206,7 @@ function open() {
     q = {
       get: db.prepare('SELECT * FROM memories WHERE id = ?'),
       bySlot: db.prepare('SELECT * FROM memories WHERE scope = ? AND slot = ? AND status != ? ORDER BY updated_at DESC LIMIT 1'),
+      byScope: db.prepare('SELECT * FROM memories WHERE scope = ? ORDER BY updated_at DESC LIMIT 400'),
       byScopeKind: db.prepare('SELECT * FROM memories WHERE scope = ? AND kind = ? ORDER BY updated_at DESC LIMIT 400'),
       insert: db.prepare(`INSERT INTO memories (id, kind, scope, slot, value, text, status, confidence, evidence, locked, review, challenger, history, sources, domain, expires_at, created_at, updated_at, seen_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
@@ -344,6 +345,59 @@ function findExisting(scope, o) {
   return null;
 }
 
+// Words that say "this replaces what was true before".
+const CHANGE_RE = /\b(now|instead|changed?|switch(ed)?|no longer|anymore|any more|used to|moved|rather than|better than|worse than|from \d|not \d|stopped|started)\b/i;
+const numbersOf = (text) => norm(text).split(' ').filter((w) => /^\d+$/.test(w));
+
+/**
+ * The same subject said in other words. Models rarely repeat a slot or a
+ * sentence exactly ("sells wheat at Khanewal" then "sold wheat at Multan,
+ * better than Khanewal"; "closes at 10" then "now closes at 11, changed from 10",
+ * once as a routine and once as a fact), so exact matching left two confirmed
+ * memories about one thing. This compares content words across the personal
+ * kinds (fact, routine, preference, style) or within one project kind, and
+ * returns { m, same } for the best overlapping durable memory, or null:
+ *   same  true when the new text adds nothing different (reinforce),
+ *         false when it changes the value (challenger / history on that memory).
+ * Two memories that merely share a subject word ("Ayesha loves sketching" and
+ * "Ayesha loves painting") are left alone unless the text signals a change
+ * (a new number, "now", "instead", "better than") or overlaps a lot; a locked
+ * memory absorbs any real overlap, so chatter can only flag it, never fork it.
+ */
+function findSimilar(scope, o) {
+  if (o.kind === 'context' || o.kind === 'lesson') return null;
+  const personal = KINDS[o.kind] && KINDS[o.kind].layer === 'personal';
+  const want = terms(o.text);
+  if (want.length < 2) return null;
+  let best = null;
+  for (const r of q.byScope.all(scope)) {
+    const m = rowToMemory(r);
+    if (m.kind === 'context' || m.kind === 'lesson') continue;
+    // Personal kinds match each other; so does anything saved with no project (a model may call a mandi choice a "decision").
+    if (!(scope === 'me' || (personal ? KINDS[m.kind].layer === 'personal' : m.kind === o.kind))) continue;
+    const have = terms(m.text);
+    const shared = overlap(want, have);
+    const ratio = shared / Math.min(want.length, have.length);
+    if (shared < 2 || ratio < 0.6) continue;
+    const jaccard = shared / (want.length + have.length - shared);
+    const haveNums = new Set(numbersOf(m.text));
+    const newNum = numbersOf(o.text).some((n) => !haveNums.has(n));
+    const same = !newNum && (jaccard >= 0.6 || shared === want.length);
+    if (!same && !(m.locked || newNum || CHANGE_RE.test(o.text) || shared >= 3)) continue;
+    if (!best || ratio + jaccard > best.score) best = { m, same, score: ratio + jaccard };
+  }
+  return best;
+}
+
+/** The challenger is being said again (same value, or the same words give or take a few). */
+function sameChallenger(ch, o) {
+  if (!ch) return false;
+  if (o.value && ch.value) return norm(ch.value) === norm(o.value);
+  if (sameText(ch.text, o.text)) return true;
+  const a = terms(ch.text); const b = terms(o.text);
+  return a.length >= 2 && b.length >= 2 && overlap(a, b) / Math.min(a.length, b.length) >= 0.6;
+}
+
 const sameValue = (m, o) => (o.value && m.value ? norm(o.value) === norm(m.value) : sameText(m.text, o.text));
 
 /**
@@ -382,7 +436,9 @@ function observe(raw, src) {
   }
 
   const stated = o.certainty === 'stated';
-  const cur = findExisting(scope, o);
+  let cur = findExisting(scope, o);
+  let fuzzy = null;
+  if (!cur) { fuzzy = findSimilar(scope, o); if (fuzzy) cur = fuzzy.m; }
   if (!cur) {
     const id = newId('m', t);
     q.insert.run(id, o.kind, scope, o.slot || null, o.value || null, o.text, stated ? 'confirmed' : 'tentative', stated ? 0.8 : 0.5, 1, 0, 0, null, '[]', JSON.stringify([from]), o.domain || null, null, t, t, t);
@@ -390,7 +446,7 @@ function observe(raw, src) {
     return { action: 'added', memory: get(id) };
   }
 
-  if (sameValue(cur, o)) {
+  if (fuzzy ? fuzzy.same : sameValue(cur, o)) {
     const evidence = cur.evidence + 1;
     const confirm = cur.status === 'tentative' && (stated || evidence >= 2);
     const m = write({
@@ -404,7 +460,7 @@ function observe(raw, src) {
   // A different value for the same thing.
   const entry = { value: cur.value, text: cur.text, status: cur.status, until: t };
   if (cur.locked) {
-    const m = write({ ...cur, challenger: { value: o.value, text: o.text, count: ((cur.challenger && sameText(cur.challenger.text, o.text)) ? cur.challenger.count : 0) + 1, at: t, from: sourceLabel(from) }, review: stated || cur.review, seenAt: t });
+    const m = write({ ...cur, challenger: { value: o.value, text: o.text, count: (sameChallenger(cur.challenger, o) ? cur.challenger.count : 0) + 1, at: t, from: sourceLabel(from) }, review: stated || cur.review, seenAt: t });
     log(cur.id, 'kept', `kept "${cur.text}" (you set it), heard "${o.text}"`, from);
     return { action: 'kept', memory: m, why: 'you set this one yourself' };
   }
@@ -417,7 +473,7 @@ function observe(raw, src) {
     return { action: 'replaced', memory: m };
   }
   // Confirmed, and contradicted in passing: one remark is not enough.
-  const ch = cur.challenger && (o.value ? norm(cur.challenger.value) === norm(o.value) : sameText(cur.challenger.text, o.text)) ? cur.challenger : null;
+  const ch = sameChallenger(cur.challenger, o) ? cur.challenger : null;
   const count = (ch ? ch.count : 0) + 1;
   if (count >= CHALLENGE_TO_SWITCH) {
     const m = write({
@@ -704,11 +760,15 @@ Respond with ONLY a JSON object {"observations": []}.`;
   } catch { return []; }
 }
 
+const TEMP_STATE_RE = /\b(ill|sick|unwell|under the weather|tired|exhausted|hungover|feeling (low|off|down)|has (a )?(cold|flu|fever|headache)|(is|am|are|being) (away|travell?ing|on (a )?(trip|leave|holiday|vacation))|out of (the )?office)\b/i;
+
 /** A bot's lessons from reflectOnRun, offered to the team. */
 function shareLessons(lessons, { botId, botName, domain } = {}) {
   if (!available()) return [];
   return (Array.isArray(lessons) ? lessons : []).slice(0, 3).map((l) => {
     if (!l || !l.situation || !l.strategy) return null;
+    // Being ill, tired or away today is a state, not a lesson or a trait: never keep it as one.
+    if (TEMP_STATE_RE.test(String(l.situation))) return null;
     return observe({ kind: 'lesson', text: `When ${clip(l.situation, 140)}: ${clip(l.strategy, 200)}`, certainty: 'implied', domain }, { botId, botName });
   }).filter(Boolean);
 }

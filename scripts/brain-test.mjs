@@ -265,6 +265,42 @@ if (section('Lessons')) {
   check('the same lesson from two bots is one lesson, now confirmed', l.length === 1 && l[0].status === 'confirmed' && l[0].evidence === 2);
 }
 
+// ─── The same subject in other words ───────────────────────────────────────
+if (section('Same subject')) {
+  // Found on a real model: it rarely repeats a slot or a sentence, so one changing fact became two confirmed memories.
+  fresh('subject');
+  BR.observe({ kind: 'fact', text: 'The user sells her wheat at the Khanewal mandi.', certainty: 'stated' }, crew());
+  const r1 = BR.observe({ kind: 'fact', text: 'The user sold wheat at the Multan mandi twice and got a better rate than at Khanewal.', certainty: 'implied' }, crew());
+  const khan = BR.list({ kinds: ['fact', 'routine'] });
+  check('a reworded change is a challenger on the old memory, not a second memory', r1.action === 'challenged' && khan.length === 1 && khan[0].challenger && /Multan/.test(khan[0].challenger.text) && /Khanewal/.test(khan[0].text), JSON.stringify(khan));
+  BR.observe({ kind: 'fact', text: 'The user sold wheat at the Multan mandi again, much better than Khanewal.', certainty: 'implied' }, crew());
+  const sw = BR.list({ kinds: ['fact'] });
+  check('seen twice it switches, with the old value in the history', sw.length === 1 && /Multan/.test(sw[0].text) && sw[0].history.length === 1 && /Khanewal/.test(sw[0].history[0].text), JSON.stringify(sw));
+  const lock = BR.correct(sw[0].id, { text: 'She sells her wheat at the Multan mandi now.' });
+  const r2 = BR.observe({ kind: 'fact', text: 'The user sells wheat at the Khanewal mandi.', certainty: 'stated' }, crew());
+  const after = BR.list({ kinds: ['fact', 'routine', 'preference'] });
+  check('a locked memory survives a later contradiction, which is only flagged', r2.action === 'kept' && after.length === 1 && after[0].id === lock.id && /Multan/.test(after[0].text) && after[0].challenger && /Khanewal/.test(after[0].challenger.text), JSON.stringify(after));
+
+  // A routine, then the same thing said as a fact with the old number in it.
+  fresh('subject2');
+  BR.observe({ kind: 'routine', text: 'The shop closes at 10 PM every day.', certainty: 'stated' }, crew());
+  BR.observe({ kind: 'fact', text: 'The shop now closes at 11 PM every day, changed from 10 PM.', certainty: 'stated' }, crew());
+  const shop = BR.list({ kinds: ['fact', 'routine'] });
+  check('across kinds, a stated change replaces and keeps 10 in the history', shop.length === 1 && /11/.test(shop[0].text) && shop[0].history.length === 1 && /10 PM/.test(shop[0].history[0].text), JSON.stringify(shop));
+  BR.observe({ kind: 'routine', text: 'The shop closes at 11 PM every day.', certainty: 'stated' }, crew());
+  check('the same thing again is not a new memory', BR.list({ kinds: ['fact', 'routine'] }).length === 1);
+
+  // Two facts that only share a name stay two facts.
+  fresh('subject3');
+  BR.observe({ kind: 'fact', text: 'Ayesha, the user\'s girlfriend, loves sketching.', certainty: 'stated' }, crew());
+  BR.observe({ kind: 'fact', text: 'Ayesha\'s birthday is on 3 March.', certainty: 'stated' }, crew());
+  check('different facts about one person are not merged', BR.list({ kinds: ['fact'] }).length === 2);
+
+  // Being ill is a state, not a lesson.
+  BR.shareLessons([{ situation: 'User asks to push everything to tomorrow because they are ill', strategy: 'Move the events and say get well' }], { botId: 'muse', botName: 'Muse' });
+  check('being ill is not kept as a lesson', !BR.list({ kinds: ['lesson'] }).length);
+}
+
 // ─── Handoffs ───────────────────────────────────────────────────────────────
 if (section('Handoffs')) {
   fresh('handoffs');
