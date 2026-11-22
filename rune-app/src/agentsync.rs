@@ -557,6 +557,16 @@ pub fn local_hour() -> u32 {
     (local(now).1 / 60) as u32
 }
 
+/// When today began on this PC (ms since the epoch), in its time zone.
+pub fn local_midnight_ms(now: u64) -> u64 {
+    midnight(now, offset_min())
+}
+
+fn midnight(now: u64, offset_min: i64) -> u64 {
+    let mins = ((now / 60_000) as i64 + offset_min).rem_euclid(1440);
+    now.saturating_sub(mins as u64 * 60_000 + now % 60_000)
+}
+
 /// (days since epoch, minutes into the day) in local time.
 fn local(ms: u64) -> (i64, i64) {
     let mins = (ms / 60_000) as i64 + offset_min();
@@ -696,6 +706,9 @@ mod tests {
         assert_eq!(when_label(ms + 3 * 86_400_000, ms), "Tue 11:05 PM");
         assert_eq!(when_label(ms + 30 * 86_400_000, ms), "Dec 21, 11:05 PM");
         assert_eq!(ago(ms - 5 * 60_000, ms), "5 min ago");
+        // 23:05 UTC is 04:05 the next day at +05:00: that day began at 19:00 UTC.
+        assert_eq!(midnight(ms, 300), parse_iso("2026-11-21T19:00:00Z").unwrap());
+        assert_eq!(midnight(ms, -480), parse_iso("2026-11-21T08:00:00Z").unwrap());
     }
 
     #[test]

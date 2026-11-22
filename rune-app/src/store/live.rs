@@ -977,7 +977,8 @@ fn derive(snap: &mut Snapshot, sessions: &[Session]) {
             body: TaskBody::Ask { text: String::new(), buttons: vec![("Allow once".into(), ButtonKind::Blue), ("Don't allow".into(), ButtonKind::Plain)] },
         }));
     }
-    let today = now_ms() - now_ms() % 86_400_000;
+    // Today as this PC counts it (its time zone), not UTC's.
+    let today = crate::agentsync::local_midnight_ms(now_ms());
     let mut list: Vec<&Session> = sessions.iter().collect();
     list.sort_by_key(|s| std::cmp::Reverse(s.updated));
     for s in list.iter().filter(|s| s.running) {
