@@ -6,7 +6,9 @@
 //!   codeply --store live            talk to `codeply serve` (build with `--features live`)
 //!   codeply --snap chat.png --scene chat --size 1440x900    a headless render (Rune tooling)
 
+mod agentsync;
 mod app;
+mod autostart;
 mod art;
 mod bot;
 mod browser;
@@ -23,6 +25,7 @@ mod markdown;
 mod mentions;
 mod model;
 mod model_actions;
+mod notify;
 mod models;
 mod prefs;
 mod project;
@@ -50,6 +53,15 @@ const SCENES: &[Scene] = &[
     ("agent", |s| s.open_agent(Some("frontend"))),
     ("agent-wisp", |s| s.open_agent(Some("wisp"))),
     ("appearance", |s| { s.go(View::Agents); s.toggle_appearance("backend"); }),
+    // The phone's agent features on the PC: reminders, a specialist's editor, Always on and
+    // runs' health (retrying, needs you), job reports.
+    ("reminders", |s| s.open_reminders()),
+    ("bell-reports", |s| { s.go(View::Agents); s.toggle_menu("notifications"); }),
+    ("reminders-notifications-off", |s| { s.prefs.notifications = false; s.open_reminders(); }),
+    ("agent-inbox", |s| s.open_agent(Some("inbox"))),
+    ("agent-health", |s| s.open_agent(Some("backend"))),
+    ("spec-edit", |s| { s.open_agent(Some("inbox")); s.open_team_dialog(crate::team::TeamDialog::Edit("inbox".into())); }),
+    ("spec-edit-builtin", |s| { s.open_agent(Some("frontend")); s.open_team_dialog(crate::team::TeamDialog::Edit("frontend".into())); }),
     ("chat", |s| s.new_chat()),
     // The composer's folder menu: eight folders opened before, five showing.
     ("chat-folders", |s| {
@@ -329,6 +341,21 @@ const SCENES: &[Scene] = &[
         items.push(model::ThreadItem::Them("Done: warm paper tones and a serif headline, from your picture. It's at http://127.0.0.1:8080/.".into()));
         s.data.threads.push(("Casual chat".into(), items));
         s.attachments.insert(EditKey::ChatThread, vec![pic]);
+    }),
+    // A specialist chat that searched the web: the pages it used as chips under the reply.
+    ("chat-sources", |s| {
+        s.open_chat("Casual chat");
+        let mut items = s.data.thread("Casual chat").to_vec();
+        items.push(model::ThreadItem::You("What changed in Rust 1.99?".into()));
+        items.push(model::ThreadItem::Event { icon: "globe", text: "Searched the web for \"Rust 1.99 release notes\"".into(), detail: None });
+        items.push(model::ThreadItem::Event { icon: "globe", text: "Opened blog.rust-lang.org".into(), detail: None });
+        items.push(model::ThreadItem::Them("Rust 1.99 stabilises async closures in traits and speeds up incremental builds. The full list is in the release notes.".into()));
+        items.push(model::ThreadItem::Sources(vec![
+            ("https://blog.rust-lang.org/2026/11/20/Rust-1.99.html".into(), "Announcing Rust 1.99".into()),
+            ("https://github.com/rust-lang/rust/releases".into(), "Releases".into()),
+            ("https://doc.rust-lang.org/stable/releases.html".into(), String::new()),
+        ]));
+        s.data.threads.push(("Casual chat".into(), items));
     }),
     ("update-offer", |s| { s.new_chat(); s.updater.show(update::Phase::Offer(sample_release())); }),
     ("update-downloading", |s| { s.new_chat(); s.updater.show(update::Phase::Fetching { version: "4.0.140".into(), done: 31_000_000, total: 74_000_000, setup: true }); }),

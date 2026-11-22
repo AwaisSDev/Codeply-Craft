@@ -69,6 +69,7 @@ pub fn transcript(s: &App, t: &Theme, chat: &str, who: &str, width: f32) -> El {
                 .child(ico_s(icon, 15.0, t.faint)).child(rich_text(x, 13.0, t.faint, t.dim).wrap().grow(1.0).min_w(0.0)),
             ThreadItem::Event { icon, text: x, .. } => el().w_full().min_w(0.0).my(2.0).child(step_row(t, icon, x, false)),
             ThreadItem::Approval { id, title, detail, answer } => approval(t, id, title, detail, answer.as_deref()),
+            ThreadItem::Sources(list) => sources(t, list),
         };
         body = body.child(enter(e, n));
         n += 1;
@@ -214,18 +215,55 @@ pub fn approval(t: &Theme, id: &str, title: &str, detail: &str, answer: Option<&
 
 /// A transcript with its composer docked at the bottom, as a chat or an agent's page shows it.
 pub fn with_composer(s: &App, t: &Theme, chat: &str, who: &str, key: EditKey, target: Target, placeholder: &str, width: f32) -> El {
+    // A background run in this chat that is retrying, paused, kept going, moved to the cloud or
+    // needs you says so in one quiet line above the composer (agentsync.rs, run_health).
+    let health = s.data.extra.agents.chat_health(chat).map(|h| {
+        let ink = if matches!(h.state.as_str(), "needs_you" | "failed") { t.warn } else { t.dim };
+        row().key(format!("chat-health/{chat}")).w_full().px(12.0).py(7.0).gap(8.0).radius(10.0).center_y().fill(t.hover)
+            .child(crate::icons::ico_s(h.icon(), 14.0, ink))
+            .child(text(h.line()).font(crate::theme::ui(12.5, 400.0)).color(ink).truncate().grow(1.0).min_w(0.0))
+    });
+    let room = if health.is_some() { 44.0 } else { 0.0 };
     let dock = col().pin(Some(0.0), None, Some(0.0), Some(0.0)).px(24.0).pt(14.0).pb(18.0).items_center()
         .linear_gradient(std::f32::consts::PI, [(0.0, t.bg.alpha(0.0)), (0.35, t.bg), (1.0, t.bg)])
-        .child(el().w_full().max_w(width).child(composer(s, t, key, target, placeholder, false, false)));
+        .child(col().w_full().max_w(width).gap(8.0).children(health).child(composer(s, t, key, target, placeholder, false, false)));
+    let body = transcript(s, t, chat, who, width);
     el().w_full().h_full()
-        .child(transcript(s, t, chat, who, width))
+        .child(if room > 0.0 { col().w_full().h_full().pb(room).child(body) } else { body })
         .child(dock)
+}
+
+/// "Searched the web" and the pages it used, as chips (the site's icon and name) that open in the
+/// browser, as the phone shows them under a reply.
+fn sources(t: &Theme, list: &[(String, String)]) -> El {
+    let chips = list.iter().enumerate().map(|(i, (url, title))| {
+        let host = crate::favicon::host(url).unwrap_or_default().trim_start_matches("www.").to_owned();
+        let open = url.clone();
+        let icon = crate::favicon::get(url).filter(|px| px.size().0 > 0);
+        row().key(format!("source/{i}/{url}")).h(26.0).px(9.0).gap(6.0).radius(13.0).center_y().fill(t.hover).border(1.0, t.border).hover(t.active)
+            .role("link").label(if title.is_empty() { host.clone() } else { title.clone() }).help(if title.is_empty() { url.clone() } else { format!("{title}\n{url}") })
+            .child(match icon {
+                Some(px) => el().size(14.0, 14.0).radius(3.0).clip_rounded(3.0).pixels_fit(&px, rune::SurfaceFit::Fill).inert(),
+                None => ico_s("globe", 13.0, t.faint),
+            })
+            .child(text(host).font(ui(12.0, 500.0)).color(t.dim))
+            .on_press(move |s: &mut App| s.browse(&open))
+    });
+    col().w_full().gap(6.0).mt(2.0).mb(8.0)
+        .child(row().gap(6.0).center_y().child(ico_s("globe", 13.0, t.faint)).child(text("Searched the web").font(ui(12.0, 500.0)).color(t.faint)))
+        .child(row().w_full().gap(6.0).flex_wrap().children(chips))
 }
 
 /// A message as its bubble shows it: without the note the code view adds for the agent
 /// ("(Open in the editor: index.html)").
 pub fn shown_message(text: &str) -> String {
-    match text.rfind("\n\n(Open in the editor: ") {
+    let text = match text.rfind("\n\n(Open in the editor: ") {
+        Some(i) if text.trim_end().ends_with(')') => &text[..i],
+        _ => text,
+    };
+    // A scheduled job's message carries the engine's note for running with nobody at the PC
+    // (ext-team.mjs fire): the agent reads it, the chat shows the job.
+    match text.find("\n\n(Nobody may be at the PC") {
         Some(i) if text.trim_end().ends_with(')') => text[..i].to_owned(),
         _ => text.to_owned(),
     }

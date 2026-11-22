@@ -45,6 +45,16 @@ enum Msg {
     Team(Value),
     /// The background agents (`/ext/agents`).
     Agents(Value),
+    /// Each specialist's full record (`/ext/agentsync/specialists`).
+    Specs(Value),
+    /// The reminders (`/ext/reminders`), or the answer to a change to them.
+    Reminders(Value),
+    /// The PC's time zone (`/ext/clock`).
+    Clock(Value),
+    /// Installed plugins and the MCP servers the agent can reach (`/ext/plugins`).
+    Plugins(Value),
+    /// Chat sync with the phone (`/ext/agentsync`).
+    AgentSync(Value),
     /// Every skill (`/ext/skills`).
     Skills(Value),
     /// An inline edit's answer: (file, the instruction, `{ text }` or `{ error }`).
@@ -83,6 +93,12 @@ enum Msg {
     /// A chat made for Wisp or a helper: its name and engine id.
     Named(String, String),
     Status(String),
+    /// Something to tell you (a change that didn't save), shown as a notice.
+    Note(String),
+    /// A plugin change that didn't go through: why, and the lists as they are.
+    PluginsNote(String, Value),
+    /// A change to a specialist that didn't save: why, and the specialists as the engine has them.
+    SpecFailed(String, Option<Value>),
 }
 
 #[derive(Clone, Debug)]
@@ -111,7 +127,7 @@ impl Conn {
     }
     fn get(&self, path: &str) -> Result<Value, String> {
         Self::agent().get(&format!("{}{path}", self.base)).set("Authorization", &format!("Bearer {}", self.token))
-            .call().map_err(|e| e.to_string())?.into_json().map_err(|e| e.to_string())
+            .call().map_err(why)?.into_json().map_err(|e| e.to_string())
     }
     fn post(&self, path: &str, body: Value) -> Result<Value, String> {
         Self::agent().post(&format!("{}{path}", self.base)).set("Authorization", &format!("Bearer {}", self.token))
@@ -141,7 +157,19 @@ impl Conn {
 fn why(e: ureq::Error) -> String {
     match e {
         ureq::Error::Status(code, resp) => resp.into_json::<Value>().ok().and_then(|v| v["error"].as_str().map(str::to_owned)).unwrap_or_else(|| format!("status {code}")),
-        other => other.to_string(),
+        ureq::Error::Transport(t) => plain_transport(&t),
+    }
+}
+
+/// A connection problem in plain words ("Connection refused (os error 111)" says nothing to
+/// most people): the engine isn't running, or it took too long.
+fn plain_transport(t: &ureq::Transport) -> String {
+    use ureq::ErrorKind;
+    let raw = t.to_string();
+    match t.kind() {
+        ErrorKind::ConnectionFailed | ErrorKind::Dns => "it isn't running right now. It starts with the app: try again in a moment.".into(),
+        ErrorKind::Io if raw.contains("timed out") || raw.contains("WouldBlock") => "it took too long to answer. Try again in a moment.".into(),
+        _ => raw,
     }
 }
 
@@ -395,6 +423,14 @@ impl LiveStore {
         }
     }
 
+    /// Reads the chat list and every list again (after the engine came back).
+    fn reload_all(&self) {
+        self.spawn(|c| c.get("/session").ok().map(|v| Msg::Sessions(sessions_from(&v))));
+        for what in ["jobs", "team", "agents", "specs", "reminders", "agentsync", "plugins", "models"] {
+            self.refresh(what);
+        }
+    }
+
     /// Fetches the account, apps, memories and files (at launch, and after they change).
     fn refresh(&self, what: &'static str) {
         self.spawn(move |c| {
@@ -408,6 +444,11 @@ impl LiveStore {
                     "linked" => c.get("/ext/linked").map(Msg::Linked),
                     "team" => c.get("/ext/team").map(Msg::Team),
                     "agents" => c.get("/ext/agents").map(Msg::Agents),
+                    "specs" => c.get("/ext/agentsync/specialists").map(Msg::Specs),
+                    "reminders" => c.get("/ext/reminders").map(Msg::Reminders),
+                    "clock" => c.get("/ext/clock").map(Msg::Clock),
+                    "plugins" => c.get("/ext/plugins").map(Msg::Plugins),
+                    "agentsync" => c.get("/ext/agentsync").map(Msg::AgentSync),
                     "skills" => c.get("/ext/skills").map(Msg::Skills),
                     "prs" => c.get("/ext/prs").map(Msg::Prs),
                     // At launch and after a sign-in: also catches the phone up with the account.
@@ -463,6 +504,11 @@ impl LiveStore {
         if crate::subagents::fold(&mut snap.extra.subagents, e, &title) {
             return true;
         }
+        // Job reports, reminders coming due and runs' health (the report itself lands in its chat
+        // through the usual `session_sync`).
+        if crate::agentsync::fold(&mut snap.extra.agents, e, &title) {
+            return true;
+        }
         let x = &mut snap.extra;
         match e["type"].as_str().unwrap_or_default() {
             "term_agent" => x.terminal.push(TermLine { kind: TermKind::Agent, text: e["command"].as_str().unwrap_or_default().to_owned() }),
@@ -508,7 +554,21 @@ impl LiveStore {
             "linked_changed" => self.refresh("linked"),
             // Live Server started or stopped, a shared port's tunnel came up or went down.
             "live" | "port_forward" => crate::run::fold_live(&mut x.ports, e),
-            "team_changed" | "wisp_team" => self.refresh("team"),
+            "team_changed" | "wisp_team" => {
+                self.refresh("team");
+                self.refresh("specs");
+            }
+            "agentsync_changed" => self.refresh("agentsync"),
+            // A plugin on or off brings its skills and servers with it.
+            "plugins_changed" => {
+                self.refresh("plugins");
+                self.refresh("skills");
+            }
+            "reminders_changed" => {
+                self.refresh("reminders");
+                // The time zone may have changed (travel, summer time).
+                self.refresh("clock");
+            }
             _ => return false,
         }
         true
@@ -561,6 +621,8 @@ impl LiveStore {
 }
 
 pub struct LiveStore {
+    /// The event stream connected at least once (a later `server_connected` is a reconnect).
+    connected_once: bool,
     conn: Conn,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
@@ -603,6 +665,7 @@ impl LiveStore {
     pub fn new(url: &str, token: &str) -> LiveStore {
         let (tx, rx) = channel();
         LiveStore {
+            connected_once: false,
             conn: Conn { base: url.trim_end_matches('/').to_owned(), token: token.to_owned() },
             tx, rx, waker: None, sessions: Vec::new(), named: Default::default(), open: None, streaming: Default::default(),
             label: format!("codeply serve at {url}"), unread: Default::default(), queued: Default::default(), want_focus: None, focus: None,
@@ -656,6 +719,12 @@ impl LiveStore {
         let id = e["sessionId"].as_str().unwrap_or_default().to_owned();
         let kind = e["type"].as_str().unwrap_or_default();
         if kind == "server_connected" {
+            // Back after the stream dropped (the engine restarted): what it has may have moved on
+            // (a reply cut short is no longer running), so the lists are read again.
+            if self.connected_once && !snap.extra.engine_ok {
+                self.reload_all();
+            }
+            self.connected_once = true;
             snap.extra.engine_ok = true;
             return;
         }
@@ -688,7 +757,8 @@ impl LiveStore {
         if kind == "session_sync" {
             return;
         }
-        if kind == "session_deleted" {
+        // Deleted here, or on the phone (ext-agentsync's `session_removed`).
+        if kind == "session_deleted" || kind == "session_removed" {
             if let Some(title) = self.title_of(&id) {
                 snap.threads.retain(|(k, _)| *k != title);
                 snap.extra.step_now.retain(|(k, _)| *k != title);
@@ -924,7 +994,8 @@ fn derive(snap: &mut Snapshot, sessions: &[Session]) {
             body: TaskBody::Ask { text: String::new(), buttons: vec![("Allow once".into(), ButtonKind::Blue), ("Don't allow".into(), ButtonKind::Plain)] },
         }));
     }
-    let today = now_ms() - now_ms() % 86_400_000;
+    // Today as this PC counts it (its time zone), not UTC's.
+    let today = crate::agentsync::local_midnight_ms(now_ms());
     let mut list: Vec<&Session> = sessions.iter().collect();
     list.sort_by_key(|s| std::cmp::Reverse(s.updated));
     for s in list.iter().filter(|s| s.running) {
@@ -1026,14 +1097,79 @@ fn tool_words(name: &str) -> String {
 
 /// A stored message as the transcript shows it.
 /// A stored message as transcript items: a message sent with files shows them above it.
+/// Integrations > Plugins and MCP servers from `/ext/plugins` (sidecar/ext-plugins.mjs).
+fn plugins_from(snap: &mut Snapshot, v: &Value) {
+    let st = |x: &Value, k: &str| x[k].as_str().unwrap_or_default().to_owned();
+    if let Some(list) = v["plugins"].as_array() {
+        snap.extra.plugins = list.iter().map(|p| {
+            let (skills, commands) = (p["skills"].as_u64().unwrap_or(0), p["commands"].as_u64().unwrap_or(0));
+            let mut note = st(p, "description");
+            if note.is_empty() {
+                let mut has = Vec::new();
+                if skills > 0 { has.push(format!("{skills} skill{}", if skills == 1 { "" } else { "s" })); }
+                if commands > 0 { has.push(format!("{commands} command{}", if commands == 1 { "" } else { "s" })); }
+                note = if has.is_empty() { "A plugin".into() } else { has.join(", ") };
+            }
+            let by = st(p, "author");
+            crate::model::Plugin {
+                id: st(p, "name"), name: st(p, "name"), note,
+                by: if by.is_empty() { if p["scope"] == "project" { "this project".into() } else { "you".into() } } else { by },
+                icon: "sparkle", installed: p["enabled"].as_bool().unwrap_or(true), local: true,
+            }
+        }).filter(|p| !p.id.is_empty()).collect();
+    }
+    if let Some(list) = v["mcp"].as_array() {
+        snap.extra.mcp = list.iter().map(|m| crate::model::McpServer {
+            name: st(m, "name"), note: st(m, "runs"), tools: 0, on: m["on"].as_bool().unwrap_or(true),
+            from: st(m, "from"), switchable: m["canToggle"].as_bool().unwrap_or(false),
+        }).filter(|m| !m.name.is_empty()).collect();
+    }
+}
+
 pub fn items_from(m: &Value) -> Vec<ThreadItem> {
     let files: Vec<String> = m["files"].as_array().map_or_else(Vec::new, |a| a.iter().filter_map(|f| f.as_str().map(str::to_owned)).collect());
     let mut out = Vec::new();
     if m["kind"] == "user" && !files.is_empty() {
         out.push(ThreadItem::Files(files));
     }
+    // A standing job's report (ext-agentsync), or a phone message with its small-print speaker
+    // line ("-# Inbox · standing job"): a quiet line above it says so, as the phone does.
+    if m["kind"] == "assistant" && !m["interim"].as_bool().unwrap_or(false) && limit_of(m).is_none() {
+        let text = m["text"].as_str().unwrap_or_default();
+        let (head, body) = match text.strip_prefix("-# ") {
+            Some(rest) => rest.split_once('\n').map_or((rest, ""), |(h, b)| (h, b)),
+            None => ("", text),
+        };
+        let label = if !head.trim().is_empty() {
+            head.trim().to_owned()
+        } else if m["report"].as_bool() == Some(true) {
+            "Standing job report".to_owned()
+        } else {
+            String::new()
+        };
+        if !label.is_empty() {
+            out.push(ThreadItem::Event { icon: "clock", text: label, detail: None });
+            out.push(ThreadItem::Them(body.trim().to_owned()));
+            out.extend(sources_of(m));
+            return out;
+        }
+    }
     out.extend(item_from(m));
+    if m["kind"] == "assistant" {
+        out.extend(sources_of(m));
+    }
     out
+}
+
+/// The pages a reply searched or opened (ext-sources.mjs, the phone's `sources`), as chips.
+fn sources_of(m: &Value) -> Option<ThreadItem> {
+    let list: Vec<(String, String)> = m["sources"].as_array()?.iter()
+        .filter_map(|s| {
+            let url = s["url"].as_str().filter(|u| u.starts_with("http"))?.to_owned();
+            Some((url, s["title"].as_str().unwrap_or_default().to_owned()))
+        })
+        .take(8).collect();
+    (!list.is_empty()).then_some(ThreadItem::Sources(list))
 }
 
 /// A command step's command and output, when the engine sent them (engine.mjs commandDetail).
@@ -1178,6 +1314,22 @@ impl Store for LiveStore {
         snap.extra.code.wisp = "idle".into();
         // Skills come from the engine (ext-skills.mjs).
         snap.extra.skills.clear();
+        // Reminders, reports and runs' health come from the engine too (agentsync.rs), and no
+        // agent is busy with the sample's work: each one's line is what it is for until it
+        // really does something.
+        snap.extra.agents = Default::default();
+        snap.extra.loops.clear();
+        // Your name comes from the account (signed out: "You"). Plugins, MCP servers and the
+        // home screen's suggestions are the engine's too: none of the sample's.
+        snap.user.clear();
+        snap.extra.plugins.clear();
+        snap.extra.mcp.clear();
+        snap.extra.suggestions.clear();
+        for a in &mut snap.team {
+            a.state = AgentState::Idle;
+            a.action.clear();
+            a.status = if a.id == "wisp" { "Your main agent".into() } else { String::new() };
+        }
         self.team = snap.team.iter().filter(|a| a.id != "wisp").map(|a| (a.id.clone(), a.name.clone(), a.role.clone())).collect();
         snap.extra.engine_ok = false;
         snap.source = format!("{} (connecting)", self.label);
@@ -1213,7 +1365,7 @@ impl Store for LiveStore {
             }
             Some(Msg::Status(format!("can't reach the engine: {last}")))
         });
-        for what in ["account", "apps", "memory", "files", "jobs", "models-sync", "team", "prs", "agents", "skills"] {
+        for what in ["account", "apps", "memory", "files", "jobs", "models-sync", "team", "prs", "agents", "skills", "specs", "reminders", "clock", "agentsync", "plugins"] {
             self.refresh(what);
         }
         // The event stream, for the life of the app, reconnecting with a growing pause.
@@ -1330,6 +1482,7 @@ impl Store for LiveStore {
                         self.refresh("prs");
                         // A project's plugins can bring skills of their own.
                         self.refresh("skills");
+                        self.refresh("plugins");
                     }
                     None => snap.extra.team_note = Some(v["error"].as_str().unwrap_or("Couldn't open that folder.").to_owned()),
                 },
@@ -1384,8 +1537,30 @@ impl Store for LiveStore {
                     let title = |id: &str| sessions.iter().find(|s| s.id == id).map(|s| s.title.clone());
                     crate::subagents::apply(&mut snap.extra.subagents, &v, &title);
                 }
+                Msg::Specs(v) => crate::agentsync::apply_specs(snap, &v),
+                Msg::Reminders(v) => {
+                    crate::agentsync::apply_reminders(snap, &v);
+                    if v["ok"] == false
+                        && let Some(e) = v["error"].as_str().filter(|e| !e.is_empty())
+                    {
+                        snap.extra.agents.reminders_note = e.to_owned();
+                    }
+                }
+                Msg::Plugins(v) => plugins_from(snap, &v),
+                Msg::Clock(v) => {
+                    if let Some(m) = v["offsetMin"].as_i64() {
+                        crate::agentsync::set_utc_offset(m);
+                    }
+                }
+                Msg::AgentSync(v) => snap.extra.agents.sync_state = v["chats"]["state"].as_str().unwrap_or_default().to_owned(),
                 Msg::Team(v) => {
                     self.team = crate::team::apply(snap, &v);
+                    // A new specialist (not a built-in one tuned): its editor opens for a look.
+                    if v["ok"] != false && v["specialist"].is_object() && v["updated"] != true {
+                        crate::agentsync::created(snap, &v["specialist"]);
+                    }
+                    crate::agentsync::apply_jobs(snap, &v);
+                    crate::agentsync::dress(snap);
                     // The chats lead and ask the team as it is now (a new agent, one removed).
                     let team: Vec<Value> = self.team.iter().map(|(id, name, role)| json!({ "id": id, "name": name, "role": role })).collect();
                     self.spawn(move |c| c.post("/config", json!({ "team": team })).err().map(|e| Msg::Status(format!("team update failed: {e}"))));
@@ -1396,6 +1571,9 @@ impl Store for LiveStore {
                     snap.extra.email = v["email"].as_str().unwrap_or_default().to_owned();
                     if let Some(name) = v["name"].as_str().filter(|n| !n.is_empty()) {
                         snap.user = name.split_whitespace().next().unwrap_or(name).to_owned();
+                    }
+                    if !snap.extra.signed_in {
+                        snap.user.clear();
                     }
                     snap.plan = if snap.extra.signed_in { "Signed in".into() } else { "Not signed in".into() };
                     // The plan itself, from the account (signing in or out changes it).
@@ -1488,12 +1666,35 @@ impl Store for LiveStore {
                 Msg::Named(name, id) => {
                     self.named.insert(name, id);
                 }
+                Msg::Note(n) => snap.extra.team_note = Some(n),
+                Msg::PluginsNote(n, v) => {
+                    snap.extra.team_note = Some(n);
+                    plugins_from(snap, &v);
+                }
+                Msg::SpecFailed(n, v) => {
+                    snap.extra.team_note = Some(n);
+                    if let Some(v) = v {
+                        crate::agentsync::apply_specs(snap, &v);
+                    }
+                }
                 Msg::Status(s) => {
                     if s.starts_with("can't reach") || s.starts_with("event stream") {
                         snap.extra.engine_ok = false;
                     }
                     snap.source = s;
                 }
+            }
+        }
+        // A report or a run's health whose chat wasn't known when it came (a chat made on the
+        // phone arrives a moment later): it finds its chat by id now.
+        for r in snap.extra.agents.reports.iter_mut().filter(|r| r.chat.is_empty() && !r.chat_id.is_empty()) {
+            if let Some(t) = self.sessions.iter().find(|s| s.id == r.chat_id) {
+                r.chat = t.title.clone();
+            }
+        }
+        for h in snap.extra.agents.health.iter_mut().filter(|h| h.chat.is_empty() && !h.chat_id.is_empty()) {
+            if let Some(t) = self.sessions.iter().find(|s| s.id == h.chat_id) {
+                h.chat = t.title.clone();
             }
         }
         if changed {
@@ -1632,6 +1833,80 @@ impl Store for LiveStore {
         self.open_project.take()
     }
 
+    fn sync_op(&mut self, op: crate::agentsync::SyncOp, snap: &mut Snapshot) {
+        use crate::agentsync::SyncOp;
+        let (path, body) = match &op {
+            SyncOp::Refresh => {
+                for what in ["reminders", "specs", "agentsync", "clock"] {
+                    self.refresh(what);
+                }
+                return;
+            }
+            SyncOp::AddReminder { text, when } => ("/ext/reminders", json!({ "text": text, "when": when })),
+            SyncOp::CancelReminder(id) => ("/ext/reminders/cancel", json!({ "id": id })),
+            SyncOp::Snooze(id, minutes) => ("/ext/reminders/snooze", json!({ "id": id, "minutes": minutes })),
+            SyncOp::UpdateSpec(id, patch) => {
+                let mut body = patch.clone();
+                body["id"] = json!(id);
+                // ext-specs.mjs: the same change as /ext/agentsync/specialists/update, on a path
+                // ext-agents.mjs doesn't read first.
+                ("/ext/specs/update", body)
+            }
+        };
+        // Shown at once (a cancelled reminder goes, an edit shows); the engine's answer follows.
+        if !matches!(op, SyncOp::AddReminder { .. }) {
+            crate::agentsync::apply_sample(&op, snap);
+        }
+        let spec = matches!(op, SyncOp::UpdateSpec(..));
+        let retry = match &op { SyncOp::AddReminder { text, when } => json!({ "text": text, "when": when }), _ => Value::Null };
+        snap.extra.agents.reminders_note.clear();
+        self.spawn(move |c| {
+            let mut v = c.post_for(path, body, 40).unwrap_or_else(|e| json!({ "ok": false, "error": format!("The engine didn't answer: {e}") }));
+            if spec {
+                return match v["ok"].as_bool() {
+                    Some(true) => c.get("/ext/agentsync/specialists").ok().map(Msg::Specs),
+                    // Shown ahead of the engine: what it really kept comes back with the note.
+                    _ => Some(Msg::SpecFailed(format!("Couldn't save it: {}", v["error"].as_str().unwrap_or("the engine said no")), c.get("/ext/agentsync/specialists").ok())),
+                };
+            }
+            if v["ok"] == false {
+                v["retry"] = retry;
+                // A cancel or snooze that didn't go through: the list as the account has it.
+                if let Ok(list) = c.get("/ext/reminders") {
+                    v["reminders"] = list["reminders"].clone();
+                }
+            }
+            Some(Msg::Reminders(v))
+        });
+    }
+
+    fn plugin_op(&mut self, op: super::PluginOp, snap: &mut Snapshot) {
+        use super::PluginOp;
+        let (path, body) = match &op {
+            PluginOp::Plugin(name, on) => ("/ext/plugins/toggle", json!({ "name": name, "enabled": on })),
+            PluginOp::Mcp(name, on) => ("/ext/plugins/mcp-toggle", json!({ "name": name, "enabled": on })),
+        };
+        // Shown at once; the engine's answer carries both lists as they are now.
+        match op {
+            PluginOp::Plugin(id, on) => {
+                if let Some(p) = snap.extra.plugins.iter_mut().find(|p| p.id == id) {
+                    p.installed = on;
+                }
+            }
+            PluginOp::Mcp(name, on) => {
+                if let Some(m) = snap.extra.mcp.iter_mut().find(|m| m.name == name) {
+                    m.on = on;
+                }
+            }
+        }
+        self.spawn(move |c| Some(match c.post(path, body) {
+            Ok(v) if v["ok"] != false => Msg::Plugins(v),
+            // Not kept: the switch goes back to what the engine really has.
+            Ok(v) => Msg::PluginsNote(v["error"].as_str().unwrap_or("That didn't work.").to_owned(), c.get("/ext/plugins").unwrap_or(Value::Null)),
+            Err(e) => Msg::PluginsNote(format!("The engine didn't answer: {e}"), c.get("/ext/plugins").unwrap_or(Value::Null)),
+        }));
+    }
+
     fn agents_op(&mut self, op: crate::subagents::Op, _snap: &mut Snapshot) {
         use crate::subagents::Op;
         let agent = match &op { Op::Send(id, _) | Op::Stop(id) | Op::Remove(id) => id.clone(), _ => String::new() };
@@ -1662,7 +1937,9 @@ impl Store for LiveStore {
             TeamOp::ToggleJob(id, on) => ("/ext/team/jobs/toggle", json!({ "id": id, "enabled": on })),
             TeamOp::CancelJob(id) => ("/ext/team/jobs/cancel", json!({ "id": id })),
         };
-        self.spawn(move |c| Some(match c.post(path, body) {
+        // Making one has the model write its instructions: that can take a while.
+        let secs = if path == "/ext/team/create" { 150 } else { 30 };
+        self.spawn(move |c| Some(match c.post_for(path, body, secs) {
             Ok(mut v) => {
                 // What the engine said no to comes back as a notice; the lists come back either way.
                 if v["ok"].as_bool() == Some(false) {
@@ -2190,9 +2467,44 @@ mod tests {
     }
 
     #[test]
+    fn a_replys_sources_become_chips() {
+        let items = items_from(&json!({ "kind": "assistant", "text": "Rust 1.99 is out.", "sources": [
+            { "url": "https://blog.rust-lang.org/x", "title": "Announcing Rust 1.99", "host": "blog.rust-lang.org" },
+            { "url": "javascript:alert(1)", "title": "no" }
+        ] }));
+        assert_eq!(items, [ThreadItem::Them("Rust 1.99 is out.".into()), ThreadItem::Sources(vec![("https://blog.rust-lang.org/x".into(), "Announcing Rust 1.99".into())])]);
+        assert_eq!(items_from(&json!({ "kind": "assistant", "text": "hi" })).len(), 1);
+    }
+
+    #[test]
+    fn plugins_and_mcp_servers_come_from_the_engine() {
+        let mut snap = mock::sample();
+        plugins_from(&mut snap, &json!({
+            "plugins": [
+                { "name": "release-notes", "description": "", "author": "", "enabled": false, "scope": "user", "skills": 1, "commands": 2 }
+            ],
+            "mcp": [
+                { "name": "filesystem", "runs": "npx server-filesystem .", "from": "yours", "on": true, "canToggle": true },
+                { "name": "github-api", "runs": "https://api.example/mcp", "from": "a plugin", "on": true, "canToggle": false }
+            ]
+        }));
+        let p = &snap.extra.plugins[0];
+        assert_eq!((p.note.as_str(), p.by.as_str(), p.installed, p.local), ("1 skill, 2 commands", "you", false, true));
+        assert_eq!(snap.extra.mcp.len(), 2);
+        assert!(snap.extra.mcp[0].switchable && !snap.extra.mcp[1].switchable);
+        assert_eq!(snap.extra.mcp[1].from, "a plugin");
+    }
+
+    #[test]
     fn stored_messages_become_transcript_items() {
         assert_eq!(item_from(&json!({ "kind": "user", "text": "hi" })), Some(ThreadItem::You("hi".into())));
         assert_eq!(item_from(&json!({ "kind": "assistant", "text": "hello", "interim": true })), None);
+        // A standing job's report, and a phone message with its speaker line, say so above them.
+        let report = items_from(&json!({ "kind": "assistant", "text": "Archived 41.", "report": true }));
+        assert_eq!(report, [ThreadItem::Event { icon: "clock", text: "Standing job report".into(), detail: None }, ThreadItem::Them("Archived 41.".into())]);
+        let phone = items_from(&json!({ "kind": "assistant", "text": "-# Inbox · standing job\nArchived 41." }));
+        assert_eq!(phone[0], ThreadItem::Event { icon: "clock", text: "Inbox · standing job".into(), detail: None });
+        assert_eq!(phone[1], ThreadItem::Them("Archived 41.".into()));
         assert!(matches!(item_from(&json!({ "kind": "tool", "name": "run", "label": "npm test" })), Some(ThreadItem::Event { icon: "terminal", .. })));
     }
 
@@ -2338,6 +2650,63 @@ mod tests {
 
     /// Against a sidecar with a fake OpenAI-compatible server at CODEPLY_FAKE_MODEL (a base URL):
     /// adds a model through the engine, picks it, sets its effort, and removes it.
+    #[test]
+    #[ignore = "needs a running sidecar (this build's sidecar/ files)"]
+    fn agent_features_round_trip_through_the_engine() {
+        use crate::agentsync::SyncOp;
+        let url = std::env::var("CODEPLY_SERVER").unwrap_or_else(|_| "http://127.0.0.1:47711".into());
+        let token = std::env::var("CODEPLY_TOKEN").unwrap_or_else(|_| "tok".into());
+        let mut store = LiveStore::new(&url, &token);
+        let mut snap = store.load();
+        assert!(snap.extra.agents.reminders.is_empty() && snap.extra.loops.is_empty(), "nothing from the sample shows in live mode");
+        store.set_waker(std::sync::Arc::new(|| {}));
+        let wait = |store: &mut LiveStore, snap: &mut Snapshot, done: &dyn Fn(&Snapshot) -> bool| {
+            for _ in 0..200 {
+                store.poll(snap);
+                if done(snap) {
+                    return true;
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            false
+        };
+        // The team's records arrive, with the account's faces.
+        assert!(wait(&mut store, &mut snap, &|s| s.extra.agents.spec("docs").is_some()), "specialists arrive");
+        assert!(snap.extra.agents.specs.iter().all(|x| !x.name.is_empty()));
+        // Saving a specialist (the editor's path) answers and the change comes back.
+        let on = !snap.extra.agents.spec("docs").unwrap().always_on;
+        store.sync_op(SyncOp::UpdateSpec("docs".into(), json!({ "alwaysOn": on, "notes": "Live test rules." })), &mut snap);
+        assert!(wait(&mut store, &mut snap, &|s| s.extra.agents.spec("docs").is_some_and(|x| x.always_on == on && x.notes == "Live test rules.") && s.extra.team_note.is_none()),
+            "the edit is kept: {:?}", snap.extra.team_note);
+        // Reminders answer (signed out here: a note says to sign in, nothing hangs).
+        assert!(wait(&mut store, &mut snap, &|s| s.extra.agents.reminders_loaded), "reminders answer");
+        store.sync_op(SyncOp::AddReminder { text: "Live test".into(), when: "in 10 minutes".into() }, &mut snap);
+        assert!(wait(&mut store, &mut snap, &|s| !s.extra.agents.reminders_note.is_empty() || s.extra.agents.reminders.iter().any(|r| r.text == "Live test")),
+            "adding a reminder answers");
+        // The PC's time zone arrived (any offset; the test only checks the call worked).
+        let _ = crate::agentsync::clock("2026-11-21T23:00:00Z");
+        // A message to a specialist (what "@Backend ..." and Run now send) opens its own session
+        // as that agent's, and a reply comes back (needs a model the engine can reach: set
+        // CODEPLY_LIVE_REPLY=1 when one is selected, e.g. the scripted fake model).
+        if std::env::var_os("CODEPLY_LIVE_REPLY").is_some() {
+            let title = format!("Backend: live test {}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis()));
+            let to = Target::AgentSession { agent: "backend".into(), title: title.clone() };
+            store.send(&to, "Say hello", &mut snap).expect("sent");
+            let mut got = false;
+            for _ in 0..600 {
+                store.poll(&mut snap);
+                let agent_chat = snap.extra.chats.iter().any(|c| c.title == title && c.kind == crate::model::ChatKind::Agent("backend".into()));
+                let replied = snap.threads.iter().any(|(k, items)| *k == title && items.iter().any(|i| matches!(i, ThreadItem::Them(t) if !t.is_empty())));
+                if agent_chat && replied {
+                    got = true;
+                    break;
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+            assert!(got, "the session is Backend's and it replied: {:?}", snap.extra.chats.iter().find(|c| c.title == title));
+        }
+    }
+
     #[test]
     #[ignore = "needs a running sidecar and a fake model server"]
     fn models_round_trip_through_the_engine() {

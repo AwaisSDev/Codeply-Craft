@@ -128,7 +128,10 @@ pub fn main(s: &App, t: &Theme) -> El {
 fn plugins(s: &App, t: &Theme, q: &str) -> El {
     let cards: Vec<El> = s.data.extra.plugins.iter().filter(|p| matches(q, &[p.name.as_str(), p.note.as_str(), p.by.as_str()])).map(|p| {
         let id = p.id.clone();
-        let action = if p.installed {
+        // One installed on this PC has a switch; the catalogue's have Install.
+        let action = if p.local {
+            toggle(t, format!("plugin-switch/{}", p.id), p.installed, &p.name)
+        } else if p.installed {
             btn(t, "Installed ✓", None, ButtonKind::Plain)
         } else {
             btn(t, "Install", None, ButtonKind::Blue)
@@ -143,7 +146,11 @@ fn plugins(s: &App, t: &Theme, q: &str) -> El {
             .child(row().justify_end().child(action.key(format!("plugin/{}", p.id)).on_press(move |s: &mut App| s.toggle_plugin(&id))))
     }).collect();
     if cards.is_empty() {
-        return empty(t, "No plugins match your search.");
+        return empty(t, if q.trim().is_empty() {
+            "No plugins installed yet. Ask Wisp to install one from a git link or a folder, and it shows here."
+        } else {
+            "No plugins match your search."
+        });
     }
     grid(cards, 2)
 }
@@ -161,13 +168,17 @@ fn mcp(s: &App, t: &Theme, q: &str) -> El {
                 .child(col().grow(1.0).min_w(0.0)
                     .child(text(m.name.clone()).font(ui(14.0, 600.0)).color(t.text))
                     .child(text(m.note.clone()).font(ui(12.5, 400.0)).color(t.faint).truncate()))
-                .child(text(format!("{} tools", m.tools)).font(tabular(12.5, 400.0)).color(t.faint))
+                .child(text(if m.tools > 0 { format!("{} tools", m.tools) } else { m.from.clone() }).font(tabular(12.5, 400.0)).color(t.faint))
                 .child(toggle(t, format!("mcp/{}", m.name), m.on, &m.name).on_press(move |s: &mut App| s.toggle_mcp(&name))),
             i,
         )
     }).collect();
     if rows.is_empty() {
-        return empty(t, "No MCP servers match.");
+        return empty(t, if q.trim().is_empty() {
+            "No MCP servers yet. Add yours to ~/.codeply/mcp.json, or connect an app or a plugin that brings one."
+        } else {
+            "No MCP servers match."
+        });
     }
     col().gap(8.0).children(rows)
 }

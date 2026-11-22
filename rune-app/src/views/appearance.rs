@@ -11,7 +11,6 @@ use crate::ui::btn;
 
 /// The popover, anchored beside the row's "more" button. Escape or a click outside closes it.
 pub fn popover(s: &App, t: &Theme, a: &Agent) -> El {
-    let _ = s;
     let mut idle = a.clone();
     idle.state = crate::model::AgentState::Idle;
     col().key("appearance").w(300.0).padding(14.0).gap(12.0).radius(14.0)
@@ -28,12 +27,22 @@ pub fn popover(s: &App, t: &Theme, a: &Agent) -> El {
         .child(row().gap(8.0).justify_end()
             // Delete takes an agent you made off the team (the engine keeps the built-in ones and
             // says so); Wisp leads and stays.
+            // Twice, as on the phone: the first press asks "Delete Inbox?".
             .children((a.id != "wisp").then(|| {
                 let id = a.id.clone();
-                btn(t, "Delete agent", None, ButtonKind::Plain).key("appearance-delete").on_press(move |s: &mut App| {
-                    s.appearance = None;
-                    s.remove_agent(&id);
-                })
+                let armed = s.delete_armed.as_deref() == Some(a.id.as_str());
+                let label = if armed { format!("Delete {}?", a.name) } else { "Delete agent".to_owned() };
+                btn(t, &label, None, ButtonKind::Plain).key("appearance-delete")
+                    .border(1.0, if armed { t.red } else { t.control_border })
+                    .on_press(move |s: &mut App| {
+                        if s.delete_armed.as_deref() == Some(id.as_str()) {
+                            s.delete_armed = None;
+                            s.appearance = None;
+                            s.remove_agent(&id);
+                        } else {
+                            s.delete_armed = Some(id.clone());
+                        }
+                    })
             }))
             .child(btn(t, "Done", None, ButtonKind::Plain).key("appearance-done").on_press(|s: &mut App| s.appearance = None)))
 }

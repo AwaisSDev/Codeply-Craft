@@ -168,6 +168,8 @@ pub enum ThreadItem {
     Team { text: String, agents: Vec<String> },
     /// A step (or a notice, icon "help"). A command keeps what it ran and the end of its output.
     Event { icon: &'static str, text: String, detail: Option<Box<StepDetail>> },
+    /// The pages a reply searched or opened: (url, title), shown as "Searched the web" chips.
+    Sources(Vec<(String, String)>),
     /// The engine asks before it acts. `answer` is set once you (or a timeout) answered.
     Approval { id: String, title: String, detail: String, answer: Option<String> },
 }
@@ -332,6 +334,13 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
+    /// Your name as the app shows it: the account's first name, or "You" before one is known.
+    pub fn who(&self) -> String {
+        if self.user.is_empty() { "You".to_owned() } else { self.user.clone() }
+    }
+}
+
+impl Snapshot {
     pub fn agent(&self, id: &str) -> Option<&Agent> {
         // A stored chat names the agent it asked; a live one has its id.
         self.team.iter().find(|a| a.id == id).or_else(|| self.team.iter().find(|a| a.name.eq_ignore_ascii_case(id)))
@@ -409,6 +418,9 @@ pub struct Plugin {
     /// An icon name (interface icons) or `app-<slug>` for an app's logo.
     pub icon: &'static str,
     pub installed: bool,
+    /// Installed on this PC (the engine's list): a switch turns it on or off, instead of the
+    /// catalogue's Install.
+    pub local: bool,
 }
 
 /// An MCP server the engine can talk to.
@@ -416,8 +428,13 @@ pub struct Plugin {
 pub struct McpServer {
     pub name: String,
     pub note: String,
+    /// How many tools it has, when known (0: not asked yet).
     pub tools: u32,
     pub on: bool,
+    /// Where it comes from ("yours", "a plugin", ...), when the engine says; and whether its
+    /// switch works here (only your own servers can be switched).
+    pub from: String,
+    pub switchable: bool,
 }
 
 /// A skill: instructions the engine follows when a task needs them (a SKILL.md, from
@@ -619,6 +636,9 @@ pub struct Extra {
     pub limits: Vec<(String, String)>,
     /// Live Server and the ports shared outside this computer (the Ports panel).
     pub ports: Ports,
+    /// The phone's agent features on the PC: specialists' full records, reminders, job reports
+    /// and each run's health (agentsync.rs).
+    pub agents: crate::agentsync::AgentsData,
 }
 
 /// Your plan, as the account says (`GET /ext/billing`, from the site's `/api/account`).

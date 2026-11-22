@@ -26,6 +26,8 @@ pub enum TeamOp {
 pub enum TeamDialog {
     NewAgent,
     NewLoop(String),
+    /// A specialist's editor (by id): name, what it's for, instructions or house rules.
+    Edit(String),
 }
 
 /// The engine's shape names (wisp.js SHAPES) as the mascots this app draws.
@@ -93,6 +95,10 @@ pub fn apply_sample(op: &TeamOp, snap: &mut Snapshot) {
     match op {
         TeamOp::Create { name, focus } => {
             let id = name.to_lowercase().replace(' ', "-");
+            let made = crate::agentsync::Spec { id: id.clone(), name: name.clone(), focus: focus.clone(), instructions: format!("You are {name}. {focus}."), ..Default::default() };
+            snap.extra.agents.specs.retain(|s| s.id != id);
+            snap.extra.agents.specs.push(made);
+            snap.extra.agents.created = Some(id.clone());
             if !snap.team.iter().any(|a| a.id == id) {
                 snap.team.push(Agent {
                     id, name: name.clone(), color: "#4a78e0".into(), look: Look::new(Shape::Pebble, Face::Pill, &[]),
@@ -118,7 +124,62 @@ impl App {
         for k in [EditKey::AgentName, EditKey::AgentFocus, EditKey::LoopTask, EditKey::LoopWhen] {
             self.edit_mut(k).clear();
         }
+        if let TeamDialog::Edit(id) = &d {
+            let spec = self.data.extra.agents.spec(id).cloned().unwrap_or_default();
+            let agent = self.data.agent(id).cloned();
+            let name = if spec.name.is_empty() { agent.as_ref().map(|a| a.name.clone()).unwrap_or_default() } else { spec.name.clone() };
+            let focus = if spec.focus.is_empty() { agent.as_ref().map(|a| a.role.clone()).unwrap_or_default() } else { spec.focus.clone() };
+            let prompt = if spec.builtin { spec.notes.clone() } else { spec.instructions.clone() };
+            *self.edit_mut(EditKey::SpecName) = rune::TextEdit::new(name);
+            *self.edit_mut(EditKey::SpecFocus) = rune::TextEdit::new(focus);
+            *self.edit_mut(EditKey::SpecInstructions) = rune::TextEdit::new(prompt);
+            self.spec_model = if spec.model.is_empty() { crate::models::AUTO.into() } else { spec.model.clone() };
+        }
+        self.notice = None;
         self.team_dialog = Some(d);
+    }
+
+    /// Turns a specialist's Always on switch, here and in the account (the phone follows).
+    pub fn set_always_on(&mut self, id: &str, on: bool) {
+        let op = crate::agentsync::SyncOp::UpdateSpec(id.to_owned(), serde_json::json!({ "alwaysOn": on }));
+        self.with_store(|st, d| st.sync_op(op, d));
+    }
+
+    /// Saves the editor: the fields that changed go to the account.
+    fn save_spec(&mut self, id: &str) {
+        let get = |s: &App, k: EditKey| s.edit(k).text.trim().to_owned();
+        let Some(spec) = self.data.extra.agents.spec(id).cloned() else {
+            self.notice = Some("Your team is still loading. Try again in a moment.".into());
+            return;
+        };
+        let (name, focus, prompt) = (get(self, EditKey::SpecName), get(self, EditKey::SpecFocus), get(self, EditKey::SpecInstructions));
+        if name.is_empty() && !spec.builtin {
+            self.notice = Some("Give it a name.".into());
+            return;
+        }
+        let taken = self.data.team.iter().any(|a| a.id != id && a.name.eq_ignore_ascii_case(&name));
+        if taken {
+            self.notice = Some(format!("{name} is already on your team."));
+            return;
+        }
+        let mut patch = serde_json::Map::new();
+        if !spec.builtin {
+            patch.insert("name".into(), name.into());
+            patch.insert("focus".into(), focus.into());
+            // A blank prompt keeps the old one, as on the phone.
+            if !prompt.is_empty() {
+                patch.insert("instructions".into(), prompt.into());
+            }
+        } else {
+            patch.insert("notes".into(), prompt.into());
+        }
+        if self.spec_model != spec.model && !(spec.model.is_empty() && self.spec_model == crate::models::AUTO) {
+            patch.insert("model".into(), self.spec_model.clone().into());
+        }
+        self.notice = None;
+        self.team_dialog = None;
+        let op = crate::agentsync::SyncOp::UpdateSpec(id.to_owned(), serde_json::Value::Object(patch));
+        self.with_store(|st, d| st.sync_op(op, d));
     }
 
     /// Sends what the dialog holds to the engine, and closes it (an error comes back as a notice).
@@ -141,6 +202,7 @@ impl App {
                 }
                 TeamOp::AddJob { agent, task, when }
             }
+            Some(TeamDialog::Edit(id)) => return self.save_spec(&id),
             None => return,
         };
         self.notice = None;
@@ -154,6 +216,28 @@ impl App {
         l.on = !l.on;
         let op = TeamOp::ToggleJob(l.id.clone(), l.on);
         self.with_store(|st, d| st.team_op(op, d));
+    }
+
+    /// Runs a loop's job now, as the phone's Run does: its task goes to its agent in a session of
+    /// its own, which opens, so you watch it work and get the answer there.
+    pub fn run_loop(&mut self, id: &str) {
+        let Some(l) = self.data.extra.loops.iter().find(|l| l.id == id).cloned() else { return };
+        let task = self.data.extra.agents.jobs_task(id).unwrap_or_else(|| l.name.clone());
+        let name = self.data.agent(&l.agent).map_or_else(|| l.agent.clone(), |a| a.name.clone());
+        let mut title = format!("{name}: {} (run now)", l.name);
+        let mut n = 2;
+        while self.data.extra.chats.iter().any(|c| c.title == title) {
+            title = format!("{name}: {} (run now {n})", l.name);
+            n += 1;
+        }
+        let to = crate::store::Target::AgentSession { agent: l.agent.clone(), title: title.clone() };
+        match self.with_store(|st, d| st.send(&to, &task, d)) {
+            Ok(()) => {
+                self.open_agent(Some(&l.agent));
+                self.open_agent_session(&l.agent, &title);
+            }
+            Err(e) => self.notice = Some(e),
+        }
     }
 
     /// Removes a loop for good.
@@ -180,6 +264,41 @@ fn field(s: &App, t: &Theme, key: EditKey, label: &str, placeholder: &str) -> El
         .child(row().w_full().h(38.0).px(12.0).radius(10.0).clip_rounded(10.0).center_y().fill(t.field).border(1.0, t.field_border).child(input))
 }
 
+/// Closes the dialog and what it said ("Give it a name.") with it.
+fn close_dialog(s: &mut App) {
+    s.team_dialog = None;
+    s.notice = None;
+}
+
+/// The specialist's own model: Haze 2 picks (auto), or one of your models.
+fn model_pick(s: &App, t: &Theme) -> El {
+    let mut options = vec![(crate::models::AUTO.to_owned(), "Haze 2 picks".to_owned())];
+    options.extend(s.data.extra.models.list.iter().map(|m| (m.id.clone(), m.name.clone())));
+    let chips = options.into_iter().map(|(id, name)| {
+        let on = s.spec_model == id;
+        let pick = id.clone();
+        rune::row().key(format!("spec-model/{id}")).h(28.0).px(10.0).radius(14.0).center_y()
+            .fill(if on { t.active } else { rune::Color::TRANSPARENT }).border(1.0, if on { t.control_border } else { t.border }).hover(t.hover)
+            .role("radio").checked(on).label(name.clone())
+            .child(text(name).font(ui(12.5, if on { 600.0 } else { 400.0 })).color(if on { t.text } else { t.dim }))
+            .on_press(move |s: &mut App| s.spec_model = pick.clone())
+    });
+    col().w_full().gap(5.0)
+        .child(text("Model").font(ui(12.0, 600.0)).color(t.faint))
+        .child(rune::row().w_full().gap(6.0).flex_wrap().children(chips))
+}
+
+/// A taller field for instructions: several lines, Enter makes a new one.
+fn area(s: &App, t: &Theme, key: EditKey, label: &str, placeholder: &str) -> El {
+    let input = text_input(s.edit(key), ui(13.0, 400.0)).key(format!("team-field/{}", key.name())).grow(1.0).w_full().color(t.text)
+        .placeholder(placeholder.to_owned(), t.faint).caret(t.accent, t.accent.alpha(0.3)).label(label.to_owned())
+        .on_edit(move |s: &mut App| s.edit_mut(key));
+    col().w_full().gap(5.0)
+        .child(text(label.to_owned()).font(ui(12.0, 600.0)).color(t.faint))
+        .child(col().w_full().h(180.0).px(12.0).py(10.0).radius(10.0).clip_rounded(10.0).fill(t.field).border(1.0, t.field_border)
+            .scroll(rune::ScrollSpec { stick_bottom: false }).child(input))
+}
+
 /// The open dialog, over the window.
 pub fn dialog(s: &App, t: &Theme) -> Option<El> {
     let d = s.team_dialog.as_ref()?;
@@ -192,6 +311,27 @@ pub fn dialog(s: &App, t: &Theme) -> Option<El> {
                 field(s, t, EditKey::AgentName, "Name (optional)", "Copywriter"),
             ],
         ),
+        TeamDialog::Edit(id) => {
+            let spec = s.data.extra.agents.spec(id).cloned().unwrap_or_default();
+            let name = s.data.agent(id).map_or_else(|| spec.name.clone(), |a| a.name.clone());
+            let mut fields = Vec::new();
+            if !spec.builtin {
+                fields.push(field(s, t, EditKey::SpecName, "Name", "Copywriter"));
+                fields.push(field(s, t, EditKey::SpecFocus, "What it is for", "Writes our landing pages and launch emails"));
+            }
+            let (label, placeholder) = if spec.builtin {
+                ("House rules, on top of its guide", "e.g. Keep it short. Never touch the payments folder.")
+            } else {
+                ("Instructions, its system prompt", "What it does, how, and what it must never do")
+            };
+            fields.push(area(s, t, EditKey::SpecInstructions, label, placeholder));
+            fields.push(model_pick(s, t));
+            (
+                format!("Edit {name}"),
+                if spec.builtin { "A built-in specialist. Add house rules it follows on top of its guide.".into() } else { "Changes reach your phone too. Its jobs and chats stay with it when you rename it.".into() },
+                fields,
+            )
+        }
         TeamDialog::NewLoop(agent) => {
             let name = s.data.agent(agent).map_or_else(|| agent.clone(), |a| a.name.clone());
             (
@@ -204,22 +344,26 @@ pub fn dialog(s: &App, t: &Theme) -> Option<El> {
             )
         }
     };
-    let notice = s.notice.clone().map(|n| text(n).font(ui(12.5, 400.0)).color(t.red).wrap());
+    // A problem in red; the note after making a specialist ("Codeply wrote its instructions") quiet.
+    let notice = s.notice.clone().map(|n| {
+        let ink = if n.starts_with("Codeply wrote") { t.dim } else { t.red };
+        text(n).font(ui(12.5, 400.0)).color(ink).wrap()
+    });
     let card = col().key("team-dialog").w(460.0).padding(22.0).gap(14.0).radius(16.0)
         .fill(t.card).border(1.0, t.card_border).shadow(16.0, 48.0, theme::rgba(0, 0, 0, 0.45))
         .transition(crate::ui::fade_in()).motion(crate::ui::ENTER)
         .role("dialog").label(title.clone())
-        .modal(true, |s: &mut App| s.team_dialog = None)
+        .modal(true, close_dialog)
         .child(row().w_full().center_y()
             .child(col().grow(1.0).min_w(0.0).gap(3.0)
                 .child(text(title).font(ui(16.0, 600.0)).color(t.text))
                 .child(text(sub).font(ui(12.5, 400.0)).color(t.faint).wrap()))
-            .child(ibtn(t, "close", "Close").key("team-dialog-close").on_press(|s: &mut App| s.team_dialog = None)))
+            .child(ibtn(t, "close", "Close").key("team-dialog-close").on_press(close_dialog)))
         .children(fields)
         .children(notice)
         .child(row().w_full().gap(8.0).justify_end()
-            .child(btn(t, "Cancel", None, ButtonKind::Plain).key("team-dialog-cancel").on_press(|s: &mut App| s.team_dialog = None))
-            .child(btn(t, if matches!(d, TeamDialog::NewAgent) { "Add to team" } else { "Create loop" }, None, ButtonKind::Blue)
+            .child(btn(t, "Cancel", None, ButtonKind::Plain).key("team-dialog-cancel").on_press(close_dialog))
+            .child(btn(t, match d { TeamDialog::NewAgent => "Add to team", TeamDialog::NewLoop(_) => "Create loop", TeamDialog::Edit(_) => "Save" }, None, ButtonKind::Blue)
                 .key("team-dialog-ok").on_press(|s: &mut App| s.submit_team_dialog())));
     Some(col().key("team-scrim").pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)).center()
         .fill(theme::rgba(0, 0, 0, 0.4))

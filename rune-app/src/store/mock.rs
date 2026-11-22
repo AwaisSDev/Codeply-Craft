@@ -203,7 +203,7 @@ pub fn extra() -> Extra {
         chat("Git push command explanation", "launch-site", "3 d", "git push sends your commits to the remote.", false, false),
     ];
     let plugin = |id: &str, name: &str, note: &str, by: &str, icon: &'static str, installed: bool| Plugin {
-        id: s(id), name: s(name), note: s(note), by: s(by), icon, installed,
+        id: s(id), name: s(name), note: s(note), by: s(by), icon, installed, local: false,
     };
     let plugins = vec![
         plugin("github", "GitHub", "Pull requests, reviews and checks, with a /review command.", "Codeply", "app-github", true),
@@ -215,7 +215,7 @@ pub fn extra() -> Extra {
         plugin("frontend-design", "Frontend design", "Skills for clean, accessible interfaces.", "Codeply", "sparkle", false),
         plugin("code-review", "Code review", "A /code-review command that checks a diff for bugs.", "Codeply", "check", true),
     ];
-    let mcp = |name: &str, note: &str, tools, on| McpServer { name: s(name), note: s(note), tools, on };
+    let mcp = |name: &str, note: &str, tools, on| McpServer { name: s(name), note: s(note), tools, on, from: String::new(), switchable: true };
     let loop_ = |agent: &str, name: &str, runs: &[bool], last: &str, on| Loop { id: format!("sample-{name}"), agent: s(agent), name: s(name), runs: runs.to_vec(), last: s(last), on };
     // Featured as the engine lists it: Codeply's own sign-ins, then vendors' own servers; then
     // a few of the registry's other, unreviewed listings.
@@ -334,6 +334,7 @@ pub fn extra() -> Extra {
         linked: Default::default(),
         limits: Vec::new(),
         ports: Default::default(),
+        agents: crate::agentsync::sample(),
     }
 }
 

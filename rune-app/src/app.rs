@@ -213,6 +213,13 @@ pub enum EditKey {
     SkillSearch,
     /// Settings > General > Voice: the Groq API key.
     GroqKey,
+    /// A specialist's editor: its name, what it's for, and its instructions (or house rules).
+    SpecName,
+    SpecFocus,
+    SpecInstructions,
+    /// Reminders: what to remember, and when.
+    ReminderText,
+    ReminderWhen,
 }
 
 /// The code view's file dialogs.
@@ -224,12 +231,13 @@ pub enum CodeDialog {
 }
 
 impl EditKey {
-    pub const ALL: [EditKey; 29] = [
+    pub const ALL: [EditKey; 34] = [
         EditKey::Search, EditKey::Mission, EditKey::AgentThread, EditKey::ChatHome, EditKey::ChatThread,
         EditKey::AppSearch, EditKey::Address, EditKey::SettingsSearch, EditKey::AboutMe, EditKey::Instructions,
         EditKey::Terminal, EditKey::Code, EditKey::SignInEmail, EditKey::SignInCode, EditKey::Memory,
         EditKey::AgentName, EditKey::AgentFocus, EditKey::LoopTask, EditKey::LoopWhen, EditKey::CodeAsk, EditKey::FilePath, EditKey::ChatTitle,
         EditKey::CloneUrl, EditKey::CodeAgent, EditKey::Subagent, EditKey::TeamPost, EditKey::PortAdd, EditKey::SkillSearch, EditKey::GroqKey,
+        EditKey::SpecName, EditKey::SpecFocus, EditKey::SpecInstructions, EditKey::ReminderText, EditKey::ReminderWhen,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -262,6 +270,11 @@ impl EditKey {
             EditKey::PortAdd => "port-add",
             EditKey::SkillSearch => "skill-search",
             EditKey::GroqKey => "groq-key",
+            EditKey::SpecName => "spec-name",
+            EditKey::SpecFocus => "spec-focus",
+            EditKey::SpecInstructions => "spec-instructions",
+            EditKey::ReminderText => "reminder-text",
+            EditKey::ReminderWhen => "reminder-when",
         }
     }
 }
@@ -355,6 +368,17 @@ pub struct App {
     pub chat_rename: Option<String>,
     /// The New agent / New loop dialog, while it's open (team.rs).
     pub team_dialog: Option<crate::team::TeamDialog>,
+    /// Agents shows Reminders (the sidebar's row) instead of Mission control or an agent.
+    pub reminders_open: bool,
+    /// The agent session whose transcript was last asked for, so one that only becomes known
+    /// later (the chat list arrives after the page opened) is fetched once it does.
+    opened_session: String,
+    /// The agent whose Delete was pressed once: the button asks "Delete Inbox?" before it does.
+    pub delete_armed: Option<String>,
+    /// The specialist editor's model pick: "auto" (Haze 2 picks) or one of your models' ids.
+    pub spec_model: String,
+    /// Whether Codeply opens when you sign in to the computer (autostart.rs), as last read.
+    pub autostart: bool,
     /// Whether the usage sheet is open (the button beside you at the sidebar's foot).
     pub usage_open: bool,
     /// The usage sheet's grouping (weekly or daily) and the week ("w12") or day ("d2026-10-11")
@@ -400,6 +424,11 @@ pub struct App {
     /// The engine this app started, kept running while the app is.
     #[cfg(feature = "live")]
     pub sidecar: Option<crate::engine::Sidecar>,
+    /// The engine watchdog: when it last looked, and when it restarted the engine (the last hour's).
+    #[cfg(feature = "live")]
+    engine_checked: f64,
+    #[cfg(feature = "live")]
+    engine_restarts: Vec<f64>,
     /// Updates: checking, downloading, waiting for a restart or for "Update now" (update.rs).
     pub updater: crate::update::Updater,
     /// The upgrade sheet: open, and the plan picked (views/upgrade.rs).
@@ -453,6 +482,11 @@ impl App {
             think_now: 0.0,
             usage_open: false,
             team_dialog: None,
+            reminders_open: false,
+            opened_session: String::new(),
+            delete_armed: None,
+            spec_model: crate::models::AUTO.into(),
+            autostart: crate::autostart::is_on(),
             code_ask: false,
             attachments: std::collections::HashMap::new(),
             agent_session: std::collections::HashMap::new(),
@@ -483,6 +517,10 @@ impl App {
             ports_hidden: Vec::new(),
             manifests_key: String::new(),
             #[cfg(feature = "live")]
+            #[cfg(feature = "live")]
+            engine_checked: 0.0,
+            #[cfg(feature = "live")]
+            engine_restarts: Vec::new(),
             sidecar: None,
             updater: Default::default(),
             upgrade: Default::default(),
@@ -553,6 +591,8 @@ impl App {
     /// Opens an agent's conversation in Agents (None: Mission control).
     pub fn open_agent(&mut self, id: Option<&str>) {
         self.view = View::Agents;
+        self.reminders_open = false;
+        self.notice = None;
         self.agent = id.map(str::to_owned);
         self.menu = None;
         if let Some(a) = id.and_then(|i| self.data.agent(i)).cloned() {
@@ -608,6 +648,7 @@ impl App {
             let shape = a.look.shape.name();
             self.prefs.set_look(id, color, shape);
             self.prefs.save();
+            self.sync_face(id);
         }
     }
 
@@ -618,10 +659,25 @@ impl App {
             let color = a.color.clone();
             self.prefs.set_look(id, &color, shape.name());
             self.prefs.save();
+            self.sync_face(id);
         }
     }
 
+    /// Saves a helper's face to the account, so the phone shows the same one (built-in ones keep
+    /// theirs there, so only one you made is sent).
+    fn sync_face(&mut self, id: &str) {
+        // Only one the account knows and you made (before the team loads, it isn't sent).
+        if id == "wisp" || self.data.extra.agents.spec(id).is_none_or(|s| s.builtin) {
+            return;
+        }
+        let Some(a) = self.data.agent(id) else { return };
+        let patch = serde_json::json!({ "shape": crate::agentsync::account_shape(a.look.shape), "color": a.color });
+        let op = crate::agentsync::SyncOp::UpdateSpec(id.to_owned(), patch);
+        self.with_store(|st, d| st.sync_op(op, d));
+    }
+
     pub fn toggle_appearance(&mut self, id: &str) {
+        self.delete_armed = None;
         self.appearance = if self.appearance.as_deref() == Some(id) { None } else { Some(id.to_owned()) };
     }
 
@@ -721,10 +777,48 @@ impl App {
 
     /// Whether a plugin, an app or an MCP server is on; flips it (sample data until the engine
     /// has an API for them).
-    pub fn toggle_plugin(&mut self, id: &str) {
-        if let Some(p) = self.data.extra.plugins.iter_mut().find(|p| p.id == id) {
-            p.installed = !p.installed;
+    /// The engine watchdog: every few seconds, if the engine this app started has stopped, start
+    /// it again on the same port, so loops and reminders keep running through the night. Up to 5
+    /// times an hour; after that it says so and leaves it (something is wrong with the install).
+    #[cfg(feature = "live")]
+    fn watch_engine(&mut self, now: f64) -> bool {
+        if now - self.engine_checked < 5.0 {
+            return false;
         }
+        self.engine_checked = now;
+        let Some(sidecar) = self.sidecar.as_mut() else { return false };
+        if sidecar.alive() {
+            return false;
+        }
+        self.engine_restarts.retain(|t| now - t < 3600.0);
+        if self.engine_restarts.len() >= 5 {
+            if !self.data.extra.engine_ok && self.notice.is_none() {
+                self.notice = Some("Codeply's engine keeps stopping, so it wasn't started again. Restart Codeply; if it happens again, reinstall it.".into());
+                return true;
+            }
+            return false;
+        }
+        self.engine_restarts.push(now);
+        self.notice = Some(match sidecar.restart() {
+            Ok(()) => "Codeply's engine stopped and was started again. Your loops and reminders carry on.".into(),
+            Err(e) => format!("Codeply's engine stopped and couldn't start again: {e}"),
+        });
+        true
+    }
+
+    /// Turns "Start with Windows" (or its macOS and Linux twin) on or off.
+    pub fn toggle_autostart(&mut self) {
+        let on = !self.autostart;
+        match crate::autostart::set(on) {
+            Ok(()) => self.autostart = on,
+            Err(e) => self.notice = Some(e),
+        }
+    }
+
+    pub fn toggle_plugin(&mut self, id: &str) {
+        let Some(on) = self.data.extra.plugins.iter().find(|p| p.id == id).map(|p| !p.installed) else { return };
+        let op = crate::store::PluginOp::Plugin(id.to_owned(), on);
+        self.with_store(|st, d| st.plugin_op(op, d));
     }
 
     /// Connects an app (its sign-in opens in your browser), or disconnects it.
@@ -739,9 +833,13 @@ impl App {
     }
 
     pub fn toggle_mcp(&mut self, name: &str) {
-        if let Some(m) = self.data.extra.mcp.iter_mut().find(|m| m.name == name) {
-            m.on = !m.on;
+        let Some(m) = self.data.extra.mcp.iter().find(|m| m.name == name) else { return };
+        if !m.switchable {
+            self.notice = Some(format!("{} comes from {}: switch that off instead.", m.name, m.from));
+            return;
         }
+        let op = crate::store::PluginOp::Mcp(name.to_owned(), !m.on);
+        self.with_store(|st, d| st.plugin_op(op, d));
     }
 
 
@@ -774,6 +872,32 @@ impl App {
 
     /// Sends a composer's text to whoever it talks to, then clears it.
     pub fn submit(&mut self, key: EditKey, to: &Target) {
+        // "@Inbox clear the newsletters" hands the chat to Inbox, as on the phone: the message
+        // starts a session on Inbox's page, which opens, and the next ones go there without "@".
+        if matches!(key, EditKey::Mission | EditKey::ChatHome | EditKey::ChatThread | EditKey::AgentThread)
+            && let Some((agent, rest)) = crate::agentsync::lead_mention(&self.data.team, self.edit(key).text.trim())
+            && !matches!(to, Target::AgentSession { agent: a, .. } if *a == agent)
+        {
+            let files = self.attachments.get(&key).cloned().unwrap_or_default();
+            if rest.is_empty() && files.is_empty() {
+                self.edit_mut(key).clear();
+                self.open_agent(Some(&agent));
+                return;
+            }
+            let typed = self.edit(key).text.clone();
+            *self.edit_mut(key) = rune::TextEdit::new(rest);
+            self.agent_session.remove(&agent);
+            self.submit(key, &Target::AgentSession { agent: agent.clone(), title: String::new() });
+            if self.edit(key).text.is_empty() {
+                let notice = self.notice.take();
+                self.open_agent(Some(&agent));
+                self.notice = notice;
+            } else {
+                // It didn't go: the message comes back as you typed it, "@Name" included.
+                *self.edit_mut(key) = rune::TextEdit::new(typed);
+            }
+            return;
+        }
         // `/review` becomes its prompt; `/skill` and `@mention` tokens go to the engine as refs.
         let (mut text, refs) = self.outgoing(self.edit(key).text.trim());
         let files = self.attachments.get(&key).cloned().unwrap_or_default();
@@ -1380,7 +1504,10 @@ impl App {
         // Windows opens maximized, so the window fits any screen (Rune has no display-size API).
         if !self.launched {
             self.launched = true;
-            if cfg!(windows) && !rune::is_headless() {
+            if crate::autostart::launched_hidden() && !rune::is_headless() {
+                // Started when you signed in: out of the way, working in the background.
+                tx.minimize();
+            } else if cfg!(windows) && !rune::is_headless() {
                 tx.toggle_maximized();
             }
         }
@@ -1391,6 +1518,48 @@ impl App {
         self.models_ui.tick(&self.data.extra.models);
         changed |= self.look_poll(tx);
         changed |= self.mention_focus(tx.focused());
+        #[cfg(feature = "live")]
+        {
+            changed |= self.watch_engine(now);
+        }
+        // Job reports, reminders coming due and agents that need you: a desktop notification each,
+        // unless notifications are off (the bell lists them either way).
+        for (title, body) in std::mem::take(&mut self.data.extra.agents.notify) {
+            if self.prefs.notifications {
+                crate::notify::show(&title, &body);
+            }
+            changed = true;
+        }
+        // An agent's page opened before its chats were known: its session's transcript is
+        // fetched once the chat shows up.
+        if self.view == View::Agents
+            && !self.reminders_open
+            && let Some(a) = self.agent.as_deref().and_then(|id| self.data.agent(id)).cloned()
+        {
+            let title = crate::views::agents::open_session(self, &a);
+            if !title.is_empty() && title != self.opened_session && self.data.extra.chats.iter().any(|c| c.title == title) {
+                self.opened_session = title.clone();
+                self.store.open(&title);
+            }
+        }
+        // A reminder the engine turned down: the form gets it back, so you can fix the time.
+        if let Some((text, when)) = self.data.extra.agents.add_failed.take() {
+            if self.edit(EditKey::ReminderText).text.is_empty() && self.edit(EditKey::ReminderWhen).text.is_empty() {
+                *self.edit_mut(EditKey::ReminderText) = rune::TextEdit::new(text);
+                *self.edit_mut(EditKey::ReminderWhen) = rune::TextEdit::new(when);
+            }
+            changed = true;
+        }
+        // A specialist you just made: its page and editor open on what Codeply wrote for it, as
+        // the phone shows its draft before you keep it.
+        if let Some(id) = self.data.extra.agents.created.take()
+            && self.data.agent(&id).is_some()
+        {
+            self.open_agent(Some(&id));
+            self.open_team_dialog(crate::team::TeamDialog::Edit(id));
+            self.notice = Some("Codeply wrote its instructions. Change anything you like, then Save.".into());
+            changed = true;
+        }
         // A change to the team the engine turned down.
         if let Some(note) = self.data.extra.team_note.take() {
             self.notice = Some(note);
@@ -1564,6 +1733,12 @@ impl App {
 /// Puts each helper's saved look on the team.
 fn apply_looks(data: &mut Snapshot, prefs: &Prefs) {
     for (id, color, shape) in &prefs.looks {
+        // A specialist you made wears the account's face once it has one, so a change made on
+        // the phone shows here too. Built-in ones keep the face picked here (the account keeps
+        // theirs fixed, as the phone does).
+        if data.extra.agents.spec(id).is_some_and(|s| !s.builtin && (!s.shape.is_empty() || !s.color.is_empty())) {
+            continue;
+        }
         if let Some(a) = data.team.iter_mut().find(|a| &a.id == id) {
             a.color = color.clone();
             if let Some(s) = Shape::from_name(shape) {
