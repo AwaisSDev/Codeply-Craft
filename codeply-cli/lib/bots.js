@@ -753,8 +753,10 @@ function approvalLine(bot) {
     return 'You are set to suggest only (the user chose this). Never edit files, run commands, send, post, publish, book or change anything, even when asked in this chat: Codeply refuses those actions for you. Read, look things up, think, then give your suggestion or a ready-to-use draft and say what you would do.';
   }
   const must = (bot.approval || []).map((k) => APPROVALS[k] && APPROVALS[k].label.toLowerCase()).filter(Boolean);
-  if (!must.length) return 'You may act without asking first. Still never do anything irreversible the user did not ask for.';
-  return `Always get the user's approval before: ${must.join('; ')}. Codeply enforces this too. Do reversible, read-only work (reading, searching, thinking) without asking.`;
+  // Found in the life simulation: told "write to them and ask X", a bot saved a draft and waited, so the email never went out.
+  const mail = ' When the user tells you to write to, email or ask someone, that is the request to send it: send it (the user approves it on a card before it goes). Save a draft only when they say draft or want to read it first.';
+  if (!must.length) return `You may act without asking first. Still never do anything irreversible the user did not ask for.${mail}`;
+  return `Always get the user's approval before: ${must.join('; ')}. Codeply enforces this too. Do reversible, read-only work (reading, searching, thinking) without asking.${mail}`;
 }
 
 function rosterLines(team, selfId) {
@@ -907,7 +909,7 @@ function handOffRules(team, selfId, native) {
   const B = brainLib();
   const who = (team || []).filter((b) => b.id !== selfId).map((b) => `${b.name} (${B.botDomains(b).join(', ') || 'general'})`).join('; ');
   return `HANDING WORK ON
-When part of a job belongs to another bot's domain and you do not need the answer to finish yours, pass it on with hand_off and carry on: an email asking for a meeting goes to the calendar bot, a follow-up date to the reminders bot. Send only what they need (the intent, the facts with exact names, addresses, dates and time zones, what is decided), never the whole conversation. Use ask_bot instead when you need their result to continue. Who handles what: ${who}.${native ? '' : `
+When part of a job belongs to another bot's domain and you do not need the answer to finish yours, pass it on with hand_off and carry on: an email asking for a meeting goes to the calendar bot, a follow-up date to the reminders bot. Also when the user asks you for something you cannot do yourself (book an appointment, set a reminder, send a mail) and a teammate's domain covers it: hand it on and tell the user you did, instead of telling them to do it themselves. Send only what they need (the intent, the facts with exact names, addresses, dates and time zones, what is decided), never the whole conversation. Use ask_bot instead when you need their result to continue. Who handles what: ${who}.${native ? '' : `
 
 <codeply:hand_off>
 <to>calendar</to>

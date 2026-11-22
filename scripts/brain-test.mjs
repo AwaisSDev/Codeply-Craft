@@ -301,6 +301,15 @@ if (section('Same subject')) {
   check('being ill is not kept as a lesson', !BR.list({ kinds: ['lesson'] }).length);
 }
 
+// ─── Prompts found wanting in the life simulation ──────────────────────────
+if (section('Prompt rules')) {
+  fresh('rules');
+  check('the learning ask names health conditions', /health condition or injury/.test(BR.observationsAsk()));
+  const bot = B.createBot({ name: 'Mun', specialty: 'Secretary' });
+  const pr = B.buildBotPrompt(B.getBot(bot.id), { team: B.listBots(), canHandOff: true });
+  check('"write to them" means send, not draft', /that is the request to send it/.test(pr));
+}
+
 // ─── Handoffs ───────────────────────────────────────────────────────────────
 if (section('Handoffs')) {
   fresh('handoffs');
