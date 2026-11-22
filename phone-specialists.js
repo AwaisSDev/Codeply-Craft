@@ -800,5 +800,6 @@
     hook(); setTimeout(hook, 800);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
-  window.CraftSpecialists = { open, loadTeam, team, startChat };
+  // phone-agents.js (the Agents screen) draws the team with these and opens the same sheets.
+  window.CraftSpecialists = { open, loadTeam, team, startChat, detailSheet, makeSheet, face, describeRule, toast };
 })();

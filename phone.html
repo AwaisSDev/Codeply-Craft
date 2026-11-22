@@ -35,6 +35,8 @@
   <link rel="stylesheet" href="phone-app.css">
   <link rel="stylesheet" href="phone-work.css">
   <link rel="stylesheet" href="phone-specialists.css">
+  <!-- v5: the look of Codeply's desktop app on the phone (tokens, glass bars, Agents) -->
+  <link rel="stylesheet" href="phone-v5.css">
   <script>
     // Apply a stored dark/light choice before first paint.
     (function () {
@@ -112,6 +114,7 @@
         <div class="empty-head">
           <h1 class="greeting" id="greeting">What can I help with?</h1>
           <p class="empty-sub" id="emptySub"></p>
+          <button type="button" class="v5-status hidden" id="homeStatus"><i></i><span></span></button>
         </div>
       </div>
       <div class="feed hidden" id="feed" aria-live="polite"></div>
@@ -383,6 +386,7 @@
   <script src="phone-wisp.js"></script>
   <script src="phone-work.js"></script>
   <script src="phone-specialists.js"></script>
+  <script src="phone-agents.js"></script>
   <script src="phone-bots.js"></script>
   <script src="phone-app.js"></script>
   <script src="phone-sync.js"></script>

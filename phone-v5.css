@@ -1,0 +1,215 @@
+/* Codeply phone, v5 design layer. Loaded last, so it sets the look on top of phone.css, phone-theme.css
+   and phone-app.css without touching how anything works.
+
+   What it borrows, and from where:
+   - Codeply's own desktop app on Rune (rune-app/src/theme.rs): the near-black canvas, the Codeply blue,
+     cards a step above the canvas, 18 and 12 radii. Phone and PC read as one product.
+   - Apple (iOS 26 HIG): glass bars over content that give way to it, large titles that settle into the
+     bar, inset grouped lists, 44 pt targets, sheets that rise on a spring, concentric corners.
+   - ChatGPT and Claude: chat is the app; a time-of-day greeting; suggestions drawn from what Codeply can
+     really do; one + for attachments and modes; the model named in the box.
+   - Notion and Duolingo: few type styles, sections set apart by space rather than lines, and a character
+     (Wisp) that reacts at the moments that matter instead of decorating every screen.
+   - Meta's Muse: a team of agents you can see at a glance, with what needs you first and a plain record
+     of what each one did. */
+
+:root {
+  --v5-radius-xl: 28px;   /* the composer, sheets */
+  --v5-radius-lg: 20px;   /* cards */
+  --v5-radius-md: 14px;   /* rows, inputs */
+  --v5-radius-sm: 10px;
+  --v5-gutter: 16px;
+  --v5-spring: cubic-bezier(.32, .72, 0, 1);   /* iOS sheet spring */
+  --v5-pop: cubic-bezier(.34, 1.56, .64, 1);   /* a small overshoot for presses and Wisp */
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", Roboto, "Segoe UI", system-ui, sans-serif;
+
+  /* dark, from the desktop app */
+  --bg: #0F0F0F; --group: #171717; --surface: #1C1C1C; --surface-2: #242424; --fill: rgba(255, 255, 255, .06);
+  --sheet: #171717; --pop: #1F1F1F; --sep: rgba(255, 255, 255, .07); --border: rgba(255, 255, 255, .08); --border-strong: rgba(255, 255, 255, .14);
+  --text: #ECECEC; --muted: #A3A3A3; --faint: #6E6E6E; --accent: #ECECEC; --accent-text: #111111;
+  --blue: #3D8BFD; --link: #6FA8FF; --brand: #3D8BFD; --green: #4CC38A; --red: #EF6A5A; --orange: #F0883E;
+  --user-bg: #232323; --user-text: #ECECEC; --code-bg: #0A0A0A;
+  --float: #1A1A1A; --bar: rgba(15, 15, 15, .72);
+  --glass: rgba(28, 28, 28, .62); --glass-2: rgba(255, 255, 255, .06); --glass-2-on: rgba(255, 255, 255, .12);
+  --glass-blur: blur(24px) saturate(1.8);
+  --glass-rim: inset 0 0 0 1px rgba(255, 255, 255, .07), 0 10px 30px rgba(0, 0, 0, .35);
+  --v5-card-rim: inset 0 0 0 1px rgba(255, 255, 255, .06);
+  --v5-hero: radial-gradient(120% 90% at 50% 0%, rgba(61, 139, 253, .16), transparent 62%);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #FFFFFF; --group: #F6F6F7; --surface: #F2F2F3; --surface-2: #E9E9EB; --fill: rgba(0, 0, 0, .045);
+    --sheet: #FFFFFF; --pop: #FFFFFF; --sep: rgba(0, 0, 0, .07); --border: rgba(0, 0, 0, .07); --border-strong: rgba(0, 0, 0, .12);
+    --text: #0D0D0D; --muted: #5E5E5E; --faint: #9A9A9A; --accent: #0D0D0D; --accent-text: #FFFFFF;
+    --blue: #2F6BFF; --link: #2F6BFF; --brand: #2F6BFF; --green: #16A34A; --red: #DC2626; --orange: #C2410C;
+    --user-bg: #F1F3F8; --user-text: #0D0D0D; --code-bg: #F6F6F7;
+    --float: #FFFFFF; --bar: rgba(255, 255, 255, .78);
+    --glass: rgba(255, 255, 255, .7); --glass-2: rgba(0, 0, 0, .04); --glass-2-on: rgba(0, 0, 0, .08);
+    --glass-rim: inset 0 0 0 1px rgba(0, 0, 0, .07), 0 10px 30px rgba(0, 0, 0, .08);
+    --v5-card-rim: inset 0 0 0 1px rgba(0, 0, 0, .06);
+    --v5-hero: radial-gradient(120% 90% at 50% 0%, rgba(47, 107, 255, .10), transparent 62%);
+  }
+}
+:root[data-theme="light"] {
+  --bg: #FFFFFF; --group: #F6F6F7; --surface: #F2F2F3; --surface-2: #E9E9EB; --fill: rgba(0, 0, 0, .045);
+  --sheet: #FFFFFF; --pop: #FFFFFF; --sep: rgba(0, 0, 0, .07); --border: rgba(0, 0, 0, .07); --border-strong: rgba(0, 0, 0, .12);
+  --text: #0D0D0D; --muted: #5E5E5E; --faint: #9A9A9A; --accent: #0D0D0D; --accent-text: #FFFFFF;
+  --blue: #2F6BFF; --link: #2F6BFF; --brand: #2F6BFF; --green: #16A34A; --red: #DC2626; --orange: #C2410C;
+  --user-bg: #F1F3F8; --user-text: #0D0D0D; --code-bg: #F6F6F7;
+  --float: #FFFFFF; --bar: rgba(255, 255, 255, .78);
+  --glass: rgba(255, 255, 255, .7); --glass-2: rgba(0, 0, 0, .04); --glass-2-on: rgba(0, 0, 0, .08);
+  --glass-rim: inset 0 0 0 1px rgba(0, 0, 0, .07), 0 10px 30px rgba(0, 0, 0, .08);
+  --v5-card-rim: inset 0 0 0 1px rgba(0, 0, 0, .06);
+  --v5-hero: radial-gradient(120% 90% at 50% 0%, rgba(47, 107, 255, .10), transparent 62%);
+}
+
+body { font-family: var(--font); -webkit-font-smoothing: antialiased; letter-spacing: -.011em; }
+
+/* ─── Type: five styles, nothing else ─── */
+.v5-large { font-size: 30px; line-height: 36px; font-weight: 700; letter-spacing: -.028em; }
+.v5-title { font-size: 20px; line-height: 26px; font-weight: 650; letter-spacing: -.02em; }
+.v5-head { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -.015em; }
+.v5-body { font-size: 16px; line-height: 24px; }
+.v5-caption { font-size: 13px; line-height: 18px; color: var(--muted); }
+
+/* ─── Top bar: glass that gives way to the chat ─── */
+#app > .top { background: var(--bar); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: none; }
+#menuBtn, #app .top-right { background: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+#menuBtn, #app .top-right .circle-btn { width: 44px; height: 44px; }
+
+/* ─── Home: Wisp, a greeting by the hour, what Codeply can do right now ─── */
+/* A soft glow of Codeply blue behind Wisp, only while the chat is empty; it fades out at every edge */
+.app:has(#empty:not(.hidden)) { background: radial-gradient(70% 38% at 50% 30%, color-mix(in srgb, var(--blue) 15%, transparent), transparent 72%), var(--bg); }
+.app:has(#empty:not(.hidden)) > .top { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.empty-head { gap: 14px; padding-bottom: 72px; }
+.empty-wisp .wisp-el { width: 96px; height: 96px; }
+.empty-wisp { animation: v5-float 5.5s ease-in-out infinite; }
+@keyframes v5-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+.greeting { font-size: 30px; line-height: 36px; font-weight: 700; letter-spacing: -.03em; max-width: 320px; }
+.empty-sub { font-size: 15px; line-height: 21px; color: var(--muted); }
+.v5-status { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px 0 10px; border-radius: 999px; background: var(--surface); color: var(--text); font-size: 13.5px; font-weight: 500; margin-top: 2px; }
+.v5-status i { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent); }
+.v5-status.warn i { background: var(--orange); box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 22%, transparent); }
+
+/* Suggestions: a row of cards you can swipe, each with what it does underneath (ChatGPT) */
+#app > .composer > .suggest { display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 0 2px 10px; margin: 0 -12px; padding-inline: 12px; scrollbar-width: none; flex-wrap: nowrap; }
+#app > .composer > .suggest::-webkit-scrollbar { display: none; }
+#app > .composer .suggest button { flex: 0 0 auto; min-width: 156px; max-width: 220px; scroll-snap-align: start; text-align: left; display: flex; flex-direction: column; gap: 2px;
+  padding: 12px 14px; border-radius: var(--v5-radius-lg); background: var(--glass); box-shadow: var(--v5-card-rim); }
+#app > .composer .suggest button strong { font-size: 15px; font-weight: 600; color: var(--text); }
+#app > .composer .suggest button span { font-size: 13.5px; color: var(--muted); }
+
+/* ─── Composer: one glass card; concentric corners for everything inside it ─── */
+#app > .composer .box { border-radius: var(--v5-radius-xl); padding: 12px 10px 10px 16px; background: var(--glass); box-shadow: var(--glass-rim); }
+.box textarea { font-size: 16.5px; line-height: 23px; }
+#app .round-btn, .voice-btn, .send-btn { width: 36px; height: 36px; border-radius: 50%; }
+#app .round-btn { background: var(--glass-2); box-shadow: none; }
+.send-btn { background: var(--accent); color: var(--accent-text); }
+#composer:not(.empty-input) .send-btn { background: var(--blue); color: #fff; }
+.voice-btn { background: var(--accent); color: var(--accent-text); }
+.model-btn { height: 36px; padding: 0 10px; border-radius: 999px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.model-btn:active { background: var(--glass-2-on); }
+.ctx-chip { background: var(--glass-2); border-radius: 999px; }
+
+/* ─── Messages ─── */
+.msg { font-size: 16px; line-height: 1.62; }
+#feed > .msg.user { border-radius: 22px 22px 6px 22px; padding: 10px 15px; }
+.msg-actions button { border-radius: 10px; }
+
+/* ─── Sidebar: search first, then places, then your chats by day ─── */
+/* Agents (phone-agents.js) holds the team now, so the older Specialists row is not shown twice */
+#drawerSpecialists { display: none; }
+.drawer { background: var(--group); }
+.drawer-head { padding-top: calc(10px + env(safe-area-inset-top)); }
+.drawer-item { height: 48px; border-radius: var(--v5-radius-md); font-weight: 500; }
+.drawer-item .v5-count { margin-left: auto; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 12.5px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
+.drawer-item .v5-count.on { background: var(--blue); color: #fff; }
+#drawerAgents .v5-faces { display: inline-flex; margin-left: auto; }
+#drawerAgents .v5-faces > span { width: 22px; height: 22px; margin-left: -6px; border-radius: 50%; background: var(--group); display: inline-flex; align-items: center; justify-content: center; }
+#drawerAgents .v5-faces .wisp-el { width: 22px; height: 22px; }
+.chat-group { font-size: 12.5px; font-weight: 600; letter-spacing: .01em; color: var(--faint); padding: 18px 10px 6px; }
+.chat-row { min-height: 44px; border-radius: 12px; }
+.drawer-foot { border-top: 1px solid var(--sep); }
+
+/* ─── Panels: large titles, inset grouped content ─── */
+.panel .top { background: var(--bar); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
+.panel-body { padding-inline: var(--v5-gutter); }
+.sheet-card, .wk-sheet-card { border-radius: var(--v5-radius-xl) var(--v5-radius-xl) 0 0; animation: v5-rise .42s var(--v5-spring); }
+@keyframes v5-rise { from { transform: translateY(100%); } to { transform: none; } }
+.sheet-handle, .wk-handle { width: 36px; height: 5px; border-radius: 3px; background: var(--border-strong); }
+.btn { height: 50px; border-radius: 999px; font-weight: 600; }
+.panel-body input, .panel-body textarea, .sp-in, .rem-add input { border-radius: var(--v5-radius-md); }
+
+/* ─── Agents (phone-agents.js) ─── */
+#agentsPanel .panel-body { padding-top: 0; padding-bottom: calc(32px + env(safe-area-inset-bottom)); }
+.ag-large { margin: 6px 2px 14px; }
+.ag-hero { position: relative; display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; padding: 16px; border-radius: var(--v5-radius-lg);
+  background: var(--v5-hero), var(--surface); box-shadow: var(--v5-card-rim); }
+.ag-hero-face { flex: none; width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; }
+.ag-hero-face .wisp-el { width: 56px; height: 56px; }
+.ag-hero b { display: block; font-size: 17px; font-weight: 650; letter-spacing: -.015em; }
+.ag-hero small { display: block; font-size: 14px; color: var(--muted); margin-top: 2px; line-height: 19px; }
+.ag-hero .chev { margin-left: auto; width: 18px; height: 18px; color: var(--faint); flex: none; }
+
+.ag-sec { display: flex; align-items: baseline; justify-content: space-between; margin: 26px 4px 10px; }
+.ag-sec h2 { font-size: 20px; line-height: 26px; font-weight: 650; letter-spacing: -.02em; margin: 0; }
+.ag-sec button, .ag-sec span { font-size: 15px; font-weight: 500; color: var(--blue); }
+.ag-sec span { color: var(--faint); font-weight: 500; }
+
+.ag-needs { display: flex; flex-direction: column; gap: 8px; }
+.ag-need { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: var(--v5-radius-lg); background: var(--surface); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--orange) 35%, transparent); text-align: left; width: 100%; }
+.ag-need .ag-face { width: 36px; height: 36px; }
+.ag-need b { font-size: 15px; font-weight: 600; display: block; }
+.ag-need small { font-size: 13.5px; color: var(--muted); display: block; margin-top: 2px; line-height: 19px; }
+
+.ag-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ag-card { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px; min-height: 148px; border-radius: var(--v5-radius-lg); background: var(--surface); box-shadow: var(--v5-card-rim); text-align: left; }
+.ag-card:active, .ag-hero:active, .ag-need:active, .ag-row:active { transform: scale(.975); transition: transform .08s; }
+.ag-card .ag-face { width: 44px; height: 44px; }
+.ag-card b { font-size: 15.5px; font-weight: 650; letter-spacing: -.012em; display: flex; align-items: center; gap: 6px; }
+.ag-card small { font-size: 13px; line-height: 18px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ag-card .ag-state { margin-top: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; color: var(--muted); }
+.ag-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+.ag-dot.on { background: var(--green); }
+.ag-dot.warn { background: var(--orange); }
+.ag-dot.bad { background: var(--red); }
+.ag-face { flex: none; display: inline-flex; align-items: center; justify-content: center; }
+.ag-face .wisp-el { width: 100%; height: 100%; }
+.ag-new { align-items: center; justify-content: center; color: var(--muted); background: transparent; box-shadow: inset 0 0 0 1.5px var(--border-strong); box-shadow: inset 0 0 0 1.5px var(--border-strong); border: 0; }
+.ag-new svg { width: 26px; height: 26px; }
+.ag-new b { justify-content: center; color: var(--text); }
+
+.ag-list { border-radius: var(--v5-radius-lg); background: var(--surface); box-shadow: var(--v5-card-rim); overflow: hidden; }
+.ag-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 10px 14px; text-align: left; position: relative; }
+.ag-row + .ag-row::before { content: ""; position: absolute; top: 0; left: 52px; right: 0; height: 1px; background: var(--sep); }
+.ag-row .ag-ico { width: 28px; height: 28px; border-radius: 8px; background: var(--surface-2); color: var(--muted); display: flex; align-items: center; justify-content: center; flex: none; }
+.ag-row .ag-ico svg { width: 16px; height: 16px; }
+.ag-row .ag-main { min-width: 0; flex: 1; }
+.ag-row b { display: block; font-size: 15px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-row small { display: block; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+.ag-row .ag-face { width: 28px; height: 28px; }
+.ag-row time { font-size: 12.5px; color: var(--faint); flex: none; }
+.ag-row .ok { color: var(--green); } .ag-row .bad { color: var(--red); }
+
+/* iOS-style switch */
+.ag-switch { position: relative; flex: none; width: 51px; height: 31px; }
+.ag-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.ag-switch i { position: absolute; inset: 0; border-radius: 999px; background: var(--surface-2); transition: background-color .2s ease; pointer-events: none; }
+.ag-switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, .25); transition: transform .32s var(--v5-pop); }
+.ag-switch input:checked + i { background: var(--green); }
+.ag-switch input:checked + i::after { transform: translateX(20px); }
+
+.ag-empty { padding: 18px 16px; border-radius: var(--v5-radius-lg); background: var(--surface); color: var(--muted); font-size: 14.5px; line-height: 21px; }
+.ag-foot { margin: 22px 6px 0; font-size: 13px; line-height: 19px; color: var(--faint); text-align: center; }
+
+/* Wisp does a small hop when something good happens (a loop turned on, a job saved) */
+.v5-hop { animation: v5-hop .55s var(--v5-pop); }
+@keyframes v5-hop { 0% { transform: none; } 35% { transform: translateY(-8px) scale(1.06); } 70% { transform: translateY(1px) scale(.98); } 100% { transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .empty-wisp, .v5-hop, .sheet-card, .wk-sheet-card { animation: none !important; }
+  .ag-card:active, .ag-hero:active, .ag-need:active, .ag-row:active { transform: none; }
+}
+
+/* Mission control's Tasks / Checks switch sits inside the page gutters like everything else */
+#wkTabs { margin: 6px var(--v5-gutter) 8px; }

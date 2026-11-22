@@ -328,6 +328,30 @@
       models: [{ name: 'Haze 2', tokens: 3900000, calls: 412 }, { name: 'Qwen Coder · your key', tokens: 960000, calls: 88 }, { name: 'Gemma 4 31B', tokens: 460000, calls: 51 }] },
     perms: { perm: 'edits', online: true, allow: ['run:npm test', 'run:npm run *', 'run:git status', 'edit_file:src/**'], deny: ['run:git push*', 'write_file:*.env'] },
   };
+  // Agents preview: a team like the desktop app's sample (rune-app/screenshots/rune-v5-final/agents.png)
+  const AGENTS_SAMPLE = () => {
+    const iso = (ms) => new Date(Date.now() - ms).toISOString();
+    return {
+      loaded: true,
+      list: [
+        { id: 'frontend', name: 'Frontend', focus: 'Building the pricing page', shape: 'triangle', color: '#ff2fa8', alwaysOn: true },
+        { id: 'backend', name: 'Backend', focus: 'APIs, databases and plan limits', shape: 'cloud', color: '#ff6b2c' },
+        { id: 'inbox', name: 'Inbox', focus: 'Reads your email and drafts replies', shape: 'circle', color: '#86d41f', alwaysOn: true },
+        { id: 'research', name: 'Research', focus: 'Finds venues, prices and facts', shape: 'square', color: '#8f5bff' },
+      ],
+      jobs: [
+        { id: 'j1', specialist: 'inbox', task: 'Morning brief of what needs a reply', when: 'every day at 8', enabled: true, nextAt: Date.now() + 9 * 3600e3 },
+        { id: 'j2', specialist: 'backend', task: 'Review new pull requests', when: 'every weekday at 10', enabled: true, failures: 1, nextAt: Date.now() + 20 * 60e3 },
+        { id: 'j3', specialist: 'frontend', task: 'Benchmark page speed', when: 'every Monday at 9', enabled: false, nextAt: Date.now() + 3 * 86400e3 },
+        { id: 'j4', specialist: 'research', task: 'Four venues for Friday', when: 'once, Thu 18:00', enabled: true, needsYou: 'Waiting for your yes: book the table at Lumen', nextAt: Date.now() + 86400e3 },
+      ],
+      runs: [
+        { id: 'r1', job_id: 'j1', specialist: 'inbox', task: 'Morning brief of what needs a reply', ok: true, origin: 'cloud', at: iso(50 * 60e3), output: 'Two replies drafted.' },
+        { id: 'r2', job_id: 'j2', specialist: 'backend', task: 'Review new pull requests', ok: false, origin: 'pc', at: iso(3 * 3600e3), output: 'The tests did not start: the database was offline.' },
+        { id: 'r3', job_id: 'j3', specialist: 'frontend', task: 'Benchmark page speed', ok: true, origin: 'pc', at: iso(26 * 3600e3), output: 'All three sizes under 1.2 s.' },
+      ],
+    };
+  };
   function preview(screen) {
     document.body.classList.add('previewing');
     $('drawerName').textContent = 'Awais Siddique'; $('drawerAvatar').textContent = 'A';
@@ -340,6 +364,15 @@
     }
     if (screen.startsWith('onboard')) { renderOnboard(Number(screen.slice(7)) || 0, { name: 'Awais', email: 'awais@codeply.app', pcOnline: true, pcName: 'Awais-PC', perm: 'edits' }); return; }
     if (screen === 'tasks') { renderTasks(SAMPLE.tasks); open('tasksPanel'); return; }
+    // v5 screens: the app's home, the sidebar, and Agents, with sample data
+    if (screen === 'home' || screen === 'drawer' || screen === 'agents') {
+      $('signin').classList.add('hidden'); $('app').classList.remove('hidden');
+      const hs = $('homeStatus');
+      if (hs) { hs.querySelector('span').textContent = '2 things need you'; hs.classList.add('warn'); hs.classList.remove('hidden'); }
+      if (screen === 'drawer' && P().openDrawer) P().openDrawer();
+      if (screen === 'agents' && window.CraftAgents) window.CraftAgents.open({ sample: AGENTS_SAMPLE() });
+      return;
+    }
     if (screen === 'settings') { renderYou(SAMPLE.you); open('settingsPanel'); return; }
     if (screen === 'usage') {
       const u = SAMPLE.usage; const byDay = {}; const mByDay = {}; const now = new Date();

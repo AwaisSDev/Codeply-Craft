@@ -35,7 +35,8 @@ swap('<html lang="en">', '<html lang="en" class="desk">');
 swap('<meta charset="utf-8">', '<meta charset="utf-8">\n  <base href="/chat/">');
 swap('<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">', '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">');
 swap('<title>Codeply</title>', '<title>Codeply</title>\n  <meta name="description" content="Codeply in your browser: chat, search the web, and start work on your PC or in the cloud.">\n  <meta name="robots" content="noindex">');
-swap('<link rel="stylesheet" href="phone-specialists.css">', '<link rel="stylesheet" href="phone-specialists.css">\n  <link rel="stylesheet" href="desktop.css">');
+// desktop.css goes after the phone's last stylesheet (phone-v5.css), so its wide layout wins on a desktop browser
+swap('<link rel="stylesheet" href="phone-v5.css">', '<link rel="stylesheet" href="phone-v5.css">\n  <link rel="stylesheet" href="desktop.css">');
 swap('<script src="phone-app.js"></script>', '<script src="phone-app.js"></script>\n  <script src="desktop.js"></script>');
 fs.writeFileSync(path.join(site, 'chat.html'), `<!-- Built by codeply-craft scripts/build-web.js from phone.html: edit there, not here. -->\n${html}`);
 
