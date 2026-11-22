@@ -110,11 +110,23 @@ function modelServer({ bridgeDir, real, log }) {
       stats.calls++; stats.waiting++;
       try {
         if (real) {
-          const res = await fetch(`${real.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${real.apiKey}` },
-            body: JSON.stringify({ model: real.model, messages: body.messages, temperature: 0.4 }),
-          });
-          const j = await res.json();
+          // A long reply or a busy service must not end the whole simulated week: retry a dropped
+          // connection, a timeout or a 5xx/429 a few times, with a generous timeout per try.
+          let j = null;
+          let lastErr = '';
+          for (let attempt = 0; attempt < 4 && !j; attempt++) {
+            if (attempt) await sleep(2000 * 2 ** attempt);
+            try {
+              const res = await fetch(`${real.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${real.apiKey}` },
+                body: JSON.stringify({ model: real.model, messages: body.messages, temperature: 0.4 }),
+                signal: AbortSignal.timeout(10 * 60 * 1000),
+              });
+              if (res.status === 429 || res.status >= 500) { lastErr = `HTTP ${res.status}`; continue; }
+              j = await res.json();
+            } catch (e) { lastErr = e.message; }
+          }
+          if (!j) throw new Error(`the model did not answer after 4 tries (${lastErr})`);
           const text = j.choices?.[0]?.message?.content || '';
           log({ kind: 'model', id, request: render(body, id).text.slice(0, 4000), answer: text });
           return text;
