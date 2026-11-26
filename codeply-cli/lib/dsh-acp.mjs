@@ -246,13 +246,29 @@ export class DshEngine {
    */
   async openSession(resumeId) {
     await this.start();
+    this.lastResumeError = '';
     if (resumeId && this.open.has(resumeId)) return resumeId;
     if (resumeId) {
-      try {
-        await this.request('session/resume', { sessionId: resumeId, cwd: this.cwd, mcpServers: [] });
-        this.open.add(resumeId);
-        return resumeId;
-      } catch { /* gone, or another folder: start fresh */ }
+      // The engine from before (an app that just closed, or restarted) can still hold the
+      // session's write lock for a few seconds while it shuts down: wait for it rather than
+      // giving the chat a fresh session that has none of what was said.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await this.request('session/resume', { sessionId: resumeId, cwd: this.cwd, mcpServers: [] });
+          this.open.add(resumeId);
+          return resumeId;
+        } catch (e) {
+          const why = String((e && e.message) || e);
+          if (attempt < 6 && /already owned|active write handle|already active/i.test(why)) {
+            await new Promise((r) => setTimeout(r, 1000 + attempt * 500));
+            continue;
+          }
+          // Gone, or another folder: start fresh (the caller tells the new session what was said).
+          this.lastResumeError = why;
+          try { process.stderr.write(`[dsh] couldn't resume session ${resumeId}: ${why}\n`); } catch {}
+          break;
+        }
+      }
     }
     const session = await this.request('session/new', { cwd: this.cwd, mcpServers: [] });
     this.open.add(session.sessionId);
@@ -397,6 +413,9 @@ export class DshEngine {
    */
   async *prompt(text, { approve, signal, sessionId, images } = {}) {
     await this.start();
+    // Stopped while the engine started or the session opened: the abort listener below would
+    // never fire for a signal that's already aborted, so the whole turn would run anyway.
+    if (signal && signal.aborted) { yield { type: 'aborted' }; return; }
     const sid = sessionId || this.sessionId;
     const queue = [];
     let wake = null;

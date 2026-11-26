@@ -542,6 +542,24 @@ const PATCH = `# Written by Codeply: the Rune app's chats on the DSH harness.
 `;
 
 const engines = new Map(); // folder key -> { engine, used }
+const STOP_GRACE_MS = 10_000;
+
+/** Drops what waits behind a chat's run; a run someone else started and awaits hears it stopped. */
+function dropQueue(id) {
+  for (const q of queues.get(id) || []) {
+    if (q && q.resolve) q.resolve({ ok: false, text: '', error: 'Stopped.' });
+  }
+  queues.delete(id);
+} // how long a stopped run may take to end before it's ended for it
+
+/** Closes a folder's DSH engine, so its next turn starts a new one (and resumes its sessions). */
+function resetEngine(cwd) {
+  const key = folderKey(cwd);
+  const e = engines.get(key);
+  if (!e) return;
+  engines.delete(key);
+  try { e.engine.close(); } catch {}
+}
 let acp = null;
 let dshProblem = null;
 async function engineFor(cwd) {
@@ -719,13 +737,51 @@ function routeFor(session) {
   return { auto: true };
 }
 
+const CATCH_UP_TURNS = 16; // messages a DSH session that missed them gets, newest last
+const CATCH_UP_CHARS = 2000; // per message
+
+/**
+ * What this chat said that its DSH session doesn't have, as a note in front of the prompt. The
+ * chat's own transcript (`session.messages`) and its DSH session's log are kept apart: a session
+ * that couldn't be resumed after a restart is a fresh one with no memory of the chat, and turns
+ * that ran elsewhere (Classic, a picture turn, the cloud, the phone) never reached it.
+ * `session.dshSeen` is how many messages the DSH session has seen; `upto` is where this turn's
+ * own messages start.
+ */
+function catchUp(session, fresh, upto) {
+  let seen = fresh ? 0 : (Number.isInteger(session.dshSeen) ? Math.min(session.dshSeen, upto) : upto);
+  if (seen >= upto) return '';
+  // A history starts with a user's message (buildHistory drops what comes before one).
+  while (seen > 0 && session.messages[seen] && session.messages[seen].kind !== 'user') seen--;
+  let turns = [];
+  try {
+    const { buildHistory } = require('./history.js');
+    turns = buildHistory({ ...session, messages: session.messages.slice(seen, upto) });
+  } catch (e) { console.error('catch-up:', e && e.message); return ''; }
+  const lines = turns
+    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+    .slice(-CATCH_UP_TURNS)
+    .map((m) => `${m.role === 'user' ? 'User' : 'You'}: ${m.content.trim().slice(0, CATCH_UP_CHARS)}`);
+  if (!lines.length) return '';
+  const head = fresh
+    ? 'Earlier in this chat (your session was restarted, so this is what was said before; what the user chose or asked for there still stands):'
+    : 'Said in this chat since your last turn (it ran outside this session):';
+  return `${head}\n\n${lines.join('\n\n')}\n\n---\n\n`;
+}
+
 /** One turn on DSH: its text arrives in chunks, sent as `text_delta` and kept as one message. */
-async function* runDsh(session, text, approve, signal, images = [], askAgents = false) {
+async function* runDsh(session, text, approve, signal, images = [], askAgents = false, upto = session.messages.length) {
   const engine = await engineFor(session.cwd);
   // A model that can't take pictures with a prompt: this turn runs on Classic, which can.
   if (images.length && !engine.imagePrompts) throw Object.assign(new Error('This model takes no images on DSH.'), { images: true });
-  const sessionId = await engine.openSession(session.dshSession);
-  if (sessionId !== session.dshSession) { session.dshSession = sessionId; save(); await applyEffort(engine, sessionId); }
+  const before = session.dshSession;
+  const sessionId = await engine.openSession(before);
+  const fresh = sessionId !== before;
+  if (fresh) {
+    if (before) console.error(`chat ${session.id}: DSH session ${before} couldn't be resumed (${engine.lastResumeError || 'unknown'}); a new one gets the chat so far`);
+    session.dshSession = sessionId; save(); await applyEffort(engine, sessionId);
+  }
+  text = catchUp(session, fresh, upto) + text;
   turns.set(sessionId, { session, cwd: path.resolve(session.cwd), approve, request: String(text || ''), route: routeFor(session) });
   // Wisp's chat leads the team; your own chats can ask an agent too (promptPrefix says when).
   // The code view's agent and an agent's own sessions do their work themselves, unless the
@@ -823,6 +879,16 @@ async function sendMessage(s, text, files = [], refs = []) {
  * classic (run on Classic), onEvent(ev) (sees every engine event).
  */
 async function startRun(session, text, opts = {}) {
+  // One run per chat at a time. Two would share the chat's DSH session: the second prompt is
+  // refused mid-turn, the first loses its updates and approvals, and Stop no longer reaches it.
+  // Whoever starts one while another runs (a reminder, a handoff, a delegation) waits its turn.
+  if (runs.has(session.id)) {
+    return new Promise((resolve) => {
+      const q = queues.get(session.id) || [];
+      q.push({ text, opts, resolve });
+      queues.set(session.id, q);
+    });
+  }
   const ctl = new AbortController();
   runs.set(session.id, ctl);
   if (opts.signal) { if (opts.signal.aborted) ctl.abort(); else opts.signal.addEventListener('abort', () => ctl.abort(), { once: true }); }
@@ -873,7 +939,7 @@ async function startRun(session, text, opts = {}) {
       run = runClassic(session, prompt, approve, ctl.signal, images);
     } else {
       try {
-        const dsh = runDsh(session, prompt, approve, ctl.signal, images, askAgents);
+        const dsh = runDsh(session, prompt, approve, ctl.signal, images, askAgents, opts.resume ? from : from - 1);
         session.engine = 'dsh';
         // Pull the first event here so a DSH that can't start falls back before anything shows.
         const first = await dsh.next();
@@ -892,7 +958,27 @@ async function startRun(session, text, opts = {}) {
         }
       }
     }
-    for await (let ev of run) {
+    // Stop asks the engine to cancel; a tool that ignores it would keep the chat running (and
+    // its Stop button doing nothing) for good. STOP_GRACE_MS after Stop the run ends here, and the
+    // folder's DSH engine starts over, since its session still has the prompt in flight.
+    const STUCK = Symbol('stuck');
+    const stuck = new Promise((r) => {
+      const arm = () => setTimeout(() => r(STUCK), STOP_GRACE_MS);
+      if (ctl.signal.aborted) arm(); else ctl.signal.addEventListener('abort', arm, { once: true });
+    });
+    const it = run[Symbol.asyncIterator]();
+    while (true) {
+      const step = await Promise.race([it.next(), stuck]);
+      if (step === STUCK) {
+        console.error(`chat ${session.id}: the run didn't stop within ${STOP_GRACE_MS} ms; ending it`);
+        if (kind === 'dsh') resetEngine(session.cwd);
+        Promise.resolve().then(() => it.return && it.return()).catch(() => {});
+        result.ok = false; result.error = 'Stopped.';
+        emit(session.id, { type: 'aborted' });
+        break;
+      }
+      if (step.done) break;
+      let ev = step.value;
       if (opts.onEvent) { try { opts.onEvent(ev); } catch {} }
       // What each step does, in words, as the Electron app shows it: "Editing index.html" while it
       // runs, "Edited index.html" after.
@@ -957,6 +1043,8 @@ async function startRun(session, text, opts = {}) {
       emit(session.id, { type: 'notice', ...n });
     }
     result.text = session.messages.slice(from).filter((m) => m.kind === 'assistant' && !m.interim && m.text).map((m) => m.text).join('\n\n');
+    // Everything up to here is in the DSH session's own log (a turn on Classic isn't).
+    if (kind === 'dsh' && session.engine === 'dsh') session.dshSeen = session.messages.length;
     if (unattended) result.needsYou = unattended.skipped;
     runs.delete(session.id);
     // The handoff closes its lease before the chat takes its next message.
@@ -971,7 +1059,12 @@ async function startRun(session, text, opts = {}) {
     const next = queue.shift();
     if (!queue.length) queues.delete(session.id);
     emit(session.id, { type: 'session_sync', session: meta(session) });
-    if (next !== undefined) setImmediate(() => (typeof next === 'string' ? startRun(session, next) : startRun(session, next.text, { files: next.files, refs: next.refs })));
+    if (next !== undefined) {
+      setImmediate(() => {
+        const r = typeof next === 'string' ? startRun(session, next) : startRun(session, next.text, next.opts || { files: next.files, refs: next.refs });
+        if (next.resolve) r.then(next.resolve, (e) => next.resolve({ ok: false, text: '', error: (e && e.message) || 'The run did not start.' }));
+      });
+    }
   }
   return result;
 }
@@ -1237,7 +1330,7 @@ const extCtx = {
     sendMessage: (...a) => sendMessage(...a),
     // The chat a DSH session's turn belongs to, while it runs: { session, cwd, approve }.
     turnOf: (dshSessionId) => turns.get(dshSessionId) || null,
-    stopRun: (id) => { queues.delete(id); const r = runs.get(id); if (r) r.abort(); return !!r; },
+    stopRun: (id) => { dropQueue(id); const r = runs.get(id); if (r) r.abort(); return !!r; },
   },
   // Called by the run path: beforeMessage(session, text) -> true when it took the message (a cloud run);
   // runStart(session, info), runEvent(session, ev), runEnd(session, { aborted }).
@@ -1507,7 +1600,7 @@ const server = http.createServer(async (req, res) => {
       if (!s) return reply(404, { error: 'No such chat.' });
       if (!m[2] && req.method === 'GET') return reply(200, { session: s, running: runs.has(s.id) });
       if (!m[2] && req.method === 'DELETE') {
-        queues.delete(s.id);
+        dropQueue(s.id);
         const r = runs.get(s.id);
         if (r) r.abort();
         for (const [id, x] of pending) if (x.sessionId === s.id) x.resolve('reject');
@@ -1536,8 +1629,9 @@ const server = http.createServer(async (req, res) => {
       }
       if (m[2] === 'abort' && req.method === 'POST') {
         const r = runs.get(s.id);
-        // Stop means stop: drop what was queued behind this reply too.
-        queues.delete(s.id);
+        // Stop means stop: drop what was queued behind this reply too (the app keeps its own
+        // queued message, with Send now, and sends it once this run has ended).
+        dropQueue(s.id);
         if (r) r.abort();
         return reply(200, { ok: true, wasRunning: !!r });
       }

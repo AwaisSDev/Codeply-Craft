@@ -78,7 +78,19 @@ pub struct Sidecar {
 }
 
 impl Drop for Sidecar {
+    /// Closing its stdin is how the engine hears to stop (engine.mjs `shutdown`): it ends each
+    /// run, closes its DSH engines and saves the chats. A kill would skip all that and leave a DSH
+    /// engine holding a chat's session for a few seconds, so the next launch couldn't resume it and
+    /// the chat would carry on without its memory. A few seconds to finish, then it's killed.
     fn drop(&mut self) {
+        drop(self.child.stdin.take());
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while std::time::Instant::now() < until {
+            if matches!(self.child.try_wait(), Ok(Some(_))) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
         let _ = self.child.kill();
     }
 }

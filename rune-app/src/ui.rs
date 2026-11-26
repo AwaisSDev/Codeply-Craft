@@ -88,11 +88,15 @@ pub fn card(t: &Theme) -> El {
 
 /// The composer: the text field, then attach, when the engine asks before it acts (a menu:
 /// "Approve manually" or "Full access"), the model and its effort (a menu), voice, and send. While
-/// the chat it talks in is writing a reply, send turns into Stop. `project` adds the project row
-/// on top; `compact` drops the approval and model chips (side panels).
+/// the chat it talks in is writing a reply, an empty composer's send turns into Stop; a message
+/// written meanwhile queues above the field ("Queued", with Send now) and goes out once the reply
+/// ends. `project` adds the project row on top; `compact` drops the approval and model chips.
 pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &str, project: bool, compact: bool) -> El {
     let chat = s.chat_of(&target);
     let running = chat.as_deref().is_some_and(|c| s.data.is_running(c));
+    let stopping = chat.as_deref().is_some_and(|c| s.stopping.contains_key(c));
+    let busy_hint = "Write the next message: it sends when this reply finishes";
+    let placeholder = if running { busy_hint } else { placeholder };
     let chip = |id: String, icon: Option<&str>, label: &str, dim: Option<&str>, chevron: bool, menu: String| {
         row().key(id).h(30.0).px(10.0).gap(7.0).radius(9.0).center_y().hover(t.hover).role("button").label(label.to_owned())
             .fill(if s.menu.as_deref() == Some(menu.as_str()) { t.active } else { Color::TRANSPARENT })
@@ -113,18 +117,41 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
         .on_input_key(move |s: &mut App, e, tx| s.mention_key(key, e, tx))
         .on_input_change(move |s: &mut App, _| s.mention_typed(key, &menu_target))
         .on_submit(move |s: &mut App, _| s.submit(key, &target));
-    let action = if running {
+    let empty = s.edit(key).text.trim().is_empty() && s.attachments.get(&key).is_none_or(Vec::is_empty);
+    let action = if running && stopping {
+        // Pressed: it's stopping (the engine ends a run that won't stop on its own).
+        el().key(format!("stop-{}", key.name())).size(34.0, 34.0).radius(17.0).fill(t.control).center().role("button").label("Stopping").help("Stopping...")
+            .child(crate::ui::orb(t, 16.0, s.reduced.get()))
+    } else if running && empty {
         let chat = chat.clone().unwrap_or_default();
         el().key(format!("stop-{}", key.name())).size(34.0, 34.0).radius(17.0).fill(t.invert).center().role("button").label("Stop").help("Stop")
             .child(el().size(11.0, 11.0).radius(2.5).fill(t.invert_text))
             .on_press(move |s: &mut App| s.stop(&chat))
     } else {
-        let empty = s.edit(key).text.trim().is_empty() && s.attachments.get(&key).is_none_or(Vec::is_empty);
         el().key(format!("send-{}", key.name())).size(34.0, 34.0).radius(17.0).fill(if empty { t.control } else { t.accent }).center().role("button").label("Send")
             .hover(t.press)
             .child(ico_s("arrow-up", 16.0, if empty { t.faint } else { t.on_accent }))
+            .help(if running { "Queue: sends when this reply finishes" } else { "Send" })
             .on_press(move |s: &mut App| s.submit(key, &send_target))
     };
+    // The message waiting for this reply to end: Send now stops the reply and sends it; the x
+    // takes it back into the field.
+    let queued = chat.as_deref().and_then(|c| s.queued.get(c).map(|q| (c.to_owned(), q.text.clone())));
+    let queued = queued.map(|(c, words)| {
+        let (now_chat, x_chat) = (c.clone(), c.clone());
+        let first = words.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or_default().to_owned();
+        row().key(format!("queued/{}", key.name())).w_full().min_w(0.0).px(12.0).py(8.0).gap(8.0).center_y().border_sides([0.0, 0.0, 1.0, 0.0], t.menu_line)
+            .child(ico_s("clock", 14.0, t.faint))
+            .child(text("Queued").font(ui(12.5, 600.0)).color(t.dim))
+            .child(text(first).font(ui(13.0, 400.0)).color(t.text).single_line().truncate().grow(1.0).min_w(0.0).help(words))
+            .child(row().key(format!("queued-now/{}", key.name())).h(26.0).px(10.0).gap(6.0).radius(13.0).center_y().fill(t.accent).hover(t.accent.alpha(0.85))
+                .role("button").label("Send now").help(if running { "Stop this reply and send this now" } else { "Send this now" })
+                .child(text(if stopping { "Stopping..." } else { "Send now" }).font(ui(12.5, 600.0)).color(t.on_accent))
+                .on_press(move |s: &mut App| s.send_queued_now(&now_chat)))
+            .child(el().key(format!("queued-x/{}", key.name())).size(24.0, 24.0).radius(12.0).center().hover(t.hover).role("button").label("Remove from queue").help("Take it back")
+                .child(ico_s("close", 12.0, t.faint))
+                .on_press(move |s: &mut App| s.unqueue(&x_chat, key)))
+    });
     let approval = s.prefs.approval;
     // The chat at its narrowest (background tasks open beside the browser or terminal): the
     // approval chip shows its icon only, so voice and send keep their room. Elsewhere the chip
@@ -161,6 +188,7 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
                     .child(ico_s("chevron-down", 14.0, t.faint))
                     .on_press(move |s: &mut App| s.toggle_menu(&menu_id)))
         }))
+        .children(queued)
         .children(notice)
         .children(attached(s, t, key))
         .child(field)

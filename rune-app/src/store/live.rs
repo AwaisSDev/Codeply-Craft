@@ -638,9 +638,6 @@ pub struct LiveStore {
     label: String,
     /// Chats with a reply finished since you last looked, by engine id.
     unread: std::collections::HashSet<String>,
-    /// Messages shown when sent to a busy chat, waiting their turn: their `run_started` mustn't
-    /// show them twice. By engine id.
-    queued: std::collections::HashMap<String, Vec<String>>,
     /// A new chat to open once the engine has titled it, and the title to open now.
     want_focus: Option<String>,
     focus: Option<String>,
@@ -668,7 +665,7 @@ impl LiveStore {
             connected_once: false,
             conn: Conn { base: url.trim_end_matches('/').to_owned(), token: token.to_owned() },
             tx, rx, waker: None, sessions: Vec::new(), named: Default::default(), open: None, streaming: Default::default(),
-            label: format!("codeply serve at {url}"), unread: Default::default(), queued: Default::default(), want_focus: None, focus: None,
+            label: format!("codeply serve at {url}"), unread: Default::default(), want_focus: None, focus: None,
             open_url: None, open_project: None, crlf: Default::default(), team: Vec::new(), renames: Vec::new(),
             apps_q: AppsQuery::default(), apps_shown: 0, apps_seq: Default::default(),
         }
@@ -809,24 +806,13 @@ impl LiveStore {
                 }
                 self.streaming.insert(id.clone());
             }
-            // Sent while a reply was running: show it now; it runs next.
-            "queued" => {
-                let text = e["text"].as_str().unwrap_or_default().to_owned();
-                self.queued.entry(id.clone()).or_default().push(text.clone());
-                items.push(ThreadItem::You(text));
-                self.streaming.remove(&id);
-            }
+            // Sent to the engine while a reply was running (another device, or a race): it shows
+            // when its own run starts, not in the middle of the reply still being written. The
+            // app's own composer holds such a message itself (App::queued) until the reply ends.
+            "queued" => {}
             "run_started" => {
                 self.streaming.remove(&id);
-                let text = e["message"]["text"].as_str().unwrap_or_default();
-                let shown = match self.queued.get_mut(&id) {
-                    Some(q) if q.first().map(String::as_str) == Some(text) => {
-                        q.remove(0);
-                        true
-                    }
-                    _ => false,
-                };
-                if !shown && let Some(m) = e.get("message") {
+                if let Some(m) = e.get("message") {
                     items.extend(items_from(m));
                 }
             }
@@ -2246,8 +2232,13 @@ impl Store for LiveStore {
 
     fn abort(&mut self, chat: &str) {
         let Some(id) = self.id_of(chat).or_else(|| self.named.get(chat).cloned()) else { return };
-        self.queued.remove(&id);
-        self.spawn(move |c| c.post(&format!("/session/{id}/abort"), json!({})).err().map(|e| Msg::Status(format!("stop failed: {e}"))));
+        // The engine had nothing running (it restarted, or the run just ended): the chat isn't
+        // running, whatever this app last heard, so its Stop button goes.
+        self.spawn(move |c| match c.post(&format!("/session/{id}/abort"), json!({})) {
+            Ok(r) if r["wasRunning"] == json!(false) => Some(Msg::Event(json!({ "type": "run_finished", "sessionId": id }))),
+            Ok(_) => None,
+            Err(e) => Some(Msg::Status(format!("stop failed: {e}"))),
+        });
     }
 
     fn configure(&mut self, prefs: &crate::prefs::Prefs) {

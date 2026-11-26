@@ -405,6 +405,12 @@ pub struct App {
     pub mention: Option<crate::mentions::Popup>,
     /// What the last message sent gave the engine: its text, files and refs (mentions::body).
     pub last_sent: Option<serde_json::Value>,
+    /// A message written while its chat was still replying, by chat title: it waits above the
+    /// composer ("Queued", with Send now) and goes out once the reply ends.
+    pub queued: std::collections::HashMap<String, Queued>,
+    /// Chats you pressed Stop in, and when: Stop shows "Stopping" until the run ends, and a
+    /// queued message waits for that.
+    pub stopping: std::collections::HashMap<String, f64>,
     /// Settings > Skills: where they came from ("" all, "built-in", "plugin", "user"), and how
     /// many show before "Show more".
     pub skills_from: &'static str,
@@ -507,6 +513,8 @@ impl App {
             completion: None,
             mention: None,
             last_sent: None,
+            queued: std::collections::HashMap::new(),
+            stopping: std::collections::HashMap::new(),
             skills_from: "",
             skills_limit: crate::views::skills::PAGE,
             code_others: std::collections::HashMap::new(),
@@ -636,9 +644,40 @@ impl App {
         self.store.answer(request, verdict, &mut self.data);
     }
 
-    /// Stops the reply being written in a chat.
+    /// Stops the reply being written in a chat. A message queued behind it goes out once it has.
     pub fn stop(&mut self, chat: &str) {
         self.store.abort(chat);
+        self.stopping.insert(chat.to_owned(), self.think_now);
+    }
+
+    /// Send now: stops the reply being written and sends the queued message as soon as it has
+    /// stopped (or at once, when nothing is running any more).
+    pub fn send_queued_now(&mut self, chat: &str) {
+        if self.data.is_running(chat) {
+            self.stop(chat);
+        } else {
+            self.flush_queued(chat);
+        }
+    }
+
+    /// Takes a queued message back: it returns to its composer when that's empty.
+    pub fn unqueue(&mut self, chat: &str, key: EditKey) {
+        let Some(q) = self.queued.remove(chat) else { return };
+        if self.edit(key).text.trim().is_empty() {
+            *self.edit_mut(key) = rune::TextEdit::new(q.text);
+            if !q.files.is_empty() {
+                self.attachments.insert(key, q.files);
+            }
+        }
+    }
+
+    /// Sends a chat's queued message.
+    fn flush_queued(&mut self, chat: &str) {
+        let Some(q) = self.queued.remove(chat) else { return };
+        match self.store.send_refs(&q.to, &q.text, &q.files, &q.refs, &mut self.data) {
+            Ok(()) => self.last_sent = Some(crate::mentions::body(&q.text, &q.files, &q.refs)),
+            Err(e) => self.notice = Some(e),
+        }
     }
 
     /// Repaints a helper (the Appearance colour picker), and remembers it.
@@ -934,6 +973,24 @@ impl App {
             }
             other => other.clone(),
         };
+        // Its chat is still replying (or stopping): the message waits its turn above the
+        // composer instead of landing in the middle of the reply. A second one joins it.
+        if let Some(chat) = self.chat_of(&to).filter(|c| self.data.is_running(c) || self.stopping.contains_key(c)) {
+            let q = self.queued.entry(chat).or_insert_with(|| Queued { to: to.clone(), text: String::new(), files: Vec::new(), refs: Vec::new() });
+            if !q.text.is_empty() {
+                q.text.push_str("\n\n");
+            }
+            q.text.push_str(&text);
+            q.files.extend(files);
+            q.refs.extend(refs);
+            if self.mention.as_ref().is_some_and(|p| p.key == key) {
+                self.mention = None;
+            }
+            self.notice = None;
+            self.edit_mut(key).clear();
+            self.attachments.remove(&key);
+            return;
+        }
         match self.store.send_refs(&to, &text, &files, &refs, &mut self.data) {
             Ok(()) => {
                 self.last_sent = Some(crate::mentions::body(&text, &files, &refs));
@@ -1590,6 +1647,12 @@ impl App {
                     *k = new.clone();
                 }
             }
+            if let Some(q) = self.queued.remove(&old) {
+                self.queued.insert(new.clone(), Queued { to: Target::Chat(new.clone()), ..q });
+            }
+            if let Some(at) = self.stopping.remove(&old) {
+                self.stopping.insert(new.clone(), at);
+            }
             if let Some(t0) = self.think_started.remove(&old) {
                 self.think_started.insert(new, t0);
             }
@@ -1615,6 +1678,20 @@ impl App {
             tx.wake_after(std::time::Duration::from_secs_f64(1.0 - now.fract().min(0.99)));
         }
         self.think_now = now;
+        // Stop: "Stopping" until the run has ended (the engine ends a run that won't stop after
+        // ten seconds; past twenty, the app stops waiting too).
+        let stopping = self.stopping.len();
+        self.stopping.retain(|c, at| self.data.is_running(c) && now - *at < 20.0);
+        changed |= stopping != self.stopping.len();
+        // A queued message goes out once its chat's reply has ended.
+        let ready: Vec<String> = self.queued.keys().filter(|c| !self.data.is_running(c) && !self.stopping.contains_key(*c)).cloned().collect();
+        for c in ready {
+            self.flush_queued(&c);
+            changed = true;
+        }
+        if !self.queued.is_empty() || !self.stopping.is_empty() {
+            tx.wake_after(std::time::Duration::from_millis(250));
+        }
         // A chat the store made for you (a new chat from "What should we build?") opens itself.
         if let Some(title) = self.store.take_focus() {
             if self.view == View::Chat && self.chat.is_none() {
@@ -1746,4 +1823,13 @@ fn apply_looks(data: &mut Snapshot, prefs: &Prefs) {
             }
         }
     }
+}
+
+/// A message waiting for its chat's reply to end: whom it goes to, and what it says.
+#[derive(Clone, Debug)]
+pub struct Queued {
+    pub to: Target,
+    pub text: String,
+    pub files: Vec<String>,
+    pub refs: Vec<crate::mentions::Ref>,
 }
