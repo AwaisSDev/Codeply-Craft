@@ -439,7 +439,7 @@ fn init_store() -> App {
         #[cfg(feature = "live")]
         _ => match engine::start() {
             Ok(sidecar) => {
-                let live = store::live::LiveStore::new(&sidecar.url, &sidecar.token).labelled("Codeply engine (DSH)");
+                let live = store::live::LiveStore::new(&sidecar.url, &sidecar.token).labelled("Yune engine (DSH)");
                 let mut app = App::new(Box::new(live));
                 app.look.set_remote(&sidecar.url, &sidecar.token);
                 app.sidecar = Some(sidecar);
@@ -466,7 +466,7 @@ fn spec() -> AppSpec<App> {
         setup: Some(|s, waker| s.set_waker(waker)),
         poll: Some(|s, now, tx| s.poll(now, tx)),
         on_key: Some(|s, e, tx| s.key(e, tx)),
-        ..AppSpec::new("Codeply", (1440.0, 900.0), init, shell::view)
+        ..AppSpec::new("Yune", (1440.0, 900.0), init, shell::view)
     }
 }
 

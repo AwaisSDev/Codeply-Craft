@@ -190,7 +190,7 @@ pub fn find() -> Result<Install, String> {
             cli = me.ancestors().map(|a| a.join("codeply-cli")).find(|p| is_cli(p));
         }
     }
-    let cli = cli.ok_or("Codeply isn't installed on this PC. Install Codeply and sign in, then open this app again.")?;
+    let cli = cli.ok_or("Yune's engine is missing from this PC. Reinstall Yune, then open it again.")?;
     let node = runtime.map(|r| r.join(exe)).filter(|p| p.is_file())
         .or_else(|| std::env::var_os("CODEPLY_DSH_NODE").map(PathBuf::from))
         .unwrap_or_else(|| PathBuf::from(exe));

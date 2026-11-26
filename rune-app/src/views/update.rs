@@ -27,8 +27,8 @@ pub fn sheet(s: &App, t: &Theme) -> Option<El> {
     let head = row().w_full().gap(12.0).center_y()
         .child(crate::logo::mark(40.0))
         .child(col().grow(1.0).min_w(0.0)
-            .child(text(format!("Codeply {version}")).font(ui(17.0, 650.0)).color(t.text))
-            .child(text(format!("You have {VERSION}. This update brings a new engine, so it installs in a minute and Codeply opens again.")).font(ui(13.0, 400.0)).color(t.dim).wrap()));
+            .child(text(format!("Yune {version}")).font(ui(17.0, 650.0)).color(t.text))
+            .child(text(format!("You have {VERSION}. This update brings a new engine, so it installs in a minute and Yune opens again.")).font(ui(13.0, 400.0)).color(t.dim).wrap()));
     let notes = (!notes.trim().is_empty()).then(|| {
         col().w_full().gap(8.0)
             .child(text("What's new").font(ui(12.5, 600.0)).color(t.faint))
@@ -44,7 +44,7 @@ pub fn sheet(s: &App, t: &Theme) -> Option<El> {
                     .child(el().h_full().w_frac(frac).radius(3.0).fill(t.accent)))
                 .child(text(label).font(ui(12.5, 400.0)).color(t.faint))
         }
-        Phase::Installing => col().child(text("Installing. Codeply will open again when it's done.").font(ui(13.0, 400.0)).color(t.dim)),
+        Phase::Installing => col().child(text("Installing. Yune will open again when it's done.").font(ui(13.0, 400.0)).color(t.dim)),
         _ => row().w_full().gap(8.0).justify_end()
             .child(btn(t, "Later", None, ButtonKind::Plain).key("update-later").on_press(|s: &mut App| s.later_update()))
             .child(btn(t, "Update now", Some("download"), ButtonKind::Blue).key("update-now").on_press(|s: &mut App| s.install_update())),
@@ -78,7 +78,7 @@ pub fn pill(s: &App, t: &Theme) -> Option<El> {
 /// Settings > General: what the updater says, and the one button that moves it on.
 pub fn status(s: &App, t: &Theme) -> El {
     let (line, action): (String, Option<El>) = match &s.updater.phase {
-        Phase::Idle => ("Codeply looks for updates when it opens.".into(), Some(check(t))),
+        Phase::Idle => ("Yune looks for updates when it opens.".into(), Some(check(t))),
         Phase::Checking => ("Checking…".into(), None),
         Phase::Current => (format!("{VERSION} is the newest."), Some(check(t))),
         Phase::Fetching { version, done, total, .. } => (

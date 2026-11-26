@@ -793,15 +793,15 @@ impl App {
         self.engine_restarts.retain(|t| now - t < 3600.0);
         if self.engine_restarts.len() >= 5 {
             if !self.data.extra.engine_ok && self.notice.is_none() {
-                self.notice = Some("Codeply's engine keeps stopping, so it wasn't started again. Restart Codeply; if it happens again, reinstall it.".into());
+                self.notice = Some("Yune's engine keeps stopping, so it wasn't started again. Restart Yune; if it happens again, reinstall it.".into());
                 return true;
             }
             return false;
         }
         self.engine_restarts.push(now);
         self.notice = Some(match sidecar.restart() {
-            Ok(()) => "Codeply's engine stopped and was started again. Your loops and reminders carry on.".into(),
-            Err(e) => format!("Codeply's engine stopped and couldn't start again: {e}"),
+            Ok(()) => "Yune's engine stopped and was started again. Your loops and reminders carry on.".into(),
+            Err(e) => format!("Yune's engine stopped and couldn't start again: {e}"),
         });
         true
     }
@@ -1557,7 +1557,7 @@ impl App {
         {
             self.open_agent(Some(&id));
             self.open_team_dialog(crate::team::TeamDialog::Edit(id));
-            self.notice = Some("Codeply wrote its instructions. Change anything you like, then Save.".into());
+            self.notice = Some("Yune wrote its instructions. Change anything you like, then Save.".into());
             changed = true;
         }
         // A change to the team the engine turned down.

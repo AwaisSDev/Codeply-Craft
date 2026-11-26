@@ -137,7 +137,7 @@ pub fn limit_card(s: &App, t: &Theme, resets: &str, narrow: bool) -> El {
         .child(btn(t, "Your model", Some("chip"), ButtonKind::Plain).key("limit-model").on_press(|s: &mut App| s.model_menu_here()))
         .children(plan.is_none().then(|| btn(t, "Upgrade", Some("sparkle"), ButtonKind::Blue).key("limit-upgrade").on_press(|s: &mut App| s.open_upgrade())));
     let words = col().grow(1.0).min_w(0.0).gap(3.0)
-        .child(text("You've used Codeply's free limit for now").font(ui(14.5, 600.0)).color(t.text).wrap())
+        .child(text("You've used Yune's free limit for now").font(ui(14.5, 600.0)).color(t.text).wrap())
         .child(text(line).font(ui(13.0, 400.0)).color(t.dim).wrap());
     let badge = el().size(36.0, 36.0).radius(10.0).center().fill(t.control).child(ico_s("clock", 18.0, t.dim));
     let card = |e: El| e.key("limit-card").w_full().px(16.0).py(14.0).gap(14.0).radius(12.0).fill(t.card).border(1.0, t.card_border).role("group").label("Free limit");
@@ -230,7 +230,7 @@ fn picker(s: &App, t: &Theme) -> El {
     let head = row().w_full().gap(14.0).items_start()
         .child(crate::logo::mark(40.0))
         .child(col().grow(1.0).min_w(0.0).gap(6.0)
-            .child(text("Upgrade Codeply").font(ui(19.0, 700.0).tracking(-0.2)).color(t.text))
+            .child(text("Upgrade Yune").font(ui(19.0, 700.0).tracking(-0.2)).color(t.text))
             .child(text("Our best models, no API key needed. Cancel any time.").font(ui(14.0, 400.0).lh(20.0)).color(t.dim).wrap()));
     let plans = row().w_full().gap(12.0).items_stretch().mt(20.0)
         .child(plan_card(t, "starter", pick == "starter", Some("3 days free"), "$20", &[
@@ -252,7 +252,7 @@ fn picker(s: &App, t: &Theme) -> El {
     let note = if sign_in {
         row().gap(6.0).center_y().shrink().min_w(0.0)
             .child(ico_s("user", 14.0, t.dim))
-            .child(text("Sign in to Codeply first, so your plan lands on your account.").font(ui(12.5, 400.0)).color(t.dim).wrap().shrink().min_w(0.0))
+            .child(text("Sign in to Yune first, so your plan lands on your account.").font(ui(12.5, 400.0)).color(t.dim).wrap().shrink().min_w(0.0))
     } else {
         row().gap(6.0).center_y()
             .child(ico_s("lock", 14.0, t.faint))
@@ -272,7 +272,7 @@ fn picker(s: &App, t: &Theme) -> El {
         .child(el().grow(1.0))
         .child(btn(t, "Not now", None, ButtonKind::Plain).key("upgrade-later").on_press(|s: &mut App| s.close_upgrade()))
         .child(go);
-    col().key("upgrade-sheet").w(620.0).padding(24.0).label("Upgrade Codeply")
+    col().key("upgrade-sheet").w(620.0).padding(24.0).label("Upgrade Yune")
         .child(head)
         .child(plans)
         .children(problem.map(|e| row().w_full().gap(8.0).mt(14.0).items_start()
@@ -312,7 +312,7 @@ fn waiting(t: &Theme, plan: &str, url: &str) -> El {
     col().key("upgrade-waiting").w(460.0).px(28.0).pt(34.0).pb(26.0).items_center().label("Finish on Whop")
         .child(spinner(t, 34.0))
         .child(text("Finish on Whop").font(ui(19.0, 700.0).tracking(-0.2)).color(t.text).mt(16.0))
-        .child(text(format!("We opened checkout in your browser. Codeply switches to {plan} as soon as you're done.")).font(ui(14.0, 400.0).lh(20.0)).color(t.dim).wrap().align(rune::Align::Center).mt(6.0))
+        .child(text(format!("We opened checkout in your browser. Yune switches to {plan} as soon as you're done.")).font(ui(14.0, 400.0).lh(20.0)).color(t.dim).wrap().align(rune::Align::Center).mt(6.0))
         .children((!url.is_empty()).then(|| row().mt(14.0).h(28.0).px(10.0).gap(6.0).radius(8.0).center_y().fill(t.well).border(1.0, t.field_border).help(url.to_owned())
             .child(ico_s("lock", 13.0, t.dim))
             .child(text(short_url(url)).font(mono(12.5, 16.0)).color(t.dim))))

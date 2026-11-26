@@ -47,8 +47,8 @@ pub fn page(s: &App, t: &Theme, _cx: &mut Cx<App>) -> El {
 fn subtitle(page: SettingsPage) -> &'static str {
     match page {
         SettingsPage::General => "Permissions, notifications, chat behaviour and the workspace.",
-        SettingsPage::Profile => "Who you are in Codeply.",
-        SettingsPage::Appearance => "How Codeply and your team look.",
+        SettingsPage::Profile => "Who you are in Yune.",
+        SettingsPage::Appearance => "How Yune and your team look.",
         SettingsPage::Configuration => "How much the engine asks, how hard it thinks, and what it runs on.",
         SettingsPage::Models => "Haze 2, and the models you add: any OpenAI-compatible API, or Ollama.",
         SettingsPage::Personalization => "Tell Wisp about yourself and how you like answers.",
@@ -165,7 +165,7 @@ fn general(s: &App, t: &Theme) -> Vec<El> {
         group(t, "Notifications", vec![
             item(t, "Notifications", Some("Tell me when a task finishes or needs me."),
                 sw(t, "set-notifications", p.notifications, "Notifications", |s: &mut App| s.update_prefs(|p| p.notifications = !p.notifications))),
-            item(t, crate::autostart::label(), Some("Codeply opens minimized when you sign in, so your loops and reminders run on time on this PC."),
+            item(t, crate::autostart::label(), Some("Yune opens minimized when you sign in, so your loops and reminders run on time on this PC."),
                 sw(t, "set-autostart", s.autostart, crate::autostart::label(), |s: &mut App| s.toggle_autostart())),
         ]),
         group(t, "Chat", vec![
@@ -193,7 +193,7 @@ fn general(s: &App, t: &Theme) -> Vec<El> {
         ]),
         group(t, "About", vec![
             // The engine's own version, once it answers ("4.0.140 · engine 4.2.0").
-            item(t, "Version", (s.data.extra.version != crate::update::VERSION).then_some(s.data.extra.version.as_str()), value(t, &format!("Codeply {}", crate::update::VERSION))),
+            item(t, "Version", (s.data.extra.version != crate::update::VERSION).then_some(s.data.extra.version.as_str()), value(t, &format!("Yune {}", crate::update::VERSION))),
             crate::views::update::status(s, t),
         ]),
     ]
@@ -230,13 +230,13 @@ fn line_field(s: &App, t: &Theme, key: EditKey, placeholder: &str, submit: fn(&m
 /// Sign in with a code sent to your email (the Codeply account the engine uses).
 fn sign_in(s: &App, t: &Theme) -> El {
     if s.data.extra.signed_in {
-        return group(t, "Codeply account", vec![item(t, "Signed in", Some(&s.data.extra.email), ico_s("check", 16.0, t.green))]);
+        return group(t, "Yune account", vec![item(t, "Signed in", Some(&s.data.extra.email), ico_s("check", 16.0, t.green))]);
     }
     let state = s.data.extra.sign_in.clone().unwrap_or_default();
     let sent = state == "sent" || state == "verifying";
     let mut rows = vec![
         col().w_full().px(16.0).py(14.0).gap(10.0)
-            .child(text("Sign in with your email. Codeply sends you a code.").font(ui(13.5, 400.0)).color(t.dim))
+            .child(text("Sign in with your email. Yune sends you a code.").font(ui(13.5, 400.0)).color(t.dim))
             .child(row().w_full().gap(8.0).center_y()
                 .child(line_field(s, t, EditKey::SignInEmail, "you@example.com", App::send_code))
                 .child(btn(t, if sent { "Resend" } else { "Send code" }, None, if sent { ButtonKind::Plain } else { ButtonKind::Blue }).key("sign-in-send").on_press(|s: &mut App| s.send_code())))
@@ -251,13 +251,13 @@ fn sign_in(s: &App, t: &Theme) -> El {
     if let Some(err) = state.strip_prefix("error: ") {
         rows.push(row().w_full().px(16.0).py(10.0).child(text(err.to_owned()).font(ui(13.0, 400.0)).color(t.red).wrap()));
     }
-    group(t, "Codeply account", rows)
+    group(t, "Yune account", rows)
 }
 
 fn appearance(s: &App, t: &Theme) -> Vec<El> {
     let team = s.data.team.iter().map(|a| {
         let right = if a.id == "wisp" {
-            text("Keeps its hexagon and Codeply blue").font(ui(12.5, 400.0)).color(t.faint)
+            text("Keeps its hexagon and its blue").font(ui(12.5, 400.0)).color(t.faint)
         } else {
             crate::views::appearance::pickers(t, a)
         };
@@ -293,7 +293,7 @@ fn configuration(s: &App, t: &Theme) -> Vec<El> {
         ]),
         group(t, "Workspace dependencies", vec![
             item(t, "Current version", None, value(t, &s.data.extra.version)),
-            item(t, "Codeply dependencies", Some("Node and the DSH runtime, from the installed app."), value(t, &s.data.extra.engine)),
+            item(t, "Yune dependencies", Some("Node and the DSH runtime, from the installed app."), value(t, &s.data.extra.engine)),
             item(t, "Maintenance", Some("Check the install, or put it back as it shipped."),
                 row().gap(8.0)
                     .child(btn(t, "Diagnose", None, ButtonKind::Plain).key("cfg-diagnose"))
@@ -411,7 +411,7 @@ fn find_app(s: &mut App, name: &str) {
 fn environments(t: &Theme) -> Vec<El> {
     vec![group(t, "Where tasks run", vec![
         item(t, "This computer", Some("Tasks run in your project folder."), pill(t, "Active", Pill::Green)),
-        item(t, "Codeply Cloud", Some("Tasks keep running when your computer is off."), btn(t, "Set up", None, ButtonKind::Plain).key("set-env/cloud")
+        item(t, "Yune Cloud", Some("Tasks keep running when your computer is off."), btn(t, "Set up", None, ButtonKind::Plain).key("set-env/cloud")
             .on_press(|s: &mut App| s.open_settings(SettingsPage::Cloud))),
     ])]
 }
@@ -495,7 +495,7 @@ fn plan_rows(s: &App, t: &Theme) -> Vec<El> {
     let upgrade = || btn_primary(t, "Upgrade", "sparkle").key("set-upgrade").on_press(|s: &mut App| s.open_upgrade());
     let mut rows = match b.plan.as_ref() {
         Some(p) if p.paid() => {
-            let desc = if p.models.is_empty() { "The agent on Codeply's models.".to_owned() } else { format!("The agent on Codeply's models: {}.", p.models.join(", ")) };
+            let desc = if p.models.is_empty() { "The agent on Yune's models.".to_owned() } else { format!("The agent on Yune's models: {}.", p.models.join(", ")) };
             vec![item(t, &format!("{} plan", p.name), Some(&desc), ico_s("check", 16.0, t.green))]
         }
         Some(_) => vec![item(t, "Free plan", Some("Chat for free, and use the agent with your own models."), upgrade())],

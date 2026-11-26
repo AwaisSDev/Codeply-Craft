@@ -63,7 +63,7 @@ pub fn groups(s: &App, t: &Theme) -> Vec<El> {
     let mobile = st(&phone["mobileUrl"]);
     let open = mobile.clone();
     out.push(group(t, "Phone and web", vec![
-        item(t, "Through your account", Some("Your phone and codeply.app reach this PC's chats, approvals and agents from anywhere, while Codeply is open."),
+        item(t, "Through your account", Some("Your phone and codeply.app reach this PC's chats, approvals and agents from anywhere, while Yune is open."),
             state(t, relay, if relay { "On" } else if signed_in { "Connecting" } else { "Off" })),
         item(t, "On the same Wi-Fi", Some(&if urls.is_empty() { "A faster way in when your phone is on this network.".to_owned() } else { urls.join("  ") }),
             state(t, lan, if lan { "On" } else { "Off" })),
@@ -87,7 +87,7 @@ pub fn groups(s: &App, t: &Theme) -> Vec<El> {
         let name = st(&p["name"]);
         if !b(&p["ready"]) {
             let at = cwd.clone();
-            rows.push(item(t, &name, Some("Not set up for the cloud yet. Codeply makes a private repo in your GitHub that holds snapshots of this project."),
+            rows.push(item(t, &name, Some("Not set up for the cloud yet. Yune makes a private repo in your GitHub that holds snapshots of this project."),
                 btn(t, "Set up", Some("oai-cloud"), ButtonKind::Blue).key(format!("cloud-setup/{name}")).on_press(move |s: &mut App| s.cloud_op(CloudOp::Setup(at.clone())))));
             continue;
         }
@@ -106,7 +106,7 @@ pub fn groups(s: &App, t: &Theme) -> Vec<El> {
     }
     out.push(group(t, "Craft Cloud", rows));
     if !b(&c["available"]) {
-        out.push(note(t, "This engine can't reach the cloud libraries; reinstall Codeply if this stays."));
+        out.push(note(t, "This engine can't reach the cloud libraries; reinstall Yune if this stays."));
     }
     out
 }

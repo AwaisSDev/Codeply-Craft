@@ -123,7 +123,7 @@ pub fn pane(s: &App, t: &Theme) -> El {
                 .role("button").label("Open in your browser")
                 .child(ico_s("external", 16.0, t.text)).child(text("Open in your browser").font(ui(13.0, 500.0)).color(t.text))
                 .on_press_tx(move |_: &mut App, tx| { let _ = tx.open_url(&u); }))
-            .child(text("Pages open inside Codeply on Windows.").font(ui(12.5, 400.0)).color(t.faint))
+            .child(text("Pages open inside Yune on Windows.").font(ui(12.5, 400.0)).color(t.faint))
     };
     let page_fill = t.solid;
     let page = if s.panes.mobile {

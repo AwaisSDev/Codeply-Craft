@@ -1,4 +1,4 @@
-; Codeply's Windows installer (Inno Setup 6): Codeply.exe and the engine it ships with
+; Yune's Windows installer (Inno Setup 6): Codeply.exe (the file keeps its name, so updates swap it) and the engine it ships with
 ; (resources\dsh-runtime: DSH and Node; resources\codeply-cli), installed for this user without
 ; admin rights, with Start menu and desktop shortcuts and an uninstall entry. Built by
 ; .github/workflows/rune-windows.yml from dist\Codeply-Rune (the same folder the zip holds):
@@ -18,14 +18,15 @@
 
 [Setup]
 AppId={{B7673CFE-5842-4181-B51D-B380E8B21909}
-AppName=Codeply
+AppName=Yune
 AppVersion={#AppVersion}
-AppVerName=Codeply {#AppVersion}
-AppPublisher=Codeply
-AppPublisherURL=https://codeply.app
-AppSupportURL=https://codeply.app
-DefaultDirName={localappdata}\Programs\Codeply
-DefaultGroupName=Codeply
+AppVerName=Yune {#AppVersion}
+AppPublisher=Eris Labs
+AppPublisherURL=https://codeply.app/yune
+AppSupportURL=https://codeply.app/yune
+; An install from before the rename stays where it is (same AppId, previous folder).
+DefaultDirName={localappdata}\Programs\Yune
+DefaultGroupName=Yune
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 DisableReadyPage=yes
@@ -40,9 +41,9 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 LZMAUseSeparateProcess=yes
 WizardStyle=modern
-UninstallDisplayName=Codeply
+UninstallDisplayName=Yune
 UninstallDisplayIcon={app}\Codeply.exe
-; Updating while Codeply runs: close it (and its engine) first, open it again after.
+; Updating while Yune runs: close it (and its engine) first, open it again after.
 CloseApplications=force
 RestartApplications=no
 #ifdef IconFile
@@ -59,17 +60,20 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; An update replaces the engine whole, so files a newer engine dropped don't linger.
 Type: filesandordirs; Name: "{app}\resources\dsh-runtime"
 Type: filesandordirs; Name: "{app}\resources\codeply-cli"
+; The shortcuts from before the app was called Yune.
+Type: files; Name: "{autoprograms}\Codeply.lnk"
+Type: files; Name: "{autodesktop}\Codeply.lnk"
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\Codeply"; Filename: "{app}\Codeply.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\Codeply"; Filename: "{app}\Codeply.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\Yune"; Filename: "{app}\Codeply.exe"; WorkingDir: "{app}"
+Name: "{autodesktop}\Yune"; Filename: "{app}\Codeply.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\Codeply.exe"; Description: "{cm:LaunchProgram,Codeply}"; Flags: nowait postinstall skipifsilent
-; An update the app started (Codeply-Setup.exe /SILENT, update.rs): open Codeply again after.
+Filename: "{app}\Codeply.exe"; Description: "{cm:LaunchProgram,Yune}"; Flags: nowait postinstall skipifsilent
+; An update the app started (Codeply-Setup.exe /SILENT, update.rs): open Yune again after.
 Filename: "{app}\Codeply.exe"; Flags: nowait; Check: WizardSilent
 
 [UninstallDelete]

@@ -212,7 +212,7 @@ fn titlebar(s: &App, t: &Theme, cx: &mut Cx<App>) -> El {
     let own_caption = insets.trailing == 0.0 && rune::is_headless();
     let brand = row().w(300.0).gap(9.0).center_y().pl(14.0 + insets.leading)
         .child(crate::logo::mark(22.0))
-        .child(text("Codeply").font(ui(14.5, 700.0)).color(t.text))
+        .child(text("Yune").font(ui(14.5, 700.0)).color(t.text))
         .child(el().px(6.0).h(18.0).radius(5.0).center().fill(t.accent.alpha(0.16)).child(text("Beta").font(ui(10.5, 700.0)).color(t.accent)));
     let win = |label: &'static str, glyph: El, close: bool, act: fn(&mut App, &mut Tx)| {
         el().w(46.0).h(TITLEBAR).center().role("button").label(label).no_window_drag()

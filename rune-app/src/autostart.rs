@@ -57,7 +57,7 @@ pub fn is_on() -> bool {
 
 /// Adds or removes the login entry. Err says why in plain words.
 pub fn set(on: bool) -> Result<(), String> {
-    let exe = exe().ok_or("Couldn't find where Codeply is installed.")?;
+    let exe = exe().ok_or("Couldn't find where Yune is installed.")?;
     #[cfg(windows)]
     {
         let ok = if on {
@@ -66,7 +66,7 @@ pub fn set(on: bool) -> Result<(), String> {
         } else {
             reg(&["delete", RUN_KEY, "/v", "Codeply", "/f"]) || !is_on()
         };
-        if ok { Ok(()) } else { Err("Windows didn't let Codeply change its startup setting.".into()) }
+        if ok { Ok(()) } else { Err("Windows didn't let Yune change its startup setting.".into()) }
     }
     #[cfg(not(windows))]
     {
@@ -107,7 +107,7 @@ fn entry_text(exe: &str) -> String {
     } else {
         // Desktop Entry Exec quoting: the path in double quotes, with \ " ` $ escaped.
         let q: String = exe.chars().flat_map(|c| if matches!(c, '\\' | '"' | '`' | '$') { vec!['\\', c] } else { vec![c] }).collect();
-        format!("[Desktop Entry]\nType=Application\nName=Codeply\nComment=Runs your agents' loops and reminders\nExec=\"{q}\" --hidden\nX-GNOME-Autostart-enabled=true\nTerminal=false\n")
+        format!("[Desktop Entry]\nType=Application\nName=Yune\nComment=Runs your agents' loops and reminders\nExec=\"{q}\" --hidden\nX-GNOME-Autostart-enabled=true\nTerminal=false\n")
     }
 }
 

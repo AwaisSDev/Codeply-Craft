@@ -368,7 +368,7 @@ pub fn apply_reminders(snap: &mut Snapshot, v: &Value) {
         x.add_failed = Some((s(&v["retry"], "text"), s(&v["retry"], "when")));
     }
     if x.reminders_note.is_empty() && v["signedIn"] == false {
-        x.reminders_note = "Sign in to Codeply to see your reminders. They are the same ones your phone has.".into();
+        x.reminders_note = "Sign in to Yune to see your reminders. They are the same ones your phone has.".into();
     }
     if let Some(list) = v["reminders"].as_array() {
         x.reminders = list.iter().map(reminder_from).filter(|r| !r.id.is_empty()).collect();
@@ -427,7 +427,7 @@ pub fn fold(x: &mut AgentsData, e: &Value, title: &dyn Fn(&str) -> Option<String
             if r.id.is_empty() {
                 return true;
             }
-            let who = if r.bot.is_empty() { "Codeply".to_owned() } else { r.bot.clone() };
+            let who = if r.bot.is_empty() { "Yune".to_owned() } else { r.bot.clone() };
             x.reports.insert(0, Report { who: who.clone(), ok: true, text: r.text.clone(), at: now_ms(), reminder: true, ..Default::default() });
             x.reports.truncate(30);
             x.notify.push((format!("Reminder from {who}"), r.text.clone()));
@@ -617,7 +617,7 @@ pub fn ago(ms: u64, now: u64) -> String {
 
 /// The small line under a reminder: "Wisp · Today 5:00 PM · Call · Every day · Snoozed".
 pub fn reminder_line(r: &Reminder, now: u64) -> String {
-    let mut parts = vec![if r.bot.is_empty() { "Codeply".to_owned() } else { r.bot.clone() }];
+    let mut parts = vec![if r.bot.is_empty() { "Yune".to_owned() } else { r.bot.clone() }];
     if let Some(ms) = parse_iso(&r.due_at) {
         parts.push(when_label(ms, now));
     }

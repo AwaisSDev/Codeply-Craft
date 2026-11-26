@@ -302,11 +302,11 @@ fn runs_where(s: &App, a: &Agent, job: &str) -> String {
         return "Running now on this PC".into();
     }
     if a.id == "wisp" {
-        return "Only while Codeply is open".into();
+        return "Only while Yune is open".into();
     }
     match s.data.extra.agents.spec(&a.id) {
         Some(sp) if sp.always_on => "On your PC, or in the cloud".into(),
-        _ => "Only while Codeply is open".into(),
+        _ => "Only while Yune is open".into(),
     }
 }
 
@@ -424,7 +424,7 @@ fn panel(s: &App, t: &Theme, a: &Agent) -> El {
     let always = (a.id != "wisp" && spec.is_some()).then(|| {
         let on = spec.is_some_and(|x| x.always_on);
         let id = a.id.clone();
-        let copy = if on { "On duty around the clock: its jobs run on time even with your PC off." } else { "Off: its jobs wait until Codeply is open on your PC." };
+        let copy = if on { "On duty around the clock: its jobs run on time even with your PC off." } else { "Off: its jobs wait until Yune is open on your PC." };
         card(t).w_full().px(14.0).py(12.0).mt(10.0).child(row().gap(12.0).center_y()
             .child(col().grow(1.0).min_w(0.0).gap(2.0)
                 .child(text("Always on").font(ui(13.5, 500.0)).color(t.text))

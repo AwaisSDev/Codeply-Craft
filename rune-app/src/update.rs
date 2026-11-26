@@ -187,7 +187,7 @@ impl App {
     pub fn restart_to_update(&mut self, tx: &mut Tx) {
         match net::start_again() {
             Ok(()) => tx.quit(),
-            Err(e) => self.notice = Some(format!("Couldn't restart: {e}. Close Codeply and open it again to update.")),
+            Err(e) => self.notice = Some(format!("Couldn't restart: {e}. Close Yune and open it again to update.")),
         }
     }
 

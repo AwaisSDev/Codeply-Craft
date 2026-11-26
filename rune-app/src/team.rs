@@ -305,7 +305,7 @@ pub fn dialog(s: &App, t: &Theme) -> Option<El> {
     let (title, sub, fields): (String, String, Vec<El>) = match d {
         TeamDialog::NewAgent => (
             "New agent".into(),
-            "Describe it in plain words: Codeply writes its full instructions, and Wisp hands it the work that fits. You can also just ask Wisp to make one.".into(),
+            "Describe it in plain words: Yune writes its full instructions, and Wisp hands it the work that fits. You can also just ask Wisp to make one.".into(),
             vec![
                 field(s, t, EditKey::AgentFocus, "Describe it", "Writes our landing pages and launch emails"),
                 field(s, t, EditKey::AgentName, "Name (optional)", "Copywriter"),
@@ -336,7 +336,7 @@ pub fn dialog(s: &App, t: &Theme) -> Option<El> {
             let name = s.data.agent(agent).map_or_else(|| agent.clone(), |a| a.name.clone());
             (
                 format!("New loop for {name}"),
-                "A job it does on a schedule, in its own chat, while Codeply is open.".into(),
+                "A job it does on a schedule, in its own chat, while Yune is open.".into(),
                 vec![
                     field(s, t, EditKey::LoopTask, "What to do", "Check the open pull requests and summarise them"),
                     field(s, t, EditKey::LoopWhen, "When", "every weekday at 9"),
@@ -346,7 +346,7 @@ pub fn dialog(s: &App, t: &Theme) -> Option<El> {
     };
     // A problem in red; the note after making a specialist ("Codeply wrote its instructions") quiet.
     let notice = s.notice.clone().map(|n| {
-        let ink = if n.starts_with("Codeply wrote") { t.dim } else { t.red };
+        let ink = if n.starts_with("Yune wrote") { t.dim } else { t.red };
         text(n).font(ui(12.5, 400.0)).color(ink).wrap()
     });
     let card = col().key("team-dialog").w(460.0).padding(22.0).gap(14.0).radius(16.0)

@@ -230,7 +230,7 @@ fn empty(s: &App, t: &Theme) -> El {
         }
         Some(r) if r.gh == "missing" => (
             "Install the GitHub CLI".into(),
-            "Codeply opens and merges pull requests with GitHub's command-line tool, gh.".into(),
+            "Yune opens and merges pull requests with GitHub's command-line tool, gh.".into(),
             vec![
                 btn(t, "Install GitHub CLI", Some("download"), ButtonKind::Blue).key("prs-install-gh").on_press_tx(|s: &mut App, tx| s.install_gh(tx)),
                 btn(t, "Download page", Some("external"), ButtonKind::Plain).key("prs-gh-page").on_press_tx(|_: &mut App, tx| { let _ = tx.open_url("https://cli.github.com"); }),

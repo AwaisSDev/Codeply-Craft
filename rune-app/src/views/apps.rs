@@ -203,7 +203,7 @@ fn grid_tile(s: &App, t: &Theme, a: &CatalogApp) -> El {
             .child(ico_s(if a.needs_reconnect { "alert" } else { "check" }, 13.0, if a.needs_reconnect { t.warn } else { t.green }))
             .child(text(who).font(ui(12.0, 500.0)).color(if a.needs_reconnect { t.warn } else { t.green }).truncate())
     } else {
-        let what = if a.builtin { format!("{} · Codeply sign-in", a.category) } else if a.verified { a.category.to_owned() } else { format!("{} · not reviewed", a.category) };
+        let what = if a.builtin { format!("{} · Yune sign-in", a.category) } else if a.verified { a.category.to_owned() } else { format!("{} · not reviewed", a.category) };
         row().gap(5.0).center_y()
             .children(a.verified.then(|| ico_s("shield-check", 13.0, t.green)))
             .child(text(what).font(ui(12.0, 400.0)).color(t.faint).truncate())
@@ -316,7 +316,7 @@ pub fn dialog(s: &App, t: &Theme) -> Option<El> {
     let out = match d {
         Dialog::Key { id, name } => panel(format!("app/{id}"), "Add an API key")
             .child(title(format!("Connect {name}")))
-            .child(help(format!("{name} signs in with an API key, not the browser. It stays on this computer, in your Codeply folder, and goes only to {name}.")))
+            .child(help(format!("{name} signs in with an API key, not the browser. It stays on this computer, in your Yune folder, and goes only to {name}.")))
             .child(field(t, "API key", &s.apps_ui.key, |s| &mut s.apps_ui.key, "Paste it here", "apps-key", true))
             .child(row().gap(8.0).justify_end().child(cancel).child(btn(t, "Connect", None, ButtonKind::Blue).key("apps-dialog-go").on_press(submit))),
         Dialog::Add => panel("int-primary".to_owned(), "Add an app")

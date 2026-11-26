@@ -25,7 +25,7 @@ pub fn composer_menu(s: &App, t: &Theme, key: &str) -> El {
     // Codeply's own models, by plan: one above your plan names it and opens the upgrade on it.
     let have = s.data.extra.billing.plan.as_ref().map_or(0, |p| plan_rank(&p.key));
     items.push(divider());
-    items.push(label(t, "Codeply models"));
+    items.push(label(t, "Yune models"));
     for (id, name, needs) in PICKS {
         let open = plan_rank(needs) <= have;
         let note = if open { None } else { Some(if needs == "pro" { "Max" } else { "Pro" }) };
@@ -169,7 +169,7 @@ fn list(s: &App, t: &Theme) -> El {
             .child(el().size(30.0, 30.0).radius(8.0).center().fill(t.accent.alpha(0.14)).child(ico_s("sparkle", 17.0, t.accent)))
             .child(col().grow(1.0).min_w(0.0).gap(2.0)
                 .child(text("Haze 2").font(ui(14.0, 500.0)).color(t.text))
-                .child(text("Codeply's own model. It picks the best model for each task. Included with your account.").font(ui(12.5, 400.0)).color(t.dim).wrap()))
+                .child(text("Yune's own model. It picks the best model for each task. Included with your account.").font(ui(12.5, 400.0)).color(t.dim).wrap()))
             .child(pill(t, "Default", Pill::Blue))
             .children((models.selected == AUTO).then(|| ico_s("check", 18.0, t.text)))
             .on_press(|s: &mut App| s.model_pick(AUTO)),
@@ -259,7 +259,7 @@ fn linked_group(s: &App, t: &Theme) -> El {
             item("claude", "Claude", rune::Color::WHITE, rune::color::hex("#D97757").unwrap_or(t.accent), "app-claude", &linked.claude),
             item("chatgpt", "ChatGPT", rune::Color::WHITE, rune::Color::BLACK, "app-openai", &linked.chatgpt),
         ]))
-        .child(note(t, "Subagents run on a plan you connect, and Codeply keeps working on it after your own limit runs out."))
+        .child(note(t, "Subagents run on a plan you connect, and Yune keeps working on it after your own limit runs out."))
 }
 
 fn add_group(s: &App, t: &Theme) -> El {
@@ -319,9 +319,9 @@ fn form(s: &App, t: &Theme) -> El {
         .child(if blocker.is_some() { el().opacity(0.4).child(toggle(t, "model-phone-switch".into(), false, "Use on my phone")) }
             else { toggle(t, "model-phone-switch".into(), phone_on, "Use on my phone").on_press(|s: &mut App| s.models_ui.phone = !s.models_ui.phone) });
     let privacy = if phone_on {
-        "Your API key is saved on this computer and sent once to your Codeply account, where it is stored encrypted for your phone. It is never shown again, and is only used to call the base URL above."
+        "Your API key is saved on this computer and sent once to your Yune account, where it is stored encrypted for your phone. It is never shown again, and is only used to call the base URL above."
     } else {
-        "Your API key is saved only on this computer and is never sent to Codeply. It is used for exactly one thing: calling the base URL above."
+        "Your API key is saved only on this computer and is never sent to Yune. It is used for exactly one thing: calling the base URL above."
     };
     let busy = models.busy;
     let actions = row().w_full().gap(8.0).center_y().justify_end()

@@ -1,9 +1,9 @@
-//! Builds Codeply.exe's icon on Windows: renders `assets/codeply-app-icon.svg` (the app icon
+//! Builds the exe's icon on Windows: renders `assets/yune-app-icon.svg` (the app icon
 //! from codeply.app) at every size Windows asks for, packs them into one .ico, and embeds it as
-//! the exe's icon (resource 1), so Explorer, the taskbar and Alt Tab show the Codeply logo.
+//! the exe's icon (resource 1), so Explorer, the taskbar and Alt Tab show the Yune logo.
 
 fn main() {
-    println!("cargo:rerun-if-changed=assets/codeply-app-icon.svg");
+    println!("cargo:rerun-if-changed=assets/yune-app-icon.svg");
     println!("cargo:rerun-if-changed=build.rs");
     // Baked into the exe (update.rs): CI sets them per run.
     for var in ["CODEPLY_VERSION", "CODEPLY_ENGINE_ID", "CODEPLY_UPDATE_FEED"] {
@@ -20,8 +20,8 @@ fn main() {
     }
     let mut res = winresource::WindowsResource::new();
     res.set_icon(ico.to_str().expect("utf-8 path"));
-    res.set("FileDescription", "Codeply");
-    res.set("ProductName", "Codeply");
+    res.set("FileDescription", "Yune");
+    res.set("ProductName", "Yune");
     if let Err(e) = res.compile() {
         println!("cargo:warning=couldn't embed the app icon: {e}");
     }
@@ -29,7 +29,7 @@ fn main() {
 
 fn make_ico(path: &std::path::Path) -> Result<(), String> {
     use resvg::{tiny_skia, usvg};
-    let svg = std::fs::read_to_string("assets/codeply-app-icon.svg").map_err(|e| e.to_string())?;
+    let svg = std::fs::read_to_string("assets/yune-app-icon.svg").map_err(|e| e.to_string())?;
     let tree = usvg::Tree::from_str(&svg, &usvg::Options::default()).map_err(|e| e.to_string())?;
     let mut dir = ico::IconDir::new(ico::ResourceType::Icon);
     for size in [16u32, 20, 24, 32, 40, 48, 64, 128, 256] {

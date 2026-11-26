@@ -77,7 +77,7 @@ impl Default for Prefs {
             archived: Vec::new(),
             home: "https://www.codeply.app".into(),
             bookmarks: vec![
-                ("Codeply".into(), "https://www.codeply.app".into()),
+                ("Yune".into(), "https://codeply.app/yune".into()),
                 ("GitHub".into(), "https://github.com".into()),
                 ("Vercel".into(), "https://vercel.com/dashboard".into()),
             ],

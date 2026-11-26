@@ -222,7 +222,7 @@ impl Browser {
     /// switching to it). Its answer lands in `answers`: at once, or once the page has loaded.
     pub fn agent_ask(&mut self, ask: &crate::subagents::BrowserAsk) {
         if !Browser::is_native() {
-            self.answers.push((ask.req.clone(), false, "Codeply's browser shows pages only in the Windows app. Use your web tools to read pages instead.".into()));
+            self.answers.push((ask.req.clone(), false, "Yune's browser shows pages only in the Windows app. Use your web tools to read pages instead.".into()));
             return;
         }
         let i = match self.tabs.iter().position(|t| t.agent.as_ref().is_some_and(|a| a.id == ask.agent)) {
@@ -238,7 +238,7 @@ impl Browser {
         };
         let (id, url) = (self.tabs[i].id, self.tabs[i].url.clone());
         if let Err(e) = native::ensure(id, &url, self.rect.unwrap_or([0.0, 0.0, 1280.0, 800.0]), self.tx.clone(), self.waker.clone()) {
-            self.answers.push((ask.req.clone(), false, format!("Codeply's browser could not open a tab: {e}")));
+            self.answers.push((ask.req.clone(), false, format!("Yune's browser could not open a tab: {e}")));
             return;
         }
         let who = (ask.name.clone(), ask.color.clone());
@@ -699,7 +699,7 @@ mod native {
         Ok(())
     }
     pub fn eval(_: u64, _: &str, req: String, tx: Sender<Event>, _: Option<rune::Waker>) {
-        let _ = tx.send(Event::Did(req, "ERROR Codeply's browser shows pages only in the Windows app.".into()));
+        let _ = tx.send(Event::Did(req, "ERROR Yune's browser shows pages only in the Windows app.".into()));
     }
     pub fn load(_: u64, _: &str) {}
     pub fn script(_: u64, _: &str) {}

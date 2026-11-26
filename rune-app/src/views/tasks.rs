@@ -162,7 +162,7 @@ fn log_line(t: &Theme, a: &Subagent, i: usize, l: &Line) -> El {
     let say = |s: String, c| text(s).font(ui(12.5, 400.0)).color(c).wrap().selectable(true).grow(1.0).min_w(0.0);
     match l.kind.as_str() {
         "user" => {
-            let who = if l.by == "you" { "You" } else { "Codeply" };
+            let who = if l.by == "you" { "You" } else { "Yune" };
             let tag = if l.live { " · while working" } else { "" };
             col().key(key).w_full().px(10.0).py(6.0).gap(2.0).radius(8.0).fill(t.hover)
                 .child(text(format!("{who}{tag}")).font(ui(11.0, 600.0)).color(t.faint))

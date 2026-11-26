@@ -176,6 +176,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --target "${GITHUB_SHA}" --title "Codeply 4.0 beta on Rune, Windows (${GITHUB_REF_NAME})" --notes "Test build of the native Rune app from the ${GITHUB_REF_NAME} branch. Run Codeply-Setup.exe to install it, or unzip Codeply-Rune-windows-x64.zip and run Codeply.exe. See TRY-IT.txt inside."
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --target "${GITHUB_SHA}" --title "Yune beta, Windows (${GITHUB_REF_NAME})" --notes "Test build of the native Rune app from the ${GITHUB_REF_NAME} branch. Run Codeply-Setup.exe to install it, or unzip Codeply-Rune-windows-x64.zip and run Codeply.exe. See TRY-IT.txt inside."
           gh release upload "$TAG" dist/Codeply-Rune-windows-x64.zip dist/Codeply-Setup.exe dist/Codeply.exe --clobber
           gh release upload "$TAG" dist/latest.json --clobber

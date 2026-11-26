@@ -67,7 +67,7 @@ pub fn notifications_off(s: &App, t: &Theme, what: &str) -> Option<El> {
     (!s.prefs.notifications).then(|| {
         row().key("notifications-off").w_full().px(14.0).py(10.0).gap(10.0).radius(10.0).center_y().fill(t.warn.alpha(0.10)).border(1.0, t.warn.alpha(0.25))
             .child(ico_s("bell", 16.0, t.warn))
-            .child(text(format!("Notifications are off for Codeply, so {what} only show here while the app is open.")).font(ui(12.5, 400.0)).color(t.text).wrap().grow(1.0).min_w(0.0))
+            .child(text(format!("Notifications are off for Yune, so {what} only show here while the app is open.")).font(ui(12.5, 400.0)).color(t.text).wrap().grow(1.0).min_w(0.0))
             .child(btn(t, "Turn on", None, ButtonKind::Plain).key("notifications-on").on_press(|s: &mut App| s.update_prefs(|p| p.notifications = true)))
     })
 }
@@ -89,7 +89,7 @@ fn upcoming_row(s: &App, t: &Theme, i: usize, r: &Reminder, now: u64) -> El {
 fn earlier_row(s: &App, t: &Theme, r: &Reminder) -> El {
     let gone = r.id.clone();
     let at = agentsync::parse_iso(if r.sent_at.is_empty() { &r.due_at } else { &r.sent_at }).map(|ms| agentsync::when_label(ms, now_ms())).unwrap_or_default();
-    let who = if r.bot.is_empty() { "Codeply" } else { r.bot.as_str() };
+    let who = if r.bot.is_empty() { "Yune" } else { r.bot.as_str() };
     row().key(format!("reminder-earlier/{}", r.id)).w_full().min_h(44.0).px(10.0).py(6.0).gap(12.0).radius(10.0).center_y().hover(t.hover)
         .child(face(s, t, who, 24.0))
         .child(col().grow(1.0).min_w(0.0).gap(1.0)
