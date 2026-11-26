@@ -307,6 +307,95 @@ const SCENES: &[Scene] = &[
             refs: Vec::new(),
         });
     }),
+    // A reply drawn as rich UI (markdown.rs): every block and inline style rich-ui.js draws.
+    ("chat-rich", |s| {
+        s.open_chat("Casual chat");
+        let mut items = s.data.thread("Casual chat").to_vec();
+        items.push(model::ThreadItem::You("Can you sum up the launch plan and draft the announcement?".into()));
+        items.push(model::ThreadItem::Them(r##"# Launch plan
+Here's where the **v4 launch** stands: *mostly* on track, with ~~two~~ one blocker left and ==one decision for you==. Status is :pill-amber[Pending] until QA signs off; the build is :green[passing] and the old installer is :red[retired]. Open the palette with :kbd[Ctrl+K] and pick :badge[Ship]. Docs flow Draft $\rightarrow$ Review \to Live, at 3 \times the old speed. Details at https://www.codeply.app and in `launch.md`.
+
+## What's left
+1. Finish the onboarding copy
+2. Record the demo video
+   - 30 second cut for social
+   - Full walkthrough
+     - with captions
+3. Sign the release notes
+
+### Checklist
+- [x] Freeze the feature branch
+- [x] Translate the store listing
+- [ ] Final QA pass on Windows
+- [ ] Press kit upload
+
+> [!WARNING] Back up before migrating
+> The v4 migration rewrites your local settings. Export them first.
+
+> [!TIP]
+> Ship on a Tuesday: support is fully staffed.
+
+> The best launch is a boring launch. Plan for the dull path.
+
+#### Numbers so far
+| Channel | Signups | Conversion | Change |
+|:--------|--------:|-----------:|:------:|
+| Website | 12,480 | 4.2% | :pill-green[+18%] |
+| Newsletter | 3,215 | 6.8% | :pill-green[+5%] |
+| Partners | 940 | 2.1% | :pill-red[-3%] |
+
+| Risk | Owner | Mitigation |
+|---|---|---|
+| Windows installer flagged by antivirus | Dana | Sign with the new EV certificate and submit to Microsoft a week early |
+| Demo video runs long | Lee | Keep the 30 second cut as the default on the landing page |
+
+| Platform | x64 | arm64 | Installer | Auto-update | Signed | Size |
+|---|:-:|:-:|---|:-:|:-:|---:|
+| Windows 11 | :green[yes] | :green[yes] | MSIX and setup.exe | yes | EV certificate | 84 MB |
+| macOS 14+ | :green[yes] | :green[yes] | Universal DMG | yes | Developer ID | 91 MB |
+| Ubuntu 24.04 | :green[yes] | :amber[beta] | AppImage, .deb | no | GPG | 88 MB |
+
+---
+
+##### Files
+[Launch brief, final version for the board](https://example.com/files/launch-brief.pdf)
+
+/home/sam/Desktop/budget-v4.xlsx
+/home/sam/Desktop/store-shots.zip
+
+```doc Announcement draft
+# Codeply 4 is here
+Today we're shipping the biggest update since launch: a native app that opens in a blink and stays out of your way.
+
+## What's new
+- **A native desktop app.** Faster start, lower memory, real system menus.
+- **Rich replies.** Tables, checklists, callouts and documents, drawn as real UI.
+- **Agents that keep working.** Close the window; your agents carry on in the background.
+
+## Why it matters
+Most of your day is spent waiting on tools. Codeply 4 cuts that wait to almost nothing, so you stay in flow from the first idea to the shipped change.
+
+Try it today: update from the app, or download it from our site.
+
+Thanks for building with us.
+The Codeply team
+```
+
+```ts
+export function launch(date: Date) {
+  return schedule("v4", date);
+}
+```
+
+```widget Signup estimator
+<label>Visitors <input type="range" min="0" max="50000"></label>
+<script>document.querySelector('input').oninput = e => out.textContent = e.target.value * 0.042;</script>
+```
+
+###### Last updated today
+"##.into()));
+        s.data.threads.push(("Casual chat".into(), items));
+    }),
     ("chat-steps", |s| {
         s.open_chat("Casual chat");
         if let Some(c) = s.data.extra.chats.iter_mut().find(|c| c.title == "Casual chat") {
