@@ -7,54 +7,147 @@ use rune::{El, Side, col, el, row, text, text_input};
 use crate::app::App;
 use crate::icons::{ico, ico_s};
 use crate::model::{ButtonKind, Pill};
-use crate::models::{AUTO, COMING, KEY, MODEL, ModelInfo, NAME, PICKS, PRESETS, URL, pick_name, plan_rank};
+use crate::models::{AUTO, KEY, MODEL, ModelInfo, NAME, PICKS, PRESETS, URL, pick_name, plan_rank};
 use crate::theme::{Theme, ui};
 use crate::ui::{btn, menu, menu_item, pill, toggle};
 
 // ---------- the composer's menu ----------
 
-/// The model menu over a composer: Haze 2, the models you added, the picked one's effort, and a
-/// way to add another.
+/// How hard the picked model thinks: its levels (value, name), the one it's on, and how to set it.
+struct Effort {
+    levels: Vec<(String, String)>,
+    current: String,
+    default: String,
+    /// The model it belongs to; None for Haze 2, whose effort is the app's own setting.
+    model: Option<String>,
+}
+
+fn effort_of(s: &App) -> Option<Effort> {
+    let models = &s.data.extra.models;
+    match models.current() {
+        // A Yune model: the router sets how hard it thinks.
+        None if pick_name(&models.selected).is_some() => None,
+        None => Some(Effort {
+            levels: ["Low", "Medium", "High"].iter().map(|e| (e.to_string(), e.to_string())).collect(),
+            current: s.prefs.effort.clone(),
+            default: "High".into(),
+            model: None,
+        }),
+        Some(m) if m.has_effort() => Some(Effort {
+            levels: m.efforts().into_iter().filter(|(v, _)| !v.is_empty()).collect(),
+            current: m.effort.clone(),
+            default: String::new(),
+            model: Some(m.id.clone()),
+        }),
+        Some(_) => None,
+    }
+}
+
+/// Sets the effort and keeps the picker open (the slider is for trying levels).
+fn set_effort(s: &mut App, model: Option<&str>, value: &str, menu_id: &str) {
+    match model {
+        Some(id) => s.model_set_effort(id, value),
+        None => s.set_effort(value),
+    }
+    s.menu = Some(menu_id.to_owned());
+}
+
+/// The model picker over a composer, as one panel: how hard it thinks, big, with the model's
+/// name under it (a click lists the models), and a slider of the effort levels; then, opened,
+/// Haze 2, Yune's models and the ones you added.
 pub fn composer_menu(s: &App, t: &Theme, key: &str) -> El {
     let models = &s.data.extra.models;
-    let divider = || el().w_full().py(3.0).child(el().w_full().h(1.0).fill(t.border));
-    let mut items = vec![
-        menu_item(t, "model/auto".into(), None, "Haze 2", Some("Picks the best model for each task"), models.selected == AUTO)
-            .on_press(|s: &mut App| s.model_pick(AUTO)),
-    ];
-    // Codeply's own models, by plan: one above your plan names it and opens the upgrade on it.
-    let have = s.data.extra.billing.plan.as_ref().map_or(0, |p| plan_rank(&p.key));
-    items.push(divider());
-    items.push(label(t, "Yune models"));
-    for (id, name, needs) in PICKS {
-        let open = plan_rank(needs) <= have;
-        let note = if open { None } else { Some(if needs == "pro" { "Max" } else { "Pro" }) };
-        items.push(menu_item(t, format!("model/{id}"), Some("sparkle"), name, note, models.selected == id)
-            .on_press(move |s: &mut App| if open { s.model_pick(id) } else { s.open_upgrade_for(needs) }));
+    let menu_id = format!("model:{key}");
+    let list_key = format!("model-list/{key}");
+    let effort = effort_of(s);
+    // The list shows when you open it, or when there's no effort to set.
+    let listing = effort.is_none() || s.expanded.contains(&list_key);
+    let (name, _) = models.chip(&s.prefs.effort);
+    let mut items = Vec::new();
+
+    // The head: the effort, the model's name under it, and a reset.
+    let big = match &effort {
+        Some(e) => e.levels.iter().find(|(v, _)| *v == e.current).map_or_else(|| crate::models::effort_label(&e.current), |(_, l)| l.clone()),
+        None => "Auto effort".into(),
+    };
+    let toggle_list = list_key.clone();
+    let reset = effort.as_ref().filter(|e| e.current != e.default).map(|e| {
+        let (model, value, menu_id) = (e.model.clone(), e.default.clone(), menu_id.clone());
+        el().key("model-effort-reset").size(30.0, 30.0).radius(15.0).center().hover(t.hover).role("button").label("Reset effort").help("Back to the default")
+            .child(ico_s("refresh", 15.0, t.dim))
+            .on_press(move |s: &mut App| set_effort(s, model.as_deref(), &value, &menu_id))
+    });
+    items.push(row().px(8.0).pt(6.0).pb(4.0).gap(8.0).center_y()
+        .child(el().size(30.0, 30.0).center().child(ico_s("gauge", 16.0, t.faint)))
+        .child(col().grow(1.0).min_w(0.0).items_center().gap(2.0)
+            .child(text(big).font(ui(17.0, 650.0).tracking(-0.2)).color(t.accent))
+            .child(row().key("model-name").gap(2.0).px(8.0).h(22.0).radius(11.0).center_y().hover(t.hover).role("button")
+                .label(format!("{name}: pick another model")).checked(listing)
+                .child(text(name.clone()).font(ui(12.5, 500.0)).color(t.dim).truncate())
+                .child(ico_s(if listing { "chevron-down" } else { "chevron-right" }, 13.0, t.faint))
+                .on_press(move |s: &mut App| s.toggle_expanded(&toggle_list))))
+        .child(reset.unwrap_or_else(|| el().size(30.0, 30.0))));
+
+    // The slider: one stop per level, filled up to the one it's on, a white knob there.
+    if let Some(e) = &effort {
+        if e.levels.is_empty() {
+            items.push(text("Checking which levels this model takes").font(ui(12.5, 400.0)).color(t.faint).px(10.0).py(6.0));
+        } else {
+            let on = e.levels.iter().position(|(v, _)| *v == e.current);
+            let cells = e.levels.iter().enumerate().map(|(i, (value, label))| {
+                let (model, value, menu_id) = (e.model.clone(), value.clone(), menu_id.clone());
+                let filled = on.is_some_and(|k| i < k);
+                let here = on == Some(i);
+                let mut cell = el().key(format!("effort/{value}")).grow(1.0).h(30.0).center().role("button").label(label.clone()).checked(here).help(label.clone());
+                if filled {
+                    cell = cell.fill(t.accent);
+                }
+                if here {
+                    // Filled up to the knob's middle, the knob on top.
+                    cell = cell.child(el().absolute(0.0, 0.0).w_full().h(30.0).child(row().w_full().h(30.0)
+                        .child(el().grow(1.0).h(30.0).fill(t.accent))
+                        .child(el().grow(1.0).h(30.0))))
+                        .child(el().size(22.0, 22.0).radius(11.0).fill(rune::Color::WHITE).shadow(2.0, 6.0, t.shadow));
+                } else {
+                    cell = cell.child(el().size(4.0, 4.0).radius(2.0).fill(if filled { rune::Color::WHITE.alpha(0.8) } else { t.faint }));
+                }
+                cell.on_press(move |s: &mut App| set_effort(s, model.as_deref(), &value, &menu_id))
+            });
+            items.push(row().key("effort-slider").mx(8.0).mt(2.0).h(30.0).radius(15.0).continuous_corners().clip_rounded(15.0).fill(t.control).children(cells));
+            // The levels' names under their stops.
+            items.push(row().mx(8.0).pt(4.0).pb(6.0).children(e.levels.iter().map(|(v, l)| {
+                text(l.clone()).font(ui(11.0, if *v == e.current { 600.0 } else { 400.0 })).color(if *v == e.current { t.text } else { t.faint }).grow(1.0).align(rune::Align::Center)
+            })));
+        }
     }
-    items.push(label(t, "ChatGPT"));
-    for (name, needs) in COMING {
-        let plan = if needs == "pro" { "Max" } else { "Pro" };
-        items.push(menu_item(t, format!("model/chatgpt-{}", name.to_lowercase()), Some("chip"), name, Some(&format!("Coming soon on {plan}")), false)
-            .on_press(|s: &mut App| s.menu = None));
-    }
-    items.push(divider());
-    items.push(label(t, "Your models"));
-    for m in &models.list {
-        let id = m.id.clone();
-        items.push(menu_item(t, format!("model/{}", m.id), Some(if m.is_local() { "laptop" } else { "chip" }), &m.name, Some(&m.place()), models.selected == m.id)
-            .on_press(move |s: &mut App| s.model_pick(&id)));
-    }
-    // How hard it thinks. Haze 2 keeps the app's own setting; a model you added has what its provider offers.
-    let efforts = effort_items(s, t);
-    if !efforts.is_empty() {
+
+    // The models, when opened.
+    if listing {
+        let divider = || el().w_full().py(4.0).child(el().w_full().h(1.0).fill(t.border));
         items.push(divider());
-        items.push(label(t, "Effort"));
-        items.extend(efforts);
+        items.push(menu_item(t, "model/auto".into(), Some("sparkle"), "Haze 2", Some("Picks the best model for each task"), models.selected == AUTO)
+            .on_press(|s: &mut App| s.model_pick(AUTO)));
+        // Yune's own models, by plan: one above your plan names it and opens the upgrade on it.
+        let have = s.data.extra.billing.plan.as_ref().map_or(0, |p| plan_rank(&p.key));
+        items.push(label(t, "Yune models"));
+        for (id, name, needs) in PICKS {
+            let open = plan_rank(needs) <= have;
+            let note = if open { None } else { Some(if needs == "pro" { "Max" } else { "Pro" }) };
+            items.push(menu_item(t, format!("model/{id}"), Some("sparkle"), name, note, models.selected == id)
+                .on_press(move |s: &mut App| if open { s.model_pick(id) } else { s.open_upgrade_for(needs) }));
+        }
+        if !models.list.is_empty() {
+            items.push(label(t, "Your models"));
+        }
+        for m in &models.list {
+            let id = m.id.clone();
+            items.push(menu_item(t, format!("model/{}", m.id), Some(if m.is_local() { "laptop" } else { "chip" }), &m.name, Some(&m.place()), models.selected == m.id)
+                .on_press(move |s: &mut App| s.model_pick(&id)));
+        }
+        items.push(divider());
+        items.push(menu_item(t, "model/add".into(), Some("plus"), "Add a model", None, false).on_press(|s: &mut App| s.model_add_from_menu()));
     }
-    items.push(divider());
-    items.push(menu_item(t, "model/add".into(), Some("plus"), "Add a model", None, false).on_press(|s: &mut App| s.model_add_from_menu()));
-    menu(t, &format!("model-chip/{key}"), Side::Top, 300.0, items)
+    menu(t, &format!("model-chip/{key}"), Side::Top, 320.0, items).padding(8.0).radius(18.0).continuous_corners()
 }
 
 /// The picked model's effort levels as menu rows (none when the model sets its own).

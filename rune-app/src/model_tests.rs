@@ -33,11 +33,22 @@ fn click(rt: &mut Runtime<App>, key: &str) {
     settle(rt);
 }
 
+/// Opens the model picker's list of models: the chip (unless the picker is open), then the
+/// model's name under the effort (unless the list already shows).
+fn open_models(rt: &mut Runtime<App>) {
+    if rt.state.menu.as_deref() != Some("model:chat-home") {
+        click(rt, "model-chip/chat-home");
+    }
+    if rt.find("model/auto").is_none() {
+        click(rt, "model-name");
+    }
+}
+
 #[test]
 fn the_composer_menu_picks_a_model_and_its_effort() {
     let mut rt = runtime(App::with_mock());
     assert_eq!(rt.state.data.extra.models.chip("High").0, "Haze 2");
-    click(&mut rt, "model-chip/chat-home");
+    open_models(&mut rt);
     click(&mut rt, "model/m1");
     assert_eq!(rt.state.data.extra.models.selected, "m1");
     assert!(rt.state.menu.is_none(), "picking closes the menu");
@@ -45,8 +56,9 @@ fn the_composer_menu_picks_a_model_and_its_effort() {
     click(&mut rt, "model-chip/chat-home");
     click(&mut rt, "effort/high");
     assert_eq!(rt.state.data.extra.models.current().map(|m| m.effort.as_str()), Some("high"));
+    assert!(rt.state.menu.is_some(), "the slider keeps the picker open");
     // Back to Haze 2, whose effort is the app's own.
-    click(&mut rt, "model-chip/chat-home");
+    open_models(&mut rt);
     click(&mut rt, "model/auto");
     assert_eq!(rt.state.data.extra.models.selected, AUTO);
 }
@@ -62,7 +74,7 @@ fn a_model_without_effort_shows_none() {
 #[test]
 fn adding_a_model_tests_it_saves_it_and_picks_it() {
     let mut rt = runtime(App::with_mock());
-    click(&mut rt, "model-chip/chat-home");
+    open_models(&mut rt);
     click(&mut rt, "model/add");
     assert_eq!(rt.state.settings, SettingsPage::Models);
     settle(&mut rt);
@@ -135,7 +147,7 @@ fn codeply_models_follow_the_plan_and_locked_ones_open_the_upgrade() {
     let mut rt = runtime(App::with_mock());
     settle(&mut rt);
     // Free: Opus is on Pro, so it opens the upgrade on Pro; nothing is picked.
-    click(&mut rt, "model-chip/chat-home");
+    open_models(&mut rt);
     click(&mut rt, "model/codeply:opus");
     assert!(rt.state.upgrade.open && rt.state.upgrade.pick == "starter", "a locked model offers its plan");
     assert_eq!(rt.state.data.extra.models.selected, crate::models::AUTO);
@@ -144,7 +156,7 @@ fn codeply_models_follow_the_plan_and_locked_ones_open_the_upgrade() {
     rt.state.data.extra.billing.plan = Some(crate::model::Plan { key: "pro".into(), name: "Max".into(), models: Vec::new() });
     rt.invalidate();
     settle(&mut rt);
-    click(&mut rt, "model-chip/chat-home");
+    open_models(&mut rt);
     click(&mut rt, "model/codeply:fable");
     assert_eq!(rt.state.data.extra.models.selected, "codeply:fable");
     assert_eq!(rt.state.data.extra.models.chip("High").0, "Fable 5.2");

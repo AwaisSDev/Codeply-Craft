@@ -266,6 +266,8 @@ const SCENES: &[Scene] = &[
         s.data.extra.models.test_failed = true;
     }),
     ("settings-models-ollama", |s| { s.open_settings(SettingsPage::Models); s.model_scan(); }),
+    // The picker with its model list open (the model's name under the effort, clicked).
+    ("model-menu-list", |s| { s.new_chat(); s.toggle_menu("model:chat-home"); s.toggle_expanded("model-list/chat-home"); }),
     ("model-menu-custom", |s| { s.model_pick("m1"); s.new_chat(); s.toggle_menu("model:chat-home"); }),
     ("prs-empty-norepo", |s| prs_empty(s, model::RepoState::default())),
     ("prs-empty-gh", |s| prs_empty(s, model::RepoState { repo: true, remote: true, branch: "main".into(), base: "main".into(), gh: "missing".into(), detail: String::new() })),

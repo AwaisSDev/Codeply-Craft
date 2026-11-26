@@ -19,8 +19,6 @@ pub const PICKS: [(&str, &str, &str); 4] = [
     ("codeply:haiku", "Haiku 5.5", "starter"),
     ("codeply:fable", "Fable 5.2", "pro"),
 ];
-/// ChatGPT models on the way: (name, the plan that will include it).
-pub const COMING: [(&str, &str); 4] = [("Tera", "starter"), ("Luna", "starter"), ("Sol", "pro"), ("Astra", "pro")];
 
 /// How far up a plan is: Free 0, Pro ("starter") 1, Max ("pro") 2.
 pub fn plan_rank(key: &str) -> u8 {

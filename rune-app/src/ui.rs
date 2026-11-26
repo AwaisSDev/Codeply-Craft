@@ -167,8 +167,18 @@ pub fn composer(s: &App, t: &Theme, key: EditKey, target: Target, placeholder: &
         }))
         .child(el().grow(1.0))
         .children((!compact).then(|| {
+            // The model and its effort as one outlined pill ("Opus 5.5 High ▾"); it opens the
+            // picker: the effort as a slider, the model under it.
             let (name, effort) = s.data.extra.models.chip(&s.prefs.effort);
-            chip(format!("model-chip/{}", key.name()), None, &name, effort.as_deref(), true, format!("model:{}", key.name()))
+            let menu_id = format!("model:{}", key.name());
+            let open = s.menu.as_deref() == Some(menu_id.as_str());
+            row().key(format!("model-chip/{}", key.name())).h(30.0).px(12.0).gap(6.0).radius(15.0).continuous_corners().center_y()
+                .border(1.0, if open { t.accent } else { t.accent.alpha(0.45) }).fill(if open { t.accent.alpha(0.1) } else { Color::TRANSPARENT }).hover(t.accent.alpha(0.08))
+                .role("button").label(format!("Model: {name}{}", effort.as_deref().map(|e| format!(", effort {e}")).unwrap_or_default()))
+                .child(text(name).font(ui(13.5, 600.0)).color(t.text).truncate())
+                .children(effort.map(|e| text(e).font(ui(13.5, 400.0)).color(t.dim)))
+                .child(ico_s("chevron-down", 15.0, t.dim))
+                .on_press(move |s: &mut App| s.toggle_menu(&menu_id))
         }))
         .child(mic(s, t, key))
         .child(action);
